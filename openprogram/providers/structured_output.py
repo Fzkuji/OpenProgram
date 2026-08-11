@@ -183,26 +183,14 @@ def _project_schema(
         return copy.deepcopy(schema), None
     if profile == "google_json_schema":
         path = _first_unsupported_google_schema_path(schema)
-        message = "Google response_json_schema does not support this constraint"
         if path is None:
-            try:
-                from google.genai import types as google_types
-
-                google_types.Schema.model_validate(_google_schema_validation_copy(schema))
-            except Exception as exc:
-                errors = getattr(exc, "errors", lambda: [])()
-                if errors:
-                    aliases = {"defs": "$defs", "ref": "$ref"}
-                    path = _pointer(aliases.get(part, part) for part in errors[0]["loc"])
-                else:
-                    path = ""
-                message = "Installed google-genai Schema rejected this constraint"
+            path = _first_required_google_reference_cycle_path(schema)
         if path is not None:
             return None, {
                 "code": "unsupported_schema_constraint",
                 "path": path,
                 "schema_path": path,
-                "message": message,
+                "message": "Google response_json_schema does not support this constraint",
             }
         return copy.deepcopy(schema), None
 
@@ -254,26 +242,22 @@ def _first_schema_difference(original: Any, projected: Any, path: tuple[Any, ...
 
 
 _GOOGLE_SCHEMA_KEYWORDS = frozenset({
+    "$anchor",
     "$defs",
+    "$id",
     "$ref",
     "additionalProperties",
     "anyOf",
-    "default",
     "description",
     "enum",
-    "example",
     "format",
     "items",
     "maxItems",
-    "maxLength",
-    "maxProperties",
     "maximum",
     "minItems",
-    "minLength",
-    "minProperties",
     "minimum",
-    "nullable",
-    "pattern",
+    "oneOf",
+    "prefixItems",
     "properties",
     "propertyOrdering",
     "required",
@@ -291,6 +275,12 @@ def _first_unsupported_google_schema_path(
     for key in sorted(schema):
         if key not in _GOOGLE_SCHEMA_KEYWORDS:
             return _pointer((*path, key))
+    if "$ref" in schema:
+        unsupported_siblings = sorted(
+            key for key in schema if key != "$ref" and not key.startswith("$")
+        )
+        if unsupported_siblings:
+            return _pointer((*path, unsupported_siblings[0]))
     properties = schema.get("properties")
     if isinstance(properties, dict):
         for name in sorted(properties):
@@ -310,17 +300,18 @@ def _first_unsupported_google_schema_path(
             if issue is not None:
                 return issue
     items = schema.get("items")
-    if items is not None:
+    if isinstance(items, dict):
         issue = _first_unsupported_google_schema_path(items, (*path, "items"))
         if issue is not None:
             return issue
-    for index, branch in enumerate(schema.get("anyOf") or []):
-        issue = _first_unsupported_google_schema_path(
-            branch,
-            (*path, "anyOf", index),
-        )
-        if issue is not None:
-            return issue
+    for keyword in ("prefixItems", "anyOf", "oneOf"):
+        for index, branch in enumerate(schema.get(keyword) or []):
+            issue = _first_unsupported_google_schema_path(
+                branch,
+                (*path, keyword, index),
+            )
+            if issue is not None:
+                return issue
     additional = schema.get("additionalProperties")
     if isinstance(additional, dict):
         return _first_unsupported_google_schema_path(
@@ -330,27 +321,100 @@ def _first_unsupported_google_schema_path(
     return None
 
 
-def _google_schema_validation_copy(schema: Any) -> Any:
-    if not isinstance(schema, dict):
-        return copy.deepcopy(schema)
-    aliases = {"$defs": "defs", "$ref": "ref"}
-    validated: dict[str, Any] = {}
-    for key, value in schema.items():
-        output_key = aliases.get(key, key)
-        if key in {"properties", "$defs"} and isinstance(value, dict):
-            validated[output_key] = {
-                name: _google_schema_validation_copy(subschema)
-                for name, subschema in value.items()
-            }
-        elif key == "anyOf" and isinstance(value, list):
-            validated[output_key] = [
-                _google_schema_validation_copy(subschema) for subschema in value
-            ]
-        elif key in {"items", "additionalProperties"} and isinstance(value, dict):
-            validated[output_key] = _google_schema_validation_copy(value)
-        else:
-            validated[output_key] = copy.deepcopy(value)
-    return validated
+def _first_required_google_reference_cycle_path(schema: dict[str, Any]) -> str | None:
+    nodes: dict[tuple[Any, ...], dict[str, Any]] = {}
+    edges: dict[tuple[Any, ...], list[tuple[Any, ...]]] = {}
+    required_edges: list[tuple[tuple[Any, ...], tuple[Any, ...], tuple[Any, ...]]] = []
+    anchors: dict[str, tuple[Any, ...]] = {}
+
+    def register(node: Any, path: tuple[Any, ...]) -> None:
+        if not isinstance(node, dict):
+            return
+        nodes[path] = node
+        edges.setdefault(path, [])
+        anchor = node.get("$anchor")
+        if isinstance(anchor, str):
+            anchors.setdefault(anchor, path)
+
+        required = node.get("required")
+        required_indexes = {
+            name: index for index, name in enumerate(required)
+        } if isinstance(required, list) else {}
+        properties = node.get("properties")
+        if isinstance(properties, dict):
+            for name in sorted(properties):
+                child = properties[name]
+                if not isinstance(child, dict):
+                    continue
+                child_path = (*path, "properties", name)
+                edges[path].append(child_path)
+                if name in required_indexes:
+                    required_edges.append((
+                        path,
+                        child_path,
+                        (*path, "required", required_indexes[name]),
+                    ))
+                register(child, child_path)
+
+        definitions = node.get("$defs")
+        if isinstance(definitions, dict):
+            for name in sorted(definitions):
+                child = definitions[name]
+                if isinstance(child, dict):
+                    child_path = (*path, "$defs", name)
+                    edges[path].append(child_path)
+                    register(child, child_path)
+
+        items = node.get("items")
+        if isinstance(items, dict):
+            child_path = (*path, "items")
+            edges[path].append(child_path)
+            register(items, child_path)
+        for keyword in ("prefixItems", "anyOf", "oneOf"):
+            for index, child in enumerate(node.get(keyword) or []):
+                if isinstance(child, dict):
+                    child_path = (*path, keyword, index)
+                    edges[path].append(child_path)
+                    register(child, child_path)
+        additional = node.get("additionalProperties")
+        if isinstance(additional, dict):
+            child_path = (*path, "additionalProperties")
+            edges[path].append(child_path)
+            register(additional, child_path)
+
+    def resolve(ref: Any) -> tuple[Any, ...] | None:
+        if ref == "#":
+            return ()
+        if not isinstance(ref, str) or not ref.startswith("#"):
+            return None
+        if ref.startswith("#/"):
+            fragment = ref[1:]
+            return next((path for path in nodes if _pointer(path) == fragment), None)
+        return anchors.get(ref[1:])
+
+    register(schema, ())
+    for path, node in nodes.items():
+        target = resolve(node.get("$ref"))
+        if target in nodes:
+            edges[path].append(target)
+
+    def reaches(start: tuple[Any, ...], target: tuple[Any, ...]) -> bool:
+        pending = [start]
+        seen: set[tuple[Any, ...]] = set()
+        while pending:
+            current = pending.pop()
+            if current == target:
+                return True
+            if current in seen:
+                continue
+            seen.add(current)
+            pending.extend(edges.get(current, ()))
+        return False
+
+    for source, child, issue_path in sorted(required_edges, key=lambda edge: edge[2]):
+        if reaches(child, source):
+            return _pointer(issue_path)
+    return None
 
 
 def _tool_choice_allows_hidden_submit(tool_choice: Any) -> bool:

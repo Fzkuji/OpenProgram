@@ -23,6 +23,30 @@ SCHEMA = {
 }
 
 
+def _google_model():
+    return Model(
+        id="gemini-test",
+        name="Gemini test",
+        api="google-generative-ai",
+        provider="google",
+        base_url="https://generativelanguage.googleapis.com/v1beta",
+        structured_output=True,
+    )
+
+
+def _negotiate_google(schema):
+    return negotiate_structured_output(
+        _google_model(),
+        get_structured_output_capabilities("google-generative-ai"),
+        normalize_response_format({
+            "type": "json_schema",
+            "schema": schema,
+            "fallback": "none",
+        }),
+        [],
+    )
+
+
 def test_google_maps_schema_to_literal_generation_config_without_mutation():
     model = Model(
         id="gemini-test",
@@ -101,7 +125,7 @@ def test_google_rejects_first_unsupported_sdk_schema_path_before_credentials():
     assert provider_calls == []
 
 
-def test_google_sdk_schema_validation_preserves_property_names_that_match_aliases():
+def test_google_schema_preflight_preserves_property_names_that_match_keywords():
     schema = {
         "type": "object",
         "properties": {"$ref": {"type": "string"}},
@@ -130,6 +154,138 @@ def test_google_sdk_schema_validation_preserves_property_names_that_match_aliase
     )
     assert plan.mode == "native"
     assert plan.provider_schema == schema
+
+
+@pytest.mark.parametrize(
+    ("keyword", "schema"),
+    [
+        ("$id", {"$id": "urn:response", "type": "string"}),
+        ("$defs", {"$defs": {"value": {"type": "string"}}, "type": "object"}),
+        ("$ref", {
+            "$defs": {"value": {"type": "string"}},
+            "type": "object",
+            "properties": {"value": {"$ref": "#/$defs/value"}},
+        }),
+        ("$anchor", {"$anchor": "response", "type": "string"}),
+        ("type", {"type": "string"}),
+        ("format", {"type": "string", "format": "date-time"}),
+        ("title", {"type": "string", "title": "Response"}),
+        ("description", {"type": "string", "description": "Response"}),
+        ("enum", {"enum": ["yes", "no"]}),
+        ("items", {"type": "array", "items": {"type": "string"}}),
+        ("prefixItems", {"type": "array", "prefixItems": [{"type": "string"}]}),
+        ("minItems", {"type": "array", "minItems": 1}),
+        ("maxItems", {"type": "array", "maxItems": 2}),
+        ("minimum", {"type": "number", "minimum": 0}),
+        ("maximum", {"type": "number", "maximum": 1}),
+        ("anyOf", {"anyOf": [{"type": "string"}, {"type": "number"}]}),
+        ("oneOf", {"oneOf": [{"type": "string"}, {"type": "number"}]}),
+        ("properties", {"type": "object", "properties": {"value": {"type": "string"}}}),
+        ("additionalProperties", {"type": "object", "additionalProperties": False}),
+        ("required", {
+            "type": "object",
+            "properties": {"value": {"type": "string"}},
+            "required": ["value"],
+        }),
+        ("propertyOrdering", {
+            "type": "object",
+            "properties": {"value": {"type": "string"}},
+            "propertyOrdering": ["value"],
+        }),
+    ],
+)
+def test_google_response_json_schema_accepts_documented_keyword(keyword, schema):
+    assert keyword in str(schema)
+    plan = _negotiate_google(schema)
+    assert plan.mode == "native"
+    assert plan.provider_schema == schema
+
+
+@pytest.mark.parametrize(
+    ("keyword", "value"),
+    [
+        ("default", "value"),
+        ("example", "value"),
+        ("pattern", "^value$"),
+        ("nullable", True),
+        ("minLength", 1),
+        ("maxLength", 5),
+        ("minProperties", 1),
+        ("maxProperties", 2),
+    ],
+)
+def test_google_response_json_schema_rejects_undocumented_keyword(keyword, value):
+    schema = {
+        "type": "object",
+        "properties": {"answer": {"type": "string", keyword: value}},
+    }
+    with pytest.raises(StructuredOutputUnsupportedError) as exc:
+        _negotiate_google(schema)
+    assert exc.value.issues[0]["path"] == f"/properties/answer/{keyword}"
+
+
+@pytest.mark.parametrize(
+    ("schema", "path"),
+    [
+        ({"type": "array", "prefixItems": [{"type": "string", "default": "x"}]},
+         "/prefixItems/0/default"),
+        ({"oneOf": [{"type": "string"}, {"type": "number", "default": 1}]},
+         "/oneOf/1/default"),
+        ({"$defs": {"value": {"type": "string", "default": "x"}}},
+         "/$defs/value/default"),
+        ({"type": "object", "additionalProperties": {"type": "string", "default": "x"}},
+         "/additionalProperties/default"),
+    ],
+)
+def test_google_response_json_schema_reports_nested_first_path(schema, path):
+    with pytest.raises(StructuredOutputUnsupportedError) as exc:
+        _negotiate_google(schema)
+    assert exc.value.issues[0]["path"] == path
+
+
+def test_google_response_json_schema_rejects_ref_siblings():
+    schema = {
+        "$defs": {"value": {"type": "string"}},
+        "type": "object",
+        "properties": {
+            "value": {"$ref": "#/$defs/value", "type": "string"},
+        },
+    }
+    with pytest.raises(StructuredOutputUnsupportedError) as exc:
+        _negotiate_google(schema)
+    assert exc.value.issues[0]["path"] == "/properties/value/type"
+
+
+def test_google_response_json_schema_allows_dollar_prefixed_ref_siblings():
+    schema = {
+        "$defs": {"value": {"type": "string"}},
+        "type": "object",
+        "properties": {
+            "value": {"$ref": "#/$defs/value", "$anchor": "valueReference"},
+        },
+    }
+    assert _negotiate_google(schema).provider_schema == schema
+
+
+@pytest.mark.parametrize("required", [False, True])
+def test_google_response_json_schema_rejects_only_required_reference_cycles(required):
+    node = {
+        "type": "object",
+        "properties": {"next": {"$ref": "#/$defs/node"}},
+    }
+    if required:
+        node["required"] = ["next"]
+    schema = {
+        "$defs": {"node": node},
+        "type": "object",
+        "properties": {"root": {"$ref": "#/$defs/node"}},
+    }
+    if required:
+        with pytest.raises(StructuredOutputUnsupportedError) as exc:
+            _negotiate_google(schema)
+        assert exc.value.issues[0]["path"] == "/$defs/node/required/0"
+    else:
+        assert _negotiate_google(schema).provider_schema == schema
 
 
 def test_google_real_prompt_feedback_block_is_terminal_error(monkeypatch):
