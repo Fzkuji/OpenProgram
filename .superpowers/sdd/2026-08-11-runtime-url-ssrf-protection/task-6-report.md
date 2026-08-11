@@ -5,7 +5,9 @@
 Complete. Baseline: `26cf395c78bd623ded1763645164e25cfc2bcd98`.
 
 - Frozen MCP v1 lock synchronization: `12f9a1c4`
-- Task 6 implementation and this report: this commit
+- Task 6 implementation: `ec762e22`
+- Managed-transport unit-test seam compatibility: `dca469b8`
+- Dev test-interpreter dependency and final report: this commit
 
 BASE `uv lock --check` failed with `The lockfile at uv.lock needs to be
 updated`. The declared dependency is `mcp>=1,<2`, while BASE locked MCP v2.
@@ -102,6 +104,33 @@ SSE real SDK sessions list and invoke a tool. No deprecation warning remains.
 - Final focused and affected: `271 passed, 2 skipped, 1 xfailed`.
 - Task 1-6 security combined: `479 passed`.
 - Fresh frozen MCP affected set: `42 passed, 2 skipped`, MCP `1.29.0`.
+- The first broad non-integration run exposed eight legacy unit tests that
+  still replaced the pre-migration raw `httpx`/`urllib` entry points. Their
+  complete node IDs and causes were:
+  - `tests/unit/test_anthropic_subscription_login.py::test_refresh_posts_refresh_token`
+    replaced `httpx.post` instead of `provider.oauth.fixed`.
+  - `tests/unit/test_backend_endpoint.py::test_resolve_backend_endpoint_never_transmits_the_token`
+    and `tests/unit/test_backend_identity.py::test_backend_identity_uses_worker_ownership_without_network_credentials`
+    replaced `urllib.request.build_opener` instead of the exact-origin
+    `runtime.local_probe` configured client.
+  - `tests/unit/test_model_fetch_routing.py::test_anthropic_fetcher_uses_provider_base_url`,
+    `tests/unit/test_model_fetch_routing.py::test_codex_browse_does_not_grow_registry`,
+    `tests/unit/test_model_fetch_routing.py::test_codex_fetch_drops_ultra_and_needs_token`,
+    and `tests/unit/test_model_fetch_routing.py::test_anthropic_fetcher_native_still_uses_anthropic_host`
+    replaced raw `httpx.get` instead of the fixed/configured provider clients.
+  - `tests/unit/test_models_dev_disk_cache.py::test_successful_fetch_writes_disk_cache`
+    replaced raw `httpx.get` instead of `webui.model_listing.fixed`.
+  Each test now asserts its registry consumer; configured-origin tests also
+  assert the exact origin and matching `OwnerURLException`. The eight-node
+  targeted run is `8 passed`; all five affected unit files are `40 passed`.
+- The same first broad run also failed
+  `tests/unit/test_recoverable_delete.py::test_wheel_contains_both_runtime_shims`
+  because the frozen environment lacked the external `build` module. The
+  identical node fails on a clean BASE archive for the same reason. With the
+  pre-fix dev extra present the wheel built, then the unchanged test supplied
+  the test-infrastructure RED at `python -m pip`: the uv environment had no
+  `pip` module. `pip>=24` was added only to the dev extra and the lock was
+  mechanically synchronized; the wheel node is now `1 passed`.
 
 ## Verification
 
@@ -117,6 +146,18 @@ SSE real SDK sessions list and invoke a tool. No deprecation warning remains.
 - `git diff --check`: exit 0.
 - Active raw-call audit: zero production matches (the sole textual match is a
   `http_proxy.py` explanatory docstring).
+- Post-compatibility focused unit files: `40 passed`; brief affected set:
+  `271 passed, 2 skipped, 1 xfailed`.
+- Post-compatibility broad non-integration suite:
+  `3727 passed, 10 skipped, 1 xfailed, 1 failed`; the only failure is the
+  BASE-reproduced wheel-build environment node above. After the dev-extra-only
+  test-interpreter repair, the final frozen dev run is
+  `3728 passed, 10 skipped, 1 xfailed` in 263.07 seconds. The eight Task 6 seam
+  regressions from the first run are green.
+- Full integration-inclusive collection remains blocked by the unchanged
+  `tests/integration/test_test_framework.py` import of absent module
+  `openprogram.functions.agentics.test_framework`: `1 skipped, 2 deselected,
+  1 error`. The same missing module was reproduced on the BASE archive.
 
 ## Modified files
 
@@ -128,6 +169,9 @@ files, OpenAI/Anthropic/Google/Azure SDK constructors, Google Gemini CLI and
 OpenAI Codex streaming call sites, and provider `http_client.py`/
 `http_proxy.py`.
 
+Test infrastructure adds `pip>=24` to the `dev` extra in `pyproject.toml` and
+synchronizes `uv.lock`; production dependencies are unchanged.
+
 Tests changed or added:
 
 - `tests/security/test_runtime_sdk_transports.py`
@@ -138,6 +182,11 @@ Tests changed or added:
 - `tests/providers/test_stream_fixes.py`
 - `tests/test_http_proxy.py`
 - `tests/unit/test_channels_attachments.py`
+- `tests/unit/test_anthropic_subscription_login.py`
+- `tests/unit/test_backend_endpoint.py`
+- `tests/unit/test_backend_identity.py`
+- `tests/unit/test_model_fetch_routing.py`
+- `tests/unit/test_models_dev_disk_cache.py`
 
 ## Concerns
 
@@ -149,3 +198,6 @@ Tests changed or added:
   this absence is not represented as an implemented adapter.
 - Legacy whole-file formatting debt remains unchanged outside the two new test
   files.
+- The integration-inclusive suite cannot collect because the BASE checkout has
+  no `openprogram.functions.agentics.test_framework` module. All non-integration
+  tests pass under the frozen dev environment.
