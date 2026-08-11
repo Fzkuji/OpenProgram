@@ -7,12 +7,19 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
+from openprogram.agent.authority import AuthorityError
 from openprogram.agent.types import AgentTool, AgentToolResult
 from openprogram.mcp_server.service import MCPClientContext, MCPService
 from openprogram.mcp_server.tools import json_result
 
 
-def _tool(name: str, *, description: str, parameters: dict) -> AgentTool:
+def _tool(
+    name: str,
+    *,
+    description: str,
+    parameters: dict,
+    cache_control: dict | None = None,
+) -> AgentTool:
     async def execute(_call_id, _args, _cancel, _on_update):
         raise AssertionError("discovery must not execute Runtime tools")
 
@@ -20,6 +27,7 @@ def _tool(name: str, *, description: str, parameters: dict) -> AgentTool:
         name=name,
         description=description,
         parameters=parameters,
+        cache_control=cache_control,
         label=name,
         execute=execute,
     )
@@ -171,6 +179,58 @@ def test_session_get_rejects_unknown_without_reading_a_branch(client_context) ->
     assert result.is_error is True
     assert _payload(result) == {"error": "session not found"}
     assert db.calls == [("get_session", "missing")]
+
+
+def test_session_get_projects_real_active_branch_without_store_metadata(
+    client_context,
+    tmp_path,
+) -> None:
+    from openprogram.store import SessionStore
+
+    db = SessionStore(tmp_path / "sessions")
+    db.create_session("real", "main", title="Real")
+    db.append_message(
+        "real",
+        {
+            "id": "u1",
+            "role": "user",
+            "content": "hello",
+            "timestamp": 1.0,
+            "predecessor": None,
+            "authority_tier": "owner",
+            "secret": "not-public",
+        },
+    )
+
+    result = _service(client_context, session_db=db).session_get("real")
+
+    assert result.is_error is False
+    assert _payload(result) == [
+        {"id": "u1", "role": "user", "content": "hello", "timestamp": 1.0}
+    ]
+    assert "not-public" not in result.content[0].text
+
+
+@pytest.mark.parametrize("session_id", [".", "../outside", "not-a-session"])
+def test_session_get_rejects_real_non_session_directories_without_leaking(
+    client_context,
+    tmp_path,
+    session_id,
+) -> None:
+    from openprogram.store import SessionStore
+
+    root = tmp_path / "sessions"
+    db = SessionStore(root)
+    (root / "not-a-session").mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "payload.txt").write_text("leaked-secret", encoding="utf-8")
+
+    result = _service(client_context, session_db=db).session_get(session_id)
+
+    assert result.is_error is True
+    assert _payload(result) == {"error": "session not found"}
+    assert "leaked-secret" not in result.content[0].text
 
 
 @pytest.mark.parametrize(
@@ -334,6 +394,38 @@ def test_tools_list_output_mutation_cannot_mutate_registry_or_later_results(
     ]
 
 
+def test_exposed_runtime_tools_returns_detached_deep_copies(client_context) -> None:
+    tool = _tool(
+        "memory_status",
+        description="Status",
+        parameters={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+        },
+        cache_control={"metadata": {"scope": ["registry"]}},
+    )
+    setattr(tool, "_discovery_metadata", {"tags": ["registry"]})
+    service = _service(
+        client_context,
+        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
+        registry={"memory_status": tool},
+    )
+
+    returned = service.exposed_runtime_tools()[0]
+    returned.parameters["properties"]["query"]["type"] = "number"
+    returned.cache_control["metadata"]["scope"].append("caller")
+    returned._discovery_metadata["tags"].append("caller")
+
+    assert returned is not tool
+    assert tool.parameters["properties"]["query"]["type"] == "string"
+    assert tool.cache_control == {"metadata": {"scope": ["registry"]}}
+    assert tool._discovery_metadata == {"tags": ["registry"]}
+    again = service.exposed_runtime_tools()[0]
+    assert again.parameters["properties"]["query"]["type"] == "string"
+    assert again.cache_control == {"metadata": {"scope": ["registry"]}}
+    assert again._discovery_metadata == {"tags": ["registry"]}
+
+
 def test_client_context_is_immutable_and_discovery_never_uses_owner_or_client_info(
     client_context,
     monkeypatch,
@@ -372,3 +464,67 @@ def test_client_context_is_immutable_and_discovery_never_uses_owner_or_client_in
         registry={"read": read},
     )
     assert _payload(service.tools_list()) == []
+
+
+@pytest.mark.parametrize(
+    "client_id",
+    [
+        "",
+        "0123456789abcde",
+        "0123456789abcdef0",
+        "0123456789ABCDEF",
+        "0123456789ABCDEG",
+    ],
+)
+def test_client_context_rejects_non_fingerprint_client_ids(
+    client_context,
+    client_id,
+) -> None:
+    authority = dict(client_context.authority)
+    authority["speaker_id"] = f"mcp/{client_id}"
+
+    with pytest.raises(AuthorityError, match="MCP client ID is invalid"):
+        MCPClientContext(client_id, authority)
+
+
+def test_client_context_rejects_forged_principal(client_context) -> None:
+    authority = dict(client_context.authority)
+    authority["principal_id"] = "owner/install/ffffffffffffffff"
+
+    with pytest.raises(ValueError, match="invalid MCP client authority"):
+        MCPClientContext(client_context.client_id, authority)
+
+
+def test_client_context_rejects_extra_authority_fields(client_context) -> None:
+    authority = {**client_context.authority, "caller_authority": "owner"}
+
+    with pytest.raises(ValueError, match="invalid MCP client authority"):
+        MCPClientContext(client_context.client_id, authority)
+
+
+def test_client_context_rejects_nested_authority_alias(client_context) -> None:
+    nested = {"roles": ["owner"]}
+    authority = {**client_context.authority, "metadata": nested}
+
+    with pytest.raises(ValueError, match="invalid MCP client authority"):
+        MCPClientContext(client_context.client_id, authority)
+    nested["roles"].append("paired")
+
+
+def test_client_context_stores_only_detached_fixed_scalar_authority(
+    client_context,
+) -> None:
+    source = dict(client_context.authority)
+    context = MCPClientContext(client_context.client_id, source)
+    source["speaker_display"] = "mutated"
+
+    assert dict(context.authority) == dict(client_context.authority)
+    assert set(context.authority) == {
+        "speaker_kind",
+        "speaker_id",
+        "speaker_display",
+        "principal_id",
+        "authority_tier",
+        "interaction",
+    }
+    assert all(isinstance(value, str) for value in context.authority.values())

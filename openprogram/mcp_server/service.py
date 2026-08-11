@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from openprogram.agent.authority import decide_tool_authority
+from openprogram.agent.authority import decide_tool_authority, mcp_client_authority
 from openprogram.agent.session_db import SessionDB, default_db
 from openprogram.agent.types import AgentTool, AgentToolResult
 from openprogram.mcp_server.tools import json_result
@@ -18,17 +18,10 @@ class MCPClientContext:
     authority: Mapping[str, Any]
 
     def __post_init__(self) -> None:
-        authority = dict(self.authority)
-        expected = {
-            "speaker_kind": "client",
-            "speaker_id": f"mcp/{self.client_id}",
-            "speaker_display": "MCP client",
-            "authority_tier": "paired",
-            "interaction": "non-interactive",
-        }
-        if any(authority.get(key) != value for key, value in expected.items()):
+        expected = mcp_client_authority(self.client_id)
+        if dict(self.authority) != expected:
             raise ValueError("invalid MCP client authority")
-        object.__setattr__(self, "authority", MappingProxyType(authority))
+        object.__setattr__(self, "authority", MappingProxyType(expected))
 
 
 def _default_config() -> Mapping[str, Any]:
@@ -170,7 +163,10 @@ class MCPService:
             except Exception:
                 continue
             if tool is not None and tool.name == name and allowed:
-                tools.append(tool)
+                try:
+                    tools.append(tool.model_copy(deep=True))
+                except Exception:
+                    continue
         return tuple(tools)
 
     def tools_list(self) -> AgentToolResult:
