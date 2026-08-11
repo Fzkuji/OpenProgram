@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import os
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Any
+
+from openprogram.security.safe_http import safe_client
 
 from ..._helpers import read_int_param, read_string_param
 from ..._runtime import function
@@ -89,11 +89,6 @@ def _ext_for_mime(mime: str) -> str:
     return ".png"
 
 
-def _download(url: str, timeout: float = 120.0) -> bytes:
-    with urllib.request.urlopen(url, timeout=timeout) as resp:
-        return resp.read()
-
-
 def _save(img: GeneratedImage, out_dir: Path, stem: str, idx: int) -> Path:
     ext = _ext_for_mime(img.mime)
     target = out_dir / f"{stem}_{idx}{ext}"
@@ -101,9 +96,12 @@ def _save(img: GeneratedImage, out_dir: Path, stem: str, idx: int) -> Path:
         target.write_bytes(img.data)
     elif img.url:
         try:
-            target.write_bytes(_download(img.url))
+            with safe_client("tool.image_result.download") as client:
+                client.download(img.url, target)
         except Exception as e:
-            raise RuntimeError(f"failed to download {img.url}: {type(e).__name__}: {e}") from e
+            raise RuntimeError(
+                f"failed to download image result: {type(e).__name__}: {e}"
+            ) from e
     else:
         raise RuntimeError("GeneratedImage had neither bytes nor URL")
     return target

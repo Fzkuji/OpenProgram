@@ -8,6 +8,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
+from openprogram.security.safe_http import safe_client
+
 from .._encode import read_b64, sniff_mime
 from ..registry import ImageInput
 
@@ -87,7 +89,9 @@ class GeminiVisionProvider:
 def _url_to_b64(url: str) -> tuple[str, str]:
     import base64
 
-    with urllib.request.urlopen(url, timeout=30) as resp:
-        data = resp.read()
-        mime = resp.headers.get("Content-Type") or sniff_mime(url)
+    with safe_client("tool.image_result.download") as client:
+        response = client.get(url, timeout=30)
+        response.raise_for_status()
+        data = response.content
+        mime = response.headers.get("Content-Type") or sniff_mime(url)
     return base64.b64encode(data).decode("ascii"), mime

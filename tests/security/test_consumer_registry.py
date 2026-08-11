@@ -23,6 +23,9 @@ EXPECTED_CONSUMERS = {
     "channel.telegram.api",
     "channel.discord.api",
     "channel.slack.api",
+    "channel.slack.attachment",
+    "channel.slack.generated_asset.upload",
+    "channel.telegram.attachment",
     "channel.wechat.api",
     "channel.feishu.api",
     "channel.matrix.configured",
@@ -82,6 +85,11 @@ EXPECTED_FIXED_ORIGINS = {
     "channel.telegram.api": frozenset({"https://api.telegram.org"}),
     "channel.discord.api": frozenset({"https://discord.com"}),
     "channel.slack.api": frozenset({"https://slack.com"}),
+    "channel.slack.attachment": frozenset(
+        {"https://files.slack.com", "https://slack.com"}
+    ),
+    "channel.slack.generated_asset.upload": frozenset({"https://files.slack.com"}),
+    "channel.telegram.attachment": frozenset({"https://api.telegram.org"}),
     "channel.feishu.api": frozenset(
         {"https://open.feishu.cn", "https://open.larksuite.com"}
     ),
@@ -220,9 +228,10 @@ def test_fixed_consumers_declare_only_audited_normalized_origins():
 )
 def test_each_audited_fixed_origin_is_accepted_by_policy(consumer, origin):
     spec = CONSUMER_REGISTRY[consumer]
+    method = "GET" if "GET" in spec.allowed_methods else min(spec.allowed_methods)
     decision = evaluate_url(
         consumer,
-        "GET",
+        method,
         f"{origin}/resource",
         trust_class=spec.trust_class,
         allowed_schemes=spec.allowed_schemes,

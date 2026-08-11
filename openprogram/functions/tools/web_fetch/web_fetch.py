@@ -13,31 +13,26 @@ Fetches HTTP/HTTPS pages, then:
 Size cap (5 MB) and timeout (30 s default) mirror opencode / claude-code
 defaults. Spoofed Chrome UA because plenty of sites 403 non-browser UAs
 for no good reason; if the target Cloudflare-challenges us we retry
-once with an honest UA so at least we don't look like we're hiding.
+once with an honest UA through the same managed client.
 
-Design choices:
-
-* Stdlib-only fast path. ``urllib.request`` handles redirects, SSL,
-  compression when you ask. No ``requests`` dep.
-* Extraction library is optional. ``trafilatura`` is the best text
+The extraction library is optional. ``trafilatura`` is the best text
   extractor I've found for agent use (keeps structure without cruft),
-  but users who don't install it still get usable output.
-* Returns STR even on error. Agents can read ``"Error: …"`` and react;
+  but users who don't install it still get usable output. The tool returns
+  STR even on error. Agents can read ``"Error: …"`` and react;
   raising makes the tool loop abort the turn.
 """
 
 from __future__ import annotations
 
-import gzip
 import html
-import io
 import re
-import urllib.error
-import urllib.request
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import urlparse
 
+import httpx
+
+from openprogram.security.safe_http import safe_client
+from openprogram.security.url_policy import URLPolicyError, normalize_origin
 from ..._helpers import read_bool_param, read_int_param, read_string_param
 from ..._runtime import function
 
@@ -200,45 +195,17 @@ def _strip_with_trafilatura(html_body: str, fmt: str) -> str | None:
         return None
 
 
-def _build_request(url: str, ua: str) -> urllib.request.Request:
-    return urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": ua,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.9,text/plain;q=0.8,*/*;q=0.5",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip",
-        },
-    )
+def _headers(ua: str) -> dict[str, str]:
+    return {
+        "User-Agent": ua,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.9,text/plain;q=0.8,*/*;q=0.5",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
 
 
-def _read_body(resp: Any) -> tuple[bytes, bool]:
-    """Read response body honouring Content-Length + our size cap.
-
-    Returns (body_bytes, truncated). Decompresses gzip when signalled.
-    """
-    declared = resp.headers.get("Content-Length")
-    if declared:
-        try:
-            if int(declared) > MAX_BYTES:
-                return b"", True  # too big to even start
-        except (TypeError, ValueError):
-            pass
-    raw = resp.read(MAX_BYTES + 1)
-    truncated = len(raw) > MAX_BYTES
-    if truncated:
-        raw = raw[:MAX_BYTES]
-    if resp.headers.get("Content-Encoding", "").lower() == "gzip":
-        try:
-            raw = gzip.decompress(raw)
-        except Exception:
-            # If the server lied about gzip we still want to keep the
-            # raw bytes — downstream decoders might handle it.
-            pass
-    return raw, truncated
-
-
-def _fetch_with_cf_fallback(url: str, timeout: float) -> tuple[Any, bytes, bool]:
+def _fetch_with_cf_fallback(
+    url: str, timeout: float
+) -> tuple[str, str, bytes, bool]:
     """Fetch ``url`` trying Chrome UA first, honest UA on Cloudflare 403.
 
     Cloudflare emits ``cf-mitigated: challenge`` for bot-challenged
@@ -246,25 +213,41 @@ def _fetch_with_cf_fallback(url: str, timeout: float) -> tuple[Any, bytes, bool]
     — being transparent is the right move when the spoof doesn't buy us
     anything anyway.
     """
-    last_err: Exception | None = None
-    for ua in (CHROME_UA, HONEST_UA):
-        req = _build_request(url, ua)
-        try:
-            resp = urllib.request.urlopen(req, timeout=timeout)
-            body, truncated = _read_body(resp)
-            return resp, body, truncated
-        except urllib.error.HTTPError as e:
-            last_err = e
-            mitigated = e.headers.get("cf-mitigated", "").lower() if e.headers else ""
-            if e.code == 403 and mitigated == "challenge" and ua == CHROME_UA:
-                # Retry with honest UA.
-                continue
-            raise
-        except Exception as e:
-            last_err = e
-            raise
-    assert last_err is not None
-    raise last_err
+    with safe_client("tool.web_fetch") as client:
+        for ua in (CHROME_UA, HONEST_UA):
+            body = bytearray()
+            final_url = url
+            content_type = ""
+            try:
+                with client.stream(
+                    "GET", url, headers=_headers(ua), timeout=timeout
+                ) as response:
+                    final_url = str(response.url)
+                    content_type = response.headers.get(
+                        "Content-Type", ""
+                    ).lower()
+                    if (
+                        response.status_code == 403
+                        and response.headers.get("cf-mitigated", "").lower()
+                        == "challenge"
+                        and ua == CHROME_UA
+                    ):
+                        continue
+                    response.raise_for_status()
+                    truncated = False
+                    for chunk in response.iter_bytes(chunk_size=64 * 1024):
+                        remaining = MAX_BYTES - len(body)
+                        if len(chunk) > remaining:
+                            body.extend(chunk[:remaining])
+                            truncated = True
+                            break
+                        body.extend(chunk)
+                    return final_url, content_type, bytes(body), truncated
+            except URLPolicyError as exc:
+                if exc.reason == "BODY_TOO_LARGE":
+                    return final_url, content_type, bytes(body[:MAX_BYTES]), True
+                raise
+    raise RuntimeError("Cloudflare retry did not return a response")
 
 
 def _decode_body(body: bytes, content_type: str) -> str:
@@ -309,25 +292,28 @@ def execute(
         return "Error: `url` is required."
     if not isinstance(url, str):
         return f"Error: `url` must be a string, got {type(url).__name__}."
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        return f"Error: only http:// and https:// URLs are supported, got {parsed.scheme!r}."
     timeout_val = max(1.0, min(timeout_val, MAX_TIMEOUT))
     fmt_norm = (fmt or "markdown").lower()
     if fmt_norm not in ("markdown", "text", "html"):
         return f"Error: `format` must be one of markdown/text/html, got {fmt!r}."
 
     try:
-        resp, body, size_truncated = _fetch_with_cf_fallback(url, timeout_val)
-    except urllib.error.HTTPError as e:
-        return f"Error: HTTP {e.code} {e.reason} for {url}"
-    except urllib.error.URLError as e:
-        return f"Error: network error for {url}: {getattr(e, 'reason', e)}"
+        final_url, content_type, body, size_truncated = _fetch_with_cf_fallback(
+            url, timeout_val
+        )
+    except httpx.HTTPStatusError as e:
+        return f"Error: HTTP {e.response.status_code} {e.response.reason_phrase} for {normalize_origin(url)}"
+    except httpx.RequestError as e:
+        return f"Error: network error for {normalize_origin(url)}: {e}"
+    except URLPolicyError as e:
+        return f"Error: failed to fetch {e.safe_url}: {type(e).__name__}: {e}"
     except Exception as e:
-        return f"Error: failed to fetch {url}: {type(e).__name__}: {e}"
+        try:
+            safe_url = normalize_origin(url)
+        except URLPolicyError:
+            safe_url = "<invalid-url>"
+        return f"Error: failed to fetch {safe_url}: {type(e).__name__}: {e}"
 
-    content_type = (resp.headers.get("Content-Type") or "").lower()
-    final_url = getattr(resp, "url", url)
     try:
         text = _decode_body(body, content_type)
     except Exception as e:

@@ -10,7 +10,7 @@ import tempfile
 import threading
 from collections import deque
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -116,6 +116,11 @@ _AUDITED_FIXED_ORIGINS = MappingProxyType(
         "channel.telegram.api": frozenset({"https://api.telegram.org"}),
         "channel.discord.api": frozenset({"https://discord.com"}),
         "channel.slack.api": frozenset({"https://slack.com"}),
+        "channel.slack.attachment": frozenset(
+            {"https://files.slack.com", "https://slack.com"}
+        ),
+        "channel.slack.generated_asset.upload": frozenset({"https://files.slack.com"}),
+        "channel.telegram.attachment": frozenset({"https://api.telegram.org"}),
         "channel.feishu.api": frozenset(
             {"https://open.feishu.cn", "https://open.larksuite.com"}
         ),
@@ -252,16 +257,41 @@ def _callback(consumer: str) -> ConsumerSpec:
 
 
 _SPECS = (
-    _download("tool.web_fetch", URLTrustClass.UNTRUSTED_PUBLIC),
+    replace(
+        _download("tool.web_fetch", URLTrustClass.UNTRUSTED_PUBLIC),
+        max_decoded_body_bytes=5 * 1024 * 1024 + 1,
+    ),
     _api("tool.web_search.fixed_api", URLTrustClass.FIXED_PUBLIC_SERVICE),
     _api("tool.web_search.configured_api", URLTrustClass.CONFIGURED_SERVICE),
     _api("tool.image_api.fixed", URLTrustClass.FIXED_PUBLIC_SERVICE),
     _api("tool.image_api.configured", URLTrustClass.CONFIGURED_SERVICE),
     _download("tool.image_result.download", URLTrustClass.UNTRUSTED_PUBLIC),
-    _download("channel.attachment.download", URLTrustClass.UNTRUSTED_PUBLIC),
+    replace(
+        _download("channel.attachment.download", URLTrustClass.UNTRUSTED_PUBLIC),
+        max_decoded_body_bytes=20 * 1024 * 1024,
+    ),
     _api("channel.telegram.api", URLTrustClass.FIXED_PUBLIC_SERVICE),
     _api("channel.discord.api", URLTrustClass.FIXED_PUBLIC_SERVICE),
     _api("channel.slack.api", URLTrustClass.FIXED_PUBLIC_SERVICE),
+    replace(
+        _download("channel.slack.attachment", URLTrustClass.FIXED_PUBLIC_SERVICE),
+        redirect_policy="same_origin",
+        max_decoded_body_bytes=20 * 1024 * 1024,
+        credential_origin_policy="same_origin",
+    ),
+    replace(
+        _api(
+            "channel.slack.generated_asset.upload",
+            URLTrustClass.FIXED_PUBLIC_SERVICE,
+        ),
+        allowed_methods=frozenset({"POST"}),
+        credential_origin_policy="none",
+    ),
+    replace(
+        _download("channel.telegram.attachment", URLTrustClass.FIXED_PUBLIC_SERVICE),
+        redirect_policy="same_origin",
+        max_decoded_body_bytes=20 * 1024 * 1024,
+    ),
     _api("channel.wechat.api", URLTrustClass.CONFIGURED_SERVICE),
     _api("channel.feishu.api", URLTrustClass.FIXED_PUBLIC_SERVICE),
     _api("channel.matrix.configured", URLTrustClass.CONFIGURED_SERVICE),

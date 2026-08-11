@@ -48,6 +48,7 @@ import requests
 
 from openprogram.channels import _format
 from openprogram.channels import accounts as _accounts
+from openprogram.security.safe_http import safe_client
 
 
 # Platform-specific message size caps (原始 markdown 字符数, 渲染前).
@@ -668,9 +669,11 @@ def _post_file_slack(
         if not upload_url or not file_id:
             return SendResult.fail("unknown", "upload URL response missing fields")
 
-        with path.open("rb") as fh:
-            up = requests.post(upload_url, data=fh, timeout=120)
-        if not up.ok:
+        with path.open("rb") as fh, safe_client(
+            "channel.slack.generated_asset.upload"
+        ) as client:
+            up = client.post(upload_url, content=fh, timeout=120)
+        if not up.is_success:
             return _classify_http_status(up.status_code, up.text)
 
         r = requests.post(

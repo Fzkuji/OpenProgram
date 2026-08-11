@@ -27,7 +27,9 @@ from __future__ import annotations
 
 import base64
 import mimetypes
+import os
 import re
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -37,6 +39,7 @@ import requests
 
 from openprogram.channels import accounts as _accounts
 from openprogram.channels._message import Attachment
+from openprogram.security.safe_http import safe_client
 
 
 #: 单个附件下载上限 (字节). 超限跳过并记日志.
@@ -98,29 +101,36 @@ def _download_one(
     channel: str, account_id: str, att: Attachment,
     url: str, headers: dict,
 ) -> dict | None:
-    r = requests.get(url, headers=headers, stream=True, timeout=60)
-    if not r.ok:
+    consumer = {
+        "slack": "channel.slack.attachment",
+        "telegram": "channel.telegram.attachment",
+    }.get(channel, "channel.attachment.download")
+    with safe_client(consumer) as client:
+        r = client.get(url, headers=headers, timeout=60)
+    if not r.is_success:
         print(f"[{channel}:{account_id}] attachment {att.name!r} "
               f"download HTTP {r.status_code}")
         return None
     mime = att.mime or r.headers.get("Content-Type", "").partition(";")[0]
     dest = attachments_dir(channel, account_id) / _dest_name(att.name, mime)
-    total = 0
-    with dest.open("wb") as fh:
-        for block in r.iter_content(chunk_size=65536):
-            total += len(block)
-            if total > MAX_DOWNLOAD_BYTES:
-                fh.close()
-                dest.unlink(missing_ok=True)
-                print(f"[{channel}:{account_id}] attachment {att.name!r} "
-                      f"aborted: exceeds {MAX_DOWNLOAD_BYTES} bytes")
-                return None
-            fh.write(block)
+    data = r.content
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{dest.name}.", dir=dest.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(data)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, dest)
+    finally:
+        temporary.unlink(missing_ok=True)
     return {
         "path": str(dest),
         "name": att.name or dest.name,
         "mime": mime,
-        "size": total,
+        "size": len(data),
     }
 
 
