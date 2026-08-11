@@ -32,8 +32,14 @@ class _FakeAsyncClient:
     def __init__(self, **_kwargs):
         self.closed = False
         self.is_closed = False
+        try:
+            self.owner_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.owner_loop = None
+        self.closed_loop = None
 
     async def aclose(self):
+        self.closed_loop = asyncio.get_running_loop()
         self.closed = True
         self.is_closed = True
 
@@ -76,22 +82,24 @@ def test_reap_leaves_other_loops_untouched():
     """Only the running loop's entries are evicted; a foreign entry survives."""
     async def _body():
         hc.get_shared_async_client("openai-codex", **_SCOPE)
-        # Inject an entry keyed to a different (fake) loop id.
+        # Inject an entry keyed to a different live loop.
         foreign = _FakeAsyncClient()
+        foreign_loop = asyncio.new_event_loop()
         foreign_key = (
             "openai-codex",
             _SCOPE["consumer"],
             _SCOPE["configured_origin"],
-            -1,
+            foreign_loop,
         )
         hc._shared[foreign_key] = foreign
         await hc.aclose_current_loop_clients()
         assert foreign_key in hc._shared, "foreign loop entry kept"
         assert not foreign.closed, "must not close another loop's client"
-        return foreign
+        return foreign, foreign_loop
 
-    foreign = asyncio.run(_body())
+    foreign, foreign_loop = asyncio.run(_body())
     assert not foreign.closed
+    foreign_loop.close()
 
 
 def test_run_async_does_not_accumulate_dead_entries():
@@ -109,6 +117,28 @@ def test_run_async_does_not_accumulate_dead_entries():
     assert hc._shared == {}, (
         f"_shared leaked {len(hc._shared)} dead entries across 5 exec()s"
     )
+
+
+def test_direct_short_lived_loops_reap_closed_loop_clients(monkeypatch):
+    """Direct async callers stay bounded without Runtime's sync bridge."""
+    created = []
+
+    def _build(**kwargs):
+        client = _FakeAsyncClient(**kwargs)
+        created.append(client)
+        return client
+
+    monkeypatch.setattr(hc, "build_async_client", _build)
+
+    for index in range(hc._MAX_SHARED_CLIENTS_PER_LOOP * 3):
+        async def _one_call():
+            hc.get_shared_async_client(f"short-loop-{index}", **_SCOPE)
+
+        asyncio.run(_one_call())
+
+    assert hc._shared == {}
+    assert all(client.closed for client in created)
+    assert all(client.closed_loop is client.owner_loop for client in created)
 
 
 def test_shared_cache_does_not_inherit_owner_authorization():
@@ -137,17 +167,17 @@ def test_shared_cache_separates_effective_transport_configuration():
 
 def test_shared_cache_cap_ignores_closed_entries_and_rejects_open_overflow():
     async def _body():
-        loop_id = id(asyncio.get_running_loop())
+        loop = asyncio.get_running_loop()
         for index in range(hc._MAX_SHARED_CLIENTS_PER_LOOP):
             closed = _FakeAsyncClient()
             closed.is_closed = True
-            hc._shared[("closed", index, loop_id)] = closed
+            hc._shared[("closed", index, loop)] = closed
         client = hc.get_shared_async_client("replacement", **_SCOPE)
         assert client is not None
 
         hc._shared.clear()
         for index in range(hc._MAX_SHARED_CLIENTS_PER_LOOP):
-            hc._shared[("open", index, loop_id)] = _FakeAsyncClient()
+            hc._shared[("open", index, loop)] = _FakeAsyncClient()
         with pytest.raises(RuntimeError, match="cache limit"):
             hc.get_shared_async_client("overflow", **_SCOPE)
 

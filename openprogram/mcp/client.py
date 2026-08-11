@@ -29,6 +29,8 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.types import CallToolResult, Tool
 
+from openprogram.security.url_policy import URLPolicyError, normalize_origin
+
 try:
     from mcp.client.streamable_http import (
         streamable_http_client as _modern_streamable_http_client,
@@ -62,6 +64,17 @@ _SESSION_EXPIRED_HINTS = (
 def _is_session_expired(exc: BaseException) -> bool:
     text = f"{type(exc).__name__}: {exc}".lower()
     return any(h.lower() in text for h in _SESSION_EXPIRED_HINTS)
+
+
+def _supervisor_error(config: MCPServerConfig, exc: BaseException) -> str:
+    """Render supervisor failures without exposing remote-controlled details."""
+    if config.type == LOCAL:
+        return f"{type(exc).__name__}: {exc}"
+    try:
+        target = normalize_origin(config.url)
+    except URLPolicyError as policy_error:
+        target = policy_error.safe_url
+    return f"{type(exc).__name__}: {target}"
 
 
 # -- list_roots_callback shared across every session ----------------
@@ -484,12 +497,12 @@ class MCPClient:
                 # refresh_token rejected, dynamic client registration
                 # rejected — the user must clear tokens and walk the
                 # OAuth flow again. Stop retrying.
-                self.error = f"{type(e).__name__}: {e}"
+                self.error = _supervisor_error(self.config, e)
                 self.error_kind = "needs_reauth"
                 self._ready.set()
                 return
             except Exception as e:  # noqa: BLE001
-                self.error = f"{type(e).__name__}: {e}"
+                self.error = _supervisor_error(self.config, e)
                 # First-attempt failure on startup is fatal — the
                 # config is probably wrong (bad command, dead URL,
                 # missing API key). Don't auto-retry: noisy and

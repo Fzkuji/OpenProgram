@@ -82,6 +82,35 @@ def build_async_client(
 
 _shared: dict[tuple[Any, ...], SafeAsyncClient] = {}
 _MAX_SHARED_CLIENTS_PER_LOOP = 32
+_MAX_SHARED_CLIENTS_TOTAL = 32
+_loop_cleanup_tasks: dict[asyncio.AbstractEventLoop, asyncio.Task[None]] = {}
+
+
+async def _close_client(client: SafeAsyncClient) -> None:
+    try:
+        await client.aclose()
+    except Exception:
+        pass
+
+
+async def _close_loop_clients(loop: asyncio.AbstractEventLoop) -> None:
+    for cache_key in [key for key in _shared if key[-1] is loop]:
+        await _close_client(_shared.pop(cache_key))
+
+
+async def _cleanup_loop(loop: asyncio.AbstractEventLoop) -> None:
+    try:
+        await asyncio.Future()
+    finally:
+        await _close_loop_clients(loop)
+        if _loop_cleanup_tasks.get(loop) is asyncio.current_task():
+            _loop_cleanup_tasks.pop(loop, None)
+
+
+def _ensure_loop_cleanup(loop: asyncio.AbstractEventLoop) -> None:
+    task = _loop_cleanup_tasks.get(loop)
+    if task is None or task.done():
+        _loop_cleanup_tasks[loop] = loop.create_task(_cleanup_loop(loop))
 
 
 def get_shared_async_client(
@@ -95,7 +124,7 @@ def get_shared_async_client(
 ) -> SafeAsyncClient:
     """Reuse a managed client only within one loop, consumer, and exact origin."""
     try:
-        loop_id = id(asyncio.get_running_loop())
+        loop = asyncio.get_running_loop()
     except RuntimeError:
         return build_async_client(
             consumer=consumer,
@@ -118,18 +147,20 @@ def get_shared_async_client(
         _timeout_identity(timeout),
         effective_force_ipv4,
         _keepalive_socket_options(),
-        loop_id,
+        loop,
     )
+    for stale_key in [
+        cached_key
+        for cached_key, cached_client in _shared.items()
+        if cached_client.is_closed
+    ]:
+        _shared.pop(stale_key, None)
     client = _shared.get(cache_key)
     if client is None or client.is_closed:
-        for stale_key in [
-            cached_key
-            for cached_key, cached_client in _shared.items()
-            if cached_key[-1] == loop_id and cached_client.is_closed
-        ]:
-            _shared.pop(stale_key, None)
-        loop_entries = sum(1 for cached_key in _shared if cached_key[-1] == loop_id)
+        loop_entries = sum(1 for cached_key in _shared if cached_key[-1] is loop)
         if loop_entries >= _MAX_SHARED_CLIENTS_PER_LOOP:
+            raise RuntimeError("shared provider client cache limit exceeded")
+        if len(_shared) >= _MAX_SHARED_CLIENTS_TOTAL:
             raise RuntimeError("shared provider client cache limit exceeded")
         client = build_async_client(
             consumer=consumer,
@@ -139,6 +170,7 @@ def get_shared_async_client(
             force_ipv4=effective_force_ipv4,
         )
         _shared[cache_key] = client
+        _ensure_loop_cleanup(loop)
     return client
 
 
@@ -179,15 +211,16 @@ async def aclose_shared_clients() -> None:
 
 async def aclose_current_loop_clients() -> None:
     try:
-        loop_id = id(asyncio.get_running_loop())
+        loop = asyncio.get_running_loop()
     except RuntimeError:
         return
-    for cache_key in [key for key in _shared if key[-1] == loop_id]:
-        client = _shared.pop(cache_key)
-        try:
-            await client.aclose()
-        except Exception:
-            pass
+    cleanup_task = _loop_cleanup_tasks.get(loop)
+    if cleanup_task is not None and cleanup_task is not asyncio.current_task():
+        cleanup_task.cancel()
+        await asyncio.gather(cleanup_task, return_exceptions=True)
+    await _close_loop_clients(loop)
+    if _loop_cleanup_tasks.get(loop) is cleanup_task:
+        _loop_cleanup_tasks.pop(loop, None)
 
 
 __all__ = [

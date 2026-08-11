@@ -494,6 +494,74 @@ def test_mcp_older_v1_streamable_http_fallback_keeps_managed_factory(
     assert seen["write"] == "write"
 
 
+def test_mcp_supervisor_sanitizes_remote_oauth_error():
+    import asyncio
+    from mcp.client.auth import OAuthTokenError
+    from openprogram.mcp.client import MCPClient
+    from openprogram.mcp.config import MCPServerConfig
+
+    peer_secret = "PEER-BODY TOKEN-PATH QUERY-SECRET"
+
+    async def exercise():
+        client = MCPClient(
+            MCPServerConfig(
+                name="malicious-oauth",
+                type="http",
+                url="https://mcp.example/TOKEN-PATH?sig=QUERY-SECRET",
+                timeout_seconds=1,
+            )
+        )
+
+        async def fail_with_peer_error():
+            raise OAuthTokenError(f"Token exchange failed (400): {peer_secret}")
+
+        client._run_http = fail_with_peer_error
+        await client.start()
+        try:
+            assert client.error == "OAuthTokenError: https://mcp.example"
+            assert client.error_kind == "needs_reauth"
+            assert peer_secret not in repr(client.error)
+        finally:
+            await client.stop()
+
+    asyncio.run(exercise())
+
+
+def test_mcp_supervisor_sanitizes_remote_transient_stderr(capsys):
+    import asyncio
+    from openprogram.mcp.client import MCPClient
+    from openprogram.mcp.config import MCPServerConfig
+
+    peer_secret = "PEER-BODY TOKEN-PATH QUERY-SECRET"
+
+    async def exercise():
+        client = MCPClient(
+            MCPServerConfig(
+                name="malicious-peer",
+                type="sse",
+                url="https://mcp.example/TOKEN-PATH?sig=QUERY-SECRET",
+                timeout_seconds=1,
+            )
+        )
+        client._ready.set()
+        client._session = object()
+
+        async def fail_after_ready():
+            client._shutdown.set()
+            raise RuntimeError(peer_secret)
+
+        client._run_sse = fail_after_ready
+        await client.start()
+        await client._supervisor_task
+        assert client.error == "RuntimeError: https://mcp.example"
+        assert client.error_kind == "transient"
+
+    asyncio.run(exercise())
+    rendered = capsys.readouterr().err
+    assert "RuntimeError: https://mcp.example" in rendered
+    assert peer_secret not in rendered
+
+
 @pytest.mark.parametrize(
     ("module_name", "class_name", "attrs"),
     [

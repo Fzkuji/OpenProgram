@@ -201,3 +201,26 @@ Tests changed or added:
 - The integration-inclusive suite cannot collect because the BASE checkout has
   no `openprogram.functions.agentics.test_framework` module. All non-integration
   tests pass under the frozen dev environment.
+
+## Accepted spec-review fixes
+
+- MCP supervisor sanitization RED:
+  `uv run --frozen --extra dev pytest -q tests/security/test_runtime_sdk_transports.py -k 'mcp_supervisor_sanitizes_remote'`
+  failed `2` tests because OAuth and transient peer exception bodies reached
+  `client.error` and stderr. A shared supervisor renderer now retains only the
+  exception class and normalized configured origin for HTTP/SSE while preserving
+  local stdio details and `needs_reauth`/`transient` classification. GREEN:
+  `2 passed, 32 deselected`.
+- Direct short-loop cache RED:
+  `uv run --frozen --extra dev pytest -q tests/providers/test_shared_client_leak.py -k 'direct_short_lived_loops'`
+  failed on loop 34 with `shared provider client cache limit exceeded`. An
+  intermediate cross-loop close implementation was rejected by an owner-loop
+  assertion. Each cached loop now owns a cleanup task whose cancellation closes
+  and removes that loop's clients during `asyncio.run()` shutdown. Cache keys use
+  the loop object rather than a reusable integer id, and the existing per-loop
+  cap is supplemented by a process-total cap. GREEN: the focused test passed and
+  the complete cache lifecycle file is `8 passed`.
+- Post-fix affected suite: `274 passed, 2 skipped, 1 xfailed`.
+- Post-fix Task 1-6 security suite: `481 passed in 76.69s`.
+- Ruff check: PASS. New security test format check: PASS. `uv lock --check`:
+  PASS. `git diff --check`: PASS.
