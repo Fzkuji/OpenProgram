@@ -50,8 +50,28 @@ _OPENAI_RESPONSES_CAPABILITIES = StructuredOutputCapabilities(
     schema_profile="openai_strict",
 )
 _ANTHROPIC_CAPABILITIES = StructuredOutputCapabilities(
-    native="unknown",
+    native="supported",
     dialect="anthropic",
+    streaming=True,
+    with_tools=True,
+    strict_tool=True,
+    schema_profile="openai_strict",
+)
+_GOOGLE_CAPABILITIES = StructuredOutputCapabilities(
+    native="supported",
+    dialect="google",
+    streaming=True,
+    schema_profile="none",
+)
+_BEDROCK_CAPABILITIES = StructuredOutputCapabilities(
+    native="supported",
+    dialect="bedrock",
+    streaming=True,
+    schema_profile="none",
+)
+_AZURE_RESPONSES_CAPABILITIES = StructuredOutputCapabilities(
+    native="supported",
+    dialect="azure_openai_responses",
     streaming=True,
     strict_tool=True,
     schema_profile="openai_strict",
@@ -150,7 +170,7 @@ def register_builtins() -> None:
     register_api_provider(
         "google-generative-ai",
         _StreamFnProvider(google.stream_simple, google.stream_simple),
-        _UNKNOWN_CAPABILITIES,
+        _GOOGLE_CAPABILITIES,
     )
 
     # Google Gemini CLI / Cloud Code Assist
@@ -175,7 +195,7 @@ def register_builtins() -> None:
         register_api_provider(
             "bedrock-converse-stream",
             _StreamFnProvider(stream_bedrock, stream_simple_bedrock),
-            _UNKNOWN_CAPABILITIES,
+            _BEDROCK_CAPABILITIES,
         )
     except ImportError:
         pass
@@ -187,7 +207,7 @@ def register_builtins() -> None:
         register_api_provider(
             "azure-openai-responses",
             _StreamFnProvider(stream_azure_openai_responses, stream_simple_azure_openai_responses),
-            _STRICT_TOOL_ONLY_CAPABILITIES,
+            _AZURE_RESPONSES_CAPABILITIES,
         )
     except ImportError:
         pass

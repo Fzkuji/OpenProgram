@@ -177,19 +177,55 @@ def build_repair_prompt(error: StructuredOutputValidationError) -> str:
 def _project_schema(
     schema: dict[str, Any],
     profile: str,
-) -> dict[str, Any] | None:
+) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
     if profile in {"none", "passthrough"}:
-        return copy.deepcopy(schema)
+        return copy.deepcopy(schema), None
 
     from openprogram.providers._schema import normalize
 
     try:
         projected = normalize(schema, profile)  # type: ignore[arg-type]
     except Exception:
-        return None
+        return None, {
+            "code": "unsupported_schema_constraint",
+            "path": "",
+            "schema_path": "",
+            "message": "Provider schema profile rejected this schema",
+        }
     # Existing dialect normalizers may strengthen or delete constraints.
     # Response schemas may use them only when the projection is unchanged.
-    return projected if projected == schema else None
+    if projected == schema:
+        return projected, None
+    path = _first_schema_difference(schema, projected)
+    return None, {
+        "code": "unsupported_schema_constraint",
+        "path": path,
+        "schema_path": path,
+        "message": "Provider schema profile would change this constraint",
+    }
+
+
+def _first_schema_difference(original: Any, projected: Any, path: tuple[Any, ...] = ()) -> str:
+    if isinstance(original, dict) and isinstance(projected, dict):
+        for key in sorted(original):
+            if key not in projected:
+                return _pointer((*path, key))
+            child = _first_schema_difference(original[key], projected[key], (*path, key))
+            if child:
+                return child
+        for key in sorted(projected):
+            if key not in original:
+                return _pointer((*path, key))
+        return ""
+    if isinstance(original, list) and isinstance(projected, list):
+        for index, (left, right) in enumerate(zip(original, projected)):
+            child = _first_schema_difference(left, right, (*path, index))
+            if child:
+                return child
+        if len(original) != len(projected):
+            return _pointer((*path, min(len(original), len(projected))))
+        return ""
+    return "" if original == projected else _pointer(path)
 
 
 def _tool_choice_allows_hidden_submit(tool_choice: Any) -> bool:
@@ -205,12 +241,21 @@ def _tool_choice_allows_hidden_submit(tool_choice: Any) -> bool:
 
 
 def _adapter_contract_matches(model: Any, capabilities: StructuredOutputCapabilities) -> bool:
-    expected_provider = {
-        "openai_chat": "openai",
-        "openai_responses": "openai",
-        "anthropic": "anthropic",
-    }.get(capabilities.dialect)
-    return expected_provider is None or getattr(model, "provider", "") == expected_provider
+    provider = getattr(model, "provider", "")
+    api = getattr(model, "api", "")
+    base_url = (getattr(model, "base_url", "") or "").rstrip("/").lower()
+    dialect = capabilities.dialect
+    if dialect in {"openai_chat", "openai_responses"}:
+        return provider == "openai" and base_url == "https://api.openai.com/v1"
+    if dialect == "azure_openai_responses":
+        return provider == "azure-openai-responses" and api == "azure-openai-responses"
+    if dialect == "anthropic":
+        return provider == "anthropic" and base_url == "https://api.anthropic.com"
+    if dialect == "google":
+        return provider == "google" and api == "google-generative-ai"
+    if dialect == "bedrock":
+        return provider == "amazon-bedrock" and api == "bedrock-converse-stream"
+    return True
 
 
 def _strict_tool_contract_active(
@@ -239,7 +284,10 @@ def _build_plan(
     parallel_tool_calls: bool | None = None,
 ) -> StructuredOutputPlan:
     original_schema = copy.deepcopy(output.schema)
-    provider_schema = _project_schema(output.schema, capabilities.schema_profile)
+    provider_schema, projection_issue = _project_schema(
+        output.schema,
+        capabilities.schema_profile,
+    )
     has_tools = bool(tools)
 
     native_available = (
@@ -289,6 +337,7 @@ def _build_plan(
     raise StructuredOutputUnsupportedError(
         f"Structured output is not verified for provider={provider!r}, api={api!r}",
         code="unsupported",
+        issues=[projection_issue] if projection_issue is not None else None,
     )
 
 

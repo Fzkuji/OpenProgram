@@ -108,6 +108,7 @@ def _build_contents(context: Context) -> list[Any]:
 
 
 def _build_config(
+    model: Model,
     context: Context,
     opts: SimpleStreamOptions,
 ) -> Any:
@@ -151,12 +152,15 @@ def _build_config(
         # on non-thinking models this field is silently ignored.
         thinking_config: Any = gtypes.ThinkingConfig(thinking_budget=0)
 
+    output = opts.response_format
     return gtypes.GenerateContentConfig(
         system_instruction=context.system_prompt or None,
         max_output_tokens=opts.max_tokens or None,
         temperature=opts.temperature,
         tools=tools,
         thinking_config=thinking_config,
+        response_mime_type="application/json" if output is not None else None,
+        response_json_schema=output.schema if output is not None else None,
     )
 
 
@@ -176,6 +180,22 @@ def _make_empty_assistant(model: Model) -> AssistantMessage:
 # ---------------------------------------------------------------------------
 # stream_simple — main streaming entry point
 # ---------------------------------------------------------------------------
+
+def _map_finish_reason(reason: Any) -> str:
+    value = str(getattr(reason, "value", reason) or "").upper().rsplit(".", 1)[-1]
+    if value == "MAX_TOKENS":
+        return "length"
+    if value in {
+        "SAFETY",
+        "RECITATION",
+        "BLOCKLIST",
+        "PROHIBITED_CONTENT",
+        "SPII",
+        "MALFORMED_FUNCTION_CALL",
+        "IMAGE_SAFETY",
+    }:
+        return "error"
+    return "stop"
 
 async def stream_simple(
     model: Model,
@@ -213,12 +233,13 @@ async def stream_simple(
     client = genai.Client(api_key=api_key, http_options=http_options)
 
     contents = _build_contents(context)
-    config = _build_config(context, opts)
+    config = _build_config(model, context, opts)
 
     partial = _make_empty_assistant(model)
     content_blocks: list[Any] = []
     current_block: TextContent | ThinkingContent | None = None
     usage_final = Usage()
+    terminal_reason = "stop"
 
     _signal = getattr(opts, "signal", None)
 
@@ -264,6 +285,9 @@ async def stream_simple(
                 )
 
             for candidate in (chunk.candidates or []):
+                finish_reason = getattr(candidate, "finish_reason", None)
+                if finish_reason is not None:
+                    terminal_reason = _map_finish_reason(finish_reason)
                 if not candidate.content or not candidate.content.parts:
                     continue
                 for part in candidate.content.parts:
@@ -358,7 +382,7 @@ async def stream_simple(
                 yield EventThinkingEnd(type="thinking_end", content_index=_block_index(), content=current_block.thinking, partial=partial)
 
         has_tool_calls = any(isinstance(b, ToolCall) for b in content_blocks)
-        stop_reason = "toolUse" if has_tool_calls else "stop"
+        stop_reason = "toolUse" if has_tool_calls else terminal_reason
 
         final = AssistantMessage(
             role="assistant",
@@ -370,11 +394,10 @@ async def stream_simple(
             stop_reason=stop_reason,
             timestamp=int(time.time() * 1000),
         )
-        yield EventDone(
-            type="done",
-            reason=stop_reason if stop_reason != "stop" else "stop",
-            message=final,
-        )
+        if stop_reason == "error":
+            yield EventError(type="error", reason="error", error=final)
+        else:
+            yield EventDone(type="done", reason=stop_reason, message=final)
 
     except Exception as e:
         # User cancel is not an error: finalize as "aborted" (anthropic's

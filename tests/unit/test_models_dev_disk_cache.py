@@ -45,3 +45,56 @@ def test_successful_fetch_writes_disk_cache(tmp_path, monkeypatch):
         assert json.loads(cache.read_text())["groq"]["name"] == "Groq"
     finally:
         _reset_mem_cache()
+
+
+def test_structured_output_tri_state_survives_disk_model_and_web_listing(
+    tmp_path, monkeypatch
+):
+    from openprogram.providers.enabled_models import _build_model_from_row
+    import openprogram.providers.enabled_models as enabled_models
+    from openprogram.providers.sources import models_dev
+    from openprogram.providers import storage
+    from openprogram.webui._model_listing import listing
+
+    cache = tmp_path / "cache" / "models_dev.json"
+    cache.parent.mkdir(parents=True)
+    cache.write_text(json.dumps({
+        "acme": {
+            "name": "Acme",
+            "models": {
+                "yes": {"structured_output": True},
+                "no": {"structured_output": False},
+                "unknown": {},
+            },
+        }
+    }))
+    monkeypatch.setattr(models_dev, "_disk_cache_path", lambda: cache)
+    monkeypatch.setattr(models_dev, "_CATALOGUE_URL", "http://127.0.0.1:1/nope")
+    _reset_mem_cache()
+    try:
+        rows = models_dev.list_models("acme")
+        built = {
+            mid: _build_model_from_row(
+                {"id": mid, "name": mid, "api": "openai-completions", **row},
+                "acme",
+                {"default": {"base_url": "https://acme.example/v1"}},
+            )
+            for mid, row in rows.items()
+        }
+        monkeypatch.setattr(enabled_models, "ENABLED_MODELS", {
+            f"acme/{mid}": model for mid, model in built.items()
+        })
+        monkeypatch.setattr(
+            storage,
+            "_read_providers_cfg",
+            lambda: {"acme": {"enabled": True}},
+        )
+
+        listed = {row["id"]: row for row in listing.list_enabled_models()}
+        assert [listed[mid]["structured_output"] for mid in ("yes", "no", "unknown")] == [
+            True,
+            False,
+            None,
+        ]
+    finally:
+        _reset_mem_cache()

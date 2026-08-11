@@ -1,3 +1,4 @@
+import copy
 import threading
 
 import pytest
@@ -250,6 +251,40 @@ def test_negotiation_deep_copies_original_and_provider_schemas():
     assert "maximum" not in output.schema["properties"]["answer"]
 
 
+def test_lossy_native_projection_reports_first_bounded_schema_path():
+    schema = {
+        "type": "object",
+        "properties": {"answer": {"type": "integer", "minimum": 0}},
+        "required": ["answer"],
+        "additionalProperties": False,
+    }
+    original = copy.deepcopy(schema)
+    model = Model(
+        id="gpt-test",
+        name="GPT test",
+        api="openai-responses",
+        provider="openai",
+        base_url="https://api.openai.com/v1",
+        structured_output=True,
+    )
+
+    with pytest.raises(StructuredOutputUnsupportedError) as exc:
+        negotiate_structured_output(
+            model,
+            api_registry.get_structured_output_capabilities(model.api),
+            normalize_response_format(schema),
+            [],
+        )
+
+    assert exc.value.issues == [{
+        "code": "unsupported_schema_constraint",
+        "path": "/properties/answer/minimum",
+        "schema_path": "/properties/answer/minimum",
+        "message": "Provider schema profile would change this constraint",
+    }]
+    assert schema == original
+
+
 def test_capability_registration_replaces_provider_and_capabilities_together(monkeypatch):
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})
@@ -334,7 +369,10 @@ def test_builtin_capabilities_are_explicit_and_unknown_adapters_fail_closed():
     assert openai.native == "supported"
     assert openai.strict_tool is True
     assert openai.with_tools is True
-    assert api_registry.get_structured_output_capabilities("anthropic-messages").native == "unknown"
+    assert api_registry.get_structured_output_capabilities("anthropic-messages").native == "supported"
+    assert api_registry.get_structured_output_capabilities("google-generative-ai").native == "supported"
+    assert api_registry.get_structured_output_capabilities("bedrock-converse-stream").native == "supported"
+    assert api_registry.get_structured_output_capabilities("azure-openai-responses").native == "supported"
     assert codex.native == "unknown"
     assert codex.strict_tool is True
     assert gemini_subscription.native == "unknown"

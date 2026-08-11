@@ -95,9 +95,9 @@ def _fake_model() -> Model:
                  provider="openai", base_url="https://example.invalid/v1")
 
 
-def _session(stream_fn, **kwargs) -> AgentSession:
+def _session(stream_fn, *, model=None, **kwargs) -> AgentSession:
     session = AgentSession(
-        model=_fake_model(),
+        model=model or _fake_model(),
         tools=[_echo_tool()],
         **kwargs,
     )
@@ -152,7 +152,13 @@ def test_response_format_reaches_stream_opts():
         "required": ["answer"],
         "additionalProperties": False,
     })
-    session = _session(stream_fn, response_format=response_format)
+    session = _session(
+        stream_fn,
+        model=_fake_model().model_copy(update={
+            "base_url": "https://api.openai.com/v1",
+        }),
+        response_format=response_format,
+    )
 
     asyncio.run(session.run("go"))
 

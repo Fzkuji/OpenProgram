@@ -286,6 +286,7 @@ async def process_responses_stream(
     from openprogram.providers.utils.errors import StreamAborted
 
     blocks = output.content
+    refusal_seen = False
 
     def _get(ev: Any, name: str, default: Any = None) -> Any:
         return ev.get(name, default) if isinstance(ev, dict) else getattr(ev, name, default)
@@ -408,6 +409,15 @@ async def process_responses_stream(
                     stream.push({"type": "thinking_end", "content_index": i, "content": block.get("thinking", ""), "partial": output})
 
             elif item_type == "message":
+                refusal_seen = any(
+                    (
+                        c.get("type") == "refusal" or bool(c.get("refusal"))
+                        if isinstance(c, dict)
+                        else getattr(c, "type", None) == "refusal"
+                        or bool(getattr(c, "refusal", None))
+                    )
+                    for c in (item_dict.get("content") or [])
+                ) or refusal_seen
                 i = _find(out_idx, "text")
                 if i >= 0 and blocks[i].get("type") == "text":
                     block = blocks[i]
@@ -482,7 +492,7 @@ async def process_responses_stream(
                     apply_service_tier_pricing(output.usage, tier)
 
                 status = resp_dict.get("status")
-                output.stop_reason = _map_stop_reason(status)
+                output.stop_reason = "error" if refusal_seen else _map_stop_reason(status)
                 if any(getattr(b, "type", None) == "toolCall" or (isinstance(b, dict) and b.get("type") == "toolCall") for b in output.content) and output.stop_reason == "stop":
                     output.stop_reason = "toolUse"
 

@@ -84,6 +84,26 @@ def _map_thinking_level_to_effort(level: "ThinkingLevel | None") -> str:
     return result if isinstance(result, str) else "high"
 
 
+def _build_output_config(response_format: Any) -> dict[str, Any]:
+    import json
+
+    schema = json.dumps(
+        response_format.schema,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    definition = {"name": response_format.name, "schema": schema}
+    if response_format.description is not None:
+        definition["description"] = response_format.description
+    return {
+        "textFormat": {
+            "type": "json_schema",
+            "structure": {"jsonSchema": definition},
+        }
+    }
+
+
 def stream_bedrock(
     model: "Model",
     context: "Context",
@@ -171,6 +191,8 @@ def stream_bedrock(
                 request["toolConfig"] = tool_config
             if add_fields:
                 request["additionalModelRequestFields"] = add_fields
+            if opts.get("response_format") is not None:
+                request["outputConfig"] = _build_output_config(opts["response_format"])
 
             if opts.get("on_payload"):
                 opts["on_payload"](request)
@@ -248,6 +270,8 @@ def stream_simple_bedrock(
 
     base = build_base_options(model, options)
     base_dict = base.model_dump() if hasattr(base, "model_dump") else dict(base)
+    if base.response_format is not None:
+        base_dict["response_format"] = base.response_format
     reasoning = getattr(options, "reasoning", None) if options else None
 
     if not reasoning:
