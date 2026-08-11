@@ -643,8 +643,11 @@ def _validate_response_headers(
         content_length = content_lengths[0].strip(" \t")
         if _ASCII_DECIMAL.fullmatch(content_length) is None:
             raise URLPolicyError("CONTENT_LENGTH_INVALID", safe_origin)
-        declared = int(content_length)
-        if declared > spec.max_decoded_body_bytes:
+        significant = content_length.lstrip("0") or "0"
+        maximum = str(spec.max_decoded_body_bytes)
+        if len(significant) > len(maximum) or (
+            len(significant) == len(maximum) and significant > maximum
+        ):
             raise URLPolicyError("BODY_TOO_LARGE", safe_origin)
 
 

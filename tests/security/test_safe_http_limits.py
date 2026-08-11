@@ -21,6 +21,7 @@ from openprogram.security.url_policy import URLPolicyError
 
 
 _MALFORMED_CONTENT_LENGTHS = [b"+1", b"1_0", b"-0", b"", "١".encode()]
+_OVERSIZED_CONTENT_LENGTH = b"9" * 5_000
 
 
 class _ScriptedPool:
@@ -382,6 +383,88 @@ def test_malformed_content_length_closes_before_async_body_read(
     assert asyncio.run(exercise()).reason == "CONTENT_LENGTH_INVALID"
     assert not consumed
     assert response.stream.closed
+
+
+def test_oversized_content_length_validator_returns_stable_policy_error():
+    with pytest.raises(URLPolicyError) as exc:
+        safe_http._validate_response_headers(
+            [(b"content-length", _OVERSIZED_CONTENT_LENGTH)],
+            safe_http.CONSUMER_REGISTRY["tool.web_fetch"],
+            "https://public.test",
+        )
+
+    assert exc.value.reason == "BODY_TOO_LARGE"
+    assert exc.value.safe_url == "https://public.test"
+
+
+def test_oversized_content_length_closes_and_audits_before_sync_body_read(
+    monkeypatch,
+):
+    consumed = []
+
+    def body():
+        consumed.append(True)
+        yield b"body"
+
+    response = httpcore.Response(
+        200,
+        headers=[
+            (b"content-type", b"text/plain"),
+            (b"content-length", _OVERSIZED_CONTENT_LENGTH),
+        ],
+        content=body(),
+    )
+    client = _small_client(monkeypatch, response)
+
+    with client, pytest.raises(URLPolicyError) as exc:
+        client.get("https://public.test/resource")
+
+    denial = client.audit_events[-1]
+    assert exc.value.reason == "BODY_TOO_LARGE"
+    assert not consumed
+    assert response.stream.closed
+    assert (denial.reason, denial.safe_origin) == (
+        "BODY_TOO_LARGE",
+        "https://public.test",
+    )
+    assert "999999" not in repr(client.audit_events)
+
+
+def test_oversized_content_length_closes_and_audits_before_async_body_read(
+    monkeypatch,
+):
+    consumed = []
+
+    def chunks():
+        consumed.append(True)
+        yield b"body"
+
+    response = httpcore.Response(
+        200,
+        headers=[
+            (b"content-type", b"text/plain"),
+            (b"content-length", _OVERSIZED_CONTENT_LENGTH),
+        ],
+        content=_empty_async(),
+    )
+    client = _small_async_client(monkeypatch, response, chunks())
+
+    async def exercise():
+        async with client:
+            with pytest.raises(URLPolicyError) as exc:
+                await client.get("https://public.test/resource")
+        return exc.value, client.audit_events
+
+    error, audit_events = asyncio.run(exercise())
+    denial = audit_events[-1]
+    assert error.reason == "BODY_TOO_LARGE"
+    assert not consumed
+    assert response.stream.closed
+    assert (denial.reason, denial.safe_origin) == (
+        "BODY_TOO_LARGE",
+        "https://public.test",
+    )
+    assert "999999" not in repr(audit_events)
 
 
 def test_request_forces_supported_accept_encoding(monkeypatch):
