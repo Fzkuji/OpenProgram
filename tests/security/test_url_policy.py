@@ -125,6 +125,31 @@ def test_public_policy_normalizes_method_and_rejects_disallowed_method():
     assert exc.value.reason == "METHOD_FORBIDDEN"
 
 
+@pytest.mark.parametrize("trust_class", ["unknown", None, 0])
+def test_invalid_trust_class_is_rejected_before_dns(trust_class):
+    calls: list[tuple[str, int]] = []
+
+    def resolver(hostname: str, port: int):
+        calls.append((hostname, port))
+        return ("127.0.0.1",)
+
+    with pytest.raises(URLPolicyError) as exc:
+        evaluate_url(
+            "tool.web_fetch",
+            "GET",
+            "http://internal.example/private/path-token?q=secret#fragment",
+            trust_class=trust_class,
+            allowed_methods=PUBLIC_METHODS,
+            allowed_ports=PUBLIC_PORTS,
+            resolver=resolver,
+        )
+
+    assert exc.value.reason == "TRUST_CLASS_INVALID"
+    assert exc.value.safe_url == "http://internal.example"
+    assert str(exc.value) == "TRUST_CLASS_INVALID: http://internal.example"
+    assert calls == []
+
+
 @pytest.mark.parametrize(
     ("resolver", "reason"),
     [
