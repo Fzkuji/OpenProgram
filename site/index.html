@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OpenProgram — Python agent harness for Agentic Programming</title>
-<meta name="description" content="OpenProgram is an open-source Python agent harness for Agentic Programming: deterministic control flow, scoped DAG context, multi-agent workflows, tools, skills, memory, Web UI, and terminal UI.">
+<title>OpenProgram — Open-source Python agent framework</title>
+<meta name="description" content="Build, run, and extend AI agents in Python with a complete open-source framework: Web UI, terminal UI, model providers, tools, skills, memory, and multi-agent collaboration.">
 <meta name="theme-color" content="#07080a">
 <link rel="canonical" href="https://openprogram.io/">
 <link rel="icon" type="image/svg+xml" href="/docs/assets/mark.svg">
@@ -13,23 +13,23 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="OpenProgram">
 <meta property="og:url" content="https://openprogram.io/">
-<meta property="og:title" content="OpenProgram — Agents are just Python functions">
-<meta property="og:description" content="An open-source Python agent harness with deterministic control flow, scoped DAG context, and model calls inline with ordinary code.">
-<meta property="og:image" content="https://openprogram.io/docs/images/code_hero.png">
+<meta property="og:title" content="OpenProgram — Open-source Python agent framework">
+<meta property="og:description" content="Install a ready-made agent or build your own with one Python framework for models, tools, skills, memory, and multi-agent work.">
+<meta property="og:image" content="https://openprogram.io/docs/images/chat_hero.png">
 <meta property="og:image:width" content="3024">
-<meta property="og:image:height" content="1444">
-<meta property="og:image:alt" content="OpenProgram code interface showing an agentic Python function">
+<meta property="og:image:height" content="1462">
+<meta property="og:image:alt" content="OpenProgram Web UI showing an agent session and execution DAG">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="OpenProgram — Agents are just Python functions">
-<meta name="twitter:description" content="Build agent workflows in Python with deterministic control flow and scoped DAG context.">
-<meta name="twitter:image" content="https://openprogram.io/docs/images/code_hero.png">
+<meta name="twitter:title" content="OpenProgram — Open-source Python agent framework">
+<meta name="twitter:description" content="Install a ready-made agent or build your own with models, tools, skills, memory, and multi-agent collaboration.">
+<meta name="twitter:image" content="https://openprogram.io/docs/images/chat_hero.png">
 
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "SoftwareSourceCode",
   "name": "OpenProgram",
-  "description": "Open-source Python agent harness for Agentic Programming, deterministic workflows, and scoped DAG context.",
+  "description": "Open-source Python framework for building, running, and extending AI agents.",
   "url": "https://openprogram.io/",
   "codeRepository": "https://github.com/Fzkuji/OpenProgram",
   "license": "https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE",
@@ -114,6 +114,7 @@ nav{
 }
 @keyframes drift{from{transform:translateX(-1.5%)}to{transform:translateX(1.5%)}}
 .hero-grid{position:relative;display:grid;grid-template-columns:.92fr 1.08fr;gap:62px;align-items:center}
+.hero-grid>*{min-width:0}
 .eyebrow{
   display:inline-flex;align-items:center;gap:9px;margin-bottom:24px;
   border:1px solid var(--border-hi);border-radius:999px;background:rgba(13,16,20,.78);
@@ -149,10 +150,12 @@ h1{max-width:720px;font-size:clamp(42px,5.2vw,68px);line-height:1.02;letter-spac
 .install-mini .copy{margin-left:auto;color:var(--faint);white-space:nowrap}
 .install-mini.copied .copy{color:var(--teal)}
 
-.terminal{
+.terminal,.hero-product{
   border:1px solid var(--border);border-radius:13px;background:var(--surface-2);
   box-shadow:var(--shadow),0 0 88px rgba(94,234,212,.045);overflow:hidden;
 }
+.hero-product img{width:100%;height:clamp(250px,32vw,360px);object-fit:cover;object-position:center top}
+.hero-product figcaption{padding:13px 15px;border-top:1px solid var(--border);color:var(--muted);font-size:12px}
 .terminal-bar{display:flex;align-items:center;gap:7px;padding:12px 15px;border-bottom:1px solid var(--border);background:var(--surface)}
 .dot{width:10px;height:10px;border-radius:50%;background:#303846}
 .terminal-title{margin-left:auto;color:var(--faint);font:11px/1 var(--mono)}
@@ -174,12 +177,35 @@ section{padding:94px 0;scroll-margin-top:62px}
 h2{font-size:clamp(30px,3.6vw,46px);line-height:1.09;letter-spacing:-.04em;font-weight:750}
 .lead{color:var(--muted);font-size:17px;max-width:640px}
 
-.anatomy{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--border);border-radius:13px;overflow:hidden;background:var(--surface)}
-.anatomy article{padding:26px 24px;border-right:1px solid var(--border)}
-.anatomy article:last-child{border-right:0}
-.anatomy code{display:inline-block;color:var(--teal);font-size:12px;margin-bottom:14px}
-.anatomy h3{font-size:16px;margin-bottom:8px}
-.anatomy p{color:var(--muted);font-size:14px}
+.use-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.use-card{
+  display:flex;flex-direction:column;min-height:270px;padding:27px;
+  border:1px solid var(--border);border-radius:13px;background:var(--surface);
+  transition:border-color .2s,transform .2s;
+}
+.use-card:hover{border-color:var(--border-hi);transform:translateY(-2px)}
+.use-tag{color:var(--teal);font:12px/1.4 var(--mono);margin-bottom:28px}
+.use-card h3{font-size:24px;letter-spacing:-.03em;margin-bottom:12px}
+.use-card p{color:var(--muted);font-size:14.5px;max-width:540px}
+.use-link{margin-top:auto;padding-top:26px;color:var(--teal);font-size:13px}
+.use-card pre{margin-top:18px;padding:16px;border:1px solid var(--border);border-radius:9px;background:var(--bg);font-size:11px}
+
+.quick-start{background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.quick-panel{display:grid;grid-template-columns:.78fr 1.22fr;gap:48px;align-items:center}
+.quick-copy p{margin-top:15px;color:var(--muted);max-width:500px}
+.quick-copy a{display:inline-block;margin-top:20px;color:var(--teal);font-size:13px}
+.command-stack{display:grid;gap:12px}
+.command-card{width:100%;text-align:left;cursor:pointer;transition:border-color .15s}
+.command-card:hover{border-color:var(--border-hi)}
+.command-card.copied .copy{color:var(--teal)}
+
+.capabilities{background:linear-gradient(180deg,var(--bg),var(--surface))}
+.capability-grid{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--border);border-radius:13px;overflow:hidden;background:var(--surface)}
+.capability{padding:25px 23px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);min-height:190px}
+.capability:nth-child(4n){border-right:0}.capability:nth-last-child(-n+4){border-bottom:0}
+.capability code{display:block;color:var(--teal);font-size:11px;margin-bottom:18px}
+.capability h3{font-size:17px;margin-bottom:9px}
+.capability p{color:var(--muted);font-size:13.5px}
 
 .mechanisms{background:linear-gradient(180deg,var(--surface),var(--bg));border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
 .mechanism-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
@@ -247,12 +273,14 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
 :focus-visible{outline:2px solid var(--teal);outline-offset:3px}
 
 @media(max-width:920px){
-  .hero-grid,.section-head,.start-panel{grid-template-columns:1fr}
+  .hero-grid,.section-head,.start-panel,.quick-panel{grid-template-columns:1fr}
   .hero-grid{gap:42px}.hero{padding-top:74px}
   .proof-grid{grid-template-columns:repeat(2,1fr)}
   .proof-item:nth-child(2){border-right:0}.proof-item:nth-child(-n+2){border-bottom:1px solid var(--border)}
-  .anatomy{grid-template-columns:repeat(2,1fr)}
-  .anatomy article:nth-child(2){border-right:0}.anatomy article:nth-child(-n+2){border-bottom:1px solid var(--border)}
+  .use-grid{grid-template-columns:1fr}
+  .capability-grid{grid-template-columns:repeat(2,1fr)}
+  .capability:nth-child(odd){border-right:1px solid var(--border)}.capability:nth-child(even){border-right:0}
+  .capability:nth-last-child(-n+4){border-bottom:1px solid var(--border)}.capability:nth-last-child(-n+2){border-bottom:0}
   .mechanism-grid{grid-template-columns:1fr}
   .mechanism{min-height:240px}
   .paper-grid{grid-template-columns:1fr}
@@ -260,20 +288,20 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
 @media(max-width:680px){
   .wrap{width:min(100% - 30px,1160px)}
   .navin{gap:12px}
-  .navlinks{gap:14px}.navlinks a[href="#how"],.navlinks .paper-link{display:none}.nav-install{padding:5px 9px}
+  .navlinks{gap:14px}.navlinks a[href="#use-cases"],.navlinks a[href="#capabilities"],.navlinks .paper-link,.navlinks a[href="https://github.com/Fzkuji/OpenProgram"]{display:none}.nav-install{padding:5px 9px}
   .hero{padding:62px 0 58px}.hero-grid{gap:34px}
   h1{font-size:46px}.gradient{display:block}.hero-copy{font-size:16px}
   pre{font-size:11px;padding:17px 16px}
   section{padding:68px 0}.section-head{gap:18px;margin-bottom:30px}
-  .proof-grid,.anatomy{grid-template-columns:1fr}
-  .proof-item,.proof-item:nth-child(2),.anatomy article,.anatomy article:nth-child(2){border-right:0;border-bottom:1px solid var(--border)}
-  .proof-item:last-child,.anatomy article:last-child{border-bottom:0}
+  .proof-grid,.capability-grid{grid-template-columns:1fr}
+  .proof-item,.proof-item:nth-child(2),.capability,.capability:nth-child(odd),.capability:nth-child(even),.capability:nth-last-child(-n+2){border-right:0;border-bottom:1px solid var(--border)}
+  .proof-item:last-child,.capability:last-child{border-bottom:0}
   .interface-grid{grid-template-columns:1fr}.shot-main{grid-row:auto}.shot{min-height:230px}
   .start-panel{padding:27px 22px;gap:28px}.btn{width:100%}.actions{align-items:stretch}
 }
 @media(prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}.hero::before{animation:none}
-  .btn,.mechanism{transition:none}
+  .btn,.mechanism,.use-card{transition:none}
 }
 </style>
 </head>
@@ -286,11 +314,12 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
       <img src="/docs/assets/mark.svg" alt="">Open<span>Program</span>
     </a>
     <div class="navlinks">
-      <a href="#how">How it works</a>
+      <a href="#use-cases">Agents</a>
+      <a href="#capabilities">Framework</a>
       <a href="/docs/">Docs</a>
       <a class="paper-link" href="#papers">Papers</a>
       <a href="https://github.com/Fzkuji/OpenProgram">GitHub</a>
-      <a class="nav-install" href="#start">Install</a>
+      <a class="nav-install" href="#quick-start">Install</a>
     </div>
   </div>
 </nav>
@@ -299,91 +328,113 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
   <header class="hero">
     <div class="wrap hero-grid">
       <div>
-        <span class="eyebrow">Open-source Python agent harness</span>
-        <h1>Agents are just<br><span class="gradient">Python functions.</span></h1>
-        <p class="hero-copy">OpenProgram keeps execution in ordinary Python and calls the model only where judgement is needed. The docstring defines the task, parameters carry input, and typed return values bring the result back into code.</p>
+        <span class="eyebrow">Open-source agent framework</span>
+        <h1>Build agents that<br><span class="gradient">run in Python.</span></h1>
+        <p class="hero-copy">OpenProgram gives you the runtime, Web UI, terminal UI, model connections, tools, skills, memory, and multi-agent collaboration. Install a ready-made harness or build an agent for your own workflow.</p>
         <div class="actions">
-          <a class="btn btn-primary" href="/docs/start/GETTING_STARTED.html">Get started</a>
-          <a class="btn btn-secondary" href="https://github.com/Fzkuji/OpenProgram">View on GitHub</a>
+          <a class="btn btn-primary" href="#quick-start">Install OpenProgram</a>
+          <a class="btn btn-secondary" href="/docs/">Explore documentation</a>
         </div>
-        <button class="install-mini" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash" aria-label="Copy macOS and Linux install command">
-          <span class="prompt">$</span>
-          <span class="command">curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash</span>
-          <span class="copy">copy</span>
-        </button>
       </div>
 
-      <div class="terminal" role="figure" aria-label="A Python function containing two scoped model calls">
+      <figure class="hero-product">
         <div class="terminal-bar">
           <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-          <span class="terminal-title">triage.py</span>
+          <span class="terminal-title">OpenProgram Web UI</span>
         </div>
-<pre><code><span class="dec">@agentic_function</span>
-<span class="kw">def</span> <span class="fn">triage</span>(ticket: <span class="fn">str</span>, runtime=<span class="kw">None</span>) <span class="op">-&gt;</span> <span class="fn">str</span>:
-    <span class="doc">"""Classify the ticket, then draft a reply."""</span>
-    kind = <span class="agent-call">runtime.exec</span>(ticket,
-        choices=[<span class="str">"bug"</span>, <span class="str">"feature"</span>, <span class="str">"question"</span>])
-
-    <span class="kw">if</span> kind == <span class="str">"bug"</span>:             <span class="cm"># code decides</span>
-        logs = search_logs(ticket)    <span class="cm"># plain Python</span>
-        <span class="kw">return</span> <span class="agent-call">runtime.exec</span>(
-            <span class="str">f"Find the root cause:\n{logs}"</span>)
-
-    <span class="kw">return</span> <span class="agent-call">runtime.exec</span>(<span class="str">"Draft a short reply."</span>)</code></pre>
-      </div>
+        <img src="/docs/images/chat_hero.png" alt="OpenProgram Web UI showing an agent session and its execution DAG" width="3024" height="1462">
+        <figcaption>Run agents, inspect sessions, and review every call from one interface.</figcaption>
+      </figure>
     </div>
   </header>
 
   <aside class="proof" aria-label="Project facts">
     <div class="wrap proof-grid">
-      <div class="proof-item"><span class="proof-label">License</span><span class="proof-value">Open source · AGPL-3.0</span></div>
       <div class="proof-item"><span class="proof-label">Runtime</span><span class="proof-value">Python 3.11+</span></div>
       <div class="proof-item"><span class="proof-label">Platforms</span><span class="proof-value">macOS · Linux · Windows</span></div>
-      <div class="proof-item"><span class="proof-label">Research</span><span class="proof-value">2 related papers</span></div>
+      <div class="proof-item"><span class="proof-label">Interfaces</span><span class="proof-value">Web · TUI · CLI</span></div>
+      <div class="proof-item"><span class="proof-label">License</span><span class="proof-value">Open source · AGPL-3.0</span></div>
     </div>
   </aside>
 
-  <section id="how">
+  <section id="use-cases">
     <div class="wrap">
       <div class="section-head reveal">
-        <div><p class="kicker">Agentic Programming</p><h2>One function carries the whole contract.</h2></div>
-        <p class="lead">Model reasoning and deterministic code share the same variables, branches, loops, and error handling. No separate workflow DSL is required.</p>
+        <div><p class="kicker">Start where you need</p><h2>Use an agent or build your own.</h2></div>
+        <p class="lead">Install an existing harness for a complete workflow, or use the same OpenProgram runtime to create an agent in ordinary Python.</p>
       </div>
-      <div class="anatomy reveal">
-        <article><code>"""docstring"""</code><h3>Task</h3><p>The function documentation becomes the system instruction for the agent.</p></article>
-        <article><code>(ticket: str)</code><h3>Input</h3><p>Parameters define what enters the call and remain ordinary Python values.</p></article>
-        <article><code>runtime.exec(...)</code><h3>Judgement</h3><p>The model is invoked at the exact points where code cannot decide reliably.</p></article>
-        <article><code>-&gt; str</code><h3>Output</h3><p>The result returns to typed control flow, ready for validation or another call.</p></article>
+      <div class="use-grid reveal">
+        <a class="use-card" href="https://github.com/Fzkuji/GUI-Agent-Harness">
+          <span class="use-tag">openprogram programs install gui</span>
+          <h3>GUI Agent</h3>
+          <p>Operate desktop applications and GUI environments with visual grounding, action execution, and task verification.</p>
+          <span class="use-link">View installation guide →</span>
+        </a>
+        <a class="use-card" href="https://github.com/Fzkuji/Research-Agent-Harness">
+          <span class="use-tag">openprogram programs install research</span>
+          <h3>Research Agent</h3>
+          <p>Run literature research, experiment, analysis, and paper-writing workflows from one agent harness.</p>
+          <span class="use-link">View repository →</span>
+        </a>
+        <a class="use-card" href="https://github.com/Fzkuji/Wiki-Agent-Harness">
+          <span class="use-tag">openprogram programs install wiki</span>
+          <h3>Wiki Agent</h3>
+          <p>Organize notes, documents, and conversations into a maintainable Obsidian knowledge base.</p>
+          <span class="use-link">View repository →</span>
+        </a>
+        <a class="use-card" href="/docs/capabilities/installing-harnesses.html">
+          <span class="use-tag">Build your own</span>
+          <h3>Your agent, ordinary Python</h3>
+          <p>Use a decorated function for the task contract and call the model only where the workflow needs judgement.</p>
+<pre><code><span class="dec">@agentic_function</span>
+<span class="kw">def</span> <span class="fn">triage</span>(ticket: <span class="fn">str</span>, runtime=<span class="kw">None</span>):
+    kind = <span class="agent-call">runtime.exec</span>(ticket,
+        choices=[<span class="str">"bug"</span>, <span class="str">"feature"</span>])
+    <span class="kw">return</span> handle(ticket, kind)</code></pre>
+          <span class="use-link">Read the harness guide →</span>
+        </a>
       </div>
     </div>
   </section>
 
-  <section class="mechanisms" id="mechanisms">
+  <section class="quick-start" id="quick-start">
+    <div class="wrap">
+      <div class="quick-panel reveal">
+        <div class="quick-copy">
+          <p class="kicker">Quick Start</p>
+          <h2>Install, then run.</h2>
+          <p>The first run guides you through connecting a model provider and choosing the Web UI or terminal interface.</p>
+          <a href="/docs/install/install.html">Windows and advanced installation →</a>
+        </div>
+        <div class="command-stack">
+          <button class="command-card" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash" aria-label="Copy macOS and Linux install command">
+            <span class="command-head"><span>1 · Install on macOS / Linux</span><span class="copy">copy</span></span>
+            <span class="command-body"><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash</span>
+          </button>
+          <button class="command-card" type="button" data-copy="openprogram" aria-label="Copy OpenProgram run command">
+            <span class="command-head"><span>2 · Start OpenProgram</span><span class="copy">copy</span></span>
+            <span class="command-body"><span class="prompt">$ </span>openprogram</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="capabilities" id="capabilities">
     <div class="wrap">
       <div class="section-head reveal">
-        <div><p class="kicker">Harness mechanisms</p><h2>Context, control, and events stay explicit.</h2></div>
-        <p class="lead">OpenProgram provides the runtime components needed for multi-agent work without moving the application into a separate orchestration language.</p>
+        <div><p class="kicker">Included framework</p><h2>Everything you need to run agents.</h2></div>
+        <p class="lead">Use the complete runtime or adopt only the components required by your workflow. Configuration and execution remain available from Python, the Web UI, and the terminal.</p>
       </div>
-      <div class="mechanism-grid">
-        <article class="mechanism reveal">
-          <span class="mechanism-tag">caller + reads</span>
-          <h3>DAG Context</h3>
-          <p>Every user turn, model call, and function call is a node. Context is selected from dependency edges, so branches, sub-agents, cross-session messages, and isolated worktrees share one execution model.</p>
-          <span class="note">Scoped assembly supports a theoretical shift from quadratic toward log-linear cumulative context cost; this is not a measured benchmark.</span>
-          <a href="/docs/capabilities/agentic-programming/README.html">Read about Agentic Programming →</a>
-        </article>
-        <article class="mechanism reveal">
-          <span class="mechanism-tag">Python gates</span>
-          <h3>Agentic Workflow</h3>
-          <p>Code fixes the required order, validates model decisions, and retries failed checks. Agentic functions can call other functions, use tools, and be loaded through the same Python runtime.</p>
-          <a href="/docs/start/features.html">Explore runtime features →</a>
-        </article>
-        <article class="mechanism reveal">
-          <span class="mechanism-tag">Event(type, payload, ts)</span>
-          <h3>Event Infrastructure</h3>
-          <p>A process-wide event bus carries activity from the agent loop, authentication, context, channels, and memory. Subscribers can observe typed events without coupling those systems together.</p>
-          <a href="/docs/reference/design/proactive/overview.html">Inspect the event design →</a>
-        </article>
+      <div class="capability-grid reveal">
+        <article class="capability"><code>providers</code><h3>Model providers</h3><p>Connect Anthropic, OpenAI, Gemini, and compatible backends with account and model configuration.</p></article>
+        <article class="capability"><code>tools + mcp</code><h3>Tools and MCP</h3><p>Give agents local tools, browser actions, external services, and MCP server capabilities.</p></article>
+        <article class="capability"><code>skills + memory</code><h3>Skills and memory</h3><p>Load reusable instructions and retain task knowledge across longer-running work.</p></article>
+        <article class="capability"><code>multi-agent</code><h3>Agent collaboration</h3><p>Spawn agents, exchange messages, and isolate file-changing work in separate branches.</p></article>
+        <article class="capability"><code>sessions</code><h3>Sessions and branches</h3><p>Keep conversations, calls, context, forks, and execution history inspectable.</p></article>
+        <article class="capability"><code>web · tui · cli</code><h3>Three interfaces</h3><p>Run the same agents from the browser, terminal UI, or headless command line.</p></article>
+        <article class="capability"><code>channels</code><h3>Channel integrations</h3><p>Connect agent workers to supported messaging channels without replacing the runtime.</p></article>
+        <article class="capability"><code>programs</code><h3>Installable harnesses</h3><p>Install, manage, run, and publish Python harnesses through one package contract.</p></article>
       </div>
     </div>
   </section>
@@ -416,6 +467,35 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
     </div>
   </section>
 
+  <section class="mechanisms" id="mechanisms">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <div><p class="kicker">Framework internals</p><h2>Inspectable context, control, and events.</h2></div>
+        <p class="lead">OpenProgram keeps agent execution inside Python while recording model calls, context dependencies, validation, and runtime events.</p>
+      </div>
+      <div class="mechanism-grid">
+        <article class="mechanism reveal">
+          <span class="mechanism-tag">caller + reads</span>
+          <h3>DAG Context</h3>
+          <p>Every user turn, model call, and function call is a node. Dependency edges select the context used by branches, sub-agents, and cross-session messages.</p>
+          <a href="/docs/capabilities/agentic-programming/README.html">Read the context documentation →</a>
+        </article>
+        <article class="mechanism reveal">
+          <span class="mechanism-tag">Python gates</span>
+          <h3>Agentic Workflow</h3>
+          <p>Python fixes required execution order, validates model decisions, retries failed checks, and combines agentic functions with ordinary tools.</p>
+          <a href="/docs/start/features.html">Explore runtime features →</a>
+        </article>
+        <article class="mechanism reveal">
+          <span class="mechanism-tag">Event(type, payload, ts)</span>
+          <h3>Event Infrastructure</h3>
+          <p>A process-wide event bus carries typed activity from the agent loop, authentication, context, channels, and memory.</p>
+          <a href="/docs/reference/design/proactive/overview.html">Inspect the event design →</a>
+        </article>
+      </div>
+    </div>
+  </section>
+
   <section class="papers" id="papers">
     <div class="wrap">
       <div class="section-head reveal">
@@ -442,8 +522,8 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
       <div class="start-panel reveal">
         <div>
           <p class="kicker">Install</p>
-          <h2>Start with one command.</h2>
-          <p>The installer sets up the Python package, Web UI, terminal UI, browser tools, and channels. First run guides you through connecting a provider.</p>
+          <h2>Build your next agent with OpenProgram.</h2>
+          <p>Install the framework, connect a model provider, and start from an existing harness or your own Python workflow.</p>
           <div class="actions start-actions">
             <a class="btn btn-primary" href="/docs/start/GETTING_STARTED.html">Installation guide</a>
             <a class="btn btn-secondary" href="/docs/">Browse documentation</a>

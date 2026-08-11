@@ -20,6 +20,7 @@ class LandingParser(HTMLParser):
         super().__init__()
         self.ids: set[str] = set()
         self.images: set[str] = set()
+        self.anchors: set[str] = set()
         self.links: list[dict[str, str]] = []
         self.meta: list[dict[str, str]] = []
         self.text: list[str] = []
@@ -34,6 +35,8 @@ class LandingParser(HTMLParser):
             self.ids.add(element_id)
         if tag == "img" and (src := values.get("src")):
             self.images.add(src)
+        if tag == "a" and (href := values.get("href")):
+            self.anchors.add(href)
         if tag == "link":
             self.links.append(values)
         if tag == "meta":
@@ -92,8 +95,30 @@ def main() -> int:
                 for item in page.structured_data),
             "missing SoftwareSourceCode structured data", failures)
 
-    for section_id in ("how", "mechanisms", "interfaces", "papers", "start"):
+    for section_id in (
+        "use-cases", "quick-start", "capabilities", "interfaces",
+        "mechanisms", "papers", "start",
+    ):
         require(section_id in page.ids, f"missing #{section_id} section", failures)
+
+    for phrase in (
+        "Build agents that run in Python.",
+        "Use an agent or build your own.",
+        "Everything you need to run agents.",
+        "GUI Agent", "Research Agent", "Wiki Agent",
+    ):
+        require(phrase in visible_text, f"missing product copy: {phrase}", failures)
+
+    for harness_url in (
+        "https://github.com/Fzkuji/GUI-Agent-Harness",
+        "https://github.com/Fzkuji/Research-Agent-Harness",
+        "https://github.com/Fzkuji/Wiki-Agent-Harness",
+    ):
+        require(harness_url in page.anchors,
+                f"missing harness link {harness_url}", failures)
+
+    require("Agents are just Python functions." not in visible_text,
+            "landing page still leads with the concept message", failures)
 
     for arxiv_id in ("2606.15874", "2608.03270"):
         require(f"https://arxiv.org/abs/{arxiv_id}" in source,
@@ -103,6 +128,8 @@ def main() -> int:
 
     install = "curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash"
     require(install in visible_text, "missing documented installer", failures)
+    require('data-copy="openprogram"' in source,
+            "missing copyable openprogram run command", failures)
     require("pip install openprogram" not in visible_text,
             "landing page still advertises unsupported pip install", failures)
 
