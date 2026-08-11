@@ -323,8 +323,10 @@ def _first_unsupported_google_schema_path(
 
 def _first_required_google_reference_cycle_path(schema: dict[str, Any]) -> str | None:
     nodes: dict[tuple[Any, ...], dict[str, Any]] = {}
-    edges: dict[tuple[Any, ...], list[tuple[Any, ...]]] = {}
-    required_edges: list[tuple[tuple[Any, ...], tuple[Any, ...], tuple[Any, ...]]] = []
+    edges: dict[
+        tuple[Any, ...],
+        list[tuple[tuple[Any, ...], tuple[Any, ...] | None]],
+    ] = {}
     anchors: dict[str, tuple[Any, ...]] = {}
 
     def register(node: Any, path: tuple[Any, ...]) -> None:
@@ -337,9 +339,6 @@ def _first_required_google_reference_cycle_path(schema: dict[str, Any]) -> str |
             anchors.setdefault(anchor, path)
 
         required = node.get("required")
-        required_indexes = {
-            name: index for index, name in enumerate(required)
-        } if isinstance(required, list) else {}
         properties = node.get("properties")
         if isinstance(properties, dict):
             for name in sorted(properties):
@@ -347,14 +346,15 @@ def _first_required_google_reference_cycle_path(schema: dict[str, Any]) -> str |
                 if not isinstance(child, dict):
                     continue
                 child_path = (*path, "properties", name)
-                edges[path].append(child_path)
-                if name in required_indexes:
-                    required_edges.append((
-                        path,
-                        child_path,
-                        (*path, "required", required_indexes[name]),
-                    ))
                 register(child, child_path)
+            if isinstance(required, list):
+                for index, name in enumerate(required):
+                    child = properties.get(name)
+                    if isinstance(child, dict):
+                        edges[path].append((
+                            (*path, "properties", name),
+                            (*path, "required", index),
+                        ))
 
         definitions = node.get("$defs")
         if isinstance(definitions, dict):
@@ -362,24 +362,23 @@ def _first_required_google_reference_cycle_path(schema: dict[str, Any]) -> str |
                 child = definitions[name]
                 if isinstance(child, dict):
                     child_path = (*path, "$defs", name)
-                    edges[path].append(child_path)
                     register(child, child_path)
 
         items = node.get("items")
         if isinstance(items, dict):
             child_path = (*path, "items")
-            edges[path].append(child_path)
+            edges[path].append((child_path, None))
             register(items, child_path)
         for keyword in ("prefixItems", "anyOf", "oneOf"):
             for index, child in enumerate(node.get(keyword) or []):
                 if isinstance(child, dict):
                     child_path = (*path, keyword, index)
-                    edges[path].append(child_path)
+                    edges[path].append((child_path, None))
                     register(child, child_path)
         additional = node.get("additionalProperties")
         if isinstance(additional, dict):
             child_path = (*path, "additionalProperties")
-            edges[path].append(child_path)
+            edges[path].append((child_path, None))
             register(additional, child_path)
 
     def resolve(ref: Any) -> tuple[Any, ...] | None:
@@ -396,30 +395,29 @@ def _first_required_google_reference_cycle_path(schema: dict[str, Any]) -> str |
     for path, node in nodes.items():
         target = resolve(node.get("$ref"))
         if target in nodes:
-            edges[path].append(target)
+            edges[path].append((target, None))
 
-    def reaches_cycle(start: tuple[Any, ...]) -> bool:
-        active: set[tuple[Any, ...]] = set()
-        complete: set[tuple[Any, ...]] = set()
+    def first_required_cycle(
+        current: tuple[Any, ...],
+        active: set[tuple[Any, ...]],
+        first_required: tuple[Any, ...] | None,
+    ) -> tuple[Any, ...] | None:
+        if current in active:
+            return first_required
+        active.add(current)
+        for child, required_path in edges.get(current, ()):
+            issue = first_required_cycle(
+                child,
+                active,
+                first_required if first_required is not None else required_path,
+            )
+            if issue is not None:
+                return issue
+        active.remove(current)
+        return None
 
-        def visit(current: tuple[Any, ...]) -> bool:
-            if current in active:
-                return True
-            if current in complete:
-                return False
-            active.add(current)
-            if any(visit(child) for child in edges.get(current, ())):
-                return True
-            active.remove(current)
-            complete.add(current)
-            return False
-
-        return visit(start)
-
-    for _source, child, issue_path in sorted(required_edges, key=lambda edge: edge[2]):
-        if reaches_cycle(child):
-            return _pointer(issue_path)
-    return None
+    issue_path = first_required_cycle((), set(), None)
+    return _pointer(issue_path) if issue_path is not None else None
 
 
 def _tool_choice_allows_hidden_submit(tool_choice: Any) -> bool:

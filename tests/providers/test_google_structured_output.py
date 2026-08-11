@@ -279,11 +279,12 @@ def test_google_response_json_schema_rejects_only_required_reference_cycles(requ
         "$defs": {"node": node},
         "type": "object",
         "properties": {"root": {"$ref": "#/$defs/node"}},
+        "required": ["root"],
     }
     if required:
         with pytest.raises(StructuredOutputUnsupportedError) as exc:
             _negotiate_google(schema)
-        assert exc.value.issues[0]["path"] == "/$defs/node/required/0"
+        assert exc.value.issues[0]["path"] == "/required/0"
     else:
         assert _negotiate_google(schema).provider_schema == schema
 
@@ -374,6 +375,90 @@ def test_google_required_reachable_cycle_fails_before_credentials_and_network():
     assert exc.value.issues[0]["path"] == "/required/0"
     assert credentials == []
     assert provider_calls == []
+
+
+@pytest.mark.parametrize("reference_style", ["pointer", "anchor"])
+def test_google_required_outer_accepts_referenced_optional_recursive_property(
+    reference_style,
+):
+    node = {
+        "type": "object",
+        "properties": {
+            "next": {"$ref": "#/$defs/node" if reference_style == "pointer" else "#node"},
+        },
+    }
+    if reference_style == "anchor":
+        node["$anchor"] = "node"
+    schema = {
+        "$defs": {"node": node},
+        "type": "object",
+        "properties": {
+            "root": {
+                "$ref": "#/$defs/node" if reference_style == "pointer" else "#node",
+            },
+        },
+        "required": ["root"],
+    }
+    assert _negotiate_google(schema).provider_schema == schema
+
+
+@pytest.mark.parametrize("reference_style", ["pointer", "anchor"])
+def test_google_required_child_accepts_unreferenced_cyclic_definitions(
+    reference_style,
+):
+    if reference_style == "pointer":
+        definitions = {
+            "a": {"$ref": "#/properties/root/$defs/b"},
+            "b": {"$ref": "#/properties/root/$defs/a"},
+        }
+    else:
+        definitions = {
+            "a": {"$anchor": "a", "$ref": "#b"},
+            "b": {"$anchor": "b", "$ref": "#a"},
+        }
+    schema = {
+        "type": "object",
+        "properties": {
+            "root": {
+                "$defs": definitions,
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+            },
+        },
+        "required": ["root"],
+    }
+    assert _negotiate_google(schema).provider_schema == schema
+
+
+@pytest.mark.parametrize("reference_style", ["pointer", "anchor"])
+def test_google_required_outer_accepts_cycle_with_optional_object_edge(reference_style):
+    if reference_style == "pointer":
+        ref_a = "#/$defs/a"
+        ref_b = "#/$defs/b"
+        anchors = ({}, {})
+    else:
+        ref_a = "#a"
+        ref_b = "#b"
+        anchors = ({"$anchor": "a"}, {"$anchor": "b"})
+    schema = {
+        "$defs": {
+            "a": {
+                **anchors[0],
+                "type": "object",
+                "properties": {"b": {"$ref": ref_b}},
+                "required": ["b"],
+            },
+            "b": {
+                **anchors[1],
+                "type": "object",
+                "properties": {"a": {"$ref": ref_a}},
+            },
+        },
+        "type": "object",
+        "properties": {"root": {"$ref": ref_a}},
+        "required": ["root"],
+    }
+    assert _negotiate_google(schema).provider_schema == schema
 
 
 def test_google_real_prompt_feedback_block_is_terminal_error(monkeypatch):
