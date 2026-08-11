@@ -25,7 +25,7 @@ from typing import Any
 import httpx
 
 from openprogram.security import safe_http
-from openprogram.security.url_policy import normalize_origin
+from openprogram.security.url_policy import OwnerURLException, normalize_origin
 
 
 class ProviderHTTPError(RuntimeError):
@@ -131,7 +131,12 @@ def _execute(
 ) -> Any:
     client = (
         safe_http.configured_safe_client(
-            "tool.web_search.configured_api", configured_url
+            "tool.web_search.configured_api",
+            configured_url,
+            owner_exception=OwnerURLException(
+                consumer="tool.web_search.configured_api",
+                origin=normalize_origin(configured_url),
+            ),
         )
         if configured_url is not None
         else safe_http.safe_client(consumer)

@@ -54,6 +54,7 @@ def latest_pypi_version() -> Optional[str]:
                 timeout=HTTP_TIMEOUT,
             )
             response.raise_for_status()
+            safe_http.require_json_mime(response)
             payload = response.json()
     except Exception:
         return None

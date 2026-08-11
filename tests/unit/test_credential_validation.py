@@ -234,7 +234,7 @@ def _patch_layer2(monkeypatch, response):
     monkeypatch.setattr(
         safe_http,
         "configured_safe_client",
-        lambda consumer, _base: _FakeClient(response),
+        lambda consumer, _base, **_kwargs: _FakeClient(response),
     )
 
 

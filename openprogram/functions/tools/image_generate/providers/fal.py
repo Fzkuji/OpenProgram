@@ -76,7 +76,7 @@ class FalProvider:
         status_url = submit.get("status_url")
         response_url = submit.get("response_url")
         if not status_url or not response_url:
-            raise RuntimeError(f"FAL response missing queue URLs: {submit}")
+            raise RuntimeError("FAL response missing queue URLs") from None
 
         # Poll
         deadline = time.time() + TIMEOUT
@@ -93,7 +93,7 @@ class FalProvider:
             if st == "COMPLETED":
                 break
             if st in ("FAILED", "CANCELLED"):
-                raise RuntimeError(f"FAL job {st}: {status}")
+                raise RuntimeError(f"FAL job {st}") from None
         else:
             raise RuntimeError("FAL job timed out")
 

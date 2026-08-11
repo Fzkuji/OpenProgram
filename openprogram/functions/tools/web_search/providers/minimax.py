@@ -84,8 +84,9 @@ class MiniMaxProvider:
         base_resp = data.get("base_resp") or {}
         status_code = base_resp.get("status_code")
         if status_code and status_code != 0:
-            msg = base_resp.get("status_msg", "unknown error")
-            raise RuntimeError(f"MiniMax API error ({status_code}): {msg}")
+            if isinstance(status_code, int) and not isinstance(status_code, bool):
+                raise RuntimeError(f"MiniMax API error ({status_code})") from None
+            raise RuntimeError("MiniMax API error") from None
 
         limit = max(1, min(int(num_results), 20))
         organic = data.get("organic") or []

@@ -46,6 +46,7 @@ def latest_release_tag(
                 timeout=HTTP_TIMEOUT,
             )
             response.raise_for_status()
+            safe_http.require_json_mime(response)
             payload = response.json()
     except Exception:
         return None
@@ -77,6 +78,7 @@ def asset_for(
                 timeout=HTTP_TIMEOUT,
             )
             response.raise_for_status()
+            safe_http.require_json_mime(response)
             payload = response.json()
     except Exception:
         return None

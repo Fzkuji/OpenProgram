@@ -44,6 +44,7 @@ import httpx
 from pydantic import BaseModel, Field
 
 from openprogram.security import safe_http
+from openprogram.security.url_policy import OwnerURLException, normalize_origin
 
 from .loader import remote_cache_dir
 
@@ -154,20 +155,20 @@ _USER_AGENT = "OpenProgram-Discovery/1.0"
 
 async def _get_text(client: httpx.AsyncClient, url: str) -> str:
     r = await client.get(url, timeout=30.0, headers={"User-Agent": _USER_AGENT})
-    r.raise_for_status()
+    safe_http.raise_for_status_sanitized(r)
     return r.text
 
 
 async def _get_json_text(client: httpx.AsyncClient, url: str) -> str:
     r = await client.get(url, timeout=30.0, headers={"User-Agent": _USER_AGENT})
-    r.raise_for_status()
+    safe_http.raise_for_status_sanitized(r)
     safe_http.require_json_mime(r)
     return r.text
 
 
 async def _get_bytes(client: httpx.AsyncClient, url: str) -> bytes:
     r = await client.get(url, timeout=60.0, headers={"User-Agent": _USER_AGENT})
-    r.raise_for_status()
+    safe_http.raise_for_status_sanitized(r)
     return r.content
 
 
@@ -247,7 +248,7 @@ async def _fetch_repo_zip(client: httpx.AsyncClient, repo: GhRepo) -> tuple[byte
         repo.zip_url, timeout=60.0,
         headers={"User-Agent": _USER_AGENT, "Accept": "application/zip"},
     )
-    r.raise_for_status()
+    safe_http.raise_for_status_sanitized(r)
     mime = r.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if mime not in {
         "application/zip",
@@ -497,13 +498,12 @@ async def _pull_async(url: str, namespace: str | None = None) -> list[str]:
         if url.endswith(".json"):
             try:
                 return await _pull_from_index(client, url, namespace=ns)
-            except httpx.HTTPStatusError as e:
+            except safe_http.SafeHTTPStatusError as e:
                 # Auto-fallback: ``.json`` 404 on raw.githubusercontent.com →
                 # try treating the host repo as a tree.
                 parsed = urlparse(url)
                 if (
-                    e.response is not None
-                    and e.response.status_code == 404
+                    e.status_code == 404
                     and parsed.hostname == "raw.githubusercontent.com"
                 ):
                     parts = parsed.path.strip("/").split("/")
@@ -663,11 +663,10 @@ async def _browse_async(url: str) -> list[dict]:
         elif url.endswith(".json"):
             try:
                 entries = await _browse_index(client, url)
-            except httpx.HTTPStatusError as e:
+            except safe_http.SafeHTTPStatusError as e:
                 parsed = urlparse(url)
                 if (
-                    e.response is not None
-                    and e.response.status_code == 404
+                    e.status_code == 404
                     and parsed.hostname == "raw.githubusercontent.com"
                 ):
                     parts = parsed.path.strip("/").split("/")
@@ -789,4 +788,11 @@ def install_one(url: str, name: str, namespace: str | None = None) -> str | None
 def _client_for(url: str):
     if _parse_github(url) is not None or _parse_clawhub(url) is not None:
         return safe_http.safe_async_client("skills.github.catalog")
-    return safe_http.configured_safe_async_client("skills.configured.catalog", url)
+    consumer = "skills.configured.catalog"
+    return safe_http.configured_safe_async_client(
+        consumer,
+        url,
+        owner_exception=OwnerURLException(
+            consumer=consumer, origin=normalize_origin(url)
+        ),
+    )

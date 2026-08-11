@@ -52,7 +52,7 @@ def _codex_ping(
     the initial status code, and tear the connection down without consuming the
     SSE."""
     from openprogram.security import safe_http
-    from openprogram.security.url_policy import normalize_origin
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
     from openprogram.providers.env_api_keys import resolve_api_key_with_auth_store
     from openprogram.providers.storage import _resolve_base_url
 
@@ -103,7 +103,12 @@ def _codex_ping(
     t0 = time.time()
     try:
         with safe_http.configured_safe_client(
-            "webui.model_listing.configured", base
+            "webui.model_listing.configured",
+            base,
+            owner_exception=OwnerURLException(
+                consumer="webui.model_listing.configured",
+                origin=normalize_origin(base),
+            ),
         ) as client:
             with client.stream("POST", url, headers=headers, json=body) as r:
                 latency_ms = int((time.time() - t0) * 1000)

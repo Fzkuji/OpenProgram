@@ -7,6 +7,7 @@ import io
 import json
 import socketserver
 import threading
+import traceback
 import zipfile
 from contextlib import contextmanager
 from dataclasses import replace
@@ -53,6 +54,14 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.server.requests.append(self.path)
+        if self.path.startswith("/redirect-without-location"):
+            body = b'{"skills": []}'
+            self.send_response(302)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.startswith("/echo-error"):
             body, content_type = (
                 b"HEADER-SECRET QUERY-SECRET TOKEN-PATH",
@@ -354,6 +363,88 @@ def test_update_metadata_uses_fixed_registry_client(managed_clients, call, consu
     assert managed_clients[0] == ("client", consumer, None)
 
 
+@pytest.mark.parametrize(
+    ("call", "expected"),
+    [
+        ("plugin_pip", "9.9.9"),
+        ("plugin_npm", "9.9.9"),
+        ("github_tag", "9.9.9"),
+        ("github_asset", "https://downloads.example/demo.zip"),
+        ("pip", "9.9.9"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("mime", "accepted"),
+    [
+        ("application/json", True),
+        ("application/problem+json; charset=utf-8", True),
+        ("text/problem+json", False),
+        ("text/html", False),
+    ],
+)
+def test_update_metadata_requires_json_mime(
+    monkeypatch, call, expected, mime, accepted
+):
+    payload = {
+        "info": {"version": "9.9.9"},
+        "version": "9.9.9",
+        "tag_name": "v9.9.9",
+        "assets": [
+            {
+                "name": "demo.zip",
+                "browser_download_url": "https://downloads.example/demo.zip",
+            }
+        ],
+    }
+
+    class Response:
+        status_code = 200
+        reason_phrase = "OK"
+        headers = {"content-type": mime}
+        url = "https://api.example/metadata"
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return payload
+
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(safe_http, "safe_client", lambda *_args, **_kwargs: Client())
+
+    if call.startswith("plugin"):
+        from openprogram.plugins import autoupdate
+
+        result = (
+            autoupdate._check_pip("demo", "0")
+            if call == "plugin_pip"
+            else autoupdate._check_npm("demo", "0")
+        )
+    elif call.startswith("github"):
+        from openprogram.updater import github
+
+        result = (
+            github.latest_release_tag()
+            if call == "github_tag"
+            else github.asset_for("demo.zip")
+        )
+    else:
+        from openprogram.updater import pip
+
+        result = pip.latest_pypi_version()
+
+    assert result == (expected if accepted else None)
+
+
 def test_model_listing_openai_compat_freezes_configured_origin(
     monkeypatch, managed_clients
 ):
@@ -543,6 +634,101 @@ def test_web_mcp_catalog_malformed_status_hides_signed_url_and_peer_echo(
     assert "QUERY-SECRET" not in detail
 
 
+def _render_exception(error: BaseException) -> str:
+    return "\n".join(
+        (
+            str(error),
+            repr(error),
+            "".join(traceback.format_exception(error)),
+            repr(error.__cause__),
+            repr(error.__context__),
+        )
+    )
+
+
+def test_skills_cli_status_error_hides_signed_source_url(server):
+    from openprogram._cli_cmds.skills import _cmd_skills_search
+
+    url = f"http://127.0.0.1:{server.port}/echo-error/TOKEN-PATH?sig=QUERY-SECRET"
+
+    with pytest.raises(Exception) as caught:
+        _cmd_skills_search("", source=url)
+
+    rendered = _render_exception(caught.value)
+    assert "HTTP 401 Unauthorized" in rendered
+    assert f"http://127.0.0.1:{server.port}" in rendered
+    assert "TOKEN-PATH" not in rendered
+    assert "QUERY-SECRET" not in rendered
+    assert "HEADER-SECRET" not in rendered
+
+
+def test_skills_rejects_redirect_without_location_as_sanitized_status(server):
+    from openprogram.skills import discovery
+
+    url = (
+        f"http://127.0.0.1:{server.port}/redirect-without-location/"
+        "TOKEN-PATH?sig=QUERY-SECRET"
+    )
+
+    with pytest.raises(Exception) as caught:
+        discovery.browse(url)
+
+    rendered = _render_exception(caught.value)
+    assert "HTTP 302 Found" in rendered
+    assert f"http://127.0.0.1:{server.port}" in rendered
+    assert "TOKEN-PATH" not in rendered
+    assert "QUERY-SECRET" not in rendered
+
+
+def test_skills_web_status_error_hides_signed_source_url(server):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from openprogram.webui.routes import skills
+
+    app = FastAPI()
+    skills.register(app)
+    url = f"http://127.0.0.1:{server.port}/echo-error/TOKEN-PATH?sig=QUERY-SECRET"
+
+    response = TestClient(app).get("/api/skills/discovery/browse", params={"url": url})
+
+    assert response.status_code == 502
+    rendered = response.text
+    assert "HTTP 401 Unauthorized" in rendered
+    assert f"http://127.0.0.1:{server.port}" in rendered
+    assert "TOKEN-PATH" not in rendered
+    assert "QUERY-SECRET" not in rendered
+    assert "HEADER-SECRET" not in rendered
+
+
+def test_marketplace_cli_and_web_status_errors_hide_signed_source_url(
+    monkeypatch, server, capsys
+):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from openprogram._cli_cmds.plugins import _cmd_plugins_search
+    from openprogram.plugins import marketplace
+    from openprogram.webui.routes import plugins
+
+    url = f"http://127.0.0.1:{server.port}/echo-error/TOKEN-PATH?sig=QUERY-SECRET"
+    entry = {"id": "signed", "name": "signed", "url": url}
+    monkeypatch.setattr(marketplace, "_load", lambda: [entry])
+
+    assert _cmd_plugins_search("demo") == 0
+    cli_rendered = capsys.readouterr().err
+
+    app = FastAPI()
+    plugins.register(app)
+    response = TestClient(app).get("/api/plugins/marketplace/signed/index")
+
+    assert response.status_code == 502
+    rendered = cli_rendered + response.text
+    assert "HTTP 401 Unauthorized" in rendered
+    assert f"http://127.0.0.1:{server.port}" in rendered
+    assert "TOKEN-PATH" not in rendered
+    assert "QUERY-SECRET" not in rendered
+    assert "HEADER-SECRET" not in rendered
+
+
 def _github_over_real_managed(monkeypatch, server, *, body_cap=1024 * 1024):
     from openprogram.skills import discovery
 
@@ -642,3 +828,44 @@ def test_web_mcp_catalog_rejects_wrong_json_mime(monkeypatch, server, tmp_path):
 
     assert response.status_code == 502
     assert "URLPolicyError" in response.json()["detail"]
+
+
+def test_web_mcp_diff_keeps_same_origin_catalog_errors_distinct(
+    monkeypatch, server, tmp_path
+):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from openprogram import paths
+    from openprogram.mcp.config import MCPServerConfig, save_configs
+    from openprogram.webui.routes import mcp
+
+    origin = f"http://127.0.0.1:{server.port}"
+    sources = [
+        origin + "/echo-error/a/TOKEN-PATH?sig=QUERY-SECRET-A",
+        origin + "/echo-error/b/TOKEN-PATH?sig=QUERY-SECRET-B",
+    ]
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
+    save_configs(
+        [
+            MCPServerConfig(
+                name=f"remote-{index}",
+                type="http",
+                url="https://mcp.example/mcp",
+                source_catalog_url=source,
+            )
+            for index, source in enumerate(sources, 1)
+        ]
+    )
+    app = FastAPI()
+    mcp.register(app)
+
+    response = TestClient(app).get("/api/mcp/catalog/diff")
+
+    assert response.status_code == 200
+    errors = response.json()["catalog_errors"]
+    assert list(errors) == [origin, f"{origin}#2"]
+    assert len(errors) == 2
+    rendered = json.dumps(errors)
+    assert "TOKEN-PATH" not in rendered
+    assert "QUERY-SECRET-A" not in rendered
+    assert "QUERY-SECRET-B" not in rendered

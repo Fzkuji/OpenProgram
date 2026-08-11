@@ -5,6 +5,7 @@ import http.server
 import json
 import socketserver
 import threading
+import traceback
 from contextlib import contextmanager
 from dataclasses import replace
 
@@ -296,6 +297,81 @@ def _fixed_test_origin(monkeypatch, consumer, port):
     )
     monkeypatch.setattr(safe_http, "CONSUMER_REGISTRY", registry)
     return origin
+
+
+def _render_exception(error: BaseException) -> str:
+    return "\n".join(
+        (
+            str(error),
+            repr(error),
+            "".join(traceback.format_exception(error)),
+            repr(error.__cause__),
+            repr(error.__context__),
+        )
+    )
+
+
+@pytest.mark.parametrize("failure", ["missing", "FAILED", "CANCELLED"])
+def test_fal_200_error_envelope_omits_peer_mapping(monkeypatch, failure):
+    from openprogram.functions.tools.image_generate.providers import fal
+
+    secret_mapping = {
+        "error": "HEADER-SECRET",
+        "request": "TOKEN-PATH?sig=QUERY-SECRET",
+    }
+    monkeypatch.setenv("FAL_KEY", "secret")
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+    if failure == "missing":
+        monkeypatch.setattr(fal, "post_json", lambda *_args, **_kwargs: secret_mapping)
+    else:
+        monkeypatch.setattr(
+            fal,
+            "post_json",
+            lambda *_args, **_kwargs: {
+                "status_url": "https://queue.fal.run/status",
+                "response_url": "https://queue.fal.run/result",
+            },
+        )
+        monkeypatch.setattr(
+            fal,
+            "get_json",
+            lambda *_args, **_kwargs: {"status": failure, **secret_mapping},
+        )
+
+    with pytest.raises(RuntimeError) as caught:
+        fal.FalProvider().generate("draw")
+
+    rendered = _render_exception(caught.value)
+    expected = "missing queue URLs" if failure == "missing" else f"job {failure}"
+    assert expected in rendered
+    assert "HEADER-SECRET" not in rendered
+    assert "TOKEN-PATH" not in rendered
+    assert "QUERY-SECRET" not in rendered
+
+
+def test_minimax_200_error_envelope_omits_peer_status_message(monkeypatch):
+    from openprogram.functions.tools.web_search.providers import minimax
+
+    monkeypatch.setenv("MINIMAX_CODE_PLAN_KEY", "secret")
+    monkeypatch.setattr(
+        minimax,
+        "post_json",
+        lambda *_args, **_kwargs: {
+            "base_resp": {
+                "status_code": 17,
+                "status_msg": "HEADER-SECRET TOKEN-PATH?sig=QUERY-SECRET",
+            }
+        },
+    )
+
+    with pytest.raises(RuntimeError) as caught:
+        minimax.MiniMaxProvider().search("query")
+
+    rendered = _render_exception(caught.value)
+    assert "MiniMax API error (17)" in rendered
+    assert "HEADER-SECRET" not in rendered
+    assert "TOKEN-PATH" not in rendered
+    assert "QUERY-SECRET" not in rendered
 
 
 def test_web_search_malformed_status_hides_signed_url_and_peer_echo(
@@ -764,6 +840,30 @@ def test_configured_search_keeps_credential_on_exact_origin_and_rejects_redirect
 
     assert len(server.requests) == 1
     assert server.requests[0][2]["authorization"] == "Bearer TOKEN"
+
+
+def test_configured_search_passes_explicit_owner_exception(monkeypatch):
+    from openprogram.functions.tools.web_search.providers import ollama
+    from openprogram.security.url_policy import OwnerURLException
+
+    calls = []
+
+    def factory(consumer, configured_url, *, owner_exception):
+        calls.append((consumer, configured_url, owner_exception))
+        return _Client([], consumer)
+
+    monkeypatch.setattr(safe_http, "configured_safe_client", factory)
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:19020/api")
+    monkeypatch.setenv("OLLAMA_API_KEY", "secret")
+
+    ollama.OllamaProvider().search("query", num_results=1)
+
+    consumer, configured_url, exception = calls[0]
+    assert consumer == "tool.web_search.configured_api"
+    assert configured_url == "http://127.0.0.1:19020/api"
+    assert type(exception) is OwnerURLException
+    assert exception.consumer == consumer
+    assert exception.origin == "http://127.0.0.1:19020"
 
 
 def test_fixed_search_rejects_private_redirect_before_second_request(

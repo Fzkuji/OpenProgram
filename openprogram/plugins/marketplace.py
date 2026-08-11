@@ -134,11 +134,18 @@ async def fetch_index(mid: str) -> list[dict[str, Any]]:
     if not m:
         raise KeyError(mid)
     from openprogram.security import safe_http
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
+
+    consumer = "plugins.marketplace"
     async with safe_http.configured_safe_async_client(
-        "plugins.marketplace", m["url"]
+        consumer,
+        m["url"],
+        owner_exception=OwnerURLException(
+            consumer=consumer, origin=normalize_origin(m["url"])
+        ),
     ) as client:
         r = await client.get(m["url"])
-        r.raise_for_status()
+        safe_http.raise_for_status_sanitized(r)
         safe_http.require_json_mime(r)
         data = r.json()
     if isinstance(data, dict) and isinstance(data.get("plugins"), list):

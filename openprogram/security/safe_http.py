@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import Enum
+from http import HTTPStatus
 from pathlib import Path
 from time import monotonic
 from types import MappingProxyType
@@ -419,6 +420,21 @@ class OutboundSecurityConfig:
             except URLPolicyError as exc:
                 safe_origin = exc.safe_url
             raise URLPolicyError("POLICY_PROXY_ENFORCEMENT_REQUIRED", safe_origin)
+
+
+class SafeHTTPStatusError(RuntimeError):
+    """HTTP status failure without request paths, queries, or peer text."""
+
+    def __init__(self, status_code: int, origin: str):
+        self.status_code = status_code
+        self.origin = origin
+        try:
+            reason = HTTPStatus(status_code).phrase
+        except ValueError:
+            reason = ""
+        super().__init__(
+            f"HTTP {status_code}{f' {reason}' if reason else ''} for {origin}"
+        )
 
 
 def _canonical_peer(stream: Any, decision: URLDecision):
@@ -1434,27 +1450,57 @@ def safe_async_client(
     )
 
 
-def configured_safe_client(consumer: str, configured_url: str) -> SafeClient:
-    """Freeze an owner-configured exact origin before any request is built."""
+def _configured_security(
+    consumer: str,
+    origin: str,
+    owner_exception: OwnerURLException | None,
+) -> OutboundSecurityConfig | None:
+    if owner_exception is None:
+        return None
+    if type(owner_exception) is not OwnerURLException:
+        raise TypeError("owner_exception must be an OwnerURLException")
+    if (
+        owner_exception.consumer != consumer
+        or owner_exception.origin is None
+        or owner_exception.network is not None
+    ):
+        raise URLPolicyError("OWNER_EXCEPTION_MISMATCH", origin)
+    try:
+        authorized_origin = normalize_origin(owner_exception.origin)
+    except URLPolicyError:
+        raise URLPolicyError("OWNER_EXCEPTION_MISMATCH", origin) from None
+    if authorized_origin != origin:
+        raise URLPolicyError("OWNER_EXCEPTION_MISMATCH", origin)
+    return OutboundSecurityConfig(owner_exceptions=(owner_exception,))
+
+
+def configured_safe_client(
+    consumer: str,
+    configured_url: str,
+    *,
+    owner_exception: OwnerURLException | None = None,
+) -> SafeClient:
+    """Freeze an exact origin; private access needs explicit owner authorization."""
     origin = normalize_origin(configured_url)
     return safe_client(
         consumer,
         configured_origin=origin,
-        security=OutboundSecurityConfig(
-            owner_exceptions=(OwnerURLException(consumer=consumer, origin=origin),)
-        ),
+        security=_configured_security(consumer, origin, owner_exception),
     )
 
 
-def configured_safe_async_client(consumer: str, configured_url: str) -> SafeAsyncClient:
+def configured_safe_async_client(
+    consumer: str,
+    configured_url: str,
+    *,
+    owner_exception: OwnerURLException | None = None,
+) -> SafeAsyncClient:
     """Async exact-origin counterpart to :func:`configured_safe_client`."""
     origin = normalize_origin(configured_url)
     return safe_async_client(
         consumer,
         configured_origin=origin,
-        security=OutboundSecurityConfig(
-            owner_exceptions=(OwnerURLException(consumer=consumer, origin=origin),)
-        ),
+        security=_configured_security(consumer, origin, owner_exception),
     )
 
 
@@ -1462,8 +1508,21 @@ def require_json_mime(response: httpx.Response) -> None:
     """Reject catalog metadata not explicitly served as JSON."""
     content_type = response.headers.get("content-type", "")
     mime = content_type.split(";", 1)[0].strip().lower()
-    if mime != "application/json" and not mime.endswith("+json"):
+    subtype = (
+        mime.removeprefix("application/") if mime.startswith("application/") else ""
+    )
+    if mime != "application/json" and not (
+        len(subtype) > len("+json") and subtype.endswith("+json")
+    ):
         raise URLPolicyError("MIME_TYPE_FORBIDDEN", normalize_origin(str(response.url)))
+
+
+def raise_for_status_sanitized(response: httpx.Response) -> None:
+    """Raise an origin-only status error using the standard HTTP reason."""
+    if not 200 <= response.status_code < 300:
+        raise SafeHTTPStatusError(
+            response.status_code, normalize_origin(str(response.url))
+        ) from None
 
 
 __all__ = [
@@ -1479,9 +1538,11 @@ __all__ = [
     "SDKDisposition",
     "SafeAsyncClient",
     "SafeClient",
+    "SafeHTTPStatusError",
     "configured_safe_async_client",
     "configured_safe_client",
     "require_json_mime",
+    "raise_for_status_sanitized",
     "safe_async_client",
     "safe_client",
 ]

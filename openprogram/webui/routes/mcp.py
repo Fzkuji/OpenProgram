@@ -76,11 +76,16 @@ def _one_shot_client(cfg: MCPServerConfig, sandbox_cwd: str):
 
 async def _fetch_catalog_json(url: str):
     from openprogram.security import safe_http
-    from openprogram.security.url_policy import normalize_origin
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
 
+    consumer = "webui.mcp.catalog"
     try:
         async with safe_http.configured_safe_async_client(
-            "webui.mcp.catalog", url
+            consumer,
+            url,
+            owner_exception=OwnerURLException(
+                consumer=consumer, origin=normalize_origin(url)
+            ),
         ) as client:
             response = await client.get(url, timeout=15.0)
             if response.status_code >= 400:
@@ -295,9 +300,13 @@ def register(app: FastAPI) -> None:
                 if not c.source_catalog_url
             ]
 
+        origin_counts: dict[str, int] = {}
         for cat_url in targets:
             from openprogram.security.url_policy import normalize_origin
-            safe_catalog = normalize_origin(cat_url)
+            origin = normalize_origin(cat_url)
+            ordinal = origin_counts.get(origin, 0) + 1
+            origin_counts[origin] = ordinal
+            safe_catalog = origin if ordinal == 1 else f"{origin}#{ordinal}"
             try:
                 data = await _fetch_catalog_json(cat_url)
             except Exception as e:  # noqa: BLE001
@@ -404,10 +413,12 @@ def register(app: FastAPI) -> None:
             None,
         )
         if catalog_entry is None:
+            from openprogram.security.url_policy import normalize_origin
+
             raise HTTPException(
                 status_code=502,
                 detail=(f"server '{name}' no longer in catalog "
-                        f"{match.source_catalog_url!r}"),
+                        f"{normalize_origin(match.source_catalog_url)}"),
             )
 
         # Build the merged config: take catalog's connection/auth

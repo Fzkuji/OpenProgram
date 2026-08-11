@@ -167,12 +167,18 @@ def _http_get(
 ) -> tuple[int, str, int] | None:
     """``(status, body, latency_ms)`` or ``None`` on a transport error."""
     from openprogram.security import safe_http
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
 
     t0 = time.time()
     try:
         client = (
             safe_http.configured_safe_client(
-                "webui.model_listing.configured", configured_url
+                "webui.model_listing.configured",
+                configured_url,
+                owner_exception=OwnerURLException(
+                    consumer="webui.model_listing.configured",
+                    origin=normalize_origin(configured_url),
+                ),
             )
             if configured_url is not None
             else safe_http.safe_client("webui.model_listing.fixed")
@@ -272,17 +278,22 @@ def _layer2_ping(provider_id: str, kind: str, api_key: str, base: str | None,
         return dataclasses.replace(r, model=model)
 
     from openprogram.security import safe_http
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
     url = base.rstrip("/") + "/chat/completions"
     body = {"model": model, "messages": [{"role": "user", "content": "PING"}], "max_tokens": 4}
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
     t0 = time.time()
     try:
         with safe_http.configured_safe_client(
-            "webui.model_listing.configured", base
+            "webui.model_listing.configured",
+            base,
+            owner_exception=OwnerURLException(
+                consumer="webui.model_listing.configured",
+                origin=normalize_origin(base),
+            ),
         ) as client:
             r = client.post(url, headers=headers, json=body, timeout=timeout)
     except Exception as e:
-        from openprogram.security.url_policy import normalize_origin
         return _result(
             provider_id, UNKNOWN, kind=kind, model=model,
             detail=f"Request failed: {type(e).__name__} for {normalize_origin(url)}",

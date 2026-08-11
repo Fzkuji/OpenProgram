@@ -65,6 +65,7 @@ def _check_pip(dist_name: str, current_version: str) -> str | None:
         with safe_http.safe_client("plugins.autoupdate") as client:
             response = client.get(url, timeout=10)
             response.raise_for_status()
+            safe_http.require_json_mime(response)
             data = response.json()
     except Exception:
         return None
@@ -84,6 +85,7 @@ def _check_npm(pkg_name: str, current_version: str) -> str | None:
         with safe_http.safe_client("plugins.autoupdate") as client:
             response = client.get(url, timeout=10)
             response.raise_for_status()
+            safe_http.require_json_mime(response)
             data = response.json()
     except Exception:
         return None
