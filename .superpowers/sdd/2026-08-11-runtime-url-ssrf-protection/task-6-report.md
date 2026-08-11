@@ -247,3 +247,33 @@ Tests changed or added:
 - Complete `tests/security`: `481 passed in 76.70s`.
 - Ruff lint: PASS. Ruff format check: both changed Python files formatted.
   `uv lock --check`: PASS. `git diff --check`: PASS.
+
+## Quality-review fix round
+
+- Remote registered-tool secrecy RED:
+  `uv run --frozen --extra dev pytest -q tests/security/test_runtime_sdk_transports.py -k 'registered_remote_mcp_tool_sanitizes_peer_failures_and_exception_graph'`
+  failed `2` cases. Both direct peer failure and a failed session-expired retry
+  exposed peer body, signed path/query, and bearer-token sentinels in the
+  model-visible registered-tool result.
+- Gateway constructor import-order RED:
+  `uv run --frozen --extra dev pytest -q tests/security/test_runtime_sdk_transports.py -k 'uninjectable_gateway_sdk_is_disabled_before_sdk_import'`
+  failed `2` cases. Normal Slack and Discord constructors attempted their
+  disabled SDK imports and raised the import sentinel before reaching
+  `UNMANAGED_TRANSPORT`.
+- Remote registered-tool secrecy GREEN: the same focused command passed both
+  cases. Remote `call_tool()` now classifies the caught peer error inside the
+  handler but raises its origin-only replacement after leaving the handler, so
+  traceback, cause, and context retain no peer values. The error preserves the
+  original exception kind and normalized MCP origin; session-expired still
+  signals reconnect and retries once before a final sanitized failure.
+- Gateway constructor import-order GREEN: the same focused command passed both
+  normal-construction cases. Slack and Discord now check their disabled
+  registry dispositions before credential loading or any gateway SDK import;
+  the existing `run()` checks remain as a second fail-closed boundary.
+- Combined quality-fix targeted set: `6 passed, 30 deselected in 0.17s`.
+- Task 6 brief affected set: `278 passed, 2 skipped, 1 xfailed in 10.89s`.
+- Complete `tests/security`: `483 passed in 76.26s`.
+- Ruff lint: PASS. The changed security test is Ruff-formatted; whole-file
+  format checks for the three touched production modules remain failing exactly
+  as at pre-fix HEAD due to existing legacy formatting. `uv lock --check`:
+  PASS. `git diff --check`: PASS.

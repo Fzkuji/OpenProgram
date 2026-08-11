@@ -26,6 +26,11 @@ class SlackChannel(Channel):
         return f"{ch_msg.chat_id}_{ch_msg.user_id}"
 
     def __init__(self, account_id: str = "default") -> None:
+        from openprogram.security.safe_http import require_active_sdk_transport
+
+        require_active_sdk_transport(
+            "channel.slack.gateway_sdk", "https://slack.com"
+        )
         from openprogram.channels import accounts as _accounts
         creds = _accounts.load_credentials("slack", account_id)
         bot_token = creds.get("bot_token")

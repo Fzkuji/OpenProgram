@@ -8,6 +8,7 @@ import socket
 import socketserver
 import threading
 import time
+import traceback
 import warnings
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
@@ -563,28 +564,155 @@ def test_mcp_supervisor_sanitizes_remote_transient_stderr(capsys):
 
 
 @pytest.mark.parametrize(
-    ("module_name", "class_name", "attrs"),
+    ("peer_error", "calls_per_execution", "expects_reconnect"),
+    [
+        ("PEER-BODY TOKEN-PATH QUERY-SECRET BEARER-TOKEN", 1, False),
+        (
+            "session expired PEER-BODY TOKEN-PATH QUERY-SECRET BEARER-TOKEN",
+            2,
+            True,
+        ),
+    ],
+)
+def test_registered_remote_mcp_tool_sanitizes_peer_failures_and_exception_graph(
+    peer_error,
+    calls_per_execution,
+    expects_reconnect,
+):
+    import asyncio
+    from mcp.types import Tool
+    from openprogram.functions._runtime import (
+        get,
+        restore_registry,
+        snapshot_registry,
+    )
+    from openprogram.mcp.adapter import register_remote_tool
+    from openprogram.mcp.client import MCPClient
+    from openprogram.mcp.config import MCPServerConfig
+
+    snapshot = snapshot_registry()
+
+    class PeerSession:
+        calls = 0
+
+        async def call_tool(self, *_args, **_kwargs):
+            self.calls += 1
+            raise RuntimeError(peer_error)
+
+    async def exercise():
+        client = MCPClient(
+            MCPServerConfig(
+                name="remote-peer",
+                type="http",
+                url="https://mcp.example/TOKEN-PATH?sig=QUERY-SECRET",
+                timeout_seconds=1,
+            )
+        )
+        session = PeerSession()
+        client._session = session
+        client._ready.set()
+        registered_name = register_remote_tool(
+            client,
+            Tool(
+                name="boom",
+                description="remote failure",
+                inputSchema={"type": "object", "properties": {}},
+            ),
+        )
+        agent_tool = get(registered_name)
+        result = await agent_tool.execute("call-1", {}, None, None)
+
+        caught = None
+        try:
+            await client.call_tool("boom", {})
+        except Exception as exc:  # noqa: BLE001 - inspect the public error graph
+            caught = exc
+        assert caught is not None
+
+        rendered_result = repr(result)
+        rendered_exception = "\n".join(
+            (
+                str(caught),
+                repr(caught),
+                "".join(traceback.format_exception(caught)),
+            )
+        )
+        for secret in (
+            "PEER-BODY",
+            "TOKEN-PATH",
+            "QUERY-SECRET",
+            "BEARER-TOKEN",
+        ):
+            assert secret not in rendered_result
+            assert secret not in rendered_exception
+        assert "https://mcp.example" in rendered_result
+        assert "https://mcp.example" in rendered_exception
+        assert "RuntimeError" in rendered_result
+        assert "RuntimeError" in rendered_exception
+        assert caught.__cause__ is None
+        assert caught.__context__ is None
+        assert session.calls == calls_per_execution * 2
+        assert client._reconnect_signal.is_set() is expects_reconnect
+
+    try:
+        asyncio.run(exercise())
+    finally:
+        restore_registry(snapshot)
+
+
+@pytest.mark.parametrize(
+    ("module_name", "class_name", "platform", "credentials", "sdk_prefix"),
     [
         (
             "openprogram.channels.implementations.slack",
             "SlackChannel",
-            {"account_id": "test", "bot_token": "x", "app_token": "x"},
+            "slack",
+            {"bot_token": "xoxb-test", "app_token": "xapp-test"},
+            "slack_sdk",
         ),
         (
             "openprogram.channels.implementations.discord",
             "DiscordChannel",
-            {"account_id": "test", "token": "x"},
+            "discord",
+            {"bot_token": "discord-test"},
+            "discord",
         ),
     ],
 )
 def test_uninjectable_gateway_sdk_is_disabled_before_sdk_import(
-    module_name, class_name, attrs
+    monkeypatch,
+    module_name,
+    class_name,
+    platform,
+    credentials,
+    sdk_prefix,
 ):
+    import builtins
+    from openprogram.channels import accounts
+
     module = __import__(module_name, fromlist=[class_name])
-    instance = getattr(module, class_name).__new__(getattr(module, class_name))
-    for name, value in attrs.items():
-        setattr(instance, name, value)
+    channel_class = getattr(module, class_name)
+    monkeypatch.setattr(
+        accounts,
+        "load_credentials",
+        lambda requested_platform, account_id: (
+            credentials
+            if (requested_platform, account_id) == (platform, "test")
+            else {}
+        ),
+    )
+    sdk_imports = []
+    real_import = builtins.__import__
+
+    def import_sentinel(name, *args, **kwargs):
+        if name == sdk_prefix or name.startswith(f"{sdk_prefix}."):
+            sdk_imports.append(name)
+            raise AssertionError(f"disabled SDK imported: {name}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_sentinel)
 
     with pytest.raises(URLPolicyError) as exc:
-        instance.run(SimpleNamespace(is_set=lambda: False))
+        channel_class("test")
     assert exc.value.reason == "UNMANAGED_TRANSPORT"
+    assert sdk_imports == []

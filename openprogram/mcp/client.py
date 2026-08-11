@@ -378,8 +378,10 @@ class MCPClient:
         if the session can't be re-established within a short window.
         """
         timeout_delta = datetime.timedelta(seconds=self.config.timeout_seconds)
+        remote_error: RuntimeError | None = None
         for attempt in range(2):
             await self._await_session_ready()
+            retry = False
             try:
                 async with self._call_lock:
                     return await self._session.call_tool(
@@ -389,14 +391,23 @@ class MCPClient:
                     )
             except Exception as e:  # noqa: BLE001
                 if attempt == 0 and _is_session_expired(e):
-                    # Tell the supervisor to bounce — it'll re-init
-                    # the session, our next loop iteration uses the
-                    # fresh one.
-                    self._signal_reconnect()
-                    await self._await_session_ready(timeout=15)
-                    continue
-                raise
-        # Loop only exits via return; ``raise`` above handles failure.
+                    retry = True
+                elif self.config.is_remote:
+                    remote_error = RuntimeError(_supervisor_error(self.config, e))
+                else:
+                    raise
+            if retry:
+                # Tell the supervisor to bounce — it'll re-init the session,
+                # and the next loop iteration uses the fresh one. This runs
+                # outside the caught peer exception so a reconnect failure
+                # cannot retain peer text in its implicit context.
+                self._signal_reconnect()
+                await self._await_session_ready(timeout=15)
+                continue
+            if remote_error is not None:
+                break
+        if remote_error is not None:
+            raise remote_error from None
         raise RuntimeError("unreachable")
 
     async def _await_session_ready(self, *, timeout: float = 0.0) -> None:
