@@ -528,8 +528,32 @@ def test_bash_execution_failures_use_typed_error(
     assert "is_error" not in result.details
 
 
-def test_agentic_subprocess_error_reaches_agent_loop_as_typed_error(
-    monkeypatch,
+@pytest.mark.parametrize(
+    ("subprocess_result", "expected_text", "expected_reason"),
+    [
+        (
+            {"error": "subprocess failed"},
+            "subprocess failed",
+            "agentic_subprocess_error",
+        ),
+        (
+            {
+                "error": "subprocess died without writing result",
+                "killed": True,
+                "signal": 11,
+            },
+            "subprocess died without writing result",
+            "agentic_subprocess_error",
+        ),
+        (
+            {"killed": True, "signal": 9},
+            "[cancelled by user]",
+            "agentic_subprocess_cancelled",
+        ),
+    ],
+)
+def test_agentic_subprocess_failure_reaches_agent_loop_as_typed_error(
+    monkeypatch, subprocess_result, expected_text, expected_reason
 ) -> None:
     from contextlib import nullcontext
 
@@ -569,7 +593,7 @@ def test_agentic_subprocess_error_reaches_agent_loop_as_typed_error(
     monkeypatch.setattr(
         process_runner,
         "run_agentic_in_subprocess",
-        lambda **kwargs: {"error": "subprocess failed"},
+        lambda **kwargs: subprocess_result,
     )
     monkeypatch.setattr(session_db, "default_db", lambda: FakeDB())
     monkeypatch.setattr(exec_dag, "live_progress", lambda *a, **kw: nullcontext())
@@ -636,8 +660,13 @@ def test_agentic_subprocess_error_reaches_agent_loop_as_typed_error(
         if isinstance(message, ToolResultMessage)
     ]
     assert len(results) == 1
-    assert results[0].content[0].text == "subprocess failed"
+    assert results[0].content[0].text == expected_text
     assert results[0].is_error is True
+    assert results[0].details["reason_code"] == expected_reason
+    if subprocess_result.get("killed"):
+        assert results[0].details["killed"] is True
+    if subprocess_result.get("signal") is not None:
+        assert results[0].details["signal"] == subprocess_result["signal"]
 
 
 # ---------------------------------------------------------------------------
