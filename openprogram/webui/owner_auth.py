@@ -42,27 +42,31 @@ _INLINE_SCRIPT_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
-_PUBLIC_FRONTEND_ROUTES = frozenset({
-    "",
-    "/",
-    "/chat",
-    "/chats",
-    "/desktop-transfer-acceptance",
-    "/functions",
-    "/mcp",
-    "/memory",
-    "/plugin",
-    "/plugins",
-    "/programs",
-    "/projects",
-    "/settings",
-    "/skills",
-})
-_PUBLIC_STATIC_FILES = frozenset({
-    "/favicon.ico",
-    "/icon.svg",
-    "/manifest.webmanifest",
-})
+_PUBLIC_FRONTEND_ROUTES = frozenset(
+    {
+        "",
+        "/",
+        "/chat",
+        "/chats",
+        "/desktop-transfer-acceptance",
+        "/functions",
+        "/mcp",
+        "/memory",
+        "/plugin",
+        "/plugins",
+        "/programs",
+        "/projects",
+        "/settings",
+        "/skills",
+    }
+)
+_PUBLIC_STATIC_FILES = frozenset(
+    {
+        "/favicon.ico",
+        "/icon.svg",
+        "/manifest.webmanifest",
+    }
+)
 _PUBLIC_STATIC_PREFIXES = (
     "/_next/",
     "/html/",
@@ -73,7 +77,20 @@ _PUBLIC_STATIC_PREFIXES = (
 )
 
 
-def _write_private_text(path: Path, content: str) -> None:
+def _write_private_text(
+    path: Path, content: str, *, expected_revision: str | None = None
+):
+    if path.name == "token":
+        from openprogram.credential_files import _private_atomic_write
+
+        return _private_atomic_write(
+            path,
+            lambda handle: handle.write(content.encode("ascii")),
+            root=path.parent.parent,
+            expected_revision=expected_revision,
+        )
+
+    # Non-secret Web access metadata retains its existing lifecycle.
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(6)}.tmp")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
@@ -168,7 +185,9 @@ class OwnerAuthState:
 
         try:
             if owner_principal_id is None:
-                from openprogram.agent.authority import owner_principal_id as get_owner_principal_id
+                from openprogram.agent.authority import (
+                    owner_principal_id as get_owner_principal_id,
+                )
 
                 owner_principal_id = get_owner_principal_id()
             state = cls.from_raw_token(
@@ -197,7 +216,17 @@ class OwnerAuthState:
                 ),
             )
             return state
-        except Exception:
+        except Exception as exc:
+            from openprogram.credential_files import PrivateAtomicWriteError
+
+            if isinstance(exc, PrivateAtomicWriteError) and exc.committed:
+                if "state" in locals() and state._lock_handle is handle:
+                    state._lock_handle = None
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                finally:
+                    handle.close()
+                raise
             if "state" in locals() and state._lock_handle is handle:
                 state.close()
             else:
@@ -396,17 +425,21 @@ async def _websocket_response(send, status: int, error: str, scope) -> None:
         ]
         if status == 401:
             headers.append((b"www-authenticate", b'Bearer realm="OpenProgram"'))
-        await send({
-            "type": "websocket.http.response.start",
-            "status": status,
-            "headers": headers,
-        })
+        await send(
+            {
+                "type": "websocket.http.response.start",
+                "status": status,
+                "headers": headers,
+            }
+        )
         await send({"type": "websocket.http.response.body", "body": body})
     else:
         await send({"type": "websocket.close", "code": 1008})
 
 
-def _replace_header(headers: list[tuple[bytes, bytes]], name: bytes, value: bytes) -> None:
+def _replace_header(
+    headers: list[tuple[bytes, bytes]], name: bytes, value: bytes
+) -> None:
     lowered = name.lower()
     headers[:] = [(key, val) for key, val in headers if key.lower() != lowered]
     headers.append((name, value))
@@ -417,9 +450,9 @@ def _shell_content_security_policy(body: bytes = b"") -> bytes:
     for match in _INLINE_SCRIPT_RE.finditer(body):
         if re.search(rb"\bsrc\s*=", match.group("attributes"), re.IGNORECASE):
             continue
-        digest = base64.b64encode(
-            hashlib.sha256(match.group("body")).digest()
-        ).decode("ascii")
+        digest = base64.b64encode(hashlib.sha256(match.group("body")).digest()).decode(
+            "ascii"
+        )
         hashes.append(f"'sha256-{digest}'")
     script_sources = " ".join(("'self'", *hashes))
     return (
@@ -490,14 +523,10 @@ class OwnerAuthMiddleware:
             return
         headers = _headers(scope)
         try:
-            request_origin, origin = _request_origin(
-                scope, headers, self.auth_state
-            )
+            request_origin, origin = _request_origin(scope, headers, self.auth_state)
         except OwnerAuthError:
             if scope["type"] == "websocket":
-                await _websocket_response(
-                    send, 403, "request_origin_rejected", scope
-                )
+                await _websocket_response(send, 403, "request_origin_rejected", scope)
             else:
                 await _http_response(send, 403, "request_origin_rejected")
             return
@@ -510,15 +539,16 @@ class OwnerAuthMiddleware:
             await self._bootstrap(scope, receive, send, headers, request_origin, origin)
             return
 
-        public = (
-            scope["type"] == "http"
-            and (path == "/healthz" or _public_shell(scope))
+        public = scope["type"] == "http" and (
+            path == "/healthz" or _public_shell(scope)
         )
         if public:
             await self.app(
                 scope,
                 receive,
-                _response_sender(send, no_store=path == "/healthz", shell=path != "/healthz"),
+                _response_sender(
+                    send, no_store=path == "/healthz", shell=path != "/healthz"
+                ),
             )
             return
 
@@ -533,16 +563,14 @@ class OwnerAuthMiddleware:
         cookie_authenticated = cookie is not None and hmac.compare_digest(
             cookie, self.auth_state.cookie_value
         )
-        bearer_authenticated = (
-            bearer_provided and self.auth_state.verify_token(bearer_token)
+        bearer_authenticated = bearer_provided and self.auth_state.verify_token(
+            bearer_token
         )
         if (bearer_provided and not bearer_authenticated) or (
             not bearer_provided and not cookie_authenticated
         ):
             if scope["type"] == "websocket":
-                await _websocket_response(
-                    send, 401, "authentication_required", scope
-                )
+                await _websocket_response(send, 401, "authentication_required", scope)
             else:
                 await _http_response(send, 401, "authentication_required")
             return
@@ -553,16 +581,12 @@ class OwnerAuthMiddleware:
         )
         if using_cookie and origin_required and origin is None:
             if scope["type"] == "websocket":
-                await _websocket_response(
-                    send, 403, "request_origin_rejected", scope
-                )
+                await _websocket_response(send, 403, "request_origin_rejected", scope)
             else:
                 await _http_response(send, 403, "request_origin_rejected")
             return
 
-        scope.setdefault("state", {})["authority"] = dict(
-            self.auth_state.authority
-        )
+        scope.setdefault("state", {})["authority"] = dict(self.auth_state.authority)
         await self.app(
             scope,
             receive,
@@ -610,15 +634,17 @@ class OwnerAuthMiddleware:
             {"proof": proof},
             separators=(",", ":"),
         ).encode("utf-8")
-        await send({
-            "type": "http.response.start",
-            "status": 200,
-            "headers": [
-                (b"content-type", b"application/json"),
-                (b"content-length", str(len(body)).encode("ascii")),
-                (b"cache-control", b"no-store"),
-            ],
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode("ascii")),
+                    (b"cache-control", b"no-store"),
+                ],
+            }
+        )
         await send({"type": "http.response.body", "body": body})
 
     async def _bootstrap(
@@ -680,17 +706,18 @@ class OwnerAuthMiddleware:
         secure = request_origin.startswith("https://")
         cookie = (
             f"{self.auth_state.cookie_name}={self.auth_state.cookie_value}; Path=/; "
-            "HttpOnly; SameSite=Strict"
-            + ("; Secure" if secure else "")
+            "HttpOnly; SameSite=Strict" + ("; Secure" if secure else "")
         ).encode("ascii")
-        await send({
-            "type": "http.response.start",
-            "status": 204,
-            "headers": [
-                (b"set-cookie", cookie),
-                (b"cache-control", b"no-store"),
-            ],
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 204,
+                "headers": [
+                    (b"set-cookie", cookie),
+                    (b"cache-control", b"no-store"),
+                ],
+            }
+        )
         await send({"type": "http.response.body", "body": b""})
 
 

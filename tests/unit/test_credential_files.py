@@ -7,9 +7,19 @@ import json
 import os
 import stat
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
+
+
+def _wait_for_path(path: Path) -> None:
+    deadline = time.monotonic() + 5
+    while not path.exists():
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"timed out waiting for {path}")
+        time.sleep(0.01)
 
 
 def test_inventory_classifies_every_persisted_secret_surface() -> None:
@@ -525,3 +535,161 @@ def test_private_atomic_write_reports_committed_not_durable(
     assert exc.value.code == "committed_not_durable"
     assert exc.value.committed is True
     assert target.read_bytes() == b"new"
+
+
+def test_private_atomic_write_revision_fingerprints_exact_bytes_and_missing(
+    tmp_path: Path,
+) -> None:
+    from openprogram.credential_files import (
+        _private_atomic_write,
+        private_file_revision,
+    )
+
+    root = tmp_path / "state"
+    root.mkdir(mode=0o700)
+    target = root / "config.json"
+    missing = private_file_revision(target, root=root)
+
+    first = _private_atomic_write(
+        target,
+        lambda handle: handle.write(b'{"value":1}\n'),
+        root=root,
+        expected_revision=missing,
+    )
+    second_revision = private_file_revision(target, root=root)
+    target.write_bytes(b'{"value":1} \n')
+    target.chmod(0o600)
+
+    assert missing.startswith("missing:sha256:")
+    assert first.revision == second_revision
+    assert private_file_revision(target, root=root) != second_revision
+
+
+def test_private_atomic_write_rejects_stale_revision_before_publication(
+    tmp_path: Path,
+) -> None:
+    from openprogram.credential_files import (
+        PrivateAtomicWriteError,
+        _private_atomic_write,
+        private_file_revision,
+    )
+
+    root = tmp_path / "state"
+    root.mkdir(mode=0o700)
+    target = root / "config.json"
+    target.write_bytes(b"initial")
+    target.chmod(0o600)
+    revision = private_file_revision(target, root=root)
+    target.write_bytes(b"external-edit")
+
+    with pytest.raises(PrivateAtomicWriteError) as exc:
+        _private_atomic_write(
+            target,
+            lambda handle: handle.write(b"ours"),
+            root=root,
+            expected_revision=revision,
+        )
+
+    assert exc.value.code == "conflict"
+    assert exc.value.committed is False
+    assert target.read_bytes() == b"external-edit"
+
+
+def test_private_atomic_update_serializes_two_processes(tmp_path: Path) -> None:
+    root = tmp_path / "state"
+    root.mkdir(mode=0o700)
+    target = root / "config.json"
+    target.write_text("{}", encoding="utf-8")
+    target.chmod(0o600)
+    script = """
+import json, sys, time
+from pathlib import Path
+from openprogram.credential_files import _private_atomic_update
+root, target, key = map(Path, sys.argv[1:])
+def update(raw):
+    value = json.loads((raw or b'{}').decode())
+    time.sleep(0.15)
+    value[key.name] = key.name
+    return json.dumps(value, sort_keys=True).encode()
+_private_atomic_update(target, update, root=root)
+"""
+    processes = [
+        subprocess.Popen(
+            [sys.executable, "-c", script, os.fspath(root), os.fspath(target), key],
+            cwd=Path(__file__).parents[2],
+        )
+        for key in ("first", "second")
+    ]
+
+    assert [process.wait(timeout=10) for process in processes] == [0, 0]
+    assert json.loads(target.read_text(encoding="utf-8")) == {
+        "first": "first",
+        "second": "second",
+    }
+
+
+def test_private_atomic_write_lock_timeout_is_structured(tmp_path: Path) -> None:
+    from openprogram.credential_files import (
+        PrivateAtomicWriteError,
+        _private_atomic_write,
+    )
+
+    root = tmp_path / "state"
+    root.mkdir(mode=0o700)
+    target = root / "config.json"
+    ready = tmp_path / "ready"
+    script = """
+import sys, time
+from pathlib import Path
+from openprogram.credential_files import _private_file_lock
+root, target, ready = map(Path, sys.argv[1:])
+with _private_file_lock(target, root=root, timeout=2):
+    ready.write_text('ready')
+    time.sleep(1)
+"""
+    holder = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            script,
+            os.fspath(root),
+            os.fspath(target),
+            os.fspath(ready),
+        ],
+        cwd=Path(__file__).parents[2],
+    )
+    try:
+        _wait_for_path(ready)
+        with pytest.raises(PrivateAtomicWriteError) as exc:
+            _private_atomic_write(
+                target,
+                lambda handle: handle.write(b"new"),
+                root=root,
+                lock_timeout=0.05,
+            )
+        assert exc.value.code == "lock_timeout"
+        assert exc.value.committed is False
+    finally:
+        holder.terminate()
+        holder.wait(timeout=5)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX lock-file contract")
+def test_private_lock_is_owner_only_and_rejects_unsafe_existing_lock(
+    tmp_path: Path,
+) -> None:
+    from openprogram.credential_files import PrivateAtomicWriteError, _private_file_lock
+
+    root = tmp_path / "state"
+    root.mkdir(mode=0o700)
+    target = root / "config.json"
+    lock = root / "config.json.lock"
+    with _private_file_lock(target, root=root):
+        assert stat.S_IMODE(lock.stat().st_mode) == 0o600
+
+    lock.unlink()
+    lock.mkdir()
+    with pytest.raises(PrivateAtomicWriteError) as exc:
+        with _private_file_lock(target, root=root):
+            pass
+    assert exc.value.code == "lock"

@@ -28,6 +28,7 @@ Design references:
 Nothing here imports httpx or talks to LLM providers. Refresh itself
 happens in :mod:`auth.credential_provider`; this module just stores the result.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -94,7 +95,9 @@ try:
                     break
                 except BlockingIOError:
                     if time.time() >= deadline:
-                        raise TimeoutError(f"could not acquire {lock_path} within {timeout}s")
+                        raise TimeoutError(
+                            f"could not acquire {lock_path} within {timeout}s"
+                        )
                     time.sleep(0.05)
             yield
         finally:
@@ -121,7 +124,9 @@ except ImportError:  # pragma: no cover — Windows path
                     break
                 except OSError:
                     if time.time() >= deadline:
-                        raise TimeoutError(f"could not acquire {lock_path} within {timeout}s")
+                        raise TimeoutError(
+                            f"could not acquire {lock_path} within {timeout}s"
+                        )
                     time.sleep(0.05)
             yield
         finally:
@@ -136,6 +141,7 @@ except ImportError:  # pragma: no cover — Windows path
 # ---------------------------------------------------------------------------
 # AuthStore
 # ---------------------------------------------------------------------------
+
 
 class AuthStore:
     """Authoritative in-memory + on-disk credential pool store.
@@ -153,11 +159,13 @@ class AuthStore:
         account: Optional[Account] = None,
     ) -> None:
         self._root = root or DEFAULT_ROOT
+        self._root.mkdir(parents=True, exist_ok=True, mode=0o700)
         # One-shot: migrate any old-format payload JSON under this root to the
         # new CredentialData structure before we read pools. Idempotent; the
         # migrator no-ops when everything is already new.
         try:
             from ._migrate_payload import migrate_store
+
             migrate_store(root=self._root)
         except Exception:
             # Migration must never block store startup; a genuinely corrupt
@@ -172,6 +180,7 @@ class AuthStore:
         # Cross-process coherence: remember (mtime, size) we last observed
         # for each file so reads can notice out-of-process writes.
         self._fstat: dict[tuple[str, str], tuple[float, int]] = {}
+        self._revisions: dict[tuple[str, str], str] = {}
         self._listeners: list[AuthEventListener] = []
 
     # -- configuration --------------------------------------------------------
@@ -197,6 +206,7 @@ class AuthStore:
         """
         try:
             from openprogram.auth.aliases import resolve
+
             return resolve(provider_id)
         except Exception:
             return provider_id
@@ -216,6 +226,7 @@ class AuthStore:
         # canonical id is also a valid on-disk directory.
         try:
             from openprogram.auth.aliases import known_aliases
+
             for alias, target in known_aliases().items():
                 if target == provider_id and alias != provider_id:
                     alt = self.base_dir() / alias / f"{account_id}.json"
@@ -235,6 +246,7 @@ class AuthStore:
             with self._sync_lock:
                 if listener in self._listeners:
                     self._listeners.remove(listener)
+
         return _unsub
 
     def _emit(self, event: AuthEvent) -> None:
@@ -308,7 +320,9 @@ class AuthStore:
 
     # -- writes ---------------------------------------------------------------
 
-    def put_pool(self, pool: CredentialPool) -> None:
+    def put_pool(
+        self, pool: CredentialPool, *, expected_revision: str | None = None
+    ) -> None:
         """Persist ``pool`` and emit appropriate events.
 
         Intended use: call by higher-level helpers (``add_credential``,
@@ -320,8 +334,8 @@ class AuthStore:
         pool.provider_id = self._canon(pool.provider_id)
         key = (pool.provider_id, pool.account_id)
         with self._sync_lock:
+            self._persist(pool, expected_revision=expected_revision)
             self._pools[key] = pool
-            self._persist(pool)
 
     def add_credential(self, cred: Credential) -> CredentialPool:
         """Append ``cred`` to the pool at ``(cred.provider_id, cred.account_id)``,
@@ -329,42 +343,57 @@ class AuthStore:
         cred.provider_id = self._canon(cred.provider_id)
         key = (cred.provider_id, cred.account_id)
         with self._sync_lock:
-            pool = self._pools.get(key) or self._load_from_disk(key) or CredentialPool(
-                provider_id=cred.provider_id, account_id=cred.account_id,
+            current = self._pools.get(key) or self._load_from_disk(key)
+            pool = (
+                CredentialPool.from_dict(current.to_dict())
+                if current
+                else CredentialPool(
+                    provider_id=cred.provider_id,
+                    account_id=cred.account_id,
+                )
             )
             pool.credentials.append(cred)
-            self._pools[key] = pool
             self._persist(pool)
-            self._emit(AuthEvent(
-                type=AuthEventType.POOL_MEMBER_ADDED,
-                provider_id=cred.provider_id,
-                account_id=cred.account_id,
-                credential_id=cred.credential_id,
-                detail={"source": cred.source, "kind": cred.kind},
-            ))
+            self._pools[key] = pool
+            self._emit(
+                AuthEvent(
+                    type=AuthEventType.POOL_MEMBER_ADDED,
+                    provider_id=cred.provider_id,
+                    account_id=cred.account_id,
+                    credential_id=cred.credential_id,
+                    detail={"source": cred.source, "kind": cred.kind},
+                )
+            )
             return pool
 
-    def remove_credential(self, provider_id: str, account_id: str, credential_id: str) -> None:
+    def remove_credential(
+        self, provider_id: str, account_id: str, credential_id: str
+    ) -> None:
         """Remove a single credential from a pool. If the pool becomes
         empty the pool file is *not* deleted — the account may want to
         add new credentials back. Use :meth:`delete_pool` to nuke it."""
         key = (self._canon(provider_id), account_id)
         with self._sync_lock:
-            pool = self._pools.get(key) or self._load_from_disk(key)
-            if pool is None:
+            current = self._pools.get(key) or self._load_from_disk(key)
+            if current is None:
                 return
+            pool = CredentialPool.from_dict(current.to_dict())
             before = len(pool.credentials)
-            pool.credentials = [c for c in pool.credentials if c.credential_id != credential_id]
+            pool.credentials = [
+                c for c in pool.credentials if c.credential_id != credential_id
+            ]
             if len(pool.credentials) == before:
                 return
-            self._pools[key] = pool
             self._persist(pool)
-            self._emit(AuthEvent(
-                type=AuthEventType.POOL_MEMBER_REMOVED,
-                provider_id=provider_id,
-                account_id=account_id,
-                credential_id=credential_id,
-            ))
+            self._pools[key] = pool
+            self._emit(
+                AuthEvent(
+                    type=AuthEventType.POOL_MEMBER_REMOVED,
+                    provider_id=provider_id,
+                    account_id=account_id,
+                    credential_id=credential_id,
+                )
+            )
 
     def delete_pool(self, provider_id: str, account_id: str) -> None:
         """Delete a pool entirely (in-memory and on-disk)."""
@@ -374,18 +403,21 @@ class AuthStore:
         with self._sync_lock:
             self._pools.pop(key, None)
             self._fstat.pop(key, None)
+            self._revisions.pop(key, None)
             if path.exists():
                 with _flock(path):
                     try:
                         path.unlink()
                     except FileNotFoundError:
                         pass
-            self._emit(AuthEvent(
-                type=AuthEventType.POOL_MEMBER_REMOVED,
-                provider_id=provider_id,
-                account_id=account_id,
-                detail={"reason": "pool_deleted"},
-            ))
+            self._emit(
+                AuthEvent(
+                    type=AuthEventType.POOL_MEMBER_REMOVED,
+                    provider_id=provider_id,
+                    account_id=account_id,
+                    detail={"reason": "pool_deleted"},
+                )
+            )
 
     # -- locks (public — used by manager) ------------------------------------
 
@@ -402,38 +434,53 @@ class AuthStore:
 
     # -- persistence internals -----------------------------------------------
 
-    def _persist(self, pool: CredentialPool) -> None:
+    def _persist(
+        self,
+        pool: CredentialPool,
+        *,
+        expected_revision: str | None = None,
+    ) -> None:
         path = self._pool_path(pool.provider_id, pool.account_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
         data = json.dumps(pool.to_dict(), indent=2, ensure_ascii=False)
-        with _flock(path):
-            # Write → chmod → fsync → rename so a crash mid-write leaves
-            # the previous good file untouched, and permissions are set
-            # before the file becomes visible at its final name.
-            fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
-            try:
-                os.write(fd, data.encode("utf-8"))
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-            os.replace(tmp, path)
-            # POSIX got 0o600 from the O_CREAT mode above; on Windows that
-            # mode is a near-no-op, so harden the final file's ACL too.
-            from openprogram._compat import restrict_to_user
-            restrict_to_user(path)
-            # Record observed fstat so we don't treat our own write as a
-            # cross-process change on the next read.
-            st = path.stat()
-            self._fstat[(pool.provider_id, pool.account_id)] = (st.st_mtime, st.st_size)
+        from openprogram.credential_files import _private_atomic_write
+
+        key = (pool.provider_id, pool.account_id)
+        expected = (
+            expected_revision
+            if expected_revision is not None
+            else self._revisions.get(key)
+        )
+        result = _private_atomic_write(
+            path,
+            lambda handle: handle.write(data.encode("utf-8")),
+            root=self._root,
+            expected_revision=expected,
+            lock_timeout=FILE_LOCK_TIMEOUT_SECONDS,
+        )
+        self._revisions[key] = result.revision
+        # Record observed fstat so we don't treat our own write as a
+        # cross-process change on the next read.
+        st = path.stat()
+        self._fstat[key] = (st.st_mtime, st.st_size)
 
     def _load_from_disk(self, key: tuple[str, str]) -> Optional[CredentialPool]:
         path = self._pool_path(*key)
-        if not path.exists():
-            return None
+        from openprogram.credential_files import (
+            _private_file_lock,
+            _read_private_bytes,
+            _revision,
+        )
+
         try:
-            with _flock(path):
-                raw = path.read_text(encoding="utf-8")
+            with _private_file_lock(
+                path, root=self._root, timeout=FILE_LOCK_TIMEOUT_SECONDS
+            ):
+                raw_bytes = _read_private_bytes(path, root=self._root)
+                self._revisions[key] = _revision(raw_bytes)
+                if raw_bytes is None:
+                    return None
+                raw = raw_bytes.decode("utf-8")
                 st = path.stat()
         except FileNotFoundError:
             return None
@@ -442,40 +489,29 @@ class AuthStore:
         except json.JSONDecodeError as e:
             raise AuthCorruptCredentialError(
                 f"{path} is not valid JSON: {e}",
-                provider_id=key[0], account_id=key[1],
+                provider_id=key[0],
+                account_id=key[1],
             ) from e
         pool = CredentialPool.from_dict(d)
         self._fstat[key] = (st.st_mtime, st.st_size)
         return pool
 
     def _reload_if_disk_changed(self, key: tuple[str, str]) -> None:
-        """If the on-disk file has a different (mtime, size) than we last
-        saw, reload. This is the "Claude Code mtime-watch" pattern.
-
-        Safe to call cheaply on every read because `os.stat` is a few
-        microseconds and we only actually re-parse when something
-        changed. Zero network, zero allocation in the common path.
-        """
+        """Reload when the exact on-disk byte revision changed."""
         path = self._pool_path(*key)
-        if not path.exists():
-            # Race: someone deleted the file since our last load. Drop
-            # the cached copy so the next access goes through get_pool's
-            # "no credentials" path rather than silently returning stale
-            # data.
+        from openprogram.credential_files import private_file_revision
+
+        current = private_file_revision(
+            path, root=self._root, lock_timeout=FILE_LOCK_TIMEOUT_SECONDS
+        )
+        if self._revisions.get(key) == current:
+            return
+        loaded = self._load_from_disk(key)
+        if loaded is None:
             self._pools.pop(key, None)
             self._fstat.pop(key, None)
-            return
-        try:
-            st = path.stat()
-        except FileNotFoundError:
-            self._pools.pop(key, None)
-            self._fstat.pop(key, None)
-            return
-        prev = self._fstat.get(key)
-        if prev is None or prev != (st.st_mtime, st.st_size):
-            loaded = self._load_from_disk(key)
-            if loaded is not None:
-                self._pools[key] = loaded
+        else:
+            self._pools[key] = loaded
 
 
 # ---------------------------------------------------------------------------
@@ -503,6 +539,10 @@ def set_store_for_testing(store: Optional[AuthStore]) -> None:
 
 
 __all__ = [
-    "AuthStore", "get_store", "set_store_for_testing",
-    "DEFAULT_ROOT", "FILE_LOCK_TIMEOUT_SECONDS", "MTIME_POLL_INTERVAL",
+    "AuthStore",
+    "get_store",
+    "set_store_for_testing",
+    "DEFAULT_ROOT",
+    "FILE_LOCK_TIMEOUT_SECONDS",
+    "MTIME_POLL_INTERVAL",
 ]

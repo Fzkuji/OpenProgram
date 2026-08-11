@@ -9,14 +9,18 @@ external credential helpers.
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import json
 import os
 import secrets
 import stat
 import subprocess
+import threading
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import BinaryIO, Callable, Literal
+from typing import BinaryIO, Callable, Iterator, Literal
 
 SecretLifecycle = Literal["persistent", "ephemeral"]
 BackupPolicy = Literal[
@@ -325,6 +329,26 @@ class PrivateAtomicWriteError(OSError):
         self.__cause__ = cause
 
 
+@dataclass(frozen=True)
+class PrivateAtomicWriteResult:
+    """Revision of the exact bytes published by one successful write."""
+
+    revision: str
+
+
+_MISSING_REVISION = (
+    "missing:sha256:"
+    + hashlib.sha256(b"openprogram-private-file-missing-v1").hexdigest()
+)
+_held_locks = threading.local()
+
+
+def _revision(raw: bytes | None) -> str:
+    if raw is None:
+        return _MISSING_REVISION
+    return "sha256:" + hashlib.sha256(raw).hexdigest()
+
+
 def _ensure_private_directory(path: Path, *, root: Path) -> Path:
     """Create one owner-only directory below ``root`` without following links."""
 
@@ -354,8 +378,213 @@ def _private_atomic_write(
     writer: Callable[[BinaryIO], object],
     *,
     root: Path,
-) -> None:
-    """Write one owner-only file with same-directory atomic publication."""
+    expected_revision: str | None = None,
+    lock_timeout: float = 10.0,
+) -> PrivateAtomicWriteResult:
+    """Write one owner-only file under a stable sibling lock.
+
+    ``expected_revision`` is optional for compatibility with existing full
+    replacement callers.  When supplied, it must match the fingerprint of the
+    exact current bytes (or the stable missing-file fingerprint).  A manual
+    edit made while the callback runs is also detected before publication.
+    """
+
+    with _private_file_lock(path, root=root, timeout=lock_timeout):
+        baseline = private_file_revision(path, root=root, lock_timeout=lock_timeout)
+        if expected_revision is not None and expected_revision != baseline:
+            raise PrivateAtomicWriteError("conflict", Path(path), committed=False)
+        return _private_atomic_publish(
+            path,
+            writer,
+            root=root,
+            baseline_revision=baseline,
+            lock_timeout=lock_timeout,
+        )
+
+
+def _private_atomic_update(
+    path: Path,
+    updater: Callable[[bytes | None], bytes],
+    *,
+    root: Path,
+    expected_revision: str | None = None,
+    lock_timeout: float = 10.0,
+) -> PrivateAtomicWriteResult:
+    """Read, update, and publish exact bytes under one cross-process lock."""
+
+    with _private_file_lock(path, root=root, timeout=lock_timeout):
+        current = _read_private_bytes(path, root=root)
+        baseline = _revision(current)
+        if expected_revision is not None and expected_revision != baseline:
+            raise PrivateAtomicWriteError("conflict", Path(path), committed=False)
+        try:
+            updated = updater(current)
+            if not isinstance(updated, bytes):
+                raise TypeError("private file updater must return bytes")
+        except PrivateAtomicWriteError:
+            raise
+        except Exception as exc:
+            raise PrivateAtomicWriteError(
+                "serialization", Path(path), committed=False, cause=exc
+            ) from exc
+        return _private_atomic_write(
+            path,
+            lambda handle: handle.write(updated),
+            root=root,
+            expected_revision=baseline,
+            lock_timeout=lock_timeout,
+        )
+
+
+def private_file_revision(
+    path: Path,
+    *,
+    root: Path,
+    lock_timeout: float = 10.0,
+) -> str:
+    """Fingerprint the exact current bytes, including a stable missing state."""
+
+    with _private_file_lock(path, root=root, timeout=lock_timeout):
+        return _revision(_read_private_bytes(path, root=root))
+
+
+@contextmanager
+def _private_file_lock(
+    path: Path,
+    *,
+    root: Path,
+    timeout: float = 10.0,
+) -> Iterator[None]:
+    """Acquire the owner-only stable sibling lock for ``path``."""
+
+    root_path = Path(root).absolute()
+    root_resolved = root_path.resolve(strict=True)
+    relative = _relative_below_root(Path(path).absolute(), root_path, root_resolved)
+    parent = _ensure_private_directory(
+        root_resolved.joinpath(*relative.parent.parts), root=root_resolved
+    )
+    target = parent / relative.name
+    _verify_existing_target(target)
+    key = os.fspath(target)
+    held = getattr(_held_locks, "paths", set())
+    if key in held:
+        yield
+        return
+
+    lock_path = target.with_suffix(target.suffix + ".lock")
+    try:
+        _verify_existing_target(lock_path)
+        flags = os.O_RDWR | os.O_CREAT
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        flags |= getattr(os, "O_CLOEXEC", 0)
+        descriptor = os.open(lock_path, flags, 0o600)
+    except PrivateAtomicWriteError as exc:
+        raise PrivateAtomicWriteError(
+            "lock", lock_path, committed=False, cause=exc
+        ) from exc
+    except OSError as exc:
+        raise PrivateAtomicWriteError(
+            "lock", lock_path, committed=False, cause=exc
+        ) from exc
+
+    acquired = False
+    try:
+        info = os.fstat(descriptor)
+        _verify_owner(lock_path, info)
+        if os.name != "nt":
+            os.fchmod(descriptor, 0o600)
+        else:
+            _apply_windows_owner_acl(lock_path)
+        _verify_private_regular_info(lock_path, os.fstat(descriptor))
+        path_info = os.lstat(lock_path)
+        if stat.S_ISLNK(path_info.st_mode) or (
+            path_info.st_dev,
+            path_info.st_ino,
+        ) != (info.st_dev, info.st_ino):
+            raise PrivateAtomicWriteError("lock", lock_path, committed=False)
+
+        from openprogram import _compat as file_lock
+
+        deadline = time.monotonic() + max(0.0, timeout)
+        while True:
+            try:
+                file_lock.flock(descriptor, file_lock.LOCK_EX | file_lock.LOCK_NB)
+                acquired = True
+                break
+            except BlockingIOError as exc:
+                if time.monotonic() >= deadline:
+                    raise PrivateAtomicWriteError(
+                        "lock_timeout", lock_path, committed=False, cause=exc
+                    ) from exc
+                time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+
+        locked_info = os.lstat(lock_path)
+        if stat.S_ISLNK(locked_info.st_mode) or (
+            locked_info.st_dev,
+            locked_info.st_ino,
+        ) != (info.st_dev, info.st_ino):
+            raise PrivateAtomicWriteError("lock", lock_path, committed=False)
+
+        held.add(key)
+        _held_locks.paths = held
+        try:
+            yield
+        finally:
+            held.remove(key)
+    finally:
+        if acquired:
+            from openprogram import _compat as file_lock
+
+            file_lock.flock(descriptor, file_lock.LOCK_UN)
+        os.close(descriptor)
+
+
+def _read_private_bytes(path: Path, *, root: Path) -> bytes | None:
+    root_path = Path(root).absolute()
+    root_resolved = root_path.resolve(strict=True)
+    relative = _relative_below_root(Path(path).absolute(), root_path, root_resolved)
+    parent = _ensure_private_directory(
+        root_resolved.joinpath(*relative.parent.parts), root=root_resolved
+    )
+    target = parent / relative.name
+    try:
+        before = os.lstat(target)
+    except FileNotFoundError:
+        return None
+    _verify_existing_target(target)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    try:
+        descriptor = os.open(target, flags)
+    except FileNotFoundError:
+        return None
+    try:
+        opened = os.fstat(descriptor)
+        _verify_owner(target, opened)
+        if not stat.S_ISREG(opened.st_mode) or (
+            before.st_dev,
+            before.st_ino,
+        ) != (opened.st_dev, opened.st_ino):
+            raise PrivateAtomicWriteError("read", target, committed=False)
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
+    finally:
+        os.close(descriptor)
+
+
+def _private_atomic_publish(
+    path: Path,
+    writer: Callable[[BinaryIO], object],
+    *,
+    root: Path,
+    baseline_revision: str,
+    lock_timeout: float,
+) -> PrivateAtomicWriteResult:
+    """Publish bytes while the caller holds the target's sibling lock."""
 
     root_path = Path(root).absolute()
     root_resolved = root_path.resolve(strict=True)
@@ -404,6 +633,11 @@ def _private_atomic_write(
                 committed=False,
                 cause=exc,
             ) from exc
+        if (
+            private_file_revision(target, root=root_resolved, lock_timeout=lock_timeout)
+            != baseline_revision
+        ):
+            raise PrivateAtomicWriteError("conflict", target, committed=False)
         try:
             os.replace(temporary, target)
             committed = True
@@ -438,6 +672,11 @@ def _private_atomic_write(
                     committed=True,
                     cause=exc,
                 ) from exc
+        return PrivateAtomicWriteResult(
+            revision=private_file_revision(
+                target, root=root_resolved, lock_timeout=lock_timeout
+            )
+        )
     finally:
         if not committed:
             try:
@@ -615,11 +854,13 @@ def _run_icacls(argv: list[str]) -> subprocess.CompletedProcess[str]:
 __all__ = [
     "BackupPolicy",
     "DeleteAction",
+    "PrivateAtomicWriteResult",
     "PrivateAtomicWriteError",
     "SECRET_INVENTORY",
     "SecretInventoryEntry",
     "SecretLifecycle",
     "backup_bytes",
     "inventory_for_path",
+    "private_file_revision",
     "preserve_local_secret_bytes",
 ]

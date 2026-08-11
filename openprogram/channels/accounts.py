@@ -17,10 +17,10 @@ For backward UX the ``account_id`` ``default`` is reserved for the
 account dimension doesn't exist for single-account installs by always
 resolving to ``default``.
 """
+
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import threading
@@ -39,9 +39,9 @@ _lock = threading.RLock()
 
 @dataclass
 class ChannelAccount:
-    channel: str                       # "wechat" | "telegram" | ...
-    account_id: str                    # "default" | "personal" | ...
-    name: str = ""                     # optional human label
+    channel: str  # "wechat" | "telegram" | ...
+    account_id: str  # "default" | "personal" | ...
+    name: str = ""  # optional human label
     created_at: float = 0.0
     updated_at: float = 0.0
 
@@ -63,8 +63,10 @@ class ChannelAccount:
 # Paths
 # ---------------------------------------------------------------------------
 
+
 def _channels_root() -> Path:
     from openprogram.paths import get_state_dir
+
     root = get_state_dir() / "channels"
     root.mkdir(parents=True, exist_ok=True)
     return root
@@ -93,6 +95,7 @@ def account_credentials_path(channel: str, account_id: str) -> Path:
 # ---------------------------------------------------------------------------
 # CRUD
 # ---------------------------------------------------------------------------
+
 
 def list_channels() -> list[str]:
     root = _channels_root()
@@ -143,8 +146,9 @@ def get(channel: str, account_id: str) -> Optional[ChannelAccount]:
     return ChannelAccount.from_dict(raw)
 
 
-def create(channel: str, account_id: str = DEFAULT_ACCOUNT_ID,
-           *, name: str = "") -> ChannelAccount:
+def create(
+    channel: str, account_id: str = DEFAULT_ACCOUNT_ID, *, name: str = ""
+) -> ChannelAccount:
     if channel not in SUPPORTED_CHANNELS:
         raise ValueError(
             f"Unknown channel {channel!r}. Supported: {SUPPORTED_CHANNELS}"
@@ -156,9 +160,7 @@ def create(channel: str, account_id: str = DEFAULT_ACCOUNT_ID,
         )
     with _lock:
         if get(channel, account_id) is not None:
-            raise ValueError(
-                f"Account {channel}:{account_id} already exists."
-            )
+            raise ValueError(f"Account {channel}:{account_id} already exists.")
         now = time.time()
         acct = ChannelAccount(
             channel=channel,
@@ -177,9 +179,14 @@ def create(channel: str, account_id: str = DEFAULT_ACCOUNT_ID,
         # briefly live world-readable.
         cred_path = account_credentials_path(channel, account_id)
         if not cred_path.exists():
-            cred_path.write_text("{}\n", encoding="utf-8")
-            from openprogram._compat import restrict_to_user
-            restrict_to_user(cred_path)
+            from openprogram.credential_files import _private_atomic_write
+            from openprogram.paths import get_state_dir
+
+            _private_atomic_write(
+                cred_path,
+                lambda handle: handle.write(b"{}\n"),
+                root=get_state_dir(),
+            )
         return acct
 
 
@@ -201,27 +208,53 @@ def load_credentials(channel: str, account_id: str) -> dict[str, Any]:
         return {}
 
 
-def save_credentials(channel: str, account_id: str,
-                     creds: dict[str, Any]) -> None:
+def save_credentials(
+    channel: str,
+    account_id: str,
+    creds: dict[str, Any],
+    *,
+    expected_revision: str | None = None,
+):
     """Atomically replace credentials.json with ``creds``."""
     with _lock:
         path = account_credentials_path(channel, account_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(json.dumps(creds, indent=2), encoding="utf-8")
-        os.replace(tmp, path)
-        from openprogram._compat import restrict_to_user
-        restrict_to_user(path)
+        from openprogram.credential_files import _private_atomic_write
+        from openprogram.paths import get_state_dir
+
+        return _private_atomic_write(
+            path,
+            lambda handle: handle.write(json.dumps(creds, indent=2).encode("utf-8")),
+            root=get_state_dir(),
+            expected_revision=expected_revision,
+        )
 
 
-def update_credentials(channel: str, account_id: str,
-                       patch: dict[str, Any]) -> dict[str, Any]:
+def update_credentials(
+    channel: str, account_id: str, patch: dict[str, Any]
+) -> dict[str, Any]:
     """Merge ``patch`` into credentials.json (shallow merge)."""
     with _lock:
-        creds = load_credentials(channel, account_id)
-        creds.update(patch)
-        save_credentials(channel, account_id, creds)
-        return creds
+        path = account_credentials_path(channel, account_id)
+        updated: dict[str, Any] = {}
+
+        def update(raw: bytes | None) -> bytes:
+            nonlocal updated
+            try:
+                value = json.loads(raw.decode("utf-8")) if raw is not None else {}
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                value = {}
+            if not isinstance(value, dict):
+                value = {}
+            value.update(patch)
+            updated = value
+            return json.dumps(value, indent=2).encode("utf-8")
+
+        from openprogram.credential_files import _private_atomic_update
+        from openprogram.paths import get_state_dir
+
+        _private_atomic_update(path, update, root=get_state_dir())
+        return updated
 
 
 def is_configured(channel: str, account_id: str) -> bool:

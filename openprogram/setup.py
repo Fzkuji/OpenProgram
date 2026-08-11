@@ -19,10 +19,10 @@ existing provider / api_keys config. Keys written here:
     tools.disabled     list[str]
     agent.thinking_effort  str  (low/medium/high/xhigh)
 """
+
 from __future__ import annotations
 
 import json
-import os
 import threading
 from typing import Any, Callable
 
@@ -31,6 +31,7 @@ from openprogram.paths import get_config_path
 
 # --- storage helpers --------------------------------------------------------
 
+
 def _read_config() -> dict[str, Any]:
     try:
         return json.loads(get_config_path().read_text(encoding="utf-8"))
@@ -38,17 +39,18 @@ def _read_config() -> dict[str, Any]:
         return {}
 
 
-def _write_config(cfg: dict[str, Any]) -> None:
+def _write_config(cfg: dict[str, Any], *, expected_revision: str | None = None):
     path = get_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     data = json.dumps(cfg, indent=2) + "\n"
-    # config.json holds plaintext api_keys — keep it owner-only (0o600), never
-    # world/group-readable. os.open creates a new file tight from the start;
-    # the chmod also tightens a pre-existing 0644 file written before this.
-    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(data)
-    os.chmod(str(path), 0o600)
+    from openprogram.credential_files import _private_atomic_write
+
+    return _private_atomic_write(
+        path,
+        lambda handle: handle.write(data.encode("utf-8")),
+        root=path.parent,
+        expected_revision=expected_revision,
+    )
 
 
 # In-process lock for the read-modify-write critical section. Cross-process
@@ -56,7 +58,9 @@ def _write_config(cfg: dict[str, Any]) -> None:
 _config_write_lock = threading.Lock()
 
 
-def update_config(mutator: Callable[[dict], Any]) -> dict:
+def update_config(
+    mutator: Callable[[dict], Any], *, expected_revision: str | None = None
+) -> dict:
     """Atomic read-modify-write of config.json.
 
     Holds an in-process lock (the worker's threads) AND a cross-process file
@@ -69,21 +73,30 @@ def update_config(mutator: Callable[[dict], Any]) -> dict:
     clobbers a concurrent one). ``_read_config`` / ``_write_config`` remain for
     read-only and full-replace.
     """
-    lock_path = str(get_config_path()) + ".lock"
-    with _config_write_lock:
+    path = get_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    updated: dict[str, Any] = {}
+
+    def update(raw: bytes | None) -> bytes:
+        nonlocal updated
         try:
-            from filelock import FileLock
-            file_lock: Any = FileLock(lock_path, timeout=10)
-        except Exception:
-            # filelock unavailable → in-process lock only (still correct for the
-            # single-worker case; cross-process writes are rare).
-            import contextlib
-            file_lock = contextlib.nullcontext()
-        with file_lock:
-            cfg = _read_config()
-            mutator(cfg)
-            _write_config(cfg)
-            return cfg
+            cfg = json.loads(raw.decode("utf-8")) if raw is not None else {}
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            cfg = {}
+        mutator(cfg)
+        updated = cfg
+        return (json.dumps(cfg, indent=2) + "\n").encode("utf-8")
+
+    with _config_write_lock:
+        from openprogram.credential_files import _private_atomic_update
+
+        _private_atomic_update(
+            path,
+            update,
+            root=path.parent,
+            expected_revision=expected_revision,
+        )
+    return updated
 
 
 def read_disabled_tools() -> set[str]:
@@ -101,6 +114,7 @@ def read_disabled_tools() -> set[str]:
     disabled = set(cfg.get("tools", {}).get("disabled", []) or [])
     if (cfg.get("memory", {}) or {}).get("backend") == "none":
         from openprogram.functions.tools.memory import MEMORY_TOOL_NAMES
+
         disabled.update(MEMORY_TOOL_NAMES)
     return disabled
 
@@ -113,6 +127,7 @@ def read_disabled_skills() -> set[str]:
     example) read the default agent's list here.
     """
     from openprogram.agent.management import manager as _agents
+
     agent = _agents.get_default()
     if agent is None:
         return set()
@@ -133,6 +148,7 @@ def read_search_default_provider() -> str | None:
 
 def write_search_default_provider(name: str | None) -> None:
     """Persist the user's default web_search backend (or clear it)."""
+
     def _mut(cfg: dict) -> None:
         section = dict(cfg.get("search") or {})
         if name:
@@ -143,6 +159,7 @@ def write_search_default_provider(name: str | None) -> None:
             cfg["search"] = section
         else:
             cfg.pop("search", None)
+
     update_config(_mut)
 
 
@@ -173,12 +190,14 @@ def set_ui_ports(
     ``read_ui_prefs()`` dict. Takes effect on the next ``openprogram web``
     / ``worker`` start — nothing live is rebound here.
     """
+
     def _mut(cfg: dict) -> None:
         ui = cfg.setdefault("ui", {})
         if web_port is not None:
             ui["web_port"] = int(web_port)
         if open_browser is not None:
             ui["open_browser"] = bool(open_browser)
+
     update_config(_mut)
     return read_ui_prefs()
 
@@ -194,6 +213,7 @@ def prompt_schema_group(group: str) -> int:
     module, so a top-level import would cycle.)
     """
     from openprogram.config_schema import get_settings, set_setting
+
     rows = [r for r in get_settings() if r["group"] == group]
     for r in rows:
         key, label, widget, cur = r["key"], r["label"], r["widget"], r.get("value")
@@ -220,6 +240,7 @@ def prompt_schema_group(group: str) -> int:
 
 # --- UI primitives (questionary w/ input() fallback) ------------------------
 
+
 def _have_questionary() -> bool:
     """Return True only if questionary is importable AND the underlying
     ``prompt_toolkit`` output backend can render in this terminal.
@@ -235,6 +256,7 @@ def _have_questionary() -> bool:
     except ImportError:
         return False
     from openprogram._compat import prompt_toolkit_usable
+
     return prompt_toolkit_usable()
 
 
@@ -262,17 +284,19 @@ def _qstyle():
         from questionary import Style
     except ImportError:
         return None
-    return Style([
-        ("qmark",        "fg:ansicyan bold"),
-        ("question",     "bold"),
-        ("answer",       "fg:ansicyan bold"),
-        ("pointer",      "fg:ansicyan bold"),
-        ("highlighted",  "fg:ansicyan bold"),
-        ("selected",     "fg:ansicyan"),
-        ("separator",    "fg:ansibrightblack"),
-        ("instruction",  "fg:ansibrightblack"),
-        ("disabled",     "fg:ansibrightblack italic"),
-    ])
+    return Style(
+        [
+            ("qmark", "fg:ansicyan bold"),
+            ("question", "bold"),
+            ("answer", "fg:ansicyan bold"),
+            ("pointer", "fg:ansicyan bold"),
+            ("highlighted", "fg:ansicyan bold"),
+            ("selected", "fg:ansicyan"),
+            ("separator", "fg:ansibrightblack"),
+            ("instruction", "fg:ansibrightblack"),
+            ("disabled", "fg:ansibrightblack italic"),
+        ]
+    )
 
 
 def _confirm(prompt: str, default: bool = True) -> bool:
@@ -284,6 +308,7 @@ def _confirm(prompt: str, default: bool = True) -> bool:
     """
     if _have_questionary():
         import questionary
+
         choices = ["Yes", "No"] if default else ["No", "Yes"]
         # unsafe_ask raises KeyboardInterrupt on Ctrl-C instead of
         # returning None — so Ctrl-C in ANY prompt aborts the whole
@@ -309,12 +334,14 @@ def _confirm(prompt: str, default: bool = True) -> bool:
     return s in ("y", "yes")
 
 
-def _choose_one(prompt: str, choices: list[str],
-                default: str | None = None) -> str | None:
+def _choose_one(
+    prompt: str, choices: list[str], default: str | None = None
+) -> str | None:
     if not choices:
         return None
     if _have_questionary():
         import questionary
+
         # Never pass default= to questionary.select — see _qstyle
         # docstring. Reorder so the default sits at index 0; the initial
         # cursor position lands on it naturally.
@@ -335,7 +362,9 @@ def _choose_one(prompt: str, choices: list[str],
         marker = "*" if c == default else " "
         print(f"  {marker} {i:>2}) {c}")
     try:
-        raw = input(f"? [{(choices.index(default) + 1) if default in choices else 1}] ").strip()
+        raw = input(
+            f"? [{(choices.index(default) + 1) if default in choices else 1}] "
+        ).strip()
     except (EOFError, KeyboardInterrupt):
         return None
     if not raw:
@@ -356,6 +385,7 @@ def _checkbox(prompt: str, items: list[tuple[str, bool]]) -> list[str] | None:
         return []
     if _have_questionary():
         import questionary
+
         choices = [
             questionary.Choice(name, value=name, checked=enabled)
             for name, enabled in items
@@ -383,9 +413,11 @@ def _checkbox(prompt: str, items: list[tuple[str, bool]]) -> list[str] | None:
         if raw == "":
             return sorted(selected)
         if raw == "all":
-            selected = set(names); continue
+            selected = set(names)
+            continue
         if raw == "none":
-            selected = set(); continue
+            selected = set()
+            continue
         try:
             for tok in raw.split(","):
                 idx = int(tok.strip()) - 1
@@ -404,6 +436,7 @@ def _checkbox(prompt: str, items: list[tuple[str, bool]]) -> list[str] | None:
 def _text(prompt: str, default: str = "") -> str | None:
     if _have_questionary():
         import questionary
+
         ans = questionary.text(
             prompt,
             default=default,
@@ -422,6 +455,7 @@ def _text(prompt: str, default: str = "") -> str | None:
 def _password(prompt: str) -> str | None:
     if _have_questionary():
         import questionary
+
         ans = questionary.password(
             prompt,
             style=_qstyle(),
@@ -429,13 +463,13 @@ def _password(prompt: str) -> str | None:
         return ans
     try:
         import getpass
+
         return getpass.getpass(f"{prompt} ")
     except (EOFError, KeyboardInterrupt):
         return None
 
 
 # --- Sections ---------------------------------------------------------------
-
 
 
 # ---------------------------------------------------------------------------

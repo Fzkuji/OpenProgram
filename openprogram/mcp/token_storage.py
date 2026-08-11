@@ -24,10 +24,10 @@ user-visible state (config file in the same state dir) and runtime
 data stay near each other. Permissions are tightened to ``0600``
 since the file holds a bearer token.
 """
+
 from __future__ import annotations
 
 import json
-import os
 import time
 import urllib.parse
 from pathlib import Path
@@ -67,16 +67,15 @@ class FileTokenStorage(TokenStorage):
             return None
 
     async def set_tokens(self, tokens: OAuthToken) -> None:
-        data = self._read() or {}
-        data["tokens"] = tokens.model_dump(mode="json", exclude_none=True)
-        # Record the *absolute* expiry. ``expires_in`` is relative to
-        # issuance, so on its own it can't tell a later process whether
-        # the access token is still live.
-        if tokens.expires_in is not None:
-            data["expires_at"] = time.time() + int(tokens.expires_in)
-        else:
-            data.pop("expires_at", None)
-        self._write(data)
+        def update(data: dict) -> None:
+            data["tokens"] = tokens.model_dump(mode="json", exclude_none=True)
+            # ``expires_in`` is relative; persist the absolute expiry.
+            if tokens.expires_in is not None:
+                data["expires_at"] = time.time() + int(tokens.expires_in)
+            else:
+                data.pop("expires_at", None)
+
+        self._update(update)
 
     async def get_client_info(self) -> Optional[OAuthClientInformationFull]:
         data = self._read()
@@ -88,13 +87,11 @@ class FileTokenStorage(TokenStorage):
         except Exception:  # noqa: BLE001
             return None
 
-    async def set_client_info(self,
-                              client_info: OAuthClientInformationFull) -> None:
-        data = self._read() or {}
-        data["client_info"] = client_info.model_dump(
-            mode="json", exclude_none=True,
-        )
-        self._write(data)
+    async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
+        def update(data: dict) -> None:
+            data["client_info"] = client_info.model_dump(mode="json", exclude_none=True)
+
+        self._update(update)
 
     # -- restart-survival extras (not part of the SDK protocol) ------
     def expires_at(self) -> Optional[float]:
@@ -121,9 +118,7 @@ class FileTokenStorage(TokenStorage):
 
     def set_discovery(self, discovery: dict) -> None:
         """Persist OAuth discovery state (token endpoint et al.)."""
-        data = self._read() or {}
-        data["discovery"] = discovery
-        self._write(data)
+        self._update(lambda data: data.__setitem__("discovery", discovery))
 
     def get_discovery(self) -> Optional[dict]:
         data = self._read()
@@ -155,45 +150,38 @@ class FileTokenStorage(TokenStorage):
         except Exception:  # noqa: BLE001 — keep going on corrupt JSON
             return None
 
-    def _write(self, data: dict) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        # ``open(O_CREAT, mode=0o600)`` creates the file with the
-        # restrictive perms in one syscall. The previous "write_text
-        # then chmod" sequence left a brief window where the file was
-        # world-readable, which matters since the payload is a bearer
-        # token. Existing-file mode bits are NOT changed by O_CREAT
-        # alone, so unlink first to be sure the perms come from our
-        # ``mode`` argument and not from a leftover 0644 inode.
-        tmp = self._path.with_suffix(self._path.suffix + ".tmp")
-        try:
-            os.unlink(tmp)
-        except FileNotFoundError:
-            pass
-        # ``os.O_NOFOLLOW`` blocks symlink attacks against the temp
-        # path. mode=0o600 sets owner-only read/write at creation time.
-        # O_NOFOLLOW is POSIX-only — it doesn't exist on Windows CPython,
-        # so reference it via getattr(..., 0) or this whole write crashes
-        # with AttributeError before the file is even opened (breaking
-        # every OAuth MCP token write on Windows).
-        _open_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-        _open_flags |= getattr(os, "O_NOFOLLOW", 0)
-        fd = os.open(tmp, _open_flags, 0o600)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-        except Exception:
-            # Best-effort cleanup on write failure so a half-written tmp
-            # file doesn't linger with a token-shaped name.
+    def _update(self, mutator) -> None:
+        from openprogram.credential_files import _private_atomic_update
+        from openprogram.paths import get_state_dir
+
+        root = get_state_dir()
+        root.mkdir(parents=True, exist_ok=True)
+
+        def update(raw: bytes | None) -> bytes:
             try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
-        os.replace(tmp, self._path)
-        # 0o600 on POSIX comes from the O_CREAT mode above; on Windows it
-        # is a near-no-op, so harden the bearer-token file's ACL too.
-        from openprogram._compat import restrict_to_user
-        restrict_to_user(self._path)
+                data = json.loads(raw.decode("utf-8")) if raw is not None else {}
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                data = {}
+            if not isinstance(data, dict):
+                data = {}
+            mutator(data)
+            return json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+
+        _private_atomic_update(self._path, update, root=root)
+
+    def _write(self, data: dict, *, expected_revision: str | None = None):
+        from openprogram.credential_files import _private_atomic_write
+        from openprogram.paths import get_state_dir
+
+        root = get_state_dir()
+        root.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+        return _private_atomic_write(
+            self._path,
+            lambda handle: handle.write(payload),
+            root=root,
+            expected_revision=expected_revision,
+        )
 
 
 def _sanitize(name: str) -> str:
@@ -242,15 +230,19 @@ class PersistentOAuthProvider(OAuthClientProvider):
         if self.context.oauth_metadata is None and disc.get("oauth_metadata"):
             try:
                 self.context.oauth_metadata = OAuthMetadata.model_validate(
-                    disc["oauth_metadata"])
+                    disc["oauth_metadata"]
+                )
             except Exception:  # noqa: BLE001
                 pass
-        if (self.context.protected_resource_metadata is None
-                and disc.get("protected_resource_metadata")):
+        if self.context.protected_resource_metadata is None and disc.get(
+            "protected_resource_metadata"
+        ):
             try:
                 self.context.protected_resource_metadata = (
                     ProtectedResourceMetadata.model_validate(
-                        disc["protected_resource_metadata"]))
+                        disc["protected_resource_metadata"]
+                    )
+                )
             except Exception:  # noqa: BLE001
                 pass
         if self.context.auth_server_url is None:
@@ -268,23 +260,33 @@ class PersistentOAuthProvider(OAuthClientProvider):
         prior = self.context.current_tokens
         ok = await super()._handle_refresh_response(response)
         current = self.context.current_tokens
-        if (ok and prior is not None and prior.refresh_token
-                and current is not None and not current.refresh_token):
+        if (
+            ok
+            and prior is not None
+            and prior.refresh_token
+            and current is not None
+            and not current.refresh_token
+        ):
             current.refresh_token = prior.refresh_token
             await self.context.storage.set_tokens(current)
         return ok
 
     def _persist_discovery(self) -> None:
         ctx = self.context
-        self._file_storage.set_discovery({
-            "oauth_metadata": (
-                ctx.oauth_metadata.model_dump(mode="json", exclude_none=True)
-                if ctx.oauth_metadata else None
-            ),
-            "protected_resource_metadata": (
-                ctx.protected_resource_metadata.model_dump(
-                    mode="json", exclude_none=True)
-                if ctx.protected_resource_metadata else None
-            ),
-            "auth_server_url": ctx.auth_server_url,
-        })
+        self._file_storage.set_discovery(
+            {
+                "oauth_metadata": (
+                    ctx.oauth_metadata.model_dump(mode="json", exclude_none=True)
+                    if ctx.oauth_metadata
+                    else None
+                ),
+                "protected_resource_metadata": (
+                    ctx.protected_resource_metadata.model_dump(
+                        mode="json", exclude_none=True
+                    )
+                    if ctx.protected_resource_metadata
+                    else None
+                ),
+                "auth_server_url": ctx.auth_server_url,
+            }
+        )

@@ -37,6 +37,7 @@ File format::
       }
     }
 """
+
 from __future__ import annotations
 
 import json
@@ -52,6 +53,7 @@ from typing import Any, Iterable, Optional
 # tests. Going through the module ensures every call reads the
 # attribute live.
 from openprogram import paths as _paths
+
 # One mask shape across the whole product — the same helper the
 # provider-credential routes use, so an MCP env value and an API key
 # render identically in the UI.
@@ -80,6 +82,7 @@ class OAuthSettings:
     common case. ``client_id``/``client_secret`` only need to be set
     for servers that pre-register clients.
     """
+
     client_id: Optional[str] = None
     client_secret: Optional[str] = None
     scope: Optional[str] = None
@@ -90,8 +93,10 @@ class OAuthSettings:
 
     def to_storage_dict(self) -> dict:
         """Full values — for the on-disk config file only."""
-        out: dict = {"client_name": self.client_name,
-                     "redirect_port": int(self.redirect_port)}
+        out: dict = {
+            "client_name": self.client_name,
+            "redirect_port": int(self.redirect_port),
+        }
         if self.client_id:
             out["client_id"] = self.client_id
         if self.client_secret:
@@ -119,6 +124,7 @@ class MCPServerConfig:
     ``type=local``; ``url``/``headers``/``auth_*`` only apply to
     ``type=http`` or ``type=sse``. :func:`parse_entry` enforces this.
     """
+
     name: str
     type: str = LOCAL
     # local-only ------------------------------------------------------
@@ -212,8 +218,7 @@ class MCPServerConfig:
             if self.auth_kind == AUTH_BEARER:
                 auth_obj["has_token"] = bool(self.bearer_token)
                 if self.bearer_token:
-                    auth_obj["masked_token"] = mask_credential(
-                        self.bearer_token)
+                    auth_obj["masked_token"] = mask_credential(self.bearer_token)
             if self.auth_kind == AUTH_OAUTH and self.oauth is not None:
                 auth_obj["client_name"] = self.oauth.client_name
                 auth_obj["redirect_port"] = int(self.oauth.redirect_port)
@@ -224,7 +229,8 @@ class MCPServerConfig:
                 auth_obj["has_client_secret"] = bool(self.oauth.client_secret)
                 if self.oauth.client_secret:
                     auth_obj["masked_client_secret"] = mask_credential(
-                        self.oauth.client_secret)
+                        self.oauth.client_secret
+                    )
             out["auth"] = auth_obj
         return out
 
@@ -288,10 +294,11 @@ def load_roots() -> list[dict[str, str]]:
     return out
 
 
-def save_roots(roots: list[dict[str, str]]) -> Path:
+def save_roots(
+    roots: list[dict[str, str]], *, expected_revision: str | None = None
+) -> Path:
     """Persist the roots list, preserving the ``servers`` block."""
     path = get_config_path()
-    raw = _read_raw(path)
     cleaned: list[dict[str, str]] = []
     for entry in roots:
         if isinstance(entry, str):
@@ -303,9 +310,17 @@ def save_roots(roots: list[dict[str, str]]) -> Path:
             continue
         name = entry.get("name") or _name_from_uri(uri)
         cleaned.append({"uri": uri, "name": str(name)})
-    raw["roots"] = cleaned
-    # Same file as the server configs, so the same owner-only write.
-    _write_private_json(path, raw)
+
+    def update(raw: bytes | None) -> bytes:
+        payload = _decode_raw_bytes(raw)
+        payload["roots"] = cleaned
+        return json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+
+    from openprogram.credential_files import _private_atomic_update
+
+    root = _paths.get_state_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    _private_atomic_update(path, update, root=root, expected_revision=expected_revision)
     return path
 
 
@@ -316,9 +331,11 @@ def _name_from_uri(uri: str) -> str:
     """
     if uri.startswith("file://"):
         from pathlib import PurePosixPath
-        return PurePosixPath(uri[len("file://"):]).name or uri
+
+        return PurePosixPath(uri[len("file://") :]).name or uri
     if uri.startswith(("http://", "https://")):
         from urllib.parse import urlparse
+
         return urlparse(uri).netloc or uri
     return uri
 
@@ -348,6 +365,7 @@ def load_configs(*, include_disabled: bool = False) -> list[MCPServerConfig]:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except Exception as e:  # noqa: BLE001
         import sys
+
         print(f"[mcp] failed to parse {path}: {e}", file=sys.stderr)
         return []
 
@@ -367,7 +385,9 @@ def load_configs(*, include_disabled: bool = False) -> list[MCPServerConfig]:
     return out
 
 
-def save_configs(configs: Iterable[MCPServerConfig]) -> Path:
+def save_configs(
+    configs: Iterable[MCPServerConfig], *, expected_revision: str | None = None
+) -> Path:
     """Persist a full set of server configs back to disk.
 
     The file is rewritten as a whole (read-modify-write style).
@@ -378,9 +398,18 @@ def save_configs(configs: Iterable[MCPServerConfig]) -> Path:
     :func:`save_roots` preserves ``servers``.
     """
     path = get_config_path()
-    raw = _read_raw(path)
-    raw["servers"] = {cfg.name: cfg.to_storage_dict() for cfg in configs}
-    _write_private_json(path, raw)
+    servers = {cfg.name: cfg.to_storage_dict() for cfg in configs}
+
+    def update(raw: bytes | None) -> bytes:
+        payload = _decode_raw_bytes(raw)
+        payload["servers"] = servers
+        return json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+
+    from openprogram.credential_files import _private_atomic_update
+
+    root = _paths.get_state_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    _private_atomic_update(path, update, root=root, expected_revision=expected_revision)
     return path
 
 
@@ -392,49 +421,30 @@ def _read_raw(path: Path) -> dict:
     return raw if isinstance(raw, dict) else {}
 
 
+def _decode_raw_bytes(raw: bytes | None) -> dict:
+    if raw is None:
+        return {}
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def _write_private_json(path: Path, payload: dict) -> None:
-    """Owner-only atomic write — this file holds bearer tokens, OAuth
-    client secrets, and arbitrary ``env`` values.
+    """Owner-only full replacement used by compatibility callers."""
 
-    Same shape as the OAuth token file's writer
-    (:mod:`openprogram.mcp.token_storage`): create the temp file with
-    ``0600`` in one syscall so it is never briefly world-readable,
-    fsync before the rename so a crash can't leave a truncated config,
-    then ``os.replace`` for atomicity. ``restrict_to_user`` afterwards
-    tightens the ACL on Windows (where POSIX mode bits do nothing) and
-    re-applies ``0600`` to a pre-existing file created before this
-    hardening landed — an existing 0644 config narrows on its next save.
+    from openprogram.credential_files import _private_atomic_write
 
-    The state directory itself keeps its normal mode: every other
-    subsystem reads ``~/.openprogram/``, and 0600 on a directory would
-    strip the traversal bit they need. The file's own mode is what
-    keeps the secrets private.
-    """
-    import os
-
-    from openprogram._compat import restrict_to_user
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    try:
-        os.unlink(tmp)
-    except FileNotFoundError:
-        pass
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(tmp, flags, 0o600)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2, ensure_ascii=False)
-            f.flush()
-            os.fsync(f.fileno())
-    except Exception:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
-    os.replace(tmp, path)
-    restrict_to_user(path)
+    root = _paths.get_state_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    _private_atomic_write(
+        path,
+        lambda handle: handle.write(
+            json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+        ),
+        root=root,
+    )
 
 
 def parse_entry(name: str, entry: dict) -> Optional[MCPServerConfig]:
@@ -446,9 +456,11 @@ def parse_entry(name: str, entry: dict) -> Optional[MCPServerConfig]:
 
     transport = str(entry.get("type", LOCAL))
     if transport not in _KNOWN_TRANSPORTS:
-        print(f"[mcp] skipping server '{name}': unknown type "
-              f"'{transport}' (expected one of {_KNOWN_TRANSPORTS})",
-              file=sys.stderr)
+        print(
+            f"[mcp] skipping server '{name}': unknown type "
+            f"'{transport}' (expected one of {_KNOWN_TRANSPORTS})",
+            file=sys.stderr,
+        )
         return None
 
     enabled = bool(entry.get("enabled", True))
@@ -464,8 +476,10 @@ def parse_entry(name: str, entry: dict) -> Optional[MCPServerConfig]:
     if transport == LOCAL:
         command = entry.get("command")
         if not isinstance(command, list) or not command:
-            print(f"[mcp] skipping server '{name}': missing/empty "
-                  f"command list", file=sys.stderr)
+            print(
+                f"[mcp] skipping server '{name}': missing/empty command list",
+                file=sys.stderr,
+            )
             return None
         env_obj = entry.get("env", {})
         if not isinstance(env_obj, dict):
@@ -485,8 +499,11 @@ def parse_entry(name: str, entry: dict) -> Optional[MCPServerConfig]:
     # remote (http / sse) --------------------------------------------
     url = entry.get("url")
     if not isinstance(url, str) or not url.strip():
-        print(f"[mcp] skipping server '{name}': missing 'url' for "
-              f"transport '{transport}'", file=sys.stderr)
+        print(
+            f"[mcp] skipping server '{name}': missing 'url' for "
+            f"transport '{transport}'",
+            file=sys.stderr,
+        )
         return None
 
     headers_obj = entry.get("headers", {})
@@ -496,13 +513,18 @@ def parse_entry(name: str, entry: dict) -> Optional[MCPServerConfig]:
 
     auth_raw = entry.get("auth") or {"kind": AUTH_NONE}
     if not isinstance(auth_raw, dict):
-        print(f"[mcp] server '{name}': 'auth' must be an object, "
-              f"defaulting to none", file=sys.stderr)
+        print(
+            f"[mcp] server '{name}': 'auth' must be an object, defaulting to none",
+            file=sys.stderr,
+        )
         auth_raw = {"kind": AUTH_NONE}
     auth_kind = str(auth_raw.get("kind", AUTH_NONE))
     if auth_kind not in _KNOWN_AUTH_KINDS:
-        print(f"[mcp] server '{name}': unknown auth kind "
-              f"'{auth_kind}', defaulting to none", file=sys.stderr)
+        print(
+            f"[mcp] server '{name}': unknown auth kind "
+            f"'{auth_kind}', defaulting to none",
+            file=sys.stderr,
+        )
         auth_kind = AUTH_NONE
 
     bearer_token: Optional[str] = None
@@ -510,9 +532,11 @@ def parse_entry(name: str, entry: dict) -> Optional[MCPServerConfig]:
     if auth_kind == AUTH_BEARER:
         bearer_token = _opt_str(auth_raw.get("token"))
         if not bearer_token:
-            print(f"[mcp] server '{name}': bearer auth without "
-                  f"'token' — set it via the management API",
-                  file=sys.stderr)
+            print(
+                f"[mcp] server '{name}': bearer auth without "
+                f"'token' — set it via the management API",
+                file=sys.stderr,
+            )
     elif auth_kind == AUTH_OAUTH:
         oauth = OAuthSettings.from_dict(auth_raw)
 
@@ -567,11 +591,11 @@ def catalog_entry_hash(entry: dict) -> str:
     """
     import hashlib
     import json as _json
-    canonical = {
-        k: entry.get(k) for k in _CATALOG_HASHED_KEYS if k in entry
-    }
-    blob = _json.dumps(canonical, sort_keys=True, separators=(",", ":"),
-                       ensure_ascii=False)
+
+    canonical = {k: entry.get(k) for k in _CATALOG_HASHED_KEYS if k in entry}
+    blob = _json.dumps(
+        canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 

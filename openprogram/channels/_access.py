@@ -32,15 +32,14 @@ dispatch 里处理, 而 dispatch 只对已放行的发信人运行, 顺序上也
 一路带到 ``memory/`` 的 ``SourceRecord``. 门禁判定的是"这
 个人能不能进", 不是"能进几个人".
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import math
-import os
 import re
 import secrets
-import tempfile
 import threading
 import time
 from contextlib import contextmanager
@@ -48,7 +47,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from openprogram import _compat as fcntl
 from openprogram.channels import accounts as _accounts
 
 
@@ -86,7 +84,11 @@ def _decision(
     reply: Optional[str] = None,
 ) -> AccessDecision:
     value = AccessDecision(
-        allowed, pairing_state, "stable_sender_allowlist", reason_code, reply,
+        allowed,
+        pairing_state,
+        "stable_sender_allowlist",
+        reason_code,
+        reply,
     )
     _log.info("channel pairing decision %s", value.to_dict())
     return value
@@ -109,13 +111,11 @@ def access_path(channel: str, account_id: str) -> Path:
 @contextmanager
 def _state_file_lock(channel: str, account_id: str):
     path = access_path(channel, account_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.with_suffix(".json.lock").open("a+b") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    from openprogram.credential_files import _private_file_lock
+    from openprogram.paths import get_state_dir
+
+    with _private_file_lock(path, root=get_state_dir(), timeout=10):
+        yield
 
 
 def _rows(value: Any) -> dict[str, dict[str, Any]]:
@@ -134,9 +134,14 @@ def _rows(value: Any) -> dict[str, dict[str, Any]]:
 
 def _load(channel: str, account_id: str) -> dict[str, Any]:
     path = access_path(channel, account_id)
+    from openprogram.credential_files import _private_file_lock, _read_private_bytes
+    from openprogram.paths import get_state_dir
+
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        with _private_file_lock(path, root=get_state_dir(), timeout=10):
+            stored = _read_private_bytes(path, root=get_state_dir())
+        raw = json.loads(stored.decode("utf-8")) if stored is not None else {}
+    except (UnicodeDecodeError, json.JSONDecodeError):
         raw = {}
     if not isinstance(raw, dict):
         raw = {}
@@ -147,20 +152,24 @@ def _load(channel: str, account_id: str) -> dict[str, Any]:
     }
 
 
-def _save(channel: str, account_id: str, data: dict[str, Any]) -> None:
+def _save(
+    channel: str,
+    account_id: str,
+    data: dict[str, Any],
+    *,
+    expected_revision: str | None = None,
+):
     path = access_path(channel, account_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(
-        prefix="access-", suffix=".json.tmp", dir=path.parent,
+    payload = (json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    from openprogram.credential_files import _private_atomic_write
+    from openprogram.paths import get_state_dir
+
+    return _private_atomic_write(
+        path,
+        lambda handle: handle.write(payload),
+        root=get_state_dir(),
+        expected_revision=expected_revision,
     )
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(data, handle, indent=2, sort_keys=True)
-            handle.write("\n")
-        os.chmod(temporary, 0o600)
-        os.replace(temporary, path)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
 
 
 def _prune_pending(data: dict[str, Any], now: float) -> None:
@@ -170,8 +179,7 @@ def _prune_pending(data: dict[str, Any], now: float) -> None:
             requested_at = float(row.get("requested_at") or 0)
         except (TypeError, ValueError):
             requested_at = 0.0
-        if not math.isfinite(requested_at) \
-                or now - requested_at > PENDING_TTL:
+        if not math.isfinite(requested_at) or now - requested_at > PENDING_TTL:
             expired.append(uid)
     for uid in expired:
         del data["pending"][uid]
@@ -181,8 +189,12 @@ def _prune_pending(data: dict[str, Any], now: float) -> None:
 # 入站路径 (只读 allowlist / 只写 pending)
 # ---------------------------------------------------------------------------
 
+
 def decide_inbound_sender(
-    channel: str, account_id: str, user_id: str, display: str = "",
+    channel: str,
+    account_id: str,
+    user_id: str,
+    display: str = "",
 ) -> AccessDecision:
     """Return one structured pairing decision for a stable sender ID.
 
@@ -193,7 +205,9 @@ def decide_inbound_sender(
     user_id = str(user_id or "").strip()
     if not user_id:
         return _decision(
-            False, "unpaired", "STABLE_SENDER_ID_MISSING",
+            False,
+            "unpaired",
+            "STABLE_SENDER_ID_MISSING",
         )
     with _lock, _state_file_lock(channel, account_id):
         data = _load(channel, account_id)
@@ -209,11 +223,15 @@ def decide_inbound_sender(
                 data["pending"][user_id] = row
                 _save(channel, account_id, data)
             return _decision(
-                False, "unpaired", "PAIRING_ALREADY_PENDING",
+                False,
+                "unpaired",
+                "PAIRING_ALREADY_PENDING",
             )
         if len(data["pending"]) >= MAX_PENDING:
             return _decision(
-                False, "unpaired", "PAIRING_PENDING_LIMIT",
+                False,
+                "unpaired",
+                "PAIRING_PENDING_LIMIT",
             )
         row = {
             "code": _new_code(),
@@ -247,6 +265,7 @@ def _id_flag(account_id: str) -> str:
 # 本机管理面 (CLI / webui — 永远不由 channel 消息触发)
 # ---------------------------------------------------------------------------
 
+
 def approve(channel: str, account_id: str, code: str) -> Optional[str]:
     """按配对码放行. 返回放行的 user_id, 码不存在/过期返回 None.
 
@@ -270,8 +289,9 @@ def approve(channel: str, account_id: str, code: str) -> Optional[str]:
         return None
 
 
-def approve_user(channel: str, account_id: str, user_id: str,
-                 display: str = "") -> None:
+def approve_user(
+    channel: str, account_id: str, user_id: str, display: str = ""
+) -> None:
     """直接把 platform user id 加进 allowlist (机主已知 id 时不必等
     对方来信刷配对码).
 
