@@ -31,6 +31,7 @@ class _FakeAsyncClient:
     """Stand-in for httpx.AsyncClient that records aclose() without any I/O."""
 
     def __init__(self, **_kwargs):
+        self.kwargs = _kwargs
         self.closed = False
         self.is_closed = False
         try:
@@ -250,6 +251,66 @@ def test_shared_cache_separates_effective_transport_configuration():
         normal = hc.get_shared_async_client("same", **_SCOPE, force_ipv4=False)
         ipv4 = hc.get_shared_async_client("same", **_SCOPE, force_ipv4=True)
         assert normal is not ipv4
+
+    asyncio.run(_body())
+
+
+def test_shared_cache_retires_client_when_live_owner_policy_changes(
+    monkeypatch,
+):
+    state = {
+        "security": {
+            "outbound_url": {
+                "policy_proxy": {
+                    "url": "http://127.0.0.1:3111",
+                    "enforces_target_policy": True,
+                }
+            }
+        }
+    }
+    monkeypatch.setattr("openprogram.setup._read_config", lambda: state)
+
+    async def _body():
+        first = hc.get_shared_async_client("same", **_SCOPE)
+        state["security"]["outbound_url"]["policy_proxy"]["url"] = (
+            "http://127.0.0.1:3222"
+        )
+        second = hc.get_shared_async_client("same", **_SCOPE)
+        await asyncio.sleep(0)
+
+        assert first is not second
+        assert first.closed
+        assert second.kwargs["security"].policy_proxy.url == "http://127.0.0.1:3222"
+
+        state["security"]["outbound_url"] = {"exceptions": []}
+        third = hc.get_shared_async_client("same", **_SCOPE)
+        await asyncio.sleep(0)
+        assert second.closed
+        assert third is not second
+        assert third.kwargs["security"].policy_proxy is None
+
+    asyncio.run(_body())
+
+
+def test_shared_cache_retires_client_when_live_owner_exception_is_revoked(
+    monkeypatch,
+):
+    exception = {
+        "consumer": _SCOPE["consumer"],
+        "origin": _SCOPE["configured_origin"],
+    }
+    state = {"security": {"outbound_url": {"exceptions": [exception]}}}
+    monkeypatch.setattr("openprogram.setup._read_config", lambda: state)
+
+    async def _body():
+        authorized = hc.get_shared_async_client("same", **_SCOPE)
+        state["security"]["outbound_url"]["exceptions"] = []
+        revoked = hc.get_shared_async_client("same", **_SCOPE)
+        await asyncio.sleep(0)
+
+        assert authorized is not revoked
+        assert authorized.closed
+        assert revoked.kwargs["security"].owner_exceptions == ()
 
     asyncio.run(_body())
 

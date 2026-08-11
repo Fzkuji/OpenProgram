@@ -2,7 +2,8 @@
 
 ## Status and baseline
 
-Implementation complete pending independent reviews. Baseline:
+Implementation and first spec-review fixes complete pending independent
+re-review. Baseline:
 `23f40cf8e81cbd822d39e3a3a380c432b251b6f8`.
 
 ## Implementation scope
@@ -44,7 +45,7 @@ Implementation complete pending independent reviews. Baseline:
 | Path | Owner | Narrow excluded call |
 |---|---|---|
 | `security/safe_http.py` | Runtime managed transport | httpcore pools/proxies only |
-| `functions/tools/browser/_chrome_bootstrap.py` | Browser control | urllib opener construction only |
+| `functions/tools/browser/_chrome_bootstrap.py` | Browser control | two urllib opener constructions and one loopback CDP liveness dial |
 | `_cli_cmds/mcp.py` | Owner control plane | authenticated backend urllib opener only |
 | `cli_ink.py` | Owner control plane | loopback worker socket liveness only |
 | `_cli_cmds/doctor.py` | Owner control plane | loopback worker socket liveness only |
@@ -81,6 +82,19 @@ declaration reasons rather than false detected call sites.
   setting error.
 - Persisted non-object `security` RED -> `1 failed`; GREEN fails closed rather
   than treating it as empty policy.
+- Spec review fix RED, inventory group: `4 failed, 10 deselected`. The failures
+  proved that an unrelated string argument could claim a consumer, a same-file
+  managed consumer could hide a naked SDK constructor, `socket.create_connection`
+  was absent, and boundary exclusions did not bind every kind/count. GREEN:
+  `4 passed, 10 deselected`.
+- Adjacent fail-closed inventory RED: a lookalike `unrelated.safe_client` and
+  an injected SDK constructor whose exact consumer was declared `DISABLED`
+  both passed. GREEN: `2 passed, 14 deselected`; managed factory symbols and
+  SDK dispositions now require exact recognized associations.
+- Live owner-policy cache RED: `2 failed, 10 deselected`; changing policy proxy
+  `3111` to `3222` and revoking a persisted exception both reused the old
+  provider client. GREEN: `2 passed, 10 deselected`; the cache key now includes
+  the effective immutable policy snapshot and retires superseded clients.
 
 ## Final verification evidence
 
@@ -97,6 +111,18 @@ declaration reasons rather than false detected call sites.
   for the legacy `config_schema.py` and `doctor.py` remain unchanged from the
   baseline; no unrelated mechanical reformat was applied.
 - `git diff --check`: passed.
+
+Spec-review fix verification:
+
+- Task 7 focused plus provider cache lifecycle: `69 passed in 1.49s`.
+- Static checker: `unregistered=0 active_unmanaged=0
+  registry_without_consumer=0 stale_exclusions=0`.
+- `tests/security`: `531 passed in 77.18s`.
+- Provider/config affected suite: `131 passed, 1 xfailed in 0.48s`.
+- Full frozen dev non-integration suite: `3789 passed, 10 skipped, 1
+  xfailed, 4 warnings in 273.06s`.
+- Ruff lint, scoped Ruff format, `uv lock --check`, and `git diff --check`:
+  passed.
 
 ## Concerns
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -87,7 +88,9 @@ def test_scanner_reports_exclusion_whose_declared_call_no_longer_exists(tmp_path
         registry={},
     )
 
-    assert result.stale_exclusions == ("old.py",)
+    assert result.stale_exclusions == (
+        "old.py:urllib.request.urlopen expected=1 actual=0",
+    )
 
 
 def test_scanner_detects_supported_raw_libraries_and_known_sdk(tmp_path):
@@ -164,6 +167,173 @@ def test_registry_consumer_cannot_be_satisfied_by_docstring_only(tmp_path):
     )
 
     assert result.registry_without_consumer == ("tool.web_fetch",)
+
+
+def test_registry_consumer_cannot_be_satisfied_by_unrelated_call_argument(
+    tmp_path,
+):
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "claims.py").write_text(
+        'print("tool.web_fetch")\n',
+        encoding="utf-8",
+    )
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry={"tool.web_fetch": object()},
+    )
+
+    assert result.registry_without_consumer == ("tool.web_fetch",)
+
+
+def test_registry_consumer_cannot_be_satisfied_by_lookalike_factory(tmp_path):
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "claims.py").write_text(
+        """
+from unrelated import safe_client as pretend
+pretend("tool.web_fetch")
+""",
+        encoding="utf-8",
+    )
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry={"tool.web_fetch": object()},
+    )
+
+    assert result.registry_without_consumer == ("tool.web_fetch",)
+
+
+def test_unmanaged_sdk_is_not_hidden_by_same_file_consumer_evidence(tmp_path):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "mixed.py").write_text(
+        """
+import openai
+from openprogram.security.safe_http import safe_client
+
+safe_client("provider.openai.sdk")
+openai.OpenAI()
+""",
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert {issue.kind for issue in result.unregistered} == {"sdk.openai.OpenAI"}
+    assert result.active_unmanaged_transports == ("provider.openai.sdk",)
+
+
+def test_sdk_injection_must_match_the_registered_consumer_disposition(tmp_path):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "mismatch.py").write_text(
+        """
+import openai
+openai.OpenAI(http_client=object())
+""",
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(sdk_disposition=SDKDisposition.DISABLED)
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == ["sdk.openai.OpenAI"]
+    assert result.active_unmanaged_transports == ("provider.openai.sdk",)
+
+
+def test_scanner_detects_socket_create_connection_and_imported_alias(tmp_path):
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "socket_calls.py").write_text(
+        """
+import socket
+from socket import create_connection as dial
+
+socket.create_connection(("127.0.0.1", 80))
+dial(("127.0.0.1", 81))
+""",
+        encoding="utf-8",
+    )
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry={},
+    )
+
+    assert [issue.kind for issue in result.unregistered] == [
+        "socket.create_connection",
+        "socket.create_connection",
+    ]
+
+
+def test_boundary_manifest_tracks_each_kind_and_exact_call_count(tmp_path):
+    package = tmp_path / "runtime"
+    package.mkdir()
+    source = package / "managed.py"
+    source.write_text(
+        """
+import httpcore
+httpcore.ConnectionPool()
+""",
+        encoding="utf-8",
+    )
+    exclusion = runtime_http_audit.BoundaryExclusion(
+        path="managed.py",
+        boundary_owner="managed-transport",
+        reason="test exact manifest binding",
+        kinds=frozenset({"httpcore.ConnectionPool", "httpcore.HTTPProxy"}),
+    )
+
+    missing = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(exclusion,),
+        registry={},
+    )
+    assert missing.stale_exclusions == (
+        "managed.py:httpcore.HTTPProxy expected=1 actual=0",
+    )
+
+    source.write_text(
+        """
+import httpcore
+httpcore.ConnectionPool()
+httpcore.ConnectionPool()
+httpcore.HTTPProxy("http://proxy.example")
+""",
+        encoding="utf-8",
+    )
+    extra = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(exclusion,),
+        registry={},
+    )
+    assert [issue.kind for issue in extra.unregistered] == ["httpcore.ConnectionPool"]
+    assert extra.stale_exclusions == ()
 
 
 def test_shared_denial_ring_is_bounded_and_origin_only():
