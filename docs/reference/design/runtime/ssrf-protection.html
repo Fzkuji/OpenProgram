@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>出站 URL 与 SSRF 防护设计</title>
+<style>
+  :root{--bg:#16150f;--pan:#1d1c14;--bd:#2e2c20;--tx:#bdb9a6;--dim:#8a8675;
+    --acc:#d4843a;--blue:#4f8ef7;--green:#5aad4e;--purple:#9d6fe0;--red:#e0445a;--code:#12110b}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--tx);
+    font:14px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:40px 24px 96px}
+  .wrap{max-width:1120px;margin:auto} h1{color:#f0eee6;font-size:24px;margin:0 0 6px}
+  h2{color:var(--acc);font-size:17px;margin:36px 0 8px;scroll-margin-top:18px}
+  h3{color:#f0eee6;font-size:14px;margin:24px 0 8px}.sub,.lead{color:var(--dim);max-width:90ch}
+  .toc{display:flex;gap:7px;flex-wrap:wrap;margin:18px 0}.toc a{color:var(--tx);text-decoration:none;
+    border:1px solid var(--bd);border-radius:99px;padding:4px 11px;font-size:12px;background:var(--pan)}
+  .band{border:1px solid var(--bd);border-left:4px solid var(--blue);border-radius:11px;
+    padding:12px 15px;background:var(--pan);margin:36px 0 12px}.band.ref{border-left-color:var(--purple)}
+  .band.plan{border-left-color:var(--green)}.band b{color:#f0eee6}.num{color:var(--dim);margin-right:8px}
+  .note{border-left:3px solid var(--acc);padding:4px 0 4px 13px;color:var(--dim);max-width:92ch;margin:12px 0}
+  .note.red{border-left-color:var(--red)}.note.green{border-left-color:var(--green)}.note b{color:#f0eee6}
+  code{background:var(--code);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
+  .tbl{overflow-x:auto;border:1px solid var(--bd);border-radius:11px;background:var(--pan);margin:12px 0 18px}
+  table{width:100%;border-collapse:collapse;min-width:760px;font-size:13px}th{text-align:left;color:var(--dim);
+    font-size:11px;letter-spacing:.08em;padding:10px 13px;border-bottom:1px solid var(--bd)}
+  td{padding:10px 13px;vertical-align:top;border-bottom:1px solid #26241a}tr:last-child td{border:0}
+  td b{color:#f0eee6}.yes{color:var(--green)}.no{color:var(--red)}.partial{color:var(--acc)}
+  .flow{display:grid;grid-template-columns:1fr 38px 1fr 38px 1fr;gap:8px;align-items:stretch;margin:14px 0}
+  .box{border:1px solid var(--bd);border-radius:10px;background:var(--pan);padding:12px}.box h3{margin:0 0 5px}
+  .arrow{display:grid;place-items:center;color:var(--acc);font-size:22px}.small{font-size:12px;color:var(--dim)}
+  ul{padding-left:20px;max-width:94ch}li{margin:6px 0}a{color:#7ca7f8}
+  @media(max-width:820px){.flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}}
+</style>
+</head>
+<body><main class="wrap">
+<h1>出站 URL 与 SSRF 防护</h1>
+<p class="sub">设计快照：2026-08-11。本页只定义设计与验收口径，尚不表示功能已经实现。
+内容固定按 OpenProgram 当前状态、其他项目设计、OpenProgram 后续完整方案排列。</p>
+
+<nav class="toc">
+  <a href="#current">01 当前状态</a><a href="#surfaces">02 出站面</a><a href="#references">03 参考项目</a>
+  <a href="#decision">04 采用与拒绝</a><a href="#target">05 目标设计</a><a href="#acceptance">06 完整验收</a>
+</nav>
+
+<section class="band" id="current"><b>第一部分 · OpenProgram 当前状态</b><br>
+当前有入站 Web 身份和 Origin/Host 校验，也有默认断网的本地命令沙箱；但 Runtime 自己发起的 HTTP 请求没有统一目标校验。
+因此 Origin 校验不能作为 SSRF 证据，功能矩阵中的该项在实现前应为未确认，而不是部分确认。</section>
+
+<h2><span class="num">01</span>已经存在的边界</h2>
+<div class="tbl"><table>
+<tr><th>现有机制</th><th>保护方向</th><th>能够证明什么</th><th>不能证明什么</th></tr>
+<tr><td><code>backend_endpoint.py</code>、Web owner auth、Origin/Host allowlist</td><td>浏览器或客户端到 Web 服务的入站请求</td><td class="yes">阻止未授权来源调用本地控制面</td><td class="no">不检查 OpenProgram 将要连接的出站地址</td></tr>
+<tr><td><code>sandbox/__init__.py</code> 的网络限制</td><td>受管 shell、<code>execute_code</code> 等子进程</td><td class="yes">默认 <code>workspace-write</code> 下阻止子进程联网</td><td class="partial">不覆盖宿主 Python 进程内的 provider、MCP、附件和目录下载</td></tr>
+<tr><td><code>providers/utils/http_client.py</code></td><td>部分 provider HTTP 客户端</td><td class="yes">统一 timeout、keepalive、IPv4 和 proxy</td><td class="no">不校验 scheme、目标 IP、重定向或实际连接地址；其他模块也未统一复用</td></tr>
+<tr><td>下载大小限制</td><td>部分附件和媒体响应体</td><td class="yes">限制磁盘与内存消耗</td><td class="no">目标连接建立前不能阻止私网访问</td></tr>
+</table></div>
+
+<h2 id="surfaces"><span class="num">02</span>当前出站面与信任来源</h2>
+<p class="lead">SSRF 策略不能简单包住所有 HTTP 请求。OpenProgram 同时需要访问公网内容、用户明确配置的 localhost 服务和固定 loopback 回调；三类目标必须使用不同规则。</p>
+<div class="tbl"><table>
+<tr><th>出站面</th><th>URL 来源</th><th>当前调用方式</th><th>目标策略</th></tr>
+<tr><td><code>web_fetch</code></td><td>模型或用户直接提供</td><td><code>urllib.request.urlopen</code>；有 scheme、timeout 和大小限制，但自动重定向不逐跳检查</td><td><b>非可信 URL</b>：只允许公网，连接时约束地址并逐跳校验</td></tr>
+<tr><td>渠道附件、远端媒体</td><td>远端消息或渠道 API 返回值</td><td><code>requests</code>，允许服务端重定向</td><td><b>非可信 URL</b>：只允许公网，逐跳校验并限制响应体</td></tr>
+<tr><td>skills discovery、plugin marketplace、MCP catalog</td><td>owner 登记入口，后续链接和重定向由远端内容决定</td><td>多个独立 <code>httpx.AsyncClient</code></td><td><b>混合来源</b>：首个 origin 受配置约束，派生 URL 仍按非可信规则处理</td></tr>
+<tr><td>provider、remote MCP、渠道和 TTS API</td><td>owner 配置的 service endpoint</td><td>SDK、<code>httpx</code>、<code>requests</code></td><td><b>受信服务</b>：允许显式私网地址；携带凭据时禁止跨 origin 重定向</td></tr>
+<tr><td>MCP OAuth redirect</td><td>Runtime 生成</td><td>固定 loopback listener</td><td><b>内部回调</b>：只允许精确 loopback host 与已分配端口</td></tr>
+<tr><td>Playwright、Electron WebTab、<code>agent_browser</code></td><td>模型、用户、网页脚本或 CDP URL</td><td>多个浏览器控制后端，不经过统一 Python client；普通导航没有目标策略</td><td>归入“浏览器控制”条目单独验收；不能用 Runtime fetch 的完成状态代替</td></tr>
+<tr><td>上游返回的 upload URL、generated asset</td><td>已连接服务的响应内容</td><td><code>requests</code> 或 <code>urllib</code> 二次获取</td><td><b>派生非可信 URL</b>：固定服务 origin 或重新执行公网策略，不继承原请求凭据</td></tr>
+<tr><td>shell、插件代码、外部安装器</td><td>任意代码</td><td>子进程或宿主进程内执行</td><td>由 sandbox/插件信任边界约束；URL 字符串校验不构成代码执行的网络边界</td></tr>
+</table></div>
+
+<div class="note red"><b>当前判定：</b>Runtime-owned 非可信 URL 获取没有统一防护。功能矩阵中的该行改名为
+“Runtime URL 获取 SSRF 防护”并记为未确认；浏览器导航、CDP 和页面派生请求随现有“浏览器控制”条目单独设计；模型命令的网络隔离继续归入“操作系统级沙箱”。</div>
+
+<section class="band ref" id="references"><b>第二部分 · 其他项目怎么设计</b><br>
+参考对象选择 Hermes、OpenClaw 与 OWASP。Hermes提供统一 URL safety 和多入口覆盖；OpenClaw明确区分应用层拦截与网络层边界；OWASP给出受信服务 allowlist 与任意公网访问两种不同模型。</section>
+
+<h2><span class="num">03</span>参考机制比较</h2>
+<div class="tbl"><table>
+<tr><th>对象</th><th>已采用机制</th><th>仍有限制</th><th>对 OpenProgram 的用途</th></tr>
+<tr><td><b>Hermes</b></td><td>共享 <code>url_safety</code>；覆盖 web、browser、vision、gateway media；DNS 失败默认拒绝；阻止 loopback、RFC1918、link-local、CGNAT、metadata、reserved、multicast 和 unspecified；逐跳检查重定向；日志 URL 去凭据；媒体流式限额</td><td>提供进程级 <code>allow_private_urls</code> 开关，开启后多个入口同时放宽；应用内检查仍不能代替 OS 网络隔离</td><td>采用共享校验、fail-closed、地址全集、逐跳检查、脱敏和大小限制；把全局开关改为按 service origin 的精确例外</td></tr>
+<tr><td><b>OpenClaw</b></td><td>private/internal/special-use 默认拒绝；hostname 精确或通配例外；导航前、交互产生的加载和最终 URL 多阶段检查；明确记录 speculative navigation 与 browser 子资源风险</td><td>官方文档明确请求拦截不是网络防火墙，redirect、popup、Service Worker 和后台资源仍可能绕过；完整预防依赖 egress isolation 或策略代理</td><td>采用严格默认和显式例外；保留“应用层不等于网络边界”的声明；浏览器能力不并入 Runtime fetch 的完成结论</td></tr>
+<tr><td><b>OWASP</b></td><td>区分“只访问已知服务”和“允许任意公网目标”；限制协议；校验所有 A/AAAA 结果；受信服务优先 allowlist；建议网络层共同限制</td><td>单次 DNS 预检本身仍存在 DNS pinning/TOCTOU 风险</td><td>采用两类策略模型；在连接阶段再次约束实际地址，不把预检结果作为唯一边界</td></tr>
+</table></div>
+<p class="small">来源：
+<a href="https://github.com/NousResearch/hermes-agent/blob/main/tools/url_safety.py">Hermes url_safety.py</a>、
+<a href="https://hermes-agent.nousresearch.com/docs/user-guide/security/">Hermes Security</a>、
+<a href="https://docs.openclaw.ai/gateway/security">OpenClaw Security</a>、
+<a href="https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html">OWASP SSRF Prevention</a>。</p>
+
+<h2 id="decision"><span class="num">04</span>采用、修改与拒绝</h2>
+<div class="tbl"><table>
+<tr><th>结论</th><th>机制</th><th>原因</th></tr>
+<tr><td class="yes">采用</td><td>一个纯 URL/IP policy 模块；所有 A/AAAA 结果必须通过；DNS 失败即拒绝；重定向逐跳验证；流式大小上限；日志脱敏</td><td>覆盖公共绕过方式，并使所有 Runtime fetch 使用相同判定</td></tr>
+<tr><td class="yes">采用</td><td>受信 service origin 与任意公网 URL 使用不同策略</td><td>保留 localhost provider、内网 MCP 和企业代理等明确配置能力，同时不允许模型自行扩大信任范围</td></tr>
+<tr><td class="partial">修改</td><td>Hermes 的全局 <code>allow_private_urls</code></td><td>改为 owner 配置中的精确 scheme/host/port 或 CIDR 例外；例外只作用于指定 consumer，不全局放宽</td></tr>
+<tr><td class="partial">修改</td><td>OpenClaw 的 browser 请求拦截</td><td>浏览器单独验收；Runtime HTTP 完成不能覆盖浏览器的 popup、Service Worker 和后台资源</td></tr>
+<tr><td class="no">拒绝</td><td>只检查 URL 字符串或只在请求前调用一次 DNS</td><td>无法处理重定向和 DNS rebinding，不能作为完整状态依据</td></tr>
+<tr><td class="no">拒绝</td><td>把 Origin/Host、CORS 或入站 owner auth 计入 SSRF 完成度</td><td>保护方向不同</td></tr>
+<tr><td class="no">拒绝</td><td>把所有 HTTP 客户端强行套用公网-only 规则</td><td>会破坏用户明确配置的本地模型、MCP 和内网服务</td></tr>
+</table></div>
+
+<section class="band plan" id="target"><b>第三部分 · OpenProgram 后续完整方案</b><br>
+目标不是增加一个 URL 检查函数，而是让每个 Runtime-owned 出站入口带上来源类型，经统一策略决定目标、重定向、凭据和响应限制；无法进入统一边界的入口不能计为完成。</section>
+
+<h2><span class="num">05</span>目标数据流</h2>
+<div class="flow">
+  <div class="box"><h3>调用者声明来源</h3><div class="small"><code>untrusted_public</code><br><code>fixed_public_service</code><br><code>configured_service</code><br><code>loopback_callback</code></div></div>
+  <div class="arrow">›</div>
+  <div class="box"><h3>统一 policy</h3><div class="small">规范化 URL、限制 scheme、解析全部地址、检查例外、生成不含秘密的审计结果</div></div>
+  <div class="arrow">›</div>
+  <div class="box"><h3>受管 transport</h3><div class="small">连接时约束已验证地址；逐跳处理 redirect；限制响应头、正文和超时；记录 reason code</div></div>
+</div>
+
+<h3>05.1 模块边界</h3>
+<div class="tbl"><table>
+<tr><th>模块</th><th>责任</th><th>不负责</th></tr>
+<tr><td><code>openprogram/security/url_policy.py</code></td><td>URL 规范化、scheme/userinfo/host/port 校验；<code>ipaddress</code> 分类；A/AAAA 全结果判断；scope 精确例外；稳定 reason code；安全日志表示</td><td>不发送网络请求，不读取调用者业务配置</td></tr>
+<tr><td><code>openprogram/security/safe_http.py</code></td><td>同步和异步受管 client；手动 redirect；连接阶段地址约束；跨 origin 凭据剥离/拒绝；流式读取上限；timeout</td><td>不决定某个 URL 属于哪个信任来源</td></tr>
+<tr><td>各 consumer adapter</td><td>把附件、catalog、marketplace、service endpoint 标成正确来源；提供响应体上限和允许的 content type</td><td>不得自己实现另一套私网判断</td></tr>
+<tr><td><code>doctor</code> 与审计日志</td><td>列出未迁移 consumer、危险例外、代理委托和最近拒绝原因；URL 只保留 scheme/host/port 与截断路径</td><td>不显示 userinfo、query、fragment、authorization header 或 token path</td></tr>
+</table></div>
+
+<h3>05.2 四类策略</h3>
+<ul>
+  <li><b>非可信公网 URL：</b>只允许 HTTP/HTTPS；禁止 userinfo；所有解析地址必须是公网 global unicast；禁止 loopback、private、link-local、CGNAT、multicast、reserved、unspecified、documentation/test range 和云 metadata host；默认不继承环境代理；每次 redirect 重新执行完整策略。</li>
+  <li><b>固定公网服务：</b>目标来自随版本发布并经审计的常量；仍校验公网地址和连接结果；变更 origin 必须修改声明清单；凭据不随跨 origin redirect 发送。</li>
+  <li><b>用户配置服务：</b>owner 保存配置时固定 scheme、规范化 host 和有效 port；允许显式 localhost/私网；携带 credential 的请求只发送到该 origin；跨 origin redirect 默认拒绝，不能把 authorization、cookie 或 URL credential 转发到新目标。</li>
+  <li><b>内部回调：</b>只允许 Runtime 当前分配的 loopback IP 与端口；不接受 hostname 通配、私网 CIDR 或 redirect。</li>
+</ul>
+
+<h3>05.3 DNS rebinding 与代理</h3>
+<p>非可信公网请求不能采用“校验一次域名后让普通 client 再解析”的流程。受管 transport 在建立 TCP 连接时解析并检查地址，然后连接到同一已检查地址；TLS SNI 和证书验证仍使用原 hostname。连接池按规范化 origin 与 policy scope 隔离，不能在不同信任策略间复用。</p>
+<p>非可信 URL 默认设置 <code>trust_env=false</code>。若 owner 选择策略代理，配置必须声明该代理承担 DNS 与目标地址强制责任；此时 doctor 显示“策略委托给代理”，实现测试必须证明请求不会绕过代理直连。普通 provider proxy 配置不能自动扩大非可信 URL 的网络权限。</p>
+
+<h3>05.4 迁移范围</h3>
+<p>第一批必须同时迁移 <code>web_fetch</code>、渠道附件、skills discovery、plugin marketplace、MCP catalog、generated asset 和所有 Runtime-owned 任意 URL 下载入口。provider、remote MCP、渠道与 TTS 的固定 endpoint 接入 configured-service 校验，重点阻止带凭据的跨 origin redirect。浏览器导航留在“浏览器控制”功能项；shell 和第三方插件继续由 sandbox 与插件信任模型负责。</p>
+
+<h2 id="acceptance"><span class="num">06</span>何时可以从未确认改为完整确认</h2>
+<div class="tbl"><table>
+<tr><th>验收组</th><th>必须通过的行为</th></tr>
+<tr><td><b>地址分类</b></td><td>IPv4、IPv6、IPv4-mapped IPv6、IDNA、大小写与尾点 hostname、异常端口、userinfo、十进制/八进制/十六进制混淆输入均得到固定结果；所有非 global 地址默认拒绝</td></tr>
+<tr><td><b>DNS</b></td><td>NXDOMAIN、timeout、空结果、A/AAAA 混合公私地址全部 fail-closed；连接使用已验证结果，测试用改变两次解析结果证明不能 rebind 到 loopback</td></tr>
+<tr><td><b>重定向</b></td><td>相对与绝对 Location、协议切换、跨 origin、redirect loop 和超限均有测试；任一跳转到 metadata/私网均在发送下一跳请求前拒绝</td></tr>
+<tr><td><b>凭据</b></td><td>configured service 的 token、Authorization、Cookie 和 URL credential 不会发送到其他 origin；异常和审计日志不含秘密</td></tr>
+<tr><td><b>资源限制</b></td><td>连接、首字节、整体读取和空闲 timeout 有界；Content-Length 缺失或造假时仍按流式累计上限终止；临时文件失败后清理</td></tr>
+<tr><td><b>入口覆盖</b></td><td><code>web_fetch</code>、附件、skills、plugin marketplace、MCP catalog、generated asset 与任意 URL 下载均有真实调用链测试；静态检查阻止这些目录新增裸 <code>requests/httpx/urllib</code> 调用</td></tr>
+<tr><td><b>兼容性</b></td><td>公网 CDN、GitHub、Telegram 附件、本地 provider、localhost MCP、企业内网 service 和显式策略代理分别通过；既有 proxy 与 provider failover 测试不回归</td></tr>
+<tr><td><b>边界说明</b></td><td>doctor 能显示 scope 例外和未迁移 consumer；文档明确 Runtime fetch、browser、sandbox、plugin 四个边界，不把一个边界的测试替代另一个</td></tr>
+</table></div>
+
+<div class="note green"><b>状态门槛：</b>只有上述各组测试、完整单元测试和至少一次真实 loopback 拒绝集成测试全部通过，且入口清单没有未分类项时，“Runtime URL 获取 SSRF 防护”才能标记为 <code>●</code>。设计完成、存在纯校验函数或只迁移一个调用者都不能标为 <code>◐</code>。</div>
+
+<h3>实现状态</h3>
+<div class="tbl"><table>
+<tr><th>项目</th><th>状态</th><th>证据</th></tr>
+<tr><td>现状与出站面审计</td><td class="yes">已完成</td><td>本页列出的当前调用路径与代码核对</td></tr>
+<tr><td>参考项目比较和采用决策</td><td class="yes">已完成</td><td>上列官方源码、官方安全文档与 OWASP 指南</td></tr>
+<tr><td>Runtime URL 获取 SSRF 防护</td><td class="no">未实现</td><td>尚无统一 policy、受管 transport、consumer 迁移和验收结果</td></tr>
+<tr><td>浏览器导航 SSRF 防护</td><td class="no">未设计完成</td><td>需要结合浏览器控制后端、策略代理或 owner 侧 egress 隔离单独处理</td></tr>
+</table></div>
+
+<p class="small">相关文档：<a href="sandbox-architecture.html">沙箱设计</a>、
+<a href="../providers/network-proxy.html">网络代理设计</a>、
+<a href="../feature-matrix.html">功能矩阵</a>。</p>
+</main></body></html>
