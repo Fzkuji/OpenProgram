@@ -210,17 +210,20 @@ _RAW_CALLS = frozenset(
         "socket.create_connection",
     }
 )
-_MANAGED_FACTORIES = frozenset(
+_MANAGED_FACTORY_NAMES = frozenset(
     {
-        "safe_client",
-        "safe_async_client",
-        "configured_safe_client",
-        "configured_safe_async_client",
-        "safe_http.safe_client",
-        "safe_http.safe_async_client",
-        "safe_http.configured_safe_client",
-        "safe_http.configured_safe_async_client",
-        "http_client.get_shared_async_client",
+        "openprogram.security.safe_http.safe_client",
+        "openprogram.security.safe_http.safe_async_client",
+        "openprogram.security.safe_http.configured_safe_client",
+        "openprogram.security.safe_http.configured_safe_async_client",
+        "openprogram.providers.utils.http_client.get_shared_async_client",
+        "utils.http_client.get_shared_async_client",
+    }
+)
+_MANAGED_CONSUMER_CALL_NAMES = frozenset(
+    {
+        "openprogram.functions.tools.web_search._http.get_json",
+        "openprogram.functions.tools.web_search._http.post_json",
     }
 )
 _SDK_CONSTRUCTORS = frozenset(
@@ -276,13 +279,6 @@ def _qualname(node: ast.AST, aliases: Mapping[str, str]) -> str | None:
     return None
 
 
-def _is_managed_factory_name(name: str | None) -> bool:
-    if name is None:
-        return False
-    short = ".".join(name.split(".")[-2:])
-    return name in _MANAGED_FACTORIES or short in _MANAGED_FACTORIES
-
-
 class _HTTPVisitor(ast.NodeVisitor):
     def __init__(self, path: str) -> None:
         self.path = path
@@ -290,10 +286,11 @@ class _HTTPVisitor(ast.NodeVisitor):
         self.socket_variables: set[str] = set()
         self.calls: list[RuntimeHTTPCall] = []
         self.consumers: set[str] = set()
-        self.sdk_calls: list[tuple[RuntimeHTTPCall, ast.Call]] = []
+        self.sdk_calls: list[tuple[RuntimeHTTPCall, frozenset[str]]] = []
         self.sdk_guards: set[str] = set()
         self.constant_variables: dict[str, str] = {}
-        self.managed_transport_containers: set[str] = set()
+        self.managed_values: dict[tuple[tuple[str, ...], str], frozenset[str]] = {}
+        self.scope: list[str] = []
 
     def visit_Import(self, node: ast.Import) -> None:
         for name in node.names:
@@ -307,6 +304,18 @@ class _HTTPVisitor(ast.NodeVisitor):
                 self.aliases[name.asname or name.name] = f"{node.module}.{name.name}"
         self.generic_visit(node)
 
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.scope.append(node.name)
+        self.generic_visit(node)
+        self.scope.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self.scope.append(node.name)
+        self.generic_visit(node)
+        self.scope.pop()
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
     def visit_Assign(self, node: ast.Assign) -> None:
         if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
             for target in node.targets:
@@ -318,16 +327,20 @@ class _HTTPVisitor(ast.NodeVisitor):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
                         self.socket_variables.add(target.id)
-        if self._contains_injected_transport(node.value):
+        provenance = self._managed_consumers(node.value)
+        if provenance:
             for target in node.targets:
                 if isinstance(target, ast.Name):
-                    self.managed_transport_containers.add(target.id)
+                    self.managed_values[(tuple(self.scope), target.id)] = provenance
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
-        if node.value is not None and self._contains_injected_transport(node.value):
+        provenance = (
+            frozenset() if node.value is None else self._managed_consumers(node.value)
+        )
+        if provenance:
             if isinstance(node.target, ast.Name):
-                self.managed_transport_containers.add(node.target.id)
+                self.managed_values[(tuple(self.scope), node.target.id)] = provenance
         self.generic_visit(node)
 
     def visit_With(self, node: ast.With) -> None:
@@ -347,44 +360,69 @@ class _HTTPVisitor(ast.NodeVisitor):
             return self.constant_variables.get(node.id)
         return None
 
-    def _contains_injected_transport(self, node: ast.AST) -> bool:
-        for child in ast.walk(node):
-            if isinstance(child, ast.Dict):
-                for key, value in zip(child.keys, child.values, strict=True):
-                    if (
-                        isinstance(key, ast.Constant)
-                        and key.value in _SDK_INJECTION_KEYWORDS
-                        and self._contains_managed_factory(value)
-                    ):
-                        return True
-            if (
-                isinstance(child, ast.Name)
-                and child.id in self.managed_transport_containers
-            ):
-                return True
-        return False
+    def _lookup_managed_value(self, name: str) -> frozenset[str]:
+        for depth in range(len(self.scope), -1, -1):
+            value = self.managed_values.get((tuple(self.scope[:depth]), name))
+            if value:
+                return value
+        return frozenset()
 
-    def _contains_managed_factory(self, node: ast.AST) -> bool:
+    def _managed_factory_consumer(self, call: ast.Call) -> str | None:
+        name = _qualname(call.func, self.aliases)
+        if name in _MANAGED_FACTORY_NAMES:
+            if name.endswith("get_shared_async_client"):
+                for keyword in call.keywords:
+                    if keyword.arg == "consumer":
+                        return self._constant_string(keyword.value)
+                return None
+            if call.args:
+                return self._constant_string(call.args[0])
+            for keyword in call.keywords:
+                if keyword.arg == "consumer":
+                    return self._constant_string(keyword.value)
+            return None
+        if name in {
+            "openprogram.providers.utils.http_client.build_google_http_options",
+            "utils.http_client.build_google_http_options",
+        }:
+            return "provider.google.sdk"
+        if (
+            self.path == "providers/anthropic/anthropic.py"
+            and name == "_shared_http_client"
+        ):
+            return "provider.anthropic.sdk"
+        if self.path == "mcp/client.py" and name == "self._managed_http_client_factory":
+            if "_run_http" in self.scope:
+                return "mcp.configured.http"
+            if "_run_sse" in self.scope:
+                return "mcp.configured.sse"
+        return None
+
+    def _managed_consumers(self, node: ast.AST) -> frozenset[str]:
+        consumers: set[str] = set()
         for child in ast.walk(node):
-            if not isinstance(child, ast.Call):
-                continue
-            name = _qualname(child.func, self.aliases)
-            if _is_managed_factory_name(name):
-                return True
-        return False
+            if isinstance(child, ast.Name):
+                consumers.update(self._lookup_managed_value(child.id))
+            elif isinstance(child, ast.Call):
+                consumer = self._managed_factory_consumer(child)
+                if consumer is not None:
+                    consumers.add(consumer)
+                if isinstance(child.func, ast.Name):
+                    consumers.update(self._lookup_managed_value(child.func.id))
+        return frozenset(consumers)
 
     def visit_Call(self, node: ast.Call) -> None:
         name = _qualname(node.func, self.aliases)
         short = None if name is None else ".".join(name.split(".")[-2:])
-        if _is_managed_factory_name(name) and node.args:
-            consumer = self._constant_string(node.args[0])
-            if consumer is not None:
-                self.consumers.add(consumer)
-        for keyword in node.keywords:
-            if keyword.arg == "consumer":
-                consumer = self._constant_string(keyword.value)
-                if consumer is not None:
-                    self.consumers.add(consumer)
+        factory_consumer = self._managed_factory_consumer(node)
+        if factory_consumer is not None:
+            self.consumers.add(factory_consumer)
+        if name in _MANAGED_CONSUMER_CALL_NAMES:
+            for keyword in node.keywords:
+                if keyword.arg == "consumer":
+                    consumer = self._constant_string(keyword.value)
+                    if consumer is not None:
+                        self.consumers.add(consumer)
         if name and name.endswith("require_active_sdk_transport") and node.args:
             consumer = self._constant_string(node.args[0])
             if consumer is not None:
@@ -411,7 +449,11 @@ class _HTTPVisitor(ast.NodeVisitor):
             sdk_name = ".".join(sdk_name.split(".")[-2:])
         if sdk_name in _SDK_CONSTRUCTORS or short in _SDK_CONSTRUCTORS:
             issue = RuntimeHTTPCall(self.path, node.lineno, f"sdk.{sdk_name}")
-            self.sdk_calls.append((issue, node))
+            injected_consumers: set[str] = set()
+            for keyword in node.keywords:
+                if keyword.arg in _SDK_INJECTION_KEYWORDS or keyword.arg is None:
+                    injected_consumers.update(self._managed_consumers(keyword.value))
+            self.sdk_calls.append((issue, frozenset(injected_consumers)))
         self.generic_visit(node)
 
 
@@ -470,13 +512,12 @@ def scan_runtime_http(
             if issue.kind in expected and observed < expected[issue.kind]:
                 continue
             unregistered.append(issue)
-        for issue, call in visitor.sdk_calls:
+        for issue, injected_consumers in visitor.sdk_calls:
             exclusion_key = (relative, issue.kind)
             observed = observed_exclusions.get(exclusion_key, 0)
             observed_exclusions[exclusion_key] = observed + 1
             if issue.kind in expected and observed < expected[issue.kind]:
                 continue
-            keywords = {keyword.arg for keyword in call.keywords}
             sdk_name = issue.kind.removeprefix("sdk.")
             consumer = _SDK_CONSUMERS.get(sdk_name)
             spec = registry.get(consumer) if consumer is not None else None
@@ -485,26 +526,11 @@ def scan_runtime_http(
                 and getattr(spec, "sdk_disposition", None) == SDKDisposition.DISABLED
                 and consumer in visitor.sdk_guards
             )
-            has_injected_argument = bool(
-                any(
-                    keyword.arg in _SDK_INJECTION_KEYWORDS
-                    and not (
-                        isinstance(keyword.value, ast.Constant)
-                        and keyword.value.value is None
-                    )
-                    for keyword in call.keywords
-                )
-                or any(
-                    keyword.arg is None
-                    and visitor._contains_injected_transport(keyword.value)
-                    for keyword in call.keywords
-                )
-            )
             injected = bool(
                 spec is not None
                 and getattr(spec, "sdk_disposition", None)
                 == SDKDisposition.INJECTED_TRANSPORT
-                and has_injected_argument
+                and injected_consumers == {consumer}
             )
             if not disabled and not injected:
                 unregistered.append(issue)

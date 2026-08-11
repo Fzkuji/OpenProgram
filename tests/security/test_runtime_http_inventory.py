@@ -265,6 +265,96 @@ openai.OpenAI(http_client=object())
     assert result.active_unmanaged_transports == ("provider.openai.sdk",)
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+import openai
+openai.OpenAI(http_client=object())
+""",
+        """
+import openai
+from openprogram.security.safe_http import safe_client
+openai.OpenAI(http_client=safe_client("tool.web_fetch"))
+""",
+        """
+import openai
+from openprogram.security.safe_http import safe_client
+safe_client("provider.openai.sdk")
+openai.OpenAI(http_client=object())
+""",
+        """
+import openai
+import unrelated.safe_http
+openai.OpenAI(
+    http_client=unrelated.safe_http.safe_client("provider.openai.sdk")
+)
+""",
+    ],
+)
+def test_sdk_injection_requires_exact_managed_value_and_consumer(
+    tmp_path,
+    source,
+):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "unmanaged.py").write_text(source, encoding="utf-8")
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == ["sdk.openai.OpenAI"]
+    assert result.active_unmanaged_transports == ("provider.openai.sdk",)
+
+
+def test_sdk_injection_accepts_exact_managed_assignment_container(tmp_path):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "managed.py").write_text(
+        """
+import openai
+from openprogram.providers.utils.http_client import get_shared_async_client
+
+kwargs = {
+    "http_client": get_shared_async_client(
+        "openai-sdk",
+        consumer="provider.openai.sdk",
+        configured_origin="https://api.openai.com",
+    )
+}
+openai.AsyncOpenAI(**{k: v for k, v in kwargs.items()})
+""",
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert result.unregistered == ()
+    assert result.active_unmanaged_transports == ()
+    assert result.registry_without_consumer == ()
+
+
 def test_scanner_detects_socket_create_connection_and_imported_alias(tmp_path):
     package = tmp_path / "runtime"
     package.mkdir()

@@ -124,6 +124,26 @@ Spec-review fix verification:
 - Ruff lint, scoped Ruff format, `uv lock --check`, and `git diff --check`:
   passed.
 
+Second spec re-review fix:
+
+- Independent re-review closed manifest/socket and live-policy cache findings,
+  but found that any non-`None` SDK injection argument still counted as
+  managed. Four public scanner probes covered an arbitrary object, an exact
+  factory with the wrong consumer, unrelated same-file consumer evidence, and
+  an `unrelated.safe_http.safe_client` lookalike. RED: `4 failed, 1 passed, 16
+  deselected`.
+- The scanner now recognizes only exact approved managed factory identities,
+  propagates their literal consumer through direct values and the supported
+  assignment/container form, and requires that provenance to equal the SDK
+  constructor's immutable registry consumer. Exact in-repository Google,
+  Anthropic, and MCP helper paths remain classified without accepting dotted
+  suffix lookalikes.
+- Targeted GREEN: `5 passed, 16 deselected`. Inventory plus shared-cache
+  lifecycle: `33 passed in 1.15s`. Repository checker again reported all four
+  categories as zero.
+- Final second-fix focused command: `74 passed in 1.50s`; complete
+  `tests/security`: `536 passed in 77.32s`.
+
 ## Concerns
 
 - Browser navigation, arbitrary-code networking, and owner control-plane
