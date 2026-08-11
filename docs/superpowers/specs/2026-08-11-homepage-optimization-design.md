@@ -32,14 +32,14 @@ Keep the selected near-black identity and teal-to-violet accent. Use the bundled
 
 ## Accessibility and resilience
 
-- Content is visible without JavaScript. JavaScript only enables reveal transitions.
+- Content is never hidden by JavaScript or CSS; motion is limited to the ambient hero gradient.
 - Preserve keyboard focus, semantic landmarks, descriptive image alt text, and reduced-motion behavior.
 - Mobile navigation wraps cleanly, screenshots remain legible, and code regions scroll horizontally.
 - No external font, analytics, animation, or frontend dependencies.
 
 ## Verification
 
-- A stdlib check validates required metadata, sections, documented install command, progressive enhancement, and image references.
+- A stdlib check validates required metadata, sections, documented install command, visible content, and image references.
 - The docs build and link checker remain green.
 - Desktop and mobile screenshots are reviewed from the built local page.
 - After deployment, root HTML, metadata, screenshots, sitemap, and Google verification are fetched from the live site.

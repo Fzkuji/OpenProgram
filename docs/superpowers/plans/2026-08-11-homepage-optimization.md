@@ -25,9 +25,9 @@
 
 **Interfaces:**
 - Consumes: `site/index.html`
-- Produces: exit code 0 only when the homepage contains required metadata, sections, installer, images, and progressive-enhancement CSS
+- Produces: exit code 0 only when the homepage contains required metadata, sections, installer, images, and no CSS that hides content
 
-- [ ] Write assertions for canonical and social metadata, JSON-LD, section ids, the documented installer, three existing screenshot paths, favicon, and `.js .reveal`.
+- [ ] Write assertions for canonical and social metadata, JSON-LD, section ids, the documented installer, three existing screenshot paths, favicon, and visible content.
 - [ ] Run `python -m tools.docs_site.check_landing` and verify it fails against the current page.
 
 ### Task 2: Rebuild the landing page
@@ -41,7 +41,7 @@
 
 - [ ] Add complete metadata and JSON-LD.
 - [ ] Implement the approved information structure and accurate installation copy.
-- [ ] Make reveal animation progressive and reduced-motion safe.
+- [ ] Keep content visible and make the ambient hero motion reduced-motion safe.
 - [ ] Run `python -m tools.docs_site.check_landing` until it passes.
 
 ### Task 3: Build, inspect, and publish
