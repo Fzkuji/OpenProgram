@@ -745,6 +745,135 @@ from openprogram.security.safe_http import safe_async_client
     assert result.active_unmanaged_transports == ()
 
 
+def test_sdk_injection_preserves_managed_refutable_match_miss(tmp_path):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "match.py").write_text(
+        """
+import openai
+from openprogram.security.safe_http import safe_async_client
+
+client = safe_async_client("provider.openai.sdk")
+match value:
+    case [client]:
+        client = safe_async_client("provider.openai.sdk")
+openai.AsyncOpenAI(http_client=client)
+""",
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert result.unregistered == ()
+    assert result.active_unmanaged_transports == ()
+
+
+@pytest.mark.parametrize(
+    "function_body",
+    [
+        """
+def build():
+    try:
+        client = object()
+    finally:
+        raise RuntimeError
+    openai.AsyncOpenAI(http_client=client)
+""",
+        """
+def build():
+    try:
+        client = object()
+        raise RuntimeError
+    finally:
+        return None
+    openai.AsyncOpenAI(http_client=client)
+""",
+        """
+async def build():
+    try:
+        client = object()
+    finally:
+        raise RuntimeError
+    openai.AsyncOpenAI(http_client=client)
+""",
+    ],
+)
+def test_scanner_skips_sdk_unreachable_after_terminating_finally(
+    tmp_path,
+    function_body,
+):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "unreachable.py").write_text(
+        "import openai\n" + function_body,
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert result.unregistered == ()
+    assert result.active_unmanaged_transports == ()
+
+
+def test_function_root_flow_keeps_reachable_sdk_after_nested_scopes(tmp_path):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "reachable.py").write_text(
+        """
+import openai
+
+def build():
+    def nested_function():
+        return None
+
+    class NestedClass:
+        def nested_method(self):
+            return None
+
+    openai.AsyncOpenAI(http_client=object())
+""",
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == ["sdk.openai.AsyncOpenAI"]
+    assert result.active_unmanaged_transports == ("provider.openai.sdk",)
+
+
 def test_scanner_detects_socket_create_connection_and_imported_alias(tmp_path):
     package = tmp_path / "runtime"
     package.mkdir()

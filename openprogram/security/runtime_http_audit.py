@@ -338,11 +338,16 @@ class _HTTPVisitor(ast.NodeVisitor):
             self._flow_collector = outer_collector
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        self.visit(node.args)
+        if node.returns is not None:
+            self.visit(node.returns)
         outer_collector = self._flow_collector
         self._flow_collector = None
         self.scope.append(node.name)
         try:
-            self.generic_visit(node)
+            self._visit_block_flow_from(node.body, self.managed_values)
         finally:
             self.scope.pop()
             self._flow_collector = outer_collector
@@ -754,12 +759,13 @@ class _HTTPVisitor(ast.NodeVisitor):
         self.visit(node.subject)
         initial = dict(self.managed_values)
         flows: list[_BlockFlow] = []
-        fallback: _ManagedState | None = initial
+        fallbacks: list[_ManagedState] = [initial]
         for case in node.cases:
-            if fallback is None:
+            if not fallbacks:
                 break
+            pre_pattern = fallbacks
             outer = self.managed_values
-            self.managed_values = dict(fallback)
+            self.managed_values = self._merge_managed_values(fallbacks)
             try:
                 self.visit(case.pattern)
                 for name in self._bound_names(case.pattern):
@@ -770,13 +776,13 @@ class _HTTPVisitor(ast.NodeVisitor):
                 flows.append(self._visit_block_flow_from(case.body, captured))
             finally:
                 self.managed_values = outer
-            if case.guard is None and self._match_pattern_is_irrefutable(case.pattern):
-                fallback = None
-            else:
-                fallback = captured
+            fallbacks = []
+            if not self._match_pattern_is_irrefutable(case.pattern):
+                fallbacks.extend(pre_pattern)
+            if case.guard is not None:
+                fallbacks.append(captured)
         normals = [flow.normal for flow in flows if flow.normal is not None]
-        if fallback is not None:
-            normals.append(fallback)
+        normals.extend(fallbacks)
         self._apply_flow(
             _BlockFlow(
                 normal=self._merge_managed_values(normals) if normals else None,

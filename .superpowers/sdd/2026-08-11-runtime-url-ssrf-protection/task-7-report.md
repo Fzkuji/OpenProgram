@@ -216,6 +216,32 @@ Third quality re-review fix:
   complete `tests/security`: `568 passed in 77.30s`. Ruff lint, scoped format,
   lock, and diff checks passed.
 
+Fourth quality re-review fix:
+
+- The third scoped re-review found that a refutable Match pattern miss reused
+  capture-killed provenance, so a managed pre-pattern value and managed case
+  body were incorrectly classified unmanaged. The exact public scanner
+  regression failed `1 failed`; preserving pattern-miss pre-state separately
+  from pattern-hit/guard-false bound state passed `1 passed`. The adjacent
+  managed-continuing and guarded-capture set passed `19 passed, 35
+  deselected`.
+- The review also found function roots still used generic AST traversal, so
+  terminating `finally: raise` and `finally: return` blocks did not suppress
+  unreachable SDK constructors. The two exact public scanner regressions
+  failed `2 failed`; function and async-function roots now scan headers and
+  analyze bodies through an isolated block-flow collector. Exact GREEN was `2
+  passed`; async termination plus reachable SDK and nested function/class
+  isolation passed `4 passed, 54 deselected`.
+- The complete inventory file passed `58 passed in 1.17s`; Task 7 focused and
+  shared-client cache lifecycle passed `111 passed in 1.46s`.
+- Final static checker reported `unregistered=0 active_unmanaged=0
+  registry_without_consumer=0 stale_exclusions=0`; complete `tests/security`
+  passed `573 passed in 78.16s`. Required Ruff lint passed. Ruff formatted the
+  new adjacent assertion, after which scoped format check, the inventory file
+  (`58 passed in 1.13s`), `uv lock --check`, and `git diff --check` passed.
+  Fresh pre-commit focused and shared-cache verification passed `111 passed in
+  1.39s`; the checker again reported all four categories as zero.
+
 ## Concerns
 
 - Browser navigation, arbitrary-code networking, and owner control-plane
