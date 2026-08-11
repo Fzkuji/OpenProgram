@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 import http.server
 import ipaddress
+import socketserver
 import threading
 from dataclasses import replace
 
@@ -121,9 +122,50 @@ class _LoopbackBackend(httpcore.NetworkBackend):
         self._real.sleep(seconds)
 
 
+class _MalformedHandler(socketserver.BaseRequestHandler):
+    def handle(self) -> None:
+        request = bytearray()
+        while b"\r\n\r\n" not in request:
+            chunk = self.request.recv(4096)
+            if not chunk:
+                break
+            request.extend(chunk)
+        self.server.requests.append(bytes(request))
+        self.request.sendall(b"TOKEN-PATH QUERY-SECRET\r\n\r\n")
+
+
+class _MalformedServer(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+    def __init__(self):
+        self.requests: list[bytes] = []
+        super().__init__(("127.0.0.1", 0), _MalformedHandler)
+        self.thread = threading.Thread(target=self.serve_forever, daemon=True)
+        self.thread.start()
+
+    @property
+    def port(self) -> int:
+        return self.server_address[1]
+
+    def close(self) -> None:
+        self.shutdown()
+        self.server_close()
+        self.thread.join(timeout=2)
+
+
 @pytest.fixture
 def server():
     instance = _Server()
+    try:
+        yield instance
+    finally:
+        instance.close()
+
+
+@pytest.fixture
+def malformed_server():
+    instance = _MalformedServer()
     try:
         yield instance
     finally:
@@ -153,14 +195,17 @@ def managed_web_fetch(monkeypatch: pytest.MonkeyPatch, server: _Server):
             return ("169.254.169.254",)
         return (str(ipaddress.ip_address(hostname)),)
 
-    monkeypatch.setattr(
-        web_fetch,
-        "safe_client",
-        lambda consumer: safe_http.safe_client(
+    clients = []
+
+    def factory(consumer: str):
+        client = safe_http.safe_client(
             consumer, security=OutboundSecurityConfig(resolver=resolver)
-        ),
-        raising=False,
-    )
+        )
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(web_fetch, "safe_client", factory, raising=False)
+    return clients
 
 
 def test_web_fetch_public_success_preserves_charset_and_result_shape(
@@ -171,6 +216,33 @@ def test_web_fetch_public_success_preserves_charset_and_result_shape(
     assert result.startswith(f"# http://public.test:{server.port}/text\n")
     assert "café" in result
     assert server.requests == ["/text"]
+
+
+def test_web_fetch_malformed_status_hides_peer_echoed_signed_url(
+    malformed_server: _MalformedServer,
+    managed_web_fetch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = dict(safe_http.CONSUMER_REGISTRY)
+    spec = registry["tool.web_fetch"]
+    registry[spec.consumer] = replace(
+        spec, allowed_ports=frozenset({malformed_server.port})
+    )
+    monkeypatch.setattr(safe_http, "CONSUMER_REGISTRY", registry)
+
+    result = web_fetch.execute(
+        f"http://public.test:{malformed_server.port}/private/TOKEN-PATH?sig=QUERY-SECRET"
+    )
+
+    assert result == (
+        "Error: network error RemoteProtocolError for "
+        f"http://public.test:{malformed_server.port}"
+    )
+    rendered = repr(result)
+    assert "TOKEN-PATH" not in rendered
+    assert "QUERY-SECRET" not in rendered
+    assert "TOKEN-PATH" not in repr(managed_web_fetch[-1].audit_events)
+    assert "QUERY-SECRET" not in repr(managed_web_fetch[-1].audit_events)
 
 
 @pytest.mark.parametrize(

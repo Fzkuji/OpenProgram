@@ -5,6 +5,7 @@ image blocks, every file becomes an [attachment: ...] note.
 from __future__ import annotations
 
 import base64
+import contextlib
 import threading
 from pathlib import Path
 
@@ -37,6 +38,9 @@ class _FakeResponse:
         for i in range(0, len(self._content), chunk_size):
             yield self._content[i:i + chunk_size]
 
+    def iter_bytes(self):
+        yield self._content
+
 
 class _FakeSafeClient:
     def __init__(self, response, seen: dict | None = None) -> None:
@@ -54,6 +58,13 @@ class _FakeSafeClient:
         if isinstance(self.response, Exception):
             raise self.response
         return self.response
+
+    @contextlib.contextmanager
+    def stream(self, _method, url, headers=None, timeout=60):
+        self.seen.update(url=url, headers=headers, timeout=timeout)
+        if isinstance(self.response, Exception):
+            raise self.response
+        yield self.response
 
 
 def test_download_inbound_saves_to_account_dir(

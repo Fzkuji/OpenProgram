@@ -44,11 +44,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
+import httpx
 import requests
 
 from openprogram.channels import _format
 from openprogram.channels import accounts as _accounts
 from openprogram.security.safe_http import safe_client
+from openprogram.security.url_policy import normalize_origin
 
 
 # Platform-specific message size caps (原始 markdown 字符数, 渲染前).
@@ -669,10 +671,17 @@ def _post_file_slack(
         if not upload_url or not file_id:
             return SendResult.fail("unknown", "upload URL response missing fields")
 
-        with path.open("rb") as fh, safe_client(
-            "channel.slack.generated_asset.upload"
-        ) as client:
-            up = client.post(upload_url, content=fh, timeout=120)
+        try:
+            with path.open("rb") as fh, safe_client(
+                "channel.slack.generated_asset.upload"
+            ) as client:
+                up = client.post(upload_url, content=fh, timeout=120)
+        except httpx.RequestError as e:
+            return SendResult.fail(
+                "network",
+                f"{type(e).__name__} for {normalize_origin(upload_url)}",
+                retryable=True,
+            )
         if not up.is_success:
             return _classify_http_status(up.status_code, up.text)
 

@@ -304,7 +304,9 @@ def execute(
     except httpx.HTTPStatusError as e:
         return f"Error: HTTP {e.response.status_code} {e.response.reason_phrase} for {normalize_origin(url)}"
     except httpx.RequestError as e:
-        return f"Error: network error for {normalize_origin(url)}: {e}"
+        return (
+            f"Error: network error {type(e).__name__} for {normalize_origin(url)}"
+        )
     except URLPolicyError as e:
         return f"Error: failed to fetch {e.safe_url}: {type(e).__name__}: {e}"
     except Exception as e:

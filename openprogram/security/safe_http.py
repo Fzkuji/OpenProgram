@@ -265,7 +265,10 @@ _SPECS = (
     _api("tool.web_search.configured_api", URLTrustClass.CONFIGURED_SERVICE),
     _api("tool.image_api.fixed", URLTrustClass.FIXED_PUBLIC_SERVICE),
     _api("tool.image_api.configured", URLTrustClass.CONFIGURED_SERVICE),
-    _download("tool.image_result.download", URLTrustClass.UNTRUSTED_PUBLIC),
+    replace(
+        _download("tool.image_result.download", URLTrustClass.UNTRUSTED_PUBLIC),
+        accepted_mime_prefixes=("image/", "application/octet-stream"),
+    ),
     replace(
         _download("channel.attachment.download", URLTrustClass.UNTRUSTED_PUBLIC),
         max_decoded_body_bytes=20 * 1024 * 1024,
@@ -1243,7 +1246,12 @@ class SafeClient(httpx.Client):
             prefix=f".{target.name}.", dir=target.parent
         )
         try:
-            with os.fdopen(descriptor, "wb") as output:
+            try:
+                output = os.fdopen(descriptor, "wb")
+            except BaseException:
+                os.close(descriptor)
+                raise
+            with output:
                 with self.stream("GET", url) as response:
                     response.raise_for_status()
                     for chunk in response.iter_bytes():
@@ -1374,7 +1382,12 @@ class SafeAsyncClient(httpx.AsyncClient):
             prefix=f".{target.name}.", dir=target.parent
         )
         try:
-            with os.fdopen(descriptor, "wb") as output:
+            try:
+                output = os.fdopen(descriptor, "wb")
+            except BaseException:
+                os.close(descriptor)
+                raise
+            with output:
                 async with self.stream("GET", url) as response:
                     response.raise_for_status()
                     async for chunk in response.aiter_bytes():

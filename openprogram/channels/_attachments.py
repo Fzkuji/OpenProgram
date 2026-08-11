@@ -35,11 +35,13 @@ import uuid
 from pathlib import Path
 from typing import Iterable
 
+import httpx
 import requests
 
 from openprogram.channels import accounts as _accounts
 from openprogram.channels._message import Attachment
 from openprogram.security.safe_http import safe_client
+from openprogram.security.url_policy import normalize_origin
 
 
 #: 单个附件下载上限 (字节). 超限跳过并记日志.
@@ -88,6 +90,12 @@ def download_inbound(
             continue
         try:
             row = _download_one(channel, account_id, att, url, headers)
+        except httpx.RequestError as e:
+            print(
+                f"[{tag}] attachment {att.name!r} download failed: "
+                f"{type(e).__name__} for {normalize_origin(url)}"
+            )
+            continue
         except Exception as e:  # noqa: BLE001
             print(f"[{tag}] attachment {att.name!r} download failed: "
                   f"{type(e).__name__}: {e}")
@@ -106,31 +114,42 @@ def _download_one(
         "telegram": "channel.telegram.attachment",
     }.get(channel, "channel.attachment.download")
     with safe_client(consumer) as client:
-        r = client.get(url, headers=headers, timeout=60)
-    if not r.is_success:
-        print(f"[{channel}:{account_id}] attachment {att.name!r} "
-              f"download HTTP {r.status_code}")
-        return None
-    mime = att.mime or r.headers.get("Content-Type", "").partition(";")[0]
-    dest = attachments_dir(channel, account_id) / _dest_name(att.name, mime)
-    data = r.content
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{dest.name}.", dir=dest.parent
-    )
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "wb") as output:
-            output.write(data)
-            output.flush()
-            os.fsync(output.fileno())
-        os.replace(temporary, dest)
-    finally:
-        temporary.unlink(missing_ok=True)
+        with client.stream("GET", url, headers=headers, timeout=60) as response:
+            if not response.is_success:
+                print(
+                    f"[{channel}:{account_id}] attachment {att.name!r} "
+                    f"download HTTP {response.status_code}"
+                )
+                return None
+            mime = att.mime or response.headers.get("Content-Type", "").partition(
+                ";"
+            )[0]
+            dest = attachments_dir(channel, account_id) / _dest_name(att.name, mime)
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{dest.name}.", dir=dest.parent
+            )
+            temporary = Path(temporary_name)
+            size = 0
+            try:
+                try:
+                    output = os.fdopen(descriptor, "wb")
+                except BaseException:
+                    os.close(descriptor)
+                    raise
+                with output:
+                    for chunk in response.iter_bytes():
+                        output.write(chunk)
+                        size += len(chunk)
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.replace(temporary, dest)
+            finally:
+                temporary.unlink(missing_ok=True)
     return {
         "path": str(dest),
         "name": att.name or dest.name,
         "mime": mime,
-        "size": len(data),
+        "size": size,
     }
 
 

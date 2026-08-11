@@ -16,6 +16,7 @@ can override per-call with the ``output_dir`` arg.
 from __future__ import annotations
 
 import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ from openprogram.security.url_policy import normalize_origin
 
 from ..._helpers import read_int_param, read_string_param
 from ..._runtime import function
+from ..image_analyze._encode import detect_raster_mime
 from . import providers as _  # registers builtins  # noqa: F401
 from .registry import GeneratedImage, registry
 
@@ -89,36 +91,52 @@ def _ext_for_mime(mime: str) -> str:
         return ".jpg"
     if "webp" in mime:
         return ".webp"
+    if "gif" in mime:
+        return ".gif"
+    if "bmp" in mime:
+        return ".bmp"
     return ".png"
 
 
 def _save(img: GeneratedImage, out_dir: Path, stem: str, idx: int) -> Path:
-    ext = _ext_for_mime(img.mime)
-    target = out_dir / f"{stem}_{idx}{ext}"
     if img.data:
+        mime = detect_raster_mime(img.data)
+        if mime is None:
+            raise RuntimeError("unsupported raster image bytes")
+        target = out_dir / f"{stem}_{idx}{_ext_for_mime(mime)}"
         target.write_bytes(img.data)
     elif img.url:
         safe_error: RuntimeError | None = None
-        try:
-            with safe_client("tool.image_result.download") as client:
-                client.download(img.url, target)
-        except httpx.HTTPStatusError as e:
-            safe_error = RuntimeError(
-                "failed to download image result: "
-                f"HTTP {e.response.status_code} {e.response.reason_phrase} "
-                f"for {normalize_origin(img.url)}"
-            )
-        except httpx.RequestError as e:
-            safe_error = RuntimeError(
-                "failed to download image result: "
-                f"{type(e).__name__} for {normalize_origin(img.url)}"
-            )
-        except Exception as e:
-            raise RuntimeError(
-                f"failed to download image result: {type(e).__name__}: {e}"
-            ) from e
-        if safe_error is not None:
-            raise safe_error from None
+        with tempfile.TemporaryDirectory(
+            prefix=f".{stem}_{idx}.", dir=out_dir
+        ) as temporary_dir:
+            staging = Path(temporary_dir) / "download"
+            try:
+                with safe_client("tool.image_result.download") as client:
+                    client.download(img.url, staging)
+            except httpx.HTTPStatusError as e:
+                safe_error = RuntimeError(
+                    "failed to download image result: "
+                    f"HTTP {e.response.status_code} {e.response.reason_phrase} "
+                    f"for {normalize_origin(img.url)}"
+                )
+            except httpx.RequestError as e:
+                safe_error = RuntimeError(
+                    "failed to download image result: "
+                    f"{type(e).__name__} for {normalize_origin(img.url)}"
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    f"failed to download image result: {type(e).__name__}: {e}"
+                ) from e
+            if safe_error is not None:
+                raise safe_error from None
+            with staging.open("rb") as downloaded:
+                mime = detect_raster_mime(downloaded.read(12))
+            if mime is None:
+                raise RuntimeError("unsupported raster image bytes")
+            target = out_dir / f"{stem}_{idx}{_ext_for_mime(mime)}"
+            os.replace(staging, target)
     else:
         raise RuntimeError("GeneratedImage had neither bytes nor URL")
     return target

@@ -265,3 +265,9 @@ def test_sdk_consumers_have_managed_dispositions():
         spec.sdk_disposition.value != "unmanaged_transport"
         for spec in sdk_specs.values()
     )
+
+
+def test_image_result_registry_rejects_explicit_non_image_mime() -> None:
+    spec = CONSUMER_REGISTRY["tool.image_result.download"]
+
+    assert spec.accepted_mime_prefixes == ("image/", "application/octet-stream")

@@ -513,6 +513,36 @@ def test_mime_prefix_is_checked_without_parameters(monkeypatch):
     assert exc.value.reason == "MIME_TYPE_FORBIDDEN"
 
 
+def test_image_result_rejects_explicit_html_before_body_read(monkeypatch):
+    consumed = []
+
+    def body():
+        consumed.append(True)
+        yield b"<html>not an image</html>"
+
+    response = httpcore.Response(
+        200,
+        headers=[(b"content-type", b"text/html")],
+        content=body(),
+    )
+    client = safe_client(
+        "tool.image_result.download",
+        security=OutboundSecurityConfig(
+            resolver=lambda _host, _port: ("93.184.216.34",)
+        ),
+    )
+    monkeypatch.setattr(
+        client._transport, "_pool", lambda _decision: _ScriptedPool(response)
+    )
+
+    with client, pytest.raises(URLPolicyError) as exc:
+        client.get("https://public.test/image")
+
+    assert exc.value.reason == "MIME_TYPE_FORBIDDEN"
+    assert not consumed
+    assert response.stream.closed
+
+
 def test_chunked_streaming_is_bounded(monkeypatch):
     response = httpcore.Response(
         200,
@@ -785,6 +815,56 @@ def test_async_http_error_download_preserves_destination_and_closes_response(
     assert destination.read_bytes() == b"valid artifact"
     assert list(tmp_path.iterdir()) == [destination]
     assert response.stream.closed
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_fdopen_failure_closes_download_descriptor_and_removes_temp(
+    monkeypatch, tmp_path, asynchronous
+):
+    descriptors: list[int] = []
+    real_mkstemp = safe_http.tempfile.mkstemp
+
+    def record_mkstemp(*args, **kwargs):
+        descriptor, name = real_mkstemp(*args, **kwargs)
+        descriptors.append(descriptor)
+        return descriptor, name
+
+    monkeypatch.setattr(safe_http.tempfile, "mkstemp", record_mkstemp)
+    monkeypatch.setattr(
+        safe_http.os,
+        "fdopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("fdopen failed")),
+    )
+    destination = tmp_path / "result.txt"
+
+    if asynchronous:
+        response = httpcore.Response(
+            200,
+            headers=[(b"content-type", b"text/plain")],
+            content=_empty_async(),
+        )
+        client = _small_async_client(monkeypatch, response, [b"new"], cap=32)
+
+        async def exercise():
+            async with client:
+                with pytest.raises(OSError, match="fdopen failed"):
+                    await client.download("https://public.test/resource", destination)
+
+        asyncio.run(exercise())
+    else:
+        response = httpcore.Response(
+            200,
+            headers=[(b"content-type", b"text/plain")],
+            content=b"new",
+        )
+        client = _small_client(monkeypatch, response, cap=32)
+        with client, pytest.raises(OSError, match="fdopen failed"):
+            client.download("https://public.test/resource", destination)
+
+    assert len(descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(descriptors[0])
+    assert list(tmp_path.iterdir()) == []
 
 
 async def _empty_async():

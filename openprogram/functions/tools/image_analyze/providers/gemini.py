@@ -13,7 +13,7 @@ import httpx
 from openprogram.security.safe_http import safe_client
 from openprogram.security.url_policy import normalize_origin
 
-from .._encode import read_b64, sniff_mime
+from .._encode import detect_raster_mime, read_b64
 from ..registry import ImageInput
 
 
@@ -95,10 +95,9 @@ def _url_to_b64(url: str) -> tuple[str, str]:
     safe_error: RuntimeError | None = None
     try:
         with safe_client("tool.image_result.download") as client:
-            response = client.get(url, timeout=30)
-            response.raise_for_status()
-            data = response.content
-            mime = response.headers.get("Content-Type") or sniff_mime(url)
+            with client.stream("GET", url, timeout=30) as response:
+                response.raise_for_status()
+                data = response.read()
     except httpx.HTTPStatusError as e:
         safe_error = RuntimeError(
             f"Gemini image download HTTP {e.response.status_code} "
@@ -111,4 +110,7 @@ def _url_to_b64(url: str) -> tuple[str, str]:
         )
     if safe_error is not None:
         raise safe_error from None
+    mime = detect_raster_mime(data)
+    if mime is None:
+        raise RuntimeError("Gemini image download returned unsupported raster bytes")
     return base64.b64encode(data).decode("ascii"), mime
