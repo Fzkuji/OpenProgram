@@ -374,6 +374,8 @@ def evaluate_url(
     resolver: Resolver = resolve_all,
 ) -> URLDecision:
     normalized = normalize_url(url)
+    if not isinstance(trust_class, URLTrustClass):
+        raise URLPolicyError("TRUST_CLASS_INVALID", normalized.safe_url)
     if normalized.scheme not in allowed_schemes:
         raise URLPolicyError("SCHEME_FORBIDDEN", normalized.safe_url)
     if exceptions and trust_class != URLTrustClass.CONFIGURED_SERVICE:
