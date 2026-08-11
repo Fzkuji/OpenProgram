@@ -884,15 +884,23 @@ class _ManagedTransportBase:
         return tuple(self._audit_events)
 
     def _record(self, reason: str, safe_origin: str) -> None:
-        self._audit_events.append(
-            AuditEvent(
-                consumer=self._consumer,
-                reason=reason,
-                safe_origin=safe_origin,
-                delegated_to_policy_proxy=self._security.policy_proxy is not None,
-                timestamp=datetime.now(timezone.utc).isoformat(),
-            )
+        event = AuditEvent(
+            consumer=self._consumer,
+            reason=reason,
+            safe_origin=safe_origin,
+            delegated_to_policy_proxy=self._security.policy_proxy is not None,
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
+        self._audit_events.append(event)
+        if reason not in {"ALLOWED", "PROXY_DELEGATED"}:
+            from .runtime_http_audit import record_runtime_http_denial
+
+            record_runtime_http_denial(
+                consumer=event.consumer,
+                reason=event.reason,
+                url=event.safe_origin,
+                delegated_to_policy_proxy=event.delegated_to_policy_proxy,
+            )
 
     def _evaluate(self, method: str, url: str) -> URLDecision:
         spec = CONSUMER_REGISTRY[self._consumer]
@@ -1524,6 +1532,10 @@ def safe_client(
     timeout: httpx.Timeout | float | None = None,
     overall_timeout: float = _OVERALL_TIMEOUT,
 ) -> SafeClient:
+    if security is None:
+        from openprogram.config_schema import load_outbound_security_config
+
+        security = load_outbound_security_config(consumer)
     return SafeClient(
         ManagedHTTPTransport(
             consumer,
@@ -1545,6 +1557,10 @@ def safe_async_client(
     timeout: httpx.Timeout | float | None = None,
     overall_timeout: float = _OVERALL_TIMEOUT,
 ) -> SafeAsyncClient:
+    if security is None:
+        from openprogram.config_schema import load_outbound_security_config
+
+        security = load_outbound_security_config(consumer)
     return SafeAsyncClient(
         AsyncManagedHTTPTransport(
             consumer,
@@ -1564,29 +1580,31 @@ def _configured_security(
     *,
     local_address: str | None = None,
     socket_options: tuple[tuple[int, int, int], ...] = (),
-) -> OutboundSecurityConfig | None:
-    if owner_exception is None:
-        if local_address is None and not socket_options:
-            return None
-        return OutboundSecurityConfig(
-            local_address=local_address, socket_options=socket_options
-        )
-    if type(owner_exception) is not OwnerURLException:
-        raise TypeError("owner_exception must be an OwnerURLException")
-    if (
-        owner_exception.consumer != consumer
-        or owner_exception.origin is None
-        or owner_exception.network is not None
-    ):
-        raise URLPolicyError("OWNER_EXCEPTION_MISMATCH", origin)
-    try:
-        authorized_origin = normalize_origin(owner_exception.origin)
-    except URLPolicyError:
-        raise URLPolicyError("OWNER_EXCEPTION_MISMATCH", origin) from None
-    if authorized_origin != origin:
-        raise URLPolicyError("OWNER_EXCEPTION_MISMATCH", origin)
-    return OutboundSecurityConfig(
-        owner_exceptions=(owner_exception,),
+) -> OutboundSecurityConfig:
+    from openprogram.config_schema import load_outbound_security_config
+
+    security = load_outbound_security_config(consumer)
+    exceptions = security.owner_exceptions
+    if owner_exception is not None:
+        if type(owner_exception) is not OwnerURLException:
+            raise TypeError("owner_exception must be an OwnerURLException")
+        if (
+            owner_exception.consumer != consumer
+            or owner_exception.origin is None
+            or owner_exception.network is not None
+        ):
+            raise URLPolicyError("OWNER_EXCEPTION_MISMATCH", origin)
+        try:
+            authorized_origin = normalize_origin(owner_exception.origin)
+        except URLPolicyError:
+            raise URLPolicyError("OWNER_EXCEPTION_MISMATCH", origin) from None
+        if authorized_origin != origin:
+            raise URLPolicyError("OWNER_EXCEPTION_MISMATCH", origin)
+        if owner_exception not in exceptions:
+            exceptions += (owner_exception,)
+    return replace(
+        security,
+        owner_exceptions=exceptions,
         local_address=local_address,
         socket_options=socket_options,
     )

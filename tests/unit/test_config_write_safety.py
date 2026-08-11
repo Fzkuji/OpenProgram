@@ -10,6 +10,7 @@ import threading
 import time
 
 from openprogram import setup
+from openprogram.config_schema import set_setting
 
 
 def test_update_config_concurrent_mutators_all_land(tmp_path, monkeypatch):
@@ -50,4 +51,40 @@ def test_update_config_keeps_0600(tmp_path, monkeypatch):
     cfgp = tmp_path / "config.json"
     monkeypatch.setattr(setup, "get_config_path", lambda: cfgp)
     setup.update_config(lambda cfg: cfg.update({"k": "v"}))
+    assert (cfgp.stat().st_mode & 0o777) == 0o600
+
+
+def test_outbound_url_security_update_preserves_mode_and_unrelated_config(
+    tmp_path, monkeypatch
+):
+    cfgp = tmp_path / "config.json"
+    monkeypatch.setattr(setup, "get_config_path", lambda: cfgp)
+    setup._write_config({"api_keys": {"OPENAI_API_KEY": "stored-secret"}})
+
+    result = set_setting(
+        "security.outbound_url",
+        {
+            "exceptions": [
+                {
+                    "consumer": "provider.configured_api",
+                    "cidr": "10.20.7.9/16",
+                }
+            ]
+        },
+    )
+
+    assert "error" not in result
+    assert setup._read_config() == {
+        "api_keys": {"OPENAI_API_KEY": "stored-secret"},
+        "security": {
+            "outbound_url": {
+                "exceptions": [
+                    {
+                        "consumer": "provider.configured_api",
+                        "cidr": "10.20.0.0/16",
+                    }
+                ]
+            }
+        },
+    }
     assert (cfgp.stat().st_mode & 0o777) == 0o600
