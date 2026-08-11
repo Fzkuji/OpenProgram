@@ -57,9 +57,13 @@ async def stream_simple(
     """
     opts = options or SimpleStreamOptions()
 
+    provider = get_api_provider(model.api)
+    if provider is None:
+        raise ValueError(f"No stream function registered for API: {model.api!r}")
+
     # Auto-resolve API key if not set. resolve_provider_key reads the
     # AuthStore (the single key source — no env vars, no config.json).
-    if not opts.api_key:
+    if not opts.api_key and getattr(provider, "requires_credentials", True):
         opts = opts.model_copy(update={"api_key": resolve_provider_key(model.provider)})
 
     # NOTE: the claude-code Meridian-profile header (x-meridian-profile) is
@@ -68,10 +72,6 @@ async def stream_simple(
     # wrapper is bypassed by some callers (e.g. providers/default_llm.py calls
     # the raw api-provider directly), so injecting here would miss them.
     # See docs/design/claude-code-meridian-profile.md.
-
-    provider = get_api_provider(model.api)
-    if provider is None:
-        raise ValueError(f"No stream function registered for API: {model.api!r}")
 
     recorded = False
     async for event in provider.stream_simple(model, context, opts):
@@ -119,13 +119,13 @@ async def stream(
     """
     opts = options or StreamOptions()
 
-    # Auto-resolve API key from the AuthStore if not set (same as stream_simple)
-    if not opts.api_key:
-        opts = opts.model_copy(update={"api_key": resolve_provider_key(model.provider)})
-
     provider = get_api_provider(model.api)
     if provider is None:
         raise ValueError(f"No stream function registered for API: {model.api!r}")
+
+    # Auto-resolve API key from the AuthStore if not set (same as stream_simple)
+    if not opts.api_key and getattr(provider, "requires_credentials", True):
+        opts = opts.model_copy(update={"api_key": resolve_provider_key(model.provider)})
 
     recorded = False
     async for event in provider.stream(model, context, opts):

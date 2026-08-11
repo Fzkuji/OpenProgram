@@ -255,6 +255,21 @@ class ReplayProvider:
     def recording_path(self) -> Path:
         return self._recording_path
 
+    @property
+    def requires_credentials(self) -> bool:
+        return False
+
+    def assert_consumed(self) -> None:
+        """Raise when the replay session ended before all calls were used."""
+        if self.call_count != len(self._calls):
+            remaining = len(self._calls) - self.call_count
+            raise ReplayMismatch(
+                self.call_count,
+                "remaining_calls",
+                recorded="all recorded calls consumed",
+                incoming=f"{remaining} unconsumed call(s)",
+            )
+
     def stream(
         self,
         model: Model,

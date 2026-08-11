@@ -357,3 +357,43 @@ def test_recording_file_and_parent_are_private(tmp_path: Path) -> None:
 
     assert stat.S_IMODE(parent.stat().st_mode) == 0o700
     assert stat.S_IMODE(recording_file.stat().st_mode) == 0o600
+
+
+def test_replay_stream_skips_credential_resolution(
+    tmp_path: Path,
+    restore_api_registry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recording_file = tmp_path / "offline.jsonl"
+    context = Context(messages=[UserMessage(content="hello", timestamp=0)])
+    options = SimpleStreamOptions()
+    recorder = RecordingProvider(_scripted_with((ScriptedText("done"),)), recording_file)
+
+    async def record() -> None:
+        async for _ in recorder.stream_simple(_model(), context, options):
+            pass
+
+    asyncio.run(record())
+    replay = ReplayProvider(recording_file)
+    register_api_provider(_API, replay)
+    stream_module = importlib.import_module("openprogram.providers.stream")
+    monkeypatch.setattr(
+        stream_module,
+        "resolve_provider_key",
+        lambda provider: pytest.fail("replay resolved provider credentials"),
+    )
+
+    async def replay_once() -> list:
+        return [event async for event in stream_module.stream_simple(_model(), context, options)]
+
+    assert [event.type for event in asyncio.run(replay_once())][-1] == "done"
+    replay.assert_consumed()
+
+
+def test_replay_assert_consumed_reports_remaining_calls(tmp_path: Path) -> None:
+    replay = ReplayProvider(_record_one_call(tmp_path))
+
+    with pytest.raises(ReplayMismatch, match="unconsumed") as caught:
+        replay.assert_consumed()
+
+    assert caught.value.call_index == 0

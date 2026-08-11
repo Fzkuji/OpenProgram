@@ -13,6 +13,11 @@ from .types import Api, Context, Model, SimpleStreamOptions, StreamOptions
 class ApiProvider(Protocol):
     """Protocol for API provider implementations."""
 
+    @property
+    def requires_credentials(self) -> bool:
+        """Whether the stream chokepoint should resolve an API key."""
+        ...
+
     def stream(
         self,
         model: Model,

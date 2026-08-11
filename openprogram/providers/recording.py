@@ -129,6 +129,10 @@ class RecordingProvider:
     def recording_path(self) -> Path:
         return self._recording_path
 
+    @property
+    def requires_credentials(self) -> bool:
+        return getattr(self._provider, "requires_credentials", True)
+
     def stream(
         self,
         model: Model,
