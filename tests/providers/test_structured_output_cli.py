@@ -127,10 +127,9 @@ def test_one_shot_structured_result_is_json_only(monkeypatch, capsys):
     assert capsys.readouterr().out == '{"answer":3}\n'
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="PTY is POSIX-only")
-def test_one_shot_structured_result_is_json_only_on_tty():
+def _run_one_shot_in_pty(*, response_format, reply):
     script = textwrap.dedent(
-        """
+        f"""
         import time
 
         from openprogram import cli_chat
@@ -144,12 +143,12 @@ def test_one_shot_structured_result_is_json_only_on_tty():
             return "test", object()
 
         cli_chat._get_chat_runtime = delayed_runtime
-        cli_chat._run_turn_with_history = lambda *args, **kwargs: {"answer": 3}
+        cli_chat._run_turn_with_history = lambda *args, **kwargs: {reply!r}
         manager.get_default = lambda: Agent()
         cli_chat.run_cli_chat(
             oneshot="answer",
             tui=False,
-            response_format={"type": "object"},
+            response_format={response_format!r},
         )
         """
     )
@@ -187,7 +186,30 @@ def test_one_shot_structured_result_is_json_only_on_tty():
         if slave_fd >= 0:
             os.close(slave_fd)
 
-    stdout = b"".join(chunks).decode("utf-8")
-    assert process.returncode == 0, stderr.decode("utf-8", errors="replace")
+    return (
+        b"".join(chunks).decode("utf-8"),
+        stderr.decode("utf-8", errors="replace"),
+        process.returncode,
+    )
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="PTY is POSIX-only")
+def test_one_shot_structured_result_is_json_only_on_tty():
+    stdout, stderr, returncode = _run_one_shot_in_pty(
+        response_format={"type": "object"},
+        reply={"answer": 3},
+    )
+    assert returncode == 0, stderr
     assert stdout == '{"answer":3}\n'
     assert json.loads(stdout) == {"answer": 3}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="PTY is POSIX-only")
+def test_one_shot_text_keeps_provider_detection_status_on_tty():
+    stdout, stderr, returncode = _run_one_shot_in_pty(
+        response_format=None,
+        reply="plain answer",
+    )
+    assert returncode == 0, stderr
+    assert "Detecting providers" in stdout
+    assert stdout.endswith("plain answer\n")
