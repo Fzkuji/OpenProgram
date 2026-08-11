@@ -448,8 +448,8 @@ replay:
   </table>
   </div>
   <h3>实现后最小验证命令</h3>
-  <pre>pytest -q tests/providers/test_record_replay.py tests/providers/test_record_replay_cli.py
-pytest -q tests/providers/test_scripted_provider.py tests/unit/test_usage_stream_chokepoint.py
+  <pre>pytest -q tests/providers/test_record_replay.py tests/providers/test_record_replay_registry.py tests/providers/test_record_replay_cli.py
+pytest -q tests/providers/test_scripted_provider.py tests/providers/test_registry_from_config.py tests/unit/test_usage_stream_chokepoint.py tests/unit/test_web_config_schema.py tests/unit/test_config_write_safety.py
 python -m openprogram recordings --help
 python -m openprogram config get record_replay.mode
 python -m tools.docs_site.build
@@ -458,12 +458,14 @@ git diff --check</pre>
 
   <h2 id="status">15 · 实现与验证记录</h2>
   <div class="status-grid" role="table" aria-label="实现状态">
-    <div class="head">状态</div><div class="head">范围</div><div class="head">证据（基线 708bfbab）</div>
-    <div class="value"><span class="pill ok">已实现</span></div><div class="value">库级 request/event/call_end 录制、固定凭证脱敏、离线事件构造、首字段 mismatch、多轮 tool loop 测试。</div><div class="value"><code>recording.py</code>、<code>replay.py</code>、<code>test_record_replay.py</code></div>
-    <div class="value"><span class="pill warn">部分实现</span></div><div class="value">格式版本拒绝、socket sentinel 测试、文件路径属性。</div><div class="value">只覆盖现有手工注册路径；parser 未完整验证结构。</div>
-    <div class="value"><span class="pill bad">尚未实现</span></div><div class="value">CLI/config、registry transform、共享并发 sink、0700/0600、严格完整性、credential bypass、list/show/delete/prune。</div><div class="value">本页是设计，不是实现证据。</div>
+    <div class="head">状态</div><div class="head">范围</div><div class="head">证据（基线 8f62da5a）</div>
+    <div class="value"><span class="pill ok">已实现</span></div><div class="value">共享 <code>RecordingSink</code> 以线程锁、跨进程 <code>flock</code>、完整 <code>os.write</code> 和 <code>call_end</code> fsync 写入单一 v1 JSONL；扩展固定脱敏并执行 0700/0600 与 symlink/普通文件检查。</div><div class="value"><code>recording.py::RecordingSink</code>、<code>paths.py::get_recordings_dir</code>；spawn 三进程并发测试严格解析 15 个连续 call。</div>
+    <div class="value"><span class="pill ok">已实现</span></div><div class="value">一次性 registry transform 覆盖已有和后续 provider；record 模式共享 sink，replay 模式共享一个预验证 provider。</div><div class="value"><code>api_registry.py::configure_provider_transform</code>、<code>recording.py::activate_record_replay_from_config</code>、<code>test_record_replay_registry.py</code>。</div>
+    <div class="value"><span class="pill ok">已实现</span></div><div class="value">严格 parser 在构造阶段验证 header、版本、行类型、call/event 索引、call_end/count 和事件模型；replay 无原 provider/fallback，两个 stream 入口先选择 provider 并跳过凭证解析。</div><div class="value"><code>replay.py::read_recording_file</code>、<code>ReplayProvider.requires_credentials</code>、<code>stream.py</code>；结构失败、credential sentinel、多轮 tool loop 测试。</div>
+    <div class="value"><span class="pill ok">已实现</span></div><div class="value"><code>record_replay.mode/file</code> 为 next_start settings；CLI 提供 status/record/replay/off/list/show/delete/prune，配置失败回滚新文件，破坏性命令包含 active、symlink、外部路径、锁与非 TTY 确认保护。</div><div class="value"><code>config_schema.py</code>、<code>cli.py</code>、<code>recording.py</code>、<code>test_record_replay_cli.py</code>；真实临时 HOME CLI smoke 验证。</div>
+    <div class="value"><span class="pill warn">兼容边界</span></div><div class="value">保留 v1 构造器、属性、异常、旧 header 和 mismatch 行为；新增严格检查会拒绝旧 reader 曾忽略的损坏行。严格离线仍只覆盖 LLM provider 层；跨进程调度顺序不保证复现。</div><div class="value"><code>test_record_replay.py</code> 继续覆盖库级录制、两轮 tool loop、版本拒绝和字段差异。</div>
     <div class="value"><span class="pill plan">明确不做</span></div><div class="value">Web UI、全进程 HTTP 录制、tool/MCP 录制、模糊 request 匹配、自动网络 fallback、自动上传。</div><div class="value">超出本阶段边界。</div>
-    <div class="value"><span class="pill plan">文档验证</span></div><div class="value">HTML 语法、docs build、link checker、diff whitespace。</div><div class="value">由本设计提交的验证记录填写。</div>
+    <div class="value"><span class="pill plan">验证命令</span></div><div class="value">相关 pytest、Ruff、docs build、link checker、CLI smoke 与 diff whitespace。</div><div class="value">提交前执行并在分支交付记录中报告精确通过数及任何基线环境失败。</div>
   </div>
 
   <p class="foot">设计来源：当前 OpenProgram provider 实现、CLI/config 入口、测试，以及仓内 <code>references/pi-ai</code> 快照。更新实现状态时必须附代码符号、测试或 commit；不得把“设计已写”标为“功能已实现”。</p>
