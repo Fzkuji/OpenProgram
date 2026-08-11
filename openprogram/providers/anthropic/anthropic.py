@@ -724,6 +724,12 @@ async def stream_simple(
             if budget and max_tokens <= budget:
                 params["max_tokens"] = budget + max_tokens
 
+    if opts.response_format is not None:
+        params.setdefault("output_config", {})["format"] = {
+            "type": "json_schema",
+            "schema": opts.response_format.schema,
+        }
+
     # Track partial state
     partial = _make_empty_assistant(model)
     content_blocks: list[Any] = []

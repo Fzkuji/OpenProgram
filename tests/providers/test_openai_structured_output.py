@@ -2,6 +2,7 @@ import asyncio
 from types import SimpleNamespace
 
 from openprogram.providers.openai_completions import openai_completions
+from openprogram.providers.anthropic import anthropic
 from openprogram.providers.openai_responses.openai_responses import _build_params
 from openprogram.providers.structured_output import normalize_response_format
 from openprogram.providers.types import Context, Model, SimpleStreamOptions
@@ -99,4 +100,42 @@ def test_chat_completions_maps_normalized_schema_to_response_format(monkeypatch)
             "strict": True,
             "schema": SCHEMA,
         },
+    }
+
+
+def test_anthropic_merges_json_schema_with_existing_output_config(monkeypatch):
+    captured = {}
+
+    class Captured(Exception):
+        pass
+
+    def on_payload(params, model):
+        captured.update(params)
+        raise Captured
+
+    monkeypatch.setattr(anthropic, "_build_client", lambda *args, **kwargs: (object(), False))
+    model = _model("anthropic-messages").model_copy(update={
+        "provider": "anthropic",
+        "id": "claude-sonnet-4-6",
+        "reasoning": True,
+    })
+    options = SimpleStreamOptions(
+        api_key="test-key",
+        reasoning="medium",
+        on_payload=on_payload,
+        response_format=normalize_response_format(SCHEMA),
+    )
+
+    async def consume():
+        async for _ in anthropic.stream_simple(model, Context(), options):
+            pass
+
+    try:
+        asyncio.run(consume())
+    except Captured:
+        pass
+
+    assert captured["output_config"] == {
+        "effort": "medium",
+        "format": {"type": "json_schema", "schema": SCHEMA},
     }

@@ -92,10 +92,10 @@ def test_validation_returns_typed_value_and_bounded_deterministic_issues():
 
 def test_negotiation_is_unknown_safe_and_prompt_fallback_is_explicit():
     model = Model(
-        id="claude-test",
-        name="Claude test",
-        api="anthropic-messages",
-        provider="anthropic",
+        id="third-party-test",
+        name="Third-party test",
+        api="openai-completions",
+        provider="openrouter",
         base_url="https://example.invalid",
     )
 

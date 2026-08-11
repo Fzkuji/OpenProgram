@@ -162,7 +162,11 @@ def negotiate_structured_output(model: Any, output: JsonSchemaOutput) -> Literal
     declared = getattr(model, "structured_output", None)
     if provider == "callable":
         return "native"
-    if provider == "openai" and api in {"openai-completions", "openai-responses"}:
+    native = (
+        (provider == "openai" and api in {"openai-completions", "openai-responses"})
+        or (provider == "anthropic" and api == "anthropic-messages")
+    )
+    if native:
         if declared is not False:
             return "native"
     if output.fallback == "prompt":
