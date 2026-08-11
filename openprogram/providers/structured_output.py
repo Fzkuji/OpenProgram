@@ -67,6 +67,20 @@ class StructuredOutputUnsupportedError(StructuredOutputError):
 
 def normalize_response_format(value: dict[str, Any] | JsonSchemaOutput) -> JsonSchemaOutput:
     """Copy, normalize, and meta-validate a public response-format value."""
+    schema_candidate: Any = None
+    if isinstance(value, JsonSchemaOutput):
+        schema_candidate = value.schema
+    elif isinstance(value, dict):
+        schema_candidate = value.get("schema") if value.get("type") == "json_schema" else value
+    if isinstance(schema_candidate, (dict, list)) and _schema_exceeds_depth_limit(
+        schema_candidate,
+        _GOOGLE_SCHEMA_MAX_DEPTH,
+    ):
+        raise StructuredOutputSchemaError(
+            "JSON Schema exceeds depth limit",
+            code="invalid_schema",
+        )
+
     if isinstance(value, JsonSchemaOutput):
         output = JsonSchemaOutput(**{**value.__dict__, "schema": copy.deepcopy(value.schema)})
     elif isinstance(value, dict):
@@ -116,9 +130,10 @@ def normalize_response_format(value: dict[str, Any] | JsonSchemaOutput) -> JsonS
     try:
         validator_cls = validators.validator_for(output.schema)
         validator_cls.check_schema(output.schema)
-    except SchemaError as exc:
+    except (SchemaError, RecursionError) as exc:
+        message = getattr(exc, "message", "recursive metaschema validation failed")
         raise StructuredOutputSchemaError(
-            f"Invalid JSON Schema: {exc.message}", code="invalid_schema"
+            f"Invalid JSON Schema: {message}", code="invalid_schema"
         ) from exc
     return output
 
@@ -190,6 +205,7 @@ def _project_schema(
         if path is None:
             path = _first_unsupported_google_schema_path(schema)
         if path is not None:
+            path = _bounded_google_pointer(path)
             return None, {
                 "code": "unsupported_schema_constraint",
                 "path": path,
@@ -270,10 +286,36 @@ _GOOGLE_SCHEMA_KEYWORDS = frozenset({
     "title",
     "type",
 })
-_GOOGLE_SCHEMA_MAX_DEPTH = 128
+_GOOGLE_SCHEMA_MAX_DEPTH = 100
 _GOOGLE_SCHEMA_MAX_NODES = 4096
 _GOOGLE_SCHEMA_MAX_EDGES = 8192
 _GOOGLE_SCHEMA_MAX_POINTER_LENGTH = 512
+
+
+def _schema_exceeds_depth_limit(value: Any, limit: int) -> bool:
+    pending = [(value, 0)]
+    deepest_seen: dict[int, int] = {}
+    while pending:
+        current, depth = pending.pop()
+        if depth > limit:
+            return True
+        if not isinstance(current, (dict, list)):
+            continue
+        identity = id(current)
+        if deepest_seen.get(identity, -1) >= depth:
+            continue
+        deepest_seen[identity] = depth
+        children = current.values() if isinstance(current, dict) else current
+        pending.extend(
+            (child, depth + 1)
+            for child in children
+            if isinstance(child, (dict, list))
+        )
+    return False
+
+
+def _bounded_google_pointer(pointer: str) -> str:
+    return pointer if len(pointer) <= _GOOGLE_SCHEMA_MAX_POINTER_LENGTH else ""
 
 
 def _first_unsupported_google_schema_path(
@@ -346,8 +388,7 @@ def _google_reference_graph_issue(
     edge_count = 0
 
     def bounded_pointer(path: tuple[Any, ...]) -> str:
-        pointer = _pointer(path)
-        return pointer if len(pointer) <= _GOOGLE_SCHEMA_MAX_POINTER_LENGTH else ""
+        return _bounded_google_pointer(_pointer(path))
 
     def limit_issue(limit: str, path: tuple[Any, ...]) -> tuple[str, str]:
         return (

@@ -8,6 +8,7 @@ from openprogram.agent.agent_loop import agent_loop
 from openprogram.agent.types import AgentContext, AgentLoopConfig
 from openprogram.providers.api_registry import get_structured_output_capabilities
 from openprogram.providers.structured_output import (
+    StructuredOutputSchemaError,
     StructuredOutputUnsupportedError,
     negotiate_structured_output,
     normalize_response_format,
@@ -49,6 +50,13 @@ def _negotiate_google(schema):
         }),
         [],
     )
+
+
+def _nested_array_schema(depth):
+    schema = {"type": "string"}
+    for _ in range(depth):
+        schema = {"type": "array", "items": schema}
+    return schema
 
 
 def test_google_maps_schema_to_literal_generation_config_without_mutation():
@@ -501,6 +509,12 @@ def test_google_schema_graph_limits_fail_closed_with_bounded_issue(monkeypatch, 
         monkeypatch.setattr(structured_output, "_GOOGLE_SCHEMA_MAX_EDGES", 1)
         schema = {"anyOf": [{"type": "string"}, {"type": "number"}]}
 
+    if limit == "depth":
+        with pytest.raises(StructuredOutputSchemaError) as exc:
+            _negotiate_google(schema)
+        assert str(exc.value) == "JSON Schema exceeds depth limit"
+        return
+
     with pytest.raises(StructuredOutputUnsupportedError) as exc:
         _negotiate_google(schema)
     issue = exc.value.issues[0]
@@ -516,6 +530,37 @@ def test_google_schema_depth_at_configured_limit_is_accepted(monkeypatch):
     for _ in range(8):
         schema = {"type": "array", "items": schema}
     assert _negotiate_google(schema).provider_schema == schema
+
+
+@pytest.mark.parametrize("depth", [127, 128, 129])
+def test_google_public_schema_depth_never_leaks_recursion_error(depth):
+    with pytest.raises(StructuredOutputSchemaError) as exc:
+        _negotiate_google(_nested_array_schema(depth))
+    assert exc.value.code == "invalid_schema"
+
+
+def test_google_public_schema_depth_boundary_matches_configured_limit():
+    import openprogram.providers.structured_output as structured_output
+
+    assert structured_output._GOOGLE_SCHEMA_MAX_DEPTH == 100
+    assert _negotiate_google(_nested_array_schema(100)).mode == "native"
+    with pytest.raises(StructuredOutputSchemaError):
+        _negotiate_google(_nested_array_schema(101))
+
+
+def test_google_long_unsupported_keyword_path_uses_shared_bound():
+    property_name = "x" * 1000
+    schema = {
+        "type": "object",
+        "properties": {
+            property_name: {"type": "string", "pattern": "^x$"},
+        },
+    }
+    with pytest.raises(StructuredOutputUnsupportedError) as exc:
+        _negotiate_google(schema)
+    issue = exc.value.issues[0]
+    assert len(issue["path"]) <= 512
+    assert issue["schema_path"] == issue["path"]
 
 
 def test_google_percent_decodes_fragment_before_json_pointer_resolution():
