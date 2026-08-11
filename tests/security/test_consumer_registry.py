@@ -22,7 +22,9 @@ EXPECTED_CONSUMERS = {
     "channel.attachment.download",
     "channel.telegram.api",
     "channel.discord.api",
+    "channel.discord.gateway_sdk",
     "channel.slack.api",
+    "channel.slack.gateway_sdk",
     "channel.slack.attachment",
     "channel.slack.generated_asset.upload",
     "channel.telegram.attachment",
@@ -47,6 +49,7 @@ EXPECTED_CONSUMERS = {
     "mcp.loopback.callback",
     "tts.fixed_api",
     "tts.configured_api",
+    "tts.edge_sdk",
     "webui.mcp.catalog",
     "webui.model_listing.fixed",
     "webui.model_listing.configured",
@@ -84,7 +87,9 @@ EXPECTED_FIXED_ORIGINS = {
     ),
     "channel.telegram.api": frozenset({"https://api.telegram.org"}),
     "channel.discord.api": frozenset({"https://discord.com"}),
+    "channel.discord.gateway_sdk": frozenset({"https://discord.com"}),
     "channel.slack.api": frozenset({"https://slack.com"}),
+    "channel.slack.gateway_sdk": frozenset({"https://slack.com"}),
     "channel.slack.attachment": frozenset(
         {"https://files.slack.com", "https://slack.com"}
     ),
@@ -245,9 +250,22 @@ def test_each_audited_fixed_origin_is_accepted_by_policy(consumer, origin):
 
 def test_sdk_consumers_have_managed_dispositions():
     expected = {
+        "channel.discord.api",
+        "channel.discord.gateway_sdk",
+        "channel.feishu.api",
+        "channel.matrix.configured",
+        "channel.slack.api",
+        "channel.slack.gateway_sdk",
+        "channel.telegram.api",
+        "channel.wechat.api",
+        "mcp.configured.http",
+        "mcp.configured.sse",
         "provider.google.sdk",
         "provider.openai.sdk",
         "provider.anthropic.sdk",
+        "tts.configured_api",
+        "tts.edge_sdk",
+        "tts.fixed_api",
     }
     sdk_specs = {
         key: spec

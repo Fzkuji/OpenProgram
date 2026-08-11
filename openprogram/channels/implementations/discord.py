@@ -43,6 +43,11 @@ class DiscordChannel(Channel):
         self.token = token
 
     def run(self, stop: threading.Event) -> None:
+        from openprogram.security.safe_http import require_active_sdk_transport
+
+        require_active_sdk_transport(
+            "channel.discord.gateway_sdk", "https://discord.com"
+        )
         asyncio.run(self._run_async(stop))
 
     async def _run_async(self, stop: threading.Event) -> None:

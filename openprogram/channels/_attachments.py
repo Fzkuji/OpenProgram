@@ -36,12 +36,11 @@ from pathlib import Path
 from typing import Iterable
 
 import httpx
-import requests
 
 from openprogram.channels import accounts as _accounts
 from openprogram.channels._message import Attachment
 from openprogram.security.safe_http import safe_client
-from openprogram.security.url_policy import normalize_origin
+from openprogram.security.url_policy import URLPolicyError, normalize_origin
 
 
 #: 单个附件下载上限 (字节). 超限跳过并记日志.
@@ -97,8 +96,13 @@ def download_inbound(
             )
             continue
         except Exception as e:  # noqa: BLE001
+            detail = (
+                e.reason
+                if isinstance(e, URLPolicyError)
+                else type(e).__name__
+            )
             print(f"[{tag}] attachment {att.name!r} download failed: "
-                  f"{type(e).__name__}: {e}")
+                  f"{detail}")
             continue
         if row is not None:
             saved.append(row)
@@ -170,11 +174,13 @@ def _resolve_telegram_file(account_id: str, file_id: str) -> str | None:
     if not token:
         return None
     try:
-        r = requests.get(
-            f"https://api.telegram.org/bot{token}/getFile",
-            params={"file_id": file_id}, timeout=15,
-        )
-        data = r.json() if r.ok else {}
+        with safe_client("channel.telegram.api") as client:
+            r = client.get(
+                f"https://api.telegram.org/bot{token}/getFile",
+                params={"file_id": file_id},
+                timeout=15,
+            )
+        data = r.json() if r.is_success else {}
         file_path = (data.get("result") or {}).get("file_path")
         if not data.get("ok") or not file_path:
             return None

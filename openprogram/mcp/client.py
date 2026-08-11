@@ -29,6 +29,13 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.types import CallToolResult, Tool
 
+try:
+    from mcp.client.streamable_http import (
+        streamable_http_client as _modern_streamable_http_client,
+    )
+except ImportError:  # pragma: no cover - older supported MCP v1
+    _modern_streamable_http_client = None
+
 from .config import AUTH_BEARER, AUTH_OAUTH, HTTP, LOCAL, SSE, MCPServerConfig
 
 
@@ -563,13 +570,30 @@ class MCPClient:
         return params
 
     async def _run_http(self) -> None:
-        from mcp.client.streamable_http import streamablehttp_client
         headers, auth = await self._build_remote_auth()
+        factory = self._managed_http_client_factory()
+        if _modern_streamable_http_client is not None:
+            managed = factory(
+                headers=headers,
+                auth=auth,
+                timeout=self.config.timeout_seconds,
+            )
+            async with managed:
+                async with _modern_streamable_http_client(
+                    self.config.url,
+                    http_client=managed,
+                ) as (read, write, _get_session_id):
+                    await self._run_session(read, write)
+            return
+
+        from mcp.client.streamable_http import streamablehttp_client
+
         async with streamablehttp_client(
             self.config.url,
             headers=headers,
             auth=auth,
             timeout=self.config.timeout_seconds,
+            httpx_client_factory=factory,
         ) as (read, write, _get_session_id):
             await self._run_session(read, write)
 
@@ -581,8 +605,40 @@ class MCPClient:
             headers=headers,
             auth=auth,
             timeout=self.config.timeout_seconds,
+            httpx_client_factory=self._managed_http_client_factory(),
         ) as (read, write):
             await self._run_session(read, write)
+
+    def _managed_http_client_factory(self):
+        """Return the MCP SDK v1 factory bound to this server's exact origin."""
+        from openprogram.security.safe_http import configured_safe_async_client
+        from openprogram.security.url_policy import OwnerURLException, normalize_origin
+
+        transport = "sse" if self.config.type == "sse" else "http"
+        consumer = f"mcp.configured.{transport}"
+        origin = normalize_origin(self.config.url)
+        exception = OwnerURLException(consumer=consumer, origin=origin)
+
+        def factory(headers=None, timeout=None, auth=None):
+            client = configured_safe_async_client(
+                consumer,
+                self.config.url,
+                owner_exception=exception,
+            )
+            if headers:
+                client.headers.update(headers)
+            if timeout is not None:
+                timeout_seconds = (
+                    timeout.total_seconds()
+                    if isinstance(timeout, datetime.timedelta)
+                    else timeout
+                )
+                client.timeout = httpx.Timeout(timeout_seconds)
+            if auth is not None:
+                client._auth = auth
+            return client
+
+        return factory
 
     async def _run_session(self, read, write) -> None:
         from mcp.types import SamplingCapability

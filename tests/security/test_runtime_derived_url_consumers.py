@@ -721,11 +721,36 @@ class _SlackResponse:
         self._data = data
         self.status_code = status_code
         self.ok = 200 <= status_code < 300
+        self.is_success = self.ok
         self.headers: dict[str, str] = {}
         self.text = json.dumps(data)
 
     def json(self):
         return self._data
+
+
+def _patch_slack_api_client(monkeypatch, post):
+    managed_factory = _transport.safe_client
+
+    class SlackClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def post(self, url, **kwargs):
+            return post(url, **kwargs)
+
+    monkeypatch.setattr(
+        _transport,
+        "safe_client",
+        lambda consumer: (
+            SlackClient()
+            if consumer == "channel.slack.api"
+            else managed_factory(consumer)
+        ),
+    )
 
 
 def test_channel_generated_upload_url_uses_managed_post(
@@ -759,7 +784,7 @@ def test_channel_generated_upload_url_uses_managed_post(
             return _SlackResponse({"ok": True})
         raise AssertionError(f"raw derived upload attempted: {url}")
 
-    monkeypatch.setattr(_transport.requests, "post", slack_api)
+    _patch_slack_api_client(monkeypatch, slack_api)
     result = _transport.post_file("slack", "a1", "C1_U1", str(path))
 
     assert result.ok and result.message_id == "F1"
@@ -808,7 +833,7 @@ def test_slack_upload_malformed_status_hides_peer_echoed_signed_url(
             )
         raise AssertionError(f"unexpected raw request: {url}")
 
-    monkeypatch.setattr(_transport.requests, "post", slack_api)
+    _patch_slack_api_client(monkeypatch, slack_api)
     result = _transport.post_file("slack", "a1", "C1_U1", str(path))
 
     assert not result.ok
@@ -847,7 +872,7 @@ def test_channel_generated_upload_redirect_to_private_is_denied_before_send(
             )
         raise AssertionError(f"unexpected raw request: {url}")
 
-    monkeypatch.setattr(_transport.requests, "post", slack_api)
+    _patch_slack_api_client(monkeypatch, slack_api)
     result = _transport.post_file("slack", "a1", "C1_U1", str(path))
 
     assert not result.ok and result.error_kind == "network"

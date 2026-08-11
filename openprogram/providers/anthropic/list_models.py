@@ -23,6 +23,8 @@ def fetch(provider_id: str, timeout: float) -> Any:
 
     from openprogram.providers.env_api_keys import resolve_api_key_with_auth_store
     from openprogram.providers.storage import _resolve_base_url
+    from openprogram.security.safe_http import configured_safe_client, safe_client
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
 
     # claude-code runs on a Claude SUBSCRIPTION (OAuth, no api-key). Its
     # credentials live in the `anthropic` pool and the token is an
@@ -63,14 +65,41 @@ def fetch(provider_id: str, timeout: float) -> Any:
     # detail call draw from this one deadline, instead of each detail
     # request getting the full ``timeout`` (N+1 requests × timeout).
     deadline = _time.monotonic() + timeout
+    if provider_id in ("anthropic", "claude-code"):
+        client_context = safe_client("provider.fixed_api")
+    else:
+        origin = normalize_origin(url)
+        client_context = configured_safe_client(
+            "provider.configured_api",
+            origin,
+            owner_exception=OwnerURLException(
+                consumer="provider.configured_api", origin=origin
+            ),
+        )
     try:
-        r = httpx.get(url, headers=headers, timeout=timeout)
-        r.raise_for_status()
-        data = r.json()
+        with client_context as client:
+            r = client.get(url, headers=headers, timeout=timeout)
+            r.raise_for_status()
+            data = r.json()
+            details = {}
+            if provider_id in ("anthropic", "claude-code"):
+                for item in data.get("data") or []:
+                    mid = item.get("id")
+                    remaining = deadline - _time.monotonic()
+                    if not mid or remaining <= 0:
+                        continue
+                    try:
+                        details[mid] = client.get(
+                            url.rstrip("/") + "/" + mid,
+                            headers=headers,
+                            timeout=max(0.5, remaining),
+                        )
+                    except Exception:
+                        pass
     except httpx.HTTPStatusError as e:
-        return {"error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+        return {"error": f"HTTP {e.response.status_code}"}
     except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+        return {"error": type(e).__name__}
     out = []
     for it in (data.get("data") or []):
         mid = it.get("id")
@@ -90,24 +119,15 @@ def fetch(provider_id: str, timeout: float) -> Any:
         # Use the SAME base as the list call (``url`` ends in /v1/models).
         # Budget spent → skip further detail probes; remaining models keep
         # their list-level fields instead of being dropped.
-        _remaining = deadline - _time.monotonic()
-        if provider_id in ("anthropic", "claude-code") and _remaining > 0:
-            try:
-                det = httpx.get(
-                    url.rstrip("/") + "/" + mid,
-                    headers=headers, timeout=max(0.5, _remaining),
-                )
-                if det.status_code == 200:
-                    dj = det.json()
-                    if dj.get("max_input_tokens"):
-                        entry["context_window"] = int(dj["max_input_tokens"])
-                    if dj.get("max_tokens"):
-                        entry["max_tokens"] = int(dj["max_tokens"])
-                    # Extract thinking/effort capabilities from the API
-                    caps = dj.get("capabilities") or {}
-                    _extract_thinking_caps(entry, caps)
-            except Exception:
-                pass
+        det = details.get(mid)
+        if det is not None and det.status_code == 200:
+            dj = det.json()
+            if dj.get("max_input_tokens"):
+                entry["context_window"] = int(dj["max_input_tokens"])
+            if dj.get("max_tokens"):
+                entry["max_tokens"] = int(dj["max_tokens"])
+            caps = dj.get("capabilities") or {}
+            _extract_thinking_caps(entry, caps)
         out.append(entry)
     return out
 

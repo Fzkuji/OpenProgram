@@ -50,6 +50,11 @@ class SlackChannel(Channel):
         self.app_token = app_token
 
     def run(self, stop: threading.Event) -> None:
+        from openprogram.security.safe_http import require_active_sdk_transport
+
+        require_active_sdk_transport(
+            "channel.slack.gateway_sdk", "https://slack.com"
+        )
         from slack_sdk.web import WebClient  # type: ignore
         from slack_sdk.socket_mode import SocketModeClient  # type: ignore
         from slack_sdk.socket_mode.request import SocketModeRequest  # type: ignore

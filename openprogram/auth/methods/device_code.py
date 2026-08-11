@@ -71,19 +71,26 @@ class DeviceCodeMethod(LoginMethod):
         self._metadata = dict(metadata or {})
 
     async def run(self, ui: LoginUi) -> Credential:
-        import httpx
+        from openprogram.security.safe_http import configured_safe_async_client
+        from openprogram.security.url_policy import OwnerURLException, normalize_origin
+
         cfg = self._cfg
 
         # Step 1 — begin device flow.
         start_params = {"client_id": cfg.client_id, **cfg.extra_start_params}
         if cfg.scopes:
             start_params["scope"] = cfg.scope_separator.join(cfg.scopes)
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        start_origin = normalize_origin(cfg.device_code_url)
+        async with configured_safe_async_client(
+            "provider.configured_api",
+            start_origin,
+            owner_exception=OwnerURLException(
+                consumer="provider.configured_api", origin=start_origin
+            ),
+        ) as client:
             start_resp = await client.post(cfg.device_code_url, data=start_params)
         if start_resp.status_code != 200:
-            raise RuntimeError(
-                f"device-code init failed: {start_resp.status_code} {start_resp.text[:200]}"
-            )
+            raise RuntimeError(f"device-code init failed: {start_resp.status_code}")
         data = start_resp.json()
         for k in ("device_code", "user_code", "verification_uri", "interval", "expires_in"):
             if k not in data:
@@ -95,7 +102,7 @@ class DeviceCodeMethod(LoginMethod):
                 if k == "expires_in" and "expires_in" not in data:
                     data["expires_in"] = 600
                     continue
-                raise RuntimeError(f"device-code response missing {k}: {data}")
+                raise RuntimeError(f"device-code response missing {k}")
 
         user_code = data["user_code"]
         verification_uri = data.get("verification_uri_complete") or data["verification_uri"]
@@ -116,7 +123,14 @@ class DeviceCodeMethod(LoginMethod):
             **cfg.extra_poll_params,
         }
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        token_origin = normalize_origin(cfg.token_url)
+        async with configured_safe_async_client(
+            "provider.configured_api",
+            token_origin,
+            owner_exception=OwnerURLException(
+                consumer="provider.configured_api", origin=token_origin
+            ),
+        ) as client:
             while time.time() < deadline:
                 await asyncio.sleep(interval)
                 resp = await client.post(cfg.token_url, data=poll_params)
@@ -125,7 +139,7 @@ class DeviceCodeMethod(LoginMethod):
                     for key in ("access_token", "expires_in"):
                         if key not in tokens:
                             raise RuntimeError(
-                                f"device-code token response missing {key}: {tokens}"
+                                f"device-code token response missing {key}"
                             )
                     expires_at_ms = int(time.time() * 1000) + int(tokens["expires_in"]) * 1000
                     return Credential(
@@ -162,6 +176,6 @@ class DeviceCodeMethod(LoginMethod):
                 if err in ("access_denied", "expired_token"):
                     raise RuntimeError(f"device-code flow aborted: {err}")
                 # Unrecognized error — surface rather than loop forever.
-                raise RuntimeError(f"device-code poll failed: {resp.text[:200]}")
+                raise RuntimeError(f"device-code poll failed: HTTP {resp.status_code}")
 
         raise TimeoutError("device-code flow timed out")

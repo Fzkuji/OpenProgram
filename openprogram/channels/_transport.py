@@ -45,12 +45,15 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import httpx
-import requests
 
 from openprogram.channels import _format
 from openprogram.channels import accounts as _accounts
-from openprogram.security.safe_http import safe_client
-from openprogram.security.url_policy import normalize_origin
+from openprogram.security.safe_http import configured_safe_client, safe_client
+from openprogram.security.url_policy import (
+    OwnerURLException,
+    URLPolicyError,
+    normalize_origin,
+)
 
 
 # Platform-specific message size caps (原始 markdown 字符数, 渲染前).
@@ -259,8 +262,7 @@ def _send_with_retry(tag: str, op: Callable[[], SendResult]) -> SendResult:
 
 def _classify_network_error(exc: Exception) -> SendResult:
     """request 库异常 → SendResult."""
-    name = type(exc).__name__
-    detail = f"{name}: {exc}"
+    detail = exc.reason if isinstance(exc, URLPolicyError) else type(exc).__name__
     # 所有 requests 异常都当 network. 上层不知道更细节也没法 retry 得
     # 更聪明, 重要的是给 retryable=True.
     return SendResult.fail("network", detail, retryable=True)
@@ -270,19 +272,18 @@ def _classify_http_status(
     status: int, body: str, retry_after_header: str = "",
 ) -> SendResult:
     """根据 HTTP status code + response body 给个 error_kind."""
-    snippet = body[:200] if body else ""
     if status == 401 or status == 403:
-        return SendResult.fail("auth", f"HTTP {status}: {snippet}")
+        return SendResult.fail("auth", f"HTTP {status}")
     if status == 404:
-        return SendResult.fail("bad_target", f"HTTP {status}: {snippet}")
+        return SendResult.fail("bad_target", f"HTTP {status}")
     if status == 429:
         return SendResult.fail(
-            "rate_limit", f"HTTP {status}: {snippet}", retryable=True,
+            "rate_limit", f"HTTP {status}", retryable=True,
             retry_after=_extract_retry_after(body, retry_after_header),
         )
     if 500 <= status < 600:
-        return SendResult.fail("network", f"HTTP {status}: {snippet}", retryable=True)
-    return SendResult.fail("unknown", f"HTTP {status}: {snippet}")
+        return SendResult.fail("network", f"HTTP {status}", retryable=True)
+    return SendResult.fail("unknown", f"HTTP {status}")
 
 
 def _extract_retry_after(body: str, header: str = "") -> float:
@@ -367,10 +368,12 @@ def _patch_telegram(
 def _tg_call(token: str, method: str, payload: dict,
              success_id: Optional[str] = None) -> SendResult:
     try:
-        r = requests.post(
-            f"https://api.telegram.org/bot{token}/{method}",
-            json=payload, timeout=10,
-        )
+        with safe_client("channel.telegram.api") as client:
+            r = client.post(
+                f"https://api.telegram.org/bot{token}/{method}",
+                json=payload,
+                timeout=10,
+            )
         data = {}
         try:
             data = r.json()
@@ -385,7 +388,9 @@ def _tg_call(token: str, method: str, payload: dict,
                     return SendResult.success(success_id or "")
                 kind = _telegram_kind_from_description(desc)
                 return SendResult.fail(
-                    kind, desc, retryable=(kind == "rate_limit"),
+                    kind,
+                    "telegram_api_error",
+                    retryable=(kind == "rate_limit"),
                     retry_after=_extract_retry_after(r.text),
                 )
             return _classify_http_status(
@@ -427,13 +432,13 @@ def _post_file_telegram(
     )
     try:
         with path.open("rb") as fh:
-            r = requests.post(
-                f"https://api.telegram.org/bot{token}/{method}",
-                data={"chat_id": _tg_chat_id(chat_id),
-                      "caption": caption[:1024]},
-                files={field: (path.name, fh)},
-                timeout=120,
-            )
+            with safe_client("channel.telegram.api") as client:
+                r = client.post(
+                    f"https://api.telegram.org/bot{token}/{method}",
+                    data={"chat_id": _tg_chat_id(chat_id), "caption": caption[:1024]},
+                    files={field: (path.name, fh)},
+                    timeout=120,
+                )
         data = {}
         try:
             data = r.json()
@@ -444,7 +449,9 @@ def _post_file_telegram(
             if desc:
                 kind = _telegram_kind_from_description(desc)
                 return SendResult.fail(
-                    kind, desc, retryable=(kind == "rate_limit"),
+                    kind,
+                    "telegram_api_error",
+                    retryable=(kind == "rate_limit"),
                     retry_after=_extract_retry_after(r.text),
                 )
             return _classify_http_status(
@@ -477,13 +484,14 @@ def _post_discord(account_id: str, scoped_user_id: str, text: str) -> SendResult
     if not channel_id:
         return SendResult.fail("bad_target", f"malformed user id {scoped_user_id!r}")
     try:
-        r = requests.post(
-            f"https://discord.com/api/v10/channels/{channel_id}/messages",
-            headers=_discord_headers(token),
-            json={"content": text},
-            timeout=10,
-        )
-        if not r.ok:
+        with safe_client("channel.discord.api") as client:
+            r = client.post(
+                f"https://discord.com/api/v10/channels/{channel_id}/messages",
+                headers=_discord_headers(token),
+                json={"content": text},
+                timeout=10,
+            )
+        if not r.is_success:
             return _classify_http_status(
                 r.status_code, r.text, r.headers.get("Retry-After", ""),
             )
@@ -505,13 +513,14 @@ def _patch_discord(
     if not channel_id:
         return SendResult.fail("bad_target", f"malformed user id {scoped_user_id!r}")
     try:
-        r = requests.patch(
-            f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}",
-            headers=_discord_headers(token),
-            json={"content": text},
-            timeout=10,
-        )
-        if not r.ok:
+        with safe_client("channel.discord.api") as client:
+            r = client.patch(
+                f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}",
+                headers=_discord_headers(token),
+                json={"content": text},
+                timeout=10,
+            )
+        if not r.is_success:
             return _classify_http_status(
                 r.status_code, r.text, r.headers.get("Retry-After", ""),
             )
@@ -532,18 +541,19 @@ def _post_file_discord(
         return SendResult.fail("bad_target", f"malformed user id {scoped_user_id!r}")
     try:
         with path.open("rb") as fh:
-            r = requests.post(
-                f"https://discord.com/api/v10/channels/{channel_id}/messages",
-                # multipart: requests 自己定 Content-Type, 不能带 json 头
-                headers={
-                    "Authorization": f"Bot {token}",
-                    "User-Agent": _discord_headers(token)["User-Agent"],
-                },
-                data={"payload_json": json.dumps({"content": caption})},
-                files={"files[0]": (path.name, fh)},
-                timeout=120,
-            )
-        if not r.ok:
+            with safe_client("channel.discord.api") as client:
+                r = client.post(
+                    f"https://discord.com/api/v10/channels/{channel_id}/messages",
+                    # multipart: httpx 自己定 Content-Type, 不能带 json 头
+                    headers={
+                        "Authorization": f"Bot {token}",
+                        "User-Agent": _discord_headers(token)["User-Agent"],
+                    },
+                    data={"payload_json": json.dumps({"content": caption})},
+                    files={"files[0]": (path.name, fh)},
+                    timeout=120,
+                )
+        if not r.is_success:
             return _classify_http_status(
                 r.status_code, r.text, r.headers.get("Retry-After", ""),
             )
@@ -573,21 +583,26 @@ def _post_slack(account_id: str, scoped_user_id: str, text: str) -> SendResult:
     if not channel_id:
         return SendResult.fail("bad_target", f"malformed user id {scoped_user_id!r}")
     try:
-        r = requests.post(
-            "https://slack.com/api/chat.postMessage",
-            headers=_slack_headers(token),
-            json={"channel": channel_id, "text": text},
-            timeout=10,
-        )
-        if not r.ok:
+        with safe_client("channel.slack.api") as client:
+            r = client.post(
+                "https://slack.com/api/chat.postMessage",
+                headers=_slack_headers(token),
+                json={"channel": channel_id, "text": text},
+                timeout=10,
+            )
+        if not r.is_success:
             return _classify_http_status(
                 r.status_code, r.text, r.headers.get("Retry-After", ""),
             )
         data = r.json()
         if not data.get("ok"):
-            err = data.get("error") or r.text[:200]
+            err = str(data.get("error") or "unknown")
             kind = _slack_kind_from_error(err)
-            return SendResult.fail(kind, err, retryable=(kind in ("rate_limit", "network")))
+            return SendResult.fail(
+                kind,
+                "slack_api_error",
+                retryable=(kind in ("rate_limit", "network")),
+            )
         ts = data.get("ts")
         return SendResult.success(str(ts) if ts else "")
     except Exception as e:  # noqa: BLE001
@@ -605,21 +620,26 @@ def _patch_slack(
     if not channel_id:
         return SendResult.fail("bad_target", f"malformed user id {scoped_user_id!r}")
     try:
-        r = requests.post(
-            "https://slack.com/api/chat.update",
-            headers=_slack_headers(token),
-            json={"channel": channel_id, "ts": ts, "text": text},
-            timeout=10,
-        )
-        if not r.ok:
+        with safe_client("channel.slack.api") as client:
+            r = client.post(
+                "https://slack.com/api/chat.update",
+                headers=_slack_headers(token),
+                json={"channel": channel_id, "ts": ts, "text": text},
+                timeout=10,
+            )
+        if not r.is_success:
             return _classify_http_status(
                 r.status_code, r.text, r.headers.get("Retry-After", ""),
             )
         data = r.json()
         if not data.get("ok"):
-            err = data.get("error") or r.text[:200]
+            err = str(data.get("error") or "unknown")
             kind = _slack_kind_from_error(err)
-            return SendResult.fail(kind, err, retryable=(kind in ("rate_limit", "network")))
+            return SendResult.fail(
+                kind,
+                "slack_api_error",
+                retryable=(kind in ("rate_limit", "network")),
+            )
         return SendResult.success(ts)
     except Exception as e:  # noqa: BLE001
         return _classify_network_error(e)
@@ -651,21 +671,24 @@ def _post_file_slack(
         return SendResult.fail("bad_target", f"malformed user id {scoped_user_id!r}")
     try:
         size = path.stat().st_size
-        r = requests.post(
-            "https://slack.com/api/files.getUploadURLExternal",
-            headers={"Authorization": f"Bearer {token}"},
-            data={"filename": path.name, "length": str(size)},
-            timeout=10,
-        )
-        if not r.ok:
+        with safe_client("channel.slack.api") as client:
+            r = client.post(
+                "https://slack.com/api/files.getUploadURLExternal",
+                headers={"Authorization": f"Bearer {token}"},
+                data={"filename": path.name, "length": str(size)},
+                timeout=10,
+            )
+        if not r.is_success:
             return _classify_http_status(
                 r.status_code, r.text, r.headers.get("Retry-After", ""),
             )
         data = r.json()
         if not data.get("ok"):
-            err = data.get("error") or r.text[:200]
+            err = str(data.get("error") or "unknown")
             kind = _slack_kind_from_error(err)
-            return SendResult.fail(kind, err, retryable=(kind == "rate_limit"))
+            return SendResult.fail(
+                kind, "slack_api_error", retryable=(kind == "rate_limit")
+            )
         upload_url = data.get("upload_url")
         file_id = data.get("file_id")
         if not upload_url or not file_id:
@@ -685,25 +708,28 @@ def _post_file_slack(
         if not up.is_success:
             return _classify_http_status(up.status_code, up.text)
 
-        r = requests.post(
-            "https://slack.com/api/files.completeUploadExternal",
-            headers=_slack_headers(token),
-            json={
-                "files": [{"id": file_id, "title": path.name}],
-                "channel_id": channel_id,
-                **({"initial_comment": caption} if caption else {}),
-            },
-            timeout=30,
-        )
-        if not r.ok:
+        with safe_client("channel.slack.api") as client:
+            r = client.post(
+                "https://slack.com/api/files.completeUploadExternal",
+                headers=_slack_headers(token),
+                json={
+                    "files": [{"id": file_id, "title": path.name}],
+                    "channel_id": channel_id,
+                    **({"initial_comment": caption} if caption else {}),
+                },
+                timeout=30,
+            )
+        if not r.is_success:
             return _classify_http_status(
                 r.status_code, r.text, r.headers.get("Retry-After", ""),
             )
         data = r.json()
         if not data.get("ok"):
-            err = data.get("error") or r.text[:200]
+            err = str(data.get("error") or "unknown")
             kind = _slack_kind_from_error(err)
-            return SendResult.fail(kind, err, retryable=(kind == "rate_limit"))
+            return SendResult.fail(
+                kind, "slack_api_error", retryable=(kind == "rate_limit")
+            )
         return SendResult.success(str(file_id))
     except Exception as e:  # noqa: BLE001
         return _classify_network_error(e)
@@ -728,38 +754,45 @@ def _post_wechat(account_id: str, user_id: str, text: str) -> SendResult:
     if not bot_token or not bot_id:
         return SendResult.fail("auth", f"account {account_id} not logged in")
     try:
-        r = requests.post(
-            f"{base}/ilink/bot/sendmessage",
-            headers={
-                "Content-Type": "application/json",
-                "AuthorizationType": "ilink_bot_token",
-                "Authorization": f"Bearer {bot_token}",
-                "X-WECHAT-UIN": _make_wechat_uin(),
-            },
-            json={
-                "msg": {
-                    "from_user_id": bot_id,
-                    "to_user_id": user_id,
-                    "client_id": uuid.uuid4().hex,
-                    "message_type": 2,
-                    "message_state": 2,
-                    "item_list": [{"type": 1, "text_item": {"text": text}}],
-                    "context_token": "",
+        configured_origin = normalize_origin(base)
+        with configured_safe_client(
+            "channel.wechat.api",
+            configured_origin,
+            owner_exception=OwnerURLException(
+                consumer="channel.wechat.api", origin=configured_origin
+            ),
+        ) as client:
+            r = client.post(
+                f"{base}/ilink/bot/sendmessage",
+                headers={
+                    "Content-Type": "application/json",
+                    "AuthorizationType": "ilink_bot_token",
+                    "Authorization": f"Bearer {bot_token}",
+                    "X-WECHAT-UIN": _make_wechat_uin(),
                 },
-                "base_info": {},
-            },
-            timeout=15,
-        )
-        if not r.ok:
+                json={
+                    "msg": {
+                        "from_user_id": bot_id,
+                        "to_user_id": user_id,
+                        "client_id": uuid.uuid4().hex,
+                        "message_type": 2,
+                        "message_state": 2,
+                        "item_list": [{"type": 1, "text_item": {"text": text}}],
+                        "context_token": "",
+                    },
+                    "base_info": {},
+                },
+                timeout=15,
+            )
+        if not r.is_success:
             return _classify_http_status(
                 r.status_code, r.text, r.headers.get("Retry-After", ""),
             )
-        data = r.json() if r.ok else {}
+        data = r.json() if r.is_success else {}
         ret = data.get("ret", 0)
         if ret != 0:
-            errmsg = data.get("errmsg", "?") or "?"
             kind = "auth" if ret in (401, 403, 1001) else "unknown"
-            return SendResult.fail(kind, f"iLink ret={ret}: {errmsg[:200]}")
+            return SendResult.fail(kind, f"iLink ret={ret}")
         # iLink 不返回稳定的 message_id, send_text 拿到的 handle 在 wechat
         # 上 editable=False (空 message_id). 这跟 wechat 不支持 edit 一致.
         return SendResult.success("")

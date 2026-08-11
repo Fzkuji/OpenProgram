@@ -53,8 +53,8 @@ class _FakeSafeClient:
     def __exit__(self, *_args):
         return None
 
-    def get(self, url, headers=None, timeout=60):
-        self.seen.update(url=url, headers=headers, timeout=timeout)
+    def get(self, url, headers=None, timeout=60, **kwargs):
+        self.seen.update(url=url, headers=headers, timeout=timeout, **kwargs)
         if isinstance(self.response, Exception):
             raise self.response
         return self.response
@@ -133,30 +133,29 @@ def test_telegram_file_id_resolved_via_getfile(
     _accounts.save_credentials("telegram", "a1", {"bot_token": "TOK"})
 
     class _GetFileResp:
-        ok = True
+        is_success = True
+
         def json(self):
             return {"ok": True, "result": {"file_path": "photos/f_1.jpg"}}
 
-    calls: list[str] = []
-
-    def fake_get(url, params=None, headers=None, stream=False, timeout=0):
-        calls.append(url)
-        return _GetFileResp()
-
-    monkeypatch.setattr(_attachments.requests, "get", fake_get)
     consumers: list[str] = []
+
+    def managed_client(consumer):
+        consumers.append(consumer)
+        if consumer == "channel.telegram.api":
+            return _FakeSafeClient(_GetFileResp())
+        return _FakeSafeClient(_FakeResponse(b"JPG", content_type="image/jpeg"))
+
     monkeypatch.setattr(
         _attachments,
         "safe_client",
-        lambda consumer: consumers.append(consumer)
-        or _FakeSafeClient(_FakeResponse(b"JPG", content_type="image/jpeg")),
+        managed_client,
     )
     saved = _attachments.download_inbound(
         "telegram", "a1",
         [Attachment(name="photo.jpg", mime="image/jpeg", file_id="F123")])
     assert len(saved) == 1
-    assert "api.telegram.org/botTOK/getFile" in calls[0]
-    assert consumers == ["channel.telegram.attachment"]
+    assert consumers == ["channel.telegram.api", "channel.telegram.attachment"]
 
 
 def test_to_turn_attachments_only_small_images(tmp_path) -> None:

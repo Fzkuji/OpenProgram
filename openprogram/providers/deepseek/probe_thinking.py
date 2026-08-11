@@ -16,11 +16,14 @@ def probe() -> dict[str, dict]:
     if not key:
         return {}
     try:
-        r = httpx.get(
-            "https://api.deepseek.com/v1/models",
-            headers={"Authorization": f"Bearer {key}"},
-            timeout=15,
-        )
+        from openprogram.security.safe_http import safe_client
+
+        with safe_client("provider.fixed_api") as client:
+            r = client.get(
+                "https://api.deepseek.com/v1/models",
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=15,
+            )
         if r.status_code != 200:
             return {}
         results = {}

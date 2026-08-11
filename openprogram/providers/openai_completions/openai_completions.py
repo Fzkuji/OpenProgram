@@ -322,14 +322,25 @@ async def stream_simple(
     # keepalive/IPv4 hardening, and one connection pool per event loop
     # instead of a fresh SDK-built client per call. The SDK never closes
     # externally-supplied clients.
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
     from ..utils.http_client import get_shared_async_client
+
+    configured_url = base_url or "https://api.openai.com/v1"
+    configured_origin = normalize_origin(configured_url)
 
     client = _openai.AsyncOpenAI(
         api_key=_client_api_key,
         base_url=base_url,
         default_headers=extra_headers or None,
         max_retries=sdk_max_retries,
-        http_client=get_shared_async_client("openai-sdk"),
+        http_client=get_shared_async_client(
+            "openai-sdk",
+            consumer="provider.openai.sdk",
+            configured_origin=configured_origin,
+            owner_exception=OwnerURLException(
+                consumer="provider.openai.sdk", origin=configured_origin
+            ),
+        ),
     )
 
     # Transform messages for cross-provider compatibility

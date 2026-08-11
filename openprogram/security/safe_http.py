@@ -116,7 +116,9 @@ _AUDITED_FIXED_ORIGINS = MappingProxyType(
         ),
         "channel.telegram.api": frozenset({"https://api.telegram.org"}),
         "channel.discord.api": frozenset({"https://discord.com"}),
+        "channel.discord.gateway_sdk": frozenset({"https://discord.com"}),
         "channel.slack.api": frozenset({"https://slack.com"}),
+        "channel.slack.gateway_sdk": frozenset({"https://slack.com"}),
         "channel.slack.attachment": frozenset(
             {"https://files.slack.com", "https://slack.com"}
         ),
@@ -274,9 +276,34 @@ _SPECS = (
         _download("channel.attachment.download", URLTrustClass.UNTRUSTED_PUBLIC),
         max_decoded_body_bytes=20 * 1024 * 1024,
     ),
-    _api("channel.telegram.api", URLTrustClass.FIXED_PUBLIC_SERVICE),
-    _api("channel.discord.api", URLTrustClass.FIXED_PUBLIC_SERVICE),
-    _api("channel.slack.api", URLTrustClass.FIXED_PUBLIC_SERVICE),
+    _api(
+        "channel.telegram.api",
+        URLTrustClass.FIXED_PUBLIC_SERVICE,
+        sdk_disposition=SDKDisposition.EXACT_ORIGIN,
+    ),
+    replace(
+        _api(
+            "channel.discord.api",
+            URLTrustClass.FIXED_PUBLIC_SERVICE,
+            sdk_disposition=SDKDisposition.EXACT_ORIGIN,
+        ),
+        allowed_methods=_API_METHODS | {"PATCH"},
+    ),
+    _api(
+        "channel.discord.gateway_sdk",
+        URLTrustClass.FIXED_PUBLIC_SERVICE,
+        sdk_disposition=SDKDisposition.DISABLED,
+    ),
+    _api(
+        "channel.slack.api",
+        URLTrustClass.FIXED_PUBLIC_SERVICE,
+        sdk_disposition=SDKDisposition.EXACT_ORIGIN,
+    ),
+    _api(
+        "channel.slack.gateway_sdk",
+        URLTrustClass.FIXED_PUBLIC_SERVICE,
+        sdk_disposition=SDKDisposition.DISABLED,
+    ),
     replace(
         _download("channel.slack.attachment", URLTrustClass.FIXED_PUBLIC_SERVICE),
         redirect_policy="same_origin",
@@ -296,9 +323,21 @@ _SPECS = (
         redirect_policy="same_origin",
         max_decoded_body_bytes=20 * 1024 * 1024,
     ),
-    _api("channel.wechat.api", URLTrustClass.CONFIGURED_SERVICE),
-    _api("channel.feishu.api", URLTrustClass.FIXED_PUBLIC_SERVICE),
-    _api("channel.matrix.configured", URLTrustClass.CONFIGURED_SERVICE),
+    _api(
+        "channel.wechat.api",
+        URLTrustClass.CONFIGURED_SERVICE,
+        sdk_disposition=SDKDisposition.EXACT_ORIGIN,
+    ),
+    _api(
+        "channel.feishu.api",
+        URLTrustClass.FIXED_PUBLIC_SERVICE,
+        sdk_disposition=SDKDisposition.EXACT_ORIGIN,
+    ),
+    _api(
+        "channel.matrix.configured",
+        URLTrustClass.CONFIGURED_SERVICE,
+        sdk_disposition=SDKDisposition.EXACT_ORIGIN,
+    ),
     _download("channel.generated_asset.download", URLTrustClass.UNTRUSTED_PUBLIC),
     _download("skills.github.catalog", URLTrustClass.FIXED_PUBLIC_SERVICE),
     _download("skills.configured.catalog", URLTrustClass.CONFIGURED_SERVICE),
@@ -324,11 +363,38 @@ _SPECS = (
         URLTrustClass.CONFIGURED_SERVICE,
         sdk_disposition=SDKDisposition.INJECTED_TRANSPORT,
     ),
-    _api("mcp.configured.http", URLTrustClass.CONFIGURED_SERVICE),
-    _api("mcp.configured.sse", URLTrustClass.CONFIGURED_SERVICE),
+    _api(
+        "mcp.configured.http",
+        URLTrustClass.CONFIGURED_SERVICE,
+        sdk_disposition=SDKDisposition.INJECTED_TRANSPORT,
+    ),
+    _api(
+        "mcp.configured.sse",
+        URLTrustClass.CONFIGURED_SERVICE,
+        sdk_disposition=SDKDisposition.INJECTED_TRANSPORT,
+    ),
     _callback("mcp.loopback.callback"),
-    _api("tts.fixed_api", URLTrustClass.FIXED_PUBLIC_SERVICE),
-    _api("tts.configured_api", URLTrustClass.CONFIGURED_SERVICE),
+    replace(
+        _api(
+            "tts.fixed_api",
+            URLTrustClass.FIXED_PUBLIC_SERVICE,
+            sdk_disposition=SDKDisposition.EXACT_ORIGIN,
+        ),
+        accepted_mime_prefixes=("audio/", "application/octet-stream"),
+    ),
+    replace(
+        _api(
+            "tts.configured_api",
+            URLTrustClass.CONFIGURED_SERVICE,
+            sdk_disposition=SDKDisposition.EXACT_ORIGIN,
+        ),
+        accepted_mime_prefixes=("audio/", "application/octet-stream"),
+    ),
+    _api(
+        "tts.edge_sdk",
+        URLTrustClass.CONFIGURED_SERVICE,
+        sdk_disposition=SDKDisposition.DISABLED,
+    ),
     _api("webui.mcp.catalog", URLTrustClass.CONFIGURED_SERVICE),
     _api("webui.model_listing.fixed", URLTrustClass.FIXED_PUBLIC_SERVICE),
     _api("webui.model_listing.configured", URLTrustClass.CONFIGURED_SERVICE),
@@ -344,6 +410,13 @@ if any(
     raise RuntimeError("fixed service must declare audited origins")
 
 CONSUMER_REGISTRY = MappingProxyType({spec.consumer: spec for spec in _SPECS})
+
+
+def require_active_sdk_transport(consumer: str, origin: str) -> None:
+    """Fail closed before starting an SDK whose network path is unmanaged."""
+    spec = CONSUMER_REGISTRY[consumer]
+    if spec.sdk_disposition is SDKDisposition.DISABLED:
+        raise URLPolicyError("UNMANAGED_TRANSPORT", normalize_origin(origin))
 
 
 _HTTPCORE_EXCEPTIONS: dict[type[Exception], type[httpx.HTTPError]] = {
@@ -403,6 +476,8 @@ class OutboundSecurityConfig:
     owner_exceptions: tuple[OwnerURLException, ...] = ()
     ca_bundle: str | None = None
     retries: int = 0
+    local_address: str | None = None
+    socket_options: tuple[tuple[int, int, int], ...] = ()
     policy_proxy_identity: str | None = None
     policy_proxy: PolicyProxyConfig | None = None
 
@@ -411,6 +486,8 @@ class OutboundSecurityConfig:
             raise TypeError("ca_bundle must be a CA bundle path")
         if self.retries < 0:
             raise ValueError("retries must be non-negative")
+        if self.local_address not in (None, "0.0.0.0"):
+            raise ValueError("local_address must be the IPv4 wildcard or None")
         if (
             self.policy_proxy is not None
             and not self.policy_proxy.enforces_target_policy
@@ -915,6 +992,8 @@ class ManagedHTTPTransport(_ManagedTransportBase, httpx.BaseTransport):
                 ssl_context=self._ssl_context,
                 retries=self._security.retries,
                 network_backend=DecisionNetworkBackend(decision),
+                local_address=self._security.local_address,
+                socket_options=self._security.socket_options or None,
             )
         else:
             proxy = self._evaluate_proxy()
@@ -926,6 +1005,8 @@ class ManagedHTTPTransport(_ManagedTransportBase, httpx.BaseTransport):
                 ),
                 retries=self._security.retries,
                 network_backend=DecisionNetworkBackend(proxy),
+                local_address=self._security.local_address,
+                socket_options=self._security.socket_options or None,
             )
         with self._pools_lock:
             self._active_pools.add(pool)
@@ -1012,6 +1093,8 @@ class AsyncManagedHTTPTransport(_ManagedTransportBase, httpx.AsyncBaseTransport)
                 ssl_context=self._ssl_context,
                 retries=self._security.retries,
                 network_backend=AsyncDecisionNetworkBackend(decision),
+                local_address=self._security.local_address,
+                socket_options=self._security.socket_options or None,
             )
         else:
             proxy = self._evaluate_proxy()
@@ -1023,6 +1106,8 @@ class AsyncManagedHTTPTransport(_ManagedTransportBase, httpx.AsyncBaseTransport)
                 ),
                 retries=self._security.retries,
                 network_backend=AsyncDecisionNetworkBackend(proxy),
+                local_address=self._security.local_address,
+                socket_options=self._security.socket_options or None,
             )
         self._active_pools.add(pool)
         return pool
@@ -1142,15 +1227,22 @@ def _sanitize_credentials(request: httpx.Request, spec: ConsumerSpec) -> None:
 
 
 class SafeClient(httpx.Client):
-    def __init__(self, transport: ManagedHTTPTransport):
+    def __init__(
+        self,
+        transport: ManagedHTTPTransport,
+        *,
+        timeout: httpx.Timeout | float | None = None,
+        overall_timeout: float = _OVERALL_TIMEOUT,
+    ):
         if type(transport) is not ManagedHTTPTransport:
             raise TypeError("SafeClient requires ManagedHTTPTransport")
         super().__init__(
             transport=transport,
             trust_env=False,
             follow_redirects=False,
-            timeout=_timeout(),
+            timeout=timeout if timeout is not None else _timeout(),
         )
+        self._overall_timeout = overall_timeout
 
     @property
     def audit_events(self) -> tuple[AuditEvent, ...]:
@@ -1167,7 +1259,7 @@ class SafeClient(httpx.Client):
         del follow_redirects
         spec = CONSUMER_REGISTRY[self._transport._consumer]
         deadline = request.extensions.setdefault(
-            "safe_overall_deadline", monotonic() + _OVERALL_TIMEOUT
+            "safe_overall_deadline", monotonic() + self._overall_timeout
         )
         try:
             seen = {normalize_url(str(request.url)).normalized_url}
@@ -1281,15 +1373,22 @@ class SafeClient(httpx.Client):
 
 
 class SafeAsyncClient(httpx.AsyncClient):
-    def __init__(self, transport: AsyncManagedHTTPTransport):
+    def __init__(
+        self,
+        transport: AsyncManagedHTTPTransport,
+        *,
+        timeout: httpx.Timeout | float | None = None,
+        overall_timeout: float = _OVERALL_TIMEOUT,
+    ):
         if type(transport) is not AsyncManagedHTTPTransport:
             raise TypeError("SafeAsyncClient requires AsyncManagedHTTPTransport")
         super().__init__(
             transport=transport,
             trust_env=False,
             follow_redirects=False,
-            timeout=_timeout(),
+            timeout=timeout if timeout is not None else _timeout(),
         )
+        self._overall_timeout = overall_timeout
 
     @property
     def audit_events(self) -> tuple[AuditEvent, ...]:
@@ -1306,7 +1405,7 @@ class SafeAsyncClient(httpx.AsyncClient):
         del follow_redirects
         spec = CONSUMER_REGISTRY[self._transport._consumer]
         deadline = request.extensions.setdefault(
-            "safe_overall_deadline", monotonic() + _OVERALL_TIMEOUT
+            "safe_overall_deadline", monotonic() + self._overall_timeout
         )
         try:
             seen = {normalize_url(str(request.url)).normalized_url}
@@ -1422,6 +1521,8 @@ def safe_client(
     configured_origin: str | None = None,
     callback_origin: str | None = None,
     security: OutboundSecurityConfig | None = None,
+    timeout: httpx.Timeout | float | None = None,
+    overall_timeout: float = _OVERALL_TIMEOUT,
 ) -> SafeClient:
     return SafeClient(
         ManagedHTTPTransport(
@@ -1429,7 +1530,9 @@ def safe_client(
             configured_origin=configured_origin,
             callback_origin=callback_origin,
             security=security,
-        )
+        ),
+        timeout=timeout,
+        overall_timeout=overall_timeout,
     )
 
 
@@ -1439,6 +1542,8 @@ def safe_async_client(
     configured_origin: str | None = None,
     callback_origin: str | None = None,
     security: OutboundSecurityConfig | None = None,
+    timeout: httpx.Timeout | float | None = None,
+    overall_timeout: float = _OVERALL_TIMEOUT,
 ) -> SafeAsyncClient:
     return SafeAsyncClient(
         AsyncManagedHTTPTransport(
@@ -1446,7 +1551,9 @@ def safe_async_client(
             configured_origin=configured_origin,
             callback_origin=callback_origin,
             security=security,
-        )
+        ),
+        timeout=timeout,
+        overall_timeout=overall_timeout,
     )
 
 
@@ -1454,9 +1561,16 @@ def _configured_security(
     consumer: str,
     origin: str,
     owner_exception: OwnerURLException | None,
+    *,
+    local_address: str | None = None,
+    socket_options: tuple[tuple[int, int, int], ...] = (),
 ) -> OutboundSecurityConfig | None:
     if owner_exception is None:
-        return None
+        if local_address is None and not socket_options:
+            return None
+        return OutboundSecurityConfig(
+            local_address=local_address, socket_options=socket_options
+        )
     if type(owner_exception) is not OwnerURLException:
         raise TypeError("owner_exception must be an OwnerURLException")
     if (
@@ -1471,7 +1585,11 @@ def _configured_security(
         raise URLPolicyError("OWNER_EXCEPTION_MISMATCH", origin) from None
     if authorized_origin != origin:
         raise URLPolicyError("OWNER_EXCEPTION_MISMATCH", origin)
-    return OutboundSecurityConfig(owner_exceptions=(owner_exception,))
+    return OutboundSecurityConfig(
+        owner_exceptions=(owner_exception,),
+        local_address=local_address,
+        socket_options=socket_options,
+    )
 
 
 def configured_safe_client(
@@ -1479,13 +1597,25 @@ def configured_safe_client(
     configured_url: str,
     *,
     owner_exception: OwnerURLException | None = None,
+    timeout: httpx.Timeout | float | None = None,
+    overall_timeout: float = _OVERALL_TIMEOUT,
+    local_address: str | None = None,
+    socket_options: tuple[tuple[int, int, int], ...] = (),
 ) -> SafeClient:
     """Freeze an exact origin; private access needs explicit owner authorization."""
     origin = normalize_origin(configured_url)
     return safe_client(
         consumer,
         configured_origin=origin,
-        security=_configured_security(consumer, origin, owner_exception),
+        security=_configured_security(
+            consumer,
+            origin,
+            owner_exception,
+            local_address=local_address,
+            socket_options=socket_options,
+        ),
+        timeout=timeout,
+        overall_timeout=overall_timeout,
     )
 
 
@@ -1494,13 +1624,25 @@ def configured_safe_async_client(
     configured_url: str,
     *,
     owner_exception: OwnerURLException | None = None,
+    timeout: httpx.Timeout | float | None = None,
+    overall_timeout: float = _OVERALL_TIMEOUT,
+    local_address: str | None = None,
+    socket_options: tuple[tuple[int, int, int], ...] = (),
 ) -> SafeAsyncClient:
     """Async exact-origin counterpart to :func:`configured_safe_client`."""
     origin = normalize_origin(configured_url)
     return safe_async_client(
         consumer,
         configured_origin=origin,
-        security=_configured_security(consumer, origin, owner_exception),
+        security=_configured_security(
+            consumer,
+            origin,
+            owner_exception,
+            local_address=local_address,
+            socket_options=socket_options,
+        ),
+        timeout=timeout,
+        overall_timeout=overall_timeout,
     )
 
 
@@ -1543,6 +1685,7 @@ __all__ = [
     "configured_safe_client",
     "require_json_mime",
     "raise_for_status_sanitized",
+    "require_active_sdk_transport",
     "safe_async_client",
     "safe_client",
 ]

@@ -28,20 +28,23 @@ def fetch(provider_id: str, timeout: float) -> Any:
             "Copilot model once so the token cache populates, then retry."
         )}
     try:
-        r = httpx.get(
-            "https://api.githubcopilot.com/models",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Copilot-Integration-Id": "vscode-chat",
-            },
-            timeout=timeout,
-        )
+        from openprogram.security.safe_http import safe_client
+
+        with safe_client("provider.fixed_api") as client:
+            r = client.get(
+                "https://api.githubcopilot.com/models",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Copilot-Integration-Id": "vscode-chat",
+                },
+                timeout=timeout,
+            )
         r.raise_for_status()
         data = r.json()
     except httpx.HTTPStatusError as e:
-        return {"error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+        return {"error": f"HTTP {e.response.status_code}"}
     except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+        return {"error": type(e).__name__}
     out = []
     for it in (data.get("data") or []):
         mid = it.get("id")

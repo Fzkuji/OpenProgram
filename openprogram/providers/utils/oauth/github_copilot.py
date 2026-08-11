@@ -13,9 +13,8 @@ import time
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-import httpx
-
 from openprogram.providers.utils.oauth.types import OAuthAuthInfo, OAuthCredentials, OAuthLoginCallbacks, OAuthPrompt
+from openprogram.security.safe_http import safe_async_client
 
 _CLIENT_ID = "Iv1.b507a08c87ecfe98"
 _DEFAULT_BASE_URL = "https://api.github.com"
@@ -40,7 +39,7 @@ def get_github_copilot_base_url(domain: str | None = None) -> str:
 
 async def login_github_copilot(callbacks: OAuthLoginCallbacks) -> OAuthCredentials:
     """Login with GitHub Copilot device code flow."""
-    async with httpx.AsyncClient() as client:
+    async with safe_async_client("provider.oauth.fixed") as client:
         # Step 1: Request device code
         resp = await client.post(
             _DEVICE_CODE_URL,
@@ -101,7 +100,7 @@ async def login_github_copilot(callbacks: OAuthLoginCallbacks) -> OAuthCredentia
                 raise RuntimeError(f"GitHub login failed: {error}")
             else:
                 # Unrecognized error / malformed body — don't busy-loop forever.
-                raise RuntimeError(f"GitHub login failed: {error or poll_data}")
+                raise RuntimeError("GitHub login failed: malformed response")
         raise TimeoutError(
             "GitHub device-code login timed out — the code expired before approval."
         )

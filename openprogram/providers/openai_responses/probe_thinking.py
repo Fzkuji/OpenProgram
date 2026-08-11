@@ -7,13 +7,18 @@ from __future__ import annotations
 
 
 def probe() -> dict[str, dict]:
-    import httpx
     from openprogram.auth.resolver import resolve_api_key_sync
+    from openprogram.security.safe_http import safe_client
 
     key = resolve_api_key_sync("openrouter")
     if not key:
         return {}
-    r = httpx.get("https://openrouter.ai/api/v1/models", headers={"Authorization": f"Bearer {key}"}, timeout=15)
+    with safe_client("provider.fixed_api") as client:
+        r = client.get(
+            "https://openrouter.ai/api/v1/models",
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=15,
+        )
     if r.status_code != 200:
         return {}
     results = {}
