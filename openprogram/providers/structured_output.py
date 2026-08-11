@@ -39,6 +39,10 @@ class StructuredOutputValidationError(StructuredOutputError):
     pass
 
 
+class StructuredOutputUnsupportedError(StructuredOutputError):
+    pass
+
+
 def normalize_response_format(value: dict[str, Any] | JsonSchemaOutput) -> JsonSchemaOutput:
     """Copy, normalize, and meta-validate a public response-format value."""
     if isinstance(value, JsonSchemaOutput):
@@ -133,3 +137,39 @@ def parse_and_validate_json(raw: str, output: JsonSchemaOutput) -> Any:
             issues=issues,
         )
     return value
+
+
+def build_repair_prompt(error: StructuredOutputValidationError) -> str:
+    """Return a bounded, deterministic instruction for one semantic retry."""
+    issues = json.dumps(error.issues, ensure_ascii=False, separators=(",", ":"))
+    return (
+        "Your previous response did not satisfy the requested JSON Schema. "
+        "Return only one complete JSON value that satisfies the same schema. "
+        f"Failure code: {error.code}. Issues: {issues}"
+    )[:3999]
+
+
+def negotiate_structured_output(model: Any, output: JsonSchemaOutput) -> Literal["native", "prompt"]:
+    """Choose only modes backed by a request-contract implementation."""
+    provider = getattr(model, "provider", "")
+    api = getattr(model, "api", "")
+    declared = getattr(model, "structured_output", None)
+    if provider == "callable":
+        return "native"
+    if provider == "openai" and api in {"openai-completions", "openai-responses"}:
+        if declared is not False:
+            return "native"
+    if output.fallback == "prompt":
+        return "prompt"
+    raise StructuredOutputUnsupportedError(
+        f"Structured output is not verified for provider={provider!r}, api={api!r}",
+        code="unsupported",
+    )
+
+
+def build_prompt_fallback(output: JsonSchemaOutput) -> str:
+    schema = json.dumps(output.schema, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return (
+        "Return only one complete JSON value matching this JSON Schema. "
+        "Do not use Markdown fences or add explanatory text. JSON Schema: " + schema
+    )

@@ -37,7 +37,10 @@ import random
 import time
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
-from openprogram.providers.structured_output import StructuredOutputError
+from openprogram.providers.structured_output import (
+    StructuredOutputError,
+    StructuredOutputValidationError,
+)
 
 if TYPE_CHECKING:
     from openprogram.providers.utils.errors import (
@@ -1264,11 +1267,37 @@ class Runtime:
                     raise ExecInterrupt("cancelled") from None
 
                 try:
-                    reply = self._call(call_input, model=use_model, response_format=response_format)
-                    raw_reply = reply
+                    raw_reply = self._call(
+                        call_input, model=use_model, response_format=response_format
+                    )
+                    reply = raw_reply
                     if structured_format is not None:
-                        from openprogram.providers.structured_output import parse_and_validate_json
-                        reply = parse_and_validate_json(raw_reply, structured_format)
+                        from openprogram.providers.structured_output import (
+                            build_repair_prompt,
+                            parse_and_validate_json,
+                        )
+                        for validation_attempt in range(
+                            structured_format.max_validation_retries + 1
+                        ):
+                            try:
+                                reply = parse_and_validate_json(raw_reply, structured_format)
+                                break
+                            except StructuredOutputValidationError as exc:
+                                if validation_attempt >= structured_format.max_validation_retries:
+                                    raise
+                                repair = build_repair_prompt(exc)
+                                if self.on_stream:
+                                    self.on_stream({
+                                        "type": "structured_output_retry",
+                                        "attempt": validation_attempt + 1,
+                                        "next_attempt": validation_attempt + 2,
+                                        "issues": exc.issues,
+                                    })
+                                raw_reply = self._call(
+                                    [*call_input, {"type": "text", "text": repair}],
+                                    model=use_model,
+                                    response_format=response_format,
+                                )
                     self._close_model_call_node(_llm_node_id, reply=raw_reply)
                     _llm_closed = True
                     break
@@ -1486,11 +1515,37 @@ class Runtime:
                 ) from cause
 
             try:
-                reply = await self._async_call(call_input, model=use_model, response_format=response_format)
-                raw_reply = reply
+                raw_reply = await self._async_call(
+                    call_input, model=use_model, response_format=response_format
+                )
+                reply = raw_reply
                 if structured_format is not None:
-                    from openprogram.providers.structured_output import parse_and_validate_json
-                    reply = parse_and_validate_json(raw_reply, structured_format)
+                    from openprogram.providers.structured_output import (
+                        build_repair_prompt,
+                        parse_and_validate_json,
+                    )
+                    for validation_attempt in range(
+                        structured_format.max_validation_retries + 1
+                    ):
+                        try:
+                            reply = parse_and_validate_json(raw_reply, structured_format)
+                            break
+                        except StructuredOutputValidationError as exc:
+                            if validation_attempt >= structured_format.max_validation_retries:
+                                raise
+                            repair = build_repair_prompt(exc)
+                            if self.on_stream:
+                                self.on_stream({
+                                    "type": "structured_output_retry",
+                                    "attempt": validation_attempt + 1,
+                                    "next_attempt": validation_attempt + 2,
+                                    "issues": exc.issues,
+                                })
+                            raw_reply = await self._async_call(
+                                [*call_input, {"type": "text", "text": repair}],
+                                model=use_model,
+                                response_format=response_format,
+                            )
                 self._close_model_call_node(_llm_node_id, reply=raw_reply)
                 _llm_closed = True
                 return reply
@@ -1746,6 +1801,20 @@ class Runtime:
         if skills_block:
             system_prompt = (system_prompt + skills_block) if system_prompt else skills_block.lstrip("\n")
 
+        structured_format = _current_response_format.get(None)
+        if structured_format is None and response_format is not None:
+            from openprogram.providers.structured_output import normalize_response_format
+            structured_format = normalize_response_format(response_format)
+        if structured_format is not None:
+            from openprogram.providers.structured_output import (
+                build_prompt_fallback,
+                negotiate_structured_output,
+            )
+            structured_mode = negotiate_structured_output(self.api_model, structured_format)
+            if structured_mode == "prompt":
+                instruction = build_prompt_fallback(structured_format)
+                system_prompt = f"{system_prompt}\n\n{instruction}" if system_prompt else instruction
+
         # 现算输入分类分解 + 采集工具名单（论文仓库 spec §5 ①③）。best-effort，
         # 算失败置 None/[]，绝不影响 LLM 调用。breakdown 挂 last_usage（见下），
         # 工具名单跟着 exec 收尾的 usage→DAG 节点通道进 history.metadata。
@@ -1774,10 +1843,6 @@ class Runtime:
             self._pending_system_prompt = ""
 
         loop_opts = _current_loop_opts.get(None) or {}
-        structured_format = _current_response_format.get(None)
-        if structured_format is None and response_format is not None:
-            from openprogram.providers.structured_output import normalize_response_format
-            structured_format = normalize_response_format(response_format)
         # stream_fn injection: a per-call override (set by exec via the
         # _current_stream_fn contextvar, used by the dispatcher / tests) wins;
         # otherwise the runtime's own _stream_fn (set when Runtime(call=fn)

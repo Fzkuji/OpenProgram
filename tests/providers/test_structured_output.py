@@ -3,9 +3,12 @@ import pytest
 from openprogram.providers.structured_output import (
     StructuredOutputSchemaError,
     StructuredOutputValidationError,
+    StructuredOutputUnsupportedError,
+    negotiate_structured_output,
     normalize_response_format,
     parse_and_validate_json,
 )
+from openprogram.providers.types import Model
 
 
 SCHEMA = {
@@ -66,3 +69,24 @@ def test_validation_returns_typed_value_and_bounded_deterministic_issues():
     assert exc.value.code == "validation_failed"
     assert [issue["path"] for issue in exc.value.issues] == ["", "/answer"]
     assert all(len(issue["message"]) <= 500 for issue in exc.value.issues)
+
+
+def test_negotiation_is_unknown_safe_and_prompt_fallback_is_explicit():
+    model = Model(
+        id="claude-test",
+        name="Claude test",
+        api="anthropic-messages",
+        provider="anthropic",
+        base_url="https://example.invalid",
+    )
+
+    with pytest.raises(StructuredOutputUnsupportedError) as exc:
+        negotiate_structured_output(model, normalize_response_format(SCHEMA))
+    assert exc.value.code == "unsupported"
+
+    prompt_output = normalize_response_format({
+        "type": "json_schema",
+        "schema": SCHEMA,
+        "fallback": "prompt",
+    })
+    assert negotiate_structured_output(model, prompt_output) == "prompt"
