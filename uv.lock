@@ -1706,6 +1706,7 @@ channels = [
 ]
 dev = [
     { name = "build" },
+    { name = "cryptography" },
     { name = "pytest" },
     { name = "pytest-timeout" },
     { name = "pytest-xdist" },
@@ -1723,6 +1724,7 @@ requires-dist = [
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.2" },
     { name = "camoufox", marker = "extra == 'browser-stealth'", specifier = ">=0.4.0" },
     { name = "claude-agent-sdk", specifier = ">=0.1.51" },
+    { name = "cryptography", marker = "extra == 'dev'", specifier = ">=42" },
     { name = "discord-py", marker = "extra == 'all'", specifier = ">=2.3.0" },
     { name = "discord-py", marker = "extra == 'channels'", specifier = ">=2.3.0" },
     { name = "fastapi", specifier = ">=0.110.0" },
