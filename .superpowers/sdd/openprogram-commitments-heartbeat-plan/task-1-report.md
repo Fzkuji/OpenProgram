@@ -6,6 +6,8 @@
 
 实现提交：`ab54b270c790c2b519fafc11f4d60e815381f2b0`
 （`feat(memory): add commitment heartbeat lifecycle`）。
+信任边界修复提交：`953276d3912ac399f3c5f616a94300bc081d0c07`
+（`fix(memory): bound commitment writer payloads`）。
 本报告作为后续 report-only commit 提交；由于提交对象不能在自身内容中记录自身
 SHA，最终 report commit SHA 以任务最终回复为准。
 
@@ -19,6 +21,11 @@ SHA，最终 report commit SHA 以任务最终回复为准。
   transaction、workspace lock、atomic replace 和 Git candidate 提交。
 - ID 由 `Source ref + exact source_quote` 派生，不依赖 LLM 改写、due 解释或输入
   顺序；覆盖同一 Source 的多条不同证据、重复提取、重排和已关闭记录去重。
+- `record_commitments` schema 与 Runtime 同时限制 writer payload：一个批次创建与
+  转移合计最多 64 项，text 最多 2,048 字符，source_quote 最多 8,192 字符，
+  Source ref 最多 512 字符。持久 schema 应用同一字段边界；超长手工记录计为
+  invalid、不会提醒，并让 strict mutation 拒写。Runtime 派生的 speaker_id 仍
+  执行 nonempty、single-line、512 字符校验。
 - tolerant read 让 status/heartbeat 隔离非法 JSONL 行并计入 `invalid`；heartbeat
   更新合法通知状态时原样保留非法行。upsert/transition 使用 strict read，发现
   非法行即拒绝变更，避免静默数据丢失。
@@ -28,7 +35,8 @@ SHA，最终 report commit SHA 以任务最终回复为准。
 - 从 Source 的来源 session 经现有 `SessionDB` channel binding 解析 channel、
   account、peer；binding 变化在发送时生效；同 target 聚合；无 target 记录保留
   可见；测试全部替换 outbound，不发送真实消息或使用凭据。
-- `memory_status`、CLI status、owner API 和 Memory Web 展示 bounded projection。
+- `memory_status`、CLI status、owner API 和 Memory Web 展示 field-bounded
+  projection。
   model-facing 投影不包含 workspace path、channel identity、任意 JSONL 扩展字段或
   exact quotes，只保留可审计 Source refs。Memory Web 增加 owner-only confirmed
   done/dismissed 控件，并复用同一 revision-checked `MemoryWorkspace.update`；stale
@@ -45,18 +53,22 @@ SHA，最终 report commit SHA 以任务最终回复为准。
 
 1. 语义与信任边界分离：LLM 不生成 ID、speaker、可信 Source、日期格式、cadence、
    quiet hours、路由、权限、通知状态或写入时序。
-2. 稳定证据而非 LLM 文本作为去重锚点：Runtime 要求 exact source substring，
+2. LLM-facing 数量与字段限制由 schema 提前声明、Runtime authoritative validation
+   强制执行；64 项沿用现有 `TransactionLimits.max_sources` 的批次先例。owner Web
+   每次只做一项显式 transition，且不接受 writer text/quote，不受无关 writer
+   semantic-field 限制。
+3. 稳定证据而非 LLM 文本作为去重锚点：Runtime 要求 exact source substring，
    以 Source ref + quote hash 派生 ID；同一证据的不同摘要不会新增记录。
-3. writer closure 与 owner manual closure 使用同一存储函数但不同 provenance：
+4. writer closure 与 owner manual closure 使用同一存储函数但不同 provenance：
    writer 必须提供当前批次可信 closure evidence；owner path 由 Runtime 固定写入
    `owner/manual`，客户端不能选择 provenance。
-4. 不新增 scheduler、storage、task manager 或 delivery journal。Heartbeat 复用
+5. 不新增 scheduler、storage、task manager 或 delivery journal。Heartbeat 复用
    cron worker、SessionDB binding 和 outbound；状态复用 memory workspace。
-5. 外部发送与本地原子状态之间维持诚实的 at-least-once 边界。所有 outbound
+6. 外部发送与本地原子状态之间维持诚实的 at-least-once 边界。所有 outbound
    adapter 没有统一 idempotency key 前，不声称 exactly-once。
-6. 非法持久行对读和写采用不同策略：读隔离以保持其余提醒可用，写严格拒绝；
+7. 非法持久行对读和写采用不同策略：读隔离以保持其余提醒可用，写严格拒绝；
    heartbeat 的合法行局部替换保留非法原始行。
-7. `commitments.jsonl` 是新增 additive capability；文件缺失等价于空集合，因此无
+8. `commitments.jsonl` 是新增 additive capability；文件缺失等价于空集合，因此无
    一次性 migration。优先级、子任务、项目、自主执行、timezone selector、可配
    overdue interval 明确不在当前功能边界。
 
@@ -109,16 +121,21 @@ SHA，最终 report commit SHA 以任务最终回复为准。
   得到 `9 failed, 42 passed`；首轮实现后 `51 passed`。
 - tolerant/strict read、projection、malformed Web payload 回归 RED：5 个测试全部失败；
   实现后该组 `5 passed`。
+- writer payload 限额 RED：schema/Runtime 三项测试 `3 failed`；加入 schema
+  `maxItems`/`maxLength` 与 Runtime batch/item validation 后 `3 passed`。
+- strict quiet-hours 格式 RED：`23:00:30-08:00` 被错误接受，测试 `1 failed`；加入
+  `HH:MM` regex 后通过。due 同时先通过 `YYYY-MM-DD` regex 再 parse，并覆盖
+  `20260812`；Runtime-derived overlong speaker_id 也有拒绝测试。
 - 最终 focused：
   `python -m pytest tests/unit/test_memory_commitments.py tests/unit/test_memory_routes.py -q`
-  → `54 passed, 6 warnings`。
+  → `59 passed, 6 warnings`。
 
 ### 最终验证
 
 - `python -m pytest tests/unit/test_memory_commitments.py tests/unit/test_memory_runtime_config.py tests/unit/test_cron_command.py tests/unit/test_channel_questions.py tests/unit/test_memory_writer_status.py tests/unit/test_memory_routes.py tests/unit/test_memory_scope.py tests/unit/test_memory_writing.py tests/unit/test_memory_stage_cleanup.py -q`
-  → `175 passed, 6 warnings`。
+  → `180 passed, 6 warnings`。
 - `python -m pytest tests/unit -q`
-  → `2723 passed, 8 skipped, 10 warnings in 165.15s`。
+  → `2728 passed, 8 skipped, 10 warnings in 139.24s`（最终重跑）。
 - `python -m ruff check openprogram/config_schema.py openprogram/functions/tools/cron/worker.py openprogram/functions/tools/memory/memory.py openprogram/memory/management/api.py openprogram/memory/management/block_views.py openprogram/memory/management/tools.py openprogram/memory/management/workspace.py openprogram/memory/prompts/write.py openprogram/memory/retrieval/inspect.py openprogram/memory/runtime/commitments.py openprogram/memory/runtime/state.py openprogram/memory/writing.py openprogram/proactive/heartbeat.py openprogram/webui/routes/memory.py tests/unit/test_memory_commitments.py tests/unit/test_memory_routes.py tests/unit/test_memory_runtime_config.py`
   → `All checks passed!`。
 - `python -m ruff format openprogram/memory/runtime/commitments.py openprogram/proactive/heartbeat.py tests/unit/test_memory_commitments.py`
@@ -131,6 +148,9 @@ SHA，最终 report commit SHA 以任务最终回复为准。
   → `No ESLint warnings or errors`。
 - `npm run check:memory-status`
   → `memory writer status checks passed`。
+- follow-up 验证中从仓库根误执行一次 `npm run check:memory-status`，因根目录无
+  `package.json` 返回 `ENOENT`；随后在 `web/` 正确重跑并通过。类型和 Web 文件在
+  follow-up 中未变化，因此按 review 要求无需再次 full build。
 - `npm run build`
   → Next.js production build compiled successfully，27/27 static pages generated。
 - `npm run lint`（full Web）→ failed on pre-existing unrelated files，包含
