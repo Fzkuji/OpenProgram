@@ -46,6 +46,20 @@ def test_normalize_envelope_and_reject_invalid_schema_before_request():
     assert exc.value.code == "invalid_schema"
 
 
+@pytest.mark.parametrize("field,value", [
+    ("name", "bad name"),
+    ("description", 3),
+    ("strict", "yes"),
+    ("fallback", "silent"),
+    ("max_validation_retries", True),
+    ("max_validation_retries", 2),
+])
+def test_normalize_rejects_invalid_control_fields(field, value):
+    envelope = {"type": "json_schema", "schema": SCHEMA, field: value}
+    with pytest.raises(StructuredOutputSchemaError):
+        normalize_response_format(envelope)
+
+
 @pytest.mark.parametrize("raw", [
     '```json\n{"answer": 1}\n```',
     '{"answer": 1} trailing',

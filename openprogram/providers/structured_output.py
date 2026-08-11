@@ -77,11 +77,17 @@ def normalize_response_format(value: dict[str, Any] | JsonSchemaOutput) -> JsonS
             code="invalid_schema",
         )
 
-    if not _NAME_RE.fullmatch(output.name):
+    if not isinstance(output.schema, dict):
+        raise StructuredOutputSchemaError("schema must be an object", code="invalid_schema")
+    if not isinstance(output.name, str) or not _NAME_RE.fullmatch(output.name):
         raise StructuredOutputSchemaError("Invalid structured output name", code="invalid_schema")
+    if output.description is not None and not isinstance(output.description, str):
+        raise StructuredOutputSchemaError("description must be a string", code="invalid_schema")
+    if not isinstance(output.strict, bool):
+        raise StructuredOutputSchemaError("strict must be a boolean", code="invalid_schema")
     if output.fallback not in ("auto", "none", "prompt"):
         raise StructuredOutputSchemaError("Invalid structured output fallback", code="invalid_schema")
-    if output.max_validation_retries not in (0, 1):
+    if type(output.max_validation_retries) is not int or output.max_validation_retries not in (0, 1):
         raise StructuredOutputSchemaError(
             "max_validation_retries must be 0 or 1", code="invalid_schema"
         )
