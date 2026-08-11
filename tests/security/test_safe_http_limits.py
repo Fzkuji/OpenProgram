@@ -20,6 +20,9 @@ from openprogram.security.safe_http import (
 from openprogram.security.url_policy import URLPolicyError
 
 
+_MALFORMED_CONTENT_LENGTHS = [b"+1", b"1_0", b"-0", b"", "١".encode()]
+
+
 class _ScriptedPool:
     def __init__(self, response):
         self.response = response
@@ -308,6 +311,77 @@ def test_async_duplicate_or_combined_content_length_is_rejected(
         return exc.value
 
     assert asyncio.run(exercise()).reason == "CONTENT_LENGTH_INVALID"
+
+
+@pytest.mark.parametrize("content_length", _MALFORMED_CONTENT_LENGTHS)
+def test_content_length_validator_requires_ascii_digits(content_length):
+    with pytest.raises(URLPolicyError) as exc:
+        safe_http._validate_response_headers(
+            [(b"content-length", content_length)],
+            safe_http.CONSUMER_REGISTRY["tool.web_fetch"],
+            "https://public.test",
+        )
+
+    assert exc.value.reason == "CONTENT_LENGTH_INVALID"
+
+
+@pytest.mark.parametrize("content_length", _MALFORMED_CONTENT_LENGTHS)
+def test_malformed_content_length_closes_before_sync_body_read(
+    monkeypatch, content_length
+):
+    consumed = []
+
+    def body():
+        consumed.append(True)
+        yield b"body"
+
+    response = httpcore.Response(
+        200,
+        headers=[
+            (b"content-type", b"text/plain"),
+            (b"content-length", content_length),
+        ],
+        content=body(),
+    )
+    client = _small_client(monkeypatch, response)
+
+    with client, pytest.raises(URLPolicyError) as exc:
+        client.get("https://public.test/resource")
+
+    assert exc.value.reason == "CONTENT_LENGTH_INVALID"
+    assert not consumed
+    assert response.stream.closed
+
+
+@pytest.mark.parametrize("content_length", _MALFORMED_CONTENT_LENGTHS)
+def test_malformed_content_length_closes_before_async_body_read(
+    monkeypatch, content_length
+):
+    consumed = []
+
+    def chunks():
+        consumed.append(True)
+        yield b"body"
+
+    response = httpcore.Response(
+        200,
+        headers=[
+            (b"content-type", b"text/plain"),
+            (b"content-length", content_length),
+        ],
+        content=_empty_async(),
+    )
+    client = _small_async_client(monkeypatch, response, chunks())
+
+    async def exercise():
+        async with client:
+            with pytest.raises(URLPolicyError) as exc:
+                await client.get("https://public.test/resource")
+        return exc.value
+
+    assert asyncio.run(exercise()).reason == "CONTENT_LENGTH_INVALID"
+    assert not consumed
+    assert response.stream.closed
 
 
 def test_request_forces_supported_accept_encoding(monkeypatch):

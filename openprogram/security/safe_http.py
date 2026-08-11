@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import re
 import ssl
 import tempfile
 import threading
@@ -43,6 +44,7 @@ _POOL_TIMEOUT = 5.0
 _OVERALL_TIMEOUT = 120.0
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 _SUPPORTED_ENCODINGS = frozenset({"identity", "gzip", "deflate"})
+_ASCII_DECIMAL = re.compile(r"[0-9]+", re.ASCII)
 AUDIT_EVENT_CAPACITY = 256
 
 
@@ -638,12 +640,10 @@ def _validate_response_headers(
     if len(content_lengths) > 1:
         raise URLPolicyError("CONTENT_LENGTH_INVALID", safe_origin)
     if content_lengths:
-        try:
-            declared = int(content_lengths[0])
-        except ValueError:
-            raise URLPolicyError("CONTENT_LENGTH_INVALID", safe_origin) from None
-        if declared < 0:
+        content_length = content_lengths[0].strip(" \t")
+        if _ASCII_DECIMAL.fullmatch(content_length) is None:
             raise URLPolicyError("CONTENT_LENGTH_INVALID", safe_origin)
+        declared = int(content_length)
         if declared > spec.max_decoded_body_bytes:
             raise URLPolicyError("BODY_TOO_LARGE", safe_origin)
 
