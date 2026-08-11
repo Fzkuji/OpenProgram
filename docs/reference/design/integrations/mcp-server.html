@@ -97,7 +97,7 @@
   <h1>MCP 服务端：现状、九家对标与最小能力集</h1>
   <p class="sub">这页分四层：<b>我们现在怎么做</b>（只有 MCP 客户端、内部 Web 面已做 owner 认证、审批阶梯已就位）、
     <b>别人怎么做</b>（<code>references/</code> 下九个框架逐一，包括两个明确不做的和两个反面案例）、
-    <b>我们计划怎么优化</b>（六个工具、白名单、外部低权档位、默认开启的认证、取消与进度对齐规范）、
+    <b>我们计划怎么优化</b>（六个工具、白名单、外部低权档位、stdio 启动认证、取消与进度对齐规范）、
     <b>理想状态</b>（ACP、入站 webhook、SDK 各自的差距和为什么现在不做）。
     设计文档：<code>docs/reference/design/integrations/mcp-server.md</code></p>
 
@@ -119,7 +119,7 @@
     <div class="toc">
       <a href="#tools">07 六个工具</a>
       <a href="#scope">08 白名单与低权档位</a>
-      <a href="#auth">09 认证默认开启</a>
+      <a href="#auth">09 stdio 启动认证</a>
       <a href="#proto">10 取消、进度、错误</a>
     </div>
   </div>
@@ -410,7 +410,7 @@
     <h2>我们计划怎么优化</h2>
     <p class="w"><code>openprogram mcp serve</code> 走 stdio 单一传输，暴露六个工具，
       <code>tool_call</code> 按默认为空的白名单过滤，外部调用方拿 <code>paired</code> 低权档位且永不 interactive，
-      token 认证默认开启无关闭开关，取消映射到已有的按轮次 token，进度由 <code>on_update</code> 驱动，错误按上面那个划分。</p>
+      启动时通过环境凭证完成认证且没有关闭开关，取消映射到已有的按轮次 token，进度由 <code>on_update</code> 驱动，错误按上面那个划分。</p>
   </div>
 
   <h2 id="tools"><span class="num">07</span>六个工具，每个映射一项能力</h2>
@@ -447,7 +447,7 @@
     <rect x="24" y="80" width="196" height="80" rx="9" fill="#131b2a" stroke="#4f8ef7" stroke-width="1.5"/>
     <text x="122" y="106" fill="#4f8ef7" font-size="12.5" font-weight="700" text-anchor="middle">外部 MCP 客户端</text>
     <text x="122" y="128" fill="#bdb9a6" font-size="11" text-anchor="middle" font-family="Menlo,monospace">tool_call(name, args)</text>
-    <text x="122" y="148" fill="#8a8675" font-size="10.5" text-anchor="middle">已通过 token 认证</text>
+    <text x="122" y="148" fill="#8a8675" font-size="10.5" text-anchor="middle">进程启动时已验证环境 token</text>
 
     <line x1="224" y1="120" x2="256" y2="120" stroke="#6f6b5c" stroke-width="1.6" marker-end="url(#p-gy)"/>
 
@@ -504,17 +504,17 @@
   </table>
   </div>
 
-  <h2 id="auth"><span class="num">09</span>认证：默认开启，没有关闭开关</h2>
+  <h2 id="auth"><span class="num">09</span>认证：stdio 启动时验证，没有协议内 token</h2>
 
   <div class="grid2">
     <div class="plat" style="border-top-color:#5aad4e">
       <div class="k">TOKEN</div>
       <h3 style="color:#5aad4e">生成一次，常量时间比较</h3>
-      <div class="noun">&lt;state_dir&gt;/mcp_server_token　权限 0600</div>
-      <div class="row"><div class="t">生成</div><div class="v">首次 <code>openprogram mcp serve</code> 时生成并打印一次。<b>不管运维有没有想到，token 都存在</b>。</div></div>
-      <div class="row"><div class="t">出示</div><div class="v">客户端在 <code>initialize</code> 请求的 <code>clientInfo</code> 里带上；不匹配或缺失在<b>列出任何工具之前</b>就让 <code>initialize</code> 失败。</div></div>
-      <div class="row"><div class="t">语义</div><div class="v">token 标识<b>一个客户端</b>，客户端 id 记进每条请求供审计。它<b>不标识 owner</b>：出示它拿到 <code>paired</code> 档位，不是 owner 权限。</div></div>
-      <div class="row"><div class="t">对标</div><div class="v">对齐 codex 的 token-file 与 claude-code-leaked 的自动生成 <code>sk-ant-cc-*</code>。</div></div>
+      <div class="noun">&lt;state_dir&gt;/mcp_server_token（0600）　↔　OPENPROGRAM_MCP_TOKEN</div>
+      <div class="row"><div class="t">生成</div><div class="v"><code>openprogram mcp token create</code> 原子写入 token 文件并只打印一次；<code>serve</code> 不隐式生成，缺少文件时直接失败并给出该命令。</div></div>
+      <div class="row"><div class="t">验证</div><div class="v"><code>openprogram mcp serve</code> 在读取任何 MCP 消息前，用常量时间比较环境变量与 token 文件；缺失或不匹配即以非零状态退出，stdout 不输出非协议内容。</div></div>
+      <div class="row"><div class="t">协议边界</div><div class="v"><code>initialize.clientInfo</code> 仅是客户端自报的实现元数据，记录供诊断但<b>不参与认证或授权</b>；token 不进入 JSON-RPC、日志、错误或会话内容。</div></div>
+      <div class="row"><div class="t">权限语义</div><div class="v">环境凭证只允许建立低权限 stdio 连接；所有请求固定映射为 <code>paired</code>，不会获得 owner authority。</div></div>
     </div>
 
     <div class="plat" style="border-top-color:#4f8ef7">
@@ -522,7 +522,8 @@
       <h3 style="color:#4f8ef7">stdio 单一传输</h3>
       <div class="noun">openprogram mcp serve　模块 openprogram/mcp_server/</div>
       <div class="row"><div class="t">为什么</div><div class="v">被调查的每个实现都最先支持 stdio；它<b>继承拉起进程那方的信任边界</b>；而且不把内部 full-owner Web API 暴露成 integration surface。</div></div>
-      <div class="row"><div class="t">HTTP</div><div class="v">等 stdio contract 稳定并形成独立 deployment design 后再做。</div></div>
+      <div class="row"><div class="t">规范基线</div><div class="v">首版锁定仓库当前 <code>mcp 1.27.0</code> 支持的 <code>2025-11-25</code>；由 SDK 协商兼容版本，不自行扩展握手字段。</div></div>
+      <div class="row"><div class="t">HTTP</div><div class="v">等 stdio contract 稳定后单独设计 Streamable HTTP、OAuth、Origin 校验与部署生命周期，不复用 Web owner token。</div></div>
       <div class="row"><div class="t">模块位置</div><div class="v">与 <code>openprogram/mcp/</code> 平级的顶层模块，<b>不复用客户端模块</b>（翻译方向相反），但共用 <code>_runtime.py</code> 与审批阶梯 —— 共用这两样正是全部意义。</div></div>
     </div>
   </div>
@@ -568,7 +569,7 @@
     <tr><th>情况</th><th>响应</th><th>理由</th></tr>
     <tr><td>工具名不存在</td><td class="n">JSON-RPC 错误，方法级</td><td>协议级故障</td></tr>
     <tr><td>参数不过 schema 校验</td><td class="n">JSON-RPC 错误，invalid params</td><td>协议级故障</td></tr>
-    <tr><td>token 缺失或错误</td><td class="n"><code>initialize</code> 失败，不建立会话</td><td>认证在列工具之前</td></tr>
+    <tr><td>启动环境 token 缺失或错误</td><td class="n">进程非零退出，不进入 MCP 生命周期</td><td>认证发生在读取 stdin 之前，错误只写 stderr</td></tr>
     <tr><td>工具不在白名单里</td><td class="n">JSON-RPC 错误，按工具名不存在处理</td><td>不泄露无权工具的存在</td></tr>
     <tr><td>档位不含该能力</td><td class="m"><code>isError: true</code>，正文点名缺失能力</td><td>工具存在但本次不可用</td></tr>
     <tr><td>审批被拒或无法审批</td><td class="m"><code>isError: true</code>，正文带原因</td><td>无 owner 在场时判为拒绝</td></tr>
@@ -582,8 +583,8 @@
     <code>ToolResult</code> 和 <code>AgentEventToolEnd</code> 上已经有了，补齐第三处就能去掉每个调用点的防御性 <code>.get</code>。</div>
 
   <div class="note"><b>验收测试的形状</b>：<code>tests/integration/test_mcp_server.py</code> 以子进程拉起
-    <code>openprogram mcp serve</code>，<b>用 MCP SDK 自己的客户端</b>连上去，断言七件事：
-    不带 token 时 <code>initialize</code> 失败、带 token 时成功；<code>tools/list</code> 精确返回白名单交集；
+    <code>openprogram mcp serve</code>，<b>用 MCP SDK 自己的客户端</b>连上去，覆盖以下协议与安全行为：
+    无 token、错 token 时子进程在握手前失败，正确环境 token 时 SDK 完成 <code>initialize</code>；<code>clientInfo</code> 的任意自报值不改变权限；<code>tools/list</code> 精确返回白名单交集；
     白名单内只读 <code>tool_call</code> 返回内容；白名单外返回方法错误；需审批的调用返回 <code>isError</code> 而不是挂住；
     <code>notifications/cancelled</code> 停掉在途 <code>prompt_send</code>；进度通知当且仅当给了 <code>progressToken</code> 时到达。
     用 SDK 客户端而不是手搓 JSON-RPC 帧，才让它成为协议测试 —— 一旦偏离规范它就挂，自洽的帧比对抓不到。</div>
@@ -647,7 +648,7 @@
     <tr><td><b><code>openprogram mcp serve</code> stdio 服务端</b></td><td class="n">未实施</td><td class="g">—</td></tr>
     <tr><td><b>六工具最小集</b></td><td class="n">未实施</td><td class="g">—</td></tr>
     <tr><td><b><code>mcp_server.exposed_tools</code> 白名单，默认为空</b></td><td class="n">未实施</td><td class="g">—</td></tr>
-    <tr><td><b>token 认证，无关闭开关</b></td><td class="n">未实施</td><td class="g">—</td></tr>
+    <tr><td><b><code>mcp token create</code> + stdio 启动环境认证，无关闭开关</b></td><td class="n">未实施</td><td class="g">协议基线固定为 SDK 已支持的 2025-11-25；HTTP/OAuth 另行设计</td></tr>
     <tr><td><b>外部调用方的 <code>authority_tier</code> 行</b></td><td class="n">未实施</td><td class="m">档位门口本身已存在（<code>openprogram/agent/authority.py</code>）；缺的是构造带该字段请求的 MCP 入口</td></tr>
     <tr><td><b>外部来源进 <code>_hard_constraint_violation()</code></b></td><td class="n">未实施</td><td class="y">不依赖批次 I，可与服务端同批落地</td></tr>
     <tr><td><b><code>notifications/cancelled</code> → <code>CancelToken</code></b></td><td class="n">未实施</td><td class="y">直接用现有 <code>run_control.py</code></td></tr>
