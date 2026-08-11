@@ -281,6 +281,8 @@ def _is_non_global(address: IPAddress) -> bool:
         or address.is_private
         or address.is_reserved
         or address.is_unspecified
+        or isinstance(address, ipaddress.IPv6Address)
+        and address.is_site_local
         or any(
             address.version == network.version and address in network
             for network in _SPECIAL_NON_GLOBAL_NETWORKS
