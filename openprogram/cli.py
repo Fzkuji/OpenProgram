@@ -387,6 +387,8 @@ def build_parser() -> argparse.ArgumentParser:
     # (``openprogram web``) or just bare ``openprogram`` (chat).
     parser.add_argument("--print", dest="print_prompt", metavar="PROMPT",
         help="One-shot prompt; send, print reply, exit")
+    parser.add_argument("--json-schema", dest="json_schema", metavar="PATH",
+        help="Require JSON Schema output for a one-shot --print call; '-' reads stdin")
     parser.add_argument("--profile", default=None,
         help="State-dir profile name. Reroutes config/sessions/logs to "
              "~/.openprogram-<name>/ so parallel workspaces don't share state. "
@@ -455,6 +457,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_tui.add_argument("--print", dest="print_prompt", metavar="PROMPT",
         help="One-shot prompt; send, print reply, exit")
+    p_tui.add_argument("--json-schema", dest="json_schema", metavar="PATH",
+        help="Require JSON Schema output for a one-shot --print call; '-' reads stdin")
     p_tui.add_argument("--resume", default=None, metavar="SESSION_ID",
         help="Resume a prior CLI chat session.")
 
@@ -1124,6 +1128,8 @@ def main():
         sys.argv[1] = "--help"
 
     args = parser.parse_args()
+    if getattr(args, "json_schema", None) and not args.print_prompt:
+        parser.error("--json-schema requires --print")
 
     # --profile must land in the env BEFORE any later code reads a path
     # (setup config, session dir, logs dir, ...). get_active_profile
@@ -1167,8 +1173,63 @@ def main():
 
     if args.command in (None, "tui", "chat"):
         if args.print_prompt:
-            _cmd_cli_chat(oneshot=args.print_prompt, resume=args.resume,
-                          tui=tui_enabled)
+            response_format = None
+            schema_path = getattr(args, "json_schema", None)
+            if schema_path:
+                from openprogram.providers.structured_output import (
+                    StructuredOutputError,
+                    StructuredOutputSchemaError,
+                    StructuredOutputUnsupportedError,
+                    normalize_response_format,
+                )
+                try:
+                    if schema_path == "-":
+                        if args.print_prompt == "-":
+                            parser.error("prompt and JSON schema cannot both read from stdin")
+                        raw_schema = sys.stdin.read()
+                    else:
+                        from pathlib import Path
+                        try:
+                            raw_schema = Path(schema_path).read_text(encoding="utf-8")
+                        except OSError as exc:
+                            raise StructuredOutputSchemaError(
+                                "JSON schema file could not be read",
+                                code="invalid_schema",
+                            ) from exc
+                    try:
+                        parsed_schema = json.loads(raw_schema)
+                    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                        raise StructuredOutputSchemaError(
+                            "JSON schema file is not valid JSON", code="invalid_schema"
+                        ) from exc
+                    response_format = normalize_response_format(parsed_schema)
+                    _cmd_cli_chat(
+                        oneshot=args.print_prompt,
+                        resume=args.resume,
+                        tui=tui_enabled,
+                        response_format=response_format,
+                    )
+                except StructuredOutputError as exc:
+                    if isinstance(exc, StructuredOutputSchemaError):
+                        print(
+                            f"{exc.code}: Structured output request is invalid",
+                            file=sys.stderr,
+                        )
+                        raise SystemExit(2) from None
+                    if isinstance(exc, StructuredOutputUnsupportedError):
+                        print(
+                            f"{exc.code}: Structured output is unsupported",
+                            file=sys.stderr,
+                        )
+                        raise SystemExit(3) from None
+                    print(
+                        f"{exc.code}: Structured output generation failed",
+                        file=sys.stderr,
+                    )
+                    raise SystemExit(4) from None
+            else:
+                _cmd_cli_chat(oneshot=args.print_prompt, resume=args.resume,
+                              tui=tui_enabled)
             return
         # Interactive pre-Ink stretch (first-run wizard + surface menu) needs
         # the REAL terminal — the module-load redirect already pointed stdio

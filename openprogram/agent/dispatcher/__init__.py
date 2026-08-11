@@ -592,6 +592,9 @@ def _process_turn_once(
         usage=usage,
         duration_ms=int((time.time() - started_at) * 1000),
         blocks=blocks,
+        structured_output=req.structured_output,
+        structured_output_mode=req.structured_output_mode,
+        structured_output_attempt=req.structured_output_attempt,
     )
 
 

@@ -522,6 +522,7 @@ def execute_in_context(
     permission_mode: str = None,
     service_tier: str = None,
     attachments: list = None,
+    response_format=None,
 ) -> None:
     """Execute a chat query or function call within the conversation's DAG.
 
@@ -597,6 +598,7 @@ def execute_in_context(
                     service_tier=service_tier,
                     agent_id=_agent_id,
                     attachments=attachments,
+                    response_format=response_format,
                 )
             elif action == "spawn":
                 _run_spawn(

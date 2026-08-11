@@ -352,6 +352,25 @@ async def handle_chat(ws, cmd: dict):
     # payload each turn (client remembers via localStorage like the
     # thinking pill) — no server-side persistence / DB column needed.
     service_tier = cmd.get("service_tier") or None
+    response_format = None
+    if cmd.get("response_format") is not None:
+        from openprogram.providers.structured_output import (
+            StructuredOutputError,
+            normalize_response_format,
+        )
+        try:
+            response_format = normalize_response_format(cmd["response_format"])
+        except StructuredOutputError as exc:
+            await ws.send_text(json.dumps({
+                "type": "chat_response",
+                "data": {
+                    "type": "error",
+                    "code": exc.code,
+                    "content": "Structured output request is invalid",
+                    "issues": exc.issues,
+                },
+            }))
+            return
     # INTENT, not snapshot. We do NOT expand the toolset / DEFAULT_TOOLS into
     # a tool-name list here — that materialization is exactly what froze old
     # sessions to a stale tool set (they never saw newly-added tools). The
@@ -735,6 +754,7 @@ async def handle_chat(ws, cmd: dict):
                     "tools_flag": tools_flag,
                     "permission_mode": run_cfg.permission_mode,
                     "service_tier": service_tier,
+                    "response_format": response_format,
                     "attachments": attachments},
             daemon=True,
         ).start()

@@ -49,7 +49,8 @@ from openprogram._cli_chat.turn import _run_turn_with_history  # noqa: E402,F401
 
 def run_cli_chat(oneshot: str | None = None,
                  resume: str | None = None,
-                 tui: bool = True) -> None:
+                 tui: bool = True,
+                 response_format=None) -> None:
     """Launch the terminal chat.
 
     ``oneshot`` runs one turn and exits (still persisted so it shows
@@ -123,8 +124,17 @@ def run_cli_chat(oneshot: str | None = None,
     # the banner entirely and just print the reply; the user wanted a
     # quick answer, not a UI.
     if oneshot:
-        reply = _run_turn_with_history(agent, session_id, oneshot)
-        print(reply)
+        reply = _run_turn_with_history(
+            agent,
+            session_id,
+            oneshot,
+            response_format=response_format,
+        )
+        if response_format is None:
+            print(reply)
+        else:
+            import json as _json
+            print(_json.dumps(reply, ensure_ascii=False, separators=(",", ":")))
         return
     if resume:
         console.print(f"[dim]↪ Resuming previous session.[/]")
