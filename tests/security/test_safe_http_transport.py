@@ -150,6 +150,35 @@ def test_async_request_resolves_once_and_connects_to_the_approved_peer(http_serv
     )
 
 
+def test_sync_request_replaces_a_hostile_host_header(http_server):
+    url = f"http://safe.test:{http_server.port}/resource"
+    with safe_client(
+        "runtime.local_probe",
+        configured_origin=url,
+        security=_security(lambda _hostname, _port: ("127.0.0.1",)),
+    ) as client:
+        response = client.get(url, headers={"Host": "hostile.test"})
+
+    assert response.status_code == 200
+    assert http_server.host_headers == [f"safe.test:{http_server.port}"]
+
+
+def test_async_request_replaces_a_hostile_host_header(http_server):
+    url = f"http://safe.test:{http_server.port}/resource"
+
+    async def exercise():
+        async with safe_async_client(
+            "runtime.local_probe",
+            configured_origin=url,
+            security=_security(lambda _hostname, _port: ("127.0.0.1",)),
+        ) as client:
+            return await client.get(url, headers={"Host": "hostile.test"})
+
+    response = asyncio.run(exercise())
+    assert response.status_code == 200
+    assert http_server.host_headers == [f"safe.test:{http_server.port}"]
+
+
 class _ReportedPeerStream(httpcore.NetworkStream):
     def __init__(self, peer: str):
         self.peer = peer
@@ -318,3 +347,55 @@ def test_unknown_registry_key_is_rejected_by_both_factories():
         safe_client("missing.consumer")
     with pytest.raises(KeyError):
         safe_async_client("missing.consumer")
+
+
+def test_sync_public_consumer_ignores_an_unrelated_configured_exception():
+    calls: list[tuple[str, int]] = []
+
+    def resolver(hostname: str, port: int):
+        calls.append((hostname, port))
+        return ("127.0.0.1",)
+
+    security = OutboundSecurityConfig(
+        resolver=resolver,
+        owner_exceptions=(
+            OwnerURLException(
+                consumer="runtime.local_probe",
+                network=ipaddress.ip_network("127.0.0.0/8"),
+            ),
+        ),
+    )
+    with safe_client("tool.web_fetch", security=security) as client:
+        with pytest.raises(URLPolicyError) as exc:
+            client.get("http://safe.test/resource")
+
+    assert exc.value.reason == "NON_GLOBAL_ADDRESS"
+    assert calls == [("safe.test", 80)]
+
+
+def test_async_public_consumer_ignores_an_unrelated_configured_exception():
+    calls: list[tuple[str, int]] = []
+
+    def resolver(hostname: str, port: int):
+        calls.append((hostname, port))
+        return ("127.0.0.1",)
+
+    security = OutboundSecurityConfig(
+        resolver=resolver,
+        owner_exceptions=(
+            OwnerURLException(
+                consumer="runtime.local_probe",
+                network=ipaddress.ip_network("127.0.0.0/8"),
+            ),
+        ),
+    )
+
+    async def exercise():
+        async with safe_async_client("tool.web_fetch", security=security) as client:
+            with pytest.raises(URLPolicyError) as exc:
+                await client.get("http://safe.test/resource")
+        return exc.value
+
+    error = asyncio.run(exercise())
+    assert error.reason == "NON_GLOBAL_ADDRESS"
+    assert calls == [("safe.test", 80)]

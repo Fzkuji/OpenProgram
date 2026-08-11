@@ -527,6 +527,15 @@ class _ManagedTransportBase:
 
     def _evaluate(self, method: str, url: str) -> URLDecision:
         spec = CONSUMER_REGISTRY[self._consumer]
+        exceptions = (
+            tuple(
+                exception
+                for exception in self._security.owner_exceptions
+                if exception.consumer == self._consumer
+            )
+            if spec.allow_owner_exceptions
+            else ()
+        )
         return evaluate_url(
             self._consumer,
             method,
@@ -538,7 +547,7 @@ class _ManagedTransportBase:
             fixed_origins=spec.fixed_origins,
             configured_origin=self._configured_origin,
             callback_origin=self._callback_origin,
-            exceptions=self._security.owner_exceptions,
+            exceptions=exceptions,
             resolver=self._security.resolver,
         )
 
@@ -550,6 +559,18 @@ class _ManagedTransportBase:
             tuple(map(str, decision.resolved_ips)),
             self._security.policy_proxy_identity,
         )
+
+    @staticmethod
+    def _request_metadata(request: httpx.Request, decision: URLDecision):
+        headers = [
+            (name, value)
+            for name, value in request.headers.raw
+            if name.lower() != b"host"
+        ]
+        headers.append((b"Host", decision.origin.split("://", 1)[1].encode("ascii")))
+        extensions = dict(request.extensions)
+        extensions["sni_hostname"] = decision.hostname
+        return headers, extensions
 
 
 class ManagedHTTPTransport(_ManagedTransportBase, httpx.BaseTransport):
@@ -585,12 +606,13 @@ class ManagedHTTPTransport(_ManagedTransportBase, httpx.BaseTransport):
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         decision = self._evaluate(request.method, str(request.url))
+        headers, extensions = self._request_metadata(request, decision)
         core_request = httpcore.Request(
             method=request.method,
             url=decision.normalized_url,
-            headers=request.headers.raw,
+            headers=headers,
             content=request.stream,
-            extensions=request.extensions,
+            extensions=extensions,
         )
         try:
             response = self._pool(decision).handle_request(core_request)
@@ -644,12 +666,13 @@ class AsyncManagedHTTPTransport(_ManagedTransportBase, httpx.AsyncBaseTransport)
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         decision = self._evaluate(request.method, str(request.url))
+        headers, extensions = self._request_metadata(request, decision)
         core_request = httpcore.Request(
             method=request.method,
             url=decision.normalized_url,
-            headers=request.headers.raw,
+            headers=headers,
             content=request.stream,
-            extensions=request.extensions,
+            extensions=extensions,
         )
         try:
             response = await self._pool(decision).handle_async_request(core_request)
@@ -673,11 +696,15 @@ class AsyncManagedHTTPTransport(_ManagedTransportBase, httpx.AsyncBaseTransport)
 
 class SafeClient(httpx.Client):
     def __init__(self, transport: ManagedHTTPTransport):
+        if type(transport) is not ManagedHTTPTransport:
+            raise TypeError("SafeClient requires ManagedHTTPTransport")
         super().__init__(transport=transport, trust_env=False, follow_redirects=False)
 
 
 class SafeAsyncClient(httpx.AsyncClient):
     def __init__(self, transport: AsyncManagedHTTPTransport):
+        if type(transport) is not AsyncManagedHTTPTransport:
+            raise TypeError("SafeAsyncClient requires AsyncManagedHTTPTransport")
         super().__init__(transport=transport, trust_env=False, follow_redirects=False)
 
 

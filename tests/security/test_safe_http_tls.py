@@ -16,6 +16,8 @@ from cryptography.x509.oid import NameOID
 
 from openprogram.security.safe_http import (
     OutboundSecurityConfig,
+    SafeAsyncClient,
+    SafeClient,
     safe_async_client,
     safe_client,
 )
@@ -188,6 +190,51 @@ def test_async_tls_preserves_original_host_sni_and_certificate_name(tls_server):
     assert server.sni_names == ["safe.test"]
 
 
+def test_sync_tls_replaces_hostile_host_and_sni_metadata(tls_server):
+    server, ca_path = tls_server
+    url = f"https://safe.test:{server.port}/resource"
+    with safe_client(
+        "runtime.local_probe",
+        configured_origin=url,
+        security=_security(ca_path, "safe.test"),
+    ) as client:
+        request = client.build_request(
+            "GET",
+            url,
+            headers={"Host": "hostile.test"},
+            extensions={"sni_hostname": "hostile.test"},
+        )
+        response = client.send(request)
+
+    assert response.status_code == 200
+    assert server.host_headers == [f"safe.test:{server.port}"]
+    assert server.sni_names == ["safe.test"]
+
+
+def test_async_tls_replaces_hostile_host_and_sni_metadata(tls_server):
+    server, ca_path = tls_server
+    url = f"https://safe.test:{server.port}/resource"
+
+    async def exercise():
+        async with safe_async_client(
+            "runtime.local_probe",
+            configured_origin=url,
+            security=_security(ca_path, "safe.test"),
+        ) as client:
+            request = client.build_request(
+                "GET",
+                url,
+                headers={"Host": "hostile.test"},
+                extensions={"sni_hostname": "hostile.test"},
+            )
+            return await client.send(request)
+
+    response = asyncio.run(exercise())
+    assert response.status_code == 200
+    assert server.host_headers == [f"safe.test:{server.port}"]
+    assert server.sni_names == ["safe.test"]
+
+
 def test_tls_verifies_the_original_hostname(tls_server):
     server, ca_path = tls_server
     url = f"https://other.test:{server.port}/resource"
@@ -208,6 +255,35 @@ def test_factories_do_not_expose_a_verify_false_escape_hatch():
         safe_client("tool.web_fetch", verify=False)
     with pytest.raises(TypeError):
         safe_async_client("tool.web_fetch", verify=False)
+
+
+def test_safe_client_rejects_unmanaged_direct_transports():
+    transports = [
+        httpx.MockTransport(lambda _request: httpx.Response(200)),
+        httpx.HTTPTransport(verify=False),
+    ]
+    for transport in transports:
+        try:
+            with pytest.raises(TypeError, match="ManagedHTTPTransport"):
+                SafeClient(transport)
+        finally:
+            transport.close()
+
+
+def test_safe_async_client_rejects_unmanaged_direct_transports():
+    async def exercise():
+        transports = [
+            httpx.MockTransport(lambda _request: httpx.Response(200)),
+            httpx.AsyncHTTPTransport(verify=False),
+        ]
+        for transport in transports:
+            try:
+                with pytest.raises(TypeError, match="AsyncManagedHTTPTransport"):
+                    SafeAsyncClient(transport)
+            finally:
+                await transport.aclose()
+
+    asyncio.run(exercise())
 
 
 def test_security_config_rejects_an_insecure_ssl_context():
