@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent 运行配额与任务生命周期治理</title>
+<style>
+  :root {
+    --bg:#15140f; --panel:#1d1c14; --panel2:#12110b; --line:#343126;
+    --text:#d1cdbb; --muted:#918c7c; --white:#f3f0e7; --blue:#6ba3ff;
+    --green:#68ba60; --orange:#e19a55; --purple:#b48aee; --red:#ec6a75;
+  }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body {
+    margin:0; padding:36px 22px 88px; background:var(--bg); color:var(--text);
+    font:16px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;
+  }
+  main { max-width:1160px; margin:0 auto; }
+  h1 { margin:0 0 8px; color:var(--white); font-size:30px; line-height:1.28; }
+  h2 { margin:44px 0 10px; color:var(--orange); font-size:22px; scroll-margin-top:16px; }
+  h3 { margin:30px 0 8px; color:var(--white); font-size:18px; scroll-margin-top:16px; }
+  h4 { margin:18px 0 6px; color:var(--white); font-size:16px; }
+  p { margin:8px 0 14px; max-width:92ch; }
+  a { color:var(--blue); }
+  code { background:var(--panel2); color:#edb378; border-radius:4px; padding:1px 5px; font:13px/1.5 Menlo,Consolas,monospace; }
+  pre { margin:10px 0 16px; padding:14px 16px; overflow-x:auto; background:var(--panel2); border:1px solid var(--line); border-radius:10px; color:#bbb6a4; font:13px/1.65 Menlo,Consolas,monospace; }
+  .subtitle { margin:0 0 18px; color:var(--muted); max-width:88ch; }
+  .status { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:20px 0; }
+  .status > div { padding:14px 16px; background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  .status .k { display:block; color:var(--muted); font-size:12px; letter-spacing:.1em; }
+  .status b { color:var(--white); font-size:17px; }
+  nav { display:flex; flex-wrap:wrap; gap:7px; margin:22px 0 30px; }
+  nav a { padding:5px 11px; border:1px solid var(--line); border-radius:999px; color:var(--text); text-decoration:none; font-size:13px; }
+  nav a:hover { border-color:var(--orange); color:var(--white); }
+  .note { max-width:94ch; margin:14px 0; padding:10px 14px; border-left:4px solid var(--blue); background:#19202c; color:#b9c9e2; }
+  .note.warn { border-left-color:var(--orange); background:#251e16; color:#d9c2a8; }
+  .note.stop { border-left-color:var(--red); background:#29191b; color:#e1b9bd; }
+  .note.good { border-left-color:var(--green); background:#172318; color:#bdd8b9; }
+  .table-wrap { overflow-x:auto; margin:12px 0 18px; border:1px solid var(--line); border-radius:11px; background:var(--panel); }
+  table { width:100%; min-width:820px; border-collapse:collapse; font-size:14px; }
+  table.wide { min-width:1100px; }
+  th { padding:10px 12px; text-align:left; color:var(--muted); font-size:12px; letter-spacing:.06em; border-bottom:1px solid var(--line); vertical-align:bottom; }
+  td { padding:10px 12px; border-bottom:1px solid #29271e; vertical-align:top; }
+  tr:last-child td { border-bottom:0; }
+  td:first-child { color:var(--white); font-weight:600; }
+  .yes { color:var(--green); } .partial { color:var(--orange); } .no { color:var(--red); }
+  .source { display:block; margin-top:4px; color:#777263; font:11px/1.55 Menlo,Consolas,monospace; word-break:break-word; }
+  .flow { display:grid; grid-template-columns:repeat(8,minmax(115px,1fr)); gap:8px; min-width:1040px; padding:14px; }
+  .flow > div { min-height:100px; padding:11px; background:var(--panel2); border:1px solid var(--line); border-top:3px solid var(--purple); border-radius:8px; }
+  .flow .n { color:var(--purple); font:12px Menlo,monospace; }
+  .flow b { display:block; color:var(--white); margin:3px 0 5px; }
+  .flow span { color:var(--muted); font-size:12px; }
+  .state { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:14px; }
+  .state .box { padding:8px 12px; background:var(--panel2); border:1px solid var(--line); border-radius:7px; color:var(--white); }
+  .state .arrow { color:var(--muted); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:12px 0 18px; }
+  .card { padding:15px 17px; background:var(--panel); border:1px solid var(--line); border-radius:11px; }
+  .card h3, .card h4 { margin-top:0; }
+  .phase { margin:20px 0 28px; padding:18px; border:1px solid var(--line); border-radius:12px; background:#191812; }
+  .phase > h3 { margin-top:0; color:var(--purple); }
+  .phase dl { display:grid; grid-template-columns:112px 1fr; gap:7px 14px; margin:12px 0; }
+  .phase dt { color:var(--muted); font-weight:600; }
+  .phase dd { margin:0; }
+  ul, ol { margin:8px 0 14px; padding-left:24px; }
+  li { margin:4px 0; }
+  .tag { display:inline-block; margin:0 4px 4px 0; padding:2px 8px; border:1px solid var(--line); border-radius:999px; color:var(--muted); font-size:12px; }
+  footer { margin-top:44px; color:var(--muted); font-size:13px; }
+  @media (max-width:820px) {
+    body { padding:24px 14px 64px; font-size:16px; }
+    h1 { font-size:25px; }
+    .status, .grid2 { grid-template-columns:1fr; }
+    .phase { padding:14px; }
+    .phase dl { grid-template-columns:1fr; gap:2px; }
+    .phase dd { margin-bottom:10px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Agent 运行配额与任务生命周期治理</h1>
+  <p class="subtitle">按用户从配置、创建、排队、运行到终态诊断的完整流程，说明 OpenProgram 当前已有什么、参考实现怎样限制资源，以及后续需要建立的统一治理契约。</p>
+
+  <div class="status">
+    <div><span class="k">文档状态</span><b>设计完成，基础批次已实现</b></div>
+    <div><span class="k">产品边界</span><b>单用户、本机、常驻 worker</b></div>
+    <div><span class="k">验收状态</span><b>尚未满足实心圆 gate</b></div>
+  </div>
+
+  <div class="note stop"><b>实现状态边界。</b><code>main@990bfe36</code> 已有配置解析、SQLite admission/budget schema、per-session live/queued/cumulative 限制、reservation 原语和基础诊断，但 dispatcher 公平性、完整恢复、provider token/cost 强制、runtime/idle 强制与跨界面 DTO 尚未全部进入 main。设计文档和未合并分支都不能单独作为 feature matrix 的完整实现证据。</div>
+
+  <nav aria-label="目录">
+    <a href="#scope">00 范围与结论</a>
+    <a href="#current">01 我们的现状</a>
+    <a href="#references">02 其他项目</a>
+    <a href="#journey">03 使用流程</a>
+    <a href="#configure">04 配置</a>
+    <a href="#admission">05 Admission</a>
+    <a href="#queue">06 排队与运行</a>
+    <a href="#inheritance">07 父子预算</a>
+    <a href="#enforcement">08 计量与强制</a>
+    <a href="#release">09 终态释放</a>
+    <a href="#recovery">10 恢复与竞争</a>
+    <a href="#visibility">11 用户可见状态</a>
+    <a href="#schema">12 Schema</a>
+    <a href="#migration">13 实施与迁移</a>
+    <a href="#tests">14 测试矩阵</a>
+    <a href="#gate">15 实心圆 gate</a>
+    <a href="#implementation">16 实现记录</a>
+  </nav>
+
+  <h2 id="scope">00 范围与最终决策</h2>
+  <p>本设计治理的是 agent/task 的创建资格、会话内排队与运行容量、父子预算、实际使用量、终止和恢复。现有 <code>agent.max_spawn_depth</code>、<code>agent.max_spawn_fanout</code>、<code>agent.max_messages</code> 继续负责调用拓扑和循环约束，不被重新解释为资源预算。</p>
+
+  <div class="table-wrap">
+  <table>
+    <tr><th>决策</th><th>结论</th><th>理由</th></tr>
+    <tr><td><code>max_live_global</code></td><td class="no">不新增</td><td>现有进程级 <code>ThreadPoolExecutor</code> 已由 <code>OPENPROGRAM_TASK_WORKERS</code> 控制全局执行容量，默认 4。再增加同义配置会形成两个可能冲突的全局上限。界面只读展示有效 worker capacity。</td></tr>
+    <tr><td><code>max_live_per_session</code></td><td class="yes">新增</td><td>防止一个会话占用全部 worker；它只计真正执行且尚未确认停止的任务。</td></tr>
+    <tr><td><code>max_queued_per_session</code></td><td class="yes">新增</td><td>限制已 admission 但未运行的任务，避免无界持久队列。排队任务不占 live 名额。</td></tr>
+    <tr><td><code>max_tasks_per_session</code></td><td class="yes">新增</td><td>限制会话生命周期内成功 admission 的累计任务数；任务终态后不返还。</td></tr>
+    <tr><td>token / cost / runtime / idle</td><td class="yes">均纳入，强制条件不同</td><td>token 和时间在具备安全上界与可取消边界时可强制；费用只有价格已知时才可预先强制。未知费用不能按 0 处理。</td></tr>
+    <tr><td>事实账本</td><td class="yes">复用 usage ledger</td><td>实际 provider 使用量仍只写 <code>usage_events</code>。admission 和未结算 reservation 是执行状态，不复制第二套实际用量账本。</td></tr>
+  </table>
+  </div>
+
+  <p><span class="tag">本设计不实现</span>后台会话 UI、MCP server、购买或充值、组织计费、跨机器集群调度。共享 DTO、reason code、预算 scope 和 reservation 协议可以被这些系统以后复用，但本页不预设其产品交互。</p>
+
+  <h2 id="current">01 我们的现状：基础资源账本已存在，执行链仍未完成</h2>
+  <p><code>main@990bfe36</code> 已不再只是全局线程池：<code>ResourceGovernor</code> 已提供统一 admission、每会话 live/queued/cumulative 限制、budget scope、token/cost reservation 原语和稳定 reason code。当前主要问题是这些原语尚未全部接入真实执行链：runner 仍会立刻提交 executor 后在线程中轮询，provider 调用没有使用 token/cost reservation，runtime/idle 只保存上限而不强制，用户界面也没有等价资源视图。</p>
+
+  <div class="table-wrap">
+  <table class="wide">
+    <tr><th>现有机制</th><th>已经确认的行为</th><th>治理缺口</th><th>证据</th></tr>
+    <tr><td>全局执行池与 admission</td><td><code>OPENPROGRAM_TASK_WORKERS</code> 仍是唯一全局容量；runner 与同步 agent 入口已调用 <code>ResourceGovernor.admit_task()</code>，SQLite 用 <code>BEGIN IMMEDIATE</code> 保护计数。</td><td>runner 仍把所有已 admission 任务提交到 executor，再由 worker 轮询 <code>try_start()</code>；被限流 session 可占满线程并阻止其他 session 执行。</td><td><span class="source">openprogram/agent/task/runner.py · admit_task_entity / spawn_task / _run_one<br>openprogram/agent/resource_governance.py · admit_task / try_start</span></td></tr>
+    <tr><td>任务与资源持久状态</td><td>Task 已有 <code>budget_scope_id</code>、<code>effective_limits</code>、<code>reason_code</code>；usage DB 已有 admissions、budget scopes 与 reservations。</td><td>资源状态和 tasks.json 的跨文件/数据库恢复仍需逐崩溃点验证；未合并的 owner-fencing 修复不能视为 main 行为。</td><td><span class="source">openprogram/agent/task/types.py<br>openprogram/usage/ledger.py<br>openprogram/agent/resource_governance.py</span></td></tr>
+    <tr><td>会话限制</td><td><code>max_live_per_session</code>、<code>max_queued_per_session</code>、<code>max_tasks_per_session</code> 已进入 config schema，并由 governor 原子检查。</td><td>Web/TUI/CLI 尚不能完整查看 configured/effective/source、queue position 与 retryable reason；公平 dispatcher 尚未进入 main。</td><td><span class="source">openprogram/config_schema.py<br>openprogram/agent/resource_governance.py · resolve_resource_limits / _capacity</span></td></tr>
+    <tr><td>取消与恢复</td><td>取消继续按父子关系级联，运行任务使用 cancel/kill/watchdog；governor 已有 lease、stopping 与 release 原语。</td><td>当前 main 尚未完成 owner-fenced reconciler 和“线程真正退出后才返还 live”的全部竞争条件修复。</td><td><span class="source">openprogram/agent/task/runner.py · cancel_task / _run_one<br>openprogram/agent/resource_governance.py · renew_lease / request_stop / release_task</span></td></tr>
+    <tr><td>token / cost</td><td>scope、reservation、start、settle 数据结构和事务方法已存在；unknown cost 仍由 usage ledger 保留来源。</td><td><code>reserve_tokens()</code>、<code>reserve_cost()</code> 当前只有测试调用；真实 provider 请求没有安全上界预占、output cap 收紧、结算或未知价格 fail-closed。</td><td><span class="source">openprogram/agent/resource_governance.py · reserve_tokens / reserve_cost / settle_reservation<br>tests/unit/test_resource_governance.py</span></td></tr>
+    <tr><td>runtime / idle</td><td>配置和 budget scope 可以保存 <code>max_runtime_seconds</code>、<code>idle_timeout_seconds</code>；既有 provider/tool timeout 仍独立工作。</td><td>main runner 没有 active timer、meaningful activity、deadline clamp 或 non-preemptible operation gate；排队时间与运行时间也未形成完整用户诊断。</td><td><span class="source">openprogram/config_schema.py<br>openprogram/providers/utils/deadline.py<br>openprogram/agent/task/runner.py</span></td></tr>
+    <tr><td>用户状态</td><td>Web 与模型工具已有任务 list/get/cancel 和状态广播；<code>TaskResourceView</code> 可生成基础结构。</td><td>Web/TUI/CLI/model 尚未共享完整 DTO；token/cost/runtime 的 <code>used</code> 或 <code>shared_remaining</code> 仍可能为空，不能据此宣称预算已执行。</td><td><span class="source">openprogram/agent/resource_governance.py · TaskResourceView / build_task_resource_view<br>openprogram/webui/ws_actions/task.py<br>openprogram/functions/tools/agent/list_tasks/</span></td></tr>
+  </table>
+  </div>
+
+  <div class="note warn"><b>创建入口审计。</b>基础批次已把 runner 与同步 agent 接到 governor，但完整 gate 仍要求 WebSocket、busy-target inbox、内部重试和后续新增入口都有同一 admission 证据，并验证拒绝之前没有 branch、inbox 或广播副作用。</div>
+
+  <h2 id="references">02 其他项目怎么设计：比较计数单位、拒绝时机、持久性、取消和可见性</h2>
+  <p>参考对象的数字服务于理解其计数单位和运行模型，不构成 OpenProgram 默认值依据。完整协作证据见<a href="agent-collab-comparison.html">Agent 协作实现对照</a>，现有内部设计见<a href="agent-collaboration.zh.html">agent-collaboration.zh.html</a>和<a href="execution/async-task-lifecycle.zh.html">async-task-lifecycle.zh.html</a>。</p>
+
+  <div class="table-wrap">
+  <table class="wide">
+    <tr><th>项目</th><th>真实计数单位与限制</th><th>拒绝/阻塞时机</th><th>持久性与取消</th><th>用户可见性</th><th>对本设计的作用</th></tr>
+    <tr><td>Claude Code</td><td>二进制快照显示 spawn depth 3、并发 20、inbox 50；矩阵证据另记录每会话累计派生量。</td><td>深度/并发在创建路径检查；不同 fork 路径存在“先保留工具、调用时拒绝”的差异。</td><td>agentId 可追踪；已确认级联取消。二进制与泄露源码树不是同一实现。</td><td>list/output/stop 与 agent 状态。</td><td>说明 live 与累计量需要分开，也说明必须声明证据版本；不采用其数值。</td></tr>
+    <tr><td>Codex CLI</td><td>全局并发 6；V2 每会话 4；V1 深度 1，V2 计算层数但未强制。</td><td>execution controller 在启动前做并发检查。</td><td>ThreadId；list/wait/interrupt；V2 interrupt 未确认完整级联。</td><td>模型可查询与中断。</td><td>支持 per-session live 与全局 scheduler capacity 分层；也说明深度和并发不能互相替代。</td></tr>
+    <tr><td>OpenClaw</td><td>默认深度 1、每父 live children 5、并发池 8/4，另有消息循环上限。</td><td>spawn 时再次检查深度、children 和并发。</td><td>runId/session key；宿主维护 run；已确认子任务级联取消。</td><td>list 和宿主状态。</td><td>采用“提交处再检查”和级联思路；不采用多个重叠 children/global 参数。</td></tr>
+    <tr><td>OpenCode</td><td>权限形状形成隐式深度 1；未确认数值并发上限。</td><td>工具权限在子 session 创建/调用处约束。</td><td>子 session id 和后台 metadata；宿主级联取消。</td><td>后台任务状态可见，但模型查询面较弱。</td><td>证明 permission 限制不等同于资源 quota；状态应当独立暴露。</td></tr>
+    <tr><td>Hermes</td><td>默认深度 1（可配至 3）、child concurrency 3、每子 50 iterations、caller timeout 600 秒并有 heartbeat。</td><td>线程池提交和调用等待处限制。</td><td>同步等待；模型没有稳定 task id；宿主可级联取消。</td><td>看板/宿主可见，模型控制面有限。</td><td>采用 runtime/idle 两类时间信号；不把 caller wait timeout 当作实际停止保证。</td></tr>
+    <tr><td>CodeBuddy</td><td>官方本机包文档记录 workflow 最多并发 16、每次 run 最多 1000 agents。</td><td>workflow 编排器按 phase 和 run 约束。</td><td>同 session 内可 resume；agent teams 文档同时说明 team 不由 <code>/resume</code> 恢复。</td><td>workflow UI 展示 phase agent 数、tokens、elapsed 和 abort。</td><td>采用并发、累计量和可见用量分离；不直接采用 16/1000，也不把 resume 描述扩大到 team。</td></tr>
+    <tr><td>pi-mono</td><td>示例扩展 batch 8、concurrency 4、单任务输出 50KB。</td><td>扩展在派生子进程前限制 batch/concurrency。</td><td>没有 durable task id/query；一层进程取消可能遗留更深后代。</td><td>主要是调用结果。</td><td>说明扩展局部 semaphore 不足以覆盖持久任务和级联恢复。</td></tr>
+  </table>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><h3>采用</h3><ul><li>全局 scheduler capacity 与 per-session live 分层。</li><li>live、queued、累计任务分别计数。</li><li>稳定 task id、级联取消、用户可查询状态。</li><li>tokens、elapsed、reason 在任务视图中同时展示。</li></ul></div>
+    <div class="card"><h3>修改或拒绝</h3><ul><li>拒绝直接采用竞品具体数值。</li><li>拒绝用深度、fanout 或 tool permission 代替资源 admission。</li><li>拒绝只用进程内 semaphore；admission 必须持久且跨进程原子。</li><li>拒绝把 caller timeout 或终态标记描述为已终止执行。</li></ul></div>
+  </div>
+
+  <h2 id="journey">03 我们后续怎么计划：按用户使用流程建立一个治理边界</h2>
+  <div class="table-wrap" aria-label="从配置到诊断的八阶段流程">
+    <div class="flow">
+      <div><span class="n">01</span><b>查看与配置</b><span>全局默认、会话覆盖、有效值</span></div>
+      <div><span class="n">02</span><b>请求创建</b><span>统一 admission、原子预占</span></div>
+      <div><span class="n">03</span><b>排队与运行</b><span>queued 与 live 分离</span></div>
+      <div><span class="n">04</span><b>父子预算</b><span>只收紧、共享剩余池</span></div>
+      <div><span class="n">05</span><b>计量与停止</b><span>token、cost、runtime、idle</span></div>
+      <div><span class="n">06</span><b>终态释放</b><span>名额返还、累计量保留</span></div>
+      <div><span class="n">07</span><b>重启恢复</b><span>intent、lease、多进程竞争</span></div>
+      <div><span class="n">08</span><b>用户诊断</b><span>Web/TUI/CLI 同一 DTO</span></div>
+    </div>
+  </div>
+
+  <section class="phase" id="configure">
+    <h3>04 用户查看和配置全局默认与会话覆盖</h3>
+    <dl>
+      <dt>当前行为</dt><dd>配置 schema 只有 depth/messages/fanout。worker capacity 由环境变量控制，任务页不显示其有效值；没有 session resource override。</dd>
+      <dt>用户影响</dt><dd>用户不能限制某会话对 worker、token、费用或时间的使用，也不能在创建前确认实际生效值。</dd>
+      <dt>缺口</dt><dd>若同时增加多组全局、父级、子级同义参数，优先级难以解释；若使用 0 同时表达 unlimited 与 disabled，会延续现有配置歧义。</dd>
+      <dt>目标行为</dt><dd>一个最小 <code>agent.resource_limits</code> 对象承载全局默认；session metadata 可覆盖同名字段。API 始终返回 source、configured 和 effective 三者。任务只能在 effective session 限制内进一步收紧。</dd>
+    </dl>
+
+    <pre>agent.resource_limits:
+  max_live_per_session: integer | null
+  max_queued_per_session: integer | null
+  max_tasks_per_session: integer | null
+  max_total_tokens: integer | null
+  max_cost_usd: decimal-string | null
+  max_runtime_seconds: integer | null
+  idle_timeout_seconds: integer | null</pre>
+
+    <p>所有非空值必须大于 0；<code>null</code> 表示未设置/继承。为兼容现有安装，默认不启用 queued、累计和四类预算。<code>max_live_per_session</code> 未设置时，有效值等于当前 scheduler capacity；已设置时，有效值是配置值与 scheduler capacity 的较小者。<code>OPENPROGRAM_TASK_WORKERS</code> 继续是唯一全局执行容量来源，并以只读字段 <code>scheduler_capacity</code> 展示。</p>
+    <p>只有 owner 可以修改全局默认和 session override。Agent/task 请求只能提供更严格的四类执行预算，不能修改 live、queued、累计任务量或提高任何 owner 限制。现有 config get/set 接口扩展同名字段，session override 复用 session metadata；不增加第二套 quota 配置服务。</p>
+    <p><code>max_total_tokens</code> 和 <code>max_cost_usd</code> 统计该 session 中带受治理 <code>task_id</code> 的 agent/task 调用总量；普通前台主对话不计入本设计。<code>max_runtime_seconds</code> 和 <code>idle_timeout_seconds</code> 是每个 Task 及其祖先 scope 的时间 ceiling。修改 live/queued/cumulative 上限后，不终止已经 live/queued 的任务，但立即限制新的 admission 或 <code>queued → live</code>；修改 token/cost 上限后，已有任务在下一次 reservation 使用新 session ceiling；runtime/idle 默认值只作用于修改后 admission 的 Task，避免给运行中任务追溯设置 deadline。</p>
+  </section>
+
+  <section class="phase" id="admission">
+    <h3>05 Agent 请求创建任务时的 admission 与原子预占</h3>
+    <dl>
+      <dt>当前行为</dt><dd>agent tool、Web spawn、sync/async runner 和 busy-target inbox 采用不同创建路径；fanout slot 是进程内计数，且可在后续校验失败前消耗。</dd>
+      <dt>用户影响</dt><dd>相同请求从不同入口可能获得不同结果；并发前端或多进程可以同时通过非原子检查；失败创建可能留下 Task、branch、inbox 或计数残留。</dd>
+      <dt>缺口</dt><dd>没有单一 admission API、跨进程事务、幂等 task id 或 side-effect ordering。</dd>
+      <dt>目标行为</dt><dd>所有能产生执行任务的路径必须调用 <code>ResourceGovernor.admit_task</code>。先做纯校验，再在 SQLite 事务中原子检查 depth/fanout 与资源限制并预占，成功后才创建 Task/branch/inbox 并发布事件。拒绝不创建 Task。</dd>
+    </dl>
+
+    <h4>统一覆盖范围</h4>
+    <ul>
+      <li>同步与异步 <code>agent()</code>；<code>agent(to=...)</code> 的 busy-target 预创建；<code>run_agent_turn_async</code>。</li>
+      <li>WebSocket/API spawn；模型工具；未来任何直接调用 <code>TaskRunner.spawn_task</code> 的入口。</li>
+      <li>同一 <code>task_id</code> 和相同 request fingerprint 的重试是幂等读取，不能再次增加 fanout、累计量或预占 queue；内容不同则返回 <code>quota.admission_conflict</code>。</li>
+      <li><code>send_message</code> 本身不创建任务，不计累计任务数；它若触发受治理 lineage 中的模型调用，该调用仍计入对应预算。</li>
+    </ul>
+
+    <h4>跨 SQLite 与 tasks.json 的 durable intent</h4>
+    <ol>
+      <li>生成 <code>task_id</code>、<code>admission_id</code> 与 request fingerprint，完成参数、target 和权限等不修改状态的校验。</li>
+      <li>在 usage DB 的第一个 <code>BEGIN IMMEDIATE</code> 事务中检查 depth、per-turn fanout、session/parent 剩余量，插入 <code>preparing</code> admission，并预占一个 queue 名额、一次 provisional fanout 和一次 provisional 累计任务量，然后提交。<code>preparing</code> 必须在写 tasks.json 前已经 durable；所有并发 admission 检查都把它的 provisional 占用计入，避免进程间超配。</li>
+      <li>使用 <code>openprogram._compat.flock</code> 保护每会话 tasks 文件读改写，持久化 Task。此时不广播，也不创建其他不可逆副作用。</li>
+      <li>在第二个 <code>BEGIN IMMEDIATE</code> 事务中将 admission 从 <code>preparing</code> 改为 <code>queued</code>，把 provisional fanout/累计量确认为正式计数并提交；之后才创建 branch/inbox 并广播 accepted 状态。</li>
+      <li>任一步失败均执行幂等补偿。重启看到 durable <code>preparing</code> 时：存在匹配 Task 就以第二个事务 finalize；不存在就以事务释放 queue 与 provisional 计数。SQLite 事务不得跨越 tasks.json 文件 I/O。</li>
+    </ol>
+
+    <div class="note">拒绝响应使用稳定结构：<code>{accepted:false, task_id:null, reason_code, retryable, effective_limits, usage, capacity}</code>。queue 满通常可重试；累计量或父预算耗尽不可重试，除非 owner 提高限制或创建新会话。</div>
+  </section>
+
+  <section class="phase" id="queue">
+    <h3>06 排队与运行中的实时并发</h3>
+    <dl>
+      <dt>当前行为</dt><dd>runner 立即向 executor 提交；executor 的内部队列承载等待；Task 状态从 pending/queued 进入 running。</dd>
+      <dt>用户影响</dt><dd>无法控制每会话排队量；一个会话可以填满执行池和等待队列；queue position 不稳定且不可诊断。</dd>
+      <dt>缺口</dt><dd>没有 durable dispatcher、per-session fairness 或 queued/live 原子交换。</dd>
+      <dt>目标行为</dt><dd>admission 后先进入持久队列。dispatcher 只在全局 worker 和该 session live 都有容量时提交任务，并在同一事务中释放 queue、获取 live。排队不占 live。</dd>
+    </dl>
+
+    <div class="table-wrap">
+      <div class="state" aria-label="资源状态机">
+        <span class="box">preparing</span><span class="arrow">→</span>
+        <span class="box">queued</span><span class="arrow">→ 原子交换</span>
+        <span class="box">live</span><span class="arrow">→ cancel/timeout</span>
+        <span class="box">stopping</span><span class="arrow">→ 已确认退出</span>
+        <span class="box">released</span>
+      </div>
+    </div>
+
+    <p>Task 的兼容状态仍是 <code>pending/queued/running/completed/cancelled/errored</code>；资源状态单独持久化。<code>stopping</code> 尤其重要：Task 可以已显示 cancelled，但只要 worker/thread/runtime 尚未确认停止，live lease 就不能返还。这样不会因为 30 秒 watchdog 只改状态而产生超配。</p>
+    <p>dispatcher 按全局 <code>admitted_seq</code> 选择“当前 session 仍有 live 容量”的最早任务。它跳过暂时不可运行的 session，避免某个 session 的队首任务阻止其他 session 被调度。全局 worker pool 仍决定总执行容量。</p>
+    <p>只有持有现有 worker lock 的单个执行进程可以执行 <code>queued → live</code> 并提交 executor；Web/TUI/CLI/API 进程只做 admission 和持久入队。这样保留当前单 worker 产品拓扑，也防止多个进程各自创建全局线程池。若未来支持多个执行 worker，需要另行设计全局调度。</p>
+  </section>
+
+  <section class="phase" id="inheritance">
+    <h3>07 父子预算分配与只可收紧继承</h3>
+    <dl>
+      <dt>当前行为</dt><dd>消息/生成预算通过 ContextVar 继承并裁工具；Task 没有 token/cost/time 预算字段，也没有父任务剩余量的原子约束。</dd>
+      <dt>用户影响</dt><dd>父任务无法限制整个后代树；显式给子任务的预算没有可验证的上界；并发子任务可同时消耗同一父预算。</dd>
+      <dt>缺口</dt><dd>缺少 scope、共享剩余量和确定性分配规则。</dd>
+      <dt>目标行为</dt><dd>task 请求可带单个 <code>limits</code> 对象，只包含 token/cost/runtime/idle 四类预算。显式子上限不得大于 session 有效上限、父任务上限或父 scope 的当前剩余量。</dd>
+    </dl>
+
+    <h4>未显式分配子预算时的确定规则</h4>
+    <p>不提前把父预算平均切分，也不按 fanout 数推测未来任务。子任务加入父级共享 budget scope；每次 provider/tool reservation 都在一个事务中检查“任务自身上限、全部祖先 scope、session scope”，最先成功的 durable reservation 获得使用权。这样不会因未使用的静态份额导致预算闲置，也不会把“当前剩余”误报为子任务保证额度。</p>
+    <p>UI 将 <code>shared_remaining</code> 标为共享实时余额，不称为 allotment。显式子预算只创建更严格的局部 ceiling，不从父 scope 预先永久扣除；实际 reservation 才占用父余额。</p>
+  </section>
+
+  <section class="phase" id="enforcement">
+    <h3>08 token、费用、wall-clock 与 idle 的计量和强制停止</h3>
+    <dl>
+      <dt>当前行为</dt><dd>usage event 在模型调用完成后 best-effort 写入；provider transport 有 timeout；Runtime deadline 可传递，但不代表任务总时长。</dd>
+      <dt>用户影响</dt><dd>完成后才能看到部分用量；并发请求会同时认为余额可用；未知价格表现为数值 0，容易被误解；超时的同步线程可能继续执行。</dd>
+      <dt>缺口</dt><dd>请求前 exposure reservation、task attribution、未知费用语义、活动定义和可抢占边界均未建立。</dd>
+      <dt>目标行为</dt><dd>实际用量只由现有 usage ledger 记账；在同一 DB 增加 reservation 状态。模型请求和工具调用开始前原子预占，结束后以 provider 最终 usage 结算。主动 timer 与边界检查共同触发既有级联取消。</dd>
+    </dl>
+
+    <div class="table-wrap">
+    <table class="wide">
+      <tr><th>预算</th><th>计量单位与事实来源</th><th>调用前强制</th><th>调用中/调用后</th><th>不能可靠强制时</th></tr>
+      <tr><td>token</td><td>provider-authoritative input + output；cache read/write 单独诊断，不重复相加。</td><td>预占 <code>input_upper_bound + max_output_tokens</code>，并把 provider output cap 收紧到剩余值。</td><td>最终 usage event 结算并释放差额；并发请求将 open reservations 一并计入。</td><td>严格 token budget 下若 tokenizer 或安全上界不可得，拒绝新模型请求：<code>quota.accounting_unavailable</code>。</td></tr>
+      <tr><td>cost</td><td>已知 provider/model/rate 与实际 token；<code>cost_source</code> 保留。</td><td>仅在所有需要的价格已知时预占 micro-USD 上界。</td><td>按实际 token/rate 结算；聚合同时返回 <code>cost_known</code> 和 <code>unknown_cost_events</code>。</td><td>设置 cost budget 时，当前调用价格未知或该 scope 已含未知费用事件，都拒绝新 LLM 调用：<code>quota.cost_unavailable</code>。未设置 cost budget 时可执行，但费用显示“未知”，绝不显示为 $0；不根据后来的目录价格改写历史实际费用。</td></tr>
+      <tr><td>runtime</td><td>从资源状态进入 <code>live</code> 起的 monotonic wall-clock；排队等待不计入。</td><td>每个 provider/tool timeout 取操作上限与 task 剩余时间的最小值。</td><td>主动 timer 到期设 cancel，并沿现有 parent-child 关系级联。</td><td>不能在剩余时间内可靠退出的工具不得进入严格预算任务，返回 <code>error.nonpreemptible_operation</code>。</td></tr>
+      <tr><td>idle</td><td>最后一次有意义活动的 monotonic 时间。</td><td>调用开始记录边界；等待子任务时关联其活动。</td><td>provider 数据、tool progress、子任务 progress/terminal 更新活动时间；transport keepalive 不更新。</td><td>工具若既无进度也无有界 timeout，按不可抢占操作处理。</td></tr>
+    </table>
+    </div>
+
+    <h4>不可抢占操作的明确上限</h4>
+    <p>预算耗尽在模型请求/工具调用边界强制，并由 active timer 尽快触发取消。正在执行的操作不会被描述为即时终止。其最大不可抢占区间必须等于“操作声明 timeout、任务剩余 runtime、系统 cancel grace”三者中的最小值。同步 in-process 操作如果无法满足该约束，需要改为可终止子进程或被严格预算任务拒绝；<code>asyncio.wait_for</code> 返回不代表 executor 线程已经结束。</p>
+
+    <h4>记账延迟与崩溃</h4>
+    <ul>
+      <li>reservation 状态为 <code>reserved → started → settled/released</code>。在 provider 请求开始前崩溃可安全释放。</li>
+      <li>请求已经开始但拿不到最终 usage 时，保留 conservative unsettled exposure；不能捏造实际 token/cost，也不能立即返还并允许重复超支。</li>
+      <li>预算任务在调用前无法访问 accounting DB 时 fail closed。调用后 settlement 失败则任务 errored、停止后续调用，并保留 reservation 供恢复器核对。</li>
+      <li>当前 recorder 的 best-effort 行为可继续服务非预算历史兼容路径；进入预算治理的调用必须使用可确认的 reserve/settle 协议。</li>
+    </ul>
+  </section>
+
+  <section class="phase" id="release">
+    <h3>09 取消、失败、超时和完成后的名额释放与累计量语义</h3>
+    <dl>
+      <dt>当前行为</dt><dd>终态吸收，取消会级联；runner finally 清理进程内 map。watchdog 可在执行线程仍活跃时标记 cancelled。</dd>
+      <dt>用户影响</dt><dd>如果把 Task 终态直接等同于资源释放，可能出现 worker 仍运行但新任务已获得名额；如果崩溃后永不释放，又会永久泄漏。</dd>
+      <dt>缺口</dt><dd>Task 状态和资源 lease 没有分离；累计任务的返还规则未定义。</dd>
+      <dt>目标行为</dt><dd>queue/live 只在其执行实体确认结束或 lease 恢复规则成立时释放；累计任务量在成功 admission 时只增加一次，任何终态都不返还。</dd>
+    </dl>
+
+    <div class="table-wrap">
+    <table>
+      <tr><th>事件</th><th>queue 名额</th><th>live 名额</th><th>累计任务量</th><th>Task 终态</th></tr>
+      <tr><td>admission 被拒绝</td><td>不占用</td><td>不占用</td><td>不增加</td><td>不创建 Task</td></tr>
+      <tr><td>preparing 回滚</td><td>释放</td><td>不占用</td><td>不增加</td><td>没有 Task 或恢复为一致状态</td></tr>
+      <tr><td>queued 后用户取消</td><td>立即释放</td><td>不占用</td><td>保留</td><td>cancelled</td></tr>
+      <tr><td>running 后取消/预算耗尽</td><td>已释放</td><td>进入 stopping，确认退出后释放</td><td>保留</td><td>cancelled</td></tr>
+      <tr><td>执行错误/完成</td><td>已释放</td><td>worker finally 确认后释放</td><td>保留</td><td>errored/completed</td></tr>
+      <tr><td>相同 task_id 重试</td><td>不重复占用</td><td>不重复占用</td><td>不重复增加</td><td>返回原任务/冲突原因</td></tr>
+    </table>
+    </div>
+
+    <p>累计量的生命周期等于 session 生命周期。默认没有隐式 reset；session archive 也不返还。用户只能创建新 session，或由 owner 明确提高 session override。减少上限不能删除既有任务；当已用量高于新上限时，只拒绝后续 admission。</p>
+  </section>
+
+  <section class="phase" id="recovery">
+    <h3>10 重启恢复、多进程竞争和诊断</h3>
+    <dl>
+      <dt>当前行为</dt><dd>启动时把非终态 Task 统一标为 <code>errored: worker died before completion</code>；tasks.json 只有线程锁；profile worker lock 表示支持的执行拓扑是单 worker。</dd>
+      <dt>用户影响</dt><dd>进程在 admission 中间崩溃会产生无法区分的 Task/计数残留；两个前端进程可并发读改写同一 tasks.json；状态只说 worker died，不能解释配额恢复。</dd>
+      <dt>缺口</dt><dd>缺少 owner instance、lease expiry、preparing reconciliation、跨进程文件锁和结构化诊断。</dd>
+      <dt>目标行为</dt><dd>单 worker 仍是支持的执行拓扑；多个 UI/API 进程通过 SQLite admission 事务竞争。每个 live admission 带 owner/lease；reconciler 按 intent、Task 和 lease 三方事实恢复，不让配额永久泄漏。</dd>
+    </dl>
+
+    <h4>恢复规则</h4>
+    <ul>
+      <li><code>preparing + Task 存在</code>：校验 admission/task id 后 finalize 为 queued；<code>preparing + Task 不存在</code>：回滚 queue 与累计 provisional delta。</li>
+      <li><code>queued</code> 在重启后继续进入 durable dispatcher，不需要占 live。</li>
+      <li><code>live/stopping</code> 的 owner 已消失且 lease 过期：先按现有孤儿策略将 Task 标为 errored，reason 为 <code>error.worker_lost</code>，再释放 live；未过期不由另一个实例抢占。初始实现固定每 10 秒续租、lease TTL 30 秒，使用 UTC wall-clock 持久化；只要原 owner 仍持有 worker lock，即使 wall-clock lease看似过期也不得释放。该参数不是用户 quota 配置。</li>
+      <li>lease 只证明 worker ownership，不是外部副作用已经回滚。Task 输出中保留 worker-lost 诊断。</li>
+      <li>tasks.json 所有读改写加跨进程 <code>flock</code>；SQLite 使用 WAL、<code>BEGIN IMMEDIATE</code> 和唯一键保证 admission/reservation 幂等。</li>
+    </ul>
+
+    <p>本设计不引入集群 consensus 或远端 scheduler。若未来允许多个 worker 同时执行，同一 <code>task_admissions</code> lease/owner 契约可扩展，但需要独立设计 leader election、clock assumptions 和外部 runtime fencing。</p>
+  </section>
+
+  <section class="phase" id="visibility">
+    <h3>11 Web、TUI 和 CLI 的用户可见状态与原因码</h3>
+    <dl>
+      <dt>当前行为</dt><dd>Web task/branch 卡片和 WS 事件能显示 queued/running/terminal；模型工具能 list/output/stop。未确认到 TUI/CLI 等价的配额状态页。</dd>
+      <dt>用户影响</dt><dd>用户无法判断任务为何排队、还能创建多少任务、费用是否未知、取消后为何仍占 live，或 admission 是否可重试。</dd>
+      <dt>缺口</dt><dd>三个界面没有共同 DTO 与稳定 reason code。</dd>
+      <dt>目标行为</dt><dd>Web、TUI、CLI 和模型工具消费同一 <code>TaskResourceView</code>；文字可以适配界面，字段和 reason code 必须一致。</dd>
+    </dl>
+
+    <div class="table-wrap">
+    <table class="wide">
+      <tr><th>视图</th><th>必须显示</th><th>交互</th><th>兼容方式</th></tr>
+      <tr><td>Web</td><td>Task status + resource state、queue position、session live/queued/cumulative、四类剩余额、cost known/unknown、reason。</td><td>沿用现有 task/branch 卡片和 cancel；不新增后台会话 UI。</td><td>现有 <code>task_status</code> event 增加可选 resource 字段。</td></tr>
+      <tr><td>TUI</td><td>紧凑 session 容量、选中任务剩余额和停止原因。</td><td>复用任务列表/详情/停止操作；不要求新的全屏产品面。</td><td>字段缺失时按 legacy task 展示，不猜测 0。</td></tr>
+      <tr><td>CLI</td><td>人类可读表格与稳定 JSON：effective limits、usage、reservations、reason、retryable。</td><td>复用任务查询与取消命令面；JSON 供自动诊断。</td><td>新增字段向后兼容，Task 原状态枚举不变。</td></tr>
+      <tr><td>模型工具</td><td><code>list_tasks/task_output/task_stop</code> 返回同一 reason 和简化剩余额。</td><td>admission 拒绝是结构化 tool result，不创建不存在的 Task 记录。</td><td>原文本结果保留，附加机器可读字段。</td></tr>
+    </table>
+    </div>
+
+    <h4>稳定 reason code</h4>
+    <div class="table-wrap">
+    <table>
+      <tr><th>阶段</th><th>reason_code</th><th>语义</th></tr>
+      <tr><td>admission</td><td><code>quota.queue_full</code></td><td>当前 session 持久队列已满，可在容量释放后重试。</td></tr>
+      <tr><td>admission</td><td><code>quota.tasks_exhausted</code></td><td>session 累计任务量已达到上限。</td></tr>
+      <tr><td>admission</td><td><code>quota.parent_budget_exhausted</code></td><td>父 scope 剩余量不足以接受子任务限制。</td></tr>
+      <tr><td>admission</td><td><code>quota.token_exhausted</code> / <code>quota.cost_exhausted</code></td><td>请求前已无足够 reservation 空间。</td></tr>
+      <tr><td>admission</td><td><code>quota.cost_unavailable</code></td><td>设置了 cost budget，但 provider/model 价格未知。</td></tr>
+      <tr><td>admission</td><td><code>quota.invalid_limits</code></td><td>值非法或子限制比父/会话限制更宽。</td></tr>
+      <tr><td>admission</td><td><code>quota.accounting_unavailable</code> / <code>quota.admission_conflict</code></td><td>无法安全记账，或幂等 key 与已有请求内容冲突。</td></tr>
+      <tr><td>terminal</td><td><code>cancel.user</code> / <code>cancel.parent</code> / <code>cancel.session</code></td><td>明确取消来源。</td></tr>
+      <tr><td>terminal</td><td><code>budget.token_exhausted</code> / <code>budget.cost_exhausted</code> / <code>budget.runtime_exhausted</code> / <code>budget.idle_exhausted</code></td><td>运行中达到预算边界，Task 进入 cancelled，取消向后代级联。</td></tr>
+      <tr><td>terminal</td><td><code>error.worker_lost</code> / <code>error.accounting_unavailable</code> / <code>error.nonpreemptible_operation</code></td><td>执行保障失败，Task 进入 errored。</td></tr>
+      <tr><td>terminal</td><td><code>completed</code></td><td>正常完成。</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <h2 id="schema">12 稳定 schema 与状态契约</h2>
+  <p>实际 usage 继续以 <code>usage_events</code> 为唯一事实源。下列 admission/reservation 表只描述资源占用和未结算 exposure；不能用于伪造实际 provider token/cost。</p>
+
+  <pre>task_admissions(
+  admission_id PRIMARY KEY,
+  task_id UNIQUE NOT NULL,
+  session_id NOT NULL,
+  parent_task_id,
+  caller_turn_id,
+  creates_agent BOOLEAN NOT NULL,
+  request_fingerprint NOT NULL,
+  budget_scope_id NOT NULL,
+  state CHECK state IN ('preparing','queued','live','stopping','released'),
+  admitted_seq NOT NULL,
+  owner_instance_id,
+  lease_expires_at,
+  created_at, started_at, last_activity_at, released_at,
+  reason_code
+)
+
+budget_scopes(
+  budget_scope_id PRIMARY KEY,
+  scope_kind CHECK scope_kind IN ('session','task'),
+  session_id NOT NULL,
+  task_id UNIQUE,
+  parent_scope_id,
+  max_total_tokens,
+  max_cost_microusd,
+  max_runtime_seconds,
+  idle_timeout_seconds,
+  created_at
+)
+
+usage_reservations(
+  reservation_id PRIMARY KEY,
+  task_id NOT NULL,
+  budget_scope_id NOT NULL,
+  kind CHECK kind IN ('token','cost'),
+  state CHECK state IN ('reserved','started','settled','released'),
+  reserved_tokens,
+  reserved_cost_microusd,
+  request_started_at,
+  settled_event_id,
+  expires_at
+)
+
+usage_events + optional columns:
+  task_id, budget_scope_id, reservation_id
+
+Task JSON + optional fields:
+  admission_id, budget_scope_id, effective_limits, reason_code</pre>
+
+  <p><code>effective_limits</code> 是任务开始时的审计快照；配置查询另行返回每个字段的 <code>configured</code>、<code>effective</code> 与 <code>source</code>。实际可用共享余额必须从 ledger + open reservations 实时计算，<code>shared_remaining</code> 明确表示祖先和 session 共享池中的当前值，不是该 Task 的保证额度。Task JSON 不复制累计 actual usage。金额配置使用十进制定点字符串，存储和比较使用 micro-USD 整数，避免浮点边界差异。</p>
+
+  <h3>TaskResourceView</h3>
+  <pre>{
+  "task_id": "...",
+  "status": "running",
+  "resource_state": "live",
+  "reason_code": null,
+  "retryable": false,
+  "capacity": {
+    "scheduler_capacity": 4,
+    "session_live": {"used": 2, "limit": 3},
+    "session_queued": {"used": 1, "limit": 8},
+    "session_tasks": {"used": 17, "limit": 100},
+    "queue_position": null
+  },
+  "budget": {
+    "scope": "task_with_shared_ancestors",
+    "tokens": {"actual": 12000, "reserved": 4000, "limit": 50000},
+    "cost_usd": {"actual": "0.38", "reserved": "0.12", "limit": "2.00",
+                 "known": true, "unknown_events": 0},
+    "runtime_seconds": {"used": 91, "limit": 600},
+    "idle_seconds": {"used": 4, "limit": 120},
+    "shared_remaining": {"tokens": 34000, "cost_usd": "1.50"}
+  }
+}</pre>
+
+  <h2 id="migration">13 兼容、迁移和实施批次</h2>
+  <h3>兼容原则</h3>
+  <ul>
+    <li>旧 Task 缺少新增字段时标为 <code>legacy/unmetered</code>，不能把缺失解释为 0，也不重写历史 tasks.json。</li>
+    <li>现有 Task status 枚举、task id、状态广播和级联取消 API 保持兼容；资源状态与 reason 是可选扩展。</li>
+    <li>现有 depth/messages/fanout 配置和语义保持不变。它们是拓扑/循环 guard，不参与 quota 计数。</li>
+    <li>现有 <code>OPENPROGRAM_TASK_WORKERS</code> 保持唯一全局 worker capacity。没有新增 <code>max_live_global</code>。</li>
+    <li>旧库迁移只增加 nullable columns/tables/index；usage event 保持 append-only。</li>
+  </ul>
+
+  <div class="table-wrap">
+  <table class="wide">
+    <tr><th>批次</th><th>实现范围</th><th>启用条件</th><th>未完成时矩阵状态</th></tr>
+    <tr><td>1 计量基础</td><td>schema migration、task/budget attribution、unknown cost 聚合、只读 effective limits/diagnostics。</td><td>旧库升级/回退、未知费用和现有 usage 查询兼容测试通过。</td><td class="m">main 已有基础；需补完整迁移与用户 DTO gate</td></tr>
+    <tr><td>2 Admission 与队列</td><td>统一创建入口、durable intent、per-session live/queued/cumulative、dispatcher、跨进程文件锁。</td><td>所有入口覆盖；并发进程不超配；每种终态和崩溃点可恢复。</td><td class="m">main 已有 admission；公平 dispatcher 与恢复修复未合并</td></tr>
+    <tr><td>3 Token 与费用</td><td>共享父子 scope、reserve/settle、provider output cap、unknown price fail-closed。</td><td>并发请求、晚到 usage、settlement failure 和价格变更测试通过。</td><td class="n">仅有 ledger 原语，真实 provider 链未接入</td></tr>
+    <tr><td>4 Runtime 与 idle</td><td>active timer、activity contract、deadline clamp、bounded operation contract、级联停止。</td><td>模型、工具、同步线程/子进程、stopping lease 测试通过。</td><td class="n">main 未实施；存在待审查分支</td></tr>
+    <tr><td>5 用户面与 gate</td><td>Web/TUI/CLI/model tool 同一 DTO、reason 文案、兼容文档和机械检查。</td><td>跨界面合同测试和本页全部 gate 通过。</td><td class="n">未实施；完成后才允许对应能力为 ●</td></tr>
+  </table>
+  </div>
+
+  <h2 id="tests">14 测试矩阵</h2>
+  <div class="table-wrap">
+  <table class="wide">
+    <tr><th>测试域</th><th>最低用例</th><th>失败表示什么</th></tr>
+    <tr><td>配置</td><td>全局默认、session override、parent/task 只收紧；null/正整数/decimal 校验；worker env 只读展示。</td><td>有效值不可预测或出现重叠全局上限。</td></tr>
+    <tr><td>创建入口</td><td>sync/async agent、target inbox、Web/API、runner 内部、未来注册入口；拒绝前无 Task/branch/inbox 副作用。</td><td>存在 quota bypass。</td></tr>
+    <tr><td>原子 admission</td><td>20+ threads/processes 同时创建；唯一 task id；上限边界；失败注入覆盖 preparing 前后。</td><td>超配、重复累计或永久泄漏。</td></tr>
+    <tr><td>Queue/live</td><td>queue 不占 live；queued→live 原子交换；跨 session oldest-eligible；queue full；stopping 保留 live。</td><td>会话长期无法调度、名额错误提前释放或 executor 无界排队。</td></tr>
+    <tr><td>累计量</td><td>completed/cancelled/errored 均不返还；preparing rollback 不计；同 task id 重试不重复；降低上限。</td><td>累计语义随终态变化或可被重试绕过。</td></tr>
+    <tr><td>父子预算</td><td>显式 child 超父剩余被拒；无显式预算共享 scope；兄弟并发 reservation；多层祖先检查。</td><td>子任务可扩大预算或并发超支。</td></tr>
+    <tr><td>Token/cost</td><td>安全 token 上界、provider output cap、cache token 不重复；known/unknown price；late/missing usage；settlement DB failure。</td><td>预算只能事后观测，或未知费用被当 0。</td></tr>
+    <tr><td>Runtime/idle</td><td>queue wait 排除；provider data/tool progress/child activity；keepalive 不重置；deadline clamp；不可抢占工具拒绝。</td><td>时间预算不可强制或会误杀活跃任务。</td></tr>
+    <tr><td>取消与恢复</td><td>用户/父/session/budget 级联；watchdog 后线程仍活；worker 在每个事务点崩溃；lease expiry；reconciler 幂等。</td><td>名额提前释放、后代残留或重启后永久占用。</td></tr>
+    <tr><td>用户可见性</td><td>Web/TUI/CLI/model DTO contract；queue position、shared remaining、unknown cost、reason/retryable；legacy task。</td><td>各界面解释不同或把未知显示为 0。</td></tr>
+  </table>
+  </div>
+
+  <h2 id="gate">15 Feature matrix 实心圆机械 gate</h2>
+  <p>feature matrix 的“并发数与每会话派生总量上限”在当前页面中显示为 <code>●</code>，但 <code>main@990bfe36</code> 尚未满足下列机械 gate，因此该标记不能作为完整实现结论。只有以下条件全部有代码和自动化测试证据时，才可保留 <code>●</code>：</p>
+  <ol>
+    <li>稳定配置 schema 已实现，并能从 Web/TUI/CLI 查看全局默认、session override 与有效值。</li>
+    <li>所有 agent/task 创建入口都经过统一 admission；不存在 Web、同步 agent、target inbox 或 runner 直调绕过。</li>
+    <li>per-session live 与 cumulative task admission 在跨进程竞争下原子，不超配、不重复计数。</li>
+    <li>queue 是否占 live、累计量是否返还、stopping 是否保留 live 均按本页语义实现。</li>
+    <li>完成、失败、取消、超时、worker crash 和 admission 中间崩溃均能释放应返还的 queue/live，不永久泄漏。</li>
+    <li>Web/TUI/CLI 展示有效限制、已用量、queue/live/cumulative 和稳定 reason code。</li>
+    <li>兼容迁移、并发/崩溃测试、文档链接和 feature matrix 机械计分检查全部通过。</li>
+  </ol>
+
+  <div class="note good"><b>计分边界。</b>该矩阵行只验收“并发数与每会话派生总量上限”，不要求 token/cost/runtime/idle 四类预算全部完成才改这一行；四类预算若以后形成独立能力项，应使用各自完整 gate。反过来，仅完成 UI、schema 或单进程 semaphore 也不能把本行改为实心圆。</div>
+
+  <h2 id="implementation">16 实现与验证记录</h2>
+  <div class="table-wrap">
+  <table class="wide">
+    <tr><th>基线或分支</th><th>已确认内容</th><th>验证</th><th>能否计为完成</th></tr>
+    <tr><td><code>main@990bfe36</code><br>foundation 来源 <code>8f62da5a</code></td><td>配置解析、SQLite schema、admission、per-session live/queued/cumulative、budget scope、reservation 原语、reason code、基础 view。</td><td><code>tests/unit/test_resource_governance.py</code> 的 foundation 用例存在；代码审计确认 reservation 仅被测试调用。</td><td class="m">否；执行链与用户面不完整</td></tr>
+    <tr><td><code>codex/resource-governance-runtime-20260811@ace9a907</code></td><td>oldest-eligible dispatcher、owner fencing/reconcile、runtime/idle monitor 与 bounded-operation helper。</td><td>2026-08-12 fresh：<code>tests/unit/test_resource_governance.py tests/unit/test_async_task.py</code>，52 passed；该分支未做独立 spec/quality review，也未包含后续 integration fixes。</td><td class="m">否；只作为待复用候选</td></tr>
+    <tr><td>当前 completion 计划</td><td>先把候选分支按当前 main 重放并审查，再完成 provider token/cost reserve/settle、deadline/output cap、跨界面 DTO、全部 crash/concurrency gates。</td><td>每个任务先 RED 后 GREEN；独立 spec 与 quality review；最终 full unit、Web/CLI、docs、matrix 机械检查。</td><td class="n">全部 gate 通过后才能记为完成</td></tr>
+  </table>
+  </div>
+
+  <h2>证据索引</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>主题</th><th>本仓库证据</th></tr>
+    <tr><td>TaskRunner、单 worker、取消和孤儿恢复</td><td><code>openprogram/agent/task/runner.py</code>；<code>openprogram/agent/task/store.py</code>；<code>openprogram/agent/task/types.py</code>；<code>openprogram/worker/paths.py</code></td></tr>
+    <tr><td>派生和消息预算</td><td><code>openprogram/functions/tools/agent/agent/agent.py</code>；<code>openprogram/functions/tools/send_message/send_message/depth.py</code>；<code>openprogram/config_schema.py</code></td></tr>
+    <tr><td>Usage 与 provider 记录</td><td><code>openprogram/usage/event.py</code>；<code>openprogram/usage/ledger.py</code>；<code>openprogram/usage/recorder.py</code>；<code>openprogram/providers/stream.py</code></td></tr>
+    <tr><td>Deadline 与函数 timeout</td><td><code>openprogram/providers/utils/deadline.py</code>；<code>openprogram/functions/_runtime.py</code></td></tr>
+    <tr><td>任务界面与协议</td><td><code>openprogram/webui/ws_actions/task.py</code>、Web branch/task cards、<code>openprogram/functions/tools/agent/list_tasks/</code>、<code>task_output/</code>、<code>task_stop/</code></td></tr>
+    <tr><td>竞品与既有设计</td><td><a href="agent-collab-comparison.html">agent-collab-comparison.html</a>；<a href="agent-collaboration.zh.html">agent-collaboration.zh.html</a>；<a href="execution/async-task-lifecycle.zh.html">async-task-lifecycle.zh.html</a>；<a href="../usage-metering.zh.html">usage-metering.zh.html</a></td></tr>
+  </table>
+  </div>
+
+  <footer>设计范围固定于当前 OpenProgram 单用户、本机、常驻 worker 产品模型。实现前需以当时工作树重新核对每项现状证据，但不得根据未来计划修改当前实现状态。</footer>
+</main>
+</body>
+</html>

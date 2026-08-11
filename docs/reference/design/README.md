@@ -79,6 +79,7 @@ Proactivity applications (built on the base):
 | [`runtime/permission-model.md`](runtime/permission-model.md) | Permission system design |
 | [`runtime/sandbox.md`](runtime/sandbox.md) | Sandbox: the boundary on both platforms, where the switch is lost, coverage, how eight reference harnesses compare, repair order ([rendered](runtime/sandbox-architecture.html)) |
 | [`runtime/agent-collaboration.md`](runtime/agent-collaboration.md) | Agent collaboration: cross-branch communication primitives ([tool surface](runtime/agent-collab-architecture.html), [eight reference implementations compared](runtime/agent-collab-comparison.html)) |
+| [`runtime/agent-resource-governance.html`](runtime/agent-resource-governance.html) | Agent resource governance: current implementation, framework comparison, durable scheduling and enforceable budget plan |
 | [`runtime/tool-toggle-management.md`](runtime/tool-toggle-management.md) | Tool toggles / toolset management design |
 | [`runtime/additional-working-directories.md`](runtime/additional-working-directories.md) | Multiple working directories per session |
 
