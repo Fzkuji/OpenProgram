@@ -19,6 +19,7 @@ from typing import Any, AsyncGenerator
 
 from .recording import (
     RECORDING_FORMAT_VERSION,
+    _RUNTIME_ONLY_OPTION_FIELDS,
     _dump_options,
     remove_secret_values,
     restrict_recording_file,
@@ -101,10 +102,25 @@ class ReplayMismatch(AssertionError):
         position = f"call {call_index}"
         if event_index is not None:
             position += f", recorded event {event_index}"
+        detail = "; unconsumed calls remain" if field_path == "remaining_calls" else ""
         super().__init__(
-            f"replay mismatch at {position}, field {field_path}: "
-            f"recorded {recorded!r}, incoming {incoming!r}"
+            f"replay mismatch at {position}, field {_public_path(field_path)}{detail}"
         )
+
+
+def _public_path(field_path: str, max_length: int = 384) -> str:
+    """Return a redacted, escaped, bounded diagnostic path."""
+    cleaned = remove_secret_values(field_path)
+    parts: list[str] = []
+    length = 0
+    for character in cleaned:
+        escaped = json.dumps(character, ensure_ascii=True)[1:-1]
+        if length + len(escaped) > max_length - 3:
+            parts.append("...")
+            break
+        parts.append(escaped)
+        length += len(escaped)
+    return "".join(parts)
 
 
 @dataclass
@@ -174,9 +190,10 @@ def read_recording_file(recording_path: str | Path) -> list[RecordedCall]:
                     call_index=call_index,
                 )
             if recorded_version == 1 and isinstance(options, dict):
-                # v1 persisted the request-local cancellation field as null;
-                # v2 omits it because live asyncio.Event values are not JSON.
-                options.pop("signal", None)
+                # v1 persisted request-local fields as null; v2 omits them
+                # because live events and callbacks are not recording data.
+                for field_name in _RUNTIME_ONLY_OPTION_FIELDS:
+                    options.pop(field_name, None)
             calls[call_index] = RecordedCall(call_index=call_index, request=line)
             next_event[call_index] = 0
         elif kind == "event":
@@ -310,8 +327,8 @@ class ReplayProvider:
                 incoming=f"call {call_index}",
             )
         recorded = self._calls[call_index]
-        self.call_count += 1
         self._check_request(recorded, model, context, options)
+        self.call_count += 1
 
         for event_index, payload in enumerate(recorded.events):
             event_type = payload.get("type")

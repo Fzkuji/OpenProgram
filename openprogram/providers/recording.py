@@ -43,6 +43,7 @@ RECORDING_FORMAT_VERSION = 2
 REDACTION_VERSION = 1
 
 PLACEHOLDER = "[secret removed]"
+_RUNTIME_ONLY_OPTION_FIELDS = frozenset({"signal", "on_payload"})
 
 # Field names whose value is a secret wherever it appears — request options,
 # model headers, nested provider-specific dicts.
@@ -116,11 +117,11 @@ def _dump(model_or_none: Any) -> Any:
 
 
 def _dump_options(options: Any) -> Any:
-    """Serialize deterministic provider options, excluding live cancel state."""
+    """Serialize deterministic provider options, excluding live request state."""
     if options is None:
         return None
     return remove_secret_values(
-        options.model_dump(mode="json", exclude={"signal"})
+        options.model_dump(mode="json", exclude=_RUNTIME_ONLY_OPTION_FIELDS)
     )
 
 

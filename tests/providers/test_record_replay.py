@@ -7,6 +7,7 @@ recording file back with no provider underneath it at all.
 from __future__ import annotations
 
 import asyncio
+import builtins
 import importlib
 import json
 import stat
@@ -141,9 +142,33 @@ def test_recorded_recording_file_holds_no_secret_in_plain_text(
     assert [line["type"] for line in lines[-2:]] == ["event", "call_end"]
 
 
-def _runtime_for_registered_model(monkeypatch: pytest.MonkeyPatch) -> Runtime:
+def test_recording_omits_runtime_only_options_but_provider_receives_callback(
+    tmp_path: Path, restore_api_registry
+) -> None:
+    recording_file = tmp_path / "runtime-options.jsonl"
+    scripted = _scripted_with((ScriptedText("done"),))
+    register_api_provider(_API, RecordingProvider(scripted, recording_file))
+
+    callback = lambda payload, model: payload
+    _drain_stream(_model(), SimpleStreamOptions(on_payload=callback))
+
+    assert scripted.calls[0].options.on_payload is callback
+    request = next(
+        row
+        for row in map(json.loads, recording_file.read_text().splitlines())
+        if row["type"] == "request"
+    )
+    assert "signal" not in request["options"]
+    assert "on_payload" not in request["options"]
+
+
+def _runtime_for_registered_model(
+    monkeypatch: pytest.MonkeyPatch, *, max_retries: int = 1
+) -> Runtime:
     monkeypatch.setattr("openprogram.providers.get_model", lambda provider, model_id: _model())
-    runtime = Runtime(model="record-replay-provider:record-replay-model", max_retries=1)
+    runtime = Runtime(
+        model="record-replay-provider:record-replay-model", max_retries=max_retries
+    )
     runtime.session_id = "record-replay-structured-session"
     return runtime
 
@@ -238,17 +263,62 @@ def test_replay_rejects_structured_schema_mismatch_at_exact_path_before_events(
 
     replay = ReplayProvider(recording_file)
     register_api_provider(_API, replay, capabilities)
+    stream_module = importlib.import_module("openprogram.providers.stream")
+    monkeypatch.setattr(
+        stream_module,
+        "resolve_provider_key",
+        lambda provider: pytest.fail("schema mismatch resolved credentials"),
+    )
+    failover_module = importlib.import_module("openprogram.providers.utils.failover")
+    monkeypatch.setattr(
+        failover_module,
+        "failover_stream_fn",
+        lambda *args, **kwargs: pytest.fail("schema mismatch selected fallback"),
+    )
+    original_import = builtins.__import__
+
+    def reject_vendor_import(name, *args, **kwargs):
+        if name.split(".", 1)[0] in {"anthropic", "boto3", "google", "openai"}:
+            pytest.fail(f"schema mismatch imported vendor SDK {name}")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", reject_vendor_import)
     changed = {
         **_STRUCTURED_SCHEMA,
         "properties": {"answer": {"type": "string"}},
     }
     expected_path = "options.response_format.schema.properties.answer.type"
-    with pytest.raises(LLMError, match=expected_path):
-        _runtime_for_registered_model(monkeypatch).exec(
-            "answer", response_format=changed, toolset="none"
-        )
+    for _ in range(2):
+        with pytest.raises(LLMError, match=expected_path):
+            _runtime_for_registered_model(monkeypatch, max_retries=3).exec(
+                "answer", response_format=changed, toolset="none"
+            )
 
-    assert replay.call_count == 1
+    assert replay.call_count == 0
+
+
+def test_replay_mismatch_display_is_bounded_escaped_and_omits_values() -> None:
+    field_path = "options.response_format.schema.properties." + "x" * 5000
+    recorded = {
+        "description": "internal schema text",
+        "type": "integer",
+        "api_key": _SECRET,
+    }
+    incoming = None  # the object-valued schema key is omitted on this side
+
+    mismatch = ReplayMismatch(0, field_path, recorded, incoming)
+    message = str(mismatch)
+
+    assert len(message) <= 512
+    assert "internal schema text" not in message
+    assert _SECRET not in message
+    assert mismatch.field_path == field_path
+    assert mismatch.recorded is recorded
+    assert mismatch.incoming is incoming
+
+    escaped = str(ReplayMismatch(0, "options.schema.bad\nkey", None, recorded))
+    assert "\n" not in escaped
+    assert "\\n" in escaped
 
 
 def test_v1_structured_recording_is_rejected_explicitly(tmp_path: Path) -> None:
@@ -287,6 +357,7 @@ def test_v1_ordinary_recording_remains_replayable(
     request = next(row for row in rows if row["type"] == "request")
     assert request["options"].get("response_format") is None
     request["options"]["signal"] = None  # v1 serialized this request-local field
+    request["options"]["on_payload"] = None  # v1 serialized this callback field
     recording_file.write_text(
         "\n".join(json.dumps(row) for row in rows) + "\n",
         encoding="utf-8",
