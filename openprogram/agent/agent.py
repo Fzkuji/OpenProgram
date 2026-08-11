@@ -477,6 +477,13 @@ class Agent:
                         raise RuntimeError("Request was aborted")
 
         except Exception as err:
+            # Structured-output negotiation and validation errors are typed
+            # caller contract failures. Preserve them so Runtime can bypass
+            # its provider retry policy instead of converting them to a generic
+            # assistant error message.
+            from openprogram.providers.structured_output import StructuredOutputError
+            if isinstance(err, StructuredOutputError):
+                raise
             is_aborted = self._cancel_event.is_set() if self._cancel_event else False
             # ``str(err)`` is empty for bare exceptions (e.g. RuntimeError()),
             # which would surface downstream as a content-free

@@ -245,12 +245,12 @@ async def _run_loop(
 
     structured_plan = None
     if config.response_format is not None:
-        from openprogram.providers.api_registry import get_structured_output_capabilities
+        from openprogram.providers.api_registry import resolve_structured_output_capabilities
         from openprogram.providers.structured_output import negotiate_structured_output
 
         structured_plan = negotiate_structured_output(
             config.model,
-            get_structured_output_capabilities(config.model.api),
+            resolve_structured_output_capabilities(config.model),
             config.response_format,
             list(current_context.tools or []),
             tool_choice=config.tool_choice,
@@ -283,6 +283,15 @@ async def _run_loop(
         while has_more_tool_calls or len(pending_messages) > 0:
             inner_iterations += 1
             if inner_iterations > iteration_cap:
+                if structured_plan is not None and structured_plan.mode == "tool":
+                    from openprogram.providers.structured_output import (
+                        StructuredOutputValidationError,
+                    )
+
+                    raise StructuredOutputValidationError(
+                        "The model did not call the hidden structured-output submission tool",
+                        code="missing_submission",
+                    )
                 # End the stream cleanly with whatever we've got. The
                 # consumer (dispatcher / cli_chat) treats a normal
                 # stream end as a successful turn — no more, no less.
@@ -453,6 +462,11 @@ async def _stream_assistant_response(
                 prefetch_block = ""
 
     sys_prompt = context.system_prompt or None
+    if structured_plan is not None and structured_plan.mode == "prompt":
+        from openprogram.providers.structured_output import build_prompt_fallback
+
+        instruction = build_prompt_fallback(config.response_format)
+        sys_prompt = f"{sys_prompt}\n\n{instruction}" if sys_prompt else instruction
     if prefetch_block:
         _inject_memory_prefetch(llm_messages, prefetch_block)
 
@@ -498,6 +512,31 @@ async def _stream_assistant_response(
                 failover_stream_fn,
             )
             _fallbacks = resolve_fallback_models(config.model)
+            if structured_plan is not None:
+                from openprogram.providers.api_registry import (
+                    resolve_structured_output_capabilities,
+                )
+                from openprogram.providers.structured_output import negotiate_structured_output
+
+                compatible = []
+                for fallback in _fallbacks:
+                    try:
+                        fallback_plan = negotiate_structured_output(
+                            fallback,
+                            resolve_structured_output_capabilities(fallback),
+                            config.response_format,
+                            list(context.tools or []),
+                            tool_choice=config.tool_choice,
+                            parallel_tool_calls=config.parallel_tool_calls,
+                        )
+                    except Exception:
+                        continue
+                    if (
+                        fallback_plan.mode == structured_plan.mode
+                        and fallback_plan.provider_schema == structured_plan.provider_schema
+                    ):
+                        compatible.append(fallback)
+                _fallbacks = compatible
             if _fallbacks:
                 fn = failover_stream_fn(fn, _fallbacks)
         except Exception:

@@ -213,6 +213,22 @@ def _adapter_contract_matches(model: Any, capabilities: StructuredOutputCapabili
     return expected_provider is None or getattr(model, "provider", "") == expected_provider
 
 
+def _strict_tool_contract_active(
+    model: Any,
+    capabilities: StructuredOutputCapabilities,
+) -> bool:
+    if not capabilities.strict_tool:
+        return False
+    if capabilities.schema_profile != "openai_strict":
+        return True
+    from openprogram.providers._schema import wants_strict_flag
+
+    return wants_strict_flag(
+        getattr(model, "api", None),
+        getattr(model, "id", None),
+    )
+
+
 def _build_plan(
     model: Any,
     capabilities: StructuredOutputCapabilities,
@@ -248,7 +264,7 @@ def _build_plan(
     )
     if (
         output.fallback == "auto"
-        and capabilities.strict_tool
+        and _strict_tool_contract_active(model, capabilities)
         and _adapter_contract_matches(model, capabilities)
         and capabilities.streaming
         and provider_schema is not None
@@ -278,39 +294,17 @@ def _build_plan(
 
 def negotiate_structured_output(
     model: Any,
-    capabilities_or_output: StructuredOutputCapabilities | JsonSchemaOutput,
-    output: JsonSchemaOutput | None = None,
+    capabilities: StructuredOutputCapabilities,
+    output: JsonSchemaOutput,
     tools: list[Any] | None = None,
     *,
     tool_choice: Any = None,
     parallel_tool_calls: bool | None = None,
-) -> StructuredOutputPlan | Literal["native", "tool", "prompt"]:
-    """Choose a verified mode without weakening caller controls.
-
-    The two-argument form remains for existing Runtime callers until their
-    typed-result migration; new callers receive the complete immutable plan.
-    """
-    if isinstance(capabilities_or_output, JsonSchemaOutput):
-        legacy_output = capabilities_or_output
-        if getattr(model, "provider", "") == "callable":
-            return "native"
-        from openprogram.providers.api_registry import get_structured_output_capabilities
-
-        plan = _build_plan(
-            model,
-            get_structured_output_capabilities(getattr(model, "api", "")),
-            legacy_output,
-            tools or [],
-            tool_choice=tool_choice,
-            parallel_tool_calls=parallel_tool_calls,
-        )
-        return plan.mode
-
-    if output is None:
-        raise TypeError("output is required when capabilities are provided")
+) -> StructuredOutputPlan:
+    """Choose a verified mode without weakening caller controls."""
     return _build_plan(
         model,
-        capabilities_or_output,
+        capabilities,
         output,
         tools or [],
         tool_choice=tool_choice,

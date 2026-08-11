@@ -50,11 +50,11 @@ _OPENAI_RESPONSES_CAPABILITIES = StructuredOutputCapabilities(
     schema_profile="openai_strict",
 )
 _ANTHROPIC_CAPABILITIES = StructuredOutputCapabilities(
-    native="supported",
+    native="unknown",
     dialect="anthropic",
     streaming=True,
-    with_tools=True,
-    schema_profile="none",
+    strict_tool=True,
+    schema_profile="openai_strict",
 )
 _STRICT_TOOL_ONLY_CAPABILITIES = StructuredOutputCapabilities(
     strict_tool=True,

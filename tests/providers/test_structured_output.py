@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 
 from openprogram.providers import JsonSchemaOutput
@@ -12,7 +14,7 @@ from openprogram.providers.structured_output import (
     normalize_response_format,
     parse_and_validate_json,
 )
-from openprogram.providers.types import Model
+from openprogram.providers.types import Model, Tool
 
 
 SCHEMA = {
@@ -108,9 +110,10 @@ def test_negotiation_is_unknown_safe_and_prompt_fallback_is_explicit():
         provider="openrouter",
         base_url="https://example.invalid",
     )
+    capabilities = api_registry.get_structured_output_capabilities(model.api)
 
     with pytest.raises(StructuredOutputUnsupportedError) as exc:
-        negotiate_structured_output(model, normalize_response_format(SCHEMA))
+        negotiate_structured_output(model, capabilities, normalize_response_format(SCHEMA), [])
     assert exc.value.code == "unsupported"
 
     prompt_output = normalize_response_format({
@@ -118,7 +121,7 @@ def test_negotiation_is_unknown_safe_and_prompt_fallback_is_explicit():
         "schema": SCHEMA,
         "fallback": "prompt",
     })
-    assert negotiate_structured_output(model, prompt_output) == "prompt"
+    assert negotiate_structured_output(model, capabilities, prompt_output, []).mode == "prompt"
 
 
 def _capabilities(**overrides):
@@ -182,6 +185,48 @@ def test_hidden_tool_does_not_override_conflicting_caller_controls(
         )
 
 
+def test_hidden_tool_rejects_reserved_name_collision():
+    model = Model(
+        id="unknown-model",
+        name="Unknown model",
+        api="unknown-api",
+        provider="unknown-provider",
+        base_url="https://example.invalid",
+    )
+    collision = Tool(
+        name="__openprogram_submit_json",
+        description="Caller tool",
+        parameters={"type": "object"},
+    )
+
+    with pytest.raises(StructuredOutputUnsupportedError):
+        negotiate_structured_output(
+            model,
+            _capabilities(strict_tool=True),
+            normalize_response_format(SCHEMA),
+            [collision],
+        )
+
+
+def test_strict_tool_kill_switch_disables_hidden_auto(monkeypatch):
+    monkeypatch.setenv("OPENPROGRAM_STRICT_TOOLS", "0")
+    model = Model(
+        id="callable",
+        name="Codex",
+        api="openai-codex",
+        provider="openai-codex",
+        base_url="https://example.invalid",
+    )
+
+    with pytest.raises(StructuredOutputUnsupportedError):
+        negotiate_structured_output(
+            model,
+            _capabilities(strict_tool=True, schema_profile="openai_strict"),
+            normalize_response_format(SCHEMA),
+            [],
+        )
+
+
 def test_negotiation_deep_copies_original_and_provider_schemas():
     output = normalize_response_format(SCHEMA)
     plan = negotiate_structured_output(
@@ -221,6 +266,64 @@ def test_capability_registration_replaces_provider_and_capabilities_together(mon
     assert api_registry.get_structured_output_capabilities("missing-api") == _capabilities()
 
 
+def test_provider_transform_preserves_replaced_capabilities(monkeypatch):
+    monkeypatch.setattr(api_registry, "_registry", {})
+    monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_provider_transform", None)
+
+    class Wrapped:
+        def __init__(self, provider):
+            self.provider = provider
+
+    first = object()
+    first_capabilities = _capabilities(native="supported")
+    register_api_provider("test-api", first, first_capabilities)
+    api_registry.configure_provider_transform(lambda _api, provider: Wrapped(provider))
+
+    assert api_registry.get_api_provider("test-api").provider is first
+    assert api_registry.get_structured_output_capabilities("test-api") == first_capabilities
+
+    second = object()
+    second_capabilities = _capabilities(strict_tool=True)
+    register_api_provider("test-api", second, second_capabilities)
+    assert api_registry.get_api_provider("test-api").provider is second
+    assert api_registry.get_structured_output_capabilities("test-api") == second_capabilities
+
+
+def test_registry_entry_reads_remain_coherent_during_replacement(monkeypatch):
+    monkeypatch.setattr(api_registry, "_registry", {})
+    monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_provider_transform", None)
+    pairs = [
+        (object(), _capabilities(native="supported")),
+        (object(), _capabilities(strict_tool=True)),
+    ]
+    allowed = {(id(provider), capabilities) for provider, capabilities in pairs}
+    failures = []
+
+    def writer():
+        for index in range(500):
+            register_api_provider("test-api", *pairs[index % 2])
+
+    def reader():
+        for _ in range(500):
+            with api_registry._registry_lock:
+                value = api_registry._registry.get("test-api")
+                if value is None:
+                    continue
+                entry = api_registry._entry(value)
+                if (id(entry.provider), entry.structured_output) not in allowed:
+                    failures.append((entry.provider, entry.structured_output))
+
+    threads = [threading.Thread(target=writer), threading.Thread(target=reader)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert failures == []
+
+
 def test_builtin_capabilities_are_explicit_and_unknown_adapters_fail_closed():
     openai = api_registry.get_structured_output_capabilities("openai-responses")
     codex = api_registry.get_structured_output_capabilities("openai-codex")
@@ -231,6 +334,7 @@ def test_builtin_capabilities_are_explicit_and_unknown_adapters_fail_closed():
     assert openai.native == "supported"
     assert openai.strict_tool is True
     assert openai.with_tools is True
+    assert api_registry.get_structured_output_capabilities("anthropic-messages").native == "unknown"
     assert codex.native == "unknown"
     assert codex.strict_tool is True
     assert gemini_subscription.native == "unknown"

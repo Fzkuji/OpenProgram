@@ -67,6 +67,7 @@ from .api_registry import (
     configure_provider_transform,
     get_api_provider,
     get_structured_output_capabilities,
+    resolve_structured_output_capabilities,
     register_api_provider,
 )
 
@@ -106,7 +107,7 @@ __all__ = [
     "get_model", "get_providers", "get_models", "calculate_cost", "supports_xhigh", "models_are_equal",
     # Registry
     "register_api_provider", "get_api_provider", "get_structured_output_capabilities",
-    "configure_provider_transform",
+    "resolve_structured_output_capabilities", "configure_provider_transform",
     # Runtime factory / detection
     "PROVIDERS", "detect_provider", "create_runtime", "check_providers",
     # Keys

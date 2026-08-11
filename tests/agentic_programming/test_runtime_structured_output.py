@@ -99,13 +99,14 @@ def test_async_exec_returns_validated_python_value():
 
 def test_unknown_provider_is_rejected_before_stream_call():
     calls = []
+    retries = []
 
     async def stream(model, context, options=None):
         calls.append(1)
         if False:
             yield None
 
-    runtime = Runtime(call=lambda *args, **kwargs: "unused", model="dummy")
+    runtime = Runtime(call=lambda *args, **kwargs: "unused", model="dummy", max_retries=3)
     runtime.api_model = Model(
         id="third-party-test",
         name="Third-party test",
@@ -115,7 +116,46 @@ def test_unknown_provider_is_rejected_before_stream_call():
     )
 
     with pytest.raises(StructuredOutputUnsupportedError):
-        runtime.exec("question", response_format=SCHEMA, stream_fn=stream)
+        runtime.exec(
+            "question",
+            response_format=SCHEMA,
+            stream_fn=stream,
+            on_retry=lambda info: retries.append(info),
+        )
+    assert calls == []
+    assert retries == []
+
+
+def test_explicit_parallel_true_reaches_hidden_tool_preflight():
+    calls = []
+
+    async def stream(model, context, options=None):
+        calls.append(options)
+        if False:
+            yield None
+
+    runtime = Runtime(call=lambda *args, **kwargs: "unused", model="dummy", max_retries=1)
+    runtime.api_model = Model(
+        id="codex-test",
+        name="Codex test",
+        api="openai-codex",
+        provider="openai-codex",
+        base_url="https://example.invalid",
+    )
+
+    with pytest.raises(StructuredOutputUnsupportedError):
+        runtime.exec(
+            "question",
+            response_format={
+                "type": "json_schema",
+                "schema": SCHEMA,
+                "max_validation_retries": 0,
+            },
+            toolset="none",
+            parallel_tool_calls=True,
+            stream_fn=stream,
+        )
+
     assert calls == []
 
 

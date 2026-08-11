@@ -1047,7 +1047,7 @@ class Runtime:
         tools_allow: Optional[list[str]] = None,
         tools_deny: Optional[list[str]] = None,
         tool_choice: Any = "auto",
-        parallel_tool_calls: bool = True,
+        parallel_tool_calls: Optional[bool] = None,
         max_iterations: int = 20,
         choices: Any = None,
         timeout_s: Optional[float] = None,
@@ -1086,8 +1086,8 @@ class Runtime:
                               {"type":"function","name":"X"} to force a
                               specific tool.
 
-            parallel_tool_calls: allow the model to emit multiple tool calls
-                                 in one turn (default True).
+            parallel_tool_calls: explicitly allow or forbid multiple tool calls
+                                 in one turn. ``None`` leaves the provider default.
 
             max_iterations:   safety cap on the tool loop (default 20).
 
@@ -1198,13 +1198,14 @@ class Runtime:
             _current_tool_policy.set({**(_current_tool_policy.get(None) or {}), **_policy_kwargs})
             if _policy_kwargs else None
         )
-        # Loop options — only non-default values travel ("auto" / True
-        # are the provider defaults, sending them adds nothing).
+        # Loop options — only explicit values travel. In particular, structured
+        # output negotiation must distinguish an explicit True (which conflicts
+        # with the single hidden submission tool) from the provider default.
         _loop_opts = {}
         if tool_choice is not None and tool_choice != "auto":
             _loop_opts["tool_choice"] = tool_choice
-        if parallel_tool_calls is False:
-            _loop_opts["parallel_tool_calls"] = False
+        if parallel_tool_calls is not None:
+            _loop_opts["parallel_tool_calls"] = parallel_tool_calls
         if max_iterations is not None:
             _loop_opts["max_iterations"] = max_iterations
         if web_search:
@@ -1721,7 +1722,9 @@ class Runtime:
         DEFAULT_TOOLSET = "full"
         if raw_tools is None:
             preset = policy.get("toolset") if policy else None
-            if preset == "none":
+            # CallableModel exposes only the supplied callable contract. It
+            # cannot execute Runtime's process-wide default tool registry.
+            if preset == "none" or self._call_fn is not None:
                 # Explicit opt-out — reasoning-only call, no tools.
                 agent_tools = None
             else:
@@ -1805,16 +1808,6 @@ class Runtime:
         if structured_format is None and response_format is not None:
             from openprogram.providers.structured_output import normalize_response_format
             structured_format = normalize_response_format(response_format)
-        if structured_format is not None:
-            from openprogram.providers.structured_output import (
-                build_prompt_fallback,
-                negotiate_structured_output,
-            )
-            structured_mode = negotiate_structured_output(self.api_model, structured_format)
-            if structured_mode == "prompt":
-                instruction = build_prompt_fallback(structured_format)
-                system_prompt = f"{system_prompt}\n\n{instruction}" if system_prompt else instruction
-
         # 现算输入分类分解 + 采集工具名单（论文仓库 spec §5 ①③）。best-effort，
         # 算失败置 None/[]，绝不影响 LLM 调用。breakdown 挂 last_usage（见下），
         # 工具名单跟着 exec 收尾的 usage→DAG 节点通道进 history.metadata。

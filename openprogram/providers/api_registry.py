@@ -90,6 +90,19 @@ def get_structured_output_capabilities(api: Api) -> StructuredOutputCapabilities
         return _entry(value).structured_output
 
 
+def resolve_structured_output_capabilities(model: Model) -> StructuredOutputCapabilities:
+    """Resolve the capability contract for the concrete adapter model."""
+    if model.provider == "callable" and model.api == "completion":
+        return StructuredOutputCapabilities(
+            native="supported",
+            dialect="callable",
+            streaming=True,
+            with_tools=False,
+            schema_profile="none",
+        )
+    return get_structured_output_capabilities(model.api)
+
+
 def configure_provider_transform(
     transform: Callable[[str, ApiProvider], ApiProvider],
 ) -> None:
