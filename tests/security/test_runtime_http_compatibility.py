@@ -849,6 +849,102 @@ def test_literal_fixture_matches_the_real_policy_boundary(consumer, expected) ->
     assert decision.port == port
 
 
+def _literal_reachable_scheme_port_urls(
+    consumer: str, expected: tuple[object, ...]
+) -> tuple[tuple[str, int], ...]:
+    trust_class, _method, origin, _port, schemes, _methods, ports, *_rest = expected
+    literal_origins = (
+        FIXED_ORIGIN_FIXTURES[consumer]
+        if trust_class == "fixed_public_service"
+        else (origin,)
+    )
+    urls: list[tuple[str, int]] = []
+    for literal_origin in literal_origins:
+        parsed = urlsplit(literal_origin)
+        hostname = parsed.hostname
+        assert hostname is not None
+        for scheme in schemes:
+            default_port = 443 if scheme == "https" else 80
+            if trust_class == "fixed_public_service":
+                if parsed.scheme != scheme:
+                    continue
+                reachable_ports = (parsed.port or default_port,)
+            elif ports is None:
+                reachable_ports = (parsed.port or default_port,)
+            else:
+                reachable_ports = ports
+            for port in reachable_ports:
+                netloc = (
+                    f"[{hostname}]:{port}" if ":" in hostname else f"{hostname}:{port}"
+                )
+                urls.append((urlunsplit((scheme, netloc, "/allowed", "", "")), port))
+    return tuple(urls)
+
+
+@pytest.mark.parametrize("consumer, expected", COMPATIBILITY_FIXTURES.items())
+def test_every_literal_allowed_scheme_and_port_reaches_policy_boundary(
+    consumer, expected
+) -> None:
+    (
+        trust_class,
+        method,
+        _origin,
+        _port,
+        _schemes,
+        _methods,
+        ports,
+        *_rest,
+    ) = expected
+    resolver_calls = []
+
+    def resolver(hostname: str, port: int) -> tuple[str, ...]:
+        resolver_calls.append((hostname, port))
+        return (
+            ("127.0.0.1",) if trust_class == "loopback_callback" else ("93.184.216.34",)
+        )
+
+    for url, expected_port in _literal_reachable_scheme_port_urls(consumer, expected):
+        kwargs = {}
+        if trust_class == "configured_service":
+            kwargs["configured_origin"] = urlunsplit(
+                urlsplit(url)._replace(path="", query="", fragment="")
+            )
+        if trust_class == "loopback_callback":
+            kwargs["callback_origin"] = urlunsplit(
+                urlsplit(url)._replace(path="", query="", fragment="")
+            )
+        with safe_client(
+            consumer, security=OutboundSecurityConfig(resolver=resolver), **kwargs
+        ) as client:
+            decision = client._transport._evaluate(method, url)
+        assert decision.port == expected_port
+
+    original = urlsplit(expected[2])
+    calls_before_rejections = len(resolver_calls)
+    kwargs = {}
+    if trust_class == "configured_service":
+        kwargs["configured_origin"] = expected[2]
+    if trust_class == "loopback_callback":
+        kwargs["callback_origin"] = expected[2]
+    with safe_client(
+        consumer, security=OutboundSecurityConfig(resolver=resolver), **kwargs
+    ) as client:
+        with pytest.raises(URLPolicyError):
+            client._transport._evaluate(
+                method,
+                urlunsplit(("ftp", original.netloc, "/blocked", "", "")),
+            )
+        if ports is not None:
+            host = original.hostname or "invalid"
+            netloc = f"[{host}]:65535" if ":" in host else f"{host}:65535"
+            with pytest.raises(URLPolicyError):
+                client._transport._evaluate(
+                    method,
+                    urlunsplit((original.scheme, netloc, "/blocked", "", "")),
+                )
+    assert len(resolver_calls) == calls_before_rejections
+
+
 @pytest.mark.parametrize("consumer, expected", COMPATIBILITY_FIXTURES.items())
 def test_each_literal_row_rejects_unapproved_method_scheme_and_origin_port(
     consumer, expected

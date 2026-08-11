@@ -145,3 +145,30 @@ Task 8 does not modify those files.
   exit 0, `2932 passed, 12 skipped, 1 xfailed, 4 warnings in 176.80s`.
   The four warnings are existing websockets/uvicorn deprecations.
 - No production file changed and F2's proxy-outage sentinel was not modified.
+
+## Quality-review fix round 3
+
+- Added a 41-row, literal-fixture-driven `SafeClient` policy-boundary test for
+  every allowed scheme and every reachable allowed port.  Configured and
+  callback origins are reconstructed per allowed value; fixed consumers use
+  every independent literal fixed origin and only its reachable port form.
+  The test calls the real managed transport policy boundary and verifies each
+  accepted value reaches resolution.  Rejected `ftp` schemes and, where the
+  policy declares a finite port set, rejected port `65535` are rejected before
+  resolver invocation, so the test cannot connect externally.
+- RED: wrapping `_ManagedTransportBase._evaluate` so only
+  `provider.configured_api` rejects `https://` produced
+  `1 failed, 40 passed, 150 deselected, 1 warning` from
+  `uv run pytest -q tests/security/test_runtime_http_compatibility.py -k allowed_scheme`.
+  The failing parametrized case named `provider.configured_api` and its
+  declared `https://configured.example.test:17654` URL.  The warning is
+  pytest assertion-rewrite state from the in-process mutation runner.
+- GREEN: the same focused new test returned `41 passed, 150 deselected in
+  1.82s`; the complete Task 8 focused pair returned `202 passed in 34.93s`.
+- `uv run pytest -q tests/security`: exit 0, `780 passed in 112.33s`.
+- `uv run pytest -q tests/meta_functions tests/providers tests/unit tests/webui tests/integration/test_mcp_client.py`:
+  exit 0, `2932 passed, 12 skipped, 1 xfailed, 4 warnings in 163.91s`.
+  The warnings are existing websockets/uvicorn deprecations.
+- No production or documentation file changed; the existing socket contract
+  remains responsible for transport-level redirect, MIME, cap, credential,
+  and owner-exception behavior.
