@@ -576,36 +576,60 @@ class _HTTPVisitor(ast.NodeVisitor):
         incoming: _BlockFlow,
         finalbody: list[ast.stmt],
     ) -> _BlockFlow:
-        states = [
-            *([] if incoming.normal is None else [incoming.normal]),
-            *incoming.breaks,
-            *incoming.continues,
-            *incoming.returns,
-            *incoming.raises,
-        ]
-        if not states:
-            return incoming
-        final = self._visit_block_flow_from(
-            finalbody,
-            self._merge_managed_values(states),
-        )
-        completed = final.normal
+        incoming_by_kind: dict[str, list[_ManagedState]] = {
+            "normal": [] if incoming.normal is None else [incoming.normal],
+            "breaks": incoming.breaks,
+            "continues": incoming.continues,
+            "returns": incoming.returns,
+            "raises": incoming.raises,
+        }
+        outgoing: dict[str, list[_ManagedState]] = {
+            "normal": [],
+            "breaks": [],
+            "continues": [],
+            "returns": [],
+            "raises": [],
+        }
+        first_execution = True
+        for incoming_kind, states in incoming_by_kind.items():
+            distinct: list[_ManagedState] = []
+            for state in states:
+                if state not in distinct:
+                    distinct.append(state)
+            for state in distinct:
+                call_start = len(self.calls)
+                sdk_start = len(self.sdk_calls)
+                final = self._visit_block_flow_from(finalbody, state)
+                if not first_execution:
+                    del self.calls[call_start:]
+                    repeated_sdk_calls = self.sdk_calls[sdk_start:]
+                    del self.sdk_calls[sdk_start:]
+                    for issue, consumers in repeated_sdk_calls:
+                        for index, (known_issue, known_consumers) in enumerate(
+                            self.sdk_calls
+                        ):
+                            if known_issue == issue:
+                                self.sdk_calls[index] = (
+                                    known_issue,
+                                    known_consumers & consumers,
+                                )
+                                break
+                        else:
+                            self.sdk_calls.append((issue, consumers))
+                first_execution = False
+                if final.normal is not None:
+                    outgoing[incoming_kind].append(final.normal)
+                outgoing["breaks"].extend(final.breaks)
+                outgoing["continues"].extend(final.continues)
+                outgoing["returns"].extend(final.returns)
+                outgoing["raises"].extend(final.raises)
+        normals = outgoing["normal"]
         return _BlockFlow(
-            normal=(
-                completed
-                if incoming.normal is not None and completed is not None
-                else None
-            ),
-            breaks=([] if completed is None or not incoming.breaks else [completed])
-            + final.breaks,
-            continues=(
-                [] if completed is None or not incoming.continues else [completed]
-            )
-            + final.continues,
-            returns=([] if completed is None or not incoming.returns else [completed])
-            + final.returns,
-            raises=([] if completed is None or not incoming.raises else [completed])
-            + final.raises,
+            normal=self._merge_managed_values(normals) if normals else None,
+            breaks=outgoing["breaks"],
+            continues=outgoing["continues"],
+            returns=outgoing["returns"],
+            raises=outgoing["raises"],
         )
 
     def visit_Try(self, node: ast.Try) -> None:
@@ -730,26 +754,29 @@ class _HTTPVisitor(ast.NodeVisitor):
         self.visit(node.subject)
         initial = dict(self.managed_values)
         flows: list[_BlockFlow] = []
-        exhaustive = False
+        fallback: _ManagedState | None = initial
         for case in node.cases:
+            if fallback is None:
+                break
             outer = self.managed_values
-            self.managed_values = dict(initial)
+            self.managed_values = dict(fallback)
             try:
                 self.visit(case.pattern)
                 for name in self._bound_names(case.pattern):
                     self.managed_values.pop((tuple(self.scope), name), None)
                 if case.guard is not None:
                     self.visit(case.guard)
-                flows.append(
-                    self._visit_block_flow_from(case.body, self.managed_values)
-                )
+                captured = dict(self.managed_values)
+                flows.append(self._visit_block_flow_from(case.body, captured))
             finally:
                 self.managed_values = outer
             if case.guard is None and self._match_pattern_is_irrefutable(case.pattern):
-                exhaustive = True
+                fallback = None
+            else:
+                fallback = captured
         normals = [flow.normal for flow in flows if flow.normal is not None]
-        if not exhaustive:
-            normals.append(initial)
+        if fallback is not None:
+            normals.append(fallback)
         self._apply_flow(
             _BlockFlow(
                 normal=self._merge_managed_values(normals) if normals else None,

@@ -543,6 +543,13 @@ match value:
         pass
 openai.AsyncOpenAI(http_client=client)
 """,
+        """
+client = safe_async_client("provider.openai.sdk")
+match value:
+    case client if condition:
+        client = safe_async_client("provider.openai.sdk")
+openai.AsyncOpenAI(http_client=client)
+""",
     ],
 )
 def test_sdk_injection_rejects_hidden_unmanaged_control_flow_state(
@@ -655,6 +662,26 @@ def build(flag):
     if flag:
         raise RuntimeError
     client = safe_async_client("provider.openai.sdk")
+    return openai.AsyncOpenAI(http_client=client)
+""",
+        """
+def build(flag):
+    try:
+        if flag:
+            return None
+        client = safe_async_client("provider.openai.sdk")
+    finally:
+        marker = 1
+    return openai.AsyncOpenAI(http_client=client)
+""",
+        """
+def build(flag):
+    try:
+        if flag:
+            raise RuntimeError
+        client = safe_async_client("provider.openai.sdk")
+    finally:
+        marker = 1
     return openai.AsyncOpenAI(http_client=client)
 """,
         """

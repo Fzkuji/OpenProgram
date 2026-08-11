@@ -199,6 +199,23 @@ Second quality re-review fix:
   `tests/security`: `565 passed in 77.64s`. Ruff lint and scoped format passed;
   final lock and diff checks are recorded with the fix commit below.
 
+Third quality re-review fix:
+
+- The second scoped re-review closed the original seven probes but found a
+  guarded capture fallback that retained pre-match provenance, plus return and
+  raise paths being merged with the only normal path before `finally`. The
+  exact three public regressions produced `3 failed, 15 passed, 35 deselected`.
+- Guard-false match processing now advances with the capture-bound state.
+  Finally analysis preserves flow-kind association, applies the final block to
+  each distinct incoming state, merges only states of the same outgoing kind,
+  and intersects duplicate SDK-call provenance while avoiding duplicate raw
+  call inventory entries. Targeted GREEN: `18 passed, 35 deselected`; complete
+  control-flow set: `30 passed, 23 deselected`.
+- Final inventory file: `53 passed in 1.13s`; Task 7 focused and cache
+  lifecycle suite: `106 passed in 1.43s`; static checker categories all zero;
+  complete `tests/security`: `568 passed in 77.30s`. Ruff lint, scoped format,
+  lock, and diff checks passed.
+
 ## Concerns
 
 - Browser navigation, arbitrary-code networking, and owner control-plane
