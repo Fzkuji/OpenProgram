@@ -15,6 +15,7 @@ def _source(
     thread_id: str = "session-1",
     message_id: str = "message-1",
     content: str = "I will submit the rebuttal by Wednesday.",
+    speaker_id: str = "owner/local",
 ) -> str:
     from openprogram.memory.management import MemoryWorkspace
     from openprogram.memory.runtime.state import SourceRecord
@@ -27,7 +28,7 @@ def _source(
         role="user",
         content=content,
         timestamp="2026-08-11T09:00:00+08:00",
-        speaker_id="owner/local",
+        speaker_id=speaker_id,
         speaker_display="Owner",
         speaker_kind="owner",
         principal_id="owner/install/0123456789abcdef",
@@ -236,6 +237,159 @@ def test_writer_tool_stages_and_commits_only_batch_sources(tmp_path):
         workspace.commit_edits(*baseline)
 
     assert load_commitments(tmp_path)[0]["text"] == "Submit the rebuttal."
+
+
+def test_writer_schema_declares_commitment_batch_and_item_limits(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.tools import management_tools
+    from openprogram.memory.runtime.commitments import (
+        MAX_COMMITMENT_BATCH_ITEMS,
+        MAX_COMMITMENT_QUOTE_CHARS,
+        MAX_COMMITMENT_SOURCE_CHARS,
+        MAX_COMMITMENT_TEXT_CHARS,
+    )
+
+    with closing(MemoryWorkspace(tmp_path)) as workspace:
+        tool = next(
+            item
+            for item in management_tools(workspace, [])
+            if item.name == "record_commitments"
+        )
+    properties = tool.input_schema["properties"]
+
+    assert properties["commitments"]["maxItems"] == MAX_COMMITMENT_BATCH_ITEMS
+    assert properties["transitions"]["maxItems"] == MAX_COMMITMENT_BATCH_ITEMS
+    commitment = properties["commitments"]["items"]["properties"]
+    transition = properties["transitions"]["items"]["properties"]
+    assert commitment["text"]["maxLength"] == MAX_COMMITMENT_TEXT_CHARS
+    assert commitment["source"]["maxLength"] == MAX_COMMITMENT_SOURCE_CHARS
+    assert commitment["source_quote"]["maxLength"] == MAX_COMMITMENT_QUOTE_CHARS
+    assert transition["source"]["maxLength"] == MAX_COMMITMENT_SOURCE_CHARS
+    assert transition["source_quote"]["maxLength"] == MAX_COMMITMENT_QUOTE_CHARS
+
+
+def test_runtime_rejects_oversized_commitment_batches_and_fields(tmp_path):
+    from openprogram.memory.runtime.commitments import (
+        MAX_COMMITMENT_BATCH_ITEMS,
+        MAX_COMMITMENT_QUOTE_CHARS,
+        MAX_COMMITMENT_TEXT_CHARS,
+        upsert_commitments,
+    )
+
+    source = _source(tmp_path)
+    valid = {
+        "text": "Submit the rebuttal.",
+        "due": "2026-08-12",
+        "source": source,
+        "source_quote": "I will submit the rebuttal by Wednesday.",
+    }
+
+    with pytest.raises(ValueError, match="at most"):
+        upsert_commitments(tmp_path, [valid] * (MAX_COMMITMENT_BATCH_ITEMS + 1))
+    with pytest.raises(ValueError, match="text exceeds"):
+        upsert_commitments(
+            tmp_path,
+            [{**valid, "text": "x" * (MAX_COMMITMENT_TEXT_CHARS + 1)}],
+        )
+
+    with pytest.raises(ValueError, match="YYYY-MM-DD"):
+        upsert_commitments(tmp_path, [{**valid, "due": "20260812"}])
+
+    overlong_speaker_source = _source(
+        tmp_path,
+        message_id="message-speaker-long",
+        speaker_id="x" * 513,
+    )
+    with pytest.raises(ValueError, match="speaker identity"):
+        upsert_commitments(
+            tmp_path,
+            [{**valid, "source": overlong_speaker_source}],
+        )
+
+    long_quote = "x" * (MAX_COMMITMENT_QUOTE_CHARS + 1)
+    long_source = _source(
+        tmp_path,
+        message_id="message-long",
+        content=long_quote,
+    )
+    with pytest.raises(ValueError, match="source_quote exceeds"):
+        upsert_commitments(
+            tmp_path,
+            [
+                {
+                    "text": "Bounded item.",
+                    "due": None,
+                    "source": long_source,
+                    "source_quote": long_quote,
+                }
+            ],
+        )
+
+
+def test_runtime_limits_writer_transitions_and_combined_tool_batch(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.tools import management_tools
+    from openprogram.memory.runtime.commitments import (
+        MAX_COMMITMENT_BATCH_ITEMS,
+        MAX_COMMITMENT_QUOTE_CHARS,
+        transition_commitments,
+        upsert_commitments,
+    )
+
+    source = _source(tmp_path)
+    row = upsert_commitments(
+        tmp_path,
+        [
+            {
+                "text": "Submit the rebuttal.",
+                "due": None,
+                "source": source,
+                "source_quote": "I will submit the rebuttal by Wednesday.",
+            }
+        ],
+    )[0]
+    with pytest.raises(ValueError, match="at most"):
+        transition_commitments(
+            tmp_path,
+            [{"id": row["id"], "status": "done"}] * (MAX_COMMITMENT_BATCH_ITEMS + 1),
+            manual_source="owner/manual",
+        )
+
+    long_quote = "x" * (MAX_COMMITMENT_QUOTE_CHARS + 1)
+    closure = _source(
+        tmp_path,
+        message_id="message-closure-long",
+        content=long_quote,
+    )
+    with pytest.raises(ValueError, match="source_quote exceeds"):
+        transition_commitments(
+            tmp_path,
+            [
+                {
+                    "id": row["id"],
+                    "status": "done",
+                    "source": closure,
+                    "source_quote": long_quote,
+                }
+            ],
+        )
+
+    with closing(MemoryWorkspace(tmp_path)) as workspace:
+        tool = next(
+            item
+            for item in management_tools(workspace, [])
+            if item.name == "record_commitments"
+        )
+        result = asyncio.run(
+            tool.handler(
+                {
+                    "commitments": [{}] * 33,
+                    "transitions": [{}] * 32,
+                }
+            )
+        )
+    assert result["is_error"] is True
+    assert "at most 64" in result["content"][0]["text"]
 
 
 def test_writer_tool_rejects_source_outside_selected_batch(tmp_path):
@@ -717,6 +871,69 @@ def test_mutations_refuse_invalid_file_without_deleting_bad_rows(tmp_path):
     assert path.read_bytes() == before
 
 
+def test_persisted_overlong_record_is_invalid_skipped_and_blocks_mutation(
+    tmp_path,
+):
+    from datetime import datetime
+
+    from openprogram.memory.runtime.commitments import (
+        MAX_COMMITMENT_TEXT_CHARS,
+        commitment_status,
+        upsert_commitments,
+    )
+    from openprogram.proactive.heartbeat import run_heartbeat
+
+    source = _source(tmp_path)
+    row = upsert_commitments(
+        tmp_path,
+        [
+            {
+                "text": "Submit the rebuttal.",
+                "due": "2026-08-12",
+                "source": source,
+                "source_quote": "I will submit the rebuttal by Wednesday.",
+            }
+        ],
+    )[0]
+    row["text"] = "x" * (MAX_COMMITMENT_TEXT_CHARS + 1)
+    path = tmp_path / "commitments.jsonl"
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    before = path.read_bytes()
+
+    assert commitment_status(tmp_path) == {
+        "counts": {
+            "total": 0,
+            "open": 0,
+            "done": 0,
+            "dismissed": 0,
+            "invalid": 1,
+        },
+        "records": [],
+    }
+    assert (
+        run_heartbeat(
+            tmp_path,
+            now=datetime(2026, 8, 12, 9, 0),
+            target_for_source=lambda _source: ("telegram", "default", "42"),
+            send=lambda *_args: pytest.fail("invalid record must not send"),
+        )
+        == 0
+    )
+    with pytest.raises(ValueError, match="invalid commitment"):
+        upsert_commitments(
+            tmp_path,
+            [
+                {
+                    "text": "Submit the rebuttal.",
+                    "due": None,
+                    "source": source,
+                    "source_quote": "I will submit the rebuttal by Wednesday.",
+                }
+            ],
+        )
+    assert path.read_bytes() == before
+
+
 def test_heartbeat_groups_by_target_and_keeps_missing_targets_visible(tmp_path):
     from datetime import datetime
 
@@ -961,3 +1178,13 @@ def test_heartbeat_cadence(cadence, stamp, expected):
     from openprogram.proactive.heartbeat import cadence_due
 
     assert cadence_due(cadence, datetime.fromisoformat(stamp)) is expected
+
+
+def test_quiet_hours_rejects_seconds_and_offsets():
+    from datetime import datetime
+
+    from openprogram.proactive.heartbeat import in_quiet_hours
+
+    for value in ("23:00:30-08:00", "23:00+01:00-08:00"):
+        with pytest.raises(ValueError, match="HH:MM-HH:MM"):
+            in_quiet_hours(datetime(2026, 8, 12, 23, 30), value)

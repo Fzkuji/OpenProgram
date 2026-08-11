@@ -11,6 +11,13 @@
 Source ref 和一行精确引用；Runtime 验证该引用是当前批次可信 Source 的精确
 片段，校验绝对 `YYYY-MM-DD` 日期或 `null`，并派生承诺 ID 和发言人。
 
+tool schema 与 Runtime 同时执行 writer 限额：一个批次的创建与转移合计最多 64
+项，规范化承诺文本最多 2,048 字符，精确引用最多 8,192 字符，Source ref 最多
+512 字符。批次数量沿用现有 transaction 每次最多 64 个 Source 的先例；即使调用
+方绕过 schema，Runtime 校验仍然生效。owner Web route 每次只执行一项显式转移，
+也不接受 writer 语义文本或引用，因此这些 writer batch 限额不会形成另一套 owner
+限制。
+
 `commitments.jsonl` 与 Topic 变更一起通过同一个 staged memory transaction
 安装。每条记录包含 `id`、`text`、`due`、`speaker_id`、`source`、
 `source_quote`、`status`、状态转移 provenance、转移时间和

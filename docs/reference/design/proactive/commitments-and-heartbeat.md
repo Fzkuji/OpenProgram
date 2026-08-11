@@ -14,6 +14,14 @@ due value, Source ref, and an exact one-line quote. The Runtime verifies that
 the quote is a substring of that trusted, in-batch Source, validates the
 absolute `YYYY-MM-DD` date or `null`, and derives the speaker and commitment ID.
 
+The tool schema and Runtime both enforce the same writer limits: at most 64
+commitment creates plus transitions in one batch, at most 2,048 characters for
+normalized commitment text, 8,192 for an exact quote, and 512 for a Source ref.
+The count follows the existing 64-source transaction precedent. Runtime checks
+remain authoritative if a caller bypasses schema validation. The owner Web
+route performs one explicit transition and does not accept writer semantic text
+or quotes, so these writer-batch limits do not create a separate owner limit.
+
 `commitments.jsonl` is installed in the same staged memory transaction as Topic
 changes. Each record contains `id`, `text`, `due`, `speaker_id`, `source`,
 `source_quote`, `status`, transition provenance, transition time, and

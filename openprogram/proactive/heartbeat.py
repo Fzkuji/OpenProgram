@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime, time
 from pathlib import Path
+import re
 from typing import Any, Callable, Hashable
 
 from openprogram.memory.management.transaction import workspace_write_lock
@@ -16,6 +17,7 @@ from openprogram.memory.runtime.commitments import (
 
 DEFAULT_QUIET_HOURS = "23:00-08:00"
 DEFAULT_OVERDUE_INTERVAL_DAYS = 7
+_CLOCK_RE = re.compile(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
 
 
 def cadence_due(cadence: str, now: datetime) -> bool:
@@ -28,6 +30,8 @@ def cadence_due(cadence: str, now: datetime) -> bool:
 
 
 def _clock(value: str) -> time:
+    if not isinstance(value, str) or not _CLOCK_RE.fullmatch(value.strip()):
+        raise ValueError("quiet hours must use HH:MM-HH:MM")
     try:
         return time.fromisoformat(value.strip())
     except ValueError as exc:

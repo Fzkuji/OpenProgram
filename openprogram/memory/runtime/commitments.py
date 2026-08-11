@@ -12,6 +12,12 @@ from typing import Any
 
 FILENAME = "commitments.jsonl"
 STATUSES = frozenset({"open", "done", "dismissed"})
+MAX_COMMITMENT_BATCH_ITEMS = 64
+MAX_COMMITMENT_TEXT_CHARS = 2_048
+MAX_COMMITMENT_QUOTE_CHARS = 8_192
+MAX_COMMITMENT_SOURCE_CHARS = 512
+MAX_COMMITMENT_SPEAKER_CHARS = 512
+MAX_NOTIFICATION_STEPS = 64
 PUBLIC_FIELDS = (
     "id",
     "text",
@@ -25,6 +31,7 @@ PUBLIC_FIELDS = (
 )
 _ID_RE = re.compile(r"^com_[0-9a-f]{16}$")
 _NOTIFICATION_RE = re.compile(r"^(?:due|overdue:[1-9][0-9]*)$")
+_DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 
 
 def _valid_timestamp(value: Any) -> bool:
@@ -42,9 +49,20 @@ def _valid_row(row: Any) -> bool:
         return False
     if not isinstance(row.get("id"), str) or not _ID_RE.fullmatch(row["id"]):
         return False
-    for field in ("text", "speaker_id", "source", "source_quote"):
+    field_limits = {
+        "text": MAX_COMMITMENT_TEXT_CHARS,
+        "speaker_id": MAX_COMMITMENT_SPEAKER_CHARS,
+        "source": MAX_COMMITMENT_SOURCE_CHARS,
+        "source_quote": MAX_COMMITMENT_QUOTE_CHARS,
+    }
+    for field, max_chars in field_limits.items():
         value = row.get(field)
-        if not isinstance(value, str) or not value.strip() or "\n" in value:
+        if (
+            not isinstance(value, str)
+            or not value.strip()
+            or "\n" in value
+            or len(value) > max_chars
+        ):
             return False
     try:
         _due(row.get("due"))
@@ -56,6 +74,7 @@ def _valid_row(row: Any) -> bool:
     steps = row.get("notification_steps")
     if (
         not isinstance(steps, list)
+        or len(steps) > MAX_NOTIFICATION_STEPS
         or len(steps) != len(set(steps))
         or any(
             not isinstance(step, str) or not _NOTIFICATION_RE.fullmatch(step)
@@ -70,15 +89,21 @@ def _valid_row(row: Any) -> bool:
         return (
             status_source is None and status_quote is None and status_changed_at is None
         )
-    if not _valid_timestamp(status_changed_at):
+    if (
+        not isinstance(status_changed_at, str)
+        or len(status_changed_at) > 64
+        or not _valid_timestamp(status_changed_at)
+    ):
         return False
     if status_source == "owner/manual":
         return status_quote is None
     return (
         isinstance(status_source, str)
         and bool(status_source.strip())
+        and len(status_source) <= MAX_COMMITMENT_SOURCE_CHARS
         and isinstance(status_quote, str)
         and bool(status_quote.strip())
+        and len(status_quote) <= MAX_COMMITMENT_QUOTE_CHARS
         and "\n" not in status_quote
     )
 
@@ -193,15 +218,23 @@ def _source(memory_dir: Path, source_id: str):
     )
     if event is None or event.trust_state != "trusted":
         raise ValueError(f"commitment source must be trusted: {source_id}")
-    if not event.speaker_id:
-        raise ValueError(f"commitment source has no speaker identity: {source_id}")
+    if (
+        not event.speaker_id
+        or "\n" in event.speaker_id
+        or len(event.speaker_id) > MAX_COMMITMENT_SPEAKER_CHARS
+    ):
+        raise ValueError(f"commitment source has invalid speaker identity: {source_id}")
     return event
 
 
 def _due(value: Any) -> str | None:
     if value in (None, ""):
         return None
-    normalized = str(value).strip()
+    if not isinstance(value, str):
+        raise ValueError("commitment due must be YYYY-MM-DD or null")
+    normalized = value.strip()
+    if not _DATE_RE.fullmatch(normalized):
+        raise ValueError("commitment due must be YYYY-MM-DD or null")
     try:
         date.fromisoformat(normalized)
     except ValueError as exc:
@@ -209,13 +242,50 @@ def _due(value: Any) -> str | None:
     return normalized
 
 
+def _limited_line(value: Any, *, field: str, max_chars: int) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"commitment {field} must be a string")
+    normalized = value.strip()
+    if not normalized or "\n" in normalized:
+        raise ValueError(f"commitment {field} must be one non-empty line")
+    if len(normalized) > max_chars:
+        raise ValueError(f"commitment {field} exceeds {max_chars} characters")
+    return normalized
+
+
+def _source_ref(value: Any) -> str:
+    return _limited_line(
+        value,
+        field="source",
+        max_chars=MAX_COMMITMENT_SOURCE_CHARS,
+    )
+
+
 def _quote(event: Any, value: Any) -> str:
-    quote = str(value or "").strip()
-    if not quote or "\n" in quote or quote not in event.content:
+    quote = _limited_line(
+        value,
+        field="source_quote",
+        max_chars=MAX_COMMITMENT_QUOTE_CHARS,
+    )
+    if quote not in event.content:
         raise ValueError(
             "commitment source_quote must be one exact substring of Source"
         )
     return quote
+
+
+def validate_writer_batch_size(
+    commitments: list[dict[str, Any]],
+    transitions: list[dict[str, Any]],
+) -> None:
+    if not isinstance(commitments, list) or not isinstance(transitions, list):
+        raise ValueError("commitments and transitions must be arrays")
+    total = len(commitments) + len(transitions)
+    if total > MAX_COMMITMENT_BATCH_ITEMS:
+        raise ValueError(
+            f"at most {MAX_COMMITMENT_BATCH_ITEMS} commitments and transitions "
+            "per writer batch"
+        )
 
 
 def upsert_commitments(
@@ -224,6 +294,12 @@ def upsert_commitments(
     *,
     source_memory_dir: str | Path | None = None,
 ) -> list[dict[str, Any]]:
+    if not isinstance(items, list):
+        raise ValueError("commitments must be an array")
+    if len(items) > MAX_COMMITMENT_BATCH_ITEMS:
+        raise ValueError(
+            f"at most {MAX_COMMITMENT_BATCH_ITEMS} commitments per writer batch"
+        )
     root = Path(memory_dir)
     source_root = Path(source_memory_dir) if source_memory_dir is not None else root
     existing = load_commitments(root, strict=True)
@@ -231,10 +307,12 @@ def upsert_commitments(
     for item in items:
         if not isinstance(item, dict):
             raise ValueError("each commitment must be an object")
-        text = str(item.get("text") or "").strip()
-        source_id = str(item.get("source") or "").strip()
-        if not text or "\n" in text:
-            raise ValueError("commitment text must be one non-empty line")
+        text = _limited_line(
+            item.get("text"),
+            field="text",
+            max_chars=MAX_COMMITMENT_TEXT_CHARS,
+        )
+        source_id = _source_ref(item.get("source"))
         event = _source(source_root, source_id)
         source_quote = _quote(event, item.get("source_quote"))
         due = _due(item.get("due"))
@@ -275,6 +353,12 @@ def transition_commitments(
     allowed_source_refs: frozenset[str] | set[str] | None = None,
     manual_source: str | None = None,
 ) -> list[dict[str, Any]]:
+    if not isinstance(transitions, list):
+        raise ValueError("commitment transitions must be an array")
+    if len(transitions) > MAX_COMMITMENT_BATCH_ITEMS:
+        raise ValueError(
+            f"at most {MAX_COMMITMENT_BATCH_ITEMS} transitions per writer batch"
+        )
     root = Path(memory_dir)
     source_root = Path(source_memory_dir) if source_memory_dir is not None else root
     if manual_source not in {None, "owner/manual"}:
@@ -282,8 +366,20 @@ def transition_commitments(
     rows = load_commitments(root, strict=True)
     by_id = {str(row["id"]): row for row in rows}
     for transition in transitions:
-        commitment_id = str(transition.get("id") or "").strip()
-        status = str(transition.get("status") or "").strip()
+        if not isinstance(transition, dict):
+            raise ValueError("each commitment transition must be an object")
+        commitment_id = _limited_line(
+            transition.get("id"),
+            field="id",
+            max_chars=20,
+        )
+        if not _ID_RE.fullmatch(commitment_id):
+            raise ValueError("commitment id is invalid")
+        status = _limited_line(
+            transition.get("status"),
+            field="status",
+            max_chars=9,
+        )
         if status not in {"done", "dismissed"}:
             raise ValueError("commitment status must be done or dismissed")
         status_source: str
@@ -292,7 +388,7 @@ def transition_commitments(
             status_source = manual_source
             status_quote = None
         else:
-            status_source = str(transition.get("source") or "").strip()
+            status_source = _source_ref(transition.get("source"))
             if (
                 allowed_source_refs is not None
                 and status_source not in allowed_source_refs
@@ -315,8 +411,15 @@ def transition_commitments(
 
 __all__ = [
     "FILENAME",
+    "MAX_COMMITMENT_BATCH_ITEMS",
+    "MAX_COMMITMENT_QUOTE_CHARS",
+    "MAX_COMMITMENT_SPEAKER_CHARS",
+    "MAX_COMMITMENT_SOURCE_CHARS",
+    "MAX_COMMITMENT_TEXT_CHARS",
+    "MAX_NOTIFICATION_STEPS",
     "commitment_status",
     "load_commitments",
     "transition_commitments",
     "upsert_commitments",
+    "validate_writer_batch_size",
 ]

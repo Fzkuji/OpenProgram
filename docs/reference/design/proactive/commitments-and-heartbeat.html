@@ -48,7 +48,7 @@
     <section class="card">
       <span class="tag">已实现</span>
       <h3>writer 与可信证据</h3>
-      <p>现有 memory writer 在 Runtime 选定的批次内调用 <code>record_commitments</code>。LLM 提供语义字段、Source ref 和一行精确引用；Runtime 验证引用属于当前批次可信 Source，并以 Source ref + quote 派生 ID。ID 不依赖 LLM 措辞、日期解释或 item 顺序。</p>
+      <p>现有 memory writer 在 Runtime 选定的批次内调用 <code>record_commitments</code>。LLM 提供语义字段、Source ref 和一行精确引用；Runtime 验证引用属于当前批次可信 Source，并以 Source ref + quote 派生 ID。ID 不依赖 LLM 措辞、日期解释或 item 顺序。Schema 与 Runtime 同时限制每批创建+转移合计 64 项、文本 2,048 字符、quote 8,192 字符、Source ref 512 字符；owner Web 仍是单项显式转移，不接受这些 writer 语义字段。</p>
     </section>
     <section class="card">
       <span class="tag">已实现</span>

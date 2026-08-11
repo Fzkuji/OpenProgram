@@ -77,6 +77,13 @@ def management_tools(
             raise ValueError("Source Memory is append-only")
         return resolved, relative
 
+    from ..runtime.commitments import (
+        MAX_COMMITMENT_BATCH_ITEMS,
+        MAX_COMMITMENT_QUOTE_CHARS,
+        MAX_COMMITMENT_SOURCE_CHARS,
+        MAX_COMMITMENT_TEXT_CHARS,
+    )
+
     @tool(
         "shell",
         (
@@ -292,13 +299,26 @@ def management_tools(
             "properties": {
                 "commitments": {
                     "type": "array",
+                    "maxItems": MAX_COMMITMENT_BATCH_ITEMS,
                     "items": {
                         "type": "object",
                         "properties": {
-                            "text": {"type": "string"},
-                            "due": {"type": ["string", "null"]},
-                            "source": {"type": "string"},
-                            "source_quote": {"type": "string"},
+                            "text": {
+                                "type": "string",
+                                "maxLength": MAX_COMMITMENT_TEXT_CHARS,
+                            },
+                            "due": {
+                                "type": ["string", "null"],
+                                "maxLength": 10,
+                            },
+                            "source": {
+                                "type": "string",
+                                "maxLength": MAX_COMMITMENT_SOURCE_CHARS,
+                            },
+                            "source_quote": {
+                                "type": "string",
+                                "maxLength": MAX_COMMITMENT_QUOTE_CHARS,
+                            },
                         },
                         "required": ["text", "due", "source", "source_quote"],
                         "additionalProperties": False,
@@ -306,16 +326,23 @@ def management_tools(
                 },
                 "transitions": {
                     "type": "array",
+                    "maxItems": MAX_COMMITMENT_BATCH_ITEMS,
                     "items": {
                         "type": "object",
                         "properties": {
-                            "id": {"type": "string"},
+                            "id": {"type": "string", "maxLength": 20},
                             "status": {
                                 "type": "string",
                                 "enum": ["done", "dismissed"],
                             },
-                            "source": {"type": "string"},
-                            "source_quote": {"type": "string"},
+                            "source": {
+                                "type": "string",
+                                "maxLength": MAX_COMMITMENT_SOURCE_CHARS,
+                            },
+                            "source_quote": {
+                                "type": "string",
+                                "maxLength": MAX_COMMITMENT_QUOTE_CHARS,
+                            },
                         },
                         "required": ["id", "status", "source", "source_quote"],
                         "additionalProperties": False,
@@ -330,10 +357,12 @@ def management_tools(
             from ..runtime.commitments import (
                 transition_commitments,
                 upsert_commitments,
+                validate_writer_batch_size,
             )
 
             commitments = arguments.get("commitments") or []
             transitions = arguments.get("transitions") or []
+            validate_writer_batch_size(commitments, transitions)
             allowed = workspace._allowed_new_source_refs
             if allowed is not None and any(
                 str(item.get("source") or "") not in allowed for item in commitments
