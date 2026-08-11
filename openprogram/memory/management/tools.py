@@ -281,7 +281,100 @@ def management_tools(
 
         return _result("Grep", arguments, operation)
 
-    return [shell, read_file, write_file, edit_file, grep_files, glob_files]
+    @tool(
+        "record_commitments",
+        (
+            "Record dated obligations found in this writer batch, or close "
+            "an open commitment when the conversation says it is complete."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "commitments": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "text": {"type": "string"},
+                            "due": {"type": ["string", "null"]},
+                            "source": {"type": "string"},
+                            "source_quote": {"type": "string"},
+                        },
+                        "required": ["text", "due", "source", "source_quote"],
+                        "additionalProperties": False,
+                    },
+                },
+                "transitions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "status": {
+                                "type": "string",
+                                "enum": ["done", "dismissed"],
+                            },
+                            "source": {"type": "string"},
+                            "source_quote": {"type": "string"},
+                        },
+                        "required": ["id", "status", "source", "source_quote"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "additionalProperties": False,
+        },
+    )
+    async def record_commitments(arguments: dict[str, Any]) -> dict[str, Any]:
+        def operation() -> str:
+            from ..runtime.commitments import (
+                transition_commitments,
+                upsert_commitments,
+            )
+
+            commitments = arguments.get("commitments") or []
+            transitions = arguments.get("transitions") or []
+            allowed = workspace._allowed_new_source_refs
+            if allowed is not None and any(
+                str(item.get("source") or "") not in allowed for item in commitments
+            ):
+                raise ValueError(
+                    "commitment source is outside the selected writer batch"
+                )
+            if allowed is not None and any(
+                str(item.get("source") or "") not in allowed for item in transitions
+            ):
+                raise ValueError(
+                    "commitment transition source is outside the selected writer batch"
+                )
+            if commitments:
+                upsert_commitments(
+                    workspace.stage_dir,
+                    commitments,
+                    source_memory_dir=workspace.memory_dir,
+                )
+            if transitions:
+                transition_commitments(
+                    workspace.stage_dir,
+                    transitions,
+                    source_memory_dir=workspace.memory_dir,
+                    allowed_source_refs=allowed,
+                )
+            if not commitments and not transitions:
+                raise ValueError("commitments or transitions is required")
+            return "commitments recorded"
+
+        return _result("record_commitments", arguments, operation)
+
+    return [
+        shell,
+        read_file,
+        write_file,
+        edit_file,
+        grep_files,
+        glob_files,
+        record_commitments,
+    ]
 
 
 # The writer protocol hash covers the tool surface as well as the prompts, so
@@ -305,6 +398,6 @@ TOOLS = [
     },
     *[
         {"type": "function", "function": {"name": name}}
-        for name in ("Read", "Write", "Edit", "Grep", "Glob")
+        for name in ("Read", "Write", "Edit", "Grep", "Glob", "record_commitments")
     ],
 ]

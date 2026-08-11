@@ -18,6 +18,7 @@ See ``docs/design/cli/redesign.md``.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -199,6 +200,15 @@ def _validate_hooks(v: Any) -> Optional[str]:
     return None
 
 
+def _validate_quiet_hours(value: Any) -> Optional[str]:
+    if re.fullmatch(
+        r"(?:[01]\d|2[0-3]):[0-5]\d-(?:[01]\d|2[0-3]):[0-5]\d",
+        str(value),
+    ):
+        return None
+    return "must use HH:MM-HH:MM with 24-hour local times"
+
+
 # the registry
 
 SETTINGS: list[SettingSpec] = [
@@ -282,6 +292,22 @@ SETTINGS: list[SettingSpec] = [
         group="Recordings", label="Provider recording selector", widget="text",
         apply=APPLY_NEXT_START, default="",
         help="Managed recording ID or an explicit replay file path; record mode accepts IDs only.",
+    ),
+    SettingSpec(
+        key="proactive.heartbeat", path=("proactive", "heartbeat"),
+        group="Memory", label="Commitment heartbeat", widget="enum",
+        apply=APPLY_LIVE, default="daily",
+        choices=lambda: ["daily", "hourly", "off"],
+        help="Check due commitments daily at 09:00 local time, hourly at "
+             "minute 00, or keep them visible without sending reminders.",
+    ),
+    SettingSpec(
+        key="proactive.quiet_hours", path=("proactive", "quiet_hours"),
+        group="Memory", label="Commitment quiet hours", widget="text",
+        apply=APPLY_LIVE, default="23:00-08:00",
+        validate=_validate_quiet_hours,
+        help="Local-time interval in HH:MM-HH:MM form. Due reminders wait "
+             "until a later heartbeat outside this interval.",
     ),
     SettingSpec(
         key="goal.max_turns", path=("goal", "max_turns"), group="Goal",

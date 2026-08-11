@@ -91,9 +91,10 @@ class MemoryWorkspace(
             if source.exists():
                 shutil.copytree(source, self.stage_dir / name)
         (self.stage_dir / "topics").mkdir(exist_ok=True)
-        recent = self.memory_dir / "recent_events.jsonl"
-        if recent.exists():
-            shutil.copy2(recent, self.stage_dir / recent.name)
+        for name in ("recent_events.jsonl", "commitments.jsonl"):
+            derived = self.memory_dir / name
+            if derived.exists():
+                shutil.copy2(derived, self.stage_dir / derived.name)
         relations = self.memory_dir / "relations.json"
         if relations.exists():
             shutil.copy2(relations, self.stage_dir / relations.name)
@@ -294,8 +295,10 @@ class MemoryWorkspace(
         self,
         *,
         base_revision: str,
-        patch: str,
+        patch: str = "",
         sources: Any = None,
+        commitment_transitions: list[dict[str, Any]] | None = None,
+        commitment_transition_source: str | None = None,
         commit_message: str | None = None,
         git_commit: str = "auto",
         limits: TransactionLimits | None = None,
@@ -314,6 +317,11 @@ class MemoryWorkspace(
                 "INVALID_ARGUMENT", "git_commit must be auto, on or off"
             )
         limits = limits or TransactionLimits()
+        if not patch and not commitment_transitions:
+            raise TransactionError(
+                "INVALID_ARGUMENT",
+                "patch or commitment_transitions is required",
+            )
         if len(patch.encode("utf-8")) > limits.max_patch_bytes:
             raise TransactionError(
                 "INVALID_ARGUMENT",
@@ -354,7 +362,7 @@ class MemoryWorkspace(
                 # attach an unrelated Source — trusted or not — to new prose.
                 self._transaction_source_refs = frozenset(mapping.values())
                 resolved = resolve_source_labels(patch, mapping)
-                changed = apply_patch(self.stage_dir, resolved)
+                changed = apply_patch(self.stage_dir, resolved) if patch else []
                 if append_only:
                     for relative in changed:
                         before = self.memory_dir / relative
@@ -369,6 +377,14 @@ class MemoryWorkspace(
                                 "but cannot rewrite existing content",
                                 path=relative,
                             )
+                if commitment_transitions:
+                    from ..runtime.commitments import transition_commitments
+
+                    transition_commitments(
+                        self.stage_dir,
+                        commitment_transitions,
+                        manual_source=commitment_transition_source,
+                    )
                 install_state(self, before_units, before_block_ids)
             except TransactionError:
                 self._refresh_stage()
