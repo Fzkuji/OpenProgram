@@ -5,14 +5,14 @@ from __future__ import annotations
 import ipaddress
 import ssl
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Iterator
 
 import httpcore
 import httpx
-from httpcore._backends.auto import AutoBackend
 
 from .url_policy import (
     OwnerURLException,
@@ -282,24 +282,53 @@ if any(
 CONSUMER_REGISTRY = MappingProxyType({spec.consumer: spec for spec in _SPECS})
 
 
-PoolKey = tuple[str, str, str, tuple[str, ...], str | None]
+_HTTPCORE_EXCEPTIONS: dict[type[Exception], type[httpx.HTTPError]] = {
+    httpcore.TimeoutException: httpx.TimeoutException,
+    httpcore.ConnectTimeout: httpx.ConnectTimeout,
+    httpcore.ReadTimeout: httpx.ReadTimeout,
+    httpcore.WriteTimeout: httpx.WriteTimeout,
+    httpcore.PoolTimeout: httpx.PoolTimeout,
+    httpcore.NetworkError: httpx.NetworkError,
+    httpcore.ConnectError: httpx.ConnectError,
+    httpcore.ReadError: httpx.ReadError,
+    httpcore.WriteError: httpx.WriteError,
+    httpcore.ProxyError: httpx.ProxyError,
+    httpcore.UnsupportedProtocol: httpx.UnsupportedProtocol,
+    httpcore.ProtocolError: httpx.ProtocolError,
+    httpcore.LocalProtocolError: httpx.LocalProtocolError,
+    httpcore.RemoteProtocolError: httpx.RemoteProtocolError,
+}
+
+
+@contextmanager
+def _map_httpcore_exceptions() -> Iterator[None]:
+    try:
+        yield
+    except URLPolicyError:
+        raise
+    except Exception as exc:
+        mapped_type = None
+        for core_type, httpx_type in _HTTPCORE_EXCEPTIONS.items():
+            if isinstance(exc, core_type) and (
+                mapped_type is None or issubclass(httpx_type, mapped_type)
+            ):
+                mapped_type = httpx_type
+        if mapped_type is None:
+            raise
+        raise mapped_type(str(exc)) from exc
 
 
 @dataclass(frozen=True)
 class OutboundSecurityConfig:
     resolver: Resolver = resolve_all
     owner_exceptions: tuple[OwnerURLException, ...] = ()
-    ca_bundle: ssl.SSLContext | str | None = None
+    ca_bundle: str | None = None
     retries: int = 0
     policy_proxy_identity: str | None = None
 
     def __post_init__(self) -> None:
-        insecure_context = isinstance(self.ca_bundle, ssl.SSLContext) and (
-            not self.ca_bundle.check_hostname
-            or self.ca_bundle.verify_mode != ssl.CERT_REQUIRED
-        )
-        if isinstance(self.ca_bundle, bool) or insecure_context:
-            raise ValueError("TLS verification cannot be disabled")
+        if self.ca_bundle is not None and not isinstance(self.ca_bundle, str):
+            raise TypeError("ca_bundle must be a CA bundle path")
         if self.retries < 0:
             raise ValueError("retries must be non-negative")
 
@@ -443,7 +472,7 @@ class AsyncDecisionNetworkBackend(httpcore.AsyncNetworkBackend):
         underlying: httpcore.AsyncNetworkBackend | None = None,
     ):
         self._decision = decision
-        self._underlying = underlying or AutoBackend()
+        self._underlying = underlying or httpcore.AnyIOBackend()
         self._next_address = 0
 
     async def connect_tcp(
@@ -481,26 +510,54 @@ class AsyncDecisionNetworkBackend(httpcore.AsyncNetworkBackend):
 
 
 class _ResponseStream(httpx.SyncByteStream):
-    def __init__(self, stream):
+    def __init__(self, stream, close_pool=None):
         self._stream = stream
+        self._close_pool = close_pool
+        self._closed = False
 
     def __iter__(self):
-        yield from self._stream
+        try:
+            with _map_httpcore_exceptions():
+                yield from self._stream
+        finally:
+            self.close()
 
     def close(self) -> None:
-        self._stream.close()
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            with _map_httpcore_exceptions():
+                self._stream.close()
+        finally:
+            if self._close_pool is not None:
+                self._close_pool()
 
 
 class _AsyncResponseStream(httpx.AsyncByteStream):
-    def __init__(self, stream):
+    def __init__(self, stream, close_pool=None):
         self._stream = stream
+        self._close_pool = close_pool
+        self._closed = False
 
     async def __aiter__(self):
-        async for chunk in self._stream:
-            yield chunk
+        try:
+            with _map_httpcore_exceptions():
+                async for chunk in self._stream:
+                    yield chunk
+        finally:
+            await self.aclose()
 
     async def aclose(self) -> None:
-        await self._stream.aclose()
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            with _map_httpcore_exceptions():
+                await self._stream.aclose()
+        finally:
+            if self._close_pool is not None:
+                await self._close_pool()
 
 
 class _ManagedTransportBase:
@@ -519,9 +576,9 @@ class _ManagedTransportBase:
         self._callback_origin = callback_origin
         self._security = security or OutboundSecurityConfig()
         verify = self._security.ca_bundle
-        if isinstance(verify, str):
+        if verify is not None:
             verify = ssl.create_default_context(cafile=verify)
-        elif verify is None:
+        else:
             verify = True
         self._ssl_context = httpx.create_ssl_context(verify=verify, trust_env=False)
 
@@ -549,15 +606,6 @@ class _ManagedTransportBase:
             callback_origin=self._callback_origin,
             exceptions=exceptions,
             resolver=self._security.resolver,
-        )
-
-    def _pool_key(self, decision: URLDecision) -> PoolKey:
-        return (
-            decision.consumer,
-            decision.trust_class.value,
-            decision.origin,
-            tuple(map(str, decision.resolved_ips)),
-            self._security.policy_proxy_identity,
         )
 
     @staticmethod
@@ -588,21 +636,25 @@ class ManagedHTTPTransport(_ManagedTransportBase, httpx.BaseTransport):
             callback_origin=callback_origin,
             security=security,
         )
-        self._pools: dict[PoolKey, httpcore.ConnectionPool] = {}
+        self._active_pools: set[httpcore.ConnectionPool] = set()
         self._pools_lock = threading.Lock()
 
     def _pool(self, decision: URLDecision) -> httpcore.ConnectionPool:
-        key = self._pool_key(decision)
+        pool = httpcore.ConnectionPool(
+            ssl_context=self._ssl_context,
+            retries=self._security.retries,
+            network_backend=DecisionNetworkBackend(decision),
+        )
         with self._pools_lock:
-            pool = self._pools.get(key)
-            if pool is None:
-                pool = httpcore.ConnectionPool(
-                    ssl_context=self._ssl_context,
-                    retries=self._security.retries,
-                    network_backend=DecisionNetworkBackend(decision),
-                )
-                self._pools[key] = pool
+            self._active_pools.add(pool)
         return pool
+
+    def _close_pool(self, pool: httpcore.ConnectionPool) -> None:
+        with self._pools_lock:
+            if pool not in self._active_pools:
+                return
+            self._active_pools.remove(pool)
+        pool.close()
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         decision = self._evaluate(request.method, str(request.url))
@@ -614,23 +666,26 @@ class ManagedHTTPTransport(_ManagedTransportBase, httpx.BaseTransport):
             content=request.stream,
             extensions=extensions,
         )
+        pool = self._pool(decision)
         try:
-            response = self._pool(decision).handle_request(core_request)
-        except httpcore.ConnectError as exc:
-            raise httpx.ConnectError(str(exc), request=request) from exc
+            with _map_httpcore_exceptions():
+                response = pool.handle_request(core_request)
+        except BaseException:
+            self._close_pool(pool)
+            raise
         extensions = dict(response.extensions)
         extensions["url_decision"] = decision
         return httpx.Response(
             status_code=response.status,
             headers=response.headers,
-            stream=_ResponseStream(response.stream),
+            stream=_ResponseStream(response.stream, lambda: self._close_pool(pool)),
             extensions=extensions,
         )
 
     def close(self) -> None:
         with self._pools_lock:
-            pools = tuple(self._pools.values())
-            self._pools.clear()
+            pools = tuple(self._active_pools)
+            self._active_pools.clear()
         for pool in pools:
             pool.close()
 
@@ -650,19 +705,22 @@ class AsyncManagedHTTPTransport(_ManagedTransportBase, httpx.AsyncBaseTransport)
             callback_origin=callback_origin,
             security=security,
         )
-        self._pools: dict[PoolKey, httpcore.AsyncConnectionPool] = {}
+        self._active_pools: set[httpcore.AsyncConnectionPool] = set()
 
     def _pool(self, decision: URLDecision) -> httpcore.AsyncConnectionPool:
-        key = self._pool_key(decision)
-        pool = self._pools.get(key)
-        if pool is None:
-            pool = httpcore.AsyncConnectionPool(
-                ssl_context=self._ssl_context,
-                retries=self._security.retries,
-                network_backend=AsyncDecisionNetworkBackend(decision),
-            )
-            self._pools[key] = pool
+        pool = httpcore.AsyncConnectionPool(
+            ssl_context=self._ssl_context,
+            retries=self._security.retries,
+            network_backend=AsyncDecisionNetworkBackend(decision),
+        )
+        self._active_pools.add(pool)
         return pool
+
+    async def _close_pool(self, pool: httpcore.AsyncConnectionPool) -> None:
+        if pool not in self._active_pools:
+            return
+        self._active_pools.remove(pool)
+        await pool.aclose()
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         decision = self._evaluate(request.method, str(request.url))
@@ -674,22 +732,27 @@ class AsyncManagedHTTPTransport(_ManagedTransportBase, httpx.AsyncBaseTransport)
             content=request.stream,
             extensions=extensions,
         )
+        pool = self._pool(decision)
         try:
-            response = await self._pool(decision).handle_async_request(core_request)
-        except httpcore.ConnectError as exc:
-            raise httpx.ConnectError(str(exc), request=request) from exc
+            with _map_httpcore_exceptions():
+                response = await pool.handle_async_request(core_request)
+        except BaseException:
+            await self._close_pool(pool)
+            raise
         extensions = dict(response.extensions)
         extensions["url_decision"] = decision
         return httpx.Response(
             status_code=response.status,
             headers=response.headers,
-            stream=_AsyncResponseStream(response.stream),
+            stream=_AsyncResponseStream(
+                response.stream, lambda: self._close_pool(pool)
+            ),
             extensions=extensions,
         )
 
     async def aclose(self) -> None:
-        pools = tuple(self._pools.values())
-        self._pools.clear()
+        pools = tuple(self._active_pools)
+        self._active_pools.clear()
         for pool in pools:
             await pool.aclose()
 
@@ -750,7 +813,6 @@ __all__ = [
     "DecisionNetworkBackend",
     "ManagedHTTPTransport",
     "OutboundSecurityConfig",
-    "PoolKey",
     "SDKDisposition",
     "SafeAsyncClient",
     "SafeClient",
