@@ -317,7 +317,10 @@ def execute(
     try:
         text = _decode_body(body, content_type)
     except Exception as e:
-        return f"Error: cannot decode {final_url}: {type(e).__name__}: {e}"
+        return (
+            f"Error: cannot decode {normalize_origin(final_url)}: "
+            f"{type(e).__name__}: {e}"
+        )
 
     size_note = (
         f"\n\n…[response exceeded {MAX_BYTES // 1024 // 1024} MB cap, truncated]" if size_truncated else ""
@@ -351,7 +354,8 @@ def execute(
         out = text
     else:
         return (
-            f"Error: unsupported Content-Type {content_type!r} for {final_url}. "
+            f"Error: unsupported Content-Type {content_type!r} for "
+            f"{normalize_origin(final_url)}. "
             f"Use `pdf` for PDFs or `image_analyze` for images."
         )
 

@@ -50,7 +50,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        if self.path == "/binary":
+        if self.path == "/binary" or self.path.startswith("/private/TOKEN-PATH.png?"):
             body = b"\x89PNG\r\n"
             content_type = "image/png"
             encoding = None
@@ -204,6 +204,44 @@ def test_web_fetch_rejects_binary_mime(server: _Server, managed_web_fetch) -> No
     result = web_fetch.execute(f"http://public.test:{server.port}/binary")
 
     assert "Error: unsupported Content-Type 'image/png'" in result
+
+
+def test_web_fetch_binary_mime_error_hides_signed_path_and_query(
+    server: _Server, managed_web_fetch
+) -> None:
+    result = web_fetch.execute(
+        f"http://public.test:{server.port}/private/TOKEN-PATH.png?sig=QUERY-SECRET"
+    )
+
+    assert result == (
+        "Error: unsupported Content-Type 'image/png' for "
+        f"http://public.test:{server.port}. "
+        "Use `pdf` for PDFs or `image_analyze` for images."
+    )
+    assert "TOKEN-PATH" not in result
+    assert "QUERY-SECRET" not in result
+
+
+def test_web_fetch_decode_error_hides_signed_path_and_query(
+    server: _Server,
+    managed_web_fetch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        web_fetch,
+        "_decode_body",
+        lambda *_args: (_ for _ in ()).throw(UnicodeError("bad decode")),
+    )
+    result = web_fetch.execute(
+        f"http://public.test:{server.port}/private/TOKEN-PATH.txt?sig=QUERY-SECRET"
+    )
+
+    assert result == (
+        f"Error: cannot decode http://public.test:{server.port}: "
+        "UnicodeError: bad decode"
+    )
+    assert "TOKEN-PATH" not in result
+    assert "QUERY-SECRET" not in result
 
 
 def test_web_fetch_truncates_after_five_mib_of_decoded_content(

@@ -8,7 +8,10 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
+import httpx
+
 from openprogram.security.safe_http import safe_client
+from openprogram.security.url_policy import normalize_origin
 
 from .._encode import read_b64, sniff_mime
 from ..registry import ImageInput
@@ -89,9 +92,23 @@ class GeminiVisionProvider:
 def _url_to_b64(url: str) -> tuple[str, str]:
     import base64
 
-    with safe_client("tool.image_result.download") as client:
-        response = client.get(url, timeout=30)
-        response.raise_for_status()
-        data = response.content
-        mime = response.headers.get("Content-Type") or sniff_mime(url)
+    safe_error: RuntimeError | None = None
+    try:
+        with safe_client("tool.image_result.download") as client:
+            response = client.get(url, timeout=30)
+            response.raise_for_status()
+            data = response.content
+            mime = response.headers.get("Content-Type") or sniff_mime(url)
+    except httpx.HTTPStatusError as e:
+        safe_error = RuntimeError(
+            f"Gemini image download HTTP {e.response.status_code} "
+            f"{e.response.reason_phrase} for {normalize_origin(url)}"
+        )
+    except httpx.RequestError as e:
+        safe_error = RuntimeError(
+            f"Gemini image download {type(e).__name__} for "
+            f"{normalize_origin(url)}"
+        )
+    if safe_error is not None:
+        raise safe_error from None
     return base64.b64encode(data).decode("ascii"), mime

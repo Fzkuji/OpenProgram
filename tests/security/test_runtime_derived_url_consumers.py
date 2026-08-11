@@ -5,6 +5,7 @@ import http.server
 import ipaddress
 import json
 import threading
+import traceback
 from dataclasses import replace
 from pathlib import Path
 
@@ -50,6 +51,9 @@ class _Server(http.server.ThreadingHTTPServer):
         self.server_close()
         self.thread.join(timeout=2)
 
+    def handle_error(self, *_args) -> None:
+        pass
+
 
 class _Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -70,6 +74,14 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", f"http://other.test:{server.port}/stolen")
             self.send_header("Content-Length", "0")
             self.end_headers()
+            return
+        if self.path.startswith("/private/TOKEN-PATH.png?"):
+            body = b"forbidden"
+            self.send_response(403)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
         body = b"IMGDATA"
         self.send_response(200)
@@ -304,6 +316,53 @@ def test_image_generation_private_result_is_denied_before_request(
     assert server.requests == []
 
 
+def test_image_generation_http_error_hides_signed_path_query_and_cause(
+    server: _Server,
+    managed_clients,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        image_generate.registry,
+        "select",
+        lambda **_kwargs: _ImageBackend(
+            f"http://public.test:{server.port}/private/TOKEN-PATH.png?sig=QUERY-SECRET"
+        ),
+    )
+
+    result = image_generate.execute("draw", output_dir=str(tmp_path))
+
+    assert "HTTP 403 Forbidden" in result
+    assert f"http://public.test:{server.port}" in result
+    assert "TOKEN-PATH" not in result
+    assert "QUERY-SECRET" not in result
+    assert "TOKEN-PATH" not in repr(managed_clients[-1].audit_events)
+    assert "QUERY-SECRET" not in repr(managed_clients[-1].audit_events)
+
+
+def test_image_result_http_error_traceback_does_not_retain_signed_url(
+    server: _Server, managed_clients, tmp_path: Path
+) -> None:
+    signed_url = (
+        f"http://public.test:{server.port}/private/TOKEN-PATH.png?sig=QUERY-SECRET"
+    )
+
+    with pytest.raises(RuntimeError) as caught:
+        image_generate._save(
+            GeneratedImage(url=signed_url, mime="image/png"),
+            tmp_path,
+            "image",
+            1,
+        )
+
+    error = caught.value
+    rendered = "".join(traceback.format_exception(error))
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert "TOKEN-PATH" not in rendered
+    assert "QUERY-SECRET" not in rendered
+
+
 class _GeminiAPIResponse:
     headers: dict[str, str] = {}
 
@@ -349,6 +408,32 @@ def test_gemini_private_url_image_is_denied_before_request(
             "describe",
         )
     assert server.requests == []
+
+
+def test_gemini_http_error_hides_signed_path_query_and_cause(
+    server: _Server, managed_clients, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gemini.GeminiVisionProvider, "_resolve_key", lambda _self: "k")
+    signed_url = (
+        f"http://public.test:{server.port}/private/TOKEN-PATH.png?sig=QUERY-SECRET"
+    )
+
+    with pytest.raises(RuntimeError) as caught:
+        gemini.GeminiVisionProvider().analyze(
+            [gemini.ImageInput(url=signed_url)], "describe"
+        )
+
+    error = caught.value
+    rendered = "".join(traceback.format_exception(error))
+    assert str(error) == (
+        f"Gemini image download HTTP 403 Forbidden for http://public.test:{server.port}"
+    )
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert "TOKEN-PATH" not in rendered
+    assert "QUERY-SECRET" not in rendered
+    assert "TOKEN-PATH" not in repr(managed_clients[-1].audit_events)
+    assert "QUERY-SECRET" not in repr(managed_clients[-1].audit_events)
 
 
 class _SlackResponse:
