@@ -276,6 +276,82 @@ def test_chunked_streaming_is_bounded(monkeypatch):
     assert exc.value.reason == "BODY_TOO_LARGE"
 
 
+def test_sync_raw_streaming_is_bounded(monkeypatch):
+    response = httpcore.Response(
+        200,
+        headers=[(b"content-type", b"text/plain")],
+        content=[b"12345", b"67890"],
+    )
+    client = _small_client(monkeypatch, response, cap=4)
+
+    with client:
+        with client.stream("GET", "https://public.test/resource") as result:
+            with pytest.raises(URLPolicyError) as exc:
+                b"".join(result.iter_raw())
+            assert result.is_closed
+
+    assert exc.value.reason == "BODY_TOO_LARGE"
+
+
+def test_async_raw_streaming_is_bounded(monkeypatch):
+    response = httpcore.Response(
+        200,
+        headers=[(b"content-type", b"text/plain")],
+        content=_empty_async(),
+    )
+    client = _small_async_client(monkeypatch, response, [b"12345", b"67890"], cap=4)
+
+    async def exercise():
+        async with client:
+            async with client.stream("GET", "https://public.test/resource") as result:
+                with pytest.raises(URLPolicyError) as exc:
+                    b"".join([chunk async for chunk in result.aiter_raw()])
+                assert result.is_closed
+        return exc.value
+
+    assert asyncio.run(exercise()).reason == "BODY_TOO_LARGE"
+
+
+def test_sync_raw_streaming_enforces_overall_deadline(monkeypatch):
+    ticks = iter((0.0, 0.0, 121.0))
+    monkeypatch.setattr(safe_http, "monotonic", lambda: next(ticks, 121.0))
+    response = httpcore.Response(
+        200,
+        headers=[(b"content-type", b"text/plain")],
+        content=b"ok",
+    )
+    client = _small_client(monkeypatch, response, cap=4)
+
+    with client:
+        with client.stream("GET", "https://public.test/resource") as result:
+            with pytest.raises(URLPolicyError) as exc:
+                b"".join(result.iter_raw())
+            assert result.is_closed
+
+    assert exc.value.reason == "OVERALL_TIMEOUT"
+
+
+def test_async_raw_streaming_enforces_overall_deadline(monkeypatch):
+    ticks = iter((0.0, 0.0, 121.0))
+    monkeypatch.setattr(safe_http, "monotonic", lambda: next(ticks, 121.0))
+    response = httpcore.Response(
+        200,
+        headers=[(b"content-type", b"text/plain")],
+        content=_empty_async(),
+    )
+    client = _small_async_client(monkeypatch, response, [b"ok"], cap=4)
+
+    async def exercise():
+        async with client:
+            async with client.stream("GET", "https://public.test/resource") as result:
+                with pytest.raises(URLPolicyError) as exc:
+                    b"".join([chunk async for chunk in result.aiter_raw()])
+                assert result.is_closed
+        return exc.value
+
+    assert asyncio.run(exercise()).reason == "OVERALL_TIMEOUT"
+
+
 @pytest.mark.parametrize(
     ("core_error", "expected"),
     [

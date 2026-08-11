@@ -19,15 +19,18 @@ from openprogram.security.url_policy import OwnerURLException, URLPolicyError
 
 
 class _ScriptedPool:
-    def __init__(self, script, requests):
+    def __init__(self, script, requests, streams=None):
         self._script = script
         self._requests = requests
+        self._streams = streams
 
     def handle_request(self, request):
         self._requests.append(request)
         status, headers, content = self._script.popleft()
         response = httpcore.Response(status, headers=headers, content=content)
         response.stream = _ClosableStream(response.stream)
+        if self._streams is not None:
+            self._streams.append(response.stream)
         return response
 
     def close(self):
@@ -37,36 +40,41 @@ class _ScriptedPool:
 class _ClosableStream:
     def __init__(self, stream):
         self._stream = stream
+        self.closed = False
 
     def __iter__(self):
         yield from self._stream
 
     def close(self):
-        pass
+        self.closed = True
 
 
 class _AsyncClosableStream:
     def __init__(self, chunks):
         self._chunks = chunks
+        self.closed = False
 
     async def __aiter__(self):
         for chunk in self._chunks:
             yield chunk
 
     async def aclose(self):
-        pass
+        self.closed = True
 
 
 class _AsyncScriptedPool:
-    def __init__(self, script, requests):
+    def __init__(self, script, requests, streams=None):
         self._script = script
         self._requests = requests
+        self._streams = streams
 
     async def handle_async_request(self, request):
         self._requests.append(request)
         status, headers, content = self._script.popleft()
         response = httpcore.Response(status, headers=headers, content=_empty_async())
         response.stream = _AsyncClosableStream([content])
+        if self._streams is not None:
+            self._streams.append(response.stream)
         return response
 
     async def aclose(self):
@@ -436,3 +444,82 @@ def test_private_redirect_is_rejected_before_the_next_send(monkeypatch):
 
     assert exc.value.reason == "NON_GLOBAL_ADDRESS"
     assert len(requests) == 1
+
+
+@pytest.mark.parametrize(
+    ("location", "reason", "sensitive"),
+    [
+        ("https://user:secret@other.test/x", "USERINFO_FORBIDDEN", "secret"),
+        ("https://other.test/%0aSecret", "CONTROL_CHARACTER", "%0a"),
+        ("http://[", "INVALID_URL", "http://["),
+    ],
+)
+def test_rejected_redirect_location_closes_and_audits_safely(
+    monkeypatch, location, reason, sensitive
+):
+    client = safe_client(
+        "tool.web_fetch",
+        security=OutboundSecurityConfig(
+            resolver=lambda _host, _port: ("93.184.216.34",)
+        ),
+    )
+    requests = []
+    streams = []
+    script = deque([(302, [(b"location", location.encode())], b"")])
+    monkeypatch.setattr(
+        client._transport,
+        "_pool",
+        lambda _decision: _ScriptedPool(script, requests, streams),
+    )
+
+    with client, pytest.raises(URLPolicyError) as exc:
+        client.get("https://public.test/start")
+
+    denials = [event for event in client.audit_events if event.reason != "ALLOWED"]
+    assert exc.value.reason == reason
+    assert len(requests) == 1
+    assert streams[0].closed
+    assert [event.reason for event in denials] == [reason]
+    assert sensitive not in str(exc.value)
+    assert sensitive not in repr(denials)
+
+
+@pytest.mark.parametrize(
+    ("location", "reason", "sensitive"),
+    [
+        ("https://user:secret@other.test/x", "USERINFO_FORBIDDEN", "secret"),
+        ("https://other.test/%0aSecret", "CONTROL_CHARACTER", "%0a"),
+        ("http://[", "INVALID_URL", "http://["),
+    ],
+)
+def test_async_rejected_redirect_location_closes_and_audits_safely(
+    monkeypatch, location, reason, sensitive
+):
+    async def exercise():
+        client = safe_async_client(
+            "tool.web_fetch",
+            security=OutboundSecurityConfig(
+                resolver=lambda _host, _port: ("93.184.216.34",)
+            ),
+        )
+        requests = []
+        streams = []
+        script = deque([(302, [(b"location", location.encode())], b"")])
+        monkeypatch.setattr(
+            client._transport,
+            "_pool",
+            lambda _decision: _AsyncScriptedPool(script, requests, streams),
+        )
+        async with client:
+            with pytest.raises(URLPolicyError) as exc:
+                await client.get("https://public.test/start")
+        return exc.value, requests, streams, client.audit_events
+
+    error, requests, streams, audit_events = asyncio.run(exercise())
+    denials = [event for event in audit_events if event.reason != "ALLOWED"]
+    assert error.reason == reason
+    assert len(requests) == 1
+    assert streams[0].closed
+    assert [event.reason for event in denials] == [reason]
+    assert sensitive not in str(error)
+    assert sensitive not in repr(denials)

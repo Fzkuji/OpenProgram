@@ -687,6 +687,17 @@ class _LimitedResponse(httpx.Response):
             self.close()
             raise
 
+    def iter_raw(self, chunk_size: int | None = None):
+        size = 0
+        try:
+            for chunk in super().iter_raw(chunk_size):
+                size += len(chunk)
+                self._check(size)
+                yield chunk
+        except BaseException:
+            self.close()
+            raise
+
     async def aiter_bytes(self, chunk_size: int | None = None):
         if hasattr(self, "_content"):
             async for chunk in super().aiter_bytes(chunk_size):
@@ -695,6 +706,17 @@ class _LimitedResponse(httpx.Response):
         size = 0
         try:
             async for chunk in super().aiter_bytes(chunk_size):
+                size += len(chunk)
+                self._check(size)
+                yield chunk
+        except BaseException:
+            await self.aclose()
+            raise
+
+    async def aiter_raw(self, chunk_size: int | None = None):
+        size = 0
+        try:
+            async for chunk in super().aiter_raw(chunk_size):
                 size += len(chunk)
                 self._check(size)
                 yield chunk
@@ -1050,6 +1072,14 @@ def _redirect_request(
     )
 
 
+def _redirect_target(request_url: str, location: str):
+    try:
+        target_url = urljoin(request_url, location)
+    except ValueError as exc:
+        raise URLPolicyError("INVALID_URL", "<invalid-url>") from exc
+    return normalize_url(target_url)
+
+
 def _sanitize_credentials(request: httpx.Request, spec: ConsumerSpec) -> None:
     request.headers.pop("proxy-authorization", None)
     if spec.credential_origin_policy == "none":
@@ -1131,9 +1161,14 @@ class SafeClient(httpx.Client):
                 )
                 self._transport._record(error.reason, error.safe_url)
                 raise error
-            target = normalize_url(
-                urljoin(str(current.url), response.headers["location"])
-            )
+            try:
+                target = _redirect_target(
+                    str(current.url), response.headers["location"]
+                )
+            except URLPolicyError as exc:
+                response.close()
+                self._transport._record(exc.reason, exc.safe_url)
+                raise
             current_origin = normalize_origin(str(current.url))
             if current.url.scheme == "https" and target.scheme == "http":
                 response.close()
@@ -1154,8 +1189,16 @@ class SafeClient(httpx.Client):
                 self._transport._record(error.reason, error.safe_url)
                 raise error
             seen.add(target.normalized_url)
+            try:
+                next_request = _redirect_request(
+                    self, current, response, target.normalized_url
+                )
+            except URLPolicyError as exc:
+                response.close()
+                self._transport._record(exc.reason, exc.safe_url)
+                raise
             history.append(response)
-            current = _redirect_request(self, current, response, target.normalized_url)
+            current = next_request
             current.extensions["safe_overall_deadline"] = deadline
             response.close()
 
@@ -1248,9 +1291,14 @@ class SafeAsyncClient(httpx.AsyncClient):
                 )
                 self._transport._record(error.reason, error.safe_url)
                 raise error
-            target = normalize_url(
-                urljoin(str(current.url), response.headers["location"])
-            )
+            try:
+                target = _redirect_target(
+                    str(current.url), response.headers["location"]
+                )
+            except URLPolicyError as exc:
+                await response.aclose()
+                self._transport._record(exc.reason, exc.safe_url)
+                raise
             current_origin = normalize_origin(str(current.url))
             if current.url.scheme == "https" and target.scheme == "http":
                 await response.aclose()
@@ -1271,8 +1319,16 @@ class SafeAsyncClient(httpx.AsyncClient):
                 self._transport._record(error.reason, error.safe_url)
                 raise error
             seen.add(target.normalized_url)
+            try:
+                next_request = _redirect_request(
+                    self, current, response, target.normalized_url
+                )
+            except URLPolicyError as exc:
+                await response.aclose()
+                self._transport._record(exc.reason, exc.safe_url)
+                raise
             history.append(response)
-            current = _redirect_request(self, current, response, target.normalized_url)
+            current = next_request
             current.extensions["safe_overall_deadline"] = deadline
             await response.aclose()
 
