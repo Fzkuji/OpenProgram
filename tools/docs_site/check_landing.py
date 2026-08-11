@@ -134,6 +134,7 @@ def main() -> int:
             "landing page still advertises unsupported pip install", failures)
 
     for image in (
+        "/docs/images/logo-lockup-dark.svg",
         "/docs/images/code_hero.png",
         "/docs/images/chat_hero.png",
         "/docs/images/tui_hero.png",
@@ -144,6 +145,10 @@ def main() -> int:
             "reveal content is not visible by default", failures)
     require(re.search(r"\.reveal[^}]*\{[^}]*opacity\s*:\s*0", css) is None,
             "reveal CSS can hide landing-page content", failures)
+    require(re.search(
+        r"\.command-body\s*\{[^}]*white-space\s*:\s*nowrap[^}]*"
+        r"overflow-x\s*:\s*auto", css,
+    ) is not None, "command text can wrap inside the terminal card", failures)
 
     if failures:
         for failure in failures:

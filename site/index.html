@@ -94,9 +94,8 @@ nav{
   backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
 }
 .navin{min-height:64px;display:flex;align-items:center;gap:28px}
-.brand{display:flex;align-items:center;gap:9px;font-weight:720;letter-spacing:-.025em}
-.brand img{width:21px;height:21px}
-.brand span{color:var(--teal)}
+.brand{display:block;width:190px;line-height:0}
+.brand img{width:100%;height:auto}
 .navlinks{display:flex;align-items:center;gap:26px;margin-left:auto;color:var(--muted);font-size:14px}
 .navlinks a:hover{color:var(--text)}
 .nav-install{
@@ -260,7 +259,7 @@ h2{font-size:clamp(30px,3.6vw,46px);line-height:1.09;letter-spacing:-.04em;font-
 .start-panel p{color:var(--muted);margin-top:14px}
 .command-card{border:1px solid var(--border);border-radius:11px;overflow:hidden;background:var(--surface-2)}
 .command-head{display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);color:var(--faint);font:11px/1.4 var(--mono)}
-.command-body{padding:18px 19px;color:#d8dee9;font:12px/1.65 var(--mono);overflow-wrap:anywhere}
+.command-body{display:block;padding:18px 19px;color:#d8dee9;font:11px/1.65 var(--mono);white-space:nowrap;overflow-x:auto;overflow-wrap:normal}
 .command-body .prompt{color:var(--teal);user-select:none}
 .start-actions{margin-top:20px}
 
@@ -311,7 +310,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
 <nav aria-label="Primary navigation">
   <div class="wrap navin">
     <a class="brand" href="/" aria-label="OpenProgram home">
-      <img src="/docs/assets/mark.svg" alt="">Open<span>Program</span>
+      <img src="/docs/images/logo-lockup-dark.svg" alt="OpenProgram">
     </a>
     <div class="navlinks">
       <a href="#use-cases">Agents</a>
