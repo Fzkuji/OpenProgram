@@ -170,6 +170,35 @@ Quality-review control-flow fix:
   `tests/security`: `550 passed in 77.55s`. Ruff lint, scoped Ruff format,
   `uv lock --check`, and `git diff --check` passed.
 
+Second quality re-review fix:
+
+- Scoped re-review found seven remaining fail-open paths: intermediate
+  `Try`/`TryStar` exception states, `For`/`AsyncFor` target assignment,
+  unreachable managed assignments after `continue`/`break`, and `Match`
+  capture binding. The exact seven public scanner probes all failed before the
+  production change: `7 failed, 35 deselected`.
+- Block analysis now separates normal, break, continue, return, and raise
+  outcomes. Try handlers receive the conservative intersection of every
+  per-statement exception checkpoint; iteration targets and match captures
+  clear any previous provenance before their body; terminated blocks do not
+  inspect unreachable assignments. All seven regressions and the prior branch
+  tests pass: `19 passed, 23 deselected`.
+- Adjacent TDD added three flow-integrity cases. A `finally` assignment on a
+  break exit failed `1 failed, 7 passed`; a nested conditional raise omitted
+  its exceptional state and failed `1 failed, 8 passed`; a return in a nested
+  function incorrectly terminated its enclosing loop analysis and failed `1
+  failed, 9 passed`. Finally now transforms every normal and non-normal
+  outcome, nested raises join handler checkpoints, and function/class scopes
+  isolate their flow collectors. The ten hidden-state negatives pass.
+- Five positive regressions verify that non-continuing return/raise paths are
+  excluded while handler restoration, loop break/else, and match-return paths
+  retain an exact consumer when every actual continuing exit agrees. Complete
+  control-flow set: `27 passed, 23 deselected`.
+- Final Task 7 focused and cache lifecycle suite: `103 passed in 1.47s`.
+  Static checker again reported all four categories as zero. Complete
+  `tests/security`: `565 passed in 77.64s`. Ruff lint and scoped format passed;
+  final lock and diff checks are recorded with the fix commit below.
+
 ## Concerns
 
 - Browser navigation, arbitrary-code networking, and owner control-plane

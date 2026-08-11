@@ -279,6 +279,28 @@ def _qualname(node: ast.AST, aliases: Mapping[str, str]) -> str | None:
     return None
 
 
+_ManagedKey = tuple[tuple[str, ...], str]
+_ManagedState = dict[_ManagedKey, frozenset[str]]
+
+
+@dataclass
+class _BlockFlow:
+    normal: _ManagedState | None
+    breaks: list[_ManagedState]
+    continues: list[_ManagedState]
+    returns: list[_ManagedState]
+    raises: list[_ManagedState]
+
+
+@dataclass
+class _FlowCollector:
+    breaks: list[_ManagedState]
+    continues: list[_ManagedState]
+    returns: list[_ManagedState]
+    raises: list[_ManagedState]
+    terminated: bool = False
+
+
 class _HTTPVisitor(ast.NodeVisitor):
     def __init__(self, path: str) -> None:
         self.path = path
@@ -291,6 +313,7 @@ class _HTTPVisitor(ast.NodeVisitor):
         self.constant_variables: dict[str, str] = {}
         self.managed_values: dict[tuple[tuple[str, ...], str], frozenset[str]] = {}
         self.scope: list[str] = []
+        self._flow_collector: _FlowCollector | None = None
 
     def visit_Import(self, node: ast.Import) -> None:
         for name in node.names:
@@ -305,14 +328,24 @@ class _HTTPVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        outer_collector = self._flow_collector
+        self._flow_collector = None
         self.scope.append(node.name)
-        self.generic_visit(node)
-        self.scope.pop()
+        try:
+            self.generic_visit(node)
+        finally:
+            self.scope.pop()
+            self._flow_collector = outer_collector
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        outer_collector = self._flow_collector
+        self._flow_collector = None
         self.scope.append(node.name)
-        self.generic_visit(node)
-        self.scope.pop()
+        try:
+            self.generic_visit(node)
+        finally:
+            self.scope.pop()
+            self._flow_collector = outer_collector
 
     visit_AsyncFunctionDef = visit_FunctionDef
 
@@ -373,24 +406,81 @@ class _HTTPVisitor(ast.NodeVisitor):
                 return value
         return frozenset()
 
-    def _visit_block_from(
+    def _visit_block_flow_from(
         self,
         statements: list[ast.stmt],
-        initial: Mapping[tuple[tuple[str, ...], str], frozenset[str]],
-    ) -> dict[tuple[tuple[str, ...], str], frozenset[str]]:
+        initial: Mapping[_ManagedKey, frozenset[str]],
+    ) -> _BlockFlow:
         outer = self.managed_values
+        parent_collector = self._flow_collector
+        collector = _FlowCollector([], [], [], [])
         self.managed_values = dict(initial)
+        self._flow_collector = collector
         try:
             for statement in statements:
                 self.visit(statement)
-            return dict(self.managed_values)
+                if collector.terminated:
+                    break
+            return _BlockFlow(
+                normal=None if collector.terminated else dict(self.managed_values),
+                breaks=collector.breaks,
+                continues=collector.continues,
+                returns=collector.returns,
+                raises=collector.raises,
+            )
         finally:
             self.managed_values = outer
+            self._flow_collector = parent_collector
+
+    def _visit_block_with_checkpoints_from(
+        self,
+        statements: list[ast.stmt],
+        initial: Mapping[_ManagedKey, frozenset[str]],
+    ) -> tuple[
+        _BlockFlow,
+        list[Mapping[_ManagedKey, frozenset[str]]],
+    ]:
+        outer = self.managed_values
+        parent_collector = self._flow_collector
+        collector = _FlowCollector([], [], [], [])
+        self.managed_values = dict(initial)
+        self._flow_collector = collector
+        checkpoints: list[Mapping[_ManagedKey, frozenset[str]]] = [dict(initial)]
+        try:
+            for statement in statements:
+                self.visit(statement)
+                checkpoints.append(dict(self.managed_values))
+                if collector.terminated:
+                    break
+            return (
+                _BlockFlow(
+                    normal=None if collector.terminated else dict(self.managed_values),
+                    breaks=collector.breaks,
+                    continues=collector.continues,
+                    returns=collector.returns,
+                    raises=collector.raises,
+                ),
+                checkpoints,
+            )
+        finally:
+            self.managed_values = outer
+            self._flow_collector = parent_collector
+
+    def _apply_flow(self, flow: _BlockFlow) -> None:
+        collector = self._flow_collector
+        if collector is not None:
+            collector.breaks.extend(flow.breaks)
+            collector.continues.extend(flow.continues)
+            collector.returns.extend(flow.returns)
+            collector.raises.extend(flow.raises)
+            if flow.normal is None:
+                collector.terminated = True
+        self.managed_values = {} if flow.normal is None else flow.normal
 
     @staticmethod
     def _merge_managed_values(
-        states: list[Mapping[tuple[tuple[str, ...], str], frozenset[str]]],
-    ) -> dict[tuple[tuple[str, ...], str], frozenset[str]]:
+        states: list[Mapping[_ManagedKey, frozenset[str]]],
+    ) -> _ManagedState:
         if not states:
             return {}
         first = states[0]
@@ -400,20 +490,61 @@ class _HTTPVisitor(ast.NodeVisitor):
             if all(state.get(key) == value for state in states[1:])
         }
 
+    def _terminate_flow(self, kind: str) -> None:
+        collector = self._flow_collector
+        if collector is None:
+            return
+        getattr(collector, kind).append(dict(self.managed_values))
+        collector.terminated = True
+
+    def visit_Break(self, node: ast.Break) -> None:
+        self._terminate_flow("breaks")
+
+    def visit_Continue(self, node: ast.Continue) -> None:
+        self._terminate_flow("continues")
+
+    def visit_Return(self, node: ast.Return) -> None:
+        if node.value is not None:
+            self.visit(node.value)
+        self._terminate_flow("returns")
+
+    def visit_Raise(self, node: ast.Raise) -> None:
+        if node.exc is not None:
+            self.visit(node.exc)
+        if node.cause is not None:
+            self.visit(node.cause)
+        self._terminate_flow("raises")
+
     def visit_If(self, node: ast.If) -> None:
         self.visit(node.test)
         initial = dict(self.managed_values)
-        body = self._visit_block_from(node.body, initial)
-        other = self._visit_block_from(node.orelse, initial)
-        self.managed_values = self._merge_managed_values([body, other])
+        body = self._visit_block_flow_from(node.body, initial)
+        other = self._visit_block_flow_from(node.orelse, initial)
+        normals = [state for state in (body.normal, other.normal) if state is not None]
+        self._apply_flow(
+            _BlockFlow(
+                normal=self._merge_managed_values(normals) if normals else None,
+                breaks=body.breaks + other.breaks,
+                continues=body.continues + other.continues,
+                returns=body.returns + other.returns,
+                raises=body.raises + other.raises,
+            )
+        )
 
     def _visit_try(self, node: ast.Try | ast.TryStar) -> None:
         initial = dict(self.managed_values)
-        normal = self._visit_block_from(node.body, initial)
-        normal = self._visit_block_from(node.orelse, normal)
-        exits = [normal]
+        body, exception_states = self._visit_block_with_checkpoints_from(
+            node.body, initial
+        )
+        normal_flow = (
+            self._visit_block_flow_from(node.orelse, body.normal)
+            if body.normal is not None
+            else _BlockFlow(None, [], [], [], [])
+        )
+        handler_flows: list[_BlockFlow] = []
+        exception_state = self._merge_managed_values([*exception_states, *body.raises])
         for handler in node.handlers:
-            handler_initial = dict(initial)
+            handler_initial = dict(exception_state)
             if handler.name:
                 handler_initial.pop((tuple(self.scope), handler.name), None)
             outer = self.managed_values
@@ -421,12 +552,61 @@ class _HTTPVisitor(ast.NodeVisitor):
             try:
                 if handler.type is not None:
                     self.visit(handler.type)
-                exits.append(self._visit_block_from(handler.body, self.managed_values))
+                handler_flows.append(
+                    self._visit_block_flow_from(handler.body, self.managed_values)
+                )
             finally:
                 self.managed_values = outer
+        flows = [normal_flow, *handler_flows]
+        normals = [flow.normal for flow in flows if flow.normal is not None]
+        combined = _BlockFlow(
+            normal=self._merge_managed_values(normals) if normals else None,
+            breaks=body.breaks + [state for flow in flows for state in flow.breaks],
+            continues=body.continues
+            + [state for flow in flows for state in flow.continues],
+            returns=body.returns + [state for flow in flows for state in flow.returns],
+            raises=body.raises + [state for flow in flows for state in flow.raises],
+        )
         if node.finalbody:
-            exits = [self._visit_block_from(node.finalbody, state) for state in exits]
-        self.managed_values = self._merge_managed_values(exits)
+            combined = self._apply_finally_to_flow(combined, node.finalbody)
+        self._apply_flow(combined)
+
+    def _apply_finally_to_flow(
+        self,
+        incoming: _BlockFlow,
+        finalbody: list[ast.stmt],
+    ) -> _BlockFlow:
+        states = [
+            *([] if incoming.normal is None else [incoming.normal]),
+            *incoming.breaks,
+            *incoming.continues,
+            *incoming.returns,
+            *incoming.raises,
+        ]
+        if not states:
+            return incoming
+        final = self._visit_block_flow_from(
+            finalbody,
+            self._merge_managed_values(states),
+        )
+        completed = final.normal
+        return _BlockFlow(
+            normal=(
+                completed
+                if incoming.normal is not None and completed is not None
+                else None
+            ),
+            breaks=([] if completed is None or not incoming.breaks else [completed])
+            + final.breaks,
+            continues=(
+                [] if completed is None or not incoming.continues else [completed]
+            )
+            + final.continues,
+            returns=([] if completed is None or not incoming.returns else [completed])
+            + final.returns,
+            raises=([] if completed is None or not incoming.raises else [completed])
+            + final.raises,
+        )
 
     def visit_Try(self, node: ast.Try) -> None:
         self._visit_try(node)
@@ -439,28 +619,63 @@ class _HTTPVisitor(ast.NodeVisitor):
         *,
         body: list[ast.stmt],
         orelse: list[ast.stmt],
+        iteration_initial: Mapping[_ManagedKey, frozenset[str]] | None = None,
     ) -> None:
         initial = dict(self.managed_values)
-        after_body = self._visit_block_from(body, initial)
-        exits = [initial, after_body]
+        body_flow = self._visit_block_flow_from(
+            body,
+            initial if iteration_initial is None else iteration_initial,
+        )
+        normal_iterations = [
+            state
+            for state in [body_flow.normal, *body_flow.continues]
+            if state is not None
+        ]
+        exits: list[Mapping[_ManagedKey, frozenset[str]]] = list(body_flow.breaks)
+        else_flows: list[_BlockFlow] = []
         if orelse:
-            exits.extend(
-                [
-                    self._visit_block_from(orelse, initial),
-                    self._visit_block_from(orelse, after_body),
-                ]
+            for state in [initial, *normal_iterations]:
+                flow = self._visit_block_flow_from(orelse, state)
+                else_flows.append(flow)
+                if flow.normal is not None:
+                    exits.append(flow.normal)
+        else:
+            exits.extend([initial, *normal_iterations])
+        self._apply_flow(
+            _BlockFlow(
+                normal=self._merge_managed_values(exits) if exits else None,
+                breaks=[state for flow in else_flows for state in flow.breaks],
+                continues=[state for flow in else_flows for state in flow.continues],
+                returns=body_flow.returns
+                + [state for flow in else_flows for state in flow.returns],
+                raises=body_flow.raises
+                + [state for flow in else_flows for state in flow.raises],
             )
-        self.managed_values = self._merge_managed_values(exits)
+        )
 
     def visit_For(self, node: ast.For) -> None:
         self.visit(node.target)
         self.visit(node.iter)
-        self._visit_loop(body=node.body, orelse=node.orelse)
+        iteration_initial = dict(self.managed_values)
+        for name in self._bound_names(node.target):
+            iteration_initial.pop((tuple(self.scope), name), None)
+        self._visit_loop(
+            body=node.body,
+            orelse=node.orelse,
+            iteration_initial=iteration_initial,
+        )
 
     def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
         self.visit(node.target)
         self.visit(node.iter)
-        self._visit_loop(body=node.body, orelse=node.orelse)
+        iteration_initial = dict(self.managed_values)
+        for name in self._bound_names(node.target):
+            iteration_initial.pop((tuple(self.scope), name), None)
+        self._visit_loop(
+            body=node.body,
+            orelse=node.orelse,
+            iteration_initial=iteration_initial,
+        )
 
     def visit_While(self, node: ast.While) -> None:
         self.visit(node.test)
@@ -480,26 +695,70 @@ class _HTTPVisitor(ast.NodeVisitor):
             )
         return False
 
+    @staticmethod
+    def _bound_names(node: ast.AST) -> frozenset[str]:
+        names: set[str] = set()
+        if isinstance(node, ast.Name):
+            names.add(node.id)
+        elif isinstance(node, (ast.Tuple, ast.List)):
+            for item in node.elts:
+                names.update(_HTTPVisitor._bound_names(item))
+        elif isinstance(node, ast.Starred):
+            names.update(_HTTPVisitor._bound_names(node.value))
+        elif isinstance(node, ast.MatchAs):
+            if node.name is not None:
+                names.add(node.name)
+            if node.pattern is not None:
+                names.update(_HTTPVisitor._bound_names(node.pattern))
+        elif isinstance(node, ast.MatchStar):
+            if node.name is not None:
+                names.add(node.name)
+        elif isinstance(node, ast.MatchMapping):
+            if node.rest is not None:
+                names.add(node.rest)
+            for pattern in node.patterns:
+                names.update(_HTTPVisitor._bound_names(pattern))
+        elif isinstance(node, ast.MatchClass):
+            for pattern in (*node.patterns, *node.kwd_patterns):
+                names.update(_HTTPVisitor._bound_names(pattern))
+        elif isinstance(node, (ast.MatchSequence, ast.MatchOr)):
+            for pattern in node.patterns:
+                names.update(_HTTPVisitor._bound_names(pattern))
+        return frozenset(names)
+
     def visit_Match(self, node: ast.Match) -> None:
         self.visit(node.subject)
         initial = dict(self.managed_values)
-        exits: list[Mapping[tuple[tuple[str, ...], str], frozenset[str]]] = []
+        flows: list[_BlockFlow] = []
         exhaustive = False
         for case in node.cases:
             outer = self.managed_values
             self.managed_values = dict(initial)
             try:
                 self.visit(case.pattern)
+                for name in self._bound_names(case.pattern):
+                    self.managed_values.pop((tuple(self.scope), name), None)
                 if case.guard is not None:
                     self.visit(case.guard)
-                exits.append(self._visit_block_from(case.body, self.managed_values))
+                flows.append(
+                    self._visit_block_flow_from(case.body, self.managed_values)
+                )
             finally:
                 self.managed_values = outer
             if case.guard is None and self._match_pattern_is_irrefutable(case.pattern):
                 exhaustive = True
+        normals = [flow.normal for flow in flows if flow.normal is not None]
         if not exhaustive:
-            exits.append(initial)
-        self.managed_values = self._merge_managed_values(exits)
+            normals.append(initial)
+        self._apply_flow(
+            _BlockFlow(
+                normal=self._merge_managed_values(normals) if normals else None,
+                breaks=[state for flow in flows for state in flow.breaks],
+                continues=[state for flow in flows for state in flow.continues],
+                returns=[state for flow in flows for state in flow.returns],
+                raises=[state for flow in flows for state in flow.raises],
+            )
+        )
 
     def _managed_factory_consumer(self, call: ast.Call) -> str | None:
         name = _qualname(call.func, self.aliases)
