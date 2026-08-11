@@ -20,6 +20,8 @@ openprogram backup prune --keep 5   # 只保留最新的 5 份
 归档文件放在 `~/.openprogram/backups/`（命名 profile 下是
 `~/.openprogram-<profile>/backups/`），文件名为
 `<profile>-<时间戳>.tar.gz`，权限 `0600`，只有你自己能读。
+归档先写入唯一的 owner-only 临时文件，flush 后原子发布；POSIX 还会
+fsync 所在目录。
 
 ## 备份范围
 
@@ -37,7 +39,7 @@ openprogram backup prune --keep 5   # 只保留最新的 5 份
 | `skills/`、`skills.json` | skill 注册表 |
 | `plugins/`、`marketplaces.json` | 已安装插件 |
 | `mcp_servers.json`、`models/`、`commands/` | MCP 服务器、模型覆盖、自定义命令 |
-| `owner.json`、`projects/`、`worktrees.json`、`usage.db` | 归属、项目列表、worktree、用量历史 |
+| `owner.json`、`projects/`、`profiles/`、`worktrees.json`、`usage.db` | 归属、项目和账号元数据、worktree、用量历史 |
 
 以下内容故意排除，因为下次启动会重新生成，留着只会让归档变大：
 
@@ -51,14 +53,22 @@ openprogram backup prune --keep 5   # 只保留最新的 5 份
 
 ## 凭据
 
-`auth/` 和 `mcp_tokens/` 默认**不备份**。它们以明文保存着有效的 API key 和 OAuth token，
-包含它们的归档和这些密钥本身一样敏感。
+默认情况下，备份 manifest 会记录凭据未包含。归档会排除 `auth/`、
+`mcp_tokens/`、profile AuthStore 文件和 `.env` 文件、Channel
+`credentials.json`；同时从混合配置中删除 `config.json[api_keys]`，以及
+MCP server 的 env、header、bearer token 和 OAuth client secret 字段，
+其余非秘密配置继续保留。
+
+Web 运行期 token 和待处理的 Channel pairing code 永远不进入归档，
+即使显式开启凭据备份也不例外。
 
 ```bash
 openprogram backup create --include-credentials
 ```
 
-这样显式开启，并会打印一条警告。请像对待密码文件一样对待生成的文件。
+这样会显式包含 inventory 中允许备份的全部长期凭据，并打印准确的明文凭据警告。
+生成的文件必须采用与原始凭据相同的访问限制。归档内的 `backup-manifest.json`
+会记录 opt-in、包含、redacted、排除和永不备份的类别，但不记录秘密值。
 如果你只是要换一台机器，重新登录通常比拷贝归档更安全。
 
 ## 恢复
@@ -82,6 +92,8 @@ openprogram backup restore default-20260811-012458.tar.gz --dry-run
 ```
 
 恢复只替换归档里存在的条目，范围之外的状态（缓存、日志）原样不动。
+如果混合文件中的已注册秘密字段缺失或被 redacted，恢复会保留本机现有值，
+不会把 mask 写入，也不会删除本机秘密。
 
 ## 清理
 

@@ -21,7 +21,8 @@ openprogram backup prune --keep 5   # delete all but the newest 5
 Archives land in `~/.openprogram/backups/` (or
 `~/.openprogram-<profile>/backups/` under a named profile), named
 `<profile>-<timestamp>.tar.gz` and created with mode `0600` — readable only
-by you.
+by you. The archive is written to a unique owner-only temporary file, flushed,
+and atomically published; POSIX also flushes the containing directory.
 
 ## What gets backed up
 
@@ -39,7 +40,7 @@ added by a future release cannot silently start bloating your archives.
 | `skills/`, `skills.json` | The skill registry |
 | `plugins/`, `marketplaces.json` | Installed plugins |
 | `mcp_servers.json`, `models/`, `commands/` | MCP servers, model overrides, custom commands |
-| `owner.json`, `projects/`, `worktrees.json`, `usage.db` | Ownership, project list, worktrees, usage history |
+| `owner.json`, `projects/`, `profiles/`, `worktrees.json`, `usage.db` | Ownership, project and account metadata, worktrees, usage history |
 
 Left out on purpose, because it is regenerated on next start and would only
 make the archive bigger:
@@ -55,16 +56,24 @@ make the archive bigger:
 
 ## Credentials
 
-`auth/` and `mcp_tokens/` are **not** backed up by default. They hold live API
-keys and OAuth tokens in plaintext, and an archive containing them is as
-sensitive as the keys themselves.
+By default, the backup manifest reports that credentials are excluded. The
+archive omits `auth/`, `mcp_tokens/`, profile AuthStore files and `.env` files,
+and Channel `credentials.json` files. It removes `config.json[api_keys]` and MCP
+server env, header, bearer-token, and OAuth client-secret fields while keeping
+the rest of those mixed configuration files.
+
+The Web runtime token and pending Channel pairing codes are never archived,
+including when credential opt-in is enabled.
 
 ```bash
 openprogram backup create --include-credentials
 ```
 
-This opts in and prints a warning. Treat the resulting file the way you would
-treat a password file. If you only need to move to a new machine, logging in
+This opts in to every registered persistent credential category and prints an
+accurate plaintext warning. Store the resulting file with the same access
+restrictions as the original credentials. `backup-manifest.json` records the
+opt-in, included, redacted, excluded, and never-backed-up categories without
+recording secret values. If you only need to move to a new machine, logging in
 again is usually safer than copying the archive.
 
 ## Restoring
@@ -91,7 +100,9 @@ openprogram backup restore default-20260811-012458.tar.gz --dry-run
 ```
 
 Restore only replaces the entries present in the archive. State outside that
-scope — caches, logs — is left alone.
+scope — caches, logs — is left alone. When a mixed file omits or redacts a
+registered secret field, restore keeps the current machine's value for that
+field instead of replacing it with a mask or deleting it.
 
 ## Pruning
 
