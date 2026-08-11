@@ -72,7 +72,7 @@ def test_contract_exposes_exact_ordered_wrapper_tools_and_schemas() -> None:
         "tool_call",
     ]
     assert {
-        tool.name: tool.inputSchema for tool in MCP_TOOL_SCHEMAS
+        tool.name: tool.model_dump()["inputSchema"] for tool in MCP_TOOL_SCHEMAS
     } == EXPECTED_SCHEMAS
     assert tuple(TOOL_BY_NAME) == tuple(EXPECTED_SCHEMAS)
     assert all(TOOL_BY_NAME[tool.name] is tool for tool in MCP_TOOL_SCHEMAS)
@@ -189,7 +189,11 @@ def test_exported_tool_contracts_are_immutable_and_sdk_serializable() -> None:
     required = TOOL_BY_NAME["session_get"].inputSchema["required"]
     with pytest.raises((AttributeError, TypeError, ValueError)):
         required += ["unexpected"]
-    assert required == ["session_id"]
+    assert required == ("session_id",)
+    with pytest.raises((AttributeError, TypeError, ValueError)):
+        dict.__setitem__(tool.inputSchema, "unexpected", True)
+    with pytest.raises((AttributeError, TypeError, ValueError)):
+        list.append(required, "unexpected")
     assert '"name":"sessions_list"' in tool.model_dump_json()
 
 
@@ -204,3 +208,5 @@ def test_mapping_copy_failure_is_sanitized_as_invalid_params() -> None:
         validate_tool_call("sessions_list", {"extra": HostileValue()})
     assert exc_info.value.error.code == mcp_types.INVALID_PARAMS
     assert secret not in f"{exc_info.value!s} {exc_info.value!r}"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None

@@ -10,45 +10,33 @@ from typing import Any
 import mcp.types as mcp_types
 from jsonschema import Draft202012Validator
 from mcp.shared.exceptions import McpError
-from pydantic import ConfigDict
+from pydantic import ConfigDict, field_serializer
 
 
 _NON_BLANK_STRING = {"type": "string", "minLength": 1, "pattern": r"\S"}
 
 
-class _FrozenDict(dict):
-    def _immutable(self, *args, **kwargs):
-        raise TypeError("MCP tool contract is immutable")
-
-    __setitem__ = __delitem__ = __ior__ = clear = pop = popitem = setdefault = (
-        update
-    ) = _immutable
-
-    def __deepcopy__(self, memo):
-        return self
-
-
-class _FrozenList(list):
-    def _immutable(self, *args, **kwargs):
-        raise TypeError("MCP tool contract is immutable")
-
-    __setitem__ = __delitem__ = __iadd__ = __imul__ = append = clear = extend = (
-        insert
-    ) = pop = remove = reverse = sort = _immutable
-
-    def __deepcopy__(self, memo):
-        return self
-
-
 class _FrozenTool(mcp_types.Tool):
     model_config = ConfigDict(extra="allow", frozen=True)
+
+    @field_serializer("inputSchema")
+    def _serialize_input_schema(self, value):
+        return _thaw(value)
 
 
 def _freeze(value):
     if isinstance(value, dict):
-        return _FrozenDict({key: _freeze(item) for key, item in value.items()})
+        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
     if isinstance(value, list):
-        return _FrozenList(_freeze(item) for item in value)
+        return tuple(_freeze(item) for item in value)
+    return value
+
+
+def _thaw(value):
+    if isinstance(value, Mapping):
+        return {key: _thaw(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw(item) for item in value]
     return value
 
 
@@ -112,13 +100,13 @@ TOOL_BY_NAME: Mapping[str, mcp_types.Tool] = MappingProxyType(
 )
 _VALIDATORS = MappingProxyType(
     {
-        tool.name: Draft202012Validator(copy.deepcopy(tool.inputSchema))
+        tool.name: Draft202012Validator(_thaw(tool.inputSchema))
         for tool in MCP_TOOL_SCHEMAS
     }
 )
 
 for _tool in MCP_TOOL_SCHEMAS:
-    Draft202012Validator.check_schema(_tool.inputSchema)
+    Draft202012Validator.check_schema(_thaw(_tool.inputSchema))
 
 
 def _error(code: int, message: str) -> McpError:
@@ -144,12 +132,13 @@ def validate_tool_call(
     if arguments is None:
         normalized: dict[str, Any] = {}
     elif isinstance(arguments, Mapping):
+        copy_failed = False
         try:
             normalized = copy.deepcopy(dict(arguments))
         except Exception:
-            raise _error(
-                mcp_types.INVALID_PARAMS, "invalid arguments at $: value"
-            ) from None
+            copy_failed = True
+        if copy_failed:
+            raise _error(mcp_types.INVALID_PARAMS, "invalid arguments at $: value")
     else:
         raise _error(mcp_types.INVALID_PARAMS, "invalid arguments at $: type")
 
