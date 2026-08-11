@@ -54,9 +54,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.server.requests.append(self.path)
-        if self.path.startswith("/redirect-without-location"):
-            body = b'{"skills": []}'
-            self.send_response(302)
+        if self.path.startswith("/redirect-without-location/"):
+            status = int(self.path.split("/", 3)[2])
+            body = b'{"servers":[{"name":"PEER-BODY-SECRET"}]}'
+            self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -634,6 +635,42 @@ def test_web_mcp_catalog_malformed_status_hides_signed_url_and_peer_echo(
     assert "QUERY-SECRET" not in detail
 
 
+@pytest.mark.parametrize("status", [302, 304])
+def test_web_mcp_catalog_rejects_non_2xx_without_leaking_signed_url_or_body(
+    server, tmp_path, monkeypatch, status
+):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from openprogram import paths
+    from openprogram.webui.routes import mcp
+
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
+    app = FastAPI()
+    mcp.register(app)
+    origin = f"http://127.0.0.1:{server.port}"
+    url = f"{origin}/redirect-without-location/{status}/TOKEN-PATH?sig=QUERY-SECRET"
+
+    response = TestClient(app).get("/api/mcp/catalog", params={"url": url})
+
+    assert response.status_code == 502
+    rendered_response = response.text
+    assert f"HTTP {status}" in rendered_response
+    assert origin in rendered_response
+    assert "TOKEN-PATH" not in rendered_response
+    assert "QUERY-SECRET" not in rendered_response
+    assert "PEER-BODY-SECRET" not in rendered_response
+
+    with pytest.raises(RuntimeError) as caught:
+        asyncio.run(mcp._fetch_catalog_json(url))
+
+    rendered_error = _render_exception(caught.value)
+    assert f"HTTP {status}" in rendered_error
+    assert origin in rendered_error
+    assert "TOKEN-PATH" not in rendered_error
+    assert "QUERY-SECRET" not in rendered_error
+    assert "PEER-BODY-SECRET" not in rendered_error
+
+
 def _render_exception(error: BaseException) -> str:
     return "\n".join(
         (
@@ -666,7 +703,7 @@ def test_skills_rejects_redirect_without_location_as_sanitized_status(server):
     from openprogram.skills import discovery
 
     url = (
-        f"http://127.0.0.1:{server.port}/redirect-without-location/"
+        f"http://127.0.0.1:{server.port}/redirect-without-location/302/"
         "TOKEN-PATH?sig=QUERY-SECRET"
     )
 

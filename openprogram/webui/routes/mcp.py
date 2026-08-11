@@ -88,10 +88,7 @@ async def _fetch_catalog_json(url: str):
             ),
         ) as client:
             response = await client.get(url, timeout=15.0)
-            if response.status_code >= 400:
-                raise RuntimeError(
-                    f"HTTP {response.status_code} for {normalize_origin(url)}"
-                )
+            safe_http.raise_for_status_sanitized(response)
             safe_http.require_json_mime(response)
             return response.json()
     except Exception as e:

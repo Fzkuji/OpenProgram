@@ -159,10 +159,8 @@ def _execute(
 
 
 def _raise_status(response: httpx.Response, provider_label: str) -> None:
-    if response.status_code >= 400:
-        raise ProviderHTTPError(
-            provider_label, response.status_code, str(response.url)
-        )
+    if not 200 <= response.status_code < 300:
+        raise ProviderHTTPError(provider_label, response.status_code, str(response.url))
 
 
 def _safe_request_error(

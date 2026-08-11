@@ -130,6 +130,15 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path.startswith("/non-2xx/"):
+            status = int(self.path.split("/", 3)[2])
+            body = b'{"web":{"results":[{"title":"PEER-BODY-SECRET"}]}}'
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.endswith("/status"):
             payload = {"status": "COMPLETED"}
         elif self.path.endswith("/result"):
@@ -394,6 +403,33 @@ def test_web_search_malformed_status_hides_signed_url_and_peer_echo(
     assert "TOKEN-PATH" not in rendered
     assert "QUERY-SECRET" not in rendered
     assert "HEADER-SECRET" not in rendered
+
+
+@pytest.mark.parametrize("status", [302, 304])
+def test_brave_rejects_non_2xx_without_leaking_signed_url_or_body(
+    monkeypatch, server, real_managed_http, status
+):
+    from openprogram.functions.tools.web_search._http import ProviderHTTPError
+    from openprogram.functions.tools.web_search.providers import brave
+
+    origin = _fixed_test_origin(monkeypatch, "tool.web_search.fixed_api", server.port)
+    monkeypatch.setattr(
+        brave,
+        "API_URL",
+        f"{origin}/non-2xx/{status}/TOKEN-PATH?sig=QUERY-SECRET",
+    )
+    monkeypatch.setenv("BRAVE_API_KEY", "HEADER-SECRET")
+
+    with pytest.raises(ProviderHTTPError) as caught:
+        brave.BraveProvider().search("query")
+
+    rendered = _render_exception(caught.value)
+    assert f"Brave HTTP {status}" in rendered
+    assert origin in rendered
+    assert "TOKEN-PATH" not in rendered
+    assert "QUERY-SECRET" not in rendered
+    assert "HEADER-SECRET" not in rendered
+    assert "PEER-BODY-SECRET" not in rendered
 
 
 def test_image_api_4xx_body_hides_credentials_and_signed_url(
