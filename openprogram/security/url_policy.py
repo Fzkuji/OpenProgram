@@ -118,8 +118,7 @@ def _invalid_safe_url(url: object) -> str:
     scheme = parsed.scheme.lower()
     if port is not None and port != _DEFAULT_PORTS.get(scheme):
         authority = f"{authority}:{port}"
-    path = parsed.path[:256]
-    return urlunsplit((scheme, authority, path, "", ""))
+    return urlunsplit((scheme, authority, "", "", ""))
 
 
 def _raise(reason: str, url: object, safe_url: str | None = None) -> None:
@@ -213,7 +212,7 @@ def normalize_url(url: str) -> NormalizedURL:
         (scheme, authority, parsed.path, parsed.query, parsed.fragment)
     )
     origin = f"{scheme}://{authority}"
-    safe_url = urlunsplit((scheme, authority, parsed.path[:256], "", ""))
+    safe_url = origin
     return NormalizedURL(
         normalized_url=normalized_url,
         origin=origin,
@@ -332,6 +331,12 @@ def _validate_addresses(
         URLTrustClass.FIXED_PUBLIC_SERVICE,
     }:
         for address in addresses:
+            if _is_non_global(address):
+                raise URLPolicyError("NON_GLOBAL_ADDRESS", normalized.safe_url)
+        return
+
+    if trust_class == URLTrustClass.CONFIGURED_SERVICE:
+        for address in addresses:
             if _is_non_global(address) and not any(
                 _exception_allows(exception, consumer, normalized, address)
                 for exception in exceptions
@@ -359,21 +364,34 @@ def evaluate_url(
     url: str,
     *,
     trust_class: URLTrustClass = URLTrustClass.UNTRUSTED_PUBLIC,
+    allowed_schemes: frozenset[str] = frozenset({"http", "https"}),
     allowed_methods: frozenset[str] = frozenset({"GET", "HEAD"}),
     allowed_ports: frozenset[int] | None = frozenset({80, 443}),
+    fixed_origins: frozenset[str] = frozenset(),
     configured_origin: str | None = None,
     callback_origin: str | None = None,
     exceptions: tuple[OwnerURLException, ...] = (),
     resolver: Resolver = resolve_all,
 ) -> URLDecision:
     normalized = normalize_url(url)
+    if normalized.scheme not in allowed_schemes:
+        raise URLPolicyError("SCHEME_FORBIDDEN", normalized.safe_url)
+    if exceptions and trust_class != URLTrustClass.CONFIGURED_SERVICE:
+        raise URLPolicyError("EXCEPTIONS_FORBIDDEN", normalized.safe_url)
     normalized_method = method.upper()
     if normalized_method not in allowed_methods:
         raise URLPolicyError("METHOD_FORBIDDEN", normalized.safe_url)
     if allowed_ports is not None and normalized.port not in allowed_ports:
         raise URLPolicyError("PORT_FORBIDDEN", normalized.safe_url)
 
-    if trust_class == URLTrustClass.CONFIGURED_SERVICE:
+    if trust_class == URLTrustClass.FIXED_PUBLIC_SERVICE:
+        if not fixed_origins:
+            raise URLPolicyError("FIXED_ORIGINS_REQUIRED", normalized.safe_url)
+        if normalized.origin not in {
+            normalize_origin(origin) for origin in fixed_origins
+        }:
+            raise URLPolicyError("FIXED_ORIGIN_MISMATCH", normalized.safe_url)
+    elif trust_class == URLTrustClass.CONFIGURED_SERVICE:
         if configured_origin is None:
             raise URLPolicyError("CONFIGURED_ORIGIN_REQUIRED", normalized.safe_url)
         if normalized.origin != normalize_origin(configured_origin):
