@@ -53,11 +53,23 @@ def bash(command: str,
     wt_cwd = current_worktree_path()
     result = backend.run(command, timeout=timeout_sec, cwd=wt_cwd)
 
+    from openprogram.agent.types import AgentToolResult
+    from openprogram.providers.types import TextContent
+
     if result.timed_out:
-        return (
+        text = (
             f"[timeout after {timeout_sec:.1f}s via {backend.backend_id}]\n"
             f"--- stdout (partial) ---\n{result.stdout}\n"
             f"--- stderr (partial) ---\n{result.stderr}"
+        )
+        return AgentToolResult(
+            content=[TextContent(text=text)],
+            details={
+                "timeout": True,
+                "exit_code": result.exit_code,
+                "backend": backend.backend_id,
+            },
+            is_error=True,
         )
 
     parts = [f"exit_code={result.exit_code}"]
@@ -69,9 +81,6 @@ def bash(command: str,
         parts.append(f"--- stderr ---\n{result.stderr.rstrip()}")
     text = "\n".join(parts)
     if result.sandbox_error == "denied":
-        from openprogram.agent.types import AgentToolResult
-        from openprogram.providers.types import TextContent
-
         return AgentToolResult(
             content=[TextContent(text=text)],
             details={
@@ -80,6 +89,15 @@ def bash(command: str,
                     "backend": "seatbelt" if sys.platform == "darwin"
                     else "bubblewrap",
                 },
+            },
+            is_error=True,
+        )
+    if result.exit_code != 0:
+        return AgentToolResult(
+            content=[TextContent(text=text)],
+            details={
+                "exit_code": result.exit_code,
+                "backend": backend.backend_id,
             },
             is_error=True,
         )

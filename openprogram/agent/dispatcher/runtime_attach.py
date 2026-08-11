@@ -186,7 +186,11 @@ def _wrap_agentic_runtime_block(
                     from openprogram.providers.types import (
                         TextContent as _CB,
                     )
-                    result = _TR(content=[_CB(text=str(out["error"]))])
+                    result = _TR(
+                        content=[_CB(text=str(out["error"]))],
+                        details={"reason_code": "agentic_subprocess_error"},
+                        is_error=True,
+                    )
                 else:
                     from openprogram.agent.types import (
                         AgentToolResult as _TR,
