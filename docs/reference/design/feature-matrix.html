@@ -124,11 +124,11 @@
 </div>
 
 <div class="note orange">
-  <b>快照与使用边界</b>。OpenProgram 的实现证据以 <code>main@0683819b</code> 为基线（2026-08-11 复核），包含运行中发消息排队、owner/paired 两档来源权限加配对准入、默认开启并覆盖全部本地执行面的沙箱、ACP 服务端与三个 LSP 工具，以及本次复核确认的 commit-push-pr 打包技能、credential_process 外部命令取密钥、providers 层请求录制与回放模块和 backup 命令。其他列固定在第五节列出的本地源码、二进制或 npm 包版本，没有声明为各产品的最新版本。<code>·</code> 只表示本轮没有确认到实现，不等于功能不存在。第四节是设计参考，优先级尚未经过使用频率统计或工程量估算。
+  <b>快照与使用边界</b>。OpenProgram 的实现证据以 <code>main@8f62da5a</code> 为基线（2026-08-11 复核），包含运行中发消息排队、owner/paired 两档来源权限加配对准入、默认开启并覆盖全部本地执行面的沙箱、ACP 服务端与三个 LSP 工具，以及本次复核确认的 commit-push-pr 打包技能、credential_process 外部命令取密钥、providers 层请求录制与回放模块、backup 命令和 agent/resource_governance 的每会话并发与资源限额。其他列固定在第五节列出的本地源码、二进制或 npm 包版本，没有声明为各产品的最新版本。<code>·</code> 只表示本轮没有确认到实现，不等于功能不存在。第四节是设计参考，优先级尚未经过使用频率统计或工程量估算。
 </div>
 
 <div class="note blue">
-  <b>和 <a href="framework-comparison.html">framework-comparison</a> 的分工</b>。那一份比较执行模型、状态存储、上下文装配和权限审批等设计机制；本页按用户可调用或可配置的功能记录证据。前一份记录 55 个候选差异，本页撰写时记录 78 个（15 个重合、63 个此前未列出）；截至 0683819b 复核其中 3 个已实现，现存 75 个。两份材料分别支持机制设计和功能范围设计，计数不能直接合并。
+  <b>和 <a href="framework-comparison.html">framework-comparison</a> 的分工</b>。那一份比较执行模型、状态存储、上下文装配和权限审批等设计机制；本页按用户可调用或可配置的功能记录证据。前一份记录 55 个候选差异，本页撰写时记录 78 个（15 个重合、63 个此前未列出）；截至 8f62da5a 复核其中 4 个已实现，现存 74 个。两份材料分别支持机制设计和功能范围设计，计数不能直接合并。
 </div>
 
 <!-- ══════════════════════════ 三问 ══════════════════════════ -->
@@ -154,7 +154,7 @@
   <div class="q" style="border-top-color:#d4843a">
     <div class="k">相对既有机制审计的增量</div>
     <h4>78 条里 63 条此前未列出</h4>
-    <p>前几轮机制审计记录了 55 个候选差异；本页撰写时 OpenProgram 未确认而至少一个参考列已确认的条目为 78 个，两份材料重合 15 个，<b>其余 63 个此前未列出</b>；0683819b 复核后其中 3 个已实现，现存 75 个。</p>
+    <p>前几轮机制审计记录了 55 个候选差异；本页撰写时 OpenProgram 未确认而至少一个参考列已确认的条目为 78 个，两份材料重合 15 个，<b>其余 63 个此前未列出</b>；8f62da5a 复核后其中 4 个已实现，现存 74 个。</p>
     <p>版本控制 7 条、界面形态 5 条、多 agent 6 条和代码理解 4 条均未出现在前几轮清单中；编辑器集成新增 6 条，集成与被集成新增 9 条，部署与运维新增 6 条。</p>
     <p>这里的“新增”表示此前文档未记录，不表示相关产品最近发布了这些功能，也不表示全部条目都应进入实现计划。</p>
     <span class="ev">前六轮出处：runtime/sandbox · agent-collab-comparison · memory-comparison · memory-adoption · speaker-identity · chat-attachments · context/comparison · extension-gating · framework-comparison</span>
@@ -254,7 +254,7 @@
 <tr><td class="fname">委派模式：协调 agent 不直接执行任务<span class="src">buddy --permission-mode delegate，可用工具限制为五个</span></td><td class="g0 us">·</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
 <tr><td class="fname">多模型共识或交叉复核<span class="src">我们 mixture_of_agents · claude /advisor · openclaw oracle 技能</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
 <tr><td class="fname">子 agent 深度预算<span class="src">我们 agent.max_spawn_depth 默认 1 · claude 默认 3 · hermes max_spawn_depth</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td></tr>
-<tr><td class="fname">并发数与每会话派生总量上限<span class="src">claude 并发 20 加每会话 200 次 · hermes max_concurrent_children 默认 3</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">并发数与每会话派生总量上限<span class="src">我们 agent/resource_governance.py 每会话 live/queued/total 上限加 token、费用与运行时长限额，config_schema 可配并入 usage ledger 计量 · claude 并发 20 加每会话 200 次 · hermes max_concurrent_children 默认 3</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
 <tr><td class="fname">子 agent 支持从持久状态恢复执行<span class="src">buddy 使用 agentId 与 agent-{id}.jsonl，并在后续调用中传入 resume 参数</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
 <tr class="only"><td class="fname">函数调用树写进同一张会话图<span class="src">我们 agentic_programming/function.py 写 code 节点，store/session/session_node_writer.py 与 context/nodes.py 统一 caller/predecessor 语义</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
 <tr class="only"><td class="fname">按剩余消息预算限制子 agent 可用工具<span class="src">我们 agent/internals/_model_tools.py 在解析工具时读取调用链消息预算；tests/unit/test_spawn_caller_invariant.py 验证预算耗尽后移除协作工具</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
@@ -364,7 +364,7 @@
 <h3 id="cover">1.1已确认功能覆盖分</h3>
 <p class="lead">按 160 项加权：<code>●</code> 记 1 分，<code>◐</code> 和 <code>○</code> 各记 0.5 分。该分数只用于定位本页清单中的候选差异，不是综合产品排名。</p>
 <div class="card scroll">
-<svg viewBox="0 0 960 330" role="img" aria-label="十三列在160项功能上的已确认功能覆盖分，buddy为103分，OpenProgram为76分">
+<svg viewBox="0 0 960 330" role="img" aria-label="十三列在160项功能上的已确认功能覆盖分，buddy为103分，OpenProgram为77分">
   <rect x="0" y="0" width="960" height="330" fill="#12110b"/>
   <text x="20" y="26" fill="#8a8675" font-size="11" letter-spacing="2">已确认功能覆盖分 / 160</text>
   <line x1="150" y1="36" x2="150" y2="300" stroke="#2e2c20"/>
@@ -379,7 +379,7 @@
   <g transform="translate(0,84)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">cc内</text><rect x="150" y="2" width="376" height="13" rx="2" fill="#6b4d96"/><text x="536" y="12" fill="#8a8675" font-size="10">94.0</text></g>
   <g transform="translate(0,104)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">hermes</text><rect x="150" y="2" width="368" height="13" rx="2" fill="#5aad4e"/><text x="528" y="12" fill="#8a8675" font-size="10">92.0</text></g>
   <g transform="translate(0,124)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">openclaw</text><rect x="150" y="2" width="332" height="13" rx="2" fill="#2db3d5"/><text x="492" y="12" fill="#8a8675" font-size="10">83.0</text></g>
-  <g transform="translate(0,144)"><text x="140" y="11" fill="#4f8ef7" text-anchor="end" font-weight="700">我们</text><rect x="150" y="2" width="304" height="13" rx="2" fill="#4f8ef7"/><text x="464" y="12" fill="#4f8ef7" font-size="10" font-weight="700">76.0</text></g>
+  <g transform="translate(0,144)"><text x="140" y="11" fill="#4f8ef7" text-anchor="end" font-weight="700">我们</text><rect x="150" y="2" width="308" height="13" rx="2" fill="#4f8ef7"/><text x="468" y="12" fill="#4f8ef7" font-size="10" font-weight="700">77.0</text></g>
   <g transform="translate(0,164)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">codex</text><rect x="150" y="2" width="260" height="13" rx="2" fill="#7a7566"/><text x="420" y="12" fill="#8a8675" font-size="10">65.0</text></g>
   <g transform="translate(0,184)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">cx内</text><rect x="150" y="2" width="256" height="13" rx="2" fill="#5e5a4d"/><text x="416" y="12" fill="#8a8675" font-size="10">64.0</text></g>
   <g transform="translate(0,204)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">opencode</text><rect x="150" y="2" width="214" height="13" rx="2" fill="#7a7566"/><text x="374" y="12" fill="#8a8675" font-size="10">53.5</text></g>
@@ -397,7 +397,7 @@
 <h3 id="bycat">1.2按类别比较已确认比例</h3>
 <p class="lead">蓝点是 OpenProgram，右侧点是该类别已确认比例最高的参考列。当前比例差最大的三类依次为集成与被集成、版本控制、编辑器集成。</p>
 <div class="card scroll">
-<svg viewBox="0 0 960 400" role="img" aria-label="十三个功能类别中OpenProgram与各类别最高参考列的已确认比例，多agent类别持平，集成与被集成差距最大">
+<svg viewBox="0 0 960 400" role="img" aria-label="十三个功能类别中OpenProgram与各类别最高参考列的已确认比例，多agent类别OpenProgram领先，集成与被集成差距最大">
   <rect x="0" y="0" width="960" height="400" fill="#12110b"/>
   <text x="20" y="24" fill="#8a8675" font-size="11" letter-spacing="2">类内已确认比例</text>
   <line x1="200" y1="34" x2="200" y2="366" stroke="#2e2c20"/>
@@ -422,12 +422,12 @@
   <g transform="translate(0,267)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">会话与历史 17</text><line x1="571" y1="8" x2="606" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="571" cy="8" r="5" fill="#4f8ef7"/><circle cx="606" cy="8" r="5" fill="#9d6fe0"/><text x="624" y="12" fill="#6b6a63" font-size="10">claude 68%</text></g>
   <g transform="translate(0,292)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">扩展 11</text><line x1="527" y1="8" x2="718" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="527" cy="8" r="5" fill="#4f8ef7"/><circle cx="718" cy="8" r="5" fill="#9d6fe0"/><text x="736" y="12" fill="#6b6a63" font-size="10">claude 86%</text></g>
   <g transform="translate(0,317)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">记忆与知识 10</text><line x1="530" y1="8" x2="620" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="530" cy="8" r="5" fill="#4f8ef7"/><circle cx="620" cy="8" r="5" fill="#2db3d5"/><text x="638" y="12" fill="#6b6a63" font-size="10">openclaw 70%</text></g>
-  <g transform="translate(0,342)"><text x="190" y="12" fill="#5aad4e" text-anchor="end" font-weight="700">多 agent 14</text><circle cx="543" cy="8" r="6" fill="#4f8ef7"/><circle cx="543" cy="8" r="10" fill="none" stroke="#5aad4e" stroke-width="1.5"/><text x="561" y="12" fill="#5aad4e" font-size="10" font-weight="700">并列最高，57%</text></g>
+  <g transform="translate(0,342)"><text x="190" y="12" fill="#5aad4e" text-anchor="end" font-weight="700">多 agent 14</text><line x1="543" y1="8" x2="586" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="543" cy="8" r="5" fill="#5aad4e"/><circle cx="586" cy="8" r="5" fill="#4f8ef7"/><text x="604" y="12" fill="#5aad4e" font-size="10" font-weight="700">我们 64%，超过最高参考 cc内 57%</text></g>
   </g>
 </svg>
 </div>
 <div class="card legend">
-  <b>按本表计分，多 agent 是唯一并列最高的类别</b>：OpenProgram 与 <code>cc内</code> 均为 8.0/14。其余类别的已确认比例都低于该类最高参考列；差值最大的三类为集成与被集成（12% 对 73%）、版本控制（40% 对 85%）和编辑器集成（39% 对 78%）。该结论仍受功能定义和快照版本限制。
+  <b>按本表计分，多 agent 是唯一超过全部参考列的类别</b>：OpenProgram 9.0/14（64%），最高参考列 <code>cc内</code> 为 8.0/14（57%）。其余类别的已确认比例都低于该类最高参考列；差值最大的三类为集成与被集成（12% 对 73%）、版本控制（40% 对 85%）和编辑器集成（39% 对 78%）。该结论仍受功能定义和快照版本限制。
 </div>
 
 <!-- ══════════════════════════ LAYER 2 ══════════════════════════ -->
@@ -437,7 +437,7 @@
 <div class="tbl">
 <table class="wide">
 <tr><th>功能</th><th>大类</th><th>已确认的参考对象</th><th>依据</th></tr>
-<tr class="grp"><td colspan="4"><b class="g1">进入后续评估</b> <span style="color:#6b6a63">45 项</span></td></tr>
+<tr class="grp"><td colspan="4"><b class="g1">进入后续评估</b> <span style="color:#6b6a63">44 项</span></td></tr>
 <tr><td class="name">终端快捷键自动配置</td><td class="sz">编辑器集成</td><td>claude、cc内、gm内 等 5 家</td><td class="srcin">claude /terminal-setup · buddy /terminal-setup 覆盖十余种终端</td></tr>
 <tr><td class="name">归档会话</td><td class="sz">会话与历史</td><td>codex、cx内</td><td class="srcin">codex archive / unarchive · ~/.codex/archived_sessions/</td></tr>
 <tr><td class="name">将运行中会话迁移至其他设备或客户端</td><td class="sz">会话与历史</td><td>claude、codex、opencode 等 7 家</td><td class="srcin">claude /teleport · codex --remote · opencode attach · buddy --remote-control</td></tr>
@@ -460,7 +460,6 @@
 <tr><td class="name">持久任务看板</td><td class="sz">多 agent</td><td>hermes</td><td class="srcin">hermes ~/.hermes/kanban.db，多项目分板加自动拆解</td></tr>
 <tr><td class="name">agent 团队：队长加成员加邮箱</td><td class="sz">多 agent</td><td>claude、cc内、buddy</td><td class="srcin">buddy Agent Teams 带 @成员补全与共享任务表 · claude 需 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS</td></tr>
 <tr><td class="name">委派模式：协调 agent 不直接执行任务</td><td class="sz">多 agent</td><td>cc内、buddy</td><td class="srcin">buddy --permission-mode delegate，可用工具限制为五个</td></tr>
-<tr><td class="name">并发数与每会话派生总量上限</td><td class="sz">多 agent</td><td>claude、openclaw、hermes 等 6 家</td><td class="srcin">claude 并发 20 加每会话 200 次 · hermes max_concurrent_children 默认 3</td></tr>
 <tr><td class="name">子 agent 支持从持久状态恢复执行</td><td class="sz">多 agent</td><td>buddy</td><td class="srcin">buddy 使用 agentId 与 agent-{id}.jsonl，并在后续调用中传入 resume 参数</td></tr>
 <tr><td class="name">记忆编成可浏览的维基</td><td class="sz">记忆与知识</td><td>openclaw</td><td class="srcin">openclaw memory-wiki 带出处与主张</td></tr>
 <tr><td class="name">按技能 bundle 批量加载</td><td class="sz">记忆与知识</td><td>hermes</td><td class="srcin">hermes bundles 通过斜杠命令一次加载一组技能</td></tr>
@@ -681,7 +680,7 @@
 <div class="tbl">
 <table class="wide">
 <tr><th>对象</th><th>取证来源</th><th>注意</th></tr>
-<tr><td class="name">OpenProgram</td><td><code>main@0683819b</code></td><td>全部能力按该基线提交复核（2026-08-11），在 414aa4de 基础上追加确认：skills_bundled 的 commit-push-pr 打包技能、auth/methods 的 credential_process 外部命令取密钥、providers 层 recording/replay 模块（仅程序内 API）、backup create/list/restore/prune，以及默认开启的同 provider 失败切换。此前条目仍包括按 profile 隔离的 functions/programs meta 存储、TUI <code>/init</code>/<code>/compact</code>/<code>/doctor</code>/<code>/mcp</code>、有总输入上限的 <code>/commit-message</code>、测试专用 scripted provider、带范围声明的 <code>trash list/restore</code>、doctor/MCP 后端响应契约测试、运行中发消息排队、owner/paired 两档来源权限、默认开启的沙箱，以及 <code>openprogram acp</code> 服务端与 lsp_diagnostics/lsp_references/lsp_definition。文档改动本身不作为功能证据</td></tr>
+<tr><td class="name">OpenProgram</td><td><code>main@8f62da5a</code></td><td>全部能力按该基线提交复核（2026-08-11），在 414aa4de 基础上追加确认：skills_bundled 的 commit-push-pr 打包技能、auth/methods 的 credential_process 外部命令取密钥、providers 层 recording/replay 模块（仅程序内 API）、backup create/list/restore/prune、默认开启的同 provider 失败切换，以及 agent/resource_governance 的每会话并发与资源限额。此前条目仍包括按 profile 隔离的 functions/programs meta 存储、TUI <code>/init</code>/<code>/compact</code>/<code>/doctor</code>/<code>/mcp</code>、有总输入上限的 <code>/commit-message</code>、测试专用 scripted provider、带范围声明的 <code>trash list/restore</code>、doctor/MCP 后端响应契约测试、运行中发消息排队、owner/paired 两档来源权限、默认开启的沙箱，以及 <code>openprogram acp</code> 服务端与 lsp_diagnostics/lsp_references/lsp_definition。文档改动本身不作为功能证据</td></tr>
 <tr><td class="name">claude-code</td><td class="p">本机 CLI <code>2.1.226</code>；<code>references/claude-code-leaked@a371abbe75ff</code> 仅作补充</td><td>二进制与参考源码冲突时以本机二进制为准；只在内部构建出现且本机不可达的功能不计入</td></tr>
 <tr><td class="name">codex</td><td class="p">本机 CLI <code>0.147.0</code>；源码 <code>references/codex-cli@57f42a81131c</code></td><td>UnderDevelopment 与 Experimental 条目使用 <code>○</code>，不按默认开启状态计为完整确认</td></tr>
 <tr><td class="name">openclaw</td><td><code>references/openclaw@b1b28415c2eb</code></td><td rowspan="5">均为本地源码快照，不声明为项目最新发布版；文档声明没有统一转换成端到端运行验证</td></tr>
@@ -699,7 +698,7 @@
 <div class="tbl">
 <table>
 <tr><th>条目</th><th>状态</th></tr>
-<tr><td>功能矩阵、76.0 分、75 个候选差异、6 个快照差异</td><td class="y">基于上述基线提交；外部对象没有做全量运行验收</td></tr>
+<tr><td>功能矩阵、77.0 分、74 个候选差异、6 个快照差异</td><td class="y">基于上述基线提交；外部对象没有做全量运行验收</td></tr>
 <tr><td>第四节的六个批次</td><td class="n">设计参考，未表示已实现或已批准；实施前需重新核对现状并单独估算</td></tr>
 <tr><td>OpenProgram 列的 <code>◐</code></td><td class="p">只在部分界面或部分输入路径确认；具体限制写在对应依据中</td></tr>
 <tr><td>分数、类别比例和候选计数</td><td class="p">由矩阵状态机械计算；不附带质量权重或重要性权重</td></tr>
