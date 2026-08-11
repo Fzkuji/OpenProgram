@@ -237,9 +237,9 @@ Commit: `feat(structured-output): expose validated stream lifecycle`
 - Modify: `openprogram/cli.py`
 - Modify: `openprogram/_cli_chat/turn.py`
 - Modify: `openprogram/webui/ws_actions/chat.py`
-- Modify: `openprogram/webui/routes/chat.py`
 - Modify: `openprogram/webui/_execute/chat.py`
 - Modify: `openprogram/webui/server.py`
+- Modify: `openprogram/webui/routes/functions.py`
 - Modify: `cli/src/ws/client.ts`
 - Modify: `cli/src/screens/repl/wsHandlers/handleChatResponse.ts`
 - Create: `tests/providers/test_structured_output_cli.py`
@@ -277,15 +277,22 @@ Parse and preflight the schema before Runtime construction. Keep normal `--print
 - [ ] **Step 4: Write failing Web request/event tests**
 
 ```python
-def test_owner_chat_accepts_response_format_and_returns_typed_result(client):
-    reply = client.post("/api/chat", json={"content": "x", "response_format": ENVELOPE})
-    assert reply.status_code == 200
-    assert reply.json()["structured_output"] == {"answer": 3}
+def test_chat_ws_accepts_response_format_and_returns_typed_result(ws_client):
+    frames = ws_client.chat({"content": "x", "response_format": ENVELOPE})
+    result = next(frame for frame in frames if frame["data"].get("type") == "result")
+    assert result["data"]["structured_output"] == {"answer": 3}
 
-def test_invalid_schema_is_rejected_before_dispatch(client, dispatch_spy):
-    reply = client.post("/api/chat", json={"content": "x", "response_format": BAD_SCHEMA})
-    assert reply.status_code == 400
+def test_invalid_schema_is_rejected_before_ws_dispatch(ws_client, dispatch_spy):
+    frame = ws_client.chat_one({"content": "x", "response_format": BAD_SCHEMA})
+    assert frame["data"]["type"] == "error"
+    assert frame["data"]["code"] == "invalid_schema"
     assert dispatch_spy.calls == []
+
+def test_function_http_keeps_async_ack_and_delivers_typed_ws_result(client, ws_client):
+    ack = client.post("/api/function/demo", json={"response_format": ENVELOPE})
+    assert set(ack.json()) >= {"session_id", "msg_id"}
+    result = ws_client.await_result(ack.json()["msg_id"])
+    assert result["structured_output"] == {"answer": 3}
 ```
 
 - [ ] **Step 5: Run Web tests and verify RED**
@@ -294,7 +301,7 @@ Run: `python -m pytest -q tests/unit/test_structured_output_web.py`
 
 - [ ] **Step 6: Thread normalized schema and typed lifecycle through existing envelopes**
 
-Do not add a Web schema editor. Add backward-compatible optional TS fields; older clients may ignore them. Route retry/end only to the originating session/request. Public errors expose stable `code` and bounded issues, never candidate or schema text.
+Do not add a Web schema editor and do not invent a synchronous `/api/chat` route. Add `response_format` to the existing WebSocket chat action and the existing `POST /api/function/{name}` body. The function route must continue returning only its immediate `{session_id,msg_id}` acknowledgement; typed success/error remains on the existing WS/event chain. Add backward-compatible optional TS fields; older clients may ignore them. Route retry/end only to the originating session/request. Public errors expose stable `code` and bounded issues, never candidate or schema text.
 
 - [ ] **Step 7: Run Task 4 checks and commit**
 
@@ -380,7 +387,7 @@ Remove `ONLY title text`, prefix stripping, quote stripping, and first-line pars
 
 - [ ] **Step 4: Run title tests and commit**
 
-Run: `python -m pytest -q tests/unit/test_dispatcher_compaction_title.py tests/unit/test_session_naming.py`
+Run: `python -m pytest -q tests/unit/test_dispatcher_compaction_title.py`
 
 Commit: `refactor(session): generate titles with validated JSON schema`
 
