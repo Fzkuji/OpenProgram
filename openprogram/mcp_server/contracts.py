@@ -73,7 +73,10 @@ TOOL_BY_NAME: Mapping[str, mcp_types.Tool] = MappingProxyType(
     {tool.name: tool for tool in MCP_TOOL_SCHEMAS}
 )
 _VALIDATORS = MappingProxyType(
-    {tool.name: Draft202012Validator(tool.inputSchema) for tool in MCP_TOOL_SCHEMAS}
+    {
+        tool.name: Draft202012Validator(copy.deepcopy(tool.inputSchema))
+        for tool in MCP_TOOL_SCHEMAS
+    }
 )
 
 for _tool in MCP_TOOL_SCHEMAS:

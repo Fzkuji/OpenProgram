@@ -166,3 +166,16 @@ def test_unknown_wrapper_is_method_not_found_without_echoing_the_name() -> None:
 def test_contract_matches_locked_mcp_protocol_without_startup_side_effects() -> None:
     assert version("mcp") == "1.29.0"
     assert mcp_types.LATEST_PROTOCOL_VERSION == "2025-11-25"
+
+
+def test_exported_tool_schema_mutation_cannot_change_validation_contract() -> None:
+    tool = TOOL_BY_NAME["sessions_list"]
+    original = copy.deepcopy(tool.inputSchema)
+    try:
+        tool.inputSchema["properties"]["unexpected"] = {"type": "string"}
+        with pytest.raises(McpError) as exc_info:
+            validate_tool_call("sessions_list", {"unexpected": "value"})
+        assert exc_info.value.error.code == mcp_types.INVALID_PARAMS
+    finally:
+        tool.inputSchema.clear()
+        tool.inputSchema.update(original)
