@@ -39,8 +39,18 @@ def mem_cfg(monkeypatch):
     store: dict = {}
     _read = lambda: copy.deepcopy(store)
     _write = lambda cfg: store.clear() or store.update(copy.deepcopy(cfg))
+    def _update(mutator):
+        current = copy.deepcopy(store)
+        result = mutator(current)
+        _write(current)
+        from openprogram.providers import enabled_models as mg
+
+        mg.reload()
+        return result
+
     monkeypatch.setattr(st, "_read_providers_cfg", _read)
     monkeypatch.setattr(st, "_write_providers_cfg", _write)
+    monkeypatch.setattr(st, "_update_providers_cfg", _update)
     st._reset_spec_migration()
     return store
 

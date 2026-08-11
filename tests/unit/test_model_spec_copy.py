@@ -29,11 +29,17 @@ def mem_cfg(monkeypatch):
     # via _write_providers_cfg (mirrors real config.json round-tripping).
     _read = lambda: copy.deepcopy(store)
     _write = lambda cfg: store.clear() or store.update(copy.deepcopy(cfg))
+    def _update(mutator):
+        current = copy.deepcopy(store)
+        result = mutator(current)
+        _write(current)
+        return result
+
     # toggle.py binds these names at import time, so patch it too (not just st).
     monkeypatch.setattr(st, "_read_providers_cfg", _read)
     monkeypatch.setattr(st, "_write_providers_cfg", _write)
-    monkeypatch.setattr(tg, "_read_providers_cfg", _read)
-    monkeypatch.setattr(tg, "_write_providers_cfg", _write)
+    monkeypatch.setattr(st, "_update_providers_cfg", _update)
+    monkeypatch.setattr(tg, "_update_providers_cfg", _update)
     st._reset_spec_migration()
     return store
 
@@ -267,11 +273,15 @@ def live_cfg(monkeypatch):
     # storage._write_providers_cfg goes through setup._read_config/_write_config,
     # then calls enabled_models.reload(); reload() reads via cr.read_providers_config.
     import openprogram.setup as setup
-    monkeypatch.setattr(setup, "_read_config", lambda: {"providers": copy.deepcopy(store)})
-    monkeypatch.setattr(setup, "_write_config", _save)
+    def _update_root(mutator, **_kwargs):
+        root = {"providers": copy.deepcopy(store)}
+        mutator(root)
+        _save(root)
+        return root
+
+    monkeypatch.setattr(setup, "update_config", _update_root)
     monkeypatch.setattr(cr, "read_providers_config", lambda: copy.deepcopy(store))
     monkeypatch.setattr(st, "_read_providers_cfg", _read)
-    monkeypatch.setattr(tg, "_read_providers_cfg", _read)
     st._reset_spec_migration()
     mg.reload()
     yield store
@@ -305,7 +315,15 @@ def test_repair_pass_runs_through_run_once(monkeypatch):
     config = {"spec_migration_version": 0, "providers": {"p": _repair_provider()}}
     import openprogram.setup as setup
     monkeypatch.setattr(setup, "_read_config", lambda: config)
-    monkeypatch.setattr(setup, "_write_config", lambda c: config.update(c))
+
+    def update(mutator, **_kwargs):
+        mutator(config)
+        return config
+
+    monkeypatch.setattr(setup, "update_config", update)
+    import openprogram.providers.enabled_models as mg
+
+    monkeypatch.setattr(mg, "reload", lambda: None)
     st._reset_spec_migration()
     st._run_spec_migration_once(config["providers"])
     ids = [r["id"] for r in config["providers"]["p"]["models"]]

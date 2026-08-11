@@ -13,9 +13,11 @@ easily as ``API_KEY`` holds a key.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import stat
+from concurrent.futures import CancelledError as FutureCancelledError
 
 import pytest
 from fastapi import FastAPI
@@ -270,23 +272,26 @@ def patch_server(cfg: MCPServerConfig, body: dict, monkeypatch, *,
     return response, stored
 
 
-def test_patch_revision_conflict_happens_before_runtime_restart(
+def test_patch_revision_conflict_resyncs_runtime_to_external_config(
     monkeypatch, state_dir
 ):
     from openprogram.credential_files import PrivateAtomicWriteError
     from openprogram.webui.routes import mcp
 
     cfg = local_config()
+    external = local_config()
+    external.timeout_seconds = 99
     restarts = []
 
-    async def observed_restart(*args, **kwargs):
-        restarts.append((args, kwargs))
+    async def observed_restart(_name, *, new_cfg):
+        restarts.append(new_cfg.timeout_seconds)
         return {"name": cfg.name, "ready": True}
 
+    loads = iter([([cfg], "sha256:stale"), ([external], "sha256:external")])
     monkeypatch.setattr(
         mcp,
         "load_configs_with_revision",
-        lambda **_kwargs: ([cfg], "sha256:stale"),
+        lambda **_kwargs: next(loads),
     )
     monkeypatch.setattr(
         mcp,
@@ -304,30 +309,104 @@ def test_patch_revision_conflict_happens_before_runtime_restart(
     )
 
     assert response.status_code == 409
-    assert restarts == []
+    assert restarts == [45, 99]
 
 
-def test_patch_rollback_conflict_resyncs_runtime_to_external_config(
-    monkeypatch, state_dir
-):
-    from openprogram.credential_files import PrivateAtomicWriteError
+def test_patch_cancelled_restart_leaves_disk_unchanged(monkeypatch, state_dir):
     from openprogram.webui.routes import mcp
 
     original = local_config()
-    external = local_config()
-    external.timeout_seconds = 99
-    loads = iter([([original], "sha256:old"), ([external], "sha256:external")])
+    original.command = ["old"]
+    save_configs([original])
+
+    async def cancelled_restart(*_args, **_kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(mcp, "restart_server", cancelled_restart)
+    app = FastAPI()
+    mcp.register(app)
+
+    with pytest.raises(FutureCancelledError):
+        TestClient(app).patch(
+            f"/api/mcp/servers/{original.name}", json={"command": ["new"]}
+        )
+
+    stored = load_configs(include_disabled=True)[0]
+    assert stored.command == ["old"]
+    assert stored.env == original.env
+
+
+def test_catalog_update_cancelled_restart_leaves_disk_unchanged(
+    monkeypatch, state_dir
+):
+    from openprogram.webui.routes import mcp
+
+    original = local_config()
+    original.command = ["old"]
+    original.source_catalog_url = "https://catalog.example/mcp.json"
+    save_configs([original])
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "servers": [
+                    {
+                        "name": original.name,
+                        "type": "local",
+                        "command": ["new"],
+                    }
+                ]
+            }
+
+    class Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, *_args, **_kwargs):
+            return Response()
+
+    async def cancelled_restart(*_args, **_kwargs):
+        raise asyncio.CancelledError
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", Client)
+    monkeypatch.setattr(mcp, "restart_server", cancelled_restart)
+    app = FastAPI()
+    mcp.register(app)
+
+    with pytest.raises(FutureCancelledError):
+        TestClient(app).post(
+            f"/api/mcp/servers/{original.name}/update_from_catalog"
+        )
+
+    stored = load_configs(include_disabled=True)[0]
+    assert stored.command == ["old"]
+    assert stored.env == original.env
+
+
+def test_patch_restart_failure_restores_runtime_before_any_publication(
+    monkeypatch, state_dir
+):
+    from openprogram.webui.routes import mcp
+
+    original = local_config()
     saves = 0
     restarts = []
 
     def observed_save(*_args, **_kwargs):
         nonlocal saves
         saves += 1
-        if saves == 1:
-            return "sha256:new"
-        raise PrivateAtomicWriteError(
-            "conflict", state_dir / "mcp_servers.json", committed=False
-        )
+        return "sha256:new"
 
     async def observed_restart(_name, *, new_cfg):
         restarts.append(new_cfg.timeout_seconds)
@@ -335,7 +414,11 @@ def test_patch_rollback_conflict_resyncs_runtime_to_external_config(
             raise RuntimeError("new config failed")
         return {"name": original.name, "ready": True}
 
-    monkeypatch.setattr(mcp, "load_configs_with_revision", lambda **_kwargs: next(loads))
+    monkeypatch.setattr(
+        mcp,
+        "load_configs_with_revision",
+        lambda **_kwargs: ([original], "sha256:old"),
+    )
     monkeypatch.setattr(mcp, "save_configs_revision", observed_save)
     monkeypatch.setattr(mcp, "restart_server", observed_restart)
     app = FastAPI()
@@ -345,8 +428,9 @@ def test_patch_rollback_conflict_resyncs_runtime_to_external_config(
         f"/api/mcp/servers/{original.name}", json={"timeout_seconds": 45}
     )
 
-    assert response.status_code == 409
-    assert restarts == [45, 99]
+    assert response.status_code == 500
+    assert restarts == [45, 30]
+    assert saves == 0
 
 
 def test_omitted_env_field_preserves_every_stored_value(monkeypatch, state_dir):

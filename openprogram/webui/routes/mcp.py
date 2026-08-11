@@ -71,6 +71,42 @@ async def _resync_server_from_disk(name: str) -> None:
         pass
 
 
+async def _restart_then_publish(
+    name: str,
+    *,
+    previous: MCPServerConfig,
+    updated: MCPServerConfig,
+    configs: list[MCPServerConfig],
+    expected_revision: str,
+) -> dict:
+    """Validate runtime first, then conditionally publish the same snapshot."""
+    try:
+        status = await restart_server(name, new_cfg=updated)
+    except Exception as exc:  # noqa: BLE001
+        try:
+            await restart_server(name, new_cfg=previous)
+        except Exception:  # noqa: BLE001
+            pass
+        raise HTTPException(
+            status_code=500,
+            detail=f"restart failed: {type(exc).__name__}: {exc}",
+        ) from exc
+
+    try:
+        save_configs_revision(configs, expected_revision=expected_revision)
+    except PrivateAtomicWriteError as exc:
+        if exc.code == "conflict":
+            await _resync_server_from_disk(name)
+            raise HTTPException(
+                status_code=409,
+                detail="MCP config changed concurrently; runtime was resynced",
+            ) from exc
+        if not exc.committed:
+            await _resync_server_from_disk(name)
+        raise
+    return status
+
+
 def _require_local_request(request: Request) -> None:
     """Allow loopback clients; browser requests must also be same-origin."""
     from urllib.parse import urlsplit
@@ -170,28 +206,13 @@ def register(app: FastAPI) -> None:
         if new_cfg is None:
             raise HTTPException(status_code=400, detail="invalid config")
         new_list = [c if c.name != name else new_cfg for c in all_cfgs]
-        published_revision = _save_expected(new_list, revision)
-        try:
-            status = await restart_server(name, new_cfg=new_cfg)
-        except Exception as e:  # noqa: BLE001
-            try:
-                save_configs_revision(
-                    all_cfgs, expected_revision=published_revision
-                )
-            except PrivateAtomicWriteError as rollback_error:
-                if rollback_error.code != "conflict":
-                    raise
-                await _resync_server_from_disk(name)
-                raise HTTPException(
-                    status_code=409,
-                    detail="MCP config changed while a failed restart was rolled back",
-                ) from rollback_error
-            try:
-                await restart_server(name, new_cfg=match)
-            except Exception:  # noqa: BLE001
-                pass
-            raise HTTPException(status_code=500,
-                                detail=f"restart failed: {type(e).__name__}: {e}")
+        status = await _restart_then_publish(
+            name,
+            previous=match,
+            updated=new_cfg,
+            configs=new_list,
+            expected_revision=revision,
+        )
         return JSONResponse(content=status)
 
     @app.delete("/api/mcp/servers/{name}")
@@ -442,29 +463,13 @@ def register(app: FastAPI) -> None:
         )
 
         new_list = [c if c.name != name else new_cfg for c in all_cfgs]
-        published_revision = _save_expected(new_list, revision)
-        try:
-            status = await restart_server(name, new_cfg=new_cfg)
-        except Exception as e:  # noqa: BLE001
-            try:
-                save_configs_revision(
-                    all_cfgs, expected_revision=published_revision
-                )
-            except PrivateAtomicWriteError as rollback_error:
-                if rollback_error.code != "conflict":
-                    raise
-                await _resync_server_from_disk(name)
-                raise HTTPException(
-                    status_code=409,
-                    detail="MCP config changed while a failed restart was rolled back",
-                ) from rollback_error
-            try:
-                await restart_server(name, new_cfg=match)
-            except Exception:  # noqa: BLE001
-                pass
-            raise HTTPException(status_code=500,
-                                detail=f"restart failed: "
-                                       f"{type(e).__name__}: {e}")
+        status = await _restart_then_publish(
+            name,
+            previous=match,
+            updated=new_cfg,
+            configs=new_list,
+            expected_revision=revision,
+        )
         return JSONResponse(content=status)
 
     @app.get("/api/mcp/catalog/suggested")
