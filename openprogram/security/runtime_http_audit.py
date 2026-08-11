@@ -328,19 +328,25 @@ class _HTTPVisitor(ast.NodeVisitor):
                     if isinstance(target, ast.Name):
                         self.socket_variables.add(target.id)
         provenance = self._managed_consumers(node.value)
-        if provenance:
-            for target in node.targets:
-                if isinstance(target, ast.Name):
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                key = (tuple(self.scope), target.id)
+                if provenance:
                     self.managed_values[(tuple(self.scope), target.id)] = provenance
+                else:
+                    self.managed_values.pop(key, None)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         provenance = (
             frozenset() if node.value is None else self._managed_consumers(node.value)
         )
-        if provenance:
-            if isinstance(node.target, ast.Name):
+        if isinstance(node.target, ast.Name):
+            key = (tuple(self.scope), node.target.id)
+            if provenance:
                 self.managed_values[(tuple(self.scope), node.target.id)] = provenance
+            else:
+                self.managed_values.pop(key, None)
         self.generic_visit(node)
 
     def visit_With(self, node: ast.With) -> None:
@@ -399,17 +405,36 @@ class _HTTPVisitor(ast.NodeVisitor):
         return None
 
     def _managed_consumers(self, node: ast.AST) -> frozenset[str]:
-        consumers: set[str] = set()
-        for child in ast.walk(node):
-            if isinstance(child, ast.Name):
-                consumers.update(self._lookup_managed_value(child.id))
-            elif isinstance(child, ast.Call):
-                consumer = self._managed_factory_consumer(child)
-                if consumer is not None:
-                    consumers.add(consumer)
-                if isinstance(child.func, ast.Name):
-                    consumers.update(self._lookup_managed_value(child.func.id))
-        return frozenset(consumers)
+        if isinstance(node, ast.Name):
+            return self._lookup_managed_value(node.id)
+        if isinstance(node, ast.Call):
+            consumer = self._managed_factory_consumer(node)
+            if consumer is not None:
+                return frozenset({consumer})
+            if isinstance(node.func, ast.Name):
+                return self._lookup_managed_value(node.func.id)
+            if isinstance(node.func, ast.Attribute) and node.func.attr == "items":
+                return self._managed_consumers(node.func.value)
+            return frozenset()
+        if isinstance(node, ast.Dict):
+            consumers: set[str] = set()
+            for key, value in zip(node.keys, node.values, strict=True):
+                if (
+                    isinstance(key, ast.Constant)
+                    and key.value in _SDK_INJECTION_KEYWORDS
+                ):
+                    consumers.update(self._managed_consumers(value))
+            return frozenset(consumers)
+        if isinstance(node, ast.DictComp):
+            consumers: set[str] = set()
+            for generator in node.generators:
+                consumers.update(self._managed_consumers(generator.iter))
+            return frozenset(consumers)
+        if isinstance(node, ast.IfExp):
+            body = self._managed_consumers(node.body)
+            other = self._managed_consumers(node.orelse)
+            return body if body and body == other else frozenset()
+        return frozenset()
 
     def visit_Call(self, node: ast.Call) -> None:
         name = _qualname(node.func, self.aliases)

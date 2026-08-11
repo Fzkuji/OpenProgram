@@ -143,6 +143,14 @@ Second spec re-review fix:
   categories as zero.
 - Final second-fix focused command: `74 passed in 1.50s`; complete
   `tests/security`: `536 passed in 77.32s`.
+- Same-finding provenance self-review added a selected-tuple expression and a
+  managed-then-unmanaged reassignment. RED: `2 failed, 4 passed, 17
+  deselected`. The analysis now follows only structurally selected values and
+  clears provenance on unmanaged reassignment instead of accepting any nested
+  factory descendant or retaining stale assignment state. GREEN: `7 passed,
+  16 deselected`; checker categories remain all zero. Final focused: `76
+  passed in 1.40s`; complete `tests/security`: `538 passed in 77.78s`; Ruff,
+  format, lock, and diff checks passed.
 
 ## Concerns
 

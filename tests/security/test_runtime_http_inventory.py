@@ -290,6 +290,20 @@ openai.OpenAI(
     http_client=unrelated.safe_http.safe_client("provider.openai.sdk")
 )
 """,
+        """
+import openai
+from openprogram.security.safe_http import safe_client
+openai.OpenAI(
+    http_client=(safe_client("provider.openai.sdk"), object())[1]
+)
+""",
+        """
+import openai
+from openprogram.security.safe_http import safe_client
+client = safe_client("provider.openai.sdk")
+client = object()
+openai.OpenAI(http_client=client)
+""",
     ],
 )
 def test_sdk_injection_requires_exact_managed_value_and_consumer(
