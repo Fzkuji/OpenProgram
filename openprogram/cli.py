@@ -91,7 +91,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
         "agents", "sessions", "channels", "config", "programs", "skills", "plugins", "doctor",
         "providers", "web", "resume", "init", "doctor", "browser",
         "worker", "update", "memory", "mcp", "trash", "backup",
-        "stop", "status", "restart", "upgrade", "help",
+        "recordings", "stop", "status", "restart", "upgrade", "help",
     }
     bypass_flags = {
         "--print", "-p", "--help", "-h", "--version", "--print-prompt",
@@ -1435,7 +1435,11 @@ def main():
             return
 
     if args.command == "recordings":
-        from openprogram.providers.recording import dispatch_recordings
+        os.environ["_OPENPROGRAM_RECORDINGS_MANAGEMENT"] = "1"
+        try:
+            from openprogram.providers.recording import dispatch_recordings
+        finally:
+            os.environ.pop("_OPENPROGRAM_RECORDINGS_MANAGEMENT", None)
 
         sys.exit(dispatch_recordings(args))
 

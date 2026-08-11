@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import stat
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -181,6 +183,37 @@ def test_recordings_parser_and_json_dispatch(recording_env: Path, capsys) -> Non
     payload = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert payload["mode"] == "record"
     assert payload["file"] == "cli"
+
+
+def test_off_recovers_from_a_replay_file_that_became_invalid(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    state = home / ".openprogram"
+    state.mkdir(parents=True)
+    missing = state / "recordings" / "missing.jsonl"
+    (state / "config.json").write_text(
+        json.dumps({"record_replay": {"mode": "replay", "file": str(missing)}}),
+        encoding="utf-8",
+    )
+    env = {**os.environ, "HOME": str(home)}
+
+    result = subprocess.run(
+        [sys.executable, "-m", "openprogram", "recordings", "off"],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads((state / "config.json").read_text())["record_replay"]["mode"] == "off"
+
+
+def test_recordings_is_not_classified_as_a_tui_invocation() -> None:
+    from openprogram.cli import _looks_like_tui_invocation
+
+    assert not _looks_like_tui_invocation(["recordings", "record"])
 
 
 def test_destructive_dispatch_requires_yes_when_not_a_tty(
