@@ -29,15 +29,29 @@ def test_successful_fetch_writes_disk_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(models_dev, "_disk_cache_path", lambda: cache)
 
     class _Resp:
+        headers = {"content-type": "application/json"}
+
         def raise_for_status(self):
             pass
 
         def json(self):
             return {"groq": {"name": "Groq", "models": {}}}
 
-    import httpx
+    class _Client:
+        def __enter__(self):
+            return self
 
-    monkeypatch.setattr(httpx, "get", lambda *a, **k: _Resp())
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            return _Resp()
+
+    def fixed(consumer):
+        assert consumer == "webui.model_listing.fixed"
+        return _Client()
+
+    monkeypatch.setattr(models_dev.safe_http, "safe_client", fixed)
     _reset_mem_cache()
     try:
         data = models_dev._load()
