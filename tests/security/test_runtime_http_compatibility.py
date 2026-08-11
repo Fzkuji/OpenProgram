@@ -1,10 +1,23 @@
+import http.server
+import subprocess
+import sys
+import threading
+from dataclasses import replace
+from types import MappingProxyType
+from urllib.parse import urlsplit, urlunsplit
+
+import httpcore
 import pytest
 
+from openprogram.security import safe_http
 from openprogram.security.safe_http import (
     CONSUMER_REGISTRY,
     OutboundSecurityConfig,
+    configured_safe_client,
+    require_active_sdk_transport,
     safe_client,
 )
+from openprogram.security.url_policy import OwnerURLException, URLPolicyError
 
 
 COMPATIBILITY_FIXTURES = {
@@ -667,8 +680,122 @@ COMPATIBILITY_FIXTURES = {
 }
 
 
+FIXED_ORIGIN_FIXTURES = {
+    "tool.web_search.fixed_api": (
+        "https://api.exa.ai",
+        "https://api.firecrawl.dev",
+        "https://api.minimax.io",
+        "https://api.minimaxi.com",
+        "https://api.moonshot.ai",
+        "https://api.moonshot.cn",
+        "https://api.perplexity.ai",
+        "https://api.search.brave.com",
+        "https://api.tavily.com",
+        "https://chat-api.you.com",
+        "https://export.arxiv.org",
+        "https://google.serper.dev",
+        "https://kagi.com",
+        "https://ollama.com",
+        "https://s.jina.ai",
+        "https://www.googleapis.com",
+    ),
+    "tool.image_api.fixed": (
+        "https://api.anthropic.com",
+        "https://api.openai.com",
+        "https://generativelanguage.googleapis.com",
+        "https://queue.fal.run",
+    ),
+    "channel.telegram.api": ("https://api.telegram.org",),
+    "channel.discord.api": ("https://discord.com",),
+    "channel.discord.gateway_sdk": ("https://discord.com",),
+    "channel.slack.api": ("https://slack.com",),
+    "channel.slack.gateway_sdk": ("https://slack.com",),
+    "channel.slack.attachment": ("https://files.slack.com", "https://slack.com"),
+    "channel.slack.generated_asset.upload": ("https://files.slack.com",),
+    "channel.telegram.attachment": ("https://api.telegram.org",),
+    "channel.feishu.api": ("https://open.feishu.cn", "https://open.larksuite.com"),
+    "skills.github.catalog": (
+        "https://clawhub.ai",
+        "https://codeload.github.com",
+        "https://github.com",
+    ),
+    "plugins.autoupdate": ("https://pypi.org", "https://registry.npmjs.org"),
+    "updater.github": ("https://api.github.com",),
+    "updater.pip": ("https://pypi.org",),
+    "provider.fixed_api": (
+        "https://ai-gateway.vercel.sh",
+        "https://api.anthropic.com",
+        "https://api.cerebras.ai",
+        "https://api.deepseek.com",
+        "https://api.github.com",
+        "https://api.githubcopilot.com",
+        "https://api.groq.com",
+        "https://api.individual.githubcopilot.com",
+        "https://api.kimi.com",
+        "https://api.minimax.io",
+        "https://api.minimaxi.com",
+        "https://api.mistral.ai",
+        "https://api.openai.com",
+        "https://api.x.ai",
+        "https://api.z.ai",
+        "https://bedrock-runtime.us-east-1.amazonaws.com",
+        "https://chatgpt.com",
+        "https://cloudcode-pa.googleapis.com",
+        "https://generativelanguage.googleapis.com",
+        "https://opencode.ai",
+        "https://openrouter.ai",
+        "https://router.huggingface.co",
+        "https://token-plan.cn-beijing.maas.aliyuncs.com",
+    ),
+    "provider.oauth.fixed": (
+        "https://accounts.google.com",
+        "https://api.github.com",
+        "https://auth.openai.com",
+        "https://claude.ai",
+        "https://console.anthropic.com",
+        "https://github.com",
+        "https://oauth2.googleapis.com",
+    ),
+    "tts.fixed_api": ("https://api.elevenlabs.io", "https://api.openai.com"),
+    "webui.model_listing.fixed": (
+        "https://api.anthropic.com",
+        "https://generativelanguage.googleapis.com",
+        "https://models.dev",
+    ),
+}
+
+
 def test_every_registry_consumer_has_a_literal_compatibility_fixture() -> None:
     assert set(COMPATIBILITY_FIXTURES) == set(CONSUMER_REGISTRY)
+
+
+def test_literal_fixed_origin_fixtures_cover_every_fixed_consumer() -> None:
+    fixed_consumers = {
+        consumer
+        for consumer, spec in CONSUMER_REGISTRY.items()
+        if spec.trust_class.value == "fixed_public_service"
+    }
+    assert set(FIXED_ORIGIN_FIXTURES) == fixed_consumers
+
+
+@pytest.mark.parametrize("consumer, origins", FIXED_ORIGIN_FIXTURES.items())
+def test_fixed_consumer_allows_only_its_complete_literal_origin_set(
+    consumer, origins
+) -> None:
+    spec = CONSUMER_REGISTRY[consumer]
+    assert spec.fixed_origins == frozenset(origins)
+    method = "GET" if "GET" in spec.allowed_methods else "POST"
+    with safe_client(
+        consumer,
+        security=OutboundSecurityConfig(resolver=lambda *_args: ("93.184.216.34",)),
+    ) as client:
+        for origin in origins:
+            assert (
+                client._transport._evaluate(method, origin + "/literal").origin
+                == origin
+            )
+        with pytest.raises(Exception, match="FIXED_ORIGIN_MISMATCH"):
+            client.request(method, "https://not-declared.example.test/literal")
 
 
 @pytest.mark.parametrize("consumer, expected", COMPATIBILITY_FIXTURES.items())
@@ -720,3 +847,246 @@ def test_literal_fixture_matches_the_real_policy_boundary(consumer, expected) ->
 
     assert decision.origin == origin
     assert decision.port == port
+
+
+@pytest.mark.parametrize("consumer, expected", COMPATIBILITY_FIXTURES.items())
+def test_each_literal_row_rejects_unapproved_method_scheme_and_origin_port(
+    consumer, expected
+) -> None:
+    trust_class, _method, origin, _port, *_rest = expected
+    parsed = urlsplit(origin)
+    kwargs = {}
+    if trust_class == "configured_service":
+        kwargs["configured_origin"] = origin
+    if trust_class == "loopback_callback":
+        kwargs["callback_origin"] = origin
+    resolver = lambda _host, _port: (
+        ("127.0.0.1",) if trust_class == "loopback_callback" else ("93.184.216.34",)
+    )
+    host = parsed.hostname or "invalid"
+    netloc = f"[{host}]:65535" if ":" in host else f"{host}:65535"
+    wrong_scheme = urlunsplit(("ftp", parsed.netloc, "/blocked", "", ""))
+    wrong_port = urlunsplit((parsed.scheme, netloc, "/blocked", "", ""))
+
+    with safe_client(
+        consumer, security=OutboundSecurityConfig(resolver=resolver), **kwargs
+    ) as client:
+        with pytest.raises(URLPolicyError):
+            client.request("DELETE", origin + "/blocked")
+        with pytest.raises(URLPolicyError):
+            client.get(wrong_scheme)
+        with pytest.raises(URLPolicyError):
+            client.get(wrong_port)
+
+
+class _CompatibilityHandler(http.server.BaseHTTPRequestHandler):
+    requests: list[tuple[str, str, dict[str, str]]] = []
+
+    def _reply(self) -> None:
+        type(self).requests.append((self.command, self.path, dict(self.headers)))
+        if self.path == "/redirect":
+            self.send_response(302)
+            self.send_header("Location", "http://127.0.0.1:1/forbidden")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        body = b"12345" if self.path == "/over-cap" else b"ok"
+        self.send_response(200)
+        self.send_header(
+            "Content-Type", "image/png" if self.path == "/wrong-mime" else "text/plain"
+        )
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    do_GET = _reply
+    do_POST = _reply
+
+    def log_message(self, *_args) -> None:
+        return
+
+
+@pytest.fixture
+def compatibility_server():
+    _CompatibilityHandler.requests = []
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _CompatibilityHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+class _PublicReportedStream(httpcore.NetworkStream):
+    def __init__(self, stream: httpcore.NetworkStream, peer: str):
+        self._stream = stream
+        self._peer = peer
+
+    def read(self, max_bytes: int, timeout: float | None = None) -> bytes:
+        return self._stream.read(max_bytes, timeout)
+
+    def write(self, buffer: bytes, timeout: float | None = None) -> None:
+        self._stream.write(buffer, timeout)
+
+    def close(self) -> None:
+        self._stream.close()
+
+    def start_tls(self, *args, **kwargs):
+        return self._stream.start_tls(*args, **kwargs)
+
+    def get_extra_info(self, info: str):
+        if info == "server_addr":
+            return (self._peer, 80)
+        return self._stream.get_extra_info(info)
+
+
+class _PublicLoopbackBackend(httpcore.NetworkBackend):
+    def __init__(self, peer: str):
+        self._peer = peer
+        self._backend = httpcore.SyncBackend()
+
+    def connect_tcp(self, _host, port, **kwargs):
+        stream = self._backend.connect_tcp("127.0.0.1", port, **kwargs)
+        return _PublicReportedStream(stream, self._peer)
+
+    def connect_unix_socket(self, *args, **kwargs):
+        return self._backend.connect_unix_socket(*args, **kwargs)
+
+    def sleep(self, seconds: float) -> None:
+        self._backend.sleep(seconds)
+
+
+def test_public_client_strips_credentials_before_a_real_local_socket_send(
+    monkeypatch, compatibility_server
+) -> None:
+    port = compatibility_server.server_address[1]
+    registry = dict(safe_http.CONSUMER_REGISTRY)
+    registry["tool.web_fetch"] = replace(
+        registry["tool.web_fetch"], allowed_ports=frozenset({port})
+    )
+    monkeypatch.setattr(safe_http, "CONSUMER_REGISTRY", MappingProxyType(registry))
+    original = safe_http.DecisionNetworkBackend
+    monkeypatch.setattr(
+        safe_http,
+        "DecisionNetworkBackend",
+        lambda decision: original(
+            decision,
+            underlying=_PublicLoopbackBackend(str(decision.resolved_ips[0])),
+        ),
+    )
+    with safe_client(
+        "tool.web_fetch",
+        security=OutboundSecurityConfig(resolver=lambda *_args: ("93.184.216.34",)),
+    ) as client:
+        assert (
+            client.get(
+                f"http://public.example.test:{port}/credential",
+                headers={"Authorization": "Bearer never-send"},
+            ).content
+            == b"ok"
+        )
+
+    assert (
+        "Authorization" not in compatibility_server.RequestHandlerClass.requests[0][2]
+    )
+
+
+def test_configured_client_rejects_wrong_mime_from_a_real_local_socket(
+    compatibility_server,
+) -> None:
+    origin = f"http://127.0.0.1:{compatibility_server.server_address[1]}"
+    with (
+        configured_safe_client(
+            "provider.configured_api",
+            origin,
+            owner_exception=OwnerURLException(
+                consumer="provider.configured_api", origin=origin
+            ),
+        ) as client,
+        pytest.raises(URLPolicyError, match="MIME_TYPE_FORBIDDEN"),
+    ):
+        client.get(origin + "/wrong-mime")
+
+
+def test_configured_client_enforces_its_decoded_body_cap_on_a_real_socket(
+    monkeypatch, compatibility_server
+) -> None:
+    origin = f"http://127.0.0.1:{compatibility_server.server_address[1]}"
+    registry = dict(safe_http.CONSUMER_REGISTRY)
+    registry["provider.configured_api"] = replace(
+        registry["provider.configured_api"], max_decoded_body_bytes=4
+    )
+    monkeypatch.setattr(safe_http, "CONSUMER_REGISTRY", MappingProxyType(registry))
+    with (
+        configured_safe_client(
+            "provider.configured_api",
+            origin,
+            owner_exception=OwnerURLException(
+                consumer="provider.configured_api", origin=origin
+            ),
+        ) as client,
+        pytest.raises(URLPolicyError, match="BODY_TOO_LARGE"),
+    ):
+        client.get(origin + "/over-cap")
+
+
+def test_configured_client_rejects_cross_origin_redirect_before_a_second_send(
+    compatibility_server,
+) -> None:
+    origin = f"http://127.0.0.1:{compatibility_server.server_address[1]}"
+    with (
+        configured_safe_client(
+            "provider.configured_api",
+            origin,
+            owner_exception=OwnerURLException(
+                consumer="provider.configured_api", origin=origin
+            ),
+        ) as client,
+        pytest.raises(URLPolicyError, match="REDIRECT_ORIGIN_FORBIDDEN"),
+    ):
+        client.get(origin + "/redirect", headers={"Authorization": "Bearer local"})
+
+    assert len(compatibility_server.RequestHandlerClass.requests) == 1
+    assert (
+        compatibility_server.RequestHandlerClass.requests[0][2]["Authorization"]
+        == "Bearer local"
+    )
+
+
+def test_configured_private_origin_requires_its_own_literal_owner_exception(
+    compatibility_server,
+) -> None:
+    origin = f"http://127.0.0.1:{compatibility_server.server_address[1]}"
+    with (
+        safe_client(
+            "provider.configured_api",
+            configured_origin=origin,
+            security=OutboundSecurityConfig(resolver=lambda *_args: ("127.0.0.1",)),
+        ) as client,
+        pytest.raises(URLPolicyError),
+    ):
+        client.get(origin + "/owner-exception")
+
+    assert compatibility_server.RequestHandlerClass.requests == []
+
+
+def test_sdk_dispositions_are_enforced_by_the_runtime_inventory() -> None:
+    for consumer, expected in COMPATIBILITY_FIXTURES.items():
+        disposition = expected[-1]
+        if disposition == "disabled":
+            with pytest.raises(URLPolicyError, match="UNMANAGED_TRANSPORT"):
+                require_active_sdk_transport(consumer, expected[2])
+        elif disposition is not None:
+            require_active_sdk_transport(consumer, expected[2])
+
+    result = subprocess.run(
+        [sys.executable, "scripts/check_runtime_http.py"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "active_unmanaged=0" in result.stdout

@@ -9,6 +9,7 @@ from dataclasses import replace
 from types import MappingProxyType
 
 import httpcore
+import httpx
 import pytest
 
 from openprogram.security import safe_http
@@ -89,12 +90,13 @@ class _ReportedStream(httpcore.NetworkStream):
 
 
 class _LoopbackBackend(httpcore.NetworkBackend):
-    def __init__(self, peer: str):
+    def __init__(self, peer: str, port: int | None = None):
         self._peer = peer
+        self._port = port
         self._backend = httpcore.SyncBackend()
 
     def connect_tcp(self, _host, port, **kwargs):
-        stream = self._backend.connect_tcp("127.0.0.1", port, **kwargs)
+        stream = self._backend.connect_tcp("127.0.0.1", self._port or port, **kwargs)
         return _ReportedStream(stream, self._peer)
 
     def connect_unix_socket(self, *args, **kwargs):
@@ -230,7 +232,12 @@ def test_private_enterprise_exception_is_limited_to_its_exact_origin(local_serve
 
 class _OutageHandler(socketserver.StreamRequestHandler):
     def handle(self) -> None:
-        self.server.requests += 1
+        if hasattr(self.server, "connections"):
+            self.server.connections += 1
+        else:
+            self.server.requests += 1
+        while self.rfile.readline() not in {b"", b"\r\n"}:
+            pass
 
 
 class _OutageProxy(socketserver.ThreadingTCPServer):
@@ -249,10 +256,46 @@ class _OutageProxy(socketserver.ThreadingTCPServer):
         self.thread.join(timeout=2)
 
 
-def test_policy_proxy_outage_does_not_fallback_to_a_direct_target_connection():
+class _TargetSentinel(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+    def __init__(self):
+        self.connections = 0
+        super().__init__(("127.0.0.1", 0), _OutageHandler)
+        self.thread = threading.Thread(target=self.serve_forever, daemon=True)
+        self.thread.start()
+
+    def close(self) -> None:
+        self.shutdown()
+        self.server_close()
+        self.thread.join(timeout=2)
+
+
+def test_policy_proxy_outage_has_no_direct_target_fallback(monkeypatch):
     proxy = _OutageProxy()
+    target = _TargetSentinel()
     try:
         proxy_origin = f"http://proxy.test:{proxy.server_address[1]}"
+        target_port = target.server_address[1]
+        registry = dict(safe_http.CONSUMER_REGISTRY)
+        registry["tool.web_fetch"] = replace(
+            registry["tool.web_fetch"], allowed_ports=frozenset({target_port})
+        )
+        monkeypatch.setattr(safe_http, "CONSUMER_REGISTRY", MappingProxyType(registry))
+        original = safe_http.DecisionNetworkBackend
+
+        def backend(decision):
+            if decision.hostname == "target.example.test":
+                return original(
+                    decision,
+                    underlying=_LoopbackBackend(
+                        str(decision.resolved_ips[0]), target_port
+                    ),
+                )
+            return original(decision)
+
+        monkeypatch.setattr(safe_http, "DecisionNetworkBackend", backend)
         with safe_client(
             "tool.web_fetch",
             security=OutboundSecurityConfig(
@@ -269,12 +312,14 @@ def test_policy_proxy_outage_does_not_fallback_to_a_direct_target_connection():
                 ),
             ),
         ) as client:
-            with pytest.raises(Exception):
-                client.get("http://target.example.test/no-fallback")
+            with pytest.raises(httpx.RemoteProtocolError):
+                client.get(f"http://target.example.test:{target_port}/no-fallback")
     finally:
         proxy.close()
+        target.close()
 
     assert proxy.requests == 1
+    assert target.connections == 0
 
 
 def test_provider_failover_clients_do_not_share_pool_or_credentials(local_server):
