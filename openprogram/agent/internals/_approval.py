@@ -34,10 +34,11 @@ EventCallback = Callable[[dict], None]
 _FORCE_APPROVAL_TOOLS = {"exit_plan_mode"}
 # auto 档下即便未声明 requires_approval 也仍要审批的高风险工具。
 _RISKY_TOOLS = {"bash", "exec", "shell", "execute_code", "process"}
-# Non-interactive git side effects: creating a worktree, merging one back,
-# or discarding one all mutate the repository outside the spawned agent's
-# working directories, and a spawned turn has no approval surface to ask.
-_WORKTREE_TOOLS = {"worktree_create", "worktree_merge", "worktree_discard"}
+# Non-interactive worktree side effects mutate repository state outside the
+# spawned agent's working directories, and those turns cannot ask approval.
+_WORKTREE_TOOLS = {
+    "worktree_create", "worktree_merge", "worktree_discard", "worktree_keep",
+}
 _WRITE_TOOLS = {"write", "write_file", "edit", "edit_file"}
 _PATCH_PATH_PREFIXES = (
     "*** Add File: ",

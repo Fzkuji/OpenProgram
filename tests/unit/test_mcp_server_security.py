@@ -175,3 +175,33 @@ def test_mcp_relative_write_in_bound_worktree_reaches_authority_gate(
     assert result.is_error is True
     assert result.details["reason_code"] == "AUTHORITY_CAPABILITY_DENIED"
     assert calls == []
+
+
+@pytest.mark.parametrize("authority_kind", ["paired", "owner-shaped"])
+def test_mcp_cannot_keep_worktree_before_authority_or_bypass(
+    mcp_authority,
+    authority_kind,
+):
+    from openprogram.agent import authority
+    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.questions import get_question_registry
+
+    request_authority = mcp_authority
+    if authority_kind == "owner-shaped":
+        request_authority = authority.local_owner_authority()
+    calls = []
+    events = []
+    req = _mcp_request(request_authority)
+    wrapped = wrap_with_approval(
+        _recording_tool("worktree_keep", calls),
+        req,
+        events.append,
+    )
+
+    result = _run(wrapped, {"worktree_id": "wt-1"})
+
+    assert result.is_error is True
+    assert result.details["reason_code"] == "HARD_CONSTRAINT_DENIED"
+    assert calls == []
+    assert events == []
+    assert get_question_registry().list_pending("mcp-session") == []
