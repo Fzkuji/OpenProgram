@@ -170,12 +170,37 @@ def test_contract_matches_locked_mcp_protocol_without_startup_side_effects() -> 
 
 def test_exported_tool_schema_mutation_cannot_change_validation_contract() -> None:
     tool = TOOL_BY_NAME["sessions_list"]
-    original = copy.deepcopy(tool.inputSchema)
-    try:
+    with pytest.raises((AttributeError, TypeError, ValueError)):
         tool.inputSchema["properties"]["unexpected"] = {"type": "string"}
-        with pytest.raises(McpError) as exc_info:
-            validate_tool_call("sessions_list", {"unexpected": "value"})
-        assert exc_info.value.error.code == mcp_types.INVALID_PARAMS
-    finally:
-        tool.inputSchema.clear()
-        tool.inputSchema.update(original)
+    with pytest.raises(McpError) as exc_info:
+        validate_tool_call("sessions_list", {"unexpected": "value"})
+    assert exc_info.value.error.code == mcp_types.INVALID_PARAMS
+
+
+def test_exported_tool_contracts_are_immutable_and_sdk_serializable() -> None:
+    tool = TOOL_BY_NAME["sessions_list"]
+    with pytest.raises((AttributeError, TypeError, ValueError)):
+        tool.name = "mutated"
+    with pytest.raises((AttributeError, TypeError, ValueError)):
+        tool.inputSchema["properties"]["unexpected"] = {"type": "string"}
+    with pytest.raises((AttributeError, TypeError, ValueError)):
+        tool.inputSchema |= {"unexpected": True}
+    assert "unexpected" not in tool.inputSchema
+    required = TOOL_BY_NAME["session_get"].inputSchema["required"]
+    with pytest.raises((AttributeError, TypeError, ValueError)):
+        required += ["unexpected"]
+    assert required == ["session_id"]
+    assert '"name":"sessions_list"' in tool.model_dump_json()
+
+
+def test_mapping_copy_failure_is_sanitized_as_invalid_params() -> None:
+    secret = "PEER-SECRET-IN-DEEPCOPY"
+
+    class HostileValue:
+        def __deepcopy__(self, memo):
+            raise RuntimeError(secret)
+
+    with pytest.raises(McpError) as exc_info:
+        validate_tool_call("sessions_list", {"extra": HostileValue()})
+    assert exc_info.value.error.code == mcp_types.INVALID_PARAMS
+    assert secret not in f"{exc_info.value!s} {exc_info.value!r}"
