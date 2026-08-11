@@ -187,6 +187,44 @@ def test_create_token_removes_its_published_inode_if_final_verification_fails(
     assert not list(tmp_path.glob(".mcp_server_token.*.tmp"))
 
 
+def test_create_token_cleans_temp_through_parent_fd_after_post_write_swap(
+    tmp_path, monkeypatch
+):
+    auth = _auth()
+    parent = tmp_path / "parent"
+    parent.mkdir(mode=0o700)
+    replacement = tmp_path / "replacement"
+    replacement.mkdir(mode=0o700)
+    moved = tmp_path / "moved-parent"
+    target = parent / "mcp_server_token"
+    generated = "S" * 43
+    real_fsync = auth.os.fsync
+    swapped = False
+
+    def fsync_then_swap(fd):
+        nonlocal swapped
+        real_fsync(fd)
+        if not swapped:
+            parent.rename(moved)
+            parent.symlink_to(replacement, target_is_directory=True)
+            swapped = True
+
+    monkeypatch.setattr(auth.secrets, "token_urlsafe", lambda size: generated)
+    monkeypatch.setattr(auth.os, "fsync", fsync_then_swap)
+
+    with pytest.raises(auth.MCPTokenError, match="^could not create MCP server token$"):
+        auth.create_token(target)
+
+    assert parent.is_symlink()
+    for directory in (moved, replacement):
+        files = [entry for entry in directory.iterdir() if entry.is_file()]
+        secret_bearing = [
+            entry for entry in files if generated.encode("ascii") in entry.read_bytes()
+        ]
+        assert secret_bearing == []
+        assert files == []
+
+
 def test_real_concurrent_creators_publish_exactly_one_token(tmp_path):
     auth = _auth()
     target = tmp_path / "mcp_server_token"

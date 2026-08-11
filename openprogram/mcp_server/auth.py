@@ -8,7 +8,6 @@ import os
 import secrets
 import stat
 import sys
-import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -119,45 +118,94 @@ def _revalidate_parent(target: Path, expected: os.stat_result, message: str) -> 
         raise MCPTokenError(message)
 
 
+def _open_parent(target: Path, expected: os.stat_result, message: str) -> int:
+    required = (os.open, os.link, os.stat, os.unlink)
+    if (
+        sys.platform == "win32"
+        or not hasattr(os, "O_DIRECTORY")
+        or not hasattr(os, "O_NOFOLLOW")
+        or any(function not in os.supports_dir_fd for function in required)
+    ):
+        raise MCPTokenError(message)
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            target.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        )
+        opened = os.fstat(descriptor)
+        _verify_directory(opened, message, private=True)
+        if not _same_file(opened, expected):
+            raise MCPTokenError(message)
+        _revalidate_parent(target, expected, message)
+        return descriptor
+    except Exception as exc:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        if isinstance(exc, MCPTokenError):
+            raise
+        raise MCPTokenError(message) from None
+
+
+def _revalidate_open_parent(
+    target: Path, descriptor: int, expected: os.stat_result, message: str
+) -> None:
+    opened = os.fstat(descriptor)
+    _verify_directory(opened, message, private=True)
+    if not _same_file(opened, expected):
+        raise MCPTokenError(message)
+    _revalidate_parent(target, expected, message)
+
+
 def create_token(path: Path | None = None) -> str:
     """Create one private token file without replacing a concurrent winner."""
     try:
         target = _selected_target(path, _CREATE_FAILED)
         parent_info = _prepare_parent(target, create=True, message=_CREATE_FAILED)
+        parent_descriptor = _open_parent(target, parent_info, _CREATE_FAILED)
     except MCPTokenError:
         raise
     except Exception:
         raise MCPTokenError(_CREATE_FAILED) from None
 
     descriptor: int | None = None
-    temporary: Path | None = None
+    temporary_name: str | None = None
     published = False
     published_info: os.stat_result | None = None
     succeeded = False
     try:
         token = secrets.token_urlsafe(32)
-        descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
-        )
-        temporary = Path(temporary_name)
+        temporary_name = f".{target.name}.{secrets.token_hex(12)}.tmp"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+        descriptor = os.open(temporary_name, flags, 0o600, dir_fd=parent_descriptor)
         initial_info = os.fstat(descriptor)
         _verify_private_regular(initial_info, _CREATE_FAILED)
-        _revalidate_parent(target, parent_info, _CREATE_FAILED)
+        _revalidate_open_parent(target, parent_descriptor, parent_info, _CREATE_FAILED)
         _write_all(descriptor, token.encode("ascii"))
         os.fsync(descriptor)
-        _revalidate_parent(target, parent_info, _CREATE_FAILED)
+        _revalidate_open_parent(target, parent_descriptor, parent_info, _CREATE_FAILED)
 
         try:
-            os.link(temporary, target, follow_symlinks=False)
+            os.link(
+                temporary_name,
+                target.name,
+                src_dir_fd=parent_descriptor,
+                dst_dir_fd=parent_descriptor,
+                follow_symlinks=False,
+            )
         except FileExistsError:
             raise MCPTokenError(_EXISTS) from None
         published = True
         published_info = initial_info
-        _revalidate_parent(target, parent_info, _CREATE_FAILED)
+        _revalidate_open_parent(target, parent_descriptor, parent_info, _CREATE_FAILED)
 
         os.fchmod(descriptor, 0o600)
         published_info = os.fstat(descriptor)
-        final_info = os.stat(target, follow_symlinks=False)
+        final_info = os.stat(
+            target.name, dir_fd=parent_descriptor, follow_symlinks=False
+        )
         _verify_private_regular(published_info, _CREATE_FAILED)
         _verify_private_regular(final_info, _CREATE_FAILED)
         if not _same_file(published_info, final_info):
@@ -174,18 +222,26 @@ def create_token(path: Path | None = None) -> str:
                 os.close(descriptor)
             except OSError:
                 pass
-        if temporary is not None:
+        if temporary_name is not None:
             try:
-                temporary.unlink()
+                os.unlink(temporary_name, dir_fd=parent_descriptor)
             except OSError:
                 pass
         if published and not succeeded and published_info is not None:
             try:
-                current = os.stat(target, follow_symlinks=False)
+                current = os.stat(
+                    target.name,
+                    dir_fd=parent_descriptor,
+                    follow_symlinks=False,
+                )
                 if _same_file(current, published_info):
-                    target.unlink()
+                    os.unlink(target.name, dir_fd=parent_descriptor)
             except OSError:
                 pass
+        try:
+            os.close(parent_descriptor)
+        except OSError:
+            pass
 
 
 def _read_stored_token(path: Path) -> str:
