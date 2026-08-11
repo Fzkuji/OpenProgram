@@ -2015,6 +2015,11 @@ class Runtime:
 
     async def _async_call(self, content: list[dict], model: str = "default", response_format: dict = None) -> Any:
         """Async version of _call(). Override for async providers."""
+        if response_format is None and self._call_fn is not None:
+            result = self._call_fn(content, model=model, response_format=None)
+            if asyncio.iscoroutine(result):
+                return await result
+            return result
         if self.api_model is not None:
             return await asyncio.to_thread(
                 self._call_via_providers,

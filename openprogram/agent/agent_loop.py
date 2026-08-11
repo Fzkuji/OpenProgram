@@ -183,7 +183,12 @@ def agent_loop(
                 if not ev_stream._result_event.is_set():
                     ev_stream.end(new_messages)
             else:
-                raise
+                from openprogram.providers.utils.errors import ExecInterrupt
+                if isinstance(e, ExecInterrupt):
+                    if not ev_stream._result_event.is_set():
+                        ev_stream.fail(e)
+                else:
+                    raise
 
     asyncio.ensure_future(_run())
     return ev_stream
@@ -225,6 +230,13 @@ def agent_loop_continue(
         except Exception as e:
             if not ev_stream._result_event.is_set():
                 ev_stream.fail(e)
+        except BaseException as e:
+            from openprogram.providers.utils.errors import ExecInterrupt
+            if isinstance(e, ExecInterrupt):
+                if not ev_stream._result_event.is_set():
+                    ev_stream.fail(e)
+            else:
+                raise
 
     asyncio.ensure_future(_run())
     return ev_stream
@@ -383,7 +395,8 @@ async def _run_loop(
                 )
 
                 if message.stop_reason == "aborted":
-                    raise RuntimeError("Structured output request was aborted")
+                    from openprogram.providers.utils.errors import ExecInterrupt
+                    raise ExecInterrupt("aborted")
                 if message.stop_reason == "error" and message.error_message:
                     reason = message.error_message.lower()
                     if not any(

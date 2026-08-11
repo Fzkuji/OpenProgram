@@ -24,6 +24,7 @@ from openprogram.providers.types import (
     TextContent,
     UserMessage,
 )
+from openprogram.providers.utils.errors import ExecInterrupt
 
 
 SCHEMA = {
@@ -212,7 +213,7 @@ def test_retry_event_and_prompt_do_not_copy_invalid_candidate_value():
     [
         ("length", StructuredOutputGenerationError, "incomplete"),
         ("error", StructuredOutputGenerationError, "refusal"),
-        ("aborted", RuntimeError, None),
+        ("aborted", ExecInterrupt, None),
     ],
 )
 def test_non_validation_terminal_never_starts_repair(stop_reason, error_type, code):

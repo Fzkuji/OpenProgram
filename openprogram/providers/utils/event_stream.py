@@ -33,7 +33,7 @@ class EventStream(Generic[T, R]):
         self._queue: asyncio.Queue[T | _Sentinel] = asyncio.Queue()
         self._result: R | None = None
         self._result_event = asyncio.Event()
-        self._error: Exception | None = None
+        self._error: BaseException | None = None
 
     def push(self, event: T) -> None:
         """Push an event into the stream.
@@ -59,7 +59,7 @@ class EventStream(Generic[T, R]):
         self._result_event.set()
         self._queue.put_nowait(_SENTINEL)
 
-    def fail(self, error: Exception) -> None:
+    def fail(self, error: BaseException) -> None:
         """Signal stream failure with an exception."""
         self._error = error
         self._result_event.set()

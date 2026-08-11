@@ -12,10 +12,12 @@ from openprogram.providers.structured_output import (
 from openprogram.providers.types import (
     AssistantMessage,
     EventDone,
+    EventError,
     EventStart,
     Model,
     TextContent,
 )
+from openprogram.providers.utils.errors import ExecInterrupt
 
 
 SCHEMA = {
@@ -162,6 +164,82 @@ def test_structured_json_null_is_a_valid_typed_result():
     )
 
     assert runtime.exec("question", response_format={"type": "null"}) is None
+
+
+def test_public_runtime_aborted_structured_stream_propagates_once_without_persistence(
+    monkeypatch,
+):
+    calls = []
+    sessions = []
+
+    async def aborted_stream(model, context, options=None):
+        calls.append(1)
+        message = AssistantMessage(
+            content=[TextContent(text="partial")],
+            api=model.api,
+            provider=model.provider,
+            model=model.id,
+            stop_reason="aborted",
+            timestamp=int(time.time() * 1000),
+        )
+        yield EventStart(partial=message)
+        yield EventError(reason="aborted", error=message)
+
+    from openprogram.agent.session import AgentSession
+
+    original_run = AgentSession.run
+
+    async def capture_session(self, *args, **kwargs):
+        sessions.append(self)
+        return await original_run(self, *args, **kwargs)
+
+    monkeypatch.setattr(AgentSession, "run", capture_session)
+    stream_events = []
+    runtime = Runtime(call=lambda *args, **kwargs: "unused", model="dummy", max_retries=3)
+    runtime.on_stream = stream_events.append
+
+    with pytest.raises(ExecInterrupt, match="aborted"):
+        runtime.exec("question", response_format=SCHEMA, stream_fn=aborted_stream)
+
+    assert calls == [1]
+    assert len(sessions) == 1
+    assert not any(
+        message.role == "assistant" for message in sessions[0]._agent.state.messages
+    )
+    assert not any(
+        event["type"].startswith("structured_") for event in stream_events
+    )
+
+
+def test_ordinary_async_callable_preserves_direct_baseline_without_agent_session(
+    monkeypatch,
+):
+    seen_content = []
+    session_runs = []
+
+    async def call(content, model="test", response_format=None):
+        seen_content.append(content)
+        return "ordinary reply"
+
+    from openprogram.agent.session import AgentSession
+
+    original_run = AgentSession.run
+
+    async def counted_run(self, *args, **kwargs):
+        session_runs.append(self)
+        return await original_run(self, *args, **kwargs)
+
+    monkeypatch.setattr(AgentSession, "run", counted_run)
+    stream_events = []
+    runtime = Runtime(call=call, model="dummy")
+    runtime.on_stream = stream_events.append
+
+    result = asyncio.run(runtime.async_exec("hello"))
+
+    assert result == "ordinary reply"
+    assert seen_content == [[{"type": "text", "text": "hello"}]]
+    assert session_runs == []
+    assert stream_events == []
 
 
 def test_async_exec_returns_validated_python_value():
