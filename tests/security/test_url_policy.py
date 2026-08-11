@@ -89,6 +89,34 @@ def test_untrusted_public_rejects_every_non_global_address_category(address):
     assert exc.value.reason == "NON_GLOBAL_ADDRESS"
 
 
+@pytest.mark.parametrize(
+    ("url", "resolver_answers", "expected_calls"),
+    [
+        ("http://[fec0::1]/", (PUBLIC_IP,), []),
+        (
+            "https://example.com/resource",
+            ("fec0::1",),
+            [("example.com", 443)],
+        ),
+    ],
+    ids=("literal", "dns-answer"),
+)
+def test_public_policy_rejects_ipv6_site_local_addresses(
+    url, resolver_answers, expected_calls
+):
+    calls: list[tuple[str, int]] = []
+
+    def resolver(hostname: str, port: int):
+        calls.append((hostname, port))
+        return resolver_answers
+
+    with pytest.raises(URLPolicyError) as exc:
+        evaluate_public(url, resolver=resolver)
+
+    assert exc.value.reason == "NON_GLOBAL_ADDRESS"
+    assert calls == expected_calls
+
+
 def test_normalization_canonicalizes_hostname_idna_and_default_port():
     normalized = normalize_url(
         "HTTPS://B\N{LATIN SMALL LETTER U WITH DIAERESIS}CHER.Example.:443/a?q=1#frag"
