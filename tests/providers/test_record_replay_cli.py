@@ -61,6 +61,20 @@ def test_record_rolls_back_new_file_when_config_update_fails(
     assert setup._read_config()["record_replay"] == {"mode": "off", "file": "old"}
 
 
+def test_create_rolls_back_partial_file_when_header_write_fails(
+    recording_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "openprogram.providers.recording._write_all",
+        lambda fd, payload: (_ for _ in ()).throw(OSError("write failed")),
+    )
+
+    with pytest.raises(OSError, match="write failed"):
+        create_managed_recording("partial")
+
+    assert not (paths.get_recordings_dir() / "partial.jsonl").exists()
+
+
 def test_replay_prevalidates_before_updating_config(recording_env: Path) -> None:
     invalid = recording_env / "invalid.jsonl"
     invalid.parent.mkdir(parents=True)

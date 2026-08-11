@@ -407,18 +407,25 @@ def create_managed_recording(name: str | None = None) -> RecordingInfo:
     created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     fd = os.open(path, flags, 0o600)
     try:
-        restrict_to_user(path)
-        _verify_private_regular_file(fd, path)
-        _write_all(fd, _encode_line({
-            "type": "header",
-            "format_version": RECORDING_FORMAT_VERSION,
-            "recording_id": recording_id,
-            "created_at": created_at,
-            "redaction_version": REDACTION_VERSION,
-        }))
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+        try:
+            restrict_to_user(path)
+            _verify_private_regular_file(fd, path)
+            _write_all(fd, _encode_line({
+                "type": "header",
+                "format_version": RECORDING_FORMAT_VERSION,
+                "recording_id": recording_id,
+                "created_at": created_at,
+                "redaction_version": REDACTION_VERSION,
+            }))
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except Exception:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        raise
     info = path.stat()
     return RecordingInfo(
         recording_id=recording_id,
