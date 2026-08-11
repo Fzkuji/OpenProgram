@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import stat
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -142,6 +143,20 @@ def test_remove_secret_values_covers_nested_and_inline_secrets() -> None:
     assert cleaned["note"] == f"call with {PLACEHOLDER} please"
     assert cleaned["url"] == f"https://host/v1?api_key={PLACEHOLDER}&x=1"
     assert cleaned["keep"] == ["plain", 3]
+
+
+def test_remove_secret_values_covers_auth_schemes_and_url_userinfo() -> None:
+    cleaned = remove_secret_values({
+        "basic": "Basic dXNlcjpwYXNzd29yZA==",
+        "bot": "Bot 123456789:ABCdef_ghi-jkl",
+        "url": "https://alice:password@example.test/v1?access-token=value123&x=1",
+    })
+
+    assert cleaned == {
+        "basic": PLACEHOLDER,
+        "bot": PLACEHOLDER,
+        "url": f"https://{PLACEHOLDER}@example.test/v1?access-token={PLACEHOLDER}&x=1",
+    }
 
 
 def _run_tool_loop(monkeypatch: pytest.MonkeyPatch) -> tuple[list, list]:
@@ -286,3 +301,59 @@ def test_replay_refuses_a_recording_file_without_a_format_header(tmp_path: Path)
 
     with pytest.raises(RecordingFileError, match="no format header"):
         ReplayProvider(recording_file)
+
+
+def _record_one_call(tmp_path: Path) -> Path:
+    recording_file = tmp_path / "strict.jsonl"
+    provider = RecordingProvider(_scripted_with((ScriptedText("done"),)), recording_file)
+
+    async def run() -> None:
+        async for _ in provider.stream_simple(
+            _model(),
+            Context(messages=[UserMessage(content="hello", timestamp=0)]),
+            _options(),
+        ):
+            pass
+
+    asyncio.run(run())
+    return recording_file
+
+
+@pytest.mark.parametrize(
+    "mutation, match",
+    [
+        (lambda rows: rows.insert(1, dict(rows[0])), "duplicate header"),
+        (lambda rows: rows.__setitem__(-1, {**rows[-1], "event_count": 99}), "event_count"),
+        (lambda rows: rows.pop(), "missing call_end"),
+        (lambda rows: rows.append({"type": "mystery"}), "unknown row type"),
+        (lambda rows: rows.__setitem__(1, {**rows[1], "call_index": 1}), "contiguous"),
+    ],
+)
+def test_replay_strictly_validates_structure(tmp_path: Path, mutation, match: str) -> None:
+    recording_file = _record_one_call(tmp_path)
+    rows = [json.loads(line) for line in recording_file.read_text().splitlines()]
+    mutation(rows)
+    recording_file.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+
+    with pytest.raises(RecordingFileError, match=match):
+        ReplayProvider(recording_file)
+
+
+def test_replay_prevalidates_event_types(tmp_path: Path) -> None:
+    recording_file = _record_one_call(tmp_path)
+    rows = [json.loads(line) for line in recording_file.read_text().splitlines()]
+    event = next(row for row in rows if row["type"] == "event")
+    event["event"]["type"] = "unknown_event"
+    recording_file.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+
+    with pytest.raises(RecordingFileError, match="unknown event type"):
+        ReplayProvider(recording_file)
+
+
+def test_recording_file_and_parent_are_private(tmp_path: Path) -> None:
+    parent = tmp_path / "recordings"
+    recording_file = parent / "private.jsonl"
+    RecordingProvider(_scripted_with((ScriptedText("done"),)), recording_file)
+
+    assert stat.S_IMODE(parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(recording_file.stat().st_mode) == 0o600

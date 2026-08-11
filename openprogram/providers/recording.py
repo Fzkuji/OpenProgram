@@ -13,9 +13,14 @@ to turn it off.
 from __future__ import annotations
 
 import json
+import os
 import re
+import stat
+import sys
 from pathlib import Path
 from typing import Any, AsyncGenerator
+
+from openprogram._compat import restrict_to_user
 
 from .types import (
     AssistantMessageEvent,
@@ -56,9 +61,10 @@ SECRET_FIELD_NAMES = frozenset({
 # Secret-looking values that survive field-name matching, e.g. a bearer token
 # pasted into a free-form string field or a URL query parameter.
 _SECRET_VALUE_PATTERNS = (
-    re.compile(r"(?i)\bbearer\s+[\w.\-~+/]+=*"),
+    re.compile(r"(?i)\b(?:bearer|basic|bot|token|key)\s+[\w.:\-~+/]+=*"),
     re.compile(r"\bsk-[A-Za-z0-9_\-]{8,}"),
-    re.compile(r"(?i)([?&](?:api[_-]?key|access_token|token)=)[^&\s]+"),
+    re.compile(r"(?i)([?&](?:api[_-]?key|access[_-]?token|token)=)[^&\s]+"),
+    re.compile(r"(?i)(https?://)[^/@\s]+:[^/@\s]+@"),
 )
 
 
@@ -82,7 +88,13 @@ def remove_secret_values(value: Any) -> Any:
         cleaned = value
         for pattern in _SECRET_VALUE_PATTERNS:
             cleaned = pattern.sub(
-                lambda match: (match.group(1) + PLACEHOLDER) if match.groups() else PLACEHOLDER,
+                lambda match: (
+                    match.group(1) + PLACEHOLDER + "@"
+                    if match.groups() and match.group(1).lower().startswith("http")
+                    else match.group(1) + PLACEHOLDER
+                    if match.groups()
+                    else PLACEHOLDER
+                ),
                 cleaned,
             )
         return cleaned
@@ -114,12 +126,33 @@ class RecordingProvider:
         return self._recording_path
 
     def _start_recording_file(self) -> None:
-        self._recording_path.parent.mkdir(parents=True, exist_ok=True)
-        self._write({"type": "header", "format_version": RECORDING_FORMAT_VERSION})
+        self._recording_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(self._recording_path.parent, 0o700)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(self._recording_path, flags, 0o600)
+        try:
+            restrict_to_user(self._recording_path)
+            _verify_private_regular_file(fd, self._recording_path)
+            if os.fstat(fd).st_size == 0:
+                _write_all(fd, _encode_line({
+                    "type": "header",
+                    "format_version": RECORDING_FORMAT_VERSION,
+                }))
+        finally:
+            os.close(fd)
 
     def _write(self, line: dict[str, Any]) -> None:
-        with self._recording_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(line, ensure_ascii=False, sort_keys=True) + "\n")
+        flags = os.O_WRONLY | os.O_APPEND
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(self._recording_path, flags)
+        try:
+            _verify_private_regular_file(fd, self._recording_path)
+            _write_all(fd, _encode_line(line))
+        finally:
+            os.close(fd)
 
     def stream(
         self,
@@ -156,6 +189,7 @@ class RecordingProvider:
             "options": _dump(options),
         })
         event_index = 0
+        ended = False
         async for event in source:
             self._write({
                 "type": "event",
@@ -164,9 +198,54 @@ class RecordingProvider:
                 "event": _dump(event),
             })
             event_index += 1
+            if getattr(event, "type", None) in {"done", "error"}:
+                self._write({
+                    "type": "call_end",
+                    "call_index": call_index,
+                    "event_count": event_index,
+                })
+                ended = True
             yield event
-        self._write({
-            "type": "call_end",
-            "call_index": call_index,
-            "event_count": event_index,
-        })
+        if not ended:
+            self._write({
+                "type": "call_end",
+                "call_index": call_index,
+                "event_count": event_index,
+            })
+
+
+def _encode_line(line: dict[str, Any]) -> bytes:
+    return (json.dumps(line, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _write_all(fd: int, payload: bytes) -> None:
+    view = memoryview(payload)
+    while view:
+        written = os.write(fd, view)
+        if written <= 0:
+            raise OSError("recording write made no progress")
+        view = view[written:]
+
+
+def _verify_private_regular_file(fd: int, path: Path) -> None:
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode):
+        raise OSError(f"recording path is not a regular file: {path}")
+    if sys.platform != "win32" and stat.S_IMODE(info.st_mode) != 0o600:
+        raise PermissionError(f"recording file must have mode 0600: {path}")
+
+
+def restrict_recording_file(path: str | Path) -> None:
+    """Tighten and verify a recording before it is read."""
+    recording_path = Path(path)
+    if recording_path.is_symlink():
+        raise PermissionError(f"recording path must not be a symlink: {recording_path}")
+    restrict_to_user(recording_path)
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(recording_path, flags)
+    try:
+        _verify_private_regular_file(fd, recording_path)
+    finally:
+        os.close(fd)

@@ -168,6 +168,14 @@ def get_logs_dir() -> Path:
     return get_state_dir() / "logs"
 
 
+def get_recordings_dir() -> Path:
+    """Owner-private directory for managed provider recordings."""
+    directory = get_state_dir() / "recordings"
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    _restrict_to_owner(directory, 0o700)
+    return directory
+
+
 def get_memory_dir() -> Path:
     return get_state_dir() / "memory"
 

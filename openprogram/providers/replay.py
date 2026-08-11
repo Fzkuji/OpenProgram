@@ -17,7 +17,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
-from .recording import RECORDING_FORMAT_VERSION, remove_secret_values
+from .recording import (
+    RECORDING_FORMAT_VERSION,
+    remove_secret_values,
+    restrict_recording_file,
+)
 from .types import (
     AssistantMessageEvent,
     Context,
@@ -55,7 +59,26 @@ _EVENT_CLASSES = {
 
 
 class RecordingFileError(RuntimeError):
-    """The recording file cannot be used at all — missing header or wrong version."""
+    """The recording file cannot be parsed as one complete supported recording."""
+
+    def __init__(
+        self,
+        path: str | Path,
+        reason: str | None = None,
+        *,
+        line_number: int | None = None,
+        call_index: int | None = None,
+    ) -> None:
+        self.path = Path(path)
+        self.reason = reason if reason is not None else str(path)
+        self.line_number = line_number
+        self.call_index = call_index
+        location = ""
+        if line_number is not None:
+            location += f" at line {line_number}"
+        if call_index is not None:
+            location += f" for call {call_index}"
+        super().__init__(f"recording file {self.path}{location}: {self.reason}")
 
 
 class ReplayMismatch(AssertionError):
@@ -91,30 +114,87 @@ class RecordedCall:
 
 
 def read_recording_file(recording_path: str | Path) -> list[RecordedCall]:
-    """Parse a recording file into ordered recorded calls, checking the format version."""
+    """Parse and fully validate one version-1 JSONL recording."""
     path = Path(recording_path)
-    lines = [
-        json.loads(raw) for raw in path.read_text(encoding="utf-8").splitlines() if raw.strip()
-    ]
-    if not lines or lines[0].get("type") != "header":
-        raise RecordingFileError(f"recording file {path} has no format header on its first line")
-    recorded_version = lines[0].get("format_version")
+    try:
+        restrict_recording_file(path)
+        lines = []
+        for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if not raw.strip():
+                continue
+            try:
+                row = json.loads(raw)
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                raise RecordingFileError(path, f"invalid JSON: {exc}", line_number=number) from exc
+            if not isinstance(row, dict):
+                raise RecordingFileError(path, "row must be an object", line_number=number)
+            lines.append((number, row))
+    except RecordingFileError:
+        raise
+    except OSError as exc:
+        raise RecordingFileError(path, str(exc)) from exc
+    if not lines or lines[0][1].get("type") != "header":
+        raise RecordingFileError(path, "has no format header on its first line")
+    recorded_version = lines[0][1].get("format_version")
     if recorded_version != RECORDING_FORMAT_VERSION:
         raise RecordingFileError(
-            f"recording file {path} was written in format version {recorded_version!r}, "
-            f"this build replays version {RECORDING_FORMAT_VERSION}"
+            path,
+            f"was written in format version {recorded_version!r}; "
+            f"this build replays version {RECORDING_FORMAT_VERSION}",
         )
 
     calls: dict[int, RecordedCall] = {}
-    for line in lines[1:]:
+    ended: set[int] = set()
+    next_event: dict[int, int] = {}
+    for number, line in lines[1:]:
         kind = line.get("type")
+        if kind == "header":
+            raise RecordingFileError(path, "duplicate header", line_number=number)
+        if kind not in {"request", "event", "call_end"}:
+            raise RecordingFileError(path, f"unknown row type {kind!r}", line_number=number)
+        call_index = line.get("call_index")
+        if not isinstance(call_index, int) or isinstance(call_index, bool) or call_index < 0:
+            raise RecordingFileError(path, "invalid call_index", line_number=number)
         if kind == "request":
-            calls[line["call_index"]] = RecordedCall(
-                call_index=line["call_index"], request=line
-            )
+            if call_index != len(calls):
+                raise RecordingFileError(path, "request call indexes must be contiguous", line_number=number)
+            if call_index in calls:
+                raise RecordingFileError(path, "duplicate request", line_number=number, call_index=call_index)
+            calls[call_index] = RecordedCall(call_index=call_index, request=line)
+            next_event[call_index] = 0
         elif kind == "event":
-            calls[line["call_index"]].events.append(line["event"])
-    return [calls[index] for index in sorted(calls)]
+            if call_index not in calls:
+                raise RecordingFileError(path, "orphan event", line_number=number, call_index=call_index)
+            if call_index in ended:
+                raise RecordingFileError(path, "event after call_end", line_number=number, call_index=call_index)
+            event_index = line.get("event_index")
+            if event_index != next_event[call_index]:
+                raise RecordingFileError(path, "event indexes must be contiguous", line_number=number, call_index=call_index)
+            payload = line.get("event")
+            if not isinstance(payload, dict):
+                raise RecordingFileError(path, "event payload must be an object", line_number=number, call_index=call_index)
+            event_type = payload.get("type")
+            event_class = _EVENT_CLASSES.get(event_type)
+            if event_class is None:
+                raise RecordingFileError(path, f"unknown event type {event_type!r}", line_number=number, call_index=call_index)
+            try:
+                event_class.model_validate(payload)
+            except Exception as exc:
+                raise RecordingFileError(path, f"invalid {event_type!r} event: {exc}", line_number=number, call_index=call_index) from exc
+            calls[call_index].events.append(payload)
+            next_event[call_index] += 1
+        else:
+            if call_index not in calls:
+                raise RecordingFileError(path, "orphan call_end", line_number=number, call_index=call_index)
+            if call_index in ended:
+                raise RecordingFileError(path, "duplicate call_end", line_number=number, call_index=call_index)
+            if line.get("event_count") != next_event[call_index]:
+                raise RecordingFileError(path, "call_end event_count mismatch", line_number=number, call_index=call_index)
+            ended.add(call_index)
+    missing = sorted(set(calls) - ended)
+    if missing:
+        raise RecordingFileError(path, "missing call_end", call_index=missing[0])
+    return [calls[index] for index in range(len(calls))]
 
 
 # Wall-clock fields differ between the recording run and every replay run, so
