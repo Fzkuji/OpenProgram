@@ -66,7 +66,7 @@ Runtime.exec(content, context=None, response_format=None, model=None,
 |------|------|--------|------|
 | `content` | `list[dict] \| str` | *(必填)* | 内容块列表(见下方格式)。纯字符串会包成一个 text 块 |
 | `context` | `str \| None` | `None` | 遗留参数,已被忽略——provider 路径从 DAG 构建历史 |
-| `response_format` | `dict \| None` | `None` | 输出格式约束(JSON schema),转发给 `_call()`。默认 provider 路径不应用它;要生效需子类重写 `_call()` |
+| `response_format` | `dict \| None` | `None` | 输出格式约束(JSON Schema 或 `JsonSchemaOutput` 包络)。默认 provider 路径原生应用它:OpenAI 系走 `response_format`,Anthropic 走结构化输出映射,其余模型回退为提示词指令。最终回复严格解析校验,无效输出重试一次。同时仍转发给 `_call()` 供子类使用 |
 | `model` | `str \| None` | `None` | 覆盖默认模型 |
 | `tools` | `list \| None` | `None` | 本次调用 LLM 可用的工具。每项可以是 `@agentic_function`、`{"spec":..., "execute":...}` 字典、或带 `.spec` / `.execute` 的对象。设了就跑工具循环直到模型返回纯文本。**默认(`None`)不是"无工具"**:调用会拿到完整的注册工具集;纯推理调用传 `toolset="none"`,要显式空列表传 `tools=[]` |
 | `toolset` / `tools_source` / `tools_allow` / `tools_deny` | — | `None` | 工具集预设与策略过滤:`toolset` 指名预设(`"full"` 是隐式默认,`"none"` 表示退出),`tools_source` 按渠道来源过滤,`tools_allow` / `tools_deny` 是名单允许/拒绝列表 |

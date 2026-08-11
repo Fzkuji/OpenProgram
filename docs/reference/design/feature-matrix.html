@@ -124,11 +124,11 @@
 </div>
 
 <div class="note orange">
-  <b>快照与使用边界</b>。OpenProgram 的实现证据以 <code>main@8f62da5a</code> 为基线（2026-08-11 复核），包含运行中发消息排队、owner/paired 两档来源权限加配对准入、默认开启并覆盖全部本地执行面的沙箱、ACP 服务端与三个 LSP 工具，以及本次复核确认的 commit-push-pr 打包技能、credential_process 外部命令取密钥、providers 层请求录制与回放模块、backup 命令和 agent/resource_governance 的每会话并发与资源限额。其他列固定在第五节列出的本地源码、二进制或 npm 包版本，没有声明为各产品的最新版本。<code>·</code> 只表示本轮没有确认到实现，不等于功能不存在。第四节是设计参考，优先级尚未经过使用频率统计或工程量估算。
+  <b>快照与使用边界</b>。OpenProgram 的实现证据以 <code>main@1c249e92</code> 为基线（2026-08-11 复核），包含运行中发消息排队、owner/paired 两档来源权限加配对准入、默认开启并覆盖全部本地执行面的沙箱、ACP 服务端与三个 LSP 工具，以及本次复核确认的 commit-push-pr 打包技能、credential_process 外部命令取密钥、带 <code>openprogram recordings</code> CLI 与 <code>record_replay.mode/file</code> 配置入口的请求录制与严格离线回放、runtime <code>llm(response_format=…)</code> 的 JSON schema 结构化输出（严格校验加一次重试，OpenAI/Anthropic 原生映射）、backup 命令和 agent/resource_governance 的每会话并发与资源限额。其他列固定在第五节列出的本地源码、二进制或 npm 包版本，没有声明为各产品的最新版本。<code>·</code> 只表示本轮没有确认到实现，不等于功能不存在。第四节是设计参考，优先级尚未经过使用频率统计或工程量估算。
 </div>
 
 <div class="note blue">
-  <b>和 <a href="framework-comparison.html">framework-comparison</a> 的分工</b>。那一份比较执行模型、状态存储、上下文装配和权限审批等设计机制；本页按用户可调用或可配置的功能记录证据。前一份记录 55 个候选差异，本页撰写时记录 78 个（15 个重合、63 个此前未列出）；截至 8f62da5a 复核其中 4 个已实现，现存 74 个。两份材料分别支持机制设计和功能范围设计，计数不能直接合并。
+  <b>和 <a href="framework-comparison.html">framework-comparison</a> 的分工</b>。那一份比较执行模型、状态存储、上下文装配和权限审批等设计机制；本页按用户可调用或可配置的功能记录证据。前一份记录 55 个候选差异，本页撰写时记录 78 个（15 个重合、63 个此前未列出）；截至 1c249e92 复核其中 5 个已实现，现存 73 个。两份材料分别支持机制设计和功能范围设计，计数不能直接合并。
 </div>
 
 <!-- ══════════════════════════ 三问 ══════════════════════════ -->
@@ -154,7 +154,7 @@
   <div class="q" style="border-top-color:#d4843a">
     <div class="k">相对既有机制审计的增量</div>
     <h4>78 条里 63 条此前未列出</h4>
-    <p>前几轮机制审计记录了 55 个候选差异；本页撰写时 OpenProgram 未确认而至少一个参考列已确认的条目为 78 个，两份材料重合 15 个，<b>其余 63 个此前未列出</b>；8f62da5a 复核后其中 4 个已实现，现存 74 个。</p>
+    <p>前几轮机制审计记录了 55 个候选差异；本页撰写时 OpenProgram 未确认而至少一个参考列已确认的条目为 78 个，两份材料重合 15 个，<b>其余 63 个此前未列出</b>；1c249e92 复核后其中 5 个已实现，现存 73 个。</p>
     <p>版本控制 7 条、界面形态 5 条、多 agent 6 条和代码理解 4 条均未出现在前几轮清单中；编辑器集成新增 6 条，集成与被集成新增 9 条，部署与运维新增 6 条。</p>
     <p>这里的“新增”表示此前文档未记录，不表示相关产品最近发布了这些功能，也不表示全部条目都应进入实现计划。</p>
     <span class="ev">前六轮出处：runtime/sandbox · agent-collab-comparison · memory-comparison · memory-adoption · speaker-identity · chat-attachments · context/comparison · extension-gating · framework-comparison</span>
@@ -242,7 +242,7 @@
 <tr><td class="fname">模型动态生成编排脚本并执行大规模并行任务<span class="src">buddy ultracode 最多 1000 个子 agent、并发上限 16 · claude Dynamic Workflows · codex code mode 默认关闭</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g1">●</td></tr>
 <tr><td class="fname">类型化工作流运行时带审批检查点<span class="src">openclaw Lobster 加 llm-task</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
 <tr><td class="fname">结构化提问用户<span class="src">我们 ask_user_question · buddy AskUserQuestion · opencode question · hermes clarify</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g1">●</td></tr>
-<tr><td class="fname">按 JSON schema 约束输出<span class="src">buddy --json-schema 加 StructuredOutput · opencode format: json_schema</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td></tr>
+<tr><td class="fname">按 JSON schema 约束输出<span class="src">我们 runtime llm(response_format=…) 严格解析校验加一次重试，OpenAI response_format 与 Anthropic 结构化输出原生映射 · buddy --json-schema 加 StructuredOutput · opencode format: json_schema</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td></tr>
 <tr class="grp"><td>06 <b>多 agent</b> <span style="color:#6b6a63">14 项</span></td><td class="hc us">我们</td><td class="hc">claude</td><td class="hc">codex</td><td class="hc">openclaw</td><td class="hc">opencode</td><td class="hc">hermes</td><td class="hc">pi-mono</td><td class="hc">pi-ai</td><td class="hc">weclaw</td><td class="hc">cc内</td><td class="hc">cx内</td><td class="hc">gm内</td><td class="hc">buddy</td></tr>
 <tr><td class="fname">派生子 agent<span class="src">我们 agent 工具三种起点 · pi-mono 只有示例扩展 · weclaw 是把消息广播给多个外部 CLI</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
 <tr><td class="fname">agent 之间发消息<span class="src">我们 send_message · codex multi_agent_v1.send_message · buddy SendMessage</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
@@ -344,7 +344,7 @@
 <tr><td class="fname">实时成本可见<span class="src">各家；我们在底栏常驻</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
 <tr><td class="fname">调试开关与分类日志<span class="src">claude --debug "api,hooks" · 我们约 30 个环境变量开关</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
 <tr><td class="fname">确定性模拟模型驱动完整 agent 循环<span class="src">我们 tests/providers/scripted_provider.py 经正式 provider registry 与公开 stream 入口脚本化文本、思考、工具调用、错误及多轮；pi-mono faux provider</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
-<tr><td class="fname">请求录制与回放<span class="src">我们 providers/recording.py 与 replay.py 经 api_registry 注册路径录制和离线回放，仅程序内 API，无 CLI 或环境变量入口。pi-mono HTTP 与 WebSocket 磁带 · buddy CODEBUDDY_RECORD_DIR / REPLAY_DIR</span></td><td class="g2 us">◐</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">请求录制与回放<span class="src">我们 openprogram recordings CLI（status/record/replay/off/list/show/delete/prune）与 record_replay.mode/file 配置，跨进程并发录制，回放严格离线不解析凭证 · pi-mono HTTP 与 WebSocket 磁带 · buddy CODEBUDDY_RECORD_DIR / REPLAY_DIR</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g1">●</td></tr>
 <tr><td class="fname">会话导出成训练样本<span class="src">hermes batch processing 批量生成轨迹 · pi-mono 依赖外部 pi-share-hf</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
 <tr><td class="fname">内置强化学习训练管线<span class="src">hermes Tinker-Atropos 的 GRPO 加 LoRA</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
 <tr><td class="fname">使用洞察报告<span class="src">buddy /insights 生成描述交互习惯与失败或中断场景的 HTML 报告 · claude /insights</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
@@ -364,7 +364,7 @@
 <h3 id="cover">1.1已确认功能覆盖分</h3>
 <p class="lead">按 160 项加权：<code>●</code> 记 1 分，<code>◐</code> 和 <code>○</code> 各记 0.5 分。该分数只用于定位本页清单中的候选差异，不是综合产品排名。</p>
 <div class="card scroll">
-<svg viewBox="0 0 960 330" role="img" aria-label="十三列在160项功能上的已确认功能覆盖分，buddy为103分，OpenProgram为77分">
+<svg viewBox="0 0 960 330" role="img" aria-label="十三列在160项功能上的已确认功能覆盖分，buddy为103分，OpenProgram为78.5分">
   <rect x="0" y="0" width="960" height="330" fill="#12110b"/>
   <text x="20" y="26" fill="#8a8675" font-size="11" letter-spacing="2">已确认功能覆盖分 / 160</text>
   <line x1="150" y1="36" x2="150" y2="300" stroke="#2e2c20"/>
@@ -379,7 +379,7 @@
   <g transform="translate(0,84)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">cc内</text><rect x="150" y="2" width="376" height="13" rx="2" fill="#6b4d96"/><text x="536" y="12" fill="#8a8675" font-size="10">94.0</text></g>
   <g transform="translate(0,104)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">hermes</text><rect x="150" y="2" width="368" height="13" rx="2" fill="#5aad4e"/><text x="528" y="12" fill="#8a8675" font-size="10">92.0</text></g>
   <g transform="translate(0,124)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">openclaw</text><rect x="150" y="2" width="332" height="13" rx="2" fill="#2db3d5"/><text x="492" y="12" fill="#8a8675" font-size="10">83.0</text></g>
-  <g transform="translate(0,144)"><text x="140" y="11" fill="#4f8ef7" text-anchor="end" font-weight="700">我们</text><rect x="150" y="2" width="308" height="13" rx="2" fill="#4f8ef7"/><text x="468" y="12" fill="#4f8ef7" font-size="10" font-weight="700">77.0</text></g>
+  <g transform="translate(0,144)"><text x="140" y="11" fill="#4f8ef7" text-anchor="end" font-weight="700">我们</text><rect x="150" y="2" width="314" height="13" rx="2" fill="#4f8ef7"/><text x="474" y="12" fill="#4f8ef7" font-size="10" font-weight="700">78.5</text></g>
   <g transform="translate(0,164)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">codex</text><rect x="150" y="2" width="260" height="13" rx="2" fill="#7a7566"/><text x="420" y="12" fill="#8a8675" font-size="10">65.0</text></g>
   <g transform="translate(0,184)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">cx内</text><rect x="150" y="2" width="256" height="13" rx="2" fill="#5e5a4d"/><text x="416" y="12" fill="#8a8675" font-size="10">64.0</text></g>
   <g transform="translate(0,204)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">opencode</text><rect x="150" y="2" width="214" height="13" rx="2" fill="#7a7566"/><text x="374" y="12" fill="#8a8675" font-size="10">53.5</text></g>
@@ -413,12 +413,12 @@
   <g transform="translate(0,42)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">编辑器集成 9</text><line x1="433" y1="8" x2="667" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="433" cy="8" r="5" fill="#4f8ef7"/><circle cx="667" cy="8" r="5" fill="#d4843a"/><text x="685" y="12" fill="#6b6a63" font-size="10">buddy 78%</text></g>
   <g transform="translate(0,67)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">集成与被集成 13</text><line x1="269" y1="8" x2="638" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="269" cy="8" r="5" fill="#4f8ef7"/><circle cx="638" cy="8" r="5" fill="#5aad4e"/><text x="656" y="12" fill="#6b6a63" font-size="10">hermes 73%</text></g>
   <g transform="translate(0,92)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">版本控制 10</text><line x1="440" y1="8" x2="710" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="440" cy="8" r="5" fill="#4f8ef7"/><circle cx="710" cy="8" r="5" fill="#d4843a"/><text x="728" y="12" fill="#6b6a63" font-size="10">buddy 85%</text></g>
-  <g transform="translate(0,117)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">开发者体验 13</text><line x1="500" y1="8" x2="592" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="500" cy="8" r="5" fill="#4f8ef7"/><circle cx="592" cy="8" r="5" fill="#5aad4e"/><text x="610" y="12" fill="#6b6a63" font-size="10">hermes 65%</text></g>
+  <g transform="translate(0,117)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">开发者体验 13</text><line x1="523" y1="8" x2="592" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="523" cy="8" r="5" fill="#4f8ef7"/><circle cx="592" cy="8" r="5" fill="#5aad4e"/><text x="610" y="12" fill="#6b6a63" font-size="10">hermes 65%</text></g>
   <g transform="translate(0,142)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">代码理解 10</text><line x1="410" y1="8" x2="560" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="410" cy="8" r="5" fill="#4f8ef7"/><circle cx="560" cy="8" r="5" fill="#2db3d5"/><text x="578" y="12" fill="#6b6a63" font-size="10">openclaw 60%</text></g>
   <g transform="translate(0,167)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">安全 15</text><line x1="520" y1="8" x2="620" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="520" cy="8" r="5" fill="#4f8ef7"/><circle cx="620" cy="8" r="5" fill="#d4843a"/><text x="638" y="12" fill="#6b6a63" font-size="10">buddy 70%</text></g>
   <g transform="translate(0,192)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">界面形态 12</text><line x1="525" y1="8" x2="725" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="525" cy="8" r="5" fill="#4f8ef7"/><circle cx="725" cy="8" r="5" fill="#9d6fe0"/><text x="743" y="12" fill="#6b6a63" font-size="10">claude 88%</text></g>
   <g transform="translate(0,217)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">部署与运维 15</text><line x1="480" y1="8" x2="640" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="480" cy="8" r="5" fill="#4f8ef7"/><circle cx="640" cy="8" r="5" fill="#5aad4e"/><text x="658" y="12" fill="#6b6a63" font-size="10">hermes 73%</text></g>
-  <g transform="translate(0,242)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">任务与规划 11</text><line x1="473" y1="8" x2="582" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="473" cy="8" r="5" fill="#4f8ef7"/><circle cx="582" cy="8" r="5" fill="#9d6fe0"/><text x="600" y="12" fill="#6b6a63" font-size="10">claude 64%</text></g>
+  <g transform="translate(0,242)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">任务与规划 11</text><line x1="527" y1="8" x2="582" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="527" cy="8" r="5" fill="#4f8ef7"/><circle cx="582" cy="8" r="5" fill="#9d6fe0"/><text x="600" y="12" fill="#6b6a63" font-size="10">claude 64%</text></g>
   <g transform="translate(0,267)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">会话与历史 17</text><line x1="571" y1="8" x2="606" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="571" cy="8" r="5" fill="#4f8ef7"/><circle cx="606" cy="8" r="5" fill="#9d6fe0"/><text x="624" y="12" fill="#6b6a63" font-size="10">claude 68%</text></g>
   <g transform="translate(0,292)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">扩展 11</text><line x1="527" y1="8" x2="718" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="527" cy="8" r="5" fill="#4f8ef7"/><circle cx="718" cy="8" r="5" fill="#9d6fe0"/><text x="736" y="12" fill="#6b6a63" font-size="10">claude 86%</text></g>
   <g transform="translate(0,317)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">记忆与知识 10</text><line x1="530" y1="8" x2="620" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="530" cy="8" r="5" fill="#4f8ef7"/><circle cx="620" cy="8" r="5" fill="#2db3d5"/><text x="638" y="12" fill="#6b6a63" font-size="10">openclaw 70%</text></g>
@@ -437,7 +437,7 @@
 <div class="tbl">
 <table class="wide">
 <tr><th>功能</th><th>大类</th><th>已确认的参考对象</th><th>依据</th></tr>
-<tr class="grp"><td colspan="4"><b class="g1">进入后续评估</b> <span style="color:#6b6a63">44 项</span></td></tr>
+<tr class="grp"><td colspan="4"><b class="g1">进入后续评估</b> <span style="color:#6b6a63">43 项</span></td></tr>
 <tr><td class="name">终端快捷键自动配置</td><td class="sz">编辑器集成</td><td>claude、cc内、gm内 等 5 家</td><td class="srcin">claude /terminal-setup · buddy /terminal-setup 覆盖十余种终端</td></tr>
 <tr><td class="name">归档会话</td><td class="sz">会话与历史</td><td>codex、cx内</td><td class="srcin">codex archive / unarchive · ~/.codex/archived_sessions/</td></tr>
 <tr><td class="name">将运行中会话迁移至其他设备或客户端</td><td class="sz">会话与历史</td><td>claude、codex、opencode 等 7 家</td><td class="srcin">claude /teleport · codex --remote · opencode attach · buddy --remote-control</td></tr>
@@ -456,7 +456,6 @@
 <tr><td class="name">从会话中提取承诺并定期复核</td><td class="sz">任务与规划</td><td>openclaw</td><td class="srcin">openclaw src/commitments，置信度 0.86，每天最多主动发起三次复核</td></tr>
 <tr><td class="name">模型动态生成编排脚本并执行大规模并行任务</td><td class="sz">任务与规划</td><td>claude、cc内、buddy 等 5 家</td><td class="srcin">buddy ultracode 最多 1000 个子 agent、并发上限 16 · claude Dynamic Workflows · codex code mode 默认关闭</td></tr>
 <tr><td class="name">类型化工作流运行时带审批检查点</td><td class="sz">任务与规划</td><td>openclaw</td><td class="srcin">openclaw Lobster 加 llm-task</td></tr>
-<tr><td class="name">按 JSON schema 约束输出</td><td class="sz">任务与规划</td><td>claude、opencode、cc内 等 5 家</td><td class="srcin">buddy --json-schema 加 StructuredOutput · opencode format: json_schema</td></tr>
 <tr><td class="name">持久任务看板</td><td class="sz">多 agent</td><td>hermes</td><td class="srcin">hermes ~/.hermes/kanban.db，多项目分板加自动拆解</td></tr>
 <tr><td class="name">agent 团队：队长加成员加邮箱</td><td class="sz">多 agent</td><td>claude、cc内、buddy</td><td class="srcin">buddy Agent Teams 带 @成员补全与共享任务表 · claude 需 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS</td></tr>
 <tr><td class="name">委派模式：协调 agent 不直接执行任务</td><td class="sz">多 agent</td><td>cc内、buddy</td><td class="srcin">buddy --permission-mode delegate，可用工具限制为五个</td></tr>
@@ -518,7 +517,7 @@
 </div>
 
 <div class="note green">
-  <b>45 项仍需单独立项判断</b>。commit-push-pr 与外部命令取密钥已在 0683819b 落地并移出本表；当前优先关注 diff 安全审查、操作系统钥匙串、请求录制与回放的 CLI 入口、JSON schema 输出，以及可恢复删除尚未覆盖的后端和删除入口。这里没有可靠的使用频率与工程量数据；具体顺序由第四节按风险、依赖关系、协议稳定性和可验收性给出。已落地的 credential_process 仍缺参数约束、超时和日志脱敏的加固。
+  <b>43 项仍需单独立项判断</b>。commit-push-pr、外部命令取密钥、每会话资源限额、请求录制与回放的 CLI 入口和 JSON schema 输出已陆续落地并移出本表；当前优先关注 diff 安全审查、操作系统钥匙串，以及可恢复删除尚未覆盖的后端和删除入口。这里没有可靠的使用频率与工程量数据；具体顺序由第四节按风险、依赖关系、协议稳定性和可验收性给出。已落地的 credential_process 仍缺参数约束、超时和日志脱敏的加固。
 </div>
 
 <h3 id="newfound">2.1相对前几轮新增的清单项</h3>
@@ -623,7 +622,7 @@
 <tr>
   <td class="name">二</td>
   <td><b>确定性循环测试</b>：请求录制、默认脱敏和离线回放。</td>
-  <td>当前工作树已有测试专用 scripted provider，可经正常 provider 注册路径驱动文本、思考、工具调用、错误和多轮响应，并覆盖真实 <code>agent_loop</code> 工具结果回填；录制与回放模块已落地（providers/recording.py、replay.py，经 api_registry 注册路径），但仅测试可用，尚无 CLI、界面或环境变量入口。</td>
+  <td>当前工作树已有测试专用 scripted provider，可经正常 provider 注册路径驱动文本、思考、工具调用、错误和多轮响应，并覆盖真实 <code>agent_loop</code> 工具结果回填；录制与回放已具备 <code>openprogram recordings</code> CLI 与 <code>record_replay.mode/file</code> 配置入口，回放严格离线不解析凭证。</td>
   <td class="y">后续协议、会话和权限改动需要稳定回归基线。最低验收：录制默认脱敏；回放不访问网络；事件顺序和失败差异可定位；录制格式有版本约束。</td>
 </tr>
 <tr>
@@ -680,7 +679,7 @@
 <div class="tbl">
 <table class="wide">
 <tr><th>对象</th><th>取证来源</th><th>注意</th></tr>
-<tr><td class="name">OpenProgram</td><td><code>main@8f62da5a</code></td><td>全部能力按该基线提交复核（2026-08-11），在 414aa4de 基础上追加确认：skills_bundled 的 commit-push-pr 打包技能、auth/methods 的 credential_process 外部命令取密钥、providers 层 recording/replay 模块（仅程序内 API）、backup create/list/restore/prune、默认开启的同 provider 失败切换，以及 agent/resource_governance 的每会话并发与资源限额。此前条目仍包括按 profile 隔离的 functions/programs meta 存储、TUI <code>/init</code>/<code>/compact</code>/<code>/doctor</code>/<code>/mcp</code>、有总输入上限的 <code>/commit-message</code>、测试专用 scripted provider、带范围声明的 <code>trash list/restore</code>、doctor/MCP 后端响应契约测试、运行中发消息排队、owner/paired 两档来源权限、默认开启的沙箱，以及 <code>openprogram acp</code> 服务端与 lsp_diagnostics/lsp_references/lsp_definition。文档改动本身不作为功能证据</td></tr>
+<tr><td class="name">OpenProgram</td><td><code>main@1c249e92</code></td><td>全部能力按该基线提交复核（2026-08-11），在 414aa4de 基础上追加确认：skills_bundled 的 commit-push-pr 打包技能、auth/methods 的 credential_process 外部命令取密钥、带 recordings CLI 与 record_replay 配置入口的请求录制与严格离线回放、runtime llm(response_format=…) 的 JSON schema 结构化输出、backup create/list/restore/prune、默认开启的同 provider 失败切换，以及 agent/resource_governance 的每会话并发与资源限额。此前条目仍包括按 profile 隔离的 functions/programs meta 存储、TUI <code>/init</code>/<code>/compact</code>/<code>/doctor</code>/<code>/mcp</code>、有总输入上限的 <code>/commit-message</code>、测试专用 scripted provider、带范围声明的 <code>trash list/restore</code>、doctor/MCP 后端响应契约测试、运行中发消息排队、owner/paired 两档来源权限、默认开启的沙箱，以及 <code>openprogram acp</code> 服务端与 lsp_diagnostics/lsp_references/lsp_definition。文档改动本身不作为功能证据</td></tr>
 <tr><td class="name">claude-code</td><td class="p">本机 CLI <code>2.1.226</code>；<code>references/claude-code-leaked@a371abbe75ff</code> 仅作补充</td><td>二进制与参考源码冲突时以本机二进制为准；只在内部构建出现且本机不可达的功能不计入</td></tr>
 <tr><td class="name">codex</td><td class="p">本机 CLI <code>0.147.0</code>；源码 <code>references/codex-cli@57f42a81131c</code></td><td>UnderDevelopment 与 Experimental 条目使用 <code>○</code>，不按默认开启状态计为完整确认</td></tr>
 <tr><td class="name">openclaw</td><td><code>references/openclaw@b1b28415c2eb</code></td><td rowspan="5">均为本地源码快照，不声明为项目最新发布版；文档声明没有统一转换成端到端运行验证</td></tr>
@@ -698,7 +697,7 @@
 <div class="tbl">
 <table>
 <tr><th>条目</th><th>状态</th></tr>
-<tr><td>功能矩阵、77.0 分、74 个候选差异、6 个快照差异</td><td class="y">基于上述基线提交；外部对象没有做全量运行验收</td></tr>
+<tr><td>功能矩阵、78.5 分、73 个候选差异、6 个快照差异</td><td class="y">基于上述基线提交；外部对象没有做全量运行验收</td></tr>
 <tr><td>第四节的六个批次</td><td class="n">设计参考，未表示已实现或已批准；实施前需重新核对现状并单独估算</td></tr>
 <tr><td>OpenProgram 列的 <code>◐</code></td><td class="p">只在部分界面或部分输入路径确认；具体限制写在对应依据中</td></tr>
 <tr><td>分数、类别比例和候选计数</td><td class="p">由矩阵状态机械计算；不附带质量权重或重要性权重</td></tr>
