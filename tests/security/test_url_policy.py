@@ -160,9 +160,28 @@ def test_errors_and_safe_urls_do_not_expose_secrets():
         evaluate_public(url)
 
     rendered = str(exc.value)
-    assert exc.value.safe_url == "https://example.com/private/token"
-    for secret in ("alice", "password", "secret", "fragment-secret"):
+    assert exc.value.safe_url == "https://example.com"
+    for secret in (
+        "alice",
+        "password",
+        "private",
+        "token",
+        "secret",
+        "fragment-secret",
+    ):
         assert secret not in rendered
+
+
+def test_path_credential_is_not_copied_into_policy_error():
+    path_credential = "bot123456:ABC-SECRET"
+    with pytest.raises(URLPolicyError) as exc:
+        evaluate_public(
+            f"https://api.telegram.org/{path_credential}/getUpdates",
+            resolver=answers("10.0.0.1"),
+        )
+
+    assert exc.value.safe_url == "https://api.telegram.org"
+    assert path_credential not in str(exc.value)
 
 
 def test_encoded_control_character_is_not_copied_into_safe_url():
@@ -174,6 +193,10 @@ def test_encoded_control_character_is_not_copied_into_safe_url():
 
 
 def test_configured_service_requires_exact_origin_but_allows_private_address():
+    exception = OwnerURLException(
+        consumer="provider.configured_api",
+        origin="http://localhost:11434",
+    )
     decision = evaluate_url(
         "provider.configured_api",
         "POST",
@@ -182,6 +205,7 @@ def test_configured_service_requires_exact_origin_but_allows_private_address():
         allowed_methods=frozenset({"GET", "POST"}),
         allowed_ports=None,
         configured_origin="http://localhost:11434/base",
+        exceptions=(exception,),
         resolver=answers("127.0.0.1"),
     )
     assert decision.origin == "http://localhost:11434"
@@ -201,52 +225,134 @@ def test_configured_service_requires_exact_origin_but_allows_private_address():
     assert exc.value.reason == "CONFIGURED_ORIGIN_MISMATCH"
 
 
-def test_owner_exception_is_consumer_scoped_and_metadata_is_never_excepted():
+def test_public_trust_classes_reject_owner_exceptions_before_dns():
     exception = OwnerURLException(
         consumer="skills.configured.catalog",
         network=ipaddress.ip_network("10.0.0.0/8"),
+    )
+    for trust_class in (
+        URLTrustClass.UNTRUSTED_PUBLIC,
+        URLTrustClass.FIXED_PUBLIC_SERVICE,
+    ):
+        calls: list[tuple[str, int]] = []
+
+        def resolver(hostname: str, port: int):
+            calls.append((hostname, port))
+            return ("10.1.2.3",)
+
+        kwargs = {}
+        if trust_class == URLTrustClass.FIXED_PUBLIC_SERVICE:
+            kwargs["fixed_origins"] = frozenset({"https://catalog.example.test"})
+        with pytest.raises(URLPolicyError) as exc:
+            evaluate_url(
+                "skills.configured.catalog",
+                "GET",
+                "https://catalog.example.test/skills",
+                trust_class=trust_class,
+                allowed_methods=PUBLIC_METHODS,
+                allowed_ports=PUBLIC_PORTS,
+                exceptions=(exception,),
+                resolver=resolver,
+                **kwargs,
+            )
+        assert exc.value.reason == "EXCEPTIONS_FORBIDDEN"
+        assert calls == []
+
+
+def test_configured_private_address_requires_a_matching_owner_exception():
+    kwargs = {
+        "trust_class": URLTrustClass.CONFIGURED_SERVICE,
+        "allowed_methods": PUBLIC_METHODS,
+        "allowed_ports": None,
+        "configured_origin": "https://catalog.example.test",
+        "resolver": answers("10.1.2.3"),
+    }
+    with pytest.raises(URLPolicyError) as exc:
+        evaluate_url(
+            "skills.configured.catalog",
+            "GET",
+            "https://catalog.example.test/skills",
+            **kwargs,
+        )
+    assert exc.value.reason == "NON_GLOBAL_ADDRESS"
+
+    exception = OwnerURLException(
+        consumer="skills.configured.catalog",
+        origin="https://catalog.example.test",
     )
     decision = evaluate_url(
         "skills.configured.catalog",
         "GET",
         "https://catalog.example.test/skills",
-        trust_class=URLTrustClass.UNTRUSTED_PUBLIC,
-        allowed_methods=PUBLIC_METHODS,
-        allowed_ports=PUBLIC_PORTS,
         exceptions=(exception,),
-        resolver=answers("10.1.2.3"),
+        **kwargs,
     )
     assert decision.resolved_ips == (ipaddress.ip_address("10.1.2.3"),)
 
-    with pytest.raises(URLPolicyError) as exc:
-        evaluate_url(
-            "tool.web_fetch",
-            "GET",
-            "https://catalog.example.test/skills",
-            trust_class=URLTrustClass.UNTRUSTED_PUBLIC,
-            allowed_methods=PUBLIC_METHODS,
-            allowed_ports=PUBLIC_PORTS,
-            exceptions=(exception,),
-            resolver=answers("10.1.2.3"),
-        )
-    assert exc.value.reason == "NON_GLOBAL_ADDRESS"
 
+def test_configured_service_never_allows_metadata_through_owner_exception():
     metadata_exception = OwnerURLException(
         consumer="skills.configured.catalog",
-        network=ipaddress.ip_network("169.254.0.0/16"),
+        origin="http://169.254.169.254",
     )
     with pytest.raises(URLPolicyError) as exc:
         evaluate_url(
             "skills.configured.catalog",
             "GET",
             "http://169.254.169.254/latest/meta-data",
-            trust_class=URLTrustClass.UNTRUSTED_PUBLIC,
+            trust_class=URLTrustClass.CONFIGURED_SERVICE,
             allowed_methods=PUBLIC_METHODS,
-            allowed_ports=PUBLIC_PORTS,
+            allowed_ports=None,
+            configured_origin="http://169.254.169.254",
             exceptions=(metadata_exception,),
             resolver=answers("169.254.169.254"),
         )
     assert exc.value.reason == "METADATA_ADDRESS"
+
+
+def test_fixed_service_rejects_unlisted_origin_before_dns():
+    calls: list[tuple[str, int]] = []
+
+    def resolver(hostname: str, port: int):
+        calls.append((hostname, port))
+        return (PUBLIC_IP,)
+
+    with pytest.raises(URLPolicyError) as exc:
+        evaluate_url(
+            "channel.telegram.api",
+            "GET",
+            "https://attacker.example/getUpdates",
+            trust_class=URLTrustClass.FIXED_PUBLIC_SERVICE,
+            allowed_methods=PUBLIC_METHODS,
+            allowed_ports=PUBLIC_PORTS,
+            fixed_origins=frozenset({"https://api.telegram.org"}),
+            resolver=resolver,
+        )
+    assert exc.value.reason == "FIXED_ORIGIN_MISMATCH"
+    assert calls == []
+
+
+def test_callback_rejects_https_before_dns_when_registry_allows_only_http():
+    calls: list[tuple[str, int]] = []
+
+    def resolver(hostname: str, port: int):
+        calls.append((hostname, port))
+        return ("127.0.0.1",)
+
+    with pytest.raises(URLPolicyError) as exc:
+        evaluate_url(
+            "mcp.loopback.callback",
+            "GET",
+            "https://127.0.0.1:9005/callback",
+            trust_class=URLTrustClass.LOOPBACK_CALLBACK,
+            allowed_schemes=frozenset({"http"}),
+            allowed_methods=frozenset({"GET"}),
+            allowed_ports=None,
+            callback_origin="https://127.0.0.1:9005",
+            resolver=resolver,
+        )
+    assert exc.value.reason == "SCHEME_FORBIDDEN"
+    assert calls == []
 
 
 def test_loopback_callback_requires_exact_ip_and_port():
