@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenProgram · JSON Schema Structured Output 设计</title>
+<style>
+  :root {
+    --bg:#0e1117; --panel:#161b24; --panel2:#1b2230; --ink:#e7ebf2; --muted:#98a2b3;
+    --line:#2a3342; --accent:#79a8ff; --accent2:#b19cff; --ok:#4ad6a0; --warn:#f4c76b;
+    --bad:#ff7c82; --info:#73d2de; --code:#0a0d12;
+    --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  }
+  * { box-sizing:border-box }
+  html { scroll-behavior:smooth }
+  body { margin:0; color:var(--ink); background:var(--bg); font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif }
+  .wrap { max-width:1180px; margin:auto; padding:40px 28px 88px }
+  h1 { margin:2px 0 8px; font-size:32px; line-height:1.25 }
+  h2 { margin:46px 0 16px; padding-top:15px; border-top:1px solid var(--line); font-size:22px }
+  h3 { margin:27px 0 10px; font-size:17px; color:#d8e2f3 }
+  h4 { margin:0 0 7px; font-size:15px }
+  p { margin:9px 0 }
+  a { color:var(--accent) }
+  code,.mono { font-family:var(--mono); font-size:.9em }
+  code { color:#dce7fb; background:var(--code); border:1px solid var(--line); border-radius:5px; padding:1px 5px }
+  pre { margin:12px 0; padding:15px 17px; overflow:auto; background:var(--code); border:1px solid var(--line); border-radius:10px; color:#dce7fb; font:12.5px/1.55 var(--mono) }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13.5px }
+  th,td { padding:9px 11px; border:1px solid var(--line); text-align:left; vertical-align:top }
+  th { color:#d8e2f3; background:var(--panel2) }
+  tr:nth-child(even) td { background:#121721 }
+  ul,ol { margin:8px 0; padding-left:23px }
+  li { margin:5px 0 }
+  .eyebrow,.small { color:var(--muted); font-size:12.5px }
+  .lead { margin:19px 0; padding:18px 20px; border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:12px; background:linear-gradient(180deg,#182131,#131924) }
+  .grid { display:grid; gap:14px }
+  .g2 { grid-template-columns:repeat(2,minmax(0,1fr)) }
+  .g3 { grid-template-columns:repeat(3,minmax(0,1fr)) }
+  .card { padding:16px 18px; border:1px solid var(--line); border-radius:11px; background:var(--panel) }
+  .pill { display:inline-block; padding:4px 7px; border:1px solid; border-radius:999px; font:600 10.5px/1 var(--mono); white-space:nowrap }
+  .ok { color:var(--ok); border-color:#256449; background:#10251d }
+  .warn { color:var(--warn); border-color:#655128; background:#29220f }
+  .bad { color:var(--bad); border-color:#6c3136; background:#2b1518 }
+  .info { color:var(--info); border-color:#285f66; background:#102328 }
+  .callout { margin:13px 0; padding:12px 15px; border-radius:10px; border:1px solid var(--line); background:var(--panel) }
+  .callout.badline { border-color:#6c3136; background:#271518 }
+  .callout.warnline { border-color:#655128; background:#28210f }
+  .callout.okline { border-color:#256449; background:#10231c }
+  .flow { display:grid; grid-template-columns:repeat(7,minmax(105px,1fr)); gap:8px; align-items:stretch; margin:14px 0 }
+  .flow .node { padding:12px 9px; border:1px solid var(--line); border-radius:9px; background:var(--panel); text-align:center; font-size:12.5px }
+  .flow .node:not(:last-child)::after { content:"→"; float:right; transform:translate(18px,0); color:#5f6c80 }
+  .state { display:grid; grid-template-columns:42px 1fr; border:1px solid var(--line); border-bottom:0 }
+  .state:first-child { border-radius:10px 10px 0 0 }
+  .state:last-child { border-bottom:1px solid var(--line); border-radius:0 0 10px 10px }
+  .state .n { display:flex; align-items:center; justify-content:center; background:var(--panel2); color:var(--accent); font:600 13px var(--mono) }
+  .state .d { padding:10px 13px; background:var(--panel) }
+  .files td:first-child { white-space:nowrap; font-family:var(--mono); font-size:12px }
+  .foot { margin-top:52px; padding-top:18px; border-top:1px solid var(--line); color:var(--muted); font-size:12.5px }
+  @media(max-width:900px) { .flow { grid-template-columns:1fr 1fr } .flow .node::after { display:none } }
+  @media(max-width:720px) { .g2,.g3 { grid-template-columns:1fr } .wrap { padding:26px 17px 64px } }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <p class="eyebrow">OpenProgram · Provider / Runtime 设计文档 · implementation-ready · 2026-08-11</p>
+  <h1>JSON Schema Structured Output</h1>
+  <p class="small">基线：<code>main@708bfbab</code>。本文描述目标契约与修改清单，不表示功能已经实现。</p>
+
+  <div class="lead">
+    <p><strong>设计结论：</strong>继续使用现有 <code>Runtime.exec(..., response_format=...)</code> 作为唯一公共入口；在 provider 公共类型中加入规范化后的 schema 配置，由 capability negotiation 选择 provider 原生 JSON Schema 或受约束的隐藏 tool fallback。无论 provider 是否宣称 strict，最终结果都必须经过严格 JSON 解析和调用方原始 JSON Schema 的本地校验。失败最多执行一次语义修复请求，最终只返回已校验的 Python JSON 值。</p>
+    <p class="small">当前实现并不满足现有文档承诺：<code>Runtime.exec</code> 接收 <code>response_format</code>，但默认 provider 路径没有把它传入 <code>AgentSession</code> 或 <code>StreamOptions</code>。<code>session/name.md</code> 声称 title 使用 JSON Schema，实际代码仍要求纯文本并用正则清理。本设计同时定义这两个缺口的收敛方式。</p>
+  </div>
+
+  <h2>1. 范围、目标与边界</h2>
+  <div class="grid g3">
+    <section class="card"><h4>统一语义</h4><p>Python Runtime、Agent、CLI、WebSocket/API 使用同一份 schema、相同协商结果、相同验证器和错误分类。</p></section>
+    <section class="card"><h4>流式兼容</h4><p>保留 provider 的增量文本和 tool 事件，同时明确候选尝试、丢弃、重试与最终结构化结果事件。</p></section>
+    <section class="card"><h4>可复现</h4><p>record/replay 记录规范化请求和每次 provider 调用；离线 replay 重新执行同一解析、校验与有限重试。</p></section>
+  </div>
+  <p>不在本次实现范围：任意 schema 到 provider 子集的有损改写、自动生成 Pydantic 类型、跨语言代码生成、逐 token 的增量 JSON AST、Web UI schema 编辑器、改变普通文本调用的返回值或流事件。</p>
+
+  <h2>2. 基线审计</h2>
+  <table>
+    <thead><tr><th>层</th><th>当前事实</th><th>缺口</th></tr></thead>
+    <tbody>
+      <tr><td>公共 Runtime</td><td><code>agentic_programming/runtime.py</code> 已暴露 <code>response_format: dict</code>，并在 callable-model 路径透传。</td><td><code>_call_via_providers()</code> 没有使用它；默认 provider 调用静默退化为普通文本。</td></tr>
+      <tr><td>Provider 类型</td><td><code>StreamOptions</code> 有采样、tool、transport、header 等字段；<code>Model</code> 有 reasoning/thinking/compat；<code>AssistantMessage</code> 只保存文本/tool/错误。</td><td>没有 output schema、模型能力或已解析 JSON 字段。</td></tr>
+      <tr><td>模型目录</td><td><code>models_dev.py</code> 已把 models.dev 的 <code>structured_output</code> 规范化并缓存。</td><td><code>Model</code> 没有对应字段，Pydantic 构造时丢弃；模型列表也没有展示该能力。</td></tr>
+      <tr><td>Agent loop</td><td><code>AgentLoopConfig</code> 继承公共 stream options；每轮可执行 tool，直到得到不含 tool call 的 assistant message。</td><td>重建 <code>SimpleStreamOptions</code> 时无 schema 可转发；没有最终候选校验与修复状态。</td></tr>
+      <tr><td>流事件</td><td>provider 事件覆盖 text/thinking/tool/done/error；dispatcher 再转换为 Web/CLI 的 <code>stream_event</code>。</td><td>无法表示“第 1 个候选无效，清空后进入第 2 次尝试”及“最终结构化值已校验”。</td></tr>
+      <tr><td>CLI / Web / API</td><td><code>--print</code> 最终打印字符串；WS <code>chat_response.result.content</code> 是字符串；<code>POST /api/function/{name}</code> 返回异步 ack。</td><td>请求不能携带 schema，成功结果没有 typed JSON，错误没有稳定 machine-readable code。</td></tr>
+      <tr><td>Session title</td><td>设计文档写明 <code>{title:string}</code> schema。</td><td><code>agent/dispatcher/titles.py</code> 实际提示“ONLY title text”，再按行、引号、前缀与长度清理。</td></tr>
+      <tr><td>Record/replay</td><td>format v1 记录 model、context、options 及原始 provider 事件；replay 严格比较字段。</td><td>加入默认字段会让旧录制与新请求产生形状差异；结构化校验重试需保持 call index 顺序。</td></tr>
+    </tbody>
+  </table>
+
+  <h3>调用与返回链</h3>
+  <div class="flow">
+    <div class="node">Runtime.exec</div><div class="node">_call_via_providers</div><div class="node">AgentSession</div><div class="node">Agent loop</div><div class="node">API provider stream</div><div class="node">event parsing</div><div class="node">CLI / WS / API</div>
+  </div>
+  <p class="small">schema 必须沿这条现有链路传递；不新增绕过 Agent loop 的“structured provider client”，否则 tool calling、deadline、record/replay、DAG 与 session persistence 会形成第二套语义。</p>
+
+  <h2>3. 公共 API 与规范化类型</h2>
+  <p>保留参数名 <code>response_format</code>，因为它已经公开并出现在现有设计文档。支持两种输入形状：裸 JSON Schema，以及带 OpenProgram 控制项的 envelope。规范化只发生一次。</p>
+  <pre>JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
+
+class JsonSchemaOutput(BaseModel):
+    type: Literal["json_schema"] = "json_schema"
+    schema: dict[str, Any]                  # 调用方原始 schema，禁止原地改写
+    name: str = "response"                 # ^[A-Za-z_][A-Za-z0-9_-]{0,63}$
+    description: str | None = None
+    strict: bool = True
+    fallback: Literal["auto", "none", "prompt"] = "auto"
+    max_validation_retries: Literal[0, 1] = 1
+
+# 兼容现有调用：裸 dict 视为 schema 本身，而不是 provider payload。
+Runtime.exec(content=..., response_format={"type":"object", ...}) -&gt; JsonValue
+Runtime.exec(content=..., response_format=JsonSchemaOutput(...)) -&gt; JsonValue
+Runtime.exec(content=..., response_format=None) -&gt; str</pre>
+  <ul>
+    <li>用 overload 表达返回类型；普通文本调用仍返回 <code>str</code>。结构化调用成功时不返回 JSON 字符串。</li>
+    <li><code>async_exec</code>、<code>exec</code>、AgentSession 和 dispatcher 使用同一个 <code>JsonSchemaOutput</code>；不接受 provider 私有 <code>response_format</code> payload。</li>
+    <li>网络请求前调用 <code>validator_for(schema).check_schema(schema)</code>。无法识别的 meta-schema 或非法 schema 抛 <code>StructuredOutputSchemaError</code>，不消耗 provider 请求。</li>
+    <li>在 <code>pyproject.toml</code> 直接声明 <code>jsonschema&gt;=4.23</code>。当前 lock 中的传递依赖不能作为核心功能契约。</li>
+  </ul>
+
+  <h3>Provider 公共字段</h3>
+  <pre>class Model(BaseModel):
+    structured_output: bool | None = None   # models.dev: true / false / unknown
+
+class StreamOptions(BaseModel):
+    ...
+    response_format: JsonSchemaOutput | None = None
+
+class AssistantMessage(BaseModel):
+    ...
+    structured_output: JsonValue | None = None
+    structured_output_mode: Literal["native", "tool", "prompt"] | None = None
+    structured_output_attempt: int | None = None</pre>
+  <p><code>None</code> 是未知能力，不等于 <code>False</code>。原始 JSON 文本继续保存在 assistant text content 中，便于历史、DAG、审计和 replay；程序调用返回 <code>structured_output</code>。</p>
+
+  <h2>4. Capability negotiation</h2>
+  <p>模型目录只回答“该模型是否宣称支持 structured output”；API adapter 还必须回答 payload 方言、streaming、与 tools 的组合约束。协商同时检查两者。</p>
+  <pre>class StructuredOutputCapabilities(BaseModel):
+    native: Literal["supported", "unsupported", "unknown"]
+    dialect: Literal["openai_chat", "openai_responses", "anthropic",
+                     "google", "bedrock"] | None
+    streaming: bool
+    with_tools: bool
+    schema_profile: str                 # provider 子集检查器名称
+
+negotiate(model, api_provider, options, tools) -&gt; StructuredOutputPlan
+# plan.mode: native | tool | prompt
+# plan.provider_schema: 经等价投影后的副本
+# plan.original_schema: 本地最终验证使用</pre>
+  <ol>
+    <li>schema 自身非法：立即失败。</li>
+    <li>adapter 为该 API 明确支持、模型字段不是 <code>False</code>、schema 可无损投影、当前 tools 组合受支持：选择 <code>native</code>。</li>
+    <li><code>fallback="auto"</code> 且 provider 支持 strict tool schema、schema 可无损投影、<code>tool_choice</code> 未禁止/强制其他 tool：选择隐藏 tool。</li>
+    <li><code>fallback="prompt"</code>：显式选择 prompt fallback；它只保证本地校验，不宣称 provider-level strict。</li>
+    <li>否则抛 <code>StructuredOutputUnsupportedError</code>，请求发出前给出 provider、model、冲突能力和 fallback 原因。</li>
+  </ol>
+  <div class="callout warnline"><strong>未知不作乐观推断。</strong> <code>openai-codex</code> 和 <code>gemini-subscription</code> 可能借用官方模型条目，但它们使用不同后端。除非该 API adapter 有契约测试，不能因为 <code>Model.structured_output=True</code> 就发送原生字段。</div>
+
+  <h3>Provider 映射与首版边界</h3>
+  <table>
+    <thead><tr><th>API</th><th>原生 payload</th><th>首版策略</th><th>组合限制</th></tr></thead>
+    <tbody>
+      <tr><td><code>openai-completions</code></td><td><code>response_format={type:"json_schema", json_schema:{name,description,strict,schema}}</code></td><td><span class="pill ok">native</span></td><td>按兼容 profile 检查 tools/parallel；不为 community endpoint 假定完整 OpenAI 支持。</td></tr>
+      <tr><td><code>openai-responses</code></td><td><code>text.format={type:"json_schema", name,description,strict,schema}</code></td><td><span class="pill ok">native</span></td><td>保留 refusal/incomplete 终止语义；能力不满足时转 hidden tool。</td></tr>
+      <tr><td><code>azure-openai-responses</code></td><td>Responses <code>text.format</code></td><td><span class="pill ok">native</span></td><td>部署模型和 API version 必须通过 adapter 探针/契约测试，不能只看模型名。</td></tr>
+      <tr><td><code>anthropic-messages</code></td><td><code>output_config.format={type:"json_schema", schema}</code></td><td><span class="pill ok">native</span></td><td>与现有 <code>output_config.effort</code> 合并，禁止覆盖；refusal/max_tokens 仍需本地失败分类。</td></tr>
+      <tr><td><code>google-generative-ai</code></td><td><code>response_mime_type="application/json"</code> + <code>response_json_schema</code></td><td><span class="pill ok">native</span></td><td>只接受官方支持子集；工具组合在契约测试通过前标为 <code>with_tools=False</code>。</td></tr>
+      <tr><td><code>bedrock-converse-stream</code></td><td><code>outputConfig.textFormat.structure.jsonSchema</code>，其中 schema 是 JSON 字符串</td><td><span class="pill ok">native</span></td><td>模型支持名单与 citations 冲突由 adapter 判定；本地仍按原 schema 校验。</td></tr>
+      <tr><td><code>openai-codex</code></td><td>无已验证的 ChatGPT backend 契约</td><td><span class="pill warn">tool fallback</span></td><td>原生为 unknown；不发送 OpenAI Responses 私有字段。</td></tr>
+      <tr><td><code>gemini-subscription</code></td><td>Cloud Code Assist request 内部有 <code>generationConfig</code>，但兼容性未验证</td><td><span class="pill warn">tool fallback</span></td><td>独立契约测试通过后才能打开原生能力。</td></tr>
+    </tbody>
+  </table>
+  <p class="small">外部契约依据：<a href="https://openai.com/index/introducing-structured-outputs-in-the-api/">OpenAI Structured Outputs</a>、<a href="https://platform.claude.com/docs/en/build-with-claude/structured-outputs">Anthropic structured outputs</a>、<a href="https://ai.google.dev/api/generate-content">Google GenerateContent API</a>、<a href="https://docs.aws.amazon.com/bedrock/latest/userguide/structured-output.html">Amazon Bedrock structured outputs</a>、<a href="https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/structured-outputs">Azure OpenAI structured outputs</a>。这些接口会变化，adapter 契约测试是启用能力的必要条件。</p>
+
+  <h2>5. 原生模式与 fallback</h2>
+  <h3>原生 schema</h3>
+  <p>adapter 只负责把规范化配置映射到 provider payload。现有 <code>providers/_schema</code> 可复用遍历与方言识别，但只能执行语义等价变换，例如 key 命名或 JSON 字符串序列化。任何删除 constraint、放宽 <code>additionalProperties</code>、改写 union 等有损处理都返回具体路径并使原生方案不可用。最终验证永远使用调用方原始 schema。</p>
+
+  <h3>隐藏 tool fallback</h3>
+  <pre>{
+  "name": "__openprogram_submit_json",
+  "description": "Submit the final response matching the required schema.",
+  "parameters": &lt;provider_schema&gt;,
+  "strict": true
+}</pre>
+  <ul>
+    <li>隐藏 tool 与调用方 tools 一起发送。普通 tool call 照常执行并进入下一轮。</li>
+    <li>隐藏 tool 必须单独出现；其 arguments 是最终候选，不实际调用 tool，也不生成 <code>ToolResultMessage</code>。</li>
+    <li>fallback round 设置 <code>parallel_tool_calls=False</code>。如果调用方显式要求 parallel、<code>tool_choice="none"</code> 或强制另一个 tool，协商失败，不覆盖调用方设置。</li>
+    <li>模型输出普通文本而不调用隐藏 tool，归类为 <code>missing_submission</code>，可进入一次修复请求。</li>
+  </ul>
+
+  <h3>Prompt fallback</h3>
+  <p>只在调用方明确设置 <code>fallback="prompt"</code> 时启用：把紧凑 schema 和“仅返回 JSON”要求加入系统层，并对最终文本执行相同解析/校验。它不标记为 strict，不在 <code>auto</code> 中静默使用。这样可以区分 provider-level 约束与纯本地检测。</p>
+
+  <h2>6. 流式事件和增量文本</h2>
+  <p>structured output 不做增量 schema 校验。每次尝试仍转发原始文本 delta，消费者可显示正在生成的 JSON；最终 <code>text_end</code> 后才解析。为避免无效尝试被提交为最终消息，增加两个框架事件，并给 text 事件增加可选 attempt 元数据。</p>
+  <pre>EventTextStart/TextDelta/TextEnd.output_attempt: int | None = None
+
+EventStructuredOutputRetry {
+  type: "structured_output_retry",
+  attempt: 1,
+  next_attempt: 2,
+  issues: [{code, path, schema_path, message}],
+}
+
+EventStructuredOutputEnd {
+  type: "structured_output_end",
+  attempt: 1 | 2,
+  mode: "native" | "tool" | "prompt",
+  value: JsonValue,
+}</pre>
+  <div class="state"><div class="n">1</div><div class="d">转发 attempt=1 的 text/tool 增量，客户端写入“候选缓冲区”，不提交持久消息。</div></div>
+  <div class="state"><div class="n">2</div><div class="d">provider 完成后严格解析并校验。成功则发 <code>structured_output_end</code>，随后发唯一一次 <code>done</code>。</div></div>
+  <div class="state"><div class="n">3</div><div class="d">失败且可修复时发 <code>structured_output_retry</code>。CLI/Web 清空候选缓冲区；Agent loop 发起下一次 provider stream。</div></div>
+  <div class="state"><div class="n">4</div><div class="d">第 2 次成功则提交；再次失败则发 <code>error</code>，不发 <code>done</code>，不持久化无效 assistant final。</div></div>
+  <p>provider 自己的 raw <code>done</code> 由 Agent loop 消费；对外只暴露结构化事务的最终 <code>done</code>。普通文本模式保持原事件序列。CLI/TUI/Web 对未知新事件必须继续安全忽略，保证版本滚动升级。</p>
+
+  <h2>7. 严格解析、校验和有限重试</h2>
+  <h3>解析规则</h3>
+  <ul>
+    <li>direct text 使用 <code>json.loads(raw, parse_constant=reject_nonfinite)</code>；拒绝 Markdown fence、前后说明文字、尾随内容、<code>NaN</code>/<code>Infinity</code>。</li>
+    <li>隐藏 tool arguments 同样按完整 JSON 文本解析，不使用 <code>utils/json_parse.py</code> 的 partial/forgiving parser。</li>
+    <li>使用 <code>jsonschema.validators.validator_for(original_schema)</code> 创建 validator；错误排序固定为 instance path、schema path、message。</li>
+    <li>错误传输最多保留 20 项，每项 message 最多 500 字符，避免将完整敏感输出复制到日志和 WS 错误。</li>
+  </ul>
+
+  <h3>重试状态</h3>
+  <table>
+    <thead><tr><th>失败</th><th>是否消耗 validation retry</th><th>处理</th></tr></thead>
+    <tbody>
+      <tr><td>schema definition 非法</td><td>否</td><td>请求前 <code>StructuredOutputSchemaError</code>。</td></tr>
+      <tr><td>provider/模型不支持或配置冲突</td><td>否</td><td>请求前 <code>StructuredOutputUnsupportedError</code>。</td></tr>
+      <tr><td>JSON syntax、schema violation、missing hidden submission</td><td>是，最多 1 次</td><td>把无效 assistant 候选和确定性的 issue 列表追加到临时修复上下文，再请求一次。</td></tr>
+      <tr><td>refusal、content filter、安全阻止</td><td>否</td><td><code>StructuredOutputGenerationError(code="refusal")</code>。</td></tr>
+      <tr><td><code>max_tokens</code>/incomplete、context length</td><td>否</td><td>保留 provider reason；调用方调整预算。框架不自行放大 token 上限。</td></tr>
+      <tr><td>transport/rate limit/provider internal</td><td>否</td><td>继续由现有 stream/exec retry 处理；不计入 validation retry。</td></tr>
+      <tr><td>取消或 deadline</td><td>否</td><td>立即传播，不进入修复。</td></tr>
+    </tbody>
+  </table>
+  <p>修复 prompt 只包含失败类型和有界 issue 列表，不重新解释 schema，也不调用另一个 LLM。修复上下文只存在于该次 exec；session history 和最终 DAG 只保留最终有效 assistant message，但 model-call 记录保留两次 provider call 供审计。</p>
+
+  <h2>8. Tool calling 共存</h2>
+  <table>
+    <thead><tr><th>情形</th><th>行为</th></tr></thead>
+    <tbody>
+      <tr><td>原生 schema，无用户 tools</td><td>直接应用原生 output format。</td></tr>
+      <tr><td>原生 schema + 用户 tools，adapter <code>with_tools=True</code></td><td>每个 agent round 都携带 schema；用户 tool 正常执行，最终无 tool round 的文本被校验。</td></tr>
+      <tr><td>原生 schema + tools，但组合未验证</td><td>若 auto 可使用 hidden tool，则改用 tool fallback；否则 preflight 失败。</td></tr>
+      <tr><td>tool fallback + 用户 tools</td><td>隐藏 submit tool 与用户 tools 合并；普通 tools 可多轮执行，submit tool 结束事务。</td></tr>
+      <tr><td>一次响应同时含普通 tool 与 submit tool</td><td>拒绝该候选并进入有限修复；不执行普通 tool，避免在“final”之后产生副作用。</td></tr>
+      <tr><td>调用方强制特定 tool / 禁用 tools</td><td>不覆写调用方意图；native 可用则 native，否则 unsupported。</td></tr>
+    </tbody>
+  </table>
+  <p>结构化配置必须在 <code>agent_loop._stream_assistant_response()</code> 重建 <code>SimpleStreamOptions</code> 时明确复制。最终验证位于 Agent loop 的 no-tool terminal 边界，而不是各 provider parser 中重复实现。</p>
+
+  <h2>9. CLI、WebSocket/API 与错误语义</h2>
+  <h3>Python API</h3>
+  <pre>value = runtime.exec(content=..., response_format=schema)  # Python JsonValue
+
+except StructuredOutputError as e:
+    e.code       # invalid_schema | unsupported | invalid_json | validation_failed |
+                 # missing_submission | refusal | incomplete
+    e.provider
+    e.model
+    e.attempts
+    e.issues     # bounded machine-readable list</pre>
+  <p><code>StructuredOutputError</code> 归入现有 LLM error 边界，但不伪装成 transport error。<code>retryable</code> 表示“新 exec/new budget 是否可能成功”；validation retry 是否已用尽由 <code>attempts</code> 表示。</p>
+
+  <h3>CLI</h3>
+  <p>在现有 one-shot <code>openprogram --print</code> 增加 <code>--json-schema PATH</code>；首版不改变交互 REPL/TUI 输入方式。成功时 stdout 只写规范 JSON（UTF-8，非 pretty，末尾换行），退出码 0。错误写 stderr：用法/非法 schema 为 2，unsupported 为 3，生成或最终校验失败为 4，现有 provider/auth/cancel 语义不变。结构化结果以紧凑 JSON 字符串持久化到 session assistant content，同时附带 message metadata 中的 parsed value/mode。</p>
+
+  <h3>WebSocket 与 HTTP 异步 API</h3>
+  <pre>// request: existing chat action and POST /api/function/{name} body
+response_format?: JsonSchemaOutput | JSONSchema
+
+// stream
+{type:"chat_response", data:{type:"stream_event", event:{
+  type:"structured_output_retry", attempt:1, next_attempt:2, issues:[...]}}}
+
+// success
+{type:"chat_response", data:{type:"result", content:"{...}",
+  structured_output:&lt;JsonValue&gt;, structured_output_mode:"native", attempt:1}}
+
+// terminal error
+{type:"chat_response", data:{type:"error", code:"validation_failed",
+  content:"Structured output failed validation", attempts:2, issues:[...]}}</pre>
+  <ul>
+    <li><code>POST /api/function/{name}</code> 继续立即返回 <code>{session_id,msg_id}</code> ack；结果仍从同一 WS/事件链送达，不改成同步 HTTP response。</li>
+    <li>Web chat 默认不发送 schema。收到 schema result 时以 canonical JSON 文本显示，typed value 留给 API consumer；retry 事件清空当前候选文本。</li>
+    <li>server 的 <code>json.dumps(..., default=str)</code> 不得承担 structured value 序列化；value 在验证后已属于 JSON data model，否则视为内部错误。</li>
+  </ul>
+
+  <h2>10. Record/replay 与持久化</h2>
+  <ul>
+    <li><code>RECORDING_FORMAT_VERSION</code> 从 1 升到 2。v2 request options 记录完整规范化 <code>response_format</code>；旧 v1 明确拒绝，避免默认 <code>None</code> 字段造成含糊 mismatch。</li>
+    <li>recording 继续记录 provider 原始事件，不记录本地派生的 validation events。replay 返回相同原始事件后，Agent loop 确定性地重建 retry/end/error。</li>
+    <li>每次 validation repair 是新的 provider call 和新的 <code>call_index</code>。录制中必须出现两个 request/call_end；replay 少一个或多一个均为 mismatch。</li>
+    <li>schema 在规范化后按递归 key 排序计算 SHA-256，hash 用于日志、DAG metadata 和错误关联；recording 仍保存 schema 全文以便严格比较。hash 不替代 schema。</li>
+    <li>session assistant content 保存最终 canonical JSON；message metadata 保存 mode、attempt、schema hash。无效候选不进入 session message chain。</li>
+  </ul>
+
+  <h2>11. Session title 迁移</h2>
+  <p>基础能力完成后，把 <code>agent/dispatcher/titles.py</code> 改为首个内部 consumer：</p>
+  <pre>TITLE_SCHEMA = {
+  "type": "object",
+  "properties": {"title": {"type": "string", "minLength": 1, "maxLength": 80}},
+  "required": ["title"],
+  "additionalProperties": false,
+}
+
+result = runtime.exec(content=prompt, response_format=JsonSchemaOutput(
+    schema=TITLE_SCHEMA, name="session_title", max_validation_retries=1,
+))
+title = result["title"]</pre>
+  <p>保留 Unicode trim 和最终数据库长度防御；删除“ONLY title text”以及去引号、去 <code>Title:</code>、取首行等格式修复逻辑。title 生成仍是 best-effort，structured error 时保留 phase-1 placeholder，不影响主 turn。同步修正 <code>session/name.md</code> 与 feature matrix，使文档区分“已实现”和“设计”。</p>
+
+  <h2>12. References 对比：采用、修改、拒绝</h2>
+  <p>仓库 <code>references/pi-ai</code> 已有统一 stream option、provider-local payload builder、tool schema 和 <code>supportsStrictMode</code>，但 strict 仅针对 tool definition；没有通用 response schema、最终 JSON validator 或 structured retry。</p>
+  <table>
+    <thead><tr><th>决定</th><th>来源/现状</th><th>本设计处理</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill ok">采用</span></td><td>共享 option/type 经所有 provider adapter 透传。</td><td><code>JsonSchemaOutput</code> 放在公共类型；payload 映射留在各 provider。</td></tr>
+      <tr><td><span class="pill ok">采用</span></td><td>tool strict 是 provider/model compatibility，而不是调用方单方面承诺。</td><td>hidden tool fallback 受 capability negotiation 和 schema profile 约束。</td></tr>
+      <tr><td><span class="pill warn">修改</span></td><td>pi-ai 把 strict 能力放在 compat 字段，models.dev 已有 structured_output 数据。</td><td>模型用 tri-state 字段，API adapter 用独立 capability；两者联合决定。</td></tr>
+      <tr><td><span class="pill warn">修改</span></td><td>现有 <code>_schema</code> 可以为 provider 降级 tool schema。</td><td>structured output 只允许无损投影；本地始终按原始 schema 验证。</td></tr>
+      <tr><td><span class="pill bad">拒绝</span></td><td>只依赖 provider strict，直接返回文本。</td><td>拒绝。refusal、截断、兼容 endpoint 和 provider bug 都要求本地 parse + validate。</td></tr>
+      <tr><td><span class="pill bad">拒绝</span></td><td>用 forgiving/partial JSON parser 修正最终输出。</td><td>拒绝。只接受单一完整 JSON document，失败进入有界语义修复。</td></tr>
+      <tr><td><span class="pill bad">拒绝</span></td><td>把每个 JSON delta 解析为增量对象并对外发布。</td><td>拒绝。schema 校验只在完整候选上定义；流式阶段只传候选文本和 attempt。</td></tr>
+      <tr><td><span class="pill bad">拒绝</span></td><td>另建独立 structured-output provider 调用路径。</td><td>拒绝。必须复用 Agent loop、tools、deadline、DAG 和 record/replay。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>13. 精确修改文件</h2>
+  <table class="files">
+    <thead><tr><th>文件</th><th>修改</th></tr></thead>
+    <tbody>
+      <tr><td>openprogram/providers/types.py</td><td>新增 <code>JsonSchemaOutput</code>、JsonValue、Model tri-state、StreamOptions 字段、AssistantMessage parsed 字段与 structured retry/end 事件。</td></tr>
+      <tr><td>openprogram/providers/api_registry.py<br>openprogram/providers/register.py</td><td>为 API adapter 注册 structured capability；提供 unknown-safe 查询，不按模型名猜测。</td></tr>
+      <tr><td>openprogram/providers/structured_output.py <span class="pill info">new</span></td><td>输入规范化、schema preflight、协商、严格解析、本地校验、issue 限界、schema hash 和错误类型。</td></tr>
+      <tr><td>openprogram/providers/_schema/*</td><td>增加“无损/有损”报告接口和 provider schema profile；保留原 schema。</td></tr>
+      <tr><td>openprogram/providers/sources/models_dev.py<br>openprogram/providers/enabled_models.py<br>openprogram/webui/_model_listing/listing.py</td><td>保留、构造并展示 <code>structured_output</code> tri-state。</td></tr>
+      <tr><td>openprogram/providers/openai_completions/openai_completions.py<br>openprogram/providers/openai_responses/openai_responses.py<br>openprogram/providers/azure_openai_responses/azure_openai_responses.py</td><td>映射 Chat/Responses/Azure 原生 payload，并处理 response refusal/incomplete。</td></tr>
+      <tr><td>openprogram/providers/anthropic/anthropic.py</td><td>把 format 合并进现有 <code>output_config</code>，保留 adaptive-thinking effort。</td></tr>
+      <tr><td>openprogram/providers/google/google.py<br>openprogram/providers/google_gemini_cli/google_gemini_cli.py</td><td>Google 官方 adapter 映射原生字段；subscription adapter 首版显式 unknown/tool fallback。</td></tr>
+      <tr><td>openprogram/providers/amazon_bedrock/amazon_bedrock.py<br>openprogram/providers/openai_codex/openai_codex.py</td><td>Bedrock 映射 <code>outputConfig</code>；Codex adapter 首版显式 unknown/tool fallback。</td></tr>
+      <tr><td>openprogram/agent/types.py<br>openprogram/agent/agent_loop.py<br>openprogram/agent/internals/_event_parsing.py</td><td>透传 schema；实现 no-tool terminal 校验、hidden tool、一次修复、派生事件和最终 parsed message。</td></tr>
+      <tr><td>openprogram/agentic_programming/runtime.py<br>openprogram/providers/callable_model.py</td><td>修复 provider 路径静默忽略；增加 overload/parsed return；对 callable model 应用同一最终校验。</td></tr>
+      <tr><td>openprogram/providers/recording.py<br>openprogram/providers/replay.py</td><td>format v2、规范化 option 比较、validation retry 多 call 测试；provider raw event 集合保持不变。</td></tr>
+      <tr><td>openprogram/_cli_cmds/chat.py<br>openprogram/cli.py<br>openprogram/cli_chat.py<br>openprogram/_cli_chat/turn.py</td><td>one-shot schema 参数、typed result、stdout/stderr/exit code、session persistence。</td></tr>
+      <tr><td>openprogram/webui/ws_actions/chat.py<br>openprogram/webui/routes/chat.py<br>openprogram/webui/_execute/chat.py<br>openprogram/webui/server.py</td><td>请求校验、schema 透传、structured stream/result/error envelope。</td></tr>
+      <tr><td>cli/src/ws/client.ts<br>cli/src/screens/repl/wsHandlers/handleChatResponse.ts<br>cli/src/screens/repl/wsHandlers/streamingHelpers.ts</td><td>TS 请求/事件类型、retry 清空候选、typed result 接收；不增加 schema 编辑 UI。</td></tr>
+      <tr><td>openprogram/agent/dispatcher/titles.py</td><td>迁移 title consumer，删除文本格式清理，保留长度与 best-effort 边界。</td></tr>
+      <tr><td>pyproject.toml<br>uv.lock</td><td>直接依赖 <code>jsonschema</code> 并更新 lock。</td></tr>
+      <tr><td>docs/reference/design/runtime/session/name.md<br>docs/reference/design/feature-matrix.html</td><td>实现落地后修正文档状态和实际契约。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>14. 测试矩阵与验收条件</h2>
+  <table>
+    <thead><tr><th>层</th><th>必须覆盖</th><th>建议文件</th></tr></thead>
+    <tbody>
+      <tr><td>规范化/validator</td><td>裸 schema、envelope、非法 meta-schema、object/array/scalar/null、非有限数、fence/尾随文本、稳定 issue path。</td><td><code>tests/providers/test_structured_output.py</code>（new）</td></tr>
+      <tr><td>协商</td><td>true/false/unknown × adapter support；有损 schema；fallback none/auto/prompt；tool_choice/parallel 冲突。</td><td>同上 + <code>test_provider_meta.py</code></td></tr>
+      <tr><td>Provider payload</td><td>逐 adapter 快照测试；Anthropic effort+format 合并；Bedrock schema JSON 字符串；unknown adapter 不发送私有字段。</td><td>现有 <code>tests/providers/test_openai.py</code>、<code>test_anthropic.py</code>、<code>test_gemini.py</code> + 新 Bedrock cases</td></tr>
+      <tr><td>Streaming</td><td>单次成功；invalid attempt 的 delta→retry→清空→成功；第 2 次失败无 done；取消/deadline 不重试。</td><td><code>tests/providers/test_structured_output_streaming.py</code>（new）</td></tr>
+      <tr><td>Tools</td><td>原生+tools；hidden tool 单独提交；普通 tool 多轮后提交；普通+submit 同轮拒绝；forced/none/parallel 冲突。</td><td><code>tests/unit/test_tools_runtime.py</code> + new Agent loop cases</td></tr>
+      <tr><td>Runtime</td><td>无 schema 返回 str；有 schema 返回 JsonValue；默认 provider 路径确实透传；callable model 同样本地校验。</td><td><code>tests/agentic_programming/test_runtime_structured_output.py</code>（new）</td></tr>
+      <tr><td>Record/replay</td><td>v2 单 call、validation retry 两 calls、schema mismatch path、v1 拒绝、离线派生事件一致。</td><td><code>tests/providers/test_record_replay.py</code></td></tr>
+      <tr><td>CLI</td><td>成功 stdout 仅 JSON；exit 2/3/4；stderr 无候选全文；普通 <code>--print</code> 不变。</td><td><code>tests/providers/test_cli.py</code> + CLI integration</td></tr>
+      <tr><td>WS/API</td><td>request schema、retry event、typed result、machine error、foreign session routing、旧客户端忽略新字段。</td><td><code>tests/unit/test_webui_chat_dispatcher.py</code> + TS tests</td></tr>
+      <tr><td>Session title</td><td>合法 title、structured failure 回退 placeholder、Unicode/80 字边界、无旧正则依赖。</td><td><code>tests/unit/test_dispatcher_compaction_title.py</code></td></tr>
+      <tr><td>回归</td><td>全部 provider stream、tool loop、普通聊天、DAG、session persistence、typecheck、docs HTML。</td><td>现有 suites + <code>npm test</code>/<code>npm run typecheck</code></td></tr>
+    </tbody>
+  </table>
+  <div class="callout okline"><strong>验收门槛：</strong>每个标为 native 的 adapter 必须有 payload 契约测试和至少一个受控集成测试；结构化成功值必须通过本地原始 schema；所有失败路径最多发生 2 次 provider call；普通文本模式的录制、事件和返回类型保持不变。</div>
+
+  <h2>15. 实施顺序与完成判定</h2>
+  <ol>
+    <li>公共类型、直接依赖、schema preflight/validator/错误类；先建立纯单元测试。</li>
+    <li>capability registry、models.dev tri-state 保留、provider schema profiles。</li>
+    <li>各 provider payload 映射与 adapter 契约测试；未验证 adapter 保持 unknown。</li>
+    <li>Agent loop 的终态校验、hidden tool、事件、一次修复；Runtime parsed return。</li>
+    <li>record/replay v2、CLI、WS/API consumer；验证旧文本调用不变。</li>
+    <li>迁移 session title，修正 feature matrix 与 session naming 文档。</li>
+  </ol>
+  <p>只有在上述测试通过、provider 能力标记与契约测试一致、session title 不再依赖文本格式清理后，feature matrix 才能把 JSON Schema structured output 标为 implemented。单纯增加 provider payload 字段不构成功能完成。</p>
+
+  <div class="foot">
+    <p>仓库证据：<code>openprogram/providers/types.py</code>、<code>sources/models_dev.py</code>、七类 provider adapter、<code>agent/agent_loop.py</code>、<code>agentic_programming/runtime.py</code>、<code>agent/internals/_event_parsing.py</code>、CLI/WebSocket 链、<code>recording.py</code>/<code>replay.py</code>、<code>agent/dispatcher/titles.py</code>、<code>references/pi-ai</code>。本文行号不绑定源码快照；实现时以符号和测试为定位依据。</p>
+    <p>外部 provider 文档仅用于确认当前 payload 与约束；能力启用仍以 OpenProgram adapter 契约测试为准。</p>
+  </div>
+</main>
+</body>
+</html>
