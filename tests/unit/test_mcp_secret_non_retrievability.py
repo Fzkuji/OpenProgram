@@ -17,6 +17,7 @@ import asyncio
 import json
 import os
 import stat
+import traceback
 from concurrent.futures import CancelledError as FutureCancelledError
 
 import pytest
@@ -313,16 +314,47 @@ def test_patch_revision_conflict_resyncs_runtime_to_external_config(
 
 
 @pytest.mark.parametrize(
-    ("remove_fails", "status_code", "code", "runtime_state"),
+    ("resync_error", "remove_error", "status_code", "code", "runtime_state"),
     [
-        (False, 503, "mcp_runtime_resync_failed", "stopped"),
-        (True, 500, "mcp_runtime_state_unknown", "unknown"),
+        pytest.param(
+            RuntimeError("peer-secret-value resync failed"),
+            None,
+            503,
+            "mcp_runtime_resync_failed",
+            "stopped",
+            id="ordinary-resync-failure-stopped",
+        ),
+        pytest.param(
+            asyncio.CancelledError("peer-secret-value resync cancelled"),
+            None,
+            503,
+            "mcp_runtime_resync_failed",
+            "stopped",
+            id="cancelled-resync-stopped",
+        ),
+        pytest.param(
+            RuntimeError("peer-secret-value resync failed"),
+            RuntimeError("peer-secret-value stop failed"),
+            500,
+            "mcp_runtime_state_unknown",
+            "unknown",
+            id="ordinary-stop-failure-unknown",
+        ),
+        pytest.param(
+            RuntimeError("peer-secret-value resync failed"),
+            asyncio.CancelledError("peer-secret-value stop cancelled"),
+            500,
+            "mcp_runtime_state_unknown",
+            "unknown",
+            id="cancelled-stop-unknown",
+        ),
     ],
 )
 def test_patch_conflict_resync_failure_reports_sanitized_runtime_state(
     monkeypatch,
     state_dir,
-    remove_fails,
+    resync_error,
+    remove_error,
     status_code,
     code,
     runtime_state,
@@ -343,13 +375,16 @@ def test_patch_conflict_resync_failure_reports_sanitized_runtime_state(
     async def observed_restart(_name, *, new_cfg):
         restarts.append(new_cfg.command)
         if len(restarts) == 2:
-            raise RuntimeError("peer-secret-value resync failed")
+            if isinstance(resync_error, asyncio.CancelledError):
+                asyncio.current_task().cancel(str(resync_error))
+                await asyncio.sleep(0)
+            raise resync_error
         return {"name": original.name, "ready": True}
 
     async def observed_remove(name):
         removals.append(name)
-        if remove_fails:
-            raise RuntimeError("peer-secret-value stop failed")
+        if remove_error is not None:
+            raise remove_error
 
     loads = iter([([original], "sha256:stale"), ([external], "sha256:actual")])
     monkeypatch.setattr(mcp, "load_configs_with_revision", lambda **_kwargs: next(loads))
@@ -384,6 +419,122 @@ def test_patch_conflict_resync_failure_reports_sanitized_runtime_state(
     stored = load_configs(include_disabled=True)[0]
     assert stored.command == ["old"]
     assert stored.env == original.env
+
+
+@pytest.mark.parametrize(
+    ("config_present", "restart_error", "remove_error"),
+    [
+        pytest.param(
+            True,
+            asyncio.CancelledError("peer-secret-value resync cancelled"),
+            None,
+            id="cancelled-resync",
+        ),
+        pytest.param(
+            True,
+            RuntimeError("peer-secret-value resync failed"),
+            asyncio.CancelledError("peer-secret-value stop cancelled"),
+            id="cancelled-stop-after-resync",
+        ),
+        pytest.param(
+            False,
+            None,
+            asyncio.CancelledError("peer-secret-value stop cancelled"),
+            id="cancelled-stop-after-delete",
+        ),
+    ],
+)
+def test_resync_failure_exception_has_no_runtime_secret_in_any_representation(
+    monkeypatch,
+    config_present,
+    restart_error,
+    remove_error,
+):
+    from fastapi import HTTPException
+
+    from openprogram.webui.routes import mcp
+
+    secret = "peer-secret-value"
+    cfg = local_config()
+
+    monkeypatch.setattr(
+        mcp,
+        "load_configs_with_revision",
+        lambda **_kwargs: ([cfg] if config_present else [], "sha256:actual"),
+    )
+
+    async def failed_restart(*_args, **_kwargs):
+        raise restart_error
+
+    async def stopped(_name):
+        if remove_error is not None:
+            raise remove_error
+        return True
+
+    monkeypatch.setattr(mcp, "restart_server", failed_restart)
+    monkeypatch.setattr(mcp, "remove_server", stopped)
+
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(mcp._resync_server_from_disk(cfg.name))
+
+    rendered = "\n".join(
+        (
+            str(caught.value),
+            repr(caught.value),
+            "".join(traceback.format_exception(caught.value)),
+        )
+    )
+    assert secret not in rendered
+
+
+def test_patch_conflict_deleted_config_cancelled_stop_reports_unknown(
+    monkeypatch,
+    state_dir,
+):
+    from openprogram.credential_files import PrivateAtomicWriteError
+    from openprogram.webui.routes import mcp
+
+    original = local_config()
+    original.command = ["old"]
+    original.env = {"TOKEN": "peer-secret-value"}
+    save_configs([original])
+    removals = []
+
+    async def started(_name, *, new_cfg):
+        return {"name": new_cfg.name, "ready": True}
+
+    async def cancelled_remove(name):
+        removals.append(name)
+        raise asyncio.CancelledError("peer-secret-value stop cancelled")
+
+    def external_delete(*_args, **_kwargs):
+        save_configs([])
+        raise PrivateAtomicWriteError(
+            "conflict", state_dir / "mcp_servers.json", committed=False
+        )
+
+    loads = iter([([original], "sha256:stale"), ([], "sha256:actual")])
+    monkeypatch.setattr(mcp, "load_configs_with_revision", lambda **_kwargs: next(loads))
+    monkeypatch.setattr(mcp, "save_configs_revision", external_delete)
+    monkeypatch.setattr(mcp, "restart_server", started)
+    monkeypatch.setattr(mcp, "remove_server", cancelled_remove)
+    app = FastAPI()
+    mcp.register(app)
+
+    response = TestClient(app).patch(
+        f"/api/mcp/servers/{original.name}", json={"command": ["new"]}
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "mcp_runtime_state_unknown",
+        "persisted_config": "unchanged",
+        "runtime_state": "unknown",
+        "action": "retry_or_restart",
+    }
+    assert "peer-secret-value" not in response.text
+    assert removals == [original.name]
+    assert load_configs(include_disabled=True) == []
 
 
 def test_patch_cancelled_restart_leaves_disk_unchanged(monkeypatch, state_dir):

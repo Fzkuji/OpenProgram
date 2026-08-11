@@ -23,6 +23,7 @@ server set survives worker restarts.
 """
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from typing import Optional
 
@@ -65,7 +66,7 @@ async def _resync_server_from_disk(name: str) -> None:
     if match is None:
         try:
             await remove_server(name)
-        except Exception as exc:  # noqa: BLE001
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
             raise HTTPException(
                 status_code=500,
                 detail={
@@ -74,16 +75,16 @@ async def _resync_server_from_disk(name: str) -> None:
                     "runtime_state": "unknown",
                     "action": "retry_or_restart",
                 },
-            ) from exc
+            ) from None
         return
 
     try:
         await restart_server(name, new_cfg=match)
         return
-    except Exception as resync_error:  # noqa: BLE001
+    except (asyncio.CancelledError, Exception):  # noqa: BLE001
         try:
             await remove_server(name)
-        except Exception as stop_error:  # noqa: BLE001
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
             raise HTTPException(
                 status_code=500,
                 detail={
@@ -92,7 +93,7 @@ async def _resync_server_from_disk(name: str) -> None:
                     "runtime_state": "unknown",
                     "action": "retry_or_restart",
                 },
-            ) from stop_error
+            ) from None
         raise HTTPException(
             status_code=503,
             detail={
@@ -101,7 +102,7 @@ async def _resync_server_from_disk(name: str) -> None:
                 "runtime_state": "stopped",
                 "action": "retry_or_restart",
             },
-        ) from resync_error
+        ) from None
 
 
 async def _restart_then_publish(
