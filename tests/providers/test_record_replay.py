@@ -17,6 +17,7 @@ import pytest
 
 from openprogram.agent.agent_loop import agent_loop
 from openprogram.agent.types import AgentContext, AgentLoopConfig, AgentTool, AgentToolResult
+from openprogram.agentic_programming.runtime import Runtime
 from openprogram.providers.api_registry import get_api_provider, register_api_provider
 from openprogram.providers.recording import (
     PLACEHOLDER,
@@ -25,6 +26,8 @@ from openprogram.providers.recording import (
     remove_secret_values,
 )
 from openprogram.providers.replay import ReplayMismatch, ReplayProvider, RecordingFileError
+from openprogram.providers.structured_output import StructuredOutputCapabilities
+from openprogram.providers.utils.errors import LLMError
 from openprogram.providers.types import (
     Context,
     Model,
@@ -38,6 +41,12 @@ from tests.providers.scripted_provider import ScriptedText, ScriptedToolCall
 
 _API = "record-replay-test-api"
 _SECRET = "sk-livekey0123456789abcdef"
+_STRUCTURED_SCHEMA = {
+    "type": "object",
+    "properties": {"answer": {"type": "integer"}},
+    "required": ["answer"],
+    "additionalProperties": False,
+}
 
 
 def _model() -> Model:
@@ -123,12 +132,172 @@ def test_recorded_recording_file_holds_no_secret_in_plain_text(
     assert "keep-me" in text  # non-secret headers survive
 
     lines = [json.loads(raw) for raw in text.splitlines()]
-    assert lines[0] == {"type": "header", "format_version": RECORDING_FORMAT_VERSION}
+    assert RECORDING_FORMAT_VERSION == 2
+    assert lines[0] == {"type": "header", "format_version": 2}
     request = next(line for line in lines if line["type"] == "request")
     assert request["options"]["api_key"] == PLACEHOLDER
     assert request["options"]["headers"]["Cookie"] == PLACEHOLDER
     assert request["model"]["headers"]["Authorization"] == PLACEHOLDER
     assert [line["type"] for line in lines[-2:]] == ["event", "call_end"]
+
+
+def _runtime_for_registered_model(monkeypatch: pytest.MonkeyPatch) -> Runtime:
+    monkeypatch.setattr("openprogram.providers.get_model", lambda provider, model_id: _model())
+    runtime = Runtime(model="record-replay-provider:record-replay-model", max_retries=1)
+    runtime.session_id = "record-replay-structured-session"
+    return runtime
+
+
+def test_structured_retry_records_v2_calls_and_replays_same_typed_result(
+    tmp_path: Path,
+    restore_api_registry,
+    monkeypatch: pytest.MonkeyPatch,
+    offline,
+) -> None:
+    recording_file = tmp_path / "structured-v2.jsonl"
+    scripted = _scripted_with(
+        (ScriptedText('{"answer":"bad"}'),),
+        (ScriptedText('{"answer":2}'),),
+    )
+    recorder = RecordingProvider(scripted, recording_file)
+    capabilities = StructuredOutputCapabilities(
+        native="supported",
+        dialect="test",
+        streaming=True,
+        with_tools=False,
+        schema_profile="none",
+    )
+    register_api_provider(_API, recorder, capabilities)
+    monkeypatch.setenv("OPENPROGRAM_FALLBACK_MODELS", "off")
+
+    live = _runtime_for_registered_model(monkeypatch).exec(
+        "answer",
+        response_format=_STRUCTURED_SCHEMA,
+        toolset="none",
+    )
+
+    replay = ReplayProvider(recording_file)
+    register_api_provider(_API, replay, capabilities)
+    stream_module = importlib.import_module("openprogram.providers.stream")
+    monkeypatch.setattr(
+        stream_module,
+        "resolve_provider_key",
+        lambda provider: pytest.fail("structured replay resolved credentials"),
+    )
+    replayed = _runtime_for_registered_model(monkeypatch).exec(
+        "answer",
+        response_format=_STRUCTURED_SCHEMA,
+        toolset="none",
+    )
+
+    assert live == replayed == {"answer": 2}
+    assert scripted.call_count == replay.call_count == 2
+    replay.assert_consumed()
+    rows = [json.loads(raw) for raw in recording_file.read_text().splitlines()]
+    assert rows[0] == {"type": "header", "format_version": 2}
+    requests = [row for row in rows if row["type"] == "request"]
+    assert [row["call_index"] for row in requests] == [0, 1]
+    assert requests[0]["options"]["response_format"] == {
+        "schema": _STRUCTURED_SCHEMA,
+        "name": "response",
+        "description": None,
+        "strict": True,
+        "fallback": "auto",
+        "max_validation_retries": 1,
+        "type": "json_schema",
+    }
+    assert not any(
+        row.get("event", {}).get("type", "").startswith("structured_output_")
+        for row in rows
+    )
+
+
+def test_replay_rejects_structured_schema_mismatch_at_exact_path_before_events(
+    tmp_path: Path,
+    restore_api_registry,
+    monkeypatch: pytest.MonkeyPatch,
+    offline,
+) -> None:
+    recording_file = tmp_path / "schema-mismatch-v2.jsonl"
+    capabilities = StructuredOutputCapabilities(
+        native="supported",
+        dialect="test",
+        streaming=True,
+        with_tools=False,
+        schema_profile="none",
+    )
+    register_api_provider(
+        _API,
+        RecordingProvider(_scripted_with((ScriptedText('{"answer":2}'),)), recording_file),
+        capabilities,
+    )
+    monkeypatch.setenv("OPENPROGRAM_FALLBACK_MODELS", "off")
+    _runtime_for_registered_model(monkeypatch).exec(
+        "answer", response_format=_STRUCTURED_SCHEMA, toolset="none"
+    )
+
+    replay = ReplayProvider(recording_file)
+    register_api_provider(_API, replay, capabilities)
+    changed = {
+        **_STRUCTURED_SCHEMA,
+        "properties": {"answer": {"type": "string"}},
+    }
+    expected_path = "options.response_format.schema.properties.answer.type"
+    with pytest.raises(LLMError, match=expected_path):
+        _runtime_for_registered_model(monkeypatch).exec(
+            "answer", response_format=changed, toolset="none"
+        )
+
+    assert replay.call_count == 1
+
+
+def test_v1_structured_recording_is_rejected_explicitly(tmp_path: Path) -> None:
+    recording_file = tmp_path / "structured-v1.jsonl"
+    rows = [
+        {"type": "header", "format_version": 1},
+        {
+            "type": "request",
+            "call_index": 0,
+            "model": _model().model_dump(mode="json"),
+            "context": Context(messages=[]).model_dump(mode="json"),
+            "options": {
+                "response_format": {
+                    "type": "json_schema",
+                    "schema": _STRUCTURED_SCHEMA,
+                }
+            },
+        },
+        {"type": "call_end", "call_index": 0, "event_count": 0},
+    ]
+    recording_file.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RecordingFileError, match="version 1.*structured"):
+        ReplayProvider(recording_file)
+
+
+def test_v1_ordinary_recording_remains_replayable(
+    tmp_path: Path, restore_api_registry
+) -> None:
+    recording_file = _record_one_call(tmp_path)
+    rows = [json.loads(line) for line in recording_file.read_text().splitlines()]
+    rows[0]["format_version"] = 1
+    request = next(row for row in rows if row["type"] == "request")
+    assert request["options"].get("response_format") is None
+    request["options"]["signal"] = None  # v1 serialized this request-local field
+    recording_file.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+
+    replay = ReplayProvider(recording_file)
+    register_api_provider(_API, replay)
+    events = _drain_stream(_model())
+    assert events[-1].type == "done"
+    assert replay.call_count == 1
+    replay.assert_consumed()
 
 
 def test_remove_secret_values_covers_nested_and_inline_secrets() -> None:

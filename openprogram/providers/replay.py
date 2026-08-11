@@ -19,6 +19,7 @@ from typing import Any, AsyncGenerator
 
 from .recording import (
     RECORDING_FORMAT_VERSION,
+    _dump_options,
     remove_secret_values,
     restrict_recording_file,
 )
@@ -114,7 +115,7 @@ class RecordedCall:
 
 
 def read_recording_file(recording_path: str | Path) -> list[RecordedCall]:
-    """Parse and fully validate one version-1 JSONL recording."""
+    """Parse and fully validate one supported JSONL recording."""
     path = Path(recording_path)
     try:
         restrict_recording_file(path)
@@ -136,7 +137,7 @@ def read_recording_file(recording_path: str | Path) -> list[RecordedCall]:
     if not lines or lines[0][1].get("type") != "header":
         raise RecordingFileError(path, "has no format header on its first line")
     recorded_version = lines[0][1].get("format_version")
-    if recorded_version != RECORDING_FORMAT_VERSION:
+    if recorded_version not in {1, RECORDING_FORMAT_VERSION}:
         raise RecordingFileError(
             path,
             f"was written in format version {recorded_version!r}; "
@@ -160,6 +161,22 @@ def read_recording_file(recording_path: str | Path) -> list[RecordedCall]:
                 raise RecordingFileError(path, "request call indexes must be contiguous", line_number=number)
             if call_index in calls:
                 raise RecordingFileError(path, "duplicate request", line_number=number, call_index=call_index)
+            options = line.get("options")
+            if (
+                recorded_version == 1
+                and isinstance(options, dict)
+                and options.get("response_format") is not None
+            ):
+                raise RecordingFileError(
+                    path,
+                    "format version 1 cannot replay structured response_format",
+                    line_number=number,
+                    call_index=call_index,
+                )
+            if recorded_version == 1 and isinstance(options, dict):
+                # v1 persisted the request-local cancellation field as null;
+                # v2 omits it because live asyncio.Event values are not JSON.
+                options.pop("signal", None)
             calls[call_index] = RecordedCall(call_index=call_index, request=line)
             next_event[call_index] = 0
         elif kind == "event":
@@ -316,10 +333,7 @@ class ReplayProvider:
         incoming = {
             "model": remove_secret_values(model.model_dump(mode="json")),
             "context": remove_secret_values(context.model_dump(mode="json")),
-            "options": (
-                remove_secret_values(options.model_dump(mode="json"))
-                if options is not None else None
-            ),
+            "options": _dump_options(options),
         }
         for part in ("model", "context", "options"):
             difference = find_first_difference(
