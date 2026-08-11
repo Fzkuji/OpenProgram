@@ -13,6 +13,10 @@ from openprogram.providers.structured_output import (
     normalize_response_format,
 )
 from openprogram.providers.types import Context, EventError, Model, SimpleStreamOptions, UserMessage
+from openprogram.providers.types import EventDone
+
+import json
+import time
 
 
 SCHEMA = {
@@ -459,6 +463,205 @@ def test_google_required_outer_accepts_cycle_with_optional_object_edge(reference
         "required": ["root"],
     }
     assert _negotiate_google(schema).provider_schema == schema
+
+
+def test_google_shared_schema_dag_preflight_is_linear_time():
+    definitions = {"leaf": {"type": "string"}}
+    target = "leaf"
+    for depth in reversed(range(22)):
+        name = f"n{depth}"
+        definitions[name] = {
+            "anyOf": [
+                {"$ref": f"#/$defs/{target}"},
+                {"$ref": f"#/$defs/{target}"},
+            ],
+        }
+        target = name
+    schema = {"$defs": definitions, "$ref": "#/$defs/n0"}
+    assert len(json.dumps(schema, separators=(",", ":"))) < 2000
+
+    started = time.perf_counter()
+    assert _negotiate_google(schema).provider_schema == schema
+    assert time.perf_counter() - started < 1.0
+
+
+@pytest.mark.parametrize("limit", ["depth", "nodes", "edges"])
+def test_google_schema_graph_limits_fail_closed_with_bounded_issue(monkeypatch, limit):
+    import openprogram.providers.structured_output as structured_output
+
+    if limit == "depth":
+        monkeypatch.setattr(structured_output, "_GOOGLE_SCHEMA_MAX_DEPTH", 3)
+        schema = {"type": "string"}
+        for _ in range(4):
+            schema = {"type": "array", "items": schema}
+    elif limit == "nodes":
+        monkeypatch.setattr(structured_output, "_GOOGLE_SCHEMA_MAX_NODES", 3)
+        schema = {"$defs": {name: {"type": "string"} for name in ("a", "b", "c")}}
+    else:
+        monkeypatch.setattr(structured_output, "_GOOGLE_SCHEMA_MAX_EDGES", 1)
+        schema = {"anyOf": [{"type": "string"}, {"type": "number"}]}
+
+    with pytest.raises(StructuredOutputUnsupportedError) as exc:
+        _negotiate_google(schema)
+    issue = exc.value.issues[0]
+    assert issue["message"] == f"Google response_json_schema exceeds {limit} limit"
+    assert len(issue["path"]) <= 512
+
+
+def test_google_schema_depth_at_configured_limit_is_accepted(monkeypatch):
+    import openprogram.providers.structured_output as structured_output
+
+    monkeypatch.setattr(structured_output, "_GOOGLE_SCHEMA_MAX_DEPTH", 8)
+    schema = {"type": "string"}
+    for _ in range(8):
+        schema = {"type": "array", "items": schema}
+    assert _negotiate_google(schema).provider_schema == schema
+
+
+def test_google_percent_decodes_fragment_before_json_pointer_resolution():
+    schema = {
+        "$defs": {
+            "a b": {
+                "type": "object",
+                "properties": {"next": {"$ref": "#/$defs/a%20b"}},
+                "required": ["next"],
+            },
+        },
+        "type": "object",
+        "properties": {"root": {"$ref": "#/$defs/a%20b"}},
+        "required": ["root"],
+    }
+    with pytest.raises(StructuredOutputUnsupportedError) as exc:
+        _negotiate_google(schema)
+    assert exc.value.issues[0]["path"] == "/required/0"
+
+
+@pytest.mark.parametrize("resource", ["child-a", "child-b"])
+def test_google_anchor_resolution_is_scoped_by_nested_id(resource):
+    schema = {
+        "$id": "https://schemas.example/root",
+        "$defs": {
+            "a": {
+                "$id": "child-a",
+                "$anchor": "x",
+                "type": "object",
+                "properties": {"next": {"$ref": "#x"}},
+                "required": ["next"],
+            },
+            "b": {"$id": "child-b", "$anchor": "x", "type": "string"},
+        },
+        "type": "object",
+        "properties": {"root": {"$ref": f"{resource}#x"}},
+        "required": ["root"],
+    }
+    if resource == "child-a":
+        with pytest.raises(StructuredOutputUnsupportedError) as exc:
+            _negotiate_google(schema)
+        assert exc.value.issues[0]["path"] == "/required/0"
+    else:
+        assert _negotiate_google(schema).provider_schema == schema
+
+
+def test_google_unresolved_external_resource_fails_closed_at_ref_path():
+    schema = {
+        "type": "object",
+        "properties": {"root": {"$ref": "https://external.example/schema#x"}},
+        "required": ["root"],
+    }
+    with pytest.raises(StructuredOutputUnsupportedError) as exc:
+        _negotiate_google(schema)
+    assert exc.value.issues[0]["path"] == "/properties/root/$ref"
+
+
+@pytest.mark.parametrize(
+    ("finish_reason", "prompt_block", "expected_reason", "event_type"),
+    [
+        ("SAFETY", None, "error", EventError),
+        ("MAX_TOKENS", None, "length", EventDone),
+        ("STOP", "SAFETY", "error", EventError),
+    ],
+)
+def test_google_terminal_reason_precedes_mixed_function_call(
+    monkeypatch,
+    finish_reason,
+    prompt_block,
+    expected_reason,
+    event_type,
+):
+    from google import genai
+    from google.genai import types as gtypes
+
+    response = gtypes.GenerateContentResponse(
+        candidates=[gtypes.Candidate(
+            finish_reason=getattr(gtypes.FinishReason, finish_reason),
+            content=gtypes.Content(parts=[gtypes.Part(
+                function_call=gtypes.FunctionCall(name="lookup", args={"key": "x"}),
+            )]),
+        )],
+        prompt_feedback=(
+            gtypes.GenerateContentResponsePromptFeedback(
+                block_reason=getattr(gtypes.BlockedReason, prompt_block),
+            )
+            if prompt_block else None
+        ),
+    )
+
+    class Models:
+        async def generate_content_stream(self, **kwargs):
+            async def chunks():
+                yield response
+            return chunks()
+
+    class Client:
+        def __init__(self, **kwargs):
+            self.aio = type("Aio", (), {"models": Models()})()
+
+    monkeypatch.setattr(genai, "Client", Client)
+
+    async def consume():
+        return [event async for event in google.stream_simple(
+            _google_model(),
+            Context(),
+            SimpleStreamOptions(api_key="test"),
+        )]
+
+    events = asyncio.run(consume())
+    assert isinstance(events[-1], event_type)
+    assert events[-1].reason == expected_reason
+    assert events[-1].reason != "toolUse"
+
+    from openprogram.agent.types import AgentTool, AgentToolResult
+
+    executed = []
+
+    async def execute(call_id, args, cancel, on_update):
+        executed.append((call_id, args))
+        return AgentToolResult(content=[])
+
+    async def run_loop():
+        stream = agent_loop(
+            [UserMessage(content="lookup", timestamp=1)],
+            AgentContext(tools=[AgentTool(
+                name="lookup",
+                description="Lookup",
+                parameters={"type": "object", "properties": {}},
+                label="lookup",
+                execute=execute,
+            )]),
+            AgentLoopConfig(
+                model=_google_model(),
+                get_api_key=lambda provider: "test",
+                convert_to_llm=lambda messages: messages,
+            ),
+            stream_fn=google.stream_simple,
+        )
+        try:
+            await stream.result()
+        except Exception:
+            pass
+
+    asyncio.run(run_loop())
+    assert executed == []
 
 
 def test_google_real_prompt_feedback_block_is_terminal_error(monkeypatch):

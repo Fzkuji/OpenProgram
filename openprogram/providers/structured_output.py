@@ -4,8 +4,10 @@ from __future__ import annotations
 import copy
 import json
 import re
+from collections import deque
 from dataclasses import dataclass
 from typing import Any, Literal
+from urllib.parse import unquote, urldefrag, urljoin
 
 from jsonschema import SchemaError, validators
 
@@ -182,15 +184,19 @@ def _project_schema(
     if profile in {"none", "passthrough"}:
         return copy.deepcopy(schema), None
     if profile == "google_json_schema":
-        path = _first_unsupported_google_schema_path(schema)
+        graph_issue = _google_reference_graph_issue(schema)
+        path = graph_issue[0] if graph_issue is not None else None
+        message = graph_issue[1] if graph_issue is not None else None
         if path is None:
-            path = _first_required_google_reference_cycle_path(schema)
+            path = _first_unsupported_google_schema_path(schema)
         if path is not None:
             return None, {
                 "code": "unsupported_schema_constraint",
                 "path": path,
                 "schema_path": path,
-                "message": "Google response_json_schema does not support this constraint",
+                "message": message or (
+                    "Google response_json_schema does not support this constraint"
+                ),
             }
         return copy.deepcopy(schema), None
 
@@ -264,6 +270,10 @@ _GOOGLE_SCHEMA_KEYWORDS = frozenset({
     "title",
     "type",
 })
+_GOOGLE_SCHEMA_MAX_DEPTH = 128
+_GOOGLE_SCHEMA_MAX_NODES = 4096
+_GOOGLE_SCHEMA_MAX_EDGES = 8192
+_GOOGLE_SCHEMA_MAX_POINTER_LENGTH = 512
 
 
 def _first_unsupported_google_schema_path(
@@ -321,22 +331,92 @@ def _first_unsupported_google_schema_path(
     return None
 
 
-def _first_required_google_reference_cycle_path(schema: dict[str, Any]) -> str | None:
+def _google_reference_graph_issue(
+    schema: dict[str, Any],
+) -> tuple[str, str] | None:
     nodes: dict[tuple[Any, ...], dict[str, Any]] = {}
     edges: dict[
         tuple[Any, ...],
         list[tuple[tuple[Any, ...], tuple[Any, ...] | None]],
     ] = {}
-    anchors: dict[str, tuple[Any, ...]] = {}
+    node_bases: dict[tuple[Any, ...], str] = {}
+    paths_by_pointer: dict[str, tuple[Any, ...]] = {}
+    resource_roots: dict[str, tuple[Any, ...]] = {}
+    anchors: dict[tuple[str, str], tuple[Any, ...]] = {}
+    edge_count = 0
 
-    def register(node: Any, path: tuple[Any, ...]) -> None:
+    def bounded_pointer(path: tuple[Any, ...]) -> str:
+        pointer = _pointer(path)
+        return pointer if len(pointer) <= _GOOGLE_SCHEMA_MAX_POINTER_LENGTH else ""
+
+    def limit_issue(limit: str, path: tuple[Any, ...]) -> tuple[str, str]:
+        return (
+            bounded_pointer(path),
+            f"Google response_json_schema exceeds {limit} limit",
+        )
+
+    class GraphIssue(Exception):
+        def __init__(self, issue: tuple[str, str]):
+            self.issue = issue
+
+    def add_edge(
+        source: tuple[Any, ...],
+        target: tuple[Any, ...],
+        required_path: tuple[Any, ...] | None,
+        issue_path: tuple[Any, ...],
+    ) -> None:
+        nonlocal edge_count
+        edge_count += 1
+        if edge_count > _GOOGLE_SCHEMA_MAX_EDGES:
+            raise GraphIssue(limit_issue("edges", issue_path))
+        edges[source].append((target, required_path))
+
+    def register(
+        node: Any,
+        path: tuple[Any, ...],
+        depth: int,
+        inherited_base: str,
+        inherited_resource_root: tuple[Any, ...],
+    ) -> None:
         if not isinstance(node, dict):
             return
+        if depth > _GOOGLE_SCHEMA_MAX_DEPTH:
+            raise GraphIssue(limit_issue("depth", path))
+        if len(nodes) >= _GOOGLE_SCHEMA_MAX_NODES:
+            raise GraphIssue(limit_issue("nodes", path))
+
+        base = inherited_base
+        resource_root = inherited_resource_root
+        identifier = node.get("$id")
+        if isinstance(identifier, str):
+            base = urljoin(inherited_base, identifier)
+            resource_uri, _fragment = urldefrag(base)
+            existing = resource_roots.get(resource_uri)
+            if existing is not None and existing != path:
+                raise GraphIssue((
+                    bounded_pointer((*path, "$id")),
+                    "Google response_json_schema has duplicate resource identifier",
+                ))
+            resource_roots[resource_uri] = path
+            resource_root = path
+        else:
+            resource_uri, _fragment = urldefrag(base)
+            resource_roots.setdefault(resource_uri, resource_root)
+
         nodes[path] = node
+        node_bases[path] = base
+        paths_by_pointer[_pointer(path)] = path
         edges.setdefault(path, [])
         anchor = node.get("$anchor")
         if isinstance(anchor, str):
-            anchors.setdefault(anchor, path)
+            anchor_key = (resource_uri, anchor)
+            existing = anchors.get(anchor_key)
+            if existing is not None and existing != path:
+                raise GraphIssue((
+                    bounded_pointer((*path, "$anchor")),
+                    "Google response_json_schema has duplicate anchor in resource",
+                ))
+            anchors[anchor_key] = path
 
         required = node.get("required")
         properties = node.get("properties")
@@ -346,15 +426,17 @@ def _first_required_google_reference_cycle_path(schema: dict[str, Any]) -> str |
                 if not isinstance(child, dict):
                     continue
                 child_path = (*path, "properties", name)
-                register(child, child_path)
+                register(child, child_path, depth + 1, base, resource_root)
             if isinstance(required, list):
                 for index, name in enumerate(required):
                     child = properties.get(name)
                     if isinstance(child, dict):
-                        edges[path].append((
+                        add_edge(
+                            path,
                             (*path, "properties", name),
                             (*path, "required", index),
-                        ))
+                            (*path, "required", index),
+                        )
 
         definitions = node.get("$defs")
         if isinstance(definitions, dict):
@@ -362,62 +444,91 @@ def _first_required_google_reference_cycle_path(schema: dict[str, Any]) -> str |
                 child = definitions[name]
                 if isinstance(child, dict):
                     child_path = (*path, "$defs", name)
-                    register(child, child_path)
+                    register(child, child_path, depth + 1, base, resource_root)
 
         items = node.get("items")
         if isinstance(items, dict):
             child_path = (*path, "items")
-            edges[path].append((child_path, None))
-            register(items, child_path)
+            add_edge(path, child_path, None, child_path)
+            register(items, child_path, depth + 1, base, resource_root)
         for keyword in ("prefixItems", "anyOf", "oneOf"):
             for index, child in enumerate(node.get(keyword) or []):
                 if isinstance(child, dict):
                     child_path = (*path, keyword, index)
-                    edges[path].append((child_path, None))
-                    register(child, child_path)
+                    add_edge(path, child_path, None, child_path)
+                    register(child, child_path, depth + 1, base, resource_root)
         additional = node.get("additionalProperties")
         if isinstance(additional, dict):
             child_path = (*path, "additionalProperties")
-            edges[path].append((child_path, None))
-            register(additional, child_path)
+            add_edge(path, child_path, None, child_path)
+            register(additional, child_path, depth + 1, base, resource_root)
 
-    def resolve(ref: Any) -> tuple[Any, ...] | None:
-        if ref == "#":
-            return ()
-        if not isinstance(ref, str) or not ref.startswith("#"):
+    def resolve(path: tuple[Any, ...], ref: str) -> tuple[Any, ...] | None:
+        resolved = urljoin(node_bases[path], ref)
+        resource_uri, encoded_fragment = urldefrag(resolved)
+        resource_root = resource_roots.get(resource_uri)
+        if resource_root is None:
             return None
-        if ref.startswith("#/"):
-            fragment = ref[1:]
-            return next((path for path in nodes if _pointer(path) == fragment), None)
-        return anchors.get(ref[1:])
+        fragment = unquote(encoded_fragment)
+        if not fragment:
+            return resource_root
+        if fragment.startswith("/"):
+            return paths_by_pointer.get(f"{_pointer(resource_root)}{fragment}")
+        return anchors.get((resource_uri, fragment))
 
-    register(schema, ())
-    for path, node in nodes.items():
-        target = resolve(node.get("$ref"))
-        if target in nodes:
-            edges[path].append((target, None))
+    try:
+        register(schema, (), 0, "", ())
+        for path, node in nodes.items():
+            ref = node.get("$ref")
+            if not isinstance(ref, str):
+                continue
+            target = resolve(path, ref)
+            if target is None:
+                return (
+                    bounded_pointer((*path, "$ref")),
+                    "Google response_json_schema cannot resolve local reference",
+                )
+            add_edge(path, target, None, (*path, "$ref"))
+    except GraphIssue as exc:
+        return exc.issue
 
-    def first_required_cycle(
-        current: tuple[Any, ...],
-        active: set[tuple[Any, ...]],
-        first_required: tuple[Any, ...] | None,
-    ) -> tuple[Any, ...] | None:
-        if current in active:
-            return first_required
-        active.add(current)
-        for child, required_path in edges.get(current, ()):
-            issue = first_required_cycle(
-                child,
-                active,
-                first_required if first_required is not None else required_path,
-            )
-            if issue is not None:
-                return issue
-        active.remove(current)
-        return None
+    outdegree = {path: len(outgoing) for path, outgoing in edges.items()}
+    predecessors: dict[tuple[Any, ...], list[tuple[Any, ...]]] = {
+        path: [] for path in nodes
+    }
+    for source, outgoing in edges.items():
+        for target, _required_path in outgoing:
+            predecessors[target].append(source)
+    removable = deque(path for path, degree in outdegree.items() if degree == 0)
+    removed: set[tuple[Any, ...]] = set()
+    while removable:
+        current = removable.popleft()
+        if current in removed:
+            continue
+        removed.add(current)
+        for predecessor in predecessors[current]:
+            outdegree[predecessor] -= 1
+            if outdegree[predecessor] == 0:
+                removable.append(predecessor)
+    reaches_cycle = set(nodes) - removed
 
-    issue_path = first_required_cycle((), set(), None)
-    return _pointer(issue_path) if issue_path is not None else None
+    pending = deque([()])
+    visited: set[tuple[Any, ...]] = set()
+    while pending:
+        current = pending.popleft()
+        if current in visited:
+            continue
+        visited.add(current)
+        for target, required_path in edges[current]:
+            if required_path is not None:
+                if target in reaches_cycle:
+                    return (
+                        bounded_pointer(required_path),
+                        "Google response_json_schema required property enters local reference cycle",
+                    )
+                continue
+            pending.append(target)
+    return None
 
 
 def _tool_choice_allows_hidden_submit(tool_choice: Any) -> bool:

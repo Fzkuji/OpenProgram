@@ -261,6 +261,10 @@ async def stream_simple(
             return str(new_sig)
         return existing
 
+    def _merge_terminal_reason(current: str, new: str) -> str:
+        priority = {"stop": 0, "length": 1, "error": 2}
+        return new if priority.get(new, 0) > priority.get(current, 0) else current
+
     yield EventStart(type="start", partial=partial)
 
     try:
@@ -289,12 +293,15 @@ async def stream_simple(
             if block_reason is not None and str(
                 getattr(block_reason, "value", block_reason)
             ) != "BLOCKED_REASON_UNSPECIFIED":
-                terminal_reason = "error"
+                terminal_reason = _merge_terminal_reason(terminal_reason, "error")
 
             for candidate in (chunk.candidates or []):
                 finish_reason = getattr(candidate, "finish_reason", None)
                 if finish_reason is not None:
-                    terminal_reason = _map_finish_reason(finish_reason)
+                    terminal_reason = _merge_terminal_reason(
+                        terminal_reason,
+                        _map_finish_reason(finish_reason),
+                    )
                 if not candidate.content or not candidate.content.parts:
                     continue
                 for part in candidate.content.parts:
@@ -389,11 +396,18 @@ async def stream_simple(
                 yield EventThinkingEnd(type="thinking_end", content_index=_block_index(), content=current_block.thinking, partial=partial)
 
         has_tool_calls = any(isinstance(b, ToolCall) for b in content_blocks)
-        stop_reason = "toolUse" if has_tool_calls else terminal_reason
+        stop_reason = (
+            "toolUse" if has_tool_calls and terminal_reason == "stop" else terminal_reason
+        )
+        final_content = (
+            content_blocks
+            if terminal_reason == "stop"
+            else [block for block in content_blocks if not isinstance(block, ToolCall)]
+        )
 
         final = AssistantMessage(
             role="assistant",
-            content=content_blocks,
+            content=final_content,
             api=model.api,
             provider=model.provider,
             model=model.id,
