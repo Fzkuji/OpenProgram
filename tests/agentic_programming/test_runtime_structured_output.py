@@ -107,10 +107,10 @@ def test_unknown_provider_is_rejected_before_stream_call():
 
     runtime = Runtime(call=lambda *args, **kwargs: "unused", model="dummy")
     runtime.api_model = Model(
-        id="claude-test",
-        name="Claude test",
-        api="anthropic-messages",
-        provider="anthropic",
+        id="third-party-test",
+        name="Third-party test",
+        api="openai-completions",
+        provider="openrouter",
         base_url="https://example.invalid",
     )
 
@@ -136,10 +136,10 @@ def test_explicit_prompt_fallback_adds_schema_instruction():
 
     runtime = Runtime(call=lambda *args, **kwargs: "unused", model="dummy")
     runtime.api_model = Model(
-        id="claude-test",
-        name="Claude test",
-        api="anthropic-messages",
-        provider="anthropic",
+        id="third-party-test",
+        name="Third-party test",
+        api="openai-completions",
+        provider="openrouter",
         base_url="https://example.invalid",
     )
     response_format = {
