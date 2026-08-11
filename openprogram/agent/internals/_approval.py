@@ -97,9 +97,10 @@ def _path_is_safe(tool_name: str, args: dict, req: "TurnRequest") -> bool:
     # 围栏基准与 system prompt 的 cwd 同源（_model_tools 同一 ContextVar）：
     # dispatcher 每 turn 把真实 cwd（worktree / 项目路径）绑进
     # current_worktree_path，进程 getcwd 只是无绑定时的回落。
-    work_dirs = [current_worktree_path() or os.getcwd(),
-                 *getattr(req, "additional_working_dirs", [])]
-    return check_path_safety(path, work_dirs)["safe"]
+    worktree = current_worktree_path() or os.getcwd()
+    work_dirs = [worktree, *getattr(req, "additional_working_dirs", [])]
+    target = path if os.path.isabs(path) else os.path.join(worktree, path)
+    return check_path_safety(target, work_dirs)["safe"]
 
 
 def _hard_constraint_violation(

@@ -138,3 +138,40 @@ def test_mcp_write_in_additional_working_directory_reaches_authority_gate(
     assert result.is_error is True
     assert result.details["reason_code"] == "AUTHORITY_CAPABILITY_DENIED"
     assert calls == []
+
+
+def test_mcp_relative_write_in_bound_worktree_reaches_authority_gate(
+    tmp_path,
+    monkeypatch,
+    mcp_authority,
+):
+    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.worktree.context import reset_worktree, set_worktree
+
+    project = tmp_path / "project"
+    process_cwd = tmp_path / "process-cwd"
+    project.mkdir()
+    process_cwd.mkdir()
+    monkeypatch.chdir(process_cwd)
+    token = set_worktree(str(project))
+    calls = []
+    try:
+        req = _mcp_request(mcp_authority)
+        wrapped = wrap_with_approval(
+            _recording_tool("write_file", calls),
+            req,
+            lambda _e: None,
+        )
+        result = _run(
+            wrapped,
+            {
+                "path": "inside.txt",
+                "content": "ok",
+            },
+        )
+    finally:
+        reset_worktree(token)
+
+    assert result.is_error is True
+    assert result.details["reason_code"] == "AUTHORITY_CAPABILITY_DENIED"
+    assert calls == []
