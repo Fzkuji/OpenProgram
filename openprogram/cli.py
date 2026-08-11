@@ -960,6 +960,16 @@ def build_parser() -> argparse.ArgumentParser:
              "`openprogram`. Same backend as the webui /mcp page and "
              "the TUI /mcp command.")
     p_mcp_sub = p_mcp.add_subparsers(dest="mcp_verb", metavar="verb")
+    p_mcp_token = p_mcp_sub.add_parser(
+        "token", help="Manage the independent stdio MCP server token"
+    )
+    p_mcp_token_sub = p_mcp_token.add_subparsers(
+        dest="mcp_token_verb", metavar="verb"
+    )
+    p_mcp_token_sub.add_parser(
+        "create", help="Create and print a new stdio MCP server token"
+    )
+    p_mcp_token.set_defaults(_cmd_parser=p_mcp_token)
     p_mcp_sub.add_parser("list", help="List every configured MCP server with state")
     p_mcp_show = p_mcp_sub.add_parser("show", help="Show one server's tools + full schemas")
     p_mcp_show.add_argument("name", help="MCP server name to show")
@@ -1619,6 +1629,11 @@ def main():
 
     if args.command == "mcp":
         verb = getattr(args, "mcp_verb", None)
+        if verb == "token":
+            token_verb = getattr(args, "mcp_token_verb", None)
+            if token_verb == "create":
+                sys.exit(_cmd_mcp_token_create())
+            _need_subcommand(args._cmd_parser)
         if verb == "list":
             sys.exit(_cmd_mcp_list())
         if verb == "show":
@@ -1795,6 +1810,7 @@ from openprogram._cli_cmds.chat import (  # noqa: E402,F401
 )
 from openprogram._cli_cmds.cron import _cmd_cron_worker  # noqa: E402,F401
 from openprogram._cli_cmds.mcp import (  # noqa: E402,F401
+    _cmd_mcp_token_create,
     _cmd_mcp_list,
     _cmd_mcp_show,
     _cmd_mcp_add,
