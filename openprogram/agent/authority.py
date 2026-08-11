@@ -71,6 +71,7 @@ TIER_CAPABILITIES: Mapping[AuthorityTier, frozenset[str]] = {
 }
 
 _OWNER_RE = re.compile(r"^owner/install/[0-9a-f]{16}$")
+_MCP_CLIENT_RE = re.compile(r"^[0-9a-f]{16}$")
 _owner_cache: dict[Path, str] = {}
 _owner_lock = threading.Lock()
 _log = logging.getLogger(__name__)
@@ -175,6 +176,20 @@ def paired_channel_authority(
         "speaker_display": sanitize_speaker_display(
             str(user_display or user_id)
         ),
+        "principal_id": owner_principal_id(),
+        "authority_tier": "paired",
+        "interaction": "non-interactive",
+    }
+
+
+def mcp_client_authority(client_id: str) -> dict[str, Any]:
+    """Build fixed paired authority for one credential-derived MCP client."""
+    if not isinstance(client_id, str) or not _MCP_CLIENT_RE.fullmatch(client_id):
+        raise AuthorityError("MCP client ID is invalid")
+    return {
+        "speaker_kind": "client",
+        "speaker_id": f"mcp/{client_id}",
+        "speaker_display": "MCP client",
         "principal_id": owner_principal_id(),
         "authority_tier": "paired",
         "interaction": "non-interactive",
@@ -386,7 +401,7 @@ __all__ = [
     "MESSAGE_SCHEMA_VERSION", "MESSAGE_SCHEMA_FIELD",
     "stamp_schema", "is_legacy_message",
     "owner_principal_id", "owner_authority", "local_owner_authority",
-    "paired_channel_authority",
+    "paired_channel_authority", "mcp_client_authority",
     "runtime_authority", "normalize_authority",
     "authority_from_message", "has_capability", "decide_capability",
     "render_model_input", "render_model_input_from", "sanitize_speaker_display",

@@ -74,6 +74,14 @@ def _validate_web_origins(value: Any) -> Optional[str]:
     return None
 
 
+def _validate_mcp_exposed_tools(value: Any) -> Optional[str]:
+    if not isinstance(value, list) or not all(
+        isinstance(name, str) for name in value
+    ):
+        return "must be a JSON list of tool-name strings"
+    return None
+
+
 def _validate_web_bind_host(value: Any) -> Optional[str]:
     from openprogram.backend_endpoint import OwnerAuthError, canonicalize_bind_host
 
@@ -230,6 +238,18 @@ SETTINGS: list[SettingSpec] = [
              "instance. Each value is scheme://host[:port], such as "
              "https://agent.example.com. This is a request-Origin and Host "
              "allowlist, not a CORS list for cross-origin frontends.",
+    ),
+    SettingSpec(
+        key="mcp_server.exposed_tools",
+        path=("mcp_server", "exposed_tools"),
+        group="MCP server",
+        label="Exposed Runtime tools",
+        widget="json",
+        apply=APPLY_NEXT_START,
+        default=[],
+        validate=_validate_mcp_exposed_tools,
+        help="Runtime tools available to authenticated MCP clients. Empty by "
+             "default; changes apply on the next server start.",
     ),
     SettingSpec(
         key="search.default_provider", path=("search", "default_provider"),
