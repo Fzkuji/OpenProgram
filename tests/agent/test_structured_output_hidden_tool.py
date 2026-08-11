@@ -182,7 +182,15 @@ def test_submit_must_be_the_only_tool_call_in_its_message():
     )
 
     with pytest.raises(StructuredOutputValidationError) as exc:
-        asyncio.run(_run_loop([reply], [ordinary]))
+        asyncio.run(_run_loop(
+            [reply],
+            [ordinary],
+            response_format=normalize_response_format({
+                "type": "json_schema",
+                "schema": SCHEMA,
+                "max_validation_retries": 0,
+            }),
+        ))
 
     assert exc.value.code == "mixed_submission"
     assert executed == []
@@ -503,13 +511,80 @@ def test_failover_candidate_dispatch_uses_its_negotiated_registry_snapshot(monke
 
 def test_hidden_submission_is_validated_against_the_original_schema():
     with pytest.raises(StructuredOutputValidationError) as exc:
-        asyncio.run(_run_loop([_assistant([_submit("not-an-integer")])], []))
+        asyncio.run(_run_loop(
+            [_assistant([_submit("not-an-integer")])],
+            [],
+            response_format=normalize_response_format({
+                "type": "json_schema",
+                "schema": SCHEMA,
+                "max_validation_retries": 0,
+            }),
+        ))
 
     assert exc.value.code == "validation_failed"
 
 
 def test_hidden_tool_mode_rejects_text_without_submission():
     with pytest.raises(StructuredOutputValidationError) as exc:
-        asyncio.run(_run_loop([_assistant([TextContent(text='{"answer": 4}')])], []))
+        asyncio.run(_run_loop(
+            [_assistant([TextContent(text='{"answer": 4}')])],
+            [],
+            response_format=normalize_response_format({
+                "type": "json_schema",
+                "schema": SCHEMA,
+                "max_validation_retries": 0,
+            }),
+        ))
 
     assert exc.value.code == "missing_submission"
+
+
+def test_hidden_validation_failure_repairs_inside_one_agent_loop():
+    messages, seen_contexts, _ = asyncio.run(
+        _run_loop(
+            [
+                _assistant([_submit("not-an-integer")]),
+                _assistant([_submit(8)]),
+            ],
+            [],
+        )
+    )
+
+    assistants = [message for message in messages if message.role == "assistant"]
+    assert len(assistants) == 1
+    assert assistants[0].structured_output == {"answer": 8}
+    assert assistants[0].structured_output_attempt == 2
+    assert len(seen_contexts) == 2
+
+
+def test_mixed_submission_repairs_without_executing_ordinary_tool():
+    executed = []
+
+    async def execute(call_id, arguments, cancel_event, on_update):
+        executed.append(call_id)
+        return AgentToolResult(content=[TextContent(text="executed")])
+
+    ordinary = AgentTool(
+        name="ordinary",
+        description="Ordinary tool",
+        parameters={"type": "object", "properties": {}},
+        label="ordinary",
+        execute=execute,
+    )
+    messages, _, _ = asyncio.run(
+        _run_loop(
+            [
+                _assistant([
+                    ToolCall(id="ordinary", name="ordinary", arguments={}),
+                    _submit(8),
+                ]),
+                _assistant([_submit(9)]),
+            ],
+            [ordinary],
+        )
+    )
+
+    assert executed == []
+    final = next(message for message in reversed(messages) if message.role == "assistant")
+    assert final.structured_output == {"answer": 9}
+    assert final.structured_output_attempt == 2

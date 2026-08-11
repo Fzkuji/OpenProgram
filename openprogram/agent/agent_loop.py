@@ -15,11 +15,15 @@ from typing import Any, AsyncGenerator
 from openprogram.providers.types import (
     AssistantMessage,
     Context,
+    EventDone,
+    EventStructuredOutputEnd,
+    EventStructuredOutputRetry,
     TextContent,
     Tool,
     ToolCall,
     ToolResultMessage,
     Usage,
+    UserMessage,
 )
 from openprogram.providers.utils.event_stream import EventStream
 from openprogram.providers.utils.validation import validate_tool_arguments
@@ -257,6 +261,50 @@ async def _run_loop(
             tool_choice=config.tool_choice,
             parallel_tool_calls=config.parallel_tool_calls,
         )
+    structured_attempt = 1
+    pending_validation_error: Exception | None = None
+
+    def commit_assistant(message: AssistantMessage) -> None:
+        current_context.messages.append(message)
+        new_messages.append(message)
+        ev_stream.push(AgentEventMessageEnd(message=message))
+
+    def schedule_structured_repair(
+        error: Exception,
+        candidate: AssistantMessage,
+    ) -> bool:
+        nonlocal structured_attempt, has_more_tool_calls, pending_validation_error
+        if structured_plan is None or config.response_format is None:
+            return False
+        from openprogram.providers.structured_output import (
+            StructuredOutputValidationError,
+            build_repair_prompt,
+        )
+
+        if not isinstance(error, StructuredOutputValidationError):
+            return False
+        if structured_attempt > config.response_format.max_validation_retries:
+            return False
+        next_attempt = structured_attempt + 1
+        ev_stream.push(AgentEventMessageUpdate(
+            message=candidate,
+            assistant_message_event=EventStructuredOutputRetry(
+                attempt=structured_attempt,
+                next_attempt=next_attempt,
+                issues=error.issues,
+            ),
+        ))
+        current_context.messages.extend([
+            candidate,
+            UserMessage(
+                content=build_repair_prompt(error),
+                timestamp=int(time.time() * 1000),
+            ),
+        ])
+        structured_attempt = next_attempt
+        pending_validation_error = error
+        has_more_tool_calls = True
+        return True
 
     # Hard cap on the inner tool-call loop so a model that keeps asking
     # for "one more tool call" can't churn the runtime forever. 50 is
@@ -284,6 +332,8 @@ async def _run_loop(
         while has_more_tool_calls or len(pending_messages) > 0:
             inner_iterations += 1
             if inner_iterations > iteration_cap:
+                if pending_validation_error is not None:
+                    raise pending_validation_error
                 if structured_plan is not None and structured_plan.mode == "tool":
                     from openprogram.providers.structured_output import (
                         StructuredOutputValidationError,
@@ -322,10 +372,37 @@ async def _run_loop(
                 stream_fn,
                 structured_plan,
                 provider_snapshot,
+                structured_attempt if structured_plan is not None else None,
             )
-            new_messages.append(message)
+
+            if structured_plan is not None and message.stop_reason in (
+                "length", "error", "aborted",
+            ):
+                from openprogram.providers.structured_output import (
+                    StructuredOutputGenerationError,
+                )
+
+                if message.stop_reason == "aborted":
+                    raise RuntimeError("Structured output request was aborted")
+                if message.stop_reason == "error" and message.error_message:
+                    reason = message.error_message.lower()
+                    if not any(
+                        marker in reason
+                        for marker in ("refusal", "content filter", "content_filter", "safety")
+                    ):
+                        commit_assistant(message)
+                        ev_stream.push(AgentEventTurnEnd(message=message, tool_results=[]))
+                        ev_stream.push(AgentEventAgentEnd(messages=new_messages))
+                        ev_stream.end(new_messages)
+                        return
+                code = "incomplete" if message.stop_reason == "length" else "refusal"
+                raise StructuredOutputGenerationError(
+                    "Structured output generation did not produce a complete value",
+                    code=code,
+                )
 
             if message.stop_reason in ("error", "aborted"):
+                commit_assistant(message)
                 ev_stream.push(AgentEventTurnEnd(message=message, tool_results=[]))
                 ev_stream.push(AgentEventAgentEnd(messages=new_messages))
                 ev_stream.end(new_messages)
@@ -346,10 +423,13 @@ async def _run_loop(
                         StructuredOutputValidationError,
                     )
 
-                    raise StructuredOutputValidationError(
+                    error = StructuredOutputValidationError(
                         "The hidden structured-output submission must be the only tool call",
                         code="mixed_submission",
                     )
+                    if schedule_structured_repair(error, message):
+                        continue
+                    raise error
                 if submit_calls:
                     from openprogram.providers.structured_output import parse_and_validate_json
 
@@ -357,22 +437,90 @@ async def _run_loop(
                         config.response_format,
                         schema=structured_plan.original_schema,
                     )
-                    message.structured_output = parse_and_validate_json(
-                        json.dumps(submit_calls[0].arguments, ensure_ascii=False),
-                        validation_output,
-                    )
+                    try:
+                        value = parse_and_validate_json(
+                            json.dumps(submit_calls[0].arguments, ensure_ascii=False),
+                            validation_output,
+                        )
+                    except Exception as error:
+                        if schedule_structured_repair(error, message):
+                            continue
+                        raise
+                    message.content = [TextContent(
+                        text=json.dumps(
+                            value,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
+                    )]
+                    message.stop_reason = "stop"
+                    message.structured_output = value
                     message.structured_output_mode = "tool"
-                    message.structured_output_attempt = 0
+                    message.structured_output_attempt = structured_attempt
                     has_more_tool_calls = False
                 elif not tool_calls:
                     from openprogram.providers.structured_output import (
                         StructuredOutputValidationError,
                     )
 
-                    raise StructuredOutputValidationError(
+                    error = StructuredOutputValidationError(
                         "The model did not call the hidden structured-output submission tool",
                         code="missing_submission",
                     )
+                    if schedule_structured_repair(error, message):
+                        continue
+                    raise error
+
+            if (
+                structured_plan is not None
+                and structured_plan.mode in ("native", "prompt")
+                and not tool_calls
+            ):
+                from openprogram.providers.structured_output import parse_and_validate_json
+
+                raw = "".join(
+                    block.text for block in message.content
+                    if isinstance(block, TextContent)
+                )
+                validation_output = replace(
+                    config.response_format,
+                    schema=structured_plan.original_schema,
+                )
+                try:
+                    value = parse_and_validate_json(raw, validation_output)
+                except Exception as error:
+                    if schedule_structured_repair(error, message):
+                        continue
+                    raise
+                message.content = [TextContent(
+                    text=json.dumps(
+                        value,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                )]
+                message.structured_output = value
+                message.structured_output_mode = structured_plan.mode
+                message.structured_output_attempt = structured_attempt
+
+            if structured_plan is not None and message.structured_output_mode is not None:
+                pending_validation_error = None
+                ev_stream.push(AgentEventMessageUpdate(
+                    message=message,
+                    assistant_message_event=EventStructuredOutputEnd(
+                        attempt=structured_attempt,
+                        mode=message.structured_output_mode,
+                        value=message.structured_output,
+                    ),
+                ))
+                ev_stream.push(AgentEventMessageUpdate(
+                    message=message,
+                    assistant_message_event=EventDone(reason="stop", message=message),
+                ))
+
+            commit_assistant(message)
 
             tool_results: list[ToolResultMessage] = []
             if has_more_tool_calls:
@@ -423,6 +571,7 @@ async def _stream_assistant_response(
     stream_fn: StreamFn | None,
     structured_plan: Any | None = None,
     provider_snapshot: Any | None = None,
+    output_attempt: int | None = None,
 ) -> AssistantMessage:
     """
     Stream an assistant response from the LLM.
@@ -622,8 +771,9 @@ async def _stream_assistant_response(
     async for event in response_stream:
         if event.type == "start":
             partial_message = event.partial
-            context.messages.append(partial_message)
-            added_partial = True
+            if structured_plan is None:
+                context.messages.append(partial_message)
+                added_partial = True
             ev_stream.push(AgentEventMessageStart(message=partial_message))
             emit_safe("model.response_started", "agent")
 
@@ -633,8 +783,13 @@ async def _stream_assistant_response(
             "toolcall_start", "toolcall_delta", "toolcall_end",
         ):
             if partial_message is not None:
+                if output_attempt is not None and event.type in (
+                    "text_start", "text_delta", "text_end",
+                ):
+                    event = event.model_copy(update={"output_attempt": output_attempt})
                 partial_message = event.partial
-                context.messages[-1] = partial_message
+                if added_partial:
+                    context.messages[-1] = partial_message
                 ev_stream.push(AgentEventMessageUpdate(
                     message=partial_message,
                     assistant_message_event=event,
@@ -642,6 +797,12 @@ async def _stream_assistant_response(
 
         elif event.type in ("done", "error"):
             final_message = event.message if event.type == "done" else event.error
+            if structured_plan is not None:
+                if partial_message is None:
+                    ev_stream.push(AgentEventMessageStart(message=final_message))
+                emit_safe("model.response_completed", "agent",
+                          {"is_error": event.type == "error"})
+                return final_message
             if added_partial:
                 context.messages[-1] = final_message
             else:

@@ -61,6 +61,10 @@ class StructuredOutputValidationError(StructuredOutputError):
     pass
 
 
+class StructuredOutputGenerationError(StructuredOutputError):
+    pass
+
+
 class StructuredOutputUnsupportedError(StructuredOutputError):
     pass
 
@@ -146,6 +150,10 @@ def _pointer(parts) -> str:
     return "".join(f"/{str(part).replace('~', '~0').replace('/', '~1')}" for part in parts)
 
 
+def _bounded_pointer(pointer: str, max_length: int = 512) -> str:
+    return pointer if len(pointer) <= max_length else ""
+
+
 def parse_and_validate_json(raw: str, output: JsonSchemaOutput) -> Any:
     """Parse one complete JSON value and validate it against the original schema."""
     try:
@@ -168,9 +176,12 @@ def parse_and_validate_json(raw: str, output: JsonSchemaOutput) -> Any:
         issues = [
             {
                 "code": "schema_violation",
-                "path": _pointer(error.absolute_path),
-                "schema_path": _pointer(error.absolute_schema_path),
-                "message": error.message[:500],
+                "path": _bounded_pointer(_pointer(error.absolute_path)),
+                "schema_path": _bounded_pointer(_pointer(error.absolute_schema_path)),
+                "message": (
+                    "Value does not satisfy JSON Schema constraint: "
+                    f"{error.validator or 'unknown'}"
+                )[:500],
             }
             for error in errors[:20]
         ]
@@ -315,7 +326,7 @@ def _schema_exceeds_depth_limit(value: Any, limit: int) -> bool:
 
 
 def _bounded_google_pointer(pointer: str) -> str:
-    return pointer if len(pointer) <= _GOOGLE_SCHEMA_MAX_POINTER_LENGTH else ""
+    return _bounded_pointer(pointer, _GOOGLE_SCHEMA_MAX_POINTER_LENGTH)
 
 
 def _first_unsupported_google_schema_path(

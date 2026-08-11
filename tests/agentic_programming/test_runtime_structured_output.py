@@ -89,6 +89,81 @@ def test_validation_failure_gets_one_bounded_semantic_repair():
     assert len(repair_text) < 4000
 
 
+def test_validation_repair_is_owned_by_one_agent_session(monkeypatch):
+    seen_content = []
+    session_runs = []
+
+    def call(content, model="test", response_format=None):
+        seen_content.append(content)
+        return '{"answer":"wrong"}' if len(seen_content) == 1 else '{"answer":12}'
+
+    from openprogram.agent.session import AgentSession
+
+    original_run = AgentSession.run
+
+    async def counted_run(self, *args, **kwargs):
+        session_runs.append(self)
+        return await original_run(self, *args, **kwargs)
+
+    monkeypatch.setattr(AgentSession, "run", counted_run)
+    stream_events = []
+    runtime = Runtime(call=call, model="dummy", max_retries=3)
+    runtime.on_stream = stream_events.append
+    result = runtime.exec(
+        "question",
+        response_format=SCHEMA,
+    )
+
+    assert result == {"answer": 12}
+    assert len(session_runs) == 1
+    assert len(seen_content) == 2
+    persisted = [
+        message for message in session_runs[0]._agent.state.messages
+        if message.role == "assistant"
+    ]
+    assert len(persisted) == 1
+    assert persisted[0].structured_output == {"answer": 12}
+    assert persisted[0].structured_output_attempt == 2
+    assert [event["type"] for event in stream_events if event["type"].startswith("structured_")] == [
+        "structured_output_retry",
+        "structured_output_end",
+    ]
+
+
+def test_sync_and_async_exec_share_agent_owned_typed_lifecycle():
+    sync_calls = []
+    async_calls = []
+
+    def sync_call(content, model="test", response_format=None):
+        sync_calls.append(content)
+        return '{"answer":21}'
+
+    async def async_call(content, model="test", response_format=None):
+        async_calls.append(content)
+        return '{"answer":21}'
+
+    sync_value = Runtime(call=sync_call, model="dummy").exec(
+        "question", response_format=SCHEMA
+    )
+    async_value = asyncio.run(
+        Runtime(call=async_call, model="dummy").async_exec(
+            "question", response_format=SCHEMA
+        )
+    )
+
+    assert sync_value == async_value == {"answer": 21}
+    assert len(sync_calls) == len(async_calls) == 1
+
+
+def test_structured_json_null_is_a_valid_typed_result():
+    runtime = Runtime(
+        call=lambda content, model="test", response_format=None: "null",
+        model="dummy",
+    )
+
+    assert runtime.exec("question", response_format={"type": "null"}) is None
+
+
 def test_async_exec_returns_validated_python_value():
     async def call(content, model="test", response_format=None):
         return '{"answer": 9}'

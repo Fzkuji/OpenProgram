@@ -1272,34 +1272,17 @@ class Runtime:
                         call_input, model=use_model, response_format=response_format
                     )
                     reply = raw_reply
-                    if structured_format is not None:
-                        from openprogram.providers.structured_output import (
-                            build_repair_prompt,
-                            parse_and_validate_json,
+                    dag_reply = (
+                        json.dumps(
+                            raw_reply,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
                         )
-                        for validation_attempt in range(
-                            structured_format.max_validation_retries + 1
-                        ):
-                            try:
-                                reply = parse_and_validate_json(raw_reply, structured_format)
-                                break
-                            except StructuredOutputValidationError as exc:
-                                if validation_attempt >= structured_format.max_validation_retries:
-                                    raise
-                                repair = build_repair_prompt(exc)
-                                if self.on_stream:
-                                    self.on_stream({
-                                        "type": "structured_output_retry",
-                                        "attempt": validation_attempt + 1,
-                                        "next_attempt": validation_attempt + 2,
-                                        "issues": exc.issues,
-                                    })
-                                raw_reply = self._call(
-                                    [*call_input, {"type": "text", "text": repair}],
-                                    model=use_model,
-                                    response_format=response_format,
-                                )
-                    self._close_model_call_node(_llm_node_id, reply=raw_reply)
+                        if structured_format is not None
+                        else raw_reply
+                    )
+                    self._close_model_call_node(_llm_node_id, reply=dag_reply)
                     _llm_closed = True
                     break
                 except ExecInterrupt:
@@ -1520,34 +1503,17 @@ class Runtime:
                     call_input, model=use_model, response_format=response_format
                 )
                 reply = raw_reply
-                if structured_format is not None:
-                    from openprogram.providers.structured_output import (
-                        build_repair_prompt,
-                        parse_and_validate_json,
+                dag_reply = (
+                    json.dumps(
+                        raw_reply,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
                     )
-                    for validation_attempt in range(
-                        structured_format.max_validation_retries + 1
-                    ):
-                        try:
-                            reply = parse_and_validate_json(raw_reply, structured_format)
-                            break
-                        except StructuredOutputValidationError as exc:
-                            if validation_attempt >= structured_format.max_validation_retries:
-                                raise
-                            repair = build_repair_prompt(exc)
-                            if self.on_stream:
-                                self.on_stream({
-                                    "type": "structured_output_retry",
-                                    "attempt": validation_attempt + 1,
-                                    "next_attempt": validation_attempt + 2,
-                                    "issues": exc.issues,
-                                })
-                            raw_reply = await self._async_call(
-                                [*call_input, {"type": "text", "text": repair}],
-                                model=use_model,
-                                response_format=response_format,
-                            )
-                self._close_model_call_node(_llm_node_id, reply=raw_reply)
+                    if structured_format is not None
+                    else raw_reply
+                )
+                self._close_model_call_node(_llm_node_id, reply=dag_reply)
                 _llm_closed = True
                 return reply
             except ExecInterrupt:
@@ -1615,7 +1581,7 @@ class Runtime:
             if response_format_token is not None:
                 _current_response_format.reset(response_format_token)
 
-    def _call(self, content: list[dict], model: str = "default", response_format: dict = None) -> str:
+    def _call(self, content: list[dict], model: str = "default", response_format: dict = None) -> Any:
         """
         Call the LLM. Override this in subclasses.
 
@@ -1680,7 +1646,7 @@ class Runtime:
         self,
         content: list[dict],
         response_format: dict = None,
-    ) -> str:
+    ) -> Any:
         """
         Default _call implementation for ``model="provider:model_id"`` usage.
 
@@ -1891,7 +1857,26 @@ class Runtime:
                         inner_type = getattr(inner, "type", None)
                         if inner_type == "text_delta":
                             if cb:
-                                cb({"type": "text", "text": getattr(inner, "delta", "") or "", "elapsed": _elapsed()})
+                                event = {
+                                    "type": "text",
+                                    "text": getattr(inner, "delta", "") or "",
+                                    "elapsed": _elapsed(),
+                                }
+                                output_attempt = getattr(inner, "output_attempt", None)
+                                if output_attempt is not None:
+                                    event["output_attempt"] = output_attempt
+                                cb(event)
+                        elif inner_type in (
+                            "structured_output_retry", "structured_output_end",
+                        ):
+                            if inner_type == "structured_output_retry":
+                                _thinking_buf["text"] = ""
+                                _tool_index.clear()
+                            if cb:
+                                cb(inner.model_dump(exclude_none=True))
+                        elif inner_type == "done":
+                            if cb and getattr(inner.message, "structured_output_mode", None):
+                                cb({"type": "done"})
                         elif inner_type == "thinking_delta":
                             delta = getattr(inner, "delta", "") or ""
                             _thinking_buf["text"] += delta
@@ -2004,6 +1989,10 @@ class Runtime:
                 "cache_create": getattr(final.usage, "cache_write", 0) or 0,
                 "breakdown": getattr(self, "_pending_breakdown", None),
             }
+        if structured_format is not None:
+            if final.structured_output_mode is None:
+                raise RuntimeError("Agent session produced no validated structured output")
+            return final.structured_output
         return _assistant_text(final)
 
     def list_models(self) -> list[str]:
@@ -2024,14 +2013,14 @@ class Runtime:
                 return ids
         return [self.model] if self.model and self.model != "default" else []
 
-    async def _async_call(self, content: list[dict], model: str = "default", response_format: dict = None) -> str:
+    async def _async_call(self, content: list[dict], model: str = "default", response_format: dict = None) -> Any:
         """Async version of _call(). Override for async providers."""
-        if self._call_fn is not None:
-            result = self._call_fn(content, model=model, response_format=response_format)
-            if asyncio.iscoroutine(result):
-                return await result
-            # Sync function passed to async_exec — just return it
-            return result
+        if self.api_model is not None:
+            return await asyncio.to_thread(
+                self._call_via_providers,
+                content,
+                response_format,
+            )
         raise NotImplementedError(
             "No async LLM provider configured. Either pass an async `call` to Runtime(), "
             "or subclass Runtime and override _async_call()."

@@ -145,7 +145,9 @@ def test_defaults_leave_stream_opts_unset():
 
 
 def test_response_format_reaches_stream_opts():
-    stream_fn, state = _make_stream_fn([_text_msg()])
+    stream_fn, state = _make_stream_fn([
+        _assistant([TextContent(text='{"answer":"done"}')])
+    ])
     response_format = normalize_response_format({
         "type": "object",
         "properties": {"answer": {"type": "string"}},
