@@ -19,6 +19,7 @@ _EXISTS = "MCP server token already exists"
 _FILE_INVALID = "MCP server token file is unavailable or invalid"
 _ENV_MISSING = f"{MCP_TOKEN_ENV} is required"
 _AUTH_FAILED = "MCP server authentication failed"
+_MAX_TOKEN_BYTES = 4096
 
 
 class MCPTokenError(RuntimeError):
@@ -42,6 +43,15 @@ def _verify_private_regular(info: os.stat_result, message: str) -> None:
         raise MCPTokenError(message)
 
 
+def _verify_directory(info: os.stat_result, message: str, *, private: bool) -> None:
+    if sys.platform == "win32" or not hasattr(os, "geteuid"):
+        raise MCPTokenError(message)
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
+        raise MCPTokenError(message)
+    if private and stat.S_IMODE(info.st_mode) & 0o077:
+        raise MCPTokenError(message)
+
+
 def _same_file(left: os.stat_result, right: os.stat_result) -> bool:
     return (left.st_dev, left.st_ino) == (right.st_dev, right.st_ino)
 
@@ -55,12 +65,68 @@ def _write_all(fd: int, payload: bytes) -> None:
         view = view[written:]
 
 
+def _selected_target(path: Path | None, message: str) -> Path:
+    try:
+        selected = Path(path) if path is not None else Path(token_path())
+        if ".." in selected.parts:
+            raise ValueError("parent traversal is not allowed")
+        target = selected if selected.is_absolute() else Path.cwd() / selected
+        if not target.name:
+            raise ValueError("token path has no file name")
+        return target
+    except MCPTokenError:
+        raise
+    except Exception:
+        raise MCPTokenError(message) from None
+
+
+def _prepare_parent(target: Path, *, create: bool, message: str) -> os.stat_result:
+    try:
+        current = Path(target.anchor)
+        info = os.lstat(current)
+        if not stat.S_ISDIR(info.st_mode):
+            raise MCPTokenError(message)
+        for part in target.parent.parts[1:]:
+            current /= part
+            try:
+                next_info = os.lstat(current)
+            except FileNotFoundError:
+                if not create:
+                    raise MCPTokenError(message) from None
+                _verify_directory(info, message, private=False)
+                if stat.S_IMODE(info.st_mode) & 0o022:
+                    raise MCPTokenError(message)
+                try:
+                    os.mkdir(current, 0o700)
+                except FileExistsError:
+                    pass
+                next_info = os.lstat(current)
+                _verify_directory(next_info, message, private=True)
+            if not stat.S_ISDIR(next_info.st_mode):
+                raise MCPTokenError(message)
+            info = next_info
+        _verify_directory(info, message, private=True)
+        return info
+    except MCPTokenError:
+        raise
+    except Exception:
+        raise MCPTokenError(message) from None
+
+
+def _revalidate_parent(target: Path, expected: os.stat_result, message: str) -> None:
+    current = _prepare_parent(target, create=False, message=message)
+    if not _same_file(current, expected):
+        raise MCPTokenError(message)
+
+
 def create_token(path: Path | None = None) -> str:
     """Create one private token file without replacing a concurrent winner."""
-    target = Path(path) if path is not None else token_path()
     try:
-        target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    except OSError:
+        target = _selected_target(path, _CREATE_FAILED)
+        parent_info = _prepare_parent(target, create=True, message=_CREATE_FAILED)
+    except MCPTokenError:
+        raise
+    except Exception:
         raise MCPTokenError(_CREATE_FAILED) from None
 
     descriptor: int | None = None
@@ -76,8 +142,10 @@ def create_token(path: Path | None = None) -> str:
         temporary = Path(temporary_name)
         initial_info = os.fstat(descriptor)
         _verify_private_regular(initial_info, _CREATE_FAILED)
+        _revalidate_parent(target, parent_info, _CREATE_FAILED)
         _write_all(descriptor, token.encode("ascii"))
         os.fsync(descriptor)
+        _revalidate_parent(target, parent_info, _CREATE_FAILED)
 
         try:
             os.link(temporary, target, follow_symlinks=False)
@@ -85,6 +153,7 @@ def create_token(path: Path | None = None) -> str:
             raise MCPTokenError(_EXISTS) from None
         published = True
         published_info = initial_info
+        _revalidate_parent(target, parent_info, _CREATE_FAILED)
 
         os.fchmod(descriptor, 0o600)
         published_info = os.fstat(descriptor)
@@ -122,6 +191,7 @@ def create_token(path: Path | None = None) -> str:
 def _read_stored_token(path: Path) -> str:
     descriptor: int | None = None
     try:
+        parent_info = _prepare_parent(path, create=False, message=_FILE_INVALID)
         before = os.lstat(path)
         _verify_private_regular(before, _FILE_INVALID)
         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
@@ -131,10 +201,28 @@ def _read_stored_token(path: Path) -> str:
         _verify_private_regular(opened, _FILE_INVALID)
         if not _same_file(before, opened):
             raise MCPTokenError(_FILE_INVALID)
-        payload = os.read(descriptor, 4097)
-        if len(payload) > 4096:
+        _revalidate_parent(path, parent_info, _FILE_INVALID)
+        if opened.st_size > _MAX_TOKEN_BYTES:
             raise MCPTokenError(_FILE_INVALID)
-        return payload.decode("ascii")
+        payload = bytearray()
+        while len(payload) < opened.st_size:
+            chunk = os.read(descriptor, opened.st_size - len(payload))
+            if not chunk:
+                raise MCPTokenError(_FILE_INVALID)
+            payload.extend(chunk)
+        if os.read(descriptor, 1):
+            raise MCPTokenError(_FILE_INVALID)
+        after = os.fstat(descriptor)
+        _verify_private_regular(after, _FILE_INVALID)
+        if (
+            not _same_file(opened, after)
+            or after.st_size != opened.st_size
+            or after.st_mtime_ns != opened.st_mtime_ns
+            or after.st_ctime_ns != opened.st_ctime_ns
+        ):
+            raise MCPTokenError(_FILE_INVALID)
+        _revalidate_parent(path, parent_info, _FILE_INVALID)
+        return bytes(payload).decode("ascii")
     except MCPTokenError:
         raise
     except Exception:
@@ -155,7 +243,8 @@ def authenticate_from_environment(
     presented = environ.get(MCP_TOKEN_ENV)
     if not isinstance(presented, str) or not presented:
         raise MCPTokenError(_ENV_MISSING)
-    stored = _read_stored_token(Path(path) if path is not None else token_path())
+    target = _selected_target(path, _FILE_INVALID)
+    stored = _read_stored_token(target)
     try:
         matched = hmac.compare_digest(stored, presented)
     except Exception:

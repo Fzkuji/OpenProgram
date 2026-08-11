@@ -4,8 +4,11 @@ import importlib
 import os
 import re
 import stat
+import tempfile
 import traceback
+import uuid
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from threading import Barrier
 
 import pytest
@@ -18,6 +21,17 @@ def _auth():
 def _write_private(path, value: str) -> None:
     path.write_text(value, encoding="ascii")
     path.chmod(0o600)
+
+
+def _foreign_writable_temp() -> Path:
+    for candidate in (Path("/private/tmp"), Path(tempfile.gettempdir()).resolve()):
+        try:
+            info = candidate.stat()
+        except OSError:
+            continue
+        if info.st_uid != os.geteuid() and os.access(candidate, os.W_OK | os.X_OK):
+            return candidate
+    pytest.skip("no writable foreign-owned temporary directory")
 
 
 def test_token_path_uses_independent_state_file(tmp_path, monkeypatch):
@@ -106,6 +120,55 @@ def test_create_token_refuses_existing_symlink_without_touching_target(tmp_path)
     assert destination.read_text(encoding="ascii") == "do-not-touch"
 
 
+@pytest.mark.parametrize("use_default_path", [False, True])
+def test_create_token_rejects_real_symlink_ancestor(
+    tmp_path, monkeypatch, use_default_path
+):
+    auth = _auth()
+    actual = tmp_path / "actual"
+    actual.mkdir(mode=0o700)
+    linked = tmp_path / "linked"
+    linked.symlink_to(actual, target_is_directory=True)
+    if use_default_path:
+        paths = importlib.import_module("openprogram.paths")
+        monkeypatch.setattr(paths, "get_state_dir", lambda: linked)
+        selected_path = None
+    else:
+        selected_path = linked / "mcp_server_token"
+
+    with pytest.raises(auth.MCPTokenError, match="^could not create MCP server token$"):
+        auth.create_token(selected_path)
+
+    assert not (actual / "mcp_server_token").exists()
+
+
+def test_create_token_rejects_wide_parent_directory(tmp_path):
+    auth = _auth()
+    parent = tmp_path / "wide"
+    parent.mkdir(mode=0o700)
+    parent.chmod(0o755)
+    target = parent / "mcp_server_token"
+
+    with pytest.raises(auth.MCPTokenError, match="^could not create MCP server token$"):
+        auth.create_token(target)
+
+    assert not target.exists()
+
+
+def test_create_token_rejects_foreign_parent_directory():
+    auth = _auth()
+    parent = _foreign_writable_temp()
+    target = parent / f".openprogram-mcp-create-{uuid.uuid4().hex}"
+    try:
+        with pytest.raises(
+            auth.MCPTokenError, match="^could not create MCP server token$"
+        ):
+            auth.create_token(target)
+        assert not target.exists()
+    finally:
+        target.unlink(missing_ok=True)
+
+
 def test_create_token_removes_its_published_inode_if_final_verification_fails(
     tmp_path, monkeypatch
 ):
@@ -177,6 +240,129 @@ def test_authentication_rejects_unsafe_or_missing_paths(tmp_path, setup, expecte
         )
 
 
+@pytest.mark.parametrize("use_default_path", [False, True])
+def test_authentication_rejects_real_symlink_ancestor(
+    tmp_path, monkeypatch, use_default_path
+):
+    auth = _auth()
+    actual = tmp_path / "actual"
+    actual.mkdir(mode=0o700)
+    _write_private(actual / "mcp_server_token", "stored-token")
+    linked = tmp_path / "linked"
+    linked.symlink_to(actual, target_is_directory=True)
+    if use_default_path:
+        paths = importlib.import_module("openprogram.paths")
+        monkeypatch.setattr(paths, "get_state_dir", lambda: linked)
+        selected_path = None
+    else:
+        selected_path = linked / "mcp_server_token"
+
+    with pytest.raises(
+        auth.MCPTokenError,
+        match="^MCP server token file is unavailable or invalid$",
+    ):
+        auth.authenticate_from_environment(
+            {auth.MCP_TOKEN_ENV: "stored-token"}, path=selected_path
+        )
+
+
+def test_authentication_rejects_wide_parent_directory(tmp_path):
+    auth = _auth()
+    parent = tmp_path / "wide"
+    parent.mkdir(mode=0o700)
+    target = parent / "mcp_server_token"
+    _write_private(target, "stored-token")
+    parent.chmod(0o755)
+
+    with pytest.raises(
+        auth.MCPTokenError,
+        match="^MCP server token file is unavailable or invalid$",
+    ):
+        auth.authenticate_from_environment(
+            {auth.MCP_TOKEN_ENV: "stored-token"}, path=target
+        )
+
+
+def test_authentication_rejects_foreign_parent_directory():
+    auth = _auth()
+    parent = _foreign_writable_temp()
+    target = parent / f".openprogram-mcp-auth-{uuid.uuid4().hex}"
+    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.write(descriptor, b"stored-token")
+    finally:
+        os.close(descriptor)
+    try:
+        with pytest.raises(
+            auth.MCPTokenError,
+            match="^MCP server token file is unavailable or invalid$",
+        ):
+            auth.authenticate_from_environment(
+                {auth.MCP_TOKEN_ENV: "stored-token"}, path=target
+            )
+    finally:
+        target.unlink(missing_ok=True)
+
+
+def test_authentication_revalidates_parent_path_after_read(tmp_path, monkeypatch):
+    auth = _auth()
+    parent = tmp_path / "parent"
+    parent.mkdir(mode=0o700)
+    target = parent / "mcp_server_token"
+    _write_private(target, "stored-token")
+    replacement = tmp_path / "replacement"
+    replacement.mkdir(mode=0o700)
+    _write_private(replacement / "mcp_server_token", "other-token")
+    moved = tmp_path / "moved"
+    real_read = auth.os.read
+    swapped = False
+
+    def swap_parent_then_read(fd, size):
+        nonlocal swapped
+        if not swapped:
+            parent.rename(moved)
+            parent.symlink_to(replacement, target_is_directory=True)
+            swapped = True
+        return real_read(fd, size)
+
+    monkeypatch.setattr(auth.os, "read", swap_parent_then_read)
+
+    with pytest.raises(
+        auth.MCPTokenError,
+        match="^MCP server token file is unavailable or invalid$",
+    ):
+        auth.authenticate_from_environment(
+            {auth.MCP_TOKEN_ENV: "stored-token"}, path=target
+        )
+
+
+def test_authentication_revalidates_token_path_inode_after_read(tmp_path, monkeypatch):
+    auth = _auth()
+    target = tmp_path / "mcp_server_token"
+    _write_private(target, "stored-token")
+    moved = tmp_path / "moved-token"
+    real_read = auth.os.read
+    swapped = False
+
+    def replace_token_then_read(fd, size):
+        nonlocal swapped
+        if not swapped:
+            target.rename(moved)
+            _write_private(target, "other-token")
+            swapped = True
+        return real_read(fd, size)
+
+    monkeypatch.setattr(auth.os, "read", replace_token_then_read)
+
+    with pytest.raises(
+        auth.MCPTokenError,
+        match="^MCP server token file is unavailable or invalid$",
+    ):
+        auth.authenticate_from_environment(
+            {auth.MCP_TOKEN_ENV: "stored-token"}, path=target
+        )
+
+
 def test_authentication_rejects_file_not_owned_by_current_user(tmp_path, monkeypatch):
     auth = _auth()
     target = tmp_path / "mcp_server_token"
@@ -219,6 +405,69 @@ def test_authentication_sanitizes_unreadable_file_failure(tmp_path, monkeypatch)
     assert "stored-token" not in str(caught.value)
     assert "stored-token" not in repr(caught.value)
     assert "stored-token" not in rendered
+
+
+def test_authentication_reads_to_eof_across_forced_short_reads(tmp_path, monkeypatch):
+    auth = _auth()
+    target = tmp_path / "mcp_server_token"
+    _write_private(target, "stored-token")
+    real_read = auth.os.read
+
+    def short_read(fd, size):
+        return real_read(fd, min(size, 3))
+
+    monkeypatch.setattr(auth.os, "read", short_read)
+
+    assert (
+        auth.authenticate_from_environment(
+            {auth.MCP_TOKEN_ENV: "stored-token"}, path=target
+        )
+        == "6f69975abe580db3"
+    )
+
+
+def test_authentication_never_accepts_a_short_read_prefix(tmp_path, monkeypatch):
+    auth = _auth()
+    target = tmp_path / "mcp_server_token"
+    _write_private(target, "stored-token")
+    real_read = auth.os.read
+
+    def short_read(fd, size):
+        return real_read(fd, min(size, 3))
+
+    monkeypatch.setattr(auth.os, "read", short_read)
+
+    with pytest.raises(
+        auth.MCPTokenError,
+        match="^MCP server authentication failed$",
+    ):
+        auth.authenticate_from_environment({auth.MCP_TOKEN_ENV: "sto"}, path=target)
+
+
+def test_authentication_rejects_actual_oversize_before_reading(tmp_path, monkeypatch):
+    auth = _auth()
+    target = tmp_path / "mcp_server_token"
+    marker = "oversized-secret-marker"
+    _write_private(target, (marker * 200)[:4097])
+    read_calls = []
+
+    def forbidden_read(fd, size):
+        read_calls.append((fd, size))
+        raise AssertionError("oversized token content must not be read")
+
+    monkeypatch.setattr(auth.os, "read", forbidden_read)
+
+    with pytest.raises(
+        auth.MCPTokenError,
+        match="^MCP server token file is unavailable or invalid$",
+    ) as caught:
+        auth.authenticate_from_environment(
+            {auth.MCP_TOKEN_ENV: "presented-secret"}, path=target
+        )
+
+    assert read_calls == []
+    assert marker not in str(caught.value)
+    assert marker not in repr(caught.value)
 
 
 def test_authentication_requires_environment_without_mutating_it(tmp_path):
@@ -296,3 +545,33 @@ def test_authentication_non_ascii_mismatch_is_the_same_sanitized_failure(tmp_pat
         auth.authenticate_from_environment(
             {auth.MCP_TOKEN_ENV: "presented-secret-凭证"}, path=target
         )
+
+
+@pytest.mark.parametrize(
+    ("operation", "expected"),
+    [
+        ("create", "could not create MCP server token"),
+        ("authenticate", "MCP server token file is unavailable or invalid"),
+    ],
+)
+def test_default_path_resolution_failure_is_sanitized(monkeypatch, operation, expected):
+    auth = _auth()
+    leaked = "secret-path-fragment"
+
+    def fail_path():
+        raise OSError(f"cannot resolve /private/{leaked}")
+
+    monkeypatch.setattr(auth, "token_path", fail_path)
+
+    with pytest.raises(auth.MCPTokenError, match=f"^{expected}$") as caught:
+        if operation == "create":
+            auth.create_token()
+        else:
+            auth.authenticate_from_environment({auth.MCP_TOKEN_ENV: "presented"})
+
+    rendered = "".join(
+        traceback.format_exception(type(caught.value), caught.value, caught.tb)
+    )
+    assert leaked not in str(caught.value)
+    assert leaked not in repr(caught.value)
+    assert leaked not in rendered

@@ -977,7 +977,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Add a new MCP server (stdio command). Persists to "
              "mcp_servers.json and spawns immediately.")
     p_mcp_add.add_argument("name", help="Short identifier (used as tool prefix)")
-    p_mcp_add.add_argument("command", nargs="+",
+    p_mcp_add.add_argument("server_command", metavar="command", nargs="+",
         help="Command and args to spawn the server, e.g. `npx -y @drawio/mcp`")
     p_mcp_add.add_argument("--env", action="append", default=None,
         metavar="KEY=VALUE",
@@ -1000,7 +1000,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Spawn an ad-hoc config and verify the server starts + "
              "returns a tool list. Doesn't write disk.")
     p_mcp_test.add_argument("name", help="Name to label this MCP server under")
-    p_mcp_test.add_argument("command", nargs="+", help="Command and args that launch the MCP server")
+    p_mcp_test.add_argument("server_command", metavar="command", nargs="+",
+        help="Command and args that launch the MCP server")
     p_mcp_test.add_argument("--env", action="append", default=None, help="Extra env var as KEY=VALUE (repeatable)",
         metavar="KEY=VALUE")
     p_mcp_test.add_argument("--timeout", type=float, default=30.0, help="Startup timeout in seconds (default: 30)")
@@ -1639,7 +1640,7 @@ def main():
         if verb == "show":
             sys.exit(_cmd_mcp_show(args.name))
         if verb == "add":
-            sys.exit(_cmd_mcp_add(args.name, args.command,
+            sys.exit(_cmd_mcp_add(args.name, args.server_command,
                                    env=args.env,
                                    timeout=args.timeout,
                                    enabled=not args.disabled))
@@ -1654,7 +1655,7 @@ def main():
         if verb == "edit":
             sys.exit(_cmd_mcp_edit())
         if verb == "test":
-            sys.exit(_cmd_mcp_test(args.name, args.command,
+            sys.exit(_cmd_mcp_test(args.name, args.server_command,
                                     env=args.env, timeout=args.timeout))
         _need_subcommand(args._cmd_parser)
 

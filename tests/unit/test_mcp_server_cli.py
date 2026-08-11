@@ -105,18 +105,102 @@ def test_token_create_failure_never_prints_generated_token(
     assert generated not in output.err
 
 
+def test_token_create_path_resolution_error_is_fixed_cli_failure(monkeypatch, capsys):
+    auth = _auth()
+    leaked = "secret-path-fragment"
+
+    def fail_path():
+        raise OSError(f"cannot resolve /private/{leaked}")
+
+    monkeypatch.setattr(auth, "token_path", fail_path)
+    monkeypatch.setattr(sys, "argv", ["openprogram", "mcp", "token", "create"])
+
+    with pytest.raises(SystemExit) as caught:
+        cli.main()
+
+    assert caught.value.code == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err == "Error: could not create MCP server token\n"
+    assert "Traceback" not in output.err
+    assert leaked not in output.err
+
+
+def test_existing_mcp_add_dispatches_command_argv_through_real_main(monkeypatch):
+    calls = []
+
+    def fake_add(name, server_command, env=None, timeout=30.0, enabled=True):
+        calls.append((name, server_command, env, timeout, enabled))
+        return 23
+
+    monkeypatch.setattr(cli, "_cmd_mcp_add", fake_add)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "openprogram",
+            "mcp",
+            "add",
+            "demo",
+            "python",
+            "server.py",
+            "--env",
+            "KEY=value",
+            "--timeout",
+            "4.5",
+            "--disabled",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as caught:
+        cli.main()
+
+    assert caught.value.code == 23
+    assert calls == [("demo", ["python", "server.py"], ["KEY=value"], 4.5, False)]
+
+
+def test_existing_mcp_test_dispatches_command_argv_through_real_main(monkeypatch):
+    calls = []
+
+    def fake_test(name, server_command, env=None, timeout=30.0):
+        calls.append((name, server_command, env, timeout))
+        return 29
+
+    monkeypatch.setattr(cli, "_cmd_mcp_test", fake_test)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "openprogram",
+            "mcp",
+            "test",
+            "probe",
+            "node",
+            "server.js",
+            "--env",
+            "TOKEN=value",
+            "--timeout",
+            "7",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as caught:
+        cli.main()
+
+    assert caught.value.code == 29
+    assert calls == [("probe", ["node", "server.js"], ["TOKEN=value"], 7.0)]
+
+
 @pytest.mark.parametrize(
     "argv",
     [
         ["mcp", "list"],
         ["mcp", "show", "demo"],
-        ["mcp", "add", "demo", "python", "server.py"],
         ["mcp", "rm", "demo"],
         ["mcp", "restart", "demo"],
         ["mcp", "enable", "demo"],
         ["mcp", "disable", "demo"],
         ["mcp", "edit"],
-        ["mcp", "test", "demo", "python", "server.py"],
     ],
 )
 def test_existing_mcp_management_verbs_still_parse(argv):
