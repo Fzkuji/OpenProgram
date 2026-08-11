@@ -219,6 +219,95 @@ def test_runner_spawn_completes(store_fixture, fake_worker, monkeypatch):
     assert calls[0]["branch_from"] == "a1"
 
 
+def test_runner_spawn_persists_durable_admission(
+    store_fixture, fake_worker, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    from openprogram.agent.resource_governance import ResourceGovernor, ResourceLimits, resolve_resource_limits
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.usage.ledger import UsageLedger
+
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    ledger = UsageLedger(tmp_path / "governance.db")
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    renewals = []
+    original_renew = governor.renew_lease
+
+    def record_renewal(*args, **kwargs):
+        renewals.append(args[0])
+        return original_renew(*args, **kwargs)
+
+    monkeypatch.setattr(governor, "renew_lease", record_renewal)
+    monkeypatch.setattr("openprogram.agent.task.runner._LEASE_RENEW_SECS", 0.02)
+    runner = TaskRunner(
+        max_workers=1,
+        governor=governor,
+    )
+    try:
+        tid = runner.spawn_task(
+            session_id="p1", prompt="governed", agent_id="main", parent_msg_id="a1",
+        )
+        task = runner.get_task(tid)
+        assert task is not None
+        assert task.admission_id
+        assert task.budget_scope_id
+        assert task.effective_limits["max_live_per_session"] == 1
+        assert fake_worker[3].wait(2)
+        assert ledger.connection().execute(
+            "SELECT state FROM task_admissions WHERE task_id = ?", (tid,),
+        ).fetchone()[0] == "live"
+        deadline = time.time() + 1
+        while not renewals and time.time() < deadline:
+            time.sleep(0.01)
+        assert renewals and set(renewals) == {tid}
+        fake_worker[1].set()
+        assert runner.await_task(tid, timeout=5).status.value == "completed"
+        assert ledger.connection().execute(
+            "SELECT state FROM task_admissions WHERE task_id = ?", (tid,),
+        ).fetchone()[0] == "released"
+    finally:
+        fake_worker[1].set()
+        runner.shutdown()
+
+
+def test_runner_rejection_creates_no_task(
+    store_fixture, fake_worker, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    from openprogram.agent.resource_governance import (
+        AdmissionRejected,
+        ResourceGovernor,
+        ResourceLimits,
+        resolve_resource_limits,
+    )
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.usage.ledger import UsageLedger
+
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_tasks_per_session=1), scheduler_capacity=1,
+    )
+    runner = TaskRunner(
+        max_workers=1,
+        governor=ResourceGovernor(
+            UsageLedger(tmp_path / "governance.db"),
+            limit_resolver=lambda _sid, _task: resolved,
+        ),
+    )
+    try:
+        runner.spawn_task(session_id="p1", prompt="one", agent_id="main")
+        with pytest.raises(AdmissionRejected) as caught:
+            runner.spawn_task(session_id="p1", prompt="two", agent_id="main")
+        assert caught.value.decision.reason_code == "quota.tasks_exhausted"
+        assert [task.prompt for task in runner.list_tasks("p1")] == ["one"]
+    finally:
+        fake_worker[1].set()
+        runner.shutdown()
+
+
 def test_runner_cancel_before_pickup(store_fixture, fake_worker, monkeypatch):
     monkeypatch.setattr(
         "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,

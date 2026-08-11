@@ -1,0 +1,434 @@
+from __future__ import annotations
+
+from decimal import Decimal
+import threading
+import multiprocessing
+import time
+
+import pytest
+
+from openprogram.agent.resource_governance import (
+    ResourceLimitError,
+    ResourceLimits,
+    ResourceGovernor,
+    build_task_resource_view,
+    resolve_resource_limits,
+    save_session_resource_limits,
+)
+from openprogram.agent.session_db import SessionDB
+from openprogram.agent.task.types import Task
+from openprogram.usage.event import UsageEvent
+from openprogram.usage.ledger import UsageLedger
+
+
+def test_resource_limits_require_positive_values_or_null() -> None:
+    limits = ResourceLimits.from_mapping({
+        "max_live_per_session": 3,
+        "max_queued_per_session": None,
+        "max_cost_usd": "2.00",
+    })
+
+    assert limits.max_live_per_session == 3
+    assert limits.max_queued_per_session is None
+    assert limits.max_cost_usd == "2.00"
+
+    for value in (0, -1, True, 1.5, "1"):
+        with pytest.raises(ResourceLimitError):
+            ResourceLimits.from_mapping({"max_total_tokens": value})
+    for value in ("0", "-1", "nan", 1.0):
+        with pytest.raises(ResourceLimitError):
+            ResourceLimits.from_mapping({"max_cost_usd": value})
+
+
+def test_effective_limits_apply_scheduler_cap_and_report_sources() -> None:
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_live_per_session=8, max_total_tokens=1000),
+        session=ResourceLimits(max_live_per_session=3, max_total_tokens=800),
+        task=ResourceLimits(max_total_tokens=500),
+        scheduler_capacity=4,
+    )
+
+    assert resolved.scheduler_capacity == 4
+    assert resolved.fields["max_live_per_session"].configured == 3
+    assert resolved.fields["max_live_per_session"].effective == 3
+    assert resolved.fields["max_live_per_session"].source == "session"
+    assert resolved.fields["max_total_tokens"].configured == 500
+    assert resolved.fields["max_total_tokens"].effective == 500
+    assert resolved.fields["max_total_tokens"].source == "task"
+
+
+def test_session_and_task_limits_can_only_narrow() -> None:
+    with pytest.raises(ResourceLimitError):
+        resolve_resource_limits(
+            ResourceLimits(max_total_tokens=100),
+            session=ResourceLimits(max_total_tokens=101),
+            scheduler_capacity=4,
+        )
+    with pytest.raises(ResourceLimitError):
+        resolve_resource_limits(
+            ResourceLimits(max_live_per_session=2),
+            task=ResourceLimits(max_live_per_session=1),
+            scheduler_capacity=4,
+        )
+
+
+def test_only_owner_can_save_session_resource_limits(
+    tmp_path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = SessionDB(tmp_path / "sessions")
+    db.create_session("s1", "main")
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.agent.authority.owner_principal_id", lambda: "owner/install/1234567890abcdef")
+
+    with pytest.raises(PermissionError):
+        save_session_resource_limits(
+            "s1", {"max_total_tokens": 10},
+            authority={"speaker_kind": "human", "authority_tier": "paired"},
+        )
+    save_session_resource_limits(
+        "s1", {"max_total_tokens": 10},
+        authority={
+            "speaker_kind": "owner", "speaker_id": "owner/local",
+            "speaker_display": "Owner", "principal_id": "owner/install/1234567890abcdef",
+            "authority_tier": "owner", "interaction": "interactive",
+        },
+    )
+    assert db.get_session("s1")["resource_limits"] == {"max_total_tokens": 10}
+
+
+def test_legacy_task_resource_view_is_unmetered(tmp_path) -> None:
+    task = Task(id="t_old", parent_session_id="s1", prompt="p", agent_id="a")
+    view = build_task_resource_view(
+        task,
+        ledger=UsageLedger(tmp_path / "usage.db"),
+        resolved=resolve_resource_limits(ResourceLimits(), scheduler_capacity=4),
+    )
+
+    assert view.resource_state == "legacy/unmetered"
+    assert view.capacity["scheduler_capacity"] == 4
+    assert view.capacity["session_live"]["limit"] == 4
+    assert view.budget["cost_usd"]["known"] is True
+
+
+def test_resource_view_reports_unknown_cost_without_treating_it_as_zero(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    ledger.append(UsageEvent(
+        event_id="e1", task_id="t1", session_id="s1", provider="p",
+        model_id="m", input_tokens=5, total_tokens=5,
+        cost_total=0.0, cost_source="unknown",
+    ))
+    task = Task(
+        id="t1", parent_session_id="s1", prompt="p", agent_id="a",
+        admission_id="a1", budget_scope_id="b1",
+    )
+
+    view = build_task_resource_view(
+        task,
+        ledger=ledger,
+        resolved=resolve_resource_limits(
+            ResourceLimits(max_cost_usd="1.00"), scheduler_capacity=4,
+        ),
+    )
+
+    assert view.budget["cost_usd"] == {
+        "actual": None,
+        "reserved": "0",
+        "limit": "1.00",
+        "known": False,
+        "unknown_events": 1,
+    }
+    assert view.budget["tokens"]["actual"] == 5
+
+
+def test_money_storage_conversion_is_exact() -> None:
+    assert ResourceLimits.usd_to_microusd("1.234567") == 1_234_567
+    assert ResourceLimits.microusd_to_usd(1_234_567) == Decimal("1.234567")
+
+
+def test_admission_is_atomic_at_queue_boundary(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_queued_per_session=5, max_tasks_per_session=20),
+        scheduler_capacity=4,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    persisted: list[str] = []
+    persisted_lock = threading.Lock()
+    decisions = []
+
+    def submit(i: int) -> None:
+        task = Task(
+            id=f"t_{i}", parent_session_id="s1", prompt=str(i), agent_id="a",
+        )
+        decision = governor.admit_task(
+            task,
+            persist=lambda accepted: (
+                persisted_lock.acquire(), persisted.append(accepted.id), persisted_lock.release()
+            ),
+        )
+        decisions.append(decision)
+
+    threads = [threading.Thread(target=submit, args=(i,)) for i in range(24)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sum(item.accepted for item in decisions) == 5
+    assert {item.reason_code for item in decisions if not item.accepted} == {"quota.queue_full"}
+    assert len(persisted) == 5
+    counts = ledger.connection().execute(
+        "SELECT state, COUNT(*) FROM task_admissions GROUP BY state"
+    ).fetchall()
+    assert [(row[0], row[1]) for row in counts] == [("queued", 5)]
+
+
+def test_rejected_admission_has_no_persistence_side_effect(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_tasks_per_session=1), scheduler_capacity=4,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    persisted = []
+    first = Task(id="t_1", parent_session_id="s1", prompt="one", agent_id="a")
+    second = Task(id="t_2", parent_session_id="s1", prompt="two", agent_id="a")
+
+    assert governor.admit_task(first, persist=persisted.append).accepted
+    denied = governor.admit_task(second, persist=persisted.append)
+
+    assert denied.accepted is False
+    assert denied.task_id is None
+    assert denied.reason_code == "quota.tasks_exhausted"
+    assert [task.id for task in persisted] == ["t_1"]
+
+
+def test_admission_retry_is_idempotent_and_conflict_is_rejected(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=4)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    persisted = []
+    task = Task(id="t_same", parent_session_id="s1", prompt="same", agent_id="a")
+
+    first = governor.admit_task(task, persist=persisted.append)
+    retry = governor.admit_task(task, persist=persisted.append)
+    conflict = governor.admit_task(
+        Task(id="t_same", parent_session_id="s1", prompt="different", agent_id="a"),
+        persist=persisted.append,
+    )
+
+    assert first.accepted and retry.accepted and retry.idempotent
+    assert conflict.accepted is False
+    assert conflict.reason_code == "quota.admission_conflict"
+    assert len(persisted) == 1
+
+
+def test_failed_task_publication_rolls_back_provisional_admission(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=4)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+
+    with pytest.raises(OSError, match="disk full"):
+        governor.admit_task(
+            Task(id="t_fail", parent_session_id="s1", prompt="x", agent_id="a"),
+            persist=lambda _task: (_ for _ in ()).throw(OSError("disk full")),
+        )
+
+    assert ledger.connection().execute(
+        "SELECT COUNT(*) FROM task_admissions"
+    ).fetchone()[0] == 0
+
+
+def test_stopping_keeps_live_capacity_until_worker_release(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_live_per_session=1), scheduler_capacity=4,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    for task_id in ("t_1", "t_2"):
+        governor.admit_task(
+            Task(id=task_id, parent_session_id="s1", prompt=task_id, agent_id="a"),
+            persist=lambda _task: None,
+        )
+
+    assert governor.try_start("t_1", owner_instance_id="worker") is True
+    assert governor.try_start("t_2", owner_instance_id="worker") is False
+    governor.request_stop("t_1", "cancel.user")
+    assert governor.try_start("t_2", owner_instance_id="worker") is False
+    governor.release_task("t_1", "cancel.user")
+    assert governor.try_start("t_2", owner_instance_id="worker") is True
+
+
+def test_releasing_queued_task_keeps_cumulative_admission(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_queued_per_session=1, max_tasks_per_session=1),
+        scheduler_capacity=4,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    governor.admit_task(
+        Task(id="t_1", parent_session_id="s1", prompt="one", agent_id="a"),
+        persist=lambda _task: None,
+    )
+    governor.release_task("t_1", "cancel.user")
+
+    denied = governor.admit_task(
+        Task(id="t_2", parent_session_id="s1", prompt="two", agent_id="a"),
+        persist=lambda _task: None,
+    )
+
+    assert denied.reason_code == "quota.tasks_exhausted"
+
+
+def test_task_store_serializes_cross_process_writers(tmp_path, monkeypatch) -> None:
+    if "fork" not in multiprocessing.get_all_start_methods():
+        pytest.skip("requires fork to share the isolated store patch")
+    from openprogram.agent.task import store as task_store
+
+    path = tmp_path / "tasks.json"
+    monkeypatch.setattr(task_store, "_ensure_session", lambda _sid: path)
+    monkeypatch.setattr(task_store, "_commit", lambda *_args, **_kwargs: None)
+    original_load = task_store._load_raw
+
+    def slow_load(target):
+        rows = original_load(target)
+        time.sleep(0.03)
+        return rows
+
+    monkeypatch.setattr(task_store, "_load_raw", slow_load)
+
+    def write_one(index: int) -> None:
+        task_store.save_task(
+            "s1", Task(
+                id=f"t_{index}", parent_session_id="s1", prompt="p", agent_id="a",
+            ),
+        )
+
+    ctx = multiprocessing.get_context("fork")
+    processes = [ctx.Process(target=write_one, args=(index,)) for index in range(12)]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join(5)
+        assert process.exitcode == 0
+
+    assert len(original_load(path)) == 12
+
+
+def test_sibling_token_reservations_share_session_budget_atomically(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_total_tokens=100), scheduler_capacity=4,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    for task_id in ("t_1", "t_2"):
+        governor.admit_task(
+            Task(id=task_id, parent_session_id="s1", prompt=task_id, agent_id="a"),
+            persist=lambda _task: None,
+        )
+    decisions = []
+
+    def reserve(task_id: str) -> None:
+        decisions.append(governor.reserve_tokens(task_id, 60))
+
+    threads = [threading.Thread(target=reserve, args=(task_id,)) for task_id in ("t_1", "t_2")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sum(item.accepted for item in decisions) == 1
+    assert {item.reason_code for item in decisions if not item.accepted} == {"quota.token_exhausted"}
+
+
+def test_cost_budget_fails_closed_when_price_is_unknown(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_cost_usd="1.00"), scheduler_capacity=4,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    governor.admit_task(
+        Task(id="t_1", parent_session_id="s1", prompt="one", agent_id="a"),
+        persist=lambda _task: None,
+    )
+
+    denied = governor.reserve_cost("t_1", 100_000, price_known=False)
+
+    assert denied.accepted is False
+    assert denied.reason_code == "quota.cost_unavailable"
+    assert ledger.connection().execute(
+        "SELECT COUNT(*) FROM usage_reservations"
+    ).fetchone()[0] == 0
+
+
+def test_settlement_records_actual_usage_and_releases_reservation_delta(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_total_tokens=100), scheduler_capacity=4,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    governor.admit_task(
+        Task(id="t_1", parent_session_id="s1", prompt="one", agent_id="a"),
+        persist=lambda _task: None,
+    )
+    reserved = governor.reserve_tokens("t_1", 80)
+    assert reserved.accepted
+    governor.start_reservation(reserved.reservation_id)
+
+    governor.settle_reservation(
+        reserved.reservation_id,
+        UsageEvent(
+            event_id="actual", task_id="t_1", session_id="s1", provider="p",
+            model_id="m", input_tokens=20, output_tokens=10, total_tokens=30,
+            cost_source="model_catalog",
+        ),
+    )
+
+    assert governor.reserve_tokens("t_1", 70).accepted
+    assert ledger.query(filters={"task_id": "t_1"})[0].total_tokens == 30
+
+
+def test_task_budget_does_not_narrow_shared_session_scope(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    session_limits = resolve_resource_limits(
+        ResourceLimits(max_total_tokens=100), scheduler_capacity=4,
+    )
+    task_limits = resolve_resource_limits(
+        ResourceLimits(max_total_tokens=100),
+        task=ResourceLimits(max_total_tokens=50), scheduler_capacity=4,
+    )
+    governor = ResourceGovernor(
+        ledger,
+        limit_resolver=lambda _sid, task: task_limits if task.id == "t_1" else session_limits,
+        session_limit_resolver=lambda _sid: session_limits,
+    )
+    for task_id in ("t_1", "t_2"):
+        governor.admit_task(
+            Task(id=task_id, parent_session_id="s1", prompt=task_id, agent_id="a"),
+            persist=lambda _task: None,
+        )
+
+    assert governor.reserve_tokens("t_1", 50).accepted
+    assert governor.reserve_tokens("t_2", 50).accepted
+    assert governor.reserve_tokens("t_2", 1).reason_code == "quota.token_exhausted"
+
+
+def test_unknown_parent_task_still_inherits_session_budget(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_total_tokens=100), scheduler_capacity=4,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    governor.admit_task(
+        Task(
+            id="child", parent_session_id="s1", parent_task_id="missing",
+            prompt="child", agent_id="a",
+        ),
+        persist=lambda _task: None,
+    )
+    governor.admit_task(
+        Task(id="sibling", parent_session_id="s1", prompt="sibling", agent_id="a"),
+        persist=lambda _task: None,
+    )
+
+    assert governor.reserve_tokens("child", 100).accepted
+    assert governor.reserve_tokens("sibling", 1).reason_code == "quota.token_exhausted"

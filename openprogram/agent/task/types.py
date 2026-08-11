@@ -177,6 +177,12 @@ class Task:
     principal_id: Optional[str] = None
     authority_tier: Optional[Literal["owner", "paired"]] = None
     interaction: Optional[str] = None
+    # Resource-governance attribution is optional for backward compatibility.
+    # Missing values identify tasks created before durable admission existed.
+    admission_id: Optional[str] = None
+    budget_scope_id: Optional[str] = None
+    effective_limits: Optional[dict[str, Any]] = None
+    reason_code: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

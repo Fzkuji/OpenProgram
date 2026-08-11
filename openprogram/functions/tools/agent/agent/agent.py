@@ -309,7 +309,8 @@ def _dispatch_to_existing(
         if is_turn_running(run_session):
             from openprogram.agent import inbox
             from openprogram.agent.task.runner import _current_task_id
-            from openprogram.agent.task.store import save_task, update_task_status
+            from openprogram.agent.task import get_runner
+            from openprogram.agent.task.store import update_task_status
             from openprogram.agent.task.types import Task, TaskStatus, mint_task_id
             task = Task(
                 id=mint_task_id(),
@@ -331,7 +332,13 @@ def _dispatch_to_existing(
                 status=TaskStatus.PENDING,
                 **normalize_authority(caller_authority),
             )
-            save_task(run_session, task)
+            runner = get_runner()
+            try:
+                runner.admit_task_entity(
+                    task, creates_agent=False, caller_turn_id=aid,
+                )
+            except Exception as e:  # noqa: BLE001
+                return f"[agent error] {type(e).__name__}: {e}"
             try:
                 q = inbox.enqueue(
                     run_session,
@@ -352,6 +359,7 @@ def _dispatch_to_existing(
                         run_session, task.id, TaskStatus.ERRORED,
                         error=f"enqueue failed: {e}",
                     )
+                    runner._governor.release_task(task.id, "error.inbox_enqueue")
                 except Exception:
                     pass
                 return f"[agent error] {type(e).__name__}: {e}"
@@ -361,6 +369,7 @@ def _dispatch_to_existing(
                         run_session, task.id, TaskStatus.CANCELLED,
                         error="duplicate dispatch",
                     )
+                    runner._governor.release_task(task.id, "cancel.duplicate")
                 except Exception:
                     pass
                 return (
@@ -409,6 +418,7 @@ def _dispatch_to_existing(
             chain_generations=generations,
             caller_chain_generations=generations,
             authority=caller_authority,
+            creates_agent=False,
         )
     except Exception as e:  # noqa: BLE001
         return f"[agent error] {type(e).__name__}: {e}"

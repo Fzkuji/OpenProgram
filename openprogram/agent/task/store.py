@@ -32,8 +32,11 @@ from __future__ import annotations
 import json
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
+
+from openprogram import _compat as fcntl
 
 from openprogram.agent.task.types import (
     Task,
@@ -54,6 +57,18 @@ def _session_lock(session_id: str) -> threading.Lock:
             lk = threading.Lock()
             _locks[session_id] = lk
         return lk
+
+
+@contextmanager
+def _session_file_lock(path: Path):
+    lock_path = path.with_suffix(".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _tasks_path(session_id: str) -> Optional[Path]:
@@ -121,9 +136,10 @@ def save_task(session_id: str, task: Task, *, commit_message: Optional[str] = No
     if path is None:
         return
     with _session_lock(session_id):
-        tasks = _load_raw(path)
-        tasks[task.id] = task.to_dict()
-        _write_raw(path, tasks)
+        with _session_file_lock(path):
+            tasks = _load_raw(path)
+            tasks[task.id] = task.to_dict()
+            _write_raw(path, tasks)
     msg = commit_message or f"task: {task.id} {task.status.value}"
     _commit(session_id, msg)
 
@@ -133,7 +149,8 @@ def load_task(session_id: str, task_id: str) -> Optional[Task]:
     if path is None or not path.exists():
         return None
     with _session_lock(session_id):
-        tasks = _load_raw(path)
+        with _session_file_lock(path):
+            tasks = _load_raw(path)
     row = tasks.get(task_id)
     if not row:
         return None
@@ -154,7 +171,8 @@ def list_tasks(
     if path is None or not path.exists():
         return []
     with _session_lock(session_id):
-        rows = _load_raw(path)
+        with _session_file_lock(path):
+            rows = _load_raw(path)
     out: list[Task] = []
     for row in rows.values():
         try:
@@ -190,45 +208,46 @@ def update_task_status(
     if path is None:
         return None
     with _session_lock(session_id):
-        tasks = _load_raw(path)
-        row = tasks.get(task_id)
-        if not row:
-            return None
-        try:
-            t = Task.from_dict(row)
-        except Exception:
-            return None
-        if t.status == new_status:
-            # No-op transition is OK (idempotent caller). Still apply
-            # field updates if any.
+        with _session_file_lock(path):
+            tasks = _load_raw(path)
+            row = tasks.get(task_id)
+            if not row:
+                return None
+            try:
+                t = Task.from_dict(row)
+            except Exception:
+                return None
+            if t.status == new_status:
+                # No-op transition is OK (idempotent caller). Still apply
+                # field updates if any.
+                for k, v in fields.items():
+                    if hasattr(t, k):
+                        setattr(t, k, v)
+                tasks[task_id] = t.to_dict()
+                _write_raw(path, tasks)
+                return t
+            if not can_transition(t.status, new_status):
+                raise ValueError(
+                    f"illegal task transition {t.status.value} → "
+                    f"{new_status.value} (task {task_id})"
+                )
+            old_status = t.status
+            t.status = new_status
+            # Time-stamp the transition.
+            now = time.time()
+            if new_status == TaskStatus.QUEUED and t.queued_at is None:
+                t.queued_at = now
+            elif new_status == TaskStatus.RUNNING and t.started_at is None:
+                t.started_at = now
+            elif is_terminal(new_status) and t.completed_at is None:
+                t.completed_at = now
+            if new_status == TaskStatus.CANCELLED and t.cancel_requested_at is None:
+                t.cancel_requested_at = now
             for k, v in fields.items():
                 if hasattr(t, k):
                     setattr(t, k, v)
             tasks[task_id] = t.to_dict()
             _write_raw(path, tasks)
-            return t
-        if not can_transition(t.status, new_status):
-            raise ValueError(
-                f"illegal task transition {t.status.value} → "
-                f"{new_status.value} (task {task_id})"
-            )
-        old_status = t.status
-        t.status = new_status
-        # Time-stamp the transition.
-        now = time.time()
-        if new_status == TaskStatus.QUEUED and t.queued_at is None:
-            t.queued_at = now
-        elif new_status == TaskStatus.RUNNING and t.started_at is None:
-            t.started_at = now
-        elif is_terminal(new_status) and t.completed_at is None:
-            t.completed_at = now
-        if new_status == TaskStatus.CANCELLED and t.cancel_requested_at is None:
-            t.cancel_requested_at = now
-        for k, v in fields.items():
-            if hasattr(t, k):
-                setattr(t, k, v)
-        tasks[task_id] = t.to_dict()
-        _write_raw(path, tasks)
     _commit(session_id, f"task: {task_id} {old_status.value}→{new_status.value}")
     return t
 
@@ -252,30 +271,31 @@ def reconcile_orphans() -> int:
         if not path.exists():
             continue
         with _session_lock(sid):
-            try:
-                rows = _load_raw(path)
-            except Exception:
-                continue
-            mutated = False
-            for tid, row in list(rows.items()):
+            with _session_file_lock(path):
                 try:
-                    t = Task.from_dict(row)
+                    rows = _load_raw(path)
                 except Exception:
                     continue
-                if is_terminal(t.status):
-                    continue
-                old = t.status
-                t.status = TaskStatus.ERRORED
-                t.completed_at = time.time()
-                t.error = "worker died before completion"
-                rows[tid] = t.to_dict()
-                mutated = True
-                count += 1
-                # Per-task git commit would be noisy on startup with
-                # many orphans; aggregate them under one commit below.
-                _ = old  # quiet linter
-            if mutated:
-                _write_raw(path, rows)
+                mutated = False
+                for tid, row in list(rows.items()):
+                    try:
+                        t = Task.from_dict(row)
+                    except Exception:
+                        continue
+                    if is_terminal(t.status):
+                        continue
+                    old = t.status
+                    t.status = TaskStatus.ERRORED
+                    t.completed_at = time.time()
+                    t.error = "worker died before completion"
+                    rows[tid] = t.to_dict()
+                    mutated = True
+                    count += 1
+                    # Per-task git commit would be noisy on startup with
+                    # many orphans; aggregate them under one commit below.
+                    _ = old  # quiet linter
+                if mutated:
+                    _write_raw(path, rows)
         if path.exists():
             _commit(sid, f"task: reconcile orphans (startup)")
     return count

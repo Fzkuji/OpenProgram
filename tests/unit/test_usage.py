@@ -17,6 +17,7 @@ from openprogram.usage import context as _ctx_mod
 from openprogram.usage.event import UsageEvent
 from openprogram.usage.ledger import UsageLedger
 from openprogram.usage import recorder as _recorder
+import sqlite3
 
 
 @pytest.fixture(autouse=True)
@@ -118,6 +119,61 @@ def test_query_empty_ledger(ledger):
     assert len(rows) == 1
     assert rows[0].input_tokens == 0
     assert rows[0].events == 0
+
+
+def test_existing_usage_database_is_migrated_and_reopens(tmp_path):
+    path = tmp_path / "usage.db"
+    conn = sqlite3.connect(path)
+    conn.execute("""
+        CREATE TABLE usage_events (
+            event_id TEXT PRIMARY KEY, ts REAL NOT NULL, session_id TEXT,
+            parent_session_id TEXT, agent_id TEXT, call_kind TEXT NOT NULL,
+            call_label TEXT, origin_pid INTEGER, provider TEXT NOT NULL,
+            api TEXT, model_id TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+            total_tokens INTEGER NOT NULL DEFAULT 0, cost_total REAL NOT NULL DEFAULT 0,
+            cost_input REAL, cost_output REAL, cost_cache_read REAL,
+            cost_cache_write REAL, cost_source TEXT, token_source TEXT,
+            schema_version INTEGER NOT NULL DEFAULT 1
+        )
+    """)
+    conn.execute("""
+        INSERT INTO usage_events (
+            event_id, ts, call_kind, provider, model_id, input_tokens,
+            total_tokens, cost_total, cost_source
+        ) VALUES ('old', 1, 'chat', 'p', 'm', 7, 7, 0, 'unknown')
+    """)
+    conn.commit()
+    conn.close()
+
+    upgraded = UsageLedger(path)
+    assert upgraded.query()[0].input_tokens == 7
+    upgraded.close()
+    reopened = UsageLedger(path)
+    columns = {
+        row[1] for row in reopened.connection().execute("PRAGMA table_info(usage_events)")
+    }
+    tables = {
+        row[0] for row in reopened.connection().execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
+    assert {"task_id", "budget_scope_id", "reservation_id"} <= columns
+    assert {"task_admissions", "budget_scopes", "usage_reservations"} <= tables
+    assert reopened.connection().execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+
+
+def test_usage_aggregation_tracks_unknown_cost_events(ledger):
+    ledger.append(_ev(event_id="known", cost_total=0.5, cost_source="model_catalog"))
+    ledger.append(_ev(event_id="unknown", cost_total=0.0, cost_source="unknown"))
+
+    row = ledger.query()[0]
+
+    assert row.cost_total == 0.5
+    assert row.cost_known is False
+    assert row.unknown_cost_events == 1
 
 
 # contextvar scope

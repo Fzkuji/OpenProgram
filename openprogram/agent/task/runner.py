@@ -49,6 +49,7 @@ import os
 import threading
 import time
 import traceback
+import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Callable, Optional
 
@@ -74,6 +75,7 @@ _DEFAULT_MAX_WORKERS = 4
 # Hard ceiling on the wait we'll give a worker to honour cancel before
 # forcibly flipping the entity to cancelled.
 _CANCEL_TIMEOUT_SECS = 30.0
+_LEASE_RENEW_SECS = 10.0
 
 # Task id of the task currently executing on this context. Bound by
 # ``_run_one`` for the duration of the child turn; read by ``spawn_task``
@@ -167,7 +169,7 @@ class TaskRunner:
     ``self._lock``.
     """
 
-    def __init__(self, max_workers: Optional[int] = None) -> None:
+    def __init__(self, max_workers: Optional[int] = None, *, governor=None) -> None:
         if max_workers is None:
             try:
                 max_workers = int(
@@ -179,6 +181,16 @@ class TaskRunner:
         if max_workers < 1:
             max_workers = 1
         self.max_workers = max_workers
+        if governor is None:
+            from openprogram.agent.resource_governance import ResourceGovernor
+            from openprogram.store import default_store
+            from openprogram.usage.ledger import UsageLedger
+
+            governor = ResourceGovernor(
+                UsageLedger(default_store().root_path.parent / "usage.db")
+            )
+        self._governor = governor
+        self._instance_id = "worker_" + uuid.uuid4().hex
         # Reconcile orphans before opening the pool so any "running"
         # task from a previous process is flipped to errored. The
         # state-machine transition rules cover (running, errored).
@@ -212,6 +224,26 @@ class TaskRunner:
 
     # Public API
 
+    def admit_task_entity(
+        self,
+        task: Task,
+        *,
+        creates_agent: bool,
+        caller_turn_id: str | None = None,
+    ):
+        """Durably admit and publish one queued Task, without executing it."""
+        from openprogram.agent.resource_governance import AdmissionRejected
+
+        decision = self._governor.admit_task(
+            task,
+            persist=lambda accepted: _store_save(task.parent_session_id, accepted),
+            creates_agent=creates_agent,
+            caller_turn_id=caller_turn_id,
+        )
+        if not decision.accepted:
+            raise AdmissionRejected(decision)
+        return decision
+
     def spawn_task(
         self,
         session_id: str,
@@ -236,6 +268,7 @@ class TaskRunner:
         archive_when_done: bool = False,
         task_id: Optional[str] = None,
         authority: Optional[dict] = None,
+        creates_agent: bool = True,
     ) -> str:
         """Create a Task entity, persist it, queue it on the pool.
 
@@ -294,7 +327,16 @@ class TaskRunner:
             status=TaskStatus.PENDING,
             created_at=existing.created_at if existing is not None else time.time(),
         )
-        _store_save(session_id, task)
+        decision = self.admit_task_entity(
+            task,
+            creates_agent=creates_agent,
+            caller_turn_id=caller_msg_id,
+        )
+        if decision.idempotent:
+            with self._lock:
+                if task.id in self._tasks:
+                    return task.id
+            task = _store_load(session_id, task.id) or task
         _broadcast_task_status(task)
 
         # Done-event for await_task / await_tasks callers.
@@ -326,19 +368,6 @@ class TaskRunner:
             if self._tasks.get(task.id) is entry:
                 entry["future"] = future
 
-        # Mark queued. The transition pending→queued is allowed; the
-        # worker may have already flipped it to running by the time
-        # this lands. update_task_status is idempotent on no-op.
-        try:
-            updated = _store_update_status(session_id, task.id, TaskStatus.QUEUED,
-                                            queued_at=time.time())
-            if updated is not None:
-                _broadcast_task_status(updated)
-        except ValueError:
-            # Worker beat us — already at running. Read back and broadcast.
-            cur = _store_load(session_id, task.id)
-            if cur is not None:
-                _broadcast_task_status(cur)
         return task.id
 
     def cancel_task(self, task_id: str, *, reason: Optional[str] = None) -> Optional[Task]:
@@ -368,10 +397,12 @@ class TaskRunner:
             if is_terminal(child.status):
                 continue
             try:
-                self._cancel_single(child.id, reason=cascade_reason)
+                self._cancel_single(
+                    child.id, reason=cascade_reason, reason_code="cancel.parent",
+                )
             except Exception:
                 pass
-        return self._cancel_single(task_id, reason=reason)
+        return self._cancel_single(task_id, reason=reason, reason_code="cancel.user")
 
     def _descendant_tasks(self, root_task_id: str) -> list[Task]:
         """All tasks reachable from ``root_task_id`` via parent_task_id,
@@ -395,7 +426,13 @@ class TaskRunner:
                 queue.append(child.id)
         return out
 
-    def _cancel_single(self, task_id: str, *, reason: Optional[str] = None) -> Optional[Task]:
+    def _cancel_single(
+        self,
+        task_id: str,
+        *,
+        reason: Optional[str] = None,
+        reason_code: str = "cancel.user",
+    ) -> Optional[Task]:
         """Cancel one task, no cascade. Returns the (post-update)
         Task entity, or None if not found.
 
@@ -425,24 +462,28 @@ class TaskRunner:
         else:
             session_id = info["session_id"]
         if info is None:
-            # Not on the pool. A PENDING task with no pool entry is a
+            # Not on the pool. A queued task with no pool entry is a
             # tracked dispatch still queued in the target's inbox
             # (agent(to=…) hit a busy target) — withdraw it: pull the
             # inbox entry and flip the entity. NO session-level cancel
             # here: the target is busy running someone ELSE's turn,
             # which withdrawing a queued task must not kill.
             queued_task = _store_load(session_id, task_id)
-            if queued_task is not None and queued_task.status == TaskStatus.PENDING:
+            if queued_task is not None and queued_task.status in (
+                TaskStatus.PENDING, TaskStatus.QUEUED,
+            ):
                 try:
                     from openprogram.agent import inbox
                     inbox.discard_task(session_id, task_id)
                 except Exception:
                     pass
                 try:
+                    self._governor.request_stop(task_id, reason_code)
                     updated = _store_update_status(
                         session_id, task_id, TaskStatus.CANCELLED,
                         cancel_requested_at=time.time(),
                         error=reason or "withdrawn before delivery",
+                        reason_code=reason_code,
                     )
                 except ValueError:
                     updated = _store_load(session_id, task_id)
@@ -471,12 +512,14 @@ class TaskRunner:
         cur_task = _store_load(session_id, task_id)
         if cur_task is None:
             return None
+        self._governor.request_stop(task_id, reason_code)
         try:
             if cur_task.status in (TaskStatus.PENDING, TaskStatus.QUEUED):
                 updated = _store_update_status(
                     session_id, task_id, TaskStatus.CANCELLED,
                     cancel_requested_at=time.time(),
                     error=reason or "cancelled before pickup",
+                    reason_code=reason_code,
                 )
                 if updated is not None:
                     _broadcast_task_status(updated)
@@ -600,6 +643,17 @@ class TaskRunner:
             done_ev.set()
             return
         session_id = task.parent_session_id
+        while not self._governor.try_start(
+            task_id, owner_instance_id=self._instance_id,
+        ):
+            current = _store_load(session_id, task_id)
+            if cancel_ev.is_set() or current is None or is_terminal(current.status):
+                self._governor.release_task(
+                    task_id, current.reason_code if current is not None else None,
+                )
+                done_ev.set()
+                return
+            time.sleep(0.05)
 
         # Bind the session id ContextVar for the cancel hook. Same
         # contract _execute_in_context honours in the webui worker.
@@ -632,6 +686,15 @@ class TaskRunner:
             except Exception:
                 _wt_token = None
 
+        lease_stop = threading.Event()
+        lease_thread = threading.Thread(
+            target=self._renew_task_lease,
+            args=(task_id, lease_stop),
+            daemon=True,
+            name=f"op-task-lease-{task_id}",
+        )
+        lease_thread.start()
+
         try:
             # pending → running. If state went to cancelled (pre-pickup)
             # the transition fails — bail out cleanly.
@@ -652,6 +715,7 @@ class TaskRunner:
                 updated = _store_update_status(
                     session_id, task_id, TaskStatus.CANCELLED,
                     error="cancelled before run",
+                    reason_code="cancel.user",
                 )
                 if updated is not None:
                     _broadcast_task_status(updated)
@@ -730,6 +794,7 @@ class TaskRunner:
                     updated = _store_update_status(
                         session_id, task_id, TaskStatus.ERRORED,
                         error=err,
+                        reason_code="error.execution",
                     )
                 except ValueError:
                     updated = _store_load(session_id, task_id)
@@ -762,6 +827,11 @@ class TaskRunner:
                     head_id=result.head_id,
                     result_text=result.final_text or "",
                     error=result.error,
+                    reason_code=(
+                        "cancel.user" if new_status == TaskStatus.CANCELLED
+                        else "error.execution" if new_status == TaskStatus.ERRORED
+                        else "completed"
+                    ),
                 )
             except ValueError:
                 # State already moved (e.g. force-cancel watchdog).
@@ -790,6 +860,8 @@ class TaskRunner:
             # picks up the new head / text.
             _broadcast_session_reload(session_id, reason=f"task_{new_status.value}")
         finally:
+            lease_stop.set()
+            lease_thread.join(timeout=1.0)
             try:
                 # Pass our Event: if a newer turn (e.g. a chat turn the
                 # user started while this task ran) has re-registered,
@@ -833,6 +905,13 @@ class TaskRunner:
                         pass
             except Exception:
                 pass
+            try:
+                cur = _store_load(session_id, task_id)
+                self._governor.release_task(
+                    task_id, cur.reason_code if cur is not None else None,
+                )
+            except Exception:
+                _log.exception("failed to release resource admission for %s", task_id)
             self._wake_done(task_id)
             with self._lock:
                 self._tasks.pop(task_id, None)
@@ -844,6 +923,17 @@ class TaskRunner:
                 self._done_events.pop(task_id, None)
 
     # Internals
+
+    def _renew_task_lease(self, task_id: str, stop: threading.Event) -> None:
+        while not stop.wait(_LEASE_RENEW_SECS):
+            try:
+                if not self._governor.renew_lease(
+                    task_id, owner_instance_id=self._instance_id,
+                ):
+                    return
+            except Exception:
+                _log.exception("failed to renew resource lease for %s", task_id)
+                return
 
     def _wake_done(self, task_id: str) -> None:
         with self._lock:

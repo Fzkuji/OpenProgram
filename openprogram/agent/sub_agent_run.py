@@ -49,6 +49,7 @@ def run_agent_turn(
     advance_head: bool = True,
     tools_override: Optional[list[str]] = None,
     authority: Optional[dict[str, Any]] = None,
+    creates_agent: bool = True,
 ) -> AgentTurnResult:
     """Run one agent turn inside ``session_id``.
 
@@ -436,4 +437,5 @@ def run_agent_turn_async(
         archive_when_done=archive_when_done,
         task_id=task_id,
         authority=authority,
+        creates_agent=creates_agent,
     )

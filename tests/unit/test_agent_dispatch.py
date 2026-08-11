@@ -237,10 +237,12 @@ def test_to_busy_target_precreates_task_and_queues(parent_turn, monkeypatch):
     from openprogram.agent.task.store import load_task
     from openprogram.agent.task.types import TaskStatus
     tid, _ = _dispatch_queued(parent_turn, monkeypatch)
-    # Task record exists, pending, routed back to the dispatcher.
+    # Task record is durably admitted before the inbox side effect.
     t = load_task("p2", tid)
     assert t is not None
-    assert t.status == TaskStatus.PENDING
+    assert t.status == TaskStatus.QUEUED
+    assert t.admission_id
+    assert t.budget_scope_id
     assert t.caller_session_id == "p1"
     assert t.caller_msg_id == "a1"
     assert t.parent_msg_id == "a9"

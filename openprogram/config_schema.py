@@ -18,6 +18,7 @@ See ``docs/design/cli/redesign.md``.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, Optional
 
 from openprogram import setup as _setup
@@ -150,6 +151,28 @@ def _validate_limit(v: Any) -> Optional[str]:
     return None
 
 
+def _validate_positive_optional(v: Any) -> Optional[str]:
+    if v is None:
+        return None
+    if isinstance(v, bool) or not isinstance(v, int) or v <= 0:
+        return "must be empty (inherit/unlimited) or a positive whole number"
+    return None
+
+
+def _validate_positive_decimal_optional(v: Any) -> Optional[str]:
+    if v is None:
+        return None
+    if not isinstance(v, str):
+        return "must be a decimal string"
+    try:
+        value = Decimal(v)
+    except InvalidOperation:
+        return "must be a decimal string"
+    if not value.is_finite() or value <= 0 or value.as_tuple().exponent < -6:
+        return "must be positive with at most 6 decimal places"
+    return None
+
+
 def _validate_hooks(v: Any) -> Optional[str]:
     if not isinstance(v, dict):
         return 'must be a JSON object: {"<event>": [{"command": "...", "timeout": 60}]}'
@@ -276,6 +299,29 @@ SETTINGS: list[SettingSpec] = [
              "OPENPROGRAM_TASK_WORKERS with it or the extra agents only "
              "queue longer.",
     ),
+    *[
+        SettingSpec(
+            key=f"agent.resource_limits.{name}",
+            path=("agent", "resource_limits", name),
+            group="Agent resources", label=label,
+            widget="text" if name == "max_cost_usd" else "number",
+            apply=APPLY_LIVE, default=None,
+            validate=(
+                _validate_positive_decimal_optional
+                if name == "max_cost_usd" else _validate_positive_optional
+            ),
+            help="Empty means inherit or unlimited; non-empty values must be positive.",
+        )
+        for name, label in (
+            ("max_live_per_session", "Max live tasks per session"),
+            ("max_queued_per_session", "Max queued tasks per session"),
+            ("max_tasks_per_session", "Max admitted tasks per session"),
+            ("max_total_tokens", "Max total tokens"),
+            ("max_cost_usd", "Max cost (USD)"),
+            ("max_runtime_seconds", "Max runtime seconds"),
+            ("idle_timeout_seconds", "Idle timeout seconds"),
+        )
+    ],
     SettingSpec(
         key="hooks", path=("hooks",), group="Hooks",
         label="Event hook commands", widget="json",
@@ -544,9 +590,19 @@ def set_setting(key: str, value: Any) -> dict:
     if spec is None:
         return {"error": f"unknown setting: {key}"}
 
-    # coerce to the widget's type before validation
+    # Resource limits use an empty value for null/inherit. Cost stays a
+    # decimal string at the API boundary; integer limits use normal numbers.
     try:
-        coerced = _coerce(spec.widget, value)
+        if spec.key.startswith("agent.resource_limits.") and (
+            value is None or (isinstance(value, str) and not value.strip())
+        ):
+            coerced = None
+        elif spec.key == "agent.resource_limits.max_cost_usd":
+            if not isinstance(value, str):
+                raise ValueError("cost must be a decimal string")
+            coerced = value.strip()
+        else:
+            coerced = _coerce(spec.widget, value)
     except (TypeError, ValueError):
         return {"error": f"invalid value for {spec.label!r}: {value!r}"}
 
