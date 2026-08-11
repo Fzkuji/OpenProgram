@@ -398,6 +398,88 @@ def test_307_rejects_a_non_rewindable_request_body(monkeypatch):
 
 
 @pytest.mark.parametrize(
+    ("status_code", "redirected_method", "keeps_body"),
+    [
+        (301, b"GET", False),
+        (302, b"GET", False),
+        (303, b"GET", False),
+        (307, b"POST", True),
+        (308, b"POST", True),
+    ],
+)
+def test_redirect_method_and_rewindable_body_rules(
+    monkeypatch, status_code, redirected_method, keeps_body
+):
+    origin = "https://service.test"
+    client, requests = _scripted_client(
+        monkeypatch,
+        "provider.configured_api",
+        origin,
+        [
+            (status_code, [(b"location", b"/next")], b""),
+            (200, [(b"content-type", b"text/plain")], b"ok"),
+        ],
+    )
+
+    with client:
+        response = client.post(f"{origin}/start", content=b"body")
+
+    redirected_headers = _headers(requests[1])
+    redirected_body = b"".join(requests[1].stream)
+    assert response.content == b"ok"
+    assert [request.method for request in requests] == [b"POST", redirected_method]
+    assert (redirected_headers.get("content-length") == "4") is keeps_body
+    assert redirected_body == (b"body" if keeps_body else b"")
+
+
+@pytest.mark.parametrize(
+    ("status_code", "redirected_method", "keeps_body"),
+    [
+        (301, b"GET", False),
+        (302, b"GET", False),
+        (303, b"GET", False),
+        (307, b"POST", True),
+        (308, b"POST", True),
+    ],
+)
+def test_async_redirect_method_and_rewindable_body_rules(
+    monkeypatch, status_code, redirected_method, keeps_body
+):
+    async def exercise():
+        origin = "https://service.test"
+        client = safe_async_client(
+            "provider.configured_api",
+            configured_origin=origin,
+            security=OutboundSecurityConfig(
+                resolver=lambda _host, _port: ("93.184.216.34",)
+            ),
+        )
+        requests = []
+        script = deque(
+            [
+                (status_code, [(b"location", b"/next")], b""),
+                (200, [(b"content-type", b"text/plain")], b"ok"),
+            ]
+        )
+        monkeypatch.setattr(
+            client._transport,
+            "_pool",
+            lambda _decision: _AsyncScriptedPool(script, requests),
+        )
+        async with client:
+            response = await client.post(f"{origin}/start", content=b"body")
+        redirected_body = b"".join([chunk async for chunk in requests[1].stream])
+        return response, requests, redirected_body
+
+    response, requests, redirected_body = asyncio.run(exercise())
+    redirected_headers = _headers(requests[1])
+    assert response.content == b"ok"
+    assert [request.method for request in requests] == [b"POST", redirected_method]
+    assert (redirected_headers.get("content-length") == "4") is keeps_body
+    assert redirected_body == (b"body" if keeps_body else b"")
+
+
+@pytest.mark.parametrize(
     ("locations", "reason"),
     [
         (["/loop"], "REDIRECT_LOOP"),

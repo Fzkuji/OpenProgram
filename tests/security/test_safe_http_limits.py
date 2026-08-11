@@ -37,18 +37,20 @@ class _ScriptedPool:
 class _ClosableStream:
     def __init__(self, stream):
         self._stream = stream
+        self.closed = False
 
     def __iter__(self):
         yield from self._stream
 
     def close(self):
-        pass
+        self.closed = True
 
 
 class _AsyncClosableStream:
     def __init__(self, chunks, error=None):
         self._chunks = chunks
         self._error = error
+        self.closed = False
 
     async def __aiter__(self):
         for chunk in self._chunks:
@@ -57,7 +59,7 @@ class _AsyncClosableStream:
             raise self._error
 
     async def aclose(self):
-        pass
+        self.closed = True
 
 
 class _AsyncScriptedPool:
@@ -212,6 +214,100 @@ def test_unknown_content_encoding_is_rejected_before_body(monkeypatch):
         client.get("https://public.test/resource")
 
     assert exc.value.reason == "CONTENT_ENCODING_FORBIDDEN"
+
+
+@pytest.mark.parametrize(
+    "encoding_headers",
+    [
+        [(b"content-encoding", b"br"), (b"content-encoding", b"gzip")],
+        [(b"content-encoding", b"gzip, br")],
+    ],
+)
+def test_all_content_encoding_values_are_validated(monkeypatch, encoding_headers):
+    response = httpcore.Response(
+        200,
+        headers=[(b"content-type", b"text/plain"), *encoding_headers],
+        content=b"body",
+    )
+    client = _small_client(monkeypatch, response)
+
+    with client, pytest.raises(URLPolicyError) as exc:
+        client.get("https://public.test/resource")
+
+    assert exc.value.reason == "CONTENT_ENCODING_FORBIDDEN"
+
+
+@pytest.mark.parametrize(
+    "encoding_headers",
+    [
+        [(b"content-encoding", b"br"), (b"content-encoding", b"gzip")],
+        [(b"content-encoding", b"gzip, br")],
+    ],
+)
+def test_async_all_content_encoding_values_are_validated(monkeypatch, encoding_headers):
+    response = httpcore.Response(
+        200,
+        headers=[(b"content-type", b"text/plain"), *encoding_headers],
+        content=_empty_async(),
+    )
+    client = _small_async_client(monkeypatch, response, [b"body"])
+
+    async def exercise():
+        async with client:
+            with pytest.raises(URLPolicyError) as exc:
+                await client.get("https://public.test/resource")
+        return exc.value
+
+    assert asyncio.run(exercise()).reason == "CONTENT_ENCODING_FORBIDDEN"
+
+
+@pytest.mark.parametrize(
+    "length_headers",
+    [
+        [(b"content-length", b"1"), (b"content-length", b"1")],
+        [(b"content-length", b"1"), (b"content-length", b"2")],
+        [(b"content-length", b"1, 2")],
+    ],
+)
+def test_duplicate_or_combined_content_length_is_rejected(monkeypatch, length_headers):
+    response = httpcore.Response(
+        200,
+        headers=[(b"content-type", b"text/plain"), *length_headers],
+        content=b"body",
+    )
+    client = _small_client(monkeypatch, response)
+
+    with client, pytest.raises(URLPolicyError) as exc:
+        client.get("https://public.test/resource")
+
+    assert exc.value.reason == "CONTENT_LENGTH_INVALID"
+
+
+@pytest.mark.parametrize(
+    "length_headers",
+    [
+        [(b"content-length", b"1"), (b"content-length", b"1")],
+        [(b"content-length", b"1"), (b"content-length", b"2")],
+        [(b"content-length", b"1, 2")],
+    ],
+)
+def test_async_duplicate_or_combined_content_length_is_rejected(
+    monkeypatch, length_headers
+):
+    response = httpcore.Response(
+        200,
+        headers=[(b"content-type", b"text/plain"), *length_headers],
+        content=_empty_async(),
+    )
+    client = _small_async_client(monkeypatch, response, [b"body"])
+
+    async def exercise():
+        async with client:
+            with pytest.raises(URLPolicyError) as exc:
+                await client.get("https://public.test/resource")
+        return exc.value
+
+    assert asyncio.run(exercise()).reason == "CONTENT_LENGTH_INVALID"
 
 
 def test_request_forces_supported_accept_encoding(monkeypatch):
@@ -384,6 +480,26 @@ def test_overall_timeout_is_enforced_during_body_read(monkeypatch):
     assert exc.value.reason == "OVERALL_TIMEOUT"
 
 
+def test_audit_events_retain_a_fixed_sanitized_recent_window():
+    client = safe_client(
+        "tool.web_fetch",
+        security=OutboundSecurityConfig(
+            resolver=lambda _host, _port: ("93.184.216.34",)
+        ),
+    )
+    capacity = safe_http.AUDIT_EVENT_CAPACITY
+
+    for index in range(capacity + 3):
+        client._transport._record(f"EVENT_{index}", "https://public.test")
+
+    events = client.audit_events
+    assert isinstance(events, tuple)
+    assert len(events) == capacity
+    assert events[0].reason == "EVENT_3"
+    assert events[-1].reason == f"EVENT_{capacity + 2}"
+    assert {event.safe_origin for event in events} == {"https://public.test"}
+
+
 def test_failed_download_removes_temp_and_preserves_destination(monkeypatch, tmp_path):
     class _Interrupted:
         def __iter__(self):
@@ -436,6 +552,27 @@ def test_successful_download_fsyncs_then_atomically_replaces(monkeypatch, tmp_pa
     assert list(tmp_path.iterdir()) == [destination]
 
 
+@pytest.mark.parametrize("status_code", [404, 500])
+def test_http_error_download_preserves_destination_and_closes_response(
+    monkeypatch, tmp_path, status_code
+):
+    response = httpcore.Response(
+        status_code,
+        headers=[(b"content-type", b"text/plain")],
+        content=b"error page",
+    )
+    client = _small_client(monkeypatch, response, cap=32)
+    destination = tmp_path / "result.txt"
+    destination.write_bytes(b"valid artifact")
+
+    with client, pytest.raises(httpx.HTTPStatusError):
+        client.download("https://public.test/resource", destination)
+
+    assert destination.read_bytes() == b"valid artifact"
+    assert list(tmp_path.iterdir()) == [destination]
+    assert response.stream.closed
+
+
 def test_async_failed_download_removes_temp_and_preserves_destination(
     monkeypatch, tmp_path
 ):
@@ -462,6 +599,35 @@ def test_async_failed_download_removes_temp_and_preserves_destination(
     asyncio.run(exercise())
     assert destination.read_bytes() == b"old"
     assert list(tmp_path.iterdir()) == [destination]
+
+
+@pytest.mark.parametrize("status_code", [404, 500])
+def test_async_http_error_download_preserves_destination_and_closes_response(
+    monkeypatch, tmp_path, status_code
+):
+    response = httpcore.Response(
+        status_code,
+        headers=[(b"content-type", b"text/plain")],
+        content=_empty_async(),
+    )
+    client = _small_async_client(
+        monkeypatch,
+        response,
+        [b"error page"],
+        cap=32,
+    )
+    destination = tmp_path / "result.txt"
+    destination.write_bytes(b"valid artifact")
+
+    async def exercise():
+        async with client:
+            with pytest.raises(httpx.HTTPStatusError):
+                await client.download("https://public.test/resource", destination)
+
+    asyncio.run(exercise())
+    assert destination.read_bytes() == b"valid artifact"
+    assert list(tmp_path.iterdir()) == [destination]
+    assert response.stream.closed
 
 
 async def _empty_async():

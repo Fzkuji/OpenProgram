@@ -7,6 +7,7 @@ import os
 import ssl
 import tempfile
 import threading
+from collections import deque
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -42,6 +43,7 @@ _POOL_TIMEOUT = 5.0
 _OVERALL_TIMEOUT = 120.0
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 _SUPPORTED_ENCODINGS = frozenset({"identity", "gzip", "deflate"})
+AUDIT_EVENT_CAPACITY = 256
 
 
 class SDKDisposition(str, Enum):
@@ -619,29 +621,29 @@ def _validate_response_headers(
     encoded_size = sum(len(name) + len(value) + 4 for name, value in headers)
     if encoded_size > _MAX_ENCODED_HEADER_BYTES:
         raise URLPolicyError("HEADERS_TOO_LARGE", safe_origin)
-    values = {name.lower(): value for name, value in headers}
-    encoding = values.get(b"content-encoding", b"identity")
-    try:
-        encodings = {
-            item.strip().lower()
-            for item in encoding.decode("ascii").split(",")
-            if item.strip()
-        } or {"identity"}
-    except UnicodeDecodeError as exc:
-        raise URLPolicyError("CONTENT_ENCODING_FORBIDDEN", safe_origin) from exc
+    values = httpx.Headers(headers)
+    encodings = {
+        item.strip().lower()
+        for item in values.get_list("content-encoding", split_commas=True)
+        if item.strip()
+    } or {"identity"}
     if not encodings <= _SUPPORTED_ENCODINGS:
         raise URLPolicyError("CONTENT_ENCODING_FORBIDDEN", safe_origin)
-    content_type = values.get(b"content-type")
+    content_type = values.get("content-type")
     if content_type is not None:
-        mime = content_type.decode("latin-1").split(";", 1)[0].strip().lower()
+        mime = content_type.split(";", 1)[0].strip().lower()
         if not any(mime.startswith(prefix) for prefix in spec.accepted_mime_prefixes):
             raise URLPolicyError("MIME_TYPE_FORBIDDEN", safe_origin)
-    content_length = values.get(b"content-length")
-    if content_length is not None:
+    content_lengths = values.get_list("content-length", split_commas=True)
+    if len(content_lengths) > 1:
+        raise URLPolicyError("CONTENT_LENGTH_INVALID", safe_origin)
+    if content_lengths:
         try:
-            declared = int(content_length)
+            declared = int(content_lengths[0])
         except ValueError:
-            declared = 0
+            raise URLPolicyError("CONTENT_LENGTH_INVALID", safe_origin) from None
+        if declared < 0:
+            raise URLPolicyError("CONTENT_LENGTH_INVALID", safe_origin)
         if declared > spec.max_decoded_body_bytes:
             raise URLPolicyError("BODY_TOO_LARGE", safe_origin)
 
@@ -740,7 +742,7 @@ class _ManagedTransportBase:
         self._configured_origin = configured_origin
         self._callback_origin = callback_origin
         self._security = security or OutboundSecurityConfig()
-        self._audit_events: list[AuditEvent] = []
+        self._audit_events: deque[AuditEvent] = deque(maxlen=AUDIT_EVENT_CAPACITY)
         verify = self._security.ca_bundle
         if verify is not None:
             verify = ssl.create_default_context(cafile=verify)
@@ -1210,6 +1212,7 @@ class SafeClient(httpx.Client):
         try:
             with os.fdopen(descriptor, "wb") as output:
                 with self.stream("GET", url) as response:
+                    response.raise_for_status()
                     for chunk in response.iter_bytes():
                         output.write(chunk)
                 output.flush()
@@ -1340,6 +1343,7 @@ class SafeAsyncClient(httpx.AsyncClient):
         try:
             with os.fdopen(descriptor, "wb") as output:
                 async with self.stream("GET", url) as response:
+                    response.raise_for_status()
                     async for chunk in response.aiter_bytes():
                         output.write(chunk)
                 output.flush()
