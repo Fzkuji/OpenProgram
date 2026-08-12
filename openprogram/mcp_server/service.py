@@ -323,6 +323,23 @@ class MCPService:
         from openprogram.agent.internals._approval import wrap_with_approval
         from openprogram.functions.permission_rule import load_merged_rules
 
+        underlying_started = False
+
+        async def forward_execute(
+            forwarded_call_id,
+            forwarded_arguments,
+            forwarded_cancel_event,
+            forwarded_update_callback,
+        ):
+            nonlocal underlying_started
+            underlying_started = True
+            return await tool.execute(
+                forwarded_call_id,
+                forwarded_arguments,
+                forwarded_cancel_event,
+                forwarded_update_callback,
+            )
+
         setup_failed = False
         try:
             req = TurnRequest(
@@ -334,7 +351,8 @@ class MCPService:
                 permission_rules=load_merged_rules(""),
                 **dict(self.context.authority),
             )
-            gated = wrap_with_approval(tool, req, lambda _event: None)
+            forwarding_tool = tool.model_copy(update={"execute": forward_execute})
+            gated = wrap_with_approval(forwarding_tool, req, lambda _event: None)
         except Exception:
             setup_failed = True
         if setup_failed:
@@ -371,8 +389,9 @@ class MCPService:
                         tool_name=name,
                         arguments=copied_arguments,
                     )
-                    or _execution_error()
-                )
+                    if not underlying_started
+                    else None
+                ) or _execution_error()
         except Exception:
             execution_failed = True
         if execution_failed:
