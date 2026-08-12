@@ -191,6 +191,37 @@ def test_repair_never_takes_ownership_of_a_foreign_file(
     assert stat.S_IMODE(os.lstat(target).st_mode) == 0o644
 
 
+def test_repair_does_not_follow_file_swapped_to_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A path replacement after audit must not chmod the replacement target."""
+    from openprogram import credential_files
+
+    root = _state(tmp_path)
+    target = _write(root / "config.json", 0o644)
+    outside = _write(tmp_path / "outside.json", 0o644)
+    real_lstat = os.lstat
+    target_checks = 0
+
+    def swap_after_recheck(path: os.PathLike[str] | str):
+        nonlocal target_checks
+        info = real_lstat(path)
+        if Path(path) == target:
+            target_checks += 1
+            if target_checks == 2:
+                target.unlink()
+                target.symlink_to(outside)
+        return info
+
+    monkeypatch.setattr(credential_files.os, "lstat", swap_after_recheck)
+
+    findings = credential_files.repair_credentials(root=root)
+
+    assert [(f.status, f.repaired) for f in findings] == [("permission", False)]
+    assert target.is_symlink()
+    assert stat.S_IMODE(real_lstat(outside).st_mode) == 0o644
+
+
 def test_repair_removes_only_old_stale_temporary_files(tmp_path: Path) -> None:
     from openprogram.credential_files import repair_credentials
 

@@ -453,6 +453,32 @@ def _is_stale_temporary(path: Path) -> bool:
     return time.time() - info.st_mtime > _STALE_TEMPORARY_AGE
 
 
+def _repair_posix_mode(path: Path, expected: os.stat_result, mode: int) -> bool:
+    """Change mode through a no-follow descriptor for the audited inode."""
+
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    if stat.S_ISDIR(expected.st_mode):
+        flags |= getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(path, flags)
+    try:
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino):
+            return False
+        if opened.st_uid != os.geteuid():
+            return False
+        if not (stat.S_ISREG(opened.st_mode) or stat.S_ISDIR(opened.st_mode)):
+            return False
+        os.fchmod(descriptor, mode)
+        verified = os.fstat(descriptor)
+        return (
+            (verified.st_dev, verified.st_ino) == (expected.st_dev, expected.st_ino)
+            and stat.S_IMODE(verified.st_mode) == mode
+        )
+    finally:
+        os.close(descriptor)
+
+
 def repair_credentials(*, root: Path) -> list[CredentialFinding]:
     """Repair only current-user regular files and secret directories.
 
@@ -483,8 +509,11 @@ def repair_credentials(*, root: Path) -> list[CredentialFinding]:
                     os.name == "nt" or info.st_uid == os.geteuid()
                 ):
                     mode = 0o700 if stat.S_ISDIR(info.st_mode) else 0o600
-                    os.chmod(path, mode)
-                    done = stat.S_IMODE(os.lstat(path).st_mode) == mode
+                    if os.name == "nt":
+                        _apply_windows_owner_acl(path)
+                        done = True
+                    else:
+                        done = _repair_posix_mode(path, info, mode)
         except OSError:
             done = False
         repaired.append(
