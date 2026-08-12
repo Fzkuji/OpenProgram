@@ -211,6 +211,43 @@ def test_prompt_send_rejects_duplicate_request_id_without_dispatch() -> None:
     assert _payload(second) == {"error": "prompt execution failed"}
 
 
+@pytest.mark.parametrize("rejection", ["closed", "duplicate"])
+def test_rejected_omitted_session_does_not_create_orphan(rejection) -> None:
+    db = FakeSessionDB()
+    entered = threading.Event()
+    release = threading.Event()
+
+    def process(req, *, cancel_event):
+        entered.set()
+        release.wait(2)
+        return TurnResult("first", "u", "a")
+
+    service = _service(db=db, process=process)
+
+    async def scenario():
+        first = None
+        if rejection == "closed":
+            service.close()
+        else:
+            first = asyncio.create_task(
+                service.prompt_send("first", session_id="existing", request_id="same")
+            )
+            await asyncio.to_thread(entered.wait, 1)
+        before = list(db.created)
+        rejected = await service.prompt_send(
+            "rejected", session_id=None, request_id="same"
+        )
+        assert db.created == before
+        if first is not None:
+            release.set()
+            await first
+        return rejected
+
+    rejected = asyncio.run(scenario())
+    assert rejected.is_error is True
+    assert _payload(rejected) == {"error": "prompt execution failed"}
+
+
 def test_concurrent_requests_are_isolated_and_completion_removes_only_owner() -> None:
     entered = {name: threading.Event() for name in ("one", "two")}
     release = {name: threading.Event() for name in ("one", "two")}
@@ -719,6 +756,37 @@ def test_prompt_send_async_cancellation_cleans_then_reraises_and_drops_late_resu
         assert _active(service) == ()
         release.set()
         await asyncio.sleep(0.05)
+
+    asyncio.run(scenario())
+    assert [name for name, _ in calls].count("mark") == 1
+    assert [name for name, _ in calls].count("unregister") == 1
+
+
+@pytest.mark.parametrize("operation", ["prompt_cancel", "close"])
+def test_cancelled_late_worker_exception_cannot_publish_result(operation) -> None:
+    entered = threading.Event()
+    release = threading.Event()
+    calls = []
+
+    def process(req, *, cancel_event):
+        entered.set()
+        release.wait(2)
+        raise RuntimeError("secret-late-worker")
+
+    service = _service(process=process, calls=calls)
+
+    async def scenario():
+        task = asyncio.create_task(
+            service.prompt_send("prompt", session_id="existing", request_id="r1")
+        )
+        await asyncio.to_thread(entered.wait, 1)
+        if operation == "prompt_cancel":
+            assert _payload(service.prompt_cancel("existing"))["cancelled"] is True
+        else:
+            service.close()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
     asyncio.run(scenario())
     assert [name for name, _ in calls].count("mark") == 1

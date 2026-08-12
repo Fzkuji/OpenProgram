@@ -482,19 +482,55 @@ class MCPService:
 
         selected_session_id = session_id
         agent_id = "main"
+        record = None
+        registered = False
         if selected_session_id is None:
-            try:
-                for _ in range(8):
-                    candidate = f"mcp_{uuid.uuid4().hex}"
-                    if self._session_db.get_session(candidate) is None:
-                        selected_session_id = candidate
-                        break
-                if selected_session_id is None:
-                    raise RuntimeError
-                self._session_db.create_session(
-                    selected_session_id, "main", source="mcp"
-                )
-            except Exception:
+            with self._active_lock:
+                if self._closed or request_id in self._active_by_request:
+                    return json_result(
+                        {"error": "prompt execution failed"}, is_error=True
+                    )
+                try:
+                    for _ in range(8):
+                        candidate = f"mcp_{uuid.uuid4().hex}"
+                        if self._session_db.get_session(candidate) is None:
+                            selected_session_id = candidate
+                            break
+                    if selected_session_id is None:
+                        raise RuntimeError
+                    thread_cancel = threading.Event()
+                    tool_cancel = asyncio.Event()
+                    record = ActiveMCPRequest(
+                        request_id=request_id,
+                        session_id=selected_session_id,
+                        client_id=self.context.client_id,
+                        thread_cancel=thread_cancel,
+                        tool_cancel=tool_cancel,
+                    )
+                    claimed = self._register_cancel_event(
+                        selected_session_id, thread_cancel
+                    )
+                    if claimed is False or (
+                        self._current_cancel_event(selected_session_id)
+                        is not thread_cancel
+                    ):
+                        raise RuntimeError
+                    self._session_db.create_session(
+                        selected_session_id, "main", source="mcp"
+                    )
+                    registered = True
+                    self._active_by_request[request_id] = record
+                    self._request_by_session[selected_session_id] = request_id
+                    self._registered_requests[request_id] = record
+                except Exception:
+                    registered = False
+            if not registered:
+                if record is not None:
+                    _best_effort(
+                        self._unregister_cancel_event,
+                        selected_session_id,
+                        record.thread_cancel,
+                    )
                 return json_result({"error": "prompt execution failed"}, is_error=True)
         else:
             invalid_session = False
@@ -513,44 +549,46 @@ class MCPService:
             if invalid_session:
                 raise _mcp_error(mcp_types.INVALID_PARAMS, "invalid MCP prompt session")
 
-        thread_cancel = threading.Event()
-        tool_cancel = asyncio.Event()
-        record = ActiveMCPRequest(
-            request_id=request_id,
-            session_id=selected_session_id,
-            client_id=self.context.client_id,
-            thread_cancel=thread_cancel,
-            tool_cancel=tool_cancel,
-        )
-        registered = False
-        with self._active_lock:
-            if (
-                self._closed
-                or request_id in self._active_by_request
-                or selected_session_id in self._request_by_session
-                or selected_session_id in self._cleaning_sessions
-            ):
-                return json_result({"error": "prompt execution failed"}, is_error=True)
-            try:
-                claimed = self._register_cancel_event(
-                    selected_session_id, thread_cancel
-                )
-                if claimed is False or (
-                    self._current_cancel_event(selected_session_id) is not thread_cancel
-                ):
-                    raise RuntimeError
-                registered = True
-            except Exception:
-                registered = False
-            if registered:
-                self._active_by_request[request_id] = record
-                self._request_by_session[selected_session_id] = request_id
-                self._registered_requests[request_id] = record
-        if not registered:
-            _best_effort(
-                self._unregister_cancel_event, selected_session_id, thread_cancel
+            thread_cancel = threading.Event()
+            tool_cancel = asyncio.Event()
+            record = ActiveMCPRequest(
+                request_id=request_id,
+                session_id=selected_session_id,
+                client_id=self.context.client_id,
+                thread_cancel=thread_cancel,
+                tool_cancel=tool_cancel,
             )
-            return json_result({"error": "prompt execution failed"}, is_error=True)
+            with self._active_lock:
+                if (
+                    self._closed
+                    or request_id in self._active_by_request
+                    or selected_session_id in self._request_by_session
+                    or selected_session_id in self._cleaning_sessions
+                ):
+                    return json_result(
+                        {"error": "prompt execution failed"}, is_error=True
+                    )
+                try:
+                    claimed = self._register_cancel_event(
+                        selected_session_id, thread_cancel
+                    )
+                    if claimed is False or (
+                        self._current_cancel_event(selected_session_id)
+                        is not thread_cancel
+                    ):
+                        raise RuntimeError
+                    registered = True
+                except Exception:
+                    registered = False
+                if registered:
+                    self._active_by_request[request_id] = record
+                    self._request_by_session[selected_session_id] = request_id
+                    self._registered_requests[request_id] = record
+            if not registered:
+                _best_effort(
+                    self._unregister_cancel_event, selected_session_id, thread_cancel
+                )
+                return json_result({"error": "prompt execution failed"}, is_error=True)
 
         try:
             request = TurnRequest(
@@ -566,6 +604,7 @@ class MCPService:
             self._remove_owned(record)
             self._unregister_once(record)
             return json_result({"error": "prompt execution failed"}, is_error=True)
+        failure = None
         try:
             result = await anyio.to_thread.run_sync(
                 lambda: self._process_user_turn(request, cancel_event=thread_cancel),
@@ -575,12 +614,14 @@ class MCPService:
             self.cancel_request(request_id, reason="request_cancelled")
             raise
         except Exception:
-            return json_result({"error": "prompt execution failed"}, is_error=True)
+            failure = json_result({"error": "prompt execution failed"}, is_error=True)
         finally:
             self._remove_owned(record)
             self._unregister_once(record)
         if thread_cancel.is_set() or tool_cancel.is_set():
             raise asyncio.CancelledError
+        if failure is not None:
+            return failure
         return prompt_result(selected_session_id, result)
 
     def sessions_list(self) -> AgentToolResult:
