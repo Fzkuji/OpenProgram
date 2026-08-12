@@ -16,6 +16,7 @@ import openprogram.auth.login_seed_models as le
 import openprogram.providers._config_read as cr
 import openprogram.providers.enabled_models as mg
 import openprogram.providers.storage as st
+import openprogram.setup as setup
 
 
 def _mem_config(monkeypatch, initial: dict) -> dict:
@@ -27,6 +28,7 @@ def _mem_config(monkeypatch, initial: dict) -> dict:
                         lambda p: store.__setitem__("providers", p))
     monkeypatch.setattr(cr, "read_providers_config",
                         lambda: store["providers"])
+    monkeypatch.setattr(setup, "update_config", lambda mutate: mutate(store))
     return store
 
 

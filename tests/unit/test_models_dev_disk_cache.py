@@ -164,6 +164,12 @@ def test_structured_output_tri_state_survives_real_fetch_persist_reload_and_web(
         store.clear()
         store.update(copy.deepcopy(config["providers"]))
 
+    def update(config_mutator):
+        config = {"providers": copy.deepcopy(store)}
+        config_mutator(config)
+        save(config)
+        return config
+
     monkeypatch.setattr(
         models_dev.safe_http,
         "safe_client",
@@ -172,9 +178,9 @@ def test_structured_output_tri_state_survives_real_fetch_persist_reload_and_web(
     monkeypatch.setattr(models_dev, "_disk_cache_path", lambda: cache)
     monkeypatch.setattr(setup, "_read_config", lambda: {"providers": copy.deepcopy(store)})
     monkeypatch.setattr(setup, "_write_config", save)
+    monkeypatch.setattr(setup, "update_config", update)
     monkeypatch.setattr(config_read, "read_providers_config", lambda: copy.deepcopy(store))
     monkeypatch.setattr(storage, "_read_providers_cfg", lambda: copy.deepcopy(store))
-    monkeypatch.setattr(toggle, "_read_providers_cfg", lambda: copy.deepcopy(store))
     storage._reset_spec_migration()
     listing._reset_browse_cache()
     _reset_mem_cache()
