@@ -15,8 +15,8 @@ def test_ssrf_matrix_evidence_matches_integrated_snapshot() -> None:
     result = check_matrix(MATRIX)
 
     assert result.feature_count == 160
-    assert result.openprogram_score == 80.5
-    assert result.openprogram_gaps == 71
+    assert result.openprogram_score == 84.5
+    assert result.openprogram_gaps == 67
     assert result.openprogram_only == 6
 
 

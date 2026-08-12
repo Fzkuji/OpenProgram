@@ -520,9 +520,10 @@ def test_mcp_supervisor_sanitizes_remote_oauth_error():
         client._run_http = fail_with_peer_error
         await client.start()
         try:
-            assert client.error == "OAuthTokenError: https://mcp.example"
+            assert client.error == "mcp_reauthentication_required"
             assert client.error_kind == "needs_reauth"
-            assert peer_secret not in repr(client.error)
+            for secret in ("PEER-BODY", "TOKEN-PATH", "QUERY-SECRET"):
+                assert secret not in repr(client.error)
         finally:
             await client.stop()
 
@@ -555,13 +556,14 @@ def test_mcp_supervisor_sanitizes_remote_transient_stderr(capsys):
         client._run_sse = fail_after_ready
         await client.start()
         await client._supervisor_task
-        assert client.error == "RuntimeError: https://mcp.example"
+        assert client.error == "mcp_connection_transient"
         assert client.error_kind == "transient"
 
     asyncio.run(exercise())
     rendered = capsys.readouterr().err
-    assert "RuntimeError: https://mcp.example" in rendered
-    assert peer_secret not in rendered
+    assert "transient connection failure" in rendered
+    for secret in ("PEER-BODY", "TOKEN-PATH", "QUERY-SECRET"):
+        assert secret not in rendered
 
 
 @pytest.mark.parametrize(
