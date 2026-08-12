@@ -54,6 +54,9 @@ AGENTIC_MODULES: list[str] = [
     # Domain functions
     "extract_pdf_figures",
     "extract_pdf_tables",
+    # Answers questions about OpenProgram itself by reading the product
+    # documentation tree, with a read-only agent scoped to docs/.
+    "docs_question",
     # 交互自测：串行走一遍 ask/confirm/form/ask_many 各形态（手动点 Run 体验）。
     "interaction_demo",
     # Task list workflow: plans a task into bounded items and runs them
