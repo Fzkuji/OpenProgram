@@ -384,7 +384,51 @@ agent 跑到一半（worktree 里 commit 了 5 个 patch），用户决定自己
 
 ---
 
-## Part 4. 不在本设计范围
+## Part 4. `.worktreeinclude`
+
+`git worktree add`只checkout**已跟踪**的内容。仓库故意保持未跟踪且被 gitignore 的文件
+（`.env`、按机器分的 TLS 证书、`*.local.json` 覆盖项）不会出现在新建的 worktree 里，
+但 agent 的工具马上就要用到它们。
+
+`source_repo/.worktreeinclude`存在时，每行是一条 gitignore 风格的 pattern：
+
+- 去掉首尾空白后以`#`开头的行是注释；空行忽略。
+- `*`、`?`、`[...]`——标准 glob 通配符。
+- 不含`/`的 pattern 匹配树里任意位置的 basename（`*.local.json`同时匹配`a.local.json`
+  和`sub/a.local.json`）。
+- 含`/`的 pattern 相对仓库根锚定。
+- 结尾的`/`标记目录 pattern（匹配该目录及其下所有内容）。
+
+不支持：`!`取反、`**`双星号。这类情形拆成多条普通 pattern。
+
+`create_worktree`末尾、`git worktree add`成功之后，`WorktreeManager`调用
+`sync_include_files(source_repo, worktree_path)`（`openprogram/worktree/include_sync.py`）。
+这是所有创建路径共同经过的唯一入口——`worktree_create`工具，以及未来的
+task/plan-mode 并发创建——所以钩子挂在 manager 里，不挂在某一个调用方上。
+
+语义：
+
+- 只有**未跟踪**文件才是候选（`git ls-files --others`，刻意不加`--exclude-standard`，
+  这样已经被 gitignore 的`.env`之类仍会出现）——已跟踪文件本来就被
+  `git worktree add`自己 checkout 了。
+- 目标路径已存在就跳过，不覆盖。
+- 符号链接按链接本身拷贝，不解引用。
+- 文件权限保留（`shutil.copy2`）。
+- 单个文件拷贝失败会被记录，不中断其余文件；成功与失败都会挂到`Worktree`记录上
+  （`include_synced` / `include_failed`），并回显在`worktree_create`工具的返回文本里。
+- `source_repo`里没有`.worktreeinclude`文件→零 git 调用，零行为变化。
+
+Pattern 匹配是手写的 Python（`fnmatch` + `pathlib`），不是 git 自己的 exclude 引擎。
+`git check-ignore` / `ls-files --exclude-from`只会把匹配到的文件从列表里**排除**——
+没有把 pattern 文件当作*包含*过滤器的 plumbing 形式——要让 git 指向任意 pattern 文件，
+另一条路是`core.excludesFile`配置注入，这个 sandbox 会拒绝。复用 git 自己枚举未跟踪
+文件的能力（`git ls-files --others`）加一个小的 pattern matcher 处理 manifest，
+不需要配置注入也不需要新依赖——`pathspec`不在`openprogram`自己的 base
+dependencies 里，它只通过`semble`（一个 MCP 开发工具）传递引入。
+
+---
+
+## Part 5. 不在本设计范围
 
 - **远程 push**：worktree 只本地；要把 worktree branch 推 origin，agent 自己用
   bash 跑 `git push -u origin <branch>`。worktree_merge 也不做 push。
@@ -415,6 +459,7 @@ agent 跑到一半（worktree 里 commit 了 5 个 patch），用户决定自己
 | UI worktree chip | 无 |
 | Worktree × Task 整合 | 无，依赖 async task 系统，后者本身仍在设计中 |
 | Sub-agent worktree 机制 | 在 sub-agent 改为 peer session 时已移除，本设计不复用 |
+| `.worktreeinclude` 未跟踪文件同步 | 已落地——`openprogram/worktree/include_sync.py`，从 `WorktreeManager.create_worktree` 调用 |
 
 按依赖顺序要做的事：
 
