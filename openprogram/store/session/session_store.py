@@ -571,35 +571,36 @@ class SessionStore:
                 # end). Two stat calls detect the foreign write; rebuild
                 # from disk when it happened. Own-process writes call
                 # mark_synced(), so they never trigger a rebuild.
-                if git.exists() and git.stale():
-                    # Rebuild IN PLACE (reset + repopulate the SAME index
-                    # object): callers across a multi-step operation hold
-                    # (git, idx) from an earlier _open — swapping the
-                    # cached object would orphan their reference, and a
-                    # later step that re-opens (e.g. commit_turn) would
-                    # persist the rebuilt object's stale head over their
-                    # in-memory update.
-                    disk_meta = git.read_meta()
-                    disk_hist = git.list_history()
-                    # A concurrent reader can land here between
-                    # create_session's set_meta() and its _persist_meta()
-                    # — the repo exists (some other write initialized it)
-                    # but meta.json is still empty/absent on disk. Blindly
-                    # rebuilding then resets the index and throws away the
-                    # just-populated in-memory meta (source/channel/peer_*
-                    # silently vanished). Disk with nothing in it is never
-                    # a more truthful view than populated memory, so skip
-                    # the rebuild instead of destroying state.
-                    if not disk_meta and not disk_hist and (idx.meta or idx.head_id):
-                        pass
-                    else:
-                        idx.rebuild_from_paths(
-                            disk_hist,
-                            disk_meta,
-                            _node_conv_predecessor,
-                            _node_caller,
-                        )
-                        git.mark_synced()
+                with idx._persist_lock:
+                    if git.exists() and git.stale():
+                        # Rebuild IN PLACE (reset + repopulate the SAME index
+                        # object): callers across a multi-step operation hold
+                        # (git, idx) from an earlier _open — swapping the
+                        # cached object would orphan their reference, and a
+                        # later step that re-opens (e.g. commit_turn) would
+                        # persist the rebuilt object's stale head over their
+                        # in-memory update.
+                        disk_meta = git.read_meta()
+                        disk_hist = git.list_history()
+                        # A concurrent reader can land here between
+                        # create_session's set_meta() and its _persist_meta()
+                        # — the repo exists (some other write initialized it)
+                        # but meta.json is still empty/absent on disk. Blindly
+                        # rebuilding then resets the index and throws away the
+                        # just-populated in-memory meta (source/channel/peer_*
+                        # silently vanished). Disk with nothing in it is never
+                        # a more truthful view than populated memory, so skip
+                        # the rebuild instead of destroying state.
+                        if not disk_meta and not disk_hist and (idx.meta or idx.head_id):
+                            pass
+                        else:
+                            idx.rebuild_from_paths(
+                                disk_hist,
+                                disk_meta,
+                                _node_conv_predecessor,
+                                _node_caller,
+                            )
+                            git.mark_synced()
                 return cached
             sdir = self._session_dir(session_id)
             if not sdir.exists() and not create_if_missing:
@@ -629,9 +630,11 @@ class SessionStore:
     def _persist_meta(self, git: GitSession, idx: SessionMemoryIndex) -> None:
         """Sync the in-memory meta back to ``meta.json``. Called whenever
         title / head_id / extra / branches change."""
-        meta = dict(idx.meta)
-        meta["head_id"] = idx.head_id
-        git.write_meta(meta)
+        with idx._persist_lock:
+            with idx._lock:
+                meta = dict(idx.meta)
+                meta["head_id"] = idx.head_id
+            git.write_meta(meta)
 
     def session_workdir(self, session_id: str) -> Optional[Path]:
         """Path of the per-session scratch workdir, materialized on first
@@ -1542,17 +1545,19 @@ class SessionStore:
         if pair is None:
             return
         git, idx = pair
-        cur = list(idx.meta.get("merged_heads") or [])
-        changed = False
-        for h in head_ids:
-            if not h:
-                continue
-            h = h.strip()
-            if h and h not in cur:
-                cur.append(h)
-                changed = True
+        with idx._lock:
+            cur = list(idx.meta.get("merged_heads") or [])
+            changed = False
+            for h in head_ids:
+                if not h:
+                    continue
+                h = h.strip()
+                if h and h not in cur:
+                    cur.append(h)
+                    changed = True
+            if changed:
+                idx.meta["merged_heads"] = cur
         if changed:
-            idx.set_meta(merged_heads=cur)
             self._persist_meta(git, idx)
 
     def merged_heads(self, session_id: str) -> set[str]:
