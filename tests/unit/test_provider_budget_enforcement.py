@@ -379,12 +379,14 @@ def test_recording_transform_preserves_registry_audited_identity(tmp_path):
 
     state = (
         dict(api_registry._registry), dict(api_registry._original_registry),
-        dict(api_registry._audited_accounting), api_registry._provider_transform,
+        {key: set(value) for key, value in api_registry._audited_accounting.items()},
+        dict(api_registry._audited_originals), api_registry._provider_transform,
     )
     try:
         api_registry._registry.clear()
         api_registry._original_registry.clear()
         api_registry._audited_accounting.clear()
+        api_registry._audited_originals.clear()
         api_registry._provider_transform = None
         provider = _FakeProvider(_model())
         api_registry._register_builtin_api_providers({"openai-completions": provider})
@@ -394,10 +396,11 @@ def test_recording_transform_preserves_registry_audited_identity(tmp_path):
         wrapped = api_registry._registry["openai-completions"]
         assert api_registry.has_audited_accounting(wrapped, "openai-completions")
     finally:
-        registry, original, audited, transform = state
+        registry, original, audited, audited_originals, transform = state
         api_registry._registry.clear(); api_registry._registry.update(registry)
         api_registry._original_registry.clear(); api_registry._original_registry.update(original)
         api_registry._audited_accounting.clear(); api_registry._audited_accounting.update(audited)
+        api_registry._audited_originals.clear(); api_registry._audited_originals.update(audited_originals)
         api_registry._provider_transform = transform
 
 
@@ -406,22 +409,23 @@ def test_public_registry_override_cannot_self_declare_accounting_capability():
 
     malicious = _FakeProvider(_model())
     malicious._budget_accounting_api = "openai-completions"
-    prior = api_registry._registry.get("openai-completions")
-    prior_original = api_registry._original_registry.get("openai-completions")
+    state = (
+        dict(api_registry._registry), dict(api_registry._original_registry),
+        {key: set(value) for key, value in api_registry._audited_accounting.items()},
+        dict(api_registry._audited_originals), api_registry._provider_transform,
+    )
     try:
         api_registry.register_api_provider("openai-completions", malicious)
         assert not api_registry.has_audited_accounting(
             malicious, "openai-completions",
         )
     finally:
-        if prior is None:
-            api_registry._registry.pop("openai-completions", None)
-        else:
-            api_registry._registry["openai-completions"] = prior
-        if prior_original is None:
-            api_registry._original_registry.pop("openai-completions", None)
-        else:
-            api_registry._original_registry["openai-completions"] = prior_original
+        registry, original, audited, audited_originals, transform = state
+        api_registry._registry.clear(); api_registry._registry.update(registry)
+        api_registry._original_registry.clear(); api_registry._original_registry.update(original)
+        api_registry._audited_accounting.clear(); api_registry._audited_accounting.update(audited)
+        api_registry._audited_originals.clear(); api_registry._audited_originals.update(audited_originals)
+        api_registry._provider_transform = transform
 
 
 def test_settlement_failure_surfaces_as_accounting_error(wired, monkeypatch):

@@ -40,22 +40,36 @@ _registry: dict[str, ApiProvider] = {}
 _original_registry: dict[str, ApiProvider] = {}
 _provider_transform: Callable[[str, ApiProvider], ApiProvider] | None = None
 _registry_lock = threading.RLock()
-_audited_accounting: dict[int, str] = {}
+_audited_accounting: dict[int, set[str]] = {}
+_audited_originals: dict[str, ApiProvider] = {}
+
+
+def _rebuild_audited_accounting() -> None:
+    _audited_accounting.clear()
+    for api, original in _audited_originals.items():
+        if _original_registry.get(api) is not original:
+            continue
+        for provider in (original, _registry.get(api)):
+            if provider is not None:
+                _audited_accounting.setdefault(id(provider), set()).add(api)
 
 
 def register_api_provider(api: Api, provider: ApiProvider) -> None:
     """Register an API provider implementation."""
     with _registry_lock:
-        _audited_accounting.pop(id(provider), None)
+        _audited_originals.pop(api, None)
         _original_registry[api] = provider
         _registry[api] = (
             _provider_transform(api, provider) if _provider_transform is not None else provider
         )
+        _rebuild_audited_accounting()
 
 
 def register_api_providers(providers: dict[Api, ApiProvider]) -> None:
     """Atomically publish a batch of API providers."""
     with _registry_lock:
+        for api in providers:
+            _audited_originals.pop(api, None)
         transformed = {
             api: (
                 _provider_transform(api, provider)
@@ -66,6 +80,7 @@ def register_api_providers(providers: dict[Api, ApiProvider]) -> None:
         }
         _original_registry.update(providers)
         _registry.update(transformed)
+        _rebuild_audited_accounting()
 
 
 def _register_builtin_api_providers(providers: dict[Api, ApiProvider]) -> None:
@@ -77,14 +92,13 @@ def _register_builtin_api_providers(providers: dict[Api, ApiProvider]) -> None:
         }
         _original_registry.update(providers)
         _registry.update(transformed)
-        for api, provider in providers.items():
-            _audited_accounting[id(provider)] = api
-            _audited_accounting[id(transformed[api])] = api
+        _audited_originals.update(providers)
+        _rebuild_audited_accounting()
 
 
 def has_audited_accounting(provider: ApiProvider, api: str) -> bool:
     with _registry_lock:
-        return _audited_accounting.get(id(provider)) == api
+        return api in _audited_accounting.get(id(provider), set())
 
 
 def get_api_provider(api: Api) -> ApiProvider | None:
@@ -112,9 +126,7 @@ def configure_provider_transform(
         }
         _registry.clear()
         _registry.update(transformed)
-        for api, provider in transformed.items():
-            if _audited_accounting.get(id(_original_registry[api])) == api:
-                _audited_accounting[id(provider)] = api
+        _rebuild_audited_accounting()
         _provider_transform = transform
 
 
@@ -130,4 +142,5 @@ def _replace_provider_transform(
         }
         _registry.clear()
         _registry.update(transformed)
+        _rebuild_audited_accounting()
         _provider_transform = transform

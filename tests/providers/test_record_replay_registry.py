@@ -10,9 +10,12 @@ import pytest
 
 from openprogram.providers import api_registry
 from openprogram.providers.api_registry import (
+    _register_builtin_api_providers,
+    _replace_provider_transform,
     configure_provider_transform,
     get_api_provider,
     register_api_provider,
+    register_api_providers,
 )
 from openprogram.providers.recording import RecordingSink
 from openprogram.providers.recording import RecordingProvider, activate_record_replay_from_config
@@ -37,6 +40,58 @@ def isolated_registry(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})
     monkeypatch.setattr(api_registry, "_provider_transform", None)
+    monkeypatch.setattr(api_registry, "_audited_accounting", {})
+    monkeypatch.setattr(api_registry, "_audited_originals", {})
+
+
+def test_shared_replay_transform_preserves_each_audited_api_identity() -> None:
+    _register_builtin_api_providers({
+        "first-api": Provider("first"),
+        "second-api": Provider("second"),
+    })
+    replay = Provider("shared-replay")
+
+    configure_provider_transform(lambda _api, _provider: replay)
+
+    assert get_api_provider("first-api") is replay
+    assert get_api_provider("second-api") is replay
+    assert api_registry.has_audited_accounting(replay, "first-api")
+    assert api_registry.has_audited_accounting(replay, "second-api")
+
+
+@pytest.mark.parametrize("batch", [False, True])
+def test_public_override_revokes_original_and_transformed_accounting_identity(
+    batch: bool,
+) -> None:
+    audited = Provider("audited")
+    _register_builtin_api_providers({"first-api": audited})
+    old_wrapper = WrappedProvider("first-api", audited)
+    configure_provider_transform(lambda _api, _provider: old_wrapper)
+    custom = Provider("custom")
+
+    if batch:
+        register_api_providers({"first-api": custom})
+    else:
+        register_api_provider("first-api", custom)
+
+    current = get_api_provider("first-api")
+    assert not api_registry.has_audited_accounting(audited, "first-api")
+    assert not api_registry.has_audited_accounting(old_wrapper, "first-api")
+    assert not api_registry.has_audited_accounting(current, "first-api")
+
+
+def test_replacing_transform_revokes_old_wrapper_identity() -> None:
+    audited = Provider("audited")
+    _register_builtin_api_providers({"first-api": audited})
+    old_wrapper = WrappedProvider("old", audited)
+    new_wrapper = WrappedProvider("new", audited)
+    configure_provider_transform(lambda _api, _provider: old_wrapper)
+    assert api_registry.has_audited_accounting(old_wrapper, "first-api")
+
+    _replace_provider_transform(lambda _api, _provider: new_wrapper)
+
+    assert not api_registry.has_audited_accounting(old_wrapper, "first-api")
+    assert api_registry.has_audited_accounting(new_wrapper, "first-api")
 
 
 def test_transform_wraps_existing_and_future_registry_entries() -> None:
