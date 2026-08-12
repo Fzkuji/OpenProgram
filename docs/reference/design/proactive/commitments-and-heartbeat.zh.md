@@ -62,7 +62,10 @@ key，因此不能声称 exactly-once；另加 delivery journal 也不能消除�
 `openprogram/<session>/<message>` Source，Runtime 从 `SessionDB` 读取来源会话，
 使用该会话已有的 channel、account 和 peer binding。没有目标的记录保持可见。
 同一目标的到期记录合成一条消息，经 `channels.outbound` 发送；只有发送返回
-成功后才写入通知档位。测试替换 outbound send，不使用真实渠道或凭据。
+成功后才写入通知档位。发送是带重试和退避预算的网络 I/O，因此在 workspace
+写锁之外执行：读取到期记录时取一次锁，写入已送达档位时再取一次，第二次写入
+只把档位合并到当时磁盘上的记录，所以提醒发送期间提交的状态变更不会被覆盖。
+测试替换 outbound send，不使用真实渠道或凭据。
 
 ### 已实现的 owner 与 model 界面
 
