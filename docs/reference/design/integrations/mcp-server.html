@@ -511,9 +511,9 @@
       <div class="k">TOKEN</div>
       <h3 style="color:#5aad4e">生成一次，常量时间比较</h3>
       <div class="noun">&lt;state_dir&gt;/mcp_server_token（0600）　↔　OPENPROGRAM_MCP_TOKEN</div>
-      <div class="row"><div class="t">生成</div><div class="v"><code>openprogram mcp token create</code> 原子写入 token 文件并只打印一次；<code>serve</code> 不隐式生成，缺少文件时直接失败并给出该命令。</div></div>
-      <div class="row"><div class="t">验证</div><div class="v"><code>openprogram mcp serve</code> 在读取任何 MCP 消息前，用常量时间比较环境变量与 token 文件；缺失或不匹配即以非零状态退出，stdout 不输出非协议内容。</div></div>
-      <div class="row"><div class="t">协议边界</div><div class="v"><code>initialize.clientInfo</code> 仅是客户端自报的实现元数据，记录供诊断但<b>不参与认证或授权</b>；token 不进入 JSON-RPC、日志、错误或会话内容。</div></div>
+      <div class="row"><div class="t">生成</div><div class="v"><code>openprogram mcp token create</code> 原子写入 token 文件并只打印一次；<code>serve</code> 不隐式生成 token。</div></div>
+      <div class="row"><div class="t">验证</div><div class="v"><code>openprogram mcp serve</code> 在读取任何 MCP 消息前，用常量时间比较环境变量与 token 文件；缺失、权限错误或不匹配均以非零状态退出，stderr 固定为 <code>Error: MCP server authentication failed</code>，stdout 为空。</div></div>
+      <div class="row"><div class="t">协议边界</div><div class="v"><code>initialize.clientInfo</code> 当前不被读取或记录，也不参与认证、身份、authority、routing 或结果；token 不进入 JSON-RPC、日志、错误或会话内容。</div></div>
       <div class="row"><div class="t">权限语义</div><div class="v">环境凭证只允许建立低权限 stdio 连接；所有请求固定映射为 <code>paired</code>，不会获得 owner authority。</div></div>
     </div>
 
@@ -662,9 +662,11 @@
   </div>
 
   <div class="note"><b>Reviewed implementation evidence</b>：实现基线 <code>885d8f15</code>；Task 8 最终 specification review
-    <b>PASS，0 remaining findings</b>，quality review <b>PASS，0 remaining findings</b>。Task 9 编辑前 release gate：MCP server focused
-    <code>195 passed</code>，共享 authority / permission / hard-constraint / questions / ACP / Runtime 回归 <code>198 passed</code>，
-    文档构建 <code>453 pages</code>，链接检查 <code>0 broken</code>。文档状态更新后使用同一组命令再次验证。</div>
+    <b>PASS，0 remaining findings</b>，quality review <b>PASS，0 remaining findings</b>。Task 9 编辑前五项 release gate：MCP server focused
+    <code>195 passed</code>；共享 authority / permission / hard-constraint / questions / ACP / Runtime 回归 <code>198 passed</code>；
+    文档构建 <code>453 pages</code>；链接检查 <code>0 broken</code>；<code>git diff --check</code> PASS。
+    编辑后以相同五条命令复验：MCP server focused <code>195 passed</code>；共享回归 <code>198 passed</code>；
+    文档构建 <code>453 pages</code>；链接检查 <code>0 broken</code>；<code>git diff --check</code> PASS。</div>
 
   <div class="note"><b>明确排除</b>：本次实现没有 HTTP、SSE、Streamable HTTP、OAuth、Web route、Web owner token 复用、
     ACP transport/contract 扩张、专属客户端 SDK 或 MCP SDK 依赖范围扩张。对外协议面仍只有认证 stdio 与上述六个 wrapper。</div>
