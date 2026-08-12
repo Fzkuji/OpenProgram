@@ -243,6 +243,8 @@ _SDK_CONSTRUCTORS = frozenset(
         "mcp.client.streamable_http.streamable_http_client",
         "mcp.client.streamable_http.streamablehttp_client",
         "mcp.client.sse.sse_client",
+        "boto3.client",
+        "boto3.session.Session.client",
     }
 )
 
@@ -263,11 +265,17 @@ _SDK_CONSUMERS: Mapping[str, str] = MappingProxyType(
         "mcp.client.streamable_http.streamable_http_client": "mcp.configured.http",
         "mcp.client.streamable_http.streamablehttp_client": "mcp.configured.http",
         "mcp.client.sse.sse_client": "mcp.configured.sse",
+        "boto3.client": "provider.amazon_bedrock.sdk",
+        "boto3.session.Session.client": "provider.amazon_bedrock.sdk",
     }
 )
 _SDK_INJECTION_KEYWORDS = frozenset(
     {"http_client", "http_options", "httpx_client_factory"}
 )
+_SDK_GUARD_CALLS = frozenset(
+    {"openprogram.security.safe_http.require_active_sdk_transport"}
+)
+_BOTO3_SESSION_PROVENANCE = "sdk.boto3.session.Session"
 
 
 def _qualname(node: ast.AST, aliases: Mapping[str, str]) -> str | None:
@@ -308,8 +316,9 @@ class _HTTPVisitor(ast.NodeVisitor):
         self.socket_variables: set[str] = set()
         self.calls: list[RuntimeHTTPCall] = []
         self.consumers: set[str] = set()
-        self.sdk_calls: list[tuple[RuntimeHTTPCall, frozenset[str]]] = []
-        self.sdk_guards: set[str] = set()
+        self.sdk_calls: list[
+            tuple[RuntimeHTTPCall, frozenset[str], frozenset[str]]
+        ] = []
         self.constant_variables: dict[str, str] = {}
         self.managed_values: dict[tuple[tuple[str, ...], str], frozenset[str]] = {}
         self.scope: list[str] = []
@@ -374,6 +383,11 @@ class _HTTPVisitor(ast.NodeVisitor):
                     if isinstance(target, ast.Name):
                         self.socket_variables.add(target.id)
         provenance = self._managed_consumers(node.value)
+        if (
+            isinstance(node.value, ast.Call)
+            and _qualname(node.value.func, self.aliases) == "boto3.session.Session"
+        ):
+            provenance = frozenset({_BOTO3_SESSION_PROVENANCE})
         for target in node.targets:
             if isinstance(target, ast.Name):
                 key = (tuple(self.scope), target.id)
@@ -418,6 +432,19 @@ class _HTTPVisitor(ast.NodeVisitor):
             if value:
                 return value
         return frozenset()
+
+    def _active_sdk_guards(self) -> frozenset[str]:
+        guards: set[str] = set()
+        prefix = "@sdk_guard:"
+        for (scope, name), values in self.managed_values.items():
+            if scope == tuple(self.scope) and name.startswith(prefix):
+                guards.update(values)
+        for depth in range(len(self.scope)):
+            parent = tuple(self.scope[:depth])
+            for (scope, name), values in self.managed_values.items():
+                if scope == parent and name.startswith(prefix):
+                    guards.update(values)
+        return frozenset(guards)
 
     def _visit_block_flow_from(
         self,
@@ -876,11 +903,13 @@ class _HTTPVisitor(ast.NodeVisitor):
                     consumer = self._constant_string(keyword.value)
                     if consumer is not None:
                         self.consumers.add(consumer)
-        if name and name.endswith("require_active_sdk_transport") and node.args:
+        if name in _SDK_GUARD_CALLS and node.args:
             consumer = self._constant_string(node.args[0])
             if consumer is not None:
                 self.consumers.add(consumer)
-                self.sdk_guards.add(consumer)
+                self.managed_values[
+                    (tuple(self.scope), f"@sdk_guard:{consumer}")
+                ] = frozenset({consumer})
 
         if name in _RAW_CALLS:
             self.calls.append(RuntimeHTTPCall(self.path, node.lineno, name))
@@ -898,6 +927,23 @@ class _HTTPVisitor(ast.NodeVisitor):
                 )
 
         sdk_name = name
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "client"
+            and (
+                (
+                    isinstance(node.func.value, ast.Call)
+                    and _qualname(node.func.value.func, self.aliases)
+                    == "boto3.session.Session"
+                )
+                or (
+                    isinstance(node.func.value, ast.Name)
+                    and _BOTO3_SESSION_PROVENANCE
+                    in self._lookup_managed_value(node.func.value.id)
+                )
+            )
+        ):
+            sdk_name = "boto3.session.Session.client"
         if sdk_name and sdk_name.startswith("openprogram.providers."):
             sdk_name = ".".join(sdk_name.split(".")[-2:])
         if sdk_name in _SDK_CONSTRUCTORS or short in _SDK_CONSTRUCTORS:
@@ -906,7 +952,13 @@ class _HTTPVisitor(ast.NodeVisitor):
             for keyword in node.keywords:
                 if keyword.arg in _SDK_INJECTION_KEYWORDS or keyword.arg is None:
                     injected_consumers.update(self._managed_consumers(keyword.value))
-            self.sdk_calls.append((issue, frozenset(injected_consumers)))
+            self.sdk_calls.append(
+                (
+                    issue,
+                    frozenset(injected_consumers),
+                    self._active_sdk_guards(),
+                )
+            )
         self.generic_visit(node)
 
 
@@ -965,7 +1017,7 @@ def scan_runtime_http(
             if issue.kind in expected and observed < expected[issue.kind]:
                 continue
             unregistered.append(issue)
-        for issue, injected_consumers in visitor.sdk_calls:
+        for issue, injected_consumers, active_guards in visitor.sdk_calls:
             exclusion_key = (relative, issue.kind)
             observed = observed_exclusions.get(exclusion_key, 0)
             observed_exclusions[exclusion_key] = observed + 1
@@ -977,7 +1029,7 @@ def scan_runtime_http(
             disabled = bool(
                 spec is not None
                 and getattr(spec, "sdk_disposition", None) == SDKDisposition.DISABLED
-                and consumer in visitor.sdk_guards
+                and consumer in active_guards
             )
             injected = bool(
                 spec is not None

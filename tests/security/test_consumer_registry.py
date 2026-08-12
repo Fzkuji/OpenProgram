@@ -44,6 +44,7 @@ EXPECTED_CONSUMERS = {
     "provider.google.sdk",
     "provider.openai.sdk",
     "provider.anthropic.sdk",
+    "provider.amazon_bedrock.sdk",
     "mcp.configured.http",
     "mcp.configured.sse",
     "mcp.loopback.callback",
@@ -140,6 +141,12 @@ EXPECTED_FIXED_ORIGINS = {
             "https://console.anthropic.com",
             "https://github.com",
             "https://oauth2.googleapis.com",
+        }
+    ),
+    "provider.amazon_bedrock.sdk": frozenset(
+        {
+            "https://bedrock.us-east-1.amazonaws.com",
+            "https://bedrock-runtime.us-east-1.amazonaws.com",
         }
     ),
     "tts.fixed_api": frozenset({"https://api.elevenlabs.io", "https://api.openai.com"}),
@@ -263,6 +270,7 @@ def test_sdk_consumers_have_managed_dispositions():
         "provider.google.sdk",
         "provider.openai.sdk",
         "provider.anthropic.sdk",
+        "provider.amazon_bedrock.sdk",
         "tts.configured_api",
         "tts.edge_sdk",
         "tts.fixed_api",

@@ -53,7 +53,7 @@
 <body><main class="wrap">
 <p class="eyebrow">SECURITY DESIGN · RUNTIME NETWORK</p>
 <h1>Runtime outbound URL and SSRF protection</h1>
-<p class="sub">Evidence snapshot: 2026-08-12, Runtime implementation through <code>80c377fa</code>.
+<p class="sub">Evidence snapshot: 2026-08-12, Runtime implementation through the Task 10 consolidated fix (Task 1–8 anchor <code>80c377fa</code>).
 This document is ordered as OpenProgram current state, other projects, then the OpenProgram future plan.
 Implemented behavior and future work are labeled separately.</p>
 
@@ -72,7 +72,7 @@ origin, bounds response resources, and fails static verification for unclassifie
 <div class="tbl"><table>
 <tr><th>Component</th><th>Implemented responsibility</th><th>Explicit non-responsibility</th></tr>
 <tr><td><code>openprogram/security/url_policy.py</code></td><td>URL and origin normalization; scheme, userinfo, host, and port validation; full A/AAAA classification; exact owner exceptions; stable sanitized reason codes</td><td>Does not send network requests or infer a caller's trust class</td></tr>
-<tr><td><code>openprogram/security/safe_http.py</code></td><td>Immutable 41-consumer registry; sync/async peer-constrained transports; Host/SNI preservation; manual redirects; credential, header, MIME, decoded-body, encoding, timeout, proxy, and atomic-download enforcement</td><td>Does not accept caller-created policy objects or expose <code>verify=False</code></td></tr>
+<tr><td><code>openprogram/security/safe_http.py</code></td><td>Immutable 42-consumer registry; sync/async peer-constrained transports; Host/SNI preservation; manual redirects; credential, header, MIME, decoded-body, encoding, timeout, proxy, and atomic-download enforcement</td><td>Does not accept caller-created policy objects or expose <code>verify=False</code></td></tr>
 <tr><td>Consumer adapters</td><td>Select one immutable registry key and, for configured services or callbacks, supply the exact owner-configured origin</td><td>May not implement a second private-address classifier or retry through a raw client</td></tr>
 <tr><td><code>runtime_http_audit.py</code>, <code>doctor</code>, and <code>scripts/check_runtime_http.py</code></td><td>Bounded sanitized denial state, exact owner exception/proxy reporting, AST inventory, SDK disposition verification, and stale exclusion detection</td><td>Do not display userinfo, query, fragment, credentials, peer response bodies, or token-bearing paths</td></tr>
 </table></div>
@@ -82,7 +82,7 @@ origin, bounds response resources, and fails static verification for unclassifie
 <tr><th>Boundary</th><th>Current treatment</th><th>Status in this feature</th></tr>
 <tr><td>Arbitrary and derived Runtime URLs</td><td><code>web_fetch</code>, attachments, generated assets, image result downloads, catalogs, marketplaces, and updater metadata use managed clients with public or exact-service policy</td><td class="yes">Included</td></tr>
 <tr><td>Fixed/configured APIs</td><td>Web search, image APIs, channel REST, TTS, provider listing/probes/OAuth, Web model listing, MCP HTTP/SSE, and local probes use fixed or owner-configured exact origins</td><td class="yes">Included</td></tr>
-<tr><td>Third-party SDKs</td><td>Provider and MCP clients receive injected managed transports; exact-origin REST adapters remain managed; uninjectable Slack/Discord gateway SDKs and edge-tts fail closed</td><td class="yes">Included and classified</td></tr>
+<tr><td>Third-party SDKs</td><td>Provider and MCP clients receive injected managed transports; exact-origin REST adapters remain managed; uninjectable Bedrock, Slack/Discord gateway, and edge-tts SDK paths fail closed</td><td class="yes">Included and classified</td></tr>
 <tr><td>Browser navigation, popup, Service Worker, and page subresources</td><td>Governed by the browser-control design and any owner egress isolation</td><td class="no">Excluded</td></tr>
 <tr><td>Sandboxed arbitrary code, plugin code, external provider CLIs, and package managers</td><td>Governed by sandbox, plugin trust, child-process, and installation boundaries</td><td class="no">Excluded</td></tr>
 <tr><td>Owner control-plane liveness probes</td><td>Narrow loopback-only exclusions are inventoried with exact call kind, owner, reason, and count</td><td class="partial">Classified, not claimed as Runtime URL fetch</td></tr>
@@ -151,7 +151,7 @@ then lists separate future boundaries. Publication as <code>●</code> remains p
 
 <h2><span class="num">05</span>Completed plan: implementation evidence</h2>
 <div class="flow">
-  <div class="box"><h3>Registry-keyed caller</h3><div class="small">41 immutable consumers<br>four trust classes<br>exact configured or callback origin</div></div>
+  <div class="box"><h3>Registry-keyed caller</h3><div class="small">42 immutable consumers<br>four trust classes<br>exact configured or callback origin</div></div>
   <div class="arrow">›</div>
   <div class="box"><h3>Pure policy decision</h3><div class="small">normalized URL and origin<br>one complete DNS answer set<br>exact exception and reason code</div></div>
   <div class="arrow">›</div>
@@ -172,7 +172,7 @@ then lists separate future boundaries. Publication as <code>●</code> remains p
 <tr><td>Injected transport</td><td><code>provider.openai.sdk</code>, <code>provider.anthropic.sdk</code>, <code>provider.google.sdk</code>, <code>mcp.configured.http</code>, <code>mcp.configured.sse</code></td><td>Public SDK construction receives a scoped managed client or factory; real SDK-chain tests reach the constrained backend.</td></tr>
 <tr><td>Exact origin</td><td>Telegram, WeChat, Feishu, Matrix, Slack, Discord, fixed/configured TTS, and other fixed/configured REST consumers</td><td>The normalized owner or shipped origin is frozen before credentials are attached; redirects cannot move credentials to another origin.</td></tr>
 <tr><td>Derived URL extraction</td><td>Attachment, generated-asset, and image-result consumers</td><td>The SDK or upstream response yields a URL, then Runtime performs the download or upload through a dedicated managed registry consumer.</td></tr>
-<tr><td>Disabled</td><td><code>channel.slack.gateway_sdk</code>, <code>channel.discord.gateway_sdk</code>, <code>tts.edge_sdk</code></td><td>Startup or invocation fails with <code>UNMANAGED_TRANSPORT</code> before importing or using the uninjectable network SDK.</td></tr>
+<tr><td>Disabled</td><td><code>provider.amazon_bedrock.sdk</code>, <code>channel.slack.gateway_sdk</code>, <code>channel.discord.gateway_sdk</code>, <code>tts.edge_sdk</code></td><td>Startup or invocation fails with <code>UNMANAGED_TRANSPORT</code> before importing or using the uninjectable network SDK. Bedrock covers both the registered stream and model-list entry before boto3/botocore credential or client activity.</td></tr>
 </table></div>
 
 <h3>05.3 Owner exceptions, policy proxy, doctor, and inventory</h3>
@@ -195,7 +195,7 @@ or stale exclusion. Doctor exposes stable <code>runtime-http-registry</code>, <c
 <h3>05.4 Verification snapshot</h3>
 <div class="tbl"><table>
 <tr><th>Command</th><th>Recorded result</th></tr>
-<tr><td><code>uv run pytest -q tests/security</code></td><td class="yes"><code>785 passed</code></td></tr>
+<tr><td><code>uv run pytest -q tests/security</code></td><td class="yes"><code>812 passed</code></td></tr>
 <tr><td><code>uv run pytest -q tests/meta_functions tests/providers tests/unit tests/webui tests/integration/test_mcp_client.py</code></td><td class="yes"><code>2932 passed, 12 skipped, 1 xfailed</code></td></tr>
 <tr><td><code>uv run pytest -q</code></td><td class="partial">Collection is blocked by the pre-existing missing <code>openprogram.functions.agentics.test_framework</code> module; the affected suites above complete independently.</td></tr>
 <tr><td><code>uv run python scripts/check_runtime_http.py</code></td><td class="yes"><code>unregistered=0 active_unmanaged=0 registry_without_consumer=0 stale_exclusions=0</code></td></tr>
@@ -204,7 +204,7 @@ or stale exclusion. Doctor exposes stable <code>runtime-http-registry</code>, <c
 <div class="note"><b>Publication gate.</b> Policy parsing/address tests, real sync/async socket and TLS peer tests,
 DNS-rebinding prevention, redirect and credential-origin tests, response/decompression/timeout cleanup, all-consumer migration,
 four-way SDK classification with zero active unmanaged transports, owner-only exact exceptions, doctor/audit/static enforcement,
-and the 41-row compatibility contract are present. The required complete repository command <code>uv run pytest -q</code>
+and the 42-row compatibility contract are present. The required complete repository command <code>uv run pytest -q</code>
 does not pass: collection stops because <code>openprogram.functions.agentics.test_framework</code> is missing. The feature matrix
 therefore remains <code>·</code>; the affected-suite result is not substituted for the complete-suite gate.</div>
 

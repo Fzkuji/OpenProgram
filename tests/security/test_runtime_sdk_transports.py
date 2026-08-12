@@ -104,6 +104,7 @@ def sdk_server():
     [
         ("provider.openai.sdk", SDKDisposition.INJECTED_TRANSPORT),
         ("provider.anthropic.sdk", SDKDisposition.INJECTED_TRANSPORT),
+        ("provider.amazon_bedrock.sdk", SDKDisposition.DISABLED),
         ("provider.google.sdk", SDKDisposition.INJECTED_TRANSPORT),
         ("mcp.configured.http", SDKDisposition.INJECTED_TRANSPORT),
         ("mcp.configured.sse", SDKDisposition.INJECTED_TRANSPORT),
@@ -714,5 +715,65 @@ def test_uninjectable_gateway_sdk_is_disabled_before_sdk_import(
 
     with pytest.raises(URLPolicyError) as exc:
         channel_class("test")
+    assert exc.value.reason == "UNMANAGED_TRANSPORT"
+    assert sdk_imports == []
+
+
+@pytest.mark.timeout(5)
+def test_registered_bedrock_stream_is_disabled_before_aws_sdk_import(monkeypatch):
+    import asyncio
+    import builtins
+
+    from openprogram.providers.api_registry import get_api_provider
+    from openprogram.providers.types import Context, Model
+
+    sdk_imports = []
+    real_import = builtins.__import__
+
+    def import_sentinel(name, *args, **kwargs):
+        if name == "boto3" or name.startswith("boto3.") or name.startswith("botocore."):
+            sdk_imports.append(name)
+            raise AssertionError(f"disabled AWS SDK imported: {name}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_sentinel)
+    provider = get_api_provider("bedrock-converse-stream")
+    assert provider is not None
+    model = Model(
+        id="anthropic.claude-test-v1",
+        name="Bedrock test",
+        api="bedrock-converse-stream",
+        provider="amazon-bedrock",
+        base_url="https://bedrock-runtime.us-east-1.amazonaws.com",
+    )
+
+    async def run():
+        stream = provider.stream(model, Context(messages=[]), {})
+        return await stream.result()
+
+    with pytest.raises(URLPolicyError) as exc:
+        asyncio.run(run())
+    assert exc.value.reason == "UNMANAGED_TRANSPORT"
+    assert sdk_imports == []
+
+
+def test_bedrock_model_list_is_disabled_before_aws_sdk_import(monkeypatch):
+    import builtins
+
+    from openprogram.providers.amazon_bedrock import list_models
+
+    sdk_imports = []
+    real_import = builtins.__import__
+
+    def import_sentinel(name, *args, **kwargs):
+        if name == "boto3" or name.startswith("boto3.") or name.startswith("botocore."):
+            sdk_imports.append(name)
+            raise AssertionError(f"disabled AWS SDK imported: {name}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_sentinel)
+
+    with pytest.raises(URLPolicyError) as exc:
+        list_models.fetch("amazon-bedrock", 5.0)
     assert exc.value.reason == "UNMANAGED_TRANSPORT"
     assert sdk_imports == []

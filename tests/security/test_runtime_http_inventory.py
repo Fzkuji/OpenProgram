@@ -267,6 +267,146 @@ openai.OpenAI(http_client=object())
 
 
 @pytest.mark.parametrize(
+    ("source", "kind"),
+    [
+        (
+            'import boto3\nboto3.client("bedrock-runtime")\n',
+            "sdk.boto3.client",
+        ),
+        (
+            """
+import boto3.session
+session = boto3.session.Session(profile_name="prod")
+session.client("bedrock-runtime")
+""",
+            "sdk.boto3.session.Session.client",
+        ),
+    ],
+)
+def test_scanner_rejects_unguarded_bedrock_sdk_constructors(tmp_path, source, kind):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "bedrock.py").write_text(source, encoding="utf-8")
+    registry = {
+        "provider.amazon_bedrock.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.DISABLED
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == [kind]
+    assert result.active_unmanaged_transports == ("provider.amazon_bedrock.sdk",)
+
+
+@pytest.mark.parametrize(
+    "false_guard",
+    [
+        '"require_active_sdk_transport(\\"provider.amazon_bedrock.sdk\\")"',
+        """
+from unrelated import require_active_sdk_transport
+require_active_sdk_transport(
+    "provider.amazon_bedrock.sdk",
+    "https://bedrock-runtime.us-east-1.amazonaws.com",
+)
+""",
+        """
+from openprogram.security.safe_http import require_active_sdk_transport
+if enabled:
+    require_active_sdk_transport(
+        "provider.amazon_bedrock.sdk",
+        "https://bedrock-runtime.us-east-1.amazonaws.com",
+    )
+""",
+        """
+from openprogram.security.safe_http import require_active_sdk_transport
+boto3.client("bedrock-runtime")
+require_active_sdk_transport(
+    "provider.amazon_bedrock.sdk",
+    "https://bedrock-runtime.us-east-1.amazonaws.com",
+)
+""",
+    ],
+)
+def test_bedrock_sdk_constructor_rejects_non_dominating_or_fake_guard(
+    tmp_path, false_guard
+):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    source = "import boto3\nenabled = False\n" + false_guard
+    if 'boto3.client("bedrock-runtime")' not in false_guard:
+        source += '\nboto3.client("bedrock-runtime")\n'
+    (package / "bedrock.py").write_text(source, encoding="utf-8")
+    registry = {
+        "provider.amazon_bedrock.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.DISABLED
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == ["sdk.boto3.client"]
+    assert result.active_unmanaged_transports == ("provider.amazon_bedrock.sdk",)
+
+
+@pytest.mark.parametrize(
+    "constructor",
+    [
+        'boto3.client("bedrock-runtime")',
+        'boto3.session.Session(profile_name="prod").client("bedrock-runtime")',
+    ],
+)
+def test_scanner_accepts_exact_dominating_disabled_bedrock_guard(
+    tmp_path, constructor
+):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "bedrock.py").write_text(
+        f"""
+import boto3
+import boto3.session
+from openprogram.security.safe_http import require_active_sdk_transport
+
+require_active_sdk_transport(
+    "provider.amazon_bedrock.sdk",
+    "https://bedrock-runtime.us-east-1.amazonaws.com",
+)
+{constructor}
+""",
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.amazon_bedrock.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.DISABLED
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert result.unregistered == ()
+    assert result.active_unmanaged_transports == ()
+    assert result.registry_without_consumer == ()
+
+
+@pytest.mark.parametrize(
     "source",
     [
         """

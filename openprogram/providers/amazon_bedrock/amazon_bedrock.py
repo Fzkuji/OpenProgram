@@ -110,6 +110,12 @@ def stream_bedrock(
     options: dict[str, Any] | None = None,
 ) -> EventStream:
     """Stream responses from AWS Bedrock Converse Stream API."""
+    from openprogram.security.safe_http import require_active_sdk_transport
+
+    require_active_sdk_transport(
+        "provider.amazon_bedrock.sdk",
+        "https://bedrock-runtime.us-east-1.amazonaws.com",
+    )
     opts = options or {}
     ev_stream: EventStream = EventStream()
 

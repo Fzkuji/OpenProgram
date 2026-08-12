@@ -517,6 +517,22 @@ COMPATIBILITY_FIXTURES = {
         True,
         "injected_transport",
     ),
+    "provider.amazon_bedrock.sdk": (
+        "fixed_public_service",
+        "POST",
+        "https://bedrock-runtime.us-east-1.amazonaws.com",
+        443,
+        ("https",),
+        ("GET", "HEAD", "POST"),
+        (80, 443),
+        "same_origin",
+        5,
+        16_777_216,
+        ("application/", "text/"),
+        "same_origin",
+        False,
+        "disabled",
+    ),
     "mcp.configured.http": (
         "configured_service",
         "POST",
@@ -755,6 +771,10 @@ FIXED_ORIGIN_FIXTURES = {
         "https://console.anthropic.com",
         "https://github.com",
         "https://oauth2.googleapis.com",
+    ),
+    "provider.amazon_bedrock.sdk": (
+        "https://bedrock.us-east-1.amazonaws.com",
+        "https://bedrock-runtime.us-east-1.amazonaws.com",
     ),
     "tts.fixed_api": ("https://api.elevenlabs.io", "https://api.openai.com"),
     "webui.model_listing.fixed": (

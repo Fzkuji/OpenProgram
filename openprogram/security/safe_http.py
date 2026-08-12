@@ -166,6 +166,12 @@ _AUDITED_FIXED_ORIGINS = MappingProxyType(
                 "https://token-plan.cn-beijing.maas.aliyuncs.com",
             }
         ),
+        "provider.amazon_bedrock.sdk": frozenset(
+            {
+                "https://bedrock.us-east-1.amazonaws.com",
+                "https://bedrock-runtime.us-east-1.amazonaws.com",
+            }
+        ),
         "provider.oauth.fixed": frozenset(
             {
                 "https://accounts.google.com",
@@ -362,6 +368,11 @@ _SPECS = (
         "provider.anthropic.sdk",
         URLTrustClass.CONFIGURED_SERVICE,
         sdk_disposition=SDKDisposition.INJECTED_TRANSPORT,
+    ),
+    _api(
+        "provider.amazon_bedrock.sdk",
+        URLTrustClass.FIXED_PUBLIC_SERVICE,
+        sdk_disposition=SDKDisposition.DISABLED,
     ),
     _api(
         "mcp.configured.http",
