@@ -46,6 +46,7 @@ class SessionMemoryIndex:
     # of scanning nodes_by_seq keeps append O(1) on long sessions.
     _taken_seqs: set[int] = field(default_factory=set)
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    _persist_lock: threading.Lock = field(default_factory=threading.Lock)
 
     # Mutations
 

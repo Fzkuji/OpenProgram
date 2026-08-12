@@ -629,9 +629,11 @@ class SessionStore:
     def _persist_meta(self, git: GitSession, idx: SessionMemoryIndex) -> None:
         """Sync the in-memory meta back to ``meta.json``. Called whenever
         title / head_id / extra / branches change."""
-        meta = dict(idx.meta)
-        meta["head_id"] = idx.head_id
-        git.write_meta(meta)
+        with idx._persist_lock:
+            with idx._lock:
+                meta = dict(idx.meta)
+                meta["head_id"] = idx.head_id
+            git.write_meta(meta)
 
     def session_workdir(self, session_id: str) -> Optional[Path]:
         """Path of the per-session scratch workdir, materialized on first
