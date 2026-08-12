@@ -243,6 +243,21 @@ class RecordingSink:
             raise PermissionError(
                 f"recordings directory must not be a symlink: {managed_root}"
             )
+        if inside_managed_root:
+            normalized_root = Path(os.path.abspath(managed_root))
+            normalized_parent = Path(os.path.abspath(self.path.parent))
+            try:
+                relative_parent = normalized_parent.relative_to(normalized_root)
+                current = normalized_root
+            except ValueError:
+                current = Path(*normalized_parent.parts[:len(normalized_root.parts)])
+                relative_parent = normalized_parent.relative_to(current)
+            for part in relative_parent.parts:
+                current /= part
+                if current.is_symlink():
+                    raise PermissionError(
+                        f"recordings path must not contain a symlink: {current}"
+                    )
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if sys.platform != "win32" and _is_managed_recording_path(self.path.parent):
             os.chmod(self.path.parent, 0o700)
