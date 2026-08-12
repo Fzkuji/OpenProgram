@@ -871,6 +871,85 @@ def test_tool_call_wire_cancellation_sets_exact_event_and_stops_progress(
         service.close()
 
 
+@pytest.mark.parametrize(
+    ("outcome", "expected_text", "expected_error"),
+    [
+        ("success", "done", False),
+        ("is_error", "denied", True),
+        ("failure", "MCP tool execution failed", True),
+    ],
+)
+def test_blocked_progress_does_not_delay_fixed_tool_result(
+    outcome,
+    expected_text,
+    expected_error,
+):
+    from mcp.server.lowlevel.server import RequestContext, request_ctx
+
+    from openprogram.agent.types import AgentToolResult
+    from openprogram.mcp_server.server import build_server
+    from openprogram.providers.types import TextContent
+
+    server = build_server(
+        MCPClientContext("0123456789abcdef", mcp_client_authority("0123456789abcdef"))
+    )
+    service = server._openprogram_service
+    calls = []
+    notification_entered = asyncio.Event()
+
+    async def tool_call(*_args, **kwargs):
+        calls.append(kwargs["call_id"])
+        kwargs["on_progress"]("blocked")
+        if outcome == "failure":
+            raise RuntimeError("service-secret")
+        return AgentToolResult(
+            content=[TextContent(text="denied" if outcome == "is_error" else "done")],
+            is_error=outcome == "is_error",
+        )
+
+    service.tool_call = tool_call
+
+    class Session:
+        async def send_progress_notification(self, *_args, **_kwargs):
+            notification_entered.set()
+            await asyncio.Event().wait()
+
+    context = RequestContext(
+        request_id=92,
+        meta=mcp_types.RequestParams.Meta(progressToken="blocked"),
+        session=Session(),
+        lifespan_context=None,
+    )
+    request = mcp_types.CallToolRequest(
+        method="tools/call",
+        params={"name": "tool_call", "arguments": {"name": "demo"}},
+    )
+
+    async def scenario():
+        token = request_ctx.set(context)
+        try:
+            result = await asyncio.wait_for(
+                server.request_handlers[mcp_types.CallToolRequest](request), 0.5
+            )
+            assert notification_entered.is_set()
+            assert not any(
+                "consume_progress" in repr(task.get_coro())
+                for task in asyncio.all_tasks()
+                if task is not asyncio.current_task()
+            )
+            return result
+        finally:
+            request_ctx.reset(token)
+
+    try:
+        result = asyncio.run(scenario()).root
+    finally:
+        service.close()
+    assert result.content[0].text == expected_text
+    assert result.isError is expected_error
+    assert calls == ["92"]
+
+
 def test_protocol_tool_error_matrix_and_concurrent_progress_are_isolated():
     from mcp.shared.exceptions import McpError
 

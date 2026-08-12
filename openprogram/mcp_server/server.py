@@ -19,6 +19,9 @@ from openprogram.mcp_server.service import MCPClientContext, MCPService
 from openprogram.mcp_server.tools import to_mcp_content
 
 
+_PROGRESS_DRAIN_TIMEOUT_S = 0.1
+
+
 def _wire_result(result) -> mcp_types.ServerResult:
     try:
         content = to_mcp_content(result)
@@ -137,14 +140,29 @@ def build_server(context: MCPClientContext) -> Server:
             if progress_task is not None:
                 if cancelled:
                     progress_task.cancel()
-                else:
-                    await asyncio.sleep(0)
-                    progress_queue.put_nowait(None)
                 try:
-                    await progress_task
+                    if cancelled:
+                        await progress_task
+                    else:
+                        await asyncio.sleep(0)
+                        progress_queue.put_nowait(None)
+                        await asyncio.wait_for(
+                            asyncio.shield(progress_task),
+                            timeout=_PROGRESS_DRAIN_TIMEOUT_S,
+                        )
+                except TimeoutError:
+                    progress_task.cancel()
+                    try:
+                        await progress_task
+                    except asyncio.CancelledError:
+                        pass
                 except asyncio.CancelledError:
-                    if not cancelled:
-                        raise
+                    progress_task.cancel()
+                    try:
+                        await progress_task
+                    except asyncio.CancelledError:
+                        pass
+                    raise
         if failed:
             return _application_error()
         return _wire_result(result)
