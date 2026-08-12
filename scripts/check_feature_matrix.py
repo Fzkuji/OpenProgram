@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from dataclasses import dataclass
+from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
 import re
@@ -166,6 +168,47 @@ def _published_integer(source: str, pattern: str, label: str) -> int:
     return matches[0]
 
 
+def _visible_detail_rows(
+    source: str,
+    start_marker: str,
+    end_marker: str,
+    *,
+    include_category: bool,
+    label: str,
+) -> list[tuple[str, ...]]:
+    start = source.index(start_marker)
+    end = source.index(end_marker, start)
+    rows: list[tuple[str, ...]] = []
+    for attrs, body in re.findall(
+        r"<tr([^>]*)>(.*?)</tr>", source[start:end], re.DOTALL
+    ):
+        if re.search(
+            r"(?:^|\s)(?:hidden|aria-hidden\s*=)", attrs, re.IGNORECASE
+        ) or re.search(
+            r"(?:display\s*:\s*none|visibility\s*:\s*hidden)", attrs, re.IGNORECASE
+        ):
+            raise MatrixError(f"hidden {label} row")
+        name = re.search(r'<td class="name">(.*?)</td>', body, re.DOTALL)
+        if not name:
+            continue
+
+        def plain(fragment: str) -> str:
+            return " ".join(unescape(re.sub(r"<[^>]+>", "", fragment)).split())
+
+        values = [plain(name.group(1))]
+        if include_category:
+            category = re.search(r'<td class="sz">(.*?)</td>', body, re.DOTALL)
+            if not category:
+                raise MatrixError(f"{label} row is missing its category")
+            values.append(plain(category.group(1)))
+        rows.append(tuple(values))
+    return rows
+
+
+def _detail_identity(value: str) -> str:
+    return "".join(value.split())
+
+
 def check_matrix(path: Path) -> MatrixResult:
     source = path.read_text(encoding="utf-8")
     parser = _MatrixParser()
@@ -249,6 +292,44 @@ def check_matrix(path: Path) -> MatrixResult:
     if published_only != only:
         raise MatrixError(
             "published OpenProgram-only count does not match the canonical table"
+        )
+
+    expected_gap_details = Counter(
+        (_detail_identity(row.name), row.category)
+        for row in parser.rows
+        if row.cells[0] == "·" and any(cell != "·" for cell in row.cells[1:])
+    )
+    published_gap_details = Counter(
+        (_detail_identity(name), category)
+        for name, category in _visible_detail_rows(
+            source,
+            '<h2 id="gaps"',
+            '<h3 id="newfound"',
+            include_category=True,
+            label="gap detail",
+        )
+    )
+    if published_gap_details != expected_gap_details:
+        raise MatrixError("published gap detail rows do not match the canonical table")
+
+    expected_only_details = Counter(
+        (_detail_identity(row.name),)
+        for row in parser.rows
+        if row.cells[0] != "·" and all(cell == "·" for cell in row.cells[1:])
+    )
+    published_only_details = Counter(
+        (_detail_identity(name),)
+        for (name,) in _visible_detail_rows(
+            source,
+            '<h2 id="ours"',
+            '<h2 id="plan"',
+            include_category=False,
+            label="OpenProgram-only detail",
+        )
+    )
+    if published_only_details != expected_only_details:
+        raise MatrixError(
+            "published OpenProgram-only detail rows do not match the canonical table"
         )
 
     category_svg = re.search(r'<svg viewBox="0 0 960 400".*?</svg>', source, re.DOTALL)

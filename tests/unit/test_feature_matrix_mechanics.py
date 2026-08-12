@@ -20,6 +20,15 @@ def _promote_json_schema_row(text: str) -> str:
     return text[:cell] + '<td class="g1 us">●</td>' + text[cell + len(old) :]
 
 
+def _rename_section_item(text: str, section: str, old: str) -> str:
+    start = text.index(f'<h2 id="{section}"')
+    end = text.index("<h2", start + 4)
+    section_text = text[start:end]
+    changed = section_text.replace(old, "伪造的明细项", 1)
+    assert changed != section_text
+    return text[:start] + changed + text[end:]
+
+
 def test_feature_matrix_published_values_match_canonical_table() -> None:
     result = check_matrix(MATRIX)
 
@@ -58,6 +67,16 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
                 1,
             ),
             "category point",
+        ),
+        (
+            lambda text: _rename_section_item(text, "gaps", "终端快捷键自动配置"),
+            "gap detail",
+        ),
+        (
+            lambda text: _rename_section_item(
+                text, "ours", "函数调用树写进<br>同一张会话图"
+            ),
+            "OpenProgram-only detail",
         ),
         (_promote_json_schema_row, "JSON Schema"),
     ],
@@ -106,3 +125,27 @@ def test_runtime_docs_publish_structured_return_and_error_contracts() -> None:
         assert "unsupported" in text
         assert "response_format=None" in text
         assert "Python JSON" in text
+
+    for text in (english, chinese):
+        assert "stream_fn=None) -> Any" in text
+        assert "timeout_s=None, on_retry=None) -> Any" in text
+        assert "stream_fn=None) -> str" not in text
+        assert "timeout_s=None, on_retry=None) -> str" not in text
+        assert (
+            'Runtime._call(content, model="default", response_format=None) -> Any'
+            in text
+        )
+        assert (
+            'Runtime._async_call(content, model="default", response_format=None) -> Any'
+            in text
+        )
+        assert (
+            'Runtime._call(content, model="default", response_format=None) -> str'
+            not in text
+        )
+        assert (
+            'Runtime._async_call(content, model="default", response_format=None) -> str'
+            not in text
+        )
+    assert "With `response_format=None`, returns" in english
+    assert "`response_format=None` 时返回" in chinese
