@@ -202,6 +202,32 @@ def test_restore_rejects_secret_members_when_manifest_denies_opt_in(
     assert not (state / "auth").exists()
 
 
+def test_restore_rejects_unknown_credential_tree_member_without_publishing(
+    tmp_path: Path,
+) -> None:
+    from openprogram._cli_cmds.backup import restore_archive
+
+    state = _state(tmp_path)
+    (state / "config.json").write_text('{"keep": true}')
+    (state / "config.json").chmod(0o600)
+    archive = _archive(
+        tmp_path,
+        {
+            "config.json": b'{"keep": false}',
+            "auth/openai/unknown.txt": b"secret",
+        },
+        manifest=json.dumps(
+            {"format_version": 1, "credential_opt_in": True}
+        ).encode(),
+    )
+
+    with pytest.raises(tarfile.TarError, match="credential inventory"):
+        restore_archive(archive, state)
+
+    assert json.loads((state / "config.json").read_text()) == {"keep": True}
+    assert not (state / "auth").exists()
+
+
 # --- publication, permissions, and secret preservation ---------------------
 
 

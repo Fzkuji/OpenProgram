@@ -74,6 +74,14 @@ _SKIP_NAMES = frozenset({"node_modules", "__pycache__", ".DS_Store"})
 _SKIP_SUFFIXES = (".lock", ".pid", ".port", ".log", ".sock")
 
 
+def _credential_tree_member(relative: str) -> bool:
+    parts = PurePath(relative).parts
+    return bool(parts) and (
+        parts[0] in CREDENTIAL_ENTRIES
+        or (len(parts) >= 3 and parts[0] == "profiles" and parts[2] == "auth")
+    )
+
+
 def _state_dir() -> Path:
     from openprogram.paths import get_state_dir
 
@@ -240,6 +248,11 @@ def create_backup(
             _excluded(source)
             or not _profile_member_allowed(source, arcname)
             or _is_secret_writer_temporary(arcname)
+            or (
+                source.is_file()
+                and _credential_tree_member(arcname)
+                and not inventory_for_path(arcname)
+            )
         ):
             return
         info = tar.gettarinfo(str(source), arcname=arcname)
@@ -1057,6 +1070,7 @@ def restore_archive(
     """
 
     from openprogram.credential_files import (
+        _read_private_bytes,
         backup_bytes,
         inventory_for_path,
         preserve_local_secret_bytes,
@@ -1092,7 +1106,7 @@ def restore_archive(
             raise tarfile.TarError("archive manifest has an unsupported schema")
         credential_opt_in = manifest["credential_opt_in"]
 
-        staged: list[tuple[str, bytes]] = []
+        staged: list[tuple[str, bytes, tuple]] = []
         for member in members:
             if member.name == _MANIFEST_NAME:
                 continue
@@ -1109,6 +1123,10 @@ def restore_archive(
                 )
 
             inventory = inventory_for_path(member.name)
+            if _credential_tree_member(member.name) and not inventory:
+                raise tarfile.TarError(
+                    f"credential inventory does not recognize: {member.name}"
+                )
             if any(
                 entry.whole_file and entry.backup_policy == "never_backup"
                 for entry in inventory
@@ -1160,15 +1178,15 @@ def restore_archive(
                     payload = preserve_local_secret_bytes(
                         member.name, payload, local
                     )
-            staged.append((member.name, payload))
+            staged.append((member.name, payload, inventory))
 
     staging = Path(tempfile.mkdtemp(prefix=".restore-staging-", dir=state.parent))
     try:
         os.chmod(staging, 0o700)
         if os.stat(staging).st_dev != os.stat(state).st_dev:
             raise OSError("restore staging is not on the state filesystem")
-        staged_files: list[tuple[str, Path]] = []
-        for index, (relative, payload) in enumerate(staged):
+        staged_files: list[tuple[str, Path, tuple]] = []
+        for index, (relative, payload, inventory) in enumerate(staged):
             staged_file = staging / f"{index:08d}.payload"
             descriptor = _staging_open(
                 staged_file,
@@ -1185,7 +1203,7 @@ def restore_archive(
                 _staging_fsync(descriptor)
             finally:
                 os.close(descriptor)
-            staged_files.append((relative, staged_file))
+            staged_files.append((relative, staged_file, inventory))
         directory = _staging_open(
             staging, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
         )
@@ -1198,7 +1216,7 @@ def restore_archive(
         journal.start()
         published: list[str] = []
         try:
-            for relative, staged_file in staged_files:
+            for relative, staged_file, _inventory in staged_files:
                 payload = staged_file.read_bytes()
                 target = state / relative
                 from openprogram.credential_files import _ensure_private_directory
@@ -1207,6 +1225,14 @@ def restore_archive(
                 journal.record(relative, journal.preserve(relative, target))
                 _publish_restored(target, payload, root=state)
                 published.append(relative)
+            for relative, _staged_file, expected_inventory in staged_files:
+                if not expected_inventory:
+                    continue
+                if inventory_for_path(relative) != expected_inventory:
+                    raise OSError(
+                        f"credential inventory changed during restore: {relative}"
+                    )
+                _read_private_bytes(state / relative, root=state)
         except BaseException as exc:
             _reverse(state, journal.entries)
             journal.discard()
