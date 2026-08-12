@@ -1003,7 +1003,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_mcp_dis = p_mcp_sub.add_parser("disable", help="Stop + mark disabled (config kept)")
     p_mcp_dis.add_argument("name", help="MCP server name to disable")
     p_mcp_sub.add_parser("edit",
-        help="Open mcp_servers.json in $EDITOR for raw editing")
+        help="Removed: raw editing exposed stored secrets. Use add/rm or the "
+             "MCP settings page.")
     p_mcp_test = p_mcp_sub.add_parser("test",
         help="Spawn an ad-hoc config and verify the server starts + "
              "returns a tool list. Doesn't write disk.")
@@ -1669,7 +1670,7 @@ def main():
         if verb == "disable":
             sys.exit(_cmd_mcp_disable(args.name))
         if verb == "edit":
-            sys.exit(_cmd_mcp_edit())
+            sys.exit(_cmd_mcp_edit_removed())
         if verb == "test":
             sys.exit(_cmd_mcp_test(args.name, args.server_command,
                                     env=args.env, timeout=args.timeout))
@@ -1836,7 +1837,7 @@ from openprogram._cli_cmds.mcp import (  # noqa: E402,F401
     _cmd_mcp_restart,
     _cmd_mcp_enable,
     _cmd_mcp_disable,
-    _cmd_mcp_edit,
+    _cmd_mcp_edit_removed,
     _cmd_mcp_test,
 )
 

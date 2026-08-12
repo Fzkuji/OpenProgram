@@ -58,6 +58,17 @@ def _masked(raw: str) -> str:
     return mask_credential(raw)
 
 
+def reveal_deprecation_response() -> tuple[dict, int]:
+    """The stable answer for any legacy credential-reveal client.
+
+    Returning a value here is the behaviour being removed, so the reply
+    is a fixed error with no credential field at all — a client scripted
+    against the old route fails loudly instead of silently reading a
+    secret that is no longer meant to leave the store.
+    """
+    return {"error": "credential reveal is no longer supported"}, 410
+
+
 def _primary_cred(pool):
     return pool.credentials[0] if (pool and pool.credentials) else None
 
@@ -280,6 +291,12 @@ def register(app):
     @app.get("/api/providers/{provider}/accounts")
     def api_accounts(provider: str):
         return JSONResponse(content=_generic_summary(provider))
+
+    @app.get("/api/providers/{provider}/accounts/{name}/reveal")
+    def api_accounts_reveal(provider: str, name: str):
+        """Legacy key-reveal route: answers, but never with a value."""
+        payload, status = reveal_deprecation_response()
+        return JSONResponse(content=payload, status_code=status)
 
     @app.post("/api/providers/{provider}/accounts/use")
     def api_accounts_use(provider: str, body: Any = Body(default=None)):

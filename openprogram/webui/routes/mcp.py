@@ -30,6 +30,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from openprogram.credential_files import is_redacted_value as _is_redacted
 from openprogram.mcp import (
     add_server,
     get_server,
@@ -886,12 +887,11 @@ def _merge_secret_map(stored: dict, submitted: object) -> dict:
       * present with a value   → **replace** with that value
       * present, empty string  → **delete** the name
 
-    The frontend never posts a mask back, so a masked string arriving
-    here would be a bug rather than an intent; the only way to keep a
-    value is to leave its name out. A patch entry that is a dict (the
-    ``{"has_value", "masked"}`` response shape echoed back by a
-    careless caller) is treated as preserve for the same reason — it
-    carries no new secret, so it must not clobber one.
+    A masked or redacted value carries no new secret, so it preserves
+    rather than replaces: echoing a GET response back — as a dict of the
+    ``{"has_value", "masked"}`` shape, or as the bare mask string a
+    careless client may extract from it — must never overwrite the real
+    stored value with its own display form.
     """
     if not isinstance(submitted, dict):
         return dict(stored)
@@ -902,6 +902,8 @@ def _merge_secret_map(stored: dict, submitted: object) -> dict:
             continue                       # echoed mask → preserve
         if value is None or str(value) == "":
             out.pop(name, None)            # explicit empty → delete
+        elif _is_redacted(str(value)):
+            continue                       # mask / sentinel → preserve
         else:
             out[name] = str(value)         # new value → replace
     return out
@@ -933,6 +935,11 @@ def _merge_auth(stored: dict, submitted: object) -> dict:
             value = submitted[field_name]
             if value is None or str(value) == "":
                 continue                   # explicit empty → delete
+            if isinstance(value, dict) or _is_redacted(str(value)):
+                # Masked display form → preserve the stored secret.
+                if keep_secrets and field_name in stored:
+                    out[field_name] = stored[field_name]
+                continue
             out[field_name] = str(value)   # new value → replace
         elif keep_secrets and field_name in stored:
             out[field_name] = stored[field_name]   # omitted → preserve

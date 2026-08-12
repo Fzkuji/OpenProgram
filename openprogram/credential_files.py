@@ -298,7 +298,14 @@ def _preserve_selector(
     return False
 
 
-def _is_redacted(value: object) -> bool:
+def is_redacted_value(value: object) -> bool:
+    """Whether ``value`` is a display form rather than a real secret.
+
+    The single authority for "this came back from a masked projection":
+    backup restore uses it to keep a local secret, and the editing paths
+    use it to refuse a mask submitted as if it were a new value.
+    """
+
     if value is None:
         return True
     if isinstance(value, str):
@@ -309,6 +316,9 @@ def _is_redacted(value: object) -> bool:
             or "…" in value
         )
     return False
+
+
+_is_redacted = is_redacted_value
 
 
 CredentialStatus = Literal[
@@ -1042,6 +1052,7 @@ __all__ = [
     "audit_credentials",
     "backup_bytes",
     "inventory_for_path",
+    "is_redacted_value",
     "private_file_revision",
     "preserve_local_secret_bytes",
     "repair_credentials",
