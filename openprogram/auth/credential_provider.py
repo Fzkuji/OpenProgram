@@ -27,6 +27,7 @@ a fake refresh that just increments a counter.
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Optional
@@ -104,10 +105,12 @@ _provider_configs: dict[str, ProviderAuthConfig] = {}
 # ``_provider_configs``? Set once so we only pay the import cost on
 # the first ``get_provider_config`` miss per process.
 _PROVIDER_PLUGINS_LOADED = False
+_provider_plugins_lock = threading.RLock()
 
 
 def register_provider_config(cfg: ProviderAuthConfig) -> None:
-    _provider_configs[cfg.provider_id] = cfg
+    with _provider_plugins_lock:
+        _provider_configs[cfg.provider_id] = cfg
 
 
 def _load_provider_plugins() -> None:
@@ -122,25 +125,25 @@ def _load_provider_plugins() -> None:
     short-circuits on the second visit.
     """
     global _PROVIDER_PLUGINS_LOADED
-    if _PROVIDER_PLUGINS_LOADED:
-        return
-    _PROVIDER_PLUGINS_LOADED = True  # set BEFORE the import so a
-    # re-entry from within provider init (rare but possible if an
-    # auth_adapter happens to look us up at module load) doesn't
-    # recurse and try to import providers a second time mid-init.
-    try:
-        from openprogram.providers.register import register_auth_adapters
+    with _provider_plugins_lock:
+        if _PROVIDER_PLUGINS_LOADED:
+            return
+        previous = dict(_provider_configs)
+        _PROVIDER_PLUGINS_LOADED = True  # Prevent same-thread re-entry.
+        try:
+            from openprogram.providers.register import register_auth_adapters
 
-        register_auth_adapters()
-    except Exception:
-        # Import failure (missing SDK extras, etc.) is non-fatal: the
-        # default config path below still gives callers a usable
-        # ProviderAuthConfig stub. We just won't have the refresh hook.
-        pass
+            register_auth_adapters()
+        except BaseException:
+            _provider_configs.clear()
+            _provider_configs.update(previous)
+            _PROVIDER_PLUGINS_LOADED = False
+            raise
 
 
 def get_provider_config(provider_id: str) -> ProviderAuthConfig:
-    cfg = _provider_configs.get(provider_id)
+    with _provider_plugins_lock:
+        cfg = _provider_configs.get(provider_id)
     if cfg is not None:
         return cfg
     # Miss — give provider plugins a chance to register before we
@@ -150,7 +153,8 @@ def get_provider_config(provider_id: str) -> ProviderAuthConfig:
     # "no_refresh_registered" for OAuth credentials whose refresh
     # callbacks are sitting in ``providers/<x>/auth_adapter.py``.
     _load_provider_plugins()
-    cfg = _provider_configs.get(provider_id)
+    with _provider_plugins_lock:
+        cfg = _provider_configs.get(provider_id)
     if cfg is not None:
         return cfg
     # A default config is usable for API-key-only providers — no

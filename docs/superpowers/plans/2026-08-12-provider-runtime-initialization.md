@@ -65,4 +65,3 @@
 3. Run a fresh independent quality review; repair and re-review any load-bearing finding.
 4. Run the repository full Python gate, changed-file Ruff, docs build, checklinks, `git diff --check`, and clean-status check. Record exact environment-only failures at both base and candidate.
 5. Update implementation evidence and commit. Do not change the feature matrix: record/replay was already implemented and this task changes lifecycle quality, not capability scoring.
-

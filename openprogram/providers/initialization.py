@@ -55,7 +55,10 @@ def _activate_record_replay() -> str:
 
 
 def _safe_message(exc: BaseException) -> str:
-    message = str(exc)
+    try:
+        message = str(exc)
+    except Exception:
+        return "<message unavailable>"
     try:
         from .recording import remove_secret_values
 
@@ -85,24 +88,33 @@ def initialize_provider_runtime() -> ProviderRuntimeSnapshot:
         _initializing_thread = ident
 
     stage = "builtins"
+    failure: _Failure | None = None
+    control: BaseException | None = None
     try:
         _register_builtins()
         stage = "record_replay"
         mode = _activate_record_replay()
     except BaseException as exc:
+        control = exc if isinstance(exc, (KeyboardInterrupt, SystemExit)) else None
+        try:
+            cause_message = _safe_message(exc)
+        except BaseException as descriptor_error:
+            control = descriptor_error
+            cause_message = "<message unavailable>"
         failure = _Failure(
-            stage=("initialization_interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else stage),
-            cause_type=type(exc).__name__,
-            cause_message=_safe_message(exc),
+            stage=("initialization_interrupted" if control is not None else stage),
+            cause_type=type(control or exc).__name__,
+            cause_message=cause_message,
         )
         with _condition:
             _failure = failure
             _initializing_thread = None
             _state = "FAILED"
             _condition.notify_all()
-        if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-            raise
-        raise failure.error() from exc
+    if control is not None:
+        raise control
+    if failure is not None:
+        raise failure.error()
 
     snapshot = ProviderRuntimeSnapshot(mode=mode)
     with _condition:

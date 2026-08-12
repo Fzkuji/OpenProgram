@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from pathlib import Path
 
 import pytest
@@ -166,6 +167,123 @@ def test_failed_initialization_is_stable_and_never_exposes_provider(
     assert errors[0].stage == errors[1].stage == "record_replay"
     assert errors[0].cause_type == errors[1].cause_type == "ValueError"
     assert str(errors[0]) == str(errors[1])
+
+
+def test_failed_initialization_does_not_retain_original_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.providers import initialization, recording
+
+    monkeypatch.setattr(
+        initialization,
+        "_register_builtins",
+        lambda: (_ for _ in ()).throw(ValueError("SECRET-PROBE")),
+    )
+    monkeypatch.setattr(recording, "remove_secret_values", lambda _message: "[redacted]")
+
+    with pytest.raises(initialization.ProviderRuntimeInitializationError) as captured:
+        initialization.initialize_provider_runtime()
+
+    assert captured.value.__cause__ is None
+    assert captured.value.__context__ is None
+    assert "SECRET-PROBE" not in "".join(
+        traceback.format_exception(captured.value)
+    )
+
+
+def test_failure_description_cannot_leave_runtime_initializing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.providers import initialization
+
+    class BrokenMessageError(Exception):
+        def __str__(self) -> str:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        initialization,
+        "_register_builtins",
+        lambda: (_ for _ in ()).throw(BrokenMessageError()),
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        initialization.initialize_provider_runtime()
+
+    completed = threading.Event()
+
+    def retry() -> None:
+        with pytest.raises(initialization.ProviderRuntimeInitializationError):
+            initialization.initialize_provider_runtime()
+        completed.set()
+
+    thread = threading.Thread(target=retry)
+    thread.start()
+    thread.join(1)
+    assert completed.is_set()
+
+
+def test_worker_releases_lock_when_provider_initialization_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.providers import initialization
+    from openprogram.worker import runner
+
+    class FakeLock:
+        holder_pid = None
+
+        def __init__(self) -> None:
+            self.released = False
+
+        def try_acquire(self) -> bool:
+            return True
+
+        def release(self) -> None:
+            self.released = True
+
+    lock = FakeLock()
+    monkeypatch.setattr(runner, "WorkerLock", lambda: lock)
+    monkeypatch.setattr(
+        initialization,
+        "initialize_provider_runtime",
+        lambda: (_ for _ in ()).throw(RuntimeError("invalid replay")),
+    )
+
+    with pytest.raises(RuntimeError, match="invalid replay"):
+        runner.run_foreground()
+
+    assert lock.released is True
+
+
+def test_auth_adapter_registration_failure_rolls_back_and_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.auth import credential_provider
+    from openprogram.providers import register
+
+    monkeypatch.setattr(credential_provider, "_provider_configs", {})
+    monkeypatch.setattr(credential_provider, "_PROVIDER_PLUGINS_LOADED", False)
+    attempts = 0
+
+    def register_adapters() -> None:
+        nonlocal attempts
+        attempts += 1
+        credential_provider.register_provider_config(
+            credential_provider.ProviderAuthConfig(provider_id="partial")
+        )
+        if attempts == 1:
+            raise ImportError("broken auth adapter")
+        credential_provider.register_provider_config(
+            credential_provider.ProviderAuthConfig(provider_id="target")
+        )
+
+    monkeypatch.setattr(register, "register_auth_adapters", register_adapters)
+
+    with pytest.raises(ImportError, match="broken auth adapter"):
+        credential_provider.get_provider_config("target")
+    assert credential_provider._provider_configs == {}
+
+    assert credential_provider.get_provider_config("target").provider_id == "target"
+    assert attempts == 2
 
 
 def test_builtin_registration_can_retry_after_loading_failure(
