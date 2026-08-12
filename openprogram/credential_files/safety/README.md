@@ -1,4 +1,4 @@
-# Credential filesystem hardening
+# Credential filesystem safety
 
 `legacy.py` contains the credential filesystem-hardening implementation.
 Production code currently does not import or use this directory.
