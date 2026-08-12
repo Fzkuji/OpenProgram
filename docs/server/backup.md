@@ -94,7 +94,10 @@ Three things happen before anything is overwritten:
    for `y`. Pass `-y` to skip this in a script.
 3. **Automatic safety snapshot.** Your current state is backed up as
    `<profile>-pre-restore-<timestamp>.tar.gz` first, so a mistaken restore is
-   itself undoable.
+   itself undoable. Restoring an archive that was created with
+   `--include-credentials` makes that snapshot include credentials too, under
+   the same authorization — otherwise the undo would drop the very secrets the
+   restore replaced. The command says so when it happens.
 
 Use `--dry-run` to see the overwrite list without any of this happening:
 
@@ -106,6 +109,15 @@ Restore only replaces the entries present in the archive. State outside that
 scope — caches, logs — is left alone. When a mixed file omits or redacts a
 registered secret field, restore keeps the current machine's value for that
 field instead of replacing it with a mask or deleting it.
+
+The whole archive is validated before any of it becomes visible: containment,
+member type, and the JSON shape of every registered secret file. Symlink,
+hardlink, and path-traversal members are refused outright, and a rejected
+archive leaves your state exactly as it was. Each file is then published
+through the same owner-only atomic writer the rest of OpenProgram uses, and
+every publish is journalled — so a restore interrupted by a crash or a full
+disk is reversed rather than left half-applied. Recovery runs automatically at
+the start of the next restore.
 
 ## Pruning
 

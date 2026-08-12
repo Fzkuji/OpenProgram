@@ -24,6 +24,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import sys
 import tarfile
 import time
@@ -305,6 +306,20 @@ def _archive_summary(path: Path) -> tuple[int, list[str]]:
     return len(names), tops
 
 
+def _archive_carries_credentials(path: Path) -> bool:
+    """Whether an archive was created with the explicit credential opt-in."""
+
+    try:
+        with tarfile.open(path, "r:gz") as tar:
+            member = tar.extractfile(_MANIFEST_NAME)
+            if member is None:
+                return False
+            manifest = json.loads(member.read())
+    except (OSError, tarfile.TarError, json.JSONDecodeError):
+        return False
+    return bool(manifest.get("credential_opt_in"))
+
+
 def _running_processes() -> list[str]:
     """Names of live OpenProgram processes that would fight a restore."""
     live: list[str] = []
@@ -446,9 +461,21 @@ def _cmd_backup_restore(
 
     # Safety net: snapshot current state before overwriting it, so a
     # mistaken restore is itself undoable.
+    # A credential-bearing archive is about to overwrite live credentials,
+    # so the same explicit authorization that produced it lets the safety
+    # snapshot keep them too — otherwise the undo would silently drop the
+    # very secrets the restore replaced.
+    snapshot_credentials = _archive_carries_credentials(path)
     try:
-        safety = create_backup(label="pre-restore")
+        safety = create_backup(
+            include_credentials=snapshot_credentials, label="pre-restore"
+        )
         print(f"Saved current state to {safety.name} before restoring.")
+        if snapshot_credentials:
+            print(
+                "That snapshot contains plaintext credentials, because the "
+                "archive you are restoring does."
+            )
     except OSError as exc:
         print(
             f"[error] could not back up current state, aborting: {exc}", file=sys.stderr
@@ -456,11 +483,11 @@ def _cmd_backup_restore(
         return 1
 
     try:
-        with tarfile.open(path, "r:gz") as tar:
-            _extract(tar, state)
+        restore_archive(path, state)
     except (OSError, tarfile.TarError) as exc:
         print(f"[error] restore failed: {exc}", file=sys.stderr)
-        print(f"Your previous state is preserved in {safety}", file=sys.stderr)
+        print("Your previous state was restored in place.", file=sys.stderr)
+        print(f"A snapshot is also preserved in {safety}", file=sys.stderr)
         return 1
 
     print(f"Restored {path.name} into {state}")
@@ -468,53 +495,242 @@ def _cmd_backup_restore(
     return 0
 
 
-def _extract(tar: tarfile.TarFile, dest: Path) -> None:
-    """Extract with path containment, refusing anything outside ``dest``."""
-    dest = dest.resolve()
-    members = tar.getmembers()
-    for member in members:
-        if member.issym() or member.islnk():
+_JOURNAL_NAME = ".restore-journal.json"
+_JOURNAL_DIR = ".restore-journal.d"
+
+# Bound at import so the journal keeps working when a test — or a fault
+# injector — replaces these on the shared ``os`` module to exercise a
+# credential-writer failure. The journal must record that failure, not
+# inherit it.
+_journal_write = os.write
+_journal_fsync = os.fsync
+_journal_replace = os.replace
+
+
+def restore_journal_path(state: Path) -> Path:
+    """Where the durable restore journal lives for one state root."""
+
+    return Path(state) / _JOURNAL_NAME
+
+
+class _RestoreJournal:
+    """Durable record of what a restore replaced, for reversal.
+
+    Written before the first publish and fsynced after every entry, so a
+    process killed at any point leaves enough on disk to put the old
+    state back. Old copies live beside it under the same state root, so
+    reversal is a same-filesystem rename.
+    """
+
+    def __init__(self, state: Path) -> None:
+        self.state = Path(state)
+        self.path = restore_journal_path(self.state)
+        self.backup_dir = self.state / _JOURNAL_DIR
+        self.entries: list[dict] = []
+
+    def start(self) -> None:
+        self.backup_dir.mkdir(mode=0o700, exist_ok=True)
+        self._flush(complete=False)
+
+    def record(self, relative: str, previous: Path | None) -> None:
+        self.entries.append(
+            {
+                "relative_path": relative,
+                "previous": (
+                    previous.relative_to(self.state).as_posix() if previous else None
+                ),
+                "existed": previous is not None,
+            }
+        )
+        self._flush(complete=False)
+
+    def preserve(self, relative: str, target: Path) -> Path | None:
+        """Copy the current bytes aside so the publish can be reversed."""
+
+        if not target.exists():
+            return None
+        keep = self.backup_dir / relative.replace("/", "__")
+        keep.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        shutil.copy2(target, keep)
+        os.chmod(keep, 0o600)
+        return keep
+
+    def finish(self) -> None:
+        self._flush(complete=True)
+        self.discard()
+
+    def discard(self) -> None:
+        shutil.rmtree(self.backup_dir, ignore_errors=True)
+        self.path.unlink(missing_ok=True)
+
+    def _flush(self, *, complete: bool) -> None:
+        payload = json.dumps(
+            {
+                "format_version": 1,
+                "complete": complete,
+                "entries": self.entries,
+            },
+            indent=2,
+        ).encode()
+        # Deliberately not the credential writer: the journal is the thing
+        # that must survive a failing credential publish, so it cannot share
+        # the code path whose failure it exists to record.
+        descriptor = os.open(
+            self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
+        )
+        try:
+            _journal_write(descriptor, payload)
+            _journal_fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+
+def recover_interrupted_restore(state: Path) -> bool:
+    """Reverse a restore that died mid-flight. Returns whether it acted.
+
+    Safe to call repeatedly: a journal marked complete, or none at all,
+    means the last restore either finished or never published, so there
+    is nothing to undo.
+    """
+
+    state = Path(state)
+    journal_file = restore_journal_path(state)
+    try:
+        record = json.loads(journal_file.read_text())
+    except FileNotFoundError:
+        return False
+    except (OSError, json.JSONDecodeError):
+        # An unreadable journal cannot direct a rollback; leave it for
+        # the operator rather than guessing at the old state.
+        return False
+
+    if record.get("complete"):
+        shutil.rmtree(state / _JOURNAL_DIR, ignore_errors=True)
+        journal_file.unlink(missing_ok=True)
+        return False
+
+    _reverse(state, record.get("entries") or [])
+    shutil.rmtree(state / _JOURNAL_DIR, ignore_errors=True)
+    journal_file.unlink(missing_ok=True)
+    return True
+
+
+def _reverse(state: Path, entries: list[dict]) -> None:
+    for entry in reversed(entries):
+        relative = entry.get("relative_path")
+        if not isinstance(relative, str) or not relative:
             continue
-        target = (dest / member.name).resolve()
-        if not str(target).startswith(str(dest) + os.sep):
-            raise tarfile.TarError(f"unsafe path in archive: {member.name}")
+        target = state / relative
+        previous = entry.get("previous")
+        if entry.get("existed") and isinstance(previous, str):
+            source = state / previous
+            if source.exists():
+                target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                _journal_replace(source, target)
+                os.chmod(target, 0o600)
+        else:
+            target.unlink(missing_ok=True)
+
+
+def _publish_restored(target: Path, payload: bytes, *, root: Path) -> None:
+    """Publish one validated member through the shared private writer."""
+
+    from openprogram.credential_files import _private_atomic_write
+
+    _private_atomic_write(target, lambda handle: handle.write(payload), root=root)
+
+
+def restore_archive(archive: Path, state: Path) -> list[str]:
+    """Validate an archive completely, then publish it or change nothing.
+
+    Every member is extracted into a staging directory beside the state
+    root — same filesystem, so publication is a rename — and validated
+    there: containment, member type, registered-secret JSON shape, and
+    manifest presence. Only once the whole archive passes does anything
+    become visible, and each publish is journalled so a mid-restore
+    failure reverses the targets already written.
+    """
+
     from openprogram.credential_files import (
-        _private_atomic_write,
         inventory_for_path,
         preserve_local_secret_bytes,
     )
 
-    for member in members:
-        if member.name == _MANIFEST_NAME or member.issym() or member.islnk():
-            continue
-        target = dest / member.name
-        inventory = inventory_for_path(member.name)
-        if any(
-            entry.whole_file and entry.backup_policy == "never_backup"
-            for entry in inventory
-        ):
-            continue
-        if member.isfile() and inventory:
+    state = Path(state).resolve()
+    recover_interrupted_restore(state)
+
+    with tarfile.open(archive, "r:gz") as tar:
+        members = tar.getmembers()
+        names = {member.name for member in members}
+        if _MANIFEST_NAME not in names:
+            raise tarfile.TarError("archive has no manifest; refusing to restore")
+
+        staged: list[tuple[str, bytes]] = []
+        for member in members:
+            if member.name == _MANIFEST_NAME:
+                continue
+            if member.issym() or member.islnk():
+                raise tarfile.TarError(f"link member in archive: {member.name}")
+            target = (state / member.name).resolve()
+            if not str(target).startswith(str(state) + os.sep):
+                raise tarfile.TarError(f"unsafe path in archive: {member.name}")
+            if member.isdir():
+                continue
+            if not member.isfile():
+                raise tarfile.TarError(
+                    f"unsupported member type in archive: {member.name}"
+                )
+
+            inventory = inventory_for_path(member.name)
+            if any(
+                entry.whole_file and entry.backup_policy == "never_backup"
+                for entry in inventory
+            ):
+                continue
             source = tar.extractfile(member)
             if source is None:
                 raise tarfile.TarError(f"cannot read archive member: {member.name}")
-            restored = source.read()
-            if all(not entry.whole_file for entry in inventory):
-                try:
-                    local = target.read_bytes()
-                except FileNotFoundError:
-                    local = None
-                restored = preserve_local_secret_bytes(member.name, restored, local)
-            _private_atomic_write(
-                target,
-                lambda handle: handle.write(restored),
-                root=dest,
-            )
-            continue
-        try:
-            tar.extract(member, dest, filter="data")
-        except TypeError:  # pragma: no cover - Python < 3.12
-            tar.extract(member, dest)
+            payload = source.read()
+            if inventory:
+                # A registered JSON secret file must parse before
+                # publication: publishing unparseable bytes over a live
+                # credential turns a corrupt archive into a lost one.
+                # Line-oriented members (a profile ``.env``) have no JSON
+                # shape to check, so only their containment and type gate.
+                if member.name.endswith(".json"):
+                    try:
+                        json.loads(payload)
+                    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                        raise tarfile.TarError(
+                            f"registered secret member is not valid JSON: "
+                            f"{member.name}"
+                        ) from exc
+                if all(not entry.whole_file for entry in inventory):
+                    try:
+                        local = (state / member.name).read_bytes()
+                    except (FileNotFoundError, NotADirectoryError):
+                        local = None
+                    payload = preserve_local_secret_bytes(
+                        member.name, payload, local
+                    )
+            staged.append((member.name, payload))
+
+    journal = _RestoreJournal(state)
+    journal.start()
+    published: list[str] = []
+    try:
+        for relative, payload in staged:
+            target = state / relative
+            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            journal.record(relative, journal.preserve(relative, target))
+            _publish_restored(target, payload, root=state)
+            published.append(relative)
+    except BaseException:
+        _reverse(state, journal.entries)
+        journal.discard()
+        raise
+    journal.finish()
+    return published
 
 
 def _cmd_backup_prune(keep: int) -> int:
@@ -546,6 +762,9 @@ __all__ = [
     "CREDENTIAL_ENTRIES",
     "backups_dir",
     "create_backup",
+    "recover_interrupted_restore",
+    "restore_archive",
+    "restore_journal_path",
     "_cmd_backup_create",
     "_cmd_backup_list",
     "_cmd_backup_restore",
