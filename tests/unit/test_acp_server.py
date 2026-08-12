@@ -319,6 +319,33 @@ def test_prompt_rejects_unknown_session(tmp_db, client) -> None:
                                   "prompt": [{"type": "text", "text": "hi"}]})
 
 
+def test_prompt_rejects_session_reserved_by_mcp_without_replacing_token(
+    tmp_db, client, tmp_path,
+) -> None:
+    from openprogram.agent import run_control
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    mcp_event = threading.Event()
+    assert run_control.claim_cancel_event(sid, mcp_event)
+
+    try:
+        with pytest.raises(AssertionError, match="already active"):
+            c.call("session/prompt", {
+                "sessionId": sid,
+                "prompt": [{"type": "text", "text": "hi"}],
+            })
+        token = run_control.current_token(sid)
+        assert token is not None
+        assert token.event is mcp_event
+        assert tmp_db.get_messages(sid) == []
+    finally:
+        run_control.unregister_cancel_event(sid, mcp_event)
+
+
 def test_editor_context_reaches_the_model(tmp_db, client, tmp_path) -> None:
     """The selection the editor ships must end up in the persisted user
     message — that is the whole point of embeddedContext."""

@@ -109,11 +109,23 @@ def run_query(
     )
     from openprogram.functions.permission_rule import load_merged_rules as _load_merged_rules
 
-    # Fresh token for this turn: registering it retires whatever the
-    # previous turn left behind, so a stop aimed at that turn cannot
-    # short-circuit this one.
+    # One turn per session: claiming the token fails closed when another
+    # turn (chat, task worker, MCP, ACP) already owns this session, so a
+    # second turn can never displace the live one mid-flight.
     _chat_cancel_event = threading.Event()
-    _s._register_cancel_event(session_id, _chat_cancel_event)
+    if not _s._claim_cancel_event(session_id, _chat_cancel_event):
+        with _s._running_tasks_lock:
+            _s._running_tasks.pop(session_id, None)
+        _s._emit_running_task_event(session_id)
+        _s._broadcast_chat_response(session_id, msg_id, {
+            "type": "error",
+            "content": "A prompt turn is already active for this session.",
+            "display": "chat",
+        })
+        return
+    # Only after the claim succeeds: a rejected turn must not tear down
+    # the runtime the turn that actually owns the session is using.
+    _s._register_active_runtime(session_id, runtime)
 
     tool_calls_collected: list[dict] = []
     # Live block accumulator. Each tool_use opens a new

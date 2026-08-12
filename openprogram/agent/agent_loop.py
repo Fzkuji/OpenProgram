@@ -137,6 +137,19 @@ def _create_agent_stream() -> EventStream[AgentEvent, list[AgentMessage]]:
     )
 
 
+def _record_task_activity(kind: str) -> None:
+    try:
+        from openprogram.agent.task.runner import record_current_task_activity
+        record_current_task_activity(kind)
+    except Exception:
+        pass
+
+
+def _task_operation_timeout(declared: float | None) -> float | None:
+    from openprogram.agent.task.runner import current_task_operation_timeout
+    return current_task_operation_timeout(declared)
+
+
 def agent_loop(
     prompts: list[AgentMessage],
     context: AgentContext,
@@ -782,9 +795,21 @@ async def _stream_assistant_response(
     partial_message: AssistantMessage | None = None
     added_partial = False
 
+    _record_task_activity("operation_start")
     response_stream = fn(config.model, llm_context, stream_opts)
 
-    async for event in response_stream:
+    iterator = response_stream.__aiter__()
+    while True:
+        timeout = _task_operation_timeout(None)
+        try:
+            event = (
+                await iterator.__anext__()
+                if timeout is None
+                else await asyncio.wait_for(iterator.__anext__(), timeout=timeout)
+            )
+        except StopAsyncIteration:
+            break
+        _record_task_activity("provider_data")
         if structured_plan is not None and cancel_event and cancel_event.is_set():
             from openprogram.providers.utils.errors import ExecInterrupt
 
@@ -1100,6 +1125,7 @@ async def _execute_tool_calls(
             validated_args = validate_tool_arguments(ai_tool, tool_call)
 
             def on_update(partial_result: AgentToolResult) -> None:
+                _record_task_activity("tool_progress")
                 ev_stream.push(AgentEventToolUpdate(
                     tool_call_id=tool_call.id,
                     tool_name=tool_call.name,
@@ -1109,7 +1135,16 @@ async def _execute_tool_calls(
 
             pre_snapshot = _snapshot_cwd(tool_call.name)
             try:
-                result = await tool.execute(tool_call.id, validated_args, cancel_event, on_update)
+                _record_task_activity("operation_start")
+                timeout = _task_operation_timeout(None)
+                operation = tool.execute(
+                    tool_call.id, validated_args, cancel_event, on_update,
+                )
+                result = (
+                    await operation
+                    if timeout is None
+                    else await asyncio.wait_for(operation, timeout=timeout)
+                )
             except BaseException:
                 # A raising / cancelled bash may still have written files,
                 # so checkpoint before re-raising — and either way this is

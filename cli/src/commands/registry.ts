@@ -21,6 +21,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'permissions', description: 'Set permission mode (ask/acceptEdits/plan/auto/bypass); shift+tab cycles' },
   { name: 'session', description: 'Show current session info' },
   { name: 'sessions', description: 'List sessions' },
+  { name: 'tasks', description: 'List and inspect subagent tasks' },
   { name: 'new', description: 'Start a new session' },
   { name: 'resume', description: 'Resume a previous session' },
   { name: 'search', description: 'Search across past sessions' },

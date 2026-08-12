@@ -44,6 +44,47 @@ def _validate_api_key(env_var: str, value: str) -> str | None:
 
 
 def register(app):
+    def resource_limits_view(session_id: str) -> dict[str, Any]:
+        from openprogram.agent.resource_governance import (
+            global_resource_limits, resolve_resource_limits, session_resource_limits,
+        )
+        from openprogram.agent.session_db import default_db
+        if default_db().get_session(session_id) is None:
+            raise KeyError(session_id)
+        return resolve_resource_limits(
+            global_resource_limits(), session=session_resource_limits(session_id),
+        ).to_dict()
+
+    @app.get("/api/sessions/{session_id}/resource-limits")
+    async def get_session_resource_limits_api(session_id: str):
+        try:
+            return JSONResponse(content=resource_limits_view(session_id))
+        except KeyError:
+            return JSONResponse(content={"error": "session not found"}, status_code=404)
+
+    @app.put("/api/sessions/{session_id}/resource-limits")
+    async def put_session_resource_limits_api(session_id: str, request: Request, body: Any = Body(default=None)):
+        if not isinstance(body, dict) or "limits" not in body:
+            return JSONResponse(content={"error": "body must contain limits"}, status_code=400)
+        try:
+            resource_limits_view(session_id)
+        except KeyError:
+            return JSONResponse(content={"error": "session not found"}, status_code=404)
+        # Authority comes from the authenticated connection only. A body-supplied
+        # "authority" is a forgery attempt and is refused, never merged in.
+        auth_state = getattr(request.app.state, "owner_auth", None)
+        authority = getattr(auth_state, "authority", None)
+        if authority is None or set(body) != {"limits"}:
+            return JSONResponse(content={"error": "trusted owner authority required"}, status_code=403)
+        try:
+            from openprogram.agent.resource_governance import save_session_resource_limits
+            save_session_resource_limits(session_id, body["limits"], authority=authority)
+            return JSONResponse(content=resource_limits_view(session_id))
+        except PermissionError:
+            return JSONResponse(content={"error": "owner authority required"}, status_code=403)
+        except (TypeError, ValueError) as exc:
+            return JSONResponse(content={"error": str(exc)}, status_code=400)
+
     @app.get("/api/config")
     async def get_config():
         from openprogram.webui import server as _s

@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Awaitable, Callable, Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .structured_output import JsonSchemaOutput
 
@@ -305,10 +305,30 @@ class Context(BaseModel):
 # Model
 
 class ModelCost(BaseModel):
-    input: float = 0.0   # $/million tokens
-    output: float = 0.0
-    cache_read: float = 0.0
-    cache_write: float = 0.0
+    # ``None`` means the price is absent, which is distinct from an explicit
+    # zero rate (for example a bundled or free endpoint).  Do not turn absent
+    # catalog fields into zero: budget enforcement needs this distinction.
+    input: float | None = None   # $/million tokens
+    output: float | None = None
+    cache_read: float | None = None
+    cache_write: float | None = None
+    source: Literal["model_catalog", "configured", "unknown"] = "unknown"
+
+    @field_validator("input", "output", "cache_read", "cache_write")
+    @classmethod
+    def _valid_rate(cls, value: float | None) -> float | None:
+        if value is not None and (value < 0 or value == float("inf") or value != value):
+            raise ValueError("price rates must be finite and non-negative")
+        return value
+
+    def is_known(self) -> bool:
+        return (
+            (self.source != "unknown" or "source" not in self.model_fields_set)
+            and self.input is not None
+            and self.output is not None
+            and self.cache_read is not None
+            and self.cache_write is not None
+        )
 
 
 class Model(BaseModel):

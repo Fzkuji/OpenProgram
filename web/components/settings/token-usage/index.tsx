@@ -54,6 +54,8 @@ type Summary = {
     cache_write_tokens: number;
     total_tokens: number;
     cost: number;
+    cost_known: boolean;
+    unknown_cost_events: number;
     events: number;
   };
   by_model: ModelRow[];
@@ -409,7 +411,7 @@ export function TokenUsageSection() {
             { label: t("usage.card.output"), value: fmtNum(totals.output_tokens) },
             { label: t("usage.card.cache"), value: fmtNum(totals.cache_read_tokens) },
             { label: t("usage.card.total"), value: fmtNum(totals.total_tokens) },
-            { label: t("usage.card.cost"), value: fmtCost(totals.cost) },
+            { label: t("usage.card.cost"), value: totals.cost_known ? fmtCost(totals.cost) : "Unknown" },
             { label: t("usage.card.calls"), value: fmtNum(totals.events) },
           ]
         : [],

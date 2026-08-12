@@ -51,12 +51,8 @@ def captured_run(monkeypatch):
     impls run without a real LLM and we can read back spawn_caller."""
     cap = {}
 
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None,
-                 label=None, spawn_caller=None, advance_head=True,
-                 authority=None):
-        cap["session_id"] = session_id
-        cap["branch_from"] = branch_from
-        cap["spawn_caller"] = spawn_caller
+    def fake_run(**kwargs):
+        cap.update(kwargs)
         return AgentTurnResult(head_id="head_x", final_text="(reply)")
 
     monkeypatch.setattr(
@@ -129,7 +125,7 @@ def test_agent_sync_fork_passes_no_spawn_caller(store, captured_run):
 # ---- entry 3: async runner (task/runner.py _run_one) --------------------
 
 def test_runner_clean_passes_spawn_caller(store, monkeypatch):
-    """The async worker calls run_agent_turn with
+    """The async worker calls the execution primitive with
     spawn_caller=caller_msg_id when context_mode=clean (branch_from=None).
     Drive a real task through the pool with a fake worker that records it."""
     cap = {}
@@ -142,7 +138,7 @@ def test_runner_clean_passes_spawn_caller(store, monkeypatch):
         return AgentTurnResult(head_id="head_ok", final_text="hello")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run.run_agent_turn", fake_run,
+        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
     )
     monkeypatch.setattr(
         "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
@@ -175,7 +171,7 @@ def test_runner_inherit_passes_no_spawn_caller(store, monkeypatch):
         return AgentTurnResult(head_id="head_ok", final_text="hello")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run.run_agent_turn", fake_run,
+        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
     )
     monkeypatch.setattr(
         "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,

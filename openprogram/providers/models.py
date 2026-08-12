@@ -65,10 +65,10 @@ def calculate_cost(model: Model, usage: Usage) -> float:
     """Calculate total cost in USD from usage and model pricing. Also mutates usage.cost."""
     from openprogram.providers.types import UsageCost
 
-    input_cost = usage.input / 1_000_000 * model.cost.input
-    output_cost = usage.output / 1_000_000 * model.cost.output
-    cache_read_cost = usage.cache_read / 1_000_000 * model.cost.cache_read
-    cache_write_cost = usage.cache_write / 1_000_000 * model.cost.cache_write
+    input_cost = usage.input / 1_000_000 * (model.cost.input or 0.0)
+    output_cost = usage.output / 1_000_000 * (model.cost.output or 0.0)
+    cache_read_cost = usage.cache_read / 1_000_000 * (model.cost.cache_read or 0.0)
+    cache_write_cost = usage.cache_write / 1_000_000 * (model.cost.cache_write or 0.0)
     total = input_cost + output_cost + cache_read_cost + cache_write_cost
     usage.cost = UsageCost(
         input=input_cost,

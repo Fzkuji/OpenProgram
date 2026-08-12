@@ -146,6 +146,7 @@ def _normalize_spec_row(row: dict[str, Any]) -> dict[str, Any]:
             "output": float(out.get("output_cost", 0) or 0),
             "cache_read": float(out.get("cache_read_cost", 0) or 0),
             "cache_write": float(out.get("cache_write_cost", 0) or 0),
+            "source": "model_catalog",
         }
     return out
 

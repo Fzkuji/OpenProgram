@@ -36,7 +36,7 @@ from openprogram.agent.run_control import (
     register_active_runtime as _register_active_runtime,
     unregister_active_runtime as _unregister_active_runtime,
     kill_active_runtime as _kill_active_runtime,
-    register_cancel_event as _register_cancel_event,
+    claim_cancel_event as _claim_cancel_event,
     unregister_cancel_event as _unregister_cancel_event,
     has_active_runtime as _has_active_runtime,
     set_current_session_id as _set_current_session_id,

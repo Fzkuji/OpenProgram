@@ -25,6 +25,7 @@ from unittest.mock import patch
 import pytest
 
 from openprogram.agent import dispatcher as D
+from openprogram.agent import run_control
 from openprogram.agent.session_db import SessionDB
 from openprogram.providers.types import (
     AssistantMessage,
@@ -113,11 +114,6 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(srv, "_broadcast_chat_response", _capture)
     # Skip channel outbound forwarding (no real channel client)
     monkeypatch.setattr(srv, "_load_agent_session_meta",
-                        lambda conv_id: None)
-    # Skip the active-runtime registry tracking
-    monkeypatch.setattr(srv, "_register_active_runtime",
-                        lambda conv_id, runtime: None)
-    monkeypatch.setattr(srv, "_unregister_active_runtime",
                         lambda conv_id: None)
     return srv, db, captured
 
@@ -213,6 +209,40 @@ def test_query_action_failure_emits_error_envelope(env) -> None:
                     if c["payload"].get("type") == "error"]
     assert len(err_payloads) == 1
     assert "boom" in err_payloads[0]["payload"]["content"].lower()
+
+
+def test_query_action_rejects_session_reserved_by_mcp_without_replacing_token(
+    env,
+) -> None:
+    srv, db, captured = env
+    conv = srv._get_or_create_session("c1", agent_id="main")
+    srv._append_msg(conv, {
+        "id": "u-busy", "role": "user", "content": "busy",
+        "timestamp": time.time(), "source": "web",
+    })
+    mcp_event = run_control.CancelToken("c1").event
+    assert run_control.claim_cancel_event("c1", mcp_event)
+    run_control.register_active_runtime("c1", object())
+
+    try:
+        srv._execute_in_context(
+            "c1", "u-busy", "query", query="busy",
+            thinking_effort=None, tools_flag=None,
+        )
+        token = run_control.current_token("c1")
+        assert token is not None
+        assert token.event is mcp_event
+        assert run_control.has_active_runtime("c1")
+        assert db.get_messages("c1")[-1]["role"] == "user"
+        errors = [
+            item["payload"] for item in captured
+            if item["payload"].get("type") == "error"
+        ]
+        assert len(errors) == 1
+        assert "already active" in errors[0]["content"]
+    finally:
+        run_control.unregister_active_runtime("c1")
+        run_control.unregister_cancel_event("c1", mcp_event)
 
 
 def test_structured_query_retries_and_returns_typed_result(env) -> None:

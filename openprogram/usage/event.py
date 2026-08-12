@@ -72,7 +72,7 @@ class UsageEvent(BaseModel):
     cost_cache_read: float = 0.0
     cost_cache_write: float = 0.0
     cost_total: float = 0.0
-    cost_source: str = "unknown"  # model_catalog | provider_reported | unknown
+    cost_source: str = "unknown"  # model_catalog | configured | provider_reported | unknown
 
     # provenance
     token_source: str = "provider_usage"  # provider_usage | anthropic_count_api | estimate
