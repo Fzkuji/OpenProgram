@@ -1544,6 +1544,15 @@ class Runtime:
                     override_reason=_ER.TIMEOUT,
                 ) from cause
 
+            from openprogram.agentic_programming.function import (
+                CancelledError as _CE,
+                check_cancelled,
+            )
+            try:
+                check_cancelled()
+            except _CE:
+                raise ExecInterrupt("cancelled") from None
+
             try:
                 attempts_used += 1
                 raw_reply = await self._async_call(
