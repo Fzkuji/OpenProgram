@@ -312,13 +312,10 @@ def _http_api_key_for(entry: dict) -> str | None:
 
 def _replay_runtime(provider: str, model: str, entry: dict, kwargs: dict):
     from openprogram.agentic_programming.runtime import Runtime
-    from openprogram.providers.enabled_models import register_model_from_config
     from openprogram.providers.models import get_model
 
     namespace = entry["model_namespace"]
     source = get_model(provider, model) or get_model(namespace, model)
-    if source is None and register_model_from_config(provider, model):
-        source = get_model(provider, model)
     if source is None:
         raise ValueError(f"Unknown model {provider!r}:{model!r}")
 

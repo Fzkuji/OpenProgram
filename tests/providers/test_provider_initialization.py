@@ -344,3 +344,28 @@ def test_replay_claude_code_uses_enabled_model_without_anthropic_duplicate(
     assert enabled_models.ENABLED_MODELS == {
         "claude-code/claude-sonnet-4-6": model
     }
+
+
+def test_replay_factory_does_not_enable_disabled_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.providers import enabled_models, initialization, registry
+
+    monkeypatch.setattr(enabled_models, "ENABLED_MODELS", {})
+    monkeypatch.setattr("openprogram.providers.models.ENABLED_MODELS", enabled_models.ENABLED_MODELS)
+    monkeypatch.setattr(
+        initialization,
+        "initialize_provider_runtime",
+        lambda: initialization.ProviderRuntimeSnapshot(mode="replay"),
+    )
+    monkeypatch.setattr(
+        "openprogram.providers.enabled_models.register_model_from_config",
+        lambda provider, model: enabled_models.ENABLED_MODELS.update(
+            {f"{provider}/{model}": object()}
+        ) or True,
+    )
+
+    with pytest.raises(ValueError, match="Unknown model"):
+        registry.create_runtime(provider="anthropic", model="disabled-model")
+
+    assert enabled_models.ENABLED_MODELS == {}
