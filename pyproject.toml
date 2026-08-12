@@ -121,6 +121,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "build>=1.2",
+    # Exercises Bedrock's actual retry configuration without AWS credentials.
+    "botocore>=1.34",
     # Wheel-content tests invoke the active interpreter's pip module to
     # install the built artifact into an isolated target directory.
     "pip>=24",

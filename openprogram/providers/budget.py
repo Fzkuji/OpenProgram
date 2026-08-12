@@ -144,6 +144,22 @@ def requested_output_cap(options, model) -> int:
     return declared + reasoning_budget(options, model)
 
 
+def provider_retry_attempts(default_attempts: int) -> int:
+    """Return one provider attempt while a governed reservation is active."""
+    try:
+        from openprogram.agent.task.runner import current_task_resource_context
+        if current_task_resource_context() is not None:
+            return 1
+    except Exception:
+        pass
+    return default_attempts
+
+
+def provider_sdk_retries(default_retries: int) -> int:
+    """Translate total-attempt governance into SDK retry-count semantics."""
+    return max(0, provider_retry_attempts(default_retries + 1) - 1)
+
+
 class BudgetedRequest:
     """Reserve/start/settle around one provider request.
 
@@ -279,5 +295,5 @@ class BudgetedRequest:
 
 __all__ = [
     "BudgetedRequest", "QuotaExceeded", "estimate_input_upper_bound",
-    "requested_output_cap",
+    "provider_retry_attempts", "provider_sdk_retries", "requested_output_cap",
 ]

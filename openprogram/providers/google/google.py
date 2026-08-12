@@ -222,6 +222,8 @@ async def stream_simple(
     from openprogram.security.url_policy import OwnerURLException, normalize_origin
     import os as _os
     sdk_attempts = int(_os.environ.get("OPENPROGRAM_GOOGLE_MAX_RETRIES", "3"))
+    from ..budget import provider_retry_attempts
+    sdk_attempts = provider_retry_attempts(sdk_attempts)
     configured_origin = normalize_origin(
         getattr(model, "base_url", None)
         or "https://generativelanguage.googleapis.com"

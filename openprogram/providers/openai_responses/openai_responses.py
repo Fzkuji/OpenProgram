@@ -193,6 +193,8 @@ def _create_client(
     # via ``OPENPROGRAM_OPENAI_MAX_RETRIES`` (also picked up by the
     # Azure and copilot endpoints that share this client factory).
     sdk_max_retries = int(os.environ.get("OPENPROGRAM_OPENAI_MAX_RETRIES", "3"))
+    from ..budget import provider_sdk_retries
+    sdk_max_retries = provider_sdk_retries(sdk_max_retries)
 
     # Shared hardened httpx client: unified proxy semantics + keepalive,
     # one connection pool per event loop (the SDK never closes

@@ -16,6 +16,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from openprogram.providers.models import supports_xhigh
+from openprogram.providers.budget import provider_retry_attempts
 from openprogram.providers._shared.openai_responses import (
     convert_responses_messages,
     convert_responses_tools,
@@ -314,6 +315,7 @@ def stream_openai_codex_responses(
             await retry_stream(
                 _attempt,
                 is_committed_fn=lambda: bool(output.content),
+                max_attempts=provider_retry_attempts(PROVIDER_STREAM_MAX_ATTEMPTS),
                 label=model.api,
                 provider=model.provider,
             )

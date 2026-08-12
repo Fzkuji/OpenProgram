@@ -33,6 +33,7 @@ from openprogram.providers.types import (
 from openprogram.usage import context as _ctx_mod
 from openprogram.usage import recorder as _recorder
 from openprogram.usage.context import UsageContext
+from openprogram.usage.event import UsageEvent
 from openprogram.usage.ledger import UsageLedger
 
 
@@ -193,6 +194,31 @@ def test_budgeted_call_settles_actual_usage_once(wired):
     assert rows[0].events == 1
     # Both the token and cost legs settle; no exposure is left reserved.
     assert set(_reservation_states(env["ledger"])) == {"settled"}
+
+
+def test_actual_usage_over_reservation_is_authoritatively_settled(wired):
+    """Provider usage, not the estimate, is the one usage-ledger fact."""
+    env = wired(
+        limits=ResourceLimits(max_total_tokens=100_000),
+        usage=Usage(input=90_000, output=20_000, cache_read=0, cache_write=0),
+    )
+
+    _drain(env["model"], SimpleStreamOptions(session_id="s1"))
+
+    row = env["ledger"].query()[0]
+    assert row.total_tokens == 110_000
+    assert set(_reservation_states(env["ledger"])) == {"settled"}
+    reservation_id = env["ledger"].connection().execute(
+        "SELECT reservation_id FROM usage_events LIMIT 1",
+    ).fetchone()[0]
+    duplicate = UsageEvent(
+        event_id="duplicate", session_id="s1", provider="fakeprov",
+        model_id="fake-model-1", input_tokens=90_000, output_tokens=20_000,
+    )
+    assert env["governor"].settle_provider_request(
+        reservation_id.removesuffix(":token"), duplicate,
+    ) is None
+    assert env["ledger"].query()[0].events == 1
 
 
 def test_output_cap_is_clamped_to_remaining_budget(wired):

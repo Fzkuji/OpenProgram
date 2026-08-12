@@ -149,14 +149,10 @@ def stream_bedrock(
         )
 
         # boto3 retry config: "standard" mode retries throttling /
-        # 5xx with exponential backoff; default max_attempts=3. Match
+        # 5xx with exponential backoff; default retries=3. Match
         # other providers' stream retry budget; override via
         # ``OPENPROGRAM_BEDROCK_MAX_RETRIES``.
-        from botocore.config import Config as _BotoConfig
-        boto_max_attempts = int(os.environ.get("OPENPROGRAM_BEDROCK_MAX_RETRIES", "3"))
-        boto_config = _BotoConfig(
-            retries={"max_attempts": boto_max_attempts, "mode": "standard"},
-        )
+        boto_config = _build_boto_retry_config()
 
         client_kwargs: dict[str, Any] = {"region_name": region, "config": boto_config}
         if opts.get("profile"):
@@ -264,6 +260,18 @@ def stream_bedrock(
 
     asyncio.ensure_future(_run())
     return ev_stream
+
+
+def _build_boto_retry_config():
+    from botocore.config import Config as _BotoConfig
+
+    max_retries = int(os.environ.get("OPENPROGRAM_BEDROCK_MAX_RETRIES", "3"))
+    from ..budget import provider_retry_attempts
+
+    return _BotoConfig(retries={
+        "total_max_attempts": provider_retry_attempts(max_retries + 1),
+        "mode": "standard",
+    })
 
 
 def stream_simple_bedrock(

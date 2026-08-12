@@ -274,6 +274,8 @@ def _build_client(
     # ``OPENPROGRAM_ANTHROPIC_MAX_RETRIES`` env overrides.
     import os as _os
     sdk_max_retries = int(_os.environ.get("OPENPROGRAM_ANTHROPIC_MAX_RETRIES", "3"))
+    from ..budget import provider_sdk_retries
+    sdk_max_retries = provider_sdk_retries(sdk_max_retries)
 
     if is_oauth:
         # OAuth: Bearer auth + Claude Code identity headers
