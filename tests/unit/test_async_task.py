@@ -591,6 +591,76 @@ def test_runner_releases_stopping_claim_when_cancel_races_busy_requeue(
         runner.shutdown()
 
 
+def test_runner_abandons_failed_stopping_finalize_and_continues_dispatch(
+    store_fixture, fake_worker, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    store_fixture.create_session("p2", "main", title="other")
+    from openprogram.agent import run_control
+    from openprogram.agent.resource_governance import (
+        ResourceGovernor, ResourceLimits, resolve_resource_limits,
+    )
+    import openprogram.agent.task.runner as runner_mod
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.agent.task.types import TaskStatus
+    from openprogram.usage.ledger import UsageLedger
+
+    ledger = UsageLedger(tmp_path / "governance.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=2)
+    governor = ResourceGovernor(
+        ledger, limit_resolver=lambda _sid, _task: resolved,
+    )
+    original_requeue = governor.requeue_task
+    original_store_update = runner_mod._store_update_status
+
+    def cancel_before_requeue(task_id, **fence):
+        governor.request_stop(task_id, "cancel.user")
+        return original_requeue(task_id, **fence)
+
+    def fail_cancel_store(session_id, task_id, status, **fields):
+        if status == TaskStatus.CANCELLED:
+            raise OSError("task store unavailable")
+        return original_store_update(session_id, task_id, status, **fields)
+
+    monkeypatch.setattr(governor, "requeue_task", cancel_before_requeue)
+    monkeypatch.setattr(runner_mod, "_store_update_status", fail_cancel_store)
+    runner = TaskRunner(max_workers=1, governor=governor)
+    mcp_event = threading.Event()
+    assert run_control.claim_cancel_event("p1", mcp_event)
+    try:
+        failed_id = runner.spawn_task(
+            session_id="p1", prompt="cancel race", agent_id="main",
+        )
+        other_id = runner.spawn_task(
+            session_id="p2", prompt="still dispatch", agent_id="main",
+        )
+
+        assert fake_worker[3].wait(2)
+        row = ledger.connection().execute(
+            "SELECT state, owner_instance_id, lease_expires_at, lease_generation "
+            "FROM task_admissions WHERE task_id = ?",
+            (failed_id,),
+        ).fetchone()
+        assert tuple(row) == ("stopping", None, None, 2)
+        assert [call["session_id"] for call in fake_worker[0]] == ["p2"]
+
+        runner._reconcile_resources()
+        assert runner.get_task(failed_id).status == TaskStatus.ERRORED
+        assert ledger.connection().execute(
+            "SELECT state FROM task_admissions WHERE task_id = ?",
+            (failed_id,),
+        ).fetchone()[0] == "released"
+
+        fake_worker[1].set()
+        assert runner.await_task(other_id, timeout=5).status == TaskStatus.COMPLETED
+    finally:
+        run_control.unregister_cancel_event("p1", mcp_event)
+        fake_worker[1].set()
+        runner.shutdown()
+
+
 def test_queued_cancel_does_not_cancel_unrelated_session_runtime(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):

@@ -860,12 +860,30 @@ class TaskRunner:
                                     )
                             terminal["task"] = current
 
-                        finalized = self._governor.finalize_stopping_task(
-                            claim.task_id,
-                            owner_instance_id=self._instance_id,
-                            lease_generation=claim.lease_generation,
-                            mutate=cancel_store,
-                        )
+                        try:
+                            finalized = self._governor.finalize_stopping_task(
+                                claim.task_id,
+                                owner_instance_id=self._instance_id,
+                                lease_generation=claim.lease_generation,
+                                mutate=cancel_store,
+                            )
+                        except Exception:
+                            finalized = False
+                            _log.exception(
+                                "failed to finalize stopping task %s",
+                                claim.task_id,
+                            )
+                            try:
+                                self._governor.abandon_stopping_task(
+                                    claim.task_id,
+                                    owner_instance_id=self._instance_id,
+                                    lease_generation=claim.lease_generation,
+                                )
+                            except Exception:
+                                _log.exception(
+                                    "failed to abandon stopping task %s",
+                                    claim.task_id,
+                                )
                         if finalized:
                             current = terminal.get("task")
                             if current is not None:

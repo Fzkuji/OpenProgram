@@ -668,6 +668,21 @@ class ResourceGovernor:
             ).rowcount
             return changed == 1
 
+    def abandon_stopping_task(
+        self, task_id: str, *, owner_instance_id: str, lease_generation: int,
+    ) -> bool:
+        """Revoke a failed stopping claim so reconciliation can finish it."""
+        with self.ledger.immediate() as conn:
+            return conn.execute(
+                """UPDATE task_admissions
+                   SET owner_instance_id = NULL,
+                       lease_generation = lease_generation + 1,
+                       lease_expires_at = NULL
+                   WHERE task_id = ? AND state = 'stopping'
+                     AND owner_instance_id = ? AND lease_generation = ?""",
+                (task_id, owner_instance_id, lease_generation),
+            ).rowcount == 1
+
     def request_stop(self, task_id: str, reason_code: str) -> None:
         with self.ledger.immediate() as conn:
             conn.execute(
