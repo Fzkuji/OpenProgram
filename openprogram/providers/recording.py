@@ -417,10 +417,16 @@ class _BlockedRecordReplayProvider:
         return self.stream(model, context, options)
 
 
-def activate_record_replay_safely() -> None:
-    """Activate startup configuration without enabling a live-provider fallback."""
+def activate_record_replay_safely() -> str:
+    """Activate startup configuration without enabling a live-provider fallback.
+
+    Returns the resulting mode: ``off``/``record``/``replay`` on success, or
+    ``blocked`` when configuration is invalid — in which case a fail-closed
+    provider is installed so every provider call raises the same diagnostic
+    instead of silently reaching the network.
+    """
     try:
-        activate_record_replay_from_config()
+        return activate_record_replay_from_config()
     except Exception as exc:
         logging.getLogger("openprogram.providers").error(
             "record/replay activation failed; provider calls are blocked (%s)",
@@ -430,6 +436,7 @@ def activate_record_replay_safely() -> None:
 
         blocked = _BlockedRecordReplayProvider()
         _replace_provider_transform(lambda api, provider: blocked)
+        return "blocked"
 
 
 class RecordingManagementError(RuntimeError):

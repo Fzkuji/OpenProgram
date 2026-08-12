@@ -313,10 +313,11 @@ replay:
   <ul>
     <li>状态和等待使用一个 <code>threading.Condition</code>；同一时刻只有一个线程执行初始化，其他线程等待 READY 或 FAILED。</li>
     <li>READY 后不再读取配置；配置修改继续遵循 <code>next_start</code>。</li>
-    <li>FAILED 保存 stage、cause type 和脱敏后的 cause message。每个调用方得到新的 <code>ProviderRuntimeInitializationError</code>，字段和消息一致；不得重复使用带旧 traceback 的异常对象。</li>
+    <li>FAILED 只在 built-in 注册阶段出现：runtime 保存 stage、cause type 和脱敏后的 cause message。每个调用方得到新的 <code>ProviderRuntimeInitializationError</code>，字段和消息一致；不得重复使用带旧 traceback 的异常对象。</li>
+    <li>record/replay 激活失败不使 runtime FAILED：错误被记录，registry transform 被原子替换为 fail-closed <code>_BlockedRecordReplayProvider</code>，runtime 进入 READY 且 <code>snapshot.mode == "blocked"</code>。任何 provider 调用抛同一诊断，指示运行 <code>openprogram recordings status</code> 或 <code>openprogram recordings off</code>；不解析凭据、不访问网络。</li>
     <li><code>KeyboardInterrupt</code>/<code>SystemExit</code> 等控制异常在锁内写入 <code>initialization_interrupted</code> failure descriptor 并 <code>notify_all()</code>；初始化线程继续抛原控制异常，等待者和后续调用得到稳定的初始化失败。进程内不重试，重启后从 NEW 开始。</li>
     <li>构造 <code>RecordingSink</code>/<code>ReplayProvider</code> 和完整校验在 transform 发布前完成；发布失败不得留下部分 registry 替换。</li>
-    <li>off/record/replay/FAILED 的测试隔离使用新子进程，不增加可在生产代码中重置全局生命周期的 API。</li>
+    <li>off/record/replay/blocked/FAILED 的测试隔离使用新子进程，不增加可在生产代码中重置全局生命周期的 API。</li>
   </ul>
 
   <h3>Built-in 注册的可见性</h3>
@@ -343,20 +344,20 @@ replay:
 
   <h2 id="format">07 · 录制文件、严格解析与并发写入</h2>
   <h3>格式策略</h3>
-  <p>新 writer 继续写 <code>format_version=1</code> 和现有四类行，不添加回放必需字段，避免没有实际兼容收益的版本升级。header 可增加可选元数据；v1 reader 必须忽略未知 header 字段。任何 request/event/call_end 的必需字段或语义发生变化时才升级版本。</p>
+  <p>新 writer 继续写 <code>format_version=1</code> 和现有四类行。<code>call_end.outcome</code> 是可选诊断字段：缺失等同 <code>complete</code>，因此旧 v1 文件和旧 reader 保持兼容；它不改变事件模型或 request 匹配。header 可增加可选元数据；v1 reader 必须忽略未知 header 字段。任何 request/event 的必需字段或语义发生变化时才升级版本。</p>
   <pre>{"type":"header","format_version":1,
  "recording_id":"20260811T134502Z-f7a29c1d",
  "created_at":"2026-08-11T13:45:02Z","redaction_version":1}
 {"type":"request","call_index":0,"model":{...},"context":{...},"options":{...}}
 {"type":"event","call_index":0,"event_index":0,"event":{...}}
-{"type":"call_end","call_index":0,"event_count":1}</pre>
+{"type":"call_end","call_index":0,"event_count":1,"outcome":"complete"}</pre>
   <p><code>recording_id</code>、<code>created_at</code> 和 <code>redaction_version</code> 只用于管理和诊断，不参与请求比较。旧 v1 文件没有这些字段时仍可回放，list/show 从 stat 与内容推导缺失信息。</p>
 
   <h3>严格读取不变量</h3>
   <div class="grid g2">
     <section class="card"><h4>文件级</h4><ul><li>第一条非空行必须是唯一 header。</li><li>每行必须是 JSON object；错误包含行号。</li><li><code>format_version</code> 必须是支持的整数。</li><li>只接受 header/request/event/call_end。</li></ul></section>
     <section class="card"><h4>调用级</h4><ul><li>request 的 <code>call_index</code> 唯一且从 0 连续。</li><li>event 必须引用已有、未结束的 call。</li><li><code>event_index</code> 从 0 连续。</li><li>每个 request 必须有且只有一个 call_end。</li></ul></section>
-    <section class="card"><h4>结束级</h4><ul><li><code>event_count</code> 等于实际 event 数。</li><li>call_end 后不再接受该 call 的 event。</li><li>未知 event type 在 provider 构造时失败，不延迟到中途。</li><li>空文件、截断末行和孤立行一律拒绝。</li></ul></section>
+    <section class="card"><h4>结束级</h4><ul><li><code>event_count</code> 等于实际 event 数。</li><li><code>outcome</code> 只允许 complete/error/cancelled/abandoned；缺失按 complete 兼容。</li><li>call_end 后不再接受该 call 的 event。</li><li>未知 event type 在 provider 构造时失败，不延迟到中途。</li><li>空文件、截断末行和孤立行一律拒绝。</li></ul></section>
     <section class="card"><h4>请求级</h4><ul><li>比较前对 incoming 使用同版脱敏。</li><li>model/context/options 三段依序比较。</li><li>差异保留 call、field、recorded、incoming。</li><li>超过录制调用数时拒绝，不回退 live provider。</li></ul></section>
   </div>
 
@@ -422,12 +423,12 @@ replay:
   <table>
     <thead><tr><th>阶段</th><th>条件</th><th>异常/CLI 行为</th><th>是否允许继续</th></tr></thead>
     <tbody>
-      <tr><td>配置</td><td>mode 未知、file 空、record 外部路径</td><td><code>RecordReplayConfigError</code>，包含 key 与值；worker 启动失败。</td><td class="center">否</td></tr>
-      <tr><td>生命周期</td><td>built-in 注册、配置读取或 transform 发布失败</td><td>runtime 进入 FAILED，保存不可变 failure descriptor；每个调用方得到字段一致的新异常；等待线程全部唤醒；不得返回 original provider。</td><td class="center">管理命令可继续</td></tr>
+      <tr><td>Built-in 注册</td><td>vendor 模块导入失败、auth adapter 注册失败、批发布中止</td><td>runtime 进入 FAILED，保存不可变 failure descriptor（<code>stage="builtins"</code>）；每个调用方得到字段一致的新 <code>ProviderRuntimeInitializationError</code>；等待线程全部唤醒；不得返回 original provider。</td><td class="center">管理命令可继续</td></tr>
+      <tr><td>Record/replay 激活</td><td>mode 未知、file 空、record 外部路径、replay 文件丢失、损坏或版本不符</td><td>结构化错误日志；registry transform 原子替换为 fail-closed <code>_BlockedRecordReplayProvider</code>；runtime READY 且 <code>snapshot.mode == "blocked"</code>。所有 provider 调用抛同一诊断，指示运行 <code>openprogram recordings status</code>/<code>off</code>；不解析凭据、不访问网络。</td><td class="center">仅诊断</td></tr>
       <tr><td>控制退出</td><td>初始化线程收到 <code>KeyboardInterrupt</code>/<code>SystemExit</code></td><td>状态进入 FAILED 并唤醒等待线程；initializer 抛原控制异常，其他调用方收到 <code>initialization_interrupted</code>；只允许进程重启重试。</td><td class="center">管理命令可继续</td></tr>
       <tr><td>创建</td><td>同名文件、symlink、目录不可写、无法收紧权限</td><td><code>RecordingFileError</code>；不覆盖已有文件。</td><td class="center">否</td></tr>
       <tr><td>写入</td><td>锁失败、磁盘满、序列化失败</td><td>终止当前 provider 调用并保留已写内容；不能只记录日志后继续 live 调用。</td><td class="center">否</td></tr>
-      <tr><td>真实 provider</td><td>开始/中途失败</td><td>已写 request/部分 event、无 call_end；原 provider 异常原样传播。该文件此后严格回放会报告 incomplete call。</td><td class="center">本次否</td></tr>
+      <tr><td>真实 provider</td><td>开始/中途失败、调用取消或消费方提前关闭生成器</td><td>在 <code>finally</code> 写入带 outcome 的 call_end 并关闭源生成器，随后保留原异常/取消语义。整份文件仍可解析；replay 先校验请求，只在消费到该调用时报告对应中断，调用计数随后允许调用方重试并消费下一条录制。</td><td class="center">按调用</td></tr>
       <tr><td>解析</td><td>JSON、版本、顺序、计数或事件类型无效</td><td><code>RecordingFileError(path, line, call_index, reason)</code>。</td><td class="center">否</td></tr>
       <tr><td>匹配</td><td>incoming 与 recorded 不同</td><td>现有 <code>ReplayMismatch</code> 字段保留；CLI/Web 错误链显示 call 与 field。</td><td class="center">否</td></tr>
       <tr><td>调用耗尽</td><td>incoming call 超过已录 call</td><td><code>ReplayMismatch(field_path="call_index")</code>。</td><td class="center">否</td></tr>
@@ -485,8 +486,10 @@ replay:
       <tr><td>Registry</td><td>包装前注册、包装后注册、重复配置、两个 API</td><td>已有/后续项均 transformed；冲突 transform 失败；record wrappers 共享 sink；replay 共享 call_count。</td></tr>
       <tr><td>并发线程</td><td>两个线程各录多次 call/event</td><td>每行合法 JSON；call_index 唯一连续；每个 event_index 连续；call_end count 正确。</td></tr>
       <tr><td>并发进程</td><td>两个进程写同一 managed file</td><td>单一 header、无半行、无重复 call_index、严格 parser 通过。</td></tr>
-      <tr><td>崩溃</td><td>provider 在 event 后抛异常</td><td>没有 call_end；异常原样传播；replay 明确报告 incomplete call。</td></tr>
-      <tr><td>权限</td><td>新目录/文件/锁文件、历史 0644 文件、Windows mock</td><td>POSIX 0700/0600；已有文件被收紧；调用 <code>restrict_to_user</code>。</td></tr>
+      <tr><td>异常与取消</td><td>provider 抛异常、任务取消、消费方 <code>aclose()</code>、同步启动失败</td><td>原控制流保持；源生成器关闭；call_end outcome 和 event_count 正确；整份文件可解析；replay 在对应调用失败而不影响后续计数。</td></tr>
+      <tr><td>激活失败</td><td>replay 文件丢失/损坏、未知 mode、非法 record selector</td><td>应用初始化不抛出；runtime READY，<code>snapshot.mode == "blocked"</code>；provider 调用 fail-closed；不解析凭据、不访问网络；管理命令可恢复。</td></tr>
+      <tr><td>回放计数</td><td>同一请求先 mismatch 后修正重试</td><td>mismatch 不增加 <code>call_count</code>；修正请求仍与同一 recorded call 比较；成功或已记录的中断才消费一次。</td></tr>
+      <tr><td>权限</td><td>新目录/文件/锁文件、历史 0644 文件</td><td>POSIX 0700/0600；已有文件被收紧；调用 <code>restrict_to_user</code>。</td></tr>
       <tr><td>路径</td><td><code>../</code>、绝对 record path、symlink、目录、外部 delete</td><td>record/delete/prune 拒绝逃逸；replay/show 外部文件只读可用。</td></tr>
       <tr><td>脱敏</td><td>大小写字段、嵌套值、常见 auth scheme、URL userinfo/query、普通文本</td><td>凭证字节不在文件；非凭证文本保持；record/replay 使用同版规则。</td></tr>
       <tr><td>严格格式</td><td>空文件、坏 JSON、双 header、未知行、孤立 event、索引间隔、重复 end、错误 count、未知 event</td><td>构造 ReplayProvider 时报告 path/line/call/reason。</td></tr>
@@ -517,9 +520,10 @@ git diff --check</pre>
     <div class="value"><span class="pill ok">已实现</span></div><div class="value">严格 parser 在构造阶段验证 header、版本、行类型、call/event 索引、call_end/count 和事件模型；replay 无原 provider/fallback，两个 stream 入口先选择 provider 并跳过凭证解析。</div><div class="value"><code>replay.py::read_recording_file</code>、<code>ReplayProvider.requires_credentials</code>、<code>stream.py</code>；结构失败、credential sentinel、多轮 tool loop 测试。</div>
     <div class="value"><span class="pill ok">已实现</span></div><div class="value"><code>record_replay.mode/file</code> 为 next_start settings；CLI 提供 status/record/replay/off/list/show/delete/prune，配置失败回滚新文件，破坏性命令包含 active、symlink、外部路径、锁与非 TTY 确认保护。</div><div class="value"><code>config_schema.py</code>、<code>cli.py</code>、<code>recording.py</code> 和 CLI/管理测试。</div>
     <div class="value"><span class="pill ok">已替代临时修复</span></div><div class="value">recordings 管理命令不导入或初始化 provider runtime；损坏或丢失 replay 文件时 <code>status/off</code> 可直接恢复配置，环境变量哨兵已删除。</div><div class="value"><code>e8c9f645</code>、<code>test_off_recovers_from_a_replay_file_that_became_invalid</code> 与无导入副作用子进程测试。</div>
-    <div class="value"><span class="pill ok">已实现</span></div><div class="value">显式 provider runtime 生命周期、无运行副作用的 package import、线程安全首次初始化、稳定 FAILED 传播、auth/recordings/runtime 分离，以及 replay 模式只读模型解析。</div><div class="value"><code>4d82d485..99252205</code>；规格复审 PASS，质量复审 PASS；提交态 <code>tests/unit + tests/providers</code> 为 2890 passed、10 skipped、1 xfailed。</div>
+    <div class="value"><span class="pill ok">已实现</span></div><div class="value">显式 provider runtime 生命周期、无运行副作用的 package import、线程安全首次初始化、built-in 注册失败的稳定 FAILED 传播、record/replay 激活失败改走 fail-closed blocked provider 且 runtime READY（<code>snapshot.mode="blocked"</code>），auth/recordings/runtime 分离，以及 replay 模式只读模型解析。</div><div class="value"><code>4d82d485..99252205</code>；规格复审 PASS，质量复审 PASS；提交态 <code>tests/unit + tests/providers</code> 记录于本次交付说明。</div>
+    <div class="value"><span class="pill ok">可靠性修订已实现</span></div><div class="value">异常、取消、提前关闭和同步启动失败写唯一带 outcome 的 call_end 并关闭 source；重复 terminal 在首个 terminal 后停止；source close 失败保留。配置激活失败时原子替换已有 registry transform 为 fail-closed provider；mismatch 不消费调用，匹配的中断调用消费一次并报告。</div><div class="value"><code>c26df53a</code>、<code>a4f27b3b</code>、<code>fe727546</code>、<code>6595d444</code>；公共入口 RED/GREEN、规格复审 PASS、质量复审 PASS。</div>
     <div class="value"><span class="pill warn">兼容边界</span></div><div class="value">保留 v1 构造器、属性、异常、旧 header 和 mismatch 行为；新增严格检查会拒绝旧 reader 曾忽略的损坏行。严格离线仍只覆盖 LLM provider 层；跨进程调度顺序不保证复现。</div><div class="value"><code>test_record_replay.py</code> 继续覆盖库级录制、两轮 tool loop、版本拒绝和字段差异。</div>
-    <div class="value"><span class="pill plan">明确不做</span></div><div class="value">Web UI、全进程 HTTP 录制、tool/MCP 录制、模糊 request 匹配、自动网络 fallback、自动上传。</div><div class="value">超出本阶段边界。</div>
+    <div class="value"><span class="pill plan">明确不做</span></div><div class="value">Web UI、全进程 HTTP 录制、tool/MCP 录制、模糊 request 匹配、自动网络 fallback、自动上传、Windows 专项实现或验证。</div><div class="value">超出本阶段边界。</div>
     <div class="value"><span class="pill ok">验证完成</span></div><div class="value">相关 pytest、完整 unit/providers、changed-file Ruff、docs build、link checker、CLI smoke 与 diff whitespace。</div><div class="value">仓库根级 pytest 另被既有缺失模块 <code>openprogram.functions.agentics.test_framework</code> 阻断于 integration collection；本变更未修改该入口。</div>
   </div>
 

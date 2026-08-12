@@ -49,9 +49,9 @@ def _register_builtins() -> None:
 
 
 def _activate_record_replay() -> str:
-    from .recording import activate_record_replay_from_config
+    from .recording import activate_record_replay_safely
 
-    return activate_record_replay_from_config() or "off"
+    return activate_record_replay_safely()
 
 
 def _safe_message(exc: BaseException) -> str:

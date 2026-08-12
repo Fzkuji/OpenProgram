@@ -32,9 +32,13 @@ agent loop driven by it cannot reach the network.
 Provider package import and runtime activation are separate contracts. Importing `openprogram.providers` defines
 and exports APIs; it must not register vendor providers, read `record_replay` configuration, open a recording, or
 install a registry transform. `initialize_provider_runtime()` performs built-in registration and one process-wide
-configuration snapshot before the first real provider lookup. Concurrent first callers wait for the same READY or
-FAILED result. Recordings management commands call file/configuration functions directly and never initialize the
-provider runtime, so `status` and `off` remain available when a configured replay file is missing or invalid.
+configuration snapshot before the first real provider lookup. Concurrent first callers wait for the same result.
+Built-in registration failure keeps the runtime FAILED and every caller sees the same stable error. Record/replay
+activation failure never fails the runtime: it logs the underlying error, installs a fail-closed provider that
+raises the same diagnostic on every stream call, and transitions to READY so `openprogram recordings status` and
+`openprogram recordings off` can recover the config. Recordings management commands call file/configuration
+functions directly and never initialize the provider runtime, so `status` and `off` remain available when a
+configured replay file is missing or invalid.
 
 This is not workflow recording. The Agent loop, Runtime, tools, Session, and DAG still execute the current code;
 replay replaces only the live LLM provider with recorded events. It does not restore a historical Session, replay
@@ -117,7 +121,8 @@ prompts, model output, tool results, file excerpts, and personal data even after
 ## Implementation status
 
 Implemented: strict versioned recording/replay, shared registry transform, next-start configuration, recordings CLI
-and file management. Commits `4d82d485..99252205` add the explicit provider runtime lifecycle, side-effect-free
-provider package import, atomic auth/API publication, stable FAILED propagation, and removal of the import-time
-environment guard. The normative design and verification boundary are in
+and file management, and the explicit provider runtime lifecycle: side-effect-free provider package import, atomic
+auth/API publication, stable FAILED propagation for built-in registration failure, blocked-provider recovery for
+record/replay activation failure (runtime stays READY, `openprogram recordings status`/`off` recover), and removal
+of the import-time environment guard. The normative design and verification boundary are in
 [`record-replay.html`](record-replay.html).

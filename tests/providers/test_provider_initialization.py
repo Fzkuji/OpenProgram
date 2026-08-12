@@ -138,9 +138,105 @@ def test_concurrent_first_lookups_wait_for_one_initializer(
     assert all(provider is results[0] for provider in results)
 
 
+def test_record_replay_activation_failure_installs_blocked_provider_and_stays_ready(
+    tmp_path: Path,
+) -> None:
+    """A corrupt record_replay config must not brick every provider call.
+
+    The runtime transitions to READY with a fail-closed provider installed; the
+    recordings management commands can then recover the config. Only builtin
+    registration failure keeps the runtime FAILED.
+    """
+    state = tmp_path / ".openprogram"
+    state.mkdir()
+    (state / "config.json").write_text(
+        json.dumps(
+            {"record_replay": {"mode": "replay", "file": str(tmp_path / "missing.jsonl")}}
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_python(
+        """
+import asyncio
+import json
+from openprogram.providers import api_registry, initialization
+from openprogram.providers.types import (
+    Context,
+    Model,
+    SimpleStreamOptions,
+    UserMessage,
+)
+from openprogram.providers.stream import stream_simple
+
+api_registry.register_api_provider("blocked-api", object())
+snapshot = initialization.initialize_provider_runtime()
+provider = api_registry.get_api_provider("blocked-api")
+
+async def drain():
+    model = Model(id="x", name="x", api="blocked-api", provider="blocked", base_url="https://n/a")
+    ctx = Context(messages=[UserMessage(content="hi", timestamp=0)])
+    try:
+        async for _ in stream_simple(model, ctx, SimpleStreamOptions()):
+            pass
+    except RuntimeError as exc:
+        return str(exc)
+    return None
+
+diagnostic = asyncio.run(drain())
+print(json.dumps({
+    "mode": snapshot.mode,
+    "requires_credentials": provider.requires_credentials,
+    "diagnostic": diagnostic,
+}))
+""",
+        home=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["mode"] == "blocked"
+    assert payload["requires_credentials"] is False
+    assert "record/replay configuration" in payload["diagnostic"]
+
+
+def test_recordings_off_recovers_after_activation_failure(tmp_path: Path) -> None:
+    """`openprogram recordings off` stays reachable when replay activation fails."""
+    state = tmp_path / ".openprogram"
+    state.mkdir()
+    (state / "config.json").write_text(
+        json.dumps(
+            {"record_replay": {"mode": "replay", "file": str(tmp_path / "missing.jsonl")}}
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_python(
+        """
+import json
+from openprogram.providers.recording import (
+    activate_record_replay_safely,
+    set_record_replay_off,
+)
+from openprogram.providers.api_registry import _provider_transform
+
+mode = activate_record_replay_safely()
+from openprogram.providers import api_registry
+had_transform = api_registry._provider_transform is not None
+set_record_replay_off()
+print(json.dumps({"mode": mode, "had_transform": had_transform}))
+""",
+        home=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"mode": "blocked", "had_transform": True}
+
+
 def test_failed_initialization_is_stable_and_never_exposes_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Builtin registration failure keeps the runtime FAILED across callers."""
     from openprogram.providers import api_registry
     from openprogram.providers import initialization
 
@@ -151,10 +247,10 @@ def test_failed_initialization_is_stable_and_never_exposes_provider(
     def fail() -> None:
         nonlocal calls
         calls += 1
-        raise ValueError("invalid replay file")
+        raise ValueError("broken builtin registration")
 
-    monkeypatch.setattr(initialization, "_register_builtins", lambda: None)
-    monkeypatch.setattr(initialization, "_activate_record_replay", fail)
+    monkeypatch.setattr(initialization, "_register_builtins", fail)
+    monkeypatch.setattr(initialization, "_activate_record_replay", lambda: "off")
 
     errors = []
     for _ in range(2):
@@ -164,7 +260,7 @@ def test_failed_initialization_is_stable_and_never_exposes_provider(
 
     assert calls == 1
     assert errors[0] is not errors[1]
-    assert errors[0].stage == errors[1].stage == "record_replay"
+    assert errors[0].stage == errors[1].stage == "builtins"
     assert errors[0].cause_type == errors[1].cause_type == "ValueError"
     assert str(errors[0]) == str(errors[1])
 

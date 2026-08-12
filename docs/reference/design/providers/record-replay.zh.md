@@ -28,9 +28,11 @@ ReplayProvider ──读 recording.jsonl──▶ 事件,没有厂商 provider,�
 
 provider 包导入与 runtime 激活是两个独立合同。`import openprogram.providers` 只定义和导出 API，不注册厂商
 provider、不读取 `record_replay` 配置、不打开录制文件、不安装 registry transform。第一次实际获取 provider
-之前由 `initialize_provider_runtime()` 注册 built-ins，并读取一次进程级配置。并发首次调用者等待同一个 READY
-或 FAILED 结果。recordings 管理命令直接调用文件和配置函数，不初始化 provider runtime，因此配置的 replay 文件
-缺失或损坏时，`status` 和 `off` 仍可运行。
+之前由 `initialize_provider_runtime()` 注册 built-ins，并读取一次进程级配置。并发首次调用者等待同一个结果。
+built-in 注册失败使 runtime 停在 FAILED，每个调用方看到同一稳定错误。record/replay 激活失败不使 runtime
+失败：它记录底层错误、安装一个 fail-closed provider，让每次 stream 调用抛同一诊断，同时 runtime 进入 READY，
+`openprogram recordings status` 与 `openprogram recordings off` 因此仍可恢复配置。recordings 管理命令直接
+调用文件和配置函数，不初始化 provider runtime，配置的 replay 文件缺失或损坏时，`status` 和 `off` 仍可运行。
 
 这不是 workflow 录制。Agent loop、Runtime、工具、Session 和 DAG 仍执行当前代码；回放只把真实 LLM provider
 替换为录制事件来源。它不恢复历史 Session、不重放工具副作用、不回滚文件，也不定义任务步骤。
@@ -105,7 +107,8 @@ tool 和其他子系统继续使用各自的网络与权限规则。凭证脱敏
 
 ## 实现状态
 
-已实现：严格版本化录制/回放、共享 registry transform、next-start 配置、recordings CLI 和文件管理。
-提交 `4d82d485..99252205` 增加显式 provider runtime 生命周期、无运行副作用的 provider 包导入、auth/API
-原子发布、稳定的 FAILED 传播，并删除导入期环境变量保护。规范设计与验证边界见
+已实现：严格版本化录制/回放、共享 registry transform、next-start 配置、recordings CLI 与文件管理，以及显式
+provider runtime 生命周期：无运行副作用的 provider 包导入、auth/API 原子发布、built-in 注册失败下稳定的
+FAILED 传播、record/replay 激活失败改走 blocked provider 恢复（runtime 停在 READY，`openprogram recordings
+status`/`off` 可恢复），并删除导入期环境变量保护。规范设计与验证边界见
 [`record-replay.html`](record-replay.html)。
