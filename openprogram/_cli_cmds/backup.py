@@ -1186,6 +1186,8 @@ def restore_archive(
         except BaseException as exc:
             _reverse(state, journal.entries)
             journal.discard()
+            if not isinstance(exc, Exception):
+                raise
             raise RestoreRollbackCompletedError(
                 "publication failed; rollback complete"
             ) from exc
