@@ -12,7 +12,9 @@ to turn it off.
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import re
 import stat
@@ -170,15 +172,42 @@ class RecordingProvider:
         })
         event_index = 0
         ended = False
-        async for event in source:
-            self._sink.append_event(call_index, event_index, _dump(event))
-            event_index += 1
-            if getattr(event, "type", None) in {"done", "error"}:
-                self._sink.end_call(call_index, event_index)
-                ended = True
-            yield event
-        if not ended:
-            self._sink.end_call(call_index, event_index)
+        outcome = "complete"
+        primary_error: BaseException | None = None
+        primary_traceback = None
+        cleanup_error: BaseException | None = None
+        try:
+            async for event in source:
+                self._sink.append_event(call_index, event_index, _dump(event))
+                event_index += 1
+                if getattr(event, "type", None) in {"done", "error"}:
+                    self._sink.end_call(call_index, event_index)
+                    ended = True
+                yield event
+        except BaseException as exc:
+            primary_error = exc
+            primary_traceback = exc.__traceback__
+            if isinstance(exc, asyncio.CancelledError):
+                outcome = "cancelled"
+            elif isinstance(exc, GeneratorExit):
+                outcome = "abandoned"
+            else:
+                outcome = "error"
+        finally:
+            if not ended:
+                try:
+                    self._sink.end_call(call_index, event_index, outcome=outcome)
+                except BaseException as exc:
+                    cleanup_error = exc
+            try:
+                await source.aclose()
+            except BaseException as exc:
+                if cleanup_error is None:
+                    cleanup_error = exc
+        if primary_error is not None:
+            raise primary_error.with_traceback(primary_traceback)
+        if cleanup_error is not None:
+            raise cleanup_error
 
 
 class RecordingSink:
@@ -221,12 +250,19 @@ class RecordingSink:
                 "event": remove_secret_values(event),
             })
 
-    def end_call(self, call_index: int, event_count: int) -> None:
+    def end_call(
+        self,
+        call_index: int,
+        event_count: int,
+        *,
+        outcome: str = "complete",
+    ) -> None:
         with self._locked():
             self._append_locked({
                 "type": "call_end",
                 "call_index": call_index,
                 "event_count": event_count,
+                "outcome": outcome,
             }, fsync=True)
 
     @contextmanager
@@ -350,6 +386,37 @@ def activate_record_replay_from_config() -> None:
         configure_provider_transform(lambda api, provider: replay)
         return
     raise ValueError(f"unsupported record_replay.mode: {mode!r}")
+
+
+class _BlockedRecordReplayProvider:
+    """Fail closed when configured recording or replay cannot be activated."""
+
+    requires_credentials = False
+
+    async def stream(self, model, context, options=None):
+        raise RuntimeError(
+            "record/replay configuration is invalid; run "
+            "`openprogram recordings status` or `openprogram recordings off`"
+        )
+        yield  # pragma: no cover - keeps this method an async generator
+
+    def stream_simple(self, model, context, options=None):
+        return self.stream(model, context, options)
+
+
+def activate_record_replay_safely() -> None:
+    """Activate startup configuration without enabling a live-provider fallback."""
+    try:
+        activate_record_replay_from_config()
+    except Exception as exc:
+        logging.getLogger("openprogram.providers").error(
+            "record/replay activation failed; provider calls are blocked (%s)",
+            type(exc).__name__,
+        )
+        from openprogram.providers.api_registry import configure_provider_transform
+
+        blocked = _BlockedRecordReplayProvider()
+        configure_provider_transform(lambda api, provider: blocked)
 
 
 class RecordingManagementError(RuntimeError):

@@ -31,12 +31,11 @@ git status --short
 | Evidence | Result |
 |---|---|
 | Base | `990bfe36e625579443e1cb01a1b3266c8dbd0e87` |
-| Design revision | Pending commit |
-| RED | Pending |
-| GREEN | Pending |
-| Affected verification | Pending |
+| Design revision | `1d6f52ec` |
+| RED | `pytest -q tests/providers/test_record_replay.py tests/providers/test_record_replay_registry.py` -> 5 failed, 22 passed; each failure matched a named public behavior. Invalid outcome mutation proof -> 1 failed as expected. |
+| GREEN | Same two files -> 27 passed. |
+| Affected verification | Record/replay, CLI management, and stream chokepoint -> 45 passed; scoped Ruff passed; `git diff --check` passed. |
 | Specification review | Pending |
 | Quality review | Pending |
 | Full gate | Pending |
 | Final implementation commit | Pending |
-

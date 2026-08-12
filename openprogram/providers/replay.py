@@ -111,6 +111,7 @@ class RecordedCall:
     call_index: int
     request: dict[str, Any]
     events: list[dict[str, Any]] = field(default_factory=list)
+    outcome: str = "complete"
 
 
 def read_recording_file(recording_path: str | Path) -> list[RecordedCall]:
@@ -190,6 +191,15 @@ def read_recording_file(recording_path: str | Path) -> list[RecordedCall]:
                 raise RecordingFileError(path, "duplicate call_end", line_number=number, call_index=call_index)
             if line.get("event_count") != next_event[call_index]:
                 raise RecordingFileError(path, "call_end event_count mismatch", line_number=number, call_index=call_index)
+            outcome = line.get("outcome", "complete")
+            if outcome not in {"complete", "error", "cancelled", "abandoned"}:
+                raise RecordingFileError(
+                    path,
+                    "invalid call_end outcome",
+                    line_number=number,
+                    call_index=call_index,
+                )
+            calls[call_index].outcome = outcome
             ended.add(call_index)
     missing = sorted(set(calls) - ended)
     if missing:
@@ -293,8 +303,14 @@ class ReplayProvider:
                 incoming=f"call {call_index}",
             )
         recorded = self._calls[call_index]
-        self.call_count += 1
         self._check_request(recorded, model, context, options)
+        self.call_count += 1
+        if recorded.outcome != "complete":
+            raise RecordingFileError(
+                self._recording_path,
+                f"recorded call ended with {recorded.outcome}",
+                call_index=call_index,
+            )
 
         for event_index, payload in enumerate(recorded.events):
             event_type = payload.get("type")

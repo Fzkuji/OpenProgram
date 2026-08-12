@@ -24,8 +24,14 @@ from openprogram.providers.recording import (
     RecordingProvider,
     remove_secret_values,
 )
-from openprogram.providers.replay import ReplayMismatch, ReplayProvider, RecordingFileError
+from openprogram.providers.replay import (
+    ReplayMismatch,
+    ReplayProvider,
+    RecordingFileError,
+    read_recording_file,
+)
 from openprogram.providers.types import (
+    AssistantMessageEvent,
     Context,
     Model,
     SimpleStreamOptions,
@@ -89,6 +95,33 @@ def _scripted_with(*responses) -> object:
     for steps in responses:
         provider.add_response(*steps)
     return provider
+
+
+class _InterruptingProvider:
+    """Provider source whose closure is observable by the public recorder wrapper."""
+
+    requires_credentials = False
+
+    def __init__(self, *, fail_after_first: bool = False) -> None:
+        self.closed = False
+        self.fail_after_first = fail_after_first
+
+    def stream(self, model, context, options=None):
+        return self.stream_simple(model, context, options)
+
+    async def stream_simple(self, model, context, options=None):
+        source = _scripted_with((ScriptedText("partial"),)).stream_simple(
+            model, context, options
+        )
+        try:
+            async for event in source:
+                yield event
+                if self.fail_after_first:
+                    raise RuntimeError("provider disconnected")
+                await asyncio.Event().wait()
+        finally:
+            self.closed = True
+            await source.aclose()
 
 
 def _drain_stream(model: Model, options: SimpleStreamOptions | None = None) -> list:
@@ -278,6 +311,94 @@ def test_replay_names_the_call_and_field_of_the_first_difference(
     assert "context.messages[0].content" in str(mismatch)
 
 
+def test_replay_mismatch_does_not_consume_the_recorded_call(tmp_path: Path) -> None:
+    recording_file = _record_one_call(tmp_path)
+    replay = ReplayProvider(recording_file)
+    wrong = Context(messages=[UserMessage(content="wrong", timestamp=0)])
+    right = Context(messages=[UserMessage(content="hello", timestamp=0)])
+
+    async def drain(context: Context) -> list[AssistantMessageEvent]:
+        return [
+            event async for event in replay.stream_simple(_model(), context, _options())
+        ]
+
+    with pytest.raises(ReplayMismatch):
+        asyncio.run(drain(wrong))
+    assert replay.call_count == 0
+    assert asyncio.run(drain(right))[-1].type == "done"
+    assert replay.call_count == 1
+
+
+def test_recording_finalizes_and_closes_source_when_provider_raises(tmp_path: Path) -> None:
+    source = _InterruptingProvider(fail_after_first=True)
+    recording_file = tmp_path / "provider-error.jsonl"
+    recorder = RecordingProvider(source, recording_file)
+
+    async def drain() -> None:
+        async for _ in recorder.stream_simple(
+            _model(), Context(messages=[UserMessage(content="hello", timestamp=0)]), _options()
+        ):
+            pass
+
+    with pytest.raises(RuntimeError, match="provider disconnected"):
+        asyncio.run(drain())
+
+    calls = read_recording_file(recording_file)
+    assert source.closed
+    assert calls[0].outcome == "error"
+    replay = ReplayProvider(recording_file)
+
+    async def replay_interrupted() -> None:
+        async for _ in replay.stream_simple(
+            _model(), Context(messages=[UserMessage(content="hello", timestamp=0)]), _options()
+        ):
+            pass
+
+    with pytest.raises(RecordingFileError, match="recorded call ended with error"):
+        asyncio.run(replay_interrupted())
+    assert replay.call_count == 1
+
+
+def test_recording_finalizes_and_closes_source_when_consumer_abandons(tmp_path: Path) -> None:
+    source = _InterruptingProvider()
+    recording_file = tmp_path / "consumer-close.jsonl"
+    recorder = RecordingProvider(source, recording_file)
+
+    async def abandon() -> None:
+        stream = recorder.stream_simple(
+            _model(), Context(messages=[UserMessage(content="hello", timestamp=0)]), _options()
+        )
+        await anext(stream)
+        await stream.aclose()
+
+    asyncio.run(abandon())
+    calls = read_recording_file(recording_file)
+    assert source.closed
+    assert calls[0].outcome == "abandoned"
+
+
+def test_recording_finalizes_and_closes_source_when_cancelled(tmp_path: Path) -> None:
+    source = _InterruptingProvider()
+    recording_file = tmp_path / "cancelled.jsonl"
+    recorder = RecordingProvider(source, recording_file)
+
+    async def cancel() -> None:
+        stream = recorder.stream_simple(
+            _model(), Context(messages=[UserMessage(content="hello", timestamp=0)]), _options()
+        )
+        await anext(stream)
+        task = asyncio.create_task(anext(stream))
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(cancel())
+    calls = read_recording_file(recording_file)
+    assert source.closed
+    assert calls[0].outcome == "cancelled"
+
+
 def test_replay_refuses_a_recording_file_written_in_another_format_version(
     tmp_path: Path,
 ) -> None:
@@ -328,6 +449,10 @@ def _record_one_call(tmp_path: Path) -> Path:
         (lambda rows: rows.pop(), "missing call_end"),
         (lambda rows: rows.append({"type": "mystery"}), "unknown row type"),
         (lambda rows: rows.__setitem__(1, {**rows[1], "call_index": 1}), "contiguous"),
+        (
+            lambda rows: rows.__setitem__(-1, {**rows[-1], "outcome": "unknown"}),
+            "invalid call_end outcome",
+        ),
     ],
 )
 def test_replay_strictly_validates_structure(tmp_path: Path, mutation, match: str) -> None:

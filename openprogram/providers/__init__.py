@@ -121,7 +121,7 @@ del _stream_ensure_builtins
 import os as _os
 
 if _os.environ.get("_OPENPROGRAM_RECORDINGS_MANAGEMENT") != "1":
-    from .recording import activate_record_replay_from_config as _activate_record_replay
+    from .recording import activate_record_replay_safely as _activate_record_replay
     _activate_record_replay()
     del _activate_record_replay
 del _os

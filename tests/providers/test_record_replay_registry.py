@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import multiprocessing
+import asyncio
+import importlib
+import logging
 from pathlib import Path
 
 import pytest
@@ -15,6 +18,7 @@ from openprogram.providers.recording import RecordingSink
 from openprogram.providers.recording import RecordingProvider, activate_record_replay_from_config
 from openprogram.providers.replay import ReplayProvider
 from openprogram.providers.replay import read_recording_file
+from openprogram.providers.types import Context, Model, SimpleStreamOptions, UserMessage
 
 
 class Provider:
@@ -141,3 +145,51 @@ def test_replay_activation_uses_one_provider_for_every_api(
     replay = get_api_provider("first-api")
     assert isinstance(replay, ReplayProvider)
     assert get_api_provider("second-api") is replay
+
+
+def test_invalid_startup_config_keeps_import_alive_and_blocks_live_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from openprogram.providers import recording as recording_module
+
+    api = "activation-failure-api"
+    register_api_provider(api, Provider("live"))
+    missing = tmp_path / "missing.jsonl"
+    monkeypatch.setattr(
+        "openprogram.setup._read_config",
+        lambda: {"record_replay": {"mode": "replay", "file": str(missing)}},
+    )
+    caplog.set_level(logging.ERROR, logger="openprogram.providers")
+
+    recording_module.activate_record_replay_safely()
+
+    blocked = get_api_provider(api)
+    assert blocked is not None
+    assert blocked.requires_credentials is False
+    stream_module = importlib.import_module("openprogram.providers.stream")
+    monkeypatch.setattr(
+        stream_module,
+        "resolve_provider_key",
+        lambda provider: pytest.fail("invalid replay config resolved credentials"),
+    )
+    model = Model(
+        id="blocked",
+        name="Blocked",
+        api=api,
+        provider="blocked",
+        base_url="https://network.invalid",
+    )
+
+    async def drain() -> None:
+        async for _ in stream_module.stream_simple(
+            model,
+            Context(messages=[UserMessage(content="hello", timestamp=0)]),
+            SimpleStreamOptions(),
+        ):
+            pass
+
+    with pytest.raises(RuntimeError, match="record/replay configuration"):
+        asyncio.run(drain())
+    assert "provider calls are blocked" in caplog.text
