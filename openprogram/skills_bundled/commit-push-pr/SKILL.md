@@ -17,6 +17,30 @@ shell blob.
   subagent, hand the work back rather than trying.
 - Never bypass approval on the user's behalf, and never suggest switching to
   a bypass tier to make this flow quieter.
+- **The two remote-write steps are gated.** `git push` and `gh pr create` run
+  only when `git.allow_remote_write` is on, or when the user asked for them in
+  this turn — in which case pass `allowed=True` to the argv builders below.
+  Everything before the push is local and reversible and needs no gate.
+
+### Dry run
+
+When the user asks for a dry run, do steps 1–4 for real — branching, staging,
+the message, and the commit are all local and undoable — then print the remote
+actions instead of taking them, and stop:
+
+```bash
+python3 - <<'PY'
+from openprogram.commands.commit_message import dry_run_plan
+for line in dry_run_plan(
+    default_branch="<default>", branch="<topic-branch>", title="<subject>",
+):
+    print(line)
+PY
+```
+
+To see what the push itself would send without writing anything, run
+`git push --dry-run -u origin <topic-branch>`; it contacts the remote to
+report the refs that would update and pushes nothing.
 
 ## 1. Branch first — never commit onto the default branch
 
@@ -98,6 +122,20 @@ Rules:
 
 ## 5. Push
 
+Build the argv through the gate, so an unauthorized push fails here instead of
+reaching the remote:
+
+```bash
+python3 - <<'PY'
+from openprogram.commands.commit_message import git_push_argv
+print(" ".join(git_push_argv(branch="<topic-branch>")))
+PY
+```
+
+`RemoteWriteNotAuthorized` means `git.allow_remote_write` is off. Report that
+and stop — a commit with no push is a fine place to stop. If the user asks for
+the push in that same turn, pass `allowed=True`. Then run the printed command:
+
 ```bash
 git push -u origin <topic-branch>
 ```
@@ -137,18 +175,23 @@ must end with the `Generated with OpenProgram` line, which
 
 ```bash
 python3 - <<'PY'
-from openprogram.commands.commit_message import pr_body
+from openprogram.commands.commit_message import gh_pr_create_argv, pr_body
 open("/tmp/openprogram-pr-body.md", "w").write(pr_body(
     "<why this change exists>",
     changes=["<file or area> — <what changed>"],
     testing=["python3 -m pytest tests/unit -q"],
 ))
+print(" ".join(gh_pr_create_argv(
+    base="<default>", head="<topic-branch>", title="<subject>",
+    body_file="/tmp/openprogram-pr-body.md",
+)))
 PY
-gh pr create --base <default> --head <topic-branch> \
-  --title "<subject>" --body-file /tmp/openprogram-pr-body.md
 ```
 
-Add `--draft` when the work is not ready for review. Report the PR URL `gh`
+Opening a PR passes the same gate as the push, so an unauthorized call raises
+`RemoteWriteNotAuthorized` before `gh` runs. Then run the printed command.
+
+Pass `draft=True` when the work is not ready for review. Report the PR URL `gh`
 prints back to the user.
 
 ## Stop conditions

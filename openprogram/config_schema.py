@@ -495,6 +495,17 @@ SETTINGS: list[SettingSpec] = [
              "adding any attribution trailer.",
     ),
     SettingSpec(
+        key="git.allow_remote_write", path=("git", "allow_remote_write"),
+        group="Git", label="Allow pushes and pull requests", widget="toggle",
+        apply=APPLY_LIVE, default=False,
+        help="Let the `commit-push-pr` flow run `git push` and `gh pr create`. "
+             "Off by default: branching, staging, and committing are local and "
+             "reversible, but a push and a pull request are visible to other "
+             "people and cannot be undone by resetting the local tree. Leave it "
+             "off to keep the flow stopping at the commit, and use "
+             "`git push --dry-run` to see what a push would send.",
+    ),
+    SettingSpec(
         key="update.channel", path=("update", "channel"), group="Updates",
         label="Update channel", widget="enum", apply=APPLY_LIVE,
         default="stable", choices=_update_channels,

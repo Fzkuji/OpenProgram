@@ -18,8 +18,37 @@ agent 能把做完的活从工作区一路送到可评审的 pull request：从�
 2. **按路径暂存。** 先读 `git status --short -uall`，只 add 这次请求涉及的文件。不对没看过的工作区做无差别 `git add -A`；你没提到的文件保持未暂存状态并如实汇报。
 3. **写提交信息**用 `/commit-message`：它读暂存区 diff，返回一句祈使式标题，必要时带正文。
 4. **从消息文件提交**（`git commit -F`），不用容易被引号折断的行内 `-m`。钩子一律执行，不加 `--no-verify`。pre-commit 钩子改写了文件就 amend 一次然后停下，不进入循环。
-5. **推送**用 `git push -u origin <branch>`。被判 non-fast-forward 就 rebase 后重试一次。强推必须你明确要求，而且用 `--force-with-lease`。
+5. **推送**用 `git push -u origin <branch>`，前提是下面的远端写入闸门放行。被判 non-fast-forward 就 rebase 后重试一次。强推必须你明确要求，而且用 `--force-with-lease`。
 6. **开 PR** 用 `gh pr create --base <default> --head <branch> --title ... --body-file ...`，之前先查 `gh auth status`。PR 正文由该分支的提交和相对基线的 diff 生成，分为摘要、改了什么、怎么测三节。
+
+## 空跑
+
+要求空跑时，流程在到达远端之前停下。第 1 到 4 步照常真做，因为建分支、暂存、写消息、提交都在本地、都可撤销；之后 agent 把本该执行的远端动作打印出来，而不是执行：
+
+```
+would push: git push -u origin fix-commit-trailers
+would open PR: gh pr create --base main --head fix-commit-trailers --title ... --body-file ...
+```
+
+`git push` 和 `gh pr create` 都不会跑。想看一次推送会送出什么又不写任何东西，用 `git push --dry-run -u origin <branch>`，它会联系远端报告将要更新的 ref，但不推送。
+
+## 远端写入授权
+
+推分支和开 PR 是仅有的两个别人能看见的步骤，而且重置本地工作树也撤不掉。它们默认关闭：
+
+```
+openprogram config set git.allow_remote_write true
+```
+
+设置关着时，流程做完提交就停下来告诉你，你手上留着一个完整的本地提交，自己推即可。在同一轮里直接要求推送或开 PR，这一次调用就算获得授权，设置管的是长期许可，不是一次性请求。
+
+闸门做在 argv 构造函数里，所以未授权的调用在 `git` 或 `gh` 跑起来之前就失败，而不是之后：
+
+```python
+from openprogram.commands.commit_message import git_push_argv
+git_push_argv(branch="topic")            # RemoteWriteNotAuthorized
+git_push_argv(branch="topic", dry_run=True)   # 可以，不写任何东西
+```
 
 ## AI 署名
 
@@ -53,7 +82,7 @@ from openprogram.commands.commit_message import apply_trailers, co_author_traile
 
 ## 审批与安全
 
-每一步都是 `bash` 调用，所以 `git push` 和 `gh pr create` 走会话原有的审批档位，默认档位下你会逐条看到并批准。OpenProgram 不会为了让流程安静就把你切到绕过档位。
+每一步都是 `bash` 调用，所以 `git push` 和 `gh pr create` 在 `git.allow_remote_write` 闸门之外还要走会话原有的审批档位，默认档位下你会逐条看到并批准。OpenProgram 不会为了让流程安静就把你切到绕过档位。
 
 被 spawn 出来的子 agent 完全拿不到 `bash`，因此无法提交或推送。这条流程属于顶层会话；活派给了子 agent 的话，子 agent 把分支交回来由你来发。
 
@@ -65,4 +94,4 @@ from openprogram.commands.commit_message import apply_trailers, co_author_traile
 
 - [Skills](skills.zh.md)——这条流程所在的 `SKILL.md` 注册表
 - [内置工具](tools.zh.md)——每一步都经过的 shell 工具
-- [配置项](../reference/config-keys.md)——`git.co_author` 及其他
+- [配置项](../reference/config-keys.md)——`git.co_author`、`git.allow_remote_write` 及其他

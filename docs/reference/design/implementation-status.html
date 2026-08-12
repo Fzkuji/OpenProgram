@@ -159,7 +159,7 @@
   <h3>5. Smaller uncompleted hardening work</h3>
   <ul>
     <li><code>credential_process</code>: argv is executed without shell interpolation, the timeout is configurable with a 60-second default, and successful results are cached. Helper stderr now passes through the diagnostics redactor before it reaches a failure message or a log, so a helper that echoes the credential it was fetching cannot leak it.</li>
-    <li><code>commit-push-pr</code>: add a non-mutating dry-run and enforce explicit remote-write authorization before push or PR creation.</li>
+    <li><code>commit-push-pr</code>: a dry run performs the local, reversible steps and prints the push and PR it would have taken without contacting the remote. <code>git_push_argv</code> and <code>gh_pr_create_argv</code> raise <code>RemoteWriteNotAuthorized</code> unless <code>git.allow_remote_write</code> is on or the caller passes <code>allowed=True</code>, so an unauthorized remote write fails before <code>git</code> or <code>gh</code> runs.</li>
     <li>Retain the existing discussion backlog in <a href="TODO-improvements.html">TODO improvements</a>: provider metadata corruption visibility, packaged Web/docs resources, typed frontend state migration, and the remaining oversized Python modules.</li>
   </ul>
 
