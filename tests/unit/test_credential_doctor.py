@@ -89,6 +89,23 @@ def test_audit_flags_symlink_without_following_it(tmp_path: Path) -> None:
     assert stat.S_IMODE(os.lstat(outside).st_mode) == 0o644
 
 
+def test_audit_reports_a_credential_parent_directory_symlink(tmp_path: Path) -> None:
+    from openprogram.credential_files import audit_credentials
+
+    root = _state(tmp_path)
+    outside = tmp_path / "outside-auth"
+    outside.mkdir()
+    (outside / "openai").mkdir()
+    _write(outside / "openai" / "default.json", 0o600)
+    (root / "auth").symlink_to(outside)
+
+    findings = audit_credentials(root=root)
+
+    assert ("auth", "symlink", False) in {
+        (item.relative_path, item.status, item.repairable) for item in findings
+    }
+
+
 def test_audit_flags_foreign_owner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

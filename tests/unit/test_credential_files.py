@@ -492,6 +492,7 @@ def test_private_atomic_write_wraps_callback_value_error_and_cleans_temp(
     root.mkdir(mode=0o700)
     target = root / "config.json"
     target.write_bytes(b"old")
+    target.chmod(0o600)
 
     def invalid_serialization(_handle) -> None:
         raise ValueError("cannot serialize")

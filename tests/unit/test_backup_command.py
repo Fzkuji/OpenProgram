@@ -33,6 +33,7 @@ def profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (state / "sessions").mkdir()
     (state / "sessions" / "s1.json").write_text('{"id": "s1"}', encoding="utf-8")
     (state / "config.json").write_text('{"theme": "dark"}', encoding="utf-8")
+    (state / "config.json").chmod(0o600)
     (state / "bindings.json").write_text('{"discord": []}', encoding="utf-8")
     (state / "programs_meta.json").write_text('{"favorites": []}', encoding="utf-8")
     (state / "functions_meta.json").write_text("{}", encoding="utf-8")
@@ -54,10 +55,12 @@ def profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (state / "auth" / "anthropic.json").write_text(
         '{"key": "secret"}', encoding="utf-8"
     )
+    (state / "auth" / "anthropic.json").chmod(0o600)
     (state / "mcp_tokens").mkdir()
     (state / "mcp_tokens" / "t.json").write_text(
         '{"token": "secret"}', encoding="utf-8"
     )
+    (state / "mcp_tokens" / "t.json").chmod(0o600)
     (state / "skills").mkdir()
     (state / "skills" / "node_modules").mkdir()
     (state / "skills" / "node_modules" / "junk.js").write_text("//", encoding="utf-8")
@@ -91,12 +94,28 @@ def _archive_bytes(path: Path) -> dict[str, bytes]:
 
 
 def _tar_with_files(path: Path, files: dict[str, bytes]) -> tarfile.TarFile:
+    _write_restorable_archive(path, files)
+    return tarfile.open(path, "r:gz")
+
+
+def _write_restorable_archive(path: Path, files: dict[str, bytes]) -> Path:
+    """Build an archive `restore_archive` accepts: members plus a manifest."""
+    from openprogram._cli_cmds.backup import _MANIFEST_NAME
+
     with tarfile.open(path, "w:gz") as tar:
         for name, payload in files.items():
             info = tarfile.TarInfo(name)
             info.size = len(payload)
+            info.mode = 0o600
             tar.addfile(info, io.BytesIO(payload))
-    return tarfile.open(path, "r:gz")
+        manifest = json.dumps(
+            {"format_version": 1, "credential_opt_in": True}
+        ).encode()
+        info = tarfile.TarInfo(_MANIFEST_NAME)
+        info.size = len(manifest)
+        info.mode = 0o600
+        tar.addfile(info, io.BytesIO(manifest))
+    return path
 
 
 def _seed_registered_secrets(profile: Path) -> dict[str, bytes]:
@@ -199,6 +218,18 @@ def _seed_registered_secrets(profile: Path) -> dict[str, bytes]:
     )
     (profile / "web").mkdir()
     (profile / "web" / "token").write_bytes(secrets["web_runtime_token"])
+    for private_path in (
+        profile / "config.json",
+        profile / "auth" / "openai" / "default.json",
+        account / "auth" / "openai" / "default.json",
+        account / ".env",
+        channel / "credentials.json",
+        channel / "access.json",
+        profile / "mcp_servers.json",
+        profile / "mcp_tokens" / "github.json",
+        profile / "web" / "token",
+    ):
+        private_path.chmod(0o600)
     return secrets
 
 
@@ -528,18 +559,18 @@ def test_restore_inventory_files_are_atomically_published_owner_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from openprogram import credential_files
-    from openprogram._cli_cmds.backup import _extract
+    from openprogram._cli_cmds.backup import restore_archive
 
     config = profile / "config.json"
     config.write_text(
         '{"theme":"local","api_keys":{"OPENAI_API_KEY":"local-secret"}}',
         encoding="utf-8",
     )
-    config.chmod(0o644)
+    config.chmod(0o600)
     auth = profile / "auth" / "openai" / "default.json"
     auth.parent.mkdir(parents=True, exist_ok=True)
-    auth.write_bytes(b"old-auth")
-    auth.chmod(0o644)
+    auth.write_bytes(b'{"credentials":"old-auth"}')
+    auth.chmod(0o600)
     archive = tmp_path / "restore.tar.gz"
     mcp_token = profile / "mcp_tokens" / "restored.json"
     observed: dict[str, tuple[int, bytes | None]] = {}
@@ -555,28 +586,28 @@ def test_restore_inventory_files_are_atomically_published_owner_only(
         real_replace(source, destination)
 
     monkeypatch.setattr(credential_files.os, "replace", inspect_replace)
-    with _tar_with_files(
+    _write_restorable_archive(
         archive,
         {
             "config.json": b'{"theme":"archived"}',
-            "auth/openai/default.json": b"archived-auth",
-            "mcp_tokens/restored.json": b"archived-mcp-token",
+            "auth/openai/default.json": b'{"credentials":"archived-auth"}',
+            "mcp_tokens/restored.json": b'{"token":"archived-mcp-token"}',
         },
-    ) as tar:
-        _extract(tar, profile)
+    )
+    restore_archive(archive, profile)
 
     assert json.loads(config.read_text()) == {
         "theme": "archived",
         "api_keys": {"OPENAI_API_KEY": "local-secret"},
     }
-    assert auth.read_bytes() == b"archived-auth"
-    assert mcp_token.read_bytes() == b"archived-mcp-token"
+    assert auth.read_bytes() == b'{"credentials":"archived-auth"}'
+    assert mcp_token.read_bytes() == b'{"token":"archived-mcp-token"}'
     assert observed == {
         "config.json": (
             0o600,
             b'{"theme":"local","api_keys":{"OPENAI_API_KEY":"local-secret"}}',
         ),
-        "default.json": (0o600, b"old-auth"),
+        "default.json": (0o600, b'{"credentials":"old-auth"}'),
         "restored.json": (0o600, None),
     }
     assert stat.S_IMODE(config.stat().st_mode) == 0o600
@@ -592,11 +623,12 @@ def test_restore_inventory_failure_preserves_old_file_and_cleans_temp(
     failure: str,
 ) -> None:
     from openprogram import credential_files
-    from openprogram._cli_cmds.backup import _extract
+    from openprogram._cli_cmds.backup import restore_archive
 
     target = profile / "auth" / "openai" / "default.json"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(b"old-auth")
+    target.write_bytes(b'{"credentials":"old-auth"}')
+    target.chmod(0o600)
     archive = tmp_path / "restore-failure.tar.gz"
     real_fdopen = os.fdopen
 
@@ -637,16 +669,16 @@ def test_restore_inventory_failure_preserves_old_file_and_cleans_temp(
             lambda _source, _target: (_ for _ in ()).throw(OSError("replace failed")),
         )
 
-    with _tar_with_files(
+    _write_restorable_archive(
         archive,
-        {"auth/openai/default.json": b"archived-auth"},
-    ) as tar:
-        with pytest.raises(credential_files.PrivateAtomicWriteError) as exc:
-            _extract(tar, profile)
+        {"auth/openai/default.json": b'{"credentials":"archived-auth"}'},
+    )
+    with pytest.raises(credential_files.PrivateAtomicWriteError) as exc:
+        restore_archive(archive, profile)
 
     assert exc.value.code == failure
     assert exc.value.committed is False
-    assert target.read_bytes() == b"old-auth"
+    assert target.read_bytes() == b'{"credentials":"old-auth"}'
     assert list(target.parent.glob(".default.json.*.tmp")) == []
 
 

@@ -325,7 +325,6 @@ def _write_dotenv(
     root: Path | None = None,
     expected_revision: str | None = None,
 ):
-    path.parent.mkdir(parents=True, exist_ok=True)
     from openprogram.credential_files import _private_atomic_write
 
     return _private_atomic_write(
