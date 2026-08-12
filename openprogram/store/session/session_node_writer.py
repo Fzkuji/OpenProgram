@@ -65,19 +65,17 @@ class SessionNodeWriter:
         git.write_history(seq, node.role, node.id, node.to_dict())
         if not caller and self.advance_head:
             idx.set_head(node.id)
-        idx.set_meta(updated_at=_time.time())
-        # Persist meta NOW: this append usually runs inside the
-        # @agentic_function fork()'d subprocess — the parent server can
-        # only see the head move through meta.json (see the matching
-        # persist in SessionStore.append_message).
-        if not caller and self.advance_head:
-            self.store._persist_meta(git, idx)
+        activity_at = _time.time()
+        idx.set_meta(updated_at=activity_at)
+        # Persist the activity time even when this node does not advance
+        # HEAD; otherwise meta.json and the sidebar registry disagree.
+        self.store._persist_meta(git, idx)
         # Registry too — same as SessionStore.append_message: updated_at
         # is the sidebar's recency-sort key. The webui dispatcher appends
         # through THIS shim, so skipping the registry here left every web
         # chat row without a timestamp and the sidebar order collapsed to
         # insertion order after a refresh (new sessions sank to the bottom).
-        fields: dict = {"updated_at": _time.time()}
+        fields: dict = {"updated_at": activity_at}
         if node.role == "user" and node.output:
             text = str(node.output or "").strip().replace("\n", " ")
             fields["preview"] = (text[:77] + "…") if len(text) > 80 else text

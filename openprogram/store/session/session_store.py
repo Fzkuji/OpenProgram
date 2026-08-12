@@ -280,6 +280,9 @@ class SessionStore:
         self._index: dict[str, dict[str, Any]] = {}
         self._index_dirty = False
         self._index_timer: Optional[threading.Timer] = None
+        self._index_generation = 0
+        self._index_lock = threading.Lock()
+        self._index_write_lock = threading.Lock()
         self._load_index()
         atexit.register(self._flush_index)
 
@@ -456,19 +459,28 @@ class SessionStore:
         return entry
 
     def _save_index(self) -> None:
-        try:
-            atomic_write_text(
-                self._index_path(),
-                json.dumps(self._index, indent=2, ensure_ascii=False,
-                           default=str),
-            )
-        except OSError as e:
-            _log.warning("index.json NOT saved (%s); session list may be "
-                         "stale until the next rebuild", e)
-        self._index_dirty = False
+        with self._index_write_lock:
+            with self._index_lock:
+                snapshot = {sid: dict(entry) for sid, entry in self._index.items()}
+                generation = self._index_generation
+            try:
+                atomic_write_text(
+                    self._index_path(),
+                    json.dumps(snapshot, indent=2, ensure_ascii=False,
+                               default=str),
+                )
+            except OSError as e:
+                _log.warning("index.json NOT saved (%s); session list may be "
+                             "stale until the next rebuild", e)
+                with self._index_lock:
+                    self._index_dirty = True
+                return
+            with self._index_lock:
+                if self._index_generation == generation:
+                    self._index_dirty = False
 
     def _schedule_index_flush(self) -> None:
-        with self._lock:
+        with self._index_lock:
             self._index_dirty = True
             if self._index_timer is not None:
                 return
@@ -477,30 +489,35 @@ class SessionStore:
             self._index_timer.start()
 
     def _do_deferred_flush(self) -> None:
-        with self._lock:
+        with self._index_lock:
             self._index_timer = None
-            if self._index_dirty:
-                self._save_index()
+            dirty = self._index_dirty
+        if dirty:
+            self._save_index()
 
     def _flush_index(self) -> None:
-        with self._lock:
+        with self._index_lock:
             if self._index_timer is not None:
                 self._index_timer.cancel()
                 self._index_timer = None
-            if self._index_dirty:
-                self._save_index()
+            dirty = self._index_dirty
+        if dirty:
+            self._save_index()
 
     def _update_index_entry(self, session_id: str, **fields: Any) -> None:
-        entry = self._index.get(session_id)
-        if entry is None:
-            entry = {"id": session_id, "status": "idle", "pinned": False,
-                     "archived": False, "unread": False}
-            self._index[session_id] = entry
-        # updated_at 只由调用方显式传入（追加消息的路径）——改名/置顶/
-        # 标已读不算"最新一次聊天"，不许把会话顶到侧栏最上。
-        for k, v in fields.items():
-            if k in self._INDEX_FIELDS or k == "preview":
-                entry[k] = v
+        with self._index_lock:
+            entry = self._index.get(session_id)
+            if entry is None:
+                entry = {"id": session_id, "status": "idle", "pinned": False,
+                         "archived": False, "unread": False}
+                self._index[session_id] = entry
+            # updated_at 只由调用方显式传入（追加消息的路径）——改名/置顶/
+            # 标已读不算"最新一次聊天"，不许把会话顶到侧栏最上。
+            for k, v in fields.items():
+                if k in self._INDEX_FIELDS or k == "preview":
+                    entry[k] = v
+            self._index_generation += 1
+            self._index_dirty = True
 
     # Internals
 
@@ -596,7 +613,6 @@ class SessionStore:
         title / head_id / extra / branches change."""
         meta = dict(idx.meta)
         meta["head_id"] = idx.head_id
-        meta["updated_at"] = time.time()
         git.write_meta(meta)
 
     def session_workdir(self, session_id: str) -> Optional[Path]:
@@ -812,7 +828,10 @@ class SessionStore:
                 pair[0].destroy()
             else:
                 GitSession(self._session_dir(session_id)).destroy()
-            self._index.pop(session_id, None)
+        with self._index_lock:
+            if self._index.pop(session_id, None) is not None:
+                self._index_generation += 1
+                self._index_dirty = True
         self._save_index()
         # 位置映射（配对 _record_location）。
         self._forget_location(session_id)
@@ -833,7 +852,8 @@ class SessionStore:
         source: Optional[str] = None,
         **filters: Any,
     ) -> list[dict[str, Any]]:
-        rows = list(self._index.values())
+        with self._index_lock:
+            rows = [dict(row) for row in self._index.values()]
         if agent_id is not None:
             rows = [r for r in rows if r.get("agent_id") == agent_id]
         if source is not None:
@@ -931,17 +951,14 @@ class SessionStore:
                     and (idx.head_id is None or predecessor == idx.head_id))
         if advanced:
             idx.set_head(node.id)
-        idx.set_meta(updated_at=time.time())
-        # Persist meta NOW (one tiny json write), not at turn end: a
-        # @agentic_function run appends from a fork()'d subprocess, and
-        # the parent server resolves the active branch from the on-disk
-        # head — a memory-only head keeps every mid-run load on the OLD
-        # branch until turn end.
-        if advanced:
-            self._persist_meta(git, idx)
+        activity_at = time.time()
+        idx.set_meta(updated_at=activity_at)
+        # Persist activity time for every content append. When HEAD moved,
+        # this also exposes the new active branch to the parent process.
+        self._persist_meta(git, idx)
         # Registry: every appended message bumps updated_at（最新一次聊天
         # 时间，侧栏排序键）；user 消息顺带刷新 preview（debounced to disk）。
-        fields: dict[str, Any] = {"updated_at": time.time()}
+        fields: dict[str, Any] = {"updated_at": activity_at}
         if node.role == "user" and node.output:
             text = (node.output or "").strip().replace("\n", " ")
             fields["preview"] = (text[:77] + "…") if len(text) > 80 else text
@@ -1151,7 +1168,6 @@ class SessionStore:
                 "a stand-in cannot be the active branch tip"
             )
         idx.set_head(head_id)
-        idx.set_meta(updated_at=time.time())
         self._persist_meta(git, idx)
 
     def message_exists(self, session_id: str, msg_id: str) -> bool:
