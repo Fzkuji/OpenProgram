@@ -219,6 +219,29 @@ def test_context_spec_maps_to_render_range() -> None:
     assert TL.render_range_for({}) == {"callers": 0, "subcalls": -1}
 
 
+def test_executor_applies_context_spec_at_agent_turn_boundary(monkeypatch) -> None:
+    from openprogram.agent import sub_agent_run
+
+    seen = []
+
+    class Result:
+        failed = False
+        final_text = "done"
+        error = None
+
+    monkeypatch.setattr(
+        sub_agent_run,
+        "run_agent_turn",
+        lambda *args, **kwargs: seen.append(kwargs) or Result(),
+    )
+    item = {"id": "2", "subject": "work", "done_criteria": "done",
+            "context_spec": {"upstream": 2}}
+
+    TL.execute_item("task", item, "", session_id="s1")
+
+    assert seen[0]["render_range"] == {"callers": 0, "subcalls": 2}
+
+
 # ---------------------------------------------------------------------------
 # The judge is the goal judge
 # ---------------------------------------------------------------------------
@@ -413,6 +436,29 @@ def test_resume_picks_up_an_item_left_in_progress(monkeypatch, board) -> None:
     assert out["items"][0]["status"] == TL.COMPLETED
 
 
+def test_resume_retries_interrupted_item_after_two_recorded_attempts(
+    monkeypatch, board
+) -> None:
+    board.write_text(json.dumps({"version": 1, "todos": [
+        {"id": "1", "subject": "interrupted", "description": "",
+         "status": "in_progress", "owner": TL.WORKFLOW_OWNER,
+         "blocked_by": [], "created_at": 1.0, "updated_at": 1.0,
+         "task": "t", "done_criteria": "d",
+         "context_spec": {"upstream": -1}, "result_summary": "",
+         "attempts": 2},
+    ]}))
+    runs = []
+    monkeypatch.setattr(TL, "_run_executor_turn",
+                        lambda sid, p, **k: runs.append(p) or "finished")
+    monkeypatch.setattr(TL, "judge_item", lambda *a, **k: (True, "ok"))
+
+    out = TL.run_task_list(task="t", session_id="s1", resume=True)
+
+    assert len(runs) == 1
+    assert out["items"][0]["status"] == TL.COMPLETED
+    assert out["items"][0]["attempts"] == 1
+
+
 def test_resume_ignores_another_tasks_entries(monkeypatch, board,
                                               always_pass) -> None:
     board.write_text(json.dumps({"version": 1, "todos": [
@@ -473,3 +519,32 @@ def test_parse_plan_rejects_malformed_replies() -> None:
         TL._parse_plan('{"split": "yes"}')       # split must be bool
     with pytest.raises(ValueError):
         TL._parse_plan('{"split": true, "items": []}')   # split with no items
+
+
+@pytest.mark.parametrize("reply", [
+    '{"reason": "missing"}',
+    '{"reason": "wrong type", "items": {}}',
+])
+def test_revision_requires_explicit_items_array(monkeypatch, reply) -> None:
+    monkeypatch.setattr(TL, "_run_planner_turn", lambda *a, **k: reply)
+
+    with pytest.raises(ValueError, match="items"):
+        TL.revise_task_list("t", [], {"id": "1"}, "failed", "s1")
+
+
+def test_malformed_revision_is_not_applied(monkeypatch, board) -> None:
+    calls = 0
+
+    def planner(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return _plan("work") if calls == 1 else '{"reason": "missing"}'
+
+    monkeypatch.setattr(TL, "_run_planner_turn", planner)
+    monkeypatch.setattr(TL, "_run_executor_turn", lambda *a, **k: "attempt")
+    monkeypatch.setattr(TL, "judge_item", lambda *a, **k: (False, "failed"))
+
+    out = TL.run_task_list(task="t", session_id="s1")
+
+    assert out["items"][0]["result_summary"].startswith("(failed:")
+    assert out["revisions"][0]["reason"].startswith("revision failed:")
