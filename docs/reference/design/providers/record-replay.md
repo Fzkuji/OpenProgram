@@ -1,16 +1,16 @@
 # Recording and replaying provider calls
 
 > Deterministic loop tests need a provider that answers the same way every run. Recording captures one real
-> session at the API-provider chokepoint into a JSONL recording file; replay serves that recording file back offline, and reports
+> session at the shared API-provider boundary into a JSONL recording file; replay returns those events offline and reports
 > the exact field where a later run diverges.
 
 ---
 
-## 1. Where it attaches
+## 1. Request boundary
 
 Every model call in the framework goes through `providers/stream.py`, which looks up one `ApiProvider` in
 `api_registry` by `model.api` and calls `stream()` / `stream_simple()`. That registry entry is the single
-narrowest point where a request goes out and events come back, so both recording and replay are `ApiProvider`
+narrowest shared point where a request goes out and events come back, so both recording and replay are `ApiProvider`
 implementations registered there — no vendor module knows about either.
 
 ```
@@ -29,6 +29,17 @@ ReplayProvider ──reads recording.jsonl──▶ events, no vendor provider, 
 provider produced, writing each one out first. `ReplayProvider` wraps nothing and holds no HTTP client, so an
 agent loop driven by it cannot reach the network.
 
+Provider package import and runtime activation are separate contracts. Importing `openprogram.providers` defines
+and exports APIs; it must not register vendor providers, read `record_replay` configuration, open a recording, or
+install a registry transform. `initialize_provider_runtime()` performs built-in registration and one process-wide
+configuration snapshot before the first real provider lookup. Concurrent first callers wait for the same READY or
+FAILED result. Recordings management commands call file/configuration functions directly and never initialize the
+provider runtime, so `status` and `off` remain available when a configured replay file is missing or invalid.
+
+This is not workflow recording. The Agent loop, Runtime, tools, Session, and DAG still execute the current code;
+replay replaces only the live LLM provider with recorded events. It does not restore a historical Session, replay
+tool side effects, roll back files, or define task steps.
+
 ## 2. Recording file format
 
 JSONL, one JSON object per line, written in the order events occur. The first line is the header:
@@ -38,8 +49,9 @@ JSONL, one JSON object per line, written in the order events occur. The first li
 ```
 
 `format_version` is a single integer, `RECORDING_FORMAT_VERSION` in `openprogram/providers/recording.py`. Replay
-compares it for equality and refuses any other value, so a recording file written before a shape change is rejected
-rather than misread. Bump it whenever a line's shape changes.
+compares it for equality and refuses any other value, so an incompatible recording is rejected rather than misread.
+Bump it when required request/event/call_end fields or their semantics change. Optional header metadata that old
+readers may ignore does not require a version bump.
 
 The remaining line types:
 
@@ -88,17 +100,26 @@ Wall-clock fields listed in `NON_DETERMINISTIC_FIELD_NAMES` (currently `timestam
 between the recording run and every replay run, and comparing them would make every recording file mismatch on its
 second message.
 
-## 5. Scope
+## 5. Product entry and scope
 
-Recording and replay are library modules used from tests. There is no CLI entry point, no UI surface, and no
-recording file-management command; those wait until the format has settled. Tests register the providers themselves:
+The library constructors remain available for focused tests:
 
 ```python
 register_api_provider(api, RecordingProvider(real_provider, recording_path))  # capture
 register_api_provider(api, ReplayProvider(recording_path))                    # replay
 ```
 
+Product configuration uses `record_replay.mode=off|record|replay` with next-start application. The CLI exposes
+`openprogram recordings status|record|replay|off|list|show|delete|prune`. Strict offline replay covers only the LLM
+provider layer; tools and other subsystems keep their own network and permission policies. Recordings may contain
+prompts, model output, tool results, file excerpts, and personal data even after credential redaction.
+
 ## Implementation status
 
-Implemented: `openprogram/providers/recording.py`, `openprogram/providers/replay.py`, covered by
-`tests/providers/test_record_replay.py`.
+Implemented: strict versioned recording/replay, shared registry transform, next-start configuration, recordings CLI
+and file management. Commit `b6460fdc` keeps recovery commands available through a temporary import-time environment
+guard.
+
+Approved but not yet implemented: explicit provider runtime lifecycle, side-effect-free provider package import,
+thread-safe one-time initialization, stable FAILED propagation, and removal of the environment guard. The normative
+design and evidence boundary are in [`record-replay.html`](record-replay.html).
