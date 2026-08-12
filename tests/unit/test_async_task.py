@@ -1185,6 +1185,60 @@ def test_runner_durable_dispatcher_skips_saturated_session(
         runner.shutdown()
 
 
+def test_runner_dispatch_submit_failure_terminalizes_published_task(
+    store_fixture, monkeypatch, tmp_path,
+):
+    """A claimed task must not outlive a failed executor submission."""
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    from openprogram.agent.resource_governance import (
+        ResourceGovernor,
+        ResourceLimits,
+        resolve_resource_limits,
+    )
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.agent.task.types import TaskStatus
+    from openprogram.usage.ledger import UsageLedger
+
+    ledger = UsageLedger(tmp_path / "governance.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    runner = TaskRunner(
+        max_workers=1,
+        governor=ResourceGovernor(
+            ledger, limit_resolver=lambda _sid, _task: resolved,
+        ),
+    )
+
+    def reject_submission(*_args, **_kwargs):
+        raise RuntimeError("executor unavailable")
+
+    monkeypatch.setattr(runner._pool, "submit", reject_submission)
+    try:
+        task_id = runner.spawn_task(
+            session_id="p1", prompt="dispatch me", agent_id="main",
+        )
+        deadline = time.time() + 2.0
+        admission = None
+        while time.time() < deadline:
+            admission = ledger.connection().execute(
+                "SELECT state, reason_code FROM task_admissions WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            if admission is not None and admission[0] == "released":
+                break
+            time.sleep(0.01)
+
+        assert admission is not None
+        assert tuple(admission) == ("released", "error.dispatch_failed")
+        final = runner.await_task(task_id, timeout=0.1)
+        assert final is not None
+        assert final.status == TaskStatus.ERRORED
+        assert final.reason_code == "error.dispatch_failed"
+    finally:
+        runner.shutdown()
+
+
 def test_runner_executes_three_live_tasks_for_one_session(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
