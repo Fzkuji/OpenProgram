@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+import asyncio
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from openprogram.agent.authority import decide_tool_authority, mcp_client_authority
+import mcp.types as mcp_types
+from jsonschema import Draft202012Validator
+from mcp.shared.exceptions import McpError
+
+from openprogram.agent.authority import (
+    decide_tool_authority,
+    mcp_client_authority,
+)
 from openprogram.agent.session_db import SessionDB, default_db
 from openprogram.agent.types import AgentTool, AgentToolResult
-from openprogram.mcp_server.tools import json_result
+from openprogram.mcp_server.tools import json_result, to_mcp_content
+from openprogram.providers.types import TextContent
 
 
 @dataclass(frozen=True)
@@ -88,6 +97,35 @@ def _message_row(row: Any) -> dict[str, Any]:
         "content": content,
         "timestamp": timestamp,
     }
+
+
+def _mcp_error(code: int, message: str) -> McpError:
+    return McpError(mcp_types.ErrorData(code=code, message=message))
+
+
+def _copy_json(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        copied = {}
+        for key, item in value.items():
+            if type(key) is not str:
+                raise TypeError
+            copied[key] = _copy_json(item)
+        return copied
+    if isinstance(value, list):
+        return [_copy_json(item) for item in value]
+    if value is None or type(value) in (str, bool, int):
+        return value
+    if type(value) is float and math.isfinite(value):
+        return value
+    raise TypeError
+
+
+def _execution_error() -> AgentToolResult:
+    return AgentToolResult(
+        content=[TextContent(text="Runtime tool execution failed")],
+        details={"reason_code": "RUNTIME_TOOL_EXECUTION_FAILED"},
+        is_error=True,
+    )
 
 
 class MCPService:
@@ -180,6 +218,107 @@ class MCPService:
                 for tool in self.exposed_runtime_tools()
             ]
         )
+
+    async def tool_call(
+        self,
+        name: str,
+        arguments: Mapping[str, Any],
+        *,
+        call_id: str,
+        cancel_event: asyncio.Event,
+        on_progress: Callable[[str], None] | None,
+    ) -> AgentToolResult:
+        """Execute one currently exposed Runtime tool under fixed MCP authority."""
+        tool: AgentTool | None = None
+        try:
+            config = self._config_getter()
+            server = config.get("mcp_server", {})
+            configured = server.get("exposed_tools", [])
+            exposed = self._registry_exposed_names()
+            if (
+                not isinstance(configured, list)
+                or not all(isinstance(item, str) for item in configured)
+                or name not in configured
+                or name not in exposed
+            ):
+                raise LookupError
+            tool = self._registry_get(name)
+            if tool is None or tool.name != name:
+                raise LookupError
+        except Exception:
+            tool = None
+        if tool is None:
+            raise _mcp_error(
+                mcp_types.METHOD_NOT_FOUND,
+                "underlying Runtime tool not found",
+            )
+
+        invalid_arguments = False
+        try:
+            copied_arguments = _copy_json(arguments)
+            if not isinstance(copied_arguments, dict):
+                raise TypeError
+            Draft202012Validator.check_schema(tool.parameters)
+            validator = Draft202012Validator(tool.parameters)
+            if next(validator.iter_errors(copied_arguments), None) is not None:
+                raise ValueError
+        except Exception:
+            invalid_arguments = True
+        if invalid_arguments:
+            raise _mcp_error(
+                mcp_types.INVALID_PARAMS,
+                "invalid underlying Runtime tool arguments",
+            )
+
+        from openprogram.agent.dispatcher import TurnRequest
+        from openprogram.agent.internals._approval import wrap_with_approval
+        from openprogram.functions.permission_rule import load_merged_rules
+
+        setup_failed = False
+        try:
+            req = TurnRequest(
+                session_id="",
+                user_text="",
+                agent_id="main",
+                source="mcp",
+                permission_mode="ask",
+                permission_rules=load_merged_rules(""),
+                **dict(self.context.authority),
+            )
+            gated = wrap_with_approval(tool, req, lambda _event: None)
+        except Exception:
+            setup_failed = True
+        if setup_failed:
+            return _execution_error()
+
+        update_callback = None
+        if on_progress is not None:
+
+            def update_callback(update: Any) -> None:
+                if not isinstance(update, str):
+                    return
+                try:
+                    on_progress(update)
+                except Exception:
+                    return
+
+        execution_failed = False
+        try:
+            result = await gated.execute(
+                call_id,
+                copied_arguments,
+                cancel_event,
+                update_callback,
+            )
+            if not isinstance(result, AgentToolResult):
+                raise TypeError
+            detached = result.model_copy(deep=True)
+            to_mcp_content(detached)
+        except Exception:
+            execution_failed = True
+        if execution_failed:
+            return _execution_error()
+        return detached
 
 
 __all__ = ["MCPClientContext", "MCPService"]

@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
-from types import ModuleType
+from copy import deepcopy
 from dataclasses import FrozenInstanceError
+from types import ModuleType
 
+import mcp.types as mcp_types
 import pytest
+from mcp.shared.exceptions import McpError
 
 from openprogram.agent.authority import AuthorityError
+from openprogram.agent.session_config import PermissionRules
 from openprogram.agent.types import AgentTool, AgentToolResult
 from openprogram.mcp_server.service import MCPClientContext, MCPService
-from openprogram.mcp_server.tools import json_result
+from openprogram.mcp_server.tools import json_result, to_mcp_content
+from openprogram.providers.types import ImageContent, TextContent
 
 
 def _tool(
@@ -33,11 +39,31 @@ def _tool(
     )
 
 
+def _runtime_tool(
+    name: str,
+    execute,
+    *,
+    parameters: dict | None = None,
+) -> AgentTool:
+    return AgentTool(
+        name=name,
+        description=f"Execute {name}",
+        parameters=parameters
+        or {"type": "object", "properties": {}, "additionalProperties": False},
+        label=name,
+        execute=execute,
+    )
+
+
 def _payload(result: AgentToolResult):
     assert isinstance(result, AgentToolResult)
     assert len(result.content) == 1
     assert result.content[0].type == "text"
     return json.loads(result.content[0].text)
+
+
+def _tool_call(service: MCPService, *args, **kwargs) -> AgentToolResult:
+    return asyncio.run(service.tool_call(*args, **kwargs))
 
 
 class FakeSessionDB:
@@ -528,3 +554,491 @@ def test_client_context_stores_only_detached_fixed_scalar_authority(
         "interaction",
     }
     assert all(isinstance(value, str) for value in context.authority.values())
+
+
+@pytest.mark.parametrize("name", ["unknown", "memory_status"])
+def test_tool_call_unknown_and_unexposed_are_indistinguishable(
+    client_context,
+    name,
+) -> None:
+    calls = []
+
+    async def execute(*args):
+        calls.append(args)
+        return AgentToolResult(content=[TextContent(text="must not run")])
+
+    service = _service(
+        client_context,
+        config={"mcp_server": {"exposed_tools": []}},
+        registry={"memory_status": _runtime_tool("memory_status", execute)},
+    )
+
+    with pytest.raises(McpError) as caught:
+        _tool_call(
+            service,
+            name,
+            {},
+            call_id="call-1",
+            cancel_event=asyncio.Event(),
+            on_progress=None,
+        )
+
+    assert caught.value.error.code == mcp_types.METHOD_NOT_FOUND
+    assert caught.value.error.message == "underlying Runtime tool not found"
+    assert calls == []
+
+
+@pytest.mark.parametrize("registered", [False, True])
+def test_tool_call_configured_tool_must_be_registered_and_live(
+    client_context,
+    registered,
+) -> None:
+    calls = []
+
+    async def execute(*args):
+        calls.append(args)
+        return AgentToolResult(content=[TextContent(text="must not run")])
+
+    registry = (
+        {"memory_status": _runtime_tool("memory_status", execute)} if registered else {}
+    )
+    service = _service(
+        client_context,
+        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
+        registry=registry,
+        exposed=set(),
+    )
+
+    with pytest.raises(McpError) as caught:
+        _tool_call(
+            service,
+            "memory_status",
+            {},
+            call_id="call-1",
+            cancel_event=asyncio.Event(),
+            on_progress=None,
+        )
+
+    assert caught.value.error.code == mcp_types.METHOD_NOT_FOUND
+    assert caught.value.error.message == "underlying Runtime tool not found"
+    assert calls == []
+
+
+def test_tool_call_rechecks_live_registry_at_execution_time(client_context) -> None:
+    calls = []
+
+    async def old_execute(*_args):
+        raise AssertionError("detached discovery handle must not execute")
+
+    async def new_execute(call_id, arguments, cancel_event, on_update):
+        calls.append((call_id, deepcopy(arguments), cancel_event, on_update))
+        return AgentToolResult(content=[TextContent(text="new")])
+
+    registry = {"memory_status": _runtime_tool("memory_status", old_execute)}
+    service = _service(
+        client_context,
+        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
+        registry=registry,
+    )
+    discovered = service.exposed_runtime_tools()[0]
+    discovered.name = "mutated"
+    registry["memory_status"] = _runtime_tool("memory_status", new_execute)
+    cancel = asyncio.Event()
+
+    result = _tool_call(
+        service,
+        "memory_status",
+        {},
+        call_id="fresh-call",
+        cancel_event=cancel,
+        on_progress=None,
+    )
+
+    assert result.is_error is False
+    assert result.content[0].text == "new"
+    assert calls == [("fresh-call", {}, cancel, None)]
+
+
+def test_tool_call_missing_paired_capability_is_typed_and_does_not_invoke(
+    client_context,
+) -> None:
+    calls = []
+
+    async def execute(*args):
+        calls.append(args)
+        return AgentToolResult(content=[TextContent(text="must not run")])
+
+    service = _service(
+        client_context,
+        config={"mcp_server": {"exposed_tools": ["read"]}},
+        registry={"read": _runtime_tool("read", execute)},
+    )
+
+    result = _tool_call(
+        service,
+        "read",
+        {},
+        call_id="call-1",
+        cancel_event=asyncio.Event(),
+        on_progress=None,
+    )
+
+    assert result.is_error is True
+    assert result.content[0].type == "text"
+    assert "fs.read" in result.content[0].text
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("name", "arguments", "rules", "reason_code"),
+    [
+        ("bash", {"command": "pwd"}, None, "HARD_CONSTRAINT_DENIED"),
+        (
+            "memory_update",
+            {"revision": "r1"},
+            PermissionRules(deny=["memory_update"]),
+            "PERMISSION_RULE_DENY",
+        ),
+        ("memory_search", {"query": "x"}, None, "APPROVAL_UNAVAILABLE_NON_INTERACTIVE"),
+    ],
+)
+def test_tool_call_approval_gate_denials_are_typed_before_invocation(
+    client_context,
+    name,
+    arguments,
+    rules,
+    reason_code,
+    monkeypatch,
+) -> None:
+    calls = []
+
+    async def execute(*args):
+        calls.append(args)
+        return AgentToolResult(content=[TextContent(text="must not run")])
+
+    async def approval_must_not_wait(**_kwargs):
+        raise AssertionError("MCP approval must not wait")
+
+    monkeypatch.setattr(
+        "openprogram.agent.internals._approval.await_user_approval",
+        approval_must_not_wait,
+    )
+    tool = _runtime_tool(
+        name,
+        execute,
+        parameters={
+            "type": "object",
+            "properties": {key: {"type": "string"} for key in arguments},
+            "required": list(arguments),
+            "additionalProperties": False,
+        },
+    )
+    service = _service(
+        client_context,
+        config={"mcp_server": {"exposed_tools": [name]}},
+        registry={name: tool},
+    )
+    monkeypatch.setattr(
+        "openprogram.functions.permission_rule.load_merged_rules",
+        lambda _session_id: rules or PermissionRules(),
+    )
+
+    result = _tool_call(
+        service,
+        name,
+        arguments,
+        call_id="call-1",
+        cancel_event=asyncio.Event(),
+        on_progress=None,
+    )
+
+    assert result.is_error is True
+    assert result.details["reason_code"] == reason_code
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {},
+        {"query": 7},
+        {"query": "ok", "authority_tier": "owner"},
+    ],
+)
+def test_tool_call_invalid_runtime_arguments_are_invalid_params(
+    client_context,
+    arguments,
+) -> None:
+    calls = []
+
+    async def execute(*args):
+        calls.append(args)
+        return AgentToolResult(content=[TextContent(text="must not run")])
+
+    service = _service(
+        client_context,
+        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
+        registry={
+            "memory_status": _runtime_tool(
+                "memory_status",
+                execute,
+                parameters={
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                    "additionalProperties": False,
+                },
+            )
+        },
+    )
+
+    with pytest.raises(McpError) as caught:
+        _tool_call(
+            service,
+            "memory_status",
+            arguments,
+            call_id="call-1",
+            cancel_event=asyncio.Event(),
+            on_progress=None,
+        )
+
+    assert caught.value.error.code == mcp_types.INVALID_PARAMS
+    assert caught.value.error.message == "invalid underlying Runtime tool arguments"
+    assert calls == []
+
+
+def test_tool_call_uses_fixed_turn_request_and_detached_arguments(
+    client_context,
+    monkeypatch,
+) -> None:
+    captured = []
+
+    async def execute(call_id, arguments, cancel_event, on_update):
+        captured.append((call_id, arguments, cancel_event, on_update))
+        arguments["query"] = "tool-mutated"
+        return AgentToolResult(content=[TextContent(text="ok")])
+
+    def capture_wrap(tool, req, on_event):
+        captured.append((req, on_event))
+        return tool
+
+    monkeypatch.setattr(
+        "openprogram.agent.internals._approval.wrap_with_approval", capture_wrap
+    )
+    arguments = {
+        "query": "caller",
+        "source": "web",
+        "permission_mode": "bypass",
+        "authority_tier": "owner",
+        "interaction": "interactive",
+    }
+    schema = {
+        "type": "object",
+        "properties": {key: {"type": "string"} for key in arguments},
+        "required": list(arguments),
+        "additionalProperties": False,
+    }
+    service = _service(
+        client_context,
+        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
+        registry={
+            "memory_status": _runtime_tool("memory_status", execute, parameters=schema)
+        },
+    )
+    cancel = asyncio.Event()
+
+    result = _tool_call(
+        service,
+        "memory_status",
+        arguments,
+        call_id="fixed",
+        cancel_event=cancel,
+        on_progress=None,
+    )
+
+    req, on_event = captured[0]
+    assert req.source == "mcp"
+    assert req.permission_mode == "ask"
+    assert req.authority_tier == "paired"
+    assert req.interaction == "non-interactive"
+    assert {key: getattr(req, key) for key in client_context.authority} == dict(
+        client_context.authority
+    )
+    assert callable(on_event)
+    assert captured[1][0] == "fixed"
+    assert captured[1][2:] == (cancel, None)
+    assert arguments["query"] == "caller"
+    assert result.is_error is False
+
+
+def test_tool_call_content_conversion_preserves_text_and_image() -> None:
+    result = AgentToolResult(
+        content=[
+            TextContent(text="hello"),
+            ImageContent(data="aGVsbG8=", mime_type="image/png"),
+        ]
+    )
+
+    converted = to_mcp_content(result)
+
+    assert [
+        block.model_dump(by_alias=True, exclude_none=True) for block in converted
+    ] == [
+        {"type": "text", "text": "hello"},
+        {"type": "image", "data": "aGVsbG8=", "mimeType": "image/png"},
+    ]
+
+
+@pytest.mark.parametrize(
+    "kind", ["exception", "unsupported", "malformed", "invalid_base64"]
+)
+def test_tool_call_execution_failures_are_typed_and_sanitized(
+    client_context,
+    kind,
+) -> None:
+    secret = "secret-runtime-detail"
+
+    async def execute(*_args):
+        if kind == "exception":
+            raise RuntimeError(secret)
+        if kind == "unsupported":
+            result = AgentToolResult(content=[])
+            result.content = [object()]
+            return result
+        if kind == "invalid_base64":
+            return AgentToolResult(
+                content=[ImageContent(data=secret, mime_type="image/png")]
+            )
+        return AgentToolResult.model_construct(
+            content=[
+                ImageContent.model_construct(
+                    type="image", data="aGVsbG8=", mime_type="text/plain"
+                )
+            ]
+        )
+
+    service = _service(
+        client_context,
+        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
+        registry={"memory_status": _runtime_tool("memory_status", execute)},
+    )
+
+    result = _tool_call(
+        service,
+        "memory_status",
+        {},
+        call_id="call-1",
+        cancel_event=asyncio.Event(),
+        on_progress=None,
+    )
+
+    assert result.is_error is True
+    assert len(result.content) == 1
+    assert result.content[0].type == "text"
+    assert result.content[0].text == "Runtime tool execution failed"
+    assert secret not in result.content[0].text
+
+
+def test_tool_call_preserves_explicit_failure_state(client_context) -> None:
+    async def execute(*_args):
+        return AgentToolResult(
+            content=[TextContent(text="fixed tool failure")],
+            details={"reason_code": "FIXED_FAILURE"},
+            is_error=True,
+        )
+
+    service = _service(
+        client_context,
+        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
+        registry={"memory_status": _runtime_tool("memory_status", execute)},
+    )
+
+    result = _tool_call(
+        service,
+        "memory_status",
+        {},
+        call_id="call-1",
+        cancel_event=asyncio.Event(),
+        on_progress=None,
+    )
+
+    assert result.is_error is True
+    assert result.content[0].text == "fixed tool failure"
+    assert result.details == {"reason_code": "FIXED_FAILURE"}
+
+
+def test_tool_call_policy_setup_failure_is_typed_and_sanitized(
+    client_context,
+    monkeypatch,
+) -> None:
+    calls = []
+
+    async def execute(*args):
+        calls.append(args)
+        return AgentToolResult(content=[TextContent(text="must not run")])
+
+    secret = "secret-policy-error"
+    monkeypatch.setattr(
+        "openprogram.functions.permission_rule.load_merged_rules",
+        lambda _session_id: (_ for _ in ()).throw(RuntimeError(secret)),
+    )
+    service = _service(
+        client_context,
+        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
+        registry={"memory_status": _runtime_tool("memory_status", execute)},
+    )
+
+    result = _tool_call(
+        service,
+        "memory_status",
+        {},
+        call_id="call-1",
+        cancel_event=asyncio.Event(),
+        on_progress=None,
+    )
+
+    assert result.is_error is True
+    assert result.content[0].text == "Runtime tool execution failed"
+    assert secret not in result.content[0].text
+    assert calls == []
+
+
+def test_tool_call_forwards_ordered_progress_only_when_requested(
+    client_context,
+) -> None:
+    received = []
+    callbacks = []
+
+    async def execute(_call_id, _arguments, _cancel_event, on_update):
+        callbacks.append(on_update)
+        if on_update is not None:
+            on_update("first")
+            on_update("second")
+        return AgentToolResult(content=[TextContent(text="done")])
+
+    service = _service(
+        client_context,
+        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
+        registry={"memory_status": _runtime_tool("memory_status", execute)},
+    )
+
+    _tool_call(
+        service,
+        "memory_status",
+        {},
+        call_id="with-progress",
+        cancel_event=asyncio.Event(),
+        on_progress=received.append,
+    )
+    _tool_call(
+        service,
+        "memory_status",
+        {},
+        call_id="without-progress",
+        cancel_event=asyncio.Event(),
+        on_progress=None,
+    )
+
+    assert received == ["first", "second"]
+    assert callbacks[0] is not None
+    assert callbacks[1] is None
