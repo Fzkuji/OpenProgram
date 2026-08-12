@@ -123,7 +123,7 @@ def _generate_llm_title(user_text: str, assistant_text: str) -> str | None:
 
         runtime = create_runtime(provider=provider, model=model_id)
     except Exception:
-        logger.debug("LLM title runtime setup failed", exc_info=True)
+        logger.debug("LLM title runtime setup failed")
         return None
 
     try:
@@ -135,13 +135,13 @@ def _generate_llm_title(user_text: str, assistant_text: str) -> str | None:
             max_iterations=2,
         )
     except Exception:
-        logger.debug("LLM title generation failed", exc_info=True)
+        logger.debug("LLM title generation failed")
         return None
     finally:
         try:
             runtime.close()
         except Exception:
-            logger.debug("LLM title runtime close failed", exc_info=True)
+            logger.debug("LLM title runtime close failed")
 
     title = result.get("title") if isinstance(result, dict) else None
     if not isinstance(title, str):

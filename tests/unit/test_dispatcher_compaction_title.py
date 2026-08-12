@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from pathlib import Path
 from typing import AsyncGenerator
@@ -115,9 +116,15 @@ def stubs(monkeypatch: pytest.MonkeyPatch):
 # ---------------------------------------------------------------------------
 
 class _TitleRuntimeSpy:
-    def __init__(self, result=None, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        result=None,
+        error: Exception | None = None,
+        close_error: Exception | None = None,
+    ) -> None:
         self.result = result
         self.error = error
+        self.close_error = close_error
         self.calls: list[dict] = []
         self.system = ""
         self.closed = False
@@ -130,6 +137,8 @@ class _TitleRuntimeSpy:
 
     def close(self) -> None:
         self.closed = True
+        if self.close_error is not None:
+            raise self.close_error
 
 
 def _install_title_runtime(
@@ -231,6 +240,41 @@ def test_llm_title_allows_one_structured_repair(
     assert len(provider_calls) == 2
     assert factory_calls == [{"provider": "openai", "model": "configured-model"}]
     assert runtime._closed is True
+
+
+@pytest.mark.parametrize("stage", ["setup", "exec", "close"])
+def test_llm_title_does_not_log_provider_exception_bodies(
+    stage: str,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentinel = f"SECRET_{stage.upper()}_TITLE"
+    runtime = _TitleRuntimeSpy(
+        {"title": "safe title"},
+        error=RuntimeError(sentinel) if stage == "exec" else None,
+        close_error=RuntimeError(sentinel) if stage == "close" else None,
+    )
+    monkeypatch.setattr(
+        "openprogram.providers.default_llm._read_default_model",
+        lambda: ("openai", "stub"),
+    )
+
+    def create_runtime(**_kwargs):
+        if stage == "setup":
+            raise RuntimeError(sentinel)
+        return runtime
+
+    monkeypatch.setattr(
+        "openprogram.providers.registry.create_runtime",
+        create_runtime,
+    )
+
+    with caplog.at_level(logging.DEBUG, logger=title_module.__name__):
+        title = title_module._generate_llm_title("user", "assistant")
+
+    assert title == ("safe title" if stage == "close" else None)
+    assert runtime.closed is (stage != "setup")
+    assert sentinel not in caplog.text
 
 
 def test_auto_title_stamps_from_first_user_message(tmp_db: SessionDB) -> None:
