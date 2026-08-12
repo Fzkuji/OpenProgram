@@ -182,6 +182,7 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 |------|------|----------|
 | `doctor` | 端到端健康检查 | `--json` 输出 JSON |
 | `rescue` | 诊断问题并直接打印修复命令 | — |
+| `diagnostics` | 生成脱敏支持包 zip（版本、配置、日志、探测），可直接附在故障报告里，见[诊断包](diagnostics.zh.md) | `--output PATH`（默认 `./openprogram-diagnostics-<日期>.zip`） |
 | `logs` | 查看日志 | `list`；`tail [name]`（`-n` 行数、`-f` 跟踪）；`path [name]`。name 为 worker / runtime / ink，默认 worker |
 | `update` | 检查并应用更新 | `--check` 只检查；`--force` 绕过 6 小时节流 |
 | `cron-worker` | 前台循环，触发 `cron` 工具登记的计划任务 | `--once` 只评估一个 tick 就退出；`--list` 显示每条任务的匹配状态 |
