@@ -336,7 +336,7 @@ def check_matrix(path: Path) -> MatrixResult:
     if not category_svg:
         raise MatrixError("missing published category SVG")
     category_points: dict[
-        str, tuple[int, float, float, float, float, float, float]
+        str, tuple[int, float, float, float, float, float, float, str]
     ] = {}
     for name, count, body in re.findall(
         r'<g transform="translate\(0,[^)]+\)"><text[^>]*>([^<]+?)\s+(\d+)</text>'
@@ -361,6 +361,7 @@ def check_matrix(path: Path) -> MatrixResult:
             float(markers[1]),
             float(markers[2]),
             float(openprogram.group(1)),
+            " ".join(unescape(re.sub(r"<[^>]+>", "", body)).split()),
         )
     categories = {row.category for row in parser.rows}
     if set(category_points) != categories:
@@ -379,6 +380,7 @@ def check_matrix(path: Path) -> MatrixResult:
             marker_max_x,
             median_x,
             openprogram_x,
+            visible_label,
         ) = category_points[category]
         expected_openprogram = round(
             200 + 600 * framework_scores[0] / len(category_rows)
@@ -405,6 +407,13 @@ def check_matrix(path: Path) -> MatrixResult:
             / 2
             / len(category_rows)
         )
+        expected_openprogram_percent = round(100 * framework_scores[0] / len(category_rows))
+        expected_reference_percent = round(100 * max(reference_scores) / len(category_rows))
+        expected_reference_names = {
+            FRAMEWORK_NAMES[index]
+            for index, score in enumerate(framework_scores[1:], start=1)
+            if index not in {7, 8} and score == max(reference_scores)
+        }
         if (
             count != len(category_rows)
             or openprogram_x != expected_openprogram
@@ -413,8 +422,59 @@ def check_matrix(path: Path) -> MatrixResult:
             or (marker_min_x, marker_max_x)
             != (expected_reference_min, expected_reference_max)
             or median_x != expected_reference_median
+            or f"{expected_reference_percent}%" not in visible_label
+            or not any(name in visible_label for name in expected_reference_names)
+            or (
+                framework_scores[0] > max(reference_scores)
+                and f"我们 {expected_openprogram_percent}%" not in visible_label
+            )
         ):
             raise MatrixError(f"published category point for {category} is stale")
+
+    legend_start = source.index('<div class="card legend">', category_svg.end())
+    legend_end = source.index("</div>", legend_start)
+    legend = " ".join(
+        unescape(re.sub(r"<[^>]+>", "", source[legend_start:legend_end])).split()
+    )
+    leaders: list[str] = []
+    gaps_by_category: list[tuple[float, str, int, int, int]] = []
+    for category in categories:
+        category_rows = [row for row in parser.rows if row.category == category]
+        framework_scores = [
+            sum(SYMBOL_SCORES[row.cells[index]] for row in category_rows)
+            for index in range(13)
+        ]
+        references = [
+            score
+            for index, score in enumerate(framework_scores[1:], start=1)
+            if index not in {7, 8}
+        ]
+        op_percent = round(100 * framework_scores[0] / len(category_rows))
+        reference_min = round(100 * min(references) / len(category_rows))
+        reference_max = round(100 * max(references) / len(category_rows))
+        if framework_scores[0] > max(references):
+            leaders.append(category)
+        gaps_by_category.append(
+            (
+                reference_max - op_percent,
+                category,
+                op_percent,
+                reference_min,
+                reference_max,
+            )
+        )
+    for category in leaders:
+        if category not in legend:
+            raise MatrixError("published category legend is stale")
+    for _gap, category, op_percent, reference_min, reference_max in sorted(
+        gaps_by_category, reverse=True
+    )[:3]:
+        if (
+            category not in legend
+            or f"{op_percent}%" not in legend
+            or f"{reference_min}%–{reference_max}%" not in legend
+        ):
+            raise MatrixError("published category legend is stale")
 
     return MatrixResult(
         feature_count=len(parser.rows),

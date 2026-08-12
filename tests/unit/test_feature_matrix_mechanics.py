@@ -85,6 +85,18 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
             "category point",
         ),
         (
+            lambda text: text.replace("claude 64%", "claude 999%", 1),
+            "category point",
+        ),
+        (
+            lambda text: text.replace(
+                "我们 12%，范围 12%–73%",
+                "我们 999%，范围 999%–999%",
+                1,
+            ),
+            "category legend",
+        ),
+        (
             lambda text: _rename_section_item(text, "gaps", "终端快捷键自动配置"),
             "gap detail",
         ),
