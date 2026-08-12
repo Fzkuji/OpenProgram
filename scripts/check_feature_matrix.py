@@ -32,6 +32,7 @@ HEADERS = (
 )
 FRAMEWORK_NAMES = HEADERS[1:]
 EXPECTED_SNAPSHOT = "2fb471b3"
+EXPECTED_INTEGRATION_SNAPSHOT = "33dd7d2c"
 JSON_SCHEMA_ROW = "按 JSON schema 约束输出"
 EXPECTED_SSRF_SNAPSHOT = "be5eaa3c"
 SSRF_ROW = "私网访问与 SSRF 防护"
@@ -249,6 +250,8 @@ def check_matrix(path: Path) -> MatrixResult:
         raise MatrixError("JSON Schema snapshot is stale")
     if source.count(EXPECTED_SNAPSHOT) < 4 or "deadbeef" in source:
         raise MatrixError("published snapshot evidence is stale")
+    if source.count(f"integrated candidate@{EXPECTED_INTEGRATION_SNAPSHOT}") < 3:
+        raise MatrixError("integration snapshot evidence is stale")
     if "runtime llm(response_format=…) 的 JSON schema 结构化输出" in source:
         raise MatrixError("old snapshot still claims complete JSON Schema support")
 
