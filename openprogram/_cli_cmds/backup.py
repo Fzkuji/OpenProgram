@@ -568,7 +568,7 @@ class _RestoreJournal:
             return None
         if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
             raise OSError("restore target is not a regular file")
-        keep = self.backup_dir / relative.replace("/", "__")
+        keep = self.backup_dir / f"{len(self.entries):08d}.previous"
         keep.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         shutil.copy2(target, keep)
         os.chmod(keep, 0o600)
@@ -682,6 +682,8 @@ def recover_interrupted_restore(state: Path) -> bool:
         journal_file.unlink(missing_ok=True)
         return False
 
+    if not _validate_recovery_paths(state, entries):
+        return False
     _reverse(state, entries)
     shutil.rmtree(state / _JOURNAL_DIR, ignore_errors=True)
     journal_file.unlink(missing_ok=True)
@@ -698,7 +700,9 @@ def _validate_restore_journal(record: object) -> tuple[bool, list[dict]] | None:
     if not isinstance(complete, bool) or not isinstance(entries, list):
         return None
     validated: list[dict] = []
-    for entry in entries:
+    relative_paths: set[str] = set()
+    previous_paths: set[str] = set()
+    for index, entry in enumerate(entries):
         if not isinstance(entry, dict) or set(entry) != {
             "relative_path",
             "previous",
@@ -710,11 +714,18 @@ def _validate_restore_journal(record: object) -> tuple[bool, list[dict]] | None:
         previous = entry["previous"]
         if not _safe_relative_path(relative) or not isinstance(existed, bool):
             return None
+        if relative in relative_paths:
+            return None
+        relative_paths.add(relative)
         if existed:
             if not isinstance(previous, str) or not _safe_relative_path(previous):
                 return None
             if PurePath(previous).parts[0] != _JOURNAL_DIR:
                 return None
+            expected_previous = f"{_JOURNAL_DIR}/{index:08d}.previous"
+            if previous != expected_previous or previous in previous_paths:
+                return None
+            previous_paths.add(previous)
         elif previous is not None:
             return None
         validated.append(entry)
@@ -743,6 +754,72 @@ def _reverse(state: Path, entries: list[dict]) -> None:
                 os.chmod(target, 0o600)
         else:
             target.unlink(missing_ok=True)
+
+
+def _validate_recovery_paths(state: Path, entries: list[dict]) -> bool:
+    """Validate every rollback path before the first filesystem mutation."""
+
+    try:
+        root = os.lstat(state)
+        if stat.S_ISLNK(root.st_mode) or not stat.S_ISDIR(root.st_mode):
+            return False
+        if root.st_uid != os.geteuid():
+            return False
+        for entry in entries:
+            target = state / entry["relative_path"]
+            if not _validate_recovery_target(state, target, entry["existed"]):
+                return False
+            if entry["existed"]:
+                source = state / entry["previous"]
+                if not _validate_recovery_source(state, source):
+                    return False
+    except OSError:
+        return False
+    return True
+
+
+def _validate_recovery_target(state: Path, target: Path, existed: bool) -> bool:
+    current = state
+    relative = target.relative_to(state)
+    for part in relative.parts[:-1]:
+        current /= part
+        info = os.lstat(current)
+        if (
+            stat.S_ISLNK(info.st_mode)
+            or not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != os.geteuid()
+        ):
+            return False
+    try:
+        final = os.lstat(target)
+    except FileNotFoundError:
+        return not existed
+    return (
+        not stat.S_ISLNK(final.st_mode)
+        and stat.S_ISREG(final.st_mode)
+        and final.st_uid == os.geteuid()
+    )
+
+
+def _validate_recovery_source(state: Path, source: Path) -> bool:
+    current = state
+    relative = source.relative_to(state)
+    for part in relative.parts[:-1]:
+        current /= part
+        info = os.lstat(current)
+        if (
+            stat.S_ISLNK(info.st_mode)
+            or not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != os.geteuid()
+        ):
+            return False
+    info = os.lstat(source)
+    return (
+        not stat.S_ISLNK(info.st_mode)
+        and stat.S_ISREG(info.st_mode)
+        and info.st_uid == os.geteuid()
+        and stat.S_IMODE(info.st_mode) == 0o600
+    )
 
 
 def _publish_restored(target: Path, payload: bytes, *, root: Path) -> None:
@@ -775,7 +852,10 @@ def restore_archive(archive: Path, state: Path) -> list[str]:
 
     with tarfile.open(archive, "r:gz") as tar:
         members = tar.getmembers()
-        names = {member.name for member in members}
+        member_names = [member.name for member in members]
+        if len(member_names) != len(set(member_names)):
+            raise tarfile.TarError("duplicate member name in archive")
+        names = set(member_names)
         if _MANIFEST_NAME not in names:
             raise tarfile.TarError("archive has no manifest; refusing to restore")
         manifest_source = tar.extractfile(_MANIFEST_NAME)
@@ -910,6 +990,8 @@ def restore_archive(archive: Path, state: Path) -> list[str]:
                 _publish_restored(target, payload, root=state)
                 published.append(relative)
         except BaseException:
+            if not _validate_recovery_paths(state, journal.entries):
+                raise OSError("restore rollback paths failed validation")
             _reverse(state, journal.entries)
             journal.discard()
             raise
