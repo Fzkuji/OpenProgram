@@ -54,6 +54,10 @@ def _plan(*texts, split=True, reason="r", upstream=-1):
 # Size decision — a small task is not split
 # ---------------------------------------------------------------------------
 
+def test_planner_tools_exclude_bash() -> None:
+    assert "bash" not in TL.PLANNER_TOOLS
+
+
 def test_small_task_runs_as_one_item(monkeypatch, board, always_pass) -> None:
     prompts = []
 
@@ -443,6 +447,35 @@ def test_revision_does_not_touch_completed_items(monkeypatch, board) -> None:
 # ---------------------------------------------------------------------------
 # Resume from the board
 # ---------------------------------------------------------------------------
+
+def test_completed_matching_workflow_replans(monkeypatch, board,
+                                             always_pass) -> None:
+    board.write_text(json.dumps({"version": 1, "todos": [
+        {"id": "1", "subject": "stale", "description": "",
+         "status": "completed", "owner": TL.WORKFLOW_OWNER,
+         "blocked_by": [], "created_at": 1.0, "updated_at": 1.0,
+         "task": "t", "done_criteria": "stale",
+         "context_spec": {"upstream": -1},
+         "result_summary": "old result", "attempts": 1},
+    ]}))
+    planned = []
+    plan_onto_board = TL._plan_onto_board
+
+    def _spy_plan(*args, **kwargs):
+        planned.append(args)
+        return plan_onto_board(*args, **kwargs)
+
+    monkeypatch.setattr(TL, "_plan_onto_board", _spy_plan)
+    monkeypatch.setattr(TL, "_run_planner_turn",
+                        lambda *a, **k: _plan("fresh"))
+    monkeypatch.setattr(TL, "_run_executor_turn", lambda *a, **k: "new result")
+
+    out = TL.run_task_list(task="t", session_id="s1", resume=True)
+
+    assert len(planned) == 1
+    assert [item["subject"] for item in out["items"]] == ["fresh"]
+    assert out["items"][0]["result_summary"] == "new result"
+
 
 def test_board_is_checkpointed_as_each_item_starts(monkeypatch, board,
                                                    always_pass) -> None:

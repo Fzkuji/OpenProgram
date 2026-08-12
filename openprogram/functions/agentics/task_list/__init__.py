@@ -63,7 +63,7 @@ MAX_ITEMS_EXECUTED = 40
 # The executor gets real work tools. The planner and the size check only
 # look — planning must not change the working tree.
 EXECUTOR_TOOLS = ("bash", "read", "write", "edit", "grep", "glob", "list")
-PLANNER_TOOLS = ("read", "grep", "glob", "list", "bash")
+PLANNER_TOOLS = ("read", "grep", "glob", "list")
 
 # Board statuses this workflow drives. ``shared.STATUSES`` owns the
 # vocabulary; a workflow only ever moves an entry between these three.
@@ -363,7 +363,7 @@ def plan_task_list(task: str, session_id: str = "", *,
     repository itself is shared state an executor can read, so never
     plan an item whose only job is to carry file contents forward.
 
-    You have inspection tools (read, glob, grep, list, bash) and may
+    You have inspection tools (read, glob, grep, list) and may
     look at the working directory to size the task honestly.
 
     End your reply with STRICT JSON only, no markdown fence, no prose
@@ -606,6 +606,8 @@ def run_task_list(task: str, session_id: str = "", resume: bool = True,
     sid = session_id or current_session_id()
 
     items = workflow_items(sid, task) if resume else []
+    if next_pending(items) is None:
+        items = []
     if not items:
         items, _plan = _plan_onto_board(sid, task, agent_id, spawn_caller)
 
