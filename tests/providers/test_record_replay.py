@@ -699,6 +699,27 @@ def test_recording_rejects_symlinked_managed_root(
     assert not (target / "private.jsonl").exists()
 
 
+def test_symlinked_managed_root_does_not_block_external_recording(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    managed_target = tmp_path / "managed-target"
+    managed_target.mkdir(mode=0o755)
+    (state / "recordings").symlink_to(managed_target, target_is_directory=True)
+    external = tmp_path / "external"
+    external.mkdir(mode=0o755)
+    external.chmod(0o755)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+
+    RecordingProvider(
+        _scripted_with((ScriptedText("done"),)), external / "private.jsonl"
+    )
+
+    assert (external / "private.jsonl").is_file()
+    assert stat.S_IMODE(external.stat().st_mode) == 0o755
+
+
 def test_external_replay_rejects_wide_permissions_without_chmod(tmp_path: Path) -> None:
     recording_file = _record_one_call(tmp_path)
     recording_file.chmod(0o644)
