@@ -90,7 +90,7 @@
 <main>
   <p class="eyebrow">OpenProgram / Provider design / implementation handoff</p>
   <h1>请求录制与严格离线回放入口</h1>
-  <p class="sub">基线：<code>708bfbab132870677d670337903d17e82fb0d420</code>。本页定义产品入口、registry 包装、文件安全、并发写入、严格解析、文件管理和验证合同。它只描述应实施的设计，不把文档内容计为实现证据。</p>
+  <p class="sub">原始设计基线：<code>708bfbab132870677d670337903d17e82fb0d420</code>；可靠性修订基线：<code>990bfe36e625579443e1cb01a1b3266c8dbd0e87</code>。本页定义产品入口、registry 包装、文件安全、并发写入、严格解析、文件管理和验证合同。它只描述应实施的设计，不把文档内容计为实现证据。</p>
 
   <div class="lead">
     <b>确定方案。</b> 保留现有 <code>RecordingProvider</code> 与 <code>ReplayProvider</code> 的库级 API；在 <code>api_registry</code> 增加一次性、进程级 provider 变换，使现有和后续注册的所有 API provider 使用同一个录制会话或同一个回放会话。运行模式由 profile-aware 配置决定，<code>openprogram recordings</code> 提供配置和文件管理入口。录制默认关闭，脱敏不可关闭；回放不读取凭证、不委托真实 provider、不执行 provider fallback。
@@ -295,27 +295,27 @@ replay:
   <div class="sequence" aria-label="启动顺序">
     <div class="row"><div class="n">1</div><div class="body"><b>解析 profile</b><div class="meta"><code>openprogram.cli</code> 先设置 <code>OPENPROGRAM_PROFILE</code>。</div></div></div>
     <div class="row"><div class="n">2</div><div class="body"><b>注册 built-ins</b><div class="meta">沿用 <code>providers/register.py::register_builtins()</code>。</div></div></div>
-    <div class="row"><div class="n">3</div><div class="body"><b>读取并验证 record_replay 配置</b><div class="meta">off 直接返回；无效配置抛具体异常并阻止 worker 启动。</div></div></div>
+    <div class="row"><div class="n">3</div><div class="body"><b>读取并验证 record_replay 配置</b><div class="meta">off 直接返回；无效配置写结构化错误日志并安装 fail-closed provider，应用仍可启动和执行诊断，但不得回退到真实 provider。</div></div></div>
     <div class="row"><div class="n">4</div><div class="body"><b>设置 registry transform</b><div class="meta">包装已有项，并保证插件或延迟 import 的后注册项也被包装。</div></div></div>
     <div class="row"><div class="n">5</div><div class="body"><b>处理调用</b><div class="meta">stream 先取得 transformed provider；仅 <code>requires_credentials != False</code> 时解析 credential。</div></div></div>
   </div>
 
   <h2 id="format">07 · 录制文件、严格解析与并发写入</h2>
   <h3>格式策略</h3>
-  <p>新 writer 继续写 <code>format_version=1</code> 和现有四类行，不添加回放必需字段，避免没有实际兼容收益的版本升级。header 可增加可选元数据；v1 reader 必须忽略未知 header 字段。任何 request/event/call_end 的必需字段或语义发生变化时才升级版本。</p>
+  <p>新 writer 继续写 <code>format_version=1</code> 和现有四类行。<code>call_end.outcome</code> 是可选诊断字段：缺失等同 <code>complete</code>，因此旧 v1 文件和旧 reader 保持兼容；它不改变事件模型或 request 匹配。header 可增加可选元数据；v1 reader 必须忽略未知 header 字段。任何 request/event 的必需字段或语义发生变化时才升级版本。</p>
   <pre>{"type":"header","format_version":1,
  "recording_id":"20260811T134502Z-f7a29c1d",
  "created_at":"2026-08-11T13:45:02Z","redaction_version":1}
 {"type":"request","call_index":0,"model":{...},"context":{...},"options":{...}}
 {"type":"event","call_index":0,"event_index":0,"event":{...}}
-{"type":"call_end","call_index":0,"event_count":1}</pre>
+{"type":"call_end","call_index":0,"event_count":1,"outcome":"complete"}</pre>
   <p><code>recording_id</code>、<code>created_at</code> 和 <code>redaction_version</code> 只用于管理和诊断，不参与请求比较。旧 v1 文件没有这些字段时仍可回放，list/show 从 stat 与内容推导缺失信息。</p>
 
   <h3>严格读取不变量</h3>
   <div class="grid g2">
     <section class="card"><h4>文件级</h4><ul><li>第一条非空行必须是唯一 header。</li><li>每行必须是 JSON object；错误包含行号。</li><li><code>format_version</code> 必须是支持的整数。</li><li>只接受 header/request/event/call_end。</li></ul></section>
     <section class="card"><h4>调用级</h4><ul><li>request 的 <code>call_index</code> 唯一且从 0 连续。</li><li>event 必须引用已有、未结束的 call。</li><li><code>event_index</code> 从 0 连续。</li><li>每个 request 必须有且只有一个 call_end。</li></ul></section>
-    <section class="card"><h4>结束级</h4><ul><li><code>event_count</code> 等于实际 event 数。</li><li>call_end 后不再接受该 call 的 event。</li><li>未知 event type 在 provider 构造时失败，不延迟到中途。</li><li>空文件、截断末行和孤立行一律拒绝。</li></ul></section>
+    <section class="card"><h4>结束级</h4><ul><li><code>event_count</code> 等于实际 event 数。</li><li><code>outcome</code> 只允许 complete/error/cancelled/abandoned；缺失按 complete 兼容。</li><li>call_end 后不再接受该 call 的 event。</li><li>未知 event type 在 provider 构造时失败，不延迟到中途。</li><li>空文件、截断末行和孤立行一律拒绝。</li></ul></section>
     <section class="card"><h4>请求级</h4><ul><li>比较前对 incoming 使用同版脱敏。</li><li>model/context/options 三段依序比较。</li><li>差异保留 call、field、recorded、incoming。</li><li>超过录制调用数时拒绝，不回退 live provider。</li></ul></section>
   </div>
 
@@ -381,10 +381,10 @@ replay:
   <table>
     <thead><tr><th>阶段</th><th>条件</th><th>异常/CLI 行为</th><th>是否允许继续</th></tr></thead>
     <tbody>
-      <tr><td>配置</td><td>mode 未知、file 空、record 外部路径</td><td><code>RecordReplayConfigError</code>，包含 key 与值；worker 启动失败。</td><td class="center">否</td></tr>
+      <tr><td>配置激活</td><td>mode 未知、file 空、record 外部路径、replay 文件丢失或损坏</td><td>应用记录错误并继续启动；registry 安装 fail-closed provider，所有 provider 调用返回同一配置错误，不解析凭据、不访问网络。<code>recordings status/off</code> 仍可恢复。</td><td class="center">仅诊断</td></tr>
       <tr><td>创建</td><td>同名文件、symlink、目录不可写、无法收紧权限</td><td><code>RecordingFileError</code>；不覆盖已有文件。</td><td class="center">否</td></tr>
       <tr><td>写入</td><td>锁失败、磁盘满、序列化失败</td><td>终止当前 provider 调用并保留已写内容；不能只记录日志后继续 live 调用。</td><td class="center">否</td></tr>
-      <tr><td>真实 provider</td><td>开始/中途失败</td><td>已写 request/部分 event、无 call_end；原 provider 异常原样传播。该文件此后严格回放会报告 incomplete call。</td><td class="center">本次否</td></tr>
+      <tr><td>真实 provider</td><td>开始/中途失败、调用取消或消费方提前关闭生成器</td><td>在 <code>finally</code> 写入带 outcome 的 call_end 并关闭源生成器，随后保留原异常/取消语义。整份文件仍可解析；replay 先校验请求，只在消费到该调用时报告对应中断，调用计数随后允许调用方重试并消费下一条录制。</td><td class="center">按调用</td></tr>
       <tr><td>解析</td><td>JSON、版本、顺序、计数或事件类型无效</td><td><code>RecordingFileError(path, line, call_index, reason)</code>。</td><td class="center">否</td></tr>
       <tr><td>匹配</td><td>incoming 与 recorded 不同</td><td>现有 <code>ReplayMismatch</code> 字段保留；CLI/Web 错误链显示 call 与 field。</td><td class="center">否</td></tr>
       <tr><td>调用耗尽</td><td>incoming call 超过已录 call</td><td><code>ReplayMismatch(field_path="call_index")</code>。</td><td class="center">否</td></tr>
@@ -434,8 +434,10 @@ replay:
       <tr><td>Registry</td><td>包装前注册、包装后注册、重复配置、两个 API</td><td>已有/后续项均 transformed；冲突 transform 失败；record wrappers 共享 sink；replay 共享 call_count。</td></tr>
       <tr><td>并发线程</td><td>两个线程各录多次 call/event</td><td>每行合法 JSON；call_index 唯一连续；每个 event_index 连续；call_end count 正确。</td></tr>
       <tr><td>并发进程</td><td>两个进程写同一 managed file</td><td>单一 header、无半行、无重复 call_index、严格 parser 通过。</td></tr>
-      <tr><td>崩溃</td><td>provider 在 event 后抛异常</td><td>没有 call_end；异常原样传播；replay 明确报告 incomplete call。</td></tr>
-      <tr><td>权限</td><td>新目录/文件/锁文件、历史 0644 文件、Windows mock</td><td>POSIX 0700/0600；已有文件被收紧；调用 <code>restrict_to_user</code>。</td></tr>
+      <tr><td>异常与取消</td><td>provider 抛异常、任务取消、消费方 <code>aclose()</code></td><td>原控制流保持；源生成器关闭；call_end outcome 和 event_count 正确；整份文件可解析；replay 在对应调用失败而不影响后续计数。</td></tr>
+      <tr><td>激活失败</td><td>replay 文件丢失/损坏、未知 mode、非法 record selector</td><td>应用初始化不抛出；记录错误；provider 调用 fail-closed；不解析凭据、不访问网络；管理命令可恢复。</td></tr>
+      <tr><td>回放计数</td><td>同一请求先 mismatch 后修正重试</td><td>mismatch 不增加 <code>call_count</code>；修正请求仍与同一 recorded call 比较；成功或已记录的中断才消费一次。</td></tr>
+      <tr><td>权限</td><td>新目录/文件/锁文件、历史 0644 文件</td><td>POSIX 0700/0600；已有文件被收紧；调用 <code>restrict_to_user</code>。</td></tr>
       <tr><td>路径</td><td><code>../</code>、绝对 record path、symlink、目录、外部 delete</td><td>record/delete/prune 拒绝逃逸；replay/show 外部文件只读可用。</td></tr>
       <tr><td>脱敏</td><td>大小写字段、嵌套值、常见 auth scheme、URL userinfo/query、普通文本</td><td>凭证字节不在文件；非凭证文本保持；record/replay 使用同版规则。</td></tr>
       <tr><td>严格格式</td><td>空文件、坏 JSON、双 header、未知行、孤立 event、索引间隔、重复 end、错误 count、未知 event</td><td>构造 ReplayProvider 时报告 path/line/call/reason。</td></tr>
@@ -464,7 +466,8 @@ git diff --check</pre>
     <div class="value"><span class="pill ok">已实现</span></div><div class="value">严格 parser 在构造阶段验证 header、版本、行类型、call/event 索引、call_end/count 和事件模型；replay 无原 provider/fallback，两个 stream 入口先选择 provider 并跳过凭证解析。</div><div class="value"><code>replay.py::read_recording_file</code>、<code>ReplayProvider.requires_credentials</code>、<code>stream.py</code>；结构失败、credential sentinel、多轮 tool loop 测试。</div>
     <div class="value"><span class="pill ok">已实现</span></div><div class="value"><code>record_replay.mode/file</code> 为 next_start settings；CLI 提供 status/record/replay/off/list/show/delete/prune，配置失败回滚新文件，破坏性命令包含 active、symlink、外部路径、锁与非 TTY 确认保护。管理命令导入时不自动激活已配置 replay，因此目标文件后来损坏或丢失时，<code>status/off</code> 仍可用于诊断和恢复。</div><div class="value"><code>config_schema.py</code>、<code>cli.py</code>、<code>providers/__init__.py</code>、<code>recording.py</code>、<code>test_record_replay_cli.py::test_off_recovers_from_a_replay_file_that_became_invalid</code>；真实临时 HOME CLI smoke 验证。</div>
     <div class="value"><span class="pill warn">兼容边界</span></div><div class="value">保留 v1 构造器、属性、异常、旧 header 和 mismatch 行为；新增严格检查会拒绝旧 reader 曾忽略的损坏行。严格离线仍只覆盖 LLM provider 层；跨进程调度顺序不保证复现。</div><div class="value"><code>test_record_replay.py</code> 继续覆盖库级录制、两轮 tool loop、版本拒绝和字段差异。</div>
-    <div class="value"><span class="pill plan">明确不做</span></div><div class="value">Web UI、全进程 HTTP 录制、tool/MCP 录制、模糊 request 匹配、自动网络 fallback、自动上传。</div><div class="value">超出本阶段边界。</div>
+    <div class="value"><span class="pill warn">可靠性修订待验证</span></div><div class="value">异常/取消/提前关闭的终止记录、配置激活 fail-closed、mismatch 不消费调用。</div><div class="value">基线 <code>990bfe36</code> 已确认缺口；只有 RED/GREEN、独立规格审查和质量审查全部通过后才能改为已实现。</div>
+    <div class="value"><span class="pill plan">明确不做</span></div><div class="value">Web UI、全进程 HTTP 录制、tool/MCP 录制、模糊 request 匹配、自动网络 fallback、自动上传、Windows 专项实现或验证。</div><div class="value">超出本阶段边界。</div>
     <div class="value"><span class="pill plan">验证命令</span></div><div class="value">相关 pytest、Ruff、docs build、link checker、CLI smoke 与 diff whitespace。</div><div class="value">提交前执行并在分支交付记录中报告精确通过数及任何基线环境失败。</div>
   </div>
 
