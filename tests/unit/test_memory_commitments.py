@@ -459,6 +459,84 @@ def test_writer_combined_batch_failure_restores_stage_and_committed_state(tmp_pa
     assert committed_path.read_bytes() == committed_before
 
 
+def test_writer_rollback_failure_makes_partial_stage_uncommittable(
+    tmp_path, monkeypatch
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.tools import management_tools
+    from openprogram.memory.runtime.commitments import upsert_commitments
+    from openprogram.store.session import git_session
+
+    original = _source(tmp_path)
+    upsert_commitments(
+        tmp_path,
+        [
+            {
+                "text": "Submit the rebuttal.",
+                "due": "2026-08-12",
+                "source": original,
+                "source_quote": "I will submit the rebuttal by Wednesday.",
+            }
+        ],
+    )
+    closure = _source(
+        tmp_path,
+        message_id="message-2",
+        content="I will upload the appendix tomorrow.",
+    )
+    committed_path = tmp_path / "commitments.jsonl"
+    committed_before = committed_path.read_bytes()
+
+    with closing(
+        MemoryWorkspace(tmp_path, allowed_new_source_refs={closure})
+    ) as workspace:
+        baseline = workspace.baseline()
+        tool = next(
+            item
+            for item in management_tools(workspace, [])
+            if item.name == "record_commitments"
+        )
+        real_atomic_write_text = git_session.atomic_write_text
+        calls = 0
+
+        def fail_rollback(path, text):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("rollback failed")
+            return real_atomic_write_text(path, text)
+
+        monkeypatch.setattr(git_session, "atomic_write_text", fail_rollback)
+        result = asyncio.run(
+            tool.handler(
+                {
+                    "commitments": [
+                        {
+                            "text": "Upload the appendix.",
+                            "due": "2026-08-13",
+                            "source": closure,
+                            "source_quote": "I will upload the appendix tomorrow.",
+                        }
+                    ],
+                    "transitions": [
+                        {
+                            "id": "com_0000000000000000",
+                            "status": "done",
+                            "source": closure,
+                            "source_quote": "I will upload the appendix tomorrow.",
+                        }
+                    ],
+                }
+            )
+        )
+
+        assert result["is_error"] is True
+        with pytest.raises(RuntimeError, match="stage is unavailable"):
+            workspace.commit_edits(*baseline)
+
+    assert committed_path.read_bytes() == committed_before
+
+
 def test_writer_tool_rejects_source_outside_selected_batch(tmp_path):
     from openprogram.memory.management import MemoryWorkspace
     from openprogram.memory.management.tools import management_tools
