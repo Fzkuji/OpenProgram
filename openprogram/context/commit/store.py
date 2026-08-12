@@ -73,7 +73,7 @@ def load_commit(store: "SessionStore", commit_id: str, *, session_id: Optional[s
     """
     if session_id:
         return _load_commit_in_session(store, session_id, commit_id)
-    for sess in store.list_sessions(limit=10**9):
+    for sess in store.list_sessions(limit=10**9, include_archived=True):
         commit = _load_commit_in_session(store, sess["id"], commit_id)
         if commit is not None:
             return commit

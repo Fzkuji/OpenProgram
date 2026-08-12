@@ -612,7 +612,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Manage chat sessions (list, attach a channel user to "
              "an existing session, ...)")
     sessions_sub = p_sessions.add_subparsers(dest="sessions_verb", metavar="verb")
-    sessions_sub.add_parser("list", help="List every session across every agent")
+    p_ss_list = sessions_sub.add_parser("list",
+        help="List every session across every agent")
+    p_ss_list.add_argument("--chat", action="store_true",
+        help="List chat sessions from the session store instead of "
+             "waiting follow-up sessions")
+    p_ss_list.add_argument("--archived", action="store_true",
+        help="With --chat: list archived chat sessions instead of active ones")
+    p_ss_list.add_argument("--all", action="store_true", dest="all_scope",
+        help="With --chat: list archived and active chat sessions together")
+    p_ss_arc = sessions_sub.add_parser("archive",
+        help="Hide a chat session from the default list (reversible, "
+             "deletes nothing)")
+    p_ss_arc.add_argument("session_id", help="Chat session id to archive")
+    p_ss_unarc = sessions_sub.add_parser("unarchive",
+        help="Return an archived chat session to the default list")
+    p_ss_unarc.add_argument("session_id", help="Chat session id to unarchive")
     p_ss_res = sessions_sub.add_parser("resume", help="Answer a waiting session")
     p_ss_res.add_argument("session_id", help="Session id of the waiting session to answer")
     p_ss_res.add_argument("answer", help="Text to send back as the user's reply")
@@ -1320,7 +1335,16 @@ def main():
     if args.command == "sessions":
         verb = getattr(args, "sessions_verb", None)
         if verb == "list":
-            _cmd_sessions()
+            if getattr(args, "chat", False):
+                scope = ("archived" if args.archived
+                         else "all" if args.all_scope else "active")
+                _cmd_chat_sessions(scope)
+            else:
+                _cmd_sessions()
+        elif verb == "archive":
+            _cmd_session_archive(args.session_id, True)
+        elif verb == "unarchive":
+            _cmd_session_archive(args.session_id, False)
         elif verb == "resume":
             _cmd_resume(args.session_id, args.answer)
         elif verb == "attach":
@@ -1796,7 +1820,9 @@ from openprogram._cli_cmds.subagent import (  # noqa: E402,F401
 )
 
 from openprogram._cli_cmds.sessions import (  # noqa: E402,F401
+    _cmd_chat_sessions,
     _cmd_resume,
+    _cmd_session_archive,
     _cmd_sessions,
 )
 from openprogram._cli_cmds.agents import (  # noqa: E402,F401

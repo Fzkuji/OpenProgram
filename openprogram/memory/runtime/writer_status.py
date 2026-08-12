@@ -195,7 +195,7 @@ def pending_turn_count(memory_dir: Path, session_store: Any | None = None) -> in
 
     workspace_id = _existing_workspace_id(Path(memory_dir))
     total = 0
-    for session in session_store.list_sessions(limit=10**9):
+    for session in session_store.list_sessions(limit=10**9, include_archived=True):
         session_id = str(session.get("id") or "").strip()
         if not session_id:
             continue

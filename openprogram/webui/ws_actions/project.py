@@ -63,7 +63,7 @@ def _alive_session_ids() -> set[str]:
     """当前真实存在的会话 id 集（SessionDB 有内容的）。"""
     try:
         from openprogram.agent.session_db import default_db
-        return {r.get("id") for r in default_db().list_sessions(limit=100_000) if r.get("id")}
+        return {r.get("id") for r in default_db().list_sessions(limit=100_000, include_archived=True) if r.get("id")}
     except Exception:
         return set()
 
@@ -371,7 +371,8 @@ async def handle_list_project_sessions(ws, cmd: dict):
         from openprogram.agent.session_db import default_db
         proj = _projects.get_project(project_id)
         db = default_db()
-        rows = {r.get("id"): r for r in db.list_sessions(limit=100_000)}
+        rows = {r.get("id"): r
+                for r in db.list_sessions(limit=100_000, include_archived=True)}
         for sid in (proj.session_ids if proj else []):
             row = rows.get(sid)
             if not row:

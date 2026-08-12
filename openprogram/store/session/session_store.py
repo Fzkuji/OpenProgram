@@ -868,27 +868,57 @@ class SessionStore:
         limit: int = 100,
         offset: int = 0,
         source: Optional[str] = None,
+        include_archived: bool = False,
         **filters: Any,
     ) -> list[dict[str, Any]]:
+        """Registry rows, newest activity first.
+
+        Archived sessions are hidden by default — archiving exists so a
+        list stops growing without end, which only works if the default
+        list honours it. Maintenance passes that must visit every
+        session (memory scan, run-state repair, commit lookup) pass
+        ``include_archived=True``; an explicit ``archived=`` filter
+        selects one side on its own.
+        """
         with self._index_lock:
             rows = [dict(row) for row in self._index.values()]
         if agent_id is not None:
             rows = [r for r in rows if r.get("agent_id") == agent_id]
         if source is not None:
             rows = [r for r in rows if r.get("source") == source]
+        if not include_archived and "archived" not in filters:
+            rows = [r for r in rows if not r.get("archived")]
         for k, v in filters.items():
             if v is not None:
                 rows = [r for r in rows if r.get(k) == v]
         rows.sort(key=lambda s: s.get("updated_at") or 0, reverse=True)
         return rows[offset:offset + limit]
 
+    def set_archived(self, session_id: str, archived: bool) -> bool:
+        """Flip a session's archive flag. Returns False if unknown.
+
+        Pure metadata: no node is touched and ``updated_at`` stays put
+        (index-consistency.html — only appending a message is activity),
+        so archiving is fully reversible and never reorders the list.
+        """
+        with self._index_lock:
+            known = session_id in self._index
+        if not known and self._open(session_id) is None:
+            return False
+        self.update_session(session_id, archived=bool(archived))
+        return True
+
     def count_sessions(
         self,
         *,
         agent_id: Optional[str] = None,
         source: Optional[str] = None,
+        include_archived: bool = False,
     ) -> int:
-        return len(self.list_sessions(agent_id=agent_id, source=source, limit=10**9))
+        return len(self.list_sessions(
+            agent_id=agent_id, source=source,
+            include_archived=include_archived, limit=10**9,
+        ))
 
     def invalidate_cache(self, session_id: str) -> None:
         """Drop the in-memory ``SessionMemoryIndex`` for ``session_id`` so
@@ -1727,7 +1757,7 @@ class SessionStore:
 
     def sessions_with_binding(self, channel: str, account_id: Optional[str]) -> list[str]:
         out: list[str] = []
-        for sess in self.list_sessions(limit=10**9):
+        for sess in self.list_sessions(limit=10**9, include_archived=True):
             extra = sess.get("extra_meta") or {}
             if extra.get("channel") != channel:
                 continue
@@ -1807,7 +1837,7 @@ class SessionStore:
 
     def count_recent_nodes(self, since: float) -> int:
         total = 0
-        for sess in self.list_sessions(limit=10**9):
+        for sess in self.list_sessions(limit=10**9, include_archived=True):
             pair = self._open(sess["id"])
             if not pair:
                 continue
