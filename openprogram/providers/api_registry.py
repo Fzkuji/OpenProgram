@@ -57,19 +57,20 @@ def _rebuild_audited_accounting() -> None:
 def register_api_provider(api: Api, provider: ApiProvider) -> None:
     """Register an API provider implementation."""
     with _registry_lock:
+        transformed = (
+            _provider_transform(api, provider)
+            if _provider_transform is not None
+            else provider
+        )
         _audited_originals.pop(api, None)
         _original_registry[api] = provider
-        _registry[api] = (
-            _provider_transform(api, provider) if _provider_transform is not None else provider
-        )
+        _registry[api] = transformed
         _rebuild_audited_accounting()
 
 
 def register_api_providers(providers: dict[Api, ApiProvider]) -> None:
     """Atomically publish a batch of API providers."""
     with _registry_lock:
-        for api in providers:
-            _audited_originals.pop(api, None)
         transformed = {
             api: (
                 _provider_transform(api, provider)
@@ -78,6 +79,8 @@ def register_api_providers(providers: dict[Api, ApiProvider]) -> None:
             )
             for api, provider in providers.items()
         }
+        for api in providers:
+            _audited_originals.pop(api, None)
         _original_registry.update(providers)
         _registry.update(transformed)
         _rebuild_audited_accounting()

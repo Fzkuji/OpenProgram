@@ -94,6 +94,46 @@ def test_replacing_transform_revokes_old_wrapper_identity() -> None:
     assert api_registry.has_audited_accounting(new_wrapper, "first-api")
 
 
+@pytest.mark.parametrize("batch", [False, True])
+def test_failed_public_override_preserves_registry_and_audited_identity(
+    batch: bool,
+) -> None:
+    audited = Provider("audited")
+    _register_builtin_api_providers({"first-api": audited})
+    wrapper = WrappedProvider("first-api", audited)
+
+    def transform(api, provider):
+        if provider.name == "broken":
+            raise RuntimeError("cannot transform")
+        return wrapper if api == "first-api" else WrappedProvider(api, provider)
+
+    configure_provider_transform(transform)
+    before = (
+        dict(api_registry._registry),
+        dict(api_registry._original_registry),
+        {key: set(value) for key, value in api_registry._audited_accounting.items()},
+        dict(api_registry._audited_originals),
+    )
+
+    with pytest.raises(RuntimeError, match="cannot transform"):
+        if batch:
+            register_api_providers({
+                "other-api": Provider("ok"),
+                "first-api": Provider("broken"),
+            })
+        else:
+            register_api_provider("first-api", Provider("broken"))
+
+    assert api_registry._registry == before[0]
+    assert api_registry._original_registry == before[1]
+    assert api_registry._audited_accounting == before[2]
+    assert api_registry._audited_originals == before[3]
+    assert api_registry.has_audited_accounting(wrapper, "first-api")
+
+    register_api_provider("unrelated-api", Provider("ok"))
+    assert api_registry.has_audited_accounting(wrapper, "first-api")
+
+
 def test_transform_wraps_existing_and_future_registry_entries() -> None:
     first = Provider("first")
     second = Provider("second")
