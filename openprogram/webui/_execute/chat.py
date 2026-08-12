@@ -28,6 +28,7 @@ def run_query(
     agent_id: str,
     attachments: list | None,
     service_tier: str | None = None,
+    response_format=None,
 ) -> None:
     """Run the chat-query branch. Returns None; results are broadcast via WS."""
     from openprogram.webui import server as _s
@@ -124,6 +125,7 @@ def run_query(
     # render that pulls msg.blocks from DB).
     tool_blocks_collected: list[dict] = []
     tool_blocks_by_id: dict[str, dict] = {}
+    structured_result: dict = {}
 
     def _on_dispatcher_event(env: dict) -> None:
         et = env.get("type")
@@ -134,6 +136,12 @@ def run_query(
         # so the existing reconnect/replay logic works.
         if payload.get("type") == "stream_event":
             evt = payload.get("event") or {}
+            if evt.get("type") == "structured_output_end":
+                structured_result.update(
+                    structured_output=evt.get("value"),
+                    structured_output_mode=evt.get("mode"),
+                    attempt=evt.get("attempt"),
+                )
             with _s._running_tasks_lock:
                 ti = _s._running_tasks.get(session_id)
                 if ti and "stream_events" in ti:
@@ -277,6 +285,7 @@ def run_query(
         user_already_persisted=True,
         model_override=_model_override,
         attachments=attachments,
+        response_format=response_format,
         **_authority,
     )
 
@@ -317,13 +326,21 @@ def run_query(
             pass
 
     if turn_result.failed:
-        _s._broadcast_chat_response(session_id, msg_id, {
+        error_payload = {
             "type": "error",
             "content": turn_result.error or "(unknown error)",
             "reason": turn_result.error_reason,
             "retryable": turn_result.error_retryable,
             "retry_after_s": turn_result.error_retry_after_s,
-        })
+        }
+        if turn_result.structured_error_code:
+            error_payload.update(
+                code=turn_result.structured_error_code,
+                content="Structured output request failed",
+                attempts=turn_result.structured_output_attempts,
+                issues=turn_result.structured_output_issues,
+            )
+        _s._broadcast_chat_response(session_id, msg_id, error_payload)
         return
 
     result = turn_result.final_text
@@ -360,12 +377,14 @@ def run_query(
     # populate TurnResult.blocks (e.g. cancellation mid-stream).
     _ordered_blocks = list(getattr(turn_result, "blocks", None) or [])
     _blocks_out = _ordered_blocks if _ordered_blocks else tool_blocks_collected
-    _s._broadcast_chat_response(session_id, msg_id, {
+    result_payload = {
         "type": "result",
         "content": str(result),
         "tool_calls": tool_calls_collected,
         "blocks": _blocks_out,
-    })
+    }
+    result_payload.update(structured_result)
+    _s._broadcast_chat_response(session_id, msg_id, result_payload)
     # dispatcher 走 stream_simple 不走 runtime.exec, last_usage 永远是 0;
     # 把 TurnResult.usage 同步过去, 不然 token pill 永远显示 0.
     _s._runtime_management.sync_turn_usage_to_runtime(

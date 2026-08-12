@@ -36,12 +36,15 @@ def agent_event_to_envelope(ev, req: "TurnRequest") -> Optional[dict]:
             return None
         ame_type = getattr(ame, "type", None)
         if ame_type == "text_delta":
+            output_attempt = getattr(ame, "output_attempt", None)
+            event = {"type": "text", "text": getattr(ame, "delta", "")}
+            if output_attempt is not None:
+                event["output_attempt"] = output_attempt
             return {
                 "type": "chat_response",
                 "data": {"type": "stream_event",
                          "session_id": cid,
-                         "event": {"type": "text",
-                                   "text": getattr(ame, "delta", "")}},
+                         "event": event},
             }
         if ame_type == "thinking_delta":
             return {
@@ -50,6 +53,20 @@ def agent_event_to_envelope(ev, req: "TurnRequest") -> Optional[dict]:
                          "session_id": cid,
                          "event": {"type": "thinking",
                                    "text": getattr(ame, "delta", "")}},
+            }
+        if ame_type in {"structured_output_retry", "structured_output_end"}:
+            event = (
+                ame.model_dump(mode="json", exclude_none=True)
+                if hasattr(ame, "model_dump")
+                else dict(vars(ame))
+            )
+            return {
+                "type": "chat_response",
+                "data": {
+                    "type": "stream_event",
+                    "session_id": cid,
+                    "event": event,
+                },
             }
         return None
 

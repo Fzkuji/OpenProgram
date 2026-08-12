@@ -31,6 +31,7 @@ def dispatch_forced_tool_call(
     *,
     agent_id: str = "main",
     source: str = "web",
+    response_format=None,
     on_event: Optional[EventCallback] = None,
 ) -> dict:
     """Run a single @agentic_function without invoking the LLM.
@@ -97,6 +98,7 @@ def dispatch_forced_tool_call(
             anchor_msg_id=anchor_msg_id,
             work_dir=work_dir,
             on_event=on_event,
+            response_format=response_format,
         )
     finally:
         try:

@@ -4,9 +4,11 @@ The recorder wraps the scripted provider (standing in for a real network
 provider) at the API-registry chokepoint; the replayer serves the resulting
 recording file back with no provider underneath it at all.
 """
+
 from __future__ import annotations
 
 import asyncio
+import builtins
 import importlib
 import json
 import stat
@@ -16,7 +18,13 @@ from pathlib import Path
 import pytest
 
 from openprogram.agent.agent_loop import agent_loop
-from openprogram.agent.types import AgentContext, AgentLoopConfig, AgentTool, AgentToolResult
+from openprogram.agent.types import (
+    AgentContext,
+    AgentLoopConfig,
+    AgentTool,
+    AgentToolResult,
+)
+from openprogram.agentic_programming.runtime import Runtime
 from openprogram.providers.api_registry import get_api_provider, register_api_provider
 from openprogram.providers.recording import (
     PLACEHOLDER,
@@ -30,6 +38,8 @@ from openprogram.providers.replay import (
     RecordingFileError,
     read_recording_file,
 )
+from openprogram.providers.structured_output import StructuredOutputCapabilities
+from openprogram.providers.utils.errors import LLMError
 from openprogram.providers.types import (
     AssistantMessageEvent,
     Context,
@@ -44,6 +54,12 @@ from tests.providers.scripted_provider import ScriptedText, ScriptedToolCall
 
 _API = "record-replay-test-api"
 _SECRET = "sk-livekey0123456789abcdef"
+_STRUCTURED_SCHEMA = {
+    "type": "object",
+    "properties": {"answer": {"type": "integer"}},
+    "required": ["answer"],
+    "additionalProperties": False,
+}
 
 
 def _model() -> Model:
@@ -69,6 +85,7 @@ def restore_api_registry() -> Iterator[None]:
     previous = get_api_provider(_API)
     yield
     from openprogram.providers import api_registry
+
     if previous is None:
         api_registry._registry.pop(_API, None)
         api_registry._original_registry.pop(_API, None)
@@ -182,8 +199,10 @@ def _drain_stream(model: Model, options: SimpleStreamOptions | None = None) -> l
 
     async def run():
         return [
-            event async for event in stream_simple(
-                model, Context(messages=[UserMessage(content="hello", timestamp=0)]),
+            event
+            async for event in stream_simple(
+                model,
+                Context(messages=[UserMessage(content="hello", timestamp=0)]),
                 options if options is not None else _options(),
             )
         ]
@@ -209,7 +228,8 @@ def test_recorded_recording_file_holds_no_secret_in_plain_text(
     assert "keep-me" in text  # non-secret headers survive
 
     lines = [json.loads(raw) for raw in text.splitlines()]
-    assert lines[0] == {"type": "header", "format_version": RECORDING_FORMAT_VERSION}
+    assert RECORDING_FORMAT_VERSION == 2
+    assert lines[0] == {"type": "header", "format_version": 2}
     request = next(line for line in lines if line["type"] == "request")
     assert request["options"]["api_key"] == PLACEHOLDER
     assert request["options"]["headers"]["Cookie"] == PLACEHOLDER
@@ -217,14 +237,250 @@ def test_recorded_recording_file_holds_no_secret_in_plain_text(
     assert [line["type"] for line in lines[-2:]] == ["event", "call_end"]
 
 
+def test_recording_omits_runtime_only_options_but_provider_receives_callback(
+    tmp_path: Path, restore_api_registry
+) -> None:
+    recording_file = tmp_path / "runtime-options.jsonl"
+    scripted = _scripted_with((ScriptedText("done"),))
+    register_api_provider(_API, RecordingProvider(scripted, recording_file))
+
+    callback = lambda payload, model: payload
+    _drain_stream(_model(), SimpleStreamOptions(on_payload=callback))
+
+    assert scripted.calls[0].options.on_payload is callback
+    request = next(
+        row
+        for row in map(json.loads, recording_file.read_text().splitlines())
+        if row["type"] == "request"
+    )
+    assert "signal" not in request["options"]
+    assert "on_payload" not in request["options"]
+
+
+def _runtime_for_registered_model(
+    monkeypatch: pytest.MonkeyPatch, *, max_retries: int = 1
+) -> Runtime:
+    monkeypatch.setattr(
+        "openprogram.providers.get_model", lambda provider, model_id: _model()
+    )
+    runtime = Runtime(
+        model="record-replay-provider:record-replay-model", max_retries=max_retries
+    )
+    runtime.session_id = "record-replay-structured-session"
+    return runtime
+
+
+def test_structured_retry_records_v2_calls_and_replays_same_typed_result(
+    tmp_path: Path,
+    restore_api_registry,
+    monkeypatch: pytest.MonkeyPatch,
+    offline,
+) -> None:
+    recording_file = tmp_path / "structured-v2.jsonl"
+    scripted = _scripted_with(
+        (ScriptedText('{"answer":"bad"}'),),
+        (ScriptedText('{"answer":2}'),),
+    )
+    recorder = RecordingProvider(scripted, recording_file)
+    capabilities = StructuredOutputCapabilities(
+        native="supported",
+        dialect="test",
+        streaming=True,
+        with_tools=False,
+        schema_profile="none",
+    )
+    register_api_provider(_API, recorder, capabilities)
+    monkeypatch.setenv("OPENPROGRAM_FALLBACK_MODELS", "off")
+
+    live = _runtime_for_registered_model(monkeypatch, max_retries=2).exec(
+        "answer",
+        response_format=_STRUCTURED_SCHEMA,
+        toolset="none",
+    )
+
+    replay = ReplayProvider(recording_file)
+    register_api_provider(_API, replay, capabilities)
+    stream_module = importlib.import_module("openprogram.providers.stream")
+    monkeypatch.setattr(
+        stream_module,
+        "resolve_provider_key",
+        lambda provider: pytest.fail("structured replay resolved credentials"),
+    )
+    replayed = _runtime_for_registered_model(monkeypatch, max_retries=2).exec(
+        "answer",
+        response_format=_STRUCTURED_SCHEMA,
+        toolset="none",
+    )
+
+    assert live == replayed == {"answer": 2}
+    assert scripted.call_count == replay.call_count == 2
+    replay.assert_consumed()
+    rows = [json.loads(raw) for raw in recording_file.read_text().splitlines()]
+    assert rows[0] == {"type": "header", "format_version": 2}
+    requests = [row for row in rows if row["type"] == "request"]
+    assert [row["call_index"] for row in requests] == [0, 1]
+    assert requests[0]["options"]["response_format"] == {
+        "schema": _STRUCTURED_SCHEMA,
+        "name": "response",
+        "description": None,
+        "strict": True,
+        "fallback": "auto",
+        "max_validation_retries": 1,
+        "type": "json_schema",
+    }
+    assert not any(
+        row.get("event", {}).get("type", "").startswith("structured_output_")
+        for row in rows
+    )
+
+
+def test_replay_rejects_structured_schema_mismatch_at_exact_path_before_events(
+    tmp_path: Path,
+    restore_api_registry,
+    monkeypatch: pytest.MonkeyPatch,
+    offline,
+) -> None:
+    recording_file = tmp_path / "schema-mismatch-v2.jsonl"
+    capabilities = StructuredOutputCapabilities(
+        native="supported",
+        dialect="test",
+        streaming=True,
+        with_tools=False,
+        schema_profile="none",
+    )
+    register_api_provider(
+        _API,
+        RecordingProvider(
+            _scripted_with((ScriptedText('{"answer":2}'),)), recording_file
+        ),
+        capabilities,
+    )
+    monkeypatch.setenv("OPENPROGRAM_FALLBACK_MODELS", "off")
+    _runtime_for_registered_model(monkeypatch).exec(
+        "answer", response_format=_STRUCTURED_SCHEMA, toolset="none"
+    )
+
+    replay = ReplayProvider(recording_file)
+    register_api_provider(_API, replay, capabilities)
+    stream_module = importlib.import_module("openprogram.providers.stream")
+    monkeypatch.setattr(
+        stream_module,
+        "resolve_provider_key",
+        lambda provider: pytest.fail("schema mismatch resolved credentials"),
+    )
+    failover_module = importlib.import_module("openprogram.providers.utils.failover")
+    monkeypatch.setattr(
+        failover_module,
+        "failover_stream_fn",
+        lambda *args, **kwargs: pytest.fail("schema mismatch selected fallback"),
+    )
+    original_import = builtins.__import__
+
+    def reject_vendor_import(name, *args, **kwargs):
+        if name.split(".", 1)[0] in {"anthropic", "boto3", "google", "openai"}:
+            pytest.fail(f"schema mismatch imported vendor SDK {name}")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", reject_vendor_import)
+    changed = {
+        **_STRUCTURED_SCHEMA,
+        "properties": {"answer": {"type": "string"}},
+    }
+    expected_path = "options.response_format.schema.properties.answer.type"
+    for _ in range(2):
+        with pytest.raises(LLMError, match=expected_path):
+            _runtime_for_registered_model(monkeypatch, max_retries=3).exec(
+                "answer", response_format=changed, toolset="none"
+            )
+
+    assert replay.call_count == 0
+
+
+def test_replay_mismatch_display_is_bounded_escaped_and_omits_values() -> None:
+    field_path = "options.response_format.schema.properties." + "x" * 5000
+    recorded = {
+        "description": "internal schema text",
+        "type": "integer",
+        "api_key": _SECRET,
+    }
+    incoming = None  # the object-valued schema key is omitted on this side
+
+    mismatch = ReplayMismatch(0, field_path, recorded, incoming)
+    message = str(mismatch)
+
+    assert len(message) <= 512
+    assert "internal schema text" not in message
+    assert _SECRET not in message
+    assert mismatch.field_path == field_path
+    assert mismatch.recorded is recorded
+    assert mismatch.incoming is incoming
+
+    escaped = str(ReplayMismatch(0, "options.schema.bad\nkey", None, recorded))
+    assert "\n" not in escaped
+    assert "\\n" in escaped
+
+
+def test_v1_structured_recording_is_rejected_explicitly(tmp_path: Path) -> None:
+    recording_file = tmp_path / "structured-v1.jsonl"
+    rows = [
+        {"type": "header", "format_version": 1},
+        {
+            "type": "request",
+            "call_index": 0,
+            "model": _model().model_dump(mode="json"),
+            "context": Context(messages=[]).model_dump(mode="json"),
+            "options": {
+                "response_format": {
+                    "type": "json_schema",
+                    "schema": _STRUCTURED_SCHEMA,
+                }
+            },
+        },
+        {"type": "call_end", "call_index": 0, "event_count": 0},
+    ]
+    recording_file.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    recording_file.chmod(0o600)
+
+    with pytest.raises(RecordingFileError, match="version 1.*structured"):
+        ReplayProvider(recording_file)
+
+
+def test_v1_ordinary_recording_remains_replayable(
+    tmp_path: Path, restore_api_registry
+) -> None:
+    recording_file = _record_one_call(tmp_path)
+    rows = [json.loads(line) for line in recording_file.read_text().splitlines()]
+    rows[0]["format_version"] = 1
+    request = next(row for row in rows if row["type"] == "request")
+    assert request["options"].get("response_format") is None
+    request["options"]["signal"] = None  # v1 serialized this request-local field
+    request["options"]["on_payload"] = None  # v1 serialized this callback field
+    recording_file.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+
+    replay = ReplayProvider(recording_file)
+    register_api_provider(_API, replay)
+    events = _drain_stream(_model())
+    assert events[-1].type == "done"
+    assert replay.call_count == 1
+    replay.assert_consumed()
+
+
 def test_remove_secret_values_covers_nested_and_inline_secrets() -> None:
     """Field-name matching alone misses a token embedded in a free-form string."""
-    cleaned = remove_secret_values({
-        "compat": {"extra": {"access_token": "t-1"}},
-        "note": f"call with Bearer {_SECRET} please",
-        "url": "https://host/v1?api_key=abcdef&x=1",
-        "keep": ["plain", 3],
-    })
+    cleaned = remove_secret_values(
+        {
+            "compat": {"extra": {"access_token": "t-1"}},
+            "note": f"call with Bearer {_SECRET} please",
+            "url": "https://host/v1?api_key=abcdef&x=1",
+            "keep": ["plain", 3],
+        }
+    )
 
     assert cleaned["compat"]["extra"]["access_token"] == PLACEHOLDER
     assert cleaned["note"] == f"call with {PLACEHOLDER} please"
@@ -233,11 +489,13 @@ def test_remove_secret_values_covers_nested_and_inline_secrets() -> None:
 
 
 def test_remove_secret_values_covers_auth_schemes_and_url_userinfo() -> None:
-    cleaned = remove_secret_values({
-        "basic": "Basic dXNlcjpwYXNzd29yZA==",
-        "bot": "Bot 123456789:ABCdef_ghi-jkl",
-        "url": "https://alice:password@example.test/v1?access-token=value123&x=1",
-    })
+    cleaned = remove_secret_values(
+        {
+            "basic": "Basic dXNlcjpwYXNzd29yZA==",
+            "bot": "Bot 123456789:ABCdef_ghi-jkl",
+            "url": "https://alice:password@example.test/v1?access-token=value123&x=1",
+        }
+    )
 
     assert cleaned == {
         "basic": PLACEHOLDER,
@@ -247,19 +505,21 @@ def test_remove_secret_values_covers_auth_schemes_and_url_userinfo() -> None:
 
 
 def test_remove_secret_values_covers_compound_secret_field_suffixes() -> None:
-    cleaned = remove_secret_values({
-        "X-Session-Token": "opaque-token-value",
-        "service_api_key": "opaque-key-value",
-        "client-secret": "opaque-secret-value",
-        "database_password": "opaque-password-value",
-        "refreshToken": "opaque-refresh-value",
-        "accessToken": "opaque-access-value",
-        "clientSecret": "opaque-client-value",
-        "privateKey": "opaque-private-value",
-        "token_count": 17,
-        "tokenCount": 18,
-        "monkey": "ordinary-value",
-    })
+    cleaned = remove_secret_values(
+        {
+            "X-Session-Token": "opaque-token-value",
+            "service_api_key": "opaque-key-value",
+            "client-secret": "opaque-secret-value",
+            "database_password": "opaque-password-value",
+            "refreshToken": "opaque-refresh-value",
+            "accessToken": "opaque-access-value",
+            "clientSecret": "opaque-client-value",
+            "privateKey": "opaque-private-value",
+            "token_count": 17,
+            "tokenCount": 18,
+            "monkey": "ordinary-value",
+        }
+    )
 
     assert cleaned == {
         "X-Session-Token": PLACEHOLDER,
@@ -307,7 +567,8 @@ def _run_tool_loop(monkeypatch: pytest.MonkeyPatch) -> tuple[list, list]:
     config = AgentLoopConfig(
         model=_model(),
         convert_to_llm=lambda messages: [
-            message for message in messages
+            message
+            for message in messages
             if getattr(message, "role", None) in {"user", "assistant", "toolResult"}
         ],
     )
@@ -341,12 +602,15 @@ def test_replay_reruns_a_multi_turn_tool_loop_without_network(
     register_api_provider(_API, replay)
 
     import socket
+
     monkeypatch.setattr(
-        socket.socket, "connect",
+        socket.socket,
+        "connect",
         lambda *args, **kwargs: pytest.fail("replay opened a network connection"),
     )
     monkeypatch.setattr(
-        socket, "create_connection",
+        socket,
+        "create_connection",
         lambda *args, **kwargs: pytest.fail("replay opened a network connection"),
     )
     replayed_events, replayed_executions = _run_tool_loop(monkeypatch)
@@ -356,7 +620,9 @@ def test_replay_reruns_a_multi_turn_tool_loop_without_network(
     assert [event.type for event in replayed_events] == [
         event.type for event in recorded_events
     ]
-    assert replayed_events[-1].messages[-1].content == [TextContent(text="tool completed")]
+    assert replayed_events[-1].messages[-1].content == [
+        TextContent(text="tool completed")
+    ]
     assert any(
         isinstance(message, ToolResultMessage)
         for message in replayed_events[-1].messages
@@ -369,11 +635,15 @@ def test_replay_names_the_call_and_field_of_the_first_difference(
     """A blanket 'replay failed' would not tell which field drifted."""
     recording_file = tmp_path / "drift.jsonl"
     register_api_provider(
-        _API, RecordingProvider(_scripted_with((ScriptedText("first"),)), recording_file)
+        _API,
+        RecordingProvider(_scripted_with((ScriptedText("first"),)), recording_file),
     )
     _drain_stream(_model())
 
-    lines = [json.loads(raw) for raw in recording_file.read_text(encoding="utf-8").splitlines()]
+    lines = [
+        json.loads(raw)
+        for raw in recording_file.read_text(encoding="utf-8").splitlines()
+    ]
     for line in lines:
         if line["type"] == "request":
             line["context"]["messages"][0]["content"] = "goodbye"
@@ -412,14 +682,18 @@ def test_replay_mismatch_does_not_consume_the_recorded_call(tmp_path: Path) -> N
     assert replay.call_count == 1
 
 
-def test_recording_finalizes_and_closes_source_when_provider_raises(tmp_path: Path) -> None:
+def test_recording_finalizes_and_closes_source_when_provider_raises(
+    tmp_path: Path,
+) -> None:
     source = _InterruptingProvider(fail_after_first=True)
     recording_file = tmp_path / "provider-error.jsonl"
     recorder = RecordingProvider(source, recording_file)
 
     async def drain() -> None:
         async for _ in recorder.stream_simple(
-            _model(), Context(messages=[UserMessage(content="hello", timestamp=0)]), _options()
+            _model(),
+            Context(messages=[UserMessage(content="hello", timestamp=0)]),
+            _options(),
         ):
             pass
 
@@ -433,7 +707,9 @@ def test_recording_finalizes_and_closes_source_when_provider_raises(tmp_path: Pa
 
     async def replay_interrupted() -> None:
         async for _ in replay.stream_simple(
-            _model(), Context(messages=[UserMessage(content="hello", timestamp=0)]), _options()
+            _model(),
+            Context(messages=[UserMessage(content="hello", timestamp=0)]),
+            _options(),
         ):
             pass
 
@@ -444,7 +720,10 @@ def test_recording_finalizes_and_closes_source_when_provider_raises(tmp_path: Pa
 
 @pytest.mark.parametrize(
     "entry, message",
-    [("stream", "stream start failed"), ("stream_simple", "stream_simple start failed")],
+    [
+        ("stream", "stream start failed"),
+        ("stream_simple", "stream_simple start failed"),
+    ],
 )
 def test_recording_finalizes_when_provider_source_construction_raises(
     tmp_path: Path,
@@ -456,7 +735,9 @@ def test_recording_finalizes_when_provider_source_construction_raises(
 
     async def drain() -> None:
         source = getattr(recorder, entry)(
-            _model(), Context(messages=[UserMessage(content="hello", timestamp=0)]), _options()
+            _model(),
+            Context(messages=[UserMessage(content="hello", timestamp=0)]),
+            _options(),
         )
         async for _ in source:
             pass
@@ -476,7 +757,8 @@ def test_recording_stops_after_the_first_terminal_event(tmp_path: Path) -> None:
 
     async def drain() -> list[AssistantMessageEvent]:
         return [
-            event async for event in recorder.stream_simple(
+            event
+            async for event in recorder.stream_simple(
                 _model(),
                 Context(messages=[UserMessage(content="hello", timestamp=0)]),
                 _options(),
@@ -492,13 +774,17 @@ def test_recording_stops_after_the_first_terminal_event(tmp_path: Path) -> None:
     assert calls[0].outcome == "complete"
 
 
-def test_recording_preserves_source_close_failure_after_terminal(tmp_path: Path) -> None:
+def test_recording_preserves_source_close_failure_after_terminal(
+    tmp_path: Path,
+) -> None:
     recording_file = tmp_path / "terminal-close-error.jsonl"
     recorder = RecordingProvider(_TerminalCloseFailureProvider(), recording_file)
 
     async def drain() -> None:
         async for _ in recorder.stream_simple(
-            _model(), Context(messages=[UserMessage(content="hello", timestamp=0)]), _options()
+            _model(),
+            Context(messages=[UserMessage(content="hello", timestamp=0)]),
+            _options(),
         ):
             pass
 
@@ -510,14 +796,18 @@ def test_recording_preserves_source_close_failure_after_terminal(tmp_path: Path)
     assert sum(row["type"] == "call_end" for row in rows) == 1
 
 
-def test_recording_finalizes_and_closes_source_when_consumer_abandons(tmp_path: Path) -> None:
+def test_recording_finalizes_and_closes_source_when_consumer_abandons(
+    tmp_path: Path,
+) -> None:
     source = _InterruptingProvider()
     recording_file = tmp_path / "consumer-close.jsonl"
     recorder = RecordingProvider(source, recording_file)
 
     async def abandon() -> None:
         stream = recorder.stream_simple(
-            _model(), Context(messages=[UserMessage(content="hello", timestamp=0)]), _options()
+            _model(),
+            Context(messages=[UserMessage(content="hello", timestamp=0)]),
+            _options(),
         )
         await anext(stream)
         await stream.aclose()
@@ -535,7 +825,9 @@ def test_recording_finalizes_and_closes_source_when_cancelled(tmp_path: Path) ->
 
     async def cancel() -> None:
         stream = recorder.stream_simple(
-            _model(), Context(messages=[UserMessage(content="hello", timestamp=0)]), _options()
+            _model(),
+            Context(messages=[UserMessage(content="hello", timestamp=0)]),
+            _options(),
         )
         await anext(stream)
         task = asyncio.create_task(anext(stream))
@@ -556,7 +848,8 @@ def test_replay_refuses_a_recording_file_written_in_another_format_version(
     """Serving a foreign recording file would replay events whose shape is not guaranteed."""
     recording_file = tmp_path / "old.jsonl"
     recording_file.write_text(
-        json.dumps({"type": "header", "format_version": RECORDING_FORMAT_VERSION + 1}) + "\n",
+        json.dumps({"type": "header", "format_version": RECORDING_FORMAT_VERSION + 1})
+        + "\n",
         encoding="utf-8",
     )
     recording_file.chmod(0o600)
@@ -568,10 +861,14 @@ def test_replay_refuses_a_recording_file_written_in_another_format_version(
     assert str(RECORDING_FORMAT_VERSION) in str(caught.value)
 
 
-def test_replay_refuses_a_recording_file_without_a_format_header(tmp_path: Path) -> None:
+def test_replay_refuses_a_recording_file_without_a_format_header(
+    tmp_path: Path,
+) -> None:
     """A headerless file has no version to check at all."""
     recording_file = tmp_path / "headerless.jsonl"
-    recording_file.write_text(json.dumps({"type": "request", "call_index": 0}) + "\n", encoding="utf-8")
+    recording_file.write_text(
+        json.dumps({"type": "request", "call_index": 0}) + "\n", encoding="utf-8"
+    )
     recording_file.chmod(0o600)
 
     with pytest.raises(RecordingFileError, match="no format header"):
@@ -580,7 +877,9 @@ def test_replay_refuses_a_recording_file_without_a_format_header(tmp_path: Path)
 
 def _record_one_call(tmp_path: Path) -> Path:
     recording_file = tmp_path / "strict.jsonl"
-    provider = RecordingProvider(_scripted_with((ScriptedText("done"),)), recording_file)
+    provider = RecordingProvider(
+        _scripted_with((ScriptedText("done"),)), recording_file
+    )
 
     async def run() -> None:
         async for _ in provider.stream_simple(
@@ -598,7 +897,10 @@ def _record_one_call(tmp_path: Path) -> Path:
     "mutation, match",
     [
         (lambda rows: rows.insert(1, dict(rows[0])), "duplicate header"),
-        (lambda rows: rows.__setitem__(-1, {**rows[-1], "event_count": 99}), "event_count"),
+        (
+            lambda rows: rows.__setitem__(-1, {**rows[-1], "event_count": 99}),
+            "event_count",
+        ),
         (lambda rows: rows.pop(), "missing call_end"),
         (lambda rows: rows.append({"type": "mystery"}), "unknown row type"),
         (lambda rows: rows.__setitem__(1, {**rows[1], "call_index": 1}), "contiguous"),
@@ -608,7 +910,9 @@ def _record_one_call(tmp_path: Path) -> Path:
         ),
     ],
 )
-def test_replay_strictly_validates_structure(tmp_path: Path, mutation, match: str) -> None:
+def test_replay_strictly_validates_structure(
+    tmp_path: Path, mutation, match: str
+) -> None:
     recording_file = _record_one_call(tmp_path)
     rows = [json.loads(line) for line in recording_file.read_text().splitlines()]
     mutation(rows)
@@ -645,9 +949,7 @@ def test_recording_tightens_preexisting_parent_directory(
     parent.mkdir(mode=0o755)
     parent.chmod(0o755)
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
-    RecordingProvider(
-        _scripted_with((ScriptedText("done"),)), parent / "private.jsonl"
-    )
+    RecordingProvider(_scripted_with((ScriptedText("done"),)), parent / "private.jsonl")
 
     assert stat.S_IMODE(parent.stat().st_mode) == 0o700
 
@@ -657,9 +959,7 @@ def test_recording_preserves_external_parent_permissions(tmp_path: Path) -> None
     parent.mkdir(mode=0o755)
     parent.chmod(0o755)
 
-    RecordingProvider(
-        _scripted_with((ScriptedText("done"),)), parent / "private.jsonl"
-    )
+    RecordingProvider(_scripted_with((ScriptedText("done"),)), parent / "private.jsonl")
 
     assert stat.S_IMODE(parent.stat().st_mode) == 0o755
 
@@ -671,9 +971,7 @@ def test_recording_does_not_chmod_external_parent_symlink(tmp_path: Path) -> Non
     link = tmp_path / "shared-link"
     link.symlink_to(target, target_is_directory=True)
 
-    RecordingProvider(
-        _scripted_with((ScriptedText("done"),)), link / "private.jsonl"
-    )
+    RecordingProvider(_scripted_with((ScriptedText("done"),)), link / "private.jsonl")
 
     assert stat.S_IMODE(target.stat().st_mode) == 0o755
 
@@ -774,9 +1072,7 @@ def test_direct_managed_symlink_target_remains_external(
     (state / "recordings").symlink_to(target, target_is_directory=True)
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
 
-    RecordingProvider(
-        _scripted_with((ScriptedText("done"),)), target / "direct.jsonl"
-    )
+    RecordingProvider(_scripted_with((ScriptedText("done"),)), target / "direct.jsonl")
 
     assert (target / "direct.jsonl").is_file()
     assert stat.S_IMODE(target.stat().st_mode) == 0o755
@@ -853,7 +1149,9 @@ def test_replay_stream_skips_credential_resolution(
     recording_file = tmp_path / "offline.jsonl"
     context = Context(messages=[UserMessage(content="hello", timestamp=0)])
     options = SimpleStreamOptions()
-    recorder = RecordingProvider(_scripted_with((ScriptedText("done"),)), recording_file)
+    recorder = RecordingProvider(
+        _scripted_with((ScriptedText("done"),)), recording_file
+    )
 
     async def record() -> None:
         async for _ in recorder.stream_simple(_model(), context, options):
@@ -870,7 +1168,10 @@ def test_replay_stream_skips_credential_resolution(
     )
 
     async def replay_once() -> list:
-        return [event async for event in stream_module.stream_simple(_model(), context, options)]
+        return [
+            event
+            async for event in stream_module.stream_simple(_model(), context, options)
+        ]
 
     assert [event.type for event in asyncio.run(replay_once())][-1] == "done"
     replay.assert_consumed()

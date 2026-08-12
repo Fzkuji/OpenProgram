@@ -418,6 +418,7 @@ class Agent:
         )
 
         partial: AgentMessage | None = None
+        ev_stream = None
 
         try:
             if messages is not None:
@@ -476,7 +477,20 @@ class Agent:
                     if self._cancel_event and self._cancel_event.is_set():
                         raise RuntimeError("Request was aborted")
 
+        except asyncio.CancelledError:
+            if self._cancel_event is not None:
+                self._cancel_event.set()
+            if ev_stream is not None:
+                await ev_stream.cancel_producer()
+            raise
         except Exception as err:
+            # Structured-output negotiation and validation errors are typed
+            # caller contract failures. Preserve them so Runtime can bypass
+            # its provider retry policy instead of converting them to a generic
+            # assistant error message.
+            from openprogram.providers.structured_output import StructuredOutputError
+            if isinstance(err, StructuredOutputError):
+                raise
             is_aborted = self._cancel_event.is_set() if self._cancel_event else False
             # ``str(err)`` is empty for bare exceptions (e.g. RuntimeError()),
             # which would surface downstream as a content-free

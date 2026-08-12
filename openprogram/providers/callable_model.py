@@ -37,6 +37,7 @@ never even offered tools it couldn't call.)
 """
 from __future__ import annotations
 
+import asyncio
 import inspect
 import time
 from typing import Any, AsyncGenerator, Callable, Optional
@@ -76,6 +77,7 @@ def make_callable_stream_fn(
     fn: Callable[..., Any],
     *,
     response_format: Optional[dict] = None,
+    offload_sync: bool = False,
 ) -> Callable:
     """Wrap a user ``call=fn`` into a ``StreamFn`` for the agent loop.
 
@@ -110,8 +112,16 @@ def make_callable_stream_fn(
         # plus model / response_format kwargs. Most callables accept **kw.
         normalized = getattr(options, "response_format", None)
         public_format = normalized.schema if normalized is not None else response_format
-        result = fn(content, model=model_id, response_format=public_format)
-        if inspect.iscoroutine(result):
+        if inspect.iscoroutinefunction(fn) or not offload_sync:
+            result = fn(content, model=model_id, response_format=public_format)
+        else:
+            result = await asyncio.to_thread(
+                fn,
+                content,
+                model=model_id,
+                response_format=public_format,
+            )
+        if inspect.isawaitable(result):
             result = await result
         reply = result if isinstance(result, str) else str(result)
 

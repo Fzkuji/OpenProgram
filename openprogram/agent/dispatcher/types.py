@@ -128,6 +128,10 @@ class TurnRequest:
     principal_id: Optional[str] = None
     authority_tier: Optional[Literal["owner", "paired"]] = None
     interaction: Optional[str] = None
+    response_format: Any = None
+    structured_output: Any = None
+    structured_output_mode: Optional[str] = None
+    structured_output_attempt: Optional[int] = None
 
 
 @dataclass
@@ -151,3 +155,9 @@ class TurnResult:
     # webui result-envelope path and the after-refresh DB-rebuilt
     # path render identically.
     blocks: list[dict] = field(default_factory=list)
+    structured_output: Any = None
+    structured_output_mode: Optional[str] = None
+    structured_output_attempt: Optional[int] = None
+    structured_error_code: Optional[str] = None
+    structured_output_attempts: Optional[int] = None
+    structured_output_issues: list[dict] = field(default_factory=list)

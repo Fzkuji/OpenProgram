@@ -27,6 +27,7 @@ _FUNCTION_BODY_CONTROL_KEYS = {
     "work_dir",
     "_workdir",
     "workdir",
+    "response_format",
 }
 
 
@@ -126,6 +127,23 @@ def register(app):
             then the repo root.
         """
         body = body or {}
+        response_format = None
+        if body.get("response_format") is not None:
+            from openprogram.providers.structured_output import (
+                StructuredOutputError,
+                normalize_response_format,
+            )
+            try:
+                response_format = normalize_response_format(body["response_format"])
+            except StructuredOutputError as exc:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": "Structured output request is invalid",
+                        "code": exc.code,
+                        "issues": exc.issues,
+                    },
+                )
         session_id = body.get("session_id") or body.get("_session_id")
         if isinstance(body.get("kwargs"), dict):
             kwargs = dict(body.get("kwargs") or {})
@@ -158,7 +176,12 @@ def register(app):
             if node is not None:
                 anchor = _call_predecessor(node)
         result = run_agentic_function_call(
-            name, kwargs, session_id, work_dir, anchor_msg_id=anchor,
+            name,
+            kwargs,
+            session_id,
+            work_dir,
+            anchor_msg_id=anchor,
+            response_format=response_format,
         )
         if "error" in result:
             return JSONResponse(status_code=result.pop("status_code", 400),
@@ -172,6 +195,7 @@ def run_agentic_function_call(
     session_id: str | None = None,
     work_dir: str | None = None,
     anchor_msg_id: str | None = None,
+    response_format=None,
 ) -> dict:
     """Dispatch an @agentic_function via the forced tool-call path and
     return ``{"session_id", "msg_id"}`` (or ``{"error", "status_code",
@@ -410,6 +434,7 @@ def run_agentic_function_call(
                     work_dir=work_dir,
                     agent_id=agent_id,
                     source="fn-form",
+                    response_format=response_format,
                     on_event=lambda env: _s._broadcast_envelope(env)
                         if hasattr(_s, "_broadcast_envelope")
                         else _s._broadcast(__import__("json").dumps(env, default=str)),

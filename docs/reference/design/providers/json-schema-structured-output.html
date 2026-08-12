@@ -61,13 +61,13 @@
 </head>
 <body>
 <main class="wrap">
-  <p class="eyebrow">OpenProgram · Provider / Runtime 设计文档 · implementation-ready · 2026-08-11</p>
+  <p class="eyebrow">OpenProgram · Provider / Runtime 设计文档 · implemented and reviewed · 2026-08-12</p>
   <h1>JSON Schema Structured Output</h1>
-  <p class="small">基线：<code>main@708bfbab</code>。本文描述目标契约与修改清单，不表示功能已经实现。</p>
+  <p class="small">设计基线：<code>main@708bfbab</code>。实现证据：Tasks 1–6，最终审查提交 <code>2fb471b3</code>。第 2–15 节保留获批设计与实施清单；第 16 节区分已实现合同、验证证据与未满足的完整门禁。</p>
 
   <div class="lead">
     <p><strong>设计结论：</strong>继续使用现有 <code>Runtime.exec(..., response_format=...)</code> 作为唯一公共入口；在 provider 公共类型中加入规范化后的 schema 配置，由 capability negotiation 选择 provider 原生 JSON Schema 或受约束的隐藏 tool fallback。无论 provider 是否宣称 strict，最终结果都必须经过严格 JSON 解析和调用方原始 JSON Schema 的本地校验。失败最多执行一次语义修复请求，最终只返回已校验的 Python JSON 值。</p>
-    <p class="small">当前实现并不满足现有文档承诺：<code>Runtime.exec</code> 接收 <code>response_format</code>，但默认 provider 路径没有把它传入 <code>AgentSession</code> 或 <code>StreamOptions</code>。<code>session/name.md</code> 声称 title 使用 JSON Schema，实际代码仍要求纯文本并用正则清理。本设计同时定义这两个缺口的收敛方式。</p>
+    <p class="small">当前实现已经沿既有 Agent loop 完成 schema 规范化、能力协商、严格本地校验、一次可选修复、CLI/Web typed 入口、record/replay v2 和 session title consumer。未验证的 provider 组合保持 fail closed；普通文本调用保持原返回语义。</p>
   </div>
 
   <h2>1. 范围、目标与边界</h2>
@@ -78,7 +78,8 @@
   </div>
   <p>不在本次实现范围：任意 schema 到 provider 子集的有损改写、自动生成 Pydantic 类型、跨语言代码生成、逐 token 的增量 JSON AST、Web UI schema 编辑器、改变普通文本调用的返回值或流事件。</p>
 
-  <h2>2. 基线审计</h2>
+  <h2>2. 设计基线审计（main@708bfbab）</h2>
+  <p class="small">本节记录立项时的事实与缺口，作为后续设计决定的来源，不描述 <code>2fb471b3</code> 的当前状态。</p>
   <table>
     <thead><tr><th>层</th><th>当前事实</th><th>缺口</th></tr></thead>
     <tbody>
@@ -318,7 +319,8 @@ response_format?: JsonSchemaOutput | JSONSchema
   "additionalProperties": false,
 }
 
-result = runtime.exec(content=prompt, response_format=JsonSchemaOutput(
+result = runtime.exec(content=prompt, toolset="none", max_iterations=2,
+  response_format=JsonSchemaOutput(
     schema=TITLE_SCHEMA, name="session_title", max_validation_retries=1,
 ))
 title = result["title"]</pre>
@@ -393,7 +395,20 @@ title = result["title"]</pre>
     <li>record/replay v2、CLI、WS/API consumer；验证旧文本调用不变。</li>
     <li>迁移 session title，修正 feature matrix 与 session naming 文档。</li>
   </ol>
-  <p>只有在上述测试通过、provider 能力标记与契约测试一致、session title 不再依赖文本格式清理后，feature matrix 才能把 JSON Schema structured output 标为 implemented。单纯增加 provider payload 字段不构成功能完成。</p>
+  <p>provider 能力标记、契约测试与 session title consumer 已落地。完整回归门禁仍有两个可在实现前基线复现的失败，因此 feature matrix 保持“部分确认”，不标记为完整完成。单纯增加 provider payload 字段不构成功能完成。</p>
+
+  <h2>16. 实现与验证证据</h2>
+  <table>
+    <thead><tr><th>范围</th><th>已审查实现</th><th>边界</th></tr></thead>
+    <tbody>
+      <tr><td>公共合同与 provider</td><td><code>JsonSchemaOutput</code> 规范化和 preflight；registry snapshot 下的 native / hidden tool / explicit prompt 协商；OpenAI、Anthropic、Google 与 Bedrock 已验证映射；最终值按调用方原 schema 本地校验。</td><td>未验证 adapter、模型未显式 opt-in、schema 无法无损投影或工具控制冲突时不发送未经验证的 native payload；<code>fallback="prompt"</code> 必须显式请求。</td></tr>
+      <tr><td>Agent / Runtime</td><td>Agent loop 统一拥有协商、typed retry/end 事件、最多一次 validation repair 与 parsed terminal；<code>Runtime.exec</code>/<code>async_exec</code> 返回已校验 Python JSON 值，普通调用仍返回文本。</td><td>无效候选不写入最终 assistant message；取消、deadline、refusal 与 incomplete 不转成 repair。</td></tr>
+      <tr><td>入口与复现</td><td>CLI <code>--json-schema PATH|-</code>、Web typed lifecycle、recording v2 与严格离线 replay 共用规范化合同；CLI structured one-shot stdout 只有一个 JSON document。</td><td>没有 Web schema editor、跨语言代码生成或增量 JSON AST；v1 structured recording 明确拒绝，v1 ordinary recording 保持兼容。</td></tr>
+      <tr><td>Session title</td><td>默认 agent provider/model、<code>toolset="none"</code>、两次最大模型迭代和一次 schema repair；只接受 <code>{title:string}</code>，consumer 仅做 Unicode trim 与 80 code-point 存储防御。</td><td>setup、exec、close 失败均为 best-effort，并只记录固定生命周期标签；provider 异常正文和 traceback 不进入日志。</td></tr>
+    </tbody>
+  </table>
+  <p><strong>提交证据：</strong>Task 1 <code>00945c85..27a5aa8a</code>；Task 2 <code>da4ececd..8ca7b04c</code>；Task 3 <code>6f8c80b7..546c2bc7</code>；Task 4 <code>27e4764f..510f60ee</code>；Task 5 <code>9743f3e1..86ca66d5</code>；Task 6 <code>5bba3e64..2fb471b3</code>。Tasks 1–6 的最终 SPEC 与 QUALITY scoped review 均为 PASS、remaining 0。</p>
+  <p><strong>验证状态：</strong>Task 6 affected selection 为 <code>219 passed, 1 skipped</code>；Task 7 focused selection 为 <code>226 passed, 1 skipped</code>；文档构建为 <code>453 pages</code>、链接检查为 <code>0 broken</code>。Task 7 最终树上的完整 Python selection 得到 <code>3290 passed, 5 skipped, 1 xfailed, 2 failed</code>；两个失败分别是既有 tool cancellation 的 <code>ExecInterrupt</code> 断言与 memory writer turn-order 断言，并已在实现前基线 <code>86ca66d5</code> 独立复现。它们不归因于 structured-output diff，也不满足“完整门禁通过”的发布条件。</p>
 
   <div class="foot">
     <p>仓库证据：<code>openprogram/providers/types.py</code>、<code>sources/models_dev.py</code>、七类 provider adapter、<code>agent/agent_loop.py</code>、<code>agentic_programming/runtime.py</code>、<code>agent/internals/_event_parsing.py</code>、CLI/WebSocket 链、<code>recording.py</code>/<code>replay.py</code>、<code>agent/dispatcher/titles.py</code>、<code>references/pi-ai</code>。本文行号不绑定源码快照；实现时以符号和测试为定位依据。</p>

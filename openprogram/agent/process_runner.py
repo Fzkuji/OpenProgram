@@ -63,6 +63,7 @@ def _child_entry(
     parent_call_id: Optional[str] = None,
     answer_queue: "Optional[mp.Queue]" = None,
     stop_queue: "Optional[mp.Queue]" = None,
+    response_format_snapshot: Optional[dict] = None,
     usage_ctx_snapshot: Optional[dict] = None,
     sandbox_policy_snapshot: Optional[dict] = None,
     authority_snapshot: Optional[dict] = None,
@@ -233,6 +234,12 @@ def _child_entry(
         _set_cid(session_id)
 
         rt = create_runtime()
+        if response_format_snapshot is not None:
+            from openprogram.agentic_programming.runtime import _current_response_format
+            from openprogram.providers.structured_output import normalize_response_format
+            _current_response_format.set(
+                normalize_response_format(response_format_snapshot)
+            )
         # --- user-input subprocess bridge: ask side ---
         # Send runtime.ask questions UP to the parent through ``event_queue``
         # (this child's own EventBus has no WS subscriber). The parent's drain
@@ -462,6 +469,7 @@ def run_agentic_in_subprocess(
     on_event: Optional[Callable[[dict], None]] = None,
     parent_call_id: Optional[str] = None,
     authority: Optional[dict] = None,
+    response_format=None,
 ) -> dict:
     """Run a single @agentic_function tool in a fork()'d subprocess.
 
@@ -495,13 +503,18 @@ def run_agentic_in_subprocess(
     except Exception:
         usage_ctx_snapshot = None
     sandbox_policy_snapshot = _capture_sandbox_snapshot()
+    response_format_snapshot = (
+        response_format.model_dump(mode="json")
+        if hasattr(response_format, "model_dump")
+        else response_format
+    )
 
     p = ctx.Process(
         target=_child_entry,
         args=(tool_name, dict(kwargs or {}), session_id, anchor_msg_id,
               work_dir, result_path, event_queue, parent_call_id,
-              answer_queue, stop_queue, usage_ctx_snapshot,
-              sandbox_policy_snapshot, authority),
+              answer_queue, stop_queue, response_format_snapshot,
+              usage_ctx_snapshot, sandbox_policy_snapshot, authority),
         daemon=False,
     )
     p.start()

@@ -30,7 +30,25 @@ interface ChatResponseData {
   type?: string;
   session_id?: string;
   content?: string;
-  event?: { type?: string; text?: string; tool?: string; input?: string; result?: string; is_error?: boolean };
+  event?: {
+    type?: string;
+    text?: string;
+    tool?: string;
+    input?: string;
+    result?: string;
+    is_error?: boolean;
+    attempt?: number;
+    next_attempt?: number;
+    mode?: 'native' | 'tool' | 'prompt';
+    value?: unknown;
+    issues?: Array<Record<string, unknown>>;
+  };
+  structured_output?: unknown;
+  structured_output_mode?: 'native' | 'tool' | 'prompt';
+  attempt?: number;
+  code?: string;
+  attempts?: number;
+  issues?: Array<Record<string, unknown>>;
   chat?: { input_tokens?: number; output_tokens?: number };
   context_window?: number | null;
   model?: string;
@@ -103,6 +121,17 @@ function routeForeignConv(
 ): void {
   if (d.type === 'stream_event') {
     const inner = d.event;
+    if (inner?.type === 'structured_output_retry') {
+      c.setChannelActivityByConv((m) => {
+        const prev = m[dConvId];
+        if (!prev) return m;
+        return {
+          ...m,
+          [dConvId]: { ...prev, streamingText: '', lastUpdate: Date.now() },
+        };
+      });
+      return;
+    }
     if (inner?.type === 'text' && typeof inner.text === 'string') {
       const delta = inner.text;
       c.setChannelActivityByConv((m) => {
@@ -171,6 +200,10 @@ function routeForeignConv(
 function handleStreamEvent(d: ChatResponseData, c: WsEventsCtx): void {
   const inner = d.event;
   if (!inner) return;
+  if (inner.type === 'structured_output_retry') {
+    c.setStreaming(null);
+    return;
+  }
   if (inner.type === 'tool_result' && inner.tool) {
     // Attach the result preview to the most recent matching call —
     // search blocks bottom-up for the last 'running' tool block with
