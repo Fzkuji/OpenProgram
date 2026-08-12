@@ -92,6 +92,25 @@ class NonPreemptibleOperation(RuntimeError):
 _current_task_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     "openprogram_current_task_id", default=None,
 )
+_current_task_runner: contextvars.ContextVar[Any] = contextvars.ContextVar(
+    "openprogram_current_task_runner", default=None,
+)
+
+
+def record_current_task_activity(activity_kind: str) -> bool:
+    runner = _current_task_runner.get()
+    task_id = _current_task_id.get()
+    return bool(runner and task_id and runner.record_task_activity(task_id, activity_kind))
+
+
+def current_task_operation_timeout(
+    declared_timeout: float | None,
+) -> float | None:
+    runner = _current_task_runner.get()
+    task_id = _current_task_id.get()
+    if runner is None or task_id is None:
+        return declared_timeout
+    return runner.bounded_operation_timeout(task_id, declared_timeout)
 
 
 def _broadcast(payload: dict) -> None:
@@ -599,7 +618,11 @@ class TaskRunner:
                     reason_code=reason_code,
                 )
                 # Watchdog: force cancel if worker doesn't honour signal.
-                self._schedule_force_cancel(session_id, task_id)
+                lease_generation = info.get("lease_generation") if info else None
+                if lease_generation is not None:
+                    self._schedule_force_cancel(
+                        session_id, task_id, lease_generation,
+                    )
                 return _store_load(session_id, task_id) or cur_task
         except ValueError:
             # The worker moved the task on while we were stamping —
@@ -663,9 +686,17 @@ class TaskRunner:
         return self.get_task(task_id)
 
     def record_task_activity(self, task_id: str, activity_kind: str) -> bool:
+        with self._lock:
+            entry = self._tasks.get(task_id)
+            lease_generation = (
+                entry.get("lease_generation") if entry is not None else None
+            )
+        if lease_generation is None:
+            return False
         recorded = self._governor.record_activity(
             task_id,
             owner_instance_id=self._instance_id,
+            lease_generation=lease_generation,
             activity_kind=activity_kind,
         )
         if not recorded:
@@ -688,6 +719,32 @@ class TaskRunner:
                     entry["last_activity_monotonic"] = now
         return True
 
+    def _finalize_task_status(
+        self,
+        session_id: str,
+        task_id: str,
+        lease_generation: int,
+        status: TaskStatus,
+        reason_code: str,
+        **fields: Any,
+    ) -> Optional[Task]:
+        terminal: dict[str, Task] = {}
+        try:
+            self._governor.finalize_task(
+                task_id, reason_code,
+                owner_instance_id=self._instance_id,
+                lease_generation=lease_generation,
+                mutate=lambda: terminal.setdefault(
+                    "task", _store_update_status(
+                        session_id, task_id, status,
+                        reason_code=reason_code, **fields,
+                    ),
+                ),
+            )
+        except ValueError:
+            return None
+        return terminal.get("task")
+
     def bounded_operation_timeout(
         self, task_id: str, declared_timeout: float | None,
     ) -> float | None:
@@ -695,10 +752,6 @@ class TaskRunner:
             raise ValueError("declared timeout must be positive")
         runtime_limit, idle_limit = self._governor.task_time_limits(task_id)
         strict = runtime_limit is not None or idle_limit is not None
-        if strict and declared_timeout is None:
-            raise NonPreemptibleOperation(
-                "strict time-budget task requires a bounded operation",
-            )
         bounds = [] if declared_timeout is None else [float(declared_timeout)]
         with self._lock:
             entry = self._tasks.get(task_id)
@@ -717,6 +770,10 @@ class TaskRunner:
                         now - snapshot["last_activity_monotonic"]
                     ),
                 ))
+        if strict and not bounds:
+            raise NonPreemptibleOperation(
+                "strict time-budget task requires a live bounded operation",
+            )
         return min(bounds) if bounds else None
 
     def shutdown(self, wait: bool = True) -> None:
@@ -775,17 +832,20 @@ class TaskRunner:
                     entry["started_monotonic"] = claimed_monotonic
                     entry["last_activity_monotonic"] = claimed_monotonic
                     entry["time_limits"] = time_limits
+                    entry["lease_generation"] = claim.lease_generation
                     entry["budget_cancelled"] = False
                     ctx = entry["context"]
                 try:
                     future: Future = self._pool.submit(
                         ctx.run, self._run_one, claim.task_id, cancel_ev, done_ev,
+                        claim.lease_generation,
                     )
                 except Exception:
                     self._executor_slots.release()
                     self._governor.release_task(
                         claim.task_id, "error.dispatch_failed",
                         owner_instance_id=self._instance_id,
+                        lease_generation=claim.lease_generation,
                     )
                     with self._lock:
                         self._tasks.pop(claim.task_id, None)
@@ -797,7 +857,7 @@ class TaskRunner:
                         entry["future"] = future
 
     def _run_one(self, task_id: str, cancel_ev: threading.Event,
-                 done_ev: threading.Event) -> None:
+                 done_ev: threading.Event, lease_generation: int) -> None:
         """Worker thread entry point.
 
         Wraps :func:`run_agent_turn` so the same code that handles the
@@ -818,6 +878,7 @@ class TaskRunner:
             self._governor.release_task(
                 task_id, "error.task_missing",
                 owner_instance_id=self._instance_id,
+                lease_generation=lease_generation,
             )
             self._executor_slots.release()
             self._dispatch_wake.set()
@@ -840,6 +901,7 @@ class TaskRunner:
         # Bind the running task id so spawns made inside this child turn
         # record parent_task_id (cascading cancel walks that chain).
         _task_id_token = _current_task_id.set(task_id)
+        _runner_token = _current_task_runner.set(self)
         # Opens this turn's token; the previous turn's is retired by the
         # same call, so a stop fired against it cannot reach us.
         register_cancel_event(session_id, cancel_ev)
@@ -862,7 +924,7 @@ class TaskRunner:
         lease_stop = threading.Event()
         lease_thread = threading.Thread(
             target=self._renew_task_lease,
-            args=(task_id, lease_stop),
+            args=(task_id, lease_generation, lease_stop),
             daemon=True,
             name=f"op-task-lease-{task_id}",
         )
@@ -885,10 +947,10 @@ class TaskRunner:
                 return
             if cancel_ev.is_set():
                 # Cancel arrived between queue + pickup.
-                updated = _store_update_status(
-                    session_id, task_id, TaskStatus.CANCELLED,
+                updated = self._finalize_task_status(
+                    session_id, task_id, lease_generation,
+                    TaskStatus.CANCELLED, "cancel.user",
                     error="cancelled before run",
-                    reason_code="cancel.user",
                 )
                 if updated is not None:
                     _broadcast_task_status(updated)
@@ -963,14 +1025,10 @@ class TaskRunner:
                             pass
             except Exception as exc:  # noqa: BLE001
                 err = f"{type(exc).__name__}: {exc}"
-                try:
-                    updated = _store_update_status(
-                        session_id, task_id, TaskStatus.ERRORED,
-                        error=err,
-                        reason_code="error.execution",
-                    )
-                except ValueError:
-                    updated = _store_load(session_id, task_id)
+                updated = self._finalize_task_status(
+                    session_id, task_id, lease_generation,
+                    TaskStatus.ERRORED, "error.execution", error=err,
+                )
                 if updated is not None:
                     _broadcast_task_status(updated)
                     self._update_attach_card(updated, error_text=err)
@@ -996,22 +1054,18 @@ class TaskRunner:
             else:
                 new_status = TaskStatus.COMPLETED
             current_reason = (_store_load(session_id, task_id) or task).reason_code
-            try:
-                updated = _store_update_status(
-                    session_id, task_id, new_status,
-                    head_id=result.head_id,
-                    result_text=result.final_text or "",
-                    error=result.error,
-                    reason_code=(
-                        (current_reason or "cancel.user")
-                        if new_status == TaskStatus.CANCELLED
-                        else "error.execution" if new_status == TaskStatus.ERRORED
-                        else "completed"
-                    ),
-                )
-            except ValueError:
-                # State already moved (e.g. force-cancel watchdog).
-                updated = _store_load(session_id, task_id)
+            reason_code = (
+                (current_reason or "cancel.user")
+                if new_status == TaskStatus.CANCELLED
+                else "error.execution" if new_status == TaskStatus.ERRORED
+                else "completed"
+            )
+            updated = self._finalize_task_status(
+                session_id, task_id, lease_generation, new_status, reason_code,
+                head_id=result.head_id,
+                result_text=result.final_text or "",
+                error=result.error,
+            )
             if updated is not None:
                 _broadcast_task_status(updated)
                 self._update_attach_card(updated)
@@ -1053,6 +1107,10 @@ class TaskRunner:
                 _current_task_id.reset(_task_id_token)
             except Exception:
                 pass
+            try:
+                _current_task_runner.reset(_runner_token)
+            except Exception:
+                pass
             if _wt_token is not None:
                 try:
                     from openprogram.worktree.context import reset_worktree
@@ -1086,6 +1144,7 @@ class TaskRunner:
                 self._governor.release_task(
                     task_id, cur.reason_code if cur is not None else None,
                     owner_instance_id=self._instance_id,
+                    lease_generation=lease_generation,
                 )
             except Exception:
                 _log.exception("failed to release resource admission for %s", task_id)
@@ -1103,11 +1162,14 @@ class TaskRunner:
 
     # Internals
 
-    def _renew_task_lease(self, task_id: str, stop: threading.Event) -> None:
+    def _renew_task_lease(
+        self, task_id: str, lease_generation: int, stop: threading.Event,
+    ) -> None:
         while not stop.wait(_LEASE_RENEW_SECS):
             try:
                 if not self._governor.renew_lease(
                     task_id, owner_instance_id=self._instance_id,
+                    lease_generation=lease_generation,
                 ):
                     return
             except Exception:
@@ -1596,7 +1658,9 @@ class TaskRunner:
 
         threading.Thread(target=_serial, daemon=True).start()
 
-    def _schedule_force_cancel(self, session_id: str, task_id: str) -> None:
+    def _schedule_force_cancel(
+        self, session_id: str, task_id: str, lease_generation: int,
+    ) -> None:
         """Watchdog: if the worker doesn't honour cancel within
         ``_CANCEL_TIMEOUT_SECS``, force the entity to terminal."""
         def _watch():
@@ -1604,13 +1668,11 @@ class TaskRunner:
             cur = _store_load(session_id, task_id)
             if cur is None or is_terminal(cur.status):
                 return
-            try:
-                updated = _store_update_status(
-                    session_id, task_id, TaskStatus.CANCELLED,
-                    error="cancel timed out; worker may still be running",
-                )
-            except ValueError:
-                updated = None
+            updated = self._finalize_task_status(
+                session_id, task_id, lease_generation,
+                TaskStatus.CANCELLED, "cancel.timeout",
+                error="cancel timed out; worker may still be running",
+            )
             if updated is not None:
                 _broadcast_task_status(updated)
                 self._wake_done(task_id)

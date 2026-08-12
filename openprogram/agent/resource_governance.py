@@ -268,6 +268,7 @@ class ReservationDecision:
 class DispatchClaim:
     task_id: str
     session_id: str
+    lease_generation: int
 
 
 @dataclass(frozen=True)
@@ -338,9 +339,13 @@ class ResourceGovernor:
             (session_id,),
         ).fetchone()
         limits = resolved.effective_limits()
+        configured_live_limit = limits["max_live_per_session"]
+        # Cancellation and active-runtime ownership are session keyed today.
+        # Keep one live task per session until those registries become task keyed.
+        safe_live_limit = min(int(configured_live_limit or 1), 1)
         return {
             "scheduler_capacity": resolved.scheduler_capacity,
-            "session_live": {"used": int(row[0] or 0), "limit": limits["max_live_per_session"]},
+            "session_live": {"used": int(row[0] or 0), "limit": safe_live_limit},
             "session_queued": {"used": int(row[1] or 0), "limit": limits["max_queued_per_session"]},
             "session_tasks": {"used": int(row[2] or 0), "limit": limits["max_tasks_per_session"]},
         }
@@ -545,7 +550,8 @@ class ResourceGovernor:
             changed = conn.execute(
                 """UPDATE task_admissions
                    SET state = 'live', owner_instance_id = ?, started_at = ?,
-                       last_activity_at = ?, lease_expires_at = ?
+                       last_activity_at = ?, lease_expires_at = ?,
+                       lease_generation = lease_generation + 1
                    WHERE task_id = ? AND state = 'queued'""",
                 (owner_instance_id, now, now, now + 30.0, task_id),
             ).rowcount
@@ -578,7 +584,8 @@ class ResourceGovernor:
                 changed = conn.execute(
                     """UPDATE task_admissions
                        SET state = 'live', owner_instance_id = ?, started_at = ?,
-                           last_activity_at = ?, lease_expires_at = ?
+                           last_activity_at = ?, lease_expires_at = ?,
+                           lease_generation = lease_generation + 1
                        WHERE task_id = ? AND state = 'queued'""",
                     (
                         owner_instance_id, now, now, now + 30.0,
@@ -586,19 +593,26 @@ class ResourceGovernor:
                     ),
                 ).rowcount
                 if changed == 1:
+                    generation = conn.execute(
+                        "SELECT lease_generation FROM task_admissions WHERE task_id = ?",
+                        (candidate["task_id"],),
+                    ).fetchone()[0]
                     return DispatchClaim(
-                        candidate["task_id"], candidate["session_id"],
+                        candidate["task_id"], candidate["session_id"], generation,
                     )
             return None
 
-    def renew_lease(self, task_id: str, *, owner_instance_id: str) -> bool:
+    def renew_lease(
+        self, task_id: str, *, owner_instance_id: str, lease_generation: int,
+    ) -> bool:
         with self.ledger.immediate() as conn:
             now = time.time()
             return conn.execute(
                 """UPDATE task_admissions SET lease_expires_at = ?
                    WHERE task_id = ? AND owner_instance_id = ?
+                     AND lease_generation = ?
                      AND state IN ('live','stopping')""",
-                (now + 30.0, task_id, owner_instance_id),
+                (now + 30.0, task_id, owner_instance_id, lease_generation),
             ).rowcount == 1
 
     def request_stop(self, task_id: str, reason_code: str) -> None:
@@ -622,6 +636,7 @@ class ResourceGovernor:
         reason_code: str | None = None,
         *,
         owner_instance_id: str | None = None,
+        lease_generation: int | None = None,
     ) -> bool:
         with self.ledger.immediate() as conn:
             return conn.execute(
@@ -630,8 +645,43 @@ class ResourceGovernor:
                        reason_code = COALESCE(?, reason_code)
                    WHERE task_id = ? AND state != 'released'
                      AND (state IN ('preparing','queued')
-                          OR owner_instance_id = ?)""",
-                (time.time(), reason_code, task_id, owner_instance_id),
+                          OR (owner_instance_id = ? AND lease_generation = ?))""",
+                (
+                    time.time(), reason_code, task_id,
+                    owner_instance_id, lease_generation,
+                ),
+            ).rowcount == 1
+
+    def finalize_task(
+        self,
+        task_id: str,
+        reason_code: str | None,
+        *,
+        owner_instance_id: str,
+        lease_generation: int,
+        mutate: Callable[[], Any],
+    ) -> bool:
+        """Run the terminal TaskStore write only while this lease is current."""
+        with self.ledger.immediate() as conn:
+            current = conn.execute(
+                """SELECT 1 FROM task_admissions
+                   WHERE task_id = ? AND owner_instance_id = ?
+                     AND lease_generation = ? AND state IN ('live','stopping')""",
+                (task_id, owner_instance_id, lease_generation),
+            ).fetchone()
+            if current is None:
+                return False
+            mutate()
+            return conn.execute(
+                """UPDATE task_admissions
+                   SET state = 'released', released_at = ?, lease_expires_at = NULL,
+                       reason_code = COALESCE(?, reason_code)
+                   WHERE task_id = ? AND owner_instance_id = ?
+                     AND lease_generation = ? AND state IN ('live','stopping')""",
+                (
+                    time.time(), reason_code, task_id,
+                    owner_instance_id, lease_generation,
+                ),
             ).rowcount == 1
 
     def reconcile(
@@ -646,7 +696,7 @@ class ResourceGovernor:
         current_time = time.time() if now is None else now
         rows = self.ledger.connection().execute(
             """SELECT admission_id, task_id, session_id, budget_scope_id,
-                      state, owner_instance_id, lease_expires_at
+                      state, owner_instance_id, lease_generation, lease_expires_at
                FROM task_admissions WHERE state != 'released'
                ORDER BY admitted_seq"""
         ).fetchall()
@@ -698,11 +748,18 @@ class ResourceGovernor:
             with self.ledger.immediate() as conn:
                 fenced = conn.execute(
                     """UPDATE task_admissions
-                       SET state = 'stopping', reason_code = 'error.worker_lost'
+                       SET state = 'stopping', reason_code = 'error.worker_lost',
+                           owner_instance_id = NULL,
+                           lease_generation = lease_generation + 1,
+                           lease_expires_at = NULL
                        WHERE admission_id = ? AND state IN ('live','stopping')
                          AND owner_instance_id IS ?
+                         AND lease_generation = ?
                          AND (lease_expires_at IS NULL OR lease_expires_at <= ?)""",
-                    (row["admission_id"], owner, current_time),
+                    (
+                        row["admission_id"], owner,
+                        row["lease_generation"], current_time,
+                    ),
                 ).rowcount
             if fenced != 1:
                 continue
@@ -715,9 +772,13 @@ class ResourceGovernor:
                     """UPDATE task_admissions
                        SET state = 'released', released_at = ?, lease_expires_at = NULL
                        WHERE admission_id = ? AND state = 'stopping'
-                         AND owner_instance_id IS ?
+                         AND owner_instance_id IS NULL
+                         AND lease_generation = ?
                          AND reason_code = 'error.worker_lost'""",
-                    (current_time, row["admission_id"], owner),
+                    (
+                        current_time, row["admission_id"],
+                        row["lease_generation"] + 1,
+                    ),
                 ).rowcount
             released_lost += int(changed == 1)
         return ReconcileResult(
@@ -751,6 +812,7 @@ class ResourceGovernor:
         task_id: str,
         *,
         owner_instance_id: str,
+        lease_generation: int,
         activity_kind: str,
     ) -> bool:
         """Persist meaningful task activity for the task and live ancestors."""
@@ -769,8 +831,9 @@ class ResourceGovernor:
                    SELECT task_id FROM task_admissions
                    WHERE task_id IN (SELECT task_id FROM lineage)
                      AND owner_instance_id = ?
+                     AND lease_generation = ?
                      AND state IN ('live','stopping')""",
-                (task_id, owner_instance_id),
+                (task_id, owner_instance_id, lease_generation),
             ).fetchall()
             if not rows:
                 return False

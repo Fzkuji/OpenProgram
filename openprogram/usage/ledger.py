@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS task_admissions (
     state TEXT NOT NULL CHECK (state IN ('preparing','queued','live','stopping','released')),
     admitted_seq INTEGER NOT NULL,
     owner_instance_id TEXT,
+    lease_generation INTEGER NOT NULL DEFAULT 0,
     lease_expires_at REAL,
     created_at REAL NOT NULL,
     started_at REAL,
@@ -177,6 +178,7 @@ class UsageLedger:
         conn.execute("PRAGMA synchronous=NORMAL")
         self._migrate_usage_columns(conn)
         conn.executescript(_SCHEMA)
+        self._migrate_task_admission_columns(conn)
         conn.row_factory = sqlite3.Row
         self._conn = conn
         self._conn_pid = os.getpid()
@@ -196,6 +198,18 @@ class UsageLedger:
         except Exception:
             conn.rollback()
             raise
+
+    @staticmethod
+    def _migrate_task_admission_columns(conn: sqlite3.Connection) -> None:
+        existing = {
+            str(row[1]) for row in conn.execute("PRAGMA table_info(task_admissions)")
+        }
+        if existing and "lease_generation" not in existing:
+            conn.execute(
+                "ALTER TABLE task_admissions ADD COLUMN "
+                "lease_generation INTEGER NOT NULL DEFAULT 0"
+            )
+            conn.commit()
 
     def connection(self) -> sqlite3.Connection:
         """Return the process-local connection for governance transactions."""

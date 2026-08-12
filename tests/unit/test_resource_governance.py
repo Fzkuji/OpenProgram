@@ -254,8 +254,12 @@ def test_stopping_keeps_live_capacity_until_worker_release(tmp_path) -> None:
     assert governor.try_start("t_2", owner_instance_id="worker") is False
     governor.request_stop("t_1", "cancel.user")
     assert governor.try_start("t_2", owner_instance_id="worker") is False
+    generation = ledger.connection().execute(
+        "SELECT lease_generation FROM task_admissions WHERE task_id = 't_1'"
+    ).fetchone()[0]
     governor.release_task(
         "t_1", "cancel.user", owner_instance_id="worker",
+        lease_generation=generation,
     )
     assert governor.try_start("t_2", owner_instance_id="worker") is True
 
@@ -291,6 +295,33 @@ def test_claim_next_skips_older_task_from_saturated_session(tmp_path) -> None:
     assert states == {
         "s1_first": "live", "s1_second": "queued", "s2_first": "live",
     }
+
+
+def test_claim_next_serializes_tasks_that_share_session_cancel_scope(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_live_per_session=2), scheduler_capacity=3,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    for task_id, session_id in (
+        ("s1_first", "s1"), ("s1_second", "s1"), ("s2_first", "s2"),
+    ):
+        governor.admit_task(
+            Task(
+                id=task_id, parent_session_id=session_id,
+                prompt=task_id, agent_id="a",
+            ),
+            persist=lambda _task: None,
+        )
+
+    first = governor.claim_next(owner_instance_id="worker")
+    second = governor.claim_next(owner_instance_id="worker")
+
+    assert (first.task_id, first.session_id) == ("s1_first", "s1")
+    assert (second.task_id, second.session_id) == ("s2_first", "s2")
+    assert ledger.connection().execute(
+        "SELECT state FROM task_admissions WHERE task_id = 's1_second'"
+    ).fetchone()[0] == "queued"
 
 
 def test_claim_next_cannot_be_claimed_twice_across_governors(tmp_path) -> None:
@@ -417,18 +448,61 @@ def test_live_lease_mutations_are_fenced_by_owner(tmp_path) -> None:
         Task(id="live", parent_session_id="s1", prompt="live", agent_id="a"),
         persist=lambda _task: None,
     )
-    governor.claim_next(owner_instance_id="worker_current")
+    claim = governor.claim_next(owner_instance_id="worker_current")
 
-    assert governor.renew_lease("live", owner_instance_id="worker_stale") is False
+    assert governor.renew_lease(
+        "live", owner_instance_id="worker_stale",
+        lease_generation=claim.lease_generation,
+    ) is False
     assert governor.release_task(
         "live", "completed", owner_instance_id="worker_stale",
+        lease_generation=claim.lease_generation,
     ) is False
     assert ledger.connection().execute(
         "SELECT state FROM task_admissions WHERE task_id = 'live'"
     ).fetchone()[0] == "live"
     assert governor.release_task(
         "live", "completed", owner_instance_id="worker_current",
+        lease_generation=claim.lease_generation,
     ) is True
+
+
+def test_worker_lost_revokes_generation_before_terminal_store_mutation(
+    tmp_path,
+) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    task = Task(id="live", parent_session_id="s1", prompt="live", agent_id="a")
+    governor.admit_task(task, persist=lambda _task: None)
+    claim = governor.claim_next(owner_instance_id="worker_stale")
+    ledger.connection().execute(
+        "UPDATE task_admissions SET lease_expires_at = 20 WHERE task_id = 'live'"
+    )
+    ledger.connection().commit()
+    mutations: list[str] = []
+
+    result = governor.reconcile(
+        task_lookup=lambda _sid, _task_id: task,
+        mark_worker_lost=lambda _sid, _task_id: mutations.append("worker_lost"),
+        owner_is_alive=lambda _owner: False,
+        now=21,
+    )
+    stale_finalized = governor.finalize_task(
+        "live", "completed",
+        owner_instance_id="worker_stale",
+        lease_generation=claim.lease_generation,
+        mutate=lambda: mutations.append("completed"),
+    )
+
+    row = ledger.connection().execute(
+        "SELECT state, owner_instance_id, lease_generation "
+        "FROM task_admissions WHERE task_id = 'live'"
+    ).fetchone()
+    assert result.released_worker_lost == 1
+    assert stale_finalized is False
+    assert mutations == ["worker_lost"]
+    assert tuple(row) == ("released", None, claim.lease_generation + 1)
 
 
 def test_time_limits_start_at_live_claim_and_exclude_queue_wait(tmp_path) -> None:
@@ -448,7 +522,7 @@ def test_time_limits_start_at_live_claim_and_exclude_queue_wait(tmp_path) -> Non
 
     assert tuple(queued) == (None, None)
     assert governor.task_time_limits("timed") == (10, 4)
-    governor.claim_next(owner_instance_id="worker")
+    claim = governor.claim_next(owner_instance_id="worker")
     live = ledger.connection().execute(
         "SELECT started_at, last_activity_at FROM task_admissions WHERE task_id = 'timed'"
     ).fetchone()
@@ -468,7 +542,7 @@ def test_meaningful_activity_is_owner_fenced_and_keepalive_is_ignored(
         Task(id="timed", parent_session_id="s1", prompt="timed", agent_id="a"),
         persist=lambda _task: None,
     )
-    governor.claim_next(owner_instance_id="worker")
+    claim = governor.claim_next(owner_instance_id="worker")
     before = ledger.connection().execute(
         "SELECT last_activity_at FROM task_admissions WHERE task_id = 'timed'"
     ).fetchone()[0]
@@ -477,13 +551,19 @@ def test_meaningful_activity_is_owner_fenced_and_keepalive_is_ignored(
     )
 
     assert governor.record_activity(
-        "timed", owner_instance_id="worker", activity_kind="transport_keepalive",
+        "timed", owner_instance_id="worker",
+        lease_generation=claim.lease_generation,
+        activity_kind="transport_keepalive",
     ) is False
     assert governor.record_activity(
-        "timed", owner_instance_id="stale", activity_kind="provider_data",
+        "timed", owner_instance_id="stale",
+        lease_generation=claim.lease_generation,
+        activity_kind="provider_data",
     ) is False
     assert governor.record_activity(
-        "timed", owner_instance_id="worker", activity_kind="tool_progress",
+        "timed", owner_instance_id="worker",
+        lease_generation=claim.lease_generation,
+        activity_kind="tool_progress",
     ) is True
     after = ledger.connection().execute(
         "SELECT last_activity_at FROM task_admissions WHERE task_id = 'timed'"
@@ -499,19 +579,21 @@ def test_child_progress_updates_live_parent_activity(tmp_path, monkeypatch) -> N
     governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
     parent = Task(id="parent", parent_session_id="s1", prompt="p", agent_id="a")
     child = Task(
-        id="child", parent_session_id="s1", parent_task_id="parent",
+        id="child", parent_session_id="s2", parent_task_id="parent",
         prompt="c", agent_id="a",
     )
     governor.admit_task(parent, persist=lambda _task: None)
     governor.admit_task(child, persist=lambda _task: None)
     governor.claim_next(owner_instance_id="worker")
-    governor.claim_next(owner_instance_id="worker")
+    child_claim = governor.claim_next(owner_instance_id="worker")
     monkeypatch.setattr(
         "openprogram.agent.resource_governance.time.time", lambda: 1234.5,
     )
 
     assert governor.record_activity(
-        "child", owner_instance_id="worker", activity_kind="child_progress",
+        "child", owner_instance_id="worker",
+        lease_generation=child_claim.lease_generation,
+        activity_kind="child_progress",
     ) is True
     rows = ledger.connection().execute(
         "SELECT task_id, last_activity_at FROM task_admissions ORDER BY task_id"

@@ -565,6 +565,55 @@ def test_runner_restart_dispatches_persisted_governed_queue(
         runner.shutdown()
 
 
+def test_worker_lost_fence_prevents_stale_runner_from_writing_completed(
+    store_fixture, fake_worker, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    from openprogram.agent.resource_governance import (
+        ResourceGovernor, ResourceLimits, resolve_resource_limits,
+    )
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.agent.task.store import load_task
+    from openprogram.agent.task.types import TaskStatus
+    from openprogram.usage.ledger import UsageLedger
+
+    ledger = UsageLedger(tmp_path / "governance.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    runner = TaskRunner(max_workers=1, governor=governor)
+    try:
+        task_id = runner.spawn_task(
+            session_id="p1", prompt="stale", agent_id="main",
+        )
+        assert fake_worker[3].wait(1.0)
+        ledger.connection().execute(
+            "UPDATE task_admissions SET lease_expires_at = 0 WHERE task_id = ?",
+            (task_id,),
+        )
+        ledger.connection().commit()
+
+        reconciled = governor.reconcile(
+            task_lookup=lambda session_id, current_task_id: load_task(
+                session_id, current_task_id,
+            ),
+            mark_worker_lost=runner._mark_worker_lost,
+            owner_is_alive=lambda _owner: False,
+            now=1,
+        )
+        fake_worker[1].set()
+        final = runner.await_task(task_id, timeout=5)
+
+        assert reconciled.released_worker_lost == 1
+        assert final.status == TaskStatus.ERRORED
+        assert final.reason_code == "error.worker_lost"
+        assert final.result_text in (None, "")
+    finally:
+        fake_worker[1].set()
+        runner.shutdown()
+
+
 def test_runner_treats_its_own_instance_as_live_without_lock_probe(
     store_fixture, fake_worker, tmp_path,
 ):
@@ -710,7 +759,7 @@ def test_bounded_operation_timeout_clamps_and_rejects_unbounded_strict_work(
     from openprogram.agent.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.task.runner import NonPreemptibleOperation, TaskRunner
+    from openprogram.agent.task.runner import TaskRunner
     from openprogram.usage.ledger import UsageLedger
 
     clock = _FakeMonotonic()
@@ -736,8 +785,7 @@ def test_bounded_operation_timeout_clamps_and_rejects_unbounded_strict_work(
         assert runner.bounded_operation_timeout(task_id, 8.0) == 4.0
         clock.advance(3.0)
         assert runner.bounded_operation_timeout(task_id, 8.0) == 1.0
-        with pytest.raises(NonPreemptibleOperation):
-            runner.bounded_operation_timeout(task_id, None)
+        assert runner.bounded_operation_timeout(task_id, None) == 1.0
     finally:
         fake_worker[1].set()
         runner.shutdown()
