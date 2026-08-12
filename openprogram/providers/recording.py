@@ -239,25 +239,8 @@ class RecordingSink:
         from openprogram.paths import get_state_dir
         managed_root = get_state_dir() / "recordings"
         inside_managed_root = _is_managed_recording_path(self.path)
-        if inside_managed_root and managed_root.is_symlink():
-            raise PermissionError(
-                f"recordings directory must not be a symlink: {managed_root}"
-            )
         if inside_managed_root:
-            normalized_root = Path(os.path.abspath(managed_root))
-            normalized_parent = Path(os.path.abspath(self.path.parent))
-            try:
-                relative_parent = normalized_parent.relative_to(normalized_root)
-                current = normalized_root
-            except ValueError:
-                current = Path(*normalized_parent.parts[:len(normalized_root.parts)])
-                relative_parent = normalized_parent.relative_to(current)
-            for part in relative_parent.parts:
-                current /= part
-                if current.is_symlink():
-                    raise PermissionError(
-                        f"recordings path must not contain a symlink: {current}"
-                    )
+            _reject_managed_path_symlinks(self.path.parent, managed_root)
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if sys.platform != "win32" and _is_managed_recording_path(self.path.parent):
             os.chmod(self.path.parent, 0o700)
@@ -375,6 +358,11 @@ def _verify_private_regular_file(fd: int, path: Path) -> None:
 def restrict_recording_file(path: str | Path) -> None:
     """Tighten and verify a recording before it is read."""
     recording_path = Path(path)
+    if _is_managed_recording_path(recording_path):
+        from openprogram.paths import get_state_dir
+        _reject_managed_path_symlinks(
+            recording_path.parent, get_state_dir() / "recordings"
+        )
     if recording_path.is_symlink():
         raise PermissionError(f"recording path must not be a symlink: {recording_path}")
     if _is_managed_recording_path(recording_path):
@@ -407,6 +395,25 @@ def _is_managed_recording_path(path: Path) -> bool:
         return alias_root.exists() and os.path.samefile(alias_root, managed_root)
     except OSError:
         return False
+
+
+def _reject_managed_path_symlinks(parent: Path, managed_root: Path) -> None:
+    normalized_root = Path(os.path.abspath(managed_root))
+    normalized_parent = Path(os.path.abspath(parent))
+    try:
+        relative_parent = normalized_parent.relative_to(normalized_root)
+        current = normalized_root
+    except ValueError:
+        current = Path(*normalized_parent.parts[:len(normalized_root.parts)])
+        relative_parent = normalized_parent.relative_to(current)
+    if current.is_symlink():
+        raise PermissionError(f"recordings directory must not be a symlink: {current}")
+    for part in relative_parent.parts:
+        current /= part
+        if current.is_symlink():
+            raise PermissionError(
+                f"recordings path must not contain a symlink: {current}"
+            )
 
 
 def resolve_recording_selector(selector: str) -> Path:
