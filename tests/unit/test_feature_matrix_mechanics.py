@@ -69,6 +69,22 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
             "category point",
         ),
         (
+            lambda text: text.replace(
+                '<line x1="255" y1="2" x2="255" y2="14"',
+                '<line x1="999" y1="2" x2="999" y2="14"',
+                1,
+            ),
+            "category point",
+        ),
+        (
+            lambda text: text.replace(
+                '<line x1="582" y1="2" x2="582" y2="14"',
+                '<line x1="999" y1="2" x2="999" y2="14"',
+                1,
+            ),
+            "category point",
+        ),
+        (
             lambda text: _rename_section_item(text, "gaps", "终端快捷键自动配置"),
             "gap detail",
         ),

@@ -6,10 +6,13 @@ import pytest
 
 from openprogram.agentic_programming.runtime import Runtime
 from openprogram.providers.structured_output import (
+    normalize_response_format,
     StructuredOutputSchemaError,
     StructuredOutputValidationError,
     StructuredOutputUnsupportedError,
 )
+from openprogram.providers import api_registry, register_api_provider
+from openprogram.providers.structured_output import StructuredOutputCapabilities
 from openprogram.providers.types import (
     AssistantMessage,
     EventDone,
@@ -588,6 +591,72 @@ def test_unknown_provider_is_rejected_before_stream_call():
         )
     assert calls == []
     assert retries == []
+
+
+def test_default_runtime_budget_dispatch_uses_negotiated_registry_snapshot(
+    monkeypatch,
+):
+    monkeypatch.setattr(api_registry, "_registry", {})
+    monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_provider_transform", None)
+    monkeypatch.setenv("OPENPROGRAM_FALLBACK_MODELS", "off")
+    calls = []
+
+    class Provider:
+        requires_credentials = False
+
+        def __init__(self, name):
+            self.name = name
+
+        def stream_simple(self, model, context, options):
+            calls.append((self.name, options.response_format))
+            message = AssistantMessage(
+                content=[TextContent(text='{"answer": 4}')],
+                api=model.api,
+                provider=model.provider,
+                model=model.id,
+                timestamp=1,
+            )
+
+            async def events():
+                yield EventStart(partial=message)
+                yield EventDone(reason="stop", message=message)
+
+            return events()
+
+    api = "runtime-budget-snapshot-api"
+    original = Provider("original-native")
+    replacement = Provider("replacement-unknown")
+    register_api_provider(
+        api,
+        original,
+        StructuredOutputCapabilities(native="supported", schema_profile="none"),
+    )
+
+    original_resolve = api_registry.resolve_api_provider_snapshot
+
+    def replace_after_snapshot(model):
+        snapshot = original_resolve(model)
+        register_api_provider(api, replacement)
+        return snapshot
+
+    monkeypatch.setattr(
+        api_registry, "resolve_api_provider_snapshot", replace_after_snapshot
+    )
+    runtime = Runtime(model="dummy", max_retries=2)
+    runtime.api_model = Model(
+        id="runtime-race-model",
+        name="Runtime race model",
+        api=api,
+        provider="race-provider",
+        base_url="https://example.invalid",
+        structured_output=True,
+    )
+
+    result = runtime.exec("question", response_format=SCHEMA, toolset="none")
+
+    assert result == {"answer": 4}
+    assert calls == [("original-native", normalize_response_format(SCHEMA))]
 
 
 def test_explicit_parallel_true_reaches_hidden_tool_preflight():

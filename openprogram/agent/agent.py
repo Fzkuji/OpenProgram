@@ -10,7 +10,7 @@ import inspect
 import time
 from typing import Any, Callable
 
-from openprogram.providers import get_model, stream_simple
+from openprogram.providers import get_model
 from openprogram.providers.types import (
     AssistantMessage,
     ImageContent,
@@ -130,7 +130,7 @@ class Agent:
         self._transform_context = opts.transform_context
         self._steering_mode: str = opts.steering_mode
         self._follow_up_mode: str = opts.follow_up_mode
-        self.stream_fn: StreamFn = opts.stream_fn or stream_simple
+        self.stream_fn: StreamFn | None = opts.stream_fn
         self._session_id: str | None = opts.session_id
         self.get_api_key = opts.get_api_key
         self._on_payload = opts.on_payload

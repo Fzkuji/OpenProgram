@@ -2110,14 +2110,9 @@ class Runtime:
             from openprogram.providers.callable_model import make_callable_stream_fn
 
             _stream_fn = make_callable_stream_fn(self._call_fn, offload_sync=True)
+        budget_context_transform = None
         if model_call_budget is not None:
-            if _stream_fn is None:
-                from openprogram.providers.stream import stream_simple
-
-                _stream_fn = stream_simple
-            unbudgeted_stream_fn = _stream_fn
-
-            async def budgeted_stream_fn(model, context, options=None):
+            def check_model_call_budget() -> None:
                 if model_call_budget["remaining"] < model_call_budget["limit"]:
                     deadline = model_call_budget["deadline"]
                     if deadline is not None and time.monotonic() >= deadline:
@@ -2136,10 +2131,20 @@ class Runtime:
                 if model_call_budget["remaining"] <= 0:
                     raise RuntimeError("structured output model-call budget exhausted")
                 model_call_budget["remaining"] -= 1
-                async for event in unbudgeted_stream_fn(model, context, options):
-                    yield event
 
-            _stream_fn = budgeted_stream_fn
+            if _stream_fn is None:
+                async def budget_context_transform(messages, _cancel_event):
+                    check_model_call_budget()
+                    return messages
+            else:
+                unbudgeted_stream_fn = _stream_fn
+
+                async def budgeted_stream_fn(model, context, options=None):
+                    check_model_call_budget()
+                    async for event in unbudgeted_stream_fn(model, context, options):
+                        yield event
+
+                _stream_fn = budgeted_stream_fn
         # Inner tools go through the SAME gate as the outer agent loop.
         # Without this a program spawned from a turn handed its agent raw
         # tools: no hard constraints, no authority tier, no deny rules —
@@ -2168,6 +2173,7 @@ class Runtime:
             web_search=loop_opts.get("web_search"),
             response_format=structured_format,
             stream_fn=_stream_fn,
+            transform_context=budget_context_transform,
         )
 
         # Forward agent stream events to self.on_stream so callers (the webui

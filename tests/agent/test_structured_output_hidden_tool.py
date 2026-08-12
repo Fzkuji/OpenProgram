@@ -6,6 +6,7 @@ import time
 
 import pytest
 
+from openprogram.agent.agent import Agent, AgentOptions
 from openprogram.agent.agent_loop import agent_loop
 from openprogram.agent.types import (
     AgentContext,
@@ -413,6 +414,68 @@ def test_registry_replacement_cannot_split_negotiation_from_dispatch(monkeypatch
     asyncio.run(run())
 
     assert calls == [("original-native", _config().response_format)]
+
+
+def test_default_agent_dispatch_uses_the_negotiated_registry_snapshot(monkeypatch):
+    monkeypatch.setattr(api_registry, "_registry", {})
+    monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_provider_transform", None)
+    monkeypatch.setenv("OPENPROGRAM_FALLBACK_MODELS", "off")
+    calls = []
+
+    class Provider:
+        requires_credentials = False
+
+        def __init__(self, name):
+            self.name = name
+
+        def stream_simple(self, model, context, options):
+            calls.append((self.name, options.response_format))
+            message = AssistantMessage(
+                content=[TextContent(text='{"answer": 4}')],
+                api=model.api,
+                provider=model.provider,
+                model=model.id,
+                timestamp=1,
+            )
+
+            async def events():
+                yield EventStart(partial=message)
+                yield EventDone(reason="stop", message=message)
+
+            return events()
+
+    api = "default-agent-snapshot-api"
+    original = Provider("original-native")
+    replacement = Provider("replacement-unknown")
+    capabilities = StructuredOutputCapabilities(
+        native="supported", schema_profile="none"
+    )
+    register_api_provider(api, original, capabilities)
+
+    async def replace_after_negotiation(messages, _cancel_event):
+        register_api_provider(api, replacement)
+        return messages
+
+    model = Model(
+        id="agent-race-model",
+        name="Agent race model",
+        api=api,
+        provider="race-provider",
+        base_url="https://example.invalid",
+        structured_output=True,
+    )
+    agent = Agent(
+        AgentOptions(
+            initial_state={"model": model},
+            transform_context=replace_after_negotiation,
+            response_format=normalize_response_format(SCHEMA),
+        )
+    )
+
+    asyncio.run(agent.prompt("answer"))
+
+    assert calls == [("original-native", normalize_response_format(SCHEMA))]
 
 
 def test_failover_candidate_dispatch_uses_its_negotiated_registry_snapshot(monkeypatch):

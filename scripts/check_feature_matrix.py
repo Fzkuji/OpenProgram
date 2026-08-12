@@ -335,7 +335,9 @@ def check_matrix(path: Path) -> MatrixResult:
     category_svg = re.search(r'<svg viewBox="0 0 960 400".*?</svg>', source, re.DOTALL)
     if not category_svg:
         raise MatrixError("missing published category SVG")
-    category_points: dict[str, tuple[int, float, float, float, float]] = {}
+    category_points: dict[
+        str, tuple[int, float, float, float, float, float, float]
+    ] = {}
     for name, count, body in re.findall(
         r'<g transform="translate\(0,[^)]+\)"><text[^>]*>([^<]+?)\s+(\d+)</text>'
         r"(.*?)</g>",
@@ -355,6 +357,8 @@ def check_matrix(path: Path) -> MatrixResult:
             int(count),
             float(line.group(1)),
             float(line.group(2)),
+            float(markers[0]),
+            float(markers[1]),
             float(markers[2]),
             float(openprogram.group(1)),
         )
@@ -367,7 +371,15 @@ def check_matrix(path: Path) -> MatrixResult:
             sum(SYMBOL_SCORES[row.cells[index]] for row in category_rows)
             for index in range(13)
         ]
-        count, line_x1, line_x2, median_x, openprogram_x = category_points[category]
+        (
+            count,
+            line_x1,
+            line_x2,
+            marker_min_x,
+            marker_max_x,
+            median_x,
+            openprogram_x,
+        ) = category_points[category]
         expected_openprogram = round(
             200 + 600 * framework_scores[0] / len(category_rows)
         )
@@ -397,6 +409,8 @@ def check_matrix(path: Path) -> MatrixResult:
             count != len(category_rows)
             or openprogram_x != expected_openprogram
             or (line_x1, line_x2)
+            != (expected_reference_min, expected_reference_max)
+            or (marker_min_x, marker_max_x)
             != (expected_reference_min, expected_reference_max)
             or median_x != expected_reference_median
         ):
