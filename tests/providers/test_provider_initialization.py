@@ -212,8 +212,8 @@ def test_replay_runtime_factory_never_constructs_credentials_runtime(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from openprogram.agentic_programming.runtime import Runtime
-    import openprogram.providers as providers_package
     from openprogram.providers import initialization, registry
+    from openprogram.providers import models as provider_models
     from openprogram.providers.types import Model
 
     namespace, model_id = expected.split(":", 1)
@@ -230,7 +230,7 @@ def test_replay_runtime_factory_never_constructs_credentials_runtime(
         base_url="https://offline.invalid",
     )
     monkeypatch.setattr(
-        providers_package,
+        provider_models,
         "get_model",
         lambda candidate_provider, candidate_model: (
             wire_model
@@ -305,3 +305,42 @@ def test_web_start_initializes_before_background_threads(
     server.start_server(port=18199, open_browser=False)
 
     assert order[0] == "initialize"
+
+
+def test_replay_claude_code_uses_enabled_model_without_anthropic_duplicate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.agentic_programming.runtime import Runtime
+    from openprogram.providers import enabled_models, initialization, registry
+    from openprogram.providers.types import Model
+
+    model = Model(
+        id="claude-sonnet-4-6",
+        name="Claude Sonnet 4.6",
+        api="anthropic-messages",
+        provider="claude-code",
+        base_url="https://api.anthropic.com",
+    )
+    monkeypatch.setattr(
+        enabled_models,
+        "ENABLED_MODELS",
+        {"claude-code/claude-sonnet-4-6": model},
+    )
+    monkeypatch.setattr("openprogram.providers.models.ENABLED_MODELS", enabled_models.ENABLED_MODELS)
+    monkeypatch.setattr(
+        initialization,
+        "initialize_provider_runtime",
+        lambda: initialization.ProviderRuntimeSnapshot(mode="replay"),
+    )
+
+    runtime = registry.create_runtime(
+        provider="claude-code", model="claude-sonnet-4-6"
+    )
+
+    assert type(runtime) is Runtime
+    assert runtime.model == "anthropic:claude-sonnet-4-6"
+    assert runtime.provider_id == "claude-code"
+    assert runtime.api_model.provider == "anthropic"
+    assert enabled_models.ENABLED_MODELS == {
+        "claude-code/claude-sonnet-4-6": model
+    }

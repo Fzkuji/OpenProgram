@@ -310,6 +310,32 @@ def _http_api_key_for(entry: dict) -> str | None:
     return resolve_provider_key(pool)
 
 
+def _replay_runtime(provider: str, model: str, entry: dict, kwargs: dict):
+    from openprogram.agentic_programming.runtime import Runtime
+    from openprogram.providers.enabled_models import register_model_from_config
+    from openprogram.providers.models import get_model
+
+    namespace = entry["model_namespace"]
+    source = get_model(provider, model) or get_model(namespace, model)
+    if source is None and register_model_from_config(provider, model):
+        source = get_model(provider, model)
+    if source is None:
+        raise ValueError(f"Unknown model {provider!r}:{model!r}")
+
+    runtime_kwargs = {
+        key: kwargs[key]
+        for key in ("call", "max_retries", "api_key", "skills")
+        if key in kwargs
+    }
+    runtime = Runtime(model="default", **runtime_kwargs)
+    runtime.model = f"{namespace}:{model}"
+    runtime.api_model = source.model_copy(update={"provider": namespace})
+    runtime.provider_id = provider
+    if "system" in kwargs:
+        runtime.system = kwargs["system"]
+    return runtime
+
+
 def create_runtime(provider: str = None, model: str = None, **kwargs):
     """Create a Runtime instance with auto-detection or explicit provider.
 
@@ -343,24 +369,17 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
             provider, detected_model = configured
             model = model or detected_model
         if provider not in PROVIDERS:
-            return _api_routed_runtime(provider, model, **kwargs)
+            from openprogram.providers.models import get_model
+
+            source = get_model(provider, model) if model else None
+            if source is None:
+                return _api_routed_runtime(provider, model, **kwargs)
+            return _replay_runtime(
+                provider, model, {"model_namespace": source.provider}, kwargs
+            )
         entry = PROVIDERS[provider]
         use_model = model or entry["default_model"]
-        from openprogram.agentic_programming.runtime import Runtime
-
-        runtime_kwargs = {
-            key: kwargs[key]
-            for key in ("call", "max_retries", "api_key", "skills")
-            if key in kwargs
-        }
-        runtime = Runtime(
-            model=f"{entry['model_namespace']}:{use_model}", **runtime_kwargs
-        )
-        if "runtime_class" in entry:
-            runtime.provider_id = provider
-        if "system" in kwargs:
-            runtime.system = kwargs["system"]
-        return runtime
+        return _replay_runtime(provider, use_model, entry, kwargs)
 
     if provider and provider != "auto":
         if provider not in PROVIDERS:
