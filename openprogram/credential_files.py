@@ -51,7 +51,12 @@ class SecretInventoryEntry:
         normalized = PurePosixPath(relative_path).as_posix()
         if normalized.startswith("./"):
             normalized = normalized[2:]
-        return fnmatch.fnmatchcase(normalized, self.path_pattern)
+        path_parts = PurePosixPath(normalized).parts
+        pattern_parts = PurePosixPath(self.path_pattern).parts
+        return len(path_parts) == len(pattern_parts) and all(
+            fnmatch.fnmatchcase(part, pattern)
+            for part, pattern in zip(path_parts, pattern_parts)
+        )
 
 
 SECRET_INVENTORY: tuple[SecretInventoryEntry, ...] = (

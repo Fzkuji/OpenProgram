@@ -228,6 +228,26 @@ def test_restore_rejects_unknown_credential_tree_member_without_publishing(
     assert not (state / "auth").exists()
 
 
+def test_restore_rejects_overdeep_auth_member_without_publishing(
+    tmp_path: Path,
+) -> None:
+    from openprogram._cli_cmds.backup import restore_archive
+
+    state = _state(tmp_path)
+    archive = _archive(
+        tmp_path,
+        {"auth/openai/unregistered/account.json": b'{"api_key":"secret"}'},
+        manifest=json.dumps(
+            {"format_version": 1, "credential_opt_in": True}
+        ).encode(),
+    )
+
+    with pytest.raises(tarfile.TarError, match="credential inventory"):
+        restore_archive(archive, state)
+
+    assert not (state / "auth").exists()
+
+
 # --- publication, permissions, and secret preservation ---------------------
 
 
