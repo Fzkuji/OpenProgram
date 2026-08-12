@@ -7,7 +7,7 @@ import json
 import time
 import uuid
 from dataclasses import asdict, dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from typing import Any, Callable, Mapping
 
 from openprogram.agent.task.types import Task
@@ -314,6 +314,9 @@ def plan_request_reservation(
                 input_token_upper_bound, False, None,
             )
     token_reservation = input_token_upper_bound + output_cap
+    if output_cap == 0:
+        return RequestReservation(False, "quota.token_exhausted", input_token_upper_bound, 0,
+                                  token_reservation, False, None)
     pricing = getattr(model, "cost", None)
     price_known = pricing is not None and bool(getattr(pricing, "is_known", lambda: False)())
     if cost_budget_configured and not price_known:
@@ -323,10 +326,15 @@ def plan_request_reservation(
         )
     estimated_cost = None
     if price_known:
-        estimated_cost = int(round(
-            (input_token_upper_bound * float(pricing.input)
-             + output_cap * float(pricing.output))
-        ))
+        estimated_cost = int((
+            Decimal(input_token_upper_bound) * (Decimal(str(pricing.input))
+                                                 + Decimal(str(pricing.cache_read))
+                                                 + Decimal(str(pricing.cache_write)))
+            + Decimal(output_cap) * Decimal(str(pricing.output))
+        ).to_integral_value(rounding=ROUND_CEILING))
+        if estimated_cost > 9_223_372_036_854_775_807:
+            return RequestReservation(False, "quota.accounting_unavailable", input_token_upper_bound,
+                                      output_cap, token_reservation, True, None)
     return RequestReservation(
         True, None, input_token_upper_bound, output_cap, token_reservation,
         price_known, estimated_cost,

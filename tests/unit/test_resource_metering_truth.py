@@ -65,3 +65,20 @@ def test_request_reservation_fails_closed_for_unknown_price_with_cost_budget() -
 
     assert plan.allowed is False
     assert plan.reason_code == "quota.cost_unavailable"
+
+
+def test_legacy_complete_price_without_source_is_known_but_partial_is_unknown() -> None:
+    assert ModelCost(input=1, output=2, cache_read=0, cache_write=0).is_known()
+    assert not ModelCost(input=1, output=2, cache_read=None, cache_write=0).is_known()
+
+
+def test_request_reservation_rejects_zero_output_and_rounds_cost_up() -> None:
+    priced = _model(ModelCost(input=0.1, output=0.1, cache_read=0, cache_write=0,
+                              source="model_catalog"))
+    empty = plan_request_reservation(input_token_upper_bound=10, requested_max_output_tokens=9,
+                                     remaining_token_budget=10, model=priced)
+    assert empty.allowed is False
+    assert empty.reason_code == "quota.token_exhausted"
+    plan = plan_request_reservation(input_token_upper_bound=1, requested_max_output_tokens=1,
+                                    remaining_token_budget=None, model=priced)
+    assert plan.cost_reservation_microusd == 1

@@ -59,6 +59,8 @@ def test_summary_totals(client):
     assert t["cache_read_tokens"] == 50
     assert t["events"] == 5
     assert abs(t["cost"] - (0.10 + 0.40 + 0.05 + 0.01 + 0.03)) < 1e-9
+    assert t["cost_known"] is True
+    assert t["unknown_cost_events"] == 0
 
 
 def test_summary_by_model_sorted_desc(client):
