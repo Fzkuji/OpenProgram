@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Task list workflow — 把 todo list 编成可执行的 agentic workflow</title>
+<title>Self-Programmed Agentic Workflow — agent 自己写程序（list），再自己执行</title>
 <style>
   :root { color-scheme: dark; }
   body { background:#12110b; color:#bdb9a6; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
@@ -24,54 +24,121 @@
 </head>
 <body>
 
-<h1>Task list workflow</h1>
-<p class="lead">把任务的 todo list 直接构建为可执行的 agentic workflow：list 是控制流，item 是有界子任务，
-每个 item 只带自己需要的上下文。目标是两件事：长任务的稳定性（范围钉死、item 级重试、断点续跑）
-和 token 经济性（历史不随步数膨胀）。</p>
+<h1>Self-Programmed Agentic Workflow</h1>
+<p class="lead">agent 自己把任务写成程序，再由自己执行：todo list 就是这个程序，list 是控制流，
+item 是有界子任务，每个 item 只带自己需要的上下文。目标是两件事：长任务的稳定性
+（范围钉死、item 级重试、断点续跑）和 token 经济性（历史不随步数膨胀）。
+入口是内置 agentic function <code>run_task_list</code>。</p>
 
-<h2>1. 运行循环</h2>
+<h2>1. 全流程</h2>
 <figure>
-<svg viewBox="0 0 960 330" role="img" aria-label="plan-execute循环：planner维护list，executor执行item，judge判定，不过则重试或回planner修订list">
+<svg viewBox="0 0 980 710" role="img" aria-label="完整流程：run_task_list 入口先做断点检查，板上有未完成 item 就直接续跑，否则 planner 用只读工具判规模：小任务单 agent 直接做完，大任务拆成带完成判据的 item 写上计划板，然后串行循环：取下一个 pending item，executor 用 item 加上游交接摘要执行，judge 按 done_criteria 判定，过则写 result_summary 取下一项，不过重试一次，再不过回 planner 修订未跑部分；每次状态变化先写 todos.json 作为 checkpoint；结束状态为 completed、abandoned 或 capped">
   <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
     <path d="M0,0 L10,5 L0,10 z" fill="#8a8675"/></marker></defs>
-  <rect x="0" y="0" width="960" height="330" fill="#12110b"/>
-  <!-- planner -->
-  <rect x="40" y="60" width="200" height="90" rx="10" fill="#181712" stroke="#4f8ef7" stroke-width="1.5"/>
-  <text x="140" y="95" fill="#e8e4d4" font-size="14" text-anchor="middle">planner</text>
-  <text x="140" y="118" fill="#8a8675" font-size="11" text-anchor="middle">小上下文：只看 list</text>
-  <text x="140" y="134" fill="#8a8675" font-size="11" text-anchor="middle">与各 item 结果摘要</text>
-  <!-- list store -->
-  <rect x="40" y="210" width="200" height="70" rx="10" fill="#181712" stroke="#3a382d"/>
-  <text x="140" y="240" fill="#e8e4d4" font-size="13" text-anchor="middle">list 落盘（todo 计划板）</text>
-  <text x="140" y="260" fill="#8a8675" font-size="11" text-anchor="middle">item、状态、完成判据、交接摘要</text>
-  <!-- executor -->
-  <rect x="400" y="60" width="220" height="90" rx="10" fill="#181712" stroke="#5aad4e" stroke-width="1.5"/>
-  <text x="510" y="95" fill="#e8e4d4" font-size="14" text-anchor="middle">executor（每 item 一个）</text>
-  <text x="510" y="118" fill="#8a8675" font-size="11" text-anchor="middle">输入 = item + 上游交接摘要</text>
-  <text x="510" y="134" fill="#8a8675" font-size="11" text-anchor="middle">输出 = 结果摘要 + 产物清单</text>
-  <!-- judge -->
-  <rect x="760" y="60" width="160" height="90" rx="10" fill="#181712" stroke="#d4843a" stroke-width="1.5"/>
-  <text x="840" y="95" fill="#e8e4d4" font-size="14" text-anchor="middle">judge</text>
-  <text x="840" y="118" fill="#8a8675" font-size="11" text-anchor="middle">压缩上下文单判定</text>
-  <text x="840" y="134" fill="#8a8675" font-size="11" text-anchor="middle">按 item 的完成判据</text>
-  <!-- arrows -->
-  <line x1="240" y1="90" x2="396" y2="90" stroke="#8a8675" marker-end="url(#ar)"/>
-  <text x="318" y="82" fill="#8a8675" font-size="11" text-anchor="middle">派发下一个未完成 item</text>
-  <line x1="620" y1="90" x2="756" y2="90" stroke="#8a8675" marker-end="url(#ar)"/>
-  <text x="688" y="82" fill="#8a8675" font-size="11" text-anchor="middle">交结果</text>
-  <path d="M840,150 L840,300 L140,300 L140,284" stroke="#8a8675" fill="none" marker-end="url(#ar)"/>
-  <text x="490" y="292" fill="#8a8675" font-size="11" text-anchor="middle">过：写结果摘要，取下一项　|　不过：重试一次，再不过回 planner 拆分/修订</text>
-  <line x1="140" y1="210" x2="140" y2="154" stroke="#8a8675" marker-end="url(#ar)"/>
-  <text x="152" y="185" fill="#8a8675" font-size="11">读写</text>
-</svg>
-<figcaption>plan-execute 循环。list 状态每步落盘即 checkpoint，进程被杀后从断点续跑不需要任何额外机制。</figcaption>
-</figure>
+  <rect x="0" y="0" width="980" height="710" fill="#12110b"/>
 
-<div class="card">
-入口是一个内置 agentic function <code>run_task_list(task)</code>，prompt 写在 docstring 里。
-planner 第一步先做规模判断：预估单个 agent 能一口气做完的任务<b>不拆</b>，直接单 agent 执行——
-拆小任务的规划与交接开销会超过一次做完。
-</div>
+  <!-- 入口 -->
+  <rect x="40" y="28" width="230" height="60" rx="10" fill="#181712" stroke="#e8e4d4" stroke-width="1.2"/>
+  <text x="155" y="53" fill="#e8e4d4" font-size="14" text-anchor="middle">run_task_list(task)</text>
+  <text x="155" y="74" fill="#8a8675" font-size="11" text-anchor="middle">唯一入口 · resume 默认开启</text>
+  <line x1="155" y1="88" x2="155" y2="114" stroke="#8a8675" marker-end="url(#ar)"/>
+
+  <!-- 断点检查 -->
+  <rect x="40" y="118" width="230" height="62" rx="10" fill="#181712" stroke="#3a382d"/>
+  <text x="155" y="143" fill="#e8e4d4" font-size="13" text-anchor="middle">板上有本任务未完成 item？</text>
+  <text x="155" y="163" fill="#8a8675" font-size="11" text-anchor="middle">按任务文本匹配；全已完成 → 重新规划</text>
+  <line x1="155" y1="180" x2="155" y2="216" stroke="#8a8675" marker-end="url(#ar)"/>
+  <text x="163" y="203" fill="#8a8675" font-size="11">没有：先规划</text>
+  <path d="M270,149 L420,149 L420,388" stroke="#8a8675" fill="none" marker-end="url(#ar)"/>
+  <text x="290" y="141" fill="#8a8675" font-size="11">有：跳过规划，从断点续跑</text>
+
+  <!-- planner -->
+  <rect x="40" y="220" width="230" height="116" rx="10" fill="#181712" stroke="#4f8ef7" stroke-width="1.5"/>
+  <text x="155" y="245" fill="#e8e4d4" font-size="14" text-anchor="middle">planner（规划）</text>
+  <text x="155" y="268" fill="#8a8675" font-size="11" text-anchor="middle">只读工具：read / grep / glob / list</text>
+  <text x="155" y="286" fill="#8a8675" font-size="11" text-anchor="middle">第一步判规模，再决定拆不拆</text>
+  <text x="155" y="304" fill="#8a8675" font-size="11" text-anchor="middle">每个 item：描述 + 完成判据</text>
+  <text x="155" y="320" fill="#8a8675" font-size="11" text-anchor="middle">+ 上下文规格（上游取几条）</text>
+
+  <!-- 不拆：单 agent -->
+  <line x1="155" y1="336" x2="155" y2="388" stroke="#8a8675" marker-end="url(#ar)"/>
+  <text x="163" y="364" fill="#8a8675" font-size="11">预估一口气能完：不拆</text>
+  <rect x="40" y="392" width="230" height="84" rx="10" fill="#181712" stroke="#3a382d"/>
+  <text x="155" y="418" fill="#e8e4d4" font-size="13" text-anchor="middle">单 agent 直接执行整个任务</text>
+  <text x="155" y="440" fill="#8a8675" font-size="11" text-anchor="middle">拆分与交接的开销不划算</text>
+  <text x="155" y="458" fill="#8a8675" font-size="11" text-anchor="middle">做完直接返回（completed）</text>
+
+  <!-- 拆：进入循环 -->
+  <path d="M270,278 L305,278 L305,419 L336,419" stroke="#8a8675" fill="none" marker-end="url(#ar)"/>
+  <text transform="rotate(-90 296 352)" x="296" y="352" fill="#8a8675" font-size="11" text-anchor="middle">拆：item 全部写上板</text>
+
+  <!-- 循环：取下一项 -->
+  <rect x="340" y="392" width="240" height="54" rx="10" fill="#181712" stroke="#3a382d"/>
+  <text x="460" y="414" fill="#e8e4d4" font-size="13" text-anchor="middle">取下一个 pending item</text>
+  <text x="460" y="434" fill="#8a8675" font-size="11" text-anchor="middle">in_progress 视为上次中断，重新执行</text>
+  <line x1="460" y1="446" x2="460" y2="474" stroke="#8a8675" marker-end="url(#ar)"/>
+
+  <!-- executor -->
+  <rect x="340" y="478" width="240" height="104" rx="10" fill="#181712" stroke="#5aad4e" stroke-width="1.5"/>
+  <text x="460" y="503" fill="#e8e4d4" font-size="14" text-anchor="middle">executor（每 item 一个新 agent）</text>
+  <text x="460" y="526" fill="#8a8675" font-size="11" text-anchor="middle">上下文 = item + 上游 N 条交接摘要</text>
+  <text x="460" y="544" fill="#8a8675" font-size="11" text-anchor="middle">全套工具，需要什么自己读仓库</text>
+  <text x="460" y="562" fill="#8a8675" font-size="11" text-anchor="middle">历史不进上下文，不随步数膨胀</text>
+  <line x1="580" y1="530" x2="656" y2="530" stroke="#8a8675" marker-end="url(#ar)"/>
+  <text x="618" y="522" fill="#8a8675" font-size="11" text-anchor="middle">交结果</text>
+
+  <!-- judge -->
+  <rect x="660" y="478" width="240" height="104" rx="10" fill="#181712" stroke="#d4843a" stroke-width="1.5"/>
+  <text x="780" y="503" fill="#e8e4d4" font-size="14" text-anchor="middle">judge（判定）</text>
+  <text x="780" y="526" fill="#8a8675" font-size="11" text-anchor="middle">按 item 的 done_criteria 判</text>
+  <text x="780" y="544" fill="#8a8675" font-size="11" text-anchor="middle">复用 goal 单判定</text>
+  <text x="780" y="562" fill="#8a8675" font-size="11" text-anchor="middle">过 / 不过 + 理由</text>
+
+  <!-- 过：回到取下一项 -->
+  <path d="M780,478 L780,368 L520,368 L520,388" stroke="#5aad4e" fill="none" marker-end="url(#ar)"/>
+  <text x="650" y="360" fill="#5aad4e" font-size="11" text-anchor="middle">过：result_summary 写板，取下一项</text>
+
+  <!-- 不过①：重试 -->
+  <path d="M720,582 L720,606 L460,606 L460,586" stroke="#d4843a" fill="none" marker-end="url(#ar)"/>
+  <text x="590" y="600" fill="#d4843a" font-size="11" text-anchor="middle">不过①：重试一次，附 judge 理由</text>
+
+  <!-- 不过②：回 planner 修订 -->
+  <path d="M840,582 L840,622 L20,622 L20,278 L36,278" stroke="#d4843a" fill="none" marker-end="url(#ar)"/>
+  <text x="430" y="616" fill="#d4843a" font-size="11" text-anchor="middle">不过②：回 planner 修订未跑部分（拆分 / 插入 / 作废，已完成 item 不动）</text>
+
+  <!-- 无 pending：completed -->
+  <path d="M400,446 L400,462 L310,462 L310,640" stroke="#5aad4e" fill="none" marker-end="url(#ar)"/>
+  <text x="352" y="456" fill="#5aad4e" font-size="11" text-anchor="middle">板上无 pending</text>
+
+  <!-- 计划板 -->
+  <rect x="700" y="80" width="240" height="230" rx="10" fill="#181712" stroke="#3a382d" stroke-dasharray="5 4"/>
+  <text x="820" y="108" fill="#e8e4d4" font-size="14" text-anchor="middle">todo 计划板（todos.json）</text>
+  <text x="820" y="136" fill="#8a8675" font-size="11" text-anchor="middle">item · 状态 · done_criteria</text>
+  <text x="820" y="154" fill="#8a8675" font-size="11" text-anchor="middle">context_spec · result_summary</text>
+  <text x="820" y="186" fill="#bdb9a6" font-size="11" text-anchor="middle">每次状态变化先写板再动手</text>
+  <text x="820" y="204" fill="#bdb9a6" font-size="11" text-anchor="middle">板即 checkpoint</text>
+  <text x="820" y="232" fill="#8a8675" font-size="11" text-anchor="middle">进程被杀后凭这份板续跑，</text>
+  <text x="820" y="250" fill="#8a8675" font-size="11" text-anchor="middle">不需要任何额外机制；</text>
+  <text x="820" y="268" fill="#8a8675" font-size="11" text-anchor="middle">现有 todo 界面直接可见进度</text>
+  <line x1="850" y1="474" x2="850" y2="314" stroke="#8a8675" stroke-dasharray="4 4" marker-end="url(#ar)"/>
+  <line x1="838" y1="318" x2="838" y2="474" stroke="#8a8675" stroke-dasharray="4 4" marker-end="url(#ar)"/>
+  <text x="862" y="398" fill="#8a8675" font-size="11">每步读写</text>
+
+  <!-- 结束状态 -->
+  <rect x="40" y="640" width="220" height="52" rx="10" fill="#181712" stroke="#3a382d"/>
+  <text x="150" y="661" fill="#e8e4d4" font-size="13" text-anchor="middle">abandoned</text>
+  <text x="150" y="680" fill="#8a8675" font-size="11" text-anchor="middle">planner 修订清空了剩余 list</text>
+  <rect x="280" y="640" width="240" height="52" rx="10" fill="#181712" stroke="#5aad4e"/>
+  <text x="400" y="661" fill="#5aad4e" font-size="13" text-anchor="middle">completed</text>
+  <text x="400" y="680" fill="#8a8675" font-size="11" text-anchor="middle">所有 item 已完成或被修订作废</text>
+  <rect x="560" y="640" width="240" height="52" rx="10" fill="#181712" stroke="#3a382d"/>
+  <text x="680" y="661" fill="#e8e4d4" font-size="13" text-anchor="middle">capped</text>
+  <text x="680" y="680" fill="#8a8675" font-size="11" text-anchor="middle">串行循环执行满 40 个 item 强停</text>
+</svg>
+<figcaption>全流程一张图：入口先查计划板断点，小任务不拆直接做，大任务由 planner 写成 item 上板，
+串行循环 executor → judge 推进；判定失败重试一次，再失败回 planner 修订；每步先写板，
+todos.json 就是 checkpoint。</figcaption>
+</figure>
 
 <h2>2. item 级上下文用量</h2>
 <p>planner 给每个 item 标注上下文规格，落到现有的 <code>render_range</code> 机制上。

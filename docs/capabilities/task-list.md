@@ -1,6 +1,6 @@
 # Task lists
 
-A task list turns a todo list into the control flow of a run. Instead of one agent working a long task in a single growing conversation, the task is planned into items, and each item runs as its own agent whose entire context is that item plus the results handed to it. The list is the program; each item is a bounded sub-task. Two things follow: a long task stays stable, because scope is pinned per item and a failure is retried at item level rather than restarting everything, and the context stops growing with the step count, because step twenty does not carry steps one through nineteen.
+A task list is OpenProgram's self-programmed agentic workflow: the agent writes the program — the list — and then executes it. Instead of one agent working a long task in a single growing conversation, the task is planned into items, and each item runs as its own agent whose entire context is that item plus the results handed to it. The list is the program; each item is a bounded sub-task. Two things follow: a long task stays stable, because scope is pinned per item and a failure is retried at item level rather than restarting everything, and the context stops growing with the step count, because step twenty does not carry steps one through nineteen.
 
 Run it from the Functions panel as `run_task_list`, or call it from Python:
 

@@ -1,6 +1,6 @@
 # 任务清单
 
-任务清单把 todo list 变成一次运行的控制流。不是让一个 agent 在不断变长的对话里做完长任务，而是把任务规划成若干 item，每个 item 由自己的 agent 执行，它的全部上下文就是这个 item 加上交接给它的结果。清单是程序，item 是有界子任务。由此得到两件事：长任务更稳，因为范围按 item 钉死，失败在 item 层面重试而不是整个重来；上下文不再随步数膨胀，因为第二十步不用背着第一到十九步。
+任务清单是OpenProgram的自编程agentic workflow（self-programmed agentic workflow）：agent自己写出程序（清单），再自己执行。不是让一个 agent 在不断变长的对话里做完长任务，而是把任务规划成若干 item，每个 item 由自己的 agent 执行，它的全部上下文就是这个 item 加上交接给它的结果。清单是程序，item 是有界子任务。由此得到两件事：长任务更稳，因为范围按 item 钉死，失败在 item 层面重试而不是整个重来；上下文不再随步数膨胀，因为第二十步不用背着第一到十九步。
 
 在 Functions 面板里以 `run_task_list` 运行，或从 Python 调用：
 
