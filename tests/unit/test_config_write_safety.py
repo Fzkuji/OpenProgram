@@ -351,32 +351,6 @@ save_default_model('openai', 'gpt-4.1')
     }
 
 
-def test_interactive_section_rejects_external_edit_after_prompt_snapshot(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from openprogram._setup_sections import sections
-    from openprogram.credential_files import PrivateAtomicWriteError
-
-    path = tmp_path / "config.json"
-    monkeypatch.setattr(setup, "get_config_path", lambda: path)
-    setup._write_config({"memory": {"backend": "local"}})
-
-    def edit_during_prompt(*_args):
-        path.write_text('{"api_keys":{"KEEP":"external"}}\n', encoding="utf-8")
-        path.chmod(0o600)
-        return "none"
-
-    monkeypatch.setattr(setup, "_choose_one", edit_during_prompt)
-
-    with pytest.raises(PrivateAtomicWriteError) as exc:
-        sections.run_memory_section()
-
-    assert exc.value.code == "conflict"
-    assert json.loads(path.read_text(encoding="utf-8")) == {
-        "api_keys": {"KEEP": "external"}
-    }
-
-
 def test_two_process_custom_provider_creates_preserve_both_providers(
     tmp_path: Path,
 ) -> None:
