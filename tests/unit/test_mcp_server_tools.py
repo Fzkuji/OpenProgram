@@ -14,6 +14,7 @@ from mcp.shared.exceptions import McpError
 from openprogram.agent.authority import AuthorityError
 from openprogram.agent.session_config import PermissionRules
 from openprogram.agent.types import AgentTool, AgentToolResult
+from openprogram.functions._runtime import function
 from openprogram.mcp_server.service import MCPClientContext, MCPService
 from openprogram.mcp_server.tools import json_result, to_mcp_content
 from openprogram.providers.types import ImageContent, TextContent
@@ -685,21 +686,39 @@ def test_tool_call_missing_paired_capability_is_typed_and_does_not_invoke(
 
     assert result.is_error is True
     assert result.content[0].type == "text"
-    assert "fs.read" in result.content[0].text
+    assert result.content[0].text == "[denied] authority tier does not allow fs.read"
+    assert result.details == {
+        "denied": True,
+        "reason_code": "AUTHORITY_CAPABILITY_DENIED",
+        "capability": "fs.read",
+    }
     assert calls == []
 
 
 @pytest.mark.parametrize(
-    ("name", "arguments", "rules", "reason_code"),
+    ("name", "arguments", "rules", "reason_code", "text"),
     [
-        ("bash", {"command": "pwd"}, None, "HARD_CONSTRAINT_DENIED"),
+        (
+            "bash",
+            {"command": "pwd"},
+            None,
+            "HARD_CONSTRAINT_DENIED",
+            "[denied] hard constraint",
+        ),
         (
             "memory_update",
             {"revision": "r1"},
             PermissionRules(deny=["memory_update"]),
             "PERMISSION_RULE_DENY",
+            "[denied] blocked by permission rule",
         ),
-        ("memory_search", {"query": "x"}, None, "APPROVAL_UNAVAILABLE_NON_INTERACTIVE"),
+        (
+            "memory_search",
+            {"query": "x"},
+            None,
+            "APPROVAL_UNAVAILABLE_NON_INTERACTIVE",
+            "[denied] approval unavailable for non-interactive MCP",
+        ),
     ],
 )
 def test_tool_call_approval_gate_denials_are_typed_before_invocation(
@@ -708,6 +727,7 @@ def test_tool_call_approval_gate_denials_are_typed_before_invocation(
     arguments,
     rules,
     reason_code,
+    text,
     monkeypatch,
 ) -> None:
     calls = []
@@ -753,7 +773,8 @@ def test_tool_call_approval_gate_denials_are_typed_before_invocation(
     )
 
     assert result.is_error is True
-    assert result.details["reason_code"] == reason_code
+    assert result.content[0].text == text
+    assert result.details == {"denied": True, "reason_code": reason_code}
     assert calls == []
 
 
@@ -994,11 +1015,13 @@ def test_tool_call_execution_failures_are_typed_and_sanitized(
     assert secret not in result.content[0].text
 
 
-def test_tool_call_preserves_explicit_failure_state(client_context) -> None:
+def test_tool_call_sanitizes_explicit_tool_failure_content(client_context) -> None:
+    secret = "secret-explicit-tool-failure"
+
     async def execute(*_args):
         return AgentToolResult(
-            content=[TextContent(text="fixed tool failure")],
-            details={"reason_code": "FIXED_FAILURE"},
+            content=[TextContent(text=secret)],
+            details={"trace": secret},
             is_error=True,
         )
 
@@ -1018,8 +1041,46 @@ def test_tool_call_preserves_explicit_failure_state(client_context) -> None:
     )
 
     assert result.is_error is True
-    assert result.content[0].text == "fixed tool failure"
-    assert result.details == {"reason_code": "FIXED_FAILURE"}
+    assert result.content[0].text == "Runtime tool execution failed"
+    assert result.details == {"reason_code": "RUNTIME_TOOL_EXECUTION_FAILED"}
+    assert secret not in result.model_dump_json()
+
+
+def test_tool_call_sanitizes_real_runtime_function_exception(client_context) -> None:
+    secret = "sk-task6-secret-DO-NOT-LEAK"
+
+    async def boom():
+        raise RuntimeError(secret)
+
+    tool = function(
+        boom,
+        name="memory_status",
+        description="Raise a controlled Runtime exception",
+        parameters={"type": "object", "properties": {}, "additionalProperties": False},
+        register_globally=False,
+    )
+    service = _service(
+        client_context,
+        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
+        registry={"memory_status": tool},
+    )
+
+    result = _tool_call(
+        service,
+        "memory_status",
+        {},
+        call_id="call-1",
+        cancel_event=asyncio.Event(),
+        on_progress=None,
+    )
+
+    assert result.is_error is True
+    assert result.content[0].text == "Runtime tool execution failed"
+    assert result.details == {"reason_code": "RUNTIME_TOOL_EXECUTION_FAILED"}
+    serialized = result.model_dump_json()
+    assert secret not in serialized
+    assert "RuntimeError" not in serialized
+    assert "Traceback" not in serialized
 
 
 def test_tool_call_policy_setup_failure_is_typed_and_sanitized(

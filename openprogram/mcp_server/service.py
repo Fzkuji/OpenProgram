@@ -51,6 +51,55 @@ def _default_registry_exposed_names() -> set[str]:
     return exposed_names()
 
 
+_APPROVAL_GATE_DENIAL_TEXT = {
+    "HARD_CONSTRAINT_DENIED": "[denied] hard constraint",
+    "PERMISSION_RULE_DENY": "[denied] blocked by permission rule",
+    "APPROVAL_UNAVAILABLE_NON_INTERACTIVE": (
+        "[denied] approval unavailable for non-interactive MCP"
+    ),
+}
+
+
+def _trusted_approval_denial(
+    result: AgentToolResult,
+    *,
+    request: Any,
+    tool_name: str,
+    arguments: dict[str, Any],
+) -> AgentToolResult | None:
+    details = result.details
+    if not isinstance(details, dict):
+        return None
+    reason_code = details.get("reason_code")
+    if reason_code == "AUTHORITY_CAPABILITY_DENIED":
+        decision = decide_tool_authority(request, tool_name, arguments)
+        if decision.allowed or decision.reason_code != reason_code:
+            return None
+        return AgentToolResult(
+            content=[
+                TextContent(
+                    text=(
+                        f"[denied] authority tier does not allow {decision.capability}"
+                    )
+                )
+            ],
+            details={
+                "denied": True,
+                "reason_code": reason_code,
+                "capability": decision.capability,
+            },
+            is_error=True,
+        )
+    text = _APPROVAL_GATE_DENIAL_TEXT.get(reason_code)
+    if text is None:
+        return None
+    return AgentToolResult(
+        content=[TextContent(text=text)],
+        details={"denied": True, "reason_code": reason_code},
+        is_error=True,
+    )
+
+
 def _number(value: Any) -> bool:
     return (
         isinstance(value, (int, float))
@@ -314,6 +363,16 @@ class MCPService:
                 raise TypeError
             detached = result.model_copy(deep=True)
             to_mcp_content(detached)
+            if detached.is_error:
+                detached = (
+                    _trusted_approval_denial(
+                        detached,
+                        request=req,
+                        tool_name=name,
+                        arguments=copied_arguments,
+                    )
+                    or _execution_error()
+                )
         except Exception:
             execution_failed = True
         if execution_failed:
