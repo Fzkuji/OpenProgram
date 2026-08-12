@@ -838,6 +838,45 @@ def test_heartbeat_first_observation_after_escalation_stays_monotonic(tmp_path):
     assert run_heartbeat(tmp_path, now=datetime(2026, 8, 12, 11, 0), **kwargs) == 0
 
 
+def test_heartbeat_does_not_downgrade_persisted_overdue_only_state(tmp_path):
+    from datetime import datetime
+
+    from openprogram.memory.runtime.commitments import (
+        load_commitments,
+        upsert_commitments,
+    )
+    from openprogram.proactive.heartbeat import run_heartbeat
+
+    source = _source(tmp_path)
+    row = upsert_commitments(
+        tmp_path,
+        [
+            {
+                "text": "Submit the rebuttal.",
+                "due": "2026-08-01",
+                "source": source,
+                "source_quote": "I will submit the rebuttal by Wednesday.",
+            }
+        ],
+    )[0]
+    row["notification_steps"] = ["overdue:7"]
+    path = tmp_path / "commitments.jsonl"
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    before = path.read_bytes()
+
+    assert (
+        run_heartbeat(
+            tmp_path,
+            now=datetime(2026, 8, 12, 9, 0),
+            target_for_source=lambda _source: ("telegram", "default", "42"),
+            send=lambda *_args: pytest.fail("overdue state must not regress to due"),
+        )
+        == 0
+    )
+    assert path.read_bytes() == before
+    assert load_commitments(tmp_path)[0]["notification_steps"] == ["overdue:7"]
+
+
 def test_heartbeat_quiet_hours_and_send_failure_do_not_consume_notification(
     tmp_path,
 ):
