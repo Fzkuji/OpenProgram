@@ -232,6 +232,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "capabilities/workflows/research-agent.md",
             "capabilities/workflows/wiki-agent.md"]),
         ("Session goals", "会话目标", ["capabilities/goal.md"]),
+        ("Task lists", "任务清单", ["capabilities/task-list.md"]),
         ("Extending", "扩展", [
             "capabilities/installing-harnesses.md", "capabilities/skills.md",
             "capabilities/distill.md",
@@ -302,6 +303,7 @@ PAGE_ORDER: dict[str, int] = {
     "capabilities/tools.md": 9,
     "capabilities/lsp.md": 10,
     "capabilities/goal.md": 11,
+    "capabilities/task-list.md": 12,
     "capabilities/agentic-programming/philosophy.md": 1,
     "capabilities/agentic-programming/embedding-in-your-own-stack.md": 2,
     "capabilities/agentic-programming/writing-functions": 3,
