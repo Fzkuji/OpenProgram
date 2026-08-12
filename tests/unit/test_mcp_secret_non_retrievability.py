@@ -113,7 +113,7 @@ def test_public_registry_status_masks_client_error_and_stderr(capsys):
         rendered = json.dumps(payload) + capsys.readouterr().err
         assert secret not in rendered
         assert payload[0]["error"] == "mcp_server_unavailable"
-        assert payload[0]["error_kind"] == "runtime"
+        assert payload[0]["error_kind"] == "fatal"
     finally:
         registry._clients.pop(client.config.name, None)
 
@@ -132,6 +132,126 @@ def test_public_registry_stop_log_masks_exception(monkeypatch, capsys):
     registry._registered_tool_names["secret-test"] = []
     asyncio.run(registry.remove_server("secret-test"))
     assert secret not in capsys.readouterr().err
+
+
+def test_restart_endpoint_masks_exception_and_breaks_chain(monkeypatch):
+    from openprogram.webui.routes import mcp
+
+    async def failed_restart(_name):
+        raise RuntimeError("peer-secret-value restart stderr")
+
+    monkeypatch.setattr(mcp, "restart_server", failed_restart)
+    app = FastAPI()
+    mcp.register(app)
+
+    response = TestClient(app).post("/api/mcp/servers/local-tools/restart")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "mcp_runtime_restart_failed",
+        "kind": "runtime",
+        "action": "retry_or_restart",
+    }
+    assert "peer-secret-value" not in response.text
+
+
+def test_restart_endpoint_direct_exception_chain_masks_runtime_failure(monkeypatch):
+    from fastapi import HTTPException
+
+    from openprogram.webui.routes import mcp
+
+    secret = "peer-secret-value restart stderr"
+
+    async def failed_restart(_name):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(mcp, "restart_server", failed_restart)
+    app = FastAPI()
+    mcp.register(app)
+    endpoint = next(
+        route.endpoint
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/mcp/servers/{name}/restart"
+        and "POST" in getattr(route, "methods", set())
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(endpoint("local-tools"))
+
+    rendered = "\n".join(
+        text
+        for error in exception_chain(caught.value)
+        for text in (str(error), repr(error), "".join(traceback.format_exception(error)))
+    )
+    assert secret not in rendered
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+def test_transient_supervisor_error_uses_stable_state_and_stderr(monkeypatch, capsys):
+    from openprogram.mcp.client import MCPClient
+
+    secret = "peer-secret-value transient stderr"
+    client = MCPClient(local_config())
+    client._ready.set()
+    client._session = object()
+
+    async def failed_transport():
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(client, "_run_local", failed_transport)
+
+    async def exercise() -> None:
+        task = asyncio.create_task(client._supervisor())
+        for _ in range(100):
+            if client.error_kind == "transient":
+                break
+            await asyncio.sleep(0)
+        assert client.error_kind == "transient"
+        client._shutdown.set()
+        await asyncio.wait_for(task, timeout=1)
+
+    asyncio.run(exercise())
+
+    assert client.error == "mcp_connection_transient"
+    assert secret not in capsys.readouterr().err
+
+
+def test_await_session_failure_does_not_format_private_client_error():
+    from openprogram.mcp.client import MCPClient
+
+    secret = "peer-secret-value stored client error"
+    client = MCPClient(local_config())
+    client.error = secret
+    client.error_kind = "fatal"
+
+    with pytest.raises(RuntimeError) as caught:
+        asyncio.run(client._await_session_ready())
+
+    rendered = "\n".join(
+        text
+        for error in exception_chain(caught.value)
+        for text in (str(error), repr(error), "".join(traceback.format_exception(error)))
+    )
+    assert str(caught.value) == "mcp_server_unavailable:fatal"
+    assert secret not in rendered
+
+
+@pytest.mark.parametrize("kind", ["needs_reauth", "transient", "fatal"])
+def test_public_registry_preserves_stable_ui_error_kind(kind):
+    from openprogram.mcp import registry
+
+    client = type("Client", (), {})()
+    client.config = local_config()
+    client.is_ready = False
+    client.error = "private diagnostic"
+    client.error_kind = kind
+    client.tools = []
+    registry._clients[client.config.name] = client
+    try:
+        assert registry.server_status()[0]["error_kind"] == kind
+    finally:
+        registry._clients.pop(client.config.name, None)
 
 
 def exception_chain(exc: BaseException):

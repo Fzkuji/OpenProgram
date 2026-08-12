@@ -125,12 +125,23 @@ def _entries_to_archive(state: Path, include_credentials: bool) -> list[str]:
 def create_backup(
     include_credentials: bool = False,
     label: str | None = None,
+    *,
+    _lock_held: bool = False,
 ) -> Path:
     """Write a tar.gz of the in-scope state and return its path.
 
-    Raises OSError if the archive can't be written or read back.
+    Raises OSError if the archive can't be written or read back, or
+    RestoreBusyError while a restore owns the profile state lock.
     """
     state = _state_dir()
+    if not _lock_held:
+        state.mkdir(parents=True, exist_ok=True)
+        with _restore_state_lock(state):
+            return create_backup(
+                include_credentials=include_credentials,
+                label=label,
+                _lock_held=True,
+            )
     out_dir = backups_dir()
     stamp = time.strftime("%Y%m%d-%H%M%S")
     suffix = f"-{label}" if label else ""
@@ -345,6 +356,9 @@ def _running_processes() -> list[str]:
 def _cmd_backup_create(include_credentials: bool = False) -> int:
     try:
         path = create_backup(include_credentials=include_credentials)
+    except RestoreBusyError:
+        print("[error] another restore is already in progress", file=sys.stderr)
+        return 1
     except OSError as exc:
         print(f"[error] backup failed: {exc}", file=sys.stderr)
         return 1
@@ -471,45 +485,55 @@ def _cmd_backup_restore(
     # very secrets the restore replaced.
     snapshot_credentials = _archive_carries_credentials(path)
     try:
-        safety = create_backup(
-            include_credentials=snapshot_credentials, label="pre-restore"
-        )
-        print(f"Saved current state to {safety.name} before restoring.")
-        if snapshot_credentials:
-            print(
-                "That snapshot contains plaintext credentials, because the "
-                "archive you are restoring does."
-            )
-    except OSError as exc:
-        print(
-            f"[error] could not back up current state, aborting: {exc}", file=sys.stderr
-        )
-        return 1
+        with _restore_state_lock(state):
+            try:
+                safety = create_backup(
+                    include_credentials=snapshot_credentials,
+                    label="pre-restore",
+                    _lock_held=True,
+                )
+                print(f"Saved current state to {safety.name} before restoring.")
+                if snapshot_credentials:
+                    print(
+                        "That snapshot contains plaintext credentials, because the "
+                        "archive you are restoring does."
+                    )
+            except OSError as exc:
+                print(
+                    f"[error] could not back up current state, aborting: {exc}",
+                    file=sys.stderr,
+                )
+                return 1
 
-    try:
-        restore_archive(path, state)
-    except UnrecoverableRestoreJournalError:
-        print(
-            "[error] restore blocked by an unrecoverable restore journal",
-            file=sys.stderr,
-        )
-        print("The previous state could not be verified as restored.", file=sys.stderr)
-        print(f"A snapshot is preserved in {safety}", file=sys.stderr)
-        return 1
+            try:
+                restore_archive(path, state, _lock_held=True)
+            except UnrecoverableRestoreJournalError:
+                print(
+                    "[error] restore blocked by an unrecoverable restore journal",
+                    file=sys.stderr,
+                )
+                print(
+                    "The previous state could not be verified as restored.",
+                    file=sys.stderr,
+                )
+                print(f"A snapshot is preserved in {safety}", file=sys.stderr)
+                return 1
+            except RestoreRollbackCompletedError as exc:
+                print(f"[error] restore failed: {exc}", file=sys.stderr)
+                print("Your previous state was restored in place.", file=sys.stderr)
+                print(f"A snapshot is also preserved in {safety}", file=sys.stderr)
+                return 1
+            except (OSError, tarfile.TarError) as exc:
+                print(f"[error] restore failed: {exc}", file=sys.stderr)
+                print(
+                    "The previous state could not be verified as restored.",
+                    file=sys.stderr,
+                )
+                print(f"A snapshot is also preserved in {safety}", file=sys.stderr)
+                return 1
     except RestoreBusyError:
         print("[error] another restore is already in progress", file=sys.stderr)
         print("No restore changes were made by this command.", file=sys.stderr)
-        print(f"A snapshot is preserved in {safety}", file=sys.stderr)
-        return 1
-    except RestoreRollbackCompletedError as exc:
-        print(f"[error] restore failed: {exc}", file=sys.stderr)
-        print("Your previous state was restored in place.", file=sys.stderr)
-        print(f"A snapshot is also preserved in {safety}", file=sys.stderr)
-        return 1
-    except (OSError, tarfile.TarError) as exc:
-        print(f"[error] restore failed: {exc}", file=sys.stderr)
-        print("The previous state could not be verified as restored.", file=sys.stderr)
-        print(f"A snapshot is also preserved in {safety}", file=sys.stderr)
         return 1
 
     print(f"Restored {path.name} into {state}")

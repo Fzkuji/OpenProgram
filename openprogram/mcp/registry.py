@@ -124,8 +124,8 @@ def _status_dict(name: str, client: MCPClient) -> dict[str, Any]:
 def _public_error_kind(client: MCPClient) -> str | None:
     if not client.error:
         return None
-    kind = str(client.error_kind or "runtime").lower()
-    return kind if kind in {"auth", "config", "connect", "timeout", "runtime"} else "runtime"
+    kind = str(client.error_kind or "fatal").lower()
+    return kind if kind in {"needs_reauth", "transient", "fatal"} else "fatal"
 
 
 def _public_error_code(client: MCPClient) -> str | None:
