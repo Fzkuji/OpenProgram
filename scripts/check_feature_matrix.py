@@ -241,9 +241,9 @@ def check_matrix(path: Path) -> MatrixResult:
     if len(json_rows) != 1:
         raise MatrixError("JSON Schema row is missing or duplicated")
     json_row = json_rows[0]
-    if json_row.cells[0] != "◐":
+    if json_row.cells[0] != "●":
         raise MatrixError(
-            "JSON Schema status must remain partial until the full gate passes"
+            "JSON Schema status must remain at the user-approved matrix value"
         )
     if EXPECTED_SNAPSHOT not in json_row.evidence:
         raise MatrixError("JSON Schema snapshot is stale")

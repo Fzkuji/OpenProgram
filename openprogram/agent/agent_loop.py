@@ -834,7 +834,17 @@ async def _stream_assistant_response(
                       {"is_error": event.type == "error"})
             return final_message
 
-    # Fallback: return partial if no done/error event
+    if structured_plan is not None:
+        from openprogram.providers.structured_output import (
+            StructuredOutputGenerationError,
+        )
+
+        raise StructuredOutputGenerationError(
+            "Structured output stream ended without a terminal event",
+            code="incomplete",
+        )
+
+    # Ordinary text mode preserves the legacy partial-message fallback.
     if partial_message:
         if cancel_event and cancel_event.is_set():
             raise RuntimeError("Request was aborted")

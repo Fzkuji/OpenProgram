@@ -169,6 +169,7 @@ def _wrap_agentic_runtime_block(
                         authority=runtime_authority(
                             req, f"agentic/{tool_name}"
                         ),
+                        render_range=req.render_range,
                     ),
                 )
                 if out.get("error"):

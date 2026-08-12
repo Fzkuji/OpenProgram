@@ -39,6 +39,7 @@ class TurnBindings:
         self._worktree_token = None
         self._session_id_token = None
         self._turn_request_token = None
+        self._render_range_token = None
         self._req_session_id: Optional[str] = None
 
     @classmethod
@@ -61,6 +62,7 @@ class TurnBindings:
         )
         from openprogram.agentic_programming.function import (
             _current_runtime as _current_runtime_var,
+            _render_range_override as _render_range_var,
         )
         # Tag this turn so file-mutating tools can attribute backups to
         # the right assistant message via checkpoint.helpers.
@@ -153,6 +155,7 @@ class TurnBindings:
             # Skip only the runtime; @agentic_function will still work, just
             # without an auto-injected runtime.
             self._runtime_token = None
+        self._render_range_token = _render_range_var.set(req.render_range)
         return self
 
     def release(self) -> None:
@@ -169,6 +172,7 @@ class TurnBindings:
         )
         from openprogram.agentic_programming.function import (
             _current_runtime as _current_runtime_var,
+            _render_range_override as _render_range_var,
         )
         try:
             if self._runtime_token is not None:
@@ -182,6 +186,8 @@ class TurnBindings:
                     reset_turn_request,
                 )
                 reset_turn_request(self._turn_request_token)
+            if self._render_range_token is not None:
+                _render_range_var.reset(self._render_range_token)
             if self._session_id_token is not None:
                 _reset_session_id(self._session_id_token)
             if self._worktree_token is not None:

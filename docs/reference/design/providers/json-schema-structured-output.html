@@ -217,7 +217,7 @@ EventStructuredOutputEnd {
   value: JsonValue,
 }</pre>
   <div class="state"><div class="n">1</div><div class="d">转发 attempt=1 的 text/tool 增量，客户端写入“候选缓冲区”，不提交持久消息。</div></div>
-  <div class="state"><div class="n">2</div><div class="d">provider 完成后严格解析并校验。成功则发 <code>structured_output_end</code>，随后发唯一一次 <code>done</code>。</div></div>
+  <div class="state"><div class="n">2</div><div class="d">收到 provider 的 raw <code>done</code> 后严格解析并校验。成功则发 <code>structured_output_end</code>，随后发唯一一次 <code>done</code>；stream 直接 EOF 而没有 raw <code>done</code>/<code>error</code> 时按 <code>incomplete</code> 失败，不能用 partial message 合成成功。</div></div>
   <div class="state"><div class="n">3</div><div class="d">失败且可修复时发 <code>structured_output_retry</code>。CLI/Web 清空候选缓冲区；Agent loop 发起下一次 provider stream。</div></div>
   <div class="state"><div class="n">4</div><div class="d">第 2 次成功则提交；再次失败则发 <code>error</code>，不发 <code>done</code>，不持久化无效 assistant final。</div></div>
   <p>provider 自己的 raw <code>done</code> 由 Agent loop 消费；对外只暴露结构化事务的最终 <code>done</code>。普通文本模式保持原事件序列。CLI/TUI/Web 对未知新事件必须继续安全忽略，保证版本滚动升级。</p>
@@ -227,7 +227,10 @@ EventStructuredOutputEnd {
   <ul>
     <li>direct text 使用 <code>json.loads(raw, parse_constant=reject_nonfinite)</code>；拒绝 Markdown fence、前后说明文字、尾随内容、<code>NaN</code>/<code>Infinity</code>。</li>
     <li>隐藏 tool arguments 同样按完整 JSON 文本解析，不使用 <code>utils/json_parse.py</code> 的 partial/forgiving parser。</li>
-    <li>使用 <code>jsonschema.validators.validator_for(original_schema)</code> 创建 validator；错误排序固定为 instance path、schema path、message。</li>
+    <li>使用 <code>jsonschema.validators.validator_for(original_schema)</code> 创建 validator，并安装禁止外部资源读取的 registry；错误排序固定为 instance path、schema path、message。</li>
+    <li>schema preflight 拒绝所有无法解析到当前 schema 内嵌 resource 的 <code>$ref</code>/<code>$dynamicRef</code>/<code>$recursiveRef</code>；fragment 引用和由内嵌 <code>$id</code> 定义的相对引用可保留，因此 Runtime、CLI、Web 和 replay 都不会因本地校验发起 DNS、HTTP 或文件读取。</li>
+    <li>schema 的规范 JSON 上限为 1 MiB，容器节点上限 4096、容器边上限 8192、深度上限 100；超限在 provider 调用前稳定返回 <code>invalid_schema</code>。</li>
+    <li>fragment-only 引用允许本地 JSON Pointer/anchor；直接引用链形成的自环或互环在 preflight 拒绝，避免 validator 递归溢出。由实例结构推进的有限递归 schema 保持可用。</li>
     <li>错误传输最多保留 20 项，每项 message 最多 500 字符，避免将完整敏感输出复制到日志和 WS 错误。</li>
   </ul>
 
@@ -371,10 +374,10 @@ title = result["title"]</pre>
   <table>
     <thead><tr><th>层</th><th>必须覆盖</th><th>建议文件</th></tr></thead>
     <tbody>
-      <tr><td>规范化/validator</td><td>裸 schema、envelope、非法 meta-schema、object/array/scalar/null、非有限数、fence/尾随文本、稳定 issue path。</td><td><code>tests/providers/test_structured_output.py</code>（new）</td></tr>
+      <tr><td>规范化/validator</td><td>裸 schema、envelope、非法 meta-schema、object/array/scalar/null、非有限数、fence/尾随文本、稳定 issue path；remote ref 零网络、本地直接引用环、1 MiB/4096 nodes/8192 edges/100 depth 全局预算。</td><td><code>tests/providers/test_structured_output.py</code>（new）</td></tr>
       <tr><td>协商</td><td>true/false/unknown × adapter support；有损 schema；fallback none/auto/prompt；tool_choice/parallel 冲突。</td><td>同上 + <code>test_provider_meta.py</code></td></tr>
       <tr><td>Provider payload</td><td>逐 adapter 快照测试；Anthropic effort+format 合并；Bedrock schema JSON 字符串；unknown adapter 不发送私有字段。</td><td>现有 <code>tests/providers/test_openai.py</code>、<code>test_anthropic.py</code>、<code>test_gemini.py</code> + 新 Bedrock cases</td></tr>
-      <tr><td>Streaming</td><td>单次成功；invalid attempt 的 delta→retry→清空→成功；第 2 次失败无 done；取消/deadline 不重试。</td><td><code>tests/providers/test_structured_output_streaming.py</code>（new）</td></tr>
+      <tr><td>Streaming</td><td>单次成功；invalid attempt 的 delta→retry→清空→成功；第 2 次失败无 done；取消/deadline 不重试；provider EOF 无 raw terminal 时不合成成功。</td><td><code>tests/providers/test_structured_output_streaming.py</code>（new）</td></tr>
       <tr><td>Tools</td><td>原生+tools；hidden tool 单独提交；普通 tool 多轮后提交；普通+submit 同轮拒绝；forced/none/parallel 冲突。</td><td><code>tests/unit/test_tools_runtime.py</code> + new Agent loop cases</td></tr>
       <tr><td>Runtime</td><td>无 schema 返回 str；有 schema 返回 JsonValue；默认 provider 路径确实透传；callable model 同样本地校验；同步/异步均证明初次调用、修复调用和 transport retry 共用 <code>max_retries</code> 预算。</td><td><code>tests/agentic_programming/test_runtime_structured_output.py</code>（new）</td></tr>
       <tr><td>Record/replay</td><td>v2 单 call、validation retry 两 calls、schema mismatch path、v1 拒绝、离线派生事件一致。</td><td><code>tests/providers/test_record_replay.py</code></td></tr>
@@ -395,7 +398,7 @@ title = result["title"]</pre>
     <li>record/replay v2、CLI、WS/API consumer；验证旧文本调用不变。</li>
     <li>迁移 session title，修正 feature matrix 与 session naming 文档。</li>
   </ol>
-  <p>provider 能力标记、契约测试与 session title consumer 已落地。完整回归门禁仍有两个可在实现前基线复现的失败，因此 feature matrix 保持“部分确认”，不标记为完整完成。单纯增加 provider payload 字段不构成功能完成。</p>
+  <p>provider 能力标记、契约测试与 session title consumer 已落地。feature matrix 保持用户批准的 78.5 分和既有状态单元；完整回归门禁与具体 trust-boundary 证据仍在本页独立记录。单纯增加 provider payload 字段不构成功能完成。</p>
 
   <h2>16. 实现与验证证据</h2>
   <table>
@@ -409,6 +412,7 @@ title = result["title"]</pre>
   </table>
   <p><strong>提交证据：</strong>Task 1 <code>00945c85..27a5aa8a</code>；Task 2 <code>da4ececd..8ca7b04c</code>；Task 3 <code>6f8c80b7..546c2bc7</code>；Task 4 <code>27e4764f..510f60ee</code>；Task 5 <code>9743f3e1..86ca66d5</code>；Task 6 <code>5bba3e64..2fb471b3</code>。Tasks 1–6 的最终 SPEC 与 QUALITY scoped review 均为 PASS、remaining 0。</p>
   <p><strong>验证状态：</strong>Task 6 affected selection 为 <code>219 passed, 1 skipped</code>；Task 7 focused selection 为 <code>226 passed, 1 skipped</code>；文档构建为 <code>453 pages</code>、链接检查为 <code>0 broken</code>。Task 7 最终树上的完整 Python selection 得到 <code>3290 passed, 5 skipped, 1 xfailed, 2 failed</code>；两个失败分别是既有 tool cancellation 的 <code>ExecInterrupt</code> 断言与 memory writer turn-order 断言，并已在实现前基线 <code>86ca66d5</code> 独立复现。它们不归因于 structured-output diff，也不满足“完整门禁通过”的发布条件。</p>
+  <p><strong>后续质量修复：</strong>全局 schema preflight 已增加 1 MiB/4096 nodes/8192 edges/100 depth 预算，拒绝外部 resource 和直接引用环；local validator 使用禁止检索的 registry；structured stream 只有收到 provider raw terminal 才能提交。该修复的 scoped SPEC/QUALITY 结论在 review 完成后记录。</p>
 
   <div class="foot">
     <p>仓库证据：<code>openprogram/providers/types.py</code>、<code>sources/models_dev.py</code>、七类 provider adapter、<code>agent/agent_loop.py</code>、<code>agentic_programming/runtime.py</code>、<code>agent/internals/_event_parsing.py</code>、CLI/WebSocket 链、<code>recording.py</code>/<code>replay.py</code>、<code>agent/dispatcher/titles.py</code>、<code>references/pi-ai</code>。本文行号不绑定源码快照；实现时以符号和测试为定位依据。</p>

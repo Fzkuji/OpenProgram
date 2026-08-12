@@ -326,11 +326,9 @@ def test_google_required_property_rejects_reachable_cycle_outside_root(
     }
     if required:
         schema["required"] = ["root"]
-        with pytest.raises(StructuredOutputUnsupportedError) as exc:
-            _negotiate_google(schema)
-        assert exc.value.issues[0]["path"] == "/required/0"
-    else:
-        assert _negotiate_google(schema).provider_schema == schema
+    with pytest.raises(StructuredOutputSchemaError) as exc:
+        _negotiate_google(schema)
+    assert exc.value.code == "invalid_schema"
 
 
 def test_google_required_property_accepts_acyclic_local_ref_chain():
@@ -382,9 +380,9 @@ def test_google_required_reachable_cycle_fails_before_credentials_and_network():
         )
         return await stream.result()
 
-    with pytest.raises(StructuredOutputUnsupportedError) as exc:
+    with pytest.raises(StructuredOutputSchemaError) as exc:
         asyncio.run(run())
-    assert exc.value.issues[0]["path"] == "/required/0"
+    assert exc.value.code == "invalid_schema"
     assert credentials == []
     assert provider_calls == []
 
@@ -415,7 +413,7 @@ def test_google_required_outer_accepts_referenced_optional_recursive_property(
 
 
 @pytest.mark.parametrize("reference_style", ["pointer", "anchor"])
-def test_google_required_child_accepts_unreferenced_cyclic_definitions(
+def test_google_required_child_rejects_unreferenced_cyclic_definitions(
     reference_style,
 ):
     if reference_style == "pointer":
@@ -439,7 +437,9 @@ def test_google_required_child_accepts_unreferenced_cyclic_definitions(
         },
         "required": ["root"],
     }
-    assert _negotiate_google(schema).provider_schema == schema
+    with pytest.raises(StructuredOutputSchemaError) as exc:
+        _negotiate_google(schema)
+    assert exc.value.code == "invalid_schema"
 
 
 @pytest.mark.parametrize("reference_style", ["pointer", "anchor"])
@@ -607,15 +607,15 @@ def test_google_anchor_resolution_is_scoped_by_nested_id(resource):
         assert _negotiate_google(schema).provider_schema == schema
 
 
-def test_google_unresolved_external_resource_fails_closed_at_ref_path():
+def test_google_unresolved_external_resource_fails_closed_before_negotiation():
     schema = {
         "type": "object",
         "properties": {"root": {"$ref": "https://external.example/schema#x"}},
         "required": ["root"],
     }
-    with pytest.raises(StructuredOutputUnsupportedError) as exc:
+    with pytest.raises(StructuredOutputSchemaError) as exc:
         _negotiate_google(schema)
-    assert exc.value.issues[0]["path"] == "/properties/root/$ref"
+    assert exc.value.code == "invalid_schema"
 
 
 @pytest.mark.parametrize(

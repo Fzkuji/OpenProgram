@@ -64,6 +64,7 @@ def _child_entry(
     answer_queue: "Optional[mp.Queue]" = None,
     stop_queue: "Optional[mp.Queue]" = None,
     response_format_snapshot: Optional[dict] = None,
+    render_range: Optional[dict[str, int]] = None,
     usage_ctx_snapshot: Optional[dict] = None,
     sandbox_policy_snapshot: Optional[dict] = None,
     authority_snapshot: Optional[dict] = None,
@@ -279,6 +280,7 @@ def _child_entry(
             user_text="",
             agent_id="main",
             source="web",
+            render_range=render_range,
             **(authority_snapshot or {}),
         )
         # Same context the dispatcher binds in-process: an inner
@@ -296,7 +298,11 @@ def _child_entry(
         wrapped = _wrap_agentic_runtime_block(tool, req, _on_event, anchor_msg_id)
 
         import asyncio
+        from openprogram.agentic_programming.function import (
+            _render_range_override,
+        )
         loop = asyncio.new_event_loop()
+        render_range_token = _render_range_override.set(render_range)
         try:
             # If parent passed its own call_id (LLM-driven path: this is
             # the LLM's tool_call_id), reuse it so the placeholder we
@@ -316,6 +322,7 @@ def _child_entry(
                 wrapped.execute(call_id, dict(kwargs or {}), None, None)
             )
         finally:
+            _render_range_override.reset(render_range_token)
             try:
                 loop.close()
             except Exception:
@@ -470,6 +477,7 @@ def run_agentic_in_subprocess(
     parent_call_id: Optional[str] = None,
     authority: Optional[dict] = None,
     response_format=None,
+    render_range: Optional[dict[str, int]] = None,
 ) -> dict:
     """Run a single @agentic_function tool in a fork()'d subprocess.
 
@@ -514,7 +522,8 @@ def run_agentic_in_subprocess(
         args=(tool_name, dict(kwargs or {}), session_id, anchor_msg_id,
               work_dir, result_path, event_queue, parent_call_id,
               answer_queue, stop_queue, response_format_snapshot,
-              usage_ctx_snapshot, sandbox_policy_snapshot, authority),
+              render_range, usage_ctx_snapshot, sandbox_policy_snapshot,
+              authority),
         daemon=False,
     )
     p.start()

@@ -132,6 +132,10 @@ class TurnRequest:
     structured_output: Any = None
     structured_output_mode: Optional[str] = None
     structured_output_attempt: Optional[int] = None
+    # Default DAG slice for agentic functions invoked during this turn.
+    # Kept at the end for positional-constructor compatibility. An explicit
+    # decorator value takes precedence.
+    render_range: Optional[dict[str, int]] = None
 
 
 @dataclass

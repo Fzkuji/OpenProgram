@@ -1,5 +1,6 @@
 import copy
 import threading
+import urllib.request
 
 import pytest
 
@@ -101,6 +102,97 @@ def test_validation_returns_typed_value_and_bounded_deterministic_issues():
     assert exc.value.code == "validation_failed"
     assert [issue["path"] for issue in exc.value.issues] == ["", "/answer"]
     assert all(len(issue["message"]) <= 500 for issue in exc.value.issues)
+
+
+@pytest.mark.parametrize("keyword", ["$ref", "$dynamicRef", "$recursiveRef"])
+def test_remote_references_are_rejected_without_network(keyword, monkeypatch):
+    network_calls = []
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: network_calls.append((args, kwargs)),
+    )
+
+    with pytest.raises(StructuredOutputSchemaError) as exc:
+        normalize_response_format({keyword: "http://127.0.0.1:9/schema"})
+
+    assert exc.value.code == "invalid_schema"
+    assert str(exc.value) == "JSON Schema remote references are not allowed"
+    assert network_calls == []
+
+
+def test_remote_reference_in_legacy_dependencies_is_rejected():
+    schema = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "dependencies": {
+            "trigger": {"$ref": "http://127.0.0.1:9/dependency-schema"},
+        },
+    }
+
+    with pytest.raises(StructuredOutputSchemaError) as exc:
+        normalize_response_format(schema)
+
+    assert exc.value.code == "invalid_schema"
+    assert str(exc.value) == "JSON Schema remote references are not allowed"
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"$ref": "#"},
+        {"$defs": {"x": {"$ref": "#/$defs/x"}}, "$ref": "#/$defs/x"},
+        {
+            "$defs": {
+                "a": {"$ref": "#/$defs/b"},
+                "b": {"$ref": "#/$defs/a"},
+            },
+            "$ref": "#/$defs/a",
+        },
+        {"allOf": [{"$ref": "#"}]},
+    ],
+)
+def test_direct_local_reference_cycles_are_rejected_before_validation(schema):
+    with pytest.raises(StructuredOutputSchemaError) as exc:
+        normalize_response_format(schema)
+
+    assert exc.value.code == "invalid_schema"
+    assert str(exc.value) == "JSON Schema contains a cyclic reference chain"
+
+
+def test_instance_bounded_recursive_schema_remains_supported():
+    schema = {
+        "$defs": {
+            "node": {
+                "type": "object",
+                "properties": {"next": {"$ref": "#/$defs/node"}},
+                "additionalProperties": False,
+            }
+        },
+        "$ref": "#/$defs/node",
+    }
+
+    output = normalize_response_format(schema)
+
+    assert parse_and_validate_json('{"next":{"next":{}}}', output) == {
+        "next": {"next": {}}
+    }
+
+
+@pytest.mark.parametrize(
+    ("schema", "message"),
+    [
+        ({"description": "x" * 1_048_577}, "JSON Schema exceeds byte limit"),
+        ({"anyOf": [{} for _ in range(4_096)]}, "JSON Schema exceeds node limit"),
+        ({"enum": list(range(8_193))}, "JSON Schema exceeds edge limit"),
+    ],
+)
+def test_global_schema_budgets_reject_wide_inputs(schema, message):
+    with pytest.raises(StructuredOutputSchemaError) as exc:
+        normalize_response_format(schema)
+
+    assert exc.value.code == "invalid_schema"
+    assert str(exc.value) == message
 
 
 def test_negotiation_is_unknown_safe_and_prompt_fallback_is_explicit():
