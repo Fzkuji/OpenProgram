@@ -55,6 +55,9 @@ class TurnRequest:
     # configured tools. Channels can opt out of risky tools per turn
     # (e.g. wechat shouldn't ever hit destructive bash).
     tools_override: Optional[list[str]] = None
+    # Default DAG slice for agentic functions invoked during this turn.
+    # An explicit decorator value takes precedence.
+    render_range: Optional[dict[str, int]] = None
     # Branching: predecessor of the user message we're about to write.
     #   - INHERIT_PARENT (default) → dispatcher uses the active
     #     branch's tail (head_id walk). Normal append.

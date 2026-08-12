@@ -22,7 +22,7 @@ by the plain ``todo_create`` tool keep working:
 What this module actually owns: the ``run_task_list`` entry point and
 its size decision, the serial driver that advances the board, revision
 of the unfinished tail, hand-off assembly with its length limit, and the
-context wiring onto ``expose`` / ``render_range``.
+    context wiring onto ``render_range``.
 
 Every LLM round is a spawned same-session agent turn whose prompt is a
 docstring, and each goes through a module-level ``_run_*_turn`` seam, so
@@ -250,7 +250,8 @@ def _run_planner_turn(session_id: str, prompt: str, *, agent_id: str,
 
 
 def _run_executor_turn(session_id: str, prompt: str, *, agent_id: str,
-                       spawn_caller: Optional[str], label: str) -> str:
+                       spawn_caller: Optional[str], label: str,
+                       render_range: dict[str, int]) -> str:
     """One item-execution turn with work tools. Module-level so tests
     stub it. The prompt is the whole context this executor gets — item
     text plus upstream hand-offs, not the session's history."""
@@ -264,6 +265,7 @@ def _run_executor_turn(session_id: str, prompt: str, *, agent_id: str,
         spawn_caller=spawn_caller,
         advance_head=False,
         tools_override=list(EXECUTOR_TOOLS),
+        render_range=render_range,
     )
     if res.failed:
         raise RuntimeError(res.error or "task list item turn failed")
@@ -437,6 +439,8 @@ def revise_task_list(task: str, remaining: list[dict], item: dict,
     data = parse_json(raw or "")
     if not isinstance(data, dict):
         raise ValueError("task list revision reply was not valid JSON")
+    if not isinstance(data.get("items"), list):
+        raise ValueError("task list revision items must be an array")
     return {
         "reason": str(data.get("reason") or ""),
         "items": [it for it in (data.get("items") or [])
@@ -501,6 +505,7 @@ def execute_item(task: str, item: dict, upstream: str, retry_note: str = "",
         sid, _execute_prompt(task, item, upstream, retry_note),
         agent_id=agent_id, spawn_caller=spawn_caller,
         label=f"task list item #{item.get('id')}",
+        render_range=render_range_for(item),
     )
     return clip_handoff(raw)
 
@@ -534,6 +539,8 @@ def _run_one_item(session_id: str, task: str, items: list[dict], item: dict,
     its attempt count intact."""
     retry_note = ""
     reason = ""
+    if item.get("status") == IN_PROGRESS:
+        _update_item(session_id, item, attempts=0)
     while item.get("attempts", 0) < ITEM_ATTEMPT_LIMIT:
         _update_item(session_id, item, status=IN_PROGRESS,
                      attempts=item.get("attempts", 0) + 1)

@@ -178,7 +178,7 @@ def test_items_run_serially_with_upstream_handoff(monkeypatch, board,
         TL, "_run_planner_turn",
         lambda *a, **k: _plan("write the file", "test the file"))
 
-    def _exec(sid, prompt, *, agent_id, spawn_caller, label):
+    def _exec(sid, prompt, *, agent_id, spawn_caller, label, render_range):
         prompts.append(prompt)
         return f"result of item {len(prompts)}"
 
@@ -240,6 +240,46 @@ def test_executor_applies_context_spec_at_agent_turn_boundary(monkeypatch) -> No
     TL.execute_item("task", item, "", session_id="s1")
 
     assert seen[0]["render_range"] == {"callers": 0, "subcalls": 2}
+
+
+def test_turn_render_range_applies_to_implicit_agentic_functions(
+    monkeypatch,
+) -> None:
+    import openprogram.agentic_programming.function as function_module
+    from openprogram.agentic_programming.function import agentic_function
+
+    seen = []
+    monkeypatch.setattr(
+        function_module,
+        "_append_function_call_entry",
+        lambda **kwargs: seen.append(kwargs["render_range"]),
+    )
+
+    @agentic_function(as_tool=False, register_globally=False)
+    def implicit():
+        return "ok"
+
+    @agentic_function(
+        as_tool=False,
+        register_globally=False,
+        render_range={"callers": 1, "subcalls": 1},
+    )
+    def explicit():
+        return "ok"
+
+    token = function_module._render_range_override.set(
+        {"callers": 0, "subcalls": 2}
+    )
+    try:
+        implicit()
+        explicit()
+    finally:
+        function_module._render_range_override.reset(token)
+
+    assert seen == [
+        {"callers": 0, "subcalls": 2},
+        {"callers": 1, "subcalls": 1},
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -377,7 +417,7 @@ def test_board_is_checkpointed_as_each_item_starts(monkeypatch, board,
                         lambda *a, **k: _plan("one", "two"))
     seen = []
 
-    def _exec(sid, prompt, *, agent_id, spawn_caller, label):
+    def _exec(sid, prompt, *, agent_id, spawn_caller, label, render_range):
         seen.append([e["status"] for e in _read_board(board)])
         return "ok"
 
