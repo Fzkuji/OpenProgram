@@ -53,7 +53,7 @@ import time
 import traceback
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Optional
 
 from openprogram.agent.task.store import (
@@ -148,6 +148,22 @@ _borrowed_claim: contextvars.ContextVar[
 ] = contextvars.ContextVar("openprogram_borrowed_claim", default=None)
 
 
+@dataclass(frozen=True)
+class TaskGovernanceContext:
+    task_id: str
+    budget_scope_id: str
+    governor: Any
+    ledger_identity: str
+    effective_limits: tuple[tuple[str, int | str | None], ...]
+    deadline_callback: Callable[[float | None], float | None]
+    activity_callback: Callable[[str], bool]
+
+
+_current_task_governance: contextvars.ContextVar[
+    TaskGovernanceContext | None
+] = contextvars.ContextVar("openprogram_current_task_governance", default=None)
+
+
 def record_current_task_activity(activity_kind: str) -> bool:
     runner = _current_task_runner.get()
     task_id = _current_task_id.get()
@@ -181,14 +197,9 @@ def current_task_operation_timeout_reason(
     return resolver(task_id, declared_timeout)
 
 
-def current_task_resource_context() -> tuple[str, Any] | None:
-    """Return the current governed task and its governor, if both are bound."""
-    runner = _current_task_runner.get()
-    task_id = _current_task_id.get()
-    governor = getattr(runner, "_governor", None)
-    if task_id is None or governor is None:
-        return None
-    return task_id, governor
+def current_task_resource_context() -> TaskGovernanceContext | None:
+    """Return the immutable governance handle for this claimed task body."""
+    return _current_task_governance.get()
 
 
 def _broadcast(payload: dict) -> None:
@@ -350,6 +361,20 @@ class TaskRunner:
             name="op-task-budget",
         )
         self._budget_thread.start()
+
+    def _governance_context(self, task: Task) -> TaskGovernanceContext:
+        ledger = self._governor.ledger
+        return TaskGovernanceContext(
+            task_id=task.id,
+            budget_scope_id=task.budget_scope_id or "",
+            governor=self._governor,
+            ledger_identity=str(ledger._path().resolve()),
+            effective_limits=tuple(sorted((task.effective_limits or {}).items())),
+            deadline_callback=lambda declared: self.bounded_operation_timeout(
+                task.id, declared,
+            ),
+            activity_callback=lambda kind: self.record_task_activity(task.id, kind),
+        )
 
     def _followup_lock(self, session_id: str) -> threading.Lock:
         """The per-session follow-up lock, created on first use."""
@@ -677,6 +702,9 @@ class TaskRunner:
         sid_token = set_current_session_id(session_id)
         execution_token = set_current_execution_id(task.id)
         task_token = _current_task_id.set(task.id)
+        governance_token = _current_task_governance.set(
+            self._governance_context(task),
+        )
         claim_token = _borrowed_claim.set(claim)
         lease_stop = threading.Event()
         lease_thread = threading.Thread(
@@ -843,6 +871,10 @@ class TaskRunner:
                 pass
             try:
                 _current_task_id.reset(task_token)
+            except Exception:
+                pass
+            try:
+                _current_task_governance.reset(governance_token)
             except Exception:
                 pass
             self._wake_done(task.id)
@@ -1582,6 +1614,9 @@ class TaskRunner:
         # record parent_task_id (cascading cancel walks that chain).
         _task_id_token = _current_task_id.set(task_id)
         _runner_token = _current_task_runner.set(self)
+        _governance_token = _current_task_governance.set(
+            self._governance_context(task),
+        )
         # If this task is bound to an agent worktree, bind the
         # _current_worktree_path ContextVar so bash / edit / write /
         # read use it as default cwd. Reset is handled in the finally
@@ -1796,6 +1831,10 @@ class TaskRunner:
                 pass
             try:
                 _current_task_runner.reset(_runner_token)
+            except Exception:
+                pass
+            try:
+                _current_task_governance.reset(_governance_token)
             except Exception:
                 pass
             if _wt_token is not None:
@@ -2496,6 +2535,7 @@ def shutdown_runner() -> None:
 
 __all__ = [
     "NonPreemptibleOperation",
+    "TaskGovernanceContext",
     "TaskRunner",
     "get_runner",
     "shutdown_runner",

@@ -1239,6 +1239,71 @@ def test_runner_dispatch_submit_failure_terminalizes_published_task(
         runner.shutdown()
 
 
+def test_running_task_binds_one_immutable_governance_context(
+    store_fixture, monkeypatch, tmp_path,
+):
+    from dataclasses import is_dataclass
+
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    captured = []
+
+    def inspect_context(**_kwargs):
+        from openprogram.agent.sub_agent_run import AgentTurnResult
+        from openprogram.agent.task.runner import current_task_resource_context
+
+        captured.append(current_task_resource_context())
+        return AgentTurnResult(
+            head_id="head", final_text="done", failed=False, error=None,
+        )
+
+    monkeypatch.setattr(
+        "openprogram.agent.sub_agent_run._execute_agent_turn", inspect_context,
+    )
+    from openprogram.agent.resource_governance import (
+        ResourceGovernor,
+        ResourceLimits,
+        resolve_resource_limits,
+    )
+    from openprogram.agent.task.runner import (
+        TaskRunner,
+        current_task_resource_context,
+    )
+    from openprogram.usage.ledger import UsageLedger
+
+    ledger = UsageLedger(tmp_path / "governance.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_total_tokens=10_000), scheduler_capacity=1,
+    )
+    runner = TaskRunner(
+        max_workers=1,
+        governor=ResourceGovernor(
+            ledger, limit_resolver=lambda _sid, _task: resolved,
+        ),
+    )
+    try:
+        task_id = runner.spawn_task(
+            session_id="p1", prompt="inspect", agent_id="main",
+        )
+        assert runner.await_task(task_id, timeout=5).status.value == "completed"
+    finally:
+        runner.shutdown()
+
+    assert len(captured) == 1
+    context = captured[0]
+    assert context.task_id == task_id
+    assert context.budget_scope_id
+    assert context.governor is runner._governor
+    assert context.ledger_identity == str(ledger._path().resolve())
+    assert dict(context.effective_limits)["max_total_tokens"] == 10_000
+    assert callable(context.deadline_callback)
+    assert callable(context.activity_callback)
+    assert is_dataclass(context)
+    assert context.__dataclass_params__.frozen is True
+    assert current_task_resource_context() is None
+
+
 def test_runner_executes_three_live_tasks_for_one_session(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):

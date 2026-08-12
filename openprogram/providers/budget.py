@@ -22,8 +22,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from openprogram.context.tokens import estimate_message_tokens
-
 
 class QuotaExceeded(RuntimeError):
     """A budgeted call was refused. ``reason_code`` is the stable taxonomy."""
@@ -37,58 +35,69 @@ class QuotaExceeded(RuntimeError):
 # Only accounting outages are worth retrying; an exhausted budget is not.
 _RETRYABLE_REASONS = frozenset({"quota.accounting_unavailable"})
 
-# A tool definition costs its JSON schema plus the wrapper the provider adds.
-_PER_TOOL_OVERHEAD = 8
-# Provider request envelope: role scaffolding, stop sequences, system framing.
-_REQUEST_OVERHEAD = 16
 # No request cap declared means the model may run to its own ceiling. Use a
 # high floor so the reservation cannot silently under-count the exposure.
 _UNCAPPED_OUTPUT_FLOOR = 4096
 # Anthropic's own fallback when a provider declares no budget_map entry.
 _DEFAULT_REASONING_BUDGET = 8192
+_BYTE_BOUNDED_APIS = frozenset({
+    "openai-completions",
+    "mistral-conversations",
+    "openai-responses",
+    "azure-openai-responses",
+    "openai-codex",
+    "anthropic-messages",
+    "bedrock-converse-stream",
+    "google-generative-ai",
+    "gemini-subscription",
+})
 
 
-def _schema_tokens(value: Any) -> int:
-    """Conservative token count for a JSON-serializable schema fragment."""
-    if value is None:
-        return 0
+def estimate_input_upper_bound(context, options, model=None) -> int:
+    """Return a tokenizer-independent byte upper bound for audited adapters."""
+    window = getattr(model, "context_window", None)
+    if (
+        getattr(model, "api", None) not in _BYTE_BOUNDED_APIS
+        or not isinstance(window, int)
+        or isinstance(window, bool)
+        or window <= 0
+    ):
+        raise QuotaExceeded(
+            "quota.accounting_unavailable",
+            "provider/model has no audited safe input token bound",
+        )
+    import json
+
+    context_payload = (
+        context.model_dump(mode="json")
+        if callable(getattr(context, "model_dump", None))
+        else context
+    )
+    option_payload = (
+        options.model_dump(
+            mode="json",
+            exclude={"api_key", "signal", "on_payload", "headers", "session_id"},
+            exclude_none=True,
+        )
+        if options is not None and callable(getattr(options, "model_dump", None))
+        else {}
+    )
     try:
-        import json
-        text = json.dumps(value, ensure_ascii=False, default=str)
-    except Exception:
-        text = str(value)
-    from openprogram.context.tokens import _text_tokens
-    return _text_tokens(text)
-
-
-def estimate_input_upper_bound(context, options) -> int:
-    """Upper bound on the input tokens one request can bill.
-
-    Counts the rendered system prompt, every message, each tool's schema, any
-    structured-output schema, and the provider's request envelope. Cache-write
-    exposure is included because a cache write is billed like input.
-    """
-    total = _REQUEST_OVERHEAD
-    system = getattr(context, "system_prompt", None)
-    if system:
-        from openprogram.context.tokens import _text_tokens
-        total += _text_tokens(system)
-    for message in getattr(context, "messages", None) or []:
-        total += estimate_message_tokens(message)
-    for tool in getattr(context, "tools", None) or []:
-        total += _PER_TOOL_OVERHEAD + _schema_tokens(
-            getattr(tool, "parameters", None) or getattr(tool, "input_schema", None)
-        )
-        description = getattr(tool, "description", None)
-        if description:
-            from openprogram.context.tokens import _text_tokens
-            total += _text_tokens(description)
-    output_type = getattr(options, "output", None) if options else None
-    if output_type is not None:
-        total += _schema_tokens(
-            getattr(output_type, "schema", None) or output_type
-        )
-    return total
+        encoded = json.dumps(
+            {"context": context_payload, "options": option_payload},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except Exception as exc:
+        raise QuotaExceeded(
+            "quota.accounting_unavailable",
+            "request cannot be safely counted",
+        ) from exc
+    wrapper = 1024 + 64 * (
+        len(getattr(context, "messages", None) or [])
+        + len(getattr(context, "tools", None) or [])
+    )
+    return min(window, len(encoded) + wrapper)
 
 
 def reasoning_budget(options, model) -> int:
@@ -162,9 +171,15 @@ class BudgetedRequest:
             bound = None
         if bound is None:
             return None
-        task_id, governor = bound
+        task_id = bound.task_id
+        governor = bound.governor
 
-        input_bound = estimate_input_upper_bound(context, options)
+        if getattr(options, "on_payload", None) is not None:
+            raise QuotaExceeded(
+                "quota.accounting_unavailable",
+                "budgeted requests cannot safely account for on_payload mutation",
+            )
+        input_bound = estimate_input_upper_bound(context, options, model)
         try:
             reservation = governor.reserve_provider_request(
                 task_id,

@@ -18,6 +18,7 @@ from openprogram.agent.resource_governance import (
 )
 from openprogram.agent.task.types import Task
 from openprogram.providers.budget import QuotaExceeded
+from openprogram.providers.structured_output import JsonSchemaOutput
 from openprogram.providers.types import (
     AssistantMessage,
     Context,
@@ -75,8 +76,9 @@ class _FakeProvider:
 
 
 def _model(**kw):
+    api = kw.pop("api", "openai-completions")
     return Model(
-        id="fake-model-1", provider="fakeprov", api="fake-budget-api",
+        id="fake-model-1", provider="fakeprov", api=api,
         name="fake", base_url="http://fake.local", context_window=200000, **kw,
     )
 
@@ -113,15 +115,24 @@ def wired(tmp_path, monkeypatch):
             stream_mod, "get_api_provider",
             lambda api: provider if api == used_model.api else None,
         )
-        runner = type("R", (), {"_governor": governor})()
+        from openprogram.agent.task.runner import TaskGovernanceContext
+        governance_context = TaskGovernanceContext(
+            task_id=task.id,
+            budget_scope_id=task.budget_scope_id,
+            governor=governor,
+            ledger_identity=str(ledger._path().resolve()),
+            effective_limits=tuple(sorted(task.effective_limits.items())),
+            deadline_callback=lambda declared: declared,
+            activity_callback=lambda _kind: True,
+        )
         monkeypatch.setattr(
             "openprogram.agent.task.runner.current_task_resource_context",
-            lambda: (task.id, governor),
+            lambda: governance_context,
         )
         return {
             "governor": governor, "task": task, "model": used_model,
             "provider": provider, "ledger": ledger, "key_calls": key_calls,
-            "runner": runner,
+            "governance_context": governance_context,
         }
 
     return build
@@ -165,14 +176,14 @@ def test_budgeted_call_settles_actual_usage_once(wired):
 def test_output_cap_is_clamped_to_remaining_budget(wired):
     """The provider cannot be asked for more output than the budget allows."""
     env = wired(
-        limits=ResourceLimits(max_total_tokens=300),
+        limits=ResourceLimits(max_total_tokens=1_500),
         model=_model(max_tokens=100_000),
     )
     _drain(env["model"], SimpleStreamOptions(session_id="s1", max_tokens=50_000))
 
     seen = env["provider"].seen_opts[0]
     assert seen.max_tokens is not None
-    assert seen.max_tokens <= 300
+    assert seen.max_tokens <= 1_500
     # And it never exceeds what the input bound leaves behind.
     assert seen.max_tokens < 50_000
 
@@ -203,6 +214,56 @@ def test_exhausted_token_budget_refuses_before_credentials(wired):
 
     assert excinfo.value.reason_code == "quota.token_exhausted"
     assert excinfo.value.retryable is False
+    assert env["key_calls"] == []
+    assert env["provider"].seen_opts == []
+
+
+def test_strict_budget_rejects_unaudited_adapter_before_credentials(wired):
+    env = wired(
+        limits=ResourceLimits(max_total_tokens=100_000),
+        model=_model(api="private-unknown-api"),
+    )
+
+    with pytest.raises(QuotaExceeded) as excinfo:
+        _drain(env["model"], SimpleStreamOptions(session_id="s1", max_tokens=100))
+
+    assert excinfo.value.reason_code == "quota.accounting_unavailable"
+    assert env["key_calls"] == []
+    assert env["provider"].seen_opts == []
+
+
+def test_structured_output_schema_is_included_in_safe_input_bound(wired):
+    env = wired(limits=ResourceLimits(max_total_tokens=3_000))
+    schema = JsonSchemaOutput(schema={
+        "type": "object",
+        "properties": {
+            "answer": {"type": "string", "description": "x" * 4_000},
+        },
+    })
+
+    with pytest.raises(QuotaExceeded):
+        _drain(
+            env["model"],
+            SimpleStreamOptions(
+                session_id="s1", max_tokens=100, response_format=schema,
+            ),
+        )
+
+    assert env["key_calls"] == []
+    assert env["provider"].seen_opts == []
+
+
+def test_budgeted_payload_mutator_fails_closed_before_provider(wired):
+    env = wired(limits=ResourceLimits(max_total_tokens=100_000))
+
+    with pytest.raises(QuotaExceeded, match="on_payload"):
+        _drain(
+            env["model"],
+            SimpleStreamOptions(
+                session_id="s1", on_payload=lambda payload, model: payload,
+            ),
+        )
+
     assert env["key_calls"] == []
     assert env["provider"].seen_opts == []
 
