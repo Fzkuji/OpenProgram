@@ -169,7 +169,7 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 
 | 动词 | 作用 |
 |------|------|
-| `status` | 路径、条目数、上次 sleep 时间 |
+| `status` | owner 视图：workspace 路径/revision、文件与关系计数、writer 健康状态、承诺计数与记录 |
 | `recall` | 搜索 wiki + 近期 journal，打印原始片段；`--days N` 限定 journal 窗口（默认 30） |
 | `show` / `edit` | 打印 / 用 `$EDITOR` 编辑一个 wiki 页 |
 | `sleep` | 立即跑一轮 sleep 整理（light → deep → REM）；`--phase light\|deep\|rem` 只跑一个阶段 |
@@ -185,4 +185,4 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 | `diagnostics` | 生成脱敏支持包 zip（版本、配置、日志、探测），可直接附在故障报告里，见[诊断包](diagnostics.zh.md) | `--output PATH`（默认 `./openprogram-diagnostics-<日期>.zip`） |
 | `logs` | 查看日志 | `list`；`tail [name]`（`-n` 行数、`-f` 跟踪）；`path [name]`。name 为 worker / runtime / ink，默认 worker |
 | `update` | 检查并应用更新 | `--check` 只检查；`--force` 绕过 6 小时节流 |
-| `cron-worker` | 前台循环，触发 `cron` 工具登记的计划任务 | `--once` 只评估一个 tick 就退出；`--list` 显示每条任务的匹配状态 |
+| `cron-worker` | 前台循环，触发 `cron` 工具登记的计划任务和内置承诺心跳 | `--once` 只评估一个 tick 就退出；`--list` 只显示用户 cron 条目 |
