@@ -64,17 +64,28 @@ def _service(
     calls = calls if calls is not None else []
     bus = bus or create_event_bus()
     questions = questions or FakeQuestions()
+    current_events = {}
 
     def record(name, value=None):
         calls.append((name, value))
+
+    def register(session_id, event):
+        record("register", (session_id, event))
+        current_events[session_id] = event
+
+    def unregister(session_id, event):
+        record("unregister", (session_id, event))
+        if current_events.get(session_id) is event:
+            current_events.pop(session_id, None)
 
     return MCPService(
         context or _context(),
         session_db=db or FakeSessionDB(),
         process_user_turn=process
         or (lambda req, *, cancel_event: TurnResult("ok", "u", "a")),
-        register_cancel_event=lambda sid, event: record("register", (sid, event)),
-        unregister_cancel_event=lambda sid, event: record("unregister", (sid, event)),
+        register_cancel_event=register,
+        unregister_cancel_event=unregister,
+        current_cancel_event=current_events.get,
         mark_cancelled=lambda sid: record("mark", sid),
         kill_active_subprocess=lambda sid: record("subprocess", sid),
         kill_active_runtime=lambda sid: record("runtime", sid),
@@ -301,6 +312,110 @@ def test_prompt_cancel_foreign_completed_and_stale_records_have_no_effect() -> N
 
     asyncio.run(scenario())
     assert not any(name in {"mark", "subprocess", "runtime"} for name, _ in calls)
+
+
+def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None:
+    from openprogram.agent.run_control import current_token, unregister_cancel_event
+
+    session_id = "shared-mcp-session"
+    db = FakeSessionDB()
+    db.sessions[session_id] = {"id": session_id, "agent_id": "main"}
+    entered = {"a": threading.Event(), "b": threading.Event()}
+    release = {"a": threading.Event(), "b": threading.Event()}
+    cleanup = []
+    questions_a = FakeQuestions()
+    questions_b = FakeQuestions()
+
+    def process(label):
+        def run(req, *, cancel_event):
+            entered[label].set()
+            release[label].wait(2)
+            return TurnResult(label, "u", f"assistant-{label}")
+
+        return run
+
+    def service(label, questions, client_id):
+        return MCPService(
+            _context(client_id),
+            session_db=db,
+            process_user_turn=process(label),
+            mark_cancelled=lambda sid: cleanup.append((label, "mark", sid)),
+            kill_active_subprocess=lambda sid: cleanup.append(
+                (label, "subprocess", sid)
+            ),
+            kill_active_runtime=lambda sid: cleanup.append((label, "runtime", sid)),
+            question_registry_getter=lambda: questions,
+            event_bus_getter=create_event_bus,
+        )
+
+    service_a = service("a", questions_a, "0123456789abcdef")
+    service_b = service("b", questions_b, "fedcba9876543210")
+
+    async def scenario():
+        task_a = asyncio.create_task(
+            service_a.prompt_send("a", session_id=session_id, request_id="request-a")
+        )
+        await asyncio.to_thread(entered["a"].wait, 1)
+        record_a = _active(service_a)[0]
+        assert current_token(session_id).event is record_a.thread_cancel
+
+        result_b = await asyncio.wait_for(
+            service_b.prompt_send(
+                "b", session_id=session_id, request_id="request-b-rejected"
+            ),
+            0.5,
+        )
+        assert result_b.is_error is True
+        assert _payload(result_b) == {"error": "prompt execution failed"}
+        assert not entered["b"].is_set()
+        assert current_token(session_id).event is record_a.thread_cancel
+
+        assert _payload(service_a.prompt_cancel(session_id))["cancelled"] is True
+        assert record_a.thread_cancel.is_set()
+        assert questions_a.cancelled == [session_id]
+        assert questions_b.cancelled == []
+        assert cleanup == [
+            ("a", "mark", session_id),
+            ("a", "subprocess", session_id),
+            ("a", "runtime", session_id),
+        ]
+        release["a"].set()
+        with pytest.raises(asyncio.CancelledError):
+            await task_a
+
+        task_b = asyncio.create_task(
+            service_b.prompt_send("b", session_id=session_id, request_id="request-b")
+        )
+        await asyncio.to_thread(entered["b"].wait, 1)
+        record_b = _active(service_b)[0]
+        assert current_token(session_id).event is record_b.thread_cancel
+
+        service_a.close()
+        assert not record_b.thread_cancel.is_set()
+        assert not record_b.tool_cancel.is_set()
+        assert questions_b.cancelled == []
+        assert current_token(session_id).event is record_b.thread_cancel
+        assert cleanup == [
+            ("a", "mark", session_id),
+            ("a", "subprocess", session_id),
+            ("a", "runtime", session_id),
+        ]
+
+        assert _payload(service_b.prompt_cancel(session_id))["cancelled"] is True
+        release["b"].set()
+        with pytest.raises(asyncio.CancelledError):
+            await task_b
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release["a"].set()
+        release["b"].set()
+        token = current_token(session_id)
+        if token is not None:
+            unregister_cancel_event(session_id, token.event)
+        service_a.close()
+        service_b.close()
 
 
 def test_question_events_decline_only_current_service_active_request() -> None:
@@ -633,12 +748,18 @@ def test_cancel_request_cleanup_callback_failures_do_not_retain_ownership() -> N
         raise RuntimeError("secret-cleanup-value")
 
     bus = create_event_bus()
+    current_events = {}
+
+    def register(session_id, event):
+        current_events[session_id] = event
+
     service = MCPService(
         _context(),
         session_db=FakeSessionDB(),
         process_user_turn=process,
-        register_cancel_event=lambda *_args: None,
+        register_cancel_event=register,
         unregister_cancel_event=fail,
+        current_cancel_event=current_events.get,
         mark_cancelled=fail,
         kill_active_subprocess=fail,
         kill_active_runtime=fail,
