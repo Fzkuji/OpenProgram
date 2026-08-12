@@ -369,3 +369,31 @@ def test_replay_factory_does_not_enable_disabled_model(
         registry.create_runtime(provider="anthropic", model="disabled-model")
 
     assert enabled_models.ENABLED_MODELS == {}
+
+
+def test_replay_factory_does_not_register_disabled_community_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.providers import enabled_models, initialization, registry
+
+    monkeypatch.setattr(enabled_models, "ENABLED_MODELS", {})
+    monkeypatch.setattr("openprogram.providers.models.ENABLED_MODELS", enabled_models.ENABLED_MODELS)
+    monkeypatch.setattr(
+        initialization,
+        "initialize_provider_runtime",
+        lambda: initialization.ProviderRuntimeSnapshot(mode="replay"),
+    )
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        enabled_models,
+        "register_model_from_config",
+        lambda provider, model: calls.append((provider, model)) or False,
+    )
+
+    with pytest.raises(ValueError, match="Unknown model"):
+        registry.create_runtime(
+            provider="community-provider", model="disabled-model"
+        )
+
+    assert enabled_models.ENABLED_MODELS == {}
+    assert calls == []

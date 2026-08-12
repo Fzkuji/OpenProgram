@@ -370,7 +370,7 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
 
             source = get_model(provider, model) if model else None
             if source is None:
-                return _api_routed_runtime(provider, model, **kwargs)
+                raise ValueError(f"Unknown model {provider!r}:{model!r}")
             return _replay_runtime(
                 provider, model, {"model_namespace": source.provider}, kwargs
             )
