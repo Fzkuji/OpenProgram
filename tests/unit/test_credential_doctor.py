@@ -106,6 +106,21 @@ def test_audit_reports_a_credential_parent_directory_symlink(tmp_path: Path) -> 
     }
 
 
+def test_audit_reports_dynamic_intermediate_symlink(tmp_path: Path) -> None:
+    from openprogram.credential_files import audit_credentials
+
+    root = _state(tmp_path)
+    outside = tmp_path / "outside-provider"
+    outside.mkdir()
+    _write(outside / "default.json", 0o600)
+    (root / "auth").mkdir()
+    (root / "auth" / "openai").symlink_to(outside)
+
+    assert ("auth/openai", "symlink") in {
+        (item.relative_path, item.status) for item in audit_credentials(root=root)
+    }
+
+
 def test_audit_flags_foreign_owner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

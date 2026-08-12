@@ -29,8 +29,9 @@ import shutil
 import stat
 import sys
 import tarfile
+import tempfile
 import time
-from pathlib import Path
+from pathlib import Path, PurePath
 
 # Top-level entries worth preserving. Anything not listed is skipped.
 # Keep this list in sync with docs/server/backup.md when it changes.
@@ -507,6 +508,9 @@ _JOURNAL_DIR = ".restore-journal.d"
 _journal_write = os.write
 _journal_fsync = os.fsync
 _journal_replace = os.replace
+_staging_open = os.open
+_staging_write = os.write
+_staging_fsync = os.fsync
 
 
 def restore_journal_path(state: Path) -> Path:
@@ -669,15 +673,59 @@ def recover_interrupted_restore(state: Path) -> bool:
         # the operator rather than guessing at the old state.
         return False
 
-    if record.get("complete"):
+    validated = _validate_restore_journal(record)
+    if validated is None:
+        return False
+    complete, entries = validated
+    if complete:
         shutil.rmtree(state / _JOURNAL_DIR, ignore_errors=True)
         journal_file.unlink(missing_ok=True)
         return False
 
-    _reverse(state, record.get("entries") or [])
+    _reverse(state, entries)
     shutil.rmtree(state / _JOURNAL_DIR, ignore_errors=True)
     journal_file.unlink(missing_ok=True)
     return True
+
+
+def _validate_restore_journal(record: object) -> tuple[bool, list[dict]] | None:
+    if not isinstance(record, dict) or record.get("format_version") != 1:
+        return None
+    if isinstance(record.get("format_version"), bool):
+        return None
+    complete = record.get("complete")
+    entries = record.get("entries")
+    if not isinstance(complete, bool) or not isinstance(entries, list):
+        return None
+    validated: list[dict] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != {
+            "relative_path",
+            "previous",
+            "existed",
+        }:
+            return None
+        relative = entry["relative_path"]
+        existed = entry["existed"]
+        previous = entry["previous"]
+        if not _safe_relative_path(relative) or not isinstance(existed, bool):
+            return None
+        if existed:
+            if not isinstance(previous, str) or not _safe_relative_path(previous):
+                return None
+            if PurePath(previous).parts[0] != _JOURNAL_DIR:
+                return None
+        elif previous is not None:
+            return None
+        validated.append(entry)
+    return complete, validated
+
+
+def _safe_relative_path(value: object) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    path = PurePath(value)
+    return not path.is_absolute() and all(part not in ("", ".", "..") for part in path.parts)
 
 
 def _reverse(state: Path, entries: list[dict]) -> None:
@@ -737,7 +785,14 @@ def restore_archive(archive: Path, state: Path) -> list[str]:
             manifest = json.loads(manifest_source.read())
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise tarfile.TarError("archive manifest is not valid JSON") from exc
-        credential_opt_in = manifest.get("credential_opt_in") is True
+        if (
+            not isinstance(manifest, dict)
+            or type(manifest.get("format_version")) is not int
+            or manifest.get("format_version") != 1
+            or not isinstance(manifest.get("credential_opt_in"), bool)
+        ):
+            raise tarfile.TarError("archive manifest has an unsupported schema")
+        credential_opt_in = manifest["credential_opt_in"]
 
         staged: list[tuple[str, bytes]] = []
         for member in members:
@@ -809,24 +864,59 @@ def restore_archive(archive: Path, state: Path) -> list[str]:
                     )
             staged.append((member.name, payload))
 
-    journal = _RestoreJournal(state)
-    journal.start()
-    published: list[str] = []
+    staging = Path(tempfile.mkdtemp(prefix=".restore-staging-", dir=state.parent))
     try:
-        for relative, payload in staged:
-            target = state / relative
-            from openprogram.credential_files import _ensure_private_directory
+        os.chmod(staging, 0o700)
+        if os.stat(staging).st_dev != os.stat(state).st_dev:
+            raise OSError("restore staging is not on the state filesystem")
+        staged_files: list[tuple[str, Path]] = []
+        for index, (relative, payload) in enumerate(staged):
+            staged_file = staging / f"{index:08d}.payload"
+            descriptor = _staging_open(
+                staged_file,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+            )
+            try:
+                written = 0
+                while written < len(payload):
+                    count = _staging_write(descriptor, payload[written:])
+                    if count <= 0:
+                        raise OSError("restore staging write made no progress")
+                    written += count
+                _staging_fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            staged_files.append((relative, staged_file))
+        directory = _staging_open(
+            staging, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        )
+        try:
+            _staging_fsync(directory)
+        finally:
+            os.close(directory)
 
-            _ensure_private_directory(target.parent, root=state)
-            journal.record(relative, journal.preserve(relative, target))
-            _publish_restored(target, payload, root=state)
-            published.append(relative)
-    except BaseException:
-        _reverse(state, journal.entries)
-        journal.discard()
-        raise
-    journal.finish()
-    return published
+        journal = _RestoreJournal(state)
+        journal.start()
+        published: list[str] = []
+        try:
+            for relative, staged_file in staged_files:
+                payload = staged_file.read_bytes()
+                target = state / relative
+                from openprogram.credential_files import _ensure_private_directory
+
+                _ensure_private_directory(target.parent, root=state)
+                journal.record(relative, journal.preserve(relative, target))
+                _publish_restored(target, payload, root=state)
+                published.append(relative)
+        except BaseException:
+            _reverse(state, journal.entries)
+            journal.discard()
+            raise
+        journal.finish()
+        return published
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
 
 
 def _has_secret_material(original: object, redacted: object) -> bool:

@@ -247,6 +247,26 @@ def test_public_credential_writers_do_not_create_through_parent_symlinks(
     assert list(auth_outside.iterdir()) == []
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink contract")
+def test_pairing_writer_does_not_create_through_parent_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openprogram.channels import _access
+    from openprogram.credential_files import PrivateAtomicWriteError
+
+    root = tmp_path / "state"
+    root.mkdir(mode=0o700)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "channels").symlink_to(outside)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: root)
+
+    with pytest.raises(PrivateAtomicWriteError):
+        _access.approve_user("telegram", "default", "user")
+
+    assert list(outside.iterdir()) == []
+
+
 def test_auth_store_detects_external_edit_before_republishing_cached_pool(
     tmp_path: Path,
 ) -> None:

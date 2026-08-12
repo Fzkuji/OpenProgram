@@ -87,6 +87,49 @@ def test_delete_pool_removes_file(tmp_path: Path):
     assert s.find_pool("openai-codex", "default") is None
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")
+def test_delete_pool_rejects_symlink_and_keeps_cached_pool(tmp_path: Path):
+    from openprogram.credential_files import PrivateAtomicWriteError
+
+    store = AuthStore(root=tmp_path)
+    store.add_credential(_oauth_cred())
+    path = tmp_path / "auth" / "openai-codex" / "default.json"
+    outside = tmp_path / "outside.json"
+    outside.write_text("outside")
+    path.unlink()
+    path.symlink_to(outside)
+
+    with pytest.raises(PrivateAtomicWriteError):
+        store.delete_pool("openai-codex", "default")
+
+    assert outside.read_text() == "outside"
+    assert ("openai-codex", "default") in store._pools
+
+
+def test_delete_pool_does_not_report_success_when_unlink_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from openprogram import credential_files
+    from openprogram.credential_files import PrivateAtomicWriteError
+
+    store = AuthStore(root=tmp_path)
+    store.add_credential(_oauth_cred())
+    path = tmp_path / "auth" / "openai-codex" / "default.json"
+    monkeypatch.setattr(
+        credential_files.os,
+        "unlink",
+        lambda _path: (_ for _ in ()).throw(OSError("unlink denied")),
+    )
+
+    with pytest.raises(PrivateAtomicWriteError) as caught:
+        store.delete_pool("openai-codex", "default")
+
+    assert caught.value.code == "delete"
+    assert caught.value.committed is False
+    assert path.exists()
+    assert ("openai-codex", "default") in store._pools
+
+
 # ---- persistence ----------------------------------------------------------
 
 def test_reload_after_restart(tmp_path: Path):
