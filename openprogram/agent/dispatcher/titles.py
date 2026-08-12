@@ -131,6 +131,7 @@ def _generate_llm_title(user_text: str, assistant_text: str) -> str | None:
         result = runtime.exec(
             content=[{"type": "text", "text": user_input}],
             response_format=_TITLE_RESPONSE_FORMAT,
+            toolset="none",
             max_iterations=2,
         )
     except Exception:

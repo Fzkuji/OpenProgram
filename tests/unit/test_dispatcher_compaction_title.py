@@ -161,6 +161,7 @@ def test_llm_title_uses_validated_structured_result(
     assert title == "Title: “正式标题”"
     assert runtime.closed is True
     assert len(runtime.calls) == 1
+    assert runtime.calls[0]["toolset"] == "none"
     response_format = runtime.calls[0]["response_format"]
     assert isinstance(response_format, JsonSchemaOutput)
     assert response_format.name == "session_title"
