@@ -41,6 +41,7 @@ import type {
 import { PERMISSION_CYCLE } from './repl/types.js';
 import { ChannelActivityFeed } from '../components/ChannelActivityFeed.js';
 import type { SettingRow } from '../components/SettingsPanel.js';
+import type { TaskRow } from '../ws/client.js';
 import { randomLocalId, renderModel } from './repl/helpers.js';
 import { buildPickerNode } from './repl/pickerRouter.js';
 import { useWsEvents } from './repl/useWsEvents.js';
@@ -94,6 +95,8 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const [bellEnabled, setBellEnabled] = useState(true);
   const [modelsList, setModelsList] = useState<string[]>([]);
   const [settingsRows, setSettingsRows] = useState<SettingRow[]>([]);
+  const [tasksList, setTasksList] = useState<TaskRow[]>([]);
+  const [selectedTask, setSelectedTask] = useState<TaskRow | null>(null);
   const [branchesList, setBranchesList] = useState<BranchRow[]>([]);
   const [pastConversations, setPastConversations] = useState<
     Array<{
@@ -208,7 +211,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     setConversationId, setStreaming, setActivity, setCommitted,
     setTokensByConv, setWindowByConv, setTokenStatsByConv,
     setStats, setModel, setAgent, setAgentsList, setModelsList, setBranchesList,
-    setSettingsRows,
+    setSettingsRows, setTasksList, setSelectedTask,
     setChannelAccounts, setPastConversations,
     setQrAscii, setQrStatus,
     setPickerKind, setPendingDecisions, setChosenChannel, setChosenAccount,
@@ -521,7 +524,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     pickerKind, pendingAttach, pendingDecisions,
     chosenChannel, chosenAccount, conversationId,
     modelsList, model, agentsList, channelAccounts, branchesList,
-    settingsRows,
+    settingsRows, tasksList, selectedTask,
     registerForm, qrAscii, qrStatus, pastConversations,
     contextSearchQuery, searchResults, searchBaseDraft,
     thinkingEffort, permissionMode,
@@ -530,7 +533,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     setChosenChannel, setChosenAccount, setConversationId, setAgent,
     setQrAscii, setQrStatus, setCommitted, setStreaming, setRegisterForm,
     setContextSearchQuery, setSearchResults, setPromptDraft,
-    setThinkingEffort, setPermissionMode,
+    setThinkingEffort, setPermissionMode, setSelectedTask,
     setAccountsProviderId, setAccountsState, setAccountSelected,
     setAccountPendingAdd, setAccountLogin,
     onSubmit,

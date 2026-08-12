@@ -646,7 +646,7 @@ def build_parser() -> argparse.ArgumentParser:
     # and ``openprogram/agent/_merge.py`` for the model. These commands run
     # against the in-process SessionStore singleton — no WS, no webui.
     p_subagent = sub.add_parser("subagent",
-        help="Spawn / merge subagent sessions.")
+        help="Spawn, inspect, cancel, or merge subagent sessions.")
     subagent_sub = p_subagent.add_subparsers(
         dest="subagent_verb", metavar="verb",
     )
@@ -695,6 +695,25 @@ def build_parser() -> argparse.ArgumentParser:
              "(attach-style merge).")
     p_sa_merge.add_argument("--no-json", action="store_true",
         help="Print human-readable summary instead of JSON")
+
+    p_sa_list = subagent_sub.add_parser("list",
+        help="List resource views for tasks in a session.")
+    p_sa_list.add_argument("--session", required=True,
+        help="Session id whose tasks should be listed")
+    p_sa_list.add_argument("--json", action="store_true",
+        help="Print the canonical task resource views as JSON")
+
+    p_sa_show = subagent_sub.add_parser("show",
+        help="Show one task's resource view.")
+    p_sa_show.add_argument("task_id", help="Task id to inspect")
+    p_sa_show.add_argument("--json", action="store_true",
+        help="Print the canonical task resource view as JSON")
+
+    p_sa_cancel = subagent_sub.add_parser("cancel",
+        help="Cancel one task and show its updated resource view.")
+    p_sa_cancel.add_argument("task_id", help="Task id to cancel")
+    p_sa_cancel.add_argument("--json", action="store_true",
+        help="Print the canonical task resource view as JSON")
 
     # ---- web --------------------------------------------------------------
     p_web = sub.add_parser("web", help="Start the Web UI")
@@ -1684,8 +1703,8 @@ def main():
 
     if args.command == "subagent":
         verb = getattr(args, "subagent_verb", None)
-        as_json = not getattr(args, "no_json", False)
         if verb == "spawn":
+            as_json = not getattr(args, "no_json", False)
             context = getattr(args, "context", "inherit") or "inherit"
             if getattr(args, "clean", False):
                 context = "clean"
@@ -1699,6 +1718,7 @@ def main():
                 as_json=as_json,
             ))
         if verb == "merge":
+            as_json = not getattr(args, "no_json", False)
             sys.exit(_cmd_subagent_merge(
                 target=args.target,
                 branches=list(getattr(args, "branch", []) or []),
@@ -1707,6 +1727,12 @@ def main():
                 base_branch=getattr(args, "base", None),
                 as_json=as_json,
             ))
+        if verb == "list":
+            sys.exit(_cmd_subagent_list(args.session, as_json=args.json))
+        if verb == "show":
+            sys.exit(_cmd_subagent_show(args.task_id, as_json=args.json))
+        if verb == "cancel":
+            sys.exit(_cmd_subagent_cancel(args.task_id, as_json=args.json))
         _need_subcommand(args._cmd_parser)
 
     if args.command == "cron-worker":
@@ -1791,7 +1817,10 @@ from openprogram._cli_cmds.browser import (  # noqa: E402,F401
     _cmd_browser_rm,
 )
 from openprogram._cli_cmds.subagent import (  # noqa: E402,F401
+    _cmd_subagent_cancel,
+    _cmd_subagent_list,
     _cmd_subagent_spawn,
+    _cmd_subagent_show,
     _cmd_subagent_merge,
 )
 

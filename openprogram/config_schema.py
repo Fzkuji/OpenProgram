@@ -44,6 +44,7 @@ class SettingSpec:
     validate: Optional[Callable[[Any], Optional[str]]] = None  # -> error|None
     help: str = ""
     secret: bool = False
+    minimum: int | None = None
 
 
 # validators / choice providers
@@ -342,6 +343,7 @@ SETTINGS: list[SettingSpec] = [
             group="Agent resources", label=label,
             widget="text" if name == "max_cost_usd" else "number",
             apply=APPLY_LIVE, default=None,
+            minimum=1,
             validate=(
                 _validate_positive_decimal_optional
                 if name == "max_cost_usd" else _validate_positive_optional
@@ -520,7 +522,7 @@ def _set_at(cfg: dict, path: tuple[str, ...], value: Any) -> None:
 # public API
 
 
-def get_settings() -> list[dict]:
+def get_settings(session_id: str | None = None) -> list[dict]:
     """Resolved current settings for every spec, ready to render.
 
     Reads the config once; each row carries its value, group, label,
@@ -528,6 +530,18 @@ def get_settings() -> list[dict]:
     values are returned as a bool ``set`` flag, never the value.
     """
     cfg = _setup._read_config()
+    resolved_resources = None
+    if session_id:
+        from openprogram.agent.resource_governance import (
+            ResourceLimits,
+            resolve_resource_limits,
+            session_resource_limits,
+        )
+        configured = ((cfg.get("agent") or {}).get("resource_limits") or {})
+        resolved_resources = resolve_resource_limits(
+            ResourceLimits.from_mapping(configured),
+            session=session_resource_limits(session_id),
+        )
     rows: list[dict] = []
     for s in SETTINGS:
         raw = _get_at(cfg, s.path, s.default)
@@ -538,6 +552,7 @@ def get_settings() -> list[dict]:
             "widget": s.widget,
             "apply": s.apply,
             "help": s.help,
+            "minimum": s.minimum if s.minimum is not None else (0 if s.widget == "number" else None),
         }
         if s.secret:
             row["set"] = bool(raw)
@@ -547,6 +562,10 @@ def get_settings() -> list[dict]:
             row["value"] = json.dumps(raw, ensure_ascii=False)
         else:
             row["value"] = raw
+        if resolved_resources is not None and s.group == "Agent resources":
+            resolved = resolved_resources.fields[s.key.rsplit(".", 1)[-1]]
+            row["effective"] = resolved.effective
+            row["source"] = resolved.source
         if s.choices is not None:
             try:
                 row["choices"] = list(s.choices())

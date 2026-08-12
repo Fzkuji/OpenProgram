@@ -112,6 +112,35 @@ def test_task_status_broadcast_uses_canonical_resource_and_omits_failed_read(
     assert sent[-1]["data"]["status"] == "queued"
 
 
+def test_tui_settings_keep_configured_value_and_add_session_effective_source(
+    monkeypatch,
+) -> None:
+    from openprogram.agent.resource_governance import ResourceLimits
+    from openprogram.webui.ws_actions import settings as settings_actions
+
+    monkeypatch.setattr(
+        "openprogram.config_schema._setup._read_config",
+        lambda: {"agent": {"resource_limits": {"max_total_tokens": 100}}},
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.resource_governance.session_resource_limits",
+        lambda _session_id: ResourceLimits(max_total_tokens=50),
+    )
+    ws = _WS()
+
+    asyncio.run(settings_actions.handle_get_settings(
+        ws, {"session_id": "session-1"},
+    ))
+
+    row = next(
+        item for item in ws.messages[-1]["data"]
+        if item["key"] == "agent.resource_limits.max_total_tokens"
+    )
+    assert row["value"] == 100
+    assert row["effective"] == 50
+    assert row["source"] == "session"
+
+
 def test_resource_limit_rest_returns_resolved_fields_and_owner_puts_override(
     tmp_path, monkeypatch,
 ) -> None:
