@@ -45,7 +45,7 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
     [
         (lambda text: text.replace("2fb471b3", "deadbeef"), "snapshot"),
         (
-            lambda text: text.replace("OpenProgram为78分", "OpenProgram为999分", 1),
+            lambda text: text.replace("OpenProgram为78.0分", "OpenProgram为999分", 1),
             "score",
         ),
         (
@@ -62,8 +62,8 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
         ),
         (
             lambda text: text.replace(
-                '>任务与规划 11</text><line x1="500"',
-                '>任务与规划 11</text><line x1="999"',
+                '<circle cx="500" cy="8" r="5" fill="#4f8ef7"',
+                '<circle cx="999" cy="8" r="5" fill="#4f8ef7"',
                 1,
             ),
             "category point",

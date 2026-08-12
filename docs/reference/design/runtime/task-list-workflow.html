@@ -42,7 +42,7 @@
   <text x="140" y="134" fill="#8a8675" font-size="11" text-anchor="middle">与各 item 结果摘要</text>
   <!-- list store -->
   <rect x="40" y="210" width="200" height="70" rx="10" fill="#181712" stroke="#3a382d"/>
-  <text x="140" y="240" fill="#e8e4d4" font-size="13" text-anchor="middle">list 落盘（DAG 节点）</text>
+  <text x="140" y="240" fill="#e8e4d4" font-size="13" text-anchor="middle">list 落盘（todo 计划板）</text>
   <text x="140" y="260" fill="#8a8675" font-size="11" text-anchor="middle">item、状态、完成判据、交接摘要</text>
   <!-- executor -->
   <rect x="400" y="60" width="220" height="90" rx="10" fill="#181712" stroke="#5aad4e" stroke-width="1.5"/>
@@ -99,7 +99,8 @@ planner 第一步先做规模判断：预估单个 agent 能一口气做完的�
 
 <h2>3. 运行中修订 list</h2>
 <p>list 不是编译后冻结的静态 DAG。executor 回报"这个 item 需要拆分"或发现新工作时，
-planner 修订 list（拆分、插入、作废），修订本身作为 DAG 节点记录，之后的派发按新 list 走。</p>
+planner 修订 list（拆分、插入、作废），修订记录在运行结果的 <code>revisions</code> 里（前后 item id 对照），
+之后的派发按新 list 走。</p>
 <figure>
 <svg viewBox="0 0 960 170" role="img" aria-label="list随执行推进被修订：item2执行中发现需要拆分，planner把它拆成2a和2b并插入新item5，已完成的item1不受影响">
   <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
@@ -157,8 +158,24 @@ turn 级的 continuation loop（<code>goal/loop.py</code>）保持不动，item 
 
 <h2>实现状态</h2>
 <div class="card">
-设计完成，第一版实现进行中：<code>run_task_list</code> 入口、list 持久化与断点续跑、串行 loop、
-item 级上下文规格、judge 接线。并行执行、自动依赖推断、token 收益量化对比留待第一版跑通真实任务后决定。
+第一版已实现，代码在 <code>openprogram/functions/agentics/task_list/</code>，注册在
+<code>AGENTIC_MODULES</code>，产品文档见 <code>docs/capabilities/task-list.md</code>。
+
+<p><b>已实现</b></p>
+<table>
+<tr><th>部分</th><th>落点</th></tr>
+<tr><td>入口与规模判断</td><td><code>run_task_list(task, session_id, resume, spawn_caller, agent_id)</code>；planner 第一步答 <code>split</code>，false 时整个任务作为单个 item 直接执行</td></tr>
+<tr><td>list 持久化</td><td>就是会话的 todo 计划板（<code>&lt;session-repo&gt;/todos.json</code>），条目扩展 <code>done_criteria</code>、<code>context_spec</code>、<code>result_summary</code> 三个可选字段，读写全走 <code>tools/todo/shared.py</code>；没有第二份清单格式</td></tr>
+<tr><td>断点续跑</td><td>每次状态变化在动手之前写板；续跑按 <code>owner</code> + 任务文本认领自己的条目，<code>in_progress</code> 的重跑、<code>completed</code> 的跳过</td></tr>
+<tr><td>串行 loop</td><td><code>_run_one_item</code> 取下一个未完成条目 → executor（工具限定 <code>EXECUTOR_TOOLS</code>，输入=item+上游交接摘要）→ judge → 过则写 <code>result_summary</code></td></tr>
+<tr><td>judge</td><td><code>judge_item</code> 调 <code>openprogram.agent.goal.evaluate_goal</code>（经包对象调用，符合 goal 包的 monkeypatch 约定），<code>done_criteria</code> 作为 goal 载荷；非 <code>met</code> 一律算未完成。turn 级的 <code>goal/loop.py</code> 是另一层，本模块不涉及</td></tr>
+<tr><td>item 级上下文</td><td>planner 写 <code>context_spec.upstream</code>，同一个数既决定交接摘要取几条，也经 <code>render_range_for</code> 映射为 <code>{"callers": 0, "subcalls": upstream}</code></td></tr>
+<tr><td>重试与修订</td><td>item 内重试 1 次（把 judge 的理由回传给 executor），再不过回 planner 重写未跑部分；已完成条目的结果不动，每次修订记录前后 id</td></tr>
+<tr><td>交接摘要上限</td><td><code>HANDOFF_SUMMARY_MAX_CHARS</code>=1200，超限截断并附一句"给产物路径不是内容"</td></tr>
+</table>
+
+<p><b>未做</b>：并行执行、自动依赖推断、token 收益量化对比——都等第一版跑通真实任务后再决定。
+另外 <code>MAX_ITEMS_EXECUTED</code>=40 是运行上限，触到即以 <code>capped</code> 停止。</p>
 </div>
 
 </body>

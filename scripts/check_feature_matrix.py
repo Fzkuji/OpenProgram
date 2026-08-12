@@ -335,7 +335,7 @@ def check_matrix(path: Path) -> MatrixResult:
     category_svg = re.search(r'<svg viewBox="0 0 960 400".*?</svg>', source, re.DOTALL)
     if not category_svg:
         raise MatrixError("missing published category SVG")
-    category_points: dict[str, tuple[int, float, float, float]] = {}
+    category_points: dict[str, tuple[int, float, float, float, float]] = {}
     for name, count, body in re.findall(
         r'<g transform="translate\(0,[^)]+\)"><text[^>]*>([^<]+?)\s+(\d+)</text>'
         r"(.*?)</g>",
@@ -343,13 +343,19 @@ def check_matrix(path: Path) -> MatrixResult:
         re.DOTALL,
     ):
         line = re.search(r'<line x1="([0-9.]+)"[^>]+x2="([0-9.]+)"', body)
-        openprogram = re.search(r'<circle cx="([0-9.]+)"[^>]+fill="#4f8ef7"', body)
-        if not line or not openprogram:
+        markers = re.findall(
+            r'<line x1="([0-9.]+)"[^>]+x2="\1"[^>]*/>', body
+        )
+        openprogram = re.search(
+            r'<circle cx="([0-9.]+)"[^>]+fill="#[0-9a-fA-F]{6}"', body
+        )
+        if not line or len(markers) != 3 or not openprogram:
             raise MatrixError(f"published category graphics for {name} are incomplete")
         category_points[name] = (
             int(count),
             float(line.group(1)),
             float(line.group(2)),
+            float(markers[2]),
             float(openprogram.group(1)),
         )
     categories = {row.category for row in parser.rows}
@@ -361,17 +367,38 @@ def check_matrix(path: Path) -> MatrixResult:
             sum(SYMBOL_SCORES[row.cells[index]] for row in category_rows)
             for index in range(13)
         ]
-        count, line_x1, line_x2, openprogram_x = category_points[category]
+        count, line_x1, line_x2, median_x, openprogram_x = category_points[category]
         expected_openprogram = round(
             200 + 600 * framework_scores[0] / len(category_rows)
         )
-        expected_reference = round(
-            200 + 600 * max(framework_scores[1:]) / len(category_rows)
+        reference_scores = [
+            score
+            for index, score in enumerate(framework_scores[1:], start=1)
+            if index not in {7, 8}
+        ]
+        expected_reference_min = round(
+            200 + 600 * min(reference_scores) / len(category_rows)
+        )
+        expected_reference_max = round(
+            200 + 600 * max(reference_scores) / len(category_rows)
+        )
+        ordered_references = sorted(reference_scores)
+        expected_reference_median = round(
+            200
+            + 600
+            * (
+                ordered_references[len(ordered_references) // 2 - 1]
+                + ordered_references[len(ordered_references) // 2]
+            )
+            / 2
+            / len(category_rows)
         )
         if (
             count != len(category_rows)
             or openprogram_x != expected_openprogram
-            or {line_x1, line_x2} != {expected_openprogram, expected_reference}
+            or (line_x1, line_x2)
+            != (expected_reference_min, expected_reference_max)
+            or median_x != expected_reference_median
         ):
             raise MatrixError(f"published category point for {category} is stale")
 
