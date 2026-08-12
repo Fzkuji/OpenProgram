@@ -88,6 +88,7 @@ def test_handler_error_rejects_non_string_metadata(
     ws = _SequenceWS([
         json.dumps({"action": "bad", "session_id": {"secret": "do-not-log"}}),
         json.dumps({"action": {"secret": "do-not-log-action"}}),
+        json.dumps({"action": "missing", "session_id": {"secret": "do-not-log-id"}}),
         WebSocketDisconnect(1000),
     ])
 
@@ -95,7 +96,8 @@ def test_handler_error_rejects_non_string_metadata(
 
     action_error = next(frame for frame in ws.sent if frame["type"] == "action_error")
     assert action_error["data"]["session_id"] is None
-    assert ws.sent[-1]["data"]["action"] is None
+    assert ws.sent[-2]["data"]["action"] is None
+    assert ws.sent[-1]["data"]["session_id"] is None
     assert "do-not-log" not in json.dumps(ws.sent)
     assert "do-not-log" not in caplog.text
     assert "do-not-log" not in capsys.readouterr().out

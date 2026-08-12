@@ -1379,7 +1379,9 @@ WS_ACTIONS: dict = _build_ws_action_registry()
 async def _handle_ws_command(ws, cmd: dict):
     """Handle a WebSocket command from the client."""
     raw_action = cmd.get("action") if isinstance(cmd, dict) else None
+    raw_session_id = cmd.get("session_id") if isinstance(cmd, dict) else None
     action = raw_action if isinstance(raw_action, str) else None
+    session_id = raw_session_id if isinstance(raw_session_id, str) else None
     print(f"[ws] command received: action={action}")
 
     h = WS_ACTIONS.get(action)
@@ -1397,7 +1399,7 @@ async def _handle_ws_command(ws, cmd: dict):
         "type": "action_error",
         "data": {
             "action": action,
-            "session_id": cmd.get("session_id"),
+            "session_id": session_id,
             "error": f"unknown action {action!r}",
         },
     }, default=str))
