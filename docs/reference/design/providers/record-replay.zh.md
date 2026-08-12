@@ -106,8 +106,6 @@ tool 和其他子系统继续使用各自的网络与权限规则。凭证脱敏
 ## 实现状态
 
 已实现：严格版本化录制/回放、共享 registry transform、next-start 配置、recordings CLI 和文件管理。
-`b6460fdc` 通过临时的导入期环境变量保护管理恢复命令。
-
-已批准但尚未实现：显式 provider runtime 生命周期、provider 包导入无运行副作用、线程安全的单次初始化、
-稳定的 FAILED 传播和环境变量保护删除。规范设计与实现证据边界见
+提交 `4d82d485..99252205` 增加显式 provider runtime 生命周期、无运行副作用的 provider 包导入、auth/API
+原子发布、稳定的 FAILED 传播，并删除导入期环境变量保护。规范设计与验证边界见
 [`record-replay.html`](record-replay.html)。

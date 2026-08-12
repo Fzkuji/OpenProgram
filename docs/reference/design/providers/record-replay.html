@@ -90,7 +90,7 @@
 <main>
   <p class="eyebrow">OpenProgram / Provider design / implementation handoff</p>
   <h1>请求录制与严格离线回放入口</h1>
-  <p class="sub">当前实现基线：<code>990bfe36e625579443e1cb01a1b3266c8dbd0e87</code>。本页定义产品入口、provider runtime 生命周期、registry 包装、文件安全、严格离线和验证合同。设计目标与实现证据分开记录；文档更新不代表生命周期优化已经落地。</p>
+  <p class="sub">设计审计基线：<code>990bfe36e625579443e1cb01a1b3266c8dbd0e87</code>；生命周期实现复核提交：<code>99252205957a2850e1203a888a0fa0b403b0c3f7</code>。本页定义产品入口、provider runtime 生命周期、registry 包装、文件安全、严格离线和验证合同，并分别记录设计与实现证据。</p>
 
   <div class="lead">
     <b>确定方案。</b> 保留现有 <code>RecordingProvider</code>、<code>ReplayProvider</code> 和 registry transform；新增显式、线程安全、进程级的 provider runtime 生命周期。导入 <code>openprogram.providers</code> 不注册厂商 provider、不读取 <code>record_replay</code> 配置、不打开录制文件、不安装 transform。第一次实际获取 provider 前完成注册与激活；<code>openprogram recordings</code> 只执行管理操作，不进入 runtime 生命周期。录制默认关闭，脱敏不可关闭；回放不读取凭证、不委托真实 provider、不执行 provider fallback。
@@ -151,13 +151,13 @@
       <tr><td>录制、回放与脱敏</td><td><code>recording.py</code>、<code>replay.py</code></td><td class="center"><span class="pill ok">已实现</span></td><td>严格 v1 JSONL、并发写入、固定脱敏、离线 mismatch 与 legacy reader 已有测试证据。</td></tr>
       <tr><td>Registry transform</td><td><code>api_registry.py::configure_provider_transform()</code></td><td class="center"><span class="pill ok">已实现</span></td><td>覆盖已有和后续注册 provider；同一进程只允许一个 transform。</td></tr>
       <tr><td>CLI/config 与文件管理</td><td><code>openprogram recordings</code></td><td class="center"><span class="pill ok">已实现</span></td><td>status/record/replay/off/list/show/delete/prune 与 next-start 配置已落地。</td></tr>
-      <tr><td>管理命令恢复</td><td><code>b6460fdc</code></td><td class="center"><span class="pill warn">临时边界</span></td><td>私有环境变量跳过导入期激活；解决当前 CLI 启动失败，但仍依赖导入顺序和进程全局环境。</td></tr>
-      <tr><td>Provider runtime 生命周期</td><td><code>providers/__init__.py</code>、<code>register.py</code></td><td class="center"><span class="pill bad">未实现</span></td><td>包导入仍注册 built-ins 并激活 record/replay；配置或文件错误可以在非请求路径发生。</td></tr>
-      <tr><td>简版 Markdown</td><td><code>record-replay.md</code>/<code>.zh.md</code></td><td class="center"><span class="pill ok">本次同步</span></td><td>已改为当前 CLI/严格离线事实，并明确生命周期优化尚未实现。</td></tr>
+      <tr><td>管理命令恢复</td><td><code>e8c9f645</code></td><td class="center"><span class="pill ok">已实现</span></td><td>recordings 管理入口不初始化 provider runtime；损坏 replay 文件不再依赖环境变量哨兵恢复。</td></tr>
+      <tr><td>Provider runtime 生命周期</td><td><code>initialization.py</code>、<code>register.py</code></td><td class="center"><span class="pill ok">已实现</span></td><td>显式 NEW/INITIALIZING/READY/FAILED 状态、并发首次初始化、失败脱敏、auth/API 原子发布与启动期 fail-fast 已验证。</td></tr>
+      <tr><td>简版 Markdown</td><td><code>record-replay.md</code>/<code>.zh.md</code></td><td class="center"><span class="pill ok">已同步</span></td><td>记录当前 CLI、严格离线事实与生命周期实现证据。</td></tr>
     </tbody>
   </table>
   </div>
-  <div class="note warning"><b>当前生命周期缺口：</b><code>providers/__init__.py</code> 在 import 期间调用 built-in 注册和 <code>activate_record_replay_from_config()</code>。管理命令必须设置 <code>_OPENPROGRAM_RECORDINGS_MANAGEMENT</code> 才能避开损坏 replay 文件。目标设计删除这个环境变量协议，并让 import 不接触运行配置或录制文件。</div>
+  <div class="note"><b>实现后的生命周期边界：</b><code>providers/__init__.py</code> 不注册 built-ins、不读取配置、不打开录制文件、不安装 transform。公共 provider 获取和 Web/worker 启动显式调用 <code>initialize_provider_runtime()</code>；recordings 管理直接操作配置与文件，不依赖环境变量协议。</div>
 
   <h2 id="reference">03 · 现有 reference corpus 的对应设计</h2>
   <p>本仓当前参考快照只有 <code>references/pi-ai</code>。本节只描述该快照，不声称覆盖其他版本或整个开源生态。</p>
@@ -511,16 +511,16 @@ git diff --check</pre>
 
   <h2 id="status">15 · 实现与验证记录</h2>
   <div class="status-grid" role="table" aria-label="实现状态">
-    <div class="head">状态</div><div class="head">范围</div><div class="head">证据（当前基线 990bfe36）</div>
+    <div class="head">状态</div><div class="head">范围</div><div class="head">证据（设计基线 990bfe36；实现复核 99252205）</div>
     <div class="value"><span class="pill ok">已实现</span></div><div class="value">共享 <code>RecordingSink</code> 以线程锁、跨进程 <code>flock</code>、完整 <code>os.write</code> 和 <code>call_end</code> fsync 写入单一 v1 JSONL；扩展固定脱敏并执行 0700/0600 与 symlink/普通文件检查。</div><div class="value"><code>recording.py::RecordingSink</code>、<code>paths.py::get_recordings_dir</code>；spawn 三进程并发测试严格解析 15 个连续 call。</div>
     <div class="value"><span class="pill ok">已实现</span></div><div class="value">一次性 registry transform 覆盖已有和后续 provider；record 模式共享 sink，replay 模式共享一个预验证 provider。</div><div class="value"><code>api_registry.py::configure_provider_transform</code>、<code>recording.py::activate_record_replay_from_config</code>、<code>test_record_replay_registry.py</code>。</div>
     <div class="value"><span class="pill ok">已实现</span></div><div class="value">严格 parser 在构造阶段验证 header、版本、行类型、call/event 索引、call_end/count 和事件模型；replay 无原 provider/fallback，两个 stream 入口先选择 provider 并跳过凭证解析。</div><div class="value"><code>replay.py::read_recording_file</code>、<code>ReplayProvider.requires_credentials</code>、<code>stream.py</code>；结构失败、credential sentinel、多轮 tool loop 测试。</div>
     <div class="value"><span class="pill ok">已实现</span></div><div class="value"><code>record_replay.mode/file</code> 为 next_start settings；CLI 提供 status/record/replay/off/list/show/delete/prune，配置失败回滚新文件，破坏性命令包含 active、symlink、外部路径、锁与非 TTY 确认保护。</div><div class="value"><code>config_schema.py</code>、<code>cli.py</code>、<code>recording.py</code> 和 CLI/管理测试。</div>
-    <div class="value"><span class="pill warn">临时修复</span></div><div class="value">管理命令通过 <code>_OPENPROGRAM_RECORDINGS_MANAGEMENT</code> 跳过导入期 replay 激活，使损坏或丢失文件时 <code>status/off</code> 仍可启动。</div><div class="value"><code>b6460fdc</code>、<code>test_off_recovers_from_a_replay_file_that_became_invalid</code>；该证据不证明 import 生命周期已经分离。</div>
-    <div class="value"><span class="pill plan">待实现</span></div><div class="value">显式 provider runtime 生命周期、无运行副作用的 package import、线程安全首次初始化、FAILED 一致传播、auth/recordings/runtime 边界分离，以及删除环境变量哨兵。</div><div class="value">本页 §04、§06、§11—§14 是已批准设计；在生产代码和测试提交前不得标为已实现，也不修改 feature matrix。</div>
+    <div class="value"><span class="pill ok">已替代临时修复</span></div><div class="value">recordings 管理命令不导入或初始化 provider runtime；损坏或丢失 replay 文件时 <code>status/off</code> 可直接恢复配置，环境变量哨兵已删除。</div><div class="value"><code>e8c9f645</code>、<code>test_off_recovers_from_a_replay_file_that_became_invalid</code> 与无导入副作用子进程测试。</div>
+    <div class="value"><span class="pill ok">已实现</span></div><div class="value">显式 provider runtime 生命周期、无运行副作用的 package import、线程安全首次初始化、稳定 FAILED 传播、auth/recordings/runtime 分离，以及 replay 模式只读模型解析。</div><div class="value"><code>4d82d485..99252205</code>；规格复审 PASS，质量复审 PASS；提交态 <code>tests/unit + tests/providers</code> 为 2890 passed、10 skipped、1 xfailed。</div>
     <div class="value"><span class="pill warn">兼容边界</span></div><div class="value">保留 v1 构造器、属性、异常、旧 header 和 mismatch 行为；新增严格检查会拒绝旧 reader 曾忽略的损坏行。严格离线仍只覆盖 LLM provider 层；跨进程调度顺序不保证复现。</div><div class="value"><code>test_record_replay.py</code> 继续覆盖库级录制、两轮 tool loop、版本拒绝和字段差异。</div>
     <div class="value"><span class="pill plan">明确不做</span></div><div class="value">Web UI、全进程 HTTP 录制、tool/MCP 录制、模糊 request 匹配、自动网络 fallback、自动上传。</div><div class="value">超出本阶段边界。</div>
-    <div class="value"><span class="pill plan">验证命令</span></div><div class="value">相关 pytest、Ruff、docs build、link checker、CLI smoke 与 diff whitespace。</div><div class="value">提交前执行并在分支交付记录中报告精确通过数及任何基线环境失败。</div>
+    <div class="value"><span class="pill ok">验证完成</span></div><div class="value">相关 pytest、完整 unit/providers、changed-file Ruff、docs build、link checker、CLI smoke 与 diff whitespace。</div><div class="value">仓库根级 pytest 另被既有缺失模块 <code>openprogram.functions.agentics.test_framework</code> 阻断于 integration collection；本变更未修改该入口。</div>
   </div>
 
   <p class="foot">设计来源：当前 OpenProgram provider 实现、CLI/config 入口、测试，以及仓内 <code>references/pi-ai</code> 快照。更新实现状态时必须附代码符号、测试或 commit；不得把“设计已写”标为“功能已实现”。</p>

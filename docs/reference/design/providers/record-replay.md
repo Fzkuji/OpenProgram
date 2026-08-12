@@ -117,9 +117,7 @@ prompts, model output, tool results, file excerpts, and personal data even after
 ## Implementation status
 
 Implemented: strict versioned recording/replay, shared registry transform, next-start configuration, recordings CLI
-and file management. Commit `b6460fdc` keeps recovery commands available through a temporary import-time environment
-guard.
-
-Approved but not yet implemented: explicit provider runtime lifecycle, side-effect-free provider package import,
-thread-safe one-time initialization, stable FAILED propagation, and removal of the environment guard. The normative
-design and evidence boundary are in [`record-replay.html`](record-replay.html).
+and file management. Commits `4d82d485..99252205` add the explicit provider runtime lifecycle, side-effect-free
+provider package import, atomic auth/API publication, stable FAILED propagation, and removal of the import-time
+environment guard. The normative design and verification boundary are in
+[`record-replay.html`](record-replay.html).
