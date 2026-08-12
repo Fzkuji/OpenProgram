@@ -102,9 +102,9 @@ def _fake_model() -> Model:
                  provider="openai", base_url="https://example.invalid/v1")
 
 
-def _session(stream_fn, **kwargs) -> AgentSession:
+def _session(stream_fn, *, model=None, **kwargs) -> AgentSession:
     session = AgentSession(
-        model=_fake_model(),
+        model=model or _fake_model(),
         tools=[_echo_tool()],
         **kwargs,
     )
@@ -191,9 +191,22 @@ def test_runtime_typed_error_reaches_tool_result_message() -> None:
 
 
 def test_response_format_reaches_stream_opts():
-    stream_fn, state = _make_stream_fn([_text_msg()])
-    response_format = normalize_response_format({"type": "string"})
-    session = _session(stream_fn, response_format=response_format)
+    stream_fn, state = _make_stream_fn([
+        _assistant([TextContent(text='{"answer":"done"}')])
+    ])
+    response_format = normalize_response_format({
+        "type": "object",
+        "properties": {"answer": {"type": "string"}},
+        "required": ["answer"],
+        "additionalProperties": False,
+    })
+    session = _session(
+        stream_fn,
+        model=_fake_model().model_copy(update={
+            "base_url": "https://api.openai.com/v1",
+        }),
+        response_format=response_format,
+    )
 
     asyncio.run(session.run("go"))
 

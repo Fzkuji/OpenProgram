@@ -333,7 +333,7 @@ async def handle_clear_sessions(ws, cmd: dict):
     # 一次删干净。
     ids: set[str] = set()
     try:
-        for row in db.list_sessions(limit=10**9):
+        for row in db.list_sessions(limit=10**9, include_archived=True):
             sid = row.get("id")
             if sid:
                 ids.add(sid)
@@ -990,7 +990,7 @@ def build_sessions_list() -> list[dict]:
     from openprogram.agent.session_db import default_db
     _proj_map, _default_proj = _project_name_map()
 
-    rows = default_db().list_sessions(limit=10_000)
+    rows = default_db().list_sessions(limit=10_000, include_archived=True)
     conv_list: list[dict] = []
     for row in rows:
         sid = row.get("id", "")

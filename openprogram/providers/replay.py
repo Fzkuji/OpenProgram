@@ -10,6 +10,7 @@ call index. The first mismatching field raises :class:`ReplayMismatch`, which
 names the call index, the recorded event position and the dotted field path,
 plus the recorded and incoming values.
 """
+
 from __future__ import annotations
 
 import json
@@ -19,6 +20,8 @@ from typing import Any, AsyncGenerator
 
 from .recording import (
     RECORDING_FORMAT_VERSION,
+    _RUNTIME_ONLY_OPTION_FIELDS,
+    _dump_options,
     remove_secret_values,
     restrict_recording_file,
 )
@@ -100,10 +103,25 @@ class ReplayMismatch(AssertionError):
         position = f"call {call_index}"
         if event_index is not None:
             position += f", recorded event {event_index}"
+        detail = "; unconsumed calls remain" if field_path == "remaining_calls" else ""
         super().__init__(
-            f"replay mismatch at {position}, field {field_path}: "
-            f"recorded {recorded!r}, incoming {incoming!r}"
+            f"replay mismatch at {position}, field {_public_path(field_path)}{detail}"
         )
+
+
+def _public_path(field_path: str, max_length: int = 384) -> str:
+    """Return a redacted, escaped, bounded diagnostic path."""
+    cleaned = remove_secret_values(field_path)
+    parts: list[str] = []
+    length = 0
+    for character in cleaned:
+        escaped = json.dumps(character, ensure_ascii=True)[1:-1]
+        if length + len(escaped) > max_length - 3:
+            parts.append("...")
+            break
+        parts.append(escaped)
+        length += len(escaped)
+    return "".join(parts)
 
 
 @dataclass
@@ -115,7 +133,7 @@ class RecordedCall:
 
 
 def read_recording_file(recording_path: str | Path) -> list[RecordedCall]:
-    """Parse and fully validate one version-1 JSONL recording."""
+    """Parse and fully validate one supported JSONL recording."""
     path = Path(recording_path)
     try:
         restrict_recording_file(path)
@@ -126,9 +144,13 @@ def read_recording_file(recording_path: str | Path) -> list[RecordedCall]:
             try:
                 row = json.loads(raw)
             except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-                raise RecordingFileError(path, f"invalid JSON: {exc}", line_number=number) from exc
+                raise RecordingFileError(
+                    path, f"invalid JSON: {exc}", line_number=number
+                ) from exc
             if not isinstance(row, dict):
-                raise RecordingFileError(path, "row must be an object", line_number=number)
+                raise RecordingFileError(
+                    path, "row must be an object", line_number=number
+                )
             lines.append((number, row))
     except RecordingFileError:
         raise
@@ -137,7 +159,7 @@ def read_recording_file(recording_path: str | Path) -> list[RecordedCall]:
     if not lines or lines[0][1].get("type") != "header":
         raise RecordingFileError(path, "has no format header on its first line")
     recorded_version = lines[0][1].get("format_version")
-    if recorded_version != RECORDING_FORMAT_VERSION:
+    if recorded_version not in {1, RECORDING_FORMAT_VERSION}:
         raise RecordingFileError(
             path,
             f"was written in format version {recorded_version!r}; "
@@ -152,45 +174,111 @@ def read_recording_file(recording_path: str | Path) -> list[RecordedCall]:
         if kind == "header":
             raise RecordingFileError(path, "duplicate header", line_number=number)
         if kind not in {"request", "event", "call_end"}:
-            raise RecordingFileError(path, f"unknown row type {kind!r}", line_number=number)
+            raise RecordingFileError(
+                path, f"unknown row type {kind!r}", line_number=number
+            )
         call_index = line.get("call_index")
-        if not isinstance(call_index, int) or isinstance(call_index, bool) or call_index < 0:
+        if (
+            not isinstance(call_index, int)
+            or isinstance(call_index, bool)
+            or call_index < 0
+        ):
             raise RecordingFileError(path, "invalid call_index", line_number=number)
         if kind == "request":
             if call_index != len(calls):
-                raise RecordingFileError(path, "request call indexes must be contiguous", line_number=number)
+                raise RecordingFileError(
+                    path, "request call indexes must be contiguous", line_number=number
+                )
             if call_index in calls:
-                raise RecordingFileError(path, "duplicate request", line_number=number, call_index=call_index)
+                raise RecordingFileError(
+                    path, "duplicate request", line_number=number, call_index=call_index
+                )
+            options = line.get("options")
+            if (
+                recorded_version == 1
+                and isinstance(options, dict)
+                and options.get("response_format") is not None
+            ):
+                raise RecordingFileError(
+                    path,
+                    "format version 1 cannot replay structured response_format",
+                    line_number=number,
+                    call_index=call_index,
+                )
+            if recorded_version == 1 and isinstance(options, dict):
+                # v1 persisted request-local fields as null; v2 omits them
+                # because live events and callbacks are not recording data.
+                for field_name in _RUNTIME_ONLY_OPTION_FIELDS:
+                    options.pop(field_name, None)
             calls[call_index] = RecordedCall(call_index=call_index, request=line)
             next_event[call_index] = 0
         elif kind == "event":
             if call_index not in calls:
-                raise RecordingFileError(path, "orphan event", line_number=number, call_index=call_index)
+                raise RecordingFileError(
+                    path, "orphan event", line_number=number, call_index=call_index
+                )
             if call_index in ended:
-                raise RecordingFileError(path, "event after call_end", line_number=number, call_index=call_index)
+                raise RecordingFileError(
+                    path,
+                    "event after call_end",
+                    line_number=number,
+                    call_index=call_index,
+                )
             event_index = line.get("event_index")
             if event_index != next_event[call_index]:
-                raise RecordingFileError(path, "event indexes must be contiguous", line_number=number, call_index=call_index)
+                raise RecordingFileError(
+                    path,
+                    "event indexes must be contiguous",
+                    line_number=number,
+                    call_index=call_index,
+                )
             payload = line.get("event")
             if not isinstance(payload, dict):
-                raise RecordingFileError(path, "event payload must be an object", line_number=number, call_index=call_index)
+                raise RecordingFileError(
+                    path,
+                    "event payload must be an object",
+                    line_number=number,
+                    call_index=call_index,
+                )
             event_type = payload.get("type")
             event_class = _EVENT_CLASSES.get(event_type)
             if event_class is None:
-                raise RecordingFileError(path, f"unknown event type {event_type!r}", line_number=number, call_index=call_index)
+                raise RecordingFileError(
+                    path,
+                    f"unknown event type {event_type!r}",
+                    line_number=number,
+                    call_index=call_index,
+                )
             try:
                 event_class.model_validate(payload)
             except Exception as exc:
-                raise RecordingFileError(path, f"invalid {event_type!r} event: {exc}", line_number=number, call_index=call_index) from exc
+                raise RecordingFileError(
+                    path,
+                    f"invalid {event_type!r} event: {exc}",
+                    line_number=number,
+                    call_index=call_index,
+                ) from exc
             calls[call_index].events.append(payload)
             next_event[call_index] += 1
         else:
             if call_index not in calls:
-                raise RecordingFileError(path, "orphan call_end", line_number=number, call_index=call_index)
+                raise RecordingFileError(
+                    path, "orphan call_end", line_number=number, call_index=call_index
+                )
             if call_index in ended:
-                raise RecordingFileError(path, "duplicate call_end", line_number=number, call_index=call_index)
+                raise RecordingFileError(
+                    path,
+                    "duplicate call_end",
+                    line_number=number,
+                    call_index=call_index,
+                )
             if line.get("event_count") != next_event[call_index]:
-                raise RecordingFileError(path, "call_end event_count mismatch", line_number=number, call_index=call_index)
+                raise RecordingFileError(
+                    path,
+                    "call_end event_count mismatch",
+                    line_number=number,
+                    call_index=call_index,
+                )
             outcome = line.get("outcome", "complete")
             if outcome not in {"complete", "error", "cancelled", "abandoned"}:
                 raise RecordingFileError(
@@ -212,7 +300,9 @@ def read_recording_file(recording_path: str | Path) -> list[RecordedCall]:
 NON_DETERMINISTIC_FIELD_NAMES = frozenset({"timestamp"})
 
 
-def find_first_difference(recorded: Any, incoming: Any, path: str = "") -> tuple[str, Any, Any] | None:
+def find_first_difference(
+    recorded: Any, incoming: Any, path: str = ""
+) -> tuple[str, Any, Any] | None:
     """Return ``(field_path, recorded, incoming)`` for the first difference, or None.
 
     Walks dicts by sorted key and lists by index so the reported path is
@@ -332,10 +422,7 @@ class ReplayProvider:
         incoming = {
             "model": remove_secret_values(model.model_dump(mode="json")),
             "context": remove_secret_values(context.model_dump(mode="json")),
-            "options": (
-                remove_secret_values(options.model_dump(mode="json"))
-                if options is not None else None
-            ),
+            "options": _dump_options(options),
         }
         for part in ("model", "context", "options"):
             difference = find_first_difference(

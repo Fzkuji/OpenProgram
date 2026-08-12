@@ -8,10 +8,13 @@ import pytest
 
 from openprogram.commands.commit_message import (
     PR_FOOTER,
+    RemoteWriteNotAuthorized,
     append_pr_footer,
     apply_trailers,
     co_author_trailer,
+    dry_run_plan,
     gh_pr_create_argv,
+    git_push_argv,
     pr_body,
 )
 
@@ -117,6 +120,7 @@ def test_pr_footer_is_idempotent():
 def test_gh_pr_create_argv_is_exact():
     assert gh_pr_create_argv(
         base="main", head="topic", title="Add thing", body_file="/tmp/b.md",
+        allowed=True,
     ) == [
         "gh", "pr", "create",
         "--base", "main",
@@ -126,6 +130,7 @@ def test_gh_pr_create_argv_is_exact():
     ]
     assert gh_pr_create_argv(
         base="main", head="topic", title="t", body_file="/tmp/b.md", draft=True,
+        allowed=True,
     )[-1] == "--draft"
 
 
@@ -144,8 +149,95 @@ def test_gh_pr_create_argv_runs_against_a_fake_gh(tmp_path, monkeypatch):
     body.write_text(pr_body("Why."), encoding="utf-8")
     argv = gh_pr_create_argv(
         base="main", head="topic", title="Add thing", body_file=str(body),
+        allowed=True,
     )
     result = subprocess.run(argv, capture_output=True, text=True, check=True)
 
     assert result.stdout.strip() == "https://example.invalid/pr/1"
     assert recorded.read_text(encoding="utf-8").split("\n")[:-1] == argv[1:]
+
+
+# remote-write authorization gate
+
+
+def test_push_is_refused_without_authorization():
+    with pytest.raises(RemoteWriteNotAuthorized):
+        git_push_argv(branch="topic", allowed=False)
+
+
+def test_pr_creation_is_refused_without_authorization():
+    with pytest.raises(RemoteWriteNotAuthorized):
+        gh_pr_create_argv(
+            base="main", head="topic", title="t", body_file="/tmp/b.md",
+            allowed=False,
+        )
+
+
+def test_remote_write_defaults_to_refused(monkeypatch):
+    """No explicit `allowed` and no config toggle means no remote write."""
+    from openprogram import setup as _setup
+
+    monkeypatch.setattr(_setup, "_read_config", lambda: {})
+    with pytest.raises(RemoteWriteNotAuthorized):
+        git_push_argv(branch="topic")
+    with pytest.raises(RemoteWriteNotAuthorized):
+        gh_pr_create_argv(
+            base="main", head="topic", title="t", body_file="/tmp/b.md",
+        )
+
+
+def test_config_toggle_authorizes_remote_write(monkeypatch):
+    from openprogram import setup as _setup
+
+    monkeypatch.setattr(
+        _setup, "_read_config", lambda: {"git": {"allow_remote_write": True}},
+    )
+    assert git_push_argv(branch="topic") == [
+        "git", "push", "-u", "origin", "topic",
+    ]
+
+
+def test_authorized_push_argv_is_exact():
+    assert git_push_argv(branch="topic", allowed=True) == [
+        "git", "push", "-u", "origin", "topic",
+    ]
+    assert git_push_argv(
+        branch="topic", remote="upstream", set_upstream=False, allowed=True,
+    ) == ["git", "push", "upstream", "topic"]
+
+
+# dry run
+
+
+def test_dry_run_push_needs_no_authorization_and_is_non_mutating():
+    argv = git_push_argv(branch="topic", dry_run=True, allowed=False)
+    assert argv == ["git", "push", "--dry-run", "-u", "origin", "topic"]
+
+
+def test_dry_run_pr_argv_needs_no_authorization():
+    argv = gh_pr_create_argv(
+        base="main", head="topic", title="t", body_file="/tmp/b.md",
+        dry_run=True, allowed=False,
+    )
+    assert argv[:3] == ["gh", "pr", "create"]
+
+
+def test_dry_run_plan_makes_no_remote_call(monkeypatch):
+    """A full dry run must not invoke git or gh at all."""
+    def _explode(*a, **k):
+        raise AssertionError("dry run must not run a subprocess")
+
+    monkeypatch.setattr(subprocess, "run", _explode)
+    monkeypatch.setattr(subprocess, "Popen", _explode)
+    monkeypatch.setattr(subprocess, "check_output", _explode)
+    monkeypatch.setattr(os, "system", _explode)
+
+    lines = dry_run_plan(
+        default_branch="main", branch="topic", title="Add thing",
+    )
+
+    assert lines == [
+        "would push: git push -u origin topic",
+        "would open PR: gh pr create --base main --head topic "
+        "--title Add thing --body-file <pr body file>",
+    ]

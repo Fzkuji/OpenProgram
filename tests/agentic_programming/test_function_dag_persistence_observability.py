@@ -5,7 +5,12 @@ import logging
 
 import pytest
 
-from openprogram.agentic_programming.function import agentic_function, traced
+from openprogram.agentic_programming.function import (
+    _call_id,
+    _current_runtime,
+    agentic_function,
+    traced,
+)
 from openprogram.agentic_programming.runtime import Runtime
 from openprogram.store import _store
 
@@ -27,6 +32,16 @@ class _FailingStore:
 class _AbortStore(_FailingStore):
     def append(self, node) -> None:
         raise KeyboardInterrupt
+
+
+class _ExitAbortStore(_FailingStore):
+    def update(self, node_id, **fields) -> None:
+        raise KeyboardInterrupt
+
+
+class _BadCloseRuntime:
+    def close(self) -> None:
+        raise RuntimeError("close failed")
 
 
 @pytest.fixture
@@ -140,3 +155,72 @@ def test_persistence_base_exception_is_not_downgraded(runtime: Runtime) -> None:
 
     with pytest.raises(KeyboardInterrupt):
         _run_with_store(_AbortStore(), lambda: work(runtime=runtime))
+    assert _call_id.get() is None
+    assert _current_runtime.get() is None
+
+
+def test_exit_base_exception_still_restores_agentic_context(runtime: Runtime) -> None:
+    @agentic_function
+    def work(runtime=None):
+        return "ok"
+
+    with pytest.raises(KeyboardInterrupt):
+        _run_with_store(_ExitAbortStore(), lambda: work(runtime=runtime))
+    assert _call_id.get() is None
+    assert _current_runtime.get() is None
+
+
+def test_exit_base_exception_still_restores_traced_call_id() -> None:
+    @traced
+    def work():
+        return "ok"
+
+    with pytest.raises(KeyboardInterrupt):
+        _run_with_store(_ExitAbortStore(), work)
+    assert _call_id.get() is None
+
+
+@pytest.mark.parametrize("parameter", ["runtime", "exec_runtime", "review_runtime"])
+def test_owned_runtime_alias_is_closed_after_entry_abort(
+    parameter: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CloseCounter:
+        def __init__(self) -> None:
+            self.close_calls = 0
+
+        def close(self) -> None:
+            self.close_calls += 1
+
+    owned = CloseCounter()
+    monkeypatch.setattr("openprogram.providers.registry.create_runtime", lambda: owned)
+    namespace: dict = {}
+    exec(f"def work({parameter}=None):\n    return 'unreachable'", namespace)
+    work = agentic_function(as_tool=False)(namespace["work"])
+
+    with pytest.raises(KeyboardInterrupt):
+        _run_with_store(_AbortStore(), work)
+
+    assert owned.close_calls == 1
+    assert _current_runtime.get() is None
+
+
+@pytest.mark.parametrize("phase", ["entry", "exit"])
+def test_close_failure_does_not_replace_persistence_base_exception(
+    phase: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "openprogram.providers.registry.create_runtime",
+        _BadCloseRuntime,
+    )
+
+    @agentic_function(as_tool=False)
+    def work(exec_runtime=None):
+        return "ok"
+
+    store = _AbortStore() if phase == "entry" else _ExitAbortStore()
+    with pytest.raises(KeyboardInterrupt):
+        _run_with_store(store, work)
+    assert _current_runtime.get() is None
+    assert _call_id.get() is None

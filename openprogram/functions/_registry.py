@@ -56,6 +56,9 @@ AGENTIC_MODULES: list[str] = [
     "extract_pdf_tables",
     # 交互自测：串行走一遍 ask/confirm/form/ask_many 各形态（手动点 Run 体验）。
     "interaction_demo",
+    # Task list workflow: plans a task into bounded items and runs them
+    # serially, judging each with the goal decision agent above.
+    "task_list",
 ]
 
 

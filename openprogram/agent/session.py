@@ -74,6 +74,7 @@ class AgentSession:
         web_search: bool | None = None,
         response_format: Any | None = None,
         stream_fn: Any | None = None,
+        transform_context: Callable | None = None,
     ) -> None:
         self._retry = retry or DEFAULT_RETRY_SETTINGS
         self._event_bus = event_bus
@@ -108,6 +109,7 @@ class AgentSession:
             web_search=web_search,
             response_format=response_format,
             stream_fn=stream_fn,
+            transform_context=transform_context,
         ))
 
         if event_bus is not None:

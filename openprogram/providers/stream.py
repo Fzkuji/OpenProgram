@@ -31,9 +31,20 @@ async def stream_simple(
     Automatically resolves API key from environment if not provided.
     Mirrors streamSimple() from TypeScript.
     """
+    provider = get_api_provider(model.api)
+    async for event in stream_simple_with_provider(provider, model, context, options):
+        yield event
+
+
+async def stream_simple_with_provider(
+    provider,
+    model: Model,
+    context: Context,
+    options: SimpleStreamOptions | None = None,
+) -> AsyncGenerator[AssistantMessageEvent, None]:
+    """Stream through an already-resolved request-scoped provider snapshot."""
     opts = options or SimpleStreamOptions()
 
-    provider = get_api_provider(model.api)
     if provider is None:
         raise ValueError(f"No stream function registered for API: {model.api!r}")
 

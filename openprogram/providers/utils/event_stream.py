@@ -33,7 +33,21 @@ class EventStream(Generic[T, R]):
         self._queue: asyncio.Queue[T | _Sentinel] = asyncio.Queue()
         self._result: R | None = None
         self._result_event = asyncio.Event()
-        self._error: Exception | None = None
+        self._error: BaseException | None = None
+        self._producer_task: asyncio.Task | None = None
+
+    def attach_producer(self, task: asyncio.Task) -> None:
+        self._producer_task = task
+
+    async def cancel_producer(self) -> None:
+        task = self._producer_task
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except BaseException:
+            pass
 
     def push(self, event: T) -> None:
         """Push an event into the stream.
@@ -59,7 +73,7 @@ class EventStream(Generic[T, R]):
         self._result_event.set()
         self._queue.put_nowait(_SENTINEL)
 
-    def fail(self, error: Exception) -> None:
+    def fail(self, error: BaseException) -> None:
         """Signal stream failure with an exception."""
         self._error = error
         self._result_event.set()
@@ -99,6 +113,8 @@ from ..types import (
     EventTextStart,
     EventTextDelta,
     EventTextEnd,
+    EventStructuredOutputRetry,
+    EventStructuredOutputEnd,
     EventThinkingStart,
     EventThinkingDelta,
     EventThinkingEnd,
@@ -114,6 +130,8 @@ _ASSISTANT_EVENT_CLASSES = {
     "text_start": EventTextStart,
     "text_delta": EventTextDelta,
     "text_end": EventTextEnd,
+    "structured_output_retry": EventStructuredOutputRetry,
+    "structured_output_end": EventStructuredOutputEnd,
     "thinking_start": EventThinkingStart,
     "thinking_delta": EventThinkingDelta,
     "thinking_end": EventThinkingEnd,

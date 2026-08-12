@@ -18,6 +18,8 @@ from .types import (
     EventDone,
     EventError,
     EventStart,
+    EventStructuredOutputEnd,
+    EventStructuredOutputRetry,
     EventTextDelta,
     EventTextEnd,
     EventTextStart,
@@ -53,13 +55,26 @@ from .types import (
     UserMessage,
     VercelGatewayRouting,
 )
-from .structured_output import JsonSchemaOutput
+from .structured_output import (
+    JsonSchemaOutput,
+    StructuredOutputCapabilities,
+    StructuredOutputPlan,
+)
 
 # Model registry
 from .models import calculate_cost, get_model, get_models, get_providers, models_are_equal, supports_xhigh
 
 # API registry
-from .api_registry import configure_provider_transform, get_api_provider, register_api_provider
+from .api_registry import (
+    ApiProviderSnapshot,
+    configure_provider_transform,
+    get_api_provider,
+    get_api_provider_snapshot,
+    get_structured_output_capabilities,
+    resolve_api_provider_snapshot,
+    resolve_structured_output_capabilities,
+    register_api_provider,
+)
 
 # Environment API keys
 from .env_api_keys import resolve_provider_key
@@ -82,6 +97,7 @@ __all__ = [
     "Api", "KnownApi", "KnownProvider", "Provider",
     "ThinkingLevel", "ThinkingBudgets", "CacheRetention", "Transport", "StopReason",
     "StreamOptions", "SimpleStreamOptions", "JsonSchemaOutput",
+    "StructuredOutputCapabilities", "StructuredOutputPlan", "ApiProviderSnapshot",
     "TextContent", "ThinkingContent", "ImageContent", "ToolCall",
     "Usage", "UsageCost",
     "UserMessage", "AssistantMessage", "ToolResultMessage", "Message",
@@ -89,13 +105,16 @@ __all__ = [
     "OpenAICompletionsCompat", "OpenAIResponsesCompat", "OpenRouterRouting", "VercelGatewayRouting",
     "AssistantMessageEvent", "AssistantMessageEventStream",
     "EventStart", "EventTextStart", "EventTextDelta", "EventTextEnd",
+    "EventStructuredOutputRetry", "EventStructuredOutputEnd",
     "EventThinkingStart", "EventThinkingDelta", "EventThinkingEnd",
     "EventToolCallStart", "EventToolCallDelta", "EventToolCallEnd",
     "EventDone", "EventError",
     # Models
     "get_model", "get_providers", "get_models", "calculate_cost", "supports_xhigh", "models_are_equal",
     # Registry
-    "register_api_provider", "get_api_provider", "configure_provider_transform",
+    "register_api_provider", "get_api_provider", "get_api_provider_snapshot",
+    "get_structured_output_capabilities", "resolve_api_provider_snapshot",
+    "resolve_structured_output_capabilities", "configure_provider_transform",
     # Runtime factory / detection
     "PROVIDERS", "detect_provider", "create_runtime", "check_providers",
     # Keys

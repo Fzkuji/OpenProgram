@@ -10,7 +10,7 @@ import inspect
 import time
 from typing import Any, Callable
 
-from openprogram.providers import get_model, stream_simple
+from openprogram.providers import get_model
 from openprogram.providers.types import (
     AssistantMessage,
     ImageContent,
@@ -130,7 +130,7 @@ class Agent:
         self._transform_context = opts.transform_context
         self._steering_mode: str = opts.steering_mode
         self._follow_up_mode: str = opts.follow_up_mode
-        self.stream_fn: StreamFn = opts.stream_fn or stream_simple
+        self.stream_fn: StreamFn | None = opts.stream_fn
         self._session_id: str | None = opts.session_id
         self.get_api_key = opts.get_api_key
         self._on_payload = opts.on_payload
@@ -418,6 +418,7 @@ class Agent:
         )
 
         partial: AgentMessage | None = None
+        ev_stream = None
 
         try:
             if messages is not None:
@@ -476,7 +477,20 @@ class Agent:
                     if self._cancel_event and self._cancel_event.is_set():
                         raise RuntimeError("Request was aborted")
 
+        except asyncio.CancelledError:
+            if self._cancel_event is not None:
+                self._cancel_event.set()
+            if ev_stream is not None:
+                await ev_stream.cancel_producer()
+            raise
         except Exception as err:
+            # Structured-output negotiation and validation errors are typed
+            # caller contract failures. Preserve them so Runtime can bypass
+            # its provider retry policy instead of converting them to a generic
+            # assistant error message.
+            from openprogram.providers.structured_output import StructuredOutputError
+            if isinstance(err, StructuredOutputError):
+                raise
             is_aborted = self._cancel_event.is_set() if self._cancel_event else False
             # ``str(err)`` is empty for bare exceptions (e.g. RuntimeError()),
             # which would surface downstream as a content-free

@@ -17,10 +17,12 @@ import pytest
 def _isolated_runtime(monkeypatch: pytest.MonkeyPatch):
     from openprogram.providers import api_registry
     from openprogram.providers import initialization
+    from openprogram.providers import register
 
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})
     monkeypatch.setattr(api_registry, "_provider_transform", None)
+    monkeypatch.setattr(register, "_registered", False)
     importlib.reload(initialization)
 
 
@@ -439,6 +441,9 @@ def test_builtin_registration_can_retry_after_loading_failure(
     from openprogram.providers import register
 
     importlib.reload(register)
+    monkeypatch.setattr(api_registry, "_registry", {})
+    monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(register, "_registered", False)
     provider = object()
     attempts = 0
 

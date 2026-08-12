@@ -170,6 +170,11 @@ def test_query_action_writes_via_dispatcher(env, monkeypatch: pytest.MonkeyPatch
                      if c["payload"].get("type") == "stream_event"]
     assert any(e["payload"]["event"].get("type") == "text"
                for e in stream_events)
+    assert all(
+        "output_attempt" not in e["payload"]["event"]
+        for e in stream_events
+        if e["payload"]["event"].get("type") == "text"
+    )
 
 
 def test_query_action_failure_emits_error_envelope(env) -> None:
@@ -238,6 +243,112 @@ def test_query_action_rejects_session_reserved_by_mcp_without_replacing_token(
     finally:
         run_control.unregister_active_runtime("c1")
         run_control.unregister_cancel_event("c1", mcp_event)
+
+
+def test_structured_query_retries_and_returns_typed_result(env) -> None:
+    srv, db, captured = env
+    conv = srv._get_or_create_session("structured", agent_id="main")
+    msg_id = "u-structured"
+    srv._append_msg(conv, {
+        "id": msg_id, "role": "user", "content": "answer",
+        "timestamp": time.time(), "source": "web",
+    })
+    replies = iter(['{"answer":"bad"}', '{"answer":3}'])
+
+    async def _stream(model, ctx, opts):
+        text = next(replies)
+        yield EventStart(partial=_build_partial(""))
+        yield EventTextStart(content_index=0, partial=_build_partial(""))
+        yield EventTextDelta(content_index=0, delta=text, partial=_build_partial(text))
+        yield EventTextEnd(content_index=0, content=text, partial=_build_partial(text))
+        yield EventDone(reason="stop", message=_build_final(text))
+
+    response_format = {
+        "type": "json_schema",
+        "schema": {
+            "type": "object",
+            "properties": {"answer": {"type": "integer"}},
+            "required": ["answer"],
+            "additionalProperties": False,
+        },
+        "fallback": "prompt",
+    }
+    from openprogram.providers.structured_output import normalize_response_format
+    response_format = normalize_response_format(response_format)
+    orig = D._run_loop_blocking
+
+    def _w(*, req, history, on_event, cancel_event, **_):
+        return orig(req=req, history=history, on_event=on_event,
+                    cancel_event=cancel_event, stream_fn=_stream)
+
+    with patch.object(D, "_run_loop_blocking", _w):
+        srv._execute_in_context(
+            "structured", msg_id, "query", query="answer",
+            thinking_effort=None, tools_flag=None,
+            response_format=response_format,
+        )
+
+    retry = [c["payload"]["event"] for c in captured
+             if c["payload"].get("type") == "stream_event"
+             and c["payload"].get("event", {}).get("type") == "structured_output_retry"]
+    result = [c["payload"] for c in captured if c["payload"].get("type") == "result"]
+    assert retry[0]["attempt"] == 1
+    assert result[-1]["structured_output"] == {"answer": 3}
+    assert result[-1]["structured_output_mode"] == "prompt"
+    assert result[-1]["attempt"] == 2
+    persisted = db.get_branch("structured")[-1]
+    assert persisted["content"] == '{"answer":3}'
+    assert persisted["structured_output"] == {"answer": 3}
+    assert persisted["structured_output_mode"] == "prompt"
+    assert persisted["structured_output_attempt"] == 2
+
+
+def test_structured_query_error_is_typed_and_does_not_expose_candidate(env) -> None:
+    srv, _db, captured = env
+    conv = srv._get_or_create_session("structured-error", agent_id="main")
+    msg_id = "u-structured-error"
+    srv._append_msg(conv, {
+        "id": msg_id, "role": "user", "content": "answer",
+        "timestamp": time.time(), "source": "web",
+    })
+
+    async def _stream(model, ctx, opts):
+        text = '{"answer":"secret candidate"}'
+        yield EventStart(partial=_build_partial(""))
+        yield EventTextStart(content_index=0, partial=_build_partial(""))
+        yield EventTextDelta(content_index=0, delta=text, partial=_build_partial(text))
+        yield EventTextEnd(content_index=0, content=text, partial=_build_partial(text))
+        yield EventDone(reason="stop", message=_build_final(text))
+
+    response_format = {
+        "type": "json_schema",
+        "schema": {
+            "type": "object",
+            "properties": {"answer": {"type": "integer"}},
+            "required": ["answer"],
+        },
+        "fallback": "prompt",
+    }
+    from openprogram.providers.structured_output import normalize_response_format
+    response_format = normalize_response_format(response_format)
+    orig = D._run_loop_blocking
+
+    def _w(*, req, history, on_event, cancel_event, **_):
+        return orig(req=req, history=history, on_event=on_event,
+                    cancel_event=cancel_event, stream_fn=_stream)
+
+    with patch.object(D, "_run_loop_blocking", _w):
+        srv._execute_in_context(
+            "structured-error", msg_id, "query", query="answer",
+            thinking_effort=None, tools_flag=None,
+            response_format=response_format,
+        )
+
+    errors = [c["payload"] for c in captured if c["payload"].get("type") == "error"]
+    assert errors[-1]["code"] == "validation_failed"
+    assert errors[-1]["attempts"] == 2
+    assert errors[-1]["issues"][0]["code"] == "schema_violation"
+    assert "secret candidate" not in str(errors[-1])
 
 
 def test_write_tool_checkpoints_when_dag_runtime_unavailable(

@@ -60,6 +60,9 @@ _forced_predecessor: ContextVar[Optional[str]] = ContextVar(
 _forced_node_id: ContextVar[Optional[str]] = ContextVar(
     '_forced_node_id', default=None,
 )
+_render_range_override: ContextVar[Optional[dict]] = ContextVar(
+    '_render_range_override', default=None,
+)
 
 # Self-recursion safety net. The primary guard against an agentic
 # function re-entering itself (wiki_agent calling wiki_agent →
@@ -571,6 +574,27 @@ def _restore_system(saved):
             pass
 
 
+def _close_owned_runtime(bound_args: dict, owns_runtime: bool) -> None:
+    if not owns_runtime:
+        return
+    for pname in _RUNTIME_PARAMS:
+        rt = bound_args.get(pname)
+        if rt is not None and hasattr(rt, "close"):
+            import sys
+            active_error = sys.exception()
+            try:
+                rt.close()
+            except Exception as exc:
+                if active_error is None:
+                    raise
+                _log.warning(
+                    "owned runtime close failed error_type=%s",
+                    type(exc).__name__,
+                    exc_info=True,
+                )
+            return
+
+
 class agentic_function:
     """
     Class decorator for functions whose body spawns an inner agent loop.
@@ -1034,16 +1058,26 @@ class agentic_function:
             bound = sig.bind(*new_args, **new_kwargs)
             bound.apply_defaults()
             bound_args = dict(bound.arguments)
-
-            _append_function_call_entry(
-                pending_id=_pending_call_id,
-                function_name=fn.__name__,
-                arguments=bound_args,
-                expose=expose,
-                render_range=render_range,
-                started_at=_started_at,
-                docstring=inspect.getdoc(fn) or "",
+            effective_render_range = (
+                render_range if render_range is not None
+                else _render_range_override.get()
             )
+
+            try:
+                _append_function_call_entry(
+                    pending_id=_pending_call_id,
+                    function_name=fn.__name__,
+                    arguments=bound_args,
+                    expose=expose,
+                    render_range=effective_render_range,
+                    started_at=_started_at,
+                    docstring=inspect.getdoc(fn) or "",
+                )
+            except BaseException:
+                if runtime_token is not None:
+                    _current_runtime.reset(runtime_token)
+                _close_owned_runtime(bound.arguments, owns_runtime)
+                raise
             # Stamp ``_call_id`` so anything further down the call
             # tree (rt.exec → ModelCall.caller, ask_user → user
             # Call.caller) attributes its writes to this invocation.
@@ -1100,24 +1134,23 @@ class agentic_function:
             finally:
                 _recursion_depth.reset(_depth_token_async)
                 _restore_system(_system_saved)
-                _update_function_call_exit(
-                    pending_id=_pending_call_id,
-                    output=output,
-                    error=error,
-                    status=status,
-                    expose=expose,
-                    started_at=_started_at,
-                    ended_at=time.time(),
-                )
-                _call_id.reset(_call_token)
-                if _usage_token is not None:
-                    _usage_cur.reset(_usage_token)
-                if runtime_token is not None:
-                    _current_runtime.reset(runtime_token)
-                if owns_runtime:
-                    rt = bound.arguments.get("runtime")
-                    if rt and hasattr(rt, 'close'):
-                        rt.close()
+                try:
+                    _update_function_call_exit(
+                        pending_id=_pending_call_id,
+                        output=output,
+                        error=error,
+                        status=status,
+                        expose=expose,
+                        started_at=_started_at,
+                        ended_at=time.time(),
+                    )
+                finally:
+                    _call_id.reset(_call_token)
+                    if _usage_token is not None:
+                        _usage_cur.reset(_usage_token)
+                    if runtime_token is not None:
+                        _current_runtime.reset(runtime_token)
+                    _close_owned_runtime(bound.arguments, owns_runtime)
 
         wrapper._is_agentic = True
         return wrapper
@@ -1150,16 +1183,26 @@ class agentic_function:
             bound = sig.bind(*new_args, **new_kwargs)
             bound.apply_defaults()
             bound_args = dict(bound.arguments)
-
-            _append_function_call_entry(
-                pending_id=_pending_call_id,
-                function_name=fn.__name__,
-                arguments=bound_args,
-                expose=expose,
-                render_range=render_range,
-                started_at=_started_at,
-                docstring=inspect.getdoc(fn) or "",
+            effective_render_range = (
+                render_range if render_range is not None
+                else _render_range_override.get()
             )
+
+            try:
+                _append_function_call_entry(
+                    pending_id=_pending_call_id,
+                    function_name=fn.__name__,
+                    arguments=bound_args,
+                    expose=expose,
+                    render_range=effective_render_range,
+                    started_at=_started_at,
+                    docstring=inspect.getdoc(fn) or "",
+                )
+            except BaseException:
+                if runtime_token is not None:
+                    _current_runtime.reset(runtime_token)
+                _close_owned_runtime(bound.arguments, owns_runtime)
+                raise
             _call_token = _call_id.set(_pending_call_id)
             # Apply the decorator's system= onto the injected runtime(s)
             # for the duration of this call so nested runtime.exec()
@@ -1219,24 +1262,23 @@ class agentic_function:
             finally:
                 _recursion_depth.reset(_depth_token)
                 _restore_system(_system_saved)
-                _update_function_call_exit(
-                    pending_id=_pending_call_id,
-                    output=output,
-                    error=error,
-                    status=status,
-                    expose=expose,
-                    started_at=_started_at,
-                    ended_at=time.time(),
-                )
-                _call_id.reset(_call_token)
-                if _usage_token is not None:
-                    _usage_cur.reset(_usage_token)
-                if runtime_token is not None:
-                    _current_runtime.reset(runtime_token)
-                if owns_runtime:
-                    rt = bound.arguments.get("runtime")
-                    if rt and hasattr(rt, 'close'):
-                        rt.close()
+                try:
+                    _update_function_call_exit(
+                        pending_id=_pending_call_id,
+                        output=output,
+                        error=error,
+                        status=status,
+                        expose=expose,
+                        started_at=_started_at,
+                        ended_at=time.time(),
+                    )
+                finally:
+                    _call_id.reset(_call_token)
+                    if _usage_token is not None:
+                        _usage_cur.reset(_usage_token)
+                    if runtime_token is not None:
+                        _current_runtime.reset(runtime_token)
+                    _close_owned_runtime(bound.arguments, owns_runtime)
 
         wrapper._is_agentic = True
         return wrapper
@@ -1399,16 +1441,18 @@ def traced(fn):
         return pending_call_id, started_at, call_token
 
     def _exit(pending_call_id, started_at, call_token, output, error, status):
-        _update_function_call_exit(
-            pending_id=pending_call_id,
-            output=output,
-            error=error,
-            status=status,
-            expose="io",
-            started_at=started_at,
-            ended_at=time.time(),
-        )
-        _call_id.reset(call_token)
+        try:
+            _update_function_call_exit(
+                pending_id=pending_call_id,
+                output=output,
+                error=error,
+                status=status,
+                expose="io",
+                started_at=started_at,
+                ended_at=time.time(),
+            )
+        finally:
+            _call_id.reset(call_token)
 
     # Coroutine functions get an async wrapper — calling fn() without
     # awaiting would record the coroutine object's repr as the output

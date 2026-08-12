@@ -27,6 +27,7 @@ _FUNCTION_BODY_CONTROL_KEYS = {
     "work_dir",
     "_workdir",
     "workdir",
+    "response_format",
 }
 
 
@@ -71,6 +72,46 @@ def register(app):
             "head_id": pivot_id,
         })
 
+    async def _set_archived(body: dict | None, archived: bool):
+        """Shared body of the archive / unarchive endpoints.
+
+        Metadata only: nothing is deleted and ``updated_at`` is left
+        alone, so the session keeps its place in the list and comes
+        back unchanged on unarchive. Mirrors the flag onto the live
+        conv and broadcasts ``session_updated``, exactly like the WS
+        ``update_session_flags`` action, so open tabs agree.
+        """
+        import json as _json
+        from openprogram.webui import server as _s
+        from openprogram.agent.session_db import default_db
+
+        session_id = (body or {}).get("session_id")
+        if not session_id:
+            return JSONResponse(
+                content={"error": "session_id required"}, status_code=400,
+            )
+        if not default_db().set_archived(session_id, archived):
+            return JSONResponse(content={"error": "unknown session"}, status_code=404)
+        with _s._sessions_lock:
+            conv = _s._sessions.get(session_id)
+            if conv is not None:
+                conv["archived"] = archived
+        _s._broadcast(_json.dumps({
+            "type": "session_updated",
+            "data": {"id": session_id, "archived": archived},
+        }, default=str))
+        return JSONResponse(content={"session_id": session_id, "archived": archived})
+
+    @app.post("/api/sessions/archive")
+    async def post_session_archive(body: dict = None):
+        """Hide a session from the default list. Reversible, deletes nothing."""
+        return await _set_archived(body, True)
+
+    @app.post("/api/sessions/unarchive")
+    async def post_session_unarchive(body: dict = None):
+        """Return an archived session to the default list."""
+        return await _set_archived(body, False)
+
     @app.post("/api/function/{name}")
     async def post_function(name: str, body: dict = None):
         """Directly invoke an @agentic_function through the forced
@@ -86,6 +127,23 @@ def register(app):
             then the repo root.
         """
         body = body or {}
+        response_format = None
+        if body.get("response_format") is not None:
+            from openprogram.providers.structured_output import (
+                StructuredOutputError,
+                normalize_response_format,
+            )
+            try:
+                response_format = normalize_response_format(body["response_format"])
+            except StructuredOutputError as exc:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": "Structured output request is invalid",
+                        "code": exc.code,
+                        "issues": exc.issues,
+                    },
+                )
         session_id = body.get("session_id") or body.get("_session_id")
         if isinstance(body.get("kwargs"), dict):
             kwargs = dict(body.get("kwargs") or {})
@@ -118,7 +176,12 @@ def register(app):
             if node is not None:
                 anchor = _call_predecessor(node)
         result = run_agentic_function_call(
-            name, kwargs, session_id, work_dir, anchor_msg_id=anchor,
+            name,
+            kwargs,
+            session_id,
+            work_dir,
+            anchor_msg_id=anchor,
+            response_format=response_format,
         )
         if "error" in result:
             return JSONResponse(status_code=result.pop("status_code", 400),
@@ -132,6 +195,7 @@ def run_agentic_function_call(
     session_id: str | None = None,
     work_dir: str | None = None,
     anchor_msg_id: str | None = None,
+    response_format=None,
 ) -> dict:
     """Dispatch an @agentic_function via the forced tool-call path and
     return ``{"session_id", "msg_id"}`` (or ``{"error", "status_code",
@@ -370,6 +434,7 @@ def run_agentic_function_call(
                     work_dir=work_dir,
                     agent_id=agent_id,
                     source="fn-form",
+                    response_format=response_format,
                     on_event=lambda env: _s._broadcast_envelope(env)
                         if hasattr(_s, "_broadcast_envelope")
                         else _s._broadcast(__import__("json").dumps(env, default=str)),

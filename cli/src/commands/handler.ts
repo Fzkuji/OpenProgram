@@ -100,6 +100,13 @@ type McpServer = {
   tools?: string[];
 };
 
+/** One row of the schema-driven settings list from /api/settings. */
+type SettingRow = {
+  key: string;
+  value?: unknown;
+  choices?: string[];
+};
+
 const mcpState = (server: McpServer): string => {
   if (!server.enabled || server.error === 'disabled') return 'disabled';
   if (server.ready) return 'ready';
@@ -547,6 +554,61 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
           ? `Theme set to ${name}.`
           : `Unknown theme '${name}'. Try /theme to pick from a list.`,
       );
+      return true;
+    }
+
+    case 'style': {
+      // /style          → list styles, marking the active one
+      // /style <name>   → switch
+      // The style is a schema-declared setting, so both directions go
+      // through /api/settings like every other config row.
+      const url = `${backendBase()}/api/settings`;
+      const readStyle = async (): Promise<{ value: string; choices: string[] }> => {
+        const response = await backendFetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json() as { settings?: SettingRow[] };
+        const row = (data.settings ?? []).find((s) => s.key === 'agent.output_style');
+        if (!row) throw new Error('agent.output_style is not available on this server');
+        return { value: String(row.value ?? 'default'), choices: row.choices ?? [] };
+      };
+      if (args.length < 1) {
+        void readStyle()
+          .then(({ value, choices }) => {
+            const names = choices.length ? choices : [value];
+            ctx.pushSystem(
+              `Output style (how replies are written):\n${names
+                .map((n) => `${n === value ? '●' : '○'} ${n}`)
+                .join('\n')}\n\nSwitch with /style <name>.`,
+            );
+          })
+          .catch((error) => ctx.pushSystem(`Style list failed: ${requestError(error)}`));
+        return true;
+      }
+      const wanted = args[0]!;
+      void readStyle()
+        .then(async ({ choices }) => {
+          if (choices.length && !choices.includes(wanted)) {
+            ctx.pushSystem(
+              `Unknown style '${wanted}'. Available: ${choices.join(', ')}`,
+            );
+            return;
+          }
+          const response = await backendFetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ key: 'agent.output_style', value: wanted }),
+          });
+          const result = await response.json() as { error?: string };
+          if (!response.ok || result.error) {
+            throw new Error(result.error ?? `HTTP ${response.status}`);
+          }
+          ctx.pushSystem(
+            wanted === 'default'
+              ? 'Output style set to default (no extra guidance).'
+              : `Output style set to ${wanted}. Applies from the next turn.`,
+          );
+        })
+        .catch((error) => ctx.pushSystem(`Style change failed: ${requestError(error)}`));
       return true;
     }
 

@@ -19,6 +19,8 @@ The settings registry is defined in `openprogram/config_schema.py` (the single s
 | `search.default_provider` | Search | default web search provider; `auto` picks the highest-priority configured one | auto | live |
 | `memory.backend` | Memory | `local` (on-disk memory) or `none` (no prompt memory, recall, automatic writes, organizer, or memory threads) | local | next start |
 | `memory.writer.model` | Memory | optional `provider/model` override for background writing; empty uses the default chat agent's provider, model, and credentials | empty | live |
+| `proactive.heartbeat` | Memory | due-commitment reminder cadence: `daily` at 09:00 local, `hourly` at minute 00, or `off`; requires `cron-worker` | daily | live |
+| `proactive.quiet_hours` | Memory | local-time interval in `HH:MM-HH:MM` form during which reminders are suppressed | 23:00-08:00 | live |
 | `sandbox.mode` | Sandbox | `danger-full-access`, or `workspace-write` to apply the host-native sandbox to local model-driven commands: writes are limited to the working directory/configured roots, deny-read paths are blocked, and network is disabled | workspace-write | live |
 | `sandbox.writable_roots` | Sandbox | extra directories a sandboxed command may write, as a JSON list | [] | live |
 | `sandbox.deny_read` | Sandbox | globs a sandboxed command cannot read; defaults include credential paths. Linux cannot enforce middle-wildcard patterns such as `**/.env`: use an exact path or a concrete directory deny such as `/absolute/path/to/secrets/**` for sensitive content | see `openprogram config get sandbox.deny_read` | live |
@@ -27,6 +29,7 @@ The settings registry is defined in `openprogram/config_schema.py` (the single s
 | `sandbox.pass_env` | Sandbox | environment variable names to pass through besides the built-in allowlist | [] | live |
 | `sandbox.unavailable_policy` | Sandbox | `refuse` fails the command when the platform backend is missing or cannot create its required isolation; `warn` runs it unsandboxed | refuse | live |
 | `tools.disabled.<name>` | Tools | per-tool switch; written as members of the `tools.disabled` list | all enabled | live |
+| `agent.output_style` | Agent | how replies are written; appends a block to the system prompt. See [Output styles](output-styles.md) | default | live |
 | `providers.<name>` | Providers | read-only status row (configured or not); configure with `openprogram providers login` or the Web UI | — | — |
 
 The local sandbox is host-native: Seatbelt on macOS and bubblewrap on Linux. Windows and unsupported platforms refuse commands while the sandbox is enabled unless the owner explicitly selects the unsafe `sandbox.unavailable_policy=warn` or sets `sandbox.mode=danger-full-access`. Docker is not an automatic fallback.
@@ -40,6 +43,7 @@ The top-level keys actually written to `~/.openprogram/config.json` (do not edit
 | `ui` | `{port, web_port, open_browser}`, see the table above | `openprogram/config_schema.py` |
 | `search` | `{default_provider}` | `openprogram/setup.py` |
 | `memory` | `{backend, writer: {model}}`, see the table above | `openprogram/config_schema.py`, `openprogram/memory/` |
+| `proactive` | `{heartbeat, quiet_hours}`, see the table above | `openprogram/config_schema.py`, `openprogram/proactive/heartbeat.py` |
 | `tools` | `{disabled: [tool name, ...]}` | `openprogram/setup.py`, `openprogram/config_schema.py` |
 | `sandbox` | `{mode, writable_roots, deny_read, deny_write, network, pass_env, unavailable_policy}`, see the table above | `openprogram/sandbox/__init__.py`, `openprogram/config_schema.py` |
 | `default_provider` | Default LLM provider (written by the setup wizard) | `openprogram/setup.py` |

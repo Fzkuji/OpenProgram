@@ -9,6 +9,17 @@ export type ChatRequest = {
   thinking_effort?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
   permission_mode?: 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass';
   tools?: boolean;
+  response_format?: JsonSchemaOutput | Record<string, unknown>;
+};
+
+export type JsonSchemaOutput = {
+  type?: 'json_schema';
+  schema: Record<string, unknown>;
+  name?: string;
+  description?: string;
+  strict?: boolean;
+  fallback?: 'auto' | 'none' | 'prompt';
+  max_validation_retries?: 0 | 1;
 };
 
 export type WsRequest =
@@ -129,6 +140,12 @@ export interface ChatResponse {
   data: {
     type: 'status' | 'stream_event' | 'result' | 'error' | 'follow_up_question' | 'cancelled' | 'tree_update' | 'context_stats' | string;
     content?: string;
+    structured_output?: unknown;
+    structured_output_mode?: 'native' | 'tool' | 'prompt';
+    attempt?: number;
+    code?: string;
+    attempts?: number;
+    issues?: Array<{ code: string; path?: string; schema_path?: string; message?: string }>;
     session_id?: string;
     msg_id?: string;
     [k: string]: unknown;

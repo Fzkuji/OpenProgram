@@ -171,7 +171,7 @@ One workspace per instance, shared by every agent and every conversation includi
 
 | Verb | What it does |
 |------|------|
-| `status` | Path, entry count, last sleep time |
+| `status` | Owner view of workspace path/revision, file and relation counts, writer health, and commitment counts/records |
 | `recall` | Search the wiki + recent journal, print raw snippets; `--days N` limits the journal window (default 30) |
 | `show` / `edit` | Print / edit a wiki page with `$EDITOR` |
 | `sleep` | Run a sleep consolidation pass now (light → deep → REM); `--phase light\|deep\|rem` runs one phase only |
@@ -184,6 +184,7 @@ One workspace per instance, shared by every agent and every conversation includi
 |------|------|----------|
 | `doctor` | End-to-end health check | `--json` for JSON output |
 | `rescue` | Diagnose problems and print the fix commands directly | — |
+| `diagnostics` | Build a redacted support zip (version, config, logs, probes) to attach to a bug report — see [Diagnostics bundle](diagnostics.md) | `--output PATH` (default `./openprogram-diagnostics-<date>.zip`) |
 | `logs` | View logs | `list`; `tail [name]` (`-n` line count, `-f` follow); `path [name]`. name is worker / runtime / ink, default worker |
 | `update` | Check for and apply updates | `--check` only checks; `--force` bypasses the 6-hour throttle |
-| `cron-worker` | Foreground loop that fires scheduled entries from the `cron` tool | `--once` evaluates one tick and exits; `--list` shows each entry with match status |
+| `cron-worker` | Foreground loop that fires scheduled `cron` entries and the built-in commitment heartbeat | `--once` evaluates one tick and exits; `--list` shows user cron entries only |

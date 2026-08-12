@@ -234,6 +234,7 @@ The frontend sends the WebSocket message {"action": "list_sessions"}
   → handle_list_sessions:
       → session_store.list_sessions():
           → Iterate over the in-memory _index.values()
+          → Drop archived rows unless include_archived=True
           → Filter by filters
           → Sort by updated_at in descending order
           → Return rows[offset:offset+limit]
@@ -243,6 +244,20 @@ The frontend sends the WebSocket message {"action": "list_sessions"}
 ```
 
 Purely an in-memory operation; it does not touch disk.
+
+### Archived rows
+
+`list_sessions` hides archived sessions by default — archiving only bounds the
+list if the default listing honours it. Two ways to see them:
+
+- `include_archived=True` returns archived and active rows together
+- `archived=True` returns only the archived ones
+
+Maintenance passes that must visit every session regardless of the flag —
+the memory scan, run-state repair, "clear all", channel-binding lookup,
+agent addressing — pass `include_archived=True` explicitly. The sidebar
+payload also sends every row and lets the client switch between the active,
+archived, and all views without a round trip.
 
 ### Fields returned per session
 
@@ -268,11 +283,39 @@ The registry operation is internal to `delete_session`. The broadcast is initiat
 
 ## Archiving
 
+Archiving keeps the session list from growing without end. It is a single
+boolean on the session meta — nothing is deleted, nothing is moved, and the
+operation is reversible at any time.
+
 ```
-Caller calls update_session(session_id, archived=True)
+Caller calls set_archived(session_id, True)
+  → update_session(session_id, archived=True)
   → Follows the full "Updating fields" flow
   → After the frontend receives the broadcast, it filters the display
 ```
+
+`set_archived` returns `False` for an unknown session id, so the CLI and the
+REST endpoints can report a missing session instead of silently succeeding.
+
+### What archiving does not touch
+
+`updated_at` records the last time a message was appended, and archiving
+appends nothing — so it leaves the timestamp alone. This is the
+[index consistency contract](index-consistency.html): an archived session
+returns to exactly its old place in the list when unarchived, rather than
+jumping to the top. Messages, branches, and history files are untouched;
+`get_messages` keeps working while a session is archived.
+
+### Entry points
+
+| Surface | Operation |
+|------|------|
+| WebSocket | `{"action": "update_session_flags", "session_id": ..., "archived": true}` |
+| REST | `POST /api/sessions/archive` / `POST /api/sessions/unarchive`, body `{"session_id": ...}` |
+| CLI | `openprogram sessions archive <id>` / `openprogram sessions unarchive <id>` |
+
+All three write the same flag through `set_archived` and broadcast
+`session_updated`, so every open tab agrees.
 
 Archived sessions are subject to the startup-time data maintenance constraints: 90-day expiration + the 1000 capacity cap. Active sessions are not affected.
 

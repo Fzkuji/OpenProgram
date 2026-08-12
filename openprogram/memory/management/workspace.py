@@ -58,6 +58,7 @@ class MemoryWorkspace(
             else frozenset(allowed_new_source_refs)
         )
         self.committed = False
+        self._stage_usable = True
         # Set for the duration of one structured transaction; see update().
         self._transaction_source_refs: frozenset[str] | None = None
         self.last_changed_topics: list[str] = []
@@ -84,6 +85,7 @@ class MemoryWorkspace(
         shutil.rmtree(self.stage_dir, ignore_errors=True)
 
     def _refresh_stage(self) -> None:
+        self._stage_usable = False
         self._discard_stage()
         self.stage_dir.mkdir()
         for name in ("topics", "timeline", "sources"):
@@ -91,9 +93,10 @@ class MemoryWorkspace(
             if source.exists():
                 shutil.copytree(source, self.stage_dir / name)
         (self.stage_dir / "topics").mkdir(exist_ok=True)
-        recent = self.memory_dir / "recent_events.jsonl"
-        if recent.exists():
-            shutil.copy2(recent, self.stage_dir / recent.name)
+        for name in ("recent_events.jsonl", "commitments.jsonl"):
+            derived = self.memory_dir / name
+            if derived.exists():
+                shutil.copy2(derived, self.stage_dir / derived.name)
         relations = self.memory_dir / "relations.json"
         if relations.exists():
             shutil.copy2(relations, self.stage_dir / relations.name)
@@ -113,6 +116,7 @@ class MemoryWorkspace(
             # pending or out-of-batch evidence and attributing that content to
             # one of the selected references.
             shutil.rmtree(self.stage_dir / "sources", ignore_errors=True)
+        self._stage_usable = True
 
     def _restore_staged_sources(self) -> None:
         """Restore the committed archive after a restricted agent turn."""
@@ -206,6 +210,8 @@ class MemoryWorkspace(
         the stage through the built-in file tools. Any failure discards the
         staged edits and re-raises.
         """
+        if not self._stage_usable:
+            raise RuntimeError("memory stage is unavailable after rollback failure")
         self.last_changed_topics = []
         self.last_created_blocks = 0
         try:
@@ -294,8 +300,10 @@ class MemoryWorkspace(
         self,
         *,
         base_revision: str,
-        patch: str,
+        patch: str = "",
         sources: Any = None,
+        commitment_transitions: list[dict[str, Any]] | None = None,
+        commitment_transition_source: str | None = None,
         commit_message: str | None = None,
         git_commit: str = "auto",
         limits: TransactionLimits | None = None,
@@ -314,6 +322,11 @@ class MemoryWorkspace(
                 "INVALID_ARGUMENT", "git_commit must be auto, on or off"
             )
         limits = limits or TransactionLimits()
+        if not patch and not commitment_transitions:
+            raise TransactionError(
+                "INVALID_ARGUMENT",
+                "patch or commitment_transitions is required",
+            )
         if len(patch.encode("utf-8")) > limits.max_patch_bytes:
             raise TransactionError(
                 "INVALID_ARGUMENT",
@@ -354,7 +367,7 @@ class MemoryWorkspace(
                 # attach an unrelated Source — trusted or not — to new prose.
                 self._transaction_source_refs = frozenset(mapping.values())
                 resolved = resolve_source_labels(patch, mapping)
-                changed = apply_patch(self.stage_dir, resolved)
+                changed = apply_patch(self.stage_dir, resolved) if patch else []
                 if append_only:
                     for relative in changed:
                         before = self.memory_dir / relative
@@ -369,6 +382,14 @@ class MemoryWorkspace(
                                 "but cannot rewrite existing content",
                                 path=relative,
                             )
+                if commitment_transitions:
+                    from ..runtime.commitments import transition_commitments
+
+                    transition_commitments(
+                        self.stage_dir,
+                        commitment_transitions,
+                        manual_source=commitment_transition_source,
+                    )
                 install_state(self, before_units, before_block_ids)
             except TransactionError:
                 self._refresh_stage()

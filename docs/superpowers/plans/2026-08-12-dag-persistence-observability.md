@@ -27,8 +27,8 @@ git status --short
 | Base | `4f8649d1` |
 | Design | `a271dbb9` (`docs(dag): define persistence diagnostics contract`) |
 | RED | 3 failed, 1 passed: entry, async exit, and traced exit persistence failures produced no diagnostics |
-| GREEN | 24 passed across new observability tests and existing DAG exit/exec/ask-user suites; scoped Ruff and diff check passed |
-| Specification review | Pending |
-| Quality review | Pending |
-| Full gate | Pending |
-| Final implementation | Pending |
+| GREEN | Final affected coverage: 38 passed, including diagnostic shape, hidden/no-store, BaseException cleanup, runtime aliases, and close-error priority |
+| Specification review | PASS; shared helper contract and independent sync/async/traced probes passed |
+| Quality review | PASS at `e9f4f7a6`; context cleanup, runtime aliases and active-abort priority findings repaired |
+| Full gate | 38 passed; Ruff passed; docs 461 pages; 0 broken links; `git diff --check` passed |
+| Final implementation | `74a0bbbc`, `ccb19f24`, `95772852`, `e9f4f7a6` |

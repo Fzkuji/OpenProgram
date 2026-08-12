@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from pathlib import Path
 from typing import AsyncGenerator
@@ -27,7 +28,9 @@ from unittest.mock import patch
 import pytest
 
 from openprogram.agent import dispatcher as D
+from openprogram.agent.dispatcher import titles as title_module
 from openprogram.agent.session_db import SessionDB
+from openprogram.agentic_programming.runtime import Runtime
 from openprogram.providers.types import (
     AssistantMessage,
     AssistantMessageEvent,
@@ -39,6 +42,10 @@ from openprogram.providers.types import (
     Model,
     TextContent,
     Usage,
+)
+from openprogram.providers.structured_output import (
+    JsonSchemaOutput,
+    StructuredOutputValidationError,
 )
 
 
@@ -107,6 +114,168 @@ def stubs(monkeypatch: pytest.MonkeyPatch):
 # ---------------------------------------------------------------------------
 # Auto-title
 # ---------------------------------------------------------------------------
+
+class _TitleRuntimeSpy:
+    def __init__(
+        self,
+        result=None,
+        error: Exception | None = None,
+        close_error: Exception | None = None,
+    ) -> None:
+        self.result = result
+        self.error = error
+        self.close_error = close_error
+        self.calls: list[dict] = []
+        self.system = ""
+        self.closed = False
+
+    def exec(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+    def close(self) -> None:
+        self.closed = True
+        if self.close_error is not None:
+            raise self.close_error
+
+
+def _install_title_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    runtime: _TitleRuntimeSpy,
+) -> None:
+    monkeypatch.setattr(
+        "openprogram.providers.default_llm._read_default_model",
+        lambda: ("openai", "stub"),
+    )
+    monkeypatch.setattr(
+        "openprogram.providers.registry.create_runtime",
+        lambda **_kwargs: runtime,
+    )
+    monkeypatch.setattr(
+        "openprogram.providers.default_llm.build_default_llm",
+        lambda: None,
+    )
+
+
+def test_llm_title_uses_validated_structured_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = _TitleRuntimeSpy({"title": "  Title: “正式标题”  "})
+    _install_title_runtime(monkeypatch, runtime)
+
+    title = title_module._generate_llm_title("用户内容", "助手内容")
+
+    assert title == "Title: “正式标题”"
+    assert runtime.closed is True
+    assert len(runtime.calls) == 1
+    assert runtime.calls[0]["toolset"] == "none"
+    response_format = runtime.calls[0]["response_format"]
+    assert isinstance(response_format, JsonSchemaOutput)
+    assert response_format.name == "session_title"
+    assert response_format.max_validation_retries == 1
+    assert response_format.schema == {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "minLength": 1, "maxLength": 80},
+        },
+        "required": ["title"],
+        "additionalProperties": False,
+    }
+    prompt = runtime.calls[0]["content"][0]["text"]
+    assert "<session>\n用户内容\n\n助手内容\n</session>" in prompt
+
+
+def test_structured_title_failure_keeps_phase_one_placeholder(
+    tmp_db: SessionDB,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = _TitleRuntimeSpy(
+        error=StructuredOutputValidationError(
+            "bad title",
+            code="validation_failed",
+        ),
+    )
+    _install_title_runtime(monkeypatch, runtime)
+    tmp_db.create_session("c1", "main", title="Existing")
+
+    title_module.fn_form_llm_title(tmp_db, "c1", "Existing")
+
+    assert tmp_db.get_session("c1")["title"] == "Existing"
+    assert len(runtime.calls) == 1
+    assert runtime.closed is True
+
+
+def test_llm_title_allows_one_structured_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider_calls: list[list[dict]] = []
+    factory_calls: list[dict] = []
+
+    def call(content, model="test", response_format=None):
+        provider_calls.append(content)
+        if len(provider_calls) == 1:
+            return '{"title": 7}'
+        return '{"title": "修复后的标题"}'
+
+    runtime = Runtime(call=call, model="test")
+    monkeypatch.setattr(
+        "openprogram.providers.default_llm._read_default_model",
+        lambda: ("openai", "configured-model"),
+    )
+
+    def create_runtime(**kwargs):
+        factory_calls.append(kwargs)
+        return runtime
+
+    monkeypatch.setattr(
+        "openprogram.providers.registry.create_runtime",
+        create_runtime,
+    )
+
+    title = title_module._generate_llm_title("用户内容", "助手内容")
+
+    assert title == "修复后的标题"
+    assert len(provider_calls) == 2
+    assert factory_calls == [{"provider": "openai", "model": "configured-model"}]
+    assert runtime._closed is True
+
+
+@pytest.mark.parametrize("stage", ["setup", "exec", "close"])
+def test_llm_title_does_not_log_provider_exception_bodies(
+    stage: str,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentinel = f"SECRET_{stage.upper()}_TITLE"
+    runtime = _TitleRuntimeSpy(
+        {"title": "safe title"},
+        error=RuntimeError(sentinel) if stage == "exec" else None,
+        close_error=RuntimeError(sentinel) if stage == "close" else None,
+    )
+    monkeypatch.setattr(
+        "openprogram.providers.default_llm._read_default_model",
+        lambda: ("openai", "stub"),
+    )
+
+    def create_runtime(**_kwargs):
+        if stage == "setup":
+            raise RuntimeError(sentinel)
+        return runtime
+
+    monkeypatch.setattr(
+        "openprogram.providers.registry.create_runtime",
+        create_runtime,
+    )
+
+    with caplog.at_level(logging.DEBUG, logger=title_module.__name__):
+        title = title_module._generate_llm_title("user", "assistant")
+
+    assert title == ("safe title" if stage == "close" else None)
+    assert runtime.closed is (stage != "setup")
+    assert sentinel not in caplog.text
+
 
 def test_auto_title_stamps_from_first_user_message(tmp_db: SessionDB) -> None:
     fake = make_text_stream("ack")

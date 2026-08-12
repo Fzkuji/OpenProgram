@@ -16,7 +16,9 @@ Design calls:
   * Helper runs under the *current account*'s subprocess HOME (see
     :class:`Account`) so corporate creds that bleed in via ``~/.aws/``
     don't cross account boundaries.
-  * Helper stderr is captured and surfaced on failure; stdout is parsed
+  * Helper stderr is captured and surfaced on failure, scrubbed through
+    the diagnostics redactor first because a failing token helper often
+    echoes the credential it was fetching; stdout is parsed
     as JSON or raw text per config. No shell interpolation — we take a
     ``list[str]`` argv so there's nothing to escape.
 """
@@ -234,6 +236,21 @@ def _run_helper_sync(cfg: CredentialProcessConfig) -> str:
     return box["out"]
 
 
+def _redacted_stderr(stderr: bytes) -> str:
+    """Scrub helper stderr before it reaches an error message or a log.
+
+    A failing token helper prints whatever it likes — an echoed request
+    carrying the token it just fetched, an upstream response body, a
+    verbose curl trace. Reuses the diagnostics scrubber so this path and
+    the support bundle cannot disagree about what counts as a secret.
+    Redaction runs before truncation: cutting first could leave a secret's
+    prefix behind with nothing left for a pattern to match.
+    """
+    from openprogram._cli_cmds.diagnostics import redact_text
+
+    return redact_text(stderr.decode("utf-8", errors="replace"))[:200]
+
+
 async def _run_helper(cfg: CredentialProcessConfig) -> str:
     env = os.environ.copy()
     env.update(cfg.env)
@@ -254,6 +271,6 @@ async def _run_helper(cfg: CredentialProcessConfig) -> str:
         raise RuntimeError(f"helper timed out after {cfg.timeout_seconds}s")
     if proc.returncode != 0:
         raise RuntimeError(
-            f"helper exited {proc.returncode}: {stderr.decode('utf-8', errors='replace')[:200]}"
+            f"helper exited {proc.returncode}: {_redacted_stderr(stderr)}"
         )
     return stdout.decode("utf-8")

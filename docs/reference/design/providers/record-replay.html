@@ -376,7 +376,8 @@ replay:
   <h3>文件系统</h3>
   <ul>
     <li>managed root 为 <code>get_state_dir() / "recordings"</code>；增加 <code>get_recordings_dir()</code>，创建后收紧到 0700。</li>
-    <li>数据文件在第一次写入时以 0600 创建；每次打开已有文件后调用 <code>openprogram._compat.restrict_to_user(path)</code>，修复历史宽权限并覆盖 Windows ACL。POSIX 随后以 <code>fstat</code> 确认 mode 为 0600，无法保证时拒绝录制；Windows 执行现有 ACL 收紧函数，其 best-effort 限制作为明确的平台约束显示在 status 中。</li>
+    <li>managed recordings root 无论新建还是已存在，在 POSIX 上均收紧到 0700；库级显式外部 <code>RecordingSink(path)</code> 不修改父目录权限，也不跟随父目录 symlink 执行 chmod。数据文件在第一次写入时以 0600 创建。record 写路径每次打开已有文件后调用 <code>openprogram._compat.restrict_to_user(path)</code>，修复历史宽权限；随后以 <code>fstat</code> 确认 mode 为 0600，无法保证时拒绝录制。</li>
+    <li>replay 读取区分 managed 与显式外部路径：managed 文件可收紧为 0600；显式外部文件只验证当前为普通文件且 mode 已是 0600，不主动 <code>chmod</code>。外部文件权限过宽时明确拒绝，由文件所有者处理。</li>
     <li>锁文件同样以 0600 创建。list/show/delete/prune 使用 <code>lstat</code> 拒绝 symlink，并在 resolve 后验证 managed root 包含关系。</li>
     <li>record 模式使用 <code>O_NOFOLLOW</code>（平台支持时）和 <code>O_EXCL</code> 初始化新文件；不得截断已有录制。名称冲突直接失败。没有 <code>O_NOFOLLOW</code> 时，在持有 managed root 的目录 fd 下按 basename 打开，并用 <code>lstat</code>/<code>fstat</code> 的设备号、inode 与普通文件类型复核打开结果。</li>
     <li>delete/prune 只删除后缀为 <code>.jsonl</code> 的普通文件；不递归、不跟随 symlink、不删除显式外部路径。</li>
@@ -385,7 +386,7 @@ replay:
   <h3>脱敏合同</h3>
   <ul>
     <li><code>remove_secret_values()</code> 在任何序列化之前执行，record 模式不存在关闭选项。</li>
-    <li>保留当前大小写不敏感的敏感字段集合，并覆盖嵌套 dict/list。</li>
+    <li>保留当前大小写不敏感的敏感字段集合，并覆盖嵌套 dict/list。字段名识别 <code>-</code>/<code>_</code> 与 camelCase 分段；以 <code>token</code>、<code>key</code>、<code>secret</code>、<code>password</code> 结尾的复合 header/option 名同样整体脱敏，例如 <code>X-Session-Token</code>、<code>service_api_key</code>、<code>refreshToken</code>、<code>clientSecret</code>。不匹配 <code>token_count</code>/<code>tokenCount</code> 等非凭据计数字段。</li>
     <li>value pattern 覆盖 Authorization 常见 scheme（Bearer、Basic、Bot、token、Key）、URL userinfo，以及 query 中当前已实现的 <code>api_key</code>/<code>apikey</code>/<code>access_token</code>/<code>token</code>；新增 query key 必须同时提交实现和测试，不能只写入设计状态。</li>
     <li>不采用通用“高熵字符串”规则：它会不稳定地改写正常 prompt，导致回放 mismatch。新增 provider 凭证形态必须以确定 pattern 和回归测试加入。</li>
     <li>record 与 replay 必须使用同一个 <code>redaction_version</code> 分派。当前 v1 文件没有该字段时按 redaction v1 处理。</li>
@@ -489,9 +490,9 @@ replay:
       <tr><td>异常与取消</td><td>provider 抛异常、任务取消、消费方 <code>aclose()</code>、同步启动失败</td><td>原控制流保持；源生成器关闭；call_end outcome 和 event_count 正确；整份文件可解析；replay 在对应调用失败而不影响后续计数。</td></tr>
       <tr><td>激活失败</td><td>replay 文件丢失/损坏、未知 mode、非法 record selector</td><td>应用初始化不抛出；runtime READY，<code>snapshot.mode == "blocked"</code>；provider 调用 fail-closed；不解析凭据、不访问网络；管理命令可恢复。</td></tr>
       <tr><td>回放计数</td><td>同一请求先 mismatch 后修正重试</td><td>mismatch 不增加 <code>call_count</code>；修正请求仍与同一 recorded call 比较；成功或已记录的中断才消费一次。</td></tr>
-      <tr><td>权限</td><td>新目录/文件/锁文件、历史 0644 文件</td><td>POSIX 0700/0600；已有文件被收紧；调用 <code>restrict_to_user</code>。</td></tr>
+      <tr><td>权限</td><td>新目录/文件/锁文件、既有宽权限目录、managed 历史 0644 文件、显式外部 0644 文件</td><td>POSIX 0700/0600；record 与 managed replay 可收紧；外部 replay 只验证并拒绝宽权限，不修改 mode。</td></tr>
       <tr><td>路径</td><td><code>../</code>、绝对 record path、symlink、目录、外部 delete</td><td>record/delete/prune 拒绝逃逸；replay/show 外部文件只读可用。</td></tr>
-      <tr><td>脱敏</td><td>大小写字段、嵌套值、常见 auth scheme、URL userinfo/query、普通文本</td><td>凭证字节不在文件；非凭证文本保持；record/replay 使用同版规则。</td></tr>
+      <tr><td>脱敏</td><td>大小写字段、嵌套值、复合 token/key/secret/password 后缀、常见 auth scheme、URL userinfo/query、普通文本</td><td>凭证字节不在文件；<code>token_count</code> 等非凭证文本保持；record/replay 使用同版规则。</td></tr>
       <tr><td>严格格式</td><td>空文件、坏 JSON、双 header、未知行、孤立 event、索引间隔、重复 end、错误 count、未知 event</td><td>构造 ReplayProvider 时报告 path/line/call/reason。</td></tr>
       <tr><td>严格离线</td><td>正常、mismatch、耗尽、损坏四条 replay 路径</td><td>socket/http client sentinel 均未调用；credential resolver 未调用；无 live fallback。</td></tr>
       <tr><td>Runtime factory</td><td>显式 provider/model、非凭证默认配置、无默认配置、plain/subscription provider</td><td>replay 使用 entry 的 <code>model_namespace</code>，不导入/构造 <code>runtime_class</code>，不执行 CLI/AuthStore detection，不调用 credential resolver；最终 wire-level Model 仍由 ReplayProvider 严格比较。</td></tr>

@@ -57,4 +57,30 @@ describe('handleChatResponse', () => {
       },
     });
   });
+
+  it('clears the rejected structured-output candidate before retry', () => {
+    const setStreaming = vi.fn();
+    const ctx = {
+      conversationId: 'session-1',
+      setStreaming,
+      setActivity: vi.fn(),
+    } as unknown as WsEventsCtx;
+
+    handleChatResponse(
+      {
+        type: 'stream_event',
+        session_id: 'session-1',
+        event: {
+          type: 'structured_output_retry',
+          attempt: 1,
+          next_attempt: 2,
+          issues: [],
+        },
+      },
+      ctx,
+      vi.fn(),
+    );
+
+    expect(setStreaming).toHaveBeenCalledWith(null);
+  });
 });

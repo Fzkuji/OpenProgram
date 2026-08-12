@@ -12,6 +12,8 @@ The complete source text is below and nothing needs to be copied anywhere. Files
 
 Preserve complete historical state changes. Use an observation date only to resolve explicit relative dates in the text it heads, not as the default date of every fact.
 
+Use `record_commitments` for every obligation a speaker takes on, including undated obligations. Give it one imperative sentence, an absolute YYYY-MM-DD due date or null, the single source ref where the speaker made the commitment, and an exact one-line quote from that Source that states the obligation. Do not infer obligations from wishes, plans without ownership, or requests made of somebody else. If the batch explicitly says an open commitment shown below was completed or should no longer be tracked, transition that commitment to done or dismissed and cite the current-batch Source plus its exact one-line closure quote. The Runtime derives stable IDs and speaker identity from the cited evidence, rejects untrusted or out-of-batch evidence, and records transition provenance.
+
 Write into `topics/core.md` the stable information that should be visible in every future interaction, such as persistent preferences, long-term goals, active ongoing work, or mandatory constraints. It is a subject file like any other and follows the same contract; the always-on `core.md` at the workspace root is rendered from it and is not yours to edit.
 
 {sessions}"""

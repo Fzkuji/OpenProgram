@@ -1,21 +1,28 @@
 import asyncio
+import threading
 import time
 
 import pytest
 
 from openprogram.agentic_programming.runtime import Runtime
 from openprogram.providers.structured_output import (
+    normalize_response_format,
     StructuredOutputSchemaError,
     StructuredOutputValidationError,
     StructuredOutputUnsupportedError,
 )
+from openprogram.providers import api_registry, register_api_provider
+from openprogram.providers.structured_output import StructuredOutputCapabilities
 from openprogram.providers.types import (
     AssistantMessage,
     EventDone,
+    EventError,
     EventStart,
     Model,
     TextContent,
 )
+from openprogram.providers.utils.errors import ErrorReason, LLMError
+from openprogram.providers.utils.errors import ExecInterrupt
 
 
 SCHEMA = {
@@ -89,23 +96,484 @@ def test_validation_failure_gets_one_bounded_semantic_repair():
     assert len(repair_text) < 4000
 
 
+def test_validation_repair_consumes_shared_exec_attempt_budget():
+    calls = []
+    events = []
+
+    def call(content, model="test", response_format=None):
+        calls.append(content)
+        return '{"answer": "wrong"}' if len(calls) == 1 else '{"answer": 11}'
+
+    runtime = Runtime(call=call, model="dummy", max_retries=1)
+    runtime.on_stream = events.append
+    with pytest.raises(StructuredOutputValidationError):
+        runtime.exec("question", response_format=SCHEMA)
+
+    assert len(calls) == 1
+    assert not any(event.get("type") == "structured_output_retry" for event in events)
+
+
+def test_repair_transport_failure_does_not_refresh_exec_attempt_budget(monkeypatch):
+    calls = []
+
+    def call(content, model="test", response_format=None):
+        calls.append(content)
+        if "validation_failed" in content[-1].get("text", ""):
+            raise RuntimeError("repair transport failed")
+        return '{"answer": "wrong"}'
+
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.runtime._retry_sleep_seconds",
+        lambda *args, **kwargs: 0,
+    )
+    with pytest.raises(Exception, match="repair transport failed"):
+        Runtime(call=call, model="dummy", max_retries=2).exec(
+            "question", response_format=SCHEMA
+        )
+
+    assert len(calls) == 2
+
+
+def test_transport_retry_does_not_refresh_validation_retry_budget(monkeypatch):
+    calls = []
+    events = []
+
+    def call(content, model="test", response_format=None):
+        calls.append(content)
+        if len(calls) == 2:
+            raise RuntimeError("repair transport failed")
+        return '{"answer": "wrong"}' if len(calls) < 4 else '{"answer": 11}'
+
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.runtime._retry_sleep_seconds",
+        lambda *args, **kwargs: 0,
+    )
+    runtime = Runtime(call=call, model="dummy", max_retries=4)
+    runtime.on_stream = events.append
+    with pytest.raises(StructuredOutputValidationError):
+        runtime.exec("question", response_format=SCHEMA)
+
+    assert len(calls) == 3
+    assert [
+        event["next_attempt"]
+        for event in events
+        if event.get("type") == "structured_output_retry"
+    ] == [2]
+
+
+def test_expired_deadline_does_not_start_validation_repair():
+    calls = []
+    events = []
+
+    def call(content, model="test", response_format=None):
+        calls.append(content)
+        time.sleep(0.03)
+        return '{"answer": "wrong"}'
+
+    runtime = Runtime(call=call, model="dummy", max_retries=2)
+    runtime.on_stream = events.append
+    with pytest.raises(LLMError) as exc:
+        runtime.exec("question", response_format=SCHEMA, timeout_s=0.01)
+
+    assert exc.value.reason == ErrorReason.TIMEOUT
+    assert exc.value.attempts == 1
+    assert len(calls) == 1
+    assert not any(event.get("type") == "structured_output_retry" for event in events)
+
+
+def test_cancellation_does_not_start_validation_repair(monkeypatch):
+    calls = []
+
+    def call(content, model="test", response_format=None):
+        calls.append(content)
+        return '{"answer": "wrong"}'
+
+    def check_cancelled():
+        if calls:
+            from openprogram.agentic_programming.function import CancelledError
+
+            raise CancelledError("cancelled")
+
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.function.check_cancelled", check_cancelled
+    )
+    with pytest.raises(ExecInterrupt, match="cancelled"):
+        Runtime(call=call, model="dummy", max_retries=2).exec(
+            "question", response_format=SCHEMA
+        )
+
+    assert len(calls) == 1
+
+
+def test_validation_repair_is_owned_by_one_agent_session(monkeypatch):
+    seen_content = []
+    session_runs = []
+
+    def call(content, model="test", response_format=None):
+        seen_content.append(content)
+        return '{"answer":"wrong"}' if len(seen_content) == 1 else '{"answer":12}'
+
+    from openprogram.agent.session import AgentSession
+
+    original_run = AgentSession.run
+
+    async def counted_run(self, *args, **kwargs):
+        session_runs.append(self)
+        return await original_run(self, *args, **kwargs)
+
+    monkeypatch.setattr(AgentSession, "run", counted_run)
+    stream_events = []
+    runtime = Runtime(call=call, model="dummy", max_retries=3)
+    runtime.on_stream = stream_events.append
+    result = runtime.exec(
+        "question",
+        response_format=SCHEMA,
+    )
+
+    assert result == {"answer": 12}
+    assert len(session_runs) == 1
+    assert len(seen_content) == 2
+    persisted = [
+        message
+        for message in session_runs[0]._agent.state.messages
+        if message.role == "assistant"
+    ]
+    assert len(persisted) == 1
+    assert persisted[0].structured_output == {"answer": 12}
+    assert persisted[0].structured_output_attempt == 2
+    assert [
+        event["type"]
+        for event in stream_events
+        if event["type"].startswith("structured_")
+    ] == [
+        "structured_output_retry",
+        "structured_output_end",
+    ]
+
+
+def test_sync_and_async_exec_share_agent_owned_typed_lifecycle():
+    sync_calls = []
+    async_calls = []
+
+    def sync_call(content, model="test", response_format=None):
+        sync_calls.append(content)
+        return '{"answer":21}'
+
+    async def async_call(content, model="test", response_format=None):
+        async_calls.append(content)
+        return '{"answer":21}'
+
+    sync_value = Runtime(call=sync_call, model="dummy").exec(
+        "question", response_format=SCHEMA
+    )
+    async_value = asyncio.run(
+        Runtime(call=async_call, model="dummy").async_exec(
+            "question", response_format=SCHEMA
+        )
+    )
+
+    assert sync_value == async_value == {"answer": 21}
+    assert len(sync_calls) == len(async_calls) == 1
+
+
+def test_structured_json_null_is_a_valid_typed_result():
+    runtime = Runtime(
+        call=lambda content, model="test", response_format=None: "null",
+        model="dummy",
+    )
+
+    assert runtime.exec("question", response_format={"type": "null"}) is None
+
+
+def test_public_runtime_aborted_structured_stream_propagates_once_without_persistence(
+    monkeypatch,
+):
+    calls = []
+    sessions = []
+
+    async def aborted_stream(model, context, options=None):
+        calls.append(1)
+        message = AssistantMessage(
+            content=[TextContent(text="partial")],
+            api=model.api,
+            provider=model.provider,
+            model=model.id,
+            stop_reason="aborted",
+            timestamp=int(time.time() * 1000),
+        )
+        yield EventStart(partial=message)
+        yield EventError(reason="aborted", error=message)
+
+    from openprogram.agent.session import AgentSession
+
+    original_run = AgentSession.run
+
+    async def capture_session(self, *args, **kwargs):
+        sessions.append(self)
+        return await original_run(self, *args, **kwargs)
+
+    monkeypatch.setattr(AgentSession, "run", capture_session)
+    stream_events = []
+    runtime = Runtime(
+        call=lambda *args, **kwargs: "unused", model="dummy", max_retries=3
+    )
+    runtime.on_stream = stream_events.append
+
+    with pytest.raises(ExecInterrupt, match="aborted"):
+        runtime.exec("question", response_format=SCHEMA, stream_fn=aborted_stream)
+
+    assert calls == [1]
+    assert len(sessions) == 1
+    assert not any(
+        message.role == "assistant" for message in sessions[0]._agent.state.messages
+    )
+    assert not any(event["type"].startswith("structured_") for event in stream_events)
+
+
+def test_ordinary_async_callable_preserves_direct_baseline_without_agent_session(
+    monkeypatch,
+):
+    seen_content = []
+    session_runs = []
+
+    async def call(content, model="test", response_format=None):
+        seen_content.append(content)
+        return "ordinary reply"
+
+    from openprogram.agent.session import AgentSession
+
+    original_run = AgentSession.run
+
+    async def counted_run(self, *args, **kwargs):
+        session_runs.append(self)
+        return await original_run(self, *args, **kwargs)
+
+    monkeypatch.setattr(AgentSession, "run", counted_run)
+    stream_events = []
+    runtime = Runtime(call=call, model="dummy")
+    runtime.on_stream = stream_events.append
+
+    result = asyncio.run(runtime.async_exec("hello"))
+
+    assert result == "ordinary reply"
+    assert seen_content == [[{"type": "text", "text": "hello"}]]
+    assert session_runs == []
+    assert stream_events == []
+
+
+def test_async_exec_cancellation_stops_before_structured_repair_and_waits_cleanup(
+    monkeypatch,
+):
+    first_started = threading.Event()
+    release_first = threading.Event()
+    repair_started = threading.Event()
+    session_finished = threading.Event()
+    calls = []
+    sessions = []
+
+    def call(content, model="test", response_format=None):
+        calls.append(content)
+        if len(calls) == 1:
+            first_started.set()
+            assert release_first.wait(timeout=2)
+            return '{"answer":"wrong"}'
+        repair_started.set()
+        return '{"answer":9}'
+
+    from openprogram.agent.session import AgentSession
+
+    original_run = AgentSession.run
+
+    async def capture_session(self, *args, **kwargs):
+        sessions.append(self)
+        try:
+            return await original_run(self, *args, **kwargs)
+        finally:
+            session_finished.set()
+
+    monkeypatch.setattr(AgentSession, "run", capture_session)
+    stream_events = []
+    closed_nodes = []
+    runtime = Runtime(call=call, model="dummy", max_retries=3)
+    runtime.on_stream = stream_events.append
+    original_close = runtime._close_model_call_node
+
+    def capture_close(node_id, **kwargs):
+        closed_nodes.append(kwargs.get("status", "completed"))
+        return original_close(node_id, **kwargs)
+
+    monkeypatch.setattr(runtime, "_close_model_call_node", capture_close)
+
+    async def scenario():
+        task = asyncio.create_task(
+            runtime.async_exec("question", response_format=SCHEMA)
+        )
+        assert await asyncio.to_thread(first_started.wait, 1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        release_first.set()
+        assert await asyncio.to_thread(session_finished.wait, 1)
+        await asyncio.sleep(0.05)
+
+    asyncio.run(scenario())
+
+    assert len(calls) == 1
+    assert not repair_started.is_set()
+    assert len(sessions) == 1
+    assert not any(
+        message.role == "assistant" for message in sessions[0]._agent.state.messages
+    )
+    assert not any(
+        event["type"] in ("structured_output_retry", "structured_output_end", "done")
+        for event in stream_events
+    )
+    assert "completed" not in closed_nodes
+
+
 def test_async_exec_returns_validated_python_value():
     async def call(content, model="test", response_format=None):
         return '{"answer": 9}'
 
     runtime = Runtime(call=call, model="dummy")
-    assert asyncio.run(runtime.async_exec("question", response_format=SCHEMA)) == {"answer": 9}
+    assert asyncio.run(runtime.async_exec("question", response_format=SCHEMA)) == {
+        "answer": 9
+    }
+
+
+def test_async_validation_repair_consumes_shared_exec_attempt_budget():
+    calls = []
+
+    async def call(content, model="test", response_format=None):
+        calls.append(content)
+        return '{"answer": "wrong"}' if len(calls) == 1 else '{"answer": 9}'
+
+    runtime = Runtime(call=call, model="dummy", max_retries=1)
+    with pytest.raises(StructuredOutputValidationError):
+        asyncio.run(runtime.async_exec("question", response_format=SCHEMA))
+
+    assert len(calls) == 1
+
+
+def test_async_transport_retry_does_not_refresh_validation_retry_budget(monkeypatch):
+    calls = []
+    events = []
+
+    async def call(content, model="test", response_format=None):
+        calls.append(content)
+        if len(calls) == 2:
+            raise RuntimeError("repair transport failed")
+        return '{"answer": "wrong"}' if len(calls) < 4 else '{"answer": 9}'
+
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.runtime._retry_sleep_seconds",
+        lambda *args, **kwargs: 0,
+    )
+    runtime = Runtime(call=call, model="dummy", max_retries=4)
+    runtime.on_stream = events.append
+    with pytest.raises(StructuredOutputValidationError):
+        asyncio.run(runtime.async_exec("question", response_format=SCHEMA))
+
+    assert len(calls) == 3
+    assert [
+        event["next_attempt"]
+        for event in events
+        if event.get("type") == "structured_output_retry"
+    ] == [2]
+
+
+def test_async_expired_deadline_does_not_start_validation_repair():
+    calls = []
+    events = []
+
+    async def call(content, model="test", response_format=None):
+        calls.append(content)
+        await asyncio.sleep(0.03)
+        return '{"answer": "wrong"}'
+
+    runtime = Runtime(call=call, model="dummy", max_retries=2)
+    runtime.on_stream = events.append
+    with pytest.raises(LLMError) as exc:
+        asyncio.run(
+            runtime.async_exec("question", response_format=SCHEMA, timeout_s=0.01)
+        )
+
+    assert exc.value.reason == ErrorReason.TIMEOUT
+    assert exc.value.attempts == 1
+    assert len(calls) == 1
+    assert not any(event.get("type") == "structured_output_retry" for event in events)
+
+
+def test_async_cancellation_does_not_start_validation_repair(monkeypatch):
+    calls = []
+
+    async def call(content, model="test", response_format=None):
+        calls.append(content)
+        return '{"answer": "wrong"}'
+
+    def check_cancelled():
+        if calls:
+            from openprogram.agentic_programming.function import CancelledError
+
+            raise CancelledError("cancelled")
+
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.function.check_cancelled", check_cancelled
+    )
+    with pytest.raises(ExecInterrupt, match="cancelled"):
+        asyncio.run(
+            Runtime(call=call, model="dummy", max_retries=2).async_exec(
+                "question", response_format=SCHEMA
+            )
+        )
+
+    assert len(calls) == 1
+
+
+def test_async_cancellation_after_repair_failure_blocks_outer_retry(monkeypatch):
+    calls = []
+
+    async def call(content, model="test", response_format=None):
+        calls.append(content)
+        if len(calls) == 2:
+            raise RuntimeError("repair transport failed")
+        return '{"answer": "wrong"}' if len(calls) == 1 else '{"answer": 9}'
+
+    def check_cancelled():
+        if len(calls) >= 2:
+            from openprogram.agentic_programming.function import CancelledError
+
+            raise CancelledError("cancelled")
+
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.function.check_cancelled", check_cancelled
+    )
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.runtime._retry_sleep_seconds",
+        lambda *args, **kwargs: 0,
+    )
+    with pytest.raises(ExecInterrupt, match="cancelled"):
+        asyncio.run(
+            Runtime(call=call, model="dummy", max_retries=3).async_exec(
+                "question", response_format=SCHEMA
+            )
+        )
+
+    assert len(calls) == 2
 
 
 def test_unknown_provider_is_rejected_before_stream_call():
     calls = []
+    retries = []
 
     async def stream(model, context, options=None):
         calls.append(1)
         if False:
             yield None
 
-    runtime = Runtime(call=lambda *args, **kwargs: "unused", model="dummy")
+    runtime = Runtime(
+        call=lambda *args, **kwargs: "unused", model="dummy", max_retries=3
+    )
     runtime.api_model = Model(
         id="third-party-test",
         name="Third-party test",
@@ -115,7 +583,114 @@ def test_unknown_provider_is_rejected_before_stream_call():
     )
 
     with pytest.raises(StructuredOutputUnsupportedError):
-        runtime.exec("question", response_format=SCHEMA, stream_fn=stream)
+        runtime.exec(
+            "question",
+            response_format=SCHEMA,
+            stream_fn=stream,
+            on_retry=lambda info: retries.append(info),
+        )
+    assert calls == []
+    assert retries == []
+
+
+def test_default_runtime_budget_dispatch_uses_negotiated_registry_snapshot(
+    monkeypatch,
+):
+    monkeypatch.setattr(api_registry, "_registry", {})
+    monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_provider_transform", None)
+    monkeypatch.setenv("OPENPROGRAM_FALLBACK_MODELS", "off")
+    calls = []
+
+    class Provider:
+        requires_credentials = False
+
+        def __init__(self, name):
+            self.name = name
+
+        def stream_simple(self, model, context, options):
+            calls.append((self.name, options.response_format))
+            message = AssistantMessage(
+                content=[TextContent(text='{"answer": 4}')],
+                api=model.api,
+                provider=model.provider,
+                model=model.id,
+                timestamp=1,
+            )
+
+            async def events():
+                yield EventStart(partial=message)
+                yield EventDone(reason="stop", message=message)
+
+            return events()
+
+    api = "runtime-budget-snapshot-api"
+    original = Provider("original-native")
+    replacement = Provider("replacement-unknown")
+    register_api_provider(
+        api,
+        original,
+        StructuredOutputCapabilities(native="supported", schema_profile="none"),
+    )
+
+    original_resolve = api_registry.resolve_api_provider_snapshot
+
+    def replace_after_snapshot(model):
+        snapshot = original_resolve(model)
+        register_api_provider(api, replacement)
+        return snapshot
+
+    monkeypatch.setattr(
+        api_registry, "resolve_api_provider_snapshot", replace_after_snapshot
+    )
+    runtime = Runtime(model="dummy", max_retries=2)
+    runtime.api_model = Model(
+        id="runtime-race-model",
+        name="Runtime race model",
+        api=api,
+        provider="race-provider",
+        base_url="https://example.invalid",
+        structured_output=True,
+    )
+
+    result = runtime.exec("question", response_format=SCHEMA, toolset="none")
+
+    assert result == {"answer": 4}
+    assert calls == [("original-native", normalize_response_format(SCHEMA))]
+
+
+def test_explicit_parallel_true_reaches_hidden_tool_preflight():
+    calls = []
+
+    async def stream(model, context, options=None):
+        calls.append(options)
+        if False:
+            yield None
+
+    runtime = Runtime(
+        call=lambda *args, **kwargs: "unused", model="dummy", max_retries=1
+    )
+    runtime.api_model = Model(
+        id="codex-test",
+        name="Codex test",
+        api="openai-codex",
+        provider="openai-codex",
+        base_url="https://example.invalid",
+    )
+
+    with pytest.raises(StructuredOutputUnsupportedError):
+        runtime.exec(
+            "question",
+            response_format={
+                "type": "json_schema",
+                "schema": SCHEMA,
+                "max_validation_retries": 0,
+            },
+            toolset="none",
+            parallel_tool_calls=True,
+            stream_fn=stream,
+        )
+
     assert calls == []
 
 

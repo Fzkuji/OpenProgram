@@ -268,6 +268,11 @@ class SessionStore:
         self._sessions: "OrderedDict[str, tuple[GitSession, SessionMemoryIndex]]" = OrderedDict()
         self._cache_cap = cache_cap if cache_cap is not None else _resolve_cache_cap()
         self._lock = threading.Lock()
+        # Filesystem work is serialized per session, not across the store.
+        # ponytail: retain one small RLock per seen session id; replace with a
+        # bounded lock table only if profiles with millions of ids appear.
+        self._session_locks: dict[str, Any] = {}
+        self._locations_write_lock = threading.Lock()
         # Location index: session_id → absolute repo path, for sessions
         # that live OUTSIDE the home root (i.e. inside a bound project's
         # ``<project>/.openprogram/sessions/<id>/``). Sessions absent
@@ -301,11 +306,11 @@ class SessionStore:
         except (OSError, json.JSONDecodeError):
             return {}
 
-    def _save_locations(self) -> None:
+    def _save_locations(self, locations: dict[str, str]) -> None:
         try:
             atomic_write_text(
                 self._locations_path(),
-                json.dumps(self._locations, indent=2, ensure_ascii=False),
+                json.dumps(locations, indent=2, ensure_ascii=False),
             )
         except OSError as e:
             _log.warning("locations.json NOT saved (%s); session placement "
@@ -314,15 +319,22 @@ class SessionStore:
     def _record_location(self, session_id: str, repo_dir: Path) -> None:
         """Persist that ``session_id``'s repo lives at ``repo_dir`` (an
         absolute path outside the home root). Idempotent."""
-        with self._lock:
-            self._locations[session_id] = str(repo_dir)
-            self._save_locations()
+        with self._session_lock(session_id):
+            with self._locations_write_lock:
+                with self._lock:
+                    self._locations[session_id] = str(repo_dir)
+                    snapshot = dict(self._locations)
+                self._save_locations(snapshot)
 
     def _forget_location(self, session_id: str) -> None:
         """删会话时移除位置映射（配对 _record_location）。"""
-        with self._lock:
-            if self._locations.pop(session_id, None) is not None:
-                self._save_locations()
+        with self._session_lock(session_id):
+            with self._locations_write_lock:
+                with self._lock:
+                    if self._locations.pop(session_id, None) is None:
+                        return
+                    snapshot = dict(self._locations)
+                self._save_locations(snapshot)
 
     # Registry (index.json)
 
@@ -521,6 +533,14 @@ class SessionStore:
 
     # Internals
 
+    def _session_lock(self, session_id: str):
+        with self._lock:
+            lock = self._session_locks.get(session_id)
+            if lock is None:
+                lock = threading.RLock()
+                self._session_locks[session_id] = lock
+            return lock
+
     def _session_dir(self, session_id: str) -> Path:
         """Where ``session_id``'s git repo lives.
 
@@ -530,7 +550,8 @@ class SessionStore:
         pre-existing sessions — resolves to the home root
         ``<state>/sessions/<id>/``.
         """
-        loc = self._locations.get(session_id)
+        with self._lock:
+            loc = self._locations.get(session_id)
         if loc:
             return Path(loc)
         return self.root_path / session_id
@@ -538,18 +559,23 @@ class SessionStore:
     def _open(self, session_id: str, *, create_if_missing: bool = False) -> Optional[tuple[GitSession, SessionMemoryIndex]]:
         """Return (git, idx). Loads from disk on first access. None if
         session doesn't exist and ``create_if_missing`` is False."""
-        with self._lock:
+        if not create_if_missing and (
+            not isinstance(session_id, str)
+            or not session_id
+            or session_id in {".", ".."}
+            or "/" in session_id
+            or "\\" in session_id
+        ):
+            return None
+        with self._session_lock(session_id):
             verified_git: GitSession | None = None
+            with self._lock:
+                loc = self._locations.get(session_id)
+                sdir = Path(loc) if loc else self.root_path / session_id
+                cached = self._sessions.get(session_id)
+                if cached:
+                    self._sessions.move_to_end(session_id)
             if not create_if_missing:
-                if (
-                    not isinstance(session_id, str)
-                    or not session_id
-                    or session_id in {".", ".."}
-                    or "/" in session_id
-                    or "\\" in session_id
-                ):
-                    return None
-                sdir = self._session_dir(session_id)
                 verified_git = GitSession(sdir)
                 if (
                     sdir.is_symlink()
@@ -557,11 +583,7 @@ class SessionStore:
                     or not (sdir / "history").is_dir()
                 ):
                     return None
-            cached = self._sessions.get(session_id)
             if cached:
-                # Mark as most-recently-used so the LRU eviction below
-                # never drops a session that's actively being read.
-                self._sessions.move_to_end(session_id)
                 git, idx = cached
                 # @agentic_function runs execute in a fork()'d subprocess
                 # that appends history and moves HEAD on disk directly —
@@ -571,37 +593,37 @@ class SessionStore:
                 # end). Two stat calls detect the foreign write; rebuild
                 # from disk when it happened. Own-process writes call
                 # mark_synced(), so they never trigger a rebuild.
-                if git.exists() and git.stale():
-                    # Rebuild IN PLACE (reset + repopulate the SAME index
-                    # object): callers across a multi-step operation hold
-                    # (git, idx) from an earlier _open — swapping the
-                    # cached object would orphan their reference, and a
-                    # later step that re-opens (e.g. commit_turn) would
-                    # persist the rebuilt object's stale head over their
-                    # in-memory update.
-                    disk_meta = git.read_meta()
-                    disk_hist = git.list_history()
-                    # A concurrent reader can land here between
-                    # create_session's set_meta() and its _persist_meta()
-                    # — the repo exists (some other write initialized it)
-                    # but meta.json is still empty/absent on disk. Blindly
-                    # rebuilding then resets the index and throws away the
-                    # just-populated in-memory meta (source/channel/peer_*
-                    # silently vanished). Disk with nothing in it is never
-                    # a more truthful view than populated memory, so skip
-                    # the rebuild instead of destroying state.
-                    if not disk_meta and not disk_hist and (idx.meta or idx.head_id):
-                        pass
-                    else:
-                        idx.rebuild_from_paths(
-                            disk_hist,
-                            disk_meta,
-                            _node_conv_predecessor,
-                            _node_caller,
-                        )
-                        git.mark_synced()
+                with idx._persist_lock:
+                    if git.exists() and git.stale():
+                        # Rebuild IN PLACE (reset + repopulate the SAME index
+                        # object): callers across a multi-step operation hold
+                        # (git, idx) from an earlier _open — swapping the
+                        # cached object would orphan their reference, and a
+                        # later step that re-opens (e.g. commit_turn) would
+                        # persist the rebuilt object's stale head over their
+                        # in-memory update.
+                        disk_meta = git.read_meta()
+                        disk_hist = git.list_history()
+                        # A concurrent reader can land here between
+                        # create_session's set_meta() and its _persist_meta()
+                        # — the repo exists (some other write initialized it)
+                        # but meta.json is still empty/absent on disk. Blindly
+                        # rebuilding then resets the index and throws away the
+                        # just-populated in-memory meta (source/channel/peer_*
+                        # silently vanished). Disk with nothing in it is never
+                        # a more truthful view than populated memory, so skip
+                        # the rebuild instead of destroying state.
+                        if not disk_meta and not disk_hist and (idx.meta or idx.head_id):
+                            pass
+                        else:
+                            idx.rebuild_from_paths(
+                                disk_hist,
+                                disk_meta,
+                                _node_conv_predecessor,
+                                _node_caller,
+                            )
+                            git.mark_synced()
                 return cached
-            sdir = self._session_dir(session_id)
             if not sdir.exists() and not create_if_missing:
                 return None
             git = verified_git or GitSession(sdir)
@@ -614,24 +636,27 @@ class SessionStore:
                     _node_caller,
                 )
                 git.mark_synced()
-            # New key lands at the MRU (end) of the OrderedDict.
-            self._sessions[session_id] = (git, idx)
-            # Evict least-recently-used entries beyond the cap. The
-            # just-inserted session is at the MRU end, so popitem(last=
-            # False) (oldest) never evicts it as long as cap >= 1. An
-            # evicted index rebuilds losslessly from git on next access;
-            # an in-flight turn keeps its own (git, idx) reference and is
-            # unaffected by being dropped from this dict.
-            while len(self._sessions) > self._cache_cap:
-                self._sessions.popitem(last=False)
+            with self._lock:
+                # New key lands at the MRU (end) of the OrderedDict.
+                self._sessions[session_id] = (git, idx)
+                # Evict least-recently-used entries beyond the cap. The
+                # just-inserted session is at the MRU end, so popitem(last=
+                # False) (oldest) never evicts it as long as cap >= 1. An
+                # evicted index rebuilds losslessly from git on next access;
+                # an in-flight turn keeps its own (git, idx) reference and is
+                # unaffected by being dropped from this dict.
+                while len(self._sessions) > self._cache_cap:
+                    self._sessions.popitem(last=False)
             return git, idx
 
     def _persist_meta(self, git: GitSession, idx: SessionMemoryIndex) -> None:
         """Sync the in-memory meta back to ``meta.json``. Called whenever
         title / head_id / extra / branches change."""
-        meta = dict(idx.meta)
-        meta["head_id"] = idx.head_id
-        git.write_meta(meta)
+        with idx._persist_lock:
+            with idx._lock:
+                meta = dict(idx.meta)
+                meta["head_id"] = idx.head_id
+            git.write_meta(meta)
 
     def session_workdir(self, session_id: str) -> Optional[Path]:
         """Path of the per-session scratch workdir, materialized on first
@@ -840,26 +865,28 @@ class SessionStore:
         return _row_to_session(row)
 
     def delete_session(self, session_id: str) -> None:
-        with self._lock:
-            pair = self._sessions.pop(session_id, None)
+        with self._session_lock(session_id):
+            with self._lock:
+                pair = self._sessions.pop(session_id, None)
+                loc = self._locations.get(session_id)
             if pair:
                 pair[0].destroy()
             else:
-                GitSession(self._session_dir(session_id)).destroy()
-        with self._index_lock:
-            if self._index.pop(session_id, None) is not None:
-                self._index_generation += 1
-                self._index_dirty = True
-        self._save_index()
-        # 位置映射（配对 _record_location）。
-        self._forget_location(session_id)
-        # 从项目反向索引解绑（配对 bind_session），避免 session_ids 只增不减。
-        try:
-            from openprogram.store.project import project_store as _projects
-            _projects.unbind_session(session_id)
-        except Exception as e:  # noqa: BLE001 — reverse index is best-effort
-            _log.warning("session %s NOT unbound from its project: %s",
-                         session_id, e)
+                GitSession(Path(loc) if loc else self.root_path / session_id).destroy()
+            with self._index_lock:
+                if self._index.pop(session_id, None) is not None:
+                    self._index_generation += 1
+                    self._index_dirty = True
+            self._save_index()
+            # 位置映射（配对 _record_location）。
+            self._forget_location(session_id)
+            # 从项目反向索引解绑（配对 bind_session），避免 session_ids 只增不减。
+            try:
+                from openprogram.store.project import project_store as _projects
+                _projects.unbind_session(session_id)
+            except Exception as e:  # noqa: BLE001 — reverse index is best-effort
+                _log.warning("session %s NOT unbound from its project: %s",
+                             session_id, e)
 
     def list_sessions(
         self,
@@ -868,27 +895,57 @@ class SessionStore:
         limit: int = 100,
         offset: int = 0,
         source: Optional[str] = None,
+        include_archived: bool = False,
         **filters: Any,
     ) -> list[dict[str, Any]]:
+        """Registry rows, newest activity first.
+
+        Archived sessions are hidden by default — archiving exists so a
+        list stops growing without end, which only works if the default
+        list honours it. Maintenance passes that must visit every
+        session (memory scan, run-state repair, commit lookup) pass
+        ``include_archived=True``; an explicit ``archived=`` filter
+        selects one side on its own.
+        """
         with self._index_lock:
             rows = [dict(row) for row in self._index.values()]
         if agent_id is not None:
             rows = [r for r in rows if r.get("agent_id") == agent_id]
         if source is not None:
             rows = [r for r in rows if r.get("source") == source]
+        if not include_archived and "archived" not in filters:
+            rows = [r for r in rows if not r.get("archived")]
         for k, v in filters.items():
             if v is not None:
                 rows = [r for r in rows if r.get(k) == v]
         rows.sort(key=lambda s: s.get("updated_at") or 0, reverse=True)
         return rows[offset:offset + limit]
 
+    def set_archived(self, session_id: str, archived: bool) -> bool:
+        """Flip a session's archive flag. Returns False if unknown.
+
+        Pure metadata: no node is touched and ``updated_at`` stays put
+        (index-consistency.html — only appending a message is activity),
+        so archiving is fully reversible and never reorders the list.
+        """
+        with self._index_lock:
+            known = session_id in self._index
+        if not known and self._open(session_id) is None:
+            return False
+        self.update_session(session_id, archived=bool(archived))
+        return True
+
     def count_sessions(
         self,
         *,
         agent_id: Optional[str] = None,
         source: Optional[str] = None,
+        include_archived: bool = False,
     ) -> int:
-        return len(self.list_sessions(agent_id=agent_id, source=source, limit=10**9))
+        return len(self.list_sessions(
+            agent_id=agent_id, source=source,
+            include_archived=include_archived, limit=10**9,
+        ))
 
     def invalidate_cache(self, session_id: str) -> None:
         """Drop the in-memory ``SessionMemoryIndex`` for ``session_id`` so
@@ -905,8 +962,9 @@ class SessionStore:
 
         Cheap: O(history length) git directory listing on next access.
         """
-        with self._lock:
-            self._sessions.pop(session_id, None)
+        with self._session_lock(session_id):
+            with self._lock:
+                self._sessions.pop(session_id, None)
 
     # Message append / read
 
@@ -1512,17 +1570,19 @@ class SessionStore:
         if pair is None:
             return
         git, idx = pair
-        cur = list(idx.meta.get("merged_heads") or [])
-        changed = False
-        for h in head_ids:
-            if not h:
-                continue
-            h = h.strip()
-            if h and h not in cur:
-                cur.append(h)
-                changed = True
+        with idx._lock:
+            cur = list(idx.meta.get("merged_heads") or [])
+            changed = False
+            for h in head_ids:
+                if not h:
+                    continue
+                h = h.strip()
+                if h and h not in cur:
+                    cur.append(h)
+                    changed = True
+            if changed:
+                idx.meta["merged_heads"] = cur
         if changed:
-            idx.set_meta(merged_heads=cur)
             self._persist_meta(git, idx)
 
     def merged_heads(self, session_id: str) -> set[str]:
@@ -1727,7 +1787,7 @@ class SessionStore:
 
     def sessions_with_binding(self, channel: str, account_id: Optional[str]) -> list[str]:
         out: list[str] = []
-        for sess in self.list_sessions(limit=10**9):
+        for sess in self.list_sessions(limit=10**9, include_archived=True):
             extra = sess.get("extra_meta") or {}
             if extra.get("channel") != channel:
                 continue
@@ -1807,7 +1867,7 @@ class SessionStore:
 
     def count_recent_nodes(self, since: float) -> int:
         total = 0
-        for sess in self.list_sessions(limit=10**9):
+        for sess in self.list_sessions(limit=10**9, include_archived=True):
             pair = self._open(sess["id"])
             if not pair:
                 continue

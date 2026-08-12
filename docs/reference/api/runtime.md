@@ -66,7 +66,7 @@ A single `@agentic_function` can call `exec()` multiple times; each call is a ne
 |------|------|--------|------|
 | `content` | `list[dict] \| str` | *(required)* | List of content blocks (see format below). A plain string is wrapped into one text block |
 | `context` | `str \| None` | `None` | Legacy parameter, ignored — the provider path builds history from the DAG |
-| `response_format` | `dict \| None` | `None` | Output format constraint (JSON Schema or a `JsonSchemaOutput` envelope). The default provider path applies it natively: OpenAI-style providers get `response_format`, Anthropic gets its structured-output mapping, and other models fall back to a prompt instruction. The final reply is strictly parsed and validated, with one retry on invalid output. Also forwarded to `_call()` for subclasses |
+| `response_format` | `dict \| JsonSchemaOutput \| None` | `None` | A bare JSON Schema or normalized `JsonSchemaOutput` envelope. Verified provider/model combinations use their registered native mapping; otherwise `fallback="auto"` may use the verified hidden strict-tool path, while prompt fallback requires explicit `fallback="prompt"`. Unsupported or lossy combinations fail closed. The terminal value is parsed and validated locally against the original schema and returned as a Python JSON value. `max_validation_retries` is `0` or `1`. Also forwarded to `_call()` for subclasses |
 | `model` | `str \| None` | `None` | Override the default model |
 | `tools` | `list \| None` | `None` | The tools available to the LLM for this call. Entries may be `@agentic_function`s, `{"spec":..., "execute":...}` dicts, or objects with `.spec` / `.execute`. If set, the tool loop runs until the model returns plain text. **Default (`None`) is not "no tools"**: the call gets the full registered toolset; pass `toolset="none"` for a reasoning-only call, or `tools=[]` for an explicit empty list |
 | `toolset` / `tools_source` / `tools_allow` / `tools_deny` | — | `None` | Toolset preset and policy filtering: `toolset` names a preset (`"full"` is the implicit default, `"none"` opts out), `tools_source` filters per channel source, `tools_allow` / `tools_deny` are name allow/deny lists |
@@ -93,13 +93,23 @@ Media blocks take either a `path` (read and base64-encoded automatically, mime t
 
 #### Return value
 
-`str` — the LLM's reply text. With `choices`, returns the parsed decision result (the return value of the selected function, or the selected value itself).
+With `response_format=None`, returns the LLM reply as `str`. With a structured
+`response_format`, returns the locally validated Python JSON value (`dict`,
+`list`, scalar, or `None`). With `choices`, returns the parsed decision result
+(the return value of the selected function, or the selected value itself).
 
 #### Exceptions
 
 - `RuntimeError` — the runtime is closed (`close()` was called)
 - `TypeError` / `NotImplementedError` — raised immediately, never retried (programming errors: wrong call signature, no provider configured)
 - `LLMError` — raised when retries are exhausted or a non-retryable error is hit; structured fields include `reason` / `retryable` / `http_status` / `retry_after_s` / `attempts` / `elapsed_s` / `provider` / `model`, etc.
+- `StructuredOutputSchemaError` — invalid public schema or envelope; stable `code="invalid_schema"`.
+- `StructuredOutputUnsupportedError` — no verified lossless provider/fallback contract; stable `code="unsupported"`.
+- `StructuredOutputValidationError` — invalid JSON, schema mismatch, or hidden-submit contract failure; stable codes are `invalid_json`, `validation_failed`, `missing_submission`, and `mixed_submission`.
+- `StructuredOutputGenerationError` — refusal or incomplete provider terminal; stable codes are `refusal` and `incomplete`.
+
+All structured-output errors expose the stable `.code` and bounded `.issues`
+fields. Provider candidate text is not part of the public diagnostic contract.
 
 ---
 
@@ -107,17 +117,23 @@ Media blocks take either a `path` (read and base64-encoded automatically, mime t
 
 ```python
 await Runtime.async_exec(content, context=None, response_format=None, model=None,
-                         timeout_s=None, on_retry=None) -> str
+                         timeout_s=None, on_retry=None) -> Any
 ```
 
-The async version of `exec()`. Internally calls `_async_call()`, which by default only supports a `call=` function (sync or async — a sync one is adapted automatically); the `"provider:model_id"` path requires overriding `_async_call()` in a subclass. Same `timeout_s` / `on_retry` semantics as `exec()`; retries sleep with `asyncio.sleep`, so external cancellation works. No tool-loop parameters — `async_exec()` is a plain single-reply call.
+The async version of `exec()`. It has the same `response_format=None` text
+return and structured Python JSON return/error contract. Internally it calls
+`_async_call()`; a `call=` function may be synchronous or asynchronous, and the
+default provider path uses the same AgentSession structured lifecycle. Same
+`timeout_s` / `on_retry` semantics as `exec()`; retries sleep with
+`asyncio.sleep`, so external cancellation works. It has no public tool-loop
+parameters.
 
 ---
 
 ### `_call()`
 
 ```python
-Runtime._call(content, model="default", response_format=None) -> str
+Runtime._call(content, model="default", response_format=None) -> Any
 ```
 
 The method that actually calls the LLM once (no retry — `exec()` wraps it in the retry loop). The default implementation routes through the provider layer (`AgentSession`) when a provider model or `call=` function is configured, and raises `NotImplementedError` otherwise. **Override this method when subclassing.**
@@ -132,14 +148,15 @@ The method that actually calls the LLM once (no retry — `exec()` wraps it in t
 
 #### Return value
 
-`str` — the LLM reply text.
+Raw text for ordinary calls; the validated Python JSON value when a structured
+format is active.
 
 ---
 
 ### `_async_call()`
 
 ```python
-await Runtime._async_call(content, model="default", response_format=None) -> str
+await Runtime._async_call(content, model="default", response_format=None) -> Any
 ```
 
 The async version of `_call()`. Override this method when subclassing to support an async provider.

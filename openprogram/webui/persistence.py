@@ -66,7 +66,8 @@ def list_sessions(agent_id: str = "") -> list[tuple[str, str]]:
     """
     from openprogram.agent.session_db import default_db
     db = default_db()
-    rows = db.list_sessions(agent_id=agent_id or None, limit=10_000)
+    rows = db.list_sessions(agent_id=agent_id or None, limit=10_000,
+                            include_archived=True)
     return [(r.get("agent_id") or "", r["id"]) for r in rows]
 
 

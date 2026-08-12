@@ -152,7 +152,8 @@ def _all_sessions(db: Any) -> list[dict[str, Any]]:
     seen: set[str] = set()
     offset = 0
     while True:
-        page = db.list_sessions(limit=SESSION_PAGE, offset=offset)
+        page = db.list_sessions(limit=SESSION_PAGE, offset=offset,
+                               include_archived=True)
         if not page:
             return rows
         for row in page:

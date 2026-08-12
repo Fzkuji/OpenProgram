@@ -112,6 +112,12 @@ def persist_assistant_message(
         # same session.
         "agent_id": req.agent_id,
     }
+    if req.structured_output_mode is not None:
+        assistant_msg.update({
+            "structured_output": req.structured_output,
+            "structured_output_mode": req.structured_output_mode,
+            "structured_output_attempt": req.structured_output_attempt,
+        })
     from openprogram.agent.authority import runtime_authority, stamp_schema
     assistant_msg.update(runtime_authority(req, f"agent/{req.agent_id}"))
     stamp_schema(assistant_msg)

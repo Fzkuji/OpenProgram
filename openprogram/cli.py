@@ -387,6 +387,8 @@ def build_parser() -> argparse.ArgumentParser:
     # (``openprogram web``) or just bare ``openprogram`` (chat).
     parser.add_argument("--print", dest="print_prompt", metavar="PROMPT",
         help="One-shot prompt; send, print reply, exit")
+    parser.add_argument("--json-schema", dest="json_schema", metavar="PATH",
+        help="Require JSON Schema output for a one-shot --print call; '-' reads stdin")
     parser.add_argument("--profile", default=None,
         help="State-dir profile name. Reroutes config/sessions/logs to "
              "~/.openprogram-<name>/ so parallel workspaces don't share state. "
@@ -455,6 +457,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_tui.add_argument("--print", dest="print_prompt", metavar="PROMPT",
         help="One-shot prompt; send, print reply, exit")
+    p_tui.add_argument("--json-schema", dest="json_schema", metavar="PATH",
+        help="Require JSON Schema output for a one-shot --print call; '-' reads stdin")
     p_tui.add_argument("--resume", default=None, metavar="SESSION_ID",
         help="Resume a prior CLI chat session.")
 
@@ -558,6 +562,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run sanity checks: python, node, skills, plugins, providers, mcp, cache, worker")
     p_doctor.add_argument("--json", action="store_true", help="Emit JSON")
 
+    # ---- diagnostics ------------------------------------------------------
+    p_diagnostics = sub.add_parser(
+        "diagnostics",
+        help="Build a redacted support bundle (version, config, logs, probes) as a zip",
+    )
+    p_diagnostics.add_argument(
+        "--output", metavar="PATH",
+        help="Write the zip here (default: ./openprogram-diagnostics-<date>.zip)",
+    )
+
     p_acp = sub.add_parser("acp",
         help="Serve the Agent Client Protocol on stdio, for editors like Zed")
     p_acp.add_argument("--agent", default="main",
@@ -612,7 +626,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Manage chat sessions (list, attach a channel user to "
              "an existing session, ...)")
     sessions_sub = p_sessions.add_subparsers(dest="sessions_verb", metavar="verb")
-    sessions_sub.add_parser("list", help="List every session across every agent")
+    p_ss_list = sessions_sub.add_parser("list",
+        help="List every session across every agent")
+    p_ss_list.add_argument("--chat", action="store_true",
+        help="List chat sessions from the session store instead of "
+             "waiting follow-up sessions")
+    p_ss_list.add_argument("--archived", action="store_true",
+        help="With --chat: list archived chat sessions instead of active ones")
+    p_ss_list.add_argument("--all", action="store_true", dest="all_scope",
+        help="With --chat: list archived and active chat sessions together")
+    p_ss_arc = sessions_sub.add_parser("archive",
+        help="Hide a chat session from the default list (reversible, "
+             "deletes nothing)")
+    p_ss_arc.add_argument("session_id", help="Chat session id to archive")
+    p_ss_unarc = sessions_sub.add_parser("unarchive",
+        help="Return an archived chat session to the default list")
+    p_ss_unarc.add_argument("session_id", help="Chat session id to unarchive")
     p_ss_res = sessions_sub.add_parser("resume", help="Answer a waiting session")
     p_ss_res.add_argument("session_id", help="Session id of the waiting session to answer")
     p_ss_res.add_argument("answer", help="Text to send back as the user's reply")
@@ -640,6 +669,14 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["direct", "group", "channel"])
     sessions_sub.add_parser("aliases",
         help="List every session↔channel-peer alias")
+    p_ss_exp = sessions_sub.add_parser("export",
+        help="Export a session as a shareable Markdown or HTML file")
+    p_ss_exp.add_argument("session_id", help="Session id to export")
+    p_ss_exp.add_argument("--format", dest="export_format", default="md",
+        choices=["md", "html"],
+        help="Output format: md (default) or html (single self-contained file)")
+    p_ss_exp.add_argument("--output", default=None,
+        help="Write here instead of ./<session-id>.<format>")
 
     # ---- subagent ----------------------------------------------------------
     # Subagent spawn / merge ops. See ``openprogram/agent/sub_agent_run.py``
@@ -1155,6 +1192,8 @@ def main():
         sys.argv[1] = "--help"
 
     args = parser.parse_args()
+    if getattr(args, "json_schema", None) and not args.print_prompt:
+        parser.error("--json-schema requires --print")
 
     # --profile must land in the env BEFORE any later code reads a path
     # (setup config, session dir, logs dir, ...). get_active_profile
@@ -1198,8 +1237,68 @@ def main():
 
     if args.command in (None, "tui", "chat"):
         if args.print_prompt:
-            _cmd_cli_chat(oneshot=args.print_prompt, resume=args.resume,
-                          tui=tui_enabled)
+            response_format = None
+            schema_path = getattr(args, "json_schema", None)
+            if schema_path:
+                from openprogram.providers.structured_output import (
+                    StructuredOutputError,
+                    StructuredOutputSchemaError,
+                    StructuredOutputUnsupportedError,
+                    normalize_response_format,
+                )
+                try:
+                    if schema_path == "-":
+                        if args.print_prompt == "-":
+                            parser.error("prompt and JSON schema cannot both read from stdin")
+                        raw_schema = sys.stdin.read()
+                    else:
+                        from pathlib import Path
+                        try:
+                            raw_schema = Path(schema_path).read_text(encoding="utf-8")
+                        except OSError as exc:
+                            raise StructuredOutputSchemaError(
+                                "JSON schema file could not be read",
+                                code="invalid_schema",
+                            ) from exc
+                    try:
+                        parsed_schema = json.loads(raw_schema)
+                    except (
+                        TypeError,
+                        ValueError,
+                        RecursionError,
+                        json.JSONDecodeError,
+                    ) as exc:
+                        raise StructuredOutputSchemaError(
+                            "JSON schema file is not valid JSON", code="invalid_schema"
+                        ) from exc
+                    response_format = normalize_response_format(parsed_schema)
+                    _cmd_cli_chat(
+                        oneshot=args.print_prompt,
+                        resume=args.resume,
+                        tui=tui_enabled,
+                        response_format=response_format,
+                    )
+                except StructuredOutputError as exc:
+                    if isinstance(exc, StructuredOutputSchemaError):
+                        print(
+                            f"{exc.code}: Structured output request is invalid",
+                            file=sys.stderr,
+                        )
+                        raise SystemExit(2) from None
+                    if isinstance(exc, StructuredOutputUnsupportedError):
+                        print(
+                            f"{exc.code}: Structured output is unsupported",
+                            file=sys.stderr,
+                        )
+                        raise SystemExit(3) from None
+                    print(
+                        f"{exc.code}: Structured output generation failed",
+                        file=sys.stderr,
+                    )
+                    raise SystemExit(4) from None
+            else:
+                _cmd_cli_chat(oneshot=args.print_prompt, resume=args.resume,
+                              tui=tui_enabled)
             return
         # Interactive pre-Ink stretch (first-run wizard + surface menu) needs
         # the REAL terminal — the module-load redirect already pointed stdio
@@ -1274,6 +1373,10 @@ def main():
         from openprogram._cli_cmds.doctor import _cmd_doctor
         sys.exit(_cmd_doctor(getattr(args, "json", False)))
 
+    if args.command == "diagnostics":
+        from openprogram._cli_cmds.diagnostics import _cmd_diagnostics
+        sys.exit(_cmd_diagnostics(getattr(args, "output", None)))
+
     if args.command == "acp":
         from openprogram._cli_cmds.acp import _cmd_acp
         sys.exit(_cmd_acp(getattr(args, "agent", "main"),
@@ -1339,7 +1442,16 @@ def main():
     if args.command == "sessions":
         verb = getattr(args, "sessions_verb", None)
         if verb == "list":
-            _cmd_sessions()
+            if getattr(args, "chat", False):
+                scope = ("archived" if args.archived
+                         else "all" if args.all_scope else "active")
+                _cmd_chat_sessions(scope)
+            else:
+                _cmd_sessions()
+        elif verb == "archive":
+            _cmd_session_archive(args.session_id, True)
+        elif verb == "unarchive":
+            _cmd_session_archive(args.session_id, False)
         elif verb == "resume":
             _cmd_resume(args.session_id, args.answer)
         elif verb == "attach":
@@ -1378,6 +1490,9 @@ def main():
                       f"{args.peer_kind}:{args.peer}")
             else:
                 print("No matching alias.")
+        elif verb == "export":
+            _cmd_sessions_export(args.session_id, args.export_format,
+                                 args.output)
         elif verb == "aliases":
             from openprogram.agent.management import session_aliases as _a
             rows = _a.list_all()
@@ -1825,8 +1940,11 @@ from openprogram._cli_cmds.subagent import (  # noqa: E402,F401
 )
 
 from openprogram._cli_cmds.sessions import (  # noqa: E402,F401
+    _cmd_chat_sessions,
     _cmd_resume,
+    _cmd_session_archive,
     _cmd_sessions,
+    _cmd_sessions_export,
 )
 from openprogram._cli_cmds.agents import (  # noqa: E402,F401
     _dispatch_agents_verb,

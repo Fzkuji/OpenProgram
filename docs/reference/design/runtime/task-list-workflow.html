@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task list workflow — 把 todo list 编成可执行的 agentic workflow</title>
+<style>
+  :root { color-scheme: dark; }
+  body { background:#12110b; color:#bdb9a6; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+         max-width:1000px; margin:0 auto; padding:40px 24px 80px; line-height:1.75; }
+  h1 { color:#e8e4d4; font-size:26px; letter-spacing:1px; }
+  h2 { color:#e8e4d4; font-size:19px; margin-top:44px; border-bottom:1px solid #2e2c20; padding-bottom:8px; }
+  p.lead { color:#8a8675; }
+  .card { background:#181712; border:1px solid #2e2c20; border-radius:10px; padding:18px 20px; margin:16px 0; }
+  figure { margin:20px 0; }
+  figcaption { color:#8a8675; font-size:13px; margin-top:8px; }
+  svg { max-width:100%; height:auto; display:block; }
+  code { background:#221f18; padding:1px 6px; border-radius:4px; color:#d9d4bf; font-size:0.92em; }
+  table { border-collapse:collapse; width:100%; font-size:14px; }
+  th,td { border:1px solid #2e2c20; padding:8px 12px; text-align:left; }
+  th { color:#e8e4d4; background:#181712; }
+  .blue { color:#4f8ef7; } .green { color:#5aad4e; } .orange { color:#d4843a; }
+</style>
+</head>
+<body>
+
+<h1>Task list workflow</h1>
+<p class="lead">把任务的 todo list 直接构建为可执行的 agentic workflow：list 是控制流，item 是有界子任务，
+每个 item 只带自己需要的上下文。目标是两件事：长任务的稳定性（范围钉死、item 级重试、断点续跑）
+和 token 经济性（历史不随步数膨胀）。</p>
+
+<h2>1. 运行循环</h2>
+<figure>
+<svg viewBox="0 0 960 330" role="img" aria-label="plan-execute循环：planner维护list，executor执行item，judge判定，不过则重试或回planner修订list">
+  <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M0,0 L10,5 L0,10 z" fill="#8a8675"/></marker></defs>
+  <rect x="0" y="0" width="960" height="330" fill="#12110b"/>
+  <!-- planner -->
+  <rect x="40" y="60" width="200" height="90" rx="10" fill="#181712" stroke="#4f8ef7" stroke-width="1.5"/>
+  <text x="140" y="95" fill="#e8e4d4" font-size="14" text-anchor="middle">planner</text>
+  <text x="140" y="118" fill="#8a8675" font-size="11" text-anchor="middle">小上下文：只看 list</text>
+  <text x="140" y="134" fill="#8a8675" font-size="11" text-anchor="middle">与各 item 结果摘要</text>
+  <!-- list store -->
+  <rect x="40" y="210" width="200" height="70" rx="10" fill="#181712" stroke="#3a382d"/>
+  <text x="140" y="240" fill="#e8e4d4" font-size="13" text-anchor="middle">list 落盘（todo 计划板）</text>
+  <text x="140" y="260" fill="#8a8675" font-size="11" text-anchor="middle">item、状态、完成判据、交接摘要</text>
+  <!-- executor -->
+  <rect x="400" y="60" width="220" height="90" rx="10" fill="#181712" stroke="#5aad4e" stroke-width="1.5"/>
+  <text x="510" y="95" fill="#e8e4d4" font-size="14" text-anchor="middle">executor（每 item 一个）</text>
+  <text x="510" y="118" fill="#8a8675" font-size="11" text-anchor="middle">输入 = item + 上游交接摘要</text>
+  <text x="510" y="134" fill="#8a8675" font-size="11" text-anchor="middle">输出 = 结果摘要 + 产物清单</text>
+  <!-- judge -->
+  <rect x="760" y="60" width="160" height="90" rx="10" fill="#181712" stroke="#d4843a" stroke-width="1.5"/>
+  <text x="840" y="95" fill="#e8e4d4" font-size="14" text-anchor="middle">judge</text>
+  <text x="840" y="118" fill="#8a8675" font-size="11" text-anchor="middle">压缩上下文单判定</text>
+  <text x="840" y="134" fill="#8a8675" font-size="11" text-anchor="middle">按 item 的完成判据</text>
+  <!-- arrows -->
+  <line x1="240" y1="90" x2="396" y2="90" stroke="#8a8675" marker-end="url(#ar)"/>
+  <text x="318" y="82" fill="#8a8675" font-size="11" text-anchor="middle">派发下一个未完成 item</text>
+  <line x1="620" y1="90" x2="756" y2="90" stroke="#8a8675" marker-end="url(#ar)"/>
+  <text x="688" y="82" fill="#8a8675" font-size="11" text-anchor="middle">交结果</text>
+  <path d="M840,150 L840,300 L140,300 L140,284" stroke="#8a8675" fill="none" marker-end="url(#ar)"/>
+  <text x="490" y="292" fill="#8a8675" font-size="11" text-anchor="middle">过：写结果摘要，取下一项　|　不过：重试一次，再不过回 planner 拆分/修订</text>
+  <line x1="140" y1="210" x2="140" y2="154" stroke="#8a8675" marker-end="url(#ar)"/>
+  <text x="152" y="185" fill="#8a8675" font-size="11">读写</text>
+</svg>
+<figcaption>plan-execute 循环。list 状态每步落盘即 checkpoint，进程被杀后从断点续跑不需要任何额外机制。</figcaption>
+</figure>
+
+<div class="card">
+入口是一个内置 agentic function <code>run_task_list(task)</code>，prompt 写在 docstring 里。
+planner 第一步先做规模判断：预估单个 agent 能一口气做完的任务<b>不拆</b>，直接单 agent 执行——
+拆小任务的规划与交接开销会超过一次做完。
+</div>
+
+<h2>2. item 级上下文用量</h2>
+<p>planner 给每个 item 标注上下文规格，落到现有的 <code>render_range</code> 机制上。
+小 item 少看，大 item 多看，由 planner 在写 list 时决定，不在执行时猜。</p>
+<figure>
+<svg viewBox="0 0 960 240" role="img" aria-label="小item只带item描述与直接上游摘要，大item额外带更多历史摘要与相关文件线索，对比单agent长跑上下文随步数线性膨胀">
+  <rect x="0" y="0" width="960" height="240" fill="#12110b"/>
+  <text x="30" y="34" fill="#e8e4d4" font-size="13">小 item（如：跑一遍测试并记录结果）</text>
+  <rect x="30" y="46" width="120" height="26" rx="5" fill="#221f18" stroke="#4f8ef7"/><text x="90" y="64" fill="#bdb9a6" font-size="11" text-anchor="middle">item 描述</text>
+  <rect x="158" y="46" width="150" height="26" rx="5" fill="#221f18" stroke="#3a382d"/><text x="233" y="64" fill="#bdb9a6" font-size="11" text-anchor="middle">直接上游摘要 ×1</text>
+  <text x="30" y="118" fill="#e8e4d4" font-size="13">大 item（如：改动跨三个模块的接口）</text>
+  <rect x="30" y="130" width="120" height="26" rx="5" fill="#221f18" stroke="#4f8ef7"/><text x="90" y="148" fill="#bdb9a6" font-size="11" text-anchor="middle">item 描述</text>
+  <rect x="158" y="130" width="150" height="26" rx="5" fill="#221f18" stroke="#3a382d"/><text x="233" y="148" fill="#bdb9a6" font-size="11" text-anchor="middle">上游摘要 ×N</text>
+  <rect x="316" y="130" width="140" height="26" rx="5" fill="#221f18" stroke="#3a382d"/><text x="386" y="148" fill="#bdb9a6" font-size="11" text-anchor="middle">总目标与约束</text>
+  <rect x="464" y="130" width="150" height="26" rx="5" fill="#221f18" stroke="#3a382d"/><text x="539" y="148" fill="#bdb9a6" font-size="11" text-anchor="middle">相关文件路径线索</text>
+  <text x="30" y="204" fill="#8a8675" font-size="12">对照：单 agent 长跑的第 k 步 ≈ 全部前 k−1 步的完整历史，随步数线性膨胀，最终触发 compaction 有损压缩。</text>
+  <line x1="640" y1="46" x2="640" y2="160" stroke="#2e2c20"/>
+  <text x="668" y="60" fill="#5aad4e" font-size="12">仓库现状不进上下文：</text>
+  <text x="668" y="80" fill="#8a8675" font-size="11">代码任务里仓库本身就是共享内存，</text>
+  <text x="668" y="97" fill="#8a8675" font-size="11">executor 需要什么自己读文件，</text>
+  <text x="668" y="114" fill="#8a8675" font-size="11">交接摘要只传"结论与产物在哪"。</text>
+</svg>
+<figcaption>上下文构成对比。交接摘要是结构化短文本（结论 + 产物清单），不是转录。</figcaption>
+</figure>
+
+<h2>3. 运行中修订 list</h2>
+<p>list 不是编译后冻结的静态 DAG。executor 回报"这个 item 需要拆分"或发现新工作时，
+planner 修订 list（拆分、插入、作废），修订记录在运行结果的 <code>revisions</code> 里（前后 item id 对照），
+之后的派发按新 list 走。</p>
+<figure>
+<svg viewBox="0 0 960 170" role="img" aria-label="list随执行推进被修订：item2执行中发现需要拆分，planner把它拆成2a和2b并插入新item5，已完成的item1不受影响">
+  <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M0,0 L10,5 L0,10 z" fill="#8a8675"/></marker></defs>
+  <rect x="0" y="0" width="960" height="170" fill="#12110b"/>
+  <text x="30" y="34" fill="#8a8675" font-size="12">修订前</text>
+  <g font-size="12">
+    <rect x="100" y="18" width="90" height="26" rx="5" fill="#221f18" stroke="#5aad4e"/><text x="145" y="36" fill="#5aad4e" text-anchor="middle">1 ✓</text>
+    <rect x="200" y="18" width="90" height="26" rx="5" fill="#221f18" stroke="#d4843a"/><text x="245" y="36" fill="#d4843a" text-anchor="middle">2 执行中</text>
+    <rect x="300" y="18" width="90" height="26" rx="5" fill="#221f18" stroke="#3a382d"/><text x="345" y="36" fill="#bdb9a6" text-anchor="middle">3</text>
+    <rect x="400" y="18" width="90" height="26" rx="5" fill="#221f18" stroke="#3a382d"/><text x="445" y="36" fill="#bdb9a6" text-anchor="middle">4</text>
+  </g>
+  <line x1="480" y1="70" x2="480" y2="96" stroke="#8a8675" marker-end="url(#ar2)"/>
+  <text x="500" y="88" fill="#8a8675" font-size="11">executor 回报 item 2 范围过大 → planner 拆分并插入新发现的工作</text>
+  <text x="30" y="136" fill="#8a8675" font-size="12">修订后</text>
+  <g font-size="12">
+    <rect x="100" y="120" width="90" height="26" rx="5" fill="#221f18" stroke="#5aad4e"/><text x="145" y="138" fill="#5aad4e" text-anchor="middle">1 ✓</text>
+    <rect x="200" y="120" width="90" height="26" rx="5" fill="#221f18" stroke="#4f8ef7"/><text x="245" y="138" fill="#4f8ef7" text-anchor="middle">2a</text>
+    <rect x="300" y="120" width="90" height="26" rx="5" fill="#221f18" stroke="#4f8ef7"/><text x="345" y="138" fill="#4f8ef7" text-anchor="middle">2b</text>
+    <rect x="400" y="120" width="90" height="26" rx="5" fill="#221f18" stroke="#3a382d"/><text x="445" y="138" fill="#bdb9a6" text-anchor="middle">3</text>
+    <rect x="500" y="120" width="90" height="26" rx="5" fill="#221f18" stroke="#3a382d"/><text x="545" y="138" fill="#bdb9a6" text-anchor="middle">4</text>
+    <rect x="600" y="120" width="110" height="26" rx="5" fill="#221f18" stroke="#4f8ef7"/><text x="655" y="138" fill="#4f8ef7" text-anchor="middle">5（新发现）</text>
+  </g>
+</svg>
+<figcaption>修订只影响未执行部分；已完成 item 的结果摘要保持不变，DAG 里能看到每次修订的前后对照。</figcaption>
+</figure>
+
+<h2>4. 与现有机制的归并</h2>
+<p>系统里已有两块同类机制，本设计不新建平行物，workflow 是它们之上的薄驱动层：</p>
+<table>
+<tr><th>已有机制</th><th>在 workflow 中的角色</th></tr>
+<tr><td>todo planning board（<code>functions/tools/todo/</code>，session 级 <code>todos.json</code>，
+todo_create / todo_update / todo_list）</td>
+<td><b>就是 list 本体</b>。条目 schema 扩展三个可选字段：<code>done_criteria</code>（完成判据）、
+<code>context_spec</code>（上下文规格）、<code>result_summary</code>（交接摘要）。存储读写全走现有
+<code>shared.py</code>，旧条目兼容，现有 todo 展示界面直接可见 workflow 进度。</td></tr>
+<tr><td>goal 判定（<code>agent/goal/judge.py</code> 的 <code>evaluate_goal</code>）</td>
+<td><b>就是 item 的 judge</b>。item 的 done_criteria 作为 goal payload 传入，不另写判定。
+turn 级的 continuation loop（<code>goal/loop.py</code>）保持不动，item 级推进是独立的一层。</td></tr>
+</table>
+<div class="card">
+新增的只有薄驱动层：<code>run_task_list</code> 入口与规模判断、item 串行推进、修订逻辑
+（走 todo_update）、交接摘要组装与长度上限、item 上下文规格到 <code>render_range</code> 的映射。
+</div>
+
+<h2>5. 边界与取舍</h2>
+<table>
+<tr><th>决定</th><th>理由</th></tr>
+<tr><td>默认串行执行</td><td>共享可变的仓库状态下，并行是例外不是默认。第一版不做并行、不做自动依赖推断。</td></tr>
+<tr><td>judge 复用现有 goal 判定</td><td>单个压缩上下文 LLM 判定已定案，item 完成判据在规划时写好，判定时不重新发明标准。</td></tr>
+<tr><td>小任务不拆</td><td>planner 第一步做规模判断，单 agent 能一口气完成的直接执行。</td></tr>
+<tr><td>交接摘要有长度上限</td><td>摘要退化成转录就失去全部 token 收益；超限截断并要求 executor 给产物路径而不是内容。</td></tr>
+<tr><td>重试预算：item 内 1 次，然后回 planner</td><td>同样的失败重试第三次没有意义，回 planner 拆分或改判据才是修复路径。</td></tr>
+</table>
+
+<h2>实现状态</h2>
+<div class="card">
+第一版已实现，代码在 <code>openprogram/functions/agentics/task_list/</code>，注册在
+<code>AGENTIC_MODULES</code>，产品文档见 <code>docs/capabilities/task-list.md</code>。
+
+<p><b>已实现</b></p>
+<table>
+<tr><th>部分</th><th>落点</th></tr>
+<tr><td>入口与规模判断</td><td><code>run_task_list(task, session_id, resume, spawn_caller, agent_id)</code>；planner 第一步答 <code>split</code>，false 时整个任务作为单个 item 直接执行</td></tr>
+<tr><td>list 持久化</td><td>就是会话的 todo 计划板（<code>&lt;session-repo&gt;/todos.json</code>），条目扩展 <code>done_criteria</code>、<code>context_spec</code>、<code>result_summary</code> 三个可选字段，读写全走 <code>tools/todo/shared.py</code>；没有第二份清单格式</td></tr>
+<tr><td>断点续跑</td><td>每次状态变化在动手之前写板；续跑按 <code>owner</code> + 任务文本认领自己的条目，任何 <code>in_progress</code> 都视为上次执行中断并重新获得完整两次尝试预算，<code>completed</code> 跳过</td></tr>
+<tr><td>串行 loop</td><td><code>_run_one_item</code> 取下一个未完成条目 → executor（工具限定 <code>EXECUTOR_TOOLS</code>，输入=item+上游交接摘要）→ judge → 过则写 <code>result_summary</code></td></tr>
+<tr><td>judge</td><td><code>judge_item</code> 调 <code>openprogram.agent.goal.evaluate_goal</code>（经包对象调用，符合 goal 包的 monkeypatch 约定），<code>done_criteria</code> 作为 goal 载荷；非 <code>met</code> 一律算未完成。turn 级的 <code>goal/loop.py</code> 是另一层，本模块不涉及</td></tr>
+<tr><td>item 级上下文</td><td>planner 写 <code>context_spec.upstream</code>，同一个数既决定交接摘要取几条，也经 <code>render_range_for</code> 映射为 <code>{"callers": 0, "subcalls": upstream}</code></td></tr>
+<tr><td>重试与修订</td><td>item 内重试 1 次（把 judge 的理由回传给 executor），再不过回 planner 重写未跑部分；已完成条目的结果不动，每次修订记录前后 id</td></tr>
+<tr><td>交接摘要上限</td><td><code>HANDOFF_SUMMARY_MAX_CHARS</code>=1200，超限截断并附一句"给产物路径不是内容"</td></tr>
+</table>
+
+<div class="card"><b>修复合同：</b>executor 的 <code>render_range_for(item)</code> 必须传入共享 <code>run_agent_turn</code> 边界，并由该 turn 内未显式声明范围的 agentic function 读取；使用 spawn subprocess 的 agentic tool 必须显式传递该范围，显式 decorator 范围仍优先。修订回复只有显式 JSON 数组 <code>"items": []</code> 才表示放弃，缺字段或非数组均为无效回复，不得改写 board；驱动返回 <code>error</code> 并保留 <code>in_progress</code> checkpoint 供后续 resume。</div>
+
+<p><b>未做</b>：并行执行、自动依赖推断、token 收益量化对比——都等第一版跑通真实任务后再决定。
+另外 <code>MAX_ITEMS_EXECUTED</code>=40 是运行上限，触到即以 <code>capped</code> 停止。</p>
+</div>
+
+</body>
+</html>

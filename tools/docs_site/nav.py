@@ -232,6 +232,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "capabilities/workflows/research-agent.md",
             "capabilities/workflows/wiki-agent.md"]),
         ("Session goals", "会话目标", ["capabilities/goal.md"]),
+        ("Task lists", "任务清单", ["capabilities/task-list.md"]),
         ("Extending", "扩展", [
             "capabilities/installing-harnesses.md", "capabilities/skills.md",
             "capabilities/distill.md",
@@ -268,6 +269,9 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/api/providers.md", "reference/api/agentic-function.md"]),
         ("CLI and configuration", "CLI 与配置", [
             "reference/cli.md", "reference/config.md",
+            "reference/diagnostics.md",
+            "reference/session-export.md",
+            "reference/output-styles.md",
             # generated from code at build time (generate_reference.py):
             "reference/config-keys.md", "reference/provider-registry.md"]),
         ("Notes", "笔记", ["reference/claude-code-compaction.md"]),
@@ -299,6 +303,7 @@ PAGE_ORDER: dict[str, int] = {
     "capabilities/tools.md": 9,
     "capabilities/lsp.md": 10,
     "capabilities/goal.md": 11,
+    "capabilities/task-list.md": 12,
     "capabilities/agentic-programming/philosophy.md": 1,
     "capabilities/agentic-programming/embedding-in-your-own-stack.md": 2,
     "capabilities/agentic-programming/writing-functions": 3,
@@ -330,7 +335,10 @@ PAGE_ORDER: dict[str, int] = {
     "reference/api": 2,
     "reference/cli.md": 3,
     "reference/config.md": 4,
-    "reference/claude-code-compaction.md": 5,
+    "reference/diagnostics.md": 5,
+    "reference/session-export.md": 6,
+    "reference/output-styles.md": 7,
+    "reference/claude-code-compaction.md": 6,
     "reference/design": 900,  # design-notes archive always last
     # The context notes read in order: the layer, then compaction, then how the
     # blocks are composed and compared, then the two rendered companions.

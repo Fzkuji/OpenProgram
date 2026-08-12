@@ -232,6 +232,19 @@ def _build_inline(agent: Any) -> str:
     return (_attr(agent, "system_prompt", "") or "").strip()
 
 
+def _build_output_style(agent: Any) -> str:
+    """The active output style's text — how replies should be written.
+
+    ``default`` (and an unknown style name) contributes nothing, so the
+    prompt is byte-identical to what it was before styles existed."""
+    try:
+        from openprogram.context.output_style import style_text
+        return style_text().strip()
+    except Exception:
+        _log.debug("output style unavailable", exc_info=True)
+        return ""
+
+
 def _build_skills(agent: Any) -> str:
     """The ``<available_skills>`` listing — all five sources, one renderer.
 
@@ -410,6 +423,10 @@ register(ContextComponent("identity", "L0", 10, _build_identity))
 register(ContextComponent("tool_enforcement", "L0", 12, _build_tool_enforcement))
 register(ContextComponent("model_guidance", "L0", 14, _build_model_guidance))
 register(ContextComponent("platform_format", "L0", 16, _build_platform_format))
+# Output style sits between the platform-format guidance and the agent's own
+# inline prompt: it shapes how replies are written, so the agent's specific
+# instructions come after it and win on any conflict.
+register(ContextComponent("output_style", "L0", 20, _build_output_style))
 register(ContextComponent("inline_prompt", "L0", 30, _build_inline))
 register(ContextComponent("skills_index", "L0", 40, _build_skills))
 register(ContextComponent("memory_global", "L0", 50, _build_memory))

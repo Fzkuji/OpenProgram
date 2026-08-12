@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+import re
 from typing import Any, Callable, Optional
 
 from openprogram import setup as _setup
@@ -104,6 +105,17 @@ def _search_choices() -> list[str]:
         return ["auto"] + [n for n in names if n]
     except Exception:
         return ["auto"]
+
+
+def _output_styles() -> list[str]:
+    """Every discovered output style, ``default`` first. Best-effort: a
+    broken discovery degrades to just ``default``."""
+    try:
+        from openprogram.context.output_style import DEFAULT_STYLE, list_styles
+        names = sorted(n for n in list_styles() if n != DEFAULT_STYLE)
+        return [DEFAULT_STYLE] + names
+    except Exception:
+        return ["default"]
 
 
 def _update_channels() -> list[str]:
@@ -200,6 +212,15 @@ def _validate_hooks(v: Any) -> Optional[str]:
     return None
 
 
+def _validate_quiet_hours(value: Any) -> Optional[str]:
+    if re.fullmatch(
+        r"(?:[01]\d|2[0-3]):[0-5]\d-(?:[01]\d|2[0-3]):[0-5]\d",
+        str(value),
+    ):
+        return None
+    return "must use HH:MM-HH:MM with 24-hour local times"
+
+
 # the registry
 
 SETTINGS: list[SettingSpec] = [
@@ -286,6 +307,22 @@ SETTINGS: list[SettingSpec] = [
         help="Managed recording ID or an explicit replay file path; record mode accepts IDs only.",
     ),
     SettingSpec(
+        key="proactive.heartbeat", path=("proactive", "heartbeat"),
+        group="Memory", label="Commitment heartbeat", widget="enum",
+        apply=APPLY_LIVE, default="daily",
+        choices=lambda: ["daily", "hourly", "off"],
+        help="Check due commitments daily at 09:00 local time, hourly at "
+             "minute 00, or keep them visible without sending reminders.",
+    ),
+    SettingSpec(
+        key="proactive.quiet_hours", path=("proactive", "quiet_hours"),
+        group="Memory", label="Commitment quiet hours", widget="text",
+        apply=APPLY_LIVE, default="23:00-08:00",
+        validate=_validate_quiet_hours,
+        help="Local-time interval in HH:MM-HH:MM form. Due reminders wait "
+             "until a later heartbeat outside this interval.",
+    ),
+    SettingSpec(
         key="goal.max_turns", path=("goal", "max_turns"), group="Goal",
         minimum=1,
         label="Goal max auto-continue turns", widget="number",
@@ -300,6 +337,15 @@ SETTINGS: list[SettingSpec] = [
              "loop's own stop rules (judge failures, idle spin) and "
              "/goal clear. Read when the goal is set; each goal keeps "
              "the bound it started with.",
+    ),
+    SettingSpec(
+        key="agent.output_style", path=("agent", "output_style"),
+        group="Agent", label="Output style", widget="enum",
+        apply=APPLY_LIVE, default="default", choices=_output_styles,
+        help="Appends a block of guidance to the system prompt describing how "
+             "replies should be written. `default` appends nothing. Drop a "
+             "`<name>.md` file in `~/.openprogram/output-styles/` or "
+             "`./output-styles/` to add your own.",
     ),
     SettingSpec(
         key="agent.max_spawn_depth", path=("agent", "max_spawn_depth"),
@@ -477,6 +523,17 @@ SETTINGS: list[SettingSpec] = [
              "in `git log`. The model's display name is used when known, "
              "otherwise `OpenProgram`. Turning this off stops OpenProgram "
              "adding any attribution trailer.",
+    ),
+    SettingSpec(
+        key="git.allow_remote_write", path=("git", "allow_remote_write"),
+        group="Git", label="Allow pushes and pull requests", widget="toggle",
+        apply=APPLY_LIVE, default=False,
+        help="Let the `commit-push-pr` flow run `git push` and `gh pr create`. "
+             "Off by default: branching, staging, and committing are local and "
+             "reversible, but a push and a pull request are visible to other "
+             "people and cannot be undone by resetting the local tree. Leave it "
+             "off to keep the flow stopping at the commit, and use "
+             "`git push --dry-run` to see what a push would send.",
     ),
     SettingSpec(
         key="update.channel", path=("update", "channel"), group="Updates",

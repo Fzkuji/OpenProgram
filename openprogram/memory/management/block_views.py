@@ -215,6 +215,7 @@ class BlockViewsMixin:
             Path("topics"),
             Path("timeline"),
             Path("recent_events.jsonl"),
+            Path("commitments.jsonl"),
             Path("relations.json"),
             Path("core.md"),
             Path(runtime_dir(self.memory_dir).name) / "runtime.json",

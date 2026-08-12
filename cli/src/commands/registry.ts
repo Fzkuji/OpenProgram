@@ -50,6 +50,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'copy', description: 'Copy the last assistant reply' },
   { name: 'bell', description: 'Toggle terminal-bell on long turns' },
   { name: 'theme', description: 'Switch the color theme (dark / light / dim)' },
+  { name: 'style', description: 'Show or set the output style (how replies are written)' },
   { name: 'welcome', description: 'Re-show the welcome banner' },
   { name: 'quit', description: 'Exit OpenProgram' },
 ];

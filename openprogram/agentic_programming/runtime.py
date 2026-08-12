@@ -35,16 +35,16 @@ import json
 import os
 import random
 import time
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
-from openprogram.providers.structured_output import (
-    StructuredOutputError,
-    StructuredOutputValidationError,
-)
+from openprogram.providers.structured_output import StructuredOutputError
 
 if TYPE_CHECKING:
     from openprogram.providers.utils.errors import (
-        ErrorReason, LLMError, RetryInfo,
+        ErrorReason,
+        LLMError,
+        RetryInfo,
     )
 
 # Backoff base (seconds) between exec() retry attempts. Retries sleep
@@ -117,11 +117,12 @@ def _retry_sleep_seconds(attempt: int, retry_after_s: Optional[float] = None) ->
     src/infra/retry.ts) which uses the same "positive-only when
     Retry-After present" rule.
     """
-    base = _RETRY_BACKOFF * (2 ** attempt)
+    base = _RETRY_BACKOFF * (2**attempt)
     if retry_after_s and retry_after_s > 0:
         floor = max(base, retry_after_s)
         return floor * random.uniform(1.0, 1.25)
     return base * random.uniform(0.75, 1.25)
+
 
 # Substrings marking a *permanent* provider error. Retrying these only
 # burns attempts and wall-clock time — the request is malformed or the
@@ -196,12 +197,16 @@ def _build_llm_error(
     stay tidy.
     """
     from openprogram.providers.utils.errors import (
-        LLMError, classify_error, had_image as _had_image,
+        LLMError,
+        classify_error,
+        had_image as _had_image,
     )
 
     # Try to pull HTTP status from the cause if the provider attached
     # it (HTTP providers stash it on the exc via ProviderStreamError).
-    http_status = getattr(cause, "http_status", None) or getattr(cause, "status_code", None)
+    http_status = getattr(cause, "http_status", None) or getattr(
+        cause, "status_code", None
+    )
     retry_after_s = getattr(cause, "retry_after_s", None)
     error_text = getattr(cause, "error_text", "") or ""
 
@@ -214,7 +219,9 @@ def _build_llm_error(
         retryable = False
     else:
         reason, kind_retryable = classify_error(
-            cause, http_status=http_status, error_text=error_text,
+            cause,
+            http_status=http_status,
+            error_text=error_text,
         )
         # Even if the underlying kind was retryable, when we gave up
         # because the budget was exhausted, retryable stays True
@@ -265,11 +272,19 @@ def _fire_on_retry(
     if on_retry is None:
         return
     from openprogram.providers.utils.errors import (
-        RetryInfo, classify_error, ErrorReason,
+        RetryInfo,
+        classify_error,
+        ErrorReason,
     )
-    http_status = getattr(cause, "http_status", None) or getattr(cause, "status_code", None)
-    reason, _ = classify_error(cause, http_status=http_status,
-                               error_text=getattr(cause, "error_text", "") or "")
+
+    http_status = getattr(cause, "http_status", None) or getattr(
+        cause, "status_code", None
+    )
+    reason, _ = classify_error(
+        cause,
+        http_status=http_status,
+        error_text=getattr(cause, "error_text", "") or "",
+    )
     info = RetryInfo(
         attempt=attempt,
         max_attempts=max_attempts,
@@ -286,14 +301,20 @@ def _fire_on_retry(
         # Don't break the retry loop on a buggy hook. Print once for
         # the operator; future identical hook failures stay silent.
         import sys as _sys
-        print(f"[runtime] on_retry callback raised; ignoring: "
-              f"{type(_sys.exc_info()[1]).__name__}", file=_sys.stderr)
+
+        print(
+            f"[runtime] on_retry callback raised; ignoring: "
+            f"{type(_sys.exc_info()[1]).__name__}",
+            file=_sys.stderr,
+        )
+
 
 # Context var for the tools passed into the current exec() call.
 # _call_via_providers reads it to feed AgentSession without changing
 # the _call() signature subclasses override.
 _current_tools: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar(
-    "_current_tools", default=None,
+    "_current_tools",
+    default=None,
 )
 
 # OpenClaw-style tool policy that overlays on top of the chosen tool
@@ -302,7 +323,8 @@ _current_tools: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar(
 # ``{"toolset": "research", "source": "wechat", "allow": [...], "deny": [...]}``.
 # Any subset of keys is valid; missing keys mean "no constraint".
 _current_tool_policy: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar(
-    "_current_tool_policy", default=None,
+    "_current_tool_policy",
+    default=None,
 )
 
 # Agent-loop options for the current exec() call — tool_choice /
@@ -311,11 +333,19 @@ _current_tool_policy: contextvars.ContextVar[Optional[dict]] = contextvars.Conte
 # subclasses override stays unchanged). Only non-default values are
 # stored; missing keys mean "provider / loop default".
 _current_loop_opts: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar(
-    "_current_loop_opts", default=None,
+    "_current_loop_opts",
+    default=None,
 )
 
-_current_response_format: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar(
-    "_current_response_format", default=None,
+_current_response_format: contextvars.ContextVar[Optional[Any]] = (
+    contextvars.ContextVar(
+        "_current_response_format",
+        default=None,
+    )
+)
+
+_current_model_call_budget: contextvars.ContextVar[Optional[dict]] = (
+    contextvars.ContextVar("_current_model_call_budget", default=None)
 )
 
 # Per-exec stream-fn override. exec(stream_fn=...) sets it so the dispatcher
@@ -323,7 +353,8 @@ _current_response_format: contextvars.ContextVar[Optional[Any]] = contextvars.Co
 # _call_via_providers → AgentSession path real provider calls use. None →
 # fall back to the runtime's own _stream_fn (CallableModel) or the provider.
 _current_stream_fn: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar(
-    "_current_stream_fn", default=None,
+    "_current_stream_fn",
+    default=None,
 )
 
 
@@ -340,8 +371,8 @@ def _exec_system_prompt(inline: str, tools: Optional[list]) -> str:
         from openprogram.context.components import build_system_prompt
         from openprogram.agent.internals._model_tools import load_agent_profile
         from openprogram.agent.management import manager as _A
-        profile = dict(load_agent_profile(
-            getattr(_A, "DEFAULT_AGENT_ID", "main")))
+
+        profile = dict(load_agent_profile(getattr(_A, "DEFAULT_AGENT_ID", "main")))
         if inline:
             profile["system_prompt"] = inline
         else:
@@ -467,11 +498,12 @@ class Runtime:
                            through complete() by default.
                          - Any other string → legacy path (subclass overrides
                            _call, or pass a `call` function).
-            max_retries: Maximum number of exec() attempts before raising.
+            max_retries: Maximum number of provider calls per exec() before raising.
                          ``None`` (default) → read ``OPENPROGRAM_MAX_RETRIES``
                          env, fall back to 6. Set explicitly to override
-                         env. 6 means try once + retry five times on
-                         transient failure, with exponential backoff +
+                         env. Structured-output repair calls consume the
+                         same budget as transport retries. 6 means at most
+                         six provider calls, with exponential backoff +
                          ±25% jitter — wall-clock at worst ≈ 1.5 + 3 +
                          6 + 12 + 24 = 46s of sleeping before giving
                          up (tunable via ``OPENPROGRAM_RETRY_BACKOFF_BASE``).
@@ -488,9 +520,14 @@ class Runtime:
                          appended to system_prompt on every exec() call.
         """
         import uuid as _uuid
+
         self._closed = False  # Set early so __del__ is safe even if __init__ raises.
-        self._active_llm_node_id = None  # llm node of the in-flight exec (for tool-loop attribution)
-        self._prompted_functions: set[str] = set()  # Functions whose docstrings have been sent
+        self._active_llm_node_id = (
+            None  # llm node of the in-flight exec (for tool-loop attribution)
+        )
+        self._prompted_functions: set[str] = (
+            set()
+        )  # Functions whose docstrings have been sent
         # 提问通道（runtime.ask 的出口）。默认 None → 走事件层（前端卡片 + 总线）。
         # @agentic_function 跑的子进程里，process_runner 会换成 QueueTransport
         # （经 mp.Queue 把问题送回父进程）。对齐 logging：通道显式挂在对象上。
@@ -513,8 +550,12 @@ class Runtime:
         self.max_retries = max_retries
         self.has_session = False  # Subclasses set True if they manage their own context
         self.on_stream = None  # Optional callback: fn(event_dict) for streaming events
-        self.last_usage = None  # Last call's token usage: {input_tokens, output_tokens, ...}
-        self.usage_is_cumulative = False  # True if last_usage accumulates across calls (e.g. Codex CLI)
+        self.last_usage = (
+            None  # Last call's token usage: {input_tokens, output_tokens, ...}
+        )
+        self.usage_is_cumulative = (
+            False  # True if last_usage accumulates across calls (e.g. Codex CLI)
+        )
         self.api_key = api_key
         # Skills config: resolved to a (possibly empty) list of dirs at
         # first use; actual SKILL.md loading is lazy and cached so we
@@ -546,13 +587,16 @@ class Runtime:
             # + a stream_fn that calls ``fn``. The model is never used for a
             # real network call — the stream_fn intercepts it.
             from openprogram.providers.callable_model import (
-                make_callable_model, make_callable_stream_fn,
+                make_callable_model,
+                make_callable_stream_fn,
             )
+
             self.api_model = make_callable_model(call)
             self._stream_fn = make_callable_stream_fn(call)
         elif isinstance(model, str) and ":" in model:
             provider, model_id = model.split(":", 1)
             from openprogram.providers import get_model
+
             resolved = get_model(provider, model_id)
             if resolved is None:
                 raise ValueError(
@@ -590,8 +634,11 @@ class Runtime:
         if self._skills_cache_key == key:
             return self._skills_prompt_block
         from openprogram.skills import (
-            format_skills_for_prompt, list_skills, load_skills,
+            format_skills_for_prompt,
+            list_skills,
+            load_skills,
         )
+
         if key is True:
             skills = list_skills()
         elif key:
@@ -649,9 +696,7 @@ class Runtime:
             if frame_node_id and frame_node_id in graph.nodes:
                 frame_node = graph.nodes[frame_node_id]
                 frame_entry_seq = frame_node.seq
-                render_range = (frame_node.metadata or {}).get(
-                    "render_range"
-                )
+                render_range = (frame_node.metadata or {}).get("render_range")
 
             # §6 head: the frame's nearest ROOT-level ancestor along
             # ``caller``. Its predecessor chain is the pre-frame history
@@ -669,9 +714,14 @@ class Runtime:
                     break
                 head_id = caller
             if head_id is None:
-                head_id = max(
-                    graph.nodes.values(), key=lambda n: n.seq,
-                ).id if graph.nodes else None
+                head_id = (
+                    max(
+                        graph.nodes.values(),
+                        key=lambda n: n.seq,
+                    ).id
+                    if graph.nodes
+                    else None
+                )
             read_ids = render_context(
                 graph,
                 head_id=head_id,
@@ -699,12 +749,16 @@ class Runtime:
                 if fn_name:
                     call_path = _compute_call_path(graph, frame_node_id)
                     text = _situational_prefix(
-                        fn_name, fn_doc, call_path=call_path,
+                        fn_name,
+                        fn_doc,
+                        call_path=call_path,
                     )
-                    frame_prefix_blocks.append({
-                        "type": "text",
-                        "text": text,
-                    })
+                    frame_prefix_blocks.append(
+                        {
+                            "type": "text",
+                            "text": text,
+                        }
+                    )
 
             # Synthesize the current turn from ``content`` blocks via
             # the same helper the no-store fallback uses, so image /
@@ -810,11 +864,14 @@ class Runtime:
             return
         try:
             from openprogram.store import _store
+
             store = _store.get()
             if store is None:
                 return
             _usage = usage if usage is not None else getattr(self, "last_usage", None)
-            _blocks = blocks if blocks is not None else getattr(self, "last_blocks", None)
+            _blocks = (
+                blocks if blocks is not None else getattr(self, "last_blocks", None)
+            )
             meta: dict = {"status": status}
             if _usage:
                 meta["usage"] = _usage
@@ -834,6 +891,7 @@ class Runtime:
             # global aging constants move (dag/overview.md §8).
             try:
                 from openprogram.context.aging import last_manifest
+
                 _mf = last_manifest()
                 if _mf:
                     meta["render_manifest"] = _mf
@@ -841,11 +899,12 @@ class Runtime:
                 pass
             if error is not None:
                 import traceback as _tb
+
                 meta["error"] = str(error)
                 meta["error_type"] = type(error).__name__
                 meta["trace"] = "".join(
-                    _tb.format_exception(type(error), error,
-                                         error.__traceback__))[:2000]
+                    _tb.format_exception(type(error), error, error.__traceback__)
+                )[:2000]
             store.update(node_id, output=reply, metadata=meta)
         except Exception:
             pass
@@ -856,6 +915,7 @@ class Runtime:
         """前端路由用的 webui session（dispatcher 在执行上下文里设的
         ContextVar），不是 Runtime 自己的 op-xxx id。无 webui 时为空串。"""
         from openprogram.agentic_programming.function import current_session_id
+
         return current_session_id()
 
     def can_ask(self) -> bool:
@@ -869,9 +929,19 @@ class Runtime:
         传 None 恢复默认（事件层）。"""
         self._question_transport = transport
 
-    def _ask_raw(self, *, kind, prompt, options=None, multi=False,
-                 allow_custom=True, detail="", schema=None, questions=None,
-                 timeout=300.0):
+    def _ask_raw(
+        self,
+        *,
+        kind,
+        prompt,
+        options=None,
+        multi=False,
+        allow_custom=True,
+        detail="",
+        schema=None,
+        questions=None,
+        timeout=300.0,
+    ):
         from openprogram.agent.questions import ask_blocking, emit_question_asked
 
         transport = getattr(self, "_question_transport", None)  # None → 默认事件层通道
@@ -880,26 +950,49 @@ class Runtime:
             # 经本 runtime 的提问通道把问题送出去：worker 进程默认走事件层
             # （前端卡片 + 总线）；@agentic_function 跑的子进程被 process_runner
             # 换成 QueueTransport（经 mp.Queue 送回父进程 registry）。
-            emit_question_asked({
-                "id": q.id, "session_id": q.session_id, "kind": q.kind,
-                "prompt": q.prompt, "options": q.options, "multi": q.multi,
-                "allow_custom": q.allow_custom, "detail": q.detail,
-                "schema": q.schema,        # kind="form" 时非空
-                "questions": q.questions,  # kind="ask_many" 时非空
-                "expires_at": q.expires_at,
-            }, transport)
+            emit_question_asked(
+                {
+                    "id": q.id,
+                    "session_id": q.session_id,
+                    "kind": q.kind,
+                    "prompt": q.prompt,
+                    "options": q.options,
+                    "multi": q.multi,
+                    "allow_custom": q.allow_custom,
+                    "detail": q.detail,
+                    "schema": q.schema,  # kind="form" 时非空
+                    "questions": q.questions,  # kind="ask_many" 时非空
+                    "expires_at": q.expires_at,
+                },
+                transport,
+            )
 
         return ask_blocking(
-            session_id=self._ui_session_id(), kind=kind, prompt=prompt,
-            options=options, multi=multi, allow_custom=allow_custom,
-            detail=detail, schema=schema, questions=questions,
-            timeout=timeout, on_asked=_on_asked,
+            session_id=self._ui_session_id(),
+            kind=kind,
+            prompt=prompt,
+            options=options,
+            multi=multi,
+            allow_custom=allow_custom,
+            detail=detail,
+            schema=schema,
+            questions=questions,
+            timeout=timeout,
+            on_asked=_on_asked,
             transport=transport,  # 超时收回前端卡片走同一条通道
         )
 
-    def ask(self, prompt: str | None = None, *, options=None, multi: bool = False,
-            allow_custom: bool = True, questions: list | None = None,
-            timeout: float = 300.0, default=None):
+    def ask(
+        self,
+        prompt: str | None = None,
+        *,
+        options=None,
+        multi: bool = False,
+        allow_custom: bool = True,
+        questions: list | None = None,
+        timeout: float = 300.0,
+        default=None,
+    ):
         """问用户，阻塞到有答案。统一入口——可一次问 1 题或多题。
 
         两种用法（对齐 Claude Code 的 AskUserQuestion：不区分问几个）：
@@ -929,8 +1022,11 @@ class Runtime:
                 for q in (questions or [])
             ]
             outcome, value = self._ask_raw(
-                kind="ask_many", prompt=prompt or "", questions=qs,
-                allow_custom=False, timeout=timeout,
+                kind="ask_many",
+                prompt=prompt or "",
+                questions=qs,
+                allow_custom=False,
+                timeout=timeout,
             )
             if outcome == "answered":
                 return value if isinstance(value, list) else []
@@ -942,8 +1038,12 @@ class Runtime:
 
         # 单题分支。
         outcome, value = self._ask_raw(
-            kind="ask", prompt=prompt or "", options=options, multi=multi,
-            allow_custom=allow_custom, timeout=timeout,
+            kind="ask",
+            prompt=prompt or "",
+            options=options,
+            multi=multi,
+            allow_custom=allow_custom,
+            timeout=timeout,
         )
         if outcome == "answered":
             return value
@@ -953,12 +1053,22 @@ class Runtime:
             return default
         raise AskTimeout(prompt or "ask")
 
-    def confirm(self, prompt: str, *, detail: str = "",
-                timeout: float = 300.0, default: bool = False) -> bool:
+    def confirm(
+        self,
+        prompt: str,
+        *,
+        detail: str = "",
+        timeout: float = 300.0,
+        default: bool = False,
+    ) -> bool:
         """问一个是/否，返回 bool。拒绝=False；超时返回 default（不抛）。"""
         outcome, value = self._ask_raw(
-            kind="confirm", prompt=prompt, detail=detail,
-            options=["确认", "取消"], allow_custom=False, timeout=timeout,
+            kind="confirm",
+            prompt=prompt,
+            detail=detail,
+            options=["确认", "取消"],
+            allow_custom=False,
+            timeout=timeout,
         )
         if outcome == "answered":
             if isinstance(value, str):
@@ -968,8 +1078,15 @@ class Runtime:
             return False
         return default  # timeout
 
-    def form(self, prompt: str, fields: dict, *,
-             detail: str = "", timeout: float = 300.0, default: dict | None = None):
+    def form(
+        self,
+        prompt: str,
+        fields: dict,
+        *,
+        detail: str = "",
+        timeout: float = 300.0,
+        default: dict | None = None,
+    ):
         """问用户一个多字段表单（MCP-elicitation 风格），阻塞到提交。
 
         ``fields`` 是 flat-object 字段 schema：字段名 → 字段定义，例如
@@ -983,9 +1100,14 @@ class Runtime:
         抛 UserDeclined；超时 → 有 default 返回 default，否则抛 AskTimeout。
         """
         from openprogram.agent.questions import UserDeclined, AskTimeout
+
         outcome, value = self._ask_raw(
-            kind="form", prompt=prompt, schema=dict(fields or {}),
-            allow_custom=False, detail=detail, timeout=timeout,
+            kind="form",
+            prompt=prompt,
+            schema=dict(fields or {}),
+            allow_custom=False,
+            detail=detail,
+            timeout=timeout,
         )
         if outcome == "answered":
             return value if isinstance(value, dict) else {}
@@ -1047,7 +1169,7 @@ class Runtime:
         tools_allow: Optional[list[str]] = None,
         tools_deny: Optional[list[str]] = None,
         tool_choice: Any = "auto",
-        parallel_tool_calls: bool = True,
+        parallel_tool_calls: Optional[bool] = None,
         max_iterations: int = 20,
         choices: Any = None,
         timeout_s: Optional[float] = None,
@@ -1086,8 +1208,8 @@ class Runtime:
                               {"type":"function","name":"X"} to force a
                               specific tool.
 
-            parallel_tool_calls: allow the model to emit multiple tool calls
-                                 in one turn (default True).
+            parallel_tool_calls: explicitly allow or forbid multiple tool calls
+                                 in one turn. ``None`` leaves the provider default.
 
             max_iterations:   safety cap on the tool loop (default 20).
 
@@ -1144,11 +1266,14 @@ class Runtime:
 
         structured_format = None
         if response_format is not None:
-            from openprogram.providers.structured_output import normalize_response_format
-            structured_format = normalize_response_format(response_format)
+            from openprogram.providers.structured_output import (
+                normalize_response_format,
+            )
 
+            structured_format = normalize_response_format(response_format)
         # Cancel check — lets long-running loops inside one function also abort.
         from openprogram.agentic_programming.function import _run_pre_invocation_hooks
+
         _run_pre_invocation_hooks()
 
         # Handle plain string input
@@ -1166,11 +1291,15 @@ class Runtime:
                 _normalize_options,
                 render_options,
             )
+
             _decision_menu, _decision_values = _normalize_options(choices)
-            content = list(content) + [{
-                "type": "text",
-                "text": DECISION_FINISH_INSTRUCTION + render_options(_decision_menu),
-            }]
+            content = list(content) + [
+                {
+                    "type": "text",
+                    "text": DECISION_FINISH_INSTRUCTION
+                    + render_options(_decision_menu),
+                }
+            ]
 
         use_model = model or self.model
         content_text = "\n".join(b["text"] for b in content if b.get("type") == "text")
@@ -1186,33 +1315,38 @@ class Runtime:
 
         # --- Call the LLM (with retry) ---
         tools_token = _current_tools.set(tools) if tools else None
-        stream_fn_token = _current_stream_fn.set(stream_fn) if stream_fn is not None else None
+        stream_fn_token = (
+            _current_stream_fn.set(stream_fn) if stream_fn is not None else None
+        )
         _policy_kwargs = {
             "toolset": toolset,
-            "source":  tools_source,
-            "allow":   tools_allow,
-            "deny":    tools_deny,
+            "source": tools_source,
+            "allow": tools_allow,
+            "deny": tools_deny,
         }
         _policy_kwargs = {k: v for k, v in _policy_kwargs.items() if v is not None}
         policy_token = (
-            _current_tool_policy.set({**(_current_tool_policy.get(None) or {}), **_policy_kwargs})
-            if _policy_kwargs else None
+            _current_tool_policy.set(
+                {**(_current_tool_policy.get(None) or {}), **_policy_kwargs}
+            )
+            if _policy_kwargs
+            else None
         )
-        # Loop options — only non-default values travel ("auto" / True
-        # are the provider defaults, sending them adds nothing).
+        # Loop options — only explicit values travel. In particular, structured
+        # output negotiation must distinguish an explicit True (which conflicts
+        # with the single hidden submission tool) from the provider default.
         _loop_opts = {}
         if tool_choice is not None and tool_choice != "auto":
             _loop_opts["tool_choice"] = tool_choice
-        if parallel_tool_calls is False:
-            _loop_opts["parallel_tool_calls"] = False
+        if parallel_tool_calls is not None:
+            _loop_opts["parallel_tool_calls"] = parallel_tool_calls
         if max_iterations is not None:
             _loop_opts["max_iterations"] = max_iterations
         if web_search:
             _loop_opts["web_search"] = True
-        loop_opts_token = (
-            _current_loop_opts.set(_loop_opts) if _loop_opts else None
-        )
+        loop_opts_token = _current_loop_opts.set(_loop_opts) if _loop_opts else None
         response_format_token = None
+        model_call_budget_token = None
         reply = None
         _exec_start = time.monotonic()
         if not (timeout_s and timeout_s > 0):
@@ -1224,34 +1358,48 @@ class Runtime:
         # capping the total. See docs/design/providers/reliability/error-and-timeout-mechanism.html.
         from openprogram.providers.utils.errors import ExecInterrupt
         from openprogram.providers.utils import deadline as _dl
+
         if structured_format is not None:
             response_format_token = _current_response_format.set(structured_format)
+            model_call_budget_token = _current_model_call_budget.set(
+                {
+                    "limit": self.max_retries,
+                    "remaining": self.max_retries,
+                    "validation_repairs_used": 0,
+                    "deadline": _deadline,
+                }
+            )
         _deadline_token = _dl.set_deadline(_deadline)
         # One exec == one llm node. Open it now (status=running); the
         # tool loop inside _call_via_providers repoints _call_id to this
         # node (after the prompt is built) so the model's tool calls
         # attribute here. Closed on success/failure below.
         _llm_node_id = self._open_model_call_node(
-            model=use_model, content_text=content_text,
+            model=use_model,
+            content_text=content_text,
         )
         self._active_llm_node_id = _llm_node_id
         _llm_closed = False
         try:
             errors: list[str] = []
-            for attempt in range(self.max_retries):
+            attempts_used = 0
+            while attempts_used < self.max_retries:
                 # Pre-attempt deadline check: previous sleep or _call
                 # may have already crossed the line, in which case we
                 # don't even start another attempt.
                 if _deadline is not None and time.monotonic() >= _deadline:
                     from openprogram.providers.utils.errors import ErrorReason as _ER
+
                     cause = TimeoutError(
                         f"exec() timed out after {timeout_s}s "
-                        f"({attempt} attempt(s))"
+                        f"({attempts_used} attempt(s))"
                     )
                     raise _build_llm_error(
-                        cause=cause, attempts=max(1, attempt),
+                        cause=cause,
+                        attempts=max(1, attempts_used),
                         elapsed_s=time.monotonic() - _exec_start,
-                        content=content, model=use_model,
+                        content=content,
+                        model=use_model,
                         provider=getattr(self, "provider", None),
                         history=errors,
                         permanent=True,
@@ -1259,46 +1407,32 @@ class Runtime:
                     ) from cause
 
                 from openprogram.agentic_programming.function import (
-                    CancelledError as _CE, check_cancelled,
+                    CancelledError as _CE,
+                    check_cancelled,
                 )
+
                 try:
                     check_cancelled()
                 except _CE:
                     raise ExecInterrupt("cancelled") from None
 
                 try:
+                    attempts_used += 1
                     raw_reply = self._call(
                         call_input, model=use_model, response_format=response_format
                     )
                     reply = raw_reply
-                    if structured_format is not None:
-                        from openprogram.providers.structured_output import (
-                            build_repair_prompt,
-                            parse_and_validate_json,
+                    dag_reply = (
+                        json.dumps(
+                            raw_reply,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
                         )
-                        for validation_attempt in range(
-                            structured_format.max_validation_retries + 1
-                        ):
-                            try:
-                                reply = parse_and_validate_json(raw_reply, structured_format)
-                                break
-                            except StructuredOutputValidationError as exc:
-                                if validation_attempt >= structured_format.max_validation_retries:
-                                    raise
-                                repair = build_repair_prompt(exc)
-                                if self.on_stream:
-                                    self.on_stream({
-                                        "type": "structured_output_retry",
-                                        "attempt": validation_attempt + 1,
-                                        "next_attempt": validation_attempt + 2,
-                                        "issues": exc.issues,
-                                    })
-                                raw_reply = self._call(
-                                    [*call_input, {"type": "text", "text": repair}],
-                                    model=use_model,
-                                    response_format=response_format,
-                                )
-                    self._close_model_call_node(_llm_node_id, reply=raw_reply)
+                        if structured_format is not None
+                        else raw_reply
+                    )
+                    self._close_model_call_node(_llm_node_id, reply=dag_reply)
                     _llm_closed = True
                     break
                 except ExecInterrupt:
@@ -1314,7 +1448,13 @@ class Runtime:
                 except StructuredOutputError:
                     raise
                 except Exception as e:
-                    errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
+                    model_call_budget = _current_model_call_budget.get(None)
+                    if model_call_budget is not None:
+                        attempts_used = max(
+                            attempts_used,
+                            self.max_retries - model_call_budget["remaining"],
+                        )
+                    errors.append(f"Attempt {attempts_used}: {type(e).__name__}: {e}")
                     permanent = _is_permanent_error(e)
                     # The provider already exhausted its OWN transport-retry
                     # budget on this error — don't let exec re-retry it with a
@@ -1325,12 +1465,22 @@ class Runtime:
                     # inner loop gave up exactly at the budget), surface it as
                     # TIMEOUT rather than the incidental transport cause.
                     timed_out = _deadline is not None and time.monotonic() >= _deadline
-                    if permanent or transport_done or timed_out or attempt == self.max_retries - 1:
-                        from openprogram.providers.utils.errors import ErrorReason as _ER
+                    if (
+                        permanent
+                        or transport_done
+                        or timed_out
+                        or attempts_used >= self.max_retries
+                    ):
+                        from openprogram.providers.utils.errors import (
+                            ErrorReason as _ER,
+                        )
+
                         raise _build_llm_error(
-                            cause=e, attempts=attempt + 1,
+                            cause=e,
+                            attempts=attempts_used,
                             elapsed_s=elapsed,
-                            content=content, model=use_model,
+                            content=content,
+                            model=use_model,
                             provider=getattr(self, "provider", None),
                             history=errors,
                             permanent=permanent or timed_out,
@@ -1339,17 +1489,25 @@ class Runtime:
                     # Honor server-supplied Retry-After when the
                     # underlying provider attached it to the exception.
                     retry_after_s = getattr(e, "retry_after_s", None)
-                    sleep_s = _retry_sleep_seconds(attempt, retry_after_s)
+                    sleep_s = _retry_sleep_seconds(attempts_used - 1, retry_after_s)
 
                     # Would sleeping cross the deadline? If yes, give
                     # up now as TIMEOUT — don't waste wall-clock on a
                     # backoff we'll never get to consume.
-                    if _deadline is not None and (time.monotonic() + sleep_s) >= _deadline:
-                        from openprogram.providers.utils.errors import ErrorReason as _ER
+                    if (
+                        _deadline is not None
+                        and (time.monotonic() + sleep_s) >= _deadline
+                    ):
+                        from openprogram.providers.utils.errors import (
+                            ErrorReason as _ER,
+                        )
+
                         raise _build_llm_error(
-                            cause=e, attempts=attempt + 1,
+                            cause=e,
+                            attempts=attempts_used,
                             elapsed_s=elapsed,
-                            content=content, model=use_model,
+                            content=content,
+                            model=use_model,
                             provider=getattr(self, "provider", None),
                             history=errors,
                             permanent=True,
@@ -1357,19 +1515,28 @@ class Runtime:
                         ) from e
 
                     _fire_on_retry(
-                        on_retry, cause=e, attempt=attempt + 1,
-                        max_attempts=self.max_retries, sleep_s=sleep_s,
-                        elapsed_s=elapsed, retry_after_s=retry_after_s,
+                        on_retry,
+                        cause=e,
+                        attempt=attempts_used,
+                        max_attempts=self.max_retries,
+                        sleep_s=sleep_s,
+                        elapsed_s=elapsed,
+                        retry_after_s=retry_after_s,
                     )
                     time.sleep(sleep_s)
         finally:
             if not _llm_closed:
                 import sys as _sys
+
                 _exc = _sys.exc_info()[1]
-                _st = "cancelled" if (
-                    isinstance(_exc, ExecInterrupt)
-                    and "cancel" in str(_exc).lower()
-                ) else "error"
+                _st = (
+                    "cancelled"
+                    if (
+                        isinstance(_exc, ExecInterrupt)
+                        and "cancel" in str(_exc).lower()
+                    )
+                    else "error"
+                )
                 self._close_model_call_node(
                     _llm_node_id,
                     reply=reply if reply is not None else "",
@@ -1388,6 +1555,8 @@ class Runtime:
                 _current_loop_opts.reset(loop_opts_token)
             if response_format_token is not None:
                 _current_response_format.reset(response_format_token)
+            if model_call_budget_token is not None:
+                _current_model_call_budget.reset(model_call_budget_token)
 
         # No choices — the raw reply text is the result.
         if choices is None:
@@ -1410,14 +1579,17 @@ class Runtime:
             remaining_timeout = timeout_s - (time.monotonic() - _exec_start)
             if remaining_timeout <= 0:
                 from openprogram.providers.utils.errors import ErrorReason as _ER
+
                 cause = TimeoutError(
                     f"exec() exhausted timeout_s={timeout_s}s before choice "
                     "resolution could start"
                 )
                 raise _build_llm_error(
-                    cause=cause, attempts=self.max_retries,
+                    cause=cause,
+                    attempts=self.max_retries,
                     elapsed_s=time.monotonic() - _exec_start,
-                    content=content, model=use_model,
+                    content=content,
+                    model=use_model,
                     provider=getattr(self, "provider", None),
                     history=[],
                     permanent=True,
@@ -1425,9 +1597,14 @@ class Runtime:
                 ) from cause
 
         from openprogram.agentic_programming.decision import resolve_decision
+
         return resolve_decision(
-            reply, _decision_menu, _decision_values, self,
-            timeout_s=remaining_timeout, on_retry=on_retry,
+            reply,
+            _decision_menu,
+            _decision_values,
+            self,
+            timeout_s=remaining_timeout,
+            on_retry=on_retry,
         )
 
     async def async_exec(
@@ -1456,12 +1633,17 @@ class Runtime:
 
         structured_format = None
         if response_format is not None:
-            from openprogram.providers.structured_output import normalize_response_format
+            from openprogram.providers.structured_output import (
+                normalize_response_format,
+            )
+
             structured_format = normalize_response_format(response_format)
         response_format_token = None
+        model_call_budget_token = None
 
         # Cancel check — lets long-running loops inside one function also abort.
         from openprogram.agentic_programming.function import _run_pre_invocation_hooks
+
         _run_pre_invocation_hooks()
 
         if isinstance(content, str):
@@ -1486,123 +1668,164 @@ class Runtime:
         # loop and SSE parser read it. See error-and-timeout-mechanism.html.
         from openprogram.providers.utils.errors import ExecInterrupt
         from openprogram.providers.utils import deadline as _dl
+
         if structured_format is not None:
             response_format_token = _current_response_format.set(structured_format)
+            model_call_budget_token = _current_model_call_budget.set(
+                {
+                    "limit": self.max_retries,
+                    "remaining": self.max_retries,
+                    "validation_repairs_used": 0,
+                    "deadline": _deadline,
+                }
+            )
         _deadline_token = _dl.set_deadline(_deadline)
         # One exec == one llm node (see exec() for the rationale).
         _llm_node_id = self._open_model_call_node(
-            model=use_model, content_text=content_text,
+            model=use_model,
+            content_text=content_text,
         )
         self._active_llm_node_id = _llm_node_id
         _llm_closed = False
         try:
-          for attempt in range(self.max_retries):
-            # Pre-attempt deadline check (see exec() for the rationale).
-            if _deadline is not None and time.monotonic() >= _deadline:
-                from openprogram.providers.utils.errors import ErrorReason as _ER
-                cause = TimeoutError(
-                    f"async_exec() timed out after {timeout_s}s "
-                    f"({attempt} attempt(s))"
-                )
-                raise _build_llm_error(
-                    cause=cause, attempts=max(1, attempt),
-                    elapsed_s=time.monotonic() - _exec_start,
-                    content=content, model=use_model,
-                    provider=getattr(self, "provider", None),
-                    history=errors,
-                    permanent=True,
-                    override_reason=_ER.TIMEOUT,
-                ) from cause
+            attempts_used = 0
+            while attempts_used < self.max_retries:
+                # Pre-attempt deadline check (see exec() for the rationale).
+                if _deadline is not None and time.monotonic() >= _deadline:
+                    from openprogram.providers.utils.errors import ErrorReason as _ER
 
-            try:
-                raw_reply = await self._async_call(
-                    call_input, model=use_model, response_format=response_format
-                )
-                reply = raw_reply
-                if structured_format is not None:
-                    from openprogram.providers.structured_output import (
-                        build_repair_prompt,
-                        parse_and_validate_json,
+                    cause = TimeoutError(
+                        f"async_exec() timed out after {timeout_s}s "
+                        f"({attempts_used} attempt(s))"
                     )
-                    for validation_attempt in range(
-                        structured_format.max_validation_retries + 1
-                    ):
-                        try:
-                            reply = parse_and_validate_json(raw_reply, structured_format)
-                            break
-                        except StructuredOutputValidationError as exc:
-                            if validation_attempt >= structured_format.max_validation_retries:
-                                raise
-                            repair = build_repair_prompt(exc)
-                            if self.on_stream:
-                                self.on_stream({
-                                    "type": "structured_output_retry",
-                                    "attempt": validation_attempt + 1,
-                                    "next_attempt": validation_attempt + 2,
-                                    "issues": exc.issues,
-                                })
-                            raw_reply = await self._async_call(
-                                [*call_input, {"type": "text", "text": repair}],
-                                model=use_model,
-                                response_format=response_format,
-                            )
-                self._close_model_call_node(_llm_node_id, reply=raw_reply)
-                _llm_closed = True
-                return reply
-            except ExecInterrupt:
-                raise  # caller hard-stop — bypass the retry layer
-            except (TypeError, NotImplementedError):
-                raise
-            except StructuredOutputError:
-                raise
-            except Exception as e:
-                errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
-                permanent = _is_permanent_error(e)
-                # Don't re-retry a transport error the provider already
-                # exhausted its own budget on (the 3×6 multiplication).
-                transport_done = bool(getattr(e, "transport_exhausted", False))
-                elapsed = time.monotonic() - _exec_start
-                timed_out = _deadline is not None and time.monotonic() >= _deadline
-                if permanent or transport_done or timed_out or attempt == self.max_retries - 1:
-                    from openprogram.providers.utils.errors import ErrorReason as _ER
                     raise _build_llm_error(
-                        cause=e, attempts=attempt + 1,
-                        elapsed_s=elapsed,
-                        content=content, model=use_model,
-                        provider=getattr(self, "provider", None),
-                        history=errors,
-                        permanent=permanent or timed_out,
-                        override_reason=_ER.TIMEOUT if timed_out else None,
-                    ) from e
-                retry_after_s = getattr(e, "retry_after_s", None)
-                sleep_s = _retry_sleep_seconds(attempt, retry_after_s)
-
-                if _deadline is not None and (time.monotonic() + sleep_s) >= _deadline:
-                    from openprogram.providers.utils.errors import ErrorReason as _ER
-                    raise _build_llm_error(
-                        cause=e, attempts=attempt + 1,
-                        elapsed_s=elapsed,
-                        content=content, model=use_model,
+                        cause=cause,
+                        attempts=max(1, attempts_used),
+                        elapsed_s=time.monotonic() - _exec_start,
+                        content=content,
+                        model=use_model,
                         provider=getattr(self, "provider", None),
                         history=errors,
                         permanent=True,
                         override_reason=_ER.TIMEOUT,
-                    ) from e
+                    ) from cause
 
-                _fire_on_retry(
-                    on_retry, cause=e, attempt=attempt + 1,
-                    max_attempts=self.max_retries, sleep_s=sleep_s,
-                    elapsed_s=elapsed, retry_after_s=retry_after_s,
+                from openprogram.agentic_programming.function import (
+                    CancelledError as _CE,
+                    check_cancelled,
                 )
-                await asyncio.sleep(sleep_s)
+
+                try:
+                    check_cancelled()
+                except _CE:
+                    raise ExecInterrupt("cancelled") from None
+
+                try:
+                    attempts_used += 1
+                    raw_reply = await self._async_call(
+                        call_input, model=use_model, response_format=response_format
+                    )
+                    reply = raw_reply
+                    dag_reply = (
+                        json.dumps(
+                            raw_reply,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
+                        if structured_format is not None
+                        else raw_reply
+                    )
+                    self._close_model_call_node(_llm_node_id, reply=dag_reply)
+                    _llm_closed = True
+                    return reply
+                except ExecInterrupt:
+                    raise  # caller hard-stop — bypass the retry layer
+                except (TypeError, NotImplementedError):
+                    raise
+                except StructuredOutputError:
+                    raise
+                except Exception as e:
+                    model_call_budget = _current_model_call_budget.get(None)
+                    if model_call_budget is not None:
+                        attempts_used = max(
+                            attempts_used,
+                            self.max_retries - model_call_budget["remaining"],
+                        )
+                    errors.append(f"Attempt {attempts_used}: {type(e).__name__}: {e}")
+                    permanent = _is_permanent_error(e)
+                    # Don't re-retry a transport error the provider already
+                    # exhausted its own budget on (the 3×6 multiplication).
+                    transport_done = bool(getattr(e, "transport_exhausted", False))
+                    elapsed = time.monotonic() - _exec_start
+                    timed_out = _deadline is not None and time.monotonic() >= _deadline
+                    if (
+                        permanent
+                        or transport_done
+                        or timed_out
+                        or attempts_used >= self.max_retries
+                    ):
+                        from openprogram.providers.utils.errors import (
+                            ErrorReason as _ER,
+                        )
+
+                        raise _build_llm_error(
+                            cause=e,
+                            attempts=attempts_used,
+                            elapsed_s=elapsed,
+                            content=content,
+                            model=use_model,
+                            provider=getattr(self, "provider", None),
+                            history=errors,
+                            permanent=permanent or timed_out,
+                            override_reason=_ER.TIMEOUT if timed_out else None,
+                        ) from e
+                    retry_after_s = getattr(e, "retry_after_s", None)
+                    sleep_s = _retry_sleep_seconds(attempts_used - 1, retry_after_s)
+
+                    if (
+                        _deadline is not None
+                        and (time.monotonic() + sleep_s) >= _deadline
+                    ):
+                        from openprogram.providers.utils.errors import (
+                            ErrorReason as _ER,
+                        )
+
+                        raise _build_llm_error(
+                            cause=e,
+                            attempts=attempts_used,
+                            elapsed_s=elapsed,
+                            content=content,
+                            model=use_model,
+                            provider=getattr(self, "provider", None),
+                            history=errors,
+                            permanent=True,
+                            override_reason=_ER.TIMEOUT,
+                        ) from e
+
+                    _fire_on_retry(
+                        on_retry,
+                        cause=e,
+                        attempt=attempts_used,
+                        max_attempts=self.max_retries,
+                        sleep_s=sleep_s,
+                        elapsed_s=elapsed,
+                        retry_after_s=retry_after_s,
+                    )
+                    await asyncio.sleep(sleep_s)
         finally:
             if not _llm_closed:
                 import sys as _sys
+
                 _exc = _sys.exc_info()[1]
-                _st = "cancelled" if (
-                    isinstance(_exc, ExecInterrupt)
-                    and "cancel" in str(_exc).lower()
-                ) else "error"
+                _st = (
+                    "cancelled"
+                    if (
+                        isinstance(_exc, ExecInterrupt)
+                        and "cancel" in str(_exc).lower()
+                    )
+                    else "error"
+                )
                 self._close_model_call_node(
                     _llm_node_id,
                     reply=reply if reply is not None else "",
@@ -1613,8 +1836,12 @@ class Runtime:
             _dl.reset_deadline(_deadline_token)
             if response_format_token is not None:
                 _current_response_format.reset(response_format_token)
+            if model_call_budget_token is not None:
+                _current_model_call_budget.reset(model_call_budget_token)
 
-    def _call(self, content: list[dict], model: str = "default", response_format: dict = None) -> str:
+    def _call(
+        self, content: list[dict], model: str = "default", response_format: dict = None
+    ) -> Any:
         """
         Call the LLM. Override this in subclasses.
 
@@ -1652,12 +1879,15 @@ class Runtime:
         if not agent_tools:
             return agent_tools
         from openprogram.agent.turn_request_context import (
-            get_turn_request, inner_turn_request,
+            get_turn_request,
+            inner_turn_request,
         )
+
         if get_turn_request() is None:
             return agent_tools
         try:
             from openprogram.agent.internals._approval import wrap_with_approval
+
             req = inner_turn_request("program")
             if req is None:
                 return agent_tools
@@ -1665,10 +1895,10 @@ class Runtime:
             # non-interactive by construction, so every gate that would
             # ask instead denies. The sink keeps sandbox.violation events
             # from crashing the wrapper.
-            return [wrap_with_approval(t, req, lambda _env: None)
-                    for t in agent_tools]
+            return [wrap_with_approval(t, req, lambda _env: None) for t in agent_tools]
         except Exception:
             import logging
+
             logging.getLogger(__name__).exception(
                 "inner tool gating failed; running this call without tools "
                 "rather than ungated"
@@ -1679,7 +1909,16 @@ class Runtime:
         self,
         content: list[dict],
         response_format: dict = None,
-    ) -> str:
+    ) -> Any:
+        return _run_async(self._async_call_via_providers(content, response_format))
+
+    async def _async_call_via_providers(
+        self,
+        content: list[dict],
+        response_format: dict = None,
+        *,
+        offload_sync_callable: bool = False,
+    ) -> Any:
         """
         Default _call implementation for ``model="provider:model_id"`` usage.
 
@@ -1708,7 +1947,10 @@ class Runtime:
         # a question nobody is there to answer. Merged into the policy deny so
         # both resolution paths below honour it.
         from openprogram.agent.attended import denied_ask_tools as _denied_ask
-        _deny = list(policy.get("deny") or []) + _denied_ask(getattr(self, "session_id", None))
+
+        _deny = list(policy.get("deny") or []) + _denied_ask(
+            getattr(self, "session_id", None)
+        )
         _deny = _deny or None
         # Tools are ON BY DEFAULT. A bare `runtime.exec(content=...)` with no
         # `tools=` / `toolset=` gets the FULL toolset, so any function can
@@ -1721,13 +1963,16 @@ class Runtime:
         DEFAULT_TOOLSET = "full"
         if raw_tools is None:
             preset = policy.get("toolset") if policy else None
-            if preset == "none":
+            # CallableModel exposes only the supplied callable contract. It
+            # cannot execute Runtime's process-wide default tool registry.
+            if preset == "none" or self._call_fn is not None:
                 # Explicit opt-out — reasoning-only call, no tools.
                 agent_tools = None
             else:
                 from openprogram.functions import (
                     agent_tools as _resolve_agent_tools,
                 )
+
                 tools_for_session = _resolve_agent_tools(
                     toolset=preset or DEFAULT_TOOLSET,
                     source=policy.get("source") if policy else None,
@@ -1737,6 +1982,7 @@ class Runtime:
                 agent_tools = tools_for_session or None
         elif raw_tools:
             from openprogram.functions import apply_tool_policy as _apply_policy
+
             adapted = _adapt_tools(raw_tools) or []
             # Caller-supplied tools (exec(tools=[...])) are self-authorized:
             # skip the exposure whitelist (it lists only registry tools, so it
@@ -1774,13 +2020,16 @@ class Runtime:
                 from openprogram.agentic_programming.function import (
                     _recursion_depth,
                 )
+
                 _depths = _recursion_depth.get(None) or {}
                 if _depths:
                     _cur_fn = max(_depths, key=_depths.get)
-                    standalone_prefix = [{
-                        "type": "text",
-                        "text": _situational_prefix(_cur_fn, ""),
-                    }]
+                    standalone_prefix = [
+                        {
+                            "type": "text",
+                            "text": _situational_prefix(_cur_fn, ""),
+                        }
+                    ]
             except Exception:
                 standalone_prefix = []
             ctx, _sp_unused = _build_pi_context(standalone_prefix + (content or []))
@@ -1794,27 +2043,35 @@ class Runtime:
         # (``Runtime(skills=...)``), which the agent-level skills_index
         # component doesn't know about.
         system_prompt = _exec_system_prompt(
-            getattr(self, "system", "") or "", agent_tools,
+            getattr(self, "system", "") or "",
+            agent_tools,
         )
 
         skills_block = self._skills_block()
         if skills_block:
-            system_prompt = (system_prompt + skills_block) if system_prompt else skills_block.lstrip("\n")
+            system_prompt = (
+                (system_prompt + skills_block)
+                if system_prompt
+                else skills_block.lstrip("\n")
+            )
 
         structured_format = _current_response_format.get(None)
         if structured_format is None and response_format is not None:
-            from openprogram.providers.structured_output import normalize_response_format
-            structured_format = normalize_response_format(response_format)
-        if structured_format is not None:
             from openprogram.providers.structured_output import (
-                build_prompt_fallback,
-                negotiate_structured_output,
+                normalize_response_format,
             )
-            structured_mode = negotiate_structured_output(self.api_model, structured_format)
-            if structured_mode == "prompt":
-                instruction = build_prompt_fallback(structured_format)
-                system_prompt = f"{system_prompt}\n\n{instruction}" if system_prompt else instruction
 
+            structured_format = normalize_response_format(response_format)
+        model_call_budget = _current_model_call_budget.get(None)
+        if structured_format is not None and model_call_budget is not None:
+            structured_format = replace(
+                structured_format,
+                max_validation_retries=max(
+                    0,
+                    structured_format.max_validation_retries
+                    - model_call_budget["validation_repairs_used"],
+                ),
+            )
         # 现算输入分类分解 + 采集工具名单（论文仓库 spec §5 ①③）。best-effort，
         # 算失败置 None/[]，绝不影响 LLM 调用。breakdown 挂 last_usage（见下），
         # 工具名单跟着 exec 收尾的 usage→DAG 节点通道进 history.metadata。
@@ -1824,6 +2081,7 @@ class Runtime:
         try:
             from openprogram.context.breakdown import compute_call_breakdown
             from openprogram.context.tokens import real_context_window
+
             _hist_for_bd = list(history) + [current]
             self._pending_breakdown = compute_call_breakdown(
                 system_prompt=system_prompt,
@@ -1848,6 +2106,45 @@ class Runtime:
         # otherwise the runtime's own _stream_fn (set when Runtime(call=fn)
         # wraps a callable into a CallableModel). None → real provider.
         _stream_fn = _current_stream_fn.get(None) or getattr(self, "_stream_fn", None)
+        if offload_sync_callable and self._call_fn is not None:
+            from openprogram.providers.callable_model import make_callable_stream_fn
+
+            _stream_fn = make_callable_stream_fn(self._call_fn, offload_sync=True)
+        budget_context_transform = None
+        if model_call_budget is not None:
+            def check_model_call_budget() -> None:
+                if model_call_budget["remaining"] < model_call_budget["limit"]:
+                    deadline = model_call_budget["deadline"]
+                    if deadline is not None and time.monotonic() >= deadline:
+                        raise TimeoutError("structured output model-call deadline expired")
+                    from openprogram.agentic_programming.function import (
+                        CancelledError as _CE,
+                        check_cancelled,
+                    )
+
+                    try:
+                        check_cancelled()
+                    except _CE:
+                        from openprogram.providers.utils.errors import ExecInterrupt
+
+                        raise ExecInterrupt("cancelled") from None
+                if model_call_budget["remaining"] <= 0:
+                    raise RuntimeError("structured output model-call budget exhausted")
+                model_call_budget["remaining"] -= 1
+
+            if _stream_fn is None:
+                async def budget_context_transform(messages, _cancel_event):
+                    check_model_call_budget()
+                    return messages
+            else:
+                unbudgeted_stream_fn = _stream_fn
+
+                async def budgeted_stream_fn(model, context, options=None):
+                    check_model_call_budget()
+                    async for event in unbudgeted_stream_fn(model, context, options):
+                        yield event
+
+                _stream_fn = budgeted_stream_fn
         # Inner tools go through the SAME gate as the outer agent loop.
         # Without this a program spawned from a turn handed its agent raw
         # tools: no hard constraints, no authority tier, no deny rules —
@@ -1855,6 +2152,14 @@ class Runtime:
         # request inherits the outer one (turn_request_context), so nothing
         # here can widen what the caller was allowed to do.
         agent_tools = self._gate_inner_tools(agent_tools)
+        session_max_iterations = loop_opts.get("max_iterations")
+        if model_call_budget is not None:
+            remaining = max(1, model_call_budget["remaining"])
+            session_max_iterations = (
+                min(session_max_iterations, remaining)
+                if session_max_iterations is not None
+                else remaining
+            )
         session = AgentSession(
             model=self.api_model,
             tools=agent_tools,
@@ -1864,16 +2169,18 @@ class Runtime:
             thinking_level=self.thinking_level,
             tool_choice=loop_opts.get("tool_choice"),
             parallel_tool_calls=loop_opts.get("parallel_tool_calls"),
-            max_iterations=loop_opts.get("max_iterations"),
+            max_iterations=session_max_iterations,
             web_search=loop_opts.get("web_search"),
             response_format=structured_format,
             stream_fn=_stream_fn,
+            transform_context=budget_context_transform,
         )
 
         # Forward agent stream events to self.on_stream so callers (the webui
         # server) can relay partial text/tool-call updates to the frontend
         # in real time. Without this the UI only sees the final result.
         import time as _t_stream
+
         _stream_start = _t_stream.time()
         _unsub = None
         # Accumulate structured blocks (thinking / tool calls) for persistence.
@@ -1886,6 +2193,7 @@ class Runtime:
         # still runs (callers that reload history want thinking/tool blocks
         # even when they didn't watch the live stream).
         if True:
+
             def _elapsed() -> str:
                 return f"{_t_stream.time() - _stream_start:.1f}"
 
@@ -1898,12 +2206,59 @@ class Runtime:
                         inner_type = getattr(inner, "type", None)
                         if inner_type == "text_delta":
                             if cb:
-                                cb({"type": "text", "text": getattr(inner, "delta", "") or "", "elapsed": _elapsed()})
+                                event = {
+                                    "type": "text",
+                                    "text": getattr(inner, "delta", "") or "",
+                                    "elapsed": _elapsed(),
+                                }
+                                output_attempt = getattr(inner, "output_attempt", None)
+                                if output_attempt is not None:
+                                    event["output_attempt"] = output_attempt
+                                cb(event)
+                        elif inner_type in (
+                            "structured_output_retry",
+                            "structured_output_end",
+                        ):
+                            forward_structured_event = True
+                            if inner_type == "structured_output_retry":
+                                if model_call_budget is not None:
+                                    deadline = model_call_budget["deadline"]
+                                    forward_structured_event = not (
+                                        deadline is not None
+                                        and time.monotonic() >= deadline
+                                    )
+                                    if forward_structured_event:
+                                        from openprogram.agentic_programming.function import (
+                                            CancelledError as _CE,
+                                            check_cancelled,
+                                        )
+
+                                        try:
+                                            check_cancelled()
+                                        except _CE:
+                                            forward_structured_event = False
+                                if model_call_budget is not None and forward_structured_event:
+                                    model_call_budget["validation_repairs_used"] += 1
+                                _thinking_buf["text"] = ""
+                                _tool_index.clear()
+                            if cb and forward_structured_event:
+                                cb(inner.model_dump(exclude_none=True))
+                        elif inner_type == "done":
+                            if cb and getattr(
+                                inner.message, "structured_output_mode", None
+                            ):
+                                cb({"type": "done"})
                         elif inner_type == "thinking_delta":
                             delta = getattr(inner, "delta", "") or ""
                             _thinking_buf["text"] += delta
                             if cb:
-                                cb({"type": "thinking", "text": delta, "elapsed": _elapsed()})
+                                cb(
+                                    {
+                                        "type": "thinking",
+                                        "text": delta,
+                                        "elapsed": _elapsed(),
+                                    }
+                                )
                     elif t == "tool_execution_start":
                         call_id = getattr(ev, "tool_call_id", "") or ""
                         tool_name = getattr(ev, "tool_name", "?") or "?"
@@ -1918,17 +2273,21 @@ class Runtime:
                             "elapsed": _elapsed(),
                         }
                         if cb:
-                            cb({
-                                "type": "tool_use",
-                                "tool_call_id": call_id,
-                                "tool": tool_name,
-                                "input": input_str,
-                                "elapsed": _elapsed(),
-                            })
+                            cb(
+                                {
+                                    "type": "tool_use",
+                                    "tool_call_id": call_id,
+                                    "tool": tool_name,
+                                    "input": input_str,
+                                    "elapsed": _elapsed(),
+                                }
+                            )
                     elif t == "tool_execution_end":
                         result = getattr(ev, "result", "")
                         try:
-                            result_str = result if isinstance(result, str) else str(result)
+                            result_str = (
+                                result if isinstance(result, str) else str(result)
+                            )
                         except Exception:
                             result_str = ""
                         call_id = getattr(ev, "tool_call_id", "") or ""
@@ -1939,14 +2298,16 @@ class Runtime:
                             block["is_error"] = is_error
                             block["elapsed_end"] = _elapsed()
                         if cb:
-                            cb({
-                                "type": "tool_result",
-                                "tool_call_id": call_id,
-                                "tool": getattr(ev, "tool_name", "?") or "?",
-                                "result": result_str,
-                                "is_error": is_error,
-                                "elapsed": _elapsed(),
-                            })
+                            cb(
+                                {
+                                    "type": "tool_result",
+                                    "tool_call_id": call_id,
+                                    "tool": getattr(ev, "tool_name", "?") or "?",
+                                    "result": result_str,
+                                    "is_error": is_error,
+                                    "elapsed": _elapsed(),
+                                }
+                            )
                 except Exception:
                     pass
 
@@ -1963,17 +2324,19 @@ class Runtime:
         if _llm_id is not None:
             try:
                 from openprogram.agentic_programming.function import _call_id
+
                 _frame_token = _call_id.set(_llm_id)
             except Exception:
                 _frame_token = None
 
         try:
             session.replace_messages(history)
-            final = _run_async(session.run(current))
+            final = await session.run(current)
         finally:
             if _frame_token is not None:
                 try:
                     from openprogram.agentic_programming.function import _call_id
+
                     _call_id.reset(_frame_token)
                 except Exception:
                     pass
@@ -2011,6 +2374,12 @@ class Runtime:
                 "cache_create": getattr(final.usage, "cache_write", 0) or 0,
                 "breakdown": getattr(self, "_pending_breakdown", None),
             }
+        if structured_format is not None:
+            if final.structured_output_mode is None:
+                raise RuntimeError(
+                    "Agent session produced no validated structured output"
+                )
+            return final.structured_output
         return _assistant_text(final)
 
     def list_models(self) -> list[str]:
@@ -2023,22 +2392,31 @@ class Runtime:
         """
         if self.api_model is not None and getattr(self.api_model, "provider", None):
             from openprogram.providers.enabled_models import ENABLED_MODELS
+
             ids = sorted(
-                m.id for m in ENABLED_MODELS.values()
+                m.id
+                for m in ENABLED_MODELS.values()
                 if m.provider == self.api_model.provider
             )
             if ids:
                 return ids
         return [self.model] if self.model and self.model != "default" else []
 
-    async def _async_call(self, content: list[dict], model: str = "default", response_format: dict = None) -> str:
+    async def _async_call(
+        self, content: list[dict], model: str = "default", response_format: dict = None
+    ) -> Any:
         """Async version of _call(). Override for async providers."""
-        if self._call_fn is not None:
-            result = self._call_fn(content, model=model, response_format=response_format)
+        if response_format is None and self._call_fn is not None:
+            result = self._call_fn(content, model=model, response_format=None)
             if asyncio.iscoroutine(result):
                 return await result
-            # Sync function passed to async_exec — just return it
             return result
+        if self.api_model is not None:
+            return await self._async_call_via_providers(
+                content,
+                response_format,
+                offload_sync_callable=True,
+            )
         raise NotImplementedError(
             "No async LLM provider configured. Either pass an async `call` to Runtime(), "
             "or subclass Runtime and override _async_call()."
@@ -2048,6 +2426,7 @@ class Runtime:
 # ---------------------------------------------------------------------------
 # Module-level helpers
 # ---------------------------------------------------------------------------
+
 
 def _run_async(coro):
     """
@@ -2068,6 +2447,7 @@ def _run_async(coro):
     if running is None:
         return asyncio.run(_run_and_reap(coro))
     import concurrent.futures
+
     # Carry the caller's ContextVars (the published exec deadline, the
     # active tool policy, …) into the worker thread — a bare pool.submit
     # runs the callable in a fresh, empty context and would drop them, so
@@ -2083,6 +2463,7 @@ async def _reap_loop_clients() -> None:
         from openprogram.providers.utils.http_client import (
             aclose_current_loop_clients,
         )
+
         await aclose_current_loop_clients()
     except Exception:
         pass
@@ -2166,12 +2547,23 @@ def _build_pi_context(content: list[dict]):
             continue
 
         if btype == "text":
-            parts.append(TextContent(type="text", text=block["text"],
-                                     cache_control=block.get("cache_control")))
+            parts.append(
+                TextContent(
+                    type="text",
+                    text=block["text"],
+                    cache_control=block.get("cache_control"),
+                )
+            )
         elif btype == "image":
             data, mime = _load_media(block, _media_defaults["image"])
-            parts.append(ImageContent(type="image", data=data, mime_type=mime,
-                                       cache_control=block.get("cache_control")))
+            parts.append(
+                ImageContent(
+                    type="image",
+                    data=data,
+                    mime_type=mime,
+                    cache_control=block.get("cache_control"),
+                )
+            )
         elif btype == "video":
             data, mime = _load_media(block, _media_defaults["video"])
             parts.append(VideoContent(type="video", data=data, mime_type=mime))
@@ -2236,8 +2628,9 @@ def _adapt_tools(raw_tools: list) -> list:
 
         captured_executor = executor
 
-        async def _run(tool_call_id: str, args: dict, signal, update_cb,
-                       _exec=captured_executor) -> "AgentToolResult":
+        async def _run(
+            tool_call_id: str, args: dict, signal, update_cb, _exec=captured_executor
+        ) -> "AgentToolResult":
             if inspect.iscoroutinefunction(_exec):
                 try:
                     result = await _exec(**args)
@@ -2258,11 +2651,14 @@ def _adapt_tools(raw_tools: list) -> list:
                     text = str(result)
             return AgentToolResult(content=[TextContent(type="text", text=text)])
 
-        adapted.append(AgentTool(
-            name=spec["name"],
-            description=spec.get("description", ""),
-            parameters=spec.get("parameters") or {"type": "object", "properties": {}},
-            label=spec.get("label", spec["name"]),
-            execute=_run,
-        ))
+        adapted.append(
+            AgentTool(
+                name=spec["name"],
+                description=spec.get("description", ""),
+                parameters=spec.get("parameters")
+                or {"type": "object", "properties": {}},
+                label=spec.get("label", spec["name"]),
+                execute=_run,
+            )
+        )
     return adapted

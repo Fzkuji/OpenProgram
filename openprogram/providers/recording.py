@@ -39,12 +39,13 @@ from .types import (
     StreamOptions,
 )
 
-# Bump when the line shape changes. replay.py refuses a recording file whose header
-# version differs from this value.
-RECORDING_FORMAT_VERSION = 1
+# Bump when the line shape changes. replay.py explicitly dispatches supported
+# historical versions and refuses every other header version.
+RECORDING_FORMAT_VERSION = 2
 REDACTION_VERSION = 1
 
 PLACEHOLDER = "[secret removed]"
+_RUNTIME_ONLY_OPTION_FIELDS = frozenset({"signal", "on_payload"})
 
 # Field names whose value is a secret wherever it appears — request options,
 # model headers, nested provider-specific dicts.
@@ -67,6 +68,7 @@ SECRET_FIELD_NAMES = frozenset({
     "password",
     "session_key",
 })
+_SECRET_FIELD_SUFFIX = re.compile(r"(?:^|[-_])(?:token|key|secret|password)$", re.IGNORECASE)
 
 # Secret-looking values that survive field-name matching, e.g. a bearer token
 # pasted into a free-form string field or a URL query parameter.
@@ -88,7 +90,7 @@ def remove_secret_values(value: Any) -> Any:
     """
     if isinstance(value, dict):
         return {
-            key: PLACEHOLDER if str(key).lower() in SECRET_FIELD_NAMES
+            key: PLACEHOLDER if _is_secret_field_name(key)
             else remove_secret_values(item)
             for key, item in value.items()
         }
@@ -111,10 +113,24 @@ def remove_secret_values(value: Any) -> Any:
     return value
 
 
+def _is_secret_field_name(value: Any) -> bool:
+    name = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "-", str(value)).lower()
+    return name in SECRET_FIELD_NAMES or _SECRET_FIELD_SUFFIX.search(name) is not None
+
+
 def _dump(model_or_none: Any) -> Any:
     if model_or_none is None:
         return None
     return remove_secret_values(model_or_none.model_dump(mode="json"))
+
+
+def _dump_options(options: Any) -> Any:
+    """Serialize deterministic provider options, excluding live request state."""
+    if options is None:
+        return None
+    return remove_secret_values(
+        options.model_dump(mode="json", exclude=_RUNTIME_ONLY_OPTION_FIELDS)
+    )
 
 
 class RecordingProvider:
@@ -176,7 +192,7 @@ class RecordingProvider:
         call_index = self._sink.begin_call({
             "model": _dump(model),
             "context": _dump(context),
-            "options": _dump(options),
+            "options": _dump_options(options),
         })
         event_index = 0
         ended = False
@@ -230,9 +246,13 @@ class RecordingSink:
         self.path = Path(recording_path)
         self.lock_path = self.path.with_name(self.path.name + ".lock")
         self._thread_lock = threading.RLock()
-        parent_existed = self.path.parent.exists()
+        from openprogram.paths import get_state_dir
+        managed_root = get_state_dir() / "recordings"
+        inside_managed_root = _is_managed_recording_path(self.path)
+        if inside_managed_root:
+            _reject_managed_path_symlinks(self.path.parent, managed_root)
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if not parent_existed:
+        if sys.platform != "win32" and _is_managed_recording_path(self.path.parent):
             os.chmod(self.path.parent, 0o700)
         with self._locked():
             self._ensure_header_locked()
@@ -348,9 +368,15 @@ def _verify_private_regular_file(fd: int, path: Path) -> None:
 def restrict_recording_file(path: str | Path) -> None:
     """Tighten and verify a recording before it is read."""
     recording_path = Path(path)
+    if _is_managed_recording_path(recording_path):
+        from openprogram.paths import get_state_dir
+        _reject_managed_path_symlinks(
+            recording_path.parent, get_state_dir() / "recordings"
+        )
     if recording_path.is_symlink():
         raise PermissionError(f"recording path must not be a symlink: {recording_path}")
-    restrict_to_user(recording_path)
+    if _is_managed_recording_path(recording_path):
+        restrict_to_user(recording_path)
     flags = os.O_RDONLY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -359,6 +385,45 @@ def restrict_recording_file(path: str | Path) -> None:
         _verify_private_regular_file(fd, recording_path)
     finally:
         os.close(fd)
+
+
+def _is_managed_recording_path(path: Path) -> bool:
+    from openprogram.paths import get_state_dir
+
+    managed_root = Path(os.path.abspath(get_state_dir() / "recordings"))
+    normalized_path = Path(os.path.abspath(path))
+    if normalized_path.is_relative_to(managed_root):
+        return True
+    if len(normalized_path.parts) < len(managed_root.parts):
+        return False
+    alias_root = Path(*normalized_path.parts[:len(managed_root.parts)])
+    if tuple(part.casefold() for part in alias_root.parts) != tuple(
+        part.casefold() for part in managed_root.parts
+    ):
+        return False
+    try:
+        return alias_root.exists() and os.path.samefile(alias_root, managed_root)
+    except OSError:
+        return False
+
+
+def _reject_managed_path_symlinks(parent: Path, managed_root: Path) -> None:
+    normalized_root = Path(os.path.abspath(managed_root))
+    normalized_parent = Path(os.path.abspath(parent))
+    try:
+        relative_parent = normalized_parent.relative_to(normalized_root)
+        current = normalized_root
+    except ValueError:
+        current = Path(*normalized_parent.parts[:len(normalized_root.parts)])
+        relative_parent = normalized_parent.relative_to(current)
+    if current.is_symlink():
+        raise PermissionError(f"recordings directory must not be a symlink: {current}")
+    for part in relative_parent.parts:
+        current /= part
+        if current.is_symlink():
+            raise PermissionError(
+                f"recordings path must not contain a symlink: {current}"
+            )
 
 
 def resolve_recording_selector(selector: str) -> Path:

@@ -94,10 +94,82 @@ def append_pr_footer(body: str) -> str:
     return f"{text}\n\n{PR_FOOTER}"
 
 
-def gh_pr_create_argv(
-    *, base: str, head: str, title: str, body_file: str, draft: bool = False,
+class RemoteWriteNotAuthorized(RuntimeError):
+    """Raised when a push or PR creation is attempted without authorization."""
+
+
+def _remote_write_allowed() -> bool:
+    try:
+        from openprogram import setup as _setup
+
+        return bool((_setup._read_config().get("git", {}) or {}).get("allow_remote_write", False))
+    except Exception:
+        return False
+
+
+def require_remote_write(action: str, *, allowed: bool | None = None) -> None:
+    """Refuse a remote-write step unless it is explicitly authorized.
+
+    ``allowed`` defaults to the ``git.allow_remote_write`` config toggle, which
+    is off by default: pushing a branch and opening a pull request are the two
+    steps in this flow that other people can see and that cannot be undone by
+    resetting the local tree, so they take a deliberate opt-in rather than
+    inheriting the approval that let the commit happen.
+    """
+    if allowed is None:
+        allowed = _remote_write_allowed()
+    if not allowed:
+        raise RemoteWriteNotAuthorized(
+            f"{action} is a remote write and is not authorized. Enable "
+            "`git.allow_remote_write`, or pass allowed=True for a call the user "
+            "asked for explicitly."
+        )
+
+
+def git_push_argv(
+    *,
+    branch: str,
+    remote: str = "origin",
+    set_upstream: bool = True,
+    dry_run: bool = False,
+    allowed: bool | None = None,
 ) -> list[str]:
-    """The exact `gh pr create` argv the commit-push-pr skill documents."""
+    """The `git push` argv for the commit-push-pr skill's push step.
+
+    ``dry_run=True`` returns git's own ``--dry-run`` form, which contacts the
+    remote to report what *would* update but writes nothing, and needs no
+    authorization. Anything else is a real remote write and goes through
+    :func:`require_remote_write`.
+    """
+    if not dry_run:
+        require_remote_write(f"push to {remote}/{branch}", allowed=allowed)
+    argv = ["git", "push"]
+    if dry_run:
+        argv.append("--dry-run")
+    if set_upstream:
+        argv.append("-u")
+    argv += [remote, branch]
+    return argv
+
+
+def gh_pr_create_argv(
+    *,
+    base: str,
+    head: str,
+    title: str,
+    body_file: str,
+    draft: bool = False,
+    dry_run: bool = False,
+    allowed: bool | None = None,
+) -> list[str]:
+    """The exact `gh pr create` argv the commit-push-pr skill documents.
+
+    ``gh pr create`` has no dry-run of its own, so ``dry_run=True`` returns the
+    argv without executing anything — the caller prints it as the action it
+    would have taken. A real call goes through :func:`require_remote_write`.
+    """
+    if not dry_run:
+        require_remote_write(f"open a pull request against {base}", allowed=allowed)
     argv = [
         "gh", "pr", "create",
         "--base", base,
@@ -108,6 +180,26 @@ def gh_pr_create_argv(
     if draft:
         argv.append("--draft")
     return argv
+
+
+def dry_run_plan(
+    *, default_branch: str, branch: str, title: str, remote: str = "origin",
+) -> list[str]:
+    """The remote-write actions a real run would take, as printable lines.
+
+    Everything before the push — branching, staging, the message, the commit —
+    is local and reversible, so a dry run performs it for real and only reports
+    the steps that would leave the machine.
+    """
+    push = " ".join(git_push_argv(branch=branch, remote=remote, dry_run=True))
+    pr = " ".join(gh_pr_create_argv(
+        base=default_branch, head=branch, title=title,
+        body_file="<pr body file>", dry_run=True,
+    ))
+    return [
+        f"would push: {push.replace('--dry-run ', '')}",
+        f"would open PR: {pr}",
+    ]
 
 
 def _truncate(text: str, limit: int, label: str) -> str:
