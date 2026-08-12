@@ -124,6 +124,16 @@ class _InterruptingProvider:
             await source.aclose()
 
 
+class _SyncStartFailureProvider:
+    requires_credentials = False
+
+    def stream(self, model, context, options=None):
+        raise RuntimeError("stream start failed")
+
+    def stream_simple(self, model, context, options=None):
+        raise RuntimeError("stream_simple start failed")
+
+
 def _drain_stream(model: Model, options: SimpleStreamOptions | None = None) -> list:
     from openprogram.providers import stream_simple
 
@@ -357,6 +367,33 @@ def test_recording_finalizes_and_closes_source_when_provider_raises(tmp_path: Pa
     with pytest.raises(RecordingFileError, match="recorded call ended with error"):
         asyncio.run(replay_interrupted())
     assert replay.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "entry, message",
+    [("stream", "stream start failed"), ("stream_simple", "stream_simple start failed")],
+)
+def test_recording_finalizes_when_provider_source_construction_raises(
+    tmp_path: Path,
+    entry: str,
+    message: str,
+) -> None:
+    recording_file = tmp_path / f"{entry}-start-error.jsonl"
+    recorder = RecordingProvider(_SyncStartFailureProvider(), recording_file)
+
+    async def drain() -> None:
+        source = getattr(recorder, entry)(
+            _model(), Context(messages=[UserMessage(content="hello", timestamp=0)]), _options()
+        )
+        async for _ in source:
+            pass
+
+    with pytest.raises(RuntimeError, match=message):
+        asyncio.run(drain())
+
+    calls = read_recording_file(recording_file)
+    assert len(calls) == 1
+    assert calls[0].outcome == "error"
 
 
 def test_recording_finalizes_and_closes_source_when_consumer_abandons(tmp_path: Path) -> None:

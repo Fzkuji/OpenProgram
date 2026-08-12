@@ -35,7 +35,7 @@ git status --short
 | RED | `pytest -q tests/providers/test_record_replay.py tests/providers/test_record_replay_registry.py` -> 5 failed, 22 passed; each failure matched a named public behavior. Invalid outcome mutation proof -> 1 failed as expected. |
 | GREEN | Same two files -> 27 passed. |
 | Affected verification | Record/replay, CLI management, and stream chokepoint -> 45 passed; scoped Ruff passed; `git diff --check` passed. |
-| Specification review | Pending |
+| Specification review | `CHANGES_REQUIRED`: synchronous `stream`/`stream_simple` source construction failures occurred before `begin_call`; repair RED was 2 failed, then 47 affected tests passed. Scoped re-review pending. |
 | Quality review | Pending |
 | Full gate | Pending |
 | Final implementation commit | Pending |

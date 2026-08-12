@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncGenerator, Iterator
+from typing import Any, AsyncGenerator, Callable, Iterator
 import secrets
 
 from openprogram import _compat
@@ -146,7 +146,12 @@ class RecordingProvider:
         context: Context,
         options: StreamOptions | None = None,
     ) -> AsyncGenerator[AssistantMessageEvent, None]:
-        return self._record(self._provider.stream(model, context, options), model, context, options)
+        return self._record(
+            lambda: self._provider.stream(model, context, options),
+            model,
+            context,
+            options,
+        )
 
     def stream_simple(
         self,
@@ -155,12 +160,15 @@ class RecordingProvider:
         options: SimpleStreamOptions | StreamOptions | None = None,
     ) -> AsyncGenerator[AssistantMessageEvent, None]:
         return self._record(
-            self._provider.stream_simple(model, context, options), model, context, options
+            lambda: self._provider.stream_simple(model, context, options),
+            model,
+            context,
+            options,
         )
 
     async def _record(
         self,
-        source: AsyncGenerator[AssistantMessageEvent, None],
+        source_factory: Callable[[], AsyncGenerator[AssistantMessageEvent, None]],
         model: Model,
         context: Context,
         options: Any,
@@ -176,7 +184,9 @@ class RecordingProvider:
         primary_error: BaseException | None = None
         primary_traceback = None
         cleanup_error: BaseException | None = None
+        source: AsyncGenerator[AssistantMessageEvent, None] | None = None
         try:
+            source = source_factory()
             async for event in source:
                 self._sink.append_event(call_index, event_index, _dump(event))
                 event_index += 1
@@ -199,11 +209,12 @@ class RecordingProvider:
                     self._sink.end_call(call_index, event_index, outcome=outcome)
                 except BaseException as exc:
                     cleanup_error = exc
-            try:
-                await source.aclose()
-            except BaseException as exc:
-                if cleanup_error is None:
-                    cleanup_error = exc
+            if source is not None:
+                try:
+                    await source.aclose()
+                except BaseException as exc:
+                    if cleanup_error is None:
+                        cleanup_error = exc
         if primary_error is not None:
             raise primary_error.with_traceback(primary_traceback)
         if cleanup_error is not None:
