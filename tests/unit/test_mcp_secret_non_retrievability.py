@@ -91,7 +91,7 @@ def test_public_registry_status_masks_client_error_and_stderr(capsys):
         rendered = json.dumps(payload) + capsys.readouterr().err
         assert secret not in rendered
         assert payload[0]["error"] == "mcp_server_unavailable"
-        assert payload[0]["error_kind"] == "runtime"
+        assert payload[0]["error_kind"] == "fatal"
     finally:
         registry._clients.pop(client.config.name, None)
 
@@ -110,6 +110,44 @@ def test_public_registry_stop_log_masks_exception(monkeypatch, capsys):
     registry._registered_tool_names["secret-test"] = []
     asyncio.run(registry.remove_server("secret-test"))
     assert secret not in capsys.readouterr().err
+
+
+def test_restart_endpoint_masks_exception_and_breaks_chain(monkeypatch):
+    from openprogram.webui.routes import mcp
+
+    async def failed_restart(_name):
+        raise RuntimeError("peer-secret-value restart stderr")
+
+    monkeypatch.setattr(mcp, "restart_server", failed_restart)
+    app = FastAPI()
+    mcp.register(app)
+
+    response = TestClient(app).post("/api/mcp/servers/local-tools/restart")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "mcp_runtime_restart_failed",
+        "kind": "runtime",
+        "action": "retry_or_restart",
+    }
+    assert "peer-secret-value" not in response.text
+
+
+@pytest.mark.parametrize("kind", ["needs_reauth", "transient", "fatal"])
+def test_public_registry_preserves_stable_ui_error_kind(kind):
+    from openprogram.mcp import registry
+
+    client = type("Client", (), {})()
+    client.config = local_config()
+    client.is_ready = False
+    client.error = "private diagnostic"
+    client.error_kind = kind
+    client.tools = []
+    registry._clients[client.config.name] = client
+    try:
+        assert registry.server_status()[0]["error_kind"] == kind
+    finally:
+        registry._clients.pop(client.config.name, None)
 
 
 def exception_chain(exc: BaseException):
