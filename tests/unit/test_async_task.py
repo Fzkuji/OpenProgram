@@ -1007,6 +1007,97 @@ def test_runner_spawn_persists_durable_admission(
         runner.shutdown()
 
 
+def test_spawned_child_resource_view_uses_persisted_ancestor_limits(
+    store_fixture, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    from openprogram.agent.resource_governance import (
+        ResourceGovernor,
+        ResourceLimits,
+        resolve_resource_limits,
+    )
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.agent.task.store import load_task
+    from openprogram.usage.ledger import UsageLedger
+
+    shared = ResourceLimits(
+        max_total_tokens=1_000,
+        max_cost_usd="10.00",
+        max_runtime_seconds=100,
+        idle_timeout_seconds=50,
+    )
+    session_limits = resolve_resource_limits(shared, scheduler_capacity=1)
+    parent_limits = resolve_resource_limits(
+        shared,
+        task=ResourceLimits(
+            max_total_tokens=100,
+            max_cost_usd="1.00",
+            max_runtime_seconds=10,
+            idle_timeout_seconds=5,
+        ),
+        scheduler_capacity=1,
+    )
+
+    def limits(_session_id, task):
+        return parent_limits if task.prompt == "parent-limited" else session_limits
+
+    governor = ResourceGovernor(
+        UsageLedger(tmp_path / "ancestor-view.db"),
+        limit_resolver=limits,
+        session_limit_resolver=lambda _session_id: session_limits,
+    )
+    runner = TaskRunner(max_workers=1, governor=governor)
+    try:
+        parent_id = runner.spawn_task(
+            session_id="p1",
+            prompt="parent-limited",
+            agent_id="main",
+            parent_msg_id="a1",
+            defer_dispatch=True,
+        )
+        child_id = runner.spawn_task(
+            session_id="p1",
+            prompt="child",
+            agent_id="main",
+            parent_msg_id="a1",
+            parent_task_id=parent_id,
+            defer_dispatch=True,
+        )
+
+        child = load_task("p1", child_id)
+        assert child is not None
+        view = runner.get_task_resource_view(child_id)
+        assert view is not None
+        expected = {
+            "max_total_tokens": 100,
+            "max_cost_usd": "1.000000",
+            "max_runtime_seconds": 10,
+            "idle_timeout_seconds": 5,
+        }
+        for name, value in expected.items():
+            assert child.resolved_limits_snapshot["limits"][name] == {
+                "configured": value,
+                "effective": value,
+                "source": "parent",
+            }
+            assert view.limits["limits"][name] == {
+                "configured": value,
+                "effective": value,
+                "source": "parent",
+            }
+        assert governor.task_time_limits(child_id) == (10, 5)
+        assert governor.reserve_tokens(child_id, 101).reason_code == (
+            "quota.token_exhausted"
+        )
+        assert governor.reserve_cost(
+            child_id, 1_000_001, price_known=True,
+        ).reason_code == "quota.cost_exhausted"
+    finally:
+        runner.shutdown()
+
+
 def test_runner_rejection_creates_no_task(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
