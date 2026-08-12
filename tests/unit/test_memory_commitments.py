@@ -1544,3 +1544,53 @@ def test_heartbeat_preserves_transition_committed_during_send(tmp_path):
     stored = load_commitments(tmp_path)[0]
     assert stored["status"] == "done"
     assert stored["notification_steps"] == ["due"]
+
+
+def test_writer_commit_rejects_stale_stage_after_heartbeat_update(tmp_path):
+    """A writer snapshot must not overwrite a delivered heartbeat step."""
+    from contextlib import closing
+    from datetime import datetime
+
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.transaction import TransactionError
+    from openprogram.memory.runtime.commitments import (
+        load_commitments,
+        upsert_commitments,
+    )
+    from openprogram.proactive.heartbeat import run_heartbeat
+
+    source = _source(tmp_path)
+    row = upsert_commitments(
+        tmp_path,
+        [
+            {
+                "text": "Submit the rebuttal.",
+                "due": "2026-08-12",
+                "source": source,
+                "source_quote": "I will submit the rebuttal by Wednesday.",
+            }
+        ],
+    )[0]
+
+    with closing(MemoryWorkspace(tmp_path)) as workspace:
+        baseline = workspace.baseline()
+        staged = load_commitments(workspace.stage_dir)
+        staged[0]["text"] = "Submit the revised rebuttal."
+        from openprogram.memory.runtime.commitments import _write
+
+        _write(workspace.stage_dir, staged)
+
+        assert run_heartbeat(
+            tmp_path,
+            now=datetime(2026, 8, 12, 9, 0),
+            target_for_source=lambda _source: ("telegram", "default", "42"),
+            send=lambda _target, _text: True,
+        ) == 1
+
+        with pytest.raises(TransactionError, match="workspace changed"):
+            workspace.commit_edits(*baseline)
+
+    stored = load_commitments(tmp_path)[0]
+    assert stored["id"] == row["id"]
+    assert stored["text"] == "Submit the rebuttal."
+    assert stored["notification_steps"] == ["due"]

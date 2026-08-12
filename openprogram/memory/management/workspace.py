@@ -85,6 +85,10 @@ class MemoryWorkspace(
         shutil.rmtree(self.stage_dir, ignore_errors=True)
 
     def _refresh_stage(self) -> None:
+        with workspace_write_lock(self.memory_dir):
+            self._refresh_stage_locked()
+
+    def _refresh_stage_locked(self) -> None:
         self._stage_usable = False
         self._discard_stage()
         self.stage_dir.mkdir()
@@ -116,6 +120,7 @@ class MemoryWorkspace(
             # pending or out-of-batch evidence and attributing that content to
             # one of the selected references.
             shutil.rmtree(self.stage_dir / "sources", ignore_errors=True)
+        self._base_revision = workspace_revision(self.memory_dir)
         self._stage_usable = True
 
     def _restore_staged_sources(self) -> None:
@@ -250,7 +255,13 @@ class MemoryWorkspace(
                 # reusing a reference some other Topic already cites.
                 self._transaction_source_refs = frozenset(selected_refs)
             try:
-                self._synchronize()
+                with workspace_write_lock(self.memory_dir):
+                    if workspace_revision(self.memory_dir) != self._base_revision:
+                        raise TransactionError(
+                            "CONCURRENT_UPDATE",
+                            "workspace changed while the writer was running",
+                        )
+                    self._synchronize()
             finally:
                 self._transaction_source_refs = None
             after_units = parse_topic_tree(self.stage_dir / "topics")
