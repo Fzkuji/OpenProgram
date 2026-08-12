@@ -29,6 +29,7 @@ import pytest
 from openprogram.agent import dispatcher as D
 from openprogram.agent.dispatcher import titles as title_module
 from openprogram.agent.session_db import SessionDB
+from openprogram.agentic_programming.runtime import Runtime
 from openprogram.providers.types import (
     AssistantMessage,
     AssistantMessageEvent,
@@ -194,6 +195,41 @@ def test_structured_title_failure_keeps_phase_one_placeholder(
     assert tmp_db.get_session("c1")["title"] == "Existing"
     assert len(runtime.calls) == 1
     assert runtime.closed is True
+
+
+def test_llm_title_allows_one_structured_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider_calls: list[list[dict]] = []
+    factory_calls: list[dict] = []
+
+    def call(content, model="test", response_format=None):
+        provider_calls.append(content)
+        if len(provider_calls) == 1:
+            return '{"title": 7}'
+        return '{"title": "修复后的标题"}'
+
+    runtime = Runtime(call=call, model="test")
+    monkeypatch.setattr(
+        "openprogram.providers.default_llm._read_default_model",
+        lambda: ("openai", "configured-model"),
+    )
+
+    def create_runtime(**kwargs):
+        factory_calls.append(kwargs)
+        return runtime
+
+    monkeypatch.setattr(
+        "openprogram.providers.registry.create_runtime",
+        create_runtime,
+    )
+
+    title = title_module._generate_llm_title("用户内容", "助手内容")
+
+    assert title == "修复后的标题"
+    assert len(provider_calls) == 2
+    assert factory_calls == [{"provider": "openai", "model": "configured-model"}]
+    assert runtime._closed is True
 
 
 def test_auto_title_stamps_from_first_user_message(tmp_db: SessionDB) -> None:
