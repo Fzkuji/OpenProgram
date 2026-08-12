@@ -1,7 +1,14 @@
 import json
+from pathlib import Path
+
 from openprogram.auth._migrate_payload import migrate_payload_dict, migrate_store
 from openprogram.auth.store import AuthStore
 from openprogram.auth.types import CREDENTIAL_SCHEMA_VERSION
+
+
+def _write_private(path: Path, payload: dict) -> None:
+    path.write_text(json.dumps(payload))
+    path.chmod(0o600)
 
 
 def test_migrate_api_key():
@@ -46,7 +53,7 @@ def test_migrate_store_rewrites_files_and_skips_admin(tmp_path):
     auth = tmp_path / "auth"
     (auth / "openai").mkdir(parents=True)
     cred_file = auth / "openai" / "default.json"
-    cred_file.write_text(json.dumps({
+    _write_private(cred_file, {
         "v": 1, "provider_id": "openai", "profile_id": "default",
         "kind": "api_key", "credential_id": "cred_1",
         "payload": {"api_key": "sk-x", "__type__": "ApiKeyPayload"},
@@ -55,7 +62,7 @@ def test_migrate_store_rewrites_files_and_skips_admin(tmp_path):
             "kind": "api_key", "credential_id": "cred_1",
             "payload": {"api_key": "sk-x", "__type__": "ApiKeyPayload"},
         }],
-    }))
+    })
     (auth / "_rotation.json").write_text(json.dumps({"enabled": {}}))
 
     n = migrate_store(root=tmp_path)
@@ -76,7 +83,7 @@ def test_migrate_store_leaves_corrupt_version_alone(tmp_path):
     auth = tmp_path / "auth" / "openai"
     auth.mkdir(parents=True)
     cred_file = auth / "default.json"
-    cred_file.write_text(json.dumps({
+    _write_private(cred_file, {
         "v": 3, "provider_id": "openai", "account_id": "default",
         "kind": "api_key", "credential_id": "cred_1",
         "credentials": [{
@@ -86,7 +93,7 @@ def test_migrate_store_leaves_corrupt_version_alone(tmp_path):
             "payload": {"kind": "api_key", "auth_value": "k",
                         "base_url": "", "headers": {}, "data": {}},
         }],
-    }))
+    })
     n = migrate_store(root=tmp_path)
     assert n == 0, "must not rewrite an already-current file"
     got = json.loads(cred_file.read_text())
@@ -117,7 +124,7 @@ def test_migrate_renames_external_process_kind(tmp_path):
     auth = tmp_path / "auth" / "openai"
     auth.mkdir(parents=True)
     f = auth / "work.json"
-    f.write_text(json.dumps(_v2_pool("external_process", "external_process")))
+    _write_private(f, _v2_pool("external_process", "external_process"))
 
     assert migrate_store(root=tmp_path) == 1
     got = json.loads(f.read_text())
@@ -132,7 +139,7 @@ def test_migrate_renames_profile_id_to_account_id(tmp_path):
     auth = tmp_path / "auth" / "openai"
     auth.mkdir(parents=True)
     f = auth / "work.json"
-    f.write_text(json.dumps(_v2_pool()))
+    _write_private(f, _v2_pool())
 
     assert migrate_store(root=tmp_path) == 1
     got = json.loads(f.read_text())
@@ -147,8 +154,9 @@ def test_migrated_v2_store_loads_through_the_store(tmp_path):
     usable objects, with the renamed kind and account reaching the caller."""
     auth = tmp_path / "auth" / "openai"
     auth.mkdir(parents=True)
-    (auth / "work.json").write_text(
-        json.dumps(_v2_pool("external_process", "external_process")))
+    _write_private(
+        auth / "work.json", _v2_pool("external_process", "external_process"),
+    )
 
     store = AuthStore(root=tmp_path)
     pool = store.find_pool("openai", "work")
@@ -163,7 +171,7 @@ def test_migrate_is_idempotent_on_current_shape(tmp_path):
     auth = tmp_path / "auth" / "openai"
     auth.mkdir(parents=True)
     f = auth / "work.json"
-    f.write_text(json.dumps(_v2_pool("external_process", "external_process")))
+    _write_private(f, _v2_pool("external_process", "external_process"))
 
     assert migrate_store(root=tmp_path) == 1
     first = f.read_text()

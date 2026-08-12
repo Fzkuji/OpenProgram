@@ -110,6 +110,7 @@ def test_legacy_open_policy_is_ignored_fail_closed() -> None:
     path = _access.access_path("wechat", "a1")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('{"policy":"open","allowlist":{},"pending":{}}')
+    path.chmod(0o600)
 
     decision = _access.decide_inbound_sender("wechat", "a1", "stranger")
     assert decision.allowed is False

@@ -194,6 +194,7 @@ def test_off_recovers_from_a_replay_file_that_became_invalid(tmp_path: Path) -> 
         json.dumps({"record_replay": {"mode": "replay", "file": str(missing)}}),
         encoding="utf-8",
     )
+    (state / "config.json").chmod(0o600)
     env = {**os.environ, "HOME": str(home)}
 
     result = subprocess.run(
