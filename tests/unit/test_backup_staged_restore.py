@@ -540,6 +540,133 @@ def test_recovery_rejects_duplicate_journal_entries_before_mutation(
     assert target.read_text() == "current"
 
 
+def _write_recovery_case(state: Path, *, existed: bool) -> tuple[Path, Path]:
+    from openprogram._cli_cmds.backup import restore_journal_path
+
+    parent = state / "safe"
+    parent.mkdir()
+    target = parent / "target.json"
+    target.write_text("half-applied")
+    target.chmod(0o600)
+    backup = state / ".restore-journal.d"
+    backup.mkdir(mode=0o700)
+    previous = None
+    if existed:
+        source = backup / "00000000.previous"
+        source.write_text("old")
+        source.chmod(0o600)
+        previous = ".restore-journal.d/00000000.previous"
+    journal = restore_journal_path(state)
+    journal.write_text(
+        json.dumps(
+            {
+                "format_version": 1,
+                "complete": False,
+                "entries": [
+                    {
+                        "relative_path": "safe/target.json",
+                        "previous": previous,
+                        "existed": existed,
+                    }
+                ],
+            }
+        )
+    )
+    journal.chmod(0o600)
+    return parent, target
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX dirfd semantics")
+def test_recovery_parent_swap_after_validation_cannot_write_outside_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openprogram._cli_cmds import backup as backup_cmd
+
+    state = _state(tmp_path)
+    parent, _target = _write_recovery_case(state, existed=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_target = outside / "target.json"
+    outside_target.write_text("outside")
+    detached = state / "detached"
+    real_replace = backup_cmd._journal_replace
+    swapped = False
+
+    def swap_then_replace(source, target, **kwargs):
+        nonlocal swapped
+        if not swapped:
+            parent.rename(detached)
+            parent.symlink_to(outside)
+            swapped = True
+        return real_replace(source, target, **kwargs)
+
+    monkeypatch.setattr(backup_cmd, "_journal_replace", swap_then_replace)
+
+    assert backup_cmd.recover_interrupted_restore(state) is True
+    assert outside_target.read_text() == "outside"
+    assert (detached / "target.json").read_text() == "old"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX dirfd semantics")
+def test_recovery_source_swap_after_validation_uses_opened_source_inode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openprogram._cli_cmds import backup as backup_cmd
+
+    state = _state(tmp_path)
+    _parent, target = _write_recovery_case(state, existed=True)
+    source = state / ".restore-journal.d" / "00000000.previous"
+    outside = tmp_path / "outside.json"
+    outside.write_text("outside")
+    real_replace = backup_cmd._journal_replace
+    swapped = False
+
+    def swap_source_then_replace(src, dst, **kwargs):
+        nonlocal swapped
+        if not swapped:
+            source.unlink()
+            source.symlink_to(outside)
+            swapped = True
+        return real_replace(src, dst, **kwargs)
+
+    monkeypatch.setattr(backup_cmd, "_journal_replace", swap_source_then_replace)
+
+    assert backup_cmd.recover_interrupted_restore(state) is True
+    assert target.read_text() == "old"
+    assert outside.read_text() == "outside"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX dirfd semantics")
+def test_recovery_unlink_parent_swap_cannot_delete_outside_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openprogram._cli_cmds import backup as backup_cmd
+
+    state = _state(tmp_path)
+    parent, _target = _write_recovery_case(state, existed=False)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_target = outside / "target.json"
+    outside_target.write_text("outside")
+    detached = state / "detached"
+    real_unlink = backup_cmd.os.unlink
+    swapped = False
+
+    def swap_then_unlink(path, *args, **kwargs):
+        nonlocal swapped
+        if not swapped and str(path).endswith("target.json"):
+            parent.rename(detached)
+            parent.symlink_to(outside)
+            swapped = True
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(backup_cmd.os, "unlink", swap_then_unlink)
+
+    assert backup_cmd.recover_interrupted_restore(state) is True
+    assert outside_target.read_text() == "outside"
+    assert not (detached / "target.json").exists()
+
+
 def test_restore_staging_is_owner_only_and_on_the_state_filesystem(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
