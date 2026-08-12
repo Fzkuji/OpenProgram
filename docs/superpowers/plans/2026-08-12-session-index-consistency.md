@@ -28,9 +28,9 @@ git status --short
 | Base | `e831d0f0` |
 | Design | `0a66a3cc` (`docs(session): define index consistency contract`) |
 | RED | `tests/unit/test_session_index_consistency.py`: 3 failed; meta timestamp overwritten, returned row mutated registry, and an in-flight old save cleared newer dirty state |
-| GREEN | `tests/unit/test_session_index_consistency.py`: 5 passed, including ordered concurrent direct saves |
-| Affected verification | 103 passed; scoped Ruff passed; `git diff --check` passed |
-| Specification review | Pending |
-| Quality review | Pending |
-| Full gate | Pending |
-| Final implementation | Pending |
+| GREEN | Final contract coverage: 9 passed, including set-head, non-head node append, side-branch append, deferred and direct writes |
+| Affected verification | 107 passed in independent quality review; scoped Ruff passed; `git diff --check` passed |
+| Specification review | PASS after `09480e0f`; set-head and non-head node findings repaired |
+| Quality review | PASS at `c50b5180`; write-failure retry, 6-writer concurrency, deadlock, reload and final JSON probes passed |
+| Full gate | 107 passed; Ruff passed; docs 459 pages; 0 broken links; `git diff --check` passed |
+| Final implementation | `9fef648c`, `09480e0f`, `c50b5180` |

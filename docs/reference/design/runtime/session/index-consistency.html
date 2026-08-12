@@ -12,7 +12,7 @@
 <body><main>
   <p class="sub">OpenProgram / SessionStore / implementation handoff</p>
   <h1>Session 注册表时间语义与并发一致性</h1>
-  <p class="sub">基线：<code>e831d0f0</code>。本页只规范 <code>meta.json</code>、内存 <code>_index</code> 与 <code>index.json</code> 的时间和并发合同；设计状态不代表实现完成。</p>
+  <p class="sub">基线：<code>e831d0f0</code>。本页只规范 <code>meta.json</code>、内存 <code>_index</code> 与 <code>index.json</code> 的时间和并发合同；实现状态与证据见第 07 节。</p>
 
   <div class="lead"><b>确定方案。</b> <code>updated_at</code> 表示最后一次会话内容追加时间，不表示任意元数据持久化时间。内存注册表的读、改、快照由独立锁保护；磁盘原子写串行化，但不在注册表锁内执行文件 I/O。延迟 flush 只能清除自己快照之前的 dirty 状态，不能覆盖并发更新。</div>
 
@@ -68,7 +68,8 @@
   <h2>07 · 实现文件与证据</h2>
   <div class="table"><table><thead><tr><th>文件</th><th>职责</th></tr></thead><tbody>
     <tr><td><code>openprogram/store/session/session_store.py</code></td><td>时间语义、registry state/write 锁、快照与延迟 flush。</td></tr>
+    <tr><td><code>openprogram/store/session/session_node_writer.py</code></td><td>node append 的单一 activity timestamp 与 meta/index 同步。</td></tr>
     <tr><td><code>tests/unit/test_session_index_consistency.py</code></td><td>排序时间、返回快照和并发写入的公共回归。</td></tr>
   </tbody></table></div>
-  <p class="note"><span class="warn">待实现与审查。</span> 只有在 RED/GREEN、独立规格审查、独立质量审查和完整 gate 后更新实现证据。</p>
+  <p class="note"><span class="ok">已实现并完成独立审查。</span> 实现提交：<code>9fef648c</code>、<code>09480e0f</code>、<code>c50b5180</code>。规格审查与质量审查均通过；最终 gate 证据记录在任务台账。</p>
 </main></body></html>
