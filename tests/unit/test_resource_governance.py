@@ -505,6 +505,59 @@ def test_worker_lost_revokes_generation_before_terminal_store_mutation(
     assert tuple(row) == ("released", None, claim.lease_generation + 1)
 
 
+def test_stopping_finalize_keeps_claim_when_store_mutation_fails(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    task = Task(id="stopping", parent_session_id="s1", prompt="p", agent_id="a")
+    governor.admit_task(task, persist=lambda _task: None)
+    claim = governor.claim_next(owner_instance_id="worker")
+    governor.request_stop(task.id, "cancel.user")
+
+    def fail_mutation(_reason_code: str | None) -> None:
+        raise RuntimeError("task store unavailable")
+
+    with pytest.raises(RuntimeError, match="task store unavailable"):
+        governor.finalize_stopping_task(
+            task.id,
+            owner_instance_id="worker",
+            lease_generation=claim.lease_generation,
+            mutate=fail_mutation,
+        )
+
+    row = ledger.connection().execute(
+        "SELECT state, reason_code FROM task_admissions WHERE task_id = ?",
+        (task.id,),
+    ).fetchone()
+    assert tuple(row) == ("stopping", "cancel.user")
+
+
+def test_stopping_finalize_mutates_then_releases_current_claim(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    task = Task(id="stopping", parent_session_id="s1", prompt="p", agent_id="a")
+    governor.admit_task(task, persist=lambda _task: None)
+    claim = governor.claim_next(owner_instance_id="worker")
+    governor.request_stop(task.id, "cancel.user")
+    mutations: list[str | None] = []
+
+    finalized = governor.finalize_stopping_task(
+        task.id,
+        owner_instance_id="worker",
+        lease_generation=claim.lease_generation,
+        mutate=mutations.append,
+    )
+
+    row = ledger.connection().execute(
+        "SELECT state, reason_code FROM task_admissions WHERE task_id = ?",
+        (task.id,),
+    ).fetchone()
+    assert finalized is True
+    assert mutations == ["cancel.user"]
+    assert tuple(row) == ("released", "cancel.user")
+
+
 def test_time_limits_start_at_live_claim_and_exclude_queue_wait(tmp_path) -> None:
     ledger = UsageLedger(tmp_path / "usage.db")
     resolved = resolve_resource_limits(

@@ -638,10 +638,15 @@ class ResourceGovernor:
                 (task_id, owner_instance_id, lease_generation),
             ).rowcount == 1
 
-    def release_stopping_task(
-        self, task_id: str, *, owner_instance_id: str, lease_generation: int,
-    ) -> tuple[bool, str | None]:
-        """Release only the stopping lease created by this exact claim."""
+    def finalize_stopping_task(
+        self,
+        task_id: str,
+        *,
+        owner_instance_id: str,
+        lease_generation: int,
+        mutate: Callable[[str | None], Any],
+    ) -> bool:
+        """Mutate TaskStore before releasing this exact stopping claim."""
         with self.ledger.immediate() as conn:
             row = conn.execute(
                 """SELECT reason_code FROM task_admissions
@@ -650,7 +655,8 @@ class ResourceGovernor:
                 (task_id, owner_instance_id, lease_generation),
             ).fetchone()
             if row is None:
-                return False, None
+                return False
+            mutate(row["reason_code"])
             changed = conn.execute(
                 """UPDATE task_admissions
                    SET state = 'released', released_at = ?, lease_expires_at = NULL
@@ -660,7 +666,7 @@ class ResourceGovernor:
                     time.time(), task_id, owner_instance_id, lease_generation,
                 ),
             ).rowcount
-            return changed == 1, row["reason_code"]
+            return changed == 1
 
     def request_stop(self, task_id: str, reason_code: str) -> None:
         with self.ledger.immediate() as conn:
