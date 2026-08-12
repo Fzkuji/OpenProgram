@@ -39,6 +39,11 @@ class _ExitAbortStore(_FailingStore):
         raise KeyboardInterrupt
 
 
+class _BadCloseRuntime:
+    def close(self) -> None:
+        raise RuntimeError("close failed")
+
+
 @pytest.fixture
 def runtime() -> Runtime:
     return Runtime(call=lambda *args, **kwargs: "", model="dummy")
@@ -198,3 +203,24 @@ def test_owned_runtime_alias_is_closed_after_entry_abort(
 
     assert owned.close_calls == 1
     assert _current_runtime.get() is None
+
+
+@pytest.mark.parametrize("phase", ["entry", "exit"])
+def test_close_failure_does_not_replace_persistence_base_exception(
+    phase: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "openprogram.providers.registry.create_runtime",
+        _BadCloseRuntime,
+    )
+
+    @agentic_function(as_tool=False)
+    def work(exec_runtime=None):
+        return "ok"
+
+    store = _AbortStore() if phase == "entry" else _ExitAbortStore()
+    with pytest.raises(KeyboardInterrupt):
+        _run_with_store(store, work)
+    assert _current_runtime.get() is None
+    assert _call_id.get() is None

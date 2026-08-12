@@ -577,7 +577,18 @@ def _close_owned_runtime(bound_args: dict, owns_runtime: bool) -> None:
     for pname in _RUNTIME_PARAMS:
         rt = bound_args.get(pname)
         if rt is not None and hasattr(rt, "close"):
-            rt.close()
+            import sys
+            active_error = sys.exception()
+            try:
+                rt.close()
+            except Exception as exc:
+                if active_error is None:
+                    raise
+                _log.warning(
+                    "owned runtime close failed error_type=%s",
+                    type(exc).__name__,
+                    exc_info=True,
+                )
             return
 
 
