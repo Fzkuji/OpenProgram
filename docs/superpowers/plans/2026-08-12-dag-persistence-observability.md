@@ -25,9 +25,9 @@ git status --short
 | Evidence | Result |
 |---|---|
 | Base | `4f8649d1` |
-| Design | Pending commit |
-| RED | Pending |
-| GREEN | Pending |
+| Design | `a271dbb9` (`docs(dag): define persistence diagnostics contract`) |
+| RED | 3 failed, 1 passed: entry, async exit, and traced exit persistence failures produced no diagnostics |
+| GREEN | 24 passed across new observability tests and existing DAG exit/exec/ask-user suites; scoped Ruff and diff check passed |
 | Specification review | Pending |
 | Quality review | Pending |
 | Full gate | Pending |
