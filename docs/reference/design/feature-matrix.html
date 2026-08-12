@@ -147,11 +147,11 @@
 </div>
 
 <div class="note orange">
-  <b>快照与使用边界</b>。OpenProgram 的通用实现证据以 <code>main@02860737</code> 为基线（2026-08-12 复核），包含运行中发消息排队、owner/paired 两档来源权限加配对准入、默认开启并覆盖全部本地执行面的沙箱、ACP 服务端与三个 LSP 工具，以及 commit-push-pr 打包技能、credential_process 外部命令取密钥、请求录制与严格离线回放、backup 命令、每会话资源限额，以及本轮完成的队列与 WebSocket 生命周期、session index/merged_heads 一致性、DAG 持久化观测、provider 诊断、record/replay 安全加固和 SessionStore 锁范围修复。JSON Schema structured output 单独按 Tasks 1–6@<code>2fb471b3</code> 及后续 trust-boundary 修复复核；Runtime URL SSRF 单独按集成提交 <code>be5eaa3c</code> 的实现、兼容性测试与运行时审计记为 <code>◐</code>。其他列固定在第五节列出的本地源码、二进制或 npm 包版本，没有声明为各产品的最新版本。<code>·</code> 只表示本轮没有确认到实现，不等于功能不存在。第四节是设计参考，优先级尚未经过使用频率统计或工程量估算。
+  <b>快照与使用边界</b>。OpenProgram 的通用实现证据以 <code>integrated candidate@33dd7d2c</code> 为基线（2026-08-13 复核），包含运行中发消息排队、owner/paired 两档来源权限加配对准入、默认开启并覆盖全部本地执行面的沙箱、ACP 服务端与三个 LSP 工具，以及 commit-push-pr 打包技能、credential_process 外部命令取密钥、请求录制与严格离线回放、backup 命令、每会话资源限额，以及本轮完成的队列与 WebSocket 生命周期、session index/merged_heads 一致性、DAG 持久化观测、provider 诊断、record/replay 安全加固、SessionStore 锁范围修复、commitment/heartbeat 并发修复、完整 credential-file hardening 与 resource-governance 集成修复。JSON Schema structured output 单独按 Tasks 1–6@<code>2fb471b3</code> 及后续 trust-boundary 修复复核；Runtime URL SSRF 单独按集成提交 <code>be5eaa3c</code> 的实现、兼容性测试与运行时审计记为 <code>◐</code>。其他列固定在第五节列出的本地源码、二进制或 npm 包版本，没有声明为各产品的最新版本。<code>·</code> 只表示本轮没有确认到实现，不等于功能不存在。第四节是设计参考，优先级尚未经过使用频率统计或工程量估算。
 </div>
 
 <div class="note blue">
-  <b>和 <a href="framework-comparison.html">framework-comparison</a> 的分工</b>。那一份比较执行模型、状态存储、上下文装配和权限审批等设计机制；本页按用户可调用或可配置的功能记录证据。前一份记录 55 个候选差异，本页撰写时记录 78 个（15 个重合、63 个此前未列出）；截至 main@02860737 复核其中 11 个已实现，现存 67 个。两份材料分别支持机制设计和功能范围设计，计数不能直接合并。
+  <b>和 <a href="framework-comparison.html">framework-comparison</a> 的分工</b>。那一份比较执行模型、状态存储、上下文装配和权限审批等设计机制；本页按用户可调用或可配置的功能记录证据。前一份记录 55 个候选差异，本页撰写时记录 78 个（15 个重合、63 个此前未列出）；截至 integrated candidate@33dd7d2c 复核其中 11 个已实现，现存 67 个。两份材料分别支持机制设计和功能范围设计，计数不能直接合并。
 </div>
 
 <!-- ══════════════════════════ 三问 ══════════════════════════ -->
@@ -177,7 +177,7 @@
   <div class="q" style="border-top-color:#d4843a">
     <div class="k">相对既有机制审计的增量</div>
     <h4>78 条里 63 条此前未列出</h4>
-    <p>前几轮机制审计记录了 55 个候选差异；本页撰写时 OpenProgram 未确认而至少一个参考列已确认的条目为 78 个，两份材料重合 15 个，<b>其余 63 个此前未列出</b>；main@02860737 复核后其中 11 个已实现，现存 67 个。</p>
+    <p>前几轮机制审计记录了 55 个候选差异；本页撰写时 OpenProgram 未确认而至少一个参考列已确认的条目为 78 个，两份材料重合 15 个，<b>其余 63 个此前未列出</b>；integrated candidate@33dd7d2c 复核后其中 11 个已实现，现存 67 个。</p>
     <p>版本控制 7 条、界面形态 5 条、多 agent 6 条和代码理解 4 条均未出现在前几轮清单中；编辑器集成新增 6 条，集成与被集成新增 9 条，部署与运维新增 6 条。</p>
     <p>这里的“新增”表示此前文档未记录，不表示相关产品最近发布了这些功能，也不表示全部条目都应进入实现计划。</p>
     <span class="ev">前六轮出处：runtime/sandbox · agent-collab-comparison · memory-comparison · memory-adoption · speaker-identity · chat-attachments · context/comparison · extension-gating · framework-comparison</span>
@@ -696,7 +696,7 @@
 <div class="tbl">
 <table class="wide">
 <tr><th>对象</th><th>取证来源</th><th>注意</th></tr>
-<tr><td class="name">OpenProgram</td><td><code>main@02860737</code>；JSON Schema 行另用 <code>2fb471b3</code>；Runtime URL SSRF 行另用 <code>be5eaa3c</code></td><td>通用能力按 main 基线复核（2026-08-12）。本轮新增实现证据包括队列与 WebSocket 生命周期、session index/merged_heads 一致性、DAG 持久化观测、结构化输出重试总预算、provider 诊断、record/replay 安全加固、credential_process stderr 脱敏和 SessionStore 锁范围。JSON Schema structured output 与 Runtime URL SSRF 分别按对应实现、复审和集成证据复核。既有证据仍包括 commit-push-pr、recordings CLI、backup、同 provider 失败切换、每会话资源限额、TUI 命令、scripted provider、<code>trash list/restore</code>、运行中发消息排队、owner/paired 权限、默认沙箱、ACP 服务端和三个 LSP 工具。文档改动本身不作为功能证据。</td></tr>
+<tr><td class="name">OpenProgram</td><td><code>integrated candidate@33dd7d2c</code>；JSON Schema 行另用 <code>2fb471b3</code>；Runtime URL SSRF 行另用 <code>be5eaa3c</code></td><td>通用能力按 integrated candidate 复核（2026-08-13）。本轮新增实现证据包括队列与 WebSocket 生命周期、session index/merged_heads 一致性、DAG 持久化观测、结构化输出重试总预算、provider 诊断、record/replay 安全加固、credential_process stderr 脱敏、SessionStore 锁范围、commitment/heartbeat 并发、完整 credential-file hardening 与 resource-governance 集成修复。JSON Schema structured output 与 Runtime URL SSRF 分别按对应实现、复审和集成证据复核。既有证据仍包括 commit-push-pr、recordings CLI、backup、同 provider 失败切换、每会话资源限额、TUI 命令、scripted provider、<code>trash list/restore</code>、运行中发消息排队、owner/paired 权限、默认沙箱、ACP 服务端和三个 LSP 工具。文档改动本身不作为功能证据。</td></tr>
 <tr><td class="name">claude-code</td><td class="p">本机 CLI <code>2.1.226</code>；<code>references/claude-code-leaked@a371abbe75ff</code> 仅作补充</td><td>二进制与参考源码冲突时以本机二进制为准；只在内部构建出现且本机不可达的功能不计入</td></tr>
 <tr><td class="name">codex</td><td class="p">本机 CLI <code>0.147.0</code>；源码 <code>references/codex-cli@57f42a81131c</code></td><td>UnderDevelopment 与 Experimental 条目使用 <code>○</code>，不按默认开启状态计为完整确认</td></tr>
 <tr><td class="name">openclaw</td><td><code>references/openclaw@b1b28415c2eb</code></td><td rowspan="5">均为本地源码快照，不声明为项目最新发布版；文档声明没有统一转换成端到端运行验证</td></tr>

@@ -55,11 +55,11 @@ def profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (state / "worker.pid").write_text("1234", encoding="utf-8")
     (state / "worker.port").write_text("18100", encoding="utf-8")
     (state / "channels.log").write_text("noise", encoding="utf-8")
-    (state / "auth").mkdir()
-    (state / "auth" / "anthropic.json").write_text(
+    (state / "auth" / "anthropic").mkdir(parents=True)
+    (state / "auth" / "anthropic" / "default.json").write_text(
         '{"key": "secret"}', encoding="utf-8"
     )
-    (state / "auth" / "anthropic.json").chmod(0o600)
+    (state / "auth" / "anthropic" / "default.json").chmod(0o600)
     (state / "mcp_tokens").mkdir()
     (state / "mcp_tokens" / "t.json").write_text(
         '{"token": "secret"}', encoding="utf-8"
@@ -298,7 +298,7 @@ def test_credentials_excluded_by_default_and_opt_in_works(profile: Path):
     assert not any(n.startswith("mcp_tokens") for n in default_names)
 
     opt_in_names = _members(create_backup(include_credentials=True))
-    assert "auth/anthropic.json" in opt_in_names
+    assert "auth/anthropic/default.json" in opt_in_names
     assert "mcp_tokens/t.json" in opt_in_names
 
 
@@ -453,7 +453,7 @@ def test_manifest_is_empty_when_no_inventory_member_exists(profile: Path) -> Non
     from openprogram._cli_cmds.backup import create_backup
 
     (profile / "config.json").unlink()
-    (profile / "auth" / "anthropic.json").unlink()
+    (profile / "auth" / "anthropic" / "default.json").unlink()
     (profile / "mcp_tokens" / "t.json").unlink()
     manifest = json.loads(_archive_bytes(create_backup())["backup-manifest.json"])
 
@@ -473,7 +473,7 @@ def test_manifest_reports_only_present_secret_fields(profile: Path) -> None:
         '{"theme":"dark","api_keys":{"OPENAI_API_KEY":"present"}}',
         encoding="utf-8",
     )
-    (profile / "auth" / "anthropic.json").unlink()
+    (profile / "auth" / "anthropic" / "default.json").unlink()
     (profile / "mcp_tokens" / "t.json").unlink()
     default = json.loads(_archive_bytes(create_backup())["backup-manifest.json"])
     opted_in = json.loads(
@@ -492,7 +492,7 @@ def test_manifest_marks_malformed_mixed_secret_as_actually_excluded(
     from openprogram._cli_cmds.backup import create_backup
 
     (profile / "config.json").write_bytes(b'{"api_keys":"unknown-secret"')
-    (profile / "auth" / "anthropic.json").unlink()
+    (profile / "auth" / "anthropic" / "default.json").unlink()
     (profile / "mcp_tokens" / "t.json").unlink()
     archived = _archive_bytes(create_backup())
     manifest = json.loads(archived["backup-manifest.json"])
@@ -638,6 +638,74 @@ def test_restore_inventory_files_are_atomically_published_owner_only(
     assert stat.S_IMODE(config.stat().st_mode) == 0o600
     assert stat.S_IMODE(auth.stat().st_mode) == 0o600
     assert stat.S_IMODE(mcp_token.stat().st_mode) == 0o600
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode contract")
+def test_backup_restore_cli_rolls_back_failed_final_credential_validation(
+    profile: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from openprogram._cli_cmds import backup as backup_cmd
+
+    target = profile / "auth" / "openai" / "default.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b'{"credentials":"old-auth"}')
+    target.chmod(0o600)
+    archive = _write_restorable_archive(
+        tmp_path / "restore-final-validation.tar.gz",
+        {"auth/openai/default.json": b'{"credentials":"archived-auth"}'},
+    )
+    real_publish = backup_cmd._publish_restored
+
+    def publish_with_bad_mode(target: Path, payload: bytes, *, root: Path) -> None:
+        real_publish(target, payload, root=root)
+        target.chmod(0o644)
+
+    monkeypatch.setattr(backup_cmd, "_publish_restored", publish_with_bad_mode)
+
+    assert backup_cmd._cmd_backup_restore(str(archive), yes=True) == 1
+
+    output = capsys.readouterr()
+    assert "restore failed" in output.err
+    assert "Restored " not in output.out
+    assert target.read_bytes() == b'{"credentials":"old-auth"}'
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode contract")
+def test_backup_restore_cli_rolls_back_credential_changed_during_journal_finish(
+    profile: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from openprogram._cli_cmds import backup as backup_cmd
+
+    target = profile / "auth" / "openai" / "default.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b'{"credentials":"old-auth"}')
+    target.chmod(0o600)
+    archive = _write_restorable_archive(
+        tmp_path / "restore-journal-finish-validation.tar.gz",
+        {"auth/openai/default.json": b'{"credentials":"archived-auth"}'},
+    )
+    real_finish = backup_cmd._RestoreJournal.finish
+
+    def finish_with_bad_mode(journal: backup_cmd._RestoreJournal) -> None:
+        target.chmod(0o644)
+        real_finish(journal)
+
+    monkeypatch.setattr(backup_cmd._RestoreJournal, "finish", finish_with_bad_mode)
+
+    assert backup_cmd._cmd_backup_restore(str(archive), yes=True) == 1
+
+    output = capsys.readouterr()
+    assert "restore failed" in output.err
+    assert "Restored " not in output.out
+    assert target.read_bytes() == b'{"credentials":"old-auth"}'
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
 
 
 @pytest.mark.parametrize("failure", ["write", "fsync", "replace"])

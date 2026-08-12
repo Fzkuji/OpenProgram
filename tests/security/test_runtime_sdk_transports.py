@@ -16,7 +16,6 @@ from types import SimpleNamespace
 import pytest
 
 from openprogram.security.safe_http import (
-    AsyncDecisionNetworkBackend,
     AsyncManagedHTTPTransport,
     CONSUMER_REGISTRY,
     ManagedHTTPTransport,
@@ -522,7 +521,8 @@ def test_mcp_supervisor_sanitizes_remote_oauth_error():
         try:
             assert client.error == "mcp_reauthentication_required"
             assert client.error_kind == "needs_reauth"
-            assert peer_secret not in repr(client.error)
+            for secret in ("PEER-BODY", "TOKEN-PATH", "QUERY-SECRET"):
+                assert secret not in repr(client.error)
         finally:
             await client.stop()
 
@@ -561,7 +561,8 @@ def test_mcp_supervisor_sanitizes_remote_transient_stderr(capsys):
     asyncio.run(exercise())
     rendered = capsys.readouterr().err
     assert "transient connection failure" in rendered
-    assert peer_secret not in rendered
+    for secret in ("PEER-BODY", "TOKEN-PATH", "QUERY-SECRET"):
+        assert secret not in rendered
 
 
 @pytest.mark.parametrize(

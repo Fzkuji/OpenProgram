@@ -104,7 +104,7 @@ export function taskResourceDetails(
   const { budget } = resource;
   const unknownEvents = Math.max(
     budget.cost_usd.unknown_events ?? 0,
-    budget.shared_remaining.cost_unknown_events,
+    budget.shared_remaining.cost_unknown_events ?? 0,
   );
   let cost: string;
   if (budget.cost_usd.known !== true || unknownEvents > 0) {
@@ -120,6 +120,7 @@ export function taskResourceDetails(
     );
   }
   const details: TaskResourceDetail[] = [
+    { key: "state", value: resource.resource_state },
     {
       key: "tokens",
       value: remaining(

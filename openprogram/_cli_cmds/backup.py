@@ -31,7 +31,8 @@ import sys
 import tarfile
 import tempfile
 import time
-from contextlib import contextmanager
+from collections.abc import Iterable
+from contextlib import ExitStack, contextmanager
 from pathlib import Path, PurePath
 
 # Top-level entries worth preserving. Anything not listed is skipped.
@@ -72,6 +73,14 @@ _MANIFEST_NAME = "backup-manifest.json"
 # Never archived, even if nested inside an included entry.
 _SKIP_NAMES = frozenset({"node_modules", "__pycache__", ".DS_Store"})
 _SKIP_SUFFIXES = (".lock", ".pid", ".port", ".log", ".sock")
+
+
+def _credential_tree_member(relative: str) -> bool:
+    parts = PurePath(relative).parts
+    return bool(parts) and (
+        parts[0] in CREDENTIAL_ENTRIES
+        or (len(parts) >= 3 and parts[0] == "profiles" and parts[2] == "auth")
+    )
 
 
 def _state_dir() -> Path:
@@ -240,6 +249,11 @@ def create_backup(
             _excluded(source)
             or not _profile_member_allowed(source, arcname)
             or _is_secret_writer_temporary(arcname)
+            or (
+                source.is_file()
+                and _credential_tree_member(arcname)
+                and not inventory_for_path(arcname)
+            )
         ):
             return
         info = tar.gettarinfo(str(source), arcname=arcname)
@@ -597,6 +611,18 @@ def _restore_state_lock(state: Path):
         os.close(descriptor)
 
 
+@contextmanager
+def _restore_target_locks(state: Path, relative_paths: Iterable[str]):
+    """Hold target writer locks in one stable order for a restore transaction."""
+
+    from openprogram.credential_files import _private_file_lock
+
+    with ExitStack() as stack:
+        for relative in sorted(set(relative_paths)):
+            stack.enter_context(_private_file_lock(state / relative, root=state))
+        yield
+
+
 class _RestoreJournal:
     """Durable record of what a restore replaced, for reversal.
 
@@ -701,6 +727,12 @@ class _RestoreJournal:
         return self.backup_dir / name
 
     def finish(self) -> None:
+        from openprogram.credential_files import _read_private_bytes, inventory_for_path
+
+        for entry in self.entries:
+            relative = entry["relative_path"]
+            if inventory_for_path(relative):
+                _read_private_bytes(self.state / relative, root=self.state)
         self._flush(complete=True)
         self.discard()
 
@@ -823,8 +855,19 @@ def recover_interrupted_restore(state: Path, *, _lock_held: bool = False) -> boo
         journal_file.unlink(missing_ok=True)
         return False
 
+    from openprogram.credential_files import PrivateAtomicWriteError
+
     try:
-        _reverse(state, entries)
+        with _restore_target_locks(
+            state, (entry["relative_path"] for entry in entries)
+        ):
+            _reverse(state, entries)
+    except PrivateAtomicWriteError as exc:
+        if exc.code == "lock_timeout":
+            raise
+        raise UnrecoverableRestoreJournalError(
+            "restore journal paths are unsafe"
+        ) from None
     except _UnsafeRecoveryPath as exc:
         raise UnrecoverableRestoreJournalError(
             "restore journal paths are unsafe"
@@ -1057,6 +1100,7 @@ def restore_archive(
     """
 
     from openprogram.credential_files import (
+        _read_private_bytes,
         backup_bytes,
         inventory_for_path,
         preserve_local_secret_bytes,
@@ -1092,7 +1136,7 @@ def restore_archive(
             raise tarfile.TarError("archive manifest has an unsupported schema")
         credential_opt_in = manifest["credential_opt_in"]
 
-        staged: list[tuple[str, bytes]] = []
+        staged: list[tuple[str, bytes, tuple]] = []
         for member in members:
             if member.name == _MANIFEST_NAME:
                 continue
@@ -1109,6 +1153,10 @@ def restore_archive(
                 )
 
             inventory = inventory_for_path(member.name)
+            if _credential_tree_member(member.name) and not inventory:
+                raise tarfile.TarError(
+                    f"credential inventory does not recognize: {member.name}"
+                )
             if any(
                 entry.whole_file and entry.backup_policy == "never_backup"
                 for entry in inventory
@@ -1152,23 +1200,15 @@ def restore_archive(
                             f"registered secret member is not valid JSON: "
                             f"{member.name}"
                         ) from exc
-                if all(not entry.whole_file for entry in inventory):
-                    try:
-                        local = (state / member.name).read_bytes()
-                    except (FileNotFoundError, NotADirectoryError):
-                        local = None
-                    payload = preserve_local_secret_bytes(
-                        member.name, payload, local
-                    )
-            staged.append((member.name, payload))
+            staged.append((member.name, payload, inventory))
 
     staging = Path(tempfile.mkdtemp(prefix=".restore-staging-", dir=state.parent))
     try:
         os.chmod(staging, 0o700)
         if os.stat(staging).st_dev != os.stat(state).st_dev:
             raise OSError("restore staging is not on the state filesystem")
-        staged_files: list[tuple[str, Path]] = []
-        for index, (relative, payload) in enumerate(staged):
+        staged_files: list[tuple[str, Path, tuple]] = []
+        for index, (relative, payload, inventory) in enumerate(staged):
             staged_file = staging / f"{index:08d}.payload"
             descriptor = _staging_open(
                 staged_file,
@@ -1185,7 +1225,7 @@ def restore_archive(
                 _staging_fsync(descriptor)
             finally:
                 os.close(descriptor)
-            staged_files.append((relative, staged_file))
+            staged_files.append((relative, staged_file, inventory))
         directory = _staging_open(
             staging, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
         )
@@ -1194,28 +1234,45 @@ def restore_archive(
         finally:
             os.close(directory)
 
-        journal = _RestoreJournal(state)
-        journal.start()
-        published: list[str] = []
-        try:
-            for relative, staged_file in staged_files:
-                payload = staged_file.read_bytes()
-                target = state / relative
-                from openprogram.credential_files import _ensure_private_directory
+        with _restore_target_locks(
+            state, (relative for relative, _path, _inventory in staged_files)
+        ):
+            journal = _RestoreJournal(state)
+            journal.start()
+            published: list[str] = []
+            try:
+                for relative, staged_file, inventory in staged_files:
+                    payload = staged_file.read_bytes()
+                    target = state / relative
+                    from openprogram.credential_files import _ensure_private_directory
 
-                _ensure_private_directory(target.parent, root=state)
-                journal.record(relative, journal.preserve(relative, target))
-                _publish_restored(target, payload, root=state)
-                published.append(relative)
-        except BaseException as exc:
-            _reverse(state, journal.entries)
-            journal.discard()
-            if not isinstance(exc, Exception):
-                raise
-            raise RestoreRollbackCompletedError(
-                "publication failed; rollback complete"
-            ) from exc
-        journal.finish()
+                    _ensure_private_directory(target.parent, root=state)
+                    if inventory and all(not entry.whole_file for entry in inventory):
+                        payload = preserve_local_secret_bytes(
+                            relative,
+                            payload,
+                            _read_private_bytes(target, root=state),
+                        )
+                    journal.record(relative, journal.preserve(relative, target))
+                    _publish_restored(target, payload, root=state)
+                    published.append(relative)
+                for relative, _staged_file, expected_inventory in staged_files:
+                    if not expected_inventory:
+                        continue
+                    if inventory_for_path(relative) != expected_inventory:
+                        raise OSError(
+                            f"credential inventory changed during restore: {relative}"
+                        )
+                    _read_private_bytes(state / relative, root=state)
+                journal.finish()
+            except BaseException as exc:
+                _reverse(state, journal.entries)
+                journal.discard()
+                if not isinstance(exc, Exception):
+                    raise
+                raise RestoreRollbackCompletedError(
+                    "publication failed; rollback complete"
+                ) from exc
         return published
     finally:
         shutil.rmtree(staging, ignore_errors=True)

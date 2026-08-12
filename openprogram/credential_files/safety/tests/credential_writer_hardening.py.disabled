@@ -30,6 +30,57 @@ def _symlink_target(root: Path, relative: str) -> tuple[Path, Path]:
     return target, outside
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX state-root contract")
+def test_private_writer_creates_missing_state_root_owner_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openprogram.channels import accounts
+
+    root = tmp_path / "missing-state"
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: root)
+
+    accounts.save_credentials("telegram", "default", {"bot_token": "secret"})
+
+    assert stat.S_IMODE(os.lstat(root).st_mode) == 0o700
+    assert json.loads(
+        (root / "channels/telegram/accounts/default/credentials.json").read_text()
+    ) == {"bot_token": "secret"}
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX state-root contract")
+def test_private_writer_rejects_symlink_state_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openprogram.channels import accounts
+    from openprogram.credential_files import PrivateAtomicWriteError
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root = tmp_path / "state"
+    root.symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: root)
+
+    with pytest.raises(PrivateAtomicWriteError, match="symlink"):
+        accounts.save_credentials("telegram", "default", {"bot_token": "secret"})
+
+    assert list(outside.iterdir()) == []
+
+
+def test_channel_delete_does_not_report_success_for_dangling_account_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openprogram.channels import accounts
+
+    dangling = tmp_path / "account"
+    dangling.symlink_to(tmp_path / "missing", target_is_directory=True)
+    monkeypatch.setattr(accounts, "account_dir", lambda *_args: dangling)
+
+    with pytest.raises(OSError):
+        accounts.delete("telegram", "default")
+
+    assert dangling.is_symlink()
+
+
 def test_config_writer_rejects_stale_external_revision(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -180,6 +180,7 @@ def test_resource_limit_rest_returns_resolved_fields_and_owner_puts_override(
 
     initial = client.get("/api/sessions/session-1/resource-limits")
     assert initial.status_code == 200
+    initial_revision = initial.json()["revision"]
     assert initial.json()["limits"]["max_total_tokens"] == {
         "configured": 100,
         "effective": 100,
@@ -188,14 +189,27 @@ def test_resource_limit_rest_returns_resolved_fields_and_owner_puts_override(
 
     updated = client.put(
         "/api/sessions/session-1/resource-limits",
-        json={"limits": {"max_total_tokens": 80}},
+        json={
+            "limits": {"max_total_tokens": 80},
+            "base_revision": initial_revision,
+        },
     )
     assert updated.status_code == 200
+    assert updated.json()["revision"] != initial_revision
     assert updated.json()["limits"]["max_total_tokens"] == {
         "configured": 80,
         "effective": 80,
         "source": "session",
     }
+
+    stale = client.put(
+        "/api/sessions/session-1/resource-limits",
+        json={
+            "limits": {"max_total_tokens": 70},
+            "base_revision": initial_revision,
+        },
+    )
+    assert stale.status_code == 409
 
 
 def test_spawn_rejection_transport_preserves_usage_without_inventing_task(

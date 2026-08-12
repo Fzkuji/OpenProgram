@@ -1360,6 +1360,72 @@ def test_release_task_keeps_admission_while_finalization_is_pending(tmp_path) ->
     ).fetchone()[0] == "completed"
 
 
+def test_requeue_keeps_pending_finalization_under_its_original_fence(
+    tmp_path,
+) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    task = Task(id="live", parent_session_id="s1", prompt="live", agent_id="a")
+    governor.admit_task(task, persist=lambda _task: None)
+    claim = governor.claim_next(owner_instance_id="worker")
+    fields = {
+        "status": "completed",
+        "head_id": "head_1",
+        "result_text": "done",
+        "error": None,
+        "reason_code": "completed",
+    }
+
+    with pytest.raises(RuntimeError, match="task store unavailable"):
+        governor.finalize_task(
+            task.id,
+            "completed",
+            owner_instance_id="worker",
+            lease_generation=claim.lease_generation,
+            terminal_fields=fields,
+            mutate=lambda _fields: (_ for _ in ()).throw(
+                RuntimeError("task store unavailable")
+            ),
+        )
+
+    assert governor.requeue_task(
+        task.id,
+        owner_instance_id="worker",
+        lease_generation=claim.lease_generation,
+    ) is False
+    assert tuple(ledger.connection().execute(
+        "SELECT state, owner_instance_id, lease_generation "
+        "FROM task_admissions WHERE task_id = ?",
+        (task.id,),
+    ).fetchone()) == ("live", "worker", claim.lease_generation)
+
+    task.status = TaskStatus.RUNNING
+
+    def apply_terminal(_session_id: str, _task_id: str, staged: dict) -> None:
+        task.status = TaskStatus(staged["status"])
+        for name, value in staged.items():
+            if name != "status":
+                setattr(task, name, value)
+
+    governor.reconcile(
+        task_lookup=lambda _sid, _task_id: task,
+        write_terminal=apply_terminal,
+        mark_worker_lost=lambda _sid, _task_id: pytest.fail(
+            "pending finalization must retain its original fence"
+        ),
+        owner_is_alive=lambda _owner: False,
+        now=1,
+    )
+    assert task.status == TaskStatus.COMPLETED
+    assert ledger.connection().execute(
+        "SELECT state FROM task_admissions WHERE task_id = ?", (task.id,),
+    ).fetchone()[0] == "released"
+    assert ledger.connection().execute(
+        "SELECT state FROM task_finalizations WHERE task_id = ?", (task.id,),
+    ).fetchone()[0] == "completed"
+
+
 def test_borrowed_pending_finalization_blocks_direct_and_orphan_release(
     tmp_path,
 ) -> None:

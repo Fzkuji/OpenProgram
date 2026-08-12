@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
+
 class QuotaExceeded(RuntimeError):
     """A budgeted call was refused. ``reason_code`` is the stable taxonomy."""
 
@@ -149,15 +150,18 @@ def requested_output_cap(options, model) -> int:
 
 
 def provider_retry_attempts(default_attempts: int) -> int:
-    """Disable adapter retries when one durable reservation owns one attempt."""
+    """Return one provider attempt while a governed reservation is active."""
     try:
         from openprogram.agent.task.runner import current_task_resource_context
-        return 1 if current_task_resource_context() is not None else default_attempts
+        if current_task_resource_context() is not None:
+            return 1
     except Exception:
-        return default_attempts
+        pass
+    return default_attempts
 
 
 def provider_sdk_retries(default_retries: int) -> int:
+    """Translate total-attempt governance into SDK retry-count semantics."""
     return max(0, provider_retry_attempts(default_retries + 1) - 1)
 
 
@@ -188,9 +192,11 @@ class BudgetedRequest:
             bound = None
         if bound is None:
             return None
-        task_id, governor = bound
+        task_id = bound.task_id
+        governor = bound.governor
 
         from .api_registry import has_audited_accounting
+
         if not has_audited_accounting(provider, getattr(model, "api", None)):
             raise QuotaExceeded(
                 "quota.accounting_unavailable",

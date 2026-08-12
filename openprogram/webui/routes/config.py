@@ -1,7 +1,11 @@
 """/api/config* — generic key-value config + bulk API-key save + verify."""
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import os
+import threading
 from typing import Any
 
 from fastapi import Body, Request, Response
@@ -44,6 +48,8 @@ def _validate_api_key(env_var: str, value: str) -> str | None:
 
 
 def register(app):
+    resource_limits_lock = threading.RLock()
+
     def resource_limits_view(session_id: str) -> dict[str, Any]:
         from openprogram.agent.resource_governance import (
             global_resource_limits, resolve_resource_limits, session_resource_limits,
@@ -51,9 +57,13 @@ def register(app):
         from openprogram.agent.session_db import default_db
         if default_db().get_session(session_id) is None:
             raise KeyError(session_id)
-        return resolve_resource_limits(
+        view = resolve_resource_limits(
             global_resource_limits(), session=session_resource_limits(session_id),
         ).to_dict()
+        view["revision"] = hashlib.sha256(
+            json.dumps(view, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(),
+        ).hexdigest()
+        return view
 
     @app.get("/api/sessions/{session_id}/resource-limits")
     async def get_session_resource_limits_api(session_id: str):
@@ -65,7 +75,7 @@ def register(app):
     @app.put("/api/sessions/{session_id}/resource-limits")
     async def put_session_resource_limits_api(session_id: str, request: Request, body: Any = Body(default=None)):
         if not isinstance(body, dict) or "limits" not in body:
-            return JSONResponse(content={"error": "body must contain limits"}, status_code=400)
+            return JSONResponse(content={"error": "body must contain limits and base_revision"}, status_code=400)
         try:
             resource_limits_view(session_id)
         except KeyError:
@@ -74,12 +84,21 @@ def register(app):
         # "authority" is a forgery attempt and is refused, never merged in.
         auth_state = getattr(request.app.state, "owner_auth", None)
         authority = getattr(auth_state, "authority", None)
-        if authority is None or set(body) != {"limits"}:
+        if authority is None or set(body) != {"limits", "base_revision"}:
             return JSONResponse(content={"error": "trusted owner authority required"}, status_code=403)
         try:
             from openprogram.agent.resource_governance import save_session_resource_limits
-            save_session_resource_limits(session_id, body["limits"], authority=authority)
-            return JSONResponse(content=resource_limits_view(session_id))
+            with resource_limits_lock:
+                current = resource_limits_view(session_id)
+                if not isinstance(body["base_revision"], str) or not hmac.compare_digest(
+                    body["base_revision"], current["revision"],
+                ):
+                    return JSONResponse(
+                        content={"error": "resource limits changed", "revision": current["revision"]},
+                        status_code=409,
+                    )
+                save_session_resource_limits(session_id, body["limits"], authority=authority)
+                return JSONResponse(content=resource_limits_view(session_id))
         except PermissionError:
             return JSONResponse(content={"error": "owner authority required"}, status_code=403)
         except (TypeError, ValueError) as exc:

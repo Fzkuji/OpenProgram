@@ -54,8 +54,10 @@ provenance。显式转移使用现有 `memory_update` 事务并携带当前 memo
 
 确定性 ID 负责重复提取去重；持久化的 `due` 与 `overdue:7` 把当前策略下每条
 记录的成功提醒限制为两次。发送失败不消耗档位，后续合格 heartbeat 会重试。
-送达语义明确为 at-least-once：如果 channel 已接受消息，而进程在原子写入通知
-状态前退出，可能出现一次重复。当前 outbound API 没有跨 channel idempotency
+并发 heartbeat pass 由 OS 文件锁 claim 串行化，因此正常运行中每个档位只发送并
+记录一次；发送失败时释放 claim，owner 进程退出时由 OS 自动释放。仅异常 owner
+退出保留 at-least-once：如果 channel 已接受消息，而进程在原子写入通知状态前
+退出，可能出现一次重复。当前 outbound API 没有跨 channel idempotency
 key，因此不能声称 exactly-once；另加 delivery journal 也不能消除外部不确定性。
 
 送达目标来自证据，不来自模型输出。对于

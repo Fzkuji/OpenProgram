@@ -4,7 +4,7 @@ import { cloneElement, useEffect, useRef, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
 import type { TaskResourceView } from "@/lib/net/ws-events";
-import { queueResourceSummary } from "@/lib/task-resource";
+import { queueResourceSummary, taskResourceDetails } from "@/lib/task-resource";
 import type { AnimatedNavIconHandle } from "@/components/animated-icons";
 
 import {
@@ -84,6 +84,7 @@ export function BranchItem({
 
   const isPending = branch.head_msg_id.startsWith("__pending_task__:");
   const queueSummary = chip ? null : queueResourceSummary(taskResource);
+  const resourceDetails = taskResourceDetails(taskResource);
   const finishingReason = finishing ? taskResource?.reason_code : null;
 
   function commitRename() {
@@ -214,7 +215,7 @@ export function BranchItem({
       )}
       {branch.active ? <span className="branch-item-badge">{t("right.head")}</span> : null}
       {queueSummary ? (
-        <span className="branch-item-resource" title={queueSummary}>
+        <span className="branch-item-resource-summary" title={queueSummary}>
           {queueSummary}
         </span>
       ) : running ? (
@@ -230,10 +231,13 @@ export function BranchItem({
           {finishingReason}
         </span>
       ) : null}
-      {taskResource ? (
-        <details className="branch-item-resource" onClick={(e) => e.stopPropagation()}>
+      {!chip && taskResource ? (
+        <details
+          className="branch-item-resource"
+          onClick={(event) => event.stopPropagation()}
+        >
           <summary aria-label={`Task resource details for ${branch.name || branch.head_msg_id}`}>
-            resources
+            resources{resourceDetails.length ? ` · ${resourceDetails[0].value}` : ""}
           </summary>
           <pre>{JSON.stringify({
             resource_state: taskResource.resource_state,

@@ -13,6 +13,7 @@ import errno
 import hashlib
 import os
 import re
+import threading
 from collections.abc import Callable
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
@@ -32,6 +33,7 @@ WRITABLE_PREFIX = "topics/"
 SOURCE_LABEL_PATTERN = re.compile(r"new-source-[a-z0-9-]+")
 SOURCE_PROVIDER = "claude-code"
 VALID_ROLES = ("user", "assistant", "system", "tool")
+_WRITE_LOCKS = threading.local()
 
 
 class TransactionError(Exception):
@@ -163,16 +165,28 @@ def workspace_revision(memory_dir: Path) -> str:
 @contextmanager
 def workspace_write_lock(memory_dir: Path, *, timeout_s: float = 10.0):
     """Exclusive cross-process lock covering one transaction."""
-    lock_path = ensure_runtime_dir(memory_dir) / "write.lock"
+    lock_path = (ensure_runtime_dir(memory_dir) / "write.lock").resolve()
+    held = getattr(_WRITE_LOCKS, "held", None)
+    if held is None:
+        held = _WRITE_LOCKS.held = {}
+    if lock_path in held:
+        held[lock_path] += 1
+        try:
+            yield
+        finally:
+            held[lock_path] -= 1
+        return
     # Owner-only like everything else under the profile. The lock holds no
     # memory, but a file another account can open is one it can hold, and
     # that is enough to stall every write this workspace attempts.
     handle = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
         _acquire(handle, lock_path, timeout_s)
+        held[lock_path] = 1
         try:
             yield
         finally:
+            del held[lock_path]
             _release(handle)
     finally:
         os.close(handle)

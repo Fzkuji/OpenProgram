@@ -99,6 +99,8 @@
 }
 .branch-item-resource {
   flex: 0 0 auto;
+  font: 10px/12px var(--font-mono);
+  color: var(--text-muted);
 }
 .branch-item-resource[open] {
   flex-basis: 100%;
@@ -161,7 +163,7 @@
   align-content: center;
   row-gap: 0;
 }
-.branch-item-resource {
+.branch-item-resource-summary {
   order: 10;
   width: 100%;
   margin-left: 16px;

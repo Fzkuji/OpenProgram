@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -44,6 +45,14 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
     ("mutation", "message"),
     [
         (lambda text: text.replace("2fb471b3", "deadbeef"), "snapshot"),
+        (
+            lambda text: re.sub(
+                r"(?:main|integrated candidate)@[0-9a-f]{8}",
+                "integrated candidate@cafebabe",
+                text,
+            ),
+            "integration snapshot",
+        ),
         (
             lambda text: text.replace("OpenProgram为84.5分", "OpenProgram为999分", 1),
             "score",

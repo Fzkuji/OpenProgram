@@ -80,6 +80,60 @@ def test_inventory_classifies_every_persisted_secret_surface() -> None:
         ] == [want]
 
 
+@pytest.mark.parametrize(
+    ("registered", "kind", "too_deep", "too_shallow"),
+    [
+        (
+            "auth/openai/default.json",
+            "auth_store",
+            "auth/openai/unregistered/account.json",
+            "auth/openai.json",
+        ),
+        (
+            "profiles/work/auth/openai/default.json",
+            "profile_auth_store",
+            "profiles/work/auth/openai/unregistered/account.json",
+            "profiles/work/auth/openai.json",
+        ),
+        (
+            "profiles/work/.env",
+            "profile_env",
+            "profiles/work/unregistered/.env",
+            "profiles/.env",
+        ),
+        (
+            "channels/slack/accounts/default/credentials.json",
+            "channel_credentials",
+            "channels/slack/accounts/default/unregistered/credentials.json",
+            "channels/slack/accounts/credentials.json",
+        ),
+        (
+            "channels/slack/accounts/default/access.json",
+            "channel_pairing_codes",
+            "channels/slack/accounts/default/unregistered/access.json",
+            "channels/slack/accounts/access.json",
+        ),
+        (
+            "mcp_tokens/github.json",
+            "mcp_tokens",
+            "mcp_tokens/unregistered/github.json",
+            "github.json",
+        ),
+    ],
+)
+def test_inventory_wildcards_match_exactly_one_path_segment(
+    registered: str,
+    kind: str,
+    too_deep: str,
+    too_shallow: str,
+) -> None:
+    from openprogram.credential_files import inventory_for_path
+
+    assert [entry.kind for entry in inventory_for_path(registered)] == [kind]
+    assert inventory_for_path(too_deep) == ()
+    assert inventory_for_path(too_shallow) == ()
+
+
 def test_restore_preserves_masked_secret_values() -> None:
     from openprogram.credential_files import preserve_local_secret_bytes
 

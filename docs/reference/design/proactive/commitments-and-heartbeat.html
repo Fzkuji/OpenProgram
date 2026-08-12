@@ -78,12 +78,26 @@
 
   <section class="card boundary" style="margin-top:14px">
     <h3>当前边界</h3>
-    <p>同一 Source 的不同 quote 支持多承诺，同一证据的改写提取由确定性 ID 去重；当前每条记录最多成功发送 due 与 overdue:7 两档。通知档位严格按 <code>due → overdue:7</code> 单向推进：如果首次检查时记录已经逾期七天以上，先发送并记录 due，后续符合 cadence 的 heartbeat 才发送 overdue，不允许先记录 overdue 再回退到 due。兼容修复前已经持久化的 overdue-only 状态：任何已有 <code>overdue:*</code> 都表示记录已经越过 due，不得补发或追加 due。发送失败不记档并在后续 heartbeat 重试。发送是带重试和退避预算的网络 I/O，在 workspace 写锁之外执行：读取到期记录取一次锁，写入已送达档位再取一次，第二次写入只把档位合并到当时磁盘上的记录，因此提醒发送期间提交的状态变更不会被覆盖。送达是 at-least-once：channel 成功后、状态原子写入前的进程退出可能产生一次重复，现有跨渠道 outbound 没有统一 idempotency key。状态/heartbeat 隔离并计数非法行，更新通知状态时原样保留这些行；upsert/transition 发现非法行则拒绝写入。同一次 <code>record_commitments</code> 中的 create 与 transition 是一个调用级原子批次，任何一项校验或写入失败都必须以原子替换把 stage 恢复到调用前的逐字节状态；如果恢复本身失败，Runtime 必须先标记该 stage 不可提交，再尽力丢弃 stage。任何 stage 刷新只有在全部复制与保护步骤完成后才恢复可提交状态；清理或刷新再次失败不能安装部分结果。无日期或没有 channel target 的记录保持可见但不推送；测试不发送真实消息。该功能要求 <code>cron-worker</code> 运行，不提供 fallback timer，也不包含优先级、子任务、项目、自主执行或新 scheduler/storage/task manager。</p>
+    <p>同一 Source 的不同 quote 支持多承诺，同一证据的改写提取由确定性 ID 去重；当前每条记录最多成功发送 due 与 overdue:7 两档。通知档位严格按 <code>due → overdue:7</code> 单向推进：如果首次检查时记录已经逾期七天以上，先发送并记录 due，后续符合 cadence 的 heartbeat 才发送 overdue，不允许先记录 overdue 再回退到 due。兼容修复前已经持久化的 overdue-only 状态：任何已有 <code>overdue:*</code> 都表示记录已经越过 due，不得补发或追加 due。发送失败不记档并在后续 heartbeat 重试。发送是带重试和退避预算的网络 I/O，在 workspace 写锁之外执行：读取到期记录取一次锁，写入已送达档位再取一次，第二次写入只把档位合并到当时磁盘上的记录，因此提醒发送期间提交的状态变更不会被覆盖。正常并发 heartbeat 先通过独立 claim 串行化，对同一通知档位只发送一次；但 channel 成功后、状态原子写入前的进程退出仍可能使后续进程重复发送，因此该终止窗口仍是 at-least-once；现有跨渠道 outbound 没有统一 idempotency key。状态/heartbeat 隔离并计数非法行，更新通知状态时原样保留这些行；upsert/transition 发现非法行则拒绝写入。同一次 <code>record_commitments</code> 中的 create 与 transition 是一个调用级原子批次，任何一项校验或写入失败都必须以原子替换把 stage 恢复到调用前的逐字节状态；如果恢复本身失败，Runtime 必须先标记该 stage 不可提交，再尽力丢弃 stage。任何 stage 刷新只有在全部复制与保护步骤完成后才恢复可提交状态；清理或刷新再次失败不能安装部分结果。无日期或没有 channel target 的记录保持可见但不推送；测试不发送真实消息。该功能要求 <code>cron-worker</code> 运行，不提供 fallback timer，也不包含优先级、子任务、项目、自主执行或新 scheduler/storage/task manager。</p>
   </section>
 
   <section class="card" style="margin-top:14px">
     <h3>审查修复任务 brief</h3>
-    <p>批准基线为 <code>95e778aa</code>，实现候选为 <code>cbeae923</code>。本修复只允许修改 <code>openprogram/proactive/heartbeat.py</code>、<code>openprogram/memory/management/tools.py</code>、<code>openprogram/memory/management/workspace.py</code>、<code>tests/unit/test_memory_commitments.py</code> 与本页。公共 RED 必须覆盖首次检查已逾期记录的单向通知顺序、组合 create+transition 失败后 stage 与 committed workspace 均不变化，以及恢复写入失败后部分 stage 不可提交。兼容边界包括发送失败重试、at-least-once、malformed 行策略、owner 单项 transition、既有 stage 修改和不含 commitments 文件的 stage。排除新 scheduler、delivery journal、exactly-once、优先级、子任务、项目和 Windows 专项实现。验收命令为 commitments 专项 Python 测试、Memory Web 检查、scoped Ruff、文档构建与链接、独立规格复审、独立质量审查和最终组合门禁；任何实现或测试变更后均需重新审查。</p>
+    <p>批准基线为 <code>95e778aa</code>，最终集成实现证据为 <code>33dd7d2c</code>。本修复只允许修改 <code>openprogram/proactive/heartbeat.py</code>、<code>openprogram/memory/management/tools.py</code>、<code>openprogram/memory/management/workspace.py</code>、<code>tests/unit/test_memory_commitments.py</code> 与本页。公共 RED 必须覆盖首次检查已逾期记录的单向通知顺序、组合 create+transition 失败后 stage 与 committed workspace 均不变化，以及恢复写入失败后部分 stage 不可提交。兼容边界包括发送失败重试、正常并发 claim 对同一通知档位只发送一次、channel 成功后与状态写入前进程退出窗口的 at-least-once、malformed 行策略、owner 单项 transition、既有 stage 修改和不含 commitments 文件的 stage。排除新 scheduler、delivery journal、跨进程终止窗口的端到端 exactly-once、优先级、子任务、项目和 Windows 专项实现。验收命令为 commitments 专项 Python 测试、Memory Web 检查、scoped Ruff、文档构建与链接、独立规格复审、独立质量审查和最终组合门禁；任何实现或测试变更后均需重新审查。</p>
+  </section>
+
+  <section class="card" style="margin-top:14px">
+    <h3>实现与验证证据</h3>
+    <p>最终集成实现证据为 <code>33dd7d2c</code>；相关最终修复提交为 <code>60affd50</code>、<code>716d3433</code>、<code>7dd08469</code>、<code>5fd76a44</code> 和 <code>79d2d704</code>。SPEC review、QUALITY review 与 whole-branch review 均为 PASS，remaining findings 均为 0。</p>
+    <table>
+      <thead><tr><th>门禁</th><th>结果</th></tr></thead>
+      <tbody>
+        <tr><td>完整 Python 门禁</td><td>5,265 passed，10 skipped，2 deselected，1 xfailed</td></tr>
+        <tr><td>文档构建与链接</td><td>490 pages built；0 broken links</td></tr>
+        <tr><td>功能矩阵</td><td>160 项；OpenProgram 84.5 分；67 个候选差异；6 个快照差异</td></tr>
+        <tr><td>Web</td><td>Web checks、<code>build-no-lint</code> 与 <code>tsc --noEmit</code> 均 PASS；whole Web lint 仍受 <code>origin/main</code> 已有问题阻塞，不记为本修复通过</td></tr>
+      </tbody>
+    </table>
   </section>
 
   <h2>2. 其他项目如何设计</h2>
@@ -120,7 +134,7 @@
     <ol>
       <li>在会话 replay 上测量提取精度、遗漏义务、错误日期、过早关闭、重复提醒和提醒有效性。</li>
       <li>把已实现的 fake-transport 矩阵扩展成 writer/heartbeat 并发与 post-send/pre-state-write 进程终止的 soak test。</li>
-      <li>只有全部 outbound adapter 能遵守统一契约时才增加 transport idempotency key；此前维持并记录 at-least-once。</li>
+      <li>只有全部 outbound adapter 能遵守统一契约时才增加 transport idempotency key；此前正常并发 heartbeat 由 claim 保证同一档位只发送一次，仅对 channel 成功后、状态写入前的进程终止窗口维持并记录 at-least-once。</li>
       <li>实际使用提出需求后再考虑可配置 overdue interval 或 timezone；此前保持七天逾期档和宿主本地时间。</li>
       <li>不加入优先级、子任务、项目、自主执行，也不新增 scheduler/storage/task-manager 子系统。</li>
     </ol>

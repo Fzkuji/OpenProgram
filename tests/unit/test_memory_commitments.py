@@ -578,6 +578,72 @@ def test_failed_stage_refresh_stays_uncommittable(tmp_path, monkeypatch):
     workspace.close()
 
 
+def test_commit_cancel_during_backup_restores_workspace_and_poisons_stage(
+    tmp_path, monkeypatch
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management import block_views
+    from openprogram.memory.runtime.commitments import load_commitments, upsert_commitments
+
+    source = _source(tmp_path)
+    (tmp_path / "topics").mkdir()
+    (tmp_path / "topics" / "note.md").write_text("# Note\n", encoding="utf-8")
+    (tmp_path / "commitments.jsonl").write_text("", encoding="utf-8")
+    before = {
+        path.relative_to(tmp_path): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    workspace = MemoryWorkspace(tmp_path)
+    baseline = workspace.baseline()
+    upsert_commitments(
+        workspace.stage_dir,
+        [
+            {
+                "text": "Submit the rebuttal.",
+                "due": "2026-08-12",
+                "source": source,
+                "source_quote": "I will submit the rebuttal by Wednesday.",
+            }
+        ],
+        source_memory_dir=tmp_path,
+    )
+    real_replace = block_views.os.replace
+    real_rmtree = block_views.shutil.rmtree
+    cancelled = KeyboardInterrupt("cancel install")
+    replace_calls = 0
+
+    def cancel_second_replace(source_path, target_path):
+        nonlocal replace_calls
+        replace_calls += 1
+        if replace_calls == 2:
+            raise cancelled
+        return real_replace(source_path, target_path)
+
+    def fail_backup_cleanup(path, *args, **kwargs):
+        if path.name.endswith("-block-backup"):
+            raise OSError("cleanup failed")
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(block_views.os, "replace", cancel_second_replace)
+    monkeypatch.setattr(block_views.shutil, "rmtree", fail_backup_cleanup)
+    with pytest.raises(KeyboardInterrupt) as caught:
+        workspace.commit_edits(*baseline)
+
+    assert caught.value is cancelled
+    assert {
+        path.relative_to(tmp_path): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file() and "-block-backup" not in path.parts
+    } == before
+    assert workspace._stage_usable is False
+    with pytest.raises(RuntimeError, match="stage is unavailable"):
+        workspace.commit_edits(*baseline)
+    assert load_commitments(tmp_path) == []
+    monkeypatch.undo()
+    workspace.close()
+
+
 def test_writer_tool_rejects_source_outside_selected_batch(tmp_path):
     from openprogram.memory.management import MemoryWorkspace
     from openprogram.memory.management.tools import management_tools
@@ -1462,6 +1528,7 @@ def test_quiet_hours_rejects_seconds_and_offsets():
 
 def test_heartbeat_releases_workspace_lock_while_sending(tmp_path):
     """A slow channel send must not stall every other memory write."""
+    from concurrent.futures import ThreadPoolExecutor
     from datetime import datetime
 
     from openprogram.memory.management.transaction import workspace_write_lock
@@ -1480,13 +1547,14 @@ def test_heartbeat_releases_workspace_lock_while_sending(tmp_path):
             }
         ],
     )
-    lock_free_during_send = False
 
     def _send(_target, _text):
-        nonlocal lock_free_during_send
-        with workspace_write_lock(tmp_path, timeout_s=0.5):
-            lock_free_during_send = True
-        return True
+        def _contend_for_lock():
+            with workspace_write_lock(tmp_path, timeout_s=0.5):
+                return True
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(_contend_for_lock).result(timeout=1)
 
     assert (
         run_heartbeat(
@@ -1497,7 +1565,62 @@ def test_heartbeat_releases_workspace_lock_while_sending(tmp_path):
         )
         == 1
     )
-    assert lock_free_during_send
+
+
+def test_concurrent_heartbeats_claim_one_send_for_the_same_step(tmp_path):
+    """Normal concurrent passes must not both send one notification step."""
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import datetime
+    from threading import Barrier, BrokenBarrierError, Lock
+
+    from openprogram.memory.runtime.commitments import (
+        load_commitments,
+        upsert_commitments,
+    )
+    from openprogram.proactive.heartbeat import run_heartbeat
+
+    source = _source(tmp_path)
+    upsert_commitments(
+        tmp_path,
+        [
+            {
+                "text": "Submit the rebuttal.",
+                "due": "2026-08-12",
+                "source": source,
+                "source_quote": "I will submit the rebuttal by Wednesday.",
+            }
+        ],
+    )
+    callers_ready = Barrier(2)
+    sends_overlap = Barrier(2)
+    sent: list[str] = []
+    sent_lock = Lock()
+
+    def _send(_target, text):
+        try:
+            sends_overlap.wait(timeout=0.5)
+        except BrokenBarrierError:
+            pass
+        with sent_lock:
+            sent.append(text)
+        return True
+
+    def _run():
+        callers_ready.wait(timeout=1)
+        return run_heartbeat(
+            tmp_path,
+            now=datetime(2026, 8, 12, 9, 0),
+            target_for_source=lambda _source: ("telegram", "default", "42"),
+            send=_send,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(_run), pool.submit(_run)]
+        results = [future.result(timeout=3) for future in futures]
+
+    assert sorted(results) == [0, 1]
+    assert len(sent) == 1
+    assert load_commitments(tmp_path)[0]["notification_steps"] == ["due"]
 
 
 def test_heartbeat_preserves_transition_committed_during_send(tmp_path):
@@ -1543,4 +1666,57 @@ def test_heartbeat_preserves_transition_committed_during_send(tmp_path):
     )
     stored = load_commitments(tmp_path)[0]
     assert stored["status"] == "done"
+    assert stored["notification_steps"] == ["due"]
+
+
+def test_writer_commit_rejects_stale_stage_after_heartbeat_update(tmp_path):
+    """A writer snapshot must not overwrite a delivered heartbeat step."""
+    from contextlib import closing
+    from datetime import datetime
+
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.transaction import TransactionError
+    from openprogram.memory.runtime.commitments import (
+        load_commitments,
+        upsert_commitments,
+    )
+    from openprogram.proactive.heartbeat import run_heartbeat
+
+    source = _source(tmp_path)
+    row = upsert_commitments(
+        tmp_path,
+        [
+            {
+                "text": "Submit the rebuttal.",
+                "due": "2026-08-12",
+                "source": source,
+                "source_quote": "I will submit the rebuttal by Wednesday.",
+            }
+        ],
+    )[0]
+
+    with closing(MemoryWorkspace(tmp_path)) as workspace:
+        baseline = workspace.baseline()
+        staged = load_commitments(workspace.stage_dir)
+        staged[0]["text"] = "Submit the revised rebuttal."
+        from openprogram.memory.runtime.commitments import _write
+
+        _write(workspace.stage_dir, staged)
+
+        assert (
+            run_heartbeat(
+                tmp_path,
+                now=datetime(2026, 8, 12, 9, 0),
+                target_for_source=lambda _source: ("telegram", "default", "42"),
+                send=lambda _target, _text: True,
+            )
+            == 1
+        )
+
+        with pytest.raises(TransactionError, match="workspace changed"):
+            workspace.commit_edits(*baseline)
+
+    stored = load_commitments(tmp_path)[0]
+    assert stored["id"] == row["id"]
+    assert stored["text"] == "Submit the rebuttal."
     assert stored["notification_steps"] == ["due"]

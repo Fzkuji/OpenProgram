@@ -12,32 +12,40 @@ import pytest
 
 
 def test_merge_secret_map_rejects_a_bare_mask_written_back() -> None:
+    from fastapi import HTTPException
+
     from openprogram.webui.routes._credential_secrets import mask_credential
     from openprogram.webui.routes.mcp import _merge_secret_map
 
     real = "sk-abcdefghijklmnop"
     masked = mask_credential(real)
 
-    merged = _merge_secret_map({"API_KEY": real}, {"API_KEY": masked})
+    with pytest.raises(HTTPException) as caught:
+        _merge_secret_map({"API_KEY": real}, {"API_KEY": masked})
 
-    # A mask carries no new secret, so it preserves rather than replaces.
-    assert merged == {"API_KEY": real}
+    assert caught.value.status_code == 400
 
 
 def test_merge_secret_map_rejects_short_value_mask() -> None:
+    from fastapi import HTTPException
+
     from openprogram.webui.routes.mcp import _merge_secret_map
 
-    merged = _merge_secret_map({"API_KEY": "short"}, {"API_KEY": "•" * 8})
+    with pytest.raises(HTTPException) as caught:
+        _merge_secret_map({"API_KEY": "short"}, {"API_KEY": "•" * 8})
 
-    assert merged == {"API_KEY": "short"}
+    assert caught.value.status_code == 400
 
 
 def test_merge_secret_map_rejects_redacted_sentinels() -> None:
+    from fastapi import HTTPException
+
     from openprogram.webui.routes.mcp import _merge_secret_map
 
     for sentinel in ("REDACTED", "<redacted>", "[redacted]", "***REDACTED***"):
-        merged = _merge_secret_map({"API_KEY": "real"}, {"API_KEY": sentinel})
-        assert merged == {"API_KEY": "real"}, sentinel
+        with pytest.raises(HTTPException) as caught:
+            _merge_secret_map({"API_KEY": "real"}, {"API_KEY": sentinel})
+        assert caught.value.status_code == 400, sentinel
 
 
 def test_merge_secret_map_keeps_omit_replace_delete_semantics() -> None:
@@ -51,6 +59,8 @@ def test_merge_secret_map_keeps_omit_replace_delete_semantics() -> None:
 
 
 def test_merge_auth_rejects_masked_token_and_client_secret() -> None:
+    from fastapi import HTTPException
+
     from openprogram.webui.routes._credential_secrets import mask_credential
     from openprogram.webui.routes.mcp import _merge_auth
 
@@ -58,17 +68,17 @@ def test_merge_auth_rejects_masked_token_and_client_secret() -> None:
     secret = "cs-abcdefghijklmnop"
     stored = {"kind": "oauth", "token": token, "client_secret": secret}
 
-    merged = _merge_auth(
-        stored,
-        {
-            "kind": "oauth",
-            "token": mask_credential(token),
-            "client_secret": mask_credential(secret),
-        },
-    )
+    with pytest.raises(HTTPException) as caught:
+        _merge_auth(
+            stored,
+            {
+                "kind": "oauth",
+                "token": mask_credential(token),
+                "client_secret": mask_credential(secret),
+            },
+        )
 
-    assert merged["token"] == token
-    assert merged["client_secret"] == secret
+    assert caught.value.status_code == 400
 
 
 def test_merge_auth_still_replaces_and_deletes_real_values() -> None:

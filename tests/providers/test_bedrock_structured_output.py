@@ -52,15 +52,11 @@ def test_bedrock_serializes_schema_in_literal_output_config_without_mutation():
 
 
 def test_installed_botocore_accepts_documented_output_config_shape():
-    import boto3
+    import botocore.session
     from botocore.validate import validate_parameters
 
-    client = boto3.Session(
-        aws_access_key_id="test",
-        aws_secret_access_key="test",
-        region_name="us-east-1",
-    ).client("bedrock-runtime")
-    shape = client.meta.service_model.operation_model("ConverseStream").input_shape
+    service = botocore.session.get_session().get_service_model("bedrock-runtime")
+    shape = service.operation_model("ConverseStream").input_shape
     validate_parameters({
         "modelId": "anthropic.claude-test-v1:0",
         "messages": [{"role": "user", "content": [{"text": "answer"}]}],

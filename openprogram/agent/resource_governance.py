@@ -636,6 +636,49 @@ class ResourceGovernor:
         return _usage_view(_scope_usage_breakdown(conn, row["budget_scope_id"]))
 
     @staticmethod
+    def _ancestor_limits(conn, parent_task_id: str | None) -> ResourceLimits:
+        if not parent_task_id:
+            return ResourceLimits()
+        row = conn.execute(
+            """WITH RECURSIVE ancestors AS (
+                   SELECT b.* FROM task_admissions a
+                   JOIN budget_scopes b ON b.budget_scope_id = a.budget_scope_id
+                   WHERE a.task_id = ?
+                   UNION ALL
+                   SELECT parent.* FROM budget_scopes parent
+                   JOIN ancestors child
+                     ON child.parent_scope_id = parent.budget_scope_id
+               )
+               SELECT MIN(max_total_tokens), MIN(max_cost_microusd),
+                      MIN(max_runtime_seconds), MIN(idle_timeout_seconds)
+               FROM ancestors""",
+            (parent_task_id,),
+        ).fetchone()
+        if row is None:
+            return ResourceLimits()
+        return ResourceLimits(
+            max_total_tokens=row[0],
+            max_cost_usd=_microusd_text(row[1]) if row[1] is not None else None,
+            max_runtime_seconds=row[2],
+            idle_timeout_seconds=row[3],
+        )
+
+    @staticmethod
+    def _with_ancestor_limits(
+        resolved: ResolvedResourceLimits,
+        ancestor: ResourceLimits,
+    ) -> ResolvedResourceLimits:
+        fields = dict(resolved.fields)
+        for name in TASK_LIMIT_FIELDS:
+            candidate = getattr(ancestor, name)
+            current = fields[name].effective
+            if candidate is not None and (
+                current is None or not _less_or_equal(current, candidate)
+            ):
+                fields[name] = ResolvedLimit(candidate, candidate, "parent")
+        return ResolvedResourceLimits(resolved.scheduler_capacity, fields)
+
+    @staticmethod
     def _denied(
         reason_code: str,
         *,
@@ -692,7 +735,6 @@ class ResourceGovernor:
         session_scope_id = "session_" + hashlib.sha256(
             task.parent_session_id.encode("utf-8")
         ).hexdigest()[:24]
-        effective = resolved.effective_limits()
         session_effective = self._session_limit_resolver(
             task.parent_session_id
         ).effective_limits()
@@ -706,6 +748,10 @@ class ResourceGovernor:
             spawn_fanout_limit = max_spawn_fanout()
 
         with self.ledger.immediate() as conn:
+            resolved = self._with_ancestor_limits(
+                resolved, self._ancestor_limits(conn, task.parent_task_id),
+            )
+            effective = resolved.effective_limits()
             existing = conn.execute(
                 """SELECT admission_id, request_fingerprint, budget_scope_id, state
                    FROM task_admissions WHERE task_id = ?""",
@@ -1300,7 +1346,12 @@ class ResourceGovernor:
                        lease_expires_at = NULL, started_at = NULL,
                        last_activity_at = NULL
                    WHERE task_id = ? AND state = 'live'
-                     AND owner_instance_id = ? AND lease_generation = ?""",
+                     AND owner_instance_id = ? AND lease_generation = ?
+                     AND NOT EXISTS (
+                         SELECT 1 FROM task_finalizations
+                         WHERE task_finalizations.task_id = task_admissions.task_id
+                           AND task_finalizations.state = 'pending'
+                     )""",
                 (task_id, owner_instance_id, lease_generation),
             ).rowcount == 1
 
@@ -2185,9 +2236,15 @@ def build_task_resource_view(
     if snapshot and isinstance(snapshot, dict) and isinstance(snapshot.get("limits"), dict):
         fields = dict(resolved.fields)
         try:
-            for name in ("max_runtime_seconds", "idle_timeout_seconds"):
-                value = snapshot["limits"].get(name)
-                if isinstance(value, dict):
+            for name, value in snapshot["limits"].items():
+                if not isinstance(value, dict):
+                    continue
+                # Time limits are frozen at admission. Parent/task-sourced
+                # caps only exist in the snapshot: the resolver drops task
+                # inputs after admission, so current config can never
+                # reproduce them. Session/global-sourced caps stay live.
+                if name in ("max_runtime_seconds", "idle_timeout_seconds") \
+                        or value.get("source") in ("parent", "task"):
                     fields[name] = ResolvedLimit(**value)
             resolved = ResolvedResourceLimits(
                 scheduler_capacity=resolved.scheduler_capacity, fields=fields,

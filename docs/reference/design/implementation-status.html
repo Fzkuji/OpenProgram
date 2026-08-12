@@ -25,16 +25,16 @@
 </head>
 <body>
   <h1>OpenProgram implementation status and handoff</h1>
-  <p class="meta">Snapshot: 2026-08-12. Base: <code>main</code> after the integration round that merged MCP server, provider runtime, session index, websocket lifecycle series, and DAG persistence observability into <code>origin/main</code>.</p>
+  <p class="meta">Snapshot: 2026-08-13. Integrated candidate: <code>codex/implementation-integration-20260812@33dd7d2c</code>.</p>
 
   <div class="callout">
-    <p>This page separates branch-level completion from mainline integration. A feature marked complete below passed its scoped spec and quality gates on the named branch; it is not in <code>main</code> unless the row says so.</p>
-    <p>The main working tree contained unrelated, uncommitted account, channel, memory, desktop, Web, and feature-matrix changes when this snapshot was written. They were not inspected, staged, or copied into this documentation branch.</p>
+    <p>This page separates reviewed integration evidence from mainline publication. <code>33dd7d2c</code> is the single integrated candidate reviewed here; it is not in <code>origin/main</code> unless a row says so.</p>
   </div>
 
   <h2>Status definitions</h2>
   <ul>
     <li><strong>Review-passed branch:</strong> implementation exists at the exact commit and independent scoped reviews reported zero remaining findings.</li>
+    <li><strong>Review-passed integrated candidate:</strong> the implementation is present in the single combined head, its scoped specification and quality reviews passed, and fresh whole-branch review reported zero remaining findings.</li>
     <li><strong>Merged to main:</strong> reviewed head has been merged into <code>origin/main</code> and passes the combined regression gate.</li>
     <li><strong>Partial:</strong> earlier tasks are review-passed, but the tracked plan still has required implementation or evidence tasks.</li>
     <li><strong>Candidate only:</strong> code or reports exist, but there is no single accepted integration head with final review evidence.</li>
@@ -94,27 +94,21 @@
       </tr>
       <tr>
         <td>Credential-file hardening</td>
-        <td class="status partial">Partial: Tasks 1–2 complete</td>
-        <td><code>codex/credential-file-hardening-20260811@ca182739</code><br>remote matches local</td>
-        <td>Inventory, atomic publication, and native writer migration passed the five-round review gate with no Critical or Important finding. Doctor/edit/delete, staged restore, and final evidence remain. Native Windows behavior is still mocked-only.</td>
+        <td class="status complete">Review-passed integrated candidate</td>
+        <td><code>codex/implementation-integration-20260812@33dd7d2c</code></td>
+        <td>Tasks 1–5 are integrated: private inventory and atomic publication, inventory-driven doctor/repair, omit/replace/delete secret editing, truthful deletion with cache invalidation, and staged restore with validated journaling, rollback, and recovery. Scoped specification and quality reviews passed with zero remaining findings; fresh whole-branch review also passed with zero findings. OS keychain integration remains explicitly out of scope.</td>
       </tr>
       <tr>
         <td>Agent resource governance</td>
-        <td class="status pending">Candidate only</td>
-        <td><code>codex/resource-governance-completion-20260812@5b134f95</code><br>remote matches local</td>
-        <td>The approved completion design and six-task plan are published. Multiple local batch branches contain candidate fixes, but there is no single consolidated, independently review-passed implementation head. Do not merge the candidate batches wholesale.</td>
+        <td class="status complete">Review-passed integrated candidate</td>
+        <td><code>codex/implementation-integration-20260812@33dd7d2c</code></td>
+        <td>Tasks 1–6 are integrated: durable fair dispatch and recovery, immutable budget attribution and credential-free preflight, provider reservation/start/settlement accounting, runtime and bounded-operation enforcement, and one canonical <code>TaskResourceView</code> across model tools, Web, CLI, and TUI. Scoped specification and quality reviews passed with zero remaining findings; fresh whole-branch review also passed with zero findings. The existing implemented matrix cell remains unchanged.</td>
       </tr>
       <tr>
         <td>Commitments and heartbeat</td>
-        <td class="status complete">Merged to main, review-passed</td>
-        <td><code>main</code><br><code>cbeae923</code>, <code>d9f2dba3</code>, <code>21034817</code>, review fix <code>4fd4564f</code></td>
-        <td>The commitment lifecycle, deterministic heartbeat, owner projections, and the three design documents are on <code>main</code>, separated from the runtime URL/SSRF history that shared the original branch. Independent review confirmed the notification state machine advances <code>due</code> then <code>overdue:7</code> without skipping or repeating a step, that helper stderr is redacted before truncation, and that the remote-write gate sits in the argv builders so an unauthorized push or pull request fails before <code>git</code> or <code>gh</code> runs. Review found the reminder send holding the exclusive workspace write lock across channel retries and fixed it: the lock now covers only the read and the step write, and recording merges a step onto the stored row instead of replacing it. Focused suites pass (<code>test_memory_commitments</code>, <code>test_memory_routes</code>, <code>test_memory_runtime_config</code>, <code>test_credential_process_runtime</code>, <code>test_commit_trailers</code>, <code>test_memory_writing</code>: 150 passed); Ruff is clean and docs links are 0. Delivery remains at-least-once by design.</td>
-      </tr>
-      <tr>
-        <td>Account management, channels, memory, desktop, Web</td>
-        <td class="status pending">Uncommitted main work</td>
-        <td>main working tree; no handoff commit</td>
-        <td>These files belong to an active user worktree and were intentionally excluded. Their owner must first define scope, remove orphan/duplicate paths, run their own checks, and commit or move the work before integration starts.</td>
+        <td class="status complete">Review-passed integrated candidate</td>
+        <td><code>codex/implementation-integration-20260812@33dd7d2c</code></td>
+        <td>The commitment lifecycle, deterministic heartbeat, owner projections, and design evidence are integrated together with the reviewed concurrent claim and cancellation repairs. The notification state machine preserves the <code>due</code> then <code>overdue:7</code> progression, reminder delivery no longer holds the workspace write lock across retries, and each concurrent notification step is claimed once before send. Scoped specification and quality reviews passed with zero remaining findings; fresh whole-branch review also passed with zero findings. Delivery remains at-least-once by design.</td>
       </tr>
     </tbody>
   </table>
@@ -129,27 +123,7 @@
     <li>Source plan: <code>docs/superpowers/plans/2026-08-12-json-schema-structured-output-completion.md</code> on the JSON branch.</li>
   </ol>
 
-  <h3>2. Credential-file hardening: Tasks 3–5</h3>
-  <ol>
-    <li>Add inventory-driven <code>openprogram doctor credentials</code> and constrained <code>--repair</code>. Repair only current-user regular paths; never follow symlinks or take ownership.</li>
-    <li>Use omit/replace/delete semantics for secret edits, reject masks and sentinels, remove raw MCP editor and account-key reveal behavior, make deletion truthful, and clear affected runtime caches.</li>
-    <li>Implement same-filesystem staged restore, full pre-publication validation, durable restore journaling, rollback, and idempotent crash recovery.</li>
-    <li>Run secret scans, platform-specific permission checks, affected/full suites, docs links, and matrix mechanics before updating implementation evidence.</li>
-    <li>Source plan: <code>docs/superpowers/plans/2026-08-11-credential-file-hardening.md</code> on the credential branch.</li>
-  </ol>
-
-  <h3>3. Agent resource governance: Tasks 1–6</h3>
-  <ol>
-    <li>Consolidate durable dispatch, atomic claim ownership, stopping/finalization recovery, and fairness on the approved completion branch. Reimplement or select reviewed commits; do not merge mixed historical branches wholesale.</li>
-    <li>Add task-scoped immutable budget attribution and conservative preflight estimation before credentials or network activity.</li>
-    <li>Reserve/start/settle token and cost exposure at the existing provider stream chokepoint, preserving unknown-price and unsettled-usage semantics.</li>
-    <li>Enforce runtime, idle, deadline, and bounded-operation limits while retaining capacity until worker finalization.</li>
-    <li>Expose one <code>TaskResourceView</code> contract through model tools, Web, CLI, and TUI.</li>
-    <li>Run crash/concurrency failure injection and the complete release gate before changing the design evidence or feature matrix.</li>
-    <li>Source plan: <code>docs/superpowers/plans/2026-08-12-agent-resource-governance-completion.md</code> on the resource completion branch.</li>
-  </ol>
-
-  <h3>4. Smaller uncompleted hardening work</h3>
+  <h3>2. Smaller uncompleted hardening work</h3>
   <ul>
     <li><code>credential_process</code>: argv is executed without shell interpolation, the timeout is configurable with a 60-second default, and successful results are cached. Helper stderr now passes through the diagnostics redactor before it reaches a failure message or a log, so a helper that echoes the credential it was fetching cannot leak it.</li>
     <li><code>commit-push-pr</code>: a dry run performs the local, reversible steps and prints the push and PR it would have taken without contacting the remote. <code>git_push_argv</code> and <code>gh_pr_create_argv</code> raise <code>RemoteWriteNotAuthorized</code> unless <code>git.allow_remote_write</code> is on or the caller passes <code>allowed=True</code>, so an unauthorized remote write fails before <code>git</code> or <code>gh</code> runs.</li>
@@ -158,20 +132,20 @@
 
   <h2>Integration and release order</h2>
   <ol>
-    <li><strong>Stabilize the main worktree.</strong> Commit, move, or discard the current uncommitted account/channel/memory/Desktop/Web work under its owner's direction. Integration must not stage it incidentally.</li>
-    <li><strong>Finish partial plans on their own branches.</strong> Complete JSON Tasks 6–7 and credential Tasks 3–5 before integration; create one accepted resource-governance head.</li>
-    <li><strong>Integrate one branch at a time.</strong> Rebase on the chosen mainline, inspect the complete diff, resolve conflicts at shared security/runtime boundaries, and rerun that feature's focused and affected suites before adding another branch.</li>
-    <li><strong>Run the combined release gate.</strong> Run unit, agent, provider, Web, CLI/TUI, security, docs build/link, Ruff, type/build, mechanical matrix, and <code>git diff --check</code> checks from the combined head.</li>
-    <li><strong>Publish evidence last.</strong> Update feature-matrix symbols and implementation evidence only for contracts proven on the combined head. Record unrelated environment blockers separately rather than treating partial suites as full completion.</li>
+    <li><strong>Keep the accepted candidate exact.</strong> Treat <code>33dd7d2c</code> as the reviewed integration input; later tracked implementation, test, or dependency changes require applicable scoped re-review and a fresh combined gate.</li>
+    <li><strong>Finish the remaining JSON plan separately.</strong> Preserve its independent implementation and review evidence until it has a complete gate.</li>
+    <li><strong>Publish only after an exact release decision.</strong> Reconcile the candidate against the selected mainline, rerun the documented release gate, and record the resulting merge commit rather than treating this documentation commit as implementation evidence.</li>
   </ol>
 
-  <h2>Known combined-gate blockers</h2>
+  <h2>Current combined-gate evidence</h2>
   <ul>
-    <li>One prior full-suite run could not collect <code>tests/integration/test_test_framework.py</code> because <code>openprogram.functions.agentics.test_framework</code> was absent. Recheck on the eventual combined head.</li>
-    <li>Six pre-existing Ruff <code>S110</code> findings were reproduced at an earlier base. Recheck rather than inheriting that count as current evidence.</li>
-    <li>The current main worktree modifies <code>docs/reference/design/feature-matrix.html</code>. Do not overwrite or grade from that uncommitted file during branch integration.</li>
+    <li>Fresh full Python suite at <code>33dd7d2c</code>: <code>5265 passed, 10 skipped, 2 deselected, 1 xfailed, 44 warnings</code>.</li>
+    <li>Fresh whole-branch review across the five tracked dimensions: <code>PASS</code>, zero findings. The commitments, resource-governance, and credential-hardening scoped specification and quality reviews are each <code>PASS</code> with zero remaining findings.</li>
+    <li>Documentation build: <code>490 pages</code>; link checker: <code>0 broken</code>. CLI tests: <code>134 passed, 2 skipped</code>; CLI typecheck passed. Web contract checks, <code>tsc</code>, and <code>next build --no-lint</code> passed.</li>
+    <li>The whole Web npm lint command still fails on files unchanged from <code>origin/main</code>; the same failure was reproduced there, so this page does not claim that the whole Web lint gate passed.</li>
+    <li>Mechanical feature-matrix result remains <code>160 features, 84.5 score, 67 gaps, 6 OpenProgram-only</code>. Changed Python Ruff and <code>py_compile</code>, locked dependency checks, and <code>git diff --check</code> passed on the reviewed candidate.</li>
   </ul>
 
-  <p class="note">This is a handoff snapshot, not a release declaration. Commit hashes and test counts describe the named branch heads only.</p>
+  <p class="note">This is a reviewed integration snapshot, not a release declaration. <code>33dd7d2c</code> is the implementation evidence; later documentation commits do not replace it.</p>
 </body>
 </html>

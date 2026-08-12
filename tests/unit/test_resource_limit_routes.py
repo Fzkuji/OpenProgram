@@ -13,9 +13,9 @@ def test_session_resource_limit_route_returns_effective_dto_and_requires_owner(t
     register(app)
     client = TestClient(app)
     assert client.put("/api/sessions/s1/resource-limits", json={}).status_code == 400
-    assert client.put("/api/sessions/missing/resource-limits", json={"limits": {}}).status_code == 404
-    denied = client.put("/api/sessions/s1/resource-limits", json={"limits": {"max_total_tokens": 9}, "authority": {}})
+    assert client.put("/api/sessions/missing/resource-limits", json={"limits": {}, "base_revision": "x"}).status_code == 404
+    denied = client.put("/api/sessions/s1/resource-limits", json={"limits": {"max_total_tokens": 9}, "base_revision": "x", "authority": {}})
     assert denied.status_code == 403
     claimed_owner = {"speaker_kind":"owner", "speaker_id":"owner/local", "speaker_display":"Owner", "authority_tier":"owner", "interaction":"interactive", "principal_id":"owner/id"}
-    assert client.put("/api/sessions/s1/resource-limits", json={"limits": {"max_total_tokens": 9}, "authority": claimed_owner}).status_code == 403
+    assert client.put("/api/sessions/s1/resource-limits", json={"limits": {"max_total_tokens": 9}, "base_revision": "x", "authority": claimed_owner}).status_code == 403
     assert client.get("/api/sessions/missing/resource-limits").status_code == 404

@@ -55,23 +55,22 @@ _audited_accounting: dict[int, set[str]] = {}
 _audited_originals: dict[str, ApiProvider] = {}
 
 
-def _rebuild_audited_accounting() -> None:
-    _audited_accounting.clear()
-    for api, original in _audited_originals.items():
-        original_value = _original_registry.get(api)
-        if original_value is None or _entry(original_value).provider is not original:
-            continue
-        current_value = _registry.get(api)
-        current = _entry(current_value).provider if current_value is not None else None
-        for provider in (original, current):
-            if provider is not None:
-                _audited_accounting.setdefault(id(provider), set()).add(api)
-
-
 def _entry(value: ApiProviderSnapshot | ApiProvider) -> ApiProviderSnapshot:
     if isinstance(value, ApiProviderSnapshot):
         return value
     return ApiProviderSnapshot(value, StructuredOutputCapabilities())
+
+
+def _rebuild_audited_accounting() -> None:
+    _audited_accounting.clear()
+    for api, original in _audited_originals.items():
+        source = _original_registry.get(api)
+        if source is None or _entry(source).provider is not original:
+            continue
+        current = _registry.get(api)
+        for provider in (original, _entry(current).provider if current is not None else None):
+            if provider is not None:
+                _audited_accounting.setdefault(id(provider), set()).add(api)
 
 
 def register_api_provider(
@@ -123,7 +122,7 @@ def register_api_providers(
                 if isinstance(value, ApiProviderSnapshot)
                 else provider
             )
-        for api in providers:
+        for api in originals:
             _audited_originals.pop(api, None)
         _original_registry.update(originals)
         _registry.update(transformed)
@@ -160,7 +159,10 @@ def _register_builtin_api_providers(
         _rebuild_audited_accounting()
 
 
-def has_audited_accounting(provider: ApiProvider, api: str) -> bool:
+def has_audited_accounting(provider: ApiProvider | None, api: str | None) -> bool:
+    """Whether this concrete registered implementation has audited metering."""
+    if provider is None or not api:
+        return False
     with _registry_lock:
         return api in _audited_accounting.get(id(provider), set())
 

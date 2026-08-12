@@ -22,6 +22,14 @@ def _state(tmp_path: Path) -> Path:
     return root
 
 
+def _wait_for_path(path: Path) -> None:
+    deadline = time.monotonic() + 5
+    while not path.exists():
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"timed out waiting for {path}")
+        time.sleep(0.01)
+
+
 def _archive(tmp_path: Path, members: dict[str, bytes], *, manifest: bytes | None = None) -> Path:
     from openprogram._cli_cmds.backup import _MANIFEST_NAME
 
@@ -202,6 +210,52 @@ def test_restore_rejects_secret_members_when_manifest_denies_opt_in(
     assert not (state / "auth").exists()
 
 
+def test_restore_rejects_unknown_credential_tree_member_without_publishing(
+    tmp_path: Path,
+) -> None:
+    from openprogram._cli_cmds.backup import restore_archive
+
+    state = _state(tmp_path)
+    (state / "config.json").write_text('{"keep": true}')
+    (state / "config.json").chmod(0o600)
+    archive = _archive(
+        tmp_path,
+        {
+            "config.json": b'{"keep": false}',
+            "auth/openai/unknown.txt": b"secret",
+        },
+        manifest=json.dumps(
+            {"format_version": 1, "credential_opt_in": True}
+        ).encode(),
+    )
+
+    with pytest.raises(tarfile.TarError, match="credential inventory"):
+        restore_archive(archive, state)
+
+    assert json.loads((state / "config.json").read_text()) == {"keep": True}
+    assert not (state / "auth").exists()
+
+
+def test_restore_rejects_overdeep_auth_member_without_publishing(
+    tmp_path: Path,
+) -> None:
+    from openprogram._cli_cmds.backup import restore_archive
+
+    state = _state(tmp_path)
+    archive = _archive(
+        tmp_path,
+        {"auth/openai/unregistered/account.json": b'{"api_key":"secret"}'},
+        manifest=json.dumps(
+            {"format_version": 1, "credential_opt_in": True}
+        ).encode(),
+    )
+
+    with pytest.raises(tarfile.TarError, match="credential inventory"):
+        restore_archive(archive, state)
+
+    assert not (state / "auth").exists()
+
+
 # --- publication, permissions, and secret preservation ---------------------
 
 
@@ -244,6 +298,175 @@ def test_restore_preserves_local_secrets_for_redacted_fields(tmp_path: Path) -> 
     restored = json.loads((state / "config.json").read_text())
     assert restored["api_keys"] == {"OPENAI_API_KEY": "sk-local"}
     assert restored["ui"] == {"port": 2}
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX flock semantics")
+def test_failed_restore_does_not_rollback_a_concurrent_public_writer(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    state = home / ".openprogram"
+    state.mkdir(parents=True, mode=0o700)
+    target = state / "config.json"
+    target.write_text('{"generation": "old"}')
+    target.chmod(0o600)
+    archive = _archive(tmp_path / "backup", {"config.json": b'{"generation": "restored"}'})
+    published = tmp_path / "published"
+    attempted = tmp_path / "attempted"
+    release = tmp_path / "release"
+    env = {**os.environ, "HOME": os.fspath(home)}
+    restore_script = """
+import sys, time
+from pathlib import Path
+from openprogram._cli_cmds import backup
+archive, state, published, release = map(Path, sys.argv[1:])
+real_publish = backup._publish_restored
+def fail_after_publish(target, payload, *, root):
+    real_publish(target, payload, root=root)
+    published.write_text('published')
+    while not release.exists():
+        time.sleep(0.01)
+    raise OSError('injected failure')
+backup._publish_restored = fail_after_publish
+backup.restore_archive(archive, state)
+"""
+    writer_script = """
+import sys
+from pathlib import Path
+from openprogram.setup import _write_config
+attempted = Path(sys.argv[1])
+attempted.write_text('attempted')
+_write_config({'generation': 'concurrent'})
+"""
+    restorer = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            restore_script,
+            os.fspath(archive),
+            os.fspath(state),
+            os.fspath(published),
+            os.fspath(release),
+        ],
+        cwd=Path(__file__).parents[2],
+        env=env,
+    )
+    writer: subprocess.Popen | None = None
+    try:
+        _wait_for_path(published)
+        writer = subprocess.Popen(
+            [sys.executable, "-c", writer_script, os.fspath(attempted)],
+            cwd=Path(__file__).parents[2],
+            env=env,
+        )
+        _wait_for_path(attempted)
+        time.sleep(0.2)
+        assert writer.poll() is None
+        release.write_text("release")
+        assert restorer.wait(timeout=10) != 0
+        assert writer.wait(timeout=10) == 0
+        assert json.loads(target.read_text()) == {"generation": "concurrent"}
+    finally:
+        release.write_text("release")
+        for process in (restorer, writer):
+            if process is not None and process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX flock semantics")
+def test_recovery_does_not_rollback_a_concurrent_public_writer(
+    tmp_path: Path,
+) -> None:
+    from openprogram._cli_cmds.backup import restore_journal_path
+
+    home = tmp_path / "home"
+    state = home / ".openprogram"
+    state.mkdir(parents=True, mode=0o700)
+    target = state / "config.json"
+    target.write_text('{"generation": "restored"}')
+    target.chmod(0o600)
+    backup_dir = state / ".restore-journal.d"
+    backup_dir.mkdir(mode=0o700)
+    previous = backup_dir / "00000000.previous"
+    previous.write_text('{"generation": "old"}')
+    previous.chmod(0o600)
+    journal = restore_journal_path(state)
+    journal.write_text(
+        json.dumps(
+            {
+                "format_version": 1,
+                "complete": False,
+                "entries": [
+                    {
+                        "relative_path": "config.json",
+                        "previous": ".restore-journal.d/00000000.previous",
+                        "existed": True,
+                    }
+                ],
+            }
+        )
+    )
+    journal.chmod(0o600)
+    recovering = tmp_path / "recovering"
+    attempted = tmp_path / "recovery-writer-attempted"
+    release = tmp_path / "recovery-release"
+    env = {**os.environ, "HOME": os.fspath(home)}
+    recovery_script = """
+import sys, time
+from pathlib import Path
+from openprogram._cli_cmds import backup
+state, recovering, release = map(Path, sys.argv[1:])
+real_restore = backup._restore_opened_source
+def paused_restore(*args):
+    recovering.write_text('recovering')
+    while not release.exists():
+        time.sleep(0.01)
+    real_restore(*args)
+backup._restore_opened_source = paused_restore
+backup.recover_interrupted_restore(state)
+"""
+    writer_script = """
+import sys
+from pathlib import Path
+from openprogram.setup import _write_config
+attempted = Path(sys.argv[1])
+attempted.write_text('attempted')
+_write_config({'generation': 'concurrent'})
+"""
+    recovery = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            recovery_script,
+            os.fspath(state),
+            os.fspath(recovering),
+            os.fspath(release),
+        ],
+        cwd=Path(__file__).parents[2],
+        env=env,
+    )
+    writer: subprocess.Popen | None = None
+    try:
+        _wait_for_path(recovering)
+        writer = subprocess.Popen(
+            [sys.executable, "-c", writer_script, os.fspath(attempted)],
+            cwd=Path(__file__).parents[2],
+            env=env,
+        )
+        _wait_for_path(attempted)
+        time.sleep(0.2)
+        assert writer.poll() is None
+        release.write_text("release")
+        assert recovery.wait(timeout=10) == 0
+        assert writer.wait(timeout=10) == 0
+        assert json.loads(target.read_text()) == {"generation": "concurrent"}
+    finally:
+        release.write_text("release")
+        for process in (recovery, writer):
+            if process is not None and process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
 
 
 def test_restore_leaves_no_staging_directory_behind(tmp_path: Path) -> None:

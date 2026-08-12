@@ -462,6 +462,70 @@ def test_timeout_kills_long_tool() -> None:
     assert "is_error" not in result.details
 
 
+def test_governed_async_tool_uses_task_deadline_and_records_activity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Removing either governance call lets a strict task exceed its budget."""
+    activity: list[str] = []
+
+    def bounded(timeout, *, preemptibility):
+        assert timeout is None
+        assert preemptibility == "async"
+        return 0.01
+
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner.current_task_operation_timeout", bounded,
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner.record_current_task_activity",
+        lambda kind: activity.append(kind) or True,
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner.current_task_operation_timeout_reason",
+        lambda _timeout: "budget.runtime_exhausted",
+    )
+
+    @function
+    async def progress(on_update=None) -> str:
+        on_update("working")
+        await asyncio.sleep(1)
+        return "late"
+
+    result = _run(progress.execute("governed", {}, None, None))
+
+    assert result.is_error is True
+    assert result.details == {
+        "timeout": True,
+        "reason_code": "budget.runtime_exhausted",
+    }
+    assert activity == ["operation_start", "tool_progress"]
+
+
+def test_governed_sync_tool_without_process_boundary_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A wait_for timeout cannot terminate the executor thread of a sync tool."""
+    from openprogram.agent.task.runner import NonPreemptibleOperation
+
+    def reject(_timeout, *, preemptibility):
+        assert preemptibility == "none"
+        raise NonPreemptibleOperation("error.nonpreemptible_operation")
+
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner.current_task_operation_timeout", reject,
+    )
+
+    @function
+    def blocking() -> str:
+        return "must not run"
+
+    result = _run(blocking.execute("sync-governed", {}, None, None))
+
+    assert result.is_error is True
+    assert result.details == {"reason_code": "error.nonpreemptible_operation"}
+    assert "error.nonpreemptible_operation" in result.content[0].text
+
+
 def test_bash_sandbox_denial_uses_typed_error(monkeypatch) -> None:
     bash_module = importlib.import_module(
         "openprogram.functions.tools.bash.bash"

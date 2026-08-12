@@ -16,11 +16,18 @@ from openprogram.agent.resource_governance import (
     ResourceLimits,
     resolve_resource_limits,
 )
+from openprogram.agent.agent_loop import agent_loop
+from openprogram.agent.types import AgentContext, AgentLoopConfig
 from openprogram.agent.task.types import Task
+from openprogram.providers.api_registry import ApiProviderSnapshot
 from openprogram.providers.budget import (
     QuotaExceeded,
     provider_retry_attempts,
     provider_sdk_retries,
+)
+from openprogram.providers.structured_output import (
+    JsonSchemaOutput,
+    StructuredOutputCapabilities,
 )
 from openprogram.providers.types import (
     AssistantMessage,
@@ -35,7 +42,6 @@ from openprogram.providers.types import (
     ImageContent,
     UserMessage,
 )
-from openprogram.providers.structured_output import JsonSchemaOutput
 from openprogram.usage import context as _ctx_mod
 from openprogram.usage import recorder as _recorder
 from openprogram.usage.context import UsageContext
@@ -133,21 +139,30 @@ def wired(tmp_path, monkeypatch):
             used_model, usage=usage, fail_before_start=fail_before_start,
         )
         monkeypatch.setattr(
-            registry_mod, "has_audited_accounting", lambda provider, api: True,
+            registry_mod, "has_audited_accounting", lambda _provider, _api: True,
         )
         monkeypatch.setattr(
             stream_mod, "get_api_provider",
             lambda api: provider if api == used_model.api else None,
         )
-        runner = type("R", (), {"_governor": governor})()
+        from openprogram.agent.task.runner import TaskGovernanceContext
+        governance_context = TaskGovernanceContext(
+            task_id=task.id,
+            budget_scope_id=task.budget_scope_id,
+            governor=governor,
+            ledger_identity=str(ledger._path().resolve()),
+            effective_limits=tuple(sorted(task.effective_limits.items())),
+            deadline_callback=lambda declared: declared,
+            activity_callback=lambda _kind: True,
+        )
         monkeypatch.setattr(
             "openprogram.agent.task.runner.current_task_resource_context",
-            lambda: (task.id, governor),
+            lambda: governance_context,
         )
         return {
             "governor": governor, "task": task, "model": used_model,
             "provider": provider, "ledger": ledger, "key_calls": key_calls,
-            "runner": runner,
+            "governance_context": governance_context,
         }
 
     return build
@@ -181,6 +196,109 @@ def _reservation_states(ledger):
     )
 
 
+def _drain_agent_loop(model, get_api_key, stream_fn=None):
+    async def go():
+        stream = agent_loop(
+            [UserMessage(content="hello", timestamp=0)],
+            AgentContext(tools=[], memory_prefetch=""),
+            AgentLoopConfig(
+                model=model,
+                session_id="s1",
+                get_api_key=get_api_key,
+                convert_to_llm=lambda messages: messages,
+            ),
+            stream_fn=stream_fn,
+        )
+        return await stream.result()
+
+    return asyncio.run(go())
+
+
+def _bind_agent_provider(monkeypatch, provider):
+    snapshot = ApiProviderSnapshot(provider, StructuredOutputCapabilities())
+    monkeypatch.setattr(
+        "openprogram.providers.api_registry.resolve_api_provider_snapshot",
+        lambda _model: snapshot,
+    )
+    monkeypatch.setattr(
+        "openprogram.providers.utils.failover.resolve_fallback_models",
+        lambda _model: [],
+    )
+
+
+@pytest.mark.parametrize(
+    ("failure", "reason_code"),
+    [
+        ("token", "quota.token_exhausted"),
+        ("price", "quota.cost_unavailable"),
+        ("accounting", "quota.accounting_unavailable"),
+    ],
+)
+def test_agent_loop_default_provider_denial_precedes_config_credentials(
+    wired, monkeypatch, failure, reason_code,
+):
+    limits = (
+        ResourceLimits(max_cost_usd="1.00")
+        if failure == "price"
+        else ResourceLimits(max_total_tokens=1 if failure == "token" else 100_000)
+    )
+    model = _model(cost=ModelCost()) if failure == "price" else _model()
+    env = wired(limits=limits, model=model)
+    if failure == "accounting":
+        monkeypatch.setattr(
+            env["governor"],
+            "reserve_provider_request",
+            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("ledger down")),
+        )
+    _bind_agent_provider(monkeypatch, env["provider"])
+    resolver_calls = []
+
+    with pytest.raises(QuotaExceeded) as excinfo:
+        _drain_agent_loop(
+            model,
+            lambda provider: resolver_calls.append(provider) or "agent-key",
+        )
+
+    assert excinfo.value.reason_code == reason_code
+    assert resolver_calls == []
+    assert env["provider"].seen_opts == []
+
+
+def test_agent_loop_default_provider_resolves_config_credentials_once_after_preflight(
+    wired, monkeypatch,
+):
+    env = wired(limits=ResourceLimits(max_total_tokens=100_000))
+    _bind_agent_provider(monkeypatch, env["provider"])
+    resolver_calls = []
+
+    _drain_agent_loop(
+        env["model"],
+        lambda provider: resolver_calls.append(provider) or "agent-key",
+    )
+
+    assert resolver_calls == ["fakeprov"]
+    assert len(env["provider"].seen_opts) == 1
+    assert env["provider"].seen_opts[0].api_key == "agent-key"
+    assert env["ledger"].connection().execute(
+        "SELECT COUNT(*) FROM usage_reservations"
+    ).fetchone()[0] == 1
+
+
+def test_agent_loop_injected_stream_fn_keeps_config_credential_semantics(wired):
+    env = wired(limits=ResourceLimits(max_total_tokens=100_000))
+    resolver_calls = []
+
+    _drain_agent_loop(
+        env["model"],
+        lambda provider: resolver_calls.append(provider) or "agent-key",
+        stream_fn=env["provider"].stream_simple,
+    )
+
+    assert resolver_calls == ["fakeprov"]
+    assert len(env["provider"].seen_opts) == 1
+    assert env["provider"].seen_opts[0].api_key == "agent-key"
+
+
 def test_budgeted_call_settles_actual_usage_once(wired):
     """A governed call records provider-authoritative usage, not the estimate."""
     env = wired(limits=ResourceLimits(max_total_tokens=100_000))
@@ -195,6 +313,7 @@ def test_budgeted_call_settles_actual_usage_once(wired):
 
 
 def test_actual_usage_over_reservation_is_authoritatively_settled(wired):
+    """Provider usage, not the estimate, is the one usage-ledger fact."""
     env = wired(
         limits=ResourceLimits(max_total_tokens=100_000),
         usage=Usage(input=90_000, output=20_000, cache_read=0, cache_write=0),
@@ -205,15 +324,16 @@ def test_actual_usage_over_reservation_is_authoritatively_settled(wired):
     row = env["ledger"].query()[0]
     assert row.total_tokens == 110_000
     assert set(_reservation_states(env["ledger"])) == {"settled"}
-    event = env["ledger"].connection().execute(
+    reservation_id = env["ledger"].connection().execute(
         "SELECT reservation_id FROM usage_events LIMIT 1",
     ).fetchone()[0]
-    root = event.removesuffix(":token")
     duplicate = UsageEvent(
         event_id="duplicate", session_id="s1", provider="fakeprov",
         model_id="fake-model-1", input_tokens=90_000, output_tokens=20_000,
     )
-    assert env["governor"].settle_provider_request(root, duplicate) is None
+    assert env["governor"].settle_provider_request(
+        reservation_id.removesuffix(":token"), duplicate,
+    ) is None
     assert env["ledger"].query()[0].events == 1
     with pytest.raises(QuotaExceeded):
         _drain(env["model"], SimpleStreamOptions(session_id="s1"))
@@ -231,34 +351,6 @@ def test_small_request_remains_usable_under_strict_budget(wired):
     _drain(env["model"], SimpleStreamOptions(session_id="s1", max_tokens=100))
 
     assert env["provider"].seen_opts
-
-
-def test_structured_output_schema_is_included_in_safe_input_bound(wired):
-    env = wired(
-        limits=ResourceLimits(max_total_tokens=3_000),
-        model=_model(context_window=100_000),
-    )
-    schema = JsonSchemaOutput(schema={
-        "type": "object",
-        "properties": {"answer": {"type": "string", "description": "x" * 4_000}},
-    })
-
-    with pytest.raises(QuotaExceeded):
-        _drain(
-            env["model"],
-            SimpleStreamOptions(session_id="s1", max_tokens=100, response_format=schema),
-        )
-
-
-def test_budgeted_payload_mutator_fails_closed_before_provider(wired):
-    env = wired(limits=ResourceLimits(max_total_tokens=100_000))
-
-    with pytest.raises(QuotaExceeded, match="on_payload"):
-        _drain(
-            env["model"],
-            SimpleStreamOptions(session_id="s1", on_payload=lambda payload, model: payload),
-        )
-    assert env["provider"].seen_opts == []
 
 
 def test_budgeted_high_resolution_image_fails_closed_before_provider(wired):
@@ -326,6 +418,79 @@ def test_exhausted_token_budget_refuses_before_credentials(wired):
     assert env["provider"].seen_opts == []
 
 
+def test_strict_budget_rejects_unaudited_adapter_before_credentials(wired):
+    env = wired(
+        limits=ResourceLimits(max_total_tokens=100_000),
+        model=_model(api="private-unknown-api"),
+    )
+
+    with pytest.raises(QuotaExceeded) as excinfo:
+        _drain(env["model"], SimpleStreamOptions(session_id="s1", max_tokens=100))
+
+    assert excinfo.value.reason_code == "quota.accounting_unavailable"
+    assert env["key_calls"] == []
+    assert env["provider"].seen_opts == []
+
+
+@pytest.mark.parametrize("api", ["openai-completions", "mistral-conversations"])
+def test_known_api_name_with_unaudited_implementation_fails_closed_pre_io(
+    wired, api, monkeypatch,
+):
+    """A recognized API name cannot authorize an arbitrary provider object."""
+    model = _model(api=api)
+    env = wired(limits=ResourceLimits(max_total_tokens=100_000), model=model)
+    monkeypatch.setattr(
+        "openprogram.providers.api_registry.has_audited_accounting",
+        lambda _provider, _registered_api: False,
+    )
+
+    with pytest.raises(QuotaExceeded) as excinfo:
+        _drain(model, SimpleStreamOptions(session_id="s1"))
+
+    assert excinfo.value.reason_code == "quota.accounting_unavailable"
+    assert env["key_calls"] == []
+    assert env["provider"].seen_opts == []
+
+
+def test_structured_output_schema_is_included_in_safe_input_bound(wired):
+    env = wired(
+        limits=ResourceLimits(max_total_tokens=3_000),
+        model=_model(context_window=100_000),
+    )
+    schema = JsonSchemaOutput(schema={
+        "type": "object",
+        "properties": {
+            "answer": {"type": "string", "description": "x" * 4_000},
+        },
+    })
+
+    with pytest.raises(QuotaExceeded):
+        _drain(
+            env["model"],
+            SimpleStreamOptions(
+                session_id="s1", max_tokens=100, response_format=schema,
+            ),
+        )
+
+    assert env["key_calls"] == []
+    assert env["provider"].seen_opts == []
+
+
+def test_budgeted_payload_mutator_fails_closed_before_provider(wired):
+    env = wired(limits=ResourceLimits(max_total_tokens=100_000))
+
+    with pytest.raises(QuotaExceeded, match="on_payload"):
+        _drain(
+            env["model"],
+            SimpleStreamOptions(
+                session_id="s1", on_payload=lambda payload, model: payload,
+            ),
+        )
+
+    assert env["key_calls"] == []
+    assert env["provider"].seen_opts == []
+
+
 def test_cost_budget_with_unknown_price_fails_closed(wired):
     """Unknown price is not zero: a configured cost budget refuses the call."""
     env = wired(
@@ -351,25 +516,6 @@ def test_accounting_outage_fails_closed_and_is_retryable(wired, monkeypatch):
 
     assert excinfo.value.reason_code == "quota.accounting_unavailable"
     assert excinfo.value.retryable is True
-    assert env["provider"].seen_opts == []
-
-
-@pytest.mark.parametrize("api", ["openai-completions", "mistral-conversations"])
-def test_known_api_name_with_unaudited_implementation_fails_closed_pre_io(
-    wired, api, monkeypatch,
-):
-    model = _model(api=api)
-    env = wired(limits=ResourceLimits(max_total_tokens=100_000), model=model)
-    monkeypatch.setattr(
-        "openprogram.providers.api_registry.has_audited_accounting",
-        lambda provider, registered_api: False,
-    )
-
-    with pytest.raises(QuotaExceeded) as excinfo:
-        _drain(model, SimpleStreamOptions(session_id="s1"))
-
-    assert excinfo.value.reason_code == "quota.accounting_unavailable"
-    assert env["key_calls"] == []
     assert env["provider"].seen_opts == []
 
 

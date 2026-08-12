@@ -108,9 +108,6 @@ async def handle_spawn_task(ws, cmd: dict) -> None:
     try:
         task_id = await loop.run_in_executor(None, _submit)
     except AdmissionRejected as rejected:
-        # A refused spawn has no task. Report the governor's own decision
-        # verbatim rather than inventing an id or a status the store would
-        # not agree with.
         decision = rejected.decision
         await ws.send_text(json.dumps({
             "type": "spawn_task_result",
@@ -124,6 +121,7 @@ async def handle_spawn_task(ws, cmd: dict) -> None:
                 "limits": decision.effective_limits,
                 "capacity": decision.capacity,
                 "usage": decision.usage,
+                "resource": None,
             },
         }, default=str))
         return

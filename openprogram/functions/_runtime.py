@@ -923,6 +923,11 @@ def function(
         # thread where sync tool bodies run.
         _current_tool_call_id.set(call_id)
         passable_kwargs = dict(args)
+        from openprogram.agent.task.runner import (
+            current_task_operation_timeout,
+            current_task_operation_timeout_reason,
+            record_current_task_activity,
+        )
         if accepts_cancel:
             passable_kwargs["cancel"] = cancel_event
 
@@ -938,6 +943,7 @@ def function(
         if accepts_on_update:
             def _on_update(text: str) -> None:
                 accumulator.push(text)
+                record_current_task_activity("tool_progress")
                 if on_update_cb is not None:
                     try:
                         on_update_cb(text)
@@ -961,6 +967,21 @@ def function(
                 clamped = max(lo, min(hi, requested))
                 passable_kwargs["timeout"] = clamped
                 effective_timeout = clamped
+
+        try:
+            effective_timeout = current_task_operation_timeout(
+                effective_timeout,
+                preemptibility="async" if is_async_fn else "none",
+            )
+        except Exception as exc:
+            if getattr(exc, "reason_code", None) == "error.nonpreemptible_operation":
+                return AgentToolResult(
+                    content=[TextContent(text=f"[error] {exc}")],
+                    details={"reason_code": exc.reason_code},
+                    is_error=True,
+                )
+            raise
+        record_current_task_activity("operation_start")
 
         # Cache check (after timeout clamp — clamp is part of the cache key).
         if cache:
@@ -988,12 +1009,16 @@ def function(
             else:
                 raw = await _invoke()
         except asyncio.TimeoutError:
+            reason_code = current_task_operation_timeout_reason(effective_timeout)
             return AgentToolResult(
                 content=[TextContent(text=(
                     f"[error] function {actual_name} timed out after "
                     f"{effective_timeout}s"
                 ))],
-                details={"timeout": True},
+                details={
+                    "timeout": True,
+                    "reason_code": reason_code or "error.operation_timeout",
+                },
                 is_error=True,
             )
         except asyncio.CancelledError:

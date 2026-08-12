@@ -222,6 +222,7 @@ class BlockViewsMixin:
         )
         moved: list[Path] = []
         installed: list[Path] = []
+        self._stage_usable = False
         try:
             for relative in relatives:
                 destination = self.memory_dir / relative
@@ -252,20 +253,33 @@ class BlockViewsMixin:
                         if path.is_file() and not path.is_symlink():
                             path.chmod(MEMORY_FILE_MODE)
                 installed.append(relative)
-        except Exception:
+        except BaseException as primary:
+            rollback_errors: list[BaseException] = []
             for relative in reversed(installed):
                 destination = self.memory_dir / relative
-                if destination.is_dir():
-                    shutil.rmtree(destination)
-                elif destination.exists():
-                    destination.unlink()
+                try:
+                    if destination.is_dir():
+                        shutil.rmtree(destination)
+                    elif destination.exists():
+                        destination.unlink()
+                except BaseException as exc:
+                    rollback_errors.append(exc)
             for relative in reversed(moved):
                 destination = self.memory_dir / relative
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(backup / relative, destination)
+                try:
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(backup / relative, destination)
+                except BaseException as exc:
+                    rollback_errors.append(exc)
+            if not rollback_errors:
+                try:
+                    shutil.rmtree(backup, ignore_errors=True)
+                except BaseException as exc:
+                    rollback_errors.append(exc)
+            for error in rollback_errors:
+                primary.add_note(f"memory install rollback failed: {error}")
             raise
-        finally:
-            shutil.rmtree(backup, ignore_errors=True)
+        shutil.rmtree(backup, ignore_errors=True)
         self.pending.clear()
         self.committed = True
         self._refresh_stage()
