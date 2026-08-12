@@ -8,11 +8,16 @@ the LLM saw, only what got recorded into the DAG afterwards.
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 import pytest
 
-from openprogram.agentic_programming.function import agentic_function
+from openprogram.agentic_programming import llm
+from openprogram.agentic_programming.function import (
+    _current_runtime,
+    agentic_function,
+)
 from openprogram.agentic_programming.runtime import Runtime
 from openprogram.store import SessionNodeWriter, SessionStore, _store as _store_var
 
@@ -258,3 +263,153 @@ def test_exec_stream_fn_injection(store):
     llm_nodes = [n for n in g if n.is_llm()]
     assert len(llm_nodes) == 1
     assert llm_nodes[0].output == "from fake stream"
+
+
+def test_llm_requires_ambient_runtime():
+    token = _current_runtime.set(None)
+    try:
+        with pytest.raises(
+            RuntimeError,
+            match=r"llm\(\) requires an ambient Runtime",
+        ):
+            llm("hello")
+    finally:
+        _current_runtime.reset(token)
+
+
+def test_llm_public_signature_excludes_tool_loop_parameters():
+    signature = inspect.signature(llm)
+
+    assert list(signature.parameters) == [
+        "prompt",
+        "model",
+        "effort",
+        "response_format",
+        "choices",
+        "web_search",
+        "timeout_s",
+    ]
+    assert all(
+        name not in signature.parameters
+        for name in ("runtime", "tools", "toolset", "max_iterations", "tool_choice")
+    )
+
+
+def test_llm_string_is_one_text_block_and_one_request():
+    calls = []
+
+    def call(content, model="", response_format=None):
+        calls.append((content, model, response_format))
+        return "reply"
+
+    runtime = Runtime(call=call, model="session-model")
+    token = _current_runtime.set(runtime)
+    try:
+        assert llm("hello") == "reply"
+    finally:
+        _current_runtime.reset(token)
+        runtime.close()
+
+    assert calls == [
+        ([{"type": "text", "text": "hello"}], "session-model", None)
+    ]
+
+
+def test_llm_content_blocks_reach_callable_unchanged():
+    prompt = [
+        {"type": "text", "text": "locate the button"},
+        {
+            "type": "image",
+            "data": "aW1hZ2U=",
+            "mime_type": "image/png",
+        },
+    ]
+    seen = []
+
+    def call(content, model="", response_format=None):
+        seen.append(content)
+        return "done"
+
+    runtime = Runtime(call=call, model="session-model")
+    token = _current_runtime.set(runtime)
+    try:
+        assert llm(prompt) == "done"
+    finally:
+        _current_runtime.reset(token)
+        runtime.close()
+
+    assert seen == [prompt]
+
+
+def test_llm_model_and_effort_overrides_are_per_call():
+    calls = []
+
+    def call(content, model="", response_format=None):
+        from openprogram.agentic_programming.runtime import _current_effort
+
+        calls.append((model, _current_effort.get(None)))
+        return "done"
+
+    runtime = Runtime(call=call, model="session-model")
+    runtime.thinking_level = "medium"
+    token = _current_runtime.set(runtime)
+    try:
+        assert llm("first", model="override-model", effort="high") == "done"
+        assert llm("second") == "done"
+    finally:
+        _current_runtime.reset(token)
+        runtime.close()
+
+    assert calls == [("override-model", "high"), ("session-model", None)]
+    assert runtime.model == "session-model"
+    assert runtime.thinking_level == "medium"
+
+
+def test_llm_does_not_create_session_branch_and_records_observability(store):
+    runtime = Runtime(call=lambda *_args, **_kwargs: "done", model="session-model")
+    session_count = len(store.store.list_sessions())
+
+    @agentic_function
+    def summarize(runtime=None):
+        return llm("summary")
+
+    assert summarize(runtime=runtime) == "done"
+    runtime.close()
+
+    assert len(store.store.list_sessions()) == session_count
+    graph = store.load()
+    model_call = next(node for node in graph if node.is_llm())
+    metadata = model_call.metadata or {}
+    assert metadata["execution_kind"] == "llm"
+    assert metadata["provider_request_count"] == 1
+    assert metadata["agent_iteration_count"] == 0
+
+
+def test_llm_transport_retry_is_not_an_agent_iteration(store, monkeypatch):
+    attempts = 0
+
+    def call(_content, model="", response_format=None):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("temporary provider failure")
+        return "done"
+
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.runtime._retry_sleep_seconds",
+        lambda *_args: 0,
+    )
+    runtime = Runtime(call=call, model="session-model", max_retries=2)
+
+    @agentic_function
+    def retry_once(runtime=None):
+        return llm("retry")
+
+    assert retry_once(runtime=runtime) == "done"
+    runtime.close()
+
+    model_call = next(node for node in store.load() if node.is_llm())
+    metadata = model_call.metadata or {}
+    assert attempts == 2
+    assert metadata["provider_request_count"] == 2
+    assert metadata["agent_iteration_count"] == 0

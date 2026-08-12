@@ -43,14 +43,18 @@ The module must define exactly one top-level def workflow(): with no parameters.
 The execution environment contains only the registered functions in the catalog
 below and:
 
+    llm(prompt, model="", effort="", response_format=None, choices=None,
+        web_search=False, timeout_s=None) -> str | dict
     agent(prompt, description="", agent_id="", start_from="clean",
           run_in_background=False, to="", archive_when_done=False) -> str
 
-agent starts a free-form agent. Select its model and tool set through agent_id,
-which names an agent profile. Define ordinary Python helper functions and make
-every LLM step call agent. Compose helpers and registered functions with plain
-Python calls, if/for/try statements, and return values. Verification belongs in
-the program and may raise an exception when it fails. There is no step DSL.
+llm makes one model request without tools or a session branch. agent starts a
+free-form agent; select its model and tool set through agent_id, which names an
+agent profile. Define ordinary Python helper functions and use llm for one model
+request or agent for autonomous work. Compose helpers and registered functions
+with plain Python calls, if/for/try statements, and return values. Verification
+belongs in the program and may raise an exception when it fails. There is no
+step DSL.
 
 Example:
 
@@ -118,6 +122,12 @@ def _agent_function() -> Callable:
     from openprogram.functions.tools.agent.agent.agent import _agent_impl
 
     return _agent_impl
+
+
+def _llm_function() -> Callable:
+    from openprogram.agentic_programming import llm
+
+    return llm
 
 
 def _registered_agentic_functions() -> dict[str, Callable]:
@@ -399,6 +409,7 @@ def _execute_source(source: str, state: dict, state_path: Path, *,
     }
     namespace = {
         "__builtins__": safe_builtins,
+        "llm": checkpoints.wrap("llm", _llm_function()),
         "agent": checkpoints.wrap("agent", _agent_function()),
         **{name: checkpoints.wrap(name, fn) for name, fn in functions.items()},
     }

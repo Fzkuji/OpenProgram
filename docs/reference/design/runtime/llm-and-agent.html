@@ -180,9 +180,15 @@ has_pending_input</code>，stop hook / compaction 都能让无工具 turn 继续
 
 <h2>实现状态</h2>
 <div class="card">
-四批均未开工。<code>llm()</code> 尚不存在；编排层现有约 100 处 <code>runtime.exec</code>
-（本体约 20，嵌套 harness 约 80）。批 1 落地时同步更新
-<code>self-programmed-agentic-workflow.html</code> 的注入表与产品文档。
+批 1 已完成：<code>openprogram.agentic_programming.llm</code> 已导出，使用环境
+<code>Runtime</code> 的单次调用形态，不创建 session 分支或 transcript；str prompt 在入口转换成
+单个 text block，content blocks 保持原顺序进入 provider 层。<code>effort</code> 与
+<code>model</code> 是仅限本次调用的覆盖，不修改 runtime 默认值。llm 的 <code>ModelCall</code>
+节点以及 agent 的 assistant 节点均记录 <code>execution_kind</code>、
+<code>provider_request_count</code> 和 <code>agent_iteration_count</code>；传输重试不增加 agent
+迭代数。agent 与 llm 已确认共用 <code>AgentSession → agent_loop → provider stream</code>
+单次调用层。task-list workflow 已注入带 checkpoint 的 <code>llm</code>，并更新 planner catalog。
+批 2–4 尚未开始；<code>docs/capabilities/</code> 按本批范围保持不变。
 </div>
 
 </body>

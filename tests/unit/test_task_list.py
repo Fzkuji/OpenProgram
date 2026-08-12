@@ -59,6 +59,23 @@ def _executor(monkeypatch: pytest.MonkeyPatch, fn=None) -> list[dict]:
     return calls
 
 
+def _llm_executor(monkeypatch: pytest.MonkeyPatch, fn=None) -> list[dict]:
+    calls: list[dict] = []
+
+    def fake(prompt, *, model="", effort="", response_format=None,
+             choices=None, web_search=False, timeout_s=None):
+        kwargs = {
+            "model": model, "effort": effort,
+            "response_format": response_format, "choices": choices,
+            "web_search": web_search, "timeout_s": timeout_s,
+        }
+        calls.append({"prompt": prompt, **kwargs})
+        return fn(prompt, kwargs) if fn else f"done: {prompt}"
+
+    monkeypatch.setattr(TL, "_llm_function", lambda: fake)
+    return calls
+
+
 def _instance(repo: Path, run_id: str) -> Path:
     return repo / "workflows" / run_id
 
@@ -107,6 +124,28 @@ def test_plain_helper_uses_agent_and_its_result_in_workflow(
     assert result["status"] == "completed"
     assert [call["prompt"] for call in calls] == ["produce", "consume VALUE"]
     assert [item["function"] for item in result["items"]] == ["agent", "agent"]
+
+
+def test_llm_is_injected_and_checkpointed(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _planner(monkeypatch, _code('''
+        first = llm("summarize", model="test-model", effort="low")
+        return llm("use " + first)
+    '''))
+    _executor(monkeypatch)
+    calls = _llm_executor(
+        monkeypatch,
+        lambda prompt, _kwargs: "VALUE" if prompt == "summarize" else "USED",
+    )
+
+    result = TL.run_task_list("compose", session_id="s1")
+
+    assert result["status"] == "completed"
+    assert [call["prompt"] for call in calls] == ["summarize", "use VALUE"]
+    assert calls[0]["model"] == "test-model"
+    assert calls[0]["effort"] == "low"
+    assert [item["function"] for item in result["items"]] == ["llm", "llm"]
 
 
 def test_same_function_name_uses_call_order_keys_and_replays_each_call(
@@ -321,6 +360,8 @@ def test_planner_prompt_documents_real_agentic_programming_convention(
     assert "def workflow():" in prompt
     assert 'def find_issues():' in prompt
     assert 'description="find issues"' in prompt
+    assert "llm(prompt" in prompt
+    assert "one model request" in prompt
     assert "step(" not in prompt
     assert "import" in prompt and "forbidden" in prompt
 

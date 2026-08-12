@@ -56,6 +56,33 @@ def test_persists_user_and_assistant_on_dag(dag_db: DagSessionDB):
     assert assistant["content"] == "hi back"
 
 
+def test_persists_agent_request_and_iteration_counters(dag_db: DagSessionDB):
+    req = D.TurnRequest(
+        session_id="s-dag-counters",
+        agent_id="claude",
+        user_text="count",
+        source="cli",
+    )
+    usage = {
+        "input_tokens": 5,
+        "output_tokens": 2,
+        "provider_request_count": 3,
+        "agent_iteration_count": 2,
+    }
+    with __import__("unittest.mock", fromlist=["patch"]).patch.object(
+        D, "_run_loop_blocking", side_effect=_stub_loop("done", usage=usage)
+    ):
+        D.process_user_turn(req, on_event=lambda _event: None)
+
+    assistant = [
+        message for message in dag_db.get_messages("s-dag-counters")
+        if message["role"] == "assistant"
+    ][-1]
+    assert assistant["execution_kind"] == "agent"
+    assert assistant["provider_request_count"] == 3
+    assert assistant["agent_iteration_count"] == 2
+
+
 def test_head_id_advances_on_dag(dag_db: DagSessionDB):
     req = D.TurnRequest(
         session_id="s-dag-2",

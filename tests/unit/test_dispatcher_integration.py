@@ -178,11 +178,16 @@ def test_real_loop_text_only(tmp_db: SessionDB, captured, collector) -> None:
     # Usage propagated from EventDone's message.usage
     assert result.usage["input_tokens"] >= 0
     assert result.usage["output_tokens"] >= 0
+    assert result.usage["provider_request_count"] == 1
+    assert result.usage["agent_iteration_count"] == 1
 
     # SessionDB should hold both turns
     msgs = tmp_db.get_messages("c1")
     assert [m["role"] for m in msgs] == ["user", "assistant"]
     assert msgs[1]["content"] == "Hello, world"
+    assert msgs[1]["execution_kind"] == "agent"
+    assert msgs[1]["provider_request_count"] == 1
+    assert msgs[1]["agent_iteration_count"] == 1
 
     # Stream events were forwarded to clients
     text_events = [

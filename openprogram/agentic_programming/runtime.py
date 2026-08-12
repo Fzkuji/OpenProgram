@@ -357,6 +357,18 @@ _current_stream_fn: contextvars.ContextVar[Optional[Any]] = contextvars.ContextV
     default=None,
 )
 
+# Per-call overrides used by the shared AgentSession/provider path. They stay
+# in ContextVars so llm() never mutates the ambient Runtime's session defaults.
+_current_effort: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "_current_effort", default=None,
+)
+_current_call_model: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "_current_call_model", default=None,
+)
+_current_direct_content: contextvars.ContextVar[Optional[list[dict]]] = (
+    contextvars.ContextVar("_current_direct_content", default=None)
+)
+
 
 def _exec_system_prompt(inline: str, tools: Optional[list]) -> str:
     """Assemble the function-body system prompt through the ONE assembler
@@ -779,6 +791,7 @@ class Runtime:
         self,
         *,
         model: str,
+        execution_kind: str = "agent",
         system_prompt: Optional[str] = None,
         content_text: str = "",
     ) -> Optional[str]:
@@ -820,6 +833,9 @@ class Runtime:
                 caller=_call_id.get() or "",
                 metadata={
                     "status": "running",
+                    "execution_kind": execution_kind,
+                    "provider_request_count": 0,
+                    "agent_iteration_count": 0,
                     **({"prompt_text": content_text[:8000]} if content_text else {}),
                 },
             )
@@ -837,6 +853,9 @@ class Runtime:
         status: str = "completed",
         usage: Optional[dict] = None,
         blocks: Optional[list] = None,
+        execution_kind: str = "agent",
+        provider_request_count: int = 0,
+        agent_iteration_count: int = 0,
         error: Optional[BaseException] = None,
     ) -> None:
         """Fill in the reply + terminal status on the running llm node
@@ -872,7 +891,12 @@ class Runtime:
             _blocks = (
                 blocks if blocks is not None else getattr(self, "last_blocks", None)
             )
-            meta: dict = {"status": status}
+            meta: dict = {
+                "status": status,
+                "execution_kind": execution_kind,
+                "provider_request_count": provider_request_count,
+                "agent_iteration_count": agent_iteration_count,
+            }
             if _usage:
                 meta["usage"] = _usage
             if _blocks:
@@ -1176,6 +1200,8 @@ class Runtime:
         on_retry: Optional["Callable[[RetryInfo], None]"] = None,
         web_search: bool = False,
         stream_fn: Any = None,
+        effort: Optional[str] = None,
+        execution_kind: str = "agent",
     ) -> Any:
         """
         Call the LLM. Appends a ModelCall node to the DAG.
@@ -1256,6 +1282,14 @@ class Runtime:
                               prevents the retry loop from making
                               progress.
 
+            effort:           Per-call reasoning/thinking effort. It is
+                              passed to AgentSession for this call only and
+                              does not mutate ``Runtime.thinking_level``.
+
+            execution_kind:   DAG observability label. ``llm`` is set by the
+                              public one-request primitive; tool-loop-capable
+                              Runtime calls default to ``agent``.
+
         Returns:
             ``str`` for ordinary calls; a Python JSON value for structured
             output calls. When ``choices`` is set, returns the resolved
@@ -1318,6 +1352,13 @@ class Runtime:
         stream_fn_token = (
             _current_stream_fn.set(stream_fn) if stream_fn is not None else None
         )
+        effort_token = _current_effort.set(effort) if effort else None
+        call_model_token = _current_call_model.set(use_model)
+        direct_content_token = (
+            _current_direct_content.set(content)
+            if execution_kind == "llm" and self._call_fn is not None
+            else None
+        )
         _policy_kwargs = {
             "toolset": toolset,
             "source": tools_source,
@@ -1376,9 +1417,11 @@ class Runtime:
         # attribute here. Closed on success/failure below.
         _llm_node_id = self._open_model_call_node(
             model=use_model,
+            execution_kind=execution_kind,
             content_text=content_text,
         )
         self._active_llm_node_id = _llm_node_id
+        self.last_agent_iteration_count = 0
         _llm_closed = False
         try:
             errors: list[str] = []
@@ -1432,7 +1475,22 @@ class Runtime:
                         if structured_format is not None
                         else raw_reply
                     )
-                    self._close_model_call_node(_llm_node_id, reply=dag_reply)
+                    agent_iteration_count = (
+                        0 if execution_kind == "llm"
+                        else int(getattr(self, "last_agent_iteration_count", 0) or 0)
+                    )
+                    provider_request_count = max(
+                        attempts_used,
+                        attempts_used - 1
+                        + int(getattr(self, "last_agent_iteration_count", 0) or 0),
+                    )
+                    self._close_model_call_node(
+                        _llm_node_id,
+                        reply=dag_reply,
+                        execution_kind=execution_kind,
+                        provider_request_count=provider_request_count,
+                        agent_iteration_count=agent_iteration_count,
+                    )
                     _llm_closed = True
                     break
                 except ExecInterrupt:
@@ -1541,6 +1599,12 @@ class Runtime:
                     _llm_node_id,
                     reply=reply if reply is not None else "",
                     status=_st,
+                    execution_kind=execution_kind,
+                    provider_request_count=attempts_used,
+                    agent_iteration_count=(
+                        0 if execution_kind == "llm"
+                        else int(getattr(self, "last_agent_iteration_count", 0) or 0)
+                    ),
                     error=_exc if _st == "error" else None,
                 )
             self._active_llm_node_id = None
@@ -1549,6 +1613,11 @@ class Runtime:
                 _current_tools.reset(tools_token)
             if stream_fn_token is not None:
                 _current_stream_fn.reset(stream_fn_token)
+            if effort_token is not None:
+                _current_effort.reset(effort_token)
+            _current_call_model.reset(call_model_token)
+            if direct_content_token is not None:
+                _current_direct_content.reset(direct_content_token)
             if policy_token is not None:
                 _current_tool_policy.reset(policy_token)
             if loop_opts_token is not None:
@@ -1603,6 +1672,7 @@ class Runtime:
             _decision_menu,
             _decision_values,
             self,
+            max_retries=0 if execution_kind == "llm" else 1,
             timeout_s=remaining_timeout,
             on_retry=on_retry,
         )
@@ -1940,6 +2010,26 @@ class Runtime:
         """
         from openprogram.agent import AgentSession
 
+        session_model = self.api_model
+        requested_model = _current_call_model.get(None)
+        if (
+            self._call_fn is None
+            and requested_model
+            and requested_model != self.model
+        ):
+            if ":" in requested_model:
+                provider_id, model_id = requested_model.split(":", 1)
+            else:
+                provider_id = self.provider_id or getattr(
+                    self.api_model, "provider", ""
+                )
+                model_id = requested_model
+            from openprogram.providers import get_model
+
+            session_model = get_model(provider_id, model_id)
+            if session_model is None:
+                raise ValueError(f"Unknown model override {requested_model!r}")
+
         raw_tools = _current_tools.get(None)
         policy = _current_tool_policy.get(None) or {}
         # Unattended mode: subtract the user-question tool no matter which
@@ -2087,7 +2177,7 @@ class Runtime:
                 system_prompt=system_prompt,
                 history=_hist_for_bd,
                 tools=agent_tools,
-                context_window=real_context_window(self.api_model),
+                context_window=real_context_window(session_model),
             )
             self._pending_tool_names = [
                 getattr(t, "name", "") for t in (agent_tools or [])
@@ -2161,12 +2251,12 @@ class Runtime:
                 else remaining
             )
         session = AgentSession(
-            model=self.api_model,
+            model=session_model,
             tools=agent_tools,
             system_prompt=system_prompt,
             api_key=self.api_key,
             session_id=self.session_id,
-            thinking_level=self.thinking_level,
+            thinking_level=_current_effort.get(None) or self.thinking_level,
             tool_choice=loop_opts.get("tool_choice"),
             parallel_tool_calls=loop_opts.get("parallel_tool_calls"),
             max_iterations=session_max_iterations,
@@ -2189,6 +2279,7 @@ class Runtime:
         self.last_blocks = []
         _thinking_buf = {"text": ""}
         _tool_index = {}
+        _agent_iteration_count = {"value": 0}
         # Subscribe even if on_stream is None so persistence accumulation
         # still runs (callers that reload history want thinking/tool blocks
         # even when they didn't watch the live stream).
@@ -2201,6 +2292,8 @@ class Runtime:
                 cb = self.on_stream
                 t = getattr(ev, "type", None)
                 try:
+                    if t == "turn_end":
+                        _agent_iteration_count["value"] += 1
                     if t == "message_update":
                         inner = getattr(ev, "assistant_message_event", None)
                         inner_type = getattr(inner, "type", None)
@@ -2352,6 +2445,7 @@ class Runtime:
             self.last_blocks.append({"type": "thinking", "text": _thinking_buf["text"]})
         for _blk in _tool_index.values():
             self.last_blocks.append(_blk)
+        self.last_agent_iteration_count = _agent_iteration_count["value"]
 
         if final is None:
             raise RuntimeError("Agent session produced no assistant message")

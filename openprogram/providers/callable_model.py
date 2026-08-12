@@ -102,11 +102,20 @@ def make_callable_stream_fn(
             EventDone,
         )
 
-        system_prompt = getattr(context, "system_prompt", None)
-        messages = getattr(context, "messages", None) or []
-        content = _messages_to_content(system_prompt, messages)
+        from openprogram.agentic_programming.runtime import (
+            _current_call_model,
+            _current_direct_content,
+        )
 
-        model_id = getattr(model, "id", None) or "callable"
+        direct_content = _current_direct_content.get(None)
+        if direct_content is not None:
+            content = direct_content
+        else:
+            system_prompt = getattr(context, "system_prompt", None)
+            messages = getattr(context, "messages", None) or []
+            content = _messages_to_content(system_prompt, messages)
+
+        model_id = _current_call_model.get(None) or getattr(model, "id", None) or "callable"
 
         # Call the user's fn the way the legacy path did: positional content,
         # plus model / response_format kwargs. Most callables accept **kw.

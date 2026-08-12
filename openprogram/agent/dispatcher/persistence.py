@@ -111,6 +111,13 @@ def persist_assistant_message(
         # the turn consistently when multiple peer agents live in the
         # same session.
         "agent_id": req.agent_id,
+        "execution_kind": "agent",
+        "provider_request_count": int(
+            usage.get("provider_request_count") or 0
+        ),
+        "agent_iteration_count": int(
+            usage.get("agent_iteration_count") or 0
+        ),
     }
     if req.structured_output_mode is not None:
         assistant_msg.update({

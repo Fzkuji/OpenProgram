@@ -358,6 +358,7 @@ def run_loop_blocking(
         usage_total: dict[str, int] = {
             "input_tokens": 0, "output_tokens": 0,
             "cache_read_tokens": 0, "cache_write_tokens": 0,
+            "provider_request_count": 0, "agent_iteration_count": 0,
         }
         tool_calls: list[dict] = []
         # Capture tool_use inputs so we can rebuild the same
@@ -402,6 +403,8 @@ def run_loop_blocking(
                         }
                         tool_calls.append(_tc)
                     if ev.type == "turn_end":
+                        usage_total["provider_request_count"] += 1
+                        usage_total["agent_iteration_count"] += 1
                         msg = getattr(ev, "message", None)
                         if getattr(msg, "structured_output_mode", None) is not None:
                             req.structured_output = getattr(msg, "structured_output", None)
