@@ -87,24 +87,34 @@ origin, bounds response resources, and fails static verification for unclassifie
 <tr><td>Sandboxed arbitrary code, plugin code, external provider CLIs, and package managers</td><td>Governed by sandbox, plugin trust, child-process, and installation boundaries</td><td class="no">Excluded</td></tr>
 <tr><td>Owner control-plane liveness probes</td><td>Narrow loopback-only exclusions are inventoried with exact call kind, owner, reason, and count</td><td class="partial">Classified, not claimed as Runtime URL fetch</td></tr>
 </table></div>
-<div class="note green"><b>Feature-matrix scope.</b> The solid circle confirms only Runtime-owned HTTP fetches.
-It does not claim equivalent protection for browsers, arbitrary code, plugins, external CLIs, or package-manager child processes.</div>
+<div class="note"><b>Feature-matrix scope and status.</b> The implemented controls cover only Runtime-owned HTTP fetches.
+The matrix remains <code>·</code> because the complete repository test gate is blocked during collection by the pre-existing missing
+<code>openprogram.functions.agentics.test_framework</code> module. Browsers, arbitrary code, plugins, external CLIs, and
+package-manager child processes remain separate boundaries.</div>
 
 <section class="band ref" id="references"><span class="part">Part II · References</span><div><b>How other projects design this boundary</b>
-<p>The comparison keeps only direct links to current official documentation or official repositories. A permission prompt,
-hostname rule, application URL validator, policy proxy, and operating-system network sandbox are recorded as different controls.</p></div></section>
+<p>The comparison preserves all twelve external feature-matrix columns plus OWASP. Permission prompts, hostname rules,
+application URL validation, policy proxies, and operating-system network sandboxes remain distinct controls; upstream wrappers
+and protocol libraries are not counted again as independent implementations.</p></div></section>
 
 <h2><span class="num">03</span>Reference mechanisms</h2>
+<div class="note"><b>Evidence boundary.</b> The matrix uses fixed snapshots. Current official documentation is linked directly
+for design context, without retroactively changing the fixed-version matrix scores. Capabilities not confirmed in the audited
+snapshot are described as unconfirmed, not as universally absent.</div>
 <div class="tbl"><table>
-<tr><th>Project</th><th>Official mechanism</th><th>OpenProgram use</th></tr>
-<tr><td><b>Hermes</b></td><td>A shared URL-safety module covers web, browser, vision, and gateway media; it classifies DNS results, rejects unsafe redirects, sanitizes URLs, and bounds media responses.</td><td>Adopted shared fail-closed validation, full address classification, redirect checks, sanitization, and body limits; replaced a process-wide private-URL switch with consumer-scoped exact exceptions.</td></tr>
-<tr><td><b>OpenClaw</b></td><td>Documents strict private/internal defaults, explicit exceptions, browser-stage checks, and the limitation that request interception is not a network firewall.</td><td>Adopted strict defaults and explicit exceptions; retained a separate browser boundary instead of using Runtime tests as browser evidence.</td></tr>
-<tr><td><b>Claude Code</b></td><td>Separates WebFetch domain permission from sandboxed child-process HTTP/SOCKS proxy policy and documents the proxy's hostname-level limitations.</td><td>Adopted layered tool authorization and network enforcement; rejected hostname permission as sufficient DNS/IP/connect-time SSRF evidence.</td></tr>
-<tr><td><b>Codex</b></td><td>The network proxy provides HTTP/SOCKS handling, restricted domain rules, private-resolution rejection, method limits, hooks, and structured audit while the OS sandbox constrains bypass paths.</td><td>Adopted structured deny reasons, audit state, and managed policy concepts; retained consumer-aware Runtime transport enforcement.</td></tr>
-<tr><td><b>Gemini CLI</b></td><td>Official tool documentation warns that web fetch can access localhost and private networks and may require confirmation.</td><td>Adopted explicit risk documentation; rejected confirmation as a substitute for deterministic target enforcement.</td></tr>
-<tr><td><b>OpenCode</b></td><td>Permissions can allow, ask, or deny a requested URL; shell rules are documented as best effort rather than network isolation.</td><td>Adopted separate resource-permission semantics; a permitted URL must still pass transport policy.</td></tr>
-<tr><td><b>pi-mono, pi-ai, and weclaw</b></td><td>The reviewed official repositories do not provide an equivalent product-level Runtime URL-fetch boundary in the audited unit; pi-ai is protocol reference code and weclaw delegates most network behavior to external agents.</td><td>Excluded protocol-only code and delegated external-process behavior from evidence for this feature.</td></tr>
-<tr><td><b>OWASP</b></td><td>Separates known-service allowlisting from arbitrary-public-target validation, recommends validating all resolved addresses, restricting protocols, and adding network controls.</td><td>Adopted separate trust classes and connect-time peer constraints; rejected a single preflight DNS lookup.</td></tr>
+<tr><th>Project</th><th>Application URL-fetch evidence</th><th>Network or permission boundary</th><th>Adopted, modified, or rejected</th></tr>
+<tr><td><b>Hermes</b></td><td>Shared <code>url_safety</code> covers web, browser, vision, and gateway media. DNS failure is closed; loopback, RFC1918, link-local, CGNAT, metadata, reserved, multicast, and unspecified results are rejected; redirects are checked hop by hop; URLs are sanitized and media is streamed with limits.</td><td>A process-wide <code>allow_private_urls</code> switch relaxes multiple entries together. Application checks still do not replace OS network isolation.</td><td>Adopted shared fail-closed validation, the full address set, redirect checks, sanitization, and limits. Modified the global switch into exact consumer-scoped service-origin exceptions.</td></tr>
+<tr><td><b>OpenClaw</b></td><td>Private, internal, and special-use targets are denied by default, with exact or wildcard hostname exceptions and checks before navigation, interaction-generated loads, and final URLs. Its documentation identifies speculative navigation and browser subresource risk.</td><td>Official documentation states that request interception is not a network firewall: redirects, popups, Service Workers, and background resources can still require egress isolation or a policy proxy.</td><td>Adopted strict defaults and explicit exceptions. Modified browser interception into a separate acceptance boundary; it is not Runtime-fetch evidence.</td></tr>
+<tr><td><b>Claude Code</b></td><td><code>WebFetch(domain:...)</code> supports allow/deny. A hostname safety preflight may be cached and may be disabled by the owner.</td><td>The Bash sandbox uses Seatbelt or bubblewrap plus an external HTTP/SOCKS proxy. Official documentation notes hostname-level limits, broad domains, and domain-fronting risk.</td><td>Adopted layered tool authorization and child-process egress policy. Rejected hostname permission as DNS/IP/connect-time SSRF evidence.</td></tr>
+<tr><td><b>Codex</b></td><td>The audited mainline does not substitute one WebFetch string check for a network boundary.</td><td><code>codex-network-proxy</code> supplies HTTP/SOCKS5 proxying, exact or restricted wildcard domains, private-resolution rejection, limited read-only methods, MITM header hooks, Unix-socket control, and structured audit; the OS sandbox constrains loopback bypass paths.</td><td>Adopted structured deny reasons, audit, and managed-policy concepts. Retained consumer-aware Runtime safe clients rather than relying only on a child-process proxy.</td></tr>
+<tr><td><b>CodeBuddy 2.109.3</b></td><td><code>WebFetch</code> applies Security Center domain policy and rejects IP literals, <code>localhost</code>, and selected private ranges. WeCom media uses an official CDN allowlist with redirects disabled.</td><td>Sandbox <code>allowedDomains</code> intersects with WebFetch permission. The audited bundle's general WebFetch path checks literal hosts; the snapshot does not confirm full hostname A/AAAA validation, peer binding, or hop-by-hop redirect enforcement.</td><td>Adopted fixed channel-service allowlists and the intersection of permission and network policy. Rejected literal-IP-only protection for general fetches.</td></tr>
+<tr><td><b>Gemini CLI</b></td><td>Official tool documentation warns that <code>web_fetch</code> can reach localhost and private networks; Plan Mode can require confirmation. The local 0.35.3 core contains IP classification and DNS utilities, but the warning shows they do not form a general WebFetch private-target boundary.</td><td>User confirmation is a permission decision and does not constrain the connected peer.</td><td>Adopted explicit risk documentation. Rejected confirmation as a substitute for deterministic target enforcement.</td></tr>
+<tr><td><b>OpenCode</b></td><td><code>webfetch</code> permissions use the complete requested URL and support allow, ask, or deny. Current official permissions documentation does not establish private-IP classification, full DNS results, hop-by-hop redirects, or peer binding.</td><td><code>shell</code> uses the host user's network privileges; official documentation calls string rules best effort, not network isolation.</td><td>Adopted uniform resource-permission semantics. A permitted URL must still pass independent transport policy.</td></tr>
+<tr><td><b>pi-mono</b></td><td>The fixed snapshot does not confirm a built-in arbitrary-URL fetch in the core product; network capability primarily comes from shell commands, installers, or user extensions.</td><td>The core snapshot does not confirm an OS egress policy. Third-party <code>pi-sandbox</code> is not counted as built-in pi-mono behavior.</td><td>Rejected it as a Runtime SSRF algorithm reference. Its extension boundary supports keeping third-party code outside safe-client completion.</td></tr>
+<tr><td><b>pi-ai</b></td><td>This is protocol reference source, not a runnable product, and has no session or Runtime URL consumer.</td><td>Not applicable.</td><td>Excluded from product-level SSRF conclusions while retaining its matrix column to preserve the audited unit distinction.</td></tr>
+<tr><td><b>weclaw</b></td><td>The fixed snapshot is a messaging bridge to external ACP/CLI agents and does not confirm an independent general URL fetch.</td><td>It primarily inherits the launched CLI's tools and network privileges; the delegated product's controls are not counted again for weclaw.</td><td>Retained channel-media and external-process launch as its relevant boundaries; rejected it as a general safe-HTTP reference.</td></tr>
+<tr><td><b>cc-internal / cx-internal / gm-internal</b></td><td><code>cc-internal</code> and <code>cx-internal</code> wrap upstream launchers; <code>gm-internal</code> substantially reuses Gemini CLI. The audited packages do not confirm independent strengthening of general URL-fetch policy.</td><td>They inherit most Claude Code, Codex, or Gemini CLI permission and network behavior. Added authentication or endpoints do not themselves create an SSRF boundary.</td><td>Audited only their additional endpoints, credential forwarding, and configuration differences; rejected double-counting them as three independent security designs.</td></tr>
+<tr><td><b>OWASP</b></td><td>Separates known-service allowlisting from arbitrary-public-target validation, restricts protocols, validates every A/AAAA result, and prefers allowlists for trusted services.</td><td>A single DNS preflight still has DNS pinning and time-of-check/time-of-use risk; network controls are also recommended.</td><td>Adopted separate trust classes and connect-time peer constraints. Rejected one preflight DNS result as the only boundary.</td></tr>
 </table></div>
 <p class="small">Primary sources:
 <a href="https://github.com/NousResearch/hermes-agent/blob/main/tools/url_safety.py">Hermes url_safety.py</a>,
@@ -115,25 +125,28 @@ hostname rule, application URL validator, policy proxy, and operating-system net
 <a href="https://github.com/openai/codex/blob/main/codex-rs/network-proxy/README.md">Codex network proxy</a>,
 <a href="https://opencode.ai/v2/docs/permissions">OpenCode Permissions</a>,
 <a href="https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/tools.md">Gemini CLI tools</a>,
-<a href="https://github.com/badlogic/pi-mono">pi-mono</a>,
-<a href="https://github.com/badlogic/pi-mono/tree/main/packages/ai">pi-ai</a>,
-<a href="https://github.com/weclaw/weclaw">weclaw</a>, and
+and
 <a href="https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html">OWASP SSRF Prevention</a>.</p>
+<p class="small">Versioned local snapshot evidence: <code>@tencent-ai/codebuddy-code@2.109.3 dist/codebuddy.js,
+CHANGELOG.md, dist/web-ui/docs/cn/cli/permissions.md</code>; <code>@google/gemini-cli@0.35.3 core/dist/src/utils/fetch.js</code>;
+<code>references/pi-mono@3eb002766fff</code>; <code>references/weclaw@10711d0c6b7e</code>; and <code>references/pi-ai</code>.</p>
 
 <h2 id="decision"><span class="num">04</span>Adopted, modified, and rejected choices</h2>
 <div class="tbl"><table>
 <tr><th>Decision</th><th>Mechanism</th><th>Reason</th></tr>
 <tr><td class="yes">Adopted</td><td>One pure URL/IP policy; all DNS answers must pass; DNS failure is closed; every redirect is reevaluated; errors are origin-only; decoded bodies are bounded</td><td>These checks cover the Runtime's target, redirect, credential, and resource boundaries consistently.</td></tr>
 <tr><td class="yes">Adopted</td><td>Distinct untrusted-public, fixed-public-service, configured-service, and loopback-callback trust classes</td><td>Owner-configured localhost/private services remain usable without granting arbitrary public consumers private-network access.</td></tr>
-<tr><td class="partial">Modified</td><td>Global private-URL switches and broad hostname exceptions</td><td>Replaced by an exact consumer plus normalized origin or canonical private/local CIDR; metadata and link-local targets remain non-exceptable.</td></tr>
-<tr><td class="partial">Modified</td><td>Whole-process policy proxy</td><td>Optional and owner-declared; it must assert target-policy enforcement, is itself peer constrained, is visible in doctor output, and has no direct fallback.</td></tr>
-<tr><td class="no">Rejected</td><td>URL-string-only checks, one DNS preflight, implicit redirects, environment proxy inheritance, TLS verification disablement, or raw fallback</td><td>Each leaves a documented target, rebinding, credential, or bypass path.</td></tr>
+<tr><td class="yes">Adopted</td><td>Claude Code and CodeBuddy permission/network layering, Codex structured deny reasons, and CodeBuddy fixed channel-media allowlists</td><td>Permission answers who may request a resource; transport policy answers which peer receives the connection and credentials.</td></tr>
+<tr><td class="partial">Modified</td><td>Hermes process-wide <code>allow_private_urls</code></td><td>Replaced by an exact consumer plus normalized origin or canonical private/local CIDR; metadata and link-local targets remain non-exceptable.</td></tr>
+<tr><td class="partial">Modified</td><td>OpenClaw browser interception and Codex whole-process egress proxy</td><td>Browser controls remain a separate gate; a policy proxy is optional, owner-declared, separately peer constrained, visible in doctor output, and has no direct fallback.</td></tr>
+<tr><td class="no">Rejected</td><td>URL-string-only checks, one DNS preflight, implicit redirects, environment proxy inheritance, TLS verification disablement, or raw fallback</td><td>Each leaves a target, rebinding, credential, or bypass path.</td></tr>
+<tr><td class="no">Rejected</td><td>User confirmation or hostname allow/deny as target enforcement</td><td>Neither validates every resolved address nor constrains the connected peer.</td></tr>
 <tr><td class="no">Rejected</td><td>Counting Origin/Host, CORS, owner authentication, browser checks, or sandbox networking as Runtime SSRF completion</td><td>Those controls protect different directions or execution boundaries.</td></tr>
 </table></div>
 
 <section class="band plan" id="implementation"><span class="part">Part III · Plan</span><div><b>OpenProgram plan status and future work</b>
-<p>The Runtime URL-fetch plan is implemented. This section records the completed implementation evidence first, then lists
-the separate boundaries that remain future work. Completed implementation is not presented as a future capability.</p></div></section>
+<p>The Runtime URL-fetch implementation is complete through Task 8. This section records that implementation evidence first,
+then lists separate future boundaries. Publication as <code>●</code> remains pending until the complete repository test gate passes.</p></div></section>
 
 <h2><span class="num">05</span>Completed plan: implementation evidence</h2>
 <div class="flow">
@@ -185,12 +198,14 @@ or stale exclusion. Doctor exposes stable <code>runtime-http-registry</code>, <c
 <tr><td><code>uv run pytest -q tests/meta_functions tests/providers tests/unit tests/webui tests/integration/test_mcp_client.py</code></td><td class="yes"><code>2932 passed, 12 skipped, 1 xfailed</code></td></tr>
 <tr><td><code>uv run pytest -q</code></td><td class="partial">Collection is blocked by the pre-existing missing <code>openprogram.functions.agentics.test_framework</code> module; the affected suites above complete independently.</td></tr>
 <tr><td><code>uv run python scripts/check_runtime_http.py</code></td><td class="yes"><code>unregistered=0 active_unmanaged=0 registry_without_consumer=0 stale_exclusions=0</code></td></tr>
-<tr><td><code>uv run python scripts/check_feature_matrix.py docs/reference/design/feature-matrix.html</code></td><td class="yes"><code>features=160 openprogram_score=72 openprogram_gaps=85 openprogram_only=7</code></td></tr>
+<tr><td><code>uv run python scripts/check_feature_matrix.py docs/reference/design/feature-matrix.html</code></td><td class="yes"><code>features=160 openprogram_score=71 openprogram_gaps=86 openprogram_only=7</code></td></tr>
 </table></div>
-<div class="note green"><b>Solid-circle gate.</b> Policy parsing/address tests, real sync/async socket and TLS peer tests,
+<div class="note"><b>Publication gate.</b> Policy parsing/address tests, real sync/async socket and TLS peer tests,
 DNS-rebinding prevention, redirect and credential-origin tests, response/decompression/timeout cleanup, all-consumer migration,
 four-way SDK classification with zero active unmanaged transports, owner-only exact exceptions, doctor/audit/static enforcement,
-the 41-row compatibility contract, and the affected unit suite are all present. The feature matrix therefore records <code>●</code>.</div>
+and the 41-row compatibility contract are present. The required complete repository command <code>uv run pytest -q</code>
+does not pass: collection stops because <code>openprogram.functions.agentics.test_framework</code> is missing. The feature matrix
+therefore remains <code>·</code>; the affected-suite result is not substituted for the complete-suite gate.</div>
 
 <h2 id="future"><span class="num">06</span>OpenProgram future plan</h2>
 <div class="tbl"><table>
