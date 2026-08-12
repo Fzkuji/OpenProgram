@@ -17,6 +17,7 @@ LANDING = ROOT / "site" / "index.html"
 README = ROOT / "README.md"
 DOCS_README = ROOT / "docs" / "README.md"
 PYPROJECT = ROOT / "pyproject.toml"
+BUILT_SITE = ROOT / "docs" / "_site"
 SITE_TITLE = "OpenProgram: Self-Programming AI Agent Framework"
 SITE_DESCRIPTION = (
     "Build self-programming AI agents that create and refine their own "
@@ -129,6 +130,8 @@ def main() -> int:
             "package homepage is not the canonical website", failures)
     require(project_urls.get("Documentation") == "https://openprogram.io/docs/",
             "package documentation URL is not canonical", failures)
+    require(project_urls.get("Repository") == "https://github.com/Fzkuji/OpenProgram",
+            "package repository URL is not canonical", failures)
     software = next((item for item in page.structured_data
                      if item.get("@type") == "SoftwareSourceCode"), None)
     require(software is not None,
@@ -190,6 +193,24 @@ def main() -> int:
         r"\.command-body\s*\{[^}]*white-space\s*:\s*nowrap[^}]*"
         r"overflow-x\s*:\s*auto", css,
     ) is not None, "command text can wrap inside the terminal card", failures)
+
+    sitemap_path = BUILT_SITE / "sitemap.xml"
+    require(sitemap_path.is_file(), "docs build did not produce sitemap.xml", failures)
+    if sitemap_path.is_file():
+        sitemap = sitemap_path.read_text(encoding="utf-8")
+        for url in (
+            "https://openprogram.io/docs/capabilities/agentic-programming/self-programming-ai-agents.html",
+            "https://openprogram.io/docs/comparisons/ai-agent-frameworks.html",
+        ):
+            require(f"<loc>{url}</loc>" in sitemap,
+                    f"sitemap is missing {url}", failures)
+        require("https://openprogram.io/docs/README.html" not in sitemap,
+                "sitemap includes the duplicate docs README URL", failures)
+    built_favicon = BUILT_SITE / "favicon.ico"
+    require(built_favicon.is_file(), "docs build did not produce favicon.ico", failures)
+    if built_favicon.is_file():
+        require(built_favicon.read_bytes() == (ROOT / "web/app/favicon.ico").read_bytes(),
+                "built favicon differs from the application favicon", failures)
 
     if failures:
         for failure in failures:

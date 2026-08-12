@@ -8,19 +8,18 @@ official documentation.
 | Framework | Documented primary abstraction | Documented orchestration model | Documented emphasis |
 |---|---|---|---|
 | **OpenProgram** | `@agentic_function` plus an execution runtime | Ordinary control flow, model-selected tools, and a shared execution DAG | Agents that can author reviewable agentic functions; runtime-managed context, tools, memory, interfaces, and multi-agent work |
-| **LangGraph** | Stateful graph with nodes and edges | Compile and invoke a graph over shared state | Durable execution, persistence, streaming, and human-in-the-loop control |
+| **LangGraph** | Graph API with nodes and edges, or Functional API with `@entrypoint` and `@task` | Explicit state graphs or standard Python control flow over the same runtime | Durable execution, persistence, streaming, and human-in-the-loop control |
 | **AutoGen** | AgentChat agents and teams, or Core agents and runtimes | Agent messages, team patterns, and an event-driven Core API | Conversational single/multi-agent applications and scalable multi-agent runtimes |
 | **CrewAI** | Agents, tasks, crews, and flows | Role-based agent crews combined with event-driven flows | Collaborative agent teams plus structured workflow automation |
 
 Sources: [OpenProgram Agentic Programming](../capabilities/agentic-programming/README.md),
 [LangGraph overview](https://docs.langchain.com/oss/python/langgraph/overview),
+[LangGraph Functional API](https://docs.langchain.com/oss/python/langgraph/functional-api),
 [AutoGen overview](https://microsoft.github.io/autogen/), and
 [CrewAI documentation](https://docs.crewai.com/).
 
 ## Choose OpenProgram when
 
-- the workflow should remain normal source code with explicit branches, loops,
-  validation, and return values;
 - an agent should be able to propose or author a new workflow as a reviewable
   function rather than only select from a fixed graph or team configuration;
 - one runtime should provide terminal, Web, model-provider, tool, memory,
@@ -33,13 +32,14 @@ the [OpenProgram installation guide](../start/GETTING_STARTED.md).
 
 ## Choose LangGraph when
 
-Your system is most naturally represented as an explicit state graph and the
-primary requirements are durable execution, persistence, streaming, and
-human-in-the-loop state control. LangGraph describes itself as a low-level
-orchestration runtime and recommends higher-level LangChain agents for prebuilt
-agent architectures.
+Your system needs durable execution, persistence, streaming, and human-in-the-loop
+state control. LangGraph provides an explicit Graph API and a Functional API that
+supports ordinary Python branches, loops, and function calls. Its overview
+describes LangGraph as a low-level orchestration runtime and recommends
+higher-level LangChain agents for prebuilt agent architectures.
 
-Official source: [LangGraph overview](https://docs.langchain.com/oss/python/langgraph/overview).
+Official sources: [LangGraph overview](https://docs.langchain.com/oss/python/langgraph/overview)
+and [Functional API](https://docs.langchain.com/oss/python/langgraph/functional-api).
 
 ## Choose AutoGen when
 

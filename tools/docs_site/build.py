@@ -58,6 +58,14 @@ def _slugify(text: str) -> str:
     return s or "section"
 
 
+def _meta_description(body_html: str, title: str) -> str:
+    text = searchmod.plain_text(body_html)
+    text = text.removeprefix(title).removeprefix(" #").strip()
+    if len(text) <= 160:
+        return text
+    return text[:160].rsplit(" ", 1)[0]
+
+
 def _highlight_code(code: str, lang: str, _attrs) -> str:
     # No language tag → plain text (these are often ASCII diagrams; guessing a
     # lexer mangles arrows/emoji into red .err tokens). Return "" so markdown-it
@@ -527,12 +535,17 @@ def _build_into_out_root() -> int:
         # bilingual: if a Chinese version exists, its URL lets the language
         # toggle jump straight to it (and vice-versa from the zh page).
         alt_url = (DEPLOY_BASE + str(p.zh_out).replace("\\", "/")) if p.zh_out else ""
+        page_description = _meta_description(body, p.title)
+        page_url = SITE_ORIGIN.rstrip("/") + DEPLOY_BASE + str(p.out).replace("\\", "/")
+        if p.out.as_posix() == "README.html":
+            page_url = SITE_ORIGIN.rstrip("/") + DEPLOY_BASE
 
         full = render_page(
             title=p.title, body_html=body, nav_html=nav_html,
             toc_html=toc, base=base, page_lang="en", alt_lang_url=alt_url,
             breadcrumb_html=breadcrumb, prevnext_html=prevnext, meta_html=meta_html,
             tabbar_html=tabbar_html,
+            canonical_url=page_url, description=page_description,
         )
         out_path = OUT_ROOT / p.out
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -551,6 +564,9 @@ def _build_into_out_root() -> int:
                 toc_html=zh_toc, base=base, page_lang="zh", alt_lang_url=zh_back,
                 breadcrumb_html=breadcrumb, prevnext_html=prevnext, meta_html=meta_html,
                 tabbar_html=tabbar_html,
+                canonical_url=(SITE_ORIGIN.rstrip("/") + DEPLOY_BASE
+                               + str(p.zh_out).replace("\\", "/")),
+                description=_meta_description(zh_body, p.title_zh or p.title),
             )
             zh_path = OUT_ROOT / p.zh_out
             zh_path.parent.mkdir(parents=True, exist_ok=True)
@@ -607,6 +623,8 @@ def _write_sitemap() -> None:
     for path in sorted(OUT_ROOT.rglob("*.html")):
         rel = path.relative_to(OUT_ROOT).as_posix()
         if rel.endswith(".raw.html") or rel in static_root:
+            continue
+        if rel == "README.html":
             continue
         # index.html is the same document as the bare directory URL; list the
         # canonical bare form only.

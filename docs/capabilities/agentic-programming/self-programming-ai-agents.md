@@ -1,8 +1,8 @@
 # Self-Programming AI Agents
 
 A self-programming AI agent can create or revise executable workflows while it
-works. In OpenProgram, those workflows are ordinary `@agentic_function`s: the
-agent edits a source file with normal tools, the runtime validates and loads the
+works. In OpenProgram, those workflows use the `@agentic_function` decorator:
+the agent edits a source file with normal tools, the runtime validates and loads the
 function, and later turns can call it from the same registry as existing tools.
 
 This is narrower than unrestricted self-modification. OpenProgram does not let a

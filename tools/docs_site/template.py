@@ -93,6 +93,8 @@ def render_page(
     meta_html: str = "",
     extra_head: str = "",
     tabbar_html: str = "",
+    canonical_url: str = "",
+    description: str = "",
 ) -> str:
     """Assemble one full HTML document.
 
@@ -103,6 +105,14 @@ def render_page(
     language toggle navigates there.
     """
     safe_title = _html.escape(title)
+    canonical = (
+        f'<link rel="canonical" href="{_html.escape(canonical_url, quote=True)}">'
+        if canonical_url else ""
+    )
+    description_meta = (
+        f'<meta name="description" content="{_html.escape(description, quote=True)}">'
+        if description else ""
+    )
     alt_attr = f' data-alt-lang-url="{alt_lang_url}"' if alt_lang_url else ""
     if nav_html:
         layout_cls = ""
@@ -122,6 +132,8 @@ def render_page(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{safe_title} · OpenProgram Docs</title>
+{description_meta}
+{canonical}
 <script>{_THEME_BOOT}</script>
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="{base}assets/mark.svg">
