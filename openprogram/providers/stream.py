@@ -51,13 +51,20 @@ async def stream_simple_with_provider(
     # Reserve budget BEFORE credentials or network: a denied call must never
     # resolve a key or open a socket. Returns None for unbudgeted callers.
     budget = BudgetedRequest.begin(model, context, opts)
-    if budget is not None:
-        opts = budget.clamp(opts, model)
+    try:
+        if budget is not None:
+            opts = budget.clamp(opts, model)
 
-    # Auto-resolve API key if not set. resolve_provider_key reads the
-    # AuthStore (the single key source — no env vars, no config.json).
-    if not opts.api_key and getattr(provider, "requires_credentials", True):
-        opts = opts.model_copy(update={"api_key": resolve_provider_key(model.provider)})
+        # Auto-resolve API key if not set. resolve_provider_key reads the
+        # AuthStore (the single key source — no env vars, no config.json).
+        if not opts.api_key and getattr(provider, "requires_credentials", True):
+            opts = opts.model_copy(
+                update={"api_key": resolve_provider_key(model.provider)},
+            )
+    except BaseException:
+        if budget is not None:
+            budget.release()
+        raise
 
     # NOTE: the claude-code Meridian-profile header (x-meridian-profile) is
     # injected one layer down, in openai_completions.stream_simple — that's
@@ -120,12 +127,19 @@ async def stream(
         raise ValueError(f"No stream function registered for API: {model.api!r}")
 
     budget = BudgetedRequest.begin(model, context, opts)
-    if budget is not None:
-        opts = budget.clamp(opts, model)
+    try:
+        if budget is not None:
+            opts = budget.clamp(opts, model)
 
-    # Auto-resolve API key from the AuthStore if not set (same as stream_simple)
-    if not opts.api_key and getattr(provider, "requires_credentials", True):
-        opts = opts.model_copy(update={"api_key": resolve_provider_key(model.provider)})
+        # Auto-resolve API key from the AuthStore if not set (same as stream_simple)
+        if not opts.api_key and getattr(provider, "requires_credentials", True):
+            opts = opts.model_copy(
+                update={"api_key": resolve_provider_key(model.provider)},
+            )
+    except BaseException:
+        if budget is not None:
+            budget.release()
+        raise
 
     recorded = False
     async for event in _metered(provider.stream, model, context, opts, budget):
@@ -163,26 +177,24 @@ async def complete(
 async def _metered(stream_fn, model: Model, context, opts, budget):
     """Drive the provider stream, marking the reservation started around I/O.
 
-    A provider that refuses before the request starts (bad key, unroutable
-    model, immediate transport error) releases the reservation: nothing was
-    billed. Once the first event arrives the request may have reached the
-    provider, so its exposure stays held until it settles or expires.
+    Failures while constructing the provider iterator release a reservation.
+    Once ``start`` succeeds, any failure or cancellation conservatively keeps
+    exposure held because the request may already have reached the provider.
     """
     if budget is None:
         async for event in stream_fn(model, context, opts):
             yield event
         return
 
-    budget.start()
-    started = False
     try:
-        async for event in stream_fn(model, context, opts):
-            started = True
-            yield event
+        events = stream_fn(model, context, opts)
+        budget.start()
     except BaseException:
-        if not started:
-            budget.release()
+        budget.release()
         raise
+
+    async for event in events:
+        yield event
 
 
 def _record_usage(model: Model, final, options) -> None:

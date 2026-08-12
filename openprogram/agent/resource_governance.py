@@ -2059,15 +2059,14 @@ class ResourceGovernor:
     def release_provider_request(self, reservation_id: str) -> bool:
         """Release a request the provider refused before it started billing.
 
-        Only an unsettled reservation is released. A request that may have
-        reached the provider keeps its conservative exposure until it either
-        settles or expires.
+        Only a reserved request is releasable. A started request may have
+        reached the provider and keeps conservative exposure until settlement.
         """
         with self.ledger.immediate() as conn:
             return conn.execute(
                 """UPDATE usage_reservations SET state = 'released'
                    WHERE reservation_id IN (?, ?)
-                     AND state IN ('reserved','started')""",
+                     AND state = 'reserved'""",
                 (reservation_id + ":token", reservation_id + ":cost"),
             ).rowcount > 0
 
