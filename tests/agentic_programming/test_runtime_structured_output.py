@@ -16,6 +16,7 @@ from openprogram.providers.types import (
     Model,
     TextContent,
 )
+from openprogram.providers.utils.errors import ErrorReason, LLMError
 
 
 SCHEMA = {
@@ -150,6 +151,26 @@ def test_transport_retry_does_not_refresh_validation_retry_budget(monkeypatch):
     assert [event["next_attempt"] for event in events if event.get("type") == "structured_output_retry"] == [2]
 
 
+def test_expired_deadline_does_not_start_validation_repair():
+    calls = []
+    events = []
+
+    def call(content, model="test", response_format=None):
+        calls.append(content)
+        time.sleep(0.03)
+        return '{"answer": "wrong"}'
+
+    runtime = Runtime(call=call, model="dummy", max_retries=2)
+    runtime.on_stream = events.append
+    with pytest.raises(LLMError) as exc:
+        runtime.exec("question", response_format=SCHEMA, timeout_s=0.01)
+
+    assert exc.value.reason == ErrorReason.TIMEOUT
+    assert exc.value.attempts == 1
+    assert len(calls) == 1
+    assert not any(event.get("type") == "structured_output_retry" for event in events)
+
+
 def test_async_exec_returns_validated_python_value():
     async def call(content, model="test", response_format=None):
         return '{"answer": 9}'
@@ -193,6 +214,26 @@ def test_async_transport_retry_does_not_refresh_validation_retry_budget(monkeypa
 
     assert len(calls) == 3
     assert [event["next_attempt"] for event in events if event.get("type") == "structured_output_retry"] == [2]
+
+
+def test_async_expired_deadline_does_not_start_validation_repair():
+    calls = []
+    events = []
+
+    async def call(content, model="test", response_format=None):
+        calls.append(content)
+        await asyncio.sleep(0.03)
+        return '{"answer": "wrong"}'
+
+    runtime = Runtime(call=call, model="dummy", max_retries=2)
+    runtime.on_stream = events.append
+    with pytest.raises(LLMError) as exc:
+        asyncio.run(runtime.async_exec("question", response_format=SCHEMA, timeout_s=0.01))
+
+    assert exc.value.reason == ErrorReason.TIMEOUT
+    assert exc.value.attempts == 1
+    assert len(calls) == 1
+    assert not any(event.get("type") == "structured_output_retry" for event in events)
 
 
 def test_unknown_provider_is_rejected_before_stream_call():

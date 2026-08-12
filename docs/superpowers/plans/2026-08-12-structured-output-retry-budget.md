@@ -13,7 +13,7 @@
 ## Verification gate
 
 ```text
-pytest -q tests/agentic_programming/test_runtime_structured_output.py tests/agentic_programming/test_runtime_errors.py
+pytest -q tests/agentic_programming/test_runtime_structured_output.py tests/unit/test_permanent_error_retryable.py tests/unit/test_error_taxonomy.py tests/unit/test_exec_timeout_code.py
 ruff check openprogram/agentic_programming/runtime.py tests/agentic_programming/test_runtime_structured_output.py
 python -m tools.docs_site.build
 python -m tools.docs_site.checklinks
@@ -25,10 +25,10 @@ git diff --check
 | Evidence | Result |
 |---|---|
 | Base | `a2ba5d49` |
-| Design | pending |
-| RED | pending |
-| GREEN | pending |
+| Design | `7e6236ad` (`docs(runtime): define shared structured retry budget`) |
+| RED | 2 failed, 1 passed: sync and async `max_retries=1` both issued an extra semantic repair call |
+| GREEN | 140 passed across `tests/agentic_programming` and the error taxonomy regression |
 | Specification review | pending |
 | Quality review | pending |
 | Full gate | pending |
-| Final implementation | pending |
+| Final implementation | `cf2dedae` (`fix(runtime): share structured and transport retry budget`) |
