@@ -277,9 +277,10 @@ async def _run_loop(
     pending_validation_error: Exception | None = None
 
     def commit_assistant(message: AssistantMessage) -> None:
-        current_context.messages.append(message)
+        if structured_plan is not None:
+            current_context.messages.append(message)
+            ev_stream.push(AgentEventMessageEnd(message=message))
         new_messages.append(message)
-        ev_stream.push(AgentEventMessageEnd(message=message))
 
     def schedule_structured_repair(
         error: Exception,
@@ -784,7 +785,7 @@ async def _stream_assistant_response(
     response_stream = fn(config.model, llm_context, stream_opts)
 
     async for event in response_stream:
-        if cancel_event and cancel_event.is_set():
+        if structured_plan is not None and cancel_event and cancel_event.is_set():
             from openprogram.providers.utils.errors import ExecInterrupt
 
             raise ExecInterrupt("cancelled")
