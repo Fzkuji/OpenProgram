@@ -24,6 +24,7 @@ The public lookup functions (``label_for``, ``env_var_for``,
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 from pathlib import Path
 from typing import Any
@@ -379,6 +380,26 @@ def is_configured(provider_id: str) -> bool:
 
 # ── provider.json endpoint metadata ──────────────────────────────
 _ROOT = Path(__file__).parent
+_logger = logging.getLogger(__name__)
+
+
+def _read_provider_json(path: Path) -> dict | None:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(value, dict):
+            raise TypeError("provider metadata must be an object")
+        return value
+    except (OSError, TypeError, json.JSONDecodeError) as exc:
+        _logger.warning(
+            "provider metadata load failed",
+            extra={
+                "source": "provider_json",
+                "path": str(path),
+                "error_type": type(exc).__name__,
+            },
+            exc_info=True,
+        )
+        return None
 
 
 def _provider_dir(provider_id: str) -> Path | None:
@@ -409,10 +430,8 @@ def _endpoints(provider_id: str) -> dict:
     d = _provider_dir(_WIRE_SIBLING.get(provider_id, provider_id))
     if d is None:
         return {}
-    try:
-        return (json.loads((d / "provider.json").read_text(encoding="utf-8")).get("endpoints") or {})
-    except (OSError, json.JSONDecodeError):
-        return {}
+    metadata = _read_provider_json(d / "provider.json")
+    return (metadata.get("endpoints") or {}) if metadata is not None else {}
 
 
 def resolved_endpoints(provider_id: str) -> dict:
@@ -474,9 +493,8 @@ def shipped_provider_ids() -> list[str]:
         f = d / "provider.json"
         if not f.is_file():
             continue
-        try:
-            j = json.loads(f.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        j = _read_provider_json(f)
+        if j is None:
             continue
         if j.get("endpoints"):
             out.append(j.get("id") or d.name.replace("_", "-"))

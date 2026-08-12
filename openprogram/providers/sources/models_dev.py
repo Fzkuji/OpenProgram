@@ -10,6 +10,7 @@ a ~300KB GET on top of the per-provider ``/v1/models`` call.
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Any
@@ -21,6 +22,7 @@ _FAIL_TTL_SECONDS = 60  # short retry window on failure/empty
 
 _cache_lock = threading.Lock()
 _cache: dict[str, Any] = {"data": None, "fetched_at": 0.0}
+_logger = logging.getLogger(__name__)
 
 
 def _load() -> dict[str, Any]:
@@ -89,10 +91,25 @@ def _write_disk_cache(data: dict[str, Any]) -> None:
 def _read_disk_cache() -> dict[str, Any]:
     import json
 
+    path = None
     try:
-        data = json.loads(_disk_cache_path().read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
+        path = _disk_cache_path()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise TypeError("models.dev cache must be an object")
+        return data
+    except FileNotFoundError:
+        return {}
+    except (OSError, TypeError, json.JSONDecodeError) as exc:
+        _logger.warning(
+            "provider metadata load failed",
+            extra={
+                "source": "models_dev_cache",
+                "path": str(path),
+                "error_type": type(exc).__name__,
+            },
+            exc_info=True,
+        )
         return {}
 
 
