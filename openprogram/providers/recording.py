@@ -236,6 +236,12 @@ class RecordingSink:
         self.path = Path(recording_path)
         self.lock_path = self.path.with_name(self.path.name + ".lock")
         self._thread_lock = threading.RLock()
+        from openprogram.paths import get_state_dir
+        managed_root = get_state_dir() / "recordings"
+        if managed_root.is_symlink():
+            raise PermissionError(
+                f"recordings directory must not be a symlink: {managed_root}"
+            )
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if sys.platform != "win32" and _is_managed_recording_path(self.path.parent):
             os.chmod(self.path.parent, 0o700)
