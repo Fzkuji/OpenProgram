@@ -21,11 +21,16 @@ Return the title through the required structured output schema.
 ```
 
 `_generate_llm_title()` creates a fresh Runtime for the configured default
-agent model and calls `Runtime.exec(..., response_format=TITLE_SCHEMA)`. The
+agent model and calls `Runtime.exec(..., response_format=TITLE_SCHEMA,
+toolset="none", max_iterations=2)`. The
 schema requires one non-empty `title` string of at most 80 code points and
 rejects additional properties. Runtime validation and its single bounded
 repair attempt are authoritative; the title consumer does not parse a text
 protocol.
+
+Setup, execution, and close failures are best-effort. They use fixed lifecycle
+log labels without provider exception text or traceback. Cancellation still
+propagates after the created Runtime is closed.
 
 Language follows the content: the prompt instructs the model to generate the title in the conversation's language. The title is stored in meta.json (JSON UTF-8), broadcast as JSON over WebSocket, and rendered in the browser; none of these three places impose any encoding restriction.
 
