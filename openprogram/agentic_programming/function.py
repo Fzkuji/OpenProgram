@@ -17,10 +17,13 @@ from __future__ import annotations
 
 import functools
 import inspect
+import logging
 import os
 import time
 from contextvars import ContextVar
 from typing import Callable, Optional
+
+_log = logging.getLogger(__name__)
 
 # Runtime shared across the call chain via ContextVar.
 # Entry-point functions auto-create a runtime; child functions inherit it.
@@ -352,9 +355,14 @@ def _append_function_call_entry(
         return
     try:
         store.append(node)
-    except Exception:
+    except Exception as exc:
         # DAG persistence failure must never break the user's function call.
-        pass
+        _log.warning(
+            "DAG persistence failed phase=entry node_id=%s error_type=%s",
+            pending_id,
+            type(exc).__name__,
+            exc_info=True,
+        )
 
 
 def _update_function_call_exit(
@@ -397,8 +405,13 @@ def _update_function_call_exit(
                 "duration_seconds": duration,
             },
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.warning(
+            "DAG persistence failed phase=exit node_id=%s error_type=%s",
+            pending_id,
+            type(exc).__name__,
+            exc_info=True,
+        )
 
 
 def _sanitize_function_args(params: dict) -> dict:

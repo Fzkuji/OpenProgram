@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DAG 持久化失败可观察性</title><style>
+:root{color-scheme:dark;--bg:#11120f;--panel:#191a16;--line:#34362d;--text:#e8e6dc;--muted:#aaa99f;--ok:#8fca8b;--warn:#e1b36c;--bad:#e98b83}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 ui-sans-serif,system-ui,sans-serif}main{max-width:1000px;margin:auto;padding:48px 24px 72px}h1{font-size:32px;line-height:1.2}h2{margin-top:36px;border-bottom:1px solid var(--line);padding-bottom:8px}.sub{color:var(--muted)}.lead,.note{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px}.table{overflow:auto;border:1px solid var(--line);border-radius:10px}table{width:100%;border-collapse:collapse;min-width:700px}th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}th{color:var(--muted)}code{color:#d7c58f}.ok{color:var(--ok)}.warn{color:var(--warn)}ul{padding-left:22px}
+</style></head><body><main>
+<p class="sub">OpenProgram / agentic DAG / implementation handoff</p>
+<h1>DAG 持久化失败可观察性</h1>
+<p class="sub">基线：<code>4f8649d1</code>。范围仅限 agentic/traced function 的 DAG entry append 与 exit update。</p>
+<div class="lead"><b>确定方案。</b> DAG 是执行记录，不是用户函数的成功条件：append/update 失败继续保持 best-effort，不改变返回值或原始异常；但必须通过本地 logger 输出一次结构化 warning 和 traceback，使磁盘、权限、序列化错误可诊断。</div>
+
+<h2>01 · 合同</h2>
+<div class="table"><table><thead><tr><th>阶段</th><th>失败语义</th><th>诊断字段</th></tr></thead><tbody>
+<tr><td>entry / <code>store.append</code></td><td>不中止函数；函数照常执行。</td><td><code>phase=entry</code>、node id、exception type、traceback。</td></tr>
+<tr><td>exit / <code>store.update</code></td><td>不覆盖函数返回值或函数自身异常。</td><td><code>phase=exit</code>、node id、exception type、traceback。</td></tr>
+<tr><td>无 store / hidden</td><td>保持静默 no-op。</td><td>不记录 warning。</td></tr>
+</tbody></table></div>
+
+<h2>02 · 信任边界与取舍</h2>
+<ul>
+<li>日志不记录函数参数、输出、exception message 的独立字段；logger traceback 保留本地根因。</li>
+<li>复用模块 logger 和现有两个共享 helper，不在 sync/async/traced wrapper 重复捕获。</li>
+<li>不向 WebSocket 或函数结果增加诊断，不新增事件类型、重试、队列或持久化 fallback。</li>
+<li>只捕获 <code>Exception</code>；取消和进程级 <code>BaseException</code> 不降级为 best-effort。</li>
+</ul>
+
+<h2>03 · 验收</h2>
+<div class="table"><table><thead><tr><th>场景</th><th>断言</th></tr></thead><tbody>
+<tr><td>entry append 抛异常</td><td>被装饰函数仍返回原结果；恰一 warning 包含 entry、node id、exception type 和 traceback。</td></tr>
+<tr><td>exit update 抛异常</td><td>被装饰函数仍返回原结果；恰一 warning 包含 exit、node id、exception type 和 traceback。</td></tr>
+<tr><td>函数自身抛异常且 exit update 失败</td><td>调用方收到函数原始异常，不能被 persistence 异常覆盖。</td></tr>
+<tr><td>hidden / no store</td><td>无 persistence warning。</td></tr>
+</tbody></table></div>
+
+<h2>04 · 排除项</h2>
+<p>不修改 DAG schema、SessionStore、wrapper 生命周期、usage context、tool registration、Windows、credential store 或孤儿文件。</p>
+
+<h2>05 · 实现与证据</h2>
+<p><code>openprogram/agentic_programming/function.py</code> 提供共享诊断；<code>tests/agentic_programming/test_function_dag_persistence_observability.py</code> 覆盖公共 decorator 行为。</p>
+<p class="note"><span class="warn">待实现与审查。</span> RED/GREEN、两轮独立审查和完整 gate 后更新。</p>
+</main></body></html>
