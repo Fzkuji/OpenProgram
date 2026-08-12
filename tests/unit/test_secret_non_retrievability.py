@@ -141,14 +141,23 @@ def test_config_key_reveal_query_is_not_a_route(secret_api, monkeypatch, query):
     assert _LONG_SECRET not in response.text
 
 
-def test_account_reveal_route_is_absent(secret_api):
+def test_account_reveal_route_answers_a_stable_deprecation(secret_api):
+    """The legacy route answers, but never with a credential value.
+
+    A client scripted against the old reveal endpoint gets a fixed 410
+    with no credential field, so it fails loudly instead of quietly
+    reading a secret that no longer leaves the store.
+    """
     _put_credential(secret_api.store)
 
     response = secret_api.client.get(
         "/api/providers/openai/accounts/work/reveal"
     )
 
-    assert response.status_code == 404
+    assert response.status_code == 410
+    assert response.json() == {
+        "error": "credential reveal is no longer supported"
+    }
     assert _LONG_SECRET not in response.text
 
 

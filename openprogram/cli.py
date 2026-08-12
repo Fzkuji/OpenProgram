@@ -561,6 +561,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor = sub.add_parser("doctor",
         help="Run sanity checks: python, node, skills, plugins, providers, mcp, cache, worker")
     p_doctor.add_argument("--json", action="store_true", help="Emit JSON")
+    p_doctor.add_argument(
+        "topic", nargs="?", choices=["credentials"],
+        help="credentials: audit every credential file's owner-only permissions")
+    p_doctor.add_argument(
+        "--repair", action="store_true",
+        help="With `credentials`: restore owner-only permissions on files this "
+             "user owns. Symlinks and foreign-owned paths are never modified.")
 
     # ---- diagnostics ------------------------------------------------------
     p_diagnostics = sub.add_parser(
@@ -1052,7 +1059,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_mcp_dis = p_mcp_sub.add_parser("disable", help="Stop + mark disabled (config kept)")
     p_mcp_dis.add_argument("name", help="MCP server name to disable")
     p_mcp_sub.add_parser("edit",
-        help="Open mcp_servers.json in $EDITOR for raw editing")
+        help="Removed: raw editing exposed stored secrets. Use add/rm or the "
+             "MCP settings page.")
     p_mcp_test = p_mcp_sub.add_parser("test",
         help="Spawn an ad-hoc config and verify the server starts + "
              "returns a tool list. Doesn't write disk.")
@@ -1370,8 +1378,14 @@ def main():
         return
 
     if args.command == "doctor":
+        as_json = getattr(args, "json", False)
+        if getattr(args, "topic", None) == "credentials":
+            from openprogram._cli_cmds.doctor import _cmd_doctor_credentials
+            sys.exit(_cmd_doctor_credentials(
+                repair=getattr(args, "repair", False), as_json=as_json
+            ))
         from openprogram._cli_cmds.doctor import _cmd_doctor
-        sys.exit(_cmd_doctor(getattr(args, "json", False)))
+        sys.exit(_cmd_doctor(as_json))
 
     if args.command == "diagnostics":
         from openprogram._cli_cmds.diagnostics import _cmd_diagnostics
@@ -1790,7 +1804,7 @@ def main():
         if verb == "disable":
             sys.exit(_cmd_mcp_disable(args.name))
         if verb == "edit":
-            sys.exit(_cmd_mcp_edit())
+            sys.exit(_cmd_mcp_edit_removed())
         if verb == "test":
             sys.exit(_cmd_mcp_test(args.name, args.server_command,
                                     env=args.env, timeout=args.timeout))
@@ -1970,7 +1984,7 @@ from openprogram._cli_cmds.mcp import (  # noqa: E402,F401
     _cmd_mcp_restart,
     _cmd_mcp_enable,
     _cmd_mcp_disable,
-    _cmd_mcp_edit,
+    _cmd_mcp_edit_removed,
     _cmd_mcp_test,
 )
 

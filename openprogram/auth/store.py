@@ -138,6 +138,18 @@ except ImportError:  # pragma: no cover — Windows path
             os.close(fd)
 
 
+def _clear_runtime_credential_caches() -> None:
+    """Drop process-local secrets that a deleted credential could feed.
+
+    Removing a credential from disk is not enough: a ``credential_process``
+    token cached in this process keeps answering until its TTL expires,
+    so a "deleted" credential would still authenticate requests.
+    """
+    from openprogram.auth.methods.credential_process import clear_token_cache
+
+    clear_token_cache()
+
+
 # ---------------------------------------------------------------------------
 # AuthStore
 # ---------------------------------------------------------------------------
@@ -391,6 +403,7 @@ class AuthStore:
                 return
             self._persist(pool)
             self._pools[key] = pool
+            _clear_runtime_credential_caches()
             self._emit(
                 AuthEvent(
                     type=AuthEventType.POOL_MEMBER_REMOVED,
@@ -415,6 +428,7 @@ class AuthStore:
                         path.unlink()
                     except FileNotFoundError:
                         pass
+            _clear_runtime_credential_caches()
             self._emit(
                 AuthEvent(
                     type=AuthEventType.POOL_MEMBER_REMOVED,

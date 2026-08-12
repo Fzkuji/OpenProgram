@@ -200,10 +200,23 @@ def create(
 
 
 def delete(channel: str, account_id: str) -> None:
+    """Remove an account's directory, or raise if anything survives.
+
+    ``ignore_errors`` used to hide a failed removal behind a successful
+    return, so a caller could report "deleted" while the credential file
+    was still on disk. Absence is now verified after the removal and a
+    surviving path raises. This is a logical delete: it makes no claim
+    about media-level erasure or copies already inside backups.
+    """
     with _lock:
         folder = account_dir(channel, account_id)
         if folder.exists():
             shutil.rmtree(folder, ignore_errors=True)
+        if folder.exists():
+            # Retry once loudly so the real errno reaches the caller.
+            shutil.rmtree(folder)
+        if folder.exists():
+            raise OSError(f"channel account directory survived deletion: {folder}")
 
 
 def load_credentials(channel: str, account_id: str) -> dict[str, Any]:

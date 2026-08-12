@@ -298,7 +298,14 @@ def _preserve_selector(
     return False
 
 
-def _is_redacted(value: object) -> bool:
+def is_redacted_value(value: object) -> bool:
+    """Whether ``value`` is a display form rather than a real secret.
+
+    The single authority for "this came back from a masked projection":
+    backup restore uses it to keep a local secret, and the editing paths
+    use it to refuse a mask submitted as if it were a new value.
+    """
+
     if value is None:
         return True
     if isinstance(value, str):
@@ -309,6 +316,216 @@ def _is_redacted(value: object) -> bool:
             or "…" in value
         )
     return False
+
+
+_is_redacted = is_redacted_value
+
+
+CredentialStatus = Literal[
+    "permission",
+    "symlink",
+    "not_regular",
+    "foreign_owner",
+    "stale_temporary",
+]
+
+# A temporary file younger than this may still belong to a live writer, so
+# only older leftovers are reported and removed.
+_STALE_TEMPORARY_AGE = 3600.0
+
+
+@dataclass(frozen=True)
+class CredentialFinding:
+    """One inventory-driven defect: kind, path, and status only.
+
+    A finding never carries a secret value, a file's contents, or an
+    absolute path outside the state root, because it is printed by
+    ``openprogram doctor credentials`` and serialised to JSON.
+    """
+
+    kind: str
+    relative_path: str
+    status: CredentialStatus
+    repairable: bool
+    repaired: bool = False
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "kind": self.kind,
+            "relative_path": self.relative_path,
+            "status": self.status,
+            "repairable": self.repairable,
+            "repaired": self.repaired,
+        }
+
+
+def _temporary_of(name: str) -> str | None:
+    """Return the target name a private temporary file belongs to."""
+
+    if not name.startswith(".") or not name.endswith(".tmp"):
+        return None
+    stem = name[1:-4]
+    target, _, token = stem.rpartition(".")
+    if not target or len(token) != 24 or any(c not in "0123456789abcdef" for c in token):
+        return None
+    return target
+
+
+def _inspect(path: Path, relative: str, kind: str) -> CredentialFinding | None:
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return None
+    if stat.S_ISLNK(info.st_mode):
+        return CredentialFinding(kind, relative, "symlink", False)
+    if os.name != "nt" and info.st_uid != os.geteuid():
+        return CredentialFinding(kind, relative, "foreign_owner", False)
+    if stat.S_ISDIR(info.st_mode):
+        expected = 0o700
+    elif stat.S_ISREG(info.st_mode):
+        expected = 0o600
+    else:
+        return CredentialFinding(kind, relative, "not_regular", False)
+    if os.name != "nt" and stat.S_IMODE(info.st_mode) != expected:
+        return CredentialFinding(kind, relative, "permission", True)
+    return None
+
+
+def audit_credentials(*, root: Path) -> list[CredentialFinding]:
+    """Report every inventory-registered path that is not owner-only.
+
+    The scan uses ``lstat`` throughout, so a symlink is reported as a
+    symlink and never followed to its target.
+    """
+
+    root_path = Path(root)
+    findings: list[CredentialFinding] = []
+    seen: set[str] = set()
+    for current_dir, dir_names, file_names in os.walk(root_path, followlinks=False):
+        here = Path(current_dir)
+        for name in sorted(dir_names) + sorted(file_names):
+            path = here / name
+            relative = path.relative_to(root_path).as_posix()
+            if relative in seen:
+                continue
+            entries = inventory_for_path(relative)
+            target = _temporary_of(name)
+            if not entries and target is not None:
+                # A leftover temporary only matters beside a registered target.
+                entries = inventory_for_path(
+                    (path.parent / target).relative_to(root_path).as_posix()
+                )
+                if entries and _is_stale_temporary(path):
+                    seen.add(relative)
+                    findings.append(
+                        CredentialFinding(
+                            entries[0].kind, relative, "stale_temporary", True
+                        )
+                    )
+                continue
+            if not entries:
+                continue
+            seen.add(relative)
+            finding = _inspect(path, relative, entries[0].kind)
+            if finding is not None:
+                findings.append(finding)
+            # Secret directories are the parents of registered files.
+            for parent in path.parents:
+                if parent == root_path:
+                    break
+                parent_relative = parent.relative_to(root_path).as_posix()
+                if parent_relative in seen:
+                    continue
+                seen.add(parent_relative)
+                parent_finding = _inspect(parent, parent_relative, entries[0].kind)
+                if parent_finding is not None:
+                    findings.append(parent_finding)
+    return sorted(findings, key=lambda f: (f.relative_path, f.status))
+
+
+def _is_stale_temporary(path: Path) -> bool:
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return False
+    if not stat.S_ISREG(info.st_mode):
+        return False
+    return time.time() - info.st_mtime > _STALE_TEMPORARY_AGE
+
+
+def _repair_posix_mode(path: Path, expected: os.stat_result, mode: int) -> bool:
+    """Change mode through a no-follow descriptor for the audited inode."""
+
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    if stat.S_ISDIR(expected.st_mode):
+        flags |= getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(path, flags)
+    try:
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino):
+            return False
+        if opened.st_uid != os.geteuid():
+            return False
+        if not (stat.S_ISREG(opened.st_mode) or stat.S_ISDIR(opened.st_mode)):
+            return False
+        os.fchmod(descriptor, mode)
+        verified = os.fstat(descriptor)
+        return (
+            (verified.st_dev, verified.st_ino) == (expected.st_dev, expected.st_ino)
+            and stat.S_IMODE(verified.st_mode) == mode
+        )
+    finally:
+        os.close(descriptor)
+
+
+def repair_credentials(*, root: Path) -> list[CredentialFinding]:
+    """Repair only current-user regular files and secret directories.
+
+    Ownership is never taken and symlinks are never followed, so a
+    foreign-owner or symlink finding survives repair and keeps the
+    command's exit status non-zero.
+    """
+
+    root_path = Path(root)
+    repaired: list[CredentialFinding] = []
+    for finding in audit_credentials(root=root_path):
+        if not finding.repairable:
+            repaired.append(finding)
+            continue
+        path = root_path / finding.relative_path
+        done = False
+        try:
+            if finding.status == "stale_temporary":
+                with _private_file_lock(path, root=root_path):
+                    if _is_stale_temporary(path):
+                        path.unlink(missing_ok=True)
+                        done = True
+            else:
+                info = os.lstat(path)
+                # Re-check under the same rules the audit used: never
+                # widen the blast radius between scan and repair.
+                if not stat.S_ISLNK(info.st_mode) and (
+                    os.name == "nt" or info.st_uid == os.geteuid()
+                ):
+                    mode = 0o700 if stat.S_ISDIR(info.st_mode) else 0o600
+                    if os.name == "nt":
+                        _apply_windows_owner_acl(path)
+                        done = True
+                    else:
+                        done = _repair_posix_mode(path, info, mode)
+        except OSError:
+            done = False
+        repaired.append(
+            CredentialFinding(
+                finding.kind,
+                finding.relative_path,
+                finding.status,
+                finding.repairable,
+                done,
+            )
+        )
+    return repaired
 
 
 class PrivateAtomicWriteError(OSError):
@@ -853,14 +1070,19 @@ def _run_icacls(argv: list[str]) -> subprocess.CompletedProcess[str]:
 
 __all__ = [
     "BackupPolicy",
+    "CredentialFinding",
+    "CredentialStatus",
     "DeleteAction",
     "PrivateAtomicWriteResult",
     "PrivateAtomicWriteError",
     "SECRET_INVENTORY",
     "SecretInventoryEntry",
     "SecretLifecycle",
+    "audit_credentials",
     "backup_bytes",
     "inventory_for_path",
+    "is_redacted_value",
     "private_file_revision",
     "preserve_local_secret_bytes",
+    "repair_credentials",
 ]
