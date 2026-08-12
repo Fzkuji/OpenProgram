@@ -682,9 +682,10 @@ def recover_interrupted_restore(state: Path) -> bool:
         journal_file.unlink(missing_ok=True)
         return False
 
-    if not _validate_recovery_paths(state, entries):
+    try:
+        _reverse(state, entries)
+    except _UnsafeRecoveryPath:
         return False
-    _reverse(state, entries)
     shutil.rmtree(state / _JOURNAL_DIR, ignore_errors=True)
     journal_file.unlink(missing_ok=True)
     return True
@@ -739,87 +740,156 @@ def _safe_relative_path(value: object) -> bool:
     return not path.is_absolute() and all(part not in ("", ".", "..") for part in path.parts)
 
 
+class _UnsafeRecoveryPath(Exception):
+    pass
+
+
 def _reverse(state: Path, entries: list[dict]) -> None:
-    for entry in reversed(entries):
-        relative = entry.get("relative_path")
-        if not isinstance(relative, str) or not relative:
-            continue
-        target = state / relative
-        previous = entry.get("previous")
-        if entry.get("existed") and isinstance(previous, str):
-            source = state / previous
-            if source.exists():
-                target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                _journal_replace(source, target)
-                os.chmod(target, 0o600)
-        else:
-            target.unlink(missing_ok=True)
-
-
-def _validate_recovery_paths(state: Path, entries: list[dict]) -> bool:
-    """Validate every rollback path before the first filesystem mutation."""
-
+    prepared = _prepare_recovery_entries(state, entries)
     try:
-        root = os.lstat(state)
-        if stat.S_ISLNK(root.st_mode) or not stat.S_ISDIR(root.st_mode):
-            return False
-        if root.st_uid != os.geteuid():
-            return False
+        for target_parent, target_name, existed, source in reversed(prepared):
+            if existed:
+                assert source is not None
+                _restore_opened_source(source, target_parent, target_name)
+            else:
+                try:
+                    os.unlink(target_name, dir_fd=target_parent)
+                except FileNotFoundError:
+                    pass
+                _journal_fsync(target_parent)
+    finally:
+        for target_parent, _target_name, _existed, source in prepared:
+            os.close(target_parent)
+            if source is not None:
+                os.close(source)
+
+
+def _prepare_recovery_entries(
+    state: Path, entries: list[dict]
+) -> list[tuple[int, str, bool, int | None]]:
+    prepared: list[tuple[int, str, bool, int | None]] = []
+    root_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    root_flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    try:
+        root = os.open(state, root_flags)
+        _verify_recovery_directory(root)
         for entry in entries:
-            target = state / entry["relative_path"]
-            if not _validate_recovery_target(state, target, entry["existed"]):
-                return False
-            if entry["existed"]:
-                source = state / entry["previous"]
-                if not _validate_recovery_source(state, source):
-                    return False
-    except OSError:
-        return False
-    return True
+            target_parts = PurePath(entry["relative_path"]).parts
+            target_parent = _open_recovery_directory(root, target_parts[:-1])
+            source = None
+            try:
+                _verify_recovery_target_at(
+                    target_parent, target_parts[-1], entry["existed"]
+                )
+                if entry["existed"]:
+                    source_parts = PurePath(entry["previous"]).parts
+                    source_parent = _open_recovery_directory(root, source_parts[:-1])
+                    try:
+                        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                        flags |= getattr(os, "O_CLOEXEC", 0)
+                        source = os.open(
+                            source_parts[-1], flags, dir_fd=source_parent
+                        )
+                        info = os.fstat(source)
+                        if (
+                            not stat.S_ISREG(info.st_mode)
+                            or info.st_uid != os.geteuid()
+                            or stat.S_IMODE(info.st_mode) != 0o600
+                        ):
+                            raise _UnsafeRecoveryPath
+                    finally:
+                        os.close(source_parent)
+                prepared.append(
+                    (target_parent, target_parts[-1], entry["existed"], source)
+                )
+            except BaseException:
+                os.close(target_parent)
+                if source is not None:
+                    os.close(source)
+                raise
+    except (OSError, _UnsafeRecoveryPath) as exc:
+        for target_parent, _target_name, _existed, source in prepared:
+            os.close(target_parent)
+            if source is not None:
+                os.close(source)
+        raise _UnsafeRecoveryPath from exc
+    finally:
+        if "root" in locals():
+            os.close(root)
+    return prepared
 
 
-def _validate_recovery_target(state: Path, target: Path, existed: bool) -> bool:
-    current = state
-    relative = target.relative_to(state)
-    for part in relative.parts[:-1]:
-        current /= part
-        info = os.lstat(current)
-        if (
-            stat.S_ISLNK(info.st_mode)
-            or not stat.S_ISDIR(info.st_mode)
-            or info.st_uid != os.geteuid()
-        ):
-            return False
+def _open_recovery_directory(root: int, parts: tuple[str, ...]) -> int:
+    current = os.dup(root)
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
     try:
-        final = os.lstat(target)
+        for part in parts:
+            following = os.open(part, flags, dir_fd=current)
+            os.close(current)
+            current = following
+            _verify_recovery_directory(current)
+        return current
+    except BaseException:
+        os.close(current)
+        raise
+
+
+def _verify_recovery_directory(descriptor: int) -> None:
+    info = os.fstat(descriptor)
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
+        raise _UnsafeRecoveryPath
+
+
+def _verify_recovery_target_at(parent: int, name: str, existed: bool) -> None:
+    try:
+        info = os.stat(name, dir_fd=parent, follow_symlinks=False)
     except FileNotFoundError:
-        return not existed
-    return (
-        not stat.S_ISLNK(final.st_mode)
-        and stat.S_ISREG(final.st_mode)
-        and final.st_uid == os.geteuid()
-    )
+        if existed:
+            raise _UnsafeRecoveryPath
+        return
+    if (
+        stat.S_ISLNK(info.st_mode)
+        or not stat.S_ISREG(info.st_mode)
+        or info.st_uid != os.geteuid()
+    ):
+        raise _UnsafeRecoveryPath
 
 
-def _validate_recovery_source(state: Path, source: Path) -> bool:
-    current = state
-    relative = source.relative_to(state)
-    for part in relative.parts[:-1]:
-        current /= part
-        info = os.lstat(current)
-        if (
-            stat.S_ISLNK(info.st_mode)
-            or not stat.S_ISDIR(info.st_mode)
-            or info.st_uid != os.geteuid()
-        ):
-            return False
-    info = os.lstat(source)
-    return (
-        not stat.S_ISLNK(info.st_mode)
-        and stat.S_ISREG(info.st_mode)
-        and info.st_uid == os.geteuid()
-        and stat.S_IMODE(info.st_mode) == 0o600
-    )
+def _restore_opened_source(source: int, parent: int, target_name: str) -> None:
+    temporary = f".{target_name}.{secrets.token_hex(12)}.rollback"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    descriptor = os.open(temporary, flags, 0o600, dir_fd=parent)
+    published = False
+    try:
+        os.lseek(source, 0, os.SEEK_SET)
+        while payload := os.read(source, 1024 * 1024):
+            written = 0
+            while written < len(payload):
+                count = _journal_write(descriptor, payload[written:])
+                if count <= 0:
+                    raise OSError("restore rollback write made no progress")
+                written += count
+        _journal_fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        _journal_replace(
+            temporary,
+            target_name,
+            src_dir_fd=parent,
+            dst_dir_fd=parent,
+        )
+        published = True
+        _journal_fsync(parent)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if not published:
+            try:
+                os.unlink(temporary, dir_fd=parent)
+            except FileNotFoundError:
+                pass
 
 
 def _publish_restored(target: Path, payload: bytes, *, root: Path) -> None:
@@ -990,8 +1060,6 @@ def restore_archive(archive: Path, state: Path) -> list[str]:
                 _publish_restored(target, payload, root=state)
                 published.append(relative)
         except BaseException:
-            if not _validate_recovery_paths(state, journal.entries):
-                raise OSError("restore rollback paths failed validation")
             _reverse(state, journal.entries)
             journal.discard()
             raise
