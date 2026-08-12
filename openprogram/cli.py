@@ -557,6 +557,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor = sub.add_parser("doctor",
         help="Run sanity checks: python, node, skills, plugins, providers, mcp, cache, worker")
     p_doctor.add_argument("--json", action="store_true", help="Emit JSON")
+    p_doctor.add_argument(
+        "topic", nargs="?", choices=["credentials"],
+        help="credentials: audit every credential file's owner-only permissions")
+    p_doctor.add_argument(
+        "--repair", action="store_true",
+        help="With `credentials`: restore owner-only permissions on files this "
+             "user owns. Symlinks and foreign-owned paths are never modified.")
 
     p_acp = sub.add_parser("acp",
         help="Serve the Agent Client Protocol on stdio, for editors like Zed")
@@ -1252,8 +1259,14 @@ def main():
         return
 
     if args.command == "doctor":
+        as_json = getattr(args, "json", False)
+        if getattr(args, "topic", None) == "credentials":
+            from openprogram._cli_cmds.doctor import _cmd_doctor_credentials
+            sys.exit(_cmd_doctor_credentials(
+                repair=getattr(args, "repair", False), as_json=as_json
+            ))
         from openprogram._cli_cmds.doctor import _cmd_doctor
-        sys.exit(_cmd_doctor(getattr(args, "json", False)))
+        sys.exit(_cmd_doctor(as_json))
 
     if args.command == "acp":
         from openprogram._cli_cmds.acp import _cmd_acp

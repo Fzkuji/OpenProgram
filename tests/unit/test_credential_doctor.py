@@ -1,0 +1,263 @@
+"""Behavior tests for the inventory-driven credential doctor and repair."""
+
+from __future__ import annotations
+
+import os
+import stat
+from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.name == "nt", reason="POSIX ownership and mode semantics"
+)
+
+
+def _state(tmp_path: Path) -> Path:
+    root = tmp_path / "state"
+    root.mkdir()
+    os.chmod(root, 0o700)
+    return root
+
+
+def _write(path: Path, mode: int, text: str = "{}") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    os.chmod(path, mode)
+    return path
+
+
+def test_audit_reports_only_kind_path_and_status(tmp_path: Path) -> None:
+    from openprogram.credential_files import audit_credentials
+
+    root = _state(tmp_path)
+    _write(root / "config.json", 0o600, '{"api_keys": {"A": "sk-x"}}')
+    findings = audit_credentials(root=root)
+
+    assert findings == []
+
+
+def test_audit_flags_historical_world_readable_file(tmp_path: Path) -> None:
+    from openprogram.credential_files import audit_credentials
+
+    root = _state(tmp_path)
+    _write(root / "config.json", 0o644)
+
+    findings = audit_credentials(root=root)
+
+    assert [(f.kind, f.status) for f in findings] == [
+        ("config_api_keys", "permission")
+    ]
+    finding = findings[0]
+    assert finding.relative_path == "config.json"
+    assert finding.repairable is True
+    # No secret value is ever part of a finding's projection.
+    assert "sk-" not in repr(finding)
+
+
+def test_audit_flags_secret_directory_that_is_group_readable(
+    tmp_path: Path,
+) -> None:
+    from openprogram.credential_files import audit_credentials
+
+    root = _state(tmp_path)
+    _write(root / "auth" / "openai" / "default.json", 0o600)
+    os.chmod(root / "auth" / "openai", 0o755)
+
+    statuses = {
+        (f.relative_path, f.status) for f in audit_credentials(root=root)
+    }
+
+    assert ("auth/openai", "permission") in statuses
+
+
+def test_audit_flags_symlink_without_following_it(tmp_path: Path) -> None:
+    from openprogram.credential_files import audit_credentials
+
+    root = _state(tmp_path)
+    outside = tmp_path / "outside.json"
+    outside.write_text('{"api_keys": {}}')
+    os.chmod(outside, 0o644)
+    (root / "config.json").symlink_to(outside)
+
+    findings = audit_credentials(root=root)
+
+    assert [(f.kind, f.status, f.repairable) for f in findings] == [
+        ("config_api_keys", "symlink", False)
+    ]
+    # The link target must not be touched by an audit.
+    assert stat.S_IMODE(os.lstat(outside).st_mode) == 0o644
+
+
+def test_audit_flags_foreign_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openprogram import credential_files
+
+    root = _state(tmp_path)
+    _write(root / "config.json", 0o600)
+    monkeypatch.setattr(
+        credential_files.os, "geteuid", lambda: os.stat(root).st_uid + 1
+    )
+
+    findings = credential_files.audit_credentials(root=root)
+
+    assert ("config_api_keys", "foreign_owner", False) in {
+        (f.kind, f.status, f.repairable) for f in findings
+    }
+
+
+def test_audit_flags_non_regular_file(tmp_path: Path) -> None:
+    from openprogram.credential_files import audit_credentials
+
+    root = _state(tmp_path)
+    os.mkfifo(root / "config.json")
+
+    assert [(f.kind, f.status, f.repairable) for f in audit_credentials(root=root)] == [
+        ("config_api_keys", "not_regular", False)
+    ]
+
+
+def test_audit_reports_stale_temporary_files(tmp_path: Path) -> None:
+    from openprogram.credential_files import audit_credentials
+
+    root = _state(tmp_path)
+    _write(root / "config.json", 0o600)
+    stale = _write(root / ".config.json.abc123def456789012345678.tmp", 0o600)
+    old = os.stat(root).st_atime - 86_400
+    os.utime(stale, (old, old))
+
+    statuses = {
+        (f.relative_path, f.status) for f in audit_credentials(root=root)
+    }
+
+    assert (stale.name, "stale_temporary") in statuses
+
+
+def test_repair_restores_owner_only_mode_on_file_and_directory(
+    tmp_path: Path,
+) -> None:
+    from openprogram.credential_files import audit_credentials, repair_credentials
+
+    root = _state(tmp_path)
+    _write(root / "auth" / "openai" / "default.json", 0o644)
+    os.chmod(root / "auth" / "openai", 0o755)
+
+    repaired = repair_credentials(root=root)
+
+    assert all(f.repaired for f in repaired if f.repairable)
+    assert stat.S_IMODE(os.lstat(root / "auth" / "openai" / "default.json").st_mode) == 0o600
+    assert stat.S_IMODE(os.lstat(root / "auth" / "openai").st_mode) == 0o700
+    assert audit_credentials(root=root) == []
+
+
+def test_repair_refuses_symlink_and_leaves_target_untouched(
+    tmp_path: Path,
+) -> None:
+    from openprogram.credential_files import audit_credentials, repair_credentials
+
+    root = _state(tmp_path)
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}")
+    os.chmod(outside, 0o644)
+    (root / "config.json").symlink_to(outside)
+
+    findings = repair_credentials(root=root)
+
+    assert [(f.status, f.repaired) for f in findings] == [("symlink", False)]
+    assert stat.S_IMODE(os.lstat(outside).st_mode) == 0o644
+    # The finding survives repair, so the command still reports failure.
+    assert [f.status for f in audit_credentials(root=root)] == ["symlink"]
+
+
+def test_repair_never_takes_ownership_of_a_foreign_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openprogram import credential_files
+
+    root = _state(tmp_path)
+    target = _write(root / "config.json", 0o644)
+    monkeypatch.setattr(
+        credential_files.os, "geteuid", lambda: os.stat(root).st_uid + 1
+    )
+
+    def refuse_chown(*args: object, **kwargs: object) -> None:
+        raise AssertionError("repair must never change ownership")
+
+    monkeypatch.setattr(credential_files.os, "chown", refuse_chown)
+    findings = credential_files.repair_credentials(root=root)
+
+    assert [(f.status, f.repaired) for f in findings] == [("foreign_owner", False)]
+    assert stat.S_IMODE(os.lstat(target).st_mode) == 0o644
+
+
+def test_repair_removes_only_old_stale_temporary_files(tmp_path: Path) -> None:
+    from openprogram.credential_files import repair_credentials
+
+    root = _state(tmp_path)
+    _write(root / "config.json", 0o600)
+    stale = _write(root / ".config.json.abc123def456789012345678.tmp", 0o600)
+    fresh = _write(root / ".config.json.999888777666555444333222.tmp", 0o600)
+    old = os.stat(root).st_atime - 86_400
+    os.utime(stale, (old, old))
+
+    repair_credentials(root=root)
+
+    assert not stale.exists()
+    assert fresh.exists()
+
+
+def test_doctor_credentials_command_reports_and_exits_non_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from openprogram._cli_cmds import doctor as doctor_cmd
+
+    root = _state(tmp_path)
+    _write(root / "config.json", 0o644, '{"api_keys": {"A": "sk-secret-value"}}')
+    monkeypatch.setattr(doctor_cmd, "get_state_dir", lambda: root)
+
+    code = doctor_cmd._cmd_doctor_credentials()
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "config_api_keys" in output
+    assert "config.json" in output
+    assert "sk-secret-value" not in output
+
+
+def test_doctor_credentials_repair_fixes_and_exits_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from openprogram._cli_cmds import doctor as doctor_cmd
+
+    root = _state(tmp_path)
+    _write(root / "config.json", 0o644)
+    monkeypatch.setattr(doctor_cmd, "get_state_dir", lambda: root)
+
+    assert doctor_cmd._cmd_doctor_credentials(repair=True) == 0
+    assert stat.S_IMODE(os.lstat(root / "config.json").st_mode) == 0o600
+    assert "sk-" not in capsys.readouterr().out
+
+
+def test_doctor_credentials_json_projection_carries_no_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import json
+
+    from openprogram._cli_cmds import doctor as doctor_cmd
+
+    root = _state(tmp_path)
+    _write(root / "config.json", 0o644, '{"api_keys": {"A": "sk-secret-value"}}')
+    monkeypatch.setattr(doctor_cmd, "get_state_dir", lambda: root)
+
+    doctor_cmd._cmd_doctor_credentials(as_json=True)
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["findings"][0]["kind"] == "config_api_keys"
+    assert set(payload["findings"][0]) == {
+        "kind",
+        "relative_path",
+        "status",
+        "repairable",
+        "repaired",
+    }
