@@ -650,6 +650,14 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["direct", "group", "channel"])
     sessions_sub.add_parser("aliases",
         help="List every session↔channel-peer alias")
+    p_ss_exp = sessions_sub.add_parser("export",
+        help="Export a session as a shareable Markdown or HTML file")
+    p_ss_exp.add_argument("session_id", help="Session id to export")
+    p_ss_exp.add_argument("--format", dest="export_format", default="md",
+        choices=["md", "html"],
+        help="Output format: md (default) or html (single self-contained file)")
+    p_ss_exp.add_argument("--output", default=None,
+        help="Write here instead of ./<session-id>.<format>")
 
     # ---- subagent ----------------------------------------------------------
     # Subagent spawn / merge ops. See ``openprogram/agent/sub_agent_run.py``
@@ -1373,6 +1381,9 @@ def main():
                       f"{args.peer_kind}:{args.peer}")
             else:
                 print("No matching alias.")
+        elif verb == "export":
+            _cmd_sessions_export(args.session_id, args.export_format,
+                                 args.output)
         elif verb == "aliases":
             from openprogram.agent.management import session_aliases as _a
             rows = _a.list_all()
@@ -1812,6 +1823,7 @@ from openprogram._cli_cmds.subagent import (  # noqa: E402,F401
 from openprogram._cli_cmds.sessions import (  # noqa: E402,F401
     _cmd_resume,
     _cmd_sessions,
+    _cmd_sessions_export,
 )
 from openprogram._cli_cmds.agents import (  # noqa: E402,F401
     _dispatch_agents_verb,
