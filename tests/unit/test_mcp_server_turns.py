@@ -65,6 +65,7 @@ def _service(
     bus = bus or create_event_bus()
     questions = questions or FakeQuestions()
     current_events = {}
+    cleanup_leases = {}
 
     def record(name, value=None):
         calls.append((name, value))
@@ -78,6 +79,16 @@ def _service(
         if current_events.get(session_id) is event:
             current_events.pop(session_id, None)
 
+    def acquire_cleanup(session_id, event):
+        if current_events.get(session_id) is not event or session_id in cleanup_leases:
+            return False
+        cleanup_leases[session_id] = event
+        return True
+
+    def release_cleanup(session_id, event):
+        if cleanup_leases.get(session_id) is event:
+            cleanup_leases.pop(session_id, None)
+
     return MCPService(
         context or _context(),
         session_db=db or FakeSessionDB(),
@@ -86,6 +97,8 @@ def _service(
         register_cancel_event=register,
         unregister_cancel_event=unregister,
         current_cancel_event=current_events.get,
+        acquire_cancel_cleanup=acquire_cleanup,
+        release_cancel_cleanup=release_cleanup,
         mark_cancelled=lambda sid: record("mark", sid),
         kill_active_subprocess=lambda sid: record("subprocess", sid),
         kill_active_runtime=lambda sid: record("runtime", sid),
@@ -416,6 +429,114 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
             unregister_cancel_event(session_id, token.event)
         service_a.close()
         service_b.close()
+
+
+@pytest.mark.parametrize("operation", ["prompt_cancel", "close"])
+def test_old_owner_cleanup_cannot_cross_concurrent_session_handover(operation) -> None:
+    from openprogram.agent.questions import PendingQuestion, QuestionRegistry
+    from openprogram.agent.run_control import (
+        acquire_cancel_cleanup,
+        current_token,
+        register_cancel_event,
+        release_cancel_cleanup,
+        unregister_cancel_event,
+    )
+
+    session_id = f"handover-{operation}"
+    db = FakeSessionDB()
+    db.sessions[session_id] = {"id": session_id, "agent_id": "main"}
+    turn_entered = threading.Event()
+    release_turn = threading.Event()
+    owner_sampled = threading.Event()
+    release_owner_sample = threading.Event()
+    cleanup = []
+    questions = QuestionRegistry()
+
+    def process(req, *, cancel_event):
+        turn_entered.set()
+        release_turn.wait(2)
+        return TurnResult("old", "u", "a")
+
+    def acquire_cleanup(selected_session_id, event):
+        acquired = acquire_cancel_cleanup(selected_session_id, event)
+        if acquired:
+            owner_sampled.set()
+            release_owner_sample.wait(2)
+        return acquired
+
+    service = MCPService(
+        _context(),
+        session_db=db,
+        process_user_turn=process,
+        acquire_cancel_cleanup=acquire_cleanup,
+        release_cancel_cleanup=release_cancel_cleanup,
+        kill_active_subprocess=lambda sid: cleanup.append(("process", sid)),
+        kill_active_runtime=lambda sid: cleanup.append(("runtime", sid)),
+        question_registry_getter=lambda: questions,
+        event_bus_getter=create_event_bus,
+    )
+    foreign_event = threading.Event()
+
+    async def scenario():
+        task = asyncio.create_task(
+            service.prompt_send(
+                "old", session_id=session_id, request_id=f"request-{operation}"
+            )
+        )
+        await asyncio.to_thread(turn_entered.wait, 1)
+        record = _active(service)[0]
+
+        result = {}
+
+        def cancel_old_owner():
+            if operation == "prompt_cancel":
+                result["value"] = _payload(service.prompt_cancel(session_id))
+            else:
+                service.close()
+
+        cancel_thread = threading.Thread(target=cancel_old_owner)
+        cancel_thread.start()
+        assert owner_sampled.wait(1)
+        with pytest.raises(RuntimeError):
+            register_cancel_event(session_id, foreign_event)
+        assert current_token(session_id).event is record.thread_cancel
+        release_owner_sample.set()
+        cancel_thread.join(1)
+
+        assert not cancel_thread.is_alive()
+        if operation == "prompt_cancel":
+            assert result["value"] == {"session_id": session_id, "cancelled": True}
+        assert record.thread_cancel.is_set()
+        assert record.tool_cancel.is_set()
+        assert not foreign_event.is_set()
+        assert cleanup == [("process", session_id), ("runtime", session_id)]
+
+        register_cancel_event(session_id, foreign_event)
+        foreign_question_event = questions.register(
+            PendingQuestion(
+                id="foreign-question",
+                session_id=session_id,
+                kind="ask",
+                prompt="foreign prompt",
+            )
+        )
+        service.close()
+        assert not foreign_event.is_set()
+        assert not foreign_question_event.is_set()
+        assert questions.list_pending(session_id)[0].id == "foreign-question"
+        assert current_token(session_id).event is foreign_event
+
+        release_turn.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release_owner_sample.set()
+        release_turn.set()
+        unregister_cancel_event(session_id, foreign_event)
+        service.close()
 
 
 def test_question_events_decline_only_current_service_active_request() -> None:
@@ -749,9 +870,20 @@ def test_cancel_request_cleanup_callback_failures_do_not_retain_ownership() -> N
 
     bus = create_event_bus()
     current_events = {}
+    cleanup_leases = {}
 
     def register(session_id, event):
         current_events[session_id] = event
+
+    def acquire_cleanup(session_id, event):
+        if current_events.get(session_id) is not event or session_id in cleanup_leases:
+            return False
+        cleanup_leases[session_id] = event
+        return True
+
+    def release_cleanup(session_id, event):
+        if cleanup_leases.get(session_id) is event:
+            cleanup_leases.pop(session_id, None)
 
     service = MCPService(
         _context(),
@@ -760,6 +892,8 @@ def test_cancel_request_cleanup_callback_failures_do_not_retain_ownership() -> N
         register_cancel_event=register,
         unregister_cancel_event=fail,
         current_cancel_event=current_events.get,
+        acquire_cancel_cleanup=acquire_cleanup,
+        release_cancel_cleanup=release_cleanup,
         mark_cancelled=fail,
         kill_active_subprocess=fail,
         kill_active_runtime=fail,
@@ -779,3 +913,4 @@ def test_cancel_request_cleanup_callback_failures_do_not_retain_ownership() -> N
             await task
 
     asyncio.run(scenario())
+    assert cleanup_leases == {}

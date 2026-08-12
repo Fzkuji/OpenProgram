@@ -45,9 +45,6 @@ class ActiveMCPRequest:
     tool_cancel: asyncio.Event
 
 
-_MCP_SESSION_CLAIM_LOCK = threading.Lock()
-
-
 def _default_config() -> Mapping[str, Any]:
     from openprogram.setup import _read_config
 
@@ -72,10 +69,10 @@ def _default_process_user_turn(request, *, cancel_event):
     return process_user_turn(request, cancel_event=cancel_event)
 
 
-def _default_register_cancel_event(session_id, event) -> None:
-    from openprogram.agent.run_control import register_cancel_event
+def _default_register_cancel_event(session_id, event) -> bool:
+    from openprogram.agent.run_control import claim_cancel_event
 
-    register_cancel_event(session_id, event)
+    return claim_cancel_event(session_id, event)
 
 
 def _default_unregister_cancel_event(session_id, event) -> None:
@@ -89,6 +86,18 @@ def _default_current_cancel_event(session_id):
 
     token = current_token(session_id)
     return token.event if token is not None else None
+
+
+def _default_acquire_cancel_cleanup(session_id, event) -> bool:
+    from openprogram.agent.run_control import acquire_cancel_cleanup
+
+    return acquire_cancel_cleanup(session_id, event)
+
+
+def _default_release_cancel_cleanup(session_id, event) -> None:
+    from openprogram.agent.run_control import release_cancel_cleanup
+
+    release_cancel_cleanup(session_id, event)
 
 
 def _default_mark_cancelled(session_id) -> None:
@@ -267,6 +276,8 @@ class MCPService:
         register_cancel_event: Callable[[str, threading.Event], None] | None = None,
         unregister_cancel_event: Callable[[str, threading.Event], None] | None = None,
         current_cancel_event: Callable[[str], threading.Event | None] | None = None,
+        acquire_cancel_cleanup: Callable[[str, threading.Event], bool] | None = None,
+        release_cancel_cleanup: Callable[[str, threading.Event], None] | None = None,
         mark_cancelled: Callable[[str], None] | None = None,
         kill_active_subprocess: Callable[[str], Any] | None = None,
         kill_active_runtime: Callable[[str], Any] | None = None,
@@ -289,6 +300,12 @@ class MCPService:
         )
         self._current_cancel_event = (
             current_cancel_event or _default_current_cancel_event
+        )
+        self._acquire_cancel_cleanup = (
+            acquire_cancel_cleanup or _default_acquire_cancel_cleanup
+        )
+        self._release_cancel_cleanup = (
+            release_cancel_cleanup or _default_release_cancel_cleanup
         )
         self._mark_cancelled = mark_cancelled or _default_mark_cancelled
         self._kill_active_subprocess = (
@@ -328,8 +345,8 @@ class MCPService:
             if self._closed or record is None:
                 return
             try:
-                owns_session = (
-                    self._current_cancel_event(session_id) is record.thread_cancel
+                owns_session = self._acquire_cancel_cleanup(
+                    session_id, record.thread_cancel
                 )
             except Exception:
                 owns_session = False
@@ -339,6 +356,10 @@ class MCPService:
                 self._question_registry_getter().resolve(question_id, "declined", None)
             except Exception:
                 return
+            finally:
+                _best_effort(
+                    self._release_cancel_cleanup, session_id, record.thread_cancel
+                )
 
     def _unregister_once(self, record: ActiveMCPRequest) -> None:
         with self._active_lock:
@@ -388,26 +409,33 @@ class MCPService:
             record.thread_cancel.set()
             record.tool_cancel.set()
             try:
-                owns_session = (
-                    self._current_cancel_event(record.session_id)
-                    is record.thread_cancel
+                owns_session = self._acquire_cancel_cleanup(
+                    record.session_id, record.thread_cancel
                 )
             except Exception:
                 owns_session = False
-            if owns_session:
-                for callback in (
-                    self._mark_cancelled,
-                    self._kill_active_subprocess,
-                    self._kill_active_runtime,
-                ):
-                    _best_effort(callback, record.session_id)
-                try:
-                    questions = self._question_registry_getter()
-                except Exception:
-                    questions = None
-                if questions is not None:
-                    _best_effort(questions.cancel_session, record.session_id)
-            self._unregister_once(record)
+            try:
+                if owns_session:
+                    for callback in (
+                        self._mark_cancelled,
+                        self._kill_active_subprocess,
+                        self._kill_active_runtime,
+                    ):
+                        _best_effort(callback, record.session_id)
+                    try:
+                        questions = self._question_registry_getter()
+                    except Exception:
+                        questions = None
+                    if questions is not None:
+                        _best_effort(questions.cancel_session, record.session_id)
+                self._unregister_once(record)
+            finally:
+                if owns_session:
+                    _best_effort(
+                        self._release_cancel_cleanup,
+                        record.session_id,
+                        record.thread_cancel,
+                    )
             self._audit_cancellation(record, reason)
             return True
         finally:
@@ -503,19 +531,17 @@ class MCPService:
                 or selected_session_id in self._cleaning_sessions
             ):
                 return json_result({"error": "prompt execution failed"}, is_error=True)
-            with _MCP_SESSION_CLAIM_LOCK:
-                try:
-                    if self._current_cancel_event(selected_session_id) is not None:
-                        raise RuntimeError
-                    self._register_cancel_event(selected_session_id, thread_cancel)
-                    if (
-                        self._current_cancel_event(selected_session_id)
-                        is not thread_cancel
-                    ):
-                        raise RuntimeError
-                    registered = True
-                except Exception:
-                    registered = False
+            try:
+                claimed = self._register_cancel_event(
+                    selected_session_id, thread_cancel
+                )
+                if claimed is False or (
+                    self._current_cancel_event(selected_session_id) is not thread_cancel
+                ):
+                    raise RuntimeError
+                registered = True
+            except Exception:
+                registered = False
             if registered:
                 self._active_by_request[request_id] = record
                 self._request_by_session[selected_session_id] = request_id
