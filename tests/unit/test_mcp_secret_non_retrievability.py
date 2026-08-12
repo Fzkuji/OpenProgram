@@ -13,6 +13,7 @@ easily as ``API_KEY`` holds a key.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import stat
@@ -70,6 +71,28 @@ def remote_config(auth_kind: str = "bearer") -> MCPServerConfig:
 def secrets_absent(blob: str) -> None:
     for secret in (BEARER, CLIENT_SECRET, ENV_SECRET, HEADER_SECRET):
         assert secret not in blob, f"response leaked {secret!r}"
+
+
+def test_restart_endpoint_does_not_disclose_runtime_exception(monkeypatch):
+    """Replacing the stable error with an upstream exception leaks credentials."""
+    from openprogram.webui.routes import mcp
+
+    async def failed_restart(_name):
+        raise RuntimeError("peer-secret-value restart stderr")
+
+    monkeypatch.setattr(mcp, "restart_server", failed_restart)
+    app = FastAPI()
+    mcp.register(app)
+
+    response = TestClient(app).post("/api/mcp/servers/local-tools/restart")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "mcp_runtime_restart_failed",
+        "kind": "runtime",
+        "action": "retry_or_restart",
+    }
+    assert "peer-secret-value" not in response.text
 
 
 # --- serialization split ---------------------------------------------

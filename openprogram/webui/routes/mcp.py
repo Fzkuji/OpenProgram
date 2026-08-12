@@ -201,9 +201,15 @@ def register(app: FastAPI) -> None:
         except KeyError:
             raise HTTPException(status_code=404,
                                 detail=f"server '{name}' not loaded")
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500,
-                                detail=f"restart failed: {type(e).__name__}: {e}")
+        except Exception:  # noqa: BLE001
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "mcp_runtime_restart_failed",
+                    "kind": "runtime",
+                    "action": "retry_or_restart",
+                },
+            ) from None
         return JSONResponse(content=status)
 
     @app.post("/api/mcp/servers/{name}/enable")
