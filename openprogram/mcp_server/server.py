@@ -123,7 +123,12 @@ def build_server(context: MCPClientContext) -> Server:
         except asyncio.CancelledError:
             cancelled = True
             cancel_event.set()
-            raise
+            task = asyncio.current_task()
+            if task is not None and task.cancelling():
+                raise
+            raise McpError(
+                mcp_types.ErrorData(code=0, message="Request cancelled", data=None)
+            ) from None
         except McpError:
             raise
         except Exception:

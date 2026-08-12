@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import os
 import subprocess
 import sys
 import threading
+from contextlib import asynccontextmanager
 
 import anyio
 import mcp.types as mcp_types
@@ -15,6 +18,394 @@ from openprogram.agent.authority import mcp_client_authority
 from openprogram.mcp_server.contracts import get_mcp_tools
 from openprogram.mcp_server.service import MCPClientContext
 from openprogram.mcp_server.tools import json_result
+
+
+def _stdio_subprocess_environment(tmp_path, *, client: str = "a"):
+    state = tmp_path / ".openprogram"
+    state.mkdir(mode=0o700, parents=True, exist_ok=True)
+    token = f"stdio-{client}-secret-token"
+    token_file = state / "mcp_server_token"
+    token_file.write_text(token, encoding="ascii")
+    token_file.chmod(0o600)
+    fixture_path = tmp_path / "subprocess_fixture"
+    fixture_path.mkdir()
+    (fixture_path / "sitecustomize.py").write_text(
+        """
+import json
+import os
+import threading
+from pathlib import Path
+
+from openprogram.agent.dispatcher import TurnResult
+from openprogram.agent.types import AgentTool, AgentToolResult
+from openprogram.events import get_event_bus, make_event
+from openprogram.functions._runtime import register
+from openprogram.providers.types import TextContent
+
+evidence = Path(os.environ["OPENPROGRAM_MCP_TEST_EVIDENCE"])
+
+def record(kind, **values):
+    with evidence.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"kind": kind, **values}, sort_keys=True) + "\\n")
+
+async def execute(call_id, arguments, cancel_event, on_update):
+    record("execute", call_id=call_id, arguments=arguments,
+           progress=on_update is not None)
+    if on_update is not None:
+        on_update("first")
+        on_update("second")
+    if arguments.get("failure"):
+        raise RuntimeError("runtime-secret")
+    return AgentToolResult(content=[TextContent(text="runtime-ok")])
+
+for name in ("memory_status", "memory_search", "read", "bash", "memory_update"):
+    properties = {"failure": {"type": "boolean"}}
+    if name == "bash":
+        properties["command"] = {"type": "string"}
+    if name == "memory_update":
+        properties["revision"] = {"type": "string"}
+    schema = {"type": "object", "properties": properties,
+              "additionalProperties": False}
+    register(AgentTool(name=name, description="Fixture " + name,
+                       parameters=schema, label=name, execute=execute))
+
+from openprogram.agent.session_config import PermissionRules
+import openprogram.functions.permission_rule as permission_module
+permission_module.load_merged_rules = lambda _session_id: PermissionRules(
+    deny=["memory_update"]
+)
+
+from openprogram.agent import dispatcher
+def process_user_turn(request, *, cancel_event):
+    record("turn", session_id=request.session_id, prompt=request.user_text,
+           speaker_id=request.speaker_id)
+    get_event_bus().emit(make_event("question.asked", "agent", {
+        "id": "fixture-question", "session_id": request.session_id,
+    }))
+    if request.user_text == "wait-for-cancel":
+        record("entered", session_id=request.session_id)
+        while not cancel_event.is_set():
+            threading.Event().wait(0.01)
+        record("late-worker-finished", session_id=request.session_id)
+    return TurnResult("fixture-result", "fixture-user", "fixture-assistant")
+dispatcher.process_user_turn = process_user_turn
+
+class Questions:
+    def resolve(self, question_id, outcome, value=None):
+        record("question", question_id=question_id, outcome=outcome, value=value)
+        return True
+    def cancel_session(self, session_id):
+        record("question_cancel", session_id=session_id)
+
+questions = Questions()
+import openprogram.agent.questions as question_module
+question_module.get_question_registry = lambda: questions
+def audit(event):
+    from openprogram.agent.run_control import current_token
+    record("audit", payload=event.payload,
+           run_control_cleared=current_token(event.payload["session_id"]) is None)
+get_event_bus().subscribe(audit, types={"mcp.request.cancelled"})
+
+from openprogram.agent.session_db import default_db
+db = default_db()
+if db.get_session("fixture-session") is None:
+    db.create_session("fixture-session", "main", title="Fixture", source="mcp")
+    db.append_message("fixture-session", {
+        "id": "seed-message", "role": "user", "content": "seed",
+        "timestamp": 1.0, "predecessor": "",
+    })
+""",
+        encoding="utf-8",
+    )
+    state.joinpath("config.json").write_text(
+        json.dumps(
+            {
+                "mcp_server": {
+                    "exposed_tools": [
+                        "memory_status",
+                        "memory_search",
+                        "read",
+                        "bash",
+                        "memory_update",
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    state.joinpath("config.json").chmod(0o600)
+    environment = dict(os.environ)
+    python_path = str(fixture_path)
+    if environment.get("PYTHONPATH"):
+        python_path += os.pathsep + environment["PYTHONPATH"]
+    environment.update(
+        {
+            "HOME": str(tmp_path),
+            "OPENPROGRAM_MCP_TOKEN": token,
+            "OPENPROGRAM_MCP_TEST_EVIDENCE": str(tmp_path / "evidence.jsonl"),
+            "PYTHONPATH": python_path,
+        }
+    )
+    return environment
+
+
+@asynccontextmanager
+async def _stdio_sdk_client(environment, *, client_name="acceptance"):
+    from mcp import StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    parameters = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "openprogram.cli", "mcp", "serve"],
+        env=environment,
+        cwd=os.getcwd(),
+    )
+    async with stdio_client(parameters) as streams:
+        async with ClientSession(
+            *streams,
+            client_info=mcp_types.Implementation(name=client_name, version="1"),
+        ) as session:
+            await session.initialize()
+            await session.list_tools()
+            yield session
+
+
+@pytest.mark.parametrize("client_name", ["acceptance-a", "acceptance-b"])
+def test_real_stdio_subprocess_calls_all_six_wrappers(tmp_path, client_name):
+    environment = _stdio_subprocess_environment(tmp_path)
+
+    async def scenario():
+        async with _stdio_sdk_client(environment, client_name=client_name) as session:
+            listed = await session.list_tools()
+            sessions = await session.call_tool("sessions_list", {})
+            session_get = await session.call_tool(
+                "session_get", {"session_id": "fixture-session"}
+            )
+            prompt = await session.call_tool(
+                "prompt_send",
+                {"prompt": "fixture-prompt", "session_id": "fixture-session"},
+            )
+            completed_cancel = await session.call_tool(
+                "prompt_cancel", {"session_id": "fixture-session"}
+            )
+            tools = await session.call_tool("tools_list", {})
+            runtime = await session.call_tool(
+                "tool_call", {"name": "memory_status", "arguments": {}}
+            )
+        return listed, sessions, session_get, prompt, completed_cancel, tools, runtime
+
+    results = asyncio.run(asyncio.wait_for(scenario(), 10))
+    listed, sessions, session_get, prompt, completed_cancel, tools, runtime = results
+    assert listed.tools == list(get_mcp_tools())
+    session_rows = json.loads(sessions.content[0].text)
+    assert len(session_rows) == 1
+    assert session_rows[0]["id"] == "fixture-session"
+    assert session_rows[0]["title"] == "Fixture"
+    assert isinstance(session_rows[0]["updated_at"], (int, float))
+    assert session_get.content[0].text == (
+        '[{"content":"seed","id":"seed-message","role":"user","timestamp":1.0}]'
+    )
+    assert prompt.content[0].text == (
+        '{"assistant_msg_id":"fixture-assistant","failed":false,'
+        '"session_id":"fixture-session","text":"fixture-result"}'
+    )
+    assert completed_cancel.content[0].text == (
+        '{"cancelled":false,"session_id":"fixture-session"}'
+    )
+    assert tools.content[0].text.startswith('[{"description":')
+    assert runtime.content[0].text == "runtime-ok"
+    evidence = [
+        json.loads(line)
+        for line in (tmp_path / "evidence.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert [item["outcome"] for item in evidence if item["kind"] == "question"] == [
+        "declined"
+    ]
+    client_id = hashlib.sha256(
+        environment["OPENPROGRAM_MCP_TOKEN"].encode("ascii")
+    ).hexdigest()[:16]
+    assert [item["speaker_id"] for item in evidence if item["kind"] == "turn"] == [
+        f"mcp/{client_id}"
+    ]
+
+
+def test_real_stdio_subprocess_error_progress_and_concurrency_contract(tmp_path):
+    environment = _stdio_subprocess_environment(tmp_path)
+
+    async def scenario():
+        progress = {"left": [], "right": []}
+
+        async def observe(label, value, _total, message):
+            progress[label].append((value, message))
+
+        async with _stdio_sdk_client(environment) as session:
+            with pytest.raises(Exception) as unknown_wrapper:
+                await session.call_tool("unknown", {})
+            with pytest.raises(Exception) as invalid_wrapper:
+                await session.call_tool("session_get", {})
+            underlying = []
+            for name in ("missing-a", "missing-b"):
+                with pytest.raises(Exception) as caught:
+                    await session.call_tool(
+                        "tool_call", {"name": name, "arguments": {}}
+                    )
+                underlying.append(str(caught.value))
+            typed = [
+                await session.call_tool("tool_call", {"name": "read", "arguments": {}}),
+                await session.call_tool(
+                    "tool_call",
+                    {"name": "bash", "arguments": {"command": "pwd"}},
+                ),
+                await session.call_tool(
+                    "tool_call",
+                    {"name": "memory_update", "arguments": {"revision": "r1"}},
+                ),
+                await session.call_tool(
+                    "tool_call", {"name": "memory_search", "arguments": {}}
+                ),
+                await session.call_tool(
+                    "tool_call",
+                    {"name": "memory_status", "arguments": {"failure": True}},
+                ),
+            ]
+            no_progress = await session.call_tool(
+                "tool_call", {"name": "memory_status", "arguments": {}}
+            )
+            left, right = await asyncio.gather(
+                session.call_tool(
+                    "tool_call",
+                    {"name": "memory_status", "arguments": {}},
+                    progress_callback=lambda v, t, m: observe("left", v, t, m),
+                ),
+                session.call_tool(
+                    "tool_call",
+                    {"name": "memory_status", "arguments": {}},
+                    progress_callback=lambda v, t, m: observe("right", v, t, m),
+                ),
+            )
+        return (
+            unknown_wrapper.value,
+            invalid_wrapper.value,
+            underlying,
+            typed,
+            no_progress,
+            left,
+            right,
+            progress,
+        )
+
+    result = asyncio.run(asyncio.wait_for(scenario(), 10))
+    (
+        unknown_wrapper,
+        invalid_wrapper,
+        underlying,
+        typed,
+        no_progress,
+        left,
+        right,
+        progress,
+    ) = result
+    assert "unknown MCP wrapper tool" in str(unknown_wrapper)
+    assert "invalid arguments" in str(invalid_wrapper)
+    assert underlying[0] == underlying[1]
+    assert "underlying Runtime tool not found" in underlying[0]
+    assert [item.isError for item in typed] == [True] * 5
+    assert [item.content[0].text for item in typed] == [
+        "[denied] authority tier does not allow fs.read",
+        "[denied] hard constraint",
+        "[denied] blocked by permission rule",
+        "[denied] approval unavailable for non-interactive MCP",
+        "Runtime tool execution failed",
+    ]
+    assert no_progress.content[0].text == "runtime-ok"
+    assert left.content[0].text == right.content[0].text == "runtime-ok"
+    assert progress == {
+        "left": [(1.0, "first"), (2.0, "second")],
+        "right": [(1.0, "first"), (2.0, "second")],
+    }
+    evidence = [
+        json.loads(line)
+        for line in (tmp_path / "evidence.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    executions = [item for item in evidence if item["kind"] == "execute"]
+    assert len(executions) == 4
+    assert len({item["call_id"] for item in executions}) == 4
+    assert [item["progress"] for item in executions] == [False, False, True, True]
+
+
+def test_real_stdio_subprocess_prompt_cancel_cleanup_and_foreign_ownership(tmp_path):
+    environment_a = _stdio_subprocess_environment(tmp_path / "a", client="a")
+    environment_b = _stdio_subprocess_environment(tmp_path / "b", client="b")
+
+    async def wait_for_evidence(path, kind):
+        deadline = asyncio.get_running_loop().time() + 3
+        while asyncio.get_running_loop().time() < deadline:
+            if path.exists() and any(
+                json.loads(line)["kind"] == kind
+                for line in path.read_text(encoding="utf-8").splitlines()
+            ):
+                return
+            await asyncio.sleep(0.02)
+        raise AssertionError(f"missing subprocess evidence: {kind}")
+
+    async def scenario():
+        async with (
+            _stdio_sdk_client(environment_a, client_name="owner-a") as client_a,
+            _stdio_sdk_client(environment_b, client_name="foreign-b") as client_b,
+        ):
+            prompt = asyncio.create_task(
+                client_a.call_tool(
+                    "prompt_send",
+                    {"prompt": "wait-for-cancel", "session_id": "fixture-session"},
+                )
+            )
+            await wait_for_evidence(tmp_path / "a" / "evidence.jsonl", "entered")
+            foreign = await client_b.call_tool(
+                "prompt_cancel", {"session_id": "fixture-session"}
+            )
+            same = await client_a.call_tool(
+                "prompt_cancel", {"session_id": "fixture-session"}
+            )
+            with pytest.raises(Exception) as cancellation:
+                await prompt
+        async with _stdio_sdk_client(environment_a) as completed_client:
+            completed = await completed_client.call_tool(
+                "prompt_cancel", {"session_id": "fixture-session"}
+            )
+        return foreign, same, cancellation.value, completed
+
+    foreign, same, cancellation, completed = asyncio.run(
+        asyncio.wait_for(scenario(), 15)
+    )
+    assert foreign.content[0].text == (
+        '{"cancelled":false,"session_id":"fixture-session"}'
+    )
+    assert same.content[0].text == ('{"cancelled":true,"session_id":"fixture-session"}')
+    assert "cancel" in str(cancellation).lower()
+    assert completed.content[0].text == (
+        '{"cancelled":false,"session_id":"fixture-session"}'
+    )
+    evidence = [
+        json.loads(line)
+        for line in (tmp_path / "a" / "evidence.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert [item["outcome"] for item in evidence if item["kind"] == "question"] == [
+        "declined"
+    ]
+    assert len([item for item in evidence if item["kind"] == "question_cancel"]) == 1
+    audits = [item for item in evidence if item["kind"] == "audit"]
+    assert len(audits) == 1
+    assert audits[0]["payload"]["reason"] == "prompt_cancel"
+    assert audits[0]["run_control_cleared"] is True
+    assert (
+        len([item for item in evidence if item["kind"] == "late-worker-finished"]) == 1
+    )
 
 
 def test_build_server_registers_exact_tools_and_explicit_call_handler():
