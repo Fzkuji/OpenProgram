@@ -56,3 +56,40 @@ def test_mark_merged_preserves_order_and_is_idempotent(tmp_path: Path) -> None:
     pair = store._open("s1")
     assert pair is not None
     assert pair[1].meta["merged_heads"] == ["a", "b", "c"]
+
+
+def test_cached_open_waits_for_local_meta_publish(tmp_path: Path, monkeypatch) -> None:
+    store = SessionStore(tmp_path / "sessions")
+    store.create_session("s1", "main")
+    pair = store._open("s1")
+    assert pair is not None
+    git, idx = pair
+    published = threading.Event()
+    release_sync = threading.Event()
+    original_mark_synced = git.mark_synced
+
+    def delayed_mark_synced():
+        published.set()
+        assert release_sync.wait(timeout=2)
+        original_mark_synced()
+
+    monkeypatch.setattr(git, "mark_synced", delayed_mark_synced)
+    with idx._lock:
+        idx.meta["merged_heads"] = ["head-a"]
+    writer = threading.Thread(target=store._persist_meta, args=(git, idx))
+    writer.start()
+    assert published.wait(timeout=2)
+    with idx._lock:
+        idx.meta["merged_heads"].append("head-b")
+    reader = threading.Thread(target=store._open, args=("s1",))
+    reader.start()
+    release_sync.set()
+    writer.join(timeout=3)
+    reader.join(timeout=3)
+    assert not writer.is_alive()
+    assert not reader.is_alive()
+
+    store._persist_meta(git, idx)
+    assert store.merged_heads("s1") == {"head-a", "head-b"}
+    reloaded = SessionStore(tmp_path / "sessions")
+    assert reloaded.merged_heads("s1") == {"head-a", "head-b"}
