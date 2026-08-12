@@ -58,6 +58,33 @@ def test_append_advances_meta_and_registry_with_one_timestamp(
     assert on_disk["updated_at"] == 30.0
 
 
+def test_side_branch_append_syncs_meta_and_registry(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    store = SessionStore(tmp_path / "sessions")
+    store.create_session("s1", "main", updated_at=10.0)
+    store.append_message("s1", {
+        "id": "m1", "role": "user", "content": "root", "predecessor": "",
+    })
+    store.append_message("s1", {
+        "id": "m2", "role": "assistant", "content": "main", "predecessor": "m1",
+    })
+    monkeypatch.setattr(
+        "openprogram.store.session.session_store.time.time",
+        lambda: 40.0,
+    )
+
+    store.append_message("s1", {
+        "id": "b1", "role": "assistant", "content": "side", "predecessor": "m1",
+    })
+
+    assert store.get_session("s1")["updated_at"] == 40.0
+    assert store.list_sessions()[0]["updated_at"] == 40.0
+    on_disk = json.loads((tmp_path / "sessions" / "s1" / "meta.json").read_text())
+    assert on_disk["updated_at"] == 40.0
+
+
 def test_set_head_preserves_activity_time(tmp_path: Path) -> None:
     store = SessionStore(tmp_path / "sessions")
     store.create_session("s1", "main", updated_at=10.0)

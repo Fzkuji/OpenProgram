@@ -953,13 +953,9 @@ class SessionStore:
             idx.set_head(node.id)
         activity_at = time.time()
         idx.set_meta(updated_at=activity_at)
-        # Persist meta NOW (one tiny json write), not at turn end: a
-        # @agentic_function run appends from a fork()'d subprocess, and
-        # the parent server resolves the active branch from the on-disk
-        # head — a memory-only head keeps every mid-run load on the OLD
-        # branch until turn end.
-        if advanced:
-            self._persist_meta(git, idx)
+        # Persist activity time for every content append. When HEAD moved,
+        # this also exposes the new active branch to the parent process.
+        self._persist_meta(git, idx)
         # Registry: every appended message bumps updated_at（最新一次聊天
         # 时间，侧栏排序键）；user 消息顺带刷新 preview（debounced to disk）。
         fields: dict[str, Any] = {"updated_at": activity_at}
