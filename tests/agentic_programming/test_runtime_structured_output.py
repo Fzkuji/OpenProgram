@@ -17,6 +17,7 @@ from openprogram.providers.types import (
     TextContent,
 )
 from openprogram.providers.utils.errors import ErrorReason, LLMError
+from openprogram.providers.utils.errors import ExecInterrupt
 
 
 SCHEMA = {
@@ -171,6 +172,29 @@ def test_expired_deadline_does_not_start_validation_repair():
     assert not any(event.get("type") == "structured_output_retry" for event in events)
 
 
+def test_cancellation_does_not_start_validation_repair(monkeypatch):
+    calls = []
+
+    def call(content, model="test", response_format=None):
+        calls.append(content)
+        return '{"answer": "wrong"}'
+
+    def check_cancelled():
+        if calls:
+            from openprogram.agentic_programming.function import CancelledError
+            raise CancelledError("cancelled")
+
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.function.check_cancelled", check_cancelled
+    )
+    with pytest.raises(ExecInterrupt, match="cancelled"):
+        Runtime(call=call, model="dummy", max_retries=2).exec(
+            "question", response_format=SCHEMA
+        )
+
+    assert len(calls) == 1
+
+
 def test_async_exec_returns_validated_python_value():
     async def call(content, model="test", response_format=None):
         return '{"answer": 9}'
@@ -234,6 +258,31 @@ def test_async_expired_deadline_does_not_start_validation_repair():
     assert exc.value.attempts == 1
     assert len(calls) == 1
     assert not any(event.get("type") == "structured_output_retry" for event in events)
+
+
+def test_async_cancellation_does_not_start_validation_repair(monkeypatch):
+    calls = []
+
+    async def call(content, model="test", response_format=None):
+        calls.append(content)
+        return '{"answer": "wrong"}'
+
+    def check_cancelled():
+        if calls:
+            from openprogram.agentic_programming.function import CancelledError
+            raise CancelledError("cancelled")
+
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.function.check_cancelled", check_cancelled
+    )
+    with pytest.raises(ExecInterrupt, match="cancelled"):
+        asyncio.run(
+            Runtime(call=call, model="dummy", max_retries=2).async_exec(
+                "question", response_format=SCHEMA
+            )
+        )
+
+    assert len(calls) == 1
 
 
 def test_unknown_provider_is_rejected_before_stream_call():
