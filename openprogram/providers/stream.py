@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import AsyncGenerator
 
 from .api_registry import get_api_provider
+from .budget import BudgetedRequest
 from .env_api_keys import resolve_provider_key
 from .types import (
     AssistantMessage,
@@ -36,6 +37,12 @@ async def stream_simple(
     if provider is None:
         raise ValueError(f"No stream function registered for API: {model.api!r}")
 
+    # Reserve budget BEFORE credentials or network: a denied call must never
+    # resolve a key or open a socket. Returns None for unbudgeted callers.
+    budget = BudgetedRequest.begin(model, context, opts)
+    if budget is not None:
+        opts = budget.clamp(opts, model)
+
     # Auto-resolve API key if not set. resolve_provider_key reads the
     # AuthStore (the single key source — no env vars, no config.json).
     if not opts.api_key and getattr(provider, "requires_credentials", True):
@@ -49,7 +56,7 @@ async def stream_simple(
     # See docs/design/claude-code-meridian-profile.md.
 
     recorded = False
-    async for event in provider.stream_simple(model, context, opts):
+    async for event in _metered(provider.stream_simple, model, context, opts, budget):
         # Record AT the terminal event, not after the loop: the consumer
         # (agent_loop) returns the moment it sees the done/error event,
         # leaving this generator suspended at ``yield`` — a post-loop line
@@ -59,7 +66,10 @@ async def stream_simple(
             final = _extract_final(event)
             if final is not None:
                 recorded = True
-                _record_usage(model, final, opts)
+                if budget is not None:
+                    budget.settle(model, final, opts)
+                else:
+                    _record_usage(model, final, opts)
         yield event
 
 
@@ -98,17 +108,24 @@ async def stream(
     if provider is None:
         raise ValueError(f"No stream function registered for API: {model.api!r}")
 
+    budget = BudgetedRequest.begin(model, context, opts)
+    if budget is not None:
+        opts = budget.clamp(opts, model)
+
     # Auto-resolve API key from the AuthStore if not set (same as stream_simple)
     if not opts.api_key and getattr(provider, "requires_credentials", True):
         opts = opts.model_copy(update={"api_key": resolve_provider_key(model.provider)})
 
     recorded = False
-    async for event in provider.stream(model, context, opts):
+    async for event in _metered(provider.stream, model, context, opts, budget):
         if not recorded:
             final = _extract_final(event)
             if final is not None:
                 recorded = True
-                _record_usage(model, final, opts)
+                if budget is not None:
+                    budget.settle(model, final, opts)
+                else:
+                    _record_usage(model, final, opts)
         yield event
 
 
@@ -130,6 +147,31 @@ async def complete(
         raise RuntimeError("Stream completed without a final message")
 
     return final_message
+
+
+async def _metered(stream_fn, model: Model, context, opts, budget):
+    """Drive the provider stream, marking the reservation started around I/O.
+
+    A provider that refuses before the request starts (bad key, unroutable
+    model, immediate transport error) releases the reservation: nothing was
+    billed. Once the first event arrives the request may have reached the
+    provider, so its exposure stays held until it settles or expires.
+    """
+    if budget is None:
+        async for event in stream_fn(model, context, opts):
+            yield event
+        return
+
+    budget.start()
+    started = False
+    try:
+        async for event in stream_fn(model, context, opts):
+            started = True
+            yield event
+    except BaseException:
+        if not started:
+            budget.release()
+        raise
 
 
 def _record_usage(model: Model, final, options) -> None:
