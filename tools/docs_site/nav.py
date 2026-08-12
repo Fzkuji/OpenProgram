@@ -372,10 +372,9 @@ PAGE_ORDER: dict[str, int] = {
     "reference/design/framework-overview.md": 1020,
     "reference/design/framework-comparison.html": 1021,
     "reference/design/feature-matrix.html": 1022,
-    # Integrations: the MCP client note stays alphabetical; the server-side
-    # note and its rendered companion pin to the end of the section, doc first.
-    "reference/design/integrations/mcp-server.md": 1040,
-    "reference/design/integrations/mcp-server.html": 1041,
+    # Integrations: pin the authoritative server-side HTML design after the
+    # alphabetical MCP client note.
+    "reference/design/integrations/mcp-server.html": 1040,
     # Agentic program: the four-layer note that unifies tools, skills and
     # agentic functions as one concept sits after the calling-framework
     # note it builds on.

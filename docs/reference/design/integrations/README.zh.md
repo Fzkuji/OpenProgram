@@ -4,5 +4,5 @@
 
 - [`harness-standard.md`](harness-standard.md)
 - [`mcp-integration.md`](mcp-integration.md)
-- [`mcp-server.md`](mcp-server.md)
+- [MCP 服务端——认证 stdio 设计与实现证据](mcp-server.html)
 - [`skills-and-plugins.md`](skills-and-plugins.md)

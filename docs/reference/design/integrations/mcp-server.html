@@ -99,7 +99,7 @@
     <b>别人怎么做</b>（<code>references/</code> 下九个框架逐一，包括两个明确不做的和两个反面案例）、
     <b>我们实施了什么</b>（六个工具、默认空白名单、外部低权档位、stdio 启动认证、取消与进度对齐规范）、
     <b>理想状态</b>（现有 ACP 的边界、入站 webhook、SDK 各自的差距和为什么本轮不扩张）。
-    设计文档：<code>docs/reference/design/integrations/mcp-server.md</code></p>
+    本页是该能力的唯一权威设计与实现证据。</p>
 
   <div class="tocg">
     <div class="gl">层一 · 我们现在怎么做</div>
@@ -657,7 +657,7 @@
     <tr><td><b>端到端协议测试</b></td><td class="y">已实施</td><td class="g">真实 MCP 1.29.0 <code>ClientSession</code> + CLI stdio 子进程，协议 <code>2025-11-25</code>；覆盖六项、clientInfo invariance、typed errors、question decline、progress、并发、取消、审计与 stdout 隔离</td></tr>
     <tr><td><b>ACP stdio 服务端</b></td><td class="g">已存在；本轮不扩张</td><td class="m"><code>openprogram/_cli_cmds/acp.py</code> 与 <code>openprogram/acp/server.py</code>；只做共享类型回归</td></tr>
     <tr><td><b>入站 webhook</b></td><td class="g">本轮不做</td><td class="m">依赖沙箱批次 I 与第 05B 步的固化 job capability</td></tr>
-    <tr><td><b>客户端 SDK</b></td><td class="g">本轮不做</td><td class="m">需要一个稳定到可以承诺的工具面</td></tr>
+    <tr><td><b>客户端 SDK</b></td><td class="g">本轮不做</td><td class="m">标准 MCP SDK 已覆盖客户端角色；仅当已冻结的六工具面被真实集成证明过粗时，再考虑专属 OpenProgram SDK</td></tr>
   </table>
   </div>
 

@@ -17,7 +17,7 @@ MCP 是协议,定义"工具的提供方"(server)和"工具的消费方"(client)�
 | Server | 提供工具的进程 | `@drawio/mcp`、`@modelcontextprotocol/server-filesystem` |
 | Client | LLM 框架,把 server 的工具暴露给 LLM | OpenProgram、Claude Desktop、Claude Code、Cursor、Cline、opencode |
 
-我们是 client。本设计**不涉及**把 OpenProgram 自己的工具暴露给外部 client —— 那个方向是另一个独立模块,不复用 `openprogram/mcp/` 里的代码,设计见 [`mcp-server.md`](mcp-server.md)。
+我们是 client。本设计**不涉及**把 OpenProgram 自己的工具暴露给外部 client —— 那个方向是另一个独立模块，不复用 `openprogram/mcp/` 里的代码，见权威的 [MCP 服务端设计与实现证据](mcp-server.html)。
 
 ## 目录位置
 
