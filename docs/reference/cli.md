@@ -184,6 +184,7 @@ One workspace per instance, shared by every agent and every conversation includi
 |------|------|----------|
 | `doctor` | End-to-end health check | `--json` for JSON output |
 | `rescue` | Diagnose problems and print the fix commands directly | — |
+| `diagnostics` | Build a redacted support zip (version, config, logs, probes) to attach to a bug report — see [Diagnostics bundle](diagnostics.md) | `--output PATH` (default `./openprogram-diagnostics-<date>.zip`) |
 | `logs` | View logs | `list`; `tail [name]` (`-n` line count, `-f` follow); `path [name]`. name is worker / runtime / ink, default worker |
 | `update` | Check for and apply updates | `--check` only checks; `--force` bypasses the 6-hour throttle |
 | `cron-worker` | Foreground loop that fires scheduled entries from the `cron` tool | `--once` evaluates one tick and exits; `--list` shows each entry with match status |

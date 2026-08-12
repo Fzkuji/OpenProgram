@@ -558,6 +558,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run sanity checks: python, node, skills, plugins, providers, mcp, cache, worker")
     p_doctor.add_argument("--json", action="store_true", help="Emit JSON")
 
+    # ---- diagnostics ------------------------------------------------------
+    p_diagnostics = sub.add_parser(
+        "diagnostics",
+        help="Build a redacted support bundle (version, config, logs, probes) as a zip",
+    )
+    p_diagnostics.add_argument(
+        "--output", metavar="PATH",
+        help="Write the zip here (default: ./openprogram-diagnostics-<date>.zip)",
+    )
+
     p_acp = sub.add_parser("acp",
         help="Serve the Agent Client Protocol on stdio, for editors like Zed")
     p_acp.add_argument("--agent", default="main",
@@ -1254,6 +1264,10 @@ def main():
     if args.command == "doctor":
         from openprogram._cli_cmds.doctor import _cmd_doctor
         sys.exit(_cmd_doctor(getattr(args, "json", False)))
+
+    if args.command == "diagnostics":
+        from openprogram._cli_cmds.diagnostics import _cmd_diagnostics
+        sys.exit(_cmd_diagnostics(getattr(args, "output", None)))
 
     if args.command == "acp":
         from openprogram._cli_cmds.acp import _cmd_acp

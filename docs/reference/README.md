@@ -13,6 +13,7 @@ Come here to look up parameters, commands, and configuration keys. This tab hold
 
 - [CLI reference](cli.md) — what every `openprogram` subcommand does and its key flags
 - [Configuration reference](config.md) — the keys in `config.json`, how to use `openprogram config`, and the environment variable roundup
+- [Diagnostics bundle](diagnostics.md) — `openprogram diagnostics`: what goes into the support zip and what is redacted out of it
 
 ## Topic notes
 

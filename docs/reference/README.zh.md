@@ -13,6 +13,7 @@
 
 - [CLI 命令参考](cli.md) —— `openprogram` 每个子命令的作用与关键参数
 - [配置参考](config.md) —— `config.json` 的键、`openprogram config` 的用法、环境变量汇总
+- [诊断包](diagnostics.md) —— `openprogram diagnostics`：支持包 zip 里有什么、脱敏掉了什么
 
 ## 专题笔记
 
