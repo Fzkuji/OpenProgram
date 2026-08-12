@@ -782,6 +782,28 @@ def test_direct_managed_symlink_target_remains_external(
     assert stat.S_IMODE(target.stat().st_mode) == 0o755
 
 
+def test_recording_rejects_intermediate_symlink_inside_managed_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state"
+    managed_root = state / "recordings"
+    managed_root.mkdir(parents=True, mode=0o700)
+    target = tmp_path / "shared-target"
+    target.mkdir(mode=0o755)
+    target.chmod(0o755)
+    (managed_root / "nested").symlink_to(target, target_is_directory=True)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+
+    with pytest.raises(PermissionError, match="must not contain a symlink"):
+        RecordingProvider(
+            _scripted_with((ScriptedText("done"),)),
+            managed_root / "nested" / "private.jsonl",
+        )
+
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+    assert not (target / "private.jsonl").exists()
+
+
 def test_external_replay_rejects_wide_permissions_without_chmod(tmp_path: Path) -> None:
     recording_file = _record_one_call(tmp_path)
     recording_file.chmod(0o644)
