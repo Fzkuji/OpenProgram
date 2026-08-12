@@ -1277,7 +1277,12 @@ class ResourceGovernor:
                        lease_expires_at = NULL, started_at = NULL,
                        last_activity_at = NULL
                    WHERE task_id = ? AND state = 'live'
-                     AND owner_instance_id = ? AND lease_generation = ?""",
+                     AND owner_instance_id = ? AND lease_generation = ?
+                     AND NOT EXISTS (
+                         SELECT 1 FROM task_finalizations
+                         WHERE task_finalizations.task_id = task_admissions.task_id
+                           AND task_finalizations.state = 'pending'
+                     )""",
                 (task_id, owner_instance_id, lease_generation),
             ).rowcount == 1
 
