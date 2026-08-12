@@ -5,7 +5,12 @@ import logging
 
 import pytest
 
-from openprogram.agentic_programming.function import agentic_function, traced
+from openprogram.agentic_programming.function import (
+    _call_id,
+    _current_runtime,
+    agentic_function,
+    traced,
+)
 from openprogram.agentic_programming.runtime import Runtime
 from openprogram.store import _store
 
@@ -26,6 +31,11 @@ class _FailingStore:
 
 class _AbortStore(_FailingStore):
     def append(self, node) -> None:
+        raise KeyboardInterrupt
+
+
+class _ExitAbortStore(_FailingStore):
+    def update(self, node_id, **fields) -> None:
         raise KeyboardInterrupt
 
 
@@ -140,3 +150,26 @@ def test_persistence_base_exception_is_not_downgraded(runtime: Runtime) -> None:
 
     with pytest.raises(KeyboardInterrupt):
         _run_with_store(_AbortStore(), lambda: work(runtime=runtime))
+    assert _call_id.get() is None
+    assert _current_runtime.get() is None
+
+
+def test_exit_base_exception_still_restores_agentic_context(runtime: Runtime) -> None:
+    @agentic_function
+    def work(runtime=None):
+        return "ok"
+
+    with pytest.raises(KeyboardInterrupt):
+        _run_with_store(_ExitAbortStore(), lambda: work(runtime=runtime))
+    assert _call_id.get() is None
+    assert _current_runtime.get() is None
+
+
+def test_exit_base_exception_still_restores_traced_call_id() -> None:
+    @traced
+    def work():
+        return "ok"
+
+    with pytest.raises(KeyboardInterrupt):
+        _run_with_store(_ExitAbortStore(), work)
+    assert _call_id.get() is None
