@@ -143,13 +143,30 @@ def test_edit_that_changes_nothing_is_not_a_write(memory, editor, capsys):
 
 
 def test_edit_gives_up_while_the_workspace_lock_is_held(memory, editor):
+    import threading
+
     from openprogram.memory.management.transaction import (
         workspace_write_lock,
     )
     editor.content = NOTE.replace("worth keeping", "worth remembering")
 
-    with workspace_write_lock(memory):
+    acquired = threading.Event()
+    release = threading.Event()
+
+    def hold_lock():
+        with workspace_write_lock(memory):
+            acquired.set()
+            release.wait(timeout=15)
+
+    holder = threading.Thread(target=hold_lock)
+    holder.start()
+    assert acquired.wait(timeout=2)
+    try:
         assert _edit(memory, "topics/note.md") == 1
+    finally:
+        release.set()
+        holder.join(timeout=2)
+    assert not holder.is_alive()
     assert (memory / "topics/note.md").read_text(encoding="utf-8") == NOTE
 
 
