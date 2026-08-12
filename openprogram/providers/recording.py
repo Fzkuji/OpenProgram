@@ -239,9 +239,17 @@ class RecordingSink:
         from openprogram.paths import get_state_dir
         managed_root = get_state_dir() / "recordings"
         try:
-            inside_managed_root = Path(os.path.abspath(self.path)).is_relative_to(
-                Path(os.path.abspath(managed_root))
-            )
+            normalized_path = Path(os.path.abspath(self.path))
+            normalized_root = Path(os.path.abspath(managed_root))
+            inside_managed_root = normalized_path.is_relative_to(normalized_root)
+            if not inside_managed_root and len(normalized_path.parts) >= len(normalized_root.parts):
+                alias_root = Path(*normalized_path.parts[:len(normalized_root.parts)])
+                inside_managed_root = (
+                    tuple(part.casefold() for part in alias_root.parts)
+                    == tuple(part.casefold() for part in normalized_root.parts)
+                    and alias_root.exists()
+                    and os.path.samefile(alias_root, normalized_root)
+                )
         except OSError:
             inside_managed_root = False
         if inside_managed_root and managed_root.is_symlink():
