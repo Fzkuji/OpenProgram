@@ -199,6 +199,7 @@ def _deepest_leaf_db(session_id: str, root_id: str) -> Optional[str]:
 # queue. The frontend sends the answer back via WebSocket.
 _follow_up_queues: dict = {}
 _follow_up_lock = threading.Lock()
+_FOLLOW_UP_DISCONNECTED = object()
 
 # Track running tasks so refresh can recover them
 _running_tasks: dict = {}  # session_id → {msg_id, func_name, started_at, ...}
@@ -264,7 +265,7 @@ def _web_follow_up(session_id: str, msg_id: str, func_name: str, tree_cb=None):
     with _follow_up_lock:
         _follow_up_queues[session_id] = fq
 
-    def _handler(question: str) -> str:
+    def _handler(question: str) -> Optional[str]:
         _broadcast_chat_response(session_id, msg_id, {
             "type": "follow_up_question",
             "question": question,
@@ -273,9 +274,14 @@ def _web_follow_up(session_id: str, msg_id: str, func_name: str, tree_cb=None):
         if tree_cb is not None:
             tree_cb("follow_up", {})
         try:
-            return fq.get(timeout=300)
+            answer = fq.get(timeout=300)
         except queue.Empty:
-            return ""
+            return None
+        if answer is _FOLLOW_UP_DISCONNECTED:
+            return None
+        if isinstance(answer, dict) and answer.get("_cancelled"):
+            return None
+        return answer
 
     set_ask_user(_handler)
     try:
@@ -1251,9 +1257,31 @@ async def _websocket_handler(ws):
             else:
                 try:
                     cmd = json.loads(data)
-                    await _handle_ws_command(ws, cmd)
                 except json.JSONDecodeError:
-                    pass
+                    continue
+                try:
+                    await _handle_ws_command(ws, cmd)
+                except Exception as exc:
+                    action = cmd.get("action") if isinstance(cmd, dict) else None
+                    session_id = (
+                        cmd.get("session_id") if isinstance(cmd, dict) else None
+                    )
+                    import logging
+                    logging.getLogger("openprogram.webui").exception(
+                        "[ws] action failed action=%r session_id=%r error_type=%s",
+                        action,
+                        session_id,
+                        type(exc).__name__,
+                    )
+                    await ws.send_text(json.dumps({
+                        "type": "action_error",
+                        "data": {
+                            "action": action,
+                            "session_id": session_id,
+                            "code": "handler_error",
+                            "error": "action failed",
+                        },
+                    }))
 
     except WebSocketDisconnect as e:
         # Normal client departure (refresh/close, codes 1000/1001/1005) —
@@ -1269,6 +1297,19 @@ async def _websocket_handler(ws):
                 _ws_connections.remove(ws)
             except ValueError:
                 pass
+            focused_session_id = getattr(ws, "_focused_session_id", None)
+            has_other_observer = bool(focused_session_id) and any(
+                getattr(conn, "_focused_session_id", None) == focused_session_id
+                for conn in _ws_connections
+            )
+        if focused_session_id and not has_other_observer:
+            with _follow_up_lock:
+                follow_up_queue = _follow_up_queues.get(focused_session_id)
+            if follow_up_queue is not None:
+                try:
+                    follow_up_queue.put_nowait(_FOLLOW_UP_DISCONNECTED)
+                except queue.Full:
+                    pass
 
 
 # ---------------------------------------------------------------------------

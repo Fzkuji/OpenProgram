@@ -28,10 +28,10 @@ git status --short
 | Evidence | Result |
 |---|---|
 | Base | `c1f10273` |
-| Design | Pending commit |
-| RED | Pending |
-| GREEN | Pending |
-| Affected verification | Pending |
+| Design | `84fe7da9` (`docs(web): define websocket command lifecycle`) |
+| RED | `tests/unit/test_websocket_command_lifecycle.py`: 2 failed, 3 passed; handler failure closed the socket before ping, and last focused disconnect left the legacy follow-up thread waiting |
+| GREEN | `tests/unit/test_websocket_command_lifecycle.py`: 5 passed |
+| Affected verification | 63 passed; scoped Ruff passed; `git diff --check` passed |
 | Specification review | Pending |
 | Quality review | Pending |
 | Full gate | Pending |
