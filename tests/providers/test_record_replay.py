@@ -549,6 +549,7 @@ def test_replay_refuses_a_recording_file_written_in_another_format_version(
         json.dumps({"type": "header", "format_version": RECORDING_FORMAT_VERSION + 1}) + "\n",
         encoding="utf-8",
     )
+    recording_file.chmod(0o600)
 
     with pytest.raises(RecordingFileError) as caught:
         ReplayProvider(recording_file)
@@ -561,6 +562,7 @@ def test_replay_refuses_a_recording_file_without_a_format_header(tmp_path: Path)
     """A headerless file has no version to check at all."""
     recording_file = tmp_path / "headerless.jsonl"
     recording_file.write_text(json.dumps({"type": "request", "call_index": 0}) + "\n", encoding="utf-8")
+    recording_file.chmod(0o600)
 
     with pytest.raises(RecordingFileError, match="no format header"):
         ReplayProvider(recording_file)
