@@ -950,6 +950,77 @@ def test_blocked_progress_does_not_delay_fixed_tool_result(
     assert calls == ["92"]
 
 
+def test_handler_cancel_during_progress_timeout_cleanup_is_not_swallowed():
+    from mcp.server.lowlevel.server import RequestContext, request_ctx
+
+    from openprogram.agent.types import AgentToolResult
+    from openprogram.mcp_server.server import build_server
+    from openprogram.providers.types import TextContent
+
+    server = build_server(
+        MCPClientContext("0123456789abcdef", mcp_client_authority("0123456789abcdef"))
+    )
+    service = server._openprogram_service
+    calls = []
+    first_cancel = asyncio.Event()
+    second_cancel = asyncio.Event()
+
+    async def tool_call(*_args, **kwargs):
+        calls.append(kwargs["call_id"])
+        kwargs["on_progress"]("blocked")
+        return AgentToolResult(content=[TextContent(text="must-not-return")])
+
+    service.tool_call = tool_call
+
+    class Session:
+        async def send_progress_notification(self, *_args, **_kwargs):
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                first_cancel.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    second_cancel.set()
+                    raise
+
+    context = RequestContext(
+        request_id=93,
+        meta=mcp_types.RequestParams.Meta(progressToken="blocked"),
+        session=Session(),
+        lifespan_context=None,
+    )
+    request = mcp_types.CallToolRequest(
+        method="tools/call",
+        params={"name": "tool_call", "arguments": {"name": "demo"}},
+    )
+
+    async def scenario():
+        token = request_ctx.set(context)
+        try:
+            handler = asyncio.create_task(
+                server.request_handlers[mcp_types.CallToolRequest](request)
+            )
+            await asyncio.wait_for(first_cancel.wait(), 0.5)
+            handler.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(handler, 0.5)
+            assert second_cancel.is_set()
+            assert not any(
+                "consume_progress" in repr(task.get_coro())
+                for task in asyncio.all_tasks()
+                if task is not asyncio.current_task()
+            )
+        finally:
+            request_ctx.reset(token)
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        service.close()
+    assert calls == ["93"]
+
+
 def test_protocol_tool_error_matrix_and_concurrent_progress_are_isolated():
     from mcp.shared.exceptions import McpError
 

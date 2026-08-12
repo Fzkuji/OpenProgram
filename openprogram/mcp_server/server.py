@@ -155,7 +155,9 @@ def build_server(context: MCPClientContext) -> Server:
                     try:
                         await progress_task
                     except asyncio.CancelledError:
-                        pass
+                        task = asyncio.current_task()
+                        if task is not None and task.cancelling():
+                            raise
                 except asyncio.CancelledError:
                     progress_task.cancel()
                     try:
