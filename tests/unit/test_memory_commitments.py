@@ -578,6 +578,72 @@ def test_failed_stage_refresh_stays_uncommittable(tmp_path, monkeypatch):
     workspace.close()
 
 
+def test_commit_cancel_during_backup_restores_workspace_and_poisons_stage(
+    tmp_path, monkeypatch
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management import block_views
+    from openprogram.memory.runtime.commitments import load_commitments, upsert_commitments
+
+    source = _source(tmp_path)
+    (tmp_path / "topics").mkdir()
+    (tmp_path / "topics" / "note.md").write_text("# Note\n", encoding="utf-8")
+    (tmp_path / "commitments.jsonl").write_text("", encoding="utf-8")
+    before = {
+        path.relative_to(tmp_path): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    workspace = MemoryWorkspace(tmp_path)
+    baseline = workspace.baseline()
+    upsert_commitments(
+        workspace.stage_dir,
+        [
+            {
+                "text": "Submit the rebuttal.",
+                "due": "2026-08-12",
+                "source": source,
+                "source_quote": "I will submit the rebuttal by Wednesday.",
+            }
+        ],
+        source_memory_dir=tmp_path,
+    )
+    real_replace = block_views.os.replace
+    real_rmtree = block_views.shutil.rmtree
+    cancelled = KeyboardInterrupt("cancel install")
+    replace_calls = 0
+
+    def cancel_second_replace(source_path, target_path):
+        nonlocal replace_calls
+        replace_calls += 1
+        if replace_calls == 2:
+            raise cancelled
+        return real_replace(source_path, target_path)
+
+    def fail_backup_cleanup(path, *args, **kwargs):
+        if path.name.endswith("-block-backup"):
+            raise OSError("cleanup failed")
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(block_views.os, "replace", cancel_second_replace)
+    monkeypatch.setattr(block_views.shutil, "rmtree", fail_backup_cleanup)
+    with pytest.raises(KeyboardInterrupt) as caught:
+        workspace.commit_edits(*baseline)
+
+    assert caught.value is cancelled
+    assert {
+        path.relative_to(tmp_path): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file() and "-block-backup" not in path.parts
+    } == before
+    assert workspace._stage_usable is False
+    with pytest.raises(RuntimeError, match="stage is unavailable"):
+        workspace.commit_edits(*baseline)
+    assert load_commitments(tmp_path) == []
+    monkeypatch.undo()
+    workspace.close()
+
+
 def test_writer_tool_rejects_source_outside_selected_batch(tmp_path):
     from openprogram.memory.management import MemoryWorkspace
     from openprogram.memory.management.tools import management_tools
