@@ -105,7 +105,16 @@ def access_path(channel: str, account_id: str) -> Path:
         raise ValueError("invalid channel id")
     if not _PATH_ID.fullmatch(str(account_id)):
         raise ValueError("invalid channel account id")
-    return _accounts.account_dir(channel, account_id) / "access.json"
+    from openprogram.paths import get_state_dir
+
+    return (
+        get_state_dir()
+        / "channels"
+        / channel
+        / "accounts"
+        / account_id
+        / "access.json"
+    )
 
 
 @contextmanager

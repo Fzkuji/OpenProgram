@@ -135,11 +135,9 @@ class FileTokenStorage(TokenStorage):
 
     def clear(self) -> bool:
         """Delete the file. Returns True iff something was removed."""
-        try:
-            self._path.unlink()
-            return True
-        except FileNotFoundError:
-            return False
+        from openprogram.credential_files import _private_unlink
+
+        return _private_unlink(self._path, root=self._path.parent.parent)
 
     # -- internals ----------------------------------------------------
     def _read(self) -> Optional[dict]:

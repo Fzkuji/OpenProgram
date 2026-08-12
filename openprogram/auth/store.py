@@ -419,15 +419,14 @@ class AuthStore:
         key = (provider_id, account_id)
         path = self._pool_path(provider_id, account_id)
         with self._sync_lock:
+            from openprogram.credential_files import _private_unlink
+
+            _private_unlink(
+                path, root=self._root, lock_timeout=FILE_LOCK_TIMEOUT_SECONDS
+            )
             self._pools.pop(key, None)
             self._fstat.pop(key, None)
             self._revisions.pop(key, None)
-            if path.exists():
-                with _flock(path):
-                    try:
-                        path.unlink()
-                    except FileNotFoundError:
-                        pass
             _clear_runtime_credential_caches()
             self._emit(
                 AuthEvent(

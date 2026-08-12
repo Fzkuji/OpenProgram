@@ -117,6 +117,29 @@ def test_restore_rejects_a_missing_manifest(tmp_path: Path) -> None:
         restore_archive(archive, state)
 
 
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        [],
+        {"format_version": 2, "credential_opt_in": False},
+        {"format_version": True, "credential_opt_in": False},
+        {"format_version": 1, "credential_opt_in": "false"},
+    ],
+)
+def test_restore_rejects_invalid_manifest_schema(tmp_path: Path, manifest) -> None:
+    from openprogram._cli_cmds.backup import restore_archive
+
+    state = _state(tmp_path)
+    archive = _archive(
+        tmp_path, {"config.json": b"{}"}, manifest=json.dumps(manifest).encode()
+    )
+
+    with pytest.raises(tarfile.TarError, match="manifest"):
+        restore_archive(archive, state)
+
+    assert not (state / "config.json").exists()
+
+
 def test_restore_rejects_a_registered_secret_member_that_is_not_json(
     tmp_path: Path,
 ) -> None:
@@ -358,6 +381,60 @@ def test_crash_after_publish_is_recovered_from_the_journal(tmp_path: Path) -> No
     assert recovered is True
     assert json.loads((state / "config.json").read_text()) == {"generation": "old"}
     assert not restore_journal_path(state).exists()
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"relative_path": "../outside.json", "previous": None, "existed": False},
+        {
+            "relative_path": "config.json",
+            "previous": "../outside.json",
+            "existed": True,
+        },
+        {"relative_path": "/tmp/outside.json", "previous": None, "existed": False},
+    ],
+)
+def test_recovery_rejects_journal_traversal_without_mutation(
+    tmp_path: Path, entry: dict
+) -> None:
+    from openprogram._cli_cmds.backup import recover_interrupted_restore, restore_journal_path
+
+    state = _state(tmp_path)
+    outside = tmp_path / "outside.json"
+    outside.write_text('{"keep": true}')
+    journal = restore_journal_path(state)
+    journal.write_text(
+        json.dumps({"format_version": 1, "complete": False, "entries": [entry]})
+    )
+    journal.chmod(0o600)
+
+    assert recover_interrupted_restore(state) is False
+    assert json.loads(outside.read_text()) == {"keep": True}
+    assert journal.exists()
+
+
+def test_restore_staging_is_owner_only_and_on_the_state_filesystem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openprogram._cli_cmds import backup as backup_cmd
+
+    state = _state(tmp_path)
+    archive = _archive(tmp_path, {"memory/core.md": b"value"})
+    observed: list[tuple[int, int]] = []
+    real_publish = backup_cmd._publish_restored
+
+    def inspect(target: Path, payload: bytes, *, root: Path) -> None:
+        staging = next(path for path in state.parent.iterdir() if ".restore-staging-" in path.name)
+        observed.append((staging.stat().st_dev, stat.S_IMODE(staging.stat().st_mode)))
+        real_publish(target, payload, root=root)
+
+    import stat
+
+    monkeypatch.setattr(backup_cmd, "_publish_restored", inspect)
+    backup_cmd.restore_archive(archive, state)
+
+    assert observed == [(state.stat().st_dev, 0o700)]
 
 
 def test_recovery_removes_targets_that_did_not_exist_before(tmp_path: Path) -> None:

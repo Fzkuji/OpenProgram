@@ -66,7 +66,7 @@ SECRET_INVENTORY: tuple[SecretInventoryEntry, ...] = (
     ),
     SecretInventoryEntry(
         "auth_store",
-        "auth/*.json",
+        "auth/*/*.json",
         ("$",),
         "openprogram.auth.store.AuthStore",
         "persistent",
@@ -75,7 +75,7 @@ SECRET_INVENTORY: tuple[SecretInventoryEntry, ...] = (
     ),
     SecretInventoryEntry(
         "profile_auth_store",
-        "profiles/*/auth/*.json",
+        "profiles/*/auth/*/*.json",
         ("$",),
         "openprogram.auth.store.AuthStore",
         "persistent",
@@ -413,12 +413,7 @@ def audit_credentials(*, root: Path) -> list[CredentialFinding]:
                 entries = tuple(
                     entry
                     for entry in SECRET_INVENTORY
-                    if (
-                        entry.path_pattern.split("*", 1)[0].rstrip("/") == relative
-                        or entry.path_pattern.split("*", 1)[0]
-                        .rstrip("/")
-                        .startswith(relative + "/")
-                    )
+                    if _can_be_inventory_parent(relative, entry.path_pattern)
                 )
             target = _temporary_of(name)
             if not entries and target is not None:
@@ -452,6 +447,15 @@ def audit_credentials(*, root: Path) -> list[CredentialFinding]:
                 if parent_finding is not None:
                     findings.append(parent_finding)
     return sorted(findings, key=lambda f: (f.relative_path, f.status))
+
+
+def _can_be_inventory_parent(relative: str, pattern: str) -> bool:
+    parts = PurePosixPath(relative).parts
+    pattern_parts = PurePosixPath(pattern).parts
+    return len(parts) < len(pattern_parts) and all(
+        fnmatch.fnmatchcase(part, pattern_part)
+        for part, pattern_part in zip(parts, pattern_parts)
+    )
 
 
 def _is_stale_temporary(path: Path) -> bool:
@@ -674,6 +678,64 @@ def private_file_revision(
 
     with _private_file_lock(path, root=root, timeout=lock_timeout):
         return _revision(_read_private_bytes(path, root=root))
+
+
+def _private_unlink(
+    path: Path, *, root: Path, lock_timeout: float = 10.0
+) -> bool:
+    """Delete one verified private regular file under its sibling lock."""
+
+    with _private_file_lock(path, root=root, timeout=lock_timeout):
+        root_path = Path(root).absolute()
+        root_resolved = root_path.resolve(strict=True)
+        relative = _relative_below_root(Path(path).absolute(), root_path, root_resolved)
+        parent = _ensure_private_directory(
+            root_resolved.joinpath(*relative.parent.parts), root=root_resolved
+        )
+        target = parent / relative.name
+        try:
+            before = os.lstat(target)
+        except FileNotFoundError:
+            return False
+        if stat.S_ISLNK(before.st_mode):
+            raise PrivateAtomicWriteError("symlink", target, committed=False)
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        flags |= getattr(os, "O_CLOEXEC", 0)
+        descriptor = os.open(target, flags)
+        try:
+            opened = os.fstat(descriptor)
+            _verify_private_regular_info(target, opened)
+            if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+                raise PrivateAtomicWriteError("delete", target, committed=False)
+            try:
+                os.unlink(target)
+            except OSError as exc:
+                raise PrivateAtomicWriteError(
+                    "delete", target, committed=False, cause=exc
+                ) from exc
+        finally:
+            os.close(descriptor)
+        try:
+            os.lstat(target)
+        except FileNotFoundError:
+            if os.name != "nt":
+                try:
+                    directory = os.open(
+                        parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                    )
+                    try:
+                        os.fsync(directory)
+                    finally:
+                        os.close(directory)
+                except OSError as exc:
+                    raise PrivateAtomicWriteError(
+                        "committed_not_durable",
+                        target,
+                        committed=True,
+                        cause=exc,
+                    ) from exc
+            return True
+        raise PrivateAtomicWriteError("delete", target, committed=False)
 
 
 @contextmanager
