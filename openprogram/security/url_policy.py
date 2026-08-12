@@ -327,6 +327,8 @@ def _validate_addresses(
     for address in addresses:
         if _is_metadata(normalized, address):
             raise URLPolicyError("METADATA_ADDRESS", normalized.safe_url)
+        if address.is_link_local:
+            raise URLPolicyError("NON_GLOBAL_ADDRESS", normalized.safe_url)
 
     if trust_class in {
         URLTrustClass.UNTRUSTED_PUBLIC,

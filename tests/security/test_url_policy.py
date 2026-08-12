@@ -363,6 +363,38 @@ def test_configured_service_never_allows_metadata_through_owner_exception():
     assert exc.value.reason == "METADATA_ADDRESS"
 
 
+@pytest.mark.parametrize("address", ["169.254.1.2", "fe80::1234"])
+def test_configured_origin_exception_never_allows_link_local_dns(address):
+    from openprogram.config_schema import parse_outbound_url_settings
+
+    origin = "https://catalog.example.test"
+    security = parse_outbound_url_settings(
+        {
+            "exceptions": [
+                {
+                    "consumer": "skills.configured.catalog",
+                    "origin": origin,
+                }
+            ]
+        }
+    ).security_for("skills.configured.catalog")
+
+    with pytest.raises(URLPolicyError) as exc:
+        evaluate_url(
+            "skills.configured.catalog",
+            "GET",
+            f"{origin}/skills",
+            trust_class=URLTrustClass.CONFIGURED_SERVICE,
+            allowed_methods=PUBLIC_METHODS,
+            allowed_ports=PUBLIC_PORTS,
+            configured_origin=origin,
+            exceptions=security.owner_exceptions,
+            resolver=answers(address),
+        )
+
+    assert exc.value.reason == "NON_GLOBAL_ADDRESS"
+
+
 def test_fixed_service_rejects_unlisted_origin_before_dns():
     calls: list[tuple[str, int]] = []
 
