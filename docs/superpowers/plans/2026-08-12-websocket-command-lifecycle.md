@@ -30,9 +30,9 @@ git status --short
 | Base | `c1f10273` |
 | Design | `84fe7da9` (`docs(web): define websocket command lifecycle`) |
 | RED | `tests/unit/test_websocket_command_lifecycle.py`: 2 failed, 3 passed; handler failure closed the socket before ping, and last focused disconnect left the legacy follow-up thread waiting |
-| GREEN | `tests/unit/test_websocket_command_lifecycle.py`: 5 passed |
-| Affected verification | 63 passed; scoped Ruff passed; `git diff --check` passed |
-| Specification review | Pending |
-| Quality review | Pending |
-| Full gate | Pending |
-| Final implementation | Pending |
+| GREEN | Initial implementation: 5 passed; review repairs added malformed metadata, repeated disconnect/cancel, transport disconnect, and unknown-action coverage |
+| Affected verification | 67 passed; scoped Ruff passed; `git diff --check` passed |
+| Specification review | PASS at `4bc76c83`; 63 passed plus unknown-action and transport-write probes |
+| Quality review | PASS at `781de2b1`; all disclosure, repeated-wait, transport-classification, and unknown-action findings repaired |
+| Full gate | 67 passed; Ruff passed; docs 457 pages; 0 broken links; `git diff --check` passed |
+| Final implementation | `4bc76c83`, `be307d4b`, `781de2b1` |

@@ -12,7 +12,7 @@
 <body><main>
   <p class="sub">OpenProgram / WebUI reliability / implementation handoff</p>
   <h1>WebSocket 命令与交互等待生命周期</h1>
-  <p class="sub">基线：<code>c1f10273</code>。本页限定单条 WebSocket 命令失败、连接断开和 legacy <code>ask_user</code> 等待的所有权与可观察行为。设计完成不表示代码已实现。</p>
+  <p class="sub">基线：<code>c1f10273</code>。本页限定单条 WebSocket 命令失败、连接断开和 legacy <code>ask_user</code> 等待的所有权与可观察行为；实现状态与验证证据见第 07 节。</p>
 
   <div class="lead"><b>确定方案。</b> 单条命令异常在 receive loop 内隔离并返回稳定的 <code>action_error</code>；dispatcher 不清理 action 自己取得的 reservation，避免误删另一连接的 owner。连接断开时，仅当该 session 没有其他聚焦连接，才向 legacy follow-up queue 投递进程内 sentinel；等待者收到 sentinel 后返回 <code>None</code>，不能把断连解释为空字符串答案。</div>
 
@@ -73,5 +73,5 @@
     <tr><td><code>openprogram/webui/server.py</code></td><td>命令级异常边界、低敏错误帧、连接观察者清理、follow-up sentinel 解释。</td></tr>
     <tr><td><code>tests/unit/test_websocket_command_lifecycle.py</code></td><td>真实 receive-loop、断连和等待线程的公共入口回归。</td></tr>
   </tbody></table></div>
-  <p class="note"><span class="warn">待实现与审查。</span> 实现记录只有在 RED/GREEN、独立规格审查、独立质量审查和完整 gate 后更新。</p>
+  <p class="note"><span class="ok">已实现并完成独立审查。</span> 实现提交：<code>4bc76c83</code>、<code>be307d4b</code>、<code>781de2b1</code>。最终定向验证：67 passed；Ruff 通过；文档构建 457 页；链接检查 0 broken links。</p>
 </main></body></html>
