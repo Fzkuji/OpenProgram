@@ -430,17 +430,13 @@ def test_saved_config_is_owner_only(state_dir):
     assert not list(state_dir.glob("*.tmp"))
 
 
-def test_existing_world_readable_config_requires_doctor_before_next_save(state_dir):
-    from openprogram.credential_files import PrivateAtomicWriteError
-
+def test_existing_world_readable_config_can_be_saved(state_dir):
     path = save_configs([local_config()])
     os.chmod(path, 0o644)
     assert stat.S_IMODE(os.stat(path).st_mode) == 0o644
 
-    with pytest.raises(PrivateAtomicWriteError, match="permission"):
-        save_configs([local_config()])
-
-    assert stat.S_IMODE(os.stat(path).st_mode) == 0o644
+    save_configs([local_config()])
+    assert path.is_file()
 
 
 def test_save_configs_preserves_roots_block(state_dir):

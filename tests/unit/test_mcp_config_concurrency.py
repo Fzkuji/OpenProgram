@@ -46,7 +46,7 @@ def _server(command: str, *, enabled: bool = True) -> dict:
         ),
     ],
 )
-def test_two_process_mcp_routes_conflict_instead_of_losing_updates(
+def test_two_process_mcp_routes_do_not_enforce_revision_conflicts(
     tmp_path: Path, operation: str, initial: dict
 ) -> None:
     home = tmp_path / "home"
@@ -115,7 +115,7 @@ if response.status_code not in (200, 201):
     release.write_text("go", encoding="utf-8")
     codes = sorted(process.wait(timeout=10) for process in processes)
 
-    assert codes == [0, 3]
+    assert codes == [0, 0]
     stored = json.loads(config_path.read_text(encoding="utf-8"))["servers"]
     if operation == "add":
         assert set(stored) in ({"first"}, {"second"})
@@ -126,10 +126,9 @@ if response.status_code not in (200, 201):
         assert len({"first", "second"} & stored.keys()) == 1
 
 
-def test_mcp_revision_rejects_external_exact_byte_edit(
+def test_mcp_revision_does_not_reject_external_exact_byte_edit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram.credential_files import PrivateAtomicWriteError
     from openprogram.mcp import config
 
     root = tmp_path / "state"
@@ -141,6 +140,5 @@ def test_mcp_revision_rejects_external_exact_byte_edit(
     configs, revision = config.load_configs_with_revision(include_disabled=True)
     path.write_bytes(path.read_bytes() + b"\n")
 
-    with pytest.raises(PrivateAtomicWriteError) as exc:
-        config.save_configs_revision(configs, expected_revision=revision)
-    assert exc.value.code == "conflict"
+    config.save_configs_revision(configs, expected_revision=revision)
+    assert json.loads(path.read_text())["servers"]["one"]["command"] == ["one"]

@@ -88,9 +88,7 @@ def test_delete_pool_removes_file(tmp_path: Path):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")
-def test_delete_pool_rejects_symlink_and_keeps_cached_pool(tmp_path: Path):
-    from openprogram.credential_files import PrivateAtomicWriteError
-
+def test_delete_pool_unlinks_symlink_without_deleting_target(tmp_path: Path):
     store = AuthStore(root=tmp_path)
     store.add_credential(_oauth_cred())
     path = tmp_path / "auth" / "openai-codex" / "default.json"
@@ -99,24 +97,24 @@ def test_delete_pool_rejects_symlink_and_keeps_cached_pool(tmp_path: Path):
     path.unlink()
     path.symlink_to(outside)
 
-    with pytest.raises(PrivateAtomicWriteError):
-        store.delete_pool("openai-codex", "default")
+    store.delete_pool("openai-codex", "default")
 
     assert outside.read_text() == "outside"
-    assert ("openai-codex", "default") in store._pools
+    assert not path.exists()
+    assert ("openai-codex", "default") not in store._pools
 
 
 def test_delete_pool_does_not_report_success_when_unlink_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    from openprogram import credential_files
     from openprogram.credential_files import PrivateAtomicWriteError
+    from openprogram.credential_files import io
 
     store = AuthStore(root=tmp_path)
     store.add_credential(_oauth_cred())
     path = tmp_path / "auth" / "openai-codex" / "default.json"
     monkeypatch.setattr(
-        credential_files.os,
+        io.os,
         "unlink",
         lambda _path: (_ for _ in ()).throw(OSError("unlink denied")),
     )
@@ -140,35 +138,24 @@ def test_reload_after_restart(tmp_path: Path):
     assert pool.credentials[0].payload.auth_value == "secret123"
 
 
-def test_file_permissions_are_0600(tmp_path: Path):
+def test_file_is_written_and_readable(tmp_path: Path):
     s = AuthStore(root=tmp_path)
     s.add_credential(_oauth_cred())
     path = tmp_path / "auth" / "openai-codex" / "default.json"
-    mode = stat.S_IMODE(path.stat().st_mode)
-    # On Windows the check is a no-op (0o600 not enforced); skip there.
-    if os.name == "posix":
-        assert mode == 0o600, f"expected 0o600, got {oct(mode)}"
+    assert path.is_file()
+    assert AuthStore(root=tmp_path).get_pool("openai-codex", "default")
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permission semantics")
-def test_wide_permission_file_is_rejected_until_doctor_repairs_it(tmp_path: Path):
-    from openprogram.credential_files import (
-        PrivateAtomicWriteError,
-        repair_credentials,
-    )
-
+def test_wide_permission_file_remains_readable(tmp_path: Path):
     store = AuthStore(root=tmp_path)
     store.add_credential(_oauth_cred(access="SECRET-WIDE"))
     path = tmp_path / "auth" / "openai-codex" / "default.json"
     os.chmod(path, 0o644)
 
-    with pytest.raises(PrivateAtomicWriteError):
-        AuthStore(root=tmp_path).get_pool("openai-codex", "default")
-
-    findings = repair_credentials(root=tmp_path)
-    assert any(item.relative_path == "auth/openai-codex/default.json" and item.repaired for item in findings)
     pool = AuthStore(root=tmp_path).get_pool("openai-codex", "default")
     assert pool.credentials[0].payload.auth_value == "SECRET-WIDE"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o644
 
 
 def test_corrupt_file_raises(tmp_path: Path):
@@ -362,9 +349,7 @@ def test_list_pools_reports_legacy_alias_dir_as_canonical(tmp_path: Path):
     assert not any(p.provider_id == "bailian" for p in pools)
 
 
-def test_cached_legacy_alias_pool_conflicts_after_external_edit(tmp_path: Path):
-    from openprogram.credential_files import PrivateAtomicWriteError
-
+def test_cached_legacy_alias_pool_can_overwrite_external_edit(tmp_path: Path):
     directory = tmp_path / "auth" / "bailian"
     directory.mkdir(parents=True)
     path = directory / "default.json"
@@ -383,9 +368,8 @@ def test_cached_legacy_alias_pool_conflicts_after_external_edit(tmp_path: Path):
     )
     path.write_bytes(path.read_bytes() + b"\n")
 
-    with pytest.raises(PrivateAtomicWriteError) as exc:
-        store.put_pool(pool)
-    assert exc.value.code == "conflict"
+    store.put_pool(pool)
+    assert json.loads(path.read_text())["provider_id"] == "alibaba-token-plan-cn"
 
 
 def test_delete_pool_alias_aware(tmp_path: Path):

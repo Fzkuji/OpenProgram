@@ -205,10 +205,7 @@ def test_restore_rejects_secret_members_when_manifest_denies_opt_in(
 # --- publication, permissions, and secret preservation ---------------------
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX permission semantics")
-def test_restored_secret_files_are_owner_only(tmp_path: Path) -> None:
-    import stat
-
+def test_restored_secret_files_are_published(tmp_path: Path) -> None:
     from openprogram._cli_cmds.backup import restore_archive
 
     state = _state(tmp_path)
@@ -225,10 +222,10 @@ def test_restored_secret_files_are_owner_only(tmp_path: Path) -> None:
 
     restore_archive(archive, state)
 
-    for name in ("config.json", "auth/openai/default.json"):
-        mode = stat.S_IMODE(os.lstat(state / name).st_mode)
-        assert mode == 0o600, name
-    assert stat.S_IMODE(os.lstat(state / "auth" / "openai").st_mode) == 0o700
+    assert (state / "config.json").read_bytes() == b'{"api_keys": {}}'
+    assert (state / "auth/openai/default.json").read_bytes() == (
+        b'{"credentials": []}'
+    )
 
 
 def test_restore_preserves_local_secrets_for_redacted_fields(tmp_path: Path) -> None:

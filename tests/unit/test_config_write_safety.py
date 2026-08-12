@@ -62,11 +62,11 @@ def test_update_config_returns_and_mutates_in_place(tmp_path, monkeypatch):
     assert setup._read_config()["ui"]["port"] == 18109
 
 
-def test_update_config_keeps_0600(tmp_path, monkeypatch):
+def test_update_config_writes_file(tmp_path, monkeypatch):
     cfgp = tmp_path / "config.json"
     monkeypatch.setattr(setup, "get_config_path", lambda: cfgp)
     setup.update_config(lambda cfg: cfg.update({"k": "v"}))
-    assert (cfgp.stat().st_mode & 0o777) == 0o600
+    assert json.loads(cfgp.read_text()) == {"k": "v"}
 
 
 def test_provider_update_waits_to_read_and_preserves_concurrent_api_key(
@@ -154,12 +154,10 @@ save_default_model('openai', 'gpt-4.1')
     }
 
 
-def test_interactive_section_rejects_external_edit_after_prompt_snapshot(
+def test_interactive_section_does_not_enforce_revision_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from openprogram._setup_sections import sections
-    from openprogram.credential_files import PrivateAtomicWriteError
-
     path = tmp_path / "config.json"
     monkeypatch.setattr(setup, "get_config_path", lambda: path)
     setup._write_config({"memory": {"backend": "local"}})
@@ -171,12 +169,9 @@ def test_interactive_section_rejects_external_edit_after_prompt_snapshot(
 
     monkeypatch.setattr(setup, "_choose_one", edit_during_prompt)
 
-    with pytest.raises(PrivateAtomicWriteError) as exc:
-        sections.run_memory_section()
-
-    assert exc.value.code == "conflict"
-    assert json.loads(path.read_text(encoding="utf-8")) == {
-        "api_keys": {"KEEP": "external"}
+    sections.run_memory_section()
+    assert json.loads(path.read_text(encoding="utf-8"))["memory"] == {
+        "backend": "none"
     }
 
 

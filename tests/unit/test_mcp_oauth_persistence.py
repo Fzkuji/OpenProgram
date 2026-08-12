@@ -90,9 +90,7 @@ def _seed_authenticated_server(name: str = "srv",
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")
-def test_clear_rejects_symlink_without_deleting_target(tmp_path, monkeypatch):
-    from openprogram.credential_files import PrivateAtomicWriteError
-
+def test_clear_unlinks_symlink_without_deleting_target(tmp_path, monkeypatch):
     tokens = tmp_path / "mcp_tokens"
     tokens.mkdir()
     monkeypatch.setattr(
@@ -103,15 +101,15 @@ def test_clear_rejects_symlink_without_deleting_target(tmp_path, monkeypatch):
     storage = FileTokenStorage("srv")
     storage.path().symlink_to(outside)
 
-    with pytest.raises(PrivateAtomicWriteError):
-        storage.clear()
+    assert storage.clear() is True
 
     assert outside.read_text() == "outside"
+    assert not storage.path().exists()
 
 
 def test_clear_returns_no_success_when_unlink_fails(tmp_path, monkeypatch):
-    from openprogram import credential_files
     from openprogram.credential_files import PrivateAtomicWriteError
+    from openprogram.credential_files import io
 
     tokens = tmp_path / "mcp_tokens"
     tokens.mkdir()
@@ -122,7 +120,7 @@ def test_clear_returns_no_success_when_unlink_fails(tmp_path, monkeypatch):
     storage.path().write_text("{}")
     storage.path().chmod(0o600)
     monkeypatch.setattr(
-        credential_files.os,
+        io.os,
         "unlink",
         lambda _path: (_ for _ in ()).throw(OSError("unlink denied")),
     )

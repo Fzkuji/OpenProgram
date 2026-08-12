@@ -563,11 +563,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor.add_argument("--json", action="store_true", help="Emit JSON")
     p_doctor.add_argument(
         "topic", nargs="?", choices=["credentials"],
-        help="credentials: audit every credential file's owner-only permissions")
+        help="credentials: report disabled credential filesystem checks")
     p_doctor.add_argument(
         "--repair", action="store_true",
-        help="With `credentials`: restore owner-only permissions on files this "
-             "user owns. Symlinks and foreign-owned paths are never modified.")
+        help="Accepted for compatibility; credential filesystem checks stay disabled")
 
     # ---- diagnostics ------------------------------------------------------
     p_diagnostics = sub.add_parser(
