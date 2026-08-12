@@ -358,6 +358,41 @@ def test_account_update_rejects_every_display_value_without_rewriting_storage(
     assert credential_path.read_bytes() == before
 
 
+@pytest.mark.parametrize(
+    "display_value",
+    [
+        "sk-…abc4",
+        "•" * 8,
+        "REDACTED",
+        "<redacted>",
+        "[redacted]",
+        "***REDACTED***",
+    ],
+)
+def test_account_add_rejects_every_display_value_without_writing_storage(
+    secret_api, display_value
+):
+    before = {
+        path.relative_to(secret_api.store.root): path.read_bytes()
+        for path in secret_api.store.root.rglob("*")
+        if path.is_file()
+    }
+
+    response = secret_api.client.post(
+        "/api/providers/openai/accounts/keys",
+        json={"api_key": display_value, "name": "work", "validate": False},
+    )
+
+    after = {
+        path.relative_to(secret_api.store.root): path.read_bytes()
+        for path in secret_api.store.root.rglob("*")
+        if path.is_file()
+    }
+    assert 400 <= response.status_code < 500
+    assert secret_api.store.list_pools() == []
+    assert after == before
+
+
 @pytest.mark.parametrize("kind", ["oauth", "device_code"])
 def test_account_update_non_api_key_account_is_404_without_probe(
     secret_api, monkeypatch, kind

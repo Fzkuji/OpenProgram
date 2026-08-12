@@ -463,6 +463,7 @@ def register(app):
         validate = body.get("validate", False)
         if (
             not is_nonempty_printable_ascii(key)
+            or is_redacted_value(key)
             or not isinstance(validate, bool)
             or not isinstance(name_field, str)
             or (name_field != "" and not is_nonempty_printable_ascii(name_field))
