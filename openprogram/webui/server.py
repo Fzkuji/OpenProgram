@@ -262,10 +262,13 @@ def _web_follow_up(session_id: str, msg_id: str, func_name: str, tree_cb=None):
         tree_cb:   Optional tree event callback to trigger on follow-up.
     """
     fq = queue.Queue()
+    ended = threading.Event()
     with _follow_up_lock:
         _follow_up_queues[session_id] = fq
 
     def _handler(question: str) -> Optional[str]:
+        if ended.is_set():
+            return None
         _broadcast_chat_response(session_id, msg_id, {
             "type": "follow_up_question",
             "question": question,
@@ -278,8 +281,10 @@ def _web_follow_up(session_id: str, msg_id: str, func_name: str, tree_cb=None):
         except queue.Empty:
             return None
         if answer is _FOLLOW_UP_DISCONNECTED:
+            ended.set()
             return None
         if isinstance(answer, dict) and answer.get("_cancelled"):
+            ended.set()
             return None
         return answer
 
@@ -1261,10 +1266,16 @@ async def _websocket_handler(ws):
                     continue
                 try:
                     await _handle_ws_command(ws, cmd)
+                except WebSocketDisconnect:
+                    raise
                 except Exception as exc:
-                    action = cmd.get("action") if isinstance(cmd, dict) else None
-                    session_id = (
+                    raw_action = cmd.get("action") if isinstance(cmd, dict) else None
+                    raw_session_id = (
                         cmd.get("session_id") if isinstance(cmd, dict) else None
+                    )
+                    action = raw_action if isinstance(raw_action, str) else None
+                    session_id = (
+                        raw_session_id if isinstance(raw_session_id, str) else None
                     )
                     import logging
                     logging.getLogger("openprogram.webui").exception(
@@ -1367,7 +1378,8 @@ WS_ACTIONS: dict = _build_ws_action_registry()
 
 async def _handle_ws_command(ws, cmd: dict):
     """Handle a WebSocket command from the client."""
-    action = cmd.get("action")
+    raw_action = cmd.get("action") if isinstance(cmd, dict) else None
+    action = raw_action if isinstance(raw_action, str) else None
     print(f"[ws] command received: action={action}")
 
     h = WS_ACTIONS.get(action)
