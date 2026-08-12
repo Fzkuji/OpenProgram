@@ -714,6 +714,12 @@ class _RestoreJournal:
         return self.backup_dir / name
 
     def finish(self) -> None:
+        from openprogram.credential_files import _read_private_bytes, inventory_for_path
+
+        for entry in self.entries:
+            relative = entry["relative_path"]
+            if inventory_for_path(relative):
+                _read_private_bytes(self.state / relative, root=self.state)
         self._flush(complete=True)
         self.discard()
 
@@ -1233,6 +1239,7 @@ def restore_archive(
                         f"credential inventory changed during restore: {relative}"
                     )
                 _read_private_bytes(state / relative, root=state)
+            journal.finish()
         except BaseException as exc:
             _reverse(state, journal.entries)
             journal.discard()
@@ -1241,7 +1248,6 @@ def restore_archive(
             raise RestoreRollbackCompletedError(
                 "publication failed; rollback complete"
             ) from exc
-        journal.finish()
         return published
     finally:
         shutil.rmtree(staging, ignore_errors=True)
