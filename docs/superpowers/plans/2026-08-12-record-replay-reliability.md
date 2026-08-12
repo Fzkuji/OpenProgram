@@ -4,7 +4,7 @@
 
 - Approved design: `docs/reference/design/providers/record-replay.html`.
 - Base commit: `990bfe36e625579443e1cb01a1b3266c8dbd0e87`.
-- Production files: `openprogram/providers/recording.py`, `openprogram/providers/replay.py`, `openprogram/providers/__init__.py`.
+- Production files: `openprogram/providers/recording.py`, `openprogram/providers/replay.py`, `openprogram/providers/api_registry.py`, `openprogram/providers/__init__.py`.
 - Test files: `tests/providers/test_record_replay.py`, `tests/providers/test_record_replay_registry.py`.
 - Public-entry RED cases:
   - provider exception, task cancellation, and consumer `aclose()` leave a parseable terminal call and close the source generator;
@@ -36,6 +36,6 @@ git status --short
 | GREEN | Same two files -> 27 passed. |
 | Affected verification | Record/replay, CLI management, and stream chokepoint -> 45 passed; scoped Ruff passed; `git diff --check` passed. |
 | Specification review | Initial `CHANGES_REQUIRED`: synchronous `stream`/`stream_simple` source construction failures occurred before `begin_call`; repair RED was 2 failed, then 47 affected tests passed. Scoped re-review `PASS` at `a4f27b3b`. |
-| Quality review | Pending |
+| Quality review | Initial `CHANGES_REQUIRED`: duplicate terminal events wrote multiple `call_end` rows; fail-closed activation could not replace an existing transform. Repair RED was 2 failed; affected suite then passed 49 tests. Scoped re-review pending. |
 | Full gate | Pending |
 | Final implementation commit | Pending |

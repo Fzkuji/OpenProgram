@@ -194,6 +194,8 @@ class RecordingProvider:
                     self._sink.end_call(call_index, event_index)
                     ended = True
                 yield event
+                if ended:
+                    return
         except BaseException as exc:
             primary_error = exc
             primary_traceback = exc.__traceback__
@@ -424,10 +426,10 @@ def activate_record_replay_safely() -> None:
             "record/replay activation failed; provider calls are blocked (%s)",
             type(exc).__name__,
         )
-        from openprogram.providers.api_registry import configure_provider_transform
+        from openprogram.providers.api_registry import _replace_provider_transform
 
         blocked = _BlockedRecordReplayProvider()
-        configure_provider_transform(lambda api, provider: blocked)
+        _replace_provider_transform(lambda api, provider: blocked)
 
 
 class RecordingManagementError(RuntimeError):

@@ -134,6 +134,31 @@ class _SyncStartFailureProvider:
         raise RuntimeError("stream_simple start failed")
 
 
+class _DuplicateTerminalProvider:
+    requires_credentials = False
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def stream(self, model, context, options=None):
+        return self.stream_simple(model, context, options)
+
+    async def stream_simple(self, model, context, options=None):
+        source = _scripted_with((ScriptedText("done"),)).stream_simple(
+            model, context, options
+        )
+        try:
+            terminal = None
+            async for event in source:
+                terminal = event
+                yield event
+            assert terminal is not None
+            yield terminal
+        finally:
+            self.closed = True
+            await source.aclose()
+
+
 def _drain_stream(model: Model, options: SimpleStreamOptions | None = None) -> list:
     from openprogram.providers import stream_simple
 
@@ -394,6 +419,29 @@ def test_recording_finalizes_when_provider_source_construction_raises(
     calls = read_recording_file(recording_file)
     assert len(calls) == 1
     assert calls[0].outcome == "error"
+
+
+def test_recording_stops_after_the_first_terminal_event(tmp_path: Path) -> None:
+    source = _DuplicateTerminalProvider()
+    recording_file = tmp_path / "duplicate-terminal.jsonl"
+    recorder = RecordingProvider(source, recording_file)
+
+    async def drain() -> list[AssistantMessageEvent]:
+        return [
+            event async for event in recorder.stream_simple(
+                _model(),
+                Context(messages=[UserMessage(content="hello", timestamp=0)]),
+                _options(),
+            )
+        ]
+
+    events = asyncio.run(drain())
+    calls = read_recording_file(recording_file)
+    rows = [json.loads(line) for line in recording_file.read_text().splitlines()]
+    assert source.closed
+    assert sum(row["type"] == "call_end" for row in rows) == 1
+    assert sum(event.type == "done" for event in events) == 1
+    assert calls[0].outcome == "complete"
 
 
 def test_recording_finalizes_and_closes_source_when_consumer_abandons(tmp_path: Path) -> None:

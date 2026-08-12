@@ -74,3 +74,18 @@ def configure_provider_transform(
         _registry.clear()
         _registry.update(transformed)
         _provider_transform = transform
+
+
+def _replace_provider_transform(
+    transform: Callable[[str, ApiProvider], ApiProvider],
+) -> None:
+    """Atomically replace the transform for a fail-closed startup fallback."""
+    global _provider_transform
+    with _registry_lock:
+        transformed = {
+            api: transform(api, provider)
+            for api, provider in _original_registry.items()
+        }
+        _registry.clear()
+        _registry.update(transformed)
+        _provider_transform = transform

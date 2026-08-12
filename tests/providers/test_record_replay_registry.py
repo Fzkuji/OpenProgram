@@ -193,3 +193,36 @@ def test_invalid_startup_config_keeps_import_alive_and_blocks_live_provider(
     with pytest.raises(RuntimeError, match="record/replay configuration"):
         asyncio.run(drain())
     assert "provider calls are blocked" in caplog.text
+
+
+def test_invalid_startup_config_replaces_an_existing_transform_with_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transform = lambda api, provider: WrappedProvider(api, provider)
+    configure_provider_transform(transform)
+    register_api_provider("existing-api", Provider("existing"))
+    monkeypatch.setattr(
+        "openprogram.setup._read_config",
+        lambda: {
+            "record_replay": {
+                "mode": "replay",
+                "file": str(tmp_path / "missing.jsonl"),
+            }
+        },
+    )
+
+    from openprogram.providers.recording import activate_record_replay_safely
+
+    activate_record_replay_safely()
+    register_api_provider("future-api", Provider("future"))
+
+    async def drain(provider) -> None:
+        async for _ in provider.stream(None, None):
+            pass
+
+    for api in ("existing-api", "future-api"):
+        provider = get_api_provider(api)
+        assert provider.requires_credentials is False
+        with pytest.raises(RuntimeError, match="record/replay configuration"):
+            asyncio.run(drain(provider))
