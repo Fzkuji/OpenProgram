@@ -1307,6 +1307,10 @@ class Runtime:
                                         history=errors, permanent=True,
                                         override_reason=_ER.TIMEOUT,
                                     ) from cause
+                                try:
+                                    check_cancelled()
+                                except _CE:
+                                    raise ExecInterrupt("cancelled") from None
                                 repair = build_repair_prompt(exc)
                                 if self.on_stream:
                                     self.on_stream({
@@ -1578,6 +1582,14 @@ class Runtime:
                                     history=errors, permanent=True,
                                     override_reason=_ER.TIMEOUT,
                                 ) from cause
+                            from openprogram.agentic_programming.function import (
+                                CancelledError as _CE,
+                                check_cancelled,
+                            )
+                            try:
+                                check_cancelled()
+                            except _CE:
+                                raise ExecInterrupt("cancelled") from None
                             repair = build_repair_prompt(exc)
                             if self.on_stream:
                                 self.on_stream({
