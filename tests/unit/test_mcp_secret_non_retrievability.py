@@ -1031,17 +1031,67 @@ def test_submitted_value_replaces_and_empty_value_deletes(monkeypatch, state_dir
     assert stored.env == {"ENDPOINT": "replaced-value"}
 
 
-def test_echoed_mask_is_treated_as_preserve(monkeypatch, state_dir):
-    """The frontend never posts a mask back, but if the response shape
-    is echoed by a scripted caller it must not overwrite the secret."""
-    response, stored = patch_server(
-        local_config(),
-        {"env": {"ENDPOINT": {"has_value": True, "masked": "ghp…here"}}},
-        monkeypatch,
+@pytest.mark.parametrize(
+    "display_value",
+    [
+        {"has_value": True, "masked": "ghp…here"},
+        "ghp…here",
+        "•" * 8,
+        "REDACTED",
+        "<redacted>",
+        "[redacted]",
+        "***REDACTED***",
+    ],
+)
+@pytest.mark.parametrize(
+    ("config", "body"),
+    [
+        pytest.param(
+            local_config,
+            lambda value: {"env": {"ENDPOINT": value}},
+            id="env",
+        ),
+        pytest.param(
+            remote_config,
+            lambda value: {"headers": {"X-Tenant": value}},
+            id="header",
+        ),
+        pytest.param(
+            remote_config,
+            lambda value: {"auth": {"kind": "bearer", "token": value}},
+            id="bearer",
+        ),
+        pytest.param(
+            lambda: remote_config("oauth"),
+            lambda value: {
+                "auth": {"kind": "oauth", "client_secret": value}
+            },
+            id="oauth-client-secret",
+        ),
+    ],
+)
+def test_patch_rejects_every_display_value_without_rewriting_storage(
+    monkeypatch, state_dir, config, body, display_value
+):
+    from openprogram.webui.routes import mcp
+
+    cfg = config()
+    path = save_configs([cfg])
+    before = path.read_bytes()
+
+    async def unexpected_restart(*_args, **_kwargs):
+        raise AssertionError("invalid credential edit must not restart")
+
+    monkeypatch.setattr(mcp, "restart_server", unexpected_restart)
+    app = FastAPI()
+    mcp.register(app)
+
+    response = TestClient(app).patch(
+        f"/api/mcp/servers/{cfg.name}", json=body(display_value)
     )
 
-    assert response.status_code == 200
-    assert stored.env["ENDPOINT"] == ENV_SECRET
+    assert 400 <= response.status_code < 500
+    assert path.read_bytes() == before
 
 
 def test_omitted_bearer_token_is_preserved(monkeypatch, state_dir):

@@ -275,7 +275,8 @@ def register(app: FastAPI) -> None:
         bearer token, the OAuth client secret) follow preserve /
         replace / delete: a name the body omits keeps its stored value,
         a name carrying a new value replaces it, and a name carrying an
-        explicit empty string deletes it. See :func:`_merge_secret_map`.
+        explicit empty string deletes it. Display masks and redaction
+        sentinels are invalid. See :func:`_merge_secret_map`.
         """
         all_cfgs, revision = load_configs_with_revision(include_disabled=True)
         match = next((c for c in all_cfgs if c.name == name), None)
@@ -923,11 +924,8 @@ def _merge_secret_map(stored: dict, submitted: object) -> dict:
       * present with a value   → **replace** with that value
       * present, empty string  → **delete** the name
 
-    A masked or redacted value carries no new secret, so it preserves
-    rather than replaces: echoing a GET response back — as a dict of the
-    ``{"has_value", "masked"}`` shape, or as the bare mask string a
-    careless client may extract from it — must never overwrite the real
-    stored value with its own display form.
+    A submitted display mask or redaction sentinel is invalid. Only omission
+    preserves a stored value.
     """
     if not isinstance(submitted, dict):
         return dict(stored)
@@ -935,11 +933,11 @@ def _merge_secret_map(stored: dict, submitted: object) -> dict:
     for key, value in submitted.items():
         name = str(key)
         if isinstance(value, dict):
-            continue                       # echoed mask → preserve
+            raise HTTPException(status_code=400, detail="invalid credential value")
         if value is None or str(value) == "":
             out.pop(name, None)            # explicit empty → delete
-        elif _is_redacted(str(value)):
-            continue                       # mask / sentinel → preserve
+        elif _is_redacted(value):
+            raise HTTPException(status_code=400, detail="invalid credential value")
         else:
             out[name] = str(value)         # new value → replace
     return out
@@ -971,11 +969,11 @@ def _merge_auth(stored: dict, submitted: object) -> dict:
             value = submitted[field_name]
             if value is None or str(value) == "":
                 continue                   # explicit empty → delete
-            if isinstance(value, dict) or _is_redacted(str(value)):
-                # Masked display form → preserve the stored secret.
-                if keep_secrets and field_name in stored:
-                    out[field_name] = stored[field_name]
-                continue
+            if isinstance(value, dict) or _is_redacted(value):
+                raise HTTPException(
+                    status_code=400,
+                    detail="invalid credential value",
+                )
             out[field_name] = str(value)   # new value → replace
         elif keep_secrets and field_name in stored:
             out[field_name] = stored[field_name]   # omitted → preserve

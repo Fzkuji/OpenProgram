@@ -34,6 +34,8 @@ from typing import Any
 from fastapi import Body
 from fastapi.responses import JSONResponse
 
+from openprogram.credential_files import is_redacted_value
+
 from ._credential_secrets import (
     check_request_body,
     is_nonempty_printable_ascii,
@@ -537,7 +539,11 @@ def register(app):
             )
         key = body["api_key"]
         validate = body.get("validate", True)
-        if not is_nonempty_printable_ascii(key) or not isinstance(validate, bool):
+        if (
+            not is_nonempty_printable_ascii(key)
+            or is_redacted_value(key)
+            or not isinstance(validate, bool)
+        ):
             return JSONResponse(
                 content={"error": "invalid account update body"},
                 status_code=400,
