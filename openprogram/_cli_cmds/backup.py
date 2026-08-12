@@ -13,14 +13,16 @@ bloat the archive.
 
 Credentials are the one deliberate opt-out: ``auth/`` and ``mcp_tokens/``
 hold live secrets in file form and are skipped unless the user passes
-``--include-credentials``, which prints a warning. (They are migrating to
-the system keychain, at which point the flag stops mattering.)
+``--include-credentials``, which prints a plaintext-credential warning.
 
 Archives land in ``<state>/backups/`` as ``<profile>-<timestamp>.tar.gz``
 with mode 0600.
 """
+
 from __future__ import annotations
 
+import io
+import json
 import os
 import sys
 import tarfile
@@ -30,19 +32,19 @@ from pathlib import Path
 # Top-level entries worth preserving. Anything not listed is skipped.
 # Keep this list in sync with docs/server/backup.md when it changes.
 INCLUDED: tuple[str, ...] = (
-    "memory",            # memory workspace (core.md, topics, timeline, ...)
-    "sessions",          # session transcripts on disk
-    "sessions.db",       # session index
+    "memory",  # memory workspace (core.md, topics, timeline, ...)
+    "sessions",  # session transcripts on disk
+    "sessions.db",  # session index
     "session_aliases.json",
-    "config.json",       # main configuration
+    "config.json",  # main configuration
     "cli-config.json",
-    "agents",            # per-agent definitions
+    "agents",  # per-agent definitions
     "agents.json",
     "programs_meta.json",
     "functions_meta.json",
     "program-sources.json",
-    "channels",          # channel account state
-    "bindings.json",     # channel <-> session bindings
+    "channels",  # channel account state
+    "bindings.json",  # channel <-> session bindings
     "skills",
     "skills.json",
     "plugins",
@@ -52,12 +54,15 @@ INCLUDED: tuple[str, ...] = (
     "commands",
     "owner.json",
     "projects",
+    "profiles",  # account metadata; credentials are inventory-filtered
     "worktrees.json",
-    "usage.db",          # usage/accounting history
+    "usage.db",  # usage/accounting history
 )
 
-# Only included when --include-credentials is passed.
+# Whole top-level credential trees included only with --include-credentials.
 CREDENTIAL_ENTRIES: tuple[str, ...] = ("auth", "mcp_tokens")
+
+_MANIFEST_NAME = "backup-manifest.json"
 
 # Never archived, even if nested inside an included entry.
 _SKIP_NAMES = frozenset({"node_modules", "__pycache__", ".DS_Store"})
@@ -66,18 +71,22 @@ _SKIP_SUFFIXES = (".lock", ".pid", ".port", ".log", ".sock")
 
 def _state_dir() -> Path:
     from openprogram.paths import get_state_dir
+
     return get_state_dir()
 
 
 def _profile_name() -> str:
     from openprogram.paths import get_active_profile
+
     return get_active_profile() or "default"
 
 
 def backups_dir() -> Path:
-    d = _state_dir() / "backups"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    state = _state_dir()
+    state.mkdir(parents=True, exist_ok=True)
+    from openprogram.credential_files import _ensure_private_directory
+
+    return _ensure_private_directory(state / "backups", root=state)
 
 
 def _excluded(path: Path) -> bool:
@@ -122,35 +131,176 @@ def create_backup(
     suffix = f"-{label}" if label else ""
     target = out_dir / f"{_profile_name()}{suffix}-{stamp}.tar.gz"
 
-    def _filter(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
-        base = Path(info.name).name
-        if base in _SKIP_NAMES or base.endswith(_SKIP_SUFFIXES):
-            return None
-        if info.issym() or info.islnk():
-            return None
-        return info
+    from openprogram.credential_files import (
+        SECRET_INVENTORY,
+        _private_atomic_write,
+        backup_bytes,
+        inventory_for_path,
+    )
 
-    # Write to a temp name then rename, so an interrupted create never
-    # leaves a half-archive that `list` would happily show.
-    # ``.partial`` deliberately does not match the ``*.tar.gz`` glob that
-    # ``list``/``prune`` use, so an interrupted create is invisible to them.
-    tmp = target.with_name(target.name + ".partial")
-    try:
-        with tarfile.open(tmp, "w:gz") as tar:
+    included_secret_kinds: set[str] = set()
+    redacted_secret_kinds: set[str] = set()
+    excluded_secret_kinds: set[str] = set()
+
+    def _selector_has_secret(node: object, parts: list[str]) -> bool:
+        if not isinstance(node, dict) or not parts:
+            return False
+        head, *tail = parts
+        if head == "*":
+            return any(_selector_has_secret(value, tail) for value in node.values())
+        if head not in node:
+            return False
+        if tail:
+            return _selector_has_secret(node[head], tail)
+        value = node[head]
+        return (
+            bool(value)
+            if isinstance(value, (str, bytes, dict, list))
+            else value is not None
+        )
+
+    def _entry_has_secret(entry, raw: bytes) -> bool:
+        if entry.whole_file:
+            return True
+        try:
+            payload = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return True
+        return any(
+            _selector_has_secret(payload, selector.split("."))
+            for selector in entry.secret_fields
+        )
+
+    def _profile_member_allowed(source: Path, arcname: str) -> bool:
+        parts = Path(arcname).parts
+        if not parts or parts[0] != "profiles":
+            return True
+        if len(parts) <= 2:
+            return True
+        if len(parts) == 3:
+            return parts[2] in {"metadata.json", ".env", "auth"}
+        if parts[2] != "auth":
+            return False
+        return source.is_dir() or bool(inventory_for_path(arcname))
+
+    def _is_secret_writer_temporary(arcname: str) -> bool:
+        if not arcname.endswith(".tmp"):
+            return False
+        if inventory_for_path(arcname[: -len(".tmp")]):
+            return True
+        parts = Path(arcname).parts
+        if parts and parts[0] in {"auth", "mcp_tokens"}:
+            return True
+        if len(parts) >= 3 and parts[0] == "profiles" and parts[2] == "auth":
+            return True
+        return (
+            len(parts) >= 5
+            and parts[0] == "channels"
+            and parts[-1].startswith("access-")
+            and parts[-1].endswith(".json.tmp")
+        )
+
+    if not include_credentials:
+        for top_name in CREDENTIAL_ENTRIES:
+            credential_root = state / top_name
+            if not credential_root.is_dir():
+                continue
+            for source in credential_root.rglob("*"):
+                arcname = source.relative_to(state).as_posix()
+                if (
+                    not source.is_file()
+                    or _excluded(source)
+                    or _is_secret_writer_temporary(arcname)
+                ):
+                    continue
+                excluded_secret_kinds.update(
+                    entry.kind
+                    for entry in inventory_for_path(arcname)
+                    if entry.backup_policy == "include_on_opt_in"
+                )
+
+    def _add_path(tar: tarfile.TarFile, source: Path, arcname: str) -> None:
+        if (
+            _excluded(source)
+            or not _profile_member_allowed(source, arcname)
+            or _is_secret_writer_temporary(arcname)
+        ):
+            return
+        info = tar.gettarinfo(str(source), arcname=arcname)
+        if info.issym() or info.islnk():
+            return
+        if info.isdir():
+            tar.addfile(info)
+            for child in sorted(source.iterdir(), key=lambda item: item.name):
+                _add_path(tar, child, f"{arcname}/{child.name}")
+            return
+        if not info.isfile():
+            return
+
+        inventory = inventory_for_path(arcname)
+        if inventory:
+            raw = source.read_bytes()
+            archived = backup_bytes(
+                arcname,
+                raw,
+                include_credentials=include_credentials,
+            )
+            if archived is None:
+                excluded_secret_kinds.update(entry.kind for entry in inventory)
+                return
+            for entry in inventory:
+                if not _entry_has_secret(entry, raw):
+                    continue
+                if entry.backup_policy == "never_backup":
+                    redacted_secret_kinds.add(entry.kind)
+                elif include_credentials:
+                    included_secret_kinds.add(entry.kind)
+                elif entry.backup_policy == "redact_default":
+                    redacted_secret_kinds.add(entry.kind)
+                else:
+                    excluded_secret_kinds.add(entry.kind)
+            if archived != raw:
+                info.size = len(archived)
+                tar.addfile(info, io.BytesIO(archived))
+                return
+        tar.add(str(source), arcname=arcname, recursive=False)
+
+    def _write_archive(handle) -> None:
+        with tarfile.open(fileobj=handle, mode="w:gz") as tar:
             for name in _entries_to_archive(state, include_credentials):
-                tar.add(state / name, arcname=name, filter=_filter)
-        os.chmod(tmp, 0o600)
-        tmp.replace(target)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
+                _add_path(tar, state / name, name)
+            manifest = {
+                "format_version": 1,
+                "credential_opt_in": include_credentials,
+                "credentials_included": bool(included_secret_kinds),
+                "included_secret_kinds": sorted(included_secret_kinds),
+                "redacted_secret_kinds": sorted(redacted_secret_kinds),
+                "excluded_secret_kinds": sorted(excluded_secret_kinds),
+                "credential_policy": {
+                    "never_backed_up_secret_kinds": sorted(
+                        {
+                            entry.kind
+                            for entry in SECRET_INVENTORY
+                            if entry.backup_policy == "never_backup"
+                        }
+                    )
+                },
+            }
+            payload = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
+            info = tarfile.TarInfo(_MANIFEST_NAME)
+            info.size = len(payload)
+            info.mode = 0o600
+            info.mtime = int(time.time())
+            tar.addfile(info, io.BytesIO(payload))
+
+    _private_atomic_write(target, _write_archive, root=state)
     return target
 
 
 def _archive_summary(path: Path) -> tuple[int, list[str]]:
     """Return (member count, sorted top-level names). Raises on unreadable."""
     with tarfile.open(path, "r:gz") as tar:
-        names = tar.getnames()
+        names = [name for name in tar.getnames() if name != _MANIFEST_NAME]
     tops = sorted({n.split("/", 1)[0] for n in names})
     return len(names), tops
 
@@ -160,6 +310,7 @@ def _running_processes() -> list[str]:
     live: list[str] = []
     try:
         from openprogram.worker.lifecycle import current_worker_pid, find_running_webui
+
         pid = current_worker_pid()
         if pid is not None:
             live.append(f"worker (PID {pid})")
@@ -179,14 +330,13 @@ def _cmd_backup_create(include_credentials: bool = False) -> int:
         print(f"[error] backup failed: {exc}", file=sys.stderr)
         return 1
 
-    # Verify the archive is actually readable before claiming success —
-    # a backup you can't open is worse than no backup, because the user
-    # stops worrying.
+    # Verify readability before reporting success.
     try:
         count, tops = _archive_summary(path)
     except (OSError, tarfile.TarError) as exc:
-        print(f"[error] archive written but unreadable, removing: {exc}",
-              file=sys.stderr)
+        print(
+            f"[error] archive written but unreadable, removing: {exc}", file=sys.stderr
+        )
         path.unlink(missing_ok=True)
         return 1
 
@@ -196,8 +346,11 @@ def _cmd_backup_create(include_credentials: bool = False) -> int:
     print(f"  entries: {count} files across {len(tops)} top-level items")
     print(f"  content: {', '.join(tops)}")
     if include_credentials:
-        print("  WARNING: this archive contains credentials (auth, mcp_tokens) "
-              "in plaintext. Store it somewhere you would store a password.")
+        print(
+            "  WARNING: credential opt-in allows plaintext credentials from "
+            "config, AuthStore, account .env, Channels, and MCP storage."
+        )
+        print("  Web runtime tokens and pending pairing codes are never included.")
     else:
         print("  credentials excluded (use --include-credentials to include them)")
     return 0
@@ -205,8 +358,11 @@ def _cmd_backup_create(include_credentials: bool = False) -> int:
 
 def _list_backups() -> list[Path]:
     try:
-        files = sorted(backups_dir().glob("*.tar.gz"),
-                       key=lambda p: p.stat().st_mtime, reverse=True)
+        files = sorted(
+            backups_dir().glob("*.tar.gz"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
     except OSError:
         return []
     return files
@@ -248,8 +404,9 @@ def _cmd_backup_restore(
     path = _resolve(name)
     if path is None:
         print(f"[error] no such backup: {name}", file=sys.stderr)
-        print("Run `openprogram backup list` to see available archives.",
-              file=sys.stderr)
+        print(
+            "Run `openprogram backup list` to see available archives.", file=sys.stderr
+        )
         return 1
 
     try:
@@ -268,10 +425,12 @@ def _cmd_backup_restore(
 
     running = _running_processes()
     if running:
-        print("[error] refusing to restore while OpenProgram is running: "
-              + ", ".join(running), file=sys.stderr)
-        print("Stop it first with `openprogram stop`, then retry.",
-              file=sys.stderr)
+        print(
+            "[error] refusing to restore while OpenProgram is running: "
+            + ", ".join(running),
+            file=sys.stderr,
+        )
+        print("Stop it first with `openprogram stop`, then retry.", file=sys.stderr)
         return 1
 
     if not yes:
@@ -291,8 +450,9 @@ def _cmd_backup_restore(
         safety = create_backup(label="pre-restore")
         print(f"Saved current state to {safety.name} before restoring.")
     except OSError as exc:
-        print(f"[error] could not back up current state, aborting: {exc}",
-              file=sys.stderr)
+        print(
+            f"[error] could not back up current state, aborting: {exc}", file=sys.stderr
+        )
         return 1
 
     try:
@@ -311,18 +471,50 @@ def _cmd_backup_restore(
 def _extract(tar: tarfile.TarFile, dest: Path) -> None:
     """Extract with path containment, refusing anything outside ``dest``."""
     dest = dest.resolve()
-    for member in tar.getmembers():
+    members = tar.getmembers()
+    for member in members:
         if member.issym() or member.islnk():
             continue
         target = (dest / member.name).resolve()
         if not str(target).startswith(str(dest) + os.sep):
             raise tarfile.TarError(f"unsafe path in archive: {member.name}")
-    # ``filter="data"`` (3.12+) also strips ownership/permission surprises;
-    # fall back for older interpreters, where the loop above is the guard.
-    try:
-        tar.extractall(dest, filter="data")
-    except TypeError:  # pragma: no cover - Python < 3.12
-        tar.extractall(dest)
+    from openprogram.credential_files import (
+        _private_atomic_write,
+        inventory_for_path,
+        preserve_local_secret_bytes,
+    )
+
+    for member in members:
+        if member.name == _MANIFEST_NAME or member.issym() or member.islnk():
+            continue
+        target = dest / member.name
+        inventory = inventory_for_path(member.name)
+        if any(
+            entry.whole_file and entry.backup_policy == "never_backup"
+            for entry in inventory
+        ):
+            continue
+        if member.isfile() and inventory:
+            source = tar.extractfile(member)
+            if source is None:
+                raise tarfile.TarError(f"cannot read archive member: {member.name}")
+            restored = source.read()
+            if all(not entry.whole_file for entry in inventory):
+                try:
+                    local = target.read_bytes()
+                except FileNotFoundError:
+                    local = None
+                restored = preserve_local_secret_bytes(member.name, restored, local)
+            _private_atomic_write(
+                target,
+                lambda handle: handle.write(restored),
+                root=dest,
+            )
+            continue
+        try:
+            tar.extract(member, dest, filter="data")
+        except TypeError:  # pragma: no cover - Python < 3.12
+            tar.extract(member, dest)
 
 
 def _cmd_backup_prune(keep: int) -> int:
@@ -342,8 +534,10 @@ def _cmd_backup_prune(keep: int) -> int:
             print(f"Removed {path.name}")
         except OSError as exc:
             print(f"[warn] could not remove {path.name}: {exc}", file=sys.stderr)
-    print(f"Pruned {len(doomed)} backup(s), freed {_human(freed)}. "
-          f"{min(keep, len(files))} kept.")
+    print(
+        f"Pruned {len(doomed)} backup(s), freed {_human(freed)}. "
+        f"{min(keep, len(files))} kept."
+    )
     return 0
 
 

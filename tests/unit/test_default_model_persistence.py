@@ -20,6 +20,7 @@ def cfg_path(tmp_path, monkeypatch):
     p = tmp_path / "config.json"
     p.write_text("{}", encoding="utf-8")
     monkeypatch.setattr("openprogram.paths.get_config_path", lambda: p)
+    monkeypatch.setattr("openprogram.setup.get_config_path", lambda: p)
 
     def _read():
         try:

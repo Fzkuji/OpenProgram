@@ -40,6 +40,7 @@ succeeds once, :meth:`delete_account` removes the whole tree (this is
 executable because the files are ours; external CLI stores are handled
 by :class:`RemovalStep` instead).
 """
+
 from __future__ import annotations
 
 import json
@@ -69,7 +70,7 @@ class AccountManager:
 
     root: Path
     _cache: dict[str, Account] = None  # type: ignore[assignment]
-    _lock: threading.RLock = None       # type: ignore[assignment]
+    _lock: threading.RLock = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         self.root = Path(self.root).expanduser()
@@ -173,7 +174,7 @@ class AccountManager:
         # Core HOME knobs — covers git, ssh, gpg, npm, gh, AWS, gcloud.
         overrides = {
             "HOME": home,
-            "USERPROFILE": home,                                   # Windows
+            "USERPROFILE": home,  # Windows
             "XDG_CONFIG_HOME": str(account.home_dir / ".config"),
             "XDG_DATA_HOME": str(account.home_dir / ".local" / "share"),
             "XDG_CACHE_HOME": str(account.home_dir / ".cache"),
@@ -204,19 +205,31 @@ class AccountManager:
         may hand-edit it between runs.
         """
         _validate_env_key(key)
-        with self._lock:
-            current = _read_dotenv(account.env_file) if account.env_file.exists() else {}
+
+        def update(raw: bytes | None) -> bytes:
+            current = _parse_dotenv(raw.decode("utf-8")) if raw is not None else {}
             current[key] = value
-            _write_dotenv(account.env_file, current)
+            return _serialize_dotenv(current)
+
+        with self._lock:
+            from openprogram.credential_files import _private_atomic_update
+
+            _private_atomic_update(account.env_file, update, root=self.root)
 
     def unset_env_var(self, account: Account, key: str) -> None:
         _validate_env_key(key)
+
+        def update(raw: bytes | None) -> bytes:
+            current = _parse_dotenv(raw.decode("utf-8")) if raw is not None else {}
+            current.pop(key, None)
+            return _serialize_dotenv(current)
+
         with self._lock:
             if not account.env_file.exists():
                 return
-            current = _read_dotenv(account.env_file)
-            current.pop(key, None)
-            _write_dotenv(account.env_file, current)
+            from openprogram.credential_files import _private_atomic_update
+
+            _private_atomic_update(account.env_file, update, root=self.root)
 
     # ---- internals -----------------------------------------------------
 
@@ -250,6 +263,7 @@ class AccountManager:
 # Validation + dotenv I/O
 # ---------------------------------------------------------------------------
 
+
 def _validate_name(name: str) -> None:
     if not name:
         raise AuthConfigError("account name cannot be empty")
@@ -269,8 +283,12 @@ def _validate_env_key(key: str) -> None:
 
 
 def _read_dotenv(path: Path) -> dict[str, str]:
+    return _parse_dotenv(path.read_text(encoding="utf-8"))
+
+
+def _parse_dotenv(text: str) -> dict[str, str]:
     out: dict[str, str] = {}
-    for raw in path.read_text(encoding="utf-8").splitlines():
+    for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
@@ -289,8 +307,7 @@ def _read_dotenv(path: Path) -> dict[str, str]:
     return out
 
 
-def _write_dotenv(path: Path, values: dict[str, str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+def _serialize_dotenv(values: dict[str, str]) -> bytes:
     lines: list[str] = []
     for key, value in values.items():
         if any(c in value for c in " \t'\"\\"):
@@ -298,9 +315,25 @@ def _write_dotenv(path: Path, values: dict[str, str]) -> None:
             lines.append(f'{key}="{escaped}"')
         else:
             lines.append(f"{key}={value}")
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
-    tmp.replace(path)
+    return ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
+
+
+def _write_dotenv(
+    path: Path,
+    values: dict[str, str],
+    *,
+    root: Path | None = None,
+    expected_revision: str | None = None,
+):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    from openprogram.credential_files import _private_atomic_write
+
+    return _private_atomic_write(
+        path,
+        lambda handle: handle.write(_serialize_dotenv(values)),
+        root=root or path.parent,
+        expected_revision=expected_revision,
+    )
 
 
 # ---------------------------------------------------------------------------

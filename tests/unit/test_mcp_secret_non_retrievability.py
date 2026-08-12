@@ -322,6 +322,85 @@ def patch_server(cfg: MCPServerConfig, body: dict, monkeypatch, *,
     return response, stored
 
 
+def test_patch_revision_conflict_happens_before_runtime_restart(
+    monkeypatch, state_dir
+):
+    from openprogram.credential_files import PrivateAtomicWriteError
+    from openprogram.webui.routes import mcp
+
+    cfg = local_config()
+    restarts = []
+
+    async def observed_restart(*args, **kwargs):
+        restarts.append((args, kwargs))
+        return {"name": cfg.name, "ready": True}
+
+    monkeypatch.setattr(
+        mcp,
+        "load_configs_with_revision",
+        lambda **_kwargs: ([cfg], "sha256:stale"),
+    )
+    monkeypatch.setattr(
+        mcp,
+        "save_configs_revision",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            PrivateAtomicWriteError("conflict", state_dir / "mcp_servers.json", committed=False)
+        ),
+    )
+    monkeypatch.setattr(mcp, "restart_server", observed_restart)
+    app = FastAPI()
+    mcp.register(app)
+
+    response = TestClient(app).patch(
+        f"/api/mcp/servers/{cfg.name}", json={"timeout_seconds": 45}
+    )
+
+    assert response.status_code == 409
+    assert restarts == []
+
+
+def test_patch_rollback_conflict_resyncs_runtime_to_external_config(
+    monkeypatch, state_dir
+):
+    from openprogram.credential_files import PrivateAtomicWriteError
+    from openprogram.webui.routes import mcp
+
+    original = local_config()
+    external = local_config()
+    external.timeout_seconds = 99
+    loads = iter([([original], "sha256:old"), ([external], "sha256:external")])
+    saves = 0
+    restarts = []
+
+    def observed_save(*_args, **_kwargs):
+        nonlocal saves
+        saves += 1
+        if saves == 1:
+            return "sha256:new"
+        raise PrivateAtomicWriteError(
+            "conflict", state_dir / "mcp_servers.json", committed=False
+        )
+
+    async def observed_restart(_name, *, new_cfg):
+        restarts.append(new_cfg.timeout_seconds)
+        if len(restarts) == 1:
+            raise RuntimeError("new config failed")
+        return {"name": original.name, "ready": True}
+
+    monkeypatch.setattr(mcp, "load_configs_with_revision", lambda **_kwargs: next(loads))
+    monkeypatch.setattr(mcp, "save_configs_revision", observed_save)
+    monkeypatch.setattr(mcp, "restart_server", observed_restart)
+    app = FastAPI()
+    mcp.register(app)
+
+    response = TestClient(app).patch(
+        f"/api/mcp/servers/{original.name}", json={"timeout_seconds": 45}
+    )
+
+    assert response.status_code == 409
+    assert restarts == [45, 99]
+
+
 def test_omitted_env_field_preserves_every_stored_value(monkeypatch, state_dir):
     response, stored = patch_server(
         local_config(), {"timeout_seconds": 45}, monkeypatch)

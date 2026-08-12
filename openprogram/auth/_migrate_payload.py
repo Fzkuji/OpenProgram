@@ -16,11 +16,10 @@ Every step is idempotent: data already in the current shape is left
 untouched, so a repeated load is a cheap no-op. Old formats are not
 supported after migration — reads go through the migrated shape only.
 """
+
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 
 from .types import CREDENTIAL_SCHEMA_VERSION
@@ -49,11 +48,15 @@ def migrate_payload_dict(old: dict) -> dict:
     kind = _TYPE_TO_KIND.get(tname)
     if kind is None:
         # Unknown/absent discriminator: best-effort passthrough shell.
-        return {"kind": old.get("kind", ""), "auth_value": "",
-                "base_url": "", "headers": {}, "data": dict(old)}
+        return {
+            "kind": old.get("kind", ""),
+            "auth_value": "",
+            "base_url": "",
+            "headers": {},
+            "data": dict(old),
+        }
     auth_field = _AUTH_FIELD.get(tname)
-    data = {k: v for k, v in old.items()
-            if k not in ("__type__", auth_field)}
+    data = {k: v for k, v in old.items() if k not in ("__type__", auth_field)}
     return {
         "kind": kind,
         "auth_value": old.get(auth_field, "") if auth_field else "",
@@ -111,11 +114,35 @@ def _migrate_kind_and_account(doc: dict) -> bool:
     return changed
 
 
-def _migrate_file(path: Path) -> bool:
-    try:
-        doc = json.loads(path.read_text())
-    except Exception:
-        return False
+def _migrate_file(path: Path, *, root: Path | None = None) -> bool:
+    storage_root = root or path.parents[2]
+    from openprogram.credential_files import (
+        _private_atomic_write,
+        _private_file_lock,
+        _read_private_bytes,
+    )
+
+    with _private_file_lock(path, root=storage_root, timeout=15):
+        try:
+            raw = _read_private_bytes(path, root=storage_root)
+            if raw is None:
+                return False
+            doc = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        if not _migrate_document(doc):
+            return False
+        payload = json.dumps(doc, indent=2, ensure_ascii=False).encode("utf-8")
+        _private_atomic_write(
+            path,
+            lambda handle: handle.write(payload),
+            root=storage_root,
+            lock_timeout=15,
+        )
+        return True
+
+
+def _migrate_document(doc: dict) -> bool:
     creds = doc.get("credentials")
     if not isinstance(creds, list):
         return False  # admin file (_rotation/_active/...) — no credentials
@@ -146,19 +173,7 @@ def _migrate_file(path: Path) -> bool:
             if isinstance(c, dict):
                 c["v"] = CREDENTIAL_SCHEMA_VERSION
         changed = True
-    if not changed:
-        return False
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(doc, f, indent=2, ensure_ascii=False)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-    finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-    return True
+    return changed
 
 
 def migrate_store(root: Path | None = None) -> int:
@@ -168,6 +183,6 @@ def migrate_store(root: Path | None = None) -> int:
         return 0
     n = 0
     for path in auth_dir.rglob("*.json"):
-        if _migrate_file(path):
+        if _migrate_file(path, root=base):
             n += 1
     return n

@@ -296,6 +296,32 @@ def test_list_pools_reports_legacy_alias_dir_as_canonical(tmp_path: Path):
     assert not any(p.provider_id == "bailian" for p in pools)
 
 
+def test_cached_legacy_alias_pool_conflicts_after_external_edit(tmp_path: Path):
+    from openprogram.credential_files import PrivateAtomicWriteError
+
+    directory = tmp_path / "auth" / "bailian"
+    directory.mkdir(parents=True)
+    path = directory / "default.json"
+    legacy = CredentialPool(
+        provider_id="bailian",
+        account_id="default",
+        credentials=[_api_cred(provider="bailian", key="sk-legacy")],
+    )
+    path.write_text(json.dumps(legacy.to_dict()), encoding="utf-8")
+    path.chmod(0o600)
+    store = AuthStore(root=tmp_path)
+    pool = next(
+        item
+        for item in store.list_pools()
+        if item.provider_id == "alibaba-token-plan-cn"
+    )
+    path.write_bytes(path.read_bytes() + b"\n")
+
+    with pytest.raises(PrivateAtomicWriteError) as exc:
+        store.put_pool(pool)
+    assert exc.value.code == "conflict"
+
+
 def test_delete_pool_alias_aware(tmp_path: Path):
     s = AuthStore(root=tmp_path)
     s.add_credential(_api_cred(provider="alibaba-token-plan-cn", key="k"))
