@@ -109,19 +109,3 @@ __all__ = [
     "is_context_overflow", "get_overflow_patterns",
     "sanitize_surrogates",
 ]
-
-
-# Register builtin API providers AFTER the full package init completes.
-# Doing this from inside stream.py at module load triggers a circular
-# re-entry into providers/* when threads import in parallel.
-from .stream import _ensure_builtins as _stream_ensure_builtins
-_stream_ensure_builtins()
-del _stream_ensure_builtins
-
-import os as _os
-
-if _os.environ.get("_OPENPROGRAM_RECORDINGS_MANAGEMENT") != "1":
-    from .recording import activate_record_replay_safely as _activate_record_replay
-    _activate_record_replay()
-    del _activate_record_replay
-del _os

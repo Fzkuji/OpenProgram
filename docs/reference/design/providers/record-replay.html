@@ -90,10 +90,10 @@
 <main>
   <p class="eyebrow">OpenProgram / Provider design / implementation handoff</p>
   <h1>请求录制与严格离线回放入口</h1>
-  <p class="sub">原始设计基线：<code>708bfbab132870677d670337903d17e82fb0d420</code>；可靠性修订基线：<code>990bfe36e625579443e1cb01a1b3266c8dbd0e87</code>。本页定义产品入口、registry 包装、文件安全、并发写入、严格解析、文件管理和验证合同。它只描述应实施的设计，不把文档内容计为实现证据。</p>
+  <p class="sub">设计审计基线：<code>990bfe36e625579443e1cb01a1b3266c8dbd0e87</code>；生命周期实现复核提交：<code>99252205957a2850e1203a888a0fa0b403b0c3f7</code>。本页定义产品入口、provider runtime 生命周期、registry 包装、文件安全、严格离线和验证合同，并分别记录设计与实现证据。</p>
 
   <div class="lead">
-    <b>确定方案。</b> 保留现有 <code>RecordingProvider</code> 与 <code>ReplayProvider</code> 的库级 API；在 <code>api_registry</code> 增加一次性、进程级 provider 变换，使现有和后续注册的所有 API provider 使用同一个录制会话或同一个回放会话。运行模式由 profile-aware 配置决定，<code>openprogram recordings</code> 提供配置和文件管理入口。录制默认关闭，脱敏不可关闭；回放不读取凭证、不委托真实 provider、不执行 provider fallback。
+    <b>确定方案。</b> 保留现有 <code>RecordingProvider</code>、<code>ReplayProvider</code> 和 registry transform；新增显式、线程安全、进程级的 provider runtime 生命周期。导入 <code>openprogram.providers</code> 不注册厂商 provider、不读取 <code>record_replay</code> 配置、不打开录制文件、不安装 transform。第一次实际获取 provider 前完成注册与激活；<code>openprogram recordings</code> 只执行管理操作，不进入 runtime 生命周期。录制默认关闭，脱敏不可关闭；回放不读取凭证、不委托真实 provider、不执行 provider fallback。
   </div>
 
   <nav class="toc" aria-label="目录">
@@ -117,16 +117,19 @@
         <li>文件写入并发安全、默认 owner-only、始终脱敏。</li>
         <li>提供可脚本化的 list/show/delete/prune。</li>
         <li>错误定位到文件、行、调用、事件或字段。</li>
+        <li>把 provider 注册、runtime 激活和 recordings 管理分成可独立调用和验证的边界。</li>
       </ul>
     </section>
     <section class="card">
       <h3>非目标</h3>
       <ul>
         <li>不录制 tool、MCP、浏览器或任意 HTTP 流量。</li>
+        <li>不定义、持久化或恢复 workflow、Agent DAG、Session 和工具副作用；回放只替换 LLM provider 请求/事件边界。</li>
         <li>不把 JSONL 定义为长期稳定的公共交换格式。</li>
         <li>不做跨模型或跨 prompt 的模糊匹配。</li>
         <li>不在 Web UI 增加入口；CLI/config 先覆盖 worker。</li>
         <li>不自动上传、共享或提交录制文件。</li>
+        <li>不重写 provider 插件协议，不改变录制格式，不引入运行中热切换。</li>
       </ul>
     </section>
     <section class="card">
@@ -145,17 +148,16 @@
   <table>
     <thead><tr><th>能力</th><th>当前证据</th><th class="center">状态</th><th>缺口</th></tr></thead>
     <tbody>
-      <tr><td>库级录制</td><td><code>openprogram/providers/recording.py::RecordingProvider</code></td><td class="center"><span class="pill ok">已实现</span></td><td>构造时直接 append header；没有入口、锁或权限收紧。</td></tr>
-      <tr><td>递归凭证脱敏</td><td><code>remove_secret_values()</code></td><td class="center"><span class="pill warn">部分</span></td><td>字段名、Bearer、<code>sk-</code> 与部分 query 参数已覆盖；不保证移除普通正文中的私有内容。</td></tr>
-      <tr><td>库级回放</td><td><code>openprogram/providers/replay.py::ReplayProvider</code></td><td class="center"><span class="pill warn">部分</span></td><td>不持有 HTTP client；解析未验证 JSON 错误、孤立 event、重复 request、<code>call_end</code>、截断和完整索引。</td></tr>
-      <tr><td>请求差异</td><td><code>find_first_difference()</code></td><td class="center"><span class="pill ok">已实现</span></td><td>按稳定顺序报告首个字段差异；只跳过 <code>timestamp</code>。</td></tr>
-      <tr><td>registry 接入</td><td>测试手工调用 <code>register_api_provider()</code></td><td class="center"><span class="pill bad">未实现</span></td><td>产品运行没有统一包装；每个 API 手工替换会遗漏后注册 provider。</td></tr>
-      <tr><td>CLI/config</td><td>现有 Markdown 明确写“没有 CLI 入口”</td><td class="center"><span class="pill bad">未实现</span></td><td>worker、TUI、Web、channel 无法启用。</td></tr>
-      <tr><td>文件管理</td><td>无</td><td class="center"><span class="pill bad">未实现</span></td><td>没有受限 root、枚举、检查、删除和保留期管理。</td></tr>
+      <tr><td>录制、回放与脱敏</td><td><code>recording.py</code>、<code>replay.py</code></td><td class="center"><span class="pill ok">已实现</span></td><td>严格 v1 JSONL、并发写入、固定脱敏、离线 mismatch 与 legacy reader 已有测试证据。</td></tr>
+      <tr><td>Registry transform</td><td><code>api_registry.py::configure_provider_transform()</code></td><td class="center"><span class="pill ok">已实现</span></td><td>覆盖已有和后续注册 provider；同一进程只允许一个 transform。</td></tr>
+      <tr><td>CLI/config 与文件管理</td><td><code>openprogram recordings</code></td><td class="center"><span class="pill ok">已实现</span></td><td>status/record/replay/off/list/show/delete/prune 与 next-start 配置已落地。</td></tr>
+      <tr><td>管理命令恢复</td><td><code>e8c9f645</code></td><td class="center"><span class="pill ok">已实现</span></td><td>recordings 管理入口不初始化 provider runtime；损坏 replay 文件不再依赖环境变量哨兵恢复。</td></tr>
+      <tr><td>Provider runtime 生命周期</td><td><code>initialization.py</code>、<code>register.py</code></td><td class="center"><span class="pill ok">已实现</span></td><td>显式 NEW/INITIALIZING/READY/FAILED 状态、并发首次初始化、失败脱敏、auth/API 原子发布与启动期 fail-fast 已验证。</td></tr>
+      <tr><td>简版 Markdown</td><td><code>record-replay.md</code>/<code>.zh.md</code></td><td class="center"><span class="pill ok">已同步</span></td><td>记录当前 CLI、严格离线事实与生命周期实现证据。</td></tr>
     </tbody>
   </table>
   </div>
-  <div class="note warning"><b>当前“离线”证据的范围：</b><code>tests/providers/test_record_replay.py</code> 在回放测试中替换 <code>socket.connect</code>，证明该测试路径没有连接；当前产品没有自动 registry 包装，因此不能把这个测试外推为所有产品入口均已离线。</div>
+  <div class="note"><b>实现后的生命周期边界：</b><code>providers/__init__.py</code> 不注册 built-ins、不读取配置、不打开录制文件、不安装 transform。公共 provider 获取和 Web/worker 启动显式调用 <code>initialize_provider_runtime()</code>；recordings 管理直接操作配置与文件，不依赖环境变量协议。</div>
 
   <h2 id="reference">03 · 现有 reference corpus 的对应设计</h2>
   <p>本仓当前参考快照只有 <code>references/pi-ai</code>。本节只描述该快照，不声称覆盖其他版本或整个开源生态。</p>
@@ -182,55 +184,48 @@
 
   <h2 id="decision">04 · 总体设计</h2>
   <div class="diagram">
-  <svg viewBox="0 0 1120 480" role="img" aria-label="配置解析、registry 包装、录制和回放的数据流">
+  <svg viewBox="0 0 1120 430" role="img" aria-label="provider 导入、runtime 初始化和 recordings 管理的分离关系">
     <defs>
       <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#65a6ff"/></marker>
       <marker id="arrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#a68cff"/></marker>
     </defs>
-    <text x="24" y="30" fill="#8f9bad" font-size="12">启动阶段</text>
-    <rect x="24" y="48" width="220" height="78" rx="10" fill="#171c26" stroke="#2d3747"/>
-    <text x="134" y="77" fill="#d9e0ea" text-anchor="middle" font-size="14" font-weight="700">profile-aware config</text>
-    <text x="134" y="101" fill="#8f9bad" text-anchor="middle" font-size="12">mode + file selector</text>
-    <line x1="244" y1="87" x2="342" y2="87" stroke="#65a6ff" marker-end="url(#arrow)"/>
-    <rect x="350" y="48" width="260" height="78" rx="10" fill="#171c26" stroke="#65a6ff"/>
-    <text x="480" y="77" fill="#d9e0ea" text-anchor="middle" font-size="14" font-weight="700">configure_provider_transform()</text>
-    <text x="480" y="101" fill="#8f9bad" text-anchor="middle" font-size="12">一次设置；变换已有与后续注册项</text>
-    <line x1="610" y1="87" x2="708" y2="87" stroke="#65a6ff" marker-end="url(#arrow)"/>
-    <rect x="716" y="48" width="380" height="78" rx="10" fill="#171c26" stroke="#2d3747"/>
-    <text x="906" y="77" fill="#d9e0ea" text-anchor="middle" font-size="14" font-weight="700">api_registry</text>
-    <text x="906" y="101" fill="#8f9bad" text-anchor="middle" font-size="12">每个 api → transformed provider</text>
+    <text x="24" y="28" fill="#8f9bad" font-size="12">模块导入</text>
+    <rect x="24" y="44" width="1072" height="68" rx="10" fill="#171c26" stroke="#2d3747"/>
+    <text x="560" y="72" fill="#d9e0ea" text-anchor="middle" font-size="14" font-weight="700">import openprogram.providers</text>
+    <text x="560" y="94" fill="#8f9bad" text-anchor="middle" font-size="12">只定义和导出 API；不注册厂商 provider，不读取配置，不访问录制文件，不安装 transform</text>
 
-    <text x="24" y="184" fill="#8f9bad" font-size="12">请求阶段</text>
-    <rect x="24" y="202" width="220" height="76" rx="10" fill="#171c26" stroke="#2d3747"/>
-    <text x="134" y="231" fill="#d9e0ea" text-anchor="middle" font-size="14" font-weight="700">stream / stream_simple</text>
-    <text x="134" y="254" fill="#8f9bad" text-anchor="middle" font-size="12">先取 provider，再决定凭证</text>
-    <line x1="244" y1="240" x2="342" y2="240" stroke="#65a6ff" marker-end="url(#arrow)"/>
-    <rect x="350" y="202" width="260" height="76" rx="10" fill="#171c26" stroke="#65a6ff"/>
-    <text x="480" y="231" fill="#d9e0ea" text-anchor="middle" font-size="14" font-weight="700">registry provider</text>
-    <text x="480" y="254" fill="#8f9bad" text-anchor="middle" font-size="12">off / RecordingProvider / ReplayProvider</text>
+    <text x="24" y="150" fill="#8f9bad" font-size="12">正常运行</text>
+    <rect x="24" y="166" width="230" height="78" rx="10" fill="#171c26" stroke="#65a6ff"/>
+    <text x="139" y="195" fill="#d9e0ea" text-anchor="middle" font-size="14" font-weight="700">实际 provider 获取</text>
+    <text x="139" y="218" fill="#8f9bad" text-anchor="middle" font-size="12">get_api_provider(api)</text>
+    <line x1="254" y1="205" x2="334" y2="205" stroke="#65a6ff" marker-end="url(#arrow)"/>
+    <rect x="342" y="154" width="300" height="102" rx="10" fill="#171c26" stroke="#65a6ff"/>
+    <text x="492" y="184" fill="#d9e0ea" text-anchor="middle" font-size="14" font-weight="700">initialize_provider_runtime()</text>
+    <text x="492" y="207" fill="#8f9bad" text-anchor="middle" font-size="12">NEW → INITIALIZING → READY / FAILED</text>
+    <text x="492" y="230" fill="#8f9bad" text-anchor="middle" font-size="12">注册 built-ins → 配置快照 → 原子安装 transform</text>
+    <line x1="642" y1="205" x2="722" y2="205" stroke="#65a6ff" marker-end="url(#arrow)"/>
+    <rect x="730" y="166" width="366" height="78" rx="10" fill="#171c26" stroke="#2d3747"/>
+    <text x="913" y="195" fill="#d9e0ea" text-anchor="middle" font-size="14" font-weight="700">最终 registry provider</text>
+    <text x="913" y="218" fill="#8f9bad" text-anchor="middle" font-size="12">原 provider / RecordingProvider / ReplayProvider</text>
 
-    <path d="M610,225 C675,225 672,184 744,184" fill="none" stroke="#65a6ff" marker-end="url(#arrow)"/>
-    <rect x="752" y="150" width="344" height="76" rx="10" fill="#14241d" stroke="#51d49a"/>
-    <text x="924" y="179" fill="#51d49a" text-anchor="middle" font-size="14" font-weight="700">record</text>
-    <text x="924" y="202" fill="#b9c9c1" text-anchor="middle" font-size="12">脱敏 append → 委托真实 provider → 原事件</text>
-
-    <path d="M610,255 C675,255 672,310 744,310" fill="none" stroke="#a68cff" marker-end="url(#arrow2)"/>
-    <rect x="752" y="274" width="344" height="76" rx="10" fill="#211a31" stroke="#a68cff"/>
-    <text x="924" y="303" fill="#c8b9ff" text-anchor="middle" font-size="14" font-weight="700">replay</text>
-    <text x="924" y="326" fill="#c7bfd5" text-anchor="middle" font-size="12">严格比较 → 构造事件；无真实 provider</text>
-
-    <rect x="350" y="382" width="746" height="68" rx="10" fill="#171c26" stroke="#2d3747"/>
-    <text x="723" y="410" fill="#d9e0ea" text-anchor="middle" font-size="14" font-weight="700">~/.openprogram[-profile]/recordings/&lt;id&gt;.jsonl</text>
-    <text x="723" y="432" fill="#8f9bad" text-anchor="middle" font-size="12">0700 目录 · 0600 文件 · JSONL · 同一共享会话</text>
-    <line x1="924" y1="226" x2="924" y2="374" stroke="#65a6ff" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
-    <line x1="898" y1="374" x2="898" y2="358" stroke="#a68cff" stroke-dasharray="5 5" marker-end="url(#arrow2)"/>
+    <text x="24" y="300" fill="#8f9bad" font-size="12">管理运行</text>
+    <rect x="24" y="316" width="320" height="78" rx="10" fill="#211a31" stroke="#a68cff"/>
+    <text x="184" y="345" fill="#c8b9ff" text-anchor="middle" font-size="14" font-weight="700">openprogram recordings ...</text>
+    <text x="184" y="368" fill="#c7bfd5" text-anchor="middle" font-size="12">直接调用 inspection / config 管理函数</text>
+    <line x1="344" y1="355" x2="454" y2="355" stroke="#a68cff" marker-end="url(#arrow2)"/>
+    <rect x="462" y="316" width="300" height="78" rx="10" fill="#171c26" stroke="#a68cff"/>
+    <text x="612" y="345" fill="#d9e0ea" text-anchor="middle" font-size="14" font-weight="700">不初始化 provider runtime</text>
+    <text x="612" y="368" fill="#8f9bad" text-anchor="middle" font-size="12">损坏配置或 replay 文件仍可诊断和关闭</text>
+    <rect x="806" y="316" width="290" height="78" rx="10" fill="#171c26" stroke="#2d3747"/>
+    <text x="951" y="345" fill="#d9e0ea" text-anchor="middle" font-size="14" font-weight="700">next_start</text>
+    <text x="951" y="368" fill="#8f9bad" text-anchor="middle" font-size="12">管理修改不重置当前进程生命周期</text>
   </svg>
   </div>
   <div class="grid g2">
-    <section class="card"><h3>采用</h3><p>现有 request/event JSONL、现有事件类型、首差异比较、profile state dir、<code>restrict_to_user()</code>、跨平台 <code>flock</code> 兼容层，以及 <code>setup.update_config()</code>。</p></section>
-    <section class="card"><h3>修改</h3><p>把手工 registry 替换改为统一 provider transform；把当前宽松读取改为版本分派后的严格结构验证；把凭证解析移动到 provider 选择之后，以便回放明确跳过。</p></section>
-    <section class="card"><h3>新增</h3><p>managed recordings root、CLI 管理命令、共享录制 sink、配置项、启动激活函数和文件检查结果。</p></section>
-    <section class="card"><h3>拒绝</h3><p>不修改 vendor provider；不增加数据库；不引入文件管理依赖；不支持脱敏关闭；不对损坏文件进行猜测式恢复；不在 mismatch 后回退网络。</p></section>
+    <section class="card"><h3>保留</h3><p>现有 JSONL、严格 parser、共享 sink/replay、registry transform、next-start 配置、管理函数和直接构造 <code>RecordingProvider</code>/<code>ReplayProvider</code> 的库 API。</p></section>
+    <section class="card"><h3>分离</h3><p><code>register_builtins()</code> 只负责 provider/auth adapter 注册；<code>initialize_provider_runtime()</code> 负责一次性配置快照和 transform；管理命令不调用二者。</p></section>
+    <section class="card"><h3>新增</h3><p>统一生命周期状态、并发首次初始化、失败缓存、公共 provider 获取前强制初始化，以及 Web/worker 的启动期 fail-fast 调用。</p></section>
+    <section class="card"><h3>拒绝</h3><p>不使用环境变量控制 import；不为每个 vendor 增加初始化分支；不热重载配置；不改变录制格式；不把 recordings 管理依赖于 provider runtime。</p></section>
   </div>
 
   <h2 id="entry">05 · CLI 与配置合同</h2>
@@ -272,11 +267,28 @@ openprogram recordings prune --older-than-days N [--dry-run] [--yes]</pre>
     </tbody>
   </table>
   </div>
-  <p><code>openprogram config set</code> 仍可逐项修改；推荐的 <code>recordings record/replay/off</code> 用 <code>setup.update_config()</code> 一次写两个字段，避免中间状态。配置仅在 provider 子系统初始化时读取，避免一次运行中途替换 provider。worker/TUI/Web/channel 的 provider 调用都由 worker 执行，因此修改后必须重启 worker；命令输出必须明确打印这一点。</p>
+  <p><code>openprogram config set</code> 仍可逐项修改；推荐的 <code>recordings record/replay/off</code> 用 <code>setup.update_config()</code> 一次写两个字段，避免中间状态。配置仅在 <code>initialize_provider_runtime()</code> 从 NEW 转入 INITIALIZING 时读取，READY 或 FAILED 后不再重读。修改后必须重启相关进程；命令输出必须明确打印这一点。管理命令本身只检查和更新配置，不触发 runtime 初始化。</p>
   <div class="note"><b>路径规则：</b>不含路径分隔符的 selector 解析为当前 profile 的 managed ID；包含分隔符或绝对路径时解析为显式路径。record 模式只允许 managed root 内路径，避免长期 worker 覆盖项目文件；replay/show 可读取显式文件。delete/prune 永远只作用于 managed root。</div>
 
   <h2 id="registry">06 · Registry 包装与生命周期</h2>
-  <p><code>api_registry</code> 保留当前 <code>register_api_provider(api, provider)</code> 和 <code>get_api_provider(api)</code> API，新增一个内部、一次性 transform。transform 必须同时处理设置前已有的注册项和设置后新增的注册项。</p>
+  <h3>导入合同</h3>
+  <p><code>import openprogram.providers</code> 只完成 Python API 定义、模型 API 导出以及既有静态模型模块加载。它不得调用 <code>register_builtins()</code>、不得读取 <code>record_replay</code> 配置、不得打开录制文件、不得安装 transform，也不得通过导入 auth adapter 改变凭证注册表。这个合同用隔离子进程测试验证，不以代码注释代替；本任务不承诺清除模型目录模块已有的其他只读初始化。</p>
+
+  <h3>职责与接口</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>接口</th><th>职责</th><th>禁止行为</th></tr></thead>
+    <tbody>
+      <tr><td><code>register_builtins()</code></td><td>线程安全、幂等地解析内建 provider，使用一次 registry batch 原子发布 API provider，并显式加载已有 auth adapter。</td><td>不读取 record/replay 配置，不访问录制文件，不安装 transform；内部 import 错误不得按“可选 SDK 缺失”静默忽略。</td></tr>
+      <tr><td><code>initialize_provider_runtime()</code></td><td>串行执行 built-in 注册、配置快照、record/replay 预构造和 transform 发布。</td><td>不解析 credential，不创建 vendor client，不发起网络请求。</td></tr>
+      <tr><td><code>get_api_provider(api)</code></td><td>作为公共 provider 获取边界，先确保 runtime READY，再从 registry 返回最终 provider。</td><td>FAILED 时不得返回原 provider，也不得绕过录制/回放配置。</td></tr>
+      <tr><td><code>create_runtime(...)</code></td><td>先确保 provider runtime READY；off/record 保持现有 runtime 路由，replay 根据显式或非凭证默认 provider/model 构造基础 Runtime。</td><td>replay 下不得执行 CLI/AuthStore detection，也不得实例化会读取 credential 的 subscription runtime。</td></tr>
+      <tr><td>recordings management</td><td>读取/校验文件和更新 next-start 配置。</td><td>不调用 <code>initialize_provider_runtime()</code>，不依赖 provider registry。</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><code>api_registry</code> 保留 <code>register_api_provider(api, provider)</code>、<code>get_api_provider(api)</code> 和一次性 transform。transform 必须同时处理初始化前已有的注册项和初始化后新增的注册项。</p>
   <pre>configure_provider_transform(transform)
   - 同一进程只允许设置一次；重复同值是 no-op，冲突值抛 RuntimeError
   - 保存 original provider，不对已经 transformed 的 provider 再包装
@@ -292,13 +304,43 @@ replay:
   transform(api, original) -> shared_replay
   original 只用于确认该 api 已注册，不保存到 ReplayProvider，不允许委托</pre>
   <p>所有 record wrapper 共享一个 sink，所有 replay API 共享一个 <code>ReplayProvider</code>，因此 <code>call_index</code> 表示进程内所有 provider API 调用的总顺序，而不是每个 API 各自从 0 开始。direct library 用法继续支持独立构造器；产品激活不得要求调用方逐个枚举 API。</p>
-  <div class="sequence" aria-label="启动顺序">
-    <div class="row"><div class="n">1</div><div class="body"><b>解析 profile</b><div class="meta"><code>openprogram.cli</code> 先设置 <code>OPENPROGRAM_PROFILE</code>。</div></div></div>
-    <div class="row"><div class="n">2</div><div class="body"><b>注册 built-ins</b><div class="meta">沿用 <code>providers/register.py::register_builtins()</code>。</div></div></div>
-    <div class="row"><div class="n">3</div><div class="body"><b>读取并验证 record_replay 配置</b><div class="meta">off 直接返回；无效配置写结构化错误日志并安装 fail-closed provider，应用仍可启动和执行诊断，但不得回退到真实 provider。</div></div></div>
-    <div class="row"><div class="n">4</div><div class="body"><b>设置 registry transform</b><div class="meta">包装已有项，并保证插件或延迟 import 的后注册项也被包装。</div></div></div>
-    <div class="row"><div class="n">5</div><div class="body"><b>处理调用</b><div class="meta">stream 先取得 transformed provider；仅 <code>requires_credentials != False</code> 时解析 credential。</div></div></div>
+
+  <h3>进程级状态</h3>
+  <pre>NEW
+  └─ initialize_provider_runtime() ─→ INITIALIZING
+       ├─ 成功 ─→ READY
+       └─ 任意未完成退出 ─→ FAILED（保存不可变 failure descriptor）</pre>
+  <ul>
+    <li>状态和等待使用一个 <code>threading.Condition</code>；同一时刻只有一个线程执行初始化，其他线程等待 READY 或 FAILED。</li>
+    <li>READY 后不再读取配置；配置修改继续遵循 <code>next_start</code>。</li>
+    <li>FAILED 只在 built-in 注册阶段出现：runtime 保存 stage、cause type 和脱敏后的 cause message。每个调用方得到新的 <code>ProviderRuntimeInitializationError</code>，字段和消息一致；不得重复使用带旧 traceback 的异常对象。</li>
+    <li>record/replay 激活失败不使 runtime FAILED：错误被记录，registry transform 被原子替换为 fail-closed <code>_BlockedRecordReplayProvider</code>，runtime 进入 READY 且 <code>snapshot.mode == "blocked"</code>。任何 provider 调用抛同一诊断，指示运行 <code>openprogram recordings status</code> 或 <code>openprogram recordings off</code>；不解析凭据、不访问网络。</li>
+    <li><code>KeyboardInterrupt</code>/<code>SystemExit</code> 等控制异常在锁内写入 <code>initialization_interrupted</code> failure descriptor 并 <code>notify_all()</code>；初始化线程继续抛原控制异常，等待者和后续调用得到稳定的初始化失败。进程内不重试，重启后从 NEW 开始。</li>
+    <li>构造 <code>RecordingSink</code>/<code>ReplayProvider</code> 和完整校验在 transform 发布前完成；发布失败不得留下部分 registry 替换。</li>
+    <li>off/record/replay/blocked/FAILED 的测试隔离使用新子进程，不增加可在生产代码中重置全局生命周期的 API。</li>
+  </ul>
+
+  <h3>Built-in 注册的可见性</h3>
+  <p><code>register_builtins()</code> 在自身锁内先导入和验证现有内建模块，在局部变量中形成 API provider batch，再由 API registry 一次发布；失败前不改变 API registry，只有完整成功后才设置 registered。Anthropic/Codex/Gemini auth adapter 继续调用各自现有幂等注册函数，但从 package import 移到这个显式阶段。若 auth adapter 失败，provider runtime 进入 FAILED，公共 <code>get_api_provider()</code> 因生命周期门禁不能观察或使用已发布 provider；进程重启后重建。项目当前把 Anthropic/OpenAI/Google SDK 声明为核心依赖，因此不再用包住整个 provider import 的 <code>except ImportError</code> 静默跳过内部缺陷。</p>
+
+  <div class="sequence" aria-label="正常 provider 获取顺序">
+    <div class="row"><div class="n">1</div><div class="body"><b>确定 profile</b><div class="meta">沿用现有 CLI/worker profile 解析；生命周期不重新解释 profile。</div></div></div>
+    <div class="row"><div class="n">2</div><div class="body"><b>公共入口请求 provider</b><div class="meta"><code>get_api_provider(api)</code> 先调用 <code>initialize_provider_runtime()</code>；Web/worker 可在启动线程前显式调用以便提前报告失败。</div></div></div>
+    <div class="row"><div class="n">3</div><div class="body"><b>注册 built-ins</b><div class="meta"><code>register_builtins()</code> 自身线程安全；完成后才标记注册成功，异常不得永久固化部分状态。</div></div></div>
+    <div class="row"><div class="n">4</div><div class="body"><b>读取一次配置并预构造</b><div class="meta">off 不安装 transform；record 创建共享 sink；replay 完整解析文件并创建共享 replay provider。</div></div></div>
+    <div class="row"><div class="n">5</div><div class="body"><b>原子发布并处理调用</b><div class="meta">registry 返回最终 provider；仅 <code>requires_credentials != False</code> 时解析 credential。</div></div></div>
   </div>
+
+  <h3>显式启动与统一保证</h3>
+  <p>Web 和 worker 在创建恢复线程、dispatcher 或 provider warm-up 线程前显式调用 <code>initialize_provider_runtime()</code>，使无效 replay 在单线程启动阶段失败。公共 <code>get_api_provider()</code> 仍执行幂等检查，覆盖 Python library 调用和未来入口。auth 的延迟 adapter 注册只调用 <code>register_builtins()</code>；它不能因为 replay 文件损坏而失败。</p>
+
+  <h3>Runtime 构造与 credential 边界</h3>
+  <p>严格离线必须覆盖 <code>create_runtime()</code>，不能只覆盖 <code>stream.py</code>。当前 factory 和 subscription runtime 构造器会在 <code>get_api_provider()</code> 前读取 API key/OAuth。目标实现不重构这些 live runtime：off/record 继续走现有 factory；replay 增加一个 credential-free 分支，只接受调用方显式给出的 provider/model，或 <code>AGENTIC_PROVIDER</code>/<code>AGENTIC_MODEL</code>、配置文件 <code>default_provider</code>/<code>default_model</code> 中已有的非凭证选择。没有这些选择时立即返回 replay 配置错误，不继续执行 CLI 探测或 AuthStore 探测。</p>
+  <p>replay factory 不实例化 subscription runtime，而是按 <code>PROVIDERS</code> 的 provider→model namespace 纯元数据构造基础 <code>Runtime</code>。plain provider 已有该字段；三个 subscription entry 新增 <code>model_namespace</code>：<code>claude-code→anthropic</code>、<code>openai-codex→openai-codex</code>、<code>gemini-cli→gemini-subscription</code>。API-routed provider 继续使用其模型目录 namespace。这个分支不读取录制文件来推断原始 factory provider：现有 v1 request 只保存 wire-level <code>Model</code>，无法区分 <code>claude-code</code> 与 <code>anthropic</code> 等共享 wire 的入口，也不能把多 API 文件的首个 model 当成所有后续 runtime 的 identity。请求进入 <code>ReplayProvider</code> 后由现有完整 request comparison 校验最终 <code>Model</code>、context、tools 和 options；不匹配按既有 <code>ReplayMismatch</code> 报告。</p>
+  <div class="note warning"><b>范围隔离：</b>当前主工作区存在并行 auth 账号管理重构。本任务不修改三个 subscription runtime 或 credential API，只在 replay factory 分支绕过它们；实现基于独立 worktree，合入时需复核 registry 的最终调用位置。</div>
+
+  <h3>与 OpenProgram 执行模型的关系</h3>
+  <p>record/replay 是 provider 测试与故障复现能力，不是 workflow 能力。Agent loop、Runtime retry、工具执行、Session 持久化和 DAG 状态仍按正常代码执行；仅 registry 返回的 provider 从 live/record provider 变为 <code>ReplayProvider</code>。因此 replay 可以验证这些上层组件在同一模型事件序列下的行为，但不会恢复历史 Session、重放工具副作用、回滚文件或定义执行步骤。</p>
 
   <h2 id="format">07 · 录制文件、严格解析与并发写入</h2>
   <h3>格式策略</h3>
@@ -344,7 +386,7 @@ replay:
   <ul>
     <li><code>remove_secret_values()</code> 在任何序列化之前执行，record 模式不存在关闭选项。</li>
     <li>保留当前大小写不敏感的敏感字段集合，并覆盖嵌套 dict/list。</li>
-    <li>value pattern 扩展到 Authorization 常见 scheme（Bearer、Basic、Bot、token、Key）、URL userinfo，以及 query 中的 <code>api_key</code>/<code>apikey</code>/<code>access_token</code>/<code>refresh_token</code>/<code>token</code>/<code>key</code>/<code>secret</code>。</li>
+    <li>value pattern 覆盖 Authorization 常见 scheme（Bearer、Basic、Bot、token、Key）、URL userinfo，以及 query 中当前已实现的 <code>api_key</code>/<code>apikey</code>/<code>access_token</code>/<code>token</code>；新增 query key 必须同时提交实现和测试，不能只写入设计状态。</li>
     <li>不采用通用“高熵字符串”规则：它会不稳定地改写正常 prompt，导致回放 mismatch。新增 provider 凭证形态必须以确定 pattern 和回归测试加入。</li>
     <li>record 与 replay 必须使用同一个 <code>redaction_version</code> 分派。当前 v1 文件没有该字段时按 redaction v1 处理。</li>
   </ul>
@@ -381,7 +423,9 @@ replay:
   <table>
     <thead><tr><th>阶段</th><th>条件</th><th>异常/CLI 行为</th><th>是否允许继续</th></tr></thead>
     <tbody>
-      <tr><td>配置激活</td><td>mode 未知、file 空、record 外部路径、replay 文件丢失或损坏</td><td>应用记录错误并继续启动；registry 安装 fail-closed provider，所有 provider 调用返回同一配置错误，不解析凭据、不访问网络。<code>recordings status/off</code> 仍可恢复。</td><td class="center">仅诊断</td></tr>
+      <tr><td>Built-in 注册</td><td>vendor 模块导入失败、auth adapter 注册失败、批发布中止</td><td>runtime 进入 FAILED，保存不可变 failure descriptor（<code>stage="builtins"</code>）；每个调用方得到字段一致的新 <code>ProviderRuntimeInitializationError</code>；等待线程全部唤醒；不得返回 original provider。</td><td class="center">管理命令可继续</td></tr>
+      <tr><td>Record/replay 激活</td><td>mode 未知、file 空、record 外部路径、replay 文件丢失、损坏或版本不符</td><td>结构化错误日志；registry transform 原子替换为 fail-closed <code>_BlockedRecordReplayProvider</code>；runtime READY 且 <code>snapshot.mode == "blocked"</code>。所有 provider 调用抛同一诊断，指示运行 <code>openprogram recordings status</code>/<code>off</code>；不解析凭据、不访问网络。</td><td class="center">仅诊断</td></tr>
+      <tr><td>控制退出</td><td>初始化线程收到 <code>KeyboardInterrupt</code>/<code>SystemExit</code></td><td>状态进入 FAILED 并唤醒等待线程；initializer 抛原控制异常，其他调用方收到 <code>initialization_interrupted</code>；只允许进程重启重试。</td><td class="center">管理命令可继续</td></tr>
       <tr><td>创建</td><td>同名文件、symlink、目录不可写、无法收紧权限</td><td><code>RecordingFileError</code>；不覆盖已有文件。</td><td class="center">否</td></tr>
       <tr><td>写入</td><td>锁失败、磁盘满、序列化失败</td><td>终止当前 provider 调用并保留已写内容；不能只记录日志后继续 live 调用。</td><td class="center">否</td></tr>
       <tr><td>真实 provider</td><td>开始/中途失败、调用取消或消费方提前关闭生成器</td><td>在 <code>finally</code> 写入带 outcome 的 call_end 并关闭源生成器，随后保留原异常/取消语义。整份文件仍可解析；replay 先校验请求，只在消费到该调用时报告对应中断，调用计数随后允许调用方重试并消费下一条录制。</td><td class="center">按调用</td></tr>
@@ -399,9 +443,11 @@ replay:
     <li><b>库 API：</b><code>RecordingProvider(provider, path)</code>、<code>ReplayProvider(path)</code>、<code>recording_path</code>、<code>call_count</code> 和现有异常属性保持。</li>
     <li><b>现有 v1 文件：</b>继续读取；新增严格检查会拒绝之前被宽松 reader 忽略的截断、孤立或重复行。这是有意的 fail-closed 行为。</li>
     <li><b>旧 writer：</b>header 只有 type/version 仍有效；管理元数据从 stat/内容推导并标为 <code>legacy-v1</code>。</li>
-    <li><b>默认运行：</b><code>mode=off</code> 时 registry 内容和 credential 解析顺序保持现状，不增加文件 I/O。</li>
+    <li><b>默认运行：</b><code>mode=off</code> 时首次实际 provider 获取完成一次配置快照，随后请求不增加配置文件 I/O；provider identity 和 credential 解析顺序保持。</li>
     <li><b>配置：</b>缺少 <code>record_replay</code> subtree 等同 off。不会从环境变量自动启用，也不会扫描并选取“最新录制”。</li>
-    <li><b>Markdown：</b>现有 <code>record-replay.md</code>/<code>.zh.md</code> 暂时保留为当前实现说明；实现完成后改为短入口并链接本页，避免本设计提交同时改写三份文档。</li>
+    <li><b>导入：</b><code>import openprogram.providers</code> 不再保证 built-in registry 已填充；实际 provider 获取和显式 <code>register_builtins()</code> 承担该责任。公开 stream/complete API 行为保持。</li>
+    <li><b>管理恢复：</b>删除 <code>_OPENPROGRAM_RECORDINGS_MANAGEMENT</code>；status/off 等恢复能力由结构分离保证，不再依赖 import 顺序。</li>
+    <li><b>Markdown：</b><code>record-replay.md</code>/<code>.zh.md</code> 与本页同步当前 CLI、严格离线和生命周期边界，不再保留“仅测试库模块”的过期描述。</li>
     <li><b>未来格式：</b>版本升级使用独立 parser；不原地改写用户文件。只在有明确字段语义变化时提供显式 migrate 命令。</li>
   </ul>
 
@@ -410,39 +456,47 @@ replay:
   <table class="file-list">
     <thead><tr><th>文件</th><th>最小改动</th><th>复用理由</th></tr></thead>
     <tbody>
-      <tr><td><code>openprogram/paths.py</code></td><td>增加 profile-aware <code>get_recordings_dir()</code>，创建/收紧 0700。</td><td>不复制 profile 路由。</td></tr>
-      <tr><td><code>openprogram/providers/api_registry.py</code></td><td>增加单一 provider transform，覆盖已有和后续注册。</td><td>这是所有 API 注册的共同入口。</td></tr>
-      <tr><td><code>openprogram/providers/recording.py</code></td><td>增加共享 <code>RecordingSink</code>、安全 append、inspection/management 纯函数与产品激活；保留 wrapper API。</td><td>避免新增与 JSONL 格式重复的 store 模块。</td></tr>
-      <tr><td><code>openprogram/providers/replay.py</code></td><td>严格 parser、预验证 event、<code>requires_credentials=False</code>、<code>assert_consumed()</code>。</td><td>解析与回放语义保持同文件。</td></tr>
-      <tr><td><code>openprogram/providers/stream.py</code></td><td>先查 provider，回放时跳过 credential resolution。</td><td>两种 stream API 共用现有代码。</td></tr>
-      <tr><td><code>openprogram/config_schema.py</code></td><td>增加两个 next_start settings 及交叉校验。</td><td>CLI/TUI/Web settings 的单一 schema。</td></tr>
-      <tr><td><code>openprogram/cli.py</code></td><td>增加 recordings argparse/dispatch，调用 recording 模块中的管理函数。</td><td>不新增只含参数转发的 CLI 模块。</td></tr>
-      <tr><td><code>openprogram/providers/__init__.py</code></td><td>built-ins 完成后调用一次 profile-aware 激活函数。</td><td>现有初始化顺序已经集中在这里。</td></tr>
-      <tr><td><code>tests/providers/test_record_replay.py</code></td><td>扩展格式、并发、权限、脱敏、offline 与兼容测试。</td><td>现有端到端测试归属。</td></tr>
-      <tr><td><code>tests/providers/test_record_replay_cli.py</code></td><td>一个新文件覆盖 argparse、config transaction、管理退出码。</td><td>CLI 测试与 provider stream 测试分开，避免单文件过长。</td></tr>
+      <tr><td><code>openprogram/providers/initialization.py</code></td><td>新增 runtime 状态、Condition、单次 built-in 注册、配置快照、transform 激活和失败传播。</td><td>生命周期协调独立于 recording 格式与 registry 存储。</td></tr>
+      <tr><td><code>openprogram/providers/register.py</code></td><td>让 <code>register_builtins()</code> 线程安全，并只在完整执行后标记成功。</td><td>保留现有 vendor 注册清单，不复制到生命周期模块。</td></tr>
+      <tr><td><code>openprogram/providers/api_registry.py</code></td><td><code>get_api_provider()</code> 在读取 registry 前确保 runtime READY；保留现有 transform 原子发布。</td><td>所有实际 API provider 获取的共同边界。</td></tr>
+      <tr><td><code>openprogram/providers/registry.py</code></td><td>三个 subscription entry 增加纯 <code>model_namespace</code> 元数据；<code>create_runtime()</code> 先取得 lifecycle snapshot，仅 replay 增加无凭据的基础 Runtime 分支。</td><td>off/record 的 live factory、subscription runtime 与 credential 行为保持。</td></tr>
+      <tr><td><code>openprogram/providers/__init__.py</code></td><td>删除 built-in 注册和 record/replay 激活调用，仅保留导出。</td><td>消除包导入对运行状态和文件系统的影响。</td></tr>
+      <tr><td><code>openprogram/providers/recording.py</code></td><td>保留格式与管理函数；激活函数由生命周期显式调用，不再参与 import。</td><td>不移动已经稳定的录制/回放逻辑。</td></tr>
+      <tr><td><code>openprogram/auth/credential_provider.py</code></td><td>把 provider side-effect import 改为显式 <code>register_builtins()</code>。</td><td>auth 只需要 adapter 注册，不应激活 replay。</td></tr>
+      <tr><td><code>openprogram/webui/server.py</code></td><td>在线程启动前显式初始化 provider runtime。</td><td>保留现有单线程 preload 意图，并把失败边界变为显式 API。</td></tr>
+      <tr><td><code>openprogram/worker/runner.py</code></td><td>在 <code>start_web()</code>、provider warm-up 和 channel 线程之前显式初始化。</td><td>worker 对无效 replay 配置统一 fail-fast，不允许后台线程独立触发首次初始化。</td></tr>
+      <tr><td><code>openprogram/cli.py</code></td><td>删除 recordings 环境变量哨兵，继续直接分派管理函数。</td><td>管理恢复由模块边界保证。</td></tr>
+      <tr><td><code>tests/providers/test_provider_initialization.py</code></td><td>新增 import purity、状态机、并发、失败原子性、auth/Web 边界测试。</td><td>生命周期测试与格式、CLI 测试分开。</td></tr>
+      <tr><td><code>tests/providers/test_record_replay_cli.py</code></td><td>补 status/off 对 missing、corrupt、unsupported-version 文件的真实子进程恢复矩阵。</td><td>验证用户恢复入口，不用单元 mock 代替启动行为。</td></tr>
     </tbody>
   </table>
   </div>
-  <p class="small">不修改 vendor provider、runtime factory、Web routes、Node CLI 或录制格式类型定义。若实现时发现 plugin provider 绕过 <code>register_api_provider()</code>，应先修正该 provider 的注册方式，不能在 recorder 中增加 vendor 特例。</p>
+  <p class="small">不修改 vendor provider、off/record 的 live factory、Web routes、Node CLI 或录制格式。runtime factory 只增加 replay 分支。若实现时发现调用绕过 <code>get_api_provider()</code> 或插件绕过 <code>register_api_provider()</code>，应改回统一边界，不能在 recorder 或生命周期模块增加 vendor 特例。</p>
 
   <h2 id="tests">14 · 验收与测试矩阵</h2>
   <div class="table-wrap">
   <table>
     <thead><tr><th>维度</th><th>用例</th><th>关键断言</th></tr></thead>
     <tbody>
-      <tr><td>默认兼容</td><td>无配置 / mode off</td><td>registry provider identity、credential resolver 次数和现有测试行为不变。</td></tr>
+      <tr><td>Import 合同</td><td>隔离子进程只执行 <code>import openprogram.providers</code></td><td>不读取 config、不打开 recording、不导入 vendor SDK/auth adapter、不修改 API registry。</td></tr>
+      <tr><td>首次初始化</td><td>无配置 / mode off / record / replay</td><td>built-ins 和配置只处理一次；READY 后 provider identity、credential resolver 次数和现有行为保持。</td></tr>
+      <tr><td>并发初始化</td><td>多个线程同时首次 <code>get_api_provider()</code></td><td>只有一个初始化执行者；其余线程得到同一 READY provider 或同一 FAILED 原因；无死等。</td></tr>
+      <tr><td>失败原子性</td><td>built-in 注册、配置读取、ReplayProvider 构造、transform 发布分别注入异常</td><td>不返回 original provider，不查询凭证，不构造网络 client；transform 不处于部分发布状态。</td></tr>
+      <tr><td>入口一致性</td><td>Web 启动、worker、公共 stream、直接 library provider 获取、auth adapter 加载</td><td>实际 provider 使用确保 READY；Web/worker 在线程前 fail-fast；auth 只注册 built-ins，不激活 replay。</td></tr>
       <tr><td>Registry</td><td>包装前注册、包装后注册、重复配置、两个 API</td><td>已有/后续项均 transformed；冲突 transform 失败；record wrappers 共享 sink；replay 共享 call_count。</td></tr>
       <tr><td>并发线程</td><td>两个线程各录多次 call/event</td><td>每行合法 JSON；call_index 唯一连续；每个 event_index 连续；call_end count 正确。</td></tr>
       <tr><td>并发进程</td><td>两个进程写同一 managed file</td><td>单一 header、无半行、无重复 call_index、严格 parser 通过。</td></tr>
-      <tr><td>异常与取消</td><td>provider 抛异常、任务取消、消费方 <code>aclose()</code></td><td>原控制流保持；源生成器关闭；call_end outcome 和 event_count 正确；整份文件可解析；replay 在对应调用失败而不影响后续计数。</td></tr>
-      <tr><td>激活失败</td><td>replay 文件丢失/损坏、未知 mode、非法 record selector</td><td>应用初始化不抛出；记录错误；provider 调用 fail-closed；不解析凭据、不访问网络；管理命令可恢复。</td></tr>
+      <tr><td>异常与取消</td><td>provider 抛异常、任务取消、消费方 <code>aclose()</code>、同步启动失败</td><td>原控制流保持；源生成器关闭；call_end outcome 和 event_count 正确；整份文件可解析；replay 在对应调用失败而不影响后续计数。</td></tr>
+      <tr><td>激活失败</td><td>replay 文件丢失/损坏、未知 mode、非法 record selector</td><td>应用初始化不抛出；runtime READY，<code>snapshot.mode == "blocked"</code>；provider 调用 fail-closed；不解析凭据、不访问网络；管理命令可恢复。</td></tr>
       <tr><td>回放计数</td><td>同一请求先 mismatch 后修正重试</td><td>mismatch 不增加 <code>call_count</code>；修正请求仍与同一 recorded call 比较；成功或已记录的中断才消费一次。</td></tr>
       <tr><td>权限</td><td>新目录/文件/锁文件、历史 0644 文件</td><td>POSIX 0700/0600；已有文件被收紧；调用 <code>restrict_to_user</code>。</td></tr>
       <tr><td>路径</td><td><code>../</code>、绝对 record path、symlink、目录、外部 delete</td><td>record/delete/prune 拒绝逃逸；replay/show 外部文件只读可用。</td></tr>
       <tr><td>脱敏</td><td>大小写字段、嵌套值、常见 auth scheme、URL userinfo/query、普通文本</td><td>凭证字节不在文件；非凭证文本保持；record/replay 使用同版规则。</td></tr>
       <tr><td>严格格式</td><td>空文件、坏 JSON、双 header、未知行、孤立 event、索引间隔、重复 end、错误 count、未知 event</td><td>构造 ReplayProvider 时报告 path/line/call/reason。</td></tr>
       <tr><td>严格离线</td><td>正常、mismatch、耗尽、损坏四条 replay 路径</td><td>socket/http client sentinel 均未调用；credential resolver 未调用；无 live fallback。</td></tr>
-      <tr><td>CLI 配置</td><td>record/replay/off/status、无效 selector、配置写并发</td><td>一次事务更新；失败不改配置；输出 restart 提示；profile 隔离。</td></tr>
+      <tr><td>Runtime factory</td><td>显式 provider/model、非凭证默认配置、无默认配置、plain/subscription provider</td><td>replay 使用 entry 的 <code>model_namespace</code>，不导入/构造 <code>runtime_class</code>，不执行 CLI/AuthStore detection，不调用 credential resolver；最终 wire-level Model 仍由 ReplayProvider 严格比较。</td></tr>
+      <tr><td>CLI 配置</td><td>record/replay/off/status、无效 selector、配置写并发</td><td>一次事务更新；失败不改配置；输出 restart 提示；profile 隔离；不初始化 runtime。</td></tr>
+      <tr><td>恢复命令</td><td>replay 文件 missing、corrupt、unsupported version 时执行 status/off</td><td>真实子进程可启动；status 报稳定诊断，off 成功写配置；不需要环境变量哨兵。</td></tr>
       <tr><td>管理</td><td>mixed valid/invalid list、metadata show、content show、active delete、dry-run prune、partial failure</td><td>稳定 JSON schema；默认无内容；active 不删；结果计数与退出码正确。</td></tr>
       <tr><td>旧文件</td><td>当前测试生成的 header-only v1 metadata</td><td>正常文件继续回放；结构损坏的旧文件按新严格规则拒绝。</td></tr>
       <tr><td>现有 loop</td><td>多轮 tool loop record → replay</td><td>事件类型、tool execution 和 final message 与当前测试一致。</td></tr>
@@ -450,8 +504,8 @@ replay:
   </table>
   </div>
   <h3>实现后最小验证命令</h3>
-  <pre>pytest -q tests/providers/test_record_replay.py tests/providers/test_record_replay_registry.py tests/providers/test_record_replay_cli.py
-pytest -q tests/providers/test_scripted_provider.py tests/providers/test_registry_from_config.py tests/unit/test_usage_stream_chokepoint.py tests/unit/test_web_config_schema.py tests/unit/test_config_write_safety.py
+  <pre>pytest -q tests/providers/test_provider_initialization.py tests/providers/test_record_replay.py tests/providers/test_record_replay_registry.py tests/providers/test_record_replay_cli.py
+  pytest -q tests/providers/test_scripted_provider.py tests/providers/test_registry_from_config.py tests/unit/test_usage_stream_chokepoint.py tests/unit/test_auth_methods.py tests/unit/test_web_config_schema.py tests/unit/test_config_write_safety.py
 python -m openprogram recordings --help
 python -m openprogram config get record_replay.mode
 python -m tools.docs_site.build
@@ -460,15 +514,17 @@ git diff --check</pre>
 
   <h2 id="status">15 · 实现与验证记录</h2>
   <div class="status-grid" role="table" aria-label="实现状态">
-    <div class="head">状态</div><div class="head">范围</div><div class="head">证据（基线 b6460fdc）</div>
+    <div class="head">状态</div><div class="head">范围</div><div class="head">证据（设计基线 990bfe36；实现复核 99252205）</div>
     <div class="value"><span class="pill ok">已实现</span></div><div class="value">共享 <code>RecordingSink</code> 以线程锁、跨进程 <code>flock</code>、完整 <code>os.write</code> 和 <code>call_end</code> fsync 写入单一 v1 JSONL；扩展固定脱敏并执行 0700/0600 与 symlink/普通文件检查。</div><div class="value"><code>recording.py::RecordingSink</code>、<code>paths.py::get_recordings_dir</code>；spawn 三进程并发测试严格解析 15 个连续 call。</div>
     <div class="value"><span class="pill ok">已实现</span></div><div class="value">一次性 registry transform 覆盖已有和后续 provider；record 模式共享 sink，replay 模式共享一个预验证 provider。</div><div class="value"><code>api_registry.py::configure_provider_transform</code>、<code>recording.py::activate_record_replay_from_config</code>、<code>test_record_replay_registry.py</code>。</div>
     <div class="value"><span class="pill ok">已实现</span></div><div class="value">严格 parser 在构造阶段验证 header、版本、行类型、call/event 索引、call_end/count 和事件模型；replay 无原 provider/fallback，两个 stream 入口先选择 provider 并跳过凭证解析。</div><div class="value"><code>replay.py::read_recording_file</code>、<code>ReplayProvider.requires_credentials</code>、<code>stream.py</code>；结构失败、credential sentinel、多轮 tool loop 测试。</div>
-    <div class="value"><span class="pill ok">已实现</span></div><div class="value"><code>record_replay.mode/file</code> 为 next_start settings；CLI 提供 status/record/replay/off/list/show/delete/prune，配置失败回滚新文件，破坏性命令包含 active、symlink、外部路径、锁与非 TTY 确认保护。管理命令导入时不自动激活已配置 replay，因此目标文件后来损坏或丢失时，<code>status/off</code> 仍可用于诊断和恢复。</div><div class="value"><code>config_schema.py</code>、<code>cli.py</code>、<code>providers/__init__.py</code>、<code>recording.py</code>、<code>test_record_replay_cli.py::test_off_recovers_from_a_replay_file_that_became_invalid</code>；真实临时 HOME CLI smoke 验证。</div>
+    <div class="value"><span class="pill ok">已实现</span></div><div class="value"><code>record_replay.mode/file</code> 为 next_start settings；CLI 提供 status/record/replay/off/list/show/delete/prune，配置失败回滚新文件，破坏性命令包含 active、symlink、外部路径、锁与非 TTY 确认保护。</div><div class="value"><code>config_schema.py</code>、<code>cli.py</code>、<code>recording.py</code> 和 CLI/管理测试。</div>
+    <div class="value"><span class="pill ok">已替代临时修复</span></div><div class="value">recordings 管理命令不导入或初始化 provider runtime；损坏或丢失 replay 文件时 <code>status/off</code> 可直接恢复配置，环境变量哨兵已删除。</div><div class="value"><code>e8c9f645</code>、<code>test_off_recovers_from_a_replay_file_that_became_invalid</code> 与无导入副作用子进程测试。</div>
+    <div class="value"><span class="pill ok">已实现</span></div><div class="value">显式 provider runtime 生命周期、无运行副作用的 package import、线程安全首次初始化、built-in 注册失败的稳定 FAILED 传播、record/replay 激活失败改走 fail-closed blocked provider 且 runtime READY（<code>snapshot.mode="blocked"</code>），auth/recordings/runtime 分离，以及 replay 模式只读模型解析。</div><div class="value"><code>4d82d485..99252205</code>；规格复审 PASS，质量复审 PASS；提交态 <code>tests/unit + tests/providers</code> 记录于本次交付说明。</div>
+    <div class="value"><span class="pill ok">可靠性修订已实现</span></div><div class="value">异常、取消、提前关闭和同步启动失败写唯一带 outcome 的 call_end 并关闭 source；重复 terminal 在首个 terminal 后停止；source close 失败保留。配置激活失败时原子替换已有 registry transform 为 fail-closed provider；mismatch 不消费调用，匹配的中断调用消费一次并报告。</div><div class="value"><code>c26df53a</code>、<code>a4f27b3b</code>、<code>fe727546</code>、<code>6595d444</code>；公共入口 RED/GREEN、规格复审 PASS、质量复审 PASS。</div>
     <div class="value"><span class="pill warn">兼容边界</span></div><div class="value">保留 v1 构造器、属性、异常、旧 header 和 mismatch 行为；新增严格检查会拒绝旧 reader 曾忽略的损坏行。严格离线仍只覆盖 LLM provider 层；跨进程调度顺序不保证复现。</div><div class="value"><code>test_record_replay.py</code> 继续覆盖库级录制、两轮 tool loop、版本拒绝和字段差异。</div>
-    <div class="value"><span class="pill ok">可靠性修订已实现</span></div><div class="value">异常、取消、提前关闭和同步启动失败写唯一带 outcome 的 call_end 并关闭 source；重复 terminal 在首个 terminal 后停止；source close 失败保留。配置激活失败时原子替换已有 registry transform 为 fail-closed provider；mismatch 不消费调用，匹配的中断调用消费一次并报告。</div><div class="value"><code>c26df53a</code>、<code>a4f27b3b</code>、<code>fe727546</code>、<code>6595d444</code>；公共入口 RED/GREEN、规格复审 PASS、质量复审 PASS，最终 full gate 见任务台账。</div>
     <div class="value"><span class="pill plan">明确不做</span></div><div class="value">Web UI、全进程 HTTP 录制、tool/MCP 录制、模糊 request 匹配、自动网络 fallback、自动上传、Windows 专项实现或验证。</div><div class="value">超出本阶段边界。</div>
-    <div class="value"><span class="pill plan">验证命令</span></div><div class="value">相关 pytest、Ruff、docs build、link checker、CLI smoke 与 diff whitespace。</div><div class="value">提交前执行并在分支交付记录中报告精确通过数及任何基线环境失败。</div>
+    <div class="value"><span class="pill ok">验证完成</span></div><div class="value">相关 pytest、完整 unit/providers、changed-file Ruff、docs build、link checker、CLI smoke 与 diff whitespace。</div><div class="value">仓库根级 pytest 另被既有缺失模块 <code>openprogram.functions.agentics.test_framework</code> 阻断于 integration collection；本变更未修改该入口。</div>
   </div>
 
   <p class="foot">设计来源：当前 OpenProgram provider 实现、CLI/config 入口、测试，以及仓内 <code>references/pi-ai</code> 快照。更新实现状态时必须附代码符号、测试或 commit；不得把“设计已写”标为“功能已实现”。</p>

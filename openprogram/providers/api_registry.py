@@ -51,8 +51,26 @@ def register_api_provider(api: Api, provider: ApiProvider) -> None:
         )
 
 
+def register_api_providers(providers: dict[Api, ApiProvider]) -> None:
+    """Atomically publish a batch of API providers."""
+    with _registry_lock:
+        transformed = {
+            api: (
+                _provider_transform(api, provider)
+                if _provider_transform is not None
+                else provider
+            )
+            for api, provider in providers.items()
+        }
+        _original_registry.update(providers)
+        _registry.update(transformed)
+
+
 def get_api_provider(api: Api) -> ApiProvider | None:
     """Get a registered API provider."""
+    from .initialization import initialize_provider_runtime
+
+    initialize_provider_runtime()
     with _registry_lock:
         return _registry.get(api)
 

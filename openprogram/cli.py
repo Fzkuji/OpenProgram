@@ -1435,11 +1435,7 @@ def main():
             return
 
     if args.command == "recordings":
-        os.environ["_OPENPROGRAM_RECORDINGS_MANAGEMENT"] = "1"
-        try:
-            from openprogram.providers.recording import dispatch_recordings
-        finally:
-            os.environ.pop("_OPENPROGRAM_RECORDINGS_MANAGEMENT", None)
+        from openprogram.providers.recording import dispatch_recordings
 
         sys.exit(dispatch_recordings(args))
 

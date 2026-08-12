@@ -52,6 +52,7 @@ PROVIDERS = {
             "openprogram.providers.anthropic._claude_code_direct_runtime",
             "ClaudeCodeRuntime",
         ),
+        "model_namespace": "anthropic",
         "default_model": "claude-sonnet-4",
     },
     "openai-codex": {
@@ -59,6 +60,7 @@ PROVIDERS = {
             "openprogram.providers.openai_codex.runtime",
             "OpenAICodexRuntime",
         ),
+        "model_namespace": "openai-codex",
         "default_model": "gpt-5.5",
     },
     "gemini-cli": {
@@ -66,6 +68,7 @@ PROVIDERS = {
             "openprogram.providers.google_gemini_cli.runtime",
             "GeminiCLIRuntime",
         ),
+        "model_namespace": "gemini-subscription",
         "default_model": "gemini-2.5-flash",
     },
     "anthropic": {
@@ -307,6 +310,29 @@ def _http_api_key_for(entry: dict) -> str | None:
     return resolve_provider_key(pool)
 
 
+def _replay_runtime(provider: str, model: str, entry: dict, kwargs: dict):
+    from openprogram.agentic_programming.runtime import Runtime
+    from openprogram.providers.models import get_model
+
+    namespace = entry["model_namespace"]
+    source = get_model(provider, model) or get_model(namespace, model)
+    if source is None:
+        raise ValueError(f"Unknown model {provider!r}:{model!r}")
+
+    runtime_kwargs = {
+        key: kwargs[key]
+        for key in ("call", "max_retries", "api_key", "skills")
+        if key in kwargs
+    }
+    runtime = Runtime(model="default", **runtime_kwargs)
+    runtime.model = f"{namespace}:{model}"
+    runtime.api_model = source.model_copy(update={"provider": namespace})
+    runtime.provider_id = provider
+    if "system" in kwargs:
+        runtime.system = kwargs["system"]
+    return runtime
+
+
 def create_runtime(provider: str = None, model: str = None, **kwargs):
     """Create a Runtime instance with auto-detection or explicit provider.
 
@@ -324,6 +350,33 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
         namespace, or set by the subscription runtime classes).
     """
     import importlib
+
+    from openprogram.providers.initialization import initialize_provider_runtime
+
+    runtime_snapshot = initialize_provider_runtime()
+
+    if runtime_snapshot.mode == "replay":
+        if not provider or provider == "auto":
+            configured = _load_provider_config()
+            if configured is None:
+                raise RuntimeError(
+                    "Replay mode requires an explicit provider/model or a "
+                    "configured default_provider/default_model"
+                )
+            provider, detected_model = configured
+            model = model or detected_model
+        if provider not in PROVIDERS:
+            from openprogram.providers.models import get_model
+
+            source = get_model(provider, model) if model else None
+            if source is None:
+                raise ValueError(f"Unknown model {provider!r}:{model!r}")
+            return _replay_runtime(
+                provider, model, {"model_namespace": source.provider}, kwargs
+            )
+        entry = PROVIDERS[provider]
+        use_model = model or entry["default_model"]
+        return _replay_runtime(provider, use_model, entry, kwargs)
 
     if provider and provider != "auto":
         if provider not in PROVIDERS:
