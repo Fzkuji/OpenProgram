@@ -124,7 +124,7 @@
 </div>
 
 <div class="note orange">
-  <b>快照与使用边界</b>。OpenProgram 的实现证据以 <code>main@1c249e92</code> 为基线（2026-08-11 复核），包含运行中发消息排队、owner/paired 两档来源权限加配对准入、默认开启并覆盖全部本地执行面的沙箱、ACP 服务端与三个 LSP 工具，以及本次复核确认的 commit-push-pr 打包技能、credential_process 外部命令取密钥、带 <code>openprogram recordings</code> CLI 与 <code>record_replay.mode/file</code> 配置入口的请求录制与严格离线回放、runtime <code>llm(response_format=…)</code> 的 JSON schema 结构化输出（严格校验加一次重试，OpenAI/Anthropic 原生映射）、backup 命令和 agent/resource_governance 的每会话并发与资源限额。其他列固定在第五节列出的本地源码、二进制或 npm 包版本，没有声明为各产品的最新版本。<code>·</code> 只表示本轮没有确认到实现，不等于功能不存在。第四节是设计参考，优先级尚未经过使用频率统计或工程量估算。
+  <b>快照与使用边界</b>。OpenProgram 的通用实现证据以 <code>main@1c249e92</code> 为基线（2026-08-11 复核），包含运行中发消息排队、owner/paired 两档来源权限加配对准入、默认开启并覆盖全部本地执行面的沙箱、ACP 服务端与三个 LSP 工具，以及本次复核确认的 commit-push-pr 打包技能、credential_process 外部命令取密钥、带 <code>openprogram recordings</code> CLI 与 <code>record_replay.mode/file</code> 配置入口的请求录制与严格离线回放、backup 命令和 agent/resource_governance 的每会话并发与资源限额。JSON Schema structured output 不沿用该旧快照结论，单独按 Tasks 1–6@<code>2fb471b3</code> 的实现、复审和未完成完整门禁记为 <code>◐</code>。其他列固定在第五节列出的本地源码、二进制或 npm 包版本，没有声明为各产品的最新版本。<code>·</code> 只表示本轮没有确认到实现，不等于功能不存在。第四节是设计参考，优先级尚未经过使用频率统计或工程量估算。
 </div>
 
 <div class="note blue">
@@ -679,7 +679,7 @@
 <div class="tbl">
 <table class="wide">
 <tr><th>对象</th><th>取证来源</th><th>注意</th></tr>
-<tr><td class="name">OpenProgram</td><td><code>main@1c249e92</code></td><td>全部能力按该基线提交复核（2026-08-11），在 414aa4de 基础上追加确认：skills_bundled 的 commit-push-pr 打包技能、auth/methods 的 credential_process 外部命令取密钥、带 recordings CLI 与 record_replay 配置入口的请求录制与严格离线回放、runtime llm(response_format=…) 的 JSON schema 结构化输出、backup create/list/restore/prune、默认开启的同 provider 失败切换，以及 agent/resource_governance 的每会话并发与资源限额。此前条目仍包括按 profile 隔离的 functions/programs meta 存储、TUI <code>/init</code>/<code>/compact</code>/<code>/doctor</code>/<code>/mcp</code>、有总输入上限的 <code>/commit-message</code>、测试专用 scripted provider、带范围声明的 <code>trash list/restore</code>、doctor/MCP 后端响应契约测试、运行中发消息排队、owner/paired 两档来源权限、默认开启的沙箱，以及 <code>openprogram acp</code> 服务端与 lsp_diagnostics/lsp_references/lsp_definition。文档改动本身不作为功能证据</td></tr>
+<tr><td class="name">OpenProgram</td><td><code>main@1c249e92</code>；JSON Schema 行另用 <code>2fb471b3</code></td><td>通用能力按 main 基线复核（2026-08-11），在 414aa4de 基础上追加确认：skills_bundled 的 commit-push-pr 打包技能、auth/methods 的 credential_process 外部命令取密钥、带 recordings CLI 与 record_replay 配置入口的请求录制与严格离线回放、backup create/list/restore/prune、默认开启的同 provider 失败切换，以及 agent/resource_governance 的每会话并发与资源限额。JSON Schema structured output 只按 Tasks 1–6 的实现与复审证据记为部分确认，不继承旧快照的完整确认。此前条目仍包括按 profile 隔离的 functions/programs meta 存储、TUI <code>/init</code>/<code>/compact</code>/<code>/doctor</code>/<code>/mcp</code>、有总输入上限的 <code>/commit-message</code>、测试专用 scripted provider、带范围声明的 <code>trash list/restore</code>、doctor/MCP 后端响应契约测试、运行中发消息排队、owner/paired 两档来源权限、默认开启的沙箱，以及 <code>openprogram acp</code> 服务端与 lsp_diagnostics/lsp_references/lsp_definition。文档改动本身不作为功能证据</td></tr>
 <tr><td class="name">claude-code</td><td class="p">本机 CLI <code>2.1.226</code>；<code>references/claude-code-leaked@a371abbe75ff</code> 仅作补充</td><td>二进制与参考源码冲突时以本机二进制为准；只在内部构建出现且本机不可达的功能不计入</td></tr>
 <tr><td class="name">codex</td><td class="p">本机 CLI <code>0.147.0</code>；源码 <code>references/codex-cli@57f42a81131c</code></td><td>UnderDevelopment 与 Experimental 条目使用 <code>○</code>，不按默认开启状态计为完整确认</td></tr>
 <tr><td class="name">openclaw</td><td><code>references/openclaw@b1b28415c2eb</code></td><td rowspan="5">均为本地源码快照，不声明为项目最新发布版；文档声明没有统一转换成端到端运行验证</td></tr>
