@@ -139,7 +139,7 @@
   <a class="l0" href="#three">设计前需要确认的三类问题</a>
   <a class="l1" href="#matrix">1功能全表 160 项</a>
   <a class="l1" href="#cover">覆盖度</a>
-  <a class="l2" href="#gaps">2 OpenProgram 未确认的 73 项</a>
+  <a class="l2" href="#gaps">2 OpenProgram 未确认的 71 项</a>
   <a class="l2" href="#newfound">相对既有审计新增的条目</a>
   <a class="l2" href="#ours">3仅 OpenProgram 确认的 6 项</a>
   <a class="l3" href="#plan">4设计参考顺序</a>
@@ -151,7 +151,7 @@
 </div>
 
 <div class="note blue">
-  <b>和 <a href="framework-comparison.html">framework-comparison</a> 的分工</b>。那一份比较执行模型、状态存储、上下文装配和权限审批等设计机制；本页按用户可调用或可配置的功能记录证据。前一份记录 55 个候选差异，本页撰写时记录 78 个（15 个重合、63 个此前未列出）；截至 1c249e92 复核其中 5 个已实现，现存 73 个。两份材料分别支持机制设计和功能范围设计，计数不能直接合并。
+  <b>和 <a href="framework-comparison.html">framework-comparison</a> 的分工</b>。那一份比较执行模型、状态存储、上下文装配和权限审批等设计机制；本页按用户可调用或可配置的功能记录证据。前一份记录 55 个候选差异，本页撰写时记录 78 个（15 个重合、63 个此前未列出）；截至 main@02860737 复核其中 7 个已实现，现存 71 个。两份材料分别支持机制设计和功能范围设计，计数不能直接合并。
 </div>
 
 <!-- ══════════════════════════ 三问 ══════════════════════════ -->
@@ -177,7 +177,7 @@
   <div class="q" style="border-top-color:#d4843a">
     <div class="k">相对既有机制审计的增量</div>
     <h4>78 条里 63 条此前未列出</h4>
-    <p>前几轮机制审计记录了 55 个候选差异；本页撰写时 OpenProgram 未确认而至少一个参考列已确认的条目为 78 个，两份材料重合 15 个，<b>其余 63 个此前未列出</b>；1c249e92 复核后其中 5 个已实现，现存 73 个。</p>
+    <p>前几轮机制审计记录了 55 个候选差异；本页撰写时 OpenProgram 未确认而至少一个参考列已确认的条目为 78 个，两份材料重合 15 个，<b>其余 63 个此前未列出</b>；main@02860737 复核后其中 7 个已实现，现存 71 个。</p>
     <p>版本控制 7 条、界面形态 5 条、多 agent 6 条和代码理解 4 条均未出现在前几轮清单中；编辑器集成新增 6 条，集成与被集成新增 9 条，部署与运维新增 6 条。</p>
     <p>这里的“新增”表示此前文档未记录，不表示相关产品最近发布了这些功能，也不表示全部条目都应进入实现计划。</p>
     <span class="ev">前六轮出处：runtime/sandbox · agent-collab-comparison · memory-comparison · memory-adoption · speaker-identity · chat-attachments · context/comparison · extension-gating · framework-comparison</span>
@@ -259,9 +259,9 @@
 <tr><td class="fname">计划模式<span class="src">我们 enter_plan_mode · gm内 /plan 实验性</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g3">○</td><td class="g1">●</td></tr>
 <tr><td class="fname">目标条件驱动的自治循环<span class="src">我们 agent/goal/judge.py 独立裁判模型 · claude /goal · codex /goal · buddy /goal · hermes /goal</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
 <tr><td class="fname">定时任务<span class="src">我们 cron 工具写入计划，openprogram cron-worker 支持 --once/--list/前台循环并执行 agent prompt 或受控命令</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
-<tr><td class="fname">周期心跳式主动发起<span class="src">openclaw heartbeat，与 cron 是两条独立路径</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">周期心跳式主动发起<span class="src">我们 proactive/heartbeat.py 是 cron-worker 内置检查，非独立调度器；daily 09:00 或 hourly 整点判到期，quiet_hours 默认 23:00–08:00 抑制，到期与超期 7 天各发一次、发送在工作区写锁外进行、record_notification_steps 只合并本次步骤幂等写回。openclaw heartbeat，与 cron 是两条独立路径</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
 <tr><td class="fname">常驻授权长期自主运行<span class="src">openclaw standing orders，带触发与升级规则</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
-<tr><td class="fname">从会话中提取承诺并定期复核<span class="src">openclaw src/commitments，置信度 0.86，每天最多主动发起三次复核</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">从会话中提取承诺并定期复核<span class="src">我们 memory/runtime/commitments.py：写入承诺时以 Source 引用加精确引用文本的 SHA-256 派生去重 ID，只认已选批次内可信 Source；open→done|dismissed 状态机记录转移出处与时间戳，strict 重读拒绝任何畸形行；heartbeat.py 按上一行的到期/超期两步节奏复核并发送。openclaw src/commitments，置信度 0.86，每天最多主动发起三次复核</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
 <tr><td class="fname">模型动态生成编排脚本并执行大规模并行任务<span class="src">buddy ultracode 最多 1000 个子 agent、并发上限 16 · claude Dynamic Workflows · codex code mode 默认关闭</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g1">●</td></tr>
 <tr><td class="fname">类型化工作流运行时带审批检查点<span class="src">openclaw Lobster 加 llm-task</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
 <tr><td class="fname">结构化提问用户<span class="src">我们 ask_user_question · buddy AskUserQuestion · opencode question · hermes clarify</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g1">●</td></tr>
@@ -387,7 +387,7 @@
 <h3 id="cover">1.1已确认功能覆盖分</h3>
 <p class="lead">按 160 项加权：<code>●</code> 记 1 分，<code>◐</code> 和 <code>○</code> 各记 0.5 分。该分数只用于定位本页清单中的候选差异，不是综合产品排名。</p>
 <div class="card scroll">
-<svg viewBox="0 0 960 330" role="img" aria-label="十三列在160项功能上的已确认功能覆盖分，buddy为103分，OpenProgram为78.5分">
+<svg viewBox="0 0 960 330" role="img" aria-label="十三列在160项功能上的已确认功能覆盖分，buddy为103分，OpenProgram为80.5分">
   <rect x="0" y="0" width="960" height="330" fill="#12110b"/>
   <text x="20" y="26" fill="#8a8675" font-size="11" letter-spacing="2">已确认功能覆盖分 / 160</text>
   <line x1="150" y1="36" x2="150" y2="300" stroke="#2e2c20"/>
@@ -402,7 +402,7 @@
   <g transform="translate(0,84)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">cc内</text><rect x="150" y="2" width="376" height="13" rx="2" fill="#6b4d96"/><text x="536" y="12" fill="#8a8675" font-size="10">94.0</text></g>
   <g transform="translate(0,104)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">hermes</text><rect x="150" y="2" width="368" height="13" rx="2" fill="#5aad4e"/><text x="528" y="12" fill="#8a8675" font-size="10">92.0</text></g>
   <g transform="translate(0,124)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">openclaw</text><rect x="150" y="2" width="332" height="13" rx="2" fill="#2db3d5"/><text x="492" y="12" fill="#8a8675" font-size="10">83.0</text></g>
-  <g transform="translate(0,144)"><text x="140" y="11" fill="#4f8ef7" text-anchor="end" font-weight="700">我们</text><rect x="150" y="2" width="314" height="13" rx="2" fill="#4f8ef7"/><text x="474" y="12" fill="#4f8ef7" font-size="10" font-weight="700">78.5</text></g>
+  <g transform="translate(0,144)"><text x="140" y="11" fill="#4f8ef7" text-anchor="end" font-weight="700">我们</text><rect x="150" y="2" width="322" height="13" rx="2" fill="#4f8ef7"/><text x="482" y="12" fill="#4f8ef7" font-size="10" font-weight="700">80.5</text></g>
   <g transform="translate(0,164)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">codex</text><rect x="150" y="2" width="260" height="13" rx="2" fill="#7a7566"/><text x="420" y="12" fill="#8a8675" font-size="10">65.0</text></g>
   <g transform="translate(0,184)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">cx内</text><rect x="150" y="2" width="256" height="13" rx="2" fill="#5e5a4d"/><text x="416" y="12" fill="#8a8675" font-size="10">64.0</text></g>
   <g transform="translate(0,204)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">opencode</text><rect x="150" y="2" width="214" height="13" rx="2" fill="#7a7566"/><text x="374" y="12" fill="#8a8675" font-size="10">53.5</text></g>
@@ -420,7 +420,7 @@
 <h3 id="bycat">1.2按类别比较已确认比例</h3>
 <p class="lead">灰色横带是该类别 10 个有效参考列（剔除证据过稀的 pi-ai、weclaw）已确认比例的最低到最高范围，竖刻度是中位数，蓝点是 OpenProgram 的位置。点落在带子左端附近说明大幅落后，落在带外右侧说明领先全部参考列。当前比例差最大的三类依次为集成与被集成、版本控制、代码理解。</p>
 <div class="card scroll">
-<svg viewBox="0 0 960 400" role="img" aria-label="十三个功能类别中OpenProgram相对10个参考列已确认比例范围的位置，多agent类别领先全部参考列，集成与被集成落在范围下端">
+<svg viewBox="0 0 960 400" role="img" aria-label="十三个功能类别中OpenProgram相对10个参考列已确认比例范围的位置，多agent与任务与规划两个类别领先全部参考列，集成与被集成落在范围下端">
   <rect x="0" y="0" width="960" height="400" fill="#12110b"/>
   <text x="20" y="24" fill="#8a8675" font-size="11" letter-spacing="2">类内已确认比例　<tspan fill="#55523f">┃ 范围端点</tspan>　<tspan fill="#8a8675">│ 中位数</tspan>　<tspan fill="#4f8ef7">● 我们</tspan></text>
   <line x1="200" y1="34" x2="200" y2="366" stroke="#2e2c20"/>
@@ -437,7 +437,7 @@
   <g transform="translate(0,67)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">会话与历史 17</text><line x1="394" y1="8" x2="606" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="394" y1="2" x2="394" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="606" y1="2" x2="606" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="535" y1="1" x2="535" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="571" cy="8" r="5" fill="#4f8ef7"/><text x="624" y="12" fill="#6b6a63" font-size="10">claude 68%</text></g>
   <g transform="translate(0,92)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">代码理解 10</text><line x1="350" y1="8" x2="560" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="350" y1="2" x2="350" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="560" y1="2" x2="560" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="470" y1="1" x2="470" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="410" cy="8" r="5" fill="#4f8ef7"/><text x="578" y="12" fill="#6b6a63" font-size="10">openclaw 60%</text></g>
   <g transform="translate(0,117)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">版本控制 10</text><line x1="260" y1="8" x2="710" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="260" y1="2" x2="260" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="710" y1="2" x2="710" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="380" y1="1" x2="380" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="440" cy="8" r="5" fill="#4f8ef7"/><text x="728" y="12" fill="#6b6a63" font-size="10">buddy 85%</text></g>
-  <g transform="translate(0,142)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">任务与规划 11</text><line x1="255" y1="8" x2="582" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="255" y1="2" x2="255" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="582" y1="2" x2="582" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="445" y1="1" x2="445" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="527" cy="8" r="5" fill="#4f8ef7"/><text x="600" y="12" fill="#6b6a63" font-size="10">claude 64%</text></g>
+  <g transform="translate(0,142)"><text x="190" y="12" fill="#5aad4e" text-anchor="end" font-weight="700">任务与规划 11</text><line x1="255" y1="8" x2="582" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="255" y1="2" x2="255" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="582" y1="2" x2="582" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="445" y1="1" x2="445" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="636" cy="8" r="5" fill="#5aad4e"/><text x="654" y="12" fill="#5aad4e" font-size="10" font-weight="700">我们 73%，超过最高参考 claude 64%</text></g>
   <g transform="translate(0,167)"><text x="190" y="12" fill="#5aad4e" text-anchor="end" font-weight="700">多 agent 14</text><line x1="221" y1="8" x2="543" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="221" y1="2" x2="221" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="543" y1="2" x2="543" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="329" y1="1" x2="329" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="586" cy="8" r="5" fill="#5aad4e"/><text x="604" y="12" fill="#5aad4e" font-size="10" font-weight="700">我们 64%，超过最高参考 cc内 57%</text></g>
   <g transform="translate(0,192)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">记忆与知识 10</text><line x1="260" y1="8" x2="620" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="260" y1="2" x2="260" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="620" y1="2" x2="620" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="485" y1="1" x2="485" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="530" cy="8" r="5" fill="#4f8ef7"/><text x="638" y="12" fill="#6b6a63" font-size="10">hermes 70%</text></g>
   <g transform="translate(0,217)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">扩展 11</text><line x1="418" y1="8" x2="718" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="418" y1="2" x2="418" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="718" y1="2" x2="718" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="664" y1="1" x2="664" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="527" cy="8" r="5" fill="#4f8ef7"/><text x="736" y="12" fill="#6b6a63" font-size="10">claude 86%</text></g>
@@ -450,17 +450,17 @@
 </svg>
 </div>
 <div class="card legend">
-  <b>按本表计分，多 agent 是唯一超过全部参考列的类别</b>：OpenProgram 9.0/14（64%），最高参考列 <code>cc内</code> 为 8.0/14（57%）。其余类别蓝点都落在参考范围之内；离范围上端最远的三类为集成与被集成（我们 12%，范围 12%–73%）、版本控制（40%，10%–85%）和编辑器集成（39%，6%–78%）。范围只统计 10 个有效参考列，pi-ai（0 项确认）与 weclaw（5%）证据过稀被剔除；数字按当前功能全表重算，与旧图个别标注略有出入。该结论仍受功能定义和快照版本限制。
+  <b>按本表计分，多 agent 和任务与规划是超过全部参考列的两个类别</b>：多 agent OpenProgram 9.0/14（64%），最高参考列 <code>cc内</code> 为 8.0/14（57%）；任务与规划 OpenProgram 8.0/11（73%），最高参考列 <code>claude</code>、<code>cc内</code>、<code>buddy</code> 并列 7.0/11（64%）。其余类别蓝点都落在参考范围之内；离范围上端最远的三类为集成与被集成（我们 12%，范围 12%–73%）、版本控制（40%，10%–85%）和编辑器集成（39%，6%–78%）。范围只统计 10 个有效参考列，pi-ai（0 项确认）与 weclaw（5%）证据过稀被剔除；数字按当前功能全表重算，与旧图个别标注略有出入。该结论仍受功能定义和快照版本限制。
 </div>
 
 <!-- ══════════════════════════ LAYER 2 ══════════════════════════ -->
-<h2 id="gaps"><span class="num">02</span>OpenProgram 未确认、参考列已确认的 73 项<span class="ly ly2">候选</span></h2>
-<p class="lead">筛选条件是 OpenProgram 为 <code>·</code>、至少一个参考列不是 <code>·</code>。这 73 项是设计候选，不是已经证明的产品缺陷；<code>·</code> 可能表示确实未实现，也可能表示本轮证据不足。分组依据当前“单人本机、常驻 worker、通用 harness、自有 TUI/Web/桌面界面”的产品边界。</p>
+<h2 id="gaps"><span class="num">02</span>OpenProgram 未确认、参考列已确认的 71 项<span class="ly ly2">候选</span></h2>
+<p class="lead">筛选条件是 OpenProgram 为 <code>·</code>、至少一个参考列不是 <code>·</code>。这 71 项是设计候选，不是已经证明的产品缺陷；<code>·</code> 可能表示确实未实现，也可能表示本轮证据不足。分组依据当前“单人本机、常驻 worker、通用 harness、自有 TUI/Web/桌面界面”的产品边界。</p>
 
 <div class="tbl">
 <table class="wide">
 <tr><th>功能</th><th>大类</th><th>已确认的参考对象</th><th>依据</th></tr>
-<tr class="grp"><td colspan="4"><b class="g1">进入后续评估</b> <span style="color:#6b6a63">43 项</span></td></tr>
+<tr class="grp"><td colspan="4"><b class="g1">进入后续评估</b> <span style="color:#6b6a63">41 项</span></td></tr>
 <tr><td class="name">终端快捷键自动配置</td><td class="sz">编辑器集成</td><td>claude、cc内、gm内 等 5 家</td><td class="srcin">claude /terminal-setup · buddy /terminal-setup 覆盖十余种终端</td></tr>
 <tr><td class="name">归档会话</td><td class="sz">会话与历史</td><td>codex、cx内</td><td class="srcin">codex archive / unarchive · ~/.codex/archived_sessions/</td></tr>
 <tr><td class="name">将运行中会话迁移至其他设备或客户端</td><td class="sz">会话与历史</td><td>claude、codex、opencode 等 7 家</td><td class="srcin">claude /teleport · codex --remote · opencode attach · buddy --remote-control</td></tr>
@@ -474,9 +474,7 @@
 <tr><td class="name">worktree 建好后同步本地未跟踪文件</td><td class="sz">版本控制</td><td>hermes、buddy</td><td class="srcin">buddy .worktreeinclude · hermes .worktreeinclude</td></tr>
 <tr><td class="name">AI 作者署名写进 git 历史</td><td class="sz">版本控制</td><td>codex、cx内</td><td class="srcin">codex ext/git-attribution</td></tr>
 <tr><td class="name">对当前 diff 做安全审查</td><td class="sz">版本控制</td><td>claude、cc内、buddy</td><td class="srcin">buddy /security-review · claude /security-review</td></tr>
-<tr><td class="name">周期心跳式主动发起</td><td class="sz">任务与规划</td><td>openclaw</td><td class="srcin">openclaw heartbeat，与 cron 是两条独立路径</td></tr>
 <tr><td class="name">常驻授权长期自主运行</td><td class="sz">任务与规划</td><td>openclaw</td><td class="srcin">openclaw standing orders，带触发与升级规则</td></tr>
-<tr><td class="name">从会话中提取承诺并定期复核</td><td class="sz">任务与规划</td><td>openclaw</td><td class="srcin">openclaw src/commitments，置信度 0.86，每天最多主动发起三次复核</td></tr>
 <tr><td class="name">模型动态生成编排脚本并执行大规模并行任务</td><td class="sz">任务与规划</td><td>claude、cc内、buddy 等 5 家</td><td class="srcin">buddy ultracode 最多 1000 个子 agent、并发上限 16 · claude Dynamic Workflows · codex code mode 默认关闭</td></tr>
 <tr><td class="name">类型化工作流运行时带审批检查点</td><td class="sz">任务与规划</td><td>openclaw</td><td class="srcin">openclaw Lobster 加 llm-task</td></tr>
 <tr><td class="name">持久任务看板</td><td class="sz">多 agent</td><td>hermes</td><td class="srcin">hermes ~/.hermes/kanban.db，多项目分板加自动拆解</td></tr>
@@ -540,11 +538,11 @@
 </div>
 
 <div class="note green">
-  <b>43 项仍需单独立项判断</b>。commit-push-pr、外部命令取密钥、每会话资源限额、请求录制与回放的 CLI 入口和 JSON schema 输出已陆续落地并移出本表；当前优先关注 diff 安全审查，以及可恢复删除尚未覆盖的后端和删除入口。这里没有可靠的使用频率与工程量数据；具体顺序由第四节按风险、依赖关系、协议稳定性和可验收性给出。已落地的 credential_process 具备无 shell 插值的 argv、可配超时、结果缓存和 helper stderr 脱敏。
+  <b>41 项仍需单独立项判断</b>。commit-push-pr、外部命令取密钥、每会话资源限额、请求录制与回放的 CLI 入口、JSON schema 输出、deterministic heartbeat 和 commitment lifecycle 已陆续落地并移出本表；当前优先关注 diff 安全审查，以及可恢复删除尚未覆盖的后端和删除入口。这里没有可靠的使用频率与工程量数据；具体顺序由第四节按风险、依赖关系、协议稳定性和可验收性给出。已落地的 credential_process 具备无 shell 插值的 argv、可配超时、结果缓存和 helper stderr 脱敏。
 </div>
 
 <h3 id="newfound">2.1相对前几轮新增的清单项</h3>
-<p class="lead">口径为本页撰写时（414aa4de 基线）的 78 项：15 项在前几轮文档出现过，63 项此前未列出；此后已实现的 3 项仍计入本图。“新增”描述文档覆盖差异，不表示产品发布时间。</p>
+<p class="lead">口径为本页撰写时（414aa4de 基线）的 78 项：15 项在前几轮文档出现过，63 项此前未列出；此后已实现的 7 项仍计入本图。“新增”描述文档覆盖差异，不表示产品发布时间。</p>
 <div class="card scroll">
 <svg viewBox="0 0 960 400" role="img" aria-label="按功能类别拆分的候选差异条目数，深色为前几轮已列出，橙色为本轮新增">
   <rect x="0" y="0" width="960" height="400" fill="#12110b"/>
@@ -720,7 +718,7 @@
 <div class="tbl">
 <table>
 <tr><th>条目</th><th>状态</th></tr>
-<tr><td>功能矩阵、78.5 分、73 个候选差异、6 个快照差异</td><td class="y">基于上述基线提交；JSON Schema structured output 另以 Tasks 1–6@2fb471b3 及后续 trust-boundary 修复证据复核；外部对象没有做全量运行验收</td></tr>
+<tr><td>功能矩阵、80.5 分、71 个候选差异、6 个快照差异</td><td class="y">基于上述基线提交；JSON Schema structured output 另以 Tasks 1–6@2fb471b3 及后续 trust-boundary 修复证据复核；外部对象没有做全量运行验收</td></tr>
 <tr><td>第四节的六个批次</td><td class="n">设计参考，未表示已实现或已批准；实施前需重新核对现状并单独估算</td></tr>
 <tr><td>OpenProgram 列的 <code>◐</code></td><td class="p">只在部分界面或部分输入路径确认；具体限制写在对应依据中</td></tr>
 <tr><td>分数、类别比例和候选计数</td><td class="p">由矩阵状态机械计算；不附带质量权重或重要性权重</td></tr>
