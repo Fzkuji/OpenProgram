@@ -159,6 +159,24 @@ class _DuplicateTerminalProvider:
             await source.aclose()
 
 
+class _TerminalCloseFailureProvider:
+    requires_credentials = False
+
+    def stream(self, model, context, options=None):
+        return self.stream_simple(model, context, options)
+
+    async def stream_simple(self, model, context, options=None):
+        source = _scripted_with((ScriptedText("done"),)).stream_simple(
+            model, context, options
+        )
+        try:
+            async for event in source:
+                yield event
+        finally:
+            await source.aclose()
+            raise RuntimeError("source close failed")
+
+
 def _drain_stream(model: Model, options: SimpleStreamOptions | None = None) -> list:
     from openprogram.providers import stream_simple
 
@@ -442,6 +460,24 @@ def test_recording_stops_after_the_first_terminal_event(tmp_path: Path) -> None:
     assert sum(row["type"] == "call_end" for row in rows) == 1
     assert sum(event.type == "done" for event in events) == 1
     assert calls[0].outcome == "complete"
+
+
+def test_recording_preserves_source_close_failure_after_terminal(tmp_path: Path) -> None:
+    recording_file = tmp_path / "terminal-close-error.jsonl"
+    recorder = RecordingProvider(_TerminalCloseFailureProvider(), recording_file)
+
+    async def drain() -> None:
+        async for _ in recorder.stream_simple(
+            _model(), Context(messages=[UserMessage(content="hello", timestamp=0)]), _options()
+        ):
+            pass
+
+    with pytest.raises(RuntimeError, match="source close failed"):
+        asyncio.run(drain())
+    calls = read_recording_file(recording_file)
+    rows = [json.loads(line) for line in recording_file.read_text().splitlines()]
+    assert calls[0].outcome == "complete"
+    assert sum(row["type"] == "call_end" for row in rows) == 1
 
 
 def test_recording_finalizes_and_closes_source_when_consumer_abandons(tmp_path: Path) -> None:

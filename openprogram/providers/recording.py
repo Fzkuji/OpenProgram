@@ -195,7 +195,7 @@ class RecordingProvider:
                     ended = True
                 yield event
                 if ended:
-                    return
+                    break
         except BaseException as exc:
             primary_error = exc
             primary_traceback = exc.__traceback__
