@@ -67,12 +67,9 @@ class SessionNodeWriter:
             idx.set_head(node.id)
         activity_at = _time.time()
         idx.set_meta(updated_at=activity_at)
-        # Persist meta NOW: this append usually runs inside the
-        # @agentic_function fork()'d subprocess — the parent server can
-        # only see the head move through meta.json (see the matching
-        # persist in SessionStore.append_message).
-        if not caller and self.advance_head:
-            self.store._persist_meta(git, idx)
+        # Persist the activity time even when this node does not advance
+        # HEAD; otherwise meta.json and the sidebar registry disagree.
+        self.store._persist_meta(git, idx)
         # Registry too — same as SessionStore.append_message: updated_at
         # is the sidebar's recency-sort key. The webui dispatcher appends
         # through THIS shim, so skipping the registry here left every web

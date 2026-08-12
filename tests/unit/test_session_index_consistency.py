@@ -4,7 +4,11 @@ import json
 import threading
 from pathlib import Path
 
+import pytest
+
+from openprogram.context.nodes import Call
 from openprogram.store.session.session_store import SessionStore
+from openprogram.store.session.session_node_writer import SessionNodeWriter
 
 
 def test_metadata_updates_preserve_activity_time_and_order(tmp_path: Path) -> None:
@@ -52,6 +56,44 @@ def test_append_advances_meta_and_registry_with_one_timestamp(
     assert store.list_sessions()[0]["updated_at"] == 30.0
     on_disk = json.loads((tmp_path / "sessions" / "s1" / "meta.json").read_text())
     assert on_disk["updated_at"] == 30.0
+
+
+def test_set_head_preserves_activity_time(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path / "sessions")
+    store.create_session("s1", "main", updated_at=10.0)
+
+    store.set_head("s1", None)
+
+    assert store.get_session("s1")["updated_at"] == 10.0
+    assert store.list_sessions()[0]["updated_at"] == 10.0
+    on_disk = json.loads((tmp_path / "sessions" / "s1" / "meta.json").read_text())
+    assert on_disk["updated_at"] == 10.0
+
+
+@pytest.mark.parametrize(
+    ("caller", "advance_head"),
+    [("ROOT", True), ("", False)],
+)
+def test_node_append_syncs_activity_time_without_advancing_head(
+    tmp_path: Path,
+    caller: str,
+    advance_head: bool,
+) -> None:
+    store = SessionStore(tmp_path / "sessions")
+    store.create_session("s1", "main", updated_at=10.0)
+
+    SessionNodeWriter(store, "s1", advance_head=advance_head).append(Call(
+        id="n1",
+        role="tool" if caller else "user",
+        output="content",
+        caller=caller,
+    ))
+
+    activity_at = store.get_session("s1")["updated_at"]
+    assert activity_at > 10.0
+    assert store.list_sessions()[0]["updated_at"] == activity_at
+    on_disk = json.loads((tmp_path / "sessions" / "s1" / "meta.json").read_text())
+    assert on_disk["updated_at"] == activity_at
 
 
 def test_update_during_deferred_write_remains_dirty_for_next_flush(

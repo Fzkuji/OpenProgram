@@ -1172,7 +1172,6 @@ class SessionStore:
                 "a stand-in cannot be the active branch tip"
             )
         idx.set_head(head_id)
-        idx.set_meta(updated_at=time.time())
         self._persist_meta(git, idx)
 
     def message_exists(self, session_id: str, msg_id: str) -> bool:
