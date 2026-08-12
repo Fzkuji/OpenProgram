@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>llm 与 agent：编排层的两个原语</title>
+<style>
+  :root { color-scheme: dark; }
+  body { background:#12110b; color:#bdb9a6; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+         max-width:1000px; margin:0 auto; padding:40px 24px 80px; line-height:1.75; }
+  h1 { color:#e8e4d4; font-size:26px; letter-spacing:1px; }
+  h2 { color:#e8e4d4; font-size:19px; margin-top:44px; border-bottom:1px solid #2e2c20; padding-bottom:8px; }
+  p.lead { color:#8a8675; }
+  .card { background:#181712; border:1px solid #2e2c20; border-radius:10px; padding:18px 20px; margin:16px 0; }
+  figure { margin:20px 0; }
+  figcaption { color:#8a8675; font-size:13px; margin-top:8px; }
+  svg { max-width:100%; height:auto; display:block; }
+  code { background:#221f18; padding:1px 6px; border-radius:4px; color:#d9d4bf; font-size:0.92em; }
+  pre { background:#181712; border:1px solid #2e2c20; border-radius:10px; padding:16px 18px; overflow-x:auto;
+        font-size:13px; line-height:1.6; }
+  pre code { background:none; padding:0; }
+  table { border-collapse:collapse; width:100%; font-size:14px; }
+  th,td { border:1px solid #2e2c20; padding:8px 12px; text-align:left; }
+  th { color:#e8e4d4; background:#181712; }
+</style>
+</head>
+<body>
+
+<h1>llm 与 agent：编排层的两个原语</h1>
+<p class="lead">编排层写两种意图：要一段模型输出，和要一个自主干活的工作者。两种意图两个名字：
+<code>llm()</code> 是一次模型调用，<code>agent()</code> 是带工具循环的完整 turn。
+agent 就是循环里的 llm：它的每一轮说话走的是同一个单次调用层。
+<code>runtime.exec</code> 退回基础设施层（provider 传输、嵌入、测试），编排与业务代码不再直接使用它。</p>
+
+<h2>1. 两个原语，一个底座</h2>
+<figure>
+<svg viewBox="0 0 980 470" role="img" aria-label="编排代码调用两个原语。llm() 是一次模型请求：不建 session 分支、不进工具循环，直接经单次调用层返回文本，DAG 记为所在函数轨迹里的一次调用。agent() 是完整 turn：建 session 分支，进入循环，循环体内每轮说话仍是一次单次调用，工具结果回填后继续，直到模型不再要工具，DAG 记为独立分支。两者共用底下的单次调用层（Runtime）：provider 适配、认证、重试、usage 统计。">
+  <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M0,0 L10,5 L0,10 z" fill="#8a8675"/></marker></defs>
+  <rect x="0" y="0" width="980" height="470" fill="#12110b"/>
+
+  <rect x="330" y="20" width="320" height="44" rx="10" fill="#181712" stroke="#e8e4d4" stroke-width="1.2"/>
+  <text x="490" y="47" fill="#e8e4d4" font-size="14" text-anchor="middle">编排代码（agentics / workflow / harness）</text>
+
+  <line x1="410" y1="64" x2="240" y2="112" stroke="#8a8675" marker-end="url(#ar)"/>
+  <text x="290" y="88" fill="#8a8675" font-size="11">要一段输出</text>
+  <line x1="570" y1="64" x2="740" y2="112" stroke="#8a8675" marker-end="url(#ar)"/>
+  <text x="640" y="88" fill="#8a8675" font-size="11">要一个工作者</text>
+
+  <rect x="70" y="116" width="340" height="128" rx="10" fill="#181712" stroke="#5aad4e" stroke-width="1.5"/>
+  <text x="240" y="142" fill="#e8e4d4" font-size="14" text-anchor="middle">llm(prompt, model=, effort=)</text>
+  <text x="240" y="166" fill="#8a8675" font-size="11" text-anchor="middle">一次模型请求，返回文本（或结构化结果）</text>
+  <text x="240" y="184" fill="#8a8675" font-size="11" text-anchor="middle">prompt：str 或 content blocks（可带图）</text>
+  <text x="240" y="202" fill="#8a8675" font-size="11" text-anchor="middle">不建 session 分支，不进工具循环</text>
+  <text x="240" y="226" fill="#8a8675" font-size="11" text-anchor="middle">DAG：所在函数轨迹里的一次 ModelCall</text>
+
+  <rect x="570" y="116" width="340" height="200" rx="10" fill="#181712" stroke="#d4843a" stroke-width="1.5"/>
+  <text x="740" y="142" fill="#e8e4d4" font-size="14" text-anchor="middle">agent(prompt, description=, agent_id=)</text>
+  <text x="740" y="164" fill="#8a8675" font-size="11" text-anchor="middle">session 分支 + 资源限额，DAG：独立分支</text>
+  <rect x="600" y="178" width="280" height="118" rx="8" fill="#12110b" stroke="#3a382d"/>
+  <text x="740" y="200" fill="#bdb9a6" font-size="12" text-anchor="middle">循环体（agent = loop 里的 llm）</text>
+  <rect x="622" y="212" width="146" height="30" rx="6" fill="#181712" stroke="#5aad4e"/>
+  <text x="695" y="232" fill="#bdb9a6" font-size="11" text-anchor="middle">一次单次调用（说话）</text>
+  <rect x="622" y="254" width="146" height="30" rx="6" fill="#181712" stroke="#3a382d"/>
+  <text x="695" y="274" fill="#8a8675" font-size="11" text-anchor="middle">执行工具，回填结果</text>
+  <path d="M768,227 L826,227 L826,269 L768,269" stroke="#8a8675" fill="none" marker-end="url(#ar)"/>
+  <path d="M826,254 L826,227" stroke="#8a8675" fill="none"/>
+  <text x="838" y="252" fill="#8a8675" font-size="10">要工具</text>
+  <text x="838" y="266" fill="#8a8675" font-size="10">就继续</text>
+
+  <line x1="240" y1="244" x2="240" y2="360" stroke="#5aad4e" marker-end="url(#ar)"/>
+  <line x1="740" y1="316" x2="740" y2="360" stroke="#d4843a" marker-end="url(#ar)"/>
+  <text x="252" y="310" fill="#8a8675" font-size="11">一次请求</text>
+  <text x="752" y="342" fill="#8a8675" font-size="11">每轮一次请求</text>
+
+  <rect x="70" y="364" width="840" height="70" rx="10" fill="#181712" stroke="#3a382d" stroke-dasharray="5 4"/>
+  <text x="490" y="390" fill="#e8e4d4" font-size="13" text-anchor="middle">单次调用层（Runtime，基础设施，保留）</text>
+  <text x="490" y="412" fill="#8a8675" font-size="11" text-anchor="middle">provider 适配（Anthropic / Gemini / Codex …）· 认证 · 重试/超时/取消 · usage 统计 · 嵌入 Runtime(call=…) · 测试注入缝</text>
+</svg>
+<figcaption>两个原语共用一个单次调用层。llm 是一次请求；agent 是 session 分支里循环的 llm 加工具执行。
+分流发生在建 session 分支之前：llm 的路径上根本不存在分支、transcript、工具循环这些设施。</figcaption>
+</figure>
+
+<h2>2. llm()：一次模型调用</h2>
+<pre><code>reply = llm("把下面的段落压缩成三句话：\n" + text)
+
+verdict = llm(
+    [{"type": "text", "text": "这张截图里登录按钮在哪？给出坐标。"},
+     {"type": "image", "source": …}],
+    model="gemini:gemini-3-pro", effort="low")
+</code></pre>
+<table>
+<tr><th>方面</th><th>定义</th></tr>
+<tr><td>签名</td><td><code>llm(prompt, *, model="", effort="", response_format=None, choices=None,
+web_search=False, timeout_s=None) -&gt; str | dict</code>。<code>prompt</code> 收 str 或 content blocks
+（text/image 混排），str 在入口转成一个 text block。</td></tr>
+<tr><td>语义</td><td>恰好一次模型请求（传输层重试不算第二次）。没有 session 分支、没有 transcript、
+没有工具循环。返回模型输出本身，不带 <code>[spawned agent …]</code> 尾巴。</td></tr>
+<tr><td>覆盖优先级</td><td>调用处参数 &gt; 会话/runtime 默认。不给 <code>model</code> 就用当前会话的模型。</td></tr>
+<tr><td>runtime 来源</td><td>环境获取：agentic function 执行时框架已把当前 <code>Runtime</code> 放进
+contextvar（<code>_current_runtime</code>），<code>llm</code> 从那里拿。函数签名不再串
+<code>runtime: Runtime</code> 参数。</td></tr>
+<tr><td>归属</td><td><code>openprogram/agentic_programming/</code> 导出，和
+<code>agentic_function</code> 同层。DAG 里就是现在的 ModelCall 节点。</td></tr>
+<tr><td>实现</td><td>薄封装：对环境 runtime 调 <code>exec(content=…, tools=[], max_iterations=1)</code> 一类的
+单次形态。<code>runtime.exec</code> 的工具循环参数（<code>tools</code>/<code>toolset</code>/
+<code>max_iterations</code>/<code>tool_choice</code>）不出现在 <code>llm</code> 上——要循环就用 agent。</td></tr>
+</table>
+
+<h2>3. agent()：循环的 llm</h2>
+<p>公开形态不变：<code>agent(prompt, description="", agent_id="", start_from="clean",
+run_in_background=False, …)</code>，模型与工具集来自 <code>agent_id</code> 选的 profile，
+运行建 session 分支、受资源限额管、DAG 记独立分支（倒三角）。本次完善两件事：</p>
+<table>
+<tr><th>完善</th><th>内容</th></tr>
+<tr><td>说话走单次调用层</td><td>循环体内每轮的模型请求与 <code>llm</code> 走同一层，
+共享认证、重试、usage 统计和测试注入缝。llm 与 agent 的差异只剩循环和 session，没有第二条请求通道。</td></tr>
+<tr><td>可观测性分开计数</td><td>每次调用记录 <code>execution_kind = llm | agent</code>、
+provider 请求数、agent 迭代数。llm 的传输重试不计入迭代数，"一次调用"可验收。</td></tr>
+</table>
+<div class="card">
+不改的：agent 的多轮驱动力仍由工具循环决定，不加"最多 N 轮"参数；profile（AgentSpec）仍是模型与
+工具集的载体。调研确认的风险记录在案：Codex/Claude Code 都存在无工具也继续的机制
+（stop hook、pending input、compaction 后继续），OpenProgram 若将来引入这类 continuation，
+它属于 agent 的循环层，不影响 llm"恰好一次请求"的定义。
+</div>
+
+<h2>4. 迁移：runtime.exec 全部改名</h2>
+<p>编排与业务代码里每个 <code>runtime.exec(…)</code> 按一条规则改写：</p>
+<div class="card">
+不带工具参数（绝大多数）→ <code>llm(…)</code>；带 <code>tools</code>/<code>toolset</code>/
+<code>max_iterations&gt;1</code>（少数：wiki ingest、deep_work 的工作步、research 的 survey 步）
+→ 保持工具循环语义，改写为 <code>agent(…)</code> 或暂以 <code>llm</code> 之外的既有路径运行，逐处判断。
+函数签名里的 <code>runtime: Runtime</code> 参数随迁移删除，调用链同步收紧。
+</div>
+<table>
+<tr><th>批</th><th>范围</th><th>说明</th></tr>
+<tr><td>1</td><td>新增 <code>llm()</code>（<code>agentic_programming</code> 导出）+
+agent 说话改走单次调用层 + 计数</td><td>含单测：一次请求、content blocks 原样进 provider、
+model/effort 覆盖不改全局、无 session 分支产生。workflow 注入环境加入 <code>llm</code>。</td></tr>
+<tr><td>2</td><td>本体编排代码：<code>functions/agentics/</code>（deep_work、ask_user、
+extract_pdf_*、research/、示例）、<code>memory/wiki/</code></td><td>约 20 个文件；对应单测同批适配。</td></tr>
+<tr><td>3</td><td>嵌套 harness 仓库（<code>functions/agentics/</code> 下）：Research-Agent-Harness
+（约 80 处，stages 各目录）→ GUI-Agent-Harness（planning / benchmarks，截图调用靠 content blocks）→
+Wiki-Agent-Harness</td><td>逐仓一个子任务，嵌套仓库随改随同步。</td></tr>
+<tr><td>4</td><td>收尾</td><td>编排层无 <code>runtime.exec</code> 残留；<code>examples/</code> 与
+provider/agent 内核明确保留 <code>Runtime</code>（嵌入与实现材料）；产品文档与本页同步。</td></tr>
+</table>
+<p>每批全绿才进下一批：批 2、3 是大面积机械替换，语义错误会成倍放大，串行是最便宜的隔离。</p>
+
+<h2>5. 调研依据</h2>
+<p>对 references/ 下八个框架的分层做了逐源码调研，支撑本设计的三条结论：</p>
+<table>
+<tr><th>结论</th><th>证据</th></tr>
+<tr><td>成熟框架都保留独立的单请求层</td><td>pi-mono/pi-ai <code>completeSimple</code>、OpenCode
+<code>LLM.stream</code>、Claude Code <code>queryModelWithoutStreaming</code>/<code>queryWithModel</code>、
+Codex <code>ModelClientSession.stream</code>；agent loop 只是这一层的循环使用者。</td></tr>
+<tr><td>"无工具⇒单轮"不能当永久语义</td><td>Codex 的继续条件是 <code>model_needs_follow_up ||
+has_pending_input</code>，stop hook / compaction 都能让无工具 turn 继续；Claude Code 同。
+所以单次调用要有自己的名字（llm），而不是 agent 的一个退化档位。</td></tr>
+<tr><td>分流点必须在 session 设施之前</td><td>反例 OpenClaw：轻量 <code>promptMode=none</code>
+在完整 runner 里较晚生效，session/资源/事件设施照建，省不下固定开销。llm 的路径上不建这些。</td></tr>
+</table>
+
+<h2>6. 边界与取舍</h2>
+<table>
+<tr><th>决定</th><th>理由</th></tr>
+<tr><td>两个名字，不是一个 agent() 内部分流</td><td>调用方的意图本来就是两种；用"profile 带不带工具"
+推断执行路径是间接信号，调研证明它在多个框架里不成立。名字直接把意图写进代码。</td></tr>
+<tr><td><code>llm</code> 不带工具参数</td><td>带上工具它就是另一个 agent 入口，两个原语的边界就没了。
+需要工具循环的调用属于 agent。</td></tr>
+<tr><td>测试缝放 provider 调用边界</td><td>公开的 <code>llm()</code>/<code>agent()</code> 不暴露测试参数；
+注入发生在 Runtime 构造层（<code>Runtime(call=…)</code> / <code>stream_fn</code>），
+两条路共享同一个缝。</td></tr>
+<tr><td><code>runtime.exec</code> 退层不删除</td><td>它是 llm 的实现材料，也是嵌入
+（<code>Runtime(call=mock_llm)</code> 独立运行）与 provider 内核的接口；examples 演示的就是这层，不迁。</td></tr>
+<tr><td>runtime 环境获取，不串参数</td><td>~100 处调用的签名都在串 <code>runtime: Runtime</code>，
+这是管道噪音；contextvar 已存在（<code>_current_runtime</code>），llm 直接用。</td></tr>
+</table>
+
+<h2>实现状态</h2>
+<div class="card">
+四批均未开工。<code>llm()</code> 尚不存在；编排层现有约 100 处 <code>runtime.exec</code>
+（本体约 20，嵌套 harness 约 80）。批 1 落地时同步更新
+<code>self-programmed-agentic-workflow.html</code> 的注入表与产品文档。
+</div>
+
+</body>
+</html>
