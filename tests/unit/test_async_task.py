@@ -537,6 +537,60 @@ def test_runner_requeues_claim_while_mcp_owns_session_token(
         runner.shutdown()
 
 
+def test_runner_releases_stopping_claim_when_cancel_races_busy_requeue(
+    store_fixture, fake_worker, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    from openprogram.agent import run_control
+    from openprogram.agent.resource_governance import (
+        ResourceGovernor, ResourceLimits, resolve_resource_limits,
+    )
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.agent.task.types import TaskStatus
+    from openprogram.usage.ledger import UsageLedger
+
+    ledger = UsageLedger(tmp_path / "governance.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(
+        ledger, limit_resolver=lambda _sid, _task: resolved,
+    )
+    original_requeue = governor.requeue_task
+
+    def cancel_before_requeue(task_id, **fence):
+        governor.request_stop(task_id, "cancel.user")
+        return original_requeue(task_id, **fence)
+
+    monkeypatch.setattr(governor, "requeue_task", cancel_before_requeue)
+    runner = TaskRunner(max_workers=1, governor=governor)
+    mcp_event = threading.Event()
+    assert run_control.claim_cancel_event("p1", mcp_event)
+    try:
+        task_id = runner.spawn_task(
+            session_id="p1", prompt="cancel race", agent_id="main",
+        )
+        deadline = time.time() + 2
+        row = None
+        while time.time() < deadline:
+            row = ledger.connection().execute(
+                "SELECT state, reason_code FROM task_admissions WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            if row is not None and row[0] == "released":
+                break
+            time.sleep(0.01)
+
+        assert tuple(row) == ("released", "cancel.user")
+        assert runner.get_task(task_id).status == TaskStatus.CANCELLED
+        assert fake_worker[0] == []
+        assert run_control.current_token("p1").event is mcp_event
+    finally:
+        run_control.unregister_cancel_event("p1", mcp_event)
+        fake_worker[1].set()
+        runner.shutdown()
+
+
 def test_queued_cancel_does_not_cancel_unrelated_session_runtime(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):

@@ -834,11 +834,39 @@ class TaskRunner:
                     ctx = entry["context"]
                 from openprogram.agent.run_control import claim_cancel_event
                 if not claim_cancel_event(claim.session_id, cancel_ev):
-                    self._governor.requeue_task(
+                    requeued = self._governor.requeue_task(
                         claim.task_id,
                         owner_instance_id=self._instance_id,
                         lease_generation=claim.lease_generation,
                     )
+                    if not requeued:
+                        released, reason_code = self._governor.release_stopping_task(
+                            claim.task_id,
+                            owner_instance_id=self._instance_id,
+                            lease_generation=claim.lease_generation,
+                        )
+                        if released:
+                            current = _store_load(
+                                claim.session_id, claim.task_id,
+                            )
+                            if current is not None and not is_terminal(current.status):
+                                try:
+                                    current = _store_update_status(
+                                        claim.session_id, claim.task_id,
+                                        TaskStatus.CANCELLED,
+                                        error="cancelled before execution",
+                                        reason_code=reason_code or "cancel.concurrent",
+                                    )
+                                except ValueError:
+                                    current = _store_load(
+                                        claim.session_id, claim.task_id,
+                                    )
+                            if current is not None:
+                                _broadcast_task_status(current)
+                            self._wake_done(claim.task_id)
+                            with self._lock:
+                                self._tasks.pop(claim.task_id, None)
+                                self._done_events.pop(claim.task_id, None)
                     blocked_sessions.add(claim.session_id)
                     self._executor_slots.release()
                     continue

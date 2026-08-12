@@ -638,6 +638,30 @@ class ResourceGovernor:
                 (task_id, owner_instance_id, lease_generation),
             ).rowcount == 1
 
+    def release_stopping_task(
+        self, task_id: str, *, owner_instance_id: str, lease_generation: int,
+    ) -> tuple[bool, str | None]:
+        """Release only the stopping lease created by this exact claim."""
+        with self.ledger.immediate() as conn:
+            row = conn.execute(
+                """SELECT reason_code FROM task_admissions
+                   WHERE task_id = ? AND state = 'stopping'
+                     AND owner_instance_id = ? AND lease_generation = ?""",
+                (task_id, owner_instance_id, lease_generation),
+            ).fetchone()
+            if row is None:
+                return False, None
+            changed = conn.execute(
+                """UPDATE task_admissions
+                   SET state = 'released', released_at = ?, lease_expires_at = NULL
+                   WHERE task_id = ? AND state = 'stopping'
+                     AND owner_instance_id = ? AND lease_generation = ?""",
+                (
+                    time.time(), task_id, owner_instance_id, lease_generation,
+                ),
+            ).rowcount
+            return changed == 1, row["reason_code"]
+
     def request_stop(self, task_id: str, reason_code: str) -> None:
         with self.ledger.immediate() as conn:
             conn.execute(
