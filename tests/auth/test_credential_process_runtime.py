@@ -149,6 +149,28 @@ def test_nonzero_exit_raises_with_stderr(tmp_path):
     assert "corporate vpn is down" in str(e.value)
 
 
+def test_stderr_secrets_are_redacted_in_error_and_logs(tmp_path, caplog):
+    """A failing helper often echoes the very token it was fetching."""
+    import logging
+
+    secret = "ghp_" + "A1b2C3d4E5f6G7h8"
+    helper = _script(tmp_path, "leaky.sh", f"""
+        echo 'request failed: Authorization: Bearer sk-live-abcdefghij0123456789' >&2
+        echo 'api_key={secret}' >&2
+        exit 4
+    """)
+    with caplog.at_level(logging.DEBUG):
+        with pytest.raises(AuthCredentialProcessError) as e:
+            resolve_connection(_cred({"command": [helper], "parses": "text"}))
+
+    message = str(e.value)
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    for leaked in (secret, "sk-live-abcdefghij0123456789"):
+        assert leaked not in message
+        assert leaked not in logged
+    assert "exited 4" in message
+
+
 def test_missing_executable_raises(tmp_path):
     with pytest.raises(AuthCredentialProcessError):
         resolve_connection(_cred({"command": [str(tmp_path / "nope")]}))

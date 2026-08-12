@@ -158,7 +158,7 @@
 
   <h3>5. Smaller uncompleted hardening work</h3>
   <ul>
-    <li><code>credential_process</code>: argv is executed without shell interpolation, the timeout is configurable with a 60-second default, and successful results are cached. The remaining item is redacting helper stderr in failure diagnostics.</li>
+    <li><code>credential_process</code>: argv is executed without shell interpolation, the timeout is configurable with a 60-second default, and successful results are cached. Helper stderr now passes through the diagnostics redactor before it reaches a failure message or a log, so a helper that echoes the credential it was fetching cannot leak it.</li>
     <li><code>commit-push-pr</code>: add a non-mutating dry-run and enforce explicit remote-write authorization before push or PR creation.</li>
     <li>Retain the existing discussion backlog in <a href="TODO-improvements.html">TODO improvements</a>: provider metadata corruption visibility, packaged Web/docs resources, typed frontend state migration, and the remaining oversized Python modules.</li>
   </ul>
