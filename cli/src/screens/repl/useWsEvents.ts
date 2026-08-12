@@ -106,17 +106,19 @@ export interface WsEventsCtx {
 
 type TaskEnvelopeCtx = Pick<
   WsEventsCtx,
-  'setTasksList' | 'setSelectedTask' | 'setPickerKind'
+  'setTasksList' | 'setSelectedTask' | 'setPickerKind' | 'pushSystem'
 >;
 
 export function handleTaskEnvelope(ev: WsEnvelope, ctx: TaskEnvelopeCtx): boolean {
   if (ev.type === 'tasks_list') {
     ctx.setTasksList(ev.data.tasks ?? []);
+    ctx.pushSystem(formatTaskResourceMessage('tasks_list', ev.data));
     return true;
   }
   if (ev.type === 'task') {
     ctx.setSelectedTask(ev.data.task);
     if (ev.data.task) ctx.setPickerKind('task_detail');
+    ctx.pushSystem(formatTaskResourceMessage('task', ev.data));
     return true;
   }
   if (ev.type !== 'task_status' && ev.type !== 'cancel_task_result') return false;
@@ -226,13 +228,11 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         // plus `source` ("wechat"/"telegram"/…) and `peer_display` so
         // /resume can tag channel-bound rows.
         c.setPastConversations(ev.data ?? []);
-      } else if (
-        ev.type === 'tasks_list'
-        || ev.type === 'task'
-        || ev.type === 'spawn_task_result'
-        || ev.type === 'cancel_task_result'
-      ) {
-        c.pushSystem(formatTaskResourceMessage(ev.type, ev.data));
+      } else if (ev.type === 'spawn_task_result') {
+        const d = ev.data as { task_id?: string; status?: string; error?: string };
+        c.pushSystem(d.error
+          ? `[task] spawn failed: ${d.error}`
+          : `[task] spawned ${d.task_id ?? '?'} (${d.status ?? 'pending'})`);
       } else if (ev.type === 'qr_login') {
         // Server-driven QR-login state machine. Server pushes:
         //   qr_ready    → render the ASCII QR
