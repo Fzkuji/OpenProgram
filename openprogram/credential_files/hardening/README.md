@@ -1,7 +1,7 @@
-# Disabled credential filesystem hardening
+# Credential filesystem hardening
 
-`legacy.py` preserves the previous filesystem-hardening implementation for
-reference. Production code must not import this directory.
+`legacy.py` contains the credential filesystem-hardening implementation.
+Production code currently does not import or use this directory.
 
 The following policies are permanently disabled unless the user explicitly
 requests a separate redesign:
