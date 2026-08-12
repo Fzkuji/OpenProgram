@@ -269,7 +269,7 @@ class LanguageServer:
             self.request("shutdown", {}, timeout=5.0)
             self.notify("exit", {})
         except Exception:
-            pass
+            log.debug("LSP shutdown request failed", exc_info=True)
         try:
             self.process.terminate()
             self.process.wait(timeout=5)
@@ -277,7 +277,7 @@ class LanguageServer:
             try:
                 self.process.kill()
             except Exception:
-                pass
+                log.debug("LSP process kill failed", exc_info=True)
 
 
 # ---------------------------------------------------------------------------

@@ -126,7 +126,7 @@ def project_root() -> Path:
         if parent.is_dir():
             return parent
     except Exception:  # noqa: BLE001
-        pass
+        return Path(os.getcwd()).resolve()
     return Path(os.getcwd()).resolve()
 
 
