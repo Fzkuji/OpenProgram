@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenProgram implementation status and handoff</title>
+  <style>
+    :root { color-scheme: light dark; --muted: #667085; --line: #d0d5dd; --panel: #f8fafc; --ok: #067647; --warn: #b54708; --todo: #344054; }
+    body { max-width: 1080px; margin: 0 auto; padding: 32px 24px 64px; font: 16px/1.55 system-ui, sans-serif; }
+    h1, h2, h3 { line-height: 1.2; }
+    h1 { margin-bottom: 8px; }
+    h2 { margin-top: 40px; }
+    code { font-size: .9em; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+    th, td { border: 1px solid var(--line); padding: 10px 12px; text-align: left; vertical-align: top; }
+    th { background: var(--panel); }
+    .meta, .note { color: var(--muted); }
+    .status { white-space: nowrap; font-weight: 650; }
+    .complete { color: var(--ok); }
+    .partial { color: var(--warn); }
+    .pending { color: var(--todo); }
+    .callout { border-left: 4px solid var(--line); padding: 10px 16px; background: var(--panel); }
+    li { margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <h1>OpenProgram implementation status and handoff</h1>
+  <p class="meta">Snapshot: 2026-08-12. Documentation base: local <code>main@c1f10273</code>; fetched <code>origin/main@990bfe36</code>.</p>
+
+  <div class="callout">
+    <p>This page separates branch-level completion from mainline integration. A feature marked complete below passed its scoped spec and quality gates on the named branch; it is not in <code>main</code> unless the row says so.</p>
+    <p>The main working tree contained unrelated, uncommitted account, channel, memory, desktop, Web, and feature-matrix changes when this snapshot was written. They were not inspected, staged, or copied into this documentation branch.</p>
+  </div>
+
+  <h2>Status definitions</h2>
+  <ul>
+    <li><strong>Review-passed branch:</strong> implementation exists at the exact commit and independent scoped reviews reported zero remaining findings.</li>
+    <li><strong>Partial:</strong> earlier tasks are review-passed, but the tracked plan still has required implementation or evidence tasks.</li>
+    <li><strong>Candidate only:</strong> code or reports exist, but there is no single accepted integration head with final review evidence.</li>
+    <li><strong>Main-local:</strong> committed on local <code>main</code> but not on <code>origin/main</code>.</li>
+  </ul>
+
+  <h2>Current feature status</h2>
+  <table>
+    <thead><tr><th>Area</th><th>Status</th><th>Authoritative branch / commit</th><th>Evidence and remaining work</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Record/replay reliability</td>
+        <td class="status complete">Main-local complete</td>
+        <td><code>main@c1f10273</code><br><code>1d6f52ec..c846beb6</code></td>
+        <td>The nine committed reliability changes are on local main. They remain ahead of <code>origin/main</code> and must be included deliberately in any integration base.</td>
+      </tr>
+      <tr>
+        <td>MCP server</td>
+        <td class="status complete">Review-passed branch</td>
+        <td><code>codex/mcp-server-20260812@0cd698de</code><br>remote matches local</td>
+        <td>Tasks 1–9 completed. Final spec and quality reviews reported zero remaining findings. Focused 195, shared 198, docs 451 pages, links 0. Not merged into main.</td>
+      </tr>
+      <tr>
+        <td>Runtime URL / SSRF protection</td>
+        <td class="status complete">Review-passed branch</td>
+        <td><code>codex/commitments-heartbeat-20260811@1d93bbe5</code><br>remote branch missing</td>
+        <td>Tasks 1–10 and the final whole-branch review passed. Final evidence included security 812, affected 2932, runtime checker 0, docs links 0. The branch must be pushed and integrated without conflating it with unrelated work carried by the same branch.</td>
+      </tr>
+      <tr>
+        <td>JSON Schema structured output</td>
+        <td class="status partial">Partial: Tasks 1–5 complete</td>
+        <td><code>codex/json-schema-completion-20260812@86ca66d5</code><br>remote matches local</td>
+        <td>Capability negotiation, provider mappings, stream lifecycle, CLI/Web entrypoints, and replay v2 passed review. Session-title migration and final evidence/matrix work remain.</td>
+      </tr>
+      <tr>
+        <td>Credential-file hardening</td>
+        <td class="status partial">Partial: Tasks 1–2 complete</td>
+        <td><code>codex/credential-file-hardening-20260811@ca182739</code><br>remote matches local</td>
+        <td>Inventory, atomic publication, and native writer migration passed the five-round review gate with no Critical or Important finding. Doctor/edit/delete, staged restore, and final evidence remain. Native Windows behavior is still mocked-only.</td>
+      </tr>
+      <tr>
+        <td>Agent resource governance</td>
+        <td class="status pending">Candidate only</td>
+        <td><code>codex/resource-governance-completion-20260812@5b134f95</code><br>remote matches local</td>
+        <td>The approved completion design and six-task plan are published. Multiple local batch branches contain candidate fixes, but there is no single consolidated, independently review-passed implementation head. Do not merge the candidate batches wholesale.</td>
+      </tr>
+      <tr>
+        <td>Commitments and heartbeat</td>
+        <td class="status pending">Candidate implementation</td>
+        <td><code>ab54b270</code>, <code>953276d3</code> on <code>codex/commitments-heartbeat-20260811</code></td>
+        <td>The implementation report records focused/full verification and explicit concerns, but its dedicated ledger still says Task 1 is in progress. Reconcile the ledger, review the feature independently at the final branch head, and separate it from the SSRF integration history before claiming completion.</td>
+      </tr>
+      <tr>
+        <td>Account management, channels, memory, desktop, Web</td>
+        <td class="status pending">Uncommitted main work</td>
+        <td>main working tree; no handoff commit</td>
+        <td>These files belong to an active user worktree and were intentionally excluded. Their owner must first define scope, remove orphan/duplicate paths, run their own checks, and commit or move the work before integration starts.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Implementation packages still required</h2>
+
+  <h3>1. JSON Schema structured output: Tasks 6–7</h3>
+  <ol>
+    <li>Replace title text parsing in <code>openprogram/agent/dispatcher/titles.py</code> with <code>Runtime.exec(..., response_format=TITLE_SCHEMA)</code>. Preserve Unicode trim, the 80-code-point storage limit, and the existing placeholder on typed failure.</li>
+    <li>Update <code>docs/reference/design/runtime/session/name.md</code> and <code>tests/unit/test_dispatcher_compaction_title.py</code>.</li>
+    <li>After the title tests pass, update the structured-output HTML, Runtime API pages, session-title page, and feature matrix. The matrix may become complete only after Tasks 1–6 and fresh spec/quality reviews pass.</li>
+    <li>Source plan: <code>docs/superpowers/plans/2026-08-12-json-schema-structured-output-completion.md</code> on the JSON branch.</li>
+  </ol>
+
+  <h3>2. Credential-file hardening: Tasks 3–5</h3>
+  <ol>
+    <li>Add inventory-driven <code>openprogram doctor credentials</code> and constrained <code>--repair</code>. Repair only current-user regular paths; never follow symlinks or take ownership.</li>
+    <li>Use omit/replace/delete semantics for secret edits, reject masks and sentinels, remove raw MCP editor and account-key reveal behavior, make deletion truthful, and clear affected runtime caches.</li>
+    <li>Implement same-filesystem staged restore, full pre-publication validation, durable restore journaling, rollback, and idempotent crash recovery.</li>
+    <li>Run secret scans, platform-specific permission checks, affected/full suites, docs links, and matrix mechanics before updating implementation evidence.</li>
+    <li>Source plan: <code>docs/superpowers/plans/2026-08-11-credential-file-hardening.md</code> on the credential branch.</li>
+  </ol>
+
+  <h3>3. Agent resource governance: Tasks 1–6</h3>
+  <ol>
+    <li>Consolidate durable dispatch, atomic claim ownership, stopping/finalization recovery, and fairness on the approved completion branch. Reimplement or select reviewed commits; do not merge mixed historical branches wholesale.</li>
+    <li>Add task-scoped immutable budget attribution and conservative preflight estimation before credentials or network activity.</li>
+    <li>Reserve/start/settle token and cost exposure at the existing provider stream chokepoint, preserving unknown-price and unsettled-usage semantics.</li>
+    <li>Enforce runtime, idle, deadline, and bounded-operation limits while retaining capacity until worker finalization.</li>
+    <li>Expose one <code>TaskResourceView</code> contract through model tools, Web, CLI, and TUI.</li>
+    <li>Run crash/concurrency failure injection and the complete release gate before changing the design evidence or feature matrix.</li>
+    <li>Source plan: <code>docs/superpowers/plans/2026-08-12-agent-resource-governance-completion.md</code> on the resource completion branch.</li>
+  </ol>
+
+  <h3>4. Commitments and heartbeat finalization</h3>
+  <ol>
+    <li>Create a clean feature branch containing only the commitment lifecycle, deterministic heartbeat, owner projections, and its documentation.</li>
+    <li>Reconcile the stale task ledger with the implementation report and rerun feature-focused, full unit, Web, docs-link, privacy, and matrix checks.</li>
+    <li>Run fresh independent spec and quality reviews. Preserve the documented at-least-once delivery limitation and do not claim exactly-once notification delivery.</li>
+  </ol>
+
+  <h3>5. Smaller uncompleted hardening work</h3>
+  <ul>
+    <li><code>credential_process</code>: define executable/argument constraints, a bounded timeout, and redacted diagnostics before enabling broader use.</li>
+    <li><code>commit-push-pr</code>: add a non-mutating dry-run and enforce explicit remote-write authorization before push or PR creation.</li>
+    <li>Retain the existing discussion backlog in <a href="TODO-improvements.html">TODO improvements</a>: provider metadata corruption visibility, packaged Web/docs resources, typed frontend state migration, and the remaining oversized Python modules.</li>
+  </ul>
+
+  <h2>Integration and release order</h2>
+  <ol>
+    <li><strong>Stabilize the main worktree.</strong> Commit, move, or discard the current uncommitted account/channel/memory/Desktop/Web work under its owner's direction. Integration must not stage it incidentally.</li>
+    <li><strong>Finish partial plans on their own branches.</strong> Complete JSON Tasks 6–7 and credential Tasks 3–5 before integration; create one accepted resource-governance head; finalize commitments/heartbeat separately.</li>
+    <li><strong>Integrate one branch at a time.</strong> Rebase on the chosen mainline, inspect the complete diff, resolve conflicts at shared security/runtime boundaries, and rerun that feature's focused and affected suites before adding another branch.</li>
+    <li><strong>Run the combined release gate.</strong> Run unit, agent, provider, Web, CLI/TUI, security, docs build/link, Ruff, type/build, mechanical matrix, and <code>git diff --check</code> checks from the combined head.</li>
+    <li><strong>Publish evidence last.</strong> Update feature-matrix symbols and implementation evidence only for contracts proven on the combined head. Record unrelated environment blockers separately rather than treating partial suites as full completion.</li>
+  </ol>
+
+  <h2>Known combined-gate blockers</h2>
+  <ul>
+    <li>One prior full-suite run could not collect <code>tests/integration/test_test_framework.py</code> because <code>openprogram.functions.agentics.test_framework</code> was absent. Recheck on the eventual combined head.</li>
+    <li>Six pre-existing Ruff <code>S110</code> findings were reproduced at an earlier base. Recheck rather than inheriting that count as current evidence.</li>
+    <li>The current main worktree modifies <code>docs/reference/design/feature-matrix.html</code>. Do not overwrite or grade from that uncommitted file during branch integration.</li>
+  </ul>
+
+  <p class="note">This is a handoff snapshot, not a release declaration. Commit hashes and test counts describe the named branch heads only.</p>
+</body>
+</html>
