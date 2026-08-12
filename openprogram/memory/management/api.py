@@ -11,7 +11,11 @@ from ..prompts import ORGANIZE_MEMORY, SYSTEM_PROMPT, WRITE_MEMORY
 from .tools import TOOLS
 
 
-def render_writer_task(sessions: list[dict[str, Any]]) -> str:
+def render_writer_task(
+    sessions: list[dict[str, Any]],
+    *,
+    memory_dir: str | Path | None = None,
+) -> str:
     """Render one writer batch.
 
     A batch is however much source text fits the input budget. Each part
@@ -24,7 +28,26 @@ def render_writer_task(sessions: list[dict[str, Any]]) -> str:
             f"## Observed {session['observation_date']}\n\n"
             f"{render_conversation(session['turns'], session['refs'])}"
         )
-    return WRITE_MEMORY.format(sessions="\n\n".join(rendered))
+    open_rows: list[dict[str, Any]] = []
+    if memory_dir is not None:
+        from ..runtime.commitments import commitment_status
+
+        open_rows = [
+            row
+            for row in commitment_status(memory_dir)["records"]
+            if row.get("status") == "open"
+        ]
+    commitments = (
+        "\n\nOpen commitments (close one only when this batch says it was "
+        "completed or should be dismissed):\n"
+        + "\n".join(
+            json.dumps(row, ensure_ascii=False, separators=(",", ":"))
+            for row in open_rows
+        )
+        if open_rows
+        else ""
+    )
+    return WRITE_MEMORY.format(sessions="\n\n".join(rendered)) + commitments
 
 
 def render_writer_input(sessions: list[dict[str, Any]]) -> str:
@@ -56,7 +79,7 @@ def write_sessions(
     usage_logger: Any | None = None,
     config: MemoryConfig | None = None,
 ) -> list[dict[str, Any]]:
-    task = render_writer_task(sessions)
+    task = render_writer_task(sessions, memory_dir=memory_dir)
     return _run_agent(
         memory_dir,
         agent=agent,

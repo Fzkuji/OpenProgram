@@ -36,6 +36,7 @@ import multiprocessing
 import os
 import signal
 import subprocess
+import sys
 import time
 from typing import Any
 
@@ -272,16 +273,60 @@ def _spawn(entry: dict[str, Any], log_dir: str) -> Any | None:
     return proc
 
 
-def _tick(state: dict[str, str], *, reboot: bool = False) -> int:
+def _run_commitment_heartbeat(now: dt.datetime) -> int:
+    """Run the built-in reminder check; invalid state is fail-safe."""
+    try:
+        from openprogram import memory, setup
+        from openprogram.memory import store
+        from openprogram.proactive.heartbeat import (
+            DEFAULT_QUIET_HOURS,
+            cadence_due,
+            run_heartbeat,
+            target_for_source,
+        )
+
+        config = setup._read_config()
+        proactive = config.get("proactive") or {}
+        if not isinstance(proactive, dict):
+            return 0
+        cadence = proactive.get("heartbeat", "daily")
+        if not memory.is_enabled() or not cadence_due(cadence, now):
+            return 0
+        quiet_hours = proactive.get("quiet_hours", DEFAULT_QUIET_HOURS)
+        from openprogram.channels.outbound import send
+
+        return run_heartbeat(
+            store.ensure(),
+            now=now,
+            quiet_hours=quiet_hours,
+            target_for_source=target_for_source,
+            send=lambda target, text: send(*target, text),
+        )
+    except Exception as exc:  # noqa: BLE001 — one bad reminder cannot stop cron
+        print(
+            f"[commitment-heartbeat] skipped: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        return 0
+
+
+def _tick(
+    state: dict[str, str],
+    *,
+    reboot: bool = False,
+    now: dt.datetime | None = None,
+) -> int:
     """Evaluate schedule once at the current wall-clock minute.
 
     Returns the number of entries fired. When ``reboot=True`` only
     ``@reboot`` entries are considered; normal clock matching is skipped.
     """
+    now = (now or dt.datetime.now()).replace(second=0, microsecond=0)
+    if not reboot:
+        _run_commitment_heartbeat(now)
     entries = _load(_resolve_path())
     if not entries:
         return 0
-    now = dt.datetime.now().replace(second=0, microsecond=0)
     stamp = now.strftime("%Y-%m-%dT%H:%M")
     log_dir = _logs_dir()
     fired = 0

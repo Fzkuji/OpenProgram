@@ -1,4 +1,4 @@
-import type { WriterStatus } from "./types";
+import type { CommitmentStatus, WriterStatus } from "./types";
 
 export type WriterStatusState =
   | "unrecorded"
@@ -16,4 +16,13 @@ export function writerStatusState(status: WriterStatus): WriterStatusState {
   if (status.pending_turns > 0) return "pending";
   if (!status.last_success_at && !status.last_failure) return "unrecorded";
   return "up_to_date";
+}
+
+export type CommitmentStatusState = "empty" | "open" | "closed";
+
+export function commitmentStatusState(
+  status: CommitmentStatus,
+): CommitmentStatusState {
+  if (status.counts.open > 0) return "open";
+  return status.counts.total > 0 ? "closed" : "empty";
 }

@@ -441,7 +441,7 @@ def write_session(
                 "observation_date": observed,
                 "turns": [(r.speaker_label, r.content) for r in batch],
                 "refs": [r.source_id for r in batch],
-            }]),
+            }], memory_dir=space.memory_dir),
             stage="write",
             allowed_new_source_refs={record.source_id for record in batch},
         )
@@ -673,7 +673,7 @@ def distill_promoted_source(
                     event.content,
                 )],
                 "refs": [source_id],
-            }]),
+            }], memory_dir=root),
             stage="promote",
             allowed_new_source_refs={source_id},
         )

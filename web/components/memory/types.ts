@@ -47,6 +47,29 @@ export interface WriterStatus {
   pending_turns: number | null;
 }
 
+export interface CommitmentRecord {
+  id: string;
+  text: string;
+  due: string | null;
+  speaker_id: string;
+  source: string;
+  status: "open" | "done" | "dismissed";
+  status_source: string | null;
+  status_changed_at: string | null;
+  notification_steps: string[];
+}
+
+export interface CommitmentStatus {
+  counts: {
+    total: number;
+    open: number;
+    done: number;
+    dismissed: number;
+    invalid?: number;
+  };
+  records: CommitmentRecord[];
+}
+
 /** Exact response contract of GET /api/memory/status. */
 export interface MemoryStatus {
   workspace: string;
@@ -60,6 +83,7 @@ export interface MemoryStatus {
   core_exists: boolean;
   embedding_available: boolean;
   writer: WriterStatus;
+  commitments: CommitmentStatus;
 }
 
 /**
@@ -67,7 +91,7 @@ export interface MemoryStatus {
  * `timeline` and `recent` are derived from it; `core` is the block on
  * every system prompt.
  */
-export type Tab = "topics" | "timeline" | "recent" | "core";
+export type Tab = "topics" | "timeline" | "recent" | "commitments" | "core";
 
 export interface EditorState {
   content: string;

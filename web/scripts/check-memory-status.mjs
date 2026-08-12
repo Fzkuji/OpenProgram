@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-import { writerStatusState } from "../components/memory/status.ts";
+import {
+  commitmentStatusState,
+  writerStatusState,
+} from "../components/memory/status.ts";
 
 const failure = {
   at: "2026-08-10T12:00:00+00:00",
@@ -52,5 +56,26 @@ assert.equal(writerStatusState({
   last_failure: failure,
   pending_turns: 3,
 }), "pending");
+
+assert.equal(commitmentStatusState({
+  counts: { total: 0, open: 0, done: 0, dismissed: 0 },
+  records: [],
+}), "empty");
+assert.equal(commitmentStatusState({
+  counts: { total: 2, open: 1, done: 1, dismissed: 0 },
+  records: [],
+}), "open");
+assert.equal(commitmentStatusState({
+  counts: { total: 1, open: 0, done: 1, dismissed: 0 },
+  records: [],
+}), "closed");
+
+const memoryPage = readFileSync(
+  new URL("../components/memory/index.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(memoryPage, /\/api\/memory\/commitments\/transition/);
+assert.match(memoryPage, /"done"/);
+assert.match(memoryPage, /"dismissed"/);
 
 console.log("memory writer status checks passed");

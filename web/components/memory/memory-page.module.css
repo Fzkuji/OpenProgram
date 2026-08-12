@@ -121,6 +121,7 @@
   grid-column: 1;
   grid-row: 1;
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 8px;
   border-right: 1px solid var(--border);
@@ -131,9 +132,9 @@
 
 .tabBtn {
   /* Grow from the label's own width, so "Timeline" keeps the room it
-     needs and "Core" gives its spare back. Four equal quarters of a
-     288px sidebar are 66px each, which clips the longest label. */
-  flex: 1 1 auto;
+     needs and "Core" gives its spare back. Fixed equal-width tabs clip
+     the longest label once all five tabs are present. */
+  flex: 1 1 64px;
   min-width: 0;
   display: inline-flex;
   align-items: center;
@@ -651,6 +652,62 @@
 
 .metaWarn {
   color: var(--accent-yellow);
+}
+
+.commitmentList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.commitmentCard {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 12px 14px;
+}
+
+.commitmentHeader,
+.commitmentMeta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.commitmentHeader {
+  justify-content: space-between;
+}
+
+.commitmentStatus {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.commitmentText {
+  margin: 10px 0;
+  color: var(--text-bright);
+  font-size: 14px;
+}
+
+.commitmentActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.commitmentDismissBtn {
+  color: var(--accent-red);
+}
+
+.commitmentError {
+  color: var(--accent-red);
+  font-size: 12px;
 }
 
 
