@@ -59,6 +59,20 @@ def test_owner_outbound_url_settings_are_strict_normalized_and_immutable():
         settings.exceptions = ()
 
 
+def test_owner_outbound_url_settings_reject_ipv4_mapped_link_local_origin():
+    with pytest.raises(ValueError, match="invalid outbound URL security"):
+        config_schema.parse_outbound_url_settings(
+            {
+                "exceptions": [
+                    {
+                        "consumer": "skills.configured.catalog",
+                        "origin": "http://[::ffff:169.254.1.2]",
+                    }
+                ]
+            }
+        )
+
+
 def test_owner_outbound_url_settings_build_consumer_scoped_security():
     settings = config_schema.parse_outbound_url_settings(VALID_SETTINGS)
 

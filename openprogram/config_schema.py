@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 import ipaddress
 from pathlib import Path
-import re
 from typing import TYPE_CHECKING, Any, Callable, Optional
 from urllib.parse import urlsplit
 
@@ -112,6 +111,8 @@ class OwnerURLExceptionSetting(BaseModel):
         except ValueError:
             pass
         else:
+            if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+                address = address.ipv4_mapped
             if address.is_link_local or address in _METADATA_ADDRESSES:
                 raise ValueError("metadata or link-local origin is forbidden")
         return normalized.origin
@@ -452,15 +453,6 @@ def _validate_hooks(v: Any) -> Optional[str]:
                                   or t <= 0):
                 return f"{event}: timeout must be a positive whole number of seconds"
     return None
-
-
-def _validate_quiet_hours(value: Any) -> Optional[str]:
-    if re.fullmatch(
-        r"(?:[01]\d|2[0-3]):[0-5]\d-(?:[01]\d|2[0-3]):[0-5]\d",
-        str(value),
-    ):
-        return None
-    return "must use HH:MM-HH:MM with 24-hour local times"
 
 
 def _validate_outbound_url_settings(value: Any) -> Optional[str]:
