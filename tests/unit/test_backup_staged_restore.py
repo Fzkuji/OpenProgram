@@ -293,7 +293,7 @@ def test_restore_state_lock_reports_busy_across_processes(tmp_path: Path) -> Non
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX flock and SIGKILL semantics")
-@pytest.mark.parametrize("pause_count", [1, 2, 3, 4])
+@pytest.mark.parametrize("pause_count", [1, 2, 3])
 def test_killed_restore_recovers_old_state_and_releases_lock(
     tmp_path: Path, pause_count: int
 ) -> None:
@@ -319,8 +319,6 @@ def test_killed_restore_recovers_old_state_and_releases_lock(
         "real=b._publish_restored; count=[0]; "
         "exec(\"def publish(target,payload,*,root):\\n count[0]+=1\\n real(target,payload,root=root)\\n if count[0]==n:\\n  marker.write_text('paused')\\n  while True: time.sleep(1)\"); "
         "b._publish_restored=publish; "
-        "exec(\"def finish(self):\\n marker.write_text('paused')\\n while True: time.sleep(1)\") if n==4 else None; "
-        "setattr(b._RestoreJournal,'finish',finish) if n==4 else None; "
         "b.restore_archive(archive,state)"
     )
     process = subprocess.Popen(
@@ -341,6 +339,63 @@ def test_killed_restore_recovers_old_state_and_releases_lock(
         process.wait(5)
         assert recover_interrupted_restore(state) is True
         assert {name: (state / name).read_bytes() for name in old} == old
+        assert not (state / ".restore-journal.json").exists()
+        assert not (state / ".restore-journal.d").exists()
+        with _restore_state_lock(state):
+            pass
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(5)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX flock and SIGKILL semantics")
+@pytest.mark.parametrize("finish_phase", ["before_discard", "after_discard"])
+def test_killed_successful_restore_at_finish_boundary_keeps_new_state(
+    tmp_path: Path, finish_phase: str
+) -> None:
+    from openprogram._cli_cmds.backup import (
+        RestoreBusyError,
+        _restore_state_lock,
+        recover_interrupted_restore,
+        restore_archive,
+    )
+
+    state = _state(tmp_path)
+    old = {"a.json": b"old-a", "b.json": b"old-b"}
+    new = {"a.json": b"new-a", "b.json": b"new-b"}
+    for name, payload in old.items():
+        path = state / name
+        path.write_bytes(payload)
+        path.chmod(0o600)
+    archive = _archive(tmp_path, new)
+    marker = tmp_path / "paused"
+    code = (
+        "import sys,time; from pathlib import Path; "
+        "from openprogram._cli_cmds import backup as b; "
+        "state,archive,marker,phase=Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),sys.argv[4]; "
+        "real_discard=b._RestoreJournal.discard; "
+        "exec(\"def discard(self):\\n if phase=='after_discard': real_discard(self)\\n marker.write_text('paused')\\n while True: time.sleep(1)\"); "
+        "b._RestoreJournal.discard=discard; b.restore_archive(archive,state)"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", code, str(state), str(archive), str(marker), finish_phase]
+    )
+    deadline = time.time() + 10
+    while not marker.exists() and process.poll() is None and time.time() < deadline:
+        time.sleep(0.01)
+    assert marker.exists()
+    try:
+        assert {name: (state / name).read_bytes() for name in new} == new
+        with pytest.raises(RestoreBusyError):
+            restore_archive(archive, state)
+        with pytest.raises(RestoreBusyError):
+            recover_interrupted_restore(state)
+        assert {name: (state / name).read_bytes() for name in new} == new
+        process.send_signal(signal.SIGKILL)
+        process.wait(5)
+        assert recover_interrupted_restore(state) is False
+        assert {name: (state / name).read_bytes() for name in new} == new
         assert not (state / ".restore-journal.json").exists()
         assert not (state / ".restore-journal.d").exists()
         with _restore_state_lock(state):
