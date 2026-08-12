@@ -396,11 +396,20 @@ def management_tools(
                         allowed_source_refs=allowed,
                     )
             except BaseException:
-                if existed:
-                    assert before is not None
-                    path.write_bytes(before)
-                else:
-                    path.unlink(missing_ok=True)
+                try:
+                    if existed:
+                        from openprogram.store.session.git_session import (
+                            atomic_write_text,
+                        )
+
+                        assert before is not None
+                        atomic_write_text(path, before.decode("utf-8"))
+                    else:
+                        path.unlink(missing_ok=True)
+                except BaseException:
+                    workspace._discard_stage()
+                    workspace._stage_usable = False
+                    raise
                 raise
             return "commitments recorded"
 

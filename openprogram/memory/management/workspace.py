@@ -58,6 +58,7 @@ class MemoryWorkspace(
             else frozenset(allowed_new_source_refs)
         )
         self.committed = False
+        self._stage_usable = True
         # Set for the duration of one structured transaction; see update().
         self._transaction_source_refs: frozenset[str] | None = None
         self.last_changed_topics: list[str] = []
@@ -86,6 +87,7 @@ class MemoryWorkspace(
     def _refresh_stage(self) -> None:
         self._discard_stage()
         self.stage_dir.mkdir()
+        self._stage_usable = True
         for name in ("topics", "timeline", "sources"):
             source = self.memory_dir / name
             if source.exists():
@@ -207,6 +209,8 @@ class MemoryWorkspace(
         the stage through the built-in file tools. Any failure discards the
         staged edits and re-raises.
         """
+        if not self._stage_usable:
+            raise RuntimeError("memory stage is unavailable after rollback failure")
         self.last_changed_topics = []
         self.last_created_blocks = 0
         try:
