@@ -95,16 +95,16 @@
 <div class="wrap">
 
   <h1>MCP 服务端：现状、九家对标与最小能力集</h1>
-  <p class="sub">这页分四层：<b>我们现在怎么做</b>（只有 MCP 客户端、内部 Web 面已做 owner 认证、审批阶梯已就位）、
+  <p class="sub">这页分四层：<b>我们现在怎么做</b>（MCP 客户端与认证 stdio 服务端并存，内部 Web 面继续使用独立的 owner 认证）、
     <b>别人怎么做</b>（<code>references/</code> 下九个框架逐一，包括两个明确不做的和两个反面案例）、
-    <b>我们计划怎么优化</b>（六个工具、白名单、外部低权档位、stdio 启动认证、取消与进度对齐规范）、
+    <b>我们实施了什么</b>（六个工具、默认空白名单、外部低权档位、stdio 启动认证、取消与进度对齐规范）、
     <b>理想状态</b>（现有 ACP 的边界、入站 webhook、SDK 各自的差距和为什么本轮不扩张）。
     设计文档：<code>docs/reference/design/integrations/mcp-server.md</code></p>
 
   <div class="tocg">
     <div class="gl">层一 · 我们现在怎么做</div>
     <div class="toc">
-      <a href="#dir">01 方向：只有一半</a>
+      <a href="#dir">01 方向：双向已实现</a>
       <a href="#surf">02 三个外部面与认证缺口</a>
       <a href="#ladder">03 审批阶梯九级</a>
       <a href="#sem">04 取消与错误语义</a>
@@ -115,7 +115,7 @@
     <div class="toc"><a href="#nine">05 九家对标矩阵</a><a href="#pat">06 四种协议写法</a></div>
   </div>
   <div class="tocg">
-    <div class="gl">层三 · 我们计划怎么优化</div>
+    <div class="gl">层三 · 已实施的最小能力集</div>
     <div class="toc">
       <a href="#tools">07 六个工具</a>
       <a href="#scope">08 白名单与低权档位</a>
@@ -132,27 +132,27 @@
   <div class="band L1" id="L1">
     <span class="lv">LAYER 1</span>
     <h2>我们现在怎么做</h2>
-    <p class="w">MCP 在我们这里只有客户端半边。内部控制面是 198 条 FastAPI 路由加约 100 个 WebSocket 动作，
+    <p class="w">MCP 客户端与认证 stdio 服务端现已并存。内部控制面仍是 198 条 FastAPI 路由加约 100 个 WebSocket 动作，
       由 <code>OwnerAuthMiddleware</code> 统一执行 process token、cookie/Bearer、Host/Origin 与 accept 前 WebSocket 认证。
-      审批阶梯、按轮次取消 token、工具注册表已经就位；MCP server transport、独立 client identity、低权限 scope 和白名单仍不存在。</p>
+      MCP server 另用独立 0600 token、凭证指纹 client identity、固定 paired scope、默认空白名单与 non-interactive gate；不复用 Web owner token。</p>
   </div>
 
-  <h2 id="dir"><span class="num">01</span>方向：MCP 只做了一半</h2>
-  <p class="lead">同一个协议有两个方向。我们实现了消费方，没有实现提供方。</p>
+  <h2 id="dir"><span class="num">01</span>方向：MCP 客户端与服务端并存</h2>
+  <p class="lead">消费外部工具与向外提供固定工具是两个独立入口；两者现在都已实现，并在 Runtime 注册表处共享受控能力。</p>
 
   <div class="card">
-  <svg viewBox="0 0 1160 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MCP 两个方向，我们只实现了客户端">
+  <svg viewBox="0 0 1160 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MCP 客户端与服务端两个方向均已实现">
     <defs>
       <marker id="d-gn" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5aad4e"/></marker>
       <marker id="d-rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
     </defs>
     <text x="24" y="30" fill="#d4843a" font-size="16" font-weight="700">MCP 的两个方向</text>
-    <text x="24" y="53" fill="#8a8675" font-size="12.5">实线是已实现的路径，虚线是缺失的路径。</text>
+    <text x="24" y="53" fill="#8a8675" font-size="12.5">两条实线分别表示出站 MCP 客户端与入站 MCP stdio 服务端。</text>
 
     <rect x="430" y="86" width="300" height="128" rx="12" fill="#131b2a" stroke="#4f8ef7" stroke-width="1.7"/>
     <text x="580" y="118" fill="#4f8ef7" font-size="15.5" font-weight="700" text-anchor="middle">OpenProgram</text>
     <text x="580" y="145" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace" text-anchor="middle">openprogram/mcp/  ← 客户端，8 个模块</text>
-    <text x="580" y="170" fill="#e0445a" font-size="11.5" font-family="Menlo,monospace" text-anchor="middle">openprogram/mcp_server/  ← 不存在</text>
+    <text x="580" y="170" fill="#5aad4e" font-size="11.5" font-family="Menlo,monospace" text-anchor="middle">openprogram/mcp_server/  ← 服务端，已实现</text>
     <text x="580" y="194" fill="#8a8675" font-size="11.5" text-anchor="middle">工具注册表 _registry 两个方向共用</text>
 
     <!-- 已实现：消费外部工具 -->
@@ -162,19 +162,19 @@
     <line x1="822" y1="116" x2="734" y2="116" stroke="#5aad4e" stroke-width="1.8" marker-end="url(#d-gn)"/>
     <text x="778" y="106" fill="#5aad4e" font-size="11" text-anchor="middle" font-weight="700">已实现</text>
 
-    <!-- 缺失：暴露自己工具 -->
-    <rect x="24" y="86" width="310" height="60" rx="10" fill="#2a1215" stroke="#e0445a" stroke-width="1.5" stroke-dasharray="6 5"/>
-    <text x="44" y="112" fill="#e0445a" font-size="13.5" font-weight="700">外部 MCP 客户端</text>
+    <!-- 已实现：暴露固定工具 -->
+    <rect x="24" y="86" width="310" height="60" rx="10" fill="#101a10" stroke="#5aad4e" stroke-width="1.5"/>
+    <text x="44" y="112" fill="#5aad4e" font-size="13.5" font-weight="700">外部 MCP 客户端</text>
     <text x="44" y="133" fill="#a5a190" font-size="11.5">Claude Desktop、另一个 agent、IDE</text>
-    <line x1="426" y1="116" x2="338" y2="116" stroke="#e0445a" stroke-width="1.8" stroke-dasharray="5 5" marker-end="url(#d-rd)"/>
-    <text x="382" y="106" fill="#e0445a" font-size="11" text-anchor="middle" font-weight="700">缺失</text>
+    <line x1="426" y1="116" x2="338" y2="116" stroke="#5aad4e" stroke-width="1.8" marker-end="url(#d-gn)"/>
+    <text x="382" y="106" fill="#5aad4e" font-size="11" text-anchor="middle" font-weight="700">已实现</text>
 
     <rect x="24" y="230" width="1112" height="0" fill="none"/>
     <rect x="24" y="228" width="1112" height="0" fill="none"/>
   </svg>
   <div class="legend"><b>已有的复用点</b>：<code>AgentTool.execute</code> 的签名是
     <code>(call_id, args, cancel: asyncio.Event | None, on_update)</code>，参数字典、取消事件、增量回调三样协议服务端需要的东西都在。
-    缺的只是把它们说给外部进程听的那层传输。</div>
+    服务端已通过显式 <code>CallToolRequest</code> handler 将这些参数接到 MCP 1.29.0 stdio transport。</div>
   </div>
 
   <h2 id="surf"><span class="num">02</span>三个内部面，Web 边界已认证</h2>
@@ -307,7 +307,7 @@
   </svg>
   </div>
 
-  <h2 id="sem"><span class="num">04</span>取消与错误：两处已存在的不一致</h2>
+  <h2 id="sem"><span class="num">04</span>取消与错误：MCP 边界已统一</h2>
 
   <div class="grid2">
     <div class="plat" style="border-top-color:#4f8ef7">
@@ -321,12 +321,12 @@
 
     <div class="plat" style="border-top-color:#d4843a">
       <div class="k">ERROR</div>
-      <h3 style="color:#d4843a">is_error 三处有两处是一等字段</h3>
+      <h3 style="color:#d4843a">is_error 三处均为一等字段</h3>
       <div class="noun">functions/_runtime.py · agent/types.py</div>
       <div class="row"><div class="t">工具层</div><div class="v"><code>ToolResult</code> 有一等的 <code>is_error: bool</code>。</div></div>
-      <div class="row bad"><div class="t">框架层</div><div class="v"><code>AgentToolResult</code> <b>只有 content 和 details</b>，<code>_normalize_result()</code> 把标志挪进 <code>details["is_error"]</code>，于是每个消费方都写防御性 <code>.get</code>，没有静态检查。</div></div>
+      <div class="row"><div class="t">框架层</div><div class="v"><code>AgentToolResult</code> 已有一等的 <code>is_error: bool</code>；Runtime、approval、agent loop 与 MCP 转换均读取该字段，<code>details</code> 只保留诊断信息。</div></div>
       <div class="row"><div class="t">事件层</div><div class="v"><code>AgentEventToolEnd</code> 有一等的 <code>is_error</code>。</div></div>
-      <div class="row"><div class="t">具体载荷</div><div class="v">拒绝 <code>{"is_error":True,"denied":True}</code>；超时 <code>{"is_error":True,"timeout":True}</code>。</div></div>
+      <div class="row"><div class="t">具体载荷</div><div class="v"><code>is_error</code> 是顶层 typed bit；<code>details</code> 只保留固定 <code>reason_code</code>、<code>denied</code>、<code>timeout</code> 等诊断字段。</div></div>
     </div>
   </div>
 
@@ -357,7 +357,7 @@
     <tr><td><b>pi-ai</b></td><td class="g">无</td><td class="g">无</td><td class="g">无</td><td class="g">不适用，本身是 provider 客户端库</td></tr>
     <tr><td><b>pi-mono</b></td><td class="n">无，README 明写 <b>"No MCP."</b></td><td class="n">无</td><td class="n">无，只有进程内 <code>pi.send()</code></td><td class="g">只有内嵌用的包</td></tr>
     <tr><td><b>weclaw</b></td><td class="n">无</td><td class="n">只有 ACP <b>客户端</b>，自动放行所有权限请求</td><td class="n"><code>POST /api/send</code>，<b>零认证</b></td><td class="n">无</td></tr>
-    <tr><td class="us"><b>OpenProgram</b></td><td class="us">无</td><td class="us"><code>openprogram acp</code>，stdio；已有会话、权限与事件映射</td><td class="us">内部 Web 路由，owner token/cookie 认证</td><td class="us">无</td></tr>
+    <tr><td class="us"><b>OpenProgram</b></td><td class="us"><code>openprogram mcp serve</code>，认证 stdio，六个固定 wrapper，默认空白名单</td><td class="us"><code>openprogram acp</code>，stdio；已有会话、权限与事件映射</td><td class="us">内部 Web 路由，owner token/cookie 认证</td><td class="us">无专属 SDK；使用标准 MCP SDK</td></tr>
   </table>
   </div>
 
@@ -407,10 +407,10 @@
   <!-- ══════════════════ 层三 ══════════════════ -->
   <div class="band L3" id="L3">
     <span class="lv">LAYER 3</span>
-    <h2>我们计划怎么优化</h2>
+    <h2>已实施的最小能力集</h2>
     <p class="w"><code>openprogram mcp serve</code> 走 stdio 单一传输，暴露六个工具，
       <code>tool_call</code> 按默认为空的白名单过滤，外部调用方拿 <code>paired</code> 低权档位且永不 interactive，
-      启动时通过环境凭证完成认证且没有关闭开关，取消映射到已有的按轮次 token，进度由 <code>on_update</code> 驱动，错误按上面那个划分。</p>
+      启动时通过环境凭证完成认证且没有关闭开关，取消映射到已有的按轮次 token，进度由 <code>on_update</code> 驱动，错误按上面那个划分。以下内容均已绑定到实现提交 <code>885d8f15</code>。</p>
   </div>
 
   <h2 id="tools"><span class="num">07</span>六个工具，每个映射一项能力</h2>
@@ -548,7 +548,7 @@
     <line x1="780" y1="88" x2="844" y2="88" stroke="#5aad4e" stroke-width="1.6" marker-end="url(#m-gn)"/>
     <rect x="848" y="56" width="288" height="66" rx="9" fill="#12110b" stroke="#2e2c20"/>
     <text x="868" y="80" fill="#f0eee6" font-size="12.5" font-weight="700">execute 的 cancel 参数</text>
-    <text x="868" y="102" fill="#8a8675" font-size="11">参数已存在也已被遵守，只需填上</text>
+    <text x="868" y="102" fill="#8a8675" font-size="11">wire cancellation 设置同一个请求级事件</text>
 
     <rect x="24" y="140" width="300" height="66" rx="9" fill="#12110b" stroke="#2db3d5" stroke-width="1.4"/>
     <text x="44" y="164" fill="#2db3d5" font-size="12.5" font-weight="700">notifications/progress</text>
@@ -572,15 +572,16 @@
     <tr><td>启动环境 token 缺失或错误</td><td class="n">进程非零退出，不进入 MCP 生命周期</td><td>认证发生在读取 stdin 之前，错误只写 stderr</td></tr>
     <tr><td>工具不在白名单里</td><td class="n">JSON-RPC 错误，按工具名不存在处理</td><td>不泄露无权工具的存在</td></tr>
     <tr><td>档位不含该能力</td><td class="m"><code>isError: true</code>，正文点名缺失能力</td><td>工具存在但本次不可用</td></tr>
-    <tr><td>审批被拒或无法审批</td><td class="m"><code>isError: true</code>，正文带原因</td><td>无 owner 在场时判为拒绝</td></tr>
-    <tr><td>工具跑了并失败</td><td class="m"><code>isError: true</code>，正文是工具错误内容</td><td>与九家收敛的写法一致</td></tr>
-    <tr><td>在途 <code>prompt_send</code> 被取消</td><td class="n">SDK 返回标准 JSON-RPC cancellation error；应用不返回 tool result</td><td>以 MCP 2025-11-25 与 SDK 1.29.0 的取消分发为准</td></tr>
+    <tr><td>审批被拒或无法审批</td><td class="m"><code>isError: true</code>，仅保留固定 gate reason</td><td>无 owner 在场时判为拒绝，不透传任意工具 details</td></tr>
+    <tr><td>工具跑了并失败</td><td class="m"><code>isError: true</code>，固定净化正文与 reason code</td><td>保留 typed error，不跨边界泄漏异常、trace 或工具自报原因</td></tr>
+    <tr><td>外部 SDK 取消在途请求</td><td class="n"><code>ErrorData(code=0, message="Request cancelled", data=None)</code>；应用不返回 tool result</td><td>SDK 1.29.0 的 <code>notifications/cancelled</code> 拥有响应；OpenProgram 只做停止、清理与审计</td></tr>
+    <tr><td>普通 <code>prompt_cancel</code></td><td class="m">同连接活跃轮次返回 <code>cancelled=true</code>；foreign/completed 返回 false</td><td>它是六个 wrapper 之一，不等同于 SDK cancellation notification</td></tr>
   </table>
   </div>
 
-  <div class="note"><b>连带修一处不一致</b>：把上表落到 <code>AgentToolResult</code> 上需要 <code>details.get("is_error")</code>。
-    本设计把 <code>is_error</code> 提升为 <code>AgentToolResult</code> 的一等字段，而不是跨协议边界读一个无类型字典键 ——
-    <code>ToolResult</code> 和 <code>AgentEventToolEnd</code> 上已经有了，补齐第三处就能去掉每个调用点的防御性 <code>.get</code>。</div>
+  <div class="note"><b>已完成的共享类型修订</b>：<code>is_error</code> 已提升为 <code>AgentToolResult</code> 的一等字段；
+    Runtime normalization、approval refusal、agent loop、MCP client/server conversion 与 cache eligibility 均使用该 typed bit。
+    旧 <code>details["is_error"]</code> 仅保留输入兼容桥，不再是仓库内生产者的 canonical 状态。</div>
 
   <div class="note"><b>验收测试的形状</b>：<code>tests/integration/test_mcp_server.py</code> 以子进程拉起
     <code>openprogram mcp serve</code>，<b>用 MCP SDK 自己的客户端</b>连上去，覆盖以下协议与安全行为：
@@ -588,8 +589,9 @@
     MCP <code>tools/list</code> 精确返回六个固定入口，而其中的 <code>tools_list</code> 结果精确等于配置白名单、当前注册表与 paired scope 的交集；
     交集内只读 <code>tool_call</code> 返回内容；未知或未暴露工具按不存在处理；已暴露但 scope 越权及需审批的调用返回 <code>isError</code> 而不是挂住；
     <code>notifications/cancelled</code> 使 SDK 为原 <code>prompt_send</code> 返回标准 JSON-RPC cancellation error，断言不存在后续 tool result / <code>isError</code>；
-    同时验证后续副作用停止、活跃请求与问题状态清空、审计事件落下。进度通知当且仅当给了 <code>progressToken</code> 时到达。
-    用 SDK 客户端而不是手搓 JSON-RPC 帧，才让它成为协议测试 —— 一旦偏离规范它就挂，自洽的帧比对抓不到。</div>
+    同时验证后续副作用停止、活跃请求与问题状态清空、审计事件落下。进度通知当且仅当给了 <code>progressToken</code> 时到达，保持每请求顺序；
+    正常、错误与取消路径均有界终止 progress consumer，外部 parent cancellation 不被 teardown 吞掉。
+    验收使用真实 MCP 1.29.0 <code>ClientSession</code> 经真实 <code>openprogram mcp serve</code> 子进程覆盖六个 wrapper、typed errors、并发、进度、取消与 stdout 纯协议帧；手写帧只作为原始 stdout 的补充检查。</div>
 
   <!-- ══════════════════ 层四 ══════════════════ -->
   <div class="band L4" id="L4">
@@ -638,29 +640,37 @@
     FastAPI 和 WebSocket 仍是内部面，不成为 MCP transport，也不增加 HTTP、OAuth 或 Web route。</div>
 
   <h2 id="status"><span class="num">12</span>实现状态</h2>
-  <p class="lead">层三的 MCP server 内容一件都没实现。当前状态是层一：MCP 客户端、现有 ACP stdio 服务端、一个已做 owner 认证但仍是内部且未版本化的 Web surface，以及一条对本地轮次有效的审批阶梯。</p>
+  <p class="lead">层三已在实现提交 <code>885d8f15</code> 完成，并经独立 specification 与 quality review 收敛为零 remaining finding。MCP server 与现有 MCP client、ACP stdio、内部 Web surface 分属独立入口和认证边界。</p>
 
   <div class="tbl">
   <table>
-    <tr><th>项</th><th>状态</th><th>阻塞条件</th></tr>
-    <tr><td><b><code>openprogram mcp serve</code> stdio 服务端</b></td><td class="n">未实施</td><td class="g">—</td></tr>
-    <tr><td><b>六工具最小集</b></td><td class="n">未实施</td><td class="g">—</td></tr>
-    <tr><td><b><code>mcp_server.exposed_tools</code> 白名单，默认为空</b></td><td class="n">未实施</td><td class="g">—</td></tr>
-    <tr><td><b><code>mcp token create</code> + stdio 启动环境认证，无关闭开关</b></td><td class="n">未实施</td><td class="g">协议基线固定为 SDK 已支持的 2025-11-25；HTTP/OAuth 另行设计</td></tr>
-    <tr><td><b>外部调用方的 <code>authority_tier</code> 行</b></td><td class="n">未实施</td><td class="m">档位门口本身已存在（<code>openprogram/agent/authority.py</code>）；缺的是构造带该字段请求的 MCP 入口</td></tr>
-    <tr><td><b><code>source=mcp</code> non-interactive + hard-constraint gate</b></td><td class="n">未实施</td><td class="y">需加入 <code>_NON_INTERACTIVE_SOURCES</code> 与 <code>_hard_constraint_violation()</code>，审批及一般问题都不得等待</td></tr>
-    <tr><td><b>SDK cancellation → 请求清理与审计</b></td><td class="n">未实施</td><td class="y">SDK 1.29.0 返回 JSON-RPC cancellation error；服务端只停止后续副作用、清理内部状态并记录审计</td></tr>
-    <tr><td><b><code>notifications/progress</code> 由 <code>on_update</code> 驱动</b></td><td class="n">未实施</td><td class="y">直接用现有 <code>execute</code> 签名</td></tr>
-    <tr><td><b><code>AgentToolResult</code> 上的一等 <code>is_error</code></b></td><td class="n">未实施</td><td class="m">涉及每个 <code>details.get("is_error")</code> 调用点</td></tr>
-    <tr><td><b>端到端协议测试</b></td><td class="n">未实施</td><td class="g">—</td></tr>
+    <tr><th>项</th><th>状态</th><th>实现与证据</th></tr>
+    <tr><td><b><code>openprogram mcp serve</code> stdio 服务端</b></td><td class="y">已实施</td><td class="g"><code>openprogram/mcp_server/server.py</code>；认证在进入 SDK stdio 前完成</td></tr>
+    <tr><td><b>六工具最小集</b></td><td class="y">已实施</td><td class="g"><code>sessions_list</code>、<code>session_get</code>、<code>prompt_send</code>、<code>prompt_cancel</code>、<code>tools_list</code>、<code>tool_call</code>；SDK <code>tools/list</code> 精确返回这六项</td></tr>
+    <tr><td><b><code>mcp_server.exposed_tools</code> 白名单，默认为空</b></td><td class="y">已实施</td><td class="g">discovery 与 execution 每次取 configured allowlist ∩ live registry ∩ paired capability</td></tr>
+    <tr><td><b><code>mcp token create</code> + stdio 启动环境认证，无关闭开关</b></td><td class="y">已实施</td><td class="g">独立 <code>0600</code> token；<code>OPENPROGRAM_MCP_TOKEN</code> 常量时间比较；身份为凭证 SHA-256 前 16 位小写十六进制</td></tr>
+    <tr><td><b>外部调用方的 <code>authority_tier</code> 行</b></td><td class="y">已实施</td><td class="g">固定 <code>paired</code>、<code>speaker_kind=client</code>、<code>interaction=non-interactive</code>；<code>clientInfo</code> 不参与认证或授权</td></tr>
+    <tr><td><b><code>source=mcp</code> non-interactive + hard-constraint gate</b></td><td class="y">已实施</td><td class="g">危险 process/worktree/out-of-root write 先硬拒绝；审批与一般问题不等待，拒绝结果 typed 且净化</td></tr>
+    <tr><td><b>SDK cancellation → 请求清理与审计</b></td><td class="y">已实施</td><td class="g">精确 request/session/connection ownership；设置 thread/tool event，清理 process、Runtime、questions、run-control，再记录 <code>mcp.request.cancelled</code></td></tr>
+    <tr><td><b><code>notifications/progress</code> 由 <code>on_update</code> 驱动</b></td><td class="y">已实施</td><td class="g">仅有 <code>progressToken</code> 时发送；每请求单调有序；normal/error/cancel 均有界清理 consumer，保留 parent cancellation</td></tr>
+    <tr><td><b><code>AgentToolResult</code> 上的一等 <code>is_error</code></b></td><td class="y">已实施</td><td class="g">Runtime 失败、拒绝与 wire <code>CallToolResult.isError</code> 端到端使用 typed bit；敏感正文/details 在 MCP 边界净化</td></tr>
+    <tr><td><b>端到端协议测试</b></td><td class="y">已实施</td><td class="g">真实 MCP 1.29.0 <code>ClientSession</code> + CLI stdio 子进程，协议 <code>2025-11-25</code>；覆盖六项、clientInfo invariance、typed errors、question decline、progress、并发、取消、审计与 stdout 隔离</td></tr>
     <tr><td><b>ACP stdio 服务端</b></td><td class="g">已存在；本轮不扩张</td><td class="m"><code>openprogram/_cli_cmds/acp.py</code> 与 <code>openprogram/acp/server.py</code>；只做共享类型回归</td></tr>
     <tr><td><b>入站 webhook</b></td><td class="g">本轮不做</td><td class="m">依赖沙箱批次 I 与第 05B 步的固化 job capability</td></tr>
     <tr><td><b>客户端 SDK</b></td><td class="g">本轮不做</td><td class="m">需要一个稳定到可以承诺的工具面</td></tr>
   </table>
   </div>
 
+  <div class="note"><b>Reviewed implementation evidence</b>：实现基线 <code>885d8f15</code>；Task 8 最终 specification review
+    <b>PASS，0 remaining findings</b>，quality review <b>PASS，0 remaining findings</b>。Task 9 编辑前 release gate：MCP server focused
+    <code>195 passed</code>，共享 authority / permission / hard-constraint / questions / ACP / Runtime 回归 <code>198 passed</code>，
+    文档构建 <code>453 pages</code>，链接检查 <code>0 broken</code>。文档状态更新后使用同一组命令再次验证。</div>
+
+  <div class="note"><b>明确排除</b>：本次实现没有 HTTP、SSE、Streamable HTTP、OAuth、Web route、Web owner token 复用、
+    ACP transport/contract 扩张、专属客户端 SDK 或 MCP SDK 依赖范围扩张。对外协议面仍只有认证 stdio 与上述六个 wrapper。</div>
+
   <div class="note warn"><b>当前 Web 边界不是 MCP server 条目</b>：<code>OwnerAuthMiddleware</code> 已保护 singleton owner 的 HTTP、SSE 与 WebSocket，
-    但它不认证 external MCP client、不执行 tool whitelist，也不分配这里定义的低权限 scope。MCP server 必须另外实现这些控制，不能复用 Web owner token。</div>
+    但它不认证 external MCP client、不执行 tool whitelist，也不分配这里定义的低权限 scope。独立 MCP server 已实现这些控制且不复用 Web owner token。</div>
 
 </div>
 </body>
