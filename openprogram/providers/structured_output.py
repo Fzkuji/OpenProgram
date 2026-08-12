@@ -10,10 +10,33 @@ from typing import Any, Literal
 from urllib.parse import unquote, urldefrag, urljoin
 
 from jsonschema import SchemaError, validators
+from referencing import Registry
+from referencing.exceptions import NoSuchResource, Unresolvable
 
 
 _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]{0,63}$")
 HIDDEN_SUBMIT_TOOL_NAME = "__openprogram_submit_json"
+_SCHEMA_MAX_BYTES = 1_048_576
+_SCHEMA_MAX_NODES = 4_096
+_SCHEMA_MAX_EDGES = 8_192
+_SCHEMA_MAX_DEPTH = 100
+_REFERENCE_KEYS = ("$ref", "$dynamicRef", "$recursiveRef")
+_SCHEMA_MAP_KEYWORDS = frozenset({
+    "$defs", "definitions", "dependencies", "properties", "patternProperties",
+    "dependentSchemas",
+})
+_SCHEMA_SINGLE_KEYWORDS = frozenset({
+    "additionalItems", "additionalProperties", "contains", "contentSchema", "else", "extends",
+    "if", "items", "not", "propertyNames", "then", "unevaluatedItems",
+    "unevaluatedProperties",
+})
+_SCHEMA_LIST_KEYWORDS = frozenset({
+    "allOf", "anyOf", "extends", "items", "oneOf", "prefixItems",
+})
+_SAME_INSTANCE_KEYWORDS = frozenset({
+    "allOf", "anyOf", "dependentSchemas", "dependencies", "else", "extends",
+    "if", "not", "oneOf", "then",
+})
 
 
 @dataclass(frozen=True)
@@ -78,12 +101,14 @@ def normalize_response_format(value: dict[str, Any] | JsonSchemaOutput) -> JsonS
         schema_candidate = value.get("schema") if value.get("type") == "json_schema" else value
     if isinstance(schema_candidate, (dict, list)) and _schema_exceeds_depth_limit(
         schema_candidate,
-        _GOOGLE_SCHEMA_MAX_DEPTH,
+        min(_SCHEMA_MAX_DEPTH, _GOOGLE_SCHEMA_MAX_DEPTH),
     ):
         raise StructuredOutputSchemaError(
             "JSON Schema exceeds depth limit",
             code="invalid_schema",
         )
+    if isinstance(schema_candidate, dict):
+        _preflight_schema(schema_candidate)
 
     if isinstance(value, JsonSchemaOutput):
         output = JsonSchemaOutput(**{**value.__dict__, "schema": copy.deepcopy(value.schema)})
@@ -163,15 +188,27 @@ def parse_and_validate_json(raw: str, output: JsonSchemaOutput) -> Any:
             "Structured output is not valid JSON", code="invalid_json"
         ) from exc
 
-    validator = validators.validator_for(output.schema)(output.schema)
-    errors = sorted(
-        validator.iter_errors(value),
-        key=lambda error: (
-            tuple(str(part) for part in error.absolute_path),
-            tuple(str(part) for part in error.absolute_schema_path),
-            error.message,
-        ),
+    def reject_external_resource(uri: str):
+        raise NoSuchResource(ref=uri)
+
+    validator = validators.validator_for(output.schema)(
+        output.schema,
+        registry=Registry(retrieve=reject_external_resource),
     )
+    try:
+        errors = sorted(
+            validator.iter_errors(value),
+            key=lambda error: (
+                tuple(str(part) for part in error.absolute_path),
+                tuple(str(part) for part in error.absolute_schema_path),
+                error.message,
+            ),
+        )
+    except (RecursionError, Unresolvable) as exc:
+        raise StructuredOutputSchemaError(
+            "JSON Schema reference cannot be evaluated safely",
+            code="invalid_schema",
+        ) from exc
     if errors:
         issues = [
             {
@@ -191,6 +228,181 @@ def parse_and_validate_json(raw: str, output: JsonSchemaOutput) -> Any:
             issues=issues,
         )
     return value
+
+
+def _preflight_schema(schema: dict[str, Any]) -> None:
+    try:
+        encoded = json.dumps(
+            schema,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise StructuredOutputSchemaError(
+            "JSON Schema must be JSON-serializable",
+            code="invalid_schema",
+        ) from exc
+    if len(encoded) > _SCHEMA_MAX_BYTES:
+        raise StructuredOutputSchemaError(
+            "JSON Schema exceeds byte limit",
+            code="invalid_schema",
+        )
+
+    nodes = 0
+    edges = 0
+    pending: list[tuple[Any, int]] = [(schema, 0)]
+    while pending:
+        current, depth = pending.pop()
+        if depth > _SCHEMA_MAX_DEPTH:
+            raise StructuredOutputSchemaError(
+                "JSON Schema exceeds depth limit",
+                code="invalid_schema",
+            )
+        if not isinstance(current, (dict, list)):
+            continue
+        nodes += 1
+        if nodes > _SCHEMA_MAX_NODES:
+            raise StructuredOutputSchemaError(
+                "JSON Schema exceeds node limit",
+                code="invalid_schema",
+            )
+        children = current.values() if isinstance(current, dict) else current
+        for child in children:
+            edges += 1
+            if edges > _SCHEMA_MAX_EDGES:
+                raise StructuredOutputSchemaError(
+                    "JSON Schema exceeds edge limit",
+                    code="invalid_schema",
+                )
+            if isinstance(child, (dict, list)):
+                pending.append((child, depth + 1))
+
+    _preflight_references(schema)
+
+
+def _schema_children(node: dict[str, Any], path: tuple[Any, ...]):
+    for keyword in _SCHEMA_MAP_KEYWORDS:
+        children = node.get(keyword)
+        if isinstance(children, dict):
+            for name, child in children.items():
+                if isinstance(child, dict):
+                    yield child, (*path, keyword, name)
+    for keyword in _SCHEMA_SINGLE_KEYWORDS:
+        child = node.get(keyword)
+        if isinstance(child, dict):
+            yield child, (*path, keyword)
+    for keyword in _SCHEMA_LIST_KEYWORDS:
+        children = node.get(keyword)
+        if isinstance(children, list):
+            for index, child in enumerate(children):
+                if isinstance(child, dict):
+                    yield child, (*path, keyword, index)
+
+
+def _preflight_references(schema: dict[str, Any]) -> None:
+    all_values: dict[str, Any] = {}
+    pending_values: list[tuple[Any, tuple[Any, ...]]] = [(schema, ())]
+    while pending_values:
+        value, path = pending_values.pop()
+        all_values[_pointer(path)] = value
+        if isinstance(value, dict):
+            pending_values.extend((child, (*path, key)) for key, child in value.items())
+        elif isinstance(value, list):
+            pending_values.extend((child, (*path, index)) for index, child in enumerate(value))
+
+    schema_nodes: dict[str, dict[str, Any]] = {}
+    node_bases: dict[str, str] = {}
+    resource_roots: dict[str, str] = {}
+    anchors: dict[tuple[str, str], str] = {}
+    evaluation_edges: dict[str, list[str]] = {}
+    pending_schemas: list[tuple[dict[str, Any], tuple[Any, ...], str, str]] = [
+        (schema, (), "", "")
+    ]
+    while pending_schemas:
+        node, path, inherited_base, inherited_resource_root = pending_schemas.pop()
+        pointer = _pointer(path)
+        if pointer in schema_nodes:
+            continue
+        base = inherited_base
+        resource_root = inherited_resource_root
+        identifier = node.get("$id")
+        if isinstance(identifier, str):
+            base = urljoin(inherited_base, identifier)
+            resource_uri, _fragment = urldefrag(base)
+            resource_roots.setdefault(resource_uri, pointer)
+            resource_root = pointer
+        else:
+            resource_uri, _fragment = urldefrag(base)
+            resource_roots.setdefault(resource_uri, resource_root)
+        schema_nodes[pointer] = node
+        node_bases[pointer] = base
+        for keyword in ("$anchor", "$dynamicAnchor"):
+            anchor = node.get(keyword)
+            if isinstance(anchor, str):
+                anchors.setdefault((resource_uri, anchor), pointer)
+        children = list(_schema_children(node, path))
+        for child, child_path in children:
+            if child_path[len(path)] in _SAME_INSTANCE_KEYWORDS:
+                evaluation_edges.setdefault(pointer, []).append(_pointer(child_path))
+            pending_schemas.append((child, child_path, base, resource_root))
+
+    pending = list(schema_nodes)
+    visited: set[str] = set()
+    while pending:
+        pointer = pending.pop()
+        if pointer in visited:
+            continue
+        visited.add(pointer)
+        node = schema_nodes[pointer]
+        for keyword in _REFERENCE_KEYS:
+            reference = node.get(keyword)
+            if not isinstance(reference, str):
+                continue
+            resolved = urljoin(node_bases.get(pointer, ""), reference)
+            resource_uri, encoded_fragment = urldefrag(resolved)
+            resource_root = resource_roots.get(resource_uri)
+            if resource_root is None:
+                raise StructuredOutputSchemaError(
+                    "JSON Schema remote references are not allowed",
+                    code="invalid_schema",
+                )
+            fragment = unquote(encoded_fragment)
+            if fragment.startswith("/"):
+                target = f"{resource_root}{fragment}"
+            elif not fragment:
+                target = resource_root
+            else:
+                target = anchors.get((resource_uri, fragment))
+            if target is None:
+                continue
+            target_value = all_values.get(target)
+            if not isinstance(target_value, dict):
+                continue
+            evaluation_edges.setdefault(pointer, []).append(target)
+            if target not in schema_nodes:
+                schema_nodes[target] = target_value
+                pending.append(target)
+
+    visiting: set[str] = set()
+    visited.clear()
+
+    def visit(pointer: str) -> None:
+        if pointer in visiting:
+            raise StructuredOutputSchemaError(
+                "JSON Schema contains a cyclic reference chain",
+                code="invalid_schema",
+            )
+        if pointer in visited:
+            return
+        visiting.add(pointer)
+        for target in evaluation_edges.get(pointer, ()):
+            visit(target)
+        visiting.remove(pointer)
+        visited.add(pointer)
+
+    for pointer in evaluation_edges:
+        visit(pointer)
 
 
 def build_repair_prompt(error: StructuredOutputValidationError) -> str:

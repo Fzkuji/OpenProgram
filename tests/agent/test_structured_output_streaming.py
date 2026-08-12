@@ -189,6 +189,72 @@ def test_retry_disabled_raises_after_one_provider_call():
     assert exc.value.code == "validation_failed"
 
 
+def test_provider_eof_without_raw_terminal_does_not_synthesize_success():
+    message = _message('{"answer":7}')
+
+    def eof_stream(model, context, options):
+        async def events():
+            empty = message.model_copy(update={"content": [TextContent(text="")]})
+            yield EventStart(partial=empty)
+            yield EventTextStart(content_index=0, partial=empty)
+            yield EventTextDelta(
+                content_index=0,
+                delta='{"answer":7}',
+                partial=message,
+            )
+            yield EventTextEnd(
+                content_index=0,
+                content='{"answer":7}',
+                partial=message,
+            )
+
+        return events()
+
+    async def collect():
+        stream = agent_loop(
+            [UserMessage(content="answer", timestamp=1)],
+            AgentContext(tools=[]),
+            _config(),
+            stream_fn=eof_stream,
+        )
+        seen = []
+        with pytest.raises(StructuredOutputGenerationError) as exc:
+            async for event in stream:
+                seen.append(event)
+        assert exc.value.code == "incomplete"
+        return seen
+
+    events = asyncio.run(collect())
+    assert not any(
+        getattr(getattr(event, "assistant_message_event", None), "type", None)
+        in {"structured_output_end", "done"}
+        for event in events
+    )
+
+
+def test_provider_empty_eof_is_typed_incomplete():
+    def eof_stream(model, context, options):
+        async def events():
+            if False:
+                yield
+
+        return events()
+
+    async def collect():
+        stream = agent_loop(
+            [UserMessage(content="answer", timestamp=1)],
+            AgentContext(tools=[]),
+            _config(),
+            stream_fn=eof_stream,
+        )
+        with pytest.raises(StructuredOutputGenerationError) as exc:
+            async for _ in stream:
+                pass
+        assert exc.value.code == "incomplete"
+
+    asyncio.run(collect())
+
+
 def test_retry_event_and_prompt_do_not_copy_invalid_candidate_value():
     secret = "candidate-secret-value"
     _, events, contexts = asyncio.run(

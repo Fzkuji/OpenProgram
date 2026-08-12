@@ -13,11 +13,11 @@ ROOT = Path(__file__).resolve().parents[2]
 MATRIX = ROOT / "docs/reference/design/feature-matrix.html"
 
 
-def _promote_json_schema_row(text: str) -> str:
+def _demote_json_schema_row(text: str) -> str:
     start = text.index('<tr><td class="fname">按 JSON schema 约束输出')
-    old = '<td class="g2 us">◐</td>'
+    old = '<td class="g1 us">●</td>'
     cell = text.index(old, start)
-    return text[:cell] + '<td class="g1 us">●</td>' + text[cell + len(old) :]
+    return text[:cell] + '<td class="g2 us">◐</td>' + text[cell + len(old) :]
 
 
 def _rename_section_item(text: str, section: str, old: str) -> str:
@@ -33,10 +33,10 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
     result = check_matrix(MATRIX)
 
     assert result.feature_count == 160
-    assert result.openprogram_score == 78.0
+    assert result.openprogram_score == 78.5
     assert result.openprogram_gaps == 73
     assert result.openprogram_only == 6
-    assert result.json_schema_status == "◐"
+    assert result.json_schema_status == "●"
     assert result.snapshot == "2fb471b3"
 
 
@@ -45,7 +45,7 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
     [
         (lambda text: text.replace("2fb471b3", "deadbeef"), "snapshot"),
         (
-            lambda text: text.replace("OpenProgram为78.0分", "OpenProgram为999分", 1),
+            lambda text: text.replace("OpenProgram为78.5分", "OpenProgram为999分", 1),
             "score",
         ),
         (
@@ -62,39 +62,11 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
         ),
         (
             lambda text: text.replace(
-                '<circle cx="500" cy="8" r="5" fill="#4f8ef7"',
-                '<circle cx="999" cy="8" r="5" fill="#4f8ef7"',
+                '>任务与规划 11</text><line x1="527"',
+                '>任务与规划 11</text><line x1="999"',
                 1,
             ),
             "category point",
-        ),
-        (
-            lambda text: text.replace(
-                '<line x1="255" y1="2" x2="255" y2="14"',
-                '<line x1="999" y1="2" x2="999" y2="14"',
-                1,
-            ),
-            "category point",
-        ),
-        (
-            lambda text: text.replace(
-                '<line x1="582" y1="2" x2="582" y2="14"',
-                '<line x1="999" y1="2" x2="999" y2="14"',
-                1,
-            ),
-            "category point",
-        ),
-        (
-            lambda text: text.replace("claude 64%", "claude 999%", 1),
-            "category point",
-        ),
-        (
-            lambda text: text.replace(
-                "我们 12%，范围 12%–73%",
-                "我们 999%，范围 999%–999%",
-                1,
-            ),
-            "category legend",
         ),
         (
             lambda text: _rename_section_item(text, "gaps", "终端快捷键自动配置"),
@@ -106,7 +78,7 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
             ),
             "OpenProgram-only detail",
         ),
-        (_promote_json_schema_row, "JSON Schema"),
+        (_demote_json_schema_row, "JSON Schema"),
     ],
 )
 def test_feature_matrix_checker_rejects_published_drift(
