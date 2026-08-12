@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenProgram · Provider metadata 加载诊断</title>
+<style>
+body{margin:0;background:#101319;color:#e6e9ef;font:15px/1.65 system-ui,-apple-system,"PingFang SC",sans-serif}main{max-width:900px;margin:auto;padding:42px 26px 80px}h1{font-size:29px}h2{margin-top:38px;border-top:1px solid #303641;padding-top:22px}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}code{background:#191e27;padding:2px 5px;border-radius:4px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #303641;padding:9px;text-align:left;vertical-align:top}th{background:#1a202a}pre{background:#171c24;border:1px solid #303641;padding:14px;overflow:auto}.note{border-left:4px solid #6ba7ff;background:#172131;padding:12px 15px}.muted{color:#a7afbc}
+</style>
+</head>
+<body><main>
+<p class="muted">OpenProgram · Provider reliability</p>
+<h1>Provider metadata 加载诊断</h1>
+<p>目标是在 provider 列表退化为空或缺少 endpoint 时，区分正常缺失与本地配置损坏。该改动只增加本地 warning，不改变 fallback、返回值或 provider 选择。</p>
+
+<h2>边界</h2>
+<table>
+<thead><tr><th>输入状态</th><th>返回行为</th><th>日志行为</th></tr></thead>
+<tbody>
+<tr><td><code>provider.json</code> 不存在</td><td>保持当前不存在/alias fallback</td><td>不记录；部分 provider 本来就没有独立目录</td></tr>
+<tr><td><code>provider.json</code> 无法读取、JSON 损坏或顶层不是 object</td><td>返回空 endpoint，调用方继续现有 fallback</td><td>warning：source、path、error_type；不记录文件内容</td></tr>
+<tr><td><code>models_dev.json</code> 不存在</td><td>返回空 cache</td><td>不记录；首次运行和未成功获取过均正常</td></tr>
+<tr><td><code>models_dev.json</code> 无法读取、JSON 损坏或顶层不是 object</td><td>返回空 cache，保留短失败 TTL</td><td>warning：source、path、error_type；不记录文件内容</td></tr>
+<tr><td>models.dev 网络请求失败</td><td>继续尝试磁盘 cache</td><td>本任务不增加网络 warning，避免重复记录预期离线状态</td></tr>
+</tbody>
+</table>
+
+<h2>实现位置</h2>
+<p><code>openprogram/providers/metadata.py</code> 的共享 <code>provider.json</code> 读取边界负责结构验证和 warning；<code>_endpoints()</code> 与 <code>shipped_provider_ids()</code> 复用它，避免两个 catch 分支产生不同诊断。<code>openprogram/providers/sources/models_dev.py::_read_disk_cache()</code> 负责 cache 诊断。</p>
+<pre>warning("provider metadata load failed", extra={
+  "source": "provider_json" | "models_dev_cache",
+  "path": str(path),
+  "error_type": type(error).__name__,
+})</pre>
+<div class="note">日志不得包含 JSON 内容、provider credential、HTTP response body 或异常 message。损坏文件继续留在原路径，便于用户检查；本任务不删除、重写或隔离文件。</div>
+
+<h2>验收</h2>
+<ul>
+<li>损坏 JSON、不可读文件和错误顶层类型各返回既有空值，并产生一次 warning。</li>
+<li>不存在文件不产生 warning。</li>
+<li>warning 只包含稳定事件名、source、path、error_type 和 traceback，不包含文件内容。</li>
+<li>正常 provider endpoint、shipped provider 枚举和 models.dev cache 行为保持。</li>
+</ul>
+</main></body></html>
