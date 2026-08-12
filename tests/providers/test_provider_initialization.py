@@ -286,6 +286,56 @@ def test_auth_adapter_registration_failure_rolls_back_and_retries(
     assert attempts == 2
 
 
+def test_concurrent_builtin_and_auth_registration_do_not_deadlock(
+    tmp_path: Path,
+) -> None:
+    result = _run_python(
+        """
+import json
+import threading
+import time
+from openprogram.auth import credential_provider
+from openprogram.providers import register
+
+credential_provider._provider_configs.clear()
+credential_provider._PROVIDER_PLUGINS_LOADED = False
+register._registered = False
+entered = threading.Event()
+release = threading.Event()
+
+def load_builtins():
+    entered.set()
+    release.wait(2)
+    return {}
+
+def register_auth():
+    with register._lock:
+        credential_provider.register_provider_config(
+            credential_provider.ProviderAuthConfig(provider_id="target")
+        )
+
+register._load_builtin_providers = load_builtins
+register.register_auth_adapters = register_auth
+builtins = threading.Thread(target=register.register_builtins, daemon=True)
+auth = threading.Thread(
+    target=lambda: credential_provider.get_provider_config("target"), daemon=True
+)
+builtins.start()
+assert entered.wait(2)
+auth.start()
+time.sleep(0.05)
+release.set()
+builtins.join(1)
+auth.join(1)
+print(json.dumps({"builtins": builtins.is_alive(), "auth": auth.is_alive()}))
+""",
+        home=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"builtins": False, "auth": False}
+
+
 def test_builtin_registration_can_retry_after_loading_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -94,11 +94,13 @@ def register_auth_adapters() -> None:
 def register_builtins() -> None:
     """Register every built-in provider once; retry cleanly after failure."""
     global _registered
+    from openprogram.auth.credential_provider import _load_provider_plugins
+
+    _load_provider_plugins()
     with _lock:
         if _registered:
             return
         providers = _load_builtin_providers()
-        register_auth_adapters()
         register_api_providers(providers)
         _registered = True
 

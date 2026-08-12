@@ -95,22 +95,27 @@ class ProviderAuthConfig:
     fallback_chain: list[tuple[str, str]] = field(default_factory=list)
 
 
-# Process-wide provider config registry. Populated at provider-plugin
-# import time via :func:`register_provider_config`. One entry per
+# Process-wide provider config registry. Populated by explicit adapter
+# registration via :func:`register_provider_config`. One entry per
 # ``provider_id`` — adding a second call for the same id replaces the
 # first (last registration wins; useful for tests).
 _provider_configs: dict[str, ProviderAuthConfig] = {}
 
-# Have we lazily triggered the providers package to populate
-# ``_provider_configs``? Set once so we only pay the import cost on
-# the first ``get_provider_config`` miss per process.
+# Have we lazily registered the built-in auth adapters? Set once so we
+# only pay that cost on the first ``get_provider_config`` miss per process.
 _PROVIDER_PLUGINS_LOADED = False
-_provider_plugins_lock = threading.RLock()
+_provider_plugins_condition = threading.Condition(threading.RLock())
+_provider_plugins_loading_thread: int | None = None
+_provider_configs_staging: dict[str, ProviderAuthConfig] | None = None
 
 
 def register_provider_config(cfg: ProviderAuthConfig) -> None:
-    with _provider_plugins_lock:
-        _provider_configs[cfg.provider_id] = cfg
+    with _provider_plugins_condition:
+        if _provider_plugins_loading_thread == threading.get_ident():
+            assert _provider_configs_staging is not None
+            _provider_configs_staging[cfg.provider_id] = cfg
+        else:
+            _provider_configs[cfg.provider_id] = cfg
 
 
 def _load_provider_plugins() -> None:
@@ -125,25 +130,57 @@ def _load_provider_plugins() -> None:
     short-circuits on the second visit.
     """
     global _PROVIDER_PLUGINS_LOADED
-    with _provider_plugins_lock:
+    global _provider_configs_staging, _provider_plugins_loading_thread
+    ident = threading.get_ident()
+    with _provider_plugins_condition:
+        while _provider_plugins_loading_thread is not None:
+            if _provider_plugins_loading_thread == ident:
+                return
+            _provider_plugins_condition.wait()
         if _PROVIDER_PLUGINS_LOADED:
             return
-        previous = dict(_provider_configs)
-        _PROVIDER_PLUGINS_LOADED = True  # Prevent same-thread re-entry.
-        try:
-            from openprogram.providers.register import register_auth_adapters
+        _provider_plugins_loading_thread = ident
+        _provider_configs_staging = {}
 
-            register_auth_adapters()
-        except BaseException:
-            _provider_configs.clear()
-            _provider_configs.update(previous)
+    try:
+        from openprogram.providers.register import register_auth_adapters
+
+        register_auth_adapters()
+    except BaseException:
+        with _provider_plugins_condition:
             _PROVIDER_PLUGINS_LOADED = False
-            raise
+            _provider_configs_staging = None
+            _provider_plugins_loading_thread = None
+            _provider_plugins_condition.notify_all()
+        raise
+
+    with _provider_plugins_condition:
+        assert _provider_configs_staging is not None
+        _provider_configs.update(_provider_configs_staging)
+        _PROVIDER_PLUGINS_LOADED = True
+        _provider_configs_staging = None
+        _provider_plugins_loading_thread = None
+        _provider_plugins_condition.notify_all()
+
+
+def _get_registered_provider_config(provider_id: str) -> ProviderAuthConfig | None:
+    ident = threading.get_ident()
+    with _provider_plugins_condition:
+        while (
+            _provider_plugins_loading_thread is not None
+            and _provider_plugins_loading_thread != ident
+        ):
+            _provider_plugins_condition.wait()
+        if _provider_plugins_loading_thread == ident:
+            assert _provider_configs_staging is not None
+            cfg = _provider_configs_staging.get(provider_id)
+            if cfg is not None:
+                return cfg
+        return _provider_configs.get(provider_id)
 
 
 def get_provider_config(provider_id: str) -> ProviderAuthConfig:
-    with _provider_plugins_lock:
-        cfg = _provider_configs.get(provider_id)
+    cfg = _get_registered_provider_config(provider_id)
     if cfg is not None:
         return cfg
     # Miss — give provider plugins a chance to register before we
@@ -153,8 +190,7 @@ def get_provider_config(provider_id: str) -> ProviderAuthConfig:
     # "no_refresh_registered" for OAuth credentials whose refresh
     # callbacks are sitting in ``providers/<x>/auth_adapter.py``.
     _load_provider_plugins()
-    with _provider_plugins_lock:
-        cfg = _provider_configs.get(provider_id)
+    cfg = _get_registered_provider_config(provider_id)
     if cfg is not None:
         return cfg
     # A default config is usable for API-key-only providers — no
