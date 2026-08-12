@@ -121,6 +121,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "build>=1.2",
+    # Wheel-content tests invoke the active interpreter's pip module to
+    # install the built artifact into an isolated target directory.
+    "pip>=24",
     # test_wheel_contains_both_runtime_shims builds with --no-isolation, so
     # the backend must be importable in the dev env (not bundled on 3.12+)
     "setuptools>=68,<75",
@@ -129,6 +132,8 @@ dev = [
     # full-suite runs go 126s -> 27s with -n auto; keep serial default so
     # single-file debugging stays overhead-free
     "pytest-xdist>=3.5",
+    "cryptography>=42",
+    "trio>=0.30",
     "ruff>=0.16",
 ]
 # The LLM SDKs (anthropic / openai / google-genai) and the web stack are

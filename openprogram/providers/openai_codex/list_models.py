@@ -91,8 +91,6 @@ def fetch(provider_id: str, timeout: float) -> Any:
 
     Returns ``{"error": ...}`` when unreachable / unauthorized so the
     dispatcher leaves the saved model list untouched."""
-    import httpx
-
     from .oauth import _get_account_id_from_jwt
     from .openai_codex import _resolve_codex_bearer_token
     from .runtime import _CODEX_CLIENT_VERSION
@@ -106,22 +104,25 @@ def fetch(provider_id: str, timeout: float) -> Any:
     account_id = _get_account_id_from_jwt(token) or ""
 
     try:
-        resp = httpx.get(
-            _codex_list_url(_CODEX_CLIENT_VERSION),
-            headers={
-                "Authorization": f"Bearer {token}",
-                "chatgpt-account-id": account_id,
-                "originator": "codex_cli_rs",
-                "version": _CODEX_CLIENT_VERSION,
-                "Content-Type": "application/json",
-            },
-            timeout=timeout,
-        )
+        from openprogram.security.safe_http import safe_client
+
+        with safe_client("provider.fixed_api") as client:
+            resp = client.get(
+                _codex_list_url(_CODEX_CLIENT_VERSION),
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "chatgpt-account-id": account_id,
+                    "originator": "codex_cli_rs",
+                    "version": _CODEX_CLIENT_VERSION,
+                    "Content-Type": "application/json",
+                },
+                timeout=timeout,
+            )
         resp.raise_for_status()
         payload = resp.json()
     except Exception as exc:
         return {"error": (
-            f"could not reach the Codex models endpoint ({exc}) — your existing "
+            f"could not reach the Codex models endpoint ({type(exc).__name__}) — your existing "
             "Codex model list was kept. Try Fetch again when online."
         )}
 

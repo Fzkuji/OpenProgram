@@ -25,6 +25,17 @@ from openprogram.providers import storage as st
 from openprogram.providers.anthropic import list_models as A
 
 
+class _ClientContext:
+    def __init__(self, client):
+        self.client = client
+
+    def __enter__(self):
+        return self.client
+
+    def __exit__(self, *_args):
+        return False
+
+
 # api-stamp consistency (drift guard)
 
 @pytest.mark.parametrize("pid", ["minimax", "minimax-cn"])
@@ -121,8 +132,16 @@ def test_anthropic_fetcher_uses_provider_base_url(monkeypatch):
 
     monkeypatch.setattr(ek, "resolve_api_key_with_auth_store", lambda pid: "k")
     monkeypatch.setattr(st, "_resolve_base_url", lambda pid: "https://api.minimaxi.com/anthropic")
-    import httpx
-    monkeypatch.setattr(httpx, "get", fake_get)
+    from openprogram.security import safe_http
+
+    def configured(consumer, origin, *, owner_exception):
+        assert consumer == "provider.configured_api"
+        assert origin == "https://api.minimaxi.com"
+        assert owner_exception.consumer == consumer
+        assert owner_exception.origin == origin
+        return _ClientContext(type("Client", (), {"get": staticmethod(fake_get)})())
+
+    monkeypatch.setattr(safe_http, "configured_safe_client", configured)
 
     out = A.fetch("minimax-cn", 5.0)
     assert isinstance(out, list) and out[0]["id"] == "MiniMax-M3"
@@ -190,8 +209,18 @@ def _stub_codex_endpoint(monkeypatch, payload):
         def json(self): return payload
 
     seen = {}
-    import httpx
-    monkeypatch.setattr(httpx, "get", lambda url, **kw: seen.update(url=url, headers=kw.get("headers")) or _Resp())
+    from openprogram.security import safe_http
+
+    class Client:
+        def get(self, url, **kw):
+            seen.update(url=url, headers=kw.get("headers"))
+            return _Resp()
+
+    def fixed(consumer):
+        assert consumer == "provider.fixed_api"
+        return _ClientContext(Client())
+
+    monkeypatch.setattr(safe_http, "safe_client", fixed)
     return C, seen
 
 
@@ -259,8 +288,18 @@ def test_anthropic_fetcher_native_still_uses_anthropic_host(monkeypatch):
         def json(self): return {"data": []}
 
     monkeypatch.setattr(ek, "resolve_api_key_with_auth_store", lambda pid: "k")
-    import httpx
-    monkeypatch.setattr(httpx, "get", lambda url, **kw: seen.update(url=url) or _Resp())
+    from openprogram.security import safe_http
+
+    class Client:
+        def get(self, url, **_kw):
+            seen["url"] = url
+            return _Resp()
+
+    def fixed(consumer):
+        assert consumer == "provider.fixed_api"
+        return _ClientContext(Client())
+
+    monkeypatch.setattr(safe_http, "safe_client", fixed)
 
     A.fetch("anthropic", 5.0)
     assert seen["url"] == "https://api.anthropic.com/v1/models"

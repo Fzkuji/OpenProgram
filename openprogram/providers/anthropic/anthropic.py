@@ -291,7 +291,7 @@ def _build_client(
             base_url=base_url,
             default_headers=default_headers,
             max_retries=sdk_max_retries,
-            http_client=_shared_http_client(),
+            http_client=_shared_http_client(base_url),
         )
         # CRITICAL: even with api_key=None the SDK falls back to the
         # ANTHROPIC_API_KEY env var and sends it as x-api-key ALONGSIDE our
@@ -315,13 +315,13 @@ def _build_client(
             base_url=base_url,
             default_headers=default_headers,
             max_retries=sdk_max_retries,
-            http_client=_shared_http_client(),
+            http_client=_shared_http_client(base_url),
         )
 
     return client, is_oauth
 
 
-def _shared_http_client():
+def _shared_http_client(base_url: str | None = None):
     """A per-event-loop shared httpx client for the Anthropic SDK.
 
     Without this, ``AsyncAnthropic`` builds its OWN httpx client bound to
@@ -333,13 +333,21 @@ def _shared_http_client():
     and Anthropic 400ing it. ``get_shared_async_client`` caches per
     (name, loop), so the client's lifecycle matches the turn's loop exactly
     — the same fix that keeps openai-codex working under the worker.
-    Returns None on any failure so the SDK falls back to its own client.
+    Policy and construction failures propagate so the SDK cannot fall back to
+    its unmanaged default transport.
     """
-    try:
-        from openprogram.providers.utils.http_client import get_shared_async_client
-        return get_shared_async_client("anthropic")
-    except Exception:
-        return None
+    from openprogram.providers.utils.http_client import get_shared_async_client
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
+
+    configured_origin = normalize_origin(base_url or "https://api.anthropic.com")
+    return get_shared_async_client(
+        "anthropic",
+        consumer="provider.anthropic.sdk",
+        configured_origin=configured_origin,
+        owner_exception=OwnerURLException(
+            consumer="provider.anthropic.sdk", origin=configured_origin
+        ),
+    )
 
 
 def _convert_tool_result_block(tr_msg: ToolResultMessage, is_oauth: bool = False) -> dict[str, Any]:

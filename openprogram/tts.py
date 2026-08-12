@@ -119,30 +119,36 @@ def _openai_tts(text: str, cfg: dict[str, Any]) -> str | None:
     if not key:
         print("[tts] OPENAI_API_KEY missing — run `openprogram setup tts`.")
         return None
-    try:
-        import requests
-    except ImportError:
-        print("[tts] `requests` not installed; cannot reach OpenAI TTS.")
-        return None
-
     voice = cfg.get("voice") or "alloy"
     model = cfg.get("model") or "tts-1"
     url = cfg.get("base_url") or "https://api.openai.com/v1/audio/speech"
     try:
-        r = requests.post(
-            url,
-            headers={"Authorization": f"Bearer {key}",
-                     "Content-Type": "application/json"},
-            json={"model": model, "voice": voice, "input": text,
-                  "response_format": "mp3"},
-            timeout=30,
-        )
+        from openprogram.security.safe_http import configured_safe_client, safe_client
+        from openprogram.security.url_policy import OwnerURLException, normalize_origin
+
+        origin = normalize_origin(url)
+        if origin == "https://api.openai.com":
+            context = safe_client("tts.fixed_api")
+        else:
+            context = configured_safe_client(
+                "tts.configured_api",
+                url,
+                owner_exception=OwnerURLException(
+                    consumer="tts.configured_api", origin=origin
+                ),
+            )
+        with context as client:
+            r = client.post(
+                url,
+                headers={"Authorization": f"Bearer {key}"},
+                json={"model": model, "voice": voice, "input": text,
+                      "response_format": "mp3"},
+            )
     except Exception as e:
-        print(f"[tts] request failed: {e}")
+        print(f"[tts] request failed: {type(e).__name__}")
         return None
     if r.status_code != 200:
-        print(f"[tts] OpenAI returned {r.status_code}: "
-              f"{r.text[:200]}")
+        print(f"[tts] OpenAI returned {r.status_code}")
         return None
     fd, path = tempfile.mkstemp(prefix="op-tts-", suffix=".mp3")
     with os.fdopen(fd, "wb") as f:
@@ -161,38 +167,32 @@ def _elevenlabs_tts(text: str, cfg: dict[str, Any]) -> str | None:
     if not key:
         print("[tts] ELEVENLABS_API_KEY missing — run `openprogram setup tts`.")
         return None
-    try:
-        import requests
-    except ImportError:
-        print("[tts] `requests` not installed; cannot reach ElevenLabs.")
-        return None
-
     # "Rachel" is ElevenLabs' classic default voice; users override via
     # config if they want a different one.
     voice_id = cfg.get("voice") or "21m00Tcm4TlvDq8ikWAM"
     model_id = cfg.get("model_id") or "eleven_turbo_v2"
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
     try:
-        r = requests.post(
-            url,
-            headers={
-                "xi-api-key": key,
-                "Content-Type": "application/json",
-                "Accept": "audio/mpeg",
-            },
-            json={
-                "text": text,
-                "model_id": model_id,
-                "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
-            },
-            timeout=30,
-        )
+        from openprogram.security.safe_http import safe_client
+
+        with safe_client("tts.fixed_api") as client:
+            r = client.post(
+                url,
+                headers={"xi-api-key": key, "Accept": "audio/mpeg"},
+                json={
+                    "text": text,
+                    "model_id": model_id,
+                    "voice_settings": {
+                        "stability": 0.5,
+                        "similarity_boost": 0.75,
+                    },
+                },
+            )
     except Exception as e:
-        print(f"[tts] request failed: {e}")
+        print(f"[tts] request failed: {type(e).__name__}")
         return None
     if r.status_code != 200:
-        print(f"[tts] ElevenLabs returned {r.status_code}: "
-              f"{r.text[:200]}")
+        print(f"[tts] ElevenLabs returned {r.status_code}")
         return None
     fd, path = tempfile.mkstemp(prefix="op-tts-", suffix=".mp3")
     with os.fdopen(fd, "wb") as f:
@@ -206,6 +206,9 @@ def _edge_tts(text: str, cfg: dict[str, Any]) -> str | None:
     Free, no API key, uses MS's public voice WebSocket. Voices like
     ``en-US-AriaNeural`` / ``zh-CN-XiaoxiaoNeural``.
     """
+    from openprogram.security.safe_http import require_active_sdk_transport
+
+    require_active_sdk_transport("tts.edge_sdk", "https://speech.platform.bing.com")
     try:
         import edge_tts  # type: ignore
     except ImportError:

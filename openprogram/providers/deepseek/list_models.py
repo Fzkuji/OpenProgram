@@ -24,24 +24,34 @@ def fetch(provider_id: str, timeout: float) -> Any:
     from openprogram.providers.env_api_keys import resolve_provider_key
     from openprogram.providers.env_api_keys import resolve_api_key_with_auth_store
     from openprogram.providers.storage import _resolve_base_url
+    from openprogram.security.safe_http import configured_safe_client
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
 
     api_key = resolve_api_key_with_auth_store(provider_id) or resolve_provider_key(provider_id)
     if not api_key:
         return {"error": "No API key set (DEEPSEEK_API_KEY)"}
 
     base = (_resolve_base_url(provider_id) or "https://api.deepseek.com/v1").rstrip("/")
+    origin = normalize_origin(base)
     try:
-        r = httpx.get(
-            base + "/models",
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=timeout,
-        )
+        with configured_safe_client(
+            "provider.configured_api",
+            origin,
+            owner_exception=OwnerURLException(
+                consumer="provider.configured_api", origin=origin
+            ),
+        ) as client:
+            r = client.get(
+                base + "/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=timeout,
+            )
         r.raise_for_status()
         data = r.json()
     except httpx.HTTPStatusError as e:
-        return {"error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+        return {"error": f"HTTP {e.response.status_code}"}
     except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+        return {"error": type(e).__name__}
 
     out: list[dict[str, Any]] = []
     for raw in (data.get("data") or data.get("models") or []):

@@ -95,7 +95,6 @@ def backend_accepts_owner_challenge(
     import json
     import secrets
     import urllib.parse
-    import urllib.request
 
     from openprogram.backend_endpoint import (
         OwnerAuthError,
@@ -104,6 +103,8 @@ def backend_accepts_owner_challenge(
         read_web_token,
         select_request_origin,
     )
+    from openprogram.security.safe_http import configured_safe_client
+    from openprogram.security.url_policy import OwnerURLException
 
     try:
         active_access = read_active_web_access()
@@ -123,13 +124,21 @@ def backend_accepts_owner_challenge(
     # Dial the Origin itself — no Host rewrite. The listener sees the same
     # authority the caller will later use, so a proof here is a proof for
     # that exact URL, TLS and all.
-    request = urllib.request.Request(
-        f"{request_origin}/api/auth/challenge?{urllib.parse.urlencode(query)}",
-    )
     try:
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        with opener.open(request, timeout=1.0) as response:
-            payload = json.loads(response.read(4096))
+        with configured_safe_client(
+            "runtime.local_probe",
+            request_origin,
+            owner_exception=OwnerURLException(
+                consumer="runtime.local_probe", origin=request_origin
+            ),
+        ) as client:
+            response = client.get(
+                f"{request_origin}/api/auth/challenge",
+                params=query,
+                timeout=1.0,
+            )
+        response.raise_for_status()
+        payload = response.json()
         expected_proof = create_owner_challenge_proof(
             token=token,
             nonce=nonce,
@@ -148,12 +157,21 @@ def frontend_is_ours(port: int) -> Optional[bool]:
     ``x-powered-by: Next.js``); False → something else; None →
     inconclusive.
     """
-    import urllib.request
+    from openprogram.security.safe_http import configured_safe_client
+    from openprogram.security.url_policy import OwnerURLException
+
+    origin = f"http://127.0.0.1:{port}"
     try:
-        req = urllib.request.Request(f"http://127.0.0.1:{port}/", method="GET")
-        with urllib.request.urlopen(req, timeout=1.0) as resp:
-            powered = (resp.headers.get("x-powered-by") or "").lower()
-            body = resp.read(4096).decode("utf-8", "replace")
+        with configured_safe_client(
+            "runtime.local_probe",
+            origin,
+            owner_exception=OwnerURLException(
+                consumer="runtime.local_probe", origin=origin
+            ),
+        ) as client:
+            resp = client.get(origin + "/", timeout=1.0)
+        powered = (resp.headers.get("x-powered-by") or "").lower()
+        body = resp.text[:4096]
     except Exception:
         return None
     if "next" in powered or "/_next/" in body or "__next" in body:

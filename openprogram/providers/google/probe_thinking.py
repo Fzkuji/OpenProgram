@@ -13,7 +13,14 @@ def probe() -> dict[str, dict]:
     key = resolve_api_key_sync("google")
     if not key:
         return {}
-    r = httpx.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={key}", timeout=15)
+    from openprogram.security.safe_http import safe_client
+
+    with safe_client("provider.fixed_api") as client:
+        r = client.get(
+            "https://generativelanguage.googleapis.com/v1beta/models",
+            params={"key": key},
+            timeout=15,
+        )
     if r.status_code != 200:
         return {}
     results = {}

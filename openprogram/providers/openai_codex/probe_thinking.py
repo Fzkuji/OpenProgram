@@ -9,18 +9,19 @@ from __future__ import annotations
 
 
 def probe() -> dict[str, dict]:
-    import httpx
     from openprogram.providers.env_api_keys import resolve_provider_key
+    from openprogram.security.safe_http import safe_client
 
     key = resolve_provider_key("openai-codex")
     if not key:
         return {}
     try:
-        r = httpx.get(
-            "https://api.openai.com/v1/models",
-            headers={"Authorization": f"Bearer {key}"},
-            timeout=15,
-        )
+        with safe_client("provider.fixed_api") as client:
+            r = client.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=15,
+            )
         if r.status_code != 200:
             return {}
         results = {}

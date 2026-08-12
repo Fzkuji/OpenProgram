@@ -12,8 +12,8 @@ from __future__ import annotations
 
 
 def probe() -> dict[str, dict]:
-    import httpx
     from openprogram.auth.resolver import resolve_api_key_sync
+    from openprogram.security.safe_http import safe_client
 
     key = resolve_api_key_sync("anthropic")
     if not key:
@@ -29,16 +29,25 @@ def probe() -> dict[str, dict]:
     else:
         headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
 
-    r = httpx.get("https://api.anthropic.com/v1/models", headers=headers, timeout=15)
-    r.raise_for_status()
+    with safe_client("provider.fixed_api") as client:
+        r = client.get(
+            "https://api.anthropic.com/v1/models", headers=headers, timeout=15
+        )
+        r.raise_for_status()
 
-    results = {}
-    for m in r.json().get("data", []):
-        mid = m.get("id", "")
-        if not mid.startswith("claude"):
-            continue
-        try:
-            det = httpx.get(f"https://api.anthropic.com/v1/models/{mid}", headers=headers, timeout=10)
+        results = {}
+        for m in r.json().get("data", []):
+            mid = m.get("id", "")
+            if not mid.startswith("claude"):
+                continue
+            try:
+                det = client.get(
+                    f"https://api.anthropic.com/v1/models/{mid}",
+                    headers=headers,
+                    timeout=10,
+                )
+            except Exception:
+                continue
             if det.status_code != 200:
                 continue
             caps = det.json().get("capabilities", {})
@@ -53,8 +62,6 @@ def probe() -> dict[str, dict]:
             adaptive = getattr(types, "adaptive", None) if hasattr(types, "adaptive") else (types.get("adaptive", {}) if isinstance(types, dict) else {})
             adaptive_ok = getattr(adaptive, "supported", False) if hasattr(adaptive, "supported") else (adaptive.get("supported") if isinstance(adaptive, dict) else False)
             results[mid] = {"effort_levels": levels, "adaptive": adaptive_ok}
-        except Exception:
-            pass
 
     return results
 

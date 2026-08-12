@@ -8,13 +8,10 @@ Docs: https://api.search.brave.com/app/documentation/web-search/get-started
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 
+from .._http import get_json
 from ..registry import SearchResult
 
 
@@ -35,28 +32,20 @@ class BraveProvider:
         key = os.environ.get("BRAVE_API_KEY", "")
         if not key:
             raise RuntimeError("BRAVE_API_KEY not set")
-        params = urllib.parse.urlencode({
+        params = {
             "q": query,
             # Brave's count is 1-20 for the regular endpoint.
             "count": max(1, min(int(num_results), 20)),
             "safesearch": "moderate",
-        })
-        req = urllib.request.Request(
-            f"{API_URL}?{params}",
+        }
+        data = get_json(
+            API_URL,
+            params=params,
             headers={
                 "Accept": "application/json",
                 "X-Subscription-Token": key,
-            },
+            }, timeout=TIMEOUT, provider_label="Brave",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"Brave HTTP {e.code}: {body}") from e
         web = data.get("web") or {}
         results: list[SearchResult] = []
         for r in web.get("results", []) or []:

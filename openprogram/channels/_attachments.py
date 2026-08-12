@@ -27,16 +27,20 @@ from __future__ import annotations
 
 import base64
 import mimetypes
+import os
 import re
+import tempfile
 import time
 import uuid
 from pathlib import Path
 from typing import Iterable
 
-import requests
+import httpx
 
 from openprogram.channels import accounts as _accounts
 from openprogram.channels._message import Attachment
+from openprogram.security.safe_http import safe_client
+from openprogram.security.url_policy import URLPolicyError, normalize_origin
 
 
 #: 单个附件下载上限 (字节). 超限跳过并记日志.
@@ -85,9 +89,20 @@ def download_inbound(
             continue
         try:
             row = _download_one(channel, account_id, att, url, headers)
+        except httpx.RequestError as e:
+            print(
+                f"[{tag}] attachment {att.name!r} download failed: "
+                f"{type(e).__name__} for {normalize_origin(url)}"
+            )
+            continue
         except Exception as e:  # noqa: BLE001
+            detail = (
+                e.reason
+                if isinstance(e, URLPolicyError)
+                else type(e).__name__
+            )
             print(f"[{tag}] attachment {att.name!r} download failed: "
-                  f"{type(e).__name__}: {e}")
+                  f"{detail}")
             continue
         if row is not None:
             saved.append(row)
@@ -98,29 +113,47 @@ def _download_one(
     channel: str, account_id: str, att: Attachment,
     url: str, headers: dict,
 ) -> dict | None:
-    r = requests.get(url, headers=headers, stream=True, timeout=60)
-    if not r.ok:
-        print(f"[{channel}:{account_id}] attachment {att.name!r} "
-              f"download HTTP {r.status_code}")
-        return None
-    mime = att.mime or r.headers.get("Content-Type", "").partition(";")[0]
-    dest = attachments_dir(channel, account_id) / _dest_name(att.name, mime)
-    total = 0
-    with dest.open("wb") as fh:
-        for block in r.iter_content(chunk_size=65536):
-            total += len(block)
-            if total > MAX_DOWNLOAD_BYTES:
-                fh.close()
-                dest.unlink(missing_ok=True)
-                print(f"[{channel}:{account_id}] attachment {att.name!r} "
-                      f"aborted: exceeds {MAX_DOWNLOAD_BYTES} bytes")
+    consumer = {
+        "slack": "channel.slack.attachment",
+        "telegram": "channel.telegram.attachment",
+    }.get(channel, "channel.attachment.download")
+    with safe_client(consumer) as client:
+        with client.stream("GET", url, headers=headers, timeout=60) as response:
+            if not response.is_success:
+                print(
+                    f"[{channel}:{account_id}] attachment {att.name!r} "
+                    f"download HTTP {response.status_code}"
+                )
                 return None
-            fh.write(block)
+            mime = att.mime or response.headers.get("Content-Type", "").partition(
+                ";"
+            )[0]
+            dest = attachments_dir(channel, account_id) / _dest_name(att.name, mime)
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{dest.name}.", dir=dest.parent
+            )
+            temporary = Path(temporary_name)
+            size = 0
+            try:
+                try:
+                    output = os.fdopen(descriptor, "wb")
+                except BaseException:
+                    os.close(descriptor)
+                    raise
+                with output:
+                    for chunk in response.iter_bytes():
+                        output.write(chunk)
+                        size += len(chunk)
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.replace(temporary, dest)
+            finally:
+                temporary.unlink(missing_ok=True)
     return {
         "path": str(dest),
         "name": att.name or dest.name,
         "mime": mime,
-        "size": total,
+        "size": size,
     }
 
 
@@ -141,11 +174,13 @@ def _resolve_telegram_file(account_id: str, file_id: str) -> str | None:
     if not token:
         return None
     try:
-        r = requests.get(
-            f"https://api.telegram.org/bot{token}/getFile",
-            params={"file_id": file_id}, timeout=15,
-        )
-        data = r.json() if r.ok else {}
+        with safe_client("channel.telegram.api") as client:
+            r = client.get(
+                f"https://api.telegram.org/bot{token}/getFile",
+                params={"file_id": file_id},
+                timeout=15,
+            )
+        data = r.json() if r.is_success else {}
         file_path = (data.get("result") or {}).get("file_path")
         if not data.get("ok") or not file_path:
             return None

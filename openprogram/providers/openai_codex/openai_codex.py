@@ -253,7 +253,21 @@ def stream_openai_codex_responses(
                 # streaming body read is governed by the two-budget SSE parser
                 # below, not a tight httpx read. It's shared (keep-alive reuse
                 # across turns), so we never close it here.
-                client = get_shared_async_client("openai-codex")
+                from openprogram.security.url_policy import (
+                    OwnerURLException,
+                    normalize_origin,
+                )
+
+                configured_origin = normalize_origin(base_url)
+                client = get_shared_async_client(
+                    "openai-codex",
+                    consumer="provider.configured_api",
+                    configured_origin=configured_origin,
+                    owner_exception=OwnerURLException(
+                        consumer="provider.configured_api",
+                        origin=configured_origin,
+                    ),
+                )
                 async with client.stream(
                     "POST",
                     f"{base_url.rstrip('/')}/codex/responses",

@@ -1,4 +1,4 @@
-"""Outbound proxy resolution — one semantics for every provider call.
+"""Proxy configuration diagnostics for explicit policy-proxy setup.
 
 Resolution order (design record: docs/reference/design/providers/network-proxy.md):
 
@@ -12,9 +12,11 @@ Resolution order (design record: docs/reference/design/providers/network-proxy.m
    consistent with every plain ``httpx.AsyncClient()`` and SDK-built client
    in the process.
 
-The only consumer is :mod:`.http_client`, which turns the mount map into
-hardened per-pattern transports. Provider code never resolves proxies
-itself.
+Managed provider clients do not consume this mount map: direct ``httpx``
+mounts cannot enforce the peer checks required by Runtime URL policy.  The
+remaining rescue command uses this helper only to report configured proxy
+state.  An enforcing proxy must instead be declared through
+``OutboundSecurityConfig.policy_proxy``.
 """
 
 from __future__ import annotations

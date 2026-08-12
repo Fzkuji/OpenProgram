@@ -9,13 +9,18 @@ _REASONING_PATTERNS = ("o1", "o3", "o4", "gpt-5")
 
 
 def probe() -> dict[str, dict]:
-    import httpx
     from openprogram.auth.resolver import resolve_api_key_sync
+    from openprogram.security.safe_http import safe_client
 
     key = resolve_api_key_sync("openai")
     if not key:
         return {}
-    r = httpx.get("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {key}"}, timeout=15)
+    with safe_client("provider.fixed_api") as client:
+        r = client.get(
+            "https://api.openai.com/v1/models",
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=15,
+        )
     if r.status_code != 200:
         return {}
     results = {}

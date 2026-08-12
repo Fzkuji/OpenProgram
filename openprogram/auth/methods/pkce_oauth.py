@@ -422,7 +422,8 @@ async def _exchange_code_for_tokens(
     ``state`` is included when given — Anthropic's token endpoint requires
     it echoed back alongside the code.
     """
-    import httpx
+    from openprogram.security.safe_http import configured_safe_async_client
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
     params = {
         "grant_type": "authorization_code",
         "code": code,
@@ -433,7 +434,14 @@ async def _exchange_code_for_tokens(
     }
     if state:
         params["state"] = state
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    token_origin = normalize_origin(cfg.token_url)
+    async with configured_safe_async_client(
+        "provider.configured_api",
+        token_origin,
+        owner_exception=OwnerURLException(
+            consumer="provider.configured_api", origin=token_origin
+        ),
+    ) as client:
         if cfg.token_use_json:
             resp = await client.post(cfg.token_url, json=params)
         else:
@@ -445,14 +453,12 @@ async def _exchange_code_for_tokens(
             if resp.status_code == 400 and "content-type" in resp.text.lower():
                 resp = await client.post(cfg.token_url, json=params)
         if resp.status_code != 200:
-            raise RuntimeError(
-                f"token exchange failed: {resp.status_code} {resp.text[:200]}"
-            )
+            raise RuntimeError(f"token exchange failed: {resp.status_code}")
         data = resp.json()
 
     for key in ("access_token", "refresh_token", "expires_in"):
         if key not in data:
-            raise RuntimeError(f"token response missing {key!r}: {data}")
+            raise RuntimeError(f"token response missing {key!r}")
     return PkceTokens(
         access_token=data["access_token"],
         refresh_token=data["refresh_token"],

@@ -66,14 +66,16 @@ def test_override_replaces_proxies_but_keeps_bypasses(proxy_env):
     assert mounts["all://localhost"] is None  # bypass survives
 
 
-def test_hardened_client_routes_per_url(proxy_env):
+def test_managed_provider_client_does_not_activate_unmanaged_env_proxy(proxy_env):
     proxy_env.setenv("HTTPS_PROXY", "http://127.0.0.1:7890")
     proxy_env.setenv("NO_PROXY", "example.com")
-    client = build_async_client()
+    client = build_async_client(
+        consumer="provider.openai.sdk",
+        configured_origin="https://api.openai.com",
+    )
     try:
-        proxied = client._transport_for_url(httpx.URL("https://api.openai.com/v1"))
-        bypassed = client._transport_for_url(httpx.URL("https://sub.example.com/x"))
-        assert proxied is not client._transport  # goes through the proxy mount
-        assert bypassed is client._transport     # NO_PROXY host stays direct
+        assert client._transport._consumer == "provider.openai.sdk"
+        assert client._transport._configured_origin == "https://api.openai.com"
+        assert not client._mounts
     finally:
         asyncio.run(client.aclose())

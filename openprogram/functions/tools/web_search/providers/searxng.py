@@ -10,13 +10,10 @@ Docs: https://docs.searxng.org/dev/search_api.html
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 
+from .._http import get_json
 from ..registry import SearchResult
 
 
@@ -37,31 +34,23 @@ class SearxngProvider:
 
     def search(self, query: str, *, num_results: int = 8) -> list[SearchResult]:
         base = (os.environ.get("SEARXNG_URL") or DEFAULT_URL).rstrip("/")
-        params = urllib.parse.urlencode({
+        params = {
             "q": query,
             "format": "json",
             # SearXNG returns 10 per page; for >10 hit a second page.
             # Keep it simple and cap at the first page.
             "pageno": 1,
-        })
-        url = f"{base}/search?{params}"
-        req = urllib.request.Request(
-            url,
+        }
+        data = get_json(
+            f"{base}/search",
+            params=params,
             headers={
                 "Accept": "application/json",
                 # Many SearXNG instances rate-limit anonymous UA.
                 "User-Agent": "OpenProgram-WebSearch/1.0",
-            },
+            }, timeout=TIMEOUT, provider_label="SearXNG",
+            configured_url=base,
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"SearXNG HTTP {e.code}: {body}") from e
         results: list[SearchResult] = []
         for r in (data.get("results") or [])[: max(1, min(int(num_results), 20))]:
             results.append(SearchResult(

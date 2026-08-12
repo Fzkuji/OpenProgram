@@ -183,7 +183,11 @@ def _resolve_azure_config(model: "Model", opts: dict[str, Any]) -> tuple[str, st
 
 def _create_client(model: "Model", api_key: str, opts: dict[str, Any]) -> Any:
     from openai import AsyncAzureOpenAI
+    from openprogram.providers.utils.http_client import get_shared_async_client
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
+
     base_url, api_version = _resolve_azure_config(model, opts)
+    configured_origin = normalize_origin(base_url)
     headers = {**(getattr(model, "headers", None) or {}), **(opts.get("headers") or {})}
     # Share retry budget knob with the regular openai provider —
     # both use the same OpenAI Python SDK, same retry semantics.
@@ -194,6 +198,14 @@ def _create_client(model: "Model", api_key: str, opts: dict[str, Any]) -> Any:
         base_url=base_url,
         default_headers=headers if headers else None,
         max_retries=sdk_max_retries,
+        http_client=get_shared_async_client(
+            "azure-openai-sdk",
+            consumer="provider.openai.sdk",
+            configured_origin=configured_origin,
+            owner_exception=OwnerURLException(
+                consumer="provider.openai.sdk", origin=configured_origin
+            ),
+        ),
     )
 
 

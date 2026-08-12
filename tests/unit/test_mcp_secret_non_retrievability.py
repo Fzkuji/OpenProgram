@@ -177,6 +177,8 @@ def test_catalog_route_returns_no_plaintext(monkeypatch, state_dir):
 
     class FakeResponse:
         status_code = 200
+        headers = {"content-type": "application/json"}
+        url = "https://catalog.example/c.json"
 
         def raise_for_status(self):
             return None
@@ -185,9 +187,6 @@ def test_catalog_route_returns_no_plaintext(monkeypatch, state_dir):
             return catalog
 
     class FakeAsyncClient:
-        def __init__(self, *a, **k):
-            pass
-
         async def __aenter__(self):
             return self
 
@@ -197,9 +196,13 @@ def test_catalog_route_returns_no_plaintext(monkeypatch, state_dir):
         async def get(self, *a, **k):
             return FakeResponse()
 
-    import httpx
+    from openprogram.security import safe_http
 
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(
+        safe_http,
+        "configured_safe_async_client",
+        lambda _consumer, _url, **_kwargs: FakeAsyncClient(),
+    )
     app = FastAPI()
     mcp.register(app)
 
@@ -211,6 +214,32 @@ def test_catalog_route_returns_no_plaintext(monkeypatch, state_dir):
     entry = response.json()["servers"][0]
     assert entry["auth"]["has_token"] is True
     assert entry["headers"]["X-Tenant"]["has_value"] is True
+
+
+def test_catalog_update_missing_entry_hides_signed_source_url(monkeypatch, state_dir):
+    from openprogram.webui.routes import mcp
+
+    source = "https://catalog.example/TOKEN-PATH/catalog.json?sig=QUERY-SECRET"
+    cfg = remote_config()
+    cfg.source_catalog_url = source
+    save_configs([cfg])
+
+    async def fake_fetch(_url):
+        return {"servers": []}
+
+    monkeypatch.setattr(mcp, "_fetch_catalog_json", fake_fetch)
+    app = FastAPI()
+    mcp.register(app)
+
+    response = TestClient(app).post(
+        f"/api/mcp/servers/{cfg.name}/update_from_catalog"
+    )
+
+    assert response.status_code == 502
+    rendered = response.text
+    assert "https://catalog.example" in rendered
+    assert "TOKEN-PATH" not in rendered
+    assert "QUERY-SECRET" not in rendered
 
 
 # --- file permissions -------------------------------------------------

@@ -33,6 +33,8 @@ HEADERS = (
 FRAMEWORK_NAMES = HEADERS[1:]
 EXPECTED_SNAPSHOT = "2fb471b3"
 JSON_SCHEMA_ROW = "按 JSON schema 约束输出"
+EXPECTED_SSRF_SNAPSHOT = "be5eaa3c"
+SSRF_ROW = "私网访问与 SSRF 防护"
 
 
 class MatrixError(ValueError):
@@ -249,6 +251,15 @@ def check_matrix(path: Path) -> MatrixResult:
         raise MatrixError("published snapshot evidence is stale")
     if "runtime llm(response_format=…) 的 JSON schema 结构化输出" in source:
         raise MatrixError("old snapshot still claims complete JSON Schema support")
+
+    ssrf_rows = [row for row in parser.rows if row.name == SSRF_ROW]
+    if len(ssrf_rows) != 1:
+        raise MatrixError("SSRF row is missing or duplicated")
+    ssrf_row = ssrf_rows[0]
+    if ssrf_row.cells[0] != "◐":
+        raise MatrixError("SSRF status must match the integrated evidence gate")
+    if EXPECTED_SSRF_SNAPSHOT not in ssrf_row.evidence:
+        raise MatrixError("SSRF snapshot is stale")
 
     score_svg = re.search(r'<svg viewBox="0 0 960 330".*?</svg>', source, re.DOTALL)
     if not score_svg:

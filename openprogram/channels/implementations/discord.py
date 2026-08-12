@@ -23,6 +23,11 @@ class DiscordChannel(Channel):
         return f"{ch_msg.chat_id}_{ch_msg.user_id}"
 
     def __init__(self, account_id: str = "default") -> None:
+        from openprogram.security.safe_http import require_active_sdk_transport
+
+        require_active_sdk_transport(
+            "channel.discord.gateway_sdk", "https://discord.com"
+        )
         from openprogram.channels import accounts as _accounts
         creds = _accounts.load_credentials("discord", account_id)
         token = creds.get("bot_token")
@@ -46,6 +51,11 @@ class DiscordChannel(Channel):
         asyncio.run(self._run_async(stop))
 
     async def _run_async(self, stop: threading.Event) -> None:
+        from openprogram.security.safe_http import require_active_sdk_transport
+
+        require_active_sdk_transport(
+            "channel.discord.gateway_sdk", "https://discord.com"
+        )
         import discord  # type: ignore
 
         intents = discord.Intents.default()

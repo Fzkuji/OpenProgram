@@ -13,8 +13,8 @@ from typing import Any
 
 def _fetch_openai_compat(provider_id: str, timeout: float) -> Any:
     """OpenAI-compatible /v1/models: GET base + '/models', Bearer auth."""
-    import httpx
-
+    from openprogram.security import safe_http
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
     from openprogram.providers.metadata import env_var_for
     from openprogram.providers.env_api_keys import resolve_api_key_with_auth_store
     from openprogram.providers.storage import _resolve_base_url
@@ -28,12 +28,19 @@ def _fetch_openai_compat(provider_id: str, timeout: float) -> Any:
         return {"error": f"No base URL resolvable for {provider_id}"}
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     try:
-        r = httpx.get(base + "/models", headers=headers, timeout=timeout)
-        r.raise_for_status()
-        data = r.json()
-    except httpx.HTTPStatusError as e:
-        return {"error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+        with safe_http.configured_safe_client(
+            "webui.model_listing.configured",
+            base,
+            owner_exception=OwnerURLException(
+                consumer="webui.model_listing.configured",
+                origin=normalize_origin(base),
+            ),
+        ) as client:
+            r = client.get(base + "/models", headers=headers, timeout=timeout)
+            if not 200 <= r.status_code < 300:
+                return {"error": f"HTTP {r.status_code} for {normalize_origin(base)}"}
+            data = r.json()
     except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+        return {"error": f"{type(e).__name__} for {normalize_origin(base)}"}
     items = data.get("data") or data.get("models") or []
     return items if isinstance(items, list) else {"error": "unexpected response shape"}

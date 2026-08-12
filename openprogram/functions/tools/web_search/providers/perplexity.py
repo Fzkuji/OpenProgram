@@ -13,12 +13,10 @@ Docs: https://docs.perplexity.ai/api-reference/chat-completions
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 
+from .._http import post_json
 from ..registry import SearchResult
 
 
@@ -40,7 +38,7 @@ class PerplexityProvider:
         key = os.environ.get("PERPLEXITY_API_KEY", "")
         if not key:
             raise RuntimeError("PERPLEXITY_API_KEY not set")
-        payload = json.dumps({
+        payload = {
             "model": MODEL,
             "messages": [
                 {
@@ -53,24 +51,15 @@ class PerplexityProvider:
                 {"role": "user", "content": query},
             ],
             "return_citations": True,
-        }).encode("utf-8")
-        req = urllib.request.Request(
+        }
+        data = post_json(
             API_URL,
-            data=payload,
+            body=payload,
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {key}",
-            },
+            }, timeout=TIMEOUT, provider_label="Perplexity",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"Perplexity HTTP {e.code}: {body}") from e
 
         choices = data.get("choices") or []
         answer = ""

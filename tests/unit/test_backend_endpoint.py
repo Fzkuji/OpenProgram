@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import pytest
 
@@ -126,16 +126,29 @@ def test_resolve_backend_endpoint_never_transmits_the_token(
     auth_state = _start_auth_state(tmp_path, allowed_origins=())
     sent: list[str] = []
     try:
-        class RejectingOpener:
-            def open(self, request, timeout):
-                sent.append(request.full_url)
-                for _name, value in request.header_items():
-                    assert TOKEN not in value
-                assert TOKEN not in request.full_url
+        class RejectingClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def get(self, url, *, params, timeout):
+                assert timeout == 1.0
+                assert TOKEN not in url
+                assert TOKEN not in params.values()
+                sent.append(url + "?" + urlencode(params))
                 raise OSError("nothing is listening")
 
+        def configured(consumer, origin, *, owner_exception):
+            assert consumer == "runtime.local_probe"
+            assert origin == f"http://localhost:{EPHEMERAL_PORT}"
+            assert owner_exception.consumer == consumer
+            assert owner_exception.origin == origin
+            return RejectingClient()
+
         monkeypatch.setattr(
-            "urllib.request.build_opener", lambda *_handlers: RejectingOpener()
+            "openprogram.security.safe_http.configured_safe_client", configured
         )
         monkeypatch.setattr(
             "openprogram.worker.lifecycle.current_worker_pid", lambda: 12345

@@ -51,8 +51,8 @@ def _codex_ping(
     backend rejects ``stream: false`` with a 400, so we open the stream, read
     the initial status code, and tear the connection down without consuming the
     SSE."""
-    import httpx
-
+    from openprogram.security import safe_http
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
     from openprogram.providers.env_api_keys import resolve_api_key_with_auth_store
     from openprogram.providers.storage import _resolve_base_url
 
@@ -102,18 +102,25 @@ def _codex_ping(
 
     t0 = time.time()
     try:
-        with httpx.Client(timeout=timeout) as client:
+        with safe_http.configured_safe_client(
+            "webui.model_listing.configured",
+            base,
+            owner_exception=OwnerURLException(
+                consumer="webui.model_listing.configured",
+                origin=normalize_origin(base),
+            ),
+        ) as client:
             with client.stream("POST", url, headers=headers, json=body) as r:
                 latency_ms = int((time.time() - t0) * 1000)
                 if r.status_code != 200:
-                    err_body = b"".join(r.iter_bytes()).decode("utf-8", errors="replace")
                     return {
                         "ok": False,
-                        "error": f"HTTP {r.status_code}: {err_body[:200]}",
+                        "error": f"HTTP {r.status_code} for {normalize_origin(url)}",
                         "latency_ms": latency_ms,
                     }
         return {"ok": True, "latency_ms": latency_ms, "model": model}
-    except httpx.RequestError as e:
-        return {"ok": False, "error": f"Request failed: {e}"}
     except Exception as e:
-        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        return {
+            "ok": False,
+            "error": f"Request failed: {type(e).__name__} for {normalize_origin(url)}",
+        }

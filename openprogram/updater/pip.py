@@ -11,12 +11,11 @@ when ``[all]`` extras aren't installed.
 """
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
-import urllib.error
-import urllib.request
 from typing import Optional
+
+from openprogram.security import safe_http
 
 
 PYPI_URL = "https://pypi.org/pypi/openprogram/json"
@@ -48,14 +47,15 @@ def latest_pypi_version() -> Optional[str]:
     treat None as "no update info available", not as "we're up to date".
     """
     try:
-        req = urllib.request.Request(
-            PYPI_URL,
-            headers={"User-Agent": "openprogram-updater"},
-        )
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
-        return None
+        with safe_http.safe_client("updater.pip") as client:
+            response = client.get(
+                PYPI_URL,
+                headers={"User-Agent": "openprogram-updater"},
+                timeout=HTTP_TIMEOUT,
+            )
+            response.raise_for_status()
+            safe_http.require_json_mime(response)
+            payload = response.json()
     except Exception:
         return None
     info = payload.get("info") or {}

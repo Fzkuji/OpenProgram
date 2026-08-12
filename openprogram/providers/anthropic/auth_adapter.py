@@ -159,20 +159,20 @@ def _anthropic_refresh(cred: Credential) -> Credential:
         # Nothing to rotate — hand the credential back unchanged.
         return cred
 
-    import httpx
-    resp = httpx.post(
-        payload.data.get("token_endpoint") or OAUTH_TOKEN_URL,
-        json={
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-            "client_id": payload.data.get("client_id") or OAUTH_CLIENT_ID,
-        },
-        timeout=30.0,
-    )
-    if resp.status_code != 200:
-        raise RuntimeError(
-            f"Anthropic OAuth refresh failed {resp.status_code}: {resp.text[:200]}"
+    from openprogram.security.safe_http import safe_client
+
+    with safe_client("provider.oauth.fixed") as client:
+        resp = client.post(
+            payload.data.get("token_endpoint") or OAUTH_TOKEN_URL,
+            json={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": payload.data.get("client_id") or OAUTH_CLIENT_ID,
+            },
+            timeout=30.0,
         )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Anthropic OAuth refresh failed {resp.status_code}")
     data = resp.json()
     for k in ("access_token", "expires_in"):
         if k not in data:
