@@ -27,8 +27,8 @@ git diff --check
 | Base | `a2ba5d49` |
 | Design | `7e6236ad` (`docs(runtime): define shared structured retry budget`) |
 | RED | 2 failed, 1 passed: sync and async `max_retries=1` both issued an extra semantic repair call |
-| GREEN | 140 passed across `tests/agentic_programming` and the error taxonomy regression |
-| Specification review | pending |
-| Quality review | pending |
-| Full gate | pending |
-| Final implementation | `cf2dedae` (`fix(runtime): share structured and transport retry budget`) |
+| GREEN | Exact manifest 28 passed; full agentic-programming regression 142 passed |
+| Specification review | PASS at `8c68f3a1`; shared budgets, deadline, cancellation, cleanup, and sync/async parity verified |
+| Quality review | PASS at `8c68f3a1`; adversarial mixed validation/transport/deadline/cancellation sequences verified |
+| Full gate | 142 agentic-programming tests passed; Ruff passed; docs 466 pages; 0 broken links; diff check passed |
+| Final implementation | `cf2dedae`, `38045c75`, `0927721f`, `f1adf56b`, `8c68f3a1` |
