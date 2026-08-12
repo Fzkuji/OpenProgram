@@ -5,6 +5,8 @@ Provides stream(), complete(), stream_simple(), complete_simple().
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+import time
 from typing import AsyncGenerator
 
 from .api_registry import get_api_provider
@@ -21,6 +23,34 @@ from .types import (
     StreamOptions,
 )
 
+
+@contextmanager
+def _task_operation_deadline():
+    """Bind one provider request to the claimed task's remaining time."""
+    from openprogram.agent.task.runner import (
+        current_task_operation_timeout,
+        record_current_task_activity,
+    )
+    from openprogram.providers.utils.deadline import (
+        get_deadline,
+        reset_deadline,
+        set_deadline,
+    )
+
+    timeout = current_task_operation_timeout(None, preemptibility="async")
+    deadline = None if timeout is None else time.monotonic() + timeout
+    outer = get_deadline()
+    if outer is not None and (deadline is None or outer < deadline):
+        deadline = outer
+    token = set_deadline(deadline) if deadline is not None else None
+    record_current_task_activity("operation_start")
+    try:
+        yield record_current_task_activity
+    finally:
+        if token is not None:
+            reset_deadline(token)
+
+
 async def stream_simple(
     model: Model,
     context: Context,
@@ -31,9 +61,11 @@ async def stream_simple(
     Automatically resolves API key from environment if not provided.
     Mirrors streamSimple() from TypeScript.
     """
-    provider = get_api_provider(model.api)
-    async for event in stream_simple_with_provider(provider, model, context, options):
-        yield event
+    with _task_operation_deadline() as record_activity:
+        provider = get_api_provider(model.api)
+        async for event in stream_simple_with_provider(provider, model, context, options):
+            record_activity("provider_data")
+            yield event
 
 
 async def stream_simple_with_provider(
@@ -120,38 +152,40 @@ async def stream(
     Stream with provider-specific options (no reasoning normalization).
     Mirrors stream() from TypeScript.
     """
-    opts = options or StreamOptions()
+    with _task_operation_deadline() as record_activity:
+        opts = options or StreamOptions()
 
-    provider = get_api_provider(model.api)
-    if provider is None:
-        raise ValueError(f"No stream function registered for API: {model.api!r}")
+        provider = get_api_provider(model.api)
+        if provider is None:
+            raise ValueError(f"No stream function registered for API: {model.api!r}")
 
-    budget = BudgetedRequest.begin(model, context, opts, provider)
-    try:
-        if budget is not None:
-            opts = budget.clamp(opts, model)
+        budget = BudgetedRequest.begin(model, context, opts, provider)
+        try:
+            if budget is not None:
+                opts = budget.clamp(opts, model)
 
-        # Auto-resolve API key from the AuthStore if not set (same as stream_simple)
-        if not opts.api_key and getattr(provider, "requires_credentials", True):
-            opts = opts.model_copy(
-                update={"api_key": resolve_provider_key(model.provider)},
-            )
-    except BaseException:
-        if budget is not None:
-            budget.release()
-        raise
+            # Auto-resolve API key from the AuthStore if not set (same as stream_simple)
+            if not opts.api_key and getattr(provider, "requires_credentials", True):
+                opts = opts.model_copy(
+                    update={"api_key": resolve_provider_key(model.provider)},
+                )
+        except BaseException:
+            if budget is not None:
+                budget.release()
+            raise
 
-    recorded = False
-    async for event in _metered(provider.stream, model, context, opts, budget):
-        if not recorded:
-            final = _extract_final(event)
-            if final is not None:
-                recorded = True
-                if budget is not None:
-                    budget.settle(model, final, opts)
-                else:
-                    _record_usage(model, final, opts)
-        yield event
+        recorded = False
+        async for event in _metered(provider.stream, model, context, opts, budget):
+            record_activity("provider_data")
+            if not recorded:
+                final = _extract_final(event)
+                if final is not None:
+                    recorded = True
+                    if budget is not None:
+                        budget.settle(model, final, opts)
+                    else:
+                        _record_usage(model, final, opts)
+            yield event
 
 
 async def complete(

@@ -49,8 +49,11 @@ class _FakeProvider:
     usage — like a real provider's stream_simple."""
     def __init__(self, model):
         self._model = model
+        self.deadline = None
 
     async def stream_simple(self, model, context, opts):
+        from openprogram.providers.utils.deadline import get_deadline
+        self.deadline = get_deadline()
         partial = AssistantMessage(role="assistant", content=[], api=model.api,
                                    provider=model.provider, model=model.id, timestamp=0)
         yield EventStart(type="start", partial=partial)
@@ -131,6 +134,37 @@ def test_session_id_flows_from_options(ledger, fake_api):
         asyncio.run(drain())
     rows = ledger.query(group_by=["session_id"])
     assert rows[0].keys["session_id"] == "sess-XYZ"
+
+
+def test_provider_data_is_activity_and_uses_task_deadline(
+    ledger, fake_api, monkeypatch: pytest.MonkeyPatch,
+):
+    """Provider callbacks must run under the claimed task's bounded deadline."""
+    import importlib
+    stream_mod = importlib.import_module("openprogram.providers.stream")
+
+    activity: list[str] = []
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner.current_task_operation_timeout",
+        lambda declared, *, preemptibility: 0.1,
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner.record_current_task_activity",
+        lambda kind: activity.append(kind) or True,
+    )
+    provider = stream_mod.get_api_provider(fake_api.api)
+    monkeypatch.setattr(stream_mod, "get_api_provider", lambda _api: provider)
+
+    async def drain():
+        async for _ in stream_mod.stream_simple(
+            fake_api, Context(system_prompt="x", messages=[], tools=[]), _opts(),
+        ):
+            pass
+
+    asyncio.run(drain())
+
+    assert provider.deadline is not None
+    assert activity == ["operation_start", "provider_data", "provider_data", "provider_data"]
 
 
 def _opts(**kw):
