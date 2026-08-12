@@ -268,6 +268,11 @@ class SessionStore:
         self._sessions: "OrderedDict[str, tuple[GitSession, SessionMemoryIndex]]" = OrderedDict()
         self._cache_cap = cache_cap if cache_cap is not None else _resolve_cache_cap()
         self._lock = threading.Lock()
+        # Filesystem work is serialized per session, not across the store.
+        # ponytail: retain one small RLock per seen session id; replace with a
+        # bounded lock table only if profiles with millions of ids appear.
+        self._session_locks: dict[str, Any] = {}
+        self._locations_write_lock = threading.Lock()
         # Location index: session_id → absolute repo path, for sessions
         # that live OUTSIDE the home root (i.e. inside a bound project's
         # ``<project>/.openprogram/sessions/<id>/``). Sessions absent
@@ -301,11 +306,11 @@ class SessionStore:
         except (OSError, json.JSONDecodeError):
             return {}
 
-    def _save_locations(self) -> None:
+    def _save_locations(self, locations: dict[str, str]) -> None:
         try:
             atomic_write_text(
                 self._locations_path(),
-                json.dumps(self._locations, indent=2, ensure_ascii=False),
+                json.dumps(locations, indent=2, ensure_ascii=False),
             )
         except OSError as e:
             _log.warning("locations.json NOT saved (%s); session placement "
@@ -314,15 +319,22 @@ class SessionStore:
     def _record_location(self, session_id: str, repo_dir: Path) -> None:
         """Persist that ``session_id``'s repo lives at ``repo_dir`` (an
         absolute path outside the home root). Idempotent."""
-        with self._lock:
-            self._locations[session_id] = str(repo_dir)
-            self._save_locations()
+        with self._session_lock(session_id):
+            with self._locations_write_lock:
+                with self._lock:
+                    self._locations[session_id] = str(repo_dir)
+                    snapshot = dict(self._locations)
+                self._save_locations(snapshot)
 
     def _forget_location(self, session_id: str) -> None:
         """删会话时移除位置映射（配对 _record_location）。"""
-        with self._lock:
-            if self._locations.pop(session_id, None) is not None:
-                self._save_locations()
+        with self._session_lock(session_id):
+            with self._locations_write_lock:
+                with self._lock:
+                    if self._locations.pop(session_id, None) is None:
+                        return
+                    snapshot = dict(self._locations)
+                self._save_locations(snapshot)
 
     # Registry (index.json)
 
@@ -521,6 +533,14 @@ class SessionStore:
 
     # Internals
 
+    def _session_lock(self, session_id: str):
+        with self._lock:
+            lock = self._session_locks.get(session_id)
+            if lock is None:
+                lock = threading.RLock()
+                self._session_locks[session_id] = lock
+            return lock
+
     def _session_dir(self, session_id: str) -> Path:
         """Where ``session_id``'s git repo lives.
 
@@ -530,7 +550,8 @@ class SessionStore:
         pre-existing sessions — resolves to the home root
         ``<state>/sessions/<id>/``.
         """
-        loc = self._locations.get(session_id)
+        with self._lock:
+            loc = self._locations.get(session_id)
         if loc:
             return Path(loc)
         return self.root_path / session_id
@@ -538,8 +559,14 @@ class SessionStore:
     def _open(self, session_id: str, *, create_if_missing: bool = False) -> Optional[tuple[GitSession, SessionMemoryIndex]]:
         """Return (git, idx). Loads from disk on first access. None if
         session doesn't exist and ``create_if_missing`` is False."""
-        with self._lock:
+        with self._session_lock(session_id):
             verified_git: GitSession | None = None
+            with self._lock:
+                loc = self._locations.get(session_id)
+                sdir = Path(loc) if loc else self.root_path / session_id
+                cached = self._sessions.get(session_id)
+                if cached:
+                    self._sessions.move_to_end(session_id)
             if not create_if_missing:
                 if (
                     not isinstance(session_id, str)
@@ -549,7 +576,6 @@ class SessionStore:
                     or "\\" in session_id
                 ):
                     return None
-                sdir = self._session_dir(session_id)
                 verified_git = GitSession(sdir)
                 if (
                     sdir.is_symlink()
@@ -557,11 +583,7 @@ class SessionStore:
                     or not (sdir / "history").is_dir()
                 ):
                     return None
-            cached = self._sessions.get(session_id)
             if cached:
-                # Mark as most-recently-used so the LRU eviction below
-                # never drops a session that's actively being read.
-                self._sessions.move_to_end(session_id)
                 git, idx = cached
                 # @agentic_function runs execute in a fork()'d subprocess
                 # that appends history and moves HEAD on disk directly —
@@ -602,7 +624,6 @@ class SessionStore:
                             )
                             git.mark_synced()
                 return cached
-            sdir = self._session_dir(session_id)
             if not sdir.exists() and not create_if_missing:
                 return None
             git = verified_git or GitSession(sdir)
@@ -615,16 +636,17 @@ class SessionStore:
                     _node_caller,
                 )
                 git.mark_synced()
-            # New key lands at the MRU (end) of the OrderedDict.
-            self._sessions[session_id] = (git, idx)
-            # Evict least-recently-used entries beyond the cap. The
-            # just-inserted session is at the MRU end, so popitem(last=
-            # False) (oldest) never evicts it as long as cap >= 1. An
-            # evicted index rebuilds losslessly from git on next access;
-            # an in-flight turn keeps its own (git, idx) reference and is
-            # unaffected by being dropped from this dict.
-            while len(self._sessions) > self._cache_cap:
-                self._sessions.popitem(last=False)
+            with self._lock:
+                # New key lands at the MRU (end) of the OrderedDict.
+                self._sessions[session_id] = (git, idx)
+                # Evict least-recently-used entries beyond the cap. The
+                # just-inserted session is at the MRU end, so popitem(last=
+                # False) (oldest) never evicts it as long as cap >= 1. An
+                # evicted index rebuilds losslessly from git on next access;
+                # an in-flight turn keeps its own (git, idx) reference and is
+                # unaffected by being dropped from this dict.
+                while len(self._sessions) > self._cache_cap:
+                    self._sessions.popitem(last=False)
             return git, idx
 
     def _persist_meta(self, git: GitSession, idx: SessionMemoryIndex) -> None:
@@ -843,26 +865,28 @@ class SessionStore:
         return _row_to_session(row)
 
     def delete_session(self, session_id: str) -> None:
-        with self._lock:
-            pair = self._sessions.pop(session_id, None)
+        with self._session_lock(session_id):
+            with self._lock:
+                pair = self._sessions.pop(session_id, None)
+                loc = self._locations.get(session_id)
             if pair:
                 pair[0].destroy()
             else:
-                GitSession(self._session_dir(session_id)).destroy()
-        with self._index_lock:
-            if self._index.pop(session_id, None) is not None:
-                self._index_generation += 1
-                self._index_dirty = True
-        self._save_index()
-        # 位置映射（配对 _record_location）。
-        self._forget_location(session_id)
-        # 从项目反向索引解绑（配对 bind_session），避免 session_ids 只增不减。
-        try:
-            from openprogram.store.project import project_store as _projects
-            _projects.unbind_session(session_id)
-        except Exception as e:  # noqa: BLE001 — reverse index is best-effort
-            _log.warning("session %s NOT unbound from its project: %s",
-                         session_id, e)
+                GitSession(Path(loc) if loc else self.root_path / session_id).destroy()
+            with self._index_lock:
+                if self._index.pop(session_id, None) is not None:
+                    self._index_generation += 1
+                    self._index_dirty = True
+            self._save_index()
+            # 位置映射（配对 _record_location）。
+            self._forget_location(session_id)
+            # 从项目反向索引解绑（配对 bind_session），避免 session_ids 只增不减。
+            try:
+                from openprogram.store.project import project_store as _projects
+                _projects.unbind_session(session_id)
+            except Exception as e:  # noqa: BLE001 — reverse index is best-effort
+                _log.warning("session %s NOT unbound from its project: %s",
+                             session_id, e)
 
     def list_sessions(
         self,
@@ -938,8 +962,9 @@ class SessionStore:
 
         Cheap: O(history length) git directory listing on next access.
         """
-        with self._lock:
-            self._sessions.pop(session_id, None)
+        with self._session_lock(session_id):
+            with self._lock:
+                self._sessions.pop(session_id, None)
 
     # Message append / read
 

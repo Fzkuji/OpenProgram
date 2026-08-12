@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 
 from openprogram.store.session.git_session import GitSession
@@ -119,3 +120,78 @@ def test_slow_location_publish_does_not_block_cached_session(
         release.set()
         slow.join(2)
     assert not slow.is_alive()
+
+
+def test_concurrent_first_load_publishes_one_index(tmp_path, monkeypatch):
+    store = SessionStore(tmp_path)
+    store.create_session("same", "main")
+    store.invalidate_cache("same")
+
+    entered = threading.Event()
+    release = threading.Event()
+    original = GitSession.read_meta
+    reads = 0
+
+    def blocked_read_meta(git: GitSession):
+        nonlocal reads
+        if git.path.name == "same":
+            reads += 1
+            entered.set()
+            assert release.wait(2)
+        return original(git)
+
+    monkeypatch.setattr(GitSession, "read_meta", blocked_read_meta)
+    results: list[tuple[GitSession, object] | None] = []
+    first = threading.Thread(target=lambda: results.append(store._open("same")))
+    second = threading.Thread(target=lambda: results.append(store._open("same")))
+    first.start()
+    assert entered.wait(1)
+    second.start()
+    release.set()
+    first.join(2)
+    second.join(2)
+
+    assert not first.is_alive() and not second.is_alive()
+    assert reads == 1
+    assert results[0] is not None and results[1] is not None
+    assert results[0][1] is results[1][1]
+
+
+def test_concurrent_location_snapshots_do_not_lose_entries(tmp_path, monkeypatch):
+    store = SessionStore(tmp_path / "sessions")
+    from openprogram.store.session import session_store as store_module
+    original = store_module.atomic_write_text
+    entered = threading.Event()
+    release = threading.Event()
+    writes = 0
+
+    def blocked_first_write(path, text):
+        nonlocal writes
+        if path == store._locations_path():
+            writes += 1
+            if writes == 1:
+                entered.set()
+                assert release.wait(2)
+        return original(path, text)
+
+    monkeypatch.setattr(store_module, "atomic_write_text", blocked_first_write)
+    first = threading.Thread(
+        target=store._record_location,
+        args=("a", tmp_path / "project-a" / "a"),
+    )
+    second = threading.Thread(
+        target=store._record_location,
+        args=("b", tmp_path / "project-b" / "b"),
+    )
+    first.start()
+    assert entered.wait(1)
+    second.start()
+    release.set()
+    first.join(2)
+    second.join(2)
+
+    assert not first.is_alive() and not second.is_alive()
+    assert json.loads(store._locations_path().read_text()) == {
+        "a": str(tmp_path / "project-a" / "a"),
+        "b": str(tmp_path / "project-b" / "b"),
+    }
