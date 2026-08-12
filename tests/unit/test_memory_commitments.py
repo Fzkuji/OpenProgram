@@ -392,6 +392,73 @@ def test_runtime_limits_writer_transitions_and_combined_tool_batch(tmp_path):
     assert "at most 64" in result["content"][0]["text"]
 
 
+def test_writer_combined_batch_failure_restores_stage_and_committed_state(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.tools import management_tools
+    from openprogram.memory.runtime.commitments import upsert_commitments
+
+    original = _source(tmp_path)
+    upsert_commitments(
+        tmp_path,
+        [
+            {
+                "text": "Submit the rebuttal.",
+                "due": "2026-08-12",
+                "source": original,
+                "source_quote": "I will submit the rebuttal by Wednesday.",
+            }
+        ],
+    )
+    closure = _source(
+        tmp_path,
+        message_id="message-2",
+        content="I will upload the appendix tomorrow.",
+    )
+    committed_path = tmp_path / "commitments.jsonl"
+    committed_before = committed_path.read_bytes()
+
+    with closing(
+        MemoryWorkspace(tmp_path, allowed_new_source_refs={closure})
+    ) as workspace:
+        baseline = workspace.baseline()
+        staged_path = workspace.stage_dir / "commitments.jsonl"
+        staged_before = staged_path.read_bytes()
+        tool = next(
+            item
+            for item in management_tools(workspace, [])
+            if item.name == "record_commitments"
+        )
+
+        result = asyncio.run(
+            tool.handler(
+                {
+                    "commitments": [
+                        {
+                            "text": "Upload the appendix.",
+                            "due": "2026-08-13",
+                            "source": closure,
+                            "source_quote": "I will upload the appendix tomorrow.",
+                        }
+                    ],
+                    "transitions": [
+                        {
+                            "id": "com_0000000000000000",
+                            "status": "done",
+                            "source": closure,
+                            "source_quote": "I will upload the appendix tomorrow.",
+                        }
+                    ],
+                }
+            )
+        )
+
+        assert result["is_error"] is True
+        assert staged_path.read_bytes() == staged_before
+        workspace.commit_edits(*baseline)
+
+    assert committed_path.read_bytes() == committed_before
+
+
 def test_writer_tool_rejects_source_outside_selected_batch(tmp_path):
     from openprogram.memory.management import MemoryWorkspace
     from openprogram.memory.management.tools import management_tools
@@ -724,6 +791,51 @@ def test_heartbeat_sends_due_commitment_once_and_retries_only_after_escalation(
         == 1
     )
     assert len(sent) == 2
+
+
+def test_heartbeat_first_observation_after_escalation_stays_monotonic(tmp_path):
+    from datetime import datetime
+
+    from openprogram.memory.runtime.commitments import (
+        load_commitments,
+        upsert_commitments,
+    )
+    from openprogram.proactive.heartbeat import run_heartbeat
+
+    source = _source(tmp_path)
+    upsert_commitments(
+        tmp_path,
+        [
+            {
+                "text": "Submit the rebuttal.",
+                "due": "2026-08-01",
+                "source": source,
+                "source_quote": "I will submit the rebuttal by Wednesday.",
+            }
+        ],
+    )
+    sent: list[str] = []
+
+    def send(_target, text: str) -> bool:
+        sent.append(text)
+        return True
+
+    kwargs = {
+        "target_for_source": lambda _source: ("telegram", "default", "42"),
+        "send": send,
+    }
+    assert run_heartbeat(tmp_path, now=datetime(2026, 8, 12, 9, 0), **kwargs) == 1
+    assert "due)" in sent[-1]
+    assert "overdue)" not in sent[-1]
+    assert load_commitments(tmp_path)[0]["notification_steps"] == ["due"]
+
+    assert run_heartbeat(tmp_path, now=datetime(2026, 8, 12, 10, 0), **kwargs) == 1
+    assert "overdue)" in sent[-1]
+    assert load_commitments(tmp_path)[0]["notification_steps"] == [
+        "due",
+        "overdue:7",
+    ]
+    assert run_heartbeat(tmp_path, now=datetime(2026, 8, 12, 11, 0), **kwargs) == 0
 
 
 def test_heartbeat_quiet_hours_and_send_failure_do_not_consume_notification(
