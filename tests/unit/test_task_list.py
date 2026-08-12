@@ -282,6 +282,39 @@ def test_turn_render_range_applies_to_implicit_agentic_functions(
     ]
 
 
+def test_failed_turn_binding_does_not_leak_render_range(monkeypatch) -> None:
+    import contextvars
+
+    import openprogram.functions as functions
+    from openprogram.agent.dispatcher.turn_context import TurnBindings
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agentic_programming.function import _render_range_override
+
+    def fail_binding():
+        raise RuntimeError("bind failed")
+
+    monkeypatch.setattr(functions, "install_loaded_deferred", fail_binding)
+
+    def probe():
+        sentinel = {"callers": 9, "subcalls": 9}
+        token = _render_range_override.set(sentinel)
+        try:
+            req = TurnRequest(
+                session_id="s1",
+                user_text="",
+                agent_id="main",
+                source="agent_spawn",
+                render_range={"callers": 0, "subcalls": 2},
+            )
+            with pytest.raises(RuntimeError, match="bind failed"):
+                TurnBindings.bind(req=req, assistant_msg_id="m1", db=object())
+            assert _render_range_override.get() == sentinel
+        finally:
+            _render_range_override.reset(token)
+
+    contextvars.copy_context().run(probe)
+
+
 # ---------------------------------------------------------------------------
 # The judge is the goal judge
 # ---------------------------------------------------------------------------
@@ -586,5 +619,7 @@ def test_malformed_revision_is_not_applied(monkeypatch, board) -> None:
 
     out = TL.run_task_list(task="t", session_id="s1")
 
-    assert out["items"][0]["result_summary"].startswith("(failed:")
+    assert out["status"] == "error"
+    assert out["items"][0]["status"] == TL.IN_PROGRESS
+    assert out["items"][0]["result_summary"] == ""
     assert out["revisions"][0]["reason"].startswith("revision failed:")

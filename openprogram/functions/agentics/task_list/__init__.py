@@ -600,7 +600,8 @@ def run_task_list(task: str, session_id: str = "", resume: bool = True,
     Returns ``{"status", "task", "items", "revisions", "summary"}``,
     where ``status`` is ``completed`` when every item is settled,
     ``abandoned`` when a revision emptied the list, or ``capped`` when
-    the run hit its item ceiling.
+    the run hit its item ceiling. An invalid revision returns ``error``
+    and leaves the current checkpoint resumable.
     """
     sid = session_id or current_session_id()
 
@@ -639,14 +640,12 @@ def run_task_list(task: str, session_id: str = "", resume: bool = True,
                                         agent_id=agent_id,
                                         spawn_caller=spawn_caller)
         except Exception as exc:  # noqa: BLE001 — no revision means stop here
-            _update_item(sid, item, status=COMPLETED,
-                         result_summary=f"(failed: {reason})")
             revisions.append({
                 "at": time.time(), "failed_item": item["id"],
                 "reason": f"revision failed: {type(exc).__name__}: {exc}",
                 "before": [it["id"] for it in replaced], "after": [],
             })
-            status = "abandoned"
+            status = "error"
             break
 
         # Completed items are never rewritten — only the tail that has

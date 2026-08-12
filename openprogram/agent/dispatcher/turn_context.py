@@ -64,7 +64,6 @@ class TurnBindings:
             _current_runtime as _current_runtime_var,
             _render_range_override as _render_range_var,
         )
-        self._render_range_token = _render_range_var.set(req.render_range)
         # Tag this turn so file-mutating tools can attribute backups to
         # the right assistant message via checkpoint.helpers.
         self._turn_id_token = _turn_id_var.set(assistant_msg_id)
@@ -156,6 +155,7 @@ class TurnBindings:
             # Skip only the runtime; @agentic_function will still work, just
             # without an auto-injected runtime.
             self._runtime_token = None
+        self._render_range_token = _render_range_var.set(req.render_range)
         return self
 
     def release(self) -> None:

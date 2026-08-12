@@ -174,7 +174,7 @@ turn 级的 continuation loop（<code>goal/loop.py</code>）保持不动，item 
 <tr><td>交接摘要上限</td><td><code>HANDOFF_SUMMARY_MAX_CHARS</code>=1200，超限截断并附一句"给产物路径不是内容"</td></tr>
 </table>
 
-<div class="card"><b>修复合同：</b>executor 的 <code>render_range_for(item)</code> 必须传入共享 <code>run_agent_turn</code> 边界，并由该 turn 内未显式声明范围的 agentic function 读取；显式 decorator 范围仍优先。修订回复只有显式 JSON 数组 <code>"items": []</code> 才表示放弃，缺字段或非数组均为无效回复，不得改写 board。</div>
+<div class="card"><b>修复合同：</b>executor 的 <code>render_range_for(item)</code> 必须传入共享 <code>run_agent_turn</code> 边界，并由该 turn 内未显式声明范围的 agentic function 读取；使用 spawn subprocess 的 agentic tool 必须显式传递该范围，显式 decorator 范围仍优先。修订回复只有显式 JSON 数组 <code>"items": []</code> 才表示放弃，缺字段或非数组均为无效回复，不得改写 board；驱动返回 <code>error</code> 并保留 <code>in_progress</code> checkpoint 供后续 resume。</div>
 
 <p><b>未做</b>：并行执行、自动依赖推断、token 收益量化对比——都等第一版跑通真实任务后再决定。
 另外 <code>MAX_ITEMS_EXECUTED</code>=40 是运行上限，触到即以 <code>capped</code> 停止。</p>
