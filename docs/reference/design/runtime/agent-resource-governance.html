@@ -84,10 +84,10 @@
   <div class="status">
     <div><span class="k">文档状态</span><b>设计完成，基础批次已实现</b></div>
     <div><span class="k">产品边界</span><b>单用户、本机、常驻 worker</b></div>
-    <div><span class="k">验收状态</span><b>调度与恢复已落地；provider token/cost 强制未接线</b></div>
+    <div><span class="k">验收状态</span><b>provider token/cost 与四界面 TaskResourceView 已接线；full gate 有环境失败</b></div>
   </div>
 
-  <div class="note stop"><b>实现状态边界。</b>durable dispatcher 公平性、lease generation owner fencing、崩溃恢复、runtime/idle 强制、价格来源真值与跨界面 TaskResourceView 已实现并有自动化证据。唯一未接线的环节是 provider chokepoint：<code>reserve/start/settle_provider_request</code> 原语存在且被测试覆盖，但 <code>openprogram/providers/stream.py</code> 尚未调用它们，因此 token/cost 预算目前不能在 provider 调用上强制执行。在该接线完成前，feature matrix 不能记为实心圆。</div>
+  <div class="note stop"><b>实现状态边界。</b>durable dispatcher、公平调度、lease generation owner fencing、崩溃恢复、runtime/idle 强制、价格来源真值和 provider token/cost reservation 已接入生产路径。Web task actions、模型 task tools、Python CLI <code>tasks list/get</code> 与 Ink TUI <code>/tasks [task_id]</code> 均消费 canonical <code>TaskResourceView</code>；跨 surface fixture 与 TUI payload-preservation 测试已覆盖。full affected gate 唯一失败来自隔离工作树 <code>.venv</code> 缺少 <code>pip</code>，本轮不修改 feature matrix 分数，也不把该次 full gate 记为全绿。</div>
 
   <nav aria-label="目录">
     <a href="#scope">00 范围与结论</a>
@@ -126,7 +126,7 @@
 
   <p><span class="tag">本设计不实现</span>后台会话 UI、MCP server、购买或充值、组织计费、跨机器集群调度。共享 DTO、reason code、预算 scope 和 reservation 协议可以被这些系统以后复用，但本页不预设其产品交互。</p>
 
-  <h2 id="current">01 我们的现状：基础资源账本已存在，执行链仍未完成</h2>
+  <h2 id="current">01 实施前基线：基础资源账本已存在，执行链仍未完成</h2>
   <p><code>main@990bfe36</code> 已不再只是全局线程池：<code>ResourceGovernor</code> 已提供统一 admission、每会话 live/queued/cumulative 限制、budget scope、token/cost reservation 原语和稳定 reason code。当前主要问题是这些原语尚未全部接入真实执行链：runner 仍会立刻提交 executor 后在线程中轮询，provider 调用没有使用 token/cost reservation，runtime/idle 只保存上限而不强制，用户界面也没有等价资源视图。</p>
 
   <div class="table-wrap">
@@ -521,7 +521,9 @@ Task JSON + optional fields:
     <tr><td><code>main@990bfe36</code><br>foundation 来源 <code>8f62da5a</code></td><td>配置解析、SQLite schema、admission、per-session live/queued/cumulative、budget scope、reservation 原语、reason code、基础 view。</td><td><code>tests/unit/test_resource_governance.py</code> 的 foundation 用例存在；代码审计确认 reservation 仅被测试调用。</td><td class="m">否；执行链与用户面不完整</td></tr>
     <tr><td><code>codex/resource-governance-runtime-20260811@ace9a907</code></td><td>oldest-eligible dispatcher、owner fencing/reconcile、runtime/idle monitor 与 bounded-operation helper。</td><td>2026-08-12 fresh：<code>tests/unit/test_resource_governance.py tests/unit/test_async_task.py</code>，52 passed；该分支未做独立 spec/quality review，也未包含后续 integration fixes。</td><td class="m">否；只作为待复用候选</td></tr>
     <tr><td><code>claude/resource-governance-consolidation-20260812</code></td><td>durable fair dispatcher（<code>claim_next</code> 按 <code>admitted_seq</code> 取最旧可用，<code>spawn_task</code> 不再直接向 executor 提交）；lease generation owner fencing；<code>preparing</code> 回滚与 worker-lost 围栏的幂等 reconcile；两阶段 <code>task_finalizations</code> 崩溃安全终态；跨 Web/ACP/task 的单turn准入与忙会话 requeue；runtime/idle 预算与 <code>bounded_operation_timeout</code>；<code>ModelCost</code> 可空费率加来源，未知价格不再等于零；完整 <code>TaskResourceView</code> 与 model tools 结构化 details；取消与 active runtime 改按 <code>(session_id, execution_id)</code> 键控。</td><td>2026-08-12 fresh：<code>tests/unit tests/agent tests/providers</code> 3350 passed、9 skipped、1 xfailed；改动文件 Ruff 干净；<code>checklinks</code> 0 broken。</td><td class="m">部分；provider chokepoint 未接线</td></tr>
-    <tr><td>剩余工作</td><td>在 <code>openprogram/providers/stream.py</code> 调用 <code>reserve/start/settle_provider_request</code>，据 preflight 夹紧 output cap，并接线 <code>quota.accounting_unavailable</code> 等类型化会计失败；随后补齐故障注入与并发 gate。</td><td>原语已由 <code>tests/unit/test_resource_governance.py</code> 覆盖，但没有任何生产调用方，因此 token/cost 强制尚无端到端证据。</td><td class="n">未完成</td></tr>
+    <tr><td><code>codex/resource-governance-final-20260812@8d78d201</code></td><td>provider reserve/clamp/start/settle 已接入 <code>stream</code> 与 <code>stream_simple</code>；pre-I/O 失败只释放 <code>reserved</code>，<code>start</code> 后取消或异常保留 exposure；Web spawn/list/get/cancel 返回 canonical <code>TaskResourceView</code>。</td><td>2026-08-12 fresh focused：resource governance、provider enforcement/metering、model task tools 与 Web DTO 共 95 passed；新增两类 public stream 入口的 credential、generator construction、transport error 与 cancellation 回归。</td><td class="m">provider 生命周期完成；等待 whole-branch review</td></tr>
+    <tr><td><code>codex/resource-governance-final-20260812@c65bb446</code></td><td>新增 Python CLI <code>tasks list/get</code> 与 Ink TUI <code>/tasks [task_id]</code>，均输出 worker/runner 返回的 canonical DTO；Web、model tools 与 CLI 的同 fixture 相等，TUI 不重算字段。</td><td>2026-08-12 fresh：Python task surface 23 passed；CLI full 127 passed、2 skipped；CLI <code>tsc --noEmit</code> 与 production build 通过；changed-branch Ruff、docs checklinks 和 <code>git diff --check</code> 通过。</td><td class="m">TaskResourceView 四界面接线完成；等待 whole-branch review</td></tr>
+    <tr><td>full affected gate</td><td><code>tests/unit tests/agent tests/providers</code> 已完整执行；MCP auth/CLI/security/turns/tools 另行 focused。</td><td>3365 passed、10 skipped、1 xfailed、1 failed；唯一失败为 <code>test_wheel_contains_both_runtime_shims</code>，隔离工作树 <code>.venv/bin/python -m pip</code> 返回 <code>No module named pip</code>。MCP focused 138 passed。该环境失败未归因于实现，也未被隐藏为 green。</td><td class="n">full gate 非全绿</td></tr>
   </table>
   </div>
 
