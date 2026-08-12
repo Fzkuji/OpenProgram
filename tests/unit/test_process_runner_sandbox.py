@@ -45,11 +45,11 @@ def test_spawn_payload_contains_explicit_sandbox_snapshot(monkeypatch):
         work_dir="/workspace",
     )
 
-    assert captured["args"][-3] == {
+    assert captured["args"][-2] == {
         "enabled": True,
         "policy": {"network": False},
     }
-    assert captured["args"][-2:] == (None, None)
+    assert captured["args"][-1] is None
 
 
 def test_spawn_payload_preserves_turn_render_range(monkeypatch):
@@ -88,4 +88,4 @@ def test_spawn_payload_preserves_turn_render_range(monkeypatch):
         render_range={"callers": 0, "subcalls": 2},
     )
 
-    assert captured["args"][-1] == {"callers": 0, "subcalls": 2}
+    assert captured["args"][-4] == {"callers": 0, "subcalls": 2}
