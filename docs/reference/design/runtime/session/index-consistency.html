@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Session 注册表时间语义与并发一致性</title>
+  <style>
+    :root{color-scheme:dark;--bg:#11120f;--panel:#191a16;--line:#34362d;--text:#e8e6dc;--muted:#aaa99f;--ok:#8fca8b;--warn:#e1b36c;--bad:#e98b83}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 ui-sans-serif,system-ui,sans-serif}main{max-width:1040px;margin:auto;padding:48px 24px 72px}h1{font-size:32px;line-height:1.2;margin:.2em 0}h2{margin-top:38px;border-bottom:1px solid var(--line);padding-bottom:8px}h3{margin:0 0 8px}.sub,.muted{color:var(--muted)}.lead,.card,.note{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}.table{overflow:auto;border:1px solid var(--line);border-radius:10px}table{width:100%;border-collapse:collapse;min-width:720px}th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}th{color:var(--muted)}code{color:#d7c58f}.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}ol,ul{padding-left:22px}.flow{display:grid;grid-template-columns:auto 1fr;gap:8px 12px}.flow b{color:var(--warn)}
+  </style>
+</head>
+<body><main>
+  <p class="sub">OpenProgram / SessionStore / implementation handoff</p>
+  <h1>Session 注册表时间语义与并发一致性</h1>
+  <p class="sub">基线：<code>e831d0f0</code>。本页只规范 <code>meta.json</code>、内存 <code>_index</code> 与 <code>index.json</code> 的时间和并发合同；设计状态不代表实现完成。</p>
+
+  <div class="lead"><b>确定方案。</b> <code>updated_at</code> 表示最后一次会话内容追加时间，不表示任意元数据持久化时间。内存注册表的读、改、快照由独立锁保护；磁盘原子写串行化，但不在注册表锁内执行文件 I/O。延迟 flush 只能清除自己快照之前的 dirty 状态，不能覆盖并发更新。</div>
+
+  <h2>01 · 已验证缺口与不变量</h2>
+  <div class="table"><table><thead><tr><th>位置</th><th>当前行为</th><th>目标不变量</th></tr></thead><tbody>
+    <tr><td><code>_persist_meta</code></td><td>每次写 <code>meta.json</code> 都赋值 <code>time.time()</code>。</td><td>改名、置顶、已读、分支标记、HEAD 持久化不得改变会话内容排序时间；append 路径显式推进。</td></tr>
+    <tr><td><code>_index</code></td><td>更新和 <code>list_sessions()</code> 复制未使用同一把锁。</td><td>读者获得行字典的点时快照；并发创建、更新、删除不产生迭代异常或撕裂字段。</td></tr>
+    <tr><td>deferred flush</td><td>timer 受锁保护，但快照序列化和其他直接保存路径未形成统一协议。</td><td>旧快照不得晚于新快照落盘；写入期间的新 mutation 必须保留 dirty 并由后续 flush 保存。</td></tr>
+  </tbody></table></div>
+
+  <h2>02 · 参考机制与取舍</h2>
+  <div class="grid">
+    <section class="card"><h3>现有 SessionMemoryIndex</h3><p>节点和 session meta 已有自己的内部锁。采用其“锁内更新、锁外文件 I/O”边界，不增加事务框架。</p></section>
+    <section class="card"><h3>stdlib threading</h3><p>采用一把 registry state lock 加一把 write lock。前者保护 dict、dirty、timer；后者只保证磁盘快照按取得顺序写入。</p></section>
+    <section class="card"><h3>atomic_write_text</h3><p>继续负责单次文件替换的原子性；不新增数据库、文件锁或第三方依赖。</p></section>
+  </div>
+  <p class="note"><b>采用：</b>显式内容时钟、行级浅拷贝快照、串行原子写。<b>修改：</b><code>_persist_meta</code> 不再隐式更新时间。<b>拒绝：</b>对所有 SessionStore 操作加全局锁、每次 append 同步写 registry、把 <code>updated_at</code> 拆成新字段并迁移全部消费者。</p>
+
+  <h2>03 · 目标状态流</h2>
+  <div class="flow">
+    <b>1</b><div>append message/node 显式生成一个时间值，并写入 session meta 与 registry entry。</div>
+    <b>2</b><div>rename/pin/read/branch/head 等路径只持久化已有 <code>updated_at</code>，不自行推进。</div>
+    <b>3</b><div>registry mutation 在 state lock 内完成；<code>list_sessions</code> 在同一锁内复制每行后再过滤和排序。</div>
+    <b>4</b><div>保存者先取得 write lock，再在 state lock 内捕获 JSON 快照并清除该快照覆盖的 dirty，随后释放 state lock 执行原子写。</div>
+    <b>5</b><div>若写入期间发生新 mutation，它重新设置 dirty；timer 或退出 flush 保存后续快照。</div>
+  </div>
+
+  <h2>04 · 失败、并发与兼容</h2>
+  <ul>
+    <li>磁盘写失败保留现有 warning；内存状态仍可服务当前进程，后续 mutation/flush 可再次保存。</li>
+    <li><code>list_sessions</code> 返回副本，调用方修改返回行不得反向修改 registry。</li>
+    <li>创建时调用方提供的历史 <code>updated_at</code> 保持原值；重建旧 index 不迁移 schema。</li>
+    <li>排序仍按 <code>updated_at</code> 降序，缺失值仍按 0 处理；wire shape 和字段集合不变。</li>
+    <li>不在 registry state lock 内执行 <code>atomic_write_text</code>，避免列表读取被磁盘延迟阻塞。</li>
+  </ul>
+
+  <h2>05 · 明确排除</h2>
+  <ul>
+    <li>本任务不修改节点 DAG 的并发模型、<code>mark_merged</code> 的跨调用事务或 project location registry。</li>
+    <li>不处理 Windows、系统 credential store、孤儿文件、认证改动和其他审计项。</li>
+    <li>不引入 SQLite、跨进程 registry 锁或新的后台服务。</li>
+  </ul>
+
+  <h2>06 · 验收矩阵</h2>
+  <div class="table"><table><thead><tr><th>公共入口</th><th>场景</th><th>可观察断言</th></tr></thead><tbody>
+    <tr><td><code>update_session</code></td><td>创建两会话后改名、置顶、标已读</td><td>目标会话的 meta/index <code>updated_at</code> 不变，列表顺序不变。</td></tr>
+    <tr><td><code>append_message</code></td><td>追加一条内容</td><td>meta/index 同时推进，列表按新时间排序。</td></tr>
+    <tr><td><code>list_sessions</code></td><td>调用方修改返回行</td><td>后续列表结果不受影响。</td></tr>
+    <tr><td>deferred flush</td><td>旧快照写入期间并发更新</td><td>后续 flush 后 <code>index.json</code> 包含新字段，不被旧保存清除 dirty。</td></tr>
+    <tr><td>concurrent registry access</td><td>并发 update/list/flush</td><td>无迭代异常，JSON 始终可解析，最终内存与磁盘一致。</td></tr>
+  </tbody></table></div>
+
+  <h2>07 · 实现文件与证据</h2>
+  <div class="table"><table><thead><tr><th>文件</th><th>职责</th></tr></thead><tbody>
+    <tr><td><code>openprogram/store/session/session_store.py</code></td><td>时间语义、registry state/write 锁、快照与延迟 flush。</td></tr>
+    <tr><td><code>tests/unit/test_session_index_consistency.py</code></td><td>排序时间、返回快照和并发写入的公共回归。</td></tr>
+  </tbody></table></div>
+  <p class="note"><span class="warn">待实现与审查。</span> 只有在 RED/GREEN、独立规格审查、独立质量审查和完整 gate 后更新实现证据。</p>
+</main></body></html>
