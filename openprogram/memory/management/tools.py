@@ -376,21 +376,32 @@ def management_tools(
                 raise ValueError(
                     "commitment transition source is outside the selected writer batch"
                 )
-            if commitments:
-                upsert_commitments(
-                    workspace.stage_dir,
-                    commitments,
-                    source_memory_dir=workspace.memory_dir,
-                )
-            if transitions:
-                transition_commitments(
-                    workspace.stage_dir,
-                    transitions,
-                    source_memory_dir=workspace.memory_dir,
-                    allowed_source_refs=allowed,
-                )
             if not commitments and not transitions:
                 raise ValueError("commitments or transitions is required")
+            path = workspace.stage_dir / "commitments.jsonl"
+            existed = path.exists()
+            before = path.read_bytes() if existed else None
+            try:
+                if commitments:
+                    upsert_commitments(
+                        workspace.stage_dir,
+                        commitments,
+                        source_memory_dir=workspace.memory_dir,
+                    )
+                if transitions:
+                    transition_commitments(
+                        workspace.stage_dir,
+                        transitions,
+                        source_memory_dir=workspace.memory_dir,
+                        allowed_source_refs=allowed,
+                    )
+            except BaseException:
+                if existed:
+                    assert before is not None
+                    path.write_bytes(before)
+                else:
+                    path.unlink(missing_ok=True)
+                raise
             return "commitments recorded"
 
         return _result("record_commitments", arguments, operation)

@@ -65,10 +65,10 @@ def _notification_step(
         return None
     notified = set(row.get("notification_steps") or [])
     overdue = f"overdue:{overdue_interval_days}"
-    if days >= overdue_interval_days and overdue not in notified:
-        return overdue
     if "due" not in notified:
         return "due"
+    if days >= overdue_interval_days and overdue not in notified:
+        return overdue
     return None
 
 
