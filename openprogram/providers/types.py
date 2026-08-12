@@ -305,10 +305,23 @@ class Context(BaseModel):
 # Model
 
 class ModelCost(BaseModel):
-    input: float = 0.0   # $/million tokens
-    output: float = 0.0
-    cache_read: float = 0.0
-    cache_write: float = 0.0
+    # ``None`` means the price is absent, which is distinct from an explicit
+    # zero rate (for example a bundled or free endpoint).  Do not turn absent
+    # catalog fields into zero: budget enforcement needs this distinction.
+    input: float | None = None   # $/million tokens
+    output: float | None = None
+    cache_read: float | None = None
+    cache_write: float | None = None
+    source: Literal["model_catalog", "configured", "unknown"] = "unknown"
+
+    def is_known(self) -> bool:
+        return (
+            self.source != "unknown"
+            and self.input is not None
+            and self.output is not None
+            and self.cache_read is not None
+            and self.cache_write is not None
+        )
 
 
 class Model(BaseModel):

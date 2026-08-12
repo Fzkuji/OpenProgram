@@ -265,6 +265,75 @@ class ReservationDecision:
 
 
 @dataclass(frozen=True)
+class RequestReservation:
+    """Conservative one-request accounting plan for the future provider seam."""
+
+    allowed: bool
+    reason_code: str | None
+    input_token_upper_bound: int
+    output_token_cap: int
+    token_reservation: int
+    cost_known: bool
+    cost_reservation_microusd: int | None
+
+
+def plan_request_reservation(
+    *,
+    input_token_upper_bound: int,
+    requested_max_output_tokens: int,
+    remaining_token_budget: int | None,
+    model: Any,
+    cost_budget_configured: bool = False,
+) -> RequestReservation:
+    """Return safe request bounds without contacting a provider or ledger.
+
+    B5 consumes this DTO to perform the atomic reserve/start/settle sequence.
+    """
+    for name, value in (
+        ("input_token_upper_bound", input_token_upper_bound),
+        ("requested_max_output_tokens", requested_max_output_tokens),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"{name} must be a non-negative integer")
+    if remaining_token_budget is not None and (
+        isinstance(remaining_token_budget, bool)
+        or not isinstance(remaining_token_budget, int)
+        or remaining_token_budget < 0
+    ):
+        raise ValueError("remaining_token_budget must be a non-negative integer or None")
+    model_cap = getattr(model, "max_tokens", None)
+    if not isinstance(model_cap, int) or model_cap <= 0:
+        model_cap = requested_max_output_tokens
+    output_cap = min(requested_max_output_tokens, model_cap)
+    if remaining_token_budget is not None:
+        available_output = max(0, remaining_token_budget - input_token_upper_bound)
+        output_cap = min(output_cap, available_output)
+        if input_token_upper_bound > remaining_token_budget:
+            return RequestReservation(
+                False, "quota.token_exhausted", input_token_upper_bound, 0,
+                input_token_upper_bound, False, None,
+            )
+    token_reservation = input_token_upper_bound + output_cap
+    pricing = getattr(model, "cost", None)
+    price_known = pricing is not None and bool(getattr(pricing, "is_known", lambda: False)())
+    if cost_budget_configured and not price_known:
+        return RequestReservation(
+            False, "quota.cost_unavailable", input_token_upper_bound, output_cap,
+            token_reservation, False, None,
+        )
+    estimated_cost = None
+    if price_known:
+        estimated_cost = int(round(
+            (input_token_upper_bound * float(pricing.input)
+             + output_cap * float(pricing.output))
+        ))
+    return RequestReservation(
+        True, None, input_token_upper_bound, output_cap, token_reservation,
+        price_known, estimated_cost,
+    )
+
+
+@dataclass(frozen=True)
 class DispatchClaim:
     task_id: str
     session_id: str
@@ -1095,6 +1164,7 @@ __all__ = [
     "ResourceLimitError", "ResourceLimits", "ResolvedResourceLimits",
     "AdmissionDecision", "AdmissionRejected", "DispatchClaim", "ReconcileResult",
     "ReservationDecision",
+    "RequestReservation", "plan_request_reservation",
     "ResourceGovernor", "TaskResourceView",
     "build_task_resource_view", "global_resource_limits",
     "resolve_resource_limits", "save_session_resource_limits",

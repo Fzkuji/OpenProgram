@@ -33,6 +33,12 @@ def _cost_from_model(model, usage) -> tuple[dict, str]:
     """Return (cost dict, cost_source). Uses the catalog's per-MTok pricing
     via providers.models.calculate_cost. Falls back to a provider-reported
     cost if the model carries one and the catalog can't price it."""
+    cost = getattr(model, "cost", None)
+    if cost is None or not getattr(cost, "is_known", lambda: False)():
+        return ({
+            "cost_input": 0.0, "cost_output": 0.0, "cost_cache_read": 0.0,
+            "cost_cache_write": 0.0, "cost_total": 0.0,
+        }, "unknown")
     try:
         from openprogram.providers.models import calculate_cost
         # calculate_cost mutates usage.cost AND returns total; we read the
@@ -46,7 +52,7 @@ def _cost_from_model(model, usage) -> tuple[dict, str]:
                 "cost_cache_read": float(c.cache_read or 0.0),
                 "cost_cache_write": float(c.cache_write or 0.0),
                 "cost_total": float(c.total or 0.0),
-            }, "model_catalog")
+            }, str(cost.source))
     except Exception:
         pass
     return ({
