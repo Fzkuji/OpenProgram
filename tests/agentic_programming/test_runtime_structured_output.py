@@ -89,12 +89,64 @@ def test_validation_failure_gets_one_bounded_semantic_repair():
     assert len(repair_text) < 4000
 
 
+def test_validation_repair_consumes_shared_exec_attempt_budget():
+    calls = []
+    events = []
+
+    def call(content, model="test", response_format=None):
+        calls.append(content)
+        return '{"answer": "wrong"}' if len(calls) == 1 else '{"answer": 11}'
+
+    runtime = Runtime(call=call, model="dummy", max_retries=1)
+    runtime.on_stream = events.append
+    with pytest.raises(StructuredOutputValidationError):
+        runtime.exec("question", response_format=SCHEMA)
+
+    assert len(calls) == 1
+    assert not any(event.get("type") == "structured_output_retry" for event in events)
+
+
+def test_repair_transport_failure_does_not_refresh_exec_attempt_budget(monkeypatch):
+    calls = []
+
+    def call(content, model="test", response_format=None):
+        calls.append(content)
+        if "validation_failed" in content[-1].get("text", ""):
+            raise RuntimeError("repair transport failed")
+        return '{"answer": "wrong"}'
+
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.runtime._retry_sleep_seconds",
+        lambda *args, **kwargs: 0,
+    )
+    with pytest.raises(Exception, match="repair transport failed"):
+        Runtime(call=call, model="dummy", max_retries=2).exec(
+            "question", response_format=SCHEMA
+        )
+
+    assert len(calls) == 2
+
+
 def test_async_exec_returns_validated_python_value():
     async def call(content, model="test", response_format=None):
         return '{"answer": 9}'
 
     runtime = Runtime(call=call, model="dummy")
     assert asyncio.run(runtime.async_exec("question", response_format=SCHEMA)) == {"answer": 9}
+
+
+def test_async_validation_repair_consumes_shared_exec_attempt_budget():
+    calls = []
+
+    async def call(content, model="test", response_format=None):
+        calls.append(content)
+        return '{"answer": "wrong"}' if len(calls) == 1 else '{"answer": 9}'
+
+    runtime = Runtime(call=call, model="dummy", max_retries=1)
+    with pytest.raises(StructuredOutputValidationError):
+        asyncio.run(runtime.async_exec("question", response_format=SCHEMA))
+
+    assert len(calls) == 1
 
 
 def test_unknown_provider_is_rejected_before_stream_call():
