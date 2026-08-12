@@ -106,9 +106,9 @@
       </tr>
       <tr>
         <td>Commitments and heartbeat</td>
-        <td class="status pending">Candidate implementation</td>
-        <td><code>ab54b270</code>, <code>953276d3</code> on <code>codex/commitments-heartbeat-20260811</code></td>
-        <td>The implementation report records focused/full verification and explicit concerns, but its dedicated ledger still says Task 1 is in progress. Reconcile the ledger, review the feature independently at the final branch head, and separate it from the SSRF integration history before claiming completion.</td>
+        <td class="status partial">Implemented on an isolated branch</td>
+        <td><code>claude/commitments-heartbeat-20260812</code><br>cherry-picked from <code>ab54b270</code>, <code>953276d3</code></td>
+        <td>The commitment lifecycle, deterministic heartbeat, owner projections, and the three design documents are implemented and separated from the runtime URL/SSRF history that shared the original branch. Focused suites pass (<code>test_memory_commitments</code>, <code>test_memory_routes</code>, <code>test_memory_runtime_config</code>: 69 passed) alongside cron, memory-writing, and config-schema suites (101 passed); Ruff is clean and docs links are 0. Delivery remains at-least-once by design. Independent spec and quality review at this branch head is the remaining step before merge.</td>
       </tr>
       <tr>
         <td>Account management, channels, memory, desktop, Web</td>
@@ -150,11 +150,7 @@
   </ol>
 
   <h3>4. Commitments and heartbeat finalization</h3>
-  <ol>
-    <li>Create a clean feature branch containing only the commitment lifecycle, deterministic heartbeat, owner projections, and its documentation.</li>
-    <li>Reconcile the stale task ledger with the implementation report and rerun feature-focused, full unit, Web, docs-link, privacy, and matrix checks.</li>
-    <li>Run fresh independent spec and quality reviews. Preserve the documented at-least-once delivery limitation and do not claim exactly-once notification delivery.</li>
-  </ol>
+  <p><code>claude/commitments-heartbeat-20260812</code> carries only the commitment lifecycle, deterministic heartbeat, owner projections, and their documentation; the ledger row above now records the verified state. The remaining step is a fresh independent spec and quality review at that branch head, which must preserve the documented at-least-once delivery limitation and must not claim exactly-once notification delivery.</p>
 
   <h3>5. Smaller uncompleted hardening work</h3>
   <ul>
