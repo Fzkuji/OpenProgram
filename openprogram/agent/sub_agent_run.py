@@ -38,7 +38,7 @@ class AgentTurnResult:
     error: Optional[str] = None
 
 
-def run_agent_turn(
+def _execute_agent_turn(
     session_id: str,
     prompt: str,
     agent_id: str,
@@ -151,6 +151,119 @@ def run_agent_turn(
         final_text=turn.final_text or "",
         failed=bool(turn.failed),
         error=turn.error,
+    )
+
+
+def run_agent_turn(
+    session_id: str,
+    prompt: str,
+    agent_id: str,
+    *,
+    branch_from: Optional[str] = None,
+    label: Optional[str] = None,
+    spawn_caller: Optional[str] = None,
+    advance_head: bool = True,
+    tools_override: Optional[list[str]] = None,
+    authority: Optional[dict[str, Any]] = None,
+    creates_agent: bool = True,
+    parent_task_id: Optional[str] = None,
+    caller_msg_id: Optional[str] = None,
+    caller_session_id: Optional[str] = None,
+    chain_messages: int = 0,
+    chain_generations: int = 0,
+    caller_chain_generations: int = 0,
+    archive_when_done: bool = False,
+    on_accepted=None,
+) -> AgentTurnResult:
+    """Durably admit one agent turn and wait for its Task result."""
+    from openprogram.agent.session_db import default_db
+    if default_db().get_session(session_id) is None:
+        return AgentTurnResult(
+            failed=True,
+            error=f"session {session_id!r} not found",
+        )
+    from openprogram.agent.task import get_runner
+    from openprogram.agent.task.types import TaskStatus, mint_task_id
+    from openprogram.worker.lock import WorkerLock
+
+    runner = get_runner()
+    borrow_current_claim = runner.can_borrow_current_claim(session_id)
+    task_id = mint_task_id()
+    direct_lock = WorkerLock()
+    owns_worker = False
+    claim_scope = None
+    try:
+        if not borrow_current_claim:
+            claim_scope = runner.claim_only(task_id)
+            claim_scope.__enter__()
+            owns_worker = direct_lock.try_acquire()
+            if not owns_worker:
+                claim_scope.__exit__(None, None, None)
+                claim_scope = None
+        task_id = runner.spawn_task(
+            task_id=task_id,
+            session_id=session_id,
+            prompt=prompt,
+            agent_id=agent_id,
+            subject=prompt[:60],
+            description=prompt,
+            context_mode="inherit" if branch_from is not None else "clean",
+            parent_msg_id=branch_from,
+            parent_task_id=parent_task_id,
+            label=label,
+            wait=True,
+            caller_msg_id=caller_msg_id or branch_from,
+            caller_session_id=caller_session_id,
+            chain_messages=chain_messages,
+            chain_generations=chain_generations,
+            caller_chain_generations=caller_chain_generations,
+            archive_when_done=archive_when_done,
+            spawn_caller=spawn_caller,
+            advance_head=advance_head,
+            tools_override=tools_override,
+            authority=authority,
+            creates_agent=creates_agent,
+            on_accepted=on_accepted,
+            borrow_current_claim=borrow_current_claim,
+        )
+        if borrow_current_claim or owns_worker:
+            task = runner.await_task(task_id)
+        else:
+            def take_over_if_worker_exited() -> None:
+                nonlocal owns_worker, claim_scope
+                if owns_worker:
+                    return
+                candidate_scope = runner.claim_only(task_id)
+                candidate_scope.__enter__()
+                try:
+                    if not direct_lock.try_acquire():
+                        return
+                    owns_worker = True
+                    claim_scope = candidate_scope
+                    candidate_scope = None
+                finally:
+                    if candidate_scope is not None:
+                        candidate_scope.__exit__(None, None, None)
+
+            task = runner.await_task_durable(
+                task_id, on_poll=take_over_if_worker_exited,
+            )
+            if not owns_worker:
+                runner.retire_external_waiter(task_id)
+    finally:
+        try:
+            if owns_worker:
+                direct_lock.release()
+        finally:
+            if claim_scope is not None:
+                claim_scope.__exit__(None, None, None)
+    if task is None:
+        return AgentTurnResult(failed=True, error=f"task {task_id!r} not found")
+    return AgentTurnResult(
+        head_id=task.head_id,
+        final_text=task.result_text or "",
+        failed=task.status != TaskStatus.COMPLETED,
+        error=task.error,
     )
 
 
@@ -328,6 +441,8 @@ def write_attach_placeholder_for_spawn(
     label: Optional[str],
     prompt: str,
     chosen_agent: str,
+    node_id: Optional[str] = None,
+    task_id: Optional[str] = None,
 ) -> Optional[str]:
     """Write a ``status=running`` placeholder attach card for an async
     spawn, anchored at the CALLING node（在哪调用就锚在哪）. The runner
@@ -344,7 +459,7 @@ def write_attach_placeholder_for_spawn(
         store = default_db()
         sess_row = store.get_session(session_id) or {}
         head_before = sess_row.get("head_id")
-        attach_node_id = _uuid.uuid4().hex[:12]
+        attach_node_id = node_id or _uuid.uuid4().hex[:12]
         store.append_message(session_id, {
             "id": attach_node_id,
             "role": "assistant",
@@ -363,6 +478,7 @@ def write_attach_placeholder_for_spawn(
                     "prompt": prompt[:500],
                     "source_commit_id": None,
                     "status": "running",
+                    "task_id": task_id,
                 },
             }, default=str),
         })
@@ -400,6 +516,14 @@ def run_agent_turn_async(
     archive_when_done: bool = False,
     task_id: Optional[str] = None,
     authority: Optional[dict[str, Any]] = None,
+    creates_agent: bool = True,
+    spawn_caller: Optional[str] = None,
+    advance_head: bool = False,
+    tools_override: Optional[list[str]] = None,
+    deferred_inbox: Optional[dict[str, Any]] = None,
+    on_accepted=None,
+    defer_dispatch: bool = False,
+    resume_deferred: bool = False,
 ) -> str:
     """Submit an agent turn to the task runner, return ``task_id``.
 
@@ -435,7 +559,14 @@ def run_agent_turn_async(
         chain_generations=chain_generations,
         caller_chain_generations=caller_chain_generations,
         archive_when_done=archive_when_done,
+        spawn_caller=spawn_caller if spawn_caller is not None else caller_msg_id,
+        advance_head=advance_head,
+        tools_override=tools_override,
+        deferred_inbox=deferred_inbox,
         task_id=task_id,
         authority=authority,
         creates_agent=creates_agent,
+        on_accepted=on_accepted,
+        defer_dispatch=defer_dispatch,
+        resume_deferred=resume_deferred,
     )

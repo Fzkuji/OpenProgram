@@ -263,6 +263,21 @@ def _drop_tmp_rooted_session_store():
         session_store._default_store = None
 
 
+@pytest.fixture(autouse=True)
+def _unit_task_runner_owns_worker_lock(request, monkeypatch):
+    """Unit TaskRunners model code executing inside the locked worker."""
+    path = Path(str(request.node.path))
+    if "unit" not in path.parts or path.name in {
+        "test_resource_governance.py", "test_worker_lock.py",
+    }:
+        yield
+        return
+    monkeypatch.setattr(
+        "openprogram.worker.lock.is_held_by", lambda _pid: True,
+    )
+    yield
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

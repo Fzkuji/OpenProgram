@@ -72,10 +72,15 @@ CREATE TABLE IF NOT EXISTS task_admissions (
     task_id TEXT UNIQUE NOT NULL,
     session_id TEXT NOT NULL,
     parent_task_id TEXT,
+    caller_session_id TEXT,
     caller_turn_id TEXT,
     creates_agent INTEGER NOT NULL CHECK (creates_agent IN (0, 1)),
     request_fingerprint TEXT NOT NULL,
     budget_scope_id TEXT NOT NULL,
+    dispatch_ready INTEGER NOT NULL DEFAULT 1
+        CHECK (dispatch_ready IN (0, 1)),
+    borrowed_parent_task_id TEXT,
+    resume_parent_msg_id TEXT,
     state TEXT NOT NULL CHECK (state IN ('preparing','queued','live','stopping','released')),
     admitted_seq INTEGER NOT NULL,
     owner_instance_id TEXT,
@@ -89,6 +94,19 @@ CREATE TABLE IF NOT EXISTS task_admissions (
 );
 CREATE INDEX IF NOT EXISTS ix_admissions_session_state
     ON task_admissions(session_id, state, admitted_seq);
+
+CREATE TABLE IF NOT EXISTS task_finalizations (
+    task_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    owner_instance_id TEXT NOT NULL,
+    lease_generation INTEGER NOT NULL,
+    fields_json TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('pending','completed')),
+    created_at REAL NOT NULL,
+    completed_at REAL
+);
+CREATE INDEX IF NOT EXISTS ix_finalizations_state
+    ON task_finalizations(state);
 
 CREATE TABLE IF NOT EXISTS budget_scopes (
     budget_scope_id TEXT PRIMARY KEY,
@@ -204,11 +222,35 @@ class UsageLedger:
         existing = {
             str(row[1]) for row in conn.execute("PRAGMA table_info(task_admissions)")
         }
+        changed = False
+        if existing and "caller_session_id" not in existing:
+            conn.execute(
+                "ALTER TABLE task_admissions ADD COLUMN caller_session_id TEXT"
+            )
+            changed = True
+        if existing and "dispatch_ready" not in existing:
+            conn.execute(
+                "ALTER TABLE task_admissions ADD COLUMN "
+                "dispatch_ready INTEGER NOT NULL DEFAULT 1"
+            )
+            changed = True
+        if existing and "borrowed_parent_task_id" not in existing:
+            conn.execute(
+                "ALTER TABLE task_admissions ADD COLUMN borrowed_parent_task_id TEXT"
+            )
+            changed = True
+        if existing and "resume_parent_msg_id" not in existing:
+            conn.execute(
+                "ALTER TABLE task_admissions ADD COLUMN resume_parent_msg_id TEXT"
+            )
+            changed = True
         if existing and "lease_generation" not in existing:
             conn.execute(
                 "ALTER TABLE task_admissions ADD COLUMN "
                 "lease_generation INTEGER NOT NULL DEFAULT 0"
             )
+            changed = True
+        if changed:
             conn.commit()
 
     def connection(self) -> sqlite3.Connection:
@@ -328,6 +370,23 @@ class UsageLedger:
 
     def task_usage(self, task_id: str) -> AggregateRow:
         return self.query(filters={"task_id": task_id})[0]
+
+    def task_resource_usage(self, task_id: str) -> dict:
+        """Read the task resource facts from one SQLite result set."""
+        with self._lock:
+            rows = self._connect().execute(
+                """SELECT total_tokens, cost_total, cost_source
+                   FROM usage_events WHERE task_id = ?""",
+                (task_id,),
+            ).fetchall()
+        return {
+            "total_tokens": sum(int(row["total_tokens"] or 0) for row in rows),
+            "cost_values": [row["cost_total"] or 0 for row in rows],
+            "events": len(rows),
+            "unknown_cost_events": sum(
+                (row["cost_source"] or "unknown") == "unknown" for row in rows
+            ),
+        }
 
     def resource_counts(self, session_id: str, task_id: str) -> dict:
         with self._lock:

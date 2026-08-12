@@ -110,20 +110,30 @@ class CancelToken:
 
 _cancel_flags_lock = threading.Lock()
 
-# session_id → the token of the turn currently running on that session.
+# (session_id, execution_id) → the token owned by that execution. A None
+# execution_id is the foreground slot shared by Web, MCP and ACP turns, which
+# admit one at a time; background tasks sharing a session bind their task id
+# so a stop aimed at one never reaches a sibling.
 # Absent when no turn is in flight, which is why a stop between turns is a
 # no-op rather than a flag that poisons whatever runs next.
-_current_tokens: dict[str, CancelToken] = {}
+_current_tokens: dict[tuple[str, str | None], CancelToken] = {}
 
 # session_id -> exact Event whose owner is performing session-keyed cleanup.
 # Registration fails closed while a lease exists; cleanup callbacks run outside
-# this module's lock and release the lease in a finally block.
+# this module's lock and release the lease in a finally block. Cleanup is
+# session-keyed, so it gates the foreground slot only.
 _cancel_cleanup_leases: dict[str, threading.Event] = {}
 
 # Per-thread session_id so the cancel hook knows whose token to check.
 # Set by `_execute_in_context` at entry. ContextVars do not propagate across
 # threading.Thread starts, so the value is always set from inside the worker.
 _current_session_id: ContextVar = ContextVar("_current_session_id", default=None)
+
+# Background tasks sharing a session bind their task id here. Foreground
+# turns leave it as None and retain the historical single-turn semantics.
+_current_execution_id: ContextVar = ContextVar(
+    "_current_execution_id", default=None,
+)
 
 # The active token for the current worker context. Set alongside the
 # session id so nested agentic frames check the same object even when a
@@ -142,8 +152,9 @@ def begin_turn(session_id: str, turn_id: str | None = None) -> CancelToken:
     with _cancel_flags_lock:
         if session_id in _cancel_cleanup_leases:
             raise RuntimeError("session cancellation cleanup in progress")
-        stale = _current_tokens.get(session_id)
-        _current_tokens[session_id] = token
+        key = (session_id, None)
+        stale = _current_tokens.get(key)
+        _current_tokens[key] = token
     if stale is not None:
         stale.retire()
     return token
@@ -157,21 +168,26 @@ def end_turn(session_id: str, token: CancelToken | None = None) -> None:
     removed, never a newer turn's.
     """
     with _cancel_flags_lock:
-        current = _current_tokens.get(session_id)
+        key = (session_id, None)
+        current = _current_tokens.get(key)
         if token is None or current is token:
-            _current_tokens.pop(session_id, None)
+            _current_tokens.pop(key, None)
     doomed = token if token is not None else current
     if doomed is not None:
         doomed.retire()
 
 
-def current_token(session_id: str) -> CancelToken | None:
+def current_token(
+    session_id: str, *, execution_id: str | None = None,
+) -> CancelToken | None:
     """The token of the turn running on this session, or None between turns."""
     with _cancel_flags_lock:
-        return _current_tokens.get(session_id)
+        return _current_tokens.get((session_id, execution_id))
 
 
-def register_cancel_event(session_id: str, ev: threading.Event) -> None:
+def register_cancel_event(
+    session_id: str, ev: threading.Event, *, execution_id: str | None = None,
+) -> None:
     """Adopt a caller-owned Event as the session's current turn token.
 
     Kept for call sites (chat turns, task runner) that create their own
@@ -181,22 +197,32 @@ def register_cancel_event(session_id: str, ev: threading.Event) -> None:
     token = CancelToken(session_id)
     token._event = ev
     with _cancel_flags_lock:
-        if session_id in _cancel_cleanup_leases:
+        if execution_id is None and session_id in _cancel_cleanup_leases:
             raise RuntimeError("session cancellation cleanup in progress")
-        stale = _current_tokens.get(session_id)
-        _current_tokens[session_id] = token
+        key = (session_id, execution_id)
+        stale = _current_tokens.get(key)
+        _current_tokens[key] = token
     if stale is not None and stale._event is not ev:
         stale.retire()
 
 
-def claim_cancel_event(session_id: str, ev: threading.Event) -> bool:
-    """Register ``ev`` only when the session has no owner or cleanup lease."""
+def claim_cancel_event(
+    session_id: str, ev: threading.Event, *, execution_id: str | None = None,
+) -> bool:
+    """Register ``ev`` only when this slot has no owner or cleanup lease.
+
+    The foreground slot (``execution_id`` None) additionally fails closed
+    while a session-keyed cleanup lease is held.
+    """
     token = CancelToken(session_id)
     token._event = ev
     with _cancel_flags_lock:
-        if session_id in _cancel_cleanup_leases or session_id in _current_tokens:
+        if execution_id is None and session_id in _cancel_cleanup_leases:
             return False
-        _current_tokens[session_id] = token
+        key = (session_id, execution_id)
+        if key in _current_tokens:
+            return False
+        _current_tokens[key] = token
         return True
 
 
@@ -208,7 +234,7 @@ def acquire_cancel_cleanup(session_id: str, ev: threading.Event) -> bool:
     The caller must release in ``finally`` after all blocking cleanup work.
     """
     with _cancel_flags_lock:
-        current = _current_tokens.get(session_id)
+        current = _current_tokens.get((session_id, None))
         if (
             current is None
             or current._event is not ev
@@ -229,6 +255,8 @@ def release_cancel_cleanup(session_id: str, ev: threading.Event) -> None:
 def unregister_cancel_event(
     session_id: str,
     ev: threading.Event | None = None,
+    *,
+    execution_id: str | None = None,
 ) -> None:
     """Retire the registration made with ``ev`` (see register_cancel_event).
 
@@ -246,11 +274,12 @@ def unregister_cancel_event(
     if ev is None:
         end_turn(session_id)
         return
+    key = (session_id, execution_id)
     with _cancel_flags_lock:
-        current = _current_tokens.get(session_id)
+        current = _current_tokens.get(key)
         if current is None or current._event is not ev:
             return
-        _current_tokens.pop(session_id, None)
+        _current_tokens.pop(key, None)
     current.retire()
 
 
@@ -267,27 +296,51 @@ def is_turn_running(session_id: str) -> bool:
     # invisible here; register one there if channel sessions ever need
     # busy-queueing.
     with _cancel_flags_lock:
-        return session_id in _current_tokens
+        return any(key[0] == session_id for key in _current_tokens)
 
 
-def mark_cancelled(session_id: str) -> None:
+def mark_cancelled(session_id: str, *, execution_id: str | None = None) -> None:
     """Stop the turn running on this session. No-op between turns."""
     with _cancel_flags_lock:
-        token = _current_tokens.get(session_id)
+        token = _current_tokens.get((session_id, execution_id))
     if token is not None:
         token.cancel()
 
 
-def is_cancelled(session_id: str) -> bool:
-    """True while the current turn is cancelled. False once it has ended."""
+def is_cancelled(
+    session_id: str, *, execution_id: str | None = None,
+) -> bool:
+    """True while the current turn is cancelled. False once it has ended.
+
+    A background task checking its own session resolves to its own slot,
+    so a stop aimed at the foreground turn never reads as cancelled here.
+    """
+    if execution_id is None and _current_session_id.get(None) == session_id:
+        execution_id = _current_execution_id.get(None)
     with _cancel_flags_lock:
-        token = _current_tokens.get(session_id)
+        token = _current_tokens.get((session_id, execution_id))
     return token.is_cancelled() if token is not None else False
 
 
 def clear_cancel(session_id: str) -> None:
     """Retire the session's token — the turn is over, cancelled or not."""
     end_turn(session_id)
+
+
+def set_current_execution_id(execution_id: str | None):
+    """Bind task-keyed cancellation/runtime ownership to this context."""
+    return _current_execution_id.set(execution_id)
+
+
+def reset_current_execution_id(token) -> None:
+    try:
+        _current_execution_id.reset(token)
+    except Exception:
+        pass
+
+
+def get_current_execution_id() -> str | None:
+    return _current_execution_id.get(None)
 
 
 def set_current_session_id(session_id: str):
@@ -322,7 +375,8 @@ def _active_token() -> "CancelToken | None":
     if token is not None:
         return token
     cid = _current_session_id.get(None)
-    return current_token(cid) if cid else None
+    eid = _current_execution_id.get(None)
+    return current_token(cid, execution_id=eid) if cid else None
 
 
 def _cancel_hook() -> None:
@@ -362,35 +416,41 @@ set_session_id_provider(get_current_session_id)
 # Active exec runtimes — keep track so /api/stop can kill the CLI subprocess.
 # ---------------------------------------------------------------------------
 
-_active_exec_runtimes: dict[str, Any] = {}
+_active_exec_runtimes: dict[tuple[str, str | None], Any] = {}
 _active_exec_runtimes_lock = threading.Lock()
 
 
-def register_active_runtime(session_id: str, rt: Any) -> None:
+def register_active_runtime(
+    session_id: str, rt: Any, *, execution_id: str | None = None,
+) -> None:
     with _active_exec_runtimes_lock:
-        _active_exec_runtimes[session_id] = rt
+        _active_exec_runtimes[(session_id, execution_id)] = rt
 
 
-def unregister_active_runtime(session_id: str) -> None:
+def unregister_active_runtime(
+    session_id: str, *, execution_id: str | None = None,
+) -> None:
     with _active_exec_runtimes_lock:
-        _active_exec_runtimes.pop(session_id, None)
+        _active_exec_runtimes.pop((session_id, execution_id), None)
 
 
 def has_active_runtime(session_id: str) -> bool:
-    """True iff a runtime is currently registered for this session.
+    """True iff a foreground runtime is registered for this session.
 
     Used as a zombie check against ``_running_tasks``: an entry there
     without a paired live runtime (process died, cleanup missed) is
     stale and should be treated as no-op.
     """
     with _active_exec_runtimes_lock:
-        return session_id in _active_exec_runtimes
+        return (session_id, None) in _active_exec_runtimes
 
 
-def kill_active_runtime(session_id: str) -> None:
+def kill_active_runtime(
+    session_id: str, *, execution_id: str | None = None,
+) -> None:
     """Terminate the subprocess of the active exec runtime, if any."""
     with _active_exec_runtimes_lock:
-        rt = _active_exec_runtimes.get(session_id)
+        rt = _active_exec_runtimes.get((session_id, execution_id))
     if rt is None:
         return
     proc = getattr(rt, "_proc", None)

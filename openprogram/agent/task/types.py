@@ -132,6 +132,16 @@ class Task:
     # Set only by the agent tool's spawn form; deliveries to existing
     # branches leave it False.
     archive_when_done: bool = False
+    # Exact execution options needed after durable queueing. Public sync
+    # entry points used to pass these directly to run_agent_turn; keeping
+    # them on Task lets the runner remain the only execution boundary.
+    spawn_caller: Optional[str] = None
+    advance_head: bool = False
+    tools_override: Optional[list[str]] = None
+    # Durable intent for a busy-target delivery. Admission persists this
+    # before inbox publication so a restarted runner can recreate a
+    # missing entry without making the task dispatchable too early.
+    deferred_inbox: Optional[dict[str, Any]] = None
     label: Optional[str] = None
     # Branch tip we *expect* this task to produce when it commits.
     # Filled in by the runner immediately so the UI can stitch

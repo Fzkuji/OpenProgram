@@ -80,3 +80,16 @@ def read_holder_pid() -> Optional[int]:
         return int(raw) if raw else None
     except (OSError, ValueError):
         return None
+
+
+def is_held_by(pid: int) -> bool:
+    """Return whether ``pid`` owns the live worker lock.
+
+    The PID file alone is not proof because it can survive a crash.  Probe the
+    actual advisory lock first: acquiring it means there is no live holder.
+    """
+    probe = WorkerLock()
+    if probe.try_acquire():
+        probe.release()
+        return False
+    return probe.holder_pid == pid
