@@ -29,6 +29,11 @@ def _assert_completes_while_blocked(call, blocked: threading.Event) -> None:
         thread.join(2)
 
 
+def test_invalid_unhashable_session_id_is_still_rejected(tmp_path):
+    store = SessionStore(tmp_path)
+    assert store.get_session([]) is None  # type: ignore[arg-type]
+
+
 def test_slow_session_rebuild_does_not_block_cached_session(tmp_path, monkeypatch):
     store = SessionStore(tmp_path)
     store.create_session("slow", "main")

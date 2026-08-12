@@ -559,6 +559,14 @@ class SessionStore:
     def _open(self, session_id: str, *, create_if_missing: bool = False) -> Optional[tuple[GitSession, SessionMemoryIndex]]:
         """Return (git, idx). Loads from disk on first access. None if
         session doesn't exist and ``create_if_missing`` is False."""
+        if not create_if_missing and (
+            not isinstance(session_id, str)
+            or not session_id
+            or session_id in {".", ".."}
+            or "/" in session_id
+            or "\\" in session_id
+        ):
+            return None
         with self._session_lock(session_id):
             verified_git: GitSession | None = None
             with self._lock:
@@ -568,14 +576,6 @@ class SessionStore:
                 if cached:
                     self._sessions.move_to_end(session_id)
             if not create_if_missing:
-                if (
-                    not isinstance(session_id, str)
-                    or not session_id
-                    or session_id in {".", ".."}
-                    or "/" in session_id
-                    or "\\" in session_id
-                ):
-                    return None
                 verified_git = GitSession(sdir)
                 if (
                     sdir.is_symlink()
