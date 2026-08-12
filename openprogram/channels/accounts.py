@@ -89,7 +89,16 @@ def account_meta_path(channel: str, account_id: str) -> Path:
 
 
 def account_credentials_path(channel: str, account_id: str) -> Path:
-    return account_dir(channel, account_id) / "credentials.json"
+    from openprogram.paths import get_state_dir
+
+    return (
+        get_state_dir()
+        / "channels"
+        / channel
+        / "accounts"
+        / account_id
+        / "credentials.json"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +249,6 @@ def save_credentials(
     """Atomically replace credentials.json with ``creds``."""
     with _lock:
         path = account_credentials_path(channel, account_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
         from openprogram.credential_files import _private_atomic_write
         from openprogram.paths import get_state_dir
 

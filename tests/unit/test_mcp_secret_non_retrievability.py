@@ -244,14 +244,17 @@ def test_saved_config_is_owner_only(state_dir):
     assert not list(state_dir.glob("*.tmp"))
 
 
-def test_existing_world_readable_config_narrows_on_next_save(state_dir):
+def test_existing_world_readable_config_requires_doctor_before_next_save(state_dir):
+    from openprogram.credential_files import PrivateAtomicWriteError
+
     path = save_configs([local_config()])
     os.chmod(path, 0o644)
     assert stat.S_IMODE(os.stat(path).st_mode) == 0o644
 
-    save_configs([local_config()])
+    with pytest.raises(PrivateAtomicWriteError, match="permission"):
+        save_configs([local_config()])
 
-    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o644
 
 
 def test_save_configs_preserves_roots_block(state_dir):
@@ -561,6 +564,66 @@ def test_restart_then_publish_failure_has_no_secret_in_recursive_exception_chain
         )
     )
     assert secret not in rendered
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+@pytest.mark.parametrize(
+    ("rollback_error", "status_code", "runtime_state"),
+    [
+        (None, 500, "restored"),
+        (RuntimeError("peer-secret-value rollback failed"), 500, "unknown"),
+    ],
+)
+def test_initial_restart_failure_is_stable_and_secret_free(
+    monkeypatch, rollback_error, status_code, runtime_state
+):
+    from fastapi import HTTPException
+
+    from openprogram.webui.routes import mcp
+
+    previous = local_config()
+    previous.env = {"TOKEN": "peer-secret-value"}
+    updated = local_config()
+    updated.command = ["new"]
+    calls = 0
+
+    async def failed_restart(_name, *, new_cfg):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("peer-secret-value initial restart failed")
+        if rollback_error is not None:
+            raise rollback_error
+        return {"ready": True}
+
+    monkeypatch.setattr(mcp, "restart_server", failed_restart)
+
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(
+            mcp._restart_then_publish(
+                previous.name,
+                previous=previous,
+                updated=updated,
+                configs=[updated],
+                expected_revision="sha256:current",
+            )
+        )
+
+    assert caught.value.status_code == status_code
+    assert caught.value.detail == {
+        "code": "mcp_runtime_restart_failed",
+        "persisted_config": "unchanged",
+        "runtime_state": runtime_state,
+        "action": "retry_or_restart",
+    }
+    chain = list(exception_chain(caught.value))
+    rendered = "\n".join(
+        text
+        for error in chain
+        for text in (str(error), repr(error), "".join(traceback.format_exception(error)))
+    )
+    assert "peer-secret-value" not in rendered
     assert caught.value.__cause__ is None
     assert caught.value.__context__ is None
 

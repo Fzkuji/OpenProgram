@@ -216,6 +216,37 @@ def test_auth_store_and_web_token_writers_reject_symlink_targets(
     assert web_outside.read_text(encoding="utf-8") == "outside"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink contract")
+def test_public_credential_writers_do_not_create_through_parent_symlinks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openprogram.auth.store import AuthStore
+    from openprogram.auth.types import CredentialPool
+    from openprogram.channels import accounts
+    from openprogram.credential_files import PrivateAtomicWriteError
+
+    channel_root = tmp_path / "channel-state"
+    channel_root.mkdir(mode=0o700)
+    channel_outside = tmp_path / "channel-outside"
+    channel_outside.mkdir()
+    (channel_root / "channels").symlink_to(channel_outside)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: channel_root)
+    with pytest.raises(PrivateAtomicWriteError):
+        accounts.save_credentials("telegram", "default", {"token": "secret"})
+    assert list(channel_outside.iterdir()) == []
+
+    auth_root = tmp_path / "auth-state"
+    auth_root.mkdir(mode=0o700)
+    auth_outside = tmp_path / "auth-outside"
+    auth_outside.mkdir()
+    (auth_root / "auth").symlink_to(auth_outside)
+    with pytest.raises(PrivateAtomicWriteError):
+        AuthStore(root=auth_root).put_pool(
+            CredentialPool(provider_id="openai", account_id="default")
+        )
+    assert list(auth_outside.iterdir()) == []
+
+
 def test_auth_store_detects_external_edit_before_republishing_cached_pool(
     tmp_path: Path,
 ) -> None:

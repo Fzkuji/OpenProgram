@@ -125,17 +125,26 @@ async def _restart_then_publish(
     expected_revision: str,
 ) -> dict:
     """Validate runtime first, then conditionally publish the same snapshot."""
+    restart_failed = False
+    rollback_failed = False
     try:
         status = await restart_server(name, new_cfg=updated)
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
+        restart_failed = True
         try:
             await restart_server(name, new_cfg=previous)
         except Exception:  # noqa: BLE001
-            pass
+            rollback_failed = True
+    if restart_failed:
         raise HTTPException(
             status_code=500,
-            detail=f"restart failed: {type(exc).__name__}: {exc}",
-        ) from exc
+            detail={
+                "code": "mcp_runtime_restart_failed",
+                "persisted_config": "unchanged",
+                "runtime_state": "unknown" if rollback_failed else "restored",
+                "action": "retry_or_restart",
+            },
+        )
 
     conflict = False
     uncommitted_error = None

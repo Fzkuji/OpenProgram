@@ -132,6 +132,26 @@ def test_restore_rejects_a_registered_secret_member_that_is_not_json(
     assert json.loads((state / "config.json").read_text()) == {"keep": True}
 
 
+def test_restore_rejects_secret_members_when_manifest_denies_opt_in(
+    tmp_path: Path,
+) -> None:
+    from openprogram._cli_cmds.backup import restore_archive
+
+    state = _state(tmp_path)
+    archive = _archive(
+        tmp_path,
+        {"auth/openai/default.json": b'{"credentials": []}'},
+        manifest=json.dumps(
+            {"format_version": 1, "credential_opt_in": False}
+        ).encode(),
+    )
+
+    with pytest.raises(tarfile.TarError, match="credential_opt_in"):
+        restore_archive(archive, state)
+
+    assert not (state / "auth").exists()
+
+
 # --- publication, permissions, and secret preservation ---------------------
 
 
@@ -148,6 +168,9 @@ def test_restored_secret_files_are_owner_only(tmp_path: Path) -> None:
             "config.json": b'{"api_keys": {}}',
             "auth/openai/default.json": b'{"credentials": []}',
         },
+        manifest=json.dumps(
+            {"format_version": 1, "credential_opt_in": True}
+        ).encode(),
     )
 
     restore_archive(archive, state)
@@ -165,6 +188,7 @@ def test_restore_preserves_local_secrets_for_redacted_fields(tmp_path: Path) -> 
     (state / "config.json").write_text(
         json.dumps({"api_keys": {"OPENAI_API_KEY": "sk-local"}, "ui": {"port": 1}})
     )
+    os.chmod(state / "config.json", 0o600)
     # A default archive carries config.json with api_keys redacted away.
     archive = _archive(tmp_path, {"config.json": json.dumps({"ui": {"port": 2}}).encode()})
 
@@ -236,6 +260,69 @@ def test_journal_is_removed_after_a_successful_restore(tmp_path: Path) -> None:
     restore_archive(archive, state)
 
     assert not restore_journal_path(state).exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")
+def test_restore_rejects_a_symlinked_journal_without_mutating_its_target(
+    tmp_path: Path,
+) -> None:
+    from openprogram._cli_cmds.backup import restore_archive, restore_journal_path
+
+    state = _state(tmp_path)
+    outside = tmp_path / "outside.json"
+    outside.write_text('{"keep": true}')
+    restore_journal_path(state).symlink_to(outside)
+    archive = _archive(tmp_path, {"config.json": b"{}"})
+
+    with pytest.raises(OSError):
+        restore_archive(archive, state)
+
+    assert json.loads(outside.read_text()) == {"keep": True}
+    assert not (state / "config.json").exists()
+
+
+def test_short_journal_writes_remain_recoverable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openprogram._cli_cmds import backup as backup_cmd
+
+    state = _state(tmp_path)
+    target = state / "config.json"
+    target.write_text('{"generation": "old"}')
+    journal = backup_cmd._RestoreJournal(state)
+    real_write = os.write
+
+    def short_write(descriptor: int, payload: bytes) -> int:
+        return real_write(descriptor, payload[: max(1, len(payload) // 2)])
+
+    monkeypatch.setattr(backup_cmd, "_journal_write", short_write)
+    journal.start()
+    previous = journal.preserve("config.json", target)
+    journal.record("config.json", previous)
+    target.write_text('{"generation": "half-applied"}')
+
+    assert backup_cmd.recover_interrupted_restore(state) is True
+    assert json.loads(target.read_text()) == {"generation": "old"}
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")
+def test_restore_rejects_existing_target_symlink_without_changing_its_type(
+    tmp_path: Path,
+) -> None:
+    from openprogram._cli_cmds.backup import restore_archive
+
+    state = _state(tmp_path)
+    real = state / "real.json"
+    real.write_text('{"keep": true}')
+    target = state / "config.json"
+    target.symlink_to(real)
+    archive = _archive(tmp_path, {"config.json": b"{}"})
+
+    with pytest.raises(OSError):
+        restore_archive(archive, state)
+
+    assert target.is_symlink()
+    assert json.loads(real.read_text()) == {"keep": True}
 
 
 def test_crash_after_publish_is_recovered_from_the_journal(tmp_path: Path) -> None:

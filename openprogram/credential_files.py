@@ -409,6 +409,17 @@ def audit_credentials(*, root: Path) -> list[CredentialFinding]:
             if relative in seen:
                 continue
             entries = inventory_for_path(relative)
+            if not entries and path.is_symlink():
+                entries = tuple(
+                    entry
+                    for entry in SECRET_INVENTORY
+                    if (
+                        entry.path_pattern.split("*", 1)[0].rstrip("/") == relative
+                        or entry.path_pattern.split("*", 1)[0]
+                        .rstrip("/")
+                        .startswith(relative + "/")
+                    )
+                )
             target = _temporary_of(name)
             if not entries and target is not None:
                 # A leftover temporary only matters beside a registered target.
@@ -777,7 +788,10 @@ def _read_private_bytes(path: Path, *, root: Path) -> bytes | None:
         return None
     try:
         opened = os.fstat(descriptor)
-        _verify_owner(target, opened)
+        if inventory_for_path(relative.as_posix()):
+            _verify_private_regular_info(target, opened)
+        else:
+            _verify_owner(target, opened)
         if not stat.S_ISREG(opened.st_mode) or (
             before.st_dev,
             before.st_ino,

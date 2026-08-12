@@ -24,7 +24,9 @@ from __future__ import annotations
 import io
 import json
 import os
+import secrets
 import shutil
+import stat
 import sys
 import tarfile
 import time
@@ -529,7 +531,16 @@ class _RestoreJournal:
         self.entries: list[dict] = []
 
     def start(self) -> None:
-        self.backup_dir.mkdir(mode=0o700, exist_ok=True)
+        try:
+            info = os.lstat(self.backup_dir)
+        except FileNotFoundError:
+            self.backup_dir.mkdir(mode=0o700)
+        else:
+            if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+                raise OSError("restore journal directory is not a real directory")
+            if info.st_uid != os.geteuid():
+                raise OSError("restore journal directory has a foreign owner")
+            os.chmod(self.backup_dir, 0o700)
         self._flush(complete=False)
 
     def record(self, relative: str, previous: Path | None) -> None:
@@ -547,8 +558,12 @@ class _RestoreJournal:
     def preserve(self, relative: str, target: Path) -> Path | None:
         """Copy the current bytes aside so the publish can be reversed."""
 
-        if not target.exists():
+        try:
+            info = os.lstat(target)
+        except FileNotFoundError:
             return None
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+            raise OSError("restore target is not a regular file")
         keep = self.backup_dir / relative.replace("/", "__")
         keep.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         shutil.copy2(target, keep)
@@ -575,14 +590,48 @@ class _RestoreJournal:
         # Deliberately not the credential writer: the journal is the thing
         # that must survive a failing credential publish, so it cannot share
         # the code path whose failure it exists to record.
-        descriptor = os.open(
-            self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
-        )
         try:
-            _journal_write(descriptor, payload)
-            _journal_fsync(descriptor)
+            live = os.lstat(self.path)
+        except FileNotFoundError:
+            live = None
+        if live is not None and (
+            stat.S_ISLNK(live.st_mode) or not stat.S_ISREG(live.st_mode)
+        ):
+            raise OSError("restore journal is not a regular file")
+        temporary = self.state / f".{_JOURNAL_NAME}.{secrets.token_hex(12)}.tmp"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        descriptor = os.open(temporary, flags, 0o600)
+        try:
+            try:
+                written = 0
+                while written < len(payload):
+                    count = _journal_write(descriptor, payload[written:])
+                    if count <= 0:
+                        raise OSError("restore journal write made no progress")
+                    written += count
+                _journal_fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            try:
+                live = os.lstat(self.path)
+            except FileNotFoundError:
+                live = None
+            if live is not None and (
+                stat.S_ISLNK(live.st_mode) or not stat.S_ISREG(live.st_mode)
+            ):
+                raise OSError("restore journal is not a regular file")
+            _journal_replace(temporary, self.path)
+            directory = os.open(
+                self.state,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0),
+            )
+            try:
+                _journal_fsync(directory)
+            finally:
+                os.close(directory)
         finally:
-            os.close(descriptor)
+            temporary.unlink(missing_ok=True)
 
 
 def recover_interrupted_restore(state: Path) -> bool:
@@ -596,7 +645,23 @@ def recover_interrupted_restore(state: Path) -> bool:
     state = Path(state)
     journal_file = restore_journal_path(state)
     try:
-        record = json.loads(journal_file.read_text())
+        before = os.lstat(journal_file)
+        if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+            return False
+        descriptor = os.open(
+            journal_file,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
+        )
+        try:
+            opened = os.fstat(descriptor)
+            if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+                return False
+            chunks = []
+            while chunk := os.read(descriptor, 1024 * 1024):
+                chunks.append(chunk)
+        finally:
+            os.close(descriptor)
+        record = json.loads(b"".join(chunks))
     except FileNotFoundError:
         return False
     except (OSError, json.JSONDecodeError):
@@ -652,6 +717,7 @@ def restore_archive(archive: Path, state: Path) -> list[str]:
     """
 
     from openprogram.credential_files import (
+        backup_bytes,
         inventory_for_path,
         preserve_local_secret_bytes,
     )
@@ -664,6 +730,14 @@ def restore_archive(archive: Path, state: Path) -> list[str]:
         names = {member.name for member in members}
         if _MANIFEST_NAME not in names:
             raise tarfile.TarError("archive has no manifest; refusing to restore")
+        manifest_source = tar.extractfile(_MANIFEST_NAME)
+        if manifest_source is None:
+            raise tarfile.TarError("archive manifest cannot be read")
+        try:
+            manifest = json.loads(manifest_source.read())
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise tarfile.TarError("archive manifest is not valid JSON") from exc
+        credential_opt_in = manifest.get("credential_opt_in") is True
 
         staged: list[tuple[str, bytes]] = []
         for member in members:
@@ -692,6 +766,26 @@ def restore_archive(archive: Path, state: Path) -> list[str]:
                 raise tarfile.TarError(f"cannot read archive member: {member.name}")
             payload = source.read()
             if inventory:
+                if not credential_opt_in:
+                    safe_payload = backup_bytes(member.name, payload, include_credentials=False)
+                    if safe_payload is None:
+                        raise tarfile.TarError(
+                            "credential_opt_in does not authorize secret member: "
+                            f"{member.name}"
+                        )
+                    try:
+                        original_value = json.loads(payload)
+                        safe_value = json.loads(safe_payload)
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        original_value = payload
+                        safe_value = safe_payload
+                    if original_value != safe_value and _has_secret_material(
+                        original_value, safe_value
+                    ):
+                        raise tarfile.TarError(
+                            "credential_opt_in does not authorize secret fields: "
+                            f"{member.name}"
+                        )
                 # A registered JSON secret file must parse before
                 # publication: publishing unparseable bytes over a live
                 # credential turns a corrupt archive into a lost one.
@@ -721,7 +815,9 @@ def restore_archive(archive: Path, state: Path) -> list[str]:
     try:
         for relative, payload in staged:
             target = state / relative
-            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            from openprogram.credential_files import _ensure_private_directory
+
+            _ensure_private_directory(target.parent, root=state)
             journal.record(relative, journal.preserve(relative, target))
             _publish_restored(target, payload, root=state)
             published.append(relative)
@@ -731,6 +827,28 @@ def restore_archive(archive: Path, state: Path) -> list[str]:
         raise
     journal.finish()
     return published
+
+
+def _has_secret_material(original: object, redacted: object) -> bool:
+    """Whether redaction removed a non-empty value from a mixed file."""
+
+    if isinstance(original, dict) and isinstance(redacted, dict):
+        for key, value in original.items():
+            if key not in redacted:
+                if _nonempty_secret_value(value):
+                    return True
+            elif _has_secret_material(value, redacted[key]):
+                return True
+        return False
+    return False
+
+
+def _nonempty_secret_value(value: object) -> bool:
+    if isinstance(value, dict):
+        return any(_nonempty_secret_value(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_nonempty_secret_value(item) for item in value)
+    return value not in (None, "", False)
 
 
 def _cmd_backup_prune(keep: int) -> int:

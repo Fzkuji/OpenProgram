@@ -460,7 +460,6 @@ class AuthStore:
         expected_revision: str | None = None,
     ) -> None:
         path = self._pool_path(pool.provider_id, pool.account_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
         data = json.dumps(pool.to_dict(), indent=2, ensure_ascii=False)
         from openprogram.credential_files import _private_atomic_write
 

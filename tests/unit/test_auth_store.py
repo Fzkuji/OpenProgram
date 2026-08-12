@@ -107,6 +107,27 @@ def test_file_permissions_are_0600(tmp_path: Path):
         assert mode == 0o600, f"expected 0o600, got {oct(mode)}"
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission semantics")
+def test_wide_permission_file_is_rejected_until_doctor_repairs_it(tmp_path: Path):
+    from openprogram.credential_files import (
+        PrivateAtomicWriteError,
+        repair_credentials,
+    )
+
+    store = AuthStore(root=tmp_path)
+    store.add_credential(_oauth_cred(access="SECRET-WIDE"))
+    path = tmp_path / "auth" / "openai-codex" / "default.json"
+    os.chmod(path, 0o644)
+
+    with pytest.raises(PrivateAtomicWriteError):
+        AuthStore(root=tmp_path).get_pool("openai-codex", "default")
+
+    findings = repair_credentials(root=tmp_path)
+    assert any(item.relative_path == "auth/openai-codex/default.json" and item.repaired for item in findings)
+    pool = AuthStore(root=tmp_path).get_pool("openai-codex", "default")
+    assert pool.credentials[0].payload.auth_value == "SECRET-WIDE"
+
+
 def test_corrupt_file_raises(tmp_path: Path):
     s = AuthStore(root=tmp_path)
     s.add_credential(_oauth_cred())
@@ -285,7 +306,9 @@ def test_list_pools_reports_legacy_alias_dir_as_canonical(tmp_path: Path):
         provider_id="bailian", account_id="default",
         credentials=[_api_cred(provider="bailian", key="sk-legacy")],
     )
-    (d / "default.json").write_text(json.dumps(legacy.to_dict()), encoding="utf-8")
+    legacy_path = d / "default.json"
+    legacy_path.write_text(json.dumps(legacy.to_dict()), encoding="utf-8")
+    os.chmod(legacy_path, 0o600)
     s = AuthStore(root=tmp_path)
     pools = s.list_pools()
     # the legacy dir surfaces under the CANONICAL id so a canonical-filtered

@@ -33,6 +33,7 @@ def profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (state / "sessions").mkdir()
     (state / "sessions" / "s1.json").write_text('{"id": "s1"}', encoding="utf-8")
     (state / "config.json").write_text('{"theme": "dark"}', encoding="utf-8")
+    (state / "config.json").chmod(0o600)
     (state / "bindings.json").write_text('{"discord": []}', encoding="utf-8")
     (state / "programs_meta.json").write_text('{"favorites": []}', encoding="utf-8")
     (state / "functions_meta.json").write_text("{}", encoding="utf-8")
@@ -54,10 +55,12 @@ def profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (state / "auth" / "anthropic.json").write_text(
         '{"key": "secret"}', encoding="utf-8"
     )
+    (state / "auth" / "anthropic.json").chmod(0o600)
     (state / "mcp_tokens").mkdir()
     (state / "mcp_tokens" / "t.json").write_text(
         '{"token": "secret"}', encoding="utf-8"
     )
+    (state / "mcp_tokens" / "t.json").chmod(0o600)
     (state / "skills").mkdir()
     (state / "skills" / "node_modules").mkdir()
     (state / "skills" / "node_modules" / "junk.js").write_text("//", encoding="utf-8")
@@ -215,6 +218,18 @@ def _seed_registered_secrets(profile: Path) -> dict[str, bytes]:
     )
     (profile / "web").mkdir()
     (profile / "web" / "token").write_bytes(secrets["web_runtime_token"])
+    for private_path in (
+        profile / "config.json",
+        profile / "auth" / "openai" / "default.json",
+        account / "auth" / "openai" / "default.json",
+        account / ".env",
+        channel / "credentials.json",
+        channel / "access.json",
+        profile / "mcp_servers.json",
+        profile / "mcp_tokens" / "github.json",
+        profile / "web" / "token",
+    ):
+        private_path.chmod(0o600)
     return secrets
 
 
@@ -551,11 +566,11 @@ def test_restore_inventory_files_are_atomically_published_owner_only(
         '{"theme":"local","api_keys":{"OPENAI_API_KEY":"local-secret"}}',
         encoding="utf-8",
     )
-    config.chmod(0o644)
+    config.chmod(0o600)
     auth = profile / "auth" / "openai" / "default.json"
     auth.parent.mkdir(parents=True, exist_ok=True)
     auth.write_bytes(b'{"credentials":"old-auth"}')
-    auth.chmod(0o644)
+    auth.chmod(0o600)
     archive = tmp_path / "restore.tar.gz"
     mcp_token = profile / "mcp_tokens" / "restored.json"
     observed: dict[str, tuple[int, bytes | None]] = {}
@@ -613,6 +628,7 @@ def test_restore_inventory_failure_preserves_old_file_and_cleans_temp(
     target = profile / "auth" / "openai" / "default.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(b'{"credentials":"old-auth"}')
+    target.chmod(0o600)
     archive = tmp_path / "restore-failure.tar.gz"
     real_fdopen = os.fdopen
 
