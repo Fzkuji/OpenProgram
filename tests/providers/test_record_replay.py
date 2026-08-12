@@ -246,6 +246,36 @@ def test_remove_secret_values_covers_auth_schemes_and_url_userinfo() -> None:
     }
 
 
+def test_remove_secret_values_covers_compound_secret_field_suffixes() -> None:
+    cleaned = remove_secret_values({
+        "X-Session-Token": "opaque-token-value",
+        "service_api_key": "opaque-key-value",
+        "client-secret": "opaque-secret-value",
+        "database_password": "opaque-password-value",
+        "refreshToken": "opaque-refresh-value",
+        "accessToken": "opaque-access-value",
+        "clientSecret": "opaque-client-value",
+        "privateKey": "opaque-private-value",
+        "token_count": 17,
+        "tokenCount": 18,
+        "monkey": "ordinary-value",
+    })
+
+    assert cleaned == {
+        "X-Session-Token": PLACEHOLDER,
+        "service_api_key": PLACEHOLDER,
+        "client-secret": PLACEHOLDER,
+        "database_password": PLACEHOLDER,
+        "refreshToken": PLACEHOLDER,
+        "accessToken": PLACEHOLDER,
+        "clientSecret": PLACEHOLDER,
+        "privateKey": PLACEHOLDER,
+        "token_count": 17,
+        "tokenCount": 18,
+        "monkey": "ordinary-value",
+    }
+
+
 def _run_tool_loop(monkeypatch: pytest.MonkeyPatch) -> tuple[list, list]:
     monkeypatch.delenv("OPENPROGRAM_FALLBACK_MODELS", raising=False)
     stream_module = importlib.import_module("openprogram.providers.stream")
@@ -529,6 +559,7 @@ def test_replay_refuses_a_recording_file_written_in_another_format_version(
         json.dumps({"type": "header", "format_version": RECORDING_FORMAT_VERSION + 1}) + "\n",
         encoding="utf-8",
     )
+    recording_file.chmod(0o600)
 
     with pytest.raises(RecordingFileError) as caught:
         ReplayProvider(recording_file)
@@ -541,6 +572,7 @@ def test_replay_refuses_a_recording_file_without_a_format_header(tmp_path: Path)
     """A headerless file has no version to check at all."""
     recording_file = tmp_path / "headerless.jsonl"
     recording_file.write_text(json.dumps({"type": "request", "call_index": 0}) + "\n", encoding="utf-8")
+    recording_file.chmod(0o600)
 
     with pytest.raises(RecordingFileError, match="no format header"):
         ReplayProvider(recording_file)
@@ -603,6 +635,213 @@ def test_recording_file_and_parent_are_private(tmp_path: Path) -> None:
     RecordingProvider(_scripted_with((ScriptedText("done"),)), recording_file)
 
     assert stat.S_IMODE(parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(recording_file.stat().st_mode) == 0o600
+
+
+def test_recording_tightens_preexisting_parent_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    parent = tmp_path / "recordings"
+    parent.mkdir(mode=0o755)
+    parent.chmod(0o755)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    RecordingProvider(
+        _scripted_with((ScriptedText("done"),)), parent / "private.jsonl"
+    )
+
+    assert stat.S_IMODE(parent.stat().st_mode) == 0o700
+
+
+def test_recording_preserves_external_parent_permissions(tmp_path: Path) -> None:
+    parent = tmp_path / "shared-project"
+    parent.mkdir(mode=0o755)
+    parent.chmod(0o755)
+
+    RecordingProvider(
+        _scripted_with((ScriptedText("done"),)), parent / "private.jsonl"
+    )
+
+    assert stat.S_IMODE(parent.stat().st_mode) == 0o755
+
+
+def test_recording_does_not_chmod_external_parent_symlink(tmp_path: Path) -> None:
+    target = tmp_path / "shared-target"
+    target.mkdir(mode=0o755)
+    target.chmod(0o755)
+    link = tmp_path / "shared-link"
+    link.symlink_to(target, target_is_directory=True)
+
+    RecordingProvider(
+        _scripted_with((ScriptedText("done"),)), link / "private.jsonl"
+    )
+
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+
+
+def test_recording_rejects_symlinked_managed_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    target = tmp_path / "shared-target"
+    target.mkdir(mode=0o755)
+    target.chmod(0o755)
+    (state / "recordings").symlink_to(target, target_is_directory=True)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+
+    with pytest.raises(PermissionError, match="must not be a symlink"):
+        RecordingProvider(
+            _scripted_with((ScriptedText("done"),)),
+            state / "recordings" / "private.jsonl",
+        )
+
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+    assert not (target / "private.jsonl").exists()
+
+
+def test_symlinked_managed_root_does_not_block_external_recording(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    managed_target = tmp_path / "managed-target"
+    managed_target.mkdir(mode=0o755)
+    (state / "recordings").symlink_to(managed_target, target_is_directory=True)
+    external = tmp_path / "external"
+    external.mkdir(mode=0o755)
+    external.chmod(0o755)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+
+    RecordingProvider(
+        _scripted_with((ScriptedText("done"),)), external / "private.jsonl"
+    )
+
+    assert (external / "private.jsonl").is_file()
+    assert stat.S_IMODE(external.stat().st_mode) == 0o755
+
+
+def test_dotdot_cannot_bypass_symlinked_managed_root_rejection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "x").mkdir()
+    target = tmp_path / "shared-target"
+    target.mkdir(mode=0o755)
+    target.chmod(0o755)
+    (state / "recordings").symlink_to(target, target_is_directory=True)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    disguised = state / "x" / ".." / "recordings" / "private.jsonl"
+
+    with pytest.raises(PermissionError, match="must not be a symlink"):
+        RecordingProvider(_scripted_with((ScriptedText("done"),)), disguised)
+
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+    assert not (target / "private.jsonl").exists()
+
+
+def test_case_alias_cannot_bypass_symlinked_managed_root_rejection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    target = tmp_path / "shared-target"
+    target.mkdir(mode=0o755)
+    target.chmod(0o755)
+    (state / "recordings").symlink_to(target, target_is_directory=True)
+    alias = state / "RECORDINGS"
+    if not alias.exists():
+        pytest.skip("filesystem is case-sensitive")
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+
+    with pytest.raises(PermissionError, match="must not be a symlink"):
+        RecordingProvider(
+            _scripted_with((ScriptedText("done"),)), alias / "private.jsonl"
+        )
+
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+    assert not (target / "private.jsonl").exists()
+
+
+def test_direct_managed_symlink_target_remains_external(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    target = tmp_path / "shared-target"
+    target.mkdir(mode=0o755)
+    target.chmod(0o755)
+    (state / "recordings").symlink_to(target, target_is_directory=True)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+
+    RecordingProvider(
+        _scripted_with((ScriptedText("done"),)), target / "direct.jsonl"
+    )
+
+    assert (target / "direct.jsonl").is_file()
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+
+
+def test_recording_rejects_intermediate_symlink_inside_managed_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state"
+    managed_root = state / "recordings"
+    managed_root.mkdir(parents=True, mode=0o700)
+    target = tmp_path / "shared-target"
+    target.mkdir(mode=0o755)
+    target.chmod(0o755)
+    (managed_root / "nested").symlink_to(target, target_is_directory=True)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+
+    with pytest.raises(PermissionError, match="must not contain a symlink"):
+        RecordingProvider(
+            _scripted_with((ScriptedText("done"),)),
+            managed_root / "nested" / "private.jsonl",
+        )
+
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+    assert not (target / "private.jsonl").exists()
+
+
+def test_replay_rejects_intermediate_symlink_without_chmod(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state"
+    managed_root = state / "recordings"
+    managed_root.mkdir(parents=True, mode=0o700)
+    external = tmp_path / "external"
+    recording_file = _record_one_call(external)
+    recording_file.chmod(0o644)
+    (managed_root / "nested").symlink_to(external, target_is_directory=True)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+
+    with pytest.raises(RecordingFileError, match="must not contain a symlink"):
+        ReplayProvider(managed_root / "nested" / recording_file.name)
+
+    assert stat.S_IMODE(recording_file.stat().st_mode) == 0o644
+
+
+def test_external_replay_rejects_wide_permissions_without_chmod(tmp_path: Path) -> None:
+    recording_file = _record_one_call(tmp_path)
+    recording_file.chmod(0o644)
+
+    with pytest.raises(RecordingFileError, match="mode 0600"):
+        ReplayProvider(recording_file)
+
+    assert stat.S_IMODE(recording_file.stat().st_mode) == 0o644
+
+
+def test_managed_replay_repairs_wide_permissions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    managed_root = tmp_path / "recordings"
+    recording_file = _record_one_call(managed_root)
+    recording_file.chmod(0o644)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+
+    ReplayProvider(recording_file)
+
     assert stat.S_IMODE(recording_file.stat().st_mode) == 0o600
 
 
