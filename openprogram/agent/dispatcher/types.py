@@ -128,6 +128,10 @@ class TurnRequest:
     principal_id: Optional[str] = None
     authority_tier: Optional[Literal["owner", "paired"]] = None
     interaction: Optional[str] = None
+    # Default DAG slice for agentic functions invoked during this turn.
+    # Kept at the end for positional-constructor compatibility. An explicit
+    # decorator value takes precedence.
+    render_range: Optional[dict[str, int]] = None
 
 
 @dataclass

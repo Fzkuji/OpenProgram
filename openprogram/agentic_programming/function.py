@@ -60,6 +60,9 @@ _forced_predecessor: ContextVar[Optional[str]] = ContextVar(
 _forced_node_id: ContextVar[Optional[str]] = ContextVar(
     '_forced_node_id', default=None,
 )
+_render_range_override: ContextVar[Optional[dict]] = ContextVar(
+    '_render_range_override', default=None,
+)
 
 # Self-recursion safety net. The primary guard against an agentic
 # function re-entering itself (wiki_agent calling wiki_agent →
@@ -1055,6 +1058,10 @@ class agentic_function:
             bound = sig.bind(*new_args, **new_kwargs)
             bound.apply_defaults()
             bound_args = dict(bound.arguments)
+            effective_render_range = (
+                render_range if render_range is not None
+                else _render_range_override.get()
+            )
 
             try:
                 _append_function_call_entry(
@@ -1062,7 +1069,7 @@ class agentic_function:
                     function_name=fn.__name__,
                     arguments=bound_args,
                     expose=expose,
-                    render_range=render_range,
+                    render_range=effective_render_range,
                     started_at=_started_at,
                     docstring=inspect.getdoc(fn) or "",
                 )
@@ -1176,6 +1183,10 @@ class agentic_function:
             bound = sig.bind(*new_args, **new_kwargs)
             bound.apply_defaults()
             bound_args = dict(bound.arguments)
+            effective_render_range = (
+                render_range if render_range is not None
+                else _render_range_override.get()
+            )
 
             try:
                 _append_function_call_entry(
@@ -1183,7 +1194,7 @@ class agentic_function:
                     function_name=fn.__name__,
                     arguments=bound_args,
                     expose=expose,
-                    render_range=render_range,
+                    render_range=effective_render_range,
                     started_at=_started_at,
                     docstring=inspect.getdoc(fn) or "",
                 )

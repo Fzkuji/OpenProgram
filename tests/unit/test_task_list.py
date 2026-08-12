@@ -178,7 +178,7 @@ def test_items_run_serially_with_upstream_handoff(monkeypatch, board,
         TL, "_run_planner_turn",
         lambda *a, **k: _plan("write the file", "test the file"))
 
-    def _exec(sid, prompt, *, agent_id, spawn_caller, label):
+    def _exec(sid, prompt, *, agent_id, spawn_caller, label, render_range):
         prompts.append(prompt)
         return f"result of item {len(prompts)}"
 
@@ -217,6 +217,102 @@ def test_context_spec_maps_to_render_range() -> None:
     assert TL.render_range_for({"context_spec": {"upstream": 2}}) == {
         "callers": 0, "subcalls": 2}
     assert TL.render_range_for({}) == {"callers": 0, "subcalls": -1}
+
+
+def test_executor_applies_context_spec_at_agent_turn_boundary(monkeypatch) -> None:
+    from openprogram.agent import sub_agent_run
+
+    seen = []
+
+    class Result:
+        failed = False
+        final_text = "done"
+        error = None
+
+    monkeypatch.setattr(
+        sub_agent_run,
+        "run_agent_turn",
+        lambda *args, **kwargs: seen.append(kwargs) or Result(),
+    )
+    item = {"id": "2", "subject": "work", "done_criteria": "done",
+            "context_spec": {"upstream": 2}}
+
+    TL.execute_item("task", item, "", session_id="s1")
+
+    assert seen[0]["render_range"] == {"callers": 0, "subcalls": 2}
+
+
+def test_turn_render_range_applies_to_implicit_agentic_functions(
+    monkeypatch,
+) -> None:
+    import openprogram.agentic_programming.function as function_module
+    from openprogram.agentic_programming.function import agentic_function
+
+    seen = []
+    monkeypatch.setattr(
+        function_module,
+        "_append_function_call_entry",
+        lambda **kwargs: seen.append(kwargs["render_range"]),
+    )
+
+    @agentic_function(as_tool=False, register_globally=False)
+    def implicit():
+        return "ok"
+
+    @agentic_function(
+        as_tool=False,
+        register_globally=False,
+        render_range={"callers": 1, "subcalls": 1},
+    )
+    def explicit():
+        return "ok"
+
+    token = function_module._render_range_override.set(
+        {"callers": 0, "subcalls": 2}
+    )
+    try:
+        implicit()
+        explicit()
+    finally:
+        function_module._render_range_override.reset(token)
+
+    assert seen == [
+        {"callers": 0, "subcalls": 2},
+        {"callers": 1, "subcalls": 1},
+    ]
+
+
+def test_failed_turn_binding_does_not_leak_render_range(monkeypatch) -> None:
+    import contextvars
+
+    import openprogram.functions as functions
+    from openprogram.agent.dispatcher.turn_context import TurnBindings
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agentic_programming.function import _render_range_override
+
+    def fail_binding():
+        raise RuntimeError("bind failed")
+
+    monkeypatch.setattr(functions, "install_loaded_deferred", fail_binding)
+
+    def probe():
+        sentinel = {"callers": 9, "subcalls": 9}
+        token = _render_range_override.set(sentinel)
+        try:
+            req = TurnRequest(
+                session_id="s1",
+                user_text="",
+                agent_id="main",
+                source="agent_spawn",
+                render_range={"callers": 0, "subcalls": 2},
+            )
+            with pytest.raises(RuntimeError, match="bind failed"):
+                TurnBindings.bind(req=req, assistant_msg_id="m1", db=object())
+            assert _render_range_override.get() == sentinel
+        finally:
+            _render_range_override.reset(token)
+
+    contextvars.copy_context().run(probe)
 
 
 # ---------------------------------------------------------------------------
@@ -354,7 +450,7 @@ def test_board_is_checkpointed_as_each_item_starts(monkeypatch, board,
                         lambda *a, **k: _plan("one", "two"))
     seen = []
 
-    def _exec(sid, prompt, *, agent_id, spawn_caller, label):
+    def _exec(sid, prompt, *, agent_id, spawn_caller, label, render_range):
         seen.append([e["status"] for e in _read_board(board)])
         return "ok"
 
@@ -411,6 +507,29 @@ def test_resume_picks_up_an_item_left_in_progress(monkeypatch, board) -> None:
     out = TL.run_task_list(task="t", session_id="s1")
     assert len(runs) == 1
     assert out["items"][0]["status"] == TL.COMPLETED
+
+
+def test_resume_retries_interrupted_item_after_two_recorded_attempts(
+    monkeypatch, board
+) -> None:
+    board.write_text(json.dumps({"version": 1, "todos": [
+        {"id": "1", "subject": "interrupted", "description": "",
+         "status": "in_progress", "owner": TL.WORKFLOW_OWNER,
+         "blocked_by": [], "created_at": 1.0, "updated_at": 1.0,
+         "task": "t", "done_criteria": "d",
+         "context_spec": {"upstream": -1}, "result_summary": "",
+         "attempts": 2},
+    ]}))
+    runs = []
+    monkeypatch.setattr(TL, "_run_executor_turn",
+                        lambda sid, p, **k: runs.append(p) or "finished")
+    monkeypatch.setattr(TL, "judge_item", lambda *a, **k: (True, "ok"))
+
+    out = TL.run_task_list(task="t", session_id="s1", resume=True)
+
+    assert len(runs) == 1
+    assert out["items"][0]["status"] == TL.COMPLETED
+    assert out["items"][0]["attempts"] == 1
 
 
 def test_resume_ignores_another_tasks_entries(monkeypatch, board,
@@ -473,3 +592,34 @@ def test_parse_plan_rejects_malformed_replies() -> None:
         TL._parse_plan('{"split": "yes"}')       # split must be bool
     with pytest.raises(ValueError):
         TL._parse_plan('{"split": true, "items": []}')   # split with no items
+
+
+@pytest.mark.parametrize("reply", [
+    '{"reason": "missing"}',
+    '{"reason": "wrong type", "items": {}}',
+])
+def test_revision_requires_explicit_items_array(monkeypatch, reply) -> None:
+    monkeypatch.setattr(TL, "_run_planner_turn", lambda *a, **k: reply)
+
+    with pytest.raises(ValueError, match="items"):
+        TL.revise_task_list("t", [], {"id": "1"}, "failed", "s1")
+
+
+def test_malformed_revision_is_not_applied(monkeypatch, board) -> None:
+    calls = 0
+
+    def planner(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return _plan("work") if calls == 1 else '{"reason": "missing"}'
+
+    monkeypatch.setattr(TL, "_run_planner_turn", planner)
+    monkeypatch.setattr(TL, "_run_executor_turn", lambda *a, **k: "attempt")
+    monkeypatch.setattr(TL, "judge_item", lambda *a, **k: (False, "failed"))
+
+    out = TL.run_task_list(task="t", session_id="s1")
+
+    assert out["status"] == "error"
+    assert out["items"][0]["status"] == TL.IN_PROGRESS
+    assert out["items"][0]["result_summary"] == ""
+    assert out["revisions"][0]["reason"].startswith("revision failed:")

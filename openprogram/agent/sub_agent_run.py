@@ -48,6 +48,7 @@ def run_agent_turn(
     spawn_caller: Optional[str] = None,
     advance_head: bool = True,
     tools_override: Optional[list[str]] = None,
+    render_range: Optional[dict[str, int]] = None,
     authority: Optional[dict[str, Any]] = None,
     creates_agent: bool = True,
 ) -> AgentTurnResult:
@@ -125,6 +126,7 @@ def run_agent_turn(
         # conversation until the outer reply moved it back.
         advance_head=advance_head,
         tools_override=tools_override,
+        render_range=render_range,
         model_override=model_override,
         **runtime_authority(authority or {}, "agent_spawn"),
     )
