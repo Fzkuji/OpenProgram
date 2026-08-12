@@ -127,7 +127,25 @@ planner 修订 list（拆分、插入、作废），修订本身作为 DAG 节�
 <figcaption>修订只影响未执行部分；已完成 item 的结果摘要保持不变，DAG 里能看到每次修订的前后对照。</figcaption>
 </figure>
 
-<h2>4. 边界与取舍</h2>
+<h2>4. 与现有机制的归并</h2>
+<p>系统里已有两块同类机制，本设计不新建平行物，workflow 是它们之上的薄驱动层：</p>
+<table>
+<tr><th>已有机制</th><th>在 workflow 中的角色</th></tr>
+<tr><td>todo planning board（<code>functions/tools/todo/</code>，session 级 <code>todos.json</code>，
+todo_create / todo_update / todo_list）</td>
+<td><b>就是 list 本体</b>。条目 schema 扩展三个可选字段：<code>done_criteria</code>（完成判据）、
+<code>context_spec</code>（上下文规格）、<code>result_summary</code>（交接摘要）。存储读写全走现有
+<code>shared.py</code>，旧条目兼容，现有 todo 展示界面直接可见 workflow 进度。</td></tr>
+<tr><td>goal 判定（<code>agent/goal/judge.py</code> 的 <code>evaluate_goal</code>）</td>
+<td><b>就是 item 的 judge</b>。item 的 done_criteria 作为 goal payload 传入，不另写判定。
+turn 级的 continuation loop（<code>goal/loop.py</code>）保持不动，item 级推进是独立的一层。</td></tr>
+</table>
+<div class="card">
+新增的只有薄驱动层：<code>run_task_list</code> 入口与规模判断、item 串行推进、修订逻辑
+（走 todo_update）、交接摘要组装与长度上限、item 上下文规格到 <code>expose</code>/<code>render_range</code> 的映射。
+</div>
+
+<h2>5. 边界与取舍</h2>
 <table>
 <tr><th>决定</th><th>理由</th></tr>
 <tr><td>默认串行执行</td><td>共享可变的仓库状态下，并行是例外不是默认。第一版不做并行、不做自动依赖推断。</td></tr>
