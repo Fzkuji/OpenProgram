@@ -210,6 +210,12 @@ class MCPClient:
     def is_ready(self) -> bool:
         return self._session is not None and self.error is None
 
+    def _connection_failure(self, kind: str | None = None) -> RuntimeError:
+        stable_kind = kind or self.error_kind or "fatal"
+        if stable_kind not in {"needs_reauth", "transient", "fatal", "timeout"}:
+            stable_kind = "fatal"
+        return RuntimeError(f"mcp_server_unavailable:{stable_kind}")
+
     async def start(self) -> None:
         """Spawn the subprocess (or open the HTTP session), initialize,
         fetch tool list.
@@ -256,10 +262,7 @@ class MCPClient:
         without each having to support resources.
         """
         if self._session is None:
-            raise RuntimeError(
-                f"MCP server '{self.config.name}' not connected "
-                f"({self.error or 'no session'})"
-            )
+            raise self._connection_failure()
         try:
             result = await self._session.list_resources()
         except Exception:  # noqa: BLE001 — servers without capability raise
@@ -270,10 +273,7 @@ class MCPClient:
     async def read_resource(self, uri: str) -> list[dict]:
         """Server's resources/read response — list of content blocks."""
         if self._session is None:
-            raise RuntimeError(
-                f"MCP server '{self.config.name}' not connected "
-                f"({self.error or 'no session'})"
-            )
+            raise self._connection_failure()
         from pydantic import AnyUrl
         result = await self._session.read_resource(AnyUrl(uri))
         return [c.model_dump(mode="json", exclude_none=True)
@@ -285,10 +285,7 @@ class MCPClient:
         Returns ``[]`` for servers without prompt support.
         """
         if self._session is None:
-            raise RuntimeError(
-                f"MCP server '{self.config.name}' not connected "
-                f"({self.error or 'no session'})"
-            )
+            raise self._connection_failure()
         try:
             result = await self._session.list_prompts()
         except Exception:  # noqa: BLE001
@@ -300,10 +297,7 @@ class MCPClient:
                          arguments: Optional[dict] = None) -> dict:
         """Server's prompts/get response — rendered messages."""
         if self._session is None:
-            raise RuntimeError(
-                f"MCP server '{self.config.name}' not connected "
-                f"({self.error or 'no session'})"
-            )
+            raise self._connection_failure()
         result = await self._session.get_prompt(name, arguments or {})
         return result.model_dump(mode="json", exclude_none=True)
 
@@ -324,10 +318,7 @@ class MCPClient:
         from mcp.types import PromptReference, ResourceTemplateReference
 
         if self._session is None:
-            raise RuntimeError(
-                f"MCP server '{self.config.name}' not connected "
-                f"({self.error or 'no session'})"
-            )
+            raise self._connection_failure()
         if ref_kind == "prompt":
             ref: Any = PromptReference(type="ref/prompt", name=ref_name)
         elif ref_kind == "resource":
@@ -389,28 +380,17 @@ class MCPClient:
         if self._session is not None and self.error_kind != "needs_reauth":
             return
         if self.error_kind in ("needs_reauth", "fatal"):
-            raise RuntimeError(
-                f"MCP server '{self.config.name}' not connected "
-                f"({self.error or 'no session'})"
-            )
+            raise self._connection_failure()
         if timeout <= 0:
-            raise RuntimeError(
-                f"MCP server '{self.config.name}' not connected "
-                f"({self.error or 'no session'})"
-            )
+            raise self._connection_failure()
         # Wait for the supervisor to set _ready again after a reconnect.
         self._ready.clear()
         try:
             await asyncio.wait_for(self._ready.wait(), timeout=timeout)
         except asyncio.TimeoutError:
-            raise RuntimeError(
-                f"MCP server '{self.config.name}' reconnect timed out"
-            )
+            raise self._connection_failure("timeout") from None
         if self.error_kind in ("needs_reauth", "fatal"):
-            raise RuntimeError(
-                f"MCP server '{self.config.name}' reconnect failed: "
-                f"{self.error}"
-            )
+            raise self._connection_failure()
 
     def _signal_reconnect(self) -> None:
         """Notify the supervisor to drop + rebuild the session."""
@@ -473,16 +453,15 @@ class MCPClient:
                 continue
             except asyncio.CancelledError:
                 raise
-            except _REAUTH_ERRORS as e:
+            except _REAUTH_ERRORS:
                 # refresh_token rejected, dynamic client registration
                 # rejected — the user must clear tokens and walk the
                 # OAuth flow again. Stop retrying.
-                self.error = f"{type(e).__name__}: {e}"
+                self.error = "mcp_reauthentication_required"
                 self.error_kind = "needs_reauth"
                 self._ready.set()
                 return
-            except Exception as e:  # noqa: BLE001
-                self.error = f"{type(e).__name__}: {e}"
+            except Exception:  # noqa: BLE001
                 # First-attempt failure on startup is fatal — the
                 # config is probably wrong (bad command, dead URL,
                 # missing API key). Don't auto-retry: noisy and
@@ -491,12 +470,13 @@ class MCPClient:
                 healthy_before = self._ready.is_set() and self._session is not None
                 self._session = None
                 if healthy_before and attempt < max_transient_attempts:
+                    self.error = "mcp_connection_transient"
                     self.error_kind = "transient"
                     attempt += 1
                     print(
-                        f"[mcp] '{self.config.name}' transient error "
-                        f"(attempt {attempt}/{max_transient_attempts}): "
-                        f"{self.error}; retrying in {backoff:.1f}s",
+                        f"[mcp] '{self.config.name}' transient connection failure "
+                        f"(attempt {attempt}/{max_transient_attempts}); "
+                        f"retrying in {backoff:.1f}s",
                         file=sys.stderr,
                     )
                     try:
@@ -509,6 +489,7 @@ class MCPClient:
                     continue
                 # First-attempt failure or transient-retry budget
                 # exhausted — record + stop.
+                self.error = "mcp_server_unavailable"
                 self.error_kind = "fatal"
                 self._ready.set()
                 return

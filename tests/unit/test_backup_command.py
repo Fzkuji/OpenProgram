@@ -5,8 +5,12 @@ from __future__ import annotations
 import io
 import json
 import os
+import signal
 import stat
+import subprocess
+import sys
 import tarfile
+import time
 from pathlib import Path
 
 import pytest
@@ -116,6 +120,27 @@ def _write_restorable_archive(path: Path, files: dict[str, bytes]) -> Path:
         info.mode = 0o600
         tar.addfile(info, io.BytesIO(manifest))
     return path
+
+
+def _start_restore_paused_after_first_publish(
+    state: Path, archive: Path, marker: Path
+) -> subprocess.Popen:
+    code = (
+        "import sys,time; from pathlib import Path; "
+        "from openprogram._cli_cmds import backup as b; "
+        "state,archive,marker=Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]); "
+        "real=b._publish_restored; count=[0]; "
+        "exec(\"def publish(target,payload,*,root):\\n count[0]+=1\\n real(target,payload,root=root)\\n if count[0]==1:\\n  marker.write_text('paused')\\n  while True: time.sleep(1)\"); "
+        "b._publish_restored=publish; b.restore_archive(archive,state)"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", code, str(state), str(archive), str(marker)]
+    )
+    deadline = time.time() + 10
+    while not marker.exists() and process.poll() is None and time.time() < deadline:
+        time.sleep(0.01)
+    assert marker.exists()
+    return process
 
 
 def _seed_registered_secrets(profile: Path) -> dict[str, bytes]:
@@ -739,6 +764,91 @@ def test_restore_snapshots_current_state_first(profile: Path):
         member = tar.extractfile("memory/core.md")
         assert member is not None
         assert member.read().decode() == "about to be lost"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX flock and SIGKILL semantics")
+def test_create_backup_is_busy_during_restore_publication(
+    profile: Path, tmp_path: Path
+) -> None:
+    from openprogram._cli_cmds.backup import (
+        RestoreBusyError,
+        create_backup,
+        recover_interrupted_restore,
+    )
+
+    archive = _write_restorable_archive(
+        tmp_path / "incoming.tar.gz",
+        {
+            "memory/core.md": b"new-memory",
+            "sessions/s1.json": b'{"generation": "new"}',
+        },
+    )
+    marker = tmp_path / "restore-paused"
+    process = _start_restore_paused_after_first_publish(profile, archive, marker)
+    before = set((profile / "backups").glob("*.tar.gz")) if (profile / "backups").exists() else set()
+    try:
+        with pytest.raises(RestoreBusyError):
+            create_backup()
+        assert set((profile / "backups").glob("*.tar.gz")) == before
+    finally:
+        process.send_signal(signal.SIGKILL)
+        process.wait(5)
+        recover_interrupted_restore(profile)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX flock and SIGKILL semantics")
+def test_backup_create_cli_reports_busy_without_archive(
+    profile: Path, tmp_path: Path, capsys
+) -> None:
+    from openprogram._cli_cmds.backup import (
+        _cmd_backup_create,
+        recover_interrupted_restore,
+    )
+
+    archive = _write_restorable_archive(
+        tmp_path / "incoming.tar.gz",
+        {
+            "memory/core.md": b"new-memory",
+            "sessions/s1.json": b'{"generation": "new"}',
+        },
+    )
+    marker = tmp_path / "restore-paused"
+    process = _start_restore_paused_after_first_publish(profile, archive, marker)
+    try:
+        assert _cmd_backup_create() == 1
+        assert "another restore is already in progress" in capsys.readouterr().err
+        assert not list((profile / "backups").glob("*.tar.gz"))
+    finally:
+        process.send_signal(signal.SIGKILL)
+        process.wait(5)
+        recover_interrupted_restore(profile)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX flock and SIGKILL semantics")
+def test_busy_restore_cli_does_not_create_safety_snapshot(
+    profile: Path, tmp_path: Path
+) -> None:
+    from openprogram._cli_cmds.backup import (
+        _cmd_backup_restore,
+        recover_interrupted_restore,
+    )
+
+    archive = _write_restorable_archive(
+        tmp_path / "incoming.tar.gz",
+        {
+            "memory/core.md": b"new-memory",
+            "sessions/s1.json": b'{"generation": "new"}',
+        },
+    )
+    marker = tmp_path / "restore-paused"
+    process = _start_restore_paused_after_first_publish(profile, archive, marker)
+    try:
+        assert _cmd_backup_restore(str(archive), yes=True) == 1
+        assert not list((profile / "backups").glob("*pre-restore*.tar.gz"))
+    finally:
+        process.send_signal(signal.SIGKILL)
+        process.wait(5)
+        recover_interrupted_restore(profile)
 
 
 def test_restore_refuses_while_worker_running(profile: Path, monkeypatch, capsys):
