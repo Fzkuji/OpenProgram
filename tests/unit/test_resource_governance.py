@@ -254,7 +254,9 @@ def test_stopping_keeps_live_capacity_until_worker_release(tmp_path) -> None:
     assert governor.try_start("t_2", owner_instance_id="worker") is False
     governor.request_stop("t_1", "cancel.user")
     assert governor.try_start("t_2", owner_instance_id="worker") is False
-    governor.release_task("t_1", "cancel.user")
+    governor.release_task(
+        "t_1", "cancel.user", owner_instance_id="worker",
+    )
     assert governor.try_start("t_2", owner_instance_id="worker") is True
 
 
@@ -309,6 +311,124 @@ def test_claim_next_cannot_be_claimed_twice_across_governors(tmp_path) -> None:
 
     assert claim.task_id == "only"
     assert second_governor.claim_next(owner_instance_id="worker_2") is None
+
+
+def test_reconcile_finalizes_or_rolls_back_preparing_and_releases_missing_queue(
+    tmp_path,
+) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=2)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    tasks = {}
+    for task_id in ("preparing_present", "preparing_missing", "queued_missing"):
+        task = Task(
+            id=task_id, parent_session_id="s1", prompt=task_id, agent_id="a",
+        )
+        governor.admit_task(task, persist=lambda accepted: tasks.setdefault(
+            accepted.id, accepted,
+        ))
+    tasks.pop("preparing_missing")
+    tasks.pop("queued_missing")
+    ledger.connection().execute(
+        "UPDATE task_admissions SET state = 'preparing' "
+        "WHERE task_id IN ('preparing_present', 'preparing_missing')"
+    )
+    ledger.connection().commit()
+
+    result = governor.reconcile(
+        task_lookup=lambda _sid, task_id: tasks.get(task_id),
+        mark_worker_lost=lambda _sid, _task_id: None,
+        owner_is_alive=lambda _owner: False,
+    )
+
+    rows = {
+        row["task_id"]: (row["state"], row["reason_code"])
+        for row in ledger.connection().execute(
+            "SELECT task_id, state, reason_code FROM task_admissions"
+        )
+    }
+    assert result.finalized_preparing == 1
+    assert result.rolled_back_preparing == 1
+    assert result.released_missing == 1
+    assert "preparing_missing" not in rows
+    assert rows == {
+        "preparing_present": ("queued", None),
+        "queued_missing": ("released", "error.task_missing"),
+    }
+
+
+def test_reconcile_waits_for_lease_and_worker_lock_before_worker_lost_release(
+    tmp_path,
+) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    task = Task(id="live", parent_session_id="s1", prompt="live", agent_id="a")
+    governor.admit_task(task, persist=lambda _task: None)
+    governor.claim_next(owner_instance_id="worker_123_owner")
+    ledger.connection().execute(
+        "UPDATE task_admissions SET lease_expires_at = 20 WHERE task_id = 'live'"
+    )
+    ledger.connection().commit()
+    lost = []
+    lookup = lambda _sid, _task_id: task
+
+    unexpired = governor.reconcile(
+        task_lookup=lookup,
+        mark_worker_lost=lambda _sid, task_id: lost.append(task_id),
+        owner_is_alive=lambda _owner: False,
+        now=19,
+    )
+    locked = governor.reconcile(
+        task_lookup=lookup,
+        mark_worker_lost=lambda _sid, task_id: lost.append(task_id),
+        owner_is_alive=lambda _owner: True,
+        now=21,
+    )
+    released = governor.reconcile(
+        task_lookup=lookup,
+        mark_worker_lost=lambda _sid, task_id: lost.append(task_id),
+        owner_is_alive=lambda _owner: False,
+        now=21,
+    )
+    repeated = governor.reconcile(
+        task_lookup=lookup,
+        mark_worker_lost=lambda _sid, task_id: lost.append(task_id),
+        owner_is_alive=lambda _owner: False,
+        now=22,
+    )
+
+    assert unexpired.released_worker_lost == 0
+    assert locked.released_worker_lost == 0
+    assert released.released_worker_lost == 1
+    assert repeated.released_worker_lost == 0
+    assert lost == ["live"]
+    row = ledger.connection().execute(
+        "SELECT state, reason_code FROM task_admissions WHERE task_id = 'live'"
+    ).fetchone()
+    assert tuple(row) == ("released", "error.worker_lost")
+
+
+def test_live_lease_mutations_are_fenced_by_owner(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    governor.admit_task(
+        Task(id="live", parent_session_id="s1", prompt="live", agent_id="a"),
+        persist=lambda _task: None,
+    )
+    governor.claim_next(owner_instance_id="worker_current")
+
+    assert governor.renew_lease("live", owner_instance_id="worker_stale") is False
+    assert governor.release_task(
+        "live", "completed", owner_instance_id="worker_stale",
+    ) is False
+    assert ledger.connection().execute(
+        "SELECT state FROM task_admissions WHERE task_id = 'live'"
+    ).fetchone()[0] == "live"
+    assert governor.release_task(
+        "live", "completed", owner_instance_id="worker_current",
+    ) is True
 
 
 def test_releasing_queued_task_keeps_cumulative_admission(tmp_path) -> None:

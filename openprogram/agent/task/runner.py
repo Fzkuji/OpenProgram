@@ -76,6 +76,7 @@ _DEFAULT_MAX_WORKERS = 4
 # forcibly flipping the entity to cancelled.
 _CANCEL_TIMEOUT_SECS = 30.0
 _LEASE_RENEW_SECS = 10.0
+_RECONCILE_SECS = 5.0
 
 # Task id of the task currently executing on this context. Bound by
 # ``_run_one`` for the duration of the child turn; read by ``spawn_task``
@@ -190,14 +191,17 @@ class TaskRunner:
                 UsageLedger(default_store().root_path.parent / "usage.db")
             )
         self._governor = governor
-        self._instance_id = "worker_" + uuid.uuid4().hex
+        self._instance_id = f"worker_{os.getpid()}_{uuid.uuid4().hex}"
+        self._dispatch_wake = threading.Event()
+        self._shutdown_event = threading.Event()
         # Reconcile orphans before opening the pool so any "running"
         # task from a previous process is flipped to errored. The
         # state-machine transition rules cover (running, errored).
         try:
-            _store_reconcile()
+            _store_reconcile(legacy_only=True)
         except Exception:
             pass
+        self._reconcile_resources()
         self._pool = ThreadPoolExecutor(
             max_workers=max_workers,
             thread_name_prefix="op-task",
@@ -213,14 +217,18 @@ class TaskRunner:
         # See ``_dispatch_followup``.
         self._followup_locks: dict[str, threading.Lock] = {}
         self._executor_slots = threading.BoundedSemaphore(max_workers)
-        self._dispatch_wake = threading.Event()
-        self._shutdown_event = threading.Event()
         self._dispatcher_thread = threading.Thread(
             target=self._dispatch_loop,
             daemon=True,
             name="op-task-dispatcher",
         )
         self._dispatcher_thread.start()
+        self._reconciler_thread = threading.Thread(
+            target=self._reconcile_loop,
+            daemon=True,
+            name="op-task-reconciler",
+        )
+        self._reconciler_thread.start()
 
     def _followup_lock(self, session_id: str) -> threading.Lock:
         """The per-session follow-up lock, created on first use."""
@@ -626,6 +634,7 @@ class TaskRunner:
         self._shutdown_event.set()
         self._dispatch_wake.set()
         self._dispatcher_thread.join(timeout=1.0)
+        self._reconciler_thread.join(timeout=1.0)
         try:
             self._pool.shutdown(wait=wait, cancel_futures=True)
         except TypeError:
@@ -679,7 +688,11 @@ class TaskRunner:
                     self._executor_slots.release()
                     self._governor.release_task(
                         claim.task_id, "error.dispatch_failed",
+                        owner_instance_id=self._instance_id,
                     )
+                    with self._lock:
+                        self._tasks.pop(claim.task_id, None)
+                        self._done_events.pop(claim.task_id, None)
                     _log.exception("failed to submit claimed task %s", claim.task_id)
                     continue
                 with self._lock:
@@ -705,10 +718,16 @@ class TaskRunner:
         # point forward.
         task = self._lookup_or_load(task_id)
         if task is None:
-            self._governor.release_task(task_id, "error.task_missing")
+            self._governor.release_task(
+                task_id, "error.task_missing",
+                owner_instance_id=self._instance_id,
+            )
             self._executor_slots.release()
             self._dispatch_wake.set()
             done_ev.set()
+            with self._lock:
+                self._tasks.pop(task_id, None)
+                self._done_events.pop(task_id, None)
             return
         session_id = task.parent_session_id
 
@@ -966,6 +985,7 @@ class TaskRunner:
                 cur = _store_load(session_id, task_id)
                 self._governor.release_task(
                     task_id, cur.reason_code if cur is not None else None,
+                    owner_instance_id=self._instance_id,
                 )
             except Exception:
                 _log.exception("failed to release resource admission for %s", task_id)
@@ -993,6 +1013,56 @@ class TaskRunner:
             except Exception:
                 _log.exception("failed to renew resource lease for %s", task_id)
                 return
+
+    def _owner_holds_worker_lock(self, owner_instance_id: str) -> bool:
+        if owner_instance_id == self._instance_id:
+            return True
+        try:
+            owner_pid = int(owner_instance_id.split("_", 2)[1])
+        except (IndexError, ValueError):
+            return False
+        try:
+            from openprogram.worker.lock import read_holder_pid
+            return read_holder_pid() == owner_pid
+        except Exception:
+            return False
+
+    @staticmethod
+    def _mark_worker_lost(session_id: str, task_id: str) -> None:
+        task = _store_load(session_id, task_id)
+        if task is None or is_terminal(task.status):
+            return
+        try:
+            _store_update_status(
+                session_id, task_id, TaskStatus.ERRORED,
+                error="worker died before completion",
+                reason_code="error.worker_lost",
+            )
+        except ValueError:
+            return
+
+    def _reconcile_resources(self) -> None:
+        try:
+            result = self._governor.reconcile(
+                task_lookup=lambda session_id, task_id: _store_load(
+                    session_id, task_id,
+                ),
+                mark_worker_lost=self._mark_worker_lost,
+                owner_is_alive=self._owner_holds_worker_lock,
+            )
+        except Exception:
+            _log.exception("failed to reconcile durable task resources")
+            return
+        if (
+            result.finalized_preparing
+            or result.released_missing
+            or result.released_worker_lost
+        ):
+            self._dispatch_wake.set()
+
+    def _reconcile_loop(self) -> None:
+        while not self._shutdown_event.wait(_RECONCILE_SECS):
+            self._reconcile_resources()
 
     def _wake_done(self, task_id: str) -> None:
         with self._lock:

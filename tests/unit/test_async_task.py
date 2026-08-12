@@ -151,6 +151,29 @@ def test_store_reconcile_orphans_preserves_terminal(store_fixture):
     assert cur.status == TaskStatus.COMPLETED
 
 
+def test_store_reconcile_orphans_legacy_only_preserves_governed_tasks(store_fixture):
+    from openprogram.agent.task.types import Task, TaskStatus
+    from openprogram.agent.task.store import save_task, load_task, reconcile_orphans
+    save_task(
+        "p1",
+        Task(
+            id="legacy", parent_session_id="p1", prompt="x", agent_id="main",
+            status=TaskStatus.RUNNING,
+        ),
+    )
+    save_task(
+        "p1",
+        Task(
+            id="governed", parent_session_id="p1", prompt="x", agent_id="main",
+            status=TaskStatus.QUEUED, admission_id="adm_governed",
+        ),
+    )
+
+    assert reconcile_orphans(legacy_only=True) == 1
+    assert load_task("p1", "legacy").status == TaskStatus.ERRORED
+    assert load_task("p1", "governed").status == TaskStatus.QUEUED
+
+
 # Runner tests
 
 @pytest.fixture
@@ -488,6 +511,65 @@ def test_queued_cancel_does_not_cancel_unrelated_session_runtime(
         runner.cancel_task(queued)
 
         assert cancelled_sessions == []
+    finally:
+        fake_worker[1].set()
+        runner.shutdown()
+
+
+def test_runner_restart_dispatches_persisted_governed_queue(
+    store_fixture, fake_worker, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    from openprogram.agent.resource_governance import (
+        ResourceGovernor, ResourceLimits, resolve_resource_limits,
+    )
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.agent.task.store import save_task
+    from openprogram.agent.task.types import Task, TaskStatus
+    from openprogram.usage.ledger import UsageLedger
+
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(
+        UsageLedger(tmp_path / "governance.db"),
+        limit_resolver=lambda _sid, _task: resolved,
+    )
+    task = Task(
+        id="restart_queued", parent_session_id="p1",
+        prompt="resume me", agent_id="main",
+    )
+    governor.admit_task(task, persist=lambda accepted: save_task("p1", accepted))
+
+    runner = TaskRunner(max_workers=1, governor=governor)
+    try:
+        assert fake_worker[3].wait(1.0)
+        fake_worker[1].set()
+        assert runner.await_task(task.id, timeout=5).status == TaskStatus.COMPLETED
+    finally:
+        fake_worker[1].set()
+        runner.shutdown()
+
+
+def test_runner_treats_its_own_instance_as_live_without_lock_probe(
+    store_fixture, fake_worker, tmp_path,
+):
+    from openprogram.agent.resource_governance import (
+        ResourceGovernor, ResourceLimits, resolve_resource_limits,
+    )
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.usage.ledger import UsageLedger
+
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    runner = TaskRunner(
+        max_workers=1,
+        governor=ResourceGovernor(
+            UsageLedger(tmp_path / "governance.db"),
+            limit_resolver=lambda _sid, _task: resolved,
+        ),
+    )
+    try:
+        assert runner._owner_holds_worker_lock(runner._instance_id) is True
     finally:
         fake_worker[1].set()
         runner.shutdown()

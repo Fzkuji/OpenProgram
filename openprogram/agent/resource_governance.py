@@ -267,6 +267,14 @@ class DispatchClaim:
     session_id: str
 
 
+@dataclass(frozen=True)
+class ReconcileResult:
+    finalized_preparing: int = 0
+    rolled_back_preparing: int = 0
+    released_missing: int = 0
+    released_worker_lost: int = 0
+
+
 def _task_fingerprint(task: Task) -> str:
     facts = {
         name: getattr(task, name)
@@ -514,10 +522,11 @@ class ResourceGovernor:
             if row is None or resolved is None:
                 return False
             admission = conn.execute(
-                "SELECT state FROM task_admissions WHERE task_id = ?", (task_id,),
+                """SELECT state, owner_instance_id FROM task_admissions
+                   WHERE task_id = ?""", (task_id,),
             ).fetchone()
             if admission["state"] == "live":
-                return True
+                return admission["owner_instance_id"] == owner_instance_id
             if admission["state"] != "queued":
                 return False
             capacity = self._capacity(conn, row["session_id"], resolved)
@@ -604,15 +613,116 @@ class ResourceGovernor:
                 (reason_code, time.time(), task_id),
             )
 
-    def release_task(self, task_id: str, reason_code: str | None = None) -> None:
+    def release_task(
+        self,
+        task_id: str,
+        reason_code: str | None = None,
+        *,
+        owner_instance_id: str | None = None,
+    ) -> bool:
         with self.ledger.immediate() as conn:
-            conn.execute(
+            return conn.execute(
                 """UPDATE task_admissions
                    SET state = 'released', released_at = ?, lease_expires_at = NULL,
                        reason_code = COALESCE(?, reason_code)
-                   WHERE task_id = ? AND state != 'released'""",
-                (time.time(), reason_code, task_id),
-            )
+                   WHERE task_id = ? AND state != 'released'
+                     AND (state IN ('preparing','queued')
+                          OR owner_instance_id = ?)""",
+                (time.time(), reason_code, task_id, owner_instance_id),
+            ).rowcount == 1
+
+    def reconcile(
+        self,
+        *,
+        task_lookup: Callable[[str, str], Task | None],
+        mark_worker_lost: Callable[[str, str], Any],
+        owner_is_alive: Callable[[str], bool],
+        now: float | None = None,
+    ) -> ReconcileResult:
+        """Reconcile durable admissions without spanning task-store I/O."""
+        current_time = time.time() if now is None else now
+        rows = self.ledger.connection().execute(
+            """SELECT admission_id, task_id, session_id, budget_scope_id,
+                      state, owner_instance_id, lease_expires_at
+               FROM task_admissions WHERE state != 'released'
+               ORDER BY admitted_seq"""
+        ).fetchall()
+        finalized = rolled_back = released_missing = released_lost = 0
+        for row in rows:
+            state = row["state"]
+            task = task_lookup(row["session_id"], row["task_id"])
+            if state == "preparing":
+                if task is not None and task.admission_id == row["admission_id"]:
+                    with self.ledger.immediate() as conn:
+                        changed = conn.execute(
+                            """UPDATE task_admissions SET state = 'queued'
+                               WHERE admission_id = ? AND state = 'preparing'""",
+                            (row["admission_id"],),
+                        ).rowcount
+                    finalized += int(changed == 1)
+                else:
+                    with self.ledger.immediate() as conn:
+                        deleted = conn.execute(
+                            """DELETE FROM task_admissions
+                               WHERE admission_id = ? AND state = 'preparing'""",
+                            (row["admission_id"],),
+                        ).rowcount
+                        if deleted:
+                            conn.execute(
+                                "DELETE FROM budget_scopes WHERE budget_scope_id = ?",
+                                (row["budget_scope_id"],),
+                            )
+                    rolled_back += int(deleted == 1)
+                continue
+            if state == "queued":
+                if task is None:
+                    with self.ledger.immediate() as conn:
+                        changed = conn.execute(
+                            """UPDATE task_admissions
+                               SET state = 'released', reason_code = 'error.task_missing',
+                                   released_at = ?
+                               WHERE admission_id = ? AND state = 'queued'""",
+                            (current_time, row["admission_id"]),
+                        ).rowcount
+                    released_missing += int(changed == 1)
+                continue
+            lease = row["lease_expires_at"]
+            if lease is not None and float(lease) > current_time:
+                continue
+            owner = row["owner_instance_id"]
+            if owner and owner_is_alive(owner):
+                continue
+            with self.ledger.immediate() as conn:
+                fenced = conn.execute(
+                    """UPDATE task_admissions
+                       SET state = 'stopping', reason_code = 'error.worker_lost'
+                       WHERE admission_id = ? AND state IN ('live','stopping')
+                         AND owner_instance_id IS ?
+                         AND (lease_expires_at IS NULL OR lease_expires_at <= ?)""",
+                    (row["admission_id"], owner, current_time),
+                ).rowcount
+            if fenced != 1:
+                continue
+            try:
+                mark_worker_lost(row["session_id"], row["task_id"])
+            except Exception:
+                continue
+            with self.ledger.immediate() as conn:
+                changed = conn.execute(
+                    """UPDATE task_admissions
+                       SET state = 'released', released_at = ?, lease_expires_at = NULL
+                       WHERE admission_id = ? AND state = 'stopping'
+                         AND owner_instance_id IS ?
+                         AND reason_code = 'error.worker_lost'""",
+                    (current_time, row["admission_id"], owner),
+                ).rowcount
+            released_lost += int(changed == 1)
+        return ReconcileResult(
+            finalized_preparing=finalized,
+            rolled_back_preparing=rolled_back,
+            released_missing=released_missing,
+            released_worker_lost=released_lost,
+        )
 
     @staticmethod
     def _scope_usage(conn, scope_id: str, kind: str) -> tuple[int, int]:
@@ -795,7 +905,7 @@ def build_task_resource_view(
 
 __all__ = [
     "ResourceLimitError", "ResourceLimits", "ResolvedResourceLimits",
-    "AdmissionDecision", "AdmissionRejected", "DispatchClaim",
+    "AdmissionDecision", "AdmissionRejected", "DispatchClaim", "ReconcileResult",
     "ReservationDecision",
     "ResourceGovernor", "TaskResourceView",
     "build_task_resource_view", "global_resource_limits",
