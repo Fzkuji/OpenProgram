@@ -207,3 +207,40 @@ def test_existing_mcp_management_verbs_still_parse(argv):
     args = cli.build_parser().parse_args(argv)
 
     assert args.mcp_verb == argv[1]
+
+
+def test_mcp_serve_parser_and_local_dispatch(monkeypatch):
+    args = cli.build_parser().parse_args(["mcp", "serve"])
+    assert args.mcp_verb == "serve"
+
+    monkeypatch.setattr(cli, "_cmd_mcp_serve", lambda: 37, raising=False)
+    monkeypatch.setattr(
+        mcp_commands,
+        "_require_backend_endpoint",
+        lambda: (_ for _ in ()).throw(AssertionError("backend consulted")),
+    )
+    monkeypatch.setattr(sys, "argv", ["openprogram", "mcp", "serve"])
+    with pytest.raises(SystemExit) as caught:
+        cli.main()
+    assert caught.value.code == 37
+
+
+def test_mcp_serve_authenticates_before_stdio_and_sanitizes_failure(
+    monkeypatch, capsys
+):
+    from openprogram.mcp_server import server
+
+    entered = []
+    monkeypatch.setattr(
+        server,
+        "authenticate_from_environment",
+        lambda: (_ for _ in ()).throw(server.MCPTokenError("secret-value")),
+    )
+    monkeypatch.setattr(server.anyio, "run", lambda *_args: entered.append(True))
+
+    assert server.serve() == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err == "Error: MCP server authentication failed\n"
+    assert entered == []
+    assert "secret-value" not in output.err

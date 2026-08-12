@@ -172,6 +172,12 @@ def _cmd_mcp_token_create() -> int:
     return 0
 
 
+def _cmd_mcp_serve() -> int:
+    from openprogram.mcp_server.server import serve
+
+    return serve()
+
+
 def _cmd_mcp_list() -> int:
     code, payload = _request("GET", "/api/mcp/servers")
     if code != 200 or not isinstance(payload, dict):
