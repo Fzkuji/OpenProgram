@@ -127,6 +127,29 @@ def test_repair_transport_failure_does_not_refresh_exec_attempt_budget(monkeypat
     assert len(calls) == 2
 
 
+def test_transport_retry_does_not_refresh_validation_retry_budget(monkeypatch):
+    calls = []
+    events = []
+
+    def call(content, model="test", response_format=None):
+        calls.append(content)
+        if len(calls) == 2:
+            raise RuntimeError("repair transport failed")
+        return '{"answer": "wrong"}' if len(calls) < 4 else '{"answer": 11}'
+
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.runtime._retry_sleep_seconds",
+        lambda *args, **kwargs: 0,
+    )
+    runtime = Runtime(call=call, model="dummy", max_retries=4)
+    runtime.on_stream = events.append
+    with pytest.raises(StructuredOutputValidationError):
+        runtime.exec("question", response_format=SCHEMA)
+
+    assert len(calls) == 3
+    assert [event["next_attempt"] for event in events if event.get("type") == "structured_output_retry"] == [2]
+
+
 def test_async_exec_returns_validated_python_value():
     async def call(content, model="test", response_format=None):
         return '{"answer": 9}'
@@ -147,6 +170,29 @@ def test_async_validation_repair_consumes_shared_exec_attempt_budget():
         asyncio.run(runtime.async_exec("question", response_format=SCHEMA))
 
     assert len(calls) == 1
+
+
+def test_async_transport_retry_does_not_refresh_validation_retry_budget(monkeypatch):
+    calls = []
+    events = []
+
+    async def call(content, model="test", response_format=None):
+        calls.append(content)
+        if len(calls) == 2:
+            raise RuntimeError("repair transport failed")
+        return '{"answer": "wrong"}' if len(calls) < 4 else '{"answer": 9}'
+
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.runtime._retry_sleep_seconds",
+        lambda *args, **kwargs: 0,
+    )
+    runtime = Runtime(call=call, model="dummy", max_retries=4)
+    runtime.on_stream = events.append
+    with pytest.raises(StructuredOutputValidationError):
+        asyncio.run(runtime.async_exec("question", response_format=SCHEMA))
+
+    assert len(calls) == 3
+    assert [event["next_attempt"] for event in events if event.get("type") == "structured_output_retry"] == [2]
 
 
 def test_unknown_provider_is_rejected_before_stream_call():
