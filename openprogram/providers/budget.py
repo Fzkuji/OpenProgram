@@ -158,7 +158,7 @@ class BudgetedRequest:
         self._settled = False
 
     @classmethod
-    def begin(cls, model, context, options) -> "BudgetedRequest | None":
+    def begin(cls, model, context, options, provider=None) -> "BudgetedRequest | None":
         """Reserve exposure for this request, or return None if unbudgeted.
 
         Raises :class:`QuotaExceeded` before any credential or network work
@@ -173,6 +173,14 @@ class BudgetedRequest:
             return None
         task_id = bound.task_id
         governor = bound.governor
+
+        from .api_registry import has_audited_accounting
+
+        if not has_audited_accounting(provider, getattr(model, "api", None)):
+            raise QuotaExceeded(
+                "quota.accounting_unavailable",
+                "provider implementation has no audited accounting capability",
+            )
 
         if getattr(options, "on_payload", None) is not None:
             raise QuotaExceeded(

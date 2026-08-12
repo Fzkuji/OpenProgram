@@ -109,6 +109,8 @@ def wired(tmp_path, monkeypatch):
     )
 
     def build(*, limits=None, model=None, usage=None, fail_before_start=None):
+        import openprogram.providers.api_registry as registry_mod
+
         resolved = resolve_resource_limits(
             limits or ResourceLimits(), scheduler_capacity=1,
         )
@@ -121,6 +123,9 @@ def wired(tmp_path, monkeypatch):
         used_model = model or _model()
         provider = _FakeProvider(
             used_model, usage=usage, fail_before_start=fail_before_start,
+        )
+        monkeypatch.setattr(
+            registry_mod, "has_audited_accounting", lambda _provider, _api: True,
         )
         monkeypatch.setattr(
             stream_mod, "get_api_provider",
@@ -243,6 +248,26 @@ def test_strict_budget_rejects_unaudited_adapter_before_credentials(wired):
 
     with pytest.raises(QuotaExceeded) as excinfo:
         _drain(env["model"], SimpleStreamOptions(session_id="s1", max_tokens=100))
+
+    assert excinfo.value.reason_code == "quota.accounting_unavailable"
+    assert env["key_calls"] == []
+    assert env["provider"].seen_opts == []
+
+
+@pytest.mark.parametrize("api", ["openai-completions", "mistral-conversations"])
+def test_known_api_name_with_unaudited_implementation_fails_closed_pre_io(
+    wired, api, monkeypatch,
+):
+    """A recognized API name cannot authorize an arbitrary provider object."""
+    model = _model(api=api)
+    env = wired(limits=ResourceLimits(max_total_tokens=100_000), model=model)
+    monkeypatch.setattr(
+        "openprogram.providers.api_registry.has_audited_accounting",
+        lambda _provider, _registered_api: False,
+    )
+
+    with pytest.raises(QuotaExceeded) as excinfo:
+        _drain(model, SimpleStreamOptions(session_id="s1"))
 
     assert excinfo.value.reason_code == "quota.accounting_unavailable"
     assert env["key_calls"] == []

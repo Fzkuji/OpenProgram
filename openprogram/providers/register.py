@@ -6,7 +6,7 @@ import threading
 
 from openprogram.providers.api_registry import (
     ApiProviderSnapshot,
-    register_api_providers,
+    _register_builtin_api_providers,
 )
 from openprogram.providers.structured_output import StructuredOutputCapabilities
 
@@ -171,7 +171,7 @@ def register_builtins() -> None:
             "bedrock-converse-stream": _BEDROCK_CAPABILITIES,
             "azure-openai-responses": _AZURE_RESPONSES_CAPABILITIES,
         }
-        register_api_providers(
+        _register_builtin_api_providers(
             {
                 api: (
                     ApiProviderSnapshot(provider, capabilities[api])
