@@ -60,6 +60,9 @@
   overflow-y: auto;
   overflow-x: hidden;
 }
+.branches-list:has(.branch-item-resource[open]) {
+  max-height: min(50vh, 360px);
+}
 
 /* Item mirrors .fav-item / .conv-item geometry */
 .branch-item {
@@ -86,6 +89,27 @@
 .branch-item.active {
   background: var(--bg-hover);
   color: var(--text-bright);
+}
+.branch-item:not(.branch-chip):has(> .branch-item-resource[open]) {
+  height: auto;
+  min-height: 32px;
+  max-height: none;
+  overflow: visible;
+  flex-wrap: wrap;
+}
+.branch-item-resource {
+  flex: 0 0 auto;
+}
+.branch-item-resource[open] {
+  flex-basis: 100%;
+  padding-left: 32px;
+  white-space: normal;
+}
+.branch-item-resource pre {
+  max-height: 180px;
+  margin: 4px 0 2px;
+  overflow: auto;
+  white-space: pre-wrap;
 }
 /* Chip layout of the SAME .branch-item — see BranchItem's `chip` prop.
    Only the box changes: pill instead of full-width row, content-sized

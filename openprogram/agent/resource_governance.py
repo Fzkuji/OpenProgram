@@ -424,6 +424,27 @@ class ReconcileResult:
     released_missing: int = 0
     released_worker_lost: int = 0
     finalization_conflicts: int = 0
+    completed_pending: tuple[tuple[str, str], ...] = ()
+
+
+def _durable_task_time_limits(
+    ledger: UsageLedger, task_id: str,
+) -> tuple[int | None, int | None]:
+    row = ledger.connection().execute(
+        """WITH RECURSIVE ancestors AS (
+               SELECT b.* FROM task_admissions a
+               JOIN budget_scopes b ON b.budget_scope_id = a.budget_scope_id
+               WHERE a.task_id = ?
+               UNION ALL
+               SELECT parent.* FROM budget_scopes parent
+               JOIN ancestors child
+                 ON child.parent_scope_id = parent.budget_scope_id
+           )
+           SELECT MIN(max_runtime_seconds), MIN(idle_timeout_seconds)
+           FROM ancestors WHERE scope_kind = 'task'""",
+        (task_id,),
+    ).fetchone()
+    return (None, None) if row is None else (row[0], row[1])
 
 
 def _task_fingerprint(task: Task) -> str:
@@ -1604,6 +1625,7 @@ class ResourceGovernor:
         ).fetchall()
         pending_task_ids = {str(row["task_id"]) for row in pending}
         finalization_conflicts = 0
+        completed_pending: list[tuple[str, str]] = []
         for intent in pending:
             task = task_lookup(intent["session_id"], intent["task_id"])
             if task is None:
@@ -1632,7 +1654,7 @@ class ResourceGovernor:
             if actual_fields != fields:
                 finalization_conflicts += 1
                 continue
-            self._complete_finalization(
+            completed = self._complete_finalization(
                 intent["task_id"],
                 owner_instance_id=intent["owner_instance_id"],
                 lease_generation=intent["lease_generation"],
@@ -1640,6 +1662,8 @@ class ResourceGovernor:
                 reason_code=fields["reason_code"],
                 eligible_states=("live", "stopping", "queued"),
             )
+            if completed:
+                completed_pending.append((intent["task_id"], intent["session_id"]))
         rows = self.ledger.connection().execute(
             """SELECT admission_id, task_id, session_id, budget_scope_id,
                       state, owner_instance_id, lease_generation, lease_expires_at
@@ -1735,26 +1759,11 @@ class ResourceGovernor:
             released_missing=released_missing,
             released_worker_lost=released_lost,
             finalization_conflicts=finalization_conflicts,
+            completed_pending=tuple(completed_pending),
         )
 
     def task_time_limits(self, task_id: str) -> tuple[int | None, int | None]:
-        row = self.ledger.connection().execute(
-            """WITH RECURSIVE ancestors AS (
-                   SELECT b.* FROM task_admissions a
-                   JOIN budget_scopes b ON b.budget_scope_id = a.budget_scope_id
-                   WHERE a.task_id = ?
-                   UNION ALL
-                   SELECT parent.* FROM budget_scopes parent
-                   JOIN ancestors child
-                     ON child.parent_scope_id = parent.budget_scope_id
-               )
-               SELECT MIN(max_runtime_seconds), MIN(idle_timeout_seconds)
-               FROM ancestors WHERE scope_kind = 'task'""",
-            (task_id,),
-        ).fetchone()
-        if row is None:
-            return None, None
-        return row[0], row[1]
+        return _durable_task_time_limits(self.ledger, task_id)
 
     def record_activity(
         self,
@@ -2167,12 +2176,28 @@ def build_task_resource_view(
     usage = ledger.task_resource_usage(task.id)
     counts = ledger.resource_counts(task.parent_session_id, task.id)
     snapshot = task.resolved_limits_snapshot
-    if snapshot and isinstance(snapshot.get("limits"), dict):
+    snapshot_applied = False
+    if snapshot and isinstance(snapshot, dict) and isinstance(snapshot.get("limits"), dict):
         fields = dict(resolved.fields)
-        for name in ("max_runtime_seconds", "idle_timeout_seconds"):
-            value = snapshot["limits"].get(name)
-            if isinstance(value, dict):
-                fields[name] = ResolvedLimit(**value)
+        try:
+            for name in ("max_runtime_seconds", "idle_timeout_seconds"):
+                value = snapshot["limits"].get(name)
+                if isinstance(value, dict):
+                    fields[name] = ResolvedLimit(**value)
+            resolved = ResolvedResourceLimits(
+                scheduler_capacity=resolved.scheduler_capacity, fields=fields,
+            )
+            snapshot_applied = True
+        except (TypeError, ValueError):
+            snapshot_applied = False
+    if task.admission_id and not snapshot_applied:
+        runtime_limit, idle_limit = _durable_task_time_limits(ledger, task.id)
+        fields = dict(resolved.fields)
+        for name, value in (
+            ("max_runtime_seconds", runtime_limit),
+            ("idle_timeout_seconds", idle_limit),
+        ):
+            fields[name] = ResolvedLimit(value, value, "task")
         resolved = ResolvedResourceLimits(
             scheduler_capacity=resolved.scheduler_capacity, fields=fields,
         )

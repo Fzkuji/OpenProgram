@@ -39,7 +39,7 @@ async def stream_simple(
 
     # Reserve budget BEFORE credentials or network: a denied call must never
     # resolve a key or open a socket. Returns None for unbudgeted callers.
-    budget = BudgetedRequest.begin(model, context, opts)
+    budget = BudgetedRequest.begin(model, context, opts, provider)
     try:
         if budget is not None:
             opts = budget.clamp(opts, model)
@@ -115,7 +115,7 @@ async def stream(
     if provider is None:
         raise ValueError(f"No stream function registered for API: {model.api!r}")
 
-    budget = BudgetedRequest.begin(model, context, opts)
+    budget = BudgetedRequest.begin(model, context, opts, provider)
     try:
         if budget is not None:
             opts = budget.clamp(opts, model)

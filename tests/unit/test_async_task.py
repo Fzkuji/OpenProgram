@@ -644,7 +644,8 @@ def test_running_status_write_failure_reconciles_terminal_and_releases(
     from openprogram.agent.task.types import TaskStatus
     from openprogram.usage.ledger import UsageLedger
 
-    monkeypatch.setattr(runner_mod, "_broadcast", lambda *_a, **_k: None)
+    broadcasts = []
+    monkeypatch.setattr(runner_mod, "_broadcast", lambda payload: broadcasts.append(payload))
     real_update = runner_mod._store_update_status
 
     failed = True
@@ -672,11 +673,26 @@ def test_running_status_write_failure_reconciles_terminal_and_releases(
             "SELECT state FROM task_finalizations WHERE task_id = ?", (task_id,),
         ).fetchone()[0] == "pending"
         failed = False
+        broadcasts.clear()
         runner._reconcile_resources()
         assert runner.get_task(task_id).status == TaskStatus.ERRORED
         assert ledger.connection().execute(
             "SELECT state FROM task_admissions WHERE task_id = ?", (task_id,),
         ).fetchone()[0] == "released"
+        terminal = [
+            item for item in broadcasts
+            if item.get("type") == "task_status"
+            and item["data"].get("task_id") == task_id
+        ]
+        assert len(terminal) == 1
+        assert terminal[0]["data"]["status"] == "errored"
+        assert terminal[0]["data"]["resource"]["resource_state"] == "released"
+        reloads = [item for item in broadcasts if item.get("type") == "session_reload"]
+        assert len(reloads) == 1
+        assert reloads[0]["data"]["reason"] == "task_errored"
+        broadcasts.clear()
+        runner._reconcile_resources()
+        assert broadcasts == []
         from openprogram.agent.sub_agent_run import AgentTurnResult
         monkeypatch.setattr(
             "openprogram.agent.sub_agent_run._execute_agent_turn",

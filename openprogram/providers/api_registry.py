@@ -40,11 +40,13 @@ _registry: dict[str, ApiProvider] = {}
 _original_registry: dict[str, ApiProvider] = {}
 _provider_transform: Callable[[str, ApiProvider], ApiProvider] | None = None
 _registry_lock = threading.RLock()
+_audited_accounting: dict[int, str] = {}
 
 
 def register_api_provider(api: Api, provider: ApiProvider) -> None:
     """Register an API provider implementation."""
     with _registry_lock:
+        _audited_accounting.pop(id(provider), None)
         _original_registry[api] = provider
         _registry[api] = (
             _provider_transform(api, provider) if _provider_transform is not None else provider
@@ -64,6 +66,25 @@ def register_api_providers(providers: dict[Api, ApiProvider]) -> None:
         }
         _original_registry.update(providers)
         _registry.update(transformed)
+
+
+def _register_builtin_api_providers(providers: dict[Api, ApiProvider]) -> None:
+    """Register audited built-ins; public registration never grants this capability."""
+    with _registry_lock:
+        transformed = {
+            api: (_provider_transform(api, provider) if _provider_transform else provider)
+            for api, provider in providers.items()
+        }
+        _original_registry.update(providers)
+        _registry.update(transformed)
+        for api, provider in providers.items():
+            _audited_accounting[id(provider)] = api
+            _audited_accounting[id(transformed[api])] = api
+
+
+def has_audited_accounting(provider: ApiProvider, api: str) -> bool:
+    with _registry_lock:
+        return _audited_accounting.get(id(provider)) == api
 
 
 def get_api_provider(api: Api) -> ApiProvider | None:
@@ -91,6 +112,9 @@ def configure_provider_transform(
         }
         _registry.clear()
         _registry.update(transformed)
+        for api, provider in transformed.items():
+            if _audited_accounting.get(id(_original_registry[api])) == api:
+                _audited_accounting[id(provider)] = api
         _provider_transform = transform
 
 

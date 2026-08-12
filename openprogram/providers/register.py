@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import threading
 
-from openprogram.providers.api_registry import register_api_providers
+from openprogram.providers.api_registry import _register_builtin_api_providers
 
 
 class _StreamFnProvider:
@@ -47,28 +47,28 @@ def _load_builtin_providers() -> dict[str, _StreamFnProvider]:
 
     return {
         "anthropic-messages": _StreamFnProvider(
-            anthropic.stream_simple, anthropic.stream_simple
+            anthropic.stream_simple, anthropic.stream_simple,
         ),
         "openai-completions": _StreamFnProvider(
-            openai_completions.stream_simple, openai_completions.stream_simple
+            openai_completions.stream_simple, openai_completions.stream_simple,
         ),
         "google-generative-ai": _StreamFnProvider(
-            google.stream_simple, google.stream_simple
+            google.stream_simple, google.stream_simple,
         ),
         "openai-responses": _StreamFnProvider(
-            stream_openai_responses, stream_simple_openai_responses
+            stream_openai_responses, stream_simple_openai_responses,
         ),
         "openai-codex": _StreamFnProvider(
-            stream_openai_codex_responses, stream_simple_openai_codex_responses
+            stream_openai_codex_responses, stream_simple_openai_codex_responses,
         ),
         "gemini-subscription": _StreamFnProvider(
-            stream_google_gemini_cli, stream_simple_google_gemini_cli
+            stream_google_gemini_cli, stream_simple_google_gemini_cli,
         ),
         "bedrock-converse-stream": _StreamFnProvider(
-            stream_bedrock, stream_simple_bedrock
+            stream_bedrock, stream_simple_bedrock,
         ),
         "azure-openai-responses": _StreamFnProvider(
-            stream_azure_openai_responses, stream_simple_azure_openai_responses
+            stream_azure_openai_responses, stream_simple_azure_openai_responses,
         ),
     }
 
@@ -101,7 +101,7 @@ def register_builtins() -> None:
         if _registered:
             return
         providers = _load_builtin_providers()
-        register_api_providers(providers)
+        _register_builtin_api_providers(providers)
         _registered = True
 
 

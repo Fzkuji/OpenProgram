@@ -222,10 +222,10 @@ def _refresh_context_stats(session_id: str) -> None:
         pass
 
 
-def _broadcast_task_status(task: Task) -> None:
+def _broadcast_task_status(task: Task, runner: "TaskRunner | None" = None) -> None:
     resource = None
     try:
-        view = get_runner().get_task_resource_view(task.id)
+        view = (runner or get_runner()).get_task_resource_view(task.id)
         resource = view.to_dict() if view is not None else None
     except Exception:
         _log.debug("failed to build task resource broadcast", exc_info=True)
@@ -1931,6 +1931,13 @@ class TaskRunner:
         except Exception:
             _log.exception("failed to reconcile durable task resources")
             return
+        for task_id, session_id in result.completed_pending:
+            task = _store_load(session_id, task_id)
+            if task is not None and is_terminal(task.status):
+                _broadcast_task_status(task, self)
+                _broadcast_session_reload(
+                    session_id, reason=f"task_{task.status.value}",
+                )
         try:
             self._governor.recover_provider_reservations()
         except Exception:

@@ -1835,6 +1835,31 @@ def test_time_limits_and_view_use_admission_snapshot_after_session_change(
     assert governor.task_time_limits(newest.id) == (20, 8)
 
 
+@pytest.mark.parametrize("snapshot", [None, {"limits": {"max_runtime_seconds": {"bad": 1}}}])
+def test_legacy_or_malformed_snapshot_uses_durable_task_time_limits(
+    tmp_path, snapshot,
+) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    admitted = resolve_resource_limits(
+        ResourceLimits(max_runtime_seconds=10, idle_timeout_seconds=4),
+        scheduler_capacity=1,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: admitted)
+    task = Task(id="legacy-snapshot", parent_session_id="s1", prompt="p", agent_id="a")
+    governor.admit_task(task, persist=lambda _task: None)
+    task.resolved_limits_snapshot = snapshot
+    current = resolve_resource_limits(
+        ResourceLimits(max_runtime_seconds=2, idle_timeout_seconds=1),
+        scheduler_capacity=1,
+    )
+
+    view = build_task_resource_view(task, ledger=ledger, resolved=current)
+
+    assert governor.task_time_limits(task.id) == (10, 4)
+    assert view.limits["limits"]["max_runtime_seconds"]["effective"] == 10
+    assert view.limits["limits"]["idle_timeout_seconds"]["effective"] == 4
+
+
 def test_meaningful_activity_is_owner_fenced_and_keepalive_is_ignored(
     tmp_path, monkeypatch,
 ) -> None:

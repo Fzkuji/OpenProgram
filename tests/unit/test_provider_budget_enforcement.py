@@ -95,8 +95,9 @@ class _ConstructionFailureProvider:
 
 def _model(**kw):
     context_window = kw.pop("context_window", 1_000)
+    api = kw.pop("api", "openai-completions")
     return Model(
-        id="fake-model-1", provider="fakeprov", api="openai-completions",
+        id="fake-model-1", provider="fakeprov", api=api,
         name="fake", base_url="http://fake.local",
         context_window=context_window, **kw,
     )
@@ -117,6 +118,7 @@ def wired(tmp_path, monkeypatch):
     )
 
     def build(*, limits=None, model=None, usage=None, fail_before_start=None):
+        import openprogram.providers.api_registry as registry_mod
         resolved = resolve_resource_limits(
             limits or ResourceLimits(), scheduler_capacity=1,
         )
@@ -129,6 +131,9 @@ def wired(tmp_path, monkeypatch):
         used_model = model or _model()
         provider = _FakeProvider(
             used_model, usage=usage, fail_before_start=fail_before_start,
+        )
+        monkeypatch.setattr(
+            registry_mod, "has_audited_accounting", lambda provider, api: True,
         )
         monkeypatch.setattr(
             stream_mod, "get_api_provider",
@@ -347,6 +352,76 @@ def test_accounting_outage_fails_closed_and_is_retryable(wired, monkeypatch):
     assert excinfo.value.reason_code == "quota.accounting_unavailable"
     assert excinfo.value.retryable is True
     assert env["provider"].seen_opts == []
+
+
+@pytest.mark.parametrize("api", ["openai-completions", "mistral-conversations"])
+def test_known_api_name_with_unaudited_implementation_fails_closed_pre_io(
+    wired, api, monkeypatch,
+):
+    model = _model(api=api)
+    env = wired(limits=ResourceLimits(max_total_tokens=100_000), model=model)
+    monkeypatch.setattr(
+        "openprogram.providers.api_registry.has_audited_accounting",
+        lambda provider, registered_api: False,
+    )
+
+    with pytest.raises(QuotaExceeded) as excinfo:
+        _drain(model, SimpleStreamOptions(session_id="s1"))
+
+    assert excinfo.value.reason_code == "quota.accounting_unavailable"
+    assert env["key_calls"] == []
+    assert env["provider"].seen_opts == []
+
+
+def test_recording_transform_preserves_registry_audited_identity(tmp_path):
+    from openprogram.providers import api_registry
+    from openprogram.providers.recording import RecordingProvider
+
+    state = (
+        dict(api_registry._registry), dict(api_registry._original_registry),
+        dict(api_registry._audited_accounting), api_registry._provider_transform,
+    )
+    try:
+        api_registry._registry.clear()
+        api_registry._original_registry.clear()
+        api_registry._audited_accounting.clear()
+        api_registry._provider_transform = None
+        provider = _FakeProvider(_model())
+        api_registry._register_builtin_api_providers({"openai-completions": provider})
+        api_registry.configure_provider_transform(
+            lambda _api, inner: RecordingProvider(inner, tmp_path / "calls.jsonl"),
+        )
+        wrapped = api_registry._registry["openai-completions"]
+        assert api_registry.has_audited_accounting(wrapped, "openai-completions")
+    finally:
+        registry, original, audited, transform = state
+        api_registry._registry.clear(); api_registry._registry.update(registry)
+        api_registry._original_registry.clear(); api_registry._original_registry.update(original)
+        api_registry._audited_accounting.clear(); api_registry._audited_accounting.update(audited)
+        api_registry._provider_transform = transform
+
+
+def test_public_registry_override_cannot_self_declare_accounting_capability():
+    from openprogram.providers import api_registry
+
+    malicious = _FakeProvider(_model())
+    malicious._budget_accounting_api = "openai-completions"
+    prior = api_registry._registry.get("openai-completions")
+    prior_original = api_registry._original_registry.get("openai-completions")
+    try:
+        api_registry.register_api_provider("openai-completions", malicious)
+        assert not api_registry.has_audited_accounting(
+            malicious, "openai-completions",
+        )
+    finally:
+        if prior is None:
+            api_registry._registry.pop("openai-completions", None)
+        else:
+            api_registry._registry["openai-completions"] = prior
+        if prior_original is None:
+            api_registry._original_registry.pop("openai-completions", None)
+        else:
+            api_registry._original_registry["openai-completions"] = prior_original
 
 
 def test_settlement_failure_surfaces_as_accounting_error(wired, monkeypatch):

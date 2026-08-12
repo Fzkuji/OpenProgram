@@ -18,7 +18,7 @@
  * into types.tsx (shared types + helpers + SVG glyphs),
  * branch-item.tsx (single row), and this index.tsx (the panel itself).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
 import "@/lib/net/ws-events";
@@ -27,6 +27,7 @@ import { useSessionStore } from "@/lib/session-store";
 import { BranchItem } from "./branch-item";
 import { MergeModal } from "./merge-modal";
 import { runtimeState } from "@/lib/runtime-bridge/state";
+import { selectResourceForHead } from "./resource-selection";
 
 import {
   LANE_COLORS,
@@ -54,7 +55,8 @@ export function BranchesPanel({ variant = "list" }: {
   const [taskMap, setTaskMap] = useState<Record<string,
     { targetHead?: string | null; finalHead?: string | null;
       status: string; sessionId?: string; label?: string | null;
-      resource?: Record<string, unknown> | null }>>({});
+      resource?: Record<string, unknown> | null; updatedAt: number }>>({});
+  const taskVersion = useRef(0);
   // Branch head_msg_ids currently in "finishing" wipe — added on
   // terminal status, removed 1200ms later.
   const [finishingHeads, setFinishingHeads] = useState<Set<string>>(
@@ -116,6 +118,7 @@ export function BranchesPanel({ variant = "list" }: {
             sessionId: d.session_id,
             label: d.label || d.subject || null,
             resource: d.resource || cur[tid]?.resource || null,
+            updatedAt: ++taskVersion.current,
           };
           if (headForWipe) {
             setFinishingHeads((fs) => {
@@ -140,6 +143,7 @@ export function BranchesPanel({ variant = "list" }: {
           sessionId: d.session_id,
           label: d.label || d.subject || null,
           resource: d.resource || null,
+          updatedAt: ++taskVersion.current,
         };
         return next;
       });
@@ -164,13 +168,15 @@ export function BranchesPanel({ variant = "list" }: {
       if (!det) return;
       if (det.type !== "tasks_list") return;
       const tasks = (det.data?.tasks as Array<Record<string, unknown>>) || [];
+      taskVersion.current = tasks.length;
       setTaskMap(() => {
         const m: Record<string, {
           targetHead?: string | null; finalHead?: string | null;
           status: string; sessionId?: string; label?: string | null;
           resource?: Record<string, unknown> | null;
+          updatedAt: number;
         }> = {};
-        for (const t of tasks) {
+        for (const [index, t] of tasks.entries()) {
           const tid = t.id as string | undefined;
           const status = (t.status as string | undefined) || "";
           if (!tid) continue;
@@ -182,6 +188,8 @@ export function BranchesPanel({ variant = "list" }: {
             label: (t.label as string | null)
                    || (t.subject as string | null) || null,
             resource: (t.resource as Record<string, unknown> | null) || null,
+            // list_tasks is newest-first; a larger version wins below.
+            updatedAt: tasks.length - index,
           };
         }
         return m;
@@ -366,12 +374,7 @@ export function BranchesPanel({ variant = "list" }: {
     .filter((c) => c.id && c.id !== sessionId)
     .sort((a, b) => (a.title || a.id).localeCompare(b.title || b.id));
   const resourceForHead = (headId: string) => {
-    for (const [taskId, entry] of Object.entries(taskMap)) {
-      const mapped = entry.finalHead || entry.targetHead
-        || `${PENDING_HEAD_PREFIX}${taskId}`;
-      if (mapped === headId) return entry.resource || null;
-    }
-    return null;
+    return selectResourceForHead(taskMap, headId, PENDING_HEAD_PREFIX);
   };
 
   if (chips) {
