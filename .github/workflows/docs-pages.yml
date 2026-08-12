@@ -7,6 +7,7 @@ on:
       - "docs/**"
       - "site/**"
       - "tools/docs_site/**"
+      - "web/app/favicon.ico"
       - ".github/workflows/docs-pages.yml"
   workflow_dispatch:
 
@@ -41,6 +42,9 @@ jobs:
       - name: Build docs site
         run: python -m tools.docs_site.build
 
+      - name: Check landing page
+        run: python -m tools.docs_site.check_landing
+
       - name: Check docs links
         run: python -m tools.docs_site.checklinks
 
@@ -51,7 +55,7 @@ jobs:
           mkdir -p _publish/docs
           cp -R docs/_site/. _publish/docs/
           cp site/index.html _publish/index.html
-          for f in CNAME robots.txt sitemap.xml .nojekyll README.md google01b0015fda12129e.html; do
+          for f in CNAME favicon.ico robots.txt sitemap.xml .nojekyll README.md google01b0015fda12129e.html; do
             [ -e "_publish/docs/$f" ] && mv "_publish/docs/$f" "_publish/$f"
           done
           grep -Fx 'google-site-verification: google01b0015fda12129e.html' \

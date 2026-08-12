@@ -123,6 +123,7 @@ def render_page(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{safe_title} · OpenProgram Docs</title>
 <script>{_THEME_BOOT}</script>
+<link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="{base}assets/mark.svg">
 <link rel="stylesheet" href="{base}assets/site.css?v={ASSET_VER}">
 <link rel="stylesheet" href="{base}assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">

@@ -13,6 +13,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 LANDING = ROOT / "site" / "index.html"
+SITE_TITLE = "OpenProgram: Self-Programming AI Agent Framework"
+SITE_DESCRIPTION = (
+    "Build self-programming AI agents that create and refine their own "
+    "workflows with an open-source runtime for models, tools, memory, "
+    "context, and multi-agent collaboration."
+)
 
 
 class LandingParser(HTMLParser):
@@ -83,17 +89,34 @@ def main() -> int:
 
     require(("canonical", "https://openprogram.io/") in links,
             "missing canonical URL", failures)
-    require(any(item.get("rel") == "icon" for item in page.links),
-            "missing favicon", failures)
+    require(f"<title>{SITE_TITLE}</title>" in source,
+            "landing title differs from the product title", failures)
+    require(("icon", "/favicon.ico") in links,
+            "missing root ICO favicon", failures)
+    require(("icon", "/docs/assets/mark.svg") in links,
+            "missing SVG favicon", failures)
+    require(property_meta.get("og:title") == SITE_TITLE,
+            "Open Graph title differs from the landing title", failures)
+    require(named_meta.get("twitter:title") == SITE_TITLE,
+            "Twitter title differs from the landing title", failures)
+    require(named_meta.get("description") == SITE_DESCRIPTION,
+            "landing description differs from the product description", failures)
+    require(property_meta.get("og:description") == SITE_DESCRIPTION,
+            "Open Graph description differs from the product description", failures)
+    require(named_meta.get("twitter:description") == SITE_DESCRIPTION,
+            "Twitter description differs from the product description", failures)
     require(property_meta.get("og:image", "").startswith("https://openprogram.io/"),
             "missing absolute Open Graph image", failures)
     require(named_meta.get("twitter:card") == "summary_large_image",
             "missing large Twitter card", failures)
     require(named_meta.get("theme-color") == "#07080a",
             "missing dark browser theme color", failures)
-    require(any(item.get("@type") == "SoftwareSourceCode"
-                for item in page.structured_data),
+    software = next((item for item in page.structured_data
+                     if item.get("@type") == "SoftwareSourceCode"), None)
+    require(software is not None,
             "missing SoftwareSourceCode structured data", failures)
+    require(software is not None and software.get("description") == SITE_DESCRIPTION,
+            "structured data differs from the product description", failures)
 
     for section_id in (
         "use-cases", "quick-start", "capabilities", "interfaces",
@@ -102,7 +125,7 @@ def main() -> int:
         require(section_id in page.ids, f"missing #{section_id} section", failures)
 
     for phrase in (
-        "Build agents that run in Python.",
+        "Build agents that program their own workflows.",
         "Use an agent or build your own.",
         "Everything you need to run agents.",
         "GUI Agent", "Research Agent", "Wiki Agent",

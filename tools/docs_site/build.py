@@ -574,11 +574,12 @@ def _build_into_out_root() -> int:
 
 
 def _copy_static_root() -> None:
-    """Ship docs/_static_root/* at the site root verbatim.
+    """Ship root website files and the existing application favicon.
 
     Search-engine ownership proofs and robots.txt only count when they are
     reachable at the exact root URL the provider asks for, so they cannot go
-    through markdown rendering.
+    through markdown rendering.  The website reuses the application favicon
+    so browser and installed-app branding cannot diverge.
     """
     src = DOCS_ROOT / "_static_root"
     if not src.is_dir():
@@ -589,6 +590,7 @@ def _copy_static_root() -> None:
         dst = OUT_ROOT / path.relative_to(src)
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, dst)
+    shutil.copy2(REPO_ROOT / "web" / "app" / "favicon.ico", OUT_ROOT / "favicon.ico")
 
 
 def _write_sitemap() -> None:
