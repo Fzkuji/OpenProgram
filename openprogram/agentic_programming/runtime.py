@@ -1240,6 +1240,7 @@ class Runtime:
         try:
             errors: list[str] = []
             attempts_used = 0
+            validation_repairs_used = 0
             while attempts_used < self.max_retries:
                 # Pre-attempt deadline check: previous sleep or _call
                 # may have already crossed the line, in which case we
@@ -1279,7 +1280,7 @@ class Runtime:
                             build_repair_prompt,
                             parse_and_validate_json,
                         )
-                        for validation_attempt in range(
+                        for _ in range(
                             structured_format.max_validation_retries + 1
                         ):
                             try:
@@ -1287,7 +1288,7 @@ class Runtime:
                                 break
                             except StructuredOutputValidationError as exc:
                                 if (
-                                    validation_attempt
+                                    validation_repairs_used
                                     >= structured_format.max_validation_retries
                                     or attempts_used >= self.max_retries
                                 ):
@@ -1296,10 +1297,11 @@ class Runtime:
                                 if self.on_stream:
                                     self.on_stream({
                                         "type": "structured_output_retry",
-                                        "attempt": validation_attempt + 1,
-                                        "next_attempt": validation_attempt + 2,
+                                        "attempt": validation_repairs_used + 1,
+                                        "next_attempt": validation_repairs_used + 2,
                                         "issues": exc.issues,
                                     })
+                                validation_repairs_used += 1
                                 attempts_used += 1
                                 raw_reply = self._call(
                                     [*call_input, {"type": "text", "text": repair}],
@@ -1505,6 +1507,7 @@ class Runtime:
         _llm_closed = False
         try:
           attempts_used = 0
+          validation_repairs_used = 0
           while attempts_used < self.max_retries:
             # Pre-attempt deadline check (see exec() for the rationale).
             if _deadline is not None and time.monotonic() >= _deadline:
@@ -1534,7 +1537,7 @@ class Runtime:
                         build_repair_prompt,
                         parse_and_validate_json,
                     )
-                    for validation_attempt in range(
+                    for _ in range(
                         structured_format.max_validation_retries + 1
                     ):
                         try:
@@ -1542,7 +1545,7 @@ class Runtime:
                             break
                         except StructuredOutputValidationError as exc:
                             if (
-                                validation_attempt
+                                validation_repairs_used
                                 >= structured_format.max_validation_retries
                                 or attempts_used >= self.max_retries
                             ):
@@ -1551,10 +1554,11 @@ class Runtime:
                             if self.on_stream:
                                 self.on_stream({
                                     "type": "structured_output_retry",
-                                    "attempt": validation_attempt + 1,
-                                    "next_attempt": validation_attempt + 2,
+                                    "attempt": validation_repairs_used + 1,
+                                    "next_attempt": validation_repairs_used + 2,
                                     "issues": exc.issues,
                                 })
+                            validation_repairs_used += 1
                             attempts_used += 1
                             raw_reply = await self._async_call(
                                 [*call_input, {"type": "text", "text": repair}],
