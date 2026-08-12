@@ -431,6 +431,129 @@ def test_live_lease_mutations_are_fenced_by_owner(tmp_path) -> None:
     ) is True
 
 
+def test_time_limits_start_at_live_claim_and_exclude_queue_wait(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_runtime_seconds=10, idle_timeout_seconds=4),
+        scheduler_capacity=1,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    governor.admit_task(
+        Task(id="timed", parent_session_id="s1", prompt="timed", agent_id="a"),
+        persist=lambda _task: None,
+    )
+    queued = ledger.connection().execute(
+        "SELECT started_at, last_activity_at FROM task_admissions WHERE task_id = 'timed'"
+    ).fetchone()
+
+    assert tuple(queued) == (None, None)
+    assert governor.task_time_limits("timed") == (10, 4)
+    governor.claim_next(owner_instance_id="worker")
+    live = ledger.connection().execute(
+        "SELECT started_at, last_activity_at FROM task_admissions WHERE task_id = 'timed'"
+    ).fetchone()
+    assert live[0] is not None
+    assert live[1] == live[0]
+
+
+def test_meaningful_activity_is_owner_fenced_and_keepalive_is_ignored(
+    tmp_path, monkeypatch,
+) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(idle_timeout_seconds=4), scheduler_capacity=1,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    governor.admit_task(
+        Task(id="timed", parent_session_id="s1", prompt="timed", agent_id="a"),
+        persist=lambda _task: None,
+    )
+    governor.claim_next(owner_instance_id="worker")
+    before = ledger.connection().execute(
+        "SELECT last_activity_at FROM task_admissions WHERE task_id = 'timed'"
+    ).fetchone()[0]
+    monkeypatch.setattr(
+        "openprogram.agent.resource_governance.time.time", lambda: before + 5,
+    )
+
+    assert governor.record_activity(
+        "timed", owner_instance_id="worker", activity_kind="transport_keepalive",
+    ) is False
+    assert governor.record_activity(
+        "timed", owner_instance_id="stale", activity_kind="provider_data",
+    ) is False
+    assert governor.record_activity(
+        "timed", owner_instance_id="worker", activity_kind="tool_progress",
+    ) is True
+    after = ledger.connection().execute(
+        "SELECT last_activity_at FROM task_admissions WHERE task_id = 'timed'"
+    ).fetchone()[0]
+    assert after == before + 5
+
+
+def test_child_progress_updates_live_parent_activity(tmp_path, monkeypatch) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(idle_timeout_seconds=5), scheduler_capacity=2,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    parent = Task(id="parent", parent_session_id="s1", prompt="p", agent_id="a")
+    child = Task(
+        id="child", parent_session_id="s1", parent_task_id="parent",
+        prompt="c", agent_id="a",
+    )
+    governor.admit_task(parent, persist=lambda _task: None)
+    governor.admit_task(child, persist=lambda _task: None)
+    governor.claim_next(owner_instance_id="worker")
+    governor.claim_next(owner_instance_id="worker")
+    monkeypatch.setattr(
+        "openprogram.agent.resource_governance.time.time", lambda: 1234.5,
+    )
+
+    assert governor.record_activity(
+        "child", owner_instance_id="worker", activity_kind="child_progress",
+    ) is True
+    rows = ledger.connection().execute(
+        "SELECT task_id, last_activity_at FROM task_admissions ORDER BY task_id"
+    ).fetchall()
+    assert [(row["task_id"], row["last_activity_at"]) for row in rows] == [
+        ("child", 1234.5), ("parent", 1234.5),
+    ]
+
+
+def test_child_time_limits_use_strictest_ancestor_scope(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    session_limits = resolve_resource_limits(
+        ResourceLimits(max_runtime_seconds=10, idle_timeout_seconds=8),
+        scheduler_capacity=2,
+    )
+    parent_limits = resolve_resource_limits(
+        ResourceLimits(max_runtime_seconds=10, idle_timeout_seconds=8),
+        task=ResourceLimits(max_runtime_seconds=3, idle_timeout_seconds=2),
+        scheduler_capacity=2,
+    )
+    governor = ResourceGovernor(
+        ledger,
+        limit_resolver=lambda _sid, task: (
+            parent_limits if task.id == "parent" else session_limits
+        ),
+        session_limit_resolver=lambda _sid: session_limits,
+    )
+    governor.admit_task(
+        Task(id="parent", parent_session_id="s1", prompt="p", agent_id="a"),
+        persist=lambda _task: None,
+    )
+    governor.admit_task(
+        Task(
+            id="child", parent_session_id="s1", parent_task_id="parent",
+            prompt="c", agent_id="a",
+        ),
+        persist=lambda _task: None,
+    )
+
+    assert governor.task_time_limits("child") == (3, 2)
+
+
 def test_releasing_queued_task_keeps_cumulative_admission(tmp_path) -> None:
     ledger = UsageLedger(tmp_path / "usage.db")
     resolved = resolve_resource_limits(

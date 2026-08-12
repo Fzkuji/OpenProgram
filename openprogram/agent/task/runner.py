@@ -78,6 +78,10 @@ _CANCEL_TIMEOUT_SECS = 30.0
 _LEASE_RENEW_SECS = 10.0
 _RECONCILE_SECS = 5.0
 
+
+class NonPreemptibleOperation(RuntimeError):
+    reason_code = "error.nonpreemptible_operation"
+
 # Task id of the task currently executing on this context. Bound by
 # ``_run_one`` for the duration of the child turn; read by ``spawn_task``
 # to default ``parent_task_id`` so tasks spawned from inside a running
@@ -170,7 +174,14 @@ class TaskRunner:
     ``self._lock``.
     """
 
-    def __init__(self, max_workers: Optional[int] = None, *, governor=None) -> None:
+    def __init__(
+        self,
+        max_workers: Optional[int] = None,
+        *,
+        governor=None,
+        monotonic_clock: Callable[[], float] | None = None,
+        budget_poll_seconds: float = 0.25,
+    ) -> None:
         if max_workers is None:
             try:
                 max_workers = int(
@@ -191,6 +202,8 @@ class TaskRunner:
                 UsageLedger(default_store().root_path.parent / "usage.db")
             )
         self._governor = governor
+        self._monotonic = monotonic_clock or time.monotonic
+        self._budget_poll_seconds = budget_poll_seconds
         self._instance_id = f"worker_{os.getpid()}_{uuid.uuid4().hex}"
         self._dispatch_wake = threading.Event()
         self._shutdown_event = threading.Event()
@@ -229,6 +242,12 @@ class TaskRunner:
             name="op-task-reconciler",
         )
         self._reconciler_thread.start()
+        self._budget_thread = threading.Thread(
+            target=self._budget_loop,
+            daemon=True,
+            name="op-task-budget",
+        )
+        self._budget_thread.start()
 
     def _followup_lock(self, session_id: str) -> threading.Lock:
         """The per-session follow-up lock, created on first use."""
@@ -382,6 +401,17 @@ class TaskRunner:
         return task.id
 
     def cancel_task(self, task_id: str, *, reason: Optional[str] = None) -> Optional[Task]:
+        return self._cancel_cascade(
+            task_id, reason=reason, root_reason_code="cancel.user",
+        )
+
+    def _cancel_cascade(
+        self,
+        task_id: str,
+        *,
+        reason: Optional[str],
+        root_reason_code: str,
+    ) -> Optional[Task]:
         """Cancel ``task_id`` and every descendant task on its
         ``parent_task_id`` chain (cascading cancel). Returns the
         (post-update) Task entity for ``task_id``, or None if not found.
@@ -413,7 +443,9 @@ class TaskRunner:
                 )
             except Exception:
                 pass
-        return self._cancel_single(task_id, reason=reason, reason_code="cancel.user")
+        return self._cancel_single(
+            task_id, reason=reason, reason_code=root_reason_code,
+        )
 
     def _descendant_tasks(self, root_task_id: str) -> list[Task]:
         """All tasks reachable from ``root_task_id`` via parent_task_id,
@@ -564,6 +596,7 @@ class TaskRunner:
                 _store_update_status(
                     session_id, task_id, TaskStatus.RUNNING,
                     cancel_requested_at=time.time(),
+                    reason_code=reason_code,
                 )
                 # Watchdog: force cancel if worker doesn't honour signal.
                 self._schedule_force_cancel(session_id, task_id)
@@ -629,12 +662,70 @@ class TaskRunner:
         done.wait(timeout=timeout)
         return self.get_task(task_id)
 
+    def record_task_activity(self, task_id: str, activity_kind: str) -> bool:
+        recorded = self._governor.record_activity(
+            task_id,
+            owner_instance_id=self._instance_id,
+            activity_kind=activity_kind,
+        )
+        if not recorded:
+            return False
+        lineage = [task_id]
+        current = self.get_task(task_id)
+        seen = {task_id}
+        while current is not None and current.parent_task_id:
+            parent_id = current.parent_task_id
+            if parent_id in seen:
+                break
+            seen.add(parent_id)
+            lineage.append(parent_id)
+            current = self.get_task(parent_id)
+        now = self._monotonic()
+        with self._lock:
+            for lineage_task_id in lineage:
+                entry = self._tasks.get(lineage_task_id)
+                if entry is not None and entry.get("started_monotonic") is not None:
+                    entry["last_activity_monotonic"] = now
+        return True
+
+    def bounded_operation_timeout(
+        self, task_id: str, declared_timeout: float | None,
+    ) -> float | None:
+        if declared_timeout is not None and declared_timeout <= 0:
+            raise ValueError("declared timeout must be positive")
+        runtime_limit, idle_limit = self._governor.task_time_limits(task_id)
+        strict = runtime_limit is not None or idle_limit is not None
+        if strict and declared_timeout is None:
+            raise NonPreemptibleOperation(
+                "strict time-budget task requires a bounded operation",
+            )
+        bounds = [] if declared_timeout is None else [float(declared_timeout)]
+        with self._lock:
+            entry = self._tasks.get(task_id)
+            snapshot = dict(entry) if entry is not None else None
+        if snapshot is not None and snapshot.get("started_monotonic") is not None:
+            now = self._monotonic()
+            if runtime_limit is not None:
+                bounds.append(max(
+                    0.0, float(runtime_limit) - (
+                        now - snapshot["started_monotonic"]
+                    ),
+                ))
+            if idle_limit is not None:
+                bounds.append(max(
+                    0.0, float(idle_limit) - (
+                        now - snapshot["last_activity_monotonic"]
+                    ),
+                ))
+        return min(bounds) if bounds else None
+
     def shutdown(self, wait: bool = True) -> None:
         """Tear down the pool. Used in tests / process shutdown."""
         self._shutdown_event.set()
         self._dispatch_wake.set()
         self._dispatcher_thread.join(timeout=1.0)
         self._reconciler_thread.join(timeout=1.0)
+        self._budget_thread.join(timeout=1.0)
         try:
             self._pool.shutdown(wait=wait, cancel_futures=True)
         except TypeError:
@@ -662,6 +753,8 @@ class TaskRunner:
                 if claim is None:
                     self._executor_slots.release()
                     break
+                time_limits = self._governor.task_time_limits(claim.task_id)
+                claimed_monotonic = self._monotonic()
                 with self._lock:
                     entry = self._tasks.get(claim.task_id)
                     if entry is None:
@@ -679,6 +772,10 @@ class TaskRunner:
                     else:
                         cancel_ev = entry["event"]
                         done_ev = self._done_events[claim.task_id]
+                    entry["started_monotonic"] = claimed_monotonic
+                    entry["last_activity_monotonic"] = claimed_monotonic
+                    entry["time_limits"] = time_limits
+                    entry["budget_cancelled"] = False
                     ctx = entry["context"]
                 try:
                     future: Future = self._pool.submit(
@@ -888,6 +985,7 @@ class TaskRunner:
                         pass
 
             # Decide terminal status.
+            self.record_task_activity(task_id, "terminal")
             cancelled = cancel_ev.is_set() or (
                 result.error and "stopped" in (result.error or "").lower()
             )
@@ -897,6 +995,7 @@ class TaskRunner:
                 new_status = TaskStatus.ERRORED
             else:
                 new_status = TaskStatus.COMPLETED
+            current_reason = (_store_load(session_id, task_id) or task).reason_code
             try:
                 updated = _store_update_status(
                     session_id, task_id, new_status,
@@ -904,7 +1003,8 @@ class TaskRunner:
                     result_text=result.final_text or "",
                     error=result.error,
                     reason_code=(
-                        "cancel.user" if new_status == TaskStatus.CANCELLED
+                        (current_reason or "cancel.user")
+                        if new_status == TaskStatus.CANCELLED
                         else "error.execution" if new_status == TaskStatus.ERRORED
                         else "completed"
                     ),
@@ -1064,6 +1164,44 @@ class TaskRunner:
         while not self._shutdown_event.wait(_RECONCILE_SECS):
             self._reconcile_resources()
 
+    def _budget_loop(self) -> None:
+        while not self._shutdown_event.wait(self._budget_poll_seconds):
+            now = self._monotonic()
+            expired: list[tuple[str, str]] = []
+            with self._lock:
+                for task_id, entry in self._tasks.items():
+                    started = entry.get("started_monotonic")
+                    if started is None or entry.get("budget_cancelled"):
+                        continue
+                    runtime_limit, idle_limit = entry.get(
+                        "time_limits", (None, None),
+                    )
+                    reason_code = None
+                    if (
+                        runtime_limit is not None
+                        and now - started >= float(runtime_limit)
+                    ):
+                        reason_code = "budget.runtime_exhausted"
+                    elif (
+                        idle_limit is not None
+                        and now - entry["last_activity_monotonic"] >= float(idle_limit)
+                    ):
+                        reason_code = "budget.idle_exhausted"
+                    if reason_code is not None:
+                        entry["budget_cancelled"] = True
+                        expired.append((task_id, reason_code))
+            for task_id, reason_code in expired:
+                try:
+                    self._cancel_cascade(
+                        task_id,
+                        reason=reason_code.replace(".", " "),
+                        root_reason_code=reason_code,
+                    )
+                except Exception:
+                    _log.exception(
+                        "failed to cancel task %s after budget expiry", task_id,
+                    )
+
     def _wake_done(self, task_id: str) -> None:
         with self._lock:
             ev = self._done_events.get(task_id)
@@ -1169,6 +1307,7 @@ class TaskRunner:
                     continue
                 shim.update(task.attach_pointer_id, output=preview)
                 last_patched_id = latest.id
+                self.record_task_activity(task.id, "child_progress")
                 try:
                     _broadcast_session_reload(
                         task.parent_session_id, reason="task_progress",
@@ -1508,6 +1647,7 @@ def shutdown_runner() -> None:
 
 
 __all__ = [
+    "NonPreemptibleOperation",
     "TaskRunner",
     "get_runner",
     "shutdown_runner",

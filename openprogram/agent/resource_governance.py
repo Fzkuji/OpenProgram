@@ -27,6 +27,9 @@ LIMIT_FIELDS = (*INTEGER_LIMITS, COST_LIMIT)
 TASK_LIMIT_FIELDS = frozenset({
     "max_total_tokens", COST_LIMIT, "max_runtime_seconds", "idle_timeout_seconds",
 })
+MEANINGFUL_ACTIVITY_KINDS = frozenset({
+    "operation_start", "provider_data", "tool_progress", "child_progress", "terminal",
+})
 
 
 class ResourceLimitError(ValueError):
@@ -723,6 +726,60 @@ class ResourceGovernor:
             released_missing=released_missing,
             released_worker_lost=released_lost,
         )
+
+    def task_time_limits(self, task_id: str) -> tuple[int | None, int | None]:
+        row = self.ledger.connection().execute(
+            """WITH RECURSIVE ancestors AS (
+                   SELECT b.* FROM task_admissions a
+                   JOIN budget_scopes b ON b.budget_scope_id = a.budget_scope_id
+                   WHERE a.task_id = ?
+                   UNION ALL
+                   SELECT parent.* FROM budget_scopes parent
+                   JOIN ancestors child
+                     ON child.parent_scope_id = parent.budget_scope_id
+               )
+               SELECT MIN(max_runtime_seconds), MIN(idle_timeout_seconds)
+               FROM ancestors""",
+            (task_id,),
+        ).fetchone()
+        if row is None:
+            return None, None
+        return row[0], row[1]
+
+    def record_activity(
+        self,
+        task_id: str,
+        *,
+        owner_instance_id: str,
+        activity_kind: str,
+    ) -> bool:
+        """Persist meaningful task activity for the task and live ancestors."""
+        if activity_kind not in MEANINGFUL_ACTIVITY_KINDS:
+            return False
+        with self.ledger.immediate() as conn:
+            rows = conn.execute(
+                """WITH RECURSIVE lineage(task_id) AS (
+                       SELECT ?
+                       UNION ALL
+                       SELECT a.parent_task_id
+                       FROM task_admissions a
+                       JOIN lineage l ON a.task_id = l.task_id
+                       WHERE a.parent_task_id IS NOT NULL
+                   )
+                   SELECT task_id FROM task_admissions
+                   WHERE task_id IN (SELECT task_id FROM lineage)
+                     AND owner_instance_id = ?
+                     AND state IN ('live','stopping')""",
+                (task_id, owner_instance_id),
+            ).fetchall()
+            if not rows:
+                return False
+            now = time.time()
+            conn.executemany(
+                "UPDATE task_admissions SET last_activity_at = ? WHERE task_id = ?",
+                ((now, row["task_id"]) for row in rows),
+            )
+            return True
 
     @staticmethod
     def _scope_usage(conn, scope_id: str, kind: str) -> tuple[int, int]:

@@ -21,6 +21,20 @@ import time
 import pytest
 
 
+class _FakeMonotonic:
+    def __init__(self) -> None:
+        self._value = 0.0
+        self._lock = threading.Lock()
+
+    def __call__(self) -> float:
+        with self._lock:
+            return self._value
+
+    def advance(self, seconds: float) -> None:
+        with self._lock:
+            self._value += seconds
+
+
 @pytest.fixture
 def store_fixture(tmp_path, monkeypatch):
     """Isolated SessionStore + session row for task tests."""
@@ -570,6 +584,160 @@ def test_runner_treats_its_own_instance_as_live_without_lock_probe(
     )
     try:
         assert runner._owner_holds_worker_lock(runner._instance_id) is True
+    finally:
+        fake_worker[1].set()
+        runner.shutdown()
+
+
+def test_runtime_budget_moves_live_task_to_stopping_until_worker_exits(
+    store_fixture, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    entered = threading.Event()
+    release = threading.Event()
+
+    def stubborn_run(**_kwargs):
+        from openprogram.agent.sub_agent_run import AgentTurnResult
+        entered.set()
+        release.wait(2.0)
+        return AgentTurnResult(
+            head_id="head", final_text="late", failed=False, error=None,
+        )
+
+    monkeypatch.setattr(
+        "openprogram.agent.sub_agent_run.run_agent_turn", stubborn_run,
+    )
+    from openprogram.agent.resource_governance import (
+        ResourceGovernor, ResourceLimits, resolve_resource_limits,
+    )
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.agent.task.types import TaskStatus
+    from openprogram.usage.ledger import UsageLedger
+
+    clock = _FakeMonotonic()
+    ledger = UsageLedger(tmp_path / "governance.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_runtime_seconds=1), scheduler_capacity=1,
+    )
+    runner = TaskRunner(
+        max_workers=1,
+        governor=ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved),
+        monotonic_clock=clock,
+        budget_poll_seconds=0.01,
+    )
+    try:
+        task_id = runner.spawn_task(
+            session_id="p1", prompt="stubborn", agent_id="main",
+        )
+        assert entered.wait(1.0)
+        clock.advance(1.1)
+        deadline = time.time() + 1.0
+        state = None
+        while time.time() < deadline:
+            state = ledger.connection().execute(
+                "SELECT state FROM task_admissions WHERE task_id = ?", (task_id,),
+            ).fetchone()[0]
+            if state == "stopping":
+                break
+            time.sleep(0.01)
+
+        assert state == "stopping"
+        assert runner.get_task(task_id).status == TaskStatus.RUNNING
+        release.set()
+        final = runner.await_task(task_id, timeout=5)
+        assert final.status == TaskStatus.CANCELLED
+        assert final.reason_code == "budget.runtime_exhausted"
+    finally:
+        release.set()
+        runner.shutdown()
+
+
+def test_idle_budget_resets_only_after_meaningful_activity(
+    store_fixture, fake_worker, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    from openprogram.agent.resource_governance import (
+        ResourceGovernor, ResourceLimits, resolve_resource_limits,
+    )
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.agent.task.types import TaskStatus
+    from openprogram.usage.ledger import UsageLedger
+
+    clock = _FakeMonotonic()
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_runtime_seconds=10, idle_timeout_seconds=1),
+        scheduler_capacity=1,
+    )
+    runner = TaskRunner(
+        max_workers=1,
+        governor=ResourceGovernor(
+            UsageLedger(tmp_path / "governance.db"),
+            limit_resolver=lambda _sid, _task: resolved,
+        ),
+        monotonic_clock=clock,
+        budget_poll_seconds=0.01,
+    )
+    try:
+        task_id = runner.spawn_task(
+            session_id="p1", prompt="idle", agent_id="main",
+        )
+        assert fake_worker[3].wait(1.0)
+        clock.advance(0.75)
+        assert runner.record_task_activity(task_id, "transport_keepalive") is False
+        assert runner.record_task_activity(task_id, "provider_data") is True
+        clock.advance(0.75)
+        time.sleep(0.05)
+        assert runner.get_task(task_id).status == TaskStatus.RUNNING
+        clock.advance(0.30)
+        final = runner.await_task(task_id, timeout=5)
+        assert final.status == TaskStatus.CANCELLED
+        assert final.reason_code == "budget.idle_exhausted"
+    finally:
+        fake_worker[1].set()
+        runner.shutdown()
+
+
+def test_bounded_operation_timeout_clamps_and_rejects_unbounded_strict_work(
+    store_fixture, fake_worker, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    from openprogram.agent.resource_governance import (
+        ResourceGovernor, ResourceLimits, resolve_resource_limits,
+    )
+    from openprogram.agent.task.runner import NonPreemptibleOperation, TaskRunner
+    from openprogram.usage.ledger import UsageLedger
+
+    clock = _FakeMonotonic()
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_runtime_seconds=10, idle_timeout_seconds=4),
+        scheduler_capacity=1,
+    )
+    runner = TaskRunner(
+        max_workers=1,
+        governor=ResourceGovernor(
+            UsageLedger(tmp_path / "governance.db"),
+            limit_resolver=lambda _sid, _task: resolved,
+        ),
+        monotonic_clock=clock,
+        budget_poll_seconds=0.01,
+    )
+    try:
+        task_id = runner.spawn_task(
+            session_id="p1", prompt="bounded", agent_id="main",
+        )
+        assert fake_worker[3].wait(1.0)
+
+        assert runner.bounded_operation_timeout(task_id, 8.0) == 4.0
+        clock.advance(3.0)
+        assert runner.bounded_operation_timeout(task_id, 8.0) == 1.0
+        with pytest.raises(NonPreemptibleOperation):
+            runner.bounded_operation_timeout(task_id, None)
     finally:
         fake_worker[1].set()
         runner.shutdown()
