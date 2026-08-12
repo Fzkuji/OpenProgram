@@ -238,20 +238,7 @@ class RecordingSink:
         self._thread_lock = threading.RLock()
         from openprogram.paths import get_state_dir
         managed_root = get_state_dir() / "recordings"
-        try:
-            normalized_path = Path(os.path.abspath(self.path))
-            normalized_root = Path(os.path.abspath(managed_root))
-            inside_managed_root = normalized_path.is_relative_to(normalized_root)
-            if not inside_managed_root and len(normalized_path.parts) >= len(normalized_root.parts):
-                alias_root = Path(*normalized_path.parts[:len(normalized_root.parts)])
-                inside_managed_root = (
-                    tuple(part.casefold() for part in alias_root.parts)
-                    == tuple(part.casefold() for part in normalized_root.parts)
-                    and alias_root.exists()
-                    and os.path.samefile(alias_root, normalized_root)
-                )
-        except OSError:
-            inside_managed_root = False
+        inside_managed_root = _is_managed_recording_path(self.path)
         if inside_managed_root and managed_root.is_symlink():
             raise PermissionError(
                 f"recordings directory must not be a symlink: {managed_root}"
@@ -390,12 +377,21 @@ def restrict_recording_file(path: str | Path) -> None:
 def _is_managed_recording_path(path: Path) -> bool:
     from openprogram.paths import get_state_dir
 
-    managed_root = (get_state_dir() / "recordings").resolve()
-    try:
-        path.resolve().relative_to(managed_root)
-    except ValueError:
+    managed_root = Path(os.path.abspath(get_state_dir() / "recordings"))
+    normalized_path = Path(os.path.abspath(path))
+    if normalized_path.is_relative_to(managed_root):
+        return True
+    if len(normalized_path.parts) < len(managed_root.parts):
         return False
-    return True
+    alias_root = Path(*normalized_path.parts[:len(managed_root.parts)])
+    if tuple(part.casefold() for part in alias_root.parts) != tuple(
+        part.casefold() for part in managed_root.parts
+    ):
+        return False
+    try:
+        return alias_root.exists() and os.path.samefile(alias_root, managed_root)
+    except OSError:
+        return False
 
 
 def resolve_recording_selector(selector: str) -> Path:
