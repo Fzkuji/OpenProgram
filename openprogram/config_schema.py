@@ -105,6 +105,17 @@ def _search_choices() -> list[str]:
         return ["auto"]
 
 
+def _output_styles() -> list[str]:
+    """Every discovered output style, ``default`` first. Best-effort: a
+    broken discovery degrades to just ``default``."""
+    try:
+        from openprogram.context.output_style import DEFAULT_STYLE, list_styles
+        names = sorted(n for n in list_styles() if n != DEFAULT_STYLE)
+        return [DEFAULT_STYLE] + names
+    except Exception:
+        return ["default"]
+
+
 def _update_channels() -> list[str]:
     """Channel names known to ``openprogram upgrade``. Best-effort — a
     broken import degrades to the built-in default rather than breaking
@@ -297,6 +308,15 @@ SETTINGS: list[SettingSpec] = [
              "loop's own stop rules (judge failures, idle spin) and "
              "/goal clear. Read when the goal is set; each goal keeps "
              "the bound it started with.",
+    ),
+    SettingSpec(
+        key="agent.output_style", path=("agent", "output_style"),
+        group="Agent", label="Output style", widget="enum",
+        apply=APPLY_LIVE, default="default", choices=_output_styles,
+        help="Appends a block of guidance to the system prompt describing how "
+             "replies should be written. `default` appends nothing. Drop a "
+             "`<name>.md` file in `~/.openprogram/output-styles/` or "
+             "`./output-styles/` to add your own.",
     ),
     SettingSpec(
         key="agent.max_spawn_depth", path=("agent", "max_spawn_depth"),

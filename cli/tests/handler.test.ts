@@ -460,4 +460,68 @@ describe('handleSlash', () => {
       expect(ctx.pushSystem).toHaveBeenCalledWith(`MCP server filesystem ${result}.`);
     });
   });
+
+  const styleRow = {
+    settings: [
+      {
+        key: 'agent.output_style',
+        value: 'default',
+        choices: ['default', 'concise', 'direct'],
+      },
+    ],
+  };
+
+  it('/style lists styles and marks the active one', async () => {
+    vi.stubEnv('OPENPROGRAM_BACKEND_URL', 'http://backend.test');
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => styleRow });
+    vi.stubGlobal('fetch', fetchMock);
+    const ctx = makeCtx();
+
+    expect(handleSlash('/style', ctx)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('http://backend.test/api/settings', expect.anything());
+      expect(ctx.pushSystem).toHaveBeenCalledWith(
+        'Output style (how replies are written):\n● default\n○ concise\n○ direct\n\nSwitch with /style <name>.',
+      );
+    });
+  });
+
+  it('/style <name> posts the new style', async () => {
+    vi.stubEnv('OPENPROGRAM_BACKEND_URL', 'http://backend.test');
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => styleRow });
+    vi.stubGlobal('fetch', fetchMock);
+    const ctx = makeCtx();
+
+    handleSlash('/style concise', ctx);
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://backend.test/api/settings',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ key: 'agent.output_style', value: 'concise' }),
+        }),
+      );
+      expect(ctx.pushSystem).toHaveBeenCalledWith(
+        'Output style set to concise. Applies from the next turn.',
+      );
+    });
+  });
+
+  it('/style rejects an unknown name without posting', async () => {
+    vi.stubEnv('OPENPROGRAM_BACKEND_URL', 'http://backend.test');
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => styleRow });
+    vi.stubGlobal('fetch', fetchMock);
+    const ctx = makeCtx();
+
+    handleSlash('/style nope', ctx);
+
+    await vi.waitFor(() => {
+      expect(ctx.pushSystem).toHaveBeenCalledWith(
+        "Unknown style 'nope'. Available: default, concise, direct",
+      );
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
