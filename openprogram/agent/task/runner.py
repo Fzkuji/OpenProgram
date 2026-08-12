@@ -1835,11 +1835,20 @@ class TaskRunner:
             except Exception:
                 pass
             try:
+                # Release the admission unconditionally: a task that never
+                # reached a terminal state (store row vanished, or the
+                # pending→running transition was rejected) still holds a
+                # 'live' row that would consume max_live_per_session for
+                # good. release_task refuses to act while a pending
+                # finalization intent exists, so reconcile still owns the
+                # "terminal write staged but not persisted" case.
                 cur = _store_load(session_id, task_id)
                 if cur is None or not is_terminal(cur.status):
+                    _log.warning(
+                        "task %s ended without a persisted terminal state; "
+                        "releasing admission with no reason code", task_id,
+                    )
                     cur = None
-                if cur is None:
-                    raise RuntimeError("task terminal state was not persisted")
                 self._governor.release_task(
                     task_id, cur.reason_code if cur is not None else None,
                     owner_instance_id=self._instance_id,
