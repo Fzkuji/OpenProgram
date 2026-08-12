@@ -243,3 +243,88 @@ def test_persistence_round_trip(isolated_state, repo):
     assert _store_path().exists()
     blob = _store_path().read_text()
     assert wt.id in blob
+
+
+# create_worktree(pr=...) — PR-number worktree creation
+
+
+def _stub_fetch_pr_branch(monkeypatch, *, source_repo: Path):
+    """Replace ``fetch_pr_branch`` with a fake that creates a real
+    local branch on the tmp repo (pointing at HEAD), so the subsequent
+    real ``git worktree add`` in the manager succeeds. Records calls
+    for assertions."""
+    calls: list[dict] = []
+
+    def fake(pr_number, *, source_repo: str, local_branch: str, remote: str = "origin"):
+        calls.append({
+            "pr_number": pr_number, "source_repo": source_repo,
+            "local_branch": local_branch,
+        })
+        subprocess.run(
+            ["git", "branch", local_branch], cwd=source_repo, check=True,
+        )
+        from openprogram.worktree.pr_ref import PrInfo
+        return PrInfo(
+            number=pr_number, head_ref_name="feature",
+            is_cross_repository=False, head_owner=None,
+        )
+
+    monkeypatch.setattr("openprogram.worktree.manager.fetch_pr_branch", fake)
+    return calls
+
+
+def test_create_worktree_from_pr_number(isolated_state, repo, monkeypatch):
+    calls = _stub_fetch_pr_branch(monkeypatch, source_repo=repo)
+    mgr = WorktreeManager()
+    wt = mgr.create_worktree(str(repo), pr="123")
+    assert wt.pr_number == 123
+    assert wt.branch_name.startswith("op/wt/pr-123-")
+    assert Path(wt.worktree_path).exists()
+    assert calls == [{
+        "pr_number": 123, "source_repo": str(repo),
+        "local_branch": wt.base_ref,
+    }]
+
+
+def test_create_worktree_from_pr_hash_and_url_forms_parse_same_number(
+    isolated_state, repo, monkeypatch,
+):
+    _stub_fetch_pr_branch(monkeypatch, source_repo=repo)
+    mgr = WorktreeManager()
+    wt_hash = mgr.create_worktree(str(repo), pr="#124")
+    assert wt_hash.pr_number == 124
+    wt_url = mgr.create_worktree(
+        str(repo), pr="https://github.com/o/r/pull/125",
+    )
+    assert wt_url.pr_number == 125
+
+
+def test_create_worktree_duplicate_pr_returns_existing_path_error(
+    isolated_state, repo, monkeypatch,
+):
+    _stub_fetch_pr_branch(monkeypatch, source_repo=repo)
+    mgr = WorktreeManager()
+    first = mgr.create_worktree(str(repo), pr="7")
+    with pytest.raises(WorktreeError, match="pr_worktree_exists") as exc:
+        mgr.create_worktree(str(repo), pr="7")
+    assert first.id in str(exc.value)
+    assert first.worktree_path in str(exc.value)
+
+
+def test_create_worktree_pr_ref_error_surfaces_as_worktree_error(
+    isolated_state, repo, monkeypatch,
+):
+    def boom(*args, **kwargs):
+        from openprogram.worktree.pr_ref import PrRefError
+        raise PrRefError("gh_not_found: the GitHub CLI (`gh`) is required")
+
+    monkeypatch.setattr("openprogram.worktree.manager.fetch_pr_branch", boom)
+    mgr = WorktreeManager()
+    with pytest.raises(WorktreeError, match="pr_ref_error.*gh_not_found"):
+        mgr.create_worktree(str(repo), pr="1")
+
+
+def test_create_worktree_rejects_invalid_pr_ref(isolated_state, repo):
+    mgr = WorktreeManager()
+    with pytest.raises(WorktreeError, match="pr_ref_error"):
+        mgr.create_worktree(str(repo), pr="not-a-pr")

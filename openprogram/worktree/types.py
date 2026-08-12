@@ -108,6 +108,10 @@ class Worktree:
     merge_sha: Optional[str] = None
     files_changed: int = 0
     error: Optional[str] = None
+    # Set when this worktree was opened from a PR (worktree_create's
+    # ``pr`` argument) — lets a later worktree_create(pr=same_number)
+    # find the existing one instead of creating a duplicate.
+    pr_number: Optional[int] = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
