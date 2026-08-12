@@ -62,6 +62,9 @@ AGENTIC_MODULES: list[str] = [
     # Task list workflow: plans a task into bounded items and runs them
     # serially, judging each with the goal decision agent above.
     "task_list",
+    # Security review of the current branch's diff — read-only audit of
+    # what this change introduced, not of the repository.
+    "security_review",
 ]
 
 
