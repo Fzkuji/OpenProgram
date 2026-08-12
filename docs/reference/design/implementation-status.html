@@ -25,7 +25,7 @@
 </head>
 <body>
   <h1>OpenProgram implementation status and handoff</h1>
-  <p class="meta">Snapshot: 2026-08-12. Documentation base: local <code>main@c1f10273</code>; fetched <code>origin/main@990bfe36</code>.</p>
+  <p class="meta">Snapshot: 2026-08-12. Base: <code>main</code> after the integration round that merged MCP server, provider runtime, session index, websocket lifecycle series, and DAG persistence observability into <code>origin/main</code>.</p>
 
   <div class="callout">
     <p>This page separates branch-level completion from mainline integration. A feature marked complete below passed its scoped spec and quality gates on the named branch; it is not in <code>main</code> unless the row says so.</p>
@@ -35,9 +35,9 @@
   <h2>Status definitions</h2>
   <ul>
     <li><strong>Review-passed branch:</strong> implementation exists at the exact commit and independent scoped reviews reported zero remaining findings.</li>
+    <li><strong>Merged to main:</strong> reviewed head has been merged into <code>origin/main</code> and passes the combined regression gate.</li>
     <li><strong>Partial:</strong> earlier tasks are review-passed, but the tracked plan still has required implementation or evidence tasks.</li>
     <li><strong>Candidate only:</strong> code or reports exist, but there is no single accepted integration head with final review evidence.</li>
-    <li><strong>Main-local:</strong> committed on local <code>main</code> but not on <code>origin/main</code>.</li>
   </ul>
 
   <h2>Current feature status</h2>
@@ -46,21 +46,45 @@
     <tbody>
       <tr>
         <td>Record/replay reliability</td>
-        <td class="status complete">Main-local complete</td>
-        <td><code>main@c1f10273</code><br><code>1d6f52ec..c846beb6</code></td>
-        <td>The nine committed reliability changes are on local main. They remain ahead of <code>origin/main</code> and must be included deliberately in any integration base.</td>
+        <td class="status complete">Merged to main</td>
+        <td><code>origin/main</code><br><code>1d6f52ec..c846beb6</code></td>
+        <td>The nine reliability changes are on <code>origin/main</code>. They form part of the integration base for subsequent branches.</td>
       </tr>
       <tr>
         <td>MCP server</td>
-        <td class="status complete">Review-passed branch</td>
-        <td><code>codex/mcp-server-20260812@0cd698de</code><br>remote matches local</td>
-        <td>Tasks 1–9 completed. Final spec and quality reviews reported zero remaining findings. Focused 195, shared 198, docs 451 pages, links 0. Not merged into main.</td>
+        <td class="status complete">Merged to main</td>
+        <td><code>codex/mcp-server-20260812@0cd698de</code><br>merge <code>2b99f893</code></td>
+        <td>Tasks 1–9 completed; final spec and quality reviews reported zero remaining findings. Full regression at the merge head: 3157 passed.</td>
+      </tr>
+      <tr>
+        <td>Provider initialization lifecycle</td>
+        <td class="status complete">Merged to main</td>
+        <td><code>codex/provider-runtime-design-20260812@f76ed3d6</code><br>merge <code>3c31c99d</code></td>
+        <td>Provider initialization lifecycle with record/replay activation-failure handling that installs a blocked provider instead of crashing the runtime.</td>
+      </tr>
+      <tr>
+        <td>Session index consistency</td>
+        <td class="status complete">Merged to main</td>
+        <td><code>codex/session-index-20260812</code><br>merge <code>d37c8590</code></td>
+        <td>Session index writes are locked; <code>updated_at</code> invariant is preserved across concurrent readers and writers.</td>
+      </tr>
+      <tr>
+        <td>DAG persistence observability</td>
+        <td class="status complete">Merged to main</td>
+        <td><code>codex/dag-observability-20260812</code><br>merged this round</td>
+        <td>Persistence failures in <code>openprogram/agentic_programming/function.py</code> now emit a warning log instead of being silently swallowed. Focused test suite: 6 passed.</td>
+      </tr>
+      <tr>
+        <td>Websocket command lifecycle</td>
+        <td class="status complete">Merged to main</td>
+        <td><code>84fe7da9..e831d0f0</code> on <code>origin/main</code></td>
+        <td>The websocket lifecycle series (definition through finalized evidence) is on <code>origin/main</code>.</td>
       </tr>
       <tr>
         <td>Runtime URL / SSRF protection</td>
         <td class="status complete">Review-passed branch</td>
-        <td><code>codex/commitments-heartbeat-20260811@1d93bbe5</code><br>remote branch missing</td>
-        <td>Tasks 1–10 and the final whole-branch review passed. Final evidence included security 812, affected 2932, runtime checker 0, docs links 0. The branch must be pushed and integrated without conflating it with unrelated work carried by the same branch.</td>
+        <td><code>codex/commitments-heartbeat-20260811@1d93bbe5</code><br>remote matches local</td>
+        <td>Tasks 1–10 and the final whole-branch review passed. Final evidence included security 812, affected 2932, runtime checker 0, docs links 0. The branch must be integrated without conflating it with unrelated work carried by the same branch.</td>
       </tr>
       <tr>
         <td>JSON Schema structured output</td>
@@ -134,7 +158,7 @@
 
   <h3>5. Smaller uncompleted hardening work</h3>
   <ul>
-    <li><code>credential_process</code>: define executable/argument constraints, a bounded timeout, and redacted diagnostics before enabling broader use.</li>
+    <li><code>credential_process</code>: argv is executed without shell interpolation, the timeout is configurable with a 60-second default, and successful results are cached. The remaining item is redacting helper stderr in failure diagnostics.</li>
     <li><code>commit-push-pr</code>: add a non-mutating dry-run and enforce explicit remote-write authorization before push or PR creation.</li>
     <li>Retain the existing discussion backlog in <a href="TODO-improvements.html">TODO improvements</a>: provider metadata corruption visibility, packaged Web/docs resources, typed frontend state migration, and the remaining oversized Python modules.</li>
   </ul>
