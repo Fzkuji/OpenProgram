@@ -1462,6 +1462,7 @@ def test_quiet_hours_rejects_seconds_and_offsets():
 
 def test_heartbeat_releases_workspace_lock_while_sending(tmp_path):
     """A slow channel send must not stall every other memory write."""
+    from concurrent.futures import ThreadPoolExecutor
     from datetime import datetime
 
     from openprogram.memory.management.transaction import workspace_write_lock
@@ -1480,13 +1481,14 @@ def test_heartbeat_releases_workspace_lock_while_sending(tmp_path):
             }
         ],
     )
-    lock_free_during_send = False
 
     def _send(_target, _text):
-        nonlocal lock_free_during_send
-        with workspace_write_lock(tmp_path, timeout_s=0.5):
-            lock_free_during_send = True
-        return True
+        def _contend_for_lock():
+            with workspace_write_lock(tmp_path, timeout_s=0.5):
+                return True
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(_contend_for_lock).result(timeout=1)
 
     assert (
         run_heartbeat(
@@ -1497,7 +1499,6 @@ def test_heartbeat_releases_workspace_lock_while_sending(tmp_path):
         )
         == 1
     )
-    assert lock_free_during_send
 
 
 def test_heartbeat_preserves_transition_committed_during_send(tmp_path):
@@ -1580,12 +1581,15 @@ def test_writer_commit_rejects_stale_stage_after_heartbeat_update(tmp_path):
 
         _write(workspace.stage_dir, staged)
 
-        assert run_heartbeat(
-            tmp_path,
-            now=datetime(2026, 8, 12, 9, 0),
-            target_for_source=lambda _source: ("telegram", "default", "42"),
-            send=lambda _target, _text: True,
-        ) == 1
+        assert (
+            run_heartbeat(
+                tmp_path,
+                now=datetime(2026, 8, 12, 9, 0),
+                target_for_source=lambda _source: ("telegram", "default", "42"),
+                send=lambda _target, _text: True,
+            )
+            == 1
+        )
 
         with pytest.raises(TransactionError, match="workspace changed"):
             workspace.commit_edits(*baseline)
