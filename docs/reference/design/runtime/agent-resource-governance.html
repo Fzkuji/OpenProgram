@@ -82,9 +82,9 @@
   <p class="subtitle">按用户从配置、创建、排队、运行到终态诊断的完整流程，说明 OpenProgram 当前已有什么、参考实现怎样限制资源，以及后续需要建立的统一治理契约。</p>
 
   <div class="status">
-    <div><span class="k">文档状态</span><b>设计完成，基础批次已实现</b></div>
+    <div><span class="k">文档状态</span><b>设计完成，审查后实现已集成</b></div>
     <div><span class="k">产品边界</span><b>单用户、本机、常驻 worker</b></div>
-    <div><span class="k">验收状态</span><b>六项任务均已实现并有自动化证据</b></div>
+    <div><span class="k">验收状态</span><b>Task 1–5 已实现，集中规格与质量审查 PASS</b></div>
   </div>
 
   <div class="note"><b>实现状态边界。</b>durable dispatcher 公平性、lease generation owner fencing、崩溃恢复、runtime/idle 强制、价格来源真值、provider chokepoint 上的 token/cost reserve/start/settle，以及 model tools、Web、CLI、TUI 共用的 TaskResourceView 均已实现，并有事务边界故障注入证据。预算只对绑定了受治理任务的调用生效；CLI、测试等未治理调用保持原有 best-effort 记账语义不变。</div>
@@ -501,7 +501,7 @@ Task JSON + optional fields:
   </div>
 
   <h2 id="gate">15 Feature matrix 实心圆机械 gate</h2>
-  <p>feature matrix 的“并发数与每会话派生总量上限”在当前页面中显示为 <code>●</code>，但 <code>main@990bfe36</code> 尚未满足下列机械 gate，因此该标记不能作为完整实现结论。只有以下条件全部有代码和自动化测试证据时，才可保留 <code>●</code>：</p>
+  <p>feature matrix 的“并发数与每会话派生总量上限”在基础基线 <code>main@990bfe36</code> 尚未满足下列机械 gate；审查后集成候选 <code>33dd7d2c</code> 已满足这些条件，因此当前 <code>●</code> 有对应代码、审查和自动化证据：</p>
   <ol>
     <li>稳定配置 schema 已实现，并能从 Web/TUI/CLI 查看全局默认、session override 与有效值。</li>
     <li>所有 agent/task 创建入口都经过统一 admission；不存在 Web、同步 agent、target inbox 或 runner 直调绕过。</li>
@@ -517,12 +517,16 @@ Task JSON + optional fields:
   <h2 id="implementation">16 实现与验证记录</h2>
   <div class="table-wrap">
   <table class="wide">
-    <tr><th>基线或分支</th><th>已确认内容</th><th>验证</th><th>能否计为完成</th></tr>
+    <tr><th>范围</th><th>已确认合同与实现证据</th><th>验证或审查</th><th>状态</th></tr>
     <tr><td><code>main@990bfe36</code><br>foundation 来源 <code>8f62da5a</code></td><td>配置解析、SQLite schema、admission、per-session live/queued/cumulative、budget scope、reservation 原语、reason code、基础 view。</td><td><code>tests/unit/test_resource_governance.py</code> 的 foundation 用例存在；代码审计确认 reservation 仅被测试调用。</td><td class="m">否；执行链与用户面不完整</td></tr>
     <tr><td><code>codex/resource-governance-runtime-20260811@ace9a907</code></td><td>oldest-eligible dispatcher、owner fencing/reconcile、runtime/idle monitor 与 bounded-operation helper。</td><td>2026-08-12 fresh：<code>tests/unit/test_resource_governance.py tests/unit/test_async_task.py</code>，52 passed；该分支未做独立 spec/quality review，也未包含后续 integration fixes。</td><td class="m">否；只作为待复用候选</td></tr>
-    <tr><td><code>claude/resource-governance-consolidation-20260812</code></td><td>durable fair dispatcher（<code>claim_next</code> 按 <code>admitted_seq</code> 取最旧可用，<code>spawn_task</code> 不再直接向 executor 提交）；lease generation owner fencing；<code>preparing</code> 回滚与 worker-lost 围栏的幂等 reconcile；两阶段 <code>task_finalizations</code> 崩溃安全终态；跨 Web/ACP/task 的单turn准入与忙会话 requeue；runtime/idle 预算与 <code>bounded_operation_timeout</code>；<code>ModelCost</code> 可空费率加来源，未知价格不再等于零；完整 <code>TaskResourceView</code> 与 model tools 结构化 details；取消与 active runtime 改按 <code>(session_id, execution_id)</code> 键控。</td><td>2026-08-12 fresh：<code>tests/unit tests/agent tests/providers</code> 3350 passed、9 skipped、1 xfailed；改动文件 Ruff 干净；<code>checklinks</code> 0 broken。</td><td class="y">是；六项任务全部落地</td></tr>
-    <tr><td>provider chokepoint 强制</td><td><code>stream()</code>/<code>stream_simple()</code> 在解析凭据与建立连接之前完成 preflight 与 reserve，据保留额夹紧 <code>max_tokens</code>，在 provider I/O 前标记 started，终态事件到达时把 provider 权威用量与 <code>UsageEvent</code> 追加在同一事务里结算。preflight 计入系统提示、消息、工具 schema、结构化输出 schema、请求信封与 reasoning 预算（Anthropic 会在声明上限之下把 <code>max_tokens</code> 抬高到 thinking budget，忽略它会低估敞口）。会计不可用一律抛出类型化 <code>QuotaExceeded</code>，不再被 best-effort recorder 吞掉。</td><td><code>tests/unit/test_provider_budget_enforcement.py</code> 11 项端到端；<code>tests/unit/test_resource_fault_injection.py</code> 11 项事务边界故障注入（settle 前崩溃、settle 中途失败、双终态事件、并发 claim/预留/finalize、跨进程 claim、stale lease generation）。</td><td class="y">是</td></tr>
-    <tr><td>跨界面 DTO</td><td>model tools、Web transport（<code>task_status</code>/<code>tasks_list</code>/<code>task</code>/<code>cancel_task</code>/<code>spawn_task_result</code>）、CLI <code>openprogram subagent</code> 与 TUI task picker 共用同一份 <code>TaskResourceView</code>，各界面只做展示层裁剪，不各自推算限额；被拒绝的 spawn 返回治理器决定本身而不虚构 task id。</td><td><code>tests/unit/test_task_resource_surfaces.py</code>、<code>test_task_resource_cli.py</code>、<code>test_resource_limit_routes.py</code>；<code>web/scripts/check-task-resources.mjs</code> 通过；<code>cli</code> typecheck 干净、vitest 132 passed。</td><td class="y">是</td></tr>
+    <tr><td>Task 1<br>durable dispatcher 与 ownership</td><td><code>b132a783</code>、<code>94ce3636</code>：dispatcher 只提交 durable claim 后的任务；按最旧 eligible admission 调度；lease generation/owner fence 保护 live 与 stopping；pending finalization、worker loss、取消和重复 reconcile 保持终态持久化与名额释放幂等。</td><td>跨线程/进程 claim、dispatcher restart、lease expiry、finalization fault injection 纳入 affected 与 full suite。</td><td class="yes">已实现</td></tr>
+    <tr><td>Task 2<br>task scope 与 conservative preflight</td><td><code>a064f9be</code>、<code>da4660d8</code>：不可变 task governance context 绑定 task/scope/limits；provider preflight 计入 prompt、messages、tools、structured-output/request envelope 和已审计 adapter 上界；严格预算缺少安全 token 或价格上界时 fail closed；credential resolution 明确位于 preflight 之后。</td><td>集中规格审查唯一 HIGH 指向 preflight-before-credential；<code>da4660d8</code> scoped re-review：<code>PASS (0 findings)</code>。</td><td class="yes">已实现并通过规格复审</td></tr>
+    <tr><td>Task 3<br>provider reserve/start/settle</td><td><code>8e6ecc9a</code>、<code>1570c2c2</code>、<code>03cbbe1a</code>：<code>stream()</code>/<code>stream_simple()</code> 在 provider I/O 前 reserve 并 clamp output cap，I/O 前标记 started，以 provider 权威用量原子追加 <code>UsageEvent</code> 并 settle；未知价格、late/double terminal、consumer cancellation、adapter retry 与 replay identity 均保持保守 exposure 和幂等会计。</td><td>provider enforcement、metering truth、stream fixes、record/replay identity 与事务边界故障注入均纳入 full gate。</td><td class="yes">已实现</td></tr>
+    <tr><td>Task 4<br>runtime、idle 与 operation bounds</td><td><code>6dea9388</code>：runtime 从 durable claim 后开始；真实 provider/tool/child activity 更新 idle；provider/tool 操作使用自身 timeout、task runtime、idle 与 cancel grace 的最小正界；超限进入 stopping 并沿既有 descendant cancellation/finalization 路径释放。</td><td>queue-time exclusion、keepalive、nested deadline、并发 cancel/expiry、subprocess termination 与 non-preemptible operation 用例纳入 affected suite。</td><td class="yes">已实现</td></tr>
+    <tr><td>Task 5<br>canonical resource DTO</td><td><code>4102992f</code>、<code>bc9a14ef</code>、<code>14020be9</code>：model tools、Web <code>task_status/tasks_list/task/cancel_task/spawn_task_result</code>、Python CLI、Ink TUI 共享 canonical <code>TaskResourceView</code>；界面不独立推算 limits/usage；rejected spawn 保留稳定 reason/retryable 且不虚构 task id；child effective-limit snapshot 与 ancestor scope 一致。</td><td>集中质量审查唯一 MEDIUM 指向 ancestor snapshot；<code>14020be9</code> scoped re-review：<code>PASS (0 findings)</code>。Web、CLI、TUI、model DTO 合同测试通过。</td><td class="yes">已实现并通过质量复审</td></tr>
+    <tr><td>审查后集成候选<br><code>33dd7d2c</code></td><td>包含资源关键实现链 <code>b132a783..bc9a14ef</code>，以及规格修复 <code>da4660d8</code> 和质量修复 <code>14020be9</code>。集中 whole-feature 规格与质量审查均已完成；whole-branch 五维审查为 <code>PASS (0 findings)</code>。该结论不声称 Task 1–5 各自存在独立 reviewer。</td><td>Python full：5265 passed、10 skipped、2 deselected、1 xfailed；CLI：134 passed、2 skipped，typecheck 与 build 通过；Web：22 项 mechanical checks、<code>tsc --noEmit</code> 与 production build（no lint）通过；docs：490 pages、0 broken links；changed Python Ruff、lock check 与 <code>git diff --check</code> 通过。</td><td class="yes">完成</td></tr>
+    <tr><td>已知 whole-repository gate</td><td>Web 全量 <code>npm run lint</code> 仍报告未使用变量、<code>any</code> 等既有 lint violations；同一命令在 <code>origin/main</code> 已失败，不归因于本资源治理实现。该基线阻塞没有被 Web mechanical checks、TypeScript 或 no-lint production build 替代为“lint 通过”。</td><td>当前 integration checkout fresh readback 仍可复现；资源相关 changed-file checks 未发现新增 blocker。</td><td class="partial">基线阻塞保留记录</td></tr>
   </table>
   </div>
 
