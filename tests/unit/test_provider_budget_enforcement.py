@@ -16,9 +16,15 @@ from openprogram.agent.resource_governance import (
     ResourceLimits,
     resolve_resource_limits,
 )
+from openprogram.agent.agent_loop import agent_loop
+from openprogram.agent.types import AgentContext, AgentLoopConfig
 from openprogram.agent.task.types import Task
+from openprogram.providers.api_registry import ApiProviderSnapshot
 from openprogram.providers.budget import QuotaExceeded
-from openprogram.providers.structured_output import JsonSchemaOutput
+from openprogram.providers.structured_output import (
+    JsonSchemaOutput,
+    StructuredOutputCapabilities,
+)
 from openprogram.providers.types import (
     AssistantMessage,
     Context,
@@ -29,6 +35,7 @@ from openprogram.providers.types import (
     SimpleStreamOptions,
     StreamOptions,
     Usage,
+    UserMessage,
 )
 from openprogram.usage import context as _ctx_mod
 from openprogram.usage import recorder as _recorder
@@ -181,6 +188,109 @@ def _reservation_states(ledger):
             "SELECT state FROM usage_reservations"
         )
     )
+
+
+def _drain_agent_loop(model, get_api_key, stream_fn=None):
+    async def go():
+        stream = agent_loop(
+            [UserMessage(content="hello", timestamp=0)],
+            AgentContext(tools=[], memory_prefetch=""),
+            AgentLoopConfig(
+                model=model,
+                session_id="s1",
+                get_api_key=get_api_key,
+                convert_to_llm=lambda messages: messages,
+            ),
+            stream_fn=stream_fn,
+        )
+        return await stream.result()
+
+    return asyncio.run(go())
+
+
+def _bind_agent_provider(monkeypatch, provider):
+    snapshot = ApiProviderSnapshot(provider, StructuredOutputCapabilities())
+    monkeypatch.setattr(
+        "openprogram.providers.api_registry.resolve_api_provider_snapshot",
+        lambda _model: snapshot,
+    )
+    monkeypatch.setattr(
+        "openprogram.providers.utils.failover.resolve_fallback_models",
+        lambda _model: [],
+    )
+
+
+@pytest.mark.parametrize(
+    ("failure", "reason_code"),
+    [
+        ("token", "quota.token_exhausted"),
+        ("price", "quota.cost_unavailable"),
+        ("accounting", "quota.accounting_unavailable"),
+    ],
+)
+def test_agent_loop_default_provider_denial_precedes_config_credentials(
+    wired, monkeypatch, failure, reason_code,
+):
+    limits = (
+        ResourceLimits(max_cost_usd="1.00")
+        if failure == "price"
+        else ResourceLimits(max_total_tokens=1 if failure == "token" else 100_000)
+    )
+    model = _model(cost=ModelCost()) if failure == "price" else _model()
+    env = wired(limits=limits, model=model)
+    if failure == "accounting":
+        monkeypatch.setattr(
+            env["governor"],
+            "reserve_provider_request",
+            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("ledger down")),
+        )
+    _bind_agent_provider(monkeypatch, env["provider"])
+    resolver_calls = []
+
+    with pytest.raises(QuotaExceeded) as excinfo:
+        _drain_agent_loop(
+            model,
+            lambda provider: resolver_calls.append(provider) or "agent-key",
+        )
+
+    assert excinfo.value.reason_code == reason_code
+    assert resolver_calls == []
+    assert env["provider"].seen_opts == []
+
+
+def test_agent_loop_default_provider_resolves_config_credentials_once_after_preflight(
+    wired, monkeypatch,
+):
+    env = wired(limits=ResourceLimits(max_total_tokens=100_000))
+    _bind_agent_provider(monkeypatch, env["provider"])
+    resolver_calls = []
+
+    _drain_agent_loop(
+        env["model"],
+        lambda provider: resolver_calls.append(provider) or "agent-key",
+    )
+
+    assert resolver_calls == ["fakeprov"]
+    assert len(env["provider"].seen_opts) == 1
+    assert env["provider"].seen_opts[0].api_key == "agent-key"
+    assert env["ledger"].connection().execute(
+        "SELECT COUNT(*) FROM usage_reservations"
+    ).fetchone()[0] == 1
+
+
+def test_agent_loop_injected_stream_fn_keeps_config_credential_semantics(wired):
+    env = wired(limits=ResourceLimits(max_total_tokens=100_000))
+    resolver_calls = []
+
+    _drain_agent_loop(
+        env["model"],
+        lambda provider: resolver_calls.append(provider) or "agent-key",
+        stream_fn=env["provider"].stream_simple,
+    )
+
+    assert resolver_calls == ["fakeprov"]
+    assert len(env["provider"].seen_opts) == 1
+    assert env["provider"].seen_opts[0].api_key == "agent-key"
 
 
 def test_budgeted_call_settles_actual_usage_once(wired):

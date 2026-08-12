@@ -699,6 +699,7 @@ async def _stream_assistant_response(
                 candidate,
                 candidate_context,
                 candidate_options,
+                get_api_key=config.get_api_key,
             )
 
         fn = snapshot_stream
@@ -753,7 +754,7 @@ async def _stream_assistant_response(
 
     # Resolve API key
     resolved_api_key = config.api_key
-    if config.get_api_key:
+    if stream_fn is not None and config.get_api_key:
         key_result = config.get_api_key(config.model.provider)
         if inspect.isawaitable(key_result):
             key_result = await key_result

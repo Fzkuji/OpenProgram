@@ -6,8 +6,9 @@ Provides stream(), complete(), stream_simple(), complete_simple().
 from __future__ import annotations
 
 from contextlib import contextmanager
+import inspect
 import time
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Awaitable, Callable
 
 from .api_registry import get_api_provider
 from .budget import BudgetedRequest
@@ -73,6 +74,7 @@ async def stream_simple_with_provider(
     model: Model,
     context: Context,
     options: SimpleStreamOptions | None = None,
+    get_api_key: Callable[[str], str | None | Awaitable[str | None]] | None = None,
 ) -> AsyncGenerator[AssistantMessageEvent, None]:
     """Stream through an already-resolved request-scoped provider snapshot."""
     opts = options or SimpleStreamOptions()
@@ -86,6 +88,13 @@ async def stream_simple_with_provider(
     try:
         if budget is not None:
             opts = budget.clamp(opts, model)
+
+        if get_api_key is not None:
+            key_result = get_api_key(model.provider)
+            if inspect.isawaitable(key_result):
+                key_result = await key_result
+            if key_result:
+                opts = opts.model_copy(update={"api_key": key_result})
 
         # Auto-resolve API key if not set. resolve_provider_key reads the
         # AuthStore (the single key source — no env vars, no config.json).
