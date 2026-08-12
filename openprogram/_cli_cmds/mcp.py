@@ -270,23 +270,25 @@ def _cmd_mcp_disable(name: str) -> int:
     return 1
 
 
-def _cmd_mcp_edit() -> int:
-    """Open the mcp_servers.json file in $EDITOR. After save, the
-    user has to restart affected servers manually (or restart worker).
+def _cmd_mcp_edit_removed() -> int:
+    """Report that raw editing of the secret config file is gone.
+
+    Handing the file to ``$EDITOR`` put every stored env value, header,
+    bearer token, and OAuth client secret on screen and in the editor's
+    swap/undo files, and an unlocked external edit could silently lose a
+    concurrent write. Editing now goes through the structured paths,
+    which mask secrets and apply preserve/replace/delete per field.
     """
-    import os
-    import subprocess
-    code, payload = _request("GET", "/api/mcp/config-path")
-    if code != 200 or not isinstance(payload, dict):
-        print(f"Error: could not resolve config path: {payload}",
-              file=sys.stderr)
-        return 1
-    path = payload.get("path")
-    editor = os.environ.get("EDITOR", "vi")
-    subprocess.run([editor, path])
-    print("Done. Affected servers will pick up changes on next worker "
-          "restart, or run `openprogram mcp restart <name>`.")
-    return 0
+    print(
+        "`openprogram mcp edit` has been removed: it opened stored secrets "
+        "in a plain-text editor.\n"
+        "Use the structured paths instead:\n"
+        "  openprogram mcp add <name> ...   add or re-add a server\n"
+        "  openprogram mcp rm <name>        remove one\n"
+        "  the MCP settings page            edit fields with secrets masked",
+        file=sys.stderr,
+    )
+    return 1
 
 
 def _cmd_mcp_test(name: str, command: list[str],

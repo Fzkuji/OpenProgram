@@ -23,12 +23,14 @@ server set survives worker restarts.
 """
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from openprogram.credential_files import is_redacted_value as _is_redacted
 from openprogram.mcp import (
     add_server,
     get_server,
@@ -39,9 +41,136 @@ from openprogram.mcp import (
 from openprogram.mcp.config import (
     MCPServerConfig,
     load_configs,
+    load_configs_with_revision,
     parse_entry,
-    save_configs,
+    save_configs_revision,
 )
+from openprogram.credential_files import PrivateAtomicWriteError
+
+
+def _save_expected(configs: list[MCPServerConfig], revision: str) -> str:
+    try:
+        return save_configs_revision(configs, expected_revision=revision)
+    except PrivateAtomicWriteError as exc:
+        if exc.code == "conflict":
+            raise HTTPException(
+                status_code=409,
+                detail="MCP config changed concurrently; retry the request",
+            ) from exc
+        raise
+
+
+async def _resync_server_from_disk(name: str) -> tuple[int, dict[str, str]] | None:
+    """Match runtime to disk, returning a sanitized failure outcome."""
+    current, _revision_value = load_configs_with_revision(include_disabled=True)
+    match = next((cfg for cfg in current if cfg.name == name), None)
+    if match is None:
+        cleanup_failed = False
+        try:
+            await remove_server(name)
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            cleanup_failed = True
+        if cleanup_failed:
+            return (
+                500,
+                {
+                    "code": "mcp_runtime_state_unknown",
+                    "persisted_config": "unchanged",
+                    "runtime_state": "unknown",
+                    "action": "retry_or_restart",
+                },
+            )
+        return
+
+    resync_failed = False
+    try:
+        await restart_server(name, new_cfg=match)
+    except (asyncio.CancelledError, Exception):  # noqa: BLE001
+        resync_failed = True
+    if not resync_failed:
+        return None
+
+    cleanup_failed = False
+    try:
+        await remove_server(name)
+    except (asyncio.CancelledError, Exception):  # noqa: BLE001
+        cleanup_failed = True
+    if cleanup_failed:
+        return (
+            500,
+            {
+                "code": "mcp_runtime_state_unknown",
+                "persisted_config": "unchanged",
+                "runtime_state": "unknown",
+                "action": "retry_or_restart",
+            },
+        )
+    return (
+        503,
+        {
+            "code": "mcp_runtime_resync_failed",
+            "persisted_config": "unchanged",
+            "runtime_state": "stopped",
+            "action": "retry_or_restart",
+        },
+    )
+
+
+async def _restart_then_publish(
+    name: str,
+    *,
+    previous: MCPServerConfig,
+    updated: MCPServerConfig,
+    configs: list[MCPServerConfig],
+    expected_revision: str,
+) -> dict:
+    """Validate runtime first, then conditionally publish the same snapshot."""
+    restart_failed = False
+    rollback_failed = False
+    try:
+        status = await restart_server(name, new_cfg=updated)
+    except Exception:  # noqa: BLE001
+        restart_failed = True
+        try:
+            await restart_server(name, new_cfg=previous)
+        except Exception:  # noqa: BLE001
+            rollback_failed = True
+    if restart_failed:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "mcp_runtime_restart_failed",
+                "persisted_config": "unchanged",
+                "runtime_state": "unknown" if rollback_failed else "restored",
+                "action": "retry_or_restart",
+            },
+        )
+
+    conflict = False
+    uncommitted_error = None
+    try:
+        save_configs_revision(configs, expected_revision=expected_revision)
+    except PrivateAtomicWriteError as exc:
+        if exc.code == "conflict":
+            conflict = True
+        elif exc.committed:
+            raise
+        else:
+            uncommitted_error = exc
+
+    if conflict or uncommitted_error is not None:
+        resync_failure = await _resync_server_from_disk(name)
+        if resync_failure is not None:
+            status_code, detail = resync_failure
+            raise HTTPException(status_code=status_code, detail=detail)
+    if conflict:
+        raise HTTPException(
+            status_code=409,
+            detail="MCP config changed concurrently; runtime was resynced",
+        )
+    if uncommitted_error is not None:
+        raise uncommitted_error
+    return status
 
 
 def _require_local_request(request: Request) -> None:
@@ -103,12 +232,12 @@ def register(app: FastAPI) -> None:
         """
         cfg = _parse_body(body)
         # Persist alongside existing entries (read-modify-write).
-        all_cfgs = load_configs(include_disabled=True)
+        all_cfgs, revision = load_configs_with_revision(include_disabled=True)
         if any(c.name == cfg.name for c in all_cfgs):
             raise HTTPException(status_code=409,
                                 detail=f"server '{cfg.name}' already exists")
         all_cfgs.append(cfg)
-        save_configs(all_cfgs)
+        _save_expected(all_cfgs, revision)
         status = await add_server(cfg)
         return JSONResponse(content=status, status_code=201)
 
@@ -124,7 +253,7 @@ def register(app: FastAPI) -> None:
         a name carrying a new value replaces it, and a name carrying an
         explicit empty string deletes it. See :func:`_merge_secret_map`.
         """
-        all_cfgs = load_configs(include_disabled=True)
+        all_cfgs, revision = load_configs_with_revision(include_disabled=True)
         match = next((c for c in all_cfgs if c.name == name), None)
         if match is None:
             raise HTTPException(status_code=404,
@@ -142,31 +271,24 @@ def register(app: FastAPI) -> None:
         new_cfg = parse_entry(name, merged)
         if new_cfg is None:
             raise HTTPException(status_code=400, detail="invalid config")
-        # Restart first, persist only on success: a config that can't
-        # start must not overwrite the stored one, or a typo'd edit
-        # destroys a working server's credentials with no way back.
-        try:
-            status = await restart_server(name, new_cfg=new_cfg)
-        except Exception as e:  # noqa: BLE001
-            # Put the previous config back on the live registry so a
-            # failed edit leaves the running server as it was.
-            try:
-                await restart_server(name, new_cfg=match)
-            except Exception:  # noqa: BLE001
-                pass
-            raise HTTPException(status_code=500,
-                                detail=f"restart failed: {type(e).__name__}: {e}")
-        save_configs([c if c.name != name else new_cfg for c in all_cfgs])
+        new_list = [c if c.name != name else new_cfg for c in all_cfgs]
+        status = await _restart_then_publish(
+            name,
+            previous=match,
+            updated=new_cfg,
+            configs=new_list,
+            expected_revision=revision,
+        )
         return JSONResponse(content=status)
 
     @app.delete("/api/mcp/servers/{name}")
     async def delete_one(name: str):
-        all_cfgs = load_configs(include_disabled=True)
+        all_cfgs, revision = load_configs_with_revision(include_disabled=True)
         new_list = [c for c in all_cfgs if c.name != name]
         if len(new_list) == len(all_cfgs):
             raise HTTPException(status_code=404,
                                 detail=f"server '{name}' not in config")
-        save_configs(new_list)
+        _save_expected(new_list, revision)
         await remove_server(name)
         return JSONResponse(content={"removed": name})
 
@@ -175,12 +297,22 @@ def register(app: FastAPI) -> None:
         try:
             status = await restart_server(name)
         except KeyError:
-            raise HTTPException(status_code=404,
-                                detail=f"server '{name}' not loaded")
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500,
-                                detail=f"restart failed: {type(e).__name__}: {e}")
-        return JSONResponse(content=status)
+            failure = HTTPException(
+                status_code=404,
+                detail=f"server '{name}' not loaded",
+            )
+        except Exception:  # noqa: BLE001
+            failure = HTTPException(
+                status_code=500,
+                detail={
+                    "code": "mcp_runtime_restart_failed",
+                    "kind": "runtime",
+                    "action": "retry_or_restart",
+                },
+            )
+        else:
+            return JSONResponse(content=status)
+        raise failure from None
 
     @app.post("/api/mcp/servers/{name}/enable")
     async def enable_one(name: str):
@@ -352,12 +484,10 @@ def register(app: FastAPI) -> None:
         from openprogram.mcp.config import (
             catalog_entry_hash,
             config_to_catalog_dict,
-            load_configs,
-            save_configs,
         )
         import httpx
 
-        all_cfgs = load_configs(include_disabled=True)
+        all_cfgs, revision = load_configs_with_revision(include_disabled=True)
         match = next((c for c in all_cfgs if c.name == name), None)
         if match is None:
             raise HTTPException(status_code=404,
@@ -408,20 +538,14 @@ def register(app: FastAPI) -> None:
             config_to_catalog_dict(new_cfg)
         )
 
-        # Restart first, persist on success — same reason as PATCH: a
-        # catalog entry that no longer starts must not overwrite the
-        # working local config (and its credentials).
-        try:
-            status = await restart_server(name, new_cfg=new_cfg)
-        except Exception as e:  # noqa: BLE001
-            try:
-                await restart_server(name, new_cfg=match)
-            except Exception:  # noqa: BLE001
-                pass
-            raise HTTPException(status_code=500,
-                                detail=f"restart failed: "
-                                       f"{type(e).__name__}: {e}")
-        save_configs([c if c.name != name else new_cfg for c in all_cfgs])
+        new_list = [c if c.name != name else new_cfg for c in all_cfgs]
+        status = await _restart_then_publish(
+            name,
+            previous=match,
+            updated=new_cfg,
+            configs=new_list,
+            expected_revision=revision,
+        )
         return JSONResponse(content=status)
 
     @app.get("/api/mcp/catalog/suggested")
@@ -594,9 +718,10 @@ def register(app: FastAPI) -> None:
             raise HTTPException(status_code=404,
                                 detail=f"server '{name}' not loaded")
         if not client.is_ready:
-            raise HTTPException(status_code=409,
-                                detail=f"server '{name}' not ready: "
-                                       f"{client.error or 'no session'}")
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "mcp_server_unavailable", "kind": "runtime"},
+            )
         ref_kind = body.get("ref_kind")
         ref_name = body.get("ref_name")
         arg_name = body.get("arg_name")
@@ -756,7 +881,7 @@ def register(app: FastAPI) -> None:
                 return JSONResponse(content={
                     "ok": ok,
                     "ready": client.is_ready,
-                    "error": client.error,
+                    "error": "mcp_server_unavailable" if client.error else None,
                     "tool_count": len(client.tools),
                     "tools": [t.name for t in client.tools],
                     "sandboxed": cfg.type == "local",
@@ -782,12 +907,11 @@ def _merge_secret_map(stored: dict, submitted: object) -> dict:
       * present with a value   → **replace** with that value
       * present, empty string  → **delete** the name
 
-    The frontend never posts a mask back, so a masked string arriving
-    here would be a bug rather than an intent; the only way to keep a
-    value is to leave its name out. A patch entry that is a dict (the
-    ``{"has_value", "masked"}`` response shape echoed back by a
-    careless caller) is treated as preserve for the same reason — it
-    carries no new secret, so it must not clobber one.
+    A masked or redacted value carries no new secret, so it preserves
+    rather than replaces: echoing a GET response back — as a dict of the
+    ``{"has_value", "masked"}`` shape, or as the bare mask string a
+    careless client may extract from it — must never overwrite the real
+    stored value with its own display form.
     """
     if not isinstance(submitted, dict):
         return dict(stored)
@@ -798,6 +922,8 @@ def _merge_secret_map(stored: dict, submitted: object) -> dict:
             continue                       # echoed mask → preserve
         if value is None or str(value) == "":
             out.pop(name, None)            # explicit empty → delete
+        elif _is_redacted(str(value)):
+            continue                       # mask / sentinel → preserve
         else:
             out[name] = str(value)         # new value → replace
     return out
@@ -829,6 +955,11 @@ def _merge_auth(stored: dict, submitted: object) -> dict:
             value = submitted[field_name]
             if value is None or str(value) == "":
                 continue                   # explicit empty → delete
+            if isinstance(value, dict) or _is_redacted(str(value)):
+                # Masked display form → preserve the stored secret.
+                if keep_secrets and field_name in stored:
+                    out[field_name] = stored[field_name]
+                continue
             out[field_name] = str(value)   # new value → replace
         elif keep_secrets and field_name in stored:
             out[field_name] = stored[field_name]   # omitted → preserve

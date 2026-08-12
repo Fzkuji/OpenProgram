@@ -207,16 +207,18 @@ def run_ui_section() -> int:
 
 def run_memory_section() -> int:
     """Memory backend for the ``memory`` tool. local | none."""
-    from openprogram.setup import _choose_one, _read_config, _write_config
-    cfg = _read_config()
+    from openprogram.setup import _choose_one, read_config_with_revision, update_config
+    cfg, revision = read_config_with_revision()
     cur = (cfg.get("memory", {}) or {}).get("backend") or "local"
     choices = ["local", "none"]
     picked = _choose_one("Memory backend:", choices, cur)
     if picked is None:
         print("Cancelled.")
         return 1
-    cfg.setdefault("memory", {})["backend"] = picked
-    _write_config(cfg)
+    update_config(
+        lambda current: current.setdefault("memory", {}).__setitem__("backend", picked),
+        expected_revision=revision,
+    )
     print(f"Memory backend: {picked}")
     if picked == "none":
         from openprogram.functions.tools.memory import MEMORY_TOOL_NAMES
@@ -228,15 +230,17 @@ def run_memory_section() -> int:
 def run_profile_section() -> int:
     """Named profile (active config slot). Only persists the name; per-
     profile isolation lives in the ``--profile`` launch flag."""
-    from openprogram.setup import _read_config, _text, _write_config
-    cfg = _read_config()
+    from openprogram.setup import _text, read_config_with_revision, update_config
+    cfg, revision = read_config_with_revision()
     cur = cfg.get("profile", "default") or "default"
     name = _text("Active profile name:", default=cur)
     if not name:
         print("Cancelled.")
         return 1
-    cfg["profile"] = name
-    _write_config(cfg)
+    update_config(
+        lambda current: current.__setitem__("profile", name),
+        expected_revision=revision,
+    )
     print(f"Active profile: {name}")
     print("[info] Per-profile config isolation is not wired yet — only "
           "the active-profile name is persisted.")
@@ -348,8 +352,13 @@ def run_search_section() -> int:
 
 def run_tts_section() -> int:
     """Text-to-speech backend + credentials."""
-    from openprogram.setup import _choose_one, _password, _read_config, _write_config
-    cfg = _read_config()
+    from openprogram.setup import (
+        _choose_one,
+        _password,
+        read_config_with_revision,
+        update_config,
+    )
+    cfg, revision = read_config_with_revision()
     tts = cfg.get("tts", {}) or {}
     cur_prov = tts.get("provider") or "none"
 
@@ -366,6 +375,7 @@ def run_tts_section() -> int:
         return 1
 
     entry: dict[str, Any] = {"provider": picked}
+    prompted_key: tuple[str, str] | None = None
     if picked in ("openai", "elevenlabs", "playht"):
         env_map = {
             "openai": "OPENAI_API_KEY",
@@ -376,9 +386,14 @@ def run_tts_section() -> int:
         if not os.environ.get(entry["api_key_env"]):
             key = _password(f"{entry['api_key_env']} (leave blank to set later):")
             if key:
-                cfg.setdefault("api_keys", {})[entry["api_key_env"]] = key
-    cfg["tts"] = entry
-    _write_config(cfg)
+                prompted_key = (entry["api_key_env"], key)
+
+    def update(current: dict) -> None:
+        if prompted_key is not None:
+            current.setdefault("api_keys", {})[prompted_key[0]] = prompted_key[1]
+        current["tts"] = entry
+
+    update_config(update, expected_revision=revision)
     print(f"TTS: {picked}")
     if picked != "none":
         print("[info] Runtime hookup for spoken replies is not wired yet; "

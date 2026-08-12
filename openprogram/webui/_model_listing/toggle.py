@@ -9,10 +9,9 @@ from typing import Any
 
 from openprogram.providers.storage import (
     _cache_lock,
-    _read_providers_cfg,
     _remove_spec_row,
+    _update_providers_cfg,
     _upsert_spec_row,
-    _write_providers_cfg,
 )
 
 from .listing import spec_row_for
@@ -21,10 +20,11 @@ from .listing import spec_row_for
 def toggle_provider(provider_id: str, enabled: bool) -> dict[str, Any]:
     """Enable/disable a whole provider."""
     with _cache_lock:
-        cfg = _read_providers_cfg()
-        pcfg = cfg.setdefault(provider_id, {})
-        pcfg["enabled"] = bool(enabled)
-        _write_providers_cfg(cfg)
+
+        def toggle(cfg: dict[str, Any]) -> None:
+            cfg.setdefault(provider_id, {})["enabled"] = bool(enabled)
+
+        _update_providers_cfg(toggle)
     return {"provider": provider_id, "enabled": bool(enabled)}
 
 
@@ -49,32 +49,31 @@ def toggle_model(provider_id: str, model_id: str, enabled: bool) -> dict[str, An
     # cheap: browse results are TTL-cached, so a burst of enables shares one.
     spec = spec_row_for(provider_id, model_id) if enabled else None
     with _cache_lock:
-        cfg = _read_providers_cfg()
-        pcfg = cfg.setdefault(provider_id, {})
-        existing = next(
-            (r for r in (pcfg.get("models") or []) if r.get("id") == model_id),
-            None,
-        )
-        if enabled:
-            # A kept-disabled row is authoritative (it's the user's own spec,
-            # possibly unreachable via browse) — flip it back rather than
-            # depending on spec_row_for having resolved anything.
-            if existing is not None:
-                existing.pop("enabled", None)
-            elif spec is not None:
-                _upsert_spec_row(pcfg, spec)
-        else:
-            # Rows the live browse can't resurface must survive the toggle:
-            # hand-typed manual rows, and EVERY row of a custom provider
-            # (its endpoint is user-supplied; nothing upstream to re-derive
-            # from — includes pre-source-tag rows).
-            keep = existing is not None and (
-                existing.get("source") == "manual"
-                or pcfg.get("source") == "custom"
+
+        def toggle(cfg: dict[str, Any]) -> None:
+            pcfg = cfg.setdefault(provider_id, {})
+            existing = next(
+                (
+                    row
+                    for row in (pcfg.get("models") or [])
+                    if row.get("id") == model_id
+                ),
+                None,
             )
-            if keep:
-                existing["enabled"] = False
+            if enabled:
+                if existing is not None:
+                    existing.pop("enabled", None)
+                elif spec is not None:
+                    _upsert_spec_row(pcfg, spec)
             else:
-                _remove_spec_row(pcfg, model_id)
-        _write_providers_cfg(cfg)
+                keep = existing is not None and (
+                    existing.get("source") == "manual"
+                    or pcfg.get("source") == "custom"
+                )
+                if keep:
+                    existing["enabled"] = False
+                else:
+                    _remove_spec_row(pcfg, model_id)
+
+        _update_providers_cfg(toggle)
     return {"provider": provider_id, "model": model_id, "enabled": bool(enabled)}

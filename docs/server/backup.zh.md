@@ -20,6 +20,8 @@ openprogram backup prune --keep 5   # 只保留最新的 5 份
 归档文件放在 `~/.openprogram/backups/`（命名 profile 下是
 `~/.openprogram-<profile>/backups/`），文件名为
 `<profile>-<时间戳>.tar.gz`，权限 `0600`，只有你自己能读。
+归档先写入唯一的 owner-only 临时文件，flush 后原子发布；POSIX 还会
+fsync 所在目录。
 
 ## 备份范围
 
@@ -37,7 +39,7 @@ openprogram backup prune --keep 5   # 只保留最新的 5 份
 | `skills/`、`skills.json` | skill 注册表 |
 | `plugins/`、`marketplaces.json` | 已安装插件 |
 | `mcp_servers.json`、`models/`、`commands/` | MCP 服务器、模型覆盖、自定义命令 |
-| `owner.json`、`projects/`、`worktrees.json`、`usage.db` | 归属、项目列表、worktree、用量历史 |
+| `owner.json`、`projects/`、`profiles/`、`worktrees.json`、`usage.db` | 归属、项目和账号元数据、worktree、用量历史 |
 
 以下内容故意排除，因为下次启动会重新生成，留着只会让归档变大：
 
@@ -46,19 +48,31 @@ openprogram backup prune --keep 5   # 只保留最新的 5 份
 - `logs/` 以及任何 `*.log`
 - 锁文件、PID 文件、端口文件（`*.lock`、`*.pid`、`*.port`）
 - web token，每次启动都会重新生成
+- `.env.tmp`、`*.json.tmp` 等凭据 writer 临时文件
+- 凭据账号的 `profiles/*/home/` 目录；profile 只允许 `metadata.json`，以及
+  inventory 注册的 `.env` 和 AuthStore 路径进入归档
 - 目录树里任何位置的 `node_modules/`
 - 符号链接：跳过而不是跟随，否则一条指向状态目录外的链接会把无关的目录树拉进归档
 
 ## 凭据
 
-`auth/` 和 `mcp_tokens/` 默认**不备份**。它们以明文保存着有效的 API key 和 OAuth token，
-包含它们的归档和这些密钥本身一样敏感。
+默认情况下，归档会排除 `auth/`、`mcp_tokens/`、profile AuthStore 文件和
+`.env` 文件、Channel
+`credentials.json`；同时从混合配置中删除 `config.json[api_keys]`，以及
+MCP server 的 env、header、bearer token 和 OAuth client secret 字段，
+其余非秘密配置继续保留。
+
+Web 运行期 token 和待处理的 Channel pairing code 永远不进入归档，
+即使显式开启凭据备份也不例外。
 
 ```bash
 openprogram backup create --include-credentials
 ```
 
-这样显式开启，并会打印一条警告。请像对待密码文件一样对待生成的文件。
+这样会显式包含 inventory 中允许备份的全部长期凭据，并打印准确的明文凭据警告。
+生成的文件必须采用与原始凭据相同的访问限制。归档内的 `backup-manifest.json`
+只记录本次归档实际包含、redacted 或排除的凭据类别；全局 never-backup 规则
+单独记录在 `credential_policy` 下，且不记录秘密值。
 如果你只是要换一台机器，重新登录通常比拷贝归档更安全。
 
 ## 恢复
@@ -74,6 +88,9 @@ openprogram backup restore default-20260811-012458.tar.gz
 2. **确认。** 命令会列出将要覆盖的内容并等你输入 `y`。脚本里可以用 `-y` 跳过。
 3. **自动安全快照。** 先把当前状态备份成
    `<profile>-pre-restore-<时间戳>.tar.gz`，这样恢复错了也能再退回去。
+   如果要恢复的归档是用 `--include-credentials` 创建的，这份快照会按同一份
+   授权一并包含凭据：否则退回去的时候，恰好会丢掉这次恢复替换掉的那些秘密。
+   发生时命令会明确提示。
 
 用 `--dry-run` 只看覆盖清单，上面这些都不会发生：
 
@@ -82,6 +99,15 @@ openprogram backup restore default-20260811-012458.tar.gz --dry-run
 ```
 
 恢复只替换归档里存在的条目，范围之外的状态（缓存、日志）原样不动。
+如果混合文件中的已注册秘密字段缺失或被 redacted，恢复会保留本机现有值，
+不会把 mask 写入，也不会删除本机秘密。
+
+整个归档在任何内容可见之前先完整校验：路径包含关系、成员类型，以及每个
+已注册秘密文件的 JSON 结构。symlink、hardlink 和路径穿越成员一律拒绝，
+被拒绝的归档不会改动本机状态。通过校验后，每个文件都用 OpenProgram 其余
+部分共用的 owner-only 原子写入发布，并且每次发布都记录 journal：因此被崩溃
+或磁盘写满打断的恢复会被回滚，而不是停在改了一半的状态。下次执行恢复时
+会自动先做这个回滚。
 
 ## 清理
 

@@ -74,6 +74,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`runtime/self-update.md`](runtime/self-update.zh.md) | 自我更新：一边改自己一边保持可用 |
 | [`runtime/permission-model.md`](runtime/permission-model.md) | 权限系统设计 |
 | [`runtime/sandbox.md`](runtime/sandbox.md) | 沙箱：两个平台的边界、开关在哪里丢掉、覆盖面、八个参考框架的对标、修复顺序（[图示](runtime/sandbox-architecture.html)） |
+| [`runtime/ssrf-protection.html`](runtime/ssrf-protection.html) | 出站 URL 与 SSRF：当前缺口、Hermes/OpenClaw/OWASP 对照、分 scope 信任策略、transport 要求与完整验收门槛 |
 | [`runtime/agent-collaboration.md`](runtime/agent-collaboration.md) | Agent 协作：分支间通信原语（[工具面](runtime/agent-collab-architecture.html)、[八家参考实现对照](runtime/agent-collab-comparison.html)） |
 | [`runtime/tool-toggle-management.md`](runtime/tool-toggle-management.md) | 工具开关 / 工具集管理设计 |
 | [`runtime/additional-working-directories.md`](runtime/additional-working-directories.md) | 会话多工作目录设计 |

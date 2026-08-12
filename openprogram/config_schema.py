@@ -18,6 +18,7 @@ See ``docs/design/cli/redesign.md``.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import re

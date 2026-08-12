@@ -63,6 +63,7 @@ Proactivity applications (built on the base):
 | [`runtime/unified-session-context.md`](runtime/unified-session-context.md) | Unified session context |
 | [`runtime/execution/agent-worktree.md`](runtime/execution/agent-worktree.md) | Agent worktree behaviour |
 | [`runtime/execution/async-task-lifecycle.md`](runtime/execution/async-task-lifecycle.md) | Async task lifecycle |
+| [`runtime/agent-resource-governance.html`](runtime/agent-resource-governance.html) | Agent runtime quotas and task lifecycle governance: current implementation audit, reference comparison, admission, budgets, recovery, visibility, and implementation gates |
 | [`runtime/operations/streaming-resume.md`](runtime/operations/streaming-resume.md) | Streaming + resume |
 | [`runtime/operations/file-management.md`](runtime/operations/file-management.md) | Revert layers (commit / worktree) |
 | [`runtime/operations/multi-agent-revert-todo.md`](runtime/operations/multi-agent-revert-todo.md) | Multi-agent revert TODO |
@@ -78,6 +79,7 @@ Proactivity applications (built on the base):
 | [`runtime/self-update.md`](runtime/self-update.md) | Self-update: staying usable while OpenProgram modifies itself |
 | [`runtime/permission-model.md`](runtime/permission-model.md) | Permission system design |
 | [`runtime/sandbox.md`](runtime/sandbox.md) | Sandbox: the boundary on both platforms, where the switch is lost, coverage, how eight reference harnesses compare, repair order ([rendered](runtime/sandbox-architecture.html)) |
+| [`runtime/ssrf-protection.html`](runtime/ssrf-protection.html) | Outbound URL and SSRF design: current gaps, Hermes/OpenClaw/OWASP comparison, scoped trust policy, transport requirements, and full acceptance gates |
 | [`runtime/agent-collaboration.md`](runtime/agent-collaboration.md) | Agent collaboration: cross-branch communication primitives ([tool surface](runtime/agent-collab-architecture.html), [eight reference implementations compared](runtime/agent-collab-comparison.html)) |
 | [`runtime/agent-resource-governance.html`](runtime/agent-resource-governance.html) | Agent resource governance: current implementation, framework comparison, durable scheduling and enforceable budget plan |
 | [`runtime/tool-toggle-management.md`](runtime/tool-toggle-management.md) | Tool toggles / toolset management design |
@@ -95,6 +97,7 @@ Proactivity applications (built on the base):
 | [`providers/auth/credential-validation-unification.md`](providers/auth/credential-validation-unification.md) | Unified credential validation |
 | [`providers/auth/unified-auth-storage.md`](providers/auth/unified-auth-storage.md) | Unified auth storage |
 | [`providers/auth/unified-account-management.md`](providers/auth/unified-account-management.md) | Unified account management + rotation |
+| [`providers/auth/credential-file-hardening.html`](providers/auth/credential-file-hardening.html) | File credential persistence hardening: current inventory, user-flow risks, atomic private-write contract, backup/restore boundary, and implementation gates |
 | [`providers/auth/credential-status-redesign.md`](providers/auth/credential-status-redesign.md) | Credential status |
 | [`providers/auth/api-key-resolution-unification.md`](providers/auth/api-key-resolution-unification.md) | API key resolution unification |
 | [`providers/reliability/error-retry.md`](providers/reliability/error-retry.md) | Error + retry handling |

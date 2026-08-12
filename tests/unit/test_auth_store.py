@@ -87,6 +87,49 @@ def test_delete_pool_removes_file(tmp_path: Path):
     assert s.find_pool("openai-codex", "default") is None
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")
+def test_delete_pool_rejects_symlink_and_keeps_cached_pool(tmp_path: Path):
+    from openprogram.credential_files import PrivateAtomicWriteError
+
+    store = AuthStore(root=tmp_path)
+    store.add_credential(_oauth_cred())
+    path = tmp_path / "auth" / "openai-codex" / "default.json"
+    outside = tmp_path / "outside.json"
+    outside.write_text("outside")
+    path.unlink()
+    path.symlink_to(outside)
+
+    with pytest.raises(PrivateAtomicWriteError):
+        store.delete_pool("openai-codex", "default")
+
+    assert outside.read_text() == "outside"
+    assert ("openai-codex", "default") in store._pools
+
+
+def test_delete_pool_does_not_report_success_when_unlink_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from openprogram import credential_files
+    from openprogram.credential_files import PrivateAtomicWriteError
+
+    store = AuthStore(root=tmp_path)
+    store.add_credential(_oauth_cred())
+    path = tmp_path / "auth" / "openai-codex" / "default.json"
+    monkeypatch.setattr(
+        credential_files.os,
+        "unlink",
+        lambda _path: (_ for _ in ()).throw(OSError("unlink denied")),
+    )
+
+    with pytest.raises(PrivateAtomicWriteError) as caught:
+        store.delete_pool("openai-codex", "default")
+
+    assert caught.value.code == "delete"
+    assert caught.value.committed is False
+    assert path.exists()
+    assert ("openai-codex", "default") in store._pools
+
+
 # ---- persistence ----------------------------------------------------------
 
 def test_reload_after_restart(tmp_path: Path):
@@ -105,6 +148,27 @@ def test_file_permissions_are_0600(tmp_path: Path):
     # On Windows the check is a no-op (0o600 not enforced); skip there.
     if os.name == "posix":
         assert mode == 0o600, f"expected 0o600, got {oct(mode)}"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission semantics")
+def test_wide_permission_file_is_rejected_until_doctor_repairs_it(tmp_path: Path):
+    from openprogram.credential_files import (
+        PrivateAtomicWriteError,
+        repair_credentials,
+    )
+
+    store = AuthStore(root=tmp_path)
+    store.add_credential(_oauth_cred(access="SECRET-WIDE"))
+    path = tmp_path / "auth" / "openai-codex" / "default.json"
+    os.chmod(path, 0o644)
+
+    with pytest.raises(PrivateAtomicWriteError):
+        AuthStore(root=tmp_path).get_pool("openai-codex", "default")
+
+    findings = repair_credentials(root=tmp_path)
+    assert any(item.relative_path == "auth/openai-codex/default.json" and item.repaired for item in findings)
+    pool = AuthStore(root=tmp_path).get_pool("openai-codex", "default")
+    assert pool.credentials[0].payload.auth_value == "SECRET-WIDE"
 
 
 def test_corrupt_file_raises(tmp_path: Path):
@@ -285,7 +349,9 @@ def test_list_pools_reports_legacy_alias_dir_as_canonical(tmp_path: Path):
         provider_id="bailian", account_id="default",
         credentials=[_api_cred(provider="bailian", key="sk-legacy")],
     )
-    (d / "default.json").write_text(json.dumps(legacy.to_dict()), encoding="utf-8")
+    legacy_path = d / "default.json"
+    legacy_path.write_text(json.dumps(legacy.to_dict()), encoding="utf-8")
+    os.chmod(legacy_path, 0o600)
     s = AuthStore(root=tmp_path)
     pools = s.list_pools()
     # the legacy dir surfaces under the CANONICAL id so a canonical-filtered
@@ -294,6 +360,32 @@ def test_list_pools_reports_legacy_alias_dir_as_canonical(tmp_path: Path):
     assert len(canon) == 1
     assert canon[0].credentials[0].payload.auth_value == "sk-legacy"
     assert not any(p.provider_id == "bailian" for p in pools)
+
+
+def test_cached_legacy_alias_pool_conflicts_after_external_edit(tmp_path: Path):
+    from openprogram.credential_files import PrivateAtomicWriteError
+
+    directory = tmp_path / "auth" / "bailian"
+    directory.mkdir(parents=True)
+    path = directory / "default.json"
+    legacy = CredentialPool(
+        provider_id="bailian",
+        account_id="default",
+        credentials=[_api_cred(provider="bailian", key="sk-legacy")],
+    )
+    path.write_text(json.dumps(legacy.to_dict()), encoding="utf-8")
+    path.chmod(0o600)
+    store = AuthStore(root=tmp_path)
+    pool = next(
+        item
+        for item in store.list_pools()
+        if item.provider_id == "alibaba-token-plan-cn"
+    )
+    path.write_bytes(path.read_bytes() + b"\n")
+
+    with pytest.raises(PrivateAtomicWriteError) as exc:
+        store.put_pool(pool)
+    assert exc.value.code == "conflict"
 
 
 def test_delete_pool_alias_aware(tmp_path: Path):

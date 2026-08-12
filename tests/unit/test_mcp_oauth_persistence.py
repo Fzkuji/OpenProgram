@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 import urllib.parse
 
@@ -86,6 +87,52 @@ def _seed_authenticated_server(name: str = "srv",
 
 
 # -- FileTokenStorage extras -----------------------------------------
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")
+def test_clear_rejects_symlink_without_deleting_target(tmp_path, monkeypatch):
+    from openprogram.credential_files import PrivateAtomicWriteError
+
+    tokens = tmp_path / "mcp_tokens"
+    tokens.mkdir()
+    monkeypatch.setattr(
+        "openprogram.mcp.token_storage.get_tokens_dir", lambda: tokens
+    )
+    outside = tmp_path / "outside.json"
+    outside.write_text("outside")
+    storage = FileTokenStorage("srv")
+    storage.path().symlink_to(outside)
+
+    with pytest.raises(PrivateAtomicWriteError):
+        storage.clear()
+
+    assert outside.read_text() == "outside"
+
+
+def test_clear_returns_no_success_when_unlink_fails(tmp_path, monkeypatch):
+    from openprogram import credential_files
+    from openprogram.credential_files import PrivateAtomicWriteError
+
+    tokens = tmp_path / "mcp_tokens"
+    tokens.mkdir()
+    monkeypatch.setattr(
+        "openprogram.mcp.token_storage.get_tokens_dir", lambda: tokens
+    )
+    storage = FileTokenStorage("srv")
+    storage.path().write_text("{}")
+    storage.path().chmod(0o600)
+    monkeypatch.setattr(
+        credential_files.os,
+        "unlink",
+        lambda _path: (_ for _ in ()).throw(OSError("unlink denied")),
+    )
+
+    with pytest.raises(PrivateAtomicWriteError) as caught:
+        storage.clear()
+
+    assert caught.value.code == "delete"
+    assert caught.value.committed is False
+    assert storage.path().exists()
 
 def test_set_tokens_records_absolute_expiry(state_dir):
     storage = FileTokenStorage("srv")

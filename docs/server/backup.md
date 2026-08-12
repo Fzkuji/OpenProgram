@@ -21,7 +21,8 @@ openprogram backup prune --keep 5   # delete all but the newest 5
 Archives land in `~/.openprogram/backups/` (or
 `~/.openprogram-<profile>/backups/` under a named profile), named
 `<profile>-<timestamp>.tar.gz` and created with mode `0600` — readable only
-by you.
+by you. The archive is written to a unique owner-only temporary file, flushed,
+and atomically published; POSIX also flushes the containing directory.
 
 ## What gets backed up
 
@@ -39,7 +40,7 @@ added by a future release cannot silently start bloating your archives.
 | `skills/`, `skills.json` | The skill registry |
 | `plugins/`, `marketplaces.json` | Installed plugins |
 | `mcp_servers.json`, `models/`, `commands/` | MCP servers, model overrides, custom commands |
-| `owner.json`, `projects/`, `worktrees.json`, `usage.db` | Ownership, project list, worktrees, usage history |
+| `owner.json`, `projects/`, `profiles/`, `worktrees.json`, `usage.db` | Ownership, project and account metadata, worktrees, usage history |
 
 Left out on purpose, because it is regenerated on next start and would only
 make the archive bigger:
@@ -49,23 +50,34 @@ make the archive bigger:
 - `logs/` and any `*.log`
 - Locks, PID files, and port files (`*.lock`, `*.pid`, `*.port`)
 - The web token, which is regenerated every launch
+- Credential-writer temporary files such as `.env.tmp` and `*.json.tmp`
+- Credential-account `profiles/*/home/` trees. Only `metadata.json` and the
+  registered `.env` and AuthStore inventory paths are eligible.
 - `node_modules/` anywhere in the tree
 - Symlinks, which are skipped rather than followed — a link out of the state
   directory would pull unrelated trees into the archive
 
 ## Credentials
 
-`auth/` and `mcp_tokens/` are **not** backed up by default. They hold live API
-keys and OAuth tokens in plaintext, and an archive containing them is as
-sensitive as the keys themselves.
+By default, the archive omits `auth/`, `mcp_tokens/`, profile AuthStore files and `.env` files,
+and Channel `credentials.json` files. It removes `config.json[api_keys]` and MCP
+server env, header, bearer-token, and OAuth client-secret fields while keeping
+the rest of those mixed configuration files.
+
+The Web runtime token and pending Channel pairing codes are never archived,
+including when credential opt-in is enabled.
 
 ```bash
 openprogram backup create --include-credentials
 ```
 
-This opts in and prints a warning. Treat the resulting file the way you would
-treat a password file. If you only need to move to a new machine, logging in
-again is usually safer than copying the archive.
+This opts in to every registered persistent credential category and prints an
+accurate plaintext warning. Store the resulting file with the same access
+restrictions as the original credentials. `backup-manifest.json` records only
+credential categories that were actually included, redacted, or excluded in
+that archive. Global never-backup rules are reported separately under
+`credential_policy`, without recording secret values. If you only need to move
+to a new machine, logging in again is usually safer than copying the archive.
 
 ## Restoring
 
@@ -82,7 +94,10 @@ Three things happen before anything is overwritten:
    for `y`. Pass `-y` to skip this in a script.
 3. **Automatic safety snapshot.** Your current state is backed up as
    `<profile>-pre-restore-<timestamp>.tar.gz` first, so a mistaken restore is
-   itself undoable.
+   itself undoable. Restoring an archive that was created with
+   `--include-credentials` makes that snapshot include credentials too, under
+   the same authorization — otherwise the undo would drop the very secrets the
+   restore replaced. The command says so when it happens.
 
 Use `--dry-run` to see the overwrite list without any of this happening:
 
@@ -91,7 +106,18 @@ openprogram backup restore default-20260811-012458.tar.gz --dry-run
 ```
 
 Restore only replaces the entries present in the archive. State outside that
-scope — caches, logs — is left alone.
+scope — caches, logs — is left alone. When a mixed file omits or redacts a
+registered secret field, restore keeps the current machine's value for that
+field instead of replacing it with a mask or deleting it.
+
+The whole archive is validated before any of it becomes visible: containment,
+member type, and the JSON shape of every registered secret file. Symlink,
+hardlink, and path-traversal members are refused outright, and a rejected
+archive leaves your state exactly as it was. Each file is then published
+through the same owner-only atomic writer the rest of OpenProgram uses, and
+every publish is journalled — so a restore interrupted by a crash or a full
+disk is reversed rather than left half-applied. Recovery runs automatically at
+the start of the next restore.
 
 ## Pruning
 

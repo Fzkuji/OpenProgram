@@ -37,15 +37,30 @@ def mem_cfg(monkeypatch):
     store: dict = {}
     _read = lambda: copy.deepcopy(store)
     _write = lambda cfg: store.clear() or store.update(copy.deepcopy(cfg))
+    def _update(mutator):
+        current = copy.deepcopy(store)
+        result = mutator(current)
+        _write(current)
+        return result
+
     monkeypatch.setattr(st, "_read_providers_cfg", _read)
     monkeypatch.setattr(st, "_write_providers_cfg", _write)
+    monkeypatch.setattr(st, "_update_providers_cfg", _update)
+    from openprogram import setup
+
+    def _update_root(mutator, **_kwargs):
+        root = {"providers": copy.deepcopy(store)}
+        mutator(root)
+        _write(root.get("providers", {}))
+        return root
+
+    monkeypatch.setattr(setup, "update_config", _update_root)
     # ``toggle`` binds these two names at import time (``from .storage import
     # ...``), so patching the storage module alone doesn't reach them — patch
     # the toggle module's copies too so toggle_model writes to the store, not
     # the real config.
     from openprogram.webui._model_listing import toggle as tg
-    monkeypatch.setattr(tg, "_read_providers_cfg", _read)
-    monkeypatch.setattr(tg, "_write_providers_cfg", _write)
+    monkeypatch.setattr(tg, "_update_providers_cfg", _update)
     st._reset_spec_migration()
     return store
 

@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 from typing import Callable, Iterable
 
+from openprogram.paths import get_state_dir
+
 
 def _check_python_version() -> tuple[bool, str, str]:
     ok = sys.version_info >= (3, 11)
@@ -180,6 +182,49 @@ def run_checks() -> list[dict]:
             ok, label, detail = False, fn.__name__, f"{type(e).__name__}: {e}"
         results.append({"ok": ok, "label": label, "detail": detail})
     return results
+
+
+def _cmd_doctor_credentials(repair: bool = False, as_json: bool = False) -> int:
+    """Report — and with ``repair``, fix — credential file permissions.
+
+    Output carries the credential kind, the state-relative path, and a
+    status. It never carries a secret value, so the report is safe to
+    paste into an issue.
+    """
+    from openprogram.credential_files import audit_credentials, repair_credentials
+
+    root = get_state_dir()
+    findings = (
+        repair_credentials(root=root) if repair else audit_credentials(root=root)
+    )
+    outstanding = [f for f in findings if not f.repaired]
+
+    if as_json:
+        print(json.dumps(
+            {"findings": [f.as_dict() for f in findings]}, indent=2
+        ))
+        return 1 if outstanding else 0
+
+    if not findings:
+        print("All credential files are owner-only.")
+        return 0
+    width = max(len(f.kind) for f in findings) + 2
+    for f in findings:
+        mark = "FIXED" if f.repaired else ("FAIL " if f.repairable else "SKIP ")
+        print(f"  [{mark}] {f.kind.ljust(width)}{f.relative_path}  {f.status}")
+    print()
+    if not outstanding:
+        print(f"Repaired {len(findings)} credential path(s).")
+        return 0
+    unrepairable = [f for f in outstanding if not f.repairable]
+    if unrepairable:
+        print(
+            "Paths owned by another user, symlinks, and non-regular files are "
+            "never modified. Fix them by hand, then re-run."
+        )
+    elif not repair:
+        print("Run `openprogram doctor credentials --repair` to fix them.")
+    return 1
 
 
 def _cmd_doctor(as_json: bool = False) -> int:
