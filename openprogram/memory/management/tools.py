@@ -407,8 +407,8 @@ def management_tools(
                     else:
                         path.unlink(missing_ok=True)
                 except BaseException:
-                    workspace._discard_stage()
                     workspace._stage_usable = False
+                    workspace._discard_stage()
                     raise
                 raise
             return "commitments recorded"

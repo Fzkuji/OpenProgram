@@ -497,7 +497,9 @@ def test_writer_rollback_failure_makes_partial_stage_uncommittable(
             if item.name == "record_commitments"
         )
         real_atomic_write_text = git_session.atomic_write_text
+        real_discard_stage = workspace._discard_stage
         calls = 0
+        discard_calls = 0
 
         def fail_rollback(path, text):
             nonlocal calls
@@ -506,7 +508,15 @@ def test_writer_rollback_failure_makes_partial_stage_uncommittable(
                 raise OSError("rollback failed")
             return real_atomic_write_text(path, text)
 
+        def fail_first_discard():
+            nonlocal discard_calls
+            discard_calls += 1
+            if discard_calls == 1:
+                raise OSError("discard failed")
+            return real_discard_stage()
+
         monkeypatch.setattr(git_session, "atomic_write_text", fail_rollback)
+        monkeypatch.setattr(workspace, "_discard_stage", fail_first_discard)
         result = asyncio.run(
             tool.handler(
                 {
@@ -531,6 +541,7 @@ def test_writer_rollback_failure_makes_partial_stage_uncommittable(
         )
 
         assert result["is_error"] is True
+        assert workspace._stage_usable is False
         with pytest.raises(RuntimeError, match="stage is unavailable"):
             workspace.commit_edits(*baseline)
 
