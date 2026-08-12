@@ -118,7 +118,6 @@ def test_structured_output_tri_state_survives_real_fetch_persist_reload_and_web(
     tmp_path, monkeypatch
 ):
     import copy
-    import httpx
     import openprogram.providers._config_read as config_read
     import openprogram.providers.enabled_models as enabled_models
     import openprogram.setup as setup
@@ -134,6 +133,8 @@ def test_structured_output_tri_state_survives_real_fetch_persist_reload_and_web(
     }
 
     class Response:
+        headers = {"content-type": "application/json"}
+
         def raise_for_status(self):
             pass
 
@@ -149,11 +150,25 @@ def test_structured_output_tri_state_survives_real_fetch_persist_reload_and_web(
                 }
             }
 
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            return Response()
+
     def save(config):
         store.clear()
         store.update(copy.deepcopy(config["providers"]))
 
-    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: Response())
+    monkeypatch.setattr(
+        models_dev.safe_http,
+        "safe_client",
+        lambda consumer: Client(),
+    )
     monkeypatch.setattr(models_dev, "_disk_cache_path", lambda: cache)
     monkeypatch.setattr(setup, "_read_config", lambda: {"providers": copy.deepcopy(store)})
     monkeypatch.setattr(setup, "_write_config", save)
