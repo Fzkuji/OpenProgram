@@ -890,6 +890,61 @@ def test_tool_call_content_conversion_preserves_text_and_image() -> None:
 
 
 @pytest.mark.parametrize(
+    "media_type",
+    ["image/png;charset=utf-8", "image/../secret", "image/\x00png"],
+)
+def test_tool_call_content_conversion_rejects_malformed_image_media_types(
+    media_type,
+) -> None:
+    result = AgentToolResult(
+        content=[ImageContent(data="aGVsbG8=", mime_type=media_type)]
+    )
+
+    with pytest.raises(
+        ValueError, match="^unsupported Runtime tool content$"
+    ) as caught:
+        to_mcp_content(result)
+
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    assert media_type not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "media_type",
+    ["image/png;charset=utf-8", "image/../secret", "image/\x00png"],
+)
+def test_tool_call_rejects_malformed_image_media_types_as_sanitized_typed_errors(
+    client_context,
+    media_type,
+) -> None:
+    async def execute(*_args):
+        return AgentToolResult(
+            content=[ImageContent(data="aGVsbG8=", mime_type=media_type)]
+        )
+
+    service = _service(
+        client_context,
+        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
+        registry={"memory_status": _runtime_tool("memory_status", execute)},
+    )
+
+    result = _tool_call(
+        service,
+        "memory_status",
+        {},
+        call_id="call-1",
+        cancel_event=asyncio.Event(),
+        on_progress=None,
+    )
+
+    assert result.is_error is True
+    assert result.content[0].text == "Runtime tool execution failed"
+    assert result.details == {"reason_code": "RUNTIME_TOOL_EXECUTION_FAILED"}
+    assert media_type not in result.content[0].text
+
+
+@pytest.mark.parametrize(
     "kind", ["exception", "unsupported", "malformed", "invalid_base64"]
 )
 def test_tool_call_execution_failures_are_typed_and_sanitized(

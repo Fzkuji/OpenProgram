@@ -3,12 +3,16 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import re
 from typing import Any
 
 import mcp.types as mcp_types
 
 from openprogram.agent.types import AgentToolResult
 from openprogram.providers.types import ImageContent, TextContent
+
+
+_IMAGE_MEDIA_TYPE = re.compile(r"image/[!#$%&'*+\-.^_`|~0-9A-Za-z]+").fullmatch
 
 
 def json_result(payload: Any, *, is_error: bool = False) -> AgentToolResult:
@@ -42,9 +46,7 @@ def to_mcp_content(result: AgentToolResult) -> list[mcp_types.ContentBlock]:
                 type(block.data) is not str
                 or not block.data
                 or type(block.mime_type) is not str
-                or not block.mime_type.startswith("image/")
-                or not block.mime_type.removeprefix("image/")
-                or any(char.isspace() for char in block.mime_type)
+                or _IMAGE_MEDIA_TYPE(block.mime_type) is None
             ):
                 raise ValueError("unsupported Runtime tool content")
             try:
