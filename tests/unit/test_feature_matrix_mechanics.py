@@ -62,8 +62,8 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
         ),
         (
             lambda text: text.replace(
-                '>任务与规划 11</text><line x1="527"',
-                '>任务与规划 11</text><line x1="999"',
+                '<circle cx="527" cy="8" r="5" fill="#4f8ef7"',
+                '<circle cx="999" cy="8" r="5" fill="#4f8ef7"',
                 1,
             ),
             "category point",
