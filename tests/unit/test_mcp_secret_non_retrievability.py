@@ -934,40 +934,21 @@ def test_catalog_update_cancelled_restart_leaves_disk_unchanged(
     original.source_catalog_url = "https://catalog.example/mcp.json"
     save_configs([original])
 
-    class Response:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {
-                "servers": [
-                    {
-                        "name": original.name,
-                        "type": "local",
-                        "command": ["new"],
-                    }
-                ]
-            }
-
-    class Client:
-        def __init__(self, **_kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return False
-
-        async def get(self, *_args, **_kwargs):
-            return Response()
+    async def catalog_fetch(_url):
+        return {
+            "servers": [
+                {
+                    "name": original.name,
+                    "type": "local",
+                    "command": ["new"],
+                }
+            ]
+        }
 
     async def cancelled_restart(*_args, **_kwargs):
         raise asyncio.CancelledError
 
-    import httpx
-
-    monkeypatch.setattr(httpx, "AsyncClient", Client)
+    monkeypatch.setattr(mcp, "_fetch_catalog_json", catalog_fetch)
     monkeypatch.setattr(mcp, "restart_server", cancelled_restart)
     app = FastAPI()
     mcp.register(app)
