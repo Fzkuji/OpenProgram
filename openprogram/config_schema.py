@@ -204,6 +204,7 @@ def _validate_hooks(v: Any) -> Optional[str]:
 SETTINGS: list[SettingSpec] = [
     SettingSpec(
         key="ui.web_port", path=("ui", "web_port"), group="Ports",
+        minimum=1,
         label="Frontend port", widget="number",
         apply=APPLY_NEXT_START, default=_setup.DEFAULT_WEB_PORT,
         validate=_validate_port,
@@ -285,6 +286,7 @@ SETTINGS: list[SettingSpec] = [
     ),
     SettingSpec(
         key="goal.max_turns", path=("goal", "max_turns"), group="Goal",
+        minimum=1,
         label="Goal max auto-continue turns", widget="number",
         apply=APPLY_LIVE, default=None,
         validate=lambda v: (None if v in (None, "")

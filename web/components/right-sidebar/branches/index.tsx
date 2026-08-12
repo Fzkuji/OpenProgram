@@ -22,6 +22,7 @@ import { useEffect, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
 import "@/lib/net/ws-events";
+import type { TaskResourceView } from "@/lib/net/ws-events";
 import { useSessionStore } from "@/lib/session-store";
 
 import { BranchItem } from "./branch-item";
@@ -34,6 +35,15 @@ import {
   wsSend,
   type BranchRow,
 } from "./types";
+
+type LiveTask = {
+  targetHead?: string | null;
+  finalHead?: string | null;
+  status: string;
+  sessionId?: string;
+  label?: string | null;
+  resource?: TaskResourceView;
+};
 
 export function BranchesPanel({ variant = "list" }: {
   variant?: "list" | "chips";
@@ -51,14 +61,15 @@ export function BranchesPanel({ variant = "list" }: {
   // is known the panel renders a synthetic placeholder row labeled
   // after the task so the user still sees a running animation
   // somewhere — see PENDING_HEAD_PREFIX.
-  const [taskMap, setTaskMap] = useState<Record<string,
-    { targetHead?: string | null; finalHead?: string | null;
-      status: string; sessionId?: string; label?: string | null }>>({});
+  const [taskMap, setTaskMap] = useState<Record<string, LiveTask>>({});
   // Branch head_msg_ids currently in "finishing" wipe — added on
   // terminal status, removed 1200ms later.
   const [finishingHeads, setFinishingHeads] = useState<Set<string>>(
     () => new Set(),
   );
+  const [finishingResources, setFinishingResources] = useState<
+    Record<string, TaskResourceView>
+  >({});
   // Multi-select state for merging. ``selected`` is a list of
   // head_msg_ids the user has clicked the checkbox on; ``baseHead``
   // is the optional ⌘-clicked one that becomes ``base_peer`` (merge
@@ -110,14 +121,27 @@ export function BranchesPanel({ variant = "list" }: {
           // branch row to wipe.
           const headForWipe = finalHead || cur[tid]?.finalHead
                               || targetHead || cur[tid]?.targetHead;
+          const resource = d.resource || cur[tid]?.resource;
           delete next[tid];
           if (headForWipe) {
+            if (resource) {
+              setFinishingResources((resources) => ({
+                ...resources,
+                [headForWipe]: resource,
+              }));
+            }
             setFinishingHeads((fs) => {
               const ns = new Set(fs);
               ns.add(headForWipe);
               return ns;
             });
             setTimeout(() => {
+              setFinishingResources((resources) => {
+                if (!(headForWipe in resources)) return resources;
+                const copy = { ...resources };
+                delete copy[headForWipe];
+                return copy;
+              });
               setFinishingHeads((fs) => {
                 if (!fs.has(headForWipe)) return fs;
                 const ns = new Set(fs);
@@ -133,6 +157,7 @@ export function BranchesPanel({ variant = "list" }: {
           targetHead, finalHead, status,
           sessionId: d.session_id,
           label: d.label || d.subject || null,
+          resource: d.resource || cur[tid]?.resource,
         };
         return next;
       });
@@ -159,10 +184,7 @@ export function BranchesPanel({ variant = "list" }: {
       if (det.type !== "tasks_list") return;
       const tasks = (det.data?.tasks as Array<Record<string, unknown>>) || [];
       setTaskMap(() => {
-        const m: Record<string, {
-          targetHead?: string | null; finalHead?: string | null;
-          status: string; sessionId?: string; label?: string | null;
-        }> = {};
+        const m: Record<string, LiveTask> = {};
         for (const t of tasks) {
           const tid = t.id as string | undefined;
           const status = (t.status as string | undefined) || "";
@@ -176,6 +198,7 @@ export function BranchesPanel({ variant = "list" }: {
             sessionId: (t.parent_session_id as string | undefined),
             label: (t.label as string | null)
                    || (t.subject as string | null) || null,
+            resource: t.resource as TaskResourceView | undefined,
           };
         }
         return m;
@@ -286,6 +309,7 @@ export function BranchesPanel({ variant = "list" }: {
   // pending row so the user sees the animation immediately.
   const runningHeads = new Set<string>();
   const pendingRows: BranchRow[] = [];
+  const tasksByHead = new Map<string, LiveTask>();
   for (const tid in taskMap) {
     const entry = taskMap[tid];
     if (entry.sessionId && entry.sessionId !== sessionId) continue;
@@ -297,11 +321,13 @@ export function BranchesPanel({ variant = "list" }: {
     }
     if (head) {
       runningHeads.add(head);
+      tasksByHead.set(head, entry);
     } else {
       // No real head id yet — synthesize one keyed off task_id so
       // the row stays stable across status events.
       const synth = `${PENDING_HEAD_PREFIX}${tid}`;
       runningHeads.add(synth);
+      tasksByHead.set(synth, entry);
       pendingRows.push({
         head_msg_id: synth,
         name: entry.label || `task ${tid.slice(0, 6)}`,
@@ -376,6 +402,11 @@ export function BranchesPanel({ variant = "list" }: {
             isBase={false}
             running={runningHeads.has(b.head_msg_id)}
             finishing={finishingHeads.has(b.head_msg_id)}
+            taskStatus={tasksByHead.get(b.head_msg_id)?.status}
+            taskResource={
+              tasksByHead.get(b.head_msg_id)?.resource
+              || finishingResources[b.head_msg_id]
+            }
             onToggleSelect={toggleSelect}
             onSetBase={setBase}
           />
@@ -410,6 +441,11 @@ export function BranchesPanel({ variant = "list" }: {
             isBase={baseHead === b.head_msg_id}
             running={runningHeads.has(b.head_msg_id)}
             finishing={finishingHeads.has(b.head_msg_id)}
+            taskStatus={tasksByHead.get(b.head_msg_id)?.status}
+            taskResource={
+              tasksByHead.get(b.head_msg_id)?.resource
+              || finishingResources[b.head_msg_id]
+            }
             onToggleSelect={toggleSelect}
             onSetBase={setBase}
           />

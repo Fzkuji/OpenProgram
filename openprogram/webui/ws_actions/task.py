@@ -38,9 +38,12 @@ import json
 from typing import Any
 
 
-def _serialise(task) -> dict[str, Any]:
+def _serialise(task, runner) -> dict[str, Any]:
     """Convert a Task to the WS payload shape."""
     d = task.to_dict()
+    resource = runner.get_task_resource_view(task.id)
+    if resource is not None:
+        d["resource"] = resource.to_dict()
     # Strip oversize prompt blob — the UI doesn't need the full text
     # in list_tasks, only the subject. spawn / get respect their own
     # caller's choice (we keep prompt in the dict).
@@ -100,8 +103,31 @@ async def handle_spawn_task(ws, cmd: dict) -> None:
             label=label,
         )
 
+    from openprogram.agent.resource_governance import AdmissionRejected
+
     loop = asyncio.get_event_loop()
-    task_id = await loop.run_in_executor(None, _submit)
+    try:
+        task_id = await loop.run_in_executor(None, _submit)
+    except AdmissionRejected as rejected:
+        # A refused spawn has no task. Report the governor's own decision
+        # verbatim rather than inventing an id or a status the store would
+        # not agree with.
+        decision = rejected.decision
+        await ws.send_text(json.dumps({
+            "type": "spawn_task_result",
+            "data": {
+                "task_id": None,
+                "session_id": session_id,
+                "status": "rejected",
+                "parent_msg_id": parent_msg_id,
+                "reason_code": decision.reason_code,
+                "retryable": decision.retryable,
+                "limits": decision.effective_limits,
+                "capacity": decision.capacity,
+                "usage": decision.usage,
+            },
+        }, default=str))
+        return
     cur = runner.get_task(task_id)
     payload = {
         "task_id": task_id,
@@ -109,6 +135,9 @@ async def handle_spawn_task(ws, cmd: dict) -> None:
         "status": (cur.status.value if cur else "pending"),
         "parent_msg_id": parent_msg_id,
     }
+    resource = runner.get_task_resource_view(task_id)
+    if resource is not None:
+        payload["resource"] = resource.to_dict()
     await ws.send_text(json.dumps({
         "type": "spawn_task_result",
         "data": payload,
@@ -140,7 +169,7 @@ async def handle_list_tasks(ws, cmd: dict) -> None:
         "type": "tasks_list",
         "data": {
             "session_id": session_id,
-            "tasks": [_serialise(t) for t in rows],
+            "tasks": [_serialise(t, runner) for t in rows],
         },
     }, default=str))
 
@@ -163,7 +192,7 @@ async def handle_get_task(ws, cmd: dict) -> None:
     t = await loop.run_in_executor(None, _read)
     await ws.send_text(json.dumps({
         "type": "task",
-        "data": {"task": _serialise(t) if t else None},
+        "data": {"task": _serialise(t, runner) if t else None},
     }, default=str))
 
 
@@ -185,12 +214,17 @@ async def handle_cancel_task(ws, cmd: dict) -> None:
 
     loop = asyncio.get_event_loop()
     t = await loop.run_in_executor(None, _cancel)
+    data = {
+        "task_id": task_id,
+        "status": (t.status.value if t else None),
+    }
+    if t is not None:
+        resource = _serialise(t, runner).get("resource")
+        if resource is not None:
+            data["resource"] = resource
     await ws.send_text(json.dumps({
         "type": "cancel_task_result",
-        "data": {
-            "task_id": task_id,
-            "status": (t.status.value if t else None),
-        },
+        "data": data,
     }, default=str))
 
 

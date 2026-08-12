@@ -169,6 +169,26 @@
   max-height: 140px;
   overflow: auto;
 }
+.attach-card-resources {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.attach-card-resources .attach-card-preview-label {
+  border-top: 0;
+  padding-top: 0;
+}
+.attach-card-resource-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.attach-card-resource-row code {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
 /* Footer surfacing the staged-attach status — only present on
    user-initiated attaches (manual=true). Spawn-attached cards stay
    plain because the spawn turn already happened, nothing is staged. */
