@@ -254,6 +254,39 @@ def test_repair_does_not_follow_file_swapped_to_symlink(
     assert stat.S_IMODE(real_lstat(outside).st_mode) == 0o644
 
 
+def test_repair_does_not_traverse_parent_swapped_to_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openprogram import credential_files
+
+    root = _state(tmp_path)
+    target = _write(root / "auth" / "openai" / "default.json", 0o644)
+    os.chmod(root / "auth", 0o700)
+    os.chmod(root / "auth" / "openai", 0o700)
+    outside = tmp_path / "outside"
+    (outside / "openai").mkdir(parents=True)
+    outside_target = outside / "openai" / "default.json"
+    os.link(target, outside_target)
+    original_auth = root / "original-auth"
+    real_open = os.open
+    swapped = False
+
+    def swap_parent_before_open(path, flags, *args, **kwargs):
+        nonlocal swapped
+        if not swapped and (Path(path) == target or path == "auth"):
+            (root / "auth").rename(original_auth)
+            (root / "auth").symlink_to(outside, target_is_directory=True)
+            swapped = True
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(credential_files.os, "open", swap_parent_before_open)
+
+    findings = credential_files.repair_credentials(root=root)
+
+    assert [(f.status, f.repaired) for f in findings] == [("permission", False)]
+    assert stat.S_IMODE(os.lstat(outside_target).st_mode) == 0o644
+
+
 def test_repair_removes_only_old_stale_temporary_files(tmp_path: Path) -> None:
     from openprogram.credential_files import repair_credentials
 
@@ -268,6 +301,42 @@ def test_repair_removes_only_old_stale_temporary_files(tmp_path: Path) -> None:
 
     assert not stale.exists()
     assert fresh.exists()
+
+
+def test_stale_temporary_repair_locks_logical_target_and_rechecks_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from contextlib import contextmanager
+
+    from openprogram import credential_files
+
+    root = _state(tmp_path)
+    target = _write(root / "config.json", 0o600)
+    stale = _write(root / ".config.json.abc123def456789012345678.tmp", 0o600)
+    old = os.stat(root).st_atime - 86_400
+    os.utime(stale, (old, old))
+    replacement = tmp_path / "replacement"
+    _write(replacement, 0o600, "replacement")
+    os.utime(replacement, (old, old))
+    locked: list[Path] = []
+
+    @contextmanager
+    def replace_while_locking(path: Path, *, root: Path, timeout: float = 10.0):
+        del root, timeout
+        locked.append(Path(path))
+        stale.unlink()
+        replacement.rename(stale)
+        yield
+
+    monkeypatch.setattr(credential_files, "_private_file_lock", replace_while_locking)
+
+    findings = credential_files.repair_credentials(root=root)
+
+    assert locked == [target]
+    assert [(f.status, f.repaired) for f in findings] == [
+        ("stale_temporary", False)
+    ]
+    assert stale.read_text() == "replacement"
 
 
 def test_doctor_credentials_command_reports_and_exits_non_zero(

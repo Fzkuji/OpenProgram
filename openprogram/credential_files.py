@@ -18,7 +18,7 @@ import subprocess
 import threading
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Callable, Iterator, Literal
 
@@ -348,6 +348,7 @@ class CredentialFinding:
     status: CredentialStatus
     repairable: bool
     repaired: bool = False
+    _identity: tuple[int, int] | None = field(default=None, repr=False, compare=False)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -366,7 +367,11 @@ def _temporary_of(name: str) -> str | None:
         return None
     stem = name[1:-4]
     target, _, token = stem.rpartition(".")
-    if not target or len(token) != 24 or any(c not in "0123456789abcdef" for c in token):
+    if (
+        not target
+        or len(token) != 24
+        or any(c not in "0123456789abcdef" for c in token)
+    ):
         return None
     return target
 
@@ -421,11 +426,16 @@ def audit_credentials(*, root: Path) -> list[CredentialFinding]:
                 entries = inventory_for_path(
                     (path.parent / target).relative_to(root_path).as_posix()
                 )
-                if entries and _is_stale_temporary(path):
+                stale_info = _stale_temporary_info(path) if entries else None
+                if entries and stale_info is not None:
                     seen.add(relative)
                     findings.append(
                         CredentialFinding(
-                            entries[0].kind, relative, "stale_temporary", True
+                            entries[0].kind,
+                            relative,
+                            "stale_temporary",
+                            True,
+                            _identity=(stale_info.st_dev, stale_info.st_ino),
                         )
                     )
                 continue
@@ -458,40 +468,84 @@ def _can_be_inventory_parent(relative: str, pattern: str) -> bool:
     )
 
 
-def _is_stale_temporary(path: Path) -> bool:
+def _stale_temporary_info(path: Path) -> os.stat_result | None:
     try:
         info = os.lstat(path)
     except FileNotFoundError:
-        return False
+        return None
     if not stat.S_ISREG(info.st_mode):
-        return False
-    return time.time() - info.st_mtime > _STALE_TEMPORARY_AGE
+        return None
+    if time.time() - info.st_mtime <= _STALE_TEMPORARY_AGE:
+        return None
+    return info
 
 
-def _repair_posix_mode(path: Path, expected: os.stat_result, mode: int) -> bool:
+def _open_parent_below_root(root: Path, relative: Path) -> int:
+    """Open ``relative`` below ``root`` without following directory links."""
+
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(root, flags)
+    try:
+        for part in relative.parts:
+            child = os.open(part, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _repair_posix_mode(
+    root: Path, relative: Path, expected: os.stat_result, mode: int
+) -> bool:
     """Change mode through a no-follow descriptor for the audited inode."""
 
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
     flags |= getattr(os, "O_NOFOLLOW", 0)
     if stat.S_ISDIR(expected.st_mode):
         flags |= getattr(os, "O_DIRECTORY", 0)
-    descriptor = os.open(path, flags)
+    parent = _open_parent_below_root(root, relative.parent)
     try:
-        opened = os.fstat(descriptor)
-        if (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino):
-            return False
-        if opened.st_uid != os.geteuid():
-            return False
-        if not (stat.S_ISREG(opened.st_mode) or stat.S_ISDIR(opened.st_mode)):
-            return False
-        os.fchmod(descriptor, mode)
-        verified = os.fstat(descriptor)
-        return (
-            (verified.st_dev, verified.st_ino) == (expected.st_dev, expected.st_ino)
-            and stat.S_IMODE(verified.st_mode) == mode
-        )
+        descriptor = os.open(relative.name, flags, dir_fd=parent)
+        try:
+            opened = os.fstat(descriptor)
+            if (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino):
+                return False
+            if opened.st_uid != os.geteuid():
+                return False
+            if not (stat.S_ISREG(opened.st_mode) or stat.S_ISDIR(opened.st_mode)):
+                return False
+            os.fchmod(descriptor, mode)
+            verified = os.fstat(descriptor)
+            return (verified.st_dev, verified.st_ino) == (
+                expected.st_dev,
+                expected.st_ino,
+            ) and stat.S_IMODE(verified.st_mode) == mode
+        finally:
+            os.close(descriptor)
     finally:
-        os.close(descriptor)
+        os.close(parent)
+
+
+def _remove_stale_temporary(
+    root: Path, relative: Path, identity: tuple[int, int] | None
+) -> bool:
+    parent = _open_parent_below_root(root, relative.parent)
+    try:
+        info = os.stat(relative.name, dir_fd=parent, follow_symlinks=False)
+        if identity != (info.st_dev, info.st_ino):
+            return False
+        if not stat.S_ISREG(info.st_mode):
+            return False
+        if time.time() - info.st_mtime <= _STALE_TEMPORARY_AGE:
+            return False
+        os.unlink(relative.name, dir_fd=parent)
+        os.fsync(parent)
+        return True
+    finally:
+        os.close(parent)
 
 
 def repair_credentials(*, root: Path) -> list[CredentialFinding]:
@@ -512,10 +566,16 @@ def repair_credentials(*, root: Path) -> list[CredentialFinding]:
         done = False
         try:
             if finding.status == "stale_temporary":
-                with _private_file_lock(path, root=root_path):
-                    if _is_stale_temporary(path):
-                        path.unlink(missing_ok=True)
-                        done = True
+                target_name = _temporary_of(path.name)
+                if target_name is not None:
+                    with _private_file_lock(
+                        path.with_name(target_name), root=root_path
+                    ):
+                        done = _remove_stale_temporary(
+                            root_path,
+                            Path(finding.relative_path),
+                            finding._identity,
+                        )
             else:
                 info = os.lstat(path)
                 # Re-check under the same rules the audit used: never
@@ -528,7 +588,9 @@ def repair_credentials(*, root: Path) -> list[CredentialFinding]:
                         _apply_windows_owner_acl(path)
                         done = True
                     else:
-                        done = _repair_posix_mode(path, info, mode)
+                        done = _repair_posix_mode(
+                            root_path, Path(finding.relative_path), info, mode
+                        )
         except OSError:
             done = False
         repaired.append(
@@ -538,6 +600,7 @@ def repair_credentials(*, root: Path) -> list[CredentialFinding]:
                 finding.status,
                 finding.repairable,
                 done,
+                finding._identity,
             )
         )
     return repaired
@@ -581,12 +644,48 @@ def _revision(raw: bytes | None) -> str:
     return "sha256:" + hashlib.sha256(raw).hexdigest()
 
 
+def _ensure_private_root(root: Path) -> Path:
+    """Create or validate the owner-only state root without following it."""
+
+    try:
+        os.mkdir(root, 0o700)
+    except FileExistsError:
+        pass
+    try:
+        info = os.lstat(root)
+    except OSError as exc:
+        raise PrivateAtomicWriteError(
+            "directory", root, committed=False, cause=exc
+        ) from exc
+    if stat.S_ISLNK(info.st_mode):
+        raise PrivateAtomicWriteError("symlink", root, committed=False)
+    if not stat.S_ISDIR(info.st_mode):
+        raise PrivateAtomicWriteError("directory", root, committed=False)
+    _verify_owner(root, info)
+    if os.name != "nt":
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        flags |= getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(root, flags)
+        try:
+            opened = os.fstat(descriptor)
+            if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+                raise PrivateAtomicWriteError("directory", root, committed=False)
+            _verify_owner(root, opened)
+            os.fchmod(descriptor, 0o700)
+            if stat.S_IMODE(os.fstat(descriptor).st_mode) != 0o700:
+                raise PrivateAtomicWriteError("permission", root, committed=False)
+        finally:
+            os.close(descriptor)
+    else:
+        _apply_windows_owner_acl(root)
+    return root
+
+
 def _ensure_private_directory(path: Path, *, root: Path) -> Path:
     """Create one owner-only directory below ``root`` without following links."""
 
     root_path = Path(root).absolute()
-    root_resolved = root_path.resolve(strict=True)
-    _verify_owned_directory(root_resolved)
+    root_resolved = _ensure_private_root(root_path)
     requested = Path(path).absolute()
     if requested in {root_path, root_resolved}:
         return root_resolved
@@ -680,14 +779,12 @@ def private_file_revision(
         return _revision(_read_private_bytes(path, root=root))
 
 
-def _private_unlink(
-    path: Path, *, root: Path, lock_timeout: float = 10.0
-) -> bool:
+def _private_unlink(path: Path, *, root: Path, lock_timeout: float = 10.0) -> bool:
     """Delete one verified private regular file under its sibling lock."""
 
     with _private_file_lock(path, root=root, timeout=lock_timeout):
         root_path = Path(root).absolute()
-        root_resolved = root_path.resolve(strict=True)
+        root_resolved = _ensure_private_root(root_path)
         relative = _relative_below_root(Path(path).absolute(), root_path, root_resolved)
         parent = _ensure_private_directory(
             root_resolved.joinpath(*relative.parent.parts), root=root_resolved
@@ -748,7 +845,7 @@ def _private_file_lock(
     """Acquire the owner-only stable sibling lock for ``path``."""
 
     root_path = Path(root).absolute()
-    root_resolved = root_path.resolve(strict=True)
+    root_resolved = _ensure_private_root(root_path)
     relative = _relative_below_root(Path(path).absolute(), root_path, root_resolved)
     parent = _ensure_private_directory(
         root_resolved.joinpath(*relative.parent.parts), root=root_resolved
@@ -831,7 +928,7 @@ def _private_file_lock(
 
 def _read_private_bytes(path: Path, *, root: Path) -> bytes | None:
     root_path = Path(root).absolute()
-    root_resolved = root_path.resolve(strict=True)
+    root_resolved = _ensure_private_root(root_path)
     relative = _relative_below_root(Path(path).absolute(), root_path, root_resolved)
     parent = _ensure_private_directory(
         root_resolved.joinpath(*relative.parent.parts), root=root_resolved
@@ -880,7 +977,7 @@ def _private_atomic_publish(
     """Publish bytes while the caller holds the target's sibling lock."""
 
     root_path = Path(root).absolute()
-    root_resolved = root_path.resolve(strict=True)
+    root_resolved = _ensure_private_root(root_path)
     relative = _relative_below_root(Path(path).absolute(), root_path, root_resolved)
     parent = _ensure_private_directory(
         root_resolved.joinpath(*relative.parent.parts),

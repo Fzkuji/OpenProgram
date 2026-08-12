@@ -21,6 +21,7 @@ resolving to ``default``.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import threading
@@ -219,12 +220,12 @@ def delete(channel: str, account_id: str) -> None:
     """
     with _lock:
         folder = account_dir(channel, account_id)
-        if folder.exists():
+        if os.path.lexists(folder):
             shutil.rmtree(folder, ignore_errors=True)
-        if folder.exists():
+        if os.path.lexists(folder):
             # Retry once loudly so the real errno reaches the caller.
             shutil.rmtree(folder)
-        if folder.exists():
+        if os.path.lexists(folder):
             raise OSError(f"channel account directory survived deletion: {folder}")
 
 
