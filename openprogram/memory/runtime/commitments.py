@@ -173,12 +173,22 @@ def _write(memory_dir: str | Path, rows: list[dict[str, Any]]) -> None:
     )
 
 
-def _write_valid_updates(memory_dir: str | Path, rows: list[dict[str, Any]]) -> None:
-    """Update valid rows in place while retaining every malformed raw line."""
+def record_notification_steps(
+    memory_dir: str | Path,
+    steps: dict[str, str],
+) -> None:
+    """Append one delivered notification step per id onto the stored rows.
+
+    Only the step is merged, so a status transition another writer committed
+    while the reminder was in flight stays committed. Malformed raw lines are
+    retained untouched, and a row that already carries the step is left alone
+    so a replayed write cannot duplicate it.
+    """
     from openprogram.store.session.git_session import atomic_write_text
 
     path = Path(memory_dir) / FILENAME
-    updates = {str(row["id"]): row for row in rows}
+    if not path.is_file():
+        return
     rendered: list[str] = []
     seen_ids: set[str] = set()
     for raw in path.read_text(encoding="utf-8").splitlines(keepends=True):
@@ -193,8 +203,13 @@ def _write_valid_updates(memory_dir: str | Path, rows: list[dict[str, Any]]) -> 
             rendered.append(raw)
             continue
         seen_ids.add(stored["id"])
-        replacement = updates.get(stored["id"])
-        rendered.append(json.dumps(replacement or stored, ensure_ascii=False) + ending)
+        step = steps.get(stored["id"])
+        if step is not None and step not in stored["notification_steps"]:
+            stored = {
+                **stored,
+                "notification_steps": [*stored["notification_steps"], step],
+            }
+        rendered.append(json.dumps(stored, ensure_ascii=False) + ending)
     atomic_write_text(path, "".join(rendered))
 
 
@@ -419,6 +434,7 @@ __all__ = [
     "MAX_NOTIFICATION_STEPS",
     "commitment_status",
     "load_commitments",
+    "record_notification_steps",
     "transition_commitments",
     "upsert_commitments",
     "validate_writer_batch_size",
