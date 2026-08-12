@@ -730,9 +730,10 @@ def register(app: FastAPI) -> None:
             raise HTTPException(status_code=404,
                                 detail=f"server '{name}' not loaded")
         if not client.is_ready:
-            raise HTTPException(status_code=409,
-                                detail=f"server '{name}' not ready: "
-                                       f"{client.error or 'no session'}")
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "mcp_server_unavailable", "kind": "runtime"},
+            )
         ref_kind = body.get("ref_kind")
         ref_name = body.get("ref_name")
         arg_name = body.get("arg_name")
@@ -892,7 +893,7 @@ def register(app: FastAPI) -> None:
                 return JSONResponse(content={
                     "ok": ok,
                     "ready": client.is_ready,
-                    "error": client.error,
+                    "error": "mcp_server_unavailable" if client.error else None,
                     "tool_count": len(client.tools),
                     "tools": [t.name for t in client.tools],
                     "sandboxed": cfg.type == "local",

@@ -31,6 +31,7 @@ import sys
 import tarfile
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path, PurePath
 
 # Top-level entries worth preserving. Anything not listed is skipped.
@@ -487,9 +488,27 @@ def _cmd_backup_restore(
 
     try:
         restore_archive(path, state)
-    except (OSError, tarfile.TarError) as exc:
+    except UnrecoverableRestoreJournalError:
+        print(
+            "[error] restore blocked by an unrecoverable restore journal",
+            file=sys.stderr,
+        )
+        print("The previous state could not be verified as restored.", file=sys.stderr)
+        print(f"A snapshot is preserved in {safety}", file=sys.stderr)
+        return 1
+    except RestoreBusyError:
+        print("[error] another restore is already in progress", file=sys.stderr)
+        print("No restore changes were made by this command.", file=sys.stderr)
+        print(f"A snapshot is preserved in {safety}", file=sys.stderr)
+        return 1
+    except RestoreRollbackCompletedError as exc:
         print(f"[error] restore failed: {exc}", file=sys.stderr)
         print("Your previous state was restored in place.", file=sys.stderr)
+        print(f"A snapshot is also preserved in {safety}", file=sys.stderr)
+        return 1
+    except (OSError, tarfile.TarError) as exc:
+        print(f"[error] restore failed: {exc}", file=sys.stderr)
+        print("The previous state could not be verified as restored.", file=sys.stderr)
         print(f"A snapshot is also preserved in {safety}", file=sys.stderr)
         return 1
 
@@ -500,6 +519,7 @@ def _cmd_backup_restore(
 
 _JOURNAL_NAME = ".restore-journal.json"
 _JOURNAL_DIR = ".restore-journal.d"
+_RESTORE_LOCK = ".restore.lock"
 
 # Bound at import so the journal keeps working when a test — or a fault
 # injector — replaces these on the shared ``os`` module to exercise a
@@ -517,6 +537,40 @@ def restore_journal_path(state: Path) -> Path:
     """Where the durable restore journal lives for one state root."""
 
     return Path(state) / _JOURNAL_NAME
+
+
+class RestoreBusyError(RuntimeError):
+    pass
+
+
+class RestoreRollbackCompletedError(OSError):
+    pass
+
+
+@contextmanager
+def _restore_state_lock(state: Path):
+    from openprogram import _compat as file_lock
+
+    state = Path(state)
+    lock = state / _RESTORE_LOCK
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    descriptor = os.open(lock, flags, 0o600)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+            raise OSError("restore lock failed validation")
+        os.fchmod(descriptor, 0o600)
+        try:
+            file_lock.flock(descriptor, file_lock.LOCK_EX | file_lock.LOCK_NB)
+        except (BlockingIOError, OSError) as exc:
+            raise RestoreBusyError("another restore owns the state lock") from exc
+        try:
+            yield
+        finally:
+            file_lock.flock(descriptor, file_lock.LOCK_UN)
+    finally:
+        os.close(descriptor)
 
 
 class _RestoreJournal:
@@ -696,7 +750,7 @@ class UnrecoverableRestoreJournalError(OSError):
     pass
 
 
-def recover_interrupted_restore(state: Path) -> bool:
+def recover_interrupted_restore(state: Path, *, _lock_held: bool = False) -> bool:
     """Reverse a restore that died mid-flight. Returns whether it acted.
 
     Safe to call repeatedly: a journal marked complete, or none at all,
@@ -705,6 +759,9 @@ def recover_interrupted_restore(state: Path) -> bool:
     """
 
     state = Path(state)
+    if not _lock_held:
+        with _restore_state_lock(state):
+            return recover_interrupted_restore(state, _lock_held=True)
     journal_file = restore_journal_path(state)
     try:
         before = os.lstat(journal_file)
@@ -962,7 +1019,9 @@ def _publish_restored(target: Path, payload: bytes, *, root: Path) -> None:
     _private_atomic_write(target, lambda handle: handle.write(payload), root=root)
 
 
-def restore_archive(archive: Path, state: Path) -> list[str]:
+def restore_archive(
+    archive: Path, state: Path, *, _lock_held: bool = False
+) -> list[str]:
     """Validate an archive completely, then publish it or change nothing.
 
     Every member is extracted into a staging directory beside the state
@@ -980,7 +1039,10 @@ def restore_archive(archive: Path, state: Path) -> list[str]:
     )
 
     state = Path(state).resolve()
-    recover_interrupted_restore(state)
+    if not _lock_held:
+        with _restore_state_lock(state):
+            return restore_archive(archive, state, _lock_held=True)
+    recover_interrupted_restore(state, _lock_held=True)
 
     with tarfile.open(archive, "r:gz") as tar:
         members = tar.getmembers()
@@ -1121,10 +1183,12 @@ def restore_archive(archive: Path, state: Path) -> list[str]:
                 journal.record(relative, journal.preserve(relative, target))
                 _publish_restored(target, payload, root=state)
                 published.append(relative)
-        except BaseException:
+        except BaseException as exc:
             _reverse(state, journal.entries)
             journal.discard()
-            raise
+            raise RestoreRollbackCompletedError(
+                "publication failed; rollback complete"
+            ) from exc
         journal.finish()
         return published
     finally:
@@ -1181,6 +1245,8 @@ __all__ = [
     "INCLUDED",
     "CREDENTIAL_ENTRIES",
     "UnrecoverableRestoreJournalError",
+    "RestoreBusyError",
+    "RestoreRollbackCompletedError",
     "backups_dir",
     "create_backup",
     "recover_interrupted_restore",

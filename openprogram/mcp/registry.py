@@ -94,8 +94,8 @@ def _status_dict(name: str, client: MCPClient) -> dict[str, Any]:
         "timeout_seconds": cfg.timeout_seconds,
         "always_load": cfg.always_load,
         "ready": client.is_ready,
-        "error": client.error,
-        "error_kind": client.error_kind,
+        "error": _public_error_code(client),
+        "error_kind": _public_error_kind(client),
         "source_catalog_url": cfg.source_catalog_url,
         "source_entry_hash": cfg.source_entry_hash,
         "tool_count": len(client.tools),
@@ -119,6 +119,19 @@ def _status_dict(name: str, client: MCPClient) -> dict[str, Any]:
         out["auth"] = {**client.auth_status(),
                        **cfg.to_response_dict()["auth"]}
     return out
+
+
+def _public_error_kind(client: MCPClient) -> str | None:
+    if not client.error:
+        return None
+    kind = str(client.error_kind or "runtime").lower()
+    return kind if kind in {"auth", "config", "connect", "timeout", "runtime"} else "runtime"
+
+
+def _public_error_code(client: MCPClient) -> str | None:
+    if not client.error:
+        return None
+    return "mcp_disabled" if client.error == "disabled" else "mcp_server_unavailable"
 
 
 async def load_mcp_servers() -> None:
@@ -225,15 +238,13 @@ async def _spawn_and_register(cfg: MCPServerConfig) -> None:
 
     try:
         await client.start()
-    except Exception as e:  # noqa: BLE001
-        print(f"[mcp] server '{cfg.name}' start raised: "
-              f"{type(e).__name__}: {e}", file=sys.stderr)
-        client.error = client.error or str(e)
+    except Exception:  # noqa: BLE001
+        print(f"[mcp] server '{cfg.name}' start failed", file=sys.stderr)
+        client.error = client.error or "mcp_server_unavailable"
     _clients[cfg.name] = client
 
     if client.error:
-        print(f"[mcp] server '{cfg.name}' unavailable: {client.error}",
-              file=sys.stderr)
+        print(f"[mcp] server '{cfg.name}' unavailable", file=sys.stderr)
         _registered_tool_names.setdefault(cfg.name, [])
         return
 
@@ -255,9 +266,8 @@ async def _stop_and_unregister(name: str) -> None:
     if client is not None:
         try:
             await client.stop()
-        except Exception as e:  # noqa: BLE001
-            print(f"[mcp] stop '{name}' raised: "
-                  f"{type(e).__name__}: {e}", file=sys.stderr)
+        except Exception:  # noqa: BLE001
+            print(f"[mcp] stop '{name}' failed", file=sys.stderr)
     tool_names = _registered_tool_names.pop(name, [])
     if tool_names:
         # Defer the import to avoid a cycle: functions._runtime imports

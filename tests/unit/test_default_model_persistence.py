@@ -7,6 +7,7 @@ so every restart reverted to the head of ``_PROVIDER_PRIORITY``.
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -19,6 +20,7 @@ def cfg_path(tmp_path, monkeypatch):
     """Point every config reader/writer at a temp file — never the user's."""
     p = tmp_path / "config.json"
     p.write_text("{}", encoding="utf-8")
+    os.chmod(p, 0o600)
     monkeypatch.setattr("openprogram.paths.get_config_path", lambda: p)
     monkeypatch.setattr("openprogram.setup.get_config_path", lambda: p)
 
@@ -30,6 +32,7 @@ def cfg_path(tmp_path, monkeypatch):
 
     def _write(cfg):
         p.write_text(json.dumps(cfg), encoding="utf-8")
+        os.chmod(p, 0o600)
 
     monkeypatch.setattr("openprogram.setup._read_config", _read)
     monkeypatch.setattr("openprogram.setup._write_config", _write)
@@ -38,6 +41,7 @@ def cfg_path(tmp_path, monkeypatch):
 
 def _write_cfg(path, **kw):
     path.write_text(json.dumps(kw), encoding="utf-8")
+    os.chmod(path, 0o600)
 
 
 class _FakeRT:

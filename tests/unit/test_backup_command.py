@@ -673,11 +673,14 @@ def test_restore_inventory_failure_preserves_old_file_and_cleans_temp(
         archive,
         {"auth/openai/default.json": b'{"credentials":"archived-auth"}'},
     )
-    with pytest.raises(credential_files.PrivateAtomicWriteError) as exc:
+    from openprogram._cli_cmds.backup import RestoreRollbackCompletedError
+
+    with pytest.raises(RestoreRollbackCompletedError) as exc:
         restore_archive(archive, profile)
 
-    assert exc.value.code == failure
-    assert exc.value.committed is False
+    assert isinstance(exc.value.__cause__, credential_files.PrivateAtomicWriteError)
+    assert exc.value.__cause__.code == failure
+    assert exc.value.__cause__.committed is False
     assert target.read_bytes() == b'{"credentials":"old-auth"}'
     assert list(target.parent.glob(".default.json.*.tmp")) == []
 
