@@ -37,5 +37,5 @@ git status --short
 | Affected verification | Record/replay, CLI management, and stream chokepoint -> 45 passed; scoped Ruff passed; `git diff --check` passed. |
 | Specification review | Initial `CHANGES_REQUIRED`: synchronous `stream`/`stream_simple` source construction failures occurred before `begin_call`; repair RED was 2 failed, then 47 affected tests passed. Scoped re-review `PASS` at `a4f27b3b`. |
 | Quality review | Initial `CHANGES_REQUIRED`: duplicate terminal events wrote multiple `call_end` rows; fail-closed activation could not replace an existing transform. Repair RED was 2 failed. Scoped re-review found terminal `return` swallowed source-close errors; repair RED was 1 failed. Final scoped re-review `PASS` at `6595d444`; affected suite passed 50 tests. |
-| Full gate | Pending |
-| Final implementation commit | Pending |
+| Full gate | Final candidate: 50 passed; scoped Ruff passed; docs built 453 pages; 0 broken links; `git diff --check` passed; isolated worktree clean. |
+| Final implementation commit | `6595d444`; review evidence documentation through `da53b4c8`. |
