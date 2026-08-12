@@ -1484,14 +1484,32 @@ class TaskRunner:
                         claim.session_id, cancel_ev, execution_id=claim.task_id,
                     )
                     self._executor_slots.release()
-                    self._governor.release_task(
-                        claim.task_id, "error.dispatch_failed",
-                        owner_instance_id=self._instance_id,
-                        lease_generation=claim.lease_generation,
-                    )
-                    with self._lock:
-                        self._tasks.pop(claim.task_id, None)
-                        self._done_events.pop(claim.task_id, None)
+                    updated = None
+                    try:
+                        updated = self._finalize_task_status(
+                            claim.session_id,
+                            claim.task_id,
+                            claim.lease_generation,
+                            TaskStatus.ERRORED,
+                            "error.dispatch_failed",
+                            error="executor submission failed",
+                        )
+                    except Exception:
+                        _log.exception(
+                            "failed to durably finalize undispatched task %s",
+                            claim.task_id,
+                        )
+                    if updated is None:
+                        current = _store_load(claim.session_id, claim.task_id)
+                        if current is not None and is_terminal(current.status):
+                            updated = current
+                    if updated is not None:
+                        _broadcast_task_status(updated)
+                        self._wake_done(claim.task_id)
+                        with self._lock:
+                            self._tasks.pop(claim.task_id, None)
+                            self._done_events.pop(claim.task_id, None)
+                    self._dispatch_wake.set()
                     _log.exception("failed to submit claimed task %s", claim.task_id)
                     continue
                 with self._lock:
