@@ -454,6 +454,10 @@ class _Fake400Response:
         return b'{"error": "bad request"}'
 
 
+class _Fake404Response(_Fake400Response):
+    status_code = 404
+
+
 def test_gemini_cli_error_fails_stream_instead_of_clean_end(monkeypatch):
     gmod = importlib.import_module(
         "openprogram.providers.google_gemini_cli.google_gemini_cli")
@@ -674,16 +678,58 @@ def test_azure_sdk_retry_boundary_tracks_governed_request(
     assert captured["max_retries"] == expected
 
 
-@pytest.mark.parametrize(("governed", "expected"), [(False, 3), (True, 1)])
-def test_attempt_semantics_for_google_bedrock_and_gemini_cli(
+@pytest.mark.parametrize(("governed", "expected"), [(False, 4), (True, 1)])
+def test_bedrock_config_uses_total_attempt_semantics(
     monkeypatch, governed, expected,
 ):
     monkeypatch.setattr(
         "openprogram.agent.task.runner.current_task_resource_context",
         lambda: ("task", object()) if governed else None,
     )
-    from openprogram.providers.budget import provider_retry_attempts
+    monkeypatch.delenv("OPENPROGRAM_BEDROCK_MAX_RETRIES", raising=False)
+    mod = importlib.import_module(
+        "openprogram.providers.amazon_bedrock.amazon_bedrock")
 
-    for adapter_default in (3, 3, 4):
-        actual = provider_retry_attempts(adapter_default)
-        assert actual == (expected if adapter_default == 3 else (1 if governed else 4))
+    config = mod._build_boto_retry_config()
+
+    assert config.retries["total_max_attempts"] == expected
+    assert "max_attempts" not in config.retries
+
+
+@pytest.mark.parametrize(("governed", "expected_calls"), [(False, 2), (True, 1)])
+def test_gemini_cli_endpoint_fallback_obeys_attempt_boundary(
+    monkeypatch, governed, expected_calls,
+):
+    mod = importlib.import_module(
+        "openprogram.providers.google_gemini_cli.google_gemini_cli")
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner.current_task_resource_context",
+        lambda: ("task", object()) if governed else None,
+    )
+    monkeypatch.setattr(
+        mod, "_resolve_endpoints", lambda _model: ["https://one", "https://two"],
+    )
+    calls = []
+
+    class Client(_FakeGeminiClient):
+        def stream(self, method, url, headers=None, content=None):
+            calls.append(url)
+            return super().stream(method, url, headers=headers, content=content)
+
+    monkeypatch.setattr(
+        mod, "build_async_client", lambda: Client(_Fake404Response()),
+    )
+
+    async def run():
+        stream = mod.stream_google_gemini_cli(
+            _model(api="google-gemini-cli", provider="google-gemini-cli"),
+            Context(messages=[UserMessage(content="hi", timestamp=0)]),
+            {"api_key": "k", "project_id": "p"},
+        )
+        with pytest.raises(RuntimeError, match="HTTP 404"):
+            async for _ in stream:
+                pass
+
+    asyncio.run(run())
+
+    assert len(calls) == expected_calls
