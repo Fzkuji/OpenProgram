@@ -389,7 +389,9 @@ def _read_provider_json(path: Path) -> dict | None:
         if not isinstance(value, dict):
             raise TypeError("provider metadata must be an object")
         return value
-    except (OSError, TypeError, json.JSONDecodeError) as exc:
+    except FileNotFoundError:
+        return None
+    except (OSError, TypeError, UnicodeError, json.JSONDecodeError) as exc:
         _logger.warning(
             "provider metadata load failed",
             extra={
@@ -397,7 +399,6 @@ def _read_provider_json(path: Path) -> dict | None:
                 "path": str(path),
                 "error_type": type(exc).__name__,
             },
-            exc_info=True,
         )
         return None
 

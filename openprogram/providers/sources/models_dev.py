@@ -100,15 +100,14 @@ def _read_disk_cache() -> dict[str, Any]:
         return data
     except FileNotFoundError:
         return {}
-    except (OSError, TypeError, json.JSONDecodeError) as exc:
+    except (OSError, TypeError, UnicodeError, json.JSONDecodeError) as exc:
         _logger.warning(
             "provider metadata load failed",
             extra={
                 "source": "models_dev_cache",
-                "path": str(path),
+                "path": str(path) if path is not None else "<unresolved>",
                 "error_type": type(exc).__name__,
             },
-            exc_info=True,
         )
         return {}
 
