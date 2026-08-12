@@ -285,6 +285,37 @@ def test_async_cancellation_does_not_start_validation_repair(monkeypatch):
     assert len(calls) == 1
 
 
+def test_async_cancellation_after_repair_failure_blocks_outer_retry(monkeypatch):
+    calls = []
+
+    async def call(content, model="test", response_format=None):
+        calls.append(content)
+        if len(calls) == 2:
+            raise RuntimeError("repair transport failed")
+        return '{"answer": "wrong"}' if len(calls) == 1 else '{"answer": 9}'
+
+    def check_cancelled():
+        if len(calls) >= 2:
+            from openprogram.agentic_programming.function import CancelledError
+            raise CancelledError("cancelled")
+
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.function.check_cancelled", check_cancelled
+    )
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.runtime._retry_sleep_seconds",
+        lambda *args, **kwargs: 0,
+    )
+    with pytest.raises(ExecInterrupt, match="cancelled"):
+        asyncio.run(
+            Runtime(call=call, model="dummy", max_retries=3).async_exec(
+                "question", response_format=SCHEMA
+            )
+        )
+
+    assert len(calls) == 2
+
+
 def test_unknown_provider_is_rejected_before_stream_call():
     calls = []
 
