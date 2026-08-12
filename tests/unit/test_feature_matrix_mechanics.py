@@ -62,7 +62,7 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
         ),
         (
             lambda text: text.replace(
-                '<circle cx="527" cy="8" r="5" fill="#4f8ef7"',
+                '<circle cx="433" cy="8" r="5" fill="#4f8ef7"',
                 '<circle cx="999" cy="8" r="5" fill="#4f8ef7"',
                 1,
             ),
