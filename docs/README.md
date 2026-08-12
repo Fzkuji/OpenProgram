@@ -7,8 +7,8 @@
 </p>
 
 <p align="center">
-  <b>Open-Source, General-Purpose Agent Harness — Build Your Workflows in Python.</b><br/>
-  Any LLM · Any Platform
+  <b>OpenProgram: Self-Programming AI Agent Framework</b><br/>
+  Agents create and refine their own workflows · Any LLM · Any platform
 </p>
 
 <p align="center">
@@ -24,6 +24,8 @@
 
 <p align="center">
   <a href="start/GETTING_STARTED.md">Getting Started</a> &middot;
+  <a href="capabilities/agentic-programming/self-programming-ai-agents.md">Self-Programming Agents</a> &middot;
+  <a href="comparisons/ai-agent-frameworks.md">Framework Comparison</a> &middot;
   <a href="reference/API.md">API Reference</a> &middot;
   <a href="capabilities/agentic-programming/philosophy.md">Philosophy</a> &middot;
   <a href="README.zh.md">中文</a>

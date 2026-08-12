@@ -7,8 +7,8 @@
 </p>
 
 <p align="center">
-  <b>Open-Source, General-Purpose Agent Harness — Build Your Workflows in Python.</b><br/>
-  Any LLM · Any Platform
+  <b>OpenProgram: Self-Programming AI Agent Framework</b><br/>
+  Agents create and refine their own workflows · Any LLM · Any platform
 </p>
 
 <p align="center">

@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openprogram"
 version = "0.6.0"
-description = "The Open Source Agent Harness Framework. Any LLM. Any platform. Agentic Programming Paradigm."
+description = "OpenProgram: Self-Programming AI Agent Framework"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "AGPL-3.0-or-later"}
 authors = [
     {name = "Fzkuji"},
 ]
-keywords = ["llm", "agentic", "agentic-programming", "ai", "function", "decorator", "context"]
+keywords = ["llm", "agentic", "agentic-programming", "self-programming", "multi-agent", "ai-agent", "ai", "function", "decorator", "context"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -201,9 +201,9 @@ all = [
 openprogram = "openprogram.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/Fzkuji/OpenProgram"
+Homepage = "https://openprogram.io/"
 Repository = "https://github.com/Fzkuji/OpenProgram"
-Documentation = "https://github.com/Fzkuji/OpenProgram/tree/main/docs"
+Documentation = "https://openprogram.io/docs/"
 
 [tool.setuptools.packages.find]
 include = ["openprogram*"]

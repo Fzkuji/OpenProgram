@@ -7,12 +7,16 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
 from html.parser import HTMLParser
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 LANDING = ROOT / "site" / "index.html"
+README = ROOT / "README.md"
+DOCS_README = ROOT / "docs" / "README.md"
+PYPROJECT = ROOT / "pyproject.toml"
 SITE_TITLE = "OpenProgram: Self-Programming AI Agent Framework"
 SITE_DESCRIPTION = (
     "Build self-programming AI agents that create and refine their own "
@@ -86,6 +90,9 @@ def main() -> int:
     }
     visible_text = " ".join(" ".join(page.text).split())
     css = "\n".join(page.styles)
+    readme = README.read_text(encoding="utf-8")
+    docs_readme = DOCS_README.read_text(encoding="utf-8")
+    project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
 
     require(("canonical", "https://openprogram.io/") in links,
             "missing canonical URL", failures)
@@ -111,6 +118,17 @@ def main() -> int:
             "missing large Twitter card", failures)
     require(named_meta.get("theme-color") == "#07080a",
             "missing dark browser theme color", failures)
+    require(f"<b>{SITE_TITLE}</b>" in readme,
+            "README hero differs from the product title", failures)
+    require(f"<b>{SITE_TITLE}</b>" in docs_readme,
+            "docs hero differs from the product title", failures)
+    require(project.get("description") == SITE_TITLE,
+            "package description differs from the product title", failures)
+    project_urls = project.get("urls", {})
+    require(project_urls.get("Homepage") == "https://openprogram.io/",
+            "package homepage is not the canonical website", failures)
+    require(project_urls.get("Documentation") == "https://openprogram.io/docs/",
+            "package documentation URL is not canonical", failures)
     software = next((item for item in page.structured_data
                      if item.get("@type") == "SoftwareSourceCode"), None)
     require(software is not None,
