@@ -293,7 +293,7 @@
 
     <h4>记账延迟与崩溃</h4>
     <ul>
-      <li>reservation 状态为 <code>reserved → started → settled/released</code>。在 provider 请求开始前崩溃可安全释放。</li>
+      <li>reservation 状态为 <code>reserved → started → settled</code>，或在 provider I/O 开始前由 <code>reserved → released</code>。凭据解析、请求配置或 provider generator 建立失败时释放尚未 started 的 reservation；<code>start</code> 成功后发生取消、transport error 或缺失 terminal usage 时保留保守 exposure，等待同一 reservation 的晚到结算。不能用“尚未收到首个 stream event”推断请求未到 provider。</li>
       <li>请求已经开始但拿不到最终 usage 时，保留 conservative unsettled exposure；不能捏造实际 token/cost，也不能立即返还并允许重复超支。</li>
       <li>预算任务在调用前无法访问 accounting DB 时 fail closed。调用后 settlement 失败则任务 errored、停止后续调用，并保留 reservation 供恢复器核对。</li>
       <li>当前 recorder 的 best-effort 行为可继续服务非预算历史兼容路径；进入预算治理的调用必须使用可确认的 reserve/settle 协议。</li>

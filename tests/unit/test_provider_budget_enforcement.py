@@ -26,6 +26,7 @@ from openprogram.providers.types import (
     Model,
     ModelCost,
     SimpleStreamOptions,
+    StreamOptions,
     Usage,
 )
 from openprogram.usage import context as _ctx_mod
@@ -72,6 +73,16 @@ class _FakeProvider:
     async def stream(self, model, context, opts):
         async for event in self.stream_simple(model, context, opts):
             yield event
+
+
+class _ConstructionFailureProvider:
+    requires_credentials = False
+
+    def stream_simple(self, model, context, opts):
+        raise RuntimeError("generator construction failed")
+
+    def stream(self, model, context, opts):
+        raise RuntimeError("generator construction failed")
 
 
 def _model(**kw):
@@ -128,11 +139,17 @@ def wired(tmp_path, monkeypatch):
 
 
 def _drain(model, opts):
-    from openprogram.providers import stream_simple
+    return _drain_entry("stream_simple", model, opts)
+
+
+def _drain_entry(entry, model, opts):
+    from openprogram.providers import stream, stream_simple
+
+    stream_fn = stream_simple if entry == "stream_simple" else stream
 
     async def go():
         events = []
-        async for event in stream_simple(
+        async for event in stream_fn(
             model, Context(system_prompt="sys", messages=[], tools=[]), opts,
         ):
             events.append(event)
@@ -251,16 +268,67 @@ def test_settlement_failure_surfaces_as_accounting_error(wired, monkeypatch):
     assert "released" not in _reservation_states(env["ledger"])
 
 
-def test_provider_refusal_before_start_releases_the_reservation(wired):
-    """Nothing was billed, so nothing stays reserved."""
-    env = wired(
-        limits=ResourceLimits(max_total_tokens=100_000),
-        fail_before_start=RuntimeError("bad api key"),
+@pytest.mark.parametrize("entry", ["stream_simple", "stream"])
+def test_credential_failure_releases_reserved_exposure(
+    wired, monkeypatch, entry,
+):
+    """A pre-I/O failure must not consume a governed task's budget."""
+    import importlib
+
+    env = wired(limits=ResourceLimits(max_total_tokens=100_000))
+    stream_mod = importlib.import_module("openprogram.providers.stream")
+    monkeypatch.setattr(
+        stream_mod, "resolve_provider_key",
+        lambda _provider: (_ for _ in ()).throw(RuntimeError("credential read failed")),
     )
-    with pytest.raises(RuntimeError, match="bad api key"):
-        _drain(env["model"], SimpleStreamOptions(session_id="s1"))
+
+    opts = SimpleStreamOptions(session_id="s1") if entry == "stream_simple" else StreamOptions(session_id="s1")
+    with pytest.raises(RuntimeError, match="credential read failed"):
+        _drain_entry(entry, env["model"], opts)
 
     assert set(_reservation_states(env["ledger"])) == {"released"}
+    assert env["provider"].seen_opts == []
+
+
+@pytest.mark.parametrize("entry", ["stream_simple", "stream"])
+def test_generator_construction_failure_releases_reserved_exposure(
+    wired, monkeypatch, entry,
+):
+    """A provider failure before its async iterator exists is pre-I/O."""
+    import importlib
+
+    env = wired(limits=ResourceLimits(max_total_tokens=100_000))
+    stream_mod = importlib.import_module("openprogram.providers.stream")
+    monkeypatch.setattr(
+        stream_mod, "get_api_provider", lambda _api: _ConstructionFailureProvider(),
+    )
+    opts = (
+        SimpleStreamOptions(session_id="s1")
+        if entry == "stream_simple"
+        else StreamOptions(session_id="s1")
+    )
+
+    with pytest.raises(RuntimeError, match="generator construction failed"):
+        _drain_entry(entry, env["model"], opts)
+
+    assert set(_reservation_states(env["ledger"])) == {"released"}
+
+
+@pytest.mark.parametrize("entry", ["stream_simple", "stream"])
+@pytest.mark.parametrize("failure", [RuntimeError("transport failed"), asyncio.CancelledError()])
+def test_failure_after_provider_start_keeps_conservative_exposure(
+    wired, entry, failure,
+):
+    """Once provider I/O starts, no event is required to retain exposure."""
+    env = wired(
+        limits=ResourceLimits(max_total_tokens=100_000),
+        fail_before_start=failure,
+    )
+    opts = SimpleStreamOptions(session_id="s1") if entry == "stream_simple" else StreamOptions(session_id="s1")
+    with pytest.raises(type(failure)):
+        _drain_entry(entry, env["model"], opts)
+
+    assert set(_reservation_states(env["ledger"])) == {"started"}
 
 
 def test_missing_final_usage_keeps_conservative_exposure(wired):

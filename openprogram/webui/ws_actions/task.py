@@ -38,9 +38,11 @@ import json
 from typing import Any
 
 
-def _serialise(task) -> dict[str, Any]:
-    """Convert a Task to the WS payload shape."""
+def _serialise(task, runner) -> dict[str, Any]:
+    """Convert a Task and its canonical resource view to the WS shape."""
     d = task.to_dict()
+    view = runner.get_task_resource_view(task.id)
+    d["resource"] = view.to_dict() if view is not None else None
     # Strip oversize prompt blob — the UI doesn't need the full text
     # in list_tasks, only the subject. spawn / get respect their own
     # caller's choice (we keep prompt in the dict).
@@ -103,11 +105,13 @@ async def handle_spawn_task(ws, cmd: dict) -> None:
     loop = asyncio.get_event_loop()
     task_id = await loop.run_in_executor(None, _submit)
     cur = runner.get_task(task_id)
+    view = runner.get_task_resource_view(task_id) if cur is not None else None
     payload = {
         "task_id": task_id,
         "session_id": session_id,
         "status": (cur.status.value if cur else "pending"),
         "parent_msg_id": parent_msg_id,
+        "resource": view.to_dict() if view is not None else None,
     }
     await ws.send_text(json.dumps({
         "type": "spawn_task_result",
@@ -140,7 +144,7 @@ async def handle_list_tasks(ws, cmd: dict) -> None:
         "type": "tasks_list",
         "data": {
             "session_id": session_id,
-            "tasks": [_serialise(t) for t in rows],
+            "tasks": [_serialise(t, runner) for t in rows],
         },
     }, default=str))
 
@@ -163,7 +167,7 @@ async def handle_get_task(ws, cmd: dict) -> None:
     t = await loop.run_in_executor(None, _read)
     await ws.send_text(json.dumps({
         "type": "task",
-        "data": {"task": _serialise(t) if t else None},
+        "data": {"task": _serialise(t, runner) if t else None},
     }, default=str))
 
 
@@ -185,11 +189,13 @@ async def handle_cancel_task(ws, cmd: dict) -> None:
 
     loop = asyncio.get_event_loop()
     t = await loop.run_in_executor(None, _cancel)
+    view = runner.get_task_resource_view(task_id) if t else None
     await ws.send_text(json.dumps({
         "type": "cancel_task_result",
         "data": {
             "task_id": task_id,
             "status": (t.status.value if t else None),
+            "resource": view.to_dict() if view is not None else None,
         },
     }, default=str))
 

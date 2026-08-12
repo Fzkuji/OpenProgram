@@ -1655,6 +1655,11 @@ def test_provider_reservation_recovery_and_settlement_are_idempotent(
         requested_max_output_tokens=20, model=model,
     )
     governor.start_provider_request(started.reservation_id)
+    assert governor.release_provider_request(started.reservation_id) is False
+    assert ledger.connection().execute(
+        "SELECT DISTINCT state FROM usage_reservations WHERE reservation_id LIKE ?",
+        (started.reservation_id + ":%",),
+    ).fetchone()[0] == "started"
     ledger.connection().execute(
         "UPDATE usage_reservations SET expires_at = 0 "
         "WHERE reservation_id LIKE ?",
