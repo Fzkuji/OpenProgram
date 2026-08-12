@@ -113,7 +113,7 @@ def remove_secret_values(value: Any) -> Any:
 
 
 def _is_secret_field_name(value: Any) -> bool:
-    name = str(value).lower()
+    name = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "-", str(value)).lower()
     return name in SECRET_FIELD_NAMES or _SECRET_FIELD_SUFFIX.search(name) is not None
 
 
@@ -237,7 +237,7 @@ class RecordingSink:
         self.lock_path = self.path.with_name(self.path.name + ".lock")
         self._thread_lock = threading.RLock()
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if sys.platform != "win32":
+        if sys.platform != "win32" and _is_managed_recording_path(self.path.parent):
             os.chmod(self.path.parent, 0o700)
         with self._locked():
             self._ensure_header_locked()
