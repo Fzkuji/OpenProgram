@@ -33,8 +33,8 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
     result = check_matrix(MATRIX)
 
     assert result.feature_count == 160
-    assert result.openprogram_score == 78.5
-    assert result.openprogram_gaps == 73
+    assert result.openprogram_score == 80.5
+    assert result.openprogram_gaps == 71
     assert result.openprogram_only == 6
     assert result.json_schema_status == "●"
     assert result.snapshot == "2fb471b3"
@@ -45,12 +45,12 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
     [
         (lambda text: text.replace("2fb471b3", "deadbeef"), "snapshot"),
         (
-            lambda text: text.replace("OpenProgram为78.5分", "OpenProgram为999分", 1),
+            lambda text: text.replace("OpenProgram为80.5分", "OpenProgram为999分", 1),
             "score",
         ),
         (
             lambda text: text.replace(
-                "参考列已确认的 73 项", "参考列已确认的 999 项", 1
+                "参考列已确认的 71 项", "参考列已确认的 999 项", 1
             ),
             "gaps",
         ),
