@@ -3,21 +3,40 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from contextlib import contextmanager
 from datetime import date, datetime, time
+import os
 from pathlib import Path
 import re
-from typing import Any, Callable, Hashable
+from typing import Any, Callable, Hashable, Iterator
 
+from openprogram import _compat as fcntl
 from openprogram.memory.management.transaction import workspace_write_lock
 from openprogram.memory.runtime.commitments import (
     load_commitments,
     record_notification_steps,
 )
+from openprogram.memory.workspace_layout import ensure_runtime_dir
 
 
 DEFAULT_QUIET_HOURS = "23:00-08:00"
 DEFAULT_OVERDUE_INTERVAL_DAYS = 7
 _CLOCK_RE = re.compile(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
+
+
+@contextmanager
+def _heartbeat_claim(memory_dir: Path) -> Iterator[None]:
+    """Serialize reminder passes without holding the workspace write lock."""
+    path = ensure_runtime_dir(memory_dir) / "heartbeat.lock"
+    handle = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+        finally:
+            os.close(handle)
 
 
 def cadence_due(cadence: str, now: datetime) -> bool:
@@ -119,26 +138,27 @@ def run_heartbeat(
     if in_quiet_hours(now, quiet_hours):
         return 0
     root = Path(memory_dir)
-    with workspace_write_lock(root):
-        rows = load_commitments(root)
-    grouped: dict[Hashable, list[tuple[dict[str, Any], str]]] = defaultdict(list)
-    for row in rows:
-        step = _notification_step(row, now.date(), overdue_interval_days)
-        if step is None:
-            continue
-        target = target_for_source(str(row.get("source") or ""))
-        if target is not None:
-            grouped[target].append((row, step))
-    delivered: dict[str, str] = {}
-    for target, pending in grouped.items():
-        if not bool(send(target, _render(pending))):
-            continue
-        for row, step in pending:
-            delivered[str(row["id"])] = step
-    if delivered:
+    with _heartbeat_claim(root):
         with workspace_write_lock(root):
-            record_notification_steps(root, delivered)
-    return len(delivered)
+            rows = load_commitments(root)
+        grouped: dict[Hashable, list[tuple[dict[str, Any], str]]] = defaultdict(list)
+        for row in rows:
+            step = _notification_step(row, now.date(), overdue_interval_days)
+            if step is None:
+                continue
+            target = target_for_source(str(row.get("source") or ""))
+            if target is not None:
+                grouped[target].append((row, step))
+        delivered: dict[str, str] = {}
+        for target, pending in grouped.items():
+            if not bool(send(target, _render(pending))):
+                continue
+            for row, step in pending:
+                delivered[str(row["id"])] = step
+        if delivered:
+            with workspace_write_lock(root):
+                record_notification_steps(root, delivered)
+        return len(delivered)
 
 
 __all__ = [

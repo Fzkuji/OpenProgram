@@ -1567,6 +1567,62 @@ def test_heartbeat_releases_workspace_lock_while_sending(tmp_path):
     )
 
 
+def test_concurrent_heartbeats_claim_one_send_for_the_same_step(tmp_path):
+    """Normal concurrent passes must not both send one notification step."""
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import datetime
+    from threading import Barrier, BrokenBarrierError, Lock
+
+    from openprogram.memory.runtime.commitments import (
+        load_commitments,
+        upsert_commitments,
+    )
+    from openprogram.proactive.heartbeat import run_heartbeat
+
+    source = _source(tmp_path)
+    upsert_commitments(
+        tmp_path,
+        [
+            {
+                "text": "Submit the rebuttal.",
+                "due": "2026-08-12",
+                "source": source,
+                "source_quote": "I will submit the rebuttal by Wednesday.",
+            }
+        ],
+    )
+    callers_ready = Barrier(2)
+    sends_overlap = Barrier(2)
+    sent: list[str] = []
+    sent_lock = Lock()
+
+    def _send(_target, text):
+        try:
+            sends_overlap.wait(timeout=0.5)
+        except BrokenBarrierError:
+            pass
+        with sent_lock:
+            sent.append(text)
+        return True
+
+    def _run():
+        callers_ready.wait(timeout=1)
+        return run_heartbeat(
+            tmp_path,
+            now=datetime(2026, 8, 12, 9, 0),
+            target_for_source=lambda _source: ("telegram", "default", "42"),
+            send=_send,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(_run), pool.submit(_run)]
+        results = [future.result(timeout=3) for future in futures]
+
+    assert sorted(results) == [0, 1]
+    assert len(sent) == 1
+    assert load_commitments(tmp_path)[0]["notification_steps"] == ["due"]
+
+
 def test_heartbeat_preserves_transition_committed_during_send(tmp_path):
     """Recording a delivered step must not revert a concurrent transition."""
     from datetime import datetime

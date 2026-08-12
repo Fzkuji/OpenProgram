@@ -66,8 +66,11 @@ does not consume a notification step.
 The deterministic ID deduplicates repeated extraction. The persisted `due` and
 `overdue:7` steps bound successful delivery to two notifications per record in
 the current policy. A failed send consumes neither step and is retried by a
-later eligible heartbeat. Delivery is intentionally at-least-once: a process
-crash after the channel accepts a message but before the atomic state write can
+later eligible heartbeat. Concurrent heartbeat passes are serialized by an OS
+file-lock claim, so a normal run sends and stores each step once; the claim is
+released on send failure and automatically when its process exits. Delivery is
+intentionally at-least-once only across abnormal owner death: a process crash
+after the channel accepts a message but before the atomic state write can
 produce one duplicate. The current outbound API has no cross-channel
 idempotency key, so claiming exactly-once delivery or adding a separate delivery
 journal would not remove that external ambiguity.
