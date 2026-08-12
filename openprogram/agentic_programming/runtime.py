@@ -467,11 +467,12 @@ class Runtime:
                            through complete() by default.
                          - Any other string → legacy path (subclass overrides
                            _call, or pass a `call` function).
-            max_retries: Maximum number of exec() attempts before raising.
+            max_retries: Maximum number of provider calls per exec() before raising.
                          ``None`` (default) → read ``OPENPROGRAM_MAX_RETRIES``
                          env, fall back to 6. Set explicitly to override
-                         env. 6 means try once + retry five times on
-                         transient failure, with exponential backoff +
+                         env. Structured-output repair calls consume the
+                         same budget as transport retries. 6 means at most
+                         six provider calls, with exponential backoff +
                          ±25% jitter — wall-clock at worst ≈ 1.5 + 3 +
                          6 + 12 + 24 = 46s of sleeping before giving
                          up (tunable via ``OPENPROGRAM_RETRY_BACKOFF_BASE``).
@@ -1238,7 +1239,8 @@ class Runtime:
         _llm_closed = False
         try:
             errors: list[str] = []
-            for attempt in range(self.max_retries):
+            attempts_used = 0
+            while attempts_used < self.max_retries:
                 # Pre-attempt deadline check: previous sleep or _call
                 # may have already crossed the line, in which case we
                 # don't even start another attempt.
@@ -1246,10 +1248,10 @@ class Runtime:
                     from openprogram.providers.utils.errors import ErrorReason as _ER
                     cause = TimeoutError(
                         f"exec() timed out after {timeout_s}s "
-                        f"({attempt} attempt(s))"
+                        f"({attempts_used} attempt(s))"
                     )
                     raise _build_llm_error(
-                        cause=cause, attempts=max(1, attempt),
+                        cause=cause, attempts=max(1, attempts_used),
                         elapsed_s=time.monotonic() - _exec_start,
                         content=content, model=use_model,
                         provider=getattr(self, "provider", None),
@@ -1267,6 +1269,7 @@ class Runtime:
                     raise ExecInterrupt("cancelled") from None
 
                 try:
+                    attempts_used += 1
                     raw_reply = self._call(
                         call_input, model=use_model, response_format=response_format
                     )
@@ -1283,7 +1286,11 @@ class Runtime:
                                 reply = parse_and_validate_json(raw_reply, structured_format)
                                 break
                             except StructuredOutputValidationError as exc:
-                                if validation_attempt >= structured_format.max_validation_retries:
+                                if (
+                                    validation_attempt
+                                    >= structured_format.max_validation_retries
+                                    or attempts_used >= self.max_retries
+                                ):
                                     raise
                                 repair = build_repair_prompt(exc)
                                 if self.on_stream:
@@ -1293,6 +1300,7 @@ class Runtime:
                                         "next_attempt": validation_attempt + 2,
                                         "issues": exc.issues,
                                     })
+                                attempts_used += 1
                                 raw_reply = self._call(
                                     [*call_input, {"type": "text", "text": repair}],
                                     model=use_model,
@@ -1314,7 +1322,7 @@ class Runtime:
                 except StructuredOutputError:
                     raise
                 except Exception as e:
-                    errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
+                    errors.append(f"Attempt {attempts_used}: {type(e).__name__}: {e}")
                     permanent = _is_permanent_error(e)
                     # The provider already exhausted its OWN transport-retry
                     # budget on this error — don't let exec re-retry it with a
@@ -1325,10 +1333,10 @@ class Runtime:
                     # inner loop gave up exactly at the budget), surface it as
                     # TIMEOUT rather than the incidental transport cause.
                     timed_out = _deadline is not None and time.monotonic() >= _deadline
-                    if permanent or transport_done or timed_out or attempt == self.max_retries - 1:
+                    if permanent or transport_done or timed_out or attempts_used >= self.max_retries:
                         from openprogram.providers.utils.errors import ErrorReason as _ER
                         raise _build_llm_error(
-                            cause=e, attempts=attempt + 1,
+                            cause=e, attempts=attempts_used,
                             elapsed_s=elapsed,
                             content=content, model=use_model,
                             provider=getattr(self, "provider", None),
@@ -1339,7 +1347,7 @@ class Runtime:
                     # Honor server-supplied Retry-After when the
                     # underlying provider attached it to the exception.
                     retry_after_s = getattr(e, "retry_after_s", None)
-                    sleep_s = _retry_sleep_seconds(attempt, retry_after_s)
+                    sleep_s = _retry_sleep_seconds(attempts_used - 1, retry_after_s)
 
                     # Would sleeping cross the deadline? If yes, give
                     # up now as TIMEOUT — don't waste wall-clock on a
@@ -1347,7 +1355,7 @@ class Runtime:
                     if _deadline is not None and (time.monotonic() + sleep_s) >= _deadline:
                         from openprogram.providers.utils.errors import ErrorReason as _ER
                         raise _build_llm_error(
-                            cause=e, attempts=attempt + 1,
+                            cause=e, attempts=attempts_used,
                             elapsed_s=elapsed,
                             content=content, model=use_model,
                             provider=getattr(self, "provider", None),
@@ -1357,7 +1365,7 @@ class Runtime:
                         ) from e
 
                     _fire_on_retry(
-                        on_retry, cause=e, attempt=attempt + 1,
+                        on_retry, cause=e, attempt=attempts_used,
                         max_attempts=self.max_retries, sleep_s=sleep_s,
                         elapsed_s=elapsed, retry_after_s=retry_after_s,
                     )
@@ -1496,16 +1504,17 @@ class Runtime:
         self._active_llm_node_id = _llm_node_id
         _llm_closed = False
         try:
-          for attempt in range(self.max_retries):
+          attempts_used = 0
+          while attempts_used < self.max_retries:
             # Pre-attempt deadline check (see exec() for the rationale).
             if _deadline is not None and time.monotonic() >= _deadline:
                 from openprogram.providers.utils.errors import ErrorReason as _ER
                 cause = TimeoutError(
                     f"async_exec() timed out after {timeout_s}s "
-                    f"({attempt} attempt(s))"
+                    f"({attempts_used} attempt(s))"
                 )
                 raise _build_llm_error(
-                    cause=cause, attempts=max(1, attempt),
+                    cause=cause, attempts=max(1, attempts_used),
                     elapsed_s=time.monotonic() - _exec_start,
                     content=content, model=use_model,
                     provider=getattr(self, "provider", None),
@@ -1515,6 +1524,7 @@ class Runtime:
                 ) from cause
 
             try:
+                attempts_used += 1
                 raw_reply = await self._async_call(
                     call_input, model=use_model, response_format=response_format
                 )
@@ -1531,7 +1541,11 @@ class Runtime:
                             reply = parse_and_validate_json(raw_reply, structured_format)
                             break
                         except StructuredOutputValidationError as exc:
-                            if validation_attempt >= structured_format.max_validation_retries:
+                            if (
+                                validation_attempt
+                                >= structured_format.max_validation_retries
+                                or attempts_used >= self.max_retries
+                            ):
                                 raise
                             repair = build_repair_prompt(exc)
                             if self.on_stream:
@@ -1541,6 +1555,7 @@ class Runtime:
                                     "next_attempt": validation_attempt + 2,
                                     "issues": exc.issues,
                                 })
+                            attempts_used += 1
                             raw_reply = await self._async_call(
                                 [*call_input, {"type": "text", "text": repair}],
                                 model=use_model,
@@ -1556,17 +1571,17 @@ class Runtime:
             except StructuredOutputError:
                 raise
             except Exception as e:
-                errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
+                errors.append(f"Attempt {attempts_used}: {type(e).__name__}: {e}")
                 permanent = _is_permanent_error(e)
                 # Don't re-retry a transport error the provider already
                 # exhausted its own budget on (the 3×6 multiplication).
                 transport_done = bool(getattr(e, "transport_exhausted", False))
                 elapsed = time.monotonic() - _exec_start
                 timed_out = _deadline is not None and time.monotonic() >= _deadline
-                if permanent or transport_done or timed_out or attempt == self.max_retries - 1:
+                if permanent or transport_done or timed_out or attempts_used >= self.max_retries:
                     from openprogram.providers.utils.errors import ErrorReason as _ER
                     raise _build_llm_error(
-                        cause=e, attempts=attempt + 1,
+                        cause=e, attempts=attempts_used,
                         elapsed_s=elapsed,
                         content=content, model=use_model,
                         provider=getattr(self, "provider", None),
@@ -1575,12 +1590,12 @@ class Runtime:
                         override_reason=_ER.TIMEOUT if timed_out else None,
                     ) from e
                 retry_after_s = getattr(e, "retry_after_s", None)
-                sleep_s = _retry_sleep_seconds(attempt, retry_after_s)
+                sleep_s = _retry_sleep_seconds(attempts_used - 1, retry_after_s)
 
                 if _deadline is not None and (time.monotonic() + sleep_s) >= _deadline:
                     from openprogram.providers.utils.errors import ErrorReason as _ER
                     raise _build_llm_error(
-                        cause=e, attempts=attempt + 1,
+                        cause=e, attempts=attempts_used,
                         elapsed_s=elapsed,
                         content=content, model=use_model,
                         provider=getattr(self, "provider", None),
@@ -1590,7 +1605,7 @@ class Runtime:
                     ) from e
 
                 _fire_on_retry(
-                    on_retry, cause=e, attempt=attempt + 1,
+                    on_retry, cause=e, attempt=attempts_used,
                     max_attempts=self.max_retries, sleep_s=sleep_s,
                     elapsed_s=elapsed, retry_after_s=retry_after_s,
                 )
