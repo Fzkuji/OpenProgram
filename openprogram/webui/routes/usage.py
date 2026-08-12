@@ -83,6 +83,8 @@ def register(app):
                 "cache_write_tokens": tot.cache_write_tokens if tot else 0,
                 "total_tokens": tot.total_tokens if tot else 0,
                 "cost": tot.cost_total if tot else 0.0,
+                "cost_known": tot.cost_known if tot else True,
+                "unknown_cost_events": tot.unknown_cost_events if tot else 0,
                 "events": tot.events if tot else 0,
             },
             "by_model": rows,

@@ -43,6 +43,7 @@ import uuid
 from typing import Any
 
 from openprogram.acp.jsonrpc import (
+    INTERNAL_ERROR,
     INVALID_PARAMS,
     METHOD_NOT_FOUND,
     Connection,
@@ -284,13 +285,15 @@ class ACPServer:
         from openprogram.agent.authority import local_owner_authority
         from openprogram.agent.dispatcher import TurnRequest, process_user_turn
         from openprogram.agent.run_control import (
-            register_cancel_event,
+            claim_cancel_event,
             unregister_cancel_event,
         )
 
+        cancel_event = threading.Event()
+        if not claim_cancel_event(sess.id, cancel_event):
+            raise RPCError(INTERNAL_ERROR, "a prompt turn is already active")
         sess.cancelled = False
-        sess.cancel_event = threading.Event()
-        register_cancel_event(sess.id, sess.cancel_event)
+        sess.cancel_event = cancel_event
         try:
             result = process_user_turn(
                 TurnRequest(

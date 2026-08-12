@@ -544,9 +544,17 @@ def execute_in_context(
             # Direct internal/test callers historically entered here without
             # the WebSocket handler. Preserve that entry point while keeping
             # the same reservation contract.
-            if (not _s._try_reserve_run(session_id, msg_id)
-                    or not _s._activate_run_reservation(
-                        session_id, msg_id, runtime)):
+            if not _s._try_reserve_run(session_id, msg_id):
+                # Another turn already owns this session. Reject without
+                # mutating the DAG or touching the owner's runtime, the
+                # same contract the WebSocket entry point honours.
+                _s._broadcast_chat_response(session_id, msg_id, {
+                    "type": "error",
+                    "content": "A prompt turn is already active for this session.",
+                    "display": "chat",
+                })
+                return
+            if not _s._activate_run_reservation(session_id, msg_id, runtime):
                 raise RuntimeError(
                     "chat run reservation was lost before runtime startup")
         from openprogram.agent.session_config import (

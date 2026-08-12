@@ -49,6 +49,7 @@ def test_importing_provider_package_does_not_activate_invalid_replay(tmp_path: P
         json.dumps({"record_replay": {"mode": "replay", "file": "/missing/calls.jsonl"}}),
         encoding="utf-8",
     )
+    (state / "config.json").chmod(0o600)
 
     result = _run_python(
         """
@@ -212,6 +213,7 @@ def test_recordings_off_recovers_after_activation_failure(tmp_path: Path) -> Non
         ),
         encoding="utf-8",
     )
+    (state / "config.json").chmod(0o600)
 
     result = _run_python(
         """

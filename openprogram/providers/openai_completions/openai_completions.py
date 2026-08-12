@@ -267,6 +267,8 @@ async def stream_simple(
     # ``OPENPROGRAM_OPENAI_MAX_RETRIES``.
     import os as _os
     sdk_max_retries = int(_os.environ.get("OPENPROGRAM_OPENAI_MAX_RETRIES", "3"))
+    from ..budget import provider_sdk_retries
+    sdk_max_retries = provider_sdk_retries(sdk_max_retries)
 
     # Per-request credential from an AuthStore pool — enables multi-key rotation
     # + cooldown for providers whose keys live in the pool. No-op (returns None)

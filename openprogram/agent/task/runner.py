@@ -13,8 +13,8 @@ BashTool / file IO that dominates wall-clock time of a sub-agent.
 
 Cancel signalling reuses the dispatcher contract:
 
-  * ``run_control.register_cancel_event(session_id, ev)`` exposes the
-    cancel event so the existing pre-invocation hook fires.
+  * ``run_control.claim_cancel_event(session_id, ev)`` atomically
+    admits the session and exposes the cancel event to invocation hooks.
   * ``process_user_turn(cancel_event=ev)`` bridges the event into
     asyncio for the LLM-stream side.
   * ``kill_active_runtime(session_id)`` terminates any live BashTool
@@ -42,7 +42,9 @@ on terminal so the existing attach card pickup path triggers.
 """
 from __future__ import annotations
 
+import asyncio
 import contextvars
+from contextlib import contextmanager
 import json
 import logging
 import os
@@ -51,6 +53,7 @@ import time
 import traceback
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import replace
 from typing import Any, Callable, Optional
 
 from openprogram.agent.task.store import (
@@ -76,6 +79,56 @@ _DEFAULT_MAX_WORKERS = 4
 # forcibly flipping the entity to cancelled.
 _CANCEL_TIMEOUT_SECS = 30.0
 _LEASE_RENEW_SECS = 10.0
+_RECONCILE_SECS = 5.0
+
+
+class NonPreemptibleOperation(RuntimeError):
+    reason_code = "error.nonpreemptible_operation"
+
+
+class TaskOperationTimeout(asyncio.TimeoutError):
+    def __init__(self, reason_code: str) -> None:
+        self.reason_code = reason_code
+        super().__init__(reason_code)
+
+
+def _execution_failure_reason(error: str | None) -> str:
+    text = error or ""
+    for reason_code in (
+        NonPreemptibleOperation.reason_code,
+        "budget.runtime_exhausted",
+        "budget.idle_exhausted",
+    ):
+        if reason_code in text:
+            return reason_code
+    return "error.execution"
+
+
+def _terminal_fields(
+    status: TaskStatus,
+    reason_code: str,
+    *,
+    head_id: str | None = None,
+    result_text: str | None = None,
+    error: str | None = None,
+) -> dict[str, str | None]:
+    return {
+        "status": status.value,
+        "head_id": head_id,
+        "result_text": result_text,
+        "error": error,
+        "reason_code": reason_code,
+    }
+
+
+def _store_write_terminal(
+    session_id: str,
+    task_id: str,
+    fields: dict[str, Any],
+) -> Optional[Task]:
+    terminal_fields = dict(fields)
+    status = TaskStatus(terminal_fields.pop("status"))
+    return _store_update_status(session_id, task_id, status, **terminal_fields)
 
 # Task id of the task currently executing on this context. Bound by
 # ``_run_one`` for the duration of the child turn; read by ``spawn_task``
@@ -87,6 +140,55 @@ _LEASE_RENEW_SECS = 10.0
 _current_task_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     "openprogram_current_task_id", default=None,
 )
+_current_task_runner: contextvars.ContextVar[Any] = contextvars.ContextVar(
+    "openprogram_current_task_runner", default=None,
+)
+_borrowed_claim: contextvars.ContextVar[
+    tuple[str, str, int, str] | None
+] = contextvars.ContextVar("openprogram_borrowed_claim", default=None)
+
+
+def record_current_task_activity(activity_kind: str) -> bool:
+    runner = _current_task_runner.get()
+    task_id = _current_task_id.get()
+    return bool(runner and task_id and runner.record_task_activity(task_id, activity_kind))
+
+
+def current_task_operation_timeout(
+    declared_timeout: float | None,
+    *,
+    preemptibility: str = "async",
+) -> float | None:
+    runner = _current_task_runner.get()
+    task_id = _current_task_id.get()
+    if runner is None or task_id is None:
+        return declared_timeout
+    return runner.bounded_operation_timeout(
+        task_id, declared_timeout, preemptibility=preemptibility,
+    )
+
+
+def current_task_operation_timeout_reason(
+    declared_timeout: float | None,
+) -> str | None:
+    runner = _current_task_runner.get()
+    task_id = _current_task_id.get()
+    if runner is None or task_id is None:
+        return None
+    resolver = getattr(runner, "operation_timeout_reason", None)
+    if not callable(resolver):
+        return None
+    return resolver(task_id, declared_timeout)
+
+
+def current_task_resource_context() -> tuple[str, Any] | None:
+    """Return the current governed task and its governor, if both are bound."""
+    runner = _current_task_runner.get()
+    task_id = _current_task_id.get()
+    governor = getattr(runner, "_governor", None)
+    if task_id is None or governor is None:
+        return None
+    return task_id, governor
 
 
 def _broadcast(payload: dict) -> None:
@@ -120,7 +222,13 @@ def _refresh_context_stats(session_id: str) -> None:
         pass
 
 
-def _broadcast_task_status(task: Task) -> None:
+def _broadcast_task_status(task: Task, runner: "TaskRunner | None" = None) -> None:
+    resource = None
+    try:
+        view = (runner or get_runner()).get_task_resource_view(task.id)
+        resource = view.to_dict() if view is not None else None
+    except Exception:
+        _log.debug("failed to build task resource broadcast", exc_info=True)
     _broadcast({
         "type": "task_status",
         "data": {
@@ -136,6 +244,7 @@ def _broadcast_task_status(task: Task) -> None:
             "created_at": task.created_at,
             "started_at": task.started_at,
             "completed_at": task.completed_at,
+            "resource": resource,
         },
     })
     # 事件层 tap：状态转移的单一漏斗，RUNNING → subagent.started，
@@ -169,7 +278,14 @@ class TaskRunner:
     ``self._lock``.
     """
 
-    def __init__(self, max_workers: Optional[int] = None, *, governor=None) -> None:
+    def __init__(
+        self,
+        max_workers: Optional[int] = None,
+        *,
+        governor=None,
+        monotonic_clock: Callable[[], float] | None = None,
+        budget_poll_seconds: float = 0.25,
+    ) -> None:
         if max_workers is None:
             try:
                 max_workers = int(
@@ -190,14 +306,21 @@ class TaskRunner:
                 UsageLedger(default_store().root_path.parent / "usage.db")
             )
         self._governor = governor
-        self._instance_id = "worker_" + uuid.uuid4().hex
+        self._monotonic = monotonic_clock or time.monotonic
+        self._budget_poll_seconds = budget_poll_seconds
+        self._claim_only_task_id: str | None = None
+        self._claim_scope_lock = threading.Lock()
+        self._instance_id = f"worker_{os.getpid()}_{uuid.uuid4().hex}"
+        self._dispatch_wake = threading.Event()
+        self._shutdown_event = threading.Event()
         # Reconcile orphans before opening the pool so any "running"
         # task from a previous process is flipped to errored. The
         # state-machine transition rules cover (running, errored).
         try:
-            _store_reconcile()
+            _store_reconcile(legacy_only=True)
         except Exception:
             pass
+        self._reconcile_resources()
         self._pool = ThreadPoolExecutor(
             max_workers=max_workers,
             thread_name_prefix="op-task",
@@ -212,6 +335,25 @@ class TaskRunner:
         # HEAD; without this they read the same HEAD and write siblings.
         # See ``_dispatch_followup``.
         self._followup_locks: dict[str, threading.Lock] = {}
+        self._executor_slots = threading.BoundedSemaphore(max_workers)
+        self._dispatcher_thread = threading.Thread(
+            target=self._dispatch_loop,
+            daemon=True,
+            name="op-task-dispatcher",
+        )
+        self._dispatcher_thread.start()
+        self._reconciler_thread = threading.Thread(
+            target=self._reconcile_loop,
+            daemon=True,
+            name="op-task-reconciler",
+        )
+        self._reconciler_thread.start()
+        self._budget_thread = threading.Thread(
+            target=self._budget_loop,
+            daemon=True,
+            name="op-task-budget",
+        )
+        self._budget_thread.start()
 
     def _followup_lock(self, session_id: str) -> threading.Lock:
         """The per-session follow-up lock, created on first use."""
@@ -230,6 +372,8 @@ class TaskRunner:
         *,
         creates_agent: bool,
         caller_turn_id: str | None = None,
+        dispatch_ready: bool = True,
+        borrowed_claim: tuple[str, str, int] | None = None,
     ):
         """Durably admit and publish one queued Task, without executing it."""
         from openprogram.agent.resource_governance import AdmissionRejected
@@ -238,7 +382,10 @@ class TaskRunner:
             task,
             persist=lambda accepted: _store_save(task.parent_session_id, accepted),
             creates_agent=creates_agent,
+            caller_session_id=task.caller_session_id,
             caller_turn_id=caller_turn_id,
+            dispatch_ready=dispatch_ready,
+            borrowed_claim=borrowed_claim,
         )
         if not decision.accepted:
             raise AdmissionRejected(decision)
@@ -266,9 +413,17 @@ class TaskRunner:
         chain_generations: int = 0,
         caller_chain_generations: int = 0,
         archive_when_done: bool = False,
+        spawn_caller: Optional[str] = None,
+        advance_head: bool = False,
+        tools_override: Optional[list[str]] = None,
+        deferred_inbox: Optional[dict[str, Any]] = None,
         task_id: Optional[str] = None,
         authority: Optional[dict] = None,
         creates_agent: bool = True,
+        on_accepted: Optional[Callable[[Task], None]] = None,
+        defer_dispatch: bool = False,
+        resume_deferred: bool = False,
+        borrow_current_claim: bool = False,
     ) -> str:
         """Create a Task entity, persist it, queue it on the pool.
 
@@ -288,11 +443,22 @@ class TaskRunner:
         dispatcher's. A terminal pre-created task (withdrawn while
         queued) is NOT resurrected: the id is returned untouched.
         """
+        from openprogram.agent.session_db import default_db
+        if default_db().get_session(session_id) is None:
+            raise ValueError(f"session {session_id!r} not found")
         existing: Optional[Task] = None
         if task_id:
             existing = _store_load(session_id, task_id)
             if existing is not None and is_terminal(existing.status):
                 return task_id
+        if resume_deferred and existing is None:
+            raise ValueError(f"deferred task {task_id!r} not found")
+        borrowed_claim = (
+            self._current_borrowable_claim(session_id)
+            if borrow_current_claim else None
+        )
+        if borrow_current_claim and borrowed_claim is None:
+            raise ValueError("no same-session parent claim is available to borrow")
         if parent_task_id is None:
             if existing is not None:
                 parent_task_id = existing.parent_task_id
@@ -324,20 +490,73 @@ class TaskRunner:
             chain_generations=chain_generations,
             caller_chain_generations=caller_chain_generations,
             archive_when_done=archive_when_done,
+            spawn_caller=spawn_caller,
+            advance_head=advance_head,
+            tools_override=tools_override,
+            deferred_inbox=deferred_inbox,
             status=TaskStatus.PENDING,
             created_at=existing.created_at if existing is not None else time.time(),
         )
-        decision = self.admit_task_entity(
-            task,
-            creates_agent=creates_agent,
-            caller_turn_id=caller_msg_id,
-        )
-        if decision.idempotent:
+        if resume_deferred:
+            admission_id = existing.admission_id
+            if not admission_id or parent_msg_id is None:
+                raise RuntimeError(
+                    f"deferred task {task.id!r} has no resumable admission fence"
+                )
+            if not self._governor.stage_deferred_resume(
+                task.id,
+                admission_id=admission_id,
+                parent_msg_id=parent_msg_id,
+            ):
+                raise RuntimeError(
+                    f"deferred task {task.id!r} could not stage its target head"
+                )
+            task = replace(existing, parent_msg_id=parent_msg_id)
+            _store_save(session_id, task)
+            if not self._governor.mark_dispatch_ready(
+                task.id,
+                admission_id=admission_id,
+                parent_msg_id=parent_msg_id,
+            ):
+                raise RuntimeError(
+                    f"deferred task {task.id!r} could not become dispatchable"
+                )
+            idempotent = True
+        else:
+            decision = self.admit_task_entity(
+                task,
+                creates_agent=creates_agent,
+                caller_turn_id=caller_msg_id,
+                dispatch_ready=not defer_dispatch and borrowed_claim is None,
+                borrowed_claim=(borrowed_claim[:3] if borrowed_claim else None),
+            )
+            idempotent = decision.idempotent
+        if on_accepted is not None and not idempotent:
+            try:
+                on_accepted(task)
+            except Exception:
+                self._governor.request_stop(task.id, "error.accepted_side_effect")
+                try:
+                    _store_update_status(
+                        session_id, task.id, TaskStatus.ERRORED,
+                        error="accepted task side effect failed",
+                        reason_code="error.accepted_side_effect",
+                    )
+                except Exception:
+                    pass
+                raise
+        if borrowed_claim is not None:
+            self._run_borrowed_task(task, borrowed_claim)
+            return task.id
+        if idempotent:
             with self._lock:
                 if task.id in self._tasks:
                     return task.id
             task = _store_load(session_id, task.id) or task
-        _broadcast_task_status(task)
+        if defer_dispatch:
+            return task.id
+        if not idempotent:
+            _broadcast_task_status(task)
 
         # Done-event for await_task / await_tasks callers.
         done_ev = threading.Event()
@@ -355,22 +574,324 @@ class TaskRunner:
             "event": cancel_ev,
             "future": None,
             "session_id": session_id,
+            "context": ctx,
         }
         with self._lock:
             self._tasks[task.id] = entry
             self._done_events[task.id] = done_ev
-        future: Future = self._pool.submit(
-            ctx.run, self._run_one, task.id, cancel_ev, done_ev,
-        )
-        with self._lock:
-            # The worker may already have finished and popped the entry;
-            # only attach the future if it's still the live one.
-            if self._tasks.get(task.id) is entry:
-                entry["future"] = future
+        self._dispatch_wake.set()
 
         return task.id
 
+    def can_borrow_current_claim(self, session_id: str) -> bool:
+        return self._current_borrowable_claim(session_id) is not None
+
+    def _current_borrowable_claim(
+        self, session_id: str,
+    ) -> tuple[str, str, int, str] | None:
+        inherited = _borrowed_claim.get()
+        if inherited is not None:
+            return inherited if inherited[3] == session_id else None
+        if _current_task_runner.get() is not self:
+            return None
+        parent_task_id = _current_task_id.get()
+        if not parent_task_id:
+            return None
+        parent = _store_load(session_id, parent_task_id)
+        if parent is None or parent.parent_session_id != session_id:
+            return None
+        with self._lock:
+            info = self._tasks.get(parent_task_id)
+            generation = info.get("lease_generation") if info else None
+        if generation is None:
+            return None
+        return (
+            parent_task_id, self._instance_id, int(generation), session_id,
+        )
+
+    def _run_borrowed_task(
+        self,
+        task: Task,
+        claim: tuple[str, str, int, str],
+    ) -> None:
+        """Execute a sync child inline under its same-session parent fence."""
+        parent_task_id, owner_instance_id, lease_generation, session_id = claim
+        if not self._governor.start_borrowed_task(
+            task.id,
+            parent_task_id=parent_task_id,
+            owner_instance_id=owner_instance_id,
+            lease_generation=lease_generation,
+        ):
+            raise RuntimeError(f"borrowed task {task.id!r} lost its parent fence")
+
+        started_monotonic = self._monotonic()
+        try:
+            time_limits = self._borrowed_time_limits(task, started_monotonic)
+        except Exception:
+            self._governor.release_borrowed_task(
+                task.id,
+                parent_task_id=parent_task_id,
+                owner_instance_id=owner_instance_id,
+                lease_generation=lease_generation,
+                reason_code="error.runtime_registration",
+            )
+            raise
+        cancel_ev = threading.Event()
+        done_ev = threading.Event()
+        entry = {
+            "event": cancel_ev,
+            "future": None,
+            "session_id": session_id,
+            "context": contextvars.copy_context(),
+            "started_monotonic": started_monotonic,
+            "last_activity_monotonic": started_monotonic,
+            "time_limits": time_limits,
+            "lease_generation": lease_generation,
+            "budget_cancelled": False,
+            "borrowed_parent_task_id": parent_task_id,
+        }
+        with self._lock:
+            self._tasks[task.id] = entry
+            self._done_events[task.id] = done_ev
+
+        from openprogram.agent.run_control import (
+            is_cancelled,
+            reset_current_execution_id,
+            reset_current_session_id,
+            set_current_execution_id,
+            set_current_session_id,
+            claim_cancel_event,
+            unregister_cancel_event,
+        )
+        if not claim_cancel_event(
+            session_id, cancel_ev, execution_id=task.id,
+        ):
+            with self._lock:
+                self._tasks.pop(task.id, None)
+                self._done_events.pop(task.id, None)
+            self._governor.release_borrowed_task(
+                task.id,
+                parent_task_id=parent_task_id,
+                owner_instance_id=owner_instance_id,
+                lease_generation=lease_generation,
+                reason_code="error.cancel_token_conflict",
+            )
+            raise RuntimeError(f"borrowed task {task.id!r} already owns a runtime")
+
+        sid_token = set_current_session_id(session_id)
+        execution_token = set_current_execution_id(task.id)
+        task_token = _current_task_id.set(task.id)
+        claim_token = _borrowed_claim.set(claim)
+        lease_stop = threading.Event()
+        lease_thread = threading.Thread(
+            target=self._renew_borrowed_lease,
+            args=(
+                task.id, parent_task_id, lease_generation, lease_stop,
+            ),
+            daemon=True,
+            name=f"op-task-borrowed-lease-{task.id}",
+        )
+        lease_thread.start()
+        chain_tokens: list = []
+        result = None
+        fatal_exception: BaseException | None = None
+        released = False
+        try:
+            try:
+                updated = _store_update_status(
+                    session_id, task.id, TaskStatus.RUNNING,
+                    started_at=time.time(),
+                )
+                if updated is None:
+                    raise RuntimeError(
+                        f"borrowed task {task.id!r} disappeared"
+                    )
+                _broadcast_task_status(updated)
+                task = updated
+                if not self.record_task_activity(task.id, "operation_start"):
+                    raise RuntimeError(
+                        f"borrowed task {task.id!r} lost its activity fence"
+                    )
+                from openprogram.functions.tools.send_message.send_message.depth import (
+                    set_chain_generations,
+                    set_chain_messages,
+                )
+                chain_tokens = [
+                    set_chain_messages(int(task.chain_messages or 0)),
+                    set_chain_generations(int(task.chain_generations or 0)),
+                ]
+                from openprogram.agent.authority import normalize_authority
+                from openprogram.agent.sub_agent_run import _execute_agent_turn
+                branch_from = (
+                    None if task.context_mode == "clean" else task.parent_msg_id
+                )
+                kwargs = {
+                    "session_id": session_id,
+                    "prompt": task.prompt,
+                    "agent_id": task.agent_id,
+                    "branch_from": branch_from,
+                    "label": task.label,
+                    "spawn_caller": (
+                        task.spawn_caller or task.caller_msg_id
+                        if branch_from is None else None
+                    ),
+                    "advance_head": task.advance_head,
+                }
+                if task.tools_override is not None:
+                    kwargs["tools_override"] = task.tools_override
+                authority = normalize_authority(task)
+                if authority:
+                    kwargs["authority"] = authority
+                result = _execute_agent_turn(**kwargs)
+            except BaseException as exc:  # noqa: BLE001
+                from openprogram.agent.sub_agent_run import AgentTurnResult
+                fatal_exception = exc
+                result = AgentTurnResult(
+                    failed=True, error=f"{type(exc).__name__}: {exc}",
+                )
+            finally:
+                for token in chain_tokens:
+                    try:
+                        token.var.reset(token)
+                    except Exception:
+                        pass
+            assert result is not None
+            self.record_task_activity(task.id, "terminal")
+            cancelled = cancel_ev.is_set() or is_cancelled(session_id)
+            current = _store_load(session_id, task.id) or task
+            if cancelled:
+                status = TaskStatus.CANCELLED
+                reason_code = current.reason_code or "cancel.user"
+            elif result.failed:
+                status = TaskStatus.ERRORED
+                reason_code = _execution_failure_reason(result.error)
+            else:
+                status = TaskStatus.COMPLETED
+                reason_code = "completed"
+            fields = _terminal_fields(
+                status,
+                reason_code,
+                head_id=result.head_id,
+                result_text=result.final_text or "",
+                error=result.error,
+            )
+            terminal: dict[str, Task] = {}
+            released = self._governor.finalize_borrowed_task(
+                task.id,
+                parent_task_id=parent_task_id,
+                owner_instance_id=owner_instance_id,
+                lease_generation=lease_generation,
+                reason_code=reason_code,
+                terminal_fields=fields,
+                mutate=lambda staged_fields: terminal.setdefault(
+                    "task", _store_write_terminal(
+                        session_id, task.id, staged_fields,
+                    ),
+                ),
+            )
+            if not released:
+                raise RuntimeError(
+                    f"borrowed task {task.id!r} lost its parent fence"
+                )
+            updated = terminal.get("task")
+            if updated is not None:
+                _broadcast_task_status(updated)
+                _broadcast_session_reload(
+                    session_id, reason=f"task_{status.value}",
+                )
+        finally:
+            if not released:
+                try:
+                    self._governor.release_borrowed_task(
+                        task.id,
+                        parent_task_id=parent_task_id,
+                        owner_instance_id=owner_instance_id,
+                        lease_generation=lease_generation,
+                        reason_code="error.borrowed_cleanup",
+                    )
+                except Exception:
+                    _log.exception(
+                        "failed to release borrowed task %s", task.id,
+                    )
+            lease_stop.set()
+            lease_thread.join(timeout=1.0)
+            try:
+                from openprogram.agent.run_control import (
+                    unregister_active_runtime,
+                )
+                unregister_active_runtime(session_id, execution_id=task.id)
+            except Exception:
+                pass
+            try:
+                unregister_cancel_event(
+                    session_id, cancel_ev, execution_id=task.id,
+                )
+            except Exception:
+                pass
+            try:
+                reset_current_execution_id(execution_token)
+            except Exception:
+                pass
+            try:
+                reset_current_session_id(sid_token)
+            except Exception:
+                pass
+            try:
+                _borrowed_claim.reset(claim_token)
+            except Exception:
+                pass
+            try:
+                _current_task_id.reset(task_token)
+            except Exception:
+                pass
+            self._wake_done(task.id)
+            with self._lock:
+                self._tasks.pop(task.id, None)
+                self._done_events.pop(task.id, None)
+        if fatal_exception is not None:
+            raise fatal_exception
+
+    def _borrowed_time_limits(
+        self, task: Task, started_monotonic: float,
+    ) -> tuple[float | None, float | None]:
+        """Apply configured child ceilings and ancestors' remaining runtime."""
+        runtime_limit, idle_limit = self._governor.task_time_limits(task.id)
+        current_id = task.parent_task_id
+        seen: set[str] = set()
+        while current_id and current_id not in seen:
+            seen.add(current_id)
+            with self._lock:
+                ancestor = self._tasks.get(current_id)
+                snapshot = dict(ancestor) if ancestor is not None else None
+            if snapshot is not None and snapshot.get("started_monotonic") is not None:
+                ancestor_runtime = snapshot.get("time_limits", (None, None))[0]
+                if ancestor_runtime is not None:
+                    remaining = max(
+                        0.0,
+                        float(ancestor_runtime) - (
+                            started_monotonic - snapshot["started_monotonic"]
+                        ),
+                    )
+                    runtime_limit = (
+                        remaining if runtime_limit is None
+                        else min(float(runtime_limit), remaining)
+                    )
+            current = self.get_task(current_id)
+            current_id = current.parent_task_id if current is not None else None
+        return runtime_limit, idle_limit
+
     def cancel_task(self, task_id: str, *, reason: Optional[str] = None) -> Optional[Task]:
+        return self._cancel_cascade(
+            task_id, reason=reason, root_reason_code="cancel.user",
+        )
+
+    def _cancel_cascade(
+        self,
+        task_id: str,
+        *,
+        reason: Optional[str],
+        root_reason_code: str,
+    ) -> Optional[Task]:
         """Cancel ``task_id`` and every descendant task on its
         ``parent_task_id`` chain (cascading cancel). Returns the
         (post-update) Task entity for ``task_id``, or None if not found.
@@ -402,7 +923,9 @@ class TaskRunner:
                 )
             except Exception:
                 pass
-        return self._cancel_single(task_id, reason=reason, reason_code="cancel.user")
+        return self._cancel_single(
+            task_id, reason=reason, reason_code=root_reason_code,
+        )
 
     def _descendant_tasks(self, root_task_id: str) -> list[Task]:
         """All tasks reachable from ``root_task_id`` via parent_task_id,
@@ -491,6 +1014,29 @@ class TaskRunner:
                     _broadcast_task_status(updated)
                     self._wake_done(task_id)
                 return updated
+        cur_task = _store_load(session_id, task_id)
+        if cur_task is None:
+            return None
+        if cur_task.status in (TaskStatus.PENDING, TaskStatus.QUEUED):
+            if info is not None:
+                info["event"].set()
+            self._governor.request_stop(task_id, reason_code)
+            try:
+                updated = _store_update_status(
+                    session_id, task_id, TaskStatus.CANCELLED,
+                    cancel_requested_at=time.time(),
+                    error=reason or "cancelled before pickup",
+                    reason_code=reason_code,
+                )
+            except ValueError:
+                updated = _store_load(session_id, task_id)
+            if updated is not None:
+                _broadcast_task_status(updated)
+                self._wake_done(task_id)
+                self._update_attach_card(updated)
+                _broadcast_session_reload(session_id, reason="task_cancelled")
+            self._dispatch_wake.set()
+            return updated
         # Bridge to existing session-level cancel infra so the LLM
         # stream + bash subprocess + agent_loop pre-invocation hook
         # all see the signal.
@@ -499,8 +1045,10 @@ class TaskRunner:
                 kill_active_runtime,
                 mark_cancelled,
             )
-            mark_cancelled(session_id)
-            kill_active_runtime(session_id)
+            mark_cancelled(session_id, execution_id=task_id)
+            kill_active_runtime(session_id, execution_id=task_id)
+            from openprogram.agent.process_runner import kill_active_subprocess
+            kill_active_subprocess(session_id, execution_id=task_id)
         except Exception:
             pass
         if info is not None:
@@ -509,25 +1057,9 @@ class TaskRunner:
         # Status-side: if still pending/queued, flip terminal now.
         # If running, leave terminal flip to the worker (or the
         # watchdog).
-        cur_task = _store_load(session_id, task_id)
-        if cur_task is None:
-            return None
         self._governor.request_stop(task_id, reason_code)
         try:
-            if cur_task.status in (TaskStatus.PENDING, TaskStatus.QUEUED):
-                updated = _store_update_status(
-                    session_id, task_id, TaskStatus.CANCELLED,
-                    cancel_requested_at=time.time(),
-                    error=reason or "cancelled before pickup",
-                    reason_code=reason_code,
-                )
-                if updated is not None:
-                    _broadcast_task_status(updated)
-                    self._wake_done(task_id)
-                    self._update_attach_card(updated)
-                    _broadcast_session_reload(session_id, reason="task_cancelled")
-                return updated
-            elif cur_task.status == TaskStatus.RUNNING:
+            if cur_task.status == TaskStatus.RUNNING:
                 # Stamp request time but stay in running. Worker will
                 # detect cancel and self-flip.
                 #
@@ -546,9 +1078,14 @@ class TaskRunner:
                 _store_update_status(
                     session_id, task_id, TaskStatus.RUNNING,
                     cancel_requested_at=time.time(),
+                    reason_code=reason_code,
                 )
                 # Watchdog: force cancel if worker doesn't honour signal.
-                self._schedule_force_cancel(session_id, task_id)
+                lease_generation = info.get("lease_generation") if info else None
+                if lease_generation is not None:
+                    self._schedule_force_cancel(
+                        session_id, task_id, lease_generation,
+                    )
                 return _store_load(session_id, task_id) or cur_task
         except ValueError:
             # The worker moved the task on while we were stamping —
@@ -561,6 +1098,21 @@ class TaskRunner:
         if not sid:
             return None
         return _store_load(sid, task_id)
+
+    def get_task_resource_view(self, task_id: str):
+        """Return the canonical resource DTO for one persisted Task."""
+        task = self.get_task(task_id)
+        if task is None:
+            return None
+        from openprogram.agent.resource_governance import build_task_resource_view
+
+        return build_task_resource_view(
+            task,
+            ledger=self._governor.ledger,
+            resolved=self._governor._limit_resolver(
+                task.parent_session_id, task,
+            ),
+        )
 
     def list_tasks(
         self,
@@ -611,8 +1163,190 @@ class TaskRunner:
         done.wait(timeout=timeout)
         return self.get_task(task_id)
 
+    def await_task_durable(
+        self,
+        task_id: str,
+        *,
+        timeout: Optional[float] = None,
+        on_poll: Callable[[], None] | None = None,
+    ) -> Optional[Task]:
+        """Wait on TaskStore state that another worker process can update."""
+        deadline = time.monotonic() + timeout if timeout is not None else None
+        while True:
+            task = self.get_task(task_id)
+            if task is None or is_terminal(task.status):
+                return task
+            if deadline is not None and time.monotonic() >= deadline:
+                return task
+            if on_poll is not None:
+                on_poll()
+            time.sleep(0.05)
+
+    def retire_external_waiter(self, task_id: str) -> None:
+        """Drop local wait state after another process completed the task."""
+        with self._lock:
+            entry = self._tasks.get(task_id)
+            if entry is None or entry.get("future") is not None:
+                return
+            self._tasks.pop(task_id, None)
+            self._done_events.pop(task_id, None)
+
+    @contextmanager
+    def claim_only(self, task_id: str):
+        """Temporarily restrict this runner to one direct synchronous task."""
+        with self._claim_scope_lock:
+            if self._claim_only_task_id is not None:
+                raise RuntimeError("a direct claim scope is already active")
+            self._claim_only_task_id = task_id
+            self._dispatch_wake.set()
+            try:
+                yield
+            finally:
+                self._claim_only_task_id = None
+                self._dispatch_wake.set()
+
+    def record_task_activity(self, task_id: str, activity_kind: str) -> bool:
+        with self._lock:
+            entry = self._tasks.get(task_id)
+            lease_generation = (
+                entry.get("lease_generation") if entry is not None else None
+            )
+        if lease_generation is None:
+            return False
+        recorded = self._governor.record_activity(
+            task_id,
+            owner_instance_id=self._instance_id,
+            lease_generation=lease_generation,
+            activity_kind=activity_kind,
+        )
+        if not recorded:
+            return False
+        lineage = [task_id]
+        current = self.get_task(task_id)
+        seen = {task_id}
+        while current is not None and current.parent_task_id:
+            parent_id = current.parent_task_id
+            if parent_id in seen:
+                break
+            seen.add(parent_id)
+            lineage.append(parent_id)
+            current = self.get_task(parent_id)
+        now = self._monotonic()
+        with self._lock:
+            for lineage_task_id in lineage:
+                entry = self._tasks.get(lineage_task_id)
+                if entry is not None and entry.get("started_monotonic") is not None:
+                    entry["last_activity_monotonic"] = now
+        return True
+
+    def _finalize_task_status(
+        self,
+        session_id: str,
+        task_id: str,
+        lease_generation: int,
+        status: TaskStatus,
+        reason_code: str,
+        **fields: Any,
+    ) -> Optional[Task]:
+        terminal: dict[str, Task] = {}
+        terminal_fields = _terminal_fields(
+            status,
+            reason_code,
+            head_id=fields.get("head_id"),
+            result_text=fields.get("result_text"),
+            error=fields.get("error"),
+        )
+        try:
+            self._governor.finalize_task(
+                task_id, reason_code,
+                owner_instance_id=self._instance_id,
+                lease_generation=lease_generation,
+                terminal_fields=terminal_fields,
+                mutate=lambda staged_fields: terminal.setdefault(
+                    "task", _store_write_terminal(
+                        session_id, task_id, staged_fields,
+                    ),
+                ),
+            )
+        except ValueError:
+            return None
+        return terminal.get("task")
+
+    def bounded_operation_timeout(
+        self,
+        task_id: str,
+        declared_timeout: float | None,
+        *,
+        preemptibility: str = "async",
+    ) -> float | None:
+        if declared_timeout is not None and declared_timeout <= 0:
+            raise ValueError("declared timeout must be positive")
+        with self._lock:
+            entry = self._tasks.get(task_id)
+            snapshot = dict(entry) if entry is not None else None
+        if snapshot is not None and snapshot.get("time_limits") is not None:
+            runtime_limit, idle_limit = snapshot["time_limits"]
+        else:
+            runtime_limit, idle_limit = self._governor.task_time_limits(task_id)
+        strict = runtime_limit is not None or idle_limit is not None
+        if strict and preemptibility not in {"async", "process"}:
+            raise NonPreemptibleOperation(
+                "error.nonpreemptible_operation: strict time-budget task "
+                "cannot start an operation without a guaranteed stop boundary",
+            )
+        bounds = [] if declared_timeout is None else [float(declared_timeout)]
+        if snapshot is not None and snapshot.get("started_monotonic") is not None:
+            now = self._monotonic()
+            if runtime_limit is not None:
+                bounds.append(max(
+                    0.0, float(runtime_limit) - (
+                        now - snapshot["started_monotonic"]
+                    ),
+                ))
+            if idle_limit is not None:
+                bounds.append(max(
+                    0.0, float(idle_limit) - (
+                        now - snapshot["last_activity_monotonic"]
+                    ),
+                ))
+        if strict and not bounds:
+            raise NonPreemptibleOperation(
+                "strict time-budget task requires a live bounded operation",
+            )
+        return min(bounds) if bounds else None
+
+    def operation_timeout_reason(
+        self, task_id: str, declared_timeout: float | None,
+    ) -> str | None:
+        with self._lock:
+            entry = self._tasks.get(task_id)
+            snapshot = dict(entry) if entry is not None else None
+        if snapshot is None or snapshot.get("started_monotonic") is None:
+            return None
+        runtime_limit, idle_limit = snapshot.get("time_limits", (None, None))
+        now = self._monotonic()
+        candidates: list[tuple[float, str]] = []
+        if declared_timeout is not None:
+            candidates.append((float(declared_timeout), "error.operation_timeout"))
+        if runtime_limit is not None:
+            candidates.append((max(
+                0.0,
+                float(runtime_limit) - (now - snapshot["started_monotonic"]),
+            ), "budget.runtime_exhausted"))
+        if idle_limit is not None:
+            candidates.append((max(
+                0.0,
+                float(idle_limit) - (now - snapshot["last_activity_monotonic"]),
+            ), "budget.idle_exhausted"))
+        return min(candidates, default=(0.0, None), key=lambda item: item[0])[1]
+
     def shutdown(self, wait: bool = True) -> None:
         """Tear down the pool. Used in tests / process shutdown."""
+        self._shutdown_event.set()
+        self._dispatch_wake.set()
+        self._dispatcher_thread.join(timeout=1.0)
+        self._reconciler_thread.join(timeout=1.0)
+        self._budget_thread.join(timeout=1.0)
         try:
             self._pool.shutdown(wait=wait, cancel_futures=True)
         except TypeError:
@@ -621,8 +1355,174 @@ class TaskRunner:
 
     # Worker body
 
-    def _run_one(self, task_id: str, cancel_ev: threading.Event,
-                 done_ev: threading.Event) -> None:
+    def _dispatch_loop(self) -> None:
+        """Submit only durably claimed tasks to the executor."""
+        while not self._shutdown_event.is_set():
+            self._dispatch_wake.wait(0.5)
+            self._dispatch_wake.clear()
+            blocked_sessions: set[str] = set()
+            while not self._shutdown_event.is_set():
+                if not self._executor_slots.acquire(blocking=False):
+                    break
+                try:
+                    claim = self._governor.claim_next(
+                        owner_instance_id=self._instance_id,
+                        excluded_sessions=blocked_sessions,
+                        only_task_id=self._claim_only_task_id,
+                    )
+                except Exception:
+                    self._executor_slots.release()
+                    _log.exception("failed to claim next durable task")
+                    break
+                if claim is None:
+                    self._executor_slots.release()
+                    break
+                time_limits = self._governor.task_time_limits(claim.task_id)
+                claimed_monotonic = self._monotonic()
+                with self._lock:
+                    entry = self._tasks.get(claim.task_id)
+                    if entry is None:
+                        cancel_ev = threading.Event()
+                        done_ev = self._done_events.setdefault(
+                            claim.task_id, threading.Event(),
+                        )
+                        entry = {
+                            "event": cancel_ev,
+                            "future": None,
+                            "session_id": claim.session_id,
+                            "context": contextvars.copy_context(),
+                        }
+                        self._tasks[claim.task_id] = entry
+                    else:
+                        cancel_ev = entry["event"]
+                        done_ev = self._done_events[claim.task_id]
+                    ctx = entry["context"]
+                from openprogram.agent.run_control import claim_cancel_event
+                if not claim_cancel_event(
+                    claim.session_id, cancel_ev, execution_id=claim.task_id,
+                ):
+                    requeued = self._governor.requeue_task(
+                        claim.task_id,
+                        owner_instance_id=self._instance_id,
+                        lease_generation=claim.lease_generation,
+                    )
+                    if not requeued:
+                        terminal: dict[str, Task | None] = {}
+                        current = _store_load(claim.session_id, claim.task_id)
+                        reason_code = (
+                            current.reason_code if current is not None else None
+                        ) or "cancel.concurrent"
+                        terminal_fields = _terminal_fields(
+                            TaskStatus.CANCELLED,
+                            reason_code,
+                            error="cancelled before execution",
+                        )
+
+                        def cancel_store(staged_fields: dict[str, Any]) -> None:
+                            current = _store_load(claim.session_id, claim.task_id)
+                            if current is not None and not is_terminal(current.status):
+                                try:
+                                    current = _store_write_terminal(
+                                        claim.session_id, claim.task_id,
+                                        staged_fields,
+                                    )
+                                except ValueError:
+                                    current = _store_load(
+                                        claim.session_id, claim.task_id,
+                                    )
+                            terminal["task"] = current
+
+                        try:
+                            finalized = self._governor.finalize_stopping_task(
+                                claim.task_id,
+                                owner_instance_id=self._instance_id,
+                                lease_generation=claim.lease_generation,
+                                reason_code=reason_code,
+                                terminal_fields=terminal_fields,
+                                mutate=cancel_store,
+                            )
+                        except Exception:
+                            finalized = False
+                            _log.exception(
+                                "failed to finalize stopping task %s",
+                                claim.task_id,
+                            )
+                            try:
+                                self._governor.abandon_stopping_task(
+                                    claim.task_id,
+                                    owner_instance_id=self._instance_id,
+                                    lease_generation=claim.lease_generation,
+                                )
+                            except Exception:
+                                _log.exception(
+                                    "failed to abandon stopping task %s",
+                                    claim.task_id,
+                                )
+                        if finalized:
+                            current = terminal.get("task")
+                            if current is not None:
+                                _broadcast_task_status(current)
+                            self._wake_done(claim.task_id)
+                            with self._lock:
+                                self._tasks.pop(claim.task_id, None)
+                                self._done_events.pop(claim.task_id, None)
+                    blocked_sessions.add(claim.session_id)
+                    self._executor_slots.release()
+                    continue
+                with self._lock:
+                    entry["started_monotonic"] = claimed_monotonic
+                    entry["last_activity_monotonic"] = claimed_monotonic
+                    entry["time_limits"] = time_limits
+                    entry["lease_generation"] = claim.lease_generation
+                    entry["budget_cancelled"] = False
+                try:
+                    future: Future = self._pool.submit(
+                        ctx.run, self._run_one, claim.task_id, claim.session_id,
+                        cancel_ev, done_ev, claim.lease_generation,
+                    )
+                except Exception:
+                    from openprogram.agent.run_control import unregister_cancel_event
+                    unregister_cancel_event(
+                        claim.session_id, cancel_ev, execution_id=claim.task_id,
+                    )
+                    self._executor_slots.release()
+                    updated = None
+                    try:
+                        updated = self._finalize_task_status(
+                            claim.session_id,
+                            claim.task_id,
+                            claim.lease_generation,
+                            TaskStatus.ERRORED,
+                            "error.dispatch_failed",
+                            error="executor submission failed",
+                        )
+                    except Exception:
+                        _log.exception(
+                            "failed to durably finalize undispatched task %s",
+                            claim.task_id,
+                        )
+                    if updated is None:
+                        current = _store_load(claim.session_id, claim.task_id)
+                        if current is not None and is_terminal(current.status):
+                            updated = current
+                    if updated is not None:
+                        _broadcast_task_status(updated)
+                        self._wake_done(claim.task_id)
+                        with self._lock:
+                            self._tasks.pop(claim.task_id, None)
+                            self._done_events.pop(claim.task_id, None)
+                    self._dispatch_wake.set()
+                    _log.exception("failed to submit claimed task %s", claim.task_id)
+                    continue
+                with self._lock:
+                    if self._tasks.get(claim.task_id) is entry:
+                        entry["future"] = future
+
+    def _run_one(
+        self, task_id: str, claimed_session_id: str,
+        cancel_ev: threading.Event, done_ev: threading.Event,
+        lease_generation: int,
+    ) -> None:
         """Worker thread entry point.
 
         Wraps :func:`run_agent_turn` so the same code that handles the
@@ -640,37 +1540,39 @@ class TaskRunner:
         # point forward.
         task = self._lookup_or_load(task_id)
         if task is None:
+            from openprogram.agent.run_control import unregister_cancel_event
+            unregister_cancel_event(
+                claimed_session_id, cancel_ev, execution_id=task_id,
+            )
+            self._governor.release_task(
+                task_id, "error.task_missing",
+                owner_instance_id=self._instance_id,
+                lease_generation=lease_generation,
+            )
+            self._executor_slots.release()
+            self._dispatch_wake.set()
             done_ev.set()
+            with self._lock:
+                self._tasks.pop(task_id, None)
+                self._done_events.pop(task_id, None)
             return
         session_id = task.parent_session_id
-        while not self._governor.try_start(
-            task_id, owner_instance_id=self._instance_id,
-        ):
-            current = _store_load(session_id, task_id)
-            if cancel_ev.is_set() or current is None or is_terminal(current.status):
-                self._governor.release_task(
-                    task_id, current.reason_code if current is not None else None,
-                )
-                done_ev.set()
-                return
-            time.sleep(0.05)
 
         # Bind the session id ContextVar for the cancel hook. Same
         # contract _execute_in_context honours in the webui worker.
         from openprogram.agent.run_control import (
-            register_cancel_event,
+            reset_current_execution_id,
             unregister_cancel_event,
+            set_current_execution_id,
             set_current_session_id,
             reset_current_session_id,
         )
         sid_token = set_current_session_id(session_id)
+        execution_token = set_current_execution_id(task_id)
         # Bind the running task id so spawns made inside this child turn
         # record parent_task_id (cascading cancel walks that chain).
         _task_id_token = _current_task_id.set(task_id)
-        # Opens this turn's token; the previous turn's is retired by the
-        # same call, so a stop fired against it cannot reach us.
-        register_cancel_event(session_id, cancel_ev)
-
+        _runner_token = _current_task_runner.set(self)
         # If this task is bound to an agent worktree, bind the
         # _current_worktree_path ContextVar so bash / edit / write /
         # read use it as default cwd. Reset is handled in the finally
@@ -689,7 +1591,7 @@ class TaskRunner:
         lease_stop = threading.Event()
         lease_thread = threading.Thread(
             target=self._renew_task_lease,
-            args=(task_id, lease_stop),
+            args=(task_id, lease_generation, lease_stop),
             daemon=True,
             name=f"op-task-lease-{task_id}",
         )
@@ -712,10 +1614,10 @@ class TaskRunner:
                 return
             if cancel_ev.is_set():
                 # Cancel arrived between queue + pickup.
-                updated = _store_update_status(
-                    session_id, task_id, TaskStatus.CANCELLED,
+                updated = self._finalize_task_status(
+                    session_id, task_id, lease_generation,
+                    TaskStatus.CANCELLED, "cancel.user",
                     error="cancelled before run",
-                    reason_code="cancel.user",
                 )
                 if updated is not None:
                     _broadcast_task_status(updated)
@@ -736,9 +1638,7 @@ class TaskRunner:
                 )
                 progress_thread.start()
             try:
-                from openprogram.agent.sub_agent_run import (
-                    run_agent_turn,
-                )
+                from openprogram.agent.sub_agent_run import _execute_agent_turn
                 # Resolve parent for inherit-mode: walk through to the
                 # parent_msg_id supplied at spawn time.
                 branch_from: Optional[str]
@@ -774,30 +1674,32 @@ class TaskRunner:
                         # clean mode = new branch → its root's caller = the
                         # spawning node, so it's an explicit spawn (not
                         # seq-stitched into a sibling). dag/overview.md §2.3.
-                        spawn_caller=task.caller_msg_id if branch_from is None else None,
+                        spawn_caller=(
+                            task.spawn_caller or task.caller_msg_id
+                            if branch_from is None else None
+                        ),
                         # Same-session spawn: never steal the head.
-                        advance_head=False,
+                        advance_head=task.advance_head,
                     )
+                    if task.tools_override is not None:
+                        _turn_kwargs["tools_override"] = task.tools_override
                     _task_authority = normalize_authority(task)
                     if _task_authority:
                         _turn_kwargs["authority"] = _task_authority
-                    result = run_agent_turn(**_turn_kwargs)
+                    result = _execute_agent_turn(**_turn_kwargs)
                 finally:
                     for _tok in _chain_tokens:
                         try:
                             _tok.var.reset(_tok)
                         except Exception:
                             pass
-            except Exception as exc:  # noqa: BLE001
+            except BaseException as exc:  # noqa: BLE001
                 err = f"{type(exc).__name__}: {exc}"
-                try:
-                    updated = _store_update_status(
-                        session_id, task_id, TaskStatus.ERRORED,
-                        error=err,
-                        reason_code="error.execution",
-                    )
-                except ValueError:
-                    updated = _store_load(session_id, task_id)
+                reason_code = _execution_failure_reason(err)
+                updated = self._finalize_task_status(
+                    session_id, task_id, lease_generation,
+                    TaskStatus.ERRORED, reason_code, error=err,
+                )
                 if updated is not None:
                     _broadcast_task_status(updated)
                     self._update_attach_card(updated, error_text=err)
@@ -812,6 +1714,7 @@ class TaskRunner:
                         pass
 
             # Decide terminal status.
+            self.record_task_activity(task_id, "terminal")
             cancelled = cancel_ev.is_set() or (
                 result.error and "stopped" in (result.error or "").lower()
             )
@@ -821,21 +1724,20 @@ class TaskRunner:
                 new_status = TaskStatus.ERRORED
             else:
                 new_status = TaskStatus.COMPLETED
-            try:
-                updated = _store_update_status(
-                    session_id, task_id, new_status,
-                    head_id=result.head_id,
-                    result_text=result.final_text or "",
-                    error=result.error,
-                    reason_code=(
-                        "cancel.user" if new_status == TaskStatus.CANCELLED
-                        else "error.execution" if new_status == TaskStatus.ERRORED
-                        else "completed"
-                    ),
-                )
-            except ValueError:
-                # State already moved (e.g. force-cancel watchdog).
-                updated = _store_load(session_id, task_id)
+            current_reason = (_store_load(session_id, task_id) or task).reason_code
+            reason_code = (
+                (current_reason or "cancel.user")
+                if new_status == TaskStatus.CANCELLED
+                else _execution_failure_reason(result.error)
+                if new_status == TaskStatus.ERRORED
+                else "completed"
+            )
+            updated = self._finalize_task_status(
+                session_id, task_id, lease_generation, new_status, reason_code,
+                head_id=result.head_id,
+                result_text=result.final_text or "",
+                error=result.error,
+            )
             if updated is not None:
                 _broadcast_task_status(updated)
                 self._update_attach_card(updated)
@@ -859,6 +1761,19 @@ class TaskRunner:
             # Tell tail clients the session changed so attach card
             # picks up the new head / text.
             _broadcast_session_reload(session_id, reason=f"task_{new_status.value}")
+        except BaseException as exc:  # noqa: BLE001
+            err = f"{type(exc).__name__}: {exc}"
+            try:
+                updated = self._finalize_task_status(
+                    session_id, task_id, lease_generation,
+                    TaskStatus.ERRORED, "error.execution", error=err,
+                )
+                if updated is not None:
+                    _broadcast_task_status(updated)
+            except BaseException:
+                # finalize_task stages a durable intent before the task-store
+                # write. Reconcile completes it once persistence recovers.
+                _log.exception("failed to persist terminal task %s", task_id)
         finally:
             lease_stop.set()
             lease_thread.join(timeout=1.0)
@@ -866,7 +1781,13 @@ class TaskRunner:
                 # Pass our Event: if a newer turn (e.g. a chat turn the
                 # user started while this task ran) has re-registered,
                 # its token must survive our teardown or its Stop dies.
-                unregister_cancel_event(session_id, cancel_ev)
+                unregister_cancel_event(
+                    session_id, cancel_ev, execution_id=task_id,
+                )
+            except Exception:
+                pass
+            try:
+                reset_current_execution_id(execution_token)
             except Exception:
                 pass
             try:
@@ -875,6 +1796,10 @@ class TaskRunner:
                 pass
             try:
                 _current_task_id.reset(_task_id_token)
+            except Exception:
+                pass
+            try:
+                _current_task_runner.reset(_runner_token)
             except Exception:
                 pass
             if _wt_token is not None:
@@ -907,8 +1832,14 @@ class TaskRunner:
                 pass
             try:
                 cur = _store_load(session_id, task_id)
+                if cur is None or not is_terminal(cur.status):
+                    cur = None
+                if cur is None:
+                    raise RuntimeError("task terminal state was not persisted")
                 self._governor.release_task(
                     task_id, cur.reason_code if cur is not None else None,
+                    owner_instance_id=self._instance_id,
+                    lease_generation=lease_generation,
                 )
             except Exception:
                 _log.exception("failed to release resource admission for %s", task_id)
@@ -921,19 +1852,224 @@ class TaskRunner:
                 # is set by _wake_done above; anyone arriving later sees
                 # the task is terminal and returns without waiting.
                 self._done_events.pop(task_id, None)
+            self._executor_slots.release()
+            self._dispatch_wake.set()
 
     # Internals
 
-    def _renew_task_lease(self, task_id: str, stop: threading.Event) -> None:
+    def _renew_task_lease(
+        self, task_id: str, lease_generation: int, stop: threading.Event,
+    ) -> None:
         while not stop.wait(_LEASE_RENEW_SECS):
             try:
                 if not self._governor.renew_lease(
                     task_id, owner_instance_id=self._instance_id,
+                    lease_generation=lease_generation,
                 ):
                     return
             except Exception:
                 _log.exception("failed to renew resource lease for %s", task_id)
                 return
+
+    def _renew_borrowed_lease(
+        self,
+        task_id: str,
+        parent_task_id: str,
+        lease_generation: int,
+        stop: threading.Event,
+    ) -> None:
+        while not stop.wait(_LEASE_RENEW_SECS):
+            try:
+                if not self._governor.renew_borrowed_lease(
+                    task_id,
+                    parent_task_id=parent_task_id,
+                    owner_instance_id=self._instance_id,
+                    lease_generation=lease_generation,
+                ):
+                    return
+            except Exception:
+                _log.exception(
+                    "failed to renew borrowed resource lease for %s", task_id,
+                )
+                return
+
+    def _owner_holds_worker_lock(self, owner_instance_id: str) -> bool:
+        try:
+            owner_pid = int(owner_instance_id.split("_", 2)[1])
+        except (IndexError, ValueError):
+            return False
+        try:
+            from openprogram.worker.lock import is_held_by
+            return is_held_by(owner_pid)
+        except Exception:
+            return False
+
+    @staticmethod
+    def _mark_worker_lost(session_id: str, task_id: str) -> None:
+        task = _store_load(session_id, task_id)
+        if task is None or is_terminal(task.status):
+            return
+        try:
+            _store_update_status(
+                session_id, task_id, TaskStatus.ERRORED,
+                error="worker died before completion",
+                reason_code="error.worker_lost",
+            )
+        except ValueError:
+            return
+
+    def _reconcile_resources(self) -> None:
+        try:
+            result = self._governor.reconcile(
+                task_lookup=lambda session_id, task_id: _store_load(
+                    session_id, task_id,
+                ),
+                write_terminal=_store_write_terminal,
+                mark_worker_lost=self._mark_worker_lost,
+                owner_is_alive=self._owner_holds_worker_lock,
+            )
+        except Exception:
+            _log.exception("failed to reconcile durable task resources")
+            return
+        for task_id, session_id in result.completed_pending:
+            task = _store_load(session_id, task_id)
+            if task is not None and is_terminal(task.status):
+                _broadcast_task_status(task, self)
+                _broadcast_session_reload(
+                    session_id, reason=f"task_{task.status.value}",
+                )
+        try:
+            self._governor.recover_provider_reservations()
+        except Exception:
+            _log.exception("failed to reconcile provider reservations")
+        try:
+            orphaned_borrowed = self._governor.release_orphaned_borrowed_tasks()
+        except Exception:
+            _log.exception("failed to reconcile borrowed task resources")
+            orphaned_borrowed = []
+        for task_id, session_id in orphaned_borrowed:
+            task = _store_load(session_id, task_id)
+            if task is None or is_terminal(task.status):
+                continue
+            try:
+                _store_update_status(
+                    session_id, task_id, TaskStatus.ERRORED,
+                    error="borrowed parent claim was lost",
+                    reason_code="error.borrowed_parent_lost",
+                )
+            except ValueError:
+                pass
+        self._recover_deferred_resumes()
+        self._recover_deferred_inboxes()
+        if (
+            result.finalized_preparing
+            or result.released_missing
+            or result.released_worker_lost
+        ):
+            self._dispatch_wake.set()
+
+    def _recover_deferred_resumes(self) -> None:
+        """Publish a staged resume if the Task target save was durable."""
+        try:
+            pending = self._governor.pending_deferred_resumes()
+        except Exception:
+            _log.exception("failed to list staged deferred resumes")
+            return
+        for task_id, session_id, admission_id, parent_msg_id in pending:
+            task = _store_load(session_id, task_id)
+            if task is None:
+                continue
+            try:
+                if task.parent_msg_id == parent_msg_id:
+                    self._governor.mark_dispatch_ready(
+                        task_id,
+                        admission_id=admission_id,
+                        parent_msg_id=parent_msg_id,
+                    )
+                else:
+                    self._governor.reset_deferred_resume(
+                        task_id,
+                        admission_id=admission_id,
+                        parent_msg_id=parent_msg_id,
+                    )
+            except Exception:
+                _log.exception(
+                    "failed to recover deferred resume for task %s", task_id,
+                )
+
+    def _recover_deferred_inboxes(self) -> None:
+        """Recreate inbox entries lost after a durable deferred admission."""
+        try:
+            deferred = self._governor.deferred_dispatches()
+        except Exception:
+            _log.exception("failed to list deferred task admissions")
+            return
+        from openprogram.agent import inbox
+        for task_id, session_id in deferred:
+            task = _store_load(session_id, task_id)
+            intent = task.deferred_inbox if task is not None else None
+            if not isinstance(intent, dict):
+                self._governor.request_stop(
+                    task_id, "error.deferred_inbox_intent_missing",
+                )
+                if task is not None and not is_terminal(task.status):
+                    try:
+                        _store_update_status(
+                            session_id, task_id, TaskStatus.ERRORED,
+                            error="deferred inbox intent missing",
+                            reason_code="error.deferred_inbox_intent_missing",
+                        )
+                    except Exception:
+                        pass
+                continue
+            try:
+                inbox.enqueue(session_id, **intent)
+            except Exception:
+                _log.exception(
+                    "failed to recover deferred inbox for task %s", task_id,
+                )
+
+    def _reconcile_loop(self) -> None:
+        while not self._shutdown_event.wait(_RECONCILE_SECS):
+            self._reconcile_resources()
+
+    def _budget_loop(self) -> None:
+        while not self._shutdown_event.wait(self._budget_poll_seconds):
+            now = self._monotonic()
+            expired: list[tuple[str, str]] = []
+            with self._lock:
+                for task_id, entry in self._tasks.items():
+                    started = entry.get("started_monotonic")
+                    if started is None or entry.get("budget_cancelled"):
+                        continue
+                    runtime_limit, idle_limit = entry.get(
+                        "time_limits", (None, None),
+                    )
+                    reason_code = None
+                    if (
+                        runtime_limit is not None
+                        and now - started >= float(runtime_limit)
+                    ):
+                        reason_code = "budget.runtime_exhausted"
+                    elif (
+                        idle_limit is not None
+                        and now - entry["last_activity_monotonic"] >= float(idle_limit)
+                    ):
+                        reason_code = "budget.idle_exhausted"
+                    if reason_code is not None:
+                        entry["budget_cancelled"] = True
+                        expired.append((task_id, reason_code))
+            for task_id, reason_code in expired:
+                try:
+                    self._cancel_cascade(
+                        task_id,
+                        reason=reason_code.replace(".", " "),
+                        root_reason_code=reason_code,
+                    )
+                except Exception:
+                    _log.exception(
+                        "failed to cancel task %s after budget expiry", task_id,
+                    )
 
     def _wake_done(self, task_id: str) -> None:
         with self._lock:
@@ -1040,6 +2176,7 @@ class TaskRunner:
                     continue
                 shim.update(task.attach_pointer_id, output=preview)
                 last_patched_id = latest.id
+                self.record_task_activity(task.id, "child_progress")
                 try:
                     _broadcast_session_reload(
                         task.parent_session_id, reason="task_progress",
@@ -1328,26 +2465,20 @@ class TaskRunner:
 
         threading.Thread(target=_serial, daemon=True).start()
 
-    def _schedule_force_cancel(self, session_id: str, task_id: str) -> None:
-        """Watchdog: if the worker doesn't honour cancel within
-        ``_CANCEL_TIMEOUT_SECS``, force the entity to terminal."""
+    def _schedule_force_cancel(
+        self, session_id: str, task_id: str, lease_generation: int,
+    ) -> None:
+        """Report slow cancellation without releasing a live worker claim."""
         def _watch():
             time.sleep(_CANCEL_TIMEOUT_SECS)
             cur = _store_load(session_id, task_id)
             if cur is None or is_terminal(cur.status):
                 return
-            try:
-                updated = _store_update_status(
-                    session_id, task_id, TaskStatus.CANCELLED,
-                    error="cancel timed out; worker may still be running",
-                )
-            except ValueError:
-                updated = None
-            if updated is not None:
-                _broadcast_task_status(updated)
-                self._wake_done(task_id)
-                self._update_attach_card(updated)
-                _broadcast_session_reload(session_id, reason="task_cancel_timeout")
+            _log.warning(
+                "task %s cancellation exceeded %.1fs; retaining live claim "
+                "for lease generation %s",
+                task_id, _CANCEL_TIMEOUT_SECS, lease_generation,
+            )
         threading.Thread(target=_watch, daemon=True).start()
 
 
@@ -1379,6 +2510,7 @@ def shutdown_runner() -> None:
 
 
 __all__ = [
+    "NonPreemptibleOperation",
     "TaskRunner",
     "get_runner",
     "shutdown_runner",

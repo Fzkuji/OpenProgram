@@ -59,6 +59,7 @@ def _build_model_from_row(row: dict, provider_id: str, endpoints: dict) -> Model
             "output": float(data.get("output_cost", 0) or 0),
             "cache_read": float(data.get("cache_read_cost", 0) or 0),
             "cache_write": float(data.get("cache_write_cost", 0) or 0),
+            "source": "model_catalog",
         }
     if not data.get("api"):
         data["api"] = ep.get("api", "openai-completions")
@@ -186,10 +187,13 @@ def register_model_from_config(provider: str, model_id: str) -> bool:
     # Cost is optional — only stamp the fields the row actually has,
     # default 0.0 for missing keys so ModelCost validates.
     cost = ModelCost(
-        input=float(raw.get("input_cost", 0) or 0),
-        output=float(raw.get("output_cost", 0) or 0),
-        cache_read=float(raw.get("cache_read_cost", 0) or 0),
-        cache_write=float(raw.get("cache_write_cost", 0) or 0),
+        input=float(raw.get("input_cost", 0) or 0) if "input_cost" in raw else None,
+        output=float(raw.get("output_cost", 0) or 0) if "output_cost" in raw else None,
+        cache_read=float(raw.get("cache_read_cost", 0) or 0) if "cache_read_cost" in raw else None,
+        cache_write=float(raw.get("cache_write_cost", 0) or 0) if "cache_write_cost" in raw else None,
+        source="configured" if all(
+            name in raw for name in ("input_cost", "output_cost", "cache_read_cost", "cache_write_cost")
+        ) else "unknown",
     )
     # Resolve through ``storage._resolve_base_url`` (user config → static
     # registry → models.dev) so the row gets the SAME normalised base the

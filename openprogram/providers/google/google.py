@@ -219,7 +219,10 @@ async def stream_simple(
     # ``OPENPROGRAM_GOOGLE_MAX_RETRIES``.
     from google.genai.types import HttpOptions, HttpRetryOptions
     import os as _os
-    sdk_attempts = int(_os.environ.get("OPENPROGRAM_GOOGLE_MAX_RETRIES", "3"))
+    from ..budget import provider_retry_attempts
+    sdk_attempts = provider_retry_attempts(
+        int(_os.environ.get("OPENPROGRAM_GOOGLE_MAX_RETRIES", "3")),
+    )
     http_options = HttpOptions(
         retry_options=HttpRetryOptions(
             attempts=sdk_attempts,

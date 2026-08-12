@@ -685,6 +685,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_ss_exp.add_argument("--output", default=None,
         help="Write here instead of ./<session-id>.<format>")
 
+    # ---- tasks ------------------------------------------------------------
+    p_tasks = sub.add_parser(
+        "tasks", help="Inspect canonical resource state for background tasks",
+    )
+    tasks_sub = p_tasks.add_subparsers(dest="tasks_verb", metavar="verb")
+    p_tasks_list = tasks_sub.add_parser("list", help="List task resource DTOs")
+    p_tasks_list.add_argument(
+        "--session", dest="session_id", default=None,
+        help="Restrict tasks to one session id",
+    )
+    p_tasks_list.add_argument("--json", action="store_true", help="Emit JSON")
+    p_tasks_get = tasks_sub.add_parser("get", help="Get one task resource DTO")
+    p_tasks_get.add_argument("task_id", help="Task id")
+    p_tasks_get.add_argument("--json", action="store_true", help="Emit JSON")
+
     # ---- subagent ----------------------------------------------------------
     # Subagent spawn / merge ops. See ``openprogram/agent/sub_agent_run.py``
     # and ``openprogram/agent/_merge.py`` for the model. These commands run
@@ -1162,6 +1177,7 @@ def build_parser() -> argparse.ArgumentParser:
     # 但它们是本函数局部变量 — 经 set_defaults 盖进 args,嵌套子命令
     # 由更深一层覆盖,args._cmd_parser 恒为选中路径上最深的一个。
     for _p in (p_logs, p_programs, p_skills, p_plugins, p_trash, p_backup, p_sessions,
+               p_tasks,
                p_subagent, p_memory, p_worker, p_channels, p_chacct,
                p_chaccess, p_chb, p_mcp, p_browser, p_agents,
                p_config, p_recordings, p_upgrade, p_providers):
@@ -1507,6 +1523,16 @@ def main():
         else:
             _need_subcommand(args._cmd_parser)
         return
+
+    if args.command == "tasks":
+        from openprogram._cli_cmds.tasks import _cmd_tasks_get, _cmd_tasks_list
+
+        verb = getattr(args, "tasks_verb", None)
+        if verb == "list":
+            sys.exit(_cmd_tasks_list(args.session_id, as_json=args.json))
+        if verb == "get":
+            sys.exit(_cmd_tasks_get(args.task_id, as_json=args.json))
+        _need_subcommand(args._cmd_parser)
 
     if args.command == "web":
         if getattr(args, "web_verb", None) == "auth-url":

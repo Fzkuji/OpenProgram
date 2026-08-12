@@ -1,8 +1,8 @@
-"""run_agent_turn — same-session multi-agent.
+"""_execute_agent_turn — same-session multi-agent execution primitive.
 
 Spawn is just another branch (or a new root) in the parent session's
 DAG. There is no separate sub_session id and no attach pointer
-written by ``run_agent_turn`` itself — those are decisions for the
+written by ``_execute_agent_turn`` itself — those are decisions for the
 caller (e.g. ``_run_spawn`` in the webui broadcasts a result; merge
 writes explicit multi-parent commits).
 
@@ -99,12 +99,12 @@ def fake_dispatcher(monkeypatch):
 def test_inherit_forks_off_parent_node(parent_store, fake_dispatcher):
     """inherit mode: forks off ``caller`` in the SAME session.
     No new session id is minted; no attach pointer is written by
-    ``run_agent_turn`` itself."""
-    from openprogram.agent.sub_agent_run import run_agent_turn
+    ``_execute_agent_turn`` itself."""
+    from openprogram.agent.sub_agent_run import _execute_agent_turn
 
     pre_sessions = {s.get("id") for s in parent_store.list_sessions(limit=999) or []}
 
-    out = run_agent_turn(
+    out = _execute_agent_turn(
         session_id="p1",
         prompt="extend this",
         agent_id="probe",
@@ -135,9 +135,9 @@ def test_inherit_forks_off_parent_node(parent_store, fake_dispatcher):
 def test_clean_starts_new_root(parent_store, fake_dispatcher):
     """clean mode: caller=None → dispatcher gets history_override=[]
     and the new turn becomes a new root in the same session."""
-    from openprogram.agent.sub_agent_run import run_agent_turn
+    from openprogram.agent.sub_agent_run import _execute_agent_turn
 
-    out = run_agent_turn(
+    out = _execute_agent_turn(
         session_id="p1",
         prompt="independent task",
         agent_id="probe",
@@ -157,9 +157,9 @@ def test_label_persists_as_branch_name(parent_store, fake_dispatcher):
     """A spawn with label='X' registers X as the branch name for the
     resulting head — so the right-rail Branches panel shows the label
     instead of the raw commit hash."""
-    from openprogram.agent.sub_agent_run import run_agent_turn
+    from openprogram.agent.sub_agent_run import _execute_agent_turn
 
-    out = run_agent_turn(
+    out = _execute_agent_turn(
         session_id="p1",
         prompt="x",
         agent_id="probe",
@@ -174,8 +174,8 @@ def test_label_persists_as_branch_name(parent_store, fake_dispatcher):
 
 
 def test_unknown_session_errors(parent_store, fake_dispatcher):
-    from openprogram.agent.sub_agent_run import run_agent_turn
-    out = run_agent_turn(
+    from openprogram.agent.sub_agent_run import _execute_agent_turn
+    out = _execute_agent_turn(
         session_id="nope",
         prompt="hi",
         agent_id="main",
@@ -187,14 +187,14 @@ def test_unknown_session_errors(parent_store, fake_dispatcher):
 
 def test_dispatcher_failure_surfaces(parent_store, monkeypatch):
     from openprogram.agent import dispatcher as disp
-    from openprogram.agent.sub_agent_run import run_agent_turn
+    from openprogram.agent.sub_agent_run import _execute_agent_turn
 
     def boom(req, *, on_event=None, cancel_event=None):
         raise RuntimeError("provider exploded")
 
     monkeypatch.setattr(disp, "process_user_turn", boom)
 
-    out = run_agent_turn(
+    out = _execute_agent_turn(
         session_id="p1",
         prompt="go",
         agent_id="main",
@@ -273,7 +273,7 @@ def test_spawn_event_pair_shares_card_id_with_attach_node(
     one card, not a duplicate."""
     from openprogram.agent.sub_agent_run import (
         emit_spawn_event,
-        run_agent_turn,
+        _execute_agent_turn,
         write_attach_pointer_for_spawn,
     )
 
@@ -282,7 +282,7 @@ def test_spawn_event_pair_shares_card_id_with_attach_node(
         session_id="p1", status="running", label="probe",
         prompt="go", chosen_agent="worker", card_id=card_id,
     )
-    result = run_agent_turn(
+    result = _execute_agent_turn(
         session_id="p1", prompt="go", agent_id="worker", branch_from="a1",
     )
     node_id = write_attach_pointer_for_spawn(
@@ -318,11 +318,11 @@ def test_write_attach_pointer_mints_id_when_not_supplied(
     """node_id is optional — the slash-command path still gets a
     generated id."""
     from openprogram.agent.sub_agent_run import (
-        run_agent_turn,
+        _execute_agent_turn,
         write_attach_pointer_for_spawn,
     )
 
-    result = run_agent_turn(
+    result = _execute_agent_turn(
         session_id="p1", prompt="go", agent_id="worker", branch_from="a1",
     )
     node_id = write_attach_pointer_for_spawn(
@@ -336,23 +336,23 @@ def test_spawn_follows_session_model_pick(parent_store, fake_dispatcher):
     """A same-session spawn runs on the session's picked model: the
     picker's provider_override/model_override in session meta become
     the TurnRequest's model_override, same composition as a chat turn."""
-    from openprogram.agent.sub_agent_run import run_agent_turn
+    from openprogram.agent.sub_agent_run import _execute_agent_turn
 
     parent_store.update_session(
         "p1",
         provider_override="minimax-cn-coding-plan",
         model_override="MiniMax-M3",
     )
-    run_agent_turn(session_id="p1", prompt="go", agent_id="main",
-                   branch_from="a1")
+    _execute_agent_turn(session_id="p1", prompt="go", agent_id="main",
+                        branch_from="a1")
     assert fake_dispatcher["calls"][-1]["model_override"] == \
         "minimax-cn-coding-plan/MiniMax-M3"
 
 
 def test_spawn_without_pick_leaves_model_to_profile(parent_store,
                                                     fake_dispatcher):
-    from openprogram.agent.sub_agent_run import run_agent_turn
+    from openprogram.agent.sub_agent_run import _execute_agent_turn
 
-    run_agent_turn(session_id="p1", prompt="go", agent_id="main",
-                   branch_from="a1")
+    _execute_agent_turn(session_id="p1", prompt="go", agent_id="main",
+                        branch_from="a1")
     assert fake_dispatcher["calls"][-1]["model_override"] is None

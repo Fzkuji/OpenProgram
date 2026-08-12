@@ -1,10 +1,12 @@
 """task_stop — signal cancel for an in-flight async agent() spawn."""
 from __future__ import annotations
 
+from openprogram.agent.types import AgentToolResult
 from openprogram.functions._runtime import function
 from openprogram.functions.tools.send_message.send_message.depth import (
     delegation_budget_left,
 )
+from openprogram.providers.types import TextContent
 
 
 @function(
@@ -31,7 +33,7 @@ from openprogram.functions.tools.send_message.send_message.depth import (
     # left, gone once it is spent.
     can_use=delegation_budget_left,
 )
-def task_stop(task_id: str, reason: str = "") -> str:
+def task_stop(task_id: str, reason: str = "") -> str | AgentToolResult:
     """Signal cancel for an async task."""
     if not task_id or not isinstance(task_id, str):
         return "[task_stop error] task_id required"
@@ -44,4 +46,14 @@ def task_stop(task_id: str, reason: str = "") -> str:
     t = runner.cancel_task(task_id.strip(), reason=reason or None)
     if t is None:
         return f"[task_stop error] unknown task_id={task_id!r}"
-    return f"[task_stop] task_id={task_id} status={t.status.value}"
+    view = runner.get_task_resource_view(t.id)
+    return AgentToolResult(
+        content=[TextContent(
+            text=f"[task_stop] task_id={task_id} status={t.status.value}",
+        )],
+        details={
+            "task_id": t.id,
+            "status": t.status.value,
+            "resource": view.to_dict() if view is not None else None,
+        },
+    )

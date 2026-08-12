@@ -79,6 +79,11 @@ def _is_retryable_error(status: int, error_text: str) -> bool:
     return bool(re.search(r"rate.?limit|overloaded|quota|resource.?exhausted", error_text, re.IGNORECASE))
 
 
+def _resolve_endpoints(model: "Model") -> list[str]:
+    model_base_url = getattr(model, "base_url", None)
+    return [model_base_url] if model_base_url else [_DEFAULT_ENDPOINT]
+
+
 def stream_google_gemini_cli(
     model: "Model",
     context: "Context",
@@ -118,8 +123,7 @@ def stream_google_gemini_cli(
             api_key = opts.get("api_key") or resolve_provider_key(model.provider) or ""
 
             # Endpoint selection
-            model_base_url = getattr(model, "base_url", None)
-            endpoints = [model_base_url] if model_base_url else [_DEFAULT_ENDPOINT]
+            endpoints = _resolve_endpoints(model)
 
             headers: dict[str, str] = {
                 "Authorization": f"Bearer {api_key}",
@@ -140,9 +144,11 @@ def stream_google_gemini_cli(
 
             ev_stream.push({"type": "start", "partial": output})
 
-            retry_count = 0
+            from ..budget import provider_retry_attempts
+            max_attempts = provider_retry_attempts(_MAX_RETRIES + 1)
+            attempts_used = 0
             endpoint_index = 0
-            while retry_count <= _MAX_RETRIES:
+            while attempts_used < max_attempts:
                 base_url = endpoints[min(endpoint_index, len(endpoints) - 1)]
                 endpoint_url = f"{base_url.rstrip('/')}/v1internal:streamGenerateContent?alt=sse"
                 # Hardened client: decoupled + generous timeouts (was a single
@@ -150,6 +156,7 @@ def stream_google_gemini_cli(
                 # false-positived over a proxy/VPN), TCP keepalive, force-IPv4,
                 # proxy — all from the shared builder.
                 async with build_async_client() as client:
+                    attempts_used += 1
                     async with client.stream(
                         "POST",
                         endpoint_url,
@@ -160,13 +167,18 @@ def stream_google_gemini_cli(
                             error_text_bytes = await response.aread()
                             error_text = error_text_bytes.decode()
                             # Immediate endpoint cascade for auth/not-found errors
-                            if response.status_code in (403, 404) and endpoint_index < len(endpoints) - 1:
+                            if (
+                                response.status_code in (403, 404)
+                                and endpoint_index < len(endpoints) - 1
+                                and attempts_used < max_attempts
+                            ):
                                 endpoint_index += 1
                                 continue
-                            if retry_count < _MAX_RETRIES and _is_retryable_error(response.status_code, error_text):
-                                delay = extract_retry_delay(error_text) or (_BASE_DELAY_MS * (2 ** retry_count))
+                            if attempts_used < max_attempts and _is_retryable_error(response.status_code, error_text):
+                                delay = extract_retry_delay(error_text) or (
+                                    _BASE_DELAY_MS * (2 ** (attempts_used - 1))
+                                )
                                 await asyncio.sleep(delay / 1000)
-                                retry_count += 1
                                 continue
                             raise RuntimeError(f"HTTP {response.status_code}: {error_text}")
 

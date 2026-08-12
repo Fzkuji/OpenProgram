@@ -51,6 +51,21 @@ _registry: dict[str, ApiProviderSnapshot | ApiProvider] = {}
 _original_registry: dict[str, ApiProviderSnapshot | ApiProvider] = {}
 _provider_transform: Callable[[str, ApiProvider], ApiProvider] | None = None
 _registry_lock = threading.RLock()
+_audited_accounting: dict[int, set[str]] = {}
+_audited_originals: dict[str, ApiProvider] = {}
+
+
+def _rebuild_audited_accounting() -> None:
+    _audited_accounting.clear()
+    for api, original in _audited_originals.items():
+        original_value = _original_registry.get(api)
+        if original_value is None or _entry(original_value).provider is not original:
+            continue
+        current_value = _registry.get(api)
+        current = _entry(current_value).provider if current_value is not None else None
+        for provider in (original, current):
+            if provider is not None:
+                _audited_accounting.setdefault(id(provider), set()).add(api)
 
 
 def _entry(value: ApiProviderSnapshot | ApiProvider) -> ApiProviderSnapshot:
@@ -70,13 +85,15 @@ def register_api_provider(
             provider,
             structured_output or StructuredOutputCapabilities(),
         )
-        _original_registry[api] = original
         registered = (
             _provider_transform(api, provider)
             if _provider_transform is not None
             else provider
         )
+        _audited_originals.pop(api, None)
+        _original_registry[api] = original
         _registry[api] = ApiProviderSnapshot(registered, original.structured_output)
+        _rebuild_audited_accounting()
 
 
 def get_api_provider_snapshot(api: Api) -> ApiProviderSnapshot | None:
@@ -106,8 +123,46 @@ def register_api_providers(
                 if isinstance(value, ApiProviderSnapshot)
                 else provider
             )
+        for api in providers:
+            _audited_originals.pop(api, None)
         _original_registry.update(originals)
         _registry.update(transformed)
+        _rebuild_audited_accounting()
+
+
+def _register_builtin_api_providers(
+    providers: dict[Api, ApiProviderSnapshot | ApiProvider],
+) -> None:
+    """Register audited built-ins; public registration never grants this capability."""
+    with _registry_lock:
+        originals = dict(providers)
+        transformed = {}
+        audited = {}
+        for api, value in originals.items():
+            original = _entry(value)
+            provider = original.provider
+            if provider is None:
+                continue
+            audited[api] = provider
+            registered = (
+                _provider_transform(api, provider)
+                if _provider_transform is not None
+                else provider
+            )
+            transformed[api] = (
+                ApiProviderSnapshot(registered, original.structured_output)
+                if isinstance(value, ApiProviderSnapshot)
+                else registered
+            )
+        _original_registry.update(originals)
+        _registry.update(transformed)
+        _audited_originals.update(audited)
+        _rebuild_audited_accounting()
+
+
+def has_audited_accounting(provider: ApiProvider, api: str) -> bool:
+    with _registry_lock:
+        return api in _audited_accounting.get(id(provider), set())
 
 
 def get_api_provider(api: Api) -> ApiProvider | None:
@@ -163,12 +218,15 @@ def configure_provider_transform(
         transformed = {}
         for api, value in _original_registry.items():
             original = _entry(value)
-            transformed[api] = ApiProviderSnapshot(
-                transform(api, original.provider),
-                original.structured_output,
+            registered = transform(api, original.provider)
+            transformed[api] = (
+                ApiProviderSnapshot(registered, original.structured_output)
+                if isinstance(value, ApiProviderSnapshot)
+                else registered
             )
         _registry.clear()
         _registry.update(transformed)
+        _rebuild_audited_accounting()
         _provider_transform = transform
 
 
@@ -181,10 +239,13 @@ def _replace_provider_transform(
         transformed = {}
         for api, value in _original_registry.items():
             original = _entry(value)
-            transformed[api] = ApiProviderSnapshot(
-                transform(api, original.provider),
-                original.structured_output,
+            registered = transform(api, original.provider)
+            transformed[api] = (
+                ApiProviderSnapshot(registered, original.structured_output)
+                if isinstance(value, ApiProviderSnapshot)
+                else registered
             )
         _registry.clear()
         _registry.update(transformed)
+        _rebuild_audited_accounting()
         _provider_transform = transform

@@ -36,6 +36,8 @@ export type WsRequest =
   | { action: 'delete_agent'; id: string }
   | { action: 'set_default_agent'; id: string }
   | { action: 'list_sessions' }
+  | { action: 'list_tasks'; session_id?: string }
+  | { action: 'get_task'; task_id: string }
   | { action: 'load_session'; session_id: string }
   | { action: 'delete_session'; session_id: string }
   | { action: 'search_messages'; query: string; limit?: number; agent_id?: string }
@@ -374,6 +376,10 @@ export type WsEnvelope =
   | { type: 'steer_ack'; data: { session_id: string; queued: boolean; message?: string } }
   | { type: 'running_task'; data: { session_id: string; msg_id?: string; func_name?: string } }
   | { type: 'running_task_clear'; data: { session_id: string } }
+  | {
+      type: 'tasks_list' | 'task' | 'spawn_task_result' | 'cancel_task_result';
+      data: Record<string, unknown>;
+    }
   // Branch frames (webui/ws_actions/branch.py) — the list reply plus
   // the structural-change broadcasts useWsEvents re-fetches on.
   | { type: 'branches_list'; data: { session_id: string; branches?: unknown[]; active?: string } }

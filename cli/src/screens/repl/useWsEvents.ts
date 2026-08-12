@@ -35,6 +35,7 @@ import type {
   ThinkingEffort,
 } from './types.js';
 import { PERMISSION_MODES } from './types.js';
+import { formatTaskResourceMessage } from '../../commands/taskResource.js';
 
 export interface WsEventsCtx {
   client: BackendClient;
@@ -185,6 +186,13 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         // plus `source` ("wechat"/"telegram"/…) and `peer_display` so
         // /resume can tag channel-bound rows.
         c.setPastConversations(ev.data ?? []);
+      } else if (
+        ev.type === 'tasks_list'
+        || ev.type === 'task'
+        || ev.type === 'spawn_task_result'
+        || ev.type === 'cancel_task_result'
+      ) {
+        c.pushSystem(formatTaskResourceMessage(ev.type, ev.data));
       } else if (ev.type === 'qr_login') {
         // Server-driven QR-login state machine. Server pushes:
         //   qr_ready    → render the ASCII QR

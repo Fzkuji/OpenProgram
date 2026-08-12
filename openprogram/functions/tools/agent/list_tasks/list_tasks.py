@@ -6,7 +6,9 @@ board uses the ``todo_*`` prefix instead).
 """
 from __future__ import annotations
 
+from openprogram.agent.types import AgentToolResult
 from openprogram.functions._runtime import function
+from openprogram.providers.types import TextContent
 
 _ROW_LIMIT = 50
 _SUBJECT_CLIP = 80
@@ -24,12 +26,12 @@ _SUBJECT_CLIP = 80
     ),
     toolset=["core"],
 )
-def list_tasks() -> str:
+def list_tasks() -> str | AgentToolResult:
     """Render the current session's task table as text."""
     return _list_tasks_impl()
 
 
-def _list_tasks_impl() -> str:
+def _list_tasks_impl() -> str | AgentToolResult:
     """Implementation body — kept apart from the @function binding so
     tests can call it directly (the binding object is not callable)."""
     from openprogram.agent.run_control import _current_session_id
@@ -37,13 +39,27 @@ def _list_tasks_impl() -> str:
     if not sid:
         return "[list_tasks error] no active session context"
     from openprogram.agent.task import get_runner
-    tasks = get_runner().list_tasks(sid, limit=_ROW_LIMIT)
+    runner = get_runner()
+    tasks = runner.list_tasks(sid, limit=_ROW_LIMIT)
     if not tasks:
-        return "(no background tasks in this session)"
+        return AgentToolResult(
+            content=[TextContent(text="(no background tasks in this session)")],
+            details={"tasks": []},
+        )
     lines = []
+    details = []
     for t in tasks:
         subject = (t.subject or t.prompt or "").strip().replace("\n", " ")
         if len(subject) > _SUBJECT_CLIP:
             subject = subject[:_SUBJECT_CLIP] + "…"
         lines.append(f"- {t.id}  [{t.status.value}]  {subject}")
-    return "\n".join(lines)
+        view = runner.get_task_resource_view(t.id)
+        details.append({
+            "task_id": t.id,
+            "status": t.status.value,
+            "resource": view.to_dict() if view is not None else None,
+        })
+    return AgentToolResult(
+        content=[TextContent(text="\n".join(lines))],
+        details={"tasks": details},
+    )

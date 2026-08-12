@@ -31,6 +31,7 @@ export function BranchItem({
   isBase,
   running,
   finishing,
+  resource,
   chip,
   onToggleSelect,
   onSetBase,
@@ -43,6 +44,7 @@ export function BranchItem({
   isBase: boolean;
   running: boolean;
   finishing: boolean;
+  resource?: Record<string, unknown> | null;
   chip?: boolean;
   onToggleSelect: (headId: string, e: React.MouseEvent) => void;
   onSetBase: (headId: string, e: React.MouseEvent) => void;
@@ -204,13 +206,26 @@ export function BranchItem({
         <span className="branch-item-name">{branch.name}</span>
       )}
       {branch.active ? <span className="branch-item-badge">{t("right.head")}</span> : null}
-      {isPending ? (
+      {running ? (
         <span
           className="branch-item-badge"
           style={{ background: "rgba(160, 107, 255, 0.18)" }}
         >
           {t("right.running")}
         </span>
+      ) : null}
+      {resource ? (
+        <details className="branch-item-resource" onClick={(e) => e.stopPropagation()}>
+          <summary aria-label={`Task resource details for ${branch.name || branch.head_msg_id}`}>
+            resources
+          </summary>
+          <pre>{JSON.stringify({
+            resource_state: resource.resource_state,
+            reason_code: resource.reason_code,
+            capacity: resource.capacity,
+            budget: resource.budget,
+          }, null, 2)}</pre>
+        </details>
       ) : null}
       <span className="branch-item-actions">
         <span

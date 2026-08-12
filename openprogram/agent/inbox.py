@@ -119,6 +119,7 @@ def enqueue(
     target_head_id: Optional[str],
     chain_generations: int = 0,
     task_id: Optional[str] = None,
+    tracked_task: Optional[bool] = None,
     authority: Optional[dict[str, Any]] = None,
 ) -> str:
     """Queue a message for a busy target session.
@@ -163,6 +164,7 @@ def enqueue(
             "chain_generations": int(chain_generations),
             "target_head_id": target_head_id,
             "task_id": task_id,
+            "tracked_task": bool(task_id) if tracked_task is None else tracked_task,
             "enqueued_at": now,
             **normalize_authority(authority or {}),
         })
@@ -254,12 +256,8 @@ def clear(session_id: str, *, reason: str = "the target session was stopped") ->
         tid = entry.get("task_id")
         if tid:
             try:
-                from openprogram.agent.task.store import update_task_status
-                from openprogram.agent.task.types import TaskStatus
-                update_task_status(
-                    session_id, str(tid), TaskStatus.CANCELLED,
-                    error=f"withdrawn: {reason}",
-                )
+                from openprogram.agent.task import get_runner
+                get_runner().cancel_task(str(tid), reason=f"withdrawn: {reason}")
             except Exception:
                 pass
     return len(entries)
@@ -332,7 +330,8 @@ def _deliver(session_id: str, entry: dict[str, Any]) -> None:
         or entry.get("target_head_id")
     message = str(entry.get("message") or "")
     tid = entry.get("task_id")
-    header = task_header if tid else sender_header
+    tracked_task = bool(entry.get("tracked_task", bool(tid)))
+    header = task_header if tracked_task else sender_header
     prompt = header(
         str(entry.get("sender_session_id") or ""),
         str(entry.get("sender_msg_id") or ""),
@@ -362,6 +361,8 @@ def _deliver(session_id: str, entry: dict[str, Any]) -> None:
         chain_generations=int(entry.get("chain_generations") or 0),
         caller_chain_generations=int(entry.get("chain_generations") or 0),
         authority=entry,
+        creates_agent=False,
+        resume_deferred=bool(tid),
     )
 
 

@@ -35,6 +35,7 @@ export interface TaskStatusDetail {
   created_at?: number | string | null;
   started_at?: number | string | null;
   completed_at?: number | string | null;
+  resource?: Record<string, unknown> | null;
 }
 
 /**

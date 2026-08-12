@@ -188,6 +188,8 @@ def _create_client(model: "Model", api_key: str, opts: dict[str, Any]) -> Any:
     # Share retry budget knob with the regular openai provider —
     # both use the same OpenAI Python SDK, same retry semantics.
     sdk_max_retries = int(os.environ.get("OPENPROGRAM_OPENAI_MAX_RETRIES", "3"))
+    from ..budget import provider_sdk_retries
+    sdk_max_retries = provider_sdk_retries(sdk_max_retries)
     return AsyncAzureOpenAI(
         api_key=api_key,
         api_version=api_version,

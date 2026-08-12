@@ -6,7 +6,7 @@ import threading
 
 from openprogram.providers.api_registry import (
     ApiProviderSnapshot,
-    register_api_providers,
+    _register_builtin_api_providers,
 )
 from openprogram.providers.structured_output import StructuredOutputCapabilities
 
@@ -55,28 +55,28 @@ def _load_builtin_providers() -> dict[str, _StreamFnProvider]:
 
     return {
         "anthropic-messages": _StreamFnProvider(
-            anthropic.stream_simple, anthropic.stream_simple
+            anthropic.stream_simple, anthropic.stream_simple,
         ),
         "openai-completions": _StreamFnProvider(
-            openai_completions.stream_simple, openai_completions.stream_simple
+            openai_completions.stream_simple, openai_completions.stream_simple,
         ),
         "google-generative-ai": _StreamFnProvider(
-            google.stream_simple, google.stream_simple
+            google.stream_simple, google.stream_simple,
         ),
         "openai-responses": _StreamFnProvider(
-            stream_openai_responses, stream_simple_openai_responses
+            stream_openai_responses, stream_simple_openai_responses,
         ),
         "openai-codex": _StreamFnProvider(
-            stream_openai_codex_responses, stream_simple_openai_codex_responses
+            stream_openai_codex_responses, stream_simple_openai_codex_responses,
         ),
         "gemini-subscription": _StreamFnProvider(
-            stream_google_gemini_cli, stream_simple_google_gemini_cli
+            stream_google_gemini_cli, stream_simple_google_gemini_cli,
         ),
         "bedrock-converse-stream": _StreamFnProvider(
-            stream_bedrock, stream_simple_bedrock
+            stream_bedrock, stream_simple_bedrock,
         ),
         "azure-openai-responses": _StreamFnProvider(
-            stream_azure_openai_responses, stream_simple_azure_openai_responses
+            stream_azure_openai_responses, stream_simple_azure_openai_responses,
         ),
     }
 
@@ -171,7 +171,7 @@ def register_builtins() -> None:
             "bedrock-converse-stream": _BEDROCK_CAPABILITIES,
             "azure-openai-responses": _AZURE_RESPONSES_CAPABILITIES,
         }
-        register_api_providers(
+        _register_builtin_api_providers(
             {
                 api: (
                     ApiProviderSnapshot(provider, capabilities[api])

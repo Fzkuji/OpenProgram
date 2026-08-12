@@ -5,10 +5,12 @@ true) and ``timeout`` in milliseconds (default 30s, capped at 10min).
 """
 from __future__ import annotations
 
+from openprogram.agent.types import AgentToolResult
 from openprogram.functions._runtime import function
 from openprogram.functions.tools.send_message.send_message.depth import (
     delegation_budget_left,
 )
+from openprogram.providers.types import TextContent
 
 # Claude Code's TaskOutput cap: 600000 ms.
 _MAX_TIMEOUT_MS = 600_000
@@ -40,7 +42,7 @@ def task_output(
     task_id: str,
     block: bool = True,
     timeout: float = _DEFAULT_TIMEOUT_MS,
-) -> str:
+) -> str | AgentToolResult:
     """Wait for (or peek at) an async task and return its reply."""
     return _task_output_impl(task_id, block=block, timeout=timeout)
 
@@ -49,7 +51,7 @@ def _task_output_impl(
     task_id: str,
     block: bool = True,
     timeout: float = _DEFAULT_TIMEOUT_MS,
-) -> str:
+) -> str | AgentToolResult:
     if not task_id or not isinstance(task_id, str):
         return "[task_output error] task_id required"
     from openprogram.functions.tools.agent._ownership import check_task_ownership
@@ -71,15 +73,24 @@ def _task_output_impl(
     status = t.status.value
     if status == "completed":
         out = t.result_text or "(spawned agent returned no text)"
-        return f"{out}\n\n[task {task_id} status={status}]"
-    if status == "cancelled":
-        return f"[task {task_id} cancelled] {t.error or ''}".rstrip()
-    if status == "errored":
-        return f"[task {task_id} errored] {t.error or 'unknown error'}"
-    # still running / queued
-    if not block:
-        return f"[task {task_id} still {status}]"
-    return (
-        f"[task {task_id} still {status}] "
-        "timed out; call task_output again to keep waiting."
+        text = f"{out}\n\n[task {task_id} status={status}]"
+    elif status == "cancelled":
+        text = f"[task {task_id} cancelled] {t.error or ''}".rstrip()
+    elif status == "errored":
+        text = f"[task {task_id} errored] {t.error or 'unknown error'}"
+    elif not block:
+        text = f"[task {task_id} still {status}]"
+    else:
+        text = (
+            f"[task {task_id} still {status}] "
+            "timed out; call task_output again to keep waiting."
+        )
+    view = runner.get_task_resource_view(t.id)
+    return AgentToolResult(
+        content=[TextContent(text=text)],
+        details={
+            "task_id": t.id,
+            "status": status,
+            "resource": view.to_dict() if view is not None else None,
+        },
     )

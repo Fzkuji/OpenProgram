@@ -18,7 +18,7 @@
  * into types.tsx (shared types + helpers + SVG glyphs),
  * branch-item.tsx (single row), and this index.tsx (the panel itself).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
 import "@/lib/net/ws-events";
@@ -27,6 +27,7 @@ import { useSessionStore } from "@/lib/session-store";
 import { BranchItem } from "./branch-item";
 import { MergeModal } from "./merge-modal";
 import { runtimeState } from "@/lib/runtime-bridge/state";
+import { selectResourceForHead } from "./resource-selection";
 
 import {
   LANE_COLORS,
@@ -53,7 +54,9 @@ export function BranchesPanel({ variant = "list" }: {
   // somewhere — see PENDING_HEAD_PREFIX.
   const [taskMap, setTaskMap] = useState<Record<string,
     { targetHead?: string | null; finalHead?: string | null;
-      status: string; sessionId?: string; label?: string | null }>>({});
+      status: string; sessionId?: string; label?: string | null;
+      resource?: Record<string, unknown> | null; updatedAt: number }>>({});
+  const taskVersion = useRef(0);
   // Branch head_msg_ids currently in "finishing" wipe — added on
   // terminal status, removed 1200ms later.
   const [finishingHeads, setFinishingHeads] = useState<Set<string>>(
@@ -110,7 +113,13 @@ export function BranchesPanel({ variant = "list" }: {
           // branch row to wipe.
           const headForWipe = finalHead || cur[tid]?.finalHead
                               || targetHead || cur[tid]?.targetHead;
-          delete next[tid];
+          next[tid] = {
+            targetHead, finalHead, status,
+            sessionId: d.session_id,
+            label: d.label || d.subject || null,
+            resource: d.resource || cur[tid]?.resource || null,
+            updatedAt: ++taskVersion.current,
+          };
           if (headForWipe) {
             setFinishingHeads((fs) => {
               const ns = new Set(fs);
@@ -133,6 +142,8 @@ export function BranchesPanel({ variant = "list" }: {
           targetHead, finalHead, status,
           sessionId: d.session_id,
           label: d.label || d.subject || null,
+          resource: d.resource || null,
+          updatedAt: ++taskVersion.current,
         };
         return next;
       });
@@ -151,24 +162,24 @@ export function BranchesPanel({ variant = "list" }: {
     wsSend({
       action: "list_tasks",
       session_id: sessionId,
-      status_filter: ["pending", "queued", "running"],
     });
     const onMsg = (e: WindowEventMap["op:task-message"]) => {
       const det = e.detail;
       if (!det) return;
       if (det.type !== "tasks_list") return;
       const tasks = (det.data?.tasks as Array<Record<string, unknown>>) || [];
+      taskVersion.current = tasks.length;
       setTaskMap(() => {
         const m: Record<string, {
           targetHead?: string | null; finalHead?: string | null;
           status: string; sessionId?: string; label?: string | null;
+          resource?: Record<string, unknown> | null;
+          updatedAt: number;
         }> = {};
-        for (const t of tasks) {
+        for (const [index, t] of tasks.entries()) {
           const tid = t.id as string | undefined;
           const status = (t.status as string | undefined) || "";
           if (!tid) continue;
-          if (status === "completed" || status === "cancelled"
-              || status === "errored") continue;
           m[tid] = {
             targetHead: (t.target_branch_head_id as string | null) || null,
             finalHead: (t.head_id as string | null) || null,
@@ -176,6 +187,9 @@ export function BranchesPanel({ variant = "list" }: {
             sessionId: (t.parent_session_id as string | undefined),
             label: (t.label as string | null)
                    || (t.subject as string | null) || null,
+            resource: (t.resource as Record<string, unknown> | null) || null,
+            // list_tasks is newest-first; a larger version wins below.
+            updatedAt: tasks.length - index,
           };
         }
         return m;
@@ -295,13 +309,15 @@ export function BranchesPanel({ variant = "list" }: {
     } else if (entry.targetHead) {
       head = entry.targetHead;
     }
-    if (head) {
+    const terminal = entry.status === "completed"
+      || entry.status === "cancelled" || entry.status === "errored";
+    if (head && !terminal) {
       runningHeads.add(head);
-    } else {
+    } else if (!head) {
       // No real head id yet — synthesize one keyed off task_id so
       // the row stays stable across status events.
       const synth = `${PENDING_HEAD_PREFIX}${tid}`;
-      runningHeads.add(synth);
+      if (!terminal) runningHeads.add(synth);
       pendingRows.push({
         head_msg_id: synth,
         name: entry.label || `task ${tid.slice(0, 6)}`,
@@ -357,6 +373,9 @@ export function BranchesPanel({ variant = "list" }: {
   const otherSessions = Object.values(conversations)
     .filter((c) => c.id && c.id !== sessionId)
     .sort((a, b) => (a.title || a.id).localeCompare(b.title || b.id));
+  const resourceForHead = (headId: string) => {
+    return selectResourceForHead(taskMap, headId, PENDING_HEAD_PREFIX);
+  };
 
   if (chips) {
     return (
@@ -376,6 +395,7 @@ export function BranchesPanel({ variant = "list" }: {
             isBase={false}
             running={runningHeads.has(b.head_msg_id)}
             finishing={finishingHeads.has(b.head_msg_id)}
+            resource={resourceForHead(b.head_msg_id)}
             onToggleSelect={toggleSelect}
             onSetBase={setBase}
           />
@@ -410,6 +430,7 @@ export function BranchesPanel({ variant = "list" }: {
             isBase={baseHead === b.head_msg_id}
             running={runningHeads.has(b.head_msg_id)}
             finishing={finishingHeads.has(b.head_msg_id)}
+            resource={resourceForHead(b.head_msg_id)}
             onToggleSelect={toggleSelect}
             onSetBase={setBase}
           />
