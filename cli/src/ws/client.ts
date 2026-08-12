@@ -445,10 +445,7 @@ export type WsEnvelope =
   | { type: 'steer_ack'; data: { session_id: string; queued: boolean; message?: string } }
   | { type: 'running_task'; data: { session_id: string; msg_id?: string; func_name?: string } }
   | { type: 'running_task_clear'; data: { session_id: string } }
-  | {
-      type: 'tasks_list' | 'task' | 'spawn_task_result' | 'cancel_task_result';
-      data: Record<string, unknown>;
-    }
+  | { type: 'spawn_task_result'; data: Record<string, unknown> }
   // Branch frames (webui/ws_actions/branch.py) — the list reply plus
   // the structural-change broadcasts useWsEvents re-fetches on.
   | { type: 'branches_list'; data: { session_id: string; branches?: unknown[]; active?: string } }

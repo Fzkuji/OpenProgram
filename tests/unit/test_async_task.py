@@ -609,12 +609,15 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
 def test_durable_worker_baseexception_persists_terminal_before_release(
     store_fixture, monkeypatch, tmp_path,
 ):
+    broadcasts = []
     from openprogram.agent.resource_governance import ResourceGovernor
     from openprogram.agent.task.runner import TaskRunner
     from openprogram.agent.task.types import TaskStatus
     from openprogram.usage.ledger import UsageLedger
 
-    monkeypatch.setattr("openprogram.agent.task.runner._broadcast", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", broadcasts.append,
+    )
     monkeypatch.setattr(
         "openprogram.agent.sub_agent_run._execute_agent_turn",
         lambda **_kwargs: (_ for _ in ()).throw(SystemExit("fatal")),
@@ -631,6 +634,22 @@ def test_durable_worker_baseexception_persists_terminal_before_release(
         ).fetchone()
         assert task is not None and task.status == TaskStatus.ERRORED
         assert admission[0] == "released"
+        deadline = time.time() + 1.0
+        terminal = None
+        while time.time() < deadline:
+            terminal = next(
+                (
+                    event for event in reversed(broadcasts)
+                    if event.get("type") == "task_status"
+                    and event["data"]["status"] == "errored"
+                ),
+                None,
+            )
+            if terminal is not None:
+                break
+            time.sleep(0.01)
+        assert terminal is not None
+        assert terminal["data"]["resource"]["resource_state"] == "released"
     finally:
         runner.shutdown(wait=False)
 
@@ -1289,8 +1308,9 @@ def test_runner_dispatch_submit_failure_terminalizes_published_task(
     store_fixture, monkeypatch, tmp_path,
 ):
     """A claimed task must not outlive a failed executor submission."""
+    broadcasts = []
     monkeypatch.setattr(
-        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+        "openprogram.agent.task.runner._broadcast", broadcasts.append,
     )
     from openprogram.agent.resource_governance import (
         ResourceGovernor,
@@ -1335,6 +1355,22 @@ def test_runner_dispatch_submit_failure_terminalizes_published_task(
         assert final is not None
         assert final.status == TaskStatus.ERRORED
         assert final.reason_code == "error.dispatch_failed"
+        deadline = time.time() + 1.0
+        terminal = None
+        while time.time() < deadline:
+            terminal = next(
+                (
+                    event for event in reversed(broadcasts)
+                    if event.get("type") == "task_status"
+                    and event["data"]["status"] == "errored"
+                ),
+                None,
+            )
+            if terminal is not None:
+                break
+            time.sleep(0.01)
+        assert terminal is not None
+        assert terminal["data"]["resource"]["resource_state"] == "released"
     finally:
         runner.shutdown()
 

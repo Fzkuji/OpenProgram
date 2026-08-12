@@ -222,10 +222,13 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       if (args[0]) {
         ctx.client.send({ action: 'get_task', task_id: args[0] });
       } else {
+        const conv = ctx.currentConversation;
+        if (!conv) { ctx.pushSystem('No active session.'); return true; }
         ctx.client.send({
           action: 'list_tasks',
-          session_id: ctx.currentConversation ?? '',
+          session_id: conv,
         });
+        ctx.openPicker('tasks');
       }
       return true;
     }
@@ -234,14 +237,6 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       // slash commands run silently — no user echo
       ctx.client.send({ action: 'list_agents' });
       ctx.pushSystem('Listing agents… (see sidebar update once received)');
-      return true;
-    }
-
-    case 'tasks': {
-      const conv = ctx.currentConversation;
-      if (!conv) { ctx.pushSystem('No active session.'); return true; }
-      ctx.client.send({ action: 'list_tasks', session_id: conv });
-      ctx.openPicker('tasks');
       return true;
     }
 

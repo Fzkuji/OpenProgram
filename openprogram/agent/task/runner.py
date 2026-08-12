@@ -1510,7 +1510,7 @@ class TaskRunner:
                         if current is not None and is_terminal(current.status):
                             updated = current
                     if updated is not None:
-                        _broadcast_task_status(updated)
+                        self._broadcast_task_status(updated)
                         self._wake_done(claim.task_id)
                         with self._lock:
                             self._tasks.pop(claim.task_id, None)
@@ -1773,7 +1773,7 @@ class TaskRunner:
                     TaskStatus.ERRORED, "error.execution", error=err,
                 )
                 if updated is not None:
-                    _broadcast_task_status(updated)
+                    self._broadcast_task_status(updated)
             except BaseException:
                 # finalize_task stages a durable intent before the task-store
                 # write. Reconcile completes it once persistence recovers.
