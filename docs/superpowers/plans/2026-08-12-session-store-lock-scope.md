@@ -25,8 +25,8 @@ git diff --check
 | Evidence | Result |
 |---|---|
 | Base | `9f01e27a` |
-| Design | pending |
-| RED | pending |
+| Design | `a12dee40` (`docs(session): define store lock scope`) |
+| RED | 3 failed: blocked rebuild, recursive delete, and locations publish each blocked a cached read of another session |
 | GREEN | pending |
 | Specification review | pending |
 | Quality review | pending |
