@@ -27,8 +27,9 @@ git diff --check
 | Base | `9f01e27a` |
 | Design | `a12dee40` (`docs(session): define store lock scope`) |
 | RED | 3 failed: blocked rebuild, recursive delete, and locations publish each blocked a cached read of another session |
-| GREEN | pending |
-| Specification review | pending |
-| Quality review | pending |
+| GREEN | `5236feab`; 30 targeted tests passed and unrelated sessions complete during blocked rebuild/delete/location publish |
+| Specification review | PASS at `5236feab`; state/I/O separation, per-session serialization, location publish order, compatibility, and invalid IDs verified |
+| Quality review | PASS at `5236feab`; lock order, failure recovery, same-session interleavings, 8-session LRU stress, and invalid IDs verified |
 | Full gate | pending |
-| Final implementation | pending |
+| Baseline collection repair | Reused existing `8220fd4f` as `62ed7216` to remove retired `test_framework` integration coverage |
+| Final implementation | `3dc3145c`, `5236feab` |
