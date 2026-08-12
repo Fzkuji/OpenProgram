@@ -239,8 +239,8 @@ class RecordingSink:
         from openprogram.paths import get_state_dir
         managed_root = get_state_dir() / "recordings"
         try:
-            inside_managed_root = self.path.absolute().is_relative_to(
-                managed_root.absolute()
+            inside_managed_root = Path(os.path.abspath(self.path)).is_relative_to(
+                Path(os.path.abspath(managed_root))
             )
         except OSError:
             inside_managed_root = False
