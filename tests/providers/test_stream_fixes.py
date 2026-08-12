@@ -646,3 +646,44 @@ def test_openai_sdk_retry_boundary_tracks_governed_request(
 
     asyncio.run(run())
     assert captured["max_retries"] == expected
+
+
+@pytest.mark.parametrize(("governed", "expected"), [(False, 3), (True, 0)])
+def test_azure_sdk_retry_boundary_tracks_governed_request(
+    monkeypatch, governed, expected,
+):
+    mod = importlib.import_module(
+        "openprogram.providers.azure_openai_responses.azure_openai_responses")
+    monkeypatch.setenv("AZURE_OPENAI_BASE_URL", "https://azure.example")
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner.current_task_resource_context",
+        lambda: ("task", object()) if governed else None,
+    )
+    captured = {}
+
+    class Client:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    import openai
+    monkeypatch.setattr(openai, "AsyncAzureOpenAI", Client)
+    mod._create_client(
+        _model(api="azure-openai-responses", provider="azure-openai-responses"),
+        "key", {},
+    )
+    assert captured["max_retries"] == expected
+
+
+@pytest.mark.parametrize(("governed", "expected"), [(False, 3), (True, 1)])
+def test_attempt_semantics_for_google_bedrock_and_gemini_cli(
+    monkeypatch, governed, expected,
+):
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner.current_task_resource_context",
+        lambda: ("task", object()) if governed else None,
+    )
+    from openprogram.providers.budget import provider_retry_attempts
+
+    for adapter_default in (3, 3, 4):
+        actual = provider_retry_attempts(adapter_default)
+        assert actual == (expected if adapter_default == 3 else (1 if governed else 4))

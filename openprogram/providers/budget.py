@@ -59,6 +59,13 @@ def estimate_input_upper_bound(context, options, model=None) -> int:
             "quota.accounting_unavailable",
             "provider adapter has no audited safe input token bound",
         )
+    for message in getattr(context, "messages", None) or []:
+        for block in getattr(message, "content", None) or []:
+            if getattr(block, "type", None) in {"image", "video", "audio"}:
+                raise QuotaExceeded(
+                    "quota.accounting_unavailable",
+                    "multimodal input has no audited provider token upper bound",
+                )
     import json
 
     context_payload = (
@@ -251,15 +258,6 @@ class BudgetedRequest:
             # conservative reservation held rather than releasing exposure
             # we cannot prove went unused.
             return
-        reserved_tokens = self.reservation.token_reservation
-        actual_tokens = event.total_tokens or (
-            event.input_tokens + event.output_tokens
-        )
-        if actual_tokens > reserved_tokens:
-            raise QuotaExceeded(
-                "quota.accounting_unavailable",
-                "actual usage exceeds reservation; conservative exposure retained",
-            )
         try:
             attributed = self._governor.settle_provider_request(
                 self.reservation.reservation_id, event,

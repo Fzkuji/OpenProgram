@@ -635,7 +635,7 @@ def test_durable_worker_baseexception_persists_terminal_before_release(
         runner.shutdown(wait=False)
 
 
-def test_running_status_write_failure_keeps_admission_for_reconcile(
+def test_running_status_write_failure_reconciles_terminal_and_releases(
     store_fixture, monkeypatch, tmp_path,
 ):
     import openprogram.agent.task.runner as runner_mod
@@ -647,8 +647,10 @@ def test_running_status_write_failure_keeps_admission_for_reconcile(
     monkeypatch.setattr(runner_mod, "_broadcast", lambda *_a, **_k: None)
     real_update = runner_mod._store_update_status
 
+    failed = True
+
     def fail_running(session_id, task_id, status, **fields):
-        if status == TaskStatus.RUNNING:
+        if failed and status in {TaskStatus.RUNNING, TaskStatus.ERRORED}:
             raise OSError("task store unavailable")
         return real_update(session_id, task_id, status, **fields)
 
@@ -666,6 +668,24 @@ def test_running_status_write_failure_keeps_admission_for_reconcile(
         ).fetchone()
         assert task is not None and task.status == TaskStatus.QUEUED
         assert admission[0] == "live"
+        assert ledger.connection().execute(
+            "SELECT state FROM task_finalizations WHERE task_id = ?", (task_id,),
+        ).fetchone()[0] == "pending"
+        failed = False
+        runner._reconcile_resources()
+        assert runner.get_task(task_id).status == TaskStatus.ERRORED
+        assert ledger.connection().execute(
+            "SELECT state FROM task_admissions WHERE task_id = ?", (task_id,),
+        ).fetchone()[0] == "released"
+        from openprogram.agent.sub_agent_run import AgentTurnResult
+        monkeypatch.setattr(
+            "openprogram.agent.sub_agent_run._execute_agent_turn",
+            lambda **_kwargs: AgentTurnResult(final_text="ok"),
+        )
+        next_id = runner.spawn_task(
+            session_id="p1", prompt="next", agent_id="main", parent_msg_id="a1",
+        )
+        assert runner.await_task(next_id, timeout=2).status == TaskStatus.COMPLETED
     finally:
         runner.shutdown(wait=False)
 

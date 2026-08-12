@@ -140,9 +140,11 @@ def stream_google_gemini_cli(
 
             ev_stream.push({"type": "start", "partial": output})
 
+            from ..budget import provider_retry_attempts
+            max_attempts = provider_retry_attempts(_MAX_RETRIES + 1)
             retry_count = 0
             endpoint_index = 0
-            while retry_count <= _MAX_RETRIES:
+            while retry_count < max_attempts:
                 base_url = endpoints[min(endpoint_index, len(endpoints) - 1)]
                 endpoint_url = f"{base_url.rstrip('/')}/v1internal:streamGenerateContent?alt=sse"
                 # Hardened client: decoupled + generous timeouts (was a single
@@ -163,7 +165,7 @@ def stream_google_gemini_cli(
                             if response.status_code in (403, 404) and endpoint_index < len(endpoints) - 1:
                                 endpoint_index += 1
                                 continue
-                            if retry_count < _MAX_RETRIES and _is_retryable_error(response.status_code, error_text):
+                            if retry_count + 1 < max_attempts and _is_retryable_error(response.status_code, error_text):
                                 delay = extract_retry_delay(error_text) or (_BASE_DELAY_MS * (2 ** retry_count))
                                 await asyncio.sleep(delay / 1000)
                                 retry_count += 1

@@ -1761,6 +1761,19 @@ class TaskRunner:
             # Tell tail clients the session changed so attach card
             # picks up the new head / text.
             _broadcast_session_reload(session_id, reason=f"task_{new_status.value}")
+        except BaseException as exc:  # noqa: BLE001
+            err = f"{type(exc).__name__}: {exc}"
+            try:
+                updated = self._finalize_task_status(
+                    session_id, task_id, lease_generation,
+                    TaskStatus.ERRORED, "error.execution", error=err,
+                )
+                if updated is not None:
+                    _broadcast_task_status(updated)
+            except BaseException:
+                # finalize_task stages a durable intent before the task-store
+                # write. Reconcile completes it once persistence recovers.
+                _log.exception("failed to persist terminal task %s", task_id)
         finally:
             lease_stop.set()
             lease_thread.join(timeout=1.0)

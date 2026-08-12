@@ -2168,14 +2168,13 @@ def build_task_resource_view(
     counts = ledger.resource_counts(task.parent_session_id, task.id)
     snapshot = task.resolved_limits_snapshot
     if snapshot and isinstance(snapshot.get("limits"), dict):
+        fields = dict(resolved.fields)
+        for name in ("max_runtime_seconds", "idle_timeout_seconds"):
+            value = snapshot["limits"].get(name)
+            if isinstance(value, dict):
+                fields[name] = ResolvedLimit(**value)
         resolved = ResolvedResourceLimits(
-            scheduler_capacity=int(
-                snapshot.get("scheduler_capacity", resolved.scheduler_capacity)
-            ),
-            fields={
-                name: ResolvedLimit(**value)
-                for name, value in snapshot["limits"].items()
-            },
+            scheduler_capacity=resolved.scheduler_capacity, fields=fields,
         )
     limits = resolved.effective_limits()
     counts["session_live"]["limit"] = limits["max_live_per_session"]

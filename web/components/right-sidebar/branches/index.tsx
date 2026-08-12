@@ -111,7 +111,12 @@ export function BranchesPanel({ variant = "list" }: {
           // branch row to wipe.
           const headForWipe = finalHead || cur[tid]?.finalHead
                               || targetHead || cur[tid]?.targetHead;
-          delete next[tid];
+          next[tid] = {
+            targetHead, finalHead, status,
+            sessionId: d.session_id,
+            label: d.label || d.subject || null,
+            resource: d.resource || cur[tid]?.resource || null,
+          };
           if (headForWipe) {
             setFinishingHeads((fs) => {
               const ns = new Set(fs);
@@ -153,7 +158,6 @@ export function BranchesPanel({ variant = "list" }: {
     wsSend({
       action: "list_tasks",
       session_id: sessionId,
-      status_filter: ["pending", "queued", "running"],
     });
     const onMsg = (e: WindowEventMap["op:task-message"]) => {
       const det = e.detail;
@@ -170,8 +174,6 @@ export function BranchesPanel({ variant = "list" }: {
           const tid = t.id as string | undefined;
           const status = (t.status as string | undefined) || "";
           if (!tid) continue;
-          if (status === "completed" || status === "cancelled"
-              || status === "errored") continue;
           m[tid] = {
             targetHead: (t.target_branch_head_id as string | null) || null,
             finalHead: (t.head_id as string | null) || null,
@@ -299,13 +301,15 @@ export function BranchesPanel({ variant = "list" }: {
     } else if (entry.targetHead) {
       head = entry.targetHead;
     }
-    if (head) {
+    const terminal = entry.status === "completed"
+      || entry.status === "cancelled" || entry.status === "errored";
+    if (head && !terminal) {
       runningHeads.add(head);
-    } else {
+    } else if (!head) {
       // No real head id yet — synthesize one keyed off task_id so
       // the row stays stable across status events.
       const synth = `${PENDING_HEAD_PREFIX}${tid}`;
-      runningHeads.add(synth);
+      if (!terminal) runningHeads.add(synth);
       pendingRows.push({
         head_msg_id: synth,
         name: entry.label || `task ${tid.slice(0, 6)}`,

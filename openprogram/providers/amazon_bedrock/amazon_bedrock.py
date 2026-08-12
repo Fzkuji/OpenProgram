@@ -128,6 +128,8 @@ def stream_bedrock(
         # ``OPENPROGRAM_BEDROCK_MAX_RETRIES``.
         from botocore.config import Config as _BotoConfig
         boto_max_attempts = int(os.environ.get("OPENPROGRAM_BEDROCK_MAX_RETRIES", "3"))
+        from ..budget import provider_retry_attempts
+        boto_max_attempts = provider_retry_attempts(boto_max_attempts)
         boto_config = _BotoConfig(
             retries={"max_attempts": boto_max_attempts, "mode": "standard"},
         )

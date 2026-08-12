@@ -32,12 +32,15 @@ from openprogram.providers.types import (
     SimpleStreamOptions,
     StreamOptions,
     Usage,
+    ImageContent,
+    UserMessage,
 )
 from openprogram.providers.structured_output import JsonSchemaOutput
 from openprogram.usage import context as _ctx_mod
 from openprogram.usage import recorder as _recorder
 from openprogram.usage.context import UsageContext
 from openprogram.usage.ledger import UsageLedger
+from openprogram.usage.event import UsageEvent
 
 
 @pytest.fixture(autouse=True)
@@ -186,16 +189,29 @@ def test_budgeted_call_settles_actual_usage_once(wired):
     assert set(_reservation_states(env["ledger"])) == {"settled"}
 
 
-def test_actual_usage_cannot_exceed_reserved_token_exposure(wired):
+def test_actual_usage_over_reservation_is_authoritatively_settled(wired):
     env = wired(
         limits=ResourceLimits(max_total_tokens=100_000),
         usage=Usage(input=90_000, output=20_000, cache_read=0, cache_write=0),
     )
 
-    with pytest.raises(QuotaExceeded, match="actual usage exceeds reservation"):
-        _drain(env["model"], SimpleStreamOptions(session_id="s1"))
+    _drain(env["model"], SimpleStreamOptions(session_id="s1"))
 
-    assert set(_reservation_states(env["ledger"])) == {"started"}
+    row = env["ledger"].query()[0]
+    assert row.total_tokens == 110_000
+    assert set(_reservation_states(env["ledger"])) == {"settled"}
+    event = env["ledger"].connection().execute(
+        "SELECT reservation_id FROM usage_events LIMIT 1",
+    ).fetchone()[0]
+    root = event.removesuffix(":token")
+    duplicate = UsageEvent(
+        event_id="duplicate", session_id="s1", provider="fakeprov",
+        model_id="fake-model-1", input_tokens=90_000, output_tokens=20_000,
+    )
+    assert env["governor"].settle_provider_request(root, duplicate) is None
+    assert env["ledger"].query()[0].events == 1
+    with pytest.raises(QuotaExceeded):
+        _drain(env["model"], SimpleStreamOptions(session_id="s1"))
 
 
 def test_budgeted_provider_disables_adapter_internal_retries(wired):
@@ -237,6 +253,26 @@ def test_budgeted_payload_mutator_fails_closed_before_provider(wired):
             env["model"],
             SimpleStreamOptions(session_id="s1", on_payload=lambda payload, model: payload),
         )
+    assert env["provider"].seen_opts == []
+
+
+def test_budgeted_high_resolution_image_fails_closed_before_provider(wired):
+    from openprogram.providers import stream_simple
+
+    env = wired(limits=ResourceLimits(max_total_tokens=100_000))
+    context = Context(messages=[UserMessage(
+        content=[ImageContent(data="compressed", mime_type="image/png")],
+        timestamp=0,
+    )])
+
+    async def go():
+        async for _ in stream_simple(
+            env["model"], context, SimpleStreamOptions(session_id="s1"),
+        ):
+            pass
+
+    with pytest.raises(QuotaExceeded, match="multimodal"):
+        asyncio.run(go())
     assert env["provider"].seen_opts == []
 
 

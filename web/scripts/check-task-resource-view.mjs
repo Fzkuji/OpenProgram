@@ -9,7 +9,12 @@ const item = fs.readFileSync(
   "utf8",
 );
 
-for (const required of ["d.resource || null", "t.resource as Record", "resourceForHead"]) {
+for (const required of [
+  "d.resource || cur[tid]?.resource || null",
+  "t.resource as Record",
+  "resourceForHead",
+  "if (!terminal) runningHeads.add(synth)",
+]) {
   if (!panel.includes(required)) throw new Error(`task resource wiring missing: ${required}`);
 }
 for (const required of ["<details", "<summary aria-label=", "resource_state", "reason_code", "capacity", "budget"]) {

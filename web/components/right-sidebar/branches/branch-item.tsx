@@ -206,7 +206,7 @@ export function BranchItem({
         <span className="branch-item-name">{branch.name}</span>
       )}
       {branch.active ? <span className="branch-item-badge">{t("right.head")}</span> : null}
-      {isPending ? (
+      {running ? (
         <span
           className="branch-item-badge"
           style={{ background: "rgba(160, 107, 255, 0.18)" }}
