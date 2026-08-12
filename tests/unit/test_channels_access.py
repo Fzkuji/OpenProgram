@@ -18,8 +18,9 @@ from openprogram.channels.base import Channel
 
 @pytest.fixture(autouse=True)
 def _tmp_state(tmp_path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("openprogram.paths.get_state_dir",
-                        lambda: tmp_path / "state")
+    state = tmp_path / "state"
+    state.mkdir(mode=0o700)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
 
 
 def test_default_policy_is_pairing() -> None:
@@ -110,6 +111,7 @@ def test_legacy_open_policy_is_ignored_fail_closed() -> None:
     path = _access.access_path("wechat", "a1")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('{"policy":"open","allowlist":{},"pending":{}}')
+    path.chmod(0o600)
 
     decision = _access.decide_inbound_sender("wechat", "a1", "stranger")
     assert decision.allowed is False

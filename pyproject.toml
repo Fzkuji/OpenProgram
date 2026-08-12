@@ -121,9 +121,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "build>=1.2",
-    # Exercises the real retry-attempt semantics used by the optional
-    # Amazon Bedrock adapter without requiring AWS credentials.
-    "botocore>=1.34",
+    # Exercises the optional Amazon Bedrock adapter without AWS credentials.
+    "boto3>=1.34",
+    "pip>=24",
     # test_wheel_contains_both_runtime_shims builds with --no-isolation, so
     # the backend must be importable in the dev env (not bundled on 3.12+)
     "setuptools>=68,<75",
