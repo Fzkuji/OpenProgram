@@ -13,6 +13,38 @@ ROOT = Path(__file__).resolve().parents[2]
 MATRIX = ROOT / "docs/reference/design/feature-matrix.html"
 
 
+def _hide_the_canonical_score_behind_visible_drift(text: str) -> str:
+    return text.replace(
+        '<span>OpenProgram 完整确认 <b data-matrix-metric="openprogram-score" '
+        'data-value="71">71</b></span>',
+        "<span>OpenProgram 完整确认 <b>999</b></span>"
+        '<span hidden data-matrix-metric="openprogram-score" '
+        'data-value="71">71</span>',
+        1,
+    )
+
+
+def _replace_visible_matrix_with_hidden_canonical_copy(text: str) -> str:
+    marker = '<table class="fx">'
+    start = text.index(marker)
+    end = text.index("</table>", start) + len("</table>")
+    canonical = text[start:end]
+    visible = canonical.replace(marker, '<table class="wide">', 1)
+    ssrf = visible.index("Runtime URL 获取 SSRF 防护")
+    cell = visible.index('<td class="g0 us">·</td>', ssrf)
+    visible = (
+        visible[:cell]
+        + '<td class="g1 us">●</td>'
+        + visible[cell + len('<td class="g0 us">·</td>') :]
+    )
+    hidden = canonical.replace(marker, '<table class="fx" hidden>', 1)
+    return (
+        text[:start]
+        + visible
+        + text[end:].replace("</body>", f"<div hidden>{hidden}</div></body>", 1)
+    )
+
+
 def test_feature_matrix_mechanics_match_displayed_summary() -> None:
     result = check_matrix(MATRIX)
 
@@ -95,6 +127,31 @@ def test_feature_matrix_mechanics_match_displayed_summary() -> None:
                 1,
             ),
             "category gap order",
+        ),
+        (
+            lambda text: text.replace(
+                '<th class="us">我们</th><th>claude</th>',
+                '<th class="us">claude</th><th>我们</th>',
+                1,
+            ),
+            "framework header",
+        ),
+        (
+            _hide_the_canonical_score_behind_visible_drift,
+            "visible matrix metric",
+        ),
+        (
+            lambda text: text.replace(
+                'data-matrix-metric="openprogram-score" data-value="71">71</b>',
+                'data-matrix-metric="openprogram-score" data-value="999" '
+                'data-value="71">71</b>',
+                1,
+            ),
+            "duplicate attribute",
+        ),
+        (
+            _replace_visible_matrix_with_hidden_canonical_copy,
+            "canonical feature table",
         ),
     ],
 )
