@@ -224,7 +224,11 @@ export function sendChatMessage({
     console.error("[sendChatMessage] WebSocket send failed:", error);
     return false;
   }
-  if (sessionId?.startsWith("local_")) {
+  // Close the clear→ACK race for every session, not only provisional
+  // drafts. A queued send is already in flight once the socket accepted
+  // the frame; marking that session busy now prevents a repeated
+  // running_task_clear from draining the next queue entry before chat_ack.
+  if (sessionId) {
     useSessionStore.getState().setRunningTaskFor(sessionId, {
       session_id: sessionId,
       msg_id: "",

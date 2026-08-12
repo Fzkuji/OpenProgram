@@ -6,6 +6,7 @@
  */
 
 import { useSessionStore } from "@/lib/session-store";
+import { marked as npmMarked } from "marked";
 
 /** Module-local flag replacing the old `window.__stickListenerInstalled`. */
 let stickListenerInstalled = false;
@@ -89,26 +90,24 @@ export function sanitizeHtml(html: string): string {
 export function renderMd(s: unknown): string {
   if (typeof s !== "string") s = String(s ?? "");
   let str = s as string;
-  if (window.marked) {
-    const mathBlocks: string[] = [];
-    const stash = (m: string): string => {
-      mathBlocks.push(m);
-      return "%%MATH" + (mathBlocks.length - 1) + "%%";
-    };
-    str = str.replace(/\$\$([\s\S]*?)\$\$/g, stash);
-    str = str.replace(/\\\[([\s\S]*?)\\\]/g, stash);
-    str = str.replace(/\\\(([\s\S]*?)\\\)/g, stash);
-    str = str.replace(/\$([^$\n]+?)\$/g, stash);
-    // Sanitize BEFORE restoring math: the placeholders are inert text, so
-    // the LaTeX source can't be mangled by the strip, and KaTeX renders
-    // from the original string afterwards.
-    let html = sanitizeHtml(window.marked.parse(str, { breaks: true }));
-    for (let i = 0; i < mathBlocks.length; i++) {
-      html = html.replace("%%MATH" + i + "%%", mathBlocks[i]);
-    }
-    return '<span class="md-rendered">' + html + "</span>";
+  const markdown = window.marked ?? npmMarked;
+  const mathBlocks: string[] = [];
+  const stash = (m: string): string => {
+    mathBlocks.push(m);
+    return "%%MATH" + (mathBlocks.length - 1) + "%%";
+  };
+  str = str.replace(/\$\$([\s\S]*?)\$\$/g, stash);
+  str = str.replace(/\\\[([\s\S]*?)\\\]/g, stash);
+  str = str.replace(/\\\(([\s\S]*?)\\\)/g, stash);
+  str = str.replace(/\$([^$\n]+?)\$/g, stash);
+  // Sanitize BEFORE restoring math: the placeholders are inert text, so
+  // the LaTeX source can't be mangled by the strip, and KaTeX renders
+  // from the original string afterwards.
+  let html = sanitizeHtml(markdown.parse(str, { breaks: true }) as string);
+  for (let i = 0; i < mathBlocks.length; i++) {
+    html = html.replace("%%MATH" + i + "%%", mathBlocks[i]);
   }
-  return "<pre>" + escHtml(str) + "</pre>";
+  return '<span class="md-rendered">' + html + "</span>";
 }
 
 export function renderMathInChat(): void {

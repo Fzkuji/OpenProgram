@@ -706,6 +706,7 @@ export const useSessionStore = create<ConvState>((set) => ({
 
   setRunningTaskFor: (sessionId, t) =>
     set((s) => {
+      const wasRunning = Boolean(s.runningTasks[sessionId]);
       const next = { ...s.runningTasks };
       if (t) next[sessionId] = t;
       else delete next[sessionId];
@@ -719,7 +720,7 @@ export const useSessionStore = create<ConvState>((set) => ({
       // the composer's optimistic stop, fn-form rollback), so the queue
       // needs no polling of its own. Deferred a tick so the drain's own
       // store writes don't re-enter this `set`.
-      if (!t) {
+      if (!t && wasRunning) {
         queueMicrotask(() => {
           void import("@/lib/state/send-queue").then((m) =>
             m.useSendQueue.getState().drain(sessionId),

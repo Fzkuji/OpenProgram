@@ -18,7 +18,15 @@ const conversations = source("lib/runtime-bridge/conversations.ts");
 const chatHandlers = source("lib/runtime-bridge/chat-handlers.ts");
 const sessionStore = source("lib/session-store/index.ts");
 const assistantBubble = source("components/chat/messages/assistant-bubble.tsx");
+const runtimeHelpers = source("lib/runtime-bridge/helpers.ts");
 const chatCss = readChatCss(root);
+
+// Markdown must not depend on the optional CDN script. A missing/blocked CDN
+// previously left every assistant response in renderMd's bordered <pre>
+// fallback for the lifetime of the page.
+assert.match(runtimeHelpers, /import \{ marked as npmMarked \} from "marked";/);
+assert.match(runtimeHelpers, /window\.marked\s*\?\?\s*npmMarked/);
+assert.doesNotMatch(runtimeHelpers, /return "<pre>" \+ escHtml\(str\) \+ "<\/pre>";/);
 
 assert.match(welcome, /src=["{]?["']\/icon\.svg["']/);
 assert.doesNotMatch(welcome, /styles\.(?:l1|l2|m|caret)\b/);

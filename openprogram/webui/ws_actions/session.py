@@ -687,14 +687,11 @@ async def handle_load_session(ws, cmd: dict):
                 "status": (_ddb().get_session(session_id) or {}).get("status", "idle"),
             },
         }, default=str))
-        # Zombie-task guards: no active runtime registered OR last event
-        # >5 min ago → treat as dead, drop the task entry.
+        # _is_run_active above already removed any non-reserved task without
+        # a live runtime. The remaining timeout also recovers a reservation
+        # whose setup thread died before runtime handoff.
         with _s._running_tasks_lock:
             task_info = _s._running_tasks.get(session_id)
-        if task_info and not _s._has_active_runtime(session_id):
-            with _s._running_tasks_lock:
-                _s._running_tasks.pop(session_id, None)
-            task_info = None
         if task_info:
             _now = time.time()
             _started = task_info.get("started_at", _now)
@@ -752,6 +749,19 @@ async def handle_load_session(ws, cmd: dict):
                 "settings": {},
             },
         }, default=str))
+
+
+async def handle_get_run_state(ws, cmd: dict):
+    """Report run state without changing this socket's focused session."""
+    from openprogram.webui import server as _s
+    session_id = cmd.get("session_id")
+    await ws.send_text(json.dumps({
+        "type": "run_state",
+        "data": {
+            "session_id": session_id,
+            "run_active": bool(session_id and _s._is_run_active(session_id)),
+        },
+    }))
 
 
 async def handle_follow_up_answer(ws, cmd: dict):
@@ -1066,6 +1076,7 @@ ACTIONS = {
     "update_session_flags": handle_update_session_flags,
     "clear_sessions": handle_clear_sessions,
     "load_session": handle_load_session,
+    "get_run_state": handle_get_run_state,
     "follow_up_answer": handle_follow_up_answer,
     "question_reply": handle_question_reply,
     "question_reject": handle_question_reject,

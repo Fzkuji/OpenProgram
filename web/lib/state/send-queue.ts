@@ -146,14 +146,40 @@ export function promoteToHead(sessionId: string, id: string): void {
   });
 }
 
-/** Imperative enqueue for the composer (which is not a store consumer). */
-export function enqueueMessage(sessionId: string, draft: QueueDraft): string {
+/** Imperative enqueue for the composer (which is not a store consumer).
+ *  The queue intentionally carries plain text only. Returning null keeps an
+ *  attached draft intact instead of separating its caption from its files. */
+export function enqueueMessage(
+  sessionId: string,
+  draft: QueueDraft,
+  attachmentCount = 0,
+): string | null {
+  if (attachmentCount > 0) return null;
   return useSendQueue.getState().enqueue(sessionId, draft);
 }
 
 /** Non-reactive read for imperative call sites. */
 export function queueFor(sessionId: string): QueuedMessage[] {
   return useSendQueue.getState().queues[sessionId] ?? EMPTY;
+}
+
+/** Reconcile one retained queue after a WebSocket reconnect has loaded the
+ *  server's authoritative session state. Active sessions wait for their real
+ *  running_task_clear; idle sessions may retry the head immediately. */
+export function reconcileAfterSessionLoad(
+  sessionId: string,
+  runActive: boolean,
+): void {
+  const sessions = useSessionStore.getState();
+  if (runActive) {
+    sessions.setRunningTaskFor(sessionId, { session_id: sessionId, msg_id: "" });
+    return;
+  }
+  const wasRunning = Boolean(sessions.runningTasks[sessionId]);
+  sessions.setRunningTaskFor(sessionId, null);
+  if (!wasRunning) {
+    queueMicrotask(() => useSendQueue.getState().drain(sessionId));
+  }
 }
 
 /** Turn settings of the last outgoing send per session, so a rejected

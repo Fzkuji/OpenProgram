@@ -576,7 +576,8 @@ async def handle_chat(ws, cmd: dict):
     # the research_agent program loop — plain chat turns dispatched via
     # process_user_turn never read it, so a silent steer-merge here
     # would swallow the message for every ordinary chat session.
-    if _s._is_run_active(session_id):
+    msg_id = str(uuid.uuid4())[:8]
+    if not _s._try_reserve_run(session_id, msg_id):
         await ws.send_text(json.dumps({
             "type": "chat_response",
             "data": {
@@ -592,29 +593,31 @@ async def handle_chat(ws, cmd: dict):
         }, default=str))
         return
 
-    from openprogram.agent.session_config import save_session_run_config
-    run_cfg = save_session_run_config(
-        session_id,
-        agent_id=_db_agent_id(session_id),
-        tools=tools_flag,
-        # web_search / toolset stored as INTENT (not expanded into a list) so
-        # the session always follows the live tool set.
-        web_search=web_search_flag,
-        toolset=tools_profile,
-        thinking_effort=thinking_effort,
-        permission_mode=permission_mode,
-        # 草稿会话（尚无 session_id）在首条消息落地额外工作目录的唯一通道
-        # （additional-working-directories.md §3.3）。None = 不动既有配置。
-        additional_working_dirs=cmd.get("additional_working_dirs"),
-    )
+    try:
+        from openprogram.agent.session_config import save_session_run_config
+        run_cfg = save_session_run_config(
+            session_id,
+            agent_id=_db_agent_id(session_id),
+            tools=tools_flag,
+            # web_search / toolset stored as INTENT (not expanded into a list) so
+            # the session always follows the live tool set.
+            web_search=web_search_flag,
+            toolset=tools_profile,
+            thinking_effort=thinking_effort,
+            permission_mode=permission_mode,
+            # 草稿会话（尚无 session_id）在首条消息落地额外工作目录的唯一通道
+            # （additional-working-directories.md §3.3）。None = 不动既有配置。
+            additional_working_dirs=cmd.get("additional_working_dirs"),
+        )
+    except BaseException:
+        _s._release_run_reservation(session_id, msg_id)
+        raise
     conv["tools_enabled"] = run_cfg.tools_enabled
     conv["tools_override"] = run_cfg.tools_override
     conv["web_search"] = run_cfg.web_search
     conv["toolset"] = run_cfg.toolset
     conv["thinking_effort"] = run_cfg.thinking_effort
     conv["permission_mode"] = run_cfg.permission_mode
-    msg_id = str(uuid.uuid4())[:8]
-
     # Persist EVERY attachment to the session workdir so the agent's file
     # tools can read them and the chat can render them back, and embed the
     # saved ABSOLUTE PATH into the message text (every file is referenced
@@ -622,7 +625,11 @@ async def handle_chat(ws, cmd: dict):
     # dispatcher as ImageContent blocks; documents are NOT passed as
     # content blocks (providers have no document-block support here).
     if attachments:
-        text = _persist_attachments(session_id, attachments, text)
+        try:
+            text = _persist_attachments(session_id, attachments, text)
+        except BaseException:
+            _s._release_run_reservation(session_id, msg_id)
+            raise
         attachments = [a for a in attachments
                        if a.get("type") != "document"] or None
 
@@ -635,8 +642,11 @@ async def handle_chat(ws, cmd: dict):
     # live title against the truncation it expects) keeps the LLM title.
     # We do NOT set _user_titled: this is an automatic title, not a manual
     # rename, so the LLM stage and turn-1/6/16/40 re-titling stay live.
-    from openprogram.agent.session_db import default_db as _chat_ddb
-    _chat_sess = _chat_ddb().get_session(session_id) or {}
+    try:
+        from openprogram.agent.session_db import default_db as _chat_ddb
+        _chat_sess = _chat_ddb().get_session(session_id) or {}
+    except Exception:
+        _chat_sess = {}
     _chat_extra = _chat_sess.get("extra_meta") or {}
     if not _chat_extra.get("_auto_titled") and not _chat_extra.get("_user_titled"):
         _truncated = _title_from_text(text)
@@ -646,10 +656,18 @@ async def handle_chat(ws, cmd: dict):
         except Exception:
             pass
 
-    parsed = _s._parse_chat_input(text)
+    try:
+        parsed = _s._parse_chat_input(text)
+    except BaseException:
+        _s._release_run_reservation(session_id, msg_id)
+        raise
 
-    from openprogram.agent.authority import local_owner_authority
-    _local_authority = local_owner_authority()
+    try:
+        from openprogram.agent.authority import local_owner_authority
+        _local_authority = local_owner_authority()
+    except BaseException:
+        _s._release_run_reservation(session_id, msg_id)
+        raise
 
     user_msg = {
         "role": "user",
@@ -679,19 +697,27 @@ async def handle_chat(ws, cmd: dict):
             for a in attachments
         ]
         user_msg["extra"] = json.dumps({"attachments": manifest}, default=str)
-    _s._append_msg(conv, user_msg)
+    try:
+        _s._append_msg(conv, user_msg)
+    except BaseException:
+        _s._release_run_reservation(session_id, msg_id)
+        raise
 
     # chat.before_send on the bus — plugin subscribers observe the
     # message about to enter the runtime. emit_safe swallows failures
     # so a bad subscriber can't poison the chat path.
-    from openprogram.events import emit_safe
-    emit_safe("chat.before_send", "user", {
-        "session_id": session_id,
-        "msg_id": msg_id,
-        "text": text,
-        "agent_id": _db_agent_id(session_id),
-        "attachments": bool(attachments),
-    }, {"session": session_id})
+    try:
+        from openprogram.events import emit_safe
+        emit_safe("chat.before_send", "user", {
+            "session_id": session_id,
+            "msg_id": msg_id,
+            "text": text,
+            "agent_id": _db_agent_id(session_id),
+            "attachments": bool(attachments),
+        }, {"session": session_id})
+    except BaseException:
+        _s._release_run_reservation(session_id, msg_id)
+        raise
 
     # Echo the STORED text back. The composer only knows the path-less
     # mention it wrote (``@ <abs path>`` is appended above, after the
@@ -699,10 +725,15 @@ async def handle_chat(ws, cmd: dict):
     # own draft has no path to open. Handing it the final text is what
     # makes an attachment clickable in the turn you sent it, instead of
     # only after a reload.
-    await ws.send_text(json.dumps({
-        "type": "chat_ack",
-        "data": {"session_id": session_id, "msg_id": msg_id, "text": text},
-    }))
+    try:
+        await ws.send_text(json.dumps({
+            "type": "chat_ack",
+            "data": {"session_id": session_id, "msg_id": msg_id, "text": text},
+        }))
+    except Exception:
+        # The turn is already persisted. Losing its originating socket must
+        # not leave that user message without a corresponding execution.
+        pass
 
     # Mark the session running + push the sidebar list right now, before
     # the exec thread starts — so every connected tab shows the new
@@ -726,8 +757,15 @@ async def handle_chat(ws, cmd: dict):
     except Exception:
         pass
 
+    def _make_run_thread(**kwargs):
+        try:
+            return threading.Thread(**kwargs)
+        except BaseException:
+            _s._release_run_reservation(session_id, msg_id)
+            raise
+
     if parsed["action"] == "query":
-        threading.Thread(
+        run_thread = _make_run_thread(
             target=_s._execute_in_context,
             args=(session_id, msg_id, "query"),
             kwargs={"query": parsed["raw"],
@@ -737,9 +775,9 @@ async def handle_chat(ws, cmd: dict):
                     "service_tier": service_tier,
                     "attachments": attachments},
             daemon=True,
-        ).start()
+        )
     elif parsed["action"] == "spawn":
-        threading.Thread(
+        run_thread = _make_run_thread(
             target=_s._execute_in_context,
             args=(session_id, msg_id, "spawn"),
             kwargs={"kwargs": {
@@ -756,9 +794,9 @@ async def handle_chat(ws, cmd: dict):
                 "wait": parsed.get("wait", True),
             }},
             daemon=True,
-        ).start()
+        )
     elif parsed["action"] == "merge":
-        threading.Thread(
+        run_thread = _make_run_thread(
             target=_s._execute_in_context,
             args=(session_id, msg_id, "merge"),
             kwargs={"kwargs": {
@@ -766,7 +804,16 @@ async def handle_chat(ws, cmd: dict):
                 "message": parsed.get("message") or "",
             }},
             daemon=True,
-        ).start()
+        )
+    else:
+        _s._release_run_reservation(session_id, msg_id)
+        raise RuntimeError(f"unsupported chat action: {parsed['action']}")
+
+    try:
+        run_thread.start()
+    except BaseException:
+        _s._release_run_reservation(session_id, msg_id)
+        raise
 
 
 def _last_call_node(session_id: str, func_name: str):

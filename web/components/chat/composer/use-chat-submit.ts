@@ -87,14 +87,15 @@ export function useChatSubmit({
     // which is disabled while running.)
     if (isRunning) {
       if (!trimmed || !submitOwnerKey) return;
-      enqueueMessage(submitOwnerKey, {
+      const queuedId = enqueueMessage(submitOwnerKey, {
         text: trimmed,
         thinking,
         toolsEnabled,
         webSearchEnabled,
         serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
         background: bound !== null,
-      });
+      }, pendingImages.length + pendingDocs.length);
+      if (!queuedId) return;
       setComposerInputFor(submitOwnerKey, "");
       setHistoryIndex(-1);
       return;

@@ -69,7 +69,13 @@ setSocket({ readyState: 1, send: (payload) => sent.push(JSON.parse(payload)) });
 // Importing legacy-send is what registers the real chat sender with the
 // queue — the same wiring the app relies on.
 await import("../components/chat/composer/legacy-send.ts");
-const { useSendQueue, enqueueMessage, promoteToHead, requeueRejected } =
+const {
+  useSendQueue,
+  enqueueMessage,
+  promoteToHead,
+  requeueRejected,
+  reconcileAfterSessionLoad,
+} =
   await import("../lib/state/send-queue.ts");
 const { useSessionStore } = await import("../lib/session-store/index.ts");
 
@@ -183,5 +189,60 @@ assert.deepEqual(
 idle(A);
 await settle();
 assert.equal(sent[0].text, "rejected-by-race");
+
+/* --- 7. repeated clear before ACK still sends only one -------------- */
+sent.length = 0;
+useSendQueue.setState({ queues: {} });
+run(A);
+enqueueMessage(A, draft("clear-first"));
+enqueueMessage(A, draft("clear-second"));
+idle(A);
+idle(A);
+await settle();
+assert.deepEqual(
+  sent.map((m) => m.text),
+  ["clear-first"],
+  "duplicate idle notifications before ACK must not dispatch the next entry",
+);
+assert.deepEqual(
+  useSendQueue.getState().queues[A].map((q) => q.text),
+  ["clear-second"],
+  "the second entry waits for the first queued turn to finish",
+);
+
+/* --- 8. idle→idle is not a turn-completion signal ------------------ */
+sent.length = 0;
+useSendQueue.setState({ queues: {} });
+idle(A);
+await settle();
+enqueueMessage(A, draft("stale-idle"));
+idle(A);
+await settle();
+assert.equal(
+  sent.length,
+  0,
+  "setting an already-idle session to idle must not drain its queue",
+);
+assert.equal(useSendQueue.getState().queues[A][0].text, "stale-idle");
+
+/* --- 9. reconnect waits for authoritative idle, then retries -------- */
+sent.length = 0;
+useSendQueue.setState({ queues: {} });
+enqueueMessage(A, draft("after-reconnect"));
+setSocket({ readyState: 0, send: () => assert.fail("closed socket wrote") });
+useSendQueue.getState().drain(A);
+assert.equal(useSendQueue.getState().queues[A][0].text, "after-reconnect");
+setSocket({ readyState: 1, send: (payload) => sent.push(JSON.parse(payload)) });
+reconcileAfterSessionLoad(A, true);
+assert.equal(sent.length, 0, "an active restored session must not drain");
+reconcileAfterSessionLoad(A, false);
+await settle();
+assert.deepEqual(sent.map((m) => m.text), ["after-reconnect"]);
+assert.equal(useSendQueue.getState().queues[A], undefined);
+
+/* --- 10. attached drafts are retained, never split into text queue -- */
+const attachedId = enqueueMessage(A, draft("caption with image"), 1);
+assert.equal(attachedId, null, "an attached draft must not enter the text queue");
+assert.equal(useSendQueue.getState().queues[A], undefined);
 
 console.log("check-send-queue: ok");

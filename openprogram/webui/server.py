@@ -751,14 +751,84 @@ def _is_run_active(session_id: str) -> bool:
     dict we use for pause / stop, so we can't drift out of sync.
     """
     with _running_tasks_lock:
-        if session_id not in _running_tasks:
-            return False
+        task = _running_tasks.get(session_id)
+        # A chat handler reserves the session before it mutates the DAG and
+        # before its runtime thread exists. Treat that short state as active;
+        # otherwise a second handler would delete the reservation as a
+        # "zombie" and both turns could pass the guard.
+        if task and task.get("_reserved"):
+            if time.time() - task.get("started_at", 0) > 300:
+                _running_tasks.pop(session_id, None)
+                return False
+            return True
+    if task is None:
+        # Runtime registration precedes reservation handoff. If another
+        # observer arrives in that interval, the runtime itself still blocks
+        # a second turn even if stop/cleanup just removed the task entry.
+        return _has_active_runtime(session_id)
     # Zombie entry (no live runtime registered) → not actually running.
     # Drop it so subsequent calls don't keep blocking Edit/Retry/etc.
     if not _has_active_runtime(session_id):
         with _running_tasks_lock:
             _running_tasks.pop(session_id, None)
         return False
+    return True
+
+
+def _try_reserve_run(session_id: str, msg_id: str) -> bool:
+    """Atomically reserve one session for a chat turn before DAG mutation."""
+    if _is_run_active(session_id):
+        return False
+    now = time.time()
+    with _running_tasks_lock:
+        if session_id in _running_tasks:
+            return False
+        _running_tasks[session_id] = {
+            "msg_id": msg_id,
+            "func_name": "_chat",
+            "started_at": now,
+            "last_event_at": now,
+            "display_params": "",
+            "loaded_func_ref": None,
+            "stream_events": [],
+            "_reserved": True,
+        }
+    return True
+
+
+def _release_run_reservation(session_id: str, msg_id: str) -> None:
+    """Release only the still-provisional reservation owned by ``msg_id``."""
+    with _running_tasks_lock:
+        task = _running_tasks.get(session_id)
+        if task and task.get("_reserved") and task.get("msg_id") == msg_id:
+            _running_tasks.pop(session_id, None)
+
+
+def _activate_run_reservation(session_id: str, msg_id: str, runtime) -> bool:
+    """Atomically hand an owned reservation to its registered runtime."""
+    with _running_tasks_lock:
+        task = _running_tasks.get(session_id)
+        if not (task and task.get("_reserved")
+                and task.get("msg_id") == msg_id):
+            return False
+        # run_control uses a separate lock and never acquires
+        # _running_tasks_lock, so the two state writes can remain one visible
+        # transition without a lock-order cycle.
+        _register_active_runtime(session_id, runtime)
+        task.pop("_reserved", None)
+        task["started_at"] = time.time()
+        task["last_event_at"] = task["started_at"]
+    return True
+
+
+def _finish_owned_run(session_id: str, msg_id: str) -> bool:
+    """Remove only the task/runtime pair still owned by ``msg_id``."""
+    with _running_tasks_lock:
+        task = _running_tasks.get(session_id)
+        if not (task and task.get("msg_id") == msg_id):
+            return False
+        _unregister_active_runtime(session_id)
+        _running_tasks.pop(session_id, None)
     return True
 
 

@@ -35,16 +35,6 @@ def run_query(
 
     # Direct chat — include conversation history for context
     _s._log(f"[exec] query: {query[:80]}... (thinking={effective_thinking})")
-    with _s._running_tasks_lock:
-        _s._running_tasks[session_id] = {
-            "msg_id": msg_id,
-            "func_name": "_chat",
-            "started_at": time.time(),
-            "last_event_at": time.time(),
-            "display_params": "",
-            "loaded_func_ref": None,
-            "stream_events": [],
-        }
     _s._emit_running_task_event(session_id)
     _s._broadcast_chat_response(session_id, msg_id, {
         "type": "status", "content": "Thinking...",
@@ -118,7 +108,6 @@ def run_query(
     )
     from openprogram.functions.permission_rule import load_merged_rules as _load_merged_rules
 
-    _s._register_active_runtime(session_id, runtime)
     # Fresh token for this turn: registering it retires whatever the
     # previous turn left behind, so a stop aimed at that turn cannot
     # short-circuit this one.
@@ -297,10 +286,8 @@ def run_query(
             cancel_event=_chat_cancel_event,
         )
     finally:
-        with _s._running_tasks_lock:
-            _s._running_tasks.pop(session_id, None)
-        _s._emit_running_task_event(session_id)
-        _s._unregister_active_runtime(session_id)
+        if _s._finish_owned_run(session_id, msg_id):
+            _s._emit_running_task_event(session_id)
         # Pass our Event so a newer turn's registration (if any) is
         # left intact — see unregister_cancel_event.
         _s._unregister_cancel_event(session_id, _chat_cancel_event)

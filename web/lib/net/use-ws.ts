@@ -442,6 +442,14 @@ export function useWS(): void {
           // otherwise sit in the module-level Map forever.
           clearSessionByMsgId();
           loadSessionData(d as never);
+          {
+            const dd = d as { id?: unknown; run_active?: unknown } | undefined;
+            if (typeof dd?.id === "string" && dd.id) {
+              void import("@/lib/state/send-queue").then((m) =>
+                m.reconcileAfterSessionLoad(dd.id as string, dd.run_active === true),
+              );
+            }
+          }
           // Restore the session's additional working directories from the
           // persisted settings (refresh / device switch recovery).
           {
@@ -514,6 +522,20 @@ export function useWS(): void {
             }
           }
           return true;
+        case "run_state": {
+          const dd = d as
+            | { session_id?: unknown; run_active?: unknown }
+            | undefined;
+          if (typeof dd?.session_id === "string" && dd.session_id) {
+            void import("@/lib/state/send-queue").then((m) =>
+              m.reconcileAfterSessionLoad(
+                dd.session_id as string,
+                dd.run_active === true,
+              ),
+            );
+          }
+          return true;
+        }
         case "sessions_list":
           handleSessionsList((d ?? []) as never);
           return true;
@@ -601,6 +623,16 @@ export function useWS(): void {
             }),
           );
         }
+        // A queue item whose socket write failed is retained in renderer
+        // memory. Query background sessions without load_session: loading a
+        // transcript also changes this socket's focused-session marker.
+        void import("@/lib/state/send-queue").then((m) => {
+          const queued = Object.keys(m.useSendQueue.getState().queues);
+          const focused = runtimeState.currentSessionId;
+          for (const sid of new Set(queued.filter((id) => id !== focused))) {
+            socket?.send(JSON.stringify({ action: "get_run_state", session_id: sid }));
+          }
+        });
       };
 
       socket.onmessage = (e) => {

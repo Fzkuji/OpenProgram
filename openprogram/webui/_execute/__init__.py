@@ -539,6 +539,15 @@ def execute_in_context(
         from openprogram.agent.session_db import default_db as _exec_db
         _agent_id = (_exec_db().get_session(session_id) or {}).get("agent_id") or _s._default_agent_id()
         runtime = _s._get_session_runtime(session_id, msg_id=msg_id)
+        if not _s._activate_run_reservation(session_id, msg_id, runtime):
+            # Direct internal/test callers historically entered here without
+            # the WebSocket handler. Preserve that entry point while keeping
+            # the same reservation contract.
+            if (not _s._try_reserve_run(session_id, msg_id)
+                    or not _s._activate_run_reservation(
+                        session_id, msg_id, runtime)):
+                raise RuntimeError(
+                    "chat run reservation was lost before runtime startup")
         from openprogram.agent.session_config import (
             load_session_run_config,
             permission_from_config,
@@ -635,10 +644,8 @@ def execute_in_context(
         _s._save_session(session_id)
 
     except (Exception, _s._CancelledError) as e:
-        with _s._running_tasks_lock:
-            _s._running_tasks.pop(session_id, None)
-        _s._emit_running_task_event(session_id)
-        _s._unregister_active_runtime(session_id)
+        if _s._finish_owned_run(session_id, msg_id):
+            _s._emit_running_task_event(session_id)
 
         # Cancellation path — either the exception came from /api/stop killing
         # the subprocess, or a CancelledError was raised by the cancel hook
@@ -729,9 +736,7 @@ def execute_in_context(
         # nothing and stays silent, so no duplicate clear frame goes
         # out. spawn / merge success previously never popped at all,
         # leaving the session stuck "running" until server restart.
-        with _s._running_tasks_lock:
-            _had_task = _s._running_tasks.pop(session_id, None) is not None
-        if _had_task:
+        if _s._finish_owned_run(session_id, msg_id):
             _s._emit_running_task_event(session_id)
         _s._reset_current_session_id(_conv_token)
 
