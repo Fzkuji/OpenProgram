@@ -19,7 +19,7 @@
 
 ```text
 pytest -q tests/providers/test_record_replay.py tests/providers/test_record_replay_registry.py tests/providers/test_record_replay_cli.py tests/unit/test_usage_stream_chokepoint.py
-ruff check openprogram/providers/recording.py openprogram/providers/replay.py openprogram/providers/__init__.py tests/providers/test_record_replay.py tests/providers/test_record_replay_registry.py
+ruff check openprogram/providers/recording.py openprogram/providers/replay.py openprogram/providers/api_registry.py openprogram/providers/__init__.py tests/providers/test_record_replay.py tests/providers/test_record_replay_registry.py
 python -m tools.docs_site.build
 python -m tools.docs_site.checklinks
 git diff --check
@@ -36,6 +36,6 @@ git status --short
 | GREEN | Same two files -> 27 passed. |
 | Affected verification | Record/replay, CLI management, and stream chokepoint -> 45 passed; scoped Ruff passed; `git diff --check` passed. |
 | Specification review | Initial `CHANGES_REQUIRED`: synchronous `stream`/`stream_simple` source construction failures occurred before `begin_call`; repair RED was 2 failed, then 47 affected tests passed. Scoped re-review `PASS` at `a4f27b3b`. |
-| Quality review | Initial `CHANGES_REQUIRED`: duplicate terminal events wrote multiple `call_end` rows; fail-closed activation could not replace an existing transform. Repair RED was 2 failed. Scoped re-review found terminal `return` swallowed source-close errors; repair RED was 1 failed. Affected suite then passed 50 tests; final scoped re-review pending. |
+| Quality review | Initial `CHANGES_REQUIRED`: duplicate terminal events wrote multiple `call_end` rows; fail-closed activation could not replace an existing transform. Repair RED was 2 failed. Scoped re-review found terminal `return` swallowed source-close errors; repair RED was 1 failed. Final scoped re-review `PASS` at `6595d444`; affected suite passed 50 tests. |
 | Full gate | Pending |
 | Final implementation commit | Pending |
