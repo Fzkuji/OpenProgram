@@ -85,7 +85,7 @@ def test_runner_updates_attach_card_on_completion(isolated_store, monkeypatch):
         )
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run.run_agent_turn", fake_run,
+        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
     )
 
     # 3. Submit through the runner with attach_pointer_id wired in.
@@ -156,7 +156,7 @@ def test_attach_card_carries_the_subagent_name(isolated_store, monkeypatch):
         return AgentTurnResult(head_id="head_named", final_text="done")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run.run_agent_turn", fake_run,
+        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
     )
 
     from openprogram.agent.task import get_runner
