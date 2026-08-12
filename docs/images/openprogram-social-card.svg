@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">OpenProgram: Self-Programming AI Agent Framework</title>
+  <desc id="desc">OpenProgram brand card for social sharing.</desc>
+  <defs>
+    <linearGradient id="bg" x1="80" y1="20" x2="1120" y2="610" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#111827"/>
+      <stop offset="0.52" stop-color="#07080A"/>
+      <stop offset="1" stop-color="#130B22"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="64" y1="64" x2="216" y2="216" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3B9EFF"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+    <radialGradient id="blue" cx="0.35" cy="0.3" r="0.85">
+      <stop stop-color="#7FC0FF"/>
+      <stop offset="1" stop-color="#2F7FE0"/>
+    </radialGradient>
+    <radialGradient id="violet" cx="0.35" cy="0.3" r="0.85">
+      <stop stop-color="#C09BF7"/>
+      <stop offset="1" stop-color="#8A46D8"/>
+    </radialGradient>
+    <radialGradient id="indigo" cx="0.35" cy="0.3" r="0.85">
+      <stop stop-color="#8FA6F2"/>
+      <stop offset="1" stop-color="#5A5FD0"/>
+    </radialGradient>
+    <linearGradient id="word" x1="340" y1="140" x2="1010" y2="290" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="0.46" stop-color="#60A5FA"/>
+      <stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+    <clipPath id="inside"><circle cx="140" cy="176" r="74"/></clipPath>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="24"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="1040" cy="84" r="210" fill="#4F46E5" opacity="0.12" filter="url(#glow)"/>
+  <circle cx="112" cy="590" r="190" fill="#0EA5E9" opacity="0.08" filter="url(#glow)"/>
+  <path d="M60 514H1140" stroke="#334155" opacity="0.62"/>
+
+  <circle cx="140" cy="176" r="84" fill="none" stroke="url(#ring)" stroke-width="14"/>
+  <g clip-path="url(#inside)">
+    <circle cx="119" cy="154" r="41" fill="url(#blue)"/>
+    <circle cx="171" cy="201" r="31" fill="url(#violet)"/>
+    <circle cx="126" cy="219" r="20" fill="url(#indigo)"/>
+  </g>
+
+  <text x="268" y="188" fill="url(#word)" font-family="Inter, Arial, sans-serif" font-size="88" font-weight="760" letter-spacing="-4">OpenProgram</text>
+  <text x="72" y="350" fill="#F8FAFC" font-family="Inter, Arial, sans-serif" font-size="54" font-weight="700" letter-spacing="-1.6">Self-Programming AI Agent Framework</text>
+  <text x="74" y="417" fill="#AEB8C8" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="460">Agents create, run, and refine their own workflows.</text>
+
+  <g font-family="Inter, Arial, sans-serif" font-size="20" font-weight="620" fill="#DCE6F5">
+    <rect x="74" y="548" width="214" height="46" rx="23" fill="#172033" stroke="#334155"/>
+    <text x="99" y="578">Agentic Workflows</text>
+    <rect x="308" y="548" width="146" height="46" rx="23" fill="#172033" stroke="#334155"/>
+    <text x="335" y="578">Multi-Agent</text>
+    <rect x="474" y="548" width="150" height="46" rx="23" fill="#172033" stroke="#334155"/>
+    <text x="502" y="578">Open Source</text>
+  </g>
+  <text x="1128" y="578" text-anchor="end" fill="#7DD3FC" font-family="Inter, Arial, sans-serif" font-size="21" font-weight="650">openprogram.io</text>
+</svg>

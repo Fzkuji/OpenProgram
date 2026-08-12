@@ -113,6 +113,8 @@ def render_page(
         f'<meta name="description" content="{_html.escape(description, quote=True)}">'
         if description else ""
     )
+    social_description = _html.escape(description, quote=True)
+    social_url = _html.escape(canonical_url, quote=True)
     alt_attr = f' data-alt-lang-url="{alt_lang_url}"' if alt_lang_url else ""
     if nav_html:
         layout_cls = ""
@@ -134,6 +136,23 @@ def render_page(
 <title>{safe_title} · OpenProgram Docs</title>
 {description_meta}
 {canonical}
+<meta property="og:type" content="article">
+<meta property="og:locale" content="{('zh_CN' if page_lang == 'zh' else 'en_US')}">
+<meta property="og:site_name" content="OpenProgram">
+<meta property="og:url" content="{social_url}">
+<meta property="og:title" content="{safe_title} · OpenProgram Docs">
+<meta property="og:description" content="{social_description}">
+<meta property="og:image" content="https://openprogram.io/docs/images/openprogram-social-card.png">
+<meta property="og:image:secure_url" content="https://openprogram.io/docs/images/openprogram-social-card.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="OpenProgram: Self-Programming AI Agent Framework">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{safe_title} · OpenProgram Docs">
+<meta name="twitter:description" content="{social_description}">
+<meta name="twitter:image" content="https://openprogram.io/docs/images/openprogram-social-card.png">
+<meta name="twitter:image:alt" content="OpenProgram: Self-Programming AI Agent Framework">
 <script>{_THEME_BOOT}</script>
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="{base}assets/mark.svg">

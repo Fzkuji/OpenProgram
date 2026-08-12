@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: "If you use OpenProgram, please cite this software and the Agentic Programming paper."
+title: "OpenProgram: Self-Programming AI Agent Framework"
+type: software
+authors:
+  - family-names: Fu
+    given-names: Zichuan
+version: 0.6.0
+license: AGPL-3.0-or-later
+repository-code: "https://github.com/Fzkuji/OpenProgram"
+url: "https://openprogram.io/"
+preferred-citation:
+  type: article
+  title: "LLM-as-Code: Agentic Programming for Agent Harness"
+  authors:
+    - family-names: Qi
+      given-names: Junjia
+    - family-names: Fu
+      given-names: Zichuan
+    - family-names: Gao
+      given-names: Jingtong
+    - family-names: Zhang
+      given-names: Wenlin
+    - family-names: Yan
+      given-names: Hanyu
+    - family-names: Wu
+      given-names: Xian
+    - family-names: Zhao
+      given-names: Xiangyu
+  year: 2026
+  doi: "10.48550/arXiv.2606.15874"
+  url: "https://arxiv.org/abs/2606.15874"

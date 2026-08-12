@@ -24,6 +24,7 @@ SITE_DESCRIPTION = (
     "workflows with an open-source runtime for models, tools, memory, "
     "context, and multi-agent collaboration."
 )
+SOCIAL_IMAGE = "https://openprogram.io/docs/images/openprogram-social-card.png"
 
 
 class LandingParser(HTMLParser):
@@ -113,8 +114,15 @@ def main() -> int:
             "Open Graph description differs from the product description", failures)
     require(named_meta.get("twitter:description") == SITE_DESCRIPTION,
             "Twitter description differs from the product description", failures)
-    require(property_meta.get("og:image", "").startswith("https://openprogram.io/"),
-            "missing absolute Open Graph image", failures)
+    require(property_meta.get("og:image") == SOCIAL_IMAGE,
+            "Open Graph image is not the canonical social card", failures)
+    require(property_meta.get("og:image:secure_url") == SOCIAL_IMAGE,
+            "missing secure Open Graph image URL", failures)
+    require(property_meta.get("og:image:width") == "1200"
+            and property_meta.get("og:image:height") == "630",
+            "Open Graph image dimensions differ from the social card", failures)
+    require(named_meta.get("twitter:image") == SOCIAL_IMAGE,
+            "Twitter image is not the canonical social card", failures)
     require(named_meta.get("twitter:card") == "summary_large_image",
             "missing large Twitter card", failures)
     require(named_meta.get("theme-color") == "#07080a",
@@ -211,6 +219,25 @@ def main() -> int:
     if built_favicon.is_file():
         require(built_favicon.read_bytes() == (ROOT / "web/app/favicon.ico").read_bytes(),
                 "built favicon differs from the application favicon", failures)
+    built_social_card = BUILT_SITE / "images" / "openprogram-social-card.png"
+    require(built_social_card.is_file(),
+            "docs build did not produce the social card", failures)
+    if built_social_card.is_file():
+        require(built_social_card.read_bytes()
+                == (ROOT / "docs/images/openprogram-social-card.png").read_bytes(),
+                "built social card differs from the source asset", failures)
+    llms = BUILT_SITE / "llms.txt"
+    require(llms.is_file(), "docs build did not produce llms.txt", failures)
+    if llms.is_file():
+        llms_text = llms.read_text(encoding="utf-8")
+        for url in (
+            "https://openprogram.io/",
+            "https://openprogram.io/docs/",
+            "https://github.com/Fzkuji/OpenProgram",
+            "https://openprogram.io/docs/capabilities/agentic-programming/self-programming-ai-agents.html",
+            "https://openprogram.io/docs/comparisons/ai-agent-frameworks.html",
+        ):
+            require(url in llms_text, f"llms.txt is missing {url}", failures)
 
     if failures:
         for failure in failures:

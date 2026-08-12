@@ -1,0 +1,28 @@
+# OpenProgram
+
+> OpenProgram is a self-programming AI agent framework. Agents create, run, and refine their own workflows while the runtime manages models, tools, memory, context, and multi-agent collaboration.
+
+## Start
+
+- [Website](https://openprogram.io/): Product overview and quick start
+- [Documentation](https://openprogram.io/docs/): Complete documentation index
+- [Repository](https://github.com/Fzkuji/OpenProgram): Source code, issues, and discussions
+- [Installation](https://openprogram.io/#quick-start): Install and run OpenProgram
+
+## Core concepts
+
+- [Self-Programming AI Agents](https://openprogram.io/docs/capabilities/agentic-programming/self-programming-ai-agents.html): How agents create and refine workflows
+- [Agentic Programming](https://openprogram.io/docs/capabilities/agentic-programming/philosophy.html): Program-governed agent execution
+- [Framework Comparison](https://openprogram.io/docs/comparisons/ai-agent-frameworks.html): OpenProgram, LangGraph, AutoGen, and CrewAI
+- [Feature Matrix](https://openprogram.io/docs/reference/design/feature-matrix.html): Capability-level comparison
+- [Runtime API](https://openprogram.io/docs/reference/api/runtime.html): Runtime reference
+
+## Research
+
+- [LLM-as-Code: Agentic Programming for Agent Harness](https://arxiv.org/abs/2606.15874)
+- [GUI-Lens: Coarse-to-Fine Cropping for GUI Grounding with General-Purpose VLMs](https://arxiv.org/abs/2608.03270)
+
+## Optional
+
+- [GitHub Discussions](https://github.com/Fzkuji/OpenProgram/discussions): Announcements and community questions
+- [PyPI](https://pypi.org/project/openprogram/): Python package releases

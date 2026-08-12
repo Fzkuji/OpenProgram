@@ -55,7 +55,7 @@ jobs:
           mkdir -p _publish/docs
           cp -R docs/_site/. _publish/docs/
           cp site/index.html _publish/index.html
-          for f in CNAME favicon.ico robots.txt sitemap.xml .nojekyll README.md google01b0015fda12129e.html 7c5062acbc32b8a88d2e6b627d65cbfa.txt; do
+          for f in CNAME favicon.ico robots.txt sitemap.xml llms.txt .nojekyll README.md google01b0015fda12129e.html 7c5062acbc32b8a88d2e6b627d65cbfa.txt; do
             [ -e "_publish/docs/$f" ] && mv "_publish/docs/$f" "_publish/$f"
           done
           grep -Fx 'google-site-verification: google01b0015fda12129e.html' \
