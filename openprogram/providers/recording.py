@@ -39,12 +39,13 @@ from .types import (
     StreamOptions,
 )
 
-# Bump when the line shape changes. replay.py refuses a recording file whose header
-# version differs from this value.
-RECORDING_FORMAT_VERSION = 1
+# Bump when the line shape changes. replay.py explicitly dispatches supported
+# historical versions and refuses every other header version.
+RECORDING_FORMAT_VERSION = 2
 REDACTION_VERSION = 1
 
 PLACEHOLDER = "[secret removed]"
+_RUNTIME_ONLY_OPTION_FIELDS = frozenset({"signal", "on_payload"})
 
 # Field names whose value is a secret wherever it appears — request options,
 # model headers, nested provider-specific dicts.
@@ -123,6 +124,15 @@ def _dump(model_or_none: Any) -> Any:
     return remove_secret_values(model_or_none.model_dump(mode="json"))
 
 
+def _dump_options(options: Any) -> Any:
+    """Serialize deterministic provider options, excluding live request state."""
+    if options is None:
+        return None
+    return remove_secret_values(
+        options.model_dump(mode="json", exclude=_RUNTIME_ONLY_OPTION_FIELDS)
+    )
+
+
 class RecordingProvider:
     """Delegate to a real provider and append every call to a JSONL recording file.
 
@@ -182,7 +192,7 @@ class RecordingProvider:
         call_index = self._sink.begin_call({
             "model": _dump(model),
             "context": _dump(context),
-            "options": _dump(options),
+            "options": _dump_options(options),
         })
         event_index = 0
         ended = False

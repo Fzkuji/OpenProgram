@@ -13,7 +13,8 @@ def _run_turn_with_history(
     message: str,
     *,
     console: Optional[Any] = None,
-) -> str:
+    response_format=None,
+) -> Any:
     """Run one CLI chat turn, persisted to
     ``<state>/agents/<agent_id>/sessions/<session_id>/``.
 
@@ -91,9 +92,21 @@ def _run_turn_with_history(
         if console is not None:
             reply_text = _exec_streaming(rt, exec_content, console)
         else:
-            reply = rt.exec(content=exec_content)
-            reply_text = str(reply or "").strip() or ""
+            if response_format is None:
+                reply = rt.exec(content=exec_content)
+                reply_text = str(reply or "").strip() or ""
+            else:
+                reply = rt.exec(
+                    content=exec_content,
+                    response_format=response_format,
+                )
+                import json as _json
+                reply_text = _json.dumps(
+                    reply, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                )
     except Exception as e:  # noqa: BLE001
+        if response_format is not None:
+            raise
         reply_text = f"[error] {type(e).__name__}: {e}"
         if console is not None:
             console.print(f"\n[red]{reply_text}[/]")
@@ -134,7 +147,7 @@ def _run_turn_with_history(
     except Exception:
         pass
 
-    return reply_text
+    return reply if response_format is not None else reply_text
 
 
 def _exec_streaming(rt, exec_content: list[dict], console) -> str:

@@ -49,7 +49,8 @@ from openprogram._cli_chat.turn import _run_turn_with_history  # noqa: E402,F401
 
 def run_cli_chat(oneshot: str | None = None,
                  resume: str | None = None,
-                 tui: bool = True) -> None:
+                 tui: bool = True,
+                 response_format=None) -> None:
     """Launch the terminal chat.
 
     ``oneshot`` runs one turn and exits (still persisted so it shows
@@ -72,8 +73,11 @@ def run_cli_chat(oneshot: str | None = None,
     # Provider detection probes 5+ providers (CLI binaries + API hosts)
     # on cold cache; that takes several seconds. Tell the user something
     # is happening so the TUI launch doesn't look frozen.
-    with console.status("Detecting providers…", spinner="dots"):
+    if oneshot and response_format is not None:
         provider, rt = _get_chat_runtime()
+    else:
+        with console.status("Detecting providers…", spinner="dots"):
+            provider, rt = _get_chat_runtime()
     if rt is None:
         if not _prompt_first_run_setup(console):
             sys.exit(1)
@@ -123,8 +127,17 @@ def run_cli_chat(oneshot: str | None = None,
     # the banner entirely and just print the reply; the user wanted a
     # quick answer, not a UI.
     if oneshot:
-        reply = _run_turn_with_history(agent, session_id, oneshot)
-        print(reply)
+        reply = _run_turn_with_history(
+            agent,
+            session_id,
+            oneshot,
+            response_format=response_format,
+        )
+        if response_format is None:
+            print(reply)
+        else:
+            import json as _json
+            print(_json.dumps(reply, ensure_ascii=False, separators=(",", ":")))
         return
     if resume:
         console.print(f"[dim]↪ Resuming previous session.[/]")

@@ -190,6 +190,7 @@ def _model_to_dict(model: Any, enabled: bool) -> dict[str, Any]:
         "video": "video" in inputs,
         "audio": "audio" in inputs,
         "reasoning": bool(getattr(model, "reasoning", False)),
+        "structured_output": getattr(model, "structured_output", None),
         # 高速档声明（enabled_models.default_fast）；False → UI 不显示开关。
         "fast": bool(getattr(model, "fast", False)),
         # Thinking UX capability (see providers/thinking_spec.py).

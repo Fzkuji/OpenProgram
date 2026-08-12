@@ -286,6 +286,7 @@ async def process_responses_stream(
     from openprogram.providers.utils.errors import StreamAborted
 
     blocks = output.content
+    refusal_seen = False
 
     def _get(ev: Any, name: str, default: Any = None) -> Any:
         return ev.get(name, default) if isinstance(ev, dict) else getattr(ev, name, default)
@@ -310,6 +311,48 @@ async def process_responses_stream(
             if isinstance(b, dict) and b.get("type") == want_type and "index" in b:
                 return i
         return -1
+
+    def _apply_response_terminal(response: Any) -> None:
+        resp_dict = response if isinstance(response, dict) else response.__dict__
+        usage_raw = resp_dict.get("usage")
+        if usage_raw:
+            usage_dict = usage_raw if isinstance(usage_raw, dict) else usage_raw.__dict__
+            input_tokens = usage_dict.get("input_tokens", 0) or 0
+            output_tokens = usage_dict.get("output_tokens", 0) or 0
+            total_tokens = usage_dict.get("total_tokens", 0) or 0
+            details = usage_dict.get("input_tokens_details") or {}
+            details_dict = details if isinstance(details, dict) else details.__dict__
+            cached = details_dict.get("cached_tokens", 0) or 0
+
+            output.usage.input = input_tokens - cached
+            output.usage.output = output_tokens
+            output.usage.cache_read = cached
+            output.usage.cache_write = 0
+            output.usage.total_tokens = total_tokens
+
+        calculate_cost(model, output.usage)
+
+        if apply_service_tier_pricing:
+            tier = resp_dict.get("service_tier") or service_tier
+            apply_service_tier_pricing(output.usage, tier)
+
+        details = resp_dict.get("incomplete_details")
+        details_dict = details if isinstance(details, dict) else getattr(details, "__dict__", {})
+        incomplete_reason = details_dict.get("reason")
+        if refusal_seen or incomplete_reason == "content_filter":
+            output.stop_reason = "error"
+        elif incomplete_reason == "max_output_tokens":
+            output.stop_reason = "length"
+        else:
+            output.stop_reason = _map_stop_reason(resp_dict.get("status"))
+        if any(
+            getattr(block, "type", None) == "toolCall"
+            or (isinstance(block, dict) and block.get("type") == "toolCall")
+            for block in output.content
+        ) and output.stop_reason == "stop":
+            output.stop_reason = "toolUse"
+
+        output.content = _finalize_content_blocks(output.content)
 
     async for event in openai_stream:
         if signal is not None and callable(getattr(signal, "is_set", None)) and signal.is_set():
@@ -408,6 +451,15 @@ async def process_responses_stream(
                     stream.push({"type": "thinking_end", "content_index": i, "content": block.get("thinking", ""), "partial": output})
 
             elif item_type == "message":
+                refusal_seen = any(
+                    (
+                        c.get("type") == "refusal" or bool(c.get("refusal"))
+                        if isinstance(c, dict)
+                        else getattr(c, "type", None) == "refusal"
+                        or bool(getattr(c, "refusal", None))
+                    )
+                    for c in (item_dict.get("content") or [])
+                ) or refusal_seen
                 i = _find(out_idx, "text")
                 if i >= 0 and blocks[i].get("type") == "text":
                     block = blocks[i]
@@ -451,46 +503,14 @@ async def process_responses_stream(
                     }
                     stream.push({"type": "toolcall_end", "content_index": len(blocks) - 1, "tool_call": tool_call, "partial": output})
 
-        elif event_type == "response.completed":
+        elif event_type in ("response.completed", "response.incomplete"):
             # Items that never saw output_item.done keep no bookkeeping key.
             for b in blocks:
                 if isinstance(b, dict):
                     b.pop("index", None)
             response = event.get("response") if isinstance(event, dict) else getattr(event, "response", None)
             if response:
-                resp_dict = response if isinstance(response, dict) else response.__dict__
-                usage_raw = resp_dict.get("usage")
-                if usage_raw:
-                    usage_dict = usage_raw if isinstance(usage_raw, dict) else usage_raw.__dict__
-                    input_tokens = usage_dict.get("input_tokens", 0) or 0
-                    output_tokens = usage_dict.get("output_tokens", 0) or 0
-                    total_tokens = usage_dict.get("total_tokens", 0) or 0
-                    details = usage_dict.get("input_tokens_details") or {}
-                    details_dict = details if isinstance(details, dict) else details.__dict__
-                    cached = details_dict.get("cached_tokens", 0) or 0
-
-                    output.usage.input = input_tokens - cached
-                    output.usage.output = output_tokens
-                    output.usage.cache_read = cached
-                    output.usage.cache_write = 0
-                    output.usage.total_tokens = total_tokens
-
-                calculate_cost(model, output.usage)
-
-                if apply_service_tier_pricing:
-                    tier = resp_dict.get("service_tier") or service_tier
-                    apply_service_tier_pricing(output.usage, tier)
-
-                status = resp_dict.get("status")
-                output.stop_reason = _map_stop_reason(status)
-                if any(getattr(b, "type", None) == "toolCall" or (isinstance(b, dict) and b.get("type") == "toolCall") for b in output.content) and output.stop_reason == "stop":
-                    output.stop_reason = "toolUse"
-
-                # Finalize content blocks: promote dicts to the Pydantic
-                # variants. Downstream code (agent_loop) uses `isinstance(c,
-                # ToolCall)` to discover tool calls and falls through silently
-                # if the block is still a dict — no tools run, empty reply.
-                output.content = _finalize_content_blocks(output.content)
+                _apply_response_terminal(response)
 
         elif event_type == "error":
             code = event.get("code") if isinstance(event, dict) else getattr(event, "code", "")

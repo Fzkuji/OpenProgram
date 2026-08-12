@@ -7,17 +7,23 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import time
+from dataclasses import replace
 from typing import Any, AsyncGenerator
 
-from openprogram.providers import stream_simple as _default_stream_simple
 from openprogram.providers.types import (
     AssistantMessage,
     Context,
+    EventDone,
+    EventStructuredOutputEnd,
+    EventStructuredOutputRetry,
     TextContent,
+    Tool,
     ToolCall,
     ToolResultMessage,
     Usage,
+    UserMessage,
 )
 from openprogram.providers.utils.event_stream import EventStream
 from openprogram.providers.utils.validation import validate_tool_arguments
@@ -177,9 +183,14 @@ def agent_loop(
                 if not ev_stream._result_event.is_set():
                     ev_stream.end(new_messages)
             else:
-                raise
+                from openprogram.providers.utils.errors import ExecInterrupt
+                if isinstance(e, ExecInterrupt):
+                    if not ev_stream._result_event.is_set():
+                        ev_stream.fail(e)
+                else:
+                    raise
 
-    asyncio.ensure_future(_run())
+    ev_stream.attach_producer(asyncio.ensure_future(_run()))
     return ev_stream
 
 
@@ -219,8 +230,15 @@ def agent_loop_continue(
         except Exception as e:
             if not ev_stream._result_event.is_set():
                 ev_stream.fail(e)
+        except BaseException as e:
+            from openprogram.providers.utils.errors import ExecInterrupt
+            if isinstance(e, ExecInterrupt):
+                if not ev_stream._result_event.is_set():
+                    ev_stream.fail(e)
+            else:
+                raise
 
-    asyncio.ensure_future(_run())
+    ev_stream.attach_producer(asyncio.ensure_future(_run()))
     return ev_stream
 
 
@@ -239,6 +257,69 @@ async def _run_loop(
     pending_messages: list[AgentMessage] = []
     if config.get_steering_messages:
         pending_messages = await config.get_steering_messages()
+
+    from openprogram.providers.api_registry import resolve_api_provider_snapshot
+
+    provider_snapshot = resolve_api_provider_snapshot(config.model)
+    structured_plan = None
+    if config.response_format is not None:
+        from openprogram.providers.structured_output import negotiate_structured_output
+
+        structured_plan = negotiate_structured_output(
+            config.model,
+            provider_snapshot.structured_output,
+            config.response_format,
+            list(current_context.tools or []),
+            tool_choice=config.tool_choice,
+            parallel_tool_calls=config.parallel_tool_calls,
+        )
+    structured_attempt = 1
+    pending_validation_error: Exception | None = None
+
+    def commit_assistant(message: AssistantMessage) -> None:
+        if structured_plan is not None:
+            current_context.messages.append(message)
+            ev_stream.push(AgentEventMessageEnd(message=message))
+        new_messages.append(message)
+
+    def schedule_structured_repair(
+        error: Exception,
+        candidate: AssistantMessage,
+    ) -> bool:
+        nonlocal structured_attempt, has_more_tool_calls, pending_validation_error
+        if structured_plan is None or config.response_format is None:
+            return False
+        from openprogram.providers.structured_output import (
+            StructuredOutputValidationError,
+            build_repair_prompt,
+        )
+
+        if not isinstance(error, StructuredOutputValidationError):
+            return False
+        if structured_attempt > config.response_format.max_validation_retries:
+            return False
+        if inner_iterations >= iteration_cap:
+            return False
+        next_attempt = structured_attempt + 1
+        ev_stream.push(AgentEventMessageUpdate(
+            message=candidate,
+            assistant_message_event=EventStructuredOutputRetry(
+                attempt=structured_attempt,
+                next_attempt=next_attempt,
+                issues=error.issues,
+            ),
+        ))
+        current_context.messages.extend([
+            candidate,
+            UserMessage(
+                content=build_repair_prompt(error),
+                timestamp=int(time.time() * 1000),
+            ),
+        ])
+        structured_attempt = next_attempt
+        pending_validation_error = error
+        has_more_tool_calls = True
+        return True
 
     # Hard cap on the inner tool-call loop so a model that keeps asking
     # for "one more tool call" can't churn the runtime forever. 50 is
@@ -266,6 +347,17 @@ async def _run_loop(
         while has_more_tool_calls or len(pending_messages) > 0:
             inner_iterations += 1
             if inner_iterations > iteration_cap:
+                if pending_validation_error is not None:
+                    raise pending_validation_error
+                if structured_plan is not None and structured_plan.mode == "tool":
+                    from openprogram.providers.structured_output import (
+                        StructuredOutputValidationError,
+                    )
+
+                    raise StructuredOutputValidationError(
+                        "The model did not call the hidden structured-output submission tool",
+                        code="missing_submission",
+                    )
                 # End the stream cleanly with whatever we've got. The
                 # consumer (dispatcher / cli_chat) treats a normal
                 # stream end as a successful turn — no more, no less.
@@ -288,11 +380,45 @@ async def _run_loop(
 
             # Stream assistant response
             message = await _stream_assistant_response(
-                current_context, config, cancel_event, ev_stream, stream_fn
+                current_context,
+                config,
+                cancel_event,
+                ev_stream,
+                stream_fn,
+                structured_plan,
+                provider_snapshot,
+                structured_attempt if structured_plan is not None else None,
             )
-            new_messages.append(message)
+
+            if structured_plan is not None and message.stop_reason in (
+                "length", "error", "aborted",
+            ):
+                from openprogram.providers.structured_output import (
+                    StructuredOutputGenerationError,
+                )
+
+                if message.stop_reason == "aborted":
+                    from openprogram.providers.utils.errors import ExecInterrupt
+                    raise ExecInterrupt("aborted")
+                if message.stop_reason == "error" and message.error_message:
+                    reason = message.error_message.lower()
+                    if not any(
+                        marker in reason
+                        for marker in ("refusal", "content filter", "content_filter", "safety")
+                    ):
+                        commit_assistant(message)
+                        ev_stream.push(AgentEventTurnEnd(message=message, tool_results=[]))
+                        ev_stream.push(AgentEventAgentEnd(messages=new_messages))
+                        ev_stream.end(new_messages)
+                        return
+                code = "incomplete" if message.stop_reason == "length" else "refusal"
+                raise StructuredOutputGenerationError(
+                    "Structured output generation did not produce a complete value",
+                    code=code,
+                )
 
             if message.stop_reason in ("error", "aborted"):
+                commit_assistant(message)
                 ev_stream.push(AgentEventTurnEnd(message=message, tool_results=[]))
                 ev_stream.push(AgentEventAgentEnd(messages=new_messages))
                 ev_stream.end(new_messages)
@@ -301,6 +427,116 @@ async def _run_loop(
             # Check for tool calls
             tool_calls = [c for c in message.content if isinstance(c, ToolCall)]
             has_more_tool_calls = len(tool_calls) > 0
+
+            if structured_plan is not None and structured_plan.mode == "tool":
+                submit_calls = [
+                    call
+                    for call in tool_calls
+                    if call.name == structured_plan.submit_tool_name
+                ]
+                if submit_calls and len(tool_calls) != 1:
+                    from openprogram.providers.structured_output import (
+                        StructuredOutputValidationError,
+                    )
+
+                    error = StructuredOutputValidationError(
+                        "The hidden structured-output submission must be the only tool call",
+                        code="mixed_submission",
+                    )
+                    if schedule_structured_repair(error, message):
+                        continue
+                    raise error
+                if submit_calls:
+                    from openprogram.providers.structured_output import parse_and_validate_json
+
+                    validation_output = replace(
+                        config.response_format,
+                        schema=structured_plan.original_schema,
+                    )
+                    try:
+                        value = parse_and_validate_json(
+                            json.dumps(submit_calls[0].arguments, ensure_ascii=False),
+                            validation_output,
+                        )
+                    except Exception as error:
+                        if schedule_structured_repair(error, message):
+                            continue
+                        raise
+                    message.content = [TextContent(
+                        text=json.dumps(
+                            value,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
+                    )]
+                    message.stop_reason = "stop"
+                    message.structured_output = value
+                    message.structured_output_mode = "tool"
+                    message.structured_output_attempt = structured_attempt
+                    has_more_tool_calls = False
+                elif not tool_calls:
+                    from openprogram.providers.structured_output import (
+                        StructuredOutputValidationError,
+                    )
+
+                    error = StructuredOutputValidationError(
+                        "The model did not call the hidden structured-output submission tool",
+                        code="missing_submission",
+                    )
+                    if schedule_structured_repair(error, message):
+                        continue
+                    raise error
+
+            if (
+                structured_plan is not None
+                and structured_plan.mode in ("native", "prompt")
+                and not tool_calls
+            ):
+                from openprogram.providers.structured_output import parse_and_validate_json
+
+                raw = "".join(
+                    block.text for block in message.content
+                    if isinstance(block, TextContent)
+                )
+                validation_output = replace(
+                    config.response_format,
+                    schema=structured_plan.original_schema,
+                )
+                try:
+                    value = parse_and_validate_json(raw, validation_output)
+                except Exception as error:
+                    if schedule_structured_repair(error, message):
+                        continue
+                    raise
+                message.content = [TextContent(
+                    text=json.dumps(
+                        value,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                )]
+                message.structured_output = value
+                message.structured_output_mode = structured_plan.mode
+                message.structured_output_attempt = structured_attempt
+
+            if structured_plan is not None and message.structured_output_mode is not None:
+                pending_validation_error = None
+                ev_stream.push(AgentEventMessageUpdate(
+                    message=message,
+                    assistant_message_event=EventStructuredOutputEnd(
+                        attempt=structured_attempt,
+                        mode=message.structured_output_mode,
+                        value=message.structured_output,
+                    ),
+                ))
+                ev_stream.push(AgentEventMessageUpdate(
+                    message=message,
+                    assistant_message_event=EventDone(reason="stop", message=message),
+                ))
+
+            commit_assistant(message)
 
             tool_results: list[ToolResultMessage] = []
             if has_more_tool_calls:
@@ -349,6 +585,9 @@ async def _stream_assistant_response(
     cancel_event: asyncio.Event | None,
     ev_stream: EventStream[AgentEvent, list[AgentMessage]],
     stream_fn: StreamFn | None,
+    structured_plan: Any | None = None,
+    provider_snapshot: Any | None = None,
+    output_attempt: int | None = None,
 ) -> AssistantMessage:
     """
     Stream an assistant response from the LLM.
@@ -391,6 +630,11 @@ async def _stream_assistant_response(
                 prefetch_block = ""
 
     sys_prompt = context.system_prompt or None
+    if structured_plan is not None and structured_plan.mode == "prompt":
+        from openprogram.providers.structured_output import build_prompt_fallback
+
+        instruction = build_prompt_fallback(config.response_format)
+        sys_prompt = f"{sys_prompt}\n\n{instruction}" if sys_prompt else instruction
     if prefetch_block:
         _inject_memory_prefetch(llm_messages, prefetch_block)
 
@@ -404,13 +648,22 @@ async def _stream_assistant_response(
     _provider_tools, _ = split_tools_for_dispatch(
         list(context.tools or [])
     )
+    if structured_plan is not None and structured_plan.mode == "tool":
+        _provider_tools = [
+            *_provider_tools,
+            Tool(
+                name=structured_plan.submit_tool_name,
+                description="Submit the final response matching the required schema.",
+                parameters=structured_plan.provider_schema,
+            ),
+        ]
     llm_context = Context(
         system_prompt=sys_prompt,
         messages=llm_messages,
         tools=_provider_tools,
     )
 
-    fn = stream_fn or _default_stream_simple
+    fn = stream_fn
 
     # Provider/model failover — ON by default, conservatively.
     # resolve_fallback_models() defaults to the user's other enabled models of
@@ -421,16 +674,69 @@ async def _stream_assistant_response(
     # default fn is wrapped (a caller-supplied stream_fn is left untouched);
     # wrapped in try/except so failover can never break the normal path.
     if stream_fn is None:
+        from openprogram.providers.stream import stream_simple_with_provider
+
+        dispatch_snapshots = {id(config.model): provider_snapshot}
+
+        def snapshot_stream(candidate, candidate_context, candidate_options):
+            snapshot = dispatch_snapshots.get(id(candidate))
+            provider = snapshot.provider if snapshot is not None else None
+            return stream_simple_with_provider(
+                provider,
+                candidate,
+                candidate_context,
+                candidate_options,
+            )
+
+        fn = snapshot_stream
         try:
             from openprogram.providers.utils.failover import (
                 resolve_fallback_models,
                 failover_stream_fn,
             )
             _fallbacks = resolve_fallback_models(config.model)
+            if structured_plan is not None:
+                from openprogram.providers.api_registry import resolve_api_provider_snapshot
+                from openprogram.providers.structured_output import negotiate_structured_output
+
+                compatible = []
+                for fallback in _fallbacks:
+                    fallback_snapshot = resolve_api_provider_snapshot(fallback)
+                    if fallback_snapshot.provider is None:
+                        continue
+                    try:
+                        fallback_plan = negotiate_structured_output(
+                            fallback,
+                            fallback_snapshot.structured_output,
+                            config.response_format,
+                            list(context.tools or []),
+                            tool_choice=config.tool_choice,
+                            parallel_tool_calls=config.parallel_tool_calls,
+                        )
+                    except Exception:
+                        continue
+                    if (
+                        fallback_plan.mode == structured_plan.mode
+                        and fallback_plan.provider_schema == structured_plan.provider_schema
+                    ):
+                        compatible.append(fallback)
+                        dispatch_snapshots[id(fallback)] = fallback_snapshot
+                _fallbacks = compatible
+            else:
+                available = []
+                for fallback in _fallbacks:
+                    fallback_snapshot = resolve_api_provider_snapshot(fallback)
+                    if fallback_snapshot.provider is None:
+                        continue
+                    available.append(fallback)
+                    dispatch_snapshots[id(fallback)] = fallback_snapshot
+                _fallbacks = available
             if _fallbacks:
                 fn = failover_stream_fn(fn, _fallbacks)
         except Exception:
             pass
+
+    assert fn is not None
 
     # Resolve API key
     resolved_api_key = config.api_key
@@ -439,6 +745,13 @@ async def _stream_assistant_response(
         if inspect.isawaitable(key_result):
             key_result = await key_result
         resolved_api_key = key_result or resolved_api_key
+
+    provider_response_format = None
+    if structured_plan is not None and structured_plan.mode == "native":
+        provider_response_format = replace(
+            config.response_format,
+            schema=structured_plan.provider_schema,
+        )
 
     from openprogram.providers import SimpleStreamOptions
     stream_opts = SimpleStreamOptions(
@@ -457,9 +770,13 @@ async def _stream_assistant_response(
         metadata=config.metadata,
         service_tier=config.service_tier,
         tool_choice=config.tool_choice,
-        parallel_tool_calls=config.parallel_tool_calls,
+        parallel_tool_calls=(
+            False
+            if structured_plan is not None and structured_plan.mode == "tool"
+            else config.parallel_tool_calls
+        ),
         web_search=config.web_search,
-        response_format=config.response_format,
+        response_format=provider_response_format,
     )
 
     partial_message: AssistantMessage | None = None
@@ -468,10 +785,15 @@ async def _stream_assistant_response(
     response_stream = fn(config.model, llm_context, stream_opts)
 
     async for event in response_stream:
+        if structured_plan is not None and cancel_event and cancel_event.is_set():
+            from openprogram.providers.utils.errors import ExecInterrupt
+
+            raise ExecInterrupt("cancelled")
         if event.type == "start":
             partial_message = event.partial
-            context.messages.append(partial_message)
-            added_partial = True
+            if structured_plan is None:
+                context.messages.append(partial_message)
+                added_partial = True
             ev_stream.push(AgentEventMessageStart(message=partial_message))
             emit_safe("model.response_started", "agent")
 
@@ -481,8 +803,13 @@ async def _stream_assistant_response(
             "toolcall_start", "toolcall_delta", "toolcall_end",
         ):
             if partial_message is not None:
+                if output_attempt is not None and event.type in (
+                    "text_start", "text_delta", "text_end",
+                ):
+                    event = event.model_copy(update={"output_attempt": output_attempt})
                 partial_message = event.partial
-                context.messages[-1] = partial_message
+                if added_partial:
+                    context.messages[-1] = partial_message
                 ev_stream.push(AgentEventMessageUpdate(
                     message=partial_message,
                     assistant_message_event=event,
@@ -490,6 +817,12 @@ async def _stream_assistant_response(
 
         elif event.type in ("done", "error"):
             final_message = event.message if event.type == "done" else event.error
+            if structured_plan is not None:
+                if partial_message is None:
+                    ev_stream.push(AgentEventMessageStart(message=final_message))
+                emit_safe("model.response_completed", "agent",
+                          {"is_error": event.type == "error"})
+                return final_message
             if added_partial:
                 context.messages[-1] = final_message
             else:

@@ -281,6 +281,7 @@ def run_loop_blocking(
             if req.service_tier is not None
             else agent_profile.get("service_tier")
         ),
+        response_format=req.response_format,
     )
 
     # Async drain that forwards each AgentEvent → on_event envelope.
@@ -402,6 +403,12 @@ def run_loop_blocking(
                         tool_calls.append(_tc)
                     if ev.type == "turn_end":
                         msg = getattr(ev, "message", None)
+                        if getattr(msg, "structured_output_mode", None) is not None:
+                            req.structured_output = getattr(msg, "structured_output", None)
+                            req.structured_output_mode = msg.structured_output_mode
+                            req.structured_output_attempt = getattr(
+                                msg, "structured_output_attempt", None
+                            )
                         if getattr(msg, "stop_reason", None) == "error":
                             # Stream-level provider failure (HTTP 4xx/5xx
                             # surfaced as an error event, not an exception).

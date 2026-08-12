@@ -48,6 +48,22 @@ def handle_turn_error(
 ) -> TurnResult:
     """Fold/record the error, finalize the failed turn, build the result."""
     e = exc
+    from openprogram.providers.structured_output import (
+        StructuredOutputError,
+        StructuredOutputGenerationError,
+        StructuredOutputUnsupportedError,
+    )
+    structured_error = e if isinstance(e, StructuredOutputError) else None
+    structured_attempts = None
+    if structured_error is not None:
+        if isinstance(structured_error, StructuredOutputUnsupportedError):
+            structured_attempts = 0
+        elif isinstance(structured_error, StructuredOutputGenerationError):
+            structured_attempts = 1
+        else:
+            structured_attempts = (
+                getattr(req.response_format, "max_validation_retries", 0) + 1
+            )
     head_for_next: Optional[str] = None
     err_text: Optional[str] = None
     if placeholder_inserted:
@@ -106,4 +122,7 @@ def handle_turn_error(
         error_retryable=_e_retryable,
         error_retry_after_s=_e_retry_after,
         duration_ms=int((time.time() - started_at) * 1000),
+        structured_error_code=(structured_error.code if structured_error else None),
+        structured_output_attempts=structured_attempts,
+        structured_output_issues=(structured_error.issues if structured_error else []),
     )

@@ -1,9 +1,14 @@
 """Register the built-in API providers and authentication adapters."""
+
 from __future__ import annotations
 
 import threading
 
-from openprogram.providers.api_registry import register_api_providers
+from openprogram.providers.api_registry import (
+    ApiProviderSnapshot,
+    register_api_providers,
+)
+from openprogram.providers.structured_output import StructuredOutputCapabilities
 
 
 class _StreamFnProvider:
@@ -27,7 +32,10 @@ _auth_registered = False
 
 def _load_builtin_providers() -> dict[str, _StreamFnProvider]:
     from openprogram.providers import anthropic, google, openai_completions
-    from openprogram.providers.amazon_bedrock import stream_bedrock, stream_simple_bedrock
+    from openprogram.providers.amazon_bedrock import (
+        stream_bedrock,
+        stream_simple_bedrock,
+    )
     from openprogram.providers.azure_openai_responses import (
         stream_azure_openai_responses,
         stream_simple_azure_openai_responses,
@@ -91,6 +99,58 @@ def register_auth_adapters() -> None:
         _auth_registered = True
 
 
+_OPENAI_CHAT_CAPABILITIES = StructuredOutputCapabilities(
+    native="supported",
+    dialect="openai_chat",
+    streaming=True,
+    with_tools=True,
+    strict_tool=True,
+    schema_profile="openai_strict",
+)
+_OPENAI_RESPONSES_CAPABILITIES = StructuredOutputCapabilities(
+    native="supported",
+    dialect="openai_responses",
+    streaming=True,
+    with_tools=True,
+    strict_tool=True,
+    schema_profile="openai_strict",
+)
+_ANTHROPIC_CAPABILITIES = StructuredOutputCapabilities(
+    native="supported",
+    dialect="anthropic",
+    streaming=True,
+    with_tools=True,
+    strict_tool=True,
+    schema_profile="openai_strict",
+)
+_GOOGLE_CAPABILITIES = StructuredOutputCapabilities(
+    native="supported",
+    dialect="google",
+    streaming=True,
+    schema_profile="google_json_schema",
+)
+_BEDROCK_CAPABILITIES = StructuredOutputCapabilities(
+    native="unknown",
+    dialect="bedrock",
+    streaming=True,
+    schema_profile="none",
+    native_model_opt_in=True,
+)
+_AZURE_RESPONSES_CAPABILITIES = StructuredOutputCapabilities(
+    native="unknown",
+    dialect="azure_openai_responses",
+    streaming=True,
+    strict_tool=True,
+    schema_profile="openai_strict",
+    native_model_opt_in=True,
+)
+_STRICT_TOOL_ONLY_CAPABILITIES = StructuredOutputCapabilities(
+    strict_tool=True,
+    schema_profile="openai_strict",
+)
+_UNKNOWN_CAPABILITIES = StructuredOutputCapabilities()
+
+
 def register_builtins() -> None:
     """Register every built-in provider once; retry cleanly after failure."""
     global _registered
@@ -101,7 +161,26 @@ def register_builtins() -> None:
         if _registered:
             return
         providers = _load_builtin_providers()
-        register_api_providers(providers)
+        capabilities = {
+            "anthropic-messages": _ANTHROPIC_CAPABILITIES,
+            "openai-completions": _OPENAI_CHAT_CAPABILITIES,
+            "google-generative-ai": _GOOGLE_CAPABILITIES,
+            "openai-responses": _OPENAI_RESPONSES_CAPABILITIES,
+            "openai-codex": _STRICT_TOOL_ONLY_CAPABILITIES,
+            "gemini-subscription": _UNKNOWN_CAPABILITIES,
+            "bedrock-converse-stream": _BEDROCK_CAPABILITIES,
+            "azure-openai-responses": _AZURE_RESPONSES_CAPABILITIES,
+        }
+        register_api_providers(
+            {
+                api: (
+                    ApiProviderSnapshot(provider, capabilities[api])
+                    if api in capabilities
+                    else provider
+                )
+                for api, provider in providers.items()
+            }
+        )
         _registered = True
 
 

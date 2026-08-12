@@ -359,6 +359,7 @@ class EventTextStart(BaseModel):
     type: Literal["text_start"] = "text_start"
     content_index: int
     partial: AssistantMessage
+    output_attempt: int | None = None
 
 
 class EventTextDelta(BaseModel):
@@ -366,6 +367,7 @@ class EventTextDelta(BaseModel):
     content_index: int
     delta: str
     partial: AssistantMessage
+    output_attempt: int | None = None
 
 
 class EventTextEnd(BaseModel):
@@ -373,6 +375,21 @@ class EventTextEnd(BaseModel):
     content_index: int
     content: str
     partial: AssistantMessage
+    output_attempt: int | None = None
+
+
+class EventStructuredOutputRetry(BaseModel):
+    type: Literal["structured_output_retry"] = "structured_output_retry"
+    attempt: int
+    next_attempt: int
+    issues: list[dict[str, str]] = Field(default_factory=list)
+
+
+class EventStructuredOutputEnd(BaseModel):
+    type: Literal["structured_output_end"] = "structured_output_end"
+    attempt: int
+    mode: Literal["native", "tool", "prompt"]
+    value: Any
 
 
 class EventThinkingStart(BaseModel):
@@ -432,6 +449,8 @@ AssistantMessageEvent = Union[
     EventTextStart,
     EventTextDelta,
     EventTextEnd,
+    EventStructuredOutputRetry,
+    EventStructuredOutputEnd,
     EventThinkingStart,
     EventThinkingDelta,
     EventThinkingEnd,

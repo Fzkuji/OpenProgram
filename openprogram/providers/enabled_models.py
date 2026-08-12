@@ -208,6 +208,7 @@ def register_model_from_config(provider: str, model_id: str) -> bool:
             provider=provider,
             base_url=base_url,
             reasoning=bool(raw.get("reasoning", False)),
+            structured_output=raw.get("structured_output"),
             input=inputs,
             cost=cost,
             context_window=int(raw.get("context_window", 0) or 0),
