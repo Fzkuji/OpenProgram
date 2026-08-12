@@ -63,10 +63,10 @@ def _child_entry(
     parent_call_id: Optional[str] = None,
     answer_queue: "Optional[mp.Queue]" = None,
     stop_queue: "Optional[mp.Queue]" = None,
+    render_range: Optional[dict[str, int]] = None,
     usage_ctx_snapshot: Optional[dict] = None,
     sandbox_policy_snapshot: Optional[dict] = None,
     authority_snapshot: Optional[dict] = None,
-    render_range: Optional[dict[str, int]] = None,
 ) -> None:
     # Detach into our own process group so ``killpg`` from the parent
     # takes down every grandchild (browser, subprocess providers, ...).
@@ -508,8 +508,8 @@ def run_agentic_in_subprocess(
         target=_child_entry,
         args=(tool_name, dict(kwargs or {}), session_id, anchor_msg_id,
               work_dir, result_path, event_queue, parent_call_id,
-              answer_queue, stop_queue, usage_ctx_snapshot,
-              sandbox_policy_snapshot, authority, render_range),
+              answer_queue, stop_queue, render_range, usage_ctx_snapshot,
+              sandbox_policy_snapshot, authority),
         daemon=False,
     )
     p.start()
