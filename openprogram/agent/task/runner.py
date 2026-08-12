@@ -222,30 +222,26 @@ def _refresh_context_stats(session_id: str) -> None:
         pass
 
 
-def _broadcast_task_status(task: Task, runner: "TaskRunner | None" = None) -> None:
-    resource = None
-    try:
-        view = (runner or get_runner()).get_task_resource_view(task.id)
-        resource = view.to_dict() if view is not None else None
-    except Exception:
-        _log.debug("failed to build task resource broadcast", exc_info=True)
+def _broadcast_task_status(task: Task, resource: dict | None = None) -> None:
+    data = {
+        "task_id": task.id,
+        "session_id": task.parent_session_id,
+        "status": task.status.value,
+        "parent_msg_id": task.parent_msg_id,
+        "target_branch_head_id": task.target_branch_head_id,
+        "head_id": task.head_id,
+        "label": task.label,
+        "subject": task.subject,
+        "error": task.error,
+        "created_at": task.created_at,
+        "started_at": task.started_at,
+        "completed_at": task.completed_at,
+    }
+    if resource is not None:
+        data["resource"] = resource
     _broadcast({
         "type": "task_status",
-        "data": {
-            "task_id": task.id,
-            "session_id": task.parent_session_id,
-            "status": task.status.value,
-            "parent_msg_id": task.parent_msg_id,
-            "target_branch_head_id": task.target_branch_head_id,
-            "head_id": task.head_id,
-            "label": task.label,
-            "subject": task.subject,
-            "error": task.error,
-            "created_at": task.created_at,
-            "started_at": task.started_at,
-            "completed_at": task.completed_at,
-            "resource": resource,
-        },
+        "data": data,
     })
     # 事件层 tap：状态转移的单一漏斗，RUNNING → subagent.started，
     # 终止态 → subagent.ended。worker 线程里 ContextVar 不可靠，session 显式给。
@@ -1942,7 +1938,7 @@ class TaskRunner:
         for task_id, session_id in result.completed_pending:
             task = _store_load(session_id, task_id)
             if task is not None and is_terminal(task.status):
-                _broadcast_task_status(task, self)
+                self._broadcast_task_status(task)
                 _broadcast_session_reload(
                     session_id, reason=f"task_{task.status.value}",
                 )
