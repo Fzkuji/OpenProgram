@@ -223,6 +223,12 @@ def _refresh_context_stats(session_id: str) -> None:
 
 
 def _broadcast_task_status(task: Task) -> None:
+    resource = None
+    try:
+        view = get_runner().get_task_resource_view(task.id)
+        resource = view.to_dict() if view is not None else None
+    except Exception:
+        _log.debug("failed to build task resource broadcast", exc_info=True)
     _broadcast({
         "type": "task_status",
         "data": {
@@ -238,6 +244,7 @@ def _broadcast_task_status(task: Task) -> None:
             "created_at": task.created_at,
             "started_at": task.started_at,
             "completed_at": task.completed_at,
+            "resource": resource,
         },
     })
     # 事件层 tap：状态转移的单一漏斗，RUNNING → subagent.started，
@@ -736,11 +743,6 @@ class TaskRunner:
                 if authority:
                     kwargs["authority"] = authority
                 result = _execute_agent_turn(**kwargs)
-            except Exception as exc:  # noqa: BLE001
-                from openprogram.agent.sub_agent_run import AgentTurnResult
-                result = AgentTurnResult(
-                    failed=True, error=f"{type(exc).__name__}: {exc}",
-                )
             except BaseException as exc:  # noqa: BLE001
                 from openprogram.agent.sub_agent_run import AgentTurnResult
                 fatal_exception = exc
@@ -1691,7 +1693,7 @@ class TaskRunner:
                             _tok.var.reset(_tok)
                         except Exception:
                             pass
-            except Exception as exc:  # noqa: BLE001
+            except BaseException as exc:  # noqa: BLE001
                 err = f"{type(exc).__name__}: {exc}"
                 reason_code = _execution_failure_reason(err)
                 updated = self._finalize_task_status(
@@ -1817,6 +1819,10 @@ class TaskRunner:
                 pass
             try:
                 cur = _store_load(session_id, task_id)
+                if cur is None or not is_terminal(cur.status):
+                    cur = None
+                if cur is None:
+                    raise RuntimeError("task terminal state was not persisted")
                 self._governor.release_task(
                     task_id, cur.reason_code if cur is not None else None,
                     owner_instance_id=self._instance_id,

@@ -33,8 +33,13 @@ def test_tasks_commands_print_canonical_resource_dto(monkeypatch, capsys) -> Non
     from openprogram._cli_cmds import tasks
 
     monkeypatch.setattr("openprogram.agent.task.get_runner", _runner)
-    assert tasks._cmd_tasks_list("s1") == 0
+    assert tasks._cmd_tasks_list("s1", as_json=True) == 0
     assert json.loads(capsys.readouterr().out)["tasks"][0]["task_id"] == "t1"
 
-    assert tasks._cmd_tasks_get("t1") == 0
+    assert tasks._cmd_tasks_get("t1", as_json=True) == 0
     assert json.loads(capsys.readouterr().out)["task"]["task_id"] == "t1"
+
+    assert tasks._cmd_tasks_get("t1") == 0
+    text = capsys.readouterr().out
+    assert "t1  running  resource=active" in text
+    assert "capacity=" in text and "budget=" in text

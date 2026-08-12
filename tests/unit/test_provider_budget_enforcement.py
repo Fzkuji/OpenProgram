@@ -17,7 +17,11 @@ from openprogram.agent.resource_governance import (
     resolve_resource_limits,
 )
 from openprogram.agent.task.types import Task
-from openprogram.providers.budget import QuotaExceeded
+from openprogram.providers.budget import (
+    QuotaExceeded,
+    provider_retry_attempts,
+    provider_sdk_retries,
+)
 from openprogram.providers.types import (
     AssistantMessage,
     Context,
@@ -29,6 +33,7 @@ from openprogram.providers.types import (
     StreamOptions,
     Usage,
 )
+from openprogram.providers.structured_output import JsonSchemaOutput
 from openprogram.usage import context as _ctx_mod
 from openprogram.usage import recorder as _recorder
 from openprogram.usage.context import UsageContext
@@ -86,9 +91,11 @@ class _ConstructionFailureProvider:
 
 
 def _model(**kw):
+    context_window = kw.pop("context_window", 1_000)
     return Model(
-        id="fake-model-1", provider="fakeprov", api="fake-budget-api",
-        name="fake", base_url="http://fake.local", context_window=200000, **kw,
+        id="fake-model-1", provider="fakeprov", api="openai-completions",
+        name="fake", base_url="http://fake.local",
+        context_window=context_window, **kw,
     )
 
 
@@ -179,17 +186,71 @@ def test_budgeted_call_settles_actual_usage_once(wired):
     assert set(_reservation_states(env["ledger"])) == {"settled"}
 
 
+def test_actual_usage_cannot_exceed_reserved_token_exposure(wired):
+    env = wired(
+        limits=ResourceLimits(max_total_tokens=100_000),
+        usage=Usage(input=90_000, output=20_000, cache_read=0, cache_write=0),
+    )
+
+    with pytest.raises(QuotaExceeded, match="actual usage exceeds reservation"):
+        _drain(env["model"], SimpleStreamOptions(session_id="s1"))
+
+    assert set(_reservation_states(env["ledger"])) == {"started"}
+
+
+def test_budgeted_provider_disables_adapter_internal_retries(wired):
+    wired(limits=ResourceLimits(max_total_tokens=100_000))
+
+    assert provider_sdk_retries(3) == 0
+    assert provider_retry_attempts(5) == 1
+
+
+def test_small_request_remains_usable_under_strict_budget(wired):
+    env = wired(limits=ResourceLimits(max_total_tokens=2_000))
+    _drain(env["model"], SimpleStreamOptions(session_id="s1", max_tokens=100))
+
+    assert env["provider"].seen_opts
+
+
+def test_structured_output_schema_is_included_in_safe_input_bound(wired):
+    env = wired(
+        limits=ResourceLimits(max_total_tokens=3_000),
+        model=_model(context_window=100_000),
+    )
+    schema = JsonSchemaOutput(schema={
+        "type": "object",
+        "properties": {"answer": {"type": "string", "description": "x" * 4_000}},
+    })
+
+    with pytest.raises(QuotaExceeded):
+        _drain(
+            env["model"],
+            SimpleStreamOptions(session_id="s1", max_tokens=100, response_format=schema),
+        )
+
+
+def test_budgeted_payload_mutator_fails_closed_before_provider(wired):
+    env = wired(limits=ResourceLimits(max_total_tokens=100_000))
+
+    with pytest.raises(QuotaExceeded, match="on_payload"):
+        _drain(
+            env["model"],
+            SimpleStreamOptions(session_id="s1", on_payload=lambda payload, model: payload),
+        )
+    assert env["provider"].seen_opts == []
+
+
 def test_output_cap_is_clamped_to_remaining_budget(wired):
     """The provider cannot be asked for more output than the budget allows."""
     env = wired(
-        limits=ResourceLimits(max_total_tokens=300),
-        model=_model(max_tokens=100_000),
+        limits=ResourceLimits(max_total_tokens=1_500),
+        model=_model(max_tokens=100_000, context_window=100_000),
     )
     _drain(env["model"], SimpleStreamOptions(session_id="s1", max_tokens=50_000))
 
     seen = env["provider"].seen_opts[0]
     assert seen.max_tokens is not None
-    assert seen.max_tokens <= 300
+    assert seen.max_tokens <= 1_500
     # And it never exceeds what the input bound leaves behind.
     assert seen.max_tokens < 50_000
 

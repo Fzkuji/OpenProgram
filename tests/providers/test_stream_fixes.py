@@ -611,3 +611,38 @@ def test_openai_completions_reraises_stream_exception(monkeypatch):
                 pass
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize(("governed", "expected"), [(False, 3), (True, 0)])
+def test_openai_sdk_retry_boundary_tracks_governed_request(
+    monkeypatch, governed, expected,
+):
+    cmod = importlib.import_module(
+        "openprogram.providers.openai_completions.openai_completions")
+    from openprogram.auth import usage as auth_usage
+    monkeypatch.setattr(auth_usage, "acquire_pooled", lambda _p: None)
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner.current_task_resource_context",
+        lambda: ("task", object()) if governed else None,
+    )
+    captured = {}
+
+    class _FakeAsyncOpenAI:
+        def __init__(self, **kw):
+            captured.update(kw)
+            async def _create(**params):
+                return _FakeCompletionsStream(RuntimeError("stop"))
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=_create))
+
+    monkeypatch.setattr(cmod._openai, "AsyncOpenAI", _FakeAsyncOpenAI)
+
+    async def run():
+        gen = cmod.stream_simple(
+            _model(api="openai-completions", provider="openai"),
+            Context(messages=[UserMessage(content="hi", timestamp=0)]),
+            SimpleStreamOptions(api_key="sk-test"),
+        )
+        await gen.__anext__()
+
+    asyncio.run(run())
+    assert captured["max_retries"] == expected

@@ -651,8 +651,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--session", dest="session_id", default=None,
         help="Restrict tasks to one session id",
     )
+    p_tasks_list.add_argument("--json", action="store_true", help="Emit JSON")
     p_tasks_get = tasks_sub.add_parser("get", help="Get one task resource DTO")
     p_tasks_get.add_argument("task_id", help="Task id")
+    p_tasks_get.add_argument("--json", action="store_true", help="Emit JSON")
 
     # ---- subagent ----------------------------------------------------------
     # Subagent spawn / merge ops. See ``openprogram/agent/sub_agent_run.py``
@@ -1398,9 +1400,9 @@ def main():
 
         verb = getattr(args, "tasks_verb", None)
         if verb == "list":
-            sys.exit(_cmd_tasks_list(args.session_id))
+            sys.exit(_cmd_tasks_list(args.session_id, as_json=args.json))
         if verb == "get":
-            sys.exit(_cmd_tasks_get(args.task_id))
+            sys.exit(_cmd_tasks_get(args.task_id, as_json=args.json))
         _need_subcommand(args._cmd_parser)
 
     if args.command == "web":

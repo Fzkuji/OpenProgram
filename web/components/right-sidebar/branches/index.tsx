@@ -53,7 +53,8 @@ export function BranchesPanel({ variant = "list" }: {
   // somewhere — see PENDING_HEAD_PREFIX.
   const [taskMap, setTaskMap] = useState<Record<string,
     { targetHead?: string | null; finalHead?: string | null;
-      status: string; sessionId?: string; label?: string | null }>>({});
+      status: string; sessionId?: string; label?: string | null;
+      resource?: Record<string, unknown> | null }>>({});
   // Branch head_msg_ids currently in "finishing" wipe — added on
   // terminal status, removed 1200ms later.
   const [finishingHeads, setFinishingHeads] = useState<Set<string>>(
@@ -133,6 +134,7 @@ export function BranchesPanel({ variant = "list" }: {
           targetHead, finalHead, status,
           sessionId: d.session_id,
           label: d.label || d.subject || null,
+          resource: d.resource || null,
         };
         return next;
       });
@@ -162,6 +164,7 @@ export function BranchesPanel({ variant = "list" }: {
         const m: Record<string, {
           targetHead?: string | null; finalHead?: string | null;
           status: string; sessionId?: string; label?: string | null;
+          resource?: Record<string, unknown> | null;
         }> = {};
         for (const t of tasks) {
           const tid = t.id as string | undefined;
@@ -176,6 +179,7 @@ export function BranchesPanel({ variant = "list" }: {
             sessionId: (t.parent_session_id as string | undefined),
             label: (t.label as string | null)
                    || (t.subject as string | null) || null,
+            resource: (t.resource as Record<string, unknown> | null) || null,
           };
         }
         return m;
@@ -357,6 +361,14 @@ export function BranchesPanel({ variant = "list" }: {
   const otherSessions = Object.values(conversations)
     .filter((c) => c.id && c.id !== sessionId)
     .sort((a, b) => (a.title || a.id).localeCompare(b.title || b.id));
+  const resourceForHead = (headId: string) => {
+    for (const [taskId, entry] of Object.entries(taskMap)) {
+      const mapped = entry.finalHead || entry.targetHead
+        || `${PENDING_HEAD_PREFIX}${taskId}`;
+      if (mapped === headId) return entry.resource || null;
+    }
+    return null;
+  };
 
   if (chips) {
     return (
@@ -376,6 +388,7 @@ export function BranchesPanel({ variant = "list" }: {
             isBase={false}
             running={runningHeads.has(b.head_msg_id)}
             finishing={finishingHeads.has(b.head_msg_id)}
+            resource={resourceForHead(b.head_msg_id)}
             onToggleSelect={toggleSelect}
             onSetBase={setBase}
           />
@@ -410,6 +423,7 @@ export function BranchesPanel({ variant = "list" }: {
             isBase={baseHead === b.head_msg_id}
             running={runningHeads.has(b.head_msg_id)}
             finishing={finishingHeads.has(b.head_msg_id)}
+            resource={resourceForHead(b.head_msg_id)}
             onToggleSelect={toggleSelect}
             onSetBase={setBase}
           />
