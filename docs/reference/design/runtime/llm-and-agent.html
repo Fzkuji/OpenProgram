@@ -180,15 +180,21 @@ has_pending_input</code>，stop hook / compaction 都能让无工具 turn 继续
 
 <h2>实现状态</h2>
 <div class="card">
-批 1 已完成：<code>openprogram.agentic_programming.llm</code> 已导出，使用环境
-<code>Runtime</code> 的单次调用形态，不创建 session 分支或 transcript；str prompt 在入口转换成
-单个 text block，content blocks 保持原顺序进入 provider 层。<code>effort</code> 与
-<code>model</code> 是仅限本次调用的覆盖，不修改 runtime 默认值。llm 的 <code>ModelCall</code>
-节点以及 agent 的 assistant 节点均记录 <code>execution_kind</code>、
-<code>provider_request_count</code> 和 <code>agent_iteration_count</code>；传输重试不增加 agent
-迭代数。agent 与 llm 已确认共用 <code>AgentSession → agent_loop → provider stream</code>
-单次调用层。task-list workflow 已注入带 checkpoint 的 <code>llm</code>，并更新 planner catalog。
-批 2–4 尚未开始；<code>docs/capabilities/</code> 按本批范围保持不变。
+批 1–4 已完成。<code>openprogram.agentic_programming.llm</code> 已导出：环境 <code>Runtime</code>
+的单次调用形态，不创建 session 分支或 transcript；str prompt 入口转单个 text block，content blocks
+原样进 provider 层；<code>model</code>/<code>effort</code> 仅覆盖本次调用。llm 的
+<code>ModelCall</code> 节点与 agent 的 assistant 节点记录 <code>execution_kind</code>、
+<code>provider_request_count</code>、<code>agent_iteration_count</code>，传输重试不计迭代。
+agent 与 llm 共用 <code>AgentSession → agent_loop → provider stream</code> 单次调用层。
+workflow 注入环境含带 checkpoint 的 <code>llm</code>。
+<br><br>
+迁移结果：本体 agentics 与三个嵌套 harness 仓的单次调用全部改为 <code>llm()</code>
+（Research 92 处、GUI 23 处、Wiki 1 处、本体约 30 处）。编排层仍在 <code>runtime.exec</code>
+上的只剩 9 处带工具循环的调用（deep_work 工作步、llm_call_example 示例、Wiki ingest 生成/enrich、
+Research utils/wiki survey/run_experiment 等），均带
+<code>tool loop, migrates with agent() in a later batch</code> 注释，等 agent 批次逐处判断。
+<code>openprogram/memory/wiki/</code> 死代码目录（f4147247 换 Markdown workspace 后的磁盘残留，
+无调用方）已删除。
 </div>
 
 </body>
