@@ -2,7 +2,6 @@ import json
 import threading
 from pathlib import Path
 
-from openprogram.store.session.memory_index import SessionMemoryIndex
 from openprogram.store.session.session_store import SessionStore
 
 
@@ -12,24 +11,35 @@ def test_concurrent_mark_merged_preserves_both_heads(
     root = tmp_path / "sessions"
     store = SessionStore(root)
     store.create_session("s1", "main")
-    barrier = threading.Barrier(2)
-    original = SessionMemoryIndex.set_meta
+    pair = store._open("s1")
+    assert pair is not None
+    git, _idx = pair
+    first_write_started = threading.Event()
+    release_first_write = threading.Event()
+    combined_write_finished = threading.Event()
+    original = git.write_meta
 
-    def synchronized_set_meta(self, **fields):
-        if "merged_heads" in fields:
-            barrier.wait(timeout=2)
-        return original(self, **fields)
+    def delayed_write(meta):
+        if meta.get("merged_heads") == ["head-a"]:
+            first_write_started.set()
+            assert release_first_write.wait(timeout=2)
+        result = original(meta)
+        if set(meta.get("merged_heads") or []) == {"head-a", "head-b"}:
+            combined_write_finished.set()
+        return result
 
-    monkeypatch.setattr(SessionMemoryIndex, "set_meta", synchronized_set_meta)
-    threads = [
-        threading.Thread(target=store.mark_merged, args=("s1", [head]))
-        for head in ("head-a", "head-b")
-    ]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join(timeout=3)
-        assert not thread.is_alive()
+    monkeypatch.setattr(git, "write_meta", delayed_write)
+    first = threading.Thread(target=store.mark_merged, args=("s1", ["head-a"]))
+    second = threading.Thread(target=store.mark_merged, args=("s1", ["head-b"]))
+    first.start()
+    assert first_write_started.wait(timeout=2)
+    second.start()
+    combined_write_finished.wait(timeout=0.2)
+    release_first_write.set()
+    first.join(timeout=3)
+    second.join(timeout=3)
+    assert not first.is_alive()
+    assert not second.is_alive()
 
     assert store.merged_heads("s1") == {"head-a", "head-b"}
     on_disk = json.loads((root / "s1" / "meta.json").read_text(encoding="utf-8"))
