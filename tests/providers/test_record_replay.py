@@ -804,6 +804,24 @@ def test_recording_rejects_intermediate_symlink_inside_managed_root(
     assert not (target / "private.jsonl").exists()
 
 
+def test_replay_rejects_intermediate_symlink_without_chmod(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state"
+    managed_root = state / "recordings"
+    managed_root.mkdir(parents=True, mode=0o700)
+    external = tmp_path / "external"
+    recording_file = _record_one_call(external)
+    recording_file.chmod(0o644)
+    (managed_root / "nested").symlink_to(external, target_is_directory=True)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+
+    with pytest.raises(RecordingFileError, match="must not contain a symlink"):
+        ReplayProvider(managed_root / "nested" / recording_file.name)
+
+    assert stat.S_IMODE(recording_file.stat().st_mode) == 0o644
+
+
 def test_external_replay_rejects_wide_permissions_without_chmod(tmp_path: Path) -> None:
     recording_file = _record_one_call(tmp_path)
     recording_file.chmod(0o644)
