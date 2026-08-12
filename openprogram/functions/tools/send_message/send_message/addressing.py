@@ -180,7 +180,7 @@ def _resolve_branch_by_name(name: str) -> tuple[str, object]:
     if cur:
         sids.append(cur)
     try:
-        for row in db.list_sessions(limit=200) or []:
+        for row in db.list_sessions(limit=200, include_archived=True) or []:
             sid = row.get("id")
             if sid and sid not in sids:
                 sids.append(sid)

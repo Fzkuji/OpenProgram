@@ -378,7 +378,7 @@ def reconcile_interrupted_runs() -> int:
     # them. For any node whose metadata.status == "running", flip to
     # "interrupted" via SessionNodeWriter.update which rewrites the
     # on-disk JSON.
-    for sess in store.list_sessions(limit=10**9):
+    for sess in store.list_sessions(limit=10**9, include_archived=True):
         sid = sess["id"]
         shim = SessionNodeWriter(store, sid)
         for node in store.get_nodes(sid):

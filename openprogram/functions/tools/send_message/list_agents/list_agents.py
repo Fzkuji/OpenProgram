@@ -121,7 +121,7 @@ def _list_agents_impl(
             return ('[list_agents error] no active session context — '
                     'use scope="all" to list every session')
         try:
-            rows = [r for r in db.list_sessions(limit=10_000)
+            rows = [r for r in db.list_sessions(limit=10_000, include_archived=True)
                     if r.get("id") == cur]
         except Exception as e:  # noqa: BLE001
             return f"[list_agents error] {type(e).__name__}: {e}"

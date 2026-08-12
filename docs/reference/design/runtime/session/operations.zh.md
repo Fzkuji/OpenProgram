@@ -233,6 +233,7 @@ LLM 标题生成的细节（prompt、参数、后处理）见 [name.md](name.md)
   → handle_list_sessions：
       → session_store.list_sessions()：
           → 遍历内存 _index.values()
+          → 除非 include_archived=True，否则丢掉已归档的行
           → 按 filters 过滤
           → 按 updated_at 降序排序
           → 返回 rows[offset:offset+limit]
@@ -242,6 +243,18 @@ LLM 标题生成的细节（prompt、参数、后处理）见 [name.md](name.md)
 ```
 
 纯内存操作，不碰磁盘。
+
+### 已归档的行
+
+`list_sessions` 默认隐藏已归档会话：只有默认列举遵守归档，归档才真的能约束列表
+长度。两种方式看到它们：
+
+- `include_archived=True` 同时返回已归档和活跃的行
+- `archived=True` 只返回已归档的
+
+那些必须遍历每个会话、不管标志的维护流程（记忆扫描、运行态修复、"清空全部"、
+渠道绑定查找、agent 寻址）显式传 `include_archived=True`。侧边栏 payload 也发送
+全部行，前端在活跃/已归档/全部三个视图之间切换无需再请求一次。
 
 ### 每条 session 返回的字段
 
@@ -267,11 +280,36 @@ LLM 标题生成的细节（prompt、参数、后处理）见 [name.md](name.md)
 
 ## 归档
 
+归档让会话列表不再无限增长。它只是 session meta 上的一个布尔标志：不删数据、
+不搬目录，随时可逆。
+
 ```
-调用方调 update_session(session_id, archived=True)
+调用方调 set_archived(session_id, True)
+  → update_session(session_id, archived=True)
   → 走"更新字段"的完整流程
   → 前端收到广播后过滤显示
 ```
+
+`set_archived` 对不存在的 session id 返回 `False`，CLI 和 REST 端点据此报告
+会话不存在，而不是静默成功。
+
+### 归档不动的东西
+
+`updated_at` 记录的是最后一次追加消息的时间，归档不追加任何消息，因此不碰这个
+时间戳。这是[索引一致性契约](index-consistency.html)：取消归档后会话回到列表
+里原来的位置，不会被顶到最上面。消息、分支、history 文件都不动，归档期间
+`get_messages` 照常可读。
+
+### 入口
+
+| 界面 | 操作 |
+|------|------|
+| WebSocket | `{"action": "update_session_flags", "session_id": ..., "archived": true}` |
+| REST | `POST /api/sessions/archive` / `POST /api/sessions/unarchive`，body `{"session_id": ...}` |
+| CLI | `openprogram sessions archive <id>` / `openprogram sessions unarchive <id>` |
+
+三个入口都经 `set_archived` 写同一个标志并广播 `session_updated`，所以每个
+打开的标签页看到的状态一致。
 
 已归档的 session 受启动时数据维护约束：90 天过期 + 1000 容量上限。活跃 session 不受影响。
 

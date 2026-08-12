@@ -71,6 +71,46 @@ def register(app):
             "head_id": pivot_id,
         })
 
+    async def _set_archived(body: dict | None, archived: bool):
+        """Shared body of the archive / unarchive endpoints.
+
+        Metadata only: nothing is deleted and ``updated_at`` is left
+        alone, so the session keeps its place in the list and comes
+        back unchanged on unarchive. Mirrors the flag onto the live
+        conv and broadcasts ``session_updated``, exactly like the WS
+        ``update_session_flags`` action, so open tabs agree.
+        """
+        import json as _json
+        from openprogram.webui import server as _s
+        from openprogram.agent.session_db import default_db
+
+        session_id = (body or {}).get("session_id")
+        if not session_id:
+            return JSONResponse(
+                content={"error": "session_id required"}, status_code=400,
+            )
+        if not default_db().set_archived(session_id, archived):
+            return JSONResponse(content={"error": "unknown session"}, status_code=404)
+        with _s._sessions_lock:
+            conv = _s._sessions.get(session_id)
+            if conv is not None:
+                conv["archived"] = archived
+        _s._broadcast(_json.dumps({
+            "type": "session_updated",
+            "data": {"id": session_id, "archived": archived},
+        }, default=str))
+        return JSONResponse(content={"session_id": session_id, "archived": archived})
+
+    @app.post("/api/sessions/archive")
+    async def post_session_archive(body: dict = None):
+        """Hide a session from the default list. Reversible, deletes nothing."""
+        return await _set_archived(body, True)
+
+    @app.post("/api/sessions/unarchive")
+    async def post_session_unarchive(body: dict = None):
+        """Return an archived session to the default list."""
+        return await _set_archived(body, False)
+
     @app.post("/api/function/{name}")
     async def post_function(name: str, body: dict = None):
         """Directly invoke an @agentic_function through the forced
