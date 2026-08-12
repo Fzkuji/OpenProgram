@@ -75,6 +75,43 @@ def secrets_absent(blob: str) -> None:
         assert secret not in blob, f"response leaked {secret!r}"
 
 
+def test_public_registry_status_masks_client_error_and_stderr(capsys):
+    from openprogram.mcp import registry
+
+    secret = "peer-secret-value"
+    client = type("Client", (), {})()
+    client.config = local_config()
+    client.is_ready = False
+    client.error = f"stderr credential={secret}"
+    client.error_kind = f"unknown-{secret}"
+    client.tools = []
+    registry._clients[client.config.name] = client
+    try:
+        payload = registry.server_status()
+        rendered = json.dumps(payload) + capsys.readouterr().err
+        assert secret not in rendered
+        assert payload[0]["error"] == "mcp_server_unavailable"
+        assert payload[0]["error_kind"] == "runtime"
+    finally:
+        registry._clients.pop(client.config.name, None)
+
+
+def test_public_registry_stop_log_masks_exception(monkeypatch, capsys):
+    from openprogram.mcp import registry
+
+    secret = "peer-secret-value"
+    client = type("Client", (), {})()
+
+    async def failed_stop():
+        raise RuntimeError(secret)
+
+    client.stop = failed_stop
+    registry._clients["secret-test"] = client
+    registry._registered_tool_names["secret-test"] = []
+    asyncio.run(registry.remove_server("secret-test"))
+    assert secret not in capsys.readouterr().err
+
+
 def exception_chain(exc: BaseException):
     pending = [exc]
     seen = set()

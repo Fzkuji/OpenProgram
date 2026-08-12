@@ -6,6 +6,8 @@ import io
 import json
 import os
 import tarfile
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -255,6 +257,37 @@ def test_restore_leaves_no_staging_directory_behind(tmp_path: Path) -> None:
 
     leftovers = [p.name for p in state.parent.iterdir() if "restore" in p.name.lower()]
     assert leftovers == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX flock semantics")
+def test_restore_state_lock_reports_busy_across_processes(tmp_path: Path) -> None:
+    from openprogram._cli_cmds.backup import RestoreBusyError, _restore_state_lock
+
+    state = _state(tmp_path)
+    code = (
+        "import sys; from pathlib import Path; "
+        "from openprogram._cli_cmds.backup import _restore_state_lock; "
+        "lock=_restore_state_lock(Path(sys.argv[1])); lock.__enter__(); "
+        "print('ready', flush=True); sys.stdin.read(1); lock.__exit__(None,None,None)"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", code, str(state)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert process.stdout is not None
+    assert process.stdout.readline().strip() == "ready"
+    try:
+        with pytest.raises(RestoreBusyError):
+            with _restore_state_lock(state):
+                pass
+    finally:
+        assert process.stdin is not None
+        process.stdin.write("x")
+        process.stdin.flush()
+        process.wait(5)
+    assert process.returncode == 0
 
 
 # --- journal, rollback, and crash recovery ---------------------------------
