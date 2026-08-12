@@ -6,6 +6,7 @@ turn, which is what removes the need for any cleanup-time flag reset.
 
 See docs/reference/design/runtime/execution/turn-cancellation.md.
 """
+
 from __future__ import annotations
 
 import threading
@@ -21,12 +22,15 @@ def _clean_registry():
     """Each test starts and ends with an empty token registry."""
     with ps._cancel_flags_lock:
         ps._current_tokens.clear()
+        getattr(ps, "_cancel_cleanup_leases", {}).clear()
     yield
     with ps._cancel_flags_lock:
         ps._current_tokens.clear()
+        getattr(ps, "_cancel_cleanup_leases", {}).clear()
 
 
 # --- token lifecycle -------------------------------------------------------
+
 
 def test_no_turn_means_nothing_to_cancel():
     """Between turns a stop is a no-op, not a flag that poisons what runs next."""
@@ -104,6 +108,7 @@ def test_sessions_are_independent():
 
 # --- the signal every layer checks ----------------------------------------
 
+
 def test_registered_event_is_the_token_event():
     """Call sites owning an Event still get one token everything shares."""
     ev = threading.Event()
@@ -177,7 +182,28 @@ def test_unregister_without_event_keeps_force_clear_semantics():
     assert ps.current_token("s1") is None
 
 
+def test_exact_cleanup_lease_rejects_handover_until_release():
+    old_event = threading.Event()
+    new_event = threading.Event()
+    ps.register_cancel_event("s1", old_event)
+
+    assert ps.acquire_cancel_cleanup("s1", old_event) is True
+    assert ps.claim_cancel_event("s1", new_event) is False
+    with pytest.raises(RuntimeError):
+        ps.register_cancel_event("s1", new_event)
+    with pytest.raises(RuntimeError):
+        ps.begin_turn("s1")
+    assert ps.current_token("s1").event is old_event
+
+    ps.unregister_cancel_event("s1", old_event)
+    ps.release_cancel_cleanup("s1", old_event)
+    ps.register_cancel_event("s1", new_event)
+
+    assert ps.current_token("s1").event is new_event
+
+
 # --- enforcement: every frame in the turn checks the one token -------------
+
 
 def test_cancel_hook_raises_inside_a_cancelled_turn():
     """@agentic_function entry and Runtime.exec go through this hook."""
@@ -228,7 +254,7 @@ def test_context_bound_token_wins_over_the_registry():
     session registry has already moved on to a newer turn.
     """
     mine = ps.begin_turn("s1")
-    ps.mark_cancelled("s1")           # stop aimed at THIS turn
+    ps.mark_cancelled("s1")  # stop aimed at THIS turn
 
     tok_t = ps._current_token.set(mine)
     tok_s = ps.set_current_session_id("s1")
@@ -252,14 +278,15 @@ def test_a_new_turn_does_not_cancel_a_frame_of_the_old_one():
     tok_s = ps.set_current_session_id("s1")
     try:
         ps.begin_turn("s1")
-        ps.mark_cancelled("s1")   # stops the NEW turn, not this frame
-        ps.check_cancelled()      # must not raise
+        ps.mark_cancelled("s1")  # stops the NEW turn, not this frame
+        ps.check_cancelled()  # must not raise
     finally:
         ps.reset_current_session_id(tok_s)
         ps._current_token.reset(tok_t)
 
 
 # --- no thread leak --------------------------------------------------------
+
 
 def test_cancel_bridge_thread_exits_when_the_turn_ends():
     """The dispatcher's thread→asyncio bridge must not park forever.
@@ -280,7 +307,7 @@ def test_cancel_bridge_thread_exits_when_the_turn_ends():
     t = threading.Thread(target=_watch, name="turn-cancel-bridge")
     t.start()
 
-    turn_over.set()          # the turn finished without being cancelled
+    turn_over.set()  # the turn finished without being cancelled
     t.join(timeout=2.0)
 
     assert not t.is_alive(), "bridge thread leaked past the end of the turn"

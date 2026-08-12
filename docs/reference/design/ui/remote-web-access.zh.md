@@ -7,7 +7,7 @@
 > `openprogram/webui/server.py`、`openprogram/_cli_cmds/web.py`、
 > `web/lib/net/owner-auth-bootstrap.ts`、`openprogram/agent/authority.py`。
 > 关联设计：[说话人身份](../memory/speaker-identity.md)、
-> [权限模型](../runtime/permission-model.md)、[MCP 服务端](../integrations/mcp-server.md)。
+> [权限模型](../runtime/permission-model.md)、[MCP 服务端](../integrations/mcp-server.html)。
 
 OpenProgram 在所有部署方式下使用同一 authority 模型：进程生命周期内有效的实例
 token 认证当前 profile/state 实例的唯一所有者，每个通过认证的 Web 请求取得所有者

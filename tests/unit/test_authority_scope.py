@@ -58,6 +58,42 @@ def test_paired_authority_requires_platform_stable_ids(authority_state):
             authority.paired_channel_authority(*args, "name")
 
 
+def test_mcp_client_authority_is_fixed_paired_identity(authority_state):
+    authority = authority_state
+
+    first = authority.mcp_client_authority("0123456789abcdef")
+    second = authority.mcp_client_authority("0123456789abcdef")
+
+    assert first == second == {
+        "speaker_kind": "client",
+        "speaker_id": "mcp/0123456789abcdef",
+        "speaker_display": "MCP client",
+        "principal_id": authority.owner_principal_id(),
+        "authority_tier": "paired",
+        "interaction": "non-interactive",
+    }
+    assert authority.normalize_authority(first) == first
+    assert authority.has_capability(first, "reply") is True
+    assert authority.has_capability(first, "memory.read") is True
+    assert authority.has_capability(first, "memory.source.append") is True
+    for denied in (
+        "fs.read", "fs.write", "process.exec", "network.send",
+        "approval.request", "runtime.control",
+    ):
+        assert authority.has_capability(first, denied) is False
+
+
+@pytest.mark.parametrize("client_id", [
+    "", " ", "0123456789abcde", "0123456789abcdef0",
+    "0123456789ABCDEF", "0123456789abcde/", "0123456789abcde\n", None, 7,
+])
+def test_mcp_client_authority_rejects_malformed_fingerprint(
+    authority_state, client_id,
+):
+    with pytest.raises(authority_state.AuthorityError):
+        authority_state.mcp_client_authority(client_id)
+
+
 def test_runtime_authority_changes_speaker_without_expanding_tier(authority_state):
     authority = authority_state
     parent = authority.paired_channel_authority(

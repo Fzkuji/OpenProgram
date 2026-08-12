@@ -18,7 +18,7 @@ MCP is a protocol that defines a "tool provider" (server) and a "tool consumer" 
 | Server | The process that provides tools | `@drawio/mcp`, `@modelcontextprotocol/server-filesystem` |
 | Client | The LLM framework, which exposes the server's tools to the LLM | OpenProgram, Claude Desktop, Claude Code, Cursor, Cline, opencode |
 
-We are the client. This design **does not cover** exposing OpenProgram's own tools to an external client — that direction is a separate, standalone module that does not reuse the code in `openprogram/mcp/`, designed in [`mcp-server.md`](mcp-server.md).
+We are the client. This design **does not cover** exposing OpenProgram's own tools to an external client — that direction is a separate, standalone module that does not reuse the code in `openprogram/mcp/`, documented in the authoritative [MCP server design and evidence](mcp-server.html).
 
 ## Directory location
 

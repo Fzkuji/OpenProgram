@@ -741,8 +741,6 @@ async def _execute_tool_calls(
         gate_denial = decide_tool_gate(before_ev)
 
         result: AgentToolResult
-        is_error = False
-
         try:
             if gate_denial is not None:
                 raise ToolGateDenied(f"Tool call blocked: {gate_denial}")
@@ -780,8 +778,8 @@ async def _execute_tool_calls(
             result = AgentToolResult(
                 content=[TextContent(type="text", text=str(e))],
                 details={},
+                is_error=True,
             )
-            is_error = True
         except BaseException as e:
             # User-triggered cancel (openprogram.agentic_programming.function.CancelledError
             # is a BaseException so user-written `except Exception` inside tool bodies
@@ -794,6 +792,7 @@ async def _execute_tool_calls(
             result = AgentToolResult(
                 content=[TextContent(type="text", text=f"Cancelled: {e}")],
                 details={},
+                is_error=True,
             )
             ev_stream.push(AgentEventToolEnd(
                 tool_call_id=tool_call.id,
@@ -807,12 +806,12 @@ async def _execute_tool_calls(
             tool_call_id=tool_call.id,
             tool_name=tool_call.name,
             result=result,
-            is_error=is_error,
+            is_error=result.is_error,
         ))
         emit_safe("tool.after", "tool", {
             "tool": tool_call.name,
             "tool_call_id": tool_call.id,
-            "is_error": is_error,
+            "is_error": result.is_error,
             # Only the text channel of the result — binary attachments
             # can be huge and rarely useful for subscribers.
             "result_text": "".join(
@@ -827,7 +826,7 @@ async def _execute_tool_calls(
             tool_name=tool_call.name,
             content=result.content,
             details=result.details,
-            is_error=is_error,
+            is_error=result.is_error,
             timestamp=int(time.time() * 1000),
         )
         results.append(tool_result_msg)
@@ -856,6 +855,7 @@ def _skip_tool_call(
     result = AgentToolResult(
         content=[TextContent(type="text", text="Skipped due to queued user message.")],
         details={},
+        is_error=True,
     )
 
     ev_stream.push(AgentEventToolStart(

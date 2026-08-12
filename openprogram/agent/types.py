@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, AsyncGenerator, Awaitable, Callable, Literal, Protocol, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from openprogram.providers.types import (
     AssistantMessageEvent,
@@ -91,6 +91,19 @@ class AgentToolResult(BaseModel):
     """Result of a tool execution."""
     content: list[TextContent | ImageContent]
     details: Any = None
+    is_error: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _bridge_legacy_details_error(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or "is_error" in data:
+            return data
+        details = data.get("details")
+        if isinstance(details, dict) and "is_error" in details:
+            bridged = dict(data)
+            bridged["is_error"] = bool(details["is_error"])
+            return bridged
+        return data
 
 
 AgentToolUpdateCallback = Callable[["AgentToolResult"], None]

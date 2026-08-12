@@ -160,6 +160,24 @@ def _render_detail(server: dict) -> str:
 # Subcommands
 # ---------------------------------------------------------------------------
 
+def _cmd_mcp_token_create() -> int:
+    from openprogram.mcp_server.auth import MCPTokenError, create_token
+
+    try:
+        token = create_token()
+    except MCPTokenError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    print(token)
+    return 0
+
+
+def _cmd_mcp_serve() -> int:
+    from openprogram.mcp_server.server import serve
+
+    return serve()
+
+
 def _cmd_mcp_list() -> int:
     code, payload = _request("GET", "/api/mcp/servers")
     if code != 200 or not isinstance(payload, dict):

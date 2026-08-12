@@ -171,22 +171,42 @@ def _wrap_agentic_runtime_block(
                         ),
                     ),
                 )
-                if out.get("killed"):
+                if out.get("error"):
                     from openprogram.agent.types import (
                         AgentToolResult as _TR,
                     )
                     from openprogram.providers.types import (
                         TextContent as _CB,
                     )
-                    result = _TR(content=[_CB(text="[cancelled by user]")])
-                elif out.get("error"):
+                    details = {"reason_code": "agentic_subprocess_error"}
+                    if out.get("killed"):
+                        details["killed"] = True
+                    if out.get("signal") is not None:
+                        details["signal"] = out["signal"]
+                    result = _TR(
+                        content=[_CB(text=str(out["error"]))],
+                        details=details,
+                        is_error=True,
+                    )
+                elif out.get("killed"):
                     from openprogram.agent.types import (
                         AgentToolResult as _TR,
                     )
                     from openprogram.providers.types import (
                         TextContent as _CB,
                     )
-                    result = _TR(content=[_CB(text=str(out["error"]))])
+                    details = {
+                        "reason_code": "agentic_subprocess_cancelled",
+                        "cancelled": True,
+                        "killed": True,
+                    }
+                    if out.get("signal") is not None:
+                        details["signal"] = out["signal"]
+                    result = _TR(
+                        content=[_CB(text="[cancelled by user]")],
+                        details=details,
+                        is_error=True,
+                    )
                 else:
                     from openprogram.agent.types import (
                         AgentToolResult as _TR,

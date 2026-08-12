@@ -109,6 +109,11 @@ EVENTS: dict[str, EventSpec] = {
         payload_doc="{session_id, question, ...} — the agent asked the user "
                     "a question through the question channel",
     ),
+    "mcp.request.cancelled": EventSpec(
+        kind="notify",
+        payload_doc="{request_id, session_id, client_id, reason} — an MCP-owned "
+                    "prompt request was cancelled and cleaned up",
+    ),
     "context.compacted": EventSpec(
         kind="notify",
         payload_doc="{ok, tokens_before, tokens_after, ...} — a compaction "

@@ -158,3 +158,4 @@ def test_gate_blocks_tool_end_to_end():
     )
     assert "Tool call blocked" in text and "测试拦截" in text
     assert tool_results[0].is_error
+    assert "is_error" not in (tool_results[0].details or {})

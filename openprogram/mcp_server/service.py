@@ -1,0 +1,831 @@
+from __future__ import annotations
+
+import asyncio
+import math
+import threading
+import uuid
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Any
+
+import mcp.types as mcp_types
+import anyio
+from jsonschema import Draft202012Validator
+from mcp.shared.exceptions import McpError
+
+from openprogram.agent.authority import (
+    decide_tool_authority,
+    mcp_client_authority,
+)
+from openprogram.agent.session_db import SessionDB, default_db
+from openprogram.agent.types import AgentTool, AgentToolResult
+from openprogram.mcp_server.tools import json_result, prompt_result, to_mcp_content
+from openprogram.providers.types import TextContent
+
+
+@dataclass(frozen=True)
+class MCPClientContext:
+    client_id: str
+    authority: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        expected = mcp_client_authority(self.client_id)
+        if dict(self.authority) != expected:
+            raise ValueError("invalid MCP client authority")
+        object.__setattr__(self, "authority", MappingProxyType(expected))
+
+
+@dataclass(frozen=True)
+class ActiveMCPRequest:
+    request_id: str
+    session_id: str
+    client_id: str
+    thread_cancel: threading.Event
+    tool_cancel: asyncio.Event
+
+
+def _default_config() -> Mapping[str, Any]:
+    from openprogram.setup import _read_config
+
+    return _read_config()
+
+
+def _default_registry_get(name: str) -> AgentTool | None:
+    from openprogram.functions._runtime import get
+
+    return get(name)
+
+
+def _default_registry_exposed_names() -> set[str]:
+    from openprogram.functions._runtime import exposed_names
+
+    return exposed_names()
+
+
+def _default_process_user_turn(request, *, cancel_event):
+    from openprogram.agent.dispatcher import process_user_turn
+
+    return process_user_turn(request, cancel_event=cancel_event)
+
+
+def _default_register_cancel_event(session_id, event) -> bool:
+    from openprogram.agent.run_control import claim_cancel_event
+
+    return claim_cancel_event(session_id, event)
+
+
+def _default_unregister_cancel_event(session_id, event) -> None:
+    from openprogram.agent.run_control import unregister_cancel_event
+
+    unregister_cancel_event(session_id, event)
+
+
+def _default_current_cancel_event(session_id):
+    from openprogram.agent.run_control import current_token
+
+    token = current_token(session_id)
+    return token.event if token is not None else None
+
+
+def _default_acquire_cancel_cleanup(session_id, event) -> bool:
+    from openprogram.agent.run_control import acquire_cancel_cleanup
+
+    return acquire_cancel_cleanup(session_id, event)
+
+
+def _default_release_cancel_cleanup(session_id, event) -> None:
+    from openprogram.agent.run_control import release_cancel_cleanup
+
+    release_cancel_cleanup(session_id, event)
+
+
+def _default_mark_cancelled(session_id) -> None:
+    from openprogram.agent.run_control import mark_cancelled
+
+    mark_cancelled(session_id)
+
+
+def _default_kill_active_runtime(session_id) -> None:
+    from openprogram.agent.run_control import kill_active_runtime
+
+    kill_active_runtime(session_id)
+
+
+def _default_kill_active_subprocess(session_id) -> None:
+    from openprogram.agent.process_runner import kill_active_subprocess
+
+    kill_active_subprocess(session_id)
+
+
+def _default_question_registry():
+    from openprogram.agent.questions import get_question_registry
+
+    return get_question_registry()
+
+
+def _default_event_bus():
+    from openprogram.events import get_event_bus
+
+    return get_event_bus()
+
+
+def _best_effort(callback: Callable[..., Any], *args: Any) -> Any:
+    try:
+        return callback(*args)
+    except Exception:
+        return None
+
+
+_APPROVAL_GATE_DENIAL_TEXT = {
+    "HARD_CONSTRAINT_DENIED": "[denied] hard constraint",
+    "PERMISSION_RULE_DENY": "[denied] blocked by permission rule",
+    "APPROVAL_UNAVAILABLE_NON_INTERACTIVE": (
+        "[denied] approval unavailable for non-interactive MCP"
+    ),
+}
+
+
+def _trusted_approval_denial(
+    result: AgentToolResult,
+    *,
+    request: Any,
+    tool_name: str,
+    arguments: dict[str, Any],
+) -> AgentToolResult | None:
+    details = result.details
+    if not isinstance(details, dict):
+        return None
+    reason_code = details.get("reason_code")
+    if reason_code == "AUTHORITY_CAPABILITY_DENIED":
+        decision = decide_tool_authority(request, tool_name, arguments)
+        if decision.allowed or decision.reason_code != reason_code:
+            return None
+        return AgentToolResult(
+            content=[
+                TextContent(
+                    text=(
+                        f"[denied] authority tier does not allow {decision.capability}"
+                    )
+                )
+            ],
+            details={
+                "denied": True,
+                "reason_code": reason_code,
+                "capability": decision.capability,
+            },
+            is_error=True,
+        )
+    text = _APPROVAL_GATE_DENIAL_TEXT.get(reason_code)
+    if text is None:
+        return None
+    return AgentToolResult(
+        content=[TextContent(text=text)],
+        details={"denied": True, "reason_code": reason_code},
+        is_error=True,
+    )
+
+
+def _number(value: Any) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
+
+
+def _session_row(row: Any) -> dict[str, Any]:
+    if not isinstance(row, Mapping):
+        raise ValueError
+    session_id = row.get("id")
+    title = row.get("title")
+    updated_at = row.get("updated_at")
+    if (
+        not isinstance(session_id, str)
+        or not session_id
+        or not isinstance(title, str)
+        or not _number(updated_at)
+    ):
+        raise ValueError
+    return {"id": session_id, "title": title, "updated_at": updated_at}
+
+
+def _message_row(row: Any) -> dict[str, Any]:
+    if not isinstance(row, Mapping):
+        raise ValueError
+    message_id = row.get("id")
+    role = row.get("role")
+    content = row.get("content")
+    timestamp = row.get("timestamp")
+    if (
+        not isinstance(message_id, str)
+        or not message_id
+        or not isinstance(role, str)
+        or not role
+        or not isinstance(content, str)
+        or not _number(timestamp)
+    ):
+        raise ValueError
+    return {
+        "id": message_id,
+        "role": role,
+        "content": content,
+        "timestamp": timestamp,
+    }
+
+
+def _mcp_error(code: int, message: str) -> McpError:
+    return McpError(mcp_types.ErrorData(code=code, message=message))
+
+
+def _copy_json(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        copied = {}
+        for key, item in value.items():
+            if type(key) is not str:
+                raise TypeError
+            copied[key] = _copy_json(item)
+        return copied
+    if isinstance(value, list):
+        return [_copy_json(item) for item in value]
+    if value is None or type(value) in (str, bool, int):
+        return value
+    if type(value) is float and math.isfinite(value):
+        return value
+    raise TypeError
+
+
+def _execution_error() -> AgentToolResult:
+    return AgentToolResult(
+        content=[TextContent(text="Runtime tool execution failed")],
+        details={"reason_code": "RUNTIME_TOOL_EXECUTION_FAILED"},
+        is_error=True,
+    )
+
+
+class MCPService:
+    def __init__(
+        self,
+        context: MCPClientContext,
+        *,
+        session_db: SessionDB | None = None,
+        config_getter: Callable[[], Mapping[str, Any]] | None = None,
+        registry_get: Callable[[str], AgentTool | None] | None = None,
+        registry_exposed_names: Callable[[], set[str]] | None = None,
+        process_user_turn: Callable[..., Any] | None = None,
+        register_cancel_event: Callable[[str, threading.Event], None] | None = None,
+        unregister_cancel_event: Callable[[str, threading.Event], None] | None = None,
+        current_cancel_event: Callable[[str], threading.Event | None] | None = None,
+        acquire_cancel_cleanup: Callable[[str, threading.Event], bool] | None = None,
+        release_cancel_cleanup: Callable[[str, threading.Event], None] | None = None,
+        mark_cancelled: Callable[[str], None] | None = None,
+        kill_active_subprocess: Callable[[str], Any] | None = None,
+        kill_active_runtime: Callable[[str], Any] | None = None,
+        question_registry_getter: Callable[[], Any] | None = None,
+        event_bus_getter: Callable[[], Any] | None = None,
+    ) -> None:
+        self.context = context
+        self._session_db = session_db or default_db()
+        self._config_getter = config_getter or _default_config
+        self._registry_get = registry_get or _default_registry_get
+        self._registry_exposed_names = (
+            registry_exposed_names or _default_registry_exposed_names
+        )
+        self._process_user_turn = process_user_turn or _default_process_user_turn
+        self._register_cancel_event = (
+            register_cancel_event or _default_register_cancel_event
+        )
+        self._unregister_cancel_event = (
+            unregister_cancel_event or _default_unregister_cancel_event
+        )
+        self._current_cancel_event = (
+            current_cancel_event or _default_current_cancel_event
+        )
+        self._acquire_cancel_cleanup = (
+            acquire_cancel_cleanup or _default_acquire_cancel_cleanup
+        )
+        self._release_cancel_cleanup = (
+            release_cancel_cleanup or _default_release_cancel_cleanup
+        )
+        self._mark_cancelled = mark_cancelled or _default_mark_cancelled
+        self._kill_active_subprocess = (
+            kill_active_subprocess or _default_kill_active_subprocess
+        )
+        self._kill_active_runtime = kill_active_runtime or _default_kill_active_runtime
+        self._question_registry_getter = (
+            question_registry_getter or _default_question_registry
+        )
+        self._event_bus = (event_bus_getter or _default_event_bus)()
+        self._active_lock = threading.RLock()
+        self._active_by_request: dict[str, ActiveMCPRequest] = {}
+        self._request_by_session: dict[str, str] = {}
+        self._registered_requests: dict[str, ActiveMCPRequest] = {}
+        self._cleaning_sessions: set[str] = set()
+        self._closed = False
+        self._unsubscribe_questions = self._event_bus.subscribe(
+            self._on_question_asked, types={"question.asked"}
+        )
+
+    def _on_question_asked(self, event: Any) -> None:
+        payload = getattr(event, "payload", None)
+        if not isinstance(payload, Mapping):
+            return
+        question_id = payload.get("id")
+        session_id = payload.get("session_id")
+        if (
+            type(question_id) is not str
+            or not question_id
+            or type(session_id) is not str
+            or not session_id
+        ):
+            return
+        with self._active_lock:
+            request_id = self._request_by_session.get(session_id)
+            record = self._active_by_request.get(request_id) if request_id else None
+            if self._closed or record is None:
+                return
+            try:
+                owns_session = self._acquire_cancel_cleanup(
+                    session_id, record.thread_cancel
+                )
+            except Exception:
+                owns_session = False
+            if not owns_session:
+                return
+            try:
+                self._question_registry_getter().resolve(question_id, "declined", None)
+            except Exception:
+                return
+            finally:
+                _best_effort(
+                    self._release_cancel_cleanup, session_id, record.thread_cancel
+                )
+
+    def _unregister_once(self, record: ActiveMCPRequest) -> None:
+        with self._active_lock:
+            if self._registered_requests.get(record.request_id) is not record:
+                return
+            self._registered_requests.pop(record.request_id, None)
+        _best_effort(
+            self._unregister_cancel_event, record.session_id, record.thread_cancel
+        )
+
+    def _remove_owned(self, record: ActiveMCPRequest) -> bool:
+        with self._active_lock:
+            if self._active_by_request.get(record.request_id) is not record:
+                return False
+            self._active_by_request.pop(record.request_id, None)
+            if self._request_by_session.get(record.session_id) == record.request_id:
+                self._request_by_session.pop(record.session_id, None)
+            return True
+
+    def _audit_cancellation(self, record: ActiveMCPRequest, reason: str) -> None:
+        from openprogram.events import make_event
+
+        indicator = (
+            reason
+            if reason in {"prompt_cancel", "request_cancelled", "connection_closed"}
+            else "request_cancelled"
+        )
+        event = make_event(
+            "mcp.request.cancelled",
+            "system",
+            {
+                "request_id": record.request_id,
+                "session_id": record.session_id,
+                "client_id": record.client_id,
+                "reason": indicator,
+            },
+            {"session": record.session_id},
+        )
+        _best_effort(self._event_bus.emit, event)
+
+    def _cancel_record(self, record: ActiveMCPRequest, *, reason: str) -> bool:
+        with self._active_lock:
+            if not self._remove_owned(record):
+                return False
+            self._cleaning_sessions.add(record.session_id)
+        try:
+            record.thread_cancel.set()
+            record.tool_cancel.set()
+            try:
+                owns_session = self._acquire_cancel_cleanup(
+                    record.session_id, record.thread_cancel
+                )
+            except Exception:
+                owns_session = False
+            try:
+                if owns_session:
+                    for callback in (
+                        self._mark_cancelled,
+                        self._kill_active_subprocess,
+                        self._kill_active_runtime,
+                    ):
+                        _best_effort(callback, record.session_id)
+                    try:
+                        questions = self._question_registry_getter()
+                    except Exception:
+                        questions = None
+                    if questions is not None:
+                        _best_effort(questions.cancel_session, record.session_id)
+                self._unregister_once(record)
+            finally:
+                if owns_session:
+                    _best_effort(
+                        self._release_cancel_cleanup,
+                        record.session_id,
+                        record.thread_cancel,
+                    )
+            self._audit_cancellation(record, reason)
+            return True
+        finally:
+            with self._active_lock:
+                self._cleaning_sessions.discard(record.session_id)
+
+    def cancel_request(self, request_id: str, *, reason: str) -> None:
+        with self._active_lock:
+            record = self._active_by_request.get(request_id)
+        if record is not None:
+            self._cancel_record(record, reason=reason)
+
+    def prompt_cancel(self, session_id: str) -> AgentToolResult:
+        with self._active_lock:
+            request_id = self._request_by_session.get(session_id)
+            record = self._active_by_request.get(request_id) if request_id else None
+        cancelled = bool(
+            record is not None and self._cancel_record(record, reason="prompt_cancel")
+        )
+        return json_result({"session_id": session_id, "cancelled": cancelled})
+
+    def close(self) -> None:
+        with self._active_lock:
+            if self._closed:
+                return
+            self._closed = True
+            unsubscribe = self._unsubscribe_questions
+            self._unsubscribe_questions = None
+            request_ids = tuple(self._active_by_request)
+        if unsubscribe is not None:
+            _best_effort(unsubscribe)
+        for request_id in request_ids:
+            self.cancel_request(request_id, reason="connection_closed")
+
+    async def prompt_send(
+        self,
+        prompt: str,
+        *,
+        session_id: str | None,
+        request_id: str,
+    ) -> AgentToolResult:
+        from openprogram.agent.dispatcher import TurnRequest
+        from openprogram.functions.permission_rule import load_merged_rules
+
+        selected_session_id = session_id
+        agent_id = "main"
+        record = None
+        registered = False
+        if selected_session_id is None:
+            with self._active_lock:
+                if self._closed or request_id in self._active_by_request:
+                    return json_result(
+                        {"error": "prompt execution failed"}, is_error=True
+                    )
+                try:
+                    for _ in range(8):
+                        candidate = f"mcp_{uuid.uuid4().hex}"
+                        if self._session_db.get_session(candidate) is None:
+                            selected_session_id = candidate
+                            break
+                    if selected_session_id is None:
+                        raise RuntimeError
+                    thread_cancel = threading.Event()
+                    tool_cancel = asyncio.Event()
+                    record = ActiveMCPRequest(
+                        request_id=request_id,
+                        session_id=selected_session_id,
+                        client_id=self.context.client_id,
+                        thread_cancel=thread_cancel,
+                        tool_cancel=tool_cancel,
+                    )
+                    claimed = self._register_cancel_event(
+                        selected_session_id, thread_cancel
+                    )
+                    if claimed is False or (
+                        self._current_cancel_event(selected_session_id)
+                        is not thread_cancel
+                    ):
+                        raise RuntimeError
+                    self._session_db.create_session(
+                        selected_session_id, "main", source="mcp"
+                    )
+                    registered = True
+                    self._active_by_request[request_id] = record
+                    self._request_by_session[selected_session_id] = request_id
+                    self._registered_requests[request_id] = record
+                except Exception:
+                    registered = False
+            if not registered:
+                if record is not None:
+                    _best_effort(
+                        self._unregister_cancel_event,
+                        selected_session_id,
+                        record.thread_cancel,
+                    )
+                return json_result({"error": "prompt execution failed"}, is_error=True)
+        else:
+            invalid_session = False
+            try:
+                row = self._session_db.get_session(selected_session_id)
+                if (
+                    not isinstance(row, Mapping)
+                    or row.get("id") != selected_session_id
+                    or type(row.get("agent_id")) is not str
+                    or not row["agent_id"]
+                ):
+                    raise ValueError
+                agent_id = row["agent_id"]
+            except Exception:
+                invalid_session = True
+            if invalid_session:
+                raise _mcp_error(mcp_types.INVALID_PARAMS, "invalid MCP prompt session")
+
+            thread_cancel = threading.Event()
+            tool_cancel = asyncio.Event()
+            record = ActiveMCPRequest(
+                request_id=request_id,
+                session_id=selected_session_id,
+                client_id=self.context.client_id,
+                thread_cancel=thread_cancel,
+                tool_cancel=tool_cancel,
+            )
+            with self._active_lock:
+                if (
+                    self._closed
+                    or request_id in self._active_by_request
+                    or selected_session_id in self._request_by_session
+                    or selected_session_id in self._cleaning_sessions
+                ):
+                    return json_result(
+                        {"error": "prompt execution failed"}, is_error=True
+                    )
+                try:
+                    claimed = self._register_cancel_event(
+                        selected_session_id, thread_cancel
+                    )
+                    if claimed is False or (
+                        self._current_cancel_event(selected_session_id)
+                        is not thread_cancel
+                    ):
+                        raise RuntimeError
+                    registered = True
+                except Exception:
+                    registered = False
+                if registered:
+                    self._active_by_request[request_id] = record
+                    self._request_by_session[selected_session_id] = request_id
+                    self._registered_requests[request_id] = record
+            if not registered:
+                _best_effort(
+                    self._unregister_cancel_event, selected_session_id, thread_cancel
+                )
+                return json_result({"error": "prompt execution failed"}, is_error=True)
+
+        try:
+            request = TurnRequest(
+                session_id=selected_session_id,
+                user_text=prompt,
+                agent_id=agent_id,
+                source="mcp",
+                permission_mode="ask",
+                permission_rules=load_merged_rules(selected_session_id),
+                **dict(self.context.authority),
+            )
+        except Exception:
+            self._remove_owned(record)
+            self._unregister_once(record)
+            return json_result({"error": "prompt execution failed"}, is_error=True)
+        failure = None
+        try:
+            result = await anyio.to_thread.run_sync(
+                lambda: self._process_user_turn(request, cancel_event=thread_cancel),
+                abandon_on_cancel=True,
+            )
+        except asyncio.CancelledError:
+            self.cancel_request(request_id, reason="request_cancelled")
+            raise
+        except Exception:
+            failure = json_result({"error": "prompt execution failed"}, is_error=True)
+        finally:
+            self._remove_owned(record)
+            self._unregister_once(record)
+        if thread_cancel.is_set() or tool_cancel.is_set():
+            raise asyncio.CancelledError
+        if failure is not None:
+            return failure
+        return prompt_result(selected_session_id, result)
+
+    def sessions_list(self) -> AgentToolResult:
+        try:
+            rows = self._session_db.list_sessions(limit=100)
+            if not isinstance(rows, list):
+                raise ValueError
+            payload = [_session_row(row) for row in rows]
+        except Exception:
+            return json_result({"error": "session data unavailable"}, is_error=True)
+        return json_result(payload)
+
+    def session_get(self, session_id: str) -> AgentToolResult:
+        try:
+            session = self._session_db.get_session(session_id)
+        except Exception:
+            return json_result({"error": "session data unavailable"}, is_error=True)
+        if session is None:
+            return json_result({"error": "session not found"}, is_error=True)
+        if not isinstance(session, Mapping) or session.get("id") != session_id:
+            return json_result({"error": "session data unavailable"}, is_error=True)
+        try:
+            rows = self._session_db.get_branch(session_id)
+            if not isinstance(rows, list):
+                raise ValueError
+            payload = [_message_row(row) for row in rows]
+        except Exception:
+            return json_result({"error": "session data unavailable"}, is_error=True)
+        return json_result(payload)
+
+    def exposed_runtime_tools(self) -> tuple[AgentTool, ...]:
+        try:
+            config = self._config_getter()
+            server = config.get("mcp_server", {})
+            configured = server.get("exposed_tools", [])
+            if not isinstance(configured, list) or not all(
+                isinstance(name, str) for name in configured
+            ):
+                return ()
+            exposed = self._registry_exposed_names()
+        except Exception:
+            return ()
+
+        tools: list[AgentTool] = []
+        seen: set[str] = set()
+        for name in tuple(configured):
+            if name in seen:
+                continue
+            seen.add(name)
+            if name not in exposed:
+                continue
+            try:
+                tool = self._registry_get(name)
+                allowed = decide_tool_authority(self.context.authority, name).allowed
+            except Exception:
+                continue
+            if tool is not None and tool.name == name and allowed:
+                try:
+                    tools.append(tool.model_copy(deep=True))
+                except Exception:
+                    continue
+        return tuple(tools)
+
+    def tools_list(self) -> AgentToolResult:
+        return json_result(
+            [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "inputSchema": tool.parameters,
+                }
+                for tool in self.exposed_runtime_tools()
+            ]
+        )
+
+    async def tool_call(
+        self,
+        name: str,
+        arguments: Mapping[str, Any],
+        *,
+        call_id: str,
+        cancel_event: asyncio.Event,
+        on_progress: Callable[[str], None] | None,
+    ) -> AgentToolResult:
+        """Execute one currently exposed Runtime tool under fixed MCP authority."""
+        tool: AgentTool | None = None
+        try:
+            config = self._config_getter()
+            server = config.get("mcp_server", {})
+            configured = server.get("exposed_tools", [])
+            exposed = self._registry_exposed_names()
+            if (
+                not isinstance(configured, list)
+                or not all(isinstance(item, str) for item in configured)
+                or name not in configured
+                or name not in exposed
+            ):
+                raise LookupError
+            tool = self._registry_get(name)
+            if tool is None or tool.name != name:
+                raise LookupError
+        except Exception:
+            tool = None
+        if tool is None:
+            raise _mcp_error(
+                mcp_types.METHOD_NOT_FOUND,
+                "underlying Runtime tool not found",
+            )
+
+        invalid_arguments = False
+        try:
+            copied_arguments = _copy_json(arguments)
+            if not isinstance(copied_arguments, dict):
+                raise TypeError
+            Draft202012Validator.check_schema(tool.parameters)
+            validator = Draft202012Validator(tool.parameters)
+            if next(validator.iter_errors(copied_arguments), None) is not None:
+                raise ValueError
+        except Exception:
+            invalid_arguments = True
+        if invalid_arguments:
+            raise _mcp_error(
+                mcp_types.INVALID_PARAMS,
+                "invalid underlying Runtime tool arguments",
+            )
+
+        from openprogram.agent.dispatcher import TurnRequest
+        from openprogram.agent.internals._approval import wrap_with_approval
+        from openprogram.functions.permission_rule import load_merged_rules
+
+        underlying_started = False
+
+        async def forward_execute(
+            forwarded_call_id,
+            forwarded_arguments,
+            forwarded_cancel_event,
+            forwarded_update_callback,
+        ):
+            nonlocal underlying_started
+            underlying_started = True
+            return await tool.execute(
+                forwarded_call_id,
+                forwarded_arguments,
+                forwarded_cancel_event,
+                forwarded_update_callback,
+            )
+
+        setup_failed = False
+        try:
+            req = TurnRequest(
+                session_id="",
+                user_text="",
+                agent_id="main",
+                source="mcp",
+                permission_mode="ask",
+                permission_rules=load_merged_rules(""),
+                **dict(self.context.authority),
+            )
+            forwarding_tool = tool.model_copy(update={"execute": forward_execute})
+            gated = wrap_with_approval(forwarding_tool, req, lambda _event: None)
+        except Exception:
+            setup_failed = True
+        if setup_failed:
+            return _execution_error()
+
+        update_callback = None
+        if on_progress is not None:
+
+            def update_callback(update: Any) -> None:
+                if not isinstance(update, str):
+                    return
+                try:
+                    on_progress(update)
+                except Exception:
+                    return
+
+        execution_failed = False
+        try:
+            result = await gated.execute(
+                call_id,
+                copied_arguments,
+                cancel_event,
+                update_callback,
+            )
+            if not isinstance(result, AgentToolResult):
+                raise TypeError
+            detached = result.model_copy(deep=True)
+            to_mcp_content(detached)
+            if detached.is_error:
+                detached = (
+                    _trusted_approval_denial(
+                        detached,
+                        request=req,
+                        tool_name=name,
+                        arguments=copied_arguments,
+                    )
+                    if not underlying_started
+                    else None
+                ) or _execution_error()
+        except Exception:
+            execution_failed = True
+        if execution_failed:
+            return _execution_error()
+        return detached
+
+
+__all__ = ["ActiveMCPRequest", "MCPClientContext", "MCPService"]

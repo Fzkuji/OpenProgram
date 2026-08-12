@@ -8,12 +8,16 @@ registry filtering.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import time
 from pathlib import Path
 from typing import Optional
 
 import pytest
+from mcp.types import CallToolResult, TextContent as MCPTextContent
 
+from openprogram.agent.types import AgentToolResult
+from openprogram.backend import RunResult
 from openprogram.functions import _runtime as R
 from openprogram.functions._runtime import (
     DEFAULT_HEAD_RATIO,
@@ -34,6 +38,8 @@ from openprogram.functions._runtime import (
     function,
     tool_requires_approval,
 )
+from openprogram.mcp.adapter import convert_call_result
+from openprogram.providers.types import TextContent
 
 
 @pytest.fixture(autouse=True)
@@ -221,8 +227,19 @@ def test_exception_caught_and_wrapped() -> None:
         raise RuntimeError("boom")
 
     result = _run(bad.execute("call_1", {"x": 1}, None, None))
-    assert result.details and result.details.get("is_error")
+    assert result.is_error is True
+    assert result.details and "is_error" not in result.details
     assert "boom" in result.content[0].text
+
+
+def test_agent_tool_result_bridges_legacy_details_error_bit() -> None:
+    result = AgentToolResult(
+        content=[TextContent(text="legacy")],
+        details={"is_error": True, "reason_code": "LEGACY"},
+    )
+
+    assert result.is_error is True
+    assert result.details == {"is_error": True, "reason_code": "LEGACY"}
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +298,22 @@ def test_tool_return_error_flag() -> None:
         return ToolReturn(text="oops", is_error=True)
 
     result = _run(failing.execute("c1", {}, None, None))
-    assert result.details["is_error"] is True
+    assert result.is_error is True
+    assert result.details is None or "is_error" not in result.details
+
+
+def test_remote_mcp_error_flag_is_typed_not_stored_in_details() -> None:
+    result = convert_call_result(
+        CallToolResult(
+            content=[MCPTextContent(type="text", text="remote failed")],
+            isError=True,
+        ),
+        server="remote",
+        tool_name="probe",
+    )
+
+    assert result.is_error is True
+    assert result.details == {"mcp_server": "remote", "mcp_tool": "probe"}
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +398,23 @@ def test_cache_skips_errors() -> None:
     assert counter["n"] == 2
 
 
+def test_cache_skips_typed_errors_without_details() -> None:
+    counter = {"n": 0}
+
+    @function(cache=True, cache_ttl=60)
+    def typed_failure() -> AgentToolResult:
+        counter["n"] += 1
+        return AgentToolResult(
+            content=[TextContent(text="failed")],
+            is_error=True,
+        )
+
+    _run(typed_failure.execute("c1", {}, None, None))
+    _run(typed_failure.execute("c2", {}, None, None))
+
+    assert counter["n"] == 2
+
+
 # ---------------------------------------------------------------------------
 # Cancel + on_update injection
 # ---------------------------------------------------------------------------
@@ -408,7 +457,216 @@ def test_timeout_kills_long_tool() -> None:
         return "never"
 
     result = _run(slow.execute("c1", {}, None, None))
+    assert result.is_error is True
     assert result.details and result.details.get("timeout")
+    assert "is_error" not in result.details
+
+
+def test_bash_sandbox_denial_uses_typed_error(monkeypatch) -> None:
+    bash_module = importlib.import_module(
+        "openprogram.functions.tools.bash.bash"
+    )
+
+    class DeniedBackend:
+        backend_id = "local"
+
+        def run(self, command, timeout, cwd=None):
+            return RunResult(
+                exit_code=1,
+                stdout="",
+                stderr="denied",
+                sandbox_error="denied",
+            )
+
+    monkeypatch.setattr(bash_module, "get_active_backend", DeniedBackend)
+    result = _run(
+        bash_module.bash.execute(
+            "bash-denied", {"command": "blocked"}, None, None
+        )
+    )
+
+    assert result.is_error is True
+    assert result.details["sandbox"]["kind"] == "denied"
+    assert "is_error" not in result.details
+
+
+@pytest.mark.parametrize(
+    ("run_result", "detail_key"),
+    [
+        (RunResult(exit_code=7, stdout="", stderr="failed"), "exit_code"),
+        (
+            RunResult(
+                exit_code=-1,
+                stdout="partial",
+                stderr="timed out",
+                timed_out=True,
+            ),
+            "timeout",
+        ),
+    ],
+)
+def test_bash_execution_failures_use_typed_error(
+    monkeypatch, run_result, detail_key
+) -> None:
+    bash_module = importlib.import_module(
+        "openprogram.functions.tools.bash.bash"
+    )
+
+    class FailedBackend:
+        backend_id = "local"
+
+        def run(self, command, timeout, cwd=None):
+            return run_result
+
+    monkeypatch.setattr(bash_module, "get_active_backend", FailedBackend)
+    result = _run(
+        bash_module.bash.execute("bash-failed", {"command": "false"}, None, None)
+    )
+
+    assert result.is_error is True
+    assert detail_key in result.details
+    assert "is_error" not in result.details
+
+
+@pytest.mark.parametrize(
+    ("subprocess_result", "expected_text", "expected_reason"),
+    [
+        (
+            {"error": "subprocess failed"},
+            "subprocess failed",
+            "agentic_subprocess_error",
+        ),
+        (
+            {
+                "error": "subprocess died without writing result",
+                "killed": True,
+                "signal": 11,
+            },
+            "subprocess died without writing result",
+            "agentic_subprocess_error",
+        ),
+        (
+            {"killed": True, "signal": 9},
+            "[cancelled by user]",
+            "agentic_subprocess_cancelled",
+        ),
+    ],
+)
+def test_agentic_subprocess_failure_reaches_agent_loop_as_typed_error(
+    monkeypatch, subprocess_result, expected_text, expected_reason
+) -> None:
+    from contextlib import nullcontext
+
+    import openprogram.agent.process_runner as process_runner
+    import openprogram.agent.session_db as session_db
+    import openprogram.webui._exec_dag as exec_dag
+    from openprogram.agent import AgentSession
+    from openprogram.agent.dispatcher.runtime_attach import (
+        _wrap_agentic_runtime_block,
+    )
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.types import AgentTool
+    from openprogram.providers.types import (
+        AssistantMessage,
+        EventDone,
+        EventStart,
+        Model,
+        ToolCall,
+        ToolResultMessage,
+    )
+
+    class FakeDB:
+        def invalidate_cache(self, session_id):
+            pass
+
+    async def original_execute(call_id, args, cancel, on_update):
+        return AgentToolResult(content=[TextContent(text="original")])
+
+    tool = AgentTool(
+        name="agentic_probe",
+        description="probe",
+        parameters={"type": "object", "properties": {}},
+        label="probe",
+        execute=original_execute,
+    )
+    setattr(tool, "_is_agentic", True)
+    monkeypatch.setattr(
+        process_runner,
+        "run_agentic_in_subprocess",
+        lambda **kwargs: subprocess_result,
+    )
+    monkeypatch.setattr(session_db, "default_db", lambda: FakeDB())
+    monkeypatch.setattr(exec_dag, "live_progress", lambda *a, **kw: nullcontext())
+    monkeypatch.setattr(exec_dag, "build_exec_dag", lambda *a, **kw: None)
+
+    wrapped = _wrap_agentic_runtime_block(
+        tool,
+        TurnRequest(
+            session_id="typed-error",
+            user_text="",
+            agent_id="main",
+            source="web",
+        ),
+        lambda event: None,
+        "assistant-1",
+    )
+
+    def assistant(content, stop_reason):
+        return AssistantMessage(
+            content=content,
+            api="openai-completions",
+            provider="openai",
+            model="fake",
+            stop_reason=stop_reason,
+            timestamp=int(time.time() * 1000),
+        )
+
+    replies = [
+        assistant(
+            [ToolCall(id="call-1", name="agentic_probe", arguments={})],
+            "toolUse",
+        ),
+        assistant([TextContent(text="done")], "stop"),
+    ]
+    call_index = 0
+
+    def stream_fn(model, context, options):
+        nonlocal call_index
+        reply = replies[min(call_index, len(replies) - 1)]
+        call_index += 1
+
+        async def generate():
+            yield EventStart(partial=reply)
+            yield EventDone(reason=reply.stop_reason, message=reply)
+
+        return generate()
+
+    session = AgentSession(
+        model=Model(
+            id="fake",
+            name="fake",
+            api="openai-completions",
+            provider="openai",
+            base_url="https://example.invalid/v1",
+        ),
+        tools=[wrapped],
+    )
+    session._agent.stream_fn = stream_fn
+    _run(session.run("go"))
+
+    results = [
+        message
+        for message in session._agent.state.messages
+        if isinstance(message, ToolResultMessage)
+    ]
+    assert len(results) == 1
+    assert results[0].content[0].text == expected_text
+    assert results[0].is_error is True
+    assert results[0].details["reason_code"] == expected_reason
+    if subprocess_result.get("killed"):
+        assert results[0].details["killed"] is True
+    if subprocess_result.get("signal") is not None:
+        assert results[0].details["signal"] == subprocess_result["signal"]
 
 
 # ---------------------------------------------------------------------------

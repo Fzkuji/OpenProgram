@@ -11,7 +11,7 @@
 > `openprogram/agent/authority.py`.
 > Related designs: [speaker identity](../memory/speaker-identity.md),
 > [permission model](../runtime/permission-model.md), and
-> [MCP server](../integrations/mcp-server.md).
+> [MCP server](../integrations/mcp-server.html).
 
 OpenProgram keeps one authority model in every deployment mode: a
 process-lifetime instance token authenticates the active profile/state

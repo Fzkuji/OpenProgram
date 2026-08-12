@@ -572,12 +572,14 @@ def _normalize_result(raw: Any, *, call_id: str, max_chars: int,
         content.append(TextContent(text=""))
 
     details: dict[str, Any] = {}
-    if is_error:
-        details["is_error"] = True
     if json_payload is not None:
         details["json"] = json_payload
 
-    return AgentToolResult(content=content, details=details or None)
+    return AgentToolResult(
+        content=content,
+        details=details or None,
+        is_error=is_error,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -991,15 +993,16 @@ def function(
                     f"[error] function {actual_name} timed out after "
                     f"{effective_timeout}s"
                 ))],
-                details={"is_error": True, "timeout": True},
+                details={"timeout": True},
+                is_error=True,
             )
         except asyncio.CancelledError:
             raise
         except Exception as e:
             return AgentToolResult(
                 content=[TextContent(text=f"[error] {type(e).__name__}: {e}")],
-                details={"is_error": True,
-                          "trace": traceback.format_exc()[:2000]},
+                details={"trace": traceback.format_exc()[:2000]},
+                is_error=True,
             )
 
         # Dynamic per-call ceiling — shrinks in small-context models.
@@ -1010,7 +1013,7 @@ def function(
             head_ratio=head_ratio,
         )
 
-        if cache and not (result.details and result.details.get("is_error")):
+        if cache and not result.is_error:
             _cache_set(_cache_key(actual_name, args), result, cache_ttl)
 
         return result
@@ -1499,4 +1502,3 @@ def deferred_catalog_text(catalog: list[tuple[str, str]]) -> str:
         "— it returns the full schemas, which you can use to call the "
         "tools right away in the same turn:\n" + body
     )
-

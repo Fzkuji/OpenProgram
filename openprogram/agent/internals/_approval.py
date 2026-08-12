@@ -34,10 +34,11 @@ EventCallback = Callable[[dict], None]
 _FORCE_APPROVAL_TOOLS = {"exit_plan_mode"}
 # auto 档下即便未声明 requires_approval 也仍要审批的高风险工具。
 _RISKY_TOOLS = {"bash", "exec", "shell", "execute_code", "process"}
-# Non-interactive git side effects: creating a worktree, merging one back,
-# or discarding one all mutate the repository outside the spawned agent's
-# working directories, and a spawned turn has no approval surface to ask.
-_WORKTREE_TOOLS = {"worktree_create", "worktree_merge", "worktree_discard"}
+# Non-interactive worktree side effects mutate repository state outside the
+# spawned agent's working directories, and those turns cannot ask approval.
+_WORKTREE_TOOLS = {
+    "worktree_create", "worktree_merge", "worktree_discard", "worktree_keep",
+}
 _WRITE_TOOLS = {"write", "write_file", "edit", "edit_file"}
 _PATCH_PATH_PREFIXES = (
     "*** Add File: ",
@@ -45,7 +46,7 @@ _PATCH_PATH_PREFIXES = (
     "*** Delete File: ",
     "*** Move to: ",
 )
-_NON_INTERACTIVE_SOURCES = {"agent_spawn", "cron"}
+_NON_INTERACTIVE_SOURCES = {"agent_spawn", "cron", "mcp"}
 _CRON_READ_ONLY_TOOLS = {
     "read", "read_file", "grep", "glob", "list", "list_files", "tool_search",
 }
@@ -97,9 +98,10 @@ def _path_is_safe(tool_name: str, args: dict, req: "TurnRequest") -> bool:
     # 围栏基准与 system prompt 的 cwd 同源（_model_tools 同一 ContextVar）：
     # dispatcher 每 turn 把真实 cwd（worktree / 项目路径）绑进
     # current_worktree_path，进程 getcwd 只是无绑定时的回落。
-    work_dirs = [current_worktree_path() or os.getcwd(),
-                 *getattr(req, "additional_working_dirs", [])]
-    return check_path_safety(path, work_dirs)["safe"]
+    worktree = current_worktree_path() or os.getcwd()
+    work_dirs = [worktree, *getattr(req, "additional_working_dirs", [])]
+    target = path if os.path.isabs(path) else os.path.join(worktree, path)
+    return check_path_safety(target, work_dirs)["safe"]
 
 
 def _hard_constraint_violation(
@@ -107,7 +109,7 @@ def _hard_constraint_violation(
     args: dict,
     req: "TurnRequest",
 ) -> str | None:
-    """Return the non-configurable constraint violated by a spawned turn."""
+    """Return the non-configurable constraint violated by an external turn."""
     import os
     from openprogram.functions.permission_rule import parse_command
     from openprogram.functions._programs import agentics_dir
@@ -142,13 +144,16 @@ def _hard_constraint_violation(
         if tool_name not in _CRON_READ_ONLY_TOOLS:
             return f"cron cannot execute side-effect tool {tool_name}"
         return None
-    if req.source != "agent_spawn":
+    if req.source not in {"agent_spawn", "mcp"}:
         return None
     if tool_name in _RISKY_TOOLS or tool_name in _WORKTREE_TOOLS:
-        return f"agent_spawn cannot execute {tool_name}"
+        return f"{req.source} cannot execute {tool_name}"
     if tool_name in _WRITE_TOOLS:
         if not _path_is_safe(tool_name, args, req):
-            return f"agent_spawn cannot write outside its working directories: {tool_name}"
+            return (
+                f"{req.source} cannot write outside its working directories: "
+                f"{tool_name}"
+            )
         return None
     if tool_name != "apply_patch":
         return None
@@ -162,7 +167,10 @@ def _hard_constraint_violation(
             continue
         path = line[len(prefix):].strip()
         if not _path_is_safe("write", {"file_path": path}, req):
-            return "agent_spawn cannot apply a patch outside its working directories"
+            return (
+                f"{req.source} cannot apply a patch outside its working "
+                "directories"
+            )
     return None
 
 
@@ -223,7 +231,6 @@ def wrap_with_approval(
         authority_decision=None,
     ) -> "AgentToolResult":
         details = {
-            "is_error": True,
             "denied": True,
             "reason_code": reason_code,
         }
@@ -232,6 +239,7 @@ def wrap_with_approval(
         return AgentToolResult(
             content=[TextContent(text=text)],
             details=details,
+            is_error=True,
         )
 
     def _approval_authorized() -> bool:
@@ -336,7 +344,7 @@ def wrap_with_approval(
         mode = req.permission_mode
         force_ask = name in _FORCE_APPROVAL_TOOLS
 
-        # Non-interactive spawned turns have no approval surface. These
+        # Non-interactive external turns have no approval surface. These
         # constraints are evaluated before rules and bypass, so neither a
         # stored allow rule nor permission_mode can remove them.
         hard_violation = _hard_constraint_violation(name, args, req)

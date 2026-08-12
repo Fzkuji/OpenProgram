@@ -115,6 +115,11 @@ _cancel_flags_lock = threading.Lock()
 # no-op rather than a flag that poisons whatever runs next.
 _current_tokens: dict[str, CancelToken] = {}
 
+# session_id -> exact Event whose owner is performing session-keyed cleanup.
+# Registration fails closed while a lease exists; cleanup callbacks run outside
+# this module's lock and release the lease in a finally block.
+_cancel_cleanup_leases: dict[str, threading.Event] = {}
+
 # Per-thread session_id so the cancel hook knows whose token to check.
 # Set by `_execute_in_context` at entry. ContextVars do not propagate across
 # threading.Thread starts, so the value is always set from inside the worker.
@@ -135,6 +140,8 @@ def begin_turn(session_id: str, turn_id: str | None = None) -> CancelToken:
     """
     token = CancelToken(session_id, turn_id)
     with _cancel_flags_lock:
+        if session_id in _cancel_cleanup_leases:
+            raise RuntimeError("session cancellation cleanup in progress")
         stale = _current_tokens.get(session_id)
         _current_tokens[session_id] = token
     if stale is not None:
@@ -174,14 +181,54 @@ def register_cancel_event(session_id: str, ev: threading.Event) -> None:
     token = CancelToken(session_id)
     token._event = ev
     with _cancel_flags_lock:
+        if session_id in _cancel_cleanup_leases:
+            raise RuntimeError("session cancellation cleanup in progress")
         stale = _current_tokens.get(session_id)
         _current_tokens[session_id] = token
     if stale is not None and stale._event is not ev:
         stale.retire()
 
 
+def claim_cancel_event(session_id: str, ev: threading.Event) -> bool:
+    """Register ``ev`` only when the session has no owner or cleanup lease."""
+    token = CancelToken(session_id)
+    token._event = ev
+    with _cancel_flags_lock:
+        if session_id in _cancel_cleanup_leases or session_id in _current_tokens:
+            return False
+        _current_tokens[session_id] = token
+        return True
+
+
+def acquire_cancel_cleanup(session_id: str, ev: threading.Event) -> bool:
+    """Atomically lease session-keyed cleanup to the exact current event.
+
+    A successful lease prevents ``begin_turn`` and ``register_cancel_event``
+    from handing the session to a successor until ``release_cancel_cleanup``.
+    The caller must release in ``finally`` after all blocking cleanup work.
+    """
+    with _cancel_flags_lock:
+        current = _current_tokens.get(session_id)
+        if (
+            current is None
+            or current._event is not ev
+            or session_id in _cancel_cleanup_leases
+        ):
+            return False
+        _cancel_cleanup_leases[session_id] = ev
+        return True
+
+
+def release_cancel_cleanup(session_id: str, ev: threading.Event) -> None:
+    """Release the cleanup lease only when ``ev`` still owns it."""
+    with _cancel_flags_lock:
+        if _cancel_cleanup_leases.get(session_id) is ev:
+            _cancel_cleanup_leases.pop(session_id, None)
+
+
 def unregister_cancel_event(
-    session_id: str, ev: threading.Event | None = None,
+    session_id: str,
+    ev: threading.Event | None = None,
 ) -> None:
     """Retire the registration made with ``ev`` (see register_cancel_event).
 
@@ -286,8 +333,7 @@ def _cancel_hook() -> None:
     """
     token = _active_token()
     if token is not None and token.is_cancelled():
-        raise CancelledError(
-            f"Execution stopped by user (conv={token.session_id})")
+        raise CancelledError(f"Execution stopped by user (conv={token.session_id})")
 
 
 def check_cancelled() -> None:
@@ -365,5 +411,3 @@ def kill_active_runtime(session_id: str) -> None:
                     pass
     except Exception:
         pass
-
-

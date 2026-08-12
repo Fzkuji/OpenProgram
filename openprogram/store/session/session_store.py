@@ -539,6 +539,24 @@ class SessionStore:
         """Return (git, idx). Loads from disk on first access. None if
         session doesn't exist and ``create_if_missing`` is False."""
         with self._lock:
+            verified_git: GitSession | None = None
+            if not create_if_missing:
+                if (
+                    not isinstance(session_id, str)
+                    or not session_id
+                    or session_id in {".", ".."}
+                    or "/" in session_id
+                    or "\\" in session_id
+                ):
+                    return None
+                sdir = self._session_dir(session_id)
+                verified_git = GitSession(sdir)
+                if (
+                    sdir.is_symlink()
+                    or not verified_git.exists()
+                    or not (sdir / "history").is_dir()
+                ):
+                    return None
             cached = self._sessions.get(session_id)
             if cached:
                 # Mark as most-recently-used so the LRU eviction below
@@ -586,7 +604,7 @@ class SessionStore:
             sdir = self._session_dir(session_id)
             if not sdir.exists() and not create_if_missing:
                 return None
-            git = GitSession(sdir)
+            git = verified_git or GitSession(sdir)
             idx = SessionMemoryIndex()
             if git.exists():
                 idx.rebuild_from_paths(

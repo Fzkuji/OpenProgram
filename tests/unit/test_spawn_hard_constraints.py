@@ -85,6 +85,31 @@ def test_worktree_tools_still_run_for_an_interactive_owner_turn(owner_authority)
     assert _text(_run(wrapped, {"name": "wt"})) == "RAN"
 
 
+@pytest.mark.parametrize("tool_name", [
+    "bash", "exec", "shell", "execute_code", "process",
+    "worktree_create", "worktree_merge", "worktree_discard",
+])
+def test_mcp_cannot_run_risky_or_worktree_tools_even_on_bypass(
+    owner_authority, tool_name,
+):
+    from openprogram.agent.internals._approval import wrap_with_approval
+
+    authority = {**owner_authority, "authority_tier": "paired"}
+    authority.update({
+        "speaker_kind": "client",
+        "speaker_id": "mcp/0123456789abcdef",
+        "speaker_display": "MCP client",
+        "interaction": "non-interactive",
+    })
+    req = _request("mcp", authority)
+    wrapped = wrap_with_approval(_echo_tool(tool_name), req, lambda _e: None)
+
+    result = _run(wrapped, {"command": "id"})
+
+    assert result.details["reason_code"] == "HARD_CONSTRAINT_DENIED"
+    assert "RAN" not in _text(result)
+
+
 # --- inner AgentSession inherits the outer execution context ----------------
 
 def test_inner_request_inherits_source_and_authority(owner_authority):

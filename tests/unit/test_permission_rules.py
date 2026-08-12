@@ -191,6 +191,8 @@ def test_deny_rule_blocks_even_under_bypass():
                       permission_rules=PermissionRules(deny=["bash"]))
     result = _run(tool, req)
     assert _denied(result)
+    assert result.is_error is True
+    assert "is_error" not in result.details
     assert not ran["called"]
 
 
@@ -529,6 +531,45 @@ def test_only_interactive_owner_can_request_approval(
     assert not ran["called"]
 
 
+def test_mcp_source_denies_approval_without_registering_question(
+    tmp_path, monkeypatch,
+):
+    from openprogram import paths
+    from openprogram.agent import authority
+    from openprogram.agent.questions import get_question_registry
+
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
+    authority._reset_owner_cache_for_tests()
+    registry = get_question_registry()
+    registry._pending.clear()
+    registry._events.clear()
+    registry._results.clear()
+    events = []
+    tool, ran = _make_tool("custom_owner_tool")
+    req = TurnRequest(
+        session_id="mcp-session", user_text="", agent_id="main",
+        source="mcp", permission_mode="ask",
+        **authority.local_owner_authority(),
+    )
+    wrapped = _approval.wrap_with_approval(tool, req, events.append)
+
+    async def unexpected_approval(**_kwargs):
+        raise AssertionError("MCP must not enter the interactive approval path")
+
+    monkeypatch.setattr(_approval, "await_user_approval", unexpected_approval)
+
+    result = asyncio.run(wrapped.execute("c1", {}, None, None))
+
+    assert result.is_error is True
+    assert result.details == {
+        "denied": True,
+        "reason_code": "APPROVAL_UNAVAILABLE_NON_INTERACTIVE",
+    }
+    assert ran["called"] is False
+    assert registry.list_pending("mcp-session") == []
+    assert events == []
+
+
 def test_sandbox_denial_emits_event_and_retries_under_escalated_policy(monkeypatch):
     from contextlib import contextmanager
     from openprogram.providers.types import TextContent
@@ -544,9 +585,9 @@ def test_sandbox_denial_emits_event_and_retries_under_escalated_policy(monkeypat
             return AgentToolResult(
                 content=[TextContent(text="Operation not permitted")],
                 details={
-                    "is_error": True,
                     "sandbox": {"kind": "denied", "backend": "seatbelt"},
                 },
+                is_error=True,
             )
         return AgentToolResult(
             content=[TextContent(text="exit_code=0")], details={"ok": True}
@@ -592,7 +633,7 @@ def test_ordinary_nonzero_tool_result_does_not_trigger_sandbox_approval(monkeypa
     async def _exec(call_id, args, cancel, on_update):
         return AgentToolResult(
             content=[TextContent(text="exit_code=1\nordinary failure")],
-            details={"is_error": True},
+            is_error=True,
         )
 
     async def _unexpected(**_kwargs):
@@ -609,7 +650,8 @@ def test_ordinary_nonzero_tool_result_does_not_trigger_sandbox_approval(monkeypa
     wrapped = _approval.wrap_with_approval(tool, req, on_event=lambda _e: None)
     monkeypatch.setattr(_approval, "await_user_approval", _unexpected)
     result = asyncio.run(wrapped.execute("c", {"command": "false"}, None, None))
-    assert result.details == {"is_error": True}
+    assert result.is_error is True
+    assert result.details is None
 
 
 # ── production install point ──

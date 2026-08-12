@@ -81,3 +81,44 @@ def test_env_overrides_cap(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("OPENPROGRAM_SESSION_CACHE_CAP", "7")
     store = SessionStore(tmp_path / "s")
     assert store._cache_cap == 7
+
+
+@pytest.mark.parametrize(
+    "session_id",
+    ["", ".", "..", "../outside", "alias/../not-a-session"],
+)
+def test_read_boundary_rejects_non_session_paths(tmp_path: Path, session_id: str):
+    root = tmp_path / "sessions"
+    store = SessionStore(root)
+    (root / "not-a-session").mkdir()
+    (tmp_path / "outside").mkdir(exist_ok=True)
+
+    assert store.get_session(session_id) is None
+    assert store.get_branch(session_id) == []
+    assert session_id not in store._sessions
+
+
+def test_read_boundary_rejects_plain_directory_and_symlink_alias(tmp_path: Path):
+    root = tmp_path / "sessions"
+    store = SessionStore(root)
+    (root / "not-a-session").mkdir()
+    store.create_session("valid", "main")
+    (root / "alias").symlink_to(root / "valid", target_is_directory=True)
+
+    assert store.get_session("not-a-session") is None
+    assert store.get_session("alias") is None
+    assert "not-a-session" not in store._sessions
+    assert "alias" not in store._sessions
+
+
+def test_read_boundary_preserves_current_and_history_only_session(tmp_path: Path):
+    root = tmp_path / "sessions"
+    store = SessionStore(root)
+    store.create_session("current", "main", title="Current")
+    _append(store, "history-only", "n0", content="legacy")
+
+    fresh = SessionStore(root)
+    assert (fresh.get_session("current") or {})["title"] == "Current"
+    assert [row["content"] for row in fresh.get_branch("history-only")] == [
+        "legacy"
+    ]

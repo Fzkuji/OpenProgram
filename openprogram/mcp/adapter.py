@@ -72,8 +72,8 @@ def register_remote_tool(client: MCPClient, tool: Tool) -> Optional[str]:
                     f"[mcp error] {client.config.name}__{tool.name}: "
                     f"{type(e).__name__}: {e}"
                 ))],
-                details={"is_error": True,
-                         "mcp_server": client.config.name},
+                details={"mcp_server": client.config.name},
+                is_error=True,
             )
         return convert_call_result(result, server=client.config.name,
                                     tool_name=tool.name)
@@ -202,6 +202,8 @@ def convert_call_result(result: CallToolResult,
         out_content.append(TextContent(text=""))
 
     details: dict[str, Any] = {"mcp_server": server, "mcp_tool": tool_name}
-    if result.isError:
-        details["is_error"] = True
-    return AgentToolResult(content=out_content, details=details)
+    return AgentToolResult(
+        content=out_content,
+        details=details,
+        is_error=bool(result.isError),
+    )
