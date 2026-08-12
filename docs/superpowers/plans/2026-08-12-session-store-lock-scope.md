@@ -30,6 +30,7 @@ git diff --check
 | GREEN | `5236feab`; 30 targeted tests passed and unrelated sessions complete during blocked rebuild/delete/location publish |
 | Specification review | PASS at `5236feab`; state/I/O separation, per-session serialization, location publish order, compatibility, and invalid IDs verified |
 | Quality review | PASS at `5236feab`; lock order, failure recovery, same-session interleavings, 8-session LRU stress, and invalid IDs verified |
-| Full gate | pending |
+| Full gate | 3739 passed, 13 skipped, 2 deselected, 1 xfailed; full Ruff passed; Web build and 22 checks passed; docs 526 pages and link check passed; diff check passed |
 | Baseline collection repair | Reused existing `8220fd4f` as `62ed7216` to remove retired `test_framework` integration coverage |
+| Baseline lint repair | Reused existing `a8c2448d` and `49b0b174` as `4f80c424`, `6554e839`; 88 affected tests passed, 1 skipped |
 | Final implementation | `3dc3145c`, `5236feab` |
