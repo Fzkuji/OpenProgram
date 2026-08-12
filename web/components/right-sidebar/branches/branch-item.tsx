@@ -3,6 +3,8 @@
 import { cloneElement, useEffect, useRef, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
+import type { TaskResourceView } from "@/lib/net/ws-events";
+import { queueResourceSummary } from "@/lib/task-resource";
 import type { AnimatedNavIconHandle } from "@/components/animated-icons";
 
 import {
@@ -31,7 +33,8 @@ export function BranchItem({
   isBase,
   running,
   finishing,
-  resource,
+  taskStatus,
+  taskResource,
   chip,
   onToggleSelect,
   onSetBase,
@@ -44,7 +47,8 @@ export function BranchItem({
   isBase: boolean;
   running: boolean;
   finishing: boolean;
-  resource?: Record<string, unknown> | null;
+  taskStatus?: string;
+  taskResource?: TaskResourceView;
   chip?: boolean;
   onToggleSelect: (headId: string, e: React.MouseEvent) => void;
   onSetBase: (headId: string, e: React.MouseEvent) => void;
@@ -79,6 +83,8 @@ export function BranchItem({
   }, [branch.active]);
 
   const isPending = branch.head_msg_id.startsWith("__pending_task__:");
+  const queueSummary = chip ? null : queueResourceSummary(taskResource);
+  const finishingReason = finishing ? taskResource?.reason_code : null;
 
   function commitRename() {
     setEditing(false);
@@ -137,7 +143,8 @@ export function BranchItem({
     + (selected ? " selected" : "")
     + (isBase ? " base" : "")
     + (running ? " is-running" : "")
-    + (finishing ? " is-finishing" : "");
+    + (finishing ? " is-finishing" : "")
+    + (queueSummary ? " has-task-resource" : "");
 
   return (
     <div
@@ -206,24 +213,33 @@ export function BranchItem({
         <span className="branch-item-name">{branch.name}</span>
       )}
       {branch.active ? <span className="branch-item-badge">{t("right.head")}</span> : null}
-      {running ? (
+      {queueSummary ? (
+        <span className="branch-item-resource" title={queueSummary}>
+          {queueSummary}
+        </span>
+      ) : running ? (
         <span
           className="branch-item-badge"
           style={{ background: "rgba(160, 107, 255, 0.18)" }}
         >
-          {t("right.running")}
+          {taskStatus === "queued" ? "queued" : t("right.running")}
         </span>
       ) : null}
-      {resource ? (
+      {finishingReason ? (
+        <span className="branch-item-badge" title={finishingReason}>
+          {finishingReason}
+        </span>
+      ) : null}
+      {taskResource ? (
         <details className="branch-item-resource" onClick={(e) => e.stopPropagation()}>
           <summary aria-label={`Task resource details for ${branch.name || branch.head_msg_id}`}>
             resources
           </summary>
           <pre>{JSON.stringify({
-            resource_state: resource.resource_state,
-            reason_code: resource.reason_code,
-            capacity: resource.capacity,
-            budget: resource.budget,
+            resource_state: taskResource.resource_state,
+            reason_code: taskResource.reason_code,
+            capacity: taskResource.capacity,
+            budget: taskResource.budget,
           }, null, 2)}</pre>
         </details>
       ) : null}

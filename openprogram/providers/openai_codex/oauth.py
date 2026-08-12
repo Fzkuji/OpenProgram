@@ -60,7 +60,9 @@ async def login_openai_codex(callbacks: OAuthLoginCallbacks) -> OAuthCredentials
 
     code = await _wait_for_callback_code()
 
-    async with httpx.AsyncClient() as client:
+    from openprogram.security.safe_http import safe_async_client
+
+    async with safe_async_client("provider.oauth.fixed") as client:
         resp = await client.post(
             _TOKEN_URL,
             json={
@@ -88,7 +90,9 @@ async def login_openai_codex(callbacks: OAuthLoginCallbacks) -> OAuthCredentials
 
 async def refresh_openai_codex_token(credentials: OAuthCredentials) -> OAuthCredentials:
     """Refresh OpenAI Codex OAuth token."""
-    async with httpx.AsyncClient() as client:
+    from openprogram.security.safe_http import safe_async_client
+
+    async with safe_async_client("provider.oauth.fixed") as client:
         resp = await client.post(
             _TOKEN_URL,
             json={

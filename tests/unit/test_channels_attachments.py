@@ -5,6 +5,7 @@ image blocks, every file becomes an [attachment: ...] note.
 from __future__ import annotations
 
 import base64
+import contextlib
 import threading
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from openprogram.channels import _attachments
 from openprogram.channels._message import Attachment, ChannelMessage
 from openprogram.channels._transport import SendResult
 from openprogram.channels.base import Channel
+from openprogram.security.url_policy import URLPolicyError
 
 
 @pytest.fixture(autouse=True)
@@ -28,12 +30,42 @@ class _FakeResponse:
                  content_type: str = "image/png") -> None:
         self._content = content
         self.ok = ok
+        self.is_success = ok
         self.status_code = 200 if ok else 500
         self.headers = {"Content-Type": content_type}
+        self.content = content
 
     def iter_content(self, chunk_size: int = 65536):
         for i in range(0, len(self._content), chunk_size):
             yield self._content[i:i + chunk_size]
+
+    def iter_bytes(self):
+        yield self._content
+
+
+class _FakeSafeClient:
+    def __init__(self, response, seen: dict | None = None) -> None:
+        self.response = response
+        self.seen = seen if seen is not None else {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def get(self, url, headers=None, timeout=60, **kwargs):
+        self.seen.update(url=url, headers=headers, timeout=timeout, **kwargs)
+        if isinstance(self.response, Exception):
+            raise self.response
+        return self.response
+
+    @contextlib.contextmanager
+    def stream(self, _method, url, headers=None, timeout=60):
+        self.seen.update(url=url, headers=headers, timeout=timeout)
+        if isinstance(self.response, Exception):
+            raise self.response
+        yield self.response
 
 
 def test_download_inbound_saves_to_account_dir(
@@ -41,12 +73,13 @@ def test_download_inbound_saves_to_account_dir(
 ) -> None:
     seen: dict = {}
 
-    def fake_get(url, headers=None, stream=True, timeout=60):
-        seen["url"] = url
-        seen["headers"] = headers
-        return _FakeResponse(b"PNGDATA")
-
-    monkeypatch.setattr(_attachments.requests, "get", fake_get)
+    consumers: list[str] = []
+    monkeypatch.setattr(
+        _attachments,
+        "safe_client",
+        lambda consumer: consumers.append(consumer)
+        or _FakeSafeClient(_FakeResponse(b"PNGDATA"), seen),
+    )
     saved = _attachments.download_inbound(
         "discord", "a1",
         [Attachment(name="pic.png", mime="image/png",
@@ -61,25 +94,35 @@ def test_download_inbound_saves_to_account_dir(
     assert row["mime"] == "image/png"
     assert row["size"] == 7
     assert seen["headers"] == {"Authorization": "Bearer t"}
+    assert consumers == ["channel.attachment.download"]
 
 
 def test_download_skips_oversize_declared_and_streamed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(_attachments, "MAX_DOWNLOAD_BYTES", 10)
-    monkeypatch.setattr(
-        _attachments.requests, "get",
-        lambda *a, **k: _FakeResponse(b"x" * 50))
+    calls = 0
+
+    def fake_client(_consumer):
+        nonlocal calls
+        calls += 1
+        return _FakeSafeClient(
+            URLPolicyError("BODY_TOO_LARGE", "https://cdn")
+        )
+
+    monkeypatch.setattr(_attachments, "safe_client", fake_client)
     # declared size over cap → no request at all
     saved = _attachments.download_inbound(
         "discord", "a1",
         [Attachment(name="big.bin", url="https://cdn/big", size=999)])
     assert saved == []
+    assert calls == 0
     # undeclared size, stream exceeds cap → aborted + partial removed
     saved = _attachments.download_inbound(
         "discord", "a1",
         [Attachment(name="sneaky.bin", url="https://cdn/sneaky")])
     assert saved == []
+    assert calls == 1
     att_dir = _attachments.attachments_dir("discord", "a1")
     assert list(att_dir.iterdir()) == []
 
@@ -91,25 +134,29 @@ def test_telegram_file_id_resolved_via_getfile(
     _accounts.save_credentials("telegram", "a1", {"bot_token": "TOK"})
 
     class _GetFileResp:
-        ok = True
+        is_success = True
+
         def json(self):
             return {"ok": True, "result": {"file_path": "photos/f_1.jpg"}}
 
-    calls: list[str] = []
+    consumers: list[str] = []
 
-    def fake_get(url, params=None, headers=None, stream=False, timeout=0):
-        calls.append(url)
-        if "getFile" in url:
-            return _GetFileResp()
-        return _FakeResponse(b"JPG", content_type="image/jpeg")
+    def managed_client(consumer):
+        consumers.append(consumer)
+        if consumer == "channel.telegram.api":
+            return _FakeSafeClient(_GetFileResp())
+        return _FakeSafeClient(_FakeResponse(b"JPG", content_type="image/jpeg"))
 
-    monkeypatch.setattr(_attachments.requests, "get", fake_get)
+    monkeypatch.setattr(
+        _attachments,
+        "safe_client",
+        managed_client,
+    )
     saved = _attachments.download_inbound(
         "telegram", "a1",
         [Attachment(name="photo.jpg", mime="image/jpeg", file_id="F123")])
     assert len(saved) == 1
-    assert "api.telegram.org/botTOK/getFile" in calls[0]
-    assert "api.telegram.org/file/botTOK/photos/f_1.jpg" in calls[1]
+    assert consumers == ["channel.telegram.api", "channel.telegram.attachment"]
 
 
 def test_to_turn_attachments_only_small_images(tmp_path) -> None:

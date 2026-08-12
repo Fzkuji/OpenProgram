@@ -41,11 +41,24 @@ from pathlib import Path
 from typing import Any, Optional
 
 from openprogram.channels.base import Channel
+from openprogram.security.safe_http import configured_safe_client
+from openprogram.security.url_policy import OwnerURLException, normalize_origin
 
 
 DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com"
 LONG_POLL_TIMEOUT = 40
 SEND_TIMEOUT = 15
+
+
+def _wechat_client(base_url: str):
+    origin = normalize_origin(base_url)
+    return configured_safe_client(
+        "channel.wechat.api",
+        origin,
+        owner_exception=OwnerURLException(
+            consumer="channel.wechat.api", origin=origin
+        ),
+    )
 
 
 class WechatChannel(Channel):
@@ -55,13 +68,6 @@ class WechatChannel(Channel):
     progress_stream = False
 
     def __init__(self, account_id: str = "default") -> None:
-        try:
-            import requests  # noqa: F401
-        except ImportError as e:
-            raise RuntimeError(
-                "WeChat channel requires `requests`. "
-                "`pip install requests`."
-            ) from e
         self.account_id = account_id
         self._wechat_uin = _make_wechat_uin()
 
@@ -81,25 +87,26 @@ class WechatChannel(Channel):
         consecutive_errors = 0
         backoff = 3
 
-        import requests
-
         while not stop.is_set():
             try:
-                resp = requests.post(
-                    f"{base}/ilink/bot/getupdates",
-                    headers=self._auth_headers(creds["bot_token"]),
-                    json={
-                        "get_updates_buf": cursor,
-                        "base_info": {"channel_version": "1.0.0"},
-                    },
-                    timeout=LONG_POLL_TIMEOUT,
-                )
-                data = resp.json() if resp.ok else {}
+                with _wechat_client(base) as client:
+                    resp = client.post(
+                        f"{base}/ilink/bot/getupdates",
+                        headers=self._auth_headers(creds["bot_token"]),
+                        json={
+                            "get_updates_buf": cursor,
+                            "base_info": {"channel_version": "1.0.0"},
+                        },
+                        timeout=LONG_POLL_TIMEOUT,
+                    )
+                data = resp.json() if resp.is_success else {}
             except Exception as e:  # noqa: BLE001
                 consecutive_errors += 1
                 wait = min(60, backoff * (2 ** min(consecutive_errors - 1, 4)))
-                print(f"[wechat:{self.account_id}] poll failed "
-                      f"({type(e).__name__}: {e}); retry in {wait}s")
+                print(
+                    f"[wechat:{self.account_id}] poll failed "
+                    f"({type(e).__name__}); retry in {wait}s"
+                )
                 time.sleep(wait)
                 continue
 
@@ -118,8 +125,7 @@ class WechatChannel(Channel):
                 return
             if data.get("ret", 0) != 0 and errcode != 0:
                 print(f"[wechat:{self.account_id}] poll error "
-                      f"ret={data.get('ret')} errcode={errcode} "
-                      f"{data.get('errmsg','')[:120]}")
+                      f"ret={data.get('ret')} errcode={errcode}")
                 time.sleep(3)
                 continue
 
@@ -226,16 +232,16 @@ def login_account(account_id: str) -> dict[str, str] | None:
 
 
 def _qr_login() -> dict[str, str] | None:
-    import requests
     try:
-        resp = requests.get(
-            f"{DEFAULT_BASE_URL}/ilink/bot/get_bot_qrcode?bot_type=3",
-            timeout=15,
-        )
+        with _wechat_client(DEFAULT_BASE_URL) as client:
+            resp = client.get(
+                f"{DEFAULT_BASE_URL}/ilink/bot/get_bot_qrcode?bot_type=3",
+                timeout=15,
+            )
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:  # noqa: BLE001
-        print(f"[wechat] failed to fetch QR: {e}")
+        print(f"[wechat] failed to fetch QR ({type(e).__name__})")
         return None
 
     token = data.get("qrcode")
@@ -259,13 +265,14 @@ def _qr_login() -> dict[str, str] | None:
     print("[wechat] waiting for scan + confirm (up to a few minutes)...")
     while True:
         try:
-            resp = requests.get(
-                f"{DEFAULT_BASE_URL}/ilink/bot/get_qrcode_status?qrcode={token}",
-                timeout=40,
-            )
+            with _wechat_client(DEFAULT_BASE_URL) as client:
+                resp = client.get(
+                    f"{DEFAULT_BASE_URL}/ilink/bot/get_qrcode_status?qrcode={token}",
+                    timeout=40,
+                )
             data = resp.json()
         except Exception as e:  # noqa: BLE001
-            print(f"[wechat] status poll failed ({e}); retrying...")
+            print(f"[wechat] status poll failed ({type(e).__name__}); retrying...")
             time.sleep(3)
             continue
 
@@ -348,17 +355,17 @@ def login_account_event_driven(
                   "already_configured": True})
         return existing
 
-    import requests
     try:
-        resp = requests.get(
-            f"{DEFAULT_BASE_URL}/ilink/bot/get_bot_qrcode?bot_type=3",
-            timeout=15,
-        )
+        with _wechat_client(DEFAULT_BASE_URL) as client:
+            resp = client.get(
+                f"{DEFAULT_BASE_URL}/ilink/bot/get_bot_qrcode?bot_type=3",
+                timeout=15,
+            )
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:  # noqa: BLE001
         on_event({"phase": "error",
-                  "message": f"failed to fetch QR: {e}"})
+                  "message": f"failed to fetch QR ({type(e).__name__})"})
         return None
 
     token = data.get("qrcode")
@@ -376,14 +383,15 @@ def login_account_event_driven(
 
     while True:
         try:
-            resp = requests.get(
-                f"{DEFAULT_BASE_URL}/ilink/bot/get_qrcode_status?qrcode={token}",
-                timeout=40,
-            )
+            with _wechat_client(DEFAULT_BASE_URL) as client:
+                resp = client.get(
+                    f"{DEFAULT_BASE_URL}/ilink/bot/get_qrcode_status?qrcode={token}",
+                    timeout=40,
+                )
             data = resp.json()
         except Exception as e:  # noqa: BLE001
             on_event({"phase": "error",
-                      "message": f"status poll failed: {e}"})
+                      "message": f"status poll failed ({type(e).__name__})"})
             time.sleep(3)
             continue
 

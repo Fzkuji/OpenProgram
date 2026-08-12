@@ -292,7 +292,9 @@ def test_codex_retry_does_not_duplicate_blocks(monkeypatch):
         "data: [DONE]",
     ])
     fake_client = _FakeHTTPClient([attempt1, attempt2])
-    monkeypatch.setattr(mod, "get_shared_async_client", lambda name: fake_client)
+    monkeypatch.setattr(
+        mod, "get_shared_async_client", lambda _name, **_kwargs: fake_client
+    )
     monkeypatch.setattr(mod, "_resolve_codex_bearer_token", lambda k: "tok")
 
     # Force one retry regardless of the committed check — the point under
@@ -378,7 +380,9 @@ def test_codex_signal_finalizes_stream_as_aborted(monkeypatch):
               "delta": " never-read"}),
     ], set_signal_after=(1, sig))
     fake_client = _FakeHTTPClient([resp])
-    monkeypatch.setattr(mod, "get_shared_async_client", lambda name: fake_client)
+    monkeypatch.setattr(
+        mod, "get_shared_async_client", lambda _name, **_kwargs: fake_client
+    )
     monkeypatch.setattr(mod, "_resolve_codex_bearer_token", lambda k: "tok")
 
     async def run():
@@ -409,7 +413,7 @@ def test_gemini_cli_signal_finalizes_stream_as_aborted(monkeypatch):
         'data: {"candidates": [{"content": {"parts": [{"text": "lo"}]}}]}',
     ], set_signal_after=(0, sig))
     monkeypatch.setattr(
-        gmod, "build_async_client", lambda: _FakeGeminiClient(resp))
+        gmod, "build_async_client", lambda **_kwargs: _FakeGeminiClient(resp))
 
     async def run():
         stream = gmod.stream_google_gemini_cli(
@@ -463,7 +467,7 @@ def test_gemini_cli_error_fails_stream_instead_of_clean_end(monkeypatch):
         "openprogram.providers.google_gemini_cli.google_gemini_cli")
     monkeypatch.setattr(
         gmod, "build_async_client",
-        lambda: _FakeGeminiClient(_Fake400Response()))
+        lambda **_kwargs: _FakeGeminiClient(_Fake400Response()))
 
     async def run():
         stream = gmod.stream_google_gemini_cli(
@@ -717,7 +721,7 @@ def test_gemini_cli_endpoint_fallback_obeys_attempt_boundary(
             return super().stream(method, url, headers=headers, content=content)
 
     monkeypatch.setattr(
-        mod, "build_async_client", lambda: Client(_Fake404Response()),
+        mod, "build_async_client", lambda **_kwargs: Client(_Fake404Response()),
     )
 
     async def run():

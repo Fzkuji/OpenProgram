@@ -29,15 +29,29 @@ def test_successful_fetch_writes_disk_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(models_dev, "_disk_cache_path", lambda: cache)
 
     class _Resp:
+        headers = {"content-type": "application/json"}
+
         def raise_for_status(self):
             pass
 
         def json(self):
             return {"groq": {"name": "Groq", "models": {}}}
 
-    import httpx
+    class _Client:
+        def __enter__(self):
+            return self
 
-    monkeypatch.setattr(httpx, "get", lambda *a, **k: _Resp())
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            return _Resp()
+
+    def fixed(consumer):
+        assert consumer == "webui.model_listing.fixed"
+        return _Client()
+
+    monkeypatch.setattr(models_dev.safe_http, "safe_client", fixed)
     _reset_mem_cache()
     try:
         data = models_dev._load()
@@ -104,7 +118,6 @@ def test_structured_output_tri_state_survives_real_fetch_persist_reload_and_web(
     tmp_path, monkeypatch
 ):
     import copy
-    import httpx
     import openprogram.providers._config_read as config_read
     import openprogram.providers.enabled_models as enabled_models
     import openprogram.setup as setup
@@ -120,6 +133,8 @@ def test_structured_output_tri_state_survives_real_fetch_persist_reload_and_web(
     }
 
     class Response:
+        headers = {"content-type": "application/json"}
+
         def raise_for_status(self):
             pass
 
@@ -135,6 +150,16 @@ def test_structured_output_tri_state_survives_real_fetch_persist_reload_and_web(
                 }
             }
 
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            return Response()
+
     def save(config):
         store.clear()
         store.update(copy.deepcopy(config["providers"]))
@@ -145,7 +170,11 @@ def test_structured_output_tri_state_survives_real_fetch_persist_reload_and_web(
         save(config)
         return config
 
-    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: Response())
+    monkeypatch.setattr(
+        models_dev.safe_http,
+        "safe_client",
+        lambda consumer: Client(),
+    )
     monkeypatch.setattr(models_dev, "_disk_cache_path", lambda: cache)
     monkeypatch.setattr(setup, "_read_config", lambda: {"providers": copy.deepcopy(store)})
     monkeypatch.setattr(setup, "_write_config", save)

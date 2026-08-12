@@ -25,10 +25,9 @@ from __future__ import annotations
 
 import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 
+from .._http import post_json
 from ..registry import SearchResult
 
 
@@ -61,24 +60,19 @@ def _resolve_model() -> str:
     return os.environ.get("MOONSHOT_SEARCH_MODEL", "").strip() or DEFAULT_MODEL
 
 
-def _post(url: str, body: dict, key: str) -> dict:
-    req = urllib.request.Request(
+def _post(url: str, body: dict, key: str, base_url: str) -> dict:
+    configured = bool(os.environ.get("MOONSHOT_BASE_URL", "").strip())
+    return post_json(
         url,
-        data=json.dumps(body).encode("utf-8"),
+        body=body,
         headers={
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         },
+        timeout=TIMEOUT,
+        provider_label="Kimi",
+        configured_url=base_url if configured else None,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        try:
-            detail = e.read().decode("utf-8", errors="replace")
-        except Exception:
-            detail = str(e)
-        raise RuntimeError(f"Kimi HTTP {e.code}: {detail}") from e
 
 
 @dataclass
@@ -115,7 +109,7 @@ class MoonshotProvider:
             if model in THINKING_DISABLED_MODELS:
                 body["thinking"] = {"type": "disabled"}
 
-            data = _post(endpoint, body, key)
+            data = _post(endpoint, body, key, base_url)
 
             # Top-level search_results show up once Kimi has actually
             # called $web_search — accumulate across rounds.

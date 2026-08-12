@@ -22,6 +22,21 @@ _EXT_MIME = {
 }
 
 
+def detect_raster_mime(data: bytes) -> str | None:
+    """Return the supported raster MIME from file signatures."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data.startswith(b"BM"):
+        return "image/bmp"
+    return None
+
+
 def sniff_mime(path_or_url: str) -> str:
     """Cheap MIME inference from the path/URL extension. PNG fallback."""
     ext = Path(path_or_url.split("?", 1)[0]).suffix.lower()
@@ -39,4 +54,4 @@ def read_b64(path: str) -> tuple[str, str]:
     return sniff_mime(path), base64.b64encode(data).decode("ascii")
 
 
-__all__ = ["read_b64", "sniff_mime"]
+__all__ = ["detect_raster_mime", "read_b64", "sniff_mime"]

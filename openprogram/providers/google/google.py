@@ -217,13 +217,23 @@ async def stream_simple(
     # 3 attempts, exponential backoff base 2, ±25% jitter, retry on
     # standard transient statuses. Env override via
     # ``OPENPROGRAM_GOOGLE_MAX_RETRIES``.
-    from google.genai.types import HttpOptions, HttpRetryOptions
+    from google.genai.types import HttpRetryOptions
+    from openprogram.providers.utils.http_client import build_google_http_options
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
     import os as _os
     from ..budget import provider_retry_attempts
     sdk_attempts = provider_retry_attempts(
         int(_os.environ.get("OPENPROGRAM_GOOGLE_MAX_RETRIES", "3")),
     )
-    http_options = HttpOptions(
+    configured_origin = normalize_origin(
+        getattr(model, "base_url", None)
+        or "https://generativelanguage.googleapis.com"
+    )
+    http_options = build_google_http_options(
+        configured_origin,
+        owner_exception=OwnerURLException(
+            consumer="provider.google.sdk", origin=configured_origin
+        ),
         retry_options=HttpRetryOptions(
             attempts=sdk_attempts,
             initial_delay=1.0,

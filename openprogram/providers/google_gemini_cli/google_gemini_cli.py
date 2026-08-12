@@ -155,7 +155,20 @@ def stream_google_gemini_cli(
                 # timeout=120.0 float that capped the streaming read at 120s and
                 # false-positived over a proxy/VPN), TCP keepalive, force-IPv4,
                 # proxy — all from the shared builder.
-                async with build_async_client() as client:
+                from openprogram.security.url_policy import (
+                    OwnerURLException,
+                    normalize_origin,
+                )
+
+                configured_origin = normalize_origin(base_url)
+                async with build_async_client(
+                    consumer="provider.configured_api",
+                    configured_origin=configured_origin,
+                    owner_exception=OwnerURLException(
+                        consumer="provider.configured_api",
+                        origin=configured_origin,
+                    ),
+                ) as client:
                     attempts_used += 1
                     async with client.stream(
                         "POST",
@@ -470,8 +483,11 @@ async def _discover_project_id(headers: dict[str, str], base_url: str) -> str:
     if _cached_project_id:
         return _cached_project_id
     try:
-        import httpx
+        from openprogram.security.safe_http import configured_safe_async_client
+        from openprogram.security.url_policy import OwnerURLException, normalize_origin
+
         url = f"{base_url.rstrip('/')}/v1internal:loadCodeAssist"
+        origin = normalize_origin(base_url)
         body = {
             "metadata": {
                 "ideType": "IDE_UNSPECIFIED",
@@ -479,7 +495,13 @@ async def _discover_project_id(headers: dict[str, str], base_url: str) -> str:
                 "pluginType": "GEMINI",
             }
         }
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with configured_safe_async_client(
+            "provider.configured_api",
+            origin,
+            owner_exception=OwnerURLException(
+                consumer="provider.configured_api", origin=origin
+            ),
+        ) as client:
             resp = await client.post(url, headers=headers, content=json.dumps(body))
             if resp.status_code == 200:
                 data = resp.json()

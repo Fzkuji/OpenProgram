@@ -1,4 +1,4 @@
-"""``openprogram subagent`` — spawn / merge agent branches from the shell.
+"""``openprogram subagent`` — spawn, inspect, cancel, or merge agent branches.
 
 These commands invoke ``run_agent_turn`` / ``process_merge_turn``
 directly against the in-process ``SessionStore`` singleton — no WS, no
@@ -16,12 +16,91 @@ from __future__ import annotations
 
 import json
 import sys
+from decimal import Decimal
 from typing import Any
 
 
-def _print(payload: dict[str, Any], *, as_json: bool) -> None:
+def _remaining(limit: Any, *used: Any) -> Any:
+    if limit is None:
+        return None
+    if any(value is None for value in used):
+        return "Unknown"
+    return max(0, limit - sum(used))
+
+
+def _least_remaining(local: Any, shared: Any) -> str:
+    if local == "Unknown":
+        return local
+    bounded = [value for value in (local, shared) if value is not None]
+    return format(min(bounded), "g") if bounded else "Unlimited"
+
+
+def _print_resource(payload: dict[str, Any]) -> None:
+    print(f"Task: {payload.get('task_id', '-')}")
+    print(f"Status: {payload.get('status', '-')}")
+    if payload.get("resource_state") == "legacy/unmetered":
+        print("Resources: Unmetered")
+    else:
+        capacity = payload["capacity"]
+        live = capacity["session_live"]
+        queued = capacity["session_queued"]
+        tasks = capacity["session_tasks"]
+        print(
+            f"Session {live['used']}/{live['limit'] or '∞'} live · "
+            f"{queued['used']}/{queued['limit'] or '∞'} queued · "
+            f"{tasks['used']}/{tasks['limit'] or '∞'} tasks · "
+            f"Scheduler {capacity['scheduler_capacity']}"
+        )
+        budget = payload["budget"]
+        tokens = budget["tokens"]
+        shared = budget["shared_remaining"]
+        print("Tokens: " + _least_remaining(
+            _remaining(tokens["limit"], tokens["actual"], tokens["reserved"]),
+            shared["tokens"],
+        ))
+        cost = budget["cost_usd"]
+        unknown = max(
+            cost["unknown_events"] or 0,
+            shared["cost_unknown_events"] or 0,
+        )
+        if cost["known"] is not True or unknown:
+            suffix = f" ({unknown} event{'s' if unknown != 1 else ''})" if unknown else ""
+            print("Cost: Unknown" + suffix)
+        else:
+            local_cost = _remaining(
+                Decimal(cost["limit"]) if cost["limit"] is not None else None,
+                Decimal(cost["actual"]),
+                Decimal(cost["reserved"]),
+            )
+            shared_cost = (
+                Decimal(shared["cost_usd"])
+                if shared["cost_usd"] is not None else None
+            )
+            print(f"Cost: {_least_remaining(local_cost, shared_cost)}")
+        for label, key in (("Runtime", "runtime_seconds"), ("Idle", "idle_seconds")):
+            item = budget[key]
+            value = _remaining(item["limit"], item["used"])
+            print(f"{label}: {_least_remaining(value, None)}" + (
+                "s" if isinstance(value, (int, float)) else ""
+            ))
+    if payload.get("reason_code"):
+        print(f"Reason: {payload['reason_code']}")
+
+
+def _print(payload: Any, *, as_json: bool) -> None:
     if as_json:
         print(json.dumps(payload, ensure_ascii=False, default=str, indent=2))
+        return
+    if isinstance(payload, list):
+        for index, item in enumerate(payload):
+            if index:
+                print()
+            _print(item, as_json=False)
+        return
+    if payload.get("task_id") and (
+        "budget" in payload or payload.get("resource_state") == "legacy/unmetered"
+    ):
+        _print_resource(payload)
         return
     if payload.get("error"):
         print(f"error: {payload['error']}", file=sys.stderr)
@@ -34,6 +113,64 @@ def _print(payload: dict[str, Any], *, as_json: bool) -> None:
                 print(f"  - {item}")
         else:
             print(f"{k}: {v}")
+
+
+def _resource_payload(runner: Any, task_id: str) -> dict[str, Any] | None:
+    view = runner.get_task_resource_view(task_id)
+    if view is not None:
+        return view.to_dict()
+    get_task = getattr(runner, "get_task", None)
+    task = get_task(task_id) if get_task is not None else None
+    if get_task is not None and task is None:
+        return None
+    return {
+        "task_id": task_id,
+        "status": getattr(task, "status", None) or "unknown",
+        "resource_state": "legacy/unmetered",
+        "reason_code": getattr(task, "reason_code", None),
+        "reason_key": None,
+        "retryable": False,
+    }
+
+
+def _cmd_subagent_list(session: str, *, as_json: bool = False) -> int:
+    from openprogram.agent.task import get_runner
+
+    runner = get_runner()
+    payload = [
+        view
+        for task in runner.list_tasks(session)
+        if (view := _resource_payload(runner, task.id)) is not None
+    ]
+    _print(payload, as_json=as_json)
+    return 0
+
+
+def _cmd_subagent_show(task_id: str, *, as_json: bool = False) -> int:
+    from openprogram.agent.task import get_runner
+
+    payload = _resource_payload(get_runner(), task_id)
+    if payload is None:
+        _print({"error": f"unknown task: {task_id}"}, as_json=as_json)
+        return 2
+    _print(payload, as_json=as_json)
+    return 0
+
+
+def _cmd_subagent_cancel(task_id: str, *, as_json: bool = False) -> int:
+    from openprogram.agent.task import get_runner
+
+    runner = get_runner()
+    task = runner.cancel_task(task_id, reason="cancel.user")
+    if task is None:
+        _print({"error": f"unknown task: {task_id}"}, as_json=as_json)
+        return 2
+    payload = _resource_payload(runner, task_id)
+    if payload is None:
+        _print({"error": f"unknown task: {task_id}"}, as_json=as_json)
+        return 2
+    _print(payload, as_json=as_json)
+    return 0
 
 
 def _cmd_subagent_spawn(

@@ -17,6 +17,12 @@ from typing import Any
 
 
 def fetch(provider_id: str, timeout: float) -> Any:
+    from openprogram.security.safe_http import require_active_sdk_transport
+
+    require_active_sdk_transport(
+        "provider.amazon_bedrock.sdk",
+        "https://bedrock.us-east-1.amazonaws.com",
+    )
     try:
         import boto3
     except ImportError:

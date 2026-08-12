@@ -1,44 +1,23 @@
-"""Robust ``httpx.AsyncClient`` builder for LLM providers.
-
-Centralises the connection-layer hardening every HTTP provider should
-get, instead of each one calling ``httpx.AsyncClient(timeout=...)`` with
-ad-hoc (often too-tight) settings. Ports the connection ideas from the
-reference frameworks (see ``docs/design/providers/reliability/llm-fault-tolerance.md``):
-
-  * **Decoupled, generous timeouts** — via :mod:`.timeouts` (connect
-    bounded, body read generous). No more single-float ``timeout=120``
-    that caps the streaming read.
-  * **TCP keepalive** (hermes pattern) — ``SO_KEEPALIVE`` plus the
-    idle/interval/count knobs so a silently-dropped connection (the
-    classic VPN failure) is detected in ~60 s instead of hanging until
-    the idle budget. Applied defensively: options the OS doesn't expose
-    are skipped; the whole thing is disablable via env.
-  * **Force-IPv4 escape hatch** — many VPNs advertise broken IPv6 and
-    httpx has no Happy-Eyeballs fallback, so a connect can hang on the
-    AAAA record. ``OPENPROGRAM_FORCE_IPV4=1`` binds an IPv4 source
-    address, forcing the connection family to IPv4.
-  * **Proxy** — full standard env semantics (``http(s)_proxy`` /
-    ``all_proxy`` / ``no_proxy``, both cases) plus the
-    ``OPENPROGRAM_PROXY_URL`` override, via per-pattern ``mounts=`` so
-    proxied routes keep the keepalive / IPv4 hardening. See
-    ``docs/reference/design/providers/network-proxy.md``.
-  * **Connection reuse** — :func:`get_shared_async_client` returns a
-    cached keep-alive client (keyed by name + event loop) so repeated
-    calls reuse the TLS connection instead of re-handshaking every time
-    — meaningful over a high-latency VPN.
-
-Non-HTTP (CLI) providers never import this, so they pay nothing.
-"""
+"""Registry-scoped managed HTTP clients for provider SDKs."""
 
 from __future__ import annotations
 
 import asyncio
 import os
 import socket
-from typing import Any, Optional
+import threading
+from typing import Any
 
+from openprogram.security.safe_http import (
+    OutboundSecurityConfig,
+    SafeAsyncClient,
+    _configured_security,
+    configured_safe_async_client,
+    configured_safe_client,
+    safe_async_client,
+)
+from openprogram.security.url_policy import OwnerURLException, normalize_origin
 from . import timeouts as _timeouts
-from .http_proxy import get_proxy_mounts
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -48,180 +27,266 @@ def _env_flag(name: str, default: bool) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
-def _keepalive_socket_options() -> Optional[list[tuple[int, int, int]]]:
-    """``setsockopt`` tuples enabling TCP keepalive, OS-defensively.
-
-    ``SO_KEEPALIVE`` is universal. The tuning knobs (idle before first
-    probe, inter-probe interval, probe count) exist on Linux always and
-    on modern macOS/Windows; each is added only when the constant is
-    present. Disable entirely with ``OPENPROGRAM_TCP_KEEPALIVE=0``.
-
-    With the defaults (idle 30 s, interval 10 s, count 3) a dead peer is
-    detected in roughly 30 + 10·3 = 60 s.
-    """
+def _keepalive_socket_options() -> tuple[tuple[int, int, int], ...]:
     if not _env_flag("OPENPROGRAM_TCP_KEEPALIVE", True):
-        return None
+        return ()
     idle = int(_timeouts._f("OPENPROGRAM_TCP_KEEPIDLE_S", 30.0))
-    intvl = int(_timeouts._f("OPENPROGRAM_TCP_KEEPINTVL_S", 10.0))
-    cnt = int(_timeouts._f("OPENPROGRAM_TCP_KEEPCNT", 3.0))
-
-    opts: list[tuple[int, int, int]] = [
-        (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1),
-    ]
-    tcp = socket.IPPROTO_TCP
-    # Idle-before-first-probe: TCP_KEEPIDLE on Linux/Windows, TCP_KEEPALIVE on macOS.
-    keepidle = getattr(socket, "TCP_KEEPIDLE", None) or getattr(socket, "TCP_KEEPALIVE", None)
+    interval = int(_timeouts._f("OPENPROGRAM_TCP_KEEPINTVL_S", 10.0))
+    count = int(_timeouts._f("OPENPROGRAM_TCP_KEEPCNT", 3.0))
+    options = [(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)]
+    keepidle = getattr(socket, "TCP_KEEPIDLE", None) or getattr(
+        socket, "TCP_KEEPALIVE", None
+    )
     if keepidle is not None:
-        opts.append((tcp, keepidle, idle))
-    keepintvl = getattr(socket, "TCP_KEEPINTVL", None)
-    if keepintvl is not None:
-        opts.append((tcp, keepintvl, intvl))
-    keepcnt = getattr(socket, "TCP_KEEPCNT", None)
-    if keepcnt is not None:
-        opts.append((tcp, keepcnt, cnt))
-    return opts
+        options.append((socket.IPPROTO_TCP, keepidle, idle))
+    if hasattr(socket, "TCP_KEEPINTVL"):
+        options.append((socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, interval))
+    if hasattr(socket, "TCP_KEEPCNT"):
+        options.append((socket.IPPROTO_TCP, socket.TCP_KEEPCNT, count))
+    return tuple(options)
 
 
-def _hardening_kwargs(force_ipv4: Optional[bool]) -> dict[str, Any]:
-    """Transport kwargs shared by the direct AND proxied transports."""
-    kwargs: dict[str, Any] = {}
-    sock_opts = _keepalive_socket_options()
-    if sock_opts:
-        kwargs["socket_options"] = sock_opts
-    if force_ipv4 is None:
-        force_ipv4 = _env_flag("OPENPROGRAM_FORCE_IPV4", False)
-    if force_ipv4:
-        # Binding an IPv4 source address forces the connection family to
-        # IPv4 — sidesteps a broken-IPv6 VPN that would otherwise hang on
-        # the AAAA record.
-        kwargs["local_address"] = "0.0.0.0"
-    return kwargs
+def _effective_timeout(timeout: Any):
+    return timeout if timeout is not None else _timeouts.build_httpx_timeout()
 
 
-def _build_transports(force_ipv4: Optional[bool]) -> tuple[Any, Optional[dict[str, Any]]]:
-    """(default transport or None, mounts or None) for a hardened client.
-
-    Proxy selection comes from :func:`get_proxy_mounts` — the same env
-    semantics httpx applies to plain clients — and every proxied route gets
-    the same keepalive / IPv4 hardening as the direct route, which the old
-    single-``transport`` + ``proxy=`` approach could not express (env
-    proxies and an explicit transport are mutually exclusive in httpx).
-    """
-    import httpx
-
-    base = _hardening_kwargs(force_ipv4)
-    proxy_map = get_proxy_mounts()
-    mounts: Optional[dict[str, Any]] = None
-    if proxy_map:
-        mounts = {
-            pattern: None if url is None else httpx.AsyncHTTPTransport(proxy=url, **base)
-            for pattern, url in proxy_map.items()
-        }
-    if not base and not mounts:
-        return None, None
-    # Always pin the default transport when mounts exist: an explicit
-    # transport= stops httpx from layering its own env-proxy pass on top.
-    return httpx.AsyncHTTPTransport(**base), mounts
+def _timeout_identity(timeout: Any) -> tuple[float | None, ...]:
+    effective = _effective_timeout(timeout)
+    if isinstance(effective, (int, float)):
+        return (float(effective),) * 4
+    return (
+        effective.connect,
+        effective.read,
+        effective.write,
+        effective.pool,
+    )
 
 
 def build_async_client(
     *,
+    consumer: str,
+    configured_origin: str,
+    owner_exception: OwnerURLException | None = None,
+    security: OutboundSecurityConfig | None = None,
     timeout: Any = None,
-    force_ipv4: Optional[bool] = None,
-    **client_kwargs: Any,
-):
-    """Create a hardened ``httpx.AsyncClient`` (caller owns its lifecycle).
-
-    Args:
-        timeout: an ``httpx.Timeout`` (defaults to :func:`timeouts.build_httpx_timeout`).
-        force_ipv4: override the ``OPENPROGRAM_FORCE_IPV4`` env default.
-        **client_kwargs: passed through to ``httpx.AsyncClient``.
-    """
-    import httpx
-
-    kwargs = dict(client_kwargs)
-    kwargs.setdefault(
-        "timeout", timeout if timeout is not None else _timeouts.build_httpx_timeout()
+    force_ipv4: bool | None = None,
+) -> SafeAsyncClient:
+    """Create a managed provider client with bounded streaming hardening."""
+    if force_ipv4 is None:
+        force_ipv4 = _env_flag("OPENPROGRAM_FORCE_IPV4", False)
+    if security is not None:
+        return safe_async_client(
+            consumer,
+            configured_origin=normalize_origin(configured_origin),
+            security=security,
+            timeout=_effective_timeout(timeout),
+            overall_timeout=_timeouts.STREAM_TOTAL_TIMEOUT_S,
+        )
+    return configured_safe_async_client(
+        consumer,
+        configured_origin,
+        owner_exception=owner_exception,
+        timeout=_effective_timeout(timeout),
+        overall_timeout=_timeouts.STREAM_TOTAL_TIMEOUT_S,
+        local_address="0.0.0.0" if force_ipv4 else None,
+        socket_options=_keepalive_socket_options(),
     )
-    transport, mounts = _build_transports(force_ipv4)
-    if transport is not None:
-        kwargs["transport"] = transport
-    if mounts is not None:
-        kwargs["mounts"] = mounts
-    return httpx.AsyncClient(**kwargs)
 
 
-# ---------------------------------------------------------------------------
-# Shared (reused) clients — keyed by name + the running event loop so a
-# client created under one loop is never reused under another (which httpx
-# forbids). Repeated calls on the same loop reuse the keep-alive pool.
-# ---------------------------------------------------------------------------
+_shared: dict[tuple[Any, ...], SafeAsyncClient] = {}
+_MAX_SHARED_CLIENTS_PER_LOOP = 32
+_MAX_SHARED_CLIENTS_TOTAL = 32
+_loop_cleanup_tasks: dict[asyncio.AbstractEventLoop, asyncio.Task[None]] = {}
+_shared_reservations: set[tuple[Any, ...]] = set()
+_shared_lock = threading.Lock()
 
-_shared: dict[tuple[str, int], Any] = {}
 
-
-def get_shared_async_client(key: str = "default", **build_kwargs: Any):
-    """Return a cached keep-alive client for ``key`` on the current loop.
-
-    Do NOT ``async with`` / close the returned client — it is shared and
-    lives for the process. Use it as ``client.stream(...)`` / ``client.post(...)``
-    directly. Falls back to a fresh client when there is no running loop.
-    """
+async def _close_client(client: SafeAsyncClient) -> None:
     try:
-        loop_id = id(asyncio.get_running_loop())
+        await client.aclose()
+    except Exception:
+        pass
+
+
+async def _close_loop_clients(loop: asyncio.AbstractEventLoop) -> None:
+    if asyncio.get_running_loop() is not loop:
+        raise RuntimeError("shared provider clients must close on their owner loop")
+    with _shared_lock:
+        cache_keys = [key for key in _shared if key[-1] is loop]
+        clients = [_shared.pop(cache_key) for cache_key in cache_keys]
+    for client in clients:
+        await _close_client(client)
+
+
+async def _cleanup_loop(loop: asyncio.AbstractEventLoop) -> None:
+    try:
+        await asyncio.Future()
+    finally:
+        await _close_loop_clients(loop)
+        with _shared_lock:
+            if _loop_cleanup_tasks.get(loop) is asyncio.current_task():
+                _loop_cleanup_tasks.pop(loop, None)
+
+
+def _ensure_loop_cleanup_locked(loop: asyncio.AbstractEventLoop) -> None:
+    task = _loop_cleanup_tasks.get(loop)
+    if task is None or task.done():
+        _loop_cleanup_tasks[loop] = loop.create_task(_cleanup_loop(loop))
+
+
+def get_shared_async_client(
+    key: str,
+    *,
+    consumer: str,
+    configured_origin: str,
+    owner_exception: OwnerURLException | None = None,
+    timeout: Any = None,
+    force_ipv4: bool | None = None,
+) -> SafeAsyncClient:
+    """Reuse a managed client only within one loop, consumer, and exact origin."""
+    try:
+        loop = asyncio.get_running_loop()
     except RuntimeError:
-        # No running loop — can't safely cache; hand back a fresh client.
-        return build_async_client(**build_kwargs)
-    cache_key = (key, loop_id)
-    client = _shared.get(cache_key)
-    if client is None or client.is_closed:
-        client = build_async_client(**build_kwargs)
+        return build_async_client(
+            consumer=consumer,
+            configured_origin=configured_origin,
+            owner_exception=owner_exception,
+            timeout=timeout,
+            force_ipv4=force_ipv4,
+        )
+    origin = normalize_origin(configured_origin)
+    effective_force_ipv4 = (
+        _env_flag("OPENPROGRAM_FORCE_IPV4", False) if force_ipv4 is None else force_ipv4
+    )
+    socket_options = _keepalive_socket_options()
+    transport_security = _configured_security(
+        consumer,
+        origin,
+        owner_exception,
+        local_address="0.0.0.0" if effective_force_ipv4 else None,
+        socket_options=socket_options,
+    )
+    cache_identity = (
+        key,
+        consumer,
+        origin,
+        owner_exception,
+        _timeout_identity(timeout),
+        effective_force_ipv4,
+        socket_options,
+    )
+    cache_key = (
+        *cache_identity,
+        transport_security,
+        loop,
+    )
+    retired_clients: list[SafeAsyncClient] = []
+    with _shared_lock:
+        for stale_key in [
+            cached_key
+            for cached_key, cached_client in _shared.items()
+            if cached_client.is_closed
+        ]:
+            _shared.pop(stale_key, None)
+        for stale_policy_key in [
+            cached_key
+            for cached_key in _shared
+            if cached_key[-1] is loop
+            and cached_key[:-2] == cache_identity
+            and cached_key[-2] != transport_security
+        ]:
+            retired_clients.append(_shared.pop(stale_policy_key))
+        client = _shared.get(cache_key)
+        if client is None or client.is_closed:
+            loop_entries = sum(
+                1
+                for cached_key in (*_shared, *_shared_reservations)
+                if cached_key[-1] is loop
+            )
+            if loop_entries >= _MAX_SHARED_CLIENTS_PER_LOOP:
+                raise RuntimeError("shared provider client cache limit exceeded")
+            if len(_shared) + len(_shared_reservations) >= _MAX_SHARED_CLIENTS_TOTAL:
+                raise RuntimeError("shared provider client cache limit exceeded")
+            _shared_reservations.add(cache_key)
+    for retired_client in retired_clients:
+        loop.create_task(_close_client(retired_client))
+    if client is not None and not client.is_closed:
+        return client
+    try:
+        client = build_async_client(
+            consumer=consumer,
+            configured_origin=origin,
+            owner_exception=owner_exception,
+            security=transport_security,
+            timeout=timeout,
+            force_ipv4=effective_force_ipv4,
+        )
+    except BaseException:
+        with _shared_lock:
+            _shared_reservations.discard(cache_key)
+        raise
+    with _shared_lock:
+        _shared_reservations.discard(cache_key)
         _shared[cache_key] = client
+        _ensure_loop_cleanup_locked(loop)
     return client
 
 
+def build_google_http_options(
+    configured_origin: str,
+    *,
+    owner_exception: OwnerURLException | None = None,
+    retry_options: Any = None,
+):
+    """Build Google GenAI options with managed sync and async HTTPX clients."""
+    from google.genai.types import HttpOptions
+
+    return HttpOptions(
+        base_url=configured_origin,
+        retry_options=retry_options,
+        httpx_client=configured_safe_client(
+            "provider.google.sdk",
+            configured_origin,
+            owner_exception=owner_exception,
+        ),
+        httpx_async_client=configured_safe_async_client(
+            "provider.google.sdk",
+            configured_origin,
+            owner_exception=owner_exception,
+        ),
+    )
+
+
 async def aclose_shared_clients() -> None:
-    """Close all cached shared clients (best-effort, for shutdown/tests)."""
-    clients = list(_shared.values())
-    _shared.clear()
-    for c in clients:
-        try:
-            await c.aclose()
-        except Exception:
-            pass
+    loop = asyncio.get_running_loop()
+    with _shared_lock:
+        if any(cache_key[-1] is not loop for cache_key in _shared):
+            raise RuntimeError(
+                "shared provider clients must close on their owner loops"
+            )
+    await _close_loop_clients(loop)
 
 
 async def aclose_current_loop_clients() -> None:
-    """Close + evict every shared client bound to the *currently running* loop.
-
-    The cache is keyed by ``(name, loop_id)``. A client's connection pool /
-    sockets belong to the loop it was built on and can only be torn down from
-    that loop — so this closes exactly the entries whose ``loop_id`` matches
-    ``asyncio.get_running_loop()`` and leaves other loops' clients untouched
-    (closing those from here is unsafe and would raise).
-
-    Call this right before a short-lived loop is destroyed. ``Runtime.exec``'s
-    sync bridge runs each provider call under a throwaway ``asyncio.run`` loop;
-    without this eviction the client (and its open sockets) would linger in
-    ``_shared`` forever, never reusable (httpx forbids cross-loop use) and
-    never collected — one leaked connection pool per exec(), so the process's
-    memory + fd count climb monotonically with call volume.
-    """
     try:
-        loop_id = id(asyncio.get_running_loop())
+        loop = asyncio.get_running_loop()
     except RuntimeError:
-        return  # No running loop — nothing bound to it to close.
-    for k in [k for k in _shared if k[1] == loop_id]:
-        client = _shared.pop(k)
-        try:
-            await client.aclose()
-        except Exception:
-            pass
+        return
+    with _shared_lock:
+        cleanup_task = _loop_cleanup_tasks.get(loop)
+    if cleanup_task is not None and cleanup_task is not asyncio.current_task():
+        cleanup_task.cancel()
+        await asyncio.gather(cleanup_task, return_exceptions=True)
+    await _close_loop_clients(loop)
+    with _shared_lock:
+        if _loop_cleanup_tasks.get(loop) is cleanup_task:
+            _loop_cleanup_tasks.pop(loop, None)
 
 
 __all__ = [
-    "build_async_client",
-    "get_shared_async_client",
-    "aclose_shared_clients",
     "aclose_current_loop_clients",
+    "aclose_shared_clients",
+    "build_async_client",
+    "build_google_http_options",
+    "get_shared_async_client",
 ]

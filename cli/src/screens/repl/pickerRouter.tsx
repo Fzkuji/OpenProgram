@@ -25,7 +25,11 @@ import { ThemePicker } from '../../components/ThemePicker.js';
 import { SettingsPanel, SettingRow } from '../../components/SettingsPanel.js';
 import { allSlashCommands } from '../../commands/registry.js';
 import { Turn } from '../../components/Turn.js';
-import { BackendClient } from '../../ws/client.js';
+import {
+  BackendClient,
+  type TaskResourceView,
+  type TaskRow,
+} from '../../ws/client.js';
 import { tsToDate } from './helpers.js';
 import { buildChannelPicker } from './pickers/channel.js';
 import { buildRegisterPicker } from './pickers/register.js';
@@ -68,6 +72,8 @@ export interface PickerCtx {
   conversationId: string | undefined;
   modelsList: string[];
   settingsRows: SettingRow[];
+  tasksList: TaskRow[];
+  selectedTask: TaskRow | null;
   model: string | undefined;
   agentsList: AgentInfo[];
   channelAccounts: ChannelAccountRow[];
@@ -109,6 +115,7 @@ export interface PickerCtx {
   setPromptDraft: React.Dispatch<React.SetStateAction<string | undefined>>;
   setThinkingEffort: React.Dispatch<React.SetStateAction<ThinkingEffort>>;
   setPermissionMode: React.Dispatch<React.SetStateAction<PermissionMode>>;
+  setSelectedTask: React.Dispatch<React.SetStateAction<TaskRow | null>>;
   setAccountsProviderId: React.Dispatch<React.SetStateAction<string>>;
   setAccountsState: React.Dispatch<React.SetStateAction<AccountsState>>;
   setAccountSelected: React.Dispatch<React.SetStateAction<string | null>>;
@@ -120,12 +127,66 @@ export interface PickerCtx {
   sessionAliasesRef: React.MutableRefObject<SessionAliasRow[]>;
 }
 
+const count = ({ used, limit }: { used: number; limit: number | null }): string =>
+  `${used}/${limit ?? '∞'}`;
+
+const localRemaining = (limit: number | null, ...used: Array<number | null>): number | null | undefined => {
+  if (limit == null) return null;
+  if (used.some((value) => value == null)) return undefined;
+  return Math.max(0, limit - used.reduce<number>((sum, value) => sum + (value ?? 0), 0));
+};
+
+const displayRemaining = (value: number | null | undefined): string =>
+  value === undefined ? 'Unknown' : value === null ? 'Unlimited' : String(value);
+
+const usd = (value: number | null | undefined): string =>
+  value === undefined ? 'Unknown' : value === null ? 'Unlimited' : `$${value.toFixed(2)}`;
+
+export function formatTaskResource(resource: TaskResourceView | undefined): string[] {
+  if (!resource || resource.resource_state === 'legacy/unmetered') {
+    return ['Unmetered', ...(resource?.reason_code ? [`Reason: ${resource.reason_code}`] : [])];
+  }
+  const { capacity, budget } = resource;
+  const unknownEvents = Math.max(
+    budget.cost_usd.unknown_events ?? 0,
+    budget.shared_remaining.cost_unknown_events ?? 0,
+  );
+  const localCost = budget.cost_usd.limit == null
+    ? null
+    : budget.cost_usd.actual == null || budget.cost_usd.reserved == null
+      ? undefined
+      : Math.max(0, Number(budget.cost_usd.limit)
+        - Number(budget.cost_usd.actual) - Number(budget.cost_usd.reserved));
+  const cost = budget.cost_usd.known !== true || unknownEvents
+    ? `Unknown${unknownEvents ? ` (${unknownEvents} event${unknownEvents === 1 ? '' : 's'})` : ''}`
+    : `local ${usd(localCost)} · shared ${usd(
+        budget.shared_remaining.cost_usd == null
+          ? null : Number(budget.shared_remaining.cost_usd),
+      )}`;
+  const lines = [
+    `Session ${count(capacity.session_live)} live · ${count(capacity.session_queued)} queued · `
+      + `${count(capacity.session_tasks)} tasks · Scheduler ${capacity.scheduler_capacity}`,
+    `Tokens: local ${displayRemaining(localRemaining(
+      budget.tokens.limit, budget.tokens.actual, budget.tokens.reserved,
+    ))} · shared ${displayRemaining(budget.shared_remaining.tokens)}`,
+    `Cost: ${cost}`,
+    `Runtime: ${displayRemaining(localRemaining(
+      budget.runtime_seconds.limit, budget.runtime_seconds.used,
+    ))}${budget.runtime_seconds.limit == null ? '' : 's'}`,
+    `Idle: ${displayRemaining(localRemaining(
+      budget.idle_seconds.limit, budget.idle_seconds.used,
+    ))}${budget.idle_seconds.limit == null ? '' : 's'}`,
+  ];
+  if (resource.reason_code) lines.push(`Reason: ${resource.reason_code}`);
+  return lines;
+}
+
 export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
   const {
     client, colors, pushSystem,
     pickerKind, pendingAttach,
     chosenChannel, chosenAccount, conversationId,
-    modelsList, settingsRows, model, agentsList, channelAccounts,
+    modelsList, settingsRows, tasksList, selectedTask, model, agentsList, channelAccounts,
     registerForm, qrAscii, qrStatus, pastConversations,
     contextSearchQuery, searchResults, searchBaseDraft, thinkingEffort,
     permissionMode,
@@ -134,9 +195,57 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
     setQrAscii, setQrStatus, setCommitted, setStreaming, setRegisterForm,
     setContextSearchQuery, setSearchResults, setPromptDraft, setThinkingEffort,
     setPermissionMode,
+    setSelectedTask,
     onSubmit,
     sessionAliasesRef,
   } = ctx;
+
+  if (pickerKind === 'tasks') {
+    return (
+      <Picker
+        title="Tasks"
+        items={tasksList.map((task) => ({
+          label: task.subject || task.id,
+          description: formatTaskResource(task.resource)[0],
+          value: task.id,
+        }))}
+        onSelect={(item) => client.send({ action: 'get_task', task_id: item.value })}
+        onCancel={() => setPickerKind(null)}
+      />
+    );
+  }
+
+  if (pickerKind === 'task_detail') {
+    if (!selectedTask) return null;
+    const rows: PickerItem<string>[] = [
+      { label: 'Status', description: selectedTask.status, value: 'info' },
+      ...formatTaskResource(selectedTask.resource).map((line) => {
+        const split = line.indexOf(':');
+        return split < 0
+          ? { label: line, value: 'info' }
+          : { label: line.slice(0, split), description: line.slice(split + 1).trim(), value: 'info' };
+      }),
+      ...(['completed', 'cancelled', 'errored'].includes(selectedTask.status)
+        ? []
+        : [{ label: 'Stop task', description: 'cancel.user', value: 'stop' }]),
+      { label: 'Back', value: 'back' },
+    ];
+    return (
+      <Picker
+        title={`Task ${selectedTask.id}`}
+        items={rows}
+        onSelect={(item) => {
+          if (item.value === 'stop') {
+            client.send({ action: 'cancel_task', task_id: selectedTask.id, reason: 'cancel.user' });
+          } else if (item.value === 'back') {
+            setSelectedTask(null);
+            setPickerKind('tasks');
+          }
+        }}
+        onCancel={() => setPickerKind('tasks')}
+      />
+    );
+  }
 
   if (pickerKind === 'question') {
     // runtime.ask / confirm / approval — render the queue head. On

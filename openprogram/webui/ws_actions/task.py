@@ -102,8 +102,31 @@ async def handle_spawn_task(ws, cmd: dict) -> None:
             label=label,
         )
 
+    from openprogram.agent.resource_governance import AdmissionRejected
+
     loop = asyncio.get_event_loop()
-    task_id = await loop.run_in_executor(None, _submit)
+    try:
+        task_id = await loop.run_in_executor(None, _submit)
+    except AdmissionRejected as rejected:
+        # A refused spawn has no task. Report the governor's own decision
+        # verbatim rather than inventing an id or a status the store would
+        # not agree with.
+        decision = rejected.decision
+        await ws.send_text(json.dumps({
+            "type": "spawn_task_result",
+            "data": {
+                "task_id": None,
+                "session_id": session_id,
+                "status": "rejected",
+                "parent_msg_id": parent_msg_id,
+                "reason_code": decision.reason_code,
+                "retryable": decision.retryable,
+                "limits": decision.effective_limits,
+                "capacity": decision.capacity,
+                "usage": decision.usage,
+            },
+        }, default=str))
+        return
     cur = runner.get_task(task_id)
     view = runner.get_task_resource_view(task_id) if cur is not None else None
     payload = {

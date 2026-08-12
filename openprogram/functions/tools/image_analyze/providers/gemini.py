@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
 
-from .._encode import read_b64, sniff_mime
+import httpx
+
+from openprogram.functions.tools.web_search._http import post_json
+from openprogram.security.safe_http import safe_client
+from openprogram.security.url_policy import normalize_origin
+
+from .._encode import detect_raster_mime, read_b64
 from ..registry import ImageInput
 
 
@@ -62,20 +65,14 @@ class GeminiVisionProvider:
 
         url = f"{API_BASE}/{mdl}:generateContent?key={key}"
         payload = {"contents": [{"parts": parts}]}
-        req = urllib.request.Request(
+        data = post_json(
             url,
-            data=json.dumps(payload).encode("utf-8"),
+            body=payload,
             headers={"Content-Type": "application/json"},
+            timeout=TIMEOUT,
+            provider_label="Gemini vision",
+            consumer="tool.image_api.fixed",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"Gemini vision HTTP {e.code}: {body}") from e
 
         candidates = data.get("candidates") or []
         if not candidates:
@@ -87,7 +84,25 @@ class GeminiVisionProvider:
 def _url_to_b64(url: str) -> tuple[str, str]:
     import base64
 
-    with urllib.request.urlopen(url, timeout=30) as resp:
-        data = resp.read()
-        mime = resp.headers.get("Content-Type") or sniff_mime(url)
+    safe_error: RuntimeError | None = None
+    try:
+        with safe_client("tool.image_result.download") as client:
+            with client.stream("GET", url, timeout=30) as response:
+                response.raise_for_status()
+                data = response.read()
+    except httpx.HTTPStatusError as e:
+        safe_error = RuntimeError(
+            f"Gemini image download HTTP {e.response.status_code} "
+            f"{e.response.reason_phrase} for {normalize_origin(url)}"
+        )
+    except httpx.RequestError as e:
+        safe_error = RuntimeError(
+            f"Gemini image download {type(e).__name__} for "
+            f"{normalize_origin(url)}"
+        )
+    if safe_error is not None:
+        raise safe_error from None
+    mime = detect_raster_mime(data)
+    if mime is None:
+        raise RuntimeError("Gemini image download returned unsupported raster bytes")
     return base64.b64encode(data).decode("ascii"), mime

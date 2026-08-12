@@ -43,6 +43,9 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from pydantic import BaseModel, Field
 
+from openprogram.security import safe_http
+from openprogram.security.url_policy import OwnerURLException, normalize_origin
+
 from .loader import remote_cache_dir
 
 
@@ -63,6 +66,16 @@ class IndexSkill(BaseModel):
 
 class Index(BaseModel):
     skills: list[IndexSkill] = Field(default_factory=list)
+
+
+def _parse_index(raw: str, url: str) -> Index:
+    try:
+        return Index.model_validate_json(raw)
+    except ValueError:
+        pass
+    raise RuntimeError(
+        f"Invalid skill index for {normalize_origin(url)}"
+    ) from None
 
 
 # ---------------------------------------------------------------------------
@@ -152,13 +165,20 @@ _USER_AGENT = "OpenProgram-Discovery/1.0"
 
 async def _get_text(client: httpx.AsyncClient, url: str) -> str:
     r = await client.get(url, timeout=30.0, headers={"User-Agent": _USER_AGENT})
-    r.raise_for_status()
+    safe_http.raise_for_status_sanitized(r)
+    return r.text
+
+
+async def _get_json_text(client: httpx.AsyncClient, url: str) -> str:
+    r = await client.get(url, timeout=30.0, headers={"User-Agent": _USER_AGENT})
+    safe_http.raise_for_status_sanitized(r)
+    safe_http.require_json_mime(r)
     return r.text
 
 
 async def _get_bytes(client: httpx.AsyncClient, url: str) -> bytes:
     r = await client.get(url, timeout=60.0, headers={"User-Agent": _USER_AGENT})
-    r.raise_for_status()
+    safe_http.raise_for_status_sanitized(r)
     return r.content
 
 
@@ -192,8 +212,8 @@ async def _pull_one_indexed(
 async def _pull_from_index(
     client: httpx.AsyncClient, url: str, namespace: str | None = None,
 ) -> list[str]:
-    raw = await _get_text(client, url)
-    index = Index.model_validate_json(raw)
+    raw = await _get_json_text(client, url)
+    index = _parse_index(raw, url)
     base = url.rsplit("/", 1)[0] + "/"
     sem = asyncio.Semaphore(_MAX_CONCURRENCY)
     results = await asyncio.gather(
@@ -238,7 +258,14 @@ async def _fetch_repo_zip(client: httpx.AsyncClient, repo: GhRepo) -> tuple[byte
         repo.zip_url, timeout=60.0,
         headers={"User-Agent": _USER_AGENT, "Accept": "application/zip"},
     )
-    r.raise_for_status()
+    safe_http.raise_for_status_sanitized(r)
+    mime = r.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if mime not in {
+        "application/zip",
+        "application/x-zip-compressed",
+        "application/octet-stream",
+    }:
+        raise ValueError("skill archive MIME type is not ZIP")
     data = r.content
     # Determine the top-level dir name by inspecting the first archive member.
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
@@ -345,7 +372,7 @@ async def _clawhub_list(
         url = f"{_CLAWHUB_BASE}/api/v1/search?q={query.strip()}"
     else:
         url = f"{_CLAWHUB_BASE}/api/v1/skills?sort=trending&limit={limit}"
-    raw = await _get_text(client, url)
+    raw = await _get_json_text(client, url)
     import json as _json
     payload = _json.loads(raw)
     items = payload.get("items") or payload.get("results") or payload
@@ -468,7 +495,7 @@ def _default_namespace(url: str) -> str:
 
 async def _pull_async(url: str, namespace: str | None = None) -> list[str]:
     ns = namespace if namespace is not None else _default_namespace(url)
-    async with httpx.AsyncClient(follow_redirects=True) as client:
+    async with _client_for(url) as client:
         # 0. ClawHub registry (clawhub:// or clawhub.ai URL)
         ch = _parse_clawhub(url)
         if ch is not None:
@@ -481,13 +508,12 @@ async def _pull_async(url: str, namespace: str | None = None) -> list[str]:
         if url.endswith(".json"):
             try:
                 return await _pull_from_index(client, url, namespace=ns)
-            except httpx.HTTPStatusError as e:
+            except safe_http.SafeHTTPStatusError as e:
                 # Auto-fallback: ``.json`` 404 on raw.githubusercontent.com →
                 # try treating the host repo as a tree.
                 parsed = urlparse(url)
                 if (
-                    e.response is not None
-                    and e.response.status_code == 404
+                    e.status_code == 404
                     and parsed.hostname == "raw.githubusercontent.com"
                 ):
                     parts = parsed.path.strip("/").split("/")
@@ -565,8 +591,8 @@ def _sha256(text: str) -> str:
 
 
 async def _browse_index(client: httpx.AsyncClient, url: str) -> list[CatalogEntry]:
-    raw = await _get_text(client, url)
-    index = Index.model_validate_json(raw)
+    raw = await _get_json_text(client, url)
+    index = _parse_index(raw, url)
     base = url.rsplit("/", 1)[0] + "/"
     out: list[CatalogEntry] = []
     for s in index.skills:
@@ -613,7 +639,7 @@ async def _browse_github(client: httpx.AsyncClient, repo: GhRepo) -> list[Catalo
 
 
 async def _browse_async(url: str) -> list[dict]:
-    async with httpx.AsyncClient(follow_redirects=True) as client:
+    async with _client_for(url) as client:
         ch = _parse_clawhub(url)
         if ch is not None:
             # ``clawhub://``  → trending list.
@@ -647,11 +673,10 @@ async def _browse_async(url: str) -> list[dict]:
         elif url.endswith(".json"):
             try:
                 entries = await _browse_index(client, url)
-            except httpx.HTTPStatusError as e:
+            except safe_http.SafeHTTPStatusError as e:
                 parsed = urlparse(url)
                 if (
-                    e.response is not None
-                    and e.response.status_code == 404
+                    e.status_code == 404
                     and parsed.hostname == "raw.githubusercontent.com"
                 ):
                     parts = parsed.path.strip("/").split("/")
@@ -730,7 +755,7 @@ async def _install_one_async(
     url: str, name: str, namespace: str | None = None,
 ) -> str | None:
     ns = namespace if namespace is not None else _default_namespace(url)
-    async with httpx.AsyncClient(follow_redirects=True) as client:
+    async with _client_for(url) as client:
         ch = _parse_clawhub(url)
         if ch is not None:
             # ``name`` here is the slug we want to install.
@@ -748,8 +773,8 @@ async def _install_one_async(
                     zf, top, match.path, full_name, match.files,
                 )
         # JSON index
-        raw = await _get_text(client, url)
-        index = Index.model_validate_json(raw)
+        raw = await _get_json_text(client, url)
+        index = _parse_index(raw, url)
         match = next((s for s in index.skills if s.name == name), None)
         if match is None:
             return None
@@ -768,3 +793,16 @@ def install_one(url: str, name: str, namespace: str | None = None) -> str | None
         return ex.submit(
             lambda: asyncio.run(_install_one_async(url, name, namespace))
         ).result()
+
+
+def _client_for(url: str):
+    if _parse_github(url) is not None or _parse_clawhub(url) is not None:
+        return safe_http.safe_async_client("skills.github.catalog")
+    consumer = "skills.configured.catalog"
+    return safe_http.configured_safe_async_client(
+        consumer,
+        url,
+        owner_exception=OwnerURLException(
+            consumer=consumer, origin=normalize_origin(url)
+        ),
+    )

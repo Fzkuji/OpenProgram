@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from openprogram import setup
+from openprogram.config_schema import set_setting
 
 
 def _wait_for(path: Path) -> None:
@@ -232,3 +233,39 @@ if not result.get('ok'):
     stored = json.loads(config.read_text(encoding="utf-8"))
     assert set(stored["providers"]) == {"first", "second"}
     assert stored["api_keys"] == {"KEEP": "secret"}
+
+
+def test_outbound_url_security_update_preserves_mode_and_unrelated_config(
+    tmp_path, monkeypatch
+):
+    cfgp = tmp_path / "config.json"
+    monkeypatch.setattr(setup, "get_config_path", lambda: cfgp)
+    setup._write_config({"api_keys": {"OPENAI_API_KEY": "stored-secret"}})
+
+    result = set_setting(
+        "security.outbound_url",
+        {
+            "exceptions": [
+                {
+                    "consumer": "provider.configured_api",
+                    "cidr": "10.20.7.9/16",
+                }
+            ]
+        },
+    )
+
+    assert "error" not in result
+    assert setup._read_config() == {
+        "api_keys": {"OPENAI_API_KEY": "stored-secret"},
+        "security": {
+            "outbound_url": {
+                "exceptions": [
+                    {
+                        "consumer": "provider.configured_api",
+                        "cidr": "10.20.0.0/16",
+                    }
+                ]
+            }
+        },
+    }
+    assert (cfgp.stat().st_mode & 0o777) == 0o600

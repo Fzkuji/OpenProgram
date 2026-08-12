@@ -23,7 +23,8 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-import httpx
+from openprogram.security.safe_http import configured_safe_client, safe_client
+from openprogram.security.url_policy import OwnerURLException, normalize_origin
 
 
 _EXCHANGE_URL = "https://api.github.com/copilot_internal/v2/token"
@@ -61,7 +62,18 @@ def _http_exchange(
 ) -> CopilotApiToken:
     """Trade a GitHub OAuth token for a Copilot api_token via HTTP."""
     url = (base_url or "https://api.github.com").rstrip("/") + "/copilot_internal/v2/token"
-    with httpx.Client(timeout=15.0) as client:
+    if base_url:
+        origin = normalize_origin(base_url)
+        client_context = configured_safe_client(
+            "provider.configured_api",
+            origin,
+            owner_exception=OwnerURLException(
+                consumer="provider.configured_api", origin=origin
+            ),
+        )
+    else:
+        client_context = safe_client("provider.fixed_api")
+    with client_context as client:
         resp = client.get(
             url,
             headers={
@@ -70,6 +82,7 @@ def _http_exchange(
                 "Editor-Plugin-Version": "openprogram/1.0",
                 "Accept": "application/json",
             },
+            timeout=15.0,
         )
         resp.raise_for_status()
         data = resp.json()

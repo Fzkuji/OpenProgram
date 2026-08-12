@@ -14,13 +14,9 @@ in try/except.
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, Optional
 
-try:
-    import httpx  # type: ignore
-except ImportError:  # pragma: no cover
-    httpx = None  # type: ignore
+from openprogram.security.safe_http import safe_client
 
 
 _API_URL = "https://api.anthropic.com/v1/messages/count_tokens"
@@ -86,9 +82,6 @@ def count_tokens_via_anthropic(
     Returns None on any failure — never raises. Caller treats None as
     'we don't know' and leaves the token columns NULL.
     """
-    if httpx is None:
-        return None
-
     key = api_key
     if not key:
         try:
@@ -133,7 +126,7 @@ def count_tokens_via_anthropic(
         body["system"] = "\n\n".join(system_parts)
 
     try:
-        with httpx.Client(timeout=timeout_s) as client:
+        with safe_client("provider.fixed_api") as client:
             r = client.post(
                 _API_URL,
                 headers={
@@ -142,6 +135,7 @@ def count_tokens_via_anthropic(
                     "content-type": "application/json",
                 },
                 json=body,
+                timeout=timeout_s,
             )
         if r.status_code != 200:
             return None

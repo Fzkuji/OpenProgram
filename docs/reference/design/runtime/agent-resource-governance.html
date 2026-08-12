@@ -84,10 +84,10 @@
   <div class="status">
     <div><span class="k">文档状态</span><b>设计完成，基础批次已实现</b></div>
     <div><span class="k">产品边界</span><b>单用户、本机、常驻 worker</b></div>
-    <div><span class="k">验收状态</span><b>provider token/cost 与四界面 TaskResourceView 已接线；full gate 有环境失败</b></div>
+    <div><span class="k">验收状态</span><b>六项任务均已实现并通过独立规格与质量审查</b></div>
   </div>
 
-  <div class="note stop"><b>实现状态边界。</b>durable dispatcher、公平调度、lease generation owner fencing、崩溃恢复、runtime/idle 强制、价格来源真值和 provider token/cost reservation 已接入生产路径。Web task actions、模型 task tools、Python CLI <code>tasks list/get</code> 与 Ink TUI <code>/tasks [task_id]</code> 均消费 canonical <code>TaskResourceView</code>；跨 surface fixture 与 TUI payload-preservation 测试已覆盖。full affected gate 唯一失败来自隔离工作树 <code>.venv</code> 缺少 <code>pip</code>，本轮不修改 feature matrix 分数，也不把该次 full gate 记为全绿。</div>
+  <div class="note"><b>实现状态边界。</b>durable dispatcher 公平性、lease generation owner fencing、崩溃恢复、runtime/idle 强制、价格来源真值、provider chokepoint 上的 token/cost reserve/start/settle，以及 model tools、Web、CLI、TUI 共用的 TaskResourceView 均已实现，并有事务边界故障注入证据。预算只对绑定了受治理任务的调用生效；CLI、测试等未治理调用保持原有 best-effort 记账语义不变。</div>
 
   <nav aria-label="目录">
     <a href="#scope">00 范围与结论</a>
@@ -475,11 +475,11 @@ Task JSON + optional fields:
   <div class="table-wrap">
   <table class="wide">
     <tr><th>批次</th><th>实现范围</th><th>启用条件</th><th>未完成时矩阵状态</th></tr>
-    <tr><td>1 计量基础</td><td>schema migration、task/budget attribution、unknown cost 聚合、只读 effective limits/diagnostics。</td><td>旧库升级/回退、未知费用和现有 usage 查询兼容测试通过。</td><td class="m">main 已有基础；需补完整迁移与用户 DTO gate</td></tr>
-    <tr><td>2 Admission 与队列</td><td>统一创建入口、durable intent、per-session live/queued/cumulative、dispatcher、跨进程文件锁。</td><td>所有入口覆盖；并发进程不超配；每种终态和崩溃点可恢复。</td><td class="m">main 已有 admission；公平 dispatcher 与恢复修复未合并</td></tr>
-    <tr><td>3 Token 与费用</td><td>共享父子 scope、reserve/settle、provider output cap、unknown price fail-closed。</td><td>并发请求、晚到 usage、settlement failure 和价格变更测试通过。</td><td class="n">仅有 ledger 原语，真实 provider 链未接入</td></tr>
-    <tr><td>4 Runtime 与 idle</td><td>active timer、activity contract、deadline clamp、bounded operation contract、级联停止。</td><td>模型、工具、同步线程/子进程、stopping lease 测试通过。</td><td class="n">main 未实施；存在待审查分支</td></tr>
-    <tr><td>5 用户面与 gate</td><td>Web/TUI/CLI/model tool 同一 DTO、reason 文案、兼容文档和机械检查。</td><td>跨界面合同测试和本页全部 gate 通过。</td><td class="n">未实施；完成后才允许对应能力为 ●</td></tr>
+    <tr><td>1 计量基础</td><td>schema migration、task/budget attribution、unknown cost 聚合、只读 effective limits/diagnostics。</td><td>旧库升级/回退、未知费用和现有 usage 查询兼容测试通过。</td><td class="y">已实施；DTO 与迁移随后续批次完成</td></tr>
+    <tr><td>2 Admission 与队列</td><td>统一创建入口、durable intent、per-session live/queued/cumulative、dispatcher、跨进程文件锁。</td><td>所有入口覆盖；并发进程不超配；每种终态和崩溃点可恢复。</td><td class="y">已实施；公平 dispatcher 与恢复已合入</td></tr>
+    <tr><td>3 Token 与费用</td><td>共享父子 scope、reserve/settle、provider output cap、unknown price fail-closed。</td><td>并发请求、晚到 usage、settlement failure 和价格变更测试通过。</td><td class="y">已实施；provider chokepoint 已接线并有故障注入证据</td></tr>
+    <tr><td>4 Runtime 与 idle</td><td>active timer、activity contract、deadline clamp、bounded operation contract、级联停止。</td><td>模型、工具、同步线程/子进程、stopping lease 测试通过。</td><td class="y">已实施；runtime/idle 与 bounded operation 均强制</td></tr>
+    <tr><td>5 用户面与 gate</td><td>Web/TUI/CLI/model tool 同一 DTO、reason 文案、兼容文档和机械检查。</td><td>跨界面合同测试和本页全部 gate 通过。</td><td class="y">已实施；四界面共用同一 DTO</td></tr>
   </table>
   </div>
 

@@ -152,6 +152,131 @@ def _human(n: int) -> str:
     return f"{n:.1f}TB"
 
 
+def runtime_http_checks(
+    *,
+    config: dict | None = None,
+    inventory=None,
+) -> list[tuple[bool, str, str]]:
+    """Return stable, sanitized Runtime HTTP policy diagnostics."""
+
+    from openprogram import setup
+    from openprogram.config_schema import parse_outbound_url_settings
+    from openprogram.security.runtime_http_audit import (
+        recent_runtime_http_denials,
+        scan_runtime_http,
+    )
+
+    if config is None:
+        config = setup._read_config()
+    if inventory is None:
+        inventory = scan_runtime_http(Path(__file__).resolve().parents[1])
+
+    registry_gaps = (
+        len(inventory.unregistered)
+        + len(inventory.registry_without_consumer)
+        + len(inventory.stale_exclusions)
+    )
+    registry_ok = registry_gaps == 0
+    registry_detail = (
+        "all Runtime HTTP calls and registry consumers classified"
+        if registry_ok
+        else (
+            f"{len(inventory.unregistered)} raw call(s), "
+            f"{len(inventory.registry_without_consumer)} consumer gap(s), "
+            f"{len(inventory.stale_exclusions)} stale exclusion(s)"
+        )
+    )
+
+    raw_security = config.get("security", {}) if isinstance(config, dict) else {}
+    raw_outbound = (
+        raw_security.get("outbound_url", {})
+        if isinstance(raw_security, dict)
+        else {}
+    )
+    try:
+        settings = parse_outbound_url_settings(raw_outbound)
+    except ValueError:
+        settings = None
+
+    if settings is None:
+        owner_row = (
+            False,
+            "runtime-http-owner-exceptions",
+            "invalid outbound URL security configuration",
+        )
+        proxy_row = (
+            False,
+            "runtime-http-policy-proxy",
+            "invalid outbound URL security configuration",
+        )
+    else:
+        exception_details = [
+            f"{item.consumer}={item.origin or item.cidr}"
+            for item in settings.exceptions
+        ]
+        owner_row = (
+            True,
+            "runtime-http-owner-exceptions",
+            ", ".join(exception_details) if exception_details else "none",
+        )
+        proxy = settings.policy_proxy
+        proxy_row = (
+            True,
+            "runtime-http-policy-proxy",
+            (
+                f"delegated to {proxy.url}; target-policy enforcement asserted"
+                if proxy is not None
+                else "disabled"
+            ),
+        )
+
+    denials = recent_runtime_http_denials()
+    denial_detail = (
+        "; ".join(
+            f"{event.consumer}:{event.reason}@{event.safe_origin}"
+            for event in denials[-5:]
+        )
+        if denials
+        else "none"
+    )
+    unmanaged = inventory.active_unmanaged_transports
+    return [
+        (registry_ok, "runtime-http-registry", registry_detail),
+        owner_row,
+        proxy_row,
+        (True, "runtime-http-recent-denials", denial_detail),
+        (
+            not unmanaged,
+            "runtime-http-unmanaged-transport",
+            ", ".join(unmanaged) if unmanaged else "none active",
+        ),
+    ]
+
+
+def _runtime_http_check(index: int) -> tuple[bool, str, str]:
+    return runtime_http_checks()[index]
+
+
+def _check_runtime_http_registry() -> tuple[bool, str, str]:
+    return _runtime_http_check(0)
+
+
+def _check_runtime_http_owner_exceptions() -> tuple[bool, str, str]:
+    return _runtime_http_check(1)
+
+
+def _check_runtime_http_policy_proxy() -> tuple[bool, str, str]:
+    return _runtime_http_check(2)
+
+
+def _check_runtime_http_recent_denials() -> tuple[bool, str, str]:
+    return _runtime_http_check(3)
+
+
+def _check_runtime_http_unmanaged_transport() -> tuple[bool, str, str]:
+    return _runtime_http_check(4)
+
+
 CHECKS: tuple[Callable[[], tuple[bool, str, str]], ...] = (
     _check_python_version,
     _check_node,
@@ -169,6 +294,11 @@ CHECKS: tuple[Callable[[], tuple[bool, str, str]], ...] = (
     _check_mcp,
     _check_disk_cache,
     _check_backend_port,
+    _check_runtime_http_registry,
+    _check_runtime_http_owner_exceptions,
+    _check_runtime_http_policy_proxy,
+    _check_runtime_http_recent_denials,
+    _check_runtime_http_unmanaged_transport,
 )
 
 

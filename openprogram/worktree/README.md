@@ -26,6 +26,7 @@ repositories. See ``docs/design/runtime/agent-worktree.md`` Part 1 D4.
 - **`context.py`** — ``_current_worktree_path`` ContextVar
 - **`manager.py`** — WorktreeManager
 - **`path_resolve.py`** — Path resolution helper for worktree-aware tools
+- **`pr_ref.py`** — Resolve a PR reference (``123`` / ``#123`` / a GitHub PR URL) into a
 - **`store.py`** — Worktree persistence
 - **`types.py`** — Worktree entity + state machine
 

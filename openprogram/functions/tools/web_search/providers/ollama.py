@@ -21,12 +21,10 @@ Docs: https://ollama.com/
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 
+from .._http import post_json
 from ..registry import SearchResult
 
 
@@ -70,37 +68,33 @@ class OllamaProvider:
         base_url = _resolve_base_url()
         url = f"{base_url}{SEARCH_PATH}"
         count = max(1, min(int(num_results), 10))
-        payload = json.dumps({"query": query, "max_results": count}).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         key = _resolve_api_key()
         if key:
             headers["Authorization"] = f"Bearer {key}"
 
-        req = urllib.request.Request(url, data=payload, headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            if e.code == 401:
+            data = post_json(
+                url,
+                headers=headers,
+                body={"query": query, "max_results": count},
+                timeout=TIMEOUT,
+                provider_label="Ollama",
+                configured_url=base_url,
+            )
+        except Exception as e:
+            status = getattr(e, "status", None)
+            if status == 401:
                 raise RuntimeError(
                     "Ollama web search auth failed (401). Run `ollama signin` "
                     "on the host or set OLLAMA_API_KEY."
                 ) from e
-            if e.code == 403:
+            if status == 403:
                 raise RuntimeError(
                     "Ollama web search unavailable (403). Ensure cloud-backed "
                     "web search is enabled on the Ollama host."
                 ) from e
-            raise RuntimeError(f"Ollama HTTP {e.code}: {body}") from e
-        except urllib.error.URLError as e:
-            raise RuntimeError(
-                f"Ollama web search could not reach {base_url}: {e.reason}. "
-                "Is Ollama running?"
-            ) from e
+            raise
 
         results: list[SearchResult] = []
         for r in (data.get("results") or [])[:count]:

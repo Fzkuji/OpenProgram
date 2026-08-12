@@ -814,6 +814,10 @@ async def _stream_assistant_response(
         except StopAsyncIteration:
             break
         _record_task_activity("provider_data")
+        if structured_plan is not None and cancel_event and cancel_event.is_set():
+            from openprogram.providers.utils.errors import ExecInterrupt
+
+            raise ExecInterrupt("cancelled")
         if event.type == "start":
             partial_message = event.partial
             if structured_plan is None:

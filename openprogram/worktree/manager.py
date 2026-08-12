@@ -24,6 +24,8 @@ from pathlib import Path
 from typing import Optional
 
 from openprogram.paths import get_state_dir
+from openprogram.worktree.include_sync import sync_include_files
+from openprogram.worktree.pr_ref import PrRefError, fetch_pr_branch, parse_pr_ref
 from openprogram.worktree.store import (
     delete_worktree as _store_delete,
     find_active_for_session,
@@ -161,6 +163,13 @@ class WorktreeManager:
 
     # Public API
 
+    def find_for_pr(self, pr_number: int) -> Optional[Worktree]:
+        """Non-terminal worktree already opened from this PR, if any."""
+        for wt in self.list_worktrees():
+            if wt.pr_number == pr_number and not is_terminal(wt.status):
+                return wt
+        return None
+
     def create_worktree(
         self,
         source_repo: str,
@@ -170,8 +179,17 @@ class WorktreeManager:
         label: Optional[str] = None,
         parent_session: Optional[str] = None,
         parent_task: Optional[str] = None,
+        pr: Optional[str] = None,
     ) -> Worktree:
         """Create a new worktree on ``source_repo``.
+
+        ``pr`` (optional): a PR number / ``#number`` / GitHub PR URL.
+        When set, the PR's head branch is fetched into a local branch
+        first (same-repo PR: direct fetch; fork PR: GitHub's
+        ``pull/<n>/head`` synthetic ref) and the worktree is checked
+        out there — ``branch_name`` / ``base_ref`` are ignored in this
+        mode (the fetched branch fills both roles). Requires the
+        ``gh`` CLI, authenticated.
 
         Raises :class:`WorktreeError` on:
 
@@ -180,6 +198,10 @@ class WorktreeManager:
             (``worktree_in_sessions_dir``)
           * a worktree with the same branch_name already exists
             (``worktree_exists``)
+          * a non-terminal worktree already exists for this PR
+            (``pr_worktree_exists``)
+          * ``gh`` is missing/unauthenticated, or the PR lookup/fetch
+            fails (``pr_ref_error``)
           * the underlying ``git worktree add`` fails (passes stderr)
 
         Caller (tool wrapper) is responsible for higher-level checks
@@ -198,6 +220,20 @@ class WorktreeManager:
                 "OpenProgram's session storage."
             )
 
+        pr_number: Optional[int] = None
+        if pr is not None and str(pr).strip():
+            try:
+                pr_number = parse_pr_ref(str(pr))
+            except PrRefError as e:
+                raise WorktreeError(f"pr_ref_error: {e}") from e
+            existing = self.find_for_pr(pr_number)
+            if existing is not None:
+                raise WorktreeError(
+                    f"pr_worktree_exists: PR #{pr_number} already has worktree "
+                    f"{existing.id} at {existing.worktree_path} "
+                    f"(status={existing.status.value})."
+                )
+
         # Reject ref names that could be misparsed as git CLI options.
         # ``git worktree add -b <branch> [<commit-ish>]`` and the later
         # ``merge`` / ``branch -D`` calls all pass these names directly
@@ -214,9 +250,27 @@ class WorktreeManager:
                 )
 
         wt_id = mint_worktree_id()
-        slug = _slugify(label or "wt", default=wt_id.replace("wt_", ""))
-        branch = (branch_name or "").strip() or f"op/wt/{slug}-{wt_id[3:9]}"
+        if pr_number is not None:
+            slug = _slugify(label or f"pr-{pr_number}", default=wt_id.replace("wt_", ""))
+            branch = f"op/wt/pr-{pr_number}-{wt_id[3:9]}"
+        else:
+            slug = _slugify(label or "wt", default=wt_id.replace("wt_", ""))
+            branch = (branch_name or "").strip() or f"op/wt/{slug}-{wt_id[3:9]}"
         _validate_ref(branch, "branch_name")
+
+        if pr_number is not None:
+            # Fetch the PR head into a throwaway local ref first, then
+            # point ``git worktree add`` at it below via base_ref —
+            # this reuses the exact same add/persist/broadcast path as
+            # every other worktree instead of forking a second one.
+            fetch_ref = f"op/wt/_pr-{pr_number}-{wt_id[3:9]}"
+            try:
+                fetch_pr_branch(
+                    pr_number, source_repo=source_repo, local_branch=fetch_ref,
+                )
+            except PrRefError as e:
+                raise WorktreeError(f"pr_ref_error: {e}") from e
+            base_ref = fetch_ref
         _validate_ref(base_ref, "base_ref")
         # Final worktree path lives outside both source_repo and
         # sessions-git so neither can accidentally pick up its files.
@@ -253,6 +307,17 @@ class WorktreeManager:
             raise WorktreeError(
                 f"git worktree add failed (rc={rc}): {err.strip() or out.strip()}"
             )
+        if pr_number is not None:
+            # base_ref (the temp fetch ref) is now redundant — `branch`
+            # was created pointing at the same commit via `-b`.
+            _run_git("branch", "-D", base_ref, cwd=source_repo)
+
+        # .worktreeinclude: copy untracked local-only files (.env,
+        # certs, etc.) the fresh checkout never got. No-op when the
+        # manifest doesn't exist. Every create_worktree caller (the
+        # worktree_create tool, task/plan-mode fan-out) routes through
+        # here, so this is the one place that needs the hook.
+        include_result = sync_include_files(source_repo, str(path))
 
         wt = Worktree(
             id=wt_id,
@@ -263,6 +328,9 @@ class WorktreeManager:
             status=WorktreeStatus.ACTIVE,
             parent_session=parent_session,
             parent_task=parent_task,
+            pr_number=pr_number,
+            include_synced=include_result.copied,
+            include_failed=[f"{p}: {reason}" for p, reason in include_result.failed],
         )
         save_worktree(wt)
         # First-time appearance — `_transition` is only called on

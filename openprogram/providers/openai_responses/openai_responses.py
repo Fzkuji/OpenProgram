@@ -201,11 +201,22 @@ def _create_client(
     # externally-supplied clients).
     from ..utils.http_client import get_shared_async_client
 
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
+
+    configured_origin = normalize_origin(base_url or "https://api.openai.com/v1")
+
     kwargs: dict[str, Any] = {
         "api_key": api_key or "dummy",
         "default_headers": headers if headers else None,
         "max_retries": sdk_max_retries,
-        "http_client": get_shared_async_client("openai-sdk"),
+        "http_client": get_shared_async_client(
+            "openai-sdk",
+            consumer="provider.openai.sdk",
+            configured_origin=configured_origin,
+            owner_exception=OwnerURLException(
+                consumer="provider.openai.sdk", origin=configured_origin
+            ),
+        ),
     }
     if base_url:
         kwargs["base_url"] = base_url

@@ -9,12 +9,10 @@ Docs: https://docs.exa.ai/reference/search
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 
+from .._http import post_json
 from ..registry import SearchResult
 
 
@@ -35,7 +33,7 @@ class ExaProvider:
         key = os.environ.get("EXA_API_KEY", "")
         if not key:
             raise RuntimeError("EXA_API_KEY not set")
-        payload = json.dumps({
+        payload = {
             "query": query,
             "numResults": max(1, min(int(num_results), 25)),
             # "auto" lets Exa decide between keyword and neural per query
@@ -43,24 +41,15 @@ class ExaProvider:
             "contents": {
                 "text": {"maxCharacters": 500, "includeHtmlTags": False},
             },
-        }).encode("utf-8")
-        req = urllib.request.Request(
+        }
+        data = post_json(
             API_URL,
-            data=payload,
+            body=payload,
             headers={
                 "Content-Type": "application/json",
                 "x-api-key": key,
-            },
+            }, timeout=TIMEOUT, provider_label="Exa",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"Exa HTTP {e.code}: {body}") from e
         results: list[SearchResult] = []
         for r in data.get("results", []):
             snippet = r.get("text") or r.get("summary") or ""

@@ -17,6 +17,8 @@ from openprogram.security.safe_http import (
     OutboundSecurityConfig,
     DecisionNetworkBackend,
     SafeAsyncClient,
+    configured_safe_async_client,
+    configured_safe_client,
     _AsyncResponseStream,
     _ResponseStream,
     safe_async_client,
@@ -528,6 +530,83 @@ def test_unknown_registry_key_is_rejected_by_both_factories():
         safe_client("missing.consumer")
     with pytest.raises(KeyError):
         safe_async_client("missing.consumer")
+
+
+def test_configured_helpers_do_not_authorize_localhost_from_url_alone(http_server):
+    url = f"http://127.0.0.1:{http_server.port}/resource"
+
+    with configured_safe_client("runtime.local_probe", url) as client:
+        with pytest.raises(URLPolicyError) as sync_error:
+            client.get(url)
+
+    async def exercise():
+        async with configured_safe_async_client("runtime.local_probe", url) as client:
+            with pytest.raises(URLPolicyError) as async_error:
+                await client.get(url)
+        return async_error.value
+
+    async_error = asyncio.run(exercise())
+    assert sync_error.value.reason == "NON_GLOBAL_ADDRESS"
+    assert async_error.reason == "NON_GLOBAL_ADDRESS"
+    assert http_server.accepted_targets == []
+
+
+def test_configured_helpers_accept_exact_explicit_owner_exception(http_server):
+    url = f"http://127.0.0.1:{http_server.port}/resource"
+    exception = OwnerURLException(
+        consumer="runtime.local_probe",
+        origin=f"http://127.0.0.1:{http_server.port}",
+    )
+
+    with configured_safe_client(
+        "runtime.local_probe", url, owner_exception=exception
+    ) as client:
+        sync_response = client.get(url)
+
+    async def exercise():
+        async with configured_safe_async_client(
+            "runtime.local_probe", url, owner_exception=exception
+        ) as client:
+            return await client.get(url)
+
+    async_response = asyncio.run(exercise())
+    assert sync_response.text == "ok"
+    assert async_response.text == "ok"
+
+
+@pytest.mark.parametrize(
+    "exception",
+    [
+        OwnerURLException(
+            consumer="provider.configured_api", origin="http://127.0.0.1:19001"
+        ),
+        OwnerURLException(
+            consumer="runtime.local_probe", origin="http://127.0.0.1:19002"
+        ),
+        OwnerURLException(
+            consumer="runtime.local_probe",
+            network=ipaddress.ip_network("127.0.0.0/8"),
+        ),
+    ],
+)
+def test_configured_helper_rejects_mismatched_owner_exception(exception):
+    with pytest.raises(URLPolicyError) as caught:
+        configured_safe_client(
+            "runtime.local_probe",
+            "http://127.0.0.1:19001/resource",
+            owner_exception=exception,
+        )
+
+    assert caught.value.reason == "OWNER_EXCEPTION_MISMATCH"
+
+
+def test_configured_helper_rejects_arbitrary_authorization_object():
+    with pytest.raises(TypeError):
+        configured_safe_client(
+            "runtime.local_probe",
+            "http://127.0.0.1:19001/resource",
+            owner_exception=object(),
+        )
 
 
 def test_sync_public_consumer_ignores_an_unrelated_configured_exception():

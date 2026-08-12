@@ -67,11 +67,19 @@ def _resolve_source_repo(source_repo: str) -> Optional[str]:
         "to git rev-parse --show-toplevel from the worker cwd.\n"
         "  branch_name: branch to create the worktree on. Defaults "
         "to op/wt/<slug>-<id6>. Must not already exist in the source "
-        "repo.\n"
+        "repo. Ignored when pr is set.\n"
         "  base_ref: starting ref (default HEAD). Use 'origin/main' "
-        "etc. to pin against a specific upstream.\n"
+        "etc. to pin against a specific upstream. Ignored when pr is "
+        "set.\n"
         "  label: short slug for the worktree directory name (1-3 "
-        "words). Helps when listing multiple worktrees in a session."
+        "words). Helps when listing multiple worktrees in a session.\n"
+        "  pr: open the worktree on a pull request's branch instead of "
+        "base_ref — accepts a PR number (123), '#123', or a GitHub PR "
+        "URL. Fetches the PR's head via `gh pr view` (same-repo PR: "
+        "direct branch fetch; fork PR: GitHub's pull/<n>/head ref) and "
+        "checks it out on branch op/wt/pr-<n>-<id6>. Requires `gh`, "
+        "authenticated (`gh auth login`). If a worktree already exists "
+        "for this PR, returns its path instead of creating a duplicate."
     ),
     toolset=["core"],
     requires_approval=True,
@@ -81,15 +89,19 @@ def worktree_create(
     branch_name: str = "",
     base_ref: str = "HEAD",
     label: str = "",
+    pr: str = "",
 ) -> str:
     """Create a worktree and bind it to the current session.
 
     Args:
         source_repo: Absolute path of the source git repo.
         branch_name: Branch to create on the worktree. Defaults to
-            ``op/wt/<slug>-<id6>``.
-        base_ref: Starting ref. Defaults to ``HEAD``.
+            ``op/wt/<slug>-<id6>``. Ignored when ``pr`` is set.
+        base_ref: Starting ref. Defaults to ``HEAD``. Ignored when
+            ``pr`` is set.
         label: Short slug used in the worktree directory name.
+        pr: PR number / ``#number`` / GitHub PR URL. Opens the
+            worktree on that PR's branch instead of ``base_ref``.
     """
     sid = _current_session_id()
     mgr = get_manager()
@@ -120,6 +132,7 @@ def worktree_create(
             base_ref=(base_ref or "HEAD").strip() or "HEAD",
             label=label.strip() or None,
             parent_session=sid,
+            pr=pr.strip() or None,
         )
     except WorktreeError as e:
         return f"[worktree_create error] {e}"
@@ -132,9 +145,16 @@ def worktree_create(
     # the dispatcher hook keeps it bound on subsequent turns.
     set_worktree(wt.worktree_path)
 
-    return (
+    msg = (
         f"[worktree_create] id={wt.id} path={wt.worktree_path} "
         f"branch={wt.branch_name} base={wt.base_ref}\n"
         f"Active for this session. bash / edit / write / read now "
         f"default cwd here."
     )
+    if wt.include_synced:
+        msg += f"\n.worktreeinclude: copied {len(wt.include_synced)} file(s): " \
+               f"{', '.join(wt.include_synced)}"
+    if wt.include_failed:
+        msg += f"\n.worktreeinclude: {len(wt.include_failed)} file(s) failed: " \
+               f"{'; '.join(wt.include_failed)}"
+    return msg

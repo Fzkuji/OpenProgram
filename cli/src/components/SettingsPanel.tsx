@@ -16,7 +16,15 @@ export interface SettingRow {
   set?: boolean;
   /** For read-only `status` rows: the slash command to run on enter. */
   action?: string;
+  minimum?: number | null;
+  effective?: unknown;
+  source?: string;
 }
+
+export const resourceSettingSuffix = (row: SettingRow): string =>
+  row.group === 'Agent resources' && row.source
+    ? `effective ${String(row.effective ?? 'unlimited')} · ${row.source}`
+    : '';
 
 /** A row that, instead of editing a value, launches an existing flow
  * (a dedicated picker or a login flow) by running a slash command. */
@@ -107,7 +115,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     // number: ignore an empty buffer (keep the old value). text: allow
     // empty so a field can be cleared (e.g. unpin the Meridian profile).
     const isNumber = curSetting?.widget === 'number';
-    if (v.length || !isNumber) onSet(editKey, v);
+    if (!v.length) onSet(editKey, null);
+    else if (!isNumber || (new RegExp(`^[${(curSetting?.minimum ?? 0) === 0 ? '0-9' : '1-9'}][0-9]*$`).test(v)
+      && Number(v) >= (curSetting?.minimum ?? 0))) onSet(editKey, v);
     setEditKey(null);
     setBuffer('');
   };
@@ -229,6 +239,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             );
           }
           const next = ln.row.apply === 'next_start';
+          const resourceSuffix = resourceSettingSuffix(ln.row);
           return (
             <Box key={ln.row.key}>
               <Text color={selected ? colors.primary : colors.border}>{selected ? '▌ ' : '  '}</Text>
@@ -241,6 +252,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 {renderValue(ln.row, selected)}
               </Box>
               {next ? <Text color={colors.muted}>· next start</Text> : null}
+              {resourceSuffix ? <Text color={colors.muted}>· {resourceSuffix}</Text> : null}
             </Box>
           );
         })}

@@ -12,9 +12,9 @@ const item = fs.readFileSync(
 
 for (const required of [
   "d.resource || cur[tid]?.resource || null",
-  "t.resource as Record",
+  "t.resource as TaskResourceView",
   "resourceForHead",
-  "if (!terminal) runningHeads.add(synth)",
+  "else if (!terminal)",
 ]) {
   if (!panel.includes(required)) throw new Error(`task resource wiring missing: ${required}`);
 }

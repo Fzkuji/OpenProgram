@@ -22,7 +22,12 @@ EXPECTED_CONSUMERS = {
     "channel.attachment.download",
     "channel.telegram.api",
     "channel.discord.api",
+    "channel.discord.gateway_sdk",
     "channel.slack.api",
+    "channel.slack.gateway_sdk",
+    "channel.slack.attachment",
+    "channel.slack.generated_asset.upload",
+    "channel.telegram.attachment",
     "channel.wechat.api",
     "channel.feishu.api",
     "channel.matrix.configured",
@@ -39,11 +44,13 @@ EXPECTED_CONSUMERS = {
     "provider.google.sdk",
     "provider.openai.sdk",
     "provider.anthropic.sdk",
+    "provider.amazon_bedrock.sdk",
     "mcp.configured.http",
     "mcp.configured.sse",
     "mcp.loopback.callback",
     "tts.fixed_api",
     "tts.configured_api",
+    "tts.edge_sdk",
     "webui.mcp.catalog",
     "webui.model_listing.fixed",
     "webui.model_listing.configured",
@@ -81,7 +88,14 @@ EXPECTED_FIXED_ORIGINS = {
     ),
     "channel.telegram.api": frozenset({"https://api.telegram.org"}),
     "channel.discord.api": frozenset({"https://discord.com"}),
+    "channel.discord.gateway_sdk": frozenset({"https://discord.com"}),
     "channel.slack.api": frozenset({"https://slack.com"}),
+    "channel.slack.gateway_sdk": frozenset({"https://slack.com"}),
+    "channel.slack.attachment": frozenset(
+        {"https://files.slack.com", "https://slack.com"}
+    ),
+    "channel.slack.generated_asset.upload": frozenset({"https://files.slack.com"}),
+    "channel.telegram.attachment": frozenset({"https://api.telegram.org"}),
     "channel.feishu.api": frozenset(
         {"https://open.feishu.cn", "https://open.larksuite.com"}
     ),
@@ -127,6 +141,12 @@ EXPECTED_FIXED_ORIGINS = {
             "https://console.anthropic.com",
             "https://github.com",
             "https://oauth2.googleapis.com",
+        }
+    ),
+    "provider.amazon_bedrock.sdk": frozenset(
+        {
+            "https://bedrock.us-east-1.amazonaws.com",
+            "https://bedrock-runtime.us-east-1.amazonaws.com",
         }
     ),
     "tts.fixed_api": frozenset({"https://api.elevenlabs.io", "https://api.openai.com"}),
@@ -220,9 +240,10 @@ def test_fixed_consumers_declare_only_audited_normalized_origins():
 )
 def test_each_audited_fixed_origin_is_accepted_by_policy(consumer, origin):
     spec = CONSUMER_REGISTRY[consumer]
+    method = "GET" if "GET" in spec.allowed_methods else min(spec.allowed_methods)
     decision = evaluate_url(
         consumer,
-        "GET",
+        method,
         f"{origin}/resource",
         trust_class=spec.trust_class,
         allowed_schemes=spec.allowed_schemes,
@@ -236,9 +257,23 @@ def test_each_audited_fixed_origin_is_accepted_by_policy(consumer, origin):
 
 def test_sdk_consumers_have_managed_dispositions():
     expected = {
+        "channel.discord.api",
+        "channel.discord.gateway_sdk",
+        "channel.feishu.api",
+        "channel.matrix.configured",
+        "channel.slack.api",
+        "channel.slack.gateway_sdk",
+        "channel.telegram.api",
+        "channel.wechat.api",
+        "mcp.configured.http",
+        "mcp.configured.sse",
         "provider.google.sdk",
         "provider.openai.sdk",
         "provider.anthropic.sdk",
+        "provider.amazon_bedrock.sdk",
+        "tts.configured_api",
+        "tts.edge_sdk",
+        "tts.fixed_api",
     }
     sdk_specs = {
         key: spec
@@ -256,3 +291,9 @@ def test_sdk_consumers_have_managed_dispositions():
         spec.sdk_disposition.value != "unmanaged_transport"
         for spec in sdk_specs.values()
     )
+
+
+def test_image_result_registry_rejects_explicit_non_image_mime() -> None:
+    spec = CONSUMER_REGISTRY["tool.image_result.download"]
+
+    assert spec.accepted_mime_prefixes == ("image/", "application/octet-stream")

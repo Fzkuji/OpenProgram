@@ -1,237 +1,220 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>出站 URL 与 SSRF 防护设计</title>
+<title>Runtime outbound URL and SSRF protection</title>
 <style>
   :root{--bg:#151611;--pan:#1d1f18;--pan-2:#23251d;--bd:#34372b;--tx:#d2cfbd;--dim:#9c9988;
     --ink:#f5f2e8;--acc:#e09348;--blue:#6a9cf7;--green:#6ab95f;--purple:#ad82ed;--red:#ec6374;--code:#10110d}
-  *{box-sizing:border-box}
-  html{scroll-behavior:smooth}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
   body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.78 -apple-system,BlinkMacSystemFont,
-    "PingFang SC","Segoe UI",sans-serif;padding:52px 30px 120px;text-rendering:optimizeLegibility}
-  .wrap{max-width:1240px;margin:auto}
-  h1,h2,h3{color:var(--ink);text-wrap:balance}
-  h1{font-family:"Avenir Next Condensed","Arial Narrow","PingFang SC",sans-serif;font-size:42px;
-    line-height:1.12;letter-spacing:.015em;margin:0 0 14px}
-  h2{font-size:23px;line-height:1.35;margin:50px 0 14px;scroll-margin-top:92px}
+    "Segoe UI",sans-serif;padding:52px 30px 120px;text-rendering:optimizeLegibility}
+  .wrap{max-width:1240px;margin:auto}h1,h2,h3{color:var(--ink);text-wrap:balance}
+  h1{font-family:"Avenir Next Condensed","Arial Narrow",sans-serif;font-size:42px;line-height:1.12;
+    letter-spacing:.015em;margin:0 0 14px}h2{font-size:23px;line-height:1.35;margin:50px 0 14px;scroll-margin-top:92px}
   h3{font-size:18px;line-height:1.45;margin:34px 0 11px;scroll-margin-top:92px}
-  p{margin:0 0 14px}.sub,.lead{color:var(--dim);max-width:76ch}.sub{font-size:17px;line-height:1.7}
+  p{margin:0 0 14px}.sub,.lead{color:var(--dim);max-width:80ch}.sub{font-size:17px;line-height:1.7}
   .eyebrow{color:var(--acc);font:700 12px/1.4 Menlo,monospace;letter-spacing:.16em;margin:0 0 13px}
   .toc{position:sticky;top:12px;z-index:20;display:flex;gap:8px;flex-wrap:wrap;margin:28px 0 42px;
     padding:10px;background:color-mix(in srgb,var(--bg) 88%,transparent);border:1px solid var(--bd);
     border-radius:14px;backdrop-filter:blur(14px)}
   .toc a{color:var(--tx);text-decoration:none;border:1px solid transparent;border-radius:8px;padding:7px 12px;
-    font-size:14px;font-weight:600;background:var(--pan)}
-  .toc a:hover{color:var(--ink);border-color:var(--acc)}
+    font-size:14px;font-weight:600;background:var(--pan)}.toc a:hover{color:var(--ink);border-color:var(--acc)}
   a:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
   .band{display:grid;grid-template-columns:150px minmax(0,1fr);gap:24px;align-items:start;border:1px solid var(--bd);
     border-top:4px solid var(--blue);border-radius:14px;padding:24px;background:var(--pan);margin:54px 0 18px;
     scroll-margin-top:92px}.band.ref{border-top-color:var(--purple)}.band.plan{border-top-color:var(--green)}
   .part{color:var(--blue);font:700 13px/1.4 Menlo,monospace;letter-spacing:.12em;text-transform:uppercase}
   .band.ref .part{color:var(--purple)}.band.plan .part{color:var(--green)}
-  .band b{display:block;color:var(--ink);font-size:21px;line-height:1.35;margin-bottom:7px}.band p{margin:0;max-width:80ch}
+  .band b{display:block;color:var(--ink);font-size:21px;line-height:1.35;margin-bottom:7px}.band p{margin:0;max-width:84ch}
   .num{display:inline-block;color:var(--dim);font:600 12px/1 Menlo,monospace;margin-right:10px;letter-spacing:.08em}
-  .note{border-left:4px solid var(--acc);padding:10px 0 10px 17px;color:var(--dim);max-width:88ch;margin:18px 0;
-    font-size:15.5px}.note.red{border-left-color:var(--red)}.note.green{border-left-color:var(--green)}
-  .note b{color:var(--ink)}
+  .note{border-left:4px solid var(--acc);padding:10px 0 10px 17px;color:var(--dim);max-width:92ch;margin:18px 0;
+    font-size:15.5px}.note.red{border-left-color:var(--red)}.note.green{border-left-color:var(--green)}.note b{color:var(--ink)}
   code{background:var(--code);color:#efaa67;padding:2px 6px;border-radius:5px;font:13.5px/1.5 Menlo,monospace;
-    overflow-wrap:anywhere}
-  .tbl{overflow:auto;border:1px solid var(--bd);border-radius:14px;background:var(--pan);margin:16px 0 25px;
-    scrollbar-color:var(--dim) var(--code)}
+    overflow-wrap:anywhere}.tbl{overflow:auto;border:1px solid var(--bd);border-radius:14px;background:var(--pan);
+    margin:16px 0 25px;scrollbar-color:var(--dim) var(--code)}
   table{width:100%;border-collapse:separate;border-spacing:0;min-width:940px;font-size:14.5px;line-height:1.62}
   th{text-align:left;color:#aaa795;background:var(--pan-2);font-size:12.5px;letter-spacing:.075em;padding:13px 16px;
-    border-bottom:1px solid var(--bd);white-space:nowrap}
-  td{padding:14px 16px;vertical-align:top;border-bottom:1px solid #2b2d24}
+    border-bottom:1px solid var(--bd);white-space:nowrap}td{padding:14px 16px;vertical-align:top;border-bottom:1px solid #2b2d24}
   th:first-child,td:first-child{position:sticky;left:0;z-index:2;background:var(--pan);box-shadow:1px 0 var(--bd)}
-  th:first-child{z-index:3;background:var(--pan-2)}
-  tr:last-child td{border-bottom:0}tr:hover td{background:#22241c}tr:hover td:first-child{background:#22241c}
-  td b{color:var(--ink)}.yes{color:#79c970}.no{color:#f07384}.partial{color:#efa457}
+  th:first-child{z-index:3;background:var(--pan-2)}tr:last-child td{border-bottom:0}tr:hover td{background:#22241c}
+  tr:hover td:first-child{background:#22241c}td b{color:var(--ink)}.yes{color:#79c970}.no{color:#f07384}.partial{color:#efa457}
   .flow{display:grid;grid-template-columns:1fr 44px 1fr 44px 1fr;gap:10px;align-items:stretch;margin:20px 0 28px}
   .box{border:1px solid var(--bd);border-radius:13px;background:var(--pan);padding:18px}.box h3{margin:0 0 8px}
   .arrow{display:grid;place-items:center;color:var(--acc);font-size:28px}.small{font-size:13.5px;color:var(--dim)}
-  ul{padding-left:24px;max-width:88ch}li{margin:9px 0}a{color:#8bb2fb;text-underline-offset:3px}
-  @media(max-width:820px){
-    body{padding:32px 16px 80px;font-size:16px}h1{font-size:34px}h2{font-size:21px;margin-top:42px}
+  ul{padding-left:24px;max-width:92ch}li{margin:9px 0}a{color:#8bb2fb;text-underline-offset:3px}
+  @media(max-width:820px){body{padding:32px 16px 80px;font-size:16px}h1{font-size:34px}h2{font-size:21px;margin-top:42px}
     .toc{position:static;margin-bottom:34px}.band{grid-template-columns:1fr;gap:8px;padding:19px;margin-top:42px}
-    .flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg);height:26px}table{min-width:820px}
-  }
+    .flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg);height:26px}table{min-width:820px}}
   @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 </style>
 </head>
 <body><main class="wrap">
 <p class="eyebrow">SECURITY DESIGN · RUNTIME NETWORK</p>
-<h1>出站 URL 与 SSRF 防护</h1>
-<p class="sub">设计快照：2026-08-11。本页只定义设计与验收口径，尚不表示功能已经实现。
-内容固定按 OpenProgram 当前状态、其他项目设计、OpenProgram 后续完整方案排列。</p>
+<h1>Runtime outbound URL and SSRF protection</h1>
+<p class="sub">Evidence snapshot: 2026-08-12, Runtime implementation through the Task 10 consolidated fix (Task 1–8 anchor <code>80c377fa</code>).
+This document is ordered as OpenProgram current state, other projects, then the OpenProgram future plan.
+Implemented behavior and future work are labeled separately.</p>
 
 <nav class="toc">
-  <a href="#current">01 当前状态</a><a href="#surfaces">02 出站面</a><a href="#references">03 参考项目</a>
-  <a href="#decision">04 采用与拒绝</a><a href="#target">05 目标设计</a><a href="#acceptance">06 完整验收</a>
+  <a href="#current">01 Current state</a><a href="#surfaces">02 Boundaries</a>
+  <a href="#references">03 Other projects</a><a href="#decision">04 Decisions</a>
+  <a href="#implementation">05 Evidence</a><a href="#future">06 Future plan</a>
 </nav>
 
-<section class="band" id="current"><span class="part">Part I · 现状</span><div><b>OpenProgram 当前状态</b>
-<p>当前有入站 Web 身份和 Origin/Host 校验，也有默认断网的本地命令沙箱；但 Runtime 自己发起的 HTTP 请求没有统一目标校验。
-因此 Origin 校验不能作为 SSRF 证据，功能矩阵中的该项在实现前应为未确认，而不是部分确认。</p></div></section>
+<section class="band" id="current"><span class="part">Part I · Current</span><div><b>OpenProgram current state</b>
+<p>Runtime-owned HTTP requests use a registry-keyed URL policy and managed transport. The implementation validates
+all DNS answers, dials only approved peers, handles redirects explicitly, confines credentials to their declared
+origin, bounds response resources, and fails static verification for unclassified consumers or active unmanaged SDK transports.</p></div></section>
 
-<h2><span class="num">01</span>已经存在的边界</h2>
+<h2><span class="num">01</span>Implemented boundary</h2>
 <div class="tbl"><table>
-<tr><th>现有机制</th><th>保护方向</th><th>能够证明什么</th><th>不能证明什么</th></tr>
-<tr><td><code>backend_endpoint.py</code>、Web owner auth、Origin/Host allowlist</td><td>浏览器或客户端到 Web 服务的入站请求</td><td class="yes">阻止未授权来源调用本地控制面</td><td class="no">不检查 OpenProgram 将要连接的出站地址</td></tr>
-<tr><td><code>sandbox/__init__.py</code> 的网络限制</td><td>受管 shell、<code>execute_code</code> 等子进程</td><td class="yes">默认 <code>workspace-write</code> 下阻止子进程联网</td><td class="partial">不覆盖宿主 Python 进程内的 provider、MCP、附件和目录下载</td></tr>
-<tr><td><code>providers/utils/http_client.py</code></td><td>部分 provider HTTP 客户端</td><td class="yes">统一 timeout、keepalive、IPv4 和 proxy</td><td class="no">不校验 scheme、目标 IP、重定向或实际连接地址；其他模块也未统一复用</td></tr>
-<tr><td>下载大小限制</td><td>部分附件和媒体响应体</td><td class="yes">限制磁盘与内存消耗</td><td class="no">目标连接建立前不能阻止私网访问</td></tr>
+<tr><th>Component</th><th>Implemented responsibility</th><th>Explicit non-responsibility</th></tr>
+<tr><td><code>openprogram/security/url_policy.py</code></td><td>URL and origin normalization; scheme, userinfo, host, and port validation; full A/AAAA classification; exact owner exceptions; stable sanitized reason codes</td><td>Does not send network requests or infer a caller's trust class</td></tr>
+<tr><td><code>openprogram/security/safe_http.py</code></td><td>Immutable 42-consumer registry; sync/async peer-constrained transports; Host/SNI preservation; manual redirects; credential, header, MIME, decoded-body, encoding, timeout, proxy, and atomic-download enforcement</td><td>Does not accept caller-created policy objects or expose <code>verify=False</code></td></tr>
+<tr><td>Consumer adapters</td><td>Select one immutable registry key and, for configured services or callbacks, supply the exact owner-configured origin</td><td>May not implement a second private-address classifier or retry through a raw client</td></tr>
+<tr><td><code>runtime_http_audit.py</code>, <code>doctor</code>, and <code>scripts/check_runtime_http.py</code></td><td>Bounded sanitized denial state, exact owner exception/proxy reporting, AST inventory, SDK disposition verification, and stale exclusion detection</td><td>Do not display userinfo, query, fragment, credentials, peer response bodies, or token-bearing paths</td></tr>
 </table></div>
 
-<h2 id="surfaces"><span class="num">02</span>当前出站面与信任来源</h2>
-<p class="lead">SSRF 策略不能简单包住所有 HTTP 请求。OpenProgram 同时需要访问公网内容、用户明确配置的 localhost 服务和固定 loopback 回调；三类目标必须使用不同规则。</p>
+<h2 id="surfaces"><span class="num">02</span>Runtime consumers and separate boundaries</h2>
 <div class="tbl"><table>
-<tr><th>出站面</th><th>URL 来源</th><th>当前调用方式</th><th>目标策略</th></tr>
-<tr><td><code>web_fetch</code></td><td>模型或用户直接提供</td><td><code>urllib.request.urlopen</code>；有 scheme、timeout 和大小限制，但自动重定向不逐跳检查</td><td><b>非可信 URL</b>：只允许公网，连接时约束地址并逐跳校验</td></tr>
-<tr><td>渠道附件、远端媒体</td><td>远端消息或渠道 API 返回值</td><td><code>requests</code>，允许服务端重定向</td><td><b>非可信 URL</b>：只允许公网，逐跳校验并限制响应体</td></tr>
-<tr><td>skills discovery、plugin marketplace、MCP catalog</td><td>owner 登记入口，后续链接和重定向由远端内容决定</td><td>多个独立 <code>httpx.AsyncClient</code></td><td><b>混合来源</b>：首个 origin 受配置约束，派生 URL 仍按非可信规则处理</td></tr>
-<tr><td>provider、remote MCP、渠道和 TTS API</td><td>owner 配置的 service endpoint</td><td>SDK、<code>httpx</code>、<code>requests</code></td><td><b>受信服务</b>：允许显式私网地址；携带凭据时禁止跨 origin 重定向</td></tr>
-<tr><td>MCP OAuth redirect</td><td>Runtime 生成</td><td>固定 loopback listener</td><td><b>内部回调</b>：只允许精确 loopback host 与已分配端口</td></tr>
-<tr><td>Playwright、Electron WebTab、<code>agent_browser</code></td><td>模型、用户、网页脚本或 CDP URL</td><td>多个浏览器控制后端，不经过统一 Python client；普通导航没有目标策略</td><td>归入“浏览器控制”条目单独验收；不能用 Runtime fetch 的完成状态代替</td></tr>
-<tr><td>上游返回的 upload URL、generated asset</td><td>已连接服务的响应内容</td><td><code>requests</code> 或 <code>urllib</code> 二次获取</td><td><b>派生非可信 URL</b>：固定服务 origin 或重新执行公网策略，不继承原请求凭据</td></tr>
-<tr><td>shell、插件代码、外部安装器</td><td>任意代码</td><td>子进程或宿主进程内执行</td><td>由 sandbox/插件信任边界约束；URL 字符串校验不构成代码执行的网络边界</td></tr>
+<tr><th>Boundary</th><th>Current treatment</th><th>Status in this feature</th></tr>
+<tr><td>Arbitrary and derived Runtime URLs</td><td><code>web_fetch</code>, attachments, generated assets, image result downloads, catalogs, marketplaces, and updater metadata use managed clients with public or exact-service policy</td><td class="yes">Included</td></tr>
+<tr><td>Fixed/configured APIs</td><td>Web search, image APIs, channel REST, TTS, provider listing/probes/OAuth, Web model listing, MCP HTTP/SSE, and local probes use fixed or owner-configured exact origins</td><td class="yes">Included</td></tr>
+<tr><td>Third-party SDKs</td><td>Provider and MCP clients receive injected managed transports; exact-origin REST adapters remain managed; uninjectable Bedrock, Slack/Discord gateway, and edge-tts SDK paths fail closed</td><td class="yes">Included and classified</td></tr>
+<tr><td>Browser navigation, popup, Service Worker, and page subresources</td><td>Governed by the browser-control design and any owner egress isolation</td><td class="no">Excluded</td></tr>
+<tr><td>Sandboxed arbitrary code, plugin code, external provider CLIs, and package managers</td><td>Governed by sandbox, plugin trust, child-process, and installation boundaries</td><td class="no">Excluded</td></tr>
+<tr><td>Owner control-plane liveness probes</td><td>Narrow loopback-only exclusions are inventoried with exact call kind, owner, reason, and count</td><td class="partial">Classified, not claimed as Runtime URL fetch</td></tr>
+</table></div>
+<div class="note"><b>Feature-matrix scope and status.</b> The implemented controls cover only Runtime-owned HTTP fetches.
+The matrix records <code>◐</code> for this bounded feature after the integrated repository gate passed. Browsers, arbitrary code,
+plugins, external CLIs, and package-manager child processes remain separate boundaries.</div>
+
+<section class="band ref" id="references"><span class="part">Part II · References</span><div><b>How other projects design this boundary</b>
+<p>The comparison preserves all twelve external feature-matrix columns plus OWASP. Permission prompts, hostname rules,
+application URL validation, policy proxies, and operating-system network sandboxes remain distinct controls; upstream wrappers
+and protocol libraries are not counted again as independent implementations.</p></div></section>
+
+<h2><span class="num">03</span>Reference mechanisms</h2>
+<div class="note"><b>Evidence boundary.</b> The matrix uses fixed snapshots. Current official documentation is linked directly
+for design context, without retroactively changing the fixed-version matrix scores. Capabilities not confirmed in the audited
+snapshot are described as unconfirmed, not as universally absent.</div>
+<div class="tbl"><table>
+<tr><th>Project</th><th>Application URL-fetch evidence</th><th>Network or permission boundary</th><th>Adopted, modified, or rejected</th></tr>
+<tr><td><b>Hermes</b></td><td>Shared <code>url_safety</code> covers web, browser, vision, and gateway media. DNS failure is closed; loopback, RFC1918, link-local, CGNAT, metadata, reserved, multicast, and unspecified results are rejected; redirects are checked hop by hop; URLs are sanitized and media is streamed with limits.</td><td>A process-wide <code>allow_private_urls</code> switch relaxes multiple entries together. Application checks still do not replace OS network isolation.</td><td>Adopted shared fail-closed validation, the full address set, redirect checks, sanitization, and limits. Modified the global switch into exact consumer-scoped service-origin exceptions.</td></tr>
+<tr><td><b>OpenClaw</b></td><td>Private, internal, and special-use targets are denied by default, with exact or wildcard hostname exceptions and checks before navigation, interaction-generated loads, and final URLs. Its documentation identifies speculative navigation and browser subresource risk.</td><td>Official documentation states that request interception is not a network firewall: redirects, popups, Service Workers, and background resources can still require egress isolation or a policy proxy.</td><td>Adopted strict defaults and explicit exceptions. Modified browser interception into a separate acceptance boundary; it is not Runtime-fetch evidence.</td></tr>
+<tr><td><b>Claude Code</b></td><td><code>WebFetch(domain:...)</code> supports allow/deny. Before a request, the hostname is sent to the Anthropic safety blocklist; the result is cached for exactly five minutes, and the owner may disable the preflight.</td><td>The Bash sandbox uses a Seatbelt or bubblewrap HTTP/SOCKS proxy that child processes inherit. The proxy trusts the client-provided hostname and does not inspect TLS content, so broad domains and domain fronting remain risks.</td><td>Adopted layered tool authorization and child-process egress policy. Rejected hostname permission as DNS/IP/connect-time SSRF evidence.</td></tr>
+<tr><td><b>Codex</b></td><td>The audited mainline does not substitute one WebFetch string check for a network boundary.</td><td><code>codex-network-proxy</code> supplies HTTP/SOCKS5 proxying, exact or restricted wildcard domains, private-resolution rejection, limited read-only methods, MITM header hooks, Unix-socket control, and structured audit; the OS sandbox constrains loopback bypass paths.</td><td>Adopted structured deny reasons, audit, and managed-policy concepts. Retained consumer-aware Runtime safe clients rather than relying only on a child-process proxy.</td></tr>
+<tr><td><b>CodeBuddy 2.109.3</b></td><td><code>WebFetch</code> applies Security Center domain policy and rejects IP literals, <code>localhost</code>, and selected private ranges. WeCom media uses an official CDN allowlist with redirects disabled.</td><td>Sandbox <code>allowedDomains</code> intersects with WebFetch permission. The audited bundle's general WebFetch path checks literal hosts; the snapshot does not confirm full hostname A/AAAA validation, peer binding, or hop-by-hop redirect enforcement.</td><td>Adopted fixed channel-service allowlists and the intersection of permission and network policy. Rejected literal-IP-only protection for general fetches.</td></tr>
+<tr><td><b>Gemini CLI</b></td><td>Official tool documentation warns that <code>web_fetch</code> can reach localhost and private networks; Plan Mode can require confirmation. The local 0.35.3 core contains IP classification and DNS utilities, but the warning shows they do not form a general WebFetch private-target boundary.</td><td>User confirmation is a permission decision and does not constrain the connected peer.</td><td>Adopted explicit risk documentation. Rejected confirmation as a substitute for deterministic target enforcement.</td></tr>
+<tr><td><b>OpenCode</b></td><td><code>webfetch</code> permissions use the complete requested URL and support allow, ask, or deny. Current official permissions documentation does not establish private-IP classification, full DNS results, hop-by-hop redirects, or peer binding.</td><td><code>shell</code> uses the host user's network privileges; official documentation calls string rules best effort, not network isolation.</td><td>Adopted uniform resource-permission semantics. A permitted URL must still pass independent transport policy.</td></tr>
+<tr><td><b>pi-mono</b></td><td>The fixed snapshot does not confirm a built-in arbitrary-URL fetch in the core product; network capability primarily comes from shell commands, installers, or user extensions.</td><td>The core snapshot does not confirm an OS egress policy. Third-party <code>pi-sandbox</code> is not counted as built-in pi-mono behavior.</td><td>Rejected it as a Runtime SSRF algorithm reference. Its extension boundary supports keeping third-party code outside safe-client completion.</td></tr>
+<tr><td><b>pi-ai</b></td><td>This is protocol reference source, not a runnable product, and has no session or Runtime URL consumer.</td><td>Not applicable.</td><td>Excluded from product-level SSRF conclusions while retaining its matrix column to preserve the audited unit distinction.</td></tr>
+<tr><td><b>weclaw</b></td><td>The fixed snapshot is a messaging bridge to external ACP/CLI agents and does not confirm an independent general URL fetch.</td><td>It primarily inherits the launched CLI's tools and network privileges; the delegated product's controls are not counted again for weclaw.</td><td>Retained channel-media and external-process launch as its relevant boundaries; rejected it as a general safe-HTTP reference.</td></tr>
+<tr><td><b>cc-internal / cx-internal / gm-internal</b></td><td><code>cc-internal</code> and <code>cx-internal</code> wrap upstream launchers; <code>gm-internal</code> substantially reuses Gemini CLI. The audited packages do not confirm independent strengthening of general URL-fetch policy.</td><td>They inherit most Claude Code, Codex, or Gemini CLI permission and network behavior. Added authentication or endpoints do not themselves create an SSRF boundary.</td><td>Audited only their additional endpoints, credential forwarding, and configuration differences; rejected double-counting them as three independent security designs.</td></tr>
+<tr><td><b>OWASP</b></td><td>Separates known-service allowlisting from arbitrary-public-target validation, restricts protocols, validates every A/AAAA result, and prefers allowlists for trusted services.</td><td>A single DNS preflight still has DNS pinning and time-of-check/time-of-use risk; network controls are also recommended.</td><td>Adopted separate trust classes and connect-time peer constraints. Rejected one preflight DNS result as the only boundary.</td></tr>
+</table></div>
+<p class="small">Primary sources:
+<a href="https://github.com/NousResearch/hermes-agent/blob/main/tools/url_safety.py">Hermes url_safety.py</a>,
+<a href="https://hermes-agent.nousresearch.com/docs/user-guide/security/">Hermes Security</a>,
+<a href="https://docs.openclaw.ai/gateway/security">OpenClaw Security</a>,
+<a href="https://code.claude.com/docs/en/sandboxing">Claude Code Sandboxing</a>,
+<a href="https://code.claude.com/docs/en/data-usage">Claude Code WebFetch safety check</a>,
+<a href="https://github.com/openai/codex/blob/main/codex-rs/network-proxy/README.md">Codex network proxy</a>,
+<a href="https://opencode.ai/v2/docs/permissions">OpenCode Permissions</a>,
+<a href="https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/tools.md">Gemini CLI tools</a>,
+and
+<a href="https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html">OWASP SSRF Prevention</a>.</p>
+<p class="small">Versioned local snapshot evidence: <code>@tencent-ai/codebuddy-code@2.109.3 dist/codebuddy.js,
+CHANGELOG.md, dist/web-ui/docs/cn/cli/permissions.md</code>; <code>@google/gemini-cli@0.35.3 core/dist/src/utils/fetch.js</code>;
+<code>references/pi-mono@3eb002766fff</code>; <code>references/weclaw@10711d0c6b7e</code>; and <code>references/pi-ai</code>.</p>
+
+<h2 id="decision"><span class="num">04</span>Adopted, modified, and rejected choices</h2>
+<div class="tbl"><table>
+<tr><th>Decision</th><th>Mechanism</th><th>Reason</th></tr>
+<tr><td class="yes">Adopted</td><td>One pure URL/IP policy; all DNS answers must pass; DNS failure is closed; every redirect is reevaluated; errors are origin-only; decoded bodies are bounded</td><td>These checks cover the Runtime's target, redirect, credential, and resource boundaries consistently.</td></tr>
+<tr><td class="yes">Adopted</td><td>Distinct untrusted-public, fixed-public-service, configured-service, and loopback-callback trust classes</td><td>Owner-configured localhost/private services remain usable without granting arbitrary public consumers private-network access.</td></tr>
+<tr><td class="yes">Adopted</td><td>Claude Code and CodeBuddy permission/network layering, Codex structured deny reasons, and CodeBuddy fixed channel-media allowlists</td><td>Permission answers who may request a resource; transport policy answers which peer receives the connection and credentials.</td></tr>
+<tr><td class="partial">Modified</td><td>Hermes process-wide <code>allow_private_urls</code></td><td>Replaced by an exact consumer plus normalized origin or canonical private/local CIDR; metadata and link-local targets remain non-exceptable.</td></tr>
+<tr><td class="partial">Modified</td><td>OpenClaw browser interception and Codex whole-process egress proxy</td><td>Browser controls remain a separate gate; a policy proxy is optional, owner-declared, separately peer constrained, visible in doctor output, and has no direct fallback.</td></tr>
+<tr><td class="no">Rejected</td><td>URL-string-only checks, one DNS preflight, implicit redirects, environment proxy inheritance, TLS verification disablement, or raw fallback</td><td>Each leaves a target, rebinding, credential, or bypass path.</td></tr>
+<tr><td class="no">Rejected</td><td>User confirmation or hostname allow/deny as target enforcement</td><td>Neither validates every resolved address nor constrains the connected peer.</td></tr>
+<tr><td class="no">Rejected</td><td>Applying a public-only rule to every HTTP client</td><td>This would break explicitly configured local model endpoints, MCP servers, and intranet services.</td></tr>
+<tr><td class="no">Rejected</td><td>Counting Origin/Host, CORS, owner authentication, browser checks, or sandbox networking as Runtime SSRF completion</td><td>Those controls protect different directions or execution boundaries.</td></tr>
 </table></div>
 
-<div class="note red"><b>当前判定：</b>Runtime-owned 非可信 URL 获取没有统一防护。功能矩阵中的该行改名为
-“Runtime URL 获取 SSRF 防护”并记为未确认；浏览器导航、CDP 和页面派生请求随现有“浏览器控制”条目单独设计；模型命令的网络隔离继续归入“操作系统级沙箱”。</div>
+<section class="band plan" id="implementation"><span class="part">Part III · Plan</span><div><b>OpenProgram plan status and future work</b>
+<p>The Runtime URL-fetch implementation is complete through Task 8. This section records that implementation evidence first,
+then lists separate future boundaries. The matrix remains <code>◐</code> because those separate boundaries are excluded.</p></div></section>
 
-<section class="band ref" id="references"><span class="part">Part II · 对比</span><div><b>其他项目怎么设计</b>
-<p>逐项核对功能矩阵中的 12 个外部参考列，并以 OWASP 作为实现无关的安全基线。比较不只记录“有没有”：Runtime URL 校验、工具权限、进程网络代理和浏览器请求策略属于不同边界；上游包装器与协议库不重复计为独立实现。</p></div></section>
-
-<h2><span class="num">03</span>参考机制比较</h2>
-<div class="note"><b>证据边界：</b>功能矩阵是固定版本快照；本节同时引用 2026-08-11 可访问的当前官方文档，用于后续设计，不据此回改旧版本分数。源码或文档没有确认的能力写成“本快照未确认”，不写成绝对不存在。</div>
-<div class="tbl"><table>
-<tr><th>对象</th><th>应用层 URL 获取</th><th>网络层或权限层</th><th>结论与用途</th></tr>
-<tr><td><b>Hermes</b></td><td>共享 <code>url_safety</code>；覆盖 web、browser、vision、gateway media；DNS 失败默认拒绝；阻止 loopback、RFC1918、link-local、CGNAT、metadata、reserved、multicast 和 unspecified；逐跳检查重定向；日志 URL 去凭据；媒体流式限额</td><td>提供进程级 <code>allow_private_urls</code> 开关，开启后多个入口同时放宽；应用内检查仍不能代替 OS 网络隔离</td><td>采用共享校验、fail-closed、地址全集、逐跳检查、脱敏和大小限制；把全局开关改为按 service origin 的精确例外</td></tr>
-<tr><td><b>OpenClaw</b></td><td>private/internal/special-use 默认拒绝；hostname 精确或通配例外；导航前、交互产生的加载和最终 URL 多阶段检查；明确记录 speculative navigation 与 browser 子资源风险</td><td>官方文档明确请求拦截不是网络防火墙，redirect、popup、Service Worker 和后台资源仍可能绕过；完整预防依赖 egress isolation 或策略代理</td><td>采用严格默认和显式例外；保留“应用层不等于网络边界”的声明；浏览器能力不并入 Runtime fetch 的完成结论</td></tr>
-<tr><td><b>Claude Code</b></td><td><code>WebFetch(domain:...)</code> 支持 allow/deny；请求前把 hostname 送往 Anthropic safety blocklist，结果缓存五分钟，也允许 owner 关闭该 preflight</td><td>Bash sandbox 用 Seatbelt/bubblewrap 加外部 HTTP/SOCKS proxy 限制域名，子进程继承；官方同时说明它只按客户端提供的 hostname 判定、不检查 TLS 内容，宽泛域名和 domain fronting 仍有风险</td><td>采用“工具入口权限 + 子进程 egress”分层和 managed-only 配置；不把 hostname blocklist 当成 DNS/IP/connect-time SSRF 完成条件</td></tr>
-<tr><td><b>Codex</b></td><td>当前主线没有用一个 WebFetch 字符串检查代替网络边界</td><td><code>codex-network-proxy</code> 提供 HTTP 与 SOCKS5 代理、精确/受限通配域名、默认拒绝 local/private 解析结果、limited 只读方法、MITM header hook、Unix socket 控制和结构化审计；OS sandbox 处理绕过代理的 loopback 客户端</td><td>采用网络代理的 deny reason、审计和 managed policy 思路；Runtime 自身仍需要 consumer-aware 的 safe client，不能只依赖子进程代理</td></tr>
-<tr><td><b>CodeBuddy 2.109.3</b></td><td><code>WebFetch</code> 先执行 Security Center domain policy，并拒绝 IP literal、<code>localhost</code> 和部分私网段；企微媒体下载使用官方 CDN allowlist 并禁用 redirect</td><td>沙箱 <code>allowedDomains</code> 与 WebFetch permission 取交集；但当前 bundle 的通用 WebFetch 私网判断只检查 URL 中的 literal host，未确认对 hostname 做 A/AAAA 全结果校验、连接约束或逐跳 redirect 校验</td><td>采用“固定渠道资源使用服务域名 allowlist”及权限与网络策略取交集；不采用仅 literal-IP 的通用判断</td></tr>
-<tr><td><b>Gemini CLI</b></td><td>官方工具文档明确警告 <code>web_fetch</code> 可以访问 localhost 和私网；Plan Mode 要求确认。本机 0.35.3 core 有 IP 分类与 DNS 工具，但该官方警告说明它们没有构成通用 WebFetch 的私网拒绝边界</td><td>用户确认是权限决策，不约束实际连接目标</td><td>采用清晰的风险说明；拒绝用确认步骤替代确定性 SSRF 策略</td></tr>
-<tr><td><b>OpenCode</b></td><td><code>webfetch</code> 权限资源是完整 requested URL，可配置 allow/ask/deny；当前官方权限文档未确认私网 IP 分类、DNS 全结果、逐跳 redirect 或连接约束</td><td><code>shell</code> 使用宿主用户的网络权限，官方文档明确其字符串规则只是 best-effort，不是网络隔离</td><td>采用统一资源权限语义；URL 获批后仍必须经过独立 transport policy</td></tr>
-<tr><td><b>pi-mono</b></td><td>固定快照未确认核心产品内置任意 URL fetch；网络能力主要来自 shell、安装器或用户扩展</td><td>核心快照未确认 OS egress policy；第三方 <code>pi-sandbox</code> 不能计为 pi-mono 自带能力</td><td>不适合作为 Runtime SSRF 算法参考；其扩展边界提醒我们不能把第三方代码网络访问计入 safe client 完成度</td></tr>
-<tr><td><b>pi-ai</b></td><td>协议参考源码，不是可运行产品，也没有会话或 Runtime URL consumer</td><td>不适用</td><td>排除出产品级 SSRF 比较，保留在矩阵中仅说明审计单位差异</td></tr>
-<tr><td><b>weclaw</b></td><td>自身是消息到外部 ACP/CLI agent 的桥接层，本快照未确认独立通用 URL fetch</td><td>主要继承被启动 CLI 的工具与网络权限；不能把被代理产品的能力重复归给 weclaw</td><td>验证重点应是渠道媒体和外部进程启动边界，不从其提取通用 safe HTTP 设计</td></tr>
-<tr><td><b>cc内 / cx内 / gm内</b></td><td><code>cc内</code> 与 <code>cx内</code> 是上游启动器包装；<code>gm内</code> 大量复用 Gemini CLI。当前安装包未确认独立加强通用 URL 获取策略</td><td>分别继承 Claude Code、Codex、Gemini CLI 的大部分权限与网络行为；包装器新增认证或 endpoint 不等于新增 SSRF 边界</td><td>只审计其新增 endpoint、凭据转发和配置差异，不作为三个独立安全样本重复计数</td></tr>
-<tr><td><b>OWASP</b></td><td>区分“只访问已知服务”和“允许任意公网目标”；限制协议；校验所有 A/AAAA 结果；受信服务优先 allowlist；建议网络层共同限制</td><td>单次 DNS 预检本身仍存在 DNS pinning/TOCTOU 风险</td><td>采用两类策略模型；在连接阶段再次约束实际地址，不把预检结果作为唯一边界</td></tr>
-</table></div>
-<p class="small">来源：
-<a href="https://github.com/NousResearch/hermes-agent/blob/main/tools/url_safety.py">Hermes url_safety.py</a>、
-<a href="https://hermes-agent.nousresearch.com/docs/user-guide/security/">Hermes Security</a>、
-<a href="https://docs.openclaw.ai/gateway/security">OpenClaw Security</a>、
-<a href="https://code.claude.com/docs/en/sandboxing">Claude Code Sandboxing</a>、
-<a href="https://code.claude.com/docs/en/data-usage">Claude Code WebFetch safety check</a>、
-<a href="https://github.com/openai/codex/blob/main/codex-rs/network-proxy/README.md">Codex network proxy</a>、
-<a href="https://opencode.ai/v2/docs/permissions">OpenCode Permissions</a>、
-<a href="https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/tools.md">Gemini CLI tools</a>、
-<a href="https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html">OWASP SSRF Prevention</a>。</p>
-<p class="small">本地快照证据：<code>@tencent-ai/codebuddy-code@2.109.3 dist/codebuddy.js、CHANGELOG.md、dist/web-ui/docs/cn/cli/permissions.md</code>；<code>@google/gemini-cli@0.35.3 core/dist/src/utils/fetch.js</code>；<code>references/pi-mono@3eb002766fff</code>；<code>references/weclaw@10711d0c6b7e</code>；<code>references/pi-ai</code>。</p>
-
-<h2 id="decision"><span class="num">04</span>采用、修改与拒绝</h2>
-<div class="tbl"><table>
-<tr><th>结论</th><th>机制</th><th>原因</th></tr>
-<tr><td class="yes">采用</td><td>一个纯 URL/IP policy 模块；所有 A/AAAA 结果必须通过；DNS 失败即拒绝；重定向逐跳验证；流式大小上限；日志脱敏</td><td>覆盖公共绕过方式，并使所有 Runtime fetch 使用相同判定</td></tr>
-<tr><td class="yes">采用</td><td>受信 service origin 与任意公网 URL 使用不同策略</td><td>保留 localhost provider、内网 MCP 和企业代理等明确配置能力，同时不允许模型自行扩大信任范围</td></tr>
-<tr><td class="yes">采用</td><td>Claude Code / CodeBuddy 的工具权限与网络限制分层，Codex 的结构化 deny reason 与受管策略</td><td>权限回答“谁能请求什么”，transport 回答“实际连接到哪里”；两者必须分别记录和验收</td></tr>
-<tr><td class="yes">采用</td><td>CodeBuddy 对固定渠道媒体使用官方服务域名 allowlist 并禁用 redirect</td><td>固定服务资源不需要接受任意公网 URL；比通用公网规则更窄</td></tr>
-<tr><td class="partial">修改</td><td>Hermes 的全局 <code>allow_private_urls</code></td><td>改为 owner 配置中的精确 scheme/host/port 或 CIDR 例外；例外只作用于指定 consumer，不全局放宽</td></tr>
-<tr><td class="partial">修改</td><td>OpenClaw 的 browser 请求拦截</td><td>浏览器单独验收；Runtime HTTP 完成不能覆盖浏览器的 popup、Service Worker 和后台资源</td></tr>
-<tr><td class="partial">修改</td><td>Codex 的全进程 egress proxy</td><td>作为 sandbox、插件和 shell 的后续网络层；本功能先保证 Runtime-owned HTTP 全部经 safe client，不把代理部署设为单机基础功能的前置条件</td></tr>
-<tr><td class="no">拒绝</td><td>只检查 URL 字符串或只在请求前调用一次 DNS</td><td>无法处理重定向和 DNS rebinding，不能作为完整状态依据</td></tr>
-<tr><td class="no">拒绝</td><td>只要求用户确认，或只配置 hostname allow/deny</td><td>确认与域名权限不校验实际连接 IP；不能替代 DNS 全结果、连接约束和逐跳 redirect</td></tr>
-<tr><td class="no">拒绝</td><td>把 Origin/Host、CORS 或入站 owner auth 计入 SSRF 完成度</td><td>保护方向不同</td></tr>
-<tr><td class="no">拒绝</td><td>把所有 HTTP 客户端强行套用公网-only 规则</td><td>会破坏用户明确配置的本地模型、MCP 和内网服务</td></tr>
-</table></div>
-
-<section class="band plan" id="target"><span class="part">Part III · 计划</span><div><b>OpenProgram 后续完整方案</b>
-<p>目标不是增加一个 URL 检查函数，而是让每个 Runtime-owned 出站入口带上来源类型，经统一策略决定目标、重定向、凭据和响应限制；无法进入统一边界的入口不能计为完成。</p></div></section>
-
-<h2><span class="num">05</span>目标数据流</h2>
+<h2><span class="num">05</span>Completed plan: implementation evidence</h2>
 <div class="flow">
-  <div class="box"><h3>调用者声明来源</h3><div class="small"><code>untrusted_public</code><br><code>fixed_public_service</code><br><code>configured_service</code><br><code>loopback_callback</code></div></div>
+  <div class="box"><h3>Registry-keyed caller</h3><div class="small">42 immutable consumers<br>four trust classes<br>exact configured or callback origin</div></div>
   <div class="arrow">›</div>
-  <div class="box"><h3>统一 policy</h3><div class="small">规范化 URL、限制 scheme、解析全部地址、检查例外、生成不含秘密的审计结果</div></div>
+  <div class="box"><h3>Pure policy decision</h3><div class="small">normalized URL and origin<br>one complete DNS answer set<br>exact exception and reason code</div></div>
   <div class="arrow">›</div>
-  <div class="box"><h3>受管 transport</h3><div class="small">连接时约束已验证地址；逐跳处理 redirect；限制响应头、正文和超时；记录 reason code</div></div>
+  <div class="box"><h3>Managed transport</h3><div class="small">approved IP peer<br>original Host, SNI, and certificate<br>manual redirect and bounded response</div></div>
 </div>
 
-<h3>05.1 模块边界</h3>
-<div class="tbl"><table>
-<tr><th>模块</th><th>责任</th><th>不负责</th></tr>
-<tr><td><code>openprogram/security/url_policy.py</code></td><td>URL 规范化、scheme/userinfo/host/port 校验；<code>ipaddress</code> 分类；A/AAAA 全结果判断；scope 精确例外；稳定 reason code；安全日志表示</td><td>不发送网络请求，不读取调用者业务配置</td></tr>
-<tr><td><code>openprogram/security/safe_http.py</code></td><td>同步和异步受管 client；手动 redirect；连接阶段地址约束；跨 origin 凭据剥离/拒绝；流式读取上限；timeout</td><td>不决定某个 URL 属于哪个信任来源</td></tr>
-<tr><td>各 consumer adapter</td><td>把附件、catalog、marketplace、service endpoint 标成正确来源；提供响应体上限和允许的 content type</td><td>不得自己实现另一套私网判断</td></tr>
-<tr><td><code>doctor</code> 与审计日志</td><td>列出未迁移 consumer、危险例外、代理委托和最近拒绝原因；URL 只保留 scheme/host/port 与截断路径</td><td>不显示 userinfo、query、fragment、authorization header 或 token path</td></tr>
-</table></div>
-
-<h3>05.2 四类策略</h3>
+<h3>05.1 Transport and policy behavior</h3>
 <ul>
-  <li><b>非可信公网 URL：</b>只允许 HTTP/HTTPS、GET/HEAD 与 80/443 端口；consumer 如需其他端口必须在 registry 中逐项声明；禁止 userinfo、请求凭据和调用者 Cookie；所有解析地址必须是公网 global unicast；禁止 loopback、private、link-local、CGNAT、multicast、reserved、unspecified、documentation/test range 和云 metadata host；默认不继承环境代理；每次 redirect 重新执行完整策略。</li>
-  <li><b>固定公网服务：</b>目标来自随版本发布并经审计的常量；仍校验公网地址和连接结果；变更 origin 必须修改声明清单；凭据不随跨 origin redirect 发送。</li>
-  <li><b>用户配置服务：</b>owner 保存配置时固定 scheme、规范化 host 和有效 port；允许显式 localhost/私网；携带 credential 的请求只发送到该 origin；跨 origin redirect 默认拒绝，不能把 authorization、cookie 或 URL credential 转发到新目标。</li>
-  <li><b>内部回调：</b>只允许 Runtime 当前分配的 loopback IP 与端口；不接受 hostname 通配、私网 CIDR 或 redirect。</li>
+  <li>Public requests allow only registry-declared HTTP methods, schemes, and ports; all resolved addresses must be global, with explicit rejection for metadata, loopback, private, link-local, CGNAT, multicast, reserved, unspecified, documentation/test, mapped, ambiguous, and malformed targets.</li>
+  <li>Sync and async <code>httpcore</code> backends dial only the approved IP tuple, verify the actual socket peer, and retain the normalized hostname for HTTP Host, TLS SNI, and certificate validation. Pool identity includes consumer, trust class, normalized origin, approved IPs, and proxy identity.</li>
+  <li>Redirects are manual and each hop receives a new policy decision. Cross-origin configured-service redirects fail; public credentials are stripped; URL userinfo is rejected; logs and public errors retain no query, fragment, token path, cookie, or peer-controlled body.</li>
+  <li>Headers, MIME, content encoding, decoded bytes, connect/read/write/pool/overall timeout, and temporary-file lifecycle are bounded. Downloads replace the destination only after full validation, flush, <code>fsync</code>, and cleanup-safe completion.</li>
 </ul>
 
-<h3>05.3 DNS rebinding 与代理</h3>
-<p>非可信公网请求不能采用“校验一次域名后让普通 client 再解析”的流程。受管 transport 在建立 TCP 连接时解析并检查地址，然后连接到同一已检查地址；TLS SNI 和证书验证仍使用原 hostname。连接池按规范化 origin 与 policy scope 隔离，不能在不同信任策略间复用。</p>
-<p>非可信 URL 默认设置 <code>trust_env=false</code>。若 owner 选择策略代理，配置必须声明该代理承担 DNS 与目标地址强制责任；此时 doctor 显示“策略委托给代理”，实现测试必须证明请求不会绕过代理直连。普通 provider proxy 配置不能自动扩大非可信 URL 的网络权限。</p>
-
-<h3>05.4 各 HTTP 栈的确定实现方式</h3>
+<h3>05.2 Consumer and SDK disposition evidence</h3>
 <div class="tbl"><table>
-<tr><th>场景</th><th>实现决定</th><th>验收条件</th></tr>
-<tr><td>同步与异步直连</td><td><code>safe_http</code> 基于现有 <code>httpx/httpcore</code> 实现同步和异步 transport；每个 redirect hop 创建绑定本次 policy decision 的连接上下文。自定义 network backend 只连接 policy 返回的已验证 IP，HTTP <code>Host</code>、TLS SNI 与证书验证继续使用规范化原 hostname</td><td>测试记录 resolver 结果、实际 socket peer、Host 与 SNI；四者不一致即失败。不得采用把 URL host 改成 IP 后关闭证书验证的做法</td></tr>
-<tr><td><code>requests</code>、<code>urllib</code> 调用者</td><td>consumer adapter 改调 <code>safe_http</code>，不为两个旧 client 各写一套安全 hook；自动 redirect 关闭，由 <code>safe_http</code> 统一处理</td><td>迁移目录静态检查不再出现裸网络调用；行为测试覆盖原调用链，而不只测试 policy 函数</td></tr>
-<tr><td>连接池与重试</td><td>连接池 key 至少包含规范化 origin、policy scope、consumer 与 proxy mode；只在已验证 IP 集合仍有效时复用。连接失败只能在同一批已验证 IP 中重试，重新解析后必须生成新 decision</td><td>不同 consumer、不同私网例外和直连/代理请求不能复用同一连接；retry 不得转向未验证地址</td></tr>
-<tr><td>显式策略代理</td><td>非可信 URL 只接受 owner 配置的 policy proxy，禁止读取环境代理。Runtime 只能连接该代理 origin；HTTPS CONNECT 目标、DNS 与 private-address 拒绝由代理强制，凭据与目标策略仍由 <code>safe_http</code> 控制</td><td>集成测试证明直连不可达、代理能拒绝 hostname 指向私网及跨 origin 凭据；未声明 enforcement capability 的普通代理不能用于非可信 URL</td></tr>
+<tr><th>Disposition</th><th>Consumers</th><th>Enforcement</th></tr>
+<tr><td>Injected transport</td><td><code>provider.openai.sdk</code>, <code>provider.anthropic.sdk</code>, <code>provider.google.sdk</code>, <code>mcp.configured.http</code>, <code>mcp.configured.sse</code></td><td>Public SDK construction receives a scoped managed client or factory; real SDK-chain tests reach the constrained backend.</td></tr>
+<tr><td>Exact origin</td><td>Telegram, WeChat, Feishu, Matrix, Slack, Discord, fixed/configured TTS, and other fixed/configured REST consumers</td><td>The normalized owner or shipped origin is frozen before credentials are attached; redirects cannot move credentials to another origin.</td></tr>
+<tr><td>Derived URL extraction</td><td>Attachment, generated-asset, and image-result consumers</td><td>The SDK or upstream response yields a URL, then Runtime performs the download or upload through a dedicated managed registry consumer.</td></tr>
+<tr><td>Disabled</td><td><code>provider.amazon_bedrock.sdk</code>, <code>channel.slack.gateway_sdk</code>, <code>channel.discord.gateway_sdk</code>, <code>tts.edge_sdk</code></td><td>Startup or invocation fails with <code>UNMANAGED_TRANSPORT</code> before importing or using the uninjectable network SDK. Bedrock covers both the registered stream and model-list entry before boto3/botocore credential or client activity.</td></tr>
 </table></div>
 
-<h3>05.5 第三方 SDK 不能替换 transport 时的处理</h3>
+<h3>05.3 Owner exceptions, policy proxy, doctor, and inventory</h3>
+<p>Owner configuration accepts only a registered consumer plus exactly one normalized origin or canonical private/local CIDR.
+It rejects wildcards, suffixes, credentials, unknown fields, public/default-route networks, metadata, link-local ranges, and
+exception forms not allowed by the consumer. Existing owner-authenticated settings paths remain the only mutation authority.</p>
+<p>A policy proxy is usable only when owner configuration sets <code>enforces_target_policy: true</code>. Runtime evaluates the
+target before proxy use, constrains the proxy peer separately, reports delegation through doctor/audit state, and never retries direct.</p>
 <div class="tbl"><table>
-<tr><th>SDK 能力</th><th>处理</th><th>是否允许计入完整</th></tr>
-<tr><td>支持注入 <code>http_client</code>、transport 或 fetch callback</td><td>注入 <code>safe_http</code> adapter，并固定 consumer 与 policy scope</td><td class="yes">有真实 SDK 调用链测试后可以</td></tr>
-<tr><td>只接受 <code>base_url</code>，但仅访问 owner 配置的固定 API</td><td>归入 <code>configured_service</code>；启动时校验 exact origin，禁用跨 origin redirect；若 SDK 无法禁用 redirect，则必须经策略代理</td><td class="yes">证明目标和凭据不能离开 exact origin 后可以</td></tr>
-<tr><td>SDK 会根据远端内容继续获取任意 URL，且不能注入 transport</td><td>把派生下载移到 SDK 外由 <code>safe_http</code> 执行；无法拆分时，只能把 SDK 进程放入强制策略代理或关闭该入口</td><td class="no">仍可活动且没有等价网络边界时不可以</td></tr>
-<tr><td>SDK 绕过代理、使用自有 socket 或行为无法验证</td><td>默认禁用相应 URL consumer，并由 doctor 报告 <code>unmanaged_transport</code></td><td class="no">不可以；不得写成“由 SDK 保证”</td></tr>
+<tr><th>Inventory exclusion</th><th>Owner and narrow reason</th></tr>
+<tr><td><code>security/safe_http.py</code></td><td>Runtime managed transport; the only allowed direct <code>httpcore</code> pool/proxy construction</td></tr>
+<tr><td><code>functions/tools/browser/_chrome_bootstrap.py</code></td><td>Browser control; exact browser opener construction and loopback CDP liveness dial</td></tr>
+<tr><td><code>_cli_cmds/mcp.py</code></td><td>Owner control plane; authenticated backend opener only</td></tr>
+<tr><td><code>cli_ink.py</code>, <code>_cli_cmds/doctor.py</code>, <code>_cli_cmds/rescue.py</code></td><td>Owner control plane; exact loopback worker liveness socket only</td></tr>
 </table></div>
+<p>The checker fails for an unregistered raw call, active unmanaged SDK transport, registry entry without a classified consumer,
+or stale exclusion. Doctor exposes stable <code>runtime-http-registry</code>, <code>runtime-http-owner-exceptions</code>,
+<code>runtime-http-policy-proxy</code>, <code>runtime-http-recent-denials</code>, and <code>runtime-http-unmanaged-transport</code> labels.</p>
 
-<h3>05.6 迁移范围与覆盖清单</h3>
-<p>第一批必须同时迁移 <code>web_fetch</code>、渠道附件、skills discovery、plugin marketplace、MCP catalog、generated asset 和所有 Runtime-owned 任意 URL 下载入口。provider、remote MCP、渠道与 TTS 的固定 endpoint 接入 configured-service 校验，重点阻止带凭据的跨 origin redirect。浏览器导航留在“浏览器控制”功能项；shell 和第三方插件继续由 sandbox 与插件信任模型负责。</p>
-<p><code>safe_http</code> 内维护唯一的 consumer registry：每个 consumer 固定声明来源类型、允许 scheme、redirect 规则、响应上限、content type、credential policy 与 owner 例外范围。调用者必须传 registry key，不能传临时 policy 对象。doctor 和测试从同一 registry 生成覆盖清单；仓库中发现 Runtime-owned 网络调用而 registry 没有对应项时，验收直接失败。</p>
-
-<h2 id="acceptance"><span class="num">06</span>何时可以从未确认改为完整确认</h2>
+<h3>05.4 Verification snapshot</h3>
 <div class="tbl"><table>
-<tr><th>验收组</th><th>必须通过的行为</th></tr>
-<tr><td><b>地址分类</b></td><td>IPv4、IPv6、IPv4-mapped IPv6、zone ID、IDNA、大小写与尾点 hostname、反斜线与控制字符、异常端口、userinfo、十进制/八进制/十六进制混淆输入均得到固定结果；所有非 global 地址默认拒绝；非可信 URL 默认只允许 GET/HEAD 与 80/443</td></tr>
-<tr><td><b>DNS</b></td><td>NXDOMAIN、timeout、空结果、A/AAAA 混合公私地址全部 fail-closed；连接使用已验证结果，测试用改变两次解析结果证明不能 rebind 到 loopback</td></tr>
-<tr><td><b>重定向</b></td><td>相对与绝对 Location、协议切换、跨 origin、redirect loop 和超限均有测试；任一跳转到 metadata/私网均在发送下一跳请求前拒绝</td></tr>
-<tr><td><b>凭据</b></td><td>configured service 的 token、Authorization、Cookie 和 URL credential 不会发送到其他 origin；异常和审计日志不含秘密</td></tr>
-<tr><td><b>资源限制</b></td><td>连接、首字节、整体读取和空闲 timeout 有界；响应头数量与总大小有界；Content-Length 缺失或造假时仍按流式累计上限终止；压缩响应按解压后的字节数计限额，未知 encoding 默认拒绝；临时文件失败后清理</td></tr>
-<tr><td><b>入口覆盖</b></td><td><code>web_fetch</code>、附件、skills、plugin marketplace、MCP catalog、generated asset 与任意 URL 下载均有真实调用链测试；静态检查阻止这些目录新增裸 <code>requests/httpx/urllib</code> 调用</td></tr>
-<tr><td><b>Transport</b></td><td>同步、异步、TLS、连接池、retry 和显式策略代理均证明实际 peer 处于本次 decision 的已验证地址集；Host/SNI/证书验证使用原 hostname；没有关闭 TLS 验证或二次未受控 DNS</td></tr>
-<tr><td><b>第三方 SDK</b></td><td>每个 SDK 分别记录 injected transport、exact-origin、policy-proxy 或 disabled 四种处置之一；不存在仍可活动的 <code>unmanaged_transport</code></td></tr>
-<tr><td><b>兼容性</b></td><td>公网 CDN、GitHub、Telegram 附件、本地 provider、localhost MCP、企业内网 service 和显式策略代理分别通过；既有 proxy 与 provider failover 测试不回归</td></tr>
-<tr><td><b>边界说明</b></td><td>doctor 能显示 scope 例外和未迁移 consumer；文档明确 Runtime fetch、browser、sandbox、plugin 四个边界，不把一个边界的测试替代另一个</td></tr>
+<tr><th>Command</th><th>Recorded result</th></tr>
+<tr><td><code>uv run --extra dev pytest -q tests/security</code></td><td class="yes"><code>804 passed</code></td></tr>
+<tr><td><code>uv run --with pip --with boto3 pytest -q tests/meta_functions tests/providers tests/unit tests/webui tests/integration/test_mcp_client.py</code></td><td class="yes"><code>3482 passed, 12 skipped, 1 xfailed</code></td></tr>
+<tr><td><code>uv run --extra dev --with boto3 pytest -q</code></td><td class="yes"><code>4923 passed, 14 skipped, 2 deselected, 1 xfailed</code></td></tr>
+<tr><td><code>uv run python scripts/check_runtime_http.py</code></td><td class="yes"><code>unregistered=0 active_unmanaged=0 registry_without_consumer=0 stale_exclusions=0</code></td></tr>
+<tr><td><code>uv run python scripts/check_feature_matrix.py docs/reference/design/feature-matrix.html</code></td><td class="yes"><code>features=160 openprogram_score=78 openprogram_gaps=73 openprogram_only=6</code></td></tr>
 </table></div>
+<div class="note"><b>Publication gate.</b> Policy parsing/address tests, real sync/async socket and TLS peer tests,
+DNS-rebinding prevention, redirect and credential-origin tests, response/decompression/timeout cleanup, all-consumer migration,
+four-way SDK classification with zero active unmanaged transports, owner-only exact exceptions, doctor/audit/static enforcement,
+and the 42-row compatibility contract are present. The complete repository command passes with the declared dev and optional
+provider dependencies. The feature matrix records <code>◐</code> because the verified scope is Runtime-owned HTTP rather than the
+separate browser, arbitrary-code, plugin, external-CLI, and package-manager boundaries.</div>
 
-<div class="note green"><b>实心圆门槛：</b>只有上述各组测试、完整单元测试和真实 socket 集成测试全部通过，consumer registry 与仓库扫描均没有未分类项、未迁移入口或活动的 <code>unmanaged_transport</code> 时，“Runtime URL 获取 SSRF 防护”才能从 <code>·</code> 直接标记为 <code>●</code>。设计完成、只有 URL/IP 纯函数、只迁移部分调用者、仅依赖人工确认或只在请求前检查一次 DNS，均保持 <code>·</code>，不以 <code>◐</code> 发布。</div>
-<div class="note"><b>实心圆的准确含义：</b><code>●</code> 只确认 Runtime-owned HTTP 获取。它不声明 Playwright、Electron、CDP、popup、Service Worker、shell、插件代码或外部安装器已经获得同等保护；这些入口分别由“浏览器控制安全”和“sandbox 网络隔离”验收。任何文档、UI 和发布说明都必须保留这一限定。</div>
-
-<h3>实现状态</h3>
+<h2 id="future"><span class="num">06</span>OpenProgram future plan</h2>
 <div class="tbl"><table>
-<tr><th>项目</th><th>状态</th><th>证据</th></tr>
-<tr><td>现状与出站面审计</td><td class="yes">已完成</td><td>本页列出的当前调用路径与代码核对</td></tr>
-<tr><td>参考项目比较和采用决策</td><td class="yes">已完成</td><td>功能矩阵全部 12 个外部参考列、当前官方机制与 OWASP 指南</td></tr>
-<tr><td>Runtime URL 获取 SSRF 防护</td><td class="no">未实现</td><td>尚无统一 policy、受管 transport、consumer 迁移和验收结果</td></tr>
-<tr><td>浏览器导航 SSRF 防护</td><td class="no">未设计完成</td><td>需要结合浏览器控制后端、策略代理或 owner 侧 egress 隔离单独处理</td></tr>
+<tr><th>Future boundary</th><th>Required work before claiming completion</th></tr>
+<tr><td>Browser navigation and page-derived traffic</td><td>Define and test navigation, popup, Service Worker, background resource, redirect, download, CDP, and browser-profile policy across every browser backend; use an enforcing egress boundary where browser interception is insufficient.</td></tr>
+<tr><td>Plugin and arbitrary-code networking</td><td>Keep the trust and sandbox model separate from Runtime safe HTTP; add an OS or policy-proxy egress boundary if these processes need restricted network access.</td></tr>
+<tr><td>Disabled third-party SDK network features</td><td>Enable only after the SDK supports managed transport injection or an owner-configured enforcing policy proxy has equivalent tests. Do not replace the disabled disposition with an unverified SDK guarantee.</td></tr>
 </table></div>
-
-<p class="small">相关文档：<a href="sandbox-architecture.html">沙箱设计</a>、
-<a href="../providers/network-proxy.html">网络代理设计</a>、
-<a href="../feature-matrix.html">功能矩阵</a>。</p>
+<p class="small">Related documents: <a href="sandbox-architecture.html">Sandbox design</a>,
+<a href="../providers/network-proxy.html">network proxy design</a>, and
+<a href="../feature-matrix.html">feature matrix</a>.</p>
 </main></body></html>

@@ -1,8 +1,10 @@
+import type { TaskResourceView } from "@/lib/net/ws-events";
+
 export interface TaskResourceEntry {
   targetHead?: string | null;
   finalHead?: string | null;
   status: string;
-  resource?: Record<string, unknown> | null;
+  resource?: TaskResourceView | null;
   updatedAt: number;
 }
 
@@ -12,7 +14,7 @@ export function selectResourceForHead(
   taskMap: Record<string, TaskResourceEntry>,
   headId: string,
   pendingPrefix: string,
-): Record<string, unknown> | null {
+): TaskResourceView | null {
   const matches = Object.entries(taskMap).filter(([taskId, entry]) => {
     const mapped = entry.finalHead || entry.targetHead || `${pendingPrefix}${taskId}`;
     return mapped === headId;

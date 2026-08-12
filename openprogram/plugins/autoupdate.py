@@ -59,13 +59,15 @@ def _fire_change() -> None:
 def _check_pip(dist_name: str, current_version: str) -> str | None:
     """Return ``latest_version`` if newer than ``current_version``, else None.
     Talks to PyPI's JSON API — works without authentication."""
-    import urllib.request
-    import urllib.error
     try:
+        from openprogram.security import safe_http
         url = f"https://pypi.org/pypi/{dist_name}/json"
-        with urllib.request.urlopen(url, timeout=10) as r:
-            data = json.loads(r.read().decode("utf-8"))
-    except (urllib.error.URLError, json.JSONDecodeError, OSError):
+        with safe_http.safe_client("plugins.autoupdate") as client:
+            response = client.get(url, timeout=10)
+            response.raise_for_status()
+            safe_http.require_json_mime(response)
+            data = response.json()
+    except Exception:
         return None
     latest = (data.get("info") or {}).get("version") or ""
     if not latest or latest == current_version:
@@ -77,13 +79,15 @@ def _check_pip(dist_name: str, current_version: str) -> str | None:
 
 def _check_npm(pkg_name: str, current_version: str) -> str | None:
     """Same idea for npm registry."""
-    import urllib.request
-    import urllib.error
     try:
+        from openprogram.security import safe_http
         url = f"https://registry.npmjs.org/{pkg_name}/latest"
-        with urllib.request.urlopen(url, timeout=10) as r:
-            data = json.loads(r.read().decode("utf-8"))
-    except (urllib.error.URLError, json.JSONDecodeError, OSError):
+        with safe_http.safe_client("plugins.autoupdate") as client:
+            response = client.get(url, timeout=10)
+            response.raise_for_status()
+            safe_http.require_json_mime(response)
+            data = response.json()
+    except Exception:
         return None
     latest = data.get("version") or ""
     if not latest or latest == current_version:

@@ -77,8 +77,12 @@ Delivery is derived from evidence rather than model output. For an
 session from `SessionDB` and uses that session's existing channel, account, and
 peer binding. Records without a target remain visible. Due records sharing a
 target are sent as one message through `channels.outbound`; notification steps
-are written only after that send returns success. Tests replace outbound send,
-so no test uses a real channel or credential.
+are written only after that send returns success. The send is network I/O with
+its own retry and backoff budget, so it runs outside the workspace write lock:
+the lock is taken to read the due records and again to record the delivered
+steps, and that second write merges only the step onto the row as it stands by
+then, so a status transition committed while a reminder was in flight survives.
+Tests replace outbound send, so no test uses a real channel or credential.
 
 ### Implemented owner and model surfaces
 

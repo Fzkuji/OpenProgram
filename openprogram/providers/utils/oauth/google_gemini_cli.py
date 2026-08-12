@@ -12,10 +12,9 @@ import asyncio
 import time
 from urllib.parse import urlencode
 
-import httpx
-
 from openprogram.providers.utils.oauth.pkce import generate_pkce
 from openprogram.providers.utils.oauth.types import OAuthAuthInfo, OAuthCredentials, OAuthLoginCallbacks
+from openprogram.security.safe_http import safe_async_client
 
 import os as _os
 
@@ -50,7 +49,7 @@ async def login_gemini_cli(callbacks: OAuthLoginCallbacks) -> OAuthCredentials:
 
     code = await _wait_for_callback_code()
 
-    async with httpx.AsyncClient() as client:
+    async with safe_async_client("provider.oauth.fixed") as client:
         resp = await client.post(
             _TOKEN_URL,
             data={
@@ -75,7 +74,7 @@ async def login_gemini_cli(callbacks: OAuthLoginCallbacks) -> OAuthCredentials:
 
 async def refresh_google_cloud_token(credentials: OAuthCredentials) -> OAuthCredentials:
     """Refresh a Google Cloud OAuth token."""
-    async with httpx.AsyncClient() as client:
+    async with safe_async_client("provider.oauth.fixed") as client:
         resp = await client.post(
             _TOKEN_URL,
             data={

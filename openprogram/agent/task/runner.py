@@ -556,7 +556,7 @@ class TaskRunner:
         if defer_dispatch:
             return task.id
         if not idempotent:
-            _broadcast_task_status(task)
+            self._broadcast_task_status(task)
 
         # Done-event for await_task / await_tasks callers.
         done_ev = threading.Event()
@@ -706,7 +706,7 @@ class TaskRunner:
                     raise RuntimeError(
                         f"borrowed task {task.id!r} disappeared"
                     )
-                _broadcast_task_status(updated)
+                self._broadcast_task_status(updated)
                 task = updated
                 if not self.record_task_activity(task.id, "operation_start"):
                     raise RuntimeError(
@@ -795,7 +795,7 @@ class TaskRunner:
                 )
             updated = terminal.get("task")
             if updated is not None:
-                _broadcast_task_status(updated)
+                self._broadcast_task_status(updated)
                 _broadcast_session_reload(
                     session_id, reason=f"task_{status.value}",
                 )
@@ -1011,7 +1011,7 @@ class TaskRunner:
                 except ValueError:
                     updated = _store_load(session_id, task_id)
                 if updated is not None:
-                    _broadcast_task_status(updated)
+                    self._broadcast_task_status(updated)
                     self._wake_done(task_id)
                 return updated
         cur_task = _store_load(session_id, task_id)
@@ -1031,7 +1031,7 @@ class TaskRunner:
             except ValueError:
                 updated = _store_load(session_id, task_id)
             if updated is not None:
-                _broadcast_task_status(updated)
+                self._broadcast_task_status(updated)
                 self._wake_done(task_id)
                 self._update_attach_card(updated)
                 _broadcast_session_reload(session_id, reason="task_cancelled")
@@ -1113,6 +1113,14 @@ class TaskRunner:
                 task.parent_session_id, task,
             ),
         )
+
+    def _broadcast_task_status(self, task: Task) -> None:
+        try:
+            view = self.get_task_resource_view(task.id)
+            resource = view.to_dict() if view is not None else None
+        except Exception:
+            resource = None
+        _broadcast_task_status(task, resource)
 
     def list_tasks(
         self,
@@ -1461,7 +1469,7 @@ class TaskRunner:
                         if finalized:
                             current = terminal.get("task")
                             if current is not None:
-                                _broadcast_task_status(current)
+                                self._broadcast_task_status(current)
                             self._wake_done(claim.task_id)
                             with self._lock:
                                 self._tasks.pop(claim.task_id, None)
@@ -1608,7 +1616,7 @@ class TaskRunner:
                 if updated is None:
                     # task entity vanished
                     return
-                _broadcast_task_status(updated)
+                self._broadcast_task_status(updated)
             except ValueError:
                 # Transition rejected — likely already terminal. Done.
                 return
@@ -1620,7 +1628,7 @@ class TaskRunner:
                     error="cancelled before run",
                 )
                 if updated is not None:
-                    _broadcast_task_status(updated)
+                    self._broadcast_task_status(updated)
                 return
 
             # Progress poller — while the sub-agent is grinding, patch
@@ -1701,7 +1709,7 @@ class TaskRunner:
                     TaskStatus.ERRORED, reason_code, error=err,
                 )
                 if updated is not None:
-                    _broadcast_task_status(updated)
+                    self._broadcast_task_status(updated)
                     self._update_attach_card(updated, error_text=err)
                 _broadcast_session_reload(session_id, reason="task_errored")
                 return
@@ -1739,7 +1747,7 @@ class TaskRunner:
                 error=result.error,
             )
             if updated is not None:
-                _broadcast_task_status(updated)
+                self._broadcast_task_status(updated)
                 self._update_attach_card(updated)
                 # Auto-followup: when an async task completes (or
                 # errors / is cancelled), nobody is listening unless

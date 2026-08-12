@@ -10,8 +10,8 @@ from typing import Any, Callable, Hashable
 
 from openprogram.memory.management.transaction import workspace_write_lock
 from openprogram.memory.runtime.commitments import (
-    _write_valid_updates,
     load_commitments,
+    record_notification_steps,
 )
 
 
@@ -104,32 +104,41 @@ def run_heartbeat(
     quiet_hours: str = DEFAULT_QUIET_HOURS,
     overdue_interval_days: int = DEFAULT_OVERDUE_INTERVAL_DAYS,
 ) -> int:
-    """Send due reminders and persist notification steps after success."""
+    """Send due reminders and persist notification steps after success.
+
+    The channel send is network I/O with its own retry budget, so it runs
+    outside the workspace write lock; holding an exclusive lock across it would
+    stall every other memory write for the length of a rate-limit backoff. The
+    lock is taken to read the current rows and again to record the steps that
+    were delivered, and recording merges only the step onto whatever the row
+    says by then, so a status transition committed while a reminder was in
+    flight survives.
+    """
     if overdue_interval_days < 1:
         raise ValueError("overdue_interval_days must be positive")
     if in_quiet_hours(now, quiet_hours):
         return 0
     root = Path(memory_dir)
-    sent_count = 0
     with workspace_write_lock(root):
         rows = load_commitments(root)
-        grouped: dict[Hashable, list[tuple[dict[str, Any], str]]] = defaultdict(list)
-        for row in rows:
-            step = _notification_step(row, now.date(), overdue_interval_days)
-            if step is None:
-                continue
-            target = target_for_source(str(row.get("source") or ""))
-            if target is not None:
-                grouped[target].append((row, step))
-        for target, pending in grouped.items():
-            if not bool(send(target, _render(pending))):
-                continue
-            for row, step in pending:
-                row.setdefault("notification_steps", []).append(step)
-            sent_count += len(pending)
-        if sent_count:
-            _write_valid_updates(root, rows)
-    return sent_count
+    grouped: dict[Hashable, list[tuple[dict[str, Any], str]]] = defaultdict(list)
+    for row in rows:
+        step = _notification_step(row, now.date(), overdue_interval_days)
+        if step is None:
+            continue
+        target = target_for_source(str(row.get("source") or ""))
+        if target is not None:
+            grouped[target].append((row, step))
+    delivered: dict[str, str] = {}
+    for target, pending in grouped.items():
+        if not bool(send(target, _render(pending))):
+            continue
+        for row, step in pending:
+            delivered[str(row["id"])] = step
+    if delivered:
+        with workspace_write_lock(root):
+            record_notification_steps(root, delivered)
+    return len(delivered)
 
 
 __all__ = [

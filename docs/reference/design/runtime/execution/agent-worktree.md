@@ -28,6 +28,8 @@ Each active worktree is one record, with fields:
 - `parent_session_id`: the associated OpenProgram session (one-to-one or one-to-many)
 - `parent_task_id`: the associated async task (if any)
 - `created_by_agent`: agent id (records which agent opened it, so it is visible in the UI)
+- `pr_number`: set when the worktree was opened via `worktree_create`'s `pr` parameter (D5b);
+  lets a later `pr`-mode call detect a duplicate instead of opening a second worktree for the same PR
 
 Records are persisted in the session-git repository at `worktrees/<id>.json`, stored alongside ContextCommit.
 They are not cleaned up automatically when the session closes; they wait for the agent or user to explicitly merge / discard.
@@ -110,6 +112,34 @@ Three entry points, in descending priority:
 
 If all entry points fail → worktree_create reports the error `source_repo_not_a_git_repo`.
 It will not automatically `git init` a repository for the user (too destructive).
+
+### D5b. Opening a Worktree Directly From a PR
+
+`worktree_create`'s `pr` parameter opens a worktree on a pull request's branch instead of
+`base_ref` — accepts a bare number (`123`), a `#`-prefixed number (`#123`), or a full GitHub PR
+URL (`https://github.com/<owner>/<repo>/pull/<number>`). Parsing lives in
+`openprogram/worktree/pr_ref.py::parse_pr_ref`. This reuses the same `worktree_create` tool and
+the same `WorktreeManager.create_worktree` code path as every other worktree — `pr` is a mode
+switch on that one entry point, not a second tool.
+
+Resolution, via the `gh` CLI (`openprogram/worktree/pr_ref.py`):
+
+1. `gh pr view <n> --json headRefName,headRepositoryOwner,isCrossRepository` reads the PR's head
+   branch and whether it lives on a fork.
+2. **Same-repo PR** (`isCrossRepository=false`): `git fetch origin <headRefName>:<local_branch>` —
+   the branch already exists on `origin`.
+3. **Fork PR** (`isCrossRepository=true`): `git fetch origin pull/<n>/head:<local_branch>` — GitHub's
+   synthetic per-PR ref, the same mechanism `gh pr checkout` uses, so no remote has to be registered
+   for the contributor's fork.
+4. The fetched commit becomes `base_ref` for a normal `git worktree add`; the worktree's own branch
+   is named `op/wt/pr-<n>-<id6>` (same `op/wt/<slug>-<id6>` convention as every other worktree, with
+   the PR number standing in for the label). The throwaway fetch ref is deleted once `-b` has copied
+   its tip onto the new branch.
+
+`gh` missing or unauthenticated raises `pr_ref_error: gh_not_found` / `gh_not_authenticated` —
+never a silent fallback to `base_ref`. A non-terminal worktree already open on the same PR number
+(`Worktree.pr_number`) raises `pr_worktree_exists`, naming the existing worktree's id and path,
+instead of creating a duplicate.
 
 ### D6. Security / Permissions
 
@@ -201,7 +231,7 @@ Four tools:
 
 | Tool | Parameters | Returns |
 |---|---|---|
-| `worktree_create` | `source_repo: str?` `name: str?` `base_ref: str?` | `{id, path, branch, base_sha}` |
+| `worktree_create` | `source_repo: str?` `branch_name: str?` `base_ref: str?` `label: str?` `pr: str?` (D5b — number / `#number` / GitHub PR URL, ignores `branch_name`/`base_ref` when set) | `{id, path, branch, base_sha}` |
 | `worktree_merge`  | `worktree_id: str` `mode: str = "ff-only"` `delete_branch: bool = False` | `{merged_sha, files_changed: int, summary: str}` |
 | `worktree_discard`| `worktree_id: str` `force: bool = False` | `{status: "discarded"}` |
 | `worktree_list`   | `status_filter: str?` | `[{id, path, branch, status, source_repo, age_seconds}]` |
@@ -214,6 +244,8 @@ Error codes (prefix of the returned error string):
 - `merge_conflict`: conflict during merge
 - `worktree_in_sessions_dir`: source_repo falls inside the sessions tree (D4 isolation violation)
 - `worktree_exists`: a worktree with the same branch name already exists under the same source_repo
+- `pr_ref_error`: `pr` doesn't parse, or `gh` is missing/unauthenticated/fails (D5b)
+- `pr_worktree_exists`: a non-terminal worktree already exists for this PR number (D5b)
 
 `worktree_create` / `worktree_merge` / `worktree_discard` default to
 `requires_approval=True`; only permission_mode=auto skips the approval prompt.
@@ -383,7 +415,55 @@ The agent is halfway through (5 patches committed in the worktree), the user dec
 
 ---
 
-## Part 4. Out of Scope
+## Part 4. `.worktreeinclude`
+
+`git worktree add` only ever checks out **tracked** content. Files a repo deliberately keeps
+untracked and gitignored — `.env`, per-machine TLS certs, `*.local.json` overrides — never
+appear in a fresh worktree, even though the agent's tools need them immediately (a bash command
+reading `.env` fails silently different from how it fails in the main tree).
+
+If `source_repo/.worktreeinclude` exists, each line is a gitignore-style pattern:
+
+- `#` at the start of a (trimmed) line is a comment; blank lines are ignored.
+- `*`, `?`, `[...]` — standard glob wildcards.
+- A pattern with no `/` matches the basename anywhere in the tree (`*.local.json` matches both
+  `a.local.json` and `sub/a.local.json`).
+- A pattern containing `/` is anchored to the repo root.
+- A trailing `/` marks a directory pattern (matches the directory and everything under it).
+
+Not supported: `!` negation, `**` double-star. Split those cases into multiple plain patterns.
+
+At the end of `create_worktree`, right after `git worktree add` succeeds, `WorktreeManager`
+calls `sync_include_files(source_repo, worktree_path)`
+(`openprogram/worktree/include_sync.py`). This is the single choke point every creation path
+shares — the `worktree_create` tool, and any future task/plan-mode fan-out — so the hook lives
+in the manager, not in one caller.
+
+Semantics:
+
+- Only **untracked** files are ever candidates (`git ls-files --others`, deliberately without
+  `--exclude-standard` so already-gitignored files like `.env` still show up) — tracked files
+  are already checked out by `git worktree add` itself.
+- A destination path that already exists is left untouched (no clobber).
+- Symlinks are copied as links, not dereferenced.
+- File permissions are preserved (`shutil.copy2`).
+- One file's copy failure is recorded and does not abort the rest; failures and successes are
+  both attached to the `Worktree` record (`include_synced` / `include_failed`) and echoed in the
+  `worktree_create` tool's return string.
+- No `.worktreeinclude` file in `source_repo` → zero git calls, zero behavior change.
+
+Pattern matching is hand-rolled Python (`fnmatch` + `pathlib`), not git's own exclude engine.
+`git check-ignore` / `ls-files --exclude-from` only ever *exclude* matches from a listing — there
+is no plumbing form that treats a pattern file as an *include* filter — and pointing git at an
+arbitrary pattern file otherwise requires `core.excludesFile` config injection, which this
+sandbox refuses. Reusing git's own untracked-file enumeration (`git ls-files --others`) plus a
+small pattern matcher over the manifest gets git's semantics for "what's untracked" without
+needing config injection or a new dependency (`pathspec` is not in `openprogram`'s own base
+dependency set — it only ships transitively via `semble`, an MCP dev tool).
+
+---
+
+## Part 5. Out of Scope
 
 - **Remote push**: the worktree is local-only; to push the worktree branch to origin, the agent runs
   `git push -u origin <branch>` via bash itself. worktree_merge does not push either.
@@ -414,6 +494,7 @@ None of this design has landed. The pieces it needs, and where they stand:
 | UI worktree chip | absent |
 | Worktree × Task integration | absent; depends on the async task system, itself still in design |
 | Sub-agent worktree mechanism | removed when sub-agents became peer sessions; not reused here |
+| `.worktreeinclude` untracked-file sync | landed — `openprogram/worktree/include_sync.py`, called from `WorktreeManager.create_worktree` |
 
 The work, in dependency order:
 

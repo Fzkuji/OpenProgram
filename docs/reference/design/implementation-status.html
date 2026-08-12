@@ -106,9 +106,9 @@
       </tr>
       <tr>
         <td>Commitments and heartbeat</td>
-        <td class="status pending">Candidate implementation</td>
-        <td><code>ab54b270</code>, <code>953276d3</code> on <code>codex/commitments-heartbeat-20260811</code></td>
-        <td>The implementation report records focused/full verification and explicit concerns, but its dedicated ledger still says Task 1 is in progress. Reconcile the ledger, review the feature independently at the final branch head, and separate it from the SSRF integration history before claiming completion.</td>
+        <td class="status complete">Merged to main, review-passed</td>
+        <td><code>main</code><br><code>cbeae923</code>, <code>d9f2dba3</code>, <code>21034817</code>, review fix <code>4fd4564f</code></td>
+        <td>The commitment lifecycle, deterministic heartbeat, owner projections, and the three design documents are on <code>main</code>, separated from the runtime URL/SSRF history that shared the original branch. Independent review confirmed the notification state machine advances <code>due</code> then <code>overdue:7</code> without skipping or repeating a step, that helper stderr is redacted before truncation, and that the remote-write gate sits in the argv builders so an unauthorized push or pull request fails before <code>git</code> or <code>gh</code> runs. Review found the reminder send holding the exclusive workspace write lock across channel retries and fixed it: the lock now covers only the read and the step write, and recording merges a step onto the stored row instead of replacing it. Focused suites pass (<code>test_memory_commitments</code>, <code>test_memory_routes</code>, <code>test_memory_runtime_config</code>, <code>test_credential_process_runtime</code>, <code>test_commit_trailers</code>, <code>test_memory_writing</code>: 150 passed); Ruff is clean and docs links are 0. Delivery remains at-least-once by design.</td>
       </tr>
       <tr>
         <td>Account management, channels, memory, desktop, Web</td>
@@ -149,14 +149,7 @@
     <li>Source plan: <code>docs/superpowers/plans/2026-08-12-agent-resource-governance-completion.md</code> on the resource completion branch.</li>
   </ol>
 
-  <h3>4. Commitments and heartbeat finalization</h3>
-  <ol>
-    <li>Create a clean feature branch containing only the commitment lifecycle, deterministic heartbeat, owner projections, and its documentation.</li>
-    <li>Reconcile the stale task ledger with the implementation report and rerun feature-focused, full unit, Web, docs-link, privacy, and matrix checks.</li>
-    <li>Run fresh independent spec and quality reviews. Preserve the documented at-least-once delivery limitation and do not claim exactly-once notification delivery.</li>
-  </ol>
-
-  <h3>5. Smaller uncompleted hardening work</h3>
+  <h3>4. Smaller uncompleted hardening work</h3>
   <ul>
     <li><code>credential_process</code>: argv is executed without shell interpolation, the timeout is configurable with a 60-second default, and successful results are cached. Helper stderr now passes through the diagnostics redactor before it reaches a failure message or a log, so a helper that echoes the credential it was fetching cannot leak it.</li>
     <li><code>commit-push-pr</code>: a dry run performs the local, reversible steps and prints the push and PR it would have taken without contacting the remote. <code>git_push_argv</code> and <code>gh_pr_create_argv</code> raise <code>RemoteWriteNotAuthorized</code> unless <code>git.allow_remote_write</code> is on or the caller passes <code>allowed=True</code>, so an unauthorized remote write fails before <code>git</code> or <code>gh</code> runs.</li>
@@ -166,7 +159,7 @@
   <h2>Integration and release order</h2>
   <ol>
     <li><strong>Stabilize the main worktree.</strong> Commit, move, or discard the current uncommitted account/channel/memory/Desktop/Web work under its owner's direction. Integration must not stage it incidentally.</li>
-    <li><strong>Finish partial plans on their own branches.</strong> Complete JSON Tasks 6–7 and credential Tasks 3–5 before integration; create one accepted resource-governance head; finalize commitments/heartbeat separately.</li>
+    <li><strong>Finish partial plans on their own branches.</strong> Complete JSON Tasks 6–7 and credential Tasks 3–5 before integration; create one accepted resource-governance head.</li>
     <li><strong>Integrate one branch at a time.</strong> Rebase on the chosen mainline, inspect the complete diff, resolve conflicts at shared security/runtime boundaries, and rerun that feature's focused and affected suites before adding another branch.</li>
     <li><strong>Run the combined release gate.</strong> Run unit, agent, provider, Web, CLI/TUI, security, docs build/link, Ruff, type/build, mechanical matrix, and <code>git diff --check</code> checks from the combined head.</li>
     <li><strong>Publish evidence last.</strong> Update feature-matrix symbols and implementation evidence only for contracts proven on the combined head. Record unrelated environment blockers separately rather than treating partial suites as full completion.</li>

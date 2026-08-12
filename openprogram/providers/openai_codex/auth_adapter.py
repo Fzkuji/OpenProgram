@@ -148,16 +148,19 @@ def _codex_refresh(cred: Credential) -> Credential:
     if not refresh_token:
         raise RuntimeError("codex credential has no refresh_token")
 
-    response = httpx.post(
-        OAUTH_TOKEN_URL,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        data={
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-            "client_id": OAUTH_CLIENT_ID,
-        },
-        timeout=30.0,
-    )
+    from openprogram.security.safe_http import safe_client
+
+    with safe_client("provider.oauth.fixed") as client:
+        response = client.post(
+            OAUTH_TOKEN_URL,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": OAUTH_CLIENT_ID,
+            },
+            timeout=30.0,
+        )
     if response.status_code != 200:
         # Rotation-consumed case: OpenAI returns 400 invalid_grant when
         # the refresh_token has already been used. CredentialProvider's
@@ -165,9 +168,7 @@ def _codex_refresh(cred: Credential) -> Credential:
         # surface it through the generic RuntimeError for now (manager
         # matches on RuntimeError in one codepath, on the typed error in
         # another).
-        raise RuntimeError(
-            f"OAuth refresh failed {response.status_code}: {response.text[:200]}"
-        )
+        raise RuntimeError(f"OAuth refresh failed {response.status_code}")
     data = response.json()
     for k in ("access_token", "refresh_token", "expires_in"):
         if k not in data:

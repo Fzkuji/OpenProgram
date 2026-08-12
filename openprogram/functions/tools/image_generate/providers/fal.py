@@ -9,12 +9,11 @@ Docs: https://docs.fal.ai/model-endpoints/
 
 from __future__ import annotations
 
-import json
 import os
 import time
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
+
+from openprogram.functions.tools.web_search._http import get_json, post_json
 
 from ..registry import GeneratedImage
 
@@ -65,48 +64,47 @@ class FalProvider:
         }
 
         # Queue submit → poll until completed → fetch response
-        submit_req = urllib.request.Request(
+        submit = post_json(
             f"{QUEUE_BASE}/{mdl}",
-            data=json.dumps(payload).encode("utf-8"),
+            body=payload,
             headers=headers,
+            timeout=TIMEOUT,
+            provider_label="FAL submit",
+            consumer="tool.image_api.fixed",
         )
-        try:
-            with urllib.request.urlopen(submit_req, timeout=TIMEOUT) as resp:
-                submit = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"FAL submit HTTP {e.code}: {body}") from e
 
         status_url = submit.get("status_url")
         response_url = submit.get("response_url")
         if not status_url or not response_url:
-            raise RuntimeError(f"FAL response missing queue URLs: {submit}")
+            raise RuntimeError("FAL response missing queue URLs") from None
 
         # Poll
         deadline = time.time() + TIMEOUT
         while time.time() < deadline:
             time.sleep(POLL_INTERVAL)
-            status_req = urllib.request.Request(status_url, headers=headers)
-            try:
-                with urllib.request.urlopen(status_req, timeout=30) as sr:
-                    status = json.loads(sr.read().decode("utf-8"))
-            except urllib.error.HTTPError as e:
-                raise RuntimeError(f"FAL status HTTP {e.code}") from e
+            status = get_json(
+                status_url,
+                headers=headers,
+                timeout=30,
+                provider_label="FAL status",
+                consumer="tool.image_api.fixed",
+            )
             st = status.get("status")
             if st == "COMPLETED":
                 break
             if st in ("FAILED", "CANCELLED"):
-                raise RuntimeError(f"FAL job {st}: {status}")
+                raise RuntimeError(f"FAL job {st}") from None
         else:
             raise RuntimeError("FAL job timed out")
 
         # Fetch final result
-        result_req = urllib.request.Request(response_url, headers=headers)
-        with urllib.request.urlopen(result_req, timeout=TIMEOUT) as rr:
-            result = json.loads(rr.read().decode("utf-8"))
+        result = get_json(
+            response_url,
+            headers=headers,
+            timeout=TIMEOUT,
+            provider_label="FAL result",
+            consumer="tool.image_api.fixed",
+        )
 
         out: list[GeneratedImage] = []
         for img in result.get("images", []):

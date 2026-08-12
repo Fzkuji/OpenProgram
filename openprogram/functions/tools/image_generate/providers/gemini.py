@@ -10,11 +10,10 @@ Docs: https://ai.google.dev/gemini-api/docs/image-generation
 from __future__ import annotations
 
 import base64
-import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
+
+from openprogram.functions.tools.web_search._http import post_json
 
 from ..registry import GeneratedImage
 
@@ -66,20 +65,14 @@ class GeminiImagenProvider:
                 "aspectRatio": aspect,
             },
         }
-        req = urllib.request.Request(
+        data = post_json(
             url,
-            data=json.dumps(payload).encode("utf-8"),
+            body=payload,
             headers={"Content-Type": "application/json"},
+            timeout=TIMEOUT,
+            provider_label="Gemini Imagen",
+            consumer="tool.image_api.fixed",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"Gemini Imagen HTTP {e.code}: {body}") from e
 
         out: list[GeneratedImage] = []
         for pred in data.get("predictions", []):

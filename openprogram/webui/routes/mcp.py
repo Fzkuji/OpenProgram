@@ -203,6 +203,30 @@ def _one_shot_client(cfg: MCPServerConfig, sandbox_cwd: str):
     return MCPClient(cfg, force_sandbox=True, sandbox_cwd=sandbox_cwd)
 
 
+async def _fetch_catalog_json(url: str):
+    from openprogram.security import safe_http
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
+
+    consumer = "webui.mcp.catalog"
+    try:
+        async with safe_http.configured_safe_async_client(
+            consumer,
+            url,
+            owner_exception=OwnerURLException(
+                consumer=consumer, origin=normalize_origin(url)
+            ),
+        ) as client:
+            response = await client.get(url, timeout=15.0)
+            safe_http.raise_for_status_sanitized(response)
+            safe_http.require_json_mime(response)
+            return response.json()
+    except Exception as e:
+        detail = f"{type(e).__name__} for {normalize_origin(url)}"
+        if isinstance(e, RuntimeError) and str(e).startswith("HTTP "):
+            detail = str(e)
+        raise RuntimeError(detail) from None
+
+
 def register(app: FastAPI) -> None:
     @app.get("/api/mcp/servers")
     async def list_servers():
@@ -364,7 +388,6 @@ def register(app: FastAPI) -> None:
         any locally-installed server — handy for a global "any
         updates?" check at startup.
         """
-        import httpx
         from openprogram.mcp.config import (
             catalog_entry_hash,
             config_to_catalog_dict,
@@ -406,23 +429,26 @@ def register(app: FastAPI) -> None:
                 if not c.source_catalog_url
             ]
 
+        origin_counts: dict[str, int] = {}
         for cat_url in targets:
+            from openprogram.security.url_policy import normalize_origin
+            origin = normalize_origin(cat_url)
+            ordinal = origin_counts.get(origin, 0) + 1
+            origin_counts[origin] = ordinal
+            safe_catalog = origin if ordinal == 1 else f"{origin}#{ordinal}"
             try:
-                async with httpx.AsyncClient(timeout=15.0) as cx:
-                    resp = await cx.get(cat_url, follow_redirects=True)
-                    resp.raise_for_status()
-                    data = resp.json()
+                data = await _fetch_catalog_json(cat_url)
             except Exception as e:  # noqa: BLE001
-                result["catalog_errors"][cat_url] = (
+                result["catalog_errors"][safe_catalog] = (
                     f"{type(e).__name__}: {e}"
                 )
                 continue
             if not isinstance(data, dict):
-                result["catalog_errors"][cat_url] = "root is not an object"
+                result["catalog_errors"][safe_catalog] = "root is not an object"
                 continue
             raw_servers = data.get("servers") or []
             if not isinstance(raw_servers, list):
-                result["catalog_errors"][cat_url] = "servers is not a list"
+                result["catalog_errors"][safe_catalog] = "servers is not a list"
                 continue
 
             # Index catalog entries by name + compute their hashes.
@@ -485,7 +511,6 @@ def register(app: FastAPI) -> None:
             catalog_entry_hash,
             config_to_catalog_dict,
         )
-        import httpx
 
         all_cfgs, revision = load_configs_with_revision(include_disabled=True)
         match = next((c for c in all_cfgs if c.name == name), None)
@@ -500,11 +525,7 @@ def register(app: FastAPI) -> None:
                         f"installed servers."))
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as cx:
-                resp = await cx.get(match.source_catalog_url,
-                                     follow_redirects=True)
-                resp.raise_for_status()
-                data = resp.json()
+            data = await _fetch_catalog_json(match.source_catalog_url)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=502,
                                 detail=f"catalog fetch failed: {e}")
@@ -519,10 +540,12 @@ def register(app: FastAPI) -> None:
             None,
         )
         if catalog_entry is None:
+            from openprogram.security.url_policy import normalize_origin
+
             raise HTTPException(
                 status_code=502,
                 detail=(f"server '{name}' no longer in catalog "
-                        f"{match.source_catalog_url!r}"),
+                        f"{normalize_origin(match.source_catalog_url)}"),
             )
 
         # Build the merged config: take catalog's connection/auth
@@ -631,15 +654,8 @@ def register(app: FastAPI) -> None:
                 status_code=400,
                 detail="url must be an http(s) URL",
             )
-        import httpx
         try:
-            async with httpx.AsyncClient(timeout=15.0) as cx:
-                resp = await cx.get(url, follow_redirects=True)
-                resp.raise_for_status()
-                data = resp.json()
-        except httpx.HTTPError as e:
-            raise HTTPException(status_code=502,
-                                detail=f"catalog fetch failed: {e}")
+            data = await _fetch_catalog_json(url)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=502,
                                 detail=f"catalog parse failed: {type(e).__name__}: {e}")

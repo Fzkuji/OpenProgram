@@ -60,7 +60,8 @@ class TelegramChannel(Channel):
         return ch_msg.chat_id
 
     def run(self, stop: threading.Event) -> None:
-        import requests
+        from openprogram.security.safe_http import safe_client
+
         me = self._get_me()
         tag = f"telegram:{self.account_id}"
         if me:
@@ -72,15 +73,14 @@ class TelegramChannel(Channel):
 
         while not stop.is_set():
             try:
-                r = requests.get(
-                    f"{self.base}/getUpdates",
-                    params={"offset": self.offset, "timeout": 25},
-                    timeout=40,
-                )
-                data = r.json() if r.ok else {}
+                with safe_client("channel.telegram.api") as client:
+                    r = client.get(
+                        f"{self.base}/getUpdates",
+                        params={"offset": self.offset, "timeout": 25},
+                    )
+                data = r.json() if r.is_success else {}
                 if not data.get("ok"):
-                    print(f"[{tag}] API error {r.status_code}: "
-                          f"{(data.get('description') or r.text)[:200]}")
+                    print(f"[{tag}] API error {r.status_code}")
                     time.sleep(5)
                     continue
                 for upd in data.get("result", []):
@@ -91,14 +91,16 @@ class TelegramChannel(Channel):
             except KeyboardInterrupt:
                 raise
             except Exception as e:  # noqa: BLE001
-                print(f"[{tag}] poll failed: {type(e).__name__}: {e}")
+                print(f"[{tag}] poll failed: {type(e).__name__}")
                 time.sleep(3)
 
     def _get_me(self) -> dict[str, Any] | None:
-        import requests
+        from openprogram.security.safe_http import safe_client
+
         try:
-            r = requests.get(f"{self.base}/getMe", timeout=10)
-            if r.ok and r.json().get("ok"):
+            with safe_client("channel.telegram.api") as client:
+                r = client.get(f"{self.base}/getMe")
+            if r.is_success and r.json().get("ok"):
                 return r.json().get("result")
         except Exception:
             pass

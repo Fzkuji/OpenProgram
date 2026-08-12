@@ -63,7 +63,7 @@ export type WsRequest =
       conversation_id?: string;
     }
   | { action: 'detach_session'; channel: string; account_id: string; peer: string }
-  | { action: 'get_settings' }
+  | { action: 'get_settings'; session_id?: string }
   | { action: 'set_setting'; key: string; value: unknown }
   // runtime.ask / confirm / approval reply. answer is a string (single
   // choice / confirm / free text) or string[] (multi). Mirrors the web
@@ -82,7 +82,55 @@ export type WsRequest =
   | { action: 'checkout_branch'; session_id: string; head_msg_id: string }
   | { action: 'rename_branch'; session_id: string; name: string; head_msg_id?: string }
   | { action: 'auto_name_branch'; session_id: string; head_msg_id?: string }
-  | { action: 'delete_branch'; session_id: string; head_msg_id?: string };
+  | { action: 'delete_branch'; session_id: string; head_msg_id?: string }
+  | { action: 'list_tasks'; session_id: string }
+  | { action: 'get_task'; task_id: string }
+  | { action: 'cancel_task'; task_id: string; reason?: string };
+
+export interface TaskResourceView {
+  task_id: string;
+  status: string;
+  resource_state: string;
+  reason_code: string | null;
+  reason_key: string | null;
+  retryable: boolean;
+  limits: Record<string, unknown>;
+  capacity: {
+    scheduler_capacity: number;
+    session_live: { used: number; limit: number | null };
+    session_queued: { used: number; limit: number | null };
+    session_tasks: { used: number; limit: number | null };
+    queue_position: number | null;
+  };
+  budget: {
+    scope: string;
+    tokens: { actual: number | null; reserved: number | null; limit: number | null };
+    cost_usd: {
+      actual: string | null;
+      reserved: string | null;
+      limit: string | null;
+      known: boolean;
+      unknown_events: number | null;
+    };
+    runtime_seconds: { used: number | null; limit: number | null };
+    idle_seconds: { used: number | null; limit: number | null };
+    shared_remaining: {
+      tokens: number | null;
+      cost_usd: string | null;
+      cost_unknown_events: number | null;
+    };
+  };
+}
+
+export interface TaskRow {
+  id: string;
+  status: string;
+  subject?: string;
+  parent_session_id?: string;
+  reason_code?: string | null;
+  resource?: TaskResourceView;
+  [key: string]: unknown;
+}
 
 export interface ChatAck {
   type: 'chat_ack';
@@ -367,6 +415,27 @@ export type WsEnvelope =
   | QrLoginEnvelope
   | SearchResultsEnvelope
   | ErrorEnvelope
+  | { type: 'tasks_list'; data: { session_id?: string | null; tasks: TaskRow[] } }
+  | { type: 'task'; data: { task: TaskRow | null; error?: string } }
+  | {
+      type: 'task_status';
+      data: {
+        task_id: string;
+        session_id?: string;
+        status: string;
+        reason_code?: string | null;
+        resource?: TaskResourceView;
+      };
+    }
+  | {
+      type: 'cancel_task_result';
+      data: {
+        task_id: string;
+        status: string | null;
+        resource?: TaskResourceView;
+        error?: string;
+      };
+    }
   | { type: 'settings'; data: unknown[] }
   | {
       type: 'setting_result';

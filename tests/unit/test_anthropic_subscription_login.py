@@ -65,8 +65,22 @@ def test_refresh_posts_refresh_token(monkeypatch):
         captured["body"] = json
         return _Resp()
 
-    import httpx
-    monkeypatch.setattr(httpx, "post", _fake_post)
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        post = staticmethod(_fake_post)
+
+    from openprogram.security import safe_http
+
+    def _safe_client(consumer):
+        assert consumer == "provider.oauth.fixed"
+        return _Client()
+
+    monkeypatch.setattr(safe_http, "safe_client", _safe_client)
 
     cred = Credential(
         provider_id="anthropic", account_id="default", kind="oauth",

@@ -16,8 +16,10 @@ import type { ChatMsg } from "@/lib/session-store";
 
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import type { TaskResourceView } from "@/lib/net/ws-events";
 import { navigate } from "@/lib/navigate";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
+import { taskResourceDetails } from "@/lib/task-resource";
 import {
   type AnimatedNavIconHandle,
   ArrowUpRightIcon,
@@ -118,6 +120,8 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   const [expanded, setExpanded] = useState(false);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const attach = msg.attach || {};
+  const taskId = attach.task_id;
+  const [resource, setResource] = useState<TaskResourceView>();
   const followupNotice = useFollowupNotice(msg.id);
   const followupMsgId = useFollowupMsgId(msg.id);
   const targetSessionId = attach.session_id || "";
@@ -161,6 +165,40 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   }, [currentSessionId]);
   const alreadyHere =
     sameSession && !!targetHead && activeHead === targetHead;
+
+  useEffect(() => {
+    setResource(undefined);
+    if (!taskId) return;
+    const onStatus = (e: WindowEventMap["op:task-status"]) => {
+      if (e.detail?.task_id !== taskId || !e.detail.resource) return;
+      setResource(e.detail.resource);
+    };
+    const onMessage = (e: WindowEventMap["op:task-message"]) => {
+      if (e.detail?.type !== "task") return;
+      const data = e.detail.data as {
+        task?: { id?: string; resource?: TaskResourceView } | null;
+      } | undefined;
+      if (data?.task?.id !== taskId) return;
+      setResource(data.task.resource);
+    };
+    window.addEventListener("op:task-status", onStatus);
+    window.addEventListener("op:task-message", onMessage);
+    wsSend({ action: "get_task", task_id: taskId });
+    return () => {
+      window.removeEventListener("op:task-status", onStatus);
+      window.removeEventListener("op:task-message", onMessage);
+    };
+  }, [taskId]);
+
+  const resourceDetails = taskResourceDetails(resource);
+  function resourceLabel(key: (typeof resourceDetails)[number]["key"]): string {
+    if (key === "state") return text("Resource state", "资源状态");
+    if (key === "tokens") return text("Tokens remaining", "Token 剩余");
+    if (key === "cost") return text("Cost remaining", "费用剩余");
+    if (key === "runtime") return text("Runtime remaining", "运行时间剩余");
+    if (key === "idle") return text("Idle remaining", "空闲时间剩余");
+    return text("Reason", "原因");
+  }
 
 
   function open() {
@@ -280,6 +318,19 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
           </button>
         ) : null}
       </div>
+      {expanded && resourceDetails.length > 0 ? (
+        <div className="attach-card-resources">
+          <div className="attach-card-preview-label">
+            {text("Resources", "资源")}
+          </div>
+          {resourceDetails.map((detail) => (
+            <div className="attach-card-resource-row" key={detail.key}>
+              <span>{resourceLabel(detail.key)}</span>
+              <code>{detail.value}</code>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {expanded ? (
         <>
           <div className="attach-card-preview-label">

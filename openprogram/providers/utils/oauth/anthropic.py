@@ -13,10 +13,9 @@ import time
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
-import httpx
-
 from openprogram.providers.utils.oauth.pkce import generate_pkce
 from openprogram.providers.utils.oauth.types import OAuthAuthInfo, OAuthCredentials, OAuthLoginCallbacks, OAuthPrompt
+from openprogram.security.safe_http import safe_async_client
 
 # Obfuscated to avoid scrapers
 _CLIENT_ID = base64.b64decode("OWQxYzI1MGEtZTYxYi00NGQ5LTg4ZWQtNTk0NGQxOTYyZjVl").decode()
@@ -51,7 +50,7 @@ async def login_anthropic(
     code = splits[0]
     state = splits[1] if len(splits) > 1 else ""
 
-    async with httpx.AsyncClient() as client:
+    async with safe_async_client("provider.oauth.fixed") as client:
         resp = await client.post(
             _TOKEN_URL,
             json={
@@ -64,7 +63,7 @@ async def login_anthropic(
             },
         )
         if not resp.is_success:
-            raise RuntimeError(f"Token exchange failed: {resp.text}")
+            raise RuntimeError(f"Token exchange failed: HTTP {resp.status_code}")
 
         data = resp.json()
 
@@ -78,7 +77,7 @@ async def login_anthropic(
 
 async def refresh_anthropic_token(refresh_token: str) -> OAuthCredentials:
     """Refresh an expired Anthropic OAuth token."""
-    async with httpx.AsyncClient() as client:
+    async with safe_async_client("provider.oauth.fixed") as client:
         resp = await client.post(
             _TOKEN_URL,
             json={
@@ -88,7 +87,9 @@ async def refresh_anthropic_token(refresh_token: str) -> OAuthCredentials:
             },
         )
         if not resp.is_success:
-            raise RuntimeError(f"Anthropic token refresh failed: {resp.text}")
+            raise RuntimeError(
+                f"Anthropic token refresh failed: HTTP {resp.status_code}"
+            )
         data = resp.json()
 
     expires_at = int(time.time() * 1000) + data["expires_in"] * 1000 - 5 * 60 * 1000

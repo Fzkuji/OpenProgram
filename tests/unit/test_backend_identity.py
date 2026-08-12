@@ -1,6 +1,4 @@
-import json
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
 
 from openprogram._ports import backend_is_ours
 from openprogram.backend_endpoint import create_owner_challenge_proof
@@ -37,35 +35,42 @@ def test_backend_identity_uses_worker_ownership_without_network_credentials(
     )
 
     class ChallengeResponse:
-        def __init__(self, body: bytes):
-            self.body = body
+        def __init__(self, proof: str):
+            self._proof = proof
 
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"proof": self._proof}
+
+    class ChallengeClient:
         def __enter__(self):
             return self
 
         def __exit__(self, *_args):
             return False
 
-        def read(self, _limit: int) -> bytes:
-            return self.body
-
-    class ChallengeOpener:
-        def open(self, request, timeout: float):
+        def get(self, url, *, params, timeout: float):
             assert timeout == 1.0
-            assert "authorization" not in {
-                name.lower() for name, _value in request.header_items()
-            }
-            assert auth_state.token not in request.full_url
-            nonce = parse_qs(urlsplit(request.full_url).query)["nonce"][0]
+            assert auth_state.token not in url
+            assert auth_state.token not in params.values()
+            nonce = params["nonce"]
             proof = create_owner_challenge_proof(
                 token=auth_state.token,
                 nonce=nonce,
             )
-            return ChallengeResponse(json.dumps({"proof": proof}).encode())
+            return ChallengeResponse(proof)
+
+    def configured(consumer, origin, *, owner_exception):
+        assert consumer == "runtime.local_probe"
+        assert origin == "http://localhost:18100"
+        assert owner_exception.consumer == consumer
+        assert owner_exception.origin == origin
+        return ChallengeClient()
 
     monkeypatch.setattr(
-        "urllib.request.build_opener",
-        lambda *_handlers: ChallengeOpener(),
+        "openprogram.security.safe_http.configured_safe_client", configured
     )
 
     try:

@@ -28,6 +28,8 @@
 - `parent_session_id`: 关联的 OpenProgram session（一对一或一对多）
 - `parent_task_id`: 关联的 async task（若有）
 - `created_by_agent`: agent id（记录是哪个 agent 开的，UI 上能看出来）
+- `pr_number`: 通过 `worktree_create` 的 `pr` 参数开出来的 worktree 会记这个值（见 D5b）；
+  后续再对同一个 PR 号调用 `pr` 模式时，靠它识别出重复而不是再开一个
 
 记录持久化在 session-git 仓库的 `worktrees/<id>.json`，跟 ContextCommit 平行存。
 session 关闭时不自动清理，等 agent 或用户显式 merge / discard。
@@ -111,6 +113,32 @@ OpenProgram 自己有 `~/.openprogram/sessions/<sid>/`（每个 session 一个 g
 
 入口都失败 → worktree_create 报错 `source_repo_not_a_git_repo`。
 不会自动 `git init` 给用户建仓库（破坏性太大）。
+
+### D5b. 直接从 PR 开 worktree
+
+`worktree_create` 的 `pr` 参数让 worktree 直接开在某个 PR 的分支上，替代 `base_ref`——
+接受纯数字（`123`）、`#` 前缀（`#123`）、或完整 GitHub PR 链接
+（`https://github.com/<owner>/<repo>/pull/<number>`）。解析逻辑在
+`openprogram/worktree/pr_ref.py::parse_pr_ref`。这条路复用同一个 `worktree_create`
+工具和同一条 `WorktreeManager.create_worktree` 创建路径——`pr` 是这唯一入口上的一种
+模式切换，不是另起一个工具。
+
+解析走 `gh` CLI（`openprogram/worktree/pr_ref.py`）：
+
+1. `gh pr view <n> --json headRefName,headRepositoryOwner,isCrossRepository` 读 PR
+   的 head 分支和是否来自 fork。
+2. **同仓 PR**（`isCrossRepository=false`）：`git fetch origin <headRefName>:<local_branch>`——
+   分支已经在 `origin` 上。
+3. **fork PR**（`isCrossRepository=true`）：`git fetch origin pull/<n>/head:<local_branch>`——
+   GitHub 提供的每个 PR 一个的合成 ref，跟 `gh pr checkout` 用的机制一样，不需要把
+   贡献者的 fork 注册成 remote。
+4. fetch 到的 commit 作为普通 `git worktree add` 的 `base_ref`；worktree 自己的分支名是
+   `op/wt/pr-<n>-<id6>`（跟其它 worktree 一样的 `op/wt/<slug>-<id6>` 命名惯例，用 PR 号
+   顶替 label 位置）。临时 fetch ref 在 `-b` 把它的 tip 拷到新分支后就删掉。
+
+`gh` 缺失或未登录会报 `pr_ref_error: gh_not_found` / `gh_not_authenticated`——绝不
+静默退回 `base_ref`。同一 PR 号已存在一个非终态 worktree（`Worktree.pr_number`）时报
+`pr_worktree_exists`，报出已有 worktree 的 id 和路径，而不是重复创建。
 
 ### D6. 安全 / 权限
 
@@ -202,7 +230,7 @@ into source_repo (ff-only, 3 files changed)"。
 
 | Tool | 参数 | 返回 |
 |---|---|---|
-| `worktree_create` | `source_repo: str?` `name: str?` `base_ref: str?` | `{id, path, branch, base_sha}` |
+| `worktree_create` | `source_repo: str?` `branch_name: str?` `base_ref: str?` `label: str?` `pr: str?`（见 D5b，纯数字 / `#number` / GitHub PR 链接，一旦传了 `branch_name`/`base_ref` 会被忽略） | `{id, path, branch, base_sha}` |
 | `worktree_merge`  | `worktree_id: str` `mode: str = "ff-only"` `delete_branch: bool = False` | `{merged_sha, files_changed: int, summary: str}` |
 | `worktree_discard`| `worktree_id: str` `force: bool = False` | `{status: "discarded"}` |
 | `worktree_list`   | `status_filter: str?` | `[{id, path, branch, status, source_repo, age_seconds}]` |
@@ -215,6 +243,8 @@ into source_repo (ff-only, 3 files changed)"。
 - `merge_conflict`: merge 期间冲突
 - `worktree_in_sessions_dir`: source_repo 落在 sessions 树里（D4 隔离违例）
 - `worktree_exists`: 同 source_repo 下同名 branch 已有 worktree
+- `pr_ref_error`: `pr` 解析不出来，或 `gh` 缺失 / 未登录 / 调用失败（D5b）
+- `pr_worktree_exists`: 同一个 PR 号已经有非终态 worktree（D5b）
 
 `worktree_create` / `worktree_merge` / `worktree_discard` 默认
 `requires_approval=True`，permission_mode=auto 才不弹审批。
@@ -384,7 +414,51 @@ agent 跑到一半（worktree 里 commit 了 5 个 patch），用户决定自己
 
 ---
 
-## Part 4. 不在本设计范围
+## Part 4. `.worktreeinclude`
+
+`git worktree add`只checkout**已跟踪**的内容。仓库故意保持未跟踪且被 gitignore 的文件
+（`.env`、按机器分的 TLS 证书、`*.local.json` 覆盖项）不会出现在新建的 worktree 里，
+但 agent 的工具马上就要用到它们。
+
+`source_repo/.worktreeinclude`存在时，每行是一条 gitignore 风格的 pattern：
+
+- 去掉首尾空白后以`#`开头的行是注释；空行忽略。
+- `*`、`?`、`[...]`——标准 glob 通配符。
+- 不含`/`的 pattern 匹配树里任意位置的 basename（`*.local.json`同时匹配`a.local.json`
+  和`sub/a.local.json`）。
+- 含`/`的 pattern 相对仓库根锚定。
+- 结尾的`/`标记目录 pattern（匹配该目录及其下所有内容）。
+
+不支持：`!`取反、`**`双星号。这类情形拆成多条普通 pattern。
+
+`create_worktree`末尾、`git worktree add`成功之后，`WorktreeManager`调用
+`sync_include_files(source_repo, worktree_path)`（`openprogram/worktree/include_sync.py`）。
+这是所有创建路径共同经过的唯一入口——`worktree_create`工具，以及未来的
+task/plan-mode 并发创建——所以钩子挂在 manager 里，不挂在某一个调用方上。
+
+语义：
+
+- 只有**未跟踪**文件才是候选（`git ls-files --others`，刻意不加`--exclude-standard`，
+  这样已经被 gitignore 的`.env`之类仍会出现）——已跟踪文件本来就被
+  `git worktree add`自己 checkout 了。
+- 目标路径已存在就跳过，不覆盖。
+- 符号链接按链接本身拷贝，不解引用。
+- 文件权限保留（`shutil.copy2`）。
+- 单个文件拷贝失败会被记录，不中断其余文件；成功与失败都会挂到`Worktree`记录上
+  （`include_synced` / `include_failed`），并回显在`worktree_create`工具的返回文本里。
+- `source_repo`里没有`.worktreeinclude`文件→零 git 调用，零行为变化。
+
+Pattern 匹配是手写的 Python（`fnmatch` + `pathlib`），不是 git 自己的 exclude 引擎。
+`git check-ignore` / `ls-files --exclude-from`只会把匹配到的文件从列表里**排除**——
+没有把 pattern 文件当作*包含*过滤器的 plumbing 形式——要让 git 指向任意 pattern 文件，
+另一条路是`core.excludesFile`配置注入，这个 sandbox 会拒绝。复用 git 自己枚举未跟踪
+文件的能力（`git ls-files --others`）加一个小的 pattern matcher 处理 manifest，
+不需要配置注入也不需要新依赖——`pathspec`不在`openprogram`自己的 base
+dependencies 里，它只通过`semble`（一个 MCP 开发工具）传递引入。
+
+---
+
+## Part 5. 不在本设计范围
 
 - **远程 push**：worktree 只本地；要把 worktree branch 推 origin，agent 自己用
   bash 跑 `git push -u origin <branch>`。worktree_merge 也不做 push。
@@ -415,6 +489,7 @@ agent 跑到一半（worktree 里 commit 了 5 个 patch），用户决定自己
 | UI worktree chip | 无 |
 | Worktree × Task 整合 | 无，依赖 async task 系统，后者本身仍在设计中 |
 | Sub-agent worktree 机制 | 在 sub-agent 改为 peer session 时已移除，本设计不复用 |
+| `.worktreeinclude` 未跟踪文件同步 | 已落地——`openprogram/worktree/include_sync.py`，从 `WorktreeManager.create_worktree` 调用 |
 
 按依赖顺序要做的事：
 

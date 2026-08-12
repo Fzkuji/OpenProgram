@@ -1490,6 +1490,11 @@ class ResourceGovernor:
                     or existing["fields_json"] != fields_json
                 ):
                     return None
+                if existing["state"] == "pending":
+                    # Someone else already staged this intent and owns the
+                    # terminal write; a pending intent left by a crash is
+                    # completed by reconcile, never by a second writer.
+                    return None
                 return str(existing["state"]), fields_json, fields
             conn.execute(
                 """INSERT INTO task_finalizations (

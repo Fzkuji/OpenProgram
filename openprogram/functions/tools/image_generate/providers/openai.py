@@ -10,11 +10,10 @@ Docs: https://platform.openai.com/docs/api-reference/images
 from __future__ import annotations
 
 import base64
-import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
+
+from openprogram.functions.tools.web_search._http import post_json
 
 from ..registry import GeneratedImage
 
@@ -63,23 +62,15 @@ class OpenAIImageProvider:
             "size": size,
             "response_format": "b64_json",
         }
-        req = urllib.request.Request(
+        data = post_json(
             API_URL,
-            data=json.dumps(payload).encode("utf-8"),
+            body=payload,
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {key}",
-            },
+            }, timeout=TIMEOUT, provider_label="OpenAI image",
+            consumer="tool.image_api.fixed",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"OpenAI image HTTP {e.code}: {body}") from e
         out: list[GeneratedImage] = []
         for item in data.get("data", []):
             raw_b64 = item.get("b64_json") or ""

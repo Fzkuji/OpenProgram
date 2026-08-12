@@ -237,6 +237,14 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
+    case 'tasks': {
+      const conv = ctx.currentConversation;
+      if (!conv) { ctx.pushSystem('No active session.'); return true; }
+      ctx.client.send({ action: 'list_tasks', session_id: conv });
+      ctx.openPicker('tasks');
+      return true;
+    }
+
     case 'connections': {
       // slash commands run silently — no user echo
       ctx.client.send({ action: 'list_channel_bindings' });
@@ -761,7 +769,7 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       // Open the in-TUI settings editor. Ask the worker for the current
       // schema-resolved settings, then show the panel (pickerRouter renders
       // SettingsPanel from settingsRows; useWsEvents fills it on `settings`).
-      ctx.client.send({ action: 'get_settings' });
+      ctx.client.send({ action: 'get_settings', session_id: ctx.currentConversation });
       ctx.openPicker('settings');
       return true;
     }
