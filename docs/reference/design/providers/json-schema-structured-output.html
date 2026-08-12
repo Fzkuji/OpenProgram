@@ -239,10 +239,14 @@ EventStructuredOutputEnd {
       <tr><td>JSON syntax、schema violation、missing hidden submission</td><td>是，最多 1 次</td><td>把无效 assistant 候选和确定性的 issue 列表追加到临时修复上下文，再请求一次。</td></tr>
       <tr><td>refusal、content filter、安全阻止</td><td>否</td><td><code>StructuredOutputGenerationError(code="refusal")</code>。</td></tr>
       <tr><td><code>max_tokens</code>/incomplete、context length</td><td>否</td><td>保留 provider reason；调用方调整预算。框架不自行放大 token 上限。</td></tr>
-      <tr><td>transport/rate limit/provider internal</td><td>否</td><td>继续由现有 stream/exec retry 处理；不计入 validation retry。</td></tr>
+      <tr><td>transport/rate limit/provider internal</td><td>否</td><td>继续由现有 stream/exec retry 处理；不计入 validation retry，但每次 Runtime provider 调用都消耗共享的 <code>max_retries</code> 预算。</td></tr>
       <tr><td>取消或 deadline</td><td>否</td><td>立即传播，不进入修复。</td></tr>
     </tbody>
   </table>
+  <h3>共享调用预算</h3>
+  <p><code>max_validation_retries</code> 与 <code>max_retries</code> 是两个限制，不是两个可相乘的循环。前者限制首次候选失败后最多进行多少次语义修复；后者限制一次同步或异步 <code>exec</code> 在 Runtime 边界发起的 provider 调用总数，包含初次调用、语义修复调用和 transport failure 后的调用。只有 validation retry 尚未耗尽且共享调用预算仍有余额时，Runtime 才发起修复调用。</p>
+  <p>因此 Runtime 边界的 provider 调用数始终不超过 <code>max_retries</code>。例如 <code>max_retries=1</code> 时，无效首个候选直接返回 <code>StructuredOutputValidationError</code>；<code>max_retries=2</code> 且默认允许一次 validation retry 时，最多是初次调用加一次修复。修复调用发生 transport failure 时，该失败已经消费预算，外层不能重新获得完整预算。provider adapter 或 SDK 自己的 transport retry 仍受现有 deadline 和 transport 层配置约束，不由 validation retry 计数。</p>
+  <p><code>structured_output_retry.attempt</code> 和 <code>next_attempt</code> 继续表示结构化候选序号，不复用为 transport attempt。事件只在 Runtime 确认还有共享调用预算、即将进行修复时发送；预算耗尽时不发送虚假的 retry 事件。</p>
   <p>修复 prompt 只包含失败类型和有界 issue 列表，不重新解释 schema，也不调用另一个 LLM。修复上下文只存在于该次 exec；session history 和最终 DAG 只保留最终有效 assistant message，但 model-call 记录保留两次 provider call 供审计。</p>
 
   <h2>8. Tool calling 共存</h2>
@@ -370,7 +374,7 @@ title = result["title"]</pre>
       <tr><td>Provider payload</td><td>逐 adapter 快照测试；Anthropic effort+format 合并；Bedrock schema JSON 字符串；unknown adapter 不发送私有字段。</td><td>现有 <code>tests/providers/test_openai.py</code>、<code>test_anthropic.py</code>、<code>test_gemini.py</code> + 新 Bedrock cases</td></tr>
       <tr><td>Streaming</td><td>单次成功；invalid attempt 的 delta→retry→清空→成功；第 2 次失败无 done；取消/deadline 不重试。</td><td><code>tests/providers/test_structured_output_streaming.py</code>（new）</td></tr>
       <tr><td>Tools</td><td>原生+tools；hidden tool 单独提交；普通 tool 多轮后提交；普通+submit 同轮拒绝；forced/none/parallel 冲突。</td><td><code>tests/unit/test_tools_runtime.py</code> + new Agent loop cases</td></tr>
-      <tr><td>Runtime</td><td>无 schema 返回 str；有 schema 返回 JsonValue；默认 provider 路径确实透传；callable model 同样本地校验。</td><td><code>tests/agentic_programming/test_runtime_structured_output.py</code>（new）</td></tr>
+      <tr><td>Runtime</td><td>无 schema 返回 str；有 schema 返回 JsonValue；默认 provider 路径确实透传；callable model 同样本地校验；同步/异步均证明初次调用、修复调用和 transport retry 共用 <code>max_retries</code> 预算。</td><td><code>tests/agentic_programming/test_runtime_structured_output.py</code>（new）</td></tr>
       <tr><td>Record/replay</td><td>v2 单 call、validation retry 两 calls、schema mismatch path、v1 拒绝、离线派生事件一致。</td><td><code>tests/providers/test_record_replay.py</code></td></tr>
       <tr><td>CLI</td><td>成功 stdout 仅 JSON；exit 2/3/4；stderr 无候选全文；普通 <code>--print</code> 不变。</td><td><code>tests/providers/test_cli.py</code> + CLI integration</td></tr>
       <tr><td>WS/API</td><td>request schema、retry event、typed result、machine error、foreign session routing、旧客户端忽略新字段。</td><td><code>tests/unit/test_webui_chat_dispatcher.py</code> + TS tests</td></tr>
@@ -378,7 +382,7 @@ title = result["title"]</pre>
       <tr><td>回归</td><td>全部 provider stream、tool loop、普通聊天、DAG、session persistence、typecheck、docs HTML。</td><td>现有 suites + <code>npm test</code>/<code>npm run typecheck</code></td></tr>
     </tbody>
   </table>
-  <div class="callout okline"><strong>验收门槛：</strong>每个标为 native 的 adapter 必须有 payload 契约测试和至少一个受控集成测试；结构化成功值必须通过本地原始 schema；所有失败路径最多发生 2 次 provider call；普通文本模式的录制、事件和返回类型保持不变。</div>
+  <div class="callout okline"><strong>验收门槛：</strong>每个标为 native 的 adapter 必须有 payload 契约测试和至少一个受控集成测试；结构化成功值必须通过本地原始 schema；Runtime provider 调用总数不超过 <code>max_retries</code>，且语义修复调用数不超过 <code>max_validation_retries</code>；普通文本模式的录制、事件和返回类型保持不变。</div>
 
   <h2>15. 实施顺序与完成判定</h2>
   <ol>
