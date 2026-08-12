@@ -269,6 +269,17 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
       () => showToast(url),
     );
   }
+  // The endpoint answers with Content-Disposition: attachment and rides
+  // the same session cookie as every other call, so pointing the browser
+  // at it downloads the file — no fetch/blob dance needed.
+  function exportSession(id: string, format: "md" | "html") {
+    const a = document.createElement("a");
+    a.href = `/api/sessions/${encodeURIComponent(id)}/export?format=${format}`;
+    a.download = `${id}.${format}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
   function del(id: string) {
     const conv = conversations[id] as { title?: string } | undefined;
     const title = conv?.title || t("sidebar.untitled");
@@ -406,6 +417,7 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
         onToggleArchive={() => setFlags(c.id, { archived: !c.archived })}
         onMoveToGroup={(g) => setFlags(c.id, { group: g })}
         onCopyLink={() => copyLink(c.id)}
+        onExport={(format) => exportSession(c.id, format)}
         onDelete={() => del(c.id)}
       />
     );
@@ -826,6 +838,7 @@ function ConvItem({
   onToggleArchive,
   onMoveToGroup,
   onCopyLink,
+  onExport,
   onDelete,
 }: {
   conv: LegacyConv;
@@ -839,6 +852,7 @@ function ConvItem({
   onToggleArchive: () => void;
   onMoveToGroup: (group: string) => void;
   onCopyLink: () => void;
+  onExport: (format: "md" | "html") => void;
   onDelete: () => void;
 }) {
   const { t, text } = useTranslation();
@@ -1066,6 +1080,7 @@ function ConvItem({
           onMoveToGroup={onMoveToGroup}
           onNewGroup={newGroup}
           onCopyLink={onCopyLink}
+          onExport={onExport}
           onDelete={onDelete}
           onClose={() => setMenuOpen(false)}
         />

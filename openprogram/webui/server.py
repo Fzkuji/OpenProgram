@@ -1718,6 +1718,10 @@ def create_app(*, owner_auth=None, port: int = 18100):
     from openprogram.webui.routes import memory as _routes_memory
     _routes_memory.register(app)
 
+    # /api/sessions/{id}/export — download a session as Markdown / HTML
+    from openprogram.webui.routes import export as _routes_export
+    _routes_export.register(app)
+
     from openprogram.webui.routes import misc as _routes_misc
     _routes_misc.register(app)
 

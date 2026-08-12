@@ -46,6 +46,8 @@ export interface ConvMenuProps {
   onMoveToGroup: (group: string) => void;
   onNewGroup: () => void;
   onCopyLink: () => void;
+  /** Download the session as a file; the format picks the renderer. */
+  onExport: (format: "md" | "html") => void;
   onDelete: () => void;
   onClose: () => void;
 }
@@ -59,11 +61,13 @@ export function ConvMenu({
   onMoveToGroup,
   onNewGroup,
   onCopyLink,
+  onExport,
   onDelete,
   onClose,
 }: ConvMenuProps) {
   const { t } = useTranslation();
   const [groupOpen, setGroupOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   // Focus the menu on mount so menu-local key shortcuts work without
@@ -137,6 +141,25 @@ export function ConvMenu({
       )}
 
       <MenuItem label={t("sidebar.copy_link")} shortcut="C" onClick={() => run(onCopyLink)} />
+
+      {/* Export — same inline sub-list as "Move to group", because the
+          format is part of the choice, not a second dialog. */}
+      <button
+        type="button"
+        className={itemCls(false)}
+        onClick={() => setExportOpen((v) => !v)}
+        aria-expanded={exportOpen}
+      >
+        <span className="flex-1 text-left">{t("sidebar.export")}</span>
+        <span className="flex w-[16px] shrink-0 items-center justify-center text-text-muted">{exportOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+      </button>
+      {exportOpen && (
+        <div className="flex flex-col border-l border-[var(--border)] ml-3 my-0.5">
+          <SubItem label={t("sidebar.export_markdown")} onClick={() => run(() => onExport("md"))} />
+          <SubItem label={t("sidebar.export_html")} onClick={() => run(() => onExport("html"))} />
+        </div>
+      )}
+
       <MenuItem
         label={conv.archived ? t("sidebar.unarchive") : t("sidebar.archive")}
         shortcut="A"
