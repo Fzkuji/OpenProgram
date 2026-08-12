@@ -238,7 +238,13 @@ class RecordingSink:
         self._thread_lock = threading.RLock()
         from openprogram.paths import get_state_dir
         managed_root = get_state_dir() / "recordings"
-        if managed_root.is_symlink():
+        try:
+            inside_managed_root = self.path.absolute().is_relative_to(
+                managed_root.absolute()
+            )
+        except OSError:
+            inside_managed_root = False
+        if inside_managed_root and managed_root.is_symlink():
             raise PermissionError(
                 f"recordings directory must not be a symlink: {managed_root}"
             )
