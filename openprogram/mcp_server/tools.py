@@ -35,6 +35,30 @@ def json_result(payload: Any, *, is_error: bool = False) -> AgentToolResult:
     )
 
 
+def prompt_result(session_id: str, result: Any) -> AgentToolResult:
+    """Project one validated dispatcher result onto the fixed MCP payload."""
+    final_text = getattr(result, "final_text", None)
+    assistant_msg_id = getattr(result, "assistant_msg_id", None)
+    failed = getattr(result, "failed", None)
+    if (
+        type(session_id) is not str
+        or not session_id
+        or type(final_text) is not str
+        or type(assistant_msg_id) is not str
+        or not assistant_msg_id
+        or type(failed) is not bool
+    ):
+        return json_result({"error": "prompt execution failed"}, is_error=True)
+    return json_result(
+        {
+            "session_id": session_id,
+            "text": final_text,
+            "assistant_msg_id": assistant_msg_id,
+            "failed": failed,
+        }
+    )
+
+
 def to_mcp_content(result: AgentToolResult) -> list[mcp_types.ContentBlock]:
     """Convert supported Runtime blocks without inventing a fallback shape."""
     converted: list[mcp_types.ContentBlock] = []
@@ -65,4 +89,4 @@ def to_mcp_content(result: AgentToolResult) -> list[mcp_types.ContentBlock]:
     return converted
 
 
-__all__ = ["json_result", "to_mcp_content"]
+__all__ = ["json_result", "prompt_result", "to_mcp_content"]
