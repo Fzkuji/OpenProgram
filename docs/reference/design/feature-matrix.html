@@ -108,6 +108,29 @@
 </style>
 </head>
 <body>
+<script type="application/json" id="openprogram-scope-decisions">
+{
+  "schema_version": 1,
+  "decisions": [
+    {
+      "id": "windows",
+      "status": "deferred",
+      "decision": "do-not-plan",
+      "scope": ["implementation", "testing", "packaging", "compatibility"],
+      "visible": false,
+      "decided_at": "2026-08-12"
+    },
+    {
+      "id": "os-credential-store",
+      "status": "rejected",
+      "decision": "do-not-implement",
+      "aliases": ["Keychain", "keyring", "Credential Manager"],
+      "visible": false,
+      "decided_at": "2026-08-12"
+    }
+  ]
+}
+</script>
 <div class="wrap">
 <h1>功能清单对标：设计参考审计快照</h1>
 <p class="sub">本页用于后续完善 OpenProgram 时核对功能范围，不是实现需求、产品质量排名或对外宣传材料。审计单位是 160 个功能条目、OpenProgram 加 12 个参考列；证据来自功能配置、命令与工具清单、出厂 agent、帮助文本、界面入口和实现代码。每个格子表示在指定快照中确认到的状态，不表示对所有运行路径做过端到端验收。</p>
@@ -124,7 +147,7 @@
 </div>
 
 <div class="note orange">
-  <b>快照与使用边界</b>。OpenProgram 的实现证据以 <code>main@1c249e92</code> 为基线（2026-08-11 复核），包含运行中发消息排队、owner/paired 两档来源权限加配对准入、默认开启并覆盖全部本地执行面的沙箱、ACP 服务端与三个 LSP 工具，以及本次复核确认的 commit-push-pr 打包技能、credential_process 外部命令取密钥、带 <code>openprogram recordings</code> CLI 与 <code>record_replay.mode/file</code> 配置入口的请求录制与严格离线回放、runtime <code>llm(response_format=…)</code> 的 JSON schema 结构化输出（严格校验加一次重试，OpenAI/Anthropic 原生映射）、backup 命令和 agent/resource_governance 的每会话并发与资源限额。其他列固定在第五节列出的本地源码、二进制或 npm 包版本，没有声明为各产品的最新版本。<code>·</code> 只表示本轮没有确认到实现，不等于功能不存在。第四节是设计参考，优先级尚未经过使用频率统计或工程量估算。
+  <b>快照与使用边界</b>。OpenProgram 的实现证据以 <code>main@02860737</code> 为基线（2026-08-12 复核），包含运行中发消息排队、owner/paired 两档来源权限加配对准入、默认开启并覆盖全部本地执行面的沙箱、ACP 服务端与三个 LSP 工具，以及 commit-push-pr 打包技能、credential_process 外部命令取密钥、请求录制与严格离线回放、JSON schema 结构化输出、backup 命令、每会话资源限额，以及本轮完成的队列与 WebSocket 生命周期、session index/merged_heads 一致性、DAG 持久化观测、provider 诊断、record/replay 安全加固和 SessionStore 锁范围修复。其他列固定在第五节列出的本地源码、二进制或 npm 包版本，没有声明为各产品的最新版本。<code>·</code> 只表示本轮没有确认到实现，不等于功能不存在。第四节是设计参考，优先级尚未经过使用频率统计或工程量估算。
 </div>
 
 <div class="note blue">
@@ -331,8 +354,8 @@
 <tr><td class="fname">LLM 判定的自动审批<span class="src">我们 auto 模式先用固定 allow/deny 集筛选，不确定的写/edit 调 _auto_classifier.py，分类失败时拒绝</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
 <tr><td class="fname">不可由 bypass 绕过的强制拒绝规则<span class="src">我们 _approval.py 在 bypass 短路前应用显式 deny/ask 与 force_ask，test_deny_rule_blocks_even_under_bypass 覆盖 deny；hermes hardline · buddy hard_deny</span></td><td class="g1 us">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
 <tr><td class="fname">将删除操作重定向至回收站<span class="src">我们对绑定 session/turn 的 LocalBackend 与 execute_code 注入 shell/Python/Node shim；manifest 支持 openprogram trash list/restore。无上下文的 cron/后台任务、Docker/SSH 与可绕过入口未覆盖</span></td><td class="g2 us">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
-<tr><td class="fname">凭据存操作系统钥匙串<span class="src">buddy 使用 Keychain、keyring 或凭据管理器 · codex 可选 keyring-store；我们使用权限模式为 0600 的明文文件</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g1">●</td></tr>
-<tr><td class="fname">通过外部命令获取密钥<span class="src">我们 auth/methods/credential_process.py 每次调用外部命令取 token，可设 cache_seconds；参数约束、超时与日志脱敏尚未加固。pi-mono 将以 ! 开头的值解释为 shell 命令 · claude apiKeyHelper · openclaw SecretRef</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr data-op-scope-id="os-credential-store" data-op-decision="do-not-implement"><td class="fname">凭据存操作系统钥匙串<span class="src">buddy 使用 Keychain、keyring 或凭据管理器 · codex 可选 keyring-store；我们使用权限模式为 0600 的明文文件</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">通过外部命令获取密钥<span class="src">我们 auth/methods/credential_process.py 每次调用外部命令取 token，argv 列表无 shell 插值、60 秒可配超时、cache_seconds 去重；helper stderr 在进入错误信息或日志前经 diagnostics redactor 脱敏，再截断至 200 字符。pi-mono 将以 ! 开头的值解释为 shell 命令 · claude apiKeyHelper · openclaw SecretRef</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
 <tr><td class="fname">提示注入扫描<span class="src">hermes 扫 AGENTS.md 与 .cursorrules，加 Tirith 执行前内容扫描</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
 <tr><td class="fname">私网访问与 SSRF 防护<span class="src">hermes 挡 RFC1918 与云元数据 · openclaw 可选前置代理；我们只有 Origin 校验</span></td><td class="g2 us">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
 <tr><td class="fname">威胁模型文档或形式化验证<span class="src">openclaw MITRE ATLAS 加 TLA+ 机检模型 · codex Bugcrowd 漏洞披露</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td></tr>
@@ -395,11 +418,11 @@
 </div>
 
 <h3 id="bycat">1.2按类别比较已确认比例</h3>
-<p class="lead">蓝点是 OpenProgram，右侧点是该类别已确认比例最高的参考列。当前比例差最大的三类依次为集成与被集成、版本控制、编辑器集成。</p>
+<p class="lead">灰色横带是该类别 10 个有效参考列（剔除证据过稀的 pi-ai、weclaw）已确认比例的最低到最高范围，竖刻度是中位数，蓝点是 OpenProgram 的位置。点落在带子左端附近说明大幅落后，落在带外右侧说明领先全部参考列。当前比例差最大的三类依次为集成与被集成、版本控制、代码理解。</p>
 <div class="card scroll">
-<svg viewBox="0 0 960 400" role="img" aria-label="十三个功能类别中OpenProgram与各类别最高参考列的已确认比例，多agent类别OpenProgram领先，集成与被集成差距最大">
+<svg viewBox="0 0 960 400" role="img" aria-label="十三个功能类别中OpenProgram相对10个参考列已确认比例范围的位置，多agent类别领先全部参考列，集成与被集成落在范围下端">
   <rect x="0" y="0" width="960" height="400" fill="#12110b"/>
-  <text x="20" y="24" fill="#8a8675" font-size="11" letter-spacing="2">类内已确认比例</text>
+  <text x="20" y="24" fill="#8a8675" font-size="11" letter-spacing="2">类内已确认比例　<tspan fill="#55523f">┃ 范围端点</tspan>　<tspan fill="#8a8675">│ 中位数</tspan>　<tspan fill="#4f8ef7">● 我们</tspan></text>
   <line x1="200" y1="34" x2="200" y2="366" stroke="#2e2c20"/>
   <line x1="400" y1="34" x2="400" y2="366" stroke="#221f18"/>
   <line x1="600" y1="34" x2="600" y2="366" stroke="#221f18"/>
@@ -410,24 +433,24 @@
   <text x="800" y="384" fill="#4a483d" font-size="10" text-anchor="middle">100%</text>
 
   <g font-size="11">
-  <g transform="translate(0,42)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">编辑器集成 9</text><line x1="433" y1="8" x2="667" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="433" cy="8" r="5" fill="#4f8ef7"/><circle cx="667" cy="8" r="5" fill="#d4843a"/><text x="685" y="12" fill="#6b6a63" font-size="10">buddy 78%</text></g>
-  <g transform="translate(0,67)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">集成与被集成 13</text><line x1="269" y1="8" x2="638" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="269" cy="8" r="5" fill="#4f8ef7"/><circle cx="638" cy="8" r="5" fill="#5aad4e"/><text x="656" y="12" fill="#6b6a63" font-size="10">hermes 73%</text></g>
-  <g transform="translate(0,92)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">版本控制 10</text><line x1="440" y1="8" x2="710" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="440" cy="8" r="5" fill="#4f8ef7"/><circle cx="710" cy="8" r="5" fill="#d4843a"/><text x="728" y="12" fill="#6b6a63" font-size="10">buddy 85%</text></g>
-  <g transform="translate(0,117)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">开发者体验 13</text><line x1="523" y1="8" x2="592" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="523" cy="8" r="5" fill="#4f8ef7"/><circle cx="592" cy="8" r="5" fill="#5aad4e"/><text x="610" y="12" fill="#6b6a63" font-size="10">hermes 65%</text></g>
-  <g transform="translate(0,142)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">代码理解 10</text><line x1="410" y1="8" x2="560" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="410" cy="8" r="5" fill="#4f8ef7"/><circle cx="560" cy="8" r="5" fill="#2db3d5"/><text x="578" y="12" fill="#6b6a63" font-size="10">openclaw 60%</text></g>
-  <g transform="translate(0,167)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">安全 15</text><line x1="520" y1="8" x2="620" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="520" cy="8" r="5" fill="#4f8ef7"/><circle cx="620" cy="8" r="5" fill="#d4843a"/><text x="638" y="12" fill="#6b6a63" font-size="10">buddy 70%</text></g>
-  <g transform="translate(0,192)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">界面形态 12</text><line x1="525" y1="8" x2="725" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="525" cy="8" r="5" fill="#4f8ef7"/><circle cx="725" cy="8" r="5" fill="#9d6fe0"/><text x="743" y="12" fill="#6b6a63" font-size="10">claude 88%</text></g>
-  <g transform="translate(0,217)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">部署与运维 15</text><line x1="480" y1="8" x2="640" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="480" cy="8" r="5" fill="#4f8ef7"/><circle cx="640" cy="8" r="5" fill="#5aad4e"/><text x="658" y="12" fill="#6b6a63" font-size="10">hermes 73%</text></g>
-  <g transform="translate(0,242)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">任务与规划 11</text><line x1="527" y1="8" x2="582" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="527" cy="8" r="5" fill="#4f8ef7"/><circle cx="582" cy="8" r="5" fill="#9d6fe0"/><text x="600" y="12" fill="#6b6a63" font-size="10">claude 64%</text></g>
-  <g transform="translate(0,267)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">会话与历史 17</text><line x1="571" y1="8" x2="606" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="571" cy="8" r="5" fill="#4f8ef7"/><circle cx="606" cy="8" r="5" fill="#9d6fe0"/><text x="624" y="12" fill="#6b6a63" font-size="10">claude 68%</text></g>
-  <g transform="translate(0,292)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">扩展 11</text><line x1="527" y1="8" x2="718" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="527" cy="8" r="5" fill="#4f8ef7"/><circle cx="718" cy="8" r="5" fill="#9d6fe0"/><text x="736" y="12" fill="#6b6a63" font-size="10">claude 86%</text></g>
-  <g transform="translate(0,317)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">记忆与知识 10</text><line x1="530" y1="8" x2="620" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="530" cy="8" r="5" fill="#4f8ef7"/><circle cx="620" cy="8" r="5" fill="#2db3d5"/><text x="638" y="12" fill="#6b6a63" font-size="10">openclaw 70%</text></g>
-  <g transform="translate(0,342)"><text x="190" y="12" fill="#5aad4e" text-anchor="end" font-weight="700">多 agent 14</text><line x1="543" y1="8" x2="586" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="543" cy="8" r="5" fill="#5aad4e"/><circle cx="586" cy="8" r="5" fill="#4f8ef7"/><text x="604" y="12" fill="#5aad4e" font-size="10" font-weight="700">我们 64%，超过最高参考 cc内 57%</text></g>
+  <g transform="translate(0,42)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">编辑器集成 9</text><line x1="233" y1="8" x2="600" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="233" y1="2" x2="233" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="600" y1="2" x2="600" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="400" y1="1" x2="400" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="433" cy="8" r="5" fill="#4f8ef7"/><text x="618" y="12" fill="#6b6a63" font-size="10">buddy 67%</text></g>
+  <g transform="translate(0,67)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">会话与历史 17</text><line x1="376" y1="8" x2="606" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="376" y1="2" x2="376" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="606" y1="2" x2="606" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="518" y1="1" x2="518" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="571" cy="8" r="5" fill="#4f8ef7"/><text x="624" y="12" fill="#6b6a63" font-size="10">claude 68%</text></g>
+  <g transform="translate(0,92)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">代码理解 10</text><line x1="350" y1="8" x2="560" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="350" y1="2" x2="350" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="560" y1="2" x2="560" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="470" y1="1" x2="470" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="410" cy="8" r="5" fill="#4f8ef7"/><text x="578" y="12" fill="#6b6a63" font-size="10">openclaw 60%</text></g>
+  <g transform="translate(0,117)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">版本控制 10</text><line x1="260" y1="8" x2="710" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="260" y1="2" x2="260" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="710" y1="2" x2="710" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="365" y1="1" x2="365" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="440" cy="8" r="5" fill="#4f8ef7"/><text x="728" y="12" fill="#6b6a63" font-size="10">buddy 85%</text></g>
+  <g transform="translate(0,142)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">任务与规划 11</text><line x1="255" y1="8" x2="582" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="255" y1="2" x2="255" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="582" y1="2" x2="582" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="445" y1="1" x2="445" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="527" cy="8" r="5" fill="#4f8ef7"/><text x="600" y="12" fill="#6b6a63" font-size="10">claude 64%</text></g>
+  <g transform="translate(0,167)"><text x="190" y="12" fill="#5aad4e" text-anchor="end" font-weight="700">多 agent 14</text><line x1="221" y1="8" x2="521" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="221" y1="2" x2="221" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="521" y1="2" x2="521" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="329" y1="1" x2="329" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="586" cy="8" r="5" fill="#5aad4e"/><text x="604" y="12" fill="#5aad4e" font-size="10" font-weight="700">我们 64%，超过最高参考 cc内 54%</text></g>
+  <g transform="translate(0,192)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">记忆与知识 10</text><line x1="260" y1="8" x2="620" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="260" y1="2" x2="260" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="620" y1="2" x2="620" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="455" y1="1" x2="455" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="530" cy="8" r="5" fill="#4f8ef7"/><text x="638" y="12" fill="#6b6a63" font-size="10">hermes 70%</text></g>
+  <g transform="translate(0,217)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">扩展 11</text><line x1="418" y1="8" x2="718" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="418" y1="2" x2="418" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="718" y1="2" x2="718" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="636" y1="1" x2="636" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="527" cy="8" r="5" fill="#4f8ef7"/><text x="736" y="12" fill="#6b6a63" font-size="10">claude 86%</text></g>
+  <g transform="translate(0,242)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">界面形态 12</text><line x1="400" y1="8" x2="725" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="400" y1="2" x2="400" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="725" y1="2" x2="725" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="512" y1="1" x2="512" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="525" cy="8" r="5" fill="#4f8ef7"/><text x="743" y="12" fill="#6b6a63" font-size="10">claude 88%</text></g>
+  <g transform="translate(0,267)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">集成与被集成 13</text><line x1="269" y1="8" x2="638" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="269" y1="2" x2="269" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="638" y1="2" x2="638" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="431" y1="1" x2="431" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="269" cy="8" r="5" fill="#4f8ef7"/><text x="656" y="12" fill="#6b6a63" font-size="10">hermes 73%</text></g>
+  <g transform="translate(0,292)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">部署与运维 15</text><line x1="300" y1="8" x2="640" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="300" y1="2" x2="300" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="640" y1="2" x2="640" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="540" y1="1" x2="540" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="480" cy="8" r="5" fill="#4f8ef7"/><text x="658" y="12" fill="#6b6a63" font-size="10">hermes 73%</text></g>
+  <g transform="translate(0,317)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">安全 15</text><line x1="260" y1="8" x2="620" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="260" y1="2" x2="260" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="620" y1="2" x2="620" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="410" y1="1" x2="410" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="520" cy="8" r="5" fill="#4f8ef7"/><text x="638" y="12" fill="#6b6a63" font-size="10">buddy 70%</text></g>
+  <g transform="translate(0,342)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">开发者体验 13</text><line x1="315" y1="8" x2="592" y2="8" stroke="#3a382d" stroke-width="6" stroke-linecap="round"/><line x1="315" y1="2" x2="315" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="592" y1="2" x2="592" y2="14" stroke="#55523f" stroke-width="1.5"/><line x1="408" y1="1" x2="408" y2="15" stroke="#8a8675" stroke-width="2"/><circle cx="546" cy="8" r="5" fill="#4f8ef7"/><text x="610" y="12" fill="#6b6a63" font-size="10">hermes 65%</text></g>
   </g>
 </svg>
 </div>
 <div class="card legend">
-  <b>按本表计分，多 agent 是唯一超过全部参考列的类别</b>：OpenProgram 9.0/14（64%），最高参考列 <code>cc内</code> 为 8.0/14（57%）。其余类别的已确认比例都低于该类最高参考列；差值最大的三类为集成与被集成（12% 对 73%）、版本控制（40% 对 85%）和编辑器集成（39% 对 78%）。该结论仍受功能定义和快照版本限制。
+  <b>按本表计分，多 agent 是唯一超过全部参考列的类别</b>：OpenProgram 9.0/14（64%），最高参考列 <code>cc内</code> 为 7.5/14（54%）。其余类别蓝点都落在参考范围之内；离范围上端最远的三类为集成与被集成（我们 12%，范围 12%–73%）、版本控制（40%，10%–85%）和代码理解（35%，25%–60%，蓝点低于中位数 45%）。范围只统计 10 个有效参考列，pi-ai（0 项确认）与 weclaw（5%）证据过稀被剔除；数字按当前功能全表重算，与旧图个别标注略有出入。该结论仍受功能定义和快照版本限制。
 </div>
 
 <!-- ══════════════════════════ LAYER 2 ══════════════════════════ -->
@@ -478,7 +501,7 @@
 <tr><td class="name">可分享的诊断包</td><td class="sz">部署与运维</td><td>codex、openclaw、hermes 等 6 家</td><td class="srcin">openclaw diagnostics 脱敏支持包 · hermes debug share · codex doctor --json</td></tr>
 <tr><td class="name">进程预热降低启动延迟</td><td class="sz">部署与运维</td><td>buddy</td><td class="srcin">buddy cbc-prewarm 使用 Unix socket 通知；其文档记录启动时间由 3.7 秒降至约 1 毫秒，本文未独立验证</td></tr>
 <tr><td class="name">按需自动启动本地模型服务</td><td class="sz">部署与运维</td><td>codex、openclaw、cx内 等 6 家</td><td class="srcin">openclaw 选择本地模型时自动启动 vLLM、llama.cpp 或 MLX，并在空闲时停止服务 · codex --oss --local-provider</td></tr>
-<tr><td class="name">凭据存操作系统钥匙串</td><td class="sz">安全</td><td>claude、cc内、buddy 等 5 家</td><td class="srcin">buddy 使用 Keychain、keyring 或凭据管理器 · codex 可选 keyring-store；我们使用权限模式为 0600 的明文文件</td></tr>
+<tr data-op-scope-id="os-credential-store" data-op-decision="do-not-implement"><td class="name">凭据存操作系统钥匙串</td><td class="sz">安全</td><td>claude、cc内、buddy 等 5 家</td><td class="srcin">buddy 使用 Keychain、keyring 或凭据管理器 · codex 可选 keyring-store；我们使用权限模式为 0600 的明文文件</td></tr>
 <tr><td class="name">提示注入扫描</td><td class="sz">安全</td><td>hermes</td><td class="srcin">hermes 扫 AGENTS.md 与 .cursorrules，加 Tirith 执行前内容扫描</td></tr>
 <tr><td class="name">使用洞察报告</td><td class="sz">开发者体验</td><td>claude、hermes、cc内 等 5 家</td><td class="srcin">buddy /insights 生成描述交互习惯与失败或中断场景的 HTML 报告 · claude /insights</td></tr>
 <tr class="grp"><td colspan="4"><b class="g2">与当前产品边界不一致</b> <span style="color:#6b6a63">15 项</span></td></tr>
@@ -517,7 +540,7 @@
 </div>
 
 <div class="note green">
-  <b>43 项仍需单独立项判断</b>。commit-push-pr、外部命令取密钥、每会话资源限额、请求录制与回放的 CLI 入口和 JSON schema 输出已陆续落地并移出本表；当前优先关注 diff 安全审查、操作系统钥匙串，以及可恢复删除尚未覆盖的后端和删除入口。这里没有可靠的使用频率与工程量数据；具体顺序由第四节按风险、依赖关系、协议稳定性和可验收性给出。已落地的 credential_process 仍缺参数约束、超时和日志脱敏的加固。
+  <b>43 项仍需单独立项判断</b>。commit-push-pr、外部命令取密钥、每会话资源限额、请求录制与回放的 CLI 入口和 JSON schema 输出已陆续落地并移出本表；当前优先关注 diff 安全审查，以及可恢复删除尚未覆盖的后端和删除入口。这里没有可靠的使用频率与工程量数据；具体顺序由第四节按风险、依赖关系、协议稳定性和可验收性给出。已落地的 credential_process 具备无 shell 插值的 argv、可配超时、结果缓存和 helper stderr 脱敏。
 </div>
 
 <h3 id="newfound">2.1相对前几轮新增的清单项</h3>
@@ -615,7 +638,7 @@
 <tr><th>批次</th><th>候选范围</th><th>当前基础与依赖</th><th>排序依据与最低验收条件</th></tr>
 <tr>
   <td class="name">一</td>
-  <td><b>不可逆操作与凭据</b>：补齐可恢复删除的剩余执行路径，再评估操作系统钥匙串；外部命令取密钥已落地为 credential_process，剩参数约束、超时与日志脱敏的加固。</td>
+  <td><b>不可逆操作与凭据</b>：补齐可恢复删除的剩余执行路径；外部命令取密钥已落地为 credential_process（argv 无 shell、可配超时、结果缓存、helper stderr 脱敏）。</td>
   <td><code>agent/internals/_approval.py</code> 已确认显式 deny 先于 bypass 生效。当前工作树为带 session/turn 上下文的本地 agent 子进程提供 shell、Python 和 Node 常用删除 API 的回收目录、manifest 以及 <code>trash list/restore</code>；没有上下文的 cron/后台任务、Docker、SSH、绝对路径命令、直接 syscall 和禁用注入等路径不在覆盖范围内，因此该机制不是安全边界，列表也不是全量删除审计。</td>
   <td class="y">先处理不可逆本地状态与密钥暴露风险。最低验收：明确覆盖范围内的删除均转入可恢复位置；恢复路径和分发产物有测试；补充路径不得弱化现有 sandbox 的 fail-closed 行为；密钥不写入普通配置或日志；外部命令有参数约束、超时和脱敏。</td>
 </tr>
@@ -679,7 +702,7 @@
 <div class="tbl">
 <table class="wide">
 <tr><th>对象</th><th>取证来源</th><th>注意</th></tr>
-<tr><td class="name">OpenProgram</td><td><code>main@1c249e92</code></td><td>全部能力按该基线提交复核（2026-08-11），在 414aa4de 基础上追加确认：skills_bundled 的 commit-push-pr 打包技能、auth/methods 的 credential_process 外部命令取密钥、带 recordings CLI 与 record_replay 配置入口的请求录制与严格离线回放、runtime llm(response_format=…) 的 JSON schema 结构化输出、backup create/list/restore/prune、默认开启的同 provider 失败切换，以及 agent/resource_governance 的每会话并发与资源限额。此前条目仍包括按 profile 隔离的 functions/programs meta 存储、TUI <code>/init</code>/<code>/compact</code>/<code>/doctor</code>/<code>/mcp</code>、有总输入上限的 <code>/commit-message</code>、测试专用 scripted provider、带范围声明的 <code>trash list/restore</code>、doctor/MCP 后端响应契约测试、运行中发消息排队、owner/paired 两档来源权限、默认开启的沙箱，以及 <code>openprogram acp</code> 服务端与 lsp_diagnostics/lsp_references/lsp_definition。文档改动本身不作为功能证据</td></tr>
+<tr><td class="name">OpenProgram</td><td><code>main@02860737</code></td><td>全部能力按该基线提交复核（2026-08-12）。本轮新增实现证据包括队列与 WebSocket 生命周期、session index/merged_heads 一致性、DAG 持久化观测、结构化输出重试总预算、provider 诊断、record/replay 安全加固、credential_process stderr 脱敏和 SessionStore 锁范围。既有证据仍包括 commit-push-pr、recordings CLI、JSON schema 输出、backup、同 provider 失败切换、每会话资源限额、TUI 命令、scripted provider、<code>trash list/restore</code>、运行中发消息排队、owner/paired 权限、默认沙箱、ACP 服务端和三个 LSP 工具。文档改动本身不作为功能证据。</td></tr>
 <tr><td class="name">claude-code</td><td class="p">本机 CLI <code>2.1.226</code>；<code>references/claude-code-leaked@a371abbe75ff</code> 仅作补充</td><td>二进制与参考源码冲突时以本机二进制为准；只在内部构建出现且本机不可达的功能不计入</td></tr>
 <tr><td class="name">codex</td><td class="p">本机 CLI <code>0.147.0</code>；源码 <code>references/codex-cli@57f42a81131c</code></td><td>UnderDevelopment 与 Experimental 条目使用 <code>○</code>，不按默认开启状态计为完整确认</td></tr>
 <tr><td class="name">openclaw</td><td><code>references/openclaw@b1b28415c2eb</code></td><td rowspan="5">均为本地源码快照，不声明为项目最新发布版；文档声明没有统一转换成端到端运行验证</td></tr>
