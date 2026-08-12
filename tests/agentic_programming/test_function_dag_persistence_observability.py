@@ -24,6 +24,11 @@ class _FailingStore:
             raise PermissionError("update detail")
 
 
+class _AbortStore(_FailingStore):
+    def append(self, node) -> None:
+        raise KeyboardInterrupt
+
+
 @pytest.fixture
 def runtime() -> Runtime:
     return Runtime(call=lambda *args, **kwargs: "", model="dummy")
@@ -52,7 +57,9 @@ def test_entry_failure_is_logged_without_changing_sync_result(
         )
 
     assert result == "ok"
-    assert "phase=entry" in caplog.text
+    records = [record for record in caplog.records if "phase=entry" in record.message]
+    assert len(records) == 1
+    assert "node_id=" in records[0].message
     assert "error_type=OSError" in caplog.text
     assert "append detail" in caplog.text
 
@@ -72,7 +79,9 @@ def test_exit_failure_is_logged_without_changing_async_result(
         )
 
     assert result == "ok"
-    assert "phase=exit" in caplog.text
+    records = [record for record in caplog.records if "phase=exit" in record.message]
+    assert len(records) == 1
+    assert "node_id=" in records[0].message
     assert "error_type=PermissionError" in caplog.text
     assert "update detail" in caplog.text
 
@@ -103,3 +112,31 @@ def test_traced_uses_the_same_persistence_diagnostic(
 
     assert result == "ok"
     assert "phase=exit" in caplog.text
+
+
+def test_hidden_and_no_store_remain_silent(
+    runtime: Runtime,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    @agentic_function(expose="hidden")
+    def hidden(runtime=None):
+        return "ok"
+
+    @agentic_function
+    def standalone(runtime=None):
+        return "ok"
+
+    with caplog.at_level(logging.WARNING, logger="openprogram.agentic_programming.function"):
+        assert _run_with_store(_FailingStore(fail_append=True), lambda: hidden(runtime=runtime)) == "ok"
+        assert standalone(runtime=runtime) == "ok"
+
+    assert "DAG persistence failed" not in caplog.text
+
+
+def test_persistence_base_exception_is_not_downgraded(runtime: Runtime) -> None:
+    @agentic_function
+    def work(runtime=None):
+        return "unreachable"
+
+    with pytest.raises(KeyboardInterrupt):
+        _run_with_store(_AbortStore(), lambda: work(runtime=runtime))
