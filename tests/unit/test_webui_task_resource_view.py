@@ -6,6 +6,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from openprogram._cli_cmds.tasks import task_resource_payload
+from openprogram.functions.tools.agent.list_tasks.list_tasks import _list_tasks_impl
+from openprogram.agent.run_control import _current_session_id
 from openprogram.agent.task.types import TaskStatus
 from openprogram.webui.ws_actions import task as ws_task
 
@@ -35,6 +38,7 @@ class _Runner:
     def __init__(self) -> None:
         self.task = SimpleNamespace(
             id="t1", parent_session_id="s1", status=TaskStatus.RUNNING,
+            subject="subject", prompt="prompt",
             to_dict=lambda: {
                 "id": "t1", "parent_session_id": "s1", "status": "running",
             },
@@ -80,3 +84,22 @@ def test_web_task_surfaces_embed_canonical_resource_view(
     for key in resource_path:
         payload = payload[key]
     assert payload["resource"] == runner.get_task_resource_view("t1").to_dict()
+
+
+def test_web_model_and_cli_share_the_same_resource_dto(monkeypatch) -> None:
+    runner = _Runner()
+    expected = runner.get_task_resource_view("t1").to_dict()
+    monkeypatch.setattr("openprogram.agent.task.get_runner", lambda: runner)
+
+    ws = _WS()
+    asyncio.run(ws_task.handle_list_tasks(ws, {"session_id": "s1"}))
+    web_resource = ws.frames[0]["data"]["tasks"][0]["resource"]
+
+    token = _current_session_id.set("s1")
+    try:
+        model_resource = _list_tasks_impl().details["tasks"][0]["resource"]
+    finally:
+        _current_session_id.reset(token)
+
+    cli_resource = task_resource_payload(session_id="s1")["tasks"][0]
+    assert web_resource == model_resource == cli_resource == expected

@@ -211,6 +211,18 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
+    case 'tasks': {
+      if (args[0]) {
+        ctx.client.send({ action: 'get_task', task_id: args[0] });
+      } else {
+        ctx.client.send({
+          action: 'list_tasks',
+          session_id: ctx.currentConversation ?? '',
+        });
+      }
+      return true;
+    }
+
     case 'agents': {
       // slash commands run silently — no user echo
       ctx.client.send({ action: 'list_agents' });
