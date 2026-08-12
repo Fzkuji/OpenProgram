@@ -533,19 +533,25 @@ class _RestoreJournal:
         self.path = restore_journal_path(self.state)
         self.backup_dir = self.state / _JOURNAL_DIR
         self.entries: list[dict] = []
+        self._backup_fd: int | None = None
 
     def start(self) -> None:
         try:
-            info = os.lstat(self.backup_dir)
-        except FileNotFoundError:
-            self.backup_dir.mkdir(mode=0o700)
-        else:
-            if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
-                raise OSError("restore journal directory is not a real directory")
-            if info.st_uid != os.geteuid():
-                raise OSError("restore journal directory has a foreign owner")
-            os.chmod(self.backup_dir, 0o700)
-        self._flush(complete=False)
+            os.mkdir(self.backup_dir, 0o700)
+        except FileExistsError as exc:
+            raise OSError("restore journal directory already exists") from exc
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        self._backup_fd = os.open(self.backup_dir, flags)
+        try:
+            info = os.fstat(self._backup_fd)
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
+                raise OSError("restore journal directory failed validation")
+            os.fchmod(self._backup_fd, 0o700)
+            self._flush(complete=False)
+        except BaseException:
+            self._close_backup_fd()
+            raise
 
     def record(self, relative: str, previous: Path | None) -> None:
         self.entries.append(
@@ -562,25 +568,73 @@ class _RestoreJournal:
     def preserve(self, relative: str, target: Path) -> Path | None:
         """Copy the current bytes aside so the publish can be reversed."""
 
+        if self._backup_fd is None:
+            raise OSError("restore journal has not started")
+        target_parts = PurePath(relative).parts
+        root_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        root_flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        root = os.open(self.state, root_flags)
+        parent = -1
         try:
-            info = os.lstat(target)
-        except FileNotFoundError:
-            return None
-        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
-            raise OSError("restore target is not a regular file")
-        keep = self.backup_dir / f"{len(self.entries):08d}.previous"
-        keep.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        shutil.copy2(target, keep)
-        os.chmod(keep, 0o600)
-        return keep
+            _verify_recovery_directory(root)
+            parent = _open_recovery_directory(root, target_parts[:-1])
+            try:
+                before = os.stat(
+                    target_parts[-1], dir_fd=parent, follow_symlinks=False
+                )
+            except FileNotFoundError:
+                return None
+            if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+                raise OSError("restore target is not a regular file")
+            source_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            source_flags |= getattr(os, "O_CLOEXEC", 0)
+            source = os.open(target_parts[-1], source_flags, dir_fd=parent)
+        finally:
+            os.close(root)
+            if parent >= 0:
+                os.close(parent)
+        name = f"{len(self.entries):08d}.previous"
+        destination_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        destination_flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        destination = -1
+        try:
+            opened = os.fstat(source)
+            if (
+                (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino)
+                or not stat.S_ISREG(opened.st_mode)
+                or opened.st_uid != os.geteuid()
+            ):
+                raise OSError("restore source failed validation")
+            destination = os.open(
+                name, destination_flags, 0o600, dir_fd=self._backup_fd
+            )
+            while payload := os.read(source, 1024 * 1024):
+                written = 0
+                while written < len(payload):
+                    count = _journal_write(destination, payload[written:])
+                    if count <= 0:
+                        raise OSError("restore preserve write made no progress")
+                    written += count
+            _journal_fsync(destination)
+        finally:
+            os.close(source)
+            if destination >= 0:
+                os.close(destination)
+        return self.backup_dir / name
 
     def finish(self) -> None:
         self._flush(complete=True)
         self.discard()
 
     def discard(self) -> None:
+        self._close_backup_fd()
         shutil.rmtree(self.backup_dir, ignore_errors=True)
         self.path.unlink(missing_ok=True)
+
+    def _close_backup_fd(self) -> None:
+        if self._backup_fd is not None:
+            os.close(self._backup_fd)
+            self._backup_fd = None
 
     def _flush(self, *, complete: bool) -> None:
         payload = json.dumps(
@@ -638,6 +692,10 @@ class _RestoreJournal:
             temporary.unlink(missing_ok=True)
 
 
+class UnrecoverableRestoreJournalError(OSError):
+    pass
+
+
 def recover_interrupted_restore(state: Path) -> bool:
     """Reverse a restore that died mid-flight. Returns whether it acted.
 
@@ -651,7 +709,7 @@ def recover_interrupted_restore(state: Path) -> bool:
     try:
         before = os.lstat(journal_file)
         if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
-            return False
+            raise UnrecoverableRestoreJournalError("restore journal is unsafe")
         descriptor = os.open(
             journal_file,
             os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
@@ -659,7 +717,7 @@ def recover_interrupted_restore(state: Path) -> bool:
         try:
             opened = os.fstat(descriptor)
             if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
-                return False
+                raise UnrecoverableRestoreJournalError("restore journal changed")
             chunks = []
             while chunk := os.read(descriptor, 1024 * 1024):
                 chunks.append(chunk)
@@ -668,14 +726,16 @@ def recover_interrupted_restore(state: Path) -> bool:
         record = json.loads(b"".join(chunks))
     except FileNotFoundError:
         return False
-    except (OSError, json.JSONDecodeError):
-        # An unreadable journal cannot direct a rollback; leave it for
-        # the operator rather than guessing at the old state.
-        return False
+    except UnrecoverableRestoreJournalError:
+        raise
+    except (OSError, json.JSONDecodeError) as exc:
+        raise UnrecoverableRestoreJournalError(
+            "restore journal cannot be safely read"
+        ) from exc
 
     validated = _validate_restore_journal(record)
     if validated is None:
-        return False
+        raise UnrecoverableRestoreJournalError("restore journal schema is invalid")
     complete, entries = validated
     if complete:
         shutil.rmtree(state / _JOURNAL_DIR, ignore_errors=True)
@@ -684,8 +744,10 @@ def recover_interrupted_restore(state: Path) -> bool:
 
     try:
         _reverse(state, entries)
-    except _UnsafeRecoveryPath:
-        return False
+    except _UnsafeRecoveryPath as exc:
+        raise UnrecoverableRestoreJournalError(
+            "restore journal paths are unsafe"
+        ) from exc
     shutil.rmtree(state / _JOURNAL_DIR, ignore_errors=True)
     journal_file.unlink(missing_ok=True)
     return True
@@ -1118,6 +1180,7 @@ def _cmd_backup_prune(keep: int) -> int:
 __all__ = [
     "INCLUDED",
     "CREDENTIAL_ENTRIES",
+    "UnrecoverableRestoreJournalError",
     "backups_dir",
     "create_backup",
     "recover_interrupted_restore",

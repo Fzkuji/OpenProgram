@@ -458,7 +458,11 @@ def test_crash_after_publish_is_recovered_from_the_journal(tmp_path: Path) -> No
 def test_recovery_rejects_journal_traversal_without_mutation(
     tmp_path: Path, entry: dict
 ) -> None:
-    from openprogram._cli_cmds.backup import recover_interrupted_restore, restore_journal_path
+    from openprogram._cli_cmds.backup import (
+        UnrecoverableRestoreJournalError,
+        recover_interrupted_restore,
+        restore_journal_path,
+    )
 
     state = _state(tmp_path)
     outside = tmp_path / "outside.json"
@@ -469,7 +473,8 @@ def test_recovery_rejects_journal_traversal_without_mutation(
     )
     journal.chmod(0o600)
 
-    assert recover_interrupted_restore(state) is False
+    with pytest.raises(UnrecoverableRestoreJournalError):
+        recover_interrupted_restore(state)
     assert json.loads(outside.read_text()) == {"keep": True}
     assert journal.exists()
 
@@ -479,7 +484,11 @@ def test_recovery_rejects_journal_traversal_without_mutation(
 def test_recovery_rejects_target_parent_symlink_before_any_mutation(
     tmp_path: Path, existed: bool
 ) -> None:
-    from openprogram._cli_cmds.backup import recover_interrupted_restore, restore_journal_path
+    from openprogram._cli_cmds.backup import (
+        UnrecoverableRestoreJournalError,
+        recover_interrupted_restore,
+        restore_journal_path,
+    )
 
     state = _state(tmp_path)
     outside = tmp_path / "outside"
@@ -513,7 +522,8 @@ def test_recovery_rejects_target_parent_symlink_before_any_mutation(
     )
     journal.chmod(0o600)
 
-    assert recover_interrupted_restore(state) is False
+    with pytest.raises(UnrecoverableRestoreJournalError):
+        recover_interrupted_restore(state)
     assert outside_target.read_text() == "outside"
     assert journal.exists()
 
@@ -521,7 +531,11 @@ def test_recovery_rejects_target_parent_symlink_before_any_mutation(
 def test_recovery_rejects_duplicate_journal_entries_before_mutation(
     tmp_path: Path,
 ) -> None:
-    from openprogram._cli_cmds.backup import recover_interrupted_restore, restore_journal_path
+    from openprogram._cli_cmds.backup import (
+        UnrecoverableRestoreJournalError,
+        recover_interrupted_restore,
+        restore_journal_path,
+    )
 
     state = _state(tmp_path)
     target = state / "config.json"
@@ -536,8 +550,62 @@ def test_recovery_rejects_duplicate_journal_entries_before_mutation(
     )
     journal.chmod(0o600)
 
-    assert recover_interrupted_restore(state) is False
+    with pytest.raises(UnrecoverableRestoreJournalError):
+        recover_interrupted_restore(state)
     assert target.read_text() == "current"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")
+@pytest.mark.parametrize("journal_kind", ["malformed", "invalid_schema", "unsafe_path"])
+def test_unrecoverable_journal_blocks_new_restore_and_residual_symlink_write(
+    tmp_path: Path, journal_kind: str
+) -> None:
+    from openprogram._cli_cmds.backup import (
+        UnrecoverableRestoreJournalError,
+        restore_archive,
+        restore_journal_path,
+    )
+
+    state = _state(tmp_path)
+    outside_file = tmp_path / "outside.json"
+    outside_file.write_text("outside")
+    backup_dir = state / ".restore-journal.d"
+    backup_dir.mkdir()
+    (backup_dir / "00000000.previous").symlink_to(outside_file)
+    journal = restore_journal_path(state)
+    if journal_kind == "malformed":
+        journal.write_text("{")
+    elif journal_kind == "invalid_schema":
+        journal.write_text(json.dumps({"format_version": 99}))
+    else:
+        outside_dir = tmp_path / "outside-dir"
+        outside_dir.mkdir()
+        (outside_dir / "target.json").write_text("outside-target")
+        (state / "linked").symlink_to(outside_dir)
+        journal.write_text(
+            json.dumps(
+                {
+                    "format_version": 1,
+                    "complete": False,
+                    "entries": [
+                        {
+                            "relative_path": "linked/target.json",
+                            "previous": None,
+                            "existed": False,
+                        }
+                    ],
+                }
+            )
+        )
+    journal.chmod(0o600)
+    archive = _archive(tmp_path, {"config.json": b"{}"})
+
+    with pytest.raises(UnrecoverableRestoreJournalError):
+        restore_archive(archive, state)
+
+    assert outside_file.read_text() == "outside"
+    assert (backup_dir / "00000000.previous").is_symlink()
+    assert not (state / "config.json").exists()
 
 
 def _write_recovery_case(state: Path, *, existed: bool) -> tuple[Path, Path]:
