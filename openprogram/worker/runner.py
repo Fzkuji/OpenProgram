@@ -168,6 +168,10 @@ def run_foreground() -> int:
         )
         return 1
 
+    from openprogram.providers.initialization import initialize_provider_runtime
+
+    initialize_provider_runtime()
+
     # Bring up the webui first — that's the worker's primary job. Single
     # port: this process serves the API, /ws AND the frontend export.
     import os

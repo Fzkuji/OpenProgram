@@ -1,23 +1,13 @@
-"""
-Register all built-in API providers.
-
-Mirrors register-builtins.ts — registers Anthropic, OpenAI (Completions + Responses),
-OpenAI Codex, Google (Generative AI + Vertex + Gemini CLI), and Amazon Bedrock.
-"""
-
+"""Register the built-in API providers and authentication adapters."""
 from __future__ import annotations
 
-from openprogram.providers.api_registry import register_api_provider
-# Provider submodules are imported lazily inside register_builtins()
-# below. Importing them at module top would force re-entry into the
-# parent providers package while it's still being initialized, which
-# Python flags as "partially initialized module" when more than one
-# thread is in the import chain at the same time (the worker's
-# session-restore thread races the main webui startup).
+import threading
+
+from openprogram.providers.api_registry import register_api_providers
 
 
 class _StreamFnProvider:
-    """Adapts module-level stream/stream_simple functions to provider interface."""
+    """Adapt module-level stream functions to the provider interface."""
 
     def __init__(self, stream_fn, stream_simple_fn):
         self._stream = stream_fn
@@ -30,126 +20,87 @@ class _StreamFnProvider:
         return self._stream_simple(model, context, options)
 
 
+_lock = threading.RLock()
 _registered = False
+_auth_registered = False
+
+
+def _load_builtin_providers() -> dict[str, _StreamFnProvider]:
+    from openprogram.providers import anthropic, google, openai_completions
+    from openprogram.providers.amazon_bedrock import stream_bedrock, stream_simple_bedrock
+    from openprogram.providers.azure_openai_responses import (
+        stream_azure_openai_responses,
+        stream_simple_azure_openai_responses,
+    )
+    from openprogram.providers.google_gemini_cli import (
+        stream_google_gemini_cli,
+        stream_simple_google_gemini_cli,
+    )
+    from openprogram.providers.openai_codex.openai_codex import (
+        stream_openai_codex_responses,
+        stream_simple_openai_codex_responses,
+    )
+    from openprogram.providers.openai_responses import (
+        stream_openai_responses,
+        stream_simple_openai_responses,
+    )
+
+    return {
+        "anthropic-messages": _StreamFnProvider(
+            anthropic.stream_simple, anthropic.stream_simple
+        ),
+        "openai-completions": _StreamFnProvider(
+            openai_completions.stream_simple, openai_completions.stream_simple
+        ),
+        "google-generative-ai": _StreamFnProvider(
+            google.stream_simple, google.stream_simple
+        ),
+        "openai-responses": _StreamFnProvider(
+            stream_openai_responses, stream_simple_openai_responses
+        ),
+        "openai-codex": _StreamFnProvider(
+            stream_openai_codex_responses, stream_simple_openai_codex_responses
+        ),
+        "gemini-subscription": _StreamFnProvider(
+            stream_google_gemini_cli, stream_simple_google_gemini_cli
+        ),
+        "bedrock-converse-stream": _StreamFnProvider(
+            stream_bedrock, stream_simple_bedrock
+        ),
+        "azure-openai-responses": _StreamFnProvider(
+            stream_azure_openai_responses, stream_simple_azure_openai_responses
+        ),
+    }
+
+
+def register_auth_adapters() -> None:
+    """Register built-in auth callbacks without initializing provider runtime."""
+    global _auth_registered
+    with _lock:
+        if _auth_registered:
+            return
+        from openprogram.providers.anthropic.auth_adapter import register_anthropic_auth
+        from openprogram.providers.google_gemini_cli.auth_adapter import (
+            register_gemini_cli_auth,
+        )
+        from openprogram.providers.openai_codex.auth_adapter import register_codex_auth
+
+        register_anthropic_auth()
+        register_codex_auth()
+        register_gemini_cli_auth()
+        _auth_registered = True
 
 
 def register_builtins() -> None:
-    """Register all built-in API providers. Safe to call multiple times."""
+    """Register every built-in provider once; retry cleanly after failure."""
     global _registered
-    if _registered:
-        return
-    _registered = True
+    with _lock:
+        if _registered:
+            return
+        providers = _load_builtin_providers()
+        register_auth_adapters()
+        register_api_providers(providers)
+        _registered = True
 
-    # Lazy imports so register.py module load doesn't pull these
-    # submodules into the still-loading providers package. Each one
-    # is also wrapped in try/except: a user who only wants e.g.
-    # openai-codex shouldn't have to ``pip install anthropic`` just
-    # to make ``import openprogram`` work. Missing-SDK providers
-    # simply don't get registered; using them later raises a clean
-    # error rather than crashing the whole package init.
 
-    # Anthropic Messages API
-    try:
-        from openprogram.providers import anthropic
-        register_api_provider(
-            "anthropic-messages",
-            _StreamFnProvider(anthropic.stream_simple, anthropic.stream_simple),
-        )
-        # Side-effect import: registers the anthropic OAuth refresh fn with
-        # CredentialProvider (register_anthropic_auth). Without it the subscription
-        # token expires (8h) and never refreshes → "No API key configured for
-        # provider 'claude-code'" mid-chat. Same pattern as codex below.
-        from openprogram.providers.anthropic import auth_adapter as _anth_auth  # noqa: F401
-    except ImportError:
-        pass
-
-    # OpenAI Chat Completions API
-    try:
-        from openprogram.providers import openai_completions
-        register_api_provider(
-            "openai-completions",
-            _StreamFnProvider(openai_completions.stream_simple, openai_completions.stream_simple),
-        )
-    except ImportError:
-        pass
-
-    # Google Generative AI (referenced by subsequent registrations
-    # below; previously eagerly imported at the top alongside
-    # anthropic and openai_completions, which made google-genai a
-    # hidden hard-required install of openprogram).
-    try:
-        from openprogram.providers import google  # noqa: F401
-    except ImportError:
-        pass
-
-    # OpenAI Responses API
-    try:
-        from openprogram.providers.openai_responses import stream_simple_openai_responses
-        from openprogram.providers.openai_responses import stream_openai_responses
-        register_api_provider(
-            "openai-responses",
-            _StreamFnProvider(stream_openai_responses, stream_simple_openai_responses),
-        )
-    except ImportError:
-        pass
-
-    # OpenAI Codex Responses API
-    try:
-        from openprogram.providers.openai_codex.openai_codex import stream_simple_openai_codex_responses
-        from openprogram.providers.openai_codex.openai_codex import stream_openai_codex_responses
-        register_api_provider(
-            "openai-codex",
-            _StreamFnProvider(stream_openai_codex_responses, stream_simple_openai_codex_responses),
-        )
-        # Side-effect import: registers the OAuth refresh fn with
-        # CredentialProvider so codex's stream funcs can acquire/refresh the
-        # ChatGPT OAuth access_token. Without this import,
-        # register_codex_auth() never runs and acquiring credentials
-        # via CredentialProvider raises ProviderConfigMissing — manifesting
-        # as "No API key for provider: openai-codex" the moment a
-        # channel-routed turn fires.
-        from openprogram.providers.openai_codex import auth_adapter as _codex_auth  # noqa: F401
-    except ImportError:
-        pass
-
-    # Google Generative AI
-    register_api_provider(
-        "google-generative-ai",
-        _StreamFnProvider(google.stream_simple, google.stream_simple),
-    )
-
-    # Google Gemini CLI / Cloud Code Assist
-    # (google-vertex + gemini-subscription-corp/Antigravity intentionally
-    # not registered — the simpler "Google AI" + "Gemini CLI" pair
-    # covers the same model surface for personal users.)
-    try:
-        from openprogram.providers.google_gemini_cli import stream_google_gemini_cli
-        from openprogram.providers.google_gemini_cli import stream_simple_google_gemini_cli
-        register_api_provider(
-            "gemini-subscription",
-            _StreamFnProvider(stream_google_gemini_cli, stream_simple_google_gemini_cli),
-        )
-    except ImportError:
-        pass
-
-    # Amazon Bedrock Converse Stream
-    try:
-        from openprogram.providers.amazon_bedrock import stream_bedrock
-        from openprogram.providers.amazon_bedrock import stream_simple_bedrock
-        register_api_provider(
-            "bedrock-converse-stream",
-            _StreamFnProvider(stream_bedrock, stream_simple_bedrock),
-        )
-    except ImportError:
-        pass
-
-    # Azure OpenAI Responses API
-    try:
-        from openprogram.providers.azure_openai_responses import stream_simple_azure_openai_responses
-        from openprogram.providers.azure_openai_responses import stream_azure_openai_responses
-        register_api_provider(
-            "azure-openai-responses",
-            _StreamFnProvider(stream_azure_openai_responses, stream_simple_azure_openai_responses),
-        )
-    except ImportError:
-        pass
+__all__ = ["register_auth_adapters", "register_builtins"]

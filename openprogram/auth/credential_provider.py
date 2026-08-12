@@ -111,8 +111,7 @@ def register_provider_config(cfg: ProviderAuthConfig) -> None:
 
 
 def _load_provider_plugins() -> None:
-    """Import ``openprogram.providers`` once so its provider plugins
-    register their refresh callbacks.
+    """Register provider authentication adapters once.
 
     Deferred until the first miss in :func:`get_provider_config` to
     keep ``openprogram.auth`` independently importable (providers
@@ -130,7 +129,9 @@ def _load_provider_plugins() -> None:
     # auth_adapter happens to look us up at module load) doesn't
     # recurse and try to import providers a second time mid-init.
     try:
-        import openprogram.providers  # noqa: F401 — side-effect import
+        from openprogram.providers.register import register_auth_adapters
+
+        register_auth_adapters()
     except Exception:
         # Import failure (missing SDK extras, etc.) is non-fatal: the
         # default config path below still gives callers a usable

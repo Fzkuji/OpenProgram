@@ -52,6 +52,7 @@ PROVIDERS = {
             "openprogram.providers.anthropic._claude_code_direct_runtime",
             "ClaudeCodeRuntime",
         ),
+        "model_namespace": "anthropic",
         "default_model": "claude-sonnet-4",
     },
     "openai-codex": {
@@ -59,6 +60,7 @@ PROVIDERS = {
             "openprogram.providers.openai_codex.runtime",
             "OpenAICodexRuntime",
         ),
+        "model_namespace": "openai-codex",
         "default_model": "gpt-5.5",
     },
     "gemini-cli": {
@@ -66,6 +68,7 @@ PROVIDERS = {
             "openprogram.providers.google_gemini_cli.runtime",
             "GeminiCLIRuntime",
         ),
+        "model_namespace": "gemini-subscription",
         "default_model": "gemini-2.5-flash",
     },
     "anthropic": {
@@ -324,6 +327,40 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
         namespace, or set by the subscription runtime classes).
     """
     import importlib
+
+    from openprogram.providers.initialization import initialize_provider_runtime
+
+    runtime_snapshot = initialize_provider_runtime()
+
+    if runtime_snapshot.mode == "replay":
+        if not provider or provider == "auto":
+            configured = _load_provider_config()
+            if configured is None:
+                raise RuntimeError(
+                    "Replay mode requires an explicit provider/model or a "
+                    "configured default_provider/default_model"
+                )
+            provider, detected_model = configured
+            model = model or detected_model
+        if provider not in PROVIDERS:
+            return _api_routed_runtime(provider, model, **kwargs)
+        entry = PROVIDERS[provider]
+        use_model = model or entry["default_model"]
+        from openprogram.agentic_programming.runtime import Runtime
+
+        runtime_kwargs = {
+            key: kwargs[key]
+            for key in ("call", "max_retries", "api_key", "skills")
+            if key in kwargs
+        }
+        runtime = Runtime(
+            model=f"{entry['model_namespace']}:{use_model}", **runtime_kwargs
+        )
+        if "runtime_class" in entry:
+            runtime.provider_id = provider
+        if "system" in kwargs:
+            runtime.system = kwargs["system"]
+        return runtime
 
     if provider and provider != "auto":
         if provider not in PROVIDERS:

@@ -373,7 +373,7 @@ def resolve_recording_selector(selector: str) -> Path:
     return get_recordings_dir() / filename
 
 
-def activate_record_replay_from_config() -> None:
+def activate_record_replay_from_config() -> str:
     """Install the configured process-wide mode after built-ins register."""
     from openprogram import setup
     from openprogram.providers.api_registry import configure_provider_transform
@@ -381,7 +381,7 @@ def activate_record_replay_from_config() -> None:
     config = setup._read_config().get("record_replay", {})
     mode = config.get("mode", "off")
     if mode == "off":
-        return
+        return mode
     selector = config.get("file", "")
     path = resolve_recording_selector(selector)
     if mode == "record":
@@ -391,13 +391,13 @@ def activate_record_replay_from_config() -> None:
         configure_provider_transform(
             lambda api, provider: RecordingProvider(provider, sink)
         )
-        return
+        return mode
     if mode == "replay":
         from openprogram.providers.replay import ReplayProvider
 
         replay = ReplayProvider(path)
         configure_provider_transform(lambda api, provider: replay)
-        return
+        return mode
     raise ValueError(f"unsupported record_replay.mode: {mode!r}")
 
 
