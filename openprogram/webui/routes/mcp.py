@@ -23,6 +23,7 @@ server set survives worker restarts.
 """
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from typing import Optional
 
@@ -58,17 +59,108 @@ def _save_expected(configs: list[MCPServerConfig], revision: str) -> str:
         raise
 
 
-async def _resync_server_from_disk(name: str) -> None:
-    """Best-effort runtime resync after rollback loses an external-edit race."""
+async def _resync_server_from_disk(name: str) -> tuple[int, dict[str, str]] | None:
+    """Match runtime to disk, returning a sanitized failure outcome."""
     current, _revision_value = load_configs_with_revision(include_disabled=True)
     match = next((cfg for cfg in current if cfg.name == name), None)
-    try:
-        if match is None:
+    if match is None:
+        cleanup_failed = False
+        try:
             await remove_server(name)
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            cleanup_failed = True
+        if cleanup_failed:
+            return (
+                500,
+                {
+                    "code": "mcp_runtime_state_unknown",
+                    "persisted_config": "unchanged",
+                    "runtime_state": "unknown",
+                    "action": "retry_or_restart",
+                },
+            )
+        return
+
+    resync_failed = False
+    try:
+        await restart_server(name, new_cfg=match)
+    except (asyncio.CancelledError, Exception):  # noqa: BLE001
+        resync_failed = True
+    if not resync_failed:
+        return None
+
+    cleanup_failed = False
+    try:
+        await remove_server(name)
+    except (asyncio.CancelledError, Exception):  # noqa: BLE001
+        cleanup_failed = True
+    if cleanup_failed:
+        return (
+            500,
+            {
+                "code": "mcp_runtime_state_unknown",
+                "persisted_config": "unchanged",
+                "runtime_state": "unknown",
+                "action": "retry_or_restart",
+            },
+        )
+    return (
+        503,
+        {
+            "code": "mcp_runtime_resync_failed",
+            "persisted_config": "unchanged",
+            "runtime_state": "stopped",
+            "action": "retry_or_restart",
+        },
+    )
+
+
+async def _restart_then_publish(
+    name: str,
+    *,
+    previous: MCPServerConfig,
+    updated: MCPServerConfig,
+    configs: list[MCPServerConfig],
+    expected_revision: str,
+) -> dict:
+    """Validate runtime first, then conditionally publish the same snapshot."""
+    try:
+        status = await restart_server(name, new_cfg=updated)
+    except Exception as exc:  # noqa: BLE001
+        try:
+            await restart_server(name, new_cfg=previous)
+        except Exception:  # noqa: BLE001
+            pass
+        raise HTTPException(
+            status_code=500,
+            detail=f"restart failed: {type(exc).__name__}: {exc}",
+        ) from exc
+
+    conflict = False
+    uncommitted_error = None
+    try:
+        save_configs_revision(configs, expected_revision=expected_revision)
+    except PrivateAtomicWriteError as exc:
+        if exc.code == "conflict":
+            conflict = True
+        elif exc.committed:
+            raise
         else:
-            await restart_server(name, new_cfg=match)
-    except Exception:  # noqa: BLE001
-        pass
+            uncommitted_error = exc
+
+    if conflict or uncommitted_error is not None:
+        resync_failure = await _resync_server_from_disk(name)
+        if resync_failure is not None:
+            status_code, detail = resync_failure
+            raise HTTPException(status_code=status_code, detail=detail)
+    if conflict:
+        raise HTTPException(
+            status_code=409,
+            detail="MCP config changed concurrently; runtime was resynced",
+        )
+    if uncommitted_error is not None:
+        raise uncommitted_error
+    return status
 
 
 def _require_local_request(request: Request) -> None:
@@ -194,28 +286,13 @@ def register(app: FastAPI) -> None:
         if new_cfg is None:
             raise HTTPException(status_code=400, detail="invalid config")
         new_list = [c if c.name != name else new_cfg for c in all_cfgs]
-        published_revision = _save_expected(new_list, revision)
-        try:
-            status = await restart_server(name, new_cfg=new_cfg)
-        except Exception as e:  # noqa: BLE001
-            try:
-                save_configs_revision(
-                    all_cfgs, expected_revision=published_revision
-                )
-            except PrivateAtomicWriteError as rollback_error:
-                if rollback_error.code != "conflict":
-                    raise
-                await _resync_server_from_disk(name)
-                raise HTTPException(
-                    status_code=409,
-                    detail="MCP config changed while a failed restart was rolled back",
-                ) from rollback_error
-            try:
-                await restart_server(name, new_cfg=match)
-            except Exception:  # noqa: BLE001
-                pass
-            raise HTTPException(status_code=500,
-                                detail=f"restart failed: {type(e).__name__}: {e}")
+        status = await _restart_then_publish(
+            name,
+            previous=match,
+            updated=new_cfg,
+            configs=new_list,
+            expected_revision=revision,
+        )
         return JSONResponse(content=status)
 
     @app.delete("/api/mcp/servers/{name}")
@@ -471,29 +548,13 @@ def register(app: FastAPI) -> None:
         )
 
         new_list = [c if c.name != name else new_cfg for c in all_cfgs]
-        published_revision = _save_expected(new_list, revision)
-        try:
-            status = await restart_server(name, new_cfg=new_cfg)
-        except Exception as e:  # noqa: BLE001
-            try:
-                save_configs_revision(
-                    all_cfgs, expected_revision=published_revision
-                )
-            except PrivateAtomicWriteError as rollback_error:
-                if rollback_error.code != "conflict":
-                    raise
-                await _resync_server_from_disk(name)
-                raise HTTPException(
-                    status_code=409,
-                    detail="MCP config changed while a failed restart was rolled back",
-                ) from rollback_error
-            try:
-                await restart_server(name, new_cfg=match)
-            except Exception:  # noqa: BLE001
-                pass
-            raise HTTPException(status_code=500,
-                                detail=f"restart failed: "
-                                       f"{type(e).__name__}: {e}")
+        status = await _restart_then_publish(
+            name,
+            previous=match,
+            updated=new_cfg,
+            configs=new_list,
+            expected_revision=revision,
+        )
         return JSONResponse(content=status)
 
     @app.get("/api/mcp/catalog/suggested")

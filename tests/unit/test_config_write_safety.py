@@ -214,3 +214,58 @@ def test_interactive_section_rejects_external_edit_after_prompt_snapshot(
     assert json.loads(path.read_text(encoding="utf-8")) == {
         "api_keys": {"KEEP": "external"}
     }
+
+
+def test_two_process_custom_provider_creates_preserve_both_providers(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    state = home / ".openprogram"
+    state.mkdir(parents=True, mode=0o700)
+    config = state / "config.json"
+    config.write_text('{"api_keys":{"KEEP":"secret"}}\n', encoding="utf-8")
+    config.chmod(0o600)
+    release = tmp_path / "release"
+    ready = [tmp_path / "ready-first", tmp_path / "ready-second"]
+    env = {**os.environ, "HOME": os.fspath(home)}
+    script = """
+import sys, time
+from pathlib import Path
+from openprogram import setup
+from openprogram.providers.storage import create_custom_provider
+name = sys.argv[1]
+ready, release = map(Path, sys.argv[2:])
+real_update = setup.update_config
+def paused_update(mutator, **kwargs):
+    ready.write_text('ready')
+    while not release.exists():
+        time.sleep(0.01)
+    return real_update(mutator, **kwargs)
+setup.update_config = paused_update
+result = create_custom_provider(name, name, f'https://{name}.example/v1')
+if not result.get('ok'):
+    raise SystemExit(4)
+"""
+    processes = [
+        subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                script,
+                name,
+                os.fspath(marker),
+                os.fspath(release),
+            ],
+            cwd=Path(__file__).parents[2],
+            env=env,
+        )
+        for name, marker in zip(("first", "second"), ready, strict=True)
+    ]
+    for marker in ready:
+        _wait_for(marker)
+    release.write_text("go", encoding="utf-8")
+
+    assert [process.wait(timeout=10) for process in processes] == [0, 0]
+    stored = json.loads(config.read_text(encoding="utf-8"))
+    assert set(stored["providers"]) == {"first", "second"}
+    assert stored["api_keys"] == {"KEEP": "secret"}

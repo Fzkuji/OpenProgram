@@ -253,9 +253,8 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
     from ..listing import _browse_models_with_error
     from openprogram.providers.storage import (
         _cache_lock,
-        _read_providers_cfg,
+        _update_providers_cfg,
         _upsert_spec_row,
-        _write_providers_cfg,
     )
 
     # ONE force-refresh browse (bypasses the short-TTL cache and re-primes it
@@ -268,28 +267,26 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
 
     refreshed: list[str] = []
     with _cache_lock:
-        cfg = _read_providers_cfg()
-        pcfg = cfg.setdefault(provider_id, {})
-        enabled_ids = [
-            r.get("id") for r in (pcfg.get("models") or []) if r.get("id")
-        ] or list(pcfg.get("enabled_models") or [])
         changed = False
-        for mid in enabled_ids:
-            fresh = by_id.get(mid)
-            if not fresh:
-                continue  # absent upstream → keep the stored spec
-            spec = {k: v for k, v in fresh.items() if k != "enabled"}
-            _upsert_spec_row(pcfg, spec)
-            refreshed.append(mid)
-            changed = True
-        if changed:
-            _write_providers_cfg(cfg)
 
-    if changed:
-        # Config spec rows changed → rebuild the runtime registry in place
-        # so the chat picker / runtime see the healed specs immediately.
-        from openprogram.providers import enabled_models as _mg
-        _mg.reload()
+        def refresh(cfg: dict) -> None:
+            nonlocal changed
+            pcfg = cfg.setdefault(provider_id, {})
+            enabled_ids = [
+                row.get("id")
+                for row in (pcfg.get("models") or [])
+                if row.get("id")
+            ] or list(pcfg.get("enabled_models") or [])
+            for mid in enabled_ids:
+                fresh = by_id.get(mid)
+                if not fresh:
+                    continue
+                spec = {key: value for key, value in fresh.items() if key != "enabled"}
+                _upsert_spec_row(pcfg, spec)
+                refreshed.append(mid)
+                changed = True
+
+        _update_providers_cfg(refresh)
 
     out = {
         "provider": provider_id,

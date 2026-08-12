@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any
+from typing import Any, Callable
 
 
 _cache_lock = threading.Lock()
@@ -96,6 +96,24 @@ def _write_providers_cfg(providers_cfg: dict[str, dict[str, Any]]) -> None:
     # re-enters the migration guard.
     from openprogram.providers import enabled_models as _mg
     _mg.reload()
+
+
+def _update_providers_cfg(mutator: Callable[[dict[str, Any]], Any]) -> Any:
+    """Mutate the current providers subtree inside config.json's shared lock."""
+    from openprogram import setup as _setup
+
+    result: Any = None
+
+    def update(config: dict) -> None:
+        nonlocal result
+        providers = config.setdefault("providers", {})
+        result = mutator(providers)
+
+    _setup.update_config(update)
+    from openprogram.providers import enabled_models as _mg
+
+    _mg.reload()
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -204,13 +222,22 @@ def _run_spec_migration_once(providers: dict[str, dict[str, Any]]) -> None:
         _spec_migration_running = False
         _spec_migration_done = True
     if changed or repaired:
-        # Persist the backfill + repair. ``_write_*`` re-reads the whole config;
-        # the guard above keeps that read from re-entering migration. The repair
-        # bumps the persisted ``spec_migration_version`` marker so it's one-shot
-        # per machine (see ``_repair_over_merged_specs``).
-        if repaired:
-            _bump_spec_migration_version()
-        _write_providers_cfg(providers)
+        from openprogram import setup as _setup
+
+        def migrate(config: dict) -> None:
+            current = config.setdefault("providers", {})
+            _migrate_specs(current)
+            repaired_current = _repair_over_merged_specs(current)
+            repaired_current = (
+                _repair_modality_cost_specs(current) or repaired_current
+            )
+            if repaired or repaired_current:
+                config["spec_migration_version"] = _SPEC_MIGRATION_VERSION
+
+        _setup.update_config(migrate)
+        from openprogram.providers import enabled_models as _mg
+
+        _mg.reload()
 
 
 def _spec_migration_version() -> int:
@@ -537,36 +564,57 @@ def create_custom_provider(
         return {"ok": False, "error": "base_url is required"}
 
     with _cache_lock:
-        cfg = _read_providers_cfg()
-        if explicit_id:
-            pid = explicit_id
-            if not _SLUG_RE.match(pid):
-                return {"ok": False, "error": "id must be a kebab-case slug (a-z, 0-9, hyphens)"}
+
+        def create(cfg: dict[str, Any]) -> dict[str, Any]:
             from openprogram.auth.aliases import resolve as _resolve_alias
-            if _resolve_alias(pid) != pid:
-                return {"ok": False, "error": f"{pid!r} is a reserved alias — pick another id"}
-            if pid in _known_provider_ids() or (
-                isinstance(cfg.get(pid), dict) and cfg[pid].get("source") != "custom"
-            ):
-                return {"ok": False, "error": f"provider {pid!r} already exists"}
-        else:
-            base_pid = _slugify(label)
-            if not base_pid:
-                return {"ok": False, "error": "name must contain letters or digits (a-z, 0-9)"}
-            pid = base_pid
-            n = 2
-            while _id_taken(pid, cfg):
-                pid = f"{base_pid}-{n}"
-                n += 1
-        cfg[pid] = {
-            "enabled": True,
-            "source": "custom",
-            "label": label or prettify_provider_id(pid),
-            "base_url": base_url,
-            "models": [],
-        }
-        _write_providers_cfg(cfg)
-    return {"ok": True, "id": pid, "label": cfg[pid]["label"], "base_url": base_url}
+
+            pid = explicit_id
+            if explicit_id:
+                if not _SLUG_RE.match(pid):
+                    return {
+                        "ok": False,
+                        "error": "id must be a kebab-case slug (a-z, 0-9, hyphens)",
+                    }
+                if _resolve_alias(pid) != pid:
+                    return {
+                        "ok": False,
+                        "error": f"{pid!r} is a reserved alias — pick another id",
+                    }
+                if pid in _known_provider_ids() or (
+                    isinstance(cfg.get(pid), dict)
+                    and cfg[pid].get("source") != "custom"
+                ):
+                    return {
+                        "ok": False,
+                        "error": f"provider {pid!r} already exists",
+                    }
+            else:
+                base_pid = _slugify(label)
+                if not base_pid:
+                    return {
+                        "ok": False,
+                        "error": "name must contain letters or digits (a-z, 0-9)",
+                    }
+                pid = base_pid
+                n = 2
+                while _id_taken(pid, cfg):
+                    pid = f"{base_pid}-{n}"
+                    n += 1
+            cfg[pid] = {
+                "enabled": True,
+                "source": "custom",
+                "label": label or prettify_provider_id(pid),
+                "base_url": base_url,
+                "models": [],
+            }
+            return {
+                "ok": True,
+                "id": pid,
+                "label": cfg[pid]["label"],
+                "base_url": base_url,
+            }
+
+        return _update_providers_cfg(create)
 
 
 def delete_custom_provider(provider_id: str) -> dict[str, Any]:
@@ -579,24 +627,31 @@ def delete_custom_provider(provider_id: str) -> dict[str, Any]:
     """
     pid = (provider_id or "").strip().lower()
     with _cache_lock:
-        cfg = _read_providers_cfg()
-        pcfg = cfg.get(pid)
-        if not isinstance(pcfg, dict) or pcfg.get("source") != "custom":
-            return {"ok": False, "error": f"{pid!r} is not a custom provider"}
-        del cfg[pid]
-        _write_providers_cfg(cfg)
-        try:
-            from openprogram import setup as _setup
+        from openprogram import setup as _setup
 
-            def clear_default(root: dict) -> None:
-                if root.get("default_provider") == pid:
-                    root.pop("default_provider", None)
-                    root.pop("default_model", None)
+        result: dict[str, Any] = {}
 
-            _setup.update_config(clear_default)
-        except Exception:
-            pass  # best-effort cleanup; the startup probe degrades gracefully
-    return {"ok": True, "id": pid, "removed": True}
+        def delete(config: dict) -> None:
+            nonlocal result
+            providers = config.setdefault("providers", {})
+            pcfg = providers.get(pid)
+            if not isinstance(pcfg, dict) or pcfg.get("source") != "custom":
+                result = {
+                    "ok": False,
+                    "error": f"{pid!r} is not a custom provider",
+                }
+                return
+            del providers[pid]
+            if config.get("default_provider") == pid:
+                config.pop("default_provider", None)
+                config.pop("default_model", None)
+            result = {"ok": True, "id": pid, "removed": True}
+
+        _setup.update_config(delete)
+        from openprogram.providers import enabled_models as _mg
+
+        _mg.reload()
+        return result
 
 
 def _is_custom_provider(provider_id: str) -> bool:
@@ -621,29 +676,31 @@ def add_manual_model(provider_id: str, model_id: str, name: str | None = None) -
     mid = (model_id or "").strip()
     if not mid:
         return {"ok": False, "error": "model id is required"}
+    known_provider = _is_known_provider(provider_id)
+    fallback_api = default_api_for(provider_id) or "openai-completions"
+    fallback_base_url = _resolve_base_url(provider_id) or ""
     with _cache_lock:
-        cfg = _read_providers_cfg()
-        # Reject an unknown provider id: creating a row for one would write an
-        # ENABLED_MODELS entry with an empty base_url that can't dispatch. Known
-        # = a tier-1/tier-2 provider (static registry or models.dev), or an
-        # existing custom config key.
-        if not _is_known_provider(provider_id) and (
-            cfg.get(provider_id, {}).get("source") != "custom"
-        ):
-            return {"ok": False, "error": f"unknown provider {provider_id!r}"}
-        pcfg = cfg.setdefault(provider_id, {})
-        api = pcfg.get("api") or default_api_for(provider_id) or "openai-completions"
-        base_url = pcfg.get("base_url") or _resolve_base_url(provider_id) or ""
-        spec = {
-            "id": mid,
-            "name": (name or "").strip() or mid,
-            "api": api,
-            "base_url": base_url,
-            "source": "manual",
-        }
-        _upsert_spec_row(pcfg, spec)
-        _write_providers_cfg(cfg)
-    return {"ok": True, "provider": provider_id, "model": mid}
+
+        def add(cfg: dict[str, Any]) -> dict[str, Any]:
+            if not known_provider and (
+                cfg.get(provider_id, {}).get("source") != "custom"
+            ):
+                return {
+                    "ok": False,
+                    "error": f"unknown provider {provider_id!r}",
+                }
+            pcfg = cfg.setdefault(provider_id, {})
+            spec = {
+                "id": mid,
+                "name": (name or "").strip() or mid,
+                "api": pcfg.get("api") or fallback_api,
+                "base_url": pcfg.get("base_url") or fallback_base_url,
+                "source": "manual",
+            }
+            _upsert_spec_row(pcfg, spec)
+            return {"ok": True, "provider": provider_id, "model": mid}
+
+        return _update_providers_cfg(add)
 
 
 # ---------------------------------------------------------------------------
@@ -662,18 +719,23 @@ def get_provider_config(provider_id: str) -> dict[str, Any]:
 
 def set_provider_config(provider_id: str, patch: dict[str, Any]) -> dict[str, Any]:
     with _cache_lock:
-        cfg = _read_providers_cfg()
-        pcfg = cfg.setdefault(provider_id, {})
-        if "base_url" in patch:
-            bu = (patch.get("base_url") or "").strip()
-            if bu:
-                pcfg["base_url"] = bu
-            else:
-                pcfg.pop("base_url", None)
-        if "use_responses_api" in patch:
-            pcfg["use_responses_api"] = bool(patch.get("use_responses_api"))
-        _write_providers_cfg(cfg)
-    return get_provider_config(provider_id)
+
+        def set_config(cfg: dict[str, Any]) -> dict[str, Any]:
+            pcfg = cfg.setdefault(provider_id, {})
+            if "base_url" in patch:
+                bu = (patch.get("base_url") or "").strip()
+                if bu:
+                    pcfg["base_url"] = bu
+                else:
+                    pcfg.pop("base_url", None)
+            if "use_responses_api" in patch:
+                pcfg["use_responses_api"] = bool(patch.get("use_responses_api"))
+            return {
+                "base_url": pcfg.get("base_url") or "",
+                "use_responses_api": bool(pcfg.get("use_responses_api", False)),
+            }
+
+        return _update_providers_cfg(set_config)
 
 
 # ---------------------------------------------------------------------------
@@ -682,15 +744,16 @@ def set_provider_config(provider_id: str, patch: dict[str, Any]) -> dict[str, An
 
 def remove_custom_model(provider_id: str, model_id: str) -> dict[str, Any]:
     with _cache_lock:
-        cfg = _read_providers_cfg()
-        pcfg = cfg.setdefault(provider_id, {})
-        pcfg["custom_models"] = [
-            m for m in pcfg.get("custom_models", []) if m.get("id") != model_id
-        ]
-        # Drop the enabled spec row (the single source of truth).
-        _remove_spec_row(pcfg, model_id)
-        _write_providers_cfg(cfg)
-    return {"provider": provider_id, "model": model_id, "removed": True}
+
+        def remove(cfg: dict[str, Any]) -> dict[str, Any]:
+            pcfg = cfg.setdefault(provider_id, {})
+            pcfg["custom_models"] = [
+                m for m in pcfg.get("custom_models", []) if m.get("id") != model_id
+            ]
+            _remove_spec_row(pcfg, model_id)
+            return {"provider": provider_id, "model": model_id, "removed": True}
+
+        return _update_providers_cfg(remove)
 
 
 # ---------------------------------------------------------------------------

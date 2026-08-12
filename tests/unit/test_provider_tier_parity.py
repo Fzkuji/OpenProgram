@@ -44,10 +44,16 @@ def mem_cfg(monkeypatch):
     store: dict = {}
     _read = lambda: copy.deepcopy(store)
     _write = lambda cfg: store.clear() or store.update(copy.deepcopy(cfg))
+    def _update(mutator):
+        current = copy.deepcopy(store)
+        result = mutator(current)
+        _write(current)
+        return result
+
     monkeypatch.setattr(st, "_read_providers_cfg", _read)
     monkeypatch.setattr(st, "_write_providers_cfg", _write)
-    monkeypatch.setattr(tg, "_read_providers_cfg", _read)
-    monkeypatch.setattr(tg, "_write_providers_cfg", _write)
+    monkeypatch.setattr(st, "_update_providers_cfg", _update)
+    monkeypatch.setattr(tg, "_update_providers_cfg", _update)
     # The spec-migration marker lives in the TOP-LEVEL config
     # (setup._read_config / _write_config), not in the providers
     # section stubbed above. Without these two stubs the migration pass
