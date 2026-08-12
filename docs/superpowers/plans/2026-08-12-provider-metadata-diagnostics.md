@@ -25,10 +25,10 @@ git diff --check
 | Evidence | Result |
 |---|---|
 | Base | `be56d0dd` |
-| Design | pending |
-| RED | pending |
-| GREEN | pending |
-| Specification review | pending |
-| Quality review | pending |
-| Full gate | pending |
-| Final implementation | pending |
+| Design | `b5deec5e` (`docs(providers): define metadata load diagnostics`) |
+| RED | 4 failed, 2 passed: malformed and wrong-shaped provider/cache metadata lacked warnings |
+| GREEN | 36 passed, including invalid UTF-8, delete race, exception-message redaction, and unresolved cache path |
+| Specification review | PASS at `c73f2de6`; all metadata fallback and log-shape contracts verified |
+| Quality review | PASS at `c73f2de6`; formatted-log probes found no content or exception-message disclosure |
+| Full gate | 36 passed; Ruff passed; docs 468 pages; 0 broken links; diff check passed |
+| Final implementation | `758fead4`, `c73f2de6` |
