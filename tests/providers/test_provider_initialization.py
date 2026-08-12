@@ -151,12 +151,14 @@ def test_record_replay_activation_failure_installs_blocked_provider_and_stays_re
     """
     state = tmp_path / ".openprogram"
     state.mkdir()
-    (state / "config.json").write_text(
+    config_path = state / "config.json"
+    config_path.write_text(
         json.dumps(
             {"record_replay": {"mode": "replay", "file": str(tmp_path / "missing.jsonl")}}
         ),
         encoding="utf-8",
     )
+    config_path.chmod(0o600)
 
     result = _run_python(
         """
@@ -206,12 +208,14 @@ def test_recordings_off_recovers_after_activation_failure(tmp_path: Path) -> Non
     """`openprogram recordings off` stays reachable when replay activation fails."""
     state = tmp_path / ".openprogram"
     state.mkdir()
-    (state / "config.json").write_text(
+    config_path = state / "config.json"
+    config_path.write_text(
         json.dumps(
             {"record_replay": {"mode": "replay", "file": str(tmp_path / "missing.jsonl")}}
         ),
         encoding="utf-8",
     )
+    config_path.chmod(0o600)
 
     result = _run_python(
         """
