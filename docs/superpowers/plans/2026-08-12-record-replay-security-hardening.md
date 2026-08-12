@@ -26,10 +26,10 @@ git diff --check
 | Evidence | Result |
 |---|---|
 | Base | `ccce0500` |
-| Design | pending |
-| RED | pending |
-| GREEN | pending |
-| Specification review | pending |
-| Quality review | pending |
-| Full gate | pending |
-| Final implementation | pending |
+| Design | `95581e0a` (`docs(providers): define record replay security hardening`) |
+| RED | 3 failed, 1 passed: compound secret fields, existing managed directory mode, and external replay chmod behavior violated the contract |
+| GREEN | 60 passed across record/replay, CLI, registry, and adversarial permission/symlink cases |
+| Specification review | PASS at `6172411b`; managed/external provenance, redaction, strict replay, and compatibility verified |
+| Quality review | PASS at `6172411b`; direct, dotdot, case-alias, nested-symlink, external-target, and replay no-mutation probes verified |
+| Full gate | 60 passed; Ruff passed; docs 470 pages; 0 broken links; diff check passed |
+| Final implementation | `fb9c159d`, `8d83784b`, `adec27c1`, `e0b70288`, `3567f427`, `cfa03f29`, `76173db5`, `600d0ed9`, `6172411b` |
