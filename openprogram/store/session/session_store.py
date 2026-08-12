@@ -1542,17 +1542,19 @@ class SessionStore:
         if pair is None:
             return
         git, idx = pair
-        cur = list(idx.meta.get("merged_heads") or [])
-        changed = False
-        for h in head_ids:
-            if not h:
-                continue
-            h = h.strip()
-            if h and h not in cur:
-                cur.append(h)
-                changed = True
+        with idx._lock:
+            cur = list(idx.meta.get("merged_heads") or [])
+            changed = False
+            for h in head_ids:
+                if not h:
+                    continue
+                h = h.strip()
+                if h and h not in cur:
+                    cur.append(h)
+                    changed = True
+            if changed:
+                idx.meta["merged_heads"] = cur
         if changed:
-            idx.set_meta(merged_heads=cur)
             self._persist_meta(git, idx)
 
     def merged_heads(self, session_id: str) -> set[str]:
