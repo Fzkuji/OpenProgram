@@ -1,8 +1,8 @@
-# 任务清单
+# 自编程agentic workflow
 
-任务清单是OpenProgram的自编程agentic workflow（self-programmed agentic workflow）：agent自己写出程序（清单），再自己执行。不是让一个 agent 在不断变长的对话里做完长任务，而是把任务规划成若干 item，每个 item 由自己的 agent 执行，它的全部上下文就是这个 item 加上交接给它的结果。清单是程序，item 是有界子任务。由此得到两件事：长任务更稳，因为范围按 item 钉死，失败在 item 层面重试而不是整个重来；上下文不再随步数膨胀，因为第二十步不用背着第一到十九步。
+`run_task_list`是OpenProgram的自编程agentic workflow（self-programmed agentic workflow）：agent自己把任务写成一个真正的Python程序，再由框架执行。planner用框架的积木组合程序：自由的`agent()`调用加上注册的agentic function，控制流就是Python本身的`if`、`for`、异常。运行模型和开发者写代码一样：整个程序从头到尾跑完；崩了就看报错、改代码、整个重跑，已完成的调用直接回放上次结果，效果上从出错处继续。
 
-在 Functions 面板里以 `run_task_list` 运行，或从 Python 调用：
+在Functions面板里以`run_task_list`运行，或从Python调用：
 
 ```python
 from openprogram.functions.agentics.task_list import run_task_list
@@ -10,62 +10,69 @@ from openprogram.functions.agentics.task_list import run_task_list
 result = run_task_list("把 auth 模块迁到新客户端并更新它的测试")
 ```
 
-## 小任务不拆
+每次调用新建一个独立实例，在会话仓库下有自己的目录：`workflows/<run_id>/`，存`code.py`和`state.json`。实例之间什么都不共享，想同时跑几个流程就跑几个。
 
-planner 的第一个决定是要不要拆。单个 agent 一口气能做完的任务（一处小改动、回答一个问题、写一个文件）作为单个 item 运行，因为规划它、在 agent 之间交接的开销超过直接做完。只有任务确实超出一次的范围才拆：多个不同的交付物、跨文件或跨阶段的工作、后一步依赖前一步产出的步骤。
+## 小任务不写程序
 
-## 清单就是 todo board
+planner的第一个决定是这个任务配不配得上一个程序。单个agent一口气能做完的（一处小改动、回答一个问题、写一个文件）直接执行，因为为它写程序的开销超过直接做完。程序留给真正超出一次范围的任务：多个交付物、跨阶段的工作、后一步依赖前一步产出。
 
-没有第二份清单。item 就是会话 [todo 计划板](tools.md)上的条目，也就是 `todo_create`、`todo_update`、`todo_list` 读写的那个 `todos.json`。所以运行中的 workflow 在原本能看到 todo 的地方都能看到，状态按 `pending` → `in_progress` → `completed` 推进。`todo_list` 渲染 workflow 条目和渲染别的条目一样，你自己手写的 todo 在旁边原封不动。
+## 生成的程序长什么样
 
-条目被 workflow 拥有时，多带三个可选字段：
-
-| 字段 | 含义 |
-|---|---|
-| `done_criteria` | item 跑完后被判定的判据：必须存在的文件、必须通过的命令、必须出现的输出 |
-| `context_spec.upstream` | 接收前面几个已完成 item 的结果：`0` 独立，`N` 取最近 N 个，`-1` 全要 |
-| `result_summary` | 交接给下游 item 的摘要文本 |
-
-这三个字段在别处都是可选的，所以这套机制出现之前写的条目、以及普通 todo 工具写的条目，照常能用。
-
-`upstream` 是这个 item 的上下文预算，在规划时决定而不是执行时猜。它同时也界定嵌套调用渲染的 DAG 切片，所以一个窄 item 一路窄到底。
-
-仓库本身就是共享状态，所以交接摘要传的是结论和路径，不是文件内容。超过长度上限的摘要会被截断并附一句说明，让下一个 agent 去读点名的路径：摘要退化成转录，拆分换来的东西就全还回去了。
-
-## item 怎么判定
-
-判定 item 的就是判定[会话目标](goal.md)的那个 judge，把 item 的 `done_criteria` 作为目标交给它。这里没有第二个完成判定：它读压缩后的会话视图，有检查工具，给出严格的是或否加一个理由。除了明确的"达成"，其他情况（包括 judge 想反问、或者判定本身失败）都算这个 item 没完成。
-
-这比目标循环高一层，不是同一层。会话目标驱动的是整轮对话，直到条件成立；任务清单驱动的是 item，每个 item 调一次 judge。设目标和跑任务清单互不影响。
-
-不过则重试一次，并把 judge 的理由传给 executor，让第二次尝试知道上次哪里不对。再不过就回 planner，而不是做第三次一模一样的尝试：同样的失败再重试一遍修不好，拆分 item 或修正判据才行。
-
-## 运行中修订
-
-清单规划完不冻结。某个 item 两次失败时，planner 重写清单里还没跑的部分：拆分失败的 item、重述判据、插入结果证明是前置条件的工作，或者作废它。已完成的 item 从不被动：结果保持不变，每次修订都记下前后的 item id，改动就摆在它改的那份清单旁边。
-
-## 中断后续跑
-
-每次状态变化都在实际动手之前写进 board，这让 `todos.json` 是 checkpoint 而不是日志。跑到一半被杀的运行从停下的地方续跑：
+planner有只读工具（read、grep、glob、list），输入是任务加函数注册表（积木清单），产出一个普通Python模块，入口`def workflow()`：
 
 ```python
-run_task_list("同一段任务文本", resume=True)   # resume=True 是默认值
+def find_issues() -> str:
+    return agent(
+        "审查 openprogram/auth/ 的代码，逐文件检查错误处理与并发安全，"
+        "输出问题清单，按 HIGH / MEDIUM / LOW 分级，每条带文件路径与行号。",
+        description="find issues")
+
+
+def workflow() -> str:
+    findings = find_issues()
+    if "HIGH" in findings:
+        agent("按清单修复 HIGH 级问题，改完跑通相关测试：" + findings,
+              description="fix auth")          # 干活的 agent，profile 带工具
+        checks = run_tests()                    # 注册表里的 agentic function 直接调
+        if "failed" in checks:
+            raise RuntimeError("修复后测试仍失败：" + checks)
+    return agent("汇总以上结果写报告", description="report")
 ```
 
-被杀时留在 `in_progress` 的 item 会被重新执行；已完成的 item 保留结果并跳过。续跑按任务文本匹配，所以属于别的任务、或者你自己手写的条目永远不会被接管；board 上没有该任务条目时就重新规划。
+程序里禁止`import`，能调的东西全部由框架注入：
+
+| 注入的名字 | 说明 |
+|---|---|
+| `agent` | 唯一的LLM原语，就是现有的agent spawn工具原样注入（`agent(prompt, description="", agent_id="", …)`）。模型与工具集通过`agent_id`选的agent profile决定。 |
+| 注册的agentic function | `AGENTIC_MODULES`注册表里的全部函数，按名直接调用。planner的prompt里带着这份清单。 |
+
+模块运行前先校验：能解析、必须有`workflow()`、不许import。无效代码带着具体错误打回planner重写，改到能跑为止。
+
+程序里没有任何checkpoint语法。存档是框架的事：注入环境里的每个可调用都被包了一层，真实执行前后写`state.json`，键是（函数名，第几次被调，参数摘要）。验证也不是框架强加的：planner把检查写成程序的一步，不满足就`raise`，交给修订回环。
+
+## 断点续跑：整个程序重跑，调用回放
+
+没有调度器，没有"取下一项"。续跑就是把`workflow()`从第一行重新执行一遍，唯一的机制是调用边界的短路：`state.json`里已完成的调用（同名、同次序、同参数摘要）不真正执行，直接返回上次的结果。重跑时程序飞速掠过做完的部分，到第一个没做完的调用才真正干活。控制流每次都完整重走（`if`重新判断、`for`重新循环），恢复的只是昂贵调用的结果。
+
+进程被杀同理：状态变化先写盘再动手，拿`run_id`再跑一遍即续。续跑是显式的：每次`run_task_list(task)`都新建实例（返回值带`run_id`），续跑要传入既有实例的`run_id`。不存在按任务文本匹配旧运行这种事。
+
+## 出错后的修订
+
+程序抛异常时（语法错、积木调用失败、planner自己写的检查`raise`），处理方式和开发者一样：planner拿到异常栈、当前代码和`state.json`里的运行记录，重写`code.py`，然后整个程序重跑。没改动的已完成调用照旧回放，所以修订不推翻已完成的工作。旧版代码留档在实例目录里，修订历史进返回值。
+
+没有abandoned这种状态。无效代码、运行报错都带着具体错误打回planner再改，改到能跑为止。唯一的强制停止是`capped`：40次真实调用执行（回放不计数）触发，到这个份上程序还在长是规划失败。
 
 ## 返回什么
 
 ```python
-{"status": "completed", "task": "…", "items": [...], "revisions": [...], "summary": "…"}
+{"status": "completed", "run_id": "…", "task": "…", "result": …, "revisions": [...]}
 ```
 
 | 状态 | 含义 |
 |---|---|
-| `completed` | 每个 item 都有了结果：完成，或被修订作废。 |
-| `abandoned` | 某次修订清空了剩余清单，或者 planner 无法完成修订。 |
-| `capped` | 运行触到 40 个已执行 item 的上限。到这个份上还在长的清单是规划失败，不是进展。 |
+| `completed` | `workflow()`正常返回，附结果与全部运行记录。 |
+| `capped` | 运行触到40次真实执行的上限。 |
 
 ## 和会话目标的分工
 
-[目标](goal.md)让一个会话一直做到条件成立，对话是连续的、每轮都在变长。任务清单则预先把工作拆开，每块在自己有界的上下文里跑。终点清楚但路径不清楚时用目标；工作长到"全装在一个上下文里"本身就是问题时用任务清单。
+[目标](goal.md)让一个会话一直做到条件成立，对话是连续的、每轮都在变长。workflow把计划写成程序，每个调用在自己有界的上下文里跑。终点清楚但路径不清楚时用目标；工作长到"全装在一个上下文里"本身就是问题时用workflow。todo计划板不参与：workflow的状态在自己的实例目录里。

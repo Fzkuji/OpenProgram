@@ -1,6 +1,6 @@
-# Task lists
+# Self-programmed agentic workflows
 
-A task list is OpenProgram's self-programmed agentic workflow: the agent writes the program — the list — and then executes it. Instead of one agent working a long task in a single growing conversation, the task is planned into items, and each item runs as its own agent whose entire context is that item plus the results handed to it. The list is the program; each item is a bounded sub-task. Two things follow: a long task stays stable, because scope is pinned per item and a failure is retried at item level rather than restarting everything, and the context stops growing with the step count, because step twenty does not carry steps one through nineteen.
+`run_task_list` is OpenProgram's self-programmed agentic workflow: the agent writes an actual Python program for the task, and the framework executes it. The planner composes the program out of the framework's building blocks — free-form `agent()` calls and the registered agentic functions — and control flow is plain Python: `if`, `for`, exceptions. The run model is the same as a developer's: the whole program runs top to bottom; if it crashes, the planner reads the traceback, fixes the code, and reruns it, with completed calls replayed from recorded results so the rerun effectively continues from the point of failure.
 
 Run it from the Functions panel as `run_task_list`, or call it from Python:
 
@@ -10,62 +10,70 @@ from openprogram.functions.agentics.task_list import run_task_list
 result = run_task_list("port the auth module to the new client and update its tests")
 ```
 
+Every call creates an independent workflow instance with its own directory under the session repository — `workflows/<run_id>/` holding `code.py` and `state.json`. Instances share nothing: run as many concurrent workflows as you want.
+
 ## Small tasks are not split
 
-The planner's first decision is whether to split at all. A task one agent finishes in a single pass — a small edit, one question answered, one file written — runs as a single item, because planning it and handing work between agents costs more than just doing it. Splitting starts when a task genuinely exceeds one pass: several distinct deliverables, work spread across files or stages, or steps that depend on what the step before produced.
+The planner's first decision is whether the task needs a program at all. A task one agent finishes in a single pass — a small edit, one question answered, one file written — is executed directly, because writing a program for it costs more than doing it. Programs are for tasks that genuinely exceed one pass: several deliverables, work spread across stages, or steps that depend on earlier output.
 
-## The list is the todo board
+## The generated program
 
-There is no second list. Items are entries on the session's [todo planning board](tools.md) — the same `todos.json` that `todo_create`, `todo_update` and `todo_list` read and write — so a running workflow shows up wherever todos already show up, moving through `pending` → `in_progress` → `completed` as it goes. `todo_list` renders workflow items like any other entry, and todos you wrote by hand sit alongside untouched.
-
-Three optional fields ride on an entry when a workflow owns it:
-
-| Field | Meaning |
-|---|---|
-| `done_criteria` | The criterion judged after the item runs — a file that must exist, a command that must pass, an output that must appear |
-| `context_spec.upstream` | How many earlier completed items' results this one receives: `0` stands alone, `N` takes the last N, `-1` takes all of them |
-| `result_summary` | The hand-off text passed to the items downstream |
-
-They are optional everywhere else, so entries written before this existed, or written by the plain todo tools, keep working.
-
-`upstream` is the item's context budget, decided at planning time rather than guessed while running. It is also what bounds the DAG slice a nested call renders, so a narrow item stays narrow all the way down.
-
-The repository is shared state, so hand-off summaries carry conclusions and paths, never file contents. A summary that grows past its limit is truncated with a note telling the next agent to read the named paths instead — a summary that becomes a transcript gives back everything the split was for.
-
-## How an item is judged
-
-The same judge that decides [session goals](goal.md) decides items, with the item's `done_criteria` handed to it as the goal. There is no second completion judge: it reads the compacted session view, has inspection tools, and answers a strict yes or no with a reason. Anything other than a clear "met" — including a judge that wants to ask you something, or one that fails outright — leaves the item not done.
-
-This is one layer above the goal loop, not the same one. A session goal drives whole turns until a condition holds; a task list drives items, and calls the judge once per item. Setting a goal and running a task list are independent.
-
-A miss is retried once, with the judge's reason passed to the executor so the second attempt knows what was wrong. A second miss goes to the planner instead of a third identical attempt — retrying the same failure again does not fix it, but splitting the item or correcting its criterion does.
-
-## Revision while running
-
-The list is not frozen once planned. When an item fails twice, the planner rewrites the part of the list that has not run yet: splitting the failed item, restating its criterion, inserting work that turned out to be a prerequisite, or dropping it. Completed items are never touched — their results stand, and each revision is recorded with the item ids before and after, so the change is visible next to the list it changed.
-
-## Resuming after an interruption
-
-Every transition is written to the board before the work happens, which makes `todos.json` a checkpoint rather than a log. A run killed halfway resumes from where it stopped:
+The planner has read-only tools (read, grep, glob, list) and receives the task plus the function registry — the list of building blocks. It produces a plain Python module with a `def workflow()` entry point:
 
 ```python
-run_task_list("the same task text", resume=True)   # resume=True is the default
+def find_issues() -> str:
+    return agent(
+        "Review openprogram/auth/ file by file for error handling and "
+        "concurrency issues. Output a findings list graded HIGH / MEDIUM / LOW "
+        "with file paths and line numbers.",
+        description="find issues")
+
+
+def workflow() -> str:
+    findings = find_issues()
+    if "HIGH" in findings:
+        agent("Fix the HIGH findings and get the related tests passing: " + findings,
+              description="fix auth")          # a working agent, its profile carries tools
+        checks = run_tests()                    # a registered agentic function, called by name
+        if "failed" in checks:
+            raise RuntimeError("tests still failing after fix: " + checks)
+    return agent("Write a report summarizing the results above", description="report")
 ```
 
-An item left `in_progress` by a killed process is picked up and run again; completed items keep their results and are skipped. Resuming matches on the task text, so entries belonging to a different task — or to a todo you wrote yourself — are never adopted, and a task with no entries on the board is planned fresh.
+Imports are forbidden — the framework injects everything the program may call:
+
+| Injected name | What it is |
+|---|---|
+| `agent` | The one LLM primitive — the existing agent spawn tool, injected as-is (`agent(prompt, description="", agent_id="", …)`). Model and tool set come from the agent profile selected by `agent_id`. |
+| registered agentic functions | Every function in the `AGENTIC_MODULES` registry, callable by name. The planner's prompt carries this catalog. |
+
+The module is validated before it runs: it must parse, it must define `workflow()`, and it must not import. Invalid code is sent back to the planner with the concrete error, as many times as it takes.
+
+There is no checkpoint syntax in the program. Recording is the framework's job: every injected callable is wrapped, and each real execution is written to `state.json` before and after it happens, keyed by function name, invocation order, and an argument digest. Verification is not imposed by the framework either — the planner writes checks into the program and raises when they fail, which routes into the revision loop.
+
+## Resuming: rerun the whole program, replay completed calls
+
+There is no scheduler and no "next item" logic. Resuming means executing `workflow()` again from its first line. The only mechanism is short-circuiting at call boundaries: a call already completed in `state.json` — same name, same order, same arguments — is not executed again; it returns its recorded result instantly. The rerun flashes past finished work and starts doing real work at the first incomplete call. Control flow is re-evaluated every time (`if` re-branches, `for` re-loops); only the expensive call results are restored.
+
+A killed process resumes the same way: state changes hit disk before the work happens, so rerunning the instance by its `run_id` continues it. Resuming is explicit — each `run_task_list(task)` call creates a fresh instance and returns its `run_id`; to continue an existing one, pass that `run_id` back. Nothing is matched by task text.
+
+## Revision after an error
+
+When the program raises — a syntax error, a failed call, or a check the planner wrote itself — the handling is what a developer does: the planner gets the traceback, the current code, and the run records in `state.json`, rewrites `code.py`, and the whole program reruns. Untouched completed calls replay as before, so a revision never discards finished work. Old code versions are archived in the instance directory, and the revision history is part of the return value.
+
+There is no abandoned state. Invalid code and runtime failures both go back to the planner with the concrete error, as many rounds as needed. The only forced stop is `capped`: 40 real executions (replays don't count) ends the run, because a program still growing at that point is a planning failure.
 
 ## What it returns
 
 ```python
-{"status": "completed", "task": "…", "items": [...], "revisions": [...], "summary": "…"}
+{"status": "completed", "run_id": "…", "task": "…", "result": …, "revisions": [...]}
 ```
 
 | Status | Meaning |
 |---|---|
-| `completed` | Every item is settled — done, or dropped by a revision. |
-| `abandoned` | A revision emptied the remaining list, or the planner could not be reached to revise. |
-| `capped` | The run hit its ceiling of 40 executed items. A list still growing at that point is a planning failure, not progress. |
+| `completed` | `workflow()` returned. The result and full run records come with it. |
+| `capped` | The run hit its ceiling of 40 real executions. |
 
 ## Compared to a session goal
 
-A [goal](goal.md) keeps one session working until a condition holds; the conversation is continuous and grows with every turn. A task list splits the work up front and runs each piece in its own bounded context. Use a goal when the finish line is clear but the path is not; use a task list when the work is long enough that carrying all of it in one context is the problem.
+A [goal](goal.md) keeps one session working until a condition holds; the conversation is continuous and grows with every turn. A workflow writes the plan down as a program and runs each call in its own bounded context. Use a goal when the finish line is clear but the path is not; use a workflow when the work is long enough that carrying all of it in one context is the problem. The todo planning board is not involved — a workflow's state lives in its own instance directory.

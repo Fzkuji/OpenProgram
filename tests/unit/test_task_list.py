@@ -1,658 +1,555 @@
-"""Unit tests for the task_list agentic function
-(``openprogram/functions/agentics/task_list/``): the size decision that
-decides whether to split at all, the serial loop, the retry-then-revise
-path when the judge says no, resuming from the board, and the rule that
-a revision never touches a completed item.
-
-Two reuse boundaries are tested here because they are the point of the
-design: list state IS the todo planning board (entries written by the
-plain todo tools keep working alongside), and item completion IS
-``evaluate_goal`` (no second judge).
-
-Every LLM round goes through a module-level ``_run_*_turn`` seam (the
-same shape ``goal`` uses), so the tests stub those and never reach a
-provider."""
+"""Behavior tests for self-programmed task-list workflows."""
 from __future__ import annotations
 
 import json
+import inspect
+import textwrap
+import threading
+from pathlib import Path
 
 import pytest
 
 import openprogram.functions.agentics.task_list as TL
-from openprogram.functions.tools.todo import shared
 
 
-@pytest.fixture
-def board(tmp_path, monkeypatch):
-    """A real todos.json on disk, driven through the shared storage
-    layer — the same file the todo tools read and write."""
-    path = tmp_path / "todos.json"
-    monkeypatch.setattr(shared, "todos_path", lambda sid: path)
-    monkeypatch.setattr(shared, "current_session_id", lambda: "s1")
-    return path
-
-
-def _read_board(path):
-    return json.loads(path.read_text())["todos"] if path.exists() else []
-
-
-@pytest.fixture
-def always_pass(monkeypatch):
-    """Goal judge that accepts every item."""
-    monkeypatch.setattr(TL, "judge_item", lambda *a, **k: (True, "ok"))
-
-
-def _plan(*texts, split=True, reason="r", upstream=-1):
-    return json.dumps({
-        "split": split, "reason": reason,
-        "items": [{"text": t, "done_when": f"{t} done",
-                   "context_spec": {"upstream": upstream}} for t in texts],
-    })
-
-
-# ---------------------------------------------------------------------------
-# Size decision — a small task is not split
-# ---------------------------------------------------------------------------
-
-def test_planner_tools_exclude_bash() -> None:
-    assert "bash" not in TL.PLANNER_TOOLS
-
-
-def test_small_task_runs_as_one_item(monkeypatch, board, always_pass) -> None:
-    prompts = []
-
-    def _plan_turn(sid, prompt, *, agent_id, spawn_caller, label):
-        prompts.append(prompt)
-        return '{"split": false, "reason": "one pass is enough"}'
-
-    runs = []
-    monkeypatch.setattr(TL, "_run_planner_turn", _plan_turn)
-    monkeypatch.setattr(TL, "_run_executor_turn",
-                        lambda sid, p, **k: runs.append(p) or "did it")
-
-    out = TL.run_task_list(task="rename one variable", session_id="s1")
-
-    assert out["status"] == "completed"
-    assert len(out["items"]) == 1                  # not split
-    assert out["items"][0]["subject"] == "rename one variable"
-    assert len(runs) == 1                          # exactly one executor run
-    assert "Do NOT split" in prompts[0]            # the rule is in the prompt
-    assert "<task>\nrename one variable\n</task>" in prompts[0]
-
-
-def test_large_task_is_split_into_items(monkeypatch, board,
-                                        always_pass) -> None:
-    monkeypatch.setattr(TL, "_run_planner_turn",
-                        lambda *a, **k: _plan("step one", "step two"))
-    monkeypatch.setattr(TL, "_run_executor_turn", lambda *a, **k: "done")
-
-    out = TL.run_task_list(task="big task", session_id="s1")
-    assert out["status"] == "completed"
-    assert [it["subject"] for it in out["items"]] == ["step one", "step two"]
-    assert all(it["status"] == TL.COMPLETED for it in out["items"])
-
-
-# ---------------------------------------------------------------------------
-# The list is the todo board
-# ---------------------------------------------------------------------------
-
-def test_items_are_ordinary_todo_board_entries(monkeypatch, board,
-                                               always_pass) -> None:
-    monkeypatch.setattr(TL, "_run_planner_turn",
-                        lambda *a, **k: _plan("first", "second"))
-    monkeypatch.setattr(TL, "_run_executor_turn", lambda *a, **k: "ok")
-    TL.run_task_list(task="t", session_id="s1")
-
-    entries = _read_board(board)
-    assert len(entries) == 2
-    for e in entries:
-        # Every field todo_create writes, so todo_list renders these.
-        for field in ("id", "subject", "description", "status", "owner",
-                      "blocked_by", "created_at", "updated_at"):
-            assert field in e
-        assert e["status"] in shared.STATUSES
-        assert e["owner"] == TL.WORKFLOW_OWNER
-        # …plus the three workflow fields.
-        assert e["done_criteria"] and "upstream" in e["context_spec"]
-        assert e["result_summary"] == "ok"
-
-
-def test_todo_list_renders_a_running_workflow(monkeypatch, board) -> None:
-    from openprogram.functions.tools.todo.todo_list.todo_list import (
-        _todo_list_impl)
-
-    monkeypatch.setattr(TL, "_run_planner_turn",
-                        lambda *a, **k: _plan("write the parser"))
-    rendered = []
-    monkeypatch.setattr(
-        TL, "_run_executor_turn",
-        lambda *a, **k: rendered.append(_todo_list_impl()) or "ok")
-    monkeypatch.setattr(TL, "judge_item", lambda *a, **k: (True, "ok"))
-    TL.run_task_list(task="t", session_id="s1")
-
-    # Mid-run the board shows the item as in_progress, in the standard
-    # todo_list format — no extra surface needed to watch a workflow.
-    assert "in_progress:" in rendered[0]
-    assert "#1 write the parser" in rendered[0]
-    assert "completed:" in _todo_list_impl()
-
-
-def test_hand_written_todos_survive_a_workflow(monkeypatch, board,
-                                               always_pass) -> None:
-    from openprogram.functions.tools.todo.todo_create.todo_create import (
-        _todo_create_impl)
-
-    _todo_create_impl("a todo the user wrote", "keep me")
-    monkeypatch.setattr(TL, "_run_planner_turn",
-                        lambda *a, **k: _plan("workflow item"))
-    monkeypatch.setattr(TL, "_run_executor_turn", lambda *a, **k: "ok")
-    TL.run_task_list(task="t", session_id="s1")
-
-    entries = _read_board(board)
-    mine = [e for e in entries if e["subject"] == "a todo the user wrote"]
-    assert len(mine) == 1                       # untouched, still there
-    assert mine[0]["status"] == "pending" and mine[0]["owner"] == ""
-    # …and the workflow never adopted it as one of its items.
-    assert len(TL.workflow_items("s1", "t")) == 1
-
-
-def test_old_board_without_workflow_fields_still_loads(board) -> None:
-    # A todos.json written before these fields existed: reading it must
-    # not raise, and it contributes no workflow items.
-    board.write_text(json.dumps({"version": 1, "todos": [
-        {"id": "1", "subject": "legacy", "description": "", "status": "pending",
-         "owner": "", "blocked_by": [], "created_at": 1.0, "updated_at": 1.0},
-    ]}))
-    assert shared.load("s1")[0]["subject"] == "legacy"
-    assert TL.workflow_items("s1", "t") == []
-    # The helpers tolerate an entry with no context_spec / criteria.
-    legacy = shared.load("s1")[0]
-    assert TL.render_range_for(legacy) == {"callers": 0, "subcalls": -1}
-    assert TL._upstream_summaries([legacy], legacy) == ""
-
-
-# ---------------------------------------------------------------------------
-# Serial advance — items run in order, each with its own bounded context
-# ---------------------------------------------------------------------------
-
-def test_items_run_serially_with_upstream_handoff(monkeypatch, board,
-                                                  always_pass) -> None:
-    prompts = []
-    monkeypatch.setattr(
-        TL, "_run_planner_turn",
-        lambda *a, **k: _plan("write the file", "test the file"))
-
-    def _exec(sid, prompt, *, agent_id, spawn_caller, label, render_range):
-        prompts.append(prompt)
-        return f"result of item {len(prompts)}"
-
-    monkeypatch.setattr(TL, "_run_executor_turn", _exec)
-    out = TL.run_task_list(task="t", session_id="s1")
-
-    assert len(prompts) == 2                      # strictly serial, one each
-    assert "<upstream_results>" not in prompts[0]
-    assert "result of item 1" in prompts[1]       # item 2 gets item 1's hand-off
-    assert "<your_item>\nwrite the file\n</your_item>" in prompts[0]
-    assert "<your_item>\ntest the file\n</your_item>" in prompts[1]
-    assert out["items"][0]["result_summary"] == "result of item 1"
-
-
-def test_upstream_zero_isolates_an_item(monkeypatch, board,
-                                        always_pass) -> None:
-    plan = json.dumps({"split": True, "reason": "r", "items": [
-        {"text": "a", "done_when": "a", "context_spec": {"upstream": -1}},
-        {"text": "b", "done_when": "b", "context_spec": {"upstream": 0}},
-    ]})
-    prompts = []
-    monkeypatch.setattr(TL, "_run_planner_turn", lambda *a, **k: plan)
-    monkeypatch.setattr(
-        TL, "_run_executor_turn",
-        lambda sid, p, **k: prompts.append(p) or f"summary {len(prompts)}")
-
-    TL.run_task_list(task="t", session_id="s1")
-    assert "<upstream_results>" not in prompts[1]   # upstream=0 → stands alone
-
-
-def test_context_spec_maps_to_render_range() -> None:
-    # The planner's per-item context budget is the same number that
-    # bounds the DAG slice a nested call renders.
-    assert TL.render_range_for({"context_spec": {"upstream": 0}}) == {
-        "callers": 0, "subcalls": 0}
-    assert TL.render_range_for({"context_spec": {"upstream": 2}}) == {
-        "callers": 0, "subcalls": 2}
-    assert TL.render_range_for({}) == {"callers": 0, "subcalls": -1}
-
-
-def test_executor_applies_context_spec_at_agent_turn_boundary(monkeypatch) -> None:
-    from openprogram.agent import sub_agent_run
-
-    seen = []
-
-    class Result:
-        failed = False
-        final_text = "done"
-        error = None
-
-    monkeypatch.setattr(
-        sub_agent_run,
-        "run_agent_turn",
-        lambda *args, **kwargs: seen.append(kwargs) or Result(),
+def _code(body: str, helpers: str = "") -> str:
+    source = textwrap.dedent(helpers).strip()
+    if source:
+        source += "\n\n"
+    source += "def workflow():\n" + textwrap.indent(
+        textwrap.dedent(body).strip(), "    "
     )
-    item = {"id": "2", "subject": "work", "done_criteria": "done",
-            "context_spec": {"upstream": 2}}
-
-    TL.execute_item("task", item, "", session_id="s1")
-
-    assert seen[0]["render_range"] == {"callers": 0, "subcalls": 2}
+    return f"```python\n{source}\n```"
 
 
-def test_turn_render_range_applies_to_implicit_agentic_functions(
-    monkeypatch,
+@pytest.fixture
+def session_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setattr(TL, "_session_repo", lambda _sid: tmp_path)
+    return tmp_path
+
+
+def _planner(monkeypatch: pytest.MonkeyPatch, *replies: str) -> list[str]:
+    prompts: list[str] = []
+    queue = list(replies)
+
+    def fake(_sid, prompt, **_kwargs):
+        prompts.append(prompt)
+        if not queue:
+            raise AssertionError("unexpected planner call")
+        return queue.pop(0)
+
+    monkeypatch.setattr(TL, "_run_planner_turn", fake)
+    return prompts
+
+
+def _executor(monkeypatch: pytest.MonkeyPatch, fn=None) -> list[dict]:
+    calls: list[dict] = []
+
+    def fake(prompt, description="", agent_id="", start_from="clean",
+             run_in_background=False, to="", archive_when_done=False):
+        kwargs = {
+            "description": description, "agent_id": agent_id,
+            "start_from": start_from, "run_in_background": run_in_background,
+            "to": to, "archive_when_done": archive_when_done,
+        }
+        calls.append({"prompt": prompt, **kwargs})
+        return fn(prompt, kwargs) if fn else f"done: {prompt}"
+
+    monkeypatch.setattr(TL, "_agent_function", lambda: fake)
+    return calls
+
+
+def _instance(repo: Path, run_id: str) -> Path:
+    return repo / "workflows" / run_id
+
+
+def _state(repo: Path, run_id: str) -> dict:
+    return json.loads((_instance(repo, run_id) / "state.json").read_text())
+
+
+def test_small_task_uses_single_agent_and_persists_independent_run(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
-    import openprogram.agentic_programming.function as function_module
-    from openprogram.agentic_programming.function import agentic_function
+    prompts = _planner(monkeypatch, "SINGLE")
+    calls = _executor(monkeypatch)
 
-    seen = []
-    monkeypatch.setattr(
-        function_module,
-        "_append_function_call_entry",
-        lambda **kwargs: seen.append(kwargs["render_range"]),
+    result = TL.run_task_list("rename one variable", session_id="s1")
+
+    assert result["status"] == "completed"
+    assert calls[0]["prompt"] == "rename one variable"
+    assert "SINGLE" in prompts[0]
+    assert (_instance(session_repo, result["run_id"]) / "code.py").exists()
+    assert _state(session_repo, result["run_id"])["status"] == "completed"
+    assert not (session_repo / "todos.json").exists()
+
+
+def test_plain_helper_uses_agent_and_its_result_in_workflow(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    source = _code(
+        'return consume(produce())',
+        helpers='''
+        def produce():
+            return agent("produce", description="produce")
+
+        def consume(value):
+            return agent("consume " + value, description="consume")
+        ''',
+    )
+    _planner(monkeypatch, source)
+    calls = _executor(
+        monkeypatch,
+        lambda prompt, _kwargs: "VALUE" if prompt == "produce" else "USED",
     )
 
-    @agentic_function(as_tool=False, register_globally=False)
-    def implicit():
-        return "ok"
+    result = TL.run_task_list("compose", session_id="s1")
 
-    @agentic_function(
-        as_tool=False,
-        register_globally=False,
-        render_range={"callers": 1, "subcalls": 1},
-    )
-    def explicit():
-        return "ok"
+    assert result["status"] == "completed"
+    assert [call["prompt"] for call in calls] == ["produce", "consume VALUE"]
+    assert [item["function"] for item in result["items"]] == ["agent", "agent"]
 
-    token = function_module._render_range_override.set(
-        {"callers": 0, "subcalls": 2}
-    )
-    try:
-        implicit()
-        explicit()
-    finally:
-        function_module._render_range_override.reset(token)
 
-    assert seen == [
-        {"callers": 0, "subcalls": 2},
-        {"callers": 1, "subcalls": 1},
+def test_same_function_name_uses_call_order_keys_and_replays_each_call(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _planner(monkeypatch, _code('''
+        agent("one")
+        agent("two")
+        raise KeyboardInterrupt("killed")
+    '''))
+    calls = _executor(monkeypatch)
+
+    with pytest.raises(KeyboardInterrupt, match="killed"):
+        TL.run_task_list("resume", session_id="s1")
+
+    run_id = next((session_repo / "workflows").iterdir()).name
+    records = _state(session_repo, run_id)["items"]
+    assert [(r["function"], r["call_index"]) for r in records] == [
+        ("agent", 0), ("agent", 1)
     ]
+    code_path = _instance(session_repo, run_id) / "code.py"
+    code_path.write_text(TL._validated_reply(_code('''
+        agent("one")
+        agent("two")
+        return "finished"
+    ''')))
+
+    result = TL.resume_workflow(run_id, session_id="s1")
+
+    assert result["status"] == "completed"
+    assert [call["prompt"] for call in calls] == ["one", "two"]
+    assert len({record["key"] for record in result["items"]}) == 2
 
 
-def test_failed_turn_binding_does_not_leak_render_range(monkeypatch) -> None:
-    import contextvars
-
-    import openprogram.functions as functions
-    from openprogram.agent.dispatcher.turn_context import TurnBindings
-    from openprogram.agent.dispatcher.types import TurnRequest
-    from openprogram.agentic_programming.function import _render_range_override
-
-    def fail_binding():
-        raise RuntimeError("bind failed")
-
-    monkeypatch.setattr(functions, "install_loaded_deferred", fail_binding)
-
-    def probe():
-        sentinel = {"callers": 9, "subcalls": 9}
-        token = _render_range_override.set(sentinel)
-        try:
-            req = TurnRequest(
-                session_id="s1",
-                user_text="",
-                agent_id="main",
-                source="agent_spawn",
-                render_range={"callers": 0, "subcalls": 2},
-            )
-            with pytest.raises(RuntimeError, match="bind failed"):
-                TurnBindings.bind(req=req, assistant_msg_id="m1", db=object())
-            assert _render_range_override.get() == sentinel
-        finally:
-            _render_range_override.reset(token)
-
-    contextvars.copy_context().run(probe)
-
-
-# ---------------------------------------------------------------------------
-# The judge is the goal judge
-# ---------------------------------------------------------------------------
-
-def test_judge_item_calls_evaluate_goal_with_the_criterion(monkeypatch) -> None:
-    from openprogram.agent import goal as _goal
-    seen = []
-
-    def _fake(session_id, goal, *, agent_id, spawn_caller=None):
-        seen.append((session_id, goal, agent_id))
-        return ("met", "criterion satisfied", "", [])
-
-    # Patch on the package object — the goal package's documented seam.
-    monkeypatch.setattr(_goal, "evaluate_goal", _fake)
-    passed, reason = TL.judge_item(
-        "s1", {"done_criteria": "tests pass", "subject": "run tests"},
-        agent_id="main")
-
-    assert (passed, reason) == (True, "criterion satisfied")
-    sid, goal_payload, agent_id = seen[0]
-    assert sid == "s1" and agent_id == "main"
-    assert goal_payload["text"] == "tests pass"   # done_criteria is the goal
-
-
-@pytest.mark.parametrize("verdict", ["unmet", "needs_user", "judge_failure"])
-def test_any_non_met_verdict_is_not_passed(monkeypatch, verdict) -> None:
-    from openprogram.agent import goal as _goal
-    monkeypatch.setattr(
-        _goal, "evaluate_goal",
-        lambda *a, **k: (verdict, "why", "q", []))
-    passed, reason = TL.judge_item("s1", {"done_criteria": "x"},
-                                   agent_id="main")
-    assert passed is False and reason == "why"
-
-
-# ---------------------------------------------------------------------------
-# Judge says no — one retry, then back to the planner
-# ---------------------------------------------------------------------------
-
-def test_failed_item_is_retried_once(monkeypatch, board) -> None:
-    monkeypatch.setattr(TL, "_run_planner_turn",
-                        lambda *a, **k: _plan("hard step"))
-    runs = []
-    monkeypatch.setattr(TL, "_run_executor_turn",
-                        lambda sid, p, **k: runs.append(p) or "attempt")
-    verdicts = iter([(False, "missing the output file"), (True, "ok")])
-    monkeypatch.setattr(TL, "judge_item", lambda *a, **k: next(verdicts))
-
-    out = TL.run_task_list(task="t", session_id="s1")
-
-    assert out["status"] == "completed"
-    assert len(runs) == 2                          # one retry, not more
-    assert out["items"][0]["attempts"] == 2
-    assert "missing the output file" in runs[1]    # the retry knows why
-    assert "<previous_attempt_failed>" in runs[1]
-
-
-def test_two_failures_go_back_to_planner(monkeypatch, board) -> None:
-    planner_calls = []
-
-    def _planner(sid, prompt, *, agent_id, spawn_caller, label):
-        planner_calls.append(prompt)
-        if "<failed_item>" in prompt:
-            return json.dumps({"reason": "split it", "items": [
-                {"text": "smaller half", "done_when": "a",
-                 "context_spec": {"upstream": 1}},
-                {"text": "other half", "done_when": "b",
-                 "context_spec": {"upstream": 1}}]})
-        return _plan("too big")
-
-    monkeypatch.setattr(TL, "_run_planner_turn", _planner)
-    monkeypatch.setattr(TL, "_run_executor_turn", lambda *a, **k: "tried")
-    # The original item never passes; its replacements do.
-    monkeypatch.setattr(
-        TL, "judge_item",
-        lambda sid, item, **k: (item["subject"] != "too big", "scope too large"))
-
-    out = TL.run_task_list(task="t", session_id="s1")
-
-    assert out["status"] == "completed"
-    assert len(planner_calls) == 2                 # planned once, revised once
-    assert "<why_it_failed>\nscope too large\n</why_it_failed>" in planner_calls[1]
-    assert "[#1] too big" in planner_calls[1]
-    assert [it["subject"] for it in out["items"]] == [
-        "too big", "smaller half", "other half"]
-    assert len(out["revisions"]) == 1
-    assert out["revisions"][0]["reason"] == "split it"
-
-
-# ---------------------------------------------------------------------------
-# Revision leaves completed items alone
-# ---------------------------------------------------------------------------
-
-def test_revision_does_not_touch_completed_items(monkeypatch, board) -> None:
-    def _planner(sid, prompt, *, agent_id, spawn_caller, label):
-        if "<failed_item>" in prompt:
-            return json.dumps({"reason": "restated", "items": [
-                {"text": "replacement", "done_when": "r",
-                 "context_spec": {"upstream": -1}}]})
-        return _plan("works", "fails")
-
-    monkeypatch.setattr(TL, "_run_planner_turn", _planner)
-    monkeypatch.setattr(
-        TL, "_run_executor_turn",
-        lambda sid, p, **k: "the item 1 result" if "works" in p else "x")
-    monkeypatch.setattr(
-        TL, "judge_item",
-        lambda sid, item, **k: (item["subject"] != "fails", "no good"))
-
-    out = TL.run_task_list(task="t", session_id="s1")
-
-    done_one = next(it for it in out["items"] if it["subject"] == "works")
-    assert done_one["status"] == TL.COMPLETED
-    assert done_one["result_summary"] == "the item 1 result"   # untouched
-
-    rev = out["revisions"][0]
-    assert rev["before"] == ["2"]              # the unfinished tail only
-    assert "1" not in rev["before"]            # the completed item is not in it
-    assert rev["after"] == ["3"]               # replaced by a fresh entry
-    # The board agrees: item 1 keeps its result through the revision.
-    on_disk = {e["id"]: e for e in _read_board(board)}
-    assert on_disk["1"]["result_summary"] == "the item 1 result"
-    assert on_disk["2"]["result_summary"].startswith("(revised away")
-
-
-# ---------------------------------------------------------------------------
-# Resume from the board
-# ---------------------------------------------------------------------------
-
-def test_completed_matching_workflow_replans(monkeypatch, board,
-                                             always_pass) -> None:
-    board.write_text(json.dumps({"version": 1, "todos": [
-        {"id": "1", "subject": "stale", "description": "",
-         "status": "completed", "owner": TL.WORKFLOW_OWNER,
-         "blocked_by": [], "created_at": 1.0, "updated_at": 1.0,
-         "task": "t", "done_criteria": "stale",
-         "context_spec": {"upstream": -1},
-         "result_summary": "old result", "attempts": 1},
-    ]}))
-    planned = []
-    plan_onto_board = TL._plan_onto_board
-
-    def _spy_plan(*args, **kwargs):
-        planned.append(args)
-        return plan_onto_board(*args, **kwargs)
-
-    monkeypatch.setattr(TL, "_plan_onto_board", _spy_plan)
-    monkeypatch.setattr(TL, "_run_planner_turn",
-                        lambda *a, **k: _plan("fresh"))
-    monkeypatch.setattr(TL, "_run_executor_turn", lambda *a, **k: "new result")
-
-    out = TL.run_task_list(task="t", session_id="s1", resume=True)
-
-    assert len(planned) == 1
-    assert [item["subject"] for item in out["items"]] == ["fresh"]
-    assert out["items"][0]["result_summary"] == "new result"
-
-
-def test_board_is_checkpointed_as_each_item_starts(monkeypatch, board,
-                                                   always_pass) -> None:
-    monkeypatch.setattr(TL, "_run_planner_turn",
-                        lambda *a, **k: _plan("one", "two"))
-    seen = []
-
-    def _exec(sid, prompt, *, agent_id, spawn_caller, label, render_range):
-        seen.append([e["status"] for e in _read_board(board)])
-        return "ok"
-
-    monkeypatch.setattr(TL, "_run_executor_turn", _exec)
-    TL.run_task_list(task="t", session_id="s1")
-
-    assert seen[0] == ["in_progress", "pending"]
-    assert seen[1] == ["completed", "in_progress"]   # item 1 already saved
-
-
-def test_resume_skips_completed_items(monkeypatch, board) -> None:
-    # A run killed after item 1: the board says 1 is done, 2 is not.
-    board.write_text(json.dumps({"version": 1, "todos": [
-        {"id": "1", "subject": "one", "description": "", "status": "completed",
-         "owner": TL.WORKFLOW_OWNER, "blocked_by": [], "created_at": 1.0,
-         "updated_at": 1.0, "task": "t", "done_criteria": "one",
-         "context_spec": {"upstream": -1}, "result_summary": "already finished",
-         "attempts": 1},
-        {"id": "2", "subject": "two", "description": "", "status": "pending",
-         "owner": TL.WORKFLOW_OWNER, "blocked_by": [], "created_at": 1.0,
-         "updated_at": 1.0, "task": "t", "done_criteria": "two",
-         "context_spec": {"upstream": -1}, "result_summary": "", "attempts": 0},
-    ]}))
-    runs = []
-    monkeypatch.setattr(
-        TL, "_run_planner_turn",
-        lambda *a, **k: pytest.fail("resume must not re-plan"))
-    monkeypatch.setattr(TL, "_run_executor_turn",
-                        lambda sid, p, **k: runs.append(p) or "second result")
-    monkeypatch.setattr(TL, "judge_item", lambda *a, **k: (True, "ok"))
-
-    out = TL.run_task_list(task="t", session_id="s1", resume=True)
-
-    assert len(runs) == 1                        # only the unfinished item ran
-    assert "<your_item>\ntwo\n</your_item>" in runs[0]
-    assert "already finished" in runs[0]         # item 1's hand-off carried over
-    assert out["status"] == "completed"
-
-
-def test_resume_picks_up_an_item_left_in_progress(monkeypatch, board) -> None:
-    # Killed mid-item: status stayed in_progress and must be retried.
-    board.write_text(json.dumps({"version": 1, "todos": [
-        {"id": "1", "subject": "interrupted", "description": "",
-         "status": "in_progress", "owner": TL.WORKFLOW_OWNER, "blocked_by": [],
-         "created_at": 1.0, "updated_at": 1.0, "task": "t",
-         "done_criteria": "d", "context_spec": {"upstream": -1},
-         "result_summary": "", "attempts": 1},
-    ]}))
-    runs = []
-    monkeypatch.setattr(TL, "_run_executor_turn",
-                        lambda sid, p, **k: runs.append(p) or "finished it")
-    monkeypatch.setattr(TL, "judge_item", lambda *a, **k: (True, "ok"))
-
-    out = TL.run_task_list(task="t", session_id="s1")
-    assert len(runs) == 1
-    assert out["items"][0]["status"] == TL.COMPLETED
-
-
-def test_resume_retries_interrupted_item_after_two_recorded_attempts(
-    monkeypatch, board
+def test_exception_rewrites_with_traceback_and_state_then_replays_completed_call(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
-    board.write_text(json.dumps({"version": 1, "todos": [
-        {"id": "1", "subject": "interrupted", "description": "",
-         "status": "in_progress", "owner": TL.WORKFLOW_OWNER,
-         "blocked_by": [], "created_at": 1.0, "updated_at": 1.0,
-         "task": "t", "done_criteria": "d",
-         "context_spec": {"upstream": -1}, "result_summary": "",
-         "attempts": 2},
-    ]}))
-    runs = []
-    monkeypatch.setattr(TL, "_run_executor_turn",
-                        lambda sid, p, **k: runs.append(p) or "finished")
-    monkeypatch.setattr(TL, "judge_item", lambda *a, **k: (True, "ok"))
+    helper = '''
+        def prepare():
+            return agent("prepare", description="prepare")
+    '''
+    initial = _code('''
+        value = prepare()
+        raise RuntimeError("verification failed")
+    ''', helpers=helper)
+    fixed = _code('''
+        value = prepare()
+        return agent("finish " + value)
+    ''', helpers=helper)
+    prompts = _planner(monkeypatch, initial, fixed)
+    calls = _executor(
+        monkeypatch,
+        lambda prompt, _kwargs: "prepared" if prompt == "prepare" else "finished",
+    )
 
-    out = TL.run_task_list(task="t", session_id="s1", resume=True)
+    result = TL.run_task_list("repair", session_id="s1")
 
-    assert len(runs) == 1
-    assert out["items"][0]["status"] == TL.COMPLETED
-    assert out["items"][0]["attempts"] == 1
-
-
-def test_resume_ignores_another_tasks_entries(monkeypatch, board,
-                                              always_pass) -> None:
-    board.write_text(json.dumps({"version": 1, "todos": [
-        {"id": "1", "subject": "old", "description": "", "status": "pending",
-         "owner": TL.WORKFLOW_OWNER, "blocked_by": [], "created_at": 1.0,
-         "updated_at": 1.0, "task": "an older task", "done_criteria": "old",
-         "context_spec": {"upstream": -1}, "result_summary": "", "attempts": 0},
-    ]}))
-    monkeypatch.setattr(TL, "_run_planner_turn",
-                        lambda *a, **k: _plan("fresh work"))
-    monkeypatch.setattr(TL, "_run_executor_turn", lambda *a, **k: "ok")
-
-    out = TL.run_task_list(task="a new task", session_id="s1")
-    assert [it["subject"] for it in out["items"]] == ["fresh work"]
-    # The other task's entry is still on the board, untouched.
-    assert any(e["subject"] == "old" and e["status"] == "pending"
-               for e in _read_board(board))
+    assert result["status"] == "completed"
+    assert [call["prompt"] for call in calls] == ["prepare", "finish prepared"]
+    revision_prompt = prompts[1]
+    assert "Traceback (most recent call last)" in revision_prompt
+    assert "RuntimeError: verification failed" in revision_prompt
+    assert '"function": "agent"' in revision_prompt
+    assert "<current_code>" in revision_prompt
+    instance = _instance(session_repo, result["run_id"])
+    assert (instance / "code.1.py").exists()
+    assert len(result["revisions"]) == 1
 
 
-# ---------------------------------------------------------------------------
-# Hand-off summary length limit
-# ---------------------------------------------------------------------------
+def test_invalid_plans_keep_requesting_rewrites_with_concrete_errors(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    prompts = _planner(
+        monkeypatch,
+        "```python\ndef workflow(:\n```",
+        _code("import os"),
+        _code('return agent("fixed")'),
+    )
+    calls = _executor(monkeypatch)
 
-def test_long_handoff_is_truncated_with_the_rule_stated() -> None:
-    short = "concluded X; wrote /tmp/out.txt"
-    assert TL.clip_handoff(short) == short
+    result = TL.run_task_list("invalid", session_id="s1")
 
-    clipped = TL.clip_handoff("y" * (TL.HANDOFF_SUMMARY_MAX_CHARS + 500))
-    assert len(clipped) < TL.HANDOFF_SUMMARY_MAX_CHARS + 200
-    assert "truncated" in clipped
-    assert "artifact paths" in clipped           # tells the reader what to do
-
-
-# ---------------------------------------------------------------------------
-# Plan parsing
-# ---------------------------------------------------------------------------
-
-def test_parse_plan_accepts_fenced_json() -> None:
-    out = TL._parse_plan(
-        '```json\n{"split": true, "reason": "r", '
-        '"items": [{"text": "do it"}]}\n```')
-    assert out["split"] is True and out["items"][0]["text"] == "do it"
+    assert result["status"] == "completed"
+    assert calls[0]["prompt"] == "fixed"
+    assert "SyntaxError" in prompts[1]
+    assert "imports are forbidden" in prompts[2]
+    assert _state(session_repo, result["run_id"])["status"] == "completed"
 
 
-def test_new_item_fills_defaults(board) -> None:
-    item = TL._new_item("s1", "t", {"text": "do it"}, "7")
-    assert item["subject"] == "do it"
-    assert item["done_criteria"] == "do it"      # falls back to the text
-    assert item["context_spec"] == {"upstream": -1}
-    assert item["status"] == TL.PENDING and item["attempts"] == 0
-    assert item["owner"] == TL.WORKFLOW_OWNER and item["blocked_by"] == []
+def test_missing_workflow_is_rejected_with_exact_validation_reason(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    prompts = _planner(
+        monkeypatch,
+        "```python\ndef helper():\n    return 1\n```",
+        _code('return "ok"'),
+    )
+    _executor(monkeypatch)
+
+    result = TL.run_task_list("missing", session_id="s1")
+
+    assert result["status"] == "completed"
+    assert "exactly one def workflow()" in prompts[1]
 
 
-def test_parse_plan_rejects_malformed_replies() -> None:
-    with pytest.raises(ValueError):
-        TL._parse_plan("no json at all")
-    with pytest.raises(ValueError):
-        TL._parse_plan('{"split": "yes"}')       # split must be bool
-    with pytest.raises(ValueError):
-        TL._parse_plan('{"split": true, "items": []}')   # split with no items
+def test_execution_cap_counts_only_real_calls(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    initial = _code('''
+        for i in range(40):
+            agent(f"work-{i}")
+        raise RuntimeError("revise after completed calls")
+    ''')
+    revised = _code('''
+        for i in range(40):
+            agent(f"work-{i}")
+        agent("forty-first")
+    ''')
+    _planner(monkeypatch, initial, revised)
+    calls = _executor(monkeypatch)
+
+    result = TL.run_task_list("many", session_id="s1")
+
+    assert result["status"] == "capped"
+    assert len(calls) == TL.MAX_ITEMS_EXECUTED == 40
+    assert len(result["items"]) == 40
 
 
-@pytest.mark.parametrize("reply", [
-    '{"reason": "missing"}',
-    '{"reason": "wrong type", "items": {}}',
-])
-def test_revision_requires_explicit_items_array(monkeypatch, reply) -> None:
-    monkeypatch.setattr(TL, "_run_planner_turn", lambda *a, **k: reply)
+def test_agent_uses_existing_spawn_signature(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _planner(monkeypatch, _code('''
+        return agent(
+            "special", description="delegate", agent_id="research",
+            start_from="inherit", archive_when_done=True
+        )
+    '''))
+    calls = _executor(monkeypatch)
 
-    with pytest.raises(ValueError, match="items"):
-        TL.revise_task_list("t", [], {"id": "1"}, "failed", "s1")
+    result = TL.run_task_list("delegate", session_id="s1")
+
+    assert result["status"] == "completed"
+    assert calls[0]["description"] == "delegate"
+    assert calls[0]["agent_id"] == "research"
+    assert calls[0]["start_from"] == "inherit"
+    assert calls[0]["archive_when_done"] is True
 
 
-def test_malformed_revision_is_not_applied(monkeypatch, board) -> None:
+def test_real_agent_implementation_is_callable_with_public_signature() -> None:
+    agent = TL._agent_function()
+
+    assert callable(agent)
+    assert str(inspect.signature(agent)) == (
+        '(prompt: \'str\', description: \'str\' = \'\', agent_id: \'str\' = \'\', '
+        'start_from: \'str\' = \'clean\', run_in_background: \'bool\' = False, '
+        'to: \'str\' = \'\', archive_when_done: \'bool\' = False) -> \'str\''
+    )
+    assert agent("probe").startswith("[agent error] no active parent turn")
+
+
+def test_registered_agentic_function_is_injected_and_checkpointed(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    calls: list[str] = []
+
+    def registered(value):
+        calls.append(value)
+        return value.upper()
+
+    monkeypatch.setattr(TL, "_registered_agentic_functions", lambda: {"registered": registered})
+    _planner(monkeypatch, _code('return registered("value")'))
+    _executor(monkeypatch)
+
+    result = TL.run_task_list("registry", session_id="s1")
+
+    assert result["status"] == "completed"
+    assert result["summary"] == "VALUE"
+    assert calls == ["value"]
+    assert result["items"][0]["function"] == "registered"
+
+
+def test_new_runs_for_same_task_are_independent(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _planner(
+        monkeypatch,
+        _code('return agent("first run")'),
+        _code('return agent("second run")'),
+    )
+    calls = _executor(monkeypatch)
+
+    first = TL.run_task_list("same", session_id="s1")
+    second = TL.run_task_list("same", session_id="s1")
+
+    assert first["run_id"] != second["run_id"]
+    assert [call["prompt"] for call in calls] == ["first run", "second run"]
+    assert _state(session_repo, first["run_id"])["task"] == "same"
+    assert _state(session_repo, second["run_id"])["task"] == "same"
+
+
+def test_planner_prompt_documents_real_agentic_programming_convention(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    prompts = _planner(monkeypatch, "SINGLE")
+    _executor(monkeypatch)
+
+    TL.run_task_list("prompt", session_id="s1")
+
+    prompt = prompts[0]
+    assert "@agentic_function" not in prompt
+    assert "runtime.exec" not in prompt
+    assert "def workflow():" in prompt
+    assert 'def find_issues():' in prompt
+    assert 'description="find issues"' in prompt
+    assert "step(" not in prompt
+    assert "import" in prompt and "forbidden" in prompt
+
+
+def test_capped_status_cannot_be_caught_by_generated_code(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _planner(monkeypatch, _code('''
+        try:
+            for i in range(41):
+                agent(f"work-{i}")
+        except RuntimeError:
+            return "caught"
+    '''))
+    calls = _executor(monkeypatch)
+
+    result = TL.run_task_list("cap", session_id="s1")
+
+    assert result["status"] == "capped"
+    assert len(calls) == 40
+
+
+def test_single_run_resumes_after_interruption(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _planner(monkeypatch, "SINGLE")
+    attempts = 0
+
+    def execution(_prompt, _kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise KeyboardInterrupt("killed")
+        return "done"
+
+    _executor(monkeypatch, execution)
+    with pytest.raises(KeyboardInterrupt, match="killed"):
+        TL.run_task_list("single", session_id="s1")
+    run_id = next((session_repo / "workflows").iterdir()).name
+
+    result = TL.resume_workflow(run_id, session_id="s1")
+
+    assert result["status"] == "completed"
+    assert attempts == 2
+
+
+def test_invalid_revision_reports_the_invalid_candidate_as_current_code(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    initial = _code('raise RuntimeError("first")')
+    invalid = "```python\ndef workflow(:\n```"
+    fixed = _code('return "fixed"')
+    prompts = _planner(monkeypatch, initial, invalid, fixed)
+    _executor(monkeypatch)
+
+    result = TL.run_task_list("rewrite", session_id="s1")
+
+    assert result["status"] == "completed"
+    assert "def workflow(:" in prompts[2]
+    assert "SyntaxError" in prompts[2]
+
+
+def test_caught_callable_error_writes_failed_after_checkpoint(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    def failing():
+        raise ValueError("bad call")
+
+    monkeypatch.setattr(TL, "_registered_agentic_functions", lambda: {"failing": failing})
+    _planner(monkeypatch, _code('''
+        try:
+            failing()
+        except ValueError:
+            return "handled"
+    '''))
+    _executor(monkeypatch)
+
+    result = TL.run_task_list("caught", session_id="s1")
+
+    assert result["status"] == "completed"
+    record = result["items"][0]
+    assert record["status"] == "failed"
+    assert "ValueError: bad call" in record["error"]
+    assert record["finished_at"] is not None
+
+
+def test_cancel_signal_propagates_without_planner_rewrite(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    from openprogram.agentic_programming.function import CancelledError
+
+    def cancel():
+        raise CancelledError("stop")
+
+    monkeypatch.setattr(TL, "_registered_agentic_functions", lambda: {"cancel": cancel})
+    prompts = _planner(monkeypatch, _code("cancel()"))
+    _executor(monkeypatch)
+
+    with pytest.raises(CancelledError, match="stop"):
+        TL.run_task_list("cancel", session_id="s1")
+
+    assert len(prompts) == 1
+
+
+def test_generated_environment_excludes_runtime_and_agentic_function(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    monkeypatch.setattr(
+        TL, "_registered_agentic_functions", lambda: {"registered": lambda: "ok"}
+    )
+    _planner(monkeypatch, _code('''
+        missing = []
+        try:
+            runtime
+        except NameError:
+            missing.append("runtime")
+        try:
+            agentic_function
+        except NameError:
+            missing.append("agentic_function")
+        return agent(",".join(missing) + ":" + registered())
+    '''))
+    _executor(monkeypatch)
+
+    result = TL.run_task_list("environment", session_id="s1")
+
+    assert result["status"] == "completed"
+    assert result["summary"] == "done: runtime,agentic_function:ok"
+    assert [item["function"] for item in result["items"]] == ["registered", "agent"]
+
+
+def test_same_run_id_concurrent_resume_executes_once(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _planner(monkeypatch, _code('raise KeyboardInterrupt("pause")'))
+    _executor(monkeypatch)
+    with pytest.raises(KeyboardInterrupt):
+        TL.run_task_list("concurrent", session_id="s1")
+    run_id = next((session_repo / "workflows").iterdir()).name
+    (_instance(session_repo, run_id) / "code.py").write_text(
+        TL._validated_reply(_code('return agent("once")'))
+    )
+    calls = _executor(monkeypatch)
+    results = []
+
+    def resume():
+        results.append(TL.resume_workflow(run_id, session_id="s1"))
+
+    threads = [threading.Thread(target=resume) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert len(results) == 2
+    assert len(calls) == 1
+
+
+def test_checkpoint_preserves_path_result_and_mixed_key_arguments(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
     calls = 0
 
-    def planner(*args, **kwargs):
+    def registered(_value):
         nonlocal calls
         calls += 1
-        return _plan("work") if calls == 1 else '{"reason": "missing"}'
+        return Path("/tmp/result")
+
+    monkeypatch.setattr(TL, "_registered_agentic_functions", lambda: {"registered": registered})
+    _planner(monkeypatch, _code('''
+        registered({1: "integer", "1": "string"})
+        raise KeyboardInterrupt("pause")
+    '''))
+    _executor(monkeypatch)
+    with pytest.raises(KeyboardInterrupt):
+        TL.run_task_list("types", session_id="s1")
+    run_id = next((session_repo / "workflows").iterdir()).name
+    (_instance(session_repo, run_id) / "code.py").write_text(
+        TL._validated_reply(_code(
+            'return registered({1: "integer", "1": "string"})'
+        ))
+    )
+
+    result = TL.resume_workflow(run_id, session_id="s1")
+
+    assert result["status"] == "completed"
+    assert result["summary"] == "/tmp/result"
+    assert calls == 1
+
+
+def test_load_state_recovers_revision_metadata_from_code_history(
+    session_repo: Path,
+) -> None:
+    instance = session_repo / "workflows" / "run"
+    instance.mkdir(parents=True)
+    (instance / "code.1.py").write_text("old")
+    (instance / "state.json").write_text(json.dumps({
+        "task": "t", "status": "running", "items": [], "revisions": []
+    }))
+
+    state = TL._load_state(instance / "state.json")
+
+    assert state["revisions"] == [{
+        "version": 1,
+        "recovered": True,
+        "error": "revision recovered from code history",
+    }]
+
+
+def test_resume_continues_planning_when_interrupted_before_code_is_written(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    attempts = 0
+
+    def planner(_sid, _prompt, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise KeyboardInterrupt("planner killed")
+        return _code('return "planned"')
 
     monkeypatch.setattr(TL, "_run_planner_turn", planner)
-    monkeypatch.setattr(TL, "_run_executor_turn", lambda *a, **k: "attempt")
-    monkeypatch.setattr(TL, "judge_item", lambda *a, **k: (False, "failed"))
+    _executor(monkeypatch)
+    with pytest.raises(KeyboardInterrupt, match="planner killed"):
+        TL.run_task_list("planning", session_id="s1")
+    run_id = next((session_repo / "workflows").iterdir()).name
+    assert not (_instance(session_repo, run_id) / "code.py").exists()
 
-    out = TL.run_task_list(task="t", session_id="s1")
+    result = TL.resume_workflow(run_id, session_id="s1")
 
-    assert out["status"] == "error"
-    assert out["items"][0]["status"] == TL.IN_PROGRESS
-    assert out["items"][0]["result_summary"] == ""
-    assert out["revisions"][0]["reason"].startswith("revision failed:")
+    assert result["status"] == "completed"
+    assert attempts == 2
