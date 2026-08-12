@@ -404,7 +404,7 @@ title = result["title"]</pre>
     </tbody>
   </table>
   <p><strong>提交证据：</strong>Task 1 <code>00945c85..27a5aa8a</code>；Task 2 <code>da4ececd..8ca7b04c</code>；Task 3 <code>6f8c80b7..546c2bc7</code>；Task 4 <code>27e4764f..510f60ee</code>；Task 5 <code>9743f3e1..86ca66d5</code>；Task 6 <code>5bba3e64..2fb471b3</code>。Tasks 1–6 的最终 SPEC 与 QUALITY scoped review 均为 PASS、remaining 0。</p>
-  <p><strong>验证状态：</strong>Task 6 affected selection 为 <code>219 passed, 1 skipped</code>；文档构建为 <code>453 pages</code>、链接检查为 <code>0 broken</code>。Task 7 最终树上的完整 Python selection 得到 <code>3280 passed, 5 skipped, 1 xfailed, 2 failed</code>；两个失败分别是既有 tool cancellation 的 <code>ExecInterrupt</code> 断言与 memory writer turn-order 断言，并已在实现前基线 <code>86ca66d5</code> 独立复现。它们不归因于 structured-output diff，也不满足“完整门禁通过”的发布条件。</p>
+  <p><strong>验证状态：</strong>Task 6 affected selection 为 <code>219 passed, 1 skipped</code>；Task 7 focused selection 为 <code>224 passed, 1 skipped</code>；文档构建为 <code>453 pages</code>、链接检查为 <code>0 broken</code>。Task 7 最终树上的完整 Python selection 得到 <code>3288 passed, 5 skipped, 1 xfailed, 2 failed</code>；两个失败分别是既有 tool cancellation 的 <code>ExecInterrupt</code> 断言与 memory writer turn-order 断言，并已在实现前基线 <code>86ca66d5</code> 独立复现。它们不归因于 structured-output diff，也不满足“完整门禁通过”的发布条件。</p>
 
   <div class="foot">
     <p>仓库证据：<code>openprogram/providers/types.py</code>、<code>sources/models_dev.py</code>、七类 provider adapter、<code>agent/agent_loop.py</code>、<code>agentic_programming/runtime.py</code>、<code>agent/internals/_event_parsing.py</code>、CLI/WebSocket 链、<code>recording.py</code>/<code>replay.py</code>、<code>agent/dispatcher/titles.py</code>、<code>references/pi-ai</code>。本文行号不绑定源码快照；实现时以符号和测试为定位依据。</p>
