@@ -129,6 +129,23 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.branch-item.has-task-resource {
+  height: 46px;
+  min-height: 46px;
+  max-height: 46px;
+  flex-wrap: wrap;
+  align-content: center;
+  row-gap: 0;
+}
+.branch-item-resource {
+  order: 10;
+  width: 100%;
+  margin-left: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 10px/12px var(--font-mono);
+  color: var(--text-muted);
+}
 .branch-item-badge {
   font-size: 12px;
   padding: 0 6px;

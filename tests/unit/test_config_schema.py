@@ -21,6 +21,7 @@ def test_mcp_exposed_tools_missing_config_is_default_empty(monkeypatch):
             "default; changes apply on the next server start."
         ),
         "value": "[]",
+        "minimum": None,
     }
 
 

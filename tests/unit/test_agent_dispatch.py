@@ -62,8 +62,11 @@ def parent_turn(tmp_path, monkeypatch):
     turn_tok = store_mod._current_turn_id.set("a1")
 
     calls: list[dict] = []
+    from openprogram.agent.sub_agent_run import run_agent_turn_async as real_async
 
     def fake_async(**kw):
+        if kw.get("defer_dispatch"):
+            return real_async(**kw)
         calls.append(kw)
         return "t_fake"
 
@@ -300,14 +303,14 @@ def test_task_stop_running_cancels_target_turn(parent_turn, monkeypatch):
     marked = []
     monkeypatch.setattr(
         "openprogram.agent.run_control.mark_cancelled",
-        lambda sid: marked.append(sid))
+        lambda sid, *, execution_id=None: marked.append((sid, execution_id)))
     monkeypatch.setattr(
         "openprogram.agent.run_control.kill_active_runtime",
-        lambda sid: None)
+        lambda sid, *, execution_id=None: None)
     res = runner.cancel_task("t_run1")
     assert res is not None
     assert ev.is_set()
-    assert marked == ["p2"]
+    assert marked == [("p2", "t_run1")]
     runner._tasks.pop("t_run1", None)
 
 

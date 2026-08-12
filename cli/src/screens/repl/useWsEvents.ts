@@ -11,6 +11,7 @@ import {
   WsEnvelope,
   StatsEnvelope,
   ConnectionState,
+  TaskRow,
 } from '../../ws/client.js';
 import { Turn } from '../../components/Turn.js';
 import { trimHistoryFile } from '../../utils/history.js';
@@ -69,6 +70,8 @@ export interface WsEventsCtx {
   setAgentsList: React.Dispatch<React.SetStateAction<AgentInfo[]>>;
   setModelsList: React.Dispatch<React.SetStateAction<string[]>>;
   setSettingsRows: React.Dispatch<React.SetStateAction<SettingRow[]>>;
+  setTasksList: React.Dispatch<React.SetStateAction<TaskRow[]>>;
+  setSelectedTask: React.Dispatch<React.SetStateAction<TaskRow | null>>;
   setChannelAccounts: React.Dispatch<React.SetStateAction<ChannelAccountRow[]>>;
   setPastConversations: React.Dispatch<React.SetStateAction<PastConversation[]>>;
   setQrAscii: React.Dispatch<React.SetStateAction<string | undefined>>;
@@ -100,6 +103,41 @@ export interface WsEventsCtx {
   sessionAliasesRef: React.MutableRefObject<SessionAliasRow[]>;
 }
 
+type TaskEnvelopeCtx = Pick<
+  WsEventsCtx,
+  'setTasksList' | 'setSelectedTask' | 'setPickerKind'
+>;
+
+export function handleTaskEnvelope(ev: WsEnvelope, ctx: TaskEnvelopeCtx): boolean {
+  if (ev.type === 'tasks_list') {
+    ctx.setTasksList(ev.data.tasks ?? []);
+    return true;
+  }
+  if (ev.type === 'task') {
+    ctx.setSelectedTask(ev.data.task);
+    if (ev.data.task) ctx.setPickerKind('task_detail');
+    return true;
+  }
+  if (ev.type !== 'task_status' && ev.type !== 'cancel_task_result') return false;
+
+  const patch: Partial<TaskRow> = {
+    status: ev.data.status ?? 'unknown',
+    ...(ev.data.resource ? { resource: ev.data.resource } : {}),
+    ...('reason_code' in ev.data ? { reason_code: ev.data.reason_code } : {}),
+  };
+  ctx.setTasksList((rows) => rows.map((task) => (
+    task.id === ev.data.task_id ? { ...task, ...patch } : task
+  )));
+  ctx.setSelectedTask((task) => (
+    task?.id === ev.data.task_id
+      ? { ...task, ...patch }
+      : ev.type === 'cancel_task_result'
+        ? { id: ev.data.task_id, ...patch } as TaskRow
+        : task
+  ));
+  return true;
+}
+
 export function useWsEvents(ctx: WsEventsCtx): void {
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
@@ -113,7 +151,9 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         if (!convId) return;
         c.setSessionLiveByConv((m) => ({ ...m, [convId]: true }));
       };
-      if (ev.type === 'chat_ack') {
+      if (handleTaskEnvelope(ev, c)) {
+        return;
+      } else if (ev.type === 'chat_ack') {
         c.setConversationId(ev.data.session_id);
       } else if (ev.type === 'chat_response') {
         handleChatResponse(ev.data, c, markSessionLive);

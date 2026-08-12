@@ -382,7 +382,10 @@ def test_v3_repair_converts_legacy_modality_cost_row():
     assert repaired is True
     row = providers["p"]["models"][0]
     assert row["input"] == ["text", "image"]
-    assert row["cost"] == {"input": 2.0, "output": 8.0, "cache_read": 0.0, "cache_write": 0.0}
+    assert row["cost"] == {
+        "input": 2.0, "output": 8.0, "cache_read": 0.0, "cache_write": 0.0,
+        "source": "model_catalog",
+    }
     # flat display keys dropped
     assert "input_modalities" not in row and "input_cost" not in row
     assert "output_modalities" not in row

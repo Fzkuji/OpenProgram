@@ -252,10 +252,12 @@ def update_task_status(
     return t
 
 
-def reconcile_orphans() -> int:
+def reconcile_orphans(*, legacy_only: bool = False) -> int:
     """Walk every session repo, flip non-terminal tasks → errored.
 
     Called once at process startup (server.py / dispatcher entry).
+    ``legacy_only`` leaves Tasks with durable admission ids to the
+    resource reconciler.
     Returns the number of tasks reconciled.
     """
     from openprogram.store import default_store
@@ -283,6 +285,8 @@ def reconcile_orphans() -> int:
                     except Exception:
                         continue
                     if is_terminal(t.status):
+                        continue
+                    if legacy_only and t.admission_id:
                         continue
                     old = t.status
                     t.status = TaskStatus.ERRORED

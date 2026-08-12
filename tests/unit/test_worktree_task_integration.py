@@ -100,7 +100,7 @@ def test_task_binds_worktree_in_worker(
                                failed=False, error=None)
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run.run_agent_turn", fake_run,
+        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
     )
     import openprogram.agent.task.runner as runner_mod
     runner_mod.shutdown_runner()
@@ -153,7 +153,7 @@ def test_task_cancel_discards_worktree(
                                failed=False, error=None)
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run.run_agent_turn", fake_run,
+        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
     )
     import openprogram.agent.task.runner as runner_mod
     runner_mod.shutdown_runner()
@@ -203,7 +203,7 @@ def test_task_complete_leaves_worktree_alone(
                                failed=False, error=None)
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run.run_agent_turn", fake_run,
+        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
     )
     import openprogram.agent.task.runner as runner_mod
     runner_mod.shutdown_runner()

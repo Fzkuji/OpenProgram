@@ -33,6 +33,12 @@ def _cost_from_model(model, usage) -> tuple[dict, str]:
     """Return (cost dict, cost_source). Uses the catalog's per-MTok pricing
     via providers.models.calculate_cost. Falls back to a provider-reported
     cost if the model carries one and the catalog can't price it."""
+    cost = getattr(model, "cost", None)
+    if cost is None or not getattr(cost, "is_known", lambda: False)():
+        return ({
+            "cost_input": 0.0, "cost_output": 0.0, "cost_cache_read": 0.0,
+            "cost_cache_write": 0.0, "cost_total": 0.0,
+        }, "unknown")
     try:
         from openprogram.providers.models import calculate_cost
         # calculate_cost mutates usage.cost AND returns total; we read the
@@ -46,7 +52,7 @@ def _cost_from_model(model, usage) -> tuple[dict, str]:
                 "cost_cache_read": float(c.cache_read or 0.0),
                 "cost_cache_write": float(c.cache_write or 0.0),
                 "cost_total": float(c.total or 0.0),
-            }, "model_catalog")
+            }, str(cost.source))
     except Exception:
         pass
     return ({
@@ -55,60 +61,86 @@ def _cost_from_model(model, usage) -> tuple[dict, str]:
     }, "unknown")
 
 
+def build_message_event(
+    model, message, *, session_id: Optional[str] = None,
+    token_source: str = "provider_usage",
+) -> Optional[UsageEvent]:
+    """Assemble the UsageEvent for one finished LLM call without storing it.
+
+    Budgeted calls need the event and its append to happen inside the
+    governor's settle transaction, so building is separate from appending.
+    Returns None when the call reported no tokens. Raises on a malformed
+    event: a budgeted caller must see that rather than silently under-bill.
+    """
+    usage = getattr(message, "usage", None)
+    if usage is None:
+        return None
+    inp = int(getattr(usage, "input", 0) or 0)
+    out = int(getattr(usage, "output", 0) or 0)
+    cr = int(getattr(usage, "cache_read", 0) or 0)
+    cw = int(getattr(usage, "cache_write", 0) or 0)
+    if not (inp or out or cr or cw):
+        return None  # no tokens — nothing happened worth recording
+
+    ctx = current_usage_context()
+    cost, cost_source = _cost_from_model(model, usage)
+    # contextvar session wins (set by the turn's usage_scope) so a
+    # compaction/summary call inside the turn attributes to the same
+    # session even when its own options carried no session_id.
+    eff_session = ctx.session_id or session_id
+
+    return UsageEvent(
+        ts=time.time(),
+        session_id=eff_session,
+        parent_session_id=ctx.parent_session_id,
+        agent_id=ctx.agent_id,
+        call_kind=ctx.call_kind,
+        call_label=ctx.call_label,
+        provider=getattr(model, "provider", "") or "",
+        api=getattr(model, "api", None),
+        model_id=getattr(model, "id", "") or "",
+        input_tokens=inp,
+        output_tokens=out,
+        cache_read_tokens=cr,
+        cache_write_tokens=cw,
+        total_tokens=inp + out,
+        token_source=token_source,
+        cost_source=cost_source,
+        **cost,
+    )
+
+
+def run_usage_hooks(event: UsageEvent) -> None:
+    """Fire post-record hooks. Best-effort: a throwing hook is contained."""
+    for hook in _hooks:
+        try:
+            hook(event)
+        except Exception:
+            pass
+
+
 def record_message(model, message, *, session_id: Optional[str] = None,
                    token_source: str = "provider_usage") -> Optional[UsageEvent]:
     """Record one finished LLM call. ``model`` is the provider Model,
     ``message`` the final AssistantMessage. Returns the event (for callers
     that want a summary) or None if there was nothing to record.
 
-    Never raises.
+    Never raises. Unbudgeted calls keep this best-effort contract.
     """
     try:
-        usage = getattr(message, "usage", None)
-        if usage is None:
-            return None
-        inp = int(getattr(usage, "input", 0) or 0)
-        out = int(getattr(usage, "output", 0) or 0)
-        cr = int(getattr(usage, "cache_read", 0) or 0)
-        cw = int(getattr(usage, "cache_write", 0) or 0)
-        if not (inp or out or cr or cw):
-            return None  # no tokens — nothing happened worth recording
-
-        ctx = current_usage_context()
-        cost, cost_source = _cost_from_model(model, usage)
-        # contextvar session wins (set by the turn's usage_scope) so a
-        # compaction/summary call inside the turn attributes to the same
-        # session even when its own options carried no session_id.
-        eff_session = ctx.session_id or session_id
-
-        event = UsageEvent(
-            ts=time.time(),
-            session_id=eff_session,
-            parent_session_id=ctx.parent_session_id,
-            agent_id=ctx.agent_id,
-            call_kind=ctx.call_kind,
-            call_label=ctx.call_label,
-            provider=getattr(model, "provider", "") or "",
-            api=getattr(model, "api", None),
-            model_id=getattr(model, "id", "") or "",
-            input_tokens=inp,
-            output_tokens=out,
-            cache_read_tokens=cr,
-            cache_write_tokens=cw,
-            total_tokens=inp + out,
-            token_source=token_source,
-            cost_source=cost_source,
-            **cost,
+        event = build_message_event(
+            model, message, session_id=session_id, token_source=token_source,
         )
+        if event is None:
+            return None
         default_ledger.append(event)
-        for hook in _hooks:
-            try:
-                hook(event)
-            except Exception:
-                pass
+        run_usage_hooks(event)
         return event
     except Exception:
         return None
 
 
-__all__ = ["record_message", "register_usage_hook"]
+__all__ = [
+    "build_message_event", "record_message", "register_usage_hook",
+    "run_usage_hooks",
+]

@@ -84,10 +84,10 @@
   <div class="status">
     <div><span class="k">文档状态</span><b>设计完成，基础批次已实现</b></div>
     <div><span class="k">产品边界</span><b>单用户、本机、常驻 worker</b></div>
-    <div><span class="k">验收状态</span><b>尚未满足实心圆 gate</b></div>
+    <div><span class="k">验收状态</span><b>六项任务均已实现并有自动化证据</b></div>
   </div>
 
-  <div class="note stop"><b>实现状态边界。</b><code>main@990bfe36</code> 已有配置解析、SQLite admission/budget schema、per-session live/queued/cumulative 限制、reservation 原语和基础诊断，但 dispatcher 公平性、完整恢复、provider token/cost 强制、runtime/idle 强制与跨界面 DTO 尚未全部进入 main。设计文档和未合并分支都不能单独作为 feature matrix 的完整实现证据。</div>
+  <div class="note"><b>实现状态边界。</b>durable dispatcher 公平性、lease generation owner fencing、崩溃恢复、runtime/idle 强制、价格来源真值、provider chokepoint 上的 token/cost reserve/start/settle，以及 model tools、Web、CLI、TUI 共用的 TaskResourceView 均已实现，并有事务边界故障注入证据。预算只对绑定了受治理任务的调用生效；CLI、测试等未治理调用保持原有 best-effort 记账语义不变。</div>
 
   <nav aria-label="目录">
     <a href="#scope">00 范围与结论</a>
@@ -475,11 +475,11 @@ Task JSON + optional fields:
   <div class="table-wrap">
   <table class="wide">
     <tr><th>批次</th><th>实现范围</th><th>启用条件</th><th>未完成时矩阵状态</th></tr>
-    <tr><td>1 计量基础</td><td>schema migration、task/budget attribution、unknown cost 聚合、只读 effective limits/diagnostics。</td><td>旧库升级/回退、未知费用和现有 usage 查询兼容测试通过。</td><td class="m">main 已有基础；需补完整迁移与用户 DTO gate</td></tr>
-    <tr><td>2 Admission 与队列</td><td>统一创建入口、durable intent、per-session live/queued/cumulative、dispatcher、跨进程文件锁。</td><td>所有入口覆盖；并发进程不超配；每种终态和崩溃点可恢复。</td><td class="m">main 已有 admission；公平 dispatcher 与恢复修复未合并</td></tr>
-    <tr><td>3 Token 与费用</td><td>共享父子 scope、reserve/settle、provider output cap、unknown price fail-closed。</td><td>并发请求、晚到 usage、settlement failure 和价格变更测试通过。</td><td class="n">仅有 ledger 原语，真实 provider 链未接入</td></tr>
-    <tr><td>4 Runtime 与 idle</td><td>active timer、activity contract、deadline clamp、bounded operation contract、级联停止。</td><td>模型、工具、同步线程/子进程、stopping lease 测试通过。</td><td class="n">main 未实施；存在待审查分支</td></tr>
-    <tr><td>5 用户面与 gate</td><td>Web/TUI/CLI/model tool 同一 DTO、reason 文案、兼容文档和机械检查。</td><td>跨界面合同测试和本页全部 gate 通过。</td><td class="n">未实施；完成后才允许对应能力为 ●</td></tr>
+    <tr><td>1 计量基础</td><td>schema migration、task/budget attribution、unknown cost 聚合、只读 effective limits/diagnostics。</td><td>旧库升级/回退、未知费用和现有 usage 查询兼容测试通过。</td><td class="y">已实施；DTO 与迁移随后续批次完成</td></tr>
+    <tr><td>2 Admission 与队列</td><td>统一创建入口、durable intent、per-session live/queued/cumulative、dispatcher、跨进程文件锁。</td><td>所有入口覆盖；并发进程不超配；每种终态和崩溃点可恢复。</td><td class="y">已实施；公平 dispatcher 与恢复已合入</td></tr>
+    <tr><td>3 Token 与费用</td><td>共享父子 scope、reserve/settle、provider output cap、unknown price fail-closed。</td><td>并发请求、晚到 usage、settlement failure 和价格变更测试通过。</td><td class="y">已实施；provider chokepoint 已接线并有故障注入证据</td></tr>
+    <tr><td>4 Runtime 与 idle</td><td>active timer、activity contract、deadline clamp、bounded operation contract、级联停止。</td><td>模型、工具、同步线程/子进程、stopping lease 测试通过。</td><td class="y">已实施；runtime/idle 与 bounded operation 均强制</td></tr>
+    <tr><td>5 用户面与 gate</td><td>Web/TUI/CLI/model tool 同一 DTO、reason 文案、兼容文档和机械检查。</td><td>跨界面合同测试和本页全部 gate 通过。</td><td class="y">已实施；四界面共用同一 DTO</td></tr>
   </table>
   </div>
 
@@ -520,7 +520,9 @@ Task JSON + optional fields:
     <tr><th>基线或分支</th><th>已确认内容</th><th>验证</th><th>能否计为完成</th></tr>
     <tr><td><code>main@990bfe36</code><br>foundation 来源 <code>8f62da5a</code></td><td>配置解析、SQLite schema、admission、per-session live/queued/cumulative、budget scope、reservation 原语、reason code、基础 view。</td><td><code>tests/unit/test_resource_governance.py</code> 的 foundation 用例存在；代码审计确认 reservation 仅被测试调用。</td><td class="m">否；执行链与用户面不完整</td></tr>
     <tr><td><code>codex/resource-governance-runtime-20260811@ace9a907</code></td><td>oldest-eligible dispatcher、owner fencing/reconcile、runtime/idle monitor 与 bounded-operation helper。</td><td>2026-08-12 fresh：<code>tests/unit/test_resource_governance.py tests/unit/test_async_task.py</code>，52 passed；该分支未做独立 spec/quality review，也未包含后续 integration fixes。</td><td class="m">否；只作为待复用候选</td></tr>
-    <tr><td>当前 completion 计划</td><td>先把候选分支按当前 main 重放并审查，再完成 provider token/cost reserve/settle、deadline/output cap、跨界面 DTO、全部 crash/concurrency gates。</td><td>每个任务先 RED 后 GREEN；独立 spec 与 quality review；最终 full unit、Web/CLI、docs、matrix 机械检查。</td><td class="n">全部 gate 通过后才能记为完成</td></tr>
+    <tr><td><code>claude/resource-governance-consolidation-20260812</code></td><td>durable fair dispatcher（<code>claim_next</code> 按 <code>admitted_seq</code> 取最旧可用，<code>spawn_task</code> 不再直接向 executor 提交）；lease generation owner fencing；<code>preparing</code> 回滚与 worker-lost 围栏的幂等 reconcile；两阶段 <code>task_finalizations</code> 崩溃安全终态；跨 Web/ACP/task 的单turn准入与忙会话 requeue；runtime/idle 预算与 <code>bounded_operation_timeout</code>；<code>ModelCost</code> 可空费率加来源，未知价格不再等于零；完整 <code>TaskResourceView</code> 与 model tools 结构化 details；取消与 active runtime 改按 <code>(session_id, execution_id)</code> 键控。</td><td>2026-08-12 fresh：<code>tests/unit tests/agent tests/providers</code> 3350 passed、9 skipped、1 xfailed；改动文件 Ruff 干净；<code>checklinks</code> 0 broken。</td><td class="y">是；六项任务全部落地</td></tr>
+    <tr><td>provider chokepoint 强制</td><td><code>stream()</code>/<code>stream_simple()</code> 在解析凭据与建立连接之前完成 preflight 与 reserve，据保留额夹紧 <code>max_tokens</code>，在 provider I/O 前标记 started，终态事件到达时把 provider 权威用量与 <code>UsageEvent</code> 追加在同一事务里结算。preflight 计入系统提示、消息、工具 schema、结构化输出 schema、请求信封与 reasoning 预算（Anthropic 会在声明上限之下把 <code>max_tokens</code> 抬高到 thinking budget，忽略它会低估敞口）。会计不可用一律抛出类型化 <code>QuotaExceeded</code>，不再被 best-effort recorder 吞掉。</td><td><code>tests/unit/test_provider_budget_enforcement.py</code> 11 项端到端；<code>tests/unit/test_resource_fault_injection.py</code> 11 项事务边界故障注入（settle 前崩溃、settle 中途失败、双终态事件、并发 claim/预留/finalize、跨进程 claim、stale lease generation）。</td><td class="y">是</td></tr>
+    <tr><td>跨界面 DTO</td><td>model tools、Web transport（<code>task_status</code>/<code>tasks_list</code>/<code>task</code>/<code>cancel_task</code>/<code>spawn_task_result</code>）、CLI <code>openprogram subagent</code> 与 TUI task picker 共用同一份 <code>TaskResourceView</code>，各界面只做展示层裁剪，不各自推算限额；被拒绝的 spawn 返回治理器决定本身而不虚构 task id。</td><td><code>tests/unit/test_task_resource_surfaces.py</code>、<code>test_task_resource_cli.py</code>、<code>test_resource_limit_routes.py</code>；<code>web/scripts/check-task-resources.mjs</code> 通过；<code>cli</code> typecheck 干净、vitest 132 passed。</td><td class="y">是</td></tr>
   </table>
   </div>
 

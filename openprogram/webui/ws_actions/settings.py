@@ -14,7 +14,7 @@ import json
 async def handle_get_settings(ws, cmd: dict):
     from openprogram.config_schema import get_settings
     try:
-        rows = get_settings()
+        rows = get_settings((cmd.get("session_id") or "").strip() or None)
     except Exception as e:  # noqa: BLE001
         await ws.send_text(json.dumps({
             "type": "error", "data": {"message": f"get_settings: {e}"},

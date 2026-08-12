@@ -71,7 +71,7 @@ def fake_worker(monkeypatch):
 
     import openprogram.agent.task.runner as runner_mod
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run.run_agent_turn", fake_run,
+        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
     )
     monkeypatch.setattr(
         "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
@@ -309,7 +309,7 @@ def test_spawn_inside_task_records_parent(store_fixture, fake_worker,
                                failed=False, error=None)
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run.run_agent_turn", fake_run,
+        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
     )
     parent = runner.spawn_task(
         session_id="p1", prompt="outer", agent_id="main",
