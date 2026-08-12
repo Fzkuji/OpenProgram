@@ -31,8 +31,7 @@ import re
 import tempfile
 from pathlib import Path
 
-from openprogram.agentic_programming.function import agentic_function
-from openprogram.agentic_programming.runtime import Runtime
+from openprogram.agentic_programming import agentic_function, llm
 
 # Page-preview resolution shown to the model, and the (higher) crop
 # resolution used for the saved figure PNGs.
@@ -117,7 +116,6 @@ def _slug(label: str) -> str:
 })
 def extract_pdf_figures(
     pdf_path: str,
-    runtime: Runtime,
     pages: str = "",
     include_caption: bool = True,
     out_dir: str = "",
@@ -166,7 +164,7 @@ def extract_pdf_figures(
 
             # 2. Vision LLM → figure boxes (in preview pixels).
             prompt = _PROMPT.format(w=pix.width, h=pix.height)
-            reply = runtime.exec(content=[
+            reply = llm([
                 {"type": "text", "text": prompt},
                 {"type": "image", "path": str(preview)},
             ])

@@ -19,8 +19,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from openprogram.agentic_programming.function import agentic_function
-from openprogram.agentic_programming.runtime import Runtime
+from openprogram.agentic_programming import agentic_function, llm
 
 from ..pdf_layout import pdf_pages, render_page_png
 
@@ -66,7 +65,6 @@ def _parse_pages(spec: str, n_pages: int) -> tuple[int, int]:
 })
 def extract_pdf_tables(
     pdf_path: str,
-    runtime: Runtime,
     pages: str = "",
 ) -> list[dict]:
     """Extract every table from a PDF as Markdown, one LLM pass per page.
@@ -113,7 +111,7 @@ def extract_pdf_tables(
                     f"word sits at its real position, so columns align):\n\n"
                     f"{pl.text}"
                 )}]
-            reply = str(runtime.exec(content=content)).strip()
+            reply = str(llm(content)).strip()
             if reply and reply.upper() != "NONE":
                 results.append({"page": pl.page, "markdown": reply})
 
