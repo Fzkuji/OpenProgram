@@ -1293,6 +1293,20 @@ class Runtime:
                                     or attempts_used >= self.max_retries
                                 ):
                                     raise
+                                if _deadline is not None and time.monotonic() >= _deadline:
+                                    from openprogram.providers.utils.errors import ErrorReason as _ER
+                                    cause = TimeoutError(
+                                        f"exec() timed out after {timeout_s}s "
+                                        f"({attempts_used} attempt(s))"
+                                    )
+                                    raise _build_llm_error(
+                                        cause=cause, attempts=attempts_used,
+                                        elapsed_s=time.monotonic() - _exec_start,
+                                        content=content, model=use_model,
+                                        provider=getattr(self, "provider", None),
+                                        history=errors, permanent=True,
+                                        override_reason=_ER.TIMEOUT,
+                                    ) from cause
                                 repair = build_repair_prompt(exc)
                                 if self.on_stream:
                                     self.on_stream({
@@ -1550,6 +1564,20 @@ class Runtime:
                                 or attempts_used >= self.max_retries
                             ):
                                 raise
+                            if _deadline is not None and time.monotonic() >= _deadline:
+                                from openprogram.providers.utils.errors import ErrorReason as _ER
+                                cause = TimeoutError(
+                                    f"async_exec() timed out after {timeout_s}s "
+                                    f"({attempts_used} attempt(s))"
+                                )
+                                raise _build_llm_error(
+                                    cause=cause, attempts=attempts_used,
+                                    elapsed_s=time.monotonic() - _exec_start,
+                                    content=content, model=use_model,
+                                    provider=getattr(self, "provider", None),
+                                    history=errors, permanent=True,
+                                    override_reason=_ER.TIMEOUT,
+                                ) from cause
                             repair = build_repair_prompt(exc)
                             if self.on_stream:
                                 self.on_stream({
