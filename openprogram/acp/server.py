@@ -168,7 +168,7 @@ class ACPServer:
                 try:
                     self._unsubscribe()
                 except Exception:
-                    pass
+                    _log.debug("ACP question unsubscribe failed", exc_info=True)
 
     # -- method dispatch --------------------------------------------------
 
@@ -253,7 +253,7 @@ class ACPServer:
         try:
             mark_cancelled(sess.id)
         except Exception:
-            pass
+            _log.debug("ACP session cancellation bridge failed", exc_info=True)
         # Every permission request still in flight must be answered — the
         # spec requires the "cancelled" outcome, and the tool gate is
         # blocked on the matching question's Event.
@@ -266,7 +266,7 @@ class ACPServer:
             try:
                 resolve_question_and_broadcast(qid, "declined", None)
             except Exception:
-                pass
+                _log.debug("ACP question cancellation failed", exc_info=True)
         return None
 
     # -- the turn ---------------------------------------------------------
