@@ -437,6 +437,9 @@ class TaskRunner:
         spawn_caller: Optional[str] = None,
         advance_head: bool = False,
         tools_override: Optional[list[str]] = None,
+        model_override: Optional[str] = None,
+        thinking_effort: Optional[str] = None,
+        render_range: Optional[dict[str, int]] = None,
         deferred_inbox: Optional[dict[str, Any]] = None,
         task_id: Optional[str] = None,
         authority: Optional[dict] = None,
@@ -514,6 +517,9 @@ class TaskRunner:
             spawn_caller=spawn_caller,
             advance_head=advance_head,
             tools_override=tools_override,
+            model_override=model_override,
+            thinking_effort=thinking_effort,
+            render_range=render_range,
             deferred_inbox=deferred_inbox,
             status=TaskStatus.PENDING,
             created_at=existing.created_at if existing is not None else time.time(),
@@ -763,6 +769,12 @@ class TaskRunner:
                 }
                 if task.tools_override is not None:
                     kwargs["tools_override"] = task.tools_override
+                if task.model_override is not None:
+                    kwargs["model_override"] = task.model_override
+                if task.thinking_effort is not None:
+                    kwargs["thinking_effort"] = task.thinking_effort
+                if task.render_range is not None:
+                    kwargs["render_range"] = task.render_range
                 authority = normalize_authority(task)
                 if authority:
                     kwargs["authority"] = authority
@@ -1722,6 +1734,12 @@ class TaskRunner:
                     )
                     if task.tools_override is not None:
                         _turn_kwargs["tools_override"] = task.tools_override
+                    if task.model_override is not None:
+                        _turn_kwargs["model_override"] = task.model_override
+                    if task.thinking_effort is not None:
+                        _turn_kwargs["thinking_effort"] = task.thinking_effort
+                    if task.render_range is not None:
+                        _turn_kwargs["render_range"] = task.render_range
                     _task_authority = normalize_authority(task)
                     if _task_authority:
                         _turn_kwargs["authority"] = _task_authority

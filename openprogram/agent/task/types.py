@@ -138,6 +138,9 @@ class Task:
     spawn_caller: Optional[str] = None
     advance_head: bool = False
     tools_override: Optional[list[str]] = None
+    model_override: Optional[str] = None
+    thinking_effort: Optional[str] = None
+    render_range: Optional[dict[str, int]] = None
     # Durable intent for a busy-target delivery. Admission persists this
     # before inbox publication so a restarted runner can recreate a
     # missing entry without making the task dispatchable too early.

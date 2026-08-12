@@ -49,6 +49,8 @@ def _execute_agent_turn(
     advance_head: bool = True,
     tools_override: Optional[list[str]] = None,
     render_range: Optional[dict[str, int]] = None,
+    model_override: Optional[str] = None,
+    thinking_effort: Optional[str] = None,
     authority: Optional[dict[str, Any]] = None,
     creates_agent: bool = True,
 ) -> AgentTurnResult:
@@ -80,20 +82,20 @@ def _execute_agent_turn(
     # spawned turns fell back to the agent profile's default provider —
     # a goal decision could fail on a dead default while every chat
     # turn of the session ran fine on the picked model.
-    model_override = None
-    try:
-        meta = (store.get_session(session_id) or {}).get("extra_meta") or {}
-        if isinstance(meta, str):
-            import json as _json
-            meta = _json.loads(meta)
-        _prov = meta.get("provider_override")
-        _model = meta.get("model_override")
-        if _prov and _model:
-            model_override = f"{_prov}/{_model}"
-        elif _model:
-            model_override = _model
-    except Exception:
-        pass
+    if model_override is None:
+        try:
+            meta = (store.get_session(session_id) or {}).get("extra_meta") or {}
+            if isinstance(meta, str):
+                import json as _json
+                meta = _json.loads(meta)
+            _prov = meta.get("provider_override")
+            _model = meta.get("model_override")
+            if _prov and _model:
+                model_override = f"{_prov}/{_model}"
+            elif _model:
+                model_override = _model
+        except Exception:
+            pass
 
     # Clean start: pass ``history_override=[]`` so the dispatcher's
     # context assembly doesn't pull in any conversation history.
@@ -128,6 +130,7 @@ def _execute_agent_turn(
         tools_override=tools_override,
         render_range=render_range,
         model_override=model_override,
+        thinking_effort=thinking_effort,
         **runtime_authority(authority or {}, "agent_spawn"),
     )
     try:
@@ -166,6 +169,7 @@ def run_agent_turn(
     spawn_caller: Optional[str] = None,
     advance_head: bool = True,
     tools_override: Optional[list[str]] = None,
+    render_range: Optional[dict[str, int]] = None,
     authority: Optional[dict[str, Any]] = None,
     creates_agent: bool = True,
     parent_task_id: Optional[str] = None,
@@ -176,6 +180,8 @@ def run_agent_turn(
     caller_chain_generations: int = 0,
     archive_when_done: bool = False,
     on_accepted=None,
+    model_override: Optional[str] = None,
+    thinking_effort: Optional[str] = None,
 ) -> AgentTurnResult:
     """Durably admit one agent turn and wait for its Task result."""
     from openprogram.agent.session_db import default_db
@@ -223,6 +229,9 @@ def run_agent_turn(
             spawn_caller=spawn_caller,
             advance_head=advance_head,
             tools_override=tools_override,
+            render_range=render_range,
+            model_override=model_override,
+            thinking_effort=thinking_effort,
             authority=authority,
             creates_agent=creates_agent,
             on_accepted=on_accepted,
