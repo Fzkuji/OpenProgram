@@ -96,6 +96,7 @@ def build_server(context: MCPClientContext) -> Server:
                 loop.call_soon_threadsafe(progress_queue.put_nowait, (value, update))
 
         failed = False
+        cancelled = False
         try:
             if name == "sessions_list":
                 result = service.sessions_list()
@@ -119,15 +120,26 @@ def build_server(context: MCPClientContext) -> Server:
                     cancel_event=cancel_event,
                     on_progress=progress,
                 )
-        except (McpError, asyncio.CancelledError):
+        except asyncio.CancelledError:
+            cancelled = True
+            cancel_event.set()
+            raise
+        except McpError:
             raise
         except Exception:
             failed = True
         finally:
             if progress_task is not None:
-                await asyncio.sleep(0)
-                progress_queue.put_nowait(None)
-                await progress_task
+                if cancelled:
+                    progress_task.cancel()
+                else:
+                    await asyncio.sleep(0)
+                    progress_queue.put_nowait(None)
+                try:
+                    await progress_task
+                except asyncio.CancelledError:
+                    if not cancelled:
+                        raise
         if failed:
             return _application_error()
         return _wire_result(result)
