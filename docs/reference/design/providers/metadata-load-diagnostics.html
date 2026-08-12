@@ -29,16 +29,16 @@ body{margin:0;background:#101319;color:#e6e9ef;font:15px/1.65 system-ui,-apple-s
 <p><code>openprogram/providers/metadata.py</code> 的共享 <code>provider.json</code> 读取边界负责结构验证和 warning；<code>_endpoints()</code> 与 <code>shipped_provider_ids()</code> 复用它，避免两个 catch 分支产生不同诊断。<code>openprogram/providers/sources/models_dev.py::_read_disk_cache()</code> 负责 cache 诊断。</p>
 <pre>warning("provider metadata load failed", extra={
   "source": "provider_json" | "models_dev_cache",
-  "path": str(path),
+  "path": str(path) | "&lt;unresolved&gt;",
   "error_type": type(error).__name__,
 })</pre>
-<div class="note">日志不得包含 JSON 内容、provider credential、HTTP response body 或异常 message。损坏文件继续留在原路径，便于用户检查；本任务不删除、重写或隔离文件。</div>
+<div class="note">只有 cache 路径计算本身失败时使用稳定值 <code>&lt;unresolved&gt;</code>。日志不得包含 traceback、JSON 内容、provider credential、HTTP response body 或异常 message。损坏文件继续留在原路径，便于用户检查；本任务不删除、重写或隔离文件。</div>
 
 <h2>验收</h2>
 <ul>
 <li>损坏 JSON、不可读文件和错误顶层类型各返回既有空值，并产生一次 warning。</li>
 <li>不存在文件不产生 warning。</li>
-<li>warning 只包含稳定事件名、source、path、error_type 和 traceback，不包含文件内容。</li>
+<li>warning 只包含稳定事件名、source、path 和 error_type，不包含 traceback、异常 message 或文件内容。</li>
 <li>正常 provider endpoint、shipped provider 枚举和 models.dev cache 行为保持。</li>
 </ul>
 </main></body></html>
