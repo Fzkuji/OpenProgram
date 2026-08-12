@@ -218,7 +218,7 @@ export function BranchItem({
         <span className="branch-item-resource-summary" title={queueSummary}>
           {queueSummary}
         </span>
-      ) : isPending ? (
+      ) : running ? (
         <span
           className="branch-item-badge"
           style={{ background: "rgba(160, 107, 255, 0.18)" }}
@@ -239,7 +239,12 @@ export function BranchItem({
           <summary aria-label={`Task resource details for ${branch.name || branch.head_msg_id}`}>
             resources{resourceDetails.length ? ` · ${resourceDetails[0].value}` : ""}
           </summary>
-          <pre>{JSON.stringify(taskResource, null, 2)}</pre>
+          <pre>{JSON.stringify({
+            resource_state: taskResource.resource_state,
+            reason_code: taskResource.reason_code,
+            capacity: taskResource.capacity,
+            budget: taskResource.budget,
+          }, null, 2)}</pre>
         </details>
       ) : null}
       <span className="branch-item-actions">

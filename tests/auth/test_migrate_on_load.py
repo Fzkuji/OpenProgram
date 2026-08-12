@@ -1,4 +1,5 @@
 import json
+
 from openprogram.auth.store import AuthStore
 
 

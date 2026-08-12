@@ -75,10 +75,12 @@ describe('task resource WebSocket contract', () => {
     let tasks: unknown[] = [];
     let selected: unknown = null;
     let picker: string | null = 'tasks';
+    const systemLines: string[] = [];
     const ctx = {
       setTasksList: ((next) => { tasks = apply(tasks, next); }) as Setter<unknown[]>,
       setSelectedTask: ((next) => { selected = apply(selected, next); }) as Setter<unknown>,
       setPickerKind: ((next) => { picker = apply(picker, next); }) as Setter<string | null>,
+      pushSystem: (text: string) => { systemLines.push(text); },
     };
     const frames: WsEnvelope[] = [
       { type: 'tasks_list', data: { session_id: 'session-1', tasks: [task] } },
@@ -108,6 +110,10 @@ describe('task resource WebSocket contract', () => {
     expect(tasks).toHaveLength(1);
     expect(selected).toMatchObject({ id: 'task-1', status: 'cancelled' });
     expect(picker).toBe('task_detail');
+    // Only the explicit list / detail views print; cancel stays silent and
+    // nothing is ever dumped as raw JSON.
+    expect(systemLines).toHaveLength(2);
+    expect(systemLines.join('\n')).not.toContain('{');
   });
 });
 

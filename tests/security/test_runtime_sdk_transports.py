@@ -16,7 +16,6 @@ from types import SimpleNamespace
 import pytest
 
 from openprogram.security.safe_http import (
-    AsyncDecisionNetworkBackend,
     AsyncManagedHTTPTransport,
     CONSUMER_REGISTRY,
     ManagedHTTPTransport,

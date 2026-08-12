@@ -309,6 +309,38 @@ def test_toggle_enable_refreshes_registry_without_restart(live_cfg, stub_listing
     assert not any(r["id"] == "acme-1" for r in list_enabled_models())
 
 
+def test_stale_caller_view_does_not_mis_stamp_the_repair_marker(monkeypatch):
+    """The version marker reflects the repair that ran on the FRESH config.
+
+    A stale in-memory ``providers`` dict that still needs repair must not stamp
+    the marker when the on-disk config needs none — that would permanently
+    suppress the one-shot repair on this machine. The caller's dict is also
+    refreshed from what was persisted so memory and disk stay in sync.
+    """
+    stale = {"p": _repair_provider()}
+    fresh = {"p": {"enabled": True, "enabled_models": ["keep-a"],
+                   "models": [{"id": "keep-a", "name": "Keep A"}]}}
+    config = {"spec_migration_version": 0, "providers": fresh}
+    import openprogram.setup as setup
+    monkeypatch.setattr(setup, "_read_config", lambda: config)
+
+    def update(mutator, **_kwargs):
+        mutator(config)
+        return config
+
+    monkeypatch.setattr(setup, "update_config", update)
+    import openprogram.providers.enabled_models as mg
+    monkeypatch.setattr(mg, "reload", lambda: None)
+    st._reset_spec_migration()
+    st._run_spec_migration_once(stale)
+
+    assert config["spec_migration_version"] == 0
+    # Caller's view now matches what is on disk (the flood rows are gone
+    # because they were never in the persisted config).
+    assert stale == config["providers"]
+    assert [r["id"] for r in stale["p"]["models"]] == ["keep-a"]
+
+
 def test_repair_pass_runs_through_run_once(monkeypatch):
     """End-to-end: _run_spec_migration_once fires the repair, bumps the marker,
     and persists the pruned providers."""

@@ -30,6 +30,7 @@ wide lock is fine because the config file is tiny.
 """
 from __future__ import annotations
 
+import copy
 import logging
 import threading
 from typing import Any, Callable
@@ -215,29 +216,42 @@ def _run_spec_migration_once(providers: dict[str, dict[str, Any]]) -> None:
         return
     _spec_migration_running = True
     try:
-        changed = _migrate_specs(providers)
-        repaired = _repair_over_merged_specs(providers)
-        repaired = _repair_modality_cost_specs(providers) or repaired
+        # Probe a copy purely to decide whether a write is worth attempting;
+        # the caller's dict must stay untouched here so the in-lock pass on the
+        # fresh config (which may BE this dict) still sees the work to do.
+        probe = copy.deepcopy(providers)
+        changed = _migrate_specs(probe)
+        repaired = _repair_over_merged_specs(probe)
+        repaired = _repair_modality_cost_specs(probe) or repaired
     finally:
         _spec_migration_running = False
         _spec_migration_done = True
-    if changed or repaired:
-        from openprogram import setup as _setup
+    if not (changed or repaired):
+        return
+    from openprogram import setup as _setup
 
-        def migrate(config: dict) -> None:
-            current = config.setdefault("providers", {})
-            _migrate_specs(current)
-            repaired_current = _repair_over_merged_specs(current)
-            repaired_current = (
-                _repair_modality_cost_specs(current) or repaired_current
-            )
-            if repaired or repaired_current:
-                config["spec_migration_version"] = _SPEC_MIGRATION_VERSION
+    persisted: dict[str, dict[str, Any]] = {}
 
-        _setup.update_config(migrate)
-        from openprogram.providers import enabled_models as _mg
+    def migrate(config: dict) -> None:
+        current = config.setdefault("providers", {})
+        _migrate_specs(current)
+        repaired_current = _repair_over_merged_specs(current)
+        repaired_current = (
+            _repair_modality_cost_specs(current) or repaired_current
+        )
+        if repaired_current:
+            config["spec_migration_version"] = _SPEC_MIGRATION_VERSION
+        persisted.clear()
+        persisted.update(copy.deepcopy(current))
 
-        _mg.reload()
+    _setup.update_config(migrate)
+    # Keep the caller's dict in sync with what landed on disk — it is the
+    # value _read_providers_cfg hands back to the process.
+    providers.clear()
+    providers.update(persisted)
+    from openprogram.providers import enabled_models as _mg
+
+    _mg.reload()
 
 
 def _spec_migration_version() -> int:

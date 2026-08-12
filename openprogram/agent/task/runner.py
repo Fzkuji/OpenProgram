@@ -767,11 +767,6 @@ class TaskRunner:
                 if authority:
                     kwargs["authority"] = authority
                 result = _execute_agent_turn(**kwargs)
-            except Exception as exc:  # noqa: BLE001
-                from openprogram.agent.sub_agent_run import AgentTurnResult
-                result = AgentTurnResult(
-                    failed=True, error=f"{type(exc).__name__}: {exc}",
-                )
             except BaseException as exc:  # noqa: BLE001
                 from openprogram.agent.sub_agent_run import AgentTurnResult
                 fatal_exception = exc
@@ -1547,7 +1542,7 @@ class TaskRunner:
                         if current is not None and is_terminal(current.status):
                             updated = current
                     if updated is not None:
-                        _broadcast_task_status(updated)
+                        self._broadcast_task_status(updated)
                         self._wake_done(claim.task_id)
                         with self._lock:
                             self._tasks.pop(claim.task_id, None)
@@ -1737,7 +1732,7 @@ class TaskRunner:
                             _tok.var.reset(_tok)
                         except Exception:
                             pass
-            except Exception as exc:  # noqa: BLE001
+            except BaseException as exc:  # noqa: BLE001
                 err = f"{type(exc).__name__}: {exc}"
                 reason_code = _execution_failure_reason(err)
                 updated = self._finalize_task_status(
@@ -1805,6 +1800,19 @@ class TaskRunner:
             # Tell tail clients the session changed so attach card
             # picks up the new head / text.
             _broadcast_session_reload(session_id, reason=f"task_{new_status.value}")
+        except BaseException as exc:  # noqa: BLE001
+            err = f"{type(exc).__name__}: {exc}"
+            try:
+                updated = self._finalize_task_status(
+                    session_id, task_id, lease_generation,
+                    TaskStatus.ERRORED, "error.execution", error=err,
+                )
+                if updated is not None:
+                    self._broadcast_task_status(updated)
+            except BaseException:
+                # finalize_task stages a durable intent before the task-store
+                # write. Reconcile completes it once persistence recovers.
+                _log.exception("failed to persist terminal task %s", task_id)
         finally:
             lease_stop.set()
             lease_thread.join(timeout=1.0)
@@ -1866,7 +1874,20 @@ class TaskRunner:
             except Exception:
                 pass
             try:
+                # Release the admission unconditionally: a task that never
+                # reached a terminal state (store row vanished, or the
+                # pending→running transition was rejected) still holds a
+                # 'live' row that would consume max_live_per_session for
+                # good. release_task refuses to act while a pending
+                # finalization intent exists, so reconcile still owns the
+                # "terminal write staged but not persisted" case.
                 cur = _store_load(session_id, task_id)
+                if cur is None or not is_terminal(cur.status):
+                    _log.warning(
+                        "task %s ended without a persisted terminal state; "
+                        "releasing admission with no reason code", task_id,
+                    )
+                    cur = None
                 self._governor.release_task(
                     task_id, cur.reason_code if cur is not None else None,
                     owner_instance_id=self._instance_id,
@@ -1962,6 +1983,13 @@ class TaskRunner:
         except Exception:
             _log.exception("failed to reconcile durable task resources")
             return
+        for task_id, session_id in result.completed_pending:
+            task = _store_load(session_id, task_id)
+            if task is not None and is_terminal(task.status):
+                self._broadcast_task_status(task)
+                _broadcast_session_reload(
+                    session_id, reason=f"task_{task.status.value}",
+                )
         try:
             self._governor.recover_provider_reservations()
         except Exception:

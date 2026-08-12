@@ -60,6 +60,9 @@
   overflow-y: auto;
   overflow-x: hidden;
 }
+.branches-list:has(.branch-item-resource[open]) {
+  max-height: min(50vh, 360px);
+}
 
 /* Item mirrors .fav-item / .conv-item geometry */
 .branch-item {

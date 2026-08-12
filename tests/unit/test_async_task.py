@@ -606,6 +606,188 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
         runner.shutdown(wait=False)
 
 
+def test_durable_worker_baseexception_persists_terminal_before_release(
+    store_fixture, monkeypatch, tmp_path,
+):
+    broadcasts = []
+    from openprogram.agent.resource_governance import ResourceGovernor
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.agent.task.types import TaskStatus
+    from openprogram.usage.ledger import UsageLedger
+
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", broadcasts.append,
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.sub_agent_run._execute_agent_turn",
+        lambda **_kwargs: (_ for _ in ()).throw(SystemExit("fatal")),
+    )
+    ledger = UsageLedger(tmp_path / "fatal-worker.db")
+    runner = TaskRunner(max_workers=1, governor=ResourceGovernor(ledger))
+    task_id = runner.spawn_task(
+        session_id="p1", prompt="fatal", agent_id="main", parent_msg_id="a1",
+    )
+    try:
+        task = runner.await_task(task_id, timeout=2)
+        admission = ledger.connection().execute(
+            "SELECT state FROM task_admissions WHERE task_id = ?", (task_id,),
+        ).fetchone()
+        assert task is not None and task.status == TaskStatus.ERRORED
+        assert admission[0] == "released"
+        deadline = time.time() + 1.0
+        terminal = None
+        while time.time() < deadline:
+            terminal = next(
+                (
+                    event for event in reversed(broadcasts)
+                    if event.get("type") == "task_status"
+                    and event["data"]["status"] == "errored"
+                ),
+                None,
+            )
+            if terminal is not None:
+                break
+            time.sleep(0.01)
+        assert terminal is not None
+        assert terminal["data"]["resource"]["resource_state"] == "released"
+    finally:
+        runner.shutdown(wait=False)
+
+
+def test_running_status_write_failure_reconciles_terminal_and_releases(
+    store_fixture, monkeypatch, tmp_path,
+):
+    import openprogram.agent.task.runner as runner_mod
+    from openprogram.agent.resource_governance import ResourceGovernor
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.agent.task.types import TaskStatus
+    from openprogram.usage.ledger import UsageLedger
+
+    broadcasts = []
+    monkeypatch.setattr(runner_mod, "_broadcast", lambda payload: broadcasts.append(payload))
+    real_update = runner_mod._store_update_status
+
+    failed = True
+
+    def fail_running(session_id, task_id, status, **fields):
+        if failed and status in {TaskStatus.RUNNING, TaskStatus.ERRORED}:
+            raise OSError("task store unavailable")
+        return real_update(session_id, task_id, status, **fields)
+
+    monkeypatch.setattr(runner_mod, "_store_update_status", fail_running)
+    ledger = UsageLedger(tmp_path / "running-write.db")
+    runner = TaskRunner(max_workers=1, governor=ResourceGovernor(ledger))
+    task_id = runner.spawn_task(
+        session_id="p1", prompt="x", agent_id="main", parent_msg_id="a1",
+    )
+    try:
+        runner.await_task(task_id, timeout=1)
+        task = runner.get_task(task_id)
+        admission = ledger.connection().execute(
+            "SELECT state FROM task_admissions WHERE task_id = ?", (task_id,),
+        ).fetchone()
+        assert task is not None and task.status == TaskStatus.QUEUED
+        assert admission[0] == "live"
+        assert ledger.connection().execute(
+            "SELECT state FROM task_finalizations WHERE task_id = ?", (task_id,),
+        ).fetchone()[0] == "pending"
+        failed = False
+        broadcasts.clear()
+        runner._reconcile_resources()
+        assert runner.get_task(task_id).status == TaskStatus.ERRORED
+        assert ledger.connection().execute(
+            "SELECT state FROM task_admissions WHERE task_id = ?", (task_id,),
+        ).fetchone()[0] == "released"
+        terminal = [
+            item for item in broadcasts
+            if item.get("type") == "task_status"
+            and item["data"].get("task_id") == task_id
+        ]
+        assert len(terminal) == 1
+        assert terminal[0]["data"]["status"] == "errored"
+        assert terminal[0]["data"]["resource"]["resource_state"] == "released"
+        reloads = [item for item in broadcasts if item.get("type") == "session_reload"]
+        assert len(reloads) == 1
+        assert reloads[0]["data"]["reason"] == "task_errored"
+        broadcasts.clear()
+        runner._reconcile_resources()
+        assert broadcasts == []
+        from openprogram.agent.sub_agent_run import AgentTurnResult
+        monkeypatch.setattr(
+            "openprogram.agent.sub_agent_run._execute_agent_turn",
+            lambda **_kwargs: AgentTurnResult(final_text="ok"),
+        )
+        next_id = runner.spawn_task(
+            session_id="p1", prompt="next", agent_id="main", parent_msg_id="a1",
+        )
+        assert runner.await_task(next_id, timeout=2).status == TaskStatus.COMPLETED
+    finally:
+        runner.shutdown(wait=False)
+
+
+def test_vanished_task_row_releases_admission_instead_of_leaking_it(
+    store_fixture, monkeypatch, tmp_path,
+):
+    """A task whose store row vanishes never reaches a terminal state.
+
+    Its admission must still be released — otherwise the 'live' row
+    permanently consumes max_live_per_session and no further task can be
+    admitted for that session.
+    """
+    import openprogram.agent.task.runner as runner_mod
+    from openprogram.agent.resource_governance import ResourceGovernor
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.agent.task.types import TaskStatus
+    from openprogram.usage.ledger import UsageLedger
+
+    monkeypatch.setattr(runner_mod, "_broadcast", lambda *a, **k: None)
+    real_update = runner_mod._store_update_status
+    vanish = True
+
+    def vanish_on_running(session_id, task_id, status, **fields):
+        # Mimic "task entity vanished": pending → running finds no row.
+        if vanish and status is TaskStatus.RUNNING:
+            return None
+        return real_update(session_id, task_id, status, **fields)
+
+    monkeypatch.setattr(runner_mod, "_store_update_status", vanish_on_running)
+    ledger = UsageLedger(tmp_path / "vanished-row.db")
+    runner = TaskRunner(max_workers=1, governor=ResourceGovernor(ledger))
+    try:
+        task_id = runner.spawn_task(
+            session_id="p1", prompt="x", agent_id="main", parent_msg_id="a1",
+        )
+        deadline = time.time() + 3.0
+        state = None
+        while time.time() < deadline:
+            row = ledger.connection().execute(
+                "SELECT state FROM task_admissions WHERE task_id = ?", (task_id,),
+            ).fetchone()
+            state = row[0] if row else None
+            if state == "released":
+                break
+            time.sleep(0.01)
+        assert state == "released"
+        assert ledger.connection().execute(
+            "SELECT COUNT(*) FROM task_admissions "
+            "WHERE session_id = ? AND state = 'live'", ("p1",),
+        ).fetchone()[0] == 0
+
+        # The session is admissible again.
+        vanish = False
+        from openprogram.agent.sub_agent_run import AgentTurnResult
+        monkeypatch.setattr(
+            "openprogram.agent.sub_agent_run._execute_agent_turn",
+            lambda **_kwargs: AgentTurnResult(final_text="ok"),
+        )
+        next_id = runner.spawn_task(
+            session_id="p1", prompt="next", agent_id="main", parent_msg_id="a1",
+        )
+        assert runner.await_task(next_id, timeout=3).status == TaskStatus.COMPLETED
+    finally:
+        runner.shutdown(wait=False)
+
+
 def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
     store_fixture, monkeypatch, tmp_path,
 ):
@@ -1280,8 +1462,9 @@ def test_runner_dispatch_submit_failure_terminalizes_published_task(
     store_fixture, monkeypatch, tmp_path,
 ):
     """A claimed task must not outlive a failed executor submission."""
+    broadcasts = []
     monkeypatch.setattr(
-        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+        "openprogram.agent.task.runner._broadcast", broadcasts.append,
     )
     from openprogram.agent.resource_governance import (
         ResourceGovernor,
@@ -1326,6 +1509,22 @@ def test_runner_dispatch_submit_failure_terminalizes_published_task(
         assert final is not None
         assert final.status == TaskStatus.ERRORED
         assert final.reason_code == "error.dispatch_failed"
+        deadline = time.time() + 1.0
+        terminal = None
+        while time.time() < deadline:
+            terminal = next(
+                (
+                    event for event in reversed(broadcasts)
+                    if event.get("type") == "task_status"
+                    and event["data"]["status"] == "errored"
+                ),
+                None,
+            )
+            if terminal is not None:
+                break
+            time.sleep(0.01)
+        assert terminal is not None
+        assert terminal["data"]["resource"]["resource_state"] == "released"
     finally:
         runner.shutdown()
 
@@ -1393,8 +1592,6 @@ def test_running_task_binds_one_immutable_governance_context(
     assert is_dataclass(context)
     assert context.__dataclass_params__.frozen is True
     assert current_task_resource_context() is None
-
-
 def test_runner_executes_three_live_tasks_for_one_session(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):

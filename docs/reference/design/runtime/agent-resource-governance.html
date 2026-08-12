@@ -126,7 +126,7 @@
 
   <p><span class="tag">本设计不实现</span>后台会话 UI、MCP server、购买或充值、组织计费、跨机器集群调度。共享 DTO、reason code、预算 scope 和 reservation 协议可以被这些系统以后复用，但本页不预设其产品交互。</p>
 
-  <h2 id="current">01 我们的现状：基础资源账本已存在，执行链仍未完成</h2>
+  <h2 id="current">01 实施前基线：基础资源账本已存在，执行链仍未完成</h2>
   <p><code>main@990bfe36</code> 已不再只是全局线程池：<code>ResourceGovernor</code> 已提供统一 admission、每会话 live/queued/cumulative 限制、budget scope、token/cost reservation 原语和稳定 reason code。当前主要问题是这些原语尚未全部接入真实执行链：runner 仍会立刻提交 executor 后在线程中轮询，provider 调用没有使用 token/cost reservation，runtime/idle 只保存上限而不强制，用户界面也没有等价资源视图。</p>
 
   <div class="table-wrap">

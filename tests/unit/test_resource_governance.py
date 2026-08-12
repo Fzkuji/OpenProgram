@@ -235,30 +235,6 @@ def test_resource_view_includes_configured_effective_and_source_limits(tmp_path)
     }
 
 
-def test_admitted_task_resource_view_keeps_its_limit_snapshot(tmp_path) -> None:
-    ledger = UsageLedger(tmp_path / "usage.db")
-    admitted = resolve_resource_limits(
-        ResourceLimits(max_total_tokens=100),
-        session=ResourceLimits(max_total_tokens=80),
-        scheduler_capacity=4,
-    )
-    lowered = resolve_resource_limits(
-        ResourceLimits(max_total_tokens=100),
-        session=ResourceLimits(max_total_tokens=20),
-        scheduler_capacity=4,
-    )
-    governor = ResourceGovernor(
-        ledger, limit_resolver=lambda _sid, _task: admitted,
-    )
-    task = Task(id="snapshotted", parent_session_id="s1", prompt="p", agent_id="a")
-
-    assert governor.admit_task(task, persist=lambda _task: None).accepted
-
-    view = build_task_resource_view(task, ledger=ledger, resolved=lowered)
-
-    assert view.limits == admitted.to_dict()
-
-
 def test_task_budget_limit_excludes_shared_limits_unless_task_has_local_ceiling(
     tmp_path,
 ) -> None:
@@ -1886,6 +1862,68 @@ def test_time_limits_start_at_live_claim_and_exclude_queue_wait(tmp_path) -> Non
     ).fetchone()
     assert live[0] is not None
     assert live[1] == live[0]
+
+
+def test_time_limits_and_view_use_admission_snapshot_after_session_change(
+    tmp_path,
+) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    current = resolve_resource_limits(
+        ResourceLimits(max_runtime_seconds=10, idle_timeout_seconds=4),
+        scheduler_capacity=1,
+    )
+    governor = ResourceGovernor(
+        ledger,
+        limit_resolver=lambda _sid, _task: current,
+        session_limit_resolver=lambda _sid: current,
+    )
+    task = Task(id="snapshot", parent_session_id="s1", prompt="p", agent_id="a")
+    governor.admit_task(task, persist=lambda _task: None)
+    current = resolve_resource_limits(
+        ResourceLimits(max_runtime_seconds=2, idle_timeout_seconds=1),
+        scheduler_capacity=1,
+    )
+
+    assert governor.task_time_limits(task.id) == (10, 4)
+    view = build_task_resource_view(task, ledger=ledger, resolved=current)
+    assert view.limits["limits"]["max_runtime_seconds"]["effective"] == 10
+    assert view.budget["runtime_seconds"]["limit"] == 10
+
+    newer = Task(id="newer", parent_session_id="s1", prompt="p", agent_id="a")
+    governor.admit_task(newer, persist=lambda _task: None)
+    assert governor.task_time_limits(newer.id) == (2, 1)
+    current = resolve_resource_limits(
+        ResourceLimits(max_runtime_seconds=20, idle_timeout_seconds=8),
+        scheduler_capacity=1,
+    )
+    newest = Task(id="newest", parent_session_id="s1", prompt="p", agent_id="a")
+    governor.admit_task(newest, persist=lambda _task: None)
+    assert governor.task_time_limits(newest.id) == (20, 8)
+
+
+@pytest.mark.parametrize("snapshot", [None, {"limits": {"max_runtime_seconds": {"bad": 1}}}])
+def test_legacy_or_malformed_snapshot_uses_durable_task_time_limits(
+    tmp_path, snapshot,
+) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    admitted = resolve_resource_limits(
+        ResourceLimits(max_runtime_seconds=10, idle_timeout_seconds=4),
+        scheduler_capacity=1,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: admitted)
+    task = Task(id="legacy-snapshot", parent_session_id="s1", prompt="p", agent_id="a")
+    governor.admit_task(task, persist=lambda _task: None)
+    task.resolved_limits_snapshot = snapshot
+    current = resolve_resource_limits(
+        ResourceLimits(max_runtime_seconds=2, idle_timeout_seconds=1),
+        scheduler_capacity=1,
+    )
+
+    view = build_task_resource_view(task, ledger=ledger, resolved=current)
+
+    assert governor.task_time_limits(task.id) == (10, 4)
+    assert view.limits["limits"]["max_runtime_seconds"]["effective"] == 10
+    assert view.limits["limits"]["idle_timeout_seconds"]["effective"] == 4
 
 
 def test_meaningful_activity_is_owner_fenced_and_keepalive_is_ignored(

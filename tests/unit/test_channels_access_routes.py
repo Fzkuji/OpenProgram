@@ -7,9 +7,9 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture(autouse=True)
 def _tmp_state(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        "openprogram.paths.get_state_dir", lambda: tmp_path / "state",
-    )
+    state = tmp_path / "state"
+    state.mkdir(mode=0o700)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
 
 
 def _client(monkeypatch) -> TestClient:

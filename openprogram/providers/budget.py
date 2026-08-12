@@ -41,31 +41,32 @@ _UNCAPPED_OUTPUT_FLOOR = 4096
 # Anthropic's own fallback when a provider declares no budget_map entry.
 _DEFAULT_REASONING_BUDGET = 8192
 _BYTE_BOUNDED_APIS = frozenset({
-    "openai-completions",
-    "mistral-conversations",
-    "openai-responses",
-    "azure-openai-responses",
-    "openai-codex",
-    "anthropic-messages",
-    "bedrock-converse-stream",
-    "google-generative-ai",
-    "gemini-subscription",
+    "openai-completions", "mistral-conversations", "openai-responses",
+    "azure-openai-responses", "openai-codex", "anthropic-messages",
+    "bedrock-converse-stream", "google-generative-ai", "gemini-subscription",
 })
 
 
 def estimate_input_upper_bound(context, options, model=None) -> int:
-    """Return a tokenizer-independent byte upper bound for audited adapters."""
+    """Return a tokenizer-independent byte upper bound for supported adapters."""
     window = getattr(model, "context_window", None)
-    if (
-        getattr(model, "api", None) not in _BYTE_BOUNDED_APIS
-        or not isinstance(window, int)
-        or isinstance(window, bool)
-        or window <= 0
-    ):
+    if not isinstance(window, int) or isinstance(window, bool) or window <= 0:
         raise QuotaExceeded(
             "quota.accounting_unavailable",
-            "provider/model has no audited safe input token bound",
+            "provider/model has no safe input token ceiling",
         )
+    if getattr(model, "api", None) not in _BYTE_BOUNDED_APIS:
+        raise QuotaExceeded(
+            "quota.accounting_unavailable",
+            "provider adapter has no audited safe input token bound",
+        )
+    for message in getattr(context, "messages", None) or []:
+        for block in getattr(message, "content", None) or []:
+            if getattr(block, "type", None) in {"image", "video", "audio"}:
+                raise QuotaExceeded(
+                    "quota.accounting_unavailable",
+                    "multimodal input has no audited provider token upper bound",
+                )
     import json
 
     context_payload = (
@@ -82,17 +83,21 @@ def estimate_input_upper_bound(context, options, model=None) -> int:
         if options is not None and callable(getattr(options, "model_dump", None))
         else {}
     )
+    for name, value in list(option_payload.items()):
+        if callable(getattr(value, "model_dump", None)):
+            option_payload[name] = value.model_dump(mode="json")
     try:
         encoded = json.dumps(
             {"context": context_payload, "options": option_payload},
-            ensure_ascii=False,
-            separators=(",", ":"),
+            ensure_ascii=False, separators=(",", ":"),
         ).encode("utf-8")
     except Exception as exc:
         raise QuotaExceeded(
-            "quota.accounting_unavailable",
-            "request cannot be safely counted",
+            "quota.accounting_unavailable", "request cannot be safely counted",
         ) from exc
+    # Every adapter reachable from this common stream layer uses a byte-backed
+    # tokenizer; therefore token count cannot exceed serialized UTF-8 bytes.
+    # The fixed per-item allowance covers adapter-added role/request framing.
     wrapper = 1024 + 64 * (
         len(getattr(context, "messages", None) or [])
         + len(getattr(context, "tools", None) or [])

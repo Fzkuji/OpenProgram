@@ -20,7 +20,11 @@ from openprogram.agent.agent_loop import agent_loop
 from openprogram.agent.types import AgentContext, AgentLoopConfig
 from openprogram.agent.task.types import Task
 from openprogram.providers.api_registry import ApiProviderSnapshot
-from openprogram.providers.budget import QuotaExceeded
+from openprogram.providers.budget import (
+    QuotaExceeded,
+    provider_retry_attempts,
+    provider_sdk_retries,
+)
 from openprogram.providers.structured_output import (
     JsonSchemaOutput,
     StructuredOutputCapabilities,
@@ -35,13 +39,14 @@ from openprogram.providers.types import (
     SimpleStreamOptions,
     StreamOptions,
     Usage,
+    ImageContent,
     UserMessage,
 )
 from openprogram.usage import context as _ctx_mod
 from openprogram.usage import recorder as _recorder
 from openprogram.usage.context import UsageContext
-from openprogram.usage.event import UsageEvent
 from openprogram.usage.ledger import UsageLedger
+from openprogram.usage.event import UsageEvent
 
 
 @pytest.fixture(autouse=True)
@@ -95,10 +100,12 @@ class _ConstructionFailureProvider:
 
 
 def _model(**kw):
+    context_window = kw.pop("context_window", 1_000)
     api = kw.pop("api", "openai-completions")
     return Model(
         id="fake-model-1", provider="fakeprov", api=api,
-        name="fake", base_url="http://fake.local", context_window=200000, **kw,
+        name="fake", base_url="http://fake.local",
+        context_window=context_window, **kw,
     )
 
 
@@ -118,7 +125,6 @@ def wired(tmp_path, monkeypatch):
 
     def build(*, limits=None, model=None, usage=None, fail_before_start=None):
         import openprogram.providers.api_registry as registry_mod
-
         resolved = resolve_resource_limits(
             limits or ResourceLimits(), scheduler_capacity=1,
         )
@@ -329,13 +335,49 @@ def test_actual_usage_over_reservation_is_authoritatively_settled(wired):
         reservation_id.removesuffix(":token"), duplicate,
     ) is None
     assert env["ledger"].query()[0].events == 1
+    with pytest.raises(QuotaExceeded):
+        _drain(env["model"], SimpleStreamOptions(session_id="s1"))
+
+
+def test_budgeted_provider_disables_adapter_internal_retries(wired):
+    wired(limits=ResourceLimits(max_total_tokens=100_000))
+
+    assert provider_sdk_retries(3) == 0
+    assert provider_retry_attempts(5) == 1
+
+
+def test_small_request_remains_usable_under_strict_budget(wired):
+    env = wired(limits=ResourceLimits(max_total_tokens=2_000))
+    _drain(env["model"], SimpleStreamOptions(session_id="s1", max_tokens=100))
+
+    assert env["provider"].seen_opts
+
+
+def test_budgeted_high_resolution_image_fails_closed_before_provider(wired):
+    from openprogram.providers import stream_simple
+
+    env = wired(limits=ResourceLimits(max_total_tokens=100_000))
+    context = Context(messages=[UserMessage(
+        content=[ImageContent(data="compressed", mime_type="image/png")],
+        timestamp=0,
+    )])
+
+    async def go():
+        async for _ in stream_simple(
+            env["model"], context, SimpleStreamOptions(session_id="s1"),
+        ):
+            pass
+
+    with pytest.raises(QuotaExceeded, match="multimodal"):
+        asyncio.run(go())
+    assert env["provider"].seen_opts == []
 
 
 def test_output_cap_is_clamped_to_remaining_budget(wired):
     """The provider cannot be asked for more output than the budget allows."""
     env = wired(
         limits=ResourceLimits(max_total_tokens=1_500),
-        model=_model(max_tokens=100_000),
+        model=_model(max_tokens=100_000, context_window=100_000),
     )
     _drain(env["model"], SimpleStreamOptions(session_id="s1", max_tokens=50_000))
 
@@ -411,7 +453,10 @@ def test_known_api_name_with_unaudited_implementation_fails_closed_pre_io(
 
 
 def test_structured_output_schema_is_included_in_safe_input_bound(wired):
-    env = wired(limits=ResourceLimits(max_total_tokens=3_000))
+    env = wired(
+        limits=ResourceLimits(max_total_tokens=3_000),
+        model=_model(context_window=100_000),
+    )
     schema = JsonSchemaOutput(schema={
         "type": "object",
         "properties": {
@@ -472,6 +517,61 @@ def test_accounting_outage_fails_closed_and_is_retryable(wired, monkeypatch):
     assert excinfo.value.reason_code == "quota.accounting_unavailable"
     assert excinfo.value.retryable is True
     assert env["provider"].seen_opts == []
+
+
+def test_recording_transform_preserves_registry_audited_identity(tmp_path):
+    from openprogram.providers import api_registry
+    from openprogram.providers.recording import RecordingProvider
+
+    state = (
+        dict(api_registry._registry), dict(api_registry._original_registry),
+        {key: set(value) for key, value in api_registry._audited_accounting.items()},
+        dict(api_registry._audited_originals), api_registry._provider_transform,
+    )
+    try:
+        api_registry._registry.clear()
+        api_registry._original_registry.clear()
+        api_registry._audited_accounting.clear()
+        api_registry._audited_originals.clear()
+        api_registry._provider_transform = None
+        provider = _FakeProvider(_model())
+        api_registry._register_builtin_api_providers({"openai-completions": provider})
+        api_registry.configure_provider_transform(
+            lambda _api, inner: RecordingProvider(inner, tmp_path / "calls.jsonl"),
+        )
+        wrapped = api_registry._registry["openai-completions"]
+        assert api_registry.has_audited_accounting(wrapped, "openai-completions")
+    finally:
+        registry, original, audited, audited_originals, transform = state
+        api_registry._registry.clear(); api_registry._registry.update(registry)
+        api_registry._original_registry.clear(); api_registry._original_registry.update(original)
+        api_registry._audited_accounting.clear(); api_registry._audited_accounting.update(audited)
+        api_registry._audited_originals.clear(); api_registry._audited_originals.update(audited_originals)
+        api_registry._provider_transform = transform
+
+
+def test_public_registry_override_cannot_self_declare_accounting_capability():
+    from openprogram.providers import api_registry
+
+    malicious = _FakeProvider(_model())
+    malicious._budget_accounting_api = "openai-completions"
+    state = (
+        dict(api_registry._registry), dict(api_registry._original_registry),
+        {key: set(value) for key, value in api_registry._audited_accounting.items()},
+        dict(api_registry._audited_originals), api_registry._provider_transform,
+    )
+    try:
+        api_registry.register_api_provider("openai-completions", malicious)
+        assert not api_registry.has_audited_accounting(
+            malicious, "openai-completions",
+        )
+    finally:
+        registry, original, audited, audited_originals, transform = state
+        api_registry._registry.clear(); api_registry._registry.update(registry)
+        api_registry._original_registry.clear(); api_registry._original_registry.update(original)
+        api_registry._audited_accounting.clear(); api_registry._audited_accounting.update(audited)
+        api_registry._audited_originals.clear(); api_registry._audited_originals.update(audited_originals)
+        api_registry._provider_transform = transform
 
 
 def test_settlement_failure_surfaces_as_accounting_error(wired, monkeypatch):

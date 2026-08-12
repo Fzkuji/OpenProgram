@@ -7,6 +7,9 @@ into a chat turn, and unknown-command handling. No real TUI needed —
 """
 from __future__ import annotations
 
+import json
+from types import SimpleNamespace
+
 import pytest
 from rich.console import Console
 
@@ -70,6 +73,46 @@ def test_local_action_dispatch(clean_registry):
     assert out is False
     text = console.export_text()
     assert "sess-42" in text and "agent-x" in text
+
+
+def test_tasks_list_prints_canonical_resource_dto(clean_registry, monkeypatch):
+    expected = {
+        "task_id": "t1", "status": "running", "resource_state": "active",
+    }
+    runner = SimpleNamespace(
+        list_tasks=lambda session_id, limit=None: [SimpleNamespace(id="t1")],
+        get_task_resource_view=lambda task_id: SimpleNamespace(
+            to_dict=lambda: expected,
+        ),
+    )
+    monkeypatch.setattr("openprogram.agent.task.get_runner", lambda: runner)
+    console = _console()
+
+    assert handlers._handle_slash(
+        "/tasks", console, None, agent=_FakeAgent(), session_id="sess-42",
+    ) is False
+
+    assert json.loads(console.export_text())["tasks"] == [expected]
+
+
+def test_tasks_get_prints_canonical_resource_dto(clean_registry, monkeypatch):
+    expected = {
+        "task_id": "t1", "status": "running", "resource_state": "active",
+    }
+    runner = SimpleNamespace(
+        get_task=lambda task_id: SimpleNamespace(id=task_id),
+        get_task_resource_view=lambda task_id: SimpleNamespace(
+            to_dict=lambda: expected,
+        ),
+    )
+    monkeypatch.setattr("openprogram.agent.task.get_runner", lambda: runner)
+    console = _console()
+
+    assert handlers._handle_slash(
+        "/tasks t1", console, None, agent=_FakeAgent(), session_id="sess-42",
+    ) is False
+
+    assert json.loads(console.export_text())["task"] == expected
 
 
 def test_quit_returns_exit(clean_registry):

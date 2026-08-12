@@ -801,6 +801,10 @@ async def _stream_assistant_response(
 
     iterator = response_stream.__aiter__()
     while True:
+        if structured_plan is not None and cancel_event and cancel_event.is_set():
+            from openprogram.providers.utils.errors import ExecInterrupt
+
+            raise ExecInterrupt("cancelled")
         timeout = _task_operation_timeout(None)
         try:
             event = (
