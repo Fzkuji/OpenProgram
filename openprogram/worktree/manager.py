@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Optional
 
 from openprogram.paths import get_state_dir
+from openprogram.worktree.include_sync import sync_include_files
 from openprogram.worktree.pr_ref import PrRefError, fetch_pr_branch, parse_pr_ref
 from openprogram.worktree.store import (
     delete_worktree as _store_delete,
@@ -311,6 +312,13 @@ class WorktreeManager:
             # was created pointing at the same commit via `-b`.
             _run_git("branch", "-D", base_ref, cwd=source_repo)
 
+        # .worktreeinclude: copy untracked local-only files (.env,
+        # certs, etc.) the fresh checkout never got. No-op when the
+        # manifest doesn't exist. Every create_worktree caller (the
+        # worktree_create tool, task/plan-mode fan-out) routes through
+        # here, so this is the one place that needs the hook.
+        include_result = sync_include_files(source_repo, str(path))
+
         wt = Worktree(
             id=wt_id,
             source_repo=source_repo,
@@ -321,6 +329,8 @@ class WorktreeManager:
             parent_session=parent_session,
             parent_task=parent_task,
             pr_number=pr_number,
+            include_synced=include_result.copied,
+            include_failed=[f"{p}: {reason}" for p, reason in include_result.failed],
         )
         save_worktree(wt)
         # First-time appearance — `_transition` is only called on

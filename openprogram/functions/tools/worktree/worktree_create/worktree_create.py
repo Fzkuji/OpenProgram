@@ -145,9 +145,16 @@ def worktree_create(
     # the dispatcher hook keeps it bound on subsequent turns.
     set_worktree(wt.worktree_path)
 
-    return (
+    msg = (
         f"[worktree_create] id={wt.id} path={wt.worktree_path} "
         f"branch={wt.branch_name} base={wt.base_ref}\n"
         f"Active for this session. bash / edit / write / read now "
         f"default cwd here."
     )
+    if wt.include_synced:
+        msg += f"\n.worktreeinclude: copied {len(wt.include_synced)} file(s): " \
+               f"{', '.join(wt.include_synced)}"
+    if wt.include_failed:
+        msg += f"\n.worktreeinclude: {len(wt.include_failed)} file(s) failed: " \
+               f"{'; '.join(wt.include_failed)}"
+    return msg

@@ -97,6 +97,28 @@ def test_create_then_merge_ff_only_lands_files(isolated_state, repo):
     assert not Path(wt.worktree_path).exists()
 
 
+def test_create_worktree_syncs_worktreeinclude(isolated_state, repo):
+    (repo / ".worktreeinclude").write_text(".env\n")
+    (repo / ".env").write_text("SECRET=1\n")
+
+    mgr = WorktreeManager()
+    wt = mgr.create_worktree(str(repo), label="feat-env")
+
+    assert wt.include_synced == [".env"]
+    assert wt.include_failed == []
+    assert (Path(wt.worktree_path) / ".env").read_text() == "SECRET=1\n"
+
+
+def test_create_worktree_without_manifest_has_empty_include_fields(
+    isolated_state, repo
+):
+    mgr = WorktreeManager()
+    wt = mgr.create_worktree(str(repo), label="feat-plain")
+
+    assert wt.include_synced == []
+    assert wt.include_failed == []
+
+
 def test_create_rejects_non_git_repo(isolated_state, tmp_path):
     mgr = WorktreeManager()
     bare = tmp_path / "not-a-repo"

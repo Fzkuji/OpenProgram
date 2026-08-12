@@ -112,6 +112,11 @@ class Worktree:
     # ``pr`` argument) — lets a later worktree_create(pr=same_number)
     # find the existing one instead of creating a duplicate.
     pr_number: Optional[int] = None
+    # .worktreeinclude sync at create time (see worktree/include_sync.py):
+    # relative paths copied in, and "path: reason" for ones that failed.
+    # Both empty when no .worktreeinclude exists in source_repo.
+    include_synced: list[str] = field(default_factory=list)
+    include_failed: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

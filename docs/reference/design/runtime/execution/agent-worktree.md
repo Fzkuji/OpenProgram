@@ -415,7 +415,55 @@ The agent is halfway through (5 patches committed in the worktree), the user dec
 
 ---
 
-## Part 4. Out of Scope
+## Part 4. `.worktreeinclude`
+
+`git worktree add` only ever checks out **tracked** content. Files a repo deliberately keeps
+untracked and gitignored — `.env`, per-machine TLS certs, `*.local.json` overrides — never
+appear in a fresh worktree, even though the agent's tools need them immediately (a bash command
+reading `.env` fails silently different from how it fails in the main tree).
+
+If `source_repo/.worktreeinclude` exists, each line is a gitignore-style pattern:
+
+- `#` at the start of a (trimmed) line is a comment; blank lines are ignored.
+- `*`, `?`, `[...]` — standard glob wildcards.
+- A pattern with no `/` matches the basename anywhere in the tree (`*.local.json` matches both
+  `a.local.json` and `sub/a.local.json`).
+- A pattern containing `/` is anchored to the repo root.
+- A trailing `/` marks a directory pattern (matches the directory and everything under it).
+
+Not supported: `!` negation, `**` double-star. Split those cases into multiple plain patterns.
+
+At the end of `create_worktree`, right after `git worktree add` succeeds, `WorktreeManager`
+calls `sync_include_files(source_repo, worktree_path)`
+(`openprogram/worktree/include_sync.py`). This is the single choke point every creation path
+shares — the `worktree_create` tool, and any future task/plan-mode fan-out — so the hook lives
+in the manager, not in one caller.
+
+Semantics:
+
+- Only **untracked** files are ever candidates (`git ls-files --others`, deliberately without
+  `--exclude-standard` so already-gitignored files like `.env` still show up) — tracked files
+  are already checked out by `git worktree add` itself.
+- A destination path that already exists is left untouched (no clobber).
+- Symlinks are copied as links, not dereferenced.
+- File permissions are preserved (`shutil.copy2`).
+- One file's copy failure is recorded and does not abort the rest; failures and successes are
+  both attached to the `Worktree` record (`include_synced` / `include_failed`) and echoed in the
+  `worktree_create` tool's return string.
+- No `.worktreeinclude` file in `source_repo` → zero git calls, zero behavior change.
+
+Pattern matching is hand-rolled Python (`fnmatch` + `pathlib`), not git's own exclude engine.
+`git check-ignore` / `ls-files --exclude-from` only ever *exclude* matches from a listing — there
+is no plumbing form that treats a pattern file as an *include* filter — and pointing git at an
+arbitrary pattern file otherwise requires `core.excludesFile` config injection, which this
+sandbox refuses. Reusing git's own untracked-file enumeration (`git ls-files --others`) plus a
+small pattern matcher over the manifest gets git's semantics for "what's untracked" without
+needing config injection or a new dependency (`pathspec` is not in `openprogram`'s own base
+dependency set — it only ships transitively via `semble`, an MCP dev tool).
+
+---
+
+## Part 5. Out of Scope
 
 - **Remote push**: the worktree is local-only; to push the worktree branch to origin, the agent runs
   `git push -u origin <branch>` via bash itself. worktree_merge does not push either.
@@ -446,6 +494,7 @@ None of this design has landed. The pieces it needs, and where they stand:
 | UI worktree chip | absent |
 | Worktree × Task integration | absent; depends on the async task system, itself still in design |
 | Sub-agent worktree mechanism | removed when sub-agents became peer sessions; not reused here |
+| `.worktreeinclude` untracked-file sync | landed — `openprogram/worktree/include_sync.py`, called from `WorktreeManager.create_worktree` |
 
 The work, in dependency order:
 
