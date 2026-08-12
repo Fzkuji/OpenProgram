@@ -571,35 +571,36 @@ class SessionStore:
                 # end). Two stat calls detect the foreign write; rebuild
                 # from disk when it happened. Own-process writes call
                 # mark_synced(), so they never trigger a rebuild.
-                if git.exists() and git.stale():
-                    # Rebuild IN PLACE (reset + repopulate the SAME index
-                    # object): callers across a multi-step operation hold
-                    # (git, idx) from an earlier _open — swapping the
-                    # cached object would orphan their reference, and a
-                    # later step that re-opens (e.g. commit_turn) would
-                    # persist the rebuilt object's stale head over their
-                    # in-memory update.
-                    disk_meta = git.read_meta()
-                    disk_hist = git.list_history()
-                    # A concurrent reader can land here between
-                    # create_session's set_meta() and its _persist_meta()
-                    # — the repo exists (some other write initialized it)
-                    # but meta.json is still empty/absent on disk. Blindly
-                    # rebuilding then resets the index and throws away the
-                    # just-populated in-memory meta (source/channel/peer_*
-                    # silently vanished). Disk with nothing in it is never
-                    # a more truthful view than populated memory, so skip
-                    # the rebuild instead of destroying state.
-                    if not disk_meta and not disk_hist and (idx.meta or idx.head_id):
-                        pass
-                    else:
-                        idx.rebuild_from_paths(
-                            disk_hist,
-                            disk_meta,
-                            _node_conv_predecessor,
-                            _node_caller,
-                        )
-                        git.mark_synced()
+                with idx._persist_lock:
+                    if git.exists() and git.stale():
+                        # Rebuild IN PLACE (reset + repopulate the SAME index
+                        # object): callers across a multi-step operation hold
+                        # (git, idx) from an earlier _open — swapping the
+                        # cached object would orphan their reference, and a
+                        # later step that re-opens (e.g. commit_turn) would
+                        # persist the rebuilt object's stale head over their
+                        # in-memory update.
+                        disk_meta = git.read_meta()
+                        disk_hist = git.list_history()
+                        # A concurrent reader can land here between
+                        # create_session's set_meta() and its _persist_meta()
+                        # — the repo exists (some other write initialized it)
+                        # but meta.json is still empty/absent on disk. Blindly
+                        # rebuilding then resets the index and throws away the
+                        # just-populated in-memory meta (source/channel/peer_*
+                        # silently vanished). Disk with nothing in it is never
+                        # a more truthful view than populated memory, so skip
+                        # the rebuild instead of destroying state.
+                        if not disk_meta and not disk_hist and (idx.meta or idx.head_id):
+                            pass
+                        else:
+                            idx.rebuild_from_paths(
+                                disk_hist,
+                                disk_meta,
+                                _node_conv_predecessor,
+                                _node_caller,
+                            )
+                            git.mark_synced()
                 return cached
             sdir = self._session_dir(session_id)
             if not sdir.exists() and not create_if_missing:
