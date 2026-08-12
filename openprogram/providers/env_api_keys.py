@@ -218,13 +218,7 @@ def resolve_api_key_with_auth_store(provider_id: str) -> str | None:
             return tok
     except Exception:
         pass
-    # Known providers delegate to the canonical resolver (env vars; all
-    # special cases + the historical-name reconciliation live there now —
-    # see docs/design/providers/auth/api-key-resolution-unification.md).
-    if env_vars_for(provider_id):
-        key = resolve_api_key(provider_id)
-        if key:
-            return key
-    # Community / models.dev providers: their saved key lives in the
-    # AuthStore too (checked above) — nothing else to consult.
+    # Env vars and every special case already ran inside
+    # resolve_api_key_sync (its layer 3 delegates back to
+    # resolve_provider_key) — nothing else to consult.
     return None

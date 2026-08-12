@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 
 # WELCOME_STATS_SESSION_LIMIT lives on the server module — we read it lazily.
 
