@@ -26,7 +26,7 @@ git diff --check
 | Evidence | Result |
 |---|---|
 | Base | `ccce0500` |
-| Design | `95581e0a` (`docs(providers): define record replay security hardening`) |
+| Design | `a499fc86` (`docs(providers): define record replay security hardening`) |
 | RED | 3 failed, 1 passed: compound secret fields, existing managed directory mode, and external replay chmod behavior violated the contract |
 | GREEN | 60 passed across record/replay, CLI, registry, and adversarial permission/symlink cases |
 | Specification review | PASS at `6172411b`; managed/external provenance, redaction, strict replay, and compatibility verified |
