@@ -330,6 +330,29 @@ def test_mid_restore_failure_rolls_back_every_published_target(
     }
 
 
+def test_process_abort_rolls_back_and_propagates_original_base_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openprogram._cli_cmds import backup as backup_cmd
+
+    state = _state(tmp_path)
+    target = state / "config.json"
+    target.write_text('{"generation": "old"}')
+    target.chmod(0o600)
+    archive = _archive(tmp_path, {"config.json": b'{"generation": "new"}'})
+
+    def abort(*_args, **_kwargs):
+        raise KeyboardInterrupt("abort")
+
+    monkeypatch.setattr(backup_cmd, "_publish_restored", abort)
+
+    with pytest.raises(KeyboardInterrupt, match="abort"):
+        backup_cmd.restore_archive(archive, state)
+
+    assert json.loads(target.read_text()) == {"generation": "old"}
+    assert not backup_cmd.restore_journal_path(state).exists()
+
+
 def test_colliding_legacy_backup_names_rollback_distinct_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
