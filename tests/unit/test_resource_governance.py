@@ -235,6 +235,30 @@ def test_resource_view_includes_configured_effective_and_source_limits(tmp_path)
     }
 
 
+def test_admitted_task_resource_view_keeps_its_limit_snapshot(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    admitted = resolve_resource_limits(
+        ResourceLimits(max_total_tokens=100),
+        session=ResourceLimits(max_total_tokens=80),
+        scheduler_capacity=4,
+    )
+    lowered = resolve_resource_limits(
+        ResourceLimits(max_total_tokens=100),
+        session=ResourceLimits(max_total_tokens=20),
+        scheduler_capacity=4,
+    )
+    governor = ResourceGovernor(
+        ledger, limit_resolver=lambda _sid, _task: admitted,
+    )
+    task = Task(id="snapshotted", parent_session_id="s1", prompt="p", agent_id="a")
+
+    assert governor.admit_task(task, persist=lambda _task: None).accepted
+
+    view = build_task_resource_view(task, ledger=ledger, resolved=lowered)
+
+    assert view.limits == admitted.to_dict()
+
+
 def test_task_budget_limit_excludes_shared_limits_unless_task_has_local_ceiling(
     tmp_path,
 ) -> None:

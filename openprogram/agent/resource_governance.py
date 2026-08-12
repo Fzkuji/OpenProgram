@@ -701,6 +701,7 @@ class ResourceGovernor:
                 task.admission_id = existing["admission_id"]
                 task.budget_scope_id = existing["budget_scope_id"]
                 task.effective_limits = effective
+                task.resolved_limits_snapshot = resolved.to_dict()
                 return AdmissionDecision(
                     accepted=True,
                     task_id=task.id,
@@ -849,6 +850,7 @@ class ResourceGovernor:
         task.admission_id = admission_id
         task.budget_scope_id = scope_id
         task.effective_limits = effective
+        task.resolved_limits_snapshot = resolved.to_dict()
         task.status = task.status.__class__.QUEUED
         task.queued_at = task.queued_at or time.time()
         try:
@@ -2172,6 +2174,17 @@ def build_task_resource_view(
     ledger: UsageLedger,
     resolved: ResolvedResourceLimits,
 ) -> TaskResourceView:
+    snapshot = task.resolved_limits_snapshot
+    if snapshot and isinstance(snapshot.get("limits"), dict):
+        resolved = ResolvedResourceLimits(
+            scheduler_capacity=int(
+                snapshot.get("scheduler_capacity", resolved.scheduler_capacity),
+            ),
+            fields={
+                name: ResolvedLimit(**value)
+                for name, value in snapshot["limits"].items()
+            },
+        )
     usage = ledger.task_resource_usage(task.id)
     counts = ledger.resource_counts(task.parent_session_id, task.id)
     limits = resolved.effective_limits()

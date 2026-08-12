@@ -72,7 +72,7 @@ export interface TaskResourceView {
     shared_remaining: {
       tokens: number | null;
       cost_usd: string | null;
-      cost_unknown_events: number;
+      cost_unknown_events: number | null;
     };
   };
 }

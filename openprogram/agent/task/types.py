@@ -192,6 +192,7 @@ class Task:
     admission_id: Optional[str] = None
     budget_scope_id: Optional[str] = None
     effective_limits: Optional[dict[str, Any]] = None
+    resolved_limits_snapshot: Optional[dict[str, Any]] = None
     reason_code: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:

@@ -107,7 +107,7 @@ export interface TaskResourceView {
       actual: string | null;
       reserved: string | null;
       limit: string | null;
-      known: boolean;
+      known: boolean | null;
       unknown_events: number | null;
     };
     runtime_seconds: { used: number | null; limit: number | null };
