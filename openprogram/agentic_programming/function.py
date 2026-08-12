@@ -571,6 +571,16 @@ def _restore_system(saved):
             pass
 
 
+def _close_owned_runtime(bound_args: dict, owns_runtime: bool) -> None:
+    if not owns_runtime:
+        return
+    for pname in _RUNTIME_PARAMS:
+        rt = bound_args.get(pname)
+        if rt is not None and hasattr(rt, "close"):
+            rt.close()
+            return
+
+
 class agentic_function:
     """
     Class decorator for functions whose body spawns an inner agent loop.
@@ -1048,10 +1058,7 @@ class agentic_function:
             except BaseException:
                 if runtime_token is not None:
                     _current_runtime.reset(runtime_token)
-                if owns_runtime:
-                    rt = bound.arguments.get("runtime")
-                    if rt and hasattr(rt, "close"):
-                        rt.close()
+                _close_owned_runtime(bound.arguments, owns_runtime)
                 raise
             # Stamp ``_call_id`` so anything further down the call
             # tree (rt.exec → ModelCall.caller, ask_user → user
@@ -1125,10 +1132,7 @@ class agentic_function:
                         _usage_cur.reset(_usage_token)
                     if runtime_token is not None:
                         _current_runtime.reset(runtime_token)
-                    if owns_runtime:
-                        rt = bound.arguments.get("runtime")
-                        if rt and hasattr(rt, 'close'):
-                            rt.close()
+                    _close_owned_runtime(bound.arguments, owns_runtime)
 
         wrapper._is_agentic = True
         return wrapper
@@ -1175,10 +1179,7 @@ class agentic_function:
             except BaseException:
                 if runtime_token is not None:
                     _current_runtime.reset(runtime_token)
-                if owns_runtime:
-                    rt = bound.arguments.get("runtime")
-                    if rt and hasattr(rt, "close"):
-                        rt.close()
+                _close_owned_runtime(bound.arguments, owns_runtime)
                 raise
             _call_token = _call_id.set(_pending_call_id)
             # Apply the decorator's system= onto the injected runtime(s)
@@ -1255,10 +1256,7 @@ class agentic_function:
                         _usage_cur.reset(_usage_token)
                     if runtime_token is not None:
                         _current_runtime.reset(runtime_token)
-                    if owns_runtime:
-                        rt = bound.arguments.get("runtime")
-                        if rt and hasattr(rt, 'close'):
-                            rt.close()
+                    _close_owned_runtime(bound.arguments, owns_runtime)
 
         wrapper._is_agentic = True
         return wrapper

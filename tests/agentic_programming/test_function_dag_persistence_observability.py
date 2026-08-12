@@ -173,3 +173,28 @@ def test_exit_base_exception_still_restores_traced_call_id() -> None:
     with pytest.raises(KeyboardInterrupt):
         _run_with_store(_ExitAbortStore(), work)
     assert _call_id.get() is None
+
+
+@pytest.mark.parametrize("parameter", ["runtime", "exec_runtime", "review_runtime"])
+def test_owned_runtime_alias_is_closed_after_entry_abort(
+    parameter: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CloseCounter:
+        def __init__(self) -> None:
+            self.close_calls = 0
+
+        def close(self) -> None:
+            self.close_calls += 1
+
+    owned = CloseCounter()
+    monkeypatch.setattr("openprogram.providers.registry.create_runtime", lambda: owned)
+    namespace: dict = {}
+    exec(f"def work({parameter}=None):\n    return 'unreachable'", namespace)
+    work = agentic_function(as_tool=False)(namespace["work"])
+
+    with pytest.raises(KeyboardInterrupt):
+        _run_with_store(_AbortStore(), work)
+
+    assert owned.close_calls == 1
+    assert _current_runtime.get() is None
