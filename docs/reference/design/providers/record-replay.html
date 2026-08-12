@@ -376,7 +376,7 @@ replay:
   <h3>文件系统</h3>
   <ul>
     <li>managed root 为 <code>get_state_dir() / "recordings"</code>；增加 <code>get_recordings_dir()</code>，创建后收紧到 0700。</li>
-    <li>录制目录无论新建还是已存在，在 POSIX 上均收紧到 0700；数据文件在第一次写入时以 0600 创建。record 写路径每次打开已有文件后调用 <code>openprogram._compat.restrict_to_user(path)</code>，修复历史宽权限；随后以 <code>fstat</code> 确认 mode 为 0600，无法保证时拒绝录制。</li>
+    <li>managed recordings root 无论新建还是已存在，在 POSIX 上均收紧到 0700；库级显式外部 <code>RecordingSink(path)</code> 不修改父目录权限，也不跟随父目录 symlink 执行 chmod。数据文件在第一次写入时以 0600 创建。record 写路径每次打开已有文件后调用 <code>openprogram._compat.restrict_to_user(path)</code>，修复历史宽权限；随后以 <code>fstat</code> 确认 mode 为 0600，无法保证时拒绝录制。</li>
     <li>replay 读取区分 managed 与显式外部路径：managed 文件可收紧为 0600；显式外部文件只验证当前为普通文件且 mode 已是 0600，不主动 <code>chmod</code>。外部文件权限过宽时明确拒绝，由文件所有者处理。</li>
     <li>锁文件同样以 0600 创建。list/show/delete/prune 使用 <code>lstat</code> 拒绝 symlink，并在 resolve 后验证 managed root 包含关系。</li>
     <li>record 模式使用 <code>O_NOFOLLOW</code>（平台支持时）和 <code>O_EXCL</code> 初始化新文件；不得截断已有录制。名称冲突直接失败。没有 <code>O_NOFOLLOW</code> 时，在持有 managed root 的目录 fd 下按 basename 打开，并用 <code>lstat</code>/<code>fstat</code> 的设备号、inode 与普通文件类型复核打开结果。</li>
@@ -386,7 +386,7 @@ replay:
   <h3>脱敏合同</h3>
   <ul>
     <li><code>remove_secret_values()</code> 在任何序列化之前执行，record 模式不存在关闭选项。</li>
-    <li>保留当前大小写不敏感的敏感字段集合，并覆盖嵌套 dict/list。字段名按 <code>-</code>/<code>_</code> 分段；以 <code>token</code>、<code>key</code>、<code>secret</code>、<code>password</code> 结尾的复合 header/option 名同样整体脱敏，例如 <code>X-Session-Token</code>、<code>service_api_key</code>。不匹配 <code>token_count</code> 等非凭据计数字段。</li>
+    <li>保留当前大小写不敏感的敏感字段集合，并覆盖嵌套 dict/list。字段名识别 <code>-</code>/<code>_</code> 与 camelCase 分段；以 <code>token</code>、<code>key</code>、<code>secret</code>、<code>password</code> 结尾的复合 header/option 名同样整体脱敏，例如 <code>X-Session-Token</code>、<code>service_api_key</code>、<code>refreshToken</code>、<code>clientSecret</code>。不匹配 <code>token_count</code>/<code>tokenCount</code> 等非凭据计数字段。</li>
     <li>value pattern 覆盖 Authorization 常见 scheme（Bearer、Basic、Bot、token、Key）、URL userinfo，以及 query 中当前已实现的 <code>api_key</code>/<code>apikey</code>/<code>access_token</code>/<code>token</code>；新增 query key 必须同时提交实现和测试，不能只写入设计状态。</li>
     <li>不采用通用“高熵字符串”规则：它会不稳定地改写正常 prompt，导致回放 mismatch。新增 provider 凭证形态必须以确定 pattern 和回归测试加入。</li>
     <li>record 与 replay 必须使用同一个 <code>redaction_version</code> 分派。当前 v1 文件没有该字段时按 redaction v1 处理。</li>

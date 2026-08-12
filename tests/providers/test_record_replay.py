@@ -252,7 +252,12 @@ def test_remove_secret_values_covers_compound_secret_field_suffixes() -> None:
         "service_api_key": "opaque-key-value",
         "client-secret": "opaque-secret-value",
         "database_password": "opaque-password-value",
+        "refreshToken": "opaque-refresh-value",
+        "accessToken": "opaque-access-value",
+        "clientSecret": "opaque-client-value",
+        "privateKey": "opaque-private-value",
         "token_count": 17,
+        "tokenCount": 18,
         "monkey": "ordinary-value",
     })
 
@@ -261,7 +266,12 @@ def test_remove_secret_values_covers_compound_secret_field_suffixes() -> None:
         "service_api_key": PLACEHOLDER,
         "client-secret": PLACEHOLDER,
         "database_password": PLACEHOLDER,
+        "refreshToken": PLACEHOLDER,
+        "accessToken": PLACEHOLDER,
+        "clientSecret": PLACEHOLDER,
+        "privateKey": PLACEHOLDER,
         "token_count": 17,
+        "tokenCount": 18,
         "monkey": "ordinary-value",
     }
 
@@ -628,8 +638,22 @@ def test_recording_file_and_parent_are_private(tmp_path: Path) -> None:
     assert stat.S_IMODE(recording_file.stat().st_mode) == 0o600
 
 
-def test_recording_tightens_preexisting_parent_directory(tmp_path: Path) -> None:
+def test_recording_tightens_preexisting_parent_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     parent = tmp_path / "recordings"
+    parent.mkdir(mode=0o755)
+    parent.chmod(0o755)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    RecordingProvider(
+        _scripted_with((ScriptedText("done"),)), parent / "private.jsonl"
+    )
+
+    assert stat.S_IMODE(parent.stat().st_mode) == 0o700
+
+
+def test_recording_preserves_external_parent_permissions(tmp_path: Path) -> None:
+    parent = tmp_path / "shared-project"
     parent.mkdir(mode=0o755)
     parent.chmod(0o755)
 
@@ -637,7 +661,21 @@ def test_recording_tightens_preexisting_parent_directory(tmp_path: Path) -> None
         _scripted_with((ScriptedText("done"),)), parent / "private.jsonl"
     )
 
-    assert stat.S_IMODE(parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(parent.stat().st_mode) == 0o755
+
+
+def test_recording_does_not_chmod_external_parent_symlink(tmp_path: Path) -> None:
+    target = tmp_path / "shared-target"
+    target.mkdir(mode=0o755)
+    target.chmod(0o755)
+    link = tmp_path / "shared-link"
+    link.symlink_to(target, target_is_directory=True)
+
+    RecordingProvider(
+        _scripted_with((ScriptedText("done"),)), link / "private.jsonl"
+    )
+
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
 
 
 def test_external_replay_rejects_wide_permissions_without_chmod(tmp_path: Path) -> None:
