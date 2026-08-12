@@ -67,6 +67,7 @@ SECRET_FIELD_NAMES = frozenset({
     "password",
     "session_key",
 })
+_SECRET_FIELD_SUFFIX = re.compile(r"(?:^|[-_])(?:token|key|secret|password)$", re.IGNORECASE)
 
 # Secret-looking values that survive field-name matching, e.g. a bearer token
 # pasted into a free-form string field or a URL query parameter.
@@ -88,7 +89,7 @@ def remove_secret_values(value: Any) -> Any:
     """
     if isinstance(value, dict):
         return {
-            key: PLACEHOLDER if str(key).lower() in SECRET_FIELD_NAMES
+            key: PLACEHOLDER if _is_secret_field_name(key)
             else remove_secret_values(item)
             for key, item in value.items()
         }
@@ -109,6 +110,11 @@ def remove_secret_values(value: Any) -> Any:
             )
         return cleaned
     return value
+
+
+def _is_secret_field_name(value: Any) -> bool:
+    name = str(value).lower()
+    return name in SECRET_FIELD_NAMES or _SECRET_FIELD_SUFFIX.search(name) is not None
 
 
 def _dump(model_or_none: Any) -> Any:
@@ -230,9 +236,8 @@ class RecordingSink:
         self.path = Path(recording_path)
         self.lock_path = self.path.with_name(self.path.name + ".lock")
         self._thread_lock = threading.RLock()
-        parent_existed = self.path.parent.exists()
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if not parent_existed:
+        if sys.platform != "win32":
             os.chmod(self.path.parent, 0o700)
         with self._locked():
             self._ensure_header_locked()
@@ -350,7 +355,8 @@ def restrict_recording_file(path: str | Path) -> None:
     recording_path = Path(path)
     if recording_path.is_symlink():
         raise PermissionError(f"recording path must not be a symlink: {recording_path}")
-    restrict_to_user(recording_path)
+    if _is_managed_recording_path(recording_path):
+        restrict_to_user(recording_path)
     flags = os.O_RDONLY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -359,6 +365,17 @@ def restrict_recording_file(path: str | Path) -> None:
         _verify_private_regular_file(fd, recording_path)
     finally:
         os.close(fd)
+
+
+def _is_managed_recording_path(path: Path) -> bool:
+    from openprogram.paths import get_state_dir
+
+    managed_root = (get_state_dir() / "recordings").resolve()
+    try:
+        path.resolve().relative_to(managed_root)
+    except ValueError:
+        return False
+    return True
 
 
 def resolve_recording_selector(selector: str) -> Path:
