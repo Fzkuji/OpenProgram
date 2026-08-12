@@ -23,10 +23,10 @@ git diff --check
 | Evidence | Result |
 |---|---|
 | Base | `0402ce3f` |
-| Design | pending |
-| RED | pending |
-| GREEN | pending |
-| Specification review | pending |
-| Quality review | pending |
-| Full gate | pending |
-| Final implementation | pending |
+| Design | `4df4ca98` (`docs(session): define merged head atomicity`) |
+| RED | Concurrent merge lost one head; stale-writer-last and cached stale-rebuild probes reproduced disk/reload loss |
+| GREEN | 36 passed; deterministic persistence interleavings preserve memory and fresh reload union |
+| Specification review | PASS at `6a630607`; lock order, atomic union, snapshot timing, and lock-free state I/O verified |
+| Quality review | PASS at `6a630607`; 30 rounds of 16 concurrent writers plus reader/deadlock/reload checks passed |
+| Full gate | 36 passed; Ruff passed; docs 472 pages; 0 broken links; diff check passed |
+| Final implementation | `1619f01c`, `74a49836`, `6a630607` |
