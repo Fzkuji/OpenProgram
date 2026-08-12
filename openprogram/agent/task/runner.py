@@ -13,8 +13,8 @@ BashTool / file IO that dominates wall-clock time of a sub-agent.
 
 Cancel signalling reuses the dispatcher contract:
 
-  * ``run_control.register_cancel_event(session_id, ev)`` exposes the
-    cancel event so the existing pre-invocation hook fires.
+  * ``run_control.claim_cancel_event(session_id, ev)`` atomically
+    admits the session and exposes the cancel event to invocation hooks.
   * ``process_user_turn(cancel_event=ev)`` bridges the event into
     asyncio for the LLM-stream side.
   * ``kill_active_runtime(session_id)`` terminates any live BashTool
@@ -796,12 +796,14 @@ class TaskRunner:
         while not self._shutdown_event.is_set():
             self._dispatch_wake.wait(0.5)
             self._dispatch_wake.clear()
+            blocked_sessions: set[str] = set()
             while not self._shutdown_event.is_set():
                 if not self._executor_slots.acquire(blocking=False):
                     break
                 try:
                     claim = self._governor.claim_next(
                         owner_instance_id=self._instance_id,
+                        excluded_sessions=blocked_sessions,
                     )
                 except Exception:
                     self._executor_slots.release()
@@ -829,18 +831,31 @@ class TaskRunner:
                     else:
                         cancel_ev = entry["event"]
                         done_ev = self._done_events[claim.task_id]
+                    ctx = entry["context"]
+                from openprogram.agent.run_control import claim_cancel_event
+                if not claim_cancel_event(claim.session_id, cancel_ev):
+                    self._governor.requeue_task(
+                        claim.task_id,
+                        owner_instance_id=self._instance_id,
+                        lease_generation=claim.lease_generation,
+                    )
+                    blocked_sessions.add(claim.session_id)
+                    self._executor_slots.release()
+                    continue
+                with self._lock:
                     entry["started_monotonic"] = claimed_monotonic
                     entry["last_activity_monotonic"] = claimed_monotonic
                     entry["time_limits"] = time_limits
                     entry["lease_generation"] = claim.lease_generation
                     entry["budget_cancelled"] = False
-                    ctx = entry["context"]
                 try:
                     future: Future = self._pool.submit(
-                        ctx.run, self._run_one, claim.task_id, cancel_ev, done_ev,
-                        claim.lease_generation,
+                        ctx.run, self._run_one, claim.task_id, claim.session_id,
+                        cancel_ev, done_ev, claim.lease_generation,
                     )
                 except Exception:
+                    from openprogram.agent.run_control import unregister_cancel_event
+                    unregister_cancel_event(claim.session_id, cancel_ev)
                     self._executor_slots.release()
                     self._governor.release_task(
                         claim.task_id, "error.dispatch_failed",
@@ -856,8 +871,11 @@ class TaskRunner:
                     if self._tasks.get(claim.task_id) is entry:
                         entry["future"] = future
 
-    def _run_one(self, task_id: str, cancel_ev: threading.Event,
-                 done_ev: threading.Event, lease_generation: int) -> None:
+    def _run_one(
+        self, task_id: str, claimed_session_id: str,
+        cancel_ev: threading.Event, done_ev: threading.Event,
+        lease_generation: int,
+    ) -> None:
         """Worker thread entry point.
 
         Wraps :func:`run_agent_turn` so the same code that handles the
@@ -875,6 +893,8 @@ class TaskRunner:
         # point forward.
         task = self._lookup_or_load(task_id)
         if task is None:
+            from openprogram.agent.run_control import unregister_cancel_event
+            unregister_cancel_event(claimed_session_id, cancel_ev)
             self._governor.release_task(
                 task_id, "error.task_missing",
                 owner_instance_id=self._instance_id,
@@ -892,7 +912,6 @@ class TaskRunner:
         # Bind the session id ContextVar for the cancel hook. Same
         # contract _execute_in_context honours in the webui worker.
         from openprogram.agent.run_control import (
-            register_cancel_event,
             unregister_cancel_event,
             set_current_session_id,
             reset_current_session_id,
@@ -902,10 +921,6 @@ class TaskRunner:
         # record parent_task_id (cascading cancel walks that chain).
         _task_id_token = _current_task_id.set(task_id)
         _runner_token = _current_task_runner.set(self)
-        # Opens this turn's token; the previous turn's is retired by the
-        # same call, so a stop fired against it cannot reach us.
-        register_cancel_event(session_id, cancel_ev)
-
         # If this task is bound to an agent worktree, bind the
         # _current_worktree_path ContextVar so bash / edit / write /
         # read use it as default cwd. Reset is handled in the finally

@@ -557,14 +557,22 @@ class ResourceGovernor:
             ).rowcount
             return changed == 1
 
-    def claim_next(self, *, owner_instance_id: str) -> DispatchClaim | None:
+    def claim_next(
+        self,
+        *,
+        owner_instance_id: str,
+        excluded_sessions: set[str] | None = None,
+    ) -> DispatchClaim | None:
         """Claim the globally oldest queued task whose session is eligible."""
+        excluded_sessions = excluded_sessions or set()
         with self.ledger.immediate() as conn:
             queued = conn.execute(
                 """SELECT task_id, session_id FROM task_admissions
                    WHERE state = 'queued' ORDER BY admitted_seq"""
             ).fetchall()
             for candidate in queued:
+                if candidate["session_id"] in excluded_sessions:
+                    continue
                 row, resolved = self._resolved_for_admission(
                     conn, candidate["task_id"],
                 )
@@ -613,6 +621,21 @@ class ResourceGovernor:
                      AND lease_generation = ?
                      AND state IN ('live','stopping')""",
                 (now + 30.0, task_id, owner_instance_id, lease_generation),
+            ).rowcount == 1
+
+    def requeue_task(
+        self, task_id: str, *, owner_instance_id: str, lease_generation: int,
+    ) -> bool:
+        """Return a claimed task to queued when another turn owns its session."""
+        with self.ledger.immediate() as conn:
+            return conn.execute(
+                """UPDATE task_admissions
+                   SET state = 'queued', owner_instance_id = NULL,
+                       lease_expires_at = NULL, started_at = NULL,
+                       last_activity_at = NULL
+                   WHERE task_id = ? AND state = 'live'
+                     AND owner_instance_id = ? AND lease_generation = ?""",
+                (task_id, owner_instance_id, lease_generation),
             ).rowcount == 1
 
     def request_stop(self, task_id: str, reason_code: str) -> None:
