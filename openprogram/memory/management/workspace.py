@@ -85,9 +85,9 @@ class MemoryWorkspace(
         shutil.rmtree(self.stage_dir, ignore_errors=True)
 
     def _refresh_stage(self) -> None:
+        self._stage_usable = False
         self._discard_stage()
         self.stage_dir.mkdir()
-        self._stage_usable = True
         for name in ("topics", "timeline", "sources"):
             source = self.memory_dir / name
             if source.exists():
@@ -116,6 +116,7 @@ class MemoryWorkspace(
             # pending or out-of-batch evidence and attributing that content to
             # one of the selected references.
             shutil.rmtree(self.stage_dir / "sources", ignore_errors=True)
+        self._stage_usable = True
 
     def _restore_staged_sources(self) -> None:
         """Restore the committed archive after a restricted agent turn."""

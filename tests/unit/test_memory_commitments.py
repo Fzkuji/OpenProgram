@@ -548,6 +548,36 @@ def test_writer_rollback_failure_makes_partial_stage_uncommittable(
     assert committed_path.read_bytes() == committed_before
 
 
+def test_failed_stage_refresh_stays_uncommittable(tmp_path, monkeypatch):
+    import shutil
+
+    from openprogram.memory.management import MemoryWorkspace
+
+    _source(tmp_path)
+    (tmp_path / "commitments.jsonl").write_text("")
+    workspace = MemoryWorkspace(tmp_path)
+    baseline = workspace.baseline()
+    real_copy2 = shutil.copy2
+    calls = 0
+
+    def fail_first_copy(source, target):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("copy failed")
+        return real_copy2(source, target)
+
+    monkeypatch.setattr(shutil, "copy2", fail_first_copy)
+    with pytest.raises(OSError, match="copy failed"):
+        workspace._refresh_stage()
+    with pytest.raises(RuntimeError, match="stage is unavailable"):
+        workspace.commit_edits(*baseline)
+
+    workspace._refresh_stage()
+    workspace.commit_edits(*baseline)
+    workspace.close()
+
+
 def test_writer_tool_rejects_source_outside_selected_batch(tmp_path):
     from openprogram.memory.management import MemoryWorkspace
     from openprogram.memory.management.tools import management_tools
