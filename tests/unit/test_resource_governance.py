@@ -258,6 +258,59 @@ def test_stopping_keeps_live_capacity_until_worker_release(tmp_path) -> None:
     assert governor.try_start("t_2", owner_instance_id="worker") is True
 
 
+def test_claim_next_skips_older_task_from_saturated_session(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_live_per_session=1), scheduler_capacity=2,
+    )
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _task: resolved)
+    for task_id, session_id in (
+        ("s1_first", "s1"), ("s1_second", "s1"), ("s2_first", "s2"),
+    ):
+        governor.admit_task(
+            Task(
+                id=task_id, parent_session_id=session_id,
+                prompt=task_id, agent_id="a",
+            ),
+            persist=lambda _task: None,
+        )
+
+    first = governor.claim_next(owner_instance_id="worker")
+    second = governor.claim_next(owner_instance_id="worker")
+
+    assert (first.task_id, first.session_id) == ("s1_first", "s1")
+    assert (second.task_id, second.session_id) == ("s2_first", "s2")
+    states = {
+        row["task_id"]: row["state"]
+        for row in ledger.connection().execute(
+            "SELECT task_id, state FROM task_admissions"
+        )
+    }
+    assert states == {
+        "s1_first": "live", "s1_second": "queued", "s2_first": "live",
+    }
+
+
+def test_claim_next_cannot_be_claimed_twice_across_governors(tmp_path) -> None:
+    ledger_path = tmp_path / "usage.db"
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    first_governor = ResourceGovernor(
+        UsageLedger(ledger_path), limit_resolver=lambda _sid, _task: resolved,
+    )
+    second_governor = ResourceGovernor(
+        UsageLedger(ledger_path), limit_resolver=lambda _sid, _task: resolved,
+    )
+    first_governor.admit_task(
+        Task(id="only", parent_session_id="s1", prompt="only", agent_id="a"),
+        persist=lambda _task: None,
+    )
+
+    claim = first_governor.claim_next(owner_instance_id="worker_1")
+
+    assert claim.task_id == "only"
+    assert second_governor.claim_next(owner_instance_id="worker_2") is None
+
+
 def test_releasing_queued_task_keeps_cumulative_admission(tmp_path) -> None:
     ledger = UsageLedger(tmp_path / "usage.db")
     resolved = resolve_resource_limits(

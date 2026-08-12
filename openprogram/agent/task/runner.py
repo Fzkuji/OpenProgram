@@ -212,6 +212,15 @@ class TaskRunner:
         # HEAD; without this they read the same HEAD and write siblings.
         # See ``_dispatch_followup``.
         self._followup_locks: dict[str, threading.Lock] = {}
+        self._executor_slots = threading.BoundedSemaphore(max_workers)
+        self._dispatch_wake = threading.Event()
+        self._shutdown_event = threading.Event()
+        self._dispatcher_thread = threading.Thread(
+            target=self._dispatch_loop,
+            daemon=True,
+            name="op-task-dispatcher",
+        )
+        self._dispatcher_thread.start()
 
     def _followup_lock(self, session_id: str) -> threading.Lock:
         """The per-session follow-up lock, created on first use."""
@@ -355,18 +364,12 @@ class TaskRunner:
             "event": cancel_ev,
             "future": None,
             "session_id": session_id,
+            "context": ctx,
         }
         with self._lock:
             self._tasks[task.id] = entry
             self._done_events[task.id] = done_ev
-        future: Future = self._pool.submit(
-            ctx.run, self._run_one, task.id, cancel_ev, done_ev,
-        )
-        with self._lock:
-            # The worker may already have finished and popped the entry;
-            # only attach the future if it's still the live one.
-            if self._tasks.get(task.id) is entry:
-                entry["future"] = future
+        self._dispatch_wake.set()
 
         return task.id
 
@@ -491,6 +494,29 @@ class TaskRunner:
                     _broadcast_task_status(updated)
                     self._wake_done(task_id)
                 return updated
+        cur_task = _store_load(session_id, task_id)
+        if cur_task is None:
+            return None
+        if cur_task.status in (TaskStatus.PENDING, TaskStatus.QUEUED):
+            if info is not None:
+                info["event"].set()
+            self._governor.request_stop(task_id, reason_code)
+            try:
+                updated = _store_update_status(
+                    session_id, task_id, TaskStatus.CANCELLED,
+                    cancel_requested_at=time.time(),
+                    error=reason or "cancelled before pickup",
+                    reason_code=reason_code,
+                )
+            except ValueError:
+                updated = _store_load(session_id, task_id)
+            if updated is not None:
+                _broadcast_task_status(updated)
+                self._wake_done(task_id)
+                self._update_attach_card(updated)
+                _broadcast_session_reload(session_id, reason="task_cancelled")
+            self._dispatch_wake.set()
+            return updated
         # Bridge to existing session-level cancel infra so the LLM
         # stream + bash subprocess + agent_loop pre-invocation hook
         # all see the signal.
@@ -509,25 +535,9 @@ class TaskRunner:
         # Status-side: if still pending/queued, flip terminal now.
         # If running, leave terminal flip to the worker (or the
         # watchdog).
-        cur_task = _store_load(session_id, task_id)
-        if cur_task is None:
-            return None
         self._governor.request_stop(task_id, reason_code)
         try:
-            if cur_task.status in (TaskStatus.PENDING, TaskStatus.QUEUED):
-                updated = _store_update_status(
-                    session_id, task_id, TaskStatus.CANCELLED,
-                    cancel_requested_at=time.time(),
-                    error=reason or "cancelled before pickup",
-                    reason_code=reason_code,
-                )
-                if updated is not None:
-                    _broadcast_task_status(updated)
-                    self._wake_done(task_id)
-                    self._update_attach_card(updated)
-                    _broadcast_session_reload(session_id, reason="task_cancelled")
-                return updated
-            elif cur_task.status == TaskStatus.RUNNING:
+            if cur_task.status == TaskStatus.RUNNING:
                 # Stamp request time but stay in running. Worker will
                 # detect cancel and self-flip.
                 #
@@ -613,6 +623,9 @@ class TaskRunner:
 
     def shutdown(self, wait: bool = True) -> None:
         """Tear down the pool. Used in tests / process shutdown."""
+        self._shutdown_event.set()
+        self._dispatch_wake.set()
+        self._dispatcher_thread.join(timeout=1.0)
         try:
             self._pool.shutdown(wait=wait, cancel_futures=True)
         except TypeError:
@@ -620,6 +633,58 @@ class TaskRunner:
             self._pool.shutdown(wait=wait)
 
     # Worker body
+
+    def _dispatch_loop(self) -> None:
+        """Submit only durably claimed tasks to the executor."""
+        while not self._shutdown_event.is_set():
+            self._dispatch_wake.wait(0.5)
+            self._dispatch_wake.clear()
+            while not self._shutdown_event.is_set():
+                if not self._executor_slots.acquire(blocking=False):
+                    break
+                try:
+                    claim = self._governor.claim_next(
+                        owner_instance_id=self._instance_id,
+                    )
+                except Exception:
+                    self._executor_slots.release()
+                    _log.exception("failed to claim next durable task")
+                    break
+                if claim is None:
+                    self._executor_slots.release()
+                    break
+                with self._lock:
+                    entry = self._tasks.get(claim.task_id)
+                    if entry is None:
+                        cancel_ev = threading.Event()
+                        done_ev = self._done_events.setdefault(
+                            claim.task_id, threading.Event(),
+                        )
+                        entry = {
+                            "event": cancel_ev,
+                            "future": None,
+                            "session_id": claim.session_id,
+                            "context": contextvars.copy_context(),
+                        }
+                        self._tasks[claim.task_id] = entry
+                    else:
+                        cancel_ev = entry["event"]
+                        done_ev = self._done_events[claim.task_id]
+                    ctx = entry["context"]
+                try:
+                    future: Future = self._pool.submit(
+                        ctx.run, self._run_one, claim.task_id, cancel_ev, done_ev,
+                    )
+                except Exception:
+                    self._executor_slots.release()
+                    self._governor.release_task(
+                        claim.task_id, "error.dispatch_failed",
+                    )
+                    _log.exception("failed to submit claimed task %s", claim.task_id)
+                    continue
+                with self._lock:
+                    if self._tasks.get(claim.task_id) is entry:
+                        entry["future"] = future
 
     def _run_one(self, task_id: str, cancel_ev: threading.Event,
                  done_ev: threading.Event) -> None:
@@ -640,20 +705,12 @@ class TaskRunner:
         # point forward.
         task = self._lookup_or_load(task_id)
         if task is None:
+            self._governor.release_task(task_id, "error.task_missing")
+            self._executor_slots.release()
+            self._dispatch_wake.set()
             done_ev.set()
             return
         session_id = task.parent_session_id
-        while not self._governor.try_start(
-            task_id, owner_instance_id=self._instance_id,
-        ):
-            current = _store_load(session_id, task_id)
-            if cancel_ev.is_set() or current is None or is_terminal(current.status):
-                self._governor.release_task(
-                    task_id, current.reason_code if current is not None else None,
-                )
-                done_ev.set()
-                return
-            time.sleep(0.05)
 
         # Bind the session id ContextVar for the cancel hook. Same
         # contract _execute_in_context honours in the webui worker.
@@ -921,6 +978,8 @@ class TaskRunner:
                 # is set by _wake_done above; anyone arriving later sees
                 # the task is terminal and returns without waiting.
                 self._done_events.pop(task_id, None)
+            self._executor_slots.release()
+            self._dispatch_wake.set()
 
     # Internals
 

@@ -261,6 +261,12 @@ class ReservationDecision:
     retryable: bool
 
 
+@dataclass(frozen=True)
+class DispatchClaim:
+    task_id: str
+    session_id: str
+
+
 def _task_fingerprint(task: Task) -> str:
     facts = {
         name: getattr(task, name)
@@ -533,6 +539,46 @@ class ResourceGovernor:
             ).rowcount
             return changed == 1
 
+    def claim_next(self, *, owner_instance_id: str) -> DispatchClaim | None:
+        """Claim the globally oldest queued task whose session is eligible."""
+        with self.ledger.immediate() as conn:
+            queued = conn.execute(
+                """SELECT task_id, session_id FROM task_admissions
+                   WHERE state = 'queued' ORDER BY admitted_seq"""
+            ).fetchall()
+            for candidate in queued:
+                row, resolved = self._resolved_for_admission(
+                    conn, candidate["task_id"],
+                )
+                if row is None or resolved is None:
+                    continue
+                global_live = conn.execute(
+                    """SELECT COUNT(*) FROM task_admissions
+                       WHERE state IN ('live','stopping')"""
+                ).fetchone()[0]
+                if global_live >= resolved.scheduler_capacity:
+                    return None
+                capacity = self._capacity(conn, candidate["session_id"], resolved)
+                live = capacity["session_live"]
+                if live["limit"] is not None and live["used"] >= live["limit"]:
+                    continue
+                now = time.time()
+                changed = conn.execute(
+                    """UPDATE task_admissions
+                       SET state = 'live', owner_instance_id = ?, started_at = ?,
+                           last_activity_at = ?, lease_expires_at = ?
+                       WHERE task_id = ? AND state = 'queued'""",
+                    (
+                        owner_instance_id, now, now, now + 30.0,
+                        candidate["task_id"],
+                    ),
+                ).rowcount
+                if changed == 1:
+                    return DispatchClaim(
+                        candidate["task_id"], candidate["session_id"],
+                    )
+            return None
+
     def renew_lease(self, task_id: str, *, owner_instance_id: str) -> bool:
         with self.ledger.immediate() as conn:
             now = time.time()
@@ -749,7 +795,8 @@ def build_task_resource_view(
 
 __all__ = [
     "ResourceLimitError", "ResourceLimits", "ResolvedResourceLimits",
-    "AdmissionDecision", "AdmissionRejected", "ReservationDecision",
+    "AdmissionDecision", "AdmissionRejected", "DispatchClaim",
+    "ReservationDecision",
     "ResourceGovernor", "TaskResourceView",
     "build_task_resource_view", "global_resource_limits",
     "resolve_resource_limits", "save_session_resource_limits",

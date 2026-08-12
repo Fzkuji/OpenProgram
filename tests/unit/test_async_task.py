@@ -412,6 +412,87 @@ def test_runner_pool_backpressure(store_fixture, fake_worker, monkeypatch):
         assert final.status in (TaskStatus.COMPLETED, TaskStatus.ERRORED)
 
 
+def test_runner_durable_dispatcher_skips_saturated_session(
+    store_fixture, fake_worker, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    store_fixture.create_session("p2", "main", title="parent2")
+    from openprogram.agent.resource_governance import (
+        ResourceGovernor, ResourceLimits, resolve_resource_limits,
+    )
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.usage.ledger import UsageLedger
+
+    resolved = resolve_resource_limits(
+        ResourceLimits(max_live_per_session=1), scheduler_capacity=2,
+    )
+    runner = TaskRunner(
+        max_workers=2,
+        governor=ResourceGovernor(
+            UsageLedger(tmp_path / "governance.db"),
+            limit_resolver=lambda _sid, _task: resolved,
+        ),
+    )
+    try:
+        runner.spawn_task(session_id="p1", prompt="p1 first", agent_id="main")
+        runner.spawn_task(session_id="p1", prompt="p1 second", agent_id="main")
+        runner.spawn_task(session_id="p2", prompt="p2 first", agent_id="main")
+
+        deadline = time.time() + 1.0
+        while len(fake_worker[0]) < 2 and time.time() < deadline:
+            time.sleep(0.01)
+
+        assert {call["session_id"] for call in fake_worker[0]} == {"p1", "p2"}
+    finally:
+        fake_worker[1].set()
+        runner.shutdown()
+
+
+def test_queued_cancel_does_not_cancel_unrelated_session_runtime(
+    store_fixture, fake_worker, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    store_fixture.create_session("p2", "main", title="parent2")
+    cancelled_sessions = []
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.mark_cancelled", cancelled_sessions.append,
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.kill_active_runtime", lambda _sid: None,
+    )
+    from openprogram.agent.resource_governance import (
+        ResourceGovernor, ResourceLimits, resolve_resource_limits,
+    )
+    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.usage.ledger import UsageLedger
+
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    runner = TaskRunner(
+        max_workers=1,
+        governor=ResourceGovernor(
+            UsageLedger(tmp_path / "governance.db"),
+            limit_resolver=lambda _sid, _task: resolved,
+        ),
+    )
+    try:
+        runner.spawn_task(session_id="p1", prompt="live", agent_id="main")
+        queued = runner.spawn_task(
+            session_id="p2", prompt="queued", agent_id="main",
+        )
+        assert fake_worker[3].wait(1.0)
+
+        runner.cancel_task(queued)
+
+        assert cancelled_sessions == []
+    finally:
+        fake_worker[1].set()
+        runner.shutdown()
+
+
 def test_runner_releases_bookkeeping_after_completion(store_fixture, fake_worker,
                                                       monkeypatch):
     """Both _tasks AND _done_events must be emptied once a task ends.
