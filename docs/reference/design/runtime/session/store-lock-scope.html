@@ -1,0 +1,17 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OpenProgram · SessionStore 锁范围</title><style>body{margin:0;background:#101319;color:#e6e9ef;font:15px/1.65 system-ui,-apple-system,"PingFang SC",sans-serif}main{max-width:850px;margin:auto;padding:42px 26px 80px}h1{font-size:29px}h2{margin-top:36px;border-top:1px solid #303641;padding-top:20px}code{background:#191e27;padding:2px 5px;border-radius:4px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #303641;padding:9px;text-align:left;vertical-align:top}th{background:#1a202a}.note{border-left:4px solid #6ba7ff;background:#172131;padding:12px 15px}</style></head><body><main>
+<p>OpenProgram · SessionStore concurrency</p><h1>SessionStore 锁范围</h1>
+<p><code>SessionStore._lock</code> 仅保护会话位置映射和 LRU 缓存结构。当前 <code>_open</code>、位置索引持久化和 <code>delete_session</code> 在该锁内执行目录扫描、原子写、fsync 或递归删除，使一个会话的慢 I/O 阻塞其他会话。</p>
+<h2>并发合同</h2><table><thead><tr><th>资源</th><th>锁</th><th>要求</th></tr></thead><tbody>
+<tr><td><code>_locations</code>、<code>_sessions</code> 和 LRU 顺序</td><td><code>_lock</code></td><td>仅在读取、修改或复制这些内存结构时持有；不允许在锁内进行文件系统 I/O。</td></tr>
+<tr><td>单个 <code>session_id</code> 的首次加载、重建、删除和缓存失效</td><td>每会话 <code>RLock</code></td><td>同一会话串行，不同会话可并行。不创建通用 transaction 层。</td></tr>
+<tr><td><code>locations.json</code> 发布</td><td>专用写锁</td><td>在全局状态锁内更新并复制快照，释放状态锁后串行落盘，防止旧快照后写覆盖新快照。</td></tr>
+<tr><td><code>SessionMemoryIndex</code> 持久化</td><td>现有 <code>_persist_lock</code> → <code>idx._lock</code></td><td>保持现有锁序和 stale rebuild 语义；不在 <code>idx._lock</code> 内进行 I/O。</td></tr>
+</tbody></table>
+<div class="note">本任务只缩小 store 全局锁的 I/O 范围。不改 SessionStore 文件格式、LRU 容量、删除语义、跨进程 stale 检测或 Windows 行为。</div>
+<h2>验收</h2><ul>
+<li>会话 A 的 <code>read_meta/list_history</code> 被阻塞时，会话 B 的缓存读取在有界时间内完成。</li>
+<li>会话 A 的递归删除被阻塞时，会话 B 的读取不等待 A。</li>
+<li>同一会话的并发首次加载只发布一个缓存对象；删除与加载不交错发布已删除对象。</li>
+<li>两个会话并发更新位置映射后，重载的 <code>locations.json</code> 包含两项。</li>
+</ul>
+</main></body></html>
