@@ -102,6 +102,29 @@ def test_restore_rejects_hardlink_member(tmp_path: Path) -> None:
         restore_archive(archive, state)
 
 
+def test_restore_rejects_duplicate_member_names(tmp_path: Path) -> None:
+    from openprogram._cli_cmds.backup import _MANIFEST_NAME, restore_archive
+
+    state = _state(tmp_path)
+    archive = tmp_path / "duplicate.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        for payload in (b'{"value": 1}', b'{"value": 2}'):
+            info = tarfile.TarInfo("config.json")
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+        body = json.dumps(
+            {"format_version": 1, "credential_opt_in": False}
+        ).encode()
+        manifest = tarfile.TarInfo(_MANIFEST_NAME)
+        manifest.size = len(body)
+        tar.addfile(manifest, io.BytesIO(body))
+
+    with pytest.raises(tarfile.TarError, match="duplicate"):
+        restore_archive(archive, state)
+
+    assert not (state / "config.json").exists()
+
+
 def test_restore_rejects_a_missing_manifest(tmp_path: Path) -> None:
     from openprogram._cli_cmds.backup import restore_archive
 
@@ -274,6 +297,41 @@ def test_mid_restore_failure_rolls_back_every_published_target(
     }
 
 
+def test_colliding_legacy_backup_names_rollback_distinct_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openprogram._cli_cmds import backup as backup_cmd
+
+    state = _state(tmp_path)
+    first = state / "a" / "b__c"
+    second = state / "a__b" / "c"
+    first.parent.mkdir()
+    second.parent.mkdir()
+    first.write_text("old-first")
+    second.write_text("old-second")
+    archive = _archive(
+        tmp_path,
+        {"a/b__c": b"new-first", "a__b/c": b"new-second"},
+    )
+    real_publish = backup_cmd._publish_restored
+    calls = 0
+
+    def fail_after_first(target: Path, payload: bytes, *, root: Path) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("second publish failed")
+        real_publish(target, payload, root=root)
+
+    monkeypatch.setattr(backup_cmd, "_publish_restored", fail_after_first)
+
+    with pytest.raises(OSError):
+        backup_cmd.restore_archive(archive, state)
+
+    assert first.read_text() == "old-first"
+    assert second.read_text() == "old-second"
+
+
 def test_journal_is_removed_after_a_successful_restore(tmp_path: Path) -> None:
     from openprogram._cli_cmds.backup import restore_journal_path, restore_archive
 
@@ -357,9 +415,11 @@ def test_crash_after_publish_is_recovered_from_the_journal(tmp_path: Path) -> No
 
     state = _state(tmp_path)
     (state / "config.json").write_text('{"generation": "half-applied"}')
-    backup_copy = state / ".restore-journal.d" / "config.json"
+    backup_copy = state / ".restore-journal.d" / "00000000.previous"
     backup_copy.parent.mkdir(parents=True)
+    backup_copy.parent.chmod(0o700)
     backup_copy.write_text('{"generation": "old"}')
+    backup_copy.chmod(0o600)
     restore_journal_path(state).write_text(
         json.dumps(
             {
@@ -368,7 +428,7 @@ def test_crash_after_publish_is_recovered_from_the_journal(tmp_path: Path) -> No
                 "entries": [
                     {
                         "relative_path": "config.json",
-                        "previous": ".restore-journal.d/config.json",
+                        "previous": ".restore-journal.d/00000000.previous",
                         "existed": True,
                     }
                 ],
@@ -412,6 +472,72 @@ def test_recovery_rejects_journal_traversal_without_mutation(
     assert recover_interrupted_restore(state) is False
     assert json.loads(outside.read_text()) == {"keep": True}
     assert journal.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")
+@pytest.mark.parametrize("existed", [False, True])
+def test_recovery_rejects_target_parent_symlink_before_any_mutation(
+    tmp_path: Path, existed: bool
+) -> None:
+    from openprogram._cli_cmds.backup import recover_interrupted_restore, restore_journal_path
+
+    state = _state(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_target = outside / "target.json"
+    outside_target.write_text("outside")
+    (state / "linked").symlink_to(outside)
+    backup_dir = state / ".restore-journal.d"
+    backup_dir.mkdir()
+    previous = None
+    if existed:
+        previous_path = backup_dir / "00000000.previous"
+        previous_path.write_text("old")
+        previous_path.chmod(0o600)
+        previous = ".restore-journal.d/00000000.previous"
+    journal = restore_journal_path(state)
+    journal.write_text(
+        json.dumps(
+            {
+                "format_version": 1,
+                "complete": False,
+                "entries": [
+                    {
+                        "relative_path": "linked/target.json",
+                        "previous": previous,
+                        "existed": existed,
+                    }
+                ],
+            }
+        )
+    )
+    journal.chmod(0o600)
+
+    assert recover_interrupted_restore(state) is False
+    assert outside_target.read_text() == "outside"
+    assert journal.exists()
+
+
+def test_recovery_rejects_duplicate_journal_entries_before_mutation(
+    tmp_path: Path,
+) -> None:
+    from openprogram._cli_cmds.backup import recover_interrupted_restore, restore_journal_path
+
+    state = _state(tmp_path)
+    target = state / "config.json"
+    target.write_text("current")
+    target.chmod(0o600)
+    journal = restore_journal_path(state)
+    entry = {"relative_path": "config.json", "previous": None, "existed": False}
+    journal.write_text(
+        json.dumps(
+            {"format_version": 1, "complete": False, "entries": [entry, entry]}
+        )
+    )
+    journal.chmod(0o600)
+
+    assert recover_interrupted_restore(state) is False
+    assert target.read_text() == "current"
 
 
 def test_restore_staging_is_owner_only_and_on_the_state_filesystem(
