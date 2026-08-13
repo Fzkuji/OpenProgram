@@ -45,7 +45,7 @@ def agent(
     result = runtime.exec(
         content=content,
         model=model or None,
-        tools=tools if tools is not None else [],  # [] means use default tools
+        tools=tools,  # None = use default tools; [] = no tools; [...] = specific tools
         max_iterations=max_iterations,
         timeout_s=timeout_s,
         effort=effort or None,
