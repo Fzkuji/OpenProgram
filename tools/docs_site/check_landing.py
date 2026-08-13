@@ -244,11 +244,10 @@ def main() -> int:
         if (
             "alternate" in item.get("rel", "").split()
             and item.get("type") == "application/atom+xml"
-            and item.get("href") == RELEASE_FEED
         )
     ]
     require(
-        len(feed_links) == 1,
+        len(feed_links) == 1 and feed_links[0].get("href") == RELEASE_FEED,
         "landing must expose exactly one release feed discovery link",
         failures,
     )
