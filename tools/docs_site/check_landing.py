@@ -356,6 +356,12 @@ def main() -> int:
     ):
         require(harness_url in page.anchors,
                 f"missing harness link {harness_url}", failures)
+    for community_url in (
+        "https://github.com/Fzkuji/OpenProgram/discussions",
+        "https://github.com/Fzkuji/OpenProgram/blob/main/CONTRIBUTING.md",
+    ):
+        require(community_url in page.anchors,
+                f"missing community link {community_url}", failures)
 
     require("Agents are just Python functions." not in visible_text,
             "landing page still leads with the concept message", failures)
