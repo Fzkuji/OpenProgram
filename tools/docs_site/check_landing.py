@@ -243,7 +243,7 @@ def main() -> int:
         for item in page.links
         if (
             "alternate" in item.get("rel", "").split()
-            and item.get("type") == "application/atom+xml"
+            and item.get("type", "").casefold() == "application/atom+xml"
         )
     ]
     require(
