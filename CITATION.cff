@@ -2,15 +2,23 @@ cff-version: 1.2.0
 message: "If you use OpenProgram, please cite this software and the Agentic Programming paper."
 title: "OpenProgram: Self-Programming AI Agent Framework"
 type: software
+abstract: "OpenProgram is an open-source self-programming AI agent framework. Agents create, run, and refine their own workflows while the runtime manages models, tools, memory, context, and multi-agent collaboration."
 authors:
   - family-names: Fu
     given-names: Zichuan
 version: 0.6.0
+date-released: 2026-07-21
 license: AGPL-3.0-or-later
 repository-code: "https://github.com/Fzkuji/OpenProgram"
 url: "https://openprogram.io/"
+keywords:
+  - self-programming agents
+  - AI agent framework
+  - agentic programming
+  - multi-agent systems
+  - LLM agents
 preferred-citation:
-  type: article
+  type: conference-paper
   title: "LLM-as-Code: Agentic Programming for Agent Harness"
   authors:
     - family-names: Qi
@@ -28,5 +36,8 @@ preferred-citation:
     - family-names: Zhao
       given-names: Xiangyu
   year: 2026
+  collection-title: "KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)"
+  conference:
+    name: "KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)"
   doi: "10.48550/arXiv.2606.15874"
   url: "https://arxiv.org/abs/2606.15874"
