@@ -28,7 +28,7 @@
 
 <rect class="box" x="48" y="184" width="200" height="52" rx="8"/>
 <text class="bt" x="68" y="206">task runner</text>
-<text class="bs faint" x="68" y="226">task_status JSON</text>
+<text class="bs faint" x="68" y="226">job_status JSON</text>
 
 <rect class="box" x="48" y="262" width="200" height="52" rx="8"/>
 <text class="bt" x="68" y="284">channels</text>

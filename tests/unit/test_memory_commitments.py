@@ -822,7 +822,7 @@ def test_memory_update_transitions_commitment_without_topic_patch(
     import json
 
     import openprogram.paths as paths
-    from openprogram.functions.tools.memory import memory as memory_tools
+    from openprogram.programs.functions.memory import memory as memory_tools
     from openprogram.memory import store
     from openprogram.memory.runtime.commitments import (
         load_commitments,
@@ -880,7 +880,7 @@ def test_memory_update_rejects_commitment_transition_from_paired_turn(
     import json
 
     import openprogram.paths as paths
-    from openprogram.functions.tools.memory import memory as memory_tools
+    from openprogram.programs.functions.memory import memory as memory_tools
     from openprogram.memory import store
     from openprogram.memory.runtime.commitments import upsert_commitments
 
@@ -1376,7 +1376,7 @@ def test_cron_tick_routes_heartbeat_through_source_session_binding(
 
     import openprogram.paths as paths
     from openprogram.agent.session_db import SessionDB
-    from openprogram.functions.tools.cron import worker
+    from openprogram.programs.functions.cron import worker
     from openprogram.memory import store
     from openprogram.memory.runtime.commitments import upsert_commitments
 
@@ -1439,7 +1439,7 @@ def test_cron_heartbeat_invalid_config_fails_without_sending(
     from datetime import datetime
 
     import openprogram.paths as paths
-    from openprogram.functions.tools.cron import worker
+    from openprogram.programs.functions.cron import worker
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
     monkeypatch.setattr(worker, "_load", lambda _path: [])

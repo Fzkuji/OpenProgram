@@ -14,7 +14,7 @@ import { runtimeState } from "@/lib/runtime-bridge/state";
 import type { AgenticFunction } from "@/lib/session-store";
 
 /**
- * Re-fetch the function catalogue from `/api/functions` and publish
+ * Re-fetch the function catalogue from `/api/programs` and publish
  * it to both the React store (`useFunctions.setFunctions`) and
  * `runtimeState.availableFunctions` (read by the `→ /chat` fn-form
  * hand-off in `lib/use-pending-run-function.ts`). Mirrors
@@ -23,7 +23,7 @@ import type { AgenticFunction } from "@/lib/session-store";
  */
 export async function refreshFunctionsList(): Promise<void> {
   try {
-    const resp = await fetch("/api/functions");
+    const resp = await fetch("/api/programs");
     const data: AgenticFunction[] = await resp.json();
     const fns = Array.isArray(data) ? data : [];
     useFunctions.getState().setFunctions(fns);

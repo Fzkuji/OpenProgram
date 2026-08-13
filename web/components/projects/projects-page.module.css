@@ -1,5 +1,5 @@
 /* 壳/分栏（view/topbar/title/body/profilesNav/profileItem/content/empty）复用
-   Functions 页的 module.css（import fx），保证高度/间距完全一致。这里只放
+   Programs 页的 module.css（import fx），保证高度/间距完全一致。这里只放
    Projects 特有的类。 */
 
 .errorBar {

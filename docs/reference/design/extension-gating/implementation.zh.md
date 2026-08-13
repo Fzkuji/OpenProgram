@@ -15,7 +15,7 @@ openprogram/agent/
 openprogram/webui/ws_actions/
   └─ chat.py                ← 门控点：skills (/skill X 命令)
 
-openprogram/functions/
+openprogram/programs/
   └─ __init__.py            ← agent_tools() 遵循解析后的名称列表
 ```
 

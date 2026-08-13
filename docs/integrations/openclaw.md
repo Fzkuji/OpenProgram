@@ -50,36 +50,37 @@ import os
 sys.path.insert(0, os.path.expanduser("~/.openclaw/workspace/OpenProgram"))
 
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 from openprogram.providers.registry import create_runtime
 
 runtime = create_runtime(provider="claude-code", model="haiku")
 
 
 @agentic_function
-def decompose(task):
+def decompose(task, runtime=None):
     """Break a complex task into actionable steps."""
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": f"Break this task into 3-5 concrete, actionable steps:\n{task}\n\nNumber each step. Be specific."},
     ])
 
 
 @agentic_function
-def assess(step):
+def assess(step, runtime=None):
     """Assess difficulty and time estimate for a step."""
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": f"For this step, give: difficulty (easy/medium/hard) and time estimate.\nFormat: [difficulty] ~Xh\n\nStep: {step}"},
     ])
 
 
 @agentic_function
-def plan(task):
+def plan(task, runtime=None):
     """Create a detailed plan for a task."""
-    steps_text = decompose(task=task)
+    steps_text = decompose(task=task, runtime=runtime)
 
     lines = [l.strip() for l in steps_text.split("\n") if l.strip() and l.strip()[0].isdigit()]
     assessments = []
     for line in lines[:5]:
-        a = assess(step=line)
+        a = assess(step=line, runtime=runtime)
         assessments.append(f"{line}\n   → {a}")
 
     return "\n\n".join(assessments)
@@ -87,7 +88,7 @@ def plan(task):
 
 if __name__ == "__main__":
     task = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "Build a REST API with authentication"
-    result = plan(task=task)
+    result = plan(task=task, runtime=runtime)
     print(result)
 ```
 
@@ -118,32 +119,33 @@ If your OpenClaw agent runs Python scripts, you can import agentic functions dir
 Code review script called by an OpenClaw agent.
 """
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 from openprogram.providers.registry import create_runtime
 
 runtime = create_runtime(provider="claude-code", model="haiku")
 
 
 @agentic_function
-def review_code(code, language="python"):
+def review_code(code, language="python", runtime=None):
     """Review code for bugs, style issues, and improvements."""
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": f"Review this {language} code. List:\n1. Bugs (if any)\n2. Style issues\n3. Suggested improvements\n\n```{language}\n{code}\n```"},
     ])
 
 
 @agentic_function
-def suggest_tests(code):
+def suggest_tests(code, runtime=None):
     """Suggest test cases for the given code."""
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": f"Suggest 3 test cases for this code. For each, give: test name, input, expected output.\n\n```python\n{code}\n```"},
     ])
 
 
 @agentic_function
-def code_analysis(code):
+def code_analysis(code, runtime=None):
     """Full code analysis: review + test suggestions."""
-    review = review_code(code=code)
-    tests = suggest_tests(code=code)
+    review = review_code(code=code, runtime=runtime)
+    tests = suggest_tests(code=code, runtime=runtime)
     return f"## Code Review\n{review}\n\n## Suggested Tests\n{tests}"
 ```
 
@@ -160,13 +162,14 @@ import json
 import sys
 
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 from openprogram.providers.registry import create_runtime
 
 runtime = create_runtime(provider="claude-code", model="haiku")
 
 
 @agentic_function
-def summarize_text(text, style="bullet_points"):
+def summarize_text(text, style="bullet_points", runtime=None):
     """Summarize text in the specified style."""
     style_instructions = {
         "bullet_points": "Summarize as 3-5 bullet points.",
@@ -175,7 +178,7 @@ def summarize_text(text, style="bullet_points"):
     }
     instruction = style_instructions.get(style, style_instructions["bullet_points"])
 
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": f"{instruction}\n\nText:\n{text}"},
     ])
 
@@ -186,7 +189,7 @@ if __name__ == "__main__":
     args = request.get("args", {})
 
     if tool == "summarize":
-        result = summarize_text(**args)
+        result = summarize_text(**args, runtime=runtime)
         print(json.dumps({"result": result}))
     else:
         print(json.dumps({"error": f"Unknown tool: {tool}"}))

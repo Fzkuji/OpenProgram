@@ -3,7 +3,7 @@ from __future__ import annotations
 
 
 def _tool_inventory() -> tuple[int, list[str]]:
-    from openprogram.functions import list_available, list_registered_agent_tools
+    from openprogram.programs import list_available, list_registered_agent_tools
     names = list_available()  # only tools whose check_fn currently passes
     # Prefer the gated list; if the helper returns empty (no gating), fall
     # back to the full registry so the banner isn't misleadingly blank.
@@ -29,7 +29,7 @@ def _skill_inventory() -> tuple[int, list[tuple[str, str]]]:
 
 
 def _function_inventory() -> tuple[int, list[str]]:
-    """Return (count, [name, ...]) of agentic functions in functions/agentics/.
+    """Return (count, [name, ...]) of agentic functions in programs/agentic_functions/.
 
     Harness apps (the *-Agent-Harness symlinks) are reported separately
     by :func:`_application_inventory`.
@@ -37,7 +37,7 @@ def _function_inventory() -> tuple[int, list[str]]:
     import os
     import openprogram
     base = os.path.join(os.path.dirname(openprogram.__file__),
-                        "functions", "agentics")
+                        "programs", "agentic_functions")
     if not os.path.isdir(base):
         return 0, []
     names: list[str] = []
@@ -62,10 +62,10 @@ def _application_inventory() -> tuple[int, list[str]]:
     pip-installable packages rather than in-tree symlinks; list the ones
     actually installed on this machine. Install more with
     ``openprogram programs install <name>``. See
-    ``openprogram/functions/_programs.py``.
+    ``openprogram/programs/_programs.py``.
     """
     try:
-        from openprogram.functions._programs import installed_programs
+        from openprogram.programs._programs import installed_programs
         progs = installed_programs()
         return len(progs), [p.function for p in progs]
     except Exception:

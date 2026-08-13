@@ -11,7 +11,7 @@ authoritative.
 from __future__ import annotations
 
 
-def _is_task_followup_user(node: dict) -> bool:
+def _is_job_followup_user(node: dict) -> bool:
     """``[系统消息]…`` user msg that runner writes after a /task --async
     sub-agent finishes. It's a synthetic trigger so the parent LLM
     has a user_msg to react to — chat hides it (display=runtime) and
@@ -20,13 +20,13 @@ def _is_task_followup_user(node: dict) -> bool:
     See docs/design/runtime/dag-node-model.md (the "合成桥不是合法节点" rule).
     """
     return (
-        node.get("source") == "task_followup"
+        node.get("source") == "job_followup"
         and node.get("role") == "user"
     )
 
 
 def normalize_followup(graph_entries: list[dict]) -> list[dict]:
-    """Re-parent task_followup assistant replies onto the turn that
+    """Re-parent job_followup assistant replies onto the turn that
     received the merge-back — the synthetic user msg's own predecessor
     — so the synthetic user can be filtered out without breaking conv
     linkage.
@@ -43,7 +43,7 @@ def normalize_followup(graph_entries: list[dict]) -> list[dict]:
     """
     by_id = {m["id"]: m for m in graph_entries if m.get("id")}
     for nid, node in by_id.items():
-        if not _is_task_followup_user(node):
+        if not _is_job_followup_user(node):
             continue
         followup_user_parent = node.get("predecessor")
         if not followup_user_parent or followup_user_parent not in by_id:
@@ -52,7 +52,7 @@ def normalize_followup(graph_entries: list[dict]) -> list[dict]:
         # to skip the about-to-be-filtered synthetic user.
         for other in by_id.values():
             if (
-                other.get("source") == "task_followup"
+                other.get("source") == "job_followup"
                 and other.get("role") == "assistant"
                 and other.get("predecessor") == nid
             ):
@@ -72,6 +72,6 @@ def filter_visible(graph_entries: list[dict]) -> list[dict]:
     return [
         m for m in graph_entries
         if m.get("id")
-        and not _is_task_followup_user(m)
+        and not _is_job_followup_user(m)
         and m.get("display") != "runtime"
     ]

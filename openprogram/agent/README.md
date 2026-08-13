@@ -46,6 +46,6 @@ The Runtime layer composes these to build whatever agent behavior is needed.
 
 - **`compaction/`** — Context compaction for long agent sessions
 - **`streaming/`** — Streaming / resumable in-progress state
-- **`task/`** — Async task lifecycle
+- **`job/`** — Async job lifecycle
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

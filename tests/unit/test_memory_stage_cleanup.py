@@ -63,7 +63,7 @@ def memory(tmp_path, monkeypatch):
 def test_memory_update_cleans_up_on_both_paths(memory, monkeypatch):
     import json
 
-    from openprogram.functions.tools.memory import memory as memory_tools
+    from openprogram.programs.functions.memory import memory as memory_tools
 
     monkeypatch.setattr(memory_tools, "authority_from_message", lambda *_: {
         "speaker_kind": "owner",

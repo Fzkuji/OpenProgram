@@ -210,9 +210,9 @@ def test_model_input_encodes_untrusted_content_as_one_json_value():
 
 
 def test_task_authority_tier_round_trip_is_explicit():
-    from openprogram.agent.task.types import Task
+    from openprogram.agent.job.types import Job
 
-    task = Task(
+    job = Job(
         id="t_1",
         parent_session_id="s1",
         prompt="work",
@@ -224,19 +224,19 @@ def test_task_authority_tier_round_trip_is_explicit():
         authority_tier="owner",
         interaction="non-interactive",
     )
-    restored = Task.from_dict(task.to_dict())
-    assert restored.principal_id == task.principal_id
+    restored = Job.from_dict(job.to_dict())
+    assert restored.principal_id == job.principal_id
     assert restored.authority_tier == "owner"
-    assert restored.speaker_id == task.speaker_id
+    assert restored.speaker_id == job.speaker_id
     assert restored.interaction == "non-interactive"
 
 
 def test_task_authority_fields_do_not_shift_existing_positional_arguments():
-    from openprogram.agent.task.types import Task
+    from openprogram.agent.job.types import Job
 
-    task = Task("t_1", "s1", "work", "main", "existing subject")
-    assert task.subject == "existing subject"
-    assert task.speaker_kind is None
+    job = Job("t_1", "s1", "work", "main", "existing subject")
+    assert job.subject == "existing subject"
+    assert job.speaker_kind is None
 
 
 def test_tier_denial_precedes_bypass_and_returns_structured_reason(authority_state):

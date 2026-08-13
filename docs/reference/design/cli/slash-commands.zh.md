@@ -136,7 +136,7 @@ context: inline          （默认）
   渲染后的 prompt 进当前会话上下文
 
 context: fork
-  开 agent 子 agent 跑（已有 functions/tools/agent）
+  开 agent 子 agent 跑（已有 programs/functions/agent）
   agent 字段决定 subagent_type；allowed-tools 决定可见工具集
   子 agent 返回的最终消息以「命令结果」形式呈现，不污染主上下文
 ```

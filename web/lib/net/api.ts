@@ -101,7 +101,7 @@ export const api = {
   getKey: (envVar: string) =>
     jsonFetch<KeyPreview>(`/api/config/key/${envVar}`),
 
-  listFunctions: () => jsonFetch<AgenticFunction[]>("/api/functions"),
+  listFunctions: () => jsonFetch<AgenticFunction[]>("/api/programs"),
 
   getProgramsMeta: () => jsonFetch<FunctionsMeta>("/api/programs/meta"),
 

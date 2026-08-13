@@ -2,7 +2,7 @@
 
 > 一轮正在执行的对话如何被停止。本文是取消信号本身的权威说明：信号由哪个对象承载、
 > 存活多久、哪些代码检查它。异步 Task 实体自身的生命周期（排队、worker 池、持久化）见
-> [`async-task-lifecycle.zh.md`](async-task-lifecycle.zh.md)；一个 task 的取消使用这
+> [`async-job-lifecycle.zh.md`](async-job-lifecycle.zh.md)；一个 task 的取消使用这
 > 里描述的机制。
 
 ## 1. 每轮一个 token
@@ -134,6 +134,6 @@ WS `stop` 动作的两阶段行为不变：先尝试优雅停止，宽限期后�
 
 ## 相关文件
 
-- [`async-task-lifecycle.zh.md`](async-task-lifecycle.zh.md) — 异步 Task 实体
+- [`async-job-lifecycle.zh.md`](async-job-lifecycle.zh.md) — 异步 Task 实体
 - [`../dag/overview.zh.md`](../dag/overview.zh.md) — status 词表、失败与重试
 - [`../../error-handling.zh.md`](../../error-handling.zh.md) — 异常纪律

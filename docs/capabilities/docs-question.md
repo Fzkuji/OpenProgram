@@ -2,10 +2,10 @@
 
 "Can OpenProgram do X?" and "how do I configure Y?" are questions this documentation site already answers, and a model answering them from memory of some other agent product is how a confident wrong answer reaches you. `run_docs_question` answers such a question by reading these pages: it spawns one agent that can only read, works only inside the repository's `docs/` tree, and reports which pages the answer came from.
 
-Run it as `run_docs_question` in the Functions panel, or from Python:
+Run it as `run_docs_question` in the Programs panel, or from Python:
 
 ```python
-from openprogram.functions.agentics.docs_question import run_docs_question
+from openprogram.programs.agentic_functions.docs_question import run_docs_question
 
 result = run_docs_question("Can I keep a session working until a condition holds?")
 ```

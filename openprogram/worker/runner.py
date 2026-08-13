@@ -286,7 +286,7 @@ def run_foreground() -> int:
     # runtime (clone into agentics/ or `programs install`) so their
     # functions go live + the UI refreshes without a restart.
     try:
-        from openprogram.functions.watcher import start_in_worker as _start_programs_watch
+        from openprogram.programs.watcher import start_in_worker as _start_programs_watch
         if _start_programs_watch() is not None:
             print("[worker] programs watcher running (auto-detect installs)")
     except Exception as exc:  # noqa: BLE001

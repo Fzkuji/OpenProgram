@@ -541,7 +541,7 @@
     <tr><th>编号</th><th>实施前未统一受管的执行面</th><th>来源类</th><th>已实施边界 / 明确保留理由</th></tr>
     <tr><td><b>U01</b></td><td><code>backend/docker.py</code></td><td>模型命令 / 外部容器</td><td>声明容器是执行边界；命令仍经过工具规则、审批与审计，不宣称使用宿主sandbox</td></tr>
     <tr><td><b>U02</b></td><td><code>backend/ssh.py</code></td><td>模型命令 / 远端主机</td><td>声明远端主机是执行边界；目标由owner配置，命令仍经过工具规则、审批与审计</td></tr>
-    <tr><td><b>U03</b></td><td><code>functions/tools/execute_code</code></td><td class="n">模型代码</td><td>local路径通过<code>LocalBackend.run</code>复用<code>_invocation</code>；解释器、cwd与临时脚本均进入同一策略测试</td></tr>
+    <tr><td><b>U03</b></td><td><code>programs/functions/execute_code</code></td><td class="n">模型代码</td><td>local路径通过<code>LocalBackend.run</code>复用<code>_invocation</code>；解释器、cwd与临时脚本均进入同一策略测试</td></tr>
     <tr><td><b>U04</b></td><td><code>cron/worker.py</code> direct command</td><td class="n">模型请求保存 / 无人值守</td><td>创建先检查<code>schedule.create</code>，修改、重排或删除先检查<code>schedule.manage</code>；<code>paired</code>档必须在任何job持久化变更前deny。认证本地owner批准创建或修改后保存新的不可变job authority，固化principal、<code>authority_tier=owner</code>、command、cwd、policy与hash；触发时强制沙箱，ask与升级均deny</td></tr>
     <tr><td><b>U05</b></td><td><code>cron/worker.py</code> prompt job</td><td class="n">模型prompt / 无人值守</td><td>同样要求owner批准创建；重建请求时显式<code>source=cron</code>并加载不可变job authority，内部所有副作用继续按<code>owner</code>档常量表检查</td></tr>
     <tr><td><b>U06</b></td><td><code>memory/agent_runtime/claude_code.py</code></td><td class="n">模型驱动的嵌套agent</td><td>协议层关闭内置命令与文件工具，注入OpenProgram受管MCP工具</td></tr>
@@ -554,9 +554,9 @@
     <tr><td><b>U13</b></td><td><code>events/shell_hooks.py</code> gate command</td><td>owner配置；模型事件作stdin</td><td>命令本身按受信配置处理；配置目录受保护，超时或启动失败不能成为安全强制规则</td></tr>
     <tr><td><b>U14</b></td><td><code>events/shell_hooks.py</code> notifier command</td><td>owner配置；模型事件作stdin</td><td>保持通知用途并审计；不得把notifier结果用于允许高风险操作</td></tr>
     <tr><td><b>U15</b></td><td><code>providers/_shared/cli_backend/runner.py</code></td><td>模型prompt / 外部CLI</td><td>若接入生产，先声明CLI内置工具策略；保持未引用时不得计为现有保护</td></tr>
-    <tr><td><b>U16</b></td><td><code>functions/tools/grep</code></td><td>模型参数 / 固定argv</td><td>保持<code>shell=False</code>与<code>--</code>分隔；增加路径范围测试，不需要命令sandbox</td></tr>
-    <tr><td><b>U17</b></td><td><code>functions/tools/worktree</code></td><td>模型参数 / 固定git argv</td><td>仅允许受管仓库与固定子命令；保持argv调用并测试路径规范化</td></tr>
-    <tr><td><b>U18</b></td><td><code>functions/tools/agent_browser</code></td><td>模型参数 / 浏览器进程</td><td>浏览器profile与下载路径使用独立策略；启动参数保持argv并进入工具审批</td></tr>
+    <tr><td><b>U16</b></td><td><code>programs/functions/grep</code></td><td>模型参数 / 固定argv</td><td>保持<code>shell=False</code>与<code>--</code>分隔；增加路径范围测试，不需要命令sandbox</td></tr>
+    <tr><td><b>U17</b></td><td><code>programs/functions/worktree</code></td><td>模型参数 / 固定git argv</td><td>仅允许受管仓库与固定子命令；保持argv调用并测试路径规范化</td></tr>
+    <tr><td><b>U18</b></td><td><code>programs/functions/agent_browser</code></td><td>模型参数 / 浏览器进程</td><td>浏览器profile与下载路径使用独立策略；启动参数保持argv并进入工具审批</td></tr>
     <tr><td><b>U19</b></td><td>session/project/shadow store的git plumbing</td><td>第一方确定性argv</td><td>保留宿主执行；不接受模型shell字符串，测试参数分隔和仓库范围</td></tr>
     <tr><td><b>U20</b></td><td><code>_cli_cmds/programs.py</code></td><td>owner主动安装 / 更新</td><td>保留管理员CLI权限；与agent工具不可互调，记录安装来源</td></tr>
     <tr><td><b>U21</b></td><td><code>_cli_cmds/browser.py</code></td><td>owner主动安装</td><td>保留管理员CLI权限；安装命令不暴露给模型</td></tr>
@@ -579,7 +579,7 @@
 
     <rect x="24" y="58" width="248" height="92" rx="10" fill="#12110b" stroke="#e0445a" stroke-width="1.4"/>
     <text x="42" y="84" fill="#f0eee6" font-size="13" font-weight="700">01 模型调 write</text>
-    <text x="42" y="107" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">functions/agentics/x.py</text>
+    <text x="42" y="107" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">programs/agentic_functions/x.py</text>
     <text x="42" y="130" fill="#8a8675" font-size="11.5">写文件这个动作本身不可疑</text>
     <line x1="272" y1="104" x2="300" y2="104" stroke="#e0445a" stroke-width="1.6" marker-end="url(#p-rd)"/>
 
@@ -613,7 +613,7 @@
   <table>
     <tr><th>实施前P0缺口</th><th>实施前源码行为</th><th>影响</th><th>当前闭合方式</th></tr>
     <tr><td><b>“Always allow”过宽</b></td><td>审批持久化时只保存工具名；一次bash批准会得到<code>allow bash</code></td><td class="n">后续任意bash都可跳过审批，范围大于原命令</td><td class="y">已完成：只保存规范化后的精确操作；复杂shell只允许单次批准</td></tr>
-    <tr><td><b>文件工具与watcher组合</b></td><td>文件工具可写工作区外；watcher对<code>functions/agentics/</code>变化调用<code>exec_module</code></td><td class="n">模型可写Python并由宿主进程自动导入</td><td class="y">已完成：文件工具统一写入根检查；自动导入只接受owner登记来源</td></tr>
+    <tr><td><b>文件工具与watcher组合</b></td><td>文件工具可写工作区外；watcher对<code>programs/agentic_functions/</code>变化调用<code>exec_module</code></td><td class="n">模型可写Python并由宿主进程自动导入</td><td class="y">已完成：文件工具统一写入根检查；自动导入只接受owner登记来源</td></tr>
     <tr><td><b>cron无人值守执行</b></td><td>direct job使用<code>Popen(..., shell=True)</code>；prompt job启动分离CLI</td><td class="n">触发时没有交互审批路径，也没有统一沙箱</td><td class="y">已完成：签名执行spec、固化owner档、强制沙箱、ask与升级均deny</td></tr>
     <tr><td><b>execute_code本地执行</b></td><td>模型给代码和解释器路径，随后<code>subprocess.run</code></td><td class="n">不经过<code>Backend._invocation</code></td><td class="y">已完成：复用local backend及同一份SandboxPolicy</td></tr>
     <tr><td><b>命令规则按原字符串前缀匹配</b></td><td>未先处理ANSI、NUL、Unicode NFKC或<code>env X=1</code>包装</td><td class="n">保存规则与实际argv不一致；复杂shell文本也不能靠前缀安全解析</td><td class="y">已完成：规范化、shell解析、透明env包装与精确规则</td></tr>
@@ -1248,7 +1248,7 @@
   <div class="legend"><b>默认开启的两个准入条件已满足</b>：安全准入中的第04步、05A、身份批次I、05B、第06和第07步、共享记忆pending/trusted边界及U01—U23清单均已实现；可用性准入已在macOS Seatbelt和Linux bubblewrap真实子进程上执行上述矩阵。平台固有限制仍按第11节单独报告。</div>
 
   <div class="note"><b>配套的profile修补清单已完成</b>：工作目录拼进profile前先转义；放开exec之前补上限定在同沙箱内的<code>signal</code>和<code>process-info*</code>；
-  Linux加<code>--new-session --die-with-parent --unshare-pid --unshare-ipc --unshare-uts --cap-drop ALL</code>；<code>functions/agentics/</code>禁写；两条沙箱路径统一用<code>/bin/bash</code>；
+  Linux加<code>--new-session --die-with-parent --unshare-pid --unshare-ipc --unshare-uts --cap-drop ALL</code>；<code>programs/agentic_functions/</code>禁写；两条沙箱路径统一用<code>/bin/bash</code>；
   macOS的<code>sysctl-read</code>已收窄到硬件前缀和四个uname名字，通用<code>mach-lookup</code>已删除，<code>/private/var/folders</code>已限制到本进程<code>TMPDIR</code>。
   <code>--unshare-user</code>不在清单里：非setuid的bubblewrap构建自己就会建用户命名空间，setuid的构建不接受这个参数。</div>
 

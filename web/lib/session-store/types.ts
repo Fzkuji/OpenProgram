@@ -130,11 +130,11 @@ export interface ChatMsg {
   display?: "runtime" | "normal";
   /** Pass-through of metadata.source from the server so the client
    *  can distinguish "real user typed" vs internal synthetic turns
-   *  (task_followup, merge_turn, agent_spawn). */
+   *  (job_followup, merge_turn, agent_spawn). */
   source?: string;
   /** Pass-through of the wire ``predecessor`` (conversation-chain
    *  edge) so we can correlate internal-source msgs (e.g.
-   *  task_followup) and runtime/attach rows with the turn they hang
+   *  job_followup) and runtime/attach rows with the turn they hang
    *  off. Runtime + attach rows are written with ``predecessor``
    *  only and no ``caller`` (see webui/_execute), so this really is
    *  the right edge here despite the historical field name. */
@@ -195,15 +195,15 @@ export interface ChatMsg {
     /** Sum of source commit's item tokens — companion to embed_count
      *  for the same preview line. */
     embed_tokens?: number;
-    /** Async-task lifecycle status. Set when the attach was written
-     *  by a /task --async / TaskRunner spawn — moves through pending
+    /** Async-job lifecycle status. Set when the attach was written
+     *  by a /task --async / JobRunner spawn — moves through pending
      *  → running → completed / errored / cancelled. Drives the
      *  status pill in the attach card so the user can see whether
      *  the embedded content is finalised. */
     status?: "pending" | "queued" | "running" | "completed"
       | "errored" | "cancelled";
-    /** Cross-reference to the Task entity that owns this attach. */
-    task_id?: string;
+    /** Cross-reference to the Job entity that owns this attach. */
+    job_id?: string;
   };
   /** Which agent produced this turn. Same-session multi-agent: a
    *  conversation can have N agents writing branches in the same
@@ -350,4 +350,3 @@ export interface StatusBadgeInfo {
   /** Title attribute / hover tooltip. */
   title?: string;
 }
-

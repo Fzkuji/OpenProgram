@@ -19,7 +19,7 @@ Or from CLI:
 # *touching* any submodule of this package (e.g. the models.dev base-url
 # lookup in providers/metadata.py) drag in webui.server, which imports
 # functions.agentics.ask_user, which fires the whole agentic registry load
-# while openprogram.functions._runtime is still mid-init — breaking every
+# while openprogram.programs._runtime is still mid-init — breaking every
 # harness whose @agentic_function runs at module scope.
 def __getattr__(name):
     if name in ("start_server", "stop_server"):

@@ -6,7 +6,7 @@
 
 ```
 OpenProgram  (the host runtime — install this first, anywhere you like)
-└── openprogram/functions/agentics/      ← owner-installed programs live here
+└── openprogram/programs/agentic_functions/      ← owner-installed programs live here
     ├── GUI-Agent-Harness/               ← `gui_agent`      (clone in + run its installer)
     ├── Research-Agent-Harness/          ← `research_agent` (openprogram programs install research)
     └── Wiki-Agent-Harness/              ← `wiki_agent`     (openprogram programs install wiki)
@@ -68,7 +68,7 @@ The installer is **idempotent** — re-run it any time to repair or update.
 | 3 | **OpenProgram** editable install (`pip install -e .`) | The host + base deps. |
 | 4 | **Web UI** — `npm install && npx next build` in `web/` | Builds the static export (`web/out/`) the Python worker serves on **:18100**. Node is needed at build time only. `--minimal` skips the build (the worker builds on first start). |
 | 5 | **Ink TUI** — `npm install && npm run build` in `cli/` | POSIX only; Windows uses the Rich REPL. `--minimal` skips. |
-| 6 | **Agent programs (opt-in)** — menu when a terminal is attached, or `--programs <research\|wiki\|gui\|all>` | **No program installs by default.** When selected: `research` / `wiki` are pure Python, cloned into `functions/agentics/` as in-tree git checkouts that auto-register (`research` needs nothing beyond openprogram; `wiki` adds Jinja2 + PyYAML); `gui` pulls PyTorch (~300 MB — the CPU wheel is auto-selected on GPU-less Linux; ~3 GB only on CUDA boxes). Add any of them later with `openprogram programs install <name>`. |
+| 6 | **Agent programs (opt-in)** — menu when a terminal is attached, or `--programs <research\|wiki\|gui\|all>` | **No program installs by default.** When selected: `research` / `wiki` are pure Python, cloned into `programs/agentic_functions/` as in-tree git checkouts that auto-register (`research` needs nothing beyond openprogram; `wiki` adds Jinja2 + PyYAML); `gui` pulls PyTorch (~300 MB — the CPU wheel is auto-selected on GPU-less Linux; ~3 GB only on CUDA boxes). Add any of them later with `openprogram programs install <name>`. |
 | 7 | **Browser tool + channels** | `pip install -e .[all]` + `playwright install chromium` (~150 MB). `--minimal` skips. Heavier stealth browsers / agent-browser stay opt-in — see [Extras](#extras). |
 
 ---
@@ -88,7 +88,7 @@ The full flag matrix (`install.sh --help` prints it; the PowerShell flags are do
 | `--yes` / `-y` | `-Yes` | Skip all prompts, take every default | off (menu when a terminal is attached) |
 
 Explicit CUDA/CPU PyTorch for the GUI harness: run its own installer after the
-host install — `openprogram/functions/agentics/GUI-Agent-Harness/scripts/install.sh --cuda cu124`.
+host install — `openprogram/programs/applications/gui_harness/scripts/install.sh --cuda cu124`.
 
 ### Non-interactive / AI-agent installs
 
@@ -125,20 +125,20 @@ curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/ins
 
 ## Adding agent programs
 
-Programs installed through the CLI land in `functions/agentics/<Repo>/` and
+Programs installed through the CLI land in `programs/agentic_functions/<Repo>/` and
 register on the next start. The same command works for bundled harnesses and
 third-party repositories; run a harness-specific installer afterward when it
 has additional assets:
 
 ```bash
 openprogram programs install <harness-repo>
-cd openprogram/functions/agentics/<Harness>
+cd openprogram/programs/agentic_functions/<Harness>
 ./scripts/install.sh          # if it ships one (Windows: .\scripts\install.ps1)
 ```
 
 The **GUI agent** has native deps (PyTorch, detector weight, OCR), so it ships its
 own per-platform installer — use it via the steps above; full guide in its
-[install section](https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/functions/agentics/GUI-Agent-Harness#1-install).
+[install section](https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/programs/applications/gui_harness#1-install).
 (When GUI is opted in — checked in the menu, or `--programs gui`/`all` — the install script clones it and pulls PyTorch; run the harness's own installer afterwards for its asset setup or an explicit CUDA/CPU torch.)
 
 For the bundled harnesses there's a one-line shortcut that clones, installs,
@@ -152,7 +152,7 @@ openprogram programs available            # see install status
 that includes PyTorch, but **not** native assets like the YOLO weight or the
 OCR warm-up — run the GUI harness's own installer (above) for those.
 
-After any of these, restart the worker (or hit **Refresh** on the Functions page)
+After any of these, restart the worker (or hit **Refresh** on the Programs page)
 and the program shows in the web UI. Third-party harnesses install the same way —
 `openprogram programs install <git-url | owner/repo>`; details:
 [installing-harnesses.md](../capabilities/installing-harnesses.md).
@@ -237,7 +237,7 @@ Everything beyond `pip`. The installer handles every "auto" row.
 
 \* EasyOCR is installed as a cross-platform fallback, so the GUI agent works on
 macOS without Xcode CLT — Apple Vision is just faster. Full GUI specifics:
-[GUI-Agent-Harness/docs/install.md](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/functions/agentics/GUI-Agent-Harness/docs/install.md).
+[GUI-Agent-Harness/docs/install.md](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/applications/gui_harness/docs/install.md).
 
 ---
 
@@ -249,7 +249,7 @@ macOS without Xcode CLT — Apple Vision is just faster. Full GUI specifics:
 - **`pip` can't reinstall: `WinError 32 … openprogram.exe is being used`.**
   Stop the running `openprogram web` / worker first, then re-run.
 - **`gui_agent` doesn't appear in the UI.** Restart the worker (or Refresh the
-  Functions page). Confirm it's registered: `openprogram programs available`.
+  Programs page). Confirm it's registered: `openprogram programs available`.
 - **NVIDIA GPU unused.** The installer auto-detects it; if it picked CPU (no driver at install time, or you passed `--cpu`): `pip uninstall -y torch torchvision`, then re-run the installer.
 - **GPA weight didn't download** (offline): `hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector`.
 
@@ -264,7 +264,7 @@ pip install -e .                                  # host
 ( cd cli && npm install && npm run build )         # TUI (POSIX)
 # GUI program (editable, in-tree → auto-registers):
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-pip install -e "openprogram/functions/agentics/GUI-Agent-Harness[ocr]"
+pip install -e "openprogram/programs/applications/gui_harness[ocr]"
 hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector
 python -c "import easyocr; easyocr.Reader(['en','ch_sim'], gpu=False)"
 ```

@@ -367,7 +367,7 @@ def test_write_tool_checkpoints_when_dag_runtime_unavailable(
     Forcing create_runtime to raise reproduces the real failure exactly.
     """
     from openprogram.store.snapshot.checkpoint.paths import turn_manifest_path
-    from openprogram.functions.tools.write.write import write as write_tool
+    from openprogram.programs.functions.write.write import write as write_tool
 
     srv, db, _captured = env
 
@@ -458,7 +458,7 @@ def test_shadow_git_commits_on_webui_turn(
     (and its before/after stamp) happens for web chats too — that stamp
     is what makes turn_file_diff exact rather than approximate."""
     from types import SimpleNamespace
-    from openprogram.functions.tools.write.write import write as write_tool
+    from openprogram.programs.functions.write.write import write as write_tool
 
     srv, db, _captured = env
 

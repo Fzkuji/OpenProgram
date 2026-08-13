@@ -137,17 +137,17 @@ def _create_agent_stream() -> EventStream[AgentEvent, list[AgentMessage]]:
     )
 
 
-def _record_task_activity(kind: str) -> None:
+def _record_job_activity(kind: str) -> None:
     try:
-        from openprogram.agent.task.runner import record_current_task_activity
-        record_current_task_activity(kind)
+        from openprogram.agent.job.runner import record_current_job_activity
+        record_current_job_activity(kind)
     except Exception:
         pass
 
 
-def _task_operation_timeout(declared: float | None) -> float | None:
-    from openprogram.agent.task.runner import current_task_operation_timeout
-    return current_task_operation_timeout(declared)
+def _job_operation_timeout(declared: float | None) -> float | None:
+    from openprogram.agent.job.runner import current_job_operation_timeout
+    return current_job_operation_timeout(declared)
 
 
 def agent_loop(
@@ -351,7 +351,7 @@ async def _run_loop(
         # array until the next boundary so the cached prefix (rooted on the
         # tools array) survives the turn; they are callable immediately via
         # the schema tool_search returns. See tool-toggle-management.md §6.
-        from openprogram.functions import freeze_turn_tools
+        from openprogram.programs import freeze_turn_tools
         freeze_turn_tools(list(current_context.tools or []))
 
         has_more_tool_calls = True
@@ -657,7 +657,7 @@ async def _stream_assistant_response(
     # ``freeze_turn_tools`` at the turn boundary, so this returns the
     # SAME array on every call within a turn — the cached prefix rooted
     # on the tools array survives a mid-turn ``tool_search``.
-    from openprogram.functions import split_tools_for_dispatch
+    from openprogram.programs import split_tools_for_dispatch
     _provider_tools, _ = split_tools_for_dispatch(
         list(context.tools or [])
     )
@@ -796,7 +796,7 @@ async def _stream_assistant_response(
     partial_message: AssistantMessage | None = None
     added_partial = False
 
-    _record_task_activity("operation_start")
+    _record_job_activity("operation_start")
     response_stream = fn(config.model, llm_context, stream_opts)
 
     iterator = response_stream.__aiter__()
@@ -805,7 +805,7 @@ async def _stream_assistant_response(
             from openprogram.providers.utils.errors import ExecInterrupt
 
             raise ExecInterrupt("cancelled")
-        timeout = _task_operation_timeout(None)
+        timeout = _job_operation_timeout(None)
         try:
             event = (
                 await iterator.__anext__()
@@ -814,7 +814,7 @@ async def _stream_assistant_response(
             )
         except StopAsyncIteration:
             break
-        _record_task_activity("provider_data")
+        _record_job_activity("provider_data")
         if structured_plan is not None and cancel_event and cancel_event.is_set():
             from openprogram.providers.utils.errors import ExecInterrupt
 
@@ -1130,7 +1130,7 @@ async def _execute_tool_calls(
             validated_args = validate_tool_arguments(ai_tool, tool_call)
 
             def on_update(partial_result: AgentToolResult) -> None:
-                _record_task_activity("tool_progress")
+                _record_job_activity("tool_progress")
                 ev_stream.push(AgentEventToolUpdate(
                     tool_call_id=tool_call.id,
                     tool_name=tool_call.name,
@@ -1140,8 +1140,8 @@ async def _execute_tool_calls(
 
             pre_snapshot = _snapshot_cwd(tool_call.name)
             try:
-                _record_task_activity("operation_start")
-                timeout = _task_operation_timeout(None)
+                _record_job_activity("operation_start")
+                timeout = _job_operation_timeout(None)
                 operation = tool.execute(
                     tool_call.id, validated_args, cancel_event, on_update,
                 )

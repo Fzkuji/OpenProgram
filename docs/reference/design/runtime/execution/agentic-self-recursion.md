@@ -19,7 +19,7 @@ Two triggers compound:
 1. **The default toolset = full, which includes the function itself.** A bare `runtime.exec(content=...)` passes no `tools=` / `toolset=`, so `_call_via_providers` resolves it to `DEFAULT_TOOLSET = "full"`:
    - `openprogram/agentic_programming/runtime.py:1467` `DEFAULT_TOOLSET = "full"`
    - `runtime.py:1468-1483` the `raw_tools is None` branch → `_resolve_agent_tools(toolset="full", ...)`
-   - and the `full` toolset lists all harness entry points themselves (`wiki_agent` / `research_agent` / `gui_agent` …, see `openprogram.functions.TOOLSETS["full"]`). So the inner model's tool list **contains the very function it is executing**.
+   - and the `full` toolset lists all harness entry points themselves (`wiki_agent` / `research_agent` / `gui_agent` …, see `openprogram.programs.TOOLSETS["full"]`). So the inner model's tool list **contains the very function it is executing**.
 
 2. **The model sees the docstring match the task and mistakenly thinks it should call it.** The model sees `wiki_agent`'s tool description ("Maintain a wiki vault — route to ingest…") match the current task exactly, decides it should route to `wiki_agent` → calls itself → enters another bare exec, sees itself again → infinite recursion.
 

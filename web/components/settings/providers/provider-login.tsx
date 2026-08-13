@@ -14,7 +14,7 @@ import type { Provider } from "./types";
  *  /api/providers/{id}/login/{start,poll,submit,cancel}: start kicks off the
  *  flow, then we poll for events (open a URL, show a device code, progress, or
  *  a prompt we must answer) until done, then refresh status. Same flow the CLI
- *  runs, and the same flow <AccountManager> embeds (with accountId) as its
+ *  runs, and the same flow <AccountManager> embeds (with accountLabel) as its
  *  "add account" step for login providers.
  *
  *  Polling is a SELF-RESCHEDULING setTimeout (never setInterval) so only one
@@ -31,16 +31,15 @@ interface Prompt {
 export function ProviderLogin({
   provider,
   onChanged,
-  accountId,
+  accountLabel,
   bare = false,
   leadingInput,
 }: {
   provider: Provider;
   onChanged?: () => void;
-  /** Target account the new credential lands in. Omitted ⇒ the
-   *  worker's "default" account. <AccountManager> passes the account name so
-   *  "add account" writes a NEW account instead of overwriting the default. */
-  accountId?: string;
+  /** Optional display label. The worker independently allocates the stable
+   *  account id, so two sign-ins cannot overwrite one another. */
+  accountLabel?: string;
   /** Drop the bordered "Sign in" section wrapper — used when embedded as the
    *  add-account step inside <AccountManager>, which supplies its own frame. */
   bare?: boolean;
@@ -98,7 +97,7 @@ export function ProviderLogin({
       const r = await fetch(`/api/providers/${provider.id}/login/start`, {
         method: "POST",
         headers: JSON_HEADERS,
-        body: JSON.stringify(accountId ? { method, account: accountId } : { method }),
+        body: JSON.stringify(accountLabel ? { method, label: accountLabel } : { method }),
       });
       const d = await r.json();
       if (d.error || !d.session) {

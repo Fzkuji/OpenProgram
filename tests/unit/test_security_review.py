@@ -1,11 +1,11 @@
 """Unit tests for the security_review agentic function
-(``openprogram/functions/agentics/security_review/``): baseline
+(``openprogram/programs/agentic_functions/security_review/``): baseline
 selection, diff collection over a real git repository, the short-circuit
 that returns no findings without spawning an agent, and the shape of
 what comes back.
 
 The review turn goes through the module-level ``_run_review_turn`` seam
-(the same shape ``goal`` and ``task_list`` use), so these tests stub it
+(the same shape ``goal`` and ``agentic_workflow`` use), so these tests stub it
 and never reach a provider. Git is real — baseline selection is exactly
 the part that is worth testing against git rather than against a mock of
 it."""
@@ -16,7 +16,7 @@ import subprocess
 
 import pytest
 
-import openprogram.functions.agentics.security_review as SR
+import openprogram.programs.agentic_functions.security_review as SR
 
 
 def _run(repo, *args):

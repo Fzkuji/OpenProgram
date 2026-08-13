@@ -151,7 +151,7 @@ def run_with_session(func, *args, **kwargs):
         The function's return value (for programmatic use).
         Side effect: prints JSON lines to stdout (for CLI/agent use).
     """
-    from openprogram.functions.agentics.ask_user import set_ask_user
+    from openprogram.programs.agentic_functions.ask_user import set_ask_user
 
     session = Session()
 

@@ -29,6 +29,7 @@ async def run_login(
     ui: LoginUi,
     *,
     api_key: Optional[str] = None,
+    label: str = "",
 ) -> Credential:
     """Run ``method`` for ``provider`` through ``ui`` and return the credential."""
     # Lazy import: the sync paste/import helpers live in cli.py, which imports
@@ -37,24 +38,24 @@ async def run_login(
 
     if method == "api_key":
         key = (api_key or "").strip() or (await ui.prompt("Paste the API key", secret=True)).strip()
-        return _cli._login_paste_api_key(provider, account, api_key=key)
+        cred = _cli._login_paste_api_key(provider, account, api_key=key)
 
-    if method == "import_from_cli":
+    elif method == "import_from_cli":
         await ui.show_progress(f"Importing your existing {provider} login…")
-        return _cli._login_import_from_cli(provider, account)
+        cred = _cli._login_import_from_cli(provider, account)
 
-    if method == "pkce_oauth":
+    elif method == "pkce_oauth":
         from .methods.pkce_oauth import PkceLoginMethod
         cfg = _pkce_config(provider)
         # Claude subscription credentials live in the `anthropic` pool even
         # when the user logged in via the `claude-code` provider entry, so
         # the direct runtime (which resolves from `anthropic`) finds them.
         store_provider = _credential_provider_id(provider)
-        return await PkceLoginMethod(
+        cred = await PkceLoginMethod(
             provider_id=store_provider, config=cfg, account_id=account
         ).run(ui)
 
-    if method == "setup_token":
+    elif method == "setup_token":
         token = (api_key or "").strip() or (
             await ui.prompt(
                 "Paste your `claude setup-token` (run `claude setup-token` to mint one)",
@@ -64,12 +65,17 @@ async def run_login(
         if not token:
             raise AuthConfigError("no setup-token provided")
         from openprogram.providers.anthropic import auth_adapter as _anth
-        return _anth.import_setup_token(token, account_id=account)
+        cred = _anth.import_setup_token(token, account_id=account)
 
-    if method == "device_code":
-        return await _run_device_code(provider, account, ui)
+    elif method == "device_code":
+        cred = await _run_device_code(provider, account, ui)
 
-    raise AuthConfigError(f"unsupported login method: {method!r}")
+    else:
+        raise AuthConfigError(f"unsupported login method: {method!r}")
+
+    from .account_labels import apply_account_label
+
+    return apply_account_label(cred, label)
 
 
 def _credential_provider_id(provider: str) -> str:

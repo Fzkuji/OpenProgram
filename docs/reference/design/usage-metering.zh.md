@@ -25,7 +25,7 @@ LLM 调用最终都过 `providers/stream.py` 的 `stream_simple()`（流式）/ 
 
 3. **职责分离**。计费记账、compaction 阈值估算、热路径 budget 缓存的生命周期与消费者各不相同，分属不同对象。
 
-聊天主循环之外抵达 provider 的路径——`context/summarize.py`、`functions/tools/mixture_of_agents`、`memory/llm_bridge.py`，以及 `@agentic_function` 子进程（`process_runner.py`）——都由同一个收口点加一个显式来源 scope 覆盖。
+聊天主循环之外抵达 provider 的路径——`context/summarize.py`、`programs/functions/mixture_of_agents`、`memory/llm_bridge.py`，以及 `@agentic_function` 子进程（`process_runner.py`）——都由同一个收口点加一个显式来源 scope 覆盖。
 
 `providers/models.py:calculate_cost(model, usage)` 已能从 `Model.cost` 算成本。metering 层在收口点调用它，不新建定价逻辑。
 

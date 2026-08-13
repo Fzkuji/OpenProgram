@@ -61,7 +61,7 @@ LLM's tool_call dispatch.             (it triggers __call__ → wrapper);
 ```
 
 Both decorators ultimately produce one ``AgentTool`` entry in one
-shared registry (``openprogram.functions._runtime._registry``). The
+shared registry (``openprogram.programs._runtime._registry``). The
 ``_build_and_register_tool`` helper is the single source of truth for
 "build AgentTool + attach sidecars + register". Both decorators
 delegate to it; adding a new sidecar attribute or gating layer means
@@ -261,7 +261,7 @@ toolbox"); L5 is *blacklisting / capping* (subtractive, "this tool is
 broken / this session may not use it"). A veto must be independent of
 selection — e.g. attended-mode must withhold `ask_user_question` no
 matter which folder is active; you can't rely on the user remembering to
-leave it out of every folder. So the **Functions page surfaces L2b as
+leave it out of every folder. So the **Programs page surfaces L2b as
 the primary action (organize & pick folders) and L5 as the exception
 (a per-tool off switch)**; the system's own L5 vetoes (attended,
 subagent caps) are code-only and invisible to the user.
@@ -285,10 +285,10 @@ allowlist. Concretely:
   `expose=False`; a user can still turn any of them off on the Functions
   page (Layer 5). The default, though, is "registered = usable".
 
-## Tool profiles (Functions page)
+## Tool profiles (Programs page)
 
 A **tool profile** is a named configuration that says "which tools are
-enabled for this conversation". The Functions page (`/functions`)
+enabled for this conversation". The Programs page (`/programs`)
 manages profiles; the chat composer lets the user pick which profile to
 use.
 
@@ -296,7 +296,7 @@ use.
 
 ```
 tool catalog          all registered, exposed tools — a flat read-only
-(the shelf)           list on the Functions page. Shows every tool with
+(the shelf)           list on the Programs page. Shows every tool with
                       its name + description. The catalog itself has no
                       enable/disable controls; it just shows what exists.
 
@@ -318,7 +318,7 @@ default profile       the built-in "all tools on" profile. Always
 
 ### User flow
 
-1. **Functions page** shows the catalog (all tools) and a sidebar of
+1. **Programs page** shows the catalog (all tools) and a sidebar of
    profiles. Clicking a profile shows which tools it includes; the
    user adds/removes tools from that profile.
 2. **Chat composer** has a profile picker (e.g. a dropdown next to the
@@ -362,7 +362,7 @@ action is profile management, not per-tool global toggles.
 ```
 Entry point                     Controls                     Layer  Persisted in
 ────────────────────────────────────────────────────────────────────────────────────────
-Functions page —                create / edit / delete tool  L2b    functions_meta.json
+Programs page —                create / edit / delete tool  L2b    functions_meta.json
   tool profiles                 profiles (named tool sets).         → profiles: {name:[...]}
                                 Add/remove tools to/from a
                                 profile. Default profile =
@@ -388,7 +388,7 @@ Attended / unattended           withhold ask_user_question   L5     session stat
                                                                     the user)
 
 Global tool disable             blacklist a single tool      L5     config.json:
-  (Functions page / config)     everywhere — rarely used.           tools.disabled
+  (Programs page / config)     everywhere — rarely used.           tools.disabled
                                 Overrides any profile.
 
 Author decorator kwargs         expose / available_if /      L1/2/  in-code
@@ -396,7 +396,7 @@ Author decorator kwargs         expose / available_if /      L1/2/  in-code
                                 / check_fn
 ```
 
-Daily use = **tool profiles** on the Functions page (create profiles,
+Daily use = **tool profiles** on the Programs page (create profiles,
 add/remove tools) + **profile picker** in the chat composer (choose
 which profile this conversation uses). Global disable = rarely-used
 backstop. Agent profile = per-agent override for advanced multi-agent
@@ -601,7 +601,7 @@ def research(topic: str) -> str: ...
 ## Where each piece lives
 
 ```
-openprogram/functions/_runtime.py
+openprogram/programs/_runtime.py
   AgentTool subclass (from openprogram.agent.types)
   _registry                                            exposure source
                                                        (Layer 2: exposed =
@@ -624,12 +624,12 @@ openprogram/functions/_runtime.py
   deferred_catalog_text                                Layer 6 prompt block
   tool_search (the AgentTool itself)                   Layer 6 loader
 
-openprogram/functions/_helpers.py
+openprogram/programs/_helpers.py
   is_available (legacy dict, kept for older callers)
   is_available_agent_tool                              consolidates the
                                                        Layer 4 triad
 
-openprogram/functions/__init__.py
+openprogram/programs/__init__.py
   DEFAULT_TOOLS, TOOLSETS                              Layer 2 presets
   agent_tools, apply_tool_policy                       resolution API
   get_agent_tool, list_registered_agent_tools,
@@ -637,7 +637,7 @@ openprogram/functions/__init__.py
   side-effect imports of every subpackage              @function tools register
                                                        at import time
 
-openprogram/functions/<name>/<name>.py                  one per tool
+openprogram/programs/<name>/<name>.py                  one per tool
   @function on a plain def                             (for the 38 leaf
                                                        tools shipped today)
 
@@ -669,7 +669,7 @@ openprogram/agent/agent_loop.py
                                                        schemas appear on
                                                        the next call)
 
-openprogram/functions/agentics/*/__init__.py           @agentic_function
+openprogram/programs/agentic_functions/*/__init__.py           @agentic_function
                                                        modules (each its
                                                        own directory).
                                                        Includes harness
@@ -733,7 +733,7 @@ necessary):
 
 The registry, the six gating layers, the two decorators, and the four
 runtime knobs are all in place. Two user-facing entry points described
-under "Tool profiles (Functions page)" and "User-editable entry points"
+under "Tool profiles (Programs page)" and "User-editable entry points"
 are not built yet:
 
 - the Functions-page profile manager (create / edit / delete tool

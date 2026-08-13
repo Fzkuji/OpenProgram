@@ -87,7 +87,7 @@
     <div><span class="k">验收状态</span><b>Task 1–5 已实现，集中规格与质量审查 PASS</b></div>
   </div>
 
-  <div class="note"><b>实现状态边界。</b>durable dispatcher 公平性、lease generation owner fencing、崩溃恢复、runtime/idle 强制、价格来源真值、provider chokepoint 上的 token/cost reserve/start/settle，以及 model tools、Web、CLI、TUI 共用的 TaskResourceView 均已实现，并有事务边界故障注入证据。预算只对绑定了受治理任务的调用生效；CLI、测试等未治理调用保持原有 best-effort 记账语义不变。</div>
+  <div class="note"><b>实现状态边界。</b>durable dispatcher 公平性、lease generation owner fencing、崩溃恢复、runtime/idle 强制、价格来源真值、provider chokepoint 上的 token/cost reserve/start/settle，以及 model tools、Web、CLI、TUI 共用的 JobResourceView 均已实现，并有事务边界故障注入证据。预算只对绑定了受治理任务的调用生效；CLI、测试等未治理调用保持原有 best-effort 记账语义不变。</div>
 
   <nav aria-label="目录">
     <a href="#scope">00 范围与结论</a>
@@ -115,10 +115,10 @@
   <div class="table-wrap">
   <table>
     <tr><th>决策</th><th>结论</th><th>理由</th></tr>
-    <tr><td><code>max_live_global</code></td><td class="no">不新增</td><td>现有进程级 <code>ThreadPoolExecutor</code> 已由 <code>OPENPROGRAM_TASK_WORKERS</code> 控制全局执行容量，默认 4。再增加同义配置会形成两个可能冲突的全局上限。界面只读展示有效 worker capacity。</td></tr>
+    <tr><td><code>max_live_global</code></td><td class="no">不新增</td><td>现有进程级 <code>ThreadPoolExecutor</code> 已由 <code>OPENPROGRAM_JOB_WORKERS</code> 控制全局执行容量，默认 4。再增加同义配置会形成两个可能冲突的全局上限。界面只读展示有效 worker capacity。</td></tr>
     <tr><td><code>max_live_per_session</code></td><td class="yes">新增</td><td>防止一个会话占用全部 worker；它只计真正执行且尚未确认停止的任务。</td></tr>
     <tr><td><code>max_queued_per_session</code></td><td class="yes">新增</td><td>限制已 admission 但未运行的任务，避免无界持久队列。排队任务不占 live 名额。</td></tr>
-    <tr><td><code>max_tasks_per_session</code></td><td class="yes">新增</td><td>限制会话生命周期内成功 admission 的累计任务数；任务终态后不返还。</td></tr>
+    <tr><td><code>max_jobs_per_session</code></td><td class="yes">新增</td><td>限制会话生命周期内成功 admission 的累计任务数；任务终态后不返还。</td></tr>
     <tr><td>token / cost / runtime / idle</td><td class="yes">均纳入，强制条件不同</td><td>token 和时间在具备安全上界与可取消边界时可强制；费用只有价格已知时才可预先强制。未知费用不能按 0 处理。</td></tr>
     <tr><td>事实账本</td><td class="yes">复用 usage ledger</td><td>实际 provider 使用量仍只写 <code>usage_events</code>。admission 和未结算 reservation 是执行状态，不复制第二套实际用量账本。</td></tr>
   </table>
@@ -132,20 +132,20 @@
   <div class="table-wrap">
   <table class="wide">
     <tr><th>现有机制</th><th>已经确认的行为</th><th>治理缺口</th><th>证据</th></tr>
-    <tr><td>全局执行池与 admission</td><td><code>OPENPROGRAM_TASK_WORKERS</code> 仍是唯一全局容量；runner 与同步 agent 入口已调用 <code>ResourceGovernor.admit_task()</code>，SQLite 用 <code>BEGIN IMMEDIATE</code> 保护计数。</td><td>runner 仍把所有已 admission 任务提交到 executor，再由 worker 轮询 <code>try_start()</code>；被限流 session 可占满线程并阻止其他 session 执行。</td><td><span class="source">openprogram/agent/task/runner.py · admit_task_entity / spawn_task / _run_one<br>openprogram/agent/resource_governance.py · admit_task / try_start</span></td></tr>
-    <tr><td>任务与资源持久状态</td><td>Task 已有 <code>budget_scope_id</code>、<code>effective_limits</code>、<code>reason_code</code>；usage DB 已有 admissions、budget scopes 与 reservations。</td><td>资源状态和 tasks.json 的跨文件/数据库恢复仍需逐崩溃点验证；未合并的 owner-fencing 修复不能视为 main 行为。</td><td><span class="source">openprogram/agent/task/types.py<br>openprogram/usage/ledger.py<br>openprogram/agent/resource_governance.py</span></td></tr>
-    <tr><td>会话限制</td><td><code>max_live_per_session</code>、<code>max_queued_per_session</code>、<code>max_tasks_per_session</code> 已进入 config schema，并由 governor 原子检查。</td><td>Web/TUI/CLI 尚不能完整查看 configured/effective/source、queue position 与 retryable reason；公平 dispatcher 尚未进入 main。</td><td><span class="source">openprogram/config_schema.py<br>openprogram/agent/resource_governance.py · resolve_resource_limits / _capacity</span></td></tr>
-    <tr><td>取消与恢复</td><td>取消继续按父子关系级联，运行任务使用 cancel/kill/watchdog；governor 已有 lease、stopping 与 release 原语。</td><td>当前 main 尚未完成 owner-fenced reconciler 和“线程真正退出后才返还 live”的全部竞争条件修复。</td><td><span class="source">openprogram/agent/task/runner.py · cancel_task / _run_one<br>openprogram/agent/resource_governance.py · renew_lease / request_stop / release_task</span></td></tr>
+    <tr><td>全局执行池与 admission</td><td><code>OPENPROGRAM_JOB_WORKERS</code> 仍是唯一全局容量；runner 与同步 agent 入口已调用 <code>ResourceGovernor.admit_job()</code>，SQLite 用 <code>BEGIN IMMEDIATE</code> 保护计数。</td><td>runner 仍把所有已 admission 任务提交到 executor，再由 worker 轮询 <code>try_start()</code>；被限流 session 可占满线程并阻止其他 session 执行。</td><td><span class="source">openprogram/agent/job/runner.py · admit_job_entity / spawn_job / _run_one<br>openprogram/agent/resource_governance.py · admit_job / try_start</span></td></tr>
+    <tr><td>任务与资源持久状态</td><td>Job 已有 <code>budget_scope_id</code>、<code>effective_limits</code>、<code>reason_code</code>；usage DB 已有 admissions、budget scopes 与 reservations。</td><td>资源状态和 jobs.json 的跨文件/数据库恢复仍需逐崩溃点验证；未合并的 owner-fencing 修复不能视为 main 行为。</td><td><span class="source">openprogram/agent/job/types.py<br>openprogram/usage/ledger.py<br>openprogram/agent/resource_governance.py</span></td></tr>
+    <tr><td>会话限制</td><td><code>max_live_per_session</code>、<code>max_queued_per_session</code>、<code>max_jobs_per_session</code> 已进入 config schema，并由 governor 原子检查。</td><td>Web/TUI/CLI 尚不能完整查看 configured/effective/source、queue position 与 retryable reason；公平 dispatcher 尚未进入 main。</td><td><span class="source">openprogram/config_schema.py<br>openprogram/agent/resource_governance.py · resolve_resource_limits / _capacity</span></td></tr>
+    <tr><td>取消与恢复</td><td>取消继续按父子关系级联，运行任务使用 cancel/kill/watchdog；governor 已有 lease、stopping 与 release 原语。</td><td>当前 main 尚未完成 owner-fenced reconciler 和“线程真正退出后才返还 live”的全部竞争条件修复。</td><td><span class="source">openprogram/agent/job/runner.py · cancel_job / _run_one<br>openprogram/agent/resource_governance.py · renew_lease / request_stop / release_task</span></td></tr>
     <tr><td>token / cost</td><td>scope、reservation、start、settle 数据结构和事务方法已存在；unknown cost 仍由 usage ledger 保留来源。</td><td><code>reserve_tokens()</code>、<code>reserve_cost()</code> 当前只有测试调用；真实 provider 请求没有安全上界预占、output cap 收紧、结算或未知价格 fail-closed。</td><td><span class="source">openprogram/agent/resource_governance.py · reserve_tokens / reserve_cost / settle_reservation<br>tests/unit/test_resource_governance.py</span></td></tr>
-    <tr><td>runtime / idle</td><td>配置和 budget scope 可以保存 <code>max_runtime_seconds</code>、<code>idle_timeout_seconds</code>；既有 provider/tool timeout 仍独立工作。</td><td>main runner 没有 active timer、meaningful activity、deadline clamp 或 non-preemptible operation gate；排队时间与运行时间也未形成完整用户诊断。</td><td><span class="source">openprogram/config_schema.py<br>openprogram/providers/utils/deadline.py<br>openprogram/agent/task/runner.py</span></td></tr>
-    <tr><td>用户状态</td><td>Web 与模型工具已有任务 list/get/cancel 和状态广播；<code>TaskResourceView</code> 可生成基础结构。</td><td>Web/TUI/CLI/model 尚未共享完整 DTO；token/cost/runtime 的 <code>used</code> 或 <code>shared_remaining</code> 仍可能为空，不能据此宣称预算已执行。</td><td><span class="source">openprogram/agent/resource_governance.py · TaskResourceView / build_task_resource_view<br>openprogram/webui/ws_actions/task.py<br>openprogram/functions/tools/agent/list_tasks/</span></td></tr>
+    <tr><td>runtime / idle</td><td>配置和 budget scope 可以保存 <code>max_runtime_seconds</code>、<code>idle_timeout_seconds</code>；既有 provider/tool timeout 仍独立工作。</td><td>main runner 没有 active timer、meaningful activity、deadline clamp 或 non-preemptible operation gate；排队时间与运行时间也未形成完整用户诊断。</td><td><span class="source">openprogram/config_schema.py<br>openprogram/providers/utils/deadline.py<br>openprogram/agent/job/runner.py</span></td></tr>
+    <tr><td>用户状态</td><td>Web 与模型工具已有任务 list/get/cancel 和状态广播；<code>JobResourceView</code> 可生成基础结构。</td><td>Web/TUI/CLI/model 尚未共享完整 DTO；token/cost/runtime 的 <code>used</code> 或 <code>shared_remaining</code> 仍可能为空，不能据此宣称预算已执行。</td><td><span class="source">openprogram/agent/resource_governance.py · JobResourceView / build_task_resource_view<br>openprogram/webui/ws_actions/task.py<br>openprogram/programs/functions/agent/list_tasks/</span></td></tr>
   </table>
   </div>
 
   <div class="note warn"><b>创建入口审计。</b>基础批次已把 runner 与同步 agent 接到 governor，但完整 gate 仍要求 WebSocket、busy-target inbox、内部重试和后续新增入口都有同一 admission 证据，并验证拒绝之前没有 branch、inbox 或广播副作用。</div>
 
   <h2 id="references">02 其他项目怎么设计：比较计数单位、拒绝时机、持久性、取消和可见性</h2>
-  <p>参考对象的数字服务于理解其计数单位和运行模型，不构成 OpenProgram 默认值依据。完整协作证据见<a href="agent-collab-comparison.html">Agent 协作实现对照</a>，现有内部设计见<a href="agent-collaboration.zh.html">agent-collaboration.zh.html</a>和<a href="execution/async-task-lifecycle.zh.html">async-task-lifecycle.zh.html</a>。</p>
+  <p>参考对象的数字服务于理解其计数单位和运行模型，不构成 OpenProgram 默认值依据。完整协作证据见<a href="agent-collab-comparison.html">Agent 协作实现对照</a>，现有内部设计见<a href="agent-collaboration.zh.html">agent-collaboration.zh.html</a>和<a href="execution/async-job-lifecycle.zh.html">async-job-lifecycle.zh.html</a>。</p>
 
   <div class="table-wrap">
   <table class="wide">
@@ -154,14 +154,14 @@
     <tr><td>Codex CLI</td><td>全局并发 6；V2 每会话 4；V1 深度 1，V2 计算层数但未强制。</td><td>execution controller 在启动前做并发检查。</td><td>ThreadId；list/wait/interrupt；V2 interrupt 未确认完整级联。</td><td>模型可查询与中断。</td><td>支持 per-session live 与全局 scheduler capacity 分层；也说明深度和并发不能互相替代。</td></tr>
     <tr><td>OpenClaw</td><td>默认深度 1、每父 live children 5、并发池 8/4，另有消息循环上限。</td><td>spawn 时再次检查深度、children 和并发。</td><td>runId/session key；宿主维护 run；已确认子任务级联取消。</td><td>list 和宿主状态。</td><td>采用“提交处再检查”和级联思路；不采用多个重叠 children/global 参数。</td></tr>
     <tr><td>OpenCode</td><td>权限形状形成隐式深度 1；未确认数值并发上限。</td><td>工具权限在子 session 创建/调用处约束。</td><td>子 session id 和后台 metadata；宿主级联取消。</td><td>后台任务状态可见，但模型查询面较弱。</td><td>证明 permission 限制不等同于资源 quota；状态应当独立暴露。</td></tr>
-    <tr><td>Hermes</td><td>默认深度 1（可配至 3）、child concurrency 3、每子 50 iterations、caller timeout 600 秒并有 heartbeat。</td><td>线程池提交和调用等待处限制。</td><td>同步等待；模型没有稳定 task id；宿主可级联取消。</td><td>看板/宿主可见，模型控制面有限。</td><td>采用 runtime/idle 两类时间信号；不把 caller wait timeout 当作实际停止保证。</td></tr>
+    <tr><td>Hermes</td><td>默认深度 1（可配至 3）、child concurrency 3、每子 50 iterations、caller timeout 600 秒并有 heartbeat。</td><td>线程池提交和调用等待处限制。</td><td>同步等待；模型没有稳定 job id；宿主可级联取消。</td><td>看板/宿主可见，模型控制面有限。</td><td>采用 runtime/idle 两类时间信号；不把 caller wait timeout 当作实际停止保证。</td></tr>
     <tr><td>CodeBuddy</td><td>官方本机包文档记录 workflow 最多并发 16、每次 run 最多 1000 agents。</td><td>workflow 编排器按 phase 和 run 约束。</td><td>同 session 内可 resume；agent teams 文档同时说明 team 不由 <code>/resume</code> 恢复。</td><td>workflow UI 展示 phase agent 数、tokens、elapsed 和 abort。</td><td>采用并发、累计量和可见用量分离；不直接采用 16/1000，也不把 resume 描述扩大到 team。</td></tr>
-    <tr><td>pi-mono</td><td>示例扩展 batch 8、concurrency 4、单任务输出 50KB。</td><td>扩展在派生子进程前限制 batch/concurrency。</td><td>没有 durable task id/query；一层进程取消可能遗留更深后代。</td><td>主要是调用结果。</td><td>说明扩展局部 semaphore 不足以覆盖持久任务和级联恢复。</td></tr>
+    <tr><td>pi-mono</td><td>示例扩展 batch 8、concurrency 4、单任务输出 50KB。</td><td>扩展在派生子进程前限制 batch/concurrency。</td><td>没有 durable job id/query；一层进程取消可能遗留更深后代。</td><td>主要是调用结果。</td><td>说明扩展局部 semaphore 不足以覆盖持久任务和级联恢复。</td></tr>
   </table>
   </div>
 
   <div class="grid2">
-    <div class="card"><h3>采用</h3><ul><li>全局 scheduler capacity 与 per-session live 分层。</li><li>live、queued、累计任务分别计数。</li><li>稳定 task id、级联取消、用户可查询状态。</li><li>tokens、elapsed、reason 在任务视图中同时展示。</li></ul></div>
+    <div class="card"><h3>采用</h3><ul><li>全局 scheduler capacity 与 per-session live 分层。</li><li>live、queued、累计任务分别计数。</li><li>稳定 job id、级联取消、用户可查询状态。</li><li>tokens、elapsed、reason 在任务视图中同时展示。</li></ul></div>
     <div class="card"><h3>修改或拒绝</h3><ul><li>拒绝直接采用竞品具体数值。</li><li>拒绝用深度、fanout 或 tool permission 代替资源 admission。</li><li>拒绝只用进程内 semaphore；admission 必须持久且跨进程原子。</li><li>拒绝把 caller timeout 或终态标记描述为已终止执行。</li></ul></div>
   </div>
 
@@ -191,50 +191,50 @@
     <pre>agent.resource_limits:
   max_live_per_session: integer | null
   max_queued_per_session: integer | null
-  max_tasks_per_session: integer | null
+  max_jobs_per_session: integer | null
   max_total_tokens: integer | null
   max_cost_usd: decimal-string | null
   max_runtime_seconds: integer | null
   idle_timeout_seconds: integer | null</pre>
 
-    <p>所有非空值必须大于 0；<code>null</code> 表示未设置/继承。为兼容现有安装，默认不启用 queued、累计和四类预算。<code>max_live_per_session</code> 未设置时，有效值等于当前 scheduler capacity；已设置时，有效值是配置值与 scheduler capacity 的较小者。<code>OPENPROGRAM_TASK_WORKERS</code> 继续是唯一全局执行容量来源，并以只读字段 <code>scheduler_capacity</code> 展示。</p>
+    <p>所有非空值必须大于 0；<code>null</code> 表示未设置/继承。为兼容现有安装，默认不启用 queued、累计和四类预算。<code>max_live_per_session</code> 未设置时，有效值等于当前 scheduler capacity；已设置时，有效值是配置值与 scheduler capacity 的较小者。<code>OPENPROGRAM_JOB_WORKERS</code> 继续是唯一全局执行容量来源，并以只读字段 <code>scheduler_capacity</code> 展示。</p>
     <p>只有 owner 可以修改全局默认和 session override。Agent/task 请求只能提供更严格的四类执行预算，不能修改 live、queued、累计任务量或提高任何 owner 限制。现有 config get/set 接口扩展同名字段，session override 复用 session metadata；不增加第二套 quota 配置服务。</p>
-    <p><code>max_total_tokens</code> 和 <code>max_cost_usd</code> 统计该 session 中带受治理 <code>task_id</code> 的 agent/task 调用总量；普通前台主对话不计入本设计。<code>max_runtime_seconds</code> 和 <code>idle_timeout_seconds</code> 是每个 Task 及其祖先 scope 的时间 ceiling。修改 live/queued/cumulative 上限后，不终止已经 live/queued 的任务，但立即限制新的 admission 或 <code>queued → live</code>；修改 token/cost 上限后，已有任务在下一次 reservation 使用新 session ceiling；runtime/idle 默认值只作用于修改后 admission 的 Task，避免给运行中任务追溯设置 deadline。</p>
+    <p><code>max_total_tokens</code> 和 <code>max_cost_usd</code> 统计该 session 中带受治理 <code>job_id</code> 的 agent/task 调用总量；普通前台主对话不计入本设计。<code>max_runtime_seconds</code> 和 <code>idle_timeout_seconds</code> 是每个 Job 及其祖先 scope 的时间 ceiling。修改 live/queued/cumulative 上限后，不终止已经 live/queued 的任务，但立即限制新的 admission 或 <code>queued → live</code>；修改 token/cost 上限后，已有任务在下一次 reservation 使用新 session ceiling；runtime/idle 默认值只作用于修改后 admission 的 Job，避免给运行中任务追溯设置 deadline。</p>
   </section>
 
   <section class="phase" id="admission">
     <h3>05 Agent 请求创建任务时的 admission 与原子预占</h3>
     <dl>
       <dt>当前行为</dt><dd>agent tool、Web spawn、sync/async runner 和 busy-target inbox 采用不同创建路径；fanout slot 是进程内计数，且可在后续校验失败前消耗。</dd>
-      <dt>用户影响</dt><dd>相同请求从不同入口可能获得不同结果；并发前端或多进程可以同时通过非原子检查；失败创建可能留下 Task、branch、inbox 或计数残留。</dd>
-      <dt>缺口</dt><dd>没有单一 admission API、跨进程事务、幂等 task id 或 side-effect ordering。</dd>
-      <dt>目标行为</dt><dd>所有能产生执行任务的路径必须调用 <code>ResourceGovernor.admit_task</code>。先做纯校验，再在 SQLite 事务中原子检查 depth/fanout 与资源限制并预占，成功后才创建 Task/branch/inbox 并发布事件。拒绝不创建 Task。</dd>
+      <dt>用户影响</dt><dd>相同请求从不同入口可能获得不同结果；并发前端或多进程可以同时通过非原子检查；失败创建可能留下 Job、branch、inbox 或计数残留。</dd>
+      <dt>缺口</dt><dd>没有单一 admission API、跨进程事务、幂等 job id 或 side-effect ordering。</dd>
+      <dt>目标行为</dt><dd>所有能产生执行任务的路径必须调用 <code>ResourceGovernor.admit_job</code>。先做纯校验，再在 SQLite 事务中原子检查 depth/fanout 与资源限制并预占，成功后才创建 Job/branch/inbox 并发布事件。拒绝不创建 Job。</dd>
     </dl>
 
     <h4>统一覆盖范围</h4>
     <ul>
       <li>同步与异步 <code>agent()</code>；<code>agent(to=...)</code> 的 busy-target 预创建；<code>run_agent_turn_async</code>。</li>
-      <li>WebSocket/API spawn；模型工具；未来任何直接调用 <code>TaskRunner.spawn_task</code> 的入口。</li>
-      <li>同一 <code>task_id</code> 和相同 request fingerprint 的重试是幂等读取，不能再次增加 fanout、累计量或预占 queue；内容不同则返回 <code>quota.admission_conflict</code>。</li>
+      <li>WebSocket/API spawn；模型工具；未来任何直接调用 <code>JobRunner.spawn_job</code> 的入口。</li>
+      <li>同一 <code>job_id</code> 和相同 request fingerprint 的重试是幂等读取，不能再次增加 fanout、累计量或预占 queue；内容不同则返回 <code>quota.admission_conflict</code>。</li>
       <li><code>send_message</code> 本身不创建任务，不计累计任务数；它若触发受治理 lineage 中的模型调用，该调用仍计入对应预算。</li>
     </ul>
 
-    <h4>跨 SQLite 与 tasks.json 的 durable intent</h4>
+    <h4>跨 SQLite 与 jobs.json 的 durable intent</h4>
     <ol>
-      <li>生成 <code>task_id</code>、<code>admission_id</code> 与 request fingerprint，完成参数、target 和权限等不修改状态的校验。</li>
-      <li>在 usage DB 的第一个 <code>BEGIN IMMEDIATE</code> 事务中检查 depth、per-turn fanout、session/parent 剩余量，插入 <code>preparing</code> admission，并预占一个 queue 名额、一次 provisional fanout 和一次 provisional 累计任务量，然后提交。<code>preparing</code> 必须在写 tasks.json 前已经 durable；所有并发 admission 检查都把它的 provisional 占用计入，避免进程间超配。</li>
-      <li>使用 <code>openprogram._compat.flock</code> 保护每会话 tasks 文件读改写，持久化 Task。此时不广播，也不创建其他不可逆副作用。</li>
+      <li>生成 <code>job_id</code>、<code>admission_id</code> 与 request fingerprint，完成参数、target 和权限等不修改状态的校验。</li>
+      <li>在 usage DB 的第一个 <code>BEGIN IMMEDIATE</code> 事务中检查 depth、per-turn fanout、session/parent 剩余量，插入 <code>preparing</code> admission，并预占一个 queue 名额、一次 provisional fanout 和一次 provisional 累计任务量，然后提交。<code>preparing</code> 必须在写 jobs.json 前已经 durable；所有并发 admission 检查都把它的 provisional 占用计入，避免进程间超配。</li>
+      <li>使用 <code>openprogram._compat.flock</code> 保护每会话 tasks 文件读改写，持久化 Job。此时不广播，也不创建其他不可逆副作用。</li>
       <li>在第二个 <code>BEGIN IMMEDIATE</code> 事务中将 admission 从 <code>preparing</code> 改为 <code>queued</code>，把 provisional fanout/累计量确认为正式计数并提交；之后才创建 branch/inbox 并广播 accepted 状态。</li>
-      <li>任一步失败均执行幂等补偿。重启看到 durable <code>preparing</code> 时：存在匹配 Task 就以第二个事务 finalize；不存在就以事务释放 queue 与 provisional 计数。SQLite 事务不得跨越 tasks.json 文件 I/O。</li>
+      <li>任一步失败均执行幂等补偿。重启看到 durable <code>preparing</code> 时：存在匹配 Job 就以第二个事务 finalize；不存在就以事务释放 queue 与 provisional 计数。SQLite 事务不得跨越 jobs.json 文件 I/O。</li>
     </ol>
 
-    <div class="note">拒绝响应使用稳定结构：<code>{accepted:false, task_id:null, reason_code, retryable, effective_limits, usage, capacity}</code>。queue 满通常可重试；累计量或父预算耗尽不可重试，除非 owner 提高限制或创建新会话。</div>
+    <div class="note">拒绝响应使用稳定结构：<code>{accepted:false, job_id:null, reason_code, retryable, effective_limits, usage, capacity}</code>。queue 满通常可重试；累计量或父预算耗尽不可重试，除非 owner 提高限制或创建新会话。</div>
   </section>
 
   <section class="phase" id="queue">
     <h3>06 排队与运行中的实时并发</h3>
     <dl>
-      <dt>当前行为</dt><dd>runner 立即向 executor 提交；executor 的内部队列承载等待；Task 状态从 pending/queued 进入 running。</dd>
+      <dt>当前行为</dt><dd>runner 立即向 executor 提交；executor 的内部队列承载等待；Job 状态从 pending/queued 进入 running。</dd>
       <dt>用户影响</dt><dd>无法控制每会话排队量；一个会话可以填满执行池和等待队列；queue position 不稳定且不可诊断。</dd>
       <dt>缺口</dt><dd>没有 durable dispatcher、per-session fairness 或 queued/live 原子交换。</dd>
       <dt>目标行为</dt><dd>admission 后先进入持久队列。dispatcher 只在全局 worker 和该 session live 都有容量时提交任务，并在同一事务中释放 queue、获取 live。排队不占 live。</dd>
@@ -250,7 +250,7 @@
       </div>
     </div>
 
-    <p>Task 的兼容状态仍是 <code>pending/queued/running/completed/cancelled/errored</code>；资源状态单独持久化。<code>stopping</code> 尤其重要：Task 可以已显示 cancelled，但只要 worker/thread/runtime 尚未确认停止，live lease 就不能返还。这样不会因为 30 秒 watchdog 只改状态而产生超配。</p>
+    <p>Job 的兼容状态仍是 <code>pending/queued/running/completed/cancelled/errored</code>；资源状态单独持久化。<code>stopping</code> 尤其重要：Job 可以已显示 cancelled，但只要 worker/thread/runtime 尚未确认停止，live lease 就不能返还。这样不会因为 30 秒 watchdog 只改状态而产生超配。</p>
     <p>dispatcher 按全局 <code>admitted_seq</code> 选择“当前 session 仍有 live 容量”的最早任务。它跳过暂时不可运行的 session，避免某个 session 的队首任务阻止其他 session 被调度。全局 worker pool 仍决定总执行容量。</p>
     <p>只有持有现有 worker lock 的单个执行进程可以执行 <code>queued → live</code> 并提交 executor；Web/TUI/CLI/API 进程只做 admission 和持久入队。这样保留当前单 worker 产品拓扑，也防止多个进程各自创建全局线程池。若未来支持多个执行 worker，需要另行设计全局调度。</p>
   </section>
@@ -258,7 +258,7 @@
   <section class="phase" id="inheritance">
     <h3>07 父子预算分配与只可收紧继承</h3>
     <dl>
-      <dt>当前行为</dt><dd>消息/生成预算通过 ContextVar 继承并裁工具；Task 没有 token/cost/time 预算字段，也没有父任务剩余量的原子约束。</dd>
+      <dt>当前行为</dt><dd>消息/生成预算通过 ContextVar 继承并裁工具；Job 没有 token/cost/time 预算字段，也没有父任务剩余量的原子约束。</dd>
       <dt>用户影响</dt><dd>父任务无法限制整个后代树；显式给子任务的预算没有可验证的上界；并发子任务可同时消耗同一父预算。</dd>
       <dt>缺口</dt><dd>缺少 scope、共享剩余量和确定性分配规则。</dd>
       <dt>目标行为</dt><dd>task 请求可带单个 <code>limits</code> 对象，只包含 token/cost/runtime/idle 四类预算。显式子上限不得大于 session 有效上限、父任务上限或父 scope 的当前剩余量。</dd>
@@ -304,20 +304,20 @@
     <h3>09 取消、失败、超时和完成后的名额释放与累计量语义</h3>
     <dl>
       <dt>当前行为</dt><dd>终态吸收，取消会级联；runner finally 清理进程内 map。watchdog 可在执行线程仍活跃时标记 cancelled。</dd>
-      <dt>用户影响</dt><dd>如果把 Task 终态直接等同于资源释放，可能出现 worker 仍运行但新任务已获得名额；如果崩溃后永不释放，又会永久泄漏。</dd>
-      <dt>缺口</dt><dd>Task 状态和资源 lease 没有分离；累计任务的返还规则未定义。</dd>
+      <dt>用户影响</dt><dd>如果把 Job 终态直接等同于资源释放，可能出现 worker 仍运行但新任务已获得名额；如果崩溃后永不释放，又会永久泄漏。</dd>
+      <dt>缺口</dt><dd>Job 状态和资源 lease 没有分离；累计任务的返还规则未定义。</dd>
       <dt>目标行为</dt><dd>queue/live 只在其执行实体确认结束或 lease 恢复规则成立时释放；累计任务量在成功 admission 时只增加一次，任何终态都不返还。</dd>
     </dl>
 
     <div class="table-wrap">
     <table>
-      <tr><th>事件</th><th>queue 名额</th><th>live 名额</th><th>累计任务量</th><th>Task 终态</th></tr>
-      <tr><td>admission 被拒绝</td><td>不占用</td><td>不占用</td><td>不增加</td><td>不创建 Task</td></tr>
-      <tr><td>preparing 回滚</td><td>释放</td><td>不占用</td><td>不增加</td><td>没有 Task 或恢复为一致状态</td></tr>
+      <tr><th>事件</th><th>queue 名额</th><th>live 名额</th><th>累计任务量</th><th>Job 终态</th></tr>
+      <tr><td>admission 被拒绝</td><td>不占用</td><td>不占用</td><td>不增加</td><td>不创建 Job</td></tr>
+      <tr><td>preparing 回滚</td><td>释放</td><td>不占用</td><td>不增加</td><td>没有 Job 或恢复为一致状态</td></tr>
       <tr><td>queued 后用户取消</td><td>立即释放</td><td>不占用</td><td>保留</td><td>cancelled</td></tr>
       <tr><td>running 后取消/预算耗尽</td><td>已释放</td><td>进入 stopping，确认退出后释放</td><td>保留</td><td>cancelled</td></tr>
       <tr><td>执行错误/完成</td><td>已释放</td><td>worker finally 确认后释放</td><td>保留</td><td>errored/completed</td></tr>
-      <tr><td>相同 task_id 重试</td><td>不重复占用</td><td>不重复占用</td><td>不重复增加</td><td>返回原任务/冲突原因</td></tr>
+      <tr><td>相同 job_id 重试</td><td>不重复占用</td><td>不重复占用</td><td>不重复增加</td><td>返回原任务/冲突原因</td></tr>
     </table>
     </div>
 
@@ -327,22 +327,22 @@
   <section class="phase" id="recovery">
     <h3>10 重启恢复、多进程竞争和诊断</h3>
     <dl>
-      <dt>当前行为</dt><dd>启动时把非终态 Task 统一标为 <code>errored: worker died before completion</code>；tasks.json 只有线程锁；profile worker lock 表示支持的执行拓扑是单 worker。</dd>
-      <dt>用户影响</dt><dd>进程在 admission 中间崩溃会产生无法区分的 Task/计数残留；两个前端进程可并发读改写同一 tasks.json；状态只说 worker died，不能解释配额恢复。</dd>
+      <dt>当前行为</dt><dd>启动时把非终态 Job 统一标为 <code>errored: worker died before completion</code>；jobs.json 只有线程锁；profile worker lock 表示支持的执行拓扑是单 worker。</dd>
+      <dt>用户影响</dt><dd>进程在 admission 中间崩溃会产生无法区分的 Job/计数残留；两个前端进程可并发读改写同一 jobs.json；状态只说 worker died，不能解释配额恢复。</dd>
       <dt>缺口</dt><dd>缺少 owner instance、lease expiry、preparing reconciliation、跨进程文件锁和结构化诊断。</dd>
-      <dt>目标行为</dt><dd>单 worker 仍是支持的执行拓扑；多个 UI/API 进程通过 SQLite admission 事务竞争。每个 live admission 带 owner/lease；reconciler 按 intent、Task 和 lease 三方事实恢复，不让配额永久泄漏。</dd>
+      <dt>目标行为</dt><dd>单 worker 仍是支持的执行拓扑；多个 UI/API 进程通过 SQLite admission 事务竞争。每个 live admission 带 owner/lease；reconciler 按 intent、Job 和 lease 三方事实恢复，不让配额永久泄漏。</dd>
     </dl>
 
     <h4>恢复规则</h4>
     <ul>
-      <li><code>preparing + Task 存在</code>：校验 admission/task id 后 finalize 为 queued；<code>preparing + Task 不存在</code>：回滚 queue 与累计 provisional delta。</li>
+      <li><code>preparing + Job 存在</code>：校验 admission/job id 后 finalize 为 queued；<code>preparing + Job 不存在</code>：回滚 queue 与累计 provisional delta。</li>
       <li><code>queued</code> 在重启后继续进入 durable dispatcher，不需要占 live。</li>
-      <li><code>live/stopping</code> 的 owner 已消失且 lease 过期：先按现有孤儿策略将 Task 标为 errored，reason 为 <code>error.worker_lost</code>，再释放 live；未过期不由另一个实例抢占。初始实现固定每 10 秒续租、lease TTL 30 秒，使用 UTC wall-clock 持久化；只要原 owner 仍持有 worker lock，即使 wall-clock lease看似过期也不得释放。该参数不是用户 quota 配置。</li>
-      <li>lease 只证明 worker ownership，不是外部副作用已经回滚。Task 输出中保留 worker-lost 诊断。</li>
-      <li>tasks.json 所有读改写加跨进程 <code>flock</code>；SQLite 使用 WAL、<code>BEGIN IMMEDIATE</code> 和唯一键保证 admission/reservation 幂等。</li>
+      <li><code>live/stopping</code> 的 owner 已消失且 lease 过期：先按现有孤儿策略将 Job 标为 errored，reason 为 <code>error.worker_lost</code>，再释放 live；未过期不由另一个实例抢占。初始实现固定每 10 秒续租、lease TTL 30 秒，使用 UTC wall-clock 持久化；只要原 owner 仍持有 worker lock，即使 wall-clock lease看似过期也不得释放。该参数不是用户 quota 配置。</li>
+      <li>lease 只证明 worker ownership，不是外部副作用已经回滚。Job 输出中保留 worker-lost 诊断。</li>
+      <li>jobs.json 所有读改写加跨进程 <code>flock</code>；SQLite 使用 WAL、<code>BEGIN IMMEDIATE</code> 和唯一键保证 admission/reservation 幂等。</li>
     </ul>
 
-    <p>本设计不引入集群 consensus 或远端 scheduler。若未来允许多个 worker 同时执行，同一 <code>task_admissions</code> lease/owner 契约可扩展，但需要独立设计 leader election、clock assumptions 和外部 runtime fencing。</p>
+    <p>本设计不引入集群 consensus 或远端 scheduler。若未来允许多个 worker 同时执行，同一 <code>job_admissions</code> lease/owner 契约可扩展，但需要独立设计 leader election、clock assumptions 和外部 runtime fencing。</p>
   </section>
 
   <section class="phase" id="visibility">
@@ -351,16 +351,16 @@
       <dt>当前行为</dt><dd>Web task/branch 卡片和 WS 事件能显示 queued/running/terminal；模型工具能 list/output/stop。未确认到 TUI/CLI 等价的配额状态页。</dd>
       <dt>用户影响</dt><dd>用户无法判断任务为何排队、还能创建多少任务、费用是否未知、取消后为何仍占 live，或 admission 是否可重试。</dd>
       <dt>缺口</dt><dd>三个界面没有共同 DTO 与稳定 reason code。</dd>
-      <dt>目标行为</dt><dd>Web、TUI、CLI 和模型工具消费同一 <code>TaskResourceView</code>；文字可以适配界面，字段和 reason code 必须一致。</dd>
+      <dt>目标行为</dt><dd>Web、TUI、CLI 和模型工具消费同一 <code>JobResourceView</code>；文字可以适配界面，字段和 reason code 必须一致。</dd>
     </dl>
 
     <div class="table-wrap">
     <table class="wide">
       <tr><th>视图</th><th>必须显示</th><th>交互</th><th>兼容方式</th></tr>
-      <tr><td>Web</td><td>Task status + resource state、queue position、session live/queued/cumulative、四类剩余额、cost known/unknown、reason。</td><td>沿用现有 task/branch 卡片和 cancel；不新增后台会话 UI。</td><td>现有 <code>task_status</code> event 增加可选 resource 字段。</td></tr>
+      <tr><td>Web</td><td>Job status + resource state、queue position、session live/queued/cumulative、四类剩余额、cost known/unknown、reason。</td><td>沿用现有 task/branch 卡片和 cancel；不新增后台会话 UI。</td><td>现有 <code>job_status</code> event 增加可选 resource 字段。</td></tr>
       <tr><td>TUI</td><td>紧凑 session 容量、选中任务剩余额和停止原因。</td><td>复用任务列表/详情/停止操作；不要求新的全屏产品面。</td><td>字段缺失时按 legacy task 展示，不猜测 0。</td></tr>
-      <tr><td>CLI</td><td>人类可读表格与稳定 JSON：effective limits、usage、reservations、reason、retryable。</td><td>复用任务查询与取消命令面；JSON 供自动诊断。</td><td>新增字段向后兼容，Task 原状态枚举不变。</td></tr>
-      <tr><td>模型工具</td><td><code>list_tasks/task_output/task_stop</code> 返回同一 reason 和简化剩余额。</td><td>admission 拒绝是结构化 tool result，不创建不存在的 Task 记录。</td><td>原文本结果保留，附加机器可读字段。</td></tr>
+      <tr><td>CLI</td><td>人类可读表格与稳定 JSON：effective limits、usage、reservations、reason、retryable。</td><td>复用任务查询与取消命令面；JSON 供自动诊断。</td><td>新增字段向后兼容，Job 原状态枚举不变。</td></tr>
+      <tr><td>模型工具</td><td><code>list_tasks/task_output/task_stop</code> 返回同一 reason 和简化剩余额。</td><td>admission 拒绝是结构化 tool result，不创建不存在的 Job 记录。</td><td>原文本结果保留，附加机器可读字段。</td></tr>
     </table>
     </div>
 
@@ -376,8 +376,8 @@
       <tr><td>admission</td><td><code>quota.invalid_limits</code></td><td>值非法或子限制比父/会话限制更宽。</td></tr>
       <tr><td>admission</td><td><code>quota.accounting_unavailable</code> / <code>quota.admission_conflict</code></td><td>无法安全记账，或幂等 key 与已有请求内容冲突。</td></tr>
       <tr><td>terminal</td><td><code>cancel.user</code> / <code>cancel.parent</code> / <code>cancel.session</code></td><td>明确取消来源。</td></tr>
-      <tr><td>terminal</td><td><code>budget.token_exhausted</code> / <code>budget.cost_exhausted</code> / <code>budget.runtime_exhausted</code> / <code>budget.idle_exhausted</code></td><td>运行中达到预算边界，Task 进入 cancelled，取消向后代级联。</td></tr>
-      <tr><td>terminal</td><td><code>error.worker_lost</code> / <code>error.accounting_unavailable</code> / <code>error.nonpreemptible_operation</code></td><td>执行保障失败，Task 进入 errored。</td></tr>
+      <tr><td>terminal</td><td><code>budget.token_exhausted</code> / <code>budget.cost_exhausted</code> / <code>budget.runtime_exhausted</code> / <code>budget.idle_exhausted</code></td><td>运行中达到预算边界，Job 进入 cancelled，取消向后代级联。</td></tr>
+      <tr><td>terminal</td><td><code>error.worker_lost</code> / <code>error.accounting_unavailable</code> / <code>error.nonpreemptible_operation</code></td><td>执行保障失败，Job 进入 errored。</td></tr>
       <tr><td>terminal</td><td><code>completed</code></td><td>正常完成。</td></tr>
     </table>
     </div>
@@ -386,11 +386,11 @@
   <h2 id="schema">12 稳定 schema 与状态契约</h2>
   <p>实际 usage 继续以 <code>usage_events</code> 为唯一事实源。下列 admission/reservation 表只描述资源占用和未结算 exposure；不能用于伪造实际 provider token/cost。</p>
 
-  <pre>task_admissions(
+  <pre>job_admissions(
   admission_id PRIMARY KEY,
-  task_id UNIQUE NOT NULL,
+  job_id UNIQUE NOT NULL,
   session_id NOT NULL,
-  parent_task_id,
+  parent_job_id,
   caller_turn_id,
   creates_agent BOOLEAN NOT NULL,
   request_fingerprint NOT NULL,
@@ -407,7 +407,7 @@ budget_scopes(
   budget_scope_id PRIMARY KEY,
   scope_kind CHECK scope_kind IN ('session','task'),
   session_id NOT NULL,
-  task_id UNIQUE,
+  job_id UNIQUE,
   parent_scope_id,
   max_total_tokens,
   max_cost_microusd,
@@ -418,7 +418,7 @@ budget_scopes(
 
 usage_reservations(
   reservation_id PRIMARY KEY,
-  task_id NOT NULL,
+  job_id NOT NULL,
   budget_scope_id NOT NULL,
   kind CHECK kind IN ('token','cost'),
   state CHECK state IN ('reserved','started','settled','released'),
@@ -430,16 +430,16 @@ usage_reservations(
 )
 
 usage_events + optional columns:
-  task_id, budget_scope_id, reservation_id
+  job_id, budget_scope_id, reservation_id
 
-Task JSON + optional fields:
+Job JSON + optional fields:
   admission_id, budget_scope_id, effective_limits, reason_code</pre>
 
-  <p><code>effective_limits</code> 是任务开始时的审计快照；配置查询另行返回每个字段的 <code>configured</code>、<code>effective</code> 与 <code>source</code>。实际可用共享余额必须从 ledger + open reservations 实时计算，<code>shared_remaining</code> 明确表示祖先和 session 共享池中的当前值，不是该 Task 的保证额度。Task JSON 不复制累计 actual usage。金额配置使用十进制定点字符串，存储和比较使用 micro-USD 整数，避免浮点边界差异。</p>
+  <p><code>effective_limits</code> 是任务开始时的审计快照；配置查询另行返回每个字段的 <code>configured</code>、<code>effective</code> 与 <code>source</code>。实际可用共享余额必须从 ledger + open reservations 实时计算，<code>shared_remaining</code> 明确表示祖先和 session 共享池中的当前值，不是该 Job 的保证额度。Job JSON 不复制累计 actual usage。金额配置使用十进制定点字符串，存储和比较使用 micro-USD 整数，避免浮点边界差异。</p>
 
-  <h3>TaskResourceView</h3>
+  <h3>JobResourceView</h3>
   <pre>{
-  "task_id": "...",
+  "job_id": "...",
   "status": "running",
   "resource_state": "live",
   "reason_code": null,
@@ -448,7 +448,7 @@ Task JSON + optional fields:
     "scheduler_capacity": 4,
     "session_live": {"used": 2, "limit": 3},
     "session_queued": {"used": 1, "limit": 8},
-    "session_tasks": {"used": 17, "limit": 100},
+    "session_jobs": {"used": 17, "limit": 100},
     "queue_position": null
   },
   "budget": {
@@ -465,10 +465,10 @@ Task JSON + optional fields:
   <h2 id="migration">13 兼容、迁移和实施批次</h2>
   <h3>兼容原则</h3>
   <ul>
-    <li>旧 Task 缺少新增字段时标为 <code>legacy/unmetered</code>，不能把缺失解释为 0，也不重写历史 tasks.json。</li>
-    <li>现有 Task status 枚举、task id、状态广播和级联取消 API 保持兼容；资源状态与 reason 是可选扩展。</li>
+    <li>旧 Job 缺少新增字段时标为 <code>legacy/unmetered</code>，不能把缺失解释为 0，也不重写历史 jobs.json。</li>
+    <li>现有 Job status 枚举、job id、状态广播和级联取消 API 保持兼容；资源状态与 reason 是可选扩展。</li>
     <li>现有 depth/messages/fanout 配置和语义保持不变。它们是拓扑/循环 guard，不参与 quota 计数。</li>
-    <li>现有 <code>OPENPROGRAM_TASK_WORKERS</code> 保持唯一全局 worker capacity。没有新增 <code>max_live_global</code>。</li>
+    <li>现有 <code>OPENPROGRAM_JOB_WORKERS</code> 保持唯一全局 worker capacity。没有新增 <code>max_live_global</code>。</li>
     <li>旧库迁移只增加 nullable columns/tables/index；usage event 保持 append-only。</li>
   </ul>
 
@@ -488,10 +488,10 @@ Task JSON + optional fields:
   <table class="wide">
     <tr><th>测试域</th><th>最低用例</th><th>失败表示什么</th></tr>
     <tr><td>配置</td><td>全局默认、session override、parent/task 只收紧；null/正整数/decimal 校验；worker env 只读展示。</td><td>有效值不可预测或出现重叠全局上限。</td></tr>
-    <tr><td>创建入口</td><td>sync/async agent、target inbox、Web/API、runner 内部、未来注册入口；拒绝前无 Task/branch/inbox 副作用。</td><td>存在 quota bypass。</td></tr>
-    <tr><td>原子 admission</td><td>20+ threads/processes 同时创建；唯一 task id；上限边界；失败注入覆盖 preparing 前后。</td><td>超配、重复累计或永久泄漏。</td></tr>
+    <tr><td>创建入口</td><td>sync/async agent、target inbox、Web/API、runner 内部、未来注册入口；拒绝前无 Job/branch/inbox 副作用。</td><td>存在 quota bypass。</td></tr>
+    <tr><td>原子 admission</td><td>20+ threads/processes 同时创建；唯一 job id；上限边界；失败注入覆盖 preparing 前后。</td><td>超配、重复累计或永久泄漏。</td></tr>
     <tr><td>Queue/live</td><td>queue 不占 live；queued→live 原子交换；跨 session oldest-eligible；queue full；stopping 保留 live。</td><td>会话长期无法调度、名额错误提前释放或 executor 无界排队。</td></tr>
-    <tr><td>累计量</td><td>completed/cancelled/errored 均不返还；preparing rollback 不计；同 task id 重试不重复；降低上限。</td><td>累计语义随终态变化或可被重试绕过。</td></tr>
+    <tr><td>累计量</td><td>completed/cancelled/errored 均不返还；preparing rollback 不计；同 job id 重试不重复；降低上限。</td><td>累计语义随终态变化或可被重试绕过。</td></tr>
     <tr><td>父子预算</td><td>显式 child 超父剩余被拒；无显式预算共享 scope；兄弟并发 reservation；多层祖先检查。</td><td>子任务可扩大预算或并发超支。</td></tr>
     <tr><td>Token/cost</td><td>安全 token 上界、provider output cap、cache token 不重复；known/unknown price；late/missing usage；settlement DB failure。</td><td>预算只能事后观测，或未知费用被当 0。</td></tr>
     <tr><td>Runtime/idle</td><td>queue wait 排除；provider data/tool progress/child activity；keepalive 不重置；deadline clamp；不可抢占工具拒绝。</td><td>时间预算不可强制或会误杀活跃任务。</td></tr>
@@ -521,13 +521,13 @@ Task JSON + optional fields:
     <tr><td><code>main@990bfe36</code><br>foundation 来源 <code>8f62da5a</code></td><td>配置解析、SQLite schema、admission、per-session live/queued/cumulative、budget scope、reservation 原语、reason code、基础 view。</td><td><code>tests/unit/test_resource_governance.py</code> 的 foundation 用例存在；代码审计确认 reservation 仅被测试调用。</td><td class="m">否；执行链与用户面不完整</td></tr>
     <tr><td><code>codex/resource-governance-runtime-20260811@ace9a907</code></td><td>oldest-eligible dispatcher、owner fencing/reconcile、runtime/idle monitor 与 bounded-operation helper。</td><td>2026-08-12 fresh：<code>tests/unit/test_resource_governance.py tests/unit/test_async_task.py</code>，52 passed；该分支未做独立 spec/quality review，也未包含后续 integration fixes。</td><td class="m">否；只作为待复用候选</td></tr>
     <tr><td>Task 1<br>durable dispatcher 与 ownership</td><td><code>b132a783</code>、<code>94ce3636</code>：dispatcher 只提交 durable claim 后的任务；按最旧 eligible admission 调度；lease generation/owner fence 保护 live 与 stopping；pending finalization、worker loss、取消和重复 reconcile 保持终态持久化与名额释放幂等。</td><td>跨线程/进程 claim、dispatcher restart、lease expiry、finalization fault injection 纳入 affected 与 full suite。</td><td class="yes">已实现</td></tr>
-    <tr><td>Task 2<br>task scope 与 conservative preflight</td><td><code>a064f9be</code>、<code>da4660d8</code>：不可变 task governance context 绑定 task/scope/limits；provider preflight 计入 prompt、messages、tools、structured-output/request envelope 和已审计 adapter 上界；严格预算缺少安全 token 或价格上界时 fail closed；credential resolution 明确位于 preflight 之后。</td><td>集中规格审查唯一 HIGH 指向 preflight-before-credential；<code>da4660d8</code> scoped re-review：<code>PASS (0 findings)</code>。</td><td class="yes">已实现并通过规格复审</td></tr>
+    <tr><td>Task 2<br>job scope 与 conservative preflight</td><td><code>a064f9be</code>、<code>da4660d8</code>：不可变 job governance context 绑定 job/scope/limits；provider preflight 计入 prompt、messages、tools、structured-output/request envelope 和已审计 adapter 上界；严格预算缺少安全 token 或价格上界时 fail closed；credential resolution 明确位于 preflight 之后。</td><td>集中规格审查唯一 HIGH 指向 preflight-before-credential；<code>da4660d8</code> scoped re-review：<code>PASS (0 findings)</code>。</td><td class="yes">已实现并通过规格复审</td></tr>
     <tr><td>Task 3<br>provider reserve/start/settle</td><td><code>8e6ecc9a</code>、<code>1570c2c2</code>、<code>03cbbe1a</code>：<code>stream()</code>/<code>stream_simple()</code> 在 provider I/O 前 reserve 并 clamp output cap，I/O 前标记 started，以 provider 权威用量原子追加 <code>UsageEvent</code> 并 settle；未知价格、late/double terminal、consumer cancellation、adapter retry 与 replay identity 均保持保守 exposure 和幂等会计。</td><td>provider enforcement、metering truth、stream fixes、record/replay identity 与事务边界故障注入均纳入 full gate。</td><td class="yes">已实现</td></tr>
-    <tr><td>Task 4<br>runtime、idle 与 operation bounds</td><td><code>6dea9388</code>：runtime 从 durable claim 后开始；真实 provider/tool/child activity 更新 idle；provider/tool 操作使用自身 timeout、task runtime、idle 与 cancel grace 的最小正界；超限进入 stopping 并沿既有 descendant cancellation/finalization 路径释放。</td><td>queue-time exclusion、keepalive、nested deadline、并发 cancel/expiry、subprocess termination 与 non-preemptible operation 用例纳入 affected suite。</td><td class="yes">已实现</td></tr>
-    <tr><td>Task 5<br>canonical resource DTO</td><td><code>4102992f</code>、<code>bc9a14ef</code>、<code>14020be9</code>：model tools、Web <code>task_status/tasks_list/task/cancel_task/spawn_task_result</code>、Python CLI、Ink TUI 共享 canonical <code>TaskResourceView</code>；界面不独立推算 limits/usage；rejected spawn 保留稳定 reason/retryable 且不虚构 task id；child effective-limit snapshot 与 ancestor scope 一致。</td><td>集中质量审查唯一 MEDIUM 指向 ancestor snapshot；<code>14020be9</code> scoped re-review：<code>PASS (0 findings)</code>。Web、CLI、TUI、model DTO 合同测试通过。</td><td class="yes">已实现并通过质量复审</td></tr>
+    <tr><td>Task 4<br>runtime、idle 与 operation bounds</td><td><code>6dea9388</code>：runtime 从 durable claim 后开始；真实 provider/tool/child activity 更新 idle；provider/tool 操作使用自身 timeout、job runtime、idle 与 cancel grace 的最小正界；超限进入 stopping 并沿既有 descendant cancellation/finalization 路径释放。</td><td>queue-time exclusion、keepalive、nested deadline、并发 cancel/expiry、subprocess termination 与 non-preemptible operation 用例纳入 affected suite。</td><td class="yes">已实现</td></tr>
+    <tr><td>Task 5<br>canonical resource DTO</td><td><code>4102992f</code>、<code>bc9a14ef</code>、<code>14020be9</code>：model tools、Web <code>job_status/tasks_list/task/cancel_job/spawn_job_result</code>、Python CLI、Ink TUI 共享 canonical <code>JobResourceView</code>；界面不独立推算 limits/usage；rejected spawn 保留稳定 reason/retryable 且不虚构 job id；child effective-limit snapshot 与 ancestor scope 一致。</td><td>集中质量审查唯一 MEDIUM 指向 ancestor snapshot；<code>14020be9</code> scoped re-review：<code>PASS (0 findings)</code>。Web、CLI、TUI、model DTO 合同测试通过。</td><td class="yes">已实现并通过质量复审</td></tr>
     <tr><td>审查后集成候选<br><code>33dd7d2c</code></td><td>包含资源关键实现链 <code>b132a783..bc9a14ef</code>，以及规格修复 <code>da4660d8</code> 和质量修复 <code>14020be9</code>。集中 whole-feature 规格与质量审查均已完成；whole-branch 五维审查为 <code>PASS (0 findings)</code>。该结论不声称 Task 1–5 各自存在独立 reviewer。</td><td>Python full：5265 passed、10 skipped、2 deselected、1 xfailed；CLI：134 passed、2 skipped，typecheck 与 build 通过；Web：22 项 mechanical checks、<code>tsc --noEmit</code> 与 production build（no lint）通过；docs：490 pages、0 broken links；changed Python Ruff、lock check 与 <code>git diff --check</code> 通过。</td><td class="yes">完成</td></tr>
     <tr><td>已知 whole-repository gate</td><td>Web 全量 <code>npm run lint</code> 仍报告未使用变量、<code>any</code> 等既有 lint violations；同一命令在 <code>origin/main</code> 已失败，不归因于本资源治理实现。该基线阻塞没有被 Web mechanical checks、TypeScript 或 no-lint production build 替代为“lint 通过”。</td><td>当前 integration checkout fresh readback 仍可复现；资源相关 changed-file checks 未发现新增 blocker。</td><td class="partial">基线阻塞保留记录</td></tr>
-    <tr><td>合入 main 的最终集成<br><code>0266a046</code>（修复 <code>bc2fd416</code>）</td><td>集成分支与最新 main（含 admission 无条件释放、spec 迁移 deepcopy 探测、matrix 恢复）双向合并；TaskResourceView 快照语义定案为 runtime/idle 冻结、parent/task 来源限额取持久化快照、session/global 来源限额跟随当前配置、畸形快照回退 durable limits；合并后独立 SPEC 与 QUALITY 复审均 PASS，复审发现的 resolver 改名残留调用、缺失 time import 与重复 import 已修。</td><td>Python full：5286 passed、11 skipped、2 deselected、1 xfailed；CLI：141 passed，typecheck 通过；Web：task-resource checks、<code>tsc --noEmit</code> 与 production build 通过，whole lint 与 origin/main 基线错误集完全一致（30 处既有）；docs：493 pages、0 broken links；feature matrix：160 rows、84.5 分、67 gaps、6 ours-only；changed Ruff、compileall、lock check 与 <code>git diff --check</code> 通过。</td><td class="yes">完成</td></tr>
+    <tr><td>合入 main 的最终集成<br><code>0266a046</code>（修复 <code>bc2fd416</code>）</td><td>集成分支与最新 main（含 admission 无条件释放、spec 迁移 deepcopy 探测、matrix 恢复）双向合并；JobResourceView 快照语义定案为 runtime/idle 冻结、parent/task 来源限额取持久化快照、session/global 来源限额跟随当前配置、畸形快照回退 durable limits；合并后独立 SPEC 与 QUALITY 复审均 PASS，复审发现的 resolver 改名残留调用、缺失 time import 与重复 import 已修。</td><td>Python full：5286 passed、11 skipped、2 deselected、1 xfailed；CLI：141 passed，typecheck 通过；Web：task-resource checks、<code>tsc --noEmit</code> 与 production build 通过，whole lint 与 origin/main 基线错误集完全一致（30 处既有）；docs：493 pages、0 broken links；feature matrix：160 rows、84.5 分、67 gaps、6 ours-only；changed Ruff、compileall、lock check 与 <code>git diff --check</code> 通过。</td><td class="yes">完成</td></tr>
   </table>
   </div>
 
@@ -535,12 +535,12 @@ Task JSON + optional fields:
   <div class="table-wrap">
   <table>
     <tr><th>主题</th><th>本仓库证据</th></tr>
-    <tr><td>TaskRunner、单 worker、取消和孤儿恢复</td><td><code>openprogram/agent/task/runner.py</code>；<code>openprogram/agent/task/store.py</code>；<code>openprogram/agent/task/types.py</code>；<code>openprogram/worker/paths.py</code></td></tr>
-    <tr><td>派生和消息预算</td><td><code>openprogram/functions/tools/agent/agent/agent.py</code>；<code>openprogram/functions/tools/send_message/send_message/depth.py</code>；<code>openprogram/config_schema.py</code></td></tr>
+    <tr><td>JobRunner、单 worker、取消和孤儿恢复</td><td><code>openprogram/agent/job/runner.py</code>；<code>openprogram/agent/job/store.py</code>；<code>openprogram/agent/job/types.py</code>；<code>openprogram/worker/paths.py</code></td></tr>
+    <tr><td>派生和消息预算</td><td><code>openprogram/programs/functions/agent/agent/agent.py</code>；<code>openprogram/programs/functions/send_message/send_message/depth.py</code>；<code>openprogram/config_schema.py</code></td></tr>
     <tr><td>Usage 与 provider 记录</td><td><code>openprogram/usage/event.py</code>；<code>openprogram/usage/ledger.py</code>；<code>openprogram/usage/recorder.py</code>；<code>openprogram/providers/stream.py</code></td></tr>
-    <tr><td>Deadline 与函数 timeout</td><td><code>openprogram/providers/utils/deadline.py</code>；<code>openprogram/functions/_runtime.py</code></td></tr>
-    <tr><td>任务界面与协议</td><td><code>openprogram/webui/ws_actions/task.py</code>、Web branch/task cards、<code>openprogram/functions/tools/agent/list_tasks/</code>、<code>task_output/</code>、<code>task_stop/</code></td></tr>
-    <tr><td>竞品与既有设计</td><td><a href="agent-collab-comparison.html">agent-collab-comparison.html</a>；<a href="agent-collaboration.zh.html">agent-collaboration.zh.html</a>；<a href="execution/async-task-lifecycle.zh.html">async-task-lifecycle.zh.html</a>；<a href="../usage-metering.zh.html">usage-metering.zh.html</a></td></tr>
+    <tr><td>Deadline 与函数 timeout</td><td><code>openprogram/providers/utils/deadline.py</code>；<code>openprogram/programs/_runtime.py</code></td></tr>
+    <tr><td>任务界面与协议</td><td><code>openprogram/webui/ws_actions/task.py</code>、Web branch/task cards、<code>openprogram/programs/functions/agent/list_tasks/</code>、<code>task_output/</code>、<code>task_stop/</code></td></tr>
+    <tr><td>竞品与既有设计</td><td><a href="agent-collab-comparison.html">agent-collab-comparison.html</a>；<a href="agent-collaboration.zh.html">agent-collaboration.zh.html</a>；<a href="execution/async-job-lifecycle.zh.html">async-job-lifecycle.zh.html</a>；<a href="../usage-metering.zh.html">usage-metering.zh.html</a></td></tr>
   </table>
   </div>
 

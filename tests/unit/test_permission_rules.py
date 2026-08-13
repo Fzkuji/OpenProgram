@@ -4,7 +4,7 @@ Design: docs/design/runtime/permission-model.md.
 """
 from __future__ import annotations
 
-from openprogram.functions.permission_rule import (
+from openprogram.programs.permission_rule import (
     parse_rule, rule_to_string, parse_command, pattern_matches, PermissionRuleValue,
 )
 from openprogram.agent.internals._approval import _match_rule
@@ -258,7 +258,7 @@ def test_acceptedits_command_still_asks():
 # ── path safety (file_safety.py) ──
 
 def test_path_safety(tmp_path):
-    from openprogram.functions.tools.file_safety import check_path_safety
+    from openprogram.programs.functions.file_safety import check_path_safety
     import os
     d = str(tmp_path)
     assert check_path_safety(os.path.join(d, "a.txt"), [d])["safe"]
@@ -311,7 +311,7 @@ def test_path_is_safe_uses_worktree_contextvar(tmp_path, monkeypatch):
 
 
 def test_is_dangerous_allow_rule():
-    from openprogram.functions.tools.file_safety import is_dangerous_allow_rule
+    from openprogram.programs.functions.file_safety import is_dangerous_allow_rule
     assert is_dangerous_allow_rule("bash", "python:*")   # interpreter
     assert not is_dangerous_allow_rule("bash", "git:*")  # ordinary
     assert is_dangerous_allow_rule("bash", None)         # whole bash tool
@@ -399,9 +399,9 @@ def test_agent_spawn_bypass_allows_workspace_write_and_safe_read(tmp_path,
                                 "*** End Patch"}),
 ])
 def test_agentics_python_is_never_model_writable(monkeypatch, tool_name, args):
-    from openprogram.functions._programs import agentics_dir
+    from openprogram.programs._programs import applications_dir
 
-    root = agentics_dir()
+    root = applications_dir()
     assert root
     monkeypatch.chdir(root)
     tool, ran = _make_tool(tool_name)

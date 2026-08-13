@@ -50,7 +50,7 @@ def _coverage_nodes(db, session_id: str, node_ids: list) -> list:
 
 
 def register(app):
-    @app.get("/api/functions")
+    @app.get("/api/programs")
     async def get_functions():
         from openprogram.webui import server as _s
         return JSONResponse(content=_s._discover_functions())
@@ -63,8 +63,8 @@ def register(app):
         filtered out of every LLM toolset (agent_tools() honours
         ``tools.disabled``), so the model never sees it. Toggle via
         ``POST /api/settings {key:"tools.disabled.<name>", value:<on>}``."""
-        from openprogram.functions import agent_tools
-        from openprogram.functions.tools.memory import MEMORY_TOOL_NAMES
+        from openprogram.programs import agent_tools
+        from openprogram.programs.functions.memory import MEMORY_TOOL_NAMES
         from openprogram.setup import read_disabled_tools
         disabled = read_disabled_tools()
         _TOOL_GROUPS = {
@@ -111,12 +111,12 @@ def register(app):
     def _all_tool_names() -> list[str]:
         """Every exposed tool name — leaf tools AND agentic programs.
         Profiles cover everything the model can use."""
-        from openprogram.functions._runtime import exposed_names
+        from openprogram.programs._runtime import exposed_names
         return sorted(exposed_names())
 
     def _builtin_tool_names() -> list[str]:
         """Only non-agentic (built-in) tools."""
-        from openprogram.functions import agent_tools
+        from openprogram.programs import agent_tools
         return sorted(
             t.name for t in agent_tools(toolset="full", include_disabled=True)
             if not getattr(t, "_is_agentic", False)
@@ -140,7 +140,7 @@ def register(app):
         return data
 
     def _load_profiles() -> dict:
-        from openprogram.functions.meta_storage import load_functions_meta
+        from openprogram.programs.meta_storage import load_functions_meta
 
         data = load_functions_meta(
             {"profiles": {"full": _all_tool_names()}, "active": "full"},
@@ -151,7 +151,7 @@ def register(app):
         return data
 
     def _save_profiles(data: dict):
-        from openprogram.functions.meta_storage import save_functions_meta
+        from openprogram.programs.meta_storage import save_functions_meta
 
         _ensure_defaults(data)
         save_functions_meta(data)
@@ -400,13 +400,13 @@ def register(app):
 
     @app.get("/api/programs/meta")
     async def get_programs_meta():
-        from openprogram.functions.meta_storage import load_programs_meta
+        from openprogram.programs.meta_storage import load_programs_meta
 
         return JSONResponse(content=load_programs_meta({"favorites": [], "folders": {}}))
 
     @app.post("/api/programs/meta")
     async def save_programs_meta(body: dict = None):
-        from openprogram.functions.meta_storage import save_programs_meta as save
+        from openprogram.programs.meta_storage import save_programs_meta as save
 
         save(body or {})
         return JSONResponse(content={"ok": True})

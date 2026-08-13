@@ -13,7 +13,7 @@ This is the heaviest of the three first-party workflows: dependencies include `t
 Beyond the pip dependencies you also need model files â€” the YOLO detector weights (downloaded via `huggingface-hub`) and the OCR models are not on PyPI. After installing, run the harness's bundled installer to fetch them:
 
 ```bash
-openprogram/functions/agentics/GUI-Agent-Harness/scripts/install.sh --no-host
+openprogram/programs/applications/gui_harness/scripts/install.sh --no-host
 # Windows: ...\scripts\install.ps1 -NoHost
 ```
 
@@ -44,4 +44,4 @@ Each step runs observe (screenshot + component detection + state recognition) â†
 - Platforms: macOS / Windows / Linux; the OCR backend is selected automatically per platform.
 - The runtime needs a working directory configured before running (screenshots and run records are written there).
 
-Source and README: `openprogram/functions/agentics/GUI-Agent-Harness/`, upstream repository [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness).
+Source and README: `openprogram/programs/applications/gui_harness/`, upstream repository [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness).

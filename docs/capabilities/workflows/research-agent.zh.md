@@ -38,4 +38,4 @@ openprogram programs run research_agent -a task="Survey recent work on LLM uncer
 - 引用核验、无引用断言检查、citation-dump 检查等核查是纯 Python / 正则实现，不额外花 token；`integrity_gate` 用一次有界的 LLM 调用。
 - 联网检索（arXiv / Semantic Scholar 等）需要网络可达；LaTeX 编译需要本机有 TeX 发行版。
 
-源码与 README：`openprogram/functions/agentics/Research-Agent-Harness/`，上游仓库 [Fzkuji/Research-Agent-Harness](https://github.com/Fzkuji/Research-Agent-Harness)。
+源码与 README：`openprogram/programs/applications/research_harness/`，上游仓库 [Fzkuji/Research-Agent-Harness](https://github.com/Fzkuji/Research-Agent-Harness)。

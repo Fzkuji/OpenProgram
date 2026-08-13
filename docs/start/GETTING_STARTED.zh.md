@@ -58,7 +58,7 @@ openprogram programs install research     # 或 wiki / gui
 openprogram programs available            # 查看安装状态
 ```
 
-`research` / `wiki` 是纯 Python，装得很快；`gui` 会下载 PyTorch 和模型权重，体积较大。装完后 `openprogram restart`（或在 Functions 页面点 Refresh），程序就会出现在界面里。
+`research` / `wiki` 是纯 Python，装得很快；`gui` 会下载 PyTorch 和模型权重，体积较大。装完后 `openprogram restart`（或在 Programs 页面点 Refresh），程序就会出现在界面里。
 
 ## 下一步
 

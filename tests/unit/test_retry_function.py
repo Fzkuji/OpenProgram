@@ -236,7 +236,7 @@ def test_new_run_rejected_while_run_active(monkeypatch):
         _is_agentic = True
 
     monkeypatch.setattr(
-        "openprogram.functions.agent_tools", lambda names=None: [_Tool()]
+        "openprogram.programs.agent_tools", lambda names=None: [_Tool()]
     )
 
     class _RM:
@@ -345,7 +345,7 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
         _is_agentic = True
 
     monkeypatch.setattr(
-        "openprogram.functions.agent_tools", lambda names=None: [_Tool()]
+        "openprogram.programs.agent_tools", lambda names=None: [_Tool()]
     )
 
     class _RM:

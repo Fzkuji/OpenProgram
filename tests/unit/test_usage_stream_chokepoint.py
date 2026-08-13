@@ -145,11 +145,11 @@ def test_provider_data_is_activity_and_uses_task_deadline(
 
     activity: list[str] = []
     monkeypatch.setattr(
-        "openprogram.agent.task.runner.current_task_operation_timeout",
+        "openprogram.agent.job.runner.current_job_operation_timeout",
         lambda declared, *, preemptibility: 0.1,
     )
     monkeypatch.setattr(
-        "openprogram.agent.task.runner.record_current_task_activity",
+        "openprogram.agent.job.runner.record_current_job_activity",
         lambda kind: activity.append(kind) or True,
     )
     provider = stream_mod.get_api_provider(fake_api.api)

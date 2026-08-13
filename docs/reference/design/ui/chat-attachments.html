@@ -314,7 +314,7 @@
 </div>
 <div class="legend">
   <b>为什么是工具而不是正文里的 <code>MEDIA:</code> 指令行。</b>正文约定的失败模式是"抽不干净就当正文漏给用户"，这个亏在渠道入站那侧已经吃过一次。工具调用有存在性校验，也有地方放"文件不在了"这种诚实反馈，而且模型只是在正文里提一句路径不会被当成投递意图。
-  <span class="src">openprogram/functions/tools/send_file/send_file.py · openprogram/agent/dispatcher/__init__.py · openprogram/channels/_conversation.py:_deliver_outbound_files</span>
+  <span class="src">openprogram/programs/functions/send_file/send_file.py · openprogram/agent/dispatcher/__init__.py · openprogram/channels/_conversation.py:_deliver_outbound_files</span>
 </div>
 
 <h3 id="now-parts">1.4 字节出口：两条路由，各守各的契约</h3>
@@ -729,9 +729,9 @@
 <tr><td>字节出口 /api/file-raw，以及绝对路径版 /api/file-read</td><td class="y">已实现</td><td class="src">webui/routes/file_search.py</td></tr>
 <tr><td>chip 捕获路径、图片缩略图、点开浮层</td><td class="y">已实现</td><td class="src">web/components/chat/messages/user-attachments.tsx · attachment-preview.tsx</td></tr>
 <tr><td>chat_ack 回显存储后正文，刚发出去的附件当轮可点</td><td class="y">已实现</td><td class="src">webui/ws_actions/chat.py · web/lib/net/chat-stream.ts</td></tr>
-<tr><td>send_file 工具与 dispatcher 折入 final_text</td><td class="y">已实现</td><td class="src">functions/tools/send_file/ · agent/dispatcher/__init__.py</td></tr>
+<tr><td>send_file 工具与 dispatcher 折入 final_text</td><td class="y">已实现</td><td class="src">programs/functions/send_file/ · agent/dispatcher/__init__.py</td></tr>
 <tr><td>渠道回发接线：抽标记、调 post_file、失败改写成人话</td><td class="y">已实现</td><td class="src">channels/_conversation.py:_deliver_outbound_files</td></tr>
-<tr><td>按渠道声明能力（cli / tui / wechat / plan 下工具不出现）</td><td class="y">已实现</td><td class="src">functions/tools/send_file/send_file.py unsafe_in</td></tr>
+<tr><td>按渠道声明能力（cli / tui / wechat / plan 下工具不出现）</td><td class="y">已实现</td><td class="src">programs/functions/send_file/send_file.py unsafe_in</td></tr>
 <tr><td>四个平台的 post_file 传输实现</td><td class="y">已实现，现在有调用方了</td><td class="src">channels/_transport.py:186-211,777-780</td></tr>
 <tr><td>FileViewer 接受绝对路径</td><td class="y">已实现（abs 模式）</td><td class="src">web/components/files/file-viewer.tsx</td></tr>
 <tr><td>中心标签页作为第二种打开方式、caption、出站工具白名单、签名票据、代码高亮</td><td class="n">未实现（第三层）</td><td class="src">—</td></tr>

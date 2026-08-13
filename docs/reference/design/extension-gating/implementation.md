@@ -15,7 +15,7 @@ openprogram/agent/
 openprogram/webui/ws_actions/
   └─ chat.py                ← gate site for: skills (/skill X command)
 
-openprogram/functions/
+openprogram/programs/
   └─ __init__.py            ← agent_tools() honours the resolved name list
 ```
 

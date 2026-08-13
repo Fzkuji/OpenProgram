@@ -18,7 +18,7 @@
 1. **默认 toolset = full，含函数自己。** 裸 `runtime.exec(content=...)` 不传 `tools=` / `toolset=`，`_call_via_providers` 把它解析成 `DEFAULT_TOOLSET = "full"`：
    - `openprogram/agentic_programming/runtime.py:1467` `DEFAULT_TOOLSET = "full"`
    - `runtime.py:1468-1483` `raw_tools is None` 分支 → `_resolve_agent_tools(toolset="full", ...)`
-   - 而 `full` 工具集列出了所有 harness 入口本身(`wiki_agent` / `research_agent` / `gui_agent` …，见 `openprogram.functions.TOOLSETS["full"]`)。所以内层模型的工具列表里**有它正在执行的那个函数**。
+   - 而 `full` 工具集列出了所有 harness 入口本身(`wiki_agent` / `research_agent` / `gui_agent` …，见 `openprogram.programs.TOOLSETS["full"]`)。所以内层模型的工具列表里**有它正在执行的那个函数**。
 
 2. **模型看到 docstring 匹配任务，误以为该调。** 模型看到 `wiki_agent` 的工具描述("Maintain a wiki vault — route to ingest…")正好匹配当前任务，认为应该路由给 `wiki_agent` → 调自己 → 进去又是裸 exec、又看到自己 → 无限递归。
 

@@ -199,7 +199,7 @@ caller 边漏进父分支。spawn 分支的聊天视图只显示本分支自己�
 
 runner 让 `TurnRequest.branch_from` 保持 `INHERIT_PARENT`，派发前也不再回退 head，锚定
 交给 dispatcher 的普通追加路径完成。并发用每个投递会话一把锁处理
-（`TaskRunner._followup_lock`）：两个子 agent 同一毫秒跑完，也依次占用轮次，第二条读到的
+（`JobRunner._followup_lock`）：两个子 agent 同一毫秒跑完，也依次占用轮次，第二条读到的
 HEAD 已经包含第一条的回答。
 
 ## 5. 头指针与分支管理

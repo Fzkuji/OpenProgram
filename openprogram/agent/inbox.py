@@ -4,7 +4,7 @@ When ``send_message(to="SID:HEAD")`` addresses a branch whose session is
 mid-turn (``run_control.is_turn_running``), delivering immediately would
 race the running turn for the same head. Instead the message is persisted
 here — ``<session-repo>/inbox.json``, same placement pattern as
-``tasks.json`` (agent/task/store.py) — and the dispatcher drains the
+``jobs.json`` (agent/job/store.py) — and the dispatcher drains the
 inbox at turn end (``_process_turn_once``), re-delivering each entry
 through the normal async delivery path so the usual auto-followup returns
 the reply to the sender.
@@ -72,7 +72,7 @@ def _inbox_path(session_id: str) -> Optional[Path]:
     """Path to the session's inbox.json, or None when the session repo
     doesn't exist."""
     from openprogram.agent.session_db import default_db
-    sdir = default_db()._session_dir(session_id)  # noqa: SLF001 — same as task store
+    sdir = default_db()._session_dir(session_id)  # noqa: SLF001 — same as job store
     if not sdir.exists():
         return None
     return sdir / "inbox.json"
@@ -118,8 +118,8 @@ def enqueue(
     chain_messages: int,
     target_head_id: Optional[str],
     chain_generations: int = 0,
-    task_id: Optional[str] = None,
-    tracked_task: Optional[bool] = None,
+    job_id: Optional[str] = None,
+    tracked_job: Optional[bool] = None,
     authority: Optional[dict[str, Any]] = None,
 ) -> str:
     """Queue a message for a busy target session.
@@ -130,11 +130,11 @@ def enqueue(
     path. ``chain_generations`` is the sender's other count and travels
     through unchanged: a queued delivery creates no agent either.
 
-    ``task_id``: set for tracked-task dispatches (``agent(to=…)``) — the
-    pre-created pending Task this entry will run when drained. Drain
+    ``job_id``: set for tracked-job dispatches (``agent(to=…)``) — the
+    pre-created pending Job this entry will run when drained. Drain
     reuses the id (the dispatcher already holds it), delivers with the
-    task header, and skips the entry if the task was withdrawn
-    (``task_stop``) while queued.
+    job header, and skips the entry if the job was withdrawn
+    (``job_stop``) while queued.
 
     Returns ``"queued"`` or ``"duplicate"`` (identical message from the
     same sender session already queued within DEDUP_WINDOW_SECS).
@@ -163,8 +163,8 @@ def enqueue(
             "chain_messages": int(chain_messages),
             "chain_generations": int(chain_generations),
             "target_head_id": target_head_id,
-            "task_id": task_id,
-            "tracked_task": bool(task_id) if tracked_task is None else tracked_task,
+            "job_id": job_id,
+            "tracked_job": bool(job_id) if tracked_job is None else tracked_job,
             "enqueued_at": now,
             **normalize_authority(authority or {}),
         })
@@ -212,16 +212,16 @@ def _notify_sender(entry: dict[str, Any], content: str) -> None:
         pass
 
 
-def discard_task(session_id: str, task_id: str) -> bool:
-    """Withdraw a tracked-task entry (``agent(to=…)``) from the target's
-    inbox — task_stop on a still-queued dispatch. Returns True when an
+def discard_job(session_id: str, job_id: str) -> bool:
+    """Withdraw a tracked-job entry (``agent(to=…)``) from the target's
+    inbox — job_stop on a still-queued dispatch. Returns True when an
     entry was removed."""
     path = _inbox_path(session_id)
     if path is None or not path.exists():
         return False
     with _session_lock(session_id):
         entries = _load(path)
-        remaining = [e for e in entries if e.get("task_id") != task_id]
+        remaining = [e for e in entries if e.get("job_id") != job_id]
         if len(remaining) == len(entries):
             return False
         _write(path, remaining)
@@ -250,14 +250,14 @@ def clear(session_id: str, *, reason: str = "the target session was stopped") ->
             f"was discarded: {reason}. It was not delivered. "
             f"Message: {preview}"
         ))
-        # A tracked-task entry has a pending Task entity waiting on the
+        # A tracked-job entry has a pending Job entity waiting on the
         # delivery — flip it to cancelled so the dispatcher's
-        # task_output doesn't wait forever on work that will never run.
-        tid = entry.get("task_id")
+        # job_output doesn't wait forever on work that will never run.
+        tid = entry.get("job_id")
         if tid:
             try:
-                from openprogram.agent.task import get_runner
-                get_runner().cancel_task(str(tid), reason=f"withdrawn: {reason}")
+                from openprogram.agent.job import get_runner
+                get_runner().cancel_job(str(tid), reason=f"withdrawn: {reason}")
             except Exception:
                 pass
     return len(entries)
@@ -265,7 +265,7 @@ def clear(session_id: str, *, reason: str = "the target session was stopped") ->
 
 def drain(session_id: str) -> int:
     """Deliver every queued message for ``session_id``, one turn each,
-    through the normal async delivery path (run_agent_turn_async → task
+    through the normal async delivery path (run_agent_turn_async → job
     runner → auto-followup back to the sender). Called from the
     dispatcher at turn end. Returns the number delivered.
 
@@ -281,10 +281,10 @@ def drain(session_id: str) -> int:
         return 0
     delivered = 0
     for entry in entries:
-        # A tracked-task entry whose task was withdrawn (task_stop while
+        # A tracked-job entry whose job was withdrawn (job_stop while
         # queued) or otherwise finished must not run — drop the entry.
-        tid = entry.get("task_id")
-        if tid and _task_is_terminal(session_id, str(tid)):
+        tid = entry.get("job_id")
+        if tid and _job_is_terminal(session_id, str(tid)):
             with _session_lock(session_id):
                 remaining = [e for e in _load(path) if e.get("id") != entry.get("id")]
                 _write(path, remaining)
@@ -300,11 +300,11 @@ def drain(session_id: str) -> int:
     return delivered
 
 
-def _task_is_terminal(session_id: str, task_id: str) -> bool:
+def _job_is_terminal(session_id: str, job_id: str) -> bool:
     try:
-        from openprogram.agent.task.store import load_task
-        from openprogram.agent.task.types import is_terminal
-        t = load_task(session_id, task_id)
+        from openprogram.agent.job.store import load_job
+        from openprogram.agent.job.types import is_terminal
+        t = load_job(session_id, job_id)
         return t is not None and is_terminal(t.status)
     except Exception:
         return False
@@ -312,14 +312,14 @@ def _task_is_terminal(session_id: str, task_id: str) -> bool:
 
 def _deliver(session_id: str, entry: dict[str, Any]) -> None:
     """Trigger one turn on the target for a queued entry — same shape as
-    the direct existing-branch delivery in send_message. A tracked-task
-    entry (``task_id`` set) delivers with the task header and reuses the
-    pre-created task id so the dispatcher's handle stays valid."""
+    the direct existing-branch delivery in send_message. A tracked-job
+    entry (``job_id`` set) delivers with the job header and reuses the
+    pre-created job id so the dispatcher's handle stays valid."""
     from openprogram.agent.session_db import default_db
     from openprogram.agent.sub_agent_run import run_agent_turn_async
-    from openprogram.functions.tools.send_message.send_message.delivery import (
+    from openprogram.programs.functions.send_message.send_message.delivery import (
         sender_header,
-        task_header,
+        job_header,
     )
 
     # Continue from the branch's CURRENT head: the turn that made the
@@ -329,15 +329,15 @@ def _deliver(session_id: str, entry: dict[str, Any]) -> None:
     head = (default_db().get_session(session_id) or {}).get("head_id") \
         or entry.get("target_head_id")
     message = str(entry.get("message") or "")
-    tid = entry.get("task_id")
-    tracked_task = bool(entry.get("tracked_task", bool(tid)))
-    header = task_header if tracked_task else sender_header
+    tid = entry.get("job_id")
+    tracked_job = bool(entry.get("tracked_job", bool(tid)))
+    header = job_header if tracked_job else sender_header
     prompt = header(
         str(entry.get("sender_session_id") or ""),
         str(entry.get("sender_msg_id") or ""),
     ) + message
     run_agent_turn_async(
-        task_id=str(tid) if tid else None,
+        job_id=str(tid) if tid else None,
         session_id=session_id,
         prompt=prompt,
         agent_id=str(entry.get("agent_id") or "main"),
@@ -371,7 +371,7 @@ __all__ = [
     "DEDUP_WINDOW_SECS",
     "enqueue",
     "drain",
-    "discard_task",
+    "discard_job",
     "clear",
     "pending_count",
 ]

@@ -5,12 +5,12 @@
 > 即可 **被自动检测并直接使用，无需改动 host**。三个第一方 harness
 > （GUI / Research / Wiki）是参考实现；第三方遵循同样的规则。
 > 相关：[`../installing-harnesses.md`](../../../capabilities/installing-harnesses.md)
-> （安装流程）、`openprogram/functions/_registry.py`（加载器）、
-> `openprogram/functions/_programs.py`（第一方 harness 清单）。
+> （安装流程）、`openprogram/programs/_registry.py`（加载器）、
+> `openprogram/programs/_programs.py`（第一方 harness 清单）。
 
 ## 0. 唯一重要的规则
 
-**harness 就是任何你放进 `<openprogram>/functions/agentics/` 并通过
+**harness 就是任何你放进 `<openprogram>/programs/agentic_functions/` 并通过
 `<pkg>/agentics/__init__.py` 暴露其函数的东西。** host 在启动时（以及在
 开启热重载时，每当该文件夹变化时）遍历该文件夹，找到内层 package，导入
 `<pkg>.agentics`，随后 `@agentic_function` 装饰器自行完成注册。除此之外

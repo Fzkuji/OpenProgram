@@ -46,11 +46,11 @@ pip install -e "$GUI_HARNESS_DIR"                   # 依赖 openprogram
 pip install -e "$RESEARCH_HARNESS_DIR"
 ```
 
-`openprogram/functions/agentics/{GUI,Research}-Agent-Harness`
+`openprogram/programs/agentic_functions/{GUI,Research}-Agent-Harness`
 是符号链接 —— 如果仓库移动了需要重新创建：
 
 ```bash
-cd openprogram/functions/agentics
+cd openprogram/programs/agentic_functions
 rm -f GUI-Agent-Harness  && ln -s "$GUI_HARNESS_DIR"      GUI-Agent-Harness
 rm -f Research-Agent-Harness && ln -s "$RESEARCH_HARNESS_DIR" Research-Agent-Harness
 ```

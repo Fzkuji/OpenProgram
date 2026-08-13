@@ -182,7 +182,7 @@ def process_user_turn(
 ) -> TurnResult:
     """One full agent turn, then the session-goal continuation loop.
 
-    Every caller (webui / channels / CLI / task runner) enters here, so
+    Every caller (webui / channels / CLI / job runner) enters here, so
     an active session goal (``/goal``) is honoured no matter who
     triggered the turn: after the turn — finalize (phase 6/7) included —
     :func:`openprogram.agent.goal.continue_goal_turns` judges the goal
@@ -358,7 +358,7 @@ def _process_turn_once(
     _project_baseline = _bindings.project_baseline
     # Fresh outbound-attachment list for this turn — ``send_file`` calls
     # append to it, step 4b below folds it into the reply text.
-    from openprogram.functions.tools import send_file as _send_file
+    from openprogram.programs.functions import send_file as _send_file
     _send_file.begin_turn()
 
     # 3b. Persist an assistant *placeholder* row so the row exists in

@@ -13,7 +13,7 @@ import { useEffect } from "react";
 
 import type {
   PermissionRulesDetail,
-  TaskStatusDetail,
+  JobStatusDetail,
 } from "@/lib/net/ws-events";
 import type { PendingDecision } from "@/lib/session-store";
 import {
@@ -285,17 +285,16 @@ export function useWS(): void {
             (d as { session_id?: string } | undefined)?.session_id,
           );
           return true;
-        case "task_status": {
-          // Async task lifecycle broadcast (see
-          // docs/design/runtime/async-task-lifecycle.md D9). Dispatch a
+        case "job_status": {
+          // Async job lifecycle broadcast. Dispatch a
           // window event so any panel listening (BranchesPanel,
-          // TasksPanel) can update without prop-drilling. The
+          // JobsPanel) can update without prop-drilling. The
           // existing session_reload broadcast picks up DAG/attach
           // changes; this event is purely for the in-flight badge.
           try {
             window.dispatchEvent(
-              new CustomEvent("op:task-status", {
-                detail: (d ?? {}) as TaskStatusDetail,
+              new CustomEvent("op:job-status", {
+                detail: (d ?? {}) as JobStatusDetail,
               }),
             );
           } catch {
@@ -303,18 +302,18 @@ export function useWS(): void {
           }
           return true;
         }
-        case "spawn_task_result":
-        case "tasks_list":
-        case "task":
-        case "cancel_task_result": {
-          // Replies to the four task WS actions. We let the
+        case "spawn_job_result":
+        case "jobs_list":
+        case "job":
+        case "cancel_job_result": {
+          // Replies to the four job WS actions. We let the
           // requester correlate via the original send/await pattern
           // (no global handler needed). Surface as a window event
           // so a panel that did issue the request can match by
-          // task_id if it wants to.
+          // job_id if it wants to.
           try {
             window.dispatchEvent(
-              new CustomEvent("op:task-message", {
+              new CustomEvent("op:job-message", {
                 detail: { type: msg.type, data: d },
               }),
             );

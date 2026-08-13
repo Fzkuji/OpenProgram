@@ -1,17 +1,17 @@
-"""Cascading cancel — cancel_task stops the whole parent_task_id subtree.
+"""Cascading cancel — cancel_job stops the whole parent_job_id subtree.
 
 Covers (design: agent-collaboration.md §5.3):
   * cancelling a parent flips its pending/queued children to cancelled
     before they ever run
   * a running child receives the cancel signal through the normal
-    per-task cancel path
+    per-job cancel path
   * grandchildren stop too (recursion over the chain)
-  * a cycle in parent_task_id does not hang the walk (visited guard)
-  * spawns made inside a running task record parent_task_id
+  * a cycle in parent_job_id does not hang the walk (visited guard)
+  * spawns made inside a running job record parent_job_id
   * session-level cancel clears the target's inbox and leaves a system
     notice in each sender session
 
-Fake-worker technique mirrors tests/unit/test_async_task.py.
+Fake-worker technique mirrors tests/unit/test_async_job.py.
 """
 from __future__ import annotations
 
@@ -69,53 +69,53 @@ def fake_worker(monkeypatch):
         return AgentTurnResult(head_id="head_ok", final_text="done",
                                failed=False, error=None)
 
-    import openprogram.agent.task.runner as runner_mod
+    import openprogram.agent.job.runner as runner_mod
     monkeypatch.setattr(
         "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
     )
     monkeypatch.setattr(
-        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
     )
     yield calls, barrier, cancel_seen
     runner_mod.shutdown_runner()
 
 
 def _wait_status(runner, tid, statuses, timeout=5.0):
-    from openprogram.agent.task.types import TaskStatus  # noqa: F401
+    from openprogram.agent.job.types import JobStatus  # noqa: F401
     deadline = time.time() + timeout
     while time.time() < deadline:
-        t = runner.get_task(tid)
+        t = runner.get_job(tid)
         if t is not None and t.status in statuses:
             return t
         time.sleep(0.02)
-    return runner.get_task(tid)
+    return runner.get_job(tid)
 
 
 def test_parent_cancel_dequeues_pending_child(store_fixture, fake_worker,
                                               monkeypatch):
     """Pending child (never picked up) flips to cancelled with the parent."""
-    monkeypatch.setenv("OPENPROGRAM_TASK_WORKERS", "1")
-    import openprogram.agent.task.runner as runner_mod
+    monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "1")
+    import openprogram.agent.job.runner as runner_mod
     runner_mod.shutdown_runner()
     calls, barrier, _ = fake_worker
-    from openprogram.agent.task import get_runner, TaskStatus
+    from openprogram.agent.job import get_runner, JobStatus
     runner = get_runner()
 
-    parent = runner.spawn_task(
+    parent = runner.spawn_job(
         session_id="p1", prompt="parent", agent_id="main",
         parent_msg_id="a_p1",
     )
     # Wait until the parent occupies the single worker.
-    _wait_status(runner, parent, {TaskStatus.RUNNING})
-    child = runner.spawn_task(
+    _wait_status(runner, parent, {JobStatus.RUNNING})
+    child = runner.spawn_job(
         session_id="p2", prompt="child", agent_id="main",
-        parent_msg_id="a_p2", parent_task_id=parent,
+        parent_msg_id="a_p2", parent_job_id=parent,
     )
-    runner.cancel_task(parent)
-    p = runner.await_task(parent, timeout=5.0)
-    c = runner.await_task(child, timeout=5.0)
-    assert p.status == TaskStatus.CANCELLED
-    assert c.status == TaskStatus.CANCELLED
+    runner.cancel_job(parent)
+    p = runner.await_job(parent, timeout=5.0)
+    c = runner.await_job(child, timeout=5.0)
+    assert p.status == JobStatus.CANCELLED
+    assert c.status == JobStatus.CANCELLED
     # The child never ran.
     assert all(call["prompt"] != "child" for call in calls)
 
@@ -129,92 +129,92 @@ def test_pending_child_cannot_slip_into_the_freed_slot(
     the child the cascade was on its way to cancel. Slowing the walk down
     turns that interleaving from an occasional flake into every run.
     """
-    monkeypatch.setenv("OPENPROGRAM_TASK_WORKERS", "1")
-    import openprogram.agent.task.runner as runner_mod
+    monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "1")
+    import openprogram.agent.job.runner as runner_mod
     runner_mod.shutdown_runner()
     calls, _barrier, _ = fake_worker
-    from openprogram.agent.task import get_runner, TaskStatus
+    from openprogram.agent.job import get_runner, JobStatus
     runner = get_runner()
 
-    walk = runner._descendant_tasks
+    walk = runner._descendant_jobs
     monkeypatch.setattr(
-        runner, "_descendant_tasks",
+        runner, "_descendant_jobs",
         lambda root: (time.sleep(0.2), walk(root))[1],
     )
 
-    parent = runner.spawn_task(
+    parent = runner.spawn_job(
         session_id="p1", prompt="parent", agent_id="main",
         parent_msg_id="a_p1",
     )
-    _wait_status(runner, parent, {TaskStatus.RUNNING})
-    child = runner.spawn_task(
+    _wait_status(runner, parent, {JobStatus.RUNNING})
+    child = runner.spawn_job(
         session_id="p2", prompt="child", agent_id="main",
-        parent_msg_id="a_p2", parent_task_id=parent,
+        parent_msg_id="a_p2", parent_job_id=parent,
     )
-    runner.cancel_task(parent)
-    runner.await_task(parent, timeout=5.0)
-    assert runner.await_task(child, timeout=5.0).status == TaskStatus.CANCELLED
+    runner.cancel_job(parent)
+    runner.await_job(parent, timeout=5.0)
+    assert runner.await_job(child, timeout=5.0).status == JobStatus.CANCELLED
     assert all(call["prompt"] != "child" for call in calls), calls
 
 
 def test_parent_cancel_stops_running_child(store_fixture, fake_worker,
                                            monkeypatch):
     """Running child (different session) is cancelled through the normal
-    per-task cancel path."""
-    monkeypatch.setenv("OPENPROGRAM_TASK_WORKERS", "2")
-    import openprogram.agent.task.runner as runner_mod
+    per-job cancel path."""
+    monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "2")
+    import openprogram.agent.job.runner as runner_mod
     runner_mod.shutdown_runner()
     _, barrier, cancel_seen = fake_worker
-    from openprogram.agent.task import get_runner, TaskStatus
+    from openprogram.agent.job import get_runner, JobStatus
     runner = get_runner()
 
-    parent = runner.spawn_task(
+    parent = runner.spawn_job(
         session_id="p1", prompt="parent", agent_id="main",
         parent_msg_id="a_p1",
     )
-    child = runner.spawn_task(
+    child = runner.spawn_job(
         session_id="p2", prompt="child", agent_id="main",
-        parent_msg_id="a_p2", parent_task_id=parent,
+        parent_msg_id="a_p2", parent_job_id=parent,
     )
-    assert _wait_status(runner, parent, {TaskStatus.RUNNING}).status == TaskStatus.RUNNING
-    assert _wait_status(runner, child, {TaskStatus.RUNNING}).status == TaskStatus.RUNNING
+    assert _wait_status(runner, parent, {JobStatus.RUNNING}).status == JobStatus.RUNNING
+    assert _wait_status(runner, child, {JobStatus.RUNNING}).status == JobStatus.RUNNING
 
-    runner.cancel_task(parent)
-    p = runner.await_task(parent, timeout=5.0)
-    c = runner.await_task(child, timeout=5.0)
-    assert p.status == TaskStatus.CANCELLED
-    assert c.status == TaskStatus.CANCELLED
+    runner.cancel_job(parent)
+    p = runner.await_job(parent, timeout=5.0)
+    c = runner.await_job(child, timeout=5.0)
+    assert p.status == JobStatus.CANCELLED
+    assert c.status == JobStatus.CANCELLED
     assert cancel_seen.is_set()
 
 
-def test_cancel_request_does_not_resurrect_a_finished_task(
+def test_cancel_request_does_not_resurrect_a_finished_job(
         store_fixture, fake_worker):
     """The cancel-request stamp must not blind-write a stale snapshot.
 
-    ``_cancel_single`` reads the task, then stamps ``cancel_requested_at``
+    ``_cancel_single`` reads the job, then stamps ``cancel_requested_at``
     on it. The worker it signalled two lines earlier can reach its own
-    terminal write inside that window; a blind ``save_task`` of the stale
+    terminal write inside that window; a blind ``save_job`` of the stale
     snapshot rewrote ``status: running`` over the worker's ``cancelled``
-    and pinned the task non-terminal forever. Forcing the stale read
+    and pinned the job non-terminal forever. Forcing the stale read
     makes the race deterministic — it is otherwise a rare interleaving
     that only shows up as an occasional ``running != cancelled``.
     """
-    import openprogram.agent.task.runner as runner_mod
-    from openprogram.agent.task import get_runner, TaskStatus
-    from openprogram.agent.task.store import (
-        load_task, save_task, update_task_status,
+    import openprogram.agent.job.runner as runner_mod
+    from openprogram.agent.job import get_runner, JobStatus
+    from openprogram.agent.job.store import (
+        load_job, save_job, update_job_status,
     )
-    from openprogram.agent.task.types import Task
+    from openprogram.agent.job.types import Job
 
     # Build the runner FIRST: its startup reconcile errors any
-    # pre-existing non-terminal task.
+    # pre-existing non-terminal job.
     runner = get_runner()
-    save_task("p1", Task(id="t_resurrect", parent_session_id="p1",
+    save_job("p1", Job(id="t_resurrect", parent_session_id="p1",
                          prompt="x", agent_id="main",
-                         status=TaskStatus.RUNNING))
-    stale = load_task("p1", "t_resurrect")
+                         status=JobStatus.RUNNING))
+    stale = load_job("p1", "t_resurrect")
     # The worker wins the race and writes its terminal status.
-    update_task_status("p1", "t_resurrect", TaskStatus.CANCELLED)
+    update_job_status("p1", "t_resurrect", JobStatus.CANCELLED)
 
     # Plain setattr, not the monkeypatch fixture: undoing it has to be
     # scoped to this one call, and monkeypatch.undo() would also drop
@@ -228,79 +228,79 @@ def test_cancel_request_does_not_resurrect_a_finished_task(
     finally:
         runner_mod._store_load = original
 
-    assert load_task("p1", "t_resurrect").status == TaskStatus.CANCELLED
+    assert load_job("p1", "t_resurrect").status == JobStatus.CANCELLED
 
 
 def test_grandchild_stops_too(store_fixture, fake_worker, monkeypatch):
     """Recursion: parent → child → grandchild, all cancelled from the root."""
-    monkeypatch.setenv("OPENPROGRAM_TASK_WORKERS", "1")
-    import openprogram.agent.task.runner as runner_mod
+    monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "1")
+    import openprogram.agent.job.runner as runner_mod
     runner_mod.shutdown_runner()
     _, barrier, _ = fake_worker
-    from openprogram.agent.task import get_runner, TaskStatus
+    from openprogram.agent.job import get_runner, JobStatus
     runner = get_runner()
 
-    parent = runner.spawn_task(
+    parent = runner.spawn_job(
         session_id="p1", prompt="parent", agent_id="main",
         parent_msg_id="a_p1",
     )
-    _wait_status(runner, parent, {TaskStatus.RUNNING})
-    child = runner.spawn_task(
+    _wait_status(runner, parent, {JobStatus.RUNNING})
+    child = runner.spawn_job(
         session_id="p2", prompt="child", agent_id="main",
-        parent_msg_id="a_p2", parent_task_id=parent,
+        parent_msg_id="a_p2", parent_job_id=parent,
     )
-    grandchild = runner.spawn_task(
+    grandchild = runner.spawn_job(
         session_id="p3", prompt="grandchild", agent_id="main",
-        parent_msg_id="a_p3", parent_task_id=child,
+        parent_msg_id="a_p3", parent_job_id=child,
     )
-    runner.cancel_task(parent)
+    runner.cancel_job(parent)
     for tid in (parent, child, grandchild):
-        final = runner.await_task(tid, timeout=5.0)
-        assert final.status == TaskStatus.CANCELLED, tid
+        final = runner.await_job(tid, timeout=5.0)
+        assert final.status == JobStatus.CANCELLED, tid
 
 
 def test_cycle_in_parent_chain_does_not_hang(store_fixture, fake_worker):
-    """A (theoretically impossible) parent_task_id cycle terminates."""
-    from openprogram.agent.task.types import Task, TaskStatus
-    from openprogram.agent.task.store import save_task
-    from openprogram.agent.task import get_runner
+    """A (theoretically impossible) parent_job_id cycle terminates."""
+    from openprogram.agent.job.types import Job, JobStatus
+    from openprogram.agent.job.store import save_job
+    from openprogram.agent.job import get_runner
 
     # Construct the runner FIRST — its startup reconcile flips any
-    # pre-existing non-terminal task to errored.
+    # pre-existing non-terminal job to errored.
     runner = get_runner()
-    a = Task(id="t_cyc_a", parent_session_id="p1", prompt="a",
-             agent_id="main", parent_task_id="t_cyc_b")
-    b = Task(id="t_cyc_b", parent_session_id="p1", prompt="b",
-             agent_id="main", parent_task_id="t_cyc_a")
-    save_task("p1", a)
-    save_task("p1", b)
+    a = Job(id="t_cyc_a", parent_session_id="p1", prompt="a",
+             agent_id="main", parent_job_id="t_cyc_b")
+    b = Job(id="t_cyc_b", parent_session_id="p1", prompt="b",
+             agent_id="main", parent_job_id="t_cyc_a")
+    save_job("p1", a)
+    save_job("p1", b)
     done = threading.Event()
     result = {}
 
     def _go():
-        result["task"] = runner.cancel_task("t_cyc_a")
+        result["job"] = runner.cancel_job("t_cyc_a")
         done.set()
 
     threading.Thread(target=_go, daemon=True).start()
-    assert done.wait(timeout=5.0), "cancel_task hung on a parent cycle"
-    assert result["task"].status == TaskStatus.CANCELLED
-    assert runner.get_task("t_cyc_b").status == TaskStatus.CANCELLED
+    assert done.wait(timeout=5.0), "cancel_job hung on a parent cycle"
+    assert result["job"].status == JobStatus.CANCELLED
+    assert runner.get_job("t_cyc_b").status == JobStatus.CANCELLED
 
 
-def test_spawn_inside_task_records_parent(store_fixture, fake_worker,
+def test_spawn_inside_job_records_parent(store_fixture, fake_worker,
                                           monkeypatch):
-    """A spawn made from inside a running task defaults parent_task_id
-    to that task (the producer side of the cascade chain)."""
-    import openprogram.agent.task.runner as runner_mod
-    from openprogram.agent.task import get_runner
+    """A spawn made from inside a running job defaults parent_job_id
+    to that job (the producer side of the cascade chain)."""
+    import openprogram.agent.job.runner as runner_mod
+    from openprogram.agent.job import get_runner
     runner = get_runner()
     recorded = {}
 
     def fake_run(*, session_id, prompt, agent_id, branch_from=None,
                  label=None, spawn_caller=None, advance_head=True):
         from openprogram.agent.sub_agent_run import AgentTurnResult
-        # Simulate a tool inside this turn spawning a sub-task.
-        child_id = runner.spawn_task(
+        # Simulate a tool inside this turn spawning a sub-job.
+        child_id = runner.spawn_job(
             session_id="p2", prompt="inner child", agent_id="main",
             parent_msg_id="a_p2",
         )
@@ -311,14 +311,14 @@ def test_spawn_inside_task_records_parent(store_fixture, fake_worker,
     monkeypatch.setattr(
         "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
     )
-    parent = runner.spawn_task(
+    parent = runner.spawn_job(
         session_id="p1", prompt="outer", agent_id="main",
         parent_msg_id="a_p1",
     )
-    runner.await_task(parent, timeout=5.0)
+    runner.await_job(parent, timeout=5.0)
     assert "child_id" in recorded
-    child_task = runner.await_task(recorded["child_id"], timeout=5.0)
-    assert child_task.parent_task_id == parent
+    child_job = runner.await_job(recorded["child_id"], timeout=5.0)
+    assert child_job.parent_job_id == parent
 
 
 def test_session_cancel_clears_inbox_with_sender_notice(store_fixture):

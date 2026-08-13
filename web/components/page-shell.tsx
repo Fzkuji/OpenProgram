@@ -229,7 +229,7 @@ export function PageShell({ page }: { page: Page }) {
   //     reply later overwrites with canonical state
   //   * new chat (/chat) — call newSession() which resets the
   //     chat area in place (welcome screen + cleared state)
-  // SPA hand-off from /functions → /chat lives in its own hook —
+  // SPA hand-off from /programs → /chat lives in its own hook —
   // see lib/use-pending-run-function.ts.
   usePendingRunFunction(pathname);
 

@@ -24,7 +24,7 @@ This spec defines a single source-of-truth so every consumer reads metadata by t
 | `render_options(options)` (decision menu) | function name, when-to-pick description, parameter name / type / description / enum, whether each parameter is system-filled |
 | `parse_args(reply, options, runtime, ...)` (decision extract + dispatch + retry) | parameter names + types + enum + hidden flag, `runtime`-style auto-inject allowlist |
 | WebUI parameter form | description / placeholder / multiline / options / hidden |
-| `runtime.exec` rendered context | docstring — carried as `metadata.doc` and prefixed into the rendered context text. The default system prompt comes from `runtime.system` (plus the skills block), not from the docstring. |
+| `llm()` rendered context | docstring — carried as `metadata.doc` and prefixed into the rendered context text. The default system prompt comes from the ambient runtime (plus the skills block), not from the docstring. |
 | Session-DAG rendering (`render_context`) | `expose` mode + `render_range` |
 | auto-trace / persistence | function identity, argument values, return value, timing |
 
@@ -39,7 +39,7 @@ Every piece of information has exactly one source-of-truth. This table is the sp
 | Parameter types | annotation | `param.annotation` |
 | Parameter defaults | annotation default | `param.default` |
 | One-line summary (what / when-to-pick) | first paragraph of docstring (up to first blank line) | `inspect.getdoc(fn)`, first paragraph |
-| Per-call LLM instructions (prompt + data for one specific `runtime.exec`) | the `content=[...]` list of that exec call | passed directly at call time |
+| Per-call LLM instructions (prompt + data for one specific `llm()`) | the prompt passed to that `llm()` call | passed directly at call time |
 | Per-parameter description | `@agentic_function(input={"x": {"description": ...}})` | `fn.input_meta["x"]["description"]` |
 | Per-parameter enum | `@agentic_function(input={"x": {"options": [...]}})` | `fn.input_meta["x"]["options"]` |
 | Whether the parameter is LLM-visible | `@agentic_function(input={"x": {"hidden": True}})` | `fn.input_meta["x"]["hidden"]` |
@@ -48,9 +48,9 @@ Every piece of information has exactly one source-of-truth. This table is the sp
 | Dynamic option source | `@agentic_function(input={"x": {"options_from": "functions"}})` | `fn.input_meta["x"]["options_from"]` |
 | Working-directory picker mode | `@agentic_function(workdir_mode="optional"\|"hidden"\|"required")` — validated by the decorator and stored on the instance | `fn.workdir_mode`. Its consumer is the WebUI, which does not introspect the object — it AST-parses the source text (`openprogram/webui/_functions.py:_extract_workdir_mode`), so the value must be written as a literal in the decorator call |
 | Framework-auto-injected parameters | two constants in two files, both `{"runtime", "exec_runtime", "review_runtime"}`: `_RUNTIME_PARAMS` in `agentic_programming/function.py` (injection + tool-spec filtering) and `_AUTO_PARAMS` in `agentic_programming/decision.py` (menu hiding + dispatch) | module level |
-| Override of `runtime.exec` system prompt | `@agentic_function(system="...")` | `fn.system` |
+| Override of the ambient LLM system prompt | `@agentic_function(system="...")` | `fn.system` |
 | DAG expose mode | `@agentic_function(expose="io"\|"llm"\|"full"\|"hidden")` — controls what **callers** see of this function in their DAG render | `fn.expose` |
-| DAG render range | `@agentic_function(render_range={"callers": N, "subcalls": M})` — controls how much DAG history **this function's own** `runtime.exec` reads. Both are node-count slices on `seq`: `callers` = most-recent N nodes written **before** this function's frame started (default `None` = uncapped, `0` = wall off all prior context); `subcalls` = most-recent N nodes written **since** this function's frame started (default `-1` = uncapped — the frame sees its own progress; child internals are hidden by *their* `expose` setting, not by subcalls counting; set `N>=0` only to actively cap prompt size in a loop). | `fn.render_range` |
+| DAG render range | `@agentic_function(render_range={"callers": N, "subcalls": M})` — controls how much DAG history **this function's own** `llm()` calls read. Both are node-count slices on `seq`: `callers` = most-recent N nodes written **before** this function's frame started (default `None` = uncapped, `0` = wall off all prior context); `subcalls` = most-recent N nodes written **since** this function's frame started (default `-1` = uncapped — the frame sees its own progress; child internals are hidden by *their* `expose` setting, not by subcalls counting; set `N>=0` only to actively cap prompt size in a loop). | `fn.render_range` |
 | Skill trigger words / agent discovery | sibling `SKILL.md` frontmatter | loaded separately by the skill loader |
 
 **Core principle**: anything expressible in the signature / annotation is not repeated in the decorator; anything expressible in `input=` is not repeated in the docstring.
@@ -61,8 +61,8 @@ The decorator also accepts the shared tool-registration / gating kwargs (`name`,
 
 | Aspect | Default | Resulting behavior |
 |---|---|---|
-| `expose` | `"io"` | Callers see my name + input + output. My internal `runtime.exec` (`llm` Calls) are hidden from them. |
-| `render_range` | `None` → `render_context` falls through to `callers=None, subcalls=-1` | Pre-frame history is uncapped. In-frame nodes (the frame's own progress: earlier `runtime.exec` results, returned sub-function io) are also uncapped. Child `@agentic_function` internals stay hidden because the child carries `expose="io"`, not because subcalls trims them. |
+| `expose` | `"io"` | Callers see my name + input + output. My internal `llm()` calls are hidden from them. |
+| `render_range` | `None` → `render_context` falls through to `callers=None, subcalls=-1` | Pre-frame history is uncapped. In-frame nodes (the frame's own progress: earlier `llm()` results, returned sub-function io) are also uncapped. Child `@agentic_function` internals stay hidden because the child carries `expose="io"`, not because subcalls trims them. |
 | top-level chat turn | `frame_entry_seq=-1`, no pre-frame | Same code path as any other frame — all nodes are in-frame and visible. No special-casing. |
 | tools | full toolset | A bare `runtime.exec` with neither `tools=` nor `toolset=` resolves the full registry toolset by default — tools are ON. Pass `tools=[...]` for an explicit menu; pass `toolset="none"` or `tools=[]` for a tool-free reasoning call. A nested `exec` inside a tool body inherits the outer `tools=` list via the `_current_tools` contextvar. |
 | `system` | `None` | Use the runtime's existing system prompt as-is. |
@@ -76,9 +76,9 @@ These two channels can carry overlapping information, but they have **different 
 | Channel | Scope | What goes here |
 |---|---|---|
 | docstring | Whole-function level. Describes what the function as a whole does (it may run preprocessing, several LLM calls, and postprocessing). Read by humans, decision menus, tool_use specs, and meta tooling. | One-line summary required. May also describe in detail what each LLM call does, expected output, edge cases — as much detail as you want, for readers and for context. |
-| `runtime.exec(content=[...])` | One specific LLM call inside the function. Each `exec` is its own "ask"; the function may make several with different prompts. | The actual prompt + data for *this* LLM call: what task, what output format, what constraints, plus the data to operate on. **This must be written even if the docstring already describes it.** |
+| `llm(prompt)` | One specific LLM call inside the function. Each call is its own request; the function may make several with different prompts. | The actual prompt + data for *this* LLM call: what task, what output format, what constraints, plus the data to operate on. **This must be written even if the docstring already describes it.** |
 
-A function may have a rich docstring explaining "this function classifies sentiment by asking the LLM and normalizing the reply", but the body still needs an explicit `runtime.exec(content=[...])` containing the actual instruction + data going to the LLM. **Documentation in the docstring does not propagate into the LLM call** — the framework sends the docstring as descriptive context (carried on the DAG node as `metadata.doc` and rendered into the inner call's situation prompt), not as authoritative instruction. Provider behavior varies; codex CLI in particular ignores docstring as instruction. Always put the per-call prompt in `content`.
+A function may have a rich docstring explaining "this function classifies sentiment by asking the LLM and normalizing the reply", but the body still needs an explicit `llm(prompt)` containing the actual instruction + data going to the LLM. **Documentation in the docstring does not propagate into the LLM call** — the framework sends the docstring as descriptive context (carried on the DAG node as `metadata.doc` and rendered into the inner call's situation prompt), not as authoritative instruction. Always put the per-call instruction and data in the `llm()` prompt.
 
 Docstring writing rules:
 
@@ -92,7 +92,7 @@ Docstring writing rules:
 - Each item is a dict like `{"type": "text", "text": ...}` or `{"type": "image", "path": ...}`.
 - Embed both the instruction *and* the data for this LLM call. Example:
   ```python
-  runtime.exec(content=[{"type": "text", "text": (
+  llm([{"type": "text", "text": (
       f"Classify the sentiment of the following text. Reply with exactly one "
       f"word: positive, negative, or neutral.\n\nText:\n{text}"
   )}])

@@ -96,7 +96,7 @@ openprogram
 
 ### 3. 添加 harness
 
-Harness 是 `openprogram/functions/agentics/` 下的程序。使用 `openprogram programs install <名称或Git来源>` 安装：该命令会克隆或检查仓库、登记owner批准的来源，并在下次worker重启后启用它。只把目录复制到这里不会触发导入。
+Harness 是 `openprogram/programs/agentic_functions/` 下的程序。使用 `openprogram programs install <名称或Git来源>` 安装：该命令会克隆或检查仓库、登记owner批准的来源，并在下次worker重启后启用它。只把目录复制到这里不会触发导入。
 
 | Harness | 安装 | 功能 |
 |---|---|---|

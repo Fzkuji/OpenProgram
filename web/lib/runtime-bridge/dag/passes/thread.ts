@@ -4,7 +4,7 @@
  * One triangle = everything the model did from one reply until the next
  * user message. Three consequences, all computed here:
  *
- *   * A ``task_followup`` reply — the turn an agent's return triggers —
+ *   * A ``job_followup`` reply — the turn an agent's return triggers —
  *     is not a chain node. A function's return does not get a new node
  *     when the model keeps talking, and an agent's return is the same
  *     event at a different scale. The reply merges into its ANCHOR: the
@@ -81,12 +81,12 @@ export function isChainNode(n: GNode): boolean {
 }
 
 /** The reply a followup chain hangs off: climb ``predecessor`` past
- *  every ``task_followup`` reply. Scarred data — a followup whose
+ *  every ``job_followup`` reply. Scarred data — a followup whose
  *  predecessor an old bug rewound — resolves to the same anchor, which
  *  is why the scar stops rendering as a fork. */
 function isFollowup(n: GNode | undefined): boolean {
   return !!n
-    && (n as Record<string, unknown>).source === "task_followup"
+    && (n as Record<string, unknown>).source === "job_followup"
     && n.role === "assistant";
 }
 

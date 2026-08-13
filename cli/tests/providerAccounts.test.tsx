@@ -3,6 +3,11 @@ import { buildProviderAccountsPicker } from '../src/screens/repl/pickers/provide
 import type { PickerCtx } from '../src/screens/repl/pickerRouter.js';
 import type { AccountsState, AddStarted } from '../src/utils/providerAccounts.js';
 
+vi.mock('../src/utils/backend.js', async () => {
+  const actual = await vi.importActual<typeof import('../src/utils/backend.js')>('../src/utils/backend.js');
+  return { ...actual, openInBrowser: vi.fn() };
+});
+
 // We assert on the returned React element's PROPS rather than rendering it.
 // The picker builder returns a <Picker> or <LineInput> with fully-formed
 // items / handlers, so prop inspection exercises all the panel's logic
@@ -59,6 +64,25 @@ function loginCtx(over: Partial<PickerCtx> = {}): PickerCtx {
 }
 
 describe('Provider accounts panel — list', () => {
+  it('selects an account by stable id while displaying its label', () => {
+    const ctx = loginCtx({
+      accountsState: {
+        installed: true,
+        ready: true,
+        active: 'account-2',
+        add_mode: 'login',
+        accounts: [{ id: 'account-2', name: 'person@example.com', label: 'person@example.com', email: 'person@example.com' }],
+      } as AccountsState,
+    });
+    const el = buildProviderAccountsPicker(ctx, 'acct_list')!;
+    const account = items(el).find((item) => item.label.includes('person@example.com'))!;
+
+    el.props.onSelect(account);
+
+    expect(ctx.setAccountSelected).toHaveBeenCalledWith('account-2');
+    expect(el.props.title).toContain('active: person@example.com');
+  });
+
   it('renders accounts (active marker + email), Add and Deactivate rows', () => {
     const el = buildProviderAccountsPicker(makeCtx(), 'acct_list')!;
     expect(el.props.title).toContain('active: work@example.com');
@@ -160,7 +184,7 @@ describe('Provider accounts panel — REST wiring', () => {
       const u = String(url);
       const body = u.endsWith('/accounts') && opts?.method !== 'POST'
         ? { installed: true, ready: true, active: null, accounts: [] }
-        : { ok: true, session: 's1', url: 'https://login', name: 'account-1' };
+        : { ok: true, session: 's1', url: 'https://auth.example.test/login', name: 'account-1' };
       return Promise.resolve({ json: () => Promise.resolve(body) } as Response);
     });
   });
@@ -176,31 +200,31 @@ describe('Provider accounts panel — REST wiring', () => {
     expect(ctx.setPickerKind).toHaveBeenCalledWith('acct_add_code');
   });
 
-  it('Deactivate row POSTs to /accounts/use with an empty name', async () => {
+  it('Deactivate row POSTs to /accounts/use with an empty stable id', async () => {
     const ctx = makeCtx();
     const el = buildProviderAccountsPicker(ctx, 'acct_list')!;
     el.props.onSelect({ value: '__deactivate__' });
     await flush();
     const use = calls.find((c) => c.url.includes('/accounts/use'));
-    expect(use?.body).toEqual({ name: '' });
+    expect(use?.body).toEqual({ id: '' });
   });
 
-  it('Activate POSTs to /accounts/use with the account name', async () => {
+  it('Activate POSTs to /accounts/use with the stable account id', async () => {
     const ctx = makeCtx({ accountSelected: 'alt' });
     const el = buildProviderAccountsPicker(ctx, 'acct_action')!;
     el.props.onSelect({ value: 'activate' });
     await flush();
     const use = calls.find((c) => c.url.includes('/accounts/use'));
-    expect(use?.body).toEqual({ name: 'alt' });
+    expect(use?.body).toEqual({ id: 'alt' });
   });
 
-  it('Remove POSTs to /accounts/remove with the account name', async () => {
+  it('Remove POSTs to /accounts/remove with the stable account id', async () => {
     const ctx = makeCtx({ accountSelected: 'alt' });
     const el = buildProviderAccountsPicker(ctx, 'acct_action')!;
     el.props.onSelect({ value: 'remove' });
     await flush();
     const rm = calls.find((c) => c.url.includes('/accounts/remove'));
-    expect(rm?.body).toEqual({ name: 'alt' });
+    expect(rm?.body).toEqual({ id: 'alt' });
   });
 
   it('a generic provider hits ITS OWN /accounts/use path, not claude-code', async () => {
@@ -217,7 +241,7 @@ describe('Provider accounts panel — REST wiring', () => {
   });
 
   it('submitting the code POSTs session + code to /accounts/add/code', async () => {
-    const ctx = makeCtx({ accountPendingAdd: { session: 'sess9', url: 'https://login' } });
+    const ctx = makeCtx({ accountPendingAdd: { session: 'sess9', url: 'https://auth.example.test/login' } });
     const el = buildProviderAccountsPicker(ctx, 'acct_add_code')!;
     el.props.onSubmit('MYCODE');
     await flush();
@@ -225,12 +249,12 @@ describe('Provider accounts panel — REST wiring', () => {
     expect(c?.body).toEqual({ session: 'sess9', code: 'MYCODE' });
   });
 
-  it('rename submit POSTs old + new to /accounts/rename', async () => {
+  it('rename submit keeps the stable id and sends a new label', async () => {
     const ctx = makeCtx({ accountSelected: 'alt' });
     const el = buildProviderAccountsPicker(ctx, 'acct_rename')!;
     el.props.onSubmit('renamed');
     await flush();
     const c = calls.find((x) => x.url.includes('/accounts/rename'));
-    expect(c?.body).toEqual({ old: 'alt', new: 'renamed' });
+    expect(c?.body).toEqual({ id: 'alt', name: 'renamed' });
   });
 });

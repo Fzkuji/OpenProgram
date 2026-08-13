@@ -25,7 +25,7 @@ Three properties decide the design:
 
 3. **Separated responsibilities.** Billing accounting, compaction threshold estimation, and hot-path budget caching have different lifecycles and consumers, and live in different objects.
 
-Paths that reach the provider outside the chat loop — `context/summarize.py`, `functions/tools/mixture_of_agents`, `memory/llm_bridge.py`, and `@agentic_function` subprocesses (`process_runner.py`) — are all covered by the same collection point plus an explicit source scope.
+Paths that reach the provider outside the chat loop — `context/summarize.py`, `programs/functions/mixture_of_agents`, `memory/llm_bridge.py`, and `@agentic_function` subprocesses (`process_runner.py`) — are all covered by the same collection point plus an explicit source scope.
 
 `providers/models.py:calculate_cost(model, usage)` already computes cost from `Model.cost`. The metering layer calls it at the collection point; no new pricing logic exists.
 

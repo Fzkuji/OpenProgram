@@ -1,13 +1,13 @@
 """Agent archiving — archive_when_done + archive_agent.
 
 Archiving stops new deliveries to a branch and keeps its history.
-All fake — no real LLM, no live task pool run (async deliveries are
+All fake — no real LLM, no live job pool run (async deliveries are
 captured at run_agent_turn_async, the sync spawn at run_agent_turn;
 same technique as test_send_message.py / test_agent_dispatch.py):
 
   * agent(archive_when_done=True): sync spawn archives at terminal;
     async spawn passes the flag through to the runner, whose terminal
-    hook archives; the flag survives Task round-trip
+    hook archives; the flag survives Job round-trip
   * archive_agent: archives by address or name, in this session or
     another one, with or without session context; already-archived is
     an idempotent notice
@@ -32,14 +32,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.functions.tools.agent.agent.agent import _agent_impl
-from openprogram.functions.tools.send_message.archive_agent.archive_agent import (
+from openprogram.programs.functions.agent.agent.agent import _agent_impl
+from openprogram.programs.functions.send_message.archive_agent.archive_agent import (
     _archive_agent_impl,
 )
-from openprogram.functions.tools.send_message.list_agents.list_agents import (
+from openprogram.programs.functions.send_message.list_agents.list_agents import (
     _list_agents_impl,
 )
-from openprogram.functions.tools.send_message.send_message.send_message import (
+from openprogram.programs.functions.send_message.send_message.send_message import (
     _send_message_impl,
 )
 
@@ -89,13 +89,13 @@ def parent_turn(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "openprogram.agent.sub_agent_run.run_agent_turn_async", fake_async)
     monkeypatch.setattr(
-        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None)
+        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None)
     s.async_calls = calls
 
     yield s
     run_control._current_session_id.reset(sid_tok)
     store_mod._current_turn_id.reset(turn_tok)
-    import openprogram.agent.task.runner as runner_mod
+    import openprogram.agent.job.runner as runner_mod
     runner_mod.shutdown_runner()
 
 
@@ -139,17 +139,17 @@ def test_async_spawn_passes_archive_flag_to_runner(parent_turn):
 def test_runner_terminal_hook_archives_spawn_branch(parent_turn):
     """The runner's terminal hook archives only when the spawn asked
     for it; a delivery (flag False) never touches meta."""
-    from openprogram.agent.task import get_runner
-    from openprogram.agent.task.types import Task
+    from openprogram.agent.job import get_runner
+    from openprogram.agent.job.types import Job
 
     runner = get_runner()
-    runner._finalize_spawn_branch_meta(Task(
+    runner._finalize_spawn_branch_meta(Job(
         id="t_x1", parent_session_id="p1", prompt="x", agent_id="main",
         head_id="a0", archive_when_done=True,
     ))
     assert parent_turn.get_branch_meta("p1", "a0").get("archived") is True
 
-    runner._finalize_spawn_branch_meta(Task(
+    runner._finalize_spawn_branch_meta(Job(
         id="t_x2", parent_session_id="p2", prompt="x", agent_id="main",
         head_id="a9", archive_when_done=False,
     ))
@@ -157,10 +157,10 @@ def test_runner_terminal_hook_archives_spawn_branch(parent_turn):
 
 
 def test_task_roundtrip_preserves_archive_fields(parent_turn):
-    from openprogram.agent.task.types import Task
-    t = Task(id="t_r", parent_session_id="p1", prompt="x", agent_id="main",
+    from openprogram.agent.job.types import Job
+    t = Job(id="t_r", parent_session_id="p1", prompt="x", agent_id="main",
              archive_when_done=True)
-    t2 = Task.from_dict(t.to_dict())
+    t2 = Job.from_dict(t.to_dict())
     assert t2.archive_when_done is True
 
 
@@ -294,7 +294,7 @@ def test_auto_rename_skips_archived_branch(parent_turn, monkeypatch):
 def _merged_spawn(store, *, head="sp_head", name="fox-research"):
     """Build what a completed background spawn leaves behind on p1: a
     spawn branch off a1, its head absorbed by ``mark_merged``, and the
-    task follow-up chain the parent continued on TOP of that head.
+    job follow-up chain the parent continued on TOP of that head.
     Returns the retired head id."""
     store.spawn_branch("p1", "a1", source="agent", node_id="sp_root",
                        prompt="do it", register_head=False)
@@ -304,7 +304,7 @@ def _merged_spawn(store, *, head="sp_head", name="fox-research"):
     store.set_branch_name("p1", head, name)
     store.mark_merged("p1", [head])
     store.append_message("p1", {"id": "fu_u", "role": "user",
-                                "content": "[task done]", "timestamp": 2,
+                                "content": "[job done]", "timestamp": 2,
                                 "predecessor": head})
     store.append_message("p1", {"id": "fu_a", "role": "assistant",
                                 "content": "noted", "timestamp": 3,
@@ -356,11 +356,11 @@ def test_archive_when_done_spawn_visible_after_merge(parent_turn):
     """End to end: a successful background spawn is absorbed by the
     runner's merge, and archive_when_done still leaves an agent that
     scope="archived" can show."""
-    from openprogram.agent.task import get_runner
-    from openprogram.agent.task.types import Task
+    from openprogram.agent.job import get_runner
+    from openprogram.agent.job.types import Job
 
     head = _merged_spawn(parent_turn)
-    get_runner()._finalize_spawn_branch_meta(Task(
+    get_runner()._finalize_spawn_branch_meta(Job(
         id="t_m", parent_session_id="p1", prompt="x", agent_id="main",
         head_id=head, archive_when_done=True,
     ))

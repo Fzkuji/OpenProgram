@@ -271,7 +271,7 @@ token 全部按原价重读。
 | `openprogram/agent/session_config.py` | `SessionRunConfig` 的 `web_search` / `toolset` 意图字段；`save/load` 读写它们（存 git session meta，不需改 DB schema——`update_session(**fields)` 任意 key 透传）；`tools_override_from_config` 输出 **dict 意图**（`{enabled, toolset, web_search}`）供实时展开，不物化整张工具表；`list[str]` 仅用于用户显式精选，原样透传 |
 | `openprogram/webui/ws_actions/chat.py` | 把 `tools_profile` / `web_search_flag` 作为**意图**透传给 `save_session_run_config(toolset=, web_search=)`；"tools=False + web_search=True → `["web_search"]`" 这一单元素 list 属用户精选，不是全量快照 |
 | `openprogram/agent/internals/_model_tools.py` | dict-override 分支（`resolve_tools`，~397-421）的 `web_search` 叠加：`_overlay_web_search` 在 toolset / names 两条路径展开后，若意图含 web_search 且结果缺它则补上 |
-| `openprogram/functions/_runtime.py` | defer 机制本体：`_defer` 边车、已加载集合、`freeze_turn_tools` / `release_turn_tools`（§7.4）、`split_tools_for_dispatch`、`tool_search` 及它返回的 schema、`deferred_catalog_text` |
+| `openprogram/programs/_runtime.py` | defer 机制本体：`_defer` 边车、已加载集合、`freeze_turn_tools` / `release_turn_tools`（§7.4）、`split_tools_for_dispatch`、`tool_search` 及它返回的 schema、`deferred_catalog_text` |
 | `openprogram/agent/agent_loop.py` | 每轮在外层循环顶部调一次 `freeze_turn_tools`；工具调用按名字在完整工具列表里解析，因此轮内加载的工具仍可派发 |
 
 ### 9.2 关键设计点（别破坏）

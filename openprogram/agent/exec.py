@@ -93,12 +93,12 @@ async def exec_command(
     if opts.signal and opts.signal.is_set():
         kill_proc()
 
-    cancel_task = None
+    cancel_job = None
     if opts.signal:
         async def _watch_cancel():
             await opts.signal.wait()
             kill_proc()
-        cancel_task = asyncio.create_task(_watch_cancel())
+        cancel_job = asyncio.create_task(_watch_cancel())
 
     timeout_task = None
     if opts.timeout and opts.timeout > 0:
@@ -116,8 +116,8 @@ async def exec_command(
         stdout_bytes, stderr_bytes = b"", b""
         comm_error = e
     finally:
-        if cancel_task:
-            cancel_task.cancel()
+        if cancel_job:
+            cancel_job.cancel()
         if timeout_task:
             timeout_task.cancel()
 

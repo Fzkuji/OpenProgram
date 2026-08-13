@@ -34,7 +34,7 @@ from mcp.types import (
 from openprogram.agent.types import AgentToolResult
 from openprogram.providers.types import ImageContent, TextContent
 
-from openprogram.functions._runtime import _build_and_register_tool
+from openprogram.programs._runtime import _build_and_register_tool
 
 from .client import MCPClient
 

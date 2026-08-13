@@ -33,9 +33,9 @@ export const DEL_SVG = <XIcon size={16} />;
 
 
 
-// Per-session map of task_id → {target_head, status} mirrored from
-// the ``op:task-status`` window event (payload type: TaskStatusDetail
-// in @/lib/net/ws-events). We keep tasks in non-terminal state
+// Per-session map of job_id → {target_head, status} mirrored from
+// the ``op:job-status`` window event (payload type: JobStatusDetail
+// in @/lib/net/ws-events). We keep jobs in non-terminal state
 // ('queued' / 'running') in the map so the panel renders a branch as
 // 'running'; when a terminal status arrives we flip the branch to
 // 'finishing' for ~1.2s (matches the convFinishingWipe keyframe)
@@ -43,8 +43,8 @@ export const DEL_SVG = <XIcon size={16} />;
 // the state survives across panel mounts.
 
 // Synthetic prefix for "pending branch" rows the panel renders while
-// the task is in flight but no real assistant_msg_id exists yet.
+// the job is in flight but no real assistant_msg_id exists yet.
 // Distinct from real DAG ids (12 hex chars) so the click handlers
 // can short-circuit safely.
-export const PENDING_HEAD_PREFIX = "__pending_task__:";
+export const PENDING_HEAD_PREFIX = "__pending_job__:";
 

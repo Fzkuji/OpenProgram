@@ -35,4 +35,4 @@ The harness itself stays deliberately loose: it provides only five things — th
 - Works without openprogram: with OpenProgram not installed, the pure-Python `Wiki` class and the CLI still work as usual — you just lose the `wiki_agent` chat entry point.
 - Downstream projects (paper surveys, memory stores, CRMs, etc.) specialize the ingest pipeline by supplying their own templates and prompts — no fork needed.
 
-Source and README: `openprogram/functions/agentics/Wiki-Agent-Harness/`, upstream repository [Fzkuji/Wiki-Agent-Harness](https://github.com/Fzkuji/Wiki-Agent-Harness).
+Source and README: `openprogram/programs/applications/wiki_agent_harness/`, upstream repository [Fzkuji/Wiki-Agent-Harness](https://github.com/Fzkuji/Wiki-Agent-Harness).

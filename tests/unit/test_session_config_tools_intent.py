@@ -10,7 +10,7 @@ from openprogram.agent.session_config import (
     SessionRunConfig,
     tools_override_from_config,
 )
-from openprogram.functions import DEFAULT_TOOLS
+from openprogram.programs import DEFAULT_TOOLS
 
 
 # ── tools_override_from_config: intent in → intent out ──

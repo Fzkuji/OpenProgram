@@ -196,7 +196,7 @@ def test_document_mention_is_still_rewritten_in_place(state):
 @pytest.fixture
 def in_session(state, monkeypatch: pytest.MonkeyPatch):
     """A turn context whose session workdir exists."""
-    from openprogram.functions.tools import send_file as sf
+    from openprogram.programs.functions import send_file as sf
     monkeypatch.setattr(
         "openprogram.agent.run_control.get_current_session_id", lambda: "s1")
     wd = state / "sessions" / "s1" / "workdir"
@@ -206,12 +206,12 @@ def in_session(state, monkeypatch: pytest.MonkeyPatch):
 
 
 def _send(path) -> str:
-    from openprogram.functions.tools import send_file as sf
+    from openprogram.programs.functions import send_file as sf
     return sf._send_file_impl(str(path))
 
 
 def test_send_file_registers_a_file_in_the_workdir(in_session):
-    from openprogram.functions.tools import send_file as sf
+    from openprogram.programs.functions import send_file as sf
     chart = in_session / "chart.png"
     chart.write_bytes(_PNG)
     assert "Attached chart.png" in _send(chart)
@@ -224,7 +224,7 @@ def test_send_file_registers_a_file_in_the_workdir(in_session):
 
 
 def test_send_file_refuses_a_path_outside_the_roots(in_session, tmp_path):
-    from openprogram.functions.tools import send_file as sf
+    from openprogram.programs.functions import send_file as sf
     outside = tmp_path / "elsewhere.txt"
     outside.write_text("nope")
     msg = _send(outside)
@@ -235,7 +235,7 @@ def test_send_file_refuses_a_path_outside_the_roots(in_session, tmp_path):
 
 
 def test_send_file_refuses_a_symlink_out_of_the_roots(in_session, tmp_path):
-    from openprogram.functions.tools import send_file as sf
+    from openprogram.programs.functions import send_file as sf
     secret = tmp_path / "id_rsa"
     secret.write_text("PRIVATE KEY")
     link = in_session / "chart.png"
@@ -249,7 +249,7 @@ def test_send_file_reports_a_missing_file(in_session):
 
 
 def test_send_file_is_idempotent_within_a_turn(in_session):
-    from openprogram.functions.tools import send_file as sf
+    from openprogram.programs.functions import send_file as sf
     f = in_session / "a.txt"
     f.write_text("x")
     _send(f)
@@ -258,7 +258,7 @@ def test_send_file_is_idempotent_within_a_turn(in_session):
 
 
 def test_send_file_refuses_an_oversize_file(in_session, monkeypatch):
-    from openprogram.functions.tools import send_file as sf
+    from openprogram.programs.functions import send_file as sf
     monkeypatch.setattr(sf.send_file_mod, "MAX_SEND_BYTES", 4)
     f = in_session / "big.bin"
     f.write_bytes(b"12345")
@@ -267,7 +267,7 @@ def test_send_file_refuses_an_oversize_file(in_session, monkeypatch):
 
 
 def test_send_file_is_hidden_where_there_is_no_attachment_channel():
-    from openprogram.functions import _runtime
+    from openprogram.programs import _runtime
     for source in ("cli", "tui", "wechat"):
         names = [t.name for t in _runtime.filter_for(names=["send_file"],
                                                      source=source)]
@@ -329,7 +329,7 @@ def test_dispatcher_appends_the_marker_to_the_reply(state, tmp_path,
     from unittest.mock import patch
     from openprogram.agent import dispatcher as D
     from openprogram.agent.session_db import SessionDB
-    from openprogram.functions.tools import send_file as sf
+    from openprogram.programs.functions import send_file as sf
 
     db = SessionDB(tmp_path / "sessions-git")
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)

@@ -93,15 +93,15 @@
 - 修法：WS chat action 传 active profile name → dispatcher 用 `agent_tools(toolset=<profile>)` 解析 → 只给那组工具。
 - 位置：`webui/ws_actions/chat.py:313-316` (tools_override 逻辑) + `composer/index.tsx` submit 函数。
 
-### 4. Functions 页 Agentic/Built-in tab 分离(进行中)
+### 4. Programs 页 Agentic/Built-in tab 分离(进行中)
 - 设计：顶部 tab 栏(类似 Memory 页的 Wiki/Journal/Core),分 Agentic(函数管理+文件夹)和 Built-in Tools(profile 管理)。
 - 现状：tab 栏已加、tab 状态已加、sidebar 在 builtin tab 隐藏、agentic 内容在 builtin tab 隐藏、tools 只在 builtin tab 显示。CSS 已加。
 - 待做：typecheck + build + 浏览器验证,确认分 tab 渲染正确。
 
-### 5. ~~Functions 页删除操作仍用原生 confirm()~~
+### 5. ~~Programs 页删除操作仍用原生 confirm()~~
 - ✅ 已修复：搜索确认无残留原生 `confirm()` 调用，已全部替换为 ConfirmDialog。
 
-### 6. ~~Functions 页工具右键菜单不合理~~
+### 6. ~~Programs 页工具右键菜单不合理~~
 - ✅ 已修复：`functions-page.tsx:579` 已改为 `tab === "agentic" ? contentCtx : undefined`，builtin tab 不触发 contentCtx。
 
 ---

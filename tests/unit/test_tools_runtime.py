@@ -18,8 +18,8 @@ from mcp.types import CallToolResult, TextContent as MCPTextContent
 
 from openprogram.agent.types import AgentToolResult
 from openprogram.backend import RunResult
-from openprogram.functions import _runtime as R
-from openprogram.functions._runtime import (
+from openprogram.programs import _runtime as R
+from openprogram.programs._runtime import (
     DEFAULT_HEAD_RATIO,
     DEFAULT_MAX_RESULT_CHARS,
     MIN_KEEP_CHARS,
@@ -474,14 +474,14 @@ def test_governed_async_tool_uses_task_deadline_and_records_activity(
         return 0.01
 
     monkeypatch.setattr(
-        "openprogram.agent.task.runner.current_task_operation_timeout", bounded,
+        "openprogram.agent.job.runner.current_job_operation_timeout", bounded,
     )
     monkeypatch.setattr(
-        "openprogram.agent.task.runner.record_current_task_activity",
+        "openprogram.agent.job.runner.record_current_job_activity",
         lambda kind: activity.append(kind) or True,
     )
     monkeypatch.setattr(
-        "openprogram.agent.task.runner.current_task_operation_timeout_reason",
+        "openprogram.agent.job.runner.current_job_operation_timeout_reason",
         lambda _timeout: "budget.runtime_exhausted",
     )
 
@@ -505,14 +505,14 @@ def test_governed_sync_tool_without_process_boundary_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A wait_for timeout cannot terminate the executor thread of a sync tool."""
-    from openprogram.agent.task.runner import NonPreemptibleOperation
+    from openprogram.agent.job.runner import NonPreemptibleOperation
 
     def reject(_timeout, *, preemptibility):
         assert preemptibility == "none"
         raise NonPreemptibleOperation("error.nonpreemptible_operation")
 
     monkeypatch.setattr(
-        "openprogram.agent.task.runner.current_task_operation_timeout", reject,
+        "openprogram.agent.job.runner.current_job_operation_timeout", reject,
     )
 
     @function
@@ -528,7 +528,7 @@ def test_governed_sync_tool_without_process_boundary_is_rejected(
 
 def test_bash_sandbox_denial_uses_typed_error(monkeypatch) -> None:
     bash_module = importlib.import_module(
-        "openprogram.functions.tools.bash.bash"
+        "openprogram.programs.functions.bash.bash"
     )
 
     class DeniedBackend:
@@ -573,7 +573,7 @@ def test_bash_execution_failures_use_typed_error(
     monkeypatch, run_result, detail_key
 ) -> None:
     bash_module = importlib.import_module(
-        "openprogram.functions.tools.bash.bash"
+        "openprogram.programs.functions.bash.bash"
     )
 
     class FailedBackend:
@@ -821,7 +821,7 @@ def test_defer_sidecar_set() -> None:
 
 
 def test_split_partitions_provider_vs_catalog() -> None:
-    from openprogram.functions._runtime import (
+    from openprogram.programs._runtime import (
         split_tools_for_dispatch, install_loaded_deferred,
     )
 
@@ -842,7 +842,7 @@ def test_split_partitions_provider_vs_catalog() -> None:
 
 
 def test_tool_search_promotes_deferred_into_provider_list() -> None:
-    from openprogram.functions._runtime import (
+    from openprogram.programs._runtime import (
         split_tools_for_dispatch, install_loaded_deferred,
         tool_search,
     )
@@ -864,7 +864,7 @@ def test_tool_search_promotes_deferred_into_provider_list() -> None:
 
 
 def test_tool_search_handles_unknown_names() -> None:
-    from openprogram.functions._runtime import (
+    from openprogram.programs._runtime import (
         install_loaded_deferred, tool_search,
     )
     install_loaded_deferred()
@@ -879,7 +879,7 @@ def test_tool_search_handles_unknown_names() -> None:
 def test_deferred_catalog_text_format() -> None:
     """The catalog names the loader and every deferred tool, so the model
     can discover them and knows how to make them callable."""
-    from openprogram.functions._runtime import deferred_catalog_text
+    from openprogram.programs._runtime import deferred_catalog_text
     block = deferred_catalog_text([("CronCreate", "Create a cron job"),
                                     ("WebFetch",   "Fetch a URL")])
     assert "deferred tools" in block
@@ -904,7 +904,7 @@ def test_deferred_catalog_text_format() -> None:
 
 def test_agentic_function_registers_into_shared_registry() -> None:
     """An @agentic_function should produce an AgentTool entry in
-    ``openprogram.functions._runtime._registry`` so the dispatcher
+    ``openprogram.programs._runtime._registry`` so the dispatcher
     treats it identically to @function-decorated tools (toolset
     membership, 6 gating layers, deferred loading)."""
     from openprogram.agentic_programming.function import agentic_function
@@ -986,7 +986,7 @@ def test_exposure_is_registration_driven() -> None:
     exposed without any whitelist edit; ``expose=False`` hides it from
     every LLM-facing query (agent_tools / get_agent_tool /
     list_registered_agent_tools) while keeping it in the registry."""
-    import openprogram.functions as F
+    import openprogram.programs as F
 
     @function(name="exposed_probe")
     def p1() -> str:
@@ -1010,8 +1010,8 @@ def test_full_preset_is_exactly_the_exposed_universe() -> None:
     """``full`` is computed, not written down: it resolves to exactly
     ``exposed_names()``, so a freshly registered tool is in it with no
     edit to any list."""
-    import openprogram.functions as F
-    from openprogram.functions._runtime import exposed_names
+    import openprogram.programs as F
+    from openprogram.programs._runtime import exposed_names
 
     @function(name="full_preset_probe")
     def p() -> str:
@@ -1028,7 +1028,7 @@ def test_full_preset_leaks_no_private_helper() -> None:
     ``expose=False``, and internal @agentic_functions with
     ``as_tool=False`` never enter the shared registry at all. Deleting
     the hand-written whitelist must not let either reach the LLM."""
-    import openprogram.functions as F
+    import openprogram.programs as F
     from openprogram.agentic_programming.function import _registry as _agentics
 
     @function(name="full_preset_private_probe", expose=False)
@@ -1046,7 +1046,7 @@ def test_full_preset_leaks_no_private_helper() -> None:
 def test_exposure_disabled_via_monkeypatch(monkeypatch: pytest.MonkeyPatch) -> None:
     """Setting ``_exposed_set`` to return ``None`` disables the exposure
     filter entirely (a test-harness escape hatch)."""
-    import openprogram.functions as F
+    import openprogram.programs as F
 
     @function(name="probe_hidden_expose_false", expose=False)
     def p() -> str:

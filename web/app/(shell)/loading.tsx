@@ -5,7 +5,7 @@ import { useTranslation } from "@/lib/i18n";
 import styles from "./shell-loading.module.css";
 
 /**
- * Suspense fallback for /functions, /skills, /memory, /mcp, /plugins,
+ * Suspense fallback for /programs, /skills, /memory, /mcp, /plugins,
  * /chats, and any other (shell) subroute that doesn't ship its own
  * loading.tsx. Without this file, clicking a sidebar item left the
  * old page on screen for the full route-compile (~200-1500ms in dev

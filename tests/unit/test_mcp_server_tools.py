@@ -14,7 +14,7 @@ from mcp.shared.exceptions import McpError
 from openprogram.agent.authority import AuthorityError
 from openprogram.agent.session_config import PermissionRules
 from openprogram.agent.types import AgentTool, AgentToolResult
-from openprogram.functions._runtime import function
+from openprogram.programs._runtime import function
 from openprogram.mcp_server.service import MCPClientContext, MCPService
 from openprogram.mcp_server.tools import json_result, to_mcp_content
 from openprogram.providers.types import ImageContent, TextContent
@@ -759,7 +759,7 @@ def test_tool_call_approval_gate_denials_are_typed_before_invocation(
         registry={name: tool},
     )
     monkeypatch.setattr(
-        "openprogram.functions.permission_rule.load_merged_rules",
+        "openprogram.programs.permission_rule.load_merged_rules",
         lambda _session_id: rules or PermissionRules(),
     )
 
@@ -1142,7 +1142,7 @@ def test_tool_call_policy_setup_failure_is_typed_and_sanitized(
 
     secret = "secret-policy-error"
     monkeypatch.setattr(
-        "openprogram.functions.permission_rule.load_merged_rules",
+        "openprogram.programs.permission_rule.load_merged_rules",
         lambda _session_id: (_ for _ in ()).throw(RuntimeError(secret)),
     )
     service = _service(

@@ -143,7 +143,7 @@ def test_function_dispatch_propagates_schema_to_nested_runtime(monkeypatch):
 
     tool = type("Tool", (), {"name": "demo", "_is_agentic": True})()
     seen = {}
-    monkeypatch.setattr("openprogram.functions.agent_tools", lambda names=None: [tool])
+    monkeypatch.setattr("openprogram.programs.agent_tools", lambda names=None: [tool])
     monkeypatch.setattr(
         "openprogram.agent.process_runner.run_agentic_in_subprocess",
         lambda **kwargs: seen.update(kwargs) or {"ok": True, "runtime_msg_id": None},

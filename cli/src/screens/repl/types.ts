@@ -81,7 +81,7 @@ export type PickerKind =
   // the bypass safety confirm it detours through.
   | 'permission' | 'permission_bypass_confirm'
   | 'branch'
-  | 'tasks' | 'task_detail'
+  | 'jobs' | 'job_detail'
   | 'settings'
   | 'commands'
   | 'context_search' | 'context_search_results'

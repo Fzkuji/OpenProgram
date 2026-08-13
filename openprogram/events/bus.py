@@ -116,7 +116,7 @@ def emit_safe(
         pass
 
 
-# 透传信封：外部源（task runner / channels / worktree / functions watcher /
+# 透传信封：外部源（job runner / channels / worktree / functions watcher /
 # sub_agent）原本直接 import webui 的 _broadcast 把现成 WS 帧推给前端——这是
 # "外部源直连中枢"的耦合。改成 emit 一个 `ws.frame` 事件、payload 里放原始帧；
 # webui 订阅它原样广播。前端零改动（收到的帧一字不差），但外部源不再认识 webui。
@@ -352,7 +352,7 @@ def create_event_bus() -> EventBus:
     return EventBus()
 
 
-# process-wide singleton（照 AuthStore / TaskRunner 的双检锁先例）
+# process-wide singleton（照 AuthStore / JobRunner 的双检锁先例）
 
 _event_bus: EventBus | None = None
 _event_bus_lock = threading.Lock()

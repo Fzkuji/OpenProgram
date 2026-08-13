@@ -2,10 +2,10 @@
 
 A security review audits what your branch changed, not what your repository contains. It collects everything since the branch's baseline — commits, staged changes, unstaged edits, and files you have not added yet — and hands it to a read-only agent that looks for vulnerabilities the change introduced. A weakness that already existed and that the branch merely moved past is left alone, so what comes back is a list you can act on before you open a pull request.
 
-Run it from the Functions panel as `run_security_review`, or call it from Python:
+Run it from the Programs panel as `run_security_review`, or call it from Python:
 
 ```python
-from openprogram.functions.agentics.security_review import run_security_review
+from openprogram.programs.agentic_functions.security_review import run_security_review
 
 result = run_security_review()
 ```

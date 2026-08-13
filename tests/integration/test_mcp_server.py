@@ -39,7 +39,7 @@ from pathlib import Path
 from openprogram.agent.dispatcher import TurnResult
 from openprogram.agent.types import AgentTool, AgentToolResult
 from openprogram.events import get_event_bus, make_event
-from openprogram.functions._runtime import register
+from openprogram.programs._runtime import register
 from openprogram.providers.types import TextContent
 
 evidence = Path(os.environ["OPENPROGRAM_MCP_TEST_EVIDENCE"])
@@ -70,7 +70,7 @@ for name in ("memory_status", "memory_search", "read", "bash", "memory_update"):
                        parameters=schema, label=name, execute=execute))
 
 from openprogram.agent.session_config import PermissionRules
-import openprogram.functions.permission_rule as permission_module
+import openprogram.programs.permission_rule as permission_module
 permission_module.load_merged_rules = lambda _session_id: PermissionRules(
     deny=["memory_update"]
 )

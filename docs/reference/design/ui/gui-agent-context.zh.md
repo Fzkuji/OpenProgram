@@ -5,7 +5,7 @@
 参考：
 - 装饰器语义：[`agentic-programming/function-metadata.md`](../../../capabilities/agentic-programming/writing-functions/function-metadata.md)
 - render_context 实现：`openprogram/context/nodes.py`
-- 代码：`openprogram/functions/agentics/GUI-Agent-Harness/gui_harness/`
+- 代码：`openprogram/programs/applications/gui_harness/gui_harness/`
 
 ## 1. 调用结构
 

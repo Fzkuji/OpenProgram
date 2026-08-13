@@ -81,7 +81,7 @@
   background: color-mix(in srgb, var(--text-muted) 18%, transparent);
   color: var(--text-muted);
 }
-/* Cancel button — only shown while the attach's task is still
+/* Cancel button — only shown while the attach's job is still
    running (or pending / queued). Subtle outlined pill that doesn't
    compete with the running-status pill in the header. */
 .attach-card-cancel {
@@ -209,9 +209,9 @@
   min-width: 0;
 }
 /* Auto-followup notice — synthetic ``[系统消息]…`` user msg the
-   runner writes after the sub-task finishes (display=runtime, hidden
+   runner writes after the job finishes (display=runtime, hidden
    from the chat panel). Surfacing it inline on the attach card so
-   the card represents the full sub-task lifecycle. */
+   the card represents the full job lifecycle. */
 .attach-card-followup {
   margin-top: 8px;
   padding-top: 8px;

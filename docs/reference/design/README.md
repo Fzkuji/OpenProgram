@@ -62,7 +62,7 @@ Proactivity applications (built on the base):
 | [`runtime/p3-three-surface-sync.md`](runtime/p3-three-surface-sync.md) | P3 three-surface sync implementation detail |
 | [`runtime/unified-session-context.md`](runtime/unified-session-context.md) | Unified session context |
 | [`runtime/execution/agent-worktree.md`](runtime/execution/agent-worktree.md) | Agent worktree behaviour |
-| [`runtime/execution/async-task-lifecycle.md`](runtime/execution/async-task-lifecycle.md) | Async task lifecycle |
+| [`runtime/execution/async-job-lifecycle.md`](runtime/execution/async-job-lifecycle.md) | Async task lifecycle |
 | [`runtime/agent-resource-governance.html`](runtime/agent-resource-governance.html) | Agent runtime quotas and task lifecycle governance: current implementation audit, reference comparison, admission, budgets, recovery, visibility, and implementation gates |
 | [`runtime/operations/streaming-resume.md`](runtime/operations/streaming-resume.md) | Streaming + resume |
 | [`runtime/operations/file-management.md`](runtime/operations/file-management.md) | Revert layers (commit / worktree) |

@@ -4,7 +4,7 @@
 > cancellation signal itself: what object carries it, how long it lives, and
 > which code checks it. The async Task entity's own lifecycle (queueing,
 > worker pool, persistence) is
-> [`async-task-lifecycle.md`](async-task-lifecycle.md); a task's cancellation
+> [`async-job-lifecycle.md`](async-job-lifecycle.md); a task's cancellation
 > uses the mechanism described here.
 
 ## 1. One token per turn
@@ -155,6 +155,6 @@ resumes before stopping so a paused turn can be cancelled.
 
 ## Related Files
 
-- [`async-task-lifecycle.md`](async-task-lifecycle.md) — the async Task entity
+- [`async-job-lifecycle.md`](async-job-lifecycle.md) — the async Task entity
 - [`../dag/overview.md`](../dag/overview.md) — status vocabulary, failure and retry
 - [`../../error-handling.md`](../../error-handling.md) — exception discipline

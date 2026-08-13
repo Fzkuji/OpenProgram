@@ -19,7 +19,7 @@
 | 部分 | 管什么 | 能否被 bypass 关掉 | 位置 |
 |---|---|---|---|
 | **gate（硬拦截）** | 策略层的绝对禁止（proactive policy 的 deny/ask） | 否，永远生效 | `openprogram/events/tool_gate.py` |
-| **规则层** | 用户配的 allow / deny / ask 规则（per-tool + per-pattern，**项目级**为主，多来源分层） | deny/ask 否；allow 是 | `openprogram/agent/internals/_approval.py:50-68`（`_match_rule`）+ `openprogram/functions/permission_rule.py` |
+| **规则层** | 用户配的 allow / deny / ask 规则（per-tool + per-pattern，**项目级**为主，多来源分层） | deny/ask 否；allow 是 | `openprogram/agent/internals/_approval.py:50-68`（`_match_rule`）+ `openprogram/programs/permission_rule.py` |
 | **权限模式（会话级）** | 会话档位：ask / acceptEdits / auto / bypass / plan（对齐 Claude Code 官方名，5 档） | 档位本身就是这个开关 | `_gated_execute`（`internals/_approval.py:150-197`） |
 | **审批流** | 需要点头时的前后端交互（弹卡片、阻塞等答、写回项目规则） | 否（弹出即阻塞） | `await_user_approval`（`internals/_approval.py:245-`）+ 前端 approval mode |
 
@@ -132,7 +132,7 @@ ToolName(content)        命令级，per-pattern。例：bash(git:*) / read_file
 - 转义：pattern 内的 `(` `)` `\` 需转义（`\( \) \\`），它们是语法定界符。序列化/反序列化对偶。
 
 ```python
-# openprogram/functions/permission_rule.py:19-22
+# openprogram/programs/permission_rule.py:19-22
 @dataclass(frozen=True)
 class PermissionRuleValue:
     tool_name: str
@@ -141,7 +141,7 @@ class PermissionRuleValue:
 
 ### 2.3 规则来源（3 层，项目是主要载体）
 
-规则可来自多个来源，低优先级在前、高优先级在后，后进覆盖前进。合并在 `load_merged_rules(session_id)`（`openprogram/functions/permission_rule.py:100-146`）。**项目层是规则的主要载体**——规则跟项目走，切会话仍在、"总是允许"能长期记住。只映射真实存在的载体（无 local/cliArg/企业策略后台，见第 7 节边界）：
+规则可来自多个来源，低优先级在前、高优先级在后，后进覆盖前进。合并在 `load_merged_rules(session_id)`（`openprogram/programs/permission_rule.py:100-146`）。**项目层是规则的主要载体**——规则跟项目走，切会话仍在、"总是允许"能长期记住。只映射真实存在的载体（无 local/cliArg/企业策略后台，见第 7 节边界）：
 
 | 层 | 优先级 | 载体 | 可写 |
 |---|---|---|---|
@@ -268,7 +268,7 @@ async def _approve_then_run(call_id, args, cancel, on_update):
 
 对应 3.2 伪代码编号：
 
-- **acceptEdits（⑥）**：三部分——① `@function` 有 `accept_edits_safe: bool = False` 参数（`functions/_runtime.py:767`），落到工具对象的 `_accept_edits_safe`（`:1079`）；read/write/edit/glob/grep/list 各自的 `@function` 标 `True`（如 `functions/tools/write/write.py:24`、`edit/edit.py:25`、`read/read.py:28`、`grep/grep.py:101`、`list/list.py:30`、`glob/glob.py:43`），bash/exec/execute_code 不标（默认 `False`）；② `_path_is_safe`（`internals/_approval.py:72-87`）复用 3.5 的 `check_path_safety`（路径在工作目录集内、非危险文件/目录、无 Windows 绕过）；③ 命令类工具即使有宽 allow 也 fall-through 到 ⑧ 强制审批。
+- **acceptEdits（⑥）**：三部分——① `@function` 有 `accept_edits_safe: bool = False` 参数（`functions/_runtime.py:767`），落到工具对象的 `_accept_edits_safe`（`:1079`）；read/write/edit/glob/grep/list 各自的 `@function` 标 `True`（如 `programs/functions/write/write.py:24`、`edit/edit.py:25`、`read/read.py:28`、`grep/grep.py:101`、`list/list.py:30`、`glob/glob.py:43`），bash/exec/execute_code 不标（默认 `False`）；② `_path_is_safe`（`internals/_approval.py:72-87`）复用 3.5 的 `check_path_safety`（路径在工作目录集内、非危险文件/目录、无 Windows 绕过）；③ 命令类工具即使有宽 allow 也 fall-through 到 ⑧ 强制审批。
 - **plan（可见性控制）**：`apply_tool_policy(tools, source="plan")`（`dispatcher/__init__.py:798`）滤掉写类工具，根本不进模型工具列表。plan 状态存布尔集（`agent/plan_mode.py` 的 `_active`），**不切批准强度**——与批准档正交（详见 §3.7）。`_gated_execute` 无 plan 专属分支（写类已被滤掉，只读工具按当前档常规走）。
 - **auto（⑦）**：LLM 分类器档，三级过滤省调用（`internals/_auto_classifier.py`）：明显安全的只读工具在 ⑤ 已放行；`RISKY_AUTO_DENYLIST`（bash/exec/shell/execute_code/process）直接 `[denied]`；其余拿不准的调一次 `auto_classify_tool` 问 haiku。规则层 deny/ask（①）仍在其前生效，allow（④）不受影响。
 - **ask**：不命中 allow、不在只读白名单、per-tool 不免审的工具全部落 ⑧。
@@ -285,7 +285,7 @@ def _match_rule(rules, tool_name: str, args: dict) -> "str | None":
     再试 per-pattern（rule.pattern 对 parse_command(tool_name, args) 前缀/glob 匹配）。"""
     if rules is None:
         return None
-    from openprogram.functions.permission_rule import parse_rule, parse_command, pattern_matches
+    from openprogram.programs.permission_rule import parse_rule, parse_command, pattern_matches
     cmd = None  # 惰性求值：只在遇到 per-pattern 规则时才解析命令
     for behavior, ruleset in (("deny", rules.deny), ("ask", rules.ask), ("allow", rules.allow)):
         for raw in ruleset:
@@ -304,7 +304,7 @@ def _match_rule(rules, tool_name: str, args: dict) -> "str | None":
 - **per-tool**（`rv.pattern is None`）：`rv.tool_name == tool_name` 命中整工具。例 `deny: ["bash"]` 拦所有 bash。
 - **per-pattern**（`rv.pattern` 非空）：先取可比命令串 `cmd = parse_command(...)`，再 `pattern_matches`（`permission_rule.py:149-`）：`:*` 结尾→前缀匹配（`git:*` 匹配 `git status`、不匹配 `github`）；含 glob（`*?[`）→`fnmatch`（`/etc/**` 匹配 `/etc/passwd`）；否则精确相等。
 
-命令解析器 + 规则解析（`openprogram/functions/permission_rule.py`）：
+命令解析器 + 规则解析（`openprogram/programs/permission_rule.py`）：
 
 ```python
 # permission_rule.py:43, 77, 83-98
@@ -320,7 +320,7 @@ def parse_command(tool_name: str, args: dict) -> str | None:
 各层规则合并（`load_merged_rules(session_id)`，`permission_rule.py:100-146`）——按优先级 global < project < session 拼接三 list，供 `_gated_execute` 用（真正跑判定时 `req.permission_rules` 由构造 TurnRequest 时填入）：
 
 ```python
-# openprogram/functions/permission_rule.py:100-146
+# openprogram/programs/permission_rule.py:100-146
 def load_merged_rules(session_id: str) -> PermissionRules:
     """合并三层真实载体：全局配置 < 项目（主要载体）< 会话（一次性覆盖）。
     项目层经 project_for_session(session_id) 反查 → load_project_settings。
@@ -345,7 +345,7 @@ def _risk_level(tool_name: str, args: dict) -> str:
 
 `_approval_detail`（`internals/_approval.py:232-242`，生成"工具名 + 参数全文，超长首尾截断"）给审批卡片一段可读摘要（第一版不做危险 token 高亮）。`_on_asked`（`await_user_approval` 内）的 `question.asked` 帧带上 `tool`/`args`/`risk_level`，前端据此上色（§4.2）。
 
-**路径安全**（`openprogram/functions/tools/file_safety.py`）：
+**路径安全**（`openprogram/programs/functions/file_safety.py`）：
 
 ```python
 # file_safety.py:20-40, 63
@@ -602,14 +602,14 @@ hook 返回 `{mode, options, set}`。
 | 关注点 | 代码位置 |
 |---|---|
 | 判定链 `_gated_execute` / `_match_rule` / `await_user_approval` / `_persist_always_allow_rule` / `_risk_level` | `openprogram/agent/internals/_approval.py` |
-| 规则字符串解析、匹配、多层合并 | `openprogram/functions/permission_rule.py`（`parse_rule` / `parse_command` / `pattern_matches` / `load_merged_rules`） |
-| 路径安全 / 危险文件目录 / Windows 绕过 | `openprogram/functions/tools/file_safety.py` |
+| 规则字符串解析、匹配、多层合并 | `openprogram/programs/permission_rule.py`（`parse_rule` / `parse_command` / `pattern_matches` / `load_merged_rules`） |
+| 路径安全 / 危险文件目录 / Windows 绕过 | `openprogram/programs/functions/file_safety.py` |
 | gate 硬拦截 | `openprogram/events/tool_gate.py` |
 | 权限模式合法值 + 规范化 + SessionRunConfig 字段 | `openprogram/agent/session_config.py` |
 | `PermissionMode` 类型 + TurnRequest 字段/默认 | `openprogram/agent/dispatcher/types.py` |
 | 会话 meta schemaless 存储 | `openprogram/store/session/session_store.py` |
 | 项目级 settings 读写 + `project_for_session` | `openprogram/store/project/project_store.py` |
-| `accept_edits_safe` 声明 + per-tool `requires_approval` | `openprogram/functions/_runtime.py`；工具标记在 `openprogram/functions/tools/{read,write,edit,glob,grep,list}/` |
+| `accept_edits_safe` 声明 + per-tool `requires_approval` | `openprogram/programs/_runtime.py`；工具标记在 `openprogram/programs/functions/{read,write,edit,glob,grep,list}/` |
 | web 默认 bypass + effective_permission | `openprogram/webui/_execute/__init__.py`；`additional_working_dirs` 填充在 `_execute/chat.py`、`channels/_conversation.py` |
 | WS：审批应答 + 项目规则 list/add/remove | `openprogram/webui/ws_actions/session.py`、`chat.py` |
 | 值守（正交机制） | `openprogram/agent/attended.py`、`openprogram/webui/ws_actions/runtime.py` |

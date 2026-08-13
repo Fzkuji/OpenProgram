@@ -7,7 +7,7 @@ All agents are peers. There is no "sub-agent type". A turn is just
   * ``predecessor = <existing_node_id>`` — the new turn forks off that
     node. The agent inherits the conversation chain that leads to
     ``predecessor`` as context. This is the normal "fork from here" /
-    Claude-Code Task feel.
+    Claude-Code Job feel.
   * ``predecessor = None`` — the new turn starts a fresh root. The
     agent sees only the prompt; its turn series becomes an
     independent DAG tree inside the same session repo.
@@ -172,7 +172,7 @@ def run_agent_turn(
     render_range: Optional[dict[str, int]] = None,
     authority: Optional[dict[str, Any]] = None,
     creates_agent: bool = True,
-    parent_task_id: Optional[str] = None,
+    parent_job_id: Optional[str] = None,
     caller_msg_id: Optional[str] = None,
     caller_session_id: Optional[str] = None,
     chain_messages: int = 0,
@@ -183,33 +183,33 @@ def run_agent_turn(
     model_override: Optional[str] = None,
     thinking_effort: Optional[str] = None,
 ) -> AgentTurnResult:
-    """Durably admit one agent turn and wait for its Task result."""
+    """Durably admit one agent turn and wait for its Job result."""
     from openprogram.agent.session_db import default_db
     if default_db().get_session(session_id) is None:
         return AgentTurnResult(
             failed=True,
             error=f"session {session_id!r} not found",
         )
-    from openprogram.agent.task import get_runner
-    from openprogram.agent.task.types import TaskStatus, mint_task_id
+    from openprogram.agent.job import get_runner
+    from openprogram.agent.job.types import JobStatus, mint_job_id
     from openprogram.worker.lock import WorkerLock
 
     runner = get_runner()
     borrow_current_claim = runner.can_borrow_current_claim(session_id)
-    task_id = mint_task_id()
+    job_id = mint_job_id()
     direct_lock = WorkerLock()
     owns_worker = False
     claim_scope = None
     try:
         if not borrow_current_claim:
-            claim_scope = runner.claim_only(task_id)
+            claim_scope = runner.claim_only(job_id)
             claim_scope.__enter__()
             owns_worker = direct_lock.try_acquire()
             if not owns_worker:
                 claim_scope.__exit__(None, None, None)
                 claim_scope = None
-        task_id = runner.spawn_task(
-            task_id=task_id,
+        job_id = runner.spawn_job(
+            job_id=job_id,
             session_id=session_id,
             prompt=prompt,
             agent_id=agent_id,
@@ -217,7 +217,7 @@ def run_agent_turn(
             description=prompt,
             context_mode="inherit" if branch_from is not None else "clean",
             parent_msg_id=branch_from,
-            parent_task_id=parent_task_id,
+            parent_job_id=parent_job_id,
             label=label,
             wait=True,
             caller_msg_id=caller_msg_id or branch_from,
@@ -238,13 +238,13 @@ def run_agent_turn(
             borrow_current_claim=borrow_current_claim,
         )
         if borrow_current_claim or owns_worker:
-            task = runner.await_task(task_id)
+            job = runner.await_job(job_id)
         else:
             def take_over_if_worker_exited() -> None:
                 nonlocal owns_worker, claim_scope
                 if owns_worker:
                     return
-                candidate_scope = runner.claim_only(task_id)
+                candidate_scope = runner.claim_only(job_id)
                 candidate_scope.__enter__()
                 try:
                     if not direct_lock.try_acquire():
@@ -256,11 +256,11 @@ def run_agent_turn(
                     if candidate_scope is not None:
                         candidate_scope.__exit__(None, None, None)
 
-            task = runner.await_task_durable(
-                task_id, on_poll=take_over_if_worker_exited,
+            job = runner.await_job_durable(
+                job_id, on_poll=take_over_if_worker_exited,
             )
             if not owns_worker:
-                runner.retire_external_waiter(task_id)
+                runner.retire_external_waiter(job_id)
     finally:
         try:
             if owns_worker:
@@ -268,13 +268,13 @@ def run_agent_turn(
         finally:
             if claim_scope is not None:
                 claim_scope.__exit__(None, None, None)
-    if task is None:
-        return AgentTurnResult(failed=True, error=f"task {task_id!r} not found")
+    if job is None:
+        return AgentTurnResult(failed=True, error=f"job {job_id!r} not found")
     return AgentTurnResult(
-        head_id=task.head_id,
-        final_text=task.result_text or "",
-        failed=task.status != TaskStatus.COMPLETED,
-        error=task.error,
+        head_id=job.head_id,
+        final_text=job.result_text or "",
+        failed=job.status != JobStatus.COMPLETED,
+        error=job.error,
     )
 
 
@@ -289,7 +289,7 @@ def emit_spawn_event(
     tool_call_id: Optional[str] = None,
     head_id: Optional[str] = None,
     content: str = "",
-    task_id: Optional[str] = None,
+    job_id: Optional[str] = None,
 ) -> None:
     """Push one ``sub_agent`` stream event so the caller's live turn can
     draw the spawn card without waiting for a page reload.
@@ -324,7 +324,7 @@ def emit_spawn_event(
                     "label": label or "",
                     "prompt": (prompt or "")[:500],
                     "status": status,
-                    "task_id": task_id,
+                    "job_id": job_id,
                 },
                 "agent_id": chosen_agent,
             },
@@ -419,7 +419,7 @@ def write_attach_pointer_for_spawn(
         # Hide the spawned sub-branch from the Branches panel — its
         # content is now reachable from main via the attach pointer.
         # Same retirement the async runner does on completion (see
-        # task/runner.py::_update_attach_card).
+        # job/runner.py::_update_attach_card).
         try:
             store.mark_merged(session_id, [result.head_id])
         except Exception:
@@ -453,13 +453,13 @@ def write_attach_placeholder_for_spawn(
     prompt: str,
     chosen_agent: str,
     node_id: Optional[str] = None,
-    task_id: Optional[str] = None,
+    job_id: Optional[str] = None,
 ) -> Optional[str]:
     """Write a ``status=running`` placeholder attach card for an async
     spawn, anchored at the CALLING node（在哪调用就锚在哪）. The runner
     patches it on terminal via ``_update_attach_card``. Without this the
     agent(run_in_background=true) path had no card at all — the result later arrived
-    as a task_followup with nothing anchoring it in the transcript.
+    as a job_followup with nothing anchoring it in the transcript.
     """
     import json as _json
     import time as _time
@@ -489,7 +489,7 @@ def write_attach_placeholder_for_spawn(
                     "prompt": prompt[:500],
                     "source_commit_id": None,
                     "status": "running",
-                    "task_id": task_id,
+                    "job_id": job_id,
                 },
             }, default=str),
         })
@@ -516,7 +516,7 @@ def run_agent_turn_async(
     subject: str = "",
     description: str = "",
     context_mode: str = "inherit",
-    parent_task_id: Optional[str] = None,
+    parent_job_id: Optional[str] = None,
     attach_pointer_id: Optional[str] = None,
     target_branch_head_id: Optional[str] = None,
     caller_msg_id: Optional[str] = None,
@@ -525,7 +525,7 @@ def run_agent_turn_async(
     chain_generations: int = 0,
     caller_chain_generations: int = 0,
     archive_when_done: bool = False,
-    task_id: Optional[str] = None,
+    job_id: Optional[str] = None,
     authority: Optional[dict[str, Any]] = None,
     creates_agent: bool = True,
     spawn_caller: Optional[str] = None,
@@ -536,22 +536,22 @@ def run_agent_turn_async(
     defer_dispatch: bool = False,
     resume_deferred: bool = False,
 ) -> str:
-    """Submit an agent turn to the task runner, return ``task_id``.
+    """Submit an agent turn to the job runner, return ``job_id``.
 
-    ``task_id``: reuse a pre-created pending Task (tracked dispatch
+    ``job_id``: reuse a pre-created pending Job (tracked dispatch
     queued in the inbox) instead of minting a new id — the dispatcher
-    already holds this id, so drain must run the SAME task.
+    already holds this id, so drain must run the SAME job.
 
     Non-blocking counterpart of :func:`run_agent_turn`. The runner
-    walks the task through the state machine on a worker thread and
+    walks the job through the state machine on a worker thread and
     eventually invokes ``run_agent_turn`` under the hood. Callers
-    that need the result block on ``runner.await_task(task_id)``;
+    that need the result block on ``runner.await_job(job_id)``;
     callers that want fire-and-forget (the ``--async`` slash flag,
     plan-mode spawns) ignore the return value.
     """
-    from openprogram.agent.task import get_runner
+    from openprogram.agent.job import get_runner
     runner = get_runner()
-    return runner.spawn_task(
+    return runner.spawn_job(
         session_id=session_id,
         prompt=prompt,
         agent_id=agent_id,
@@ -559,7 +559,7 @@ def run_agent_turn_async(
         description=description or prompt,
         context_mode=context_mode if branch_from is not None or context_mode == "clean" else context_mode,
         parent_msg_id=branch_from,
-        parent_task_id=parent_task_id,
+        parent_job_id=parent_job_id,
         label=label,
         attach_pointer_id=attach_pointer_id,
         target_branch_head_id=target_branch_head_id,
@@ -574,7 +574,7 @@ def run_agent_turn_async(
         advance_head=advance_head,
         tools_override=tools_override,
         deferred_inbox=deferred_inbox,
-        task_id=task_id,
+        job_id=job_id,
         authority=authority,
         creates_agent=creates_agent,
         on_accepted=on_accepted,

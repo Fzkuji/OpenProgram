@@ -49,7 +49,7 @@ WRITTEN_NODE_MARKER = "memory_written_scriptorium"
 
 # Turns the runtime writes to drive itself: the notification a finished
 # sub-agent posts back, and the prompt a branch merge assembles.
-RUNTIME_SOURCES = frozenset({"task_followup", "merge_turn"})
+RUNTIME_SOURCES = frozenset({"job_followup", "merge_turn"})
 
 UNPAIRED_ARCHIVE_WINDOW_SECONDS = 60 * 60
 UNPAIRED_ARCHIVE_MAX_PER_WINDOW = 600

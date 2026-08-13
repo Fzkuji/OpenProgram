@@ -39,6 +39,8 @@ export interface Provider {
 /** Masked-only account projection returned by the provider account API. */
 export interface ProviderAccountView {
   id: string;
+  label: string;
+  /** Compatibility alias for older backends; new code displays label. */
   name: string;
   email?: string;
   kind?: string;

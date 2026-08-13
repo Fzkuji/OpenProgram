@@ -19,16 +19,16 @@ import textwrap
 
 import pytest
 
-from openprogram.functions.tools.lsp import shared
+from openprogram.programs.functions.lsp import shared
 # The impl functions are the tool bodies as plain Python; the
 # @function-wrapped names are AgentTool objects for LLM dispatch.
-from openprogram.functions.tools.lsp.lsp_definition.lsp_definition import (
+from openprogram.programs.functions.lsp.lsp_definition.lsp_definition import (
     _definition_impl as lsp_definition,
 )
-from openprogram.functions.tools.lsp.lsp_diagnostics.lsp_diagnostics import (
+from openprogram.programs.functions.lsp.lsp_diagnostics.lsp_diagnostics import (
     _diagnostics_impl as lsp_diagnostics,
 )
-from openprogram.functions.tools.lsp.lsp_references.lsp_references import (
+from openprogram.programs.functions.lsp.lsp_references.lsp_references import (
     _references_impl as lsp_references,
 )
 from openprogram.lsp import client as lsp_client
@@ -367,7 +367,7 @@ def test_diagnostics_truncate_beyond_the_cap(stub):
 # ---------------------------------------------------------------------------
 
 def test_tools_are_registered():
-    from openprogram.functions._runtime import get
+    from openprogram.programs._runtime import get
     for name in ("lsp_diagnostics", "lsp_references", "lsp_definition"):
         tool = get(name)
         assert tool is not None, f"{name} not registered"

@@ -27,14 +27,14 @@ _BUILTIN_SPECS: list[tuple[str, tuple[str, ...], str, str]] = [
     ("copy", (), "", "copy the last assistant reply to the clipboard"),
     ("tools", (), "", "list available tools"),
     ("skills", (), "", "list discovered skills"),
-    ("functions", ("fns",), "", "list agentic functions (functions/agentics/)"),
+    ("functions", ("fns",), "", "list agentic functions (programs/agentic_functions/)"),
     ("apps", ("applications",), "",
      "list installed programs (gui/research/wiki agents)"),
     ("mcp", (), "[verb]",
      "manage MCP servers: list (default), show <name>, restart <name>, "
      "enable <name>, disable <name>, rm <name>"),
     ("session", (), "", "show the current session id + agent"),
-    ("tasks", (), "[task_id]", "show canonical resource state for background tasks"),
+    ("jobs", (), "[job_id]", "show canonical resource state for background jobs"),
     ("login", (), "<channel> [--id X]",
      "log in to a channel bot (wechat: QR, others: paste token). "
      "Also wires inbound messages to this agent."),
@@ -284,12 +284,12 @@ def _handle_profile(args: list[str], console) -> bool:
     return True
 
 
-def _handle_tasks(args: list[str], console, session_id: str) -> bool:
-    """Print the same TaskResourceView DTO consumed by other surfaces."""
-    from openprogram._cli_cmds.tasks import task_resource_payload
+def _handle_jobs(args: list[str], console, session_id: str) -> bool:
+    """Print the same JobResourceView DTO consumed by other surfaces."""
+    from openprogram._cli_cmds.jobs import job_resource_payload
 
-    payload = task_resource_payload(
-        task_id=args[0] if args else None,
+    payload = job_resource_payload(
+        job_id=args[0] if args else None,
         session_id=session_id,
     )
     console.print_json(data=payload)
@@ -314,7 +314,7 @@ _LOCAL_ACTIONS = {
     "mcp": lambda args, console, rt, agent, sid: _handle_mcp(args, console),
     "clear": lambda args, console, rt, agent, sid: _handle_clear(console),
     "session": lambda args, console, rt, agent, sid: _handle_session_info(console, agent, sid),
-    "tasks": lambda args, console, rt, agent, sid: _handle_tasks(args, console, sid),
+    "jobs": lambda args, console, rt, agent, sid: _handle_jobs(args, console, sid),
     "login": lambda args, console, rt, agent, sid: _handle_login(args, console, agent),
     "attach": lambda args, console, rt, agent, sid: _handle_attach(args, console, agent, sid),
     "detach": lambda args, console, rt, agent, sid: _handle_detach(args, console),
@@ -462,7 +462,7 @@ def _handle_context(console, agent, session_id: str) -> bool:
 
         tools = []
         try:
-            from openprogram.functions import agent_tools
+            from openprogram.programs import agent_tools
             tools = agent_tools()
         except Exception:
             pass

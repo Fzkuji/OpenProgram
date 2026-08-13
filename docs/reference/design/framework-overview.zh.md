@@ -205,7 +205,7 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 ### ⑤ 协作　send_message + 跨 session + 防护
 
 **职责**：分支/会话之间投递消息、跑分支、把回复带回来。
-**关键文件**：`functions/tools/send_message/send_message/send_message.py`、`functions/tools/send_message/list_agents/list_agents.py`。
+**关键文件**：`programs/functions/send_message/send_message/send_message.py`、`programs/functions/send_message/list_agents/list_agents.py`。
 **关键机制**：
 - `send_message(message, to, agent_id)`（→ `_send_message_impl`）。
 - to 语义（`_parse_to`）：`SID:HEAD`（投到已存在分支 = 从其 head 再跑一轮）或分支名。建分支归 `agent` 工具（spawn / 从节点 fork）；`to="new"` 语法直接报错并指向它。
@@ -223,7 +223,7 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 - **引用扫描结果未被 ContextCommit 规则消费**：目前仅用于日志（`engine.py:204–212`）。
 - **DAG 渲染回退路径与正常路径并存**：坏 commit 时 fall back 到 legacy（`engine.py:218–220`）。
 - **核心入口无覆盖测试**：`process_user_turn` / `agent_loop` 若干路径标注「⚠️ no covering tests found」。
-- **worker 线程 ContextVar 不可靠**：`subagent.started/ended` 因此由 session 显式传参（`agent/task/runner.py:111–115`）；`send_message._resolve_parent` 为此加了 head 回退。
+- **worker 线程 ContextVar 不可靠**：`subagent.started/ended` 因此由 session 显式传参（`agent/job/runner.py:111–115`）；`send_message._resolve_parent` 为此加了 head 回退。
 - **`ContextEngine.after_turn` 有两层**：抽象基类桩 `engine.py:124` 为 `pass`；**具体引擎实现 `engine.py:437` 才是真正在干活的**（usage 回灌 + 发 compaction_recommended），由 `dispatcher/finalize.py:308` 调用。
 
 ---

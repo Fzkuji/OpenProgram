@@ -1,11 +1,11 @@
 """Collaboration ContextVars must survive the thread hops in a chain.
 
 A chain crosses two thread boundaries the language does not carry
-ContextVars across: the task runner's worker (which copies the context
-explicitly) and the follow-up thread that delivers a finished task's
+ContextVars across: the job runner's worker (which copies the context
+explicitly) and the follow-up thread that delivers a finished job's
 reply back to its dispatcher (which starts empty). What the follow-up
 turn sees decides whether the message budget can ever be spent and
-whether tasks spawned from it stay inside the cascade.
+whether jobs spawned from it stay inside the cascade.
 
 Design: docs/reference/design/runtime/agent-collaboration.md §5.1, §5.3.
 """
@@ -28,23 +28,23 @@ def tmp_db(tmp_path, monkeypatch):
     return db
 
 
-def _run_followup(task, monkeypatch, inside=None):
-    """Fire ``_dispatch_followup`` for ``task`` and report the collaboration
+def _run_followup(job, monkeypatch, inside=None):
+    """Fire ``_dispatch_followup`` for ``job`` and report the collaboration
     ContextVars the follow-up turn ran with. ``inside`` runs in that turn
     and its return value lands in ``seen["inside"]``."""
-    from openprogram.agent.task.runner import TaskRunner
+    from openprogram.agent.job.runner import JobRunner
 
     seen: dict = {}
     done = threading.Event()
 
     def fake_turn(req, on_event=None):
         from openprogram.agent.run_control import get_current_session_id
-        from openprogram.agent.task.runner import _current_task_id
-        from openprogram.functions.tools.send_message.send_message.depth import (
+        from openprogram.agent.job.runner import _current_job_id
+        from openprogram.programs.functions.send_message.send_message.depth import (
             current_chain_generations, current_chain_messages,
         )
         seen["session_id"] = get_current_session_id()
-        seen["task_id"] = _current_task_id.get()
+        seen["job_id"] = _current_job_id.get()
         seen["chain_messages"] = current_chain_messages()
         seen["chain_generations"] = current_chain_generations()
         seen["req_session"] = req.session_id
@@ -59,54 +59,54 @@ def _run_followup(task, monkeypatch, inside=None):
     import openprogram.agent.dispatcher as disp
     monkeypatch.setattr(disp, "process_user_turn", fake_turn)
     monkeypatch.setattr(
-        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
     )
-    runner = TaskRunner(max_workers=1)
+    runner = JobRunner(max_workers=1)
     try:
-        runner._dispatch_followup(task)
+        runner._dispatch_followup(job)
         assert done.wait(timeout=5.0), "follow-up turn never ran"
     finally:
         runner.shutdown(wait=False)
     return seen
 
 
-def _task(**kw):
-    from openprogram.agent.task.types import Task, TaskStatus
+def _job(**kw):
+    from openprogram.agent.job.types import Job, JobStatus
     base = dict(id="t_child", parent_session_id="s_caller", prompt="do it",
-                agent_id="main", status=TaskStatus.COMPLETED,
+                agent_id="main", status=JobStatus.COMPLETED,
                 result_text="done", wait=False)
     base.update(kw)
-    return Task(**base)
+    return Job(**base)
 
 
 def test_followup_carries_the_chain_message_count(tmp_db, monkeypatch):
     """The reply hop keeps the chain's count, so an A↔B ping-pong spends
     the budget instead of restarting it at 0 on every reply."""
-    seen = _run_followup(_task(chain_messages=3), monkeypatch)
+    seen = _run_followup(_job(chain_messages=3), monkeypatch)
     assert seen["chain_messages"] == 3
 
 
-def test_followup_chains_tasks_to_the_dispatchers_parent(tmp_db, monkeypatch):
-    """A task spawned from the follow-up turn belongs where the finished
-    task belonged, so cancelling the root still reaches it."""
+def test_followup_chains_jobs_to_the_dispatchers_parent(tmp_db, monkeypatch):
+    """A job spawned from the follow-up turn belongs where the finished
+    job belonged, so cancelling the root still reaches it."""
     seen = _run_followup(
-        _task(chain_messages=1, parent_task_id="t_root"), monkeypatch,
+        _job(chain_messages=1, parent_job_id="t_root"), monkeypatch,
     )
-    assert seen["task_id"] == "t_root"
+    assert seen["job_id"] == "t_root"
 
 
-def test_followup_of_a_top_level_task_has_no_parent(tmp_db, monkeypatch):
-    """A task spawned straight from a user turn had no parent task; its
+def test_followup_of_a_top_level_job_has_no_parent(tmp_db, monkeypatch):
+    """A job spawned straight from a user turn had no parent job; its
     follow-up must not invent one."""
-    seen = _run_followup(_task(chain_messages=1), monkeypatch)
-    assert seen["task_id"] is None
+    seen = _run_followup(_job(chain_messages=1), monkeypatch)
+    assert seen["job_id"] is None
 
 
 def test_followup_runs_at_the_dispatchers_generation_count(tmp_db, monkeypatch):
     """Reading a result creates nobody, so the follow-up turn runs at the
     count the DISPATCHER had, not the finished child's."""
     seen = _run_followup(
-        _task(chain_messages=1, chain_generations=1,
+        _job(chain_messages=1, chain_generations=1,
               caller_chain_generations=0),
         monkeypatch,
     )
@@ -153,13 +153,13 @@ def test_followup_can_create_the_next_wave_of_agents(tmp_db, monkeypatch):
         # itself is faked out here, so bind what the tool reads.
         from openprogram.agent.run_control import set_current_session_id
         from openprogram.store import _current_turn_id
-        from openprogram.functions.tools.agent.agent.agent import _agent_impl
+        from openprogram.programs.functions.agent.agent.agent import _agent_impl
         set_current_session_id(req.session_id)
         _current_turn_id.set("a1")
         return _agent_impl(prompt="second wave", start_from="clean")
 
     seen = _run_followup(
-        _task(chain_messages=1, chain_generations=1,
+        _job(chain_messages=1, chain_generations=1,
               caller_chain_generations=0),
         monkeypatch, inside=_spawn_again,
     )

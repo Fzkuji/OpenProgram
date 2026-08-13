@@ -672,7 +672,7 @@ def test_migration_prefix_uses_the_live_memory_record_filter(environment):
         "predecessor": "empty-1",
         "timestamp": 1_700_000_002.0,
         "display": "runtime",
-        "source": "task_followup",
+        "source": "job_followup",
     })
     _append(
         db, "filtered-migration", "a1", "runtime-1",

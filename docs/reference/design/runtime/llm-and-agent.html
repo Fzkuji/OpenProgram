@@ -138,9 +138,9 @@ provider 请求数、agent 迭代数。llm 的传输重试不计入迭代数，"
 <tr><td>1</td><td>新增 <code>llm()</code>（<code>agentic_programming</code> 导出）+
 agent 说话改走单次调用层 + 计数</td><td>含单测：一次请求、content blocks 原样进 provider、
 model/effort 覆盖不改全局、无 session 分支产生。workflow 注入环境加入 <code>llm</code>。</td></tr>
-<tr><td>2</td><td>本体编排代码：<code>functions/agentics/</code>（deep_work、ask_user、
+<tr><td>2</td><td>本体编排代码：<code>programs/agentic_functions/</code>（deep_work、ask_user、
 extract_pdf_*、research/、示例）、<code>memory/wiki/</code></td><td>约 20 个文件；对应单测同批适配。</td></tr>
-<tr><td>3</td><td>嵌套 harness 仓库（<code>functions/agentics/</code> 下）：Research-Agent-Harness
+<tr><td>3</td><td>嵌套 harness 仓库（<code>programs/agentic_functions/</code> 下）：Research-Agent-Harness
 （约 80 处，stages 各目录）→ GUI-Agent-Harness（planning / benchmarks，截图调用靠 content blocks）→
 Wiki-Agent-Harness</td><td>逐仓一个子任务，嵌套仓库随改随同步。</td></tr>
 <tr><td>4</td><td>收尾</td><td>编排层无 <code>runtime.exec</code> 残留；<code>examples/</code> 与

@@ -189,8 +189,8 @@ def _child_entry(
     # populates in this fresh interpreter.
     try:
         import openprogram  # noqa: F401
-        import openprogram.functions  # noqa: F401
-        from openprogram.functions import agent_tools as _warm
+        import openprogram.programs  # noqa: F401
+        from openprogram.programs import agent_tools as _warm
         _warm()  # force registration
     except Exception:
         pass
@@ -209,7 +209,7 @@ def _child_entry(
         )
         from openprogram.agent.session_db import default_db
         from openprogram.providers.registry import create_runtime
-        from openprogram.functions import agent_tools
+        from openprogram.programs import agent_tools
         from openprogram.agent.dispatcher import (
             _wrap_agentic_runtime_block,
             TurnRequest,

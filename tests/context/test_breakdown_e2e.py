@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from openprogram.functions import (
+from openprogram.programs import (
     apply_default_deferral, agent_tools, install_loaded_deferred,
     release_turn_tools, split_tools_for_dispatch,
 )

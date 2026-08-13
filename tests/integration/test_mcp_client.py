@@ -115,7 +115,7 @@ def test_registry_registers_namespaced_tools(temp_state_dir):
         shutdown_mcp_servers,
         server_status,
     )
-    from openprogram.functions._runtime import _registry
+    from openprogram.programs._runtime import _registry
 
     before = set(_registry.keys())
 

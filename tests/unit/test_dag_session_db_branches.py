@@ -236,7 +236,7 @@ def test_bump_branch_turns_coexists_with_name(db):
 
 
 # meta.json has more than one writer: the Stage-2 auto-namer runs on a
-# background thread while the task runner archives the same branch
+# background thread while the job runner archives the same branch
 # (agent-collaboration.md §2.6). Staging every write through one shared
 # ``meta.json.tmp`` let the two interleave their bytes into it — the
 # rename then published invalid JSON (read_meta swallows the decode

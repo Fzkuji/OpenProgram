@@ -70,7 +70,7 @@ def test_mode_on_resolves_a_policy(cfg):
 def test_required_policy_stays_on_when_config_mode_is_off(cfg):
     pol = resolve_policy(required=True)
     assert pol is not None
-    assert any(p.endswith(os.path.join("agentics", "**"))
+    assert any(p.endswith(os.path.join("applications", "**"))
                for p in pol.deny_write)
 
 
@@ -87,7 +87,7 @@ def test_policy_json_roundtrip_keeps_hash_and_hard_floor(cfg):
     assert policy_hash(restored) == policy_hash(policy_from_dict(encoded))
     assert restored.writable_roots == original.writable_roots
     assert restored.network is True
-    assert any(p.endswith(os.path.join("agentics", "**"))
+    assert any(p.endswith(os.path.join("applications", "**"))
                for p in restored.deny_write)
 
 
@@ -96,12 +96,14 @@ def test_unknown_mode_reads_as_off(cfg):
     assert resolve_policy() is None
 
 
-def test_agentics_directory_is_always_denied_write(cfg):
+def test_applications_directory_is_always_denied_write(cfg):
     """A user emptying deny_write must not be able to unblock the one
     directory whose contents get imported into the agent process."""
     on(cfg, deny_write=[])
     pol = resolve_policy()
-    assert any(p.endswith(os.path.join("agentics", "**")) for p in pol.deny_write)
+    assert any(
+        p.endswith(os.path.join("applications", "**")) for p in pol.deny_write
+    )
 
 
 def test_policy_resolves_in_a_fresh_thread(cfg):
@@ -161,7 +163,7 @@ def test_write_path_uses_process_policy_roots(tmp_path, cfg, monkeypatch):
 
 
 def test_write_tool_enforces_process_policy(tmp_path, cfg, monkeypatch):
-    from openprogram.functions.tools.write.write import write
+    from openprogram.programs.functions.write.write import write
 
     work = tmp_path / "work"
     outside = tmp_path / "outside"
@@ -228,7 +230,7 @@ def test_read_path_denies_configured_glob(cfg, monkeypatch, secrets):
 
 
 def test_read_tool_refuses_denied_path(cfg, monkeypatch, secrets):
-    from openprogram.functions.tools.read.read import read
+    from openprogram.programs.functions.read.read import read
 
     work, vault = secrets
     _install_deny_read(monkeypatch, str(vault) + "/**")
@@ -242,7 +244,7 @@ def test_read_tool_refuses_denied_path(cfg, monkeypatch, secrets):
 
 
 def test_list_tool_hides_denied_entries(cfg, monkeypatch, secrets):
-    from openprogram.functions.tools.list.list import list_dir
+    from openprogram.programs.functions.list.list import list_dir
 
     _work, vault = secrets
     _install_deny_read(monkeypatch, str(vault / "id_rsa"))
@@ -252,7 +254,7 @@ def test_list_tool_hides_denied_entries(cfg, monkeypatch, secrets):
 
 
 def test_list_tool_refuses_denied_directory(cfg, monkeypatch, secrets):
-    from openprogram.functions.tools.list.list import list_dir
+    from openprogram.programs.functions.list.list import list_dir
 
     _work, vault = secrets
     _install_deny_read(monkeypatch, str(vault) + "/**")
@@ -262,7 +264,7 @@ def test_list_tool_refuses_denied_directory(cfg, monkeypatch, secrets):
 
 
 def test_glob_tool_drops_denied_matches(cfg, monkeypatch, tmp_path):
-    from openprogram.functions.tools.glob.glob import glob_tool
+    from openprogram.programs.functions.glob.glob import glob_tool
 
     root = tmp_path / "root"
     (root / "keys").mkdir(parents=True)
@@ -276,7 +278,7 @@ def test_glob_tool_drops_denied_matches(cfg, monkeypatch, tmp_path):
 
 
 def test_grep_tool_drops_denied_files(cfg, monkeypatch, tmp_path):
-    from openprogram.functions.tools.grep.grep import grep
+    from openprogram.programs.functions.grep.grep import grep
 
     root = tmp_path / "root"
     (root / "keys").mkdir(parents=True)
@@ -309,7 +311,7 @@ def test_sandbox_module_does_not_import_function_registry():
         alias.name for node in ast.walk(tree)
         if isinstance(node, ast.Import) for alias in node.names
     }
-    assert not any(name.startswith("openprogram.functions") for name in imported)
+    assert not any(name.startswith("openprogram.programs") for name in imported)
 
 
 # --- glob translation ------------------------------------------------------
@@ -606,7 +608,7 @@ def test_escalated_policy_preserves_only_the_hard_floor(cfg):
     assert policy.network is True
     assert policy.deny_read == ()
     assert "/" in policy.writable_roots
-    assert any(p.endswith(os.path.join("agentics", "**"))
+    assert any(p.endswith(os.path.join("applications", "**"))
                for p in policy.deny_write)
 
 

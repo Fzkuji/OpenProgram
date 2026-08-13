@@ -49,13 +49,13 @@ the words never overlap — a term means the same thing everywhere it appears.
 | Domain | Noun | Tools | What it is |
 |---|---|---|---|
 | Planning | **todo** | `todo_create` / `todo_update` / `todo_list` | A hand-written checklist: entries, status, owner, dependencies. Written intent, and nothing runs because an entry exists |
-| Execution | **task** | `task_output` / `task_stop` / `list_tasks` | Work handed out and now running: a task id, a status, a result |
+| Execution | **task** | `job_output` / `job_stop` / `list_jobs` | Work handed out and now running: a task id, a status, a result |
 | Entity | **agent** | `agent` / `list_agents` / `archive_agent` | What does the work: create a new one, hand work to an existing one (`to=`), list the agents, archive one that is finished |
 | Communication | **message** | `send_message` / `read_conversation` | Messaging and reading: deliver a message, read any branch in full |
 
 Writing "benchmark the parser" on the todo list starts nothing. `agent(…)`
 starts something, and what comes back is a task id. The list says what was
-intended; `list_tasks` says what is running.
+intended; `list_jobs` says what is running.
 
 An agent's conversation is a **branch**: a `(session_id, head_id)` pair
 inside a session. Two heads in one session are two branches of one
@@ -70,11 +70,11 @@ do them:
 | What the dispatcher can do | What it means |
 |---|---|
 | The result comes back | When the task ends, its reply lands in the dispatcher's conversation automatically, whether or not the dispatcher is still waiting |
-| It can be stopped | `task_stop` cancels the task; one still queued is withdrawn before it ever runs |
+| It can be stopped | `job_stop` cancels the task; one still queued is withdrawn before it ever runs |
 | Cancellation cascades | Stopping a task stops everything that task dispatched, all the way down |
 
 `read_conversation` makes every task id readable, so ownership is checked
-rather than assumed: `task_output` and `task_stop` refuse a task another
+rather than assumed: `job_output` and `job_stop` refuse a task another
 session dispatched (§5.10). Calls with no session context (the user, the
 UI) are not gated.
 
@@ -100,26 +100,26 @@ A whole delegation reads in the four words:
 todo_create("benchmark the parser")            → todo #1 on the board
 todo_update("1", status="in_progress")
 agent("benchmark the parser", "bench",
-      run_in_background=true)                  → task_id=t_7f2
-list_tasks()                                   → t_7f2 running — bench
+      run_in_background=true)                  → job_id=t_7f2
+list_jobs()                                   → t_7f2 running — bench
 send_message("how far along?", to="bench")     → the agent answers, no task created
-task_output("t_7f2")                           → the result, when it lands
+job_output("t_7f2")                           → the result, when it lands
 todo_update("1", status="completed")
 archive_agent(to="bench")                      → archived out of the agent list
 ```
 
 ### Names shared with Claude Code
 
-`agent`, `list_agents`, `send_message`, `task_output` and `task_stop` carry
+`agent`, `list_agents`, `send_message`, `job_output` and `job_stop` carry
 the same meaning here as in Claude Code, deliberately — a model that knows
 those names already knows these tools.
 
 One name deliberately differs. Claude Code's `TaskList` is a todo planning
 board, not a view of running work. The planning board here takes the
-`todo_*` prefix instead, so the collision cannot happen and `list_tasks`
+`todo_*` prefix instead, so the collision cannot happen and `list_jobs`
 keeps its literal reading: the tasks that are running.
 
-Three tools have no Claude Code counterpart — `list_tasks` (there, a model
+Three tools have no Claude Code counterpart — `list_jobs` (there, a model
 cannot enumerate its background tasks), `archive_agent` (archiving an agent
 out of the agent list, §2.6), and `read_conversation` (another agent's
 history as a readable transcript, rather than the raw session files).
@@ -142,7 +142,7 @@ agent(
     description: str = "",              # short label, becomes the branch name
     agent_id: str = "",                 # agent profile; defaults to the session's
     start_from: str = "clean",          # "clean" / "inherit" / "SID:MSG_ID"
-    run_in_background: bool = false,    # false=block for the reply; true=task_id
+    run_in_background: bool = false,    # false=block for the reply; true=job_id
     to: str = "",                       # dispatch to an EXISTING agent instead
     archive_when_done: bool = false,    # archive the spawned agent at terminal state (§2.6)
 ) -> str
@@ -151,9 +151,9 @@ agent(
 `start_from` picks where the new branch starts: `"clean"` (default) is a new
 root seeing only the prompt; `"inherit"` forks off the calling turn with the
 full chain; `"SID:MSG_ID"` forks off that exact node (any session),
-inheriting the chain up to it. `run_in_background=true` returns a `task_id`; its
-companions `task_output(task_id)` (block for the result) and
-`task_stop(task_id)` (cancel) manage the background form.
+inheriting the chain up to it. `run_in_background=true` returns a `job_id`; its
+companions `job_output(job_id)` (block for the result) and
+`job_stop(job_id)` (cancel) manage the background form.
 
 **`to=` — dispatch a tracked task to an EXISTING agent.** With `to` set the
 tool creates no branch: the prompt is handed to the named existing branch
@@ -163,8 +163,8 @@ then unique prefix; ambiguity lists candidates). What distinguishes a
 dispatch from a message is task tracking:
 
 - A **Task entity** is created (the runner's task record): the dispatcher gets
-  a `task_id` back immediately, `task_output` waits on it, `task_stop`
-  withdraws or cancels it, and `list_tasks` shows it.
+  a `job_id` back immediately, `job_output` waits on it, `job_stop`
+  withdraws or cancels it, and `list_jobs` shows it.
 - Delivery reuses the message machinery: an idle target runs the task as
   the next turn on its branch; a busy target queues it in its inbox
   (§5.4) — the Task entity is pre-created in `pending` so the id exists
@@ -292,7 +292,7 @@ target branch's reply into the delivery session as a **synthetic user-role
 turn**. **Key rule: the reply-back `TurnRequest` leaves `branch_from` unset
 (INHERIT_PARENT) — the dispatcher resolves it to the delivery session's
 current HEAD and advances it.** A per-delivery-session follow-up lock
-(`TaskRunner._followup_lock`) serialises concurrent completions, so N
+(`JobRunner._followup_lock`) serialises concurrent completions, so N
 sub-tasks finishing produce one serial chain
 `… → notice₁ → answer₁ → notice₂ → answer₂` — each follow-up reads a HEAD
 that already contains the previous answer.
@@ -382,7 +382,7 @@ Two ways to archive:
   an error.
 
 **Any session may archive any agent.** Archiving is not gated the way
-`task_stop` is (§5.10), because it does not do what `task_stop` does: it
+`job_stop` is (§5.10), because it does not do what `job_stop` does: it
 interrupts no running work and deletes nothing. A task already running on
 the branch runs to its end, `read_conversation` still reads the branch and
 `agent(start_from="SID:MSG_ID")` still forks it. All that changes is that
@@ -470,7 +470,7 @@ accumulates against it and nothing is refused because of it.
 **Reading a result spends a message and no generation.** The turn that
 carries a finished agent's reply back is the *dispatcher's* turn, so it
 runs at the dispatcher's generation count (`Task.caller_chain_generations`,
-re-bound by `TaskRunner._dispatch_followup`) and one message further
+re-bound by `JobRunner._dispatch_followup`) and one message further
 along. That keeps the most common multi-agent shape open: send a batch of
 work out, read what comes back, send the next batch. One counter for both
 budgets closes it — the coordinator's follow-up turn inherits the worker's
@@ -486,8 +486,8 @@ openprogram config set agent.max_spawn_fanout 16 # wider parallel fan-out per tu
 
 **What the budgets do when they run out.** A call that would overrun is
 refused with a reason the model can act on, and it keeps every other
-tool. Once the **message** budget is spent, `agent`, `task_output` and
-`task_stop` leave the tool list altogether: every form of delegation
+tool. Once the **message** budget is spent, `agent`, `job_output` and
+`job_stop` leave the tool list altogether: every form of delegation
 hands a message over, so a chain out of messages can do nothing with
 them, and a tool sitting in the listing makes the model try to call it.
 The generation budget never removes a tool, because a chain out of
@@ -567,12 +567,12 @@ delegated subtask a 600 second timeout.
 - hermes' 600 seconds is a caller-side `Future.result(timeout=…)`, not a
   kill. On expiry it sets a cooperative interrupt flag and abandons the
   worker thread, and a child wedged in blocking I/O keeps running. We
-  already have both halves of that and stronger: `task_output(timeout=)`
+  already have both halves of that and stronger: `job_output(timeout=)`
   is the same caller-side wait (default 30s, ceiling 600s), and
-  `task_stop` cancels cooperatively, kills the active runtime and forces
+  `job_stop` cancels cooperatively, kills the active runtime and forces
   the entity terminal after 30s. What neither we nor hermes have is a
   deadline that fires with nobody watching. Adding one means scheduling
-  `cancel_task` at submit time in `TaskRunner`, and the bound that makes
+  `cancel_job` at submit time in `JobRunner`, and the bound that makes
   it rarely necessary is the 50-iteration per-turn cap below.
 
 **How the counts travel.** Both counters live in ContextVars
@@ -584,8 +584,8 @@ defaults:
 | Hop | How the counts arrive |
 |---|---|
 | Dispatcher → tool body | `copy_context()` in `functions/_runtime.py` carries both into the executor thread |
-| Sender → task worker | Both are persisted on the Task (`chain_messages`, always sender + 1; `chain_generations`, sender + 1 for a spawn and unchanged for a dispatch) and re-bound by `TaskRunner._run_one` |
-| Task → reply follow-up | `TaskRunner._dispatch_followup` re-binds the finished task's `chain_messages` and its `caller_chain_generations` in its own thread |
+| Sender → task worker | Both are persisted on the Task (`chain_messages`, always sender + 1; `chain_generations`, sender + 1 for a spawn and unchanged for a dispatch) and re-bound by `JobRunner._run_one` |
+| Task → reply follow-up | `JobRunner._dispatch_followup` re-binds the finished task's `chain_messages` and its `caller_chain_generations` in its own thread |
 
 The reply hop is where the two budgets part company, and each direction
 matters. Messages carry over from the child: the follow-up turn is where
@@ -596,8 +596,8 @@ dispatcher's count: the follow-up creates nobody, and inheriting the
 child's count left an agent that had read one worker's reply unable to
 create any further agent in that chain.
 
-The same thread also re-binds `_current_task_id` to the finished task's
-`parent_task_id`, so a task A spawns while reading the reply belongs to
+The same thread also re-binds `_current_job_id` to the finished task's
+`parent_job_id`, so a task A spawns while reading the reply belongs to
 the same lineage cascading cancel walks (§5.3).
 
 The session id those tools read (`run_control._current_session_id`) is
@@ -611,8 +611,8 @@ or `runtime.ask` at a session that registered no turn token.
 
 ### 5.2 Concurrency limit + queueing
 
-- Spawning runs on the `TaskRunner` thread pool, capped by
-  `OPENPROGRAM_TASK_WORKERS` (default 4). Spawn eight at once and anything over
+- Spawning runs on the `JobRunner` thread pool, capped by
+  `OPENPROGRAM_JOB_WORKERS` (default 4). Spawn eight at once and anything over
   the cap **queues**, running as slots free up, without overloading anything.
   This is a global pool, so it bounds what runs at once and not how much
   work one turn can create. That is the fan-out budget's job (§5.1).
@@ -627,8 +627,8 @@ or `runtime.ask` at a session that registered no turn token.
 
 - Cancelling a task **also cancels every task it spawned**. Each spawn made
   from inside a running task records the chain on the Task entity
-  (`parent_task_id`, defaulted from the runner's current-task ContextVar).
-  `TaskRunner.cancel_task` walks the persisted entities breadth-first over
+  (`parent_job_id`, defaulted from the runner's current-task ContextVar).
+  `JobRunner.cancel_job` walks the persisted entities breadth-first over
   that chain (visited-set guard, so even a malformed cycle terminates):
   pending/queued descendants flip straight to cancelled without ever running;
   running ones go through the same per-task cancel path as the root —
@@ -640,7 +640,7 @@ or `runtime.ask` at a session that registered no turn token.
   then ran a full turn for work the user had already stopped. Walking the
   chain first means the worker that picks the descendant up finds an
   entity already at `cancelled` and returns without calling
-  `run_agent_turn`. Ordering only; `cancel_task` still returns the root's
+  `run_agent_turn`. Ordering only; `cancel_job` still returns the root's
   post-update entity, and `None` for a task id that resolves to no session.
 - Session-level cancel (the user's Stop on a session) additionally clears the
   session's send_message inbox (`inbox.clear`): the queued messages are new
@@ -660,7 +660,7 @@ sender's own turn, whose token is the one the check would see.
 
 - **Queueing**: a busy target's message is persisted to the target session's
   inbox (`<session-repo>/inbox.json`, `openprogram/agent/inbox.py` — same
-  placement pattern as `tasks.json`), recording the delivery body, sender
+  placement pattern as `jobs.json`), recording the delivery body, sender
   `SID:HEAD`, sender agent, the chain's message count at send time, and
   enqueue time. The sender immediately gets back "target busy, message
   queued, processed when its current turn ends".
@@ -731,21 +731,21 @@ branch can only be triggered by `send_message` and does not appear in the UI's
 session picker (but it is still drawn in the DAG and can be listed by
 list_agents so agents can address it).
 
-### 5.10 Task ownership (task_output / task_stop)
+### 5.10 Task ownership (job_output / job_stop)
 
 `read_conversation` can read any branch, so any agent can learn any
-task_id — without a gate, any agent could wait on or kill work it never
-dispatched. `task_output` and `task_stop` therefore verify ownership
+job_id — without a gate, any agent could wait on or kill work it never
+dispatched. `job_output` and `job_stop` therefore verify ownership
 before acting: the current session must be the task's dispatcher
 (`caller_session_id`, or `parent_session_id` for a same-session spawn),
 or an ancestor on the task chain (the current task is an ancestor via
-`parent_task_id`, or the current session dispatched one of the task's
+`parent_job_id`, or the current session dispatched one of the task's
 ancestors — the same lineage cascading cancel walks). Anything else is
-refused: `[task_stop error] task {id} was not dispatched by this
+refused: `[job_stop error] task {id} was not dispatched by this
 session`. Calls with no session context (the user, the UI) are not
 gated.
 
-`task_stop` on a `to=`-dispatched task is state-dependent:
+`job_stop` on a `to=`-dispatched task is state-dependent:
 
 - **queued** (target was busy, task waiting in its inbox) → the entry is
   withdrawn from the inbox and the entity flips to `cancelled`. No

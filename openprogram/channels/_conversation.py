@@ -199,7 +199,7 @@ def _run_session_turn(
         tools_override_from_config,
         project_defaults,
     )
-    from openprogram.functions.permission_rule import load_merged_rules as _load_merged_rules
+    from openprogram.programs.permission_rule import load_merged_rules as _load_merged_rules
     run_cfg = load_session_run_config(session_key)
     _pdef = project_defaults(session_key)
 

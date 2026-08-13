@@ -69,7 +69,7 @@ def _match_rule(rules, tool_name: str, args: dict) -> "str | None":
     见 docs/design/runtime/permission-model.md §3.4。"""
     if rules is None:
         return None
-    from openprogram.functions.permission_rule import parse_rule, parse_command, pattern_matches
+    from openprogram.programs.permission_rule import parse_rule, parse_command, pattern_matches
     cmd = None  # 惰性求值：只在遇到 per-pattern 规则时解析命令
     for behavior, ruleset in (("deny", rules.deny), ("ask", rules.ask), ("allow", rules.allow)):
         for raw in ruleset:
@@ -89,8 +89,8 @@ def _path_is_safe(tool_name: str, args: dict, req: "TurnRequest") -> bool:
     """acceptEdits 档下判断写目标是否安全（工作目录内 + 非危险文件/目录 +
     无 Windows 绕过）。完整规则集在 file_safety.check_path_safety。"""
     import os
-    from openprogram.functions.permission_rule import parse_command
-    from openprogram.functions.tools.file_safety import check_path_safety
+    from openprogram.programs.permission_rule import parse_command
+    from openprogram.programs.functions.file_safety import check_path_safety
     from openprogram.worktree.context import current_worktree_path
     path = parse_command(tool_name, args)
     if not path:
@@ -111,11 +111,11 @@ def _hard_constraint_violation(
 ) -> str | None:
     """Return the non-configurable constraint violated by an external turn."""
     import os
-    from openprogram.functions.permission_rule import parse_command
-    from openprogram.functions._programs import agentics_dir
+    from openprogram.programs.permission_rule import parse_command
+    from openprogram.protected_paths import applications_root
     from openprogram.worktree.context import current_worktree_path
 
-    protected = agentics_dir()
+    protected = applications_root()
 
     def _targets_agentics(path: str | None) -> bool:
         if not path or not protected:
@@ -181,7 +181,7 @@ def _persist_always_allow_rule(session_id: str, tool_name: str, args: dict) -> b
     if not session_id:
         return False
     try:
-        from openprogram.functions.permission_rule import (
+        from openprogram.programs.permission_rule import (
             exact_rule_for_call, rule_to_string,
         )
         from openprogram.store.project import project_store as _projects

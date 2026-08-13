@@ -476,7 +476,7 @@ def _build_deferred_catalog(agent: Any) -> str:
     tools = _tools_var.get()
     if not tools:
         return ""
-    from openprogram.functions import (
+    from openprogram.programs import (
         deferred_catalog_text, split_tools_for_dispatch,
     )
     _, deferred = split_tools_for_dispatch(list(tools))

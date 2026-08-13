@@ -8,7 +8,7 @@ tools because it still listed the names of a previous memory layer.
 """
 from __future__ import annotations
 
-from openprogram.functions import TOOLSETS, _all_agent_tools, agent_tools
+from openprogram.programs import TOOLSETS, _all_agent_tools, agent_tools
 
 
 def test_every_preset_names_a_registered_tool():
@@ -17,7 +17,7 @@ def test_every_preset_names_a_registered_tool():
     # tool only when the harness repo is installed. A preset naming them on a
     # machine without the harness — CI, fresh clone — is the intended wish
     # list, not staleness.
-    from openprogram.functions._programs import KNOWN_PROGRAMS
+    from openprogram.programs._programs import KNOWN_PROGRAMS
     external = {p.function for p in KNOWN_PROGRAMS if not p.is_installed()}
     stale = {
         preset: sorted(
@@ -30,7 +30,7 @@ def test_every_preset_names_a_registered_tool():
 
 
 def test_the_memory_preset_offers_every_memory_tool():
-    from openprogram.functions.tools.memory import MEMORY_TOOL_NAMES
+    from openprogram.programs.functions.memory import MEMORY_TOOL_NAMES
 
     # The preset names these; this is about the names surviving resolution,
     # which is the step that used to drop three of the six on the floor.

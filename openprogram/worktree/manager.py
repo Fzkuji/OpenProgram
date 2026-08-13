@@ -45,7 +45,7 @@ from openprogram.worktree.types import (
 def _broadcast_worktree_status(wt: Worktree) -> None:
     """Push a ``worktree_status`` envelope through the WS server.
 
-    Mirrors :func:`openprogram.agent.task.runner._broadcast`
+    Mirrors :func:`openprogram.agent.job.runner._broadcast`
     — best-effort. The full row is included inline so the right-rail
     panel can patch its local cache without a second round-trip.
 
@@ -58,7 +58,7 @@ def _broadcast_worktree_status(wt: Worktree) -> None:
             "worktree_id": wt.id,
             "status": wt.status.value,
             "parent_session": wt.parent_session,
-            "parent_task": wt.parent_task,
+            "parent_job": wt.parent_job,
             "branch_name": wt.branch_name,
             "source_repo": wt.source_repo,
             "merge_sha": wt.merge_sha,
@@ -178,7 +178,7 @@ class WorktreeManager:
         base_ref: str = "HEAD",
         label: Optional[str] = None,
         parent_session: Optional[str] = None,
-        parent_task: Optional[str] = None,
+        parent_job: Optional[str] = None,
         pr: Optional[str] = None,
     ) -> Worktree:
         """Create a new worktree on ``source_repo``.
@@ -315,7 +315,7 @@ class WorktreeManager:
         # .worktreeinclude: copy untracked local-only files (.env,
         # certs, etc.) the fresh checkout never got. No-op when the
         # manifest doesn't exist. Every create_worktree caller (the
-        # worktree_create tool, task/plan-mode fan-out) routes through
+        # worktree_create tool, job/plan-mode fan-out) routes through
         # here, so this is the one place that needs the hook.
         include_result = sync_include_files(source_repo, str(path))
 
@@ -327,7 +327,7 @@ class WorktreeManager:
             base_ref=base_ref,
             status=WorktreeStatus.ACTIVE,
             parent_session=parent_session,
-            parent_task=parent_task,
+            parent_job=parent_job,
             pr_number=pr_number,
             include_synced=include_result.copied,
             include_failed=[f"{p}: {reason}" for p, reason in include_result.failed],
@@ -348,12 +348,12 @@ class WorktreeManager:
         *,
         status_filter: Optional[set[WorktreeStatus]] = None,
         parent_session: Optional[str] = None,
-        parent_task: Optional[str] = None,
+        parent_job: Optional[str] = None,
     ) -> list[Worktree]:
         return _store_list(
             status_filter=status_filter,
             parent_session=parent_session,
-            parent_task=parent_task,
+            parent_job=parent_job,
         )
 
     def find_active_for_session(self, session_id: str) -> Optional[Worktree]:

@@ -8,7 +8,7 @@ Design: docs/reference/design/integrations/editor-integration.md.
 User-facing setup: docs/interfaces/acp.md.
 
 The adapter sits on ``agent.dispatcher.process_user_turn`` — the same
-non-HTTP entry point the webui thread, sub-agents and the task runner use.
+non-HTTP entry point the webui thread, sub-agents and the job runner use.
 Nothing about tool gating, authority or persistence is re-implemented here;
 the ACP layer only translates protocol shapes in both directions.
 """

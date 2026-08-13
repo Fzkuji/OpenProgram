@@ -22,7 +22,7 @@
 |---|---|---|
 | 进程内事件扇出 | `EventBus`——已实现但闲置，dispatcher 和 agent_loop 用直接回调绕过了它 | `openprogram/events/bus.py` |
 | gate 的 `ask` 路径 | `ApprovalRegistry` + `_wrap_with_approval`：发起请求、阻塞等待、批准或拒绝，拒绝时回一个 is_error 的 tool result | `openprogram/agent/internals/_approval.py` |
-| observer 的 `Prepare` 后台 task | `TaskRunner.spawn_task`——ThreadPoolExecutor、状态机、task_status 广播 | `openprogram/agent/task/runner.py` |
+| observer 的 `Prepare` 后台 task | `JobRunner.spawn_job`——ThreadPoolExecutor、状态机、job_status 广播 | `openprogram/agent/job/runner.py` |
 | `Inject` 的落地槽位 | 注入 system prompt 的 memory prefetch，以及 steering messages | `openprogram/agent/agent_loop.py` |
 | 事件因果、rewind、分支 | session git DAG，节点带 parent_id / caller | `openprogram/contextgit/` |
 | gate 的强制点 | 所有 chat tool 调用都要过的那一个点 | `agent_loop.py` `_execute_tool_calls` |
@@ -39,7 +39,7 @@
 | `model.response_completed` | `agent_loop.py` 的 AgentEventMessageEnd | 转换现有事件 |
 | `tool.before` | `agent_loop.py`，每次 `tool.execute()` 之前 | 一份事件同时喂 notify emit 与 gate 问询 |
 | `tool.after` | `agent_loop.py`，每次工具调用结束之后 | notify emit，附结果文本通道 |
-| `subagent.started` / `completed` | `task/runner.py` 的 task_status 广播 | 转换，经 `_broadcast_task_status` 汇总 |
+| `subagent.started` / `completed` | `task/runner.py` 的 job_status 广播 | 转换，经 `_broadcast_job_status` 汇总 |
 | `permission.requested` | `_approval.py` 的 approval_request 信封 | 新增 tap |
 | `artifact.file.changed` | `file_backup.backup_before_edit` 与 `project_commit` | 写成功后新增发送 |
 
@@ -60,7 +60,7 @@ gate 对 subagent turn 生效，且**独立于 `permission_mode`**。特别地�
 
 ## 5. Prepare 的执行
 
-`Prepare` 复用 `TaskRunner.spawn_task`，但注入一个不含 bash、write、network 的受限
+`Prepare` 复用 `JobRunner.spawn_job`，但注入一个不含 bash、write、network 的受限
 tool allowlist。它跑在一个独立小池里，并发 1–2，可被用户任务抢占，遇 429 让路
 （设计 `execution-model.md` §3）。
 
@@ -97,7 +97,7 @@ channels、memory、web UI 的源头 tap）；再然后把 web UI 从发送方�
 | 同步问询点：`register_tool_gate` / `decide_tool_gate` / `ToolGateDenied` | `openprogram/events/tool_gate.py` |
 | `tool.before` 观察与问询、`tool.after`、`model.*` taps | `openprogram/agent/agent_loop.py` |
 | `user.prompt_submitted` | `openprogram/agent/dispatcher/__init__.py` |
-| `subagent.started` / `ended` | `openprogram/agent/task/runner.py` `_broadcast_task_status` |
+| `subagent.started` / `ended` | `openprogram/agent/job/runner.py` `_broadcast_job_status` |
 | `file.changed`，写成功后经懒 import 发出 | write / edit / apply_patch 三个工具中的五处 |
 | 外部源桥，worker 启动时幂等安装 | `openprogram/events/bridges.py` + `worker/runner.py` |
 | 外部源头 taps | `context/engine.py`（compaction ×2）、`channels/_conversation.py`、`memory/session_watcher.py`（×2）、`webui/server.py`（skills / plugins） |
@@ -106,6 +106,6 @@ channels、memory、web UI 的源头 tap）；再然后把 web UI 从发送方�
 | 单测（30 个） | `tests/agent/test_event_bus.py`、`test_tool_gate.py`、`test_event_bridges.py` |
 
 实测验证覆盖了真实 turn 上的完整事件序列、`file.changed`、gate 的端到端测试、
-`skills.changed`，以及一次 WebSocket 探针——确认 task_status 的四个状态都经新链路
+`skills.changed`，以及一次 WebSocket 探针——确认 job_status 的四个状态都经新链路
 到达前端。有一条环境注意事项要带下去：worker 的工作目录是 home，因此项目 skills
 目录解析成 `~/skills`。

@@ -38,7 +38,7 @@ def parse_chat_input(text: str) -> dict:
     # /task [--clean | --inherit] [--async | --sync] [label]: prompt
     #   --clean    → new root in this session (no parent context)
     #   --inherit  → fork off this turn (default)
-    #   --async    → submit to TaskRunner, return immediately with task_id
+    #   --async    → submit to JobRunner, return immediately with job_id
     #   --sync     → block until done (default, kept for explicit selection)
     # Legacy /spawn kept as alias.
     matched_prefix = None

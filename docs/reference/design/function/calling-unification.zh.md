@@ -61,7 +61,7 @@ LLM's tool_call dispatch.             (it triggers __call__ → wrapper);
 ```
 
 两个装饰器最终都在同一个共享注册表
-（``openprogram.functions._runtime._registry``）中产生一个 ``AgentTool``
+（``openprogram.programs._runtime._registry``）中产生一个 ``AgentTool``
 条目。``_build_and_register_tool`` 辅助函数是
 "构建 AgentTool + 挂载 sidecar + 注册" 的单一事实来源。两个装饰器都
 委托给它；新增一个 sidecar 属性或门控层意味着
@@ -184,7 +184,7 @@ Layer  When                  How configured                Effect when rejected
 已暴露），除非其作者设置了 `expose=False`；一次裸 `runtime.exec`
 会拿到 **完整的暴露集合**。框架不会按调用做限制——
 收窄是 **调用方** 的选择：一个 agent profile（Layer 3）、
-按调用的 allow/deny、Functions 页的关闭开关（Layer 5），或者
+按调用的 allow/deny、Programs 页的关闭开关（Layer 5），或者
 当某次具体调用完全不想要工具时使用 `toolset="none"`。默认
 始终是 "给工具"；明确知道自己不需要工具的调用方才选择退出。
 
@@ -261,7 +261,7 @@ Layer  Kind      Default (no config)                Who overrides & when
 坏了 / 这个会话不允许用它"）。否决必须独立于
 选择——例如，无论当前激活哪个文件夹，attended-mode 都必须扣下
 `ask_user_question`；你不能指望用户记得
-把它从每一个文件夹里都排除掉。因此 **Functions 页把 L2b 作为
+把它从每一个文件夹里都排除掉。因此 **Programs 页把 L2b 作为
 主操作呈现（组织并挑选文件夹），把 L5 作为例外
 （按工具的关闭开关）**；系统自身的 L5 否决（attended、
 subagent 上限）仅存在于代码中，对用户不可见。
@@ -285,17 +285,17 @@ allowlist 的第二步。具体来说：
   `expose=False`；用户仍可在 Functions
   页（Layer 5）关闭其中任何一个。不过默认是 "注册即可用"。
 
-## Tool profiles (Functions page)
+## Tool profiles (Programs page)
 
 一个 **tool profile** 是一个命名配置，表示 "这次对话
-启用哪些工具"。Functions 页（`/functions`）
+启用哪些工具"。Programs 页（`/programs`）
 管理 profiles；聊天输入框让用户挑选使用哪个 profile。
 
 ### Concepts
 
 ```
 tool catalog          all registered, exposed tools — a flat read-only
-(the shelf)           list on the Functions page. Shows every tool with
+(the shelf)           list on the Programs page. Shows every tool with
                       its name + description. The catalog itself has no
                       enable/disable controls; it just shows what exists.
 
@@ -317,7 +317,7 @@ default profile       the built-in "all tools on" profile. Always
 
 ### User flow
 
-1. **Functions 页** 展示 catalog（所有工具）和一个
+1. **Programs 页** 展示 catalog（所有工具）和一个
    profiles 侧边栏。点击某个 profile 会显示它包含哪些工具；
    用户从该 profile 中添加/移除工具。
 2. **聊天输入框** 有一个 profile 选择器（例如模型选择器旁边的
@@ -361,7 +361,7 @@ Profiles 持久化在 ``functions_meta.json`` 中（与
 ```
 Entry point                     Controls                     Layer  Persisted in
 ────────────────────────────────────────────────────────────────────────────────────────
-Functions page —                create / edit / delete tool  L2b    functions_meta.json
+Programs page —                create / edit / delete tool  L2b    functions_meta.json
   tool profiles                 profiles (named tool sets).         → profiles: {name:[...]}
                                 Add/remove tools to/from a
                                 profile. Default profile =
@@ -386,7 +386,7 @@ Attended / unattended           withhold ask_user_question   L5     session stat
                                                                     应用，不经用户操作)
 
 Global tool disable             blacklist a single tool      L5     config.json:
-  (Functions page / config)     everywhere — rarely used.           tools.disabled
+  (Programs page / config)     everywhere — rarely used.           tools.disabled
                                 Overrides any profile.
 
 Author decorator kwargs         expose / available_if /      L1/2/  in-code
@@ -394,7 +394,7 @@ Author decorator kwargs         expose / available_if /      L1/2/  in-code
                                 / check_fn
 ```
 
-日常使用 = Functions 页上的 **tool profiles**（创建 profiles，
+日常使用 = Programs 页上的 **tool profiles**（创建 profiles，
 添加/移除工具）+ 聊天输入框里的 **profile 选择器**（选择
 这次对话使用哪个 profile）。全局禁用 = 很少使用的
 兜底。Agent profile = 面向高级多 agent 配置的按 agent 覆盖。
@@ -598,7 +598,7 @@ def research(topic: str) -> str: ...
 ## Where each piece lives
 
 ```
-openprogram/functions/_runtime.py
+openprogram/programs/_runtime.py
   AgentTool subclass (from openprogram.agent.types)
   _registry                                            exposure source
                                                        (Layer 2: exposed =
@@ -621,12 +621,12 @@ openprogram/functions/_runtime.py
   deferred_catalog_text                                Layer 6 prompt block
   tool_search (the AgentTool itself)                   Layer 6 loader
 
-openprogram/functions/_helpers.py
+openprogram/programs/_helpers.py
   is_available (legacy dict, kept for older callers)
   is_available_agent_tool                              consolidates the
                                                        Layer 4 triad
 
-openprogram/functions/__init__.py
+openprogram/programs/__init__.py
   DEFAULT_TOOLS, TOOLSETS                              Layer 2 presets
   agent_tools, apply_tool_policy                       resolution API
   get_agent_tool, list_registered_agent_tools,
@@ -634,7 +634,7 @@ openprogram/functions/__init__.py
   side-effect imports of every subpackage              @function tools register
                                                        at import time
 
-openprogram/functions/<name>/<name>.py                  one per tool
+openprogram/programs/<name>/<name>.py                  one per tool
   @function on a plain def                             (for the 38 leaf
                                                        tools shipped today)
 
@@ -666,7 +666,7 @@ openprogram/agent/agent_loop.py
                                                        schemas appear on
                                                        the next call)
 
-openprogram/functions/agentics/*/__init__.py           @agentic_function
+openprogram/programs/agentic_functions/*/__init__.py           @agentic_function
                                                        modules (each its
                                                        own directory).
                                                        Includes harness
@@ -711,7 +711,7 @@ openprogram/functions/agentics/*/__init__.py           @agentic_function
 - 新增 @agentic_function harness（同上）
 - 把一个内部 helper 对 LLM 隐藏（仅需 `expose=False` kwarg）
 - 定义一个命名子集（TOOLSETS dict），或让用户自行定义一个
-  （Functions 页文件夹 → functions_meta.json）
+  （Programs 页文件夹 → functions_meta.json）
 - 给工具打上 defer / available_if 标记（仅需 kwarg）
 - 接入 MCP servers / plugins——它们以常规方式注册 AgentTool
   条目，并在注册时被暴露（对庞大的 MCP 面标记
@@ -727,10 +727,10 @@ openprogram/functions/agentics/*/__init__.py           @agentic_function
 ## 附录 —— 实现状态
 
 注册表、六个门控层、两个装饰器以及四个运行时旋钮均已就位。
-“Tool profiles（Functions 页）”与“User-editable entry points”
+“Tool profiles（Programs 页）”与“User-editable entry points”
 两节描述的两个面向用户的入口尚未实现：
 
-- Functions 页的 profile 管理器（创建 / 编辑 / 删除 tool
+- Programs 页的 profile 管理器（创建 / 编辑 / 删除 tool
   profile，持久化到 `functions_meta.json`）；
 - 聊天输入框的 profile 选择器（选择本次对话使用哪个 profile）。
 

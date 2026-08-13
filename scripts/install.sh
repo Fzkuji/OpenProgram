@@ -30,7 +30,7 @@
 #
 # The GUI harness's torch build is whatever pip resolves. If you need an
 # explicit CUDA/CPU variant, run the harness's own installer afterwards:
-#   openprogram/functions/agentics/GUI-Agent-Harness/scripts/install.sh --cuda cu124
+#   openprogram/programs/applications/gui_harness/scripts/install.sh --cuda cu124
 #
 # Re-runnable: every step is idempotent.
 #

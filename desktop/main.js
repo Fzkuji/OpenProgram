@@ -7,6 +7,7 @@ const http = require("http");
 const https = require("https");
 const path = require("path");
 const { Buffer } = require("buffer");
+const { resolveAuthenticatedStartUrl } = require("./worker-start-url");
 const {
   loadTransferDecisions,
   saveTransferDecisionsAtomic,
@@ -24,7 +25,9 @@ const {
 const WEB_PORT = process.env.OPENPROGRAM_WEB_PORT || "18100";
 const START_URL =
   process.env.OPENPROGRAM_DESKTOP_URL || `http://127.0.0.1:${WEB_PORT}/chat`;
+const HEALTH_URL = new URL("/healthz", START_URL).toString();
 const WORKER_COMMAND = "openprogram worker start";
+const RECOVERY_INTERVAL_MS = 3_000;
 const TRANSFER_TIMEOUT_MS = 15_000;
 const DESTINATION_UNDO_TIMEOUT_MS = 2_000;
 const COMMIT_RECONCILE_INITIAL_MS = 100;
@@ -44,13 +47,60 @@ const ERROR_PAGE =
     `<body style="background:#141416;color:#ddd;font-family:-apple-system,sans-serif;
         display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
       <div style="max-width:32rem;text-align:center">
-        <h2>OpenProgram worker is not running</h2>
-        <p>Could not reach <code>${START_URL}</code>.</p>
-        <p>Start it manually, then relaunch:</p>
+        <h2>Waiting for backend to start...</h2>
+        <p>OpenProgram will reconnect automatically when the backend is ready.</p>
+        <p>If it does not start, run:</p>
         <pre style="background:#222;padding:0.8em;border-radius:6px">${WORKER_COMMAND}</pre>
       </div>
     </body>`
   );
+
+// BEGIN WORKER RECOVERY STATE
+function createRecoveryState() {
+  return { active: false, probeInFlight: false, nextProbeAt: 0, timer: null };
+}
+
+function createRecoveryCoordinator() {
+  return { workerSpawned: false };
+}
+
+function startRecoveryCycle(state) {
+  if (state.active) return;
+  state.active = true;
+  state.probeInFlight = false;
+}
+
+function beginRecoveryProbe(state, now) {
+  if (!state.active || state.probeInFlight || now < state.nextProbeAt) return false;
+  state.probeInFlight = true;
+  return true;
+}
+
+function finishRecoveryProbe(
+  state,
+  coordinator,
+  reachable,
+  hasAuthenticatedUrl,
+  now,
+  retryIntervalMs = 3_000,
+) {
+  state.probeInFlight = false;
+  if (!state.active) return null;
+  state.nextProbeAt = now + retryIntervalMs;
+  if (reachable) coordinator.workerSpawned = false;
+  if (reachable && hasAuthenticatedUrl) {
+    state.active = false;
+    return "load";
+  }
+  if (!reachable && !coordinator.workerSpawned) {
+    coordinator.workerSpawned = true;
+    return "spawn";
+  }
+  return null;
+}
+// END WORKER RECOVERY STATE
+
+const recoveryCoordinator = createRecoveryCoordinator();
 
 // ---------------------------------------------------------------- worker boot
 
@@ -59,14 +109,12 @@ function probe(url, timeoutMs) {
     const mod = url.startsWith("https:") ? https : http;
     const req = mod.get(url, { timeout: timeoutMs }, (res) => {
       res.resume();
-      resolve(true);
+      resolve(res.statusCode >= 200 && res.statusCode < 300);
     });
     req.on("timeout", () => req.destroy(new Error("timeout")));
     req.on("error", () => resolve(false));
   });
 }
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function spawnWorker() {
   // ponytail: PATH first, then the known miniconda location; no config for more.
@@ -84,16 +132,76 @@ function spawnWorker() {
 }
 
 async function resolveStartUrl() {
+  let workerWasReachable = false;
   for (let i = 0; i < 3; i++) {
-    if (await probe(START_URL, 1000)) return START_URL;
+    if (await probe(HEALTH_URL, 1000)) {
+      workerWasReachable = true;
+      recoveryCoordinator.workerSpawned = false;
+      const authenticated = resolveAuthenticatedStartUrl(START_URL);
+      if (authenticated) return authenticated;
+    }
   }
-  spawnWorker();
-  const deadline = Date.now() + 30000;
-  while (Date.now() < deadline) {
-    if (await probe(START_URL, 1000)) return START_URL;
-    await sleep(1000);
+  if (!workerWasReachable && !recoveryCoordinator.workerSpawned) {
+    recoveryCoordinator.workerSpawned = true;
+    spawnWorker();
   }
   return ERROR_PAGE;
+}
+
+function stopWindowRecovery(ctx) {
+  const state = ctx.recovery;
+  if (state.timer !== null) clearInterval(state.timer);
+  state.active = false;
+  state.probeInFlight = false;
+  state.timer = null;
+}
+
+async function runWindowRecoveryProbe(ctx) {
+  const state = ctx.recovery;
+  if (ctx.win.isDestroyed() || !beginRecoveryProbe(state, Date.now())) return;
+  const reachable = await probe(HEALTH_URL, 1000);
+  const authenticated = reachable ? resolveAuthenticatedStartUrl(START_URL) : null;
+  const action = finishRecoveryProbe(
+    state,
+    recoveryCoordinator,
+    reachable,
+    !!authenticated,
+    Date.now(),
+    RECOVERY_INTERVAL_MS,
+  );
+  if (action === "spawn") {
+    spawnWorker();
+  } else if (action === "load" && !ctx.win.isDestroyed()) {
+    if (state.timer !== null) clearInterval(state.timer);
+    state.timer = null;
+    void ctx.win.loadURL(authenticated).catch(() => {});
+  }
+}
+
+function startWindowRecovery(ctx, showErrorPage = true) {
+  if (ctx.win.isDestroyed()) return;
+  if (!ctx.recovery.active) {
+    startRecoveryCycle(ctx.recovery);
+    ctx.recovery.timer = setInterval(
+      () => { void runWindowRecoveryProbe(ctx); },
+      RECOVERY_INTERVAL_MS,
+    );
+  }
+  if (showErrorPage && ctx.win.webContents.getURL?.() !== ERROR_PAGE) {
+    void ctx.win.loadURL(ERROR_PAGE).catch(() => {});
+  }
+  void runWindowRecoveryProbe(ctx);
+}
+
+function recoverErroredWindows() {
+  for (const ctx of windows.values()) {
+    if (
+      ctx.recovery.active ||
+      ctx.win.webContents.getURL?.() === ERROR_PAGE
+    ) {
+      startWindowRecovery(ctx);
+    }
+  }
 }
 
 // ------------------------------------------------------------- window state
@@ -145,6 +253,7 @@ function makeWindowContext(id, win) {
     views: new Map(),
     visibleViewIds: new Set(),
     pendingTransferToken: null,
+    recovery: createRecoveryState(),
   };
 }
 
@@ -1750,6 +1859,7 @@ function clearOwnedViews(ctx) {
 }
 
 function cleanupWindowContext(ctx) {
+  stopWindowRecovery(ctx);
   closeMainMenu(ctx);
   tabTransfers.contextDestroyed(ctx);
   clearOwnedViews(ctx);
@@ -1760,6 +1870,9 @@ function cleanupWindowContext(ctx) {
     contextsByBrowserWindowId.delete(ctx.win.id);
   }
   if (lastFocusedWindowId === ctx.id) lastFocusedWindowId = null;
+  if (![...windows.values()].some((item) => item !== ctx && item.recovery.active)) {
+    recoveryCoordinator.workerSpawned = false;
+  }
 }
 
 // -------------------------------------------------------------- main menu
@@ -2351,10 +2464,21 @@ async function createWindow(options = {}) {
       e.preventDefault();
     }
   });
+  win.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, _description, _url, isMainFrame) => {
+      if (errorCode === -3 || isMainFrame === false) return;
+      startWindowRecovery(ctx);
+    },
+  );
   // Renderer reload (Cmd+R) resets the renderer's view bookkeeping —
   // orphaned WebContentsViews would leak until quit. Start clean.
   win.webContents.on("did-navigate", () => clearOwnedViews(ctx));
-  win.loadURL(await resolveStartUrl());
+  const startUrl = await resolveStartUrl();
+  void win.loadURL(startUrl).catch(() => {});
+  if (startUrl === ERROR_PAGE) {
+    startWindowRecovery(ctx, false);
+  }
   return ctx;
 }
 
@@ -2439,16 +2563,40 @@ function registerFileDirectoryListing() {
   session.fromPartition("persist:webtabs").protocol.handle("file", handler);
 }
 
-app.whenReady().then(() => {
-  registerFileDirectoryListing();
-  registerWebTabIpc();
-  registerTabTransferIpc();
-  buildMenu();
-  void createWindow();
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+const primaryInstance =
+  typeof app.requestSingleInstanceLock !== "function" || app.requestSingleInstanceLock();
+
+if (!primaryInstance) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    const existing = BrowserWindow.getAllWindows();
+    if (existing.length === 0) {
+      void createWindow();
+      return;
+    }
+    recoverErroredWindows();
+    const win = BrowserWindow.getFocusedWindow() || existing[0];
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
   });
-});
+
+  app.whenReady().then(() => {
+    registerFileDirectoryListing();
+    registerWebTabIpc();
+    registerTabTransferIpc();
+    buildMenu();
+    void createWindow();
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        void createWindow();
+      } else {
+        recoverErroredWindows();
+      }
+    });
+  });
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

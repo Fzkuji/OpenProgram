@@ -13,7 +13,7 @@ openprogram programs install gui
 pip 依赖之外还需要模型文件——YOLO 检测器权重（经 `huggingface-hub` 下载）和 OCR 模型不在 PyPI 上。安装完成后运行 harness 自带的安装器获取它们：
 
 ```bash
-openprogram/functions/agentics/GUI-Agent-Harness/scripts/install.sh --no-host
+openprogram/programs/applications/gui_harness/scripts/install.sh --no-host
 # Windows: ...\scripts\install.ps1 -NoHost
 ```
 
@@ -44,4 +44,4 @@ openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 - 平台：macOS / Windows / Linux；OCR 后端按平台自动选择。
 - 运行前需要 runtime 配置好工作目录（截图与运行记录写在那里）。
 
-源码与 README：`openprogram/functions/agentics/GUI-Agent-Harness/`，上游仓库 [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness)。
+源码与 README：`openprogram/programs/applications/gui_harness/`，上游仓库 [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness)。

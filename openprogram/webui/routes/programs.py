@@ -1,13 +1,13 @@
 """``/api/programs/*`` — runtime detection of installed agentic programs.
 
-A harness installed after boot (``git clone`` into ``functions/agentics/``
+A harness installed after boot (``git clone`` into ``programs/applications/``
 or ``openprogram programs install``) doesn't appear until its modules are
 imported. This route re-runs discovery on demand so the new program's
 functions go live without restarting the worker:
 
   * ``POST /api/programs/refresh`` — the manual "refresh" button. Re-scans
     and, if anything new registered, broadcasts ``programs:changed`` so
-    every connected UI re-fetches ``/api/functions``.
+    every connected UI re-fetches ``/api/programs``.
 
 The background watcher (``functions.watcher``) hits the same core
 (``_registry.rescan``) + the same broadcast, so manual and automatic
@@ -34,14 +34,14 @@ def _emit(event: str, data: dict) -> None:
 def register(app) -> None:
     @app.post("/api/programs/refresh")
     async def refresh_programs():
-        """Re-scan ``functions/agentics/`` for newly-installed programs.
+        """Re-scan ``programs/applications/`` for newly-installed programs.
 
         Returns ``{"added": [...], "total": N}``. Broadcasts
         ``programs:changed`` when ``added`` is non-empty so the function
         list refreshes live in every open tab.
         """
         try:
-            from openprogram.functions._registry import rescan
+            from openprogram.programs._registry import rescan
             result = rescan()
         except Exception as e:  # noqa: BLE001
             return JSONResponse(

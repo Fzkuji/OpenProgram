@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from openprogram.auth.store import AuthStore, set_store_for_testing
 from openprogram.auth.types import Credential, CredentialData, CredentialPool
-from openprogram.webui.routes import accounts, config, providers
+from openprogram.webui.routes import accounts, config, provider_login, providers
 
 
 _SECRET = "sk-123456789abc4"
@@ -49,6 +49,7 @@ def account_api(tmp_path, monkeypatch):
     app = FastAPI()
     providers.register(app)
     accounts.register(app)
+    provider_login.register(app)
     config.register(app)
     with TestClient(app, raise_server_exceptions=False) as client:
         yield SimpleNamespace(
@@ -56,6 +57,7 @@ def account_api(tmp_path, monkeypatch):
         )
 
     set_store_for_testing(None)
+    provider_login._SESSIONS.clear()
 
 
 def _put_account(store: AuthStore, name: str = "work", value: str = _SECRET) -> None:
@@ -69,6 +71,33 @@ def _put_account(store: AuthStore, name: str = "work", value: str = _SECRET) -> 
                     account_id=name,
                     kind="api_key",
                     payload=CredentialData(kind="api_key", auth_value=value),
+                )
+            ],
+        )
+    )
+
+
+def _put_oauth_account(
+    store: AuthStore,
+    *,
+    account_id: str = "account-2",
+    email: str = "person@example.com",
+) -> None:
+    store.put_pool(
+        CredentialPool(
+            provider_id="openai-codex",
+            account_id=account_id,
+            credentials=[
+                Credential(
+                    provider_id="openai-codex",
+                    account_id=account_id,
+                    kind="oauth",
+                    payload=CredentialData(
+                        kind="oauth",
+                        auth_value="access-token",
+                        data={"refresh_token": "refresh-token"},
+                    ),
+                    metadata={"email": email},
                 )
             ],
         )
@@ -152,17 +181,102 @@ def test_accounts_use_invalid_request_leaves_the_pin_untouched(
 # ---------------------------------------------------------------------------
 
 
-def test_accounts_rename_moves_the_credential(account_api):
+def test_accounts_rename_changes_label_without_moving_the_credential(account_api):
     _put_account(account_api.store)
 
     response = account_api.client.post(
         "/api/providers/openai/accounts/rename",
-        json={"id": "work", "name": "personal"},
+        json={"id": "work", "name": "Personal 工作"},
     )
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "name": "personal"}
-    assert _account_state(account_api.store) == [("personal", _SECRET)]
+    assert response.json() == {
+        "ok": True,
+        "id": "work",
+        "label": "Personal 工作",
+        "name": "Personal 工作",
+    }
+    assert _account_state(account_api.store) == [("work", _SECRET)]
+    cred = account_api.store.find_pool("openai", "work").credentials[0]
+    assert cred.metadata["label"] == "Personal 工作"
+
+
+def test_second_oauth_account_automatically_uses_email_as_label(account_api):
+    _put_oauth_account(account_api.store)
+
+    response = account_api.client.get("/api/providers/openai-codex/accounts")
+
+    assert response.status_code == 200
+    account = response.json()["accounts"][0]
+    assert account["id"] == "account-2"
+    assert account["label"] == "person@example.com"
+    assert account["name"] == "person@example.com"
+    assert account["email"] == "person@example.com"
+
+
+def test_login_allocates_stable_id_and_persists_optional_label(account_api, monkeypatch):
+    from openprogram.auth import login_driver
+    from openprogram.auth.account_labels import apply_account_label
+
+    _put_oauth_account(account_api.store, account_id="default", email="first@example.com")
+    received = {}
+
+    async def fake_login(provider, account, method, ui, *, api_key=None, label=""):
+        received.update(provider=provider, account=account, method=method, label=label)
+        return apply_account_label(
+            Credential(
+                provider_id=provider,
+                account_id=account,
+                kind="oauth",
+                payload=CredentialData(kind="oauth", auth_value="access-token"),
+                metadata={"email": "second@example.com"},
+            ),
+            label,
+        )
+
+    monkeypatch.setattr(login_driver, "run_login", fake_login)
+    start = account_api.client.post(
+        "/api/providers/openai-codex/login/start",
+        json={"method": "pkce_oauth", "label": "Personal 工作"},
+    )
+    assert start.status_code == 200
+
+    poll = account_api.client.get(
+        "/api/providers/openai-codex/login/poll",
+        params={"session": start.json()["session"]},
+    )
+    assert poll.status_code == 200
+    assert poll.json()["done"] is True
+    assert poll.json()["name"] == "account-2"
+    assert poll.json()["label"] == "Personal 工作"
+    assert received == {
+        "provider": "openai-codex",
+        "account": "account-2",
+        "method": "pkce_oauth",
+        "label": "Personal 工作",
+    }
+    saved = account_api.store.find_pool("openai-codex", "account-2").credentials[0]
+    assert saved.metadata["label"] == "Personal 工作"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        None,
+        [],
+        {"method": 1},
+        {"label": 1},
+        {"label": "x" * 121},
+        {"account": "bad\naccount"},
+        {"extra": True},
+    ],
+)
+def test_login_rejects_invalid_start_body(account_api, body):
+    response = account_api.client.post(
+        "/api/providers/openai-codex/login/start", json=body
+    )
+
+    assert response.status_code == 400
 
 
 @pytest.mark.parametrize(
@@ -179,7 +293,6 @@ def test_accounts_rename_moves_the_credential(account_api):
         ({"id": "work", "name": "bad\nname"}, 400),
         ({"id": "work", "name": "personal", "api_key": _SECRET}, 400),
         ({"id": "missing", "name": "personal"}, 404),
-        ({"id": "work", "name": "other"}, 409),
     ],
 )
 def test_accounts_rename_invalid_request_does_not_mutate(account_api, body, status):

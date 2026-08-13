@@ -22,7 +22,7 @@ We are the client. This design **does not cover** exposing OpenProgram's own too
 
 ## Directory location
 
-`openprogram/mcp/` is a **top-level module**, a sibling of `openprogram/channels/`. It does **not** live under `openprogram/functions/`.
+`openprogram/mcp/` is a **top-level module**, a sibling of `openprogram/channels/`. It does **not** live under `openprogram/programs/`.
 
 Rationale:
 - MCP is an **external-protocol adapter layer**, which is a different thing from "the implementation of a function." Our function system (`@function` / `@agentic_function` / the code under `agentics/`) is locally-implemented tools; MCP is tools fetched from an external process. The two layers are orthogonal concepts.
@@ -122,7 +122,7 @@ the webui displays it
 
 The whole chain completes synchronously on the FastAPI main loop, with **no cross-thread / cross-event-loop scheduling involved**.
 
-`/api/run/{name}` / the CLI `programs run` / the `/functions` page do **not** wire up MCP tools — those are entry points for local functions. MCP tools are invisible to the user; the LLM uses them implicitly.
+`/api/run/{name}` / the CLI `programs run` / the `/programs` page do **not** wire up MCP tools — those are entry points for local functions. MCP tools are invisible to the user; the LLM uses them implicitly.
 
 ## Key technical decisions
 

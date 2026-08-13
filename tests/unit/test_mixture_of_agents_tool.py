@@ -11,7 +11,7 @@ import pytest
 
 import openprogram.providers as providers
 import openprogram.providers.metadata as provider_metadata
-from openprogram.functions.tools.mixture_of_agents import mixture_of_agents as moa
+from openprogram.programs.functions.mixture_of_agents import mixture_of_agents as moa
 
 
 def _model(provider: str, model_id: str) -> SimpleNamespace:

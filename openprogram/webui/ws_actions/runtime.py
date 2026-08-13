@@ -190,7 +190,7 @@ async def handle_browser(ws, cmd: dict):
         }))
         return
     try:
-        from openprogram.functions.tools.browser.browser import execute as _br_exec
+        from openprogram.programs.functions.browser.browser import execute as _br_exec
         result = _br_exec(action=verb, **kwargs)
     except Exception as e:  # noqa: BLE001
         result = f"Error: {type(e).__name__}: {e}"
@@ -427,7 +427,7 @@ async def handle_stats(ws, cmd: dict):
         top_sessions = []
 
     try:
-        from openprogram.functions import list_registered_agent_tools
+        from openprogram.programs import list_registered_agent_tools
         top_tools = list_registered_agent_tools()
         tools_count = len(top_tools)
     except Exception:

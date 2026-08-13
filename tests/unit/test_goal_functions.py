@@ -1,12 +1,12 @@
 """Unit tests for the goal agentic function
-(``openprogram/functions/agentics/goal/``): the single decision entry
+(``openprogram/programs/agentic_functions/goal/``): the single decision entry
 ``goal`` — prompt assembly, JSON parse path, failure path. The loop
 semantics around it live in test_goal_loop.py."""
 from __future__ import annotations
 
 import pytest
 
-import openprogram.functions.agentics.goal as GF
+import openprogram.programs.agentic_functions.goal as GF
 
 
 @pytest.fixture

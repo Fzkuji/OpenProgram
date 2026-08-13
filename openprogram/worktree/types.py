@@ -96,12 +96,12 @@ class Worktree:
     created_at: float = field(default_factory=time.time)
     completed_at: Optional[float] = None
     # Optional linkage — both nullable. ``parent_session`` is the
-    # OpenProgram session that owns this worktree; ``parent_task`` is
-    # the async task (if any) currently bound to it. Multiple
+    # OpenProgram session that owns this worktree; ``parent_job`` is
+    # the async job (if any) currently bound to it. Multiple
     # worktrees may share a parent_session (plan-mode case); each
-    # task is bound to at most one worktree.
+    # job is bound to at most one worktree.
     parent_session: Optional[str] = None
-    parent_task: Optional[str] = None
+    parent_job: Optional[str] = None
     # Default merge mode the agent will use if it doesn't override.
     merge_strategy: str = "ff-only"
     # Outcome / audit

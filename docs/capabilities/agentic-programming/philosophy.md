@@ -32,7 +32,7 @@ Agentic Programming gives control back to the programmer:
 
 Decompose a complex task into a function call graph. For each node on the graph, you decide:
 - **Doesn't need reasoning** — use a plain Python function
-- **Needs understanding / generation / judgment** — decorate it with `@agentic_function`, and call `runtime.exec(...)` inside the function body to trigger the LLM
+- **Needs understanding / generation / judgment** — decorate it with `@agentic_function`, and call `llm(...)` inside the function body
 
 The LLM becomes a tool that you call, constrain, and compose.
 
@@ -42,15 +42,16 @@ The entire paradigm is just three things:
 
 ### 1. `@agentic_function`
 
-A decorator. For a function it decorates, the docstring travels with the call as descriptive context, and `runtime.exec(...)` inside the body triggers the model call. The `runtime` parameter is auto-injected.
+A decorator. For a function it decorates, the docstring travels with the call as descriptive context, and `llm(...)` inside the body triggers one model call. The decorator supplies the ambient runtime.
 
 ```python
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 
 @agentic_function
 def summarize(text: str, runtime=None) -> str:
     """Summarize a text in one sentence, preserving the core point."""
-    return runtime.exec(content=[{"type": "text", "text": (
+    return llm([{"type": "text", "text": (
         f"Summarize in one sentence, preserving the core point:\n\n{text}"
     )}])
 ```
@@ -64,13 +65,13 @@ The runtime abstraction for LLM calls. It is responsible for:
 - Calling the underlying provider (Anthropic / OpenAI / Claude Code / ...)
 - Writing the result back into the context
 
-`Runtime.exec()` is the only LLM entry point. Every model call goes through it.
+User orchestration calls `llm()` for a single model request. `Runtime.exec()` remains the lower-level embedding and infrastructure API used underneath it.
 
 ### 3. `Context`
 
 The automatic record of execution. Every user turn, every LLM call, and every function call is one node on a single **flat DAG**; the edges are `caller` (which function invoked this node) and `reads` (which nodes an LLM call saw in its prompt). Each node records inputs, outputs, token usage, elapsed time, and failure reason.
 
-The DAG is not just a trace — it is also **where each LLM call's history comes from**: `runtime.exec()` renders its message history from the DAG. Two decorator knobs shape that flow per function:
+The DAG is not just a trace — it is also **where each LLM call's history comes from**: `llm()` renders its message history from the DAG through the ambient runtime. Two decorator knobs shape that flow per function:
 
 - `expose` — what a completed call reveals to its parent (`"io"` by default: name + input + output, internals hidden).
 - `render_range` — how much history the function's own `exec` pulls in. `render_range={"callers": 0}` gives an isolated scratch context that sees none of the prior conversation.
@@ -81,7 +82,7 @@ So context management stops being prompt plumbing and becomes a property you dec
 
 ### The LLM Writes Code Too
 
-The LLM isn't just the runtime's reasoning engine; it can also **write code** — generating, modifying, and fixing `@agentic_function`s that conform to the spec. This needs no dedicated `create()` / `fix()` framework functions; the agent authors new functions with ordinary file edits, following the [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md) as the spec — where files go, decorator metadata, the division of labor between the docstring and `content`, and the validation checklist. A background watcher rescans `functions/agentics/` and hot-loads new modules: their `@agentic_function` decorators fire on import and self-register, so a freshly written function is callable without a restart.
+The LLM isn't just the runtime's reasoning engine; it can also **write code** — generating, modifying, and fixing `@agentic_function`s that conform to the spec. This needs no dedicated `create()` / `fix()` framework functions; the agent authors new functions with ordinary file edits, following the [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md) as the spec — where files go, decorator metadata, the division of labor between the docstring and `content`, and the validation checklist. A background watcher rescans `programs/agentic_functions/` and hot-loads new modules: their `@agentic_function` decorators fire on import and self-register, so a freshly written function is callable without a restart.
 
 Code is data, the LLM is the compiler, and functions are the product — the loop closes.
 
@@ -89,7 +90,7 @@ Code is data, the LLM is the compiler, and functions are the product — the loo
 
 Agentic Programming is at the same time:
 - **A library** — you write `@agentic_function`s and wire up the pipeline by hand
-- **A running product** — chat in the CLI or WebUI and ask the agent to write the function for you; the generated file lands in `functions/agentics/` and hot-loads
+- **A running product** — chat in the CLI or WebUI and ask the agent to write the function for you; the generated file lands in `programs/agentic_functions/` and hot-loads
 
 Beginners start by asking, and what they get is a complete, readable Python file. Those who want to dig deeper can then import and hand-write. This is a tool that **can be understood incrementally**.
 
@@ -106,7 +107,7 @@ This isn't to say agent frameworks are wrong; they suit a class of tasks (fully 
 
 ## OpenProgram = the Productized Paradigm
 
-The `agentic_programming/` subpackage is the paradigm's engine code. `context/` implements the flat-DAG context model. `providers/` adapts the various LLMs. `functions/agentics/` holds the functions and applications already written under this paradigm. `webui/` lets beginners run things without writing code.
+The `agentic_programming/` subpackage is the paradigm's engine code. `context/` implements the flat-DAG context model. `providers/` adapts the various LLMs. `programs/agentic_functions/` holds the functions and applications already written under this paradigm. `webui/` lets beginners run things without writing code.
 
 The paradigm comes first; the product exists to use it.
 

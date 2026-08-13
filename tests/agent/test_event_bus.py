@@ -147,7 +147,7 @@ def test_emit_ws_frame_reaches_subscriber_verbatim(monkeypatch):
     bus.subscribe(lambda ev: got.append(ev.payload.get("frame")),
                   types={WS_FRAME_EVENT})
 
-    frame = {"type": "task_status", "data": {"task_id": "t1", "status": "running"}}
+    frame = {"type": "job_status", "data": {"job_id": "t1", "status": "running"}}
     emit_ws_frame(frame)
 
     assert got == [frame]   # 帧逐字到达，前端契约不变

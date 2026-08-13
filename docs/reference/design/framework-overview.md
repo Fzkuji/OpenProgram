@@ -331,8 +331,8 @@ decisions.
 
 **Responsibility**: deliver messages between branches and sessions, run the
 target branch, and bring the reply back.
-**Key files**: `functions/tools/send_message/send_message/send_message.py`,
-`functions/tools/send_message/list_agents/list_agents.py`.
+**Key files**: `programs/functions/send_message/send_message/send_message.py`,
+`programs/functions/send_message/list_agents/list_agents.py`.
 **Mechanisms**:
 - `send_message(message, to, agent_id)` →
   `_send_message_impl`.
@@ -372,7 +372,7 @@ a "sent" line in the initiator's chat stream.
 - **The core entry points lack covering tests**: several paths through
   `process_user_turn` / `agent_loop` are marked "no covering tests found".
 - **A worker thread's ContextVar is unreliable**: `subagent.started/ended`
-  therefore pass the session explicitly (`agent/task/runner.py:111–115`), and
+  therefore pass the session explicitly (`agent/job/runner.py:111–115`), and
   `send_message._resolve_parent` carries a head fallback for the same reason.
 - **`ContextEngine.after_turn` exists at two levels**: the abstract base stub
   (`engine.py:124`) is `pass`; the concrete engine implementation

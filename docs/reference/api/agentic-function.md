@@ -2,7 +2,7 @@
 
 > Source: [`openprogram/agentic_programming/function.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agentic_programming/function.py)
 
-`@agentic_function` turns an ordinary Python function into an Agentic Function: each call is recorded as a `code` node in the session DAG, and the `runtime.exec` calls inside the function body are recorded as `llm` nodes.
+`@agentic_function` turns an ordinary Python function into an Agentic Function: each call is recorded as a `code` node in the session DAG, and the `llm()` calls inside the function body are recorded as `llm` nodes.
 
 For the full authoring conventions—file layout, the division of labor between the docstring and `content`, parameter metadata, the validation checklist, and smoke tests—see [`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md). This document only covers the decorator itself.
 
@@ -10,11 +10,12 @@ For the full authoring conventions—file layout, the division of labor between 
 
 ```python
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 
 @agentic_function
 def f(x: str, runtime) -> str:
     """One-line summary of what f does."""
-    return runtime.exec(content=[{"type": "text", "text": f"...{x}..."}])
+    return llm([{"type": "text", "text": f"...{x}..."}])
 ```
 
 You can use bare `@agentic_function` or the parameterized form `@agentic_function(...)`.
@@ -26,14 +27,14 @@ You can use bare `@agentic_function` or the parameterized form `@agentic_functio
 | Parameter | Type | Default | Description |
 |------|------|------|------|
 | `expose` | `str` | `"io"` | **Outward-facing**: what others can see about me when they render the DAG. `"io"` = only the function's name and return value are visible externally, while its internals (LLM exchanges, sub-calls) are hidden; `"llm"` = the reverse, exposing only the internal LLM exchanges and hiding the function's own name/return value and nested code sub-calls; `"full"` = everything visible (docstring + params + output + LLM replies + internals); `"hidden"` = no DAG nodes are written at all. Any other value raises `ValueError` at decoration time |
-| `render_range` | `dict` | `None` | **Inward-facing**: how many history nodes to read from the DAG when this function's internal `runtime.exec` assembles its prompt. Shape `{"callers": N, "subcalls": M}`, where both numbers are **node counts (sliced by `seq`)**:<br>• `callers` — nodes written **before** this function's frame started; take the most recent N (`None` default = unlimited, `0` = a full wall)<br>• `subcalls` — nodes already written **after** this function's frame started; take the most recent N (`-1` default = unlimited, so the frame naturally sees its own progress; `N>=0` = set explicitly when you want to truncate the prompt; `0` = wall off in-frame entirely)<br>`{"callers":0,"subcalls":0}` = cut off from both the outside world and your own frame |
+| `render_range` | `dict` | `None` | **Inward-facing**: how many history nodes to read from the DAG when this function's internal `llm()` call assembles its prompt. Shape `{"callers": N, "subcalls": M}`, where both numbers are **node counts (sliced by `seq`)**:<br>• `callers` — nodes written **before** this function's frame started; take the most recent N (`None` default = unlimited, `0` = a full wall)<br>• `subcalls` — nodes already written **after** this function's frame started; take the most recent N (`-1` default = unlimited, so the frame naturally sees its own progress; `N>=0` = set explicitly when you want to truncate the prompt; `0` = wall off in-frame entirely)<br>`{"callers":0,"subcalls":0}` = cut off from both the outside world and your own frame |
 | `input` | `dict` | `None` | Per-parameter UI metadata; the WebUI renders the input form from it. Supported fields per parameter: `description` (label next to the name), `placeholder` (example text), `multiline` (`True` = textarea), `options` (list of allowed values, rendered as a dropdown and emitted as a JSON-schema `enum`), `hidden` (`True` = exclude from the form and from the LLM tool schema) |
 | `workdir_mode` | `str` | `None` | Working-directory picker mode: `"optional"` / `"hidden"` / `"required"`; any other value raises `ValueError`. The consumer is the WebUI—it reads the value by AST-parsing the source text, so it must be written as a literal inside the decorator call to take effect |
 | `system` | `str` | `None` | The system prompt for this function's LLM calls (applied over the injected runtime for the duration of the call, then restored afterward) |
 
 ### Tool-registration parameters
 
-Every `@agentic_function` is also registered as an LLM-callable tool in the shared registry (`openprogram.functions`), alongside `@function`-decorated tools. These parameters control that registration and share their names and semantics with `@function`:
+Every `@agentic_function` is also registered as an LLM-callable tool in the shared registry (`openprogram.programs`), alongside `@function`-decorated tools. These parameters control that registration and share their names and semantics with `@function`:
 
 | Parameter | Type | Default | Description |
 |------|------|------|------|
@@ -73,7 +74,7 @@ Parameters named `runtime`, `exec_runtime`, or `review_runtime` are auto-injecte
 ## Recording to the DAG
 
 - **Entering the function**: write a `code` node (`output=None`, `status="running"`), and store the function docstring into that node's `metadata.doc`, which is prepended to `function_name(args)` when rendering context.
-- **`runtime.exec` inside the function body**: each call writes an `llm` node.
+- **`llm()` inside the function body**: each call writes an `llm` node.
 - **Exiting the function**: backfill the same `code` node's `output` / `status`.
 
 When `expose="hidden"`, no nodes are written. In standalone runs (with no DAG store installed), all recording is a no-op and the function executes as usual.

@@ -92,7 +92,7 @@ def _run_with_ctx(fn, *, session_id, turn_id):
 # ---- entry 1: sync agent() (agent.py _agent_impl) -----------------------
 
 def test_agent_sync_clean_passes_spawn_caller(store, captured_run):
-    from openprogram.functions.tools.agent.agent.agent import _agent_impl
+    from openprogram.programs.functions.agent.agent.agent import _agent_impl
     _run_with_ctx(
         lambda: _agent_impl(prompt="go", start_from="clean"),
         session_id="p1", turn_id="a1",
@@ -102,7 +102,7 @@ def test_agent_sync_clean_passes_spawn_caller(store, captured_run):
 
 
 def test_agent_sync_inherit_passes_no_spawn_caller(store, captured_run):
-    from openprogram.functions.tools.agent.agent.agent import _agent_impl
+    from openprogram.programs.functions.agent.agent.agent import _agent_impl
     _run_with_ctx(
         lambda: _agent_impl(prompt="go", start_from="inherit"),
         session_id="p1", turn_id="a1",
@@ -112,7 +112,7 @@ def test_agent_sync_inherit_passes_no_spawn_caller(store, captured_run):
 
 
 def test_agent_sync_fork_passes_no_spawn_caller(store, captured_run):
-    from openprogram.functions.tools.agent.agent.agent import _agent_impl
+    from openprogram.programs.functions.agent.agent.agent import _agent_impl
     _run_with_ctx(
         lambda: _agent_impl(prompt="go", start_from="p1:u1"),
         session_id="p1", turn_id="a1",
@@ -141,18 +141,18 @@ def test_runner_clean_passes_spawn_caller(store, monkeypatch):
         "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
     )
     monkeypatch.setattr(
-        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
     )
-    import openprogram.agent.task.runner as runner_mod
+    import openprogram.agent.job.runner as runner_mod
     runner_mod.shutdown_runner()
-    from openprogram.agent.task import get_runner
+    from openprogram.agent.job import get_runner
     runner = get_runner()
     try:
-        tid = runner.spawn_task(
+        tid = runner.spawn_job(
             session_id="p1", prompt="go", agent_id="main",
             context_mode="clean", caller_msg_id="a1", parent_msg_id="a1",
         )
-        final = runner.await_task(tid, timeout=5.0)
+        final = runner.await_job(tid, timeout=5.0)
         assert final is not None
         assert cap["branch_from"] is None
         assert cap["spawn_caller"] == "a1"
@@ -174,18 +174,18 @@ def test_runner_inherit_passes_no_spawn_caller(store, monkeypatch):
         "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
     )
     monkeypatch.setattr(
-        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
     )
-    import openprogram.agent.task.runner as runner_mod
+    import openprogram.agent.job.runner as runner_mod
     runner_mod.shutdown_runner()
-    from openprogram.agent.task import get_runner
+    from openprogram.agent.job import get_runner
     runner = get_runner()
     try:
-        tid = runner.spawn_task(
+        tid = runner.spawn_job(
             session_id="p1", prompt="go", agent_id="main",
             context_mode="inherit", caller_msg_id="a1", parent_msg_id="a1",
         )
-        final = runner.await_task(tid, timeout=5.0)
+        final = runner.await_job(tid, timeout=5.0)
         assert final is not None
         assert cap["branch_from"] == "a1"
         assert cap["spawn_caller"] is None
@@ -208,7 +208,7 @@ def test_agent_async_passes_caller_and_depth(store, monkeypatch):
     monkeypatch.setattr(
         "openprogram.agent.sub_agent_run.run_agent_turn_async", fake_async,
     )
-    from openprogram.functions.tools.agent.agent.agent import _agent_impl
+    from openprogram.programs.functions.agent.agent.agent import _agent_impl
     out = _run_with_ctx(
         lambda: _agent_impl(prompt="go", start_from="clean", run_in_background=True),
         session_id="p1", turn_id="a1",
@@ -228,10 +228,10 @@ def _spawn_at(counts: dict, fn=None):
     """Call ``_agent_impl`` with the chain counters bound to ``counts``
     (keys: generations, messages), the way the runner binds them on a
     child or a follow-up turn."""
-    from openprogram.functions.tools.send_message.send_message.depth import (
+    from openprogram.programs.functions.send_message.send_message.depth import (
         set_chain_generations, set_chain_messages,
     )
-    from openprogram.functions.tools.agent.agent.agent import _agent_impl
+    from openprogram.programs.functions.agent.agent.agent import _agent_impl
 
     def _call():
         tokens = [
@@ -252,7 +252,7 @@ def test_agent_refuses_at_max_spawn_depth(store, captured_run):
     """The generation budget (MAX_SPAWN_DEPTH=1) is deliberately tighter
     than the message budget: only the main agent may agent(); a spawned
     agent delegating again gets refused."""
-    from openprogram.functions.tools.agent.agent.agent import MAX_SPAWN_DEPTH
+    from openprogram.programs.functions.agent.agent.agent import MAX_SPAWN_DEPTH
     out = _spawn_at({"generations": MAX_SPAWN_DEPTH})
     assert "[agent refused]" in out and "generations" in out
     assert "spawn_caller" not in captured_run  # never reached the spawn
@@ -278,7 +278,7 @@ def test_spawn_depth_zero_means_unlimited(store, captured_run, monkeypatch):
 def test_messages_alone_can_refuse_a_spawn(store, captured_run):
     """A spawn hands the child a message, so a chain out of messages
     cannot spawn either, however many generations it has left."""
-    from openprogram.functions.tools.send_message.send_message.depth import (
+    from openprogram.programs.functions.send_message.send_message.depth import (
         MAX_MESSAGES,
     )
     out = _spawn_at({"generations": 0, "messages": MAX_MESSAGES})
@@ -299,7 +299,7 @@ def test_agent_sync_child_sees_both_counts_incremented(store, monkeypatch):
     """The sync path binds both counts + 1 around the child turn, so a
     chain of agent()-inside-agent() trips the generation guard instead of
     recursing forever (each generation used to start back at 0)."""
-    from openprogram.functions.tools.send_message.send_message.depth import (
+    from openprogram.programs.functions.send_message.send_message.depth import (
         current_chain_generations, current_chain_messages,
     )
     from openprogram.agent.sub_agent_run import AgentTurnResult as _R
@@ -317,7 +317,7 @@ def test_agent_sync_child_sees_both_counts_incremented(store, monkeypatch):
         "openprogram.agent.sub_agent_run.write_attach_pointer_for_spawn",
         lambda **kw: None,
     )
-    from openprogram.functions.tools.agent.agent.agent import _agent_impl
+    from openprogram.programs.functions.agent.agent.agent import _agent_impl
     _run_with_ctx(
         lambda: _agent_impl(prompt="go", start_from="clean"),
         session_id="p1", turn_id="a1",
@@ -327,7 +327,7 @@ def test_agent_sync_child_sees_both_counts_incremented(store, monkeypatch):
 
 # ---- tool exposure follows the remaining budget ---------------------------
 
-_TOOLS_UNDER_TEST = ["agent", "task_output", "task_stop", "read"]
+_TOOLS_UNDER_TEST = ["agent", "job_output", "job_stop", "read"]
 
 
 def _spawn_tool_names(depth: int) -> set:
@@ -338,7 +338,7 @@ def _spawn_tool_names(depth: int) -> set:
     hook work at render time."""
     from contextvars import copy_context
     from openprogram.agent.internals._model_tools import resolve_tools
-    from openprogram.functions.tools.send_message.send_message.depth import (
+    from openprogram.programs.functions.send_message.send_message.depth import (
         set_chain_messages,
     )
 
@@ -354,21 +354,21 @@ def _spawn_tool_names(depth: int) -> set:
 
 def test_spawn_tools_visible_while_budget_remains():
     """A spawned agent (spawn budget spent, messages left) keeps agent /
-    task_output / task_stop: it cannot spawn — the runtime guard refuses
+    job_output / job_stop: it cannot spawn — the runtime guard refuses
     that — but agent(to=…) and the task companions still work."""
     names = _spawn_tool_names(1)
-    assert {"agent", "task_output", "task_stop"} <= names
+    assert {"agent", "job_output", "job_stop"} <= names
 
 
 def test_spawn_tools_disappear_when_budget_spent():
     """Both budgets spent → the three tools leave the listing entirely."""
-    from openprogram.functions.tools.send_message.send_message.depth import (
+    from openprogram.programs.functions.send_message.send_message.depth import (
         MAX_MESSAGES,
     )
     names = _spawn_tool_names(MAX_MESSAGES)
     assert "agent" not in names
-    assert "task_output" not in names
-    assert "task_stop" not in names
+    assert "job_output" not in names
+    assert "job_stop" not in names
     # Everything else is untouched.
     assert "read" in names
 
@@ -376,4 +376,4 @@ def test_spawn_tools_disappear_when_budget_spent():
 def test_message_budget_zero_keeps_tools_forever(monkeypatch):
     """agent.max_messages=0 = no limit, so the tools never disappear."""
     _set_config(monkeypatch, max_messages=0)
-    assert {"agent", "task_output", "task_stop"} <= _spawn_tool_names(999)
+    assert {"agent", "job_output", "job_stop"} <= _spawn_tool_names(999)

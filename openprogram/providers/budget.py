@@ -4,8 +4,8 @@
 module serves passes through, so reserve/start/settle lives here rather than
 in each adapter.
 
-A call is *budgeted* only when a governed task is bound to this context
-(``current_task_resource_context()``). Everything else — CLI, tests, headless
+A call is *budgeted* only when a governed job is bound to this context
+(``current_job_resource_context()``). Everything else — CLI, tests, headless
 usage — stays on the historical best-effort recording path untouched.
 
 The order matters and is the whole point of the module:
@@ -152,8 +152,8 @@ def requested_output_cap(options, model) -> int:
 def provider_retry_attempts(default_attempts: int) -> int:
     """Return one provider attempt while a governed reservation is active."""
     try:
-        from openprogram.agent.task.runner import current_task_resource_context
-        if current_task_resource_context() is not None:
+        from openprogram.agent.job.runner import current_job_resource_context
+        if current_job_resource_context() is not None:
             return 1
     except Exception:
         pass
@@ -172,8 +172,8 @@ class BudgetedRequest:
     its existing best-effort recording behaviour.
     """
 
-    def __init__(self, task_id: str, governor: Any, reservation: Any) -> None:
-        self._task_id = task_id
+    def __init__(self, job_id: str, governor: Any, reservation: Any) -> None:
+        self._job_id = job_id
         self._governor = governor
         self.reservation = reservation
         self._settled = False
@@ -186,13 +186,13 @@ class BudgetedRequest:
         when the request cannot be afforded or cannot be accounted for.
         """
         try:
-            from openprogram.agent.task.runner import current_task_resource_context
-            bound = current_task_resource_context()
+            from openprogram.agent.job.runner import current_job_resource_context
+            bound = current_job_resource_context()
         except Exception:
             bound = None
         if bound is None:
             return None
-        task_id = bound.task_id
+        job_id = bound.job_id
         governor = bound.governor
 
         from .api_registry import has_audited_accounting
@@ -211,7 +211,7 @@ class BudgetedRequest:
         input_bound = estimate_input_upper_bound(context, options, model)
         try:
             reservation = governor.reserve_provider_request(
-                task_id,
+                job_id,
                 input_token_upper_bound=input_bound,
                 requested_max_output_tokens=requested_output_cap(options, model),
                 model=model,
@@ -227,7 +227,7 @@ class BudgetedRequest:
             raise QuotaExceeded(
                 reservation.reason_code or "quota.accounting_unavailable",
             )
-        return cls(task_id, governor, reservation)
+        return cls(job_id, governor, reservation)
 
     def clamp(self, options, model=None):
         """Return options whose output cap cannot exceed the reservation.

@@ -45,7 +45,10 @@ def test_select_connect_host_maps_wildcard_binds_onto_loopback():
     assert select_connect_host("agent.example.com") == "agent.example.com"
 
 
-def test_select_request_origin_prefers_localhost_then_the_bind_literal():
+def test_select_request_origin_prefers_the_bind_literal_then_localhost():
+    # The bound address first: "localhost" may resolve to ::1 while the
+    # server binds 127.0.0.1 only, and the pinned-address client dials
+    # exactly one resolved address.
     loopback = ActiveWebAccess(
         bind_host="127.0.0.1",
         port=EPHEMERAL_PORT,
@@ -55,7 +58,7 @@ def test_select_request_origin_prefers_localhost_then_the_bind_literal():
         }),
         token_fingerprint="sha256:deadbeefcafe",
     )
-    assert select_request_origin(loopback) == f"http://localhost:{EPHEMERAL_PORT}"
+    assert select_request_origin(loopback) == f"http://127.0.0.1:{EPHEMERAL_PORT}"
 
     remote = ActiveWebAccess(
         bind_host="10.1.2.3",
@@ -97,11 +100,11 @@ def test_resolve_backend_endpoint_requires_a_verified_challenge(
     # Every URL is the same origin. A base_url whose Host disagreed with
     # the declared Origin is precisely what the owner-auth middleware
     # rejects as cross-origin, so the two may never drift apart.
-    assert endpoint.base_url == f"http://localhost:{EPHEMERAL_PORT}"
-    assert endpoint.websocket_url == f"ws://localhost:{EPHEMERAL_PORT}/ws"
-    assert endpoint.origin == f"http://localhost:{EPHEMERAL_PORT}"
+    assert endpoint.base_url == f"http://127.0.0.1:{EPHEMERAL_PORT}"
+    assert endpoint.websocket_url == f"ws://127.0.0.1:{EPHEMERAL_PORT}/ws"
+    assert endpoint.origin == f"http://127.0.0.1:{EPHEMERAL_PORT}"
     assert endpoint.base_url == endpoint.origin
-    assert endpoint.host == f"localhost:{EPHEMERAL_PORT}"
+    assert endpoint.host == f"127.0.0.1:{EPHEMERAL_PORT}"
     assert endpoint.scheme == "http"
     assert endpoint.port == EPHEMERAL_PORT
     assert endpoint.token == TOKEN
@@ -142,7 +145,7 @@ def test_resolve_backend_endpoint_never_transmits_the_token(
 
         def configured(consumer, origin, *, owner_exception):
             assert consumer == "runtime.local_probe"
-            assert origin == f"http://localhost:{EPHEMERAL_PORT}"
+            assert origin == f"http://127.0.0.1:{EPHEMERAL_PORT}"
             assert owner_exception.consumer == consumer
             assert owner_exception.origin == origin
             return RejectingClient()

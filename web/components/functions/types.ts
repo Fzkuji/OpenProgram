@@ -1,5 +1,5 @@
 /**
- * Shared types for the /functions page.
+ * Shared types for the /programs page.
  */
 
 export type FunctionInfo = {

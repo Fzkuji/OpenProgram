@@ -19,7 +19,7 @@ from openprogram.agent.resource_governance import (
     ResourceLimits,
     resolve_resource_limits,
 )
-from openprogram.agent.task.types import Task
+from openprogram.agent.job.types import Job
 from openprogram.usage.event import UsageEvent
 from openprogram.usage.ledger import UsageLedger
 
@@ -37,21 +37,21 @@ def _governor(db_path, **limits):
     )
     return ResourceGovernor(
         UsageLedger(db_path),
-        limit_resolver=lambda _sid, _task: resolved,
+        limit_resolver=lambda _sid, _job: resolved,
         session_limit_resolver=lambda _sid: resolved,
     )
 
 
-def _admit(governor, task_id, session="s1", **kw):
-    task = Task(
-        id=task_id, parent_session_id=session, prompt="p", agent_id="a", **kw,
+def _admit(governor, job_id, session="s1", **kw):
+    job = Job(
+        id=job_id, parent_session_id=session, prompt="p", agent_id="a", **kw,
     )
-    return task, governor.admit_task(task, persist=lambda _t: None)
+    return job, governor.admit_job(job, persist=lambda _t: None)
 
 
 def _live_count(ledger):
     return ledger.connection().execute(
-        "SELECT COUNT(*) FROM task_admissions WHERE state IN ('live','stopping')"
+        "SELECT COUNT(*) FROM job_admissions WHERE state IN ('live','stopping')"
     ).fetchone()[0]
 
 
@@ -65,29 +65,29 @@ def _reserved_tokens(ledger):
 # --- admission boundary ----------------------------------------------------
 
 def test_persist_failure_rolls_back_admission_and_scope(tmp_path):
-    """A crash between the admission insert and the task-store write must
+    """A crash between the admission insert and the job-store write must
     leave neither a phantom admission nor an orphan budget scope."""
     governor = _governor(tmp_path / "usage.db")
     ledger = governor.ledger
 
-    def explode(_task):
-        raise OSError("task store unavailable")
+    def explode(_job):
+        raise OSError("job store unavailable")
 
-    task = Task(id="t1", parent_session_id="s1", prompt="p", agent_id="a")
+    job = Job(id="t1", parent_session_id="s1", prompt="p", agent_id="a")
     with pytest.raises(OSError):
-        governor.admit_task(task, persist=explode)
+        governor.admit_job(job, persist=explode)
 
     assert ledger.connection().execute(
-        "SELECT COUNT(*) FROM task_admissions"
+        "SELECT COUNT(*) FROM job_admissions"
     ).fetchone()[0] == 0
     assert ledger.connection().execute(
-        "SELECT COUNT(*) FROM budget_scopes WHERE scope_kind = 'task'"
+        "SELECT COUNT(*) FROM budget_scopes WHERE scope_kind = 'job'"
     ).fetchone()[0] == 0
 
 
 # --- dispatch claim boundary ----------------------------------------------
 
-def test_concurrent_claims_never_hand_one_task_to_two_owners(tmp_path):
+def test_concurrent_claims_never_hand_one_job_to_two_owners(tmp_path):
     """20 threads racing claim_next must produce disjoint claims."""
     governor = _governor(tmp_path / "usage.db")
     for index in range(8):
@@ -110,8 +110,8 @@ def test_concurrent_claims_never_hand_one_task_to_two_owners(tmp_path):
     for thread in threads:
         thread.join()
 
-    ids = [claim.task_id for claim in claims]
-    assert len(ids) == len(set(ids)), "a task was claimed twice"
+    ids = [claim.job_id for claim in claims]
+    assert len(ids) == len(set(ids)), "a job was claimed twice"
     # Scheduler capacity is the hard ceiling regardless of contention.
     assert len(ids) <= 4
     assert _live_count(governor.ledger) == len(ids)
@@ -139,8 +139,8 @@ def test_claim_is_capped_by_scheduler_capacity_across_processes(tmp_path):
         proc.join(timeout=30)
 
     claimed = [output.get() for _ in range(6)]
-    won = [task_id for task_id in claimed if task_id is not None]
-    assert len(won) == len(set(won)), "two processes claimed the same task"
+    won = [job_id for job_id in claimed if job_id is not None]
+    assert len(won) == len(set(won)), "two processes claimed the same job"
     assert len(won) <= 4
 
 
@@ -148,10 +148,10 @@ def _claim_process(db_path, index, start, output) -> None:
     start.wait()
     resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=4)
     governor = ResourceGovernor(
-        UsageLedger(db_path), limit_resolver=lambda _sid, _task: resolved,
+        UsageLedger(db_path), limit_resolver=lambda _sid, _job: resolved,
     )
     claim = governor.claim_next(owner_instance_id=f"worker_{index}")
-    output.put(claim.task_id if claim is not None else None)
+    output.put(claim.job_id if claim is not None else None)
 
 
 # --- provider reserve / settle boundary -----------------------------------
@@ -162,15 +162,15 @@ def test_crash_before_settle_holds_exposure_and_recovers_once(tmp_path):
     requests that never started."""
     governor = _governor(tmp_path / "usage.db", max_total_tokens=10_000)
     ledger = governor.ledger
-    task, _ = _admit(governor, "t1")
+    job, _ = _admit(governor, "t1")
     model = type("M", (), {"max_tokens": 100, "cost": None})()
 
     never_started = governor.reserve_provider_request(
-        task.id, input_token_upper_bound=10,
+        job.id, input_token_upper_bound=10,
         requested_max_output_tokens=20, model=model,
     )
     started = governor.reserve_provider_request(
-        task.id, input_token_upper_bound=10,
+        job.id, input_token_upper_bound=10,
         requested_max_output_tokens=20, model=model,
     )
     governor.start_provider_request(started.reservation_id)
@@ -199,10 +199,10 @@ def test_settlement_failure_leaves_no_partial_usage(tmp_path, monkeypatch):
     and the reservation state — never one without the other."""
     governor = _governor(tmp_path / "usage.db", max_total_tokens=10_000)
     ledger = governor.ledger
-    task, _ = _admit(governor, "t1")
+    job, _ = _admit(governor, "t1")
     model = type("M", (), {"max_tokens": 100, "cost": None})()
     reservation = governor.reserve_provider_request(
-        task.id, input_token_upper_bound=10,
+        job.id, input_token_upper_bound=10,
         requested_max_output_tokens=20, model=model,
     )
     governor.start_provider_request(reservation.reservation_id)
@@ -233,10 +233,10 @@ def test_double_terminal_event_settles_exactly_once(tmp_path):
     once and the second settle is a no-op, not a double charge."""
     governor = _governor(tmp_path / "usage.db", max_total_tokens=10_000)
     ledger = governor.ledger
-    task, _ = _admit(governor, "t1")
+    job, _ = _admit(governor, "t1")
     model = type("M", (), {"max_tokens": 100, "cost": None})()
     reservation = governor.reserve_provider_request(
-        task.id, input_token_upper_bound=10,
+        job.id, input_token_upper_bound=10,
         requested_max_output_tokens=20, model=model,
     )
     governor.start_provider_request(reservation.reservation_id)
@@ -259,13 +259,13 @@ def test_double_terminal_event_settles_exactly_once(tmp_path):
 
 
 def test_accounting_outage_denies_rather_than_billing_blind(tmp_path):
-    """An ungoverned task id cannot reserve: a budgeted call must be denied
+    """An ungoverned job id cannot reserve: a budgeted call must be denied
     with a stable reason instead of proceeding unmetered."""
     governor = _governor(tmp_path / "usage.db", max_total_tokens=10_000)
     model = type("M", (), {"max_tokens": 100, "cost": None})()
 
     plan = governor.reserve_provider_request(
-        "no-such-task", input_token_upper_bound=10,
+        "no-such-job", input_token_upper_bound=10,
         requested_max_output_tokens=20, model=model,
     )
     assert plan.allowed is False
@@ -275,7 +275,7 @@ def test_accounting_outage_denies_rather_than_billing_blind(tmp_path):
 def test_concurrent_reservations_cannot_exceed_the_shared_ceiling(tmp_path):
     """20 threads reserving against one budget must not oversubscribe it."""
     governor = _governor(tmp_path / "usage.db", max_total_tokens=1_000)
-    task, _ = _admit(governor, "t1")
+    job, _ = _admit(governor, "t1")
     model = type("M", (), {"max_tokens": 50, "cost": None})()
 
     barrier = threading.Barrier(20)
@@ -285,7 +285,7 @@ def test_concurrent_reservations_cannot_exceed_the_shared_ceiling(tmp_path):
     def reserve() -> None:
         barrier.wait()
         plan = governor.reserve_provider_request(
-            task.id, input_token_upper_bound=100,
+            job.id, input_token_upper_bound=100,
             requested_max_output_tokens=50, model=model,
         )
         if plan.allowed:
@@ -305,11 +305,11 @@ def test_concurrent_reservations_cannot_exceed_the_shared_ceiling(tmp_path):
 # --- finalization boundary -------------------------------------------------
 
 def test_terminal_write_failure_keeps_the_claim_for_recovery(tmp_path):
-    """If the terminal task-store write raises, the admission must not be
+    """If the terminal job-store write raises, the admission must not be
     released on a half-written state."""
     governor = _governor(tmp_path / "usage.db")
     ledger = governor.ledger
-    task, _ = _admit(governor, "t1")
+    job, _ = _admit(governor, "t1")
     claim = governor.claim_next(owner_instance_id="worker")
     assert claim is not None
 
@@ -318,8 +318,8 @@ def test_terminal_write_failure_keeps_the_claim_for_recovery(tmp_path):
         "error": None, "reason_code": "completed",
     }
     with pytest.raises(OSError):
-        governor.finalize_task(
-            task.id, "completed",
+        governor.finalize_job(
+            job.id, "completed",
             owner_instance_id="worker",
             lease_generation=claim.lease_generation,
             terminal_fields=fields,
@@ -334,7 +334,7 @@ def test_concurrent_finalize_writes_the_terminal_state_once(tmp_path):
     second is idempotent — but the terminal store write happens once and
     capacity is released once."""
     governor = _governor(tmp_path / "usage.db")
-    task, _ = _admit(governor, "t1")
+    job, _ = _admit(governor, "t1")
     claim = governor.claim_next(owner_instance_id="worker")
     assert claim is not None
 
@@ -353,8 +353,8 @@ def test_concurrent_finalize_writes_the_terminal_state_once(tmp_path):
 
     def finalize() -> None:
         barrier.wait()
-        ok = governor.finalize_task(
-            task.id, "completed",
+        ok = governor.finalize_job(
+            job.id, "completed",
             owner_instance_id="worker",
             lease_generation=claim.lease_generation,
             terminal_fields=fields,
@@ -376,30 +376,30 @@ def test_concurrent_finalize_writes_the_terminal_state_once(tmp_path):
     assert len(mutations) == 1, "the terminal store write ran twice"
     assert _live_count(governor.ledger) == 0
     assert governor.ledger.connection().execute(
-        "SELECT COUNT(*) FROM task_admissions WHERE state = 'released'"
+        "SELECT COUNT(*) FROM job_admissions WHERE state = 'released'"
     ).fetchone()[0] == 1
 
 
-def test_stale_lease_generation_cannot_release_a_reclaimed_task(tmp_path):
-    """The ABA case: a worker whose lease expired and whose task was
+def test_stale_lease_generation_cannot_release_a_reclaimed_job(tmp_path):
+    """The ABA case: a worker whose lease expired and whose job was
     reclaimed must not release the successor's claim."""
     governor = _governor(tmp_path / "usage.db")
-    task, _ = _admit(governor, "t1")
+    job, _ = _admit(governor, "t1")
     stale = governor.claim_next(owner_instance_id="instance_old")
     assert stale is not None
 
     # Reclaim: back to queued, then claimed by a new owner with a new
     # generation.
-    assert governor.requeue_task(
-        task.id, owner_instance_id="instance_old",
+    assert governor.requeue_job(
+        job.id, owner_instance_id="instance_old",
         lease_generation=stale.lease_generation,
     )
     fresh = governor.claim_next(owner_instance_id="instance_new")
     assert fresh is not None
     assert fresh.lease_generation != stale.lease_generation
 
-    assert governor.release_task(
-        task.id, "cancel.user",
+    assert governor.release_job(
+        job.id, "cancel.user",
         owner_instance_id="instance_old",
         lease_generation=stale.lease_generation,
     ) is False

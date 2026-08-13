@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from openprogram.functions import (
+from openprogram.programs import (
     DEFERRED_DEFAULT_TOOLS,
     RESIDENT_TOOLS,
     apply_default_deferral,
@@ -198,7 +198,7 @@ def test_tool_search_returns_the_schema_for_same_turn_use():
     full schema so the model can construct the call this turn."""
     install_loaded_deferred()
     apply_default_deferral()
-    from openprogram.functions._runtime import _tool_search_impl
+    from openprogram.programs._runtime import _tool_search_impl
 
     text = _tool_search_impl("select:playwright_browser")
     assert "playwright_browser" in text

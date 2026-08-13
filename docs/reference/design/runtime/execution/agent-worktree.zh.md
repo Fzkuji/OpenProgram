@@ -26,7 +26,7 @@
 - `created_at`: unix 时间戳
 - `status`: `active` / `committing` / `merged` / `discarded` / `kept`
 - `parent_session_id`: 关联的 OpenProgram session（一对一或一对多）
-- `parent_task_id`: 关联的 async task（若有）
+- `parent_job_id`: 关联的 async task（若有）
 - `created_by_agent`: agent id（记录是哪个 agent 开的，UI 上能看出来）
 - `pr_number`: 通过 `worktree_create` 的 `pr` 参数开出来的 worktree 会记这个值（见 D5b）；
   后续再对同一个 PR 号调用 `pr` 模式时，靠它识别出重复而不是再开一个
@@ -44,7 +44,7 @@ OpenProgram 的工具分两类：
    bash 走 `get_active_backend().run(...)`，目前 `LocalBackend.run` 接收
    `cwd` 参数但调用方没传；edit / write / read 强制要求绝对路径。
 
-`openprogram/functions/_runtime.py` 里的 ContextVar
+`openprogram/programs/_runtime.py` 里的 ContextVar
 `_current_worktree_path: Optional[str]` 承载当前路径。dispatcher 每次进 turn 时，
 若 session 当前有 active worktree（从 session meta 读），就 `set` 这个 var。
 工具实现按需消费：
@@ -198,7 +198,7 @@ discard 前不做自动备份。把丢弃的内容打 tar 塞 `~/.openprogram/di
 
 ### D10. Worktree 跟 task 的关系
 
-async task 系统（见 `async-task-lifecycle.md`）：
+async task 系统（见 `async-job-lifecycle.md`）：
 
 - 一个 task 可以独占创建并使用 worktree（task_create → worktree_create）。
 - task cancel 时，task 持有的 worktree 默认走 `discard force=True`。
@@ -500,9 +500,9 @@ dependencies 里，它只通过`semble`（一个 MCP 开发工具）传递引入
 | 3 | 新建 `openprogram/worktree/_paths.py` | worktree path 策略：`~/.openprogram/worktrees/<id>-<slug>/`；隔离校验（D4）|
 | 4 | 改 `openprogram/agent/internals/_workdir.py` | `apply_default_workdir` 优先返回 active worktree path |
 | 5 | 改 `openprogram/agent/dispatcher.py` | turn 开始时读 session.meta.active_worktree_id → 设 `_current_worktree_path` ContextVar |
-| 6 | 改 `openprogram/functions/tools/bash/bash.py` | 调 `backend.run(cmd, cwd=_current_worktree_path.get())` |
-| 7 | 改 `openprogram/functions/tools/edit/edit.py` + write/read | 路径落在 worktree 之外时写 warning（D6）|
-| 8 | 新建 `openprogram/functions/tools/worktree/` | 4 个 @function 工具：worktree_create / worktree_merge / worktree_discard / worktree_list；走 WorktreeManager |
+| 6 | 改 `openprogram/programs/functions/bash/bash.py` | 调 `backend.run(cmd, cwd=_current_worktree_path.get())` |
+| 7 | 改 `openprogram/programs/functions/edit/edit.py` + write/read | 路径落在 worktree 之外时写 warning（D6）|
+| 8 | 新建 `openprogram/programs/functions/worktree/` | 4 个 @function 工具：worktree_create / worktree_merge / worktree_discard / worktree_list；走 WorktreeManager |
 | 9 | 改 `openprogram/store/session/session_store.py` | session.meta 加 `active_worktree_id` 字段；helper `set_active_worktree` / `get_active_worktree` |
 | 10 | 新建 `openprogram/webui/ws_actions/worktree.py` | `list_worktrees` / `keep_worktree` / `discard_worktree`（用户手动 UI 操作）|
 | 11 | 新建 `web/components/chat/composer/worktree-chip.tsx` | chip 组件 + hover panel + Merge/Discard/Keep 按钮 |

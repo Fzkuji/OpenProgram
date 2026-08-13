@@ -107,10 +107,10 @@ def run_query(
         TurnRequest as _TurnRequest,
         process_user_turn as _process_user_turn,
     )
-    from openprogram.functions.permission_rule import load_merged_rules as _load_merged_rules
+    from openprogram.programs.permission_rule import load_merged_rules as _load_merged_rules
 
     # One turn per session: claiming the token fails closed when another
-    # turn (chat, task worker, MCP, ACP) already owns this session, so a
+    # turn (chat, job worker, MCP, ACP) already owns this session, so a
     # second turn can never displace the live one mid-flight.
     _chat_cancel_event = threading.Event()
     if not _s._claim_cancel_event(session_id, _chat_cancel_event):

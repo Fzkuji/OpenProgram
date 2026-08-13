@@ -1,7 +1,7 @@
 """Worktree persistence — single ``~/.openprogram/worktrees.json``.
 
 Worktrees are cross-session resources (a plan agent can hand one
-off to a sub-task, the user can keep a worktree across session
+off to a sub-job, the user can keep a worktree across session
 restarts). So persistence lives in a single profile-scoped file,
 NOT inside any one session repo. Schema::
 
@@ -13,7 +13,7 @@ write. The file is small (one short JSON row per active worktree)
 so locking the whole file rather than per-row is acceptable.
 
 Atomic writes use the ``tmp + replace`` pattern, identical to
-``openprogram.agent.task.store._write_raw``.
+``openprogram.agent.job.store._write_raw``.
 """
 from __future__ import annotations
 
@@ -46,6 +46,15 @@ def _load_raw() -> dict[str, dict[str, Any]]:
     rows = blob.get("worktrees")
     if not isinstance(rows, dict):
         return {}
+    changed = False
+    for row in rows.values():
+        if isinstance(row, dict) and "parent_task" in row:
+            if "parent_job" not in row:
+                row["parent_job"] = row["parent_task"]
+            row.pop("parent_task", None)
+            changed = True
+    if changed:
+        _write_raw(rows)
     return rows
 
 
@@ -94,7 +103,7 @@ def list_worktrees(
     *,
     status_filter: Optional[set[WorktreeStatus]] = None,
     parent_session: Optional[str] = None,
-    parent_task: Optional[str] = None,
+    parent_job: Optional[str] = None,
 ) -> list[Worktree]:
     """Return all worktrees matching the filters, newest-first."""
     with _FILE_LOCK:
@@ -109,7 +118,7 @@ def list_worktrees(
             continue
         if parent_session is not None and wt.parent_session != parent_session:
             continue
-        if parent_task is not None and wt.parent_task != parent_task:
+        if parent_job is not None and wt.parent_job != parent_job:
             continue
         out.append(wt)
     out.sort(key=lambda w: w.created_at or 0, reverse=True)
@@ -126,8 +135,8 @@ def find_active_for_session(session_id: str) -> Optional[Worktree]:
     return rows[0] if rows else None
 
 
-def find_for_task(task_id: str) -> Optional[Worktree]:
-    rows = list_worktrees(parent_task=task_id)
+def find_for_job(job_id: str) -> Optional[Worktree]:
+    rows = list_worktrees(parent_job=job_id)
     return rows[0] if rows else None
 
 
@@ -137,5 +146,5 @@ __all__ = [
     "delete_worktree",
     "list_worktrees",
     "find_active_for_session",
-    "find_for_task",
+    "find_for_job",
 ]

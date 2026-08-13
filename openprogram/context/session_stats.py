@@ -129,7 +129,7 @@ def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
     # runtime 的 provider 没走采集路径）就回退到会话当前 toolset，
     # 这样 /context 对所有 provider 都能显示 tools/per-tool。
     try:
-        from openprogram.functions import agent_tools as _agent_tools
+        from openprogram.programs import agent_tools as _agent_tools
         if latest_tools:
             tools = _agent_tools(names=list(latest_tools))
         elif sess.get("tools_enabled", True):
@@ -230,7 +230,7 @@ def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
     # deferred 只计 catalog 一行。
     try:
         import json as _json
-        from openprogram.functions._runtime import all_tools as _all
+        from openprogram.programs._runtime import all_tools as _all
         mcp_items = []
         mcp_loaded_total = 0
         mcp_deferred_total = 0

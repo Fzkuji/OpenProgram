@@ -2,7 +2,7 @@
 
 A **harness** (an *agentic program*) is a self-contained git repo of
 agentic functions. `openprogram programs install` records its source under
-`openprogram/functions/agentics/`, and its functions then register like
+`openprogram/programs/agentic_functions/`, and its functions then register like
 built-ins. This is a **general mechanism**: the first-party programs
 (gui / research / wiki) and any third-party repo install the exact same
 way. Cross-platform (macOS / Linux / Windows); no symlinks required.
@@ -40,7 +40,7 @@ openprogram programs install <ref> --upgrade    # git pull + re-resolve deps
 The same four steps for first-party and third-party:
 
 1. **Shallow-clone** the repo into
-   `openprogram/functions/agentics/<Repo-Name>/` — a real, editable
+   `openprogram/programs/agentic_functions/<Repo-Name>/` — a real, editable
    directory (not site-packages). The clone is git-ignored by
    OpenProgram, so it stays an independent checkout you can `git pull`
    or edit in place.
@@ -54,7 +54,7 @@ The same four steps for first-party and third-party:
 4. **Record the owner-approved source.** On the next launch the registry imports
    only recorded `<package>.agentics` packages, the
    `@agentic_function` decorators fire, and the functions appear in
-   chat / the Functions page / `openprogram programs run`.
+   chat / the Programs page / `openprogram programs run`.
 
 Guard rails: for an existing **dev symlink**, `install` verifies the harness
 contract and records the link without modifying its target. It refuses a
@@ -77,7 +77,7 @@ interactively.
 > a YOLO detector weight + OCR models that aren't on PyPI. After the
 > install, run the harness's own installer to fetch them (it skips the
 > host since you already have it):
-> `openprogram/functions/agentics/GUI-Agent-Harness/scripts/install.sh --no-host`
+> `openprogram/programs/applications/gui_harness/scripts/install.sh --no-host`
 > (Windows: `…\scripts\install.ps1 -NoHost`). See the
 > [GUI install guide](https://github.com/Fzkuji/GUI-Agent-Harness#1-install).
 
@@ -102,7 +102,7 @@ with their contract status; `openprogram programs uninstall
 `<AGENTICS>` is OpenProgram's bundled-functions folder:
 
 ```bash
-python -c "import openprogram,os;print(os.path.join(os.path.dirname(openprogram.__file__),'functions','agentics'))"
+python -c "import openprogram,os;print(os.path.join(os.path.dirname(openprogram.__file__),'programs','applications'))"
 ```
 
 ```bash

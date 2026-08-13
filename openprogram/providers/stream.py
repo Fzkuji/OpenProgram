@@ -26,11 +26,11 @@ from .types import (
 
 
 @contextmanager
-def _task_operation_deadline():
-    """Bind one provider request to the claimed task's remaining time."""
-    from openprogram.agent.task.runner import (
-        current_task_operation_timeout,
-        record_current_task_activity,
+def _job_operation_deadline():
+    """Bind one provider request to the claimed job's remaining time."""
+    from openprogram.agent.job.runner import (
+        current_job_operation_timeout,
+        record_current_job_activity,
     )
     from openprogram.providers.utils.deadline import (
         get_deadline,
@@ -38,15 +38,15 @@ def _task_operation_deadline():
         set_deadline,
     )
 
-    timeout = current_task_operation_timeout(None, preemptibility="async")
+    timeout = current_job_operation_timeout(None, preemptibility="async")
     deadline = None if timeout is None else time.monotonic() + timeout
     outer = get_deadline()
     if outer is not None and (deadline is None or outer < deadline):
         deadline = outer
     token = set_deadline(deadline) if deadline is not None else None
-    record_current_task_activity("operation_start")
+    record_current_job_activity("operation_start")
     try:
-        yield record_current_task_activity
+        yield record_current_job_activity
     finally:
         if token is not None:
             reset_deadline(token)
@@ -62,7 +62,7 @@ async def stream_simple(
     Automatically resolves API key from environment if not provided.
     Mirrors streamSimple() from TypeScript.
     """
-    with _task_operation_deadline() as record_activity:
+    with _job_operation_deadline() as record_activity:
         provider = get_api_provider(model.api)
         async for event in stream_simple_with_provider(provider, model, context, options):
             record_activity("provider_data")
@@ -161,7 +161,7 @@ async def stream(
     Stream with provider-specific options (no reasoning normalization).
     Mirrors stream() from TypeScript.
     """
-    with _task_operation_deadline() as record_activity:
+    with _job_operation_deadline() as record_activity:
         opts = options or StreamOptions()
 
         provider = get_api_provider(model.api)

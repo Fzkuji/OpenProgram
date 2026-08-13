@@ -2,7 +2,7 @@
 Run control for turn execution: pause / cancel / session binding /
 active-runtime registry.
 
-This is turn-execution state, not a UI concern — the web UI, the task
+This is turn-execution state, not a UI concern — the web UI, the job
 runner, channels, process runners and long-running tools all steer the
 same machine. Importing this module claims the core's host-integration
 seams (``set_cancellation_check`` / ``set_session_id_provider``), which
@@ -112,7 +112,7 @@ _cancel_flags_lock = threading.Lock()
 
 # (session_id, execution_id) → the token owned by that execution. A None
 # execution_id is the foreground slot shared by Web, MCP and ACP turns, which
-# admit one at a time; background tasks sharing a session bind their task id
+# admit one at a time; background jobs sharing a session bind their job id
 # so a stop aimed at one never reaches a sibling.
 # Absent when no turn is in flight, which is why a stop between turns is a
 # no-op rather than a flag that poisons whatever runs next.
@@ -129,7 +129,7 @@ _cancel_cleanup_leases: dict[str, threading.Event] = {}
 # threading.Thread starts, so the value is always set from inside the worker.
 _current_session_id: ContextVar = ContextVar("_current_session_id", default=None)
 
-# Background tasks sharing a session bind their task id here. Foreground
+# Background jobs sharing a session bind their job id here. Foreground
 # turns leave it as None and retain the historical single-turn semantics.
 _current_execution_id: ContextVar = ContextVar(
     "_current_execution_id", default=None,
@@ -190,7 +190,7 @@ def register_cancel_event(
 ) -> None:
     """Adopt a caller-owned Event as the session's current turn token.
 
-    Kept for call sites (chat turns, task runner) that create their own
+    Kept for call sites (chat turns, job runner) that create their own
     Event and hand it to the dispatcher. The Event becomes the token's
     Event, so tripping either one is visible through both.
     """
@@ -287,7 +287,7 @@ def is_turn_running(session_id: str) -> bool:
     """True while a turn is in flight on this session.
 
     The authoritative in-process busy check: every turn entry point that
-    can run concurrently (webui chat, task runner workers) registers its
+    can run concurrently (webui chat, job runner workers) registers its
     cancel token in ``_current_tokens`` and unregisters it in a finally
     block, so presence here means a turn is executing right now.
     send_message uses this to decide direct delivery vs. inbox queueing.

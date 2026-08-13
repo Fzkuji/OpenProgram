@@ -9,7 +9,7 @@ Design: docs/design/runtime/tool-toggle-management.md §4.2 (hard constraint),
 """
 from __future__ import annotations
 
-from openprogram.functions import agent_tools, DEFAULT_TOOLS
+from openprogram.programs import agent_tools, DEFAULT_TOOLS
 
 
 def _names(tools):

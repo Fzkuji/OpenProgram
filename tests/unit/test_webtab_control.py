@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.functions.tools.browser._actions import open_action
+from openprogram.programs.functions.browser._actions import open_action
 from openprogram.webui.ws_actions import webtab
 
 

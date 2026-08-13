@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Profile + favorites + icons mutation hook for the /functions page.
+ * Profile + favorites + icons mutation hook for the /programs page.
  *
  * Owns no state itself — wraps the functions that mutate
  * ``FunctionsMeta`` (favorites array, profiles map, icons map) and

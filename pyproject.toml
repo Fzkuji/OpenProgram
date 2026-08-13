@@ -215,7 +215,7 @@ include = ["openprogram*"]
 # working tree (gitignored, each with its own .venv/ and multi-GB model
 # artifacts). They are installed at runtime by `openprogram programs
 # install <name>`, never shipped in this wheel.
-exclude = ["openprogram.functions.agentics.*"]
+exclude = ["openprogram.programs.agentic_functions.*"]
 
 [tool.setuptools.package-data]
 # Non-.py files the package reads at RUNTIME. Without these the wheel
@@ -291,7 +291,7 @@ select = ["E722", "S110"]
 "openprogram/commands/*" = ["E722", "S110"]
 "openprogram/contextgit/*" = ["E722", "S110"]
 "openprogram/events/*" = ["E722", "S110"]
-"openprogram/functions/*" = ["E722", "S110"]
+"openprogram/programs/*" = ["E722", "S110"]
 "openprogram/mcp/*" = ["E722", "S110"]
 "openprogram/memory/*" = ["E722", "S110"]
 "openprogram/plugins/*" = ["E722", "S110"]

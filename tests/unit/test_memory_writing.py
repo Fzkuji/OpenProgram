@@ -704,7 +704,7 @@ def test_a_repaired_commit_is_a_success(tmp_path, no_tools, monkeypatch):
 
 
 def test_the_runtimes_own_turns_are_not_conversation():
-    """``task_followup`` and ``merge_turn`` rows are written by the
+    """``job_followup`` and ``merge_turn`` rows are written by the
     dispatcher so the model has a turn to answer (``dispatcher/prep.py``
     marks them ``display="runtime"``, and the reply carries the same
     ``source``). Nobody said them, so they are not evidence."""
@@ -714,9 +714,9 @@ def test_the_runtimes_own_turns_are_not_conversation():
         _turn(0, "user", "who is dave"),
         _turn(1, "assistant", "your neighbour"),
         {**_turn(2, "user", "[系统消息] the sub-agent finished"),
-         "source": "task_followup", "display": "runtime"},
+         "source": "job_followup", "display": "runtime"},
         {**_turn(3, "assistant", "noted, I will read it"),
-         "source": "task_followup"},
+         "source": "job_followup"},
         {**_turn(4, "user", "merge the branch"),
          "source": "merge_turn", "display": "runtime"},
         {**_turn(5, "assistant", "merged"), "source": "merge_turn"},
@@ -798,8 +798,8 @@ def test_a_session_that_owes_nothing_costs_no_model_call(memory_root, written):
 
     messages = [
         {**_turn(0, "user", "the sub-agent finished"),
-         "source": "task_followup", "display": "runtime"},
-        {**_turn(1, "assistant", "noted"), "source": "task_followup"},
+         "source": "job_followup", "display": "runtime"},
+        {**_turn(1, "assistant", "noted"), "source": "job_followup"},
         _turn(2, "assistant", ""),
     ]
 

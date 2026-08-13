@@ -478,7 +478,7 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
   }
   function cancel(e: React.MouseEvent) {
     e.stopPropagation();
-    if (attach.task_id) wsSend({ action: "cancel_task", task_id: attach.task_id });
+    if (attach.job_id) wsSend({ action: "cancel_job", job_id: attach.job_id });
   }
   const preview = card.content || "";
   const detail: DetailNode = {
@@ -498,7 +498,7 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
       detail={detail}
       actions={
         <>
-          {running && attach.task_id ? (
+          {running && attach.job_id ? (
             <button type="button" className="tl-btn" onClick={cancel}>
               {text("Cancel", "取消")}
             </button>

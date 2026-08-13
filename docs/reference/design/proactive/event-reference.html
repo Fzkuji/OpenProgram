@@ -362,8 +362,8 @@ cat /tmp/openprogram-events.jsonl</div>
 // 子系统定义（顺序 = 页面顺序 = 导航顺序）
 const SUBS = [
   {id:"agentloop", key:"c-agentloop", title:"agent 主循环", where:"openprogram/agent/agent_loop.py · dispatcher/", desc:"一次对话 turn 的核心：用户消息进来、模型回复、工具调用、turn 结束——事件层最密集的来源，全部带 session/turn 关联。"},
-  {id:"tools", key:"c-tools", title:"工具", where:"openprogram/functions/tools/{write,edit,apply_patch}", desc:"写文件的工具改动磁盘后发出信号，让别处知道某文件被改了。"},
-  {id:"task", key:"c-task", title:"子任务 runner", where:"openprogram/agent/task/runner.py · sub_agent_run.py", desc:"后台子任务（subagent）的生命周期：起、止，以及 spawn 后通知前端重载 DAG。"},
+  {id:"tools", key:"c-tools", title:"工具", where:"openprogram/programs/functions/{write,edit,apply_patch}", desc:"写文件的工具改动磁盘后发出信号，让别处知道某文件被改了。"},
+  {id:"task", key:"c-task", title:"子任务 runner", where:"openprogram/agent/job/runner.py · sub_agent_run.py", desc:"后台子任务（subagent）的生命周期：起、止，以及 spawn 后通知前端重载 DAG。"},
   {id:"auth", key:"c-auth", title:"凭据 auth", where:"openprogram/agent/event_bridges.py（桥）", desc:"凭据池的限流/轮换/耗尽。auth 自带规范的发布订阅，由一座「桥」翻译进总线（只桥有响应价值的三种）。"},
   {id:"context", key:"c-context", title:"上下文 context", where:"openprogram/context/engine.py", desc:"上下文预算逼近上限时建议压缩、以及压缩完成。"},
   {id:"memory", key:"c-memory", title:"记忆 memory", where:"openprogram/memory/session_watcher.py", desc:"空闲会话的 wiki ingest（后台记忆处理）起止。"},
@@ -384,10 +384,10 @@ const EVENTS = [
   {sub:"agentloop", type:"tool.after", origin:"tool", frame:false, gate:false, purpose:"工具执行完成（成功或失败）", when:"tool.execute() 之后", file:"agent/agent_loop.py:586-587", fields:[["tool","str","工具名"],["is_error","bool","是否出错"]]},
   {sub:"agentloop", type:"turn.ended", origin:"agent", frame:false, gate:false, purpose:"一轮结束（出错/中止 或 工具结果后）", when:"turn 的两个出口", file:"agent/agent_loop.py:267,293", fields:[["reason","str","出错/中止原因（出口一）"],["tool_results","int","本轮工具结果数（出口二）"]]},
   // 工具
-  {sub:"tools", type:"file.changed", origin:"tool", frame:false, gate:false, purpose:"文件被 write/edit/apply_patch 改动", when:"写文件成功后", file:"functions/tools/{write,edit,apply_patch}", fields:[["path","str","文件路径"],["op","str","write | edit | delete"]]},
+  {sub:"tools", type:"file.changed", origin:"tool", frame:false, gate:false, purpose:"文件被 write/edit/apply_patch 改动", when:"写文件成功后", file:"programs/functions/{write,edit,apply_patch}", fields:[["path","str","文件路径"],["op","str","write | edit | delete"]]},
   // 子任务
-  {sub:"task", type:"subagent.started", origin:"system", frame:false, gate:false, purpose:"后台子任务转入 RUNNING", when:"task 状态→RUNNING", file:"agent/task/runner.py:114-117", fields:[["task_id","str",""],["label","str","任务标签"]]},
-  {sub:"task", type:"subagent.ended", origin:"system", frame:false, gate:false, purpose:"后台子任务到达终止态", when:"task 终止（完成/失败/取消）", file:"agent/task/runner.py:120-123", fields:[["task_id","str",""],["status","str","终止状态"],["error","str","失败时的错误"]]},
+  {sub:"task", type:"subagent.started", origin:"system", frame:false, gate:false, purpose:"后台子任务转入 RUNNING", when:"task 状态→RUNNING", file:"agent/job/runner.py:114-117", fields:[["task_id","str",""],["label","str","任务标签"]]},
+  {sub:"task", type:"subagent.ended", origin:"system", frame:false, gate:false, purpose:"后台子任务到达终止态", when:"task 终止（完成/失败/取消）", file:"agent/job/runner.py:120-123", fields:[["task_id","str",""],["status","str","终止状态"],["error","str","失败时的错误"]]},
   {sub:"task", type:"session_reload", origin:"system", frame:true, gate:false, purpose:"通知 UI 重载 DAG（task tool spawn 后）", when:"sub-agent spawn 完成", file:"agent/sub_agent_run.py:207-209", fields:[["session_id","str",""],["reason","str","重载原因"]]},
   // auth
   {sub:"auth", type:"credential.cooldown", origin:"system", frame:false, gate:false, purpose:"凭据被限流进入冷却（429 等）", when:"AuthEvent POOL_MEMBER_COOLDOWN 经桥翻译", file:"agent/event_bridges.py（_AUTH_TYPE_MAP）", fields:[["provider","str",""],["profile","str",""],["credential","str",""],["detail","dict","原始细节"]]},

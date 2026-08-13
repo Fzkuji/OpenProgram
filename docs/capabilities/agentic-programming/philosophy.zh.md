@@ -32,7 +32,7 @@ Agentic Programming 把控制权还给程序员：
 
 把一个复杂任务拆解成函数调用图。图上的每个节点，你决定：
 - **不需要推理的** —— 用普通 Python 函数
-- **需要理解 / 生成 / 判断的** —— 用 `@agentic_function` 装饰，函数体里调 `runtime.exec(...)` 触发 LLM
+- **需要理解 / 生成 / 判断的** —— 用 `@agentic_function` 装饰，函数体里调 `llm(...)`
 
 LLM 变成一个工具，被你调用、被你约束、被你组合。
 
@@ -42,15 +42,16 @@ LLM 变成一个工具，被你调用、被你约束、被你组合。
 
 ### 1. `@agentic_function`
 
-一个装饰器。被它装饰的函数，docstring 作为描述性上下文随调用传递，函数体里的 `runtime.exec(...)` 触发模型调用。`runtime` 参数自动注入。
+一个装饰器。被它装饰的函数，docstring 作为描述性上下文随调用传递，函数体里的 `llm(...)` 发起一次模型调用。装饰器提供环境 runtime。
 
 ```python
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 
 @agentic_function
 def summarize(text: str, runtime=None) -> str:
     """Summarize a text in one sentence, preserving the core point."""
-    return runtime.exec(content=[{"type": "text", "text": (
+    return llm([{"type": "text", "text": (
         f"Summarize in one sentence, preserving the core point:\n\n{text}"
     )}])
 ```
@@ -64,13 +65,13 @@ LLM 调用的运行时抽象。负责：
 - 调用底层 provider（Anthropic / OpenAI / Claude Code / ...）
 - 把结果写回上下文
 
-`Runtime.exec()` 是唯一的 LLM 入口。所有模型调用都走这里。
+用户编排代码使用 `llm()` 发起单次模型请求。`Runtime.exec()` 保留为其下层的嵌入与基础设施 API。
 
 ### 3. `Context`
 
 执行过程的自动记录。每个用户轮次、每次 LLM 调用、每次函数调用都是同一张**扁平 DAG** 上的一个节点；边有两种：`caller`（哪个函数发起了这个节点）和 `reads`（一次 LLM 调用的 prompt 看到了哪些节点）。每个节点记录输入、输出、token 用量、耗时、失败原因。
 
-这张 DAG 不只是执行轨迹——它同时是**每次 LLM 调用的历史来源**：`runtime.exec()` 从 DAG 渲染出自己的消息历史。装饰器上的两个旋钮按函数塑造这条数据流：
+这张 DAG 不只是执行轨迹——它同时是**每次 LLM 调用的历史来源**：`llm()` 通过环境 runtime 从 DAG 渲染消息历史。装饰器上的两个旋钮按函数塑造这条数据流：
 
 - `expose` —— 一次调用完成后向父级暴露什么（默认 `"io"`：函数名 + 输入 + 输出，内部细节隐藏）。
 - `render_range` —— 函数自身的 `exec` 拉取多少历史。`render_range={"callers": 0}` 得到一个隔离的草稿上下文，看不到任何先前对话。
@@ -81,7 +82,7 @@ LLM 调用的运行时抽象。负责：
 
 ### LLM 也写代码
 
-LLM 不只是运行时的推理引擎，它也可以**写代码**——生成、修改、修复符合规范的 `@agentic_function`。这件事不需要专门的 `create()` / `fix()` 框架函数；agent 直接用普通的文件编辑工具完成，遵循 [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md) 这份规范——文件放哪、装饰器元数据、docstring 与 `content` 的分工、校验清单。后台 watcher 会重扫 `functions/agentics/` 并热加载新模块：import 时 `@agentic_function` 装饰器触发、自行注册，刚写完的函数无需重启即可调用。
+LLM 不只是运行时的推理引擎，它也可以**写代码**——生成、修改、修复符合规范的 `@agentic_function`。这件事不需要专门的 `create()` / `fix()` 框架函数；agent 直接用普通的文件编辑工具完成，遵循 [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md) 这份规范——文件放哪、装饰器元数据、docstring 与 `content` 的分工、校验清单。后台 watcher 会重扫 `programs/agentic_functions/` 并热加载新模块：import 时 `@agentic_function` 装饰器触发、自行注册，刚写完的函数无需重启即可调用。
 
 代码是数据，LLM 是编译器，函数是产品 —— 循环闭合。
 
@@ -89,7 +90,7 @@ LLM 不只是运行时的推理引擎，它也可以**写代码**——生成、
 
 Agentic Programming 同时是：
 - **一个库** —— 你写 `@agentic_function`，手动搭 pipeline
-- **一个跑着的产品** —— 在 CLI 或 WebUI 里聊天，让 agent 帮你把函数写出来；生成的文件落到 `functions/agentics/` 并热加载
+- **一个跑着的产品** —— 在 CLI 或 WebUI 里聊天，让 agent 帮你把函数写出来；生成的文件落到 `programs/agentic_functions/` 并热加载
 
 初学者从提需求开始，拿到手的就是完整可读的 Python 文件。想深挖的人再 import 手写。这是一个**可以被逐步理解**的工具。
 
@@ -106,7 +107,7 @@ Agentic Programming 同时是：
 
 ## OpenProgram = 范式的产品化
 
-`agentic_programming/` 子包是范式的引擎代码。`context/` 实现扁平 DAG 上下文模型。`providers/` 适配各家 LLM。`functions/agentics/` 是这个范式下已经写好的函数和应用。`webui/` 让初学者不写代码也能跑。
+`agentic_programming/` 子包是范式的引擎代码。`context/` 实现扁平 DAG 上下文模型。`providers/` 适配各家 LLM。`programs/agentic_functions/` 是这个范式下已经写好的函数和应用。`webui/` 让初学者不写代码也能跑。
 
 范式先行，产品为用。
 

@@ -14,7 +14,7 @@ reply on the second call. The full path exercised:
 What this catches that test_dispatcher_integration.py doesn't:
 
   * ToolCall → registry lookup wiring (was broken before — dispatcher
-    used to import ``openprogram.functions.registry`` which doesn't exist)
+    used to import ``openprogram.programs.registry`` which doesn't exist)
   * tool_use / tool_result envelope shape (TUI/web depend on these)
   * approval gate blocking (5-min timer + ApprovalRegistry)
   * char-cap truncation and persist_full disk-write actually firing
@@ -46,8 +46,8 @@ from openprogram.providers.types import (
     ToolCall,
     Usage,
 )
-from openprogram.functions import _runtime as R
-from openprogram.functions._runtime import function
+from openprogram.programs import _runtime as R
+from openprogram.programs._runtime import function
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +175,7 @@ def fresh_registry(monkeypatch: pytest.MonkeyPatch):
     R._toolset_membership.clear()
     R._unsafe_in_channel.clear()
     R._cache.clear()
-    import openprogram.functions as _functions
+    import openprogram.programs as _functions
     monkeypatch.setattr(_functions, "_exposed_set", lambda: None)
     yield R
     R._registry.clear()
@@ -232,7 +232,7 @@ def test_resolve_default_agent_tools_from_profile_dict(
     fresh_registry,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import openprogram.functions as tools_pkg
+    import openprogram.programs as tools_pkg
 
     @function(name="safeprobe", description="Safe")
     def safeprobe() -> str:
@@ -363,7 +363,7 @@ def test_persist_full_writes_file(
     # ``write_text`` doesn't blow up.
     results_dir = tmp_path / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr("openprogram.functions._runtime._tool_results_dir",
+    monkeypatch.setattr("openprogram.programs._runtime._tool_results_dir",
                         lambda: results_dir)
 
     @function(name="persistprobe", description="Persist",

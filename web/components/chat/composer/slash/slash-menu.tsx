@@ -131,7 +131,7 @@ function slashDescription(c: SlashCommand, text: (en: string, zh: string) => str
       return text("Open the memory page in a new tab", "在新标签页打开记忆页面");
     case "/task":
       return text(
-        "Run another agent in this session as a new branch. Default inherits this conversation; --clean starts at a new root. Add --async to spawn the task to the background runner.",
+        "Run another agent in this session as a new branch. Default inherits this conversation; --clean starts at a new root. Add --async to spawn a background job.",
         "在当前会话中以新分支运行另一个 Agent。默认继承当前会话；--clean 从新根开始；--async 放到后台运行。",
       );
     case "/merge":

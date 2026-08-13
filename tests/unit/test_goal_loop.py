@@ -21,7 +21,7 @@ from unittest.mock import patch
 import pytest
 
 import openprogram.agent.goal as G
-import openprogram.functions.agentics.goal as GF
+import openprogram.programs.agentic_functions.goal as GF
 
 # The autouse fixture replaces G._emit_goal_update with a collector;
 # keep a module-import-time reference so the payload-shape test can

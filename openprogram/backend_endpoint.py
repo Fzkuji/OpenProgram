@@ -370,9 +370,13 @@ def select_connect_host(bind_host: str) -> str:
 
 def select_request_origin(active_access: ActiveWebAccess) -> str:
     """Pick the effective Origin an internal client should present."""
+    # The bound address first: "localhost" may resolve to ::1 while the
+    # server binds 127.0.0.1 only, and the pinned-address HTTP client
+    # dials exactly one resolved address — an alias that resolves to the
+    # wrong stack is refused.
     preferred = (
-        f"http://localhost:{active_access.port}",
         f"http://{select_connect_host(active_access.bind_host)}:{active_access.port}",
+        f"http://localhost:{active_access.port}",
     )
     for origin in preferred:
         if origin in active_access.effective_origins:

@@ -123,7 +123,7 @@ def prepare_turn(
     # turn predates attribution" instead of granting both the benefit of
     # the doubt.
     stamp_schema(user_msg)
-    # System-internal triggers — task_followup auto-notification,
+    # System-internal triggers — job_followup auto-notification,
     # merge prompt assembly — write a user-role node so the LLM
     # treats it as a turn, but they're NOT chats the human typed.
     # Mark display="runtime" so the chat panel renders them as a
@@ -137,7 +137,7 @@ def prepare_turn(
     # the natural "You" message on that branch's HEAD path. On main,
     # the linear_history walk doesn't reach it (it's only on the sub
     # branch chain), so leaving it visible doesn't pollute main.
-    if req.source in {"task_followup", "merge_turn"}:
+    if req.source in {"job_followup", "merge_turn"}:
         user_msg["display"] = "runtime"
     if memory_prefetch:
         # Replay reproduces the exact wire user message from the node.

@@ -106,7 +106,7 @@ function AccountRow({
   const base = `/api/providers/${encodeURIComponent(provider)}/accounts`;
 
   const [renaming, setRenaming] = useState(false);
-  const [renameVal, setRenameVal] = useState(account.name);
+  const [renameVal, setRenameVal] = useState(account.label || account.name);
   const [editingKey, setEditingKey] = useState(false);
   const [replacement, setReplacement] = useState("");
   const [vres, setVres] = useState<{ status: string; detail?: string } | null>(null);
@@ -126,7 +126,7 @@ function AccountRow({
   async function doRename() {
     const nv = renameVal.trim();
     setRenaming(false);
-    if (!nv || nv === account.id) return;
+    if (!nv || nv === (account.label || account.name)) return;
     // A refused rename (name taken, invalid characters) answers 4xx and leaves
     // the account named as it was — surface it instead of showing the new name.
     const r = await fetch(`${base}/rename`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ id: account.id, name: nv }) });
@@ -201,10 +201,10 @@ function AccountRow({
             onBlur={doRename} />
         ) : (
           <span className={styles.acctName}>
-            <span className={styles.acctNameText}>{account.name}</span>
+            <span className={styles.acctNameText}>{account.label || account.name}</span>
             {/* Keep rename and cancel controls on the same compact icon size. */}
             <button className={styles.iconBtn} title={text("Rename", "重命名")}
-              onClick={() => { setRenameVal(account.name); setRenaming(true); }} style={{ flexShrink: 0 }}>
+              onClick={() => { setRenameVal(account.label || account.name); setRenaming(true); }} style={{ flexShrink: 0 }}>
               <Pencil size={15} />
             </button>
           </span>
@@ -454,12 +454,12 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
           the key box and the sign-in button coexist instead of the sign-in
           entry disappearing. */}
       {state.add_mode === "api_key" && (provider.login_methods?.length ?? 0) > 0 && (
-        <ProviderLogin provider={provider} accountId={newName.trim() || undefined} bare
+        <ProviderLogin provider={provider} accountLabel={newName.trim() || undefined} bare
           leadingInput={<Input className="flex-1 font-mono" placeholder={text("name (optional)", "名字（可选）")} value={newName} onChange={(e) => setNewName(e.target.value)} />}
           onChanged={() => { setNewName(""); load(); onChanged?.(); }} />
       )}
       {state.add_mode === "login" && (
-        <ProviderLogin provider={provider} accountId={newName.trim() || undefined} bare
+        <ProviderLogin provider={provider} accountLabel={newName.trim() || undefined} bare
           leadingInput={<Input className="flex-1 font-mono" placeholder={text("name (optional)", "名字（可选）")} value={newName} onChange={(e) => setNewName(e.target.value)} />}
           onChanged={() => { setNewName(""); load(); }} />
       )}

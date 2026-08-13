@@ -9,7 +9,7 @@ subsystem contributes to the bus, and which parts of the framework the design le
 ![Six mechanisms each going their own way](diagrams/framework-asis.svg)
 
 Without a bus, a signal exists for one purpose only: letting the frontend see it. That
-purpose wires every signal straight into the webui server's `_broadcast` — task_status,
+purpose wires every signal straight into the webui server's `_broadcast` — job_status,
 channel_turn, and skills:changed each connect with their own JSON, while agent events
 arrive through the dispatcher callback chain. webui is a UI component, so making it the
 routing point puts a UI concern in the framework's signal path. The gaps are worse than
@@ -73,7 +73,7 @@ What stays fixed matters as much as what changes. The bus design does not reach 
 
 - The dispatcher's seven-stage turn orchestration, or the external signature of `process_user_turn`
 - session git DAG storage and contextgit
-- TaskRunner's thread-pool model
+- JobRunner's thread-pool model
 - The `ApprovalRegistry` approval mechanism, which the interrogation point reuses rather than rewrites
 - AuthStore itself, which is bridged rather than modified
 - The frontend WS protocol, which stays transparent to the frontend because webui broadcasts unchanged frames

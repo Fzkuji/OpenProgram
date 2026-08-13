@@ -4,7 +4,7 @@
 
 ## Agentic Programming 范式
 
-OpenProgram 的底座是 Agentic Programming：**Python 控制流程，LLM 提供推理**。你把任务拆成函数调用图，不需要推理的节点写普通 Python，需要理解 / 生成 / 判断的节点用 `@agentic_function` 装饰，在函数体里通过 `runtime.exec(...)` 调用模型。执行顺序、状态、重试都是普通代码，可以单元测试。
+OpenProgram 的底座是 Agentic Programming：**Python 控制流程，LLM 提供推理**。你把任务拆成函数调用图，不需要推理的节点写普通 Python，需要理解 / 生成 / 判断的节点用 `@agentic_function` 装饰，在函数体里通过 `llm(...)` 调用模型。执行顺序、状态、重试都是普通代码，可以单元测试。
 
 - [Agentic Programming 指南](agentic-programming/README.md) —— 编写函数的学习路径与三种"选择下一步"机制
 - [设计哲学](agentic-programming/philosophy.md) —— 范式解决什么问题、为什么反转控制权

@@ -609,7 +609,7 @@ class agentic_function:
          outer side, just nested execution.
 
       2. **LLM tool dispatch**: every instance bridges itself into the
-         shared ``openprogram.functions._runtime._registry`` via
+         shared ``openprogram.programs._runtime._registry`` via
          ``_register_as_tool`` (delegating to the same
          ``_build_and_register_tool`` helper ``@function`` uses). From
          the dispatcher's perspective the result is an ``AgentTool``
@@ -718,7 +718,7 @@ class agentic_function:
         # The function-calling refactor unified these names with the
         # @function decorator so an @agentic_function and an @function
         # produce equivalent ``AgentTool`` entries in the same
-        # ``openprogram.functions._runtime._registry``. The agentic
+        # ``openprogram.programs._runtime._registry``. The agentic
         # decorator adds DAG recording + inner agent loop spawning on
         # top of the shared registration machinery.
         as_tool: bool = True,
@@ -852,7 +852,7 @@ class agentic_function:
     def spec(self) -> dict:
         """JSON-schema tool spec auto-generated from signature + docstring.
 
-        Mirrors openprogram.functions.<name>.SPEC so an @agentic_function can be
+        Mirrors openprogram.programs.<name>.SPEC so an @agentic_function can be
         passed directly to runtime.exec(tools=[fn]). Runtime-injected params
         (runtime, exec_runtime, review_runtime) and any `hidden: True` entries
         in input_meta are excluded — they aren't LLM-controllable.
@@ -873,7 +873,7 @@ class agentic_function:
         """Bridge this @agentic_function into the shared AgentTool registry.
 
         Sits next to ``@function``-decorated tools in the same
-        ``openprogram.functions._runtime._registry``, so the LLM can
+        ``openprogram.programs._runtime._registry``, so the LLM can
         call this function via tool_call dispatch and so all 6 gating
         layers (available_if / toolset / mode preset / check_fn /
         deny rules / defer) apply uniformly.
@@ -897,10 +897,10 @@ class agentic_function:
             return  # nothing to wrap yet
 
         # Lazy imports to avoid a hard cycle on package init —
-        # @agentic_function may be imported before openprogram.functions
+        # @agentic_function may be imported before openprogram.programs
         # is fully constructed.
         from openprogram.agent.types import AgentToolResult
-        from openprogram.functions._runtime import (
+        from openprogram.programs._runtime import (
             _build_and_register_tool,
             _normalize_result,
             _effective_max_chars,

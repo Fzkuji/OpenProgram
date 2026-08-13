@@ -4,7 +4,7 @@
  *
  * One declaration serves both sides: the `WindowEventMap` augmentation at
  * the bottom makes `window.dispatchEvent` reject a mistyped detail AND
- * makes `window.addEventListener("op:task-status", h)` infer `h`'s
+ * makes `window.addEventListener("op:job-status", h)` infer `h`'s
  * argument, so neither the dispatcher nor the listeners need
  * `as CustomEvent<...>` / `as EventListener` casts.
  *
@@ -21,18 +21,18 @@ export interface PermissionRulesDetail {
   ask?: string[];
 }
 
-/** `openprogram/agent/task/runner.py:_broadcast_task_status` */
-export type TaskResourceLimitName =
+/** `openprogram/agent/job/runner.py:_broadcast_job_status` */
+export type JobResourceLimitName =
   | "max_live_per_session"
   | "max_queued_per_session"
-  | "max_tasks_per_session"
+  | "max_jobs_per_session"
   | "max_total_tokens"
   | "max_runtime_seconds"
   | "idle_timeout_seconds"
   | "max_cost_usd";
 
-export interface TaskResourceView {
-  task_id: string;
+export interface JobResourceView {
+  job_id: string;
   status: string;
   resource_state: string;
   reason_code: string | null;
@@ -40,7 +40,7 @@ export interface TaskResourceView {
   retryable: boolean;
   limits: {
     scheduler_capacity: number;
-    limits: Record<TaskResourceLimitName, {
+    limits: Record<JobResourceLimitName, {
       configured: number | string | null;
       effective: number | string | null;
       source: string;
@@ -50,7 +50,7 @@ export interface TaskResourceView {
     scheduler_capacity: number;
     session_live: { used: number; limit: number | null };
     session_queued: { used: number; limit: number | null };
-    session_tasks: { used: number; limit: number | null };
+    session_jobs: { used: number; limit: number | null };
     queue_position: number | null;
   };
   budget: {
@@ -77,8 +77,8 @@ export interface TaskResourceView {
   };
 }
 
-export interface TaskStatusDetail {
-  task_id?: string;
+export interface JobStatusDetail {
+  job_id?: string;
   session_id?: string;
   status?: string;
   parent_msg_id?: string | null;
@@ -90,11 +90,11 @@ export interface TaskStatusDetail {
   created_at?: number | string | null;
   started_at?: number | string | null;
   completed_at?: number | string | null;
-  resource?: TaskResourceView | null;
+  resource?: JobResourceView | null;
 }
 
 /**
- * Reply-envelope shape shared by `op:task-message` and the
+ * Reply-envelope shape shared by `op:job-message` and the
  * `op:ws-message` catch-all: the original frame's `type` plus its
  * `data` dict, re-emitted so the panel that issued the request can
  * correlate the response.
@@ -107,8 +107,8 @@ export interface WsEnvelopeDetail<T = Record<string, unknown>> {
 declare global {
   interface WindowEventMap {
     "op:permission-rules": CustomEvent<PermissionRulesDetail>;
-    "op:task-status": CustomEvent<TaskStatusDetail>;
-    "op:task-message": CustomEvent<WsEnvelopeDetail>;
+    "op:job-status": CustomEvent<JobStatusDetail>;
+    "op:job-message": CustomEvent<WsEnvelopeDetail>;
     "op:ws-message": CustomEvent<WsEnvelopeDetail>;
   }
 }

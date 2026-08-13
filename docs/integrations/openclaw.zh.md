@@ -50,36 +50,37 @@ import os
 sys.path.insert(0, os.path.expanduser("~/.openclaw/workspace/OpenProgram"))
 
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 from openprogram.providers.registry import create_runtime
 
 runtime = create_runtime(provider="claude-code", model="haiku")
 
 
 @agentic_function
-def decompose(task):
+def decompose(task, runtime=None):
     """把复杂任务拆解成可执行的步骤。"""
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": f"把这个任务拆解成 3-5 个具体、可执行的步骤：\n{task}\n\n编号，要具体。"},
     ])
 
 
 @agentic_function
-def assess(step):
+def assess(step, runtime=None):
     """评估一个步骤的难度和时间。"""
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": f"对这个步骤给出：难度（简单/中等/困难）和时间估计。\n格式：[难度] ~X小时\n\n步骤：{step}"},
     ])
 
 
 @agentic_function
-def plan(task):
+def plan(task, runtime=None):
     """为任务创建详细计划。"""
-    steps_text = decompose(task=task)
+    steps_text = decompose(task=task, runtime=runtime)
 
     lines = [l.strip() for l in steps_text.split("\n") if l.strip() and l.strip()[0].isdigit()]
     assessments = []
     for line in lines[:5]:
-        a = assess(step=line)
+        a = assess(step=line, runtime=runtime)
         assessments.append(f"{line}\n   → {a}")
 
     return "\n\n".join(assessments)
@@ -87,7 +88,7 @@ def plan(task):
 
 if __name__ == "__main__":
     task = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "构建一个带认证的 REST API"
-    result = plan(task=task)
+    result = plan(task=task, runtime=runtime)
     print(result)
 ```
 
@@ -118,32 +119,33 @@ OpenClaw 和 OpenProgram 使用同一套 AgentSkills 兼容的 `SKILL.md` 格式
 OpenClaw agent 调用的代码审查脚本。
 """
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 from openprogram.providers.registry import create_runtime
 
 runtime = create_runtime(provider="claude-code", model="haiku")
 
 
 @agentic_function
-def review_code(code, language="python"):
+def review_code(code, language="python", runtime=None):
     """审查代码的 bug、风格问题和改进建议。"""
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": f"审查这段 {language} 代码。列出：\n1. Bug（如果有）\n2. 风格问题\n3. 改进建议\n\n```{language}\n{code}\n```"},
     ])
 
 
 @agentic_function
-def suggest_tests(code):
+def suggest_tests(code, runtime=None):
     """为代码建议测试用例。"""
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": f"为这段代码建议 3 个测试用例。每个给出：测试名称、输入、期望输出。\n\n```python\n{code}\n```"},
     ])
 
 
 @agentic_function
-def code_analysis(code):
+def code_analysis(code, runtime=None):
     """完整代码分析：审查 + 测试建议。"""
-    review = review_code(code=code)
-    tests = suggest_tests(code=code)
+    review = review_code(code=code, runtime=runtime)
+    tests = suggest_tests(code=code, runtime=runtime)
     return f"## 代码审查\n{review}\n\n## 建议测试\n{tests}"
 ```
 
@@ -160,13 +162,14 @@ import json
 import sys
 
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 from openprogram.providers.registry import create_runtime
 
 runtime = create_runtime(provider="claude-code", model="haiku")
 
 
 @agentic_function
-def summarize_text(text, style="bullet_points"):
+def summarize_text(text, style="bullet_points", runtime=None):
     """按指定风格总结文本。"""
     style_instructions = {
         "bullet_points": "用 3-5 个要点总结。",
@@ -175,7 +178,7 @@ def summarize_text(text, style="bullet_points"):
     }
     instruction = style_instructions.get(style, style_instructions["bullet_points"])
 
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": f"{instruction}\n\n文本：\n{text}"},
     ])
 
@@ -186,7 +189,7 @@ if __name__ == "__main__":
     args = request.get("args", {})
 
     if tool == "summarize":
-        result = summarize_text(**args)
+        result = summarize_text(**args, runtime=runtime)
         print(json.dumps({"result": result}))
     else:
         print(json.dumps({"error": f"未知工具: {tool}"}))

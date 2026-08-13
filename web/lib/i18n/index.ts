@@ -150,7 +150,7 @@ const DICT = {
   // Sidebar secondary labels and actions
   "sidebar.toggle": { en: "Toggle sidebar", zh: "切换侧边栏" },
   "sidebar.refresh": { en: "Refresh", zh: "刷新" },
-  "sidebar.favorite_functions": { en: "Favorite Functions", zh: "收藏函数" },
+  "sidebar.favorite_functions": { en: "Favorite Programs", zh: "收藏程序" },
   "sidebar.show": { en: "Show", zh: "显示" },
   "sidebar.hide": { en: "Hide", zh: "隐藏" },
   "sidebar.clear_all": { en: "Clear all", zh: "清空全部" },
@@ -261,8 +261,8 @@ const DICT = {
   "right.merge_ellipsis": { en: "Merge...", zh: "合并..." },
   "right.merge": { en: "Merge", zh: "合并" },
   "right.clear_selection": { en: "Clear selection", zh: "清除选择" },
-  "right.task_running_merge_wait": {
-    en: "Task is running; wait for it to finish before merging",
+  "right.job_running_merge_wait": {
+    en: "Job is running; wait for it to finish before merging",
     zh: "任务正在运行，完成后才能合并",
   },
   "right.deselect_base_hint": {

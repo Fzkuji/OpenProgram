@@ -14,16 +14,17 @@ hard-coded in Python.
 
 - Use the `@agentic_function` decorator
 - Call multiple sub-`@agentic_function`s in a fixed order
-- `exec()` is optional: skip it (pure chaining), or call it multiple times
-  (each call creates one exec child node)
+- `llm()` is optional: skip it (pure chaining), or call it multiple times
+  (each call creates one `llm` child node)
 - Data flows between sub-functions through plain Python variables
-- One function may call `exec()` multiple times AND call any number of other
+- One function may call `llm()` multiple times AND call any number of other
   `@agentic_function`s
 
-## Example: no exec, pure chaining
+## Example: no LLM call, pure chaining
 
 ```python
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 
 @agentic_function(input={
     "task": {"description": "Research topic."},
@@ -37,7 +38,7 @@ def research_pipeline(task: str, runtime=None) -> dict:
     return {"survey": survey, "gaps": gaps, "ideas": ideas}
 ```
 
-## Example: one exec call to summarise
+## Example: one `llm()` call to summarise
 
 ```python
 @agentic_function(input={
@@ -49,7 +50,7 @@ def research_pipeline(task: str, runtime=None) -> str:
     gaps = identify_gaps(survey=survey, runtime=runtime)
     ideas = generate_ideas(gaps=gaps, runtime=runtime)
 
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": (
             f"Survey:\n{survey}\n\n"
             f"Gaps:\n{gaps}\n\n"

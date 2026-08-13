@@ -16,10 +16,10 @@ import type { ChatMsg } from "@/lib/session-store";
 
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
-import type { TaskResourceView } from "@/lib/net/ws-events";
+import type { JobResourceView } from "@/lib/net/ws-events";
 import { navigate } from "@/lib/navigate";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
-import { taskResourceDetails } from "@/lib/task-resource";
+import { jobResourceDetails } from "@/lib/job-resource";
 import {
   type AnimatedNavIconHandle,
   ArrowUpRightIcon,
@@ -72,11 +72,11 @@ function _activeHeadId(sessionId: string | null | undefined): string {
 }
 
 /** Look up the auto-followup user msg that the runner wrote after
- *  this attach pointer's task completed. Matches by walking forward
+ *  this attach pointer's job completed. Matches by walking forward
  *  in this session's message order from the attach pointer and
- *  picking up the next user msg with ``source === "task_followup"``.
+ *  picking up the next user msg with ``source === "job_followup"``.
  *  Returns its rendered content (the "[系统消息]..." prompt) so the
- *  attach card can surface it inline. Returns null when the task
+ *  attach card can surface it inline. Returns null when the job
  *  hasn't completed or the relationship isn't found. */
 function _findFollowupMsgId(
   s: ReturnType<typeof useSessionStore.getState>,
@@ -90,7 +90,7 @@ function _findFollowupMsgId(
   for (let i = myIdx + 1; i < order.length; i++) {
     const next = s.messagesById[order[i]];
     if (!next) continue;
-    if (next.role === "user" && next.source === "task_followup") {
+    if (next.role === "user" && next.source === "job_followup") {
       return next.id;
     }
   }
@@ -120,8 +120,8 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   const [expanded, setExpanded] = useState(false);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const attach = msg.attach || {};
-  const taskId = attach.task_id;
-  const [resource, setResource] = useState<TaskResourceView>();
+  const jobId = attach.job_id;
+  const [resource, setResource] = useState<JobResourceView>();
   const followupNotice = useFollowupNotice(msg.id);
   const followupMsgId = useFollowupMsgId(msg.id);
   const targetSessionId = attach.session_id || "";
@@ -168,29 +168,29 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
 
   useEffect(() => {
     setResource(undefined);
-    if (!taskId) return;
-    const onStatus = (e: WindowEventMap["op:task-status"]) => {
-      if (e.detail?.task_id !== taskId || !e.detail.resource) return;
+    if (!jobId) return;
+    const onStatus = (e: WindowEventMap["op:job-status"]) => {
+      if (e.detail?.job_id !== jobId || !e.detail.resource) return;
       setResource(e.detail.resource);
     };
-    const onMessage = (e: WindowEventMap["op:task-message"]) => {
-      if (e.detail?.type !== "task") return;
+    const onMessage = (e: WindowEventMap["op:job-message"]) => {
+      if (e.detail?.type !== "job") return;
       const data = e.detail.data as {
-        task?: { id?: string; resource?: TaskResourceView } | null;
+        job?: { id?: string; resource?: JobResourceView } | null;
       } | undefined;
-      if (data?.task?.id !== taskId) return;
-      setResource(data.task.resource);
+      if (data?.job?.id !== jobId) return;
+      setResource(data.job.resource);
     };
-    window.addEventListener("op:task-status", onStatus);
-    window.addEventListener("op:task-message", onMessage);
-    wsSend({ action: "get_task", task_id: taskId });
+    window.addEventListener("op:job-status", onStatus);
+    window.addEventListener("op:job-message", onMessage);
+    wsSend({ action: "get_job", job_id: jobId });
     return () => {
-      window.removeEventListener("op:task-status", onStatus);
-      window.removeEventListener("op:task-message", onMessage);
+      window.removeEventListener("op:job-status", onStatus);
+      window.removeEventListener("op:job-message", onMessage);
     };
-  }, [taskId]);
+  }, [jobId]);
 
-  const resourceDetails = taskResourceDetails(resource);
+  const resourceDetails = jobResourceDetails(resource);
   function resourceLabel(key: (typeof resourceDetails)[number]["key"]): string {
     if (key === "state") return text("Resource state", "资源状态");
     if (key === "tokens") return text("Tokens remaining", "Token 剩余");
@@ -217,7 +217,7 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   }
 
   // Label intro: "Attached" for user-triggered attaches (Branches →
-  // Attach to), "Spawned" for /task or task() invocations, "Imported"
+  // Attach to), "Spawned" for /job or job() invocations, "Imported"
   // for legacy cross-session attaches. Title-cased and human-readable
   // so the chat row reads "Attached: alpha A" not "attached · alpha A".
   const isManual = !!attach.manual;
@@ -271,11 +271,11 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
                   attach.status === "running"
                     ? text("Sub-agent is still running", "子 Agent 仍在运行")
                     : attach.status === "errored"
-                      ? text("Sub-task errored", "子任务出错")
+                      ? text("Sub-job errored", "子任务出错")
                       : attach.status === "cancelled"
-                        ? text("Sub-task cancelled", "子任务已取消")
+                        ? text("Sub-job cancelled", "子任务已取消")
                         : attach.status === "pending" || attach.status === "queued"
-                          ? text("Sub-task is waiting to start", "子任务等待开始")
+                          ? text("Sub-job is waiting to start", "子任务等待开始")
                           : ""
                 }
               >
@@ -357,8 +357,8 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
           </span>
         </div>
       ) : null}
-      {/* Live-task footer: cancel button for in-flight tasks. */}
-      {attach.task_id
+      {/* Live-job footer: cancel button for in-flight jobs. */}
+      {attach.job_id
         && (attach.status === "running" || attach.status === "pending"
             || attach.status === "queued") ? (
         <div className="attach-card-footer">
@@ -370,8 +370,8 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
             className="attach-card-cancel"
             onClick={() => {
               wsSend({
-                action: "cancel_task",
-                task_id: attach.task_id,
+                action: "cancel_job",
+                job_id: attach.job_id,
               });
             }}
             title={text("Stop this sub-agent", "停止这个子 Agent")}
@@ -380,14 +380,14 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
           </button>
         </div>
       ) : null}
-      {/* Auto-followup notice — surfaced after the task completes.
+      {/* Auto-followup notice — surfaced after the job completes.
           The runner writes a synthetic ``[系统消息]…`` user msg to
-          trigger the parent agent to react to the sub-task's output.
+          trigger the parent agent to react to the sub-job's output.
           That msg lives on the main lane (display=runtime, hidden
           from the chat panel) but the user kept asking "what is
           this DAG node I'm hovering?" because it wasn't surfaced
           anywhere. Show it inline as a small italic footer on the
-          attach card so the card represents the full sub-task
+          attach card so the card represents the full sub-job
           lifecycle: spawn → status → preview → auto-followup. */}
       {expanded && followupNotice ? (
         <div

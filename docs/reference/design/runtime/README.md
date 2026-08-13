@@ -7,7 +7,7 @@ Agent execution runtime — the run loop, worktrees, async tasks, streaming/resu
 - [`dag/branch-collaboration.md`](dag/branch-collaboration.md) — branch collaboration (communication / dispatch / merge) design and implementation steps
 - [`execution/agent-call-flow.md`](execution/agent-call-flow.md) — the call-flow skeleton (turn / loop, orthogonal to the node model)
 - [`execution/agent-worktree.md`](execution/agent-worktree.md)
-- [`execution/async-task-lifecycle.md`](execution/async-task-lifecycle.md)
+- [`execution/async-job-lifecycle.md`](execution/async-job-lifecycle.md)
 - [`execution/dispatcher-split.md`](execution/dispatcher-split.md) — break `agent/dispatcher.py` into a responsibility-scoped package (no-1000-line rule)
 - [`operations/multi-agent-revert-todo.md`](operations/multi-agent-revert-todo.md)
 - [`operations/file-management.md`](operations/file-management.md)

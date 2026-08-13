@@ -45,24 +45,24 @@ describe('handleSlash', () => {
     expect(ctx.pushSystem).toHaveBeenCalled();
   });
 
-  it('/tasks requests canonical task DTOs for the active session', () => {
+  it('/jobs requests canonical job DTOs for the active session', () => {
     const send = vi.fn();
     const ctx = makeCtx({
       client: { send } as never,
       currentConversation: 'session-1',
     });
-    expect(handleSlash('/tasks', ctx)).toBe(true);
+    expect(handleSlash('/jobs', ctx)).toBe(true);
     expect(send).toHaveBeenCalledWith({
-      action: 'list_tasks',
+      action: 'list_jobs',
       session_id: 'session-1',
     });
   });
 
-  it('/tasks <id> requests one canonical task DTO', () => {
+  it('/jobs <id> requests one canonical job DTO', () => {
     const send = vi.fn();
     const ctx = makeCtx({ client: { send } as never });
-    expect(handleSlash('/tasks t1', ctx)).toBe(true);
-    expect(send).toHaveBeenCalledWith({ action: 'get_task', task_id: 't1' });
+    expect(handleSlash('/jobs t1', ctx)).toBe(true);
+    expect(send).toHaveBeenCalledWith({ action: 'get_job', job_id: 't1' });
   });
 
   it('/clear empties committed', () => {

@@ -147,7 +147,7 @@ footer a{color:var(--cyan); text-decoration:none}
     <tr><td><b>EventBus</b></td><td><span class="bad">闲置，零订阅</span></td><td>升级（类型订阅 + 进程级单例）并启用</td><td><span class="chg core">核心</span></td></tr>
     <tr><td><b>agent loop</b></td><td>AgentEvent 内部流；<span class="bad">hooks 返回值被丢</span></td><td>关键节点同时 emit 总线；tool.before 加同步问询<span class="good">（可拦了）</span></td><td><span class="chg s">小</span></td></tr>
     <tr><td><b>webui server</b></td><td><span class="bad">被所有人直连，事实上的中枢</span></td><td>订阅总线转发前端；旧直连逐源退役</td><td><span class="chg m">中</span></td></tr>
-    <tr><td><b>task runner</b></td><td>直连 _broadcast task_status</td><td>emit <code>subagent.*</code>，广播由 webui 订阅转发</td><td><span class="chg s">小</span></td></tr>
+    <tr><td><b>task runner</b></td><td>直连 _broadcast job_status</td><td>emit <code>subagent.*</code>，广播由 webui 订阅转发</td><td><span class="chg s">小</span></td></tr>
     <tr><td><b>dispatcher</b></td><td>on_event 回调链直达 webui</td><td>保留（过渡期），另 emit <code>user.prompt_submitted</code> 等</td><td><span class="chg s">小</span></td></tr>
     <tr><td><b>channels</b></td><td>broadcast_channel_turn 直连</td><td>emit <code>channel.*</code>；直连保留过渡</td><td><span class="chg s">小</span></td></tr>
     <tr><td><b>auth</b></td><td>自己的 _emit/subscribe<span class="good">（已经做对了）</span></td><td><b>自身不动</b>，一段桥接翻译进总线</td><td><span class="chg xs">极小</span></td></tr>
@@ -198,7 +198,7 @@ footer a{color:var(--cyan); text-decoration:none}
   <div class="keep">
     <span><b>dispatcher 七阶段编排</b>process_user_turn 对外签名不变</span>
     <span><b>session git DAG 存储</b>contextgit 与节点模型不动</span>
-    <span><b>TaskRunner 线程池模型</b>subagent 执行方式不变</span>
+    <span><b>JobRunner 线程池模型</b>subagent 执行方式不变</span>
     <span><b>ApprovalRegistry</b>被复用，不被改写</span>
     <span><b>AuthStore 自身</b>桥接，不动它</span>
     <span><b>前端 WS 协议</b>webui 切换后对前端透明</span>

@@ -11,7 +11,7 @@
 ## 设计要点
 
 - **不要**使用 `@agentic_function` 装饰器
-- **不要**调用 `runtime.exec()`
+- **不要**调用 `llm()`
 - 不需要 `runtime` 参数
 - 使用标准的 Google 风格 docstring
 

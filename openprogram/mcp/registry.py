@@ -273,6 +273,6 @@ async def _stop_and_unregister(name: str) -> None:
         # Defer the import to avoid a cycle: functions._runtime imports
         # nothing from us, but pulling it in at module load time would
         # tie startup ordering tighter than necessary.
-        from openprogram.functions._runtime import _registry
+        from openprogram.programs._runtime import _registry
         for tname in tool_names:
             _registry.pop(tname, None)

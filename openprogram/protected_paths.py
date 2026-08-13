@@ -1,6 +1,6 @@
 """The two never-writable paths, resolved without importing anything heavy.
 
-The sandbox used to reach into ``openprogram.functions`` for these, which
+The sandbox used to reach into ``openprogram.programs`` for these, which
 dragged the whole tool registry into every policy construction — one
 unrelated tool failing to import took the sandbox down with it. Both paths
 only depend on where the ``openprogram`` package sits and on ``paths``, so
@@ -13,8 +13,8 @@ import os
 PROGRAM_SOURCES_FILE = "program-sources.json"
 
 
-def agentics_root() -> str:
-    """Absolute path to ``openprogram/functions/agentics``.
+def applications_root() -> str:
+    """Absolute path to ``openprogram/programs/applications``.
 
     Computed from the top-level package so it works for editable and
     site-packages installs, and without importing the agentics package
@@ -23,7 +23,7 @@ def agentics_root() -> str:
     import openprogram
     return os.path.join(
         os.path.dirname(os.path.abspath(openprogram.__file__)),
-        "functions", "agentics",
+        "programs", "applications",
     )
 
 

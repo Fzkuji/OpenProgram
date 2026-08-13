@@ -238,7 +238,7 @@ times. Anchored at HEAD they form one chain instead:
 The runner leaves `TurnRequest.branch_from` at `INHERIT_PARENT` and never
 rewinds head before dispatching, so the dispatcher's ordinary append path does
 the anchoring. Concurrency is handled by one lock per delivery session
-(`TaskRunner._followup_lock`): two sub-agents finishing in the same millisecond
+(`JobRunner._followup_lock`): two sub-agents finishing in the same millisecond
 still take their turns in sequence, and the second reads a HEAD that already
 includes the first answer.
 

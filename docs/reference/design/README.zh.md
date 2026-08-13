@@ -58,7 +58,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`runtime/p3-three-surface-sync.md`](runtime/p3-three-surface-sync.md) | P3 三端同步实施细节 |
 | [`runtime/unified-session-context.md`](runtime/unified-session-context.md) | 统一 session context |
 | [`runtime/execution/agent-worktree.md`](runtime/execution/agent-worktree.md) | Agent worktree 行为 |
-| [`runtime/execution/async-task-lifecycle.md`](runtime/execution/async-task-lifecycle.md) | 异步任务生命周期 |
+| [`runtime/execution/async-job-lifecycle.md`](runtime/execution/async-job-lifecycle.md) | 异步任务生命周期 |
 | [`runtime/operations/streaming-resume.md`](runtime/operations/streaming-resume.md) | 流式 + 恢复 |
 | [`runtime/operations/file-management.md`](runtime/operations/file-management.md) | 回退层（commit / worktree） |
 | [`runtime/operations/multi-agent-revert-todo.md`](runtime/operations/multi-agent-revert-todo.md) | 多 agent 回退 TODO |

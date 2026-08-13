@@ -23,7 +23,7 @@
 
  The GUI harness's torch build is whatever pip resolves. For an explicit
  CUDA/CPU variant run the harness's own installer afterwards:
-   openprogram\functions\agentics\GUI-Agent-Harness\scripts\install.ps1 -Cuda cu124
+   openprogram\programs\applications\gui_harness\scripts\install.ps1 -Cuda cu124
 
  Re-runnable: every step is idempotent.
 
@@ -208,7 +208,7 @@ function Install-Extras {
 }
 
 # ---- 8a. interactive program menu -------------------------------------------
-# Sizes mirror KNOWN_PROGRAMS (openprogram/functions/_programs.py).
+# Sizes mirror KNOWN_PROGRAMS (openprogram/programs/_programs.py).
 $ProgramKeys = @("gui","research","wiki")
 $ProgramMenu = @(
   "GUI harness      - autonomous desktop agent (downloads PyTorch: ~300 MB CPU / ~3 GB CUDA; ~1.5 GB on disk)",

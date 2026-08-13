@@ -126,32 +126,6 @@ def _validate_account(provider: str, name: str) -> dict:
     return {"status": getattr(cred, "status", "unknown")}
 
 
-def _oauth_email(cred) -> str:
-    """Best email for a login account: metadata first, else decode the OIDC
-    id_token (codex / gemini carry one with an `email` claim) so EXISTING
-    accounts show the email with no re-login."""
-    meta = (getattr(cred, "metadata", None) or {}) if cred else {}
-    email = meta.get("email") or meta.get("account") or ""
-    if email:
-        return email
-    # Anthropic's token response nests the email under
-    # extra.account.email_address (org name carries it too). Codex/Gemini
-    # instead ship an id_token with an `email` claim — try both.
-    payload_data = getattr(getattr(cred, "payload", None), "data", None) or {}
-    extra = payload_data.get("extra") or {}
-    acct = extra.get("account") if isinstance(extra, dict) else None
-    if isinstance(acct, dict) and acct.get("email_address"):
-        return acct["email_address"]
-    idt = payload_data.get("id_token", "") or ""
-    if idt:
-        try:
-            from openprogram.providers.openai_codex.auth_adapter import _decode_jwt_payload
-            return (_decode_jwt_payload(idt) or {}).get("email", "") or ""
-        except Exception:
-            pass
-    return ""
-
-
 def _account_record(pool, pinned: str, disabled: set = frozenset()) -> dict:
     """One ACCOUNT = one account (holding one credential). Uniform shape for every
     provider. API-key credentials expose only ``has_value`` and ``masked_key``;
@@ -161,16 +135,14 @@ def _account_record(pool, pinned: str, disabled: set = frozenset()) -> dict:
     cred = _primary_cred(pool)
     kind = getattr(cred, "kind", "") if cred else ""
     account = pool.account_id
+    from openprogram.auth.account_labels import account_identity, effective_account_label
+
+    label = effective_account_label(cred, account)
     if kind == "api_key":
-        name = account
         raw_key = _api_key_of(cred)
-        email = ""
+        email, identity = "", ""
     else:
-        email = _oauth_email(cred)
-        # Show the email as the name for an un-renamed account; a custom rename
-        # (account != "default") wins. No separate identity column.
-        name = email if (email and account == "default") else account
-        identity = ""
+        email, identity = account_identity(cred)
     # A rate_limited credential whose throttle window has passed is
     # usable again — report it as valid instead of a stale state. No
     # separate "cooling" flag: the status column says everything
@@ -180,7 +152,10 @@ def _account_record(pool, pinned: str, disabled: set = frozenset()) -> dict:
         status = "valid"
     record = {
         "id": account,
-        "name": name,
+        "label": label,
+        # Compatibility projection for older Web/TUI clients. It is display
+        # text, never the stable id used by account operations.
+        "name": label,
         "email": email,
         "kind": kind,
         "status": status,
@@ -363,54 +338,41 @@ def register(app):
 
     @app.post("/api/providers/{provider}/accounts/rename")
     def api_accounts_rename(provider: str, body: Any = Body(default=None)):
-        """Rename account ``id`` to ``name``. Both are required."""
+        """Change an account's display label without re-keying its stable id."""
         error = check_request_body(body, allowed={"id", "name"}, required={"id", "name"})
         if error is not None:
             return JSONResponse(content={"error": error}, status_code=400)
         from openprogram.auth.store import get_store
-        from openprogram.auth.account_selection import get_active_pin, set_active_account
-        from openprogram.auth.types import CredentialPool
+        from openprogram.auth.account_labels import normalize_account_label
 
         pid = _pool_id(provider)
-        old, new = body["id"], body["name"]
-        if not is_nonempty_printable_ascii(old) or not is_nonempty_printable_ascii(new):
+        account_id = body["id"]
+        if not is_nonempty_printable_ascii(account_id):
             return JSONResponse(
                 content={"error": "invalid account id"}, status_code=400
             )
-        old, new = old.strip(), new.strip()
-        if not old or not new:
+        account_id = account_id.strip()
+        try:
+            label = normalize_account_label(body["name"])
+        except ValueError as exc:
             return JSONResponse(
-                content={"error": "invalid account id"}, status_code=400
+                content={"error": str(exc)}, status_code=400
             )
         store = get_store()
-        if new == old:
-            if store.find_pool(pid, old) is None:
-                return JSONResponse(
-                    content={"error": "account id not found"}, status_code=404
-                )
-            return JSONResponse(content={"ok": True, "name": new})
-        if store.find_pool(pid, new) is not None:
-            return JSONResponse(
-                content={"error": f"account '{new}' already exists"}, status_code=409
-            )
-        pool = store.find_pool(pid, old)
+        pool = store.find_pool(pid, account_id)
         if pool is None:
             return JSONResponse(
                 content={"error": "account id not found"}, status_code=404
             )
-        # Re-key every credential onto the new account, write the new pool, then
-        # drop the old file (put-before-delete so a crash never loses the creds).
         for c in pool.credentials:
-            c.account_id = new
-        moved = CredentialPool(
-            provider_id=pid, account_id=new, strategy=pool.strategy,
-            credentials=pool.credentials, fallback_chain=pool.fallback_chain,
-        )
-        store.put_pool(moved)
-        store.delete_pool(pid, old)
-        if get_active_pin(pid) == old:
-            set_active_account(pid, new)
-        return JSONResponse(content={"ok": True, "name": new})
+            c.metadata = {**(c.metadata or {}), "label": label}
+        store.put_pool(pool)
+        return JSONResponse(content={
+            "ok": True,
+            "id": account_id,
+            "label": label,
+            "name": label,
+        })
 
     @app.post("/api/providers/{provider}/accounts/add")
     def api_accounts_add(provider: str, body: Any = Body(default=None)):

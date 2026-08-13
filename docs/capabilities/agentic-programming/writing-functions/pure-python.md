@@ -12,7 +12,7 @@ example:
 ## Design points
 
 - Do **not** use the `@agentic_function` decorator
-- Do **not** call `runtime.exec()`
+- Do **not** call `llm()`
 - No `runtime` parameter needed
 - Use a standard Google-style docstring
 

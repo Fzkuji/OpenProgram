@@ -4,7 +4,7 @@
 
 ## 是什么
 
-Agentic Workflow 是用 [Agentic Programming](../agentic-programming/README.md) 写成的成品工作流——代码里叫 **harness** 或 **agentic program**：一个自包含的 git 仓库，里面是一组 `@agentic_function`。安装后其函数注册进 OpenProgram，像内置函数一样出现在聊天、Web UI 的 Functions 页和 `openprogram programs run` 里。
+Agentic Workflow 是用 [Agentic Programming](../agentic-programming/README.md) 写成的成品工作流——代码里叫 **harness** 或 **agentic program**：一个自包含的 git 仓库，里面是一组 `@agentic_function`。安装后其函数注册进 OpenProgram，像内置函数一样出现在聊天、Web UI 的 Programs 页和 `openprogram programs run` 里。
 
 三个第一方 workflow：
 
@@ -28,7 +28,7 @@ openprogram programs run <name> -a key=value  # 直接运行一个 program
 
 `programs run` 还接受 `--provider`（claude-code / openai-codex / gemini-cli / anthropic / openai / gemini，默认自动探测）和 `--model` 覆盖模型。
 
-`programs install` 把Harness克隆到 `openprogram/functions/agentics/` 下，安装其 `pyproject.toml` / `requirements.txt` 声明的依赖，并登记批准的来源。worker重启时只注册已登记的Harness；已有手动克隆可以通过同一条安装命令和Git来源完成登记。
+`programs install` 把Harness克隆到 `openprogram/programs/agentic_functions/` 下，安装其 `pyproject.toml` / `requirements.txt` 声明的依赖，并登记批准的来源。worker重启时只注册已登记的Harness；已有手动克隆可以通过同一条安装命令和Git来源完成登记。
 
 ## 用哪种方式触发
 

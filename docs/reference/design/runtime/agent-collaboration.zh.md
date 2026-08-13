@@ -40,12 +40,12 @@
 | 域 | 名词 | 工具 | 是什么 |
 |---|---|---|---|
 | 计划 | **todo** | `todo_create` / `todo_update` / `todo_list` | 手写的计划清单：条目、状态、负责人、依赖。只记录打算做什么，有条目不代表有东西在跑 |
-| 执行 | **task** | `task_output` / `task_stop` / `list_tasks` | 派出去正在跑的任务：task_id、状态、结果 |
+| 执行 | **task** | `job_output` / `job_stop` / `list_jobs` | 派出去正在跑的任务：job_id、状态、结果 |
 | 实体 | **agent** | `agent` / `list_agents` / `archive_agent` | 执行任务的实体：新建一个、给已有的派任务（`to=`）、列出所有 agent、把干完的归档 |
 | 通讯 | **message** | `send_message` / `read_conversation` | 发消息和读历史：投一条消息，读任何分支的全文 |
 
 在 todo 清单上写"跑一遍 parser 基准"不会启动任何东西。`agent(…)` 才启动东西，
-拿回来的是一个 task_id。清单说的是打算做什么，`list_tasks` 说的是什么正在跑。
+拿回来的是一个 job_id。清单说的是打算做什么，`list_jobs` 说的是什么正在跑。
 
 一个 agent 的对话就是一条**分支**：session 内的 `(session_id, head_id)` 对。
 同 session 两个 head 是一次会话的两条分支，两个 session 是两次会话。agent 的
@@ -58,22 +58,22 @@
 | 能做什么 | 含义 |
 |---|---|
 | 结果必回 | 任务结束时回复自动落进派活方的对话，不管派活方是在等还是已经去做别的 |
-| 可取消 | `task_stop` 取消任务；还在排队的直接撤回，一轮都不跑 |
+| 可取消 | `job_stop` 取消任务；还在排队的直接撤回，一轮都不跑 |
 | 级联取消 | 停掉一个任务，它派出去的所有任务跟着停，一路到底 |
 
-`read_conversation` 能读到任何 task_id，所以归属要查而不是默认：
-`task_output` 和 `task_stop` 拒绝别的 session 派出的任务（§5.10）。没有 session
+`read_conversation` 能读到任何 job_id，所以归属要查而不是默认：
+`job_output` 和 `job_stop` 拒绝别的 session 派出的任务（§5.10）。没有 session
 上下文的调用（用户、UI）不受这条限制。
 
 `send_message` 这三件事都不带，所以任何 agent 都能发。它只投递一条消息，收件方
-回不回都行，不产生 task_id、不能取消、不会级联。发消息不会打断已经在跑的任务。
+回不回都行，不产生 job_id、不能取消、不会级联。发消息不会打断已经在跑的任务。
 
 ### `agent` 的两种模式
 
 | 调用 | 发生什么 |
 |---|---|
-| `agent(prompt=…)` | 新建一个 agent 并跑它。阻塞等回复；`run_in_background=true` 则返回 task_id |
-| `agent(prompt=…, to="reviewer")` | 不创建任何东西。prompt 作为受管任务派给已存在的 `reviewer`，作为它的下一轮跑，排在它手上这一轮后面，一次一轮。永远返回 task_id |
+| `agent(prompt=…)` | 新建一个 agent 并跑它。阻塞等回复；`run_in_background=true` 则返回 job_id |
+| `agent(prompt=…, to="reviewer")` | 不创建任何东西。prompt 作为受管任务派给已存在的 `reviewer`，作为它的下一轮跑，排在它手上这一轮后面，一次一轮。永远返回 job_id |
 
 两种都产生 task，只有第一种产生 agent。`to` 与 `start_from` 互斥：目标自带
 历史，没有 fork 点可选。
@@ -84,24 +84,24 @@
 todo_create("跑一遍 parser 基准")              → 板上 todo #1
 todo_update("1", status="in_progress")
 agent("跑一遍 parser 基准", "bench",
-      run_in_background=true)                  → task_id=t_7f2
-list_tasks()                                   → t_7f2 running（bench）
+      run_in_background=true)                  → job_id=t_7f2
+list_jobs()                                   → t_7f2 running（bench）
 send_message("进展如何？", to="bench")          → agent 回话，不产生任务
-task_output("t_7f2")                           → 结果到了就拿到
+job_output("t_7f2")                           → 结果到了就拿到
 todo_update("1", status="completed")
 archive_agent(to="bench")                      → 从 agent 列表归档
 ```
 
 ### 与 Claude Code 同名的部分
 
-`agent`、`list_agents`、`send_message`、`task_output`、`task_stop` 与
+`agent`、`list_agents`、`send_message`、`job_output`、`job_stop` 与
 Claude Code 同名同义，这是刻意的：认识那批名字的模型就已经认识这批工具。
 
 有一个名字刻意不同。Claude Code 的 `TaskList` 是 todo 规划清单，不是正在运行的
-任务清单。这里的规划清单改用 `todo_*` 前缀，撞不上，`list_tasks` 也就保住了字面
+任务清单。这里的规划清单改用 `todo_*` 前缀，撞不上，`list_jobs` 也就保住了字面
 意思：正在跑的任务。
 
-三个工具在 Claude Code 里没有对应：`list_tasks`（那边没有让模型查询后台任务的
+三个工具在 Claude Code 里没有对应：`list_jobs`（那边没有让模型查询后台任务的
 工具）、`archive_agent`（把 agent 从 agent 列表里归档，§2.6）、`read_conversation`
 （把别的 agent 的历史读成可读文本，而不是直接读原始会话文件）。
 
@@ -122,7 +122,7 @@ agent(
     description: str = "",              # 简短 label，成为分支名
     agent_id: str = "",                 # agent 档案；默认用本会话的
     start_from: str = "clean",          # "clean" / "inherit" / "SID:MSG_ID"
-    run_in_background: bool = false,    # false=阻塞等回复；true=返回 task_id
+    run_in_background: bool = false,    # false=阻塞等回复；true=返回 job_id
     to: str = "",                       # 改为给已有 agent 派活
     archive_when_done: bool = false,    # 派生的 agent 终态即归档（§2.6）
 ) -> str
@@ -130,8 +130,8 @@ agent(
 
 `start_from` 决定新分支从哪起：`"clean"`（默认）新根、只见 prompt；
 `"inherit"` 从当前轮 fork、带全链；`"SID:MSG_ID"` 从那个节点（任意
-session）fork、继承到该节点为止的链。`run_in_background=true` 返回 `task_id`，配套
-`task_output(task_id)`（阻塞取结果）和 `task_stop(task_id)`（取消）管理
+session）fork、继承到该节点为止的链。`run_in_background=true` 返回 `job_id`，配套
+`job_output(job_id)`（阻塞取结果）和 `job_stop(job_id)`（取消）管理
 异步形态。
 
 **`to=` — 给已有 agent 派受管任务。** 传了 `to` 就不新建分支：prompt 作为
@@ -139,8 +139,8 @@ session）fork、继承到该节点为止的链。`run_in_background=true` 返�
 （`"SID:HEAD"` 归位到分支当前末端；分支名先精确匹配、再唯一前缀；歧义列出
 候选）。派活与发消息的区别在任务追踪：
 
-- 创建 **Task 记录**（runner 侧的任务条目）：派活方立即拿到 `task_id`，
-  `task_output` 可等，`task_stop` 可撤回或取消，`list_tasks` 可见。
+- 创建 **Task 记录**（runner 侧的任务条目）：派活方立即拿到 `job_id`，
+  `job_output` 可等，`job_stop` 可撤回或取消，`list_jobs` 可见。
 - 投递复用消息机制：目标空闲，任务作为它分支上的下一轮立刻跑；目标忙，任务
   排进它的收件箱（§5.4）。Task 记录以 `pending` 预建，排队期间 id 就存在，
   drain 时跑的是同一个 task。投出的这一轮带任务来源头
@@ -240,7 +240,7 @@ id、标题、agent、busy/idle 状态（`run_control.is_turn_running`，探测�
 **synthetic user-role turn** 喂回投递 session。**关键规则：回送的 `TurnRequest`
 不设 `branch_from`（INHERIT_PARENT），dispatcher 解析为投递 session 当前的
 HEAD 并推进它。**每个投递 session 有一把回送串行锁
-（`TaskRunner._followup_lock`），并发完成被串行化：N 个子任务跑完形成一条串行链
+（`JobRunner._followup_lock`），并发完成被串行化：N 个子任务跑完形成一条串行链
 `… → notice₁ → answer₁ → notice₂ → answer₂`，每条回送读到的 HEAD 已包含上一条的回答。
 
 为什么不把回送钉在发起节点（`caller_msg_id`）上：同一轮 fork 出 N 个并行子任务时，
@@ -304,8 +304,8 @@ HEAD 并推进它。**每个投递 session 有一把回送串行锁
 - **`archive_agent(to, reason="")`**：事后归档。`to` 收 `send_message` 那套
   地址（`"SID:HEAD"` 或分支名）。对已归档分支再归档是一句幂等提示，不是错误。
 
-**任何 session 都能归档任何 agent。** 归档不像 `task_stop`（§5.10）那样设门，
-因为它做的事和 `task_stop` 不是一回事：它不中断任何在跑的工作，也不删任何数据。
+**任何 session 都能归档任何 agent。** 归档不像 `job_stop`（§5.10）那样设门，
+因为它做的事和 `job_stop` 不是一回事：它不中断任何在跑的工作，也不删任何数据。
 分支上已经在跑的任务照跑到完，`read_conversation` 照读，
 `agent(start_from="SID:MSG_ID")` 照 fork。变的只有两件事：这个分支从 `list_agents`
 里消失，并且不再接收 `send_message` 和 `agent(to=)`。谁都看得出一个 agent 的活
@@ -374,7 +374,7 @@ A、B 同时在跑（同 session 不同分支，或不同 session）：
 
 **读结果花的是消息，不花代数。**把已完成agent的回复带回来的那一轮是**派发方**
 自己的轮次，所以它跑在派发方的代数上（`Task.caller_chain_generations`，由
-`TaskRunner._dispatch_followup`重新绑定），消息数则往前走一格。多agent最常见
+`JobRunner._dispatch_followup`重新绑定），消息数则往前走一格。多agent最常见
 的形态因此保持通畅：派一批活出去，看回来的结果，再派下一批。两个预算共用一个
 计数器就会把这条路堵死：协调者的followup轮次继承worker的计数1，那条链里后续
 每次调用`agent`都会被拒。真正让这种链停下来的是消息计数：每一波都花消息，
@@ -387,7 +387,7 @@ openprogram config set agent.max_spawn_fanout 16 # 一轮铺得更宽
 ```
 
 **预算耗尽时的表现**：超额的那次调用被拒绝，理由回给模型，其它工具照常可用。
-**消息预算**耗尽后，`agent`、`task_output`、`task_stop`直接从工具清单里消失：
+**消息预算**耗尽后，`agent`、`job_output`、`job_stop`直接从工具清单里消失：
 任何一种派发都要交出一条消息，消息用完这三个工具就什么也做不成，而工具摆在清单里
 模型就会去调用。代数预算不摘工具，因为代数用完还能把活派给已存在的agent。扇出
 预算也不摘：工具清单在轮次开始时冻结，这个数要到轮次里才花掉，所以它只能拒绝。
@@ -437,10 +437,10 @@ hermes给每个被委派的子任务600秒超时。
   （§5.4），消息作为它自己的一轮被消费，没有可以打断的东西。
 - hermes的600秒是调用方一侧的`Future.result(timeout=…)`，不是杀。到点它只是
   设一个协作式中断标志然后放弃那个线程，孩子如果卡在阻塞I/O上会继续跑。这两半我们
-  都有，而且更强：`task_output(timeout=)`就是同样的调用方等待（默认30秒，上限
-  600秒），`task_stop`除了协作式取消还会杀掉活动运行时，30秒后强制把实体置终态。
-  我们和hermes都没有的是一个没人盯着也会到点触发的死线。要加就是在`TaskRunner`
-  提交时挂一个定时的`cancel_task`，而让它很少用得上的那条边界是下面每轮50次迭代的上限。
+  都有，而且更强：`job_output(timeout=)`就是同样的调用方等待（默认30秒，上限
+  600秒），`job_stop`除了协作式取消还会杀掉活动运行时，30秒后强制把实体置终态。
+  我们和hermes都没有的是一个没人盯着也会到点触发的死线。要加就是在`JobRunner`
+  提交时挂一个定时的`cancel_job`，而让它很少用得上的那条边界是下面每轮50次迭代的上限。
 
 **两个计数怎么传下去**。两个计数各存在一个 ContextVar 里
 （`send_message…depth._chain_messages`、`._chain_generations`）。一条链要跨三个
@@ -450,8 +450,8 @@ hermes给每个被委派的子任务600秒超时。
 | 跨越 | 计数怎么到达 |
 |---|---|
 | dispatcher → 工具体 | `functions/_runtime.py` 里的 `copy_context()` 把两个都带进执行器线程 |
-| 发送方 → task worker | 两个都写在 Task 实体上（`chain_messages` 恒为发送方 + 1；`chain_generations` 派生时 + 1、派活时不动），由 `TaskRunner._run_one` 重新绑定 |
-| task → 回送 followup | `TaskRunner._dispatch_followup` 在自己的线程里绑定这个已完成 task 的 `chain_messages` 和它的 `caller_chain_generations` |
+| 发送方 → task worker | 两个都写在 Task 实体上（`chain_messages` 恒为发送方 + 1；`chain_generations` 派生时 + 1、派活时不动），由 `JobRunner._run_one` 重新绑定 |
+| task → 回送 followup | `JobRunner._dispatch_followup` 在自己的线程里绑定这个已完成 task 的 `chain_messages` 和它的 `caller_chain_generations` |
 
 回送这一跳正是两个预算分道的地方，两个方向都要紧。消息从孩子那边接着往下走：
 followup轮次正是A读到B回复、写下一条消息的地方，followup若从0开始，A每一轮
@@ -459,7 +459,7 @@ followup轮次正是A读到B回复、写下一条消息的地方，followup若�
 任何agent，继承孩子的计数会让一个刚读完worker回复的agent在这条链里再也创建
 不出新agent。
 
-同一个线程还把 `_current_task_id` 绑成这个已完成 task 的 `parent_task_id`，
+同一个线程还把 `_current_job_id` 绑成这个已完成 task 的 `parent_job_id`，
 于是 A 在读回复时派出的 task 落在级联取消要走的同一条谱系上（§5.3）。
 
 这些工具读的 session id（`run_control._current_session_id`）由 `TurnBindings`
@@ -471,7 +471,7 @@ adapter），它继续持有，于是一个跑别的 session 的嵌套轮次不�
 
 ### 5.2 并发上限 + 排队
 
-- 派生走`TaskRunner`线程池，上限`OPENPROGRAM_TASK_WORKERS`（默认4）。一次派八
+- 派生走`JobRunner`线程池，上限`OPENPROGRAM_JOB_WORKERS`（默认4）。一次派八
   个：超出上限的**排队**，槽位空出再跑，不会过载。这是个全局池，它限制的是同时在跑
   多少，不是一轮能造出多少工作，后者归扇出预算管（§5.1）。
 - 每一轮，包括派生出来的那些，跑到50次内层工具调用就停
@@ -482,8 +482,8 @@ adapter），它继续持有，于是一个跑别的 session 的嵌套轮次不�
 ### 5.3 取消传播（级联）
 
 - 取消一个 task 时，**它派出的所有子 task 也被取消**。任何在运行中 task 内部
-  发起的派生都会在 Task 实体上记下链条（`parent_task_id`，由 runner 的
-  当前 task ContextVar 默认填入）。`TaskRunner.cancel_task` 沿这条链对持久化
+  发起的派生都会在 Task 实体上记下链条（`parent_job_id`，由 runner 的
+  当前 task ContextVar 默认填入）。`JobRunner.cancel_job` 沿这条链对持久化
   实体做广度优先遍历（visited 集合防环，即使出现畸形环也能终止）：
   pending/queued 的后代直接翻成 cancelled、不再被拾取；running 的后代走与根
   相同的单 task 取消路径：session cancel event + `kill_active_runtime` +
@@ -491,7 +491,7 @@ adapter），它继续持有，于是一个跑别的 session 的嵌套轮次不�
 - **后代先于根被取消**。取消根会让它的 worker 退出，空出来的线程池槽位立刻启动
   下一个排队的 future，那正是级联还没走到的后代，于是它为用户已经叫停的工作跑
   完了一整轮。先走链条，捡起这个后代的 worker 看到的实体已经是 `cancelled`，
-  直接返回，不会调 `run_agent_turn`。只改顺序：`cancel_task` 仍然返回根更新后的
+  直接返回，不会调 `run_agent_turn`。只改顺序：`cancel_job` 仍然返回根更新后的
   实体，task id 解析不到 session 时仍然返回 `None`。
 - session 级取消（用户对某 session 按 Stop）额外清空该 session 的
   send_message 收件箱（`inbox.clear`）：排队消息是还没开始的新工作，用户停掉
@@ -507,7 +507,7 @@ runner worker）都在 finally 里成对注册/注销 cancel token，token 在�
 就跑在发送方自己的 turn 里，检查看到的就是自己的 token。
 
 - **入队**：目标忙时消息持久化到目标 session 的收件箱
-  （`<session-repo>/inbox.json`，`openprogram/agent/inbox.py`，与 `tasks.json`
+  （`<session-repo>/inbox.json`，`openprogram/agent/inbox.py`，与 `jobs.json`
   同一放置模式），记录投递全文、发送方 `SID:HEAD`、发送方 agent、发送时的
   链上的消息数、入队时间。发送方立刻得到"目标正忙，消息已排队，对方本轮结束后
   处理"。
@@ -556,18 +556,18 @@ B 空闲则立即投递（原有行为）。
 分支标记 **内部（子派生）vs 用户可见**：内部分支只能被 `send_message` 触发，不进
 UI 的会话选择列表（但 DAG 照画、能被 list_agents 列出供 agent 寻址）。
 
-### 5.10 任务归属（task_output / task_stop）
+### 5.10 任务归属（job_output / job_stop）
 
-`read_conversation` 能读任意分支，任何 agent 都能拿到任意 task_id。
-不设门槛的话，任何 agent 都能等待或取消别人派出的任务。所以 `task_output` 和
-`task_stop` 执行前核对归属：当前 session 必须是该 task 的派活方
+`read_conversation` 能读任意分支，任何 agent 都能拿到任意 job_id。
+不设门槛的话，任何 agent 都能等待或取消别人派出的任务。所以 `job_output` 和
+`job_stop` 执行前核对归属：当前 session 必须是该 task 的派活方
 （`caller_session_id`，同 session spawn 则是 `parent_session_id`），或在
-任务链祖先上（当前 task 经 `parent_task_id` 是它的祖先，或当前 session
+任务链祖先上（当前 task 经 `parent_job_id` 是它的祖先，或当前 session
 派发过它的某个祖先，与级联取消走的是同一条链）。都不是则拒绝：
-`[task_stop error] task {id} was not dispatched by this session`。无
+`[job_stop error] task {id} was not dispatched by this session`。无
 session 上下文的调用（用户、UI）不受这条限制。
 
-`task_stop` 对 `to=` 派出的任务按状态分三种：
+`job_stop` 对 `to=` 派出的任务按状态分三种：
 
 - **排队中**（目标当时忙，任务在它收件箱里）→ 从收件箱撤回，记录翻
   `cancelled`。不发 session 级取消：目标正在跑的是别人的轮，撤回不能

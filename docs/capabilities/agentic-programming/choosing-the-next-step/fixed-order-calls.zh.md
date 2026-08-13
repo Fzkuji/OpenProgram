@@ -13,16 +13,17 @@
 
 - 使用 `@agentic_function` 装饰器
 - 按固定顺序调用多个子 `@agentic_function`
-- `exec()` 是可选的：可以跳过它（纯链式调用），也可以多次调用它
-  （每次调用都会创建一个 exec 子节点）
+- `llm()` 是可选的：可以跳过它（纯链式调用），也可以多次调用它
+  （每次调用都会创建一个 `llm` 子节点）
 - 数据通过普通 Python 变量在子函数之间流动
-- 一个函数既可以多次调用 `exec()`，也可以调用任意多个其他
+- 一个函数既可以多次调用 `llm()`，也可以调用任意多个其他
   `@agentic_function`
 
-## 示例：不用 exec，纯链式调用
+## 示例：不调用 LLM，纯链式调用
 
 ```python
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 
 @agentic_function(input={
     "task": {"description": "Research topic."},
@@ -36,7 +37,7 @@ def research_pipeline(task: str, runtime=None) -> dict:
     return {"survey": survey, "gaps": gaps, "ideas": ideas}
 ```
 
-## 示例：用一次 exec 调用做汇总
+## 示例：用一次 `llm()` 调用做汇总
 
 ```python
 @agentic_function(input={
@@ -48,7 +49,7 @@ def research_pipeline(task: str, runtime=None) -> str:
     gaps = identify_gaps(survey=survey, runtime=runtime)
     ideas = generate_ideas(gaps=gaps, runtime=runtime)
 
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": (
             f"Survey:\n{survey}\n\n"
             f"Gaps:\n{gaps}\n\n"

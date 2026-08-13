@@ -46,11 +46,11 @@ pip install -e "$GUI_HARNESS_DIR"                   # depends on openprogram
 pip install -e "$RESEARCH_HARNESS_DIR"
 ```
 
-`openprogram/functions/agentics/{GUI,Research}-Agent-Harness`
+`openprogram/programs/agentic_functions/{GUI,Research}-Agent-Harness`
 are symlinks — recreate if a repo moves:
 
 ```bash
-cd openprogram/functions/agentics
+cd openprogram/programs/agentic_functions
 rm -f GUI-Agent-Harness  && ln -s "$GUI_HARNESS_DIR"      GUI-Agent-Harness
 rm -f Research-Agent-Harness && ln -s "$RESEARCH_HARNESS_DIR" Research-Agent-Harness
 ```

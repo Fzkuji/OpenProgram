@@ -768,7 +768,7 @@ html[data-sidebar-closed] #sidebar .sidebar-nav-action {
 .history-edge.fork-edge {
   animation: forkEdgeFlow 1.2s linear infinite;
 }
-/* Pulse around DAG mini-map nodes whose async task is currently
+/* Pulse around DAG mini-map nodes whose async job is currently
    running. is-running class is toggled by branches-panel via a
    MutationObserver on .history-body so the indicator survives
    history-graph re-renders. */

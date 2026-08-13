@@ -51,7 +51,7 @@ def test_tools_enabled_yields_live_intent_not_snapshot(
     # against the registry each turn — NOT a frozen list(DEFAULT_TOOLS) snapshot.
     # This is the fix for "old sessions can't see newly-added tools".
     # See docs/design/runtime/tool-toggle-management.md.
-    import openprogram.functions as tools_pkg
+    import openprogram.programs as tools_pkg
 
     monkeypatch.setattr(tools_pkg, "DEFAULT_TOOLS", ["read", "list"])
     tmp_db.create_session("c1", "main")

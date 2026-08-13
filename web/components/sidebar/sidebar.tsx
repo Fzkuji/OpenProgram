@@ -57,7 +57,6 @@ import {
   PanelLeftOpenIcon,
   PlusIcon,
   WorkflowIcon,
-  MonitorCheckIcon,
 } from "../animated-icons";
 import { refreshFunctionsList } from "@/lib/state/functions-actions";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
@@ -106,7 +105,6 @@ export function Sidebar() {
   // row is the hover target (claude.ai-style). Pilot: functions / skills
   // / mcp only.
   const functionsIconRef = useRef<AnimatedNavIconHandle>(null);
-  const programsIconRef = useRef<AnimatedNavIconHandle>(null);
   const skillsIconRef = useRef<AnimatedNavIconHandle>(null);
   const projectsIconRef = useRef<AnimatedNavIconHandle>(null);
   const mcpIconRef = useRef<AnimatedNavIconHandle>(null);
@@ -159,7 +157,7 @@ export function Sidebar() {
 
   // Auto-refresh the function catalogue: poll every 30s + refetch
   // whenever the tab regains focus. Drops new external harnesses
-  // (symlinks added under openprogram/functions/agentics/) into the
+  // (symlinks added under openprogram/programs/agentic_functions/) into the
   // sidebar without the user having to hit the refresh button.
   useEffect(() => {
     let cancelled = false;
@@ -208,7 +206,7 @@ export function Sidebar() {
   function doRefresh() {
     if (refreshing) return;
     setRefreshing(true);
-    // Re-fetch /api/functions via the React-side helper; it mirrors the
+    // Re-fetch /api/programs via the React-side helper; it mirrors the
     // result into the zustand store and `runtimeState.availableFunctions`
     // so React + non-React consumers stay in sync.
     void refreshFunctionsList();
@@ -239,7 +237,6 @@ export function Sidebar() {
   // visual; the AppShell click-interceptor handles the actual routing.
   const navActive = {
     mcp: pathname.startsWith("/mcp"),
-    functions: pathname.startsWith("/functions"),
     programs: pathname.startsWith("/programs"),
     memory: pathname.startsWith("/memory"),
     chats: pathname.startsWith("/chats"),
@@ -385,10 +382,10 @@ export function Sidebar() {
       >
         <div className="flex flex-col gap-px shrink-0 px-[8px] pt-px">
         <Link
-          href="/functions"
+          href="/programs"
           className={
             sidebarNavItemClass +
-            (navActive.functions ? " " + sidebarNavItemActiveClass : "")
+            (navActive.programs ? " " + sidebarNavItemActiveClass : "")
           }
           id="navPrograms"
           onMouseEnter={() => functionsIconRef.current?.startAnimation?.()}
@@ -397,7 +394,7 @@ export function Sidebar() {
           <span className={sidebarNavIconClass}>
             <WorkflowIcon ref={functionsIconRef} size={20} />
           </span>
-          <span className={sidebarNavLabelClass}>{t("nav.functions")}</span>
+          <span className={sidebarNavLabelClass}>{t("nav.programs")}</span>
           <span
             className={
               sidebarNavActionClass +
@@ -427,22 +424,6 @@ export function Sidebar() {
               />
             )}
           </span>
-        </Link>
-
-        <Link
-          href="/programs"
-          className={
-            sidebarNavItemClass +
-            (navActive.programs ? " " + sidebarNavItemActiveClass : "")
-          }
-          id="navAgentPrograms"
-          onMouseEnter={() => programsIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => programsIconRef.current?.stopAnimation?.()}
-        >
-          <span className={sidebarNavIconClass}>
-            <MonitorCheckIcon ref={programsIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>{t("nav.programs")}</span>
         </Link>
 
         <Link

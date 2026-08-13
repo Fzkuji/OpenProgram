@@ -39,7 +39,7 @@ SessionRunConfig.additional_working_dirs        session_config.py:61 (field) :79
 TurnRequest.additional_working_dirs             dispatcher/types.py:112
    ↑ populated by: webui/_execute/chat.py:259, channels/_conversation.py:243
    ↓
-_path_is_safe → check_path_safety(path, dirs)   internals/_approval.py:72-82 → functions/tools/file_safety.py:63
+_path_is_safe → check_path_safety(path, dirs)   internals/_approval.py:72-82 → programs/functions/file_safety.py:63
 ```
 
 `save_session_run_config(..., additional_working_dirs=...)` accepts the parameter; passing `None` means "leave unchanged", so the chat path never accidentally clears existing directories.

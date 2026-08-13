@@ -4,7 +4,7 @@ This page answers one question: what OpenProgram can do, and which page covers e
 
 ## The Agentic Programming paradigm
 
-OpenProgram is built on Agentic Programming: **Python controls the flow, the LLM provides the reasoning**. You decompose a task into a function call graph — nodes that need no reasoning are plain Python, nodes that need understanding / generation / judgment are decorated with `@agentic_function` and call the model via `runtime.exec(...)` inside the function body. Execution order, state, and retries are ordinary code you can unit-test.
+OpenProgram is built on Agentic Programming: **Python controls the flow, the LLM provides the reasoning**. You decompose a task into a function call graph — nodes that need no reasoning are plain Python, nodes that need understanding / generation / judgment are decorated with `@agentic_function` and call the model via `llm(...)` inside the function body. Execution order, state, and retries are ordinary code you can unit-test.
 
 - [Agentic Programming guide](agentic-programming/README.md) — the learning path for writing functions and the three "choose the next step" mechanisms
 - [Design philosophy](agentic-programming/philosophy.md) — what problem the paradigm solves and why it inverts control

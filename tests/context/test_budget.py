@@ -109,7 +109,7 @@ def _wire_resident_tokens(tools) -> int:
 
 
 def test_resident_estimate_tracks_the_real_tools_array():
-    from openprogram.functions import (
+    from openprogram.programs import (
         agent_tools, install_loaded_deferred, release_turn_tools,
         split_tools_for_dispatch,
     )
@@ -130,7 +130,7 @@ def test_deferred_catalog_estimate_tracks_the_rendered_block():
     """The catalog only sends bare names — price the block, not the docs."""
     from openprogram.context.breakdown import _catalog_tokens
     from openprogram.context.tokens import _text_tokens
-    from openprogram.functions import (
+    from openprogram.programs import (
         agent_tools, deferred_catalog_text, install_loaded_deferred,
         release_turn_tools, split_tools_for_dispatch,
     )

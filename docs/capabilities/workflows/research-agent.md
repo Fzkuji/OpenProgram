@@ -38,4 +38,4 @@ The return value is a dict: `task`, `success`, `summary`, `stages_completed`, `h
 - Citation verification, uncited-claim checks, citation-dump checks, and similar verifications are pure Python / regex — no extra tokens; `integrity_gate` uses a single bounded LLM call.
 - Online retrieval (arXiv / Semantic Scholar, etc.) requires network access; LaTeX compilation requires a local TeX distribution.
 
-Source and README: `openprogram/functions/agentics/Research-Agent-Harness/`, upstream repository [Fzkuji/Research-Agent-Harness](https://github.com/Fzkuji/Research-Agent-Harness).
+Source and README: `openprogram/programs/applications/research_harness/`, upstream repository [Fzkuji/Research-Agent-Harness](https://github.com/Fzkuji/Research-Agent-Harness).

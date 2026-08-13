@@ -1,7 +1,7 @@
 # @agentic_function
 
 `@agentic_function` wraps a Python function whose body may run LLM calls through
-`runtime.exec()`. The wrapper records the function call in the session DAG unless
+`llm()`. The wrapper records the function call in the session DAG unless
 `expose="hidden"` is used.
 
 This page explains the usage patterns. Metadata rules live in
@@ -11,13 +11,14 @@ This page explains the usage patterns. Metadata rules live in
 
 ```python
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 
 @agentic_function(input={
     "text": {"description": "Text to translate."},
 })
 def translate_to_chinese(text: str, runtime=None) -> str:
     """Translate text to Chinese."""
-    return runtime.exec(content=[{"type": "text", "text": (
+    return llm([{"type": "text", "text": (
         "Translate the following text to Chinese. Return only the translation.\n\n"
         f"Text:\n{text}"
     )}])

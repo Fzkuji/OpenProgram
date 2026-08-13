@@ -72,7 +72,7 @@ hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector
 
 ## 装完 agent 程序后界面里没出现？
 
-程序在启动时注册，装完后需要 `openprogram restart`（或在 Functions 页面点 Refresh）。用 `openprogram programs available` 确认它已安装。
+程序在启动时注册，装完后需要 `openprogram restart`（或在 Programs 页面点 Refresh）。用 `openprogram programs available` 确认它已安装。
 
 ## 同一个 provider 有多个账户或多个 key，怎么切换？
 

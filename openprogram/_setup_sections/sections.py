@@ -73,7 +73,7 @@ def run_model_section() -> int:
 def run_tools_section() -> int:
     """Pick which tools the default agent can use."""
     from openprogram.setup import _checkbox
-    from openprogram.functions import list_registered_agent_tools
+    from openprogram.programs import list_registered_agent_tools
     from openprogram.agent.management import manager as _agents
     agent = _ensure_default_agent()
     disabled = set((agent.tools or {}).get("disabled") or [])
@@ -148,13 +148,13 @@ def run_programs_section() -> int:
     """Install / uninstall the bundled agent programs (harnesses).
 
     The bundled agentic programs live as their own repos and clone into
-    ``functions/agentics/`` on demand. Each row shows its download /
+    ``programs/agentic_functions/`` on demand. Each row shows its download /
     disk cost; space toggles, Enter confirms, selecting none skips.
     Regular (non-agentic) tools — bash, file edits, web search … — are
     always built in and never appear here.
     """
     from openprogram.setup import _checkbox
-    from openprogram.functions._programs import KNOWN_PROGRAMS
+    from openprogram.programs._programs import KNOWN_PROGRAMS
 
     items = []
     for prog in KNOWN_PROGRAMS:
@@ -221,7 +221,7 @@ def run_memory_section() -> int:
     )
     print(f"Memory backend: {picked}")
     if picked == "none":
-        from openprogram.functions.tools.memory import MEMORY_TOOL_NAMES
+        from openprogram.programs.functions.memory import MEMORY_TOOL_NAMES
         print(f"({' / '.join(MEMORY_TOOL_NAMES)} are hidden from the model "
               "until a backend is selected.)")
     return 0
@@ -262,8 +262,8 @@ def run_search_section() -> int:
     )
     # Import the registry the same way the tool does — populates the
     # builtin provider list as a side effect of importing `providers`.
-    from openprogram.functions.tools.web_search.registry import registry as _wsr
-    import openprogram.functions.tools.web_search.providers  # noqa: F401
+    from openprogram.programs.functions.web_search.registry import registry as _wsr
+    import openprogram.programs.functions.web_search.providers  # noqa: F401
 
     providers = list(_wsr.all())
     if not providers:
@@ -333,7 +333,7 @@ def run_search_section() -> int:
         except Exception:
             picked_available = False
         if picked_provider and not picked_available:
-            from openprogram.functions.tools.web_search import catalog as _wsc
+            from openprogram.programs.functions.web_search import catalog as _wsc
             info = _wsc.get(name)
             if info and (info.signup_url or info.setup_steps):
                 print()

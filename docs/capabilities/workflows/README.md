@@ -4,7 +4,7 @@ This page covers the ready-made agents that ship with OpenProgram: how to instal
 
 ## What they are
 
-An agentic workflow is a finished workflow built with [Agentic Programming](../agentic-programming/README.md) — called a **harness** or **agentic program** in the code: a self-contained git repository holding a set of `@agentic_function`s. Once installed, its functions register into OpenProgram and appear like built-in functions in chat, on the Web UI Functions page, and in `openprogram programs run`.
+An agentic workflow is a finished workflow built with [Agentic Programming](../agentic-programming/README.md) — called a **harness** or **agentic program** in the code: a self-contained git repository holding a set of `@agentic_function`s. Once installed, its functions register into OpenProgram and appear like built-in functions in chat, on the Web UI Programs page, and in `openprogram programs run`.
 
 Three first-party workflows:
 
@@ -28,7 +28,7 @@ openprogram programs run <name> -a key=value  # run a program directly
 
 `programs run` also accepts `--provider` (claude-code / openai-codex / gemini-cli / anthropic / openai / gemini, auto-detected by default) and `--model` to override the model.
 
-`programs install` clones the harness into `openprogram/functions/agentics/`, installs the dependencies declared by its `pyproject.toml` / `requirements.txt`, and records the approved source. Only recorded harnesses register when the worker restarts; a manual clone can be recorded by running the same install command with its git source.
+`programs install` clones the harness into `openprogram/programs/agentic_functions/`, installs the dependencies declared by its `pyproject.toml` / `requirements.txt`, and records the approved source. Only recorded harnesses register when the worker restarts; a manual clone can be recorded by running the same install command with its git source.
 
 ## How to trigger them
 

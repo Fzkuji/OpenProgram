@@ -70,9 +70,9 @@ helpers with session routing logic, not raw frames — exempt.)
 ## 6. The three spawn entry points share one semantics
 
 A sub-agent branch spawns via three entry points: the sync `agent()`
-path (functions/tools/agent/agent/agent.py), the async runner
-(agent/task/runner.py), and `send_message`
-(functions/tools/send_message/). For clean mode all three must pass
+path (programs/functions/agent/agent/agent.py), the async runner
+(agent/job/runner.py), and `send_message`
+(programs/functions/send_message/). For clean mode all three must pass
 `spawn_caller=<spawning node>`, so the branch root's `caller` points
 at the turn that opened it (dag/overview.md §4) instead of hanging
 off ROOT. Change spawn semantics in all three together, test all
@@ -82,10 +82,10 @@ A spawned agent NEVER re-delegates: the generation budget
 (`agent.max_spawn_depth`, default 1) is spent by the time it runs, so
 its `agent()` spawn is refused. Even a single "coordinator" hop
 degenerates into buck-passing, so no delegation hop is granted. It
-keeps the tool for `to=` dispatch and the `task_output` / `task_stop`
+keeps the tool for `to=` dispatch and the `job_output` / `job_stop`
 companions, because the message budget (`agent.max_messages`, default
 8) is a separate counter and still has room. Tool exposure follows the
-message counter and nothing else: agent/task_output/task_stop leave the
+message counter and nothing else: agent/job_output/job_stop leave the
 listing when the message budget is spent, never because generations ran
 out (see runtime/agent-collaboration.md §5.1). The agent that spawned
 the worker keeps its own generation count while it reads the result, so

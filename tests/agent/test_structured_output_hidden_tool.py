@@ -118,7 +118,7 @@ async def _run_loop(replies, tools, **config_overrides):
 def test_hidden_submit_tool_is_terminal_and_is_not_executed(monkeypatch):
     executed = []
     approval_checks = []
-    from openprogram.functions._runtime import _registry
+    from openprogram.programs._runtime import _registry
     loop_module = importlib.import_module("openprogram.agent.agent_loop")
 
     monkeypatch.setattr(

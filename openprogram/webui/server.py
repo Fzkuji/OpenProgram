@@ -21,7 +21,7 @@ import traceback
 import uuid
 from typing import Any, Optional
 
-from openprogram.functions.agentics.ask_user import set_ask_user, ask_user
+from openprogram.programs.agentic_functions.ask_user import set_ask_user, ask_user
 from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
 
@@ -1347,7 +1347,7 @@ def _build_ws_action_registry() -> dict:
         files as _ws_files,
         sub_agent as _ws_sub_agent,
         merge as _ws_merge,
-        task as _ws_task,
+        job as _ws_job,
         worktree as _ws_worktree,
         project as _ws_project,
         settings as _ws_settings,
@@ -1365,7 +1365,7 @@ def _build_ws_action_registry() -> dict:
     table.update(_ws_files.ACTIONS)
     table.update(_ws_sub_agent.ACTIONS)
     table.update(_ws_merge.ACTIONS)
-    table.update(_ws_task.ACTIONS)
+    table.update(_ws_job.ACTIONS)
     table.update(_ws_worktree.ACTIONS)
     table.update(_ws_project.ACTIONS)
     table.update(_ws_settings.ACTIONS)
@@ -1443,7 +1443,7 @@ def create_app(*, owner_auth=None, port: int = 18100):
     async def _subscribe_event_bus():
         """webui 降级为总线订阅者（framework-evolution.md 步 4）。
 
-        外部源（task runner / channels / worktree / functions watcher /
+        外部源（job runner / channels / worktree / functions watcher /
         sub_agent）不再 import 本模块的 _broadcast；它们 emit `ws.frame`
         事件，本订阅者把原始帧原样广播给前端——前端零改动。
 

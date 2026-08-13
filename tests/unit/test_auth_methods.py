@@ -52,6 +52,60 @@ class FakeUi:
         self.codes_shown.append((user_code, verification_uri))
 
 
+def test_login_driver_keeps_stable_id_and_applies_user_label(monkeypatch):
+    from openprogram.auth.login_driver import run_login
+    from openprogram.auth.types import Credential, CredentialData
+
+    async def fake_run(self, ui):
+        return Credential(
+            provider_id="openai-codex",
+            account_id="account-2",
+            kind="oauth",
+            payload=CredentialData(kind="oauth", auth_value="access"),
+            metadata={"email": "person@example.com"},
+        )
+
+    monkeypatch.setattr(PkceLoginMethod, "run", fake_run)
+
+    cred = asyncio.run(
+        run_login(
+            "openai-codex",
+            "account-2",
+            "pkce_oauth",
+            FakeUi(),
+            label="Personal 工作",
+        )
+    )
+
+    assert cred.account_id == "account-2"
+    assert cred.metadata["label"] == "Personal 工作"
+    assert cred.metadata["email"] == "person@example.com"
+
+
+def test_existing_oauth_account_derives_label_from_id_token():
+    import base64
+
+    from openprogram.auth.account_labels import account_identity, effective_account_label
+    from openprogram.auth.types import Credential, CredentialData
+
+    claims = base64.urlsafe_b64encode(
+        json.dumps({"email": "legacy@example.com", "name": "Legacy User"}).encode()
+    ).rstrip(b"=").decode()
+    cred = Credential(
+        provider_id="openai-codex",
+        account_id="account-2",
+        kind="oauth",
+        payload=CredentialData(
+            kind="oauth",
+            auth_value="access",
+            data={"id_token": f"header.{claims}.signature"},
+        ),
+    )
+
+    assert account_identity(cred) == ("legacy@example.com", "Legacy User")
+    assert effective_account_label(cred, "account-2") == "legacy@example.com"
+
+
 # ---- ApiKeyPasteMethod ----------------------------------------------------
 
 def test_api_key_paste_returns_credential():

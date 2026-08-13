@@ -15,7 +15,7 @@ def _harness(root, name: str):
 
 
 def test_registry_only_discovers_owner_recorded_harnesses(tmp_path, monkeypatch):
-    from openprogram.functions import _programs, _registry
+    from openprogram.programs import _programs, _registry
     import openprogram.paths as paths
 
     state = tmp_path / "state"
@@ -24,7 +24,7 @@ def test_registry_only_discovers_owner_recorded_harnesses(tmp_path, monkeypatch)
     trusted = _harness(base, "trusted")
     _harness(base, "untrusted")
     monkeypatch.setattr(paths, "get_state_dir", lambda: state)
-    monkeypatch.setattr(_programs, "agentics_dir", lambda: str(base))
+    monkeypatch.setattr(_programs, "applications_dir", lambda: str(base))
 
     _programs.record_program_source(trusted, source="https://example.test/trusted.git")
 
@@ -35,7 +35,7 @@ def test_registry_only_discovers_owner_recorded_harnesses(tmp_path, monkeypatch)
 
 
 def test_external_file_loader_rejects_unrecorded_source(tmp_path, monkeypatch):
-    from openprogram.functions import _programs, _registry
+    from openprogram.programs import _programs, _registry
     import openprogram.paths as paths
 
     state = tmp_path / "state"
@@ -44,7 +44,7 @@ def test_external_file_loader_rejects_unrecorded_source(tmp_path, monkeypatch):
     untrusted = _harness(base, "untrusted")
     source = untrusted / "demo_pkg" / "agentics" / "__init__.py"
     monkeypatch.setattr(paths, "get_state_dir", lambda: state)
-    monkeypatch.setattr(_programs, "agentics_dir", lambda: str(base))
+    monkeypatch.setattr(_programs, "applications_dir", lambda: str(base))
 
     try:
         _registry._load_external_file(
@@ -57,7 +57,7 @@ def test_external_file_loader_rejects_unrecorded_source(tmp_path, monkeypatch):
 
 
 def test_load_agentic_modules_skips_unrecorded_directory(tmp_path, monkeypatch):
-    from openprogram.functions import _programs, _registry
+    from openprogram.programs import _programs, _registry
     import openprogram.paths as paths
 
     state = tmp_path / "state"
@@ -66,7 +66,7 @@ def test_load_agentic_modules_skips_unrecorded_directory(tmp_path, monkeypatch):
     trusted = _harness(base, "trusted")
     _harness(base, "untrusted")
     monkeypatch.setattr(paths, "get_state_dir", lambda: state)
-    monkeypatch.setattr(_programs, "agentics_dir", lambda: str(base))
+    monkeypatch.setattr(_programs, "applications_dir", lambda: str(base))
     monkeypatch.setattr(_registry, "AGENTIC_MODULES", [])
     monkeypatch.setattr(_programs, "import_installed_programs", lambda: [])
     loaded = []
@@ -79,7 +79,7 @@ def test_load_agentic_modules_skips_unrecorded_directory(tmp_path, monkeypatch):
 
 
 def test_remove_program_source_revokes_loading(tmp_path, monkeypatch):
-    from openprogram.functions import _programs
+    from openprogram.programs import _programs
     import openprogram.paths as paths
 
     state = tmp_path / "state"
@@ -87,7 +87,7 @@ def test_remove_program_source_revokes_loading(tmp_path, monkeypatch):
     base.mkdir()
     trusted = _harness(base, "trusted")
     monkeypatch.setattr(paths, "get_state_dir", lambda: state)
-    monkeypatch.setattr(_programs, "agentics_dir", lambda: str(base))
+    monkeypatch.setattr(_programs, "applications_dir", lambda: str(base))
     _programs.record_program_source(trusted, source="file:///owner/trusted")
 
     _programs.remove_program_source(trusted)
@@ -96,7 +96,7 @@ def test_remove_program_source_revokes_loading(tmp_path, monkeypatch):
 
 
 def test_owner_can_record_a_dev_symlink(tmp_path, monkeypatch):
-    from openprogram.functions import _programs
+    from openprogram.programs import _programs
     import openprogram.paths as paths
 
     state = tmp_path / "state"
@@ -109,7 +109,7 @@ def test_owner_can_record_a_dev_symlink(tmp_path, monkeypatch):
     except OSError as exc:
         pytest.skip(f"directory symlink unavailable: {exc}")
     monkeypatch.setattr(paths, "get_state_dir", lambda: state)
-    monkeypatch.setattr(_programs, "agentics_dir", lambda: str(base))
+    monkeypatch.setattr(_programs, "applications_dir", lambda: str(base))
 
     _programs.record_program_source(linked, source="file:///owner/linked")
 
@@ -119,7 +119,7 @@ def test_owner_can_record_a_dev_symlink(tmp_path, monkeypatch):
 
 def test_model_file_policy_protects_source_registry(tmp_path, monkeypatch):
     from openprogram import sandbox
-    from openprogram.functions import _programs
+    from openprogram.programs import _programs
     import openprogram.paths as paths
 
     state = tmp_path / "state"
@@ -131,7 +131,7 @@ def test_model_file_policy_protects_source_registry(tmp_path, monkeypatch):
 
 
 def test_catalogued_clone_with_matching_origin_is_migrated_once(tmp_path, monkeypatch):
-    from openprogram.functions import _programs
+    from openprogram.programs import _programs
     import openprogram.paths as paths
 
     state = tmp_path / "state"
@@ -145,7 +145,7 @@ def test_catalogued_clone_with_matching_origin_is_migrated_once(tmp_path, monkey
         encoding="utf-8",
     )
     monkeypatch.setattr(paths, "get_state_dir", lambda: state)
-    monkeypatch.setattr(_programs, "agentics_dir", lambda: str(base))
+    monkeypatch.setattr(_programs, "applications_dir", lambda: str(base))
     program = _programs.Program(
         function="official_agent", package="demo_pkg", extra="official",
         repo="https://github.com/example/Official-Harness", summary="test",

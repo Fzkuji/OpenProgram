@@ -19,6 +19,8 @@ export interface LoginMethod {
 }
 
 export interface AccountInfo {
+  id?: string;
+  label?: string;
   name: string;
   email?: string;
   kind?: string;
@@ -62,6 +64,7 @@ export interface LoginPoll {
   ok?: boolean;
   error?: string;
   name?: string;
+  label?: string;
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
@@ -85,11 +88,11 @@ export interface AccountsClient {
   fetchAccounts(): Promise<AccountsState>;
   startAdd(name: string): Promise<AddStarted>;
   submitCode(session: string, code: string): Promise<{ ok?: boolean; error?: string; name?: string }>;
-  useAccount(name: string): Promise<{ ok?: boolean; error?: string; active?: string }>;
-  removeAccount(name: string): Promise<{ ok?: boolean; error?: string; removed?: boolean }>;
-  renameAccount(oldName: string, newName: string): Promise<{ ok?: boolean; error?: string; name?: string }>;
-  validateAccount(name: string): Promise<{ ok?: boolean; status?: string; detail?: string; error?: string }>;
-  revealKey(name: string): Promise<{ ok?: boolean; value?: string; error?: string }>;
+  useAccount(id: string): Promise<{ ok?: boolean; error?: string; active?: string }>;
+  removeAccount(id: string): Promise<{ ok?: boolean; error?: string; removed?: boolean }>;
+  renameAccount(id: string, label: string): Promise<{ ok?: boolean; error?: string; id?: string; label?: string; name?: string }>;
+  validateAccount(id: string): Promise<{ ok?: boolean; status?: string; detail?: string; error?: string }>;
+  revealKey(id: string): Promise<{ ok?: boolean; value?: string; error?: string }>;
   setRotation(enabled: boolean, strategy?: string): Promise<{ ok?: boolean; enabled?: boolean; strategy?: string }>;
 }
 
@@ -101,25 +104,26 @@ export function makeAccountsClient(providerId: string): AccountsClient {
     fetchAccounts: () => getJson(base) as Promise<AccountsState>,
     startAdd: (name) => postTo(`${base}/add`, { name }),
     submitCode: (session, code) => postTo(`${base}/add/code`, { session, code }),
-    useAccount: (name) => postTo(`${base}/use`, { name }),
-    removeAccount: (name) => postTo(`${base}/remove`, { name }),
-    renameAccount: (oldName, newName) => postTo(`${base}/rename`, { old: oldName, new: newName }),
-    validateAccount: (name) => postTo(`${base}/${encodeURIComponent(name)}/validate`, {}),
-    revealKey: (name) => getJson(`${base}/${encodeURIComponent(name)}/reveal`),
+    useAccount: (id) => postTo(`${base}/use`, { id }),
+    removeAccount: (id) => postTo(`${base}/remove`, { id }),
+    renameAccount: (id, label) => postTo(`${base}/rename`, { id, name: label }),
+    validateAccount: (id) => postTo(`${base}/${encodeURIComponent(id)}/validate`, {}),
+    revealKey: (id) => getJson(`${base}/${encodeURIComponent(id)}/reveal`),
     setRotation: (enabled, strategy) => postTo(`${base}/rotation`, { enabled, strategy }),
   };
 }
 
 // ---- login-mode add: the shared /login/* flow ---------------------------
 // Used when a provider reports add_mode="login" (OAuth / device-code /
-// import-from-CLI). `account` is the new account name the credential lands in.
+// import-from-CLI). `label` is optional display text; the worker allocates the
+// stable account id independently.
 
 export async function startLogin(
   providerId: string,
   method: string,
-  account: string,
+  label: string,
 ): Promise<{ session?: string; method?: string; error?: string }> {
-  return postTo(`/api/providers/${encodeURIComponent(providerId)}/login/start`, { method, account });
+  return postTo(`/api/providers/${encodeURIComponent(providerId)}/login/start`, { method, label });
 }
 
 export async function pollLogin(

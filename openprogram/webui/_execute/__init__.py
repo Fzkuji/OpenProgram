@@ -42,9 +42,9 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     With ``wait=True`` (default) the call blocks until the spawn
     finishes and writes a fully-populated ``attach`` pointer row.
     With ``wait=False`` (``/task --async ...``) we write a
-    ``status=running`` placeholder attach pointer, submit the task
-    to ``TaskRunner``, and return immediately — the runner finishes
-    the attach card when the task hits a terminal state and
+    ``status=running`` placeholder attach pointer, submit the job
+    to ``JobRunner``, and return immediately — the runner finishes
+    the attach card when the job hits a terminal state and
     broadcasts ``session_reload``.
 
     The attach pointer's ``session_id`` is the SAME session — opening
@@ -69,7 +69,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     else:
         context = "clean"
     # wait flag: True = synchronous (existing behavior), False = submit
-    # to TaskRunner and return immediately. Default True for backward
+    # to JobRunner and return immediately. Default True for backward
     # compat — /task --async opts into the new path.
     wait = kwargs.get("wait")
     if wait is None:
@@ -249,10 +249,10 @@ def _run_spawn_async(
     chosen_agent: str,
 ) -> None:
     """``/task --async`` path — write a placeholder attach card with
-    ``status=running``, submit the task, broadcast session_reload, return.
+    ``status=running``, submit the job, broadcast session_reload, return.
 
-    The TaskRunner takes over from here: on terminal it updates the
-    attach card via :meth:`TaskRunner._update_attach_card` (fills
+    The JobRunner takes over from here: on terminal it updates the
+    attach card via :meth:`JobRunner._update_attach_card` (fills
     head_id, source_commit_id, status) and broadcasts another
     session_reload so the UI re-renders the card with the result.
     """
@@ -274,9 +274,9 @@ def _run_spawn_async(
         head_before = sess_row.get("head_id")
         fork_anchor = msg_id
 
-        # Pre-mint the task id so the placeholder attach card carries
-        # task_id from the start (UI can correlate). We can't go
-        # through runner.spawn_task first because the placeholder
+        # Pre-mint the job id so the placeholder attach card carries
+        # job_id from the start (UI can correlate). We can't go
+        # through runner.spawn_job first because the placeholder
         # needs to exist *before* the runner's attach card update
         # path fires.
         attach_msg = {
@@ -297,7 +297,7 @@ def _run_spawn_async(
                     "prompt": prompt[:500],
                     "source_commit_id": None,
                     "status": "running",
-                    # task_id stitched in below once runner mints one
+                    # job_id stitched in below once runner mints one
                 },
             }, default=str),
         }
@@ -320,7 +320,7 @@ def _run_spawn_async(
     # attach card finalization, session_reload broadcasts.
     try:
         from openprogram.agent.sub_agent_run import run_agent_turn_async
-        task_id = run_agent_turn_async(
+        job_id = run_agent_turn_async(
             session_id=session_id,
             prompt=prompt,
             agent_id=chosen_agent,
@@ -341,7 +341,7 @@ def _run_spawn_async(
         })
         return
 
-    # Stitch task_id into the attach card's extra blob (re-write).
+    # Stitch job_id into the attach card's extra blob (re-write).
     try:
         from openprogram.agent.session_db import default_db
         from openprogram.store import SessionNodeWriter
@@ -359,7 +359,7 @@ def _run_spawn_async(
                 # here the only source of truth for label / status /
                 # session_id is metadata.attach. Falling back to
                 # extra_json.attach was bug city: it returned {} and
-                # blew away every field except task_id.
+                # blew away every field except job_id.
                 if isinstance(md.get("attach"), dict):
                     attach = dict(md["attach"])
                 else:
@@ -373,7 +373,7 @@ def _run_spawn_async(
                     except Exception:
                         extra_json = {}
                     attach = dict(extra_json.get("attach") or {})
-                attach["task_id"] = task_id
+                attach["job_id"] = job_id
                 # Keep extra in sync for any consumer that reads from
                 # that path too (Backend round-trip drops the field,
                 # but downstream callers may still inspect it).
@@ -382,13 +382,13 @@ def _run_spawn_async(
                 # way the runner does in _update_attach_card — the
                 # frontend's _readAttach reads the top-level first
                 # and only falls back to extra-json, so without this
-                # the UI sees task_id missing on the placeholder
+                # the UI sees job_id missing on the placeholder
                 # card and can't render the Cancel button while the
-                # task is still running.
+                # job is still running.
                 md["attach"] = attach
                 shim = SessionNodeWriter(db, session_id)
                 shim.update(attach_node_id, output="(running)", metadata=md)
-                db.commit_turn(session_id, f"task: stitch {task_id}")
+                db.commit_turn(session_id, f"job: stitch {job_id}")
     except Exception:
         pass
 
@@ -405,8 +405,8 @@ def _run_spawn_async(
     _s._broadcast_chat_response(session_id, msg_id, {
         "type": "result",
         "content": (
-            f"[task spawned async] task_id={task_id} label={label or '(none)'}\n"
-            f"The task is running in the background. The Branches panel will "
+            f"[job spawned async] job_id={job_id} label={label or '(none)'}\n"
+            f"The job is running in the background. The Branches panel will "
             f"animate while it runs; the attach card will update when it finishes."
         ),
         "function": "agent",

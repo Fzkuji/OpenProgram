@@ -113,7 +113,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       "Run another agent in this session as a new branch. Default "
       + "inherits this conversation; --clean starts at a new root "
       + "(agent sees only the prompt). Add --async to spawn the "
-      + "task to the background runner — the Branches panel "
+      + "job to the background runner — the Branches panel "
       + "animates the row while it runs and you can keep chatting. "
       + "Without --async this blocks until the spawned agent "
       + "finishes (legacy behaviour).",

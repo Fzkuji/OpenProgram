@@ -1,7 +1,7 @@
 """End-to-end budget enforcement at the provider stream chokepoint.
 
 The governor primitives are unit-tested in test_resource_governance.py. What
-these pin is the wiring: that a governed task's provider call actually
+these pin is the wiring: that a governed job's provider call actually
 reserves before credentials, clamps its output cap, settles real usage
 atomically, and fails closed when accounting is unavailable.
 """
@@ -18,7 +18,7 @@ from openprogram.agent.resource_governance import (
 )
 from openprogram.agent.agent_loop import agent_loop
 from openprogram.agent.types import AgentContext, AgentLoopConfig
-from openprogram.agent.task.types import Task
+from openprogram.agent.job.types import Job
 from openprogram.providers.api_registry import ApiProviderSnapshot
 from openprogram.providers.budget import (
     QuotaExceeded,
@@ -111,7 +111,7 @@ def _model(**kw):
 
 @pytest.fixture
 def wired(tmp_path, monkeypatch):
-    """A governed live task whose provider calls run through stream.py."""
+    """A governed live job whose provider calls run through stream.py."""
     import importlib
     stream_mod = importlib.import_module("openprogram.providers.stream")
 
@@ -129,11 +129,11 @@ def wired(tmp_path, monkeypatch):
             limits or ResourceLimits(), scheduler_capacity=1,
         )
         governor = ResourceGovernor(
-            ledger, limit_resolver=lambda _sid, _task: resolved,
+            ledger, limit_resolver=lambda _sid, _job: resolved,
             session_limit_resolver=lambda _sid: resolved,
         )
-        task = Task(id="t_budget", parent_session_id="s1", prompt="p", agent_id="a")
-        assert governor.admit_task(task, persist=lambda _t: None).accepted
+        job = Job(id="t_budget", parent_session_id="s1", prompt="p", agent_id="a")
+        assert governor.admit_job(job, persist=lambda _t: None).accepted
         used_model = model or _model()
         provider = _FakeProvider(
             used_model, usage=usage, fail_before_start=fail_before_start,
@@ -145,22 +145,22 @@ def wired(tmp_path, monkeypatch):
             stream_mod, "get_api_provider",
             lambda api: provider if api == used_model.api else None,
         )
-        from openprogram.agent.task.runner import TaskGovernanceContext
-        governance_context = TaskGovernanceContext(
-            task_id=task.id,
-            budget_scope_id=task.budget_scope_id,
+        from openprogram.agent.job.runner import JobGovernanceContext
+        governance_context = JobGovernanceContext(
+            job_id=job.id,
+            budget_scope_id=job.budget_scope_id,
             governor=governor,
             ledger_identity=str(ledger._path().resolve()),
-            effective_limits=tuple(sorted(task.effective_limits.items())),
+            effective_limits=tuple(sorted(job.effective_limits.items())),
             deadline_callback=lambda declared: declared,
             activity_callback=lambda _kind: True,
         )
         monkeypatch.setattr(
-            "openprogram.agent.task.runner.current_task_resource_context",
+            "openprogram.agent.job.runner.current_job_resource_context",
             lambda: governance_context,
         )
         return {
-            "governor": governor, "task": task, "model": used_model,
+            "governor": governor, "job": job, "model": used_model,
             "provider": provider, "ledger": ledger, "key_calls": key_calls,
             "governance_context": governance_context,
         }
@@ -594,7 +594,7 @@ def test_settlement_failure_surfaces_as_accounting_error(wired, monkeypatch):
 def test_credential_failure_releases_reserved_exposure(
     wired, monkeypatch, entry,
 ):
-    """A pre-I/O failure must not consume a governed task's budget."""
+    """A pre-I/O failure must not consume a governed job's budget."""
     import importlib
 
     env = wired(limits=ResourceLimits(max_total_tokens=100_000))
@@ -673,7 +673,7 @@ def test_crash_before_settle_leaves_started_exposure_for_recovery(wired):
     env = wired(limits=ResourceLimits(max_total_tokens=100_000))
     governor, ledger = env["governor"], env["ledger"]
     reservation = governor.reserve_provider_request(
-        env["task"].id, input_token_upper_bound=10,
+        env["job"].id, input_token_upper_bound=10,
         requested_max_output_tokens=20, model=env["model"],
     )
     governor.start_provider_request(reservation.reservation_id)
@@ -688,7 +688,7 @@ def test_crash_before_settle_leaves_started_exposure_for_recovery(wired):
     assert set(_reservation_states(ledger)) == {"started"}
 
 
-def test_concurrent_budgeted_calls_share_one_task_budget(wired):
+def test_concurrent_budgeted_calls_share_one_job_budget(wired):
     """Siblings racing on the same scope cannot jointly exceed the ceiling."""
     env = wired(limits=ResourceLimits(max_total_tokens=400))
     governor, model = env["governor"], env["model"]
@@ -696,7 +696,7 @@ def test_concurrent_budgeted_calls_share_one_task_budget(wired):
     accepted, refused = [], []
     for _ in range(6):
         plan = governor.reserve_provider_request(
-            env["task"].id, input_token_upper_bound=100,
+            env["job"].id, input_token_upper_bound=100,
             requested_max_output_tokens=50, model=model,
         )
         (accepted if plan.allowed else refused).append(plan)

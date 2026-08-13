@@ -91,7 +91,7 @@ def test_spawn_branch_stops_at_spawn_root():
     g = Graph()
     u1 = _add(g, ROLE_USER, pred="ROOT", output="parent q")
     l1 = _add(g, ROLE_LLM, pred=u1.id, output="parent a")
-    spawner = _add(g, ROLE_CODE, caller=l1.id, output="spawn_task")
+    spawner = _add(g, ROLE_CODE, caller=l1.id, output="spawn_job")
 
     root = _add(g, ROLE_USER, pred=None, caller=spawner.id,
                 output="spawned prompt", spawn_branch_root=True)

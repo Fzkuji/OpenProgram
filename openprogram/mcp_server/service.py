@@ -52,13 +52,13 @@ def _default_config() -> Mapping[str, Any]:
 
 
 def _default_registry_get(name: str) -> AgentTool | None:
-    from openprogram.functions._runtime import get
+    from openprogram.programs._runtime import get
 
     return get(name)
 
 
 def _default_registry_exposed_names() -> set[str]:
-    from openprogram.functions._runtime import exposed_names
+    from openprogram.programs._runtime import exposed_names
 
     return exposed_names()
 
@@ -478,7 +478,7 @@ class MCPService:
         request_id: str,
     ) -> AgentToolResult:
         from openprogram.agent.dispatcher import TurnRequest
-        from openprogram.functions.permission_rule import load_merged_rules
+        from openprogram.programs.permission_rule import load_merged_rules
 
         selected_session_id = session_id
         agent_id = "main"
@@ -750,7 +750,7 @@ class MCPService:
 
         from openprogram.agent.dispatcher import TurnRequest
         from openprogram.agent.internals._approval import wrap_with_approval
-        from openprogram.functions.permission_rule import load_merged_rules
+        from openprogram.programs.permission_rule import load_merged_rules
 
         underlying_started = False
 

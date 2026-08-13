@@ -93,15 +93,15 @@ The following docs were audited and are fully consistent with the code; no chang
 - Fix: the WS chat action passes the active profile name → the dispatcher resolves it with `agent_tools(toolset=<profile>)` → only that set of tools is provided.
 - Location: `webui/ws_actions/chat.py:313-316` (the tools_override logic) + the submit function in `composer/index.tsx`.
 
-### 4. Splitting the Functions page into Agentic/Built-in tabs (in progress)
+### 4. Splitting the Programs page into Agentic/Built-in tabs (in progress)
 - Design: a tab bar at the top (similar to the Wiki/Journal/Core on the Memory page), splitting into Agentic (function management + folders) and Built-in Tools (profile management).
 - Current state: the tab bar is added, tab state is added, the sidebar is hidden on the builtin tab, agentic content is hidden on the builtin tab, and tools show only on the builtin tab. CSS is added.
 - To do: typecheck + build + browser verification, to confirm the per-tab rendering is correct.
 
-### 5. ~~The Functions page delete action still uses the native confirm()~~
+### 5. ~~The Programs page delete action still uses the native confirm()~~
 - ✅ Fixed: searched and confirmed there are no leftover native `confirm()` calls; all have been replaced with ConfirmDialog.
 
-### 6. ~~The tool right-click menu on the Functions page is unreasonable~~
+### 6. ~~The tool right-click menu on the Programs page is unreasonable~~
 - ✅ Fixed: `functions-page.tsx:579` is now `tab === "agentic" ? contentCtx : undefined`, so the builtin tab does not trigger contentCtx.
 
 ---

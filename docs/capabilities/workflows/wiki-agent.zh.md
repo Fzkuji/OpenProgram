@@ -35,4 +35,4 @@ harness 本身刻意保持松散：它只提供渲染层、slot 原语、全文�
 - 不依赖 openprogram 也能用：不装 OpenProgram 时，纯 Python 的 `Wiki` 类和 CLI 照常工作，只是没有 `wiki_agent` 这个聊天入口。
 - 下游项目（论文调研、记忆库、CRM 等）通过传入自己的模板和 prompt 来特化 ingest 流水线，不需要 fork。
 
-源码与 README：`openprogram/functions/agentics/Wiki-Agent-Harness/`，上游仓库 [Fzkuji/Wiki-Agent-Harness](https://github.com/Fzkuji/Wiki-Agent-Harness)。
+源码与 README：`openprogram/programs/applications/wiki_agent_harness/`，上游仓库 [Fzkuji/Wiki-Agent-Harness](https://github.com/Fzkuji/Wiki-Agent-Harness)。

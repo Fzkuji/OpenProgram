@@ -1,6 +1,6 @@
 # @agentic_function
 
-`@agentic_function` 包装一个 Python 函数，其函数体可以通过 `runtime.exec()`
+`@agentic_function` 包装一个 Python 函数，其函数体可以通过 `llm()`
 发起 LLM 调用。除非使用 `expose="hidden"`，否则该包装器会把这次函数调用记录到
 会话 DAG 中。
 
@@ -11,13 +11,14 @@
 
 ```python
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 
 @agentic_function(input={
     "text": {"description": "Text to translate."},
 })
 def translate_to_chinese(text: str, runtime=None) -> str:
     """Translate text to Chinese."""
-    return runtime.exec(content=[{"type": "text", "text": (
+    return llm([{"type": "text", "text": (
         "Translate the following text to Chinese. Return only the translation.\n\n"
         f"Text:\n{text}"
     )}])

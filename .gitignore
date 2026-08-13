@@ -47,15 +47,14 @@ references/claude-code/
 references/pi-mono/
 references/opencode/
 
-# In-tree harness installs — independent git checkouts (or dev
-# symlinks) placed into functions/agentics/ by
-# `openprogram programs install <name|git-url>`. Any name is possible
-# for third-party harnesses, so ignore every untracked entry there
-# except new .py files; tracked bundled functions are unaffected
-# (gitignore only hides untracked paths). When adding a NEW bundled
-# function directory, `git add -f` it once.
-openprogram/functions/agentics/*
-!openprogram/functions/agentics/*.py
+# Installed single-purpose functions and complete applications. Ignore
+# untracked package directories while preserving flat bundled modules;
+# tracked bundled directories remain tracked. New bundled directories
+# need one explicit `git add -f`.
+openprogram/programs/agentic_functions/*
+!openprogram/programs/agentic_functions/*.py
+openprogram/programs/applications/*
+!openprogram/programs/applications/__init__.py
 
 # Local OpenProgram runtime state
 .openprogram/

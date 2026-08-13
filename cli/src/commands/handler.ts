@@ -218,17 +218,17 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
-    case 'tasks': {
+    case 'jobs': {
       if (args[0]) {
-        ctx.client.send({ action: 'get_task', task_id: args[0] });
+        ctx.client.send({ action: 'get_job', job_id: args[0] });
       } else {
         const conv = ctx.currentConversation;
         if (!conv) { ctx.pushSystem('No active session.'); return true; }
         ctx.client.send({
-          action: 'list_tasks',
+          action: 'list_jobs',
           session_id: conv,
         });
-        ctx.openPicker('tasks');
+        ctx.openPicker('jobs');
       }
       return true;
     }

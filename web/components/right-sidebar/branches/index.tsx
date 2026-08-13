@@ -22,7 +22,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
 import "@/lib/net/ws-events";
-import type { TaskResourceView } from "@/lib/net/ws-events";
+import type { JobResourceView } from "@/lib/net/ws-events";
 import { useSessionStore } from "@/lib/session-store";
 
 import { BranchItem } from "./branch-item";
@@ -37,13 +37,13 @@ import {
   type BranchRow,
 } from "./types";
 
-type LiveTask = {
+type LiveJob = {
   targetHead?: string | null;
   finalHead?: string | null;
   status: string;
   sessionId?: string;
   label?: string | null;
-  resource?: TaskResourceView | null;
+  resource?: JobResourceView | null;
   updatedAt: number;
 };
 
@@ -56,22 +56,22 @@ export function BranchesPanel({ variant = "list" }: {
   const conversations = useSessionStore((s) => s.conversations);
   const [collapsed, setCollapsed] = useState(false);
   const [, setTick] = useState(0);
-  // task_id → {targetHead, finalHead, status, label}. We resolve the
+  // job_id → {targetHead, finalHead, status, label}. We resolve the
   // BranchItem.head_msg_id we want to animate from either
   // target_branch_head_id (set at spawn time, when no real branch
   // tip exists yet) OR head_id (set at completion time). If neither
   // is known the panel renders a synthetic placeholder row labeled
-  // after the task so the user still sees a running animation
+  // after the job so the user still sees a running animation
   // somewhere — see PENDING_HEAD_PREFIX.
-  const [taskMap, setTaskMap] = useState<Record<string, LiveTask>>({});
-  const taskVersion = useRef(0);
+  const [jobMap, setJobMap] = useState<Record<string, LiveJob>>({});
+  const jobVersion = useRef(0);
   // Branch head_msg_ids currently in "finishing" wipe — added on
   // terminal status, removed 1200ms later.
   const [finishingHeads, setFinishingHeads] = useState<Set<string>>(
     () => new Set(),
   );
   const [finishingResources, setFinishingResources] = useState<
-    Record<string, TaskResourceView>
+    Record<string, JobResourceView>
   >({});
   // Multi-select state for merging. ``selected`` is a list of
   // head_msg_ids the user has clicked the checkbox on; ``baseHead``
@@ -99,15 +99,15 @@ export function BranchesPanel({ variant = "list" }: {
     return () => window.removeEventListener("branches-updated", bump);
   }, []);
 
-  // Subscribe to async task status broadcasts. Each ``task_status``
+  // Subscribe to async job status broadcasts. Each ``job_status``
   // event tells us which branch head_msg_id should animate as
   // running. Terminal statuses (completed / cancelled / errored)
   // flip the branch to ``finishing`` for the wipe keyframe and then
   // drop it from the map.
   useEffect(() => {
-    const onTaskStatus = (e: WindowEventMap["op:task-status"]) => {
+    const onJobStatus = (e: WindowEventMap["op:job-status"]) => {
       const d = e.detail || {};
-      const tid = d.task_id;
+      const tid = d.job_id;
       if (!tid) return;
       const status = (d.status || "").toLowerCase();
       const terminal = (
@@ -117,7 +117,7 @@ export function BranchesPanel({ variant = "list" }: {
       );
       const targetHead = d.target_branch_head_id || null;
       const finalHead = d.head_id || null;
-      setTaskMap((cur) => {
+      setJobMap((cur) => {
         const next = { ...cur };
         if (terminal) {
           // Drop from running map; if we have a head we know which
@@ -130,7 +130,7 @@ export function BranchesPanel({ variant = "list" }: {
             sessionId: d.session_id,
             label: d.label || d.subject || null,
             resource,
-            updatedAt: ++taskVersion.current,
+            updatedAt: ++jobVersion.current,
           };
           if (headForWipe) {
             if (resource) {
@@ -167,35 +167,35 @@ export function BranchesPanel({ variant = "list" }: {
           sessionId: d.session_id,
           label: d.label || d.subject || null,
           resource: d.resource || cur[tid]?.resource || null,
-          updatedAt: ++taskVersion.current,
+          updatedAt: ++jobVersion.current,
         };
         return next;
       });
     };
-    window.addEventListener("op:task-status", onTaskStatus);
+    window.addEventListener("op:job-status", onJobStatus);
     return () => {
-      window.removeEventListener("op:task-status", onTaskStatus);
+      window.removeEventListener("op:job-status", onJobStatus);
     };
   }, []);
 
-  // Hydrate from server on session change so a refresh mid-task
-  // restores the running animation. We send ``list_tasks`` and let
-  // the response come back via ``op:task-message``.
+  // Hydrate from server on session change so a refresh mid-job
+  // restores the running animation. We send ``list_jobs`` and let
+  // the response come back via ``op:job-message``.
   useEffect(() => {
     if (!sessionId) return;
     wsSend({
-      action: "list_tasks",
+      action: "list_jobs",
       session_id: sessionId,
     });
-    const onMsg = (e: WindowEventMap["op:task-message"]) => {
+    const onMsg = (e: WindowEventMap["op:job-message"]) => {
       const det = e.detail;
       if (!det) return;
-      if (det.type !== "tasks_list") return;
-      const tasks = (det.data?.tasks as Array<Record<string, unknown>>) || [];
-      taskVersion.current = tasks.length;
-      setTaskMap(() => {
-        const m: Record<string, LiveTask> = {};
-        for (const [index, t] of tasks.entries()) {
+      if (det.type !== "jobs_list") return;
+      const jobs = (det.data?.jobs as Array<Record<string, unknown>>) || [];
+      jobVersion.current = jobs.length;
+      setJobMap(() => {
+        const m: Record<string, LiveJob> = {};
+        for (const [index, t] of jobs.entries()) {
           const tid = t.id as string | undefined;
           const status = (t.status as string | undefined) || "";
           if (!tid) continue;
@@ -206,17 +206,17 @@ export function BranchesPanel({ variant = "list" }: {
             sessionId: (t.parent_session_id as string | undefined),
             label: (t.label as string | null)
                    || (t.subject as string | null) || null,
-            resource: (t.resource as TaskResourceView | null) || null,
-            // list_tasks is newest-first; a larger version wins below.
-            updatedAt: tasks.length - index,
+            resource: (t.resource as JobResourceView | null) || null,
+            // list_jobs is newest-first; a larger version wins below.
+            updatedAt: jobs.length - index,
           };
         }
         return m;
       });
     };
-    window.addEventListener("op:task-message", onMsg);
+    window.addEventListener("op:job-message", onMsg);
     return () => {
-      window.removeEventListener("op:task-message", onMsg);
+      window.removeEventListener("op:job-message", onMsg);
     };
   }, [sessionId]);
 
@@ -312,16 +312,16 @@ export function BranchesPanel({ variant = "list" }: {
     ((sessionId && runtimeState._branchesByConv[sessionId]) as BranchRow[]) || [];
 
   // Resolve which branch head_msg_ids should animate as "running".
-  // A task in non-terminal state maps to a branch via either
+  // A job in non-terminal state maps to a branch via either
   // target_branch_head_id (set at spawn) or head_id (set when the
-  // task lands its assistant reply). Only consider tasks for the
-  // current session. Tasks without any head yet get a synthetic
+  // job lands its assistant reply). Only consider jobs for the
+  // current session. Jobs without any head yet get a synthetic
   // pending row so the user sees the animation immediately.
   const runningHeads = new Set<string>();
   const pendingRows: BranchRow[] = [];
-  const tasksByHead = new Map<string, LiveTask>();
-  for (const tid in taskMap) {
-    const entry = taskMap[tid];
+  const jobsByHead = new Map<string, LiveJob>();
+  for (const tid in jobMap) {
+    const entry = jobMap[tid];
     if (entry.sessionId && entry.sessionId !== sessionId) continue;
     let head: string | null = null;
     if (entry.finalHead) {
@@ -333,7 +333,7 @@ export function BranchesPanel({ variant = "list" }: {
       || entry.status === "cancelled" || entry.status === "errored";
     if (head) {
       if (!terminal) runningHeads.add(head);
-      const current = tasksByHead.get(head);
+      const current = jobsByHead.get(head);
       const currentTerminal = current && (
         current.status === "completed"
         || current.status === "cancelled"
@@ -341,17 +341,17 @@ export function BranchesPanel({ variant = "list" }: {
       );
       if (!current || (currentTerminal && !terminal)
           || currentTerminal === terminal && entry.updatedAt > current.updatedAt) {
-        tasksByHead.set(head, entry);
+        jobsByHead.set(head, entry);
       }
     } else if (!terminal) {
-      // No real head id yet — synthesize one keyed off task_id so
+      // No real head id yet — synthesize one keyed off job_id so
       // the row stays stable across status events.
       const synth = `${PENDING_HEAD_PREFIX}${tid}`;
       runningHeads.add(synth);
-      tasksByHead.set(synth, entry);
+      jobsByHead.set(synth, entry);
       pendingRows.push({
         head_msg_id: synth,
-        name: entry.label || `task ${tid.slice(0, 6)}`,
+        name: entry.label || `job ${tid.slice(0, 6)}`,
         active: false,
       });
     }
@@ -405,7 +405,7 @@ export function BranchesPanel({ variant = "list" }: {
     .filter((c) => c.id && c.id !== sessionId)
     .sort((a, b) => (a.title || a.id).localeCompare(b.title || b.id));
   const resourceForHead = (headId: string) => {
-    return selectResourceForHead(taskMap, headId, PENDING_HEAD_PREFIX);
+    return selectResourceForHead(jobMap, headId, PENDING_HEAD_PREFIX);
   };
 
   if (chips) {
@@ -426,9 +426,9 @@ export function BranchesPanel({ variant = "list" }: {
             isBase={false}
             running={runningHeads.has(b.head_msg_id)}
             finishing={finishingHeads.has(b.head_msg_id)}
-            taskStatus={tasksByHead.get(b.head_msg_id)?.status}
-            taskResource={
-              resourceForHead(b.head_msg_id) as TaskResourceView | null
+            jobStatus={jobsByHead.get(b.head_msg_id)?.status}
+            jobResource={
+              resourceForHead(b.head_msg_id) as JobResourceView | null
               || finishingResources[b.head_msg_id]
               || undefined
             }
@@ -466,9 +466,9 @@ export function BranchesPanel({ variant = "list" }: {
             isBase={baseHead === b.head_msg_id}
             running={runningHeads.has(b.head_msg_id)}
             finishing={finishingHeads.has(b.head_msg_id)}
-            taskStatus={tasksByHead.get(b.head_msg_id)?.status}
-            taskResource={
-              resourceForHead(b.head_msg_id) as TaskResourceView | null
+            jobStatus={jobsByHead.get(b.head_msg_id)?.status}
+            jobResource={
+              resourceForHead(b.head_msg_id) as JobResourceView | null
               || finishingResources[b.head_msg_id]
               || undefined
             }

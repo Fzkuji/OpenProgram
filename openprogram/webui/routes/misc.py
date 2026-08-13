@@ -75,7 +75,7 @@ def register(app):
             info["database_error"] = f"{type(exc).__name__}: {exc}"
             info["status"] = "degraded"
         try:
-            from openprogram.functions import list_registered_agent_tools
+            from openprogram.programs import list_registered_agent_tools
 
             info["registered_tool_count"] = len(list_registered_agent_tools())
         except Exception:  # noqa: BLE001

@@ -77,7 +77,7 @@ export function FavoritesList(): React.ReactElement | null {
   // clicks still register.
   const [dragGuard, setDragGuard] = useState(false);
   useEffect(() => {
-    // External changes (toggle from /functions page, server reload)
+    // External changes (toggle from /programs page, server reload)
     // should re-sync our local order, unless we're mid-drag and the
     // arrays already match in length + members.
     const fav = programsMeta.favorites || [];

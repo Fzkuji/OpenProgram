@@ -19,7 +19,7 @@ Permission decisions run through four parts chained into a decision path, from h
 | Part | Governs | Can `bypass` disable it | Location |
 |---|---|---|---|
 | **gate (hard block)** | Absolute prohibitions from the policy layer (proactive policy deny/ask) | No, always in effect | `openprogram/events/tool_gate.py` |
-| **Rule layer** | User-configured allow / deny / ask rules (per-tool + per-pattern, **project level** primarily, layered across sources) | No for deny/ask; yes for allow | `openprogram/agent/internals/_approval.py:50-68` (`_match_rule`) + `openprogram/functions/permission_rule.py` |
+| **Rule layer** | User-configured allow / deny / ask rules (per-tool + per-pattern, **project level** primarily, layered across sources) | No for deny/ask; yes for allow | `openprogram/agent/internals/_approval.py:50-68` (`_match_rule`) + `openprogram/programs/permission_rule.py` |
 | **Permission mode (session level)** | Session tier: ask / acceptEdits / auto / bypass / plan (aligned with Claude Code's official names, 5 tiers) | The tier itself is that switch | `_gated_execute` (`internals/_approval.py:150-197`) |
 | **Approval flow** | Frontend/backend interaction when a nod is needed (show card, block waiting for an answer, write back project rules) | No (showing the card blocks) | `await_user_approval` (`internals/_approval.py:245-`) + frontend approval mode |
 
@@ -137,7 +137,7 @@ ToolName(content)        Command level, per-pattern. e.g. bash(git:*) / read_fil
 - Escaping: `(`, `)`, and `\` inside a pattern must be escaped (`\( \) \\`) because they are syntax delimiters. Serialization and deserialization are duals.
 
 ```python
-# openprogram/functions/permission_rule.py:19-22
+# openprogram/programs/permission_rule.py:19-22
 @dataclass(frozen=True)
 class PermissionRuleValue:
     tool_name: str
@@ -146,7 +146,7 @@ class PermissionRuleValue:
 
 ### 2.3 Rule sources (3 layers, the project is the primary carrier)
 
-Rules can come from multiple sources, lowest priority first and highest last, with later entries overriding earlier ones. Merging happens in `load_merged_rules(session_id)` (`openprogram/functions/permission_rule.py:100-146`). **The project layer is the primary carrier of rules** — rules follow the project, survive session switches, and let "always allow" be remembered long term. Only carriers that actually exist are mapped (no local/cliArg/enterprise policy backend, see the non-goals in section 7):
+Rules can come from multiple sources, lowest priority first and highest last, with later entries overriding earlier ones. Merging happens in `load_merged_rules(session_id)` (`openprogram/programs/permission_rule.py:100-146`). **The project layer is the primary carrier of rules** — rules follow the project, survive session switches, and let "always allow" be remembered long term. Only carriers that actually exist are mapped (no local/cliArg/enterprise policy backend, see the non-goals in section 7):
 
 | Layer | Priority | Carrier | Writable |
 |---|---|---|---|
@@ -273,7 +273,7 @@ async def _approve_then_run(call_id, args, cancel, on_update):
 
 Numbering matches the pseudocode in 3.2:
 
-- **acceptEdits (⑥)**: three parts — ① `@function` takes an `accept_edits_safe: bool = False` parameter (`functions/_runtime.py:767`) that lands on the tool object as `_accept_edits_safe` (`:1079`); read/write/edit/glob/grep/list each mark `True` in their `@function` (e.g. `functions/tools/write/write.py:24`, `edit/edit.py:25`, `read/read.py:28`, `grep/grep.py:101`, `list/list.py:30`, `glob/glob.py:43`), while bash/exec/execute_code do not (default `False`); ② `_path_is_safe` (`internals/_approval.py:72-87`) reuses `check_path_safety` from 3.5 (path inside the working directory set, not a dangerous file/directory, no Windows bypass); ③ command-class tools fall through to ⑧ forced approval even when a broad allow exists.
+- **acceptEdits (⑥)**: three parts — ① `@function` takes an `accept_edits_safe: bool = False` parameter (`functions/_runtime.py:767`) that lands on the tool object as `_accept_edits_safe` (`:1079`); read/write/edit/glob/grep/list each mark `True` in their `@function` (e.g. `programs/functions/write/write.py:24`, `edit/edit.py:25`, `read/read.py:28`, `grep/grep.py:101`, `list/list.py:30`, `glob/glob.py:43`), while bash/exec/execute_code do not (default `False`); ② `_path_is_safe` (`internals/_approval.py:72-87`) reuses `check_path_safety` from 3.5 (path inside the working directory set, not a dangerous file/directory, no Windows bypass); ③ command-class tools fall through to ⑧ forced approval even when a broad allow exists.
 - **plan (visibility control)**: `apply_tool_policy(tools, source="plan")` (`dispatcher/__init__.py:798`) filters out write-class tools so they never enter the model's tool list. Plan state lives in a boolean set (`_active` in `agent/plan_mode.py`) and **does not switch approval strength** — it is orthogonal to the approval tier (details in §3.7). `_gated_execute` has no plan-specific branch (write-class tools are already filtered, read-only tools follow the current tier as usual).
 - **auto (⑦)**: the LLM classifier tier, with three levels of filtering to save calls (`internals/_auto_classifier.py`): obviously safe read-only tools already passed at ⑤; `RISKY_AUTO_DENYLIST` (bash/exec/shell/execute_code/process) returns `[denied]` outright; anything else uncertain gets one `auto_classify_tool` call to haiku. Rule-layer deny/ask (①) still applies ahead of it, and allow (④) is unaffected.
 - **ask**: every tool that misses allow, is not on the read-only allowlist, and is not per-tool exempt lands at ⑧.
@@ -290,7 +290,7 @@ def _match_rule(rules, tool_name: str, args: dict) -> "str | None":
     then per-pattern (rule.pattern prefix/glob matched against parse_command(tool_name, args))."""
     if rules is None:
         return None
-    from openprogram.functions.permission_rule import parse_rule, parse_command, pattern_matches
+    from openprogram.programs.permission_rule import parse_rule, parse_command, pattern_matches
     cmd = None  # lazy: parse the command only when a per-pattern rule is reached
     for behavior, ruleset in (("deny", rules.deny), ("ask", rules.ask), ("allow", rules.allow)):
         for raw in ruleset:
@@ -309,7 +309,7 @@ def _match_rule(rules, tool_name: str, args: dict) -> "str | None":
 - **per-tool** (`rv.pattern is None`): `rv.tool_name == tool_name` matches the whole tool. For example `deny: ["bash"]` blocks all bash.
 - **per-pattern** (`rv.pattern` non-empty): first derive the comparable command string `cmd = parse_command(...)`, then apply `pattern_matches` (`permission_rule.py:149-`): a trailing `:*` → prefix match (`git:*` matches `git status`, not `github`); containing a glob character (`*?[`) → `fnmatch` (`/etc/**` matches `/etc/passwd`); otherwise exact equality.
 
-Command parser and rule parsing (`openprogram/functions/permission_rule.py`):
+Command parser and rule parsing (`openprogram/programs/permission_rule.py`):
 
 ```python
 # permission_rule.py:43, 77, 83-98
@@ -326,7 +326,7 @@ def parse_command(tool_name: str, args: dict) -> str | None:
 Merging rules across layers (`load_merged_rules(session_id)`, `permission_rule.py:100-146`) — concatenates the three lists in priority order global < project < session, for `_gated_execute` to use (at actual decision time `req.permission_rules` is filled in when the TurnRequest is built):
 
 ```python
-# openprogram/functions/permission_rule.py:100-146
+# openprogram/programs/permission_rule.py:100-146
 def load_merged_rules(session_id: str) -> PermissionRules:
     """Merge the three real carriers: global config < project (primary carrier) < session (one-off override).
     The project layer is resolved through project_for_session(session_id) -> load_project_settings.
@@ -352,7 +352,7 @@ def _risk_level(tool_name: str, args: dict) -> str:
 
 `_approval_detail` (`internals/_approval.py:232-242`, producing "tool name + full arguments, head and tail truncated when too long") gives the approval card a readable summary (the first version does not highlight dangerous tokens). The `question.asked` frame from `_on_asked` (inside `await_user_approval`) carries `tool`/`args`/`risk_level`, which the frontend uses for coloring (§4.2).
 
-**Path safety** (`openprogram/functions/tools/file_safety.py`):
+**Path safety** (`openprogram/programs/functions/file_safety.py`):
 
 ```python
 # file_safety.py:20-40, 63
@@ -610,14 +610,14 @@ Attended mode lives in `openprogram/agent/attended.py`. The core (`attended.py:1
 | Concern | Code location |
 |---|---|
 | Decision chain `_gated_execute` / `_match_rule` / `await_user_approval` / `_persist_always_allow_rule` / `_risk_level` | `openprogram/agent/internals/_approval.py` |
-| Rule string parsing, matching, multi-layer merging | `openprogram/functions/permission_rule.py` (`parse_rule` / `parse_command` / `pattern_matches` / `load_merged_rules`) |
-| Path safety / dangerous files and directories / Windows bypass | `openprogram/functions/tools/file_safety.py` |
+| Rule string parsing, matching, multi-layer merging | `openprogram/programs/permission_rule.py` (`parse_rule` / `parse_command` / `pattern_matches` / `load_merged_rules`) |
+| Path safety / dangerous files and directories / Windows bypass | `openprogram/programs/functions/file_safety.py` |
 | gate hard block | `openprogram/events/tool_gate.py` |
 | Permission mode legal values + normalization + SessionRunConfig fields | `openprogram/agent/session_config.py` |
 | `PermissionMode` type + TurnRequest fields and defaults | `openprogram/agent/dispatcher/types.py` |
 | Schemaless session meta storage | `openprogram/store/session/session_store.py` |
 | Project-level settings read/write + `project_for_session` | `openprogram/store/project/project_store.py` |
-| `accept_edits_safe` declaration + per-tool `requires_approval` | `openprogram/functions/_runtime.py`; tool markings in `openprogram/functions/tools/{read,write,edit,glob,grep,list}/` |
+| `accept_edits_safe` declaration + per-tool `requires_approval` | `openprogram/programs/_runtime.py`; tool markings in `openprogram/programs/functions/{read,write,edit,glob,grep,list}/` |
 | Web default bypass + effective_permission | `openprogram/webui/_execute/__init__.py`; `additional_working_dirs` populated in `_execute/chat.py`, `channels/_conversation.py` |
 | WS: approval replies + project rule list/add/remove | `openprogram/webui/ws_actions/session.py`, `chat.py` |
 | Attended mode (orthogonal mechanism) | `openprogram/agent/attended.py`, `openprogram/webui/ws_actions/runtime.py` |

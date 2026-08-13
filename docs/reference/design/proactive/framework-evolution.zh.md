@@ -8,7 +8,7 @@
 ![六套机制各自为政](diagrams/framework-asis.svg)
 
 没有总线时，信号存在的目的只有一个：让前端看到。这个目的把每个信号都硬连到 webui server 的
-`_broadcast`——task_status、channel_turn、skills:changed 各用各的 JSON 直连，agent 事件经
+`_broadcast`——job_status、channel_turn、skills:changed 各用各的 JSON 直连，agent 事件经
 dispatcher 回调链到达。webui 是个 UI 组件，让它当路由点就等于把 UI 关注点放进了框架的信号
 链路。比耦合更麻烦的是缺口：auth 把自己的事件建模对了却几乎没人订阅，memory 和文件改动
 根本不发信号，hooks 的返回值被丢弃（能观察不能拦截），EventBus 闲置。
@@ -63,7 +63,7 @@ auth 的桥接值得单说，它是"子系统自己已经把事件建模对了"�
 
 - dispatcher 的七阶段 turn 编排，以及 `process_user_turn` 的对外签名
 - session git DAG 存储与 contextgit
-- TaskRunner 的线程池模型
+- JobRunner 的线程池模型
 - `ApprovalRegistry` 批准机制——问询点复用它，而不是改写它
 - AuthStore 自身——用桥接，不修改
 - 前端 WS 协议——webui 广播的帧不变，所以对前端透明

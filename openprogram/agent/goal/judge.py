@@ -29,7 +29,7 @@ def evaluate_goal(
     question is treated as plain unmet. The 1-hour ask rate limit is
     enforced by the loop, not here."""
     from openprogram.agent.attended import is_attended
-    from openprogram.functions.agentics.goal import goal as goal_decision
+    from openprogram.programs.agentic_functions.goal import goal as goal_decision
 
     items = [it for it in (goal.get("checklist") or [])
              if isinstance(it, dict)]

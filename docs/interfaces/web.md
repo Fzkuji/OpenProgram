@@ -26,7 +26,7 @@ The model's thinking process renders as a collapsible block, collapsed by defaul
 
 ### Function-call timeline
 
-Function and tool calls within each reply turn render as an expandable execution timeline: one row per step, with arguments, output, errors, and duration for each function call. Nested calls display recursively as a context tree, and subagents are steps in the timeline too. Clicking a step opens the execution detail panel in the right sidebar. Functions run manually from the `/functions` page's Run dialog use the same timeline rendering.
+Function and tool calls within each reply turn render as an expandable execution timeline: one row per step, with arguments, output, errors, and duration for each function call. Nested calls display recursively as a context tree, and subagents are steps in the timeline too. Clicking a step opens the execution detail panel in the right sidebar. Functions run manually from the `/programs` page's Run dialog use the same timeline rendering.
 
 ### Attachments
 
@@ -50,7 +50,7 @@ Each message's action menu has "Rewind to here": it truly rolls the session back
 | Route | Purpose |
 |---|---|
 | `/chats` | Session history list: search, filter by time and channel, create new sessions |
-| `/functions` | Function directory: favorites, custom folders (drag to organize), search and sort, grid / list views |
+| `/programs` | Function directory: favorites, custom folders (drag to organize), search and sort, grid / list views |
 | `/programs` | Agentic program directory: LLM programs with their own UIs, launch and run directly |
 | `/skills` | SKILL.md management: browse installed skills, discover new ones, create skills; each skill has a detail page |
 | `/plugins` | Plugin management: installed / marketplace / errors tabs |

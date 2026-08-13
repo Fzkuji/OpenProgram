@@ -58,7 +58,7 @@ openprogram programs install research     # or wiki / gui
 openprogram programs available            # check install status
 ```
 
-`research` / `wiki` are pure Python and install quickly; `gui` downloads PyTorch and model weights, which is much larger. After installing, run `openprogram restart` (or hit Refresh on the Functions page) and the program appears in the UI.
+`research` / `wiki` are pure Python and install quickly; `gui` downloads PyTorch and model weights, which is much larger. After installing, run `openprogram restart` (or hit Refresh on the Programs page) and the program appears in the UI.
 
 ## Next steps
 

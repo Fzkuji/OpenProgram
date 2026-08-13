@@ -64,7 +64,7 @@ def main() -> int:
         (agentics / "just_a_module").mkdir()
         (agentics / "just_a_module" / "__init__.py").write_text("", encoding="utf-8")
 
-        from openprogram.functions import _registry as R
+        from openprogram.programs import _registry as R
 
         # discovery should yield the real-dir harness…
         found = dict(R._iter_external_harness_dirs(str(agentics)))
@@ -86,7 +86,7 @@ def main() -> int:
 
         # actually import it → the @agentic_function fires + registers.
         R._import_external_harness(str(agentics / "Cool-Third-Party-Harness"))
-        from openprogram.functions._runtime import get as get_tool
+        from openprogram.programs._runtime import get as get_tool
         tool = get_tool("cool_fn")
         check("third-party @agentic_function registered after import",
               tool is not None, "cool_fn in registry" if tool else "MISSING")

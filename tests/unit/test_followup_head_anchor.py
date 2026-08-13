@@ -13,22 +13,22 @@ from __future__ import annotations
 import threading
 
 from openprogram.agent.dispatcher.types import INHERIT_PARENT
-from openprogram.agent.task.types import Task, TaskStatus
+from openprogram.agent.job.types import Job, JobStatus
 
 
-def _make_task(**kw):
+def _make_job(**kw):
     base = dict(
         id="t_x",
         parent_session_id="S",
         prompt="do thing",
         agent_id="main",
-        status=TaskStatus.COMPLETED,
+        status=JobStatus.COMPLETED,
         head_id="sub_tip",
         result_text="sub answer",
         caller_msg_id="spawning_reply",
     )
     base.update(kw)
-    return Task(**base)
+    return Job(**base)
 
 
 def _inline_threads(monkeypatch, runner_mod):
@@ -43,7 +43,7 @@ def _inline_threads(monkeypatch, runner_mod):
 
 def test_followup_anchors_at_head_not_the_spawning_node(monkeypatch):
     """``branch_from`` stays INHERIT_PARENT — the dispatcher walks HEAD."""
-    from openprogram.agent.task import runner as runner_mod
+    from openprogram.agent.job import runner as runner_mod
 
     seen = {}
 
@@ -56,7 +56,7 @@ def test_followup_anchors_at_head_not_the_spawning_node(monkeypatch):
     monkeypatch.setattr(disp, "process_user_turn", fake_process)
     _inline_threads(monkeypatch, runner_mod)
 
-    runner_mod.get_runner()._dispatch_followup(_make_task())
+    runner_mod.get_runner()._dispatch_followup(_make_job())
 
     assert seen["session_id"] == "S"
     # Not pinned to caller_msg_id — that pin is what forked the branch.
@@ -70,7 +70,7 @@ def test_followup_never_resets_head_backwards(monkeypatch):
     That rewind is precisely what made the second follow-up land beside
     the first instead of after it, so the runner must not call set_head.
     """
-    from openprogram.agent.task import runner as runner_mod
+    from openprogram.agent.job import runner as runner_mod
 
     calls = []
 
@@ -84,7 +84,7 @@ def test_followup_never_resets_head_backwards(monkeypatch):
     })())
     _inline_threads(monkeypatch, runner_mod)
 
-    runner_mod.get_runner()._dispatch_followup(_make_task())
+    runner_mod.get_runner()._dispatch_followup(_make_job())
 
     assert calls == []
 
@@ -96,7 +96,7 @@ def test_two_followups_form_a_serial_chain(monkeypatch):
     at the current HEAD and moves HEAD to the answer. A parallel-branch
     regression shows up as two nodes sharing a predecessor.
     """
-    from openprogram.agent.task import runner as runner_mod
+    from openprogram.agent.job import runner as runner_mod
 
     # id → predecessor, in write order.
     graph: list[tuple[str, str | None]] = [("spawning_reply", "user_msg")]
@@ -120,8 +120,8 @@ def test_two_followups_form_a_serial_chain(monkeypatch):
     _inline_threads(monkeypatch, runner_mod)
 
     r = runner_mod.get_runner()
-    r._dispatch_followup(_make_task(id="t_1", label="后端架构"))
-    r._dispatch_followup(_make_task(id="t_2", label="前端测试"))
+    r._dispatch_followup(_make_job(id="t_1", label="后端架构"))
+    r._dispatch_followup(_make_job(id="t_2", label="前端测试"))
 
     preds = dict(graph)
     # Serial: the second notification hangs off the first answer.
@@ -138,7 +138,7 @@ def test_concurrent_followups_are_serialised(monkeypatch):
     """Two follow-ups dispatched from different threads still interleave
     cleanly: the per-session lock means one turn completes before the
     next reads HEAD."""
-    from openprogram.agent.task import runner as runner_mod
+    from openprogram.agent.job import runner as runner_mod
 
     order: list[str] = []
     in_turn = threading.Lock()
@@ -159,7 +159,7 @@ def test_concurrent_followups_are_serialised(monkeypatch):
 
     r = runner_mod.get_runner()
     threads = [
-        threading.Thread(target=r._dispatch_followup, args=(_make_task(id=f"t_{i}"),))
+        threading.Thread(target=r._dispatch_followup, args=(_make_job(id=f"t_{i}"),))
         for i in range(2)
     ]
     for t in threads:
@@ -178,7 +178,7 @@ def test_concurrent_followups_are_serialised(monkeypatch):
 def test_followup_lock_is_per_delivery_session(monkeypatch):
     """Different sessions get different locks — one slow session must not
     hold up another's notification."""
-    from openprogram.agent.task import runner as runner_mod
+    from openprogram.agent.job import runner as runner_mod
 
     r = runner_mod.get_runner()
     a = r._followup_lock("sess_a")

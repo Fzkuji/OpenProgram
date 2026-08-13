@@ -23,7 +23,7 @@ from openprogram.providers.types import (
     ToolCall,
     ToolResultMessage,
 )
-from openprogram.functions._runtime import (
+from openprogram.programs._runtime import (
     ToolReturn,
     function,
     restore_registry,

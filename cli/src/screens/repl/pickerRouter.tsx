@@ -27,8 +27,8 @@ import { allSlashCommands } from '../../commands/registry.js';
 import { Turn } from '../../components/Turn.js';
 import {
   BackendClient,
-  type TaskResourceView,
-  type TaskRow,
+  type JobResourceView,
+  type JobRow,
 } from '../../ws/client.js';
 import { tsToDate } from './helpers.js';
 import { buildChannelPicker } from './pickers/channel.js';
@@ -72,8 +72,8 @@ export interface PickerCtx {
   conversationId: string | undefined;
   modelsList: string[];
   settingsRows: SettingRow[];
-  tasksList: TaskRow[];
-  selectedTask: TaskRow | null;
+  jobsList: JobRow[];
+  selectedJob: JobRow | null;
   model: string | undefined;
   agentsList: AgentInfo[];
   channelAccounts: ChannelAccountRow[];
@@ -115,7 +115,7 @@ export interface PickerCtx {
   setPromptDraft: React.Dispatch<React.SetStateAction<string | undefined>>;
   setThinkingEffort: React.Dispatch<React.SetStateAction<ThinkingEffort>>;
   setPermissionMode: React.Dispatch<React.SetStateAction<PermissionMode>>;
-  setSelectedTask: React.Dispatch<React.SetStateAction<TaskRow | null>>;
+  setSelectedJob: React.Dispatch<React.SetStateAction<JobRow | null>>;
   setAccountsProviderId: React.Dispatch<React.SetStateAction<string>>;
   setAccountsState: React.Dispatch<React.SetStateAction<AccountsState>>;
   setAccountSelected: React.Dispatch<React.SetStateAction<string | null>>;
@@ -142,7 +142,7 @@ const displayRemaining = (value: number | null | undefined): string =>
 const usd = (value: number | null | undefined): string =>
   value === undefined ? 'Unknown' : value === null ? 'Unlimited' : `$${value.toFixed(2)}`;
 
-export function formatTaskResource(resource: TaskResourceView | undefined): string[] {
+export function formatJobResource(resource: JobResourceView | undefined): string[] {
   if (!resource || resource.resource_state === 'legacy/unmetered') {
     return ['Unmetered', ...(resource?.reason_code ? [`Reason: ${resource.reason_code}`] : [])];
   }
@@ -165,7 +165,7 @@ export function formatTaskResource(resource: TaskResourceView | undefined): stri
       )}`;
   const lines = [
     `Session ${count(capacity.session_live)} live · ${count(capacity.session_queued)} queued · `
-      + `${count(capacity.session_tasks)} tasks · Scheduler ${capacity.scheduler_capacity}`,
+      + `${count(capacity.session_jobs)} jobs · Scheduler ${capacity.scheduler_capacity}`,
     `Tokens: local ${displayRemaining(localRemaining(
       budget.tokens.limit, budget.tokens.actual, budget.tokens.reserved,
     ))} · shared ${displayRemaining(budget.shared_remaining.tokens)}`,
@@ -186,7 +186,7 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
     client, colors, pushSystem,
     pickerKind, pendingAttach,
     chosenChannel, chosenAccount, conversationId,
-    modelsList, settingsRows, tasksList, selectedTask, model, agentsList, channelAccounts,
+    modelsList, settingsRows, jobsList, selectedJob, model, agentsList, channelAccounts,
     registerForm, qrAscii, qrStatus, pastConversations,
     contextSearchQuery, searchResults, searchBaseDraft, thinkingEffort,
     permissionMode,
@@ -195,54 +195,54 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
     setQrAscii, setQrStatus, setCommitted, setStreaming, setRegisterForm,
     setContextSearchQuery, setSearchResults, setPromptDraft, setThinkingEffort,
     setPermissionMode,
-    setSelectedTask,
+    setSelectedJob,
     onSubmit,
     sessionAliasesRef,
   } = ctx;
 
-  if (pickerKind === 'tasks') {
+  if (pickerKind === 'jobs') {
     return (
       <Picker
-        title="Tasks"
-        items={tasksList.map((task) => ({
-          label: task.subject || task.id,
-          description: formatTaskResource(task.resource)[0],
-          value: task.id,
+        title="Jobs"
+        items={jobsList.map((job) => ({
+          label: job.subject || job.id,
+          description: formatJobResource(job.resource)[0],
+          value: job.id,
         }))}
-        onSelect={(item) => client.send({ action: 'get_task', task_id: item.value })}
+        onSelect={(item) => client.send({ action: 'get_job', job_id: item.value })}
         onCancel={() => setPickerKind(null)}
       />
     );
   }
 
-  if (pickerKind === 'task_detail') {
-    if (!selectedTask) return null;
+  if (pickerKind === 'job_detail') {
+    if (!selectedJob) return null;
     const rows: PickerItem<string>[] = [
-      { label: 'Status', description: selectedTask.status, value: 'info' },
-      ...formatTaskResource(selectedTask.resource).map((line) => {
+      { label: 'Status', description: selectedJob.status, value: 'info' },
+      ...formatJobResource(selectedJob.resource).map((line) => {
         const split = line.indexOf(':');
         return split < 0
           ? { label: line, value: 'info' }
           : { label: line.slice(0, split), description: line.slice(split + 1).trim(), value: 'info' };
       }),
-      ...(['completed', 'cancelled', 'errored'].includes(selectedTask.status)
+      ...(['completed', 'cancelled', 'errored'].includes(selectedJob.status)
         ? []
-        : [{ label: 'Stop task', description: 'cancel.user', value: 'stop' }]),
+        : [{ label: 'Stop job', description: 'cancel.user', value: 'stop' }]),
       { label: 'Back', value: 'back' },
     ];
     return (
       <Picker
-        title={`Task ${selectedTask.id}`}
+        title={`Job ${selectedJob.id}`}
         items={rows}
         onSelect={(item) => {
           if (item.value === 'stop') {
-            client.send({ action: 'cancel_task', task_id: selectedTask.id, reason: 'cancel.user' });
+            client.send({ action: 'cancel_job', job_id: selectedJob.id, reason: 'cancel.user' });
           } else if (item.value === 'back') {
-            setSelectedTask(null);
-            setPickerKind('tasks');
+            setSelectedJob(null);
+            setPickerKind('jobs');
           }
         }}
-        onCancel={() => setPickerKind('tasks')}
+        onCancel={() => setPickerKind('jobs')}
       />
     );
   }

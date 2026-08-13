@@ -6,7 +6,7 @@
 
 ```
 OpenProgram  (the host runtime — install this first, anywhere you like)
-└── openprogram/functions/agentics/      ← owner安装的program位于此处
+└── openprogram/programs/agentic_functions/      ← owner安装的program位于此处
     ├── GUI-Agent-Harness/               ← `gui_agent`      (clone in + run its installer)
     ├── Research-Agent-Harness/          ← `research_agent` (openprogram programs install research)
     └── Wiki-Agent-Harness/              ← `wiki_agent`     (openprogram programs install wiki)
@@ -60,7 +60,7 @@ openprogram web                               # or the browser UI -> http://loca
 | 3 | **OpenProgram** 可编辑安装（`pip install -e .`） | 宿主 + 基础依赖。 |
 | 4 | **Web UI** —— 在 `web/` 中执行 `npm install && npx next build` | 构建静态导出（`web/out/`），由 Python worker 在 **:18100** 上直接提供。Node 只在构建期需要。`--minimal` 会跳过构建（worker 会在首次启动时构建）。 |
 | 5 | **Ink TUI** —— 在 `cli/` 中执行 `npm install && npm run build` | 仅限 POSIX；Windows 使用 Rich REPL。`--minimal` 跳过。 |
-| 6 | **agent 程序（可选，opt-in）** —— 有终端时弹菜单挑，或 `--programs <research\|wiki\|gui\|all>` | **默认不装任何程序。** 选中后：`research` / `wiki` 是纯 Python，以树内 git checkout 的形式克隆进 `functions/agentics/` 并自动注册（`research` 除 openprogram 外无其他依赖；`wiki` 另需 Jinja2 + PyYAML）；`gui` 会拉取 PyTorch（约 300 MB —— 无 GPU 的 Linux 自动选 CPU wheel，仅 CUDA 机器约 3 GB）。装完后随时可用 `openprogram programs install <name>` 再补。 |
+| 6 | **agent 程序（可选，opt-in）** —— 有终端时弹菜单挑，或 `--programs <research\|wiki\|gui\|all>` | **默认不装任何程序。** 选中后：`research` / `wiki` 是纯 Python，以树内 git checkout 的形式克隆进 `programs/agentic_functions/` 并自动注册（`research` 除 openprogram 外无其他依赖；`wiki` 另需 Jinja2 + PyYAML）；`gui` 会拉取 PyTorch（约 300 MB —— 无 GPU 的 Linux 自动选 CPU wheel，仅 CUDA 机器约 3 GB）。装完后随时可用 `openprogram programs install <name>` 再补。 |
 | 7 | **浏览器工具 + channels** | `pip install -e .[all]` + `playwright install chromium`（约 150 MB）。`--minimal` 跳过。更重的 stealth 浏览器 / agent-browser 仍需主动开启 —— 见 [Extras](#extras)。 |
 
 ---
@@ -80,7 +80,7 @@ openprogram web                               # or the browser UI -> http://loca
 | `--yes` / `-y` | `-Yes` | 跳过所有提示、全部取默认值 | 关（有终端时弹菜单） |
 
 为 GUI harness 显式指定 CUDA/CPU 版 PyTorch：在宿主安装完成后运行它
-自己的安装脚本 —— `openprogram/functions/agentics/GUI-Agent-Harness/scripts/install.sh --cuda cu124`。
+自己的安装脚本 —— `openprogram/programs/applications/gui_harness/scripts/install.sh --cuda cu124`。
 
 ### 非交互 / AI agent 安装
 
@@ -107,19 +107,19 @@ curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/ins
 
 ## 添加 agent 程序
 
-通过CLI安装的程序位于 `functions/agentics/<Repo>/`，并在下次启动时注册。
+通过CLI安装的程序位于 `programs/agentic_functions/<Repo>/`，并在下次启动时注册。
 同一条命令适用于已编目的Harness和第三方仓库；如果Harness还有额外资产，随后运行
 它自己的安装脚本：
 
 ```bash
 openprogram programs install <harness-repo>
-cd openprogram/functions/agentics/<Harness>
+cd openprogram/programs/agentic_functions/<Harness>
 ./scripts/install.sh          # if it ships one (Windows: .\scripts\install.ps1)
 ```
 
 **GUI agent** 有原生依赖（PyTorch、检测器权重、OCR），因此它附带了
 自己的分平台安装脚本 —— 按上面的步骤使用它；完整指南见它的
-[安装章节](https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/functions/agentics/GUI-Agent-Harness#1-install)。
+[安装章节](https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/programs/applications/gui_harness#1-install)。
 （选装了 GUI 时 —— 菜单里勾选或 `--programs gui`/`all` —— 安装脚本会把它克隆进来并拉 PyTorch；之后运行该 harness 自己的安装脚本来配资产或指定 CUDA/CPU torch。）
 
 对于已编目的 harness，有一条单行快捷命令，会为你完成克隆、安装并注册：
@@ -131,7 +131,7 @@ openprogram programs available            # see install status
 site-packages，代码在源码树内运行）。对 `gui` 来说这包括 PyTorch，但**不含**
 YOLO 权重、OCR 预热这类原生资产 —— 这些要运行 GUI harness 自己的安装脚本（见上文）。
 
-执行上述任意操作后，重启 worker（或在 Functions 页面点击 **Refresh**），
+执行上述任意操作后，重启 worker（或在 Programs 页面点击 **Refresh**），
 该程序就会出现在 web UI 中。第三方 harness 的安装方式相同 ——
 `openprogram programs install <git-url | owner/repo>`；详见
 [installing-harnesses.md](../capabilities/installing-harnesses.md)。
@@ -216,7 +216,7 @@ export ANTHROPIC_API_KEY=sk-ant-...             # …or an API key (Windows: $en
 
 \* EasyOCR 作为跨平台回退方案被安装，所以 GUI agent 在
 没有 Xcode CLT 的 macOS 上也能工作 —— Apple Vision 只是更快而已。完整的 GUI 细节：
-[GUI-Agent-Harness/docs/install.md](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/functions/agentics/GUI-Agent-Harness/docs/install.md)。
+[GUI-Agent-Harness/docs/install.md](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/applications/gui_harness/docs/install.md)。
 
 ---
 
@@ -227,7 +227,7 @@ export ANTHROPIC_API_KEY=sk-ant-...             # …or an API key (Windows: $en
   重新运行安装脚本，然后打开 **http://localhost:18100**。
 - **`pip` 无法重装：`WinError 32 … openprogram.exe is being used`。**
   先停掉正在运行的 `openprogram web` / worker，然后重新运行。
-- **`gui_agent` 没有出现在 UI 中。** 重启 worker（或在 Functions 页面点
+- **`gui_agent` 没有出现在 UI 中。** 重启 worker（或在 Programs 页面点
   Refresh）。用 `openprogram programs available` 确认它已注册。
 - **NVIDIA GPU 未被使用。** 安装脚本会自动检测它；如果它选了 CPU（安装时没有驱动，或你传了 `--cpu`）：执行 `pip uninstall -y torch torchvision`，然后重新运行安装脚本。
 - **GPA 权重没有下载下来**（离线）：`hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector`。
@@ -243,7 +243,7 @@ pip install -e .                                  # host
 ( cd cli && npm install && npm run build )         # TUI (POSIX)
 # GUI program (editable, in-tree → auto-registers):
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-pip install -e "openprogram/functions/agentics/GUI-Agent-Harness[ocr]"
+pip install -e "openprogram/programs/applications/gui_harness[ocr]"
 hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector
 python -c "import easyocr; easyocr.Reader(['en','ch_sim'], gpu=False)"
 ```

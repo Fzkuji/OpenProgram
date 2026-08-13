@@ -30,12 +30,13 @@ Only `agentic_function` is re-exported as a top-level `openprogram` symbol; `Run
 
 ```python
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 from openprogram.providers.registry import create_runtime
 
 @agentic_function
 def observe(task: str, runtime) -> str:
     """Report the UI element on screen that matches a task."""
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": (
             f"Find the UI element for: {task}. Reply with its label only."
         )},

@@ -71,7 +71,7 @@ DEFAULT_DENY_READ: tuple[str, ...] = (
 # Writes that would let a sandboxed command escape by arranging for code
 # to run outside the sandbox later. Empty by default and not because the
 # engine is unloaded: the always-on entry is the agentics directory (see
-# ``_agentics_dir``), which no config can remove. Git hooks and git config
+# ``_applications_dir``), which no config can remove. Git hooks and git config
 # are the other escape of this shape and are deliberately NOT default —
 # measured, `git init` and `git clone` both write `.git/hooks/`, so
 # denying it fails them outright. Blocking those needs the escalation path
@@ -201,13 +201,13 @@ def _config_section() -> dict:
 
 
 def _with_hard_floor(policy: SandboxPolicy) -> SandboxPolicy:
-    agentics = _agentics_dir()
-    if agentics in policy.deny_write:
+    applications = _applications_dir()
+    if applications in policy.deny_write:
         return policy
     return SandboxPolicy(
         writable_roots=policy.writable_roots,
         deny_read=policy.deny_read,
-        deny_write=policy.deny_write + (agentics,),
+        deny_write=policy.deny_write + (applications,),
         network=policy.network,
         pass_env=policy.pass_env,
     )
@@ -250,7 +250,7 @@ def escalated_policy():
     """Relax configurable restrictions for one approved execution.
 
     The OS sandbox remains active solely to enforce the non-configurable
-    agentics write prohibition. Credentials also stay out of the child
+    applications write prohibition. Credentials also stay out of the child
     environment; approval changes execution reach, not secret handling.
     """
     policy = _with_hard_floor(SandboxPolicy(
@@ -356,16 +356,16 @@ def install_policy_snapshot(snapshot: dict) -> None:
         _process_policy_override = None
 
 
-def _agentics_dir() -> str:
+def _applications_dir() -> str:
     """Absolute glob for the directory the function watcher auto-imports.
     Resolved rather than configured — it moves with the installation, and
     a user editing the deny list must not be able to drop it."""
-    return os.path.join(_agentics_root(), "**")
+    return os.path.join(_applications_root(), "**")
 
 
-def _agentics_root() -> str:
-    from openprogram.protected_paths import agentics_root
-    return agentics_root()
+def _applications_root() -> str:
+    from openprogram.protected_paths import applications_root
+    return applications_root()
 
 
 def unavailable_policy() -> str:
@@ -447,11 +447,13 @@ def _glob_to_regex(pattern: str) -> str | None:
 def validate_write_path(path, *, cwd: str | None = None) -> str | None:
     """Return a sandbox-policy violation for a direct file write, if any."""
     target = os.path.realpath(os.path.expanduser(os.fspath(path)))
-    agentics = os.path.realpath(_agentics_root())
+    applications = os.path.realpath(_applications_root())
     target_key = target.casefold()
-    agentics_key = agentics.casefold()
-    if target_key == agentics_key or target_key.startswith(agentics_key + os.sep):
-        return "writes to auto-imported agentic Python are forbidden"
+    applications_key = applications.casefold()
+    if target_key == applications_key or target_key.startswith(
+        applications_key + os.sep
+    ):
+        return "writes to auto-imported application Python are forbidden"
     from openprogram.protected_paths import program_sources_path
     if target_key == os.path.realpath(program_sources_path()).casefold():
         return "writes to the agentic source registry are forbidden"

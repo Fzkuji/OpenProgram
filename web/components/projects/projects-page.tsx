@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * /projects — 项目管理。左右分栏（照 Functions 页）：左栏项目列表，
+ * /projects — 项目管理。左右分栏（照 Programs 页）：左栏项目列表，
  * 右栏选中项目的内容（Settings 权限规则+项目默认设置 / Chats 会话列表 /
  * Info 元数据）。同页切换，不跳路由。
  */

@@ -22,7 +22,7 @@ def _catalog_tokens(catalog: list) -> int:
     口径永远跟着渲染函数走。"""
     if not catalog:
         return 0
-    from openprogram.functions import deferred_catalog_text
+    from openprogram.programs import deferred_catalog_text
     return estimate_message_tokens(
         {"role": "system", "content": deferred_catalog_text(list(catalog))}
     )
@@ -39,7 +39,7 @@ def compute_call_breakdown(
     tools = tools or []
     # loaded vs deferred：只有 loaded（带 schema）计入 tools_schema
     try:
-        from openprogram.functions import split_tools_for_dispatch
+        from openprogram.programs import split_tools_for_dispatch
         provider_tools, catalog = split_tools_for_dispatch(tools)
     except Exception:
         provider_tools, catalog = tools, []
@@ -71,7 +71,7 @@ def _default_tool_resolver(names: list[str]) -> list:
     if not names:
         return []
     try:
-        from openprogram.functions import agent_tools
+        from openprogram.programs import agent_tools
         return agent_tools(names=names)
     except Exception:
         return []

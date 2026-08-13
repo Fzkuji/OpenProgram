@@ -1,4 +1,4 @@
-"""Resource-limit parsing, inheritance, and read-only task diagnostics."""
+"""Resource-limit parsing, inheritance, and read-only job diagnostics."""
 from __future__ import annotations
 
 import os
@@ -10,21 +10,21 @@ from dataclasses import asdict, dataclass, field, replace
 from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_HALF_UP
 from typing import Any, Callable, Mapping
 
-from openprogram.agent.task.types import Task, TaskStatus, is_terminal
+from openprogram.agent.job.types import Job, JobStatus, is_terminal
 from openprogram.usage.ledger import UsageLedger
 
 
 INTEGER_LIMITS = (
     "max_live_per_session",
     "max_queued_per_session",
-    "max_tasks_per_session",
+    "max_jobs_per_session",
     "max_total_tokens",
     "max_runtime_seconds",
     "idle_timeout_seconds",
 )
 COST_LIMIT = "max_cost_usd"
 LIMIT_FIELDS = (*INTEGER_LIMITS, COST_LIMIT)
-TASK_LIMIT_FIELDS = frozenset({
+JOB_LIMIT_FIELDS = frozenset({
     "max_total_tokens", COST_LIMIT, "max_runtime_seconds", "idle_timeout_seconds",
 })
 MEANINGFUL_ACTIVITY_KINDS = frozenset({
@@ -43,7 +43,7 @@ _RETRYABLE_RESOURCE_REASONS = frozenset({
 })
 _RESOURCE_REASON_CODES = (
     "quota.queue_full",
-    "quota.tasks_exhausted",
+    "quota.jobs_exhausted",
     "quota.parent_budget_exhausted",
     "quota.parent_claim_unavailable",
     "quota.token_exhausted",
@@ -75,7 +75,7 @@ _RESOURCE_REASON_CODES = (
     "error.deferred_inbox_intent_missing",
     "error.dispatch_failed",
     "error.runtime_registration",
-    "error.task_missing",
+    "error.job_missing",
     "completed",
 )
 RESOURCE_REASON_METADATA = {
@@ -95,7 +95,7 @@ class ResourceLimitError(ValueError):
 class ResourceLimits:
     max_live_per_session: int | None = None
     max_queued_per_session: int | None = None
-    max_tasks_per_session: int | None = None
+    max_jobs_per_session: int | None = None
     max_total_tokens: int | None = None
     max_cost_usd: str | None = None
     max_runtime_seconds: int | None = None
@@ -172,7 +172,7 @@ class ResolvedResourceLimits:
 
 def scheduler_capacity() -> int:
     try:
-        return max(1, int(os.environ.get("OPENPROGRAM_TASK_WORKERS") or "4"))
+        return max(1, int(os.environ.get("OPENPROGRAM_JOB_WORKERS") or "4"))
     except ValueError:
         return 4
 
@@ -188,7 +188,7 @@ def resolve_resource_limits(
     *,
     session: ResourceLimits | Mapping[str, Any] | None = None,
     parent: ResourceLimits | Mapping[str, Any] | None = None,
-    task: ResourceLimits | Mapping[str, Any] | None = None,
+    job: ResourceLimits | Mapping[str, Any] | None = None,
     scheduler_capacity: int | None = None,
 ) -> ResolvedResourceLimits:
     capacity = scheduler_capacity if scheduler_capacity is not None else globals()["scheduler_capacity"]()
@@ -204,17 +204,17 @@ def resolve_resource_limits(
         ("parent", ResourceLimits.from_mapping(
             parent.to_dict() if isinstance(parent, ResourceLimits) else parent
         )),
-        ("task", ResourceLimits.from_mapping(
-            task.to_dict() if isinstance(task, ResourceLimits) else task
+        ("job", ResourceLimits.from_mapping(
+            job.to_dict() if isinstance(job, ResourceLimits) else job
         )),
     ]
-    task_values = levels[-1][1]
+    job_values = levels[-1][1]
     forbidden = [
         name for name in LIMIT_FIELDS
-        if name not in TASK_LIMIT_FIELDS and getattr(task_values, name) is not None
+        if name not in JOB_LIMIT_FIELDS and getattr(job_values, name) is not None
     ]
     if forbidden:
-        raise ResourceLimitError("task limits cannot set session capacity")
+        raise ResourceLimitError("job limits cannot set session capacity")
 
     fields: dict[str, ResolvedLimit] = {}
     for name in LIMIT_FIELDS:
@@ -282,8 +282,8 @@ def save_session_resource_limits(
 
 
 @dataclass(frozen=True)
-class TaskResourceView:
-    task_id: str
+class JobResourceView:
+    job_id: str
     status: str
     resource_state: str
     reason_code: str | None
@@ -300,7 +300,7 @@ class TaskResourceView:
 @dataclass(frozen=True)
 class AdmissionDecision:
     accepted: bool
-    task_id: str | None
+    job_id: str | None
     reason_code: str | None
     retryable: bool
     effective_limits: dict[str, Any]
@@ -412,7 +412,7 @@ def plan_request_reservation(
 
 @dataclass(frozen=True)
 class DispatchClaim:
-    task_id: str
+    job_id: str
     session_id: str
     lease_generation: int
 
@@ -427,32 +427,32 @@ class ReconcileResult:
     completed_pending: tuple[tuple[str, str], ...] = ()
 
 
-def _durable_task_time_limits(
-    ledger: UsageLedger, task_id: str,
+def _durable_job_time_limits(
+    ledger: UsageLedger, job_id: str,
 ) -> tuple[int | None, int | None]:
     row = ledger.connection().execute(
         """WITH RECURSIVE ancestors AS (
-               SELECT b.* FROM task_admissions a
+               SELECT b.* FROM job_admissions a
                JOIN budget_scopes b ON b.budget_scope_id = a.budget_scope_id
-               WHERE a.task_id = ?
+               WHERE a.job_id = ?
                UNION ALL
                SELECT parent.* FROM budget_scopes parent
                JOIN ancestors child
                  ON child.parent_scope_id = parent.budget_scope_id
            )
            SELECT MIN(max_runtime_seconds), MIN(idle_timeout_seconds)
-           FROM ancestors WHERE scope_kind = 'task'""",
-        (task_id,),
+           FROM ancestors WHERE scope_kind = 'job'""",
+        (job_id,),
     ).fetchone()
     return (None, None) if row is None else (row[0], row[1])
 
 
-def _task_fingerprint(task: Task) -> str:
+def _job_fingerprint(job: Job) -> str:
     facts = {
-        name: getattr(task, name)
+        name: getattr(job, name)
         for name in (
             "id", "parent_session_id", "prompt", "agent_id", "context_mode",
-            "parent_msg_id", "parent_task_id", "caller_msg_id", "caller_session_id",
+            "parent_msg_id", "parent_job_id", "caller_msg_id", "caller_session_id",
             "chain_messages", "chain_generations", "caller_chain_generations",
             "worktree_id", "wait", "archive_when_done", "spawn_caller",
             "advance_head", "tools_override", "deferred_inbox",
@@ -556,7 +556,7 @@ class ResourceGovernor:
         self,
         ledger: UsageLedger,
         *,
-        limit_resolver: Callable[[str, Task], ResolvedResourceLimits] | None = None,
+        limit_resolver: Callable[[str, Job], ResolvedResourceLimits] | None = None,
         session_limit_resolver: Callable[[str], ResolvedResourceLimits] | None = None,
     ) -> None:
         self.ledger = ledger
@@ -568,21 +568,21 @@ class ResourceGovernor:
         else:
             self._session_limit_resolver = lambda session_id: self._limit_resolver(
                 session_id,
-                Task(id="", parent_session_id=session_id, prompt="", agent_id=""),
+                Job(id="", parent_session_id=session_id, prompt="", agent_id=""),
             )
 
     @staticmethod
-    def _resolve_limits(session_id: str, task: Task) -> ResolvedResourceLimits:
+    def _resolve_limits(session_id: str, job: Job) -> ResolvedResourceLimits:
         # After admission this field is the resolved snapshot persisted on
-        # Task, not a new child-limit request. Replaying that snapshot as
-        # input would treat session-only capacity as an illegal task limit
+        # Job, not a new child-limit request. Replaying that snapshot as
+        # input would treat session-only capacity as an illegal job limit
         # and break idempotent dispatch/resume.
-        task_limits = ResourceLimits.from_mapping(
-            {} if task.admission_id else (task.effective_limits or {})
+        job_limits = ResourceLimits.from_mapping(
+            {} if job.admission_id else (job.effective_limits or {})
         )
         return resolve_resource_limits(
             global_resource_limits(), session=session_resource_limits(session_id),
-            task=task_limits,
+            job=job_limits,
         )
 
     @staticmethod
@@ -610,7 +610,7 @@ class ResourceGovernor:
                 SUM(CASE WHEN state IN ('live','stopping') THEN 1 ELSE 0 END),
                 SUM(CASE WHEN state IN ('preparing','queued') THEN 1 ELSE 0 END),
                 COUNT(*)
-               FROM task_admissions WHERE session_id = ?""",
+               FROM job_admissions WHERE session_id = ?""",
             (session_id,),
         ).fetchone()
         limits = resolved.effective_limits()
@@ -621,7 +621,7 @@ class ResourceGovernor:
                 "used": int(row[0] or 0), "limit": configured_live_limit,
             },
             "session_queued": {"used": int(row[1] or 0), "limit": limits["max_queued_per_session"]},
-            "session_tasks": {"used": int(row[2] or 0), "limit": limits["max_tasks_per_session"]},
+            "session_jobs": {"used": int(row[2] or 0), "limit": limits["max_jobs_per_session"]},
         }
 
     @staticmethod
@@ -636,14 +636,14 @@ class ResourceGovernor:
         return _usage_view(_scope_usage_breakdown(conn, row["budget_scope_id"]))
 
     @staticmethod
-    def _ancestor_limits(conn, parent_task_id: str | None) -> ResourceLimits:
-        if not parent_task_id:
+    def _ancestor_limits(conn, parent_job_id: str | None) -> ResourceLimits:
+        if not parent_job_id:
             return ResourceLimits()
         row = conn.execute(
             """WITH RECURSIVE ancestors AS (
-                   SELECT b.* FROM task_admissions a
+                   SELECT b.* FROM job_admissions a
                    JOIN budget_scopes b ON b.budget_scope_id = a.budget_scope_id
-                   WHERE a.task_id = ?
+                   WHERE a.job_id = ?
                    UNION ALL
                    SELECT parent.* FROM budget_scopes parent
                    JOIN ancestors child
@@ -652,7 +652,7 @@ class ResourceGovernor:
                SELECT MIN(max_total_tokens), MIN(max_cost_microusd),
                       MIN(max_runtime_seconds), MIN(idle_timeout_seconds)
                FROM ancestors""",
-            (parent_task_id,),
+            (parent_job_id,),
         ).fetchone()
         if row is None:
             return ResourceLimits()
@@ -669,7 +669,7 @@ class ResourceGovernor:
         ancestor: ResourceLimits,
     ) -> ResolvedResourceLimits:
         fields = dict(resolved.fields)
-        for name in TASK_LIMIT_FIELDS:
+        for name in JOB_LIMIT_FIELDS:
             candidate = getattr(ancestor, name)
             current = fields[name].effective
             if candidate is not None and (
@@ -689,7 +689,7 @@ class ResourceGovernor:
     ) -> AdmissionDecision:
         return AdmissionDecision(
             accepted=False,
-            task_id=None,
+            job_id=None,
             reason_code=reason_code,
             retryable=retryable,
             effective_limits=resolved.to_dict(),
@@ -697,11 +697,11 @@ class ResourceGovernor:
             usage=usage or _empty_usage_view(),
         )
 
-    def admit_task(
+    def admit_job(
         self,
-        task: Task,
+        job: Job,
         *,
-        persist: Callable[[Task], Any],
+        persist: Callable[[Job], Any],
         creates_agent: bool = True,
         caller_session_id: str | None = None,
         caller_turn_id: str | None = None,
@@ -709,12 +709,12 @@ class ResourceGovernor:
         borrowed_claim: tuple[str, str, int] | None = None,
     ) -> AdmissionDecision:
         try:
-            resolved = self._limit_resolver(task.parent_session_id, task)
+            resolved = self._limit_resolver(job.parent_session_id, job)
         except ResourceLimitError:
             fallback = resolve_resource_limits(ResourceLimits())
             try:
                 usage = self._session_usage(
-                    self.ledger.connection(), task.parent_session_id,
+                    self.ledger.connection(), job.parent_session_id,
                 )
             except Exception:
                 return self._denied(
@@ -729,18 +729,18 @@ class ResourceGovernor:
                 retryable=False,
                 usage=usage,
             )
-        fingerprint = _task_fingerprint(task)
+        fingerprint = _job_fingerprint(job)
         admission_id = "adm_" + uuid.uuid4().hex
         scope_id = "budget_" + uuid.uuid4().hex
         session_scope_id = "session_" + hashlib.sha256(
-            task.parent_session_id.encode("utf-8")
+            job.parent_session_id.encode("utf-8")
         ).hexdigest()[:24]
         session_effective = self._session_limit_resolver(
-            task.parent_session_id
+            job.parent_session_id
         ).effective_limits()
         spawn_depth_limit = spawn_fanout_limit = 0
         if creates_agent:
-            from openprogram.functions.tools.agent.agent.agent import (
+            from openprogram.programs.functions.agent.agent.agent import (
                 max_spawn_depth,
                 max_spawn_fanout,
             )
@@ -749,29 +749,29 @@ class ResourceGovernor:
 
         with self.ledger.immediate() as conn:
             resolved = self._with_ancestor_limits(
-                resolved, self._ancestor_limits(conn, task.parent_task_id),
+                resolved, self._ancestor_limits(conn, job.parent_job_id),
             )
             effective = resolved.effective_limits()
             existing = conn.execute(
                 """SELECT admission_id, request_fingerprint, budget_scope_id, state
-                   FROM task_admissions WHERE task_id = ?""",
-                (task.id,),
+                   FROM job_admissions WHERE job_id = ?""",
+                (job.id,),
             ).fetchone()
-            capacity = self._capacity(conn, task.parent_session_id, resolved)
-            usage = self._session_usage(conn, task.parent_session_id)
+            capacity = self._capacity(conn, job.parent_session_id, resolved)
+            usage = self._session_usage(conn, job.parent_session_id)
             if existing is not None:
                 if existing["request_fingerprint"] != fingerprint:
                     return self._denied(
                         "quota.admission_conflict", resolved=resolved,
                         capacity=capacity, retryable=False, usage=usage,
                     )
-                task.admission_id = existing["admission_id"]
-                task.budget_scope_id = existing["budget_scope_id"]
-                task.effective_limits = effective
-                task.resolved_limits_snapshot = resolved.to_dict()
+                job.admission_id = existing["admission_id"]
+                job.budget_scope_id = existing["budget_scope_id"]
+                job.effective_limits = effective
+                job.resolved_limits_snapshot = resolved.to_dict()
                 return AdmissionDecision(
                     accepted=True,
-                    task_id=task.id,
+                    job_id=job.id,
                     reason_code=None,
                     retryable=False,
                     effective_limits=resolved.to_dict(),
@@ -779,18 +779,18 @@ class ResourceGovernor:
                     idempotent=True,
                     usage=usage,
                 )
-            borrowed_parent_task_id = None
+            borrowed_parent_job_id = None
             if borrowed_claim is not None:
-                parent_task_id, owner_instance_id, lease_generation = borrowed_claim
+                parent_job_id, owner_instance_id, lease_generation = borrowed_claim
                 parent_claim = conn.execute(
-                    """SELECT session_id FROM task_admissions
-                       WHERE task_id = ? AND state IN ('live','stopping')
+                    """SELECT session_id FROM job_admissions
+                       WHERE job_id = ? AND state IN ('live','stopping')
                          AND owner_instance_id = ? AND lease_generation = ?""",
-                    (parent_task_id, owner_instance_id, lease_generation),
+                    (parent_job_id, owner_instance_id, lease_generation),
                 ).fetchone()
                 if (
                     parent_claim is None
-                    or parent_claim["session_id"] != task.parent_session_id
+                    or parent_claim["session_id"] != job.parent_session_id
                 ):
                     return self._denied(
                         "quota.parent_claim_unavailable",
@@ -799,10 +799,10 @@ class ResourceGovernor:
                         retryable=True,
                         usage=usage,
                     )
-                borrowed_parent_task_id = parent_task_id
+                borrowed_parent_job_id = parent_job_id
             if (
                 spawn_depth_limit
-                and task.chain_generations > spawn_depth_limit
+                and job.chain_generations > spawn_depth_limit
             ):
                 return self._denied(
                     "quota.spawn_depth", resolved=resolved,
@@ -811,11 +811,11 @@ class ResourceGovernor:
             if creates_agent and caller_turn_id and spawn_fanout_limit:
                 fanout_session_id = (
                     caller_session_id
-                    or task.caller_session_id
-                    or task.parent_session_id
+                    or job.caller_session_id
+                    or job.parent_session_id
                 )
                 fanout_used = conn.execute(
-                    """SELECT COUNT(*) FROM task_admissions
+                    """SELECT COUNT(*) FROM job_admissions
                        WHERE COALESCE(caller_session_id, session_id) = ?
                          AND caller_turn_id = ?
                          AND creates_agent = 1""",
@@ -832,23 +832,23 @@ class ResourceGovernor:
                     "quota.queue_full", resolved=resolved,
                     capacity=capacity, retryable=True, usage=usage,
                 )
-            cumulative = capacity["session_tasks"]
+            cumulative = capacity["session_jobs"]
             if cumulative["limit"] is not None and cumulative["used"] >= cumulative["limit"]:
                 return self._denied(
-                    "quota.tasks_exhausted", resolved=resolved,
+                    "quota.jobs_exhausted", resolved=resolved,
                     capacity=capacity, retryable=False, usage=usage,
                 )
             admitted_seq = conn.execute(
-                "SELECT COALESCE(MAX(admitted_seq), 0) + 1 FROM task_admissions"
+                "SELECT COALESCE(MAX(admitted_seq), 0) + 1 FROM job_admissions"
             ).fetchone()[0]
             conn.execute(
                 """INSERT OR IGNORE INTO budget_scopes (
-                    budget_scope_id, scope_kind, session_id, task_id,
+                    budget_scope_id, scope_kind, session_id, job_id,
                     max_total_tokens, max_cost_microusd,
                     max_runtime_seconds, idle_timeout_seconds, created_at
                 ) VALUES (?, 'session', ?, NULL, ?, ?, ?, ?, ?)""",
                 (
-                    session_scope_id, task.parent_session_id,
+                    session_scope_id, job.parent_session_id,
                     session_effective["max_total_tokens"],
                     ResourceLimits.usd_to_microusd(session_effective["max_cost_usd"])
                     if session_effective["max_cost_usd"] is not None else None,
@@ -869,28 +869,28 @@ class ResourceGovernor:
                 ),
             )
             parent_scope = session_scope_id
-            if task.parent_task_id:
+            if job.parent_job_id:
                 parent = conn.execute(
-                    "SELECT budget_scope_id FROM task_admissions WHERE task_id = ?",
-                    (task.parent_task_id,),
+                    "SELECT budget_scope_id FROM job_admissions WHERE job_id = ?",
+                    (job.parent_job_id,),
                 ).fetchone()
                 if parent is not None:
                     parent_scope = parent[0]
             conn.execute(
                 """INSERT INTO budget_scopes (
-                    budget_scope_id, scope_kind, session_id, task_id,
+                    budget_scope_id, scope_kind, session_id, job_id,
                     parent_scope_id, max_total_tokens, max_cost_microusd,
                     max_runtime_seconds, idle_timeout_seconds, created_at
-                ) VALUES (?, 'task', ?, ?, ?, ?, ?, ?, ?, ?)""",
+                ) VALUES (?, 'job', ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    scope_id, task.parent_session_id, task.id, parent_scope,
+                    scope_id, job.parent_session_id, job.id, parent_scope,
                     effective["max_total_tokens"]
-                    if resolved.fields["max_total_tokens"].source == "task"
+                    if resolved.fields["max_total_tokens"].source == "job"
                     else None,
                     ResourceLimits.usd_to_microusd(effective["max_cost_usd"])
                     if (
                         effective["max_cost_usd"] is not None
-                        and resolved.fields["max_cost_usd"].source == "task"
+                        and resolved.fields["max_cost_usd"].source == "job"
                     )
                     else None,
                     effective["max_runtime_seconds"], effective["idle_timeout_seconds"],
@@ -898,49 +898,49 @@ class ResourceGovernor:
                 ),
             )
             conn.execute(
-                """INSERT INTO task_admissions (
-                    admission_id, task_id, session_id, parent_task_id,
+                """INSERT INTO job_admissions (
+                    admission_id, job_id, session_id, parent_job_id,
                     caller_session_id, caller_turn_id, creates_agent,
                     request_fingerprint,
-                    budget_scope_id, dispatch_ready, borrowed_parent_task_id, state,
+                    budget_scope_id, dispatch_ready, borrowed_parent_job_id, state,
                     admitted_seq, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'preparing', ?, ?)""",
                 (
-                    admission_id, task.id, task.parent_session_id, task.parent_task_id,
-                    caller_session_id or task.caller_session_id,
+                    admission_id, job.id, job.parent_session_id, job.parent_job_id,
+                    caller_session_id or job.caller_session_id,
                     caller_turn_id, int(creates_agent), fingerprint, scope_id,
-                    int(dispatch_ready), borrowed_parent_task_id,
+                    int(dispatch_ready), borrowed_parent_job_id,
                     admitted_seq, time.time(),
                 ),
             )
 
-        task.admission_id = admission_id
-        task.budget_scope_id = scope_id
-        task.effective_limits = effective
-        task.resolved_limits_snapshot = resolved.to_dict()
-        task.status = task.status.__class__.QUEUED
-        task.queued_at = task.queued_at or time.time()
+        job.admission_id = admission_id
+        job.budget_scope_id = scope_id
+        job.effective_limits = effective
+        job.resolved_limits_snapshot = resolved.to_dict()
+        job.status = job.status.__class__.QUEUED
+        job.queued_at = job.queued_at or time.time()
         try:
-            persist(task)
+            persist(job)
         except Exception:
             with self.ledger.immediate() as conn:
                 conn.execute(
-                    "DELETE FROM task_admissions WHERE admission_id = ? AND state = 'preparing'",
+                    "DELETE FROM job_admissions WHERE admission_id = ? AND state = 'preparing'",
                     (admission_id,),
                 )
                 conn.execute("DELETE FROM budget_scopes WHERE budget_scope_id = ?", (scope_id,))
             raise
         with self.ledger.immediate() as conn:
             conn.execute(
-                "UPDATE task_admissions SET state = 'queued' "
+                "UPDATE job_admissions SET state = 'queued' "
                 "WHERE admission_id = ? AND state = 'preparing'",
                 (admission_id,),
             )
-            capacity = self._capacity(conn, task.parent_session_id, resolved)
-            usage = self._session_usage(conn, task.parent_session_id)
+            capacity = self._capacity(conn, job.parent_session_id, resolved)
+            usage = self._session_usage(conn, job.parent_session_id)
         return AdmissionDecision(
             accepted=True,
-            task_id=task.id,
+            job_id=job.id,
             reason_code=None,
             retryable=False,
             effective_limits=resolved.to_dict(),
@@ -948,16 +948,16 @@ class ResourceGovernor:
             usage=usage,
         )
 
-    def _resolved_for_admission(self, conn, task_id: str):
+    def _resolved_for_admission(self, conn, job_id: str):
         row = conn.execute(
-            "SELECT session_id FROM task_admissions WHERE task_id = ?", (task_id,),
+            "SELECT session_id FROM job_admissions WHERE job_id = ?", (job_id,),
         ).fetchone()
         if row is None:
             return None, None
-        task = Task(
-            id=task_id, parent_session_id=row["session_id"], prompt="", agent_id="",
+        job = Job(
+            id=job_id, parent_session_id=row["session_id"], prompt="", agent_id="",
         )
-        return row, self._limit_resolver(row["session_id"], task)
+        return row, self._limit_resolver(row["session_id"], job)
 
     @staticmethod
     def _owner_holds_worker_lock(owner_instance_id: str) -> bool:
@@ -976,17 +976,17 @@ class ResourceGovernor:
         except Exception:
             return False
 
-    def try_start(self, task_id: str, *, owner_instance_id: str) -> bool:
+    def try_start(self, job_id: str, *, owner_instance_id: str) -> bool:
         """Atomically exchange queued capacity for live capacity."""
         if not self._owner_holds_worker_lock(owner_instance_id):
             return False
         with self.ledger.immediate() as conn:
-            row, resolved = self._resolved_for_admission(conn, task_id)
+            row, resolved = self._resolved_for_admission(conn, job_id)
             if row is None or resolved is None:
                 return False
             admission = conn.execute(
-                """SELECT state, owner_instance_id FROM task_admissions
-                   WHERE task_id = ?""", (task_id,),
+                """SELECT state, owner_instance_id FROM job_admissions
+                   WHERE job_id = ?""", (job_id,),
             ).fetchone()
             if admission["state"] == "live":
                 return admission["owner_instance_id"] == owner_instance_id
@@ -995,7 +995,7 @@ class ResourceGovernor:
             capacity = self._capacity(conn, row["session_id"], resolved)
             live = capacity["session_live"]
             global_live = conn.execute(
-                "SELECT COUNT(*) FROM task_admissions WHERE state IN ('live','stopping')"
+                "SELECT COUNT(*) FROM job_admissions WHERE state IN ('live','stopping')"
             ).fetchone()[0]
             if global_live >= resolved.scheduler_capacity:
                 return False
@@ -1003,13 +1003,13 @@ class ResourceGovernor:
                 return False
             now = time.time()
             changed = conn.execute(
-                """UPDATE task_admissions
+                """UPDATE job_admissions
                    SET state = 'live', owner_instance_id = ?, started_at = ?,
                        last_activity_at = ?, lease_expires_at = ?,
                        lease_generation = lease_generation + 1
-                   WHERE task_id = ? AND state = 'queued'
+                   WHERE job_id = ? AND state = 'queued'
                      AND dispatch_ready = 1""",
-                (owner_instance_id, now, now, now + 30.0, task_id),
+                (owner_instance_id, now, now, now + 30.0, job_id),
             ).rowcount
             return changed == 1
 
@@ -1018,30 +1018,30 @@ class ResourceGovernor:
         *,
         owner_instance_id: str,
         excluded_sessions: set[str] | None = None,
-        only_task_id: str | None = None,
+        only_job_id: str | None = None,
     ) -> DispatchClaim | None:
-        """Claim the globally oldest queued task whose session is eligible."""
+        """Claim the globally oldest queued job whose session is eligible."""
         if not self._owner_holds_worker_lock(owner_instance_id):
             return None
         excluded_sessions = excluded_sessions or set()
         with self.ledger.immediate() as conn:
             queued = conn.execute(
-                """SELECT task_id, session_id FROM task_admissions
+                """SELECT job_id, session_id FROM job_admissions
                    WHERE state = 'queued' AND dispatch_ready = 1
                    ORDER BY admitted_seq"""
             ).fetchall()
             for candidate in queued:
-                if only_task_id is not None and candidate["task_id"] != only_task_id:
+                if only_job_id is not None and candidate["job_id"] != only_job_id:
                     continue
                 if candidate["session_id"] in excluded_sessions:
                     continue
                 row, resolved = self._resolved_for_admission(
-                    conn, candidate["task_id"],
+                    conn, candidate["job_id"],
                 )
                 if row is None or resolved is None:
                     continue
                 global_live = conn.execute(
-                    """SELECT COUNT(*) FROM task_admissions
+                    """SELECT COUNT(*) FROM job_admissions
                        WHERE state IN ('live','stopping')"""
                 ).fetchone()[0]
                 if global_live >= resolved.scheduler_capacity:
@@ -1052,29 +1052,29 @@ class ResourceGovernor:
                     continue
                 now = time.time()
                 changed = conn.execute(
-                    """UPDATE task_admissions
+                    """UPDATE job_admissions
                        SET state = 'live', owner_instance_id = ?, started_at = ?,
                            last_activity_at = ?, lease_expires_at = ?,
                            lease_generation = lease_generation + 1
-                       WHERE task_id = ? AND state = 'queued'""",
+                       WHERE job_id = ? AND state = 'queued'""",
                     (
                         owner_instance_id, now, now, now + 30.0,
-                        candidate["task_id"],
+                        candidate["job_id"],
                     ),
                 ).rowcount
                 if changed == 1:
                     generation = conn.execute(
-                        "SELECT lease_generation FROM task_admissions WHERE task_id = ?",
-                        (candidate["task_id"],),
+                        "SELECT lease_generation FROM job_admissions WHERE job_id = ?",
+                        (candidate["job_id"],),
                     ).fetchone()[0]
                     return DispatchClaim(
-                        candidate["task_id"], candidate["session_id"], generation,
+                        candidate["job_id"], candidate["session_id"], generation,
                     )
             return None
 
     def stage_deferred_resume(
         self,
-        task_id: str,
+        job_id: str,
         *,
         admission_id: str,
         parent_msg_id: str,
@@ -1082,11 +1082,11 @@ class ResourceGovernor:
         """Persist the mutable target head under the original admission fence."""
         with self.ledger.immediate() as conn:
             row = conn.execute(
-                """SELECT resume_parent_msg_id FROM task_admissions
-                   WHERE task_id = ? AND admission_id = ?
+                """SELECT resume_parent_msg_id FROM job_admissions
+                   WHERE job_id = ? AND admission_id = ?
                      AND state = 'queued' AND dispatch_ready = 0
-                     AND borrowed_parent_task_id IS NULL""",
-                (task_id, admission_id),
+                     AND borrowed_parent_job_id IS NULL""",
+                (job_id, admission_id),
             ).fetchone()
             if row is None:
                 return False
@@ -1094,85 +1094,85 @@ class ResourceGovernor:
             if staged is not None and staged != parent_msg_id:
                 return False
             conn.execute(
-                """UPDATE task_admissions SET resume_parent_msg_id = ?
-                   WHERE task_id = ? AND admission_id = ?
+                """UPDATE job_admissions SET resume_parent_msg_id = ?
+                   WHERE job_id = ? AND admission_id = ?
                      AND state = 'queued' AND dispatch_ready = 0""",
-                (parent_msg_id, task_id, admission_id),
+                (parent_msg_id, job_id, admission_id),
             )
             return True
 
     def mark_dispatch_ready(
         self,
-        task_id: str,
+        job_id: str,
         *,
         admission_id: str,
         parent_msg_id: str,
     ) -> bool:
-        """Publish a staged deferred Task under its immutable admission fence."""
+        """Publish a staged deferred Job under its immutable admission fence."""
         with self.ledger.immediate() as conn:
             return conn.execute(
-                """UPDATE task_admissions
+                """UPDATE job_admissions
                    SET dispatch_ready = 1, resume_parent_msg_id = NULL
-                   WHERE task_id = ? AND admission_id = ?
+                   WHERE job_id = ? AND admission_id = ?
                      AND state = 'queued' AND dispatch_ready = 0
                      AND resume_parent_msg_id = ?
-                     AND borrowed_parent_task_id IS NULL""",
-                (task_id, admission_id, parent_msg_id),
+                     AND borrowed_parent_job_id IS NULL""",
+                (job_id, admission_id, parent_msg_id),
             ).rowcount == 1
 
     def reset_deferred_resume(
         self,
-        task_id: str,
+        job_id: str,
         *,
         admission_id: str,
         parent_msg_id: str,
     ) -> bool:
-        """Undo a staged head whose TaskStore update did not survive."""
+        """Undo a staged head whose JobStore update did not survive."""
         with self.ledger.immediate() as conn:
             return conn.execute(
-                """UPDATE task_admissions SET resume_parent_msg_id = NULL
-                   WHERE task_id = ? AND admission_id = ?
+                """UPDATE job_admissions SET resume_parent_msg_id = NULL
+                   WHERE job_id = ? AND admission_id = ?
                      AND state = 'queued' AND dispatch_ready = 0
                      AND resume_parent_msg_id = ?""",
-                (task_id, admission_id, parent_msg_id),
+                (job_id, admission_id, parent_msg_id),
             ).rowcount == 1
 
     def pending_deferred_resumes(self) -> list[tuple[str, str, str, str]]:
         """Return staged resume publications left incomplete by a crash."""
         with self.ledger.immediate() as conn:
             rows = conn.execute(
-                """SELECT task_id, session_id, admission_id, resume_parent_msg_id
-                   FROM task_admissions
+                """SELECT job_id, session_id, admission_id, resume_parent_msg_id
+                   FROM job_admissions
                    WHERE state = 'queued' AND dispatch_ready = 0
                      AND resume_parent_msg_id IS NOT NULL
-                     AND borrowed_parent_task_id IS NULL
+                     AND borrowed_parent_job_id IS NULL
                    ORDER BY admitted_seq"""
             ).fetchall()
         return [
             (
-                str(row["task_id"]), str(row["session_id"]),
+                str(row["job_id"]), str(row["session_id"]),
                 str(row["admission_id"]), str(row["resume_parent_msg_id"]),
             )
             for row in rows
         ]
 
     def deferred_dispatches(self) -> list[tuple[str, str]]:
-        """Return admitted Tasks waiting for their inbox intent."""
+        """Return admitted Jobs waiting for their inbox intent."""
         with self.ledger.immediate() as conn:
             rows = conn.execute(
-                """SELECT task_id, session_id FROM task_admissions
+                """SELECT job_id, session_id FROM job_admissions
                    WHERE state = 'queued' AND dispatch_ready = 0
-                     AND borrowed_parent_task_id IS NULL
+                     AND borrowed_parent_job_id IS NULL
                      AND resume_parent_msg_id IS NULL
                    ORDER BY admitted_seq"""
             ).fetchall()
-        return [(str(row["task_id"]), str(row["session_id"])) for row in rows]
+        return [(str(row["job_id"]), str(row["session_id"])) for row in rows]
 
-    def release_borrowed_task(
+    def release_borrowed_job(
         self,
-        task_id: str,
+        job_id: str,
         *,
-        parent_task_id: str,
+        parent_job_id: str,
         owner_instance_id: str,
         lease_generation: int,
         reason_code: str,
@@ -1180,95 +1180,95 @@ class ResourceGovernor:
         """Release a child only while its borrowed parent fence is current."""
         with self.ledger.immediate() as conn:
             parent = conn.execute(
-                """SELECT 1 FROM task_admissions
-                   WHERE task_id = ? AND state IN ('live','stopping')
+                """SELECT 1 FROM job_admissions
+                   WHERE job_id = ? AND state IN ('live','stopping')
                      AND owner_instance_id = ? AND lease_generation = ?""",
-                (parent_task_id, owner_instance_id, lease_generation),
+                (parent_job_id, owner_instance_id, lease_generation),
             ).fetchone()
             if parent is None:
                 return False
             return conn.execute(
-                """UPDATE task_admissions
+                """UPDATE job_admissions
                    SET state = 'released', released_at = ?, reason_code = ?,
                        lease_expires_at = NULL
-                   WHERE task_id = ? AND state = 'queued'
-                     AND borrowed_parent_task_id = ?
+                   WHERE job_id = ? AND state = 'queued'
+                     AND borrowed_parent_job_id = ?
                      AND NOT EXISTS (
-                         SELECT 1 FROM task_finalizations
-                         WHERE task_finalizations.task_id = task_admissions.task_id
-                           AND task_finalizations.state = 'pending'
+                         SELECT 1 FROM job_finalizations
+                         WHERE job_finalizations.job_id = job_admissions.job_id
+                           AND job_finalizations.state = 'pending'
                      )""",
-                (time.time(), reason_code, task_id, parent_task_id),
+                (time.time(), reason_code, job_id, parent_job_id),
             ).rowcount == 1
 
-    def start_borrowed_task(
+    def start_borrowed_job(
         self,
-        task_id: str,
+        job_id: str,
         *,
-        parent_task_id: str,
+        parent_job_id: str,
         owner_instance_id: str,
         lease_generation: int,
     ) -> bool:
         """Fence a borrowed child's runtime without consuming live capacity."""
         with self.ledger.immediate() as conn:
             parent = conn.execute(
-                """SELECT 1 FROM task_admissions
-                   WHERE task_id = ? AND state IN ('live','stopping')
+                """SELECT 1 FROM job_admissions
+                   WHERE job_id = ? AND state IN ('live','stopping')
                      AND owner_instance_id = ? AND lease_generation = ?""",
-                (parent_task_id, owner_instance_id, lease_generation),
+                (parent_job_id, owner_instance_id, lease_generation),
             ).fetchone()
             if parent is None:
                 return False
             now = time.time()
             return conn.execute(
-                """UPDATE task_admissions
+                """UPDATE job_admissions
                    SET owner_instance_id = ?, lease_generation = ?,
                        started_at = ?, last_activity_at = ?, lease_expires_at = ?
-                   WHERE task_id = ? AND state = 'queued'
+                   WHERE job_id = ? AND state = 'queued'
                      AND dispatch_ready = 0
-                     AND borrowed_parent_task_id = ?
+                     AND borrowed_parent_job_id = ?
                      AND owner_instance_id IS NULL""",
                 (
                     owner_instance_id, lease_generation, now, now, now + 30.0,
-                    task_id, parent_task_id,
+                    job_id, parent_job_id,
                 ),
             ).rowcount == 1
 
     def renew_borrowed_lease(
         self,
-        task_id: str,
+        job_id: str,
         *,
-        parent_task_id: str,
+        parent_job_id: str,
         owner_instance_id: str,
         lease_generation: int,
     ) -> bool:
         """Renew the child entry only while the borrowed parent fence is live."""
         with self.ledger.immediate() as conn:
             return conn.execute(
-                """UPDATE task_admissions AS child SET lease_expires_at = ?
-                   WHERE child.task_id = ? AND child.state = 'queued'
-                     AND child.borrowed_parent_task_id = ?
+                """UPDATE job_admissions AS child SET lease_expires_at = ?
+                   WHERE child.job_id = ? AND child.state = 'queued'
+                     AND child.borrowed_parent_job_id = ?
                      AND child.owner_instance_id = ?
                      AND child.lease_generation = ?
                      AND EXISTS (
-                         SELECT 1 FROM task_admissions AS parent
-                         WHERE parent.task_id = child.borrowed_parent_task_id
+                         SELECT 1 FROM job_admissions AS parent
+                         WHERE parent.job_id = child.borrowed_parent_job_id
                            AND parent.state IN ('live','stopping')
                            AND parent.owner_instance_id = ?
                            AND parent.lease_generation = ?
                      )""",
                 (
-                    time.time() + 30.0, task_id, parent_task_id,
+                    time.time() + 30.0, job_id, parent_job_id,
                     owner_instance_id, lease_generation,
                     owner_instance_id, lease_generation,
                 ),
             ).rowcount == 1
 
-    def finalize_borrowed_task(
+    def finalize_borrowed_job(
         self,
-        task_id: str,
+        job_id: str,
         *,
-        parent_task_id: str,
+        parent_job_id: str,
         owner_instance_id: str,
         lease_generation: int,
         reason_code: str,
@@ -1279,85 +1279,85 @@ class ResourceGovernor:
         if terminal_fields.get("reason_code") != reason_code:
             raise ValueError("terminal_fields reason_code must match reason_code")
         return self._finalize_with_intent(
-            task_id,
+            job_id,
             owner_instance_id=owner_instance_id,
             lease_generation=lease_generation,
             terminal_fields=terminal_fields,
             eligible_states=("queued",),
-            borrowed_parent_task_id=parent_task_id,
+            borrowed_parent_job_id=parent_job_id,
             require_parent_fence=True,
             mutate=mutate,
         )
 
-    def release_orphaned_borrowed_tasks(self) -> list[tuple[str, str]]:
+    def release_orphaned_borrowed_jobs(self) -> list[tuple[str, str]]:
         """Release borrowed children whose parent no longer owns a claim."""
         with self.ledger.immediate() as conn:
             rows = conn.execute(
-                """SELECT child.task_id, child.session_id
-                   FROM task_admissions AS child
-                   LEFT JOIN task_admissions AS parent
-                     ON parent.task_id = child.borrowed_parent_task_id
+                """SELECT child.job_id, child.session_id
+                   FROM job_admissions AS child
+                   LEFT JOIN job_admissions AS parent
+                     ON parent.job_id = child.borrowed_parent_job_id
                    WHERE child.state = 'queued'
-                     AND child.borrowed_parent_task_id IS NOT NULL
+                     AND child.borrowed_parent_job_id IS NOT NULL
                      AND NOT EXISTS (
-                         SELECT 1 FROM task_finalizations
-                         WHERE task_finalizations.task_id = child.task_id
-                           AND task_finalizations.state = 'pending'
+                         SELECT 1 FROM job_finalizations
+                         WHERE job_finalizations.job_id = child.job_id
+                           AND job_finalizations.state = 'pending'
                      )
-                     AND (parent.task_id IS NULL
+                     AND (parent.job_id IS NULL
                           OR parent.state NOT IN ('live','stopping'))"""
             ).fetchall()
             for row in rows:
                 conn.execute(
-                    """UPDATE task_admissions
+                    """UPDATE job_admissions
                        SET state = 'released', released_at = ?,
                            reason_code = 'error.borrowed_parent_lost'
-                       WHERE task_id = ? AND state = 'queued'
+                       WHERE job_id = ? AND state = 'queued'
                          AND NOT EXISTS (
-                             SELECT 1 FROM task_finalizations
-                             WHERE task_finalizations.task_id = task_admissions.task_id
-                               AND task_finalizations.state = 'pending'
+                             SELECT 1 FROM job_finalizations
+                             WHERE job_finalizations.job_id = job_admissions.job_id
+                               AND job_finalizations.state = 'pending'
                          )""",
-                    (time.time(), row["task_id"]),
+                    (time.time(), row["job_id"]),
                 )
-        return [(str(row["task_id"]), str(row["session_id"])) for row in rows]
+        return [(str(row["job_id"]), str(row["session_id"])) for row in rows]
 
     def renew_lease(
-        self, task_id: str, *, owner_instance_id: str, lease_generation: int,
+        self, job_id: str, *, owner_instance_id: str, lease_generation: int,
     ) -> bool:
         with self.ledger.immediate() as conn:
             now = time.time()
             return conn.execute(
-                """UPDATE task_admissions SET lease_expires_at = ?
-                   WHERE task_id = ? AND owner_instance_id = ?
+                """UPDATE job_admissions SET lease_expires_at = ?
+                   WHERE job_id = ? AND owner_instance_id = ?
                      AND lease_generation = ?
                      AND state IN ('live','stopping')""",
-                (now + 30.0, task_id, owner_instance_id, lease_generation),
+                (now + 30.0, job_id, owner_instance_id, lease_generation),
             ).rowcount == 1
 
-    def requeue_task(
-        self, task_id: str, *, owner_instance_id: str, lease_generation: int,
+    def requeue_job(
+        self, job_id: str, *, owner_instance_id: str, lease_generation: int,
     ) -> bool:
-        """Return a claimed task to queued when another turn owns its session."""
+        """Return a claimed job to queued when another turn owns its session."""
         with self.ledger.immediate() as conn:
             return conn.execute(
-                """UPDATE task_admissions
+                """UPDATE job_admissions
                    SET state = 'queued', owner_instance_id = NULL,
                        lease_expires_at = NULL, started_at = NULL,
                        last_activity_at = NULL
-                   WHERE task_id = ? AND state = 'live'
+                   WHERE job_id = ? AND state = 'live'
                      AND owner_instance_id = ? AND lease_generation = ?
                      AND NOT EXISTS (
-                         SELECT 1 FROM task_finalizations
-                         WHERE task_finalizations.task_id = task_admissions.task_id
-                           AND task_finalizations.state = 'pending'
+                         SELECT 1 FROM job_finalizations
+                         WHERE job_finalizations.job_id = job_admissions.job_id
+                           AND job_finalizations.state = 'pending'
                      )""",
-                (task_id, owner_instance_id, lease_generation),
+                (job_id, owner_instance_id, lease_generation),
             ).rowcount == 1
 
-    def finalize_stopping_task(
+    def finalize_stopping_job(
         self,
-        task_id: str,
+        job_id: str,
         *,
         owner_instance_id: str,
         lease_generation: int,
@@ -1369,7 +1369,7 @@ class ResourceGovernor:
         if terminal_fields.get("reason_code") != reason_code:
             raise ValueError("terminal_fields reason_code must match reason_code")
         return self._finalize_with_intent(
-            task_id,
+            job_id,
             owner_instance_id=owner_instance_id,
             lease_generation=lease_generation,
             terminal_fields=terminal_fields,
@@ -1378,34 +1378,34 @@ class ResourceGovernor:
             mutate=mutate,
         )
 
-    def abandon_stopping_task(
-        self, task_id: str, *, owner_instance_id: str, lease_generation: int,
+    def abandon_stopping_job(
+        self, job_id: str, *, owner_instance_id: str, lease_generation: int,
     ) -> bool:
         """Revoke a failed stopping claim so reconciliation can finish it."""
         with self.ledger.immediate() as conn:
             return conn.execute(
-                """UPDATE task_admissions
+                """UPDATE job_admissions
                    SET owner_instance_id = NULL,
                        lease_generation = lease_generation + 1,
                        lease_expires_at = NULL
-                   WHERE task_id = ? AND state = 'stopping'
+                   WHERE job_id = ? AND state = 'stopping'
                      AND owner_instance_id = ? AND lease_generation = ?
                      AND NOT EXISTS (
-                         SELECT 1 FROM task_finalizations
-                         WHERE task_finalizations.task_id = task_admissions.task_id
-                           AND task_finalizations.state = 'pending'
+                         SELECT 1 FROM job_finalizations
+                         WHERE job_finalizations.job_id = job_admissions.job_id
+                           AND job_finalizations.state = 'pending'
                      )""",
-                (task_id, owner_instance_id, lease_generation),
+                (job_id, owner_instance_id, lease_generation),
             ).rowcount == 1
 
-    def request_stop(self, task_id: str, reason_code: str) -> None:
+    def request_stop(self, job_id: str, reason_code: str) -> None:
         with self.ledger.immediate() as conn:
             conn.execute(
-                """UPDATE task_admissions
+                """UPDATE job_admissions
                    SET state = CASE
                        WHEN state = 'live' THEN 'stopping'
                        WHEN state = 'queued'
-                            AND borrowed_parent_task_id IS NOT NULL
+                            AND borrowed_parent_job_id IS NOT NULL
                             AND owner_instance_id IS NOT NULL THEN state
                        WHEN state IN ('preparing','queued') THEN 'released'
                        ELSE state END,
@@ -1414,16 +1414,16 @@ class ResourceGovernor:
                            WHEN state IN ('preparing','queued')
                                 AND NOT (
                                     state = 'queued'
-                                    AND borrowed_parent_task_id IS NOT NULL
+                                    AND borrowed_parent_job_id IS NOT NULL
                                     AND owner_instance_id IS NOT NULL
                                 ) THEN ? ELSE released_at END
-                   WHERE task_id = ?""",
-                (reason_code, time.time(), task_id),
+                   WHERE job_id = ?""",
+                (reason_code, time.time(), job_id),
             )
 
-    def release_task(
+    def release_job(
         self,
-        task_id: str,
+        job_id: str,
         reason_code: str | None = None,
         *,
         owner_instance_id: str | None = None,
@@ -1431,19 +1431,19 @@ class ResourceGovernor:
     ) -> bool:
         with self.ledger.immediate() as conn:
             return conn.execute(
-                """UPDATE task_admissions
+                """UPDATE job_admissions
                    SET state = 'released', released_at = ?, lease_expires_at = NULL,
                        reason_code = COALESCE(?, reason_code)
-                   WHERE task_id = ? AND state != 'released'
+                   WHERE job_id = ? AND state != 'released'
                      AND (state IN ('preparing','queued')
                           OR (owner_instance_id = ? AND lease_generation = ?))
                      AND NOT EXISTS (
-                         SELECT 1 FROM task_finalizations
-                         WHERE task_finalizations.task_id = task_admissions.task_id
-                           AND task_finalizations.state = 'pending'
+                         SELECT 1 FROM job_finalizations
+                         WHERE job_finalizations.job_id = job_admissions.job_id
+                           AND job_finalizations.state = 'pending'
                      )""",
                 (
-                    time.time(), reason_code, task_id,
+                    time.time(), reason_code, job_id,
                     owner_instance_id, lease_generation,
                 ),
             ).rowcount == 1
@@ -1452,9 +1452,9 @@ class ResourceGovernor:
     def _terminal_fields_json(terminal_fields: Mapping[str, Any]) -> str:
         fields = dict(terminal_fields)
         if fields.keys() != TERMINAL_FIELD_NAMES:
-            raise ValueError("terminal_fields must contain only terminal Task fields")
+            raise ValueError("terminal_fields must contain only terminal Job fields")
         try:
-            status = TaskStatus(fields["status"])
+            status = JobStatus(fields["status"])
         except (TypeError, ValueError) as exc:
             raise ValueError("terminal_fields status must be terminal") from exc
         if not is_terminal(status):
@@ -1489,37 +1489,37 @@ class ResourceGovernor:
 
     def _stage_finalization(
         self,
-        task_id: str,
+        job_id: str,
         *,
         owner_instance_id: str,
         lease_generation: int,
         terminal_fields: Mapping[str, Any],
         eligible_states: tuple[str, ...],
-        borrowed_parent_task_id: str | None = None,
+        borrowed_parent_job_id: str | None = None,
         require_parent_fence: bool = False,
         use_admission_reason: bool = False,
     ) -> tuple[str, str, dict[str, Any]] | None:
         with self.ledger.immediate() as conn:
             admission = conn.execute(
-                """SELECT session_id, state, borrowed_parent_task_id, reason_code
-                   FROM task_admissions
-                   WHERE task_id = ? AND owner_instance_id = ?
+                """SELECT session_id, state, borrowed_parent_job_id, reason_code
+                   FROM job_admissions
+                   WHERE job_id = ? AND owner_instance_id = ?
                      AND lease_generation = ?""",
-                (task_id, owner_instance_id, lease_generation),
+                (job_id, owner_instance_id, lease_generation),
             ).fetchone()
             if (
                 admission is None
                 or admission["state"] not in eligible_states
-                or admission["borrowed_parent_task_id"] != borrowed_parent_task_id
+                or admission["borrowed_parent_job_id"] != borrowed_parent_job_id
             ):
                 return None
             if require_parent_fence:
                 parent = conn.execute(
-                    """SELECT 1 FROM task_admissions
-                       WHERE task_id = ? AND state IN ('live','stopping')
+                    """SELECT 1 FROM job_admissions
+                       WHERE job_id = ? AND state IN ('live','stopping')
                          AND owner_instance_id = ? AND lease_generation = ?""",
                     (
-                        borrowed_parent_task_id, owner_instance_id,
+                        borrowed_parent_job_id, owner_instance_id,
                         lease_generation,
                     ),
                 ).fetchone()
@@ -1531,8 +1531,8 @@ class ResourceGovernor:
             fields_json = self._terminal_fields_json(fields)
             existing = conn.execute(
                 """SELECT owner_instance_id, lease_generation, fields_json, state
-                   FROM task_finalizations WHERE task_id = ?""",
-                (task_id,),
+                   FROM job_finalizations WHERE job_id = ?""",
+                (job_id,),
             ).fetchone()
             if existing is not None:
                 if (
@@ -1548,12 +1548,12 @@ class ResourceGovernor:
                     return None
                 return str(existing["state"]), fields_json, fields
             conn.execute(
-                """INSERT INTO task_finalizations (
-                       task_id, session_id, owner_instance_id, lease_generation,
+                """INSERT INTO job_finalizations (
+                       job_id, session_id, owner_instance_id, lease_generation,
                        fields_json, state, created_at
                    ) VALUES (?, ?, ?, ?, ?, 'pending', ?)""",
                 (
-                    task_id, admission["session_id"], owner_instance_id,
+                    job_id, admission["session_id"], owner_instance_id,
                     lease_generation, fields_json, time.time(),
                 ),
             )
@@ -1561,7 +1561,7 @@ class ResourceGovernor:
 
     def _complete_finalization(
         self,
-        task_id: str,
+        job_id: str,
         *,
         owner_instance_id: str,
         lease_generation: int,
@@ -1571,10 +1571,10 @@ class ResourceGovernor:
     ) -> bool:
         with self.ledger.immediate() as conn:
             intent = conn.execute(
-                """SELECT state FROM task_finalizations
-                   WHERE task_id = ? AND owner_instance_id = ?
+                """SELECT state FROM job_finalizations
+                   WHERE job_id = ? AND owner_instance_id = ?
                      AND lease_generation = ? AND fields_json = ?""",
-                (task_id, owner_instance_id, lease_generation, fields_json),
+                (job_id, owner_instance_id, lease_generation, fields_json),
             ).fetchone()
             if intent is None:
                 return False
@@ -1582,46 +1582,46 @@ class ResourceGovernor:
                 return True
             placeholders = ",".join("?" for _ in eligible_states)
             changed = conn.execute(
-                f"""UPDATE task_admissions
+                f"""UPDATE job_admissions
                     SET state = 'released', released_at = ?, lease_expires_at = NULL,
                         reason_code = COALESCE(?, reason_code)
-                    WHERE task_id = ? AND owner_instance_id = ?
+                    WHERE job_id = ? AND owner_instance_id = ?
                       AND lease_generation = ? AND state IN ({placeholders})""",
                 (
-                    time.time(), reason_code, task_id, owner_instance_id,
+                    time.time(), reason_code, job_id, owner_instance_id,
                     lease_generation, *eligible_states,
                 ),
             ).rowcount
             if changed != 1:
                 return False
             conn.execute(
-                """UPDATE task_finalizations
+                """UPDATE job_finalizations
                    SET state = 'completed', completed_at = ?
-                   WHERE task_id = ? AND state = 'pending'""",
-                (time.time(), task_id),
+                   WHERE job_id = ? AND state = 'pending'""",
+                (time.time(), job_id),
             )
             return True
 
     def _finalize_with_intent(
         self,
-        task_id: str,
+        job_id: str,
         *,
         owner_instance_id: str,
         lease_generation: int,
         terminal_fields: Mapping[str, Any],
         eligible_states: tuple[str, ...],
         mutate: Callable[[dict[str, Any]], Any],
-        borrowed_parent_task_id: str | None = None,
+        borrowed_parent_job_id: str | None = None,
         require_parent_fence: bool = False,
         use_admission_reason: bool = False,
     ) -> bool:
         staged = self._stage_finalization(
-            task_id,
+            job_id,
             owner_instance_id=owner_instance_id,
             lease_generation=lease_generation,
             terminal_fields=terminal_fields,
             eligible_states=eligible_states,
-            borrowed_parent_task_id=borrowed_parent_task_id,
+            borrowed_parent_job_id=borrowed_parent_job_id,
             require_parent_fence=require_parent_fence,
             use_admission_reason=use_admission_reason,
         )
@@ -1632,7 +1632,7 @@ class ResourceGovernor:
             return True
         mutate(fields)
         return self._complete_finalization(
-            task_id,
+            job_id,
             owner_instance_id=owner_instance_id,
             lease_generation=lease_generation,
             fields_json=fields_json,
@@ -1640,9 +1640,9 @@ class ResourceGovernor:
             eligible_states=eligible_states,
         )
 
-    def finalize_task(
+    def finalize_job(
         self,
-        task_id: str,
+        job_id: str,
         reason_code: str | None,
         *,
         owner_instance_id: str,
@@ -1650,11 +1650,11 @@ class ResourceGovernor:
         terminal_fields: Mapping[str, Any],
         mutate: Callable[[dict[str, Any]], Any],
     ) -> bool:
-        """Persist terminal intent, write TaskStore, then release this lease."""
+        """Persist terminal intent, write JobStore, then release this lease."""
         if terminal_fields.get("reason_code") != reason_code:
             raise ValueError("terminal_fields reason_code must match reason_code")
         return self._finalize_with_intent(
-            task_id,
+            job_id,
             owner_instance_id=owner_instance_id,
             lease_generation=lease_generation,
             terminal_fields=terminal_fields,
@@ -1665,53 +1665,53 @@ class ResourceGovernor:
     def reconcile(
         self,
         *,
-        task_lookup: Callable[[str, str], Task | None],
+        job_lookup: Callable[[str, str], Job | None],
         write_terminal: Callable[[str, str, dict[str, Any]], Any] | None = None,
         mark_worker_lost: Callable[[str, str], Any],
         owner_is_alive: Callable[[str], bool],
         now: float | None = None,
     ) -> ReconcileResult:
-        """Reconcile durable admissions without spanning task-store I/O."""
+        """Reconcile durable admissions without spanning job-store I/O."""
         current_time = time.time() if now is None else now
         pending = self.ledger.connection().execute(
-            """SELECT task_id, session_id, owner_instance_id, lease_generation,
+            """SELECT job_id, session_id, owner_instance_id, lease_generation,
                       fields_json
-               FROM task_finalizations WHERE state = 'pending'
+               FROM job_finalizations WHERE state = 'pending'
                ORDER BY created_at"""
         ).fetchall()
-        pending_task_ids = {str(row["task_id"]) for row in pending}
+        pending_job_ids = {str(row["job_id"]) for row in pending}
         finalization_conflicts = 0
         completed_pending: list[tuple[str, str]] = []
         for intent in pending:
-            task = task_lookup(intent["session_id"], intent["task_id"])
-            if task is None:
+            job = job_lookup(intent["session_id"], intent["job_id"])
+            if job is None:
                 continue
             try:
                 fields = self._terminal_fields(intent["fields_json"])
             except ValueError:
                 continue
-            if not is_terminal(task.status):
+            if not is_terminal(job.status):
                 if write_terminal is None:
                     continue
                 try:
-                    write_terminal(intent["session_id"], intent["task_id"], fields)
+                    write_terminal(intent["session_id"], intent["job_id"], fields)
                 except Exception:
                     continue
-                task = task_lookup(intent["session_id"], intent["task_id"])
-                if task is None or not is_terminal(task.status):
+                job = job_lookup(intent["session_id"], intent["job_id"])
+                if job is None or not is_terminal(job.status):
                     continue
             actual_fields = {
-                "status": task.status.value,
-                "head_id": task.head_id,
-                "result_text": task.result_text,
-                "error": task.error,
-                "reason_code": task.reason_code,
+                "status": job.status.value,
+                "head_id": job.head_id,
+                "result_text": job.result_text,
+                "error": job.error,
+                "reason_code": job.reason_code,
             }
             if actual_fields != fields:
                 finalization_conflicts += 1
                 continue
             completed = self._complete_finalization(
-                intent["task_id"],
+                intent["job_id"],
                 owner_instance_id=intent["owner_instance_id"],
                 lease_generation=intent["lease_generation"],
                 fields_json=intent["fields_json"],
@@ -1719,24 +1719,24 @@ class ResourceGovernor:
                 eligible_states=("live", "stopping", "queued"),
             )
             if completed:
-                completed_pending.append((intent["task_id"], intent["session_id"]))
+                completed_pending.append((intent["job_id"], intent["session_id"]))
         rows = self.ledger.connection().execute(
-            """SELECT admission_id, task_id, session_id, budget_scope_id,
+            """SELECT admission_id, job_id, session_id, budget_scope_id,
                       state, owner_instance_id, lease_generation, lease_expires_at
-               FROM task_admissions WHERE state != 'released'
+               FROM job_admissions WHERE state != 'released'
                ORDER BY admitted_seq"""
         ).fetchall()
         finalized = rolled_back = released_missing = released_lost = 0
         for row in rows:
-            if row["task_id"] in pending_task_ids:
+            if row["job_id"] in pending_job_ids:
                 continue
             state = row["state"]
-            task = task_lookup(row["session_id"], row["task_id"])
+            job = job_lookup(row["session_id"], row["job_id"])
             if state == "preparing":
-                if task is not None and task.admission_id == row["admission_id"]:
+                if job is not None and job.admission_id == row["admission_id"]:
                     with self.ledger.immediate() as conn:
                         changed = conn.execute(
-                            """UPDATE task_admissions SET state = 'queued'
+                            """UPDATE job_admissions SET state = 'queued'
                                WHERE admission_id = ? AND state = 'preparing'""",
                             (row["admission_id"],),
                         ).rowcount
@@ -1744,7 +1744,7 @@ class ResourceGovernor:
                 else:
                     with self.ledger.immediate() as conn:
                         deleted = conn.execute(
-                            """DELETE FROM task_admissions
+                            """DELETE FROM job_admissions
                                WHERE admission_id = ? AND state = 'preparing'""",
                             (row["admission_id"],),
                         ).rowcount
@@ -1756,11 +1756,11 @@ class ResourceGovernor:
                     rolled_back += int(deleted == 1)
                 continue
             if state == "queued":
-                if task is None:
+                if job is None:
                     with self.ledger.immediate() as conn:
                         changed = conn.execute(
-                            """UPDATE task_admissions
-                               SET state = 'released', reason_code = 'error.task_missing',
+                            """UPDATE job_admissions
+                               SET state = 'released', reason_code = 'error.job_missing',
                                    released_at = ?
                                WHERE admission_id = ? AND state = 'queued'""",
                             (current_time, row["admission_id"]),
@@ -1775,7 +1775,7 @@ class ResourceGovernor:
                 continue
             with self.ledger.immediate() as conn:
                 fenced = conn.execute(
-                    """UPDATE task_admissions
+                    """UPDATE job_admissions
                        SET state = 'stopping', reason_code = 'error.worker_lost',
                            owner_instance_id = NULL,
                            lease_generation = lease_generation + 1,
@@ -1792,12 +1792,12 @@ class ResourceGovernor:
             if fenced != 1:
                 continue
             try:
-                mark_worker_lost(row["session_id"], row["task_id"])
+                mark_worker_lost(row["session_id"], row["job_id"])
             except Exception:
                 continue
             with self.ledger.immediate() as conn:
                 changed = conn.execute(
-                    """UPDATE task_admissions
+                    """UPDATE job_admissions
                        SET state = 'released', released_at = ?, lease_expires_at = NULL
                        WHERE admission_id = ? AND state = 'stopping'
                          AND owner_instance_id IS NULL
@@ -1818,49 +1818,49 @@ class ResourceGovernor:
             completed_pending=tuple(completed_pending),
         )
 
-    def task_time_limits(self, task_id: str) -> tuple[int | None, int | None]:
-        return _durable_task_time_limits(self.ledger, task_id)
+    def job_time_limits(self, job_id: str) -> tuple[int | None, int | None]:
+        return _durable_job_time_limits(self.ledger, job_id)
 
     def record_activity(
         self,
-        task_id: str,
+        job_id: str,
         *,
         owner_instance_id: str,
         lease_generation: int,
         activity_kind: str,
     ) -> bool:
-        """Persist meaningful task activity for the task and live ancestors."""
+        """Persist meaningful job activity for the job and live ancestors."""
         if activity_kind not in MEANINGFUL_ACTIVITY_KINDS:
             return False
         with self.ledger.immediate() as conn:
             rows = conn.execute(
-                """WITH RECURSIVE lineage(task_id) AS (
+                """WITH RECURSIVE lineage(job_id) AS (
                        SELECT ?
                        UNION ALL
-                       SELECT a.parent_task_id
-                       FROM task_admissions a
-                       JOIN lineage l ON a.task_id = l.task_id
-                       WHERE a.parent_task_id IS NOT NULL
+                       SELECT a.parent_job_id
+                       FROM job_admissions a
+                       JOIN lineage l ON a.job_id = l.job_id
+                       WHERE a.parent_job_id IS NOT NULL
                    )
-                   SELECT task_id FROM task_admissions
-                   WHERE task_id IN (SELECT task_id FROM lineage)
+                   SELECT job_id FROM job_admissions
+                   WHERE job_id IN (SELECT job_id FROM lineage)
                      AND owner_instance_id = ?
                      AND lease_generation = ?
                      AND (
                          state IN ('live','stopping')
                          OR (
                              state = 'queued'
-                             AND borrowed_parent_task_id IS NOT NULL
+                             AND borrowed_parent_job_id IS NOT NULL
                          )
                      )""",
-                (task_id, owner_instance_id, lease_generation),
+                (job_id, owner_instance_id, lease_generation),
             ).fetchall()
             if not rows:
                 return False
             now = time.time()
             conn.executemany(
-                "UPDATE task_admissions SET last_activity_at = ? WHERE task_id = ?",
-                ((now, row["task_id"]) for row in rows),
+                "UPDATE job_admissions SET last_activity_at = ? WHERE job_id = ?",
+                ((now, row["job_id"]) for row in rows),
             )
             return True
 
@@ -1875,7 +1875,7 @@ class ResourceGovernor:
 
     def _reserve(
         self,
-        task_id: str,
+        job_id: str,
         *,
         kind: str,
         amount: int,
@@ -1885,8 +1885,8 @@ class ResourceGovernor:
             raise ValueError("reservation amount must be a positive integer")
         with self.ledger.immediate() as conn:
             admission = conn.execute(
-                "SELECT budget_scope_id FROM task_admissions WHERE task_id = ?",
-                (task_id,),
+                "SELECT budget_scope_id FROM job_admissions WHERE job_id = ?",
+                (job_id,),
             ).fetchone()
             if admission is None:
                 return ReservationDecision(False, None, "quota.accounting_unavailable", True)
@@ -1917,11 +1917,11 @@ class ResourceGovernor:
             reservation_id = "res_" + uuid.uuid4().hex
             conn.execute(
                 """INSERT INTO usage_reservations (
-                    reservation_id, task_id, budget_scope_id, kind, state,
+                    reservation_id, job_id, budget_scope_id, kind, state,
                     reserved_tokens, reserved_cost_microusd, expires_at
                 ) VALUES (?, ?, ?, ?, 'reserved', ?, ?, ?)""",
                 (
-                    reservation_id, task_id, admission["budget_scope_id"], kind,
+                    reservation_id, job_id, admission["budget_scope_id"], kind,
                     amount if kind == "token" else None,
                     amount if kind == "cost" else None,
                     time.time() + 300.0,
@@ -1929,19 +1929,19 @@ class ResourceGovernor:
             )
             return ReservationDecision(True, reservation_id, None, False)
 
-    def reserve_tokens(self, task_id: str, tokens: int) -> ReservationDecision:
-        return self._reserve(task_id, kind="token", amount=tokens)
+    def reserve_tokens(self, job_id: str, tokens: int) -> ReservationDecision:
+        return self._reserve(job_id, kind="token", amount=tokens)
 
     def reserve_cost(
-        self, task_id: str, cost_microusd: int, *, price_known: bool,
+        self, job_id: str, cost_microusd: int, *, price_known: bool,
     ) -> ReservationDecision:
         return self._reserve(
-            task_id, kind="cost", amount=cost_microusd, price_known=price_known,
+            job_id, kind="cost", amount=cost_microusd, price_known=price_known,
         )
 
     def reserve_provider_request(
         self,
-        task_id: str,
+        job_id: str,
         *,
         input_token_upper_bound: int,
         requested_max_output_tokens: int,
@@ -1951,8 +1951,8 @@ class ResourceGovernor:
         with self.ledger.immediate() as conn:
             admission = conn.execute(
                 """SELECT budget_scope_id, session_id
-                   FROM task_admissions WHERE task_id = ?""",
-                (task_id,),
+                   FROM job_admissions WHERE job_id = ?""",
+                (job_id,),
             ).fetchone()
             if admission is None:
                 plan = plan_request_reservation(
@@ -2044,17 +2044,17 @@ class ResourceGovernor:
             root_id = "res_" + uuid.uuid4().hex
             expires_at = time.time() + 300.0
             rows = [(
-                root_id + ":token", task_id, admission["budget_scope_id"],
+                root_id + ":token", job_id, admission["budget_scope_id"],
                 "token", plan.token_reservation, None, expires_at,
             )]
             if plan.cost_known:
                 rows.append((
-                    root_id + ":cost", task_id, admission["budget_scope_id"],
+                    root_id + ":cost", job_id, admission["budget_scope_id"],
                     "cost", None, plan.cost_reservation_microusd, expires_at,
                 ))
             conn.executemany(
                 """INSERT INTO usage_reservations (
-                    reservation_id, task_id, budget_scope_id, kind, state,
+                    reservation_id, job_id, budget_scope_id, kind, state,
                     reserved_tokens, reserved_cost_microusd, expires_at
                 ) VALUES (?, ?, ?, ?, 'reserved', ?, ?, ?)""",
                 rows,
@@ -2088,7 +2088,7 @@ class ResourceGovernor:
         cost_id = reservation_id + ":cost"
         with self.ledger.immediate() as conn:
             rows = conn.execute(
-                """SELECT task_id, budget_scope_id, state
+                """SELECT job_id, budget_scope_id, state
                    FROM usage_reservations WHERE reservation_id IN (?, ?)""",
                 (token_id, cost_id),
             ).fetchall()
@@ -2099,7 +2099,7 @@ class ResourceGovernor:
             if any(row["state"] == "released" for row in rows):
                 raise RuntimeError("cannot settle a released provider reservation")
             attributed = event.model_copy(update={
-                "task_id": rows[0]["task_id"],
+                "job_id": rows[0]["job_id"],
                 "budget_scope_id": rows[0]["budget_scope_id"],
                 "reservation_id": token_id,
             })
@@ -2150,7 +2150,7 @@ class ResourceGovernor:
     def settle_reservation(self, reservation_id: str, event) -> None:
         with self.ledger.immediate() as conn:
             reservation = conn.execute(
-                """SELECT task_id, budget_scope_id, state
+                """SELECT job_id, budget_scope_id, state
                    FROM usage_reservations WHERE reservation_id = ?""",
                 (reservation_id,),
             ).fetchone()
@@ -2159,7 +2159,7 @@ class ResourceGovernor:
             if reservation["state"] == "settled":
                 return
             attributed = event.model_copy(update={
-                "task_id": reservation["task_id"],
+                "job_id": reservation["job_id"],
                 "budget_scope_id": reservation["budget_scope_id"],
                 "reservation_id": reservation_id,
             })
@@ -2172,23 +2172,23 @@ class ResourceGovernor:
             )
 
 
-def _shared_remaining(ledger: UsageLedger, task_id: str) -> dict[str, Any]:
+def _shared_remaining(ledger: UsageLedger, job_id: str) -> dict[str, Any]:
     conn = ledger.connection()
     scopes = conn.execute(
         """WITH RECURSIVE ancestors AS (
-               SELECT parent.* FROM task_admissions admission
+               SELECT parent.* FROM job_admissions admission
                JOIN budget_scopes current
                  ON current.budget_scope_id = admission.budget_scope_id
                JOIN budget_scopes parent
                  ON parent.budget_scope_id = current.parent_scope_id
-               WHERE admission.task_id = ?
+               WHERE admission.job_id = ?
                UNION ALL
                SELECT parent.* FROM budget_scopes parent
                JOIN ancestors child
                  ON child.parent_scope_id = parent.budget_scope_id
            )
            SELECT * FROM ancestors""",
-        (task_id,),
+        (job_id,),
     ).fetchall()
     token_remaining: list[int] = []
     cost_remaining: list[int] = []
@@ -2223,15 +2223,15 @@ def _shared_remaining(ledger: UsageLedger, task_id: str) -> dict[str, Any]:
     }
 
 
-def build_task_resource_view(
-    task: Task,
+def build_job_resource_view(
+    job: Job,
     *,
     ledger: UsageLedger,
     resolved: ResolvedResourceLimits,
-) -> TaskResourceView:
-    usage = ledger.task_resource_usage(task.id)
-    counts = ledger.resource_counts(task.parent_session_id, task.id)
-    snapshot = task.resolved_limits_snapshot
+) -> JobResourceView:
+    usage = ledger.job_resource_usage(job.id)
+    counts = ledger.resource_counts(job.parent_session_id, job.id)
+    snapshot = job.resolved_limits_snapshot
     snapshot_applied = False
     if snapshot and isinstance(snapshot, dict) and isinstance(snapshot.get("limits"), dict):
         fields = dict(resolved.fields)
@@ -2239,12 +2239,12 @@ def build_task_resource_view(
             for name, value in snapshot["limits"].items():
                 if not isinstance(value, dict):
                     continue
-                # Time limits are frozen at admission. Parent/task-sourced
-                # caps only exist in the snapshot: the resolver drops task
+                # Time limits are frozen at admission. Parent/job-sourced
+                # caps only exist in the snapshot: the resolver drops job
                 # inputs after admission, so current config can never
                 # reproduce them. Session/global-sourced caps stay live.
                 if name in ("max_runtime_seconds", "idle_timeout_seconds") \
-                        or value.get("source") in ("parent", "task"):
+                        or value.get("source") in ("parent", "job"):
                     fields[name] = ResolvedLimit(**value)
             resolved = ResolvedResourceLimits(
                 scheduler_capacity=resolved.scheduler_capacity, fields=fields,
@@ -2252,22 +2252,22 @@ def build_task_resource_view(
             snapshot_applied = True
         except (TypeError, ValueError):
             snapshot_applied = False
-    if task.admission_id and not snapshot_applied:
-        runtime_limit, idle_limit = _durable_task_time_limits(ledger, task.id)
+    if job.admission_id and not snapshot_applied:
+        runtime_limit, idle_limit = _durable_job_time_limits(ledger, job.id)
         fields = dict(resolved.fields)
         for name, value in (
             ("max_runtime_seconds", runtime_limit),
             ("idle_timeout_seconds", idle_limit),
         ):
-            fields[name] = ResolvedLimit(value, value, "task")
+            fields[name] = ResolvedLimit(value, value, "job")
         resolved = ResolvedResourceLimits(
             scheduler_capacity=resolved.scheduler_capacity, fields=fields,
         )
     limits = resolved.effective_limits()
     counts["session_live"]["limit"] = limits["max_live_per_session"]
     counts["session_queued"]["limit"] = limits["max_queued_per_session"]
-    counts["session_tasks"]["limit"] = limits["max_tasks_per_session"]
-    legacy = not task.admission_id
+    counts["session_jobs"]["limit"] = limits["max_jobs_per_session"]
+    legacy = not job.admission_id
     has_actual_usage = usage["events"] > 0
     cost_known: bool | None = (
         usage["unknown_cost_events"] == 0
@@ -2280,7 +2280,7 @@ def build_task_resource_view(
         if cost_known is True
         else None
     )
-    reason = _reason_metadata(task.reason_code)
+    reason = _reason_metadata(job.reason_code)
     runtime_used: float | None = None
     idle_used: float | None = None
     local_token_limit: int | None = None
@@ -2290,18 +2290,18 @@ def build_task_resource_view(
             """SELECT admission.state, admission.started_at,
                       admission.last_activity_at, admission.released_at,
                       scope.max_total_tokens, scope.max_cost_microusd
-               FROM task_admissions admission
+               FROM job_admissions admission
                JOIN budget_scopes scope
                  ON scope.budget_scope_id = admission.budget_scope_id
-               WHERE admission.task_id = ?""",
-            (task.id,),
+               WHERE admission.job_id = ?""",
+            (job.id,),
         ).fetchone()
         if timing is not None:
             local_token_limit = timing["max_total_tokens"]
             if timing["max_cost_microusd"] is not None:
                 local_cost_limit = (
                     limits["max_cost_usd"]
-                    if resolved.fields["max_cost_usd"].source == "task"
+                    if resolved.fields["max_cost_usd"].source == "job"
                     else _microusd_text(timing["max_cost_microusd"])
                 )
             if timing["started_at"] is not None:
@@ -2316,11 +2316,11 @@ def build_task_resource_view(
                 runtime_used = max(0.0, end - timing["started_at"])
                 activity = timing["last_activity_at"] or timing["started_at"]
                 idle_used = max(0.0, end - activity)
-    return TaskResourceView(
-        task_id=task.id,
-        status=task.status.value,
+    return JobResourceView(
+        job_id=job.id,
+        status=job.status.value,
         resource_state="legacy/unmetered" if legacy else counts["resource_state"],
-        reason_code=task.reason_code,
+        reason_code=job.reason_code,
         reason_key=reason["human_key"],
         retryable=reason["retryable"],
         limits=resolved.to_dict(),
@@ -2328,11 +2328,11 @@ def build_task_resource_view(
             "scheduler_capacity": resolved.scheduler_capacity,
             "session_live": counts["session_live"],
             "session_queued": counts["session_queued"],
-            "session_tasks": counts["session_tasks"],
+            "session_jobs": counts["session_jobs"],
             "queue_position": counts["queue_position"],
         },
         budget={
-            "scope": "legacy/unmetered" if legacy else "task_with_shared_ancestors",
+            "scope": "legacy/unmetered" if legacy else "job_with_shared_ancestors",
             "tokens": {
                 "actual": (
                     usage["total_tokens"] if has_actual_usage or not legacy else None
@@ -2368,7 +2368,7 @@ def build_task_resource_view(
                     "cost_usd": None,
                     "cost_unknown_events": None,
                 }
-                if legacy else _shared_remaining(ledger, task.id)
+                if legacy else _shared_remaining(ledger, job.id)
             ),
         },
     )
@@ -2379,8 +2379,8 @@ __all__ = [
     "AdmissionDecision", "AdmissionRejected", "DispatchClaim", "ReconcileResult",
     "ReservationDecision",
     "RequestReservation", "plan_request_reservation",
-    "ResourceGovernor", "TaskResourceView",
-    "build_task_resource_view", "global_resource_limits",
+    "ResourceGovernor", "JobResourceView",
+    "build_job_resource_view", "global_resource_limits",
     "resolve_resource_limits", "save_session_resource_limits",
     "scheduler_capacity", "session_resource_limits",
 ]

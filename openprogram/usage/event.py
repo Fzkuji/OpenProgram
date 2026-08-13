@@ -50,7 +50,7 @@ class UsageEvent(BaseModel):
     call_kind: str = CALL_KIND_UNKNOWN
     call_label: Optional[str] = None
     origin_pid: int = Field(default_factory=os.getpid)
-    task_id: Optional[str] = None
+    job_id: Optional[str] = None
     budget_scope_id: Optional[str] = None
     reservation_id: Optional[str] = None
 

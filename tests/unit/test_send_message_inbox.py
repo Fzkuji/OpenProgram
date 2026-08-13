@@ -17,7 +17,7 @@ import threading
 import pytest
 
 from openprogram.agent import inbox
-from openprogram.functions.tools.send_message.send_message.send_message import (
+from openprogram.programs.functions.send_message.send_message.send_message import (
     _send_message_impl,
 )
 
@@ -127,7 +127,7 @@ def test_drain_leaves_entry_on_failed_delivery(two_sessions, busy_target, monkey
 def test_queued_delivery_inherits_both_chain_counts(two_sessions, busy_target, monkeypatch):
     """A queued hop spends a message like a direct one, and creates no
     agent, so the generation count crosses the queue unchanged."""
-    from openprogram.functions.tools.send_message.send_message.depth import (
+    from openprogram.programs.functions.send_message.send_message.depth import (
         set_chain_generations, set_chain_messages,
     )
     calls = _capture_async(monkeypatch)

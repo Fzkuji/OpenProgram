@@ -58,7 +58,7 @@ def test_parent_precreates_node_and_moves_head(monkeypatch, tmp_path):
         name = "word_count"
         _is_agentic = True
     monkeypatch.setattr(
-        "openprogram.functions.agent_tools", lambda names=None: [_Tool()])
+        "openprogram.programs.agent_tools", lambda names=None: [_Tool()])
 
     class _RM:
         def _enabled_model_keys(self):
@@ -223,7 +223,7 @@ def test_child_error_marks_precreated_running_node(monkeypatch, tmp_path):
         name = "wc"
         _is_agentic = True
     monkeypatch.setattr(
-        "openprogram.functions.agent_tools", lambda names=None: [_Tool()])
+        "openprogram.programs.agent_tools", lambda names=None: [_Tool()])
     # Child crashes before its wrapper could finalize → returns an error.
     monkeypatch.setattr(
         "openprogram.agent.process_runner.run_agentic_in_subprocess",

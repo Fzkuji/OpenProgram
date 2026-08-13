@@ -120,7 +120,7 @@ def update_config(
 
 
 def read_disabled_tools() -> set[str]:
-    """Public helper consumed by openprogram.functions to filter list_available.
+    """Public helper consumed by openprogram.programs to filter list_available.
 
     Kept in this module so the tools package doesn't import config from
     deeper webui modules and drag in FastAPI at tool-registry import time.
@@ -133,7 +133,7 @@ def read_disabled_tools() -> set[str]:
     cfg = _read_config()
     disabled = set(cfg.get("tools", {}).get("disabled", []) or [])
     if (cfg.get("memory", {}) or {}).get("backend") == "none":
-        from openprogram.functions.tools.memory import MEMORY_TOOL_NAMES
+        from openprogram.programs.functions.memory import MEMORY_TOOL_NAMES
 
         disabled.update(MEMORY_TOOL_NAMES)
     return disabled

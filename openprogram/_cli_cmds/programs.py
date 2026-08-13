@@ -92,8 +92,8 @@ def _cmd_configure(provider: str | None):
 
 def _cmd_list():
     """List the registered agentic functions (functions/_registry.py)."""
-    from openprogram.functions._registry import iter_agentic_files
-    from openprogram.functions import agentics as _agentics_pkg
+    from openprogram.programs._registry import iter_agentic_files
+    from openprogram.programs import agentics as _agentics_pkg
 
     entries: list[tuple[str, str]] = []
     for mod_name, filepath, _is_harness in iter_agentic_files(
@@ -131,8 +131,8 @@ def _cmd_list():
 
 def _print_programs_status() -> None:
     """Print the install status of every catalogued program, then any
-    third-party harnesses found in functions/agentics/."""
-    from openprogram.functions._programs import KNOWN_PROGRAMS
+    third-party harnesses found in programs/applications/."""
+    from openprogram.programs._programs import KNOWN_PROGRAMS
 
     print(f"\nPrograms ({len(KNOWN_PROGRAMS)}):\n")
     for p in KNOWN_PROGRAMS:
@@ -156,13 +156,13 @@ def _print_programs_status() -> None:
 
 def _iter_third_party_harnesses():
     """Yield (dir_name, package_dir_or_None) for every non-first-party
-    harness directory (or dev symlink) under functions/agentics/."""
-    from openprogram.functions._programs import KNOWN_PROGRAMS, agentics_dir
-    from openprogram.functions._registry import (
+    harness directory (or dev symlink) under programs/applications/."""
+    from openprogram.programs._programs import KNOWN_PROGRAMS, applications_dir
+    from openprogram.programs._registry import (
         _NOT_A_HARNESS, _find_python_package,
     )
 
-    base = agentics_dir()
+    base = applications_dir()
     if not base or not os.path.isdir(base):
         return
     first_party = {p.repo_dir_name for p in KNOWN_PROGRAMS}
@@ -189,7 +189,7 @@ def _cmd_programs_available() -> None:
 
 def _resolve_programs(name: str):
     """Resolve a program selector ('gui'/'research'/'wiki'/'all') to a list."""
-    from openprogram.functions._programs import KNOWN_PROGRAMS, get_program
+    from openprogram.programs._programs import KNOWN_PROGRAMS, get_program
 
     if name in ("all", "*"):
         return list(KNOWN_PROGRAMS)
@@ -250,7 +250,7 @@ def _normalize_git_ref(ref: str) -> str:
 def _install_third_party(ref: str, *, upgrade: bool = False) -> None:
     """Install ANY harness repo by URL — same flow as first-party programs.
 
-    Clone into ``functions/agentics/<Repo-Name>/``, install the repo's
+    Clone into ``programs/applications/<Repo-Name>/``, install the repo's
     own declared deps (its pyproject/setup.py, else requirements.txt),
     then verify the harness contract (an importable package exposing
     ``<pkg>/agentics/__init__.py`` — see docs/installing-harnesses.md).
@@ -258,12 +258,12 @@ def _install_third_party(ref: str, *, upgrade: bool = False) -> None:
     no catalogue edit is needed.
     """
     import subprocess
-    from openprogram.functions._programs import agentics_dir, record_program_source
-    from openprogram.functions._registry import _find_python_package
+    from openprogram.programs._programs import applications_dir, record_program_source
+    from openprogram.programs._registry import _find_python_package
 
-    base = agentics_dir()
+    base = applications_dir()
     if not base or not os.path.isdir(base):
-        print(f"Cannot locate functions/agentics directory ({base!r}).")
+        print(f"Cannot locate programs/applications directory ({base!r}).")
         sys.exit(1)
 
     url = _normalize_git_ref(ref)
@@ -340,10 +340,10 @@ def _install_third_party(ref: str, *, upgrade: bool = False) -> None:
 
 
 def _cmd_install(name: str, *, upgrade: bool = False) -> None:
-    """Install one (or all) program(s) by cloning into functions/agentics/.
+    """Install one (or all) program(s) by cloning into programs/applications/.
 
     Each program is ``git clone``-d into
-    ``openprogram/functions/agentics/<Repo-Name>/`` as a real, editable
+    ``openprogram/programs/applications/<Repo-Name>/`` as a real, editable
     directory (no symlinks, no site-packages). Heavy programs (gui) also
     pull their native deps from the matching ``openprogram[<extra>]``
     group. The clone is git-ignored by the parent repo, so it stays an
@@ -354,7 +354,7 @@ def _cmd_install(name: str, *, upgrade: bool = False) -> None:
     (or the ``owner/Some-Harness`` shorthand).
     """
     import subprocess
-    from openprogram.functions._programs import agentics_dir, record_program_source
+    from openprogram.programs._programs import applications_dir, record_program_source
 
     if _looks_like_git_ref(name):
         _install_third_party(name, upgrade=upgrade)
@@ -362,15 +362,15 @@ def _cmd_install(name: str, *, upgrade: bool = False) -> None:
 
     progs = _resolve_programs(name)
     if not progs:
-        from openprogram.functions._programs import KNOWN_PROGRAMS
+        from openprogram.programs._programs import KNOWN_PROGRAMS
         opts = ", ".join(p.extra for p in KNOWN_PROGRAMS) + ", all"
         print(f"Unknown program: {name!r}. Choices: {opts}, "
               f"or a git URL / owner/repo for third-party harnesses.")
         sys.exit(1)
 
-    base = agentics_dir()
+    base = applications_dir()
     if not base or not os.path.isdir(base):
-        print(f"Cannot locate functions/agentics directory ({base!r}).")
+        print(f"Cannot locate programs/applications directory ({base!r}).")
         sys.exit(1)
 
     for prog in progs:
@@ -445,14 +445,14 @@ def _cmd_uninstall(name: str) -> None:
     Third-party harnesses are addressed by their clone-dir name
     (``openprogram programs uninstall Some-Harness``)."""
     import shutil
-    from openprogram.functions._programs import agentics_dir, remove_program_source
+    from openprogram.programs._programs import applications_dir, remove_program_source
 
     progs = _resolve_programs(name)
     if not progs:
         # Third-party harness: address by clone-dir name under agentics/.
         third_party = dict(_iter_third_party_harnesses())
         if name in third_party:
-            base = agentics_dir()
+            base = applications_dir()
             dest = os.path.join(base, name)
             if os.path.islink(dest):
                 os.unlink(dest)
@@ -471,7 +471,7 @@ def _cmd_uninstall(name: str) -> None:
               f"third-party harnesses by clone-dir name "
               f"(see `openprogram programs available`).")
         sys.exit(1)
-    base = agentics_dir()
+    base = applications_dir()
     for prog in progs:
         dest = prog.clone_dir(base)
         if not (dest and os.path.isdir(dest)):
@@ -489,11 +489,11 @@ def _cmd_run(name, arg_list, provider=None, model=None):
     """Run an existing function."""
     import inspect
     try:
-        from openprogram.functions import resolve_function_module
+        from openprogram.programs import resolve_function_module
         mod = resolve_function_module(name)
         loaded_func = getattr(mod, name)
     except (ImportError, AttributeError):
-        print(f"Error: function '{name}' not found in openprogram/functions/agentics/")
+        print(f"Error: function '{name}' not found in openprogram/programs/applications/")
         sys.exit(1)
 
     unwrapped_func = loaded_func._fn if hasattr(loaded_func, "_fn") else loaded_func

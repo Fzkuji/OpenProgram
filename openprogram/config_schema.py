@@ -344,8 +344,8 @@ def _search_choices() -> list[str]:
     import failure degrades to just ``auto`` rather than breaking the
     whole settings read."""
     try:
-        from openprogram.functions.tools.web_search.registry import registry as _wsr
-        import openprogram.functions.tools.web_search.providers  # noqa: F401
+        from openprogram.programs.functions.web_search.registry import registry as _wsr
+        import openprogram.programs.functions.web_search.providers  # noqa: F401
         names = [getattr(p, "name", "") for p in _wsr.all()]
         return ["auto"] + [n for n in names if n]
     except Exception:
@@ -644,7 +644,7 @@ SETTINGS: list[SettingSpec] = [
              "widths of the task pool, so a turn can fill the pool and "
              "keep one wave queued; the next spawn is refused and points "
              "the agent at the ones it already has. 0 = no limit. Raise "
-             "OPENPROGRAM_TASK_WORKERS with it or the extra agents only "
+             "OPENPROGRAM_JOB_WORKERS with it or the extra agents only "
              "queue longer.",
     ),
     *[
@@ -662,9 +662,9 @@ SETTINGS: list[SettingSpec] = [
             help="Empty means inherit or unlimited; non-empty values must be positive.",
         )
         for name, label in (
-            ("max_live_per_session", "Max live tasks per session"),
-            ("max_queued_per_session", "Max queued tasks per session"),
-            ("max_tasks_per_session", "Max admitted tasks per session"),
+            ("max_live_per_session", "Max live jobs per session"),
+            ("max_queued_per_session", "Max queued jobs per session"),
+            ("max_jobs_per_session", "Max admitted jobs per session"),
             ("max_total_tokens", "Max total tokens"),
             ("max_cost_usd", "Max cost (USD)"),
             ("max_runtime_seconds", "Max runtime seconds"),
@@ -920,7 +920,7 @@ def get_settings(session_id: str | None = None) -> list[dict]:
     # the user hasn't disabled it. Keyed ``tools.disabled.<name>`` so
     # set_setting can flip membership of ``tools.disabled``.
     try:
-        from openprogram.functions import list_registered_agent_tools
+        from openprogram.programs import list_registered_agent_tools
         disabled = set((cfg.get("tools", {}) or {}).get("disabled", []) or [])
         for name in sorted(list_registered_agent_tools()):
             rows.append({

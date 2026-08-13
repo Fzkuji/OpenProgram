@@ -1,11 +1,11 @@
 """Unit tests for the docs_question agentic function
-(``openprogram/functions/agentics/docs_question/``): the entry point's
+(``openprogram/programs/agentic_functions/docs_question/``): the entry point's
 input validation, the page listing it builds its prompt from, source
 path normalization, and the shape it returns once the spawned agent has
 replied.
 
 The single LLM round goes through the module-level ``_run_docs_turn``
-seam (the same shape ``goal`` and ``task_list`` use), so these tests
+seam (the same shape ``goal`` and ``agentic_workflow`` use), so these tests
 stub it and never reach a provider."""
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-import openprogram.functions.agentics.docs_question as DQ
+import openprogram.programs.agentic_functions.docs_question as DQ
 
 
 @pytest.fixture
@@ -225,7 +225,7 @@ def test_sources_are_deduplicated_in_order(fake_docs) -> None:
 # ---------------------------------------------------------------------------
 
 def test_module_is_registered() -> None:
-    from openprogram.functions._registry import AGENTIC_MODULES
+    from openprogram.programs._registry import AGENTIC_MODULES
     assert "docs_question" in AGENTIC_MODULES
 
 

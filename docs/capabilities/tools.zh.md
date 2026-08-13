@@ -1,6 +1,6 @@
 # 内置工具
 
-OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调用。这一页按 `openprogram/functions/tools/` 目录逐个列出：每个工具做什么、需要什么 key 或本地依赖。大多数工具零配置；需要 key 的集中在网络检索和图像两类。
+OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调用。这一页按 `openprogram/programs/functions/` 目录逐个列出：每个工具做什么、需要什么 key 或本地依赖。大多数工具零配置；需要 key 的集中在网络检索和图像两类。
 
 ## 文件与代码
 
@@ -69,11 +69,11 @@ OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调�
 | 域 | 工具 | 做什么 | 需要什么 |
 |---|---|---|---|
 | 计划 | `todo_create` / `todo_update` / `todo_list` | 会话规划清单：手写的计划清单（建条目、设状态/负责人/依赖、按状态分组列出）。写一条不会启动任何东西 | 无 |
-| 执行 | `list_tasks` / `task_output` / `task_stop` | 真正在运行的任务：列出本会话的后台任务、等某个任务的结果、停掉某个任务。只有派活方会话能取结果或取消 | 无 |
-| 实体 | `agent` | 新建一个 agent 并取回回复，或用 `to=` 给已存在的 agent 派受管任务。`run_in_background=true` 不阻塞、直接返回 task_id；`start_from` 决定新 agent 从哪起（`clean` / `inherit` / `SID:MSG_ID`）；`archive_when_done=true` 让它在任务结束、结果回流之后自动归档 | 无 |
+| 执行 | `list_jobs` / `job_output` / `job_stop` | 真正在运行的任务：列出本会话的后台任务、等某个任务的结果、停掉某个任务。只有派活方会话能取结果或取消 | 无 |
+| 实体 | `agent` | 新建一个 agent 并取回回复，或用 `to=` 给已存在的 agent 派受管任务。`run_in_background=true` 不阻塞、直接返回 job_id；`start_from` 决定新 agent 从哪起（`clean` / `inherit` / `SID:MSG_ID`）；`archive_when_done=true` 让它在任务结束、结果回流之后自动归档 | 无 |
 | 实体 | `list_agents` | agent 列表：有哪些 agent、它们的名字、地址、体量和忙闲（`scope="archived"` 看已归档的） | 无 |
 | 实体 | `archive_agent` | 把活干完的 agent 归档：它从 `list_agents` 消失，并拒收后续 `send_message` / `agent(to=)` 投递；`read_conversation` 照读它的历史，`agent(start_from="SID:MSG_ID")` 照 fork。归档不中断在跑的工作、不删数据，所以任何会话都能归档任何 agent；归档单向，没有反归档 | 无 |
-| 通讯 | `send_message` | 跟已存在的 agent 说话，按 `"SID:HEAD"` 或名字寻址。不产生任务、不产生 task_id、没有东西可取消，所以任何 agent 都能发 | 无 |
+| 通讯 | `send_message` | 跟已存在的 agent 说话，按 `"SID:HEAD"` 或名字寻址。不产生任务、不产生 job_id、没有东西可取消，所以任何 agent 都能发 | 无 |
 | 通讯 | `read_conversation` | 把任意 agent 的历史读成纯文本（含工具调用），可指定轮次范围和字数预算 | 无 |
 
 | 工具 | 做什么 | 需要什么 |

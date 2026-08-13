@@ -5,7 +5,7 @@ Proves the backend half of "drop a harness in → it's usable":
   * rescan() imports it and the registry gains its @agentic_function
   * a second rescan reports nothing new (idempotent)
 
-Runs offline in a temp dir; never touches the real agentics/ or state.
+Runs offline in a temp dir; never touches the real applications/ or state.
 """
 from __future__ import annotations
 
@@ -30,10 +30,10 @@ def check(name: str, cond: bool, detail: str = "") -> None:
         failures.append(name)
 
 
-def _make_harness(agentics: Path, repo: str, pkg: str, fn: str) -> None:
-    p = agentics / repo / pkg / "agentics"
+def _make_harness(applications: Path, repo: str, pkg: str, fn: str) -> None:
+    p = applications / repo / pkg / "applications"
     p.mkdir(parents=True)
-    (agentics / repo / pkg / "__init__.py").write_text("", encoding="utf-8")
+    (applications / repo / pkg / "__init__.py").write_text("", encoding="utf-8")
     (p / "__init__.py").write_text(textwrap.dedent(f'''
         from openprogram.agentic_programming.function import agentic_function
         @agentic_function(name="{fn}")
@@ -45,37 +45,37 @@ def _make_harness(agentics: Path, repo: str, pkg: str, fn: str) -> None:
 
 
 def main() -> int:
-    from openprogram.functions import watcher as W
-    from openprogram.functions._registry import rescan
-    from openprogram.functions._runtime import get as get_tool
+    from openprogram.programs import watcher as W
+    from openprogram.programs._registry import rescan
+    from openprogram.programs._runtime import get as get_tool
 
     base = Path(tempfile.mkdtemp(prefix="op_watch_"))
-    agentics = base / "agentics"
-    agentics.mkdir()
+    applications = base / "applications"
+    applications.mkdir()
     try:
         # baseline fingerprint (empty-ish dir)
-        fp0 = W._fingerprint(str(agentics))
+        fp0 = W._fingerprint(str(applications))
 
         # nothing installed yet → fn absent
         check("target fn absent before install", get_tool("watched_fn") is None)
 
         # "install" a harness as a real directory
-        _make_harness(agentics, "Watched-Harness", "watched_pkg", "watched_fn")
+        _make_harness(applications, "Watched-Harness", "watched_pkg", "watched_fn")
 
         # fingerprint must change (this is what wakes the watcher)
-        fp1 = W._fingerprint(str(agentics))
+        fp1 = W._fingerprint(str(applications))
         check("fingerprint changes when a harness dir appears", fp0 != fp1,
               f"{len(fp0)}→{len(fp1)} entries")
 
         # rescan picks it up → registry gains the function
-        result = rescan(str(agentics))
+        result = rescan(str(applications))
         check("rescan reports the new fn as added",
               "watched_fn" in result.get("added", []), str(result.get("added")))
         check("new @agentic_function is live in the registry",
               get_tool("watched_fn") is not None, "watched_fn registered")
 
         # second rescan is idempotent — nothing new
-        result2 = rescan(str(agentics))
+        result2 = rescan(str(applications))
         check("second rescan adds nothing (idempotent)",
               result2.get("added") == [], str(result2.get("added")))
     finally:

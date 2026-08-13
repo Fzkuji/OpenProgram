@@ -24,7 +24,7 @@
 | `render_options(options)`（决策菜单） | 函数名、何时选用的描述、参数 name / type / description / enum，以及每个参数是否由系统填充 |
 | `parse_args(reply, options, runtime, ...)`（决策抽取 + 派发 + 重试） | 参数名 + 类型 + enum + hidden 标志，以及 `runtime` 式的自动注入白名单 |
 | WebUI 参数表单 | description / placeholder / multiline / options / hidden |
-| `runtime.exec` 渲染出的上下文 | docstring——以 `metadata.doc` 携带，并作为前缀拼入渲染出的上下文文本。默认 system prompt 来自 `runtime.system`（外加 skills 区块），而非来自 docstring。 |
+| `llm()` 渲染出的上下文 | docstring——以 `metadata.doc` 携带，并作为前缀拼入渲染出的上下文文本。默认 system prompt 来自环境 runtime（外加 skills 区块），而非来自 docstring。 |
 | 会话 DAG 渲染（`render_context`） | `expose` 模式 + `render_range` |
 | auto-trace / 持久化 | 函数身份、参数值、返回值、耗时 |
 
@@ -39,7 +39,7 @@
 | 参数类型 | 注解 | `param.annotation` |
 | 参数默认值 | 注解默认值 | `param.default` |
 | 一行摘要（做什么 / 何时选用） | docstring 的第一段（直到第一个空行为止） | `inspect.getdoc(fn)`，取第一段 |
-| 单次调用的 LLM 指令（针对某一次具体 `runtime.exec` 的 prompt + 数据） | 该次 exec 调用的 `content=[...]` 列表 | 在调用时直接传入 |
+| 单次调用的 LLM 指令（针对某一次具体 `llm()` 的 prompt + 数据） | 传给该次 `llm()` 调用的 prompt | 在调用时直接传入 |
 | 单个参数的描述 | `@agentic_function(input={"x": {"description": ...}})` | `fn.input_meta["x"]["description"]` |
 | 单个参数的枚举值 | `@agentic_function(input={"x": {"options": [...]}})` | `fn.input_meta["x"]["options"]` |
 | 该参数是否对 LLM 可见 | `@agentic_function(input={"x": {"hidden": True}})` | `fn.input_meta["x"]["hidden"]` |
@@ -48,9 +48,9 @@
 | 动态选项来源 | `@agentic_function(input={"x": {"options_from": "functions"}})` | `fn.input_meta["x"]["options_from"]` |
 | 工作目录选择器模式 | `@agentic_function(workdir_mode="optional"\|"hidden"\|"required")`——由装饰器校验并存储在实例上 | `fn.workdir_mode`。其消费方是 WebUI，它不会反射对象——而是对源码文本做 AST 解析（`openprogram/webui/_functions.py:_extract_workdir_mode`），因此该值必须在装饰器调用中写成字面量 |
 | 框架自动注入的参数 | 分布在两个文件中的两个常量，值均为 `{"runtime", "exec_runtime", "review_runtime"}`：`agentic_programming/function.py` 中的 `_RUNTIME_PARAMS`（注入 + 从 tool-spec 中过滤）和 `agentic_programming/decision.py` 中的 `_AUTO_PARAMS`（菜单隐藏 + 派发） | 模块级 |
-| 覆盖 `runtime.exec` 的 system prompt | `@agentic_function(system="...")` | `fn.system` |
+| 覆盖环境 LLM 的 system prompt | `@agentic_function(system="...")` | `fn.system` |
 | DAG expose 模式 | `@agentic_function(expose="io"\|"llm"\|"full"\|"hidden")`——控制**调用方**在其 DAG 渲染中能看到本函数的哪些内容 | `fn.expose` |
-| DAG 渲染范围 | `@agentic_function(render_range={"callers": N, "subcalls": M})`——控制**本函数自身**的 `runtime.exec` 会读取多少 DAG 历史。两者都是基于 `seq` 的节点数切片：`callers` = 在本函数帧开始**之前**写入的最近 N 个节点（默认 `None` = 不设上限，`0` = 隔绝所有先前上下文）；`subcalls` = 自本函数帧开始**以来**写入的最近 N 个节点（默认 `-1` = 不设上限——帧能看到自身的进展；子函数的内部内容是由*它们自己*的 `expose` 设置隐藏的，而非由 subcalls 计数隐藏；仅当需要在循环中主动限制 prompt 体积时才设 `N>=0`）。 | `fn.render_range` |
+| DAG 渲染范围 | `@agentic_function(render_range={"callers": N, "subcalls": M})`——控制**本函数自身**的 `llm()` 调用会读取多少 DAG 历史。两者都是基于 `seq` 的节点数切片：`callers` = 在本函数帧开始**之前**写入的最近 N 个节点（默认 `None` = 不设上限，`0` = 隔绝所有先前上下文）；`subcalls` = 自本函数帧开始**以来**写入的最近 N 个节点（默认 `-1` = 不设上限——帧能看到自身的进展；子函数的内部内容是由*它们自己*的 `expose` 设置隐藏的，而非由 subcalls 计数隐藏；仅当需要在循环中主动限制 prompt 体积时才设 `N>=0`）。 | `fn.render_range` |
 | Skill 触发词 / agent 发现 | 同级的 `SKILL.md` frontmatter | 由 skill 加载器单独加载 |
 
 **核心原则**：凡是可通过签名 / 注解表达的内容，就不在装饰器中重复；凡是可通过 `input=` 表达的内容，就不在 docstring 中重复。
@@ -61,8 +61,8 @@
 
 | 方面 | 默认值 | 由此产生的行为 |
 |---|---|---|
-| `expose` | `"io"` | 调用方能看到我的 name + input + output。我内部的 `runtime.exec`（`llm` Calls）对它们隐藏。 |
-| `render_range` | `None` → `render_context` 回落到 `callers=None, subcalls=-1` | 帧之前的历史不设上限。帧内节点（帧自身的进展：先前的 `runtime.exec` 结果、返回的子函数 io）同样不设上限。子 `@agentic_function` 的内部内容之所以保持隐藏，是因为子函数携带 `expose="io"`，而非因为 subcalls 对其做了裁剪。 |
+| `expose` | `"io"` | 调用方能看到我的 name + input + output。我内部的 `llm()` 调用对它们隐藏。 |
+| `render_range` | `None` → `render_context` 回落到 `callers=None, subcalls=-1` | 帧之前的历史不设上限。帧内节点（帧自身的进展：先前的 `llm()` 结果、返回的子函数 io）同样不设上限。子 `@agentic_function` 的内部内容之所以保持隐藏，是因为子函数携带 `expose="io"`，而非因为 subcalls 对其做了裁剪。 |
 | 顶层对话轮次 | `frame_entry_seq=-1`，无帧前内容 | 与任何其他帧走相同的代码路径——所有节点都属帧内且可见。没有特殊处理。 |
 | tools | 完整工具集 | 既不传 `tools=` 也不传 `toolset=` 的裸 `runtime.exec` 默认解析出完整的注册表工具集——工具是开启的。传 `tools=[...]` 给出显式菜单；传 `toolset="none"` 或 `tools=[]` 才是无工具的纯推理调用。工具体内嵌套的 `exec` 会通过 `_current_tools` contextvar 继承外层的 `tools=` 列表。 |
 | `system` | `None` | 原样使用运行时现有的 system prompt。 |
@@ -76,9 +76,9 @@
 | 通道 | 作用范围 | 这里该写什么 |
 |---|---|---|
 | docstring | 整个函数层面。描述函数作为一个整体做什么（它可能包含预处理、若干次 LLM 调用以及后处理）。供人类、决策菜单、tool_use spec 和 meta 工具读取。 | 必须有一行摘要。也可以详细描述每一次 LLM 调用做什么、预期输出、边界情况——想写多详细就写多详细，供读者与上下文使用。 |
-| `runtime.exec(content=[...])` | 函数内部某一次具体的 LLM 调用。每次 `exec` 都是它自己的一次“提问”；函数可以用不同的 prompt 发起多次。 | *这一次* LLM 调用真正的 prompt + 数据：什么任务、什么输出格式、什么约束，以及待处理的数据。**即便 docstring 已经描述过，这里也必须写。** |
+| `llm(prompt)` | 函数内部某一次具体的 LLM 调用。每次调用都是独立请求；函数可以用不同的 prompt 发起多次。 | *这一次* LLM 调用真正的 prompt + 数据：什么任务、什么输出格式、什么约束，以及待处理的数据。**即便 docstring 已经描述过，这里也必须写。** |
 
-一个函数可以有一段详尽的 docstring，说明“本函数通过询问 LLM 并对回复做归一化来分类情感”，但函数体仍然需要一个显式的 `runtime.exec(content=[...])`，其中包含真正发给 LLM 的指令 + 数据。**docstring 中的文档不会传递进 LLM 调用**——框架把 docstring 作为描述性上下文发送（以 `metadata.doc` 携带在 DAG 节点上，并渲染进内层调用的 situation prompt），而非作为权威指令。各 provider 的行为各异；codex CLI 尤其会忽略作为指令的 docstring。务必把每次调用的 prompt 放进 `content`。
+一个函数可以有一段详尽的 docstring，说明“本函数通过询问 LLM 并对回复做归一化来分类情感”，但函数体仍然需要一个显式的 `llm(prompt)`，其中包含真正发给 LLM 的指令 + 数据。**docstring 中的文档不会传递进 LLM 调用**——框架把 docstring 作为描述性上下文发送（以 `metadata.doc` 携带在 DAG 节点上，并渲染进内层调用的 situation prompt），而非作为权威指令。务必把每次调用的指令和数据放进 `llm()` 的 prompt。
 
 docstring 撰写规则：
 
@@ -92,7 +92,7 @@ docstring 撰写规则：
 - 每一项都是形如 `{"type": "text", "text": ...}` 或 `{"type": "image", "path": ...}` 的字典。
 - 把这次 LLM 调用的指令*与*数据都嵌进去。示例：
   ```python
-  runtime.exec(content=[{"type": "text", "text": (
+  llm([{"type": "text", "text": (
       f"Classify the sentiment of the following text. Reply with exactly one "
       f"word: positive, negative, or neutral.\n\nText:\n{text}"
   )}])

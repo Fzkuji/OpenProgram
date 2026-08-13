@@ -684,20 +684,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_ss_exp.add_argument("--output", default=None,
         help="Write here instead of ./<session-id>.<format>")
 
-    # ---- tasks ------------------------------------------------------------
-    p_tasks = sub.add_parser(
-        "tasks", help="Inspect canonical resource state for background tasks",
+    # ---- jobs -------------------------------------------------------------
+    p_jobs = sub.add_parser(
+        "jobs", help="Inspect canonical resource state for background jobs",
     )
-    tasks_sub = p_tasks.add_subparsers(dest="tasks_verb", metavar="verb")
-    p_tasks_list = tasks_sub.add_parser("list", help="List task resource DTOs")
-    p_tasks_list.add_argument(
+    jobs_sub = p_jobs.add_subparsers(dest="jobs_verb", metavar="verb")
+    p_jobs_list = jobs_sub.add_parser("list", help="List job resource DTOs")
+    p_jobs_list.add_argument(
         "--session", dest="session_id", default=None,
-        help="Restrict tasks to one session id",
+        help="Restrict jobs to one session id",
     )
-    p_tasks_list.add_argument("--json", action="store_true", help="Emit JSON")
-    p_tasks_get = tasks_sub.add_parser("get", help="Get one task resource DTO")
-    p_tasks_get.add_argument("task_id", help="Task id")
-    p_tasks_get.add_argument("--json", action="store_true", help="Emit JSON")
+    p_jobs_list.add_argument("--json", action="store_true", help="Emit JSON")
+    p_jobs_get = jobs_sub.add_parser("get", help="Get one job resource DTO")
+    p_jobs_get.add_argument("job_id", help="Job id")
+    p_jobs_get.add_argument("--json", action="store_true", help="Emit JSON")
 
     # ---- subagent ----------------------------------------------------------
     # Subagent spawn / merge ops. See ``openprogram/agent/sub_agent_run.py``
@@ -755,23 +755,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print human-readable summary instead of JSON")
 
     p_sa_list = subagent_sub.add_parser("list",
-        help="List resource views for tasks in a session.")
+        help="List resource views for jobs in a session.")
     p_sa_list.add_argument("--session", required=True,
-        help="Session id whose tasks should be listed")
+        help="Session id whose jobs should be listed")
     p_sa_list.add_argument("--json", action="store_true",
-        help="Print the canonical task resource views as JSON")
+        help="Print the canonical job resource views as JSON")
 
     p_sa_show = subagent_sub.add_parser("show",
-        help="Show one task's resource view.")
-    p_sa_show.add_argument("task_id", help="Task id to inspect")
+        help="Show one job's resource view.")
+    p_sa_show.add_argument("job_id", help="Job id to inspect")
     p_sa_show.add_argument("--json", action="store_true",
-        help="Print the canonical task resource view as JSON")
+        help="Print the canonical job resource view as JSON")
 
     p_sa_cancel = subagent_sub.add_parser("cancel",
-        help="Cancel one task and show its updated resource view.")
-    p_sa_cancel.add_argument("task_id", help="Task id to cancel")
+        help="Cancel one job and show its updated resource view.")
+    p_sa_cancel.add_argument("job_id", help="Job id to cancel")
     p_sa_cancel.add_argument("--json", action="store_true",
-        help="Print the canonical task resource view as JSON")
+        help="Print the canonical job resource view as JSON")
 
     # ---- web --------------------------------------------------------------
     p_web = sub.add_parser("web", help="Start the Web UI")
@@ -1195,7 +1195,7 @@ def build_parser() -> argparse.ArgumentParser:
     # 但它们是本函数局部变量 — 经 set_defaults 盖进 args,嵌套子命令
     # 由更深一层覆盖,args._cmd_parser 恒为选中路径上最深的一个。
     for _p in (p_logs, p_programs, p_skills, p_plugins, p_trash, p_backup, p_sessions,
-               p_tasks,
+               p_jobs,
                p_subagent, p_memory, p_worker, p_channels, p_chacct,
                p_chaccess, p_chb, p_mcp, p_browser, p_agents,
                p_config, p_recordings, p_upgrade, p_providers):
@@ -1542,14 +1542,14 @@ def main():
             _need_subcommand(args._cmd_parser)
         return
 
-    if args.command == "tasks":
-        from openprogram._cli_cmds.tasks import _cmd_tasks_get, _cmd_tasks_list
+    if args.command == "jobs":
+        from openprogram._cli_cmds.jobs import _cmd_jobs_get, _cmd_jobs_list
 
-        verb = getattr(args, "tasks_verb", None)
+        verb = getattr(args, "jobs_verb", None)
         if verb == "list":
-            sys.exit(_cmd_tasks_list(args.session_id, as_json=args.json))
+            sys.exit(_cmd_jobs_list(args.session_id, as_json=args.json))
         if verb == "get":
-            sys.exit(_cmd_tasks_get(args.task_id, as_json=args.json))
+            sys.exit(_cmd_jobs_get(args.job_id, as_json=args.json))
         _need_subcommand(args._cmd_parser)
 
     if args.command == "web":
@@ -1884,9 +1884,9 @@ def main():
         if verb == "list":
             sys.exit(_cmd_subagent_list(args.session, as_json=args.json))
         if verb == "show":
-            sys.exit(_cmd_subagent_show(args.task_id, as_json=args.json))
+            sys.exit(_cmd_subagent_show(args.job_id, as_json=args.json))
         if verb == "cancel":
-            sys.exit(_cmd_subagent_cancel(args.task_id, as_json=args.json))
+            sys.exit(_cmd_subagent_cancel(args.job_id, as_json=args.json))
         _need_subcommand(args._cmd_parser)
 
     if args.command == "cron-worker":

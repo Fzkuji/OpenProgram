@@ -79,7 +79,7 @@ def _call_agent(*, prompt: str, description: str = "", agent_id: str = "",
     so _resolve_parent finds them."""
     from openprogram.agent.run_control import _current_session_id
     from openprogram.store import _current_turn_id
-    from openprogram.functions.tools.agent.agent.agent import _agent_impl
+    from openprogram.programs.functions.agent.agent.agent import _agent_impl
 
     def _go():
         tok1 = _current_session_id.set(session_id)
@@ -189,7 +189,7 @@ def test_current_tool_call_id_visible_inside_tool_body():
     Covers the sync body path, which runs in an executor thread and only
     sees the value because ``_invoke`` copies the context across."""
     import asyncio
-    from openprogram.functions._runtime import (
+    from openprogram.programs._runtime import (
         current_tool_call_id,
         function,
     )
@@ -211,7 +211,7 @@ def test_current_tool_call_id_visible_inside_tool_body():
 
 
 def test_current_tool_call_id_is_none_outside_a_tool_call():
-    from openprogram.functions._runtime import current_tool_call_id
+    from openprogram.programs._runtime import current_tool_call_id
     assert current_tool_call_id() is None
 
 
@@ -228,7 +228,7 @@ def test_agent_exposes_start_from_to_the_llm():
     in the description was unreachable. ``start_from`` avoids the
     reserved name; this test keeps it that way.
     """
-    from openprogram.functions._runtime import all_tools
+    from openprogram.programs._runtime import all_tools
     tool = next(t for t in all_tools() if t.name == "agent")
     props = (tool.parameters or {}).get("properties", {})
     assert "start_from" in props, sorted(props)
@@ -248,11 +248,11 @@ def test_no_tool_declares_a_parameter_the_runtime_drops():
     Scope is "the .py files this repo owns", which git already answers
     exactly: tracked files plus untracked ones .gitignore does not hide.
     Walking the directory instead would sweep in code we do not control
-    and cannot fix — ``openprogram/functions/agentics/`` is where
+    and cannot fix — ``openprogram/programs/agentic_functions/`` is where
     ``openprogram programs install`` drops independent harness checkouts
     (each with its own ``.git``, some with a ``.venv`` carrying a whole
     site-packages, including stale copies of openprogram itself), and
-    .gitignore line "openprogram/functions/agentics/*" is what marks them
+    .gitignore line "openprogram/programs/agentic_functions/*" is what marks them
     as not ours. Untracked-but-unignored files stay in scope so a tool
     written and not yet committed is still guarded. Checking out this
     repo as a git worktree leaves those installs behind, so a directory
@@ -316,7 +316,7 @@ def test_no_tool_declares_a_parameter_the_runtime_drops():
 # --------------------------------------------------------------------------
 
 def test_fanout_refuses_the_spawn_past_the_limit(store, fake_dispatcher):
-    from openprogram.functions.tools.agent.agent.agent import MAX_SPAWN_FANOUT
+    from openprogram.programs.functions.agent.agent.agent import MAX_SPAWN_FANOUT
 
     for i in range(MAX_SPAWN_FANOUT):
         out = _call_agent(prompt=f"task {i}", session_id="p1", turn_id="a1")
@@ -330,7 +330,7 @@ def test_fanout_refuses_the_spawn_past_the_limit(store, fake_dispatcher):
 def test_fanout_is_counted_per_turn(store, fake_dispatcher):
     """A new turn spawns with a fresh budget — the cap stops one runaway
     turn, it is not a session-lifetime quota."""
-    from openprogram.functions.tools.agent.agent.agent import MAX_SPAWN_FANOUT
+    from openprogram.programs.functions.agent.agent.agent import MAX_SPAWN_FANOUT
 
     for i in range(MAX_SPAWN_FANOUT + 1):
         _call_agent(prompt=f"task {i}", session_id="p1", turn_id="a1")
@@ -339,7 +339,7 @@ def test_fanout_is_counted_per_turn(store, fake_dispatcher):
 
 
 def test_fanout_zero_disables_the_cap(store, fake_dispatcher, monkeypatch):
-    from openprogram.functions.tools.agent.agent.agent import MAX_SPAWN_FANOUT
+    from openprogram.programs.functions.agent.agent.agent import MAX_SPAWN_FANOUT
     monkeypatch.setattr(
         "openprogram.setup._read_config",
         lambda: {"agent": {"max_spawn_fanout": 0}},
@@ -352,10 +352,10 @@ def test_fanout_zero_disables_the_cap(store, fake_dispatcher, monkeypatch):
 def test_fanout_slot_is_not_spent_by_a_refused_spawn(store, fake_dispatcher):
     """The generation guard runs first, so a chain that is out of
     generations never burns its turn's fan-out slots."""
-    from openprogram.functions.tools.agent.agent.agent import (
+    from openprogram.programs.functions.agent.agent.agent import (
         MAX_SPAWN_DEPTH, _fanout_used,
     )
-    from openprogram.functions.tools.send_message.send_message.depth import (
+    from openprogram.programs.functions.send_message.send_message.depth import (
         set_chain_generations,
     )
     tok = set_chain_generations(MAX_SPAWN_DEPTH)

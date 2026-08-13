@@ -10,7 +10,7 @@ provider's native login works from every surface instead of "go use the other
 one".
 
 Shape:
-  POST /api/providers/{name}/login/start   {method?, account?, api_key?}
+  POST /api/providers/{name}/login/start   {method?, account?, label?, api_key?}
       -> {session, method}; spawns the login coroutine in the background.
   GET  /api/providers/{name}/login/poll?session=&cursor=
       -> {events[], cursor, waiting, prompt, done, ok, error, name}
@@ -29,7 +29,9 @@ from __future__ import annotations
 import asyncio
 import secrets
 import time
+from typing import Any
 
+from fastapi import Body
 from fastapi.responses import JSONResponse
 
 # session_id -> _LoginSession
@@ -46,6 +48,7 @@ class _LoginSession:
         self.ok: bool = False
         self.error: str | None = None
         self.name: str | None = None        # saved account id on success
+        self.label: str | None = None       # saved human-readable label
         self.task: asyncio.Task | None = None
         self.started_at: float = time.time()
         self.done_at: float | None = None
@@ -136,7 +139,7 @@ def register(app):
         })
 
     @app.post("/api/providers/{name}/login/start")
-    async def login_start(name: str, body: dict = None):
+    async def login_start(name: str, body: Any = Body(default=None)):
         _reap()
         # Resolve aliases (e.g. "codex" -> "openai-codex") so the driver gets a
         # canonical id, mirroring the CLI. Best-effort.
@@ -145,10 +148,34 @@ def register(app):
             name = _resolve(name) or name
         except Exception:
             pass
-        b = body or {}
-        explicit_account = (b.get("account") or "").strip()
+        if not isinstance(body, dict):
+            return JSONResponse(content={"error": "body must be a JSON object"}, status_code=400)
+        unknown = sorted(set(body) - {"method", "account", "label", "api_key"})
+        if unknown:
+            return JSONResponse(content={"error": f"unknown field: {unknown[0]}"}, status_code=400)
+        b = body
+        explicit_account = b.get("account", "")
+        method = b.get("method", "")
+        requested_label = b.get("label", "")
         api_key = b.get("api_key")
-        method = (b.get("method") or "").strip()
+        if not isinstance(explicit_account, str) or not isinstance(method, str):
+            return JSONResponse(content={"error": "account and method must be strings"}, status_code=400)
+        if api_key is not None and not isinstance(api_key, str):
+            return JSONResponse(content={"error": "api_key must be a string"}, status_code=400)
+        explicit_account = explicit_account.strip()
+        if explicit_account:
+            from openprogram.webui.routes._credential_secrets import is_nonempty_printable_ascii
+
+            if not is_nonempty_printable_ascii(explicit_account):
+                return JSONResponse(content={"error": "invalid account id"}, status_code=400)
+        try:
+            from openprogram.auth.account_labels import normalize_account_label
+            requested_label = normalize_account_label(
+                requested_label, allow_empty=True
+            )
+        except ValueError as exc:
+            return JSONResponse(content={"error": str(exc)}, status_code=400)
+        method = method.strip()
         if not method:
             from openprogram.auth.login_method_registry import default_method
             method = default_method(name)
@@ -168,7 +195,14 @@ def register(app):
         async def _drive() -> None:
             from openprogram.auth.login_driver import run_login, persist
             try:
-                cred = await run_login(name, account, method, _RemoteLoginUi(sess), api_key=api_key)
+                cred = await run_login(
+                    name,
+                    account,
+                    method,
+                    _RemoteLoginUi(sess),
+                    api_key=api_key,
+                    label=requested_label,
+                )
                 persist(cred)
                 # Subscription providers have no list-models API; enable their
                 # default model set into config on first login (no-op if the
@@ -181,6 +215,8 @@ def register(app):
                 except Exception:
                     pass
                 sess.name = getattr(cred, "account_id", account)
+                from openprogram.auth.account_labels import effective_account_label
+                sess.label = effective_account_label(cred, sess.name)
                 sess.ok = True
             except asyncio.CancelledError:
                 raise
@@ -213,6 +249,7 @@ def register(app):
             "ok": sess.ok,
             "error": sess.error,
             "name": sess.name,
+            "label": sess.label,
         })
 
     @app.post("/api/providers/{name}/login/submit")

@@ -6,6 +6,7 @@ worktree`` lifecycle against a throwaway repo in pytest's tmp_path.
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from openprogram.worktree.manager import (
     WorktreeManager,
     _reset_manager_for_tests,
 )
-from openprogram.worktree.store import _store_path
+from openprogram.worktree.store import _store_path, load_worktree
 from openprogram.worktree.types import WorktreeStatus, can_transition
 
 
@@ -265,6 +266,30 @@ def test_persistence_round_trip(isolated_state, repo):
     assert _store_path().exists()
     blob = _store_path().read_text()
     assert wt.id in blob
+
+
+def test_legacy_parent_task_field_is_migrated(isolated_state):
+    path = _store_path()
+    path.write_text(json.dumps({
+        "version": 1,
+        "worktrees": {
+            "w_legacy": {
+                "id": "w_legacy",
+                "source_repo": "/repo",
+                "worktree_path": "/repo-wt",
+                "branch_name": "legacy",
+                "parent_task": "t_legacy",
+            },
+        },
+    }))
+
+    worktree = load_worktree("w_legacy")
+
+    assert worktree is not None
+    assert worktree.parent_job == "t_legacy"
+    migrated = json.loads(path.read_text())
+    assert migrated["worktrees"]["w_legacy"]["parent_job"] == "t_legacy"
+    assert "parent_task" not in migrated["worktrees"]["w_legacy"]
 
 
 # create_worktree(pr=...) — PR-number worktree creation

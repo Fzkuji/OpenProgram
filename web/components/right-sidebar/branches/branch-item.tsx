@@ -3,8 +3,8 @@
 import { cloneElement, useEffect, useRef, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
-import type { TaskResourceView } from "@/lib/net/ws-events";
-import { queueResourceSummary, taskResourceDetails } from "@/lib/task-resource";
+import type { JobResourceView } from "@/lib/net/ws-events";
+import { queueResourceSummary, jobResourceDetails } from "@/lib/job-resource";
 import type { AnimatedNavIconHandle } from "@/components/animated-icons";
 
 import {
@@ -33,8 +33,8 @@ export function BranchItem({
   isBase,
   running,
   finishing,
-  taskStatus,
-  taskResource,
+  jobStatus,
+  jobResource,
   chip,
   onToggleSelect,
   onSetBase,
@@ -47,8 +47,8 @@ export function BranchItem({
   isBase: boolean;
   running: boolean;
   finishing: boolean;
-  taskStatus?: string;
-  taskResource?: TaskResourceView;
+  jobStatus?: string;
+  jobResource?: JobResourceView;
   chip?: boolean;
   onToggleSelect: (headId: string, e: React.MouseEvent) => void;
   onSetBase: (headId: string, e: React.MouseEvent) => void;
@@ -82,10 +82,10 @@ export function BranchItem({
     if (branch.active) setPendingActive(false);
   }, [branch.active]);
 
-  const isPending = branch.head_msg_id.startsWith("__pending_task__:");
-  const queueSummary = chip ? null : queueResourceSummary(taskResource);
-  const resourceDetails = taskResourceDetails(taskResource);
-  const finishingReason = finishing ? taskResource?.reason_code : null;
+  const isPending = branch.head_msg_id.startsWith("__pending_job__:");
+  const queueSummary = chip ? null : queueResourceSummary(jobResource);
+  const resourceDetails = jobResourceDetails(jobResource);
+  const finishingReason = finishing ? jobResource?.reason_code : null;
 
   function commitRename() {
     setEditing(false);
@@ -145,7 +145,7 @@ export function BranchItem({
     + (isBase ? " base" : "")
     + (running ? " is-running" : "")
     + (finishing ? " is-finishing" : "")
-    + (queueSummary ? " has-task-resource" : "");
+    + (queueSummary ? " has-job-resource" : "");
 
   return (
     <div
@@ -162,7 +162,7 @@ export function BranchItem({
           className="branch-item-check"
           title={
             isPending
-              ? t("right.task_running_merge_wait")
+              ? t("right.job_running_merge_wait")
               : (selected
                   ? t("right.deselect_base_hint")
                   : t("right.select_merge_hint"))
@@ -223,7 +223,7 @@ export function BranchItem({
           className="branch-item-badge"
           style={{ background: "rgba(160, 107, 255, 0.18)" }}
         >
-          {taskStatus === "queued" ? "queued" : t("right.running")}
+          {jobStatus === "queued" ? "queued" : t("right.running")}
         </span>
       ) : null}
       {finishingReason ? (
@@ -231,19 +231,19 @@ export function BranchItem({
           {finishingReason}
         </span>
       ) : null}
-      {!chip && taskResource ? (
+      {!chip && jobResource ? (
         <details
           className="branch-item-resource"
           onClick={(event) => event.stopPropagation()}
         >
-          <summary aria-label={`Task resource details for ${branch.name || branch.head_msg_id}`}>
+          <summary aria-label={`Job resource details for ${branch.name || branch.head_msg_id}`}>
             resources{resourceDetails.length ? ` · ${resourceDetails[0].value}` : ""}
           </summary>
           <pre>{JSON.stringify({
-            resource_state: taskResource.resource_state,
-            reason_code: taskResource.reason_code,
-            capacity: taskResource.capacity,
-            budget: taskResource.budget,
+            resource_state: jobResource.resource_state,
+            reason_code: jobResource.reason_code,
+            capacity: jobResource.capacity,
+            budget: jobResource.budget,
           }, null, 2)}</pre>
         </details>
       ) : null}

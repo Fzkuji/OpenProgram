@@ -81,9 +81,9 @@ Set these in the shell that launches `openprogram` (or the worker). Every one ha
 | `OPENPROGRAM_NO_AUTO_WORKER` | `1` = the TUI does not auto-launch a worker; connects only to an existing one | `openprogram/cli_ink.py` |
 | `OPENPROGRAM_NO_AUTO_UPDATE` | `1` = disable auto-update | `openprogram/updater/runner.py` |
 | `OPENPROGRAM_NO_SLEEP` | `1` = disable the memory sleep-consolidation scheduler | `openprogram/memory/scheduler.py` |
-| `OPENPROGRAM_NO_PROGRAMS_WATCH` | `1` = disable the file watcher on the programs directory | `openprogram/functions/watcher.py` |
+| `OPENPROGRAM_NO_PROGRAMS_WATCH` | `1` = disable the file watcher on the programs directory | `openprogram/programs/watcher.py` |
 | `OPENPROGRAM_PROJECT_AUTOCOMMIT` | `0` = turn off project auto-commit | `openprogram/store/project/project_commit.py` |
-| `OPENPROGRAM_WEBSEARCH_DISABLE` | Disable a web search provider by name (e.g. `ollama`) | `openprogram/functions/tools/web_search/providers/ollama.py` |
+| `OPENPROGRAM_WEBSEARCH_DISABLE` | Disable a web search provider by name (e.g. `ollama`) | `openprogram/programs/functions/web_search/providers/ollama.py` |
 
 ### LLM calls
 
@@ -103,10 +103,10 @@ Set these in the shell that launches `openprogram` (or the worker). Every one ha
 | Variable | Purpose | Code |
 |------|------|------|
 | `OPENPROGRAM_DEBUG_RUNTIME` | `1` = mirror runtime logs to stderr | `openprogram/webui/server.py` |
-| `OPENPROGRAM_DEBUG_REGISTRY` | `1` = show function-registry import failures | `openprogram/functions/_registry.py` |
+| `OPENPROGRAM_DEBUG_REGISTRY` | `1` = show function-registry import failures | `openprogram/programs/_registry.py` |
 | `OPENPROGRAM_DEBUG_DISPATCHER` | `1` = dispatcher debug logs | `openprogram/agent/dispatcher/runtime_attach.py` |
 | `OPENPROGRAM_DEBUG_PROVIDER` | `1` = provider-layer debug logs | `openprogram/providers/openai_codex/openai_codex.py` |
 
 ### Others
 
-The code holds a further batch of more internal variables (HTTP/SSE timeout tuning `OPENPROGRAM_HTTPX_*` / `OPENPROGRAM_SSE_*`, TCP keepalive `OPENPROGRAM_TCP_*`, per-provider retry counts `OPENPROGRAM_<PROVIDER>_MAX_RETRIES`, `OPENPROGRAM_TASK_WORKERS`, `OPENPROGRAM_IMAGE_DIR`, `OPENPROGRAM_BROWSER_CDP_URL`, etc.). `grep -rn "OPENPROGRAM_" openprogram/` lists the full set; every variable is commented where it is defined.
+The code holds a further batch of more internal variables (HTTP/SSE timeout tuning `OPENPROGRAM_HTTPX_*` / `OPENPROGRAM_SSE_*`, TCP keepalive `OPENPROGRAM_TCP_*`, per-provider retry counts `OPENPROGRAM_<PROVIDER>_MAX_RETRIES`, `OPENPROGRAM_JOB_WORKERS`, `OPENPROGRAM_IMAGE_DIR`, `OPENPROGRAM_BROWSER_CDP_URL`, etc.). `grep -rn "OPENPROGRAM_" openprogram/` lists the full set; every variable is commented where it is defined.

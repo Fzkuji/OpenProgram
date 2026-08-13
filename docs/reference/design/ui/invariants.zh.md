@@ -58,9 +58,9 @@ agent 的 agent.json `model`。当前默认掉出启用集合时，三处必须*
 ## 6. spawn 的三个入口语义必须一致
 
 spawn 一个 sub-agent 分支有三个入口：`agent()` 同步路径
-（functions/tools/agent/agent/agent.py）、异步 runner
-（agent/task/runner.py）、`send_message`
-（functions/tools/send_message/）。三者对 clean 模式必须一致地传
+（programs/functions/agent/agent/agent.py）、异步 runner
+（agent/job/runner.py）、`send_message`
+（programs/functions/send_message/）。三者对 clean 模式必须一致地传
 `spawn_caller=<发起节点>`，使分支根节点 `caller` 指向发起它的那轮
 （dag/overview.md §4），而不是挂在 ROOT 上。改 spawn 语义时三个入口
 一起改，一起测。
@@ -68,9 +68,9 @@ spawn 一个 sub-agent 分支有三个入口：`agent()` 同步路径
 被 spawn 的 agent **一律不得再委托**：它跑起来时代数预算
 （`agent.max_spawn_depth`，默认 1）已经花完，`agent()` 派生直接被拒。
 哪怕只放开"协调者"这一层，模型也会退化成层层推活儿，所以一层委托都不给。
-但它保留这个工具用于 `to=` 派活，也保留 `task_output` / `task_stop`
+但它保留这个工具用于 `to=` 派活，也保留 `job_output` / `job_stop`
 ——消息预算（`agent.max_messages`，默认 8）是另一个计数器，还有余量。
-工具是否出现只看消息计数：消息预算耗尽时 agent/task_output/task_stop
+工具是否出现只看消息计数：消息预算耗尽时 agent/job_output/job_stop
 才从清单消失，代数用完从不摘工具（见 runtime/agent-collaboration.md
 §5.1）。派出 worker 的那个 agent 在读结果时代数不变，所以还能派下一波。
 

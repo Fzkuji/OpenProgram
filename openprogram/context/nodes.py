@@ -383,7 +383,7 @@ def linear_back_to(graph: Graph, target_id: str) -> list[str]:
     return [n.id for n in graph if n.seq >= target_seq]
 
 
-def spawn_task(function_call_id: str, graph: Graph) -> list[str]:
+def spawn_job(function_call_id: str, graph: Graph) -> list[str]:
     """For a spawn-style code Call, extract the referenced task node id
     out of its ``input`` (legacy ``arguments``). Used by sub-agent ModelCalls.
     """
@@ -837,7 +837,7 @@ __all__ = [
     # Helpers:
     "last_user_message",
     "linear_back_to",
-    "spawn_task",
+    "spawn_job",
     "branch_terminals",
     "branch_internal",
     "fold_history",

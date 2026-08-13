@@ -20,5 +20,5 @@
 - `openprogram/agentic_programming/function.py`
 - `openprogram/agentic_programming/runtime.py`
 - `openprogram/agentic_programming/decision.py`
-- `openprogram/functions/tools/<name>/`
-- `openprogram/functions/agentics/llm_call_example/__init__.py`
+- `openprogram/programs/functions/<name>/`
+- `openprogram/programs/agentic_functions/llm_call_example/__init__.py`

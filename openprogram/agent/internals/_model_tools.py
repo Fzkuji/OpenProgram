@@ -438,14 +438,14 @@ def resolve_tools(
     wanted = override if override is not None else profile.get("tools")
     if wanted is None:
         try:
-            from openprogram.functions import agent_tools as _agent_tools
+            from openprogram.programs import agent_tools as _agent_tools
             return _apply_mcp_gate(_agent_tools(source=source, only_available=True))
         except Exception:
             return None
     if wanted == []:
         return []
     try:
-        from openprogram.functions import DEFAULT_TOOLS, agent_tools
+        from openprogram.programs import DEFAULT_TOOLS, agent_tools
         from openprogram.agent.management.gating import match_any
         if isinstance(wanted, dict):
             enabled = wanted.get("enabled")

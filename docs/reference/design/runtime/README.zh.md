@@ -7,7 +7,7 @@ Agent 执行运行时 —— 运行循环、worktree、异步任务、流式传�
 - [`dag/branch-collaboration.md`](dag/branch-collaboration.md) — 分支协作（通信 / 派活 / 合并）设计与实现步骤
 - [`execution/agent-call-flow.md`](execution/agent-call-flow.md) — 调用流程骨架(turn / loop,跟节点模型正交)
 - [`execution/agent-worktree.md`](execution/agent-worktree.md)
-- [`execution/async-task-lifecycle.md`](execution/async-task-lifecycle.md)
+- [`execution/async-job-lifecycle.md`](execution/async-job-lifecycle.md)
 - [`execution/dispatcher-split.md`](execution/dispatcher-split.md) — 将 `agent/dispatcher.py` 拆分为按职责划分的包(遵循「单文件不超过 1000 行」规则)
 - [`operations/multi-agent-revert-todo.md`](operations/multi-agent-revert-todo.md)
 - [`operations/file-management.md`](operations/file-management.md)

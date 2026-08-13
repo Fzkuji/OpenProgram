@@ -20,7 +20,7 @@ on the main chat path:
 
 | Mechanism | State |
 |---|---|
-| `ask_user` / `set_ask_user` / `FollowUp` (`openprogram/functions/agentics/ask_user/`) | Primitive complete, DAG awaiting-node bookkeeping complete; but no handler registered in the worker, and the agentic subprocess bridge is one-way — returns `None` in practice |
+| `ask_user` / `set_ask_user` / `FollowUp` (`openprogram/programs/agentic_functions/ask_user/`) | Primitive complete, DAG awaiting-node bookkeeping complete; but no handler registered in the worker, and the agentic subprocess bridge is one-way — returns `None` in practice |
 | webui follow-up round-trip (`webui/server.py:234-270`, WS `follow_up_answer` action, web `handleFollowUpQuestion`) | All three segments exist; the initiator `_web_follow_up` has no caller left — dead code. The web UI side is legacy DOM injection into `#runtime_pending` (only exists while a runtime block streams). TUI types the envelope but never handles it |
 | Approval gate (`openprogram/agent/internals/_approval.py`, wired in dispatcher) | Wait machinery complete and live, but `resolve()` is only called from tests; no web/TUI UI; default `bypass` masks it; sub-agents force bypass to avoid 300s hangs |
 

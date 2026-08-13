@@ -80,7 +80,7 @@ class TurnBindings:
         # turn half was true here: the session id was bound by whichever
         # entry point happened to run the turn. A new thread starts with
         # empty ContextVars, so the paths that call process_user_turn off
-        # their own thread (the task runner's follow-up, merge, the CLI
+        # their own thread (the job runner's follow-up, merge, the CLI
         # /goal turn) left it unbound and every one of those tools failed
         # with "no active parent turn".
         #
@@ -119,7 +119,7 @@ class TurnBindings:
         # Layer 6 (Claude Code's shouldDefer / ToolSearch): install a
         # session-scoped "loaded deferred tools" set so tool_search can
         # mutate it and subsequent turns see the updated set.
-        from openprogram.functions import install_loaded_deferred
+        from openprogram.programs import install_loaded_deferred
         install_loaded_deferred()
 
         # Project auto-commit (entity layer): snapshot which paths are

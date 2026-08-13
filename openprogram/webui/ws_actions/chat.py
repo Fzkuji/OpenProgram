@@ -809,7 +809,7 @@ async def handle_chat(ws, cmd: dict):
                 # --inherit and surfaces them here.
                 "context": parsed.get("context") or "inherit",
                 # wait=False (default for /task --async): submit to
-                # TaskRunner, return immediately. wait=True (default)
+                # JobRunner, return immediately. wait=True (default)
                 # blocks like the historical /task path.
                 "wait": parsed.get("wait", True),
             }},

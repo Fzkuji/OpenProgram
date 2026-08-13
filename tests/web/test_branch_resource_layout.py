@@ -8,9 +8,9 @@ def test_branch_resource_details_expand_without_clipping_and_support_keyboard():
     css = Path("web/app/styles/right-dock/branches-panel.css").read_text()
     html = f"""<style>:root{{--ui-list-radius:6px}}{css}</style>
     <div class='branches-list'><div class='branch-item'>
-      <span class='branch-item-dot'></span><span class='branch-item-name'>task</span>
+      <span class='branch-item-dot'></span><span class='branch-item-name'>job</span>
       <details class='branch-item-resource'>
-        <summary aria-label='Task resource details for task'>resources</summary>
+        <summary aria-label='Job resource details for job'>resources</summary>
         <pre>{{"resource_state":"released","reason_code":"completed","budget":{{"tokens":10}}}}</pre>
       </details>
     </div></div>"""
@@ -28,7 +28,7 @@ def test_branch_resource_details_expand_without_clipping_and_support_keyboard():
         )
         page = browser.new_page()
         page.set_content(html)
-        summary = page.get_by_label("Task resource details for task")
+        summary = page.get_by_label("Job resource details for job")
         summary.focus()
         page.keyboard.press("Enter")
         assert page.locator("details").evaluate("node => node.open") is True

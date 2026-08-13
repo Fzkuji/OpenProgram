@@ -173,7 +173,7 @@ On every LLM call, the contents of Core.md are injected into the system prompt:
 OpenProgram Memory — project: OpenProgram, last consolidated 2026-06-18
 ═══════════════════════════════════════════════
 [Timeline · recent]
-· 2026-06-15 Refactored the Functions page into a three-tab layout   ↪ session:local_fc03
+· 2026-06-15 Refactored the Programs page into a three-tab layout   ↪ session:local_fc03
 · 2026-06-17 Fixed the CLI attended-mode issue                       ↪ session:local_d125
 
 [Graph · current project]

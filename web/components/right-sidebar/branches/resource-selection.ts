@@ -1,22 +1,22 @@
-import type { TaskResourceView } from "@/lib/net/ws-events";
+import type { JobResourceView } from "@/lib/net/ws-events";
 
-export interface TaskResourceEntry {
+export interface JobResourceEntry {
   targetHead?: string | null;
   finalHead?: string | null;
   status: string;
-  resource?: TaskResourceView | null;
+  resource?: JobResourceView | null;
   updatedAt: number;
 }
 
 const TERMINAL = new Set(["completed", "cancelled", "errored"]);
 
 export function selectResourceForHead(
-  taskMap: Record<string, TaskResourceEntry>,
+  jobMap: Record<string, JobResourceEntry>,
   headId: string,
   pendingPrefix: string,
-): TaskResourceView | null {
-  const matches = Object.entries(taskMap).filter(([taskId, entry]) => {
-    const mapped = entry.finalHead || entry.targetHead || `${pendingPrefix}${taskId}`;
+): JobResourceView | null {
+  const matches = Object.entries(jobMap).filter(([jobId, entry]) => {
+    const mapped = entry.finalHead || entry.targetHead || `${pendingPrefix}${jobId}`;
     return mapped === headId;
   });
   matches.sort((a, b) => {

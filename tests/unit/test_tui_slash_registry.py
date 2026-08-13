@@ -75,44 +75,44 @@ def test_local_action_dispatch(clean_registry):
     assert "sess-42" in text and "agent-x" in text
 
 
-def test_tasks_list_prints_canonical_resource_dto(clean_registry, monkeypatch):
+def test_jobs_list_prints_canonical_resource_dto(clean_registry, monkeypatch):
     expected = {
-        "task_id": "t1", "status": "running", "resource_state": "active",
+        "job_id": "t1", "status": "running", "resource_state": "active",
     }
     runner = SimpleNamespace(
-        list_tasks=lambda session_id, limit=None: [SimpleNamespace(id="t1")],
-        get_task_resource_view=lambda task_id: SimpleNamespace(
+        list_jobs=lambda session_id, limit=None: [SimpleNamespace(id="t1")],
+        get_job_resource_view=lambda job_id: SimpleNamespace(
             to_dict=lambda: expected,
         ),
     )
-    monkeypatch.setattr("openprogram.agent.task.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
     console = _console()
 
     assert handlers._handle_slash(
-        "/tasks", console, None, agent=_FakeAgent(), session_id="sess-42",
+        "/jobs", console, None, agent=_FakeAgent(), session_id="sess-42",
     ) is False
 
-    assert json.loads(console.export_text())["tasks"] == [expected]
+    assert json.loads(console.export_text())["jobs"] == [expected]
 
 
-def test_tasks_get_prints_canonical_resource_dto(clean_registry, monkeypatch):
+def test_jobs_get_prints_canonical_resource_dto(clean_registry, monkeypatch):
     expected = {
-        "task_id": "t1", "status": "running", "resource_state": "active",
+        "job_id": "t1", "status": "running", "resource_state": "active",
     }
     runner = SimpleNamespace(
-        get_task=lambda task_id: SimpleNamespace(id=task_id),
-        get_task_resource_view=lambda task_id: SimpleNamespace(
+        get_job=lambda job_id: SimpleNamespace(id=job_id),
+        get_job_resource_view=lambda job_id: SimpleNamespace(
             to_dict=lambda: expected,
         ),
     )
-    monkeypatch.setattr("openprogram.agent.task.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
     console = _console()
 
     assert handlers._handle_slash(
-        "/tasks t1", console, None, agent=_FakeAgent(), session_id="sess-42",
+        "/jobs t1", console, None, agent=_FakeAgent(), session_id="sess-42",
     ) is False
 
-    assert json.loads(console.export_text())["task"] == expected
+    assert json.loads(console.export_text())["job"] == expected
 
 
 def test_quit_returns_exit(clean_registry):

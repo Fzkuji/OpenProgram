@@ -4,17 +4,17 @@ Specification: `docs/reference/design/runtime/agent-resource-governance.html`.
 
 ## Global constraints
 
-- Preserve the single-user, local, single execution-worker topology. `OPENPROGRAM_TASK_WORKERS` remains the only global scheduler capacity; do not add `max_live_global`.
+- Preserve the single-user, local, single execution-worker topology. `OPENPROGRAM_JOB_WORKERS` remains the only global scheduler capacity; do not add `max_live_global`.
 - Preserve existing Task ids/status enums, depth, fanout, message-budget semantics, broadcasts, cancellation APIs, and legacy tasks. Missing resource fields mean `legacy/unmetered`, never zero.
 - Follow strict TDD and record RED/GREEN evidence. All creation paths must use one admission boundary; rejected admissions create no Task, branch, inbox, or event side effects.
-- Use SQLite WAL and `BEGIN IMMEDIATE` for admission/reservation atomicity. Never hold a SQLite transaction across tasks.json file I/O. Durable `preparing` is committed before Task publication, and every concurrent check counts its provisional occupancy.
+- Use SQLite WAL and `BEGIN IMMEDIATE` for admission/reservation atomicity. Never hold a SQLite transaction across jobs.json file I/O. Durable `preparing` is committed before Task publication, and every concurrent check counts its provisional occupancy.
 - Queue, live, stopping, cumulative tasks, actual usage, and unsettled reservations are distinct. Actual provider usage remains append-only in `usage_events`.
 - New configuration values are positive or null. Task/child limits can only narrow owner/session/ancestor limits. Unknown cost is never treated as zero.
 - Do not mark the matrix row solid until the mechanical gate in the specification passes.
 
 ## Task 1: Configuration, schema migration, and read-only resource views
 
-Add `agent.resource_limits`, session overrides, configured/effective/source resolution, SQLite migrations for admissions/scopes/reservations and nullable task attribution on usage events, legacy handling, unknown-cost aggregation, and read-only `TaskResourceView`. Money is decimal-string at APIs and integer micro-USD in storage.
+Add `agent.resource_limits`, session overrides, configured/effective/source resolution, SQLite migrations for admissions/scopes/reservations and nullable task attribution on usage events, legacy handling, unknown-cost aggregation, and read-only `JobResourceView`. Money is decimal-string at APIs and integer micro-USD in storage.
 
 Required verification: schema upgrade/reopen/rollback compatibility, invalid/zero values, owner-only mutations, child narrowing, worker-capacity projection, unknown-cost display, legacy tasks, and existing usage queries.
 

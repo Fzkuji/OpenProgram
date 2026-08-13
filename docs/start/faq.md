@@ -72,7 +72,7 @@ hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector
 
 ## I installed an agent program but it doesn't show up in the UI?
 
-Programs register at startup, so run `openprogram restart` after installing (or hit Refresh on the Functions page). Confirm it's installed with `openprogram programs available`.
+Programs register at startup, so run `openprogram restart` after installing (or hit Refresh on the Programs page). Confirm it's installed with `openprogram programs available`.
 
 ## Multiple accounts or keys for the same provider — how do I switch?
 

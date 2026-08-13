@@ -21,7 +21,7 @@ MCP 是协议,定义"工具的提供方"(server)和"工具的消费方"(client)�
 
 ## 目录位置
 
-`openprogram/mcp/` 是 **top-level module**,跟 `openprogram/channels/` 平级。**不**放在 `openprogram/functions/` 下。
+`openprogram/mcp/` 是 **top-level module**,跟 `openprogram/channels/` 平级。**不**放在 `openprogram/programs/` 下。
 
 理由:
 - MCP 是**外部协议适配器层**,跟"function 的实现"是两件事。我们的 function 体系(`@function` / `@agentic_function` / `agentics/` 下的代码)是本地实现的工具;MCP 是从外部进程取来的工具。两层概念正交。
@@ -121,7 +121,7 @@ webui 显示
 
 整条链路在 FastAPI 主 loop 上同步完成,**不涉及跨线程 / 跨 event loop 调度**。
 
-`/api/run/{name}` / CLI `programs run` / `/functions` 页面**不**接 MCP 工具——它们是本地 function 的入口。MCP 工具用户不感知,LLM 隐性使用。
+`/api/run/{name}` / CLI `programs run` / `/programs` 页面**不**接 MCP 工具——它们是本地 function 的入口。MCP 工具用户不感知,LLM 隐性使用。
 
 ## 关键技术决策
 

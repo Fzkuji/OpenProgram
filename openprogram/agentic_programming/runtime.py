@@ -2059,7 +2059,7 @@ class Runtime:
                 # Explicit opt-out — reasoning-only call, no tools.
                 agent_tools = None
             else:
-                from openprogram.functions import (
+                from openprogram.programs import (
                     agent_tools as _resolve_agent_tools,
                 )
 
@@ -2071,7 +2071,7 @@ class Runtime:
                 )
                 agent_tools = tools_for_session or None
         elif raw_tools:
-            from openprogram.functions import apply_tool_policy as _apply_policy
+            from openprogram.programs import apply_tool_policy as _apply_policy
 
             adapted = _adapt_tools(raw_tools) or []
             # Caller-supplied tools (exec(tools=[...])) are self-authorized:

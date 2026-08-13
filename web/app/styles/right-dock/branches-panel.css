@@ -155,7 +155,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.branch-item.has-task-resource {
+.branch-item.has-job-resource {
   height: 46px;
   min-height: 46px;
   max-height: 46px;
@@ -255,8 +255,8 @@
    convRunningBreathe / convFinishingWipe) live in
    web/app/styles/base.css to dodge turbopack's CSS-module
    keyframe-name mangling.
-   Applied by branches-panel.tsx when its task_status subscription
-   reports a task targeting this branch's head_msg_id. */
+   Applied by branches-panel.tsx when its job_status subscription
+   reports a job targeting this branch's head_msg_id. */
 .branch-item.is-running,
 .branch-item.is-finishing {
   position: relative;

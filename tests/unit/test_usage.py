@@ -160,9 +160,87 @@ def test_existing_usage_database_is_migrated_and_reopens(tmp_path):
             "SELECT name FROM sqlite_master WHERE type='table'"
         )
     }
-    assert {"task_id", "budget_scope_id", "reservation_id"} <= columns
-    assert {"task_admissions", "budget_scopes", "usage_reservations"} <= tables
+    assert {"job_id", "budget_scope_id", "reservation_id"} <= columns
+    assert {"job_admissions", "budget_scopes", "usage_reservations"} <= tables
     assert reopened.connection().execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+
+
+def test_legacy_task_usage_schema_is_renamed_to_jobs(tmp_path):
+    path = tmp_path / "usage.db"
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        CREATE TABLE usage_events (
+            event_id TEXT PRIMARY KEY, ts REAL NOT NULL, session_id TEXT,
+            parent_session_id TEXT, agent_id TEXT, call_kind TEXT NOT NULL,
+            call_label TEXT, origin_pid INTEGER, provider TEXT NOT NULL,
+            api TEXT, model_id TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+            total_tokens INTEGER NOT NULL DEFAULT 0, cost_total REAL NOT NULL DEFAULT 0,
+            cost_input REAL, cost_output REAL, cost_cache_read REAL,
+            cost_cache_write REAL, cost_source TEXT, token_source TEXT,
+            schema_version INTEGER NOT NULL DEFAULT 1, task_id TEXT,
+            budget_scope_id TEXT, reservation_id TEXT
+        );
+        CREATE TABLE task_admissions (
+            admission_id TEXT PRIMARY KEY, task_id TEXT UNIQUE NOT NULL,
+            session_id TEXT NOT NULL, parent_task_id TEXT, caller_session_id TEXT,
+            caller_turn_id TEXT, creates_agent INTEGER NOT NULL,
+            request_fingerprint TEXT NOT NULL, budget_scope_id TEXT NOT NULL,
+            dispatch_ready INTEGER NOT NULL DEFAULT 1,
+            borrowed_parent_task_id TEXT, resume_parent_msg_id TEXT, state TEXT NOT NULL,
+            admitted_seq INTEGER NOT NULL, owner_instance_id TEXT,
+            lease_generation INTEGER NOT NULL DEFAULT 0, lease_expires_at REAL,
+            created_at REAL NOT NULL, started_at REAL, last_activity_at REAL,
+            released_at REAL, reason_code TEXT
+        );
+        CREATE TABLE task_finalizations (
+            task_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+            owner_instance_id TEXT NOT NULL, lease_generation INTEGER NOT NULL,
+            fields_json TEXT NOT NULL, state TEXT NOT NULL,
+            created_at REAL NOT NULL, completed_at REAL
+        );
+        CREATE TABLE budget_scopes (
+            budget_scope_id TEXT PRIMARY KEY,
+            scope_kind TEXT NOT NULL CHECK (scope_kind IN ('session','task')),
+            session_id TEXT NOT NULL, task_id TEXT UNIQUE, parent_scope_id TEXT,
+            max_total_tokens INTEGER, max_cost_microusd INTEGER,
+            max_runtime_seconds INTEGER, idle_timeout_seconds INTEGER,
+            created_at REAL NOT NULL
+        );
+        CREATE TABLE usage_reservations (
+            reservation_id TEXT PRIMARY KEY, task_id TEXT NOT NULL,
+            budget_scope_id TEXT NOT NULL, kind TEXT NOT NULL, state TEXT NOT NULL,
+            reserved_tokens INTEGER, reserved_cost_microusd INTEGER,
+            request_started_at REAL, settled_event_id TEXT, expires_at REAL
+        );
+        INSERT INTO usage_events (
+            event_id, ts, call_kind, provider, model_id, task_id
+        ) VALUES ('event', 1, 'chat', 'p', 'm', 't_1');
+        INSERT INTO budget_scopes (
+            budget_scope_id, scope_kind, session_id, task_id, created_at
+        ) VALUES ('scope', 'task', 's_1', 't_1', 1);
+    """)
+    conn.commit()
+    conn.close()
+
+    migrated = UsageLedger(path).connection()
+
+    tables = {
+        row[0] for row in migrated.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
+    assert "job_admissions" in tables
+    assert "job_finalizations" in tables
+    assert "task_admissions" not in tables
+    assert migrated.execute(
+        "SELECT job_id FROM usage_events WHERE event_id = 'event'"
+    ).fetchone()[0] == "t_1"
+    assert tuple(migrated.execute(
+        "SELECT scope_kind, job_id FROM budget_scopes WHERE budget_scope_id = 'scope'"
+    ).fetchone()) == ("job", "t_1")
 
 
 def test_usage_aggregation_tracks_unknown_cost_events(ledger):

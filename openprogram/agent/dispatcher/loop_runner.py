@@ -94,7 +94,7 @@ def run_loop_blocking(
     # compose: a wechat turn in plan mode hides the union of both
     # blacklists.
     if tools and _plan_mode.is_plan_mode(req.session_id):
-        from openprogram.functions import apply_tool_policy as _apply_policy
+        from openprogram.programs import apply_tool_policy as _apply_policy
         tools = _apply_policy(tools, source="plan")
     _log_resolved_tools(req, tools)
     if tools:

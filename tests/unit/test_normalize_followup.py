@@ -22,9 +22,9 @@ def _graph():
         {"id": "atc", "role": "llm", "function": "attach",
          "display": "runtime", "predecessor": "r1", "caller": "r1"},
         # synthetic followup trigger (filtered later too)
-        {"id": "fu", "role": "user", "source": "task_followup",
+        {"id": "fu", "role": "user", "source": "job_followup",
          "predecessor": "r1"},
-        {"id": "fu_reply", "role": "assistant", "source": "task_followup",
+        {"id": "fu_reply", "role": "assistant", "source": "job_followup",
          "predecessor": "fu"},
     ]
 

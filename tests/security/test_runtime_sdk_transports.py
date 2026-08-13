@@ -583,7 +583,7 @@ def test_registered_remote_mcp_tool_sanitizes_peer_failures_and_exception_graph(
 ):
     import asyncio
     from mcp.types import Tool
-    from openprogram.functions._runtime import (
+    from openprogram.programs._runtime import (
         get,
         restore_registry,
         snapshot_registry,

@@ -3,7 +3,7 @@
 /**
  * /chats — list of past conversations.
  *
- * Shell mirrors /functions and /memory: sticky topbar with title +
+ * Shell mirrors /programs and /memory: sticky topbar with title +
  * toolbar (search, New chat), 287px nav rail on the left with quick
  * date / channel filters, content column on the right showing chats
  * grouped by recency.
@@ -300,7 +300,7 @@ function ChatRow({
   );
 }
 
-/* Themed dropdown — same shape as the Functions page CustomSelect so
+/* Themed dropdown — same shape as the Programs page CustomSelect so
    chats / programs / settings selects look identical. */
 function CustomSelect<T extends string>({
   value,

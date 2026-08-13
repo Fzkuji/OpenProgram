@@ -173,7 +173,7 @@ LLM 每次调用时注入 system prompt 的最小记忆快照。≤2KB。
 OpenProgram 记忆 — 项目: OpenProgram, 最后整理 2026-06-18
 ═══════════════════════════════════════════════
 [时间轴 · 最近]
-· 2026-06-15 重构 Functions 页面为三 tab 布局            ↪ session:local_fc03
+· 2026-06-15 重构 Programs 页面为三 tab 布局            ↪ session:local_fc03
 · 2026-06-17 修复 CLI attended mode 问题                ↪ session:local_d125
 
 [图谱 · 当前项目相关]

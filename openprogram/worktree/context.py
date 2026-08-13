@@ -14,7 +14,7 @@ The var defaults to ``None`` (no worktree). Tool fallback is
 absolute paths.
 
 ContextVars do NOT propagate across ``threading.Thread`` start; the
-TaskRunner already copies the parent context with ``contextvars.copy_context``
+JobRunner already copies the parent context with ``contextvars.copy_context``
 when submitting work to its pool, so a worktree bound in the dispatcher's
 thread reaches workers transparently.
 """
@@ -53,7 +53,7 @@ def reset_worktree(token) -> None:
 def clear_worktree() -> None:
     """Force the worktree binding back to None for the current context
     without a token. Useful when a long-running runner picks up a new
-    task that doesn't have a worktree."""
+    job that doesn't have a worktree."""
     _current_worktree_path.set(None)
 
 

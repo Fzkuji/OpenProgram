@@ -92,7 +92,7 @@ const G = () => [
     _lane: 4, _tier: 2, _depth: 6, created_at: 7 },
   { id: "e2", role: "tool", display: "runtime", caller: "a0",
     _lane: 0, _tier: 3, _depth: 4, created_at: 8 },
-  { id: "f1", role: "assistant", source: "task_followup",
+  { id: "f1", role: "assistant", source: "job_followup",
     predecessor: "a0", _lane: 0, _tier: 2, _depth: 7, created_at: 9 },
 ];
 
@@ -132,7 +132,7 @@ setThreadOpen(Object.create(null));
   // turn instead of chaining it. Merged, the scar stops rendering — a
   // followup is not a chain node, so its predecessor cannot fork.
   const g = G();
-  g.push({ id: "f2", role: "assistant", source: "task_followup",
+  g.push({ id: "f2", role: "assistant", source: "job_followup",
     predecessor: "a0", _lane: 9, _tier: 0, _depth: 8, created_at: 10 });
   const m = buildThreadModel(g);
   assert.ok(

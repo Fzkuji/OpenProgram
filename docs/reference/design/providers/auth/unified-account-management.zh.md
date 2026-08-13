@@ -17,6 +17,18 @@ AuthStore 以 `(provider_id, account_id)` 为键存放每个凭据池，每个�
 profile。既然这个模型同样适用于 api-key provider，那么"账号 = profile"就是唯一
 覆盖所有 provider 的模型，每个具名 api-key 也是一个 profile。
 
+### 稳定 ID 与显示 label 是两个字段
+
+`account_id` 是内部存储与路由键，由 Runtime 分配（`default`、`account-2`……），
+只允许 ASCII，登录完成后不再改变。`label` 是面向用户的 Unicode 文本，可以修改，
+但不会移动凭据池，也不会使当前激活账号的 pin 失效。
+
+新登录的 label 按固定顺序确定：用户明确填写的 label 优先；否则依次使用 OAuth
+邮箱、provider 返回的显示名、稳定 ID。身份信息从 credential metadata、嵌套 OAuth
+account 数据或 OIDC `id_token` claims 中读取。新 credential 会持久化推导结果；旧
+credential 在读取时推导，因此无需重新登录。label 可以重复，因为所有操作都以
+稳定 ID 定位账号。
+
 ## 凭据池已经提供的能力
 
 它所依托的存储与轮换机制：
@@ -57,11 +69,13 @@ profile。既然这个模型同样适用于 api-key provider，那么"账号 = p
 
 ## 管理界面
 
-**REST。** `/api/providers/{id}/accounts/*` 是通用的：
-`GET …/accounts` 返回 `{active, accounts:[{name,label,email?,status,kind}]}`；
-`POST …/accounts/use {name}` 激活某一个（`""` 表示取消激活）；`…/rename
-{old,new}`；添加复用 `/login/start|poll|submit` 并带上目标账号名；删除复用既有的
-凭据/池删除。每个 provider 都上报一个 `add_mode`（`code_paste` 或 `login`），
+**REST。** `/api/providers/{provider}/accounts/*` 是通用的：
+`GET …/accounts` 返回
+`{active, accounts:[{id,label,name,email?,status,kind}]}`，其中 `name` 是 `label`
+的兼容别名；`POST …/accounts/use {id}` 激活某一个（`""` 表示取消激活）；
+`…/rename {id,name:<新 label>}` 只修改显示文本；删除使用 `{id}`。登录添加复用
+`/login/start|poll|submit` 并可传入 `label`，稳定 ID 由 Runtime 而不是客户端分配。
+每个 provider 都上报一个 `add_mode`（`code_paste` 或 `login`），
 这样前端无需按 provider 身份分支。
 
 **凭据池控制。** `GET …/{name}/keys` 返回脱敏后的 key、每个 key 的健康度和当前
@@ -93,7 +107,8 @@ web。
 （只探测这一个），以及 validate-all。
 
 只有**添加**按后端分支：api-key 添加会创建一个 profile 并加入 key；登录添加是
-共享登录流程并带 `profile=<name>`。
+共享登录流程，可选传入 `label=<显示文本>`。完成结果同时包含稳定账号 `name`
+（旧响应字段）与 `label`；后续操作使用账号列表返回的稳定 ID。
 
 ## 实现状态
 
@@ -101,7 +116,9 @@ web。
 `providers use <provider> [profile]`、`providers list` 中的 `← active` 标记）；
 通用账号 REST 界面与统一的 web、TUI 组件；以及轮换的接线与其控制界面
 （`routes/accounts.py` 的 strategy/retry/keys 端点，`pool-controls.tsx` 中的
-"Keys & rotation" 面板）。
+"Keys & rotation" 面板）。稳定账号 ID 与独立 label 也已覆盖 AuthStore、登录
+driver、REST、web 与 TUI，包括 OAuth 身份自动命名、用户覆盖、重命名但不重新
+分配 ID、旧账号读取投影和严格请求校验。
 
 尚未完成：UI 中的 `fallback_chain` 开关；TUI 凭据池控制（web、REST 以及经 REST
 的 CLI 已覆盖同样的操作）；原生 `providers pool …` CLI 动词；以及在"账号 =

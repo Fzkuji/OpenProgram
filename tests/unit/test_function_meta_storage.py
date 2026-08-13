@@ -88,7 +88,7 @@ def test_toolset_resolution_reads_the_active_profile_state(
         encoding="utf-8",
     )
 
-    from openprogram.functions import _resolve_folder_toolset
+    from openprogram.programs import _resolve_folder_toolset
 
     assert _resolve_folder_toolset("runtime-only") == ["read", "grep"]
 
@@ -101,7 +101,7 @@ def test_failed_meta_write_keeps_the_previous_complete_file(
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("OPENPROGRAM_PROFILE", "atomic")
     import openprogram.paths as paths
-    from openprogram.functions.meta_storage import PROGRAMS_META, save_meta
+    from openprogram.programs.meta_storage import PROGRAMS_META, save_meta
 
     monkeypatch.setattr(paths, "_migration_checked", True)
     save_meta(PROGRAMS_META, {"favorites": ["old"]})

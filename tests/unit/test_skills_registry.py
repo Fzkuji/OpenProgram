@@ -170,7 +170,7 @@ def test_disabled_skills_drop_out_of_the_chat_listing(sources):
 def test_skill_tool_is_registered_and_deferred():
     """The load verb exists as a tool, and costs one catalog line per turn
     rather than a schema."""
-    from openprogram.functions import agent_tools, get_agent_tool, split_tools_for_dispatch
+    from openprogram.programs import agent_tools, get_agent_tool, split_tools_for_dispatch
 
     tool = get_agent_tool("skill")
     assert tool is not None
@@ -182,7 +182,7 @@ def test_skill_tool_is_registered_and_deferred():
 def _run_skill_tool(**args) -> str:
     import asyncio
 
-    from openprogram.functions import get_agent_tool
+    from openprogram.programs import get_agent_tool
 
     result = asyncio.run(get_agent_tool("skill").execute("call-test", args, None, None))
     return "".join(getattr(c, "text", "") for c in result.content)

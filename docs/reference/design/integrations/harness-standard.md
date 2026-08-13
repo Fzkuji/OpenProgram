@@ -6,12 +6,12 @@
 > no host edits**. The three first-party harnesses (GUI / Research / Wiki)
 > are the reference implementations; third parties follow the same rules.
 > Related: [`../installing-harnesses.md`](../../../capabilities/installing-harnesses.md)
-> (install procedure), `openprogram/functions/_registry.py` (the loader),
-> `openprogram/functions/_programs.py` (the first-party harness list).
+> (install procedure), `openprogram/programs/_registry.py` (the loader),
+> `openprogram/programs/_programs.py` (the first-party harness list).
 
 ## 0. The one rule that matters
 
-**A harness is anything you drop into `<openprogram>/functions/agentics/`
+**A harness is anything you drop into `<openprogram>/programs/agentic_functions/`
 that exposes its functions through `<pkg>/agentics/__init__.py`.** The host
 walks that folder on startup (and, with hot-reload, whenever it changes),
 finds the inner package, imports `<pkg>.agentics`, and the

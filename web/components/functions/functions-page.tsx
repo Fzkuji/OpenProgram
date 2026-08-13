@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * /functions — Functions catalog page.
+ * /programs — Programs catalog page.
  *
  * No built-in categories: every entry is "a function". Organisation is
  * entirely user-driven — built-in folders (All / Favorites /
@@ -75,7 +75,7 @@ export function FunctionsPage() {
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
       const [a, progMeta, c, profilesData] = await Promise.all([
-        fetch("/api/functions", { signal }).then((r) => r.json()),
+        fetch("/api/programs", { signal }).then((r) => r.json()),
         fetch("/api/programs/meta", { signal }).then((r) => r.json()),
         fetch("/api/tools", { signal }).then((r) => r.json()).catch(() => []),
         fetch("/api/tool-profiles", { signal }).then((r) => r.json()).catch(() => ({})),
@@ -409,7 +409,7 @@ export function FunctionsPage() {
   const builtinFolders = [
     {
       id: "__all__",
-      name: text("All Functions", "全部函数"),
+      name: text("All Programs", "全部程序"),
       icon: <FileTextIcon size={16} />,
       count: functions.length,
     },
@@ -432,11 +432,11 @@ export function FunctionsPage() {
     <div className="main">
       <div className={styles.view}>
         <div className={styles.topbar}>
-          <span className={styles.title}>{t("nav.functions")}</span>
+          <span className={styles.title}>{t("nav.programs")}</span>
           <div className={styles.toolbar}>
             <SearchInput
               className="flex-1 max-w-[320px]"
-              placeholder={text("Search functions...", "搜索函数...")}
+              placeholder={text("Search programs...", "搜索程序...")}
               value={search}
               onChange={setSearch}
             />
@@ -574,10 +574,10 @@ export function FunctionsPage() {
               <div className={styles.empty}>
                 <div className={styles.emptyIcon}><FolderOpenIcon size={40} /></div>
                 <div className={styles.emptyText}>
-                  {search ? text("No matching functions", "没有匹配的函数") : text("This profile is empty", "配置为空")}
+                  {search ? text("No matching programs", "没有匹配的程序") : text("This profile is empty", "配置为空")}
                 </div>
                 <div className={styles.emptyHint}>
-                  {text("Drag functions here to organize", "拖动函数到这里进行整理")}
+                  {text("Drag programs here to organize", "拖动程序到这里进行整理")}
                 </div>
               </div>
             ) : (

@@ -390,7 +390,7 @@ openprogram config set <b>agent.max_spawn_fanout</b> 0  <i># 一轮想创建多�
   <div class="note">
     设置页的<b>Agent</b>分组里是同样的数字框：Max spawn depth、Max messages per chain、Max spawn fan-out，
     改完即时生效，落盘在<code>~/.openprogram/config.json</code>的<code>agent</code>段。
-    全设0之后，防失控就只剩并发上限（<code>OPENPROGRAM_TASK_WORKERS</code>，默认4）、
+    全设0之后，防失控就只剩并发上限（<code>OPENPROGRAM_JOB_WORKERS</code>，默认4）、
     每轮50次工具调用的上限和用户自己按停。<br>
     <b>扇出预算不在上面那两个链上计数器里。</b>派生把计数交给孩子、自己那份不动，
     所以链上计数器数不到兄弟。扇出按（会话，轮次）单独计，只拒绝不摘工具：

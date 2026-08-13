@@ -89,12 +89,12 @@ git commit -m "feat: define MCP server tool contracts"
 **Files:**
 
 - Modify: `openprogram/agent/types.py`
-- Modify: `openprogram/functions/_runtime.py`
+- Modify: `openprogram/programs/_runtime.py`
 - Modify: `openprogram/mcp/adapter.py`
 - Modify: `openprogram/agent/agent_loop.py`
 - Modify: `openprogram/agent/internals/_approval.py`
 - Modify: `openprogram/agentic_programming/function.py`
-- Modify: `openprogram/functions/tools/bash/bash.py`
+- Modify: `openprogram/programs/functions/bash/bash.py`
 - Modify: `tests/unit/test_tools_runtime.py`
 - Modify: `tests/agent/test_loop_options.py`
 - Modify: `tests/agent/test_tool_gate.py`
@@ -126,7 +126,7 @@ Run the same command; expected: PASS.
 **Commit:**
 
 ```bash
-git add openprogram/agent/types.py openprogram/functions/_runtime.py openprogram/mcp/adapter.py openprogram/agent/agent_loop.py openprogram/agent/internals/_approval.py openprogram/agentic_programming/function.py openprogram/functions/tools/bash/bash.py tests/unit/test_tools_runtime.py tests/agent/test_loop_options.py tests/agent/test_tool_gate.py tests/unit/test_acp_server.py
+git add openprogram/agent/types.py openprogram/programs/_runtime.py openprogram/mcp/adapter.py openprogram/agent/agent_loop.py openprogram/agent/internals/_approval.py openprogram/agentic_programming/function.py openprogram/programs/functions/bash/bash.py tests/unit/test_tools_runtime.py tests/agent/test_loop_options.py tests/agent/test_tool_gate.py tests/unit/test_acp_server.py
 git commit -m "refactor: type runtime tool error results"
 ```
 

@@ -2,7 +2,7 @@
 
 **harness**（一个 *agentic program*）是一个自包含的、由 agentic
 function 组成的 git 仓库。`openprogram programs install`在
-`openprogram/functions/agentics/` 下登记其来源，随后其函数会像内置函数一样注册。
+`openprogram/programs/agentic_functions/` 下登记其来源，随后其函数会像内置函数一样注册。
 这是一套**通用机制**：第一方程序（gui / research / wiki）与任何第三方仓库
 的安装方式完全相同。跨平台（macOS / Linux / Windows）；无需 symlink。
 
@@ -39,7 +39,7 @@ openprogram programs install <ref> --upgrade    # git pull + 重新解析依赖
 第一方和第三方都是相同的四个步骤：
 
 1. **浅克隆（shallow-clone）** 仓库到
-   `openprogram/functions/agentics/<Repo-Name>/`——一个真实、可编辑的
+   `openprogram/programs/agentic_functions/<Repo-Name>/`——一个真实、可编辑的
    目录（不是 site-packages）。该克隆被 OpenProgram 加入 git-ignore，
    因此它始终是一份独立的检出（checkout），你可以 `git pull`
    或就地编辑。
@@ -53,7 +53,7 @@ openprogram programs install <ref> --upgrade    # git pull + 重新解析依赖
 4. **登记owner批准的来源。** 下次启动时，registry只导入已登记的
    `<package>.agentics`，
    `@agentic_function` 装饰器触发，函数随即出现在
-   chat / Functions 页面 / `openprogram programs run` 中。
+   chat / Programs 页面 / `openprogram programs run` 中。
 
 防护机制：对于已存在的 **dev symlink**，`install`会校验Harness契约并登记该链接，
 但不修改链接目标；同名且不是Git克隆的目录仍会被拒绝。对symlink执行`uninstall`
@@ -74,7 +74,7 @@ openprogram programs install <ref> --upgrade    # git pull + 重新解析依赖
 > 一份 YOLO 检测器权重 + OCR 模型，它们不在 PyPI 上。安装完成后，
 > 运行 harness 自带的安装器来获取它们（由于你已经有了 host，它会
 > 跳过 host）：
-> `openprogram/functions/agentics/GUI-Agent-Harness/scripts/install.sh --no-host`
+> `openprogram/programs/applications/gui_harness/scripts/install.sh --no-host`
 > （Windows：`…\scripts\install.ps1 -NoHost`）。参见
 > [GUI 安装指南](https://github.com/Fzkuji/GUI-Agent-Harness#1-install)。
 
@@ -99,7 +99,7 @@ openprogram programs install file:///path/to/checkout # 本地 git 来源
 `<AGENTICS>` 是 OpenProgram 的内置函数文件夹：
 
 ```bash
-python -c "import openprogram,os;print(os.path.join(os.path.dirname(openprogram.__file__),'functions','agentics'))"
+python -c "import openprogram,os;print(os.path.join(os.path.dirname(openprogram.__file__),'programs','applications'))"
 ```
 
 ```bash

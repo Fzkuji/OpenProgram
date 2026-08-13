@@ -81,9 +81,9 @@ openprogram config set ui.web_port 8101
 | `OPENPROGRAM_NO_AUTO_WORKER` | `1` = TUI 不自动拉起 worker，只连已有的 | `openprogram/cli_ink.py` |
 | `OPENPROGRAM_NO_AUTO_UPDATE` | `1` = 禁用自动更新 | `openprogram/updater/runner.py` |
 | `OPENPROGRAM_NO_SLEEP` | `1` = 禁用记忆的 sleep 整理调度器 | `openprogram/memory/scheduler.py` |
-| `OPENPROGRAM_NO_PROGRAMS_WATCH` | `1` = 禁用 programs 目录的文件监听 | `openprogram/functions/watcher.py` |
+| `OPENPROGRAM_NO_PROGRAMS_WATCH` | `1` = 禁用 programs 目录的文件监听 | `openprogram/programs/watcher.py` |
 | `OPENPROGRAM_PROJECT_AUTOCOMMIT` | `0` = 关闭项目自动 commit | `openprogram/store/project/project_commit.py` |
-| `OPENPROGRAM_WEBSEARCH_DISABLE` | 按名禁用某个 web 搜索 provider（如 `ollama`） | `openprogram/functions/tools/web_search/providers/ollama.py` |
+| `OPENPROGRAM_WEBSEARCH_DISABLE` | 按名禁用某个 web 搜索 provider（如 `ollama`） | `openprogram/programs/functions/web_search/providers/ollama.py` |
 
 ### LLM 调用
 
@@ -103,10 +103,10 @@ openprogram config set ui.web_port 8101
 | 变量 | 用途 | 代码 |
 |------|------|------|
 | `OPENPROGRAM_DEBUG_RUNTIME` | `1` = runtime 日志镜像到 stderr | `openprogram/webui/server.py` |
-| `OPENPROGRAM_DEBUG_REGISTRY` | `1` = 显示函数注册表的导入失败 | `openprogram/functions/_registry.py` |
+| `OPENPROGRAM_DEBUG_REGISTRY` | `1` = 显示函数注册表的导入失败 | `openprogram/programs/_registry.py` |
 | `OPENPROGRAM_DEBUG_DISPATCHER` | `1` = dispatcher 调试日志 | `openprogram/agent/dispatcher/runtime_attach.py` |
 | `OPENPROGRAM_DEBUG_PROVIDER` | `1` = provider 层调试日志 | `openprogram/providers/openai_codex/openai_codex.py` |
 
 ### 其他
 
-代码里还有一批更内部的变量（HTTP/SSE 超时细调 `OPENPROGRAM_HTTPX_*` / `OPENPROGRAM_SSE_*`、TCP keepalive `OPENPROGRAM_TCP_*`、各 provider 单独的重试次数 `OPENPROGRAM_<PROVIDER>_MAX_RETRIES`、`OPENPROGRAM_TASK_WORKERS`、`OPENPROGRAM_IMAGE_DIR`、`OPENPROGRAM_BROWSER_CDP_URL` 等）。用 `grep -rn "OPENPROGRAM_" openprogram/` 可以列出全集；每个变量在定义处都有注释。
+代码里还有一批更内部的变量（HTTP/SSE 超时细调 `OPENPROGRAM_HTTPX_*` / `OPENPROGRAM_SSE_*`、TCP keepalive `OPENPROGRAM_TCP_*`、各 provider 单独的重试次数 `OPENPROGRAM_<PROVIDER>_MAX_RETRIES`、`OPENPROGRAM_JOB_WORKERS`、`OPENPROGRAM_IMAGE_DIR`、`OPENPROGRAM_BROWSER_CDP_URL` 等）。用 `grep -rn "OPENPROGRAM_" openprogram/` 可以列出全集；每个变量在定义处都有注释。

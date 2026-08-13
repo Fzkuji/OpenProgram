@@ -297,7 +297,7 @@
       <td>进程内线程池，默认4个worker</td>
       <td><code>agent.max_spawn_depth</code>默认1，设0即不限。越界返回"自己动手做"。
         另有一条一轮之内的扇出上限<code>agent.max_spawn_fanout</code>默认8
-        <span class="src">functions/tools/agent/agent/agent.py；配置默认 config_schema.py</span></td></tr>
+        <span class="src">programs/functions/agent/agent/agent.py；配置默认 config_schema.py</span></td></tr>
     <tr><td class="name">Claude Code</td><td class="y">能，<code>Agent</code>（旧名<code>Task</code>）</td>
       <td>进程内嵌套查询循环。另有 tmux/iTerm 子进程队友，和<code>isolation:"remote"</code>的云端agent</td>
       <td><b>深度3</b>，环境变量<code>CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH</code>可改；并发上限20。
@@ -413,7 +413,7 @@
     <tr class="us"><td class="name">我们</td><td class="y">能</td>
       <td><code>send_message(to=)</code>，任何agent对任何未归档的分支，跨会话同一条路径，不做归属检查。
         目标正忙就进它会话的收件箱排队，本轮结束后消费
-        <span class="src">functions/tools/send_message/send_message/send_message.py:82,154；地址解析 addressing.py:77-156；收件箱 agent/inbox.py</span></td></tr>
+        <span class="src">programs/functions/send_message/send_message/send_message.py:82,154；地址解析 addressing.py:77-156；收件箱 agent/inbox.py</span></td></tr>
     <tr><td class="name">Claude Code</td><td class="y">能，而且能跨机器</td>
       <td><code>SendMessage</code>。<code>to</code>可以是队友名字、<code>main</code>（回主对话）、<code>*</code>（广播）、
         <code>uds:/路径.sock</code>（本机另一个会话）、<code>bridge:会话id</code>（另一台机器）、裸agentId。
@@ -516,8 +516,8 @@
       <td class="y"><code>t_</code>开头</td><td class="y"><code>list_tasks</code></td>
       <td class="y">自动接到派发方会话后面，派发方下一轮读到</td>
       <td class="y"><code>task_stop</code>，带归属检查</td>
-      <td class="y">级联。沿<code>parent_task_id</code>广度优先，已访问集合防环
-        <span class="src">agent/task/runner.py:336-380；回流 :1075-1186；归属 functions/tools/agent/_ownership.py:21-58</span></td></tr>
+      <td class="y">级联。沿<code>parent_job_id</code>广度优先，已访问集合防环
+        <span class="src">agent/job/runner.py:336-380；回流 :1075-1186；归属 programs/functions/agent/_ownership.py:21-58</span></td></tr>
     <tr><td class="name">Claude Code</td>
       <td class="y"><code>agentId</code></td><td class="y">任务注册表；<code>TaskOutput</code>取结果</td>
       <td class="y">同步子agent直接进工具结果；后台agent写磁盘再发一条通知</td>

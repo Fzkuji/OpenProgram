@@ -6,11 +6,11 @@
 
 **Baseline:** `main@990bfe36`. The foundation from `8f62da5a` is present. The branch ending at `ace9a907` is candidate code only: it may be reused after rebase and review, but it is not implementation evidence. Mixed historical integration branches must not be merged wholesale.
 
-**Architecture:** Keep `ResourceGovernor` and the usage SQLite database as the durable authority. `TaskRunner` owns one dispatcher and submits only claimed tasks. A task-scoped ContextVar exposes an immutable governance handle to the existing provider `stream()/stream_simple()` chokepoint. Budgeted calls reserve before credential/network work, clamp the output/deadline, then atomically settle the existing append-only `UsageEvent`. Web, CLI, TUI, and model tools serialize the same `TaskResourceView`; they do not recompute limits independently.
+**Architecture:** Keep `ResourceGovernor` and the usage SQLite database as the durable authority. `JobRunner` owns one dispatcher and submits only claimed tasks. A task-scoped ContextVar exposes an immutable governance handle to the existing provider `stream()/stream_simple()` chokepoint. Budgeted calls reserve before credential/network work, clamp the output/deadline, then atomically settle the existing append-only `UsageEvent`. Web, CLI, TUI, and model tools serialize the same `JobResourceView`; they do not recompute limits independently.
 
 ## Fixed constraints
 
-- Keep the single-user, local, single execution-worker topology and `OPENPROGRAM_TASK_WORKERS` as the only global capacity.
+- Keep the single-user, local, single execution-worker topology and `OPENPROGRAM_JOB_WORKERS` as the only global capacity.
 - Do not add a second usage ledger or edit historical usage events.
 - Missing legacy fields mean `legacy/unmetered`, never zero.
 - Queue, live, stopping, cumulative, actual usage, and unsettled reservations remain distinct.
@@ -25,8 +25,8 @@
 **Primary files:**
 
 - `openprogram/agent/resource_governance.py`
-- `openprogram/agent/task/runner.py`
-- `openprogram/agent/task/store.py`
+- `openprogram/agent/job/runner.py`
+- `openprogram/agent/job/store.py`
 - `tests/unit/test_resource_governance.py`
 - `tests/unit/test_async_task.py`
 
@@ -40,14 +40,14 @@ Use the behavior from `31f62624`, `b068dbfa`, `ace9a907` and the later resource-
 - Cancellation, watchdog, busy-target withdrawal, worker crash, lease expiry, and finalization failure never release a live claim before execution exits and never leak it permanently.
 - Dispatcher restart and repeated reconciliation are idempotent.
 
-**GREEN boundary:** `spawn_task()` persists and wakes the dispatcher but never submits unclaimed work. The dispatcher atomically claims eligible work and only then submits the executor job. All live mutations require the matching owner id.
+**GREEN boundary:** `spawn_job()` persists and wakes the dispatcher but never submits unclaimed work. The dispatcher atomically claims eligible work and only then submits the executor job. All live mutations require the matching owner id.
 
 ## Task 2: Establish task-scoped budget attribution and preflight estimation
 
 **Primary files:**
 
 - `openprogram/agent/resource_governance.py`
-- `openprogram/agent/task/runner.py`
+- `openprogram/agent/job/runner.py`
 - `openprogram/usage/context.py`
 - `openprogram/usage/event.py`
 - `openprogram/providers/types.py`
@@ -95,9 +95,9 @@ Failure semantics:
 **Primary files:**
 
 - `openprogram/agent/resource_governance.py`
-- `openprogram/agent/task/runner.py`
+- `openprogram/agent/job/runner.py`
 - `openprogram/providers/utils/deadline.py`
-- `openprogram/functions/_runtime.py`
+- `openprogram/programs/_runtime.py`
 - tool progress and child-task update boundaries
 - runtime/idle focused tests
 
@@ -119,7 +119,7 @@ Expiry records `budget.runtime_exhausted` or `budget.idle_exhausted`, invokes th
 - CLI/TUI task/status command paths
 - contract tests for each surface
 
-Complete `TaskResourceView` as the only serializer. It includes scheduler capacity; configured/effective/source limits; queue position; resource state; live/queued/cumulative usage; actual/reserved token and cost; unknown-cost count; runtime/idle used and limit; shared remaining; stable reason code; retryable; and legacy state.
+Complete `JobResourceView` as the only serializer. It includes scheduler capacity; configured/effective/source limits; queue position; resource state; live/queued/cumulative usage; actual/reserved token and cost; unknown-cost count; runtime/idle used and limit; shared remaining; stable reason code; retryable; and legacy state.
 
 Surfaces may omit presentation-only labels, but their machine fields and null/unknown semantics must match. Owner-only mutation uses the existing configuration authority path. No surface may infer `$0`, unlimited, or available capacity from missing data.
 

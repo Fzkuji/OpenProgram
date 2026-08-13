@@ -36,8 +36,8 @@ export type WsRequest =
   | { action: 'delete_agent'; id: string }
   | { action: 'set_default_agent'; id: string }
   | { action: 'list_sessions' }
-  | { action: 'list_tasks'; session_id?: string }
-  | { action: 'get_task'; task_id: string }
+  | { action: 'list_jobs'; session_id?: string }
+  | { action: 'get_job'; job_id: string }
   | { action: 'load_session'; session_id: string }
   | { action: 'delete_session'; session_id: string }
   | { action: 'search_messages'; query: string; limit?: number; agent_id?: string }
@@ -83,12 +83,12 @@ export type WsRequest =
   | { action: 'rename_branch'; session_id: string; name: string; head_msg_id?: string }
   | { action: 'auto_name_branch'; session_id: string; head_msg_id?: string }
   | { action: 'delete_branch'; session_id: string; head_msg_id?: string }
-  | { action: 'list_tasks'; session_id: string }
-  | { action: 'get_task'; task_id: string }
-  | { action: 'cancel_task'; task_id: string; reason?: string };
+  | { action: 'list_jobs'; session_id: string }
+  | { action: 'get_job'; job_id: string }
+  | { action: 'cancel_job'; job_id: string; reason?: string };
 
-export interface TaskResourceView {
-  task_id: string;
+export interface JobResourceView {
+  job_id: string;
   status: string;
   resource_state: string;
   reason_code: string | null;
@@ -99,7 +99,7 @@ export interface TaskResourceView {
     scheduler_capacity: number;
     session_live: { used: number; limit: number | null };
     session_queued: { used: number; limit: number | null };
-    session_tasks: { used: number; limit: number | null };
+    session_jobs: { used: number; limit: number | null };
     queue_position: number | null;
   };
   budget: {
@@ -122,13 +122,13 @@ export interface TaskResourceView {
   };
 }
 
-export interface TaskRow {
+export interface JobRow {
   id: string;
   status: string;
   subject?: string;
   parent_session_id?: string;
   reason_code?: string | null;
-  resource?: TaskResourceView;
+  resource?: JobResourceView;
   [key: string]: unknown;
 }
 
@@ -415,24 +415,24 @@ export type WsEnvelope =
   | QrLoginEnvelope
   | SearchResultsEnvelope
   | ErrorEnvelope
-  | { type: 'tasks_list'; data: { session_id?: string | null; tasks: TaskRow[] } }
-  | { type: 'task'; data: { task: TaskRow | null; error?: string } }
+  | { type: 'jobs_list'; data: { session_id?: string | null; jobs: JobRow[] } }
+  | { type: 'job'; data: { job: JobRow | null; error?: string } }
   | {
-      type: 'task_status';
+      type: 'job_status';
       data: {
-        task_id: string;
+        job_id: string;
         session_id?: string;
         status: string;
         reason_code?: string | null;
-        resource?: TaskResourceView;
+        resource?: JobResourceView;
       };
     }
   | {
-      type: 'cancel_task_result';
+      type: 'cancel_job_result';
       data: {
-        task_id: string;
+        job_id: string;
         status: string | null;
-        resource?: TaskResourceView;
+        resource?: JobResourceView;
         error?: string;
       };
     }
@@ -445,7 +445,7 @@ export type WsEnvelope =
   | { type: 'steer_ack'; data: { session_id: string; queued: boolean; message?: string } }
   | { type: 'running_task'; data: { session_id: string; msg_id?: string; func_name?: string } }
   | { type: 'running_task_clear'; data: { session_id: string } }
-  | { type: 'spawn_task_result'; data: Record<string, unknown> }
+  | { type: 'spawn_job_result'; data: Record<string, unknown> }
   // Branch frames (webui/ws_actions/branch.py) — the list reply plus
   // the structural-change broadcasts useWsEvents re-fetches on.
   | { type: 'branches_list'; data: { session_id: string; branches?: unknown[]; active?: string } }

@@ -49,7 +49,7 @@ def dispatch_forced_tool_call(
 
     # Look up the tool by name from the global catalog.
     try:
-        from openprogram.functions import agent_tools as _agent_tools
+        from openprogram.programs import agent_tools as _agent_tools
         tools = _agent_tools(names=[tool_name]) or []
     except Exception as e:  # noqa: BLE001
         raise ValueError(f"failed to resolve tool {tool_name!r}: {e}") from e
@@ -59,7 +59,7 @@ def dispatch_forced_tool_call(
         # not they are installed — a catalogued-but-missing one gets an
         # actionable message (the GUI agent is opt-in: it pulls PyTorch).
         try:
-            from openprogram.functions._programs import get_program
+            from openprogram.programs._programs import get_program
             prog = get_program(tool_name)
         except Exception:
             prog = None

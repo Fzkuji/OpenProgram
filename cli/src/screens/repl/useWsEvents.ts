@@ -11,7 +11,7 @@ import {
   WsEnvelope,
   StatsEnvelope,
   ConnectionState,
-  TaskRow,
+  JobRow,
 } from '../../ws/client.js';
 import { Turn } from '../../components/Turn.js';
 import { trimHistoryFile } from '../../utils/history.js';
@@ -36,7 +36,7 @@ import type {
   ThinkingEffort,
 } from './types.js';
 import { PERMISSION_MODES } from './types.js';
-import { formatTaskResourceMessage } from '../../commands/taskResource.js';
+import { formatJobResourceMessage } from '../../commands/jobResource.js';
 
 export interface WsEventsCtx {
   client: BackendClient;
@@ -71,8 +71,8 @@ export interface WsEventsCtx {
   setAgentsList: React.Dispatch<React.SetStateAction<AgentInfo[]>>;
   setModelsList: React.Dispatch<React.SetStateAction<string[]>>;
   setSettingsRows: React.Dispatch<React.SetStateAction<SettingRow[]>>;
-  setTasksList: React.Dispatch<React.SetStateAction<TaskRow[]>>;
-  setSelectedTask: React.Dispatch<React.SetStateAction<TaskRow | null>>;
+  setJobsList: React.Dispatch<React.SetStateAction<JobRow[]>>;
+  setSelectedJob: React.Dispatch<React.SetStateAction<JobRow | null>>;
   setChannelAccounts: React.Dispatch<React.SetStateAction<ChannelAccountRow[]>>;
   setPastConversations: React.Dispatch<React.SetStateAction<PastConversation[]>>;
   setQrAscii: React.Dispatch<React.SetStateAction<string | undefined>>;
@@ -104,39 +104,39 @@ export interface WsEventsCtx {
   sessionAliasesRef: React.MutableRefObject<SessionAliasRow[]>;
 }
 
-type TaskEnvelopeCtx = Pick<
+type JobEnvelopeCtx = Pick<
   WsEventsCtx,
-  'setTasksList' | 'setSelectedTask' | 'setPickerKind' | 'pushSystem'
+  'setJobsList' | 'setSelectedJob' | 'setPickerKind' | 'pushSystem'
 >;
 
-export function handleTaskEnvelope(ev: WsEnvelope, ctx: TaskEnvelopeCtx): boolean {
-  if (ev.type === 'tasks_list') {
-    ctx.setTasksList(ev.data.tasks ?? []);
-    ctx.pushSystem(formatTaskResourceMessage('tasks_list', ev.data));
+export function handleJobEnvelope(ev: WsEnvelope, ctx: JobEnvelopeCtx): boolean {
+  if (ev.type === 'jobs_list') {
+    ctx.setJobsList(ev.data.jobs ?? []);
+    ctx.pushSystem(formatJobResourceMessage('jobs_list', ev.data));
     return true;
   }
-  if (ev.type === 'task') {
-    ctx.setSelectedTask(ev.data.task);
-    if (ev.data.task) ctx.setPickerKind('task_detail');
-    ctx.pushSystem(formatTaskResourceMessage('task', ev.data));
+  if (ev.type === 'job') {
+    ctx.setSelectedJob(ev.data.job);
+    if (ev.data.job) ctx.setPickerKind('job_detail');
+    ctx.pushSystem(formatJobResourceMessage('job', ev.data));
     return true;
   }
-  if (ev.type !== 'task_status' && ev.type !== 'cancel_task_result') return false;
+  if (ev.type !== 'job_status' && ev.type !== 'cancel_job_result') return false;
 
-  const patch: Partial<TaskRow> = {
+  const patch: Partial<JobRow> = {
     status: ev.data.status ?? 'unknown',
     ...(ev.data.resource ? { resource: ev.data.resource } : {}),
     ...('reason_code' in ev.data ? { reason_code: ev.data.reason_code } : {}),
   };
-  ctx.setTasksList((rows) => rows.map((task) => (
-    task.id === ev.data.task_id ? { ...task, ...patch } : task
+  ctx.setJobsList((rows) => rows.map((job) => (
+    job.id === ev.data.job_id ? { ...job, ...patch } : job
   )));
-  ctx.setSelectedTask((task) => (
-    task?.id === ev.data.task_id
-      ? { ...task, ...patch }
-      : ev.type === 'cancel_task_result'
-        ? { id: ev.data.task_id, ...patch } as TaskRow
-        : task
+  ctx.setSelectedJob((job) => (
+    job?.id === ev.data.job_id
+      ? { ...job, ...patch }
+      : ev.type === 'cancel_job_result'
+        ? { id: ev.data.job_id, ...patch } as JobRow
+        : job
   ));
   return true;
 }
@@ -154,7 +154,7 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         if (!convId) return;
         c.setSessionLiveByConv((m) => ({ ...m, [convId]: true }));
       };
-      if (handleTaskEnvelope(ev, c)) {
+      if (handleJobEnvelope(ev, c)) {
         return;
       } else if (ev.type === 'chat_ack') {
         c.setConversationId(ev.data.session_id);
@@ -228,11 +228,11 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         // plus `source` ("wechat"/"telegram"/…) and `peer_display` so
         // /resume can tag channel-bound rows.
         c.setPastConversations(ev.data ?? []);
-      } else if (ev.type === 'spawn_task_result') {
-        const d = ev.data as { task_id?: string; status?: string; error?: string };
+      } else if (ev.type === 'spawn_job_result') {
+        const d = ev.data as { job_id?: string; status?: string; error?: string };
         c.pushSystem(d.error
-          ? `[task] spawn failed: ${d.error}`
-          : `[task] spawned ${d.task_id ?? '?'} (${d.status ?? 'pending'})`);
+          ? `[job] spawn failed: ${d.error}`
+          : `[job] spawned ${d.job_id ?? '?'} (${d.status ?? 'pending'})`);
       } else if (ev.type === 'qr_login') {
         // Server-driven QR-login state machine. Server pushes:
         //   qr_ready    → render the ASCII QR

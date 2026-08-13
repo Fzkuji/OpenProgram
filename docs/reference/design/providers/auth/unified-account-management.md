@@ -19,6 +19,21 @@ pool**, so OAuth multi-account has to be separate profiles. Since that model
 also covers api-key providers, account = profile is the only model that covers
 every provider, and each named api-key is a profile too.
 
+### Stable id and display label are different fields
+
+`account_id` is an internal storage and routing key. It is allocated by the
+runtime (`default`, `account-2`, …), remains ASCII, and never changes after a
+login. `label` is user-facing Unicode text and can be changed without moving a
+credential pool or invalidating the active-account pin.
+
+For a new login, label selection is deterministic: an explicitly entered label
+wins; otherwise the runtime uses the OAuth email, then the provider display
+name, then the stable id. Identity is read from credential metadata, nested
+OAuth account data, or OIDC `id_token` claims. New credentials persist the
+derived label; existing credentials derive it when read, so they do not require
+a new sign-in. Duplicate labels are allowed because operations address the
+stable id.
+
 ## What the pool provides
 
 The storage and rotation machinery it builds on:
@@ -63,11 +78,13 @@ pool, so env-key and OAuth paths are unaffected.
 
 ## The management surface
 
-**REST.** `/api/providers/{id}/accounts/*` is generic:
-`GET …/accounts` returns `{active, accounts:[{name,label,email?,status,kind}]}`;
-`POST …/accounts/use {name}` activates one (`""` deactivates); `…/rename
-{old,new}`; add reuses `/login/start|poll|submit` with a target account name;
-remove reuses the existing credential/pool delete. Every provider reports an
+**REST.** `/api/providers/{provider}/accounts/*` is generic:
+`GET …/accounts` returns
+`{active, accounts:[{id,label,name,email?,status,kind}]}`, where `name` is a
+compatibility alias of `label`; `POST …/accounts/use {id}` activates one (`""`
+deactivates); `…/rename {id,name:<new label>}` changes only display text; and
+remove uses `{id}`. Login add reuses `/login/start|poll|submit` with an optional
+`label`; the runtime, not the client, allocates the stable id. Every provider reports an
 `add_mode` (`code_paste` or `login`) so the frontend does not branch on provider
 identity.
 
@@ -104,7 +121,10 @@ On a profile's credential: reveal the full key, update (replace it), validate
 this one, and validate-all.
 
 Only **add** branches per backend: an api-key add creates a profile and adds the
-key; a login add is the shared login flow with `profile=<name>`.
+key; a login add is the shared login flow with optional `label=<display text>`.
+The completion result contains both the stable account `name` (legacy response
+field) and `label`; all later operations use the stable id returned by the
+accounts list.
 
 ## Implementation status
 
@@ -112,7 +132,10 @@ In place: active-profile infrastructure (`auth/account_selection.py`, CLI `provi
 <provider> [profile]`, the `← active` marker in `providers list`); the generic
 accounts REST surface and the unified web and TUI components; and the rotation
 wiring with its control surface (`routes/accounts.py` strategy/retry/keys
-endpoints, the "Keys & rotation" panel in `pool-controls.tsx`).
+endpoints, the "Keys & rotation" panel in `pool-controls.tsx`). Stable account
+ids and independent labels are also in place across AuthStore, login driver,
+REST, web, and TUI, including automatic OAuth identity labels, manual override,
+rename-without-rekey, legacy-account projection, and strict request validation.
 
 Remaining: a `fallback_chain` toggle in the UI; TUI pool controls (web, REST,
 and CLI-via-REST already cover the same operations); native `providers pool …`

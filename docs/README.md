@@ -98,7 +98,7 @@ First run sets up your provider, then asks which surface to open. Skip the promp
 
 ### 3. Add a harness
 
-Harnesses are programs under `openprogram/functions/agentics/`. Install them with `openprogram programs install <name-or-git-source>`: the command clones or verifies the repository, records its owner-approved source, and makes it available after the next worker restart. A directory copied there without this install step is not imported.
+Harnesses are programs under `openprogram/programs/agentic_functions/`. Install them with `openprogram programs install <name-or-git-source>`: the command clones or verifies the repository, records its owner-approved source, and makes it available after the next worker restart. A directory copied there without this install step is not imported.
 
 | Harness | Install | What it does |
 |---|---|---|

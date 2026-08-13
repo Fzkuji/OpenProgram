@@ -64,7 +64,7 @@ def test_backend_identity_uses_worker_ownership_without_network_credentials(
 
     def configured(consumer, origin, *, owner_exception):
         assert consumer == "runtime.local_probe"
-        assert origin == "http://localhost:18100"
+        assert origin == "http://127.0.0.1:18100"
         assert owner_exception.consumer == consumer
         assert owner_exception.origin == origin
         return ChallengeClient()

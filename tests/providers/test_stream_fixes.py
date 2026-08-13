@@ -485,7 +485,7 @@ def test_gemini_cli_error_fails_stream_instead_of_clean_end(monkeypatch):
 @pytest.mark.parametrize(("governed", "expected"), [(False, 4), (True, 1)])
 def test_bedrock_config_uses_total_attempt_semantics(monkeypatch, governed, expected):
     monkeypatch.setattr(
-        "openprogram.agent.task.runner.current_task_resource_context",
+        "openprogram.agent.job.runner.current_job_resource_context",
         lambda: ("task", object()) if governed else None,
     )
     monkeypatch.delenv("OPENPROGRAM_BEDROCK_MAX_RETRIES", raising=False)
@@ -507,7 +507,7 @@ def test_gemini_cli_endpoint_fallback_obeys_attempt_boundary(
         "openprogram.providers.google_gemini_cli.google_gemini_cli",
     )
     monkeypatch.setattr(
-        "openprogram.agent.task.runner.current_task_resource_context",
+        "openprogram.agent.job.runner.current_job_resource_context",
         lambda: ("task", object()) if governed else None,
     )
     monkeypatch.setattr(
@@ -686,7 +686,7 @@ def test_openai_sdk_retry_boundary_tracks_governed_request(
     from openprogram.auth import usage as auth_usage
     monkeypatch.setattr(auth_usage, "acquire_pooled", lambda _p: None)
     monkeypatch.setattr(
-        "openprogram.agent.task.runner.current_task_resource_context",
+        "openprogram.agent.job.runner.current_job_resource_context",
         lambda: ("task", object()) if governed else None,
     )
     captured = {}
@@ -720,7 +720,7 @@ def test_azure_sdk_retry_boundary_tracks_governed_request(
         "openprogram.providers.azure_openai_responses.azure_openai_responses")
     monkeypatch.setenv("AZURE_OPENAI_BASE_URL", "https://azure.example")
     monkeypatch.setattr(
-        "openprogram.agent.task.runner.current_task_resource_context",
+        "openprogram.agent.job.runner.current_job_resource_context",
         lambda: ("task", object()) if governed else None,
     )
     captured = {}
@@ -743,7 +743,7 @@ def test_bedrock_config_uses_total_attempt_semantics(
     monkeypatch, governed, expected,
 ):
     monkeypatch.setattr(
-        "openprogram.agent.task.runner.current_task_resource_context",
+        "openprogram.agent.job.runner.current_job_resource_context",
         lambda: ("task", object()) if governed else None,
     )
     monkeypatch.delenv("OPENPROGRAM_BEDROCK_MAX_RETRIES", raising=False)
@@ -763,7 +763,7 @@ def test_gemini_cli_endpoint_fallback_obeys_attempt_boundary(
     mod = importlib.import_module(
         "openprogram.providers.google_gemini_cli.google_gemini_cli")
     monkeypatch.setattr(
-        "openprogram.agent.task.runner.current_task_resource_context",
+        "openprogram.agent.job.runner.current_job_resource_context",
         lambda: ("task", object()) if governed else None,
     )
     monkeypatch.setattr(

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from openprogram.functions._runtime import (
+from openprogram.programs._runtime import (
     _build_parameters_schema,
     _allow_null,
     _widen_optionals_to_null,
@@ -141,7 +141,7 @@ def test_close_objects_idempotent():
 
 
 def test_get_mcp_prompt_arguments_closed():
-    from openprogram.functions import agent_tools
+    from openprogram.programs import agent_tools
     t = next((x for x in agent_tools(toolset="full") if x.name == "get_mcp_prompt"), None)
     assert t is not None
     args = t.parameters["properties"]["arguments"]
@@ -151,7 +151,7 @@ def test_get_mcp_prompt_arguments_closed():
 # ── the actual bug: the agent tool's agent_id ──
 
 def test_agent_tool_agent_id_accepts_null():
-    from openprogram.functions import agent_tools
+    from openprogram.programs import agent_tools
     tool = next((t for t in agent_tools(toolset="full") if t.name == "agent"), None)
     assert tool is not None, "agent tool must be registered"
     params = tool.parameters

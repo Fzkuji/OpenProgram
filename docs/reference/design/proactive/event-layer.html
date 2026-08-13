@@ -441,7 +441,7 @@ footer a{color:var(--cyan); text-decoration:none}
     <tr><td><span class="b bA">A</span></td><td><code>tool.after</code></td><td>工具执行完</td><td class="src">AgentEventToolEnd</td></tr>
     <tr><td><span class="b bA">A</span></td><td><code>file.changed</code><span class="new">新增</span></td><td>文件被改</td><td class="src">挂 checkpoint_before_edit</td></tr>
     <tr><td><span class="b bA">A</span></td><td><code>turn.ended</code></td><td>一轮结束</td><td class="src">AgentEventTurnEnd</td></tr>
-    <tr><td><span class="b bA">A</span></td><td><code>subagent.started / .ended</code></td><td>子任务起止</td><td class="src">TaskRunner 广播</td></tr>
+    <tr><td><span class="b bA">A</span></td><td><code>subagent.started / .ended</code></td><td>子任务起止</td><td class="src">JobRunner 广播</td></tr>
     <tr><td><span class="b bB">B</span></td><td><code>credential.cooldown / .exhausted / .rotated</code></td><td>凭据限流 / 池耗尽 / 轮换</td><td class="src">AuthStore._emit</td></tr>
     <tr><td><span class="b bB">B</span></td><td><code>context.compaction_recommended / .compacted</code></td><td>上下文到阈值 / 已压缩</td><td class="src">context/engine.py</td></tr>
     <tr><td><span class="b bB">B</span></td><td><code>channel.message_inbound</code></td><td>外部消息进来</td><td class="src">channels/_broadcast.py</td></tr>

@@ -43,7 +43,7 @@ export async function deleteFunction(name: string): Promise<void> {
     const data = await resp.json();
     if (data.deleted) {
       addAssistantMessage('Deleted function "' + name + '".');
-      const fResp = await fetch("/api/functions");
+      const fResp = await fetch("/api/programs");
       runtimeState.availableFunctions = await fResp.json();
       renderFunctions();
     } else {

@@ -237,7 +237,7 @@ def run_agentic_function_call(
     # produced output. Reject early so the caller sees the reason
     # in the response body.
     try:
-        from openprogram.functions import agent_tools as _agent_tools
+        from openprogram.programs import agent_tools as _agent_tools
         _tools = _agent_tools(names=[name]) or []
     except Exception as e:  # noqa: BLE001
         return {"error": f"failed to resolve tool {name!r}: {type(e).__name__}: {e}",

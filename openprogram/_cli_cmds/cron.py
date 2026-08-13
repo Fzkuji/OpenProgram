@@ -4,7 +4,7 @@ from __future__ import annotations
 
 def _cmd_cron_worker(once: bool, show_list: bool) -> None:
     """Dispatch cron-worker subcommand: --list, --once, or run forever."""
-    from openprogram.functions.tools.cron import list_next, run_forever, run_once
+    from openprogram.programs.functions.cron import list_next, run_forever, run_once
 
     if show_list:
         list_next()

@@ -51,7 +51,7 @@ def atomic_write_text(fpath: Path, text: str) -> Path:
     The temp file carries a random suffix because the destination is
     NOT single-writer: ``meta.json`` is rewritten by every branch-meta
     write, and the Stage-2 auto-namer runs on a background thread while
-    the task runner archives the same branch. A shared ``<name>.tmp``
+    the job runner archives the same branch. A shared ``<name>.tmp``
     let those two threads write the same staging file at once — the
     rename then published a file holding both writers' bytes (invalid
     JSON, so the next rebuild read an empty meta and lost the session's

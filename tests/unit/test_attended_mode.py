@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from openprogram.agent import attended
-from openprogram.functions import agent_tools
+from openprogram.programs import agent_tools
 
 
 @pytest.fixture(autouse=True)

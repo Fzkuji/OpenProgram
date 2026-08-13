@@ -600,7 +600,7 @@ export const BoxesIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>
 );
 BoxesIcon.displayName = "BoxesIcon";
 
-// ─── heart (Functions page — Favorites nav) ─────────────────────────
+// ─── heart (Programs page — Favorites nav) ─────────────────────────
 export const HeartIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
   ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
     const controls = useAnimation();
@@ -661,7 +661,7 @@ export const HeartIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>
 );
 HeartIcon.displayName = "HeartIcon";
 
-// ─── folders (Functions page — user folder nav) ─────────────────────
+// ─── folders (Programs page — user folder nav) ─────────────────────
 export const FoldersIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
   ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
     const controls = useAnimation();
@@ -733,7 +733,7 @@ export const FoldersIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProp
 );
 FoldersIcon.displayName = "FoldersIcon";
 
-// ─── folder-plus (Functions page — New folder nav) ──────────────────
+// ─── folder-plus (Programs page — New folder nav) ──────────────────
 const FOLDER_PLUS_VARIANTS: Variants = {
   normal: { pathLength: 1, opacity: 1 },
   animate: (custom: number) => ({

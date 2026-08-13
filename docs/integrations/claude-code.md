@@ -29,19 +29,20 @@ That's all the setup needed. No API keys, no environment variables.
 
 ```python
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 from openprogram.providers.registry import create_runtime
 
 # No API key needed — uses your Claude Code subscription
 runtime = create_runtime(provider="claude-code", model="haiku")
 
 @agentic_function
-def explain(concept):
+def explain(concept, runtime=None):
     """Explain a concept clearly and concisely."""
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": f"Explain '{concept}' in 2-3 sentences. Be clear and concise."},
     ])
 
-result = explain(concept="gradient descent")
+result = explain(concept="gradient descent", runtime=runtime)
 print(result)
 ```
 
@@ -79,7 +80,7 @@ Under the hood, the `claude-code` runtime:
 ```
 Your Python code
     → @agentic_function decorator (records a DAG node)
-        → runtime.exec() (builds the prompt from the DAG)
+        → llm() (builds the prompt from the DAG through the ambient runtime)
             → api.anthropic.com (direct subscription OAuth connection)
             ← response text
         ← reply written back as a DAG node
@@ -101,45 +102,46 @@ Claude Code integration demo — no API key needed.
 Demonstrates a multi-step agentic workflow.
 """
 from openprogram import agentic_function
+from openprogram.agentic_programming import llm
 from openprogram.providers.registry import create_runtime
 
 runtime = create_runtime(provider="claude-code", model="haiku")
 
 
 @agentic_function
-def brainstorm(topic):
+def brainstorm(topic, runtime=None):
     """Generate 3 creative ideas about a topic."""
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": f"Generate exactly 3 creative ideas about: {topic}\nNumber them 1-3, one per line."},
     ])
 
 
 @agentic_function
-def evaluate(idea):
+def evaluate(idea, runtime=None):
     """Rate an idea's feasibility on a scale of 1-10 with brief reasoning."""
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": f"Rate this idea's feasibility (1-10) and explain in one sentence:\n{idea}"},
     ])
 
 
 @agentic_function
-def ideate(topic):
+def ideate(topic, runtime=None):
     """Brainstorm ideas and evaluate each one."""
-    ideas_text = brainstorm(topic=topic)
+    ideas_text = brainstorm(topic=topic, runtime=runtime)
     print(f"Ideas:\n{ideas_text}\n")
 
     lines = [l.strip() for l in ideas_text.split("\n") if l.strip() and l.strip()[0].isdigit()]
     for line in lines[:3]:
-        rating = evaluate(idea=line)
+        rating = evaluate(idea=line, runtime=runtime)
         print(f"  {rating}\n")
 
-    return runtime.exec(content=[
+    return llm([
         {"type": "text", "text": "Pick the best idea from the evaluation above and explain why in 2 sentences."},
     ])
 
 
 if __name__ == "__main__":
-    result = ideate(topic="improving developer productivity with AI")
+    result = ideate(topic="improving developer productivity with AI", runtime=runtime)
     print(f"\nBest idea:\n{result}")
 ```
 

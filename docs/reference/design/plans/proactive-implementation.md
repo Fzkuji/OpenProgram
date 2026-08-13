@@ -29,7 +29,7 @@ codebase:
 |---|---|---|
 | In-process event fan-out | `EventBus` — implemented but idle; dispatcher and agent_loop bypassed it with direct callbacks | `openprogram/events/bus.py` |
 | The gate's `ask` path | `ApprovalRegistry` + `_wrap_with_approval`: request, block and wait, approve or deny; a denial returns an is_error tool result | `openprogram/agent/internals/_approval.py` |
-| The observer's `Prepare` background task | `TaskRunner.spawn_task` — ThreadPoolExecutor, state machine, task_status broadcast | `openprogram/agent/task/runner.py` |
+| The observer's `Prepare` background task | `JobRunner.spawn_job` — ThreadPoolExecutor, state machine, job_status broadcast | `openprogram/agent/job/runner.py` |
 | Landing slot for `Inject` | memory prefetch into the system prompt plus steering messages | `openprogram/agent/agent_loop.py` |
 | Event causality, rewind, branching | the session git DAG, whose nodes carry parent_id / caller | `openprogram/contextgit/` |
 | The gate's hard enforcement point | the single point every chat tool call passes through | `agent_loop.py` `_execute_tool_calls` |
@@ -47,7 +47,7 @@ rather than adding new detection:
 | `model.response_completed` | `agent_loop.py`, AgentEventMessageEnd | conversion of an existing event |
 | `tool.before` | `agent_loop.py`, before every `tool.execute()` | one event feeds both the notify emit and the gate query |
 | `tool.after` | `agent_loop.py`, after every tool call finishes | notify emit with the result text channel |
-| `subagent.started` / `completed` | `task/runner.py`, the task_status broadcast | conversion, funnelled through `_broadcast_task_status` |
+| `subagent.started` / `completed` | `task/runner.py`, the job_status broadcast | conversion, funnelled through `_broadcast_job_status` |
 | `permission.requested` | `_approval.py`, the approval_request envelope | added tap |
 | `artifact.file.changed` | `file_backup.backup_before_edit` and `project_commit` | new emission after a successful write |
 
@@ -72,7 +72,7 @@ In particular it is not disabled by the `permission_mode="bypass"` set in
 
 ## 5. Prepare execution
 
-`Prepare` reuses `TaskRunner.spawn_task` with a restricted tool allowlist that
+`Prepare` reuses `JobRunner.spawn_job` with a restricted tool allowlist that
 excludes bash, write, and network tools. It runs in a separate small pool at
 concurrency 1–2, is preemptible by user tasks, and yields on 429 (design
 `execution-model.md` §3).
@@ -118,7 +118,7 @@ As built, the pieces sit here:
 | Synchronous query point: `register_tool_gate` / `decide_tool_gate` / `ToolGateDenied` | `openprogram/events/tool_gate.py` |
 | `tool.before` observe and query, `tool.after`, `model.*` taps | `openprogram/agent/agent_loop.py` |
 | `user.prompt_submitted` | `openprogram/agent/dispatcher/__init__.py` |
-| `subagent.started` / `ended` | `openprogram/agent/task/runner.py` `_broadcast_task_status` |
+| `subagent.started` / `ended` | `openprogram/agent/job/runner.py` `_broadcast_job_status` |
 | `file.changed`, emitted after a successful write via lazy import | five sites across the write / edit / apply_patch tools |
 | External-source bridge, installed idempotently at worker startup | `openprogram/events/bridges.py` + `worker/runner.py` |
 | External source taps | `context/engine.py` (compaction, ×2), `channels/_conversation.py`, `memory/session_watcher.py` (×2), `webui/server.py` (skills / plugins) |
@@ -128,6 +128,6 @@ As built, the pieces sit here:
 
 Live validation covered the full event sequence on a real turn, `file.changed`,
 an end-to-end gate test, `skills.changed`, and a WebSocket probe confirming that
-all four task_status states reach the frontend through the new chain. One
+all four job_status states reach the frontend through the new chain. One
 environment note carried forward: the worker's working directory is the home
 directory, so the project skills directory resolves to `~/skills`.

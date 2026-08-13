@@ -150,7 +150,7 @@ requires_live_service = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 #
 # The tool registry is process-global and populated once, at import, by the
-# @function side-effect imports in openprogram.functions.tools. Several tests
+# @function side-effect imports in openprogram.programs.functions. Several tests
 # legitimately clear / rebuild / channel-filter the registry to exercise it in
 # isolation; if any of them leaks (restores an incomplete snapshot, drops a
 # tool, or leaves a channel blacklist behind), every *later* test sees a
@@ -170,8 +170,8 @@ requires_live_service = pytest.mark.skipif(
 # is guaranteed complete. A lazily-built session fixture could otherwise be
 # instantiated inside a test that had already cleared the registry.
 def _capture_shipped_registry():
-    import openprogram.functions  # noqa: F401  (import side-effect: registers tools)
-    from openprogram.functions._runtime import snapshot_registry
+    import openprogram.programs  # noqa: F401  (import side-effect: registers tools)
+    from openprogram.programs._runtime import snapshot_registry
     return snapshot_registry()
 
 
@@ -180,7 +180,7 @@ _SHIPPED_REGISTRY = _capture_shipped_registry()
 
 @pytest.fixture(autouse=True)
 def _restore_shipped_tools():
-    from openprogram.functions import _runtime as _R
+    from openprogram.programs import _runtime as _R
 
     snap = _SHIPPED_REGISTRY
     # Re-insert any shipped tool that's gone missing, and re-establish its
@@ -236,7 +236,7 @@ def _reset_spawn_fanout():
     this, the ninth such test in a session would be refused by a counter
     the previous eight filled.
     """
-    from openprogram.functions.tools.agent.agent.agent import _fanout_used
+    from openprogram.programs.functions.agent.agent.agent import _fanout_used
     _fanout_used.clear()
     yield
     _fanout_used.clear()
@@ -265,7 +265,7 @@ def _drop_tmp_rooted_session_store():
 
 @pytest.fixture(autouse=True)
 def _unit_task_runner_owns_worker_lock(request, monkeypatch):
-    """Unit TaskRunners model code executing inside the locked worker."""
+    """Unit JobRunners model code executing inside the locked worker."""
     path = Path(str(request.node.path))
     if "unit" not in path.parts or path.name in {
         "test_resource_governance.py", "test_worker_lock.py",

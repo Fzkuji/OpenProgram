@@ -276,16 +276,16 @@ def test_spawn_branch_gets_own_lane():
 
 
 def test_followup_reply_without_attach_reparents_to_receiver():
-    """task_followup 回流没写 attach 指针时，reply 挂回收到回流的那轮，
+    """job_followup 回流没写 attach 指针时，reply 挂回收到回流的那轮，
     不能变成 depth=0 的孤儿根（rendering.md 场景 10 回流语义）。"""
     by = _annotate([
         _root(),
         {"id": "u1", "role": "user", "caller": "ROOT", "predecessor": None, "created_at": 1},
         {"id": "l1", "role": "assistant", "caller": "u1", "predecessor": "u1", "created_at": 2},
         # 合成 followup user（display=runtime 被过滤）+ 它的 reply
-        {"id": "fu", "role": "user", "source": "task_followup",
+        {"id": "fu", "role": "user", "source": "job_followup",
          "predecessor": "l1", "display": "runtime", "created_at": 3},
-        {"id": "fu_reply", "role": "assistant", "source": "task_followup",
+        {"id": "fu_reply", "role": "assistant", "source": "job_followup",
          "predecessor": "fu", "created_at": 4},
     ])
     assert "fu" not in by                      # 合成桥被过滤
