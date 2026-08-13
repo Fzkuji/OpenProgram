@@ -238,14 +238,18 @@ def main() -> int:
 
     require(("canonical", "https://openprogram.io/") in links,
             "missing canonical URL", failures)
-    require(
-        any(
+    feed_links = [
+        item
+        for item in page.links
+        if (
             "alternate" in item.get("rel", "").split()
             and item.get("type") == "application/atom+xml"
             and item.get("href") == RELEASE_FEED
-            for item in page.links
-        ),
-        "missing release feed discovery link",
+        )
+    ]
+    require(
+        len(feed_links) == 1,
+        "landing must expose exactly one release feed discovery link",
         failures,
     )
     require(f"<title>{SITE_TITLE}</title>" in source,
