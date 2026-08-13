@@ -70,3 +70,9 @@ jobs:
           publish_branch: main
           publish_dir: ./_publish
           commit_message: "Publish openprogram.io (${{ github.sha }})"
+
+      - name: Submit sitemap to IndexNow
+        continue-on-error: true
+        run: |
+          python -m tools.docs_site.indexnow \
+            _publish/sitemap.xml _indexnow --submit
