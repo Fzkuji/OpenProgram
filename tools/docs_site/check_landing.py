@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+import struct
 import tomllib
 from html.parser import HTMLParser
 from pathlib import Path
@@ -32,6 +33,10 @@ class LandingParser(HTMLParser):
         super().__init__()
         self.ids: set[str] = set()
         self.images: set[str] = set()
+        self.image_attrs: list[dict[str, str]] = []
+        self.source_attrs: list[dict[str, str]] = []
+        self.buttons: list[dict[str, str]] = []
+        self.pictures: list[dict[str, list[dict[str, str]]]] = []
         self.anchors: set[str] = set()
         self.links: list[dict[str, str]] = []
         self.meta: list[dict[str, str]] = []
@@ -40,13 +45,25 @@ class LandingParser(HTMLParser):
         self.structured_data: list[dict] = []
         self._capture: str | None = None
         self._buffer: list[str] = []
+        self._picture: dict[str, list[dict[str, str]]] | None = None
 
     def handle_starttag(self, tag: str, attrs) -> None:
         values = dict(attrs)
+        if tag == "picture":
+            self._picture = {"images": [], "sources": []}
         if element_id := values.get("id"):
             self.ids.add(element_id)
         if tag == "img" and (src := values.get("src")):
             self.images.add(src)
+            self.image_attrs.append(values)
+            if self._picture is not None:
+                self._picture["images"].append(values)
+        if tag == "source":
+            self.source_attrs.append(values)
+            if self._picture is not None:
+                self._picture["sources"].append(values)
+        if tag == "button":
+            self.buttons.append(values)
         if tag == "a" and (href := values.get("href")):
             self.anchors.add(href)
         if tag == "link":
@@ -61,6 +78,9 @@ class LandingParser(HTMLParser):
             self._buffer = []
 
     def handle_endtag(self, tag: str) -> None:
+        if tag == "picture" and self._picture is not None:
+            self.pictures.append(self._picture)
+            self._picture = None
         if tag == "style" and self._capture == "style":
             self.styles.append("".join(self._buffer))
             self._capture = None
@@ -77,6 +97,114 @@ class LandingParser(HTMLParser):
 def require(condition: bool, message: str, failures: list[str]) -> None:
     if not condition:
         failures.append(message)
+
+
+def _contrast_ratio(foreground: str, background: str) -> float:
+    def luminance(value: str) -> float:
+        channels = [int(value[index : index + 2], 16) / 255 for index in (1, 3, 5)]
+        linear = [
+            channel / 12.92
+            if channel <= 0.04045
+            else ((channel + 0.055) / 1.055) ** 2.4
+            for channel in channels
+        ]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+    light, dark = sorted((luminance(foreground), luminance(background)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
+
+
+def _isobmff_boxes(data: bytes, start: int, end: int):
+    position = start
+    while position + 8 <= end:
+        size, box_type = struct.unpack(">I4s", data[position : position + 8])
+        header_size = 8
+        if size == 1:
+            if position + 16 > end:
+                return
+            size = struct.unpack(">Q", data[position + 8 : position + 16])[0]
+            header_size = 16
+        elif size == 0:
+            size = end - position
+        box_end = position + size
+        if size < header_size or box_end > end:
+            return
+        yield box_type, position + header_size, box_end
+        position = box_end
+
+
+def _avif_dimensions(path: Path) -> tuple[int, int] | None:
+    """Read the primary AVIF item's associated spatial extents using stdlib."""
+    data = path.read_bytes()
+    top_level = list(_isobmff_boxes(data, 0, len(data)))
+    ftyp = next((box for box in top_level if box[0] == b"ftyp"), None)
+    if ftyp is None or b"avif" not in data[ftyp[1] : ftyp[2]]:
+        return None
+    for box_type, meta_start, meta_end in top_level:
+        if box_type != b"meta" or meta_start + 4 > meta_end:
+            continue
+        children = list(_isobmff_boxes(data, meta_start + 4, meta_end))
+        primary_item = None
+        for child_type, child_start, child_end in children:
+            if child_type != b"pitm" or child_start + 6 > child_end:
+                continue
+            version = data[child_start]
+            item_size = 2 if version == 0 else 4
+            if child_start + 4 + item_size <= child_end:
+                primary_item = int.from_bytes(
+                    data[child_start + 4 : child_start + 4 + item_size], "big"
+                )
+        for child_type, child_start, child_end in children:
+            if child_type != b"iprp" or primary_item is None:
+                continue
+            properties: list[tuple[int, int] | None] = [None]
+            associations: dict[int, list[int]] = {}
+            for property_type, property_start, property_end in _isobmff_boxes(
+                data, child_start, child_end
+            ):
+                if property_type == b"ipco":
+                    for item_type, item_start, item_end in _isobmff_boxes(
+                        data, property_start, property_end
+                    ):
+                        dimensions = None
+                        if item_type == b"ispe" and item_start + 12 <= item_end:
+                            dimensions = struct.unpack(
+                                ">II", data[item_start + 4 : item_start + 12]
+                            )
+                        properties.append(dimensions)
+                elif property_type == b"ipma" and property_start + 8 <= property_end:
+                    version = data[property_start]
+                    wide_index = int.from_bytes(
+                        data[property_start + 1 : property_start + 4], "big"
+                    ) & 1
+                    position = property_start + 4
+                    entry_count = int.from_bytes(data[position : position + 4], "big")
+                    position += 4
+                    for _ in range(entry_count):
+                        item_size = 2 if version == 0 else 4
+                        if position + item_size + 1 > property_end:
+                            return None
+                        item_id = int.from_bytes(
+                            data[position : position + item_size], "big"
+                        )
+                        position += item_size
+                        association_count = data[position]
+                        position += 1
+                        indexes = associations.setdefault(item_id, [])
+                        association_size = 2 if wide_index else 1
+                        index_mask = 0x7FFF if wide_index else 0x7F
+                        for _ in range(association_count):
+                            if position + association_size > property_end:
+                                return None
+                            association = int.from_bytes(
+                                data[position : position + association_size], "big"
+                            )
+                            position += association_size
+                            indexes.append(association & index_mask)
+            for property_index in associations.get(primary_item, []):
+                if property_index < len(properties) and properties[property_index]:
+                    return properties[property_index]
+    return None
 
 
 def main() -> int:
@@ -127,6 +255,64 @@ def main() -> int:
             "missing large Twitter card", failures)
     require(named_meta.get("theme-color") == "#07080a",
             "missing dark browser theme color", failures)
+    hero = next(
+        (
+            image
+            for image in page.image_attrs
+            if image.get("alt")
+            == "OpenProgram Web UI showing an agent session and its execution DAG"
+        ),
+        None,
+    )
+    hero_picture = next(
+        (picture for picture in page.pictures if hero in picture["images"]),
+        None,
+    )
+    require(
+        hero_picture is not None
+        and any(
+            item.get("srcset") == "/docs/images/chat_hero-home.avif"
+            and item.get("type") == "image/avif"
+            and item.get("width") == "800"
+            and item.get("height") == "386"
+            for item in hero_picture["sources"]
+        ),
+        "landing hero does not offer the optimized AVIF image",
+        failures,
+    )
+    require(hero is not None and hero.get("fetchpriority") == "high",
+            "landing LCP image is not high priority", failures)
+    require(
+        hero is not None
+        and hero.get("width") == "3024"
+        and hero.get("height") == "1462",
+        "landing PNG fallback dimensions differ from its intrinsic dimensions",
+        failures,
+    )
+    require(sum(image.get("fetchpriority") == "high"
+                for image in page.image_attrs) == 1,
+            "landing must have exactly one high-priority image", failures)
+    require(all(image.get("width") and image.get("height")
+                for image in page.image_attrs),
+            "landing image is missing explicit dimensions", failures)
+    command_buttons = [
+        button
+        for button in page.buttons
+        if "command-card" in button.get("class", "").split()
+    ]
+    require(
+        command_buttons and all("aria-label" not in button for button in command_buttons),
+        "copy button accessible name overrides its visible text",
+        failures,
+    )
+    faint_match = re.search(r"--faint\s*:\s*(#[0-9a-fA-F]{6})", css)
+    require(faint_match is not None,
+            "landing secondary-text color is missing", failures)
+    if faint_match:
+        faint = faint_match.group(1)
+        for background in ("#07080a", "#0d1014", "#11151b"):
+            require(_contrast_ratio(faint, background) >= 4.5,
+                    f"secondary text fails 4.5:1 contrast on {background}", failures)
     require(f"<b>{SITE_TITLE}</b>" in readme,
             "README hero differs from the product title", failures)
     require(f"<b>{SITE_TITLE}</b>" in docs_readme,
@@ -160,6 +346,8 @@ def main() -> int:
         "GUI Agent", "Research Agent", "Wiki Agent",
     ):
         require(phrase in visible_text, f"missing product copy: {phrase}", failures)
+    require('<span class="program-word">program</span>' in source,
+            "program keyword is not visually emphasized", failures)
 
     for harness_url in (
         "https://github.com/Fzkuji/GUI-Agent-Harness",
@@ -226,6 +414,62 @@ def main() -> int:
         require(built_social_card.read_bytes()
                 == (ROOT / "docs/images/openprogram-social-card.png").read_bytes(),
                 "built social card differs from the source asset", failures)
+    optimized_hero = ROOT / "docs/images/chat_hero-home.avif"
+    require(optimized_hero.is_file(), "optimized landing hero is missing", failures)
+    if optimized_hero.is_file():
+        require(optimized_hero.stat().st_size < 150_000,
+                "optimized landing hero exceeds 150 KiB", failures)
+        require(_avif_dimensions(optimized_hero) == (800, 386),
+                "optimized landing hero dimensions differ from 800x386", failures)
+        built_optimized_hero = BUILT_SITE / "images/chat_hero-home.avif"
+        require(built_optimized_hero.is_file(),
+                "docs build did not copy the optimized landing hero", failures)
+        if built_optimized_hero.is_file():
+            require(built_optimized_hero.read_bytes() == optimized_hero.read_bytes(),
+                    "built optimized hero differs from its source", failures)
+
+    language_pairs: set[tuple[Path, Path]] = set()
+    for html_path in BUILT_SITE.rglob("*.html"):
+        if html_path.name.endswith(".raw.html"):
+            continue
+        if html_path.name.endswith(".zh.html"):
+            en_path = html_path.with_name(html_path.name.replace(".zh.html", ".html"))
+            zh_path = html_path
+        elif html_path == BUILT_SITE / "index.html":
+            en_path = html_path
+            zh_path = BUILT_SITE / "README.zh.html"
+        else:
+            en_path = html_path
+            zh_path = html_path.with_name(html_path.stem + ".zh.html")
+
+        head = html_path.read_text(encoding="utf-8").split("</head>", 1)[0]
+        head_page = LandingParser()
+        head_page.feed(head)
+        alternates = {
+            (link.get("hreflang"), link.get("href"))
+            for link in head_page.links
+            if "alternate" in link.get("rel", "").split() and link.get("hreflang")
+        }
+        if not (en_path.is_file() and zh_path.is_file()):
+            require(not alternates,
+                    f"unpaired page has hreflang links in {html_path}", failures)
+            continue
+
+        language_pairs.add((en_path, zh_path))
+        en_rel = en_path.relative_to(BUILT_SITE).as_posix()
+        zh_rel = zh_path.relative_to(BUILT_SITE).as_posix()
+        en_url = "https://openprogram.io/docs/" + en_rel
+        zh_url = "https://openprogram.io/docs/" + zh_rel
+        if en_path in (BUILT_SITE / "README.html", BUILT_SITE / "index.html"):
+            en_url = "https://openprogram.io/docs/"
+        expected = {
+            ("en", en_url),
+            ("zh-Hans", zh_url),
+            ("x-default", en_url),
+        }
+        require(alternates == expected,
+                f"incomplete reciprocal hreflang cluster in {html_path}", failures)
+    require(bool(language_pairs), "docs build contains no bilingual page pairs", failures)
     llms = BUILT_SITE / "llms.txt"
     require(llms.is_file(), "docs build did not produce llms.txt", failures)
     if llms.is_file():

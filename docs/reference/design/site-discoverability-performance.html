@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Site discoverability and performance design · OpenProgram</title>
+<style>
+body{max-width:980px;margin:40px auto;padding:0 24px;font:16px/1.6 system-ui,sans-serif;color:#20242a}h1,h2{line-height:1.2}code{background:#f2f4f6;padding:.1em .3em}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccd2d8;padding:8px;text-align:left;vertical-align:top}th{background:#f4f6f8}.pass{color:#166534}.gap{color:#9a3412}
+</style>
+</head>
+<body>
+<h1>Site discoverability and performance design</h1>
+<p>This design covers the public landing page and bilingual documentation metadata. It improves page experience and language discovery without changing product positioning, hosting, application behavior, or documentation content.</p>
+
+<h2>Current implementation and verified gaps</h2>
+<p>The site is static HTML published by GitHub Pages. The landing page already has a canonical URL, description, Open Graph and Twitter cards, <code>SoftwareSourceCode</code> JSON-LD, robots.txt, sitemap.xml, and llms.txt. Documentation pages have absolute canonicals and paired English/Chinese files.</p>
+<p>A fresh mobile Lighthouse run against <code>https://openprogram.io/</code> on 2026-08-13 scored Performance 92, Accessibility 95, Best Practices 100, and SEO 100. The report identified the hero image as the LCP resource at 3.4 seconds, estimated 391 KiB of avoidable image transfer, found one unsized brand image, insufficient contrast in secondary labels, and three copy buttons whose accessible names excluded visible text. Inspection of generated bilingual pages found no reciprocal <code>hreflang</code> links.</p>
+
+<h2>Reference corpus and comparison</h2>
+<table>
+<thead><tr><th>Reference</th><th>Recommended behavior</th><th>Current state</th><th>Decision</th></tr></thead>
+<tbody>
+<tr><td><a href="https://developers.google.com/search/docs/specialty/international/localized-versions">Google Search: localized versions</a></td><td>Every localized page links to itself and all alternates with fully qualified, reciprocal <code>hreflang</code> annotations.</td><td class="gap">Language toggle exists, but search annotations are absent.</td><td>Adopt for English/Chinese pairs only.</td></tr>
+<tr><td><a href="https://web.dev/articles/optimize-lcp">web.dev: optimize LCP</a></td><td>Make the LCP resource discoverable in initial HTML, avoid lazy loading, and use <code>fetchpriority="high"</code> for a likely LCP image.</td><td class="gap">The image is discoverable and eager, but not priority hinted.</td><td>Adopt one high-priority hero image.</td></tr>
+<tr><td><a href="https://web.dev/learn/design/responsive-images">web.dev: responsive images</a></td><td>Deliver an image sized for its rendered use and use modern formats where appropriate.</td><td class="gap">A 3024-pixel, 446 KiB PNG is rendered at about 905 pixels wide on desktop and about 517 pixels in the mobile audit.</td><td>Use a dedicated 800-pixel AVIF for the landing page; preserve the original documentation asset.</td></tr>
+<tr><td><a href="https://developers.google.com/search/docs/appearance/structured-data/software-app">Google Search: SoftwareApplication data</a></td><td>Software rich results require app-specific properties and truthful offers/rating data.</td><td class="pass">Current <code>SoftwareSourceCode</code> data accurately describes the framework and source repository.</td><td>Reject changing the type solely for rich-result eligibility; no rating or commercial offer data exists.</td></tr>
+</tbody>
+</table>
+
+<h2>Target behavior and boundaries</h2>
+<ul>
+<li>The landing hero uses a dedicated AVIF, retains intrinsic dimensions, is present in initial HTML, and is the only image marked <code>fetchpriority="high"</code>.</li>
+<li>Every landing image has explicit width and height. Secondary text meets WCAG AA contrast. Copy buttons derive their accessible names from their visible content. The word <code>program</code> receives a distinct high-contrast brand color while the surrounding headline retains its gradient.</li>
+<li>Each generated English/Chinese documentation pair emits identical reciprocal annotations for <code>en</code>, <code>zh-Hans</code>, and <code>x-default</code>; the English URL is the fallback. Unpaired pages emit no incomplete language cluster.</li>
+<li>Canonical URLs remain self-referential. Existing language-toggle behavior remains unchanged.</li>
+<li>No analytics, tracking, cookie banner, new runtime dependency, CDN migration, or hosting change is introduced. GitHub Pages cache headers are outside repository control.</li>
+</ul>
+
+<h2>Failure and compatibility behavior</h2>
+<p>The build derives alternates only from the page pair already discovered by the documentation scanner. URLs are generated from the same site origin and deployment base as canonicals, preventing relative or cross-origin annotations. If a pair does not exist, the page remains valid and canonical without <code>hreflang</code>. PNG assets remain available for documentation and existing links.</p>
+
+<h2>Acceptance criteria</h2>
+<ol>
+<li><code>python -m tools.docs_site.check_landing</code> rejects the old landing markup and old bilingual build, then passes the final candidate.</li>
+<li><code>python -m tools.docs_site.build</code> and <code>python -m tools.docs_site.checklinks</code> pass.</li>
+<li>The optimized hero is materially smaller than the existing PNG and has the declared intrinsic dimensions.</li>
+<li>Fresh mobile Lighthouse has no failures for unsized images, color contrast, label-content-name mismatch, image delivery, or LCP discovery; SEO and Best Practices remain 100.</li>
+<li>Full repository CI passes on the reviewed commit, the commit is contained in <code>origin/main</code>, and the deployed page reproduces the verified markup.</li>
+</ol>
+
+<h2>Implementation evidence</h2>
+<p>Pending. This section is updated only after specification review, quality review, full verification, merge, and live deployment.</p>
+</body>
+</html>
