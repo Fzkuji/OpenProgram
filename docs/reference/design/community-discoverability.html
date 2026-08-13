@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Community discoverability design · OpenProgram</title>
+</head>
+<body>
+<h1>Community discoverability design</h1>
+<p>This change converts repository visitors into useful questions, reports, and contributions without adding a separate community platform.</p>
+<h2>Current gaps</h2>
+<p>The repository already has Issues and Discussions, but its contribution guide still names the pre-rebrand repository, there is no public security policy, and the issue chooser accepts unstructured reports. Private vulnerability reporting was also disabled.</p>
+<h2>Reference behavior and decisions</h2>
+<ul>
+<li>GitHub surfaces a root <code>CONTRIBUTING.md</code> in repository contribution flows. Adopt one canonical guide with current setup and validation commands.</li>
+<li>GitHub recognizes issue forms under <code>.github/ISSUE_TEMPLATE</code>. Adopt separate bug and feature forms, route questions to Discussions, and disable blank public issues.</li>
+<li>GitHub recognizes <code>SECURITY.md</code> and private vulnerability reporting. Adopt both so security reports are not disclosed in public Issues.</li>
+<li>Add a Contributor Covenant, support routing file, and pull-request template so GitHub can surface a complete community profile and contributors receive the same verification prompts.</li>
+<li>The public landing page links directly to Discussions and the contribution guide from its footer.</li>
+<li>Reject a new forum, chat server, form service, or bot; the existing GitHub surfaces cover the requirement and avoid another moderation channel.</li>
+</ul>
+<h2>Acceptance</h2>
+<ul>
+<li>Every repository URL uses the canonical <code>Fzkuji/OpenProgram</code> path.</li>
+<li>Issue form YAML parses, contains the GitHub-required name and description fields, and routes support and security reports to the correct existing surfaces.</li>
+<li>Contribution, security, and issue-template links return successful responses.</li>
+<li>Private vulnerability reporting is enabled in repository settings.</li>
+</ul>
+<h2>Implementation evidence</h2>
+<p>Pending review, CI, merge, and live repository verification.</p>
+</body>
+</html>

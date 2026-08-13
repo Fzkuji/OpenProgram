@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and support
+    url: https://github.com/Fzkuji/OpenProgram/discussions/categories/q-a
+    about: Ask usage and design questions in GitHub Discussions.
+  - name: Security vulnerability
+    url: https://github.com/Fzkuji/OpenProgram/security/advisories/new
+    about: Report suspected vulnerabilities privately.
