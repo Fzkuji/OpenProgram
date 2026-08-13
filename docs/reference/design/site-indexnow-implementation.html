@@ -35,6 +35,7 @@
     <h2>Full gate manifest</h2>
     <ul>
       <li><code>uv sync --extra dev</code></li>
+      <li><code>uv pip install markdown-it-py mdit-py-plugins pygments</code> (the same docs dependencies installed by the publication workflow)</li>
       <li><code>uv run pytest -q tests/unit/test_docs_publish_indexnow.py</code></li>
       <li><code>uv run python -m tools.docs_site.build</code></li>
       <li><code>uv run python -m tools.docs_site.check_landing</code></li>
@@ -54,9 +55,9 @@
         <tr><td>Specification review</td><td><code>CHANGES_REQUIRED</code>: clarify publication boundary, execute payload behavior in tests, batch over 10,000 URLs, and add required evidence records.</td></tr>
         <tr><td>Specification repair</td><td><code>PASS</code>: all four findings closed; focused suite 5 passed and diff check passed.</td></tr>
         <tr><td>Quality review</td><td><code>CHANGES_REQUIRED</code>: continue after a failed batch, remove stale batch files, and require exact sitemap tags.</td></tr>
-        <tr><td>Quality repair</td><td>Pending scoped re-review.</td></tr>
-        <tr><td>Implementation commit</td><td>Pending reviewed candidate.</td></tr>
-        <tr><td>Full gate</td><td>Pending final reviewed candidate.</td></tr>
+        <tr><td>Quality repair</td><td><code>PASS</code>: all three findings closed; focused suite 8 passed, Ruff and diff check passed.</td></tr>
+        <tr><td>Implementation commit</td><td><code>f458791e8c245e642b563a5ffc9074c9758683ab</code></td></tr>
+        <tr><td>Full gate</td><td>First run stopped after 8 passing tests because the manifest omitted the publication workflow's separately installed <code>mdit-py-plugins</code>. After correcting the manifest, the full rerun passed: 8 tests, 500-page build, landing check, zero broken links, Ruff, workflow YAML parse, and diff check.</td></tr>
       </tbody>
     </table>
   </main>
