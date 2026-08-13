@@ -591,16 +591,37 @@ def _run_single(instance: Path, *, run_id: str, session_id: str,
 
 @_real_agentic_function(input={
     "task": {"description": "The task to plan and execute", "multiline": True},
-    "run_id": {"description": "Existing isolated workflow run to resume"},
-    "session_id": {"hidden": True},
-    "spawn_caller": {"hidden": True},
-    "agent_id": {"hidden": True},
 })
-def agentic_workflow(task: str, session_id: str = "", run_id: str = "",
-                     spawn_caller: Optional[str] = None,
-                     agent_id: str = "main") -> dict:
-    """Plan and execute a new workflow, or explicitly resume ``run_id``."""
-    sid = session_id or current_session_id()
+def agentic_workflow(task: str, **_deprecated) -> dict:
+    """Plan and execute a workflow. Auto-resumes if task starts with 'continue'/'resume'/'继续'.
+
+    Examples:
+        agentic_workflow("Review auth module for bugs")
+        agentic_workflow("继续上次的优化")  # auto-resumes latest workflow
+
+    Note:
+        Old parameters (session_id, run_id, spawn_caller, agent_id) are deprecated
+        and ignored. They're accepted via **_deprecated for backward compatibility.
+    """
+    # Internal parameters from context (ignore deprecated kwargs)
+    sid = _deprecated.get("session_id") or current_session_id()
+    agent_id = _deprecated.get("agent_id") or "main"
+    spawn_caller = _deprecated.get("spawn_caller")
+    run_id = _deprecated.get("run_id", "")
+
+    # Auto-resume detection (only if run_id not explicitly passed)
+    if not run_id:
+        resume_keywords = ["continue", "resume", "继续", "接着", "carry on"]
+        should_resume = any(task.lower().startswith(kw) for kw in resume_keywords)
+
+        if should_resume:
+            # Find most recent workflow in this session
+            workflows_dir = _session_repo(sid) / "workflows"
+            if workflows_dir.exists():
+                runs = sorted(workflows_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+                if runs:
+                    run_id = runs[0].name
+
     functions = _registered_agentic_functions()
     if run_id:
         instance = _instance_dir(sid, run_id)
@@ -657,17 +678,18 @@ def agentic_workflow(task: str, session_id: str = "", run_id: str = "",
     )
 
 
-def resume_workflow(run_id: str, session_id: str = "", *,
-                    spawn_caller: Optional[str] = None,
-                    agent_id: str = "main") -> dict:
-    """Resume one explicit workflow instance by id."""
-    sid = session_id or current_session_id()
+def resume_workflow(run_id: str, **_deprecated) -> dict:
+    """Resume one explicit workflow instance by id (internal use).
+
+    Note:
+        Old parameters (session_id, spawn_caller, agent_id) are deprecated
+        and accepted via **_deprecated for backward compatibility.
+    """
+    sid = _deprecated.get("session_id") or current_session_id()
     instance = _instance_dir(sid, run_id)
     state = _load_state(instance / "state.json")
-    return agentic_workflow(
-        state["task"], session_id=sid, run_id=run_id,
-        spawn_caller=spawn_caller, agent_id=agent_id,
-    )
+    # Pass run_id and other deprecated params through
+    return agentic_workflow(state["task"], run_id=run_id, **_deprecated)
 
 
 __all__ = [

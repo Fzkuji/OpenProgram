@@ -7,10 +7,14 @@
 ```python
 from openprogram.programs.agentic_functions.agentic_workflow import agentic_workflow
 
+# 新建workflow
 result = agentic_workflow("把 auth 模块迁到新客户端并更新它的测试")
+
+# 自动续跑：任务以"继续"/"接着"开头时，自动找最近的workflow续跑
+result = agentic_workflow("继续上次的优化")
 ```
 
-每次调用新建一个独立实例，在会话仓库下有自己的目录：`workflows/<run_id>/`，存`code.py`和`state.json`。实例之间什么都不共享，想同时跑几个流程就跑几个。
+每次新调用新建一个独立实例，在会话仓库下有自己的目录：`workflows/<run_id>/`，存`code.py`和`state.json`。实例之间什么都不共享，想同时跑几个流程就跑几个。
 
 ## 小任务不写程序
 

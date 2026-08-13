@@ -7,7 +7,11 @@ Run it from the Programs panel as `agentic_workflow`, or call it from Python:
 ```python
 from openprogram.programs.agentic_functions.agentic_workflow import agentic_workflow
 
+# Start a new workflow
 result = agentic_workflow("port the auth module to the new client and update its tests")
+
+# Auto-resume: tasks starting with "continue"/"resume" automatically resume the latest workflow
+result = agentic_workflow("continue the optimization")
 ```
 
 Every call creates an independent workflow instance with its own directory under the session repository — `workflows/<run_id>/` holding `code.py` and `state.json`. Instances share nothing: run as many concurrent workflows as you want.
