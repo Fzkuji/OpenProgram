@@ -110,7 +110,7 @@
   </nav>
 
   <h2 id="scope">00 范围与最终决策</h2>
-  <p>本设计治理的是 agent/task 的创建资格、会话内排队与运行容量、父子预算、实际使用量、终止和恢复。现有 <code>agent.max_spawn_depth</code>、<code>agent.max_spawn_fanout</code>、<code>agent.max_messages</code> 继续负责调用拓扑和循环约束，不被重新解释为资源预算。</p>
+  <p>本设计治理的是 agent/Job 的创建资格、会话内排队与运行容量、父子预算、实际使用量、终止和恢复。现有 <code>agent.max_spawn_depth</code>、<code>agent.max_spawn_fanout</code>、<code>agent.max_messages</code> 继续负责调用拓扑和循环约束，不被重新解释为资源预算。</p>
 
   <div class="table-wrap">
   <table>
@@ -199,7 +199,7 @@
 
     <p>所有非空值必须大于 0；<code>null</code> 表示未设置/继承。为兼容现有安装，默认不启用 queued、累计和四类预算。<code>max_live_per_session</code> 未设置时，有效值等于当前 scheduler capacity；已设置时，有效值是配置值与 scheduler capacity 的较小者。<code>OPENPROGRAM_JOB_WORKERS</code> 继续是唯一全局执行容量来源，并以只读字段 <code>scheduler_capacity</code> 展示。</p>
     <p>只有 owner 可以修改全局默认和 session override。Agent/task 请求只能提供更严格的四类执行预算，不能修改 live、queued、累计任务量或提高任何 owner 限制。现有 config get/set 接口扩展同名字段，session override 复用 session metadata；不增加第二套 quota 配置服务。</p>
-    <p><code>max_total_tokens</code> 和 <code>max_cost_usd</code> 统计该 session 中带受治理 <code>job_id</code> 的 agent/task 调用总量；普通前台主对话不计入本设计。<code>max_runtime_seconds</code> 和 <code>idle_timeout_seconds</code> 是每个 Job 及其祖先 scope 的时间 ceiling。修改 live/queued/cumulative 上限后，不终止已经 live/queued 的任务，但立即限制新的 admission 或 <code>queued → live</code>；修改 token/cost 上限后，已有任务在下一次 reservation 使用新 session ceiling；runtime/idle 默认值只作用于修改后 admission 的 Job，避免给运行中任务追溯设置 deadline。</p>
+    <p><code>max_total_tokens</code> 和 <code>max_cost_usd</code> 统计该 session 中带受治理 <code>job_id</code> 的 agent/Job 调用总量；普通前台主对话不计入本设计。<code>max_runtime_seconds</code> 和 <code>idle_timeout_seconds</code> 是每个 Job 及其祖先 scope 的时间 ceiling。修改 live/queued/cumulative 上限后，不终止已经 live/queued 的任务，但立即限制新的 admission 或 <code>queued → live</code>；修改 token/cost 上限后，已有任务在下一次 reservation 使用新 session ceiling；runtime/idle 默认值只作用于修改后 admission 的 Job，避免给运行中任务追溯设置 deadline。</p>
   </section>
 
   <section class="phase" id="admission">
@@ -504,7 +504,7 @@ Job JSON + optional fields:
   <p>feature matrix 的“并发数与每会话派生总量上限”在基础基线 <code>main@990bfe36</code> 尚未满足下列机械 gate；审查后集成候选 <code>33dd7d2c</code> 已满足这些条件，因此当前 <code>●</code> 有对应代码、审查和自动化证据：</p>
   <ol>
     <li>稳定配置 schema 已实现，并能从 Web/TUI/CLI 查看全局默认、session override 与有效值。</li>
-    <li>所有 agent/task 创建入口都经过统一 admission；不存在 Web、同步 agent、target inbox 或 runner 直调绕过。</li>
+    <li>所有 agent/Job 创建入口都经过统一 admission；不存在 Web、同步 agent、target inbox 或 runner 直调绕过。</li>
     <li>per-session live 与 cumulative task admission 在跨进程竞争下原子，不超配、不重复计数。</li>
     <li>queue 是否占 live、累计量是否返还、stopping 是否保留 live 均按本页语义实现。</li>
     <li>完成、失败、取消、超时、worker crash 和 admission 中间崩溃均能释放应返还的 queue/live，不永久泄漏。</li>

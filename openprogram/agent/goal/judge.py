@@ -16,7 +16,7 @@ def evaluate_goal(
     (empty for every non-``needs_user`` verdict).
 
     One call to the ``goal`` agentic function
-    (``openprogram/functions/agentics/goal/``) — the only judgment
+    (``openprogram/programs/agentic_functions/goal/``) — the only judgment
     there is. It reads the session's compacted context view plus the
     goal text (inspection tools available, the agent decides whether to
     use them) and answers ``{"met", "reason", "need_user",

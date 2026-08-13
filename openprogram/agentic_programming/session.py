@@ -113,6 +113,8 @@ def list_sessions() -> list[dict]:
         return results
     for name in os.listdir(_sessions_dir()):
         session = Session(name)
+        if not session.exists():
+            continue
         meta = session.read_meta()
         if meta:
             meta["session_id"] = name
@@ -127,6 +129,8 @@ def cleanup_stale_sessions(max_age: float = 3600):
     now = time.time()
     for name in os.listdir(_sessions_dir()):
         session = Session(name)
+        if not session.exists():
+            continue
         meta = session.read_meta()
         if meta and now - meta.get("created", 0) > max_age:
             session.cleanup()

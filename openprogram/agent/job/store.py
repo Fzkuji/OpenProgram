@@ -100,10 +100,18 @@ def _rename_legacy_keys(value: Any) -> Any:
 
 
 def _migrate_legacy_file(path: Path) -> None:
-    """Copy a valid legacy tasks.json into jobs.json once, preserving it."""
+    """Move a valid legacy tasks.json into jobs.json once."""
     legacy_path = path.with_name("tasks.json")
     with _session_file_lock(path):
-        if path.exists() or not legacy_path.exists():
+        if not legacy_path.exists():
+            return
+        if path.exists():
+            try:
+                canonical = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                return
+            if isinstance(canonical, dict) and isinstance(canonical.get("jobs"), dict):
+                legacy_path.unlink()
             return
         try:
             blob = json.loads(legacy_path.read_text(encoding="utf-8"))
@@ -112,6 +120,7 @@ def _migrate_legacy_file(path: Path) -> None:
             return
         if isinstance(legacy_jobs, dict):
             _write_raw(path, _rename_legacy_keys(legacy_jobs))
+            legacy_path.unlink()
 
 
 def _load_raw(path: Path) -> dict[str, dict[str, Any]]:

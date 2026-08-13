@@ -21,6 +21,19 @@ def test_runtime_http_inventory_has_no_unclassified_calls():
     assert result.stale_exclusions == ()
 
 
+def test_runtime_http_inventory_ignores_embedded_virtualenv_sources(tmp_path):
+    (tmp_path / "owned.py").write_text("value = 1\n", encoding="utf-8")
+    foreign = tmp_path / ".venv311" / "lib" / "foreign.py"
+    foreign.parent.mkdir(parents=True)
+    foreign.write_bytes("# coding: big5\n# 中文\n".encode("big5"))
+
+    result = runtime_http_audit.scan_runtime_http(
+        tmp_path, exclusions=(), registry={}
+    )
+
+    assert result.unregistered == ()
+
+
 def test_scanner_fails_closed_for_representative_raw_network_calls(tmp_path):
     package = tmp_path / "runtime"
     package.mkdir()

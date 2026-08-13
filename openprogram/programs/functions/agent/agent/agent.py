@@ -134,7 +134,7 @@ def max_spawn_depth() -> int:
 # runaway, not to shape normal parallelism.
 #
 # Raise it for genuinely wide parallel work (one agent per file over a
-# large set) and raise OPENPROGRAM_TASK_WORKERS with it, or the extra
+# large set) and raise OPENPROGRAM_JOB_WORKERS with it, or the extra
 # children only queue longer. 0 removes the limit.
 MAX_SPAWN_FANOUT = 8
 

@@ -183,6 +183,7 @@ def test_legacy_task_usage_schema_is_renamed_to_jobs(tmp_path):
             schema_version INTEGER NOT NULL DEFAULT 1, task_id TEXT,
             budget_scope_id TEXT, reservation_id TEXT
         );
+        CREATE INDEX ix_usage_task ON usage_events(task_id);
         CREATE TABLE task_admissions (
             admission_id TEXT PRIMARY KEY, task_id TEXT UNIQUE NOT NULL,
             session_id TEXT NOT NULL, parent_task_id TEXT, caller_session_id TEXT,
@@ -225,7 +226,8 @@ def test_legacy_task_usage_schema_is_renamed_to_jobs(tmp_path):
     conn.commit()
     conn.close()
 
-    migrated = UsageLedger(path).connection()
+    ledger = UsageLedger(path)
+    migrated = ledger.connection()
 
     tables = {
         row[0] for row in migrated.execute(
@@ -241,6 +243,24 @@ def test_legacy_task_usage_schema_is_renamed_to_jobs(tmp_path):
     assert tuple(migrated.execute(
         "SELECT scope_kind, job_id FROM budget_scopes WHERE budget_scope_id = 'scope'"
     ).fetchone()) == ("job", "t_1")
+    indexes = {
+        row[0] for row in migrated.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'"
+        )
+    }
+    assert "ix_usage_task" not in indexes
+    assert "ix_usage_job" in indexes
+    ledger.close()
+
+    reopened = UsageLedger(path)
+    reopened_indexes = {
+        row[0] for row in reopened.connection().execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'"
+        )
+    }
+    assert "ix_usage_task" not in reopened_indexes
+    assert "ix_usage_job" in reopened_indexes
+    reopened.close()
 
 
 def test_usage_aggregation_tracks_unknown_cost_events(ledger):

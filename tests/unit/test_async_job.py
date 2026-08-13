@@ -66,7 +66,7 @@ def store_fixture(tmp_path, monkeypatch):
     return s
 
 
-def test_store_migrates_legacy_tasks_file_without_deleting_it(store_fixture):
+def test_store_migrates_legacy_tasks_file_and_deletes_it(store_fixture):
     from openprogram.agent.job.store import load_job
 
     session_dir = store_fixture._session_dir("p1")
@@ -89,11 +89,46 @@ def test_store_migrates_legacy_tasks_file_without_deleting_it(store_fixture):
 
     assert job is not None
     assert job.parent_job_id == "t_parent"
-    assert legacy_path.exists()
+    assert not legacy_path.exists()
     migrated = json.loads((session_dir / "jobs.json").read_text(encoding="utf-8"))
     assert "tasks" not in migrated
     assert migrated["jobs"]["t_child"]["parent_job_id"] == "t_parent"
     assert "parent_task_id" not in migrated["jobs"]["t_child"]
+
+
+def test_store_removes_legacy_file_after_prior_migration(store_fixture):
+    from openprogram.agent.job.store import load_job
+
+    session_dir = store_fixture._session_dir("p1")
+    (session_dir / "jobs.json").write_text(json.dumps({
+        "version": 1,
+        "jobs": {
+            "j_child": {
+                "id": "j_child",
+                "parent_session_id": "p1",
+                "prompt": "migrated",
+                "agent_id": "main",
+                "status": "pending",
+            },
+        },
+    }), encoding="utf-8")
+    legacy_path = session_dir / "tasks.json"
+    legacy_path.write_text('{"version": 1, "tasks": {}}', encoding="utf-8")
+
+    assert load_job("p1", "j_child") is not None
+    assert not legacy_path.exists()
+
+
+def test_store_keeps_legacy_file_when_canonical_file_is_invalid(store_fixture):
+    from openprogram.agent.job.store import load_job
+
+    session_dir = store_fixture._session_dir("p1")
+    (session_dir / "jobs.json").write_text("not json", encoding="utf-8")
+    legacy_path = session_dir / "tasks.json"
+    legacy_path.write_text('{"version": 1, "tasks": {}}', encoding="utf-8")
+
+    assert load_job("p1", "missing") is None
+    assert legacy_path.exists()
 
 
 def test_state_machine_legal_edges():

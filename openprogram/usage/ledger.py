@@ -208,6 +208,7 @@ class UsageLedger:
         """Rename persisted async-task tables and columns in place."""
         conn.execute("BEGIN IMMEDIATE")
         try:
+            conn.execute("DROP INDEX IF EXISTS ix_usage_task")
             tables = {
                 str(row[0]) for row in conn.execute(
                     "SELECT name FROM sqlite_master WHERE type = 'table'"

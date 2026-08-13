@@ -964,7 +964,12 @@ class _HTTPVisitor(ast.NodeVisitor):
 
 def _source_files(root: Path) -> tuple[Path, ...]:
     return tuple(
-        sorted(path for path in root.rglob("*.py") if "__pycache__" not in path.parts)
+        sorted(
+            path
+            for path in root.rglob("*.py")
+            if "__pycache__" not in path.parts
+            and not any(part.startswith(".venv") for part in path.parts)
+        )
     )
 
 

@@ -22,7 +22,12 @@ from openprogram.programs.agentic_functions.ask_user import (
     set_ask_user,
 )
 from openprogram.agentic_programming.function import agentic_function
-from openprogram.agentic_programming.session import Session, SESSIONS_DIR, run_with_session
+from openprogram.agentic_programming.session import (
+    Session,
+    SESSIONS_DIR,
+    list_sessions,
+    run_with_session,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +209,21 @@ class TestSessionResume:
         session = Session("_test_nonexistent")
         assert not session.exists()
         assert session.read_meta() is None
+
+    def test_list_sessions_ignores_root_metadata_files(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "openprogram.agentic_programming.session._sessions_dir",
+            lambda: str(tmp_path),
+        )
+        (tmp_path / "locations.json").write_text("{}", encoding="utf-8")
+        session = Session("waiting")
+        session.write_meta("Which option?")
+
+        rows = list_sessions()
+
+        assert len(rows) == 1
+        assert rows[0]["question"] == "Which option?"
+        assert rows[0]["session_id"] == "waiting"
 
     def test_run_with_session_no_follow_up(self, capsys):
         """Function without follow-up outputs result directly."""
