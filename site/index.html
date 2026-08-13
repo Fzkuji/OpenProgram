@@ -63,7 +63,7 @@
   --border-hi:#343d49;
   --text:#f0f2f5;
   --muted:#9ca6b5;
-  --faint:#687383;
+  --faint:#748194;
   --teal:#5eead4;
   --teal-strong:#2dd4bf;
   --teal-ink:#05231e;
@@ -131,6 +131,7 @@ h1{max-width:720px;font-size:clamp(42px,5.2vw,68px);line-height:1.02;letter-spac
   background:linear-gradient(100deg,var(--teal) 8%,#79dbe8 48%,var(--violet));
   -webkit-background-clip:text;background-clip:text;color:transparent;
 }
+.program-word{color:#d8b4fe;-webkit-text-fill-color:#d8b4fe}
 .hero-copy{max-width:650px;margin:24px 0 30px;color:var(--muted);font-size:18px;line-height:1.7}
 .actions{display:flex;align-items:center;gap:13px;flex-wrap:wrap}
 .btn{
@@ -315,7 +316,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
 <nav aria-label="Primary navigation">
   <div class="wrap navin">
     <a class="brand" href="/" aria-label="OpenProgram home">
-      <img src="/docs/images/logo-lockup-dark.svg" alt="OpenProgram">
+      <img src="/docs/images/logo-lockup-dark.svg" alt="OpenProgram" width="776" height="174">
     </a>
     <div class="navlinks">
       <a href="#use-cases">Agents</a>
@@ -333,7 +334,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
     <div class="wrap hero-grid">
       <div>
         <span class="eyebrow">Self-programming AI agent framework</span>
-        <h1>Build agents that<br><span class="gradient">program their own workflows.</span></h1>
+        <h1>Build agents that<br><span class="gradient"><span class="program-word">program</span> their own workflows.</span></h1>
         <p class="hero-copy">OpenProgram lets agents create, run, and refine agentic functions while its runtime manages models, tools, memory, context, and multi-agent collaboration.</p>
         <div class="actions">
           <a class="btn btn-primary" href="#quick-start">Install OpenProgram</a>
@@ -346,7 +347,10 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
           <span class="dot"></span><span class="dot"></span><span class="dot"></span>
           <span class="terminal-title">OpenProgram Web UI</span>
         </div>
-        <img src="/docs/images/chat_hero.png" alt="OpenProgram Web UI showing an agent session and its execution DAG" width="3024" height="1462">
+        <picture>
+          <source srcset="/docs/images/chat_hero-home.avif" type="image/avif" width="800" height="386">
+          <img src="/docs/images/chat_hero.png" alt="OpenProgram Web UI showing an agent session and its execution DAG" width="3024" height="1462" fetchpriority="high">
+        </picture>
         <figcaption>Run agents, inspect sessions, and review every call from one interface.</figcaption>
       </figure>
     </div>
@@ -411,11 +415,11 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
           <a href="/docs/install/install.html">Windows and advanced installation →</a>
         </div>
         <div class="command-stack">
-          <button class="command-card" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash" aria-label="Copy macOS and Linux install command">
+          <button class="command-card" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash">
             <span class="command-head"><span>1 · Install on macOS / Linux</span><span class="copy">copy</span></span>
             <span class="command-body"><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash</span>
           </button>
-          <button class="command-card" type="button" data-copy="openprogram" aria-label="Copy OpenProgram run command">
+          <button class="command-card" type="button" data-copy="openprogram">
             <span class="command-head"><span>2 · Start OpenProgram</span><span class="copy">copy</span></span>
             <span class="command-body"><span class="prompt">$ </span>openprogram</span>
           </button>
@@ -533,7 +537,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
             <a class="btn btn-secondary" href="/docs/">Browse documentation</a>
           </div>
         </div>
-        <button class="command-card" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash" aria-label="Copy macOS and Linux install command">
+        <button class="command-card" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash">
           <span class="command-head"><span>macOS / Linux</span><span class="copy">copy</span></span>
           <span class="command-body"><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash</span>
         </button>

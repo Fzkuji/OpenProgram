@@ -459,9 +459,9 @@ def _build_into_out_root() -> int:
     (out_assets / "pygments-dark.css").write_text(
         _pyg_css("github-dark"), encoding="utf-8")
 
-    # copy image/static assets referenced by docs (svg/png/jpg/gif/webp),
+    # copy image/static assets referenced by docs (svg/png/jpg/gif/webp/avif),
     # preserving their relative path so in-doc <img>/![] links resolve.
-    IMG_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico"}
+    IMG_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico"}
     for path in DOCS_ROOT.rglob("*"):
         if path.suffix.lower() not in IMG_EXT or not path.is_file():
             continue
@@ -539,6 +539,11 @@ def _build_into_out_root() -> int:
         page_url = SITE_ORIGIN.rstrip("/") + DEPLOY_BASE + str(p.out).replace("\\", "/")
         if p.out.as_posix() == "README.html":
             page_url = SITE_ORIGIN.rstrip("/") + DEPLOY_BASE
+        zh_page_url = (
+            SITE_ORIGIN.rstrip("/") + DEPLOY_BASE + str(p.zh_out).replace("\\", "/")
+            if p.zh_out
+            else ""
+        )
 
         full = render_page(
             title=p.title, body_html=body, nav_html=nav_html,
@@ -546,6 +551,7 @@ def _build_into_out_root() -> int:
             breadcrumb_html=breadcrumb, prevnext_html=prevnext, meta_html=meta_html,
             tabbar_html=tabbar_html,
             canonical_url=page_url, description=page_description,
+            alt_lang_canonical_url=zh_page_url,
         )
         out_path = OUT_ROOT / p.out
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -564,8 +570,8 @@ def _build_into_out_root() -> int:
                 toc_html=zh_toc, base=base, page_lang="zh", alt_lang_url=zh_back,
                 breadcrumb_html=breadcrumb, prevnext_html=prevnext, meta_html=meta_html,
                 tabbar_html=tabbar_html,
-                canonical_url=(SITE_ORIGIN.rstrip("/") + DEPLOY_BASE
-                               + str(p.zh_out).replace("\\", "/")),
+                canonical_url=zh_page_url,
+                alt_lang_canonical_url=page_url,
                 description=_meta_description(zh_body, p.title_zh or p.title),
             )
             zh_path = OUT_ROOT / p.zh_out

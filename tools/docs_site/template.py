@@ -88,6 +88,7 @@ def render_page(
     base: str,
     page_lang: str = "en",
     alt_lang_url: str = "",
+    alt_lang_canonical_url: str = "",
     breadcrumb_html: str = "",
     prevnext_html: str = "",
     meta_html: str = "",
@@ -109,6 +110,19 @@ def render_page(
         f'<link rel="canonical" href="{_html.escape(canonical_url, quote=True)}">'
         if canonical_url else ""
     )
+    language_alternates = ""
+    if canonical_url and alt_lang_canonical_url:
+        if page_lang == "zh":
+            en_url, zh_url = alt_lang_canonical_url, canonical_url
+        else:
+            en_url, zh_url = canonical_url, alt_lang_canonical_url
+        language_alternates = "\n".join(
+            (
+                f'<link rel="alternate" hreflang="en" href="{_html.escape(en_url, quote=True)}">',
+                f'<link rel="alternate" hreflang="zh-Hans" href="{_html.escape(zh_url, quote=True)}">',
+                f'<link rel="alternate" hreflang="x-default" href="{_html.escape(en_url, quote=True)}">',
+            )
+        )
     description_meta = (
         f'<meta name="description" content="{_html.escape(description, quote=True)}">'
         if description else ""
@@ -136,6 +150,7 @@ def render_page(
 <title>{safe_title} · OpenProgram Docs</title>
 {description_meta}
 {canonical}
+{language_alternates}
 <meta property="og:type" content="article">
 <meta property="og:locale" content="{('zh_CN' if page_lang == 'zh' else 'en_US')}">
 <meta property="og:site_name" content="OpenProgram">
