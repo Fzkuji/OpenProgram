@@ -43,6 +43,7 @@ import { useProfileMeta } from "./use-profile-meta";
 import { runtimeState } from "@/lib/runtime-bridge/state";
 import { getLastChatPath } from "@/lib/last-chat-path";
 import { setPendingRunFunction } from "@/lib/use-pending-run-function";
+import { jsonFetch } from "@/lib/net/fetch-client";
 import type { FunctionInfo, FunctionsMeta } from "./types";
 
 export function FunctionsPage() {
@@ -74,14 +75,17 @@ export function FunctionsPage() {
   // destroyed component.
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
-      const [a, progMeta, c, profilesData] = await Promise.all([
-        fetch("/api/programs", { signal }).then((r) => r.json()),
+      const [programsData, progMeta, c, profilesData] = await Promise.all([
+        jsonFetch<unknown>("/api/programs", { signal }),
         fetch("/api/programs/meta", { signal }).then((r) => r.json()),
         fetch("/api/tools", { signal }).then((r) => r.json()).catch(() => []),
         fetch("/api/tool-profiles", { signal }).then((r) => r.json()).catch(() => ({})),
       ]);
       if (signal?.aborted) return;
-      setFunctions(a as FunctionInfo[]);
+      if (!Array.isArray(programsData)) {
+        throw new TypeError("/api/programs must return an array");
+      }
+      setFunctions(programsData as FunctionInfo[]);
       setTools(Array.isArray(c) ? c : []);
       setMeta({
         favorites: progMeta?.favorites ?? [],

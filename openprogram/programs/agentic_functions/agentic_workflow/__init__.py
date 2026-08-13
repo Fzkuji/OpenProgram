@@ -118,10 +118,42 @@ def _run_planner_turn(session_id: str, prompt: str, *, agent_id: str,
     return result.final_text or ""
 
 
-def _agent_function() -> Callable:
-    from openprogram.programs.functions.agent.agent.agent import _agent_impl
+def _agent_function(session_id: str, spawn_caller: Optional[str]) -> Callable:
+    from openprogram.agent.sub_agent_run import run_agent_turn
 
-    return _agent_impl
+    def agent(
+        prompt: str,
+        description: str = "",
+        agent_id: str = "",
+        start_from: str = "clean",
+        run_in_background: bool = False,
+        to: str = "",
+        archive_when_done: bool = False,
+    ) -> str:
+        if run_in_background:
+            return "[agent error] run_in_background not supported in workflow context"
+        if to:
+            return "[agent error] to= dispatch not supported in workflow context"
+        if archive_when_done:
+            return "[agent error] archive_when_done not supported in workflow context"
+        if start_from != "clean":
+            return "[agent error] start_from must be 'clean' in workflow context"
+
+        result = run_agent_turn(
+            session_id=session_id,
+            prompt=prompt,
+            agent_id=agent_id or "main",
+            branch_from=None,
+            label=description or "workflow agent",
+            spawn_caller=spawn_caller,
+            advance_head=False,
+            tools_override=None,
+        )
+        if result.failed:
+            raise RuntimeError(result.error or "workflow agent turn failed")
+        return result.final_text or ""
+
+    return agent
 
 
 def _llm_function() -> Callable:
@@ -392,6 +424,7 @@ class _Checkpoints:
 
 
 def _execute_source(source: str, state: dict, state_path: Path, *,
+                    session_id: str, spawn_caller: Optional[str],
                     functions: dict[str, Callable]) -> object:
     checkpoints = _Checkpoints(state, state_path)
     checkpoints.begin_pass()
@@ -410,7 +443,7 @@ def _execute_source(source: str, state: dict, state_path: Path, *,
     namespace = {
         "__builtins__": safe_builtins,
         "llm": checkpoints.wrap("llm", _llm_function()),
-        "agent": checkpoints.wrap("agent", _agent_function()),
+        "agent": checkpoints.wrap("agent", _agent_function(session_id, spawn_caller)),
         **{name: checkpoints.wrap(name, fn) for name, fn in functions.items()},
     }
     exec(compile(source, "code.py", "exec"), namespace, namespace)
@@ -500,6 +533,7 @@ def _run_instance_locked(instance: Path, state: dict, source: str, *,
         try:
             result = _execute_source(
                 source, state, state_path, functions=functions,
+                session_id=session_id, spawn_caller=spawn_caller,
             )
         except WorkflowExecutionCapped:
             state["status"] = "capped"
