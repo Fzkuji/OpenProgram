@@ -12,11 +12,14 @@ import tomllib
 from html.parser import HTMLParser
 from pathlib import Path
 
+from .template import render_page
+
 
 ROOT = Path(__file__).resolve().parents[2]
 LANDING = ROOT / "site" / "index.html"
 README = ROOT / "README.md"
 DOCS_README = ROOT / "docs" / "README.md"
+DOCS_README_ZH = ROOT / "docs" / "README.zh.md"
 PYPROJECT = ROOT / "pyproject.toml"
 BUILT_SITE = ROOT / "docs" / "_site"
 SITE_TITLE = "OpenProgram: Self-Programming AI Agent Framework"
@@ -212,6 +215,13 @@ def main() -> int:
     page = LandingParser()
     page.feed(source)
     failures: list[str] = []
+    escaped_schema = render_page(
+        title="</script><script>alert(1)</script>", body_html="", nav_html="",
+        toc_html="", base="/docs/", canonical_url="https://openprogram.io/docs/test.html",
+        docs_root_url="https://openprogram.io/docs/",
+    )
+    require("\\u003c/script>" in escaped_schema and "</script><script>" not in escaped_schema,
+            "breadcrumb JSON does not safely encode page titles", failures)
 
     links = {(item.get("rel"), item.get("href")) for item in page.links}
     named_meta = {item.get("name"): item.get("content") for item in page.meta}
@@ -222,6 +232,7 @@ def main() -> int:
     css = "\n".join(page.styles)
     readme = README.read_text(encoding="utf-8")
     docs_readme = DOCS_README.read_text(encoding="utf-8")
+    docs_readme_zh = DOCS_README_ZH.read_text(encoding="utf-8")
     project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
 
     require(("canonical", "https://openprogram.io/") in links,
@@ -317,6 +328,13 @@ def main() -> int:
             "README hero differs from the product title", failures)
     require(f"<b>{SITE_TITLE}</b>" in docs_readme,
             "docs hero differs from the product title", failures)
+    require("<b>OpenProgram：自编程 AI Agent 框架</b>" in docs_readme_zh,
+            "Chinese docs hero differs from the product positioning", failures)
+    release_url = "https://github.com/Fzkuji/OpenProgram/releases/tag/v0.6.0"
+    for name, document in (("README", readme), ("docs README", docs_readme),
+                           ("Chinese docs README", docs_readme_zh)):
+        require(release_url in document,
+                f"{name} does not link to the current release", failures)
     require(project.get("description") == SITE_TITLE,
             "package description differs from the product title", failures)
     project_urls = project.get("urls", {})
@@ -456,6 +474,30 @@ def main() -> int:
             for link in head_page.links
             if "alternate" in link.get("rel", "").split() and link.get("hreflang")
         }
+        canonical_url = next(
+            (link.get("href") for link in head_page.links
+             if "canonical" in link.get("rel", "").split()),
+            "",
+        )
+        breadcrumbs = [
+            item for item in head_page.structured_data
+            if item.get("@type") == "BreadcrumbList"
+        ]
+        is_docs_root = canonical_url.rstrip("/") == "https://openprogram.io/docs"
+        if canonical_url:
+            require(len(breadcrumbs) == (0 if is_docs_root else 1),
+                    f"invalid breadcrumb structured data count in {html_path}", failures)
+        if canonical_url and breadcrumbs:
+            items = breadcrumbs[0].get("itemListElement", [])
+            require(
+                len(items) == 2
+                and items[0].get("position") == 1
+                and items[0].get("name") == "OpenProgram Docs"
+                and items[0].get("item") == "https://openprogram.io/docs/"
+                and items[1].get("position") == 2
+                and bool(items[1].get("name")),
+                f"invalid breadcrumb trail in {html_path}", failures,
+            )
         if not (en_path.is_file() and zh_path.is_file()):
             require(not alternates,
                     f"unpaired page has hreflang links in {html_path}", failures)

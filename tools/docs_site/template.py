@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import html as _html
+import json
 from pathlib import Path
 
 
@@ -96,6 +97,7 @@ def render_page(
     tabbar_html: str = "",
     canonical_url: str = "",
     description: str = "",
+    docs_root_url: str = "",
 ) -> str:
     """Assemble one full HTML document.
 
@@ -129,6 +131,23 @@ def render_page(
     )
     social_description = _html.escape(description, quote=True)
     social_url = _html.escape(canonical_url, quote=True)
+    breadcrumb_data = ""
+    if canonical_url and docs_root_url and canonical_url.rstrip("/") != docs_root_url.rstrip("/"):
+        payload = {
+            "@context": "https://schema.org",
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+                {
+                    "@type": "ListItem",
+                    "position": 1,
+                    "name": "OpenProgram Docs",
+                    "item": docs_root_url,
+                },
+                {"@type": "ListItem", "position": 2, "name": title},
+            ],
+        }
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
+        breadcrumb_data = f'<script type="application/ld+json">{encoded}</script>'
     alt_attr = f' data-alt-lang-url="{alt_lang_url}"' if alt_lang_url else ""
     if nav_html:
         layout_cls = ""
@@ -151,6 +170,7 @@ def render_page(
 {description_meta}
 {canonical}
 {language_alternates}
+{breadcrumb_data}
 <meta property="og:type" content="article">
 <meta property="og:locale" content="{('zh_CN' if page_lang == 'zh' else 'en_US')}">
 <meta property="og:site_name" content="OpenProgram">
