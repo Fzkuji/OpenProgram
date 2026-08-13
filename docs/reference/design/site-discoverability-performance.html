@@ -24,6 +24,7 @@ body{max-width:980px;margin:40px auto;padding:0 24px;font:16px/1.6 system-ui,san
 <tr><td><a href="https://web.dev/articles/optimize-lcp">web.dev: optimize LCP</a></td><td>Make the LCP resource discoverable in initial HTML, avoid lazy loading, and use <code>fetchpriority="high"</code> for a likely LCP image.</td><td class="gap">The image is discoverable and eager, but not priority hinted.</td><td>Adopt one high-priority hero image.</td></tr>
 <tr><td><a href="https://web.dev/learn/design/responsive-images">web.dev: responsive images</a></td><td>Deliver an image sized for its rendered use and use modern formats where appropriate.</td><td class="gap">A 3024-pixel, 446 KiB PNG is rendered at about 905 pixels wide on desktop and about 517 pixels in the mobile audit.</td><td>Use a dedicated 800-pixel AVIF for the landing page; preserve the original documentation asset.</td></tr>
 <tr><td><a href="https://developers.google.com/search/docs/appearance/structured-data/software-app">Google Search: SoftwareApplication data</a></td><td>Software rich results require app-specific properties and truthful offers/rating data.</td><td class="pass">Current <code>SoftwareSourceCode</code> data accurately describes the framework and source repository.</td><td>Reject changing the type solely for rich-result eligibility; no rating or commercial offer data exists.</td></tr>
+<tr><td><a href="https://developers.google.com/search/docs/appearance/structured-data/breadcrumb">Google Search: breadcrumb data</a></td><td>A <code>BreadcrumbList</code> with at least two ordered items can describe a typical visible navigation path.</td><td class="gap">Documentation pages show breadcrumbs and a linked documentation root but emit no matching structured data.</td><td>Adopt a two-level documentation-root and current-page trail; omit it from the documentation root itself.</td></tr>
 </tbody>
 </table>
 
@@ -33,11 +34,12 @@ body{max-width:980px;margin:40px auto;padding:0 24px;font:16px/1.6 system-ui,san
 <li>Every landing image has explicit width and height. Secondary text meets WCAG AA contrast. Copy buttons derive their accessible names from their visible content. The word <code>program</code> receives a distinct high-contrast brand color while the surrounding headline retains its gradient.</li>
 <li>Each generated English/Chinese documentation pair emits identical reciprocal annotations for <code>en</code>, <code>zh-Hans</code>, and <code>x-default</code>; the English URL is the fallback. Unpaired pages emit no incomplete language cluster.</li>
 <li>Canonical URLs remain self-referential. Existing language-toggle behavior remains unchanged.</li>
+<li>Each generated documentation content page emits one <code>BreadcrumbList</code> for <code>OpenProgram Docs → current page</code>. The documentation root emits none, avoiding a fabricated second level.</li>
 <li>No analytics, tracking, cookie banner, new runtime dependency, CDN migration, or hosting change is introduced. GitHub Pages cache headers are outside repository control.</li>
 </ul>
 
 <h2>Failure and compatibility behavior</h2>
-<p>The build derives alternates only from the page pair already discovered by the documentation scanner. URLs are generated from the same site origin and deployment base as canonicals, preventing relative or cross-origin annotations. If a pair does not exist, the page remains valid and canonical without <code>hreflang</code>. PNG assets remain available for documentation and existing links.</p>
+<p>The build derives alternates only from the page pair already discovered by the documentation scanner. URLs are generated from the same site origin and deployment base as canonicals, preventing relative or cross-origin annotations. If a pair does not exist, the page remains valid and canonical without <code>hreflang</code>. Breadcrumb JSON is serialized by the Python standard library and escapes opening angle brackets so a page title cannot terminate the script element. PNG assets remain available for documentation and existing links.</p>
 
 <h2>Acceptance criteria</h2>
 <ol>
@@ -46,6 +48,7 @@ body{max-width:980px;margin:40px auto;padding:0 24px;font:16px/1.6 system-ui,san
 <li>The optimized hero is materially smaller than the existing PNG and has the declared intrinsic dimensions.</li>
 <li>Fresh mobile Lighthouse has no failures for unsized images, color contrast, label-content-name mismatch, image delivery, or LCP discovery; SEO and Best Practices remain 100.</li>
 <li>Full repository CI passes on the reviewed commit, the commit is contained in <code>origin/main</code>, and the deployed page reproduces the verified markup.</li>
+<li>The generated documentation root contains no <code>BreadcrumbList</code>; every canonical content page contains exactly one valid two-item trail rooted at <code>https://openprogram.io/docs/</code>.</li>
 </ol>
 
 <h2>Implementation evidence</h2>

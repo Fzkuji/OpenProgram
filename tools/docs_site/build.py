@@ -552,6 +552,7 @@ def _build_into_out_root() -> int:
             tabbar_html=tabbar_html,
             canonical_url=page_url, description=page_description,
             alt_lang_canonical_url=zh_page_url,
+            docs_root_url=SITE_ORIGIN.rstrip("/") + DEPLOY_BASE,
         )
         out_path = OUT_ROOT / p.out
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -573,6 +574,7 @@ def _build_into_out_root() -> int:
                 canonical_url=zh_page_url,
                 alt_lang_canonical_url=page_url,
                 description=_meta_description(zh_body, p.title_zh or p.title),
+                docs_root_url=SITE_ORIGIN.rstrip("/") + DEPLOY_BASE,
             )
             zh_path = OUT_ROOT / p.zh_out
             zh_path.parent.mkdir(parents=True, exist_ok=True)
