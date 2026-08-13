@@ -98,6 +98,24 @@ def tls_material(tmp_path):
         .not_valid_before(now - dt.timedelta(minutes=1))
         .not_valid_after(now + dt.timedelta(days=1))
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=False,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=True,
+                crl_sign=True,
+                encipher_only=None,
+                decipher_only=None,
+            ),
+            critical=True,
+        )
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(ca_key.public_key()),
+            critical=False,
+        )
         .sign(ca_key, hashes.SHA256())
     )
     server_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -112,6 +130,10 @@ def tls_material(tmp_path):
         .not_valid_after(now + dt.timedelta(days=1))
         .add_extension(
             x509.SubjectAlternativeName([x509.DNSName("safe.test")]), critical=False
+        )
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
+            critical=False,
         )
         .sign(ca_key, hashes.SHA256())
     )

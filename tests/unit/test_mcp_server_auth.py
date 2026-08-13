@@ -420,12 +420,13 @@ def test_authentication_rejects_file_not_owned_by_current_user(tmp_path, monkeyp
 def test_authentication_sanitizes_unreadable_file_failure(tmp_path, monkeypatch):
     auth = _auth()
     target = tmp_path / "mcp_server_token"
-    _write_private(target, "stored-token")
+    secret = "-".join(("stored", "token"))
+    _write_private(target, secret)
     real_open = auth.os.open
 
     def denied(path, *args, **kwargs):
         if os.fspath(path) == os.fspath(target):
-            raise PermissionError("filesystem included stored-token")
+            raise PermissionError(f"filesystem included {secret}")
         return real_open(path, *args, **kwargs)
 
     monkeypatch.setattr(auth.os, "open", denied)
@@ -433,16 +434,14 @@ def test_authentication_sanitizes_unreadable_file_failure(tmp_path, monkeypatch)
         auth.MCPTokenError,
         match="^MCP server token file is unavailable or invalid$",
     ) as caught:
-        auth.authenticate_from_environment(
-            {auth.MCP_TOKEN_ENV: "stored-token"}, path=target
-        )
+        auth.authenticate_from_environment({auth.MCP_TOKEN_ENV: secret}, path=target)
 
     rendered = "".join(
         traceback.format_exception(type(caught.value), caught.value, caught.tb)
     )
-    assert "stored-token" not in str(caught.value)
-    assert "stored-token" not in repr(caught.value)
-    assert "stored-token" not in rendered
+    assert secret not in str(caught.value)
+    assert secret not in repr(caught.value)
+    assert secret not in rendered
 
 
 def test_authentication_reads_to_eof_across_forced_short_reads(tmp_path, monkeypatch):
