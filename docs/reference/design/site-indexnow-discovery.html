@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IndexNow deployment discovery</title>
+</head>
+<body>
+  <main>
+    <h1>IndexNow deployment discovery</h1>
+
+    <h2>Current implementation and verified gap</h2>
+    <p>The public site already exposes <code>robots.txt</code>, a generated <code>sitemap.xml</code>, and the IndexNow key file <code>7c5062acbc32b8a88d2e6b627d65cbfa.txt</code>. Before this change, no deployment workflow submitted updated URLs to an IndexNow endpoint, so participating search engines had to discover changes passively.</p>
+
+    <h2>Goal</h2>
+    <p>Notify participating search engines about every canonical URL in the generated sitemap after each successful publication commit to the site repository.</p>
+
+    <h2>Boundaries</h2>
+    <ul>
+      <li>The sitemap remains the source of truth for submitted URLs.</li>
+      <li>The existing public IndexNow key and key-location file remain unchanged.</li>
+      <li>Search notification is best-effort and must never block or roll back a successful site publication.</li>
+      <li>The source workflow waits for the site-repository publish action, not for the downstream GitHub Pages deployment in that separate repository. The notification may therefore arrive while GitHub Pages is still processing the same content.</li>
+      <li>Google Search Console verification and sitemap submission remain separate because Google does not consume IndexNow.</li>
+    </ul>
+
+    <h2>Protocol decision</h2>
+    <p>The workflow uses the <a href="https://www.indexnow.org/documentation">IndexNow batch endpoint</a> after the site repository publish action succeeds. A Python standard-library module reads <code>_publish/sitemap.xml</code>, extracts unique HTTPS URLs owned by <code>openprogram.io</code>, and emits the documented JSON request. The request includes the host, public key, key location, and URL list. More than 10,000 URLs are split into multiple requests, matching the protocol's per-request limit.</p>
+
+    <h2>Trust boundary and data flow</h2>
+    <ol>
+      <li>The trusted documentation builder generates <code>_publish/sitemap.xml</code>.</li>
+      <li>The payload builder reads only exact sitemap 0.9 <code>loc</code> elements and accepts only HTTPS URLs whose exact host is <code>openprogram.io</code>; empty and foreign-host inputs fail before network submission.</li>
+      <li>The workflow writes validated request batches to an ephemeral runner directory.</li>
+      <li>The standard-library HTTP client sends every batch to <code>https://api.indexnow.org/indexnow</code> with a bounded timeout and retries. A failed batch is recorded without skipping later batches; the step reports failure only after all batches have been attempted.</li>
+    </ol>
+
+    <h2>Alternatives considered</h2>
+    <table>
+      <thead><tr><th>Mechanism</th><th>Coverage</th><th>Decision</th></tr></thead>
+      <tbody>
+        <tr><td>Passive sitemap discovery</td><td>All sitemap-aware crawlers</td><td>Retain; it does not notify crawlers when a deployment changes.</td></tr>
+        <tr><td>IndexNow batch submission</td><td>Participating search engines</td><td>Adopt after every successful publication.</td></tr>
+        <tr><td>Google Search Console</td><td>Google</td><td>Retain as a separately verified service; no deployment credential is added.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Failure handling</h2>
+    <p>The submission step uses a bounded HTTP timeout and <code>continue-on-error</code>. Invalid sitemap URLs, payload construction errors, and endpoint failures fail the notification step without affecting the already completed site-repository publication. No repository secret is required because IndexNow ownership is proven by the public key file.</p>
+
+    <h2>Compatibility and exclusions</h2>
+    <ul>
+      <li>The implementation uses Python 3.12 standard-library modules; no package dependency is added.</li>
+      <li>Existing sitemap, robots, Google verification, and GitHub Pages behavior are unchanged.</li>
+      <li>Waiting for the downstream <code>openprogram-site</code> Pages deployment is excluded because it is a separate repository workflow and notification is non-blocking discovery metadata.</li>
+      <li>Search ranking, crawl timing, and indexing are outside the system's control and are not acceptance criteria.</li>
+    </ul>
+
+    <h2>Verification</h2>
+    <ul>
+      <li>A regression test requires publication to precede notification.</li>
+      <li>Executable tests require the documented JSON fields, stable deduplication, 10,001-URL batching, exact sitemap tags, stale-batch cleanup, continued submission after an earlier batch fails, and rejection of HTTP or foreign-host URLs.</li>
+      <li>The workflow regression requires the official endpoint, generated sitemap input, and non-blocking failure policy.</li>
+      <li>The live key URL and every submitted sitemap URL use HTTPS on <code>openprogram.io</code>.</li>
+      <li>A manual batch submission of the current 499 sitemap URLs returned HTTP 200 on 2026-08-13.</li>
+    </ul>
+
+    <h2>Implementation evidence</h2>
+    <p>Evidence is recorded in <a href="site-indexnow-implementation.html">the task ledger</a> after specification review, quality review, and the final gate complete.</p>
+  </main>
+</body>
+</html>
