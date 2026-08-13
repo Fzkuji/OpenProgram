@@ -1,6 +1,6 @@
 # Self-programmed agentic workflows
 
-`agentic_workflow` is OpenProgram's self-programmed agentic workflow: the agent writes an actual Python program for the task, and the framework executes it. The planner composes the program out of the framework's building blocks — free-form `agent()` calls and the registered agentic functions — and control flow is plain Python: `if`, `for`, exceptions. The run model is the same as a developer's: the whole program runs top to bottom; if it crashes, the planner reads the traceback, fixes the code, and reruns it, with completed calls replayed from recorded results so the rerun effectively continues from the point of failure.
+`agentic_workflow` is OpenProgram's self-programmed agentic workflow: the agent writes an actual Python program for the task, and the framework executes it. The planner composes the program out of the framework's building blocks — three-tier LLM primitives plus registered agentic functions — and control flow is plain Python: `if`, `for`, exceptions. The run model is the same as a developer's: the whole program runs top to bottom; if it crashes, the planner reads the traceback, fixes the code, and reruns it, with completed calls replayed from recorded results so the rerun effectively continues from the point of failure.
 
 Run it from the Programs panel as `agentic_workflow`, or call it from Python:
 
@@ -44,8 +44,12 @@ Imports are forbidden — the framework injects everything the program may call:
 
 | Injected name | What it is |
 |---|---|
-| `agent` | The one LLM primitive — the existing agent spawn tool, injected as-is (`agent(prompt, description="", agent_id="", …)`). Model and tool set come from the agent profile selected by `agent_id`. |
+| `llm` | Single model request, no tools, no loop. Signature: `llm(prompt, model="", effort="", response_format=None, ...)` |
+| `agent` | Tool loop, repeatedly calls llm + executes tools until done. Signature: `agent(prompt, model="", effort="", tools=None, max_iterations=20, ...)` |
+| `goal` | Judgment loop, repeatedly calls agent + uses llm to judge condition until satisfied. Signature: `goal(prompt, condition, model="", effort="", max_rounds=10, ...)` |
 | registered agentic functions | Every function in the `AGENTIC_MODULES` registry, callable by name. The planner's prompt carries this catalog. |
+
+The three tiers compose: goal is based on agent, agent is based on llm.
 
 The module is validated before it runs: it must parse, it must define `workflow()`, and it must not import. Invalid code is sent back to the planner with the concrete error, as many times as it takes.
 

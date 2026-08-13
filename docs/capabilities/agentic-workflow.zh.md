@@ -1,6 +1,6 @@
 # 自编程agentic workflow
 
-`agentic_workflow`是OpenProgram的自编程agentic workflow（self-programmed agentic workflow）：agent自己把任务写成一个真正的Python程序，再由框架执行。planner用框架的积木组合程序：自由的`agent()`调用加上注册的agentic function，控制流就是Python本身的`if`、`for`、异常。运行模型和开发者写代码一样：整个程序从头到尾跑完；崩了就看报错、改代码、整个重跑，已完成的调用直接回放上次结果，效果上从出错处继续。
+`agentic_workflow`是OpenProgram的自编程agentic workflow（self-programmed agentic workflow）：agent自己把任务写成一个真正的Python程序，再由框架执行。planner用框架的积木组合程序：三层LLM原语加上注册的agentic function，控制流就是Python本身的`if`、`for`、异常。运行模型和开发者写代码一样：整个程序从头到尾跑完；崩了就看报错、改代码、整个重跑，已完成的调用直接回放上次结果，效果上从出错处继续。
 
 在Programs面板里以`agentic_workflow`运行，或从Python调用：
 
@@ -43,8 +43,12 @@ def workflow() -> str:
 
 | 注入的名字 | 说明 |
 |---|---|
-| `agent` | 唯一的LLM原语，就是现有的agent spawn工具原样注入（`agent(prompt, description="", agent_id="", …)`）。模型与工具集通过`agent_id`选的agent profile决定。 |
+| `llm` | 单次模型请求，无工具，无循环。签名：`llm(prompt, model="", effort="", response_format=None, ...)` |
+| `agent` | 工具循环，反复调llm+执行工具直到完成。签名：`agent(prompt, model="", effort="", tools=None, max_iterations=20, ...)` |
+| `goal` | 判定循环，反复调agent+用llm判定条件直到满足。签名：`goal(prompt, condition, model="", effort="", max_rounds=10, ...)` |
 | 注册的agentic function | `AGENTIC_MODULES`注册表里的全部函数，按名直接调用。planner的prompt里带着这份清单。 |
+
+三层是组合关系：goal基于agent，agent基于llm。
 
 模块运行前先校验：能解析、必须有`workflow()`、不许import。无效代码带着具体错误打回planner重写，改到能跑为止。
 

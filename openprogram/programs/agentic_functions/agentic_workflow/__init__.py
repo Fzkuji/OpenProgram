@@ -47,14 +47,16 @@ below and:
         web_search=False, timeout_s=None) -> str | dict
     agent(prompt, description="", agent_id="", start_from="clean",
           run_in_background=False, to="", archive_when_done=False) -> str
+    goal(prompt, condition, model="", effort="", max_rounds=10,
+         timeout_s=None) -> str
 
 llm makes one model request without tools or a session branch. agent starts a
-free-form agent; select its model and tool set through agent_id, which names an
-agent profile. Define ordinary Python helper functions and use llm for one model
-request or agent for autonomous work. Compose helpers and registered functions
-with plain Python calls, if/for/try statements, and return values. Verification
-belongs in the program and may raise an exception when it fails. There is no
-step DSL.
+free-form agent with a tool loop; select its model and tool set through agent_id,
+which names an agent profile. goal runs a judgment loop: repeatedly calls agent
+and uses llm to judge whether the condition is met. Define ordinary Python helper
+functions and compose them with plain Python calls, if/for/try statements, and
+return values. Verification belongs in the program and may raise an exception
+when it fails. There is no step DSL.
 
 Example:
 
@@ -163,6 +165,12 @@ def _llm_function() -> Callable:
     from openprogram.agentic_programming import llm
 
     return llm
+
+
+def _goal_function() -> Callable:
+    from openprogram.agentic_programming import goal
+
+    return goal
 
 
 def _registered_agentic_functions() -> dict[str, Callable]:
@@ -446,6 +454,7 @@ def _execute_source(source: str, state: dict, state_path: Path, *,
         "__builtins__": safe_builtins,
         "llm": checkpoints.wrap("llm", _llm_function()),
         "agent": checkpoints.wrap("agent", _agent_function(session_id, spawn_caller)),
+        "goal": checkpoints.wrap("goal", _goal_function()),
         **{name: checkpoints.wrap(name, fn) for name, fn in functions.items()},
     }
     exec(compile(source, "code.py", "exec"), namespace, namespace)

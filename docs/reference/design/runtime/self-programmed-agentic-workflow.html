@@ -106,10 +106,13 @@
 
 <h2>2. 生成的程序长什么样</h2>
 <p>planner 产出的是一个普通 Python 模块，入口 <code>workflow()</code>，组合就是函数互调，
-控制流就是 Python 的控制流。程序里的 LLM 原语是单次请求的 <code>llm()</code> 与自主工具循环的
-<code>agent()</code>。
-"让模型想/写一段"和"让一个 agent 动手干活"是同一个调用，区别只在
-<code>agent_id</code> 选的 profile 带不带工具：</p>
+控制流就是 Python 的控制流。程序里有三层 LLM 原语:</p>
+<ul style="color:#bdb9a6; margin:12px 0 12px 24px; line-height:1.8;">
+<li><code>llm(prompt, ...)</code> — 单次模型请求，无工具，无循环</li>
+<li><code>agent(prompt, ...)</code> — 工具循环，反复调 llm + 执行工具直到完成</li>
+<li><code>goal(prompt, condition, ...)</code> — 判定循环，反复调 agent + 用 llm 判定条件直到满足</li>
+</ul>
+<p>三层是组合关系：goal 基于 agent，agent 基于 llm。</p>
 <pre><code>def find_issues() -&gt; str:
     return agent(
         "审查 openprogram/auth/ 的代码，逐文件检查错误处理与并发安全，"
@@ -130,13 +133,13 @@ def workflow() -&gt; str:
 <p>可用的积木由框架在 exec 时注入，程序里禁止 <code>import</code>：</p>
 <table>
 <tr><th>注入的名字</th><th>说明</th></tr>
-<tr><td><code>llm</code></td><td>一次模型请求；不创建 session 分支，不进入工具循环。
+<tr><td><code>llm</code></td><td>单次模型请求，无工具，无循环。
 签名为 <code>llm(prompt, model=, effort=, response_format=, choices=, web_search=,
-timeout_s=)</code>，并与其他注入调用一样由 checkpoint 层包装。</td></tr>
-<tr><td><code>agent</code></td><td>现有的 spawn 工具原样注入
-（<code>programs/functions/agent/</code>，签名 <code>agent(prompt, description=, agent_id=,
-run_in_background=, …)</code>）。模型与工具集通过 <code>agent_id</code> 选 agent profile；
-需要自主工具循环或独立分支时使用。</td></tr>
+timeout_s=)</code>。</td></tr>
+<tr><td><code>agent</code></td><td>工具循环，反复调 llm + 执行工具直到完成。
+签名为 <code>agent(prompt, model=, effort=, tools=, max_iterations=20, timeout_s=)</code>。</td></tr>
+<tr><td><code>goal</code></td><td>判定循环，反复调 agent + 用 llm 判定条件直到满足。
+签名为 <code>goal(prompt, condition, model=, effort=, max_rounds=10, timeout_s=)</code>。</td></tr>
 <tr><td>注册的 agentic function</td><td><code>AGENTIC_MODULES</code> 注册表里的全部函数，按名直接调用。
 planner 的 prompt 里带着这份清单（函数名、签名、docstring 首行），它据此选材。</td></tr>
 </table>
