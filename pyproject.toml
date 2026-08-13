@@ -12,7 +12,7 @@ license = {text = "AGPL-3.0-or-later"}
 authors = [
     {name = "Fzkuji"},
 ]
-keywords = ["llm", "agentic", "agentic-programming", "self-programming", "multi-agent", "ai-agent", "ai", "function", "decorator", "context"]
+keywords = ["llm", "agentic", "agentic-programming", "self-programming", "multi-agent", "ai-agent", "agent-framework", "workflow-automation", "autonomous-agents", "ai", "function", "decorator", "context"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -204,6 +204,10 @@ openprogram = "openprogram.cli:main"
 Homepage = "https://openprogram.io/"
 Repository = "https://github.com/Fzkuji/OpenProgram"
 Documentation = "https://openprogram.io/docs/"
+Issues = "https://github.com/Fzkuji/OpenProgram/issues"
+Changelog = "https://github.com/Fzkuji/OpenProgram/releases"
+Discussions = "https://github.com/Fzkuji/OpenProgram/discussions"
+Paper = "https://arxiv.org/abs/2606.15874"
 
 [tool.setuptools.packages.find]
 include = ["openprogram*"]
