@@ -35,6 +35,7 @@ body{max-width:980px;margin:40px auto;padding:0 24px;font:16px/1.6 system-ui,san
 <li>Each generated English/Chinese documentation pair emits identical reciprocal annotations for <code>en</code>, <code>zh-Hans</code>, and <code>x-default</code>; the English URL is the fallback. Unpaired pages emit no incomplete language cluster.</li>
 <li>Canonical URLs remain self-referential. Existing language-toggle behavior remains unchanged.</li>
 <li>Each generated documentation content page emits one <code>BreadcrumbList</code> for <code>OpenProgram Docs → current page</code>. The documentation root emits none, avoiding a fabricated second level.</li>
+<li>The landing page advertises GitHub's existing Releases Atom feed so feed readers can discover project updates without a new publishing service.</li>
 <li>No analytics, tracking, cookie banner, new runtime dependency, CDN migration, or hosting change is introduced. GitHub Pages cache headers are outside repository control.</li>
 </ul>
 
@@ -49,6 +50,7 @@ body{max-width:980px;margin:40px auto;padding:0 24px;font:16px/1.6 system-ui,san
 <li>Fresh mobile Lighthouse has no failures for unsized images, color contrast, label-content-name mismatch, image delivery, or LCP discovery; SEO and Best Practices remain 100.</li>
 <li>Full repository CI passes on the reviewed commit, the commit is contained in <code>origin/main</code>, and the deployed page reproduces the verified markup.</li>
 <li>The generated documentation root contains no <code>BreadcrumbList</code>; every canonical content page contains exactly one valid two-item trail rooted at <code>https://openprogram.io/docs/</code>.</li>
+<li>The landing page exposes one <code>application/atom+xml</code> alternate link to <code>https://github.com/Fzkuji/OpenProgram/releases.atom</code>.</li>
 </ol>
 
 <h2>Implementation evidence</h2>
@@ -58,6 +60,7 @@ body{max-width:980px;margin:40px auto;padding:0 24px;font:16px/1.6 system-ui,san
 <li>The publish workflow produced site commit <code>b16efa3</code>; Pages deployment <a href="https://github.com/Fzkuji/openprogram-site/actions/runs/31656714682">31656714682</a> passed. Live HTML and asset probes confirmed the emphasized <code>program</code> text, AVIF response, high-priority hero, and reciprocal English/Chinese annotations.</li>
 <li>A fresh mobile Lighthouse audit of the deployed site scored Performance 100, Accessibility 100, Best Practices 100, and SEO 100, with LCP 1.0 seconds and no binary audit failures.</li>
 <li>Pull request <a href="https://github.com/Fzkuji/OpenProgram/pull/5">#5</a> merged as <code>c586299e</code> after Web, documentation, and Python 3.11–3.13 CI passed. Publish run <a href="https://github.com/Fzkuji/OpenProgram/actions/runs/31659339733">31659339733</a> succeeded; live probes confirmed the two-item <code>BreadcrumbList</code>, the v0.6.0 documentation links, and the current Chinese self-programming positioning.</li>
+<li>Release-feed discovery implementation <code>e63c2974</code> passed independent specification and quality review after the checker was tightened to reject duplicate, unrelated, and case-variant second Atom feeds. The documentation builder reported 498 pages; the landing checker, link checker, diff check, and live GitHub feed probe passed.</li>
 </ul>
 </body>
 </html>

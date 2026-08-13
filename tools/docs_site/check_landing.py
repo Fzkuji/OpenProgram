@@ -29,6 +29,7 @@ SITE_DESCRIPTION = (
     "context, and multi-agent collaboration."
 )
 SOCIAL_IMAGE = "https://openprogram.io/docs/images/openprogram-social-card.png"
+RELEASE_FEED = "https://github.com/Fzkuji/OpenProgram/releases.atom"
 
 
 class LandingParser(HTMLParser):
@@ -237,6 +238,19 @@ def main() -> int:
 
     require(("canonical", "https://openprogram.io/") in links,
             "missing canonical URL", failures)
+    feed_links = [
+        item
+        for item in page.links
+        if (
+            "alternate" in item.get("rel", "").split()
+            and item.get("type", "").casefold() == "application/atom+xml"
+        )
+    ]
+    require(
+        len(feed_links) == 1 and feed_links[0].get("href") == RELEASE_FEED,
+        "landing must expose exactly one release feed discovery link",
+        failures,
+    )
     require(f"<title>{SITE_TITLE}</title>" in source,
             "landing title differs from the product title", failures)
     require(("icon", "/favicon.ico") in links,
