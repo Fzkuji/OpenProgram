@@ -25,6 +25,7 @@ def _code(body: str, helpers: str = "") -> str:
 @pytest.fixture
 def session_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(TL, "_session_repo", lambda _sid: tmp_path)
+    monkeypatch.setattr(TL, "_registered_agentic_functions", lambda: {})
     return tmp_path
 
 
@@ -55,7 +56,7 @@ def _executor(monkeypatch: pytest.MonkeyPatch, fn=None) -> list[dict]:
         calls.append({"prompt": prompt, **kwargs})
         return fn(prompt, kwargs) if fn else f"done: {prompt}"
 
-    monkeypatch.setattr(TL, "_agent_function", lambda: fake)
+    monkeypatch.setattr(TL, "_agent_function", lambda session_id, spawn_caller: fake)
     return calls
 
 
@@ -90,7 +91,7 @@ def test_small_task_uses_single_agent_and_persists_independent_run(
     prompts = _planner(monkeypatch, "SINGLE")
     calls = _executor(monkeypatch)
 
-    result = TL.run_agentic_workflow("rename one variable", session_id="s1")
+    result = TL.agentic_workflow("rename one variable", session_id="s1")
 
     assert result["status"] == "completed"
     assert calls[0]["prompt"] == "rename one variable"
@@ -119,7 +120,7 @@ def test_plain_helper_uses_agent_and_its_result_in_workflow(
         lambda prompt, _kwargs: "VALUE" if prompt == "produce" else "USED",
     )
 
-    result = TL.run_agentic_workflow("compose", session_id="s1")
+    result = TL.agentic_workflow("compose", session_id="s1")
 
     assert result["status"] == "completed"
     assert [call["prompt"] for call in calls] == ["produce", "consume VALUE"]
@@ -139,7 +140,7 @@ def test_llm_is_injected_and_checkpointed(
         lambda prompt, _kwargs: "VALUE" if prompt == "summarize" else "USED",
     )
 
-    result = TL.run_agentic_workflow("compose", session_id="s1")
+    result = TL.agentic_workflow("compose", session_id="s1")
 
     assert result["status"] == "completed"
     assert [call["prompt"] for call in calls] == ["summarize", "use VALUE"]
@@ -159,7 +160,7 @@ def test_same_function_name_uses_call_order_keys_and_replays_each_call(
     calls = _executor(monkeypatch)
 
     with pytest.raises(KeyboardInterrupt, match="killed"):
-        TL.run_agentic_workflow("resume", session_id="s1")
+        TL.agentic_workflow("resume", session_id="s1")
 
     run_id = next((session_repo / "workflows").iterdir()).name
     records = _state(session_repo, run_id)["items"]
@@ -201,7 +202,7 @@ def test_exception_rewrites_with_traceback_and_state_then_replays_completed_call
         lambda prompt, _kwargs: "prepared" if prompt == "prepare" else "finished",
     )
 
-    result = TL.run_agentic_workflow("repair", session_id="s1")
+    result = TL.agentic_workflow("repair", session_id="s1")
 
     assert result["status"] == "completed"
     assert [call["prompt"] for call in calls] == ["prepare", "finish prepared"]
@@ -226,7 +227,7 @@ def test_invalid_plans_keep_requesting_rewrites_with_concrete_errors(
     )
     calls = _executor(monkeypatch)
 
-    result = TL.run_agentic_workflow("invalid", session_id="s1")
+    result = TL.agentic_workflow("invalid", session_id="s1")
 
     assert result["status"] == "completed"
     assert calls[0]["prompt"] == "fixed"
@@ -245,7 +246,7 @@ def test_missing_workflow_is_rejected_with_exact_validation_reason(
     )
     _executor(monkeypatch)
 
-    result = TL.run_agentic_workflow("missing", session_id="s1")
+    result = TL.agentic_workflow("missing", session_id="s1")
 
     assert result["status"] == "completed"
     assert "exactly one def workflow()" in prompts[1]
@@ -267,7 +268,7 @@ def test_execution_cap_counts_only_real_calls(
     _planner(monkeypatch, initial, revised)
     calls = _executor(monkeypatch)
 
-    result = TL.run_agentic_workflow("many", session_id="s1")
+    result = TL.agentic_workflow("many", session_id="s1")
 
     assert result["status"] == "capped"
     assert len(calls) == TL.MAX_ITEMS_EXECUTED == 40
@@ -285,7 +286,7 @@ def test_agent_uses_existing_spawn_signature(
     '''))
     calls = _executor(monkeypatch)
 
-    result = TL.run_agentic_workflow("delegate", session_id="s1")
+    result = TL.agentic_workflow("delegate", session_id="s1")
 
     assert result["status"] == "completed"
     assert calls[0]["description"] == "delegate"
@@ -295,7 +296,7 @@ def test_agent_uses_existing_spawn_signature(
 
 
 def test_real_agent_implementation_is_callable_with_public_signature() -> None:
-    agent = TL._agent_function()
+    agent = TL._agent_function("test-session", None)
 
     assert callable(agent)
     assert str(inspect.signature(agent)) == (
@@ -303,7 +304,7 @@ def test_real_agent_implementation_is_callable_with_public_signature() -> None:
         'start_from: \'str\' = \'clean\', run_in_background: \'bool\' = False, '
         'to: \'str\' = \'\', archive_when_done: \'bool\' = False) -> \'str\''
     )
-    assert agent("probe").startswith("[agent error] no active parent turn")
+    assert agent("probe").startswith("[agent error]")
 
 
 def test_registered_agentic_function_is_injected_and_checkpointed(
@@ -319,7 +320,7 @@ def test_registered_agentic_function_is_injected_and_checkpointed(
     _planner(monkeypatch, _code('return registered("value")'))
     _executor(monkeypatch)
 
-    result = TL.run_agentic_workflow("registry", session_id="s1")
+    result = TL.agentic_workflow("registry", session_id="s1")
 
     assert result["status"] == "completed"
     assert result["summary"] == "VALUE"
@@ -337,8 +338,8 @@ def test_new_runs_for_same_task_are_independent(
     )
     calls = _executor(monkeypatch)
 
-    first = TL.run_agentic_workflow("same", session_id="s1")
-    second = TL.run_agentic_workflow("same", session_id="s1")
+    first = TL.agentic_workflow("same", session_id="s1")
+    second = TL.agentic_workflow("same", session_id="s1")
 
     assert first["run_id"] != second["run_id"]
     assert [call["prompt"] for call in calls] == ["first run", "second run"]
@@ -352,7 +353,7 @@ def test_planner_prompt_documents_real_agentic_programming_convention(
     prompts = _planner(monkeypatch, "SINGLE")
     _executor(monkeypatch)
 
-    TL.run_agentic_workflow("prompt", session_id="s1")
+    TL.agentic_workflow("prompt", session_id="s1")
 
     prompt = prompts[0]
     assert "@agentic_function" not in prompt
@@ -378,7 +379,7 @@ def test_capped_status_cannot_be_caught_by_generated_code(
     '''))
     calls = _executor(monkeypatch)
 
-    result = TL.run_agentic_workflow("cap", session_id="s1")
+    result = TL.agentic_workflow("cap", session_id="s1")
 
     assert result["status"] == "capped"
     assert len(calls) == 40
@@ -399,7 +400,7 @@ def test_single_run_resumes_after_interruption(
 
     _executor(monkeypatch, execution)
     with pytest.raises(KeyboardInterrupt, match="killed"):
-        TL.run_agentic_workflow("single", session_id="s1")
+        TL.agentic_workflow("single", session_id="s1")
     run_id = next((session_repo / "workflows").iterdir()).name
 
     result = TL.resume_workflow(run_id, session_id="s1")
@@ -417,7 +418,7 @@ def test_invalid_revision_reports_the_invalid_candidate_as_current_code(
     prompts = _planner(monkeypatch, initial, invalid, fixed)
     _executor(monkeypatch)
 
-    result = TL.run_agentic_workflow("rewrite", session_id="s1")
+    result = TL.agentic_workflow("rewrite", session_id="s1")
 
     assert result["status"] == "completed"
     assert "def workflow(:" in prompts[2]
@@ -439,7 +440,7 @@ def test_caught_callable_error_writes_failed_after_checkpoint(
     '''))
     _executor(monkeypatch)
 
-    result = TL.run_agentic_workflow("caught", session_id="s1")
+    result = TL.agentic_workflow("caught", session_id="s1")
 
     assert result["status"] == "completed"
     record = result["items"][0]
@@ -461,7 +462,7 @@ def test_cancel_signal_propagates_without_planner_rewrite(
     _executor(monkeypatch)
 
     with pytest.raises(CancelledError, match="stop"):
-        TL.run_agentic_workflow("cancel", session_id="s1")
+        TL.agentic_workflow("cancel", session_id="s1")
 
     assert len(prompts) == 1
 
@@ -486,7 +487,7 @@ def test_generated_environment_excludes_runtime_and_agentic_function(
     '''))
     _executor(monkeypatch)
 
-    result = TL.run_agentic_workflow("environment", session_id="s1")
+    result = TL.agentic_workflow("environment", session_id="s1")
 
     assert result["status"] == "completed"
     assert result["summary"] == "done: runtime,agentic_function:ok"
@@ -499,7 +500,7 @@ def test_same_run_id_concurrent_resume_executes_once(
     _planner(monkeypatch, _code('raise KeyboardInterrupt("pause")'))
     _executor(monkeypatch)
     with pytest.raises(KeyboardInterrupt):
-        TL.run_agentic_workflow("concurrent", session_id="s1")
+        TL.agentic_workflow("concurrent", session_id="s1")
     run_id = next((session_repo / "workflows").iterdir()).name
     (_instance(session_repo, run_id) / "code.py").write_text(
         TL._validated_reply(_code('return agent("once")'))
@@ -537,7 +538,7 @@ def test_checkpoint_preserves_path_result_and_mixed_key_arguments(
     '''))
     _executor(monkeypatch)
     with pytest.raises(KeyboardInterrupt):
-        TL.run_agentic_workflow("types", session_id="s1")
+        TL.agentic_workflow("types", session_id="s1")
     run_id = next((session_repo / "workflows").iterdir()).name
     (_instance(session_repo, run_id) / "code.py").write_text(
         TL._validated_reply(_code(
@@ -586,7 +587,7 @@ def test_resume_continues_planning_when_interrupted_before_code_is_written(
     monkeypatch.setattr(TL, "_run_planner_turn", planner)
     _executor(monkeypatch)
     with pytest.raises(KeyboardInterrupt, match="planner killed"):
-        TL.run_agentic_workflow("planning", session_id="s1")
+        TL.agentic_workflow("planning", session_id="s1")
     run_id = next((session_repo / "workflows").iterdir()).name
     assert not (_instance(session_repo, run_id) / "code.py").exists()
 

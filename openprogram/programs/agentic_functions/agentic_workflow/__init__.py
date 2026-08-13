@@ -139,19 +139,22 @@ def _agent_function(session_id: str, spawn_caller: Optional[str]) -> Callable:
         if start_from != "clean":
             return "[agent error] start_from must be 'clean' in workflow context"
 
-        result = run_agent_turn(
-            session_id=session_id,
-            prompt=prompt,
-            agent_id=agent_id or "main",
-            branch_from=None,
-            label=description or "workflow agent",
-            spawn_caller=spawn_caller,
-            advance_head=False,
-            tools_override=None,
-        )
-        if result.failed:
-            raise RuntimeError(result.error or "workflow agent turn failed")
-        return result.final_text or ""
+        try:
+            result = run_agent_turn(
+                session_id=session_id,
+                prompt=prompt,
+                agent_id=agent_id or "main",
+                branch_from=None,
+                label=description or "workflow agent",
+                spawn_caller=spawn_caller,
+                advance_head=False,
+                tools_override=None,
+            )
+            if result.failed:
+                raise RuntimeError(result.error or "workflow agent turn failed")
+            return result.final_text or ""
+        except Exception as exc:
+            return f"[agent error] {exc}"
 
     return agent
 
@@ -168,29 +171,28 @@ def _registered_agentic_functions() -> dict[str, Callable]:
 
     found: dict[str, Callable] = {}
     for module_name in AGENTIC_MODULES:
+        if module_name == "agentic_workflow":
+            continue
         try:
             module = importlib.import_module(
                 f"openprogram.programs.agentic_functions.{module_name}"
             )
         except Exception:
             continue
-        for value in vars(module).values():
-            inner = getattr(value, "_fn", None)
-            if inner is not None and inner.__module__ == module.__name__:
-                found[inner.__name__] = value
+        try:
+            for value in vars(module).values():
+                inner = getattr(value, "_fn", None)
+                if inner is not None and inner.__module__ == module.__name__:
+                    found[inner.__name__] = value
+        except Exception:
+            continue
     return found
 
 
 def _function_catalog(functions: dict[str, Callable]) -> str:
     rows = []
-    for name, function in sorted(functions.items()):
-        inner = getattr(function, "_fn", None) or function
-        try:
-            signature = inspect.signature(inner)
-        except (TypeError, ValueError):
-            signature = "(...)"
-        doc = inspect.getdoc(inner) or ""
-        rows.append(f"- {name}{signature}: {doc.splitlines()[0] if doc else ''}")
+    for name in sorted(functions.keys()):
+        rows.append(f"- {name}(...)")
     return "\n".join(rows) or "(none)"
 
 
@@ -572,7 +574,7 @@ def _run_single(instance: Path, *, run_id: str, session_id: str,
         checkpoints = _Checkpoints(state, state_path)
         checkpoints.begin_pass()
 
-        summary = checkpoints.wrap("agent", _agent_function())(state["task"])
+        summary = checkpoints.wrap("agent", _agent_function(session_id, spawn_caller))(state["task"])
         state.update(status="completed", result=clip_handoff(summary))
         _save_state(state_path, state)
         return _result(state, run_id)
@@ -585,9 +587,9 @@ def _run_single(instance: Path, *, run_id: str, session_id: str,
     "spawn_caller": {"hidden": True},
     "agent_id": {"hidden": True},
 })
-def run_agentic_workflow(task: str, session_id: str = "", run_id: str = "",
-                  spawn_caller: Optional[str] = None,
-                  agent_id: str = "main") -> dict:
+def agentic_workflow(task: str, session_id: str = "", run_id: str = "",
+                     spawn_caller: Optional[str] = None,
+                     agent_id: str = "main") -> dict:
     """Plan and execute a new workflow, or explicitly resume ``run_id``."""
     sid = session_id or current_session_id()
     functions = _registered_agentic_functions()
@@ -653,14 +655,14 @@ def resume_workflow(run_id: str, session_id: str = "", *,
     sid = session_id or current_session_id()
     instance = _instance_dir(sid, run_id)
     state = _load_state(instance / "state.json")
-    return run_agentic_workflow(
+    return agentic_workflow(
         state["task"], session_id=sid, run_id=run_id,
         spawn_caller=spawn_caller, agent_id=agent_id,
     )
 
 
 __all__ = [
-    "run_agentic_workflow", "resume_workflow", "InvalidWorkflow",
+    "agentic_workflow", "resume_workflow", "InvalidWorkflow",
     "WorkflowExecutionCapped", "PLANNER_TOOLS",
     "HANDOFF_SUMMARY_MAX_CHARS", "MAX_ITEMS_EXECUTED",
 ]

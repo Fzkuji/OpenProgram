@@ -1,13 +1,13 @@
 # Self-programmed agentic workflows
 
-`run_agentic_workflow` is OpenProgram's self-programmed agentic workflow: the agent writes an actual Python program for the task, and the framework executes it. The planner composes the program out of the framework's building blocks — free-form `agent()` calls and the registered agentic functions — and control flow is plain Python: `if`, `for`, exceptions. The run model is the same as a developer's: the whole program runs top to bottom; if it crashes, the planner reads the traceback, fixes the code, and reruns it, with completed calls replayed from recorded results so the rerun effectively continues from the point of failure.
+`agentic_workflow` is OpenProgram's self-programmed agentic workflow: the agent writes an actual Python program for the task, and the framework executes it. The planner composes the program out of the framework's building blocks — free-form `agent()` calls and the registered agentic functions — and control flow is plain Python: `if`, `for`, exceptions. The run model is the same as a developer's: the whole program runs top to bottom; if it crashes, the planner reads the traceback, fixes the code, and reruns it, with completed calls replayed from recorded results so the rerun effectively continues from the point of failure.
 
-Run it from the Programs panel as `run_agentic_workflow`, or call it from Python:
+Run it from the Programs panel as `agentic_workflow`, or call it from Python:
 
 ```python
-from openprogram.programs.agentic_functions.agentic_workflow import run_agentic_workflow
+from openprogram.programs.agentic_functions.agentic_workflow import agentic_workflow
 
-result = run_agentic_workflow("port the auth module to the new client and update its tests")
+result = agentic_workflow("port the auth module to the new client and update its tests")
 ```
 
 Every call creates an independent workflow instance with its own directory under the session repository — `workflows/<run_id>/` holding `code.py` and `state.json`. Instances share nothing: run as many concurrent workflows as you want.
@@ -55,7 +55,7 @@ There is no checkpoint syntax in the program. Recording is the framework's job: 
 
 There is no scheduler and no "next item" logic. Resuming means executing `workflow()` again from its first line. The only mechanism is short-circuiting at call boundaries: a call already completed in `state.json` — same name, same order, same arguments — is not executed again; it returns its recorded result instantly. The rerun flashes past finished work and starts doing real work at the first incomplete call. Control flow is re-evaluated every time (`if` re-branches, `for` re-loops); only the expensive call results are restored.
 
-A killed process resumes the same way: state changes hit disk before the work happens, so rerunning the instance by its `run_id` continues it. Resuming is explicit — each `run_agentic_workflow(task)` call creates a fresh instance and returns its `run_id`; to continue an existing one, pass that `run_id` back. Nothing is matched by task text.
+A killed process resumes the same way: state changes hit disk before the work happens, so rerunning the instance by its `run_id` continues it. Resuming is explicit — each `agentic_workflow(task)` call creates a fresh instance and returns its `run_id`; to continue an existing one, pass that `run_id` back. Nothing is matched by task text.
 
 ## Revision after an error
 

@@ -1,13 +1,13 @@
 # 自编程agentic workflow
 
-`run_agentic_workflow`是OpenProgram的自编程agentic workflow（self-programmed agentic workflow）：agent自己把任务写成一个真正的Python程序，再由框架执行。planner用框架的积木组合程序：自由的`agent()`调用加上注册的agentic function，控制流就是Python本身的`if`、`for`、异常。运行模型和开发者写代码一样：整个程序从头到尾跑完；崩了就看报错、改代码、整个重跑，已完成的调用直接回放上次结果，效果上从出错处继续。
+`agentic_workflow`是OpenProgram的自编程agentic workflow（self-programmed agentic workflow）：agent自己把任务写成一个真正的Python程序，再由框架执行。planner用框架的积木组合程序：自由的`agent()`调用加上注册的agentic function，控制流就是Python本身的`if`、`for`、异常。运行模型和开发者写代码一样：整个程序从头到尾跑完；崩了就看报错、改代码、整个重跑，已完成的调用直接回放上次结果，效果上从出错处继续。
 
-在Programs面板里以`run_agentic_workflow`运行，或从Python调用：
+在Programs面板里以`agentic_workflow`运行，或从Python调用：
 
 ```python
-from openprogram.programs.agentic_functions.agentic_workflow import run_agentic_workflow
+from openprogram.programs.agentic_functions.agentic_workflow import agentic_workflow
 
-result = run_agentic_workflow("把 auth 模块迁到新客户端并更新它的测试")
+result = agentic_workflow("把 auth 模块迁到新客户端并更新它的测试")
 ```
 
 每次调用新建一个独立实例，在会话仓库下有自己的目录：`workflows/<run_id>/`，存`code.py`和`state.json`。实例之间什么都不共享，想同时跑几个流程就跑几个。
@@ -54,7 +54,7 @@ def workflow() -> str:
 
 没有调度器，没有"取下一项"。续跑就是把`workflow()`从第一行重新执行一遍，唯一的机制是调用边界的短路：`state.json`里已完成的调用（同名、同次序、同参数摘要）不真正执行，直接返回上次的结果。重跑时程序飞速掠过做完的部分，到第一个没做完的调用才真正干活。控制流每次都完整重走（`if`重新判断、`for`重新循环），恢复的只是昂贵调用的结果。
 
-进程被杀同理：状态变化先写盘再动手，拿`run_id`再跑一遍即续。续跑是显式的：每次`run_agentic_workflow(task)`都新建实例（返回值带`run_id`），续跑要传入既有实例的`run_id`。不存在按任务文本匹配旧运行这种事。
+进程被杀同理：状态变化先写盘再动手，拿`run_id`再跑一遍即续。续跑是显式的：每次`agentic_workflow(task)`都新建实例（返回值带`run_id`），续跑要传入既有实例的`run_id`。不存在按任务文本匹配旧运行这种事。
 
 ## 出错后的修订
 

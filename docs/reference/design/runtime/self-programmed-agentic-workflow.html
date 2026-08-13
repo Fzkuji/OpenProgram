@@ -32,18 +32,18 @@
 （注册的 agentic function、自由 agent 调用）组合而成，控制流就是 Python 本身的控制流。
 运行模型和人写代码一样：整个程序一次跑完；报错就看报错、改代码、整个重跑，
 已完成的调用直接用上次结果，效果上从出错处继续。入口是内置 agentic function
-<code>run_agentic_workflow</code>。</p>
+<code>agentic_workflow</code>。</p>
 
 <h2>1. 全流程</h2>
 <figure>
-<svg viewBox="0 0 980 560" role="img" aria-label="全流程：run_agentic_workflow 新建独立实例，planner 用只读工具对着函数注册表写出 code.py 程序，框架校验后 exec 整个程序，成功返回 completed；校验不过就打回 planner 重写直到能跑；程序抛异常时，planner 带着报错和运行记录修改代码，整个程序重跑，已完成的调用直接回放上次结果，相当于从出错处继续；实例目录存 code.py 与 state.json，多实例并发互不相关">
+<svg viewBox="0 0 980 560" role="img" aria-label="全流程：agentic_workflow 新建独立实例，planner 用只读工具对着函数注册表写出 code.py 程序，框架校验后 exec 整个程序，成功返回 completed；校验不过就打回 planner 重写直到能跑；程序抛异常时，planner 带着报错和运行记录修改代码，整个程序重跑，已完成的调用直接回放上次结果，相当于从出错处继续；实例目录存 code.py 与 state.json，多实例并发互不相关">
   <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
     <path d="M0,0 L10,5 L0,10 z" fill="#8a8675"/></marker></defs>
   <rect x="0" y="0" width="980" height="560" fill="#12110b"/>
 
   <!-- 入口 -->
   <rect x="40" y="28" width="250" height="60" rx="10" fill="#181712" stroke="#e8e4d4" stroke-width="1.2"/>
-  <text x="165" y="53" fill="#e8e4d4" font-size="14" text-anchor="middle">run_agentic_workflow(task)</text>
+  <text x="165" y="53" fill="#e8e4d4" font-size="14" text-anchor="middle">agentic_workflow(task)</text>
   <text x="165" y="74" fill="#8a8675" font-size="11" text-anchor="middle">每次调用 = 新建一个独立实例</text>
   <line x1="165" y1="88" x2="165" y2="122" stroke="#8a8675" marker-end="url(#ar)"/>
 
@@ -189,7 +189,7 @@ planner 的 prompt 里带着这份清单（函数名、签名、docstring 首行
 </figure>
 <div class="card">
 进程被杀同理：state.json 每次状态变化先写盘，重启后拿 <code>run_id</code> 再跑一遍即续。
-续跑是显式的——每次 <code>run_agentic_workflow(task)</code> 都新建实例（返回值带 <code>run_id</code>），
+续跑是显式的——每次 <code>agentic_workflow(task)</code> 都新建实例（返回值带 <code>run_id</code>），
 续跑要传入既有实例的 <code>run_id</code>。不存在按任务文本匹配旧运行这种事。
 </div>
 
@@ -230,7 +230,7 @@ planner 拿到异常栈、当前代码和 state.json 里的运行记录，重写
 <h2>实现状态</h2>
 <div class="card">
 代码在 <code>openprogram/programs/agentic_functions/agentic_workflow/</code>，注册在 <code>AGENTIC_MODULES</code>，
-入口 <code>run_agentic_workflow</code>。正在按本设计从 JSON item 清单形态重实现为生成代码形态；
+入口 <code>agentic_workflow</code>。正在按本设计从 JSON item 清单形态重实现为生成代码形态；
 产品文档 <code>docs/capabilities/agentic-workflow.md</code> 随实现落地后同步改写。
 </div>
 
