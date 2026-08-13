@@ -93,11 +93,11 @@ def _cmd_configure(provider: str | None):
 def _cmd_list():
     """List the registered agentic functions (functions/_registry.py)."""
     from openprogram.programs._registry import iter_agentic_files
-    from openprogram.programs import agentics as _agentics_pkg
+    from openprogram.programs import agentic_functions as _agentic_functions_pkg
 
     entries: list[tuple[str, str]] = []
     for mod_name, filepath, _is_harness in iter_agentic_files(
-        os.path.dirname(_agentics_pkg.__file__)
+        os.path.dirname(_agentic_functions_pkg.__file__)
     ):
         name = mod_name
         desc = ""
