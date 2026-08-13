@@ -50,9 +50,41 @@ def workflow() -> str:
 | `llm` | 单次模型请求，无工具，无循环。签名：`llm(prompt, model="", effort="", response_format=None, ...)` |
 | `agent` | 工具循环，反复调llm+执行工具直到完成。签名：`agent(prompt, model="", effort="", tools=None, max_iterations=20, ...)` |
 | `goal` | 判定循环，反复调agent+用llm判定条件直到满足。签名：`goal(prompt, condition, model="", effort="", max_rounds=10, ...)` |
+| `validate_and_retry` | 验证和回溯：执行action，用llm判定结果是否满足check，不满足则执行retry。签名：`validate_and_retry(action, check, retry, max_retries=2)` |
+| `route` | 路由选择：让llm从options列表中选择一个。签名：`route(question, options, context="")` |
+| `conditional` | 条件分支：llm判定condition（YES/NO）并执行对应分支。签名：`conditional(condition, context="", if_true, if_false)` |
 | 注册的agentic function | `AGENTIC_MODULES`注册表里的全部函数，按名直接调用。planner的prompt里带着这份清单。 |
 
-三层是组合关系：goal基于agent，agent基于llm。
+三层是组合关系：goal基于agent，agent基于llm。控制流原语用llm做判定，简化planner的代码生成。
+
+**控制流原语示例**：
+
+```python
+def workflow() -> str:
+    # 验证和回溯：第一次结果不满足就重试
+    files = validate_and_retry(
+        action=lambda: agent("找 auth 相关文件"),
+        check="文件数量>=3 且包含 oauth",
+        retry=lambda: agent("扩大范围，包括 oauth、openid 相关文件")
+    )
+    
+    # 路由选择：让llm选策略
+    strategy = route(
+        question="选择迁移策略",
+        options=["直接迁移", "重构后迁移"],
+        context=files
+    )
+    
+    # 条件分支：根据llm判定执行不同分支
+    plan = conditional(
+        condition="策略是直接迁移",
+        context=strategy,
+        if_true=lambda: agent("写直接迁移方案：" + files),
+        if_false=lambda: agent("写重构方案：" + files)
+    )
+    
+    return plan
+```
 
 模块运行前先校验：能解析、必须有`workflow()`、不许import。无效代码带着具体错误打回planner重写，改到能跑为止。
 

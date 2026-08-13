@@ -106,13 +106,16 @@
 
 <h2>2. 生成的程序长什么样</h2>
 <p>planner 产出的是一个普通 Python 模块，入口 <code>workflow()</code>，组合就是函数互调，
-控制流就是 Python 的控制流。程序里有三层 LLM 原语:</p>
+控制流就是 Python 的控制流。程序里有三层 LLM 原语和三个控制流原语:</p>
 <ul style="color:#bdb9a6; margin:12px 0 12px 24px; line-height:1.8;">
 <li><code>llm(prompt, ...)</code> — 单次模型请求，无工具，无循环</li>
 <li><code>agent(prompt, ...)</code> — 工具循环，反复调 llm + 执行工具直到完成</li>
 <li><code>goal(prompt, condition, ...)</code> — 判定循环，反复调 agent + 用 llm 判定条件直到满足</li>
+<li><code>validate_and_retry(action, check, retry, ...)</code> — 验证和回溯，用 llm 判定结果，失败则重试</li>
+<li><code>route(question, options, ...)</code> — 路由选择，让 llm 从列表中选一个</li>
+<li><code>conditional(condition, if_true, if_false, ...)</code> — 条件分支，llm 判定 YES/NO 执行分支</li>
 </ul>
-<p>三层是组合关系：goal 基于 agent，agent 基于 llm。</p>
+<p>三层是组合关系：goal 基于 agent，agent 基于 llm。控制流原语用 llm 做判定，简化 planner 的代码生成。</p>
 <pre><code>def find_issues() -&gt; str:
     return agent(
         "审查 openprogram/auth/ 的代码，逐文件检查错误处理与并发安全，"
@@ -130,6 +133,30 @@ def workflow() -&gt; str:
             raise RuntimeError("修复后测试仍失败：" + checks)
     return agent("汇总以上结果写报告", description="report")
 </code></pre>
+<p><strong>使用控制流原语的示例</strong>（更声明式，意图更清晰）：</p>
+<pre><code>def workflow() -&gt; str:
+    # 验证和回溯：第一次结果不满足就重试
+    files = validate_and_retry(
+        action=lambda: agent("找 auth 相关文件"),
+        check="文件数量&gt;=3 且包含 oauth",
+        retry=lambda: agent("扩大范围，包括 oauth、openid 相关文件")
+    )
+
+    # 路由选择：让 llm 选策略
+    strategy = route(
+        question="选择迁移策略",
+        options=["直接迁移", "重构后迁移"],
+        context=files
+    )
+
+    # 条件分支：根据 llm 判定执行不同分支
+    return conditional(
+        condition="策略是直接迁移",
+        context=strategy,
+        if_true=lambda: agent("写直接迁移方案：" + files),
+        if_false=lambda: agent("写重构方案：" + files)
+    )
+</code></pre>
 <p>可用的积木由框架在 exec 时注入，程序里禁止 <code>import</code>：</p>
 <table>
 <tr><th>注入的名字</th><th>说明</th></tr>
@@ -140,6 +167,12 @@ timeout_s=)</code>。</td></tr>
 签名为 <code>agent(prompt, model=, effort=, tools=, max_iterations=20, timeout_s=)</code>。</td></tr>
 <tr><td><code>goal</code></td><td>判定循环，反复调 agent + 用 llm 判定条件直到满足。
 签名为 <code>goal(prompt, condition, model=, effort=, max_rounds=10, timeout_s=)</code>。</td></tr>
+<tr><td><code>validate_and_retry</code></td><td>验证和回溯，执行 action，用 llm 判定结果是否满足 check，不满足则执行 retry。
+签名为 <code>validate_and_retry(action, check, retry, max_retries=2)</code>。check 和 condition 都是自然语言字符串。</td></tr>
+<tr><td><code>route</code></td><td>路由选择，让 llm 从 options 列表中选择一个。
+签名为 <code>route(question, options, context="")</code>。options 是字符串列表，返回其中一个。</td></tr>
+<tr><td><code>conditional</code></td><td>条件分支，llm 判定 condition（YES/NO）并执行对应分支。
+签名为 <code>conditional(condition, context="", if_true, if_false)</code>。分支是可调用对象。</td></tr>
 <tr><td>注册的 agentic function</td><td><code>AGENTIC_MODULES</code> 注册表里的全部函数，按名直接调用。
 planner 的 prompt 里带着这份清单（函数名、签名、docstring 首行），它据此选材。</td></tr>
 </table>

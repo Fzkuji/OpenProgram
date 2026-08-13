@@ -31,6 +31,9 @@ from openprogram.agentic_programming.agent import agent
 from openprogram.agentic_programming.goal import goal
 from openprogram.agentic_programming import decision
 from openprogram.agentic_programming.session import Session
+from openprogram.agentic_programming.control_flow import (
+    validate_and_retry, route, conditional
+)
 
 __all__ = [
     "agentic_function",
@@ -43,4 +46,7 @@ __all__ = [
     "goal",
     "decision",
     "Session",
+    "validate_and_retry",
+    "route",
+    "conditional",
 ]

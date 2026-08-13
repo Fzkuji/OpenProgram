@@ -49,14 +49,25 @@ below and:
           run_in_background=False, to="", archive_when_done=False) -> str
     goal(prompt, condition, model="", effort="", max_rounds=10,
          timeout_s=None) -> str
+    validate_and_retry(action: Callable, check: str, retry: Callable,
+                       max_retries=2) -> str
+    route(question: str, options: list[str], context="") -> str
+    conditional(condition: str, context="", if_true: Callable,
+                if_false: Callable) -> str
 
 llm makes one model request without tools or a session branch. agent starts a
 free-form agent with a tool loop; select its model and tool set through agent_id,
 which names an agent profile. goal runs a judgment loop: repeatedly calls agent
-and uses llm to judge whether the condition is met. Define ordinary Python helper
-functions and compose them with plain Python calls, if/for/try statements, and
-return values. Verification belongs in the program and may raise an exception
-when it fails. There is no step DSL.
+and uses llm to judge whether the condition is met.
+
+Control flow primitives use llm for judgment:
+- validate_and_retry: execute action, check result with llm, retry if failed
+- route: let llm choose one option from a list
+- conditional: llm judges condition (YES/NO) and executes one branch
+
+Define ordinary Python helper functions and compose them with plain Python calls,
+if/for/try statements, and return values. Verification belongs in the program and
+may raise an exception when it fails. There is no step DSL.
 
 Example:
 
@@ -68,6 +79,21 @@ Example:
         if not findings:
             raise RuntimeError(\"issue review returned no result\")
         return findings
+
+Example with control flow primitives:
+
+    def workflow():
+        files = validate_and_retry(
+            action=lambda: agent(\"Find auth related files\"),
+            check=\"File count >= 3 and includes oauth\",
+            retry=lambda: agent(\"Expand search to include oauth and openid\")
+        )
+        strategy = route(
+            question=\"Choose migration strategy\",
+            options=[\"Direct migration\", \"Refactor then migrate\"],
+            context=files
+        )
+        return agent(f\"Write {strategy} plan for: {files}\")
 
 Available registered agentic functions (name, signature, first docstring
 line):
@@ -171,6 +197,24 @@ def _goal_function() -> Callable:
     from openprogram.agentic_programming import goal
 
     return goal
+
+
+def _validate_and_retry_function() -> Callable:
+    from openprogram.agentic_programming.control_flow import validate_and_retry
+
+    return validate_and_retry
+
+
+def _route_function() -> Callable:
+    from openprogram.agentic_programming.control_flow import route
+
+    return route
+
+
+def _conditional_function() -> Callable:
+    from openprogram.agentic_programming.control_flow import conditional
+
+    return conditional
 
 
 def _registered_agentic_functions() -> dict[str, Callable]:
@@ -455,6 +499,9 @@ def _execute_source(source: str, state: dict, state_path: Path, *,
         "llm": checkpoints.wrap("llm", _llm_function()),
         "agent": checkpoints.wrap("agent", _agent_function(session_id, spawn_caller)),
         "goal": checkpoints.wrap("goal", _goal_function()),
+        "validate_and_retry": checkpoints.wrap("validate_and_retry", _validate_and_retry_function()),
+        "route": checkpoints.wrap("route", _route_function()),
+        "conditional": checkpoints.wrap("conditional", _conditional_function()),
         **{name: checkpoints.wrap(name, fn) for name, fn in functions.items()},
     }
     exec(compile(source, "code.py", "exec"), namespace, namespace)

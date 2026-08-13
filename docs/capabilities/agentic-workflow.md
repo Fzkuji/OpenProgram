@@ -51,9 +51,41 @@ Imports are forbidden — the framework injects everything the program may call:
 | `llm` | Single model request, no tools, no loop. Signature: `llm(prompt, model="", effort="", response_format=None, ...)` |
 | `agent` | Tool loop, repeatedly calls llm + executes tools until done. Signature: `agent(prompt, model="", effort="", tools=None, max_iterations=20, ...)` |
 | `goal` | Judgment loop, repeatedly calls agent + uses llm to judge condition until satisfied. Signature: `goal(prompt, condition, model="", effort="", max_rounds=10, ...)` |
+| `validate_and_retry` | Validation and retry: execute action, use llm to check result, retry if failed. Signature: `validate_and_retry(action, check, retry, max_retries=2)` |
+| `route` | Route selection: let llm choose one option from a list. Signature: `route(question, options, context="")` |
+| `conditional` | Conditional branch: llm judges condition (YES/NO) and executes corresponding branch. Signature: `conditional(condition, context="", if_true, if_false)` |
 | registered agentic functions | Every function in the `AGENTIC_MODULES` registry, callable by name. The planner's prompt carries this catalog. |
 
-The three tiers compose: goal is based on agent, agent is based on llm.
+The three tiers compose: goal is based on agent, agent is based on llm. Control flow primitives use llm for judgment, simplifying planner's code generation.
+
+**Control flow primitives example**:
+
+```python
+def workflow() -> str:
+    # Validation and retry: retry if first result doesn't satisfy check
+    files = validate_and_retry(
+        action=lambda: agent("Find auth related files"),
+        check="File count >= 3 and includes oauth",
+        retry=lambda: agent("Expand search to include oauth and openid files")
+    )
+    
+    # Route selection: let llm choose strategy
+    strategy = route(
+        question="Choose migration strategy",
+        options=["Direct migration", "Refactor then migrate"],
+        context=files
+    )
+    
+    # Conditional branch: execute different branches based on llm judgment
+    plan = conditional(
+        condition="strategy is direct migration",
+        context=strategy,
+        if_true=lambda: agent("Write direct migration plan: " + files),
+        if_false=lambda: agent("Write refactor plan: " + files)
+    )
+    
+    return plan
+```
 
 The module is validated before it runs: it must parse, it must define `workflow()`, and it must not import. Invalid code is sent back to the planner with the concrete error, as many times as it takes.
 
