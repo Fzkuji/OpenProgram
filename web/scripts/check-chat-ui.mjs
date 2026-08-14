@@ -664,8 +664,12 @@ assert.match(
   "the visual specification footer must remain outside the collapsible execution trace",
 );
 function assertPlainConclusionRules(css) {
-  const rules = [...css.matchAll(/([^{}]*\.runtime-program-conclusion[^{}]*)\{([^}]*)\}/g)];
-  assert.ok(rules.length > 0, "workflow Conclusion CSS rules must exist");
+  const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([_, selectors]) =>
+    selectors.split(",").some((selector) =>
+      /(?:^|[\s>+~])\.runtime-program-conclusion(?:\.[\w-]+)*$/.test(selector.trim()),
+    ),
+  );
+  assert.ok(rules.length > 0, "workflow Conclusion outer CSS rules must exist");
   for (const [_, selector, declarations] of rules) {
     assert.doesNotMatch(
       declarations,
@@ -681,6 +685,12 @@ assert.throws(
   ),
   /must render as ordinary chat content/,
   "the Conclusion style contract must reject error/cancelled quote-style variants",
+);
+assert.doesNotThrow(
+  () => assertPlainConclusionRules(
+    `${chatCss}\n.runtime-program-conclusion .message-content ul { padding-inline-start: 20px; }`,
+  ),
+  "semantic Markdown list indentation must remain valid inside Conclusion",
 );
 assert.match(
   chatCss,
