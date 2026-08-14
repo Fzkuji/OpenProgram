@@ -26,6 +26,14 @@ It tracks the bounded implementation, verification, and review evidence for the 
 - Tag `v0.6.5` remained immutable after run `31827207974` built both macOS Desktop artifacts but exposed that the packaged-runtime smoke script only parsed compact JSON while the runtime manifest is formatted JSON. All four complete runtime and CLI installer jobs passed; no GitHub Release was published from that tag.
 - The `v0.6.6` retry uses the same whitespace-tolerant manifest parser already used by runtime archiving and Desktop preparation, reports actionable failures, and adds a regression test for formatted manifests.
 
+### v0.6.6 formal release acceptance
+
+- Tag `v0.6.6` points to `d08486953e19cf168fd8aba0704fe968b2a7f3a8`; release run `31829278086` completed successfully without moving any earlier tag.
+- The stable GitHub Release was published at `https://github.com/Fzkuji/OpenProgram/releases/tag/v0.6.6` as a non-draft, non-prerelease release. It contains four complete runtime archives and checksums, unsigned macOS arm64/x64 DMG and ZIP artifacts and checksums, developer wheel/sdist artifacts, and `release-manifest.json`.
+- Native release acceptance passed for macOS arm64/x86_64 and Linux arm64/x86_64. Each runtime was assembled and archived on its native runner; all four CLI installer jobs verified checksum, extraction, complete-product capabilities, worker cold start, atomic activation, and launcher version. Both macOS Desktop jobs verified the same embedded runtime before uploading their artifacts.
+- Main CI run `31828655714` passed Python 3.11/3.12/3.13, Web, and documentation/example jobs. The documentation publication run `31828655717` also passed.
+- Post-release public-entry acceptance resolved `https://openprogram.io/install` through GitHub `latest` to `v0.6.6`, installed the macOS arm64 archive into an isolated state and launcher directory, reported `openprogram 0.6.6`, passed the installer's complete-runtime and `/healthz` probes, and passed `openprogram doctor`.
+
 ## Short public installer batch
 
 - Base commit: `c1886a3fdf7ba196c42ec9a2c19dca7fe86c12e7`.
@@ -36,7 +44,7 @@ It tracks the bounded implementation, verification, and review evidence for the 
 - Tests: execute the public root script with a fake `curl` for automatic latest-version resolution and explicit pinning, assert the tagged installer handoff, build the docs site, verify the assembled root file, and run the existing distribution release suite.
 - RED evidence: the two public-entry tests initially failed because the root bootstrap did not exist and the Pages workflow did not publish `/install`.
 - GREEN evidence: the distribution release file reports 25 passed; docs build reports 509 pages; landing check passes; link check reports 0 broken links; an assembled-site probe preserves `/docs/install/` and validates the root `/install` script.
-- Release-state evidence on 2026-08-15: GitHub `latest` resolves to `v0.6.0`, whose release has no assets and whose tag has no `scripts/install-release.sh`; `v0.6.1` has not been tagged. The bootstrap therefore fails without installing a reduced product until a complete release is published. This batch does not create or move a tag.
+- Pre-release evidence on 2026-08-15: GitHub `latest` initially resolved to `v0.6.0`, whose release had no assets and whose tag had no `scripts/install-release.sh`. The installer correctly failed instead of installing a reduced product. The `v0.6.6` formal release acceptance above supersedes that observed release state.
 
 ## Unified complete-product batch
 
