@@ -26,6 +26,7 @@ from .transaction import (
     git_commit_state,
     install_state,
     parse_sources,
+    preserve_creation_order,
     resolve_source_labels,
     source_records,
     workspace_revision,
@@ -234,6 +235,7 @@ class MemoryWorkspace(
                 )
             if self._tree_fingerprint(self.stage_dir / "sources") != before_sources:
                 raise ValueError("Source Memory is append-only")
+            preserve_creation_order(self, before_units)
             self._normalize_topic_edits(before_block_ids)
             staged_ids = {
                 unit.memory_id
@@ -472,7 +474,8 @@ class MemoryWorkspace(
                     allowed_removed = {
                         item.get("memory_id")
                         for item in resolved_memory_changes
-                        if isinstance(item, dict) and item.get("op") == "delete"
+                        if isinstance(item, dict)
+                        and item.get("op") in ("delete_record", "delete")
                     }
                 install_state(
                     self,

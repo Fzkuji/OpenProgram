@@ -294,7 +294,7 @@ UPDATE_DESC = (
     "the background, so use this only for what the user asked you to "
     "remember right now, or to fix something you can see is wrong. "
     "Use record-level memory_changes when one or more final memory records "
-    "are known. The Runtime creates, updates or deletes their Topic blocks "
+    "are known. The Runtime creates, updates, deletes or moves Topic records "
     "and rebuilds derived views. Structured whole-file changes and the older "
     "unified-diff patch form remain accepted for direct Markdown edits."
 )
@@ -322,19 +322,40 @@ UPDATE_SPEC: dict[str, Any] = {
             },
             "memory_changes": {
                 "type": "array",
-                "description": "atomic final-record create, update and delete",
+                "description": "atomic final-record CRUD and structural move",
                 "items": {
                     "type": "object",
                     "properties": {
                         "op": {
                             "type": "string",
-                            "enum": ["create", "update", "delete"],
+                            "enum": [
+                                "create_record",
+                                "update_record",
+                                "delete_record",
+                                "move_records",
+                            ],
                         },
                         "memory_id": {"type": "string"},
-                        "topic_path": {"type": "string"},
-                        "headings": {
+                        "memory_ids": {
                             "type": "array",
                             "items": {"type": "string"},
+                        },
+                        "destination": {
+                            "type": "object",
+                            "properties": {
+                                "topic_path": {"type": "string"},
+                                "headings": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                                "position": {
+                                    "type": "string",
+                                    "enum": ["start", "end", "before", "after"],
+                                },
+                                "anchor_memory_id": {"type": "string"},
+                            },
+                            "required": ["topic_path", "headings", "position"],
+                            "additionalProperties": False,
                         },
                         "content": {"type": "string"},
                         "time": {

@@ -1,9 +1,8 @@
 """Restricted changes for the memory write transaction.
 
 The public contract is a list of whole-file ``write`` and ``delete`` changes.
-Record-level create/update/delete and unified diff share the same staged Topic
-tree. Every form writes only text under ``topics/**``; none can rename files or
-alter filesystem metadata.
+Record-level CRUD/move and unified diff share the same staged Topic tree. Every
+form writes only text under ``topics/**``; none can alter filesystem metadata.
 """
 
 from __future__ import annotations
@@ -17,15 +16,19 @@ from ..markdown import (
     MEMORY_ID,
     definition_match,
     is_valid_temporal_value,
+    paragraph_spans,
     parse_topic_tree,
 )
 from ..markdown.syntax import (
     BLOCK_SUFFIX,
     CITATION_GROUP,
+    LINK,
     SINGLE_CITATION,
     render_definition,
+    source_reference,
 )
 from .transaction import TransactionError, validate_writable_path
+from .topic_normalization import prune_empty_topic_file
 
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 _REJECTED_HEADERS = (
@@ -58,11 +61,19 @@ class FileChange:
 
 
 @dataclass(frozen=True)
+class Destination:
+    topic_path: str
+    headings: tuple[str, ...] = ()
+    position: str = "end"
+    anchor_memory_id: str | None = None
+
+
+@dataclass(frozen=True)
 class MemoryChange:
     op: str
     memory_id: str | None = None
-    topic_path: str | None = None
-    headings: tuple[str, ...] = ()
+    memory_ids: tuple[str, ...] = ()
+    destination: Destination | None = None
     content: str | None = None
     when: str | None = None
     source_refs: tuple[str, ...] = ()
@@ -79,34 +90,43 @@ def apply_memory_changes(
     parsed = _parse_memory_changes(
         workspace, changes, max_changes=max_changes, max_bytes=max_bytes
     )
-    units = {
-        unit.memory_id: unit
-        for unit in parse_topic_tree(workspace.stage_dir / "topics")
-    }
     changed: set[str] = set()
-    for index, change in enumerate(parsed, start=1):
-        if change.op == "create":
-            assert change.topic_path and change.content is not None
-            path = workspace.stage_dir / change.topic_path
-            _append_record(path, change, _fresh_evidence_label(workspace, index))
-            changed.add(change.topic_path)
+    ordered = [
+        change for change in parsed if change.op != "move_records"
+    ] + [
+        change for change in parsed if change.op == "move_records"
+    ]
+    for index, change in enumerate(ordered, start=1):
+        if change.op == "create_record":
+            assert change.destination and change.content is not None
+            relative = change.destination.topic_path
+            path = workspace.stage_dir / relative
+            _insert_record(
+                workspace,
+                path,
+                change,
+                _fresh_evidence_label(workspace, index),
+            )
+            changed.add(relative)
+            continue
+        if change.op == "move_records":
+            changed.update(_move_records(workspace, change))
             continue
         assert change.memory_id
-        unit = units.get(change.memory_id)
-        if unit is None:
-            raise TransactionError(
-                "MEMORY_NOT_FOUND",
-                f"memory_id does not exist: {change.memory_id}",
-            )
-        relative = (Path("topics") / unit.topic_path).as_posix()
+        path, _headings, _start, _end, _ids, _citations = _locate_record(
+            workspace, change.memory_id
+        )
+        relative = path.relative_to(workspace.stage_dir).as_posix()
         _replace_record(
             workspace,
-            workspace.stage_dir / relative,
+            path,
             change,
             None
-            if change.op == "delete"
+            if change.op == "delete_record"
             else _fresh_evidence_label(workspace, index),
         )
+        if change.op == "delete_record":
+            prune_empty_topic_file(workspace.stage_dir / relative)
         changed.add(relative)
     return sorted(changed)
 
@@ -133,61 +153,156 @@ def _parse_memory_changes(
         unit.memory_id
         for unit in parse_topic_tree(workspace.stage_dir / "topics")
     }
-    alias_groups: dict[str, frozenset[str]] = {}
-    for path in (workspace.stage_dir / "topics").rglob("*.md"):
-        text = path.read_text(encoding="utf-8")
-        lines = text.splitlines()
-        for start, end in workspace._paragraph_spans(text):
-            paragraph = "\n".join(lines[start:end])
-            suffix = BLOCK_SUFFIX.search(paragraph)
-            if suffix is None:
-                continue
-            ids = frozenset(re.findall(
-                r"\^([A-Za-z0-9-]+)", paragraph[suffix.start():]
-            ))
-            for memory_id in ids:
-                alias_groups[memory_id] = ids
+    physical_groups = _physical_record_groups(workspace)
+    planned_deleted = {
+        item.get("memory_id")
+        for item in changes
+        if isinstance(item, dict)
+        and item.get("op") in ("delete_record", "delete")
+        and isinstance(item.get("memory_id"), str)
+    }
     parsed: list[MemoryChange] = []
-    targeted: set[str] = set()
+    content_targets: set[str] = set()
+    moved: set[str] = set()
     updated_groups: set[frozenset[str]] = set()
     total_bytes = 0
-    allowed = {
-        "op", "memory_id", "topic_path", "headings",
-        "content", "time", "source_refs",
-    }
+    operations = (
+        "create_record",
+        "update_record",
+        "delete_record",
+        "move_records",
+    )
     for index, item in enumerate(changes):
         prefix = f"memory_changes[{index}]"
         if not isinstance(item, dict):
             raise TransactionError(
                 "INVALID_ARGUMENT", f"{prefix} must be an object"
             )
-        for value in item.values():
-            if isinstance(value, str):
-                total_bytes += len(value.encode("utf-8"))
-            elif isinstance(value, list):
-                total_bytes += sum(
-                    len(element.encode("utf-8"))
-                    for element in value
-                    if isinstance(element, str)
-                )
+        total_bytes += _string_bytes(item)
         if total_bytes > max_bytes:
             raise TransactionError(
                 "INVALID_ARGUMENT", f"memory_changes exceed {max_bytes} bytes"
             )
+        legacy_op = item.get("op")
+        aliases = {
+            "create": "create_record",
+            "update": "update_record",
+            "delete": "delete_record",
+        }
+        if legacy_op in aliases:
+            item = dict(item)
+            item["op"] = aliases[legacy_op]
+            if legacy_op == "create":
+                item["destination"] = {
+                    "topic_path": item.pop("topic_path", None),
+                    "headings": item.pop("headings", []),
+                    "position": "end",
+                }
+        op = item.get("op")
+        if op not in operations:
+            raise TransactionError(
+                "INVALID_ARGUMENT",
+                f"{prefix}.op must be " + ", ".join(operations),
+            )
+        allowed = {
+            "create_record": {
+                "op", "content", "time", "source_refs", "destination",
+            },
+            "update_record": {
+                "op", "memory_id", "content", "time", "source_refs",
+            },
+            "delete_record": {"op", "memory_id"},
+            "move_records": {"op", "memory_ids", "destination"},
+        }[op]
         unknown = set(item) - allowed
         if unknown:
             raise TransactionError(
                 "INVALID_ARGUMENT",
                 f"{prefix} has unknown field: {sorted(unknown)[0]}",
             )
-        op = item.get("op")
-        if op not in ("create", "update", "delete"):
-            raise TransactionError(
-                "INVALID_ARGUMENT", f"{prefix}.op must be create, update or delete"
+        if op == "move_records":
+            raw_ids = item.get("memory_ids")
+            if (
+                not isinstance(raw_ids, list)
+                or not raw_ids
+                or any(
+                    not isinstance(value, str) or not value.strip()
+                    for value in raw_ids
+                )
+            ):
+                raise TransactionError(
+                    "INVALID_ARGUMENT",
+                    f"{prefix}.memory_ids must be a non-empty string list",
+                )
+            memory_ids = tuple(value.strip() for value in raw_ids)
+            if len(set(memory_ids)) != len(memory_ids):
+                raise TransactionError(
+                    "INVALID_ARGUMENT",
+                    f"{prefix}.memory_ids contains a duplicate",
+                )
+            selected = set(memory_ids)
+            for memory_id in memory_ids:
+                if memory_id not in existing:
+                    raise TransactionError(
+                        "MEMORY_NOT_FOUND",
+                        f"memory_id does not exist: {memory_id}",
+                    )
+                if memory_id in moved:
+                    raise TransactionError(
+                        "INVALID_ARGUMENT",
+                        f"duplicate moved memory_id: {memory_id}",
+                    )
+                if memory_id in planned_deleted:
+                    raise TransactionError(
+                        "INVALID_ARGUMENT",
+                        f"deleted memory_id cannot be moved: {memory_id}",
+                    )
+                group = physical_groups.get(memory_id, (memory_id,))
+                surviving_group = tuple(
+                    value for value in group if value not in planned_deleted
+                )
+                if not set(surviving_group) <= selected:
+                    raise TransactionError(
+                        "INVALID_ARGUMENT",
+                        "move_records must include every ID in a shared physical block",
+                    )
+            groups = {
+                tuple(
+                    value for value in physical_groups.get(
+                        memory_id, (memory_id,)
+                    )
+                    if value not in planned_deleted
+                )
+                for memory_id in memory_ids
+            }
+            for group in groups:
+                if len(group) < 2:
+                    continue
+                start = min(memory_ids.index(memory_id) for memory_id in group)
+                if memory_ids[start:start + len(group)] != group:
+                    raise TransactionError(
+                        "INVALID_ARGUMENT",
+                        "move_records must preserve shared physical block order",
+                    )
+            destination = _parse_destination(
+                item.get("destination"), prefix, existing
             )
+            if destination.anchor_memory_id in selected:
+                raise TransactionError(
+                    "INVALID_ARGUMENT",
+                    "move_records anchor_memory_id cannot be moved",
+                )
+            moved.update(memory_ids)
+            parsed.append(MemoryChange(
+                op=op,
+                memory_ids=memory_ids,
+                destination=destination,
+            ))
+            continue
+
         memory_id = item.get("memory_id")
-        if op == "create":
-            if memory_id is not None:
+        if op == "create_record":
+            if "memory_id" in item:
                 raise TransactionError(
                     "INVALID_ARGUMENT", f"{prefix}.memory_id is Runtime-assigned"
                 )
@@ -200,26 +315,28 @@ def _parse_memory_changes(
                 raise TransactionError(
                     "MEMORY_NOT_FOUND", f"memory_id does not exist: {memory_id}"
                 )
-            if memory_id in targeted:
+            if memory_id in content_targets:
                 raise TransactionError(
-                    "INVALID_ARGUMENT", f"duplicate memory_id: {memory_id}"
+                    "INVALID_ARGUMENT", f"duplicate content memory_id: {memory_id}"
                 )
-            targeted.add(memory_id)
-            if op == "update":
-                group = alias_groups.get(memory_id, frozenset({memory_id}))
+            content_targets.add(memory_id)
+            if op == "update_record":
+                group = frozenset(
+                    physical_groups.get(memory_id, (memory_id,))
+                )
                 if group in updated_groups:
                     raise TransactionError(
                         "INVALID_ARGUMENT",
                         "two updates target the same merged block",
                     )
                 updated_groups.add(group)
-        if op == "delete":
-            extras = set(item) - {"op", "memory_id"}
-            if extras:
-                raise TransactionError(
-                    "INVALID_ARGUMENT",
-                    f"{prefix}.{sorted(extras)[0]} is not allowed for delete",
-                )
+            else:
+                if memory_id in moved:
+                    raise TransactionError(
+                        "INVALID_ARGUMENT",
+                        f"moved memory_id cannot be deleted: {memory_id}",
+                    )
+        if op == "delete_record":
             parsed.append(MemoryChange(op=op, memory_id=memory_id))
             continue
 
@@ -266,49 +383,130 @@ def _parse_memory_changes(
                 "INVALID_ARGUMENT", f"{prefix}.source_refs contains a duplicate"
             )
 
-        topic_path = item.get("topic_path")
-        headings: tuple[str, ...] = ()
-        if op == "create":
-            if not isinstance(topic_path, str) or not topic_path.strip():
-                raise TransactionError(
-                    "INVALID_ARGUMENT", f"{prefix}.topic_path is required"
-                )
-            validate_writable_path(topic_path)
-            topic_path = Path(topic_path).as_posix()
-            raw_headings = item.get("headings", [])
-            if (
-                not isinstance(raw_headings, list)
-                or any(
-                    not isinstance(value, str)
-                    or not value.strip()
-                    or "\n" in value
-                    for value in raw_headings
-                )
-            ):
-                raise TransactionError(
-                    "INVALID_ARGUMENT", f"{prefix}.headings must be a string list"
-                )
-            if len(raw_headings) > 6:
-                raise TransactionError(
-                    "INVALID_ARGUMENT", f"{prefix}.headings has more than 6 levels"
-                )
-            headings = tuple(value.strip() for value in raw_headings)
-        elif "topic_path" in item or "headings" in item:
-            raise TransactionError(
-                "INVALID_ARGUMENT",
-                f"{prefix}.topic_path and headings are only allowed for create",
+        destination = None
+        if op == "create_record":
+            destination = _parse_destination(
+                item.get("destination"), prefix, existing
             )
-
         parsed.append(MemoryChange(
             op=op,
             memory_id=memory_id,
-            topic_path=topic_path,
-            headings=headings,
+            destination=destination,
             content=content,
             when=when,
             source_refs=refs,
         ))
     return parsed
+
+
+def _string_bytes(value: object) -> int:
+    if isinstance(value, str):
+        return len(value.encode("utf-8"))
+    if isinstance(value, list):
+        return sum(_string_bytes(item) for item in value)
+    if isinstance(value, dict):
+        return sum(_string_bytes(item) for item in value.values())
+    return 0
+
+
+def _parse_destination(
+    raw: object,
+    prefix: str,
+    existing_ids: set[str],
+) -> Destination:
+    field = f"{prefix}.destination"
+    if not isinstance(raw, dict):
+        raise TransactionError(
+            "INVALID_ARGUMENT", f"{field} must be an object"
+        )
+    required = {"topic_path", "headings", "position"}
+    missing = required - set(raw)
+    if missing:
+        raise TransactionError(
+            "INVALID_ARGUMENT",
+            f"{field}.{sorted(missing)[0]} is required",
+        )
+    unknown = set(raw) - {
+        "topic_path", "headings", "position", "anchor_memory_id",
+    }
+    if unknown:
+        raise TransactionError(
+            "INVALID_ARGUMENT",
+            f"{field} has unknown field: {sorted(unknown)[0]}",
+        )
+    topic_path = raw.get("topic_path")
+    if not isinstance(topic_path, str) or not topic_path.strip():
+        raise TransactionError(
+            "INVALID_ARGUMENT", f"{field}.topic_path is required"
+        )
+    validate_writable_path(topic_path)
+    topic_path = Path(topic_path).as_posix()
+    raw_headings = raw.get("headings")
+    if (
+        not isinstance(raw_headings, list)
+        or any(
+            not isinstance(value, str) or not value.strip() or "\n" in value
+            for value in raw_headings
+        )
+    ):
+        raise TransactionError(
+            "INVALID_ARGUMENT", f"{field}.headings must be a string list"
+        )
+    if len(raw_headings) > 6:
+        raise TransactionError(
+            "INVALID_ARGUMENT", f"{field}.headings has more than 6 levels"
+        )
+    position = raw.get("position")
+    if position not in ("start", "end", "before", "after"):
+        raise TransactionError(
+            "INVALID_ARGUMENT",
+            f"{field}.position must be start, end, before or after",
+        )
+    anchor = raw.get("anchor_memory_id")
+    if position in ("before", "after"):
+        if not isinstance(anchor, str) or not anchor.strip():
+            raise TransactionError(
+                "INVALID_ARGUMENT",
+                f"{field}.anchor_memory_id is required for {position}",
+            )
+        anchor = anchor.strip()
+        if anchor not in existing_ids:
+            raise TransactionError(
+                "MEMORY_NOT_FOUND", f"memory_id does not exist: {anchor}"
+            )
+    elif anchor is not None:
+        raise TransactionError(
+            "INVALID_ARGUMENT",
+            f"{field}.anchor_memory_id is only allowed for before or after",
+        )
+    return Destination(
+        topic_path=topic_path,
+        headings=tuple(value.strip() for value in raw_headings),
+        position=position,
+        anchor_memory_id=anchor,
+    )
+
+
+def _physical_record_groups(workspace: Any) -> dict[str, tuple[str, ...]]:
+    groups: dict[str, tuple[str, ...]] = {}
+    for path in (workspace.stage_dir / "topics").rglob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        for start, end in workspace._paragraph_spans(text):
+            paragraph = "\n".join(lines[start:end])
+            suffix = BLOCK_SUFFIX.search(paragraph)
+            if suffix is not None:
+                ids = tuple(re.findall(
+                    r"\^([A-Za-z0-9-]+)", paragraph[suffix.start():]
+                ))
+            else:
+                ids = tuple(
+                    value for value in SINGLE_CITATION.findall(paragraph)
+                    if re.fullmatch(MEMORY_ID, value)
+                )
+            for memory_id in ids:
+                groups[memory_id] = ids
+    return groups
 
 
 def _fresh_evidence_label(workspace: Any, index: int) -> str:
@@ -335,18 +533,283 @@ def _render_record(change: MemoryChange, label: str, suffix: str = "") -> list[s
     ]
 
 
-def _append_record(path: Path, change: MemoryChange, label: str) -> None:
+def _insert_record(
+    workspace: Any,
+    path: Path,
+    change: MemoryChange,
+    label: str,
+) -> None:
+    assert change.destination is not None
+    rendered = _render_record(change, label)
+    _insert_blocks(
+        workspace,
+        path,
+        change.destination,
+        ["\n".join(rendered[:-2])],
+        rendered[-1:],
+    )
+
+
+def _heading_rows(lines: list[str]) -> list[tuple[int, int, tuple[str, ...]]]:
+    rows: list[tuple[int, int, tuple[str, ...]]] = []
+    headings: list[str] = []
+    for index, line in enumerate(lines):
+        match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
+        if match is None:
+            continue
+        level = len(match.group(1))
+        headings = headings[: level - 1] + [match.group(2)]
+        rows.append((index, level, tuple(headings)))
+    return rows
+
+
+def _ensure_heading_section(path: Path, headings: tuple[str, ...]) -> list[str]:
     path.parent.mkdir(parents=True, exist_ok=True)
-    text = path.read_text(encoding="utf-8") if path.exists() else ""
-    lines = text.rstrip().splitlines()
-    for level, heading in enumerate(change.headings, start=1):
-        if lines and lines[-1].strip():
-            lines.append("")
-        lines.append(f"{'#' * level} {heading}")
-    if lines and lines[-1].strip():
-        lines.append("")
-    lines.extend(_render_record(change, label))
-    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    lines = (
+        path.read_text(encoding="utf-8").splitlines()
+        if path.exists()
+        else []
+    )
+    if not headings:
+        return lines
+    rows = _heading_rows(lines)
+    if any(row_path == headings for _index, _level, row_path in rows):
+        return lines
+    best: tuple[int, int, tuple[str, ...]] | None = None
+    for row in rows:
+        row_path = row[2]
+        if row_path == headings[: len(row_path)] and (
+            best is None or len(row_path) > len(best[2])
+        ):
+            best = row
+    insert_at = len(lines)
+    depth = 0
+    if best is not None:
+        depth = len(best[2])
+        for index, level, _row_path in rows:
+            if index > best[0] and level <= depth:
+                insert_at = index
+                break
+    heading_lines = [
+        f"{'#' * level} {headings[level - 1]}"
+        for level in range(depth + 1, len(headings) + 1)
+    ]
+    before = "\n".join(lines[:insert_at]).rstrip()
+    after = "\n".join(lines[insert_at:]).lstrip()
+    middle = "\n\n".join(heading_lines)
+    rendered = "\n\n".join(
+        part for part in (before, middle, after) if part
+    )
+    path.write_text(rendered.rstrip() + "\n", encoding="utf-8")
+    return path.read_text(encoding="utf-8").splitlines()
+
+
+def _section_bounds(
+    lines: list[str], headings: tuple[str, ...]
+) -> tuple[int, int]:
+    rows = _heading_rows(lines)
+    if not headings:
+        end = rows[0][0] if rows else len(lines)
+        return 0, end
+    for row_index, (index, _level, row_path) in enumerate(rows):
+        if row_path != headings:
+            continue
+        end = rows[row_index + 1][0] if row_index + 1 < len(rows) else len(lines)
+        return index + 1, end
+    raise TransactionError(
+        "INVALID_ARGUMENT", "destination heading path does not exist"
+    )
+
+
+def _insert_blocks(
+    workspace: Any,
+    path: Path,
+    destination: Destination,
+    paragraphs: list[str],
+    definitions: list[str],
+) -> None:
+    lines = _ensure_heading_section(path, destination.headings)
+    start, end = _section_bounds(lines, destination.headings)
+    insert_at = start if destination.position == "start" else end
+    if destination.position in ("before", "after"):
+        assert destination.anchor_memory_id
+        anchor_path, anchor_headings, anchor_start, anchor_end, _ids, _citations = (
+            _locate_record(workspace, destination.anchor_memory_id)
+        )
+        expected_topic = Path(destination.topic_path).relative_to("topics").as_posix()
+        actual_topic = anchor_path.relative_to(
+            workspace.stage_dir / "topics"
+        ).as_posix()
+        if actual_topic != expected_topic or anchor_headings != destination.headings:
+            raise TransactionError(
+                "INVALID_ARGUMENT",
+                "anchor_memory_id is not in the destination section",
+            )
+        insert_at = anchor_start if destination.position == "before" else anchor_end
+    existing_definitions = {
+        match.group("id"): line
+        for line in lines
+        if (match := definition_match(line))
+    }
+    inserted_definitions: list[str] = []
+    for line in definitions:
+        match = definition_match(line)
+        if match is None:
+            continue
+        citation_id = match.group("id")
+        existing = existing_definitions.get(citation_id)
+        if existing is not None:
+            if _definition_signature(existing) != _definition_signature(line):
+                raise TransactionError(
+                    "INVALID_ARGUMENT",
+                    f"evidence definition conflicts in destination: {citation_id}",
+                )
+            continue
+        existing_definitions[citation_id] = line
+        inserted_definitions.append(line)
+    definitions = inserted_definitions
+    block = "\n\n".join([*paragraphs, *definitions]).strip()
+    before = "\n".join(lines[:insert_at]).rstrip()
+    after = "\n".join(lines[insert_at:]).lstrip()
+    rendered = "\n\n".join(part for part in (before, block, after) if part)
+    path.write_text(rendered.rstrip() + "\n", encoding="utf-8")
+
+
+def _locate_record(
+    workspace: Any,
+    memory_id: str,
+) -> tuple[Path, tuple[str, ...], int, int, list[str], list[str]]:
+    for path in sorted((workspace.stage_dir / "topics").rglob("*.md")):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for start, end, headings in paragraph_spans(lines):
+            paragraph = "\n".join(lines[start:end])
+            suffix = BLOCK_SUFFIX.search(paragraph)
+            if suffix is not None:
+                ids = re.findall(
+                    r"\^([A-Za-z0-9-]+)", paragraph[suffix.start():]
+                )
+            else:
+                ids = [
+                    value for value in SINGLE_CITATION.findall(paragraph)
+                    if re.fullmatch(MEMORY_ID, value)
+                ]
+            if memory_id in ids:
+                return (
+                    path,
+                    headings,
+                    start,
+                    end,
+                    ids,
+                    list(SINGLE_CITATION.findall(paragraph)),
+                )
+    raise TransactionError(
+        "MEMORY_NOT_FOUND", f"memory_id does not exist: {memory_id}"
+    )
+
+
+def _definition_signature(line: str) -> tuple[str, tuple[str, ...]]:
+    """Compare evidence semantics independently of relative link targets."""
+    match = definition_match(line)
+    assert match is not None
+    sources = match.group("sources")
+    references = tuple(
+        source_reference(label, target) for label, target in LINK.findall(sources)
+    )
+    if not references:
+        references = tuple(
+            value.strip()
+            for value in re.split(r"\s*(?:,|·)\s*", sources)
+            if value.strip()
+        )
+    return match.group("when"), references
+
+
+def _move_records(workspace: Any, change: MemoryChange) -> set[str]:
+    assert change.destination is not None
+    selected = set(change.memory_ids)
+    blocks: list[tuple[Path, int, int, str, tuple[str, ...]]] = []
+    seen_blocks: set[tuple[Path, int, int]] = set()
+    definition_lines: list[str] = []
+    seen_definitions: dict[str, str] = {}
+    for memory_id in change.memory_ids:
+        path, _headings, start, end, ids, citations = _locate_record(
+            workspace, memory_id
+        )
+        text = path.read_text(encoding="utf-8")
+        if not set(ids) <= selected:
+            raise TransactionError(
+                "INVALID_ARGUMENT",
+                "move_records must include every ID in a shared physical block",
+            )
+        key = (path, start, end)
+        if key in seen_blocks:
+            continue
+        seen_blocks.add(key)
+        lines = text.splitlines()
+        blocks.append((path, start, end, "\n".join(lines[start:end]), tuple(citations)))
+        definitions = {
+            match.group("id"): line
+            for line in lines
+            if (match := definition_match(line))
+        }
+        for citation in citations:
+            if citation not in definitions:
+                continue
+            definition = definitions[citation]
+            existing = seen_definitions.get(citation)
+            if existing is not None:
+                if _definition_signature(existing) != _definition_signature(
+                    definition
+                ):
+                    raise TransactionError(
+                        "INVALID_ARGUMENT",
+                        f"evidence definition conflicts across sources: {citation}",
+                    )
+                continue
+            definition_lines.append(definition)
+            seen_definitions[citation] = definition
+
+    by_path: dict[Path, list[tuple[int, int, tuple[str, ...]]]] = {}
+    for path, start, end, _paragraph, citations in blocks:
+        by_path.setdefault(path, []).append((start, end, citations))
+    changed: set[str] = set()
+    for path, spans in by_path.items():
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for start, end, _citations in sorted(spans, reverse=True):
+            del lines[start:end]
+        moved_citations = {
+            citation for _start, _end, citations in spans for citation in citations
+        }
+        remaining_citations = {
+            citation
+            for start, end, _headings in paragraph_spans(lines)
+            for citation in SINGLE_CITATION.findall(
+                "\n".join(lines[start:end])
+            )
+        }
+        lines = [
+            line for line in lines
+            if not (
+                (match := definition_match(line))
+                and match.group("id") in moved_citations
+                and match.group("id") not in remaining_citations
+            )
+        ]
+        path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+        changed.add(path.relative_to(workspace.stage_dir).as_posix())
+
+    destination_path = workspace.stage_dir / change.destination.topic_path
+    _insert_blocks(
+        workspace,
+        destination_path,
+        change.destination,
+        [paragraph for _path, _start, _end, paragraph, _citations in blocks],
+        definition_lines,
+    )
+    for path in by_path:
+        prune_empty_topic_file(path)
+    changed.add(change.destination.topic_path)
+    return changed
 
 
 def _record_span(workspace: Any, text: str, memory_id: str):
@@ -394,7 +857,7 @@ def _replace_legacy_record(
             for memory_id in ids:
                 if memory_id == change.memory_id:
                     found = True
-                    if change.op == "update":
+                    if change.op == "update_record":
                         assert change.content is not None
                         records.append(f"{change.content}[^{memory_id}]")
                 else:
@@ -403,12 +866,8 @@ def _replace_legacy_record(
         if not found:
             continue
         tail = paragraph[cursor:].strip()
-        if change.op == "delete" and not records and tail:
-            raise TransactionError(
-                "INVALID_ARGUMENT",
-                "deleting this legacy memory would remove unbound prose; "
-                "use direct file editing",
-            )
+        if change.op == "delete_record" and not records:
+            tail = ""
         replacement = " ".join(records)
         if replacement and tail:
             replacement += f" {tail}"
@@ -418,7 +877,7 @@ def _replace_legacy_record(
             match = definition_match(line)
             if match is None or match.group("id") != change.memory_id:
                 rendered_lines.append(line)
-            elif change.op == "update":
+            elif change.op == "update_record":
                 rendered_lines.append(render_definition(
                     change.memory_id, change.when, change.source_refs
                 ))
@@ -447,7 +906,7 @@ def _replace_record(
             raise
         return
     lines = text.splitlines()
-    if change.op == "delete" and len(ids) > 1:
+    if change.op == "delete_record" and len(ids) > 1:
         paragraph = "\n".join(lines[start:end])
         suffix = BLOCK_SUFFIX.search(paragraph)
         assert suffix is not None
@@ -479,7 +938,7 @@ def _replace_record(
         workspace, text, change.memory_id
     )
     replacement = []
-    if change.op == "update":
+    if change.op == "update_record":
         assert label is not None
         replacement = _render_record(
             change, label, "".join(f" ^{value}" for value in ids)

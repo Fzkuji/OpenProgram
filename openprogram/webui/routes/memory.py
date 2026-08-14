@@ -148,6 +148,7 @@ def register(app):
             with closing(MemoryWorkspace(store.ensure())) as workspace:
                 result = workspace.update(
                     base_revision=payload.get("base_revision", ""),
+                    patch=payload.get("patch", ""),
                     changes=payload.get("changes"),
                     memory_changes=payload.get("memory_changes"),
                     sources=sources,

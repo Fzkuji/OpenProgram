@@ -471,6 +471,18 @@ def committed_baseline(workspace: Any) -> tuple[list[Any], set[str]]:
     return units, {unit.memory_id for unit in units}
 
 
+def preserve_creation_order(workspace: Any, before_units: list[Any]) -> None:
+    """Seed a new Runtime state from the committed Topic order."""
+    state_store = RuntimeStateStore(workspace.stage_dir)
+    state = state_store.load()
+    if state.creation_order:
+        return
+    state.creation_order = {
+        unit.memory_id: unit.created_order for unit in before_units
+    }
+    state_store.save(state)
+
+
 def install_state(
     workspace: Any,
     before_units: list[Any],
@@ -482,6 +494,7 @@ def install_state(
 
     Mirrors the successful branch of ``MemoryWorkspace.shell()``.
     """
+    preserve_creation_order(workspace, before_units)
     workspace._normalize_topic_edits(before_block_ids)
     required_ids = before_block_ids
     if isinstance(allow_removed, set):

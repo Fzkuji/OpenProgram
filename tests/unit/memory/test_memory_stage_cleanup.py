@@ -140,7 +140,7 @@ def test_memory_update_accepts_record_changes(memory, monkeypatch):
     accepted = json.loads(memory_tools.memory_update(
         base_revision=revision,
         memory_changes=[{
-            "op": "update",
+            "op": "update_record",
             "memory_id": "abc12345",
             "content": "Updated as one record.",
             "time": "2026-02-01",

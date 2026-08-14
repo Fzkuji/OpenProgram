@@ -259,12 +259,15 @@ def test_record_changes_api_creates_a_memory_and_derived_views(client, memory):
     response = client.post("/api/memory/changes", json={
         "base_revision": workspace_revision(memory),
         "memory_changes": [{
-            "op": "create",
-            "topic_path": "topics/from-api.md",
-            "headings": ["API"],
+            "op": "create_record",
             "content": "Created through the record API.",
             "time": "2026-08-15",
             "source_refs": ["new-source-record"],
+            "destination": {
+                "topic_path": "topics/from-api.md",
+                "headings": ["API"],
+                "position": "end",
+            },
         }],
         "sources": [{
             "label": "new-source-record",
@@ -305,6 +308,16 @@ def test_memory_update_schema_constructs_a_google_function_declaration():
     )
 
     assert declaration.name == "memory_update"
+    item = UPDATE_SPEC["parameters"]["properties"]["memory_changes"]["items"]
+    assert item["properties"]["op"]["enum"] == [
+        "create_record",
+        "update_record",
+        "delete_record",
+        "move_records",
+    ]
+    assert item["properties"]["destination"]["properties"]["position"][
+        "enum"
+    ] == ["start", "end", "before", "after"]
 
 
 def test_structured_changes_api_reports_stale_revision(client, memory):
@@ -316,6 +329,34 @@ def test_structured_changes_api_reports_stale_revision(client, memory):
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "CONCURRENT_UPDATE"
     assert (memory / "topics/note.md").is_file()
+
+
+def test_memory_changes_api_accepts_the_compatible_unified_diff(client, memory):
+    from openprogram.memory.management.transaction import workspace_revision
+
+    original = (memory / "topics/note.md").read_text(encoding="utf-8")
+    updated = original.replace("A fact", "A corrected fact")
+    response = client.post("/api/memory/changes", json={
+        "base_revision": workspace_revision(memory),
+        "patch": (
+            "--- a/topics/note.md\n"
+            "+++ b/topics/note.md\n"
+            "@@ -1,5 +1,5 @@\n"
+            + "".join(
+                ("-" if old != new else " ") + old
+                + (("+" + new) if old != new else "")
+                for old, new in zip(
+                    original.splitlines(keepends=True),
+                    updated.splitlines(keepends=True),
+                )
+            )
+        ),
+    })
+
+    assert response.status_code == 200, response.text
+    assert "A corrected fact" in (
+        memory / "topics/note.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_structured_changes_api_requires_base_revision(client, memory):

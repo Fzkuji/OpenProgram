@@ -263,6 +263,55 @@ def test_direct_file_edit_rebuilds_derived_views(tmp_path):
     assert (root / "relations.json").is_file()
 
 
+def test_direct_file_edit_prunes_a_topic_with_no_remaining_records(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+
+    root = _root(tmp_path)
+    with closing(MemoryWorkspace(root)) as workspace:
+        baseline = workspace.baseline()
+        (workspace.stage_dir / "topics/note.md").write_text(
+            "# Note\n", encoding="utf-8"
+        )
+        workspace.commit_edits(*baseline)
+
+    assert not (root / "topics/note.md").exists()
+
+
+def test_first_direct_file_reorder_preserves_recent_creation_order(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import parse_topic_tree
+
+    root = _root(tmp_path)
+    before = {
+        unit.memory_id: unit.created_order
+        for unit in parse_topic_tree(root / "topics")
+    }
+    reordered = (
+        "# Reordered\n\n"
+        + SECOND.split("\n\n", 1)[1].strip()
+        + "\n\n"
+        + NOTE.split("\n\n", 1)[1].strip()
+        + "\n"
+    )
+    with closing(MemoryWorkspace(root)) as workspace:
+        baseline = workspace.baseline()
+        (workspace.stage_dir / "topics/note.md").unlink()
+        (workspace.stage_dir / "topics/second.md").unlink()
+        (workspace.stage_dir / "topics/reordered.md").write_text(
+            reordered, encoding="utf-8"
+        )
+        workspace.commit_edits(*baseline)
+
+    after = {
+        row["memory_id"]: row["created_order"]
+        for row in map(
+            json.loads,
+            (root / "recent_events.jsonl").read_text().splitlines(),
+        )
+    }
+    assert after == before
+
+
 def test_record_changes_create_update_delete_and_rebuild_views(tmp_path):
     from openprogram.memory.management import MemoryWorkspace
     from openprogram.memory.markdown import parse_topic_tree
@@ -719,11 +768,10 @@ def test_record_update_can_link_to_a_legacy_memory_id(tmp_path):
     assert units["abc12345"].relation_targets == ("mem_first",)
 
 
-def test_record_delete_rejects_last_legacy_unit_with_unbound_trailing_prose(
+def test_record_delete_removes_last_legacy_unit_with_unbound_trailing_prose(
     tmp_path,
 ):
     from openprogram.memory.management import MemoryWorkspace
-    from openprogram.memory.management.transaction import TransactionError
 
     root = _root(tmp_path)
     legacy = (
@@ -733,15 +781,527 @@ def test_record_delete_rejects_last_legacy_unit_with_unbound_trailing_prose(
     )
     (root / "topics/note.md").write_text(legacy, encoding="utf-8")
     with closing(MemoryWorkspace(root)) as workspace:
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{"op": "delete", "memory_id": "mem_old"}],
+            git_commit="off",
+        )
+
+    assert not (root / "topics/note.md").exists()
+
+
+def test_standard_record_operations_keep_pre_release_aliases_compatible(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import parse_topic_tree
+
+    root = _root(tmp_path)
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{
+                "op": "update",
+                "memory_id": "abc12345",
+                "content": "Legacy alias input.",
+                "time": "2026-08-15",
+                "source_refs": ["D1:1"],
+            }],
+            git_commit="off",
+        )
+
+    unit = {
+        unit.memory_id: unit for unit in parse_topic_tree(root / "topics")
+    }["abc12345"]
+    assert unit.content == "Legacy alias input."
+
+
+def test_create_record_inserts_before_an_anchor_in_an_existing_section(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import parse_topic_tree
+
+    root = _root(tmp_path)
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{
+                "op": "create_record",
+                "content": "Inserted before the existing record.",
+                "time": "2026-08-15",
+                "source_refs": ["D1:1"],
+                "destination": {
+                    "topic_path": "topics/note.md",
+                    "headings": ["Note"],
+                    "position": "before",
+                    "anchor_memory_id": "abc12345",
+                },
+            }],
+            git_commit="off",
+        )
+
+    units = [
+        unit for unit in parse_topic_tree(root / "topics")
+        if unit.topic_path == "note.md"
+    ]
+    assert [unit.content for unit in units] == [
+        "Inserted before the existing record.",
+        "A fact worth keeping.",
+    ]
+    assert units[0].headings == ("Note",)
+
+
+@pytest.mark.parametrize("missing", ["headings", "position"])
+def test_standard_destination_requires_every_schema_field(tmp_path, missing):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.transaction import TransactionError
+
+    root = _root(tmp_path)
+    destination = {
+        "topic_path": "topics/new.md",
+        "headings": [],
+        "position": "end",
+    }
+    destination.pop(missing)
+    with closing(MemoryWorkspace(root)) as workspace:
+        with pytest.raises(TransactionError, match=missing):
+            workspace.update(
+                base_revision=workspace.revision(),
+                memory_changes=[{
+                    "op": "create_record",
+                    "content": "Incomplete destination.",
+                    "time": "2026-08-15",
+                    "source_refs": ["D1:1"],
+                    "destination": destination,
+                }],
+                git_commit="off",
+            )
+
+
+def test_move_records_moves_a_batch_in_declared_order_and_prunes_sources(
+    tmp_path,
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import parse_topic_tree
+
+    root = _root(tmp_path)
+    (root / "topics/other.md").write_text(LINKING, encoding="utf-8")
+    before = {
+        unit.memory_id: unit.created_order
+        for unit in parse_topic_tree(root / "topics")
+    }
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{
+                "op": "move_records",
+                "memory_ids": ["def45678", "abc12345"],
+                "destination": {
+                    "topic_path": "topics/archive/grouped.md",
+                    "headings": ["Grouped", "Selected"],
+                    "position": "end",
+                },
+            }],
+            git_commit="off",
+        )
+
+    units = [
+        unit for unit in parse_topic_tree(root / "topics")
+        if unit.topic_path == "archive/grouped.md"
+    ]
+    assert [unit.memory_id for unit in units] == ["def45678", "abc12345"]
+    assert all(unit.headings == ("Grouped", "Selected") for unit in units)
+    assert not (root / "topics/note.md").exists()
+    assert not (root / "topics/second.md").exists()
+    grouped = (root / "topics/archive/grouped.md").read_text(encoding="utf-8")
+    assert "../../sources/D1.md#d1-1" in grouped
+    assert "archive/grouped.md#^abc12345" in (
+        root / "topics/other.md"
+    ).read_text(encoding="utf-8")
+    after = {
+        row["memory_id"]: row["created_order"]
+        for row in map(
+            json.loads,
+            (root / "recent_events.jsonl").read_text().splitlines(),
+        )
+    }
+    assert after == before
+
+
+def test_update_and_move_can_target_the_same_record(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import parse_topic_tree
+
+    root = _root(tmp_path)
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[
+                {
+                    "op": "update_record",
+                    "memory_id": "abc12345",
+                    "content": "Updated and moved.",
+                    "time": "2026-08-15",
+                    "source_refs": ["D1:1"],
+                },
+                {
+                    "op": "move_records",
+                    "memory_ids": ["abc12345"],
+                    "destination": {
+                        "topic_path": "topics/destination.md",
+                        "headings": ["Destination"],
+                        "position": "start",
+                    },
+                },
+            ],
+            git_commit="off",
+        )
+
+    unit = {
+        unit.memory_id: unit for unit in parse_topic_tree(root / "topics")
+    }["abc12345"]
+    assert unit.topic_path == "destination.md"
+    assert unit.content == "Updated and moved."
+    assert unit.when == "2026-08-15"
+
+
+def test_move_records_rejects_part_of_a_shared_physical_block_atomically(
+    tmp_path,
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.transaction import TransactionError
+
+    root = _root(tmp_path)
+    (root / "topics/note.md").write_text(MERGED, encoding="utf-8")
+    (root / "topics/second.md").unlink()
+    before = (root / "topics/note.md").read_bytes()
+    with closing(MemoryWorkspace(root)) as workspace:
         revision = workspace.revision()
-        with pytest.raises(TransactionError) as caught:
+        with pytest.raises(TransactionError, match="physical block"):
             workspace.update(
                 base_revision=revision,
-                memory_changes=[{"op": "delete", "memory_id": "mem_old"}],
+                memory_changes=[{
+                    "op": "move_records",
+                    "memory_ids": ["abc12345"],
+                    "destination": {
+                        "topic_path": "topics/destination.md",
+                        "headings": ["Destination"],
+                        "position": "end",
+                    },
+                }],
                 git_commit="off",
             )
         assert workspace.revision() == revision
 
-    assert caught.value.code == "INVALID_ARGUMENT"
-    assert "direct file editing" in caught.value.message
-    assert (root / "topics/note.md").read_text(encoding="utf-8") == legacy
+    assert (root / "topics/note.md").read_bytes() == before
+    assert not (root / "topics/destination.md").exists()
+
+
+def test_move_records_rejects_reversing_ids_in_a_shared_physical_block(
+    tmp_path,
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.transaction import TransactionError
+
+    root = _root(tmp_path)
+    (root / "topics/note.md").write_text(MERGED, encoding="utf-8")
+    (root / "topics/second.md").unlink()
+    with closing(MemoryWorkspace(root)) as workspace:
+        revision = workspace.revision()
+        with pytest.raises(TransactionError, match="physical block order"):
+            workspace.update(
+                base_revision=revision,
+                memory_changes=[{
+                    "op": "move_records",
+                    "memory_ids": ["def45678", "abc12345"],
+                    "destination": {
+                        "topic_path": "topics/destination.md",
+                        "headings": ["Destination"],
+                        "position": "end",
+                    },
+                }],
+                git_commit="off",
+            )
+        assert workspace.revision() == revision
+
+
+def test_delete_alias_then_move_the_surviving_record_in_one_transaction(
+    tmp_path,
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import parse_topic_tree
+
+    root = _root(tmp_path)
+    (root / "topics/note.md").write_text(MERGED, encoding="utf-8")
+    (root / "topics/second.md").unlink()
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[
+                {"op": "delete_record", "memory_id": "abc12345"},
+                {
+                    "op": "move_records",
+                    "memory_ids": ["def45678"],
+                    "destination": {
+                        "topic_path": "topics/destination.md",
+                        "headings": ["Destination"],
+                        "position": "end",
+                    },
+                },
+            ],
+            git_commit="off",
+        )
+
+    units = parse_topic_tree(root / "topics")
+    assert [unit.memory_id for unit in units] == ["def45678"]
+    assert units[0].topic_path == "destination.md"
+
+
+def test_move_records_rejects_a_conflicting_destination_evidence_definition(
+    tmp_path,
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.transaction import TransactionError
+
+    root = _root(tmp_path)
+    (root / "topics/note.md").unlink()
+    (root / "topics/second.md").unlink()
+    first = (
+        "# A\n\nAlpha.[^e-collision] ^aaaaaaaa\n\n"
+        "[^e-collision]: Time: `2026-01-01`; "
+        "Sources: [D1:1](../sources/D1.md#d1-1)\n"
+    )
+    second = (
+        "# B\n\nBeta.[^e-collision] ^bbbbbbbb\n\n"
+        "[^e-collision]: Time: `2026-02-02`; "
+        "Sources: [D1:1](../sources/D1.md#d1-1)\n"
+    )
+    (root / "topics/a.md").write_text(first, encoding="utf-8")
+    (root / "topics/b.md").write_text(second, encoding="utf-8")
+    before = {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file() and ".scriptorium" not in path.parts
+    }
+    with closing(MemoryWorkspace(root)) as workspace:
+        revision = workspace.revision()
+        with pytest.raises(TransactionError, match="evidence definition conflicts"):
+            workspace.update(
+                base_revision=revision,
+                memory_changes=[{
+                    "op": "move_records",
+                    "memory_ids": ["aaaaaaaa"],
+                    "destination": {
+                        "topic_path": "topics/b.md",
+                        "headings": ["B"],
+                        "position": "end",
+                    },
+                }],
+                git_commit="off",
+            )
+        assert workspace.revision() == revision
+
+    after = {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file() and ".scriptorium" not in path.parts
+    }
+    assert after == before
+
+
+def test_move_records_preserves_a_referenced_definition_in_an_empty_section(
+    tmp_path,
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import parse_topic_tree
+
+    root = _root(tmp_path)
+    (root / "topics/note.md").unlink()
+    (root / "topics/second.md").unlink()
+    centralized = (
+        "# A\n\nOne.[^e-one] ^aaaaaaaa\n\n"
+        "# B\n\nTwo.[^e-two] ^bbbbbbbb\n\n"
+        "# References\n\n"
+        "[^e-one]: Time: `2026-01-01`; "
+        "Sources: [D1:1](../sources/D1.md#d1-1)\n"
+        "[^e-two]: Time: `2026-01-02`; "
+        "Sources: [D1:1](../sources/D1.md#d1-1)\n"
+    )
+    (root / "topics/a.md").write_text(centralized, encoding="utf-8")
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{
+                "op": "move_records",
+                "memory_ids": ["bbbbbbbb"],
+                "destination": {
+                    "topic_path": "topics/d.md",
+                    "headings": ["D"],
+                    "position": "end",
+                },
+            }],
+            git_commit="off",
+        )
+
+    units = {unit.memory_id: unit for unit in parse_topic_tree(root / "topics")}
+    assert units["aaaaaaaa"].topic_path == "a.md"
+    assert units["bbbbbbbb"].topic_path == "d.md"
+    source = (root / "topics/a.md").read_text(encoding="utf-8")
+    assert "[^e-one]:" in source
+    assert "# References" not in source
+
+
+def test_move_records_rejects_conflicting_evidence_across_source_topics(
+    tmp_path,
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.transaction import TransactionError
+
+    root = _root(tmp_path)
+    (root / "topics/note.md").unlink()
+    (root / "topics/second.md").unlink()
+    first = (
+        "# A\n\nAlpha.[^e-collision] ^aaaaaaaa\n\n"
+        "[^e-collision]: Time: `2026-01-01`; "
+        "Sources: [D1:1](../sources/D1.md#d1-1)\n"
+    )
+    second = (
+        "# B\n\nBeta.[^e-collision] ^bbbbbbbb\n\n"
+        "[^e-collision]: Time: `2026-02-02`; "
+        "Sources: [D1:1](../sources/D1.md#d1-1)\n"
+    )
+    (root / "topics/a.md").write_text(first, encoding="utf-8")
+    (root / "topics/b.md").write_text(second, encoding="utf-8")
+    with closing(MemoryWorkspace(root)) as workspace:
+        revision = workspace.revision()
+        with pytest.raises(TransactionError, match="conflicts across sources"):
+            workspace.update(
+                base_revision=revision,
+                memory_changes=[{
+                    "op": "move_records",
+                    "memory_ids": ["aaaaaaaa", "bbbbbbbb"],
+                    "destination": {
+                        "topic_path": "topics/c.md",
+                        "headings": ["C"],
+                        "position": "end",
+                    },
+                }],
+                git_commit="off",
+            )
+        assert workspace.revision() == revision
+
+    assert not (root / "topics/c.md").exists()
+
+
+def test_delete_record_removes_a_topic_when_its_last_record_is_deleted(
+    tmp_path,
+):
+    from openprogram.memory.management import MemoryWorkspace
+
+    root = _root(tmp_path)
+    legacy = (
+        "# Legacy\n\nLegacy.[^mem_old] trailing prose\n\n"
+        "[^mem_old]: Time: `2026-01-12`; "
+        "Sources: [D1:1](../sources/D1.md#d1-1)\n"
+    )
+    (root / "topics/note.md").write_text(legacy, encoding="utf-8")
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{
+                "op": "delete_record",
+                "memory_id": "mem_old",
+            }],
+            git_commit="off",
+        )
+
+    assert not (root / "topics/note.md").exists()
+
+
+def test_move_records_reorders_records_after_an_anchor_in_the_same_section(
+    tmp_path,
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import parse_topic_tree
+
+    root = _root(tmp_path)
+    same_section = (
+        "# Note\n\n"
+        "First.[^e-first] ^abc12345\n\n"
+        "Second.[^e-second] ^def45678\n\n"
+        "[^e-first]: Time: `2026-01-01`; "
+        "Sources: [D1:1](../sources/D1.md#d1-1)\n"
+        "[^e-second]: Time: `2026-01-02`; "
+        "Sources: [D1:1](../sources/D1.md#d1-1)\n"
+    )
+    (root / "topics/note.md").write_text(same_section, encoding="utf-8")
+    (root / "topics/second.md").unlink()
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{
+                "op": "move_records",
+                "memory_ids": ["abc12345"],
+                "destination": {
+                    "topic_path": "topics/note.md",
+                    "headings": ["Note"],
+                    "position": "after",
+                    "anchor_memory_id": "def45678",
+                },
+            }],
+            git_commit="off",
+        )
+
+    assert [
+        unit.memory_id for unit in parse_topic_tree(root / "topics")
+    ] == ["def45678", "abc12345"]
+
+
+def test_move_records_rejects_an_anchor_outside_the_destination_section(
+    tmp_path,
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.transaction import TransactionError
+
+    root = _root(tmp_path)
+    before = (root / "topics/note.md").read_bytes()
+    with closing(MemoryWorkspace(root)) as workspace:
+        revision = workspace.revision()
+        with pytest.raises(TransactionError, match="destination section"):
+            workspace.update(
+                base_revision=revision,
+                memory_changes=[{
+                    "op": "move_records",
+                    "memory_ids": ["abc12345"],
+                    "destination": {
+                        "topic_path": "topics/second.md",
+                        "headings": ["Wrong heading"],
+                        "position": "before",
+                        "anchor_memory_id": "def45678",
+                    },
+                }],
+                git_commit="off",
+            )
+        assert workspace.revision() == revision
+
+    assert (root / "topics/note.md").read_bytes() == before
+
+
+def test_delete_record_removes_the_stale_derived_core_view(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+
+    root = _root(tmp_path)
+    core_topic = NOTE.replace("# Note", "# Core").replace(
+        "abc12345", "core12345"
+    )
+    (root / "topics/core.md").write_text(core_topic, encoding="utf-8")
+    (root / "core.md").write_text("stale core\n", encoding="utf-8")
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{
+                "op": "delete_record",
+                "memory_id": "core12345",
+            }],
+            git_commit="off",
+        )
+
+    assert not (root / "topics/core.md").exists()
+    assert not (root / "core.md").exists()
