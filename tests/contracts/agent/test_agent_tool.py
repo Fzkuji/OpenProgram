@@ -235,15 +235,15 @@ def test_agent_exposes_start_from_to_the_llm():
     assert "context" not in props
 
 
-def test_no_tool_declares_a_parameter_the_runtime_drops():
+def test_no_function_tool_declares_a_parameter_the_runtime_drops():
     """Repo-wide guard for the same class of bug.
 
-    ``ctx`` and ``context`` are stripped from every generated schema and
-    never injected back, so a tool parameter with either name is dead on
-    arrival: the LLM cannot set it and the framework never fills it in.
+    ``ctx`` and ``context`` are stripped from every ``@function`` schema
+    and never injected back, so a tool parameter with either name is dead
+    on arrival: the LLM cannot set it and the framework never fills it in.
     (``cancel`` / ``on_update`` are stripped *and* injected, so they stay
-    legal.) Cheap AST sweep over every ``@function`` /
-    ``@agentic_function`` definition in the package.
+    legal.) ``@agentic_function`` uses a separate schema generator and
+    intentionally exposes ordinary parameters with these names.
 
     Scope is "the .py files this repo owns", which git already answers
     exactly: tracked files plus untracked ones .gitignore does not hide.
@@ -293,7 +293,7 @@ def test_no_tool_declares_a_parameter_the_runtime_drops():
             for d in node.decorator_list:
                 f = d.func if isinstance(d, ast.Call) else d
                 decorators.add(getattr(f, "id", None) or getattr(f, "attr", None))
-            if not decorators & {"function", "agentic_function"}:
+            if "function" not in decorators:
                 continue
             swept += 1
             args = {a.arg for a in node.args.args + node.args.kwonlyargs}
@@ -307,6 +307,28 @@ def test_no_tool_declares_a_parameter_the_runtime_drops():
         "these tool parameters never reach the model and are never "
         f"injected by the framework — rename them: {offenders}"
     )
+
+
+def test_agentic_function_ctx_and_context_parameters_are_llm_controllable():
+    import asyncio
+
+    from openprogram.agentic_programming.function import agentic_function
+
+    @agentic_function(register_globally=False)
+    def sample(ctx: str, context: str) -> str:
+        return f"{ctx}:{context}"
+
+    for parameters in (sample.spec["parameters"], sample._agent_tool.parameters):
+        for name in ("ctx", "context"):
+            assert parameters["properties"][name] == {"type": "string"}
+            assert name in parameters["required"]
+
+    result = asyncio.run(
+        sample._agent_tool.execute(
+            "probe", {"ctx": "left", "context": "right"}, None, None
+        )
+    )
+    assert result.content[0].text == "left:right"
 
 
 # --------------------------------------------------------------------------

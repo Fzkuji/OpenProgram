@@ -16,8 +16,9 @@ def tracked_python_files(root: Path) -> tuple[Path, ...]:
         check=True,
         capture_output=True,
     )
-    return tuple(
+    paths = (
         ROOT / path.decode()
         for path in result.stdout.split(b"\0")
         if path.endswith(b".py")
     )
+    return tuple(path for path in paths if path.is_file())

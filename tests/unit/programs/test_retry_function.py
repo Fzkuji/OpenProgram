@@ -230,7 +230,6 @@ def test_new_run_rejected_while_run_active(monkeypatch):
         "openprogram.webui.server._get_or_create_session",
         lambda sid=None, **k: {"id": sid or "s1", "last_workdirs": {}},
     )
-
     class _Tool:
         name = "word_count"
         _is_agentic = True
@@ -338,6 +337,9 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
     monkeypatch.setattr(
         "openprogram.webui.server._get_or_create_session",
         lambda sid=None, **k: {"id": sid or "s1", "last_workdirs": {}},
+    )
+    monkeypatch.setattr(
+        "openprogram.webui.server._is_run_active", lambda _sid: False
     )
 
     class _Tool:
