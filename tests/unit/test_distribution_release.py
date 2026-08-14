@@ -267,6 +267,17 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     assert "Wiki-Agent-Harness" in product_config
 
 
+def test_search_runtime_dependency_supports_macos_x64() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
+    assert 'search = ["semble>=0.5.3"]' in pyproject
+    assert "tree-sitter-language-pack" not in lock
+    assert re.search(
+        r"semble_grammars-[^-]+-py3-none-macosx_[^-]+_x86_64\.whl",
+        lock,
+    )
+
+
 def test_product_manifest_requires_one_complete_capability_set() -> None:
     manifest = json.loads(
         (ROOT / "config" / "product-runtime.json").read_text(encoding="utf-8")
@@ -485,7 +496,7 @@ def test_release_manifest_records_hashes(tmp_path: Path) -> None:
 
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
-    (artifacts / "OpenProgram-0.6.1-mac-arm64.dmg").write_bytes(b"artifact")
+    (artifacts / "OpenProgram-0.6.2-mac-arm64.dmg").write_bytes(b"artifact")
     output = artifacts / "release-manifest.json"
     subprocess.run(
         [
@@ -493,14 +504,14 @@ def test_release_manifest_records_hashes(tmp_path: Path) -> None:
             str(ROOT / "scripts" / "create-release-manifest.py"),
             str(artifacts),
             "--version",
-            "v0.6.1",
+            "v0.6.2",
             "--output",
             str(output),
         ],
         check=True,
     )
     manifest = json.loads(output.read_text(encoding="utf-8"))
-    assert manifest["version"] == "0.6.1"
+    assert manifest["version"] == "0.6.2"
     assert manifest["files"][0]["sha256"] == (
         "c7c5c1d70c5dec4416ab6158afd0b223ef40c29b1dc1f97ed9428b94d4cadb1c"
     )

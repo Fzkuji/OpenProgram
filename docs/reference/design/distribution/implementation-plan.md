@@ -11,6 +11,13 @@ It tracks the bounded implementation, verification, and review evidence for the 
 - Local acceptance: the previously failing four tests pass; affected tests report 461 passed; the full non-integration suite reports 5274 passed, 11 skipped, and 1 expected failure. Desktop, Web, release-script, runtime-HTTP, Ruff, and documentation gates pass.
 - Windows native packaging remains deferred for a later release decision. This repair does not add a Windows artifact or introduce constraints that prevent a later implementation.
 
+### Native release result and v0.6.2 correction
+
+- Tag `v0.6.1` remained immutable after release run `31820999574` failed while resolving the complete macOS x86_64 runtime. No GitHub Release was published from that tag.
+- Root cause: `semble 0.2.0` constrained `tree-sitter-language-pack` below 1.8, and the locked 1.6.2 package published no macOS x86_64 wheel.
+- Correction: require `semble>=0.5.3`, whose grammar dependency is `semble-grammars`; the locked grammar package publishes native wheels for macOS x86_64/arm64 and Linux x86_64/arm64 while preserving the search capability.
+- Regression gate: resolve the complete locked product requirements for CPython 3.12 on macOS x86_64 and assert the locked grammar artifact includes that platform. The release retry uses the higher patch version `v0.6.2`.
+
 ## Short public installer batch
 
 - Base commit: `c1886a3fdf7ba196c42ec9a2c19dca7fe86c12e7`.
