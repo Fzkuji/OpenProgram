@@ -205,7 +205,7 @@
 .runtime-actions-footer {
   justify-content: flex-start; /* 与 assistant 消息一致：底部靠左 */
   padding-left: 2px; /* 对齐树最左缘（根图标列），不悬空在半截缩进上 */
-  margin-top: 6px;
+  margin-top: 12px;
 }
 .runtime-actions-footer .message-timestamp { padding-left: 0; }
 .runtime-card-host:hover .message-actions,

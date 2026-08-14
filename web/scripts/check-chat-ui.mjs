@@ -643,6 +643,26 @@ assert.ok(
   topExecution >= 0 && topConclusion > topExecution && topFooter > topConclusion,
   "the top-level footer must remain visible at the message bottom, after Conclusion",
 );
+assert.match(
+  chatCss,
+  /\.message\.assistant \.message-actions-footer\s*\{[^}]*margin-top:\s*12px/s,
+  "assistant messages define the shared 12px body-to-footer paragraph gap",
+);
+assert.match(
+  chatCss,
+  /\.runtime-actions-footer\s*\{[^}]*margin-top:\s*12px/s,
+  "workflow Conclusion-to-footer spacing must match assistant messages",
+);
+assert.match(
+  chatVisualSpec,
+  /\.run-footer\{[^}]*margin-top:12px/s,
+  "the visual specification must show the shared 12px footer spacing",
+);
+assert.match(
+  chatVisualSpec,
+  /<div class="tl-collapse"><div class="tl-collapse-inner">[\s\S]*?<\/div><\/div>\s*<\/div>\s*<div class="run-footer">/,
+  "the visual specification footer must remain outside the collapsible execution trace",
+);
 assert.match(chatCss, /\.runtime-program-conclusion\s*\{[^}]*border-left:/s);
 assert.match(runtimeBlock, /className="runtime-program-avatar"[\s\S]*>ƒ<\/div>/);
 assert.match(runtimeBlock, /if \(nested\)/, "nested LLM tool calls must keep their current rendering");

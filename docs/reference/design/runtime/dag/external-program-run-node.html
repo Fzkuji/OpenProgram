@@ -676,7 +676,7 @@
       <tr><td>产物交付</td><td>planner 示例允许 <code>return findings</code> 或直接 <code>return agent(...)</code>，没有区分任务产物与 handoff。</td><td>planner 和 SINGLE agent 的执行合同统一规定：报告、代码、表格等实质产物默认写入当前工作目录；最终返回只描述已完成工作和文件路径。只有任务明确要求“直接回答、返回正文、在聊天中给出”时才允许把正文作为直接结果。</td></tr>
       <tr><td>展开内容</td><td>函数内部调用通过 <code>caller</code> 形成 execution layer；聊天侧已有 <code>RuntimeBlock</code>、<code>TreeStep</code> 和 Details。</td><td>完整复用现有组件和交互，不增加 Planner、Agent 或 workflow 专用视觉层。</td></tr>
       <tr><td>运行时选择</td><td>直接运行仍属于当前 session；session picker 的 <code>provider_override</code>/<code>model_override</code> 是该 session 的模型选择，没有显式覆盖时由 session 的 agent 配置决定。</td><td>父进程在创建函数子进程前解析同一选择，并把 provider/model 快照显式传入子进程。子进程不得重新使用全局自动检测覆盖 session 选择。</td></tr>
-      <tr><td>footer</td><td>顶层 footer 已有时间、Copy、Retry、Edit &amp; re-run 和版本导航。</td><td>footer 不属于执行过程，始终放在整条消息最底部：有 Conclusion 时位于其后，无 Conclusion 时位于折叠标题后。出现条件、按钮顺序和行为保持不变。</td></tr>
+      <tr><td>footer</td><td>顶层 footer 已有时间、Copy、Retry、Edit &amp; re-run 和版本导航。</td><td>footer 不属于执行过程，始终放在整条消息最底部：有 Conclusion 时位于其后，无 Conclusion 时位于折叠标题后。其上方间距复用 assistant 正文到 footer 的 12px 段落间距；出现条件、按钮顺序和行为保持不变。</td></tr>
     </tbody>
   </table>
 
@@ -707,7 +707,7 @@
       <tr><td>聊天记录刚创建</td><td>显示专用 Program 头像和“函数名 · <code>Running...</code> · 时长 · 步骤数”标题；运行中默认展开现有 <code>RuntimeBlock</code>。</td></tr>
       <tr><td>用户收起顶层运行</td><td>头像、单行标题、已有的 <code>Conclusion</code>、可选 direct result 和消息 footer 保持可见；只有参数、执行树和 usage 不可见且不占布局空间。</td></tr>
       <tr><td>聊天记录收到执行事件</td><td>展开区继续由现有 <code>TreeStep</code> 更新；标题步骤数同步更新，用户手动展开/收起状态不被覆盖。</td></tr>
-      <tr><td>workflow 成功完成</td><td>未手动操作时自动收起并更新为 Completed；后端独立 summary 调用生成完整但简短的工作交接，只列完成事项、产物路径与警告，不复述报告正文。时间与操作 footer 固定在 Conclusion 后。</td></tr>
+      <tr><td>workflow 成功完成</td><td>未手动操作时自动收起并更新为 Completed；后端独立 summary 调用生成完整但简短的工作交接，只列完成事项、产物路径与警告，不复述报告正文。时间与操作 footer 固定在 Conclusion 后，并与 Conclusion 保持 assistant 消息一致的 12px 段落间距。</td></tr>
       <tr><td>workflow capped、取消、interrupted 或失败</td><td>标题显示对应终态，不调用 LLM summary；前端根据终态、调用数和已有 error 生成确定性的状态或错误 Conclusion。footer 位于该 Conclusion 之后，二者都不进入折叠区域。</td></tr>
       <tr><td>任务要求生成报告、代码或表格但未要求直接返回</td><td>实质产物写入当前工作目录；Conclusion 只列出完成步骤和绝对路径，payload 不携带用于聊天渲染的完整结果。</td></tr>
       <tr><td>任务明确要求直接回答或返回正文</td><td>summary 函数仍生成工作总结；独立的 task-only 授权判断标记 <code>return_result=true</code>。Conclusion 在工作总结后显示完整直接结果。</td></tr>
@@ -744,7 +744,7 @@
 
   <h2>实现证据</h2>
   <div class="not-decided">
-    <strong>聊天窗口实现：</strong><code>runtime-block.tsx</code> 仅为顶层 Program 增加专用头像与 <code>ExecutionStrip</code>；执行树与 usage 作为同一折叠内容，footer 位于折叠区和 <code>Conclusion</code> 之后，嵌套 LLM 工具调用保留原结构。成功态 Conclusion 只把带 <code>workflow_handoff_v1</code> 标记的内容当作工作总结，只有 <code>return_result=true</code> 时才在其后单独显示完整结果；capped、取消、interrupted 与失败态由 <code>runtime-summary.ts</code> 确定性生成状态或错误 Conclusion，不调用模型。旧 payload 的原始 <code>summary</code> 不再被当作工作总结。<br>
+    <strong>聊天窗口实现：</strong><code>runtime-block.tsx</code> 仅为顶层 Program 增加专用头像与 <code>ExecutionStrip</code>；执行树与 usage 作为同一折叠内容，footer 位于折叠区和 <code>Conclusion</code> 之后，并由 <code>execution-strip.css</code> 复用 assistant 消息的 12px 正文到 footer 段落间距；嵌套 LLM 工具调用保留原结构。成功态 Conclusion 只把带 <code>workflow_handoff_v1</code> 标记的内容当作工作总结，只有 <code>return_result=true</code> 时才在其后单独显示完整结果；capped、取消、interrupted 与失败态由 <code>runtime-summary.ts</code> 确定性生成状态或错误 Conclusion，不调用模型。旧 payload 的原始 <code>summary</code> 不再被当作工作总结。<br>
     <strong>后端实现：</strong><code>agentic_workflow/__init__.py</code> 在 workflow 成功后调用一次独立的无工具 summary 函数。它接收任务、执行函数名、状态、参数摘要、原始结果长度，以及仅限 agent 步骤的 240 字 operational handoff；不接收完整原始结果或其他函数的结果摘要。正文披露授权由只读原始 task 的确定性 guard 计算，不接受模型或 agent 输出。summary 格式错误或调用失败时生成不声称产物已完成的安全交接，并把错误只留在 state。planner 与 SINGLE agent 同时收到默认文件交付合同。原始结果与步骤结果继续持久化到 workflow state；公共 payload 默认删除顶层原始结果以及每个 item 的 <code>result</code>、<code>result_data</code>、<code>result_summary</code>。<br>
     <strong>自动检查：</strong><code>pytest -q tests/component/agent/test_agentic_workflow.py</code> 的 33 项测试、完整 Web check、<code>npm run build</code>、Web <code>tsc --noEmit</code>、文档链接检查与 <code>git diff --check</code> 通过。测试覆盖默认隐藏原始结果、整个公共 payload 不含步骤正文、agent preview 不能授权正文披露、中英文显式与否定返回措辞、明确要求时单独返回、summary 输入不含完整原始结果与非 agent 步骤结果、summary 格式错误或调用失败时安全降级并只把错误持久化到 state、planner/SINGLE 文件交付合同、旧 payload 不再显示正文。<br>
     <strong>真实验收：</strong>历史会话中的旧 workflow payload 不具备 <code>workflow_handoff_v1</code> 标记，因此不再把旧的 12198 字任务结果显示为 Conclusion。新 handoff 的真实 18100 验收必须使用新建 workflow 运行，且只使用 <code>/Applications/OpenProgram.app</code>、默认 <code>~/.openprogram</code> 与 <code>18100</code>；不启动 <code>18200</code>。DAG 节点投影未在本次实现中改动。

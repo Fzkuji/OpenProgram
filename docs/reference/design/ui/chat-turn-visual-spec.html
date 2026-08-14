@@ -109,7 +109,7 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
 
 /* ── 消息式 footer（手动函数运行的操作行） ── */
 .run-footer{display:flex;align-items:center;gap:2px;justify-content:flex-start;
-  padding-left:2px;margin-top:6px;font-size:12px;color:var(--text-muted)}
+  padding-left:2px;margin-top:12px;font-size:12px;color:var(--text-muted)}
 .run-footer .ts{margin-right:6px}
 .run-footer .act{opacity:0;display:inline-flex;gap:2px;align-items:center;transition:opacity .15s}
 .run-host:hover .run-footer .act{opacity:1}
@@ -280,6 +280,8 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
               </div>
             </div>
           </div>
+        </div></div>
+      </div>
           <div class="run-footer">
             <span class="ts">16:32</span>
             <span class="act">
@@ -293,12 +295,10 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
               </span>
             </span>
           </div>
-        </div></div>
-      </div>
     </div>
   </div>
 </div>
-<div class="rule">footer 与聊天消息的 footer 同款（同一套图标按钮 + 时间戳，悬停显现），justify-content:flex-start、左缘对齐树最左的图标列；版本切换<b>复用聊天的 .message-nav 组件</b>（◀ N/M ▶），不另造样式。footer 的复制复制<b>根调用的实际结果</b>（error ?? output），不是参数 JSON。<br>
+<div class="rule">footer 与聊天消息的 footer 同款（同一套图标按钮 + 时间戳，悬停显现），justify-content:flex-start、左缘对齐树最左的图标列；Conclusion 或直接结果到 footer 的垂直间距固定复用 assistant 正文到 footer 的 12px 段落间距，不另设紧凑间距；版本切换<b>复用聊天的 .message-nav 组件</b>（◀ N/M ▶），不另造样式。footer 的复制复制<b>根调用的实际结果</b>（error ?? output），不是参数 JSON。<br>
 <b>分支语义</b>：重试 = <b>参数不变的兄弟分支</b>；修改（Edit）= 把上一次的参数预填回表单、提交后作为<b>可改参数的兄弟分支</b>运行（fork_of_node → 锚到原调用的前驱）。两者都在原位替换显示、旧运行经 ◀ N/M ▶ 仍可回看——<b>绝不在会话尾部追加新调用</b>。运行中占位 = 单条呼吸点行；嵌套在别的消息里（nested）时不渲染 footer。</div>
 
 <!-- ═══════ 4. 消息导航 ═══════ -->
