@@ -180,6 +180,15 @@ def _process_alive(pid: int) -> bool:
     ``OpenProcess`` via ``ctypes`` and check ``GetExitCodeProcess``
     — STILL_ACTIVE means alive, anything else means terminated.
     """
+    if sys.platform.startswith("linux"):
+        try:
+            stat_tail = Path(f"/proc/{pid}/stat").read_text(
+                encoding="utf-8"
+            ).rsplit(")", 1)[-1].split()
+            if stat_tail and stat_tail[0] == "Z":
+                return False
+        except OSError:
+            pass
     if sys.platform == "win32":
         import ctypes
         from ctypes import wintypes

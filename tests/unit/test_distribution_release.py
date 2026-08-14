@@ -72,6 +72,18 @@ def test_detached_worker_preserves_packaged_python_flags() -> None:
     ]
 
 
+def test_linux_worker_process_probe_treats_zombie_as_stopped(monkeypatch) -> None:
+    from openprogram.worker import lifecycle
+
+    monkeypatch.setattr(lifecycle.sys, "platform", "linux")
+    monkeypatch.setattr(
+        lifecycle.Path,
+        "read_text",
+        lambda self, **kwargs: "123 (openprogram) Z 1 2 3",
+    )
+    assert lifecycle._process_alive(123) is False
+
+
 def test_packaged_runtime_rejects_program_mutation(monkeypatch, capsys) -> None:
     from openprogram._cli_cmds.programs import _cmd_install, _cmd_uninstall
 
@@ -139,6 +151,7 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "scripts/create-release-manifest.py" in workflow
     assert "scripts/smoke-packaged-runtime.sh" in workflow
     assert "sha256" in workflow.lower()
+    assert workflow.count("--publish never") == 2
 
 
 def test_linux_smoke_workflow_is_runnable_without_release_credentials() -> None:
@@ -150,6 +163,7 @@ def test_linux_smoke_workflow_is_runnable_without_release_credentials() -> None:
     assert "ubuntu-24.04-arm" in workflow
     assert "scripts/smoke-packaged-runtime.sh linux" in workflow
     assert "scripts/install-release.sh" in workflow
+    assert "--publish never" in workflow
 
 
 def test_linux_packaged_smoke_launches_public_appimage_entry() -> None:

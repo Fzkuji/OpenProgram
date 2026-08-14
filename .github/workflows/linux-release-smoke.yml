@@ -50,7 +50,7 @@ jobs:
       - name: Build and launch AppImage
         run: |
           scripts/prepare-desktop-runtime.sh
-          (cd desktop && npx electron-builder --linux AppImage --x64)
+          (cd desktop && npx electron-builder --linux AppImage --x64 --publish never)
           scripts/smoke-packaged-runtime.sh linux desktop/dist
       - uses: actions/upload-artifact@v5
         with:
