@@ -29,6 +29,8 @@ def test_desktop_targets_and_embedded_runtime_are_declared() -> None:
     assert {"dmg", "zip"} <= mac_targets
     assert "AppImage" in linux_targets
     assert {item["to"] for item in build["extraResources"]} >= {"runtime"}
+    assert package["desktopName"] == "ai.openprogram.OpenProgram.desktop"
+    assert build["linux"]["syncDesktopName"] is True
 
 
 def test_core_agentic_functions_are_not_excluded_from_wheel() -> None:
@@ -98,6 +100,15 @@ def test_release_installer_is_versioned_and_source_free() -> None:
     assert "npm" not in installer
 
 
+def test_release_installer_cold_starts_before_switching_current() -> None:
+    installer = (ROOT / "scripts" / "install-release.sh").read_text(encoding="utf-8")
+    start = installer.index('"$python_bin" -I -B -m openprogram worker start')
+    health = installer.index("/healthz", start)
+    stop = installer.index('"$python_bin" -I -B -m openprogram worker stop', health)
+    switch = installer.index('mv -f "$next_link" "$runtime_root/current"', stop)
+    assert start < health < stop < switch
+
+
 def test_cli_exposes_distribution_version(capsys) -> None:
     from openprogram.cli import build_parser
 
@@ -128,6 +139,28 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "scripts/create-release-manifest.py" in workflow
     assert "scripts/smoke-packaged-runtime.sh" in workflow
     assert "sha256" in workflow.lower()
+
+
+def test_linux_smoke_workflow_is_runnable_without_release_credentials() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "linux-release-smoke.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "workflow_dispatch:" in workflow
+    assert "environment: release" not in workflow
+    assert "ubuntu-24.04-arm" in workflow
+    assert "scripts/smoke-packaged-runtime.sh linux" in workflow
+    assert "scripts/install-release.sh" in workflow
+
+
+def test_linux_packaged_smoke_launches_public_appimage_entry() -> None:
+    smoke = (ROOT / "scripts" / "smoke-packaged-runtime.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "APPIMAGE_EXTRACT_AND_RUN=1" in smoke
+    assert '"$appimage"' in smoke
+    assert "app_pid=$!" in smoke
+    assert "python3 -c" not in smoke
+    assert "StartupWMClass=ai.openprogram.OpenProgram" in smoke
 
 
 def test_release_workflow_notarizes_the_distributed_dmg() -> None:
