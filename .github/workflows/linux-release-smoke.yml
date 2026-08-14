@@ -1,0 +1,81 @@
+name: Linux release smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.16"
+      - name: Build release wheel
+        run: |
+          scripts/stage-release-assets.sh
+          uv build --wheel
+      - uses: actions/upload-artifact@v5
+        with:
+          name: linux-release-wheel
+          path: dist/openprogram-*.whl
+
+  appimage:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            desktop/package-lock.json
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.16"
+      - name: Install build and display dependencies
+        run: |
+          npm ci --prefix desktop
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes xvfb
+      - name: Build and launch AppImage
+        run: |
+          scripts/prepare-desktop-runtime.sh
+          (cd desktop && npx electron-builder --linux AppImage --x64)
+          scripts/smoke-packaged-runtime.sh linux desktop/dist
+      - uses: actions/upload-artifact@v5
+        with:
+          name: linux-x64-appimage
+          path: desktop/dist/*.AppImage
+
+  cli-installer:
+    needs: python
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v6
+        with:
+          name: linux-release-wheel
+          path: python-distributions
+      - name: Install with managed CPython and cold-start worker
+        shell: bash
+        run: |
+          wheel="$(find "$GITHUB_WORKSPACE/python-distributions" -name 'openprogram-*.whl' -print -quit)"
+          OPENPROGRAM_WHEEL="$wheel" \
+          OPENPROGRAM_STATE_DIR="$RUNNER_TEMP/openprogram-state" \
+          OPENPROGRAM_BIN_DIR="$RUNNER_TEMP/openprogram-bin" \
+            scripts/install-release.sh
+          "$RUNNER_TEMP/openprogram-bin/openprogram" --version

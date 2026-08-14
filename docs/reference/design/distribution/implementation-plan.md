@@ -39,6 +39,16 @@ git status --short
 
 Platform artifact builds run in the release workflow because a macOS host cannot validate a Linux CPython/AppImage runtime and a Linux host cannot sign or notarize a macOS app.
 
+## Linux completion batch
+
+- Base commit: `540591e9f628498dee87a1c2ebb30ab4c5e757f6`.
+- Production files: `desktop/package.json`, `scripts/smoke-packaged-runtime.sh`, `scripts/install-release.sh`, `.github/workflows/release.yml`, and `.github/workflows/linux-release-smoke.yml`.
+- Test file: `tests/unit/test_distribution_release.py`.
+- Linux x86_64 acceptance: build the AppImage on a native x86_64 runner, execute its public entry under Xvfb, let Electron start the embedded worker, verify `/healthz`, `/chat`, immutable Program behavior, and matching freedesktop filename/`StartupWMClass` metadata.
+- Linux CLI acceptance: on native x86_64 and arm64 runners, install the release wheel with the pinned uv and managed CPython, cold-start the worker before switching `current`, and verify the installed launcher version.
+- Pre-release execution: the manually dispatched Linux smoke workflow requires no Apple signing or PyPI credentials and uploads the verified wheel and AppImage only as CI artifacts. It does not create a stable release.
+- Exclusions remain unchanged: no Linux arm64 desktop artifact, distro-native deb/rpm packages, Windows implementation, or OS credential-store integration.
+
 ## Ledger
 
 | Field | Evidence |

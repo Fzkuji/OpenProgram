@@ -8,6 +8,7 @@
   "homepage": "https://openprogram.io/",
   "repository": "https://github.com/Fzkuji/OpenProgram",
   "main": "main.js",
+  "desktopName": "ai.openprogram.OpenProgram.desktop",
   "scripts": {
     "dev": "electron .",
     "check": "npm run check:webtabs && npm run check:tab-transfer-store && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime",
@@ -70,7 +71,8 @@
       ],
       "icon": "build/icon.png",
       "category": "Development",
-      "executableName": "openprogram"
+      "executableName": "openprogram",
+      "syncDesktopName": true
     }
   }
 }

@@ -7,6 +7,7 @@ artifact_dir="$(cd "$artifact_dir" && pwd)"
 temp_root="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-packaged-smoke.XXXXXX")"
 state_home="$temp_root/home"
 mkdir -p "$state_home"
+app_pid=""
 
 case "$platform" in
   mac)
@@ -22,18 +23,27 @@ case "$platform" in
       "$appimage" --appimage-extract >/dev/null
     )
     resources="$temp_root/squashfs-root/resources"
+    desktop_file="$(find "$temp_root/squashfs-root" -type f -name '*.desktop' -print -quit)"
+    test -n "$desktop_file"
+    test "$(basename "$desktop_file")" = "ai.openprogram.OpenProgram.desktop"
+    grep -qx 'StartupWMClass=ai.openprogram.OpenProgram' "$desktop_file"
     ;;
   *) printf 'unsupported packaged-runtime platform: %s\n' "$platform" >&2; exit 1 ;;
 esac
 
 manifest="$resources/runtime/runtime-manifest.json"
 test -f "$manifest"
-runtime_python="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["python"])' "$manifest")"
+runtime_python="$(sed -n 's/.*"python":"\([^"]*\)".*/\1/p' "$manifest")"
+test -n "$runtime_python"
 embedded_python="$resources/runtime/$runtime_python"
 test -x "$embedded_python"
 
 port="$((19000 + RANDOM % 500))"
 cleanup() {
+  if test -n "$app_pid"; then
+    kill "$app_pid" >/dev/null 2>&1 || true
+    wait "$app_pid" >/dev/null 2>&1 || true
+  fi
   HOME="$state_home" OPENPROGRAM_WEB_PORT="$port" OPENPROGRAM_IMMUTABLE_RUNTIME=1 \
     "$embedded_python" -I -B -m openprogram worker stop >/dev/null 2>&1 || true
   rm -rf "$temp_root"
@@ -42,10 +52,17 @@ trap cleanup EXIT
 
 if test "$platform" = mac; then
   codesign --verify --deep --strict "$app_path"
+  HOME="$state_home" OPENPROGRAM_WEB_PORT="$port" OPENPROGRAM_IMMUTABLE_RUNTIME=1 \
+    "$embedded_python" -I -B -m openprogram worker start
+else
+  command -v xvfb-run >/dev/null 2>&1 || {
+    printf 'xvfb-run is required for the Linux AppImage smoke test\n' >&2
+    exit 1
+  }
+  HOME="$state_home" OPENPROGRAM_WEB_PORT="$port" APPIMAGE_EXTRACT_AND_RUN=1 \
+    xvfb-run -a "$appimage" >"$temp_root/appimage.log" 2>&1 &
+  app_pid=$!
 fi
-
-HOME="$state_home" OPENPROGRAM_WEB_PORT="$port" OPENPROGRAM_IMMUTABLE_RUNTIME=1 \
-  "$embedded_python" -I -B -m openprogram worker start
 
 ready=0
 for _attempt in $(seq 1 120); do
@@ -56,6 +73,9 @@ for _attempt in $(seq 1 120); do
   sleep 0.25
 done
 if test "$ready" != 1; then
+  if test "$platform" = linux; then
+    sed -n '1,200p' "$temp_root/appimage.log" >&2
+  fi
   sed -n '1,200p' "$state_home/.openprogram/worker.log" >&2
   exit 1
 fi

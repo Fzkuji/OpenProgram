@@ -69,6 +69,11 @@ jobs:
       - name: Install desktop dependencies
         run: npm ci
         working-directory: desktop
+      - name: Install Linux display test dependency
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes xvfb
       - name: Prepare App Store Connect API key
         if: matrix.platform == 'mac'
         shell: bash
