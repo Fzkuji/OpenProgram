@@ -125,6 +125,7 @@ class BrowserPageController:
             from openprogram.programs.functions.browser import browser as browser_api
         self.browser_api = browser_api
         self.initial_url = url
+        self.binding_id = ""
         self.max_steps = max(1, int(max_steps))
         self.session_id = ""
         self._frame: dict[str, Any] | None = None
@@ -159,6 +160,8 @@ class BrowserPageController:
             "navigate", "click", "type", "press", "scroll", "hover", "select",
         }:
             return False
+        if self.binding_id:
+            return False
         target_url = url or str((self._frame or {}).get("url") or self.initial_url)
         if _is_local(target_url):
             return False
@@ -169,6 +172,7 @@ class BrowserPageController:
             return
         result = self.browser_api.execute(
             action="open", engine="app", url=self.initial_url or None,
+            binding_id=self.binding_id or None,
         )
         match = re.search(r"`(br_[^`]+)`", str(result))
         if not match:
@@ -279,6 +283,15 @@ class BrowserPageController:
             and self._signature(snapshot) == self._dom_signature
         )
 
+    def _same_observed_target(self, expected_frame_id: str) -> bool:
+        if not self._frame or expected_frame_id != self._frame["frame_id"]:
+            return False
+        session = self._session()
+        return (
+            session.get("app_tab_id") == self._frame["target"]["tab_id"]
+            and session.get("app_target_id") == self._frame["target"]["target_id"]
+        )
+
     def _require_fresh(self, expected_frame_id: str) -> dict[str, Any] | None:
         if self._fresh(expected_frame_id):
             return None
@@ -345,6 +358,10 @@ class BrowserPageController:
             return self._observe()
         if action in {"screenshot", "verify"} and not expected_frame_id and self._frame:
             expected_frame_id = self._frame["frame_id"]
+        if action == "verify":
+            if not self._same_observed_target(expected_frame_id):
+                return {"ok": False, "reason_code": "stale_observation"}
+            return self._verify(self._page(), expected_frame_id, assertion, value)
         stale = self._require_fresh(expected_frame_id)
         if stale:
             return stale
@@ -362,8 +379,6 @@ class BrowserPageController:
         if action == "wait":
             page.wait_for_timeout(max(0, min(int(amount), 5000)))
             return {"ok": True, "frame_id": expected_frame_id}
-        if action == "verify":
-            return self._verify(page, expected_frame_id, assertion, value)
         capped = self._write_allowed()
         if capped:
             return capped
@@ -397,6 +412,7 @@ class BrowserPageController:
 
     def _verify(self, page, frame_id: str, assertion: str, value: str) -> dict:
         text = page.inner_text("body")
+        snapshot = page.evaluate(_OBSERVE_SCRIPT)
         checks = {
             "text_contains": value in text,
             "text_not_contains": value not in text,
@@ -404,7 +420,7 @@ class BrowserPageController:
             "title_contains": value in page.title(),
             "element_present": any(
                 value.casefold() in str(item.get("name") or "").casefold()
-                for item in (self._frame or {}).get("elements", [])
+                for item in snapshot.get("elements") or []
             ),
         }
         if assertion not in checks:
@@ -505,9 +521,9 @@ Rules:
 @agentic_function(
     name="browser_agent",
     toolset=("browser",),
-    unsafe_in=("wechat", "telegram"),
+    unsafe_in=("wechat", "telegram", "plan"),
     requires_approval=_browser_agent_requires_approval,
-    defer=True,
+    defer=False,
     input={
         "task": {"description": "Browser task", "multiline": True},
         "url": {"description": "Optional initial http(s) URL"},
@@ -524,14 +540,80 @@ def browser_agent(
     runtime=None,
 ) -> dict:
     """Complete a task in OpenProgram's visible built-in browser tab."""
+    return _run_browser_task(
+        task=task, url=url, max_steps=max_steps, max_seconds=max_seconds,
+        runtime=runtime,
+    )
+
+
+@agentic_function(
+    name="computer_use",
+    toolset=("browser",),
+    unsafe_in=("wechat", "telegram", "plan"),
+    requires_approval=_browser_agent_requires_approval,
+    defer=True,
+    parameters={
+        "type": "object",
+        "properties": {
+            "task": {"type": "string", "minLength": 1, "maxLength": 8000},
+            "surface": {
+                "type": "string",
+                "enum": ["right", "focused", "web:1", "s1"],
+            },
+            "url": {"type": "string", "maxLength": 2048},
+            "max_steps": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+            "max_seconds": {"type": "integer", "minimum": 1, "maximum": 1800, "default": 300},
+        },
+        "required": ["task"],
+        "additionalProperties": False,
+    },
+    input={
+        "task": {"description": "Task in the visible OpenProgram web surface", "multiline": True},
+        "surface": {
+            "description": "Turn surface alias",
+            "options": ["right", "focused", "web:1", "s1"],
+        },
+        "url": {"description": "Optional http(s) navigation in the same tab"},
+        "max_steps": {"description": "Maximum state-changing actions"},
+        "max_seconds": {"description": "Wall-clock limit in seconds"},
+        "runtime": {"hidden": True},
+    },
+)
+def computer_use(
+    task: str,
+    surface: str = "",
+    url: str = "",
+    max_steps: int = 20,
+    max_seconds: int = 300,
+    runtime=None,
+) -> dict:
+    """Observe or control the web surface attached to the current chat turn."""
+    from openprogram.agent.surface_context import resolve_binding
+    return _run_browser_task(
+        task=task, url=url, max_steps=max_steps, max_seconds=max_seconds,
+        runtime=runtime, binding_id=resolve_binding(surface),
+    )
+
+
+def _run_browser_task(
+    *,
+    task: str,
+    url: str,
+    max_steps: int,
+    max_seconds: int,
+    runtime,
+    binding_id: str = "",
+) -> dict:
     if runtime is None:
-        raise ValueError("browser_agent() requires a runtime argument")
+        raise ValueError("computer use requires a runtime argument")
     if not (task or "").strip():
         raise ValueError("task must not be empty")
     controller = _new_controller()
     controller.initial_url = url or ""
+    controller.binding_id = binding_id
     controller.max_steps = max(1, min(int(max_steps), 100))
     result: dict
+    turn_request_token = None
     try:
         if url and not _is_http_url(url):
             result = controller.final_result(
@@ -540,6 +622,19 @@ def browser_agent(
             )
         else:
             # deferred browser tool loop; runtime owns restricted AgentTool execution
+            if binding_id:
+                from dataclasses import replace
+                from openprogram.agent.turn_request_context import (
+                    get_turn_request,
+                    set_turn_request,
+                )
+
+                outer_request = get_turn_request()
+                if outer_request is not None:
+                    turn_request_token = set_turn_request(replace(
+                        outer_request,
+                        permission_mode="bypass",
+                    ))
             reply = runtime.exec(
                 content=[{"type": "text", "text": _prompt(task.strip(), url)}],
                 tools=[controller.tool],
@@ -574,6 +669,9 @@ def browser_agent(
         )
         result = controller.final_result(summary=str(exc), reason_code=reason)
     finally:
+        if turn_request_token is not None:
+            from openprogram.agent.turn_request_context import reset_turn_request
+            reset_turn_request(turn_request_token)
         cleanup_error = controller.close()
     if cleanup_error:
         result["cleanup_error"] = cleanup_error
@@ -586,4 +684,4 @@ def browser_agent(
     return result
 
 
-__all__ = ["browser_agent", "BrowserPageController"]
+__all__ = ["browser_agent", "computer_use", "BrowserPageController"]

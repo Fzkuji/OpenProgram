@@ -29,6 +29,8 @@ def run_query(
     attachments: list | None,
     service_tier: str | None = None,
     response_format=None,
+    surface_ref: dict | None = None,
+    surface_ws=None,
 ) -> None:
     """Run the chat-query branch. Returns None; results are broadcast via WS."""
     from openprogram.webui import server as _s
@@ -282,31 +284,38 @@ def run_query(
         # written before authority metadata existed. Invalid owner state raises
         # and rejects the turn instead of becoming an external/unknown request.
         _authority = local_owner_authority()
-    req_obj = _TurnRequest(
-        session_id=session_id,
-        user_text=query,
-        agent_id=agent_id,
-        source="web",
-        permission_mode=effective_permission,
-        permission_rules=_load_merged_rules(session_id),
-        additional_working_dirs=run_cfg.additional_working_dirs,
-        tools_override=resolved_tools_override,
-        thinking_effort=effective_thinking,
-        service_tier=service_tier,
-        user_msg_id=msg_id,
-        user_already_persisted=True,
-        model_override=_model_override,
-        attachments=attachments,
-        response_format=response_format,
-        **_authority,
+    from openprogram.agent.surface_context import (
+        capture as _capture_surface,
+        release_bindings as _release_surface_bindings,
     )
-
+    surface_context = None
     try:
+        surface_context = _capture_surface(surface_ref, surface_ws)
+        req_obj = _TurnRequest(
+            session_id=session_id,
+            user_text=query,
+            agent_id=agent_id,
+            source="web",
+            permission_mode=effective_permission,
+            permission_rules=_load_merged_rules(session_id),
+            additional_working_dirs=run_cfg.additional_working_dirs,
+            tools_override=resolved_tools_override,
+            thinking_effort=effective_thinking,
+            service_tier=service_tier,
+            user_msg_id=msg_id,
+            user_already_persisted=True,
+            model_override=_model_override,
+            attachments=attachments,
+            response_format=response_format,
+            surface_context=surface_context,
+            **_authority,
+        )
         turn_result = _process_user_turn(
             req_obj, on_event=_on_dispatcher_event,
             cancel_event=_chat_cancel_event,
         )
     finally:
+        _release_surface_bindings(surface_context)
         if _s._finish_owned_run(session_id, msg_id):
             _s._emit_running_task_event(session_id)
         # Pass our Event so a newer turn's registration (if any) is

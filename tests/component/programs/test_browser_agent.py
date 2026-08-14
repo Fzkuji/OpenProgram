@@ -238,6 +238,27 @@ def test_verify_uses_latest_observation_when_frame_id_is_omitted():
     controller.close()
 
 
+def test_verify_reads_current_dynamic_dom_without_reusing_refs():
+    controller, api = _controller()
+    observation = controller.execute(action="observe")
+    api.page.body_text = "Saved by an asynchronous page update"
+
+    verified = controller.execute(
+        action="verify",
+        expected_frame_id=observation["frame_id"],
+        assertion="text_contains",
+        value="Saved",
+    )
+
+    assert verified["passed"] is True
+    stale_write = controller.execute(
+        action="click",
+        expected_frame_id=observation["frame_id"],
+        ref="e1",
+    )
+    assert stale_write == {"ok": False, "reason_code": "stale_observation"}
+
+
 def test_model_summary_cannot_claim_success_without_runtime_verification():
     controller, _api = _controller()
     controller.execute(action="observe")
@@ -324,6 +345,16 @@ def test_external_initial_url_requires_approval_but_localhost_does_not():
     assert isinstance(
         _browser_agent_requires_approval(url="https://example.com/form"), str
     )
+
+
+def test_bound_surface_actions_use_the_turn_access_grant():
+    controller, _api = _controller()
+    controller.initial_url = "https://example.com/form"
+
+    assert isinstance(controller._requires_approval(action="click"), str)
+
+    controller.binding_id = "surface-binding"
+    assert controller._requires_approval(action="click") is False
 
 
 @pytest.mark.parametrize(

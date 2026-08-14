@@ -59,6 +59,7 @@ import { useHistoryRecall } from "./use-history-recall";
 import { useChatSubmit } from "./use-chat-submit";
 import { useComposerKeyDown } from "./use-composer-keydown";
 import { StatusChip } from "./status-chip";
+import { SurfaceChip } from "./surface-chip";
 import { ScopedDropOverlay } from "./scoped-drop-overlay";
 import { ComposerBody } from "./composer-body";
 import { QuestionPanel } from "./question-panel";
@@ -814,6 +815,11 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           without shifting the transcript. */}
       <div className={styles.envChips}>
         <StatusChip owningId={bound === null} />
+        <SurfaceChip
+          sessionId={currentSessionId}
+          toolsEnabled={toolsEnabled}
+          onToggleAccess={toggleTools}
+        />
         <ProjectBadge />
         <WorkingDirChips />
         <GoalChip />

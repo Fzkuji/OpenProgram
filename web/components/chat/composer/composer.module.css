@@ -421,6 +421,18 @@
   display: none;
 }
 
+.surfaceChip {
+  max-width: min(240px, 35vw);
+  cursor: pointer;
+  font: inherit;
+}
+.surfaceChipLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Env chips — floating row ABOVE the input box (Claude Code
    arrangement): FILLED pills [Local] [📁 project] — measured from
    claude.ai/code: solid near-white fill, NO border, 24px tall, 6px

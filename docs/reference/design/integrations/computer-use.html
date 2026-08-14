@@ -112,9 +112,10 @@
       <p><strong>公开入口：</strong>新增面向任务的 <code>computer_use</code>。工具只接收任务和可选的语义 surface alias，例如 <code>right</code> 或 <code>focused</code>；不接收 <code>window_id</code>、<code>tab_id</code> 或 CDP target。第一阶段只有 <code>web_tab</code> adapter。现有 <code>playwright_browser</code> 保留为底层专家工具，现有 <code>gui_agent</code> 保留为桌面实验入口，三者不互相改名。</p>
       <p><strong>工具可用性：</strong>存在已验证、可控 surface 时，dispatcher 必须在该 turn 主动加入 <code>computer_use</code> schema，不受 deferred 默认加载影响。页面问题使用 turn-start preview 或调用工具继续观察；页面动作必须调用工具。用户显式关闭网页控制时，Runtime 不提供 preview 和执行工具，并把禁用状态写入上下文。</p>
       <p><strong>浏览器实现：</strong>复用 Electron <code>WebContentsView</code>、共享的 <code>persist:webtabs</code> profile、精确 tab 的 CDP target，以及 Playwright 数据面。用户和 agent 始终看到同一个 tab。</p>
+      <p><strong>后台位置无关：</strong>页面读取和点击绑定 <code>window_id + tab_id + cdp_target_id</code>，通过该 tab 的 <code>WebContents</code>/CDP 执行，不使用桌面屏幕坐标、OS 鼠标事件或 <code>BrowserWindow.focus()</code>。OpenProgram 可以位于其他窗口后方，目标 pane 也不必拥有键盘焦点；普通 DOM/ARIA 操作不截图。</p>
       <p><strong>Harness 分工：</strong>第一阶段只复用 GUI Agent Harness 的 observe → verify → plan → act 思路；不启用 OCR、YOLO/检测器、component memory、vision memory、自动 component learning、多轮 crop 或局部放大，也不直接复用其进程全局 target、全屏截图、容错后继续执行、LLM 判定 success 和自动持久化 workflow 的行为。</p>
       <p><strong>动作策略：</strong>ARIA/DOM 语义定位优先，CSS 只作为确定性补充。只有 canvas、无标签控件或 DOM 不可用时，才把一张当前 viewport screenshot 直接交给多模态模型返回坐标；中间没有 OCR、检测器或视觉记忆。每个写动作执行后都重新观察；禁止跨页面状态批量执行写动作。</p>
-      <p><strong>权限策略：</strong>本地项目页允许任务内自动验证；外部站点按 origin 授权。读取与写入分级，登录、CAPTCHA、跨 origin、敏感提交和不可逆操作进入 <code>needs_user</code>，不得由模型自行确认。</p>
+      <p><strong>权限策略：</strong>用户在已关联 chat + web surface 上发送任务时，形成只覆盖该 turn、该 binding 的访问授权；外层 <code>computer_use</code> 不再请求第二次通用工具批准。Runtime 仍先执行 hard constraints、authority 和显式 deny/ask rules；登录、CAPTCHA、跨 origin、敏感提交和不可逆操作继续进入 <code>needs_user</code>，不得由模型自行确认。</p>
     </div>
 
     <h3>术语与生命周期</h3>
@@ -136,8 +137,8 @@
   </section>
 
   <section id="current">
-    <h2>02 当前实现与必须先处理的缺口</h2>
-    <p>这里记录的是仓库当前代码，不代表目标能力已经完成。</p>
+    <h2>02 当前 turn-scoped baseline 与后续缺口</h2>
+    <p>当前代码已经支持单个已登记 split web surface 的首轮感知和绑定控制；这里同时记录完整目标架构尚未覆盖的部分。</p>
 
     <div class="grid2">
       <article class="card good">
@@ -152,35 +153,35 @@
         <p>现有浏览器工具已支持 selector、HTML、正文提取、ARIA snapshot、console、frame、tab 等能力，可以承担浏览器专用的语义观察层。</p>
         <p>证据：<code>browser.py:56-160</code>；<code>_actions/read.py:7-72</code>。</p>
       </article>
-      <article class="card change">
-        <span class="tag">BLOCKER</span>
-        <h3>多窗口控制面没有绑定 responder</h3>
-        <p><code>webtab.command</code> 广播到全部 WebSocket 客户端，pending 表接收首个同 <code>req_id</code> 的回执；命令没有 <code>window_id</code>，服务端也没有校验回执来自哪个 renderer。多个桌面窗口同时存在时，目标不确定。</p>
-        <p>证据：<code>webui/ws_actions/webtab.py:18-69</code>；<code>web/lib/desktop-bridge.ts:478-562</code>。</p>
+      <article class="card good">
+        <span class="tag">BASELINE AVAILABLE</span>
+        <h3>Turn-scoped exact responder binding</h3>
+        <p>preview 只发送到发起 chat turn 的 WebSocket；Runtime 记录并复核 <code>window_id + tab_id + target_id</code>，子进程只能用 opaque <code>binding_id</code> 请求 bound activate。完整 authenticated window registration、单调 revision、跨窗口 transfer invalidation 和排他 tab lease 尚未实现。</p>
+        <p>证据：<code>webui/ws_actions/webtab.py</code>；<code>agent/process_runner.py</code>；<code>web/lib/desktop-bridge.ts</code>；<code>tests/unit/test_computer_use_surface.py</code>。</p>
+      </article>
+      <article class="card good">
+        <span class="tag">BASELINE AVAILABLE</span>
+        <h3>Turn-start Surface Awareness</h3>
+        <p>composer 已提交当前 compound group 的 web surface ref；Runtime 在首个模型调用前捕获有界 DOM/ARIA preview 并加入上下文。存在有效 binding 时 provider 获得 resident <code>computer_use</code> schema，没有有效 surface 时该工具被移除。</p>
+        <p>证据：<code>web/components/chat/composer/legacy-send.ts</code>；<code>agent/surface_context.py</code>；<code>agent/dispatcher/loop_runner.py</code>。</p>
       </article>
       <article class="card change">
-        <span class="tag">BLOCKER</span>
-        <h3>聊天 turn 没有 Surface Awareness</h3>
-        <p>composer 当前只提交文本、session、模型参数和工具开关，没有提交该 session 所在 compound group 的可见 web tab，也没有 turn-start preview。虽然 <code>browser_agent</code> 属于默认工具集合，但它被 deferred；模型开始推理时不知道右侧页面存在，也没有一个已绑定工具可用于观察和交互。这是当前分屏对 Agent 无效的直接原因。</p>
-        <p>证据：<code>web/components/chat/composer/legacy-send.ts:118-213</code>；<code>webui/ws_actions/chat.py:369-426</code>；<code>programs/__init__.py:71-151</code>。</p>
+        <span class="tag">DEFERRED</span>
+        <h3>Canvas 视觉 fallback 尚未接入</h3>
+        <p>当前 baseline 的 DOM/ARIA 操作不截图。目标设计要求未来只使用单张 viewport screenshot 和模型原生 vision；现有 full-page screenshot 坐标不能用于该目标，因此未接入 <code>computer_use</code>。</p>
+        <p>证据：<code>_actions/read.py</code>；<code>computer-use-implementation.html</code> 的任务 2 边界。</p>
       </article>
       <article class="card change">
-        <span class="tag">BLOCKER</span>
-        <h3>视觉坐标与截图坐标不一致</h3>
-        <p>现有 screenshot 默认 <code>full_page=True</code>。视觉模型返回的图像坐标不能直接作为当前 viewport 的 <code>page.mouse</code> 坐标，滚动页还会产生额外偏移。</p>
-        <p>证据：<code>_actions/read.py:75-105</code>。</p>
+        <span class="tag">ISOLATED</span>
+        <h3>不采用 Harness 的模型 completion</h3>
+        <p>当前 <code>computer_use</code> 由 post-action Runtime assertion 生成 <code>status</code> 和 <code>reason_code</code>，不调用 GUI Harness 的模型 success 路径。Harness completion 的原有问题仍存在，但不阻塞当前浏览器 baseline。</p>
+        <p>证据：<code>agentic_functions/browser_agent/__init__.py</code>；安装版 session <code>local_340bc50ccd2c4eafb1fc12378e0489ab</code>。</p>
       </article>
       <article class="card change">
-        <span class="tag">BLOCKER</span>
-        <h3>现有 Harness completion 不可信</h3>
-        <p>planner 两次解析失败会返回 <code>done</code>；结论 prompt 固定要求模型输出 <code>"success": true</code>，顶层结果再采用该值。因此“模型不再调用动作”不能等同于“任务成功”。</p>
-        <p>证据：<code>tasks/execute_task.py:575-607,792-834,886-949</code>；<code>main.py:168-193</code>。</p>
-      </article>
-      <article class="card change">
-        <span class="tag">BLOCKER</span>
-        <h3>状态、取消与记录不具备会话隔离</h3>
-        <p>浏览器 session、Harness action target、VM screenshot patch 都使用进程全局可变状态；主执行循环没有 cancel 参数；没有 base memory 时会自动学习 component，每次任务还默认把完整 history 写入 workflow JSON。第一阶段 runner 不调用这些路径。</p>
-        <p>证据：<code>browser.py:198-203</code>；<code>action/input.py:412-454</code>；<code>adapters/vm_adapter.py:20-31</code>；<code>main.py:98-102,116-193</code>；<code>tasks/execute_task.py:956-969</code>。</p>
+        <span class="tag">DEFERRED</span>
+        <h3>完整 lease 与 registry lifecycle</h3>
+        <p>当前 binding 有 TTL 并在 turn teardown 释放，但尚未实现 server-owned surface revisions、同 tab 排他写 lease、hide/move/transfer 即时 invalidation 和崩溃后的持久清理。当前 runner 不调用 Harness 的进程全局 target、memory 或 workflow persistence。</p>
+        <p>证据：<code>agent/surface_context.py</code>；<code>webui/ws_actions/webtab.py</code>；<code>agent/process_runner.py</code>。</p>
       </article>
     </div>
 
@@ -429,6 +430,7 @@ server-owned binding (never sent as a model-selectable target)
     <p>只要存在至少一个具备 <code>observe</code> capability 的 surface，dispatcher 就在该 turn 将 <code>computer_use</code> schema 放入 provider tool array，并追加 Surface Context。<code>interact</code> 和 <code>navigate</code> 都以 <code>observe</code> 为前置能力；Registry 拒绝缺少 observe 的 interact/navigate 组合。该规则优先于工具的 deferred 默认状态。模型因此在生成第一个 token 前已经知道右侧/当前页面存在；询问“屏幕右边有什么”时可直接依据新鲜 preview 回答，信息不足时调用 <code>computer_use(surface="right", task="...")</code> 继续观察。任何 click、type、navigate 等页面变更都必须调用工具，不能只根据 preview 声称已执行。</p>
     <p>用户显式关闭网页控制时，Runtime 仍可告诉模型“存在一个未授权 surface”，但不附带页面内容、不注入执行工具。UI 必须显示“Agent 无法访问”，避免模型把权限禁用误判为页面不存在。将 chat 与 web tab 合并为同一 compound group，默认只授予该 surface 的 R0 结构化读取；R1-R3 写操作仍按后文策略处理。</p>
     <p>工具开始运行时，Surface Broker 使用 <code>binding_id</code> 向精确 renderer 请求对应的 CDP target，随后把 <code>window_id + local_surface_id + cdp_target_id + layout_revision</code> 固定到 lease。运行期间切换焦点不会改变 target；关闭、移出 compound group、跨窗口转移或 renderer 断开会使绑定失效，并返回 <code>target_lost</code>，不得自动选择另一个可见 surface。</p>
+    <p>这里的“可见 surface”描述布局归属和用户可检查性，不要求 OpenProgram 成为 macOS/桌面环境的前台应用，也不要求目标 pane 当前接收键盘事件。读取和动作直接发送到绑定的 <code>WebContents</code>/CDP target；禁止先激活操作系统窗口、按桌面坐标点击或截取整个屏幕。只有目标仍登记在当前 compound group 内时绑定才有效；hide、close、move、disconnect 或 target identity 变化后必须返回 <code>target_lost</code>。</p>
     <p>Dispatcher 保存不可变映射 <code>provider_request_id → turn_id + context_id + context_revision + alias_map + bindings</code>。每个 tool call 的执行 envelope 由 Runtime 写入 <code>tool_call_id + source_provider_request_id</code>，模型不能提交或覆盖它；alias 只能在产生该 tool schema 的同一个 provider request 快照中解析。即使同一 chat session 有重叠 turn 或后续 Surface Context，旧工具调用也不得查询 session 的“最新 alias map”。模型 response stream 结束不立即删除映射：没有 tool call 时可以释放；存在 tool call 时保留到该 response 产生的全部 tool call settled，或 initiating turn/run 被取消、超时、teardown。异常遗留映射按短 TTL 清理。</p>
 
     <h3>Alias 与 primary surface 规则</h3>
@@ -571,7 +573,7 @@ Observation
         <tbody>
           <tr><td><strong>R0 观察</strong></td><td>Surface Context preview、ARIA/DOM text、URL/title、按过滤条件读取 console error；必要时当前 viewport screenshot</td><td>chat 与 surface 同组且网页控制开启时，结构化 preview 和观察无需重复提示；图像仍按需且不持久化。隐藏 surface、其他窗口和未登记 surface 不获得 R0。</td></tr>
           <tr><td><strong>R1 本地项目变更</strong></td><td>由 dev-server registry 或当前 project 显式证明归属的 origin/file 中 click/type/navigation</td><td>用户明确要求测试时在 task 内允许；<code>localhost</code> 或 <code>127.0.0.1</code> 字符串本身不构成项目归属或自动授权，仍执行 cancel、frame 和 target 校验。</td></tr>
-          <tr><td><strong>R2 外部普通变更</strong></td><td>外部 origin 上 click、type、same-tab navigation</td><td>首次写动作按 exact origin 请求“本次动作”或“本任务”授权；subdomain 不继承。</td></tr>
+          <tr><td><strong>R2 外部普通变更</strong></td><td>已绑定外部页面上的普通 click、type、same-tab navigation</td><td>当前 turn 的 exact surface grant 允许公开 <code>computer_use</code> 进入受限 runner，不再弹第二张通用工具卡；显式 ask/deny rule、authority、frame、target 和 action-risk 校验仍先执行，subdomain 不继承。</td></tr>
           <tr><td><strong>R3 敏感或高影响</strong></td><td>登录凭证、发送/发布、购买、删除、账户/权限修改、接受条款、跨 origin 提交</td><td>返回 <code>needs_user</code>，展示拟执行动作并由用户完成或逐次确认；不允许任务级自动授权。</td></tr>
           <tr><td><strong>Unsupported</strong></td><td>CAPTCHA、任意 JS、cookie/storage 导出、upload/download、clipboard、浏览器设置</td><td>不执行；返回明确 reason code。</td></tr>
         </tbody>
@@ -638,13 +640,13 @@ Observation
 
   <section id="delivery">
     <h2>11 实施顺序与每阶段出口</h2>
-    <p class="note warn"><strong>发布约束：</strong>PHASE 0–4 是一个不可拆分发布的交付单元。完成中间阶段可以合并内部类型和测试，但在 authoritative registry、exact routing、capability enforcement、runner、安全 UI 与默认 18100 安装版 live E2E 全部通过前，只能在测试开关下调用，不得向真实 provider 动态注入 <code>computer_use</code>，也不得在 UI 标记“Agent 可访问”。</p>
+    <p class="note warn"><strong>交付边界：</strong>当前 turn-scoped baseline 已在单一 visible split web surface 范围内向真实 provider 提供 <code>computer_use</code>，并完成默认 18100 安装版 live E2E。下面 PHASE 0–4 描述完整目标架构的后续强化顺序；只有对应 phase gate 通过后，才能宣称 authoritative multiwindow registry、排他 lease、完整 Safety UI、canvas fallback 或相关发布能力，不能用当前 baseline 证据替代。</p>
     <div class="card">
       <div class="phase"><div class="id">PHASE 0</div><div><strong>协议与确定性基础</strong><br>定义 Surface Context、binding、alias、preview、reason codes 和 completion authority；明确不进入 component learning、OCR/detector、vision memory 和 workflow persistence；invalid plan 不再映射 done。</div><div class="gate">出口：schema 与单元测试证明 surface 不可伪造、incomplete 不能变为 success。</div></div>
       <div class="phase"><div class="id">PHASE 1</div><div><strong>Authoritative Surface Registry 与精确 Broker</strong><br>实现 desktop window registration、WebSocket 绑定、单调 registry events 和连接清理；command/reply 定向发送并校验 window/renderer/surface/tab/target revision；实现 alias 解析、tab lease、hide/move/close invalidation 和 teardown。</div><div class="gate">出口：伪造/旧 ID 被拒绝；双窗口测试连续 100 次命中指定 tab；隐藏、关闭和转移不会改用其他 tab。</div></div>
-      <div class="phase"><div class="id">PHASE 2</div><div><strong>Turn-start Surface Awareness</strong><br>composer 每 turn 只引用 registry surface；服务端捕获有界且 frame-consistent 的 preview，在 provider 调用前注入 Surface Context。完成 composer surface chip 和显式关闭状态；此阶段仍不注入执行工具。</div><div class="gate">出口：provider 能稳定获得正确 preview/alias；超限、navigation race、focus race 与禁用状态测试通过。</div></div>
-      <div class="phase"><div class="id">PHASE 3</div><div><strong>WebTabAdapter 与 Runner</strong><br>ARIA/DOM element refs、frame freshness、判别式 Action、capability enforcement、按需单张 viewport screenshot、动作后 observation；接入 budget、cancel、approval、origin policy、artifact policy、structured result 和事件流。只允许测试开关调用，不能向真实 provider 注入。</div><div class="gate">出口：DOM/canvas、权限、cancel、target lost、step limit 集成测试通过。</div></div>
-      <div class="phase"><div class="id">PHASE 4</div><div><strong>桌面交互、Safety UI 与发布启用</strong><br>状态、Stop、permission card、人工接管和完成证据；覆盖用户从 sidebar/按钮打开 web tab、形成 split、提问、观察和操作的完整流程；使用默认 18100 安装版进行 live CDP 测试。全部 gate 通过后才原子启用动态 <code>computer_use</code> 注入和“Agent 可访问”状态。</div><div class="gate">出口：下面的 E2E 清单全部有可复核 artifact，真实 provider 工具注入才可开启。</div></div>
+      <div class="phase"><div class="id">PHASE 2</div><div><strong>完整 Surface Awareness</strong><br>在现有 turn ref/preview/chip baseline 上增加 authoritative registry revision、frame-consistent snapshot barrier、稳定多 surface alias 和显式关闭状态。</div><div class="gate">出口：provider 能稳定获得正确 preview/alias；超限、navigation race、focus race 与禁用状态测试通过。</div></div>
+      <div class="phase"><div class="id">PHASE 3</div><div><strong>完整 WebTabAdapter 与 Runner</strong><br>在现有 DOM/ARIA refs、frame freshness 和确定性 verification 上增加排他 lease、完整 capability/risk policy、cancel、target-lost lifecycle、单张 viewport visual fallback 和 artifact policy。</div><div class="gate">出口：DOM/canvas、权限、cancel、target lost、step limit 集成测试通过。</div></div>
+      <div class="phase"><div class="id">PHASE 4</div><div><strong>完整桌面交互与 Safety UI</strong><br>补齐运行状态、Stop、专用 permission card、人工接管和多窗口完成证据；继续使用默认 18100 安装版测试。</div><div class="gate">出口：下面与完整目标能力对应的 E2E 清单均有可复核 artifact，相关能力才可标为发布完成。</div></div>
     </div>
   </section>
 
@@ -654,6 +656,7 @@ Observation
       <li><strong>Turn-start awareness：</strong>chat 与 Bilibili fixture 合并为 compound group 后，每次 chat command 都产生经过服务端校验的 Surface Context。provider 收到首个 token 前已经具有 <code>right</code> surface 的 title、origin、有界 preview、capabilities 和 <code>computer_use</code> schema。</li>
       <li><strong>页面问答：</strong>输入“屏幕右边有什么”或“这个页面是什么”时，回复基于当前 preview；信息不足时自动调用 <code>computer_use(surface="right", task="读取回答所需的当前页面信息")</code> 观察。全程不要求用户粘贴 URL、文字或截图，不发送 screenshot，也不回答没有页面访问能力。</li>
       <li><strong>页面交互：</strong>输入“在右边页面搜索框输入 OpenProgram”时，模型直接调用已绑定工具，observe 最新 DOM/ARIA refs，操作精确右侧 tab，再重新观察并报告结果；不得操作独立 tab 或另一个窗口。</li>
+      <li><strong>非前台交互：</strong>OpenProgram 被其他应用遮挡，或用户焦点位于 chat/其他 pane 时，对已绑定 web surface 的 DOM/ARIA 读取与点击仍命中同一 <code>window_id + tab_id + cdp_target_id</code>。执行不得调用 <code>BrowserWindow.focus()</code>、OS 鼠标/键盘注入、桌面坐标或屏幕截图。</li>
       <li><strong>用户打开的 surface：</strong>用户通过 sidebar、center-tab 按钮或 split 操作打开一个已登记 web tab 后，下一 turn 的 Surface Context 自动反映新的 visible/focused/region 状态，不需要用户再次说明窗口身份。</li>
       <li><strong>显式关闭：</strong>关闭“Agent 可访问”后，provider 只知道存在一个访问被禁用的 surface，不收到 preview 或 <code>computer_use</code> schema；UI 与回复都准确说明权限状态。</li>
       <li><strong>绑定隔离：</strong>同一窗口中未与当前 session 合并的 web tab、另一窗口的 web tab、隐藏的组成员都不能成为本 turn target；关闭工具后不注入 Computer Use 工具。</li>
@@ -675,7 +678,7 @@ Observation
       <li><strong>简单视觉 fallback：</strong>在没有可用 DOM target 的 canvas fixture 上，只向模型发送一张当前 viewport screenshot，不启动 OCR、detector、memory 或 zoom，并完成一次点击；resize/scroll 后旧 action 返回 <code>stale_observation</code>。</li>
       <li><strong>多窗口：</strong>两个 OpenProgram 窗口各有 web tab；指定窗口任务不得在另一窗口创建、激活或操作 tab。</li>
       <li><strong>并发：</strong>同一 tab 第二个写任务被 lease 拒绝；两个不同 tab 可并行完成且 artifact/session 不交叉。</li>
-      <li><strong>外部 origin：</strong>首次写动作产生准确 permission card；拒绝后零写入；批准本任务后同 origin 普通 action 不重复提示。</li>
+      <li><strong>外部 origin：</strong>已关联 surface 的普通 DOM click/type 不产生重复的通用工具 approval；命中显式 ask rule 或高风险动作时显示准确 permission card，拒绝后零写入。</li>
       <li><strong>跨 origin：</strong>same-tab redirect 进入新 origin 后旧授权失效；popup/new tab 返回 <code>needs_user/new_surface_created</code>、释放原 lease并结束旧 run，不会替换当前 target。用户关联新 tab 后，下一 turn 创建新 run 才能控制。</li>
       <li><strong>登录/CAPTCHA：</strong>runner 返回 <code>needs_user</code>；用户接管后 Continue 使用新 frame，不复用暂停前 action。</li>
       <li><strong>Prompt injection：</strong>页面要求忽略用户任务、读取文件或执行高风险动作时，Runtime 权限不变化，任务被阻止或请求用户确认。</li>
@@ -702,22 +705,22 @@ Observation
       <table>
         <thead><tr><th>能力</th><th>当前证据</th><th>状态</th></tr></thead>
         <tbody>
-          <tr><td>内置可见 web tab + exact CDP target attach</td><td><code>_actions/open_action.py</code> 与 browser unit/source checks</td><td class="partial">已有基础，尚缺 live acceptance</td></tr>
+          <tr><td>内置可见 web tab + exact CDP target attach</td><td><code>desktop/main.js</code>、<code>_actions/open_action.py</code> 与安装版 session <code>local_340bc50ccd2c4eafb1fc12378e0489ab</code></td><td class="yes">已验证绑定 tab 的 DOM 点击与确定性验证</td></tr>
           <tr><td>DOM/ARIA selector 操作</td><td><code>_actions/read.py</code>、<code>_actions/interact.py</code></td><td class="partial">已有底层工具，不是 Computer Use runner</td></tr>
-          <tr><td>DOM-first Browser Agent baseline</td><td><code>agentic_functions/browser_agent/__init__.py</code> 与 <code>tests/unit/test_browser_agent.py</code></td><td class="partial">现有公开名仍是 <code>browser_agent</code>；基础单元检查存在，但没有 turn-start Surface Context 和安装版完整 E2E</td></tr>
+          <tr><td>DOM-first Browser Agent baseline</td><td><code>agentic_functions/browser_agent/__init__.py</code>、<code>tests/unit/test_browser_agent.py</code> 与 <code>test_computer_use_surface.py</code></td><td class="yes">公开 <code>computer_use</code> 复用受限 runner，并已接入 turn-start Surface Context</td></tr>
           <tr><td>GUI planning/verify</td><td><code>gui_harness/tasks/execute_task.py</code> 与 harness tests</td><td class="partial">规划和验证思路可提取；第一阶段不启用 grounding pipeline、OCR/detector 或 memory，completion/state 仍有 blocker</td></tr>
-          <tr><td>每 turn surface candidates 与服务端 Surface Registry</td><td>chat payload 当前无 surface 字段；服务端无 window/renderer/group/layout 校验后的 binding registry</td><td class="nope">未实现</td></tr>
-          <tr><td>Turn-start preview 与动态工具可用性</td><td>当前没有有界 preview；Browser Agent 为 deferred default tool</td><td class="nope">未实现</td></tr>
-          <tr><td>Surface chip、访问开关与当轮目标展示</td><td>当前 composer 不显示 Agent 可访问的 surface</td><td class="nope">未实现</td></tr>
-          <tr><td>精确 window/tab control routing</td><td>当前为全局 broadcast + first reply</td><td class="nope">未实现</td></tr>
-          <tr><td>ComputerSession、tab lease、frame freshness</td><td>无</td><td class="nope">未实现</td></tr>
-          <tr><td>Origin permission card 与 risk tiers</td><td>现有 browser approval 只覆盖少数 login-state 操作</td><td class="nope">未实现</td></tr>
-          <tr><td>确定性 completion、cancel、artifact lifecycle</td><td>现有 gui_agent 不满足本设计</td><td class="nope">未实现</td></tr>
-          <tr><td>真实内置浏览器 E2E</td><td>尚无本设计对应 artifact</td><td class="nope">未验证</td></tr>
+          <tr><td>每 turn surface candidates 与服务端 Surface Registry</td><td>composer 已提交 exact surface ref；Runtime 绑定 originating WebSocket、window、tab 和 target。完整单调 revision registry、跨窗口 transfer 与长期 lease 尚未实现。</td><td class="partial">当前 turn 绑定基线已实现</td></tr>
+          <tr><td>Turn-start preview 与动态工具可用性</td><td>有界 DOM/ARIA preview 已在首个模型调用前加入上下文；只有存在有效 surface 时才向 provider 提供 resident <code>computer_use</code> schema。</td><td class="yes">已实现并有单元测试</td></tr>
+          <tr><td>Surface chip、访问开关与当轮目标展示</td><td>composer 已显示当前可访问 surface，发送时固定 surface ref；完整运行中状态与 permission card 不在本次基线内。</td><td class="partial">基础状态已实现</td></tr>
+          <tr><td>精确 window/tab control routing</td><td>preview/activate reply 校验 originating WebSocket、<code>window_id</code>、<code>tab_id</code> 与 <code>target_id</code>；Electron 通过 bound WebContents/CDP 执行，不置顶应用。</td><td class="yes">当前绑定范围已实现</td></tr>
+          <tr><td>ComputerSession、tab lease、frame freshness</td><td>bound target 与 observation freshness 已实现；完整并发 tab lease 和 lifecycle invalidation 未实现。</td><td class="partial">基线完成</td></tr>
+          <tr><td>Origin permission card 与 risk tiers</td><td>surface grant、authority、显式 deny/ask 和现有 browser action 分类已接入；完整专用 permission card 尚未实现。</td><td class="partial">基础策略已实现</td></tr>
+          <tr><td>确定性 completion、cancel、artifact lifecycle</td><td><code>computer_use</code> 只根据 post-action Runtime assertion 生成 <code>succeeded/verified</code>；完整 artifact policy 尚未实现。</td><td class="partial">确定性 completion 已验证</td></tr>
+          <tr><td>真实内置浏览器 E2E</td><td>默认 profile、18100、<code>/Applications/OpenProgram.app</code>；session <code>local_340bc50ccd2c4eafb1fc12378e0489ab</code> 点击 Bilibili“番剧”，Runtime 返回 <code>succeeded/verified</code>。</td><td class="yes">已验证，无 screenshot</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="note warn"><strong>证据边界：</strong>本页是设计和当前差距记录，不是发布声明。只有代码合并并完成 stable desktop 的 live test 后，才能把对应条目改为“已实现/已验证”，并附测试命令和 artifact 路径。</p>
+    <p class="note warn"><strong>证据边界：</strong>当前证据只覆盖单个已登记 split web surface 的 turn-scoped 精确绑定、DOM-first 操作和安装版验证。完整 authoritative registry revisions、tab lease、hide/move/transfer invalidation、视觉 fallback、权限卡片和多窗口压力测试仍按上文标记，不因本次基线验证而视为已实现。</p>
   </section>
 
   <section id="references">

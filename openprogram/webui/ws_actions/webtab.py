@@ -13,34 +13,126 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 import uuid
+from typing import Any
 
 # req_id -> (event, result-holder)。holder 为空 dict，首个回执写入
 # "result" 键（claim-once），后续同 req_id 的回执直接忽略。
-_pending: dict[str, tuple[threading.Event, dict]] = {}
+_pending: dict[str, tuple[threading.Event, dict, Any | None]] = {}
 _lock = threading.Lock()
+_bindings: dict[str, tuple[Any, str, str, str, float]] = {}
 
 
-def _request(command: dict, timeout: float) -> dict:
-    from openprogram.webui import server as _s
-    if not _s._ws_connections:
-        return {"ok": False, "error": "no WS clients connected (desktop shell not open?)"}
+def _payload(command: dict, req_id: str) -> str:
+    return json.dumps({
+        "type": "webtab.command",
+        "data": {**command, "req_id": req_id},
+    })
+
+
+def _wait_for_reply(
+    command: dict,
+    timeout: float,
+    *,
+    expected_ws=None,
+    send,
+) -> dict:
     req_id = uuid.uuid4().hex
     ev = threading.Event()
     holder: dict = {}
     with _lock:
-        _pending[req_id] = (ev, holder)
+        _pending[req_id] = (ev, holder, expected_ws)
     try:
-        _s._broadcast(json.dumps({
-            "type": "webtab.command",
-            "data": {**command, "req_id": req_id},
-        }))
+        send(_payload(command, req_id))
         if not ev.wait(timeout):
             return {"ok": False, "error": f"timeout: no desktop shell replied within {timeout:g}s"}
         return holder.get("result") or {"ok": False, "error": "empty reply"}
     finally:
         with _lock:
             _pending.pop(req_id, None)
+
+
+def _request(command: dict, timeout: float) -> dict:
+    from openprogram.webui import server as _s
+    if not _s._ws_connections:
+        return {"ok": False, "error": "no WS clients connected (desktop shell not open?)"}
+    return _wait_for_reply(command, timeout, send=_s._broadcast)
+
+
+def request_on_ws(ws, command: dict, timeout: float = 5.0) -> dict:
+    """Send one web-tab command only to the socket that submitted the turn."""
+    from openprogram.webui import server as _s
+    if ws not in _s._ws_connections or _s._loop is None:
+        return {"ok": False, "error": "originating desktop connection is unavailable"}
+
+    def send(payload: str) -> None:
+        import asyncio
+        future = asyncio.run_coroutine_threadsafe(ws.send_text(payload), _s._loop)
+        future.result(timeout=min(max(timeout, 0.1), 2.0))
+
+    try:
+        return _wait_for_reply(
+            command, timeout, expected_ws=ws, send=send,
+        )
+    except Exception as exc:
+        return {"ok": False, "error": f"desktop command failed: {type(exc).__name__}: {exc}"}
+
+
+def register_binding(
+    ws,
+    window_id: str,
+    tab_id: str,
+    target_id: str,
+    ttl: float = 1800.0,
+) -> str:
+    binding_id = "surface_" + uuid.uuid4().hex
+    with _lock:
+        _bindings[binding_id] = (
+            ws, window_id, tab_id, target_id, time.monotonic() + ttl,
+        )
+    return binding_id
+
+
+def release_binding(binding_id: str) -> None:
+    with _lock:
+        _bindings.pop(binding_id, None)
+
+
+def request_bound_tab(
+    binding_id: str,
+    *,
+    url: str = "",
+    timeout: float = 5.0,
+) -> dict:
+    """Activate the exact visible tab captured for this turn."""
+    import os
+    if os.environ.get("OPENPROGRAM_IN_AGENTIC_SUBPROCESS") == "1":
+        command = {"op": "activate", "binding_id": binding_id}
+        if url:
+            command["url"] = url
+        return _request(command, timeout)
+    with _lock:
+        entry = _bindings.get(binding_id)
+    if entry is None:
+        return {"ok": False, "error": "surface binding is unavailable"}
+    ws, window_id, tab_id, target_id, expires_at = entry
+    if time.monotonic() >= expires_at:
+        release_binding(binding_id)
+        return {"ok": False, "error": "surface binding expired"}
+    command = {"op": "activate", "window_id": window_id, "tab_id": tab_id}
+    if url:
+        command["url"] = url
+    result = request_on_ws(ws, command, timeout)
+    if not result.get("ok"):
+        return result
+    if (
+        result.get("window_id") != window_id
+        or result.get("tab_id") != tab_id
+        or result.get("target_id") != target_id
+    ):
+        return {"ok": False, "error": "bound web tab changed"}
+    return result
 
 
 def request_open_tab(url: str, timeout: float = 15.0) -> dict:
@@ -59,13 +151,19 @@ async def handle_webtab_result(ws, cmd: dict):
         entry = _pending.get(req_id)
         if entry is None or "result" in entry[1]:
             return  # unknown req_id or already claimed — ignore duplicates
-        ev, holder = entry
+        ev, holder, expected_ws = entry
+        if expected_ws is not None and ws is not expected_ws:
+            return
         holder["result"] = {
             "ok": bool(cmd.get("ok")),
             "error": cmd.get("error"),
+            **({"window_id": cmd["window_id"]}
+               if isinstance(cmd.get("window_id"), str) else {}),
             **({"url": cmd["url"]} if isinstance(cmd.get("url"), str) else {}),
             **({"tab_id": cmd["tab_id"]} if isinstance(cmd.get("tab_id"), str) else {}),
             **({"target_id": cmd["target_id"]} if isinstance(cmd.get("target_id"), str) else {}),
+            **({"title": cmd["title"]} if isinstance(cmd.get("title"), str) else {}),
+            **({"preview": cmd["preview"]} if isinstance(cmd.get("preview"), dict) else {}),
         }
     ev.set()
 

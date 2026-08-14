@@ -347,6 +347,7 @@ async def handle_chat(ws, cmd: dict):
     tools_profile = cmd.get("tools_profile") or None
     web_search_flag = bool(cmd.get("web_search"))
     permission_mode = cmd.get("permission_mode") or None
+    surface_ref = cmd.get("surface") if isinstance(cmd.get("surface"), dict) else None
     # Per-turn speed / priority tier from the composer's speed pill
     # ("priority" = Fast, "flex" = cheaper-slower). Rides the message
     # payload each turn (client remembers via localStorage like the
@@ -793,7 +794,9 @@ async def handle_chat(ws, cmd: dict):
                     "permission_mode": run_cfg.permission_mode,
                     "service_tier": service_tier,
                     "response_format": response_format,
-                    "attachments": attachments},
+                    "attachments": attachments,
+                    "surface_ref": surface_ref,
+                    "surface_ws": ws},
             daemon=True,
         )
     elif parsed["action"] == "spawn":

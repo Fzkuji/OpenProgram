@@ -1853,6 +1853,80 @@ async function activateView(ctx, id, url) {
   return devToolsTargetId(record.view.webContents);
 }
 
+const SURFACE_PREVIEW_SCRIPT = `(() => {
+  const visible = (element) => {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden"
+      && rect.width > 0 && rect.height > 0
+      && rect.bottom > 0 && rect.right > 0
+      && rect.top < innerHeight && rect.left < innerWidth;
+  };
+  let bodyText = "";
+  if (document.body) {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode() && bodyText.length <= 2000) {
+      const parent = walker.currentNode.parentElement;
+      if (!parent || !visible(parent)) continue;
+      const text = (walker.currentNode.textContent || "").replace(/\\s+/g, " ").trim();
+      if (text) bodyText += (bodyText ? " " : "") + text;
+    }
+  }
+  const landmarkSelector = [
+    "header", "nav", "main", "aside", "footer",
+    "[role=banner]", "[role=navigation]", "[role=main]",
+    "[role=complementary]", "[role=contentinfo]", "[role=search]",
+  ].join(",");
+  const visibleLandmarks = Array.from(document.querySelectorAll(landmarkSelector))
+    .filter(visible);
+  const landmarks = visibleLandmarks
+    .slice(0, 12)
+    .map((element) => ({
+      role: element.getAttribute("role") || element.tagName.toLowerCase(),
+      name: (
+        element.getAttribute("aria-label") || element.getAttribute("title") || ""
+      ).replace(/\\s+/g, " ").trim().slice(0, 160),
+    }));
+  const interactiveSelector = [
+    "a[href]", "button", "input", "textarea", "select", "summary",
+    "[role=button]", "[role=link]", "[role=checkbox]", "[role=radio]",
+    "[role=tab]", "[role=menuitem]", "[contenteditable=true]",
+    "[tabindex]:not([tabindex='-1'])",
+  ].join(",");
+  return {
+    visible_text_excerpt: bodyText.slice(0, 2000),
+    text_truncated: bodyText.length > 2000,
+    aria_landmarks: landmarks,
+    landmarks_truncated: visibleLandmarks.length > landmarks.length,
+    interactive_count: Array.from(document.querySelectorAll(interactiveSelector))
+      .filter(visible).length,
+  };
+})()`;
+
+async function previewView(ctx, id) {
+  const record = recordFor(ctx, id);
+  if (!record || !ctx.visibleViewIds.has(id)) return null;
+  const wc = record.view.webContents;
+  try {
+    const [preview, targetId] = await Promise.all([
+      wc.executeJavaScript(SURFACE_PREVIEW_SCRIPT, true),
+      devToolsTargetId(wc),
+    ]);
+    if (!targetId || recordFor(ctx, id) !== record || !ctx.visibleViewIds.has(id)) {
+      return null;
+    }
+    return {
+      tab_id: id,
+      target_id: targetId,
+      url: wc.getURL(),
+      title: wc.getTitle(),
+      preview,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function withView(ctx, id, fn) {
   const record = recordFor(ctx, id);
   if (!record) return false;
@@ -2133,6 +2207,10 @@ function registerWebTabIpc() {
     return ctx && typeof id === "string"
       ? activateView(ctx, id, typeof url === "string" ? url : "")
       : null;
+  });
+  ipcMain.handle("webtab:preview", (event, id) => {
+    const ctx = contextForSender(event);
+    return ctx && typeof id === "string" ? previewView(ctx, id) : null;
   });
   ipcMain.on("webtab:sync-visible", (event, items) => {
     const ctx = contextForSender(event);

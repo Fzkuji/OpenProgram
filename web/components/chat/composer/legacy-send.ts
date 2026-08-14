@@ -1,6 +1,7 @@
 "use client";
 
 import { useSessionStore } from "@/lib/session-store";
+import { surfaceRefForChat } from "@/lib/desktop-bridge";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import { setWelcomeVisible } from "@/lib/runtime-bridge/helpers";
 import { setRunning } from "@/lib/runtime-bridge/ui";
@@ -170,6 +171,8 @@ export function sendChatMessage({
     tools: toolsEnabled,
     web_search: webSearchEnabled,
   };
+  const surface = surfaceRefForChat(sessionId, toolsEnabled);
+  if (surface) payload.surface = surface;
   if (serviceTier) {
     payload.service_tier = serviceTier;
   }

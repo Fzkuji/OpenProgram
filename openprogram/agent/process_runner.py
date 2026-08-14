@@ -96,14 +96,29 @@ def _new_child_webtab_bridge(event_queue):
 
 def _bridge_webtab_to_parent(data: dict, answer_queue) -> None:
     command = data.get("command") if isinstance(data, dict) else None
-    if not isinstance(command, dict) or command.get("op") not in {"open", "active"}:
+    bound_activate = (
+        isinstance(command, dict)
+        and command.get("op") == "activate"
+        and isinstance(command.get("binding_id"), str)
+    )
+    if not isinstance(command, dict) or (
+        command.get("op") not in {"open", "active"} and not bound_activate
+    ):
         result = {"ok": False, "error": "unsupported webtab bridge operation"}
     else:
         try:
             timeout = max(0.1, min(float(data.get("timeout", 15)), 15.0))
             from openprogram.webui.ws_actions import webtab
 
-            result = webtab._request(command, timeout)
+            binding_id = command.get("binding_id")
+            if bound_activate:
+                result = webtab.request_bound_tab(
+                    binding_id,
+                    url=command.get("url") or "",
+                    timeout=timeout,
+                )
+            else:
+                result = webtab._request(command, timeout)
         except Exception as exc:
             result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     answer_queue.put({
@@ -111,6 +126,17 @@ def _bridge_webtab_to_parent(data: dict, answer_queue) -> None:
         "req_id": data.get("req_id") if isinstance(data, dict) else None,
         "result": result,
     })
+
+
+def _permission_rules_from_snapshot(snapshot: Optional[dict]):
+    if snapshot is None:
+        return None
+    from openprogram.agent.session_config import PermissionRules
+    return PermissionRules(
+        allow=list(snapshot.get("allow") or []),
+        deny=list(snapshot.get("deny") or []),
+        ask=list(snapshot.get("ask") or []),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +159,10 @@ def _child_entry(
     usage_ctx_snapshot: Optional[dict] = None,
     sandbox_policy_snapshot: Optional[dict] = None,
     authority_snapshot: Optional[dict] = None,
+    permission_rules_snapshot: Optional[dict] = None,
+    surface_context_snapshot: Optional[dict] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> None:
     # Detach into our own process group so ``killpg`` from the parent
     # takes down every grandchild (browser, subprocess providers, ...).
@@ -146,6 +176,9 @@ def _child_entry(
     # cannot widen an already-running child.
     from openprogram.sandbox import install_policy_snapshot
     install_policy_snapshot(sandbox_policy_snapshot or {"enabled": False})
+    if surface_context_snapshot is not None:
+        from openprogram.agent.surface_context import bind as _bind_surface
+        _bind_surface(surface_context_snapshot)
 
     # Restore the parent's UsageContext, then override call_kind/call_label
     # with this subprocess's actual identity. The snapshot carries the
@@ -309,7 +342,7 @@ def _child_entry(
         _turn_id_var.set(anchor_msg_id)
         _set_cid(session_id)
 
-        rt = create_runtime()
+        rt = create_runtime(provider=provider, model=model)
         if response_format_snapshot is not None:
             from openprogram.agentic_programming.runtime import _current_response_format
             from openprogram.providers.structured_output import normalize_response_format
@@ -356,6 +389,9 @@ def _child_entry(
             agent_id="main",
             source="web",
             render_range=render_range,
+            permission_rules=_permission_rules_from_snapshot(
+                permission_rules_snapshot
+            ),
             **(authority_snapshot or {}),
         )
         # Same context the dispatcher binds in-process: an inner
@@ -551,6 +587,10 @@ def run_agentic_in_subprocess(
     on_event: Optional[Callable[[dict], None]] = None,
     parent_call_id: Optional[str] = None,
     authority: Optional[dict] = None,
+    permission_rules_snapshot: Optional[dict] = None,
+    surface_context_snapshot: Optional[dict] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
     response_format=None,
     render_range: Optional[dict[str, int]] = None,
 ) -> dict:
@@ -598,7 +638,8 @@ def run_agentic_in_subprocess(
               work_dir, result_path, event_queue, parent_call_id,
               answer_queue, stop_queue, response_format_snapshot,
               render_range, usage_ctx_snapshot, sandbox_policy_snapshot,
-              authority),
+              authority, permission_rules_snapshot, surface_context_snapshot,
+              provider, model),
         daemon=False,
     )
     p.start()

@@ -98,6 +98,20 @@ export interface DesktopWebTabApi {
   navigate(id: string, url: string): void;
   /** Ensure/navigate/show this view and return its CDP target id. */
   activate(id: string, url?: string): Promise<string | null>;
+  /** Bounded DOM/ARIA preview for a currently visible native view. */
+  preview(id: string): Promise<{
+    tab_id: string;
+    target_id: string;
+    url: string;
+    title: string;
+    preview: {
+      visible_text_excerpt: string;
+      text_truncated: boolean;
+      aria_landmarks: Array<{ role: string; name: string }>;
+      landmarks_truncated: boolean;
+      interactive_count: number;
+    };
+  } | null>;
   /** DIP rect relative to the window content area. */
   setBounds(id: string, bounds: DesktopWebTabBounds): void;
   show(id: string): void;
@@ -419,6 +433,51 @@ export function visibleWebTab() {
   return null;
 }
 
+export interface TurnSurfaceRef {
+  version: 1;
+  window_id: string;
+  tab_id: string;
+  region: "right";
+  access: "enabled" | "disabled";
+  focused: boolean;
+  title: string;
+  url: string;
+}
+
+/** The visible web pane paired with this chat at send time. */
+export function surfaceRefForChat(
+  sessionId: string | null,
+  toolsEnabled: boolean,
+): TurnSurfaceRef | null {
+  const bridge = desktopBridge();
+  if (!bridge || !sessionId) return null;
+  const state = useCenterTabs.getState();
+  const chat = state.tabs.find(
+    (tab) => tab.kind === "session" && tab.sessionId === sessionId,
+  );
+  if (!chat) return null;
+  const group = findCenterTabGroup(state.groups, chat.id);
+  let web = group?.visibleIds
+    .map((id) => state.tabs.find((tab) => tab.id === id))
+    .find((tab) => tab?.kind === "web");
+  if (!web && state.activeId === chat.id && state.splitWebTabId) {
+    web = state.tabs.find(
+      (tab) => tab.id === state.splitWebTabId && tab.kind === "web",
+    );
+  }
+  if (!web || web.kind !== "web") return null;
+  return {
+    version: 1,
+    window_id: bridge.windowId,
+    tab_id: web.id,
+    region: "right",
+    access: toolsEnabled ? "enabled" : "disabled",
+    focused: group?.focusedId === web.id,
+    title: web.title,
+    url: web.url || "",
+  };
+}
+
 export function restorePriorActiveTabAfterFailedWebOpen(
   priorActiveId: string | null,
   openedWebTabId: string | null,
@@ -441,7 +500,12 @@ function sendWebTabResult(
     action: "webtab_result",
     req_id: reqId,
     ok,
-    ...(ok ? { url: activeUrl, tab_id: active.id, target_id: targetId } : {}),
+    ...(ok ? {
+      window_id: desktopBridge()?.windowId,
+      url: activeUrl,
+      tab_id: active.id,
+      target_id: targetId,
+    } : {}),
     ...(!ok ? { error: "desktop web tab did not expose a CDP target" } : {}),
   }));
 }
@@ -480,11 +544,63 @@ export function installDesktopMenuHandlers(): void {
     const detail = e.detail;
     if (detail?.type !== "webtab.command") return;
     const d = detail.data as
-      | { op?: string; url?: string; req_id?: string }
+      | { op?: string; url?: string; window_id?: string; tab_id?: string; req_id?: string }
       | undefined;
-    if (!d?.req_id || (d.op !== "open" && d.op !== "active")) return;
+    if (!d?.req_id || !["open", "active", "activate", "preview"].includes(d.op || "")) return;
     const ws = getSocket();
     if (ws?.readyState !== WebSocket.OPEN) return;
+
+    if (d.op === "preview" || d.op === "activate") {
+      if (d.window_id && d.window_id !== bridge.windowId) {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ok: false,
+          error: "requested web tab belongs to another window",
+        }));
+        return;
+      }
+      const state = useCenterTabs.getState();
+      const group = state.activeId
+        ? findCenterTabGroup(state.groups, state.activeId)
+        : undefined;
+      const visibleIds = new Set(
+        resolveCenterTabPanes(group, state.tabs, state.activeId)
+          .flatMap((pane) => pane.kind === "tab" ? [pane.tabId] : []),
+      );
+      if (state.activeId && state.splitWebTabId) {
+        visibleIds.add(state.splitWebTabId);
+      }
+      const tab = d.tab_id && visibleIds.has(d.tab_id)
+        ? state.tabs.find((item) => item.id === d.tab_id && item.kind === "web")
+        : null;
+      if (!tab || tab.kind !== "web") {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ok: false,
+          error: "requested web tab is not visible in this window",
+        }));
+        return;
+      }
+      if (d.op === "preview") {
+        void bridge.webTab.preview(tab.id).then((result) => {
+          ws.send(JSON.stringify({
+            action: "webtab_result",
+            req_id: d.req_id,
+            ok: !!result,
+            ...(result
+              ? { ...result, window_id: bridge.windowId }
+              : { error: "desktop web tab preview is unavailable" }),
+          }));
+        });
+      } else {
+        void bridge.webTab.activate(tab.id, d.url).then((targetId) =>
+          sendWebTabResult(ws, d.req_id!, tab, targetId),
+        ).catch(() => sendWebTabResult(ws, d.req_id!, tab, null));
+      }
+      return;
+    }
 
     if (d.op === "open") {
       if (!d.url) return;
