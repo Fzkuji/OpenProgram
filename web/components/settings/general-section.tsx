@@ -4,6 +4,12 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { useTranslation, type Locale } from "@/lib/i18n";
+import { Button } from "@/components/ui/button";
+import {
+  desktopBridge,
+  type DesktopBridge,
+  type DesktopUpdateState,
+} from "@/lib/desktop-bridge";
 import { useFontPref, FONT_LABELS, fontStack, type FontKey } from "@/lib/prefs/font-pref";
 import {
   setAgentProfile,
@@ -383,6 +389,133 @@ function UserSection() {
   );
 }
 
+function ApplicationSection() {
+  const { t, text } = useTranslation();
+  const [updateState, setUpdateState] = useState<DesktopUpdateState | null>(null);
+  const [hostVersion, setHostVersion] = useState("unknown");
+  const [installType, setInstallType] = useState("unknown");
+  const [bridge, setBridge] = useState<DesktopBridge | null>(null);
+
+  useEffect(() => {
+    const currentBridge = desktopBridge();
+    setBridge(currentBridge);
+    const updates = currentBridge?.updates;
+    if (updates) {
+      let active = true;
+      void updates.getState().then((state) => {
+        if (active && state) setUpdateState(state);
+      });
+      const unsubscribe = updates.onState((state) => {
+        if (active) setUpdateState(state);
+      });
+      return () => {
+        active = false;
+        unsubscribe();
+      };
+    }
+
+    const controller = new AbortController();
+    void fetch("/api/system/version", { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("version request failed")))
+      .then((payload: { currentVersion?: unknown; installType?: unknown }) => {
+        if (typeof payload.currentVersion === "string") setHostVersion(payload.currentVersion);
+        if (typeof payload.installType === "string") setInstallType(payload.installType);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+
+  const statusText = (() => {
+    switch (updateState?.status) {
+      case "checking": return text("Checking…", "正在检查…");
+      case "up-to-date": return text("Up to date", "已是最新版本");
+      case "available": return text(`OpenProgram ${updateState.release?.latestVersion} is available`, `OpenProgram ${updateState.release?.latestVersion} 可用`);
+      case "downloading": {
+        const progress = updateState.progress;
+        const percentage = progress?.total ? Math.floor(progress.downloaded / progress.total * 100) : 0;
+        return text(`Downloading… ${percentage}%`, `正在下载… ${percentage}%`);
+      }
+      case "downloaded": return text("DMG opened", "DMG 已打开");
+      case "error": return updateState.error || text("Update check failed", "更新检查失败");
+      default: return text("Not checked", "尚未检查");
+    }
+  })();
+
+  const busy = updateState?.status === "checking" || updateState?.status === "downloading";
+
+  return (
+    <section>
+      <h3 className={styles.sectionTitle}>{t("general.section.application")}</h3>
+      <div className={styles.card}>
+        <div className={styles.row}>
+          <div className={styles.label}>{t("general.version")}</div>
+          <div className={styles.value}>{updateState?.currentVersion || hostVersion}</div>
+        </div>
+        {bridge?.updates ? (
+          <>
+            <div className={styles.row}>
+              <label className={styles.label} htmlFor="automatic-update-checks">
+                {text("Automatically check for updates", "自动检查更新")}
+              </label>
+              <input
+                id="automatic-update-checks"
+                type="checkbox"
+                checked={updateState?.automaticChecks ?? true}
+                onChange={(event) => { void bridge.updates.setAutomaticChecks(event.target.checked); }}
+              />
+            </div>
+            <div className={styles.row}>
+              <div className={styles.label}>{text("Update status", "更新状态")}</div>
+              <div className={styles.value}>{statusText}</div>
+            </div>
+            {updateState?.release?.releaseNotes && updateState.status === "available" && (
+              <div className={`${styles.row} ${styles.rowTop}`}>
+                <div className={styles.label}>{text("Release notes", "版本说明")}</div>
+                <div className={`${styles.value} ${styles.valueWide}`} style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>
+                  {updateState.release.releaseNotes.slice(0, 600)}
+                </div>
+              </div>
+            )}
+            <div className={styles.row}>
+              <div className={styles.label}>{text("Actions", "操作")}</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <Button variant="outline" size="sm" disabled={busy} onClick={() => { void bridge.updates.check(); }}>
+                  {text("Check now", "立即检查")}
+                </Button>
+                {updateState?.status === "available" && (
+                  <Button size="sm" disabled={busy} onClick={() => { void bridge.updates.download(); }}>
+                    {text("Download and open DMG", "下载并打开 DMG")}
+                  </Button>
+                )}
+                {updateState?.release && (
+                  <Button variant="outline" size="sm" onClick={() => { void bridge.updates.openRelease(); }}>
+                    {text("View release", "查看 Release")}
+                  </Button>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className={styles.row}>
+              <div className={styles.label}>{text("Installation", "安装类型")}</div>
+              <div className={styles.value}>{installType}</div>
+            </div>
+            <div className={styles.row}>
+              <div className={styles.label}>{text("Check for updates", "检查更新")}</div>
+              <code>openprogram upgrade --check</code>
+            </div>
+          </>
+        )}
+        <div className={styles.row}>
+          <div className={styles.label}>{t("general.framework")}</div>
+          <div className={styles.value}>Agentic Programming</div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function GeneralSection() {
   const { t, text, locale, setLocale } = useTranslation();
   const { font, setFont } = useFontPref();
@@ -516,19 +649,7 @@ export function GeneralSection() {
 
         <UserSection />
 
-        <section>
-          <h3 className={styles.sectionTitle}>{t("general.section.application")}</h3>
-          <div className={styles.card}>
-            <div className={styles.row}>
-              <div className={styles.label}>{t("general.version")}</div>
-              <div className={styles.value}>0.1.0</div>
-            </div>
-            <div className={styles.row}>
-              <div className={styles.label}>{t("general.framework")}</div>
-              <div className={styles.value}>Agentic Programming</div>
-            </div>
-          </div>
-        </section>
+        <ApplicationSection />
       </div>
     </div>
   );

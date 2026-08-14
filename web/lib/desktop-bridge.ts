@@ -210,6 +210,35 @@ export interface DesktopHistoryApi {
   clear(): Promise<boolean>;
 }
 
+export interface DesktopUpdateRelease {
+  status: "available" | "up-to-date";
+  currentVersion: string;
+  latestVersion: string;
+  publishedAt: string;
+  releaseName: string;
+  releaseNotes: string;
+  releaseUrl: string;
+}
+
+export interface DesktopUpdateState {
+  status: "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "error";
+  currentVersion: string;
+  automaticChecks: boolean;
+  checkedAt: number | null;
+  release: DesktopUpdateRelease | null;
+  progress: { downloaded: number; total: number } | null;
+  error: string | null;
+}
+
+export interface DesktopUpdateApi {
+  getState(): Promise<DesktopUpdateState | null>;
+  check(): Promise<DesktopUpdateState | null>;
+  setAutomaticChecks(enabled: boolean): Promise<DesktopUpdateState | null>;
+  download(): Promise<DesktopUpdateState | null>;
+  openRelease(): Promise<void>;
+  onState(cb: (state: DesktopUpdateState) => void): () => void;
+}
+
 /** The ⋮ main-menu overlay: a top-layer WebContentsView the desktop
  *  shell opens so the menu covers native web-tab views. `open` from the
  *  UI window; `onAction` receives the chosen action id back in the UI
@@ -255,6 +284,7 @@ export interface DesktopBridge {
   mainMenu?: DesktopMainMenuApi;
   /** Absent in shells older than the browsing-history build. */
   history?: DesktopHistoryApi;
+  updates: DesktopUpdateApi;
 }
 
 /** The preload-exposed bridge, or null outside the desktop shell. */

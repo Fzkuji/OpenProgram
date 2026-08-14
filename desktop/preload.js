@@ -56,6 +56,15 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
       ipcRenderer.invoke("history:delete", url, visitedAt),
     clear: () => ipcRenderer.invoke("history:clear"),
   },
+  updates: {
+    getState: () => ipcRenderer.invoke("updates:get-state"),
+    check: () => ipcRenderer.invoke("updates:check"),
+    setAutomaticChecks: (enabled) =>
+      ipcRenderer.invoke("updates:set-automatic-checks", Boolean(enabled)),
+    download: () => ipcRenderer.invoke("updates:download"),
+    openRelease: () => ipcRenderer.invoke("updates:open-release"),
+    onState: (cb) => subscribe("updates:state")(cb),
+  },
   tabTransfer: {
     // Synchronous by contract: called from pointer/mouse down so the
     // token exists before a same-tick dragstart reads it.

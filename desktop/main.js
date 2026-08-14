@@ -1,5 +1,15 @@
 // OpenProgram desktop shell. Plain JS, no bundler.
-const { app, BrowserWindow, WebContentsView, Menu, ipcMain, shell } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  WebContentsView,
+  Menu,
+  dialog,
+  ipcMain,
+  net,
+  powerMonitor,
+  shell,
+} = require("electron");
 const { spawn } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
@@ -9,6 +19,7 @@ const path = require("path");
 const { Buffer } = require("buffer");
 const { resolveAuthenticatedStartUrl } = require("./worker-start-url");
 const { resolvePackagedWorker } = require("./packaged-runtime");
+const { DesktopUpdateService } = require("./update-service");
 const {
   loadTransferDecisions,
   saveTransferDecisionsAtomic,
@@ -36,6 +47,68 @@ const COMMIT_RECONCILE_MAX_MS = 5_000;
 // Bounded retries for a clean (unambiguous) committed-decision write failure
 // before abandoning the commit and taking the pre-commit rollback path.
 const COMMIT_DECISION_RETRY_LIMIT = 4;
+const UPDATE_INITIAL_DELAY_MS = 30_000;
+
+let desktopUpdates = null;
+let updateTimer = null;
+
+function broadcastUpdateState(state) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send("updates:state", state);
+  }
+}
+
+function scheduleAutomaticUpdateCheck(initial = false) {
+  if (updateTimer !== null) clearTimeout(updateTimer);
+  updateTimer = null;
+  if (!app.isPackaged || !desktopUpdates?.getState().automaticChecks) return;
+  const now = Date.now();
+  const dueAt = desktopUpdates.automaticCheckDueAt();
+  const delay = initial && dueAt === 0
+    ? UPDATE_INITIAL_DELAY_MS
+    : Math.max(1_000, dueAt - now);
+  updateTimer = setTimeout(async () => {
+    updateTimer = null;
+    await desktopUpdates.check();
+    scheduleAutomaticUpdateCheck();
+  }, delay);
+}
+
+function initializeDesktopUpdates() {
+  desktopUpdates = new DesktopUpdateService({
+    currentVersion: app.getVersion(),
+    arch: process.arch,
+    statePath: path.join(app.getPath("userData"), "update-state.json"),
+    fetchImpl: (requestUrl, options) => net.fetch(requestUrl, options),
+    chooseSavePath: async (name) => {
+      const result = await dialog.showSaveDialog({
+        title: "Download OpenProgram Update",
+        defaultPath: path.join(app.getPath("downloads"), name),
+        filters: [{ name: "macOS Disk Image", extensions: ["dmg"] }],
+      });
+      return result.canceled ? null : result.filePath;
+    },
+    openPath: (filePath) => shell.openPath(filePath),
+    emit: broadcastUpdateState,
+  });
+  scheduleAutomaticUpdateCheck(true);
+  powerMonitor.on("resume", () => scheduleAutomaticUpdateCheck());
+}
+
+function registerUpdateIpc() {
+  ipcMain.handle("updates:get-state", () => desktopUpdates?.getState() || null);
+  ipcMain.handle("updates:check", () => desktopUpdates?.check({ force: true }) || null);
+  ipcMain.handle("updates:set-automatic-checks", (_event, enabled) => {
+    const state = desktopUpdates?.setAutomaticChecks(enabled) || null;
+    scheduleAutomaticUpdateCheck();
+    return state;
+  });
+  ipcMain.handle("updates:download", () => desktopUpdates?.download() || null);
+  ipcMain.handle("updates:open-release", () => {
+    const releaseUrl = desktopUpdates?.getState().release?.releaseUrl;
+    return releaseUrl ? shell.openExternal(releaseUrl) : null;
+  });
+}
 
 // agent 接管内置浏览器的数据面通道：后端 browser 工具（engine=auto/app）经
 // CDP attach 这里的可见 web tab。Electron 默认只绑 127.0.0.1，不对外暴露；
@@ -2634,6 +2707,8 @@ if (!primaryInstance) {
     registerFileDirectoryListing();
     registerWebTabIpc();
     registerTabTransferIpc();
+    registerUpdateIpc();
+    initializeDesktopUpdates();
     buildMenu();
     void createWindow();
     app.on("activate", () => {
