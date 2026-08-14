@@ -352,7 +352,7 @@ def test_release_workflow_publishes_structured_release_notes() -> None:
     )
     assert notes_path.is_file()
     notes = notes_path.read_text(encoding="utf-8")
-    assert notes.startswith(f"# OpenProgram v{version}\n")
+    assert notes.startswith(f"# OpenProgram {version} Release Notes\n")
     assert f"OpenProgram-{version}-mac-arm64-unsigned.dmg" in notes
     assert f"OpenProgram-{version}-mac-x64-unsigned.dmg" in notes
     for section in (
@@ -377,9 +377,19 @@ def test_release_workflow_publishes_structured_release_notes() -> None:
         encoding="utf-8"
     )
     assert 'notes_file=".github/release-notes/$GITHUB_REF_NAME.md"' in workflow
+    assert 'release_version="${GITHUB_REF_NAME#v}"' in workflow
     assert 'test -s "$notes_file"' in workflow
+    assert '--title "OpenProgram $release_version Release"' in workflow
     assert '--notes-file "$notes_file"' in workflow
     assert "--generate-notes" not in workflow
+
+
+def test_all_versioned_release_notes_use_the_public_english_title() -> None:
+    notes_dir = ROOT / ".github" / "release-notes"
+    for notes_path in sorted(notes_dir.glob("v*.md")):
+        version = notes_path.stem.removeprefix("v")
+        heading = notes_path.read_text(encoding="utf-8").splitlines()[0]
+        assert heading == f"# OpenProgram {version} Release Notes"
 
 
 def test_macos_desktop_matrix_maps_runtime_arch_to_electron_builder_arch() -> None:

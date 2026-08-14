@@ -211,6 +211,7 @@ jobs:
       - name: Publish GitHub Release
         run: |
           notes_file=".github/release-notes/$GITHUB_REF_NAME.md"
+          release_version="${GITHUB_REF_NAME#v}"
           test -s "$notes_file" || {
             echo "missing release notes: $notes_file" >&2
             exit 1
@@ -218,7 +219,7 @@ jobs:
           mapfile -d '' files < <(find release-artifacts -type f -print0)
           gh release create "$GITHUB_REF_NAME" "${files[@]}" \
             --verify-tag \
-            --title "$GITHUB_REF_NAME" \
+            --title "OpenProgram $release_version Release" \
             --notes-file "$notes_file"
         env:
           GH_TOKEN: ${{ github.token }}
