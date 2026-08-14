@@ -117,12 +117,16 @@ def test_only_deferred_tool_loops_still_call_runtime_exec():
             ):
                 remaining.append((path.relative_to(root).as_posix(), node.lineno))
 
+    expected_markers = {
+        "browser_agent/__init__.py": "deferred browser tool loop",
+        "deep_work/__init__.py": "tool loop, migrates with agent() in a later batch",
+        "llm_call_example/__init__.py": (
+            "tool loop, migrates with agent() in a later batch"
+        ),
+    }
     remaining.sort()
-    assert [path for path, _ in remaining] == [
-        "deep_work/__init__.py",
-        "llm_call_example/__init__.py",
-    ]
+    assert [path for path, _ in remaining] == sorted(expected_markers)
     for relative_path, line_number in remaining:
         lines = (root / relative_path).read_text(encoding="utf-8").splitlines()
         nearby = "\n".join(lines[max(0, line_number - 3):line_number])
-        assert "tool loop, migrates with agent() in a later batch" in nearby
+        assert expected_markers[relative_path] in nearby

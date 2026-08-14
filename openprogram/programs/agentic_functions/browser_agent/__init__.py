@@ -539,6 +539,7 @@ def browser_agent(
                 reason_code="unsupported_url",
             )
         else:
+            # deferred browser tool loop; runtime owns restricted AgentTool execution
             reply = runtime.exec(
                 content=[{"type": "text", "text": _prompt(task.strip(), url)}],
                 tools=[controller.tool],
