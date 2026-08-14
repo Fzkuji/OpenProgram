@@ -6,46 +6,84 @@ on:
   pull_request:
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12", "3.13"]
-    steps:
-      - uses: actions/checkout@v5
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
-      - name: Install and enable bubblewrap
-        # Ubuntu 24.04 restricts unprivileged user namespaces through
-        # AppArmor; bwrap needs them to exercise the real Linux sandbox.
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq bubblewrap
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - name: Run tests
-        run: python -m pytest tests/ --ignore=tests/integration
-
-  docs-and-examples:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Install package and docs build dependencies
-        run: pip install -e . markdown-it-py mdit-py-plugins pygments
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install locked Python dependencies
+        run: uv sync --locked --extra dev
+      - name: Ruff
+        run: uv run --locked --extra dev ruff check openprogram tests scripts tools
+      - name: Repository contracts
+        run: uv run --locked --extra dev python -m pytest -q tests/contracts
       - name: Build docs site
-        run: python -m tools.docs_site.build
-      - name: Check landing page
-        run: python -m tools.docs_site.check_landing
+        run: uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.build
+      - name: Check docs landing page
+        run: uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.check_landing
       - name: Check docs links
-        run: python -m tools.docs_site.checklinks
-      - name: Examples smoke (offline embedding)
-        run: python examples/embed_in_your_stack.py
+        run: uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.checklinks
+      - name: Examples smoke
+        run: uv run --locked python examples/embed_in_your_stack.py
+
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install locked Python dependencies
+        run: uv sync --locked --extra dev
+      - name: Unit tests
+        run: uv run --locked --extra dev python -m pytest -q tests/unit
+
+  component:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install and enable bubblewrap
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Install locked Python dependencies
+        run: uv sync --locked --extra dev
+      - name: Component tests
+        run: uv run --locked --extra dev python -m pytest -q tests/component
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install locked Python dependencies
+        run: uv sync --locked --extra dev
+      - name: Integration tests
+        run: uv run --locked --extra dev python -m pytest -q tests/integration
 
   web:
     runs-on: ubuntu-latest
@@ -56,19 +94,79 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - name: Install web dependencies
-        run: npm ci
+      - run: npm ci
+        working-directory: web
+      - name: Unit tests
+        run: npm test
         working-directory: web
       - name: Typecheck
         run: npx tsc --noEmit
         working-directory: web
+      - name: Source contracts
+        run: npm run check
+        working-directory: web
       - name: Build frontend
-        run: npx next build
+        run: npm run build
         working-directory: web
         env:
           NEXT_TELEMETRY_DISABLED: "1"
-      - name: Frontend contracts
-        run: npm run check
+
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - run: npm ci
+        working-directory: cli
+      - run: npm run typecheck
+        working-directory: cli
+      - run: npm test
+        working-directory: cli
+      - run: npm run build
+        working-directory: cli
+
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+        working-directory: desktop
+      - run: npm run check
+        working-directory: desktop
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install locked Python dependencies
+        run: uv sync --locked --extra dev --extra browser
+      - name: Install managed Chromium
+        run: uv run --locked --extra dev --extra browser playwright install --with-deps chromium
+      - run: npm ci
         working-directory: web
-      - name: Check desktop web tab navigation
-        run: node desktop/scripts/check-webtab-navigation.js
+      - run: npm run build
+        working-directory: web
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+      - name: Built Web and browser tests
+        run: uv run --locked --extra dev --extra browser python -m pytest -q -m browser tests/e2e/web

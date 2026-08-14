@@ -17,7 +17,8 @@ git clone https://github.com/Fzkuji/OpenProgram.git
 cd OpenProgram
 python -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install uv
+uv sync --locked --extra dev
 ```
 
 The [documentation](https://openprogram.io/docs/) covers the architecture,
@@ -31,20 +32,56 @@ public APIs, installation profiles, and current capabilities.
 4. Before requesting review, run:
 
    ```bash
-   python -m pytest tests/ --ignore=tests/integration
-   python -m tools.docs_site.build
-   python -m tools.docs_site.check_landing
-   python -m tools.docs_site.checklinks
+   uv run --locked --extra dev ruff check openprogram tests scripts tools
+   uv run --locked --extra dev python -m pytest -q tests/contracts
+   uv run --locked --extra dev python -m pytest -q tests/unit
+   uv run --locked --extra dev python -m pytest -q tests/component
+   uv run --locked --extra dev python -m pytest -q tests/integration
+   uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.build
+   uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.check_landing
+   uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.checklinks
    ```
 
 5. For Web changes, also run from `web/`:
 
    ```bash
    npm ci
+   npm test
    npx tsc --noEmit
+   npm run check
    npm run build
+   ```
+
+6. For CLI changes, run from `cli/`:
+
+   ```bash
+   npm ci
+   npm run typecheck
+   npm test
+   npm run build
+   ```
+
+7. For desktop changes, run from `desktop/`:
+
+   ```bash
+   npm ci
    npm run check
    ```
+
+8. For built-Web or browser changes, build Web first and run the dedicated
+   browser selection from the repository root:
+
+   ```bash
+   uv sync --locked --extra dev --extra browser
+   uv run --locked --extra dev --extra browser playwright install --with-deps chromium
+   npm --prefix web ci
+   npm --prefix web run build
+   uv run --locked --extra dev --extra browser python -m pytest -q -m browser tests/e2e/web
+   ```
+
+External-service tests under `tests/live/` are not part of ordinary pull
+request checks. Run them explicitly only with the required credentials and
+network access.
 
 Keep each pull request limited to one coherent change. Explain the user-visible
 behavior, verification performed, and any compatibility or migration impact.
