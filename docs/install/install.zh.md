@@ -32,8 +32,8 @@ OpenProgram 分别提供桌面 release 安装和 CLI/server release 安装。sou
 3. 增加当前用户执行权限并启动：
 
 ```bash
-chmod u+x OpenProgram-*-linux-x64.AppImage
-./OpenProgram-*-linux-x64.AppImage
+chmod u+x OpenProgram-*-linux-x86_64.AppImage
+./OpenProgram-*-linux-x86_64.AppImage
 ```
 
 AppImage 不要求 root。目前不发布 Linux arm64 桌面产物。

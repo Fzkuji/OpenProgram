@@ -32,8 +32,8 @@ Desktop artifacts contain Electron, a managed CPython runtime, OpenProgram's Pyt
 3. Make the file executable and start it:
 
 ```bash
-chmod u+x OpenProgram-*-linux-x64.AppImage
-./OpenProgram-*-linux-x64.AppImage
+chmod u+x OpenProgram-*-linux-x86_64.AppImage
+./OpenProgram-*-linux-x86_64.AppImage
 ```
 
 The AppImage does not require root. A Linux arm64 desktop artifact is not currently published.
