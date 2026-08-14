@@ -219,6 +219,24 @@ def test_dom_verification_after_the_last_write_is_completion_authority():
     assert result["completion_evidence"] == [verified["evidence"]]
 
 
+def test_verify_uses_latest_observation_when_frame_id_is_omitted():
+    controller, _api = _controller()
+    first = controller.execute(action="observe")
+    controller.execute(
+        action="click", expected_frame_id=first["frame_id"], ref="e1"
+    )
+    controller.execute(action="observe")
+
+    verified = controller.execute(
+        action="verify",
+        assertion="text_contains",
+        value="Saved",
+    )
+
+    assert verified["passed"] is True
+    controller.close()
+
+
 def test_model_summary_cannot_claim_success_without_runtime_verification():
     controller, _api = _controller()
     controller.execute(action="observe")

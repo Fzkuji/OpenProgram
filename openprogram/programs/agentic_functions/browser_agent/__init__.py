@@ -343,6 +343,8 @@ class BrowserPageController:
     ) -> Any:
         if action == "observe":
             return self._observe()
+        if action == "verify" and not expected_frame_id and self._frame:
+            expected_frame_id = self._frame["frame_id"]
         stale = self._require_fresh(expected_frame_id)
         if stale:
             return stale
