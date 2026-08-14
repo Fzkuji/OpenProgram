@@ -151,15 +151,16 @@ def test_screenshot_is_one_current_viewport_image_on_the_same_frame():
     controller, api = _controller()
     observation = controller.execute(action="observe")
 
-    result = controller.execute(
-        action="screenshot",
-        expected_frame_id=observation["frame_id"],
-    )
+    result = controller.execute(action="screenshot")
 
     assert isinstance(result, ToolReturn)
     assert result.images == [b"\x89PNG fake"]
     assert api.page.calls[-1] == ("screenshot", False)
     assert observation["frame_id"] in (result.text or "")
+    assert controller.execute(action="screenshot") == {
+        "ok": False,
+        "reason_code": "screenshot_already_captured",
+    }
 
 
 def test_write_requires_fresh_frame_and_invalidates_old_refs():

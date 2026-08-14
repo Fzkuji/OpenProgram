@@ -526,10 +526,10 @@ def _normalize_result(raw: Any, *, call_id: str, max_chars: int,
             if isinstance(img, bytes):
                 import base64
                 b64 = base64.b64encode(img).decode("ascii")
-                images.append(ImageContent(data=b64, media_type="image/png"))
+                images.append(ImageContent(data=b64, mime_type="image/png"))
             elif isinstance(img, str):
                 # Assume already-base64 or URL — let the provider sort it out
-                images.append(ImageContent(data=img, media_type="image/png"))
+                images.append(ImageContent(data=img, mime_type="image/png"))
     elif isinstance(raw, str):
         text_part = raw
     elif raw is None:

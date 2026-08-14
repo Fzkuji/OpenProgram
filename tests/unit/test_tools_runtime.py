@@ -39,7 +39,7 @@ from openprogram.programs._runtime import (
     tool_requires_approval,
 )
 from openprogram.mcp.adapter import convert_call_result
-from openprogram.providers.types import TextContent
+from openprogram.providers.types import ImageContent, TextContent
 
 
 @pytest.fixture(autouse=True)
@@ -289,6 +289,18 @@ def test_tool_return_struct() -> None:
     result = _run(info.execute("c1", {}, None, None))
     assert result.content[0].text == "hello"
     assert result.details["json"] == {"x": 1}
+
+
+def test_tool_return_png_bytes_are_typed_as_provider_image_content() -> None:
+    @function
+    def screenshot() -> ToolReturn:
+        """Returns a viewport image."""
+        return ToolReturn(images=[b"\x89PNG fake"])
+
+    result = _run(screenshot.execute("c1", {}, None, None))
+
+    assert isinstance(result.content[0], ImageContent)
+    assert result.content[0].mime_type == "image/png"
 
 
 def test_tool_return_error_flag() -> None:
