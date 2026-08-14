@@ -1,7 +1,9 @@
 <#
 =============================================================================
- OpenProgram - one-command installer (Windows / PowerShell)
+ OpenProgram - legacy source-development installer (Windows / PowerShell)
 -----------------------------------------------------------------------------
+ Windows release installation, packaging, and compatibility are not supported.
+ This script remains only for existing source-development workflows.
  Brings up the OpenProgram HOST so `openprogram` just works:
    1. Verify (or winget-install) the system toolchain: Python 3.11+, Node 20+, git
    2. Python env (uses an active venv/conda, else creates .\.venv)

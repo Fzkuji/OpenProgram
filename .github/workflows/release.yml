@@ -1,0 +1,162 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.16"
+      - name: Verify version
+        run: python scripts/verify-release-version.py --tag "${GITHUB_REF_NAME}"
+      - name: Stage Web and build Python distributions
+        run: |
+          scripts/stage-release-assets.sh
+          uv build
+      - name: Verify wheel contents
+        run: |
+          python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram/webui/_frontend/index.html'
+          uv run --with "$(find dist -name 'openprogram-*.whl' -print -quit)" --no-project -- python -c 'import openprogram.webui.server; from openprogram.webui.frontend import out_dir; assert (out_dir() / "index.html").is_file()'
+      - uses: actions/upload-artifact@v5
+        with:
+          name: python-distributions
+          path: dist/*
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform: mac
+            arch: arm64
+          - runner: macos-15-intel
+            platform: mac
+            arch: x64
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            desktop/package-lock.json
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.16"
+      - name: Verify version
+        run: python3 scripts/verify-release-version.py --tag "${GITHUB_REF_NAME}"
+      - name: Install desktop dependencies
+        run: npm ci
+        working-directory: desktop
+      - name: Prepare embedded Python
+        run: scripts/prepare-desktop-runtime.sh
+      - name: Build macOS artifacts
+        if: matrix.platform == 'mac'
+        run: |
+          npm run icon:build
+          npm run icon:check
+          npx electron-builder --mac dmg zip --${{ matrix.arch }}
+        working-directory: desktop
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Verify macOS signature and notarization
+        if: matrix.platform == 'mac'
+        run: |
+          app_path="$(find desktop/dist -type d -name OpenProgram.app -print -quit)"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          spctl --assess --verbose --type exec "$app_path"
+          xcrun stapler validate "$app_path"
+      - name: Build Linux AppImage
+        if: matrix.platform == 'linux'
+        run: npx electron-builder --linux AppImage --x64
+        working-directory: desktop
+      - name: Verify embedded runtime
+        run: scripts/smoke-packaged-runtime.sh "${{ matrix.platform }}" desktop/dist
+      - name: Create SHA-256 checksums
+        shell: bash
+        run: |
+          cd desktop/dist
+          find . -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' \) -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}
+      - uses: actions/upload-artifact@v5
+        with:
+          name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            desktop/dist/*.dmg
+            desktop/dist/*.zip
+            desktop/dist/*.AppImage
+            desktop/dist/SHA256SUMS-*
+
+  cli-installer:
+    needs: python
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel, ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v6
+        with:
+          name: python-distributions
+          path: python-distributions
+      - name: Install release wheel with managed CPython
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          wheel="$(find "$GITHUB_WORKSPACE/python-distributions" -name 'openprogram-*.whl' -print -quit)"
+          OPENPROGRAM_VERSION="$version" \
+          OPENPROGRAM_WHEEL="$wheel" \
+          OPENPROGRAM_STATE_DIR="$RUNNER_TEMP/openprogram-state" \
+          OPENPROGRAM_BIN_DIR="$RUNNER_TEMP/openprogram-bin" \
+            scripts/install-release.sh
+          "$RUNNER_TEMP/openprogram-bin/openprogram" --version
+
+  publish:
+    needs: [python, desktop, cli-installer]
+    runs-on: ubuntu-24.04
+    environment: release
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v6
+        with:
+          path: release-artifacts
+      - name: Create release manifest
+        run: |
+          python scripts/create-release-manifest.py release-artifacts \
+            --version "$GITHUB_REF_NAME" \
+            --output release-artifacts/release-manifest.json
+      - name: Publish GitHub Release
+        run: |
+          mapfile -d '' files < <(find release-artifacts -type f -print0)
+          gh release create "$GITHUB_REF_NAME" "${files[@]}" --verify-tag --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Publish PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: release-artifacts/python-distributions/

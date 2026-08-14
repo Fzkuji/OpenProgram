@@ -1,4 +1,8 @@
-# 自我更新：OpenProgram 一边改自己一边保持可用
+# source checkout 自更新
+
+> 范围：本文定义开发/source checkout 的更新行为。正式安装的桌面版和 CLI
+> 更新由[安装、打包、发布与升级设计](../distribution/installation-packaging.html)
+> 定义。正式安装中的 `stable` 只表示已发布版本，不表示 `origin/main`。
 
 ## 1. 问题
 
@@ -93,12 +97,10 @@
 
 刻意保持开放，后续需求接入时不用重塑命令本身：
 
-- **渠道（channel）**。`upgrade` 不硬编码任何 ref：目标一律经一个
-  `channel → target ref` 解析函数得出，今天只有一个内置渠道
-  （`stable → origin/main`）。以后加 `beta → origin/beta` 或
-  `dev → <worktree 分支>` 只是加一条表项加一个持久化的
-  `update.channel` 配置键（OpenClaw 的模型），不是重写。CLI 形态从
-  第一天就预留 `upgrade --channel <name>` 和 `upgrade status`。
+- **渠道（channel）**。当前 source-checkout 实现把历史名称 `stable` 解析为
+  `origin/main`。该名称与正式 release 安装冲突，分发迁移时改为 `dev`。
+  正式安装中的 `stable` 只解析到已发布版本。CLI 保留
+  `upgrade --channel <name>` 和 `upgrade status`。
 - **分发方式**。步骤链抽象为*解析目标 → 物化 → 校验 → 激活*四个动词。
   今天"物化"就是 `git checkout`；将来 pip/npm 包安装实现同样四个动词
   （其"物化"即 OpenClaw 式 staged install）。第 5–7 步（探测、重启、

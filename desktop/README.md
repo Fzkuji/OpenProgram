@@ -13,4 +13,13 @@ Override the startup URL entirely with `OPENPROGRAM_DESKTOP_URL=http://... npm r
 
 ## Build
 
-    npm run dist   # electron-builder --dir -> desktop/dist/
+Release builds stage the Web export, build an OpenProgram wheel, install it into
+a uv-managed portable CPython runtime, and include that runtime under Electron
+resources:
+
+    npm run dist:dir    # unpacked artifact for the current platform
+    npm run dist:mac    # DMG + ZIP; requires signing/notarization credentials
+    npm run dist:linux  # x86_64 AppImage on a Linux builder
+
+Packaged builds never fall back to `PATH`, system Python, conda, or the source
+checkout. macOS and Linux artifacts must be produced on native runners.

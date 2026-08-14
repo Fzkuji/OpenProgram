@@ -8,6 +8,7 @@ const https = require("https");
 const path = require("path");
 const { Buffer } = require("buffer");
 const { resolveAuthenticatedStartUrl } = require("./worker-start-url");
+const { resolvePackagedWorker } = require("./packaged-runtime");
 const {
   loadTransferDecisions,
   saveTransferDecisionsAtomic,
@@ -117,18 +118,26 @@ function probe(url, timeoutMs) {
 }
 
 function spawnWorker() {
-  // ponytail: PATH first, then the known miniconda location; no config for more.
   const env = { ...process.env, OPENPROGRAM_WEB_PORT: WEB_PORT };
-  const start = (bin, onFail) => {
-    const child = spawn(bin, ["worker", "start"], {
-      detached: true,
-      stdio: "ignore",
-      env,
-    });
-    child.on("error", onFail || (() => {})); // ENOENT arrives async
-    child.unref();
-  };
-  start("openprogram", () => start("/opt/miniconda3/bin/openprogram"));
+  delete env.PYTHONHOME;
+  delete env.PYTHONPATH;
+  let launch;
+  if (app.isPackaged) {
+    env.OPENPROGRAM_IMMUTABLE_RUNTIME = "1";
+    launch = resolvePackagedWorker(process.resourcesPath);
+  } else {
+    launch = { command: "openprogram", args: ["worker", "start"] };
+  }
+  const child = spawn(launch.command, launch.args, {
+    detached: true,
+    stdio: "ignore",
+    env,
+  });
+  child.on("error", (error) => {
+    recoveryCoordinator.workerSpawned = false;
+    console.error(`[desktop] worker start failed: ${error.message}`);
+  });
+  child.unref();
 }
 
 async function resolveStartUrl() {

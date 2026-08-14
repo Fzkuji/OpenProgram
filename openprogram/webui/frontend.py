@@ -24,8 +24,21 @@ def web_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "web"
 
 
-def out_dir() -> Path:
+def packaged_out_dir() -> Path:
+    """Static export installed as package data in release wheels."""
+    return Path(__file__).resolve().with_name("_frontend")
+
+
+def repo_out_dir() -> Path:
     return web_dir() / "out"
+
+
+def out_dir() -> Path:
+    """Use package data outside a source checkout; keep source builds live."""
+    bundled = packaged_out_dir()
+    if (bundled / "index.html").is_file() and not (web_dir() / "package.json").is_file():
+        return bundled
+    return repo_out_dir()
 
 
 # --- build gate -------------------------------------------------------------

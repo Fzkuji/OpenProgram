@@ -353,6 +353,13 @@ def _cmd_install(name: str, *, upgrade: bool = False) -> None:
     ``openprogram programs install https://github.com/owner/Some-Harness``
     (or the ``owner/Some-Harness`` shorthand).
     """
+    if os.environ.get("OPENPROGRAM_IMMUTABLE_RUNTIME") == "1":
+        print(
+            "Program installation is disabled in the packaged desktop runtime. "
+            "Use a supported CLI/server installation for Program management."
+        )
+        sys.exit(1)
+
     import subprocess
     from openprogram.programs._programs import applications_dir, record_program_source
 
@@ -444,6 +451,13 @@ def _cmd_uninstall(name: str) -> None:
 
     Third-party harnesses are addressed by their clone-dir name
     (``openprogram programs uninstall Some-Harness``)."""
+    if os.environ.get("OPENPROGRAM_IMMUTABLE_RUNTIME") == "1":
+        print(
+            "Program removal is disabled in the packaged desktop runtime. "
+            "Use the installation that owns the Program environment."
+        )
+        sys.exit(1)
+
     import shutil
     from openprogram.programs._programs import applications_dir, remove_program_source
 

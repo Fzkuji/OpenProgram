@@ -4,14 +4,15 @@
 
 ## 第 1 步：安装
 
-一条命令的安装脚本会装好 Python 包、网页 UI、终端 UI、浏览器工具和 channels：
+在 macOS 或 Linux 安装精确版本的 release wheel 和受控 Python runtime：
 
 ```bash
-git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
-./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
+  | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
-需要 Python ≥ 3.11、Node ≥ 20、git（缺了脚本会尽力代装）。脚本幂等，任何时候都可以重跑。agent 程序（GUI / Research / Wiki）默认不装，安装时的交互菜单里可挑选，也可以之后再补（见第 5 步）。完整参数与依赖矩阵见 [安装](../install/install.md)。
+installer 提供自己的 Python，release wheel 已包含 Web UI；运行时不需要 Node.js 和 Git。桌面用户使用 GitHub Releases 中的 DMG 或 AppImage。平台范围和开发 checkout 安装见[安装](../install/install.zh.md)。
 
 ## 第 2 步：首次运行，接入 provider
 
@@ -51,14 +52,14 @@ openprogram --print "用一句话介绍你自己"
 
 ## 第 5 步：装一个现成的 agent 程序
 
-OpenProgram 是宿主，agent 程序装进来就能在 web UI 和函数列表里出现：
+OpenProgram 是宿主；装入受支持 Program environment 的 agent Program 会出现在 Web UI 和函数列表中：
 
 ```bash
 openprogram programs install research     # 或 wiki / gui
 openprogram programs available            # 查看安装状态
 ```
 
-`research` / `wiki` 是纯 Python，装得很快；`gui` 会下载 PyTorch 和模型权重，体积较大。装完后 `openprogram restart`（或在 Programs 页面点 Refresh），程序就会出现在界面里。
+当前 Program installer 会修改活动 Python 环境，因此不支持在 immutable desktop package 内使用。只有当对应 release 明确记录 Program environment 支持时才执行这些命令。安装后运行 `openprogram restart`，或在 Programs 页面使用 Refresh。
 
 ## 下一步
 
