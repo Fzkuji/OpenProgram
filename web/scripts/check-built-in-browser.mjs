@@ -8,6 +8,7 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 const launcher = read("../components/center-tabs/new-tab-page.tsx");
 const browserHome = read("../components/center-tabs/browser-home-page.tsx");
+const mainMenu = read("../components/center-tabs/main-menu.tsx");
 const builtin = read("../components/center-tabs/builtin-tab-pane.tsx");
 const bridge = read("../lib/desktop-bridge.ts");
 const preload = read("../../desktop/preload.js");
@@ -19,8 +20,12 @@ for (const label of ["Files", "Side chat", "Browser", "Terminal"]) {
 }
 assert.doesNotMatch(launcher, /readBookmarks|readShortcuts|ntpUrlInput/);
 assert.match(browserHome, /BrowserImportDialog/);
-assert.match(browserHome, /readBookmarks/);
+assert.match(browserHome, /importBookmarkTree/);
+assert.doesNotMatch(browserHome, /readBookmarks|removeBookmark|subscribeBookmarks|ntpBookmarks|ntpBookmark/);
 assert.match(browserHome, /readShortcuts/);
+assert.match(mainMenu, /getBoundingClientRect\(\)/);
+assert.match(mainMenu, /window\.innerWidth\s*-\s*trigger\.right/);
+assert.doesNotMatch(mainMenu, /rightInset:\s*8/);
 assert.match(builtin, /groupHistoryByLocalDate/);
 assert.match(builtin, /browsing-history-row/);
 assert.match(bridge, /browserImport\?: DesktopBrowserImportApi/);

@@ -1,16 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bookmark, Download, Globe2, Plus, X } from "lucide-react";
+import { Download, Globe2, Plus, X } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
-import {
-  importBookmarksFolder,
-  readBookmarks,
-  removeBookmark,
-  subscribeBookmarks,
-  type Bookmark as BookmarkItem,
-} from "@/lib/bookmarks";
+import { importBookmarkTree } from "@/lib/bookmarks";
 import {
   addShortcut,
   faviconUrl,
@@ -117,9 +111,10 @@ export function BrowserImportDialog({ onDismiss }: { onDismiss(): void }) {
         return;
       }
       const bookmarks = response.bookmarks ?? [];
-      const bookmarkCount = response.source
-        ? importBookmarksFolder(`Imported from ${response.source.label}`, bookmarks)
-        : 0;
+      const bookmarkCount = importBookmarkTree(
+        bookmarks,
+        response.source ? `Imported from ${response.source.label}` : undefined,
+      );
       setResult(text(
         `Imported ${response.history?.imported ?? 0} history entries, ${bookmarkCount} bookmarks, and ${response.cookies?.imported ?? 0} cookies.`,
         `已导入 ${response.history?.imported ?? 0} 条历史、${bookmarkCount} 个书签和 ${response.cookies?.imported ?? 0} 个 Cookie。`,
@@ -201,7 +196,6 @@ export function BrowserHomePage() {
   const { text } = useTranslation();
   const openWebTab = useCenterTabs((state) => state.openWebTab);
   const [url, setUrl] = useState("");
-  const [bookmarks, setBookmarks] = useState<BookmarkItem[]>(readBookmarks);
   const [shortcuts, setShortcuts] = useState<Shortcut[]>(readShortcuts);
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState("");
@@ -211,10 +205,6 @@ export function BrowserHomePage() {
     return localStorage.getItem(IMPORT_DISMISSED_KEY) !== "1";
   });
 
-  useEffect(() => {
-    const refresh = () => setBookmarks(readBookmarks());
-    return subscribeBookmarks(refresh);
-  }, []);
   useEffect(() => {
     const refresh = () => setShortcuts(readShortcuts());
     return subscribeShortcuts(refresh);
@@ -282,20 +272,6 @@ export function BrowserHomePage() {
             <input className={styles.ntpTileFormLabel} value={newLabel} onChange={(event) => setNewLabel(event.target.value)} placeholder={text("Name", "名称")} />
             <input className={styles.ntpUrlInput} value={newUrl} onChange={(event) => setNewUrl(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") submitShortcut(); }} placeholder="URL" />
             <button type="button" className={styles.ntpUrlGo} onClick={submitShortcut}>{text("Add", "添加")}</button>
-          </div>
-        )}
-        {bookmarks.length > 0 && (
-          <div className={styles.ntpBookmarks}>
-            {bookmarks.map((bookmark) => (
-              <div key={bookmark.url} className={styles.ntpBookmark}>
-                <button type="button" className={styles.ntpBookmarkOpen} onClick={() => go(bookmark.url)}>
-                  <Bookmark size={13} aria-hidden="true" />{bookmark.title || bookmark.url}
-                </button>
-                <button type="button" className={styles.ntpBookmarkDelete} onClick={() => removeBookmark(bookmark.url)} aria-label={text("Delete bookmark", "删除书签")}>
-                  <X size={13} aria-hidden="true" />
-                </button>
-              </div>
-            ))}
           </div>
         )}
       </div>

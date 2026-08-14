@@ -187,24 +187,49 @@ function readBookmarks(profilePath) {
   if (!raw?.roots || typeof raw.roots !== "object") {
     throw importError("bookmarks_invalid", "Bookmarks roots are invalid");
   }
-  const out = [];
-  const walk = (node) => {
-    if (!node || typeof node !== "object" || out.length >= MAX_BOOKMARK_IMPORT) return;
+  let bookmarkCount = 0;
+  const rootLabels = {
+    bookmark_bar: "Bookmarks bar",
+    other: "Other bookmarks",
+    synced: "Mobile bookmarks",
+  };
+  const walk = (node, fallbackTitle = "Folder", depth = 0) => {
+    if (!node || typeof node !== "object" || bookmarkCount >= MAX_BOOKMARK_IMPORT || depth > 64) {
+      return null;
+    }
     if (node.type === "url" && typeof node.url === "string") {
       try {
         const url = new URL(node.url);
         if (url.protocol === "http:" || url.protocol === "https:") {
-          out.push({ title: String(node.name || node.url).slice(0, 500), url: url.href });
+          bookmarkCount += 1;
+          return {
+            kind: "bookmark",
+            title: String(node.name || node.url).slice(0, 500),
+            url: url.href,
+          };
         }
       } catch (_error) {
         /* invalid imported URL */
       }
-      return;
+      return null;
     }
-    if (Array.isArray(node.children)) node.children.forEach(walk);
+    if (!Array.isArray(node.children)) return null;
+    const children = [];
+    for (const child of node.children) {
+      const imported = walk(child, "Folder", depth + 1);
+      if (imported) children.push(imported);
+      if (bookmarkCount >= MAX_BOOKMARK_IMPORT) break;
+    }
+    if (children.length === 0) return null;
+    return {
+      kind: "folder",
+      title: String(node.name || fallbackTitle).slice(0, 500),
+      children,
+    };
   };
-  Object.values(raw.roots).forEach(walk);
-  return out;
+  return Object.entries(raw.roots)
+    .map(([key, node]) => walk(node, rootLabels[key] || key, 0))
+    .filter(Boolean);
 }
 
 function waitForFile(filePath, child, timeoutMs = CDP_TIMEOUT_MS) {
@@ -432,10 +457,17 @@ if (require.main === module) {
   fs.writeFileSync(chromeApp, "");
   fs.mkdirSync(profile, { recursive: true });
   fs.writeFileSync(path.join(chromeRoot, "Local State"), JSON.stringify({ profile: { info_cache: { Default: { name: "Person 1" } } } }));
-  fs.writeFileSync(path.join(profile, "Bookmarks"), JSON.stringify({ roots: { bookmark_bar: { children: [
-    { type: "url", name: "Example", url: "https://example.com" },
-    { type: "url", name: "Reject", url: "javascript:alert(1)" },
-  ] } } }));
+  fs.writeFileSync(path.join(profile, "Bookmarks"), JSON.stringify({ roots: {
+    bookmark_bar: { type: "folder", name: "Bookmarks bar", children: [
+      { type: "folder", name: "Research", children: [
+        { type: "url", name: "Example", url: "https://example.com" },
+        { type: "url", name: "Reject", url: "javascript:alert(1)" },
+      ] },
+    ] },
+    other: { type: "folder", name: "Other bookmarks", children: [
+      { type: "url", name: "Docs", url: "https://docs.example.com" },
+    ] },
+  } }));
   fs.writeFileSync(path.join(profile, "Cookies"), "");
   const { DatabaseSync } = require("node:sqlite");
   const historyDb = new DatabaseSync(path.join(profile, "History"));
@@ -449,7 +481,22 @@ if (require.main === module) {
       const listed = listBrowserSources(options);
       assert.strictEqual(listed[0].profiles[0].name, "Person 1");
       assert.strictEqual(listed[0].profiles[0].available.cookies, true);
-      assert.deepStrictEqual(readBookmarks(profile), [{ title: "Example", url: "https://example.com/" }]);
+      assert.deepStrictEqual(readBookmarks(profile), [
+        {
+          kind: "folder",
+          title: "Bookmarks bar",
+          children: [{
+            kind: "folder",
+            title: "Research",
+            children: [{ kind: "bookmark", title: "Example", url: "https://example.com/" }],
+          }],
+        },
+        {
+          kind: "folder",
+          title: "Other bookmarks",
+          children: [{ kind: "bookmark", title: "Docs", url: "https://docs.example.com/" }],
+        },
+      ]);
       assert.strictEqual(readHistory(profile, 1)[0].visitedAt, 1700000000000);
 
       for (const [input, expected] of [["Strict", "strict"], ["Lax", "lax"], ["None", "no_restriction"], [undefined, "unspecified"]]) {

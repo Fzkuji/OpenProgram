@@ -236,12 +236,16 @@ export interface DesktopBrowserImportSource {
   profiles: DesktopBrowserImportProfile[];
 }
 
+export type DesktopBrowserImportBookmark =
+  | { kind: "bookmark"; title: string; url: string; faviconUrl?: string }
+  | { kind: "folder"; title: string; children: DesktopBrowserImportBookmark[] };
+
 export interface DesktopBrowserImportResult {
   ok: boolean;
   error?: string;
   source?: { browserId: string; profileId: string; label: string };
   history?: { imported: number; total: number };
-  bookmarks?: Array<{ title: string; url: string }>;
+  bookmarks?: DesktopBrowserImportBookmark[];
   cookies?: { imported: number; failed: number };
 }
 

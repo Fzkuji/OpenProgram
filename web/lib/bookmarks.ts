@@ -32,6 +32,19 @@ export interface BookmarkFolder extends BookmarkNodeBase {
 }
 export type BookmarkNode = BookmarkLeaf | BookmarkFolder;
 
+export interface ImportedBookmarkLeaf {
+  kind: "bookmark";
+  title: string;
+  url: string;
+  faviconUrl?: string;
+}
+export interface ImportedBookmarkFolder {
+  kind: "folder";
+  title: string;
+  children: ImportedBookmarkNode[];
+}
+export type ImportedBookmarkNode = ImportedBookmarkLeaf | ImportedBookmarkFolder;
+
 export const BOOKMARKS_STORAGE_KEY = "openprogram.bookmarks";
 export const BOOKMARKS_CHANGE_EVENT = "openprogram:bookmarks-changed";
 export const BOOKMARKS_VERSION = 2;
@@ -276,39 +289,92 @@ export function isBookmarked(url: string): boolean {
   return readBookmarks().some((bookmark) => bookmark.url === url);
 }
 
-export function importBookmarksFolder(title: string, values: Bookmark[]): number {
-  let root = readBookmarkTree();
+/** Merge a browser's folder tree into the manager tree. Folder titles are
+ * matched only among siblings; bookmark URLs are deduplicated globally. */
+export function importBookmarkTree(
+  values: ImportedBookmarkNode[],
+  legacyFolderTitle?: string,
+): number {
+  const root = readBookmarkTree();
   const existingUrls = new Set(flattenBookmarks(root).map((item) => item.url));
-  const children: BookmarkLeaf[] = [];
-  for (const raw of values) {
-    let url: URL;
-    try { url = new URL(raw.url); } catch { continue; }
-    if ((url.protocol !== "http:" && url.protocol !== "https:") || existingUrls.has(url.href)) {
-      continue;
+  const legacyFolder = legacyFolderTitle
+    ? root.children.find(
+      (node): node is BookmarkFolder => node.kind === "folder" && node.title === legacyFolderTitle,
+    )
+    : undefined;
+  const legacyByUrl = new Map<string, { node: BookmarkLeaf; parent: BookmarkFolder }>();
+  const indexLegacy = (folder: BookmarkFolder) => {
+    for (const child of folder.children) {
+      if (child.kind === "folder") indexLegacy(child);
+      else legacyByUrl.set(child.url, { node: child, parent: folder });
     }
-    existingUrls.add(url.href);
-    children.push({
-      kind: "bookmark",
-      id: newId("b"),
-      title: raw.title.trim() || url.href,
-      url: url.href,
-    });
+  };
+  if (legacyFolder) indexLegacy(legacyFolder);
+  let imported = 0;
+  let changed = false;
+
+  const merge = (target: BookmarkFolder, incoming: ImportedBookmarkNode[]) => {
+    for (const node of incoming) {
+      if (node.kind === "folder") {
+        const title = node.title.trim() || "Folder";
+        let folder = target.children.find(
+          (child): child is BookmarkFolder => child.kind === "folder" && child.title === title,
+        );
+        if (!folder) {
+          folder = { kind: "folder", id: newId("f"), title, children: [] };
+          const before = imported;
+          merge(folder, node.children);
+          if (imported > before) target.children.push(folder);
+        } else {
+          merge(folder, node.children);
+        }
+        continue;
+      }
+
+      let url: URL;
+      try { url = new URL(node.url); } catch { continue; }
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        continue;
+      }
+      const legacy = legacyByUrl.get(url.href);
+      if (legacy) {
+        const index = legacy.parent.children.findIndex((child) => child.id === legacy.node.id);
+        if (index >= 0) legacy.parent.children.splice(index, 1);
+        target.children.push(legacy.node);
+        legacyByUrl.delete(url.href);
+        imported += 1;
+        changed = true;
+        continue;
+      }
+      if (existingUrls.has(url.href)) continue;
+      existingUrls.add(url.href);
+      target.children.push({
+        kind: "bookmark",
+        id: newId("b"),
+        title: node.title.trim() || url.href,
+        url: url.href,
+        ...(node.faviconUrl ? { faviconUrl: node.faviconUrl } : {}),
+      });
+      imported += 1;
+      changed = true;
+    }
+  };
+
+  merge(root, values);
+  if (legacyFolder) {
+    const pruneEmptyFolders = (folder: BookmarkFolder) => {
+      folder.children = folder.children.filter((child) => {
+        if (child.kind !== "folder") return true;
+        pruneEmptyFolders(child);
+        return child.children.length > 0;
+      });
+    };
+    pruneEmptyFolders(legacyFolder);
+    if (legacyFolder.children.length === 0) {
+      root.children = root.children.filter((child) => child.id !== legacyFolder.id);
+      changed = true;
+    }
   }
-  if (children.length === 0) return 0;
-  const folderTitle = title.trim() || "Imported bookmarks";
-  const existingFolder = root.children.find(
-    (node): node is BookmarkFolder => node.kind === "folder" && node.title === folderTitle,
-  );
-  if (existingFolder) {
-    for (const child of children) root = insertInto(root, existingFolder.id, child, -1);
-    saveTree(root);
-  } else {
-    saveTree(insertInto(root, BOOKMARKS_ROOT_ID, {
-      kind: "folder",
-      id: newId("f"),
-      title: folderTitle,
-      children,
-    }, -1));
-  }
-  return children.length;
+  if (changed) saveTree(root);
+  return imported;
 }

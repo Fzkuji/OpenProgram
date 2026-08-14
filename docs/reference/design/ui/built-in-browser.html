@@ -1,204 +1,355 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>内置浏览器、资料导入与新建 Pane</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>OpenProgram 内置浏览器设计</title>
   <style>
     :root {
-      color-scheme: dark;
-      --bg: #151514;
-      --panel: #1f1f1e;
-      --panel-2: #282725;
-      --line: #3b3935;
-      --text: #eceae3;
-      --muted: #aaa79d;
-      --accent: #d69a66;
-      --blue: #79a8ff;
-      --green: #80bd8a;
-      --red: #e2877d;
+      color-scheme: light;
+      --paper: #f4f5f8;
+      --surface: #ffffff;
+      --ink: #171922;
+      --muted: #646977;
+      --faint: #8a909f;
+      --line: #d9dce5;
+      --line-strong: #b9bfcc;
+      --accent: #5d55d7;
+      --accent-soft: #eceafd;
+      --green: #367b5a;
+      --green-soft: #e6f1eb;
+      --blue: #3569a8;
+      --dark: #171715;
+      --dark-2: #242421;
+      --dark-line: #3b3a36;
+      --dark-text: #f4f2eb;
+      --dark-muted: #aaa79f;
+      --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
     }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      padding: 40px max(24px, 9vw) 80px;
-      background: var(--bg);
-      color: var(--text);
-      font: 14px/1.65 -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.7 var(--sans); }
+    a { color: var(--blue); text-underline-offset: 3px; }
+    code { padding: .12em .38em; border-radius: 4px; background: #e9ebf1; color: var(--ink); font: .88em/1.5 var(--mono); }
+    button { font: inherit; }
+    .shell { display: grid; grid-template-columns: minmax(0, 880px) 180px; gap: 72px; width: min(1180px, calc(100% - 48px)); margin: 0 auto; padding: 68px 0 96px; }
+    main { min-width: 0; }
+    .eyebrow, .label, .section-no, .metric-label, .rail-title { color: var(--faint); font: 600 11px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+    h1, h2, h3 { font-family: var(--sans); font-weight: 650; }
+    h1 { max-width: 760px; margin: 12px 0 18px; font-size: clamp(36px, 4.6vw, 56px); line-height: 1.08; letter-spacing: -.035em; }
+    .lede { max-width: 720px; margin: 0; color: #484741; font-size: 18px; line-height: 1.75; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 28px; }
+    .pill { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 4px 11px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.52); color: #55534e; font-size: 12px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+    .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 38px 0 64px; padding: 14px 0; border-block: 1px solid var(--line); }
+    .metric { padding: 0 18px; border-left: 1px solid var(--line); }
+    .metric:first-child { padding-left: 0; border-left: 0; }
+    .metric-value { display: block; margin-top: 5px; font-size: 14px; font-weight: 650; line-height: 1.4; }
+    .section { margin-top: 74px; scroll-margin-top: 22px; }
+    .section-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; }
+    .section-no { min-width: 32px; padding: 4px 7px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); text-align: center; letter-spacing: .04em; }
+    h2 { margin: 0; font-size: 31px; line-height: 1.2; letter-spacing: -.02em; }
+    h3 { margin: 30px 0 8px; font-size: 22px; line-height: 1.3; }
+    .section-intro { max-width: 700px; margin: 0 0 26px 46px; color: var(--muted); }
+    .decision { display: grid; grid-template-columns: 160px 1fr; gap: 28px; padding: 22px 0; border-top: 1px solid var(--line); }
+    .decision:last-child { border-bottom: 1px solid var(--line); }
+    .decision strong { font-size: 17px; font-weight: 650; }
+    .decision p { margin: 0; color: #55534e; }
+    .demo-wrap { overflow: hidden; margin-top: 28px; border: 1px solid var(--line-strong); border-radius: 16px; background: var(--dark); box-shadow: 0 18px 45px rgba(42,38,30,.08); }
+    .demo-tabs { display: flex; gap: 4px; overflow-x: auto; padding: 10px; border-bottom: 1px solid var(--dark-line); background: #11110f; }
+    .demo-tab { flex: 0 0 auto; padding: 8px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--dark-muted); cursor: pointer; font-size: 13px; }
+    .demo-tab[aria-selected="true"] { background: var(--dark-2); color: var(--dark-text); }
+    .demo-tab:focus-visible, .rail a:focus-visible, .mobile-toc a:focus-visible { outline: 2px solid #9b95ff; outline-offset: 2px; }
+    .demo-panel { display: none; min-height: 470px; color: var(--dark-text); }
+    .demo-panel.active { display: block; }
+    .pane-head { display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 18px; border-bottom: 1px solid var(--dark-line); color: var(--dark-muted); }
+    .pane-head strong { color: var(--dark-text); font-size: 14px; }
+    .window-dot { width: 10px; height: 10px; border-radius: 50%; background: #595853; }
+    .launcher { display: grid; grid-template-columns: repeat(2, minmax(0, 250px)); justify-content: center; gap: 10px; padding: 92px 28px; }
+    .launcher-item { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 12px; min-height: 70px; padding: 12px 14px; border: 1px solid var(--dark-line); border-radius: 11px; background: var(--dark-2); }
+    .launcher-item .icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: #30302c; font: 16px var(--mono); }
+    .launcher-item strong { display: block; font-size: 14px; }
+    .launcher-item small { display: block; color: var(--dark-muted); font-size: 11px; }
+    .shortcut { color: #7f7d76; font: 11px var(--mono); }
+    .browser-toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--dark-line); }
+    .browser-actions { display: flex; gap: 6px; color: var(--dark-muted); }
+    .tool-button { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 7px; background: transparent; color: inherit; }
+    .address { overflow: hidden; padding: 7px 12px; border: 1px solid var(--dark-line); border-radius: 9px; background: #11110f; color: #77756f; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+    .browser-home { padding: 26px; }
+    .import-banner { display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: 14px; padding: 16px; border: 1px solid #494842; border-radius: 12px; background: #20201d; }
+    .browser-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: conic-gradient(#5d55d7 0 33%,#3569a8 0 66%,#367b5a 0); color: white; font-weight: 700; }
+    .import-banner strong { display: block; font-size: 14px; }
+    .import-banner span { color: var(--dark-muted); font-size: 12px; }
+    .primary { padding: 8px 14px; border: 0; border-radius: 8px; background: var(--dark-text); color: var(--dark); font-weight: 650; }
+    .home-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 22px; }
+    .home-block { padding: 17px; border-top: 1px solid var(--dark-line); }
+    .home-block h4 { margin: 0 0 12px; color: var(--dark-muted); font: 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    .site-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 13px; }
+    .site-row i { width: 22px; height: 22px; border-radius: 6px; background: #34332f; }
+    .history-head { display: grid; grid-template-columns: 1fr minmax(180px, 300px); gap: 18px; align-items: center; padding: 28px 28px 18px; }
+    .history-head h4 { margin: 0; font: 650 24px var(--sans); }
+    .history-search { padding: 8px 11px; border: 1px solid var(--dark-line); border-radius: 8px; color: #77756f; font-size: 12px; }
+    .history-group { padding: 0 28px 26px; }
+    .history-date { margin: 10px 0 7px; color: var(--dark-muted); font: 11px var(--mono); }
+    .history-row { display: grid; grid-template-columns: 20px 54px 22px minmax(0, 1fr) 130px 22px; align-items: center; gap: 10px; height: 38px; border-top: 1px solid #2c2c29; font-size: 12px; }
+    .history-row .check { width: 13px; height: 13px; border: 1px solid #77756f; border-radius: 3px; }
+    .history-row .time, .history-row .domain, .history-row .more { color: var(--dark-muted); }
+    .history-row .favicon { width: 18px; height: 18px; border-radius: 5px; background: #35342f; }
+    .history-row .title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .compare-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .compare-card { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.62); }
+    .compare-card h3 { margin: 8px 0 7px; font: 650 17px/1.3 var(--sans); }
+    .compare-card p { margin: 0; color: var(--muted); font-size: 13px; }
+    .choice { display: inline-block; margin-top: 14px; color: var(--green); font: 600 11px var(--mono); }
+    .choice.modified { color: var(--blue); }
+    .choice.rejected { color: var(--accent); }
+    .source-list { margin: 16px 0 0; padding: 0; list-style: none; }
+    .source-list li { padding: 10px 0; border-top: 1px solid var(--line); font-size: 13px; }
+    .architecture { overflow-x: auto; padding: 22px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    .architecture svg { display: block; width: 100%; min-width: 720px; height: auto; }
+    .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+    .legend span::before { content: ""; display: inline-block; width: 16px; height: 2px; margin: 0 7px 3px 0; background: var(--ink); }
+    .legend .sensitive::before { background: var(--accent); }
+    .import-types { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin-top: 24px; }
+    .type-card { padding: 18px; border-top: 3px solid var(--line-strong); background: rgba(255,255,255,.5); }
+    .type-card:nth-child(3) { border-color: var(--accent); }
+    .type-card h3 { margin: 0 0 8px; font-size: 19px; }
+    .type-card ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+    .boundary-table, .acceptance-table { width: 100%; border-collapse: collapse; }
+    .boundary-table th, .boundary-table td, .acceptance-table th, .acceptance-table td { padding: 13px 11px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 13px; }
+    .boundary-table th, .acceptance-table th { color: var(--faint); font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .boundary-table td:first-child { width: 25%; color: var(--ink); font-weight: 650; }
+    .boundary-table td:last-child, .acceptance-table td { color: #55534e; }
+    .risk { color: var(--accent); font: 600 10px var(--mono); }
+    .status { color: var(--green); font: 600 11px var(--mono); white-space: nowrap; }
+    .status.limit { color: var(--blue); }
+    .status.out { color: var(--accent); }
+    .exclusions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-top: 18px; }
+    .exclusion { padding: 15px 16px; border-left: 3px solid var(--accent); background: var(--accent-soft); font-size: 13px; }
+    .mobile-toc { display: none; margin-top: 24px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.65); }
+    .mobile-toc summary { padding: 10px 13px; cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 650; }
+    .mobile-toc nav { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px; padding: 0 10px 10px; }
+    .mobile-toc a { padding: 6px 4px; color: var(--muted); font-size: 12px; text-decoration: none; }
+    .rail { position: sticky; top: 32px; align-self: start; padding-top: 6px; }
+    .rail nav { margin-top: 14px; border-left: 1px solid var(--line); }
+    .rail a { display: block; padding: 6px 0 6px 14px; color: var(--muted); font-size: 12px; text-decoration: none; }
+    .rail a:hover { color: var(--ink); }
+    .footnote { margin-top: 70px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--faint); font-size: 12px; }
+    @media (max-width: 980px) { .shell { grid-template-columns: 1fr; width: min(880px, calc(100% - 36px)); padding-top: 42px; } .rail { display: none; } .mobile-toc { display: block; } }
+    @media (max-width: 720px) {
+      body { font-size: 15px; }
+      .metrics, .compare-grid, .import-types, .home-grid, .exclusions { grid-template-columns: 1fr; }
+      .metrics { margin-bottom: 54px; padding: 0; }
+      .metric, .metric:first-child { padding: 11px 0; border-left: 0; border-top: 1px solid var(--line); }
+      .metric:first-child { border-top: 0; }
+      .decision { grid-template-columns: 1fr; gap: 7px; }
+      .section-intro { margin-left: 0; }
+      .launcher { grid-template-columns: 1fr; padding: 36px 18px; }
+      .browser-toolbar { grid-template-columns: auto minmax(0,1fr); }
+      .browser-toolbar > .browser-actions:last-child { display: none; }
+      .import-banner { grid-template-columns: 36px 1fr; }
+      .import-banner .primary { grid-column: 1 / -1; }
+      .history-head { grid-template-columns: 1fr; }
+      .history-row { grid-template-columns: 16px 48px 18px minmax(0,1fr) 18px; }
+      .history-row .domain { display: none; }
+      .demo-panel { min-height: 520px; }
+      .boundary-table, .boundary-table tbody, .boundary-table tr, .boundary-table td { display: block; }
+      .boundary-table thead { display: none; }
+      .boundary-table tr { padding: 12px 0; border-bottom: 1px solid var(--line); }
+      .boundary-table td { width: auto !important; padding: 3px 0; border: 0; }
     }
-    main { max-width: 1040px; }
-    h1 { margin: 0 0 8px; font-size: 26px; }
-    h2 { margin: 36px 0 12px; color: var(--accent); font-size: 18px; }
-    h3 { margin: 22px 0 8px; font-size: 15px; }
-    p, li, td { color: var(--muted); }
-    a { color: var(--blue); }
-    code { padding: 1px 5px; border-radius: 4px; background: #2a2927; color: var(--text); }
-    ul, ol { padding-left: 22px; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 10px 12px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
-    th { background: var(--panel-2); color: var(--text); }
-    .card { padding: 18px 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .entry { padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px; color: var(--text); background: var(--panel-2); }
-    .flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; align-items: stretch; }
-    .flow > div { position: relative; padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
-    .flow > div:not(:last-child)::after { content: "→"; position: absolute; right: -8px; top: 50%; z-index: 2; color: var(--accent); transform: translate(50%, -50%); }
-    .ok { color: var(--green); }
-    .pending { color: var(--accent); }
-    .no { color: var(--red); }
-    @media (max-width: 760px) {
-      .grid, .flow { grid-template-columns: 1fr; }
-      .flow > div:not(:last-child)::after { display: none; }
-    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   </style>
 </head>
 <body>
-<main>
-  <h1>内置浏览器、资料导入与新建 Pane</h1>
-  <p>本设计把通用的新建内容入口与浏览器内部页面分离，并为大量 History、Bookmarks 与登录 Cookie 的显式导入定义边界。它不改变 Agent 的网页控制协议。</p>
+<div class="shell">
+  <main>
+    <header>
+      <div class="eyebrow">OpenProgram · UI design specification</div>
+      <h1>内置浏览器、资料导入与新建 Pane</h1>
+      <p class="lede">新建 Pane 只负责选择内容类型；进入 Browser 后才显示地址栏、主页、History、Bookmarks 和资料导入。外部浏览器数据经用户明确选择后复制到 OpenProgram 独立 profile，源 profile 始终只读。</p>
+      <div class="meta"><span class="pill"><span class="dot"></span>设计已确定</span><span class="pill">桌面 App</span><span class="pill">独立浏览器 profile</span><span class="pill">不改变 Agent 控制协议</span></div>
+      <details class="mobile-toc">
+        <summary>本页目录</summary>
+        <nav aria-label="移动端页内导航"><a href="#decisions">产品决策</a><a href="#surfaces">可见状态</a><a href="#references">参考行为</a><a href="#architecture">架构与数据流</a><a href="#boundaries">信任边界</a><a href="#acceptance">验收与状态</a></nav>
+      </details>
+    </header>
 
-  <h2>1. 当前实现与问题</h2>
-  <div class="card">
-    <ul>
-      <li><code>NewTabPage</code> 同时承担“选择内容类型”和“浏览器首页”两个职责：新会话、网址输入、快捷网站与书签显示在同一页面。</li>
-      <li>当前一级入口只有新会话和网址输入，没有 Files、Side chat、Browser、Terminal 四个平级入口。</li>
-      <li>主页按钮把 web tab 退回通用 <code>ntp</code>，无法区分“新建 pane”与“浏览器主页”。</li>
-      <li>History 复用书签的两行卡片，完整 URL 单独占一行；大量记录下信息密度低。</li>
-      <li>桌面端只记录 OpenProgram 自己产生的最多 5000 条 History；没有来源浏览器/profile 发现和导入流程。</li>
-      <li>内置浏览器已经使用持久化 <code>persist:webtabs</code> session，具备写入 Cookie 的目标容器，但没有外部 Cookie 的可信来源适配器。</li>
-    </ul>
-  </div>
+    <section class="metrics" aria-label="设计范围摘要">
+      <div class="metric"><span class="metric-label">范围</span><span class="metric-value">Pane 层级 · Browser surfaces · Profile import</span></div>
+      <div class="metric"><span class="metric-label">平台</span><span class="metric-value">桌面 App · 独立 profile · 源数据只读</span></div>
+      <div class="metric"><span class="metric-label">实现状态</span><span class="metric-value">浏览器与导入已实现 · Launcher 入口数量待对齐</span></div>
+    </section>
 
-  <h2>2. 参考行为与取舍</h2>
-  <table>
-    <thead><tr><th>参考</th><th>可验证行为</th><th>OpenProgram 选择</th></tr></thead>
-    <tbody>
-      <tr>
-        <td>用户提供的 Codex 截图</td>
-        <td>空白 side pane 提供 Files、Side chat、Browser、Terminal；Browser 页面内再显示地址栏与导入提示。</td>
-        <td>采用内容类型一级入口；浏览器专属控件不得出现在通用 launcher。</td>
-      </tr>
-      <tr>
-        <td><a href="https://help.openai.com/en/articles/20001277-using-the-built-in-browser-in-the-chatgpt-desktop-app">OpenAI 内置浏览器说明</a></td>
-        <td>内置浏览器使用独立浏览状态；需要既有 Chrome 登录态时，官方说明使用 Chrome extension。</td>
-        <td>保持 OpenProgram 独立 profile；外部资料只能经用户发起的导入写入，不能直接复用或修改源 profile。</td>
-      </tr>
-      <tr>
-        <td><a href="https://support.google.com/chrome/answer/96816">Chrome 导入设置</a></td>
-        <td>导入项按类型选择；既有书签放入 Imported 文件夹，不覆盖当前数据。</td>
-        <td>来源浏览器、profile、数据类型分别确认；Bookmarks 合并到带来源名称的文件夹。</td>
-      </tr>
-      <tr>
-        <td><a href="https://chromium.googlesource.com/chromium/src/+/main/docs/user_data_dir.md">Chromium user data directory</a></td>
-        <td>History、Bookmarks、Cookies 等按 profile 存放在 user data directory。</td>
-        <td>只读发现 profile；读取前复制需要的文件到私有临时目录，避免对活动数据库加锁或写入。</td>
-      </tr>
-      <tr>
-        <td><a href="https://chromium.googlesource.com/chromium/src/+/refs/tags/145.0.7573.1/components/user_data_importer/">Chromium user_data_importer</a></td>
-        <td>Chromium 有 History、Bookmarks、Passwords 等导入组件，但该组件不作为 Electron JavaScript API 暴露；通用 Cookies import 标志仍未提供实现。</td>
-        <td>不复制 Chromium C++ importer；使用 Node/Electron 原生能力实现当前需要的最小适配。</td>
-      </tr>
-      <tr>
-        <td><a href="https://www.electronjs.org/docs/latest/api/session">Electron session</a> / <a href="https://www.electronjs.org/docs/latest/api/cookies">Cookies</a></td>
-        <td>持久化 partition 保存独立浏览状态，<code>session.cookies.set()</code> 可逐条写入 Cookie。</td>
-        <td>Cookie 只写入 <code>persist:webtabs</code>，不进入聊天、日志、History 或 renderer localStorage。</td>
-      </tr>
-    </tbody>
-  </table>
+    <section class="section" id="decisions">
+      <div class="section-head"><span class="section-no">01</span><h2>产品决策</h2></div>
+      <p class="section-intro">当前问题来自内容入口、浏览器主页和资料管理共用一个页面。设计先分离职责，再定义每个页面出现的控件。</p>
+      <div class="decision"><strong>New pane 只做选择</strong><p>空白 Pane 只显示 Files、Side chat、Browser、Terminal。地址栏、快捷网站、Bookmarks 和 History 不出现在这里。</p></div>
+      <div class="decision"><strong>Browser 拥有独立主页</strong><p>选择 Browser 后原位进入浏览器主页。Home 返回该主页，不再退回通用 New pane launcher。</p></div>
+      <div class="decision"><strong>Bookmarks 是唯一书签入口</strong><p>Browser home 只显示搜索、导入入口和用户维护的快捷网站，不展开全部书签。右上角主菜单打开 Bookmarks 页面，由该页面统一浏览、搜索和编辑书签树。</p></div>
+      <div class="decision"><strong>导入保留来源结构</strong><p>Chromium 的 bookmark bar、other bookmarks 以及嵌套文件夹按原有层级和顺序进入 OpenProgram bookmark tree；导入不得把书签压平成主页下方的独立条目。</p></div>
+      <div class="decision"><strong>菜单绑定触发按钮</strong><p>右上角主菜单使用触发按钮的实际屏幕矩形定位，菜单右边缘与按钮右边缘对齐，垂直间距为 4px；窗口宽度和 tab 数量变化不得改变该相对位置。</p></div>
+      <div class="decision"><strong>History 使用紧凑行</strong><p>记录按本地日期分组，每行只显示时间、favicon、标题、域名和操作；完整 URL 不再单独占用第二行。</p></div>
+      <div class="decision"><strong>导入必须显式触发</strong><p>来源浏览器、profile 和数据类型分别确认。OpenProgram 不读取或修改用户正在使用的源 profile。</p></div>
+    </section>
 
-  <h2>3. 信息结构</h2>
-  <h3>3.1 通用 New pane launcher</h3>
-  <p>空白 pane 只显示四个一级入口，不显示地址栏、Bookmarks、快捷网站或 History。</p>
-  <div class="grid">
-    <div class="entry">Files — 打开当前项目文件视图</div>
-    <div class="entry">Side chat — 在当前 pane 创建独立会话</div>
-    <div class="entry">Browser — 将当前 pane 原位切换为浏览器主页</div>
-    <div class="entry">Terminal — 将当前 pane 原位切换为项目终端</div>
-  </div>
+    <section class="section" id="surfaces">
+      <div class="section-head"><span class="section-no">02</span><h2>三个可见状态</h2></div>
+      <p class="section-intro">下面是信息结构验收图。切换状态即可检查控件是否出现在正确层级。</p>
+      <div class="demo-wrap">
+        <div class="demo-tabs" role="tablist" aria-label="内置浏览器状态">
+          <button class="demo-tab" type="button" role="tab" aria-selected="true" aria-controls="demo-launcher" id="tab-launcher" tabindex="0">New pane</button>
+          <button class="demo-tab" type="button" role="tab" aria-selected="false" aria-controls="demo-browser" id="tab-browser" tabindex="-1">Browser home</button>
+          <button class="demo-tab" type="button" role="tab" aria-selected="false" aria-controls="demo-history" id="tab-history" tabindex="-1">History</button>
+        </div>
+        <div class="demo-panel active" id="demo-launcher" role="tabpanel" aria-labelledby="tab-launcher">
+          <div class="pane-head"><span class="window-dot"></span><strong>New pane</strong></div>
+          <div class="launcher">
+            <div class="launcher-item"><span class="icon">F</span><span><strong>Files</strong><small>浏览当前项目文件</small></span><span class="shortcut">⌘P</span></div>
+            <div class="launcher-item"><span class="icon">C</span><span><strong>Side chat</strong><small>创建独立对话</small></span><span class="shortcut">⌥⌘S</span></div>
+            <div class="launcher-item"><span class="icon">W</span><span><strong>Browser</strong><small>打开内置浏览器主页</small></span><span class="shortcut">⌘T</span></div>
+            <div class="launcher-item"><span class="icon">&gt;_</span><span><strong>Terminal</strong><small>打开项目终端</small></span><span class="shortcut">⌃`</span></div>
+          </div>
+        </div>
+        <div class="demo-panel" id="demo-browser" role="tabpanel" aria-labelledby="tab-browser" hidden>
+          <div class="pane-head"><span class="window-dot"></span><strong>Browser</strong></div>
+          <div class="browser-toolbar">
+            <div class="browser-actions" aria-hidden="true"><span class="tool-button">←</span><span class="tool-button">→</span><span class="tool-button">⌂</span></div>
+            <div class="address">输入 URL 或搜索内容</div>
+            <div class="browser-actions" aria-hidden="true"><span class="tool-button">↻</span><span class="tool-button">•••</span></div>
+          </div>
+          <div class="browser-home">
+            <div class="import-banner"><span class="browser-mark">O</span><span><strong>从浏览器导入资料</strong><span>选择 History、Bookmarks 和 Cookies</span></span><span class="primary" aria-hidden="true">Import</span></div>
+            <div class="home-grid">
+              <div class="home-block"><h4>Quick sites</h4><div class="site-row"><i></i>GitHub</div><div class="site-row"><i></i>Google</div><div class="site-row"><i></i>OpenProgram Docs</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="demo-panel" id="demo-history" role="tabpanel" aria-labelledby="tab-history" hidden>
+          <div class="pane-head"><span class="window-dot"></span><strong>History</strong></div>
+          <div class="history-head"><h4>History</h4><div class="history-search">搜索历史记录</div></div>
+          <div class="history-group">
+            <div class="history-date">今天</div>
+            <div class="history-row"><span class="check"></span><span class="time">14:22</span><span class="favicon"></span><span class="title">OpenProgram · Documentation</span><span class="domain">openprogram.ai</span><span class="more">•••</span></div>
+            <div class="history-row"><span class="check"></span><span class="time">14:16</span><span class="favicon"></span><span class="title">Repository issues and pull requests</span><span class="domain">github.com</span><span class="more">•••</span></div>
+            <div class="history-row"><span class="check"></span><span class="time">13:58</span><span class="favicon"></span><span class="title">Agent interface research notes</span><span class="domain">example.com</span><span class="more">•••</span></div>
+            <div class="history-row"><span class="check"></span><span class="time">13:41</span><span class="favicon"></span><span class="title">Browser history design references</span><span class="domain">chromium.org</span><span class="more">•••</span></div>
+            <div class="history-date">昨天</div>
+            <div class="history-row"><span class="check"></span><span class="time">21:05</span><span class="favicon"></span><span class="title">Electron session and cookies API</span><span class="domain">electronjs.org</span><span class="more">•••</span></div>
+            <div class="history-row"><span class="check"></span><span class="time">20:47</span><span class="favicon"></span><span class="title">Chromium user data directory</span><span class="domain">chromium.org</span><span class="more">•••</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-  <h3>3.2 Browser home</h3>
-  <p>Browser 被选中后才显示浏览器 toolbar、地址输入、导入提示、快捷网站和 Bookmarks。主页按钮回到 Browser home，不回到通用 launcher。首次导入提示可以关闭，之后仍能从 toolbar 的导入按钮重新打开。</p>
+    <section class="section" id="references">
+      <div class="section-head"><span class="section-no">03</span><h2>参考行为与取舍</h2></div>
+      <p class="section-intro">参考产品用于确认可见行为，平台文档用于确认可实现边界。OpenProgram 不复制完整 Chromium importer。</p>
+      <div class="compare-grid">
+        <article class="compare-card"><span class="label">Content hierarchy</span><h3>Codex 的 Pane 入口</h3><p>Files、Side chat、Browser、Terminal 作为一级内容类型；浏览器控件只在 Browser 内显示。</p><span class="choice">采用</span></article>
+        <article class="compare-card"><span class="label">Browser profile</span><h3>独立浏览状态</h3><p>内置浏览器保持自己的 profile。需要既有资料时，由用户明确发起导入。</p><span class="choice modified">修改后采用</span></article>
+        <article class="compare-card"><span class="label">Importer</span><h3>Chromium C++ importer</h3><p>组件不作为 Electron JavaScript API 暴露，且不提供通用 Cookies import 实现。</p><span class="choice rejected">不复制</span></article>
+      </div>
+      <ul class="source-list">
+        <li><a href="https://help.openai.com/en/articles/20001277-using-the-built-in-browser-in-the-chatgpt-desktop-app">OpenAI 内置浏览器说明</a>：确认独立浏览状态与外部浏览器使用边界。</li>
+        <li><a href="https://support.google.com/chrome/answer/96816">Chrome 导入设置</a>：确认按数据类型选择以及 Imported Bookmarks 的合并行为。</li>
+        <li><a href="https://chromium.googlesource.com/chromium/src/+/main/docs/user_data_dir.md">Chromium user data directory</a>：确认 History、Bookmarks、Cookies 的 profile 存储位置。</li>
+        <li><a href="https://chromium.googlesource.com/chromium/src/+/refs/tags/145.0.7573.1/components/user_data_importer/">Chromium user_data_importer</a>：确认原生导入组件的能力与 Electron 暴露边界。</li>
+        <li><a href="https://www.electronjs.org/docs/latest/api/session">Electron session</a> 与 <a href="https://www.electronjs.org/docs/latest/api/cookies">Cookies</a>：确认持久化 partition 和逐条 Cookie 写入接口。</li>
+      </ul>
+    </section>
 
-  <h3>3.3 History</h3>
-  <p>History 使用专用紧凑行：<code>选择框 | 时间 | favicon | 标题 | 域名 | 更多</code>。记录按本地日期分组；搜索结果仍保留日期分组。单行高度目标为 36–40px，标题与域名分别截断，不再显示第二行完整 URL。支持单条删除、批量删除和清空。</p>
+    <section class="section" id="architecture">
+      <div class="section-head"><span class="section-no">04</span><h2>导入架构与数据流</h2></div>
+      <p class="section-intro">renderer 只传递 main 进程签发的 opaque source/profile id。文件路径、源浏览器可执行路径和 Cookie 值都不能通过 renderer 自由指定。</p>
+      <div class="architecture">
+        <svg viewBox="0 0 900 390" role="img" aria-labelledby="flow-title flow-desc">
+          <title id="flow-title">浏览器资料导入数据流</title>
+          <desc id="flow-desc">用户从桌面界面选择来源，main 进程发现 profile 并只读复制到临时目录。History 和 Bookmarks 由解析器读取，Cookies 由源浏览器临时进程解密，最终分别写入 OpenProgram history store、bookmark tree 和 persist webtabs session。</desc>
+          <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#6f7481"/></marker><marker id="arrow-hot" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#5d55d7"/></marker></defs>
+          <rect x="24" y="42" width="145" height="70" rx="10" fill="#f4f5f8" stroke="#b9bfcc"/><text x="96" y="71" text-anchor="middle" font-family="ui-monospace" font-size="13">Import dialog</text><text x="96" y="92" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">source · profile · types</text>
+          <rect x="238" y="42" width="164" height="70" rx="10" fill="#f4f5f8" stroke="#b9bfcc"/><text x="320" y="68" text-anchor="middle" font-family="ui-monospace" font-size="12">desktop/main.js</text><text x="320" y="90" text-anchor="middle" font-family="ui-sans-serif" font-size="10" fill="#646977">browser-import:* · opaque ids</text>
+          <rect x="475" y="42" width="160" height="70" rx="10" fill="#eceafd" stroke="#5d55d7"/><text x="555" y="68" text-anchor="middle" font-family="ui-monospace" font-size="11">browser-profile-import.js</text><text x="555" y="90" text-anchor="middle" font-family="ui-sans-serif" font-size="10" fill="#646977">0700 dir · 0600 files</text>
+          <path d="M169 77H238" stroke="#6f7481" stroke-width="1.6" marker-end="url(#arrow)"/><path d="M402 77H475" stroke="#5d55d7" stroke-width="1.8" marker-end="url(#arrow-hot)"/><text x="203" y="66" text-anchor="middle" font-family="ui-monospace" font-size="10" fill="#646977">IPC</text><text x="438" y="66" text-anchor="middle" font-family="ui-monospace" font-size="10" fill="#5d55d7">copy only</text>
+          <rect x="475" y="184" width="160" height="62" rx="10" fill="#ffffff" stroke="#b9bfcc"/><text x="555" y="211" text-anchor="middle" font-family="ui-monospace" font-size="11">bounded parsers</text><text x="555" y="230" text-anchor="middle" font-family="ui-sans-serif" font-size="10" fill="#646977">History SQLite · Bookmarks JSON</text>
+          <rect x="475" y="292" width="160" height="62" rx="10" fill="#ffffff" stroke="#5d55d7"/><text x="555" y="319" text-anchor="middle" font-family="ui-monospace" font-size="11">source browser + CDP</text><text x="555" y="338" text-anchor="middle" font-family="ui-sans-serif" font-size="10" fill="#646977">temporary process · cookies</text>
+          <path d="M555 112V184" stroke="#6f7481" stroke-width="1.6" marker-end="url(#arrow)"/><path d="M590 112C690 150 690 265 635 323" fill="none" stroke="#5d55d7" stroke-width="1.8" marker-end="url(#arrow-hot)"/>
+          <rect x="728" y="153" width="148" height="68" rx="10" fill="#e6f1eb" stroke="#367b5a"/><text x="802" y="179" text-anchor="middle" font-family="ui-monospace" font-size="10">browsing-history-store.js</text><text x="802" y="199" text-anchor="middle" font-family="ui-sans-serif" font-size="10" fill="#646977">web/lib/bookmarks.ts</text>
+          <rect x="728" y="280" width="148" height="68" rx="10" fill="#e6f1eb" stroke="#367b5a"/><text x="802" y="308" text-anchor="middle" font-family="ui-monospace" font-size="12">persist:webtabs</text><text x="802" y="327" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">Electron cookies.set</text>
+          <path d="M635 215H728" stroke="#6f7481" stroke-width="1.6" marker-end="url(#arrow)"/><path d="M635 323H728" stroke="#5d55d7" stroke-width="1.8" marker-end="url(#arrow-hot)"/>
+          <rect x="22" y="155" width="365" height="199" rx="12" fill="none" stroke="#d9d5cc" stroke-dasharray="6 5"/><text x="40" y="181" font-family="ui-monospace" font-size="10" fill="#9b9890">SOURCE PROFILE · READ ONLY</text><text x="40" y="215" font-family="ui-sans-serif" font-size="12" fill="#55534e">1. 发现已安装浏览器和 profile 名称</text><text x="40" y="246" font-family="ui-sans-serif" font-size="12" fill="#55534e">2. 解析真实路径并拒绝符号链接逃逸</text><text x="40" y="277" font-family="ui-sans-serif" font-size="12" fill="#55534e">3. 复制需要的文件，不锁定活动数据库</text><text x="40" y="308" font-family="ui-sans-serif" font-size="12" fill="#55534e">4. 正常或失败后删除临时目录</text>
+        </svg>
+      </div>
+      <div class="legend"><span>一般资料路径</span><span class="sensitive">Cookie 敏感路径</span></div>
+      <div class="import-types">
+        <article class="type-card"><h3>History</h3><ul><li>读取 Chromium History SQLite 副本</li><li>只接受 http/https</li><li>按 URL + visitedAt 去重</li><li>错误时保留现有记录</li></ul></article>
+        <article class="type-card"><h3>Bookmarks</h3><ul><li>解析 Chromium Bookmarks JSON</li><li>保留根目录、嵌套文件夹与同级顺序</li><li>同 URL 不重复添加并删除空文件夹</li><li>只在 Bookmarks 页面展示和管理</li></ul></article>
+        <article class="type-card"><h3>Cookies</h3><ul><li>禁止直接复制 Cookie 数据库</li><li>由源浏览器临时进程解密</li><li>逐条校验后写入 partition</li><li>任何日志都不记录值</li></ul></article>
+      </div>
+    </section>
 
-  <h2>4. 导入流程</h2>
-  <div class="flow">
-    <div><strong>发现</strong><br>列出已安装浏览器和本地 profile 名称，不读取内容。</div>
-    <div><strong>选择</strong><br>用户选择来源、profile、History、Bookmarks、Cookies。</div>
-    <div><strong>暂存</strong><br>只读复制目标文件到权限为 0700 的临时目录；校验类型、数量和上限。</div>
-    <div><strong>提交</strong><br>History/Bookmarks 合并；Cookies 逐条写入 <code>persist:webtabs</code>；返回计数。</div>
-  </div>
+    <section class="section" id="boundaries">
+      <div class="section-head"><span class="section-no">05</span><h2>信任边界与失败行为</h2></div>
+      <p class="section-intro">导入不是 profile 迁移。它只复制已选择的数据，并且不承诺所有网站登录态都能恢复。</p>
+      <table class="boundary-table">
+        <thead><tr><th>边界</th><th>约束</th><th>失败结果</th></tr></thead>
+        <tbody>
+          <tr><td>renderer → main</td><td>source/profile 使用 main 返回的 opaque id；数据类型使用 allowlist；renderer 不能传文件路径或可执行路径。</td><td><span class="risk">拒绝请求</span></td></tr>
+          <tr><td>源 profile</td><td>只读发现；真实路径必须位于已发现 browser root 内；拒绝符号链接逃逸。</td><td><span class="risk">source_invalid</span></td></tr>
+          <tr><td>临时数据</td><td>目录 0700、文件 0600；成功、失败或超时后都删除；日志只记录来源标签、类型、计数和错误码。</td><td><span class="risk">cleanup + stable error</span></td></tr>
+          <tr><td>目标 profile</td><td>History 和 Bookmarks 合并；Cookies 通过 Electron API 写入，不替换目标数据库。</td><td><span class="risk">保留导入前数据</span></td></tr>
+          <tr><td>并发</td><td>全 App 同时只允许一个导入任务；当前基线不提供执行中取消。</td><td><span class="risk">import_busy</span></td></tr>
+        </tbody>
+      </table>
+      <div class="exclusions">
+        <div class="exclusion">不导入 Passwords、支付信息、地址、扩展、下载记录、缓存、localStorage 或 Service Workers。</div>
+        <div class="exclusion">不实现密码管理器、系统 Credential Store、自动填充或对运行中的源浏览器进行远程调试。</div>
+        <div class="exclusion">Cookie 导入可以减少重复登录，但设备绑定、过期、二次验证或服务端撤销仍会要求重新登录。</div>
+        <div class="exclusion">本地浏览器导入仅属于桌面 App；Web-only 模式不得显示为可用能力。</div>
+      </div>
+    </section>
 
-  <h3>4.1 History</h3>
-  <ul>
-    <li>从来源 profile 的 Chromium History SQLite 副本读取 <code>http/https</code> 访问记录。</li>
-    <li>按 <code>url + visitedAt</code> 去重，保持 OpenProgram 当前记录，不覆盖标题更新之外的数据。</li>
-    <li>导入采用有界批次；错误时不清空现有 History。</li>
-  </ul>
+    <section class="section" id="acceptance">
+      <div class="section-head"><span class="section-no">06</span><h2>验收与实现状态</h2></div>
+      <p class="section-intro">每项验收都对应一个外部可观察结果。设计状态和实现证据分列，不以文档存在本身证明功能完成。</p>
+      <table class="acceptance-table">
+        <thead><tr><th>可观察结果</th><th>当前状态</th></tr></thead>
+        <tbody>
+          <tr><td>新建 Pane 只显示 Files、Side chat、Browser、Terminal；DOM 中不存在 URL input、shortcut tile 或 bookmark row。</td><td><span class="status">已实现</span></td></tr>
+          <tr><td>选择 Browser 后原位显示 toolbar、导入入口和快捷网站；Home 返回 Browser home，主页 DOM 不渲染全部 bookmark rows。</td><td><span class="status">已实现</span></td></tr>
+          <tr><td>导入对话框列出来源浏览器、profile 和支持的数据类型；关闭对话框不产生目标变更。</td><td><span class="status">已实现</span></td></tr>
+          <tr><td>History 按日期分组，至少 1000 条时保持 36–40px 行高，搜索和滚动可用。</td><td><span class="status">已实现</span></td></tr>
+          <tr><td>Bookmarks 保留来源根目录、任意深度文件夹和同级顺序；无效 URL 被过滤，重复导入不产生重复 URL 或空文件夹。</td><td><span class="status">已实现</span></td></tr>
+          <tr><td>右上角主菜单在桌面 App 和 Web 中都与触发按钮右对齐，按钮底部到菜单顶部的间距为 4px。</td><td><span class="status">已实现</span></td></tr>
+          <tr><td>Cookies 只进入 <code>persist:webtabs</code>；IPC、日志、History 和 renderer 不出现 Cookie 值。</td><td><span class="status">已实现</span></td></tr>
+          <tr><td>来源损坏、浏览器缺失、临时进程超时和 Cookie 部分失败返回稳定错误码并保留原数据。</td><td><span class="status">已实现</span></td></tr>
+          <tr><td>依赖 PTY 的全屏终端程序以及执行中取消浏览器导入。</td><td><span class="status limit">当前限制</span></td></tr>
+          <tr><td>Passwords、自动填充、支付/地址数据和源浏览器接管。</td><td><span class="status out">明确排除</span></td></tr>
+        </tbody>
+      </table>
+      <h3>验证环境</h3>
+      <p>可见验收只使用安装的 <code>/Applications/OpenProgram.app</code>、默认 18100 worker 和 <code>~/.openprogram</code>。文档更新不改变 Agent 的网页控制协议。</p>
+    </section>
+    <p class="footnote">本页是当前设计的规范性说明。实现发生变化时直接更新本页；历史修订由 Git 保存。</p>
+  </main>
 
-  <h3>4.2 Bookmarks</h3>
-  <ul>
-    <li>解析 Chromium Bookmarks JSON，只接受 <code>http/https</code> URL 与有界字符串。</li>
-    <li>导入到 <code>Imported from &lt;browser/profile&gt;</code> 文件夹；同 URL 不重复添加。</li>
-    <li>Bookmarks 仍使用现有树和 localStorage 格式，不新增数据库。</li>
-  </ul>
-
-  <h3>4.3 Cookies 与登录态</h3>
-  <ul>
-    <li>禁止把外部 Cookies 数据库直接复制到 OpenProgram partition；产品密钥、数据库版本与活动 WAL 都可能不同。</li>
-    <li>源浏览器必须负责解密：对 Chromium 浏览器，复制最小 profile 到临时目录后，由该浏览器自己的无界面进程打开副本，并经本机 CDP 返回 Cookies。</li>
-    <li>临时浏览器不导航网站、禁用扩展与后台联网；正常完成或报错后终止进程并删除临时目录。</li>
-    <li>只接受 <code>http/https</code> Cookie，校验 domain、path、sameSite、secure、expirationDate；写入失败逐条计数，不输出 Cookie 值。</li>
-    <li>导入可以减少重复登录，但网站仍可能因设备绑定、过期、二次验证或服务端撤销要求重新登录，UI 不承诺所有会话均可恢复。</li>
-  </ul>
-
-  <h3>4.4 明确排除</h3>
-  <ul>
-    <li>本阶段不导入 Passwords、支付信息、地址、扩展、下载记录、缓存、localStorage 或 Service Workers。</li>
-    <li>不实现 OpenProgram 密码管理器、系统 Credential Store 或自动填充。</li>
-    <li>不修改、关闭或以远程调试方式接管用户正在运行的源浏览器。</li>
-    <li>不在 Web-only 模式声称支持本地浏览器导入；该能力仅存在于桌面 App。</li>
-  </ul>
-
-  <h2>5. 信任边界与失败行为</h2>
-  <table>
-    <thead><tr><th>边界</th><th>要求</th></tr></thead>
-    <tbody>
-      <tr><td>renderer → main IPC</td><td>source/profile 必须来自 main 返回的 opaque id；数据类型使用 allowlist；禁止 renderer 传任意文件路径或可执行路径。</td></tr>
-      <tr><td>源 profile</td><td>只读；复制前解析真实路径并限制在已发现 browser root 内；拒绝符号链接逃逸。</td></tr>
-      <tr><td>临时数据</td><td>0700 目录、0600 文件；正常成功或失败后删除；日志只记录来源标签、类型、计数和错误码。</td></tr>
-      <tr><td>目标 profile</td><td>History 与 Bookmarks 合并提交；Cookies 通过 Electron API 写入，不直接替换目标数据库。</td></tr>
-      <tr><td>并发</td><td>全 App 同时只允许一个导入任务；重复点击返回 <code>import_busy</code>。当前基线不提供执行中的取消。</td></tr>
-    </tbody>
-  </table>
-
-  <h2>6. 公共入口验收</h2>
-  <ol>
-    <li>新建 pane 只显示 Files、Side chat、Browser、Terminal 四项，DOM 中不存在 URL input、shortcut tile 或 bookmark row。</li>
-    <li>选择 Browser 后原位显示浏览器 toolbar、导入入口、快捷网站和 Bookmarks；导航 URL 后变为普通 web tab；Home 返回 Browser home。</li>
-    <li>导入对话框列出来源浏览器/profile 和实际支持的数据类型；执行前关闭对话框不产生目标变更。</li>
-    <li>导入 History 后按日期分组显示，至少 1000 条数据时行高保持紧凑、搜索和滚动可用。</li>
-    <li>导入 Bookmarks 后只增加一个来源文件夹，重复导入不产生重复 URL。</li>
-    <li>导入 Cookies 后目标 partition 可读取对应 Cookie；IPC、日志、History 和 renderer 均不出现 Cookie 值。</li>
-    <li>来源文件损坏、浏览器缺失、临时进程超时、Cookie 部分失败均返回稳定错误码，并保留导入前的数据。</li>
-    <li>可见验收只使用安装的 <code>/Applications/OpenProgram.app</code>、默认 18100 worker 和 <code>~/.openprogram</code>。</li>
-  </ol>
-
-  <h2>7. 任务 Brief 与 Gate</h2>
-  <div class="card">
-    <p><strong>生产范围：</strong><code>desktop/main.js</code>、<code>desktop/preload.js</code>、一个浏览器导入 helper、History store、center-tab state/persistence、New pane launcher、Browser home、History 页面和相关 CSS。</p>
-    <p><strong>测试范围：</strong>导入 helper 的 Node self-check、desktop IPC/source gate、center-tab/NTP source gate、History store 与 Web TypeScript/build。</p>
-    <p><strong>RED：</strong>公共入口检查先证明四入口分离、Browser home、日期分组 History 和浏览器导入 IPC 缺失。</p>
-    <p><strong>GREEN：</strong>focused tests 后运行 desktop navigation check、Web checks、TypeScript、production build、文档链接检查和安装版 App 验收。</p>
-  </div>
-
-  <h2>8. 实现状态</h2>
-  <ul>
-    <li class="ok">已实现：Files、Side chat、Browser、Terminal 四入口 launcher；Browser-only home；Chromium 来源/profile 发现；History、Bookmarks、Cookies 导入；紧凑日期分组 History。</li>
-    <li class="pending">当前限制：Terminal 是逐行命令 shell，不支持依赖 PTY 的全屏交互程序；执行中的浏览器导入不可取消。</li>
-    <li class="no">不在本阶段：Passwords、自动填充、支付/地址数据、源浏览器接管。</li>
-  </ul>
-</main>
+  <aside class="rail" aria-label="页内导航">
+    <div class="rail-title">On this page</div>
+    <nav><a href="#decisions">产品决策</a><a href="#surfaces">可见状态</a><a href="#references">参考行为</a><a href="#architecture">架构与数据流</a><a href="#boundaries">信任边界</a><a href="#acceptance">验收与状态</a></nav>
+  </aside>
+</div>
+<script>
+  const tabs = [...document.querySelectorAll('.demo-tab')];
+  const panels = [...document.querySelectorAll('.demo-panel')];
+  tabs.forEach((tab) => tab.addEventListener('click', () => {
+    tabs.forEach((item) => item.setAttribute('aria-selected', String(item === tab)));
+    panels.forEach((panel) => {
+      const active = panel.id === tab.getAttribute('aria-controls');
+      panel.classList.toggle('active', active);
+      panel.hidden = !active;
+    });
+  }));
+</script>
 </body>
 </html>

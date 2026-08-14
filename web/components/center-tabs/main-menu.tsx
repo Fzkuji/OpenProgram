@@ -76,18 +76,14 @@ export function MainMenu() {
         title={label}
         aria-label={label}
         onClick={(e) => {
-          // Anchor: panel right edge sits 8px from the window's right (the
-          // same gutter the tab-strip buttons keep), and its top edge sits on
-          // the tab-strip's bottom divider so it covers the content below.
-          const strip = e.currentTarget.closest<HTMLElement>(
-            `.${styles.strip}`,
-          );
-          const dividerY = strip
-            ? Math.round(strip.getBoundingClientRect().bottom)
-            : Math.round(e.currentTarget.getBoundingClientRect().bottom);
+          const trigger = e.currentTarget.getBoundingClientRect();
           const theme = document.documentElement.dataset.theme;
           mainMenu.open({
-            anchor: { rightInset: 8, top: dividerY, vw: window.innerWidth },
+            anchor: {
+              rightInset: Math.round(window.innerWidth - trigger.right),
+              top: Math.round(trigger.bottom + 4),
+              vw: window.innerWidth,
+            },
             theme: theme === "dark" || theme === "light" ? theme : undefined,
           });
         }}

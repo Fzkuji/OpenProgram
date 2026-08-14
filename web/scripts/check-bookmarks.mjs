@@ -62,8 +62,7 @@ const rightDockCss = readRightDockCss(new URL("../", import.meta.url));
 assert.match(webTab, /function BookmarkButton/);
 assert.match(webTab, /toggleBookmark\(\{ url, title \}\)/);
 assert.match(webTab, /<BookmarkButton url=\{effectiveUrl\} title=\{title \|\| effectiveUrl\} \/>/);
-assert.match(browserHome, /readBookmarks/);
-assert.match(browserHome, /removeBookmark/);
+assert.doesNotMatch(browserHome, /readBookmarks|removeBookmark|subscribeBookmarks/);
 // The right dock no longer has a bookmarks view; a stale persisted
 // "bookmarks" value must fall back rather than restore a dead view.
 assert.doesNotMatch(
@@ -73,11 +72,11 @@ assert.doesNotMatch(
 );
 for (const [name, text] of [
   ["web-tab-pane.tsx", webTab],
-  ["browser-home-page.tsx", browserHome],
   ["builtin-tab-pane.tsx", manager],
 ]) {
   assert.match(text, /subscribeBookmarks\(refresh\)/, `${name} must use shared bookmark subscription`);
 }
+assert.match(browserHome, /importBookmarkTree/, "browser import must write the source tree");
 // The manager is a folder TREE now: search matches a node by its own
 // title/url and keeps the folders leading to a hit, rows nest by depth,
 // and every folder operation is reachable from the page.
@@ -490,6 +489,76 @@ assert.deepEqual(bookmarks.readBookmarks(), [
   second,
   { title: "Kept", url: "https://kept.example/" },
 ]);
+
+// ---- Import: preserve the source browser's folder tree -------------
+storage.set(bookmarks.BOOKMARKS_STORAGE_KEY, JSON.stringify({
+  version: bookmarks.BOOKMARKS_VERSION,
+  root: {
+    kind: "folder",
+    id: bookmarks.BOOKMARKS_ROOT_ID,
+    title: "",
+    children: [
+      { kind: "folder", id: "existing-bar", title: "Bookmarks bar", children: [] },
+      {
+        kind: "folder",
+        id: "legacy-import",
+        title: "Imported from Google Chrome · Person 1",
+        children: [{
+          kind: "bookmark",
+          id: "legacy-paper",
+          title: "Paper",
+          url: "https://paper.example/",
+        }],
+      },
+    ],
+  },
+}));
+changes = 0;
+assert.equal(bookmarks.importBookmarkTree([
+  {
+    kind: "folder",
+    title: "Bookmarks bar",
+    children: [{
+      kind: "folder",
+      title: "Research",
+      children: [
+        { kind: "bookmark", title: "Paper", url: "https://paper.example" },
+        { kind: "bookmark", title: "Unsafe", url: "javascript:alert(1)" },
+      ],
+    }],
+  },
+  {
+    kind: "folder",
+    title: "Other bookmarks",
+    children: [{ kind: "bookmark", title: "Docs", url: "https://docs.example" }],
+  },
+], "Imported from Google Chrome · Person 1"), 2);
+assert.equal(changes, 1, "one import writes the merged tree once");
+const importedTree = bookmarks.readBookmarkTree();
+const importedBar = importedTree.children.find((node) => node.title === "Bookmarks bar");
+assert.equal(importedBar.id, "existing-bar", "same-name source roots merge instead of duplicating");
+assert.equal(importedBar.children[0].title, "Research");
+assert.equal(importedBar.children[0].children[0].url, "https://paper.example/");
+assert.equal(importedBar.children[0].children[0].id, "legacy-paper", "legacy import is moved, not duplicated");
+assert.equal(importedTree.children[1].title, "Other bookmarks");
+assert.equal(importedTree.children[1].children[0].url, "https://docs.example/");
+assert.equal(
+  importedTree.children.some((node) => node.id === "legacy-import"),
+  false,
+  "empty legacy flat folder is removed after its bookmarks are restructured",
+);
+assert.equal(bookmarks.importBookmarkTree([
+  {
+    kind: "folder",
+    title: "Bookmarks bar",
+    children: [{
+      kind: "folder",
+      title: "Research",
+      children: [{ kind: "bookmark", title: "Paper", url: "https://paper.example" }],
+    }],
+  },
+]), 0, "re-importing the same source tree is a no-op");
+assert.equal(changes, 1);
 
 // ---- Folder operations ----------------------------------------------
 storage.set(bookmarks.BOOKMARKS_STORAGE_KEY, JSON.stringify([first, second]));
