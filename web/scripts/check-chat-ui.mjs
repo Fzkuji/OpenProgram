@@ -663,7 +663,48 @@ assert.match(
   /<div class="tl-collapse"><div class="tl-collapse-inner">[\s\S]*?<\/div><\/div>\s*<\/div>\s*<div class="run-footer">/,
   "the visual specification footer must remain outside the collapsible execution trace",
 );
-assert.match(chatCss, /\.runtime-program-conclusion\s*\{[^}]*border-left:/s);
+function assertPlainConclusionRules(css) {
+  const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([_, selectors]) =>
+    selectors.split(",").some((selector) => {
+      const finalCompound = selector.trim().split(/[\s>+~]+/).at(-1) ?? "";
+      return /\.runtime-program-conclusion(?![\w-])/.test(finalCompound);
+    }),
+  );
+  assert.ok(rules.length > 0, "workflow Conclusion outer CSS rules must exist");
+  for (const [_, selector, declarations] of rules) {
+    assert.doesNotMatch(
+      declarations,
+      /(?:border|padding)-(?:left|inline-start)(?:-[\w-]+)?\s*:/,
+      `${selector.trim()} must render as ordinary chat content, not a blockquote`,
+    );
+  }
+}
+assertPlainConclusionRules(chatCss);
+assert.throws(
+  () => assertPlainConclusionRules(
+    `${chatCss}\n.runtime-program-conclusion.is-error { border-inline-start: 2px solid red; padding-inline-start: 14px; }`,
+  ),
+  /must render as ordinary chat content/,
+  "the Conclusion style contract must reject error/cancelled quote-style variants",
+);
+assert.throws(
+  () => assertPlainConclusionRules(
+    `${chatCss}\n.is-error.runtime-program-conclusion:hover { border-inline-start: 2px solid red; }`,
+  ),
+  /must render as ordinary chat content/,
+  "the Conclusion style contract must not depend on class order or pseudo-state",
+);
+assert.doesNotThrow(
+  () => assertPlainConclusionRules(
+    `${chatCss}\n.runtime-program-conclusion .message-content ul { padding-inline-start: 20px; }`,
+  ),
+  "semantic Markdown list indentation must remain valid inside Conclusion",
+);
+assert.match(
+  chatCss,
+  /\.runtime-program-conclusion-summary\.message-content,\s*\.runtime-program-conclusion-result\.message-content\s*\{[^}]*padding:\s*0/s,
+  "workflow summary and direct result must share the same plain-content alignment",
+);
 assert.match(runtimeBlock, /className="runtime-program-avatar"[\s\S]*>ƒ<\/div>/);
 assert.match(runtimeBlock, /if \(nested\)/, "nested LLM tool calls must keep their current rendering");
 assert.match(executionStrip, /aria-expanded=\{open\}/);

@@ -293,8 +293,6 @@
     .program-conclusion {
       grid-column: 2;
       margin-top: 12px;
-      padding-left: 14px;
-      border-left: 2px solid var(--line);
       color: var(--text);
       font-size: 14px;
       line-height: 1.65;
@@ -574,7 +572,7 @@
   <h2>聊天窗口视觉合同</h2>
   <div class="display-rules" aria-label="Chat display rules">
     <div class="display-rule"><strong>只新增顶层外壳</strong><span>增加一个专用 Program 头像和一条压缩标题；展开区继续使用现有 <code>RuntimeBlock</code> 和 <code>TreeStep</code>，消息 footer 保持聊天消息的独立层级。</span></div>
-    <div class="display-rule"><strong>只折叠执行过程</strong><span>参数、执行树和 usage 进入折叠区域；终态 <code>Conclusion</code> 与操作 footer 留在折叠区域之外。footer 始终位于整条消息最底部，不随执行过程折叠。</span></div>
+    <div class="display-rule"><strong>只折叠执行过程</strong><span>参数、执行树和 usage 进入折叠区域；终态 <code>Conclusion</code> 与操作 footer 留在折叠区域之外。Conclusion 使用普通聊天正文排版，不使用 blockquote、左侧竖线或引用式缩进；footer 始终位于整条消息最底部，不随执行过程折叠。</span></div>
     <div class="display-rule"><strong>标题摘要不调用模型</strong><span>压缩标题由现有结构化字段确定性生成：函数名、状态、时长，以及步骤数、输出预览或错误预览；终态 Conclusion 的 handoff 才使用独立 summary 调用。</span></div>
   </div>
 
