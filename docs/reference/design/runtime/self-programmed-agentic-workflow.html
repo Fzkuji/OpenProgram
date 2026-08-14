@@ -231,9 +231,29 @@
 <h2>10. 实现状态</h2>
 <div class="card implemented"><strong>已实现并保持：</strong>受限 Python 执行、函数注册表注入、调用边界 checkpoint、
 按 run 恢复、运行异常修订、40 次真实调用上限、provider/model 继承、聊天 RuntimeBlock 与 Conclusion。</div>
-<div class="card pending"><strong>待本设计实现：</strong>全局 workflow project catalog、确定性候选检索、统一 planner action、
-多文件项目校验/执行、不可变 revision、run snapshot、旧单文件兼容迁移测试。实现完成后在此附录记录生产文件、
-公共 RED/GREEN、specification 与 quality verdict，以及完整验证命令；未通过两轮审阅前不标记完成。</div>
+<div class="card implemented"><strong>本设计已实现：</strong>全局 workflow project catalog、确定性候选检索、
+单入口两阶段 planner、reuse/revise/create、多文件校验与共享 namespace 执行、不可变 revision、run snapshot、
+事务式 active revision 发布、跨进程 catalog 锁，以及仅在显式 resume 时读取旧 <code>code.py</code>。</div>
+
+<h3>10.1 实现与审阅证据</h3>
+<table>
+<tr><th>项目</th><th>记录</th></tr>
+<tr><td>生产实现</td><td><code>openprogram/programs/agentic_functions/agentic_workflow/__init__.py</code></td></tr>
+<tr><td>公共入口回归</td><td><code>tests/component/agent/test_agentic_workflow.py</code>：首次创建、跨 session reuse、revise、非法候选、取消、capped、故障回滚、显式 resume、旧 run、多进程并发发布。</td></tr>
+<tr><td>协议迁移回归</td><td><code>tests/unit/programs/test_three_tier_architecture.py</code> 与 <code>test_workflow_with_control_flow.py</code> 均通过单参数入口和两阶段多文件项目执行。</td></tr>
+<tr><td>提交</td><td><code>9bb08747</code> 设计；<code>1c7b5788</code> 初始实现；<code>b1297e3b</code> 单入口与多文件约束；<code>382de4b2</code> 事务发布。</td></tr>
+<tr><td>独立审阅</td><td>设计 reader test：PASS；specification review：PASS；quality review：PASS。</td></tr>
+</table>
+
+<h3>10.2 验证记录</h3>
+<ul>
+<li>workflow 定向与故障/多进程探针：通过。</li>
+<li><code>tests/component/agent</code>：256 passed，1 skipped。</li>
+<li><code>tests/integration</code>：59 passed，4 skipped。</li>
+<li><code>tests/unit</code>：2457 passed，3 skipped；3 项失败均位于未修改的 process runner 参数位置断言。</li>
+<li><code>tests/contracts</code>：447 passed，1 skipped；2 项失败均位于未修改的 browser-agent 注释和既有测试目录布局合同。</li>
+<li>Ruff、Python compile、文档链接检查（0 broken links）和 <code>git diff --check</code>：通过。</li>
+</ul>
 
 </body>
 </html>

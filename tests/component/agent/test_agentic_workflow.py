@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import inspect
+import multiprocessing as mp
 import re
 import textwrap
 import threading
@@ -1215,6 +1216,83 @@ def test_publish_failure_rolls_back_catalog_and_resume_commits_once(
     ]
     assert json.loads((project / "project.json").read_text())["active_revision"] == "0002"
     assert (project / "README.md").read_text() == "# Revised workflow\n"
+
+
+def test_concurrent_process_publish_creates_two_complete_revisions(
+    monkeypatch: pytest.MonkeyPatch,
+    session_repo: Path,
+) -> None:
+    if "fork" not in mp.get_all_start_methods():
+        pytest.skip("cross-process catalog test requires fork")
+    _planner(monkeypatch, json.dumps({"action": "create"}), _project())
+    _executor(monkeypatch)
+    _summarizer(monkeypatch)
+    initial = TL.agentic_workflow("create concurrent project")
+    project_id = initial["project_id"]
+
+    candidates = {
+        "a": TL._validate_project_candidate(json.loads(_project(
+            summary="Concurrent revision A",
+            readme="# Concurrent A\n",
+            files={
+                "steps/run.py": "def run():\n    return 'a'\n",
+                "entry.py": "def workflow():\n    return run()\n",
+            },
+        ))),
+        "b": TL._validate_project_candidate(json.loads(_project(
+            summary="Concurrent revision B",
+            readme="# Concurrent B\n",
+            files={
+                "steps/run.py": "def run():\n    return 'b'\n",
+                "entry.py": "def workflow():\n    return run()\n",
+            },
+        ))),
+    }
+    instances = {}
+    for label, candidate in candidates.items():
+        instance = session_repo / "concurrent" / label
+        instance.mkdir(parents=True)
+        TL._replace_snapshot(instance, candidate)
+        instances[label] = instance
+
+    context = mp.get_context("fork")
+    results = context.Queue()
+
+    def publish(label: str) -> None:
+        try:
+            _project_id, revision = TL._publish_snapshot(
+                instances[label],
+                project_id=project_id,
+                action="revise",
+                metadata=candidates[label]["project_metadata"],
+            )
+            results.put((label, revision, ""))
+        except Exception as exc:
+            results.put((label, "", f"{type(exc).__name__}: {exc}"))
+
+    processes = [context.Process(target=publish, args=(label,)) for label in candidates]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join(timeout=10)
+        assert process.exitcode == 0
+
+    published = [results.get(timeout=2) for _ in processes]
+    assert all(not error for _label, _revision, error in published)
+    assert sorted(revision for _label, revision, _error in published) == ["0002", "0003"]
+    project = session_repo / "catalog" / project_id
+    for label, revision, _error in published:
+        loaded = TL._read_candidate_directory(
+            project / "revisions" / revision,
+            candidates[label]["project_metadata"],
+        )
+        assert loaded == candidates[label]
+    index = TL._read_project_index(project)
+    active = next(label for label, revision, _error in published
+                  if revision == index["active_revision"])
+    assert index["project_metadata"] == candidates[active]["project_metadata"]
+    assert (project / "README.md").read_text() == candidates[active]["readme"]
+    assert not list((project / "revisions").glob(".*.tmp"))
 
 
 def test_cancelled_project_run_does_not_publish_candidate(
