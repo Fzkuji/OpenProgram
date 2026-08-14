@@ -27,6 +27,13 @@
      already sits inside the bubble's natural padding. */
   padding-left: 0;
 }
+/* The standalone row has symmetric vertical padding and a 28px avatar. */
+.message.assistant.pending-standalone > .message-header {
+  top: calc(50% - 14px);
+}
+.message.assistant.pending-standalone > .pending-body {
+  display: flex;
+}
 /* .pending-pulse retired — runtime / chat surfaces now use the
    generic .indicator-dot system. See section below. */
 .pending-label {

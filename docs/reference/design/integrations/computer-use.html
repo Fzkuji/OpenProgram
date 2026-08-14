@@ -141,6 +141,12 @@
       </article>
       <article class="card change">
         <span class="tag">BLOCKER</span>
+        <h3>聊天 turn 没有携带右侧页面绑定</h3>
+        <p>composer 当前只提交文本、session、模型参数和工具开关，没有提交该 session 所在 compound group 的可见 web tab。虽然 <code>browser_agent</code> 属于默认工具集合，但它被 deferred；模型在决定是否调用工具时不知道右侧页面存在，也不能判断该页面是否属于当前会话。</p>
+        <p>证据：<code>web/components/chat/composer/legacy-send.ts:118-213</code>；<code>webui/ws_actions/chat.py:369-426</code>；<code>programs/__init__.py:71-151</code>。</p>
+      </article>
+      <article class="card change">
+        <span class="tag">BLOCKER</span>
         <h3>视觉坐标与截图坐标不一致</h3>
         <p>现有 screenshot 默认 <code>full_page=True</code>。视觉模型返回的图像坐标不能直接作为当前 viewport 的 <code>page.mouse</code> 坐标，滚动页还会产生额外偏移。</p>
         <p>证据：<code>_actions/read.py:75-105</code>。</p>
@@ -335,6 +341,32 @@
 }</pre>
     <p>第一阶段 target 隐式固定为 <code>web_tab</code>。<code>window_id</code>、<code>tab_id</code>、<code>cdp_target_id</code> 不是 LLM 参数，由用户当前 UI 和 Runtime 决定，防止模型指定未授权 target。</p>
 
+    <h3>聊天会话与右侧页面绑定</h3>
+    <pre>surface_binding (renderer → chat command)
+  group_id
+  chat_tab_id, chat_session_id
+  web_tab_id
+  layout_revision
+
+server-owned binding
+  binding_id
+  ws_connection_id, window_id, renderer_instance_id
+  chat_session_id, group_id, web_tab_id
+  layout_revision, issued_at, expires_at
+  state: ready | leased | invalid</pre>
+    <p>renderer 只在提交消息的 session tab 与一个可见 web tab 同属当前 compound group 时发送 <code>surface_binding</code>。普通独立 chat、隐藏 web tab、其他窗口中的 web tab 或同组内无法唯一确定的 web tab 都不生成绑定。服务端从承载该 chat command 的 WebSocket 连接取得 <code>ws_connection_id</code> 与已登记的 <code>window_id</code>，校验 tab/group/layout 后签发短期 <code>binding_id</code>；不信任客户端直接声明 connection 或 CDP target。</p>
+    <p>绑定存在且本 turn 开启工具时，dispatcher 在同一 turn 将 Computer Use 公开入口的 schema 放入 provider tool array，并加入一条短系统上下文：当前会话有一个可控的可见页面；凡是读取“右侧/当前网页”的内容或执行网页动作，必须调用该工具，不得根据聊天文本猜测，也不得回答“无法访问屏幕”。这里复用现有公开入口，不增加第二个 browser proxy、意图分类器或常驻后台进程。用户关闭工具时不自动恢复工具权限，UI 显示当前页面未授权给 Agent。</p>
+    <p>工具开始运行时，Target Broker 使用 <code>binding_id</code> 向精确 renderer 请求 <code>web_tab_id</code> 对应的 <code>cdp_target_id</code>，随后把 <code>window_id + web_tab_id + cdp_target_id + layout_revision</code> 固定到 lease。运行期间切换焦点不会改变 target；关闭、移出 compound group、跨窗口转移或 renderer 断开会使绑定失效，并返回 <code>target_lost</code>，不得自动选择另一个可见 tab。</p>
+
+    <h3>从普通聊天到一次页面操作</h3>
+    <ol class="checklist">
+      <li>用户在 chat + web tab 的 compound group 中提交消息；composer 同时发送最小 <code>surface_binding</code>，不发送 DOM、ARIA 或 screenshot。</li>
+      <li>服务端验证绑定并把现有 Computer Use 公开入口加入本 turn 工具；模型需要了解或操作页面时调用该入口。</li>
+      <li>Target Broker 定向解析 exact renderer/tab/target 并获取 lease；解析失败返回结构化错误，不让普通聊天模型自行解释为“看不到”。</li>
+      <li>Runner 执行 DOM/ARIA-first 循环；只有视觉任务、canvas 或语义定位失败时发送一张当前 viewport screenshot。</li>
+      <li>每个状态变化后重新观察和验证，事件回写同一 chat turn；Stop、授权和人工接管都绑定同一个 run 与 target。</li>
+    </ol>
+
     <h3>结果契约</h3>
     <pre>{
   "status": "succeeded | failed | cancelled | needs_user",
@@ -466,6 +498,7 @@ Observation
     <h2>09 桌面 UI 行为</h2>
     <p>不新增第二套浏览器窗口。Computer Use 使用现有 center tab/split layout：chat 保持可见，右侧或相邻 pane 显示被控制的 web tab。</p>
     <div class="grid2">
+      <article class="card"><h3>待命</h3><p>chat composer 附近显示当前绑定页面的 favicon、title/origin 和“Agent 可访问”状态。只有同一 compound group 中唯一可见的 web tab 才显示为已绑定；工具被关闭时显示“网页控制未启用”。</p></article>
       <article class="card"><h3>运行中</h3><p>tab header 显示“Computer Use”状态、step 计数和 Stop。chat 中只显示当前 observation 摘要、计划动作、执行结果和验证结果；原始 DOM 与 screenshot 默认折叠。</p></article>
       <article class="card"><h3>授权时</h3><p>permission card 必须显示 origin、target tab、拟执行动作、将发送的非敏感文本摘要、风险原因，以及仅本动作/本任务/拒绝。第一阶段没有永久允许。</p></article>
       <article class="card"><h3>人工接管</h3><p>登录、CAPTCHA 或敏感页面时 session 进入 <code>needs_user</code>。用户在同一可见 tab 中操作，点击 Continue 后 Runtime 生成全新 observation；旧坐标和旧 action 全部失效。</p></article>
@@ -497,7 +530,7 @@ Observation
     <h2>11 实施顺序与每阶段出口</h2>
     <div class="card">
       <div class="phase"><div class="id">PHASE 0</div><div><strong>确定性基础</strong><br>定义协议类型、reason codes、completion authority；只提取无全局状态的 planner/verify 接口；明确不进入 component learning、OCR/detector、vision memory 和 workflow persistence；invalid plan 不再映射 done。</div><div class="gate">出口：单元测试证明 incomplete 不能变为 success。</div></div>
-      <div class="phase"><div class="id">PHASE 1</div><div><strong>精确 Target Broker</strong><br>为 desktop renderer/WS connection 建立稳定 window identity；command/reply 包含并校验 window_id、tab_id、target_id；加入 tab lease 和 teardown。</div><div class="gate">出口：双窗口测试连续 100 次命中指定 tab。</div></div>
+      <div class="phase"><div class="id">PHASE 1</div><div><strong>Surface Binding 与精确 Target Broker</strong><br>composer 提交 compound group 的最小页面绑定；服务端校验同连接 window/renderer/session/tab/layout；有效绑定使现有 Computer Use 公开入口在本 turn 可用。command/reply 定向发送并校验 window_id、tab_id、target_id；加入 tab lease 和 teardown。</div><div class="gate">出口：直接询问右侧页面会调用工具；双窗口测试连续 100 次命中指定 tab。</div></div>
       <div class="phase"><div class="id">PHASE 2</div><div><strong>WebTabAdapter</strong><br>ARIA/DOM element refs、frame freshness、element-first action、按需单张 viewport screenshot 的直接视觉 fallback、动作后 observation；不接 OCR、detector、memory 或 zoom。</div><div class="gate">出口：localhost fixture 的 DOM 与 canvas 两类任务通过。</div></div>
       <div class="phase"><div class="id">PHASE 3</div><div><strong>ComputerUseRunner 与公开工具</strong><br>接入 budget、cancel、approval、origin policy、artifact policy、structured result 和事件流；现有 playwright_browser 不改公开行为。</div><div class="gate">出口：权限、cancel、target lost、step limit 集成测试通过。</div></div>
       <div class="phase"><div class="id">PHASE 4</div><div><strong>桌面 UI 与真实浏览器验收</strong><br>状态、Stop、permission card、人工接管和完成证据；使用 stable 18100 桌面环境进行 live CDP 测试。</div><div class="gate">出口：下面的 E2E 清单全部有可复核 artifact。</div></div>
@@ -507,6 +540,8 @@ Observation
   <section id="acceptance">
     <h2>12 可执行验收标准</h2>
     <ol class="checklist">
+      <li><strong>聊天绑定：</strong>chat 与 Bilibili fixture 合并为 compound group 后，输入“你能看到右边的网页吗”会调用 Computer Use 公开入口并基于 DOM/ARIA 返回页面 title 或可见正文；不会发送 screenshot，也不会回答没有访问能力。</li>
+      <li><strong>绑定隔离：</strong>同一窗口中未与当前 session 合并的 web tab、另一窗口的 web tab、隐藏的组成员都不能成为本 turn target；关闭工具后不注入 Computer Use 工具。</li>
       <li><strong>本地 DOM 流：</strong>在内置浏览器打开测试页，读取表单、输入、提交、验证 success message；用户始终可见同一 tab。</li>
       <li><strong>简单视觉 fallback：</strong>在没有可用 DOM target 的 canvas fixture 上，只向模型发送一张当前 viewport screenshot，不启动 OCR、detector、memory 或 zoom，并完成一次点击；resize/scroll 后旧 action 返回 <code>stale_observation</code>。</li>
       <li><strong>多窗口：</strong>两个 OpenProgram 窗口各有 web tab；指定窗口任务不得在另一窗口创建、激活或操作 tab。</li>
@@ -542,6 +577,7 @@ Observation
           <tr><td>DOM/ARIA selector 操作</td><td><code>_actions/read.py</code>、<code>_actions/interact.py</code></td><td class="partial">已有底层工具，不是 Computer Use runner</td></tr>
           <tr><td>DOM-first Browser Agent baseline</td><td><code>agentic_functions/browser_agent/__init__.py</code> 与 <code>tests/unit/test_browser_agent.py</code></td><td class="partial">Task 1 代码及 specification/quality review 已通过；真实桌面 E2E 仍待验证</td></tr>
           <tr><td>GUI planning/verify</td><td><code>gui_harness/tasks/execute_task.py</code> 与 harness tests</td><td class="partial">规划和验证思路可提取；第一阶段不启用 grounding pipeline、OCR/detector 或 memory，completion/state 仍有 blocker</td></tr>
+          <tr><td>chat/compound-group surface binding 与动态工具可用性</td><td>chat payload 当前无 surface 字段；Browser Agent 为 deferred default tool</td><td class="nope">未实现</td></tr>
           <tr><td>精确 window/tab control routing</td><td>当前为全局 broadcast + first reply</td><td class="nope">未实现</td></tr>
           <tr><td>ComputerSession、tab lease、frame freshness</td><td>无</td><td class="nope">未实现</td></tr>
           <tr><td>Origin permission card 与 risk tiers</td><td>现有 browser approval 只覆盖少数 login-state 操作</td><td class="nope">未实现</td></tr>
