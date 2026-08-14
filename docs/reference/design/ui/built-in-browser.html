@@ -182,7 +182,7 @@
     <section class="metrics" aria-label="设计范围摘要">
       <div class="metric"><span class="metric-label">范围</span><span class="metric-value">Pane 层级 · Browser surfaces · Profile import</span></div>
       <div class="metric"><span class="metric-label">平台</span><span class="metric-value">桌面 App · 独立 profile · 源数据只读</span></div>
-      <div class="metric"><span class="metric-label">实现状态</span><span class="metric-value">浏览器导入已实现 · Launcher 数量与 History 密度待对齐</span></div>
+      <div class="metric"><span class="metric-label">实现状态</span><span class="metric-value">浏览器导入已实现 · History 密度待对齐</span></div>
     </section>
 
     <section class="section" id="decisions">
@@ -320,7 +320,7 @@
       <table class="acceptance-table">
         <thead><tr><th>可观察结果</th><th>当前状态</th><th>实现证据</th></tr></thead>
         <tbody>
-          <tr><td>新建 Pane 只显示 Files、Side chat、Browser、Terminal；DOM 中不存在浏览器专属控件。</td><td><span class="status limit">需对齐</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/new-tab-page.tsx"><code>new-tab-page.tsx</code></a> 当前工作树还显示 Claude Code 第五入口；Browser 专属控件已经移出。</td></tr>
+          <tr><td>新建 Pane 只显示 Files、Side chat、Browser、Terminal；DOM 中不存在浏览器专属控件。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/new-tab-page.tsx"><code>new-tab-page.tsx</code></a>；<code>check-built-in-browser.mjs</code></td></tr>
           <tr><td>选择 Browser 后原位显示 toolbar、导入入口和快捷网站；Home 返回 Browser home，主页 DOM 不渲染全部 bookmark rows。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/browser-home-page.tsx"><code>browser-home-page.tsx</code></a>；<code>check-built-in-browser.mjs</code></td></tr>
           <tr><td>导入对话框列出来源浏览器、profile 和支持的数据类型；关闭对话框不产生目标变更。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/desktop/main.js"><code>desktop/main.js</code></a> 的 <code>browser-import:*</code> IPC；<code>check-built-in-browser.mjs</code></td></tr>
           <tr><td>History 按日期分组，至少 1000 条时保持 36–40px 行高，搜索和滚动可用。</td><td><span class="status limit">需对齐</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/desktop/browsing-history-store.js"><code>browsing-history-store.js</code></a> self-check已覆盖存储；当前 <code>web-history.css</code> 为 34px，且缺少 1000 条运行时滚动与搜索验收。</td></tr>
