@@ -99,14 +99,14 @@ jobs:
         run: uv sync --locked --extra dev
       - name: Collect unit coverage
         run: uv run --locked --extra dev coverage run --branch --source=openprogram -m pytest -q tests/unit
-      - name: Report unit coverage
-        run: |
-          uv run --locked --extra dev coverage report --show-missing
-          uv run --locked --extra dev coverage xml -o coverage.xml
+      - name: Generate unit coverage artifact
+        run: uv run --locked --extra dev coverage xml -o coverage.xml
       - uses: actions/upload-artifact@v4
         with:
           name: unit-coverage
           path: coverage.xml
+      - name: Enforce unit coverage floor
+        run: uv run --locked --extra dev coverage report --show-missing --precision=6 --fail-under=40
 
   web:
     runs-on: ubuntu-latest

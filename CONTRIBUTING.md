@@ -80,12 +80,13 @@ public APIs, installation profiles, and current capabilities.
    ```
 
 9. Generate the same serial unit coverage report as CI when reviewing test
-   coverage. The report is informational and currently has no failure threshold:
+   coverage. CI and the local command enforce the verified 40% floor while
+   retaining the XML report:
 
    ```bash
    uv run --locked --extra dev coverage run --branch --source=openprogram -m pytest -q tests/unit
-   uv run --locked --extra dev coverage report --show-missing
    uv run --locked --extra dev coverage xml -o coverage.xml
+   uv run --locked --extra dev coverage report --show-missing --precision=6 --fail-under=40
    ```
 
 External-service tests under `tests/live/` are not part of ordinary pull
