@@ -101,6 +101,7 @@
     <a href="#hooks">06 接口的九个方法</a>
     <a href="#fail">07 失败会怎样</a>
     <a href="#open">08 还没解决的</a>
+    <a href="#web">09 Web 页面状态</a>
   </div>
 
   <!-- ══════════ 01 总图 ══════════ -->
@@ -1013,6 +1014,33 @@
     </div>
 
   </div>
+
+  <h2 id="web"><span class="num">09</span>Web 页面不显示写入器状态条</h2>
+  <p class="lead">Memory 页面用于查看和编辑记忆内容，不持续展示后台写入器的运行记录。写入器状态仍保留在状态 API、CLI 和模型工具中，供诊断使用。</p>
+
+  <div class="tbl">
+    <table>
+      <thead><tr><th>界面</th><th>当前能力</th><th>页面选择</th></tr></thead>
+      <tbody>
+        <tr><td><b>Memory Web</b></td><td>读取 <code>/api/memory/status</code>，Commitments 使用其中的 revision 和记录</td><td class="y">保留读取；不渲染 writer 状态条、pending 数或专用刷新按钮</td></tr>
+        <tr><td><b>CLI / 模型工具</b></td><td>按需查询最近成功、失败和待处理数</td><td class="y">保持现有诊断契约</td></tr>
+        <tr><td><b>其他管理页面</b></td><td>标题后直接进入页面导航或内容</td><td class="y">Memory 页面采用相同的页面层级</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grid2">
+    <div class="oc">
+      <h4>采用</h4>
+      <div class="d">标题栏后直接显示 Memory 标签和内容。状态请求失败时不产生全局 writer 提示；Commitments 仍可在状态请求成功后执行 revision-checked transition。</div>
+    </div>
+    <div class="oc">
+      <h4>不采用</h4>
+      <div class="d">不保留空占位、不把状态条改成徽标、不增加隐藏开关，也不改变 writer、状态 API、CLI、模型工具、Topics、Timeline、Recent、Commitments 或 Core 的数据语义。</div>
+    </div>
+  </div>
+
+  <div class="note"><b>实现与验收：</b><code>MemoryPage</code>不渲染 writer 状态、pending 数或 writer 专用刷新按钮；专用 CSS 已删除；<code>/api/memory/status</code>读取、Commitments revision 和 transition 路径保持不变。前端 Memory 专项检查、完整 Web 检查、生产构建、TypeScript 检查、文档链接检查、独立规格审查和独立质量审查均通过。</div>
 
   <div class="legend">
     <b>实现状态（2026-08-11）</b>：每轮写入与闲置写入使用同一事务；节点自身记录工作区写入标记；会话边界枚举活分支；常驻块由<code>topics/core.md</code>渲染；后台writer沿用默认聊天agent，并允许<code>memory.writer.model</code>实时覆盖；未分类异常默认不可重试。<code>memory.backend=none</code>既关闭提示、召回、自动写入、整理和记忆线程，也在创建工作区前拒绝全部CLI memory动词与<code>/api/memory/*</code>路由。writer最近成功、失败分类、retryable判定和待处理数可由工具、CLI及Web查询。一次性<code>memory backfill</code>已实现，只处理未被Topic引用的trusted Source、排除pending并按批复用正常writer事务；组合测试覆盖SessionDB、默认模型解析、managed tools、暂存安装、Topic、marker与watcher状态。正式工作区验收中，23个旧v1 source文件（154个frame）经<code>origin_scope</code>到<code>authority_tier</code>的只读兼容后全部解析；2条待处理消息提交为3个Topic文件、5个唯一block，6个source引用和relation目标均通过校验，两条节点marker写入成功，第二次扫描处理数为0且revision不变。该验收未执行历史backfill，因此152个未引用frame仍存在。仍未实现：越权请求hold队列、按请求方档位过滤读取结果、互斥分支语义、跨会话spawn关系和由head变化事件直接触发写入。写入失败原因码是封闭枚举，受限writer阶段看不到Source归档。
