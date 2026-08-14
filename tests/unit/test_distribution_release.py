@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -118,6 +120,108 @@ def test_release_installer_cold_starts_before_switching_current() -> None:
     stop = installer.index('"$python_bin" -I -B -m openprogram worker stop', health)
     switch = installer.index('mv -f "$next_link" "$runtime_root/current"', stop)
     assert start < health < stop < switch
+
+
+def test_short_public_installer_resolves_latest_and_accepts_a_pin(
+    tmp_path: Path,
+) -> None:
+    bootstrap = ROOT / "docs" / "_static_root" / "install.sh"
+    assert bootstrap.is_file()
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_installer = tmp_path / "tagged-installer.sh"
+    fake_installer.write_text(
+        '#!/bin/sh\n'
+        'printf \'%s|%s\\n\' "$OPENPROGRAM_VERSION" '
+        '"$OPENPROGRAM_REPOSITORY" > "$FAKE_RESULT"\n',
+        encoding="utf-8",
+    )
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text(
+        """#!/bin/sh
+set -eu
+output=""
+url=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) output="$2"; shift 2 ;;
+    -w) shift 2 ;;
+    https://*) url="$1"; shift ;;
+    *) shift ;;
+  esac
+done
+printf '%s\n' "$url" >> "$FAKE_CURL_LOG"
+case "$url" in
+  */releases/latest)
+    printf 'https://github.com/Fzkuji/OpenProgram/releases/tag/v0.6.1'
+    ;;
+  */v*/scripts/install-release.sh)
+    cp "$FAKE_INSTALLER" "$output"
+    ;;
+  *)
+    printf 'unexpected URL: %s\n' "$url" >&2
+    exit 1
+    ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    fake_curl.chmod(0o755)
+
+    result = tmp_path / "result"
+    curl_log = tmp_path / "curl.log"
+    env = os.environ | {
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "TMPDIR": str(tmp_path),
+        "FAKE_INSTALLER": str(fake_installer),
+        "FAKE_RESULT": str(result),
+        "FAKE_CURL_LOG": str(curl_log),
+    }
+    subprocess.run(["sh", str(bootstrap)], check=True, env=env)
+    assert result.read_text(encoding="utf-8") == "0.6.1|Fzkuji/OpenProgram\n"
+    assert curl_log.read_text(encoding="utf-8").splitlines() == [
+        "https://github.com/Fzkuji/OpenProgram/releases/latest",
+        "https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh",
+    ]
+
+    result.unlink()
+    curl_log.unlink()
+    subprocess.run(
+        ["sh", str(bootstrap)],
+        check=True,
+        env=env | {"OPENPROGRAM_VERSION": "1.2.3"},
+    )
+    assert result.read_text(encoding="utf-8") == "1.2.3|Fzkuji/OpenProgram\n"
+    assert curl_log.read_text(encoding="utf-8").splitlines() == [
+        "https://raw.githubusercontent.com/Fzkuji/OpenProgram/v1.2.3/scripts/install-release.sh"
+    ]
+
+
+def test_docs_publish_short_installer_at_the_domain_root() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "docs-pages.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "mv _publish/docs/install.sh _publish/install" in workflow
+
+
+def test_normal_user_docs_use_the_short_release_installer() -> None:
+    short_command = "curl -fsSL https://openprogram.io/install | sh"
+    for relative in (
+        "README.md",
+        "docs/README.md",
+        "docs/README.zh.md",
+        "docs/install/install.md",
+        "docs/install/install.zh.md",
+        "docs/install/upgrade.md",
+        "docs/install/upgrade.zh.md",
+        "docs/start/GETTING_STARTED.md",
+        "docs/start/GETTING_STARTED.zh.md",
+        "site/index.html",
+    ):
+        contents = (ROOT / relative).read_text(encoding="utf-8")
+        assert short_command in contents, relative
+        assert "v0.6.1/scripts/install-release.sh" not in contents, relative
 
 
 def test_cli_exposes_distribution_version(capsys) -> None:

@@ -4,12 +4,10 @@
 
 ## 第 1 步：安装
 
-在 macOS 或 Linux 安装精确版本的 release wheel 和受控 Python runtime：
+在 macOS 或 Linux 安装包含受控 Python 的完整 release runtime：
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
-  | OPENPROGRAM_VERSION=0.6.1 sh
+curl -fsSL https://openprogram.io/install | sh
 ```
 
 installer 提供自己的 Python 并包含 Web UI；运行时不需要 Node.js 和 Git。macOS 桌面用户使用 GitHub Releases 中的 DMG。Linux 用户使用带 Web UI 或 TUI 的完整 CLI/server runtime；当前不发布 Linux 桌面包。平台范围和开发 checkout 安装见[安装](../install/install.zh.md)。

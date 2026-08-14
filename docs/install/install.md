@@ -29,12 +29,16 @@ The supported macOS desktop artifact contains Electron and the complete platform
 
 The release installer supports macOS and Linux. It downloads the complete platform runtime archive, verifies its SHA-256 and capability manifest, and installs it under `~/.openprogram/runtime/cli/releases/<version>`. On macOS, the same archive is also the Desktop build input. It does not resolve product dependencies, clone the repository, or build JavaScript on the user's machine.
 
-Use the installer from the same immutable release tag as the package version:
+Install the latest stable release:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
-  | OPENPROGRAM_VERSION=0.6.1 sh
+curl -fsSL https://openprogram.io/install | sh
+```
+
+The short bootstrap resolves the latest stable GitHub Release and then runs the installer from that immutable tag. For a reproducible install of a specific release, pass the version to the shell process:
+
+```bash
+curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
 The command creates `~/.local/bin/openprogram`. If that directory is not already on `PATH`, invoke it by its absolute path or add the directory to the shell configuration.

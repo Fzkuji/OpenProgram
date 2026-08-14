@@ -39,7 +39,7 @@ steps. Each call remains visible in OpenProgram's execution context.
 Install and start OpenProgram:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash
+curl -fsSL https://openprogram.io/install | sh
 openprogram
 ```
 

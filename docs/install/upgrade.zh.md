@@ -13,12 +13,16 @@
 
 ## CLI 和服务器 release
 
-使用目标版本的不可变 tag，并设置相同的 package version：
+升级到最新 stable release：
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
-  | OPENPROGRAM_VERSION=0.6.1 sh
+curl -fsSL https://openprogram.io/install | sh
+```
+
+需要指定不可变 release 时使用：
+
+```bash
+curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
 installer 下载 Desktop 使用的同平台 runtime archive，在新版本目录验证 checksum 和完整 capability manifest、执行 worker cold-start，随后切换 `current` symlink。切换前失败时，旧版本仍保持选中状态。

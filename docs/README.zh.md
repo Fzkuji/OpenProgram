@@ -76,12 +76,10 @@ OpenProgram 正式支持 macOS 和 Linux release 安装、多 provider，以及�
 
 **macOS / Linux CLI 或服务器 release：**
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
-  | OPENPROGRAM_VERSION=0.6.1 sh
+curl -fsSL https://openprogram.io/install | sh
 ```
 
-macOS 桌面用户从 GitHub Releases 下载 unsigned DMG。Linux 用户安装完整 CLI/server runtime，并使用其中的 Web UI 或 TUI；完整桌面包通过公共入口验收前不发布 Linux 桌面产物。所有受支持的 release 安装都具有相同的完整产品能力。校验、平台范围和 source development 安装见 **[install.md](install/install.md)**。
+macOS 桌面用户从 [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases) 下载 unsigned DMG。Linux 用户安装完整 CLI/server runtime，并使用其中的 Web UI 或 TUI；完整桌面包通过公共入口验收前不发布 Linux 桌面产物。所有受支持的 release 安装都具有相同的完整产品能力。校验、平台范围和 source development 安装见 **[install.md](install/install.md)**。
 
 ### 2. 运行
 

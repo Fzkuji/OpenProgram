@@ -4,12 +4,10 @@ This page takes you through five minutes of setup: install, connect an LLM provi
 
 ## Step 1: Install
 
-Install the exact released wheel and a managed Python runtime on macOS or Linux:
+Install the complete release runtime with its managed Python on macOS or Linux:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
-  | OPENPROGRAM_VERSION=0.6.1 sh
+curl -fsSL https://openprogram.io/install | sh
 ```
 
 The installer supplies its own Python and includes the Web UI; Node.js and Git are not runtime requirements. macOS desktop users use the DMG attached to GitHub Releases. Linux users use the complete CLI/server runtime with its Web UI or TUI; no Linux desktop package is currently published. Platform scope and development-checkout instructions are in [Install](../install/install.md).

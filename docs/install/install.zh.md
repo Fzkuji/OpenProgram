@@ -29,12 +29,16 @@ OpenProgram 分别提供桌面 release 安装和 CLI/server release 安装。sou
 
 release installer 支持 macOS 和 Linux。它下载完整的平台 runtime archive，验证 SHA-256 和 capability manifest，再安装到 `~/.openprogram/runtime/cli/releases/<version>`。在 macOS 上，同一 archive 也作为 Desktop 构建输入。它不在用户机器上解析产品依赖、克隆仓库或构建 JavaScript。
 
-installer 必须与安装版本使用同一个不可变 release tag：
+安装最新 stable release：
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
-  | OPENPROGRAM_VERSION=0.6.1 sh
+curl -fsSL https://openprogram.io/install | sh
+```
+
+短 bootstrap 先解析最新 stable GitHub Release，再执行该不可变 tag 下的 installer。需要可复现地安装指定版本时，把版本传给 shell 进程：
+
+```bash
+curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
 命令创建 `~/.local/bin/openprogram`。如果该目录不在 `PATH`，可以使用绝对路径，或把它加入 shell 配置。

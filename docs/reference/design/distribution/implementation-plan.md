@@ -9,8 +9,11 @@ It tracks the bounded implementation, verification, and review evidence for the 
 - Public command: `curl -fsSL https://openprogram.io/install | sh` for normal macOS/Linux CLI and server installations.
 - Boundary: the root script resolves the latest stable GitHub Release, validates a three-part numeric version, downloads the immutable tagged installer, and forwards the version. It does not assemble a second installer and does not weaken runtime checksum, capability-manifest, or worker cold-start verification.
 - Reproducibility: advanced users and CI may pass `OPENPROGRAM_VERSION=X.Y.Z` to the `sh` process. The tagged `scripts/install-release.sh` remains the authoritative versioned installer.
-- Publication: `docs/_static_root/install` must be copied to the deployed site root as `/install`; leaving it under `/docs/` is a release failure.
+- Publication: `docs/_static_root/install.sh` must be renamed to the deployed site root as `/install`; `/docs/install/` remains the installation documentation directory.
 - Tests: execute the public root script with a fake `curl` for automatic latest-version resolution and explicit pinning, assert the tagged installer handoff, build the docs site, verify the assembled root file, and run the existing distribution release suite.
+- RED evidence: the two public-entry tests initially failed because the root bootstrap did not exist and the Pages workflow did not publish `/install`.
+- GREEN evidence: the distribution release file reports 25 passed; docs build reports 509 pages; landing check passes; link check reports 0 broken links; an assembled-site probe preserves `/docs/install/` and validates the root `/install` script.
+- Release-state evidence on 2026-08-15: GitHub `latest` resolves to `v0.6.0`, whose release has no assets and whose tag has no `scripts/install-release.sh`; `v0.6.1` has not been tagged. The bootstrap therefore fails without installing a reduced product until a complete release is published. This batch does not create or move a tag.
 
 ## Unified complete-product batch
 

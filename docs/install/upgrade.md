@@ -13,12 +13,16 @@ The application shell and complete product runtime are replaced together. State 
 
 ## CLI and server release
 
-Run the installer from the target immutable tag and set the same package version:
+Upgrade to the latest stable release:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
-  | OPENPROGRAM_VERSION=0.6.1 sh
+curl -fsSL https://openprogram.io/install | sh
+```
+
+To select a specific immutable release instead:
+
+```bash
+curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
 The installer downloads the platform runtime archive used by Desktop, verifies its checksum and complete capability manifest in a new version directory, cold-starts the worker, then changes the `current` symlink. A failure before the change leaves the previous version selected.

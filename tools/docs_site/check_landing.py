@@ -344,7 +344,7 @@ def main() -> int:
             "docs hero differs from the product title", failures)
     require("<b>OpenProgram：自编程 AI Agent 框架</b>" in docs_readme_zh,
             "Chinese docs hero differs from the product positioning", failures)
-    release_url = "https://github.com/Fzkuji/OpenProgram/releases/tag/v0.6.0"
+    release_url = "https://github.com/Fzkuji/OpenProgram/releases"
     for name, document in (("README", readme), ("docs README", docs_readme),
                            ("Chinese docs README", docs_readme_zh)):
         require(release_url in document,
@@ -404,7 +404,7 @@ def main() -> int:
     require("KDD 2026 AgenticSE Workshop" not in visible_text,
             "landing page still emphasizes the workshop venue", failures)
 
-    install = "curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash"
+    install = "curl -fsSL https://openprogram.io/install | sh"
     require(install in visible_text, "missing documented installer", failures)
     require('data-copy="openprogram"' in source,
             "missing copyable openprogram run command", failures)
