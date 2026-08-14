@@ -3,7 +3,51 @@
 This engineering record is intentionally separate from the authoritative HTML design.
 It tracks the bounded implementation, verification, and review evidence for the current distribution work.
 
-## Approved scope
+## Unified complete-product batch
+
+- Base commit: `e6ec8694977080153a3c94e50a5080d2ff43b69b`.
+- Product contract: every supported non-developer installation contains the same complete capability set for its platform and architecture. Desktop and CLI/server use the same runtime archive; only their launch shell differs.
+- Required capabilities: Web, providers, MCP, memory, channels, search, default Playwright Chromium, default OCR, the GUI detector model, and the GUI, Research, and Wiki first-party Programs.
+- Developer installations add editable sources, tests, diagnostics, local frontend builds, and replaceable OCR/browser backends. They do not define a smaller or different product edition.
+- Ordinary users install from GitHub Release artifacts. PyPI wheels remain internal build inputs and developer artifacts, not a product installation path.
+- macOS artifacts are explicitly unsigned DMG/ZIP files. Apple Developer ID signing and notarization are not release requirements.
+- Windows-specific implementation, testing, packaging, and compatibility remain excluded. OS credential-store integration remains excluded.
+
+### Current-batch files
+
+- Product contract: `docs/reference/design/distribution/installation-packaging.html` and this implementation record.
+- Runtime assembly: a checked-in product manifest, runtime builder/archive scripts, desktop runtime staging, and the CLI release installer.
+- Launchers: Electron and CLI launch paths that set bundled browser/OCR/model locations and validate the capability manifest.
+- Release: `.github/workflows/release.yml`, desktop artifact naming, runtime archives, checksums, and public-entry smoke checks.
+- Product documentation: install, desktop, server, upgrade, Programs, and README entry points that describe one complete product rather than optional first-party components.
+- Tests: `tests/unit/test_distribution_release.py` plus focused Program/runtime and packaged-entry probes.
+
+### Current-batch public-entry acceptance
+
+1. Each platform runtime archive contains a manifest with `present` and `verified` entries for `web`, `providers`, `mcp`, `memory`, `channels`, `search`, `browser.playwright`, `ocr.default`, `model.gpa_detector`, `program.gui`, `program.research`, and `program.wiki`.
+2. Desktop packaging consumes the already-built runtime archive. The CLI installer consumes the byte-identical archive from GitHub Release. Neither path resolves product dependencies independently.
+3. A normal-user install performs no PyPI dependency resolution, repository clone, npm build, or first-use download for the default browser, OCR, detector model, or first-party Programs.
+4. Public-entry probes verify the worker, Web assets, first-party Program registration, channel/search imports, Playwright Chromium executable, OCR model data, and detector model before an artifact is published or a CLI `current` link is switched.
+5. macOS artifact names and documentation state `unsigned`; the release workflow requires no Apple or PyPI credentials and does not run signing, notarization, or PyPI publication.
+6. Documentation does not present `pip install openprogram`, optional GUI/Research/Wiki installation, or component-selection prompts as normal product installation.
+
+### Current-batch gate manifest
+
+```text
+python -m pytest tests/unit/test_distribution_release.py tests/unit/test_desktop_packaged_files.py tests/unit/test_webui_frontend.py
+python -m tools.docs_site.checklinks
+python -m tools.docs_site.build
+python -m pytest tests/ --ignore=tests/integration
+npm run check --prefix desktop
+npm run check --prefix web
+bash -n scripts/build-product-runtime.sh scripts/install-release.sh scripts/prepare-desktop-runtime.sh
+git diff --check
+git status --short
+```
+
+The platform runtime and public desktop artifact probes run on native release runners. A platform artifact is absent rather than published with a reduced capability manifest.
+
+## Prior packaging batch (historical evidence)
 
 - Base commit: `717d4e176307e08cc4ae4facd3c484511684746c`.
 - Public behavior: released wheels serve prebuilt Web assets without Node.js; packaged Electron apps start an embedded CPython runtime; macOS builds DMG and ZIP artifacts; Linux builds AppImage artifacts; release CI verifies versions and checksums.
@@ -11,20 +55,20 @@ It tracks the bounded implementation, verification, and review evidence for the 
 - Windows-specific implementation, testing, packaging, and compatibility remain excluded.
 - OS credential-store integration remains excluded.
 
-## Files
+### Prior-batch files
 
 - Production: `openprogram/webui/frontend.py`, `pyproject.toml`, `desktop/main.js`, `desktop/package.json`, release staging scripts, and the release workflow.
 - Tests: frontend package-resource tests, desktop packaged-runtime checks, and release configuration checks.
 - Documentation: the distribution HTML design, related design links, and install/upgrade/desktop/server product pages.
 
-## Public-entry acceptance
+### Prior-batch public-entry acceptance
 
 1. A wheel built after release asset staging contains `openprogram/webui/_frontend/index.html` and hashed Next.js assets; an isolated wheel install serves `/chat` without repository sources or Node.js.
 2. A packaged Electron launch resolves the Python executable exclusively from `process.resourcesPath`, invokes `-I -B -m openprogram worker start`, does not fall back to `PATH`, and does not write bytecode into the signed application.
 3. `electron-builder` declares macOS DMG/ZIP and Linux AppImage targets and includes the staged runtime as an immutable resource.
 4. A tag-triggered release workflow builds each platform on its native runner, runs focused acceptance checks, and publishes checksums only after artifacts exist.
 
-## Full gate manifest
+### Prior-batch full gate manifest
 
 ```text
 python -m pytest tests/unit/test_webui_frontend.py tests/unit/test_desktop_packaged_files.py tests/unit/test_distribution_release.py
@@ -39,7 +83,7 @@ git status --short
 
 Platform artifact builds run in the release workflow because a macOS host cannot validate a Linux CPython/AppImage runtime and a Linux host cannot sign or notarize a macOS app.
 
-## Linux completion batch
+### Prior Linux completion batch
 
 - Base commit: `540591e9f628498dee87a1c2ebb30ab4c5e757f6`.
 - Production files: `desktop/package.json`, `scripts/smoke-packaged-runtime.sh`, `scripts/install-release.sh`, `.github/workflows/release.yml`, and `.github/workflows/linux-release-smoke.yml`.
@@ -49,7 +93,7 @@ Platform artifact builds run in the release workflow because a macOS host cannot
 - Pre-release execution: the manually dispatched Linux smoke workflow requires no Apple signing or PyPI credentials and uploads the verified wheel and AppImage only as CI artifacts. It does not create a stable release.
 - Exclusions remain unchanged: no Linux arm64 desktop artifact, distro-native deb/rpm packages, Windows implementation, or OS credential-store integration.
 
-## Ledger
+### Prior-batch ledger
 
 | Field | Evidence |
 |---|---|
@@ -64,7 +108,7 @@ Platform artifact builds run in the release workflow because a macOS host cannot
 | Release-only evidence | Developer ID signing, Apple notarization, macOS x64 artifacts, GitHub Release creation, and PyPI publication still require the tag workflow and protected credentials. Linux x86_64 AppImage startup and Linux x86_64/arm64 CLI installation now have separate native-runner evidence. |
 | Implementation commits | Initial batches: `714981e1`, `9e1e5e0a`, and `dddea787`. Linux completion batches: `a170ca65`, `78e78921`, `41b39e86`, `63f15e65`, and `b7220c89`; all were merged and pushed incrementally to `main`. |
 
-## Linux completion evidence
+### Prior Linux completion evidence
 
 | Field | Evidence |
 |---|---|
