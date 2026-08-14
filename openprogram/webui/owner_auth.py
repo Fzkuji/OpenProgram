@@ -56,6 +56,7 @@ _PUBLIC_FRONTEND_ROUTES = frozenset(
         "/plugins",
         "/programs",
         "/projects",
+        "/scheduler",
         "/settings",
         "/skills",
     }

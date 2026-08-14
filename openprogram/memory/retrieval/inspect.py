@@ -122,7 +122,6 @@ def status(
         except ValueError:
             relation_count = 0
     from ..runtime.writer_status import status as writer_status
-    from ..runtime.commitments import commitment_status
 
     return {
         "workspace": workspace_identity(root),
@@ -146,7 +145,6 @@ def status(
         "core_exists": (root / "core.md").is_file(),
         "embedding_available": embedding_available,
         "writer": writer_status(root),
-        "commitments": commitment_status(root),
     }
 
 

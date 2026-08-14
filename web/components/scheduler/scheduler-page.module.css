@@ -1,0 +1,18 @@
+.view{height:100%;display:flex;flex-direction:column;background:var(--bg-primary);color:var(--text-primary)}
+.topbar{height:48px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid var(--border);background:var(--bg-secondary)}
+.title{font-size:15px;font-weight:600;color:var(--text-bright)}
+.content{width:min(980px,calc(100% - 48px));margin:0 auto;padding:64px 0 80px;overflow:auto}
+.intro h1{margin:0;color:var(--text-bright);font-size:38px;font-weight:560;letter-spacing:-.035em}.intro p{margin:12px 0 32px;font-size:17px;color:var(--text-secondary);line-height:1.55}
+.search{width:100%;height:44px;margin-bottom:42px}
+.list{display:flex;flex-direction:column;border-top:1px solid var(--border)}
+.task{display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:12px;align-items:start;padding:18px 8px;border-bottom:1px solid var(--border)}
+.rail{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;background:var(--bg-secondary);color:var(--accent-blue)}.rail svg{width:18px}
+.taskBody{min-width:0}.taskHeader{display:flex;align-items:center;gap:10px}.taskHeader h2{margin:0;color:var(--text-bright);font-size:15px}.state{font-size:11px;color:var(--text-secondary);border:1px solid var(--border);border-radius:999px;padding:1px 7px}.state.active{color:var(--accent-green)}
+.schedule,.prompt{margin:5px 0 0}.schedule{font-size:13px;color:var(--text-secondary)}.prompt{font-size:13px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.memory{display:inline-flex;align-items:center;gap:5px;margin-top:8px;font-size:11px;color:var(--accent-blue)}.memory svg{width:13px}
+.actions{display:flex;gap:4px}.actions button{display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--text-secondary)}.actions button:hover{background:var(--bg-hover);color:var(--text-bright)}.actions svg{width:15px}
+.empty{padding:50px;text-align:center;color:var(--text-secondary)}
+.suggestions h2{font-size:18px;margin:0 0 16px;color:var(--text-primary)}.suggestion{width:100%;display:grid;grid-template-columns:48px 1fr;gap:16px;text-align:left;padding:14px 8px;border:0;border-radius:10px;background:transparent;color:var(--text-primary)}.suggestion:hover{background:var(--bg-hover)}.suggestionIcon{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:var(--bg-secondary);color:var(--accent-blue)}.suggestionIcon svg{width:19px}.suggestion strong{display:inline-block;margin-right:12px;color:var(--text-bright);font-size:15px}.suggestion small{color:var(--text-secondary);font-size:14px}
+.form{display:flex;flex-direction:column;gap:13px}.form label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-secondary)}.form input,.form select,.form textarea{width:100%;border:1px solid var(--border);border-radius:8px;background:var(--bg-primary);color:var(--text-bright);padding:9px 10px;font:inherit;outline:none}.form input:focus,.form select:focus,.form textarea:focus{border-color:var(--accent-blue)}.form textarea{resize:vertical}.error{color:var(--accent-red);font-size:12px}
+@media(max-width:700px){.content{width:calc(100% - 28px);padding-top:36px}.intro h1{font-size:30px}.task{grid-template-columns:38px minmax(0,1fr)}.actions{grid-column:2}.suggestion strong,.suggestion small{display:block}.suggestion small{margin-top:3px}}
+@media(prefers-reduced-motion:reduce){.view *{scroll-behavior:auto!important;transition:none!important}}

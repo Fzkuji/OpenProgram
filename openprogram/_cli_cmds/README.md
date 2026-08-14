@@ -16,7 +16,7 @@ globals, and the public ``main`` entry point. All ``_cmd_<verb>`` and
     channels.py  — accounts + bindings + login
     web.py       — web UI launcher
     chat.py      — interactive cli chat + deep_work
-    cron.py      — cron-worker
+    cron.py      — scheduler-worker
 
 cli.py re-exports these at module level so external callers
 (``openprogram.cli_chat``, tests, ``openprogram.cli_ink``) that import
@@ -29,7 +29,7 @@ cli.py re-exports these at module level so external callers
 - **`channels.py`** — ``openprogram channels`` accounts + bindings dispatchers + login flow
 - **`chat.py`** — Interactive CLI chat entry point + deep_work runner
 - **`completion.py`** — ``openprogram completion <shell>``
-- **`cron.py`** — ``openprogram cron-worker`` handler
+- **`cron.py`** — ``openprogram scheduler-worker`` handler
 - **`doctor.py`** — ``openprogram doctor``
 - **`logs.py`** — ``openprogram logs``
 - **`mcp.py`** — ``openprogram mcp`` CLI subcommands

@@ -290,7 +290,7 @@ def memory_browse(prefix: str = "", **_: Any) -> str:
 
 UPDATE_NAME = "memory_update"
 UPDATE_DESC = (
-    "Correct or add one thing in memory, or close an open commitment. "
+    "Correct or add one thing in memory. "
     "Conversation is written up in "
     "the background, so use this only for what the user asked you to "
     "remember right now, or to fix something you can see is wrong. "
@@ -311,21 +311,6 @@ UPDATE_SPEC: dict[str, Any] = {
                 "items": {"type": "object"},
             },
             "commit_message": {"type": "string"},
-            "commitment_transitions": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "string"},
-                        "status": {
-                            "type": "string",
-                            "enum": ["done", "dismissed"],
-                        },
-                    },
-                    "required": ["id", "status"],
-                    "additionalProperties": False,
-                },
-            },
         },
         "required": ["base_revision"],
     },
@@ -337,13 +322,10 @@ def memory_update(
     patch: str | None = None,
     sources: list[dict[str, Any]] | None = None,
     commit_message: str | None = None,
-    commitment_transitions: list[dict[str, Any]] | None = None,
     **_: Any,
 ) -> str:
-    if not (base_revision or "").strip() or not (
-        (patch or "").strip() or commitment_transitions
-    ):
-        return "memory_update needs base_revision and a patch or commitment transition."
+    if not (base_revision or "").strip() or not (patch or "").strip():
+        return "memory_update needs base_revision and a patch."
     try:
         # The workspace stages a copy of memory under the temp directory;
         # dropped without closing, one copy is left behind per call.
@@ -355,11 +337,6 @@ def memory_update(
         authority = normalize_authority(authority_from_message(
             session_id, turn_id,
         ))
-        if commitment_transitions and authority.get("authority_tier") != "owner":
-            raise TransactionError(
-                "AUTHORITY_DENIED",
-                "commitment transitions require the owner authority tier",
-            )
         # Identity fields come from the Runtime's own record of this turn, so
         # the model's payload cannot choose its trust state, tier or principal.
         provenance = (
@@ -374,10 +351,6 @@ def memory_update(
                 base_revision=base_revision,
                 patch=patch or "",
                 sources=sources,
-                commitment_transitions=commitment_transitions,
-                commitment_transition_source=(
-                    "owner/manual" if commitment_transitions else None
-                ),
                 commit_message=commit_message,
                 provenance=provenance,
                 # Only an explicitly persisted owner turn may rewrite or
@@ -608,9 +581,8 @@ def memory_promote(source_id: str | None = None, **_: Any) -> str:
 
 STATUS_NAME = "memory_status"
 STATUS_DESC = (
-    "Memory size, current revision, writer health, pending turn count, and "
-    "commitment records. "
-    "The revision is required by `memory_update`."
+    "Memory workspace identity, size, current revision, writer health, and "
+    "pending turn count. The revision is required by `memory_update`."
 )
 STATUS_SPEC: dict[str, Any] = {
     "name": STATUS_NAME, "description": STATUS_DESC,

@@ -304,6 +304,14 @@ def test_public_shell_and_minimal_health_are_host_guarded():
         assert rejected.json() == {"error": "request_origin_rejected"}
 
 
+def test_scheduler_shell_is_public_before_cookie_bootstrap():
+    state = _state()
+    with TestClient(_app(state), base_url=LOCAL_ORIGIN) as client:
+        # The fixture has no Scheduler route, so 404 proves auth middleware
+        # allowed the frontend shell path instead of returning 401.
+        assert client.get("/scheduler").status_code == 404
+
+
 def test_public_challenge_proves_listener_ownership_without_receiving_token():
     state = _state()
     nonce = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"

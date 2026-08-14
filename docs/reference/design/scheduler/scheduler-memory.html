@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenProgram Scheduler 与 Memory 接口</title>
+<style>
+  :root{--bg:#151714;--panel:#1d201c;--line:#33382f;--text:#d7d9d2;--muted:#969b91;--accent:#75a76c;--warn:#d0a15a}
+  *{box-sizing:border-box}body{margin:0;padding:40px 24px 80px;background:var(--bg);color:var(--text);font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  main{max-width:1080px;margin:auto}h1{font-size:26px;margin:0 0 8px}h2{font-size:18px;margin:36px 0 10px;color:#a8c9a1}h3{font-size:14px;margin:0 0 6px}p{margin:6px 0 12px;color:var(--muted)}code{background:#10120f;padding:2px 5px;border-radius:4px;color:#c9dfc4}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.card{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:15px}.card p{margin:0}.flow{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.step{border:1px solid var(--line);background:#10120f;border-radius:9px;padding:12px;min-height:120px}.step b{display:block;margin-bottom:6px}.boundary{border-left:3px solid var(--warn)}table{width:100%;border-collapse:collapse;background:var(--panel)}th,td{border:1px solid var(--line);padding:10px;text-align:left;vertical-align:top}th{background:#10120f}ul{padding-left:20px}@media(max-width:820px){.grid,.flow{grid-template-columns:1fr}}
+</style>
+</head>
+<body><main>
+<h1>OpenProgram Scheduler 与 Memory 接口</h1>
+<p>Scheduler 负责时间、执行、状态和结果；Memory 负责长期语义事实。两者通过稳定引用连接，但不共享状态文件或写入事务。</p>
+
+<h2>1. 目标与边界</h2>
+<div class="grid">
+  <section class="card"><h3>一次性任务</h3><p>保存带时区的 <code>run_at</code>，到期后只执行一次。旧的有日期 Commitments 迁移为此类型。</p></section>
+  <section class="card"><h3>周期任务</h3><p>复用现有五字段 cron 解析、owner 签名、冻结 sandbox policy 和非交互执行边界。</p></section>
+  <section class="card"><h3>监控任务</h3><p>使用 cron 周期执行观察 prompt。首版记录执行日志和状态，不承诺跨渠道 exactly-once 通知。</p></section>
+</div>
+<section class="card boundary" style="margin-top:12px"><h3>明确排除</h3><p>Memory writer 不再推断任务；Memory 页面不显示 Commitments；Scheduler 不自动修改 Memory；不新增第二套执行器；不包含 Windows 专项、系统 keyring、项目管理、任务依赖或子任务。</p></section>
+
+<h2>2. 目标数据关系</h2>
+<div class="flow">
+  <div class="step"><b>1 创建</b>owner Web、Agent tool 或外部 API 创建 Scheduler task。</div>
+  <div class="step"><b>2 冻结</b>Runtime 签名 prompt/command、cwd、权限、sandbox 与 MemoryRef。</div>
+  <div class="step"><b>3 唤醒</b>常驻 OpenProgram worker 每分钟判断 once/cron 是否到期。</div>
+  <div class="step"><b>4 解析</b>执行前按 <code>workspace_id + memory_id</code> 读取当前 Memory 内容。</div>
+  <div class="step"><b>5 执行</b>在冻结的非交互权限边界中执行，并写 Scheduler 日志与状态。</div>
+</div>
+
+<h2>3. MemoryRef 公共契约</h2>
+<table><thead><tr><th>字段</th><th>规则</th><th>失败</th></tr></thead><tbody>
+  <tr><td><code>workspace_id</code></td><td>必须等于当前 Memory workspace 的稳定 ID。</td><td>拒绝跨 workspace 隐式读取。</td></tr>
+  <tr><td><code>memory_id</code></td><td>创建和更新时必须解析到唯一 Topic block；内容在每次执行时重新读取。</td><td>写入时拒绝缺失、重复、跨 workspace 或格式错误的引用；执行前引用失效时任务失败，不回退到旧快照。</td></tr>
+  <tr><td>写入能力</td><td>引用只授予读取上下文，不授予 Memory 编辑权。</td><td>需要写入时仍走现有 Memory revision/transaction 接口。</td></tr>
+</tbody></table>
+
+<h2>4. 旧 Commitments 迁移</h2>
+<ul>
+  <li>只迁移 <code>open</code> 记录；有日期记录成为启用的一次性任务，执行时间为本地日期 09:00。</li>
+  <li>无日期记录成为暂停的一次性草稿，保留文本和 provenance，等待 owner 设置时间。</li>
+  <li>迁移成功后把原始 <code>commitments.jsonl</code> 移到 Scheduler migration archive；重复启动不得重复创建。</li>
+  <li>Memory writer 删除 <code>record_commitments</code> 工具与提示，旧 runtime parser 只作为一次性迁移兼容代码保留。</li>
+</ul>
+
+<h2>5. UI 信息结构</h2>
+<p>独立 <code>/scheduler</code> 页面包含标题、说明、搜索、Create 控件和任务列表。任务行显示类型、下一次执行、启用状态和 Memory 引用数量。Memory 页面只保留 Topics、Timeline、Recent 与 Core。</p>
+
+<h2>6. 采用、修改与拒绝</h2>
+<table><thead><tr><th>参考</th><th>处理</th></tr></thead><tbody>
+  <tr><td>用户提供的 Scheduled tasks 页面截图</td><td>采用独立页面、Create、搜索和一次性/周期/监控的产品分类；视觉样式继续使用 OpenProgram 自身 token。</td></tr>
+  <tr><td>现有 OpenProgram cron</td><td>保留执行安全机制与 cron 兼容入口，产品名称迁移为 Scheduler，并集成到常驻 worker。</td></tr>
+  <tr><td>原 Commitments/heartbeat</td><td>拒绝继续作为 Memory 类型；只保留迁移读取，不保留 Memory tab、status 字段或特殊 heartbeat。</td></tr>
+</tbody></table>
+
+<h2>7. 实施 brief 与验收</h2>
+<p>实现范围限定为 Scheduler service、worker 集成、REST/UI、MemoryRef、旧数据迁移和 Memory 去 Commitments。公共 RED 覆盖三种 task、跨进程一次性 claim、claim 写入与 spawn 故障隔离、并发 CRUD、动态 MemoryRef、写入前解析、跨 workspace 拒绝、旧 cron/Commitments 幂等迁移和 Memory status 去 Commitments。</p>
+<table><thead><tr><th>验收项</th><th>当前证据</th></tr></thead><tbody>
+  <tr><td>专项 Python</td><td>Scheduler、权限、cron CLI、Memory routes/runtime 共 <code>133 passed</code>；Ruff 通过。</td></tr>
+  <tr><td>完整 Python</td><td><code>5316 passed, 15 skipped, 2 deselected, 1 xfailed</code>。剩余 4 项失败在基线提交 <code>17db67dc</code> 上逐项复现，分别属于既有 channel HTTP inventory 与 agentic harness 扫描。</td></tr>
+  <tr><td>Web</td><td>全量静态检查、Scheduler 检查与 <code>tsc --noEmit</code> 通过；独立页面包含首次加载错误、操作错误和 icon button 可访问名称。</td></tr>
+  <tr><td>独立审查</td><td>规格审查通过；质量审查提出的权限、状态 claim、并发、MemoryRef、兼容入口与 UI 错误处理问题全部修复，复审通过。</td></tr>
+</tbody></table>
+</main></body></html>

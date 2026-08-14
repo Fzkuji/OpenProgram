@@ -435,11 +435,12 @@ def test_agent_spawn_force_ask_denies_without_waiting_for_approval():
     assert not ran["called"]
 
 
+@pytest.mark.parametrize("source", ["cron", "scheduler"])
 @pytest.mark.parametrize("tool_name", ["bash", "write", "send_message"])
-def test_cron_noninteractive_turn_denies_side_effect_tools(tool_name):
+def test_scheduled_noninteractive_turn_denies_side_effect_tools(source, tool_name):
     tool, ran = _make_tool(tool_name)
     req = TurnRequest(session_id="s", user_text="", agent_id="main",
-                      source="cron", permission_mode="ask",
+                      source=source, permission_mode="ask",
                       permission_rules=PermissionRules(allow=[tool_name]))
     result = _run_with_args(tool, req, {"command": "echo x"}, approve=True)
     assert _denied(result)

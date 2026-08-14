@@ -1,9 +1,9 @@
-"""``openprogram cron-worker`` handler."""
+"""``openprogram scheduler-worker`` handler (cron-worker is an alias)."""
 from __future__ import annotations
 
 
 def _cmd_cron_worker(once: bool, show_list: bool) -> None:
-    """Dispatch cron-worker subcommand: --list, --once, or run forever."""
+    """Dispatch scheduler-worker subcommand: --list, --once, or run forever."""
     from openprogram.programs.functions.cron import list_next, run_forever, run_once
 
     if show_list:

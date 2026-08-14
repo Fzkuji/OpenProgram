@@ -313,8 +313,6 @@ class MemoryWorkspace(
         base_revision: str,
         patch: str = "",
         sources: Any = None,
-        commitment_transitions: list[dict[str, Any]] | None = None,
-        commitment_transition_source: str | None = None,
         commit_message: str | None = None,
         git_commit: str = "auto",
         limits: TransactionLimits | None = None,
@@ -333,10 +331,10 @@ class MemoryWorkspace(
                 "INVALID_ARGUMENT", "git_commit must be auto, on or off"
             )
         limits = limits or TransactionLimits()
-        if not patch and not commitment_transitions:
+        if not patch:
             raise TransactionError(
                 "INVALID_ARGUMENT",
-                "patch or commitment_transitions is required",
+                "patch is required",
             )
         if len(patch.encode("utf-8")) > limits.max_patch_bytes:
             raise TransactionError(
@@ -393,14 +391,6 @@ class MemoryWorkspace(
                                 "but cannot rewrite existing content",
                                 path=relative,
                             )
-                if commitment_transitions:
-                    from ..runtime.commitments import transition_commitments
-
-                    transition_commitments(
-                        self.stage_dir,
-                        commitment_transitions,
-                        manual_source=commitment_transition_source,
-                    )
                 install_state(self, before_units, before_block_ids)
             except TransactionError:
                 self._refresh_stage()

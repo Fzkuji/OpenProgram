@@ -77,13 +77,6 @@ def management_tools(
             raise ValueError("Source Memory is append-only")
         return resolved, relative
 
-    from ..runtime.commitments import (
-        MAX_COMMITMENT_BATCH_ITEMS,
-        MAX_COMMITMENT_QUOTE_CHARS,
-        MAX_COMMITMENT_SOURCE_CHARS,
-        MAX_COMMITMENT_TEXT_CHARS,
-    )
-
     @tool(
         "shell",
         (
@@ -288,133 +281,6 @@ def management_tools(
 
         return _result("Grep", arguments, operation)
 
-    @tool(
-        "record_commitments",
-        (
-            "Record dated obligations found in this writer batch, or close "
-            "an open commitment when the conversation says it is complete."
-        ),
-        {
-            "type": "object",
-            "properties": {
-                "commitments": {
-                    "type": "array",
-                    "maxItems": MAX_COMMITMENT_BATCH_ITEMS,
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "text": {
-                                "type": "string",
-                                "maxLength": MAX_COMMITMENT_TEXT_CHARS,
-                            },
-                            "due": {
-                                "type": ["string", "null"],
-                                "maxLength": 10,
-                            },
-                            "source": {
-                                "type": "string",
-                                "maxLength": MAX_COMMITMENT_SOURCE_CHARS,
-                            },
-                            "source_quote": {
-                                "type": "string",
-                                "maxLength": MAX_COMMITMENT_QUOTE_CHARS,
-                            },
-                        },
-                        "required": ["text", "due", "source", "source_quote"],
-                        "additionalProperties": False,
-                    },
-                },
-                "transitions": {
-                    "type": "array",
-                    "maxItems": MAX_COMMITMENT_BATCH_ITEMS,
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "string", "maxLength": 20},
-                            "status": {
-                                "type": "string",
-                                "enum": ["done", "dismissed"],
-                            },
-                            "source": {
-                                "type": "string",
-                                "maxLength": MAX_COMMITMENT_SOURCE_CHARS,
-                            },
-                            "source_quote": {
-                                "type": "string",
-                                "maxLength": MAX_COMMITMENT_QUOTE_CHARS,
-                            },
-                        },
-                        "required": ["id", "status", "source", "source_quote"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            "additionalProperties": False,
-        },
-    )
-    async def record_commitments(arguments: dict[str, Any]) -> dict[str, Any]:
-        def operation() -> str:
-            from ..runtime.commitments import (
-                transition_commitments,
-                upsert_commitments,
-                validate_writer_batch_size,
-            )
-
-            commitments = arguments.get("commitments") or []
-            transitions = arguments.get("transitions") or []
-            validate_writer_batch_size(commitments, transitions)
-            allowed = workspace._allowed_new_source_refs
-            if allowed is not None and any(
-                str(item.get("source") or "") not in allowed for item in commitments
-            ):
-                raise ValueError(
-                    "commitment source is outside the selected writer batch"
-                )
-            if allowed is not None and any(
-                str(item.get("source") or "") not in allowed for item in transitions
-            ):
-                raise ValueError(
-                    "commitment transition source is outside the selected writer batch"
-                )
-            if not commitments and not transitions:
-                raise ValueError("commitments or transitions is required")
-            path = workspace.stage_dir / "commitments.jsonl"
-            existed = path.exists()
-            before = path.read_bytes() if existed else None
-            try:
-                if commitments:
-                    upsert_commitments(
-                        workspace.stage_dir,
-                        commitments,
-                        source_memory_dir=workspace.memory_dir,
-                    )
-                if transitions:
-                    transition_commitments(
-                        workspace.stage_dir,
-                        transitions,
-                        source_memory_dir=workspace.memory_dir,
-                        allowed_source_refs=allowed,
-                    )
-            except BaseException:
-                try:
-                    if existed:
-                        from openprogram.store.session.git_session import (
-                            atomic_write_text,
-                        )
-
-                        assert before is not None
-                        atomic_write_text(path, before.decode("utf-8"))
-                    else:
-                        path.unlink(missing_ok=True)
-                except BaseException:
-                    workspace._stage_usable = False
-                    workspace._discard_stage()
-                    raise
-                raise
-            return "commitments recorded"
-
-        return _result("record_commitments", arguments, operation)
-
     return [
         shell,
         read_file,
@@ -422,7 +288,6 @@ def management_tools(
         edit_file,
         grep_files,
         glob_files,
-        record_commitments,
     ]
 
 
@@ -447,6 +312,6 @@ TOOLS = [
     },
     *[
         {"type": "function", "function": {"name": name}}
-        for name in ("Read", "Write", "Edit", "Grep", "Glob", "record_commitments")
+        for name in ("Read", "Write", "Edit", "Grep", "Glob")
     ],
 ]

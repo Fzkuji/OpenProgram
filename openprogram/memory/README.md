@@ -18,10 +18,10 @@ Memory is a workspace of Markdown files under `<state>/memory/`:
 3. `core.md` — the small always-on block injected into every session.
 
 `timeline/`, `recent_events.jsonl` and `relations.json` are derived and
-rebuilt after every write. `commitments.jsonl` is the writer-maintained
-commitment state: records cite trusted Sources, while the Runtime derives IDs,
-validates exact evidence quotes and dates, and owns notification and explicit
-transition provenance. Model-facing status exposes Source refs but not quotes.
+rebuilt after every write. Memory does not own scheduled work. Scheduler tasks
+may keep stable `workspace_id` + `memory_id` references to Topic blocks and
+resolve their current content at execution time. A legacy `commitments.jsonl`
+file is read only by the one-time Scheduler migration.
 
 Writing happens in the background, not in the conversation: turns
 accumulate and are written once there is roughly 16k tokens' worth, and
@@ -41,7 +41,7 @@ a nightly pass rewrites what has landed.
 | `retrieval/` | BM25 and embedding search over the workspace |
 | `markdown/` | The topic format — blocks, footnotes, links |
 | `prompts/` | What the writer is told |
-| `runtime/` | Cursors, thresholds, derived views, commitments |
+| `runtime/` | Cursors, thresholds, derived views, legacy commitment migration parser |
 | `agent_runtime/` | The process that performs a write |
 
 ## Working here

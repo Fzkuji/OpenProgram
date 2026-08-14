@@ -41,7 +41,7 @@ def _create(**kw) -> str:
 
 def test_create_with_command_persists_command_field(sched):
     out = _create(cron="*/5 * * * *", command="echo hi", cwd=str(sched.parent))
-    assert "Created cron entry" in out
+    assert "Created scheduler task" in out
     entries = cron_tool._load(str(sched))
     assert len(entries) == 1
     entry = entries[0]
@@ -61,7 +61,7 @@ def test_create_with_command_persists_command_field(sched):
 def test_paired_channel_cannot_create_or_delete_jobs(sched, monkeypatch):
     from openprogram.agent.authority import paired_channel_authority
 
-    assert "Created cron entry" in _create(cron="@daily", command="echo kept")
+    assert "Created scheduler task" in _create(cron="@daily", command="echo kept")
     entry_id = cron_tool._load(str(sched))[0]["id"]
     monkeypatch.setattr(
         cron_tool,
@@ -197,7 +197,7 @@ def test_prompt_job_rebuilds_a_noninteractive_cron_turn(sched, tmp_path,
     log_path = tmp_path / "prompt.log"
     worker._run_prompt_job(spec, str(log_path))
     req = seen["req"]
-    assert req.source == "cron"
+    assert req.source == "scheduler"
     assert req.permission_mode == "ask"
     assert req.advance_head is False
     assert req.user_text == "summarize"
@@ -284,7 +284,7 @@ def test_worker_spawn_prompt_uses_managed_prompt_entry(
     monkeypatch.setattr(worker.multiprocessing, "Process", InlineProcess)
     proc = worker._spawn(entry, str(tmp_path / "prompt-logs"))
     assert proc is not None
-    assert seen["req"].source == "cron"
+    assert seen["req"].source == "scheduler"
     assert "done" in next((tmp_path / "prompt-logs").iterdir()).read_text()
 
 
