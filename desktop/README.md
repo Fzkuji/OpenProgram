@@ -23,3 +23,10 @@ resources:
 
 Packaged builds never fall back to `PATH`, system Python, conda, or the source
 checkout. macOS and Linux artifacts must be produced on native runners.
+
+The tag workflow reads macOS credentials from the protected `release`
+environment: `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`,
+`APPLE_API_KEY` (the raw `.p8` contents), `APPLE_API_KEY_ID`,
+`APPLE_API_ISSUER`, and `APPLE_TEAM_ID`. It notarizes the signed app during
+the Electron build, then submits and staples the final DMG container before
+uploading artifacts.

@@ -26,7 +26,7 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 | 命令 | 作用 | 关键参数 |
 |------|------|----------|
 | `openprogram` | 打开聊天；裸跑会先问开终端 UI 还是 Web UI，没有 worker 时自动拉起 | — |
-| `openprogram tui`（别名 `chat`） | 直接启动终端 UI，跳过界面选择（macOS/Linux 用 Ink，Windows 用 Rich） | `--print`、`--resume` 在动词后同样可用 |
+| `openprogram tui`（别名 `chat`） | 直接启动终端 UI，跳过界面选择（受支持的 macOS/Linux 安装使用 Ink 或 Python 终端 UI；Rich 仅保留给不受支持的 Windows source checkout） | `--print`、`--resume` 在动词后同样可用 |
 | `openprogram web` | 启动服务并打开浏览器 UI（`http://localhost:18100`） | `--port`（默认：已存偏好，否则 18100）、`--web-port`（同一个单端口的旧别名）、`--no-browser` |
 
 ## 后台服务

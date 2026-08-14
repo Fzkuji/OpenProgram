@@ -5,7 +5,9 @@ agentic functions. `openprogram programs install` records its source under
 `openprogram/programs/agentic_functions/`, and its functions then register like
 built-ins. This is a **general mechanism**: the first-party programs
 (gui / research / wiki) and any third-party repo install the exact same
-way. Cross-platform (macOS / Linux / Windows); no symlinks required.
+way in a mutable source-development or CLI environment; no symlinks are
+required. The immutable packaged desktop currently rejects Program install,
+upgrade, and uninstall operations.
 
 > **Where the agent reads this:** this file is the canonical procedure.
 > When a user asks to install a harness the agent doesn't have, follow
@@ -148,14 +150,20 @@ Then use it — the harness's functions are callable like any built-in
 
 ## Platform notes
 
-- **Base install is one command, every OS:** clone OpenProgram and run
-  `./scripts/install.sh` (Windows: `.\scripts\install.ps1`).
-- **No symlinks needed** — cloning a real directory into `<AGENTICS>` is
-  the supported path, so there's no Windows admin/developer-mode hurdle.
+- **Supported release hosts are macOS and Linux.** Windows has no supported
+  release installer or native package; Windows users may use a browser to
+  connect to OpenProgram on a supported remote host.
+- **These Program commands require a mutable environment.** They work in a
+  source-development checkout and may be used by a CLI release only when its
+  release notes explicitly support Program mutation. Packaged desktop builds
+  refuse the mutation commands until Programs have isolated external
+  environments.
+- **No symlinks are required** in a supported mutable environment: cloning a
+  real directory into `<AGENTICS>` is the standard path.
 - **A harness can still be platform-specific in its own code** (e.g. a
   desktop-GUI harness may only implement macOS / Linux backends).
-  Installing always works; whether every function *runs* on your OS is
-  the harness's concern — check its README.
+  Whether installation and every function run on a supported host depends on
+  the harness's declared dependencies and platform support; check its README.
 - **Encoding / paths:** OpenProgram's own tooling is UTF-8 and
   `os.path`-based throughout; a well-behaved harness should be too.
 
@@ -168,7 +176,7 @@ Then use it — the harness's functions are callable like any built-in
 | `ModuleNotFoundError` for the harness's own deps | The dep install step failed — `pip install` the clone (or its requirements.txt) and check the error. |
 | Imports inside the harness fail (`from <pkg>.x import y`) | The package dir isn't named like the import root, or a missing `__init__.py`. The package folder name must equal the import name. |
 | An existing dev symlink does not load | Run `openprogram programs install <git-source>` once to verify and record it; the installer does not modify the linked checkout. |
-| A function loads but errors when *run* on Windows | The harness's own code is platform-specific — its concern, not the install's. See its README. |
+| A Windows source checkout fails to install or run a harness | Windows release installation and compatibility are not supported. Use a supported macOS/Linux host and check the harness README for its own platform requirements. |
 
 ---
 

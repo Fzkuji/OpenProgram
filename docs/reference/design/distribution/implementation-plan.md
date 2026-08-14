@@ -46,8 +46,10 @@ Platform artifact builds run in the release workflow because a macOS host cannot
 | Base | `717d4e176307e08cc4ae4facd3c484511684746c` |
 | CodeGraph | Repository index was available in the shared checkout for initial exploration; the isolated worktree had no `.codegraph/`, so implementation lookup used targeted `rg` and direct reads. |
 | RED | Initial focused run: 5 failed and 10 passed; failures covered missing package-resource frontend selection, desktop targets/runtime resolution, release installer, and release workflow. |
-| GREEN | Focused distribution/desktop suite: 25 passed; docs build produced 503 pages with 0 broken links; clean wheel import, managed CLI install, and macOS arm64 packaged worker smoke passed. |
-| Specification review | Pending |
-| Quality review | Pending |
-| Full gate | Running; the verified subset above is sufficient for the current incremental merge. |
-| Final implementation commit | Pending |
+| GREEN | Focused distribution/desktop suite: 25 passed; docs build produced 503 pages with 0 broken links; desktop and Web npm checks passed; clean wheel import, managed CLI install, and rebuilt macOS arm64 packaged worker smoke passed. |
+| Specification review | Local design-to-implementation audit passed after adding final-DMG notarization/stapling, runtime-manifest schema/version validation, and removal of remaining public Windows-native/any-platform claims. Two bounded CodeBuddy review attempts returned no output and were terminated, so no external-review pass is claimed. |
+| Quality review | Ponytail full audit found no new dependency or packaging abstraction to remove. Shell/YAML syntax checks, diff checks, focused tests, the rebuilt app smoke, and runtime signature-stability check passed. The release workflow now writes the App Store Connect key with owner-only permissions and uses the protected `release` environment. |
+| Full gate | `tests/ --ignore=tests/integration`: 5253 passed, 9 skipped, 1 xfailed, 4 failed. Three deterministic failures reproduced unchanged at the base commit (two runtime HTTP inventory tests and one dropped-tool-parameter test). The resource-governance multiprocessing failure passed on immediate targeted rerun and is classified as a timing-sensitive failure. Change-specific Python, docs, desktop, Web, shell, YAML, wheel, CLI installer, and packaged-runtime gates are green. |
+| Dependency audit | No dependency was added. Existing lockfiles report 7 desktop npm advisories (2 moderate, 5 high) and 8 Web npm advisories (high); remediation is separate dependency-maintenance work. |
+| Release-only evidence | Developer ID signing, Apple notarization, macOS x64 artifacts, Linux x86_64 AppImage startup, and Linux arm64 CLI installation require the tag workflow, protected credentials, and native runners. They are configured but not claimed from local verification. |
+| Implementation commits | Batch 1: `714981e1`; merged to local `main` as `8da88f90`. The current follow-up commit records review fixes and final evidence. |
