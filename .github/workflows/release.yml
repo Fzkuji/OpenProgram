@@ -210,12 +210,11 @@ jobs:
             --output release-artifacts/release-manifest.json
       - name: Publish GitHub Release
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          notes_file="$RUNNER_TEMP/openprogram-release-notes.md"
-          sed \
-            -e "s/__TAG__/$GITHUB_REF_NAME/g" \
-            -e "s/__VERSION__/$version/g" \
-            .github/release-notes.md > "$notes_file"
+          notes_file=".github/release-notes/$GITHUB_REF_NAME.md"
+          test -s "$notes_file" || {
+            echo "missing release notes: $notes_file" >&2
+            exit 1
+          }
           mapfile -d '' files < <(find release-artifacts -type f -print0)
           gh release create "$GITHUB_REF_NAME" "${files[@]}" \
             --verify-tag \

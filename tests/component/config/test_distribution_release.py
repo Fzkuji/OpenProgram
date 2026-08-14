@@ -343,24 +343,34 @@ def test_native_release_workflow_has_platform_jobs() -> None:
 
 
 def test_release_workflow_publishes_structured_release_notes() -> None:
-    notes_path = ROOT / ".github" / "release-notes.md"
+    version = _desktop_package()["version"]
+    notes_path = (
+        ROOT
+        / ".github"
+        / "release-notes"
+        / f"v{version}.md"
+    )
     assert notes_path.is_file()
     notes = notes_path.read_text(encoding="utf-8")
+    assert notes.startswith(f"# OpenProgram v{version}\n")
+    assert f"OpenProgram-{version}-mac-arm64-unsigned.dmg" in notes
+    assert f"OpenProgram-{version}-mac-x64-unsigned.dmg" in notes
     for section in (
-        "## Install",
-        "## Platform guide",
-        "## Included product capabilities",
-        "## Upgrade and verify",
+        "## 🐞 修复问题",
+        "## ✨ 新增功能",
+        "## 🚀 优化改进",
+        "## 📦 下载与安装",
+        "## 🔄 版本指南",
     ):
         assert section in notes
-    assert "__TAG__" in notes
-    assert "__VERSION__" in notes
+    assert "| 用户类型 | 平台 | 安装方式 |" in notes
+    assert "curl -fsSL https://openprogram.io/install | sh" in notes
 
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
     )
-    assert '.github/release-notes.md' in workflow
-    assert 'notes_file="$RUNNER_TEMP/openprogram-release-notes.md"' in workflow
+    assert 'notes_file=".github/release-notes/$GITHUB_REF_NAME.md"' in workflow
+    assert 'test -s "$notes_file"' in workflow
     assert '--notes-file "$notes_file"' in workflow
     assert "--generate-notes" not in workflow
 
