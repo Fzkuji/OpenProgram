@@ -125,6 +125,7 @@ function spawnWorker() {
   if (app.isPackaged) {
     env.OPENPROGRAM_IMMUTABLE_RUNTIME = "1";
     launch = resolvePackagedWorker(process.resourcesPath, app.getVersion());
+    Object.assign(env, launch.env);
   } else {
     launch = { command: "openprogram", args: ["worker", "start"] };
   }
@@ -1757,6 +1758,17 @@ function normalizedBounds(bounds) {
   };
 }
 
+function normalizedRendererBounds(event, bounds) {
+  const senderZoom = Number(event?.sender?.getZoomFactor?.());
+  const zoom = Number.isFinite(senderZoom) && senderZoom > 0 ? senderZoom : 1;
+  return normalizedBounds({
+    x: Number(bounds?.x) * zoom,
+    y: Number(bounds?.y) * zoom,
+    width: Number(bounds?.width) * zoom,
+    height: Number(bounds?.height) * zoom,
+  });
+}
+
 function syncVisibleViews(ctx, items) {
   if (!ctx || ctx.win.isDestroyed() || !Array.isArray(items)) return false;
   const desired = new Map();
@@ -2124,13 +2136,21 @@ function registerWebTabIpc() {
   });
   ipcMain.on("webtab:sync-visible", (event, items) => {
     const ctx = contextForSender(event);
-    if (ctx) syncVisibleViews(ctx, items);
+    if (ctx) {
+      const normalizedItems = Array.isArray(items)
+        ? items.map((item) => ({
+            ...item,
+            bounds: normalizedRendererBounds(event, item?.bounds),
+          }))
+        : items;
+      syncVisibleViews(ctx, normalizedItems);
+    }
   });
   ipcMain.on("webtab:set-bounds", (event, id, bounds) => {
     const ctx = contextForSender(event);
     if (ctx && bounds) {
       withView(ctx, id, (record) => {
-        record.view.setBounds(normalizedBounds(bounds));
+        record.view.setBounds(normalizedRendererBounds(event, bounds));
       });
     }
   });

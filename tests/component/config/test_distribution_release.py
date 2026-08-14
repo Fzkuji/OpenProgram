@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -22,15 +24,11 @@ def test_desktop_targets_and_embedded_runtime_are_declared() -> None:
         target if isinstance(target, str) else target["target"]
         for target in build["mac"]["target"]
     }
-    linux_targets = {
-        target if isinstance(target, str) else target["target"]
-        for target in build["linux"]["target"]
-    }
     assert {"dmg", "zip"} <= mac_targets
-    assert "AppImage" in linux_targets
+    assert "linux" not in build
+    assert "dist:linux" not in package["scripts"]
     assert {item["to"] for item in build["extraResources"]} >= {"runtime"}
     assert package["desktopName"] == "ai.openprogram.OpenProgram.desktop"
-    assert build["linux"]["syncDesktopName"] is True
 
 
 def test_core_agentic_functions_are_not_excluded_from_wheel() -> None:
@@ -101,12 +99,13 @@ def test_packaged_runtime_rejects_program_mutation(monkeypatch, capsys) -> None:
 
 def test_release_installer_is_versioned_and_source_free() -> None:
     installer = (ROOT / "scripts" / "install-release.sh").read_text(encoding="utf-8")
-    assert "UV_VERSION=" in installer
-    assert "PYTHON_VERSION=" in installer
-    assert 'openprogram==${OPENPROGRAM_VERSION}' in installer
-    assert "OPENPROGRAM_WHEEL" in installer
-    assert "--no-bin" in installer
-    assert "--break-system-packages" in installer
+    assert "OPENPROGRAM_RUNTIME_ARCHIVE" in installer
+    assert "runtime-${platform}-${arch}.tar.gz" in installer
+    assert "runtime-manifest.json" in installer
+    assert "verify-product-runtime.py" in installer
+    assert "OPENPROGRAM_WHEEL" not in installer
+    assert "pypi" not in installer.lower()
+    assert "pip install" not in installer
     assert "git clone" not in installer
     assert "pip install -e" not in installer
     assert "npm" not in installer
@@ -123,6 +122,108 @@ def test_release_installer_cold_starts_before_switching_current() -> None:
     assert start < health < stop < switch
 
 
+def test_short_public_installer_resolves_latest_and_accepts_a_pin(
+    tmp_path: Path,
+) -> None:
+    bootstrap = ROOT / "docs" / "_static_root" / "install.sh"
+    assert bootstrap.is_file()
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_installer = tmp_path / "tagged-installer.sh"
+    fake_installer.write_text(
+        '#!/bin/sh\n'
+        'printf \'%s|%s\\n\' "$OPENPROGRAM_VERSION" '
+        '"$OPENPROGRAM_REPOSITORY" > "$FAKE_RESULT"\n',
+        encoding="utf-8",
+    )
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text(
+        """#!/bin/sh
+set -eu
+output=""
+url=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) output="$2"; shift 2 ;;
+    -w) shift 2 ;;
+    https://*) url="$1"; shift ;;
+    *) shift ;;
+  esac
+done
+printf '%s\n' "$url" >> "$FAKE_CURL_LOG"
+case "$url" in
+  */releases/latest)
+    printf 'https://github.com/Fzkuji/OpenProgram/releases/tag/v0.6.1'
+    ;;
+  */v*/scripts/install-release.sh)
+    cp "$FAKE_INSTALLER" "$output"
+    ;;
+  *)
+    printf 'unexpected URL: %s\n' "$url" >&2
+    exit 1
+    ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    fake_curl.chmod(0o755)
+
+    result = tmp_path / "result"
+    curl_log = tmp_path / "curl.log"
+    env = os.environ | {
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "TMPDIR": str(tmp_path),
+        "FAKE_INSTALLER": str(fake_installer),
+        "FAKE_RESULT": str(result),
+        "FAKE_CURL_LOG": str(curl_log),
+    }
+    subprocess.run(["sh", str(bootstrap)], check=True, env=env)
+    assert result.read_text(encoding="utf-8") == "0.6.1|Fzkuji/OpenProgram\n"
+    assert curl_log.read_text(encoding="utf-8").splitlines() == [
+        "https://github.com/Fzkuji/OpenProgram/releases/latest",
+        "https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh",
+    ]
+
+    result.unlink()
+    curl_log.unlink()
+    subprocess.run(
+        ["sh", str(bootstrap)],
+        check=True,
+        env=env | {"OPENPROGRAM_VERSION": "1.2.3"},
+    )
+    assert result.read_text(encoding="utf-8") == "1.2.3|Fzkuji/OpenProgram\n"
+    assert curl_log.read_text(encoding="utf-8").splitlines() == [
+        "https://raw.githubusercontent.com/Fzkuji/OpenProgram/v1.2.3/scripts/install-release.sh"
+    ]
+
+
+def test_docs_publish_short_installer_at_the_domain_root() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "docs-pages.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "mv _publish/docs/install.sh _publish/install" in workflow
+
+
+def test_normal_user_docs_use_the_short_release_installer() -> None:
+    short_command = "curl -fsSL https://openprogram.io/install | sh"
+    for relative in (
+        "README.md",
+        "docs/README.md",
+        "docs/README.zh.md",
+        "docs/install/install.md",
+        "docs/install/install.zh.md",
+        "docs/install/upgrade.md",
+        "docs/install/upgrade.zh.md",
+        "docs/start/GETTING_STARTED.md",
+        "docs/start/GETTING_STARTED.zh.md",
+        "site/index.html",
+    ):
+        contents = (ROOT / relative).read_text(encoding="utf-8")
+        assert short_command in contents, relative
+        assert "v0.6.1/scripts/install-release.sh" not in contents, relative
+
+
 def test_cli_exposes_distribution_version(capsys) -> None:
     from openprogram.cli import build_parser
 
@@ -133,20 +234,76 @@ def test_cli_exposes_distribution_version(capsys) -> None:
 
 
 def test_desktop_runtime_removes_absolute_python_aliases() -> None:
-    staging = (ROOT / "scripts" / "prepare-desktop-runtime.sh").read_text(
+    staging = (ROOT / "scripts" / "build-product-runtime.sh").read_text(
         encoding="utf-8"
     )
     assert 'readlink "$python_alias"' in staging
     assert 'unlink "$python_alias"' in staging
 
 
-def test_desktop_runtime_installs_playwright_for_cdp_without_browser_binary() -> None:
-    staging = (ROOT / "scripts" / "prepare-desktop-runtime.sh").read_text(
+def test_product_runtime_installs_complete_default_capabilities() -> None:
+    staging = (ROOT / "scripts" / "build-product-runtime.sh").read_text(
         encoding="utf-8"
     )
-    assert '"$wheel[browser]"' in staging
-    assert "import playwright.sync_api" in staging
-    assert "playwright install" not in staging
+    verifier = (ROOT / "scripts" / "verify-product-runtime.py").read_text(
+        encoding="utf-8"
+    )
+    product_config = (ROOT / "config" / "product-runtime.json").read_text(
+        encoding="utf-8"
+    )
+    assert "--frozen --no-dev" in staging
+    assert "--extra all --extra search" in staging
+    assert "--require-hashes" in staging
+    assert '--no-deps "$wheel"' in staging
+    assert "playwright.sync_api" in verifier
+    assert "playwright install chromium" in staging
+    assert "easyocr" in staging
+    assert '"${program_dir}[pdf]"' in staging
+    assert "https://download.pytorch.org/whl/cpu" in staging
+    assert 'importlib.metadata.version(distribution).split("+", 1)[0]' in verifier
+    assert "Salesforce/GPA-GUI-Detector" in product_config
+    assert "GUI-Agent-Harness" in product_config
+    assert "Research-Agent-Harness" in product_config
+    assert "Wiki-Agent-Harness" in product_config
+
+
+def test_product_manifest_requires_one_complete_capability_set() -> None:
+    manifest = json.loads(
+        (ROOT / "config" / "product-runtime.json").read_text(encoding="utf-8")
+    )
+    assert manifest["schema"] == 1
+    assert set(manifest["capabilities"]) == {
+        "web",
+        "providers",
+        "mcp",
+        "memory",
+        "channels",
+        "search",
+        "browser.playwright",
+        "ocr.default",
+        "model.gpa_detector",
+        "program.gui",
+        "program.research",
+        "program.wiki",
+    }
+    assert set(manifest["programs"]) == {"gui", "research", "wiki"}
+    assert manifest["programs"]["gui"]["torch"] == "2.13.0"
+    assert manifest["programs"]["gui"]["torchvision"] == "0.28.0"
+    for program in manifest["programs"].values():
+        assert re.fullmatch(r"[0-9a-f]{40}", program["commit"])
+
+
+def test_source_development_installer_adds_to_complete_product() -> None:
+    installer = (ROOT / "scripts" / "install.sh").read_text(encoding="utf-8")
+    assert 'PIP install -e "$HOST_ROOT[all,search]"' in installer
+    assert '"$PY" -m playwright install chromium' in installer
+    assert '"$PY" -m openprogram programs install all' in installer
+    assert 'bash "$gui_installer" --no-host --python "$PY"' in installer
+    assert 'PIP install -e "$applications/research_harness[pdf]"' in installer
+    assert "prompt_programs_menu" not in installer
+    assert "--minimal was removed" in installer
+    assert "WITH_STEALTH" in installer
+    assert "WITH_AGENT_BROWSER" in installer
 
 
 def test_native_release_workflow_has_platform_jobs() -> None:
@@ -156,27 +313,30 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "macos-" in workflow
     assert "ubuntu-" in workflow
     assert "ubuntu-24.04-arm" in workflow
+    assert "product-runtime:" in workflow
     assert "cli-installer:" in workflow
+    assert "product-runtime-${{ matrix.platform }}-${{ matrix.arch }}" in workflow
+    assert "scripts/build-product-runtime.sh" in workflow
+    assert "scripts/archive-product-runtime.sh" in workflow
     assert "scripts/prepare-desktop-runtime.sh" in workflow
     assert "scripts/verify-release-version.py" in workflow
     assert "scripts/create-release-manifest.py" in workflow
     assert "scripts/smoke-packaged-runtime.sh" in workflow
     assert "sha256" in workflow.lower()
-    assert workflow.count("--publish never") == 2
+    assert workflow.count("--publish never") == 1
+    assert "AppImage" not in workflow
 
 
-def test_linux_smoke_workflow_is_runnable_without_release_credentials() -> None:
+def test_linux_complete_runtime_smoke_is_runnable_without_release_credentials() -> None:
     workflow = (ROOT / ".github" / "workflows" / "linux-release-smoke.yml").read_text(
         encoding="utf-8"
     )
     assert "workflow_dispatch:" in workflow
     assert "environment: release" not in workflow
     assert "ubuntu-24.04-arm" in workflow
-    assert "scripts/smoke-packaged-runtime.sh linux" in workflow
     assert "scripts/install-release.sh" in workflow
-    assert "--publish never" in workflow
-    assert "debian:bullseye-slim" in workflow
-    assert "--network none" in workflow
+    assert "AppImage" not in workflow
+    assert "electron-builder" not in workflow
 
 
 def test_distribution_workflows_use_node24_action_releases() -> None:
@@ -192,24 +352,31 @@ def test_distribution_workflows_use_node24_action_releases() -> None:
         assert "actions/download-artifact@v8" in workflow
 
 
-def test_linux_packaged_smoke_launches_public_appimage_entry() -> None:
+def test_packaged_smoke_rejects_unreleased_linux_desktop() -> None:
     smoke = (ROOT / "scripts" / "smoke-packaged-runtime.sh").read_text(
         encoding="utf-8"
     )
-    assert "APPIMAGE_EXTRACT_AND_RUN=1" in smoke
-    assert '"$appimage"' in smoke
-    assert "app_pid=$!" in smoke
+    assert "AppImage" not in smoke
+    assert "linux)" not in smoke
     assert "python3 -c" not in smoke
-    assert "StartupWMClass=ai.openprogram.OpenProgram" in smoke
 
 
-def test_release_workflow_notarizes_the_distributed_dmg() -> None:
+def test_release_workflow_builds_explicitly_unsigned_macos_artifacts() -> None:
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
     )
-    assert "xcrun notarytool submit" in workflow
-    assert 'xcrun stapler staple "$dmg_path"' in workflow
-    assert 'xcrun stapler validate "$dmg_path"' in workflow
+    assert "unsigned" in workflow.lower()
+    assert "CSC_IDENTITY_AUTO_DISCOVERY: \"false\"" in workflow
+    for forbidden in (
+        "APPLE_API_KEY",
+        "APPLE_API_ISSUER",
+        "APPLE_TEAM_ID",
+        "MAC_CSC_LINK",
+        "notarytool",
+        "stapler",
+        "gh-action-pypi-publish",
+    ):
+        assert forbidden not in workflow
 
 
 def test_public_docs_follow_the_release_platform_policy() -> None:
@@ -242,11 +409,75 @@ def test_public_docs_follow_the_release_platform_policy() -> None:
             assert phrase not in contents, f"{path.relative_to(ROOT)}: {phrase}"
 
 
-def test_linux_install_docs_use_the_built_appimage_name() -> None:
-    for relative in ("docs/install/install.md", "docs/install/install.zh.md"):
+def test_linux_install_docs_do_not_claim_a_desktop_artifact() -> None:
+    expectations = {
+        "docs/install/install.md": "no reduced Linux desktop artifact is published",
+        "docs/install/install.zh.md": "不发布精简的 Linux 桌面产物",
+    }
+    for relative, expected in expectations.items():
         contents = (ROOT / relative).read_text(encoding="utf-8")
-        assert "linux-x86_64.AppImage" in contents
-        assert "linux-x64.AppImage" not in contents
+        assert "linux-x86_64.AppImage" not in contents
+        assert expected in contents
+
+
+def test_public_docs_describe_one_complete_release_product() -> None:
+    public_docs = [
+        ROOT / "README.md",
+        ROOT / "docs" / "README.md",
+        ROOT / "docs" / "README.zh.md",
+        ROOT / "docs" / "install" / "install.md",
+        ROOT / "docs" / "install" / "install.zh.md",
+        ROOT / "docs" / "install" / "upgrade.md",
+        ROOT / "docs" / "install" / "upgrade.zh.md",
+        ROOT / "docs" / "capabilities" / "installing-harnesses.md",
+        ROOT / "docs" / "capabilities" / "installing-harnesses.zh.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "README.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "README.zh.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "gui-agent.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "gui-agent.zh.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "research-agent.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "research-agent.zh.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "wiki-agent.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "wiki-agent.zh.md",
+        ROOT / "docs" / "capabilities" / "tools.md",
+        ROOT / "docs" / "capabilities" / "tools.zh.md",
+        ROOT / "docs" / "capabilities" / "README.md",
+        ROOT
+        / "docs"
+        / "capabilities"
+        / "agentic-programming"
+        / "embedding-in-your-own-stack.md",
+        ROOT
+        / "docs"
+        / "capabilities"
+        / "agentic-programming"
+        / "embedding-in-your-own-stack.zh.md",
+        ROOT / "docs" / "integrations" / "channels.md",
+        ROOT / "docs" / "integrations" / "channels.zh.md",
+        ROOT / "docs" / "start" / "GETTING_STARTED.md",
+        ROOT / "docs" / "start" / "GETTING_STARTED.zh.md",
+        ROOT / "docs" / "start" / "faq.md",
+        ROOT / "docs" / "start" / "faq.zh.md",
+        ROOT / "docs" / "slides" / "openprogram-intro.html",
+        ROOT / "docs" / "reference" / "design" / "feature-matrix.html",
+    ]
+    forbidden = (
+        "openprogram programs install gui",
+        "openprogram programs install research",
+        "openprogram programs install wiki",
+        "Agent programs are not part",
+        "agent Program 不属于",
+        "notarized DMG",
+        "exact wheel",
+        "精确 wheel",
+        "pip install 'openprogram[search]'",
+        "pip install openprogram[channels]",
+    )
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in public_docs)
+    for phrase in forbidden:
+        assert phrase not in combined
+    assert "same complete product capabilities" in combined
+    assert "相同的完整产品能力" in combined
 
 
 def test_release_manifest_records_hashes(tmp_path: Path) -> None:

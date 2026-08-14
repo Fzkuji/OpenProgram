@@ -49,6 +49,7 @@ import {
   type AnimatedNavIconHandle,
   BoxesIcon,
   BrainIcon,
+  ClockIcon,
   FoldersIcon,
   GraduationCapIcon,
   LayersIcon,
@@ -110,6 +111,7 @@ export function Sidebar() {
   const mcpIconRef = useRef<AnimatedNavIconHandle>(null);
   const pluginsIconRef = useRef<AnimatedNavIconHandle>(null);
   const memoryIconRef = useRef<AnimatedNavIconHandle>(null);
+  const schedulerIconRef = useRef<AnimatedNavIconHandle>(null);
   const chatsIconRef = useRef<AnimatedNavIconHandle>(null);
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
   const newChatIconRef = useRef<AnimatedNavIconHandle>(null);
@@ -239,6 +241,7 @@ export function Sidebar() {
     mcp: pathname.startsWith("/mcp"),
     programs: pathname.startsWith("/programs"),
     memory: pathname.startsWith("/memory"),
+    scheduler: pathname.startsWith("/scheduler"),
     chats: pathname.startsWith("/chats"),
     skills: pathname.startsWith("/skills"),
     plugins: pathname.startsWith("/plugins") || pathname.startsWith("/plugin/"),
@@ -488,6 +491,22 @@ export function Sidebar() {
             <LayersIcon ref={mcpIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.mcp")}</span>
+        </Link>
+
+        <Link
+          href="/scheduler"
+          className={
+            sidebarNavItemClass +
+            (navActive.scheduler ? " " + sidebarNavItemActiveClass : "")
+          }
+          id="navScheduler"
+          onMouseEnter={() => schedulerIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => schedulerIconRef.current?.stopAnimation?.()}
+        >
+          <span className={sidebarNavIconClass}>
+            <ClockIcon ref={schedulerIconRef} size={20} />
+          </span>
+          <span className={sidebarNavLabelClass}>{t("nav.scheduler")}</span>
         </Link>
 
         <Link

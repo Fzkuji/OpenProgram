@@ -2,13 +2,9 @@
 
 自主科研 agent：接一个研究选题，走完文献调研 → 想法生成 → 实验 → 写作 → 评审 → rebuttal / 展示的完整流程，产出可提交的论文。它不信任自己的输出——引用逐条对着 Crossref / OpenAlex / Semantic Scholar / arXiv 四个索引核验，论文里的数字要能追溯到实验的 `run_record.json`，评审可以换一个不同的模型来做（作者与审稿人不同模型，避免自评自）。
 
-## 安装
+## 可用性
 
-```bash
-openprogram programs install research
-```
-
-无额外依赖——harness 只用 OpenProgram 本身。可选项：PDF 解析（`load_paper` / wiki ingest 需要）另装 `pymupdf`；知识库联动另装 wiki harness（`openprogram programs install wiki`）。
+每个受支持的 release 都同时包含 Research、Wiki Programs 和用于 PDF 解析的 PyMuPDF。安装 OpenProgram 后不需要再安装 Program 或 PDF 依赖。开发者可以用 editable checkout 替换其中任一 Program。
 
 ## 怎么用
 

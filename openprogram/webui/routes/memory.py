@@ -1,11 +1,10 @@
-"""Memory routes — topics, timeline, recent, commitments, and core.
+"""Memory routes — topics, timeline, recent, references, and core.
 
-Five surfaces, matching the five things memory holds:
+Four surfaces plus a stable read-only reference API:
 
   topics/   the editable semantic memory, one file per subject
   timeline/ the derived time axis
   recent    the last units written, derived
-  commitments cited obligations and their owner-controlled status
   core.md   the always-on block, rendered from topics/core.md
 
 ``sources/`` is deliberately absent: it is the append-only evidence
@@ -20,7 +19,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from contextlib import closing
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -88,67 +86,14 @@ def register(app):
             content=inspect.status(store.ensure(), include_path=True)
         )
 
-    @router.post("/api/memory/commitments/transition")
-    async def transition_commitment(request: Request):
-        """Owner web transition through the shared revision-checked transaction."""
-        from openprogram.memory import store
-        from openprogram.memory.management import MemoryWorkspace
-        from openprogram.memory.management.transaction import TransactionError
-        from openprogram.memory.runtime.commitments import commitment_status
+    @router.get("/api/memory/refs")
+    def list_memory_refs(q: str = "", limit: int = 100):
+        from openprogram.memory.references import list_refs
 
         try:
-            payload = await request.json()
-        except (UnicodeDecodeError, ValueError):
-            payload = None
-        if not isinstance(payload, dict):
-            return JSONResponse(
-                content={
-                    "error": {
-                        "code": "INVALID_ARGUMENT",
-                        "message": "request body must be a JSON object",
-                    }
-                },
-                status_code=400,
-            )
-        base_revision = str(payload.get("base_revision") or "").strip()
-        commitment_id = str(payload.get("id") or "").strip()
-        status = str(payload.get("status") or "").strip()
-        if not base_revision or not commitment_id or status not in {"done", "dismissed"}:
-            return JSONResponse(
-                content={
-                    "error": {
-                        "code": "INVALID_ARGUMENT",
-                        "message": "base_revision, id, and done/dismissed status are required",
-                    }
-                },
-                status_code=400,
-            )
-        try:
-            with closing(MemoryWorkspace(store.ensure())) as workspace:
-                result = workspace.update(
-                    base_revision=base_revision,
-                    commitment_transitions=[
-                        {"id": commitment_id, "status": status}
-                    ],
-                    commitment_transition_source="owner/manual",
-                )
-        except TransactionError as exc:
-            return JSONResponse(
-                content={
-                    "error": {
-                        "code": exc.code,
-                        "message": exc.message,
-                    }
-                },
-                status_code=409 if exc.code == "CONCURRENT_UPDATE" else 400,
-            )
-        return JSONResponse(
-            content={
-                "ok": True,
-                "revision": result.revision,
-                "commitments": commitment_status(store.ensure()),
-            }
-        )
+            return JSONResponse(content=list_refs(q, limit=limit))
+        except ValueError as exc:
+            return JSONResponse(content={"error": str(exc)}, status_code=400)
 
     # -- topics ------------------------------------------------------------
 

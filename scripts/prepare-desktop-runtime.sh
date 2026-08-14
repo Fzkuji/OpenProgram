@@ -1,68 +1,58 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PYTHON_VERSION="${OPENPROGRAM_PYTHON_VERSION:-3.12.10}"
-UV_VERSION="${OPENPROGRAM_UV_VERSION:-0.11.16}"
-uv_bin="${OPENPROGRAM_UV_BIN:-$(command -v uv || true)}"
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 runtime_root="$repo_root/desktop/build/runtime"
-python_install_dir="$runtime_root/python"
-wheel_dir="$runtime_root/wheel"
+archive="${OPENPROGRAM_RUNTIME_ARCHIVE:-}"
 
-for command_name in npm; do
-  command -v "$command_name" >/dev/null 2>&1 || {
-    printf 'missing build command: %s\n' "$command_name" >&2
-    exit 1
-  }
+if test -z "$archive"; then
+  OPENPROGRAM_RUNTIME_ROOT="$runtime_root" \
+    "$repo_root/scripts/build-product-runtime.sh"
+  exit 0
+fi
+
+case "$archive" in
+  /*.tar.gz) ;;
+  *) printf 'OPENPROGRAM_RUNTIME_ARCHIVE must be an absolute .tar.gz path\n' >&2; exit 1 ;;
+esac
+test -f "$archive" || {
+  printf 'runtime archive not found: %s\n' "$archive" >&2
+  exit 1
+}
+
+expected="${OPENPROGRAM_RUNTIME_SHA256:-}"
+if test -z "$expected" && test -f "$archive.sha256"; then
+  expected="$(awk 'NR == 1 {print $1}' "$archive.sha256")"
+fi
+test -n "$expected" || {
+  printf 'runtime archive checksum is required\n' >&2
+  exit 1
+}
+if command -v shasum >/dev/null 2>&1; then
+  actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
+else
+  actual="$(sha256sum "$archive" | awk '{print $1}')"
+fi
+test "$actual" = "$expected" || {
+  printf 'runtime archive checksum mismatch\n' >&2
+  exit 1
+}
+tar -tzf "$archive" | while IFS= read -r entry; do
+  case "$entry" in runtime|runtime/*) ;; *) printf 'invalid archive path: %s\n' "$entry" >&2; exit 1 ;; esac
+  case "/$entry/" in */../*) printf 'invalid archive path: %s\n' "$entry" >&2; exit 1 ;; esac
 done
-test -n "$uv_bin" && test -x "$uv_bin" || {
-  printf 'missing build command: uv\n' >&2
-  exit 1
-}
-actual_uv_version="$($uv_bin --version | awk '{print $2}')"
-test "$actual_uv_version" = "$UV_VERSION" || {
-  printf 'uv version mismatch: expected %s, got %s\n' "$UV_VERSION" "$actual_uv_version" >&2
-  exit 1
-}
 
-"$repo_root/scripts/stage-release-assets.sh"
 rm -rf "$runtime_root"
-mkdir -p "$python_install_dir" "$wheel_dir"
-
-"$uv_bin" build --wheel --out-dir "$wheel_dir" "$repo_root"
-UV_PYTHON_INSTALL_DIR="$python_install_dir" \
-  "$uv_bin" python install "$PYTHON_VERSION" --install-dir "$python_install_dir" --no-bin
-python_bin="$(UV_PYTHON_INSTALL_DIR="$python_install_dir" \
-  "$uv_bin" python find --managed-python "$PYTHON_VERSION")"
-wheel="$(find "$wheel_dir" -maxdepth 1 -type f -name 'openprogram-*.whl' -print -quit)"
-test -n "$wheel" || {
-  printf 'OpenProgram wheel was not built\n' >&2
+mkdir -p "$(dirname "$runtime_root")"
+tar -C "$(dirname "$runtime_root")" -xzf "$archive"
+test -f "$runtime_root/runtime-manifest.json" || {
+  printf 'archive does not contain runtime/runtime-manifest.json\n' >&2
   exit 1
 }
-
-"$uv_bin" pip install --python "$python_bin" --strict --break-system-packages "$wheel[browser]"
-"$python_bin" -I -c 'import openprogram; import openprogram.webui.frontend; import playwright.sync_api'
-
-# uv creates a convenience alias whose target is the absolute staging path.
-# The versioned runtime path recorded below is self-contained; remove absolute
-# top-level aliases so no symlink can escape the final application bundle.
-while IFS= read -r -d '' python_alias; do
-  case "$(readlink "$python_alias")" in
-    /*) unlink "$python_alias" ;;
-  esac
-done < <(find "$python_install_dir" -maxdepth 1 -type l -print0)
-
-mkdir -p "$runtime_root/bin"
-cp "$uv_bin" "$runtime_root/bin/uv"
-chmod 0755 "$runtime_root/bin/uv"
-
-python_relative="${python_bin#"$runtime_root/"}"
-test "$python_relative" != "$python_bin" || {
-  printf 'managed Python resolved outside runtime: %s\n' "$python_bin" >&2
-  exit 1
-}
-package_version="$("$python_bin" -I -c 'from importlib.metadata import version; print(version("openprogram"))')"
-cat > "$runtime_root/runtime-manifest.json" <<EOF
-{"schema":1,"openprogram":"$package_version","python":"$python_relative","python_request":"$PYTHON_VERSION","uv":"$UV_VERSION"}
-EOF
-printf 'prepared desktop runtime for OpenProgram %s with %s\n' "$package_version" "$python_bin"
+python_relative="$(sed -n \
+  's/^[[:space:]]*"python":[[:space:]]*"\([^"]*\)".*/\1/p' \
+  "$runtime_root/runtime-manifest.json")"
+python_bin="$runtime_root/$python_relative"
+test -x "$python_bin"
+"$python_bin" -I "$runtime_root/bin/verify-product-runtime.py" "$runtime_root"
+printf 'prepared desktop from complete runtime archive: %s\n' "$archive"

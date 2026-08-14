@@ -2,20 +2,9 @@
 
 给一句自然语言任务，它自主操作桌面：截图、识别界面组件、点击、输入、验证结果，循环直到任务完成或达到步数上限。适用于本机桌面，也可以通过 VM 接口操作远程虚拟机。感知层是 YOLO 组件检测（GPA-GUI-Detector）+ OCR（macOS 用 Apple Vision，Linux / Windows 用 EasyOCR）+ 模板匹配；动作层覆盖鼠标、键盘、剪贴板。在 OSWorld 基准的 Multi-Apps 子集上得分 79.8%（[结果](https://github.com/Fzkuji/GUI-Agent-Harness/blob/main/benchmarks/osworld/multi_apps.md)）。
 
-## 安装
+## 可用性
 
-```bash
-openprogram programs install gui
-```
-
-这是三个第一方 workflow 里最重的一个：依赖包含 `torch` / `torchvision`、`opencv-python`、`ultralytics`、`easyocr`、`pynput` 等。在无 GPU 的 Linux 上会自动选择 CPU 版 torch wheel（约 300 MB），而不是约 3 GB 的 CUDA 构建。
-
-pip 依赖之外还需要模型文件——YOLO 检测器权重（经 `huggingface-hub` 下载）和 OCR 模型不在 PyPI 上。安装完成后运行 harness 自带的安装器获取它们：
-
-```bash
-openprogram/programs/applications/gui_harness/scripts/install.sh --no-host
-# Windows: ...\scripts\install.ps1 -NoHost
-```
+每个受支持的 release 都包含该 Program、PyTorch/OpenCV、Playwright Chromium、默认 EasyOCR 数据和固定 GPA detector 模型。安装 OpenProgram 后不需要再安装 Program 或模型。开发者可以使用 editable GUI harness checkout，或替换 OCR/Browser backend 进行调试和后端开发。
 
 ## 怎么用
 
@@ -39,9 +28,9 @@ openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 
 ## 依赖注意
 
-- PyTorch + OpenCV 体积大，安装耗时以分钟计；不需要 transformers / accelerate。
-- 模型权重是独立下载步骤（见上），漏掉它函数能注册但无法感知屏幕。
-- 平台：macOS / Windows / Linux；OCR 后端按平台自动选择。
+- PyTorch + OpenCV 占 release artifact 体积的主要部分之一；不包含 transformers / accelerate 依赖。
+- default OCR 数据或 detector 模型缺失时，release capability probe 会拒绝该 artifact。
+- 受支持的产品平台是 macOS 和 Linux；两者均可使用打包的 EasyOCR backend。
 - 运行前需要 runtime 配置好工作目录（截图与运行记录写在那里）。
 
 源码与 README：`openprogram/programs/applications/gui_harness/`，上游仓库 [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness)。

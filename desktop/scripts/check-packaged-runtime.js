@@ -8,14 +8,43 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-runtime-check-")
 try {
   const runtime = path.join(root, "runtime");
   const python = path.join(runtime, "python", "bin", "python3");
+  const playwright = path.join(runtime, "assets", "playwright");
+  const easyocr = path.join(runtime, "assets", "easyocr");
+  const detector = path.join(runtime, "assets", "gpa", "model.pt");
   fs.mkdirSync(path.dirname(python), { recursive: true });
+  fs.mkdirSync(playwright, { recursive: true });
+  fs.mkdirSync(easyocr, { recursive: true });
+  fs.mkdirSync(path.dirname(detector), { recursive: true });
   fs.writeFileSync(python, "");
+  fs.writeFileSync(detector, "model");
+  const capabilities = Object.fromEntries(
+    [
+      "web",
+      "providers",
+      "mcp",
+      "memory",
+      "channels",
+      "search",
+      "browser.playwright",
+      "ocr.default",
+      "model.gpa_detector",
+      "program.gui",
+      "program.research",
+      "program.wiki",
+    ].map((name) => [name, { present: true, verified: true }]),
+  );
   fs.writeFileSync(
     path.join(runtime, "runtime-manifest.json"),
     JSON.stringify({
-      schema: 1,
+      schema: 2,
       openprogram: "0.6.1",
       python: "python/bin/python3",
+      capabilities,
+      assets: {
+        playwright: "assets/playwright",
+        easyocr: "assets/easyocr",
+        gpa_detector: "assets/gpa/model.pt",
+      },
     }),
   );
   const launch = resolvePackagedWorker(root, "0.6.1");
@@ -24,6 +53,11 @@ try {
     launch.args,
     ["-I", "-B", "-m", "openprogram", "worker", "start"],
   );
+  assert.deepStrictEqual(launch.env, {
+    PLAYWRIGHT_BROWSERS_PATH: playwright,
+    EASYOCR_MODULE_PATH: easyocr,
+    GPA_MODEL_PATH: detector,
+  });
 
   assert.throws(
     () => resolvePackagedWorker(root, "0.6.2"),
@@ -33,9 +67,15 @@ try {
   fs.writeFileSync(
     path.join(runtime, "runtime-manifest.json"),
     JSON.stringify({
-      schema: 1,
+      schema: 2,
       openprogram: "0.6.1",
       python: "../../usr/bin/python3",
+      capabilities,
+      assets: {
+        playwright: "assets/playwright",
+        easyocr: "assets/easyocr",
+        gpa_detector: "assets/gpa/model.pt",
+      },
     }),
   );
   assert.throws(

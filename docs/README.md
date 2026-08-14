@@ -78,12 +78,10 @@ One **process-wide event bus** is the substrate under everything: the agent loop
 
 **macOS / Linux CLI or server release:**
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
-  | OPENPROGRAM_VERSION=0.6.1 sh
+curl -fsSL https://openprogram.io/install | sh
 ```
 
-Desktop users download the macOS DMG or Linux x86_64 AppImage from GitHub Releases. See **[install.md](install/install.md)** for verification, platform scope, and source-development installation.
+macOS desktop users download the unsigned DMG from [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases). Linux users install the complete CLI/server runtime and use its Web UI or TUI; no Linux desktop package is published until a complete package passes the public-entry gate. All supported release installations contain the same complete product capabilities. See **[install.md](install/install.md)** for verification, platform scope, and source-development installation.
 
 ### 2. Run
 
@@ -93,16 +91,17 @@ openprogram
 
 First run sets up your provider, then asks which surface to open. Skip the prompt with `openprogram tui` (terminal) or `openprogram web` (browser → http://localhost:18100).
 
-### 3. Add a harness
+### 3. Included Programs and additional harnesses
 
-Harnesses are programs under `openprogram/programs/agentic_functions/`. Install them with `openprogram programs install <name-or-git-source>`: the command clones or verifies the repository, records its owner-approved source, and makes it available after the next worker restart. A directory copied there without this install step is not imported.
+Every supported release installation already includes the three first-party Programs and their default runtime assets:
 
-| Harness | Install | What it does |
+| Program | Release status | What it does |
 |---|---|---|
-| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | `openprogram programs install gui` (pulls PyTorch), then its installer for the detector/OCR assets — **[guide](https://github.com/Fzkuji/GUI-Agent-Harness#1-install)** | Drives desktop apps & OSWorld VMs by vision. |
-| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | `openprogram programs install research` | Literature survey → experiments → paper draft. |
-| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | `openprogram programs install wiki` | Turns notes / docs / chats into an Obsidian vault with `[[wikilinks]]`. |
-| **Any third-party harness** | `openprogram programs install <owner>/<repo>` (or a full git URL) | Same flow — clone, deps, contract check, and owner source registration. |
+| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Included with PyTorch, default OCR, and the detector model | Drives desktop apps & OSWorld VMs by vision. |
+| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | Included | Literature survey → experiments → paper draft. |
+| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | Included | Turns notes / docs / chats into an Obsidian vault with `[[wikilinks]]`. |
+
+Third-party harnesses are additional functionality. Mutable extension environments use `openprogram programs install <owner>/<repo>` (or a full git URL); source editing and replacement OCR/browser backends are developer features.
 
 Writing your own installable harness is one layout contract away — the
 full guide (install, manage, author, test, publish) is

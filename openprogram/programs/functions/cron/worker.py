@@ -1,7 +1,7 @@
-"""cron-worker — foreground loop that fires cron entries.
+"""Scheduler worker for one-time, recurring, and monitor tasks.
 
-Reads the schedule file produced by the ``cron`` tool every minute. For
-each entry whose 5-field expression matches the current minute, spawns a
+Reads the task file produced by the ``scheduler`` tool every minute. For
+each due entry, spawns a
 detached subprocess running the entry's ``prompt`` via
 ``openprogram deep-work``. Per-entry stdout/stderr lands in
 ``<schedule_dir>/logs/<entry_id>-<timestamp>.log``. Last-fired minute per
@@ -10,9 +10,9 @@ restart within the same minute doesn't re-fire already-fired entries.
 
 Usage:
 
-    openprogram cron-worker            # run forever (foreground)
-    openprogram cron-worker --once     # evaluate one tick and exit
-    openprogram cron-worker --list     # show whether entries match now
+    openprogram scheduler-worker            # run forever (foreground)
+    openprogram scheduler-worker --once     # evaluate one tick and exit
+    openprogram scheduler-worker --list     # show whether entries match now
 
 Design notes:
 
@@ -36,14 +36,16 @@ import multiprocessing
 import os
 import signal
 import subprocess
-import sys
+import tempfile
 import time
+import threading
+import uuid
 from typing import Any
 
 from openprogram.backend.local import _invocation
 from openprogram import sandbox as _sandbox
 
-from .cron import _load, _resolve_path, _verify_execution_spec
+from .cron import _load, _resolve_path, _store_lock, _verify_execution_spec
 
 
 _MACRO_EXPANSIONS = {
@@ -63,6 +65,27 @@ def _expand(expr: str) -> str | None:
     if e == "@reboot":
         return None
     return _MACRO_EXPANSIONS.get(e, expr)
+
+
+def valid_cron(expr: str) -> bool:
+    """Return whether the worker can parse and execute an expression."""
+    expanded = _expand(expr)
+    if expanded is None:
+        return expr.strip().lower() == "@reboot"
+    parts = expanded.split()
+    if len(parts) != 5:
+        return False
+    try:
+        values = (
+            _parse_field(parts[0], 0, 59),
+            _parse_field(parts[1], 0, 23),
+            _parse_field(parts[2], 1, 31),
+            _parse_field(parts[3], 1, 12),
+            _parse_field(parts[4], 0, 7),
+        )
+    except (ValueError, IndexError):
+        return False
+    return all(values)
 
 
 def _parse_field(field: str, low: int, high: int) -> set[int]:
@@ -152,7 +175,7 @@ def _logs_dir() -> str:
     return os.path.join(_schedule_dir(), "logs")
 
 
-def _load_state() -> dict[str, str]:
+def _load_state() -> dict[str, Any]:
     try:
         with open(_state_path(), "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -161,11 +184,22 @@ def _load_state() -> dict[str, str]:
     return data if isinstance(data, dict) else {}
 
 
-def _save_state(state: dict[str, str]) -> None:
+def _save_state(state: dict[str, Any]) -> None:
     path = _state_path()
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2, ensure_ascii=False)
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix="worker-state-", dir=directory)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(state, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def _run_prompt_job(spec: dict[str, Any], log_path: str) -> None:
@@ -189,17 +223,25 @@ def _run_prompt_job(spec: dict[str, Any], log_path: str) -> None:
                     "policy": _sandbox.policy_to_dict(policy),
                 })
                 job_authority = spec["job_authority"]
+                prompt = spec["prompt"]
+                memory_refs = spec.get("memory_refs") or []
+                if memory_refs:
+                    from openprogram.memory.references import render_context
+
+                    context = render_context(memory_refs)
+                    if context:
+                        prompt = f"{prompt}\n\n{context}"
                 from openprogram.agent.dispatcher import TurnRequest, process_user_turn
                 result = process_user_turn(TurnRequest(
                     session_id=spec["session_id"],
-                    user_text=spec["prompt"],
+                    user_text=prompt,
                     agent_id=spec["agent_id"],
-                    source="cron",
+                    source="scheduler",
                     permission_mode=spec["permission_mode"],
                     advance_head=False,
                     speaker_kind="runtime",
-                    speaker_id="runtime/cron",
-                    speaker_display="cron",
+                    speaker_id="runtime/scheduler",
+                    speaker_display="scheduler",
                     principal_id=job_authority["principal_id"],
                     authority_tier=job_authority["authority_tier"],
                     interaction="non-interactive",
@@ -273,45 +315,106 @@ def _spawn(entry: dict[str, Any], log_dir: str) -> Any | None:
     return proc
 
 
-def _run_commitment_heartbeat(now: dt.datetime) -> int:
-    """Run the built-in reminder check; invalid state is fail-safe."""
-    try:
-        from openprogram import memory, setup
-        from openprogram.memory import store
-        from openprogram.proactive.heartbeat import (
-            DEFAULT_QUIET_HOURS,
-            cadence_due,
-            run_heartbeat,
-            target_for_source,
-        )
+def _last_stamp(state: dict[str, Any], entry_id: str) -> str | None:
+    value = state.get(entry_id)
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        stamp = value.get("last_fired_minute")
+        return stamp if isinstance(stamp, str) else None
+    return None
 
-        config = setup._read_config()
-        proactive = config.get("proactive") or {}
-        if not isinstance(proactive, dict):
-            return 0
-        cadence = proactive.get("heartbeat", "daily")
-        if not memory.is_enabled() or not cadence_due(cadence, now):
-            return 0
-        quiet_hours = proactive.get("quiet_hours", DEFAULT_QUIET_HOURS)
-        from openprogram.channels.outbound import send
 
-        return run_heartbeat(
-            store.ensure(),
-            now=now,
-            quiet_hours=quiet_hours,
-            target_for_source=target_for_source,
-            send=lambda target, text: send(*target, text),
-        )
-    except Exception as exc:  # noqa: BLE001 — one bad reminder cannot stop cron
-        print(
-            f"[commitment-heartbeat] skipped: {type(exc).__name__}: {exc}",
-            file=sys.stderr,
-        )
-        return 0
+def _entry_due(
+    entry: dict[str, Any], now: dt.datetime, state: dict[str, Any], *, reboot: bool,
+) -> bool:
+    if entry.get("enabled", True) is False:
+        return False
+    entry_id = str(entry.get("id") or "")
+    if not entry_id:
+        return False
+    stamp = now.strftime("%Y-%m-%dT%H:%M")
+    task_type = entry.get("type")
+    if task_type == "once":
+        if reboot or _last_stamp(state, entry_id) is not None:
+            return False
+        try:
+            due = dt.datetime.fromisoformat(
+                str(entry.get("run_at") or "").replace("Z", "+00:00")
+            )
+        except ValueError:
+            return False
+        if due.tzinfo is None:
+            return False
+        current = now if now.tzinfo is not None else now.astimezone()
+        return current.astimezone(dt.timezone.utc) >= due.astimezone(dt.timezone.utc)
+    expr = str(entry.get("cron") or "").strip()
+    if not expr:
+        return False
+    if reboot:
+        return expr.lower() == "@reboot"
+    return match(expr, now) and _last_stamp(state, entry_id) != stamp
+
+
+def _claim_entry(
+    entry: dict[str, Any], now: dt.datetime, *, reboot: bool,
+) -> tuple[str, bool, Any, dict[str, Any]] | None:
+    """Persist an exclusive execution claim before starting a task."""
+    entry_id = str(entry.get("id") or "")
+    path = _state_path()
+    with _store_lock(path):
+        shared = _load_state()
+        if not _entry_due(entry, now, shared, reboot=reboot):
+            return None
+        had_previous = entry_id in shared
+        previous = shared.get(entry_id)
+        token = uuid.uuid4().hex
+        claim = {
+            "last_fired_minute": now.strftime("%Y-%m-%dT%H:%M"),
+            "last_started_at": now.isoformat(),
+            "claim_token": token,
+            "status": "starting",
+        }
+        shared[entry_id] = claim
+        _save_state(shared)
+    return token, had_previous, previous, claim
+
+
+def _release_claim(
+    entry_id: str, token: str, *, had_previous: bool, previous: Any,
+) -> bool:
+    path = _state_path()
+    with _store_lock(path):
+        shared = _load_state()
+        current = shared.get(entry_id)
+        if not isinstance(current, dict) or current.get("claim_token") != token:
+            return False
+        if had_previous:
+            shared[entry_id] = previous
+        else:
+            shared.pop(entry_id, None)
+        _save_state(shared)
+    return True
+
+
+def _complete_claim(entry_id: str, token: str) -> dict[str, Any] | None:
+    path = _state_path()
+    with _store_lock(path):
+        shared = _load_state()
+        current = shared.get(entry_id)
+        if not isinstance(current, dict) or current.get("claim_token") != token:
+            return None
+        completed = {
+            key: value for key, value in current.items()
+            if key not in {"claim_token", "status"}
+        }
+        shared[entry_id] = completed
+        _save_state(shared)
+    return completed
 
 
 def _tick(
-    state: dict[str, str],
+    state: dict[str, Any],
     *,
     reboot: bool = False,
     now: dt.datetime | None = None,
@@ -322,8 +425,6 @@ def _tick(
     ``@reboot`` entries are considered; normal clock matching is skipped.
     """
     now = (now or dt.datetime.now()).replace(second=0, microsecond=0)
-    if not reboot:
-        _run_commitment_heartbeat(now)
     entries = _load(_resolve_path())
     if not entries:
         return 0
@@ -332,68 +433,129 @@ def _tick(
     fired = 0
     for entry in entries:
         eid = entry.get("id")
-        expr = (entry.get("cron") or "").strip()
-        if not eid or not expr:
+        if not eid:
             continue
-        if reboot:
-            should_fire = expr.lower() == "@reboot"
-        else:
-            should_fire = match(expr, now) and state.get(eid) != stamp
+        should_fire = _entry_due(entry, now, state, reboot=reboot)
         if not should_fire:
             continue
-        proc = _spawn(entry, log_dir)
-        if proc is None:
+        try:
+            claimed = _claim_entry(entry, now, reboot=reboot)
+        except Exception as exc:  # noqa: BLE001 — state failure is task-local
+            print(f"[{stamp}] claim failed {eid}: {type(exc).__name__}: {exc}")
             continue
-        if not reboot:
-            state[eid] = stamp
+        if claimed is None:
+            continue
+        token, had_previous, previous, claim = claimed
+        state[eid] = claim
+        proc = None
+        try:
+            proc = _spawn(entry, log_dir)
+        except Exception as exc:  # noqa: BLE001 — one task must not stop Scheduler
+            print(f"[{stamp}] failed {eid}: {type(exc).__name__}: {exc}")
+        if proc is None:
+            try:
+                released = _release_claim(
+                    str(eid), token,
+                    had_previous=had_previous,
+                    previous=previous,
+                )
+            except Exception as exc:  # noqa: BLE001 — claim blocks duplicates
+                print(
+                    f"[{stamp}] claim release failed {eid}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+            else:
+                if released:
+                    if had_previous:
+                        state[eid] = previous
+                    else:
+                        state.pop(eid, None)
+            continue
+        try:
+            completed = _complete_claim(str(eid), token)
+        except Exception as exc:  # noqa: BLE001 — claim still blocks duplicates
+            print(
+                f"[{stamp}] claim completion failed {eid}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        else:
+            if completed is not None:
+                state[eid] = completed
         fired += 1
         execution = entry.get("execution") or {}
         spec_kind = execution.get("kind")
         body = execution.get(spec_kind) or ""
         kind = "$" if spec_kind == "command" else ">"
-        print(f"[{stamp}] fire {eid}  pid={proc.pid}  ({expr}) {kind} {body[:60]}")
+        schedule = entry.get("run_at") or entry.get("cron") or ""
+        print(f"[{stamp}] fire {eid}  pid={proc.pid}  ({schedule}) {kind} {body[:60]}")
     return fired
 
 
-def run_forever() -> None:
+def run_forever(stop_event: threading.Event | None = None) -> None:
     """Run the worker loop until SIGINT/SIGTERM."""
     stop = {"flag": False}
 
     def _on_signal(_signum: int, _frame: Any) -> None:
         stop["flag"] = True
 
-    signal.signal(signal.SIGINT, _on_signal)
-    signal.signal(signal.SIGTERM, _on_signal)
+    if stop_event is None:
+        signal.signal(signal.SIGINT, _on_signal)
+        signal.signal(signal.SIGTERM, _on_signal)
 
-    print(f"cron-worker started. schedule={_resolve_path()}  logs={_logs_dir()}")
+    print(f"scheduler-worker started. schedule={_resolve_path()}  logs={_logs_dir()}")
     print("press Ctrl+C to stop.")
 
     state = _load_state()
-    if _tick(state, reboot=True):
-        _save_state(state)
+    _tick(state, reboot=True)
 
-    while not stop["flag"]:
+    while not stop["flag"] and not (stop_event and stop_event.is_set()):
         now = dt.datetime.now()
         remain = 60 - now.second - now.microsecond / 1_000_000
         # Break sleep into 1s chunks so signals are responsive
-        while remain > 0 and not stop["flag"]:
+        while remain > 0 and not stop["flag"] and not (stop_event and stop_event.is_set()):
             chunk = min(1.0, remain)
             time.sleep(chunk)
             remain -= chunk
-        if stop["flag"]:
+        if stop["flag"] or (stop_event and stop_event.is_set()):
             break
-        if _tick(state):
-            _save_state(state)
+        _tick(state)
 
-    print("\ncron-worker stopped.")
+    print("\nscheduler-worker stopped.")
 
 
 def run_once() -> int:
     """One-shot tick. Useful for testing / external schedulers."""
     state = _load_state()
     fired = _tick(state)
-    _save_state(state)
     return fired
+
+
+def start_in_worker() -> tuple[threading.Event, threading.Thread]:
+    """Start Scheduler in the persistent OpenProgram worker process."""
+    try:
+        from openprogram import memory
+
+        if memory.is_enabled():
+            from openprogram.agent.authority import local_owner_authority
+            from openprogram.memory import store
+            from openprogram.scheduler.migration import migrate_legacy_commitments
+
+            migrate_legacy_commitments(
+                memory_root=store.ensure(),
+                cwd=os.getcwd(),
+                authority=local_owner_authority(),
+            )
+    except Exception as exc:  # noqa: BLE001 — migration must not stop worker startup
+        print(f"[scheduler] legacy migration skipped: {type(exc).__name__}: {exc}")
+    stop = threading.Event()
+    thread = threading.Thread(
+        target=run_forever,
+        args=(stop,),
+        daemon=True,
+        name="scheduler-worker",
+    )
+    thread.start()
+    return stop, thread
 
 
 def list_next() -> None:
@@ -413,4 +575,7 @@ def list_next() -> None:
         print(f"  {e.get('id','?')}  {expr:20s}  {tag}  {kind} {body}")
 
 
-__all__ = ["match", "run_forever", "run_once", "list_next"]
+__all__ = [
+    "valid_cron", "match", "run_forever", "run_once", "list_next",
+    "start_in_worker",
+]

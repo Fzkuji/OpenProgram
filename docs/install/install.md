@@ -7,8 +7,8 @@ OpenProgram has separate release installations for desktop users and CLI/server 
 | Platform | Desktop | CLI / Server | Browser client |
 |---|---|---|---|
 | macOS arm64 / x64 | DMG | Supported | Local or remote |
-| Linux x86_64 | AppImage | Supported | Local or remote |
-| Linux arm64 | No desktop artifact | Supported | Local or remote |
+| Linux x86_64 | No published desktop artifact | Supported | Local or remote |
+| Linux arm64 | No published desktop artifact | Supported | Local or remote |
 | Windows | Not supported | Not supported | May connect to a supported remote host |
 | iOS / Android / iPadOS | No native app | Not applicable | May connect to a supported remote host; mobile layout is not a support commitment |
 
@@ -16,38 +16,29 @@ Only artifacts attached to a published [GitHub Release](https://github.com/Fzkuj
 
 ## Desktop installation
 
-Desktop artifacts contain Electron, a managed CPython runtime, OpenProgram's Python dependencies, and the prebuilt Web UI. They do not use a system Python, Node.js, or Git at runtime.
+The supported macOS desktop artifact contains Electron and the complete platform product runtime. The runtime includes managed CPython, OpenProgram, the prebuilt Web UI, providers, channels, search, Playwright Chromium, default OCR/model data, and the GUI, Research, and Wiki first-party Programs. It does not use a system Python, Node.js, or Git at runtime. Linux currently uses the complete CLI/server release because the complete AppImage failed its packaging gate; no reduced Linux desktop artifact is published.
 
 ### macOS
 
-1. Download the DMG for the machine architecture from GitHub Releases.
+1. Download the DMG whose name contains `unsigned` for the machine architecture from GitHub Releases.
 2. Verify its SHA-256 against the release checksum file.
 3. Open the DMG and copy `OpenProgram.app` to `/Applications`.
-4. Start OpenProgram from Applications. The published app must pass Gatekeeper validation.
-
-### Linux x86_64
-
-1. Download the x86_64 AppImage and checksum file from GitHub Releases.
-2. Verify the SHA-256.
-3. Make the file executable and start it:
-
-```bash
-chmod u+x OpenProgram-*-linux-x86_64.AppImage
-./OpenProgram-*-linux-x86_64.AppImage
-```
-
-The AppImage does not require root. A Linux arm64 desktop artifact is not currently published.
+4. Start OpenProgram from Applications. Because the current release is not signed with Apple Developer ID, macOS may block the first launch. Open **System Settings → Privacy & Security**, find the OpenProgram notice, and select **Open Anyway**. The checksum verifies the downloaded bytes; the app is not Apple-verified.
 
 ## CLI and server installation
 
-The release installer supports macOS and Linux. It installs a pinned uv binary, a managed CPython runtime, and one exact OpenProgram wheel under `~/.openprogram/runtime/cli/releases/<version>`. It does not clone the repository or build JavaScript.
+The release installer supports macOS and Linux. It downloads the complete platform runtime archive, verifies its SHA-256 and capability manifest, and installs it under `~/.openprogram/runtime/cli/releases/<version>`. On macOS, the same archive is also the Desktop build input. It does not resolve product dependencies, clone the repository, or build JavaScript on the user's machine.
 
-Use the installer from the same immutable release tag as the package version:
+Install the latest stable release:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
-  | OPENPROGRAM_VERSION=0.6.1 sh
+curl -fsSL https://openprogram.io/install | sh
+```
+
+The short bootstrap resolves the latest stable GitHub Release and then runs the installer from that immutable tag. For a reproducible install of a specific release, pass the version to the shell process:
+
+```bash
+curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
 The command creates `~/.local/bin/openprogram`. If that directory is not already on `PATH`, invoke it by its absolute path or add the directory to the shell configuration.
@@ -60,13 +51,13 @@ Before switching `current`, the installer automatically runs the version probe a
 ~/.local/bin/openprogram doctor
 ```
 
-The Web UI is served at `http://localhost:18100`. The released wheel contains the prebuilt Web UI, so Node.js is not required. `doctor` checks the complete working environment; it may return non-zero before a provider is configured, while the persistent worker is stopped, or when development tools are absent. Those results do not mean the base release installation failed.
+The Web UI is served at `http://localhost:18100`. The runtime contains the prebuilt Web UI, so Node.js is not required. Before activation, the installer verifies Web, providers, MCP, memory, channels, search, Chromium, OCR/model data, and all three first-party Programs. `doctor` may still report missing user configuration such as provider credentials.
 
-## Programs and optional components
+## Included product and additional extensions
 
-Agent programs are not part of the base desktop or CLI artifact. Use `openprogram programs install <name-or-git-source>` only in an installation whose Program environment support is documented by that release. The current Program installer modifies its active Python environment, so it is not enabled as a supported operation inside an immutable desktop package yet.
+GUI Agent, Research Agent, and Wiki Agent are part of every supported release installation. Their Python dependencies, default OCR data, GPA detector model, and Playwright Chromium are included and require no first-use installation.
 
-Browser models, GUI-agent weights, OCR data, and third-party Programs may require separate downloads. Their absence does not invalidate the base installation.
+Third-party Programs are additional user-selected functionality and are stored separately from the read-only product runtime. Editable first-party Program sources, diagnostics, local frontend builds, and replacement OCR/browser backends are developer additions; they are not required to make a normal installation complete.
 
 ## Development checkout
 
@@ -78,13 +69,13 @@ cd OpenProgram
 ./scripts/install.sh
 ```
 
-This development installer may install toolchains, use an editable Python package, and build the Web and Ink interfaces with npm. It is not the recommended installation for ordinary users and does not define the `stable` channel.
+This development installer installs the same product capabilities, then adds toolchains, editable sources, tests, diagnostics, local Web/Ink builds, and backend replacement options. It is not the recommended installation for ordinary users and does not define the `stable` channel.
 
 ## Data and removal
 
 Configuration, sessions, logs, Programs, and caches live under `~/.openprogram`; replacing the desktop application or CLI runtime does not delete them.
 
-- Desktop: remove `OpenProgram.app` or the downloaded AppImage.
+- macOS Desktop: remove `OpenProgram.app`.
 - CLI runtime: remove `~/.local/bin/openprogram` and `~/.openprogram/runtime/cli`.
 - User data is removed only by an explicit purge of `~/.openprogram` after backup.
 

@@ -17,16 +17,11 @@ Release builds stage the Web export, build an OpenProgram wheel, install it into
 a uv-managed portable CPython runtime, and include that runtime under Electron
 resources:
 
-    npm run dist:dir    # unpacked artifact for the current platform
-    npm run dist:mac    # DMG + ZIP; requires signing/notarization credentials
-    npm run dist:linux  # x86_64 AppImage on a Linux builder
+    npm run dist:dir    # developer-only unpacked artifact
+    npm run dist:mac    # explicitly unsigned DMG + ZIP
 
 Packaged builds never fall back to `PATH`, system Python, conda, or the source
-checkout. macOS and Linux artifacts must be produced on native runners.
-
-The tag workflow reads macOS credentials from the protected `release`
-environment: `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`,
-`APPLE_API_KEY` (the raw `.p8` contents), `APPLE_API_KEY_ID`,
-`APPLE_API_ISSUER`, and `APPLE_TEAM_ID`. It notarizes the signed app during
-the Electron build, then submits and staples the final DMG container before
-uploading artifacts.
+checkout. The tag workflow builds explicitly unsigned macOS artifacts and uses
+no Apple signing or notarization credentials. Linux source development can run
+Electron directly, but no Linux desktop artifact is published until a complete
+packaged public-entry gate passes.

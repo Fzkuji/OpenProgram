@@ -155,12 +155,12 @@ parameter — it is filtered out of the spec — and never supplies it.
 
 ## Relationship to a full install
 
-There is one `pip install openprogram`, and embedding uses only its library
-face. The web UI and the terminal UI ship in the same package, but the
-embedded path never imports them — the acceptance tests in `tests/embed/`
-fail if it ever does — so they stay inert, and a deployment that strips
-FastAPI, Uvicorn, or Textual still runs the library face. Start the platform
-later and nothing about your embedded code changes.
+Embedding is a developer integration mode, not a reduced end-user edition.
+Use the complete source-development installation; it includes the same Web,
+terminal, provider, channel, search, browser, and first-party Program baseline
+as a release. The embedded import path uses only the library API and does not
+start the Web UI or TUI. Acceptance tests in `tests/embed/` enforce that import
+boundary, while the installed product remains complete.
 
 ## Host integration seams
 

@@ -28,26 +28,7 @@ def render_writer_task(
             f"## Observed {session['observation_date']}\n\n"
             f"{render_conversation(session['turns'], session['refs'])}"
         )
-    open_rows: list[dict[str, Any]] = []
-    if memory_dir is not None:
-        from ..runtime.commitments import commitment_status
-
-        open_rows = [
-            row
-            for row in commitment_status(memory_dir)["records"]
-            if row.get("status") == "open"
-        ]
-    commitments = (
-        "\n\nOpen commitments (close one only when this batch says it was "
-        "completed or should be dismissed):\n"
-        + "\n".join(
-            json.dumps(row, ensure_ascii=False, separators=(",", ":"))
-            for row in open_rows
-        )
-        if open_rows
-        else ""
-    )
-    return WRITE_MEMORY.format(sessions="\n\n".join(rendered)) + commitments
+    return WRITE_MEMORY.format(sessions="\n\n".join(rendered))
 
 
 def render_writer_input(sessions: list[dict[str, Any]]) -> str:

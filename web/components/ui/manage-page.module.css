@@ -1,5 +1,5 @@
-/* Shared chrome for the three "manage a list of extensions" pages:
-   /skills, /mcp, /plugins. Extracted verbatim from
+/* Shared chrome for management pages such as /skills, /mcp, /plugins
+   and /scheduler. Extracted verbatim from
    skills-page.module.css (the most complete of the three) so all
    three share ONE topbar height, ONE tab pill, ONE row geometry.
 

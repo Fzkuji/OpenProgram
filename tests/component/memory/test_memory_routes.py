@@ -158,96 +158,14 @@ def test_status_route_returns_the_inspect_status_contract(
     assert seen["include_path"] is True
 
 
-def test_commitment_transition_reuses_revision_checked_workspace(client, memory):
-    from openprogram.memory.management.transaction import workspace_revision
-    from openprogram.memory.runtime.commitments import load_commitments
-
-    row = {
-        "id": "com_0123456789abcdef",
-        "text": "Submit the rebuttal.",
-        "due": "2026-08-12",
-        "speaker_id": "owner/local",
-        "source": "openprogram/session-1/message-1",
-        "source_quote": "I will submit the rebuttal by Wednesday.",
-        "status": "open",
-        "status_source": None,
-        "status_source_quote": None,
-        "status_changed_at": None,
-        "notification_steps": [],
-    }
-    (memory / "commitments.jsonl").write_text(
-        json.dumps(row) + "\n", encoding="utf-8"
-    )
-    revision = workspace_revision(memory)
-
-    response = client.post(
-        "/api/memory/commitments/transition",
-        json={
-            "base_revision": revision,
-            "id": row["id"],
-            "status": "done",
-        },
-    )
-
-    assert response.status_code == 200, response.text
-    assert response.json()["commitments"]["counts"]["done"] == 1
-    changed = load_commitments(memory)[0]
-    assert changed["status"] == "done"
-    assert changed["status_source"] == "owner/manual"
-
-
-def test_commitment_transition_rejects_stale_revision(client, memory):
-    row = {
-        "id": "com_0123456789abcdef",
-        "text": "Submit the rebuttal.",
-        "due": "2026-08-12",
-        "speaker_id": "owner/local",
-        "source": "openprogram/session-1/message-1",
-        "source_quote": "I will submit the rebuttal by Wednesday.",
-        "status": "open",
-        "status_source": None,
-        "status_source_quote": None,
-        "status_changed_at": None,
-        "notification_steps": [],
-    }
-    (memory / "commitments.jsonl").write_text(
-        json.dumps(row) + "\n", encoding="utf-8"
-    )
-
-    response = client.post(
-        "/api/memory/commitments/transition",
-        json={
-            "base_revision": "stale",
-            "id": row["id"],
-            "status": "dismissed",
-        },
-    )
-
-    assert response.status_code == 409, response.text
-    assert response.json()["error"]["code"] == "CONCURRENT_UPDATE"
-    assert json.loads((memory / "commitments.jsonl").read_text())["status"] == "open"
-
-
-@pytest.mark.parametrize(
-    ("body", "content_type"),
-    [
-        ("not-json", "application/json"),
-        ("[]", "application/json"),
-    ],
-)
-def test_commitment_transition_rejects_malformed_json_payload(
-    client,
-    body,
-    content_type,
-):
-    response = client.post(
-        "/api/memory/commitments/transition",
-        content=body,
-        headers={"content-type": content_type},
-    )
-
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == "INVALID_ARGUMENT"
+def test_memory_refs_expose_stable_block_identity(client):
+    response = client.get("/api/memory/refs?q=worth")
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 1
+    assert rows[0]["memory_id"] == "abc12345"
+    assert rows[0]["topic_path"] == "note.md"
+    assert rows[0]["workspace_id"].startswith("w-")
 
 
 # ---- a save either lands whole or not at all --------------------------

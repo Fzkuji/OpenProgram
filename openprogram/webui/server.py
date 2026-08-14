@@ -1718,6 +1718,11 @@ def create_app(*, owner_auth=None, port: int = 18100):
     from openprogram.webui.routes import memory as _routes_memory
     _routes_memory.register(app)
 
+    # Scheduler task CRUD — independent from Memory; tasks may hold read-only
+    # MemoryRefs but their lifecycle is owned here.
+    from openprogram.webui.routes import scheduler as _routes_scheduler
+    _routes_scheduler.register(app)
+
     # /api/sessions/{id}/export — download a session as Markdown / HTML
     from openprogram.webui.routes import export as _routes_export
     _routes_export.register(app)

@@ -2,13 +2,9 @@
 
 个人知识库 agent：把会话、笔记灌进一个模板驱动的 HTML wiki。页面是真实的 HTML 文件，任何浏览器直接打开、可静态托管、可用 git 管版本；agent 只往固定模板的具名 slot 里填内容，从不手写 HTML / CSS。自带全文搜索、文件夹自动索引（每个文件夹的 `README.html` 由当前内容自动生成）和整理式 ingest 流水线。
 
-## 安装
+## 可用性
 
-```bash
-openprogram programs install wiki
-```
-
-依赖极小：Jinja2 + PyYAML。模板 shell 用 Jinja2 + Bootstrap 5（CDN 引入），零构建步骤，不需要 Node。
+每个受支持的 release 都包含该 Program、Jinja2 和 PyYAML，不需要另行安装 Program。模板 shell 使用 Jinja2 + Bootstrap 5（CDN 引入），不需要 Node build。
 
 ## 怎么用
 

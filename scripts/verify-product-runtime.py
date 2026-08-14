@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+"""Write or verify the complete OpenProgram product-runtime manifest."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib
+import importlib.metadata
+import json
+import os
+import platform
+import sys
+from pathlib import Path
+
+
+def _relative_file(root: Path, value: str, label: str) -> Path:
+    path = (root / value).resolve()
+    try:
+        path.relative_to(root.resolve())
+    except ValueError as exc:
+        raise RuntimeError(f"{label} escapes the runtime: {value}") from exc
+    if not path.is_file():
+        raise RuntimeError(f"{label} is missing: {path}")
+    return path
+
+
+def _relative_dir(root: Path, value: str, label: str) -> Path:
+    path = (root / value).resolve()
+    try:
+        path.relative_to(root.resolve())
+    except ValueError as exc:
+        raise RuntimeError(f"{label} escapes the runtime: {value}") from exc
+    if not path.is_dir():
+        raise RuntimeError(f"{label} is missing: {path}")
+    return path
+
+
+def _probe(root: Path, product: dict) -> dict[str, dict[str, object]]:
+    assets = {
+        "playwright": "assets/playwright",
+        "easyocr": "assets/easyocr",
+        "gpa_detector": "assets/gpa/model.pt",
+    }
+    playwright_root = _relative_dir(root, assets["playwright"], "Playwright data")
+    easyocr_root = _relative_dir(root, assets["easyocr"], "EasyOCR data")
+    gpa_model = _relative_file(root, assets["gpa_detector"], "GPA detector")
+    if gpa_model.stat().st_size == 0:
+        raise RuntimeError("GPA detector model is empty")
+    if not any(easyocr_root.rglob("*.pth")):
+        raise RuntimeError("EasyOCR model data is missing")
+
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(playwright_root)
+    os.environ["EASYOCR_MODULE_PATH"] = str(easyocr_root)
+    os.environ["GPA_MODEL_PATH"] = str(gpa_model)
+
+    gui = product["programs"]["gui"]
+    for distribution, key in (("torch", "torch"), ("torchvision", "torchvision")):
+        actual = importlib.metadata.version(distribution).split("+", 1)[0]
+        if actual != gui[key]:
+            raise RuntimeError(
+                f"{distribution} version mismatch: expected {gui[key]}, got {actual}"
+            )
+
+    importlib.import_module("openprogram")
+    frontend = importlib.import_module("openprogram.webui.frontend")
+    if not (frontend.out_dir() / "index.html").is_file():
+        raise RuntimeError("prebuilt Web index is missing")
+    for module in (
+        "openprogram.providers",
+        "openprogram.mcp",
+        "openprogram.memory",
+        "qrcode",
+        "discord",
+        "slack_sdk",
+        "semble",
+        "easyocr",
+        "pymupdf",
+    ):
+        importlib.import_module(module)
+
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser_executable = Path(playwright.chromium.executable_path).resolve()
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_content("<title>OpenProgram runtime probe</title>")
+        if page.title() != "OpenProgram runtime probe":
+            raise RuntimeError("Playwright Chromium page probe failed")
+        browser.close()
+    if not browser_executable.is_file():
+        raise RuntimeError(f"Playwright Chromium is missing: {browser_executable}")
+    try:
+        browser_executable.relative_to(playwright_root.resolve())
+    except ValueError as exc:
+        raise RuntimeError("Playwright Chromium resolved outside the runtime") from exc
+
+    from openprogram.programs._programs import import_installed_programs
+
+    registered = set(import_installed_programs())
+    expected_programs = {
+        "gui": "gui_agent",
+        "research": "research_agent",
+        "wiki": "wiki_agent",
+    }
+    for name, function in expected_programs.items():
+        program = product["programs"][name]
+        importlib.import_module(program["import"])
+        if function not in registered:
+            raise RuntimeError(f"first-party Program did not register: {function}")
+
+    return {
+        capability: {"present": True, "verified": True}
+        for capability in product["capabilities"]
+    }
+
+
+def _read_json(path: Path) -> dict:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"expected JSON object: {path}")
+    return payload
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("runtime_root", type=Path)
+    parser.add_argument("--write", action="store_true")
+    parser.add_argument("--python-relative")
+    parser.add_argument("--openprogram-version")
+    parser.add_argument("--uv-version")
+    args = parser.parse_args()
+
+    root = args.runtime_root.resolve()
+    product_path = root / "product-runtime.json"
+    lock_path = root / "product-uv.lock"
+    product = _read_json(product_path)
+    if product.get("schema") != 1:
+        raise RuntimeError("unsupported product manifest schema")
+
+    manifest_path = root / "runtime-manifest.json"
+    if args.write:
+        if not all(
+            (args.python_relative, args.openprogram_version, args.uv_version)
+        ):
+            parser.error("--write requires Python, OpenProgram, and uv versions")
+        _relative_file(root, args.python_relative, "managed Python")
+        capabilities = _probe(root, product)
+        manifest = {
+            "schema": 2,
+            "openprogram": args.openprogram_version,
+            "python": args.python_relative,
+            "python_request": product["python"],
+            "uv": args.uv_version,
+            "platform": platform.system().lower(),
+            "architecture": platform.machine().lower(),
+            "product_manifest_sha256": hashlib.sha256(
+                product_path.read_bytes()
+            ).hexdigest(),
+            "product_lock_sha256": hashlib.sha256(lock_path.read_bytes()).hexdigest(),
+            "capabilities": capabilities,
+            "programs": product["programs"],
+            "distributions": {
+                distribution.metadata["Name"]: distribution.version
+                for distribution in importlib.metadata.distributions()
+                if distribution.metadata["Name"]
+            },
+            "assets": {
+                "playwright": "assets/playwright",
+                "easyocr": "assets/easyocr",
+                "gpa_detector": "assets/gpa/model.pt",
+            },
+        }
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    else:
+        manifest = _read_json(manifest_path)
+        if manifest.get("schema") != 2:
+            raise RuntimeError("unsupported runtime manifest schema")
+        current_arch = platform.machine().lower()
+        expected_arches = {
+            "x86_64": {"x86_64", "amd64"},
+            "amd64": {"x86_64", "amd64"},
+            "arm64": {"arm64", "aarch64"},
+            "aarch64": {"arm64", "aarch64"},
+        }.get(current_arch, {current_arch})
+        if manifest.get("platform") != platform.system().lower():
+            raise RuntimeError("runtime platform does not match this machine")
+        if manifest.get("architecture") not in expected_arches:
+            raise RuntimeError("runtime architecture does not match this machine")
+        _relative_file(root, manifest.get("python", ""), "managed Python")
+        digest = hashlib.sha256(product_path.read_bytes()).hexdigest()
+        if manifest.get("product_manifest_sha256") != digest:
+            raise RuntimeError("product manifest hash mismatch")
+        lock_digest = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+        if manifest.get("product_lock_sha256") != lock_digest:
+            raise RuntimeError("product dependency lock hash mismatch")
+        expected = set(product["capabilities"])
+        actual = manifest.get("capabilities", {})
+        if set(actual) != expected or not all(
+            value == {"present": True, "verified": True}
+            for value in actual.values()
+        ):
+            raise RuntimeError("runtime capability manifest is incomplete")
+        _probe(root, product)
+
+    print(f"verified complete OpenProgram runtime: {root}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

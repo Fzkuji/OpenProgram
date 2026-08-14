@@ -4,15 +4,13 @@ This page takes you through five minutes of setup: install, connect an LLM provi
 
 ## Step 1: Install
 
-Install the exact released wheel and a managed Python runtime on macOS or Linux:
+Install the complete release runtime with its managed Python on macOS or Linux:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
-  | OPENPROGRAM_VERSION=0.6.1 sh
+curl -fsSL https://openprogram.io/install | sh
 ```
 
-The installer supplies its own Python and the released wheel supplies the Web UI; Node.js and Git are not runtime requirements. Desktop users use the DMG or AppImage attached to GitHub Releases. Platform scope and development-checkout instructions are in [Install](../install/install.md).
+The installer supplies its own Python and includes the Web UI; Node.js and Git are not runtime requirements. macOS desktop users use the DMG attached to GitHub Releases. Linux users use the complete CLI/server runtime with its Web UI or TUI; no Linux desktop package is currently published. Platform scope and development-checkout instructions are in [Install](../install/install.md).
 
 ## Step 2: First run — connect a provider
 
@@ -50,16 +48,11 @@ openprogram --print "Introduce yourself in one sentence"
 
 It sends one message, prints the reply, and exits. Resume an earlier session with `openprogram --resume <session_id>` — ids come from `openprogram sessions list` or the web sidebar.
 
-## Step 5: Install a ready-made agent program
+## Step 5: Use the included agent programs
 
-OpenProgram is the host; agent programs installed into a supported Program environment show up in the Web UI and function list:
+Every release includes the GUI, Research, and Wiki Programs. They appear in the Web UI and function list without a separate installation step. Use `openprogram programs available` to inspect their registration status.
 
-```bash
-openprogram programs install research     # or wiki / gui
-openprogram programs available            # check install status
-```
-
-The current Program installer changes its active Python environment and is therefore not supported inside an immutable desktop package. Use it only when the installed release explicitly records Program environment support. After installing, run `openprogram restart` or use Refresh on the Programs page.
+The Program installer is reserved for third-party Programs and developer source overlays. It does not define a reduced or expanded end-user edition.
 
 ## Next steps
 

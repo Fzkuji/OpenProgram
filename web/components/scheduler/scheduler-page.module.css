@@ -1,0 +1,268 @@
+.view {
+  container-name: scheduler;
+  container-type: inline-size;
+}
+
+.headerSearch {
+  width: clamp(150px, 24vw, 320px);
+}
+
+.navButton {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.navButton:focus-visible {
+  outline: 1.5px solid var(--accent-blue);
+  outline-offset: -1px;
+}
+
+.layout {
+  min-width: 0;
+}
+
+.content {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 24px 24px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.list,
+.suggestionList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.taskIndex {
+  color: var(--text-tertiary);
+  font: 500 11px/1 var(--font-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.description {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.description > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule {
+  flex: none;
+  padding: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: 11px/1.4 var(--font-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.memory {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.memory svg {
+  width: 12px;
+  height: 12px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.actions button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.actions button:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+
+.actions button:focus-visible {
+  outline: 1.5px solid var(--accent-blue);
+}
+
+.actions svg {
+  width: 15px;
+  height: 15px;
+}
+
+.suggestions {
+  max-width: 780px;
+  padding-top: 18px;
+}
+
+.emptyIntro {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 8px 24px;
+  color: var(--text-secondary);
+}
+
+.emptyIntro > svg {
+  width: 28px;
+  height: 28px;
+  color: var(--text-tertiary);
+}
+
+.emptyIntro div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.emptyIntro strong {
+  color: var(--text-bright);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.emptyIntro span {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.suggestionRow {
+  min-height: 64px;
+  padding: 10px 14px 10px 12px;
+  border-color: var(--border);
+  background: var(--bg-secondary);
+}
+
+.suggestionRow:hover {
+  border-color: var(--text-muted);
+  background: var(--bg-tertiary);
+}
+
+.suggestionRow svg {
+  width: 19px;
+  height: 19px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.form input,
+.form select,
+.form textarea {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-bright);
+  font: inherit;
+}
+
+.form input:focus,
+.form select:focus,
+.form textarea:focus {
+  border-color: var(--accent-blue);
+}
+
+.form textarea {
+  resize: vertical;
+}
+
+.error {
+  color: var(--accent-red);
+  font-size: 12px;
+}
+
+@media (max-width: 700px) {
+  .headerSearch {
+    width: 132px;
+  }
+
+  .content {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .description {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+}
+
+@container scheduler (max-width: 520px) {
+  .headerSearch {
+    width: 90px;
+  }
+
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .layout .nav {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px;
+    padding: 6px 8px;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .navButton {
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navButton,
+  .actions button,
+  .suggestionRow {
+    transition: none;
+  }
+}

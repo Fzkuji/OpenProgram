@@ -7,8 +7,16 @@ permissions:
   contents: read
 
 jobs:
-  python:
-    runs-on: ubuntu-24.04
+  product-runtime:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -19,83 +27,48 @@ jobs:
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.11.16"
-      - name: Build release wheel
+      - name: Install Linux runtime test dependencies
         run: |
-          scripts/stage-release-assets.sh
-          uv build --wheel
-      - uses: actions/upload-artifact@v7
-        with:
-          name: linux-release-wheel
-          path: dist/openprogram-*.whl
-
-  appimage:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: |
-            web/package-lock.json
-            desktop/package-lock.json
-      - uses: astral-sh/setup-uv@v10.0.1
-        with:
-          version: "0.11.16"
-      - name: Install build and display dependencies
-        run: |
-          npm ci --prefix desktop
           sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes xvfb
-      - name: Build and launch AppImage
-        run: |
-          scripts/prepare-desktop-runtime.sh
-          (cd desktop && npx electron-builder --linux AppImage --x64 --publish never)
-          scripts/smoke-packaged-runtime.sh linux desktop/dist
-      - name: Verify AppImage on glibc 2.31 without build tools or network
-        run: |
-          docker build --tag openprogram-appimage-bullseye --file - . <<'DOCKERFILE'
-          FROM debian:bullseye-slim
-          RUN apt-get update \
-              && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
-                ca-certificates curl xvfb xauth libgtk-3-0 libnss3 libasound2 \
-                libxss1 libgbm1 libatk-bridge2.0-0 \
-              && useradd --create-home tester \
-              && ! command -v python3 \
-              && ! command -v node \
-              && ! command -v git \
-              && rm -rf /var/lib/apt/lists/*
-          USER tester
-          ENV HOME=/home/tester
-          WORKDIR /workspace
-          DOCKERFILE
-          docker run --rm --network none \
-            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
-            openprogram-appimage-bullseye \
-            scripts/smoke-packaged-runtime.sh linux desktop/dist
+          sudo apt-get install --no-install-recommends --yes xvfb xauth libgl1 libglib2.0-0
+      - name: Build complete Linux product runtime
+        env:
+          OPENPROGRAM_RUNTIME_ROOT: ${{ runner.temp }}/openprogram-runtime/runtime
+        run: xvfb-run -a scripts/build-product-runtime.sh
+      - name: Archive complete Linux product runtime
+        env:
+          OPENPROGRAM_RUNTIME_ROOT: ${{ runner.temp }}/openprogram-runtime/runtime
+          OPENPROGRAM_RUNTIME_OUTPUT_DIR: ${{ runner.temp }}/runtime-artifacts
+          OPENPROGRAM_RUNTIME_PLATFORM: linux
+          OPENPROGRAM_RUNTIME_ARCH: ${{ matrix.arch }}
+        run: scripts/archive-product-runtime.sh
       - uses: actions/upload-artifact@v7
         with:
-          name: linux-x64-appimage
-          path: desktop/dist/*.AppImage
+          name: product-runtime-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/runtime-artifacts/*
 
   cli-installer:
-    needs: python
+    needs: product-runtime
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
-          name: linux-release-wheel
-          path: python-distributions
-      - name: Install with managed CPython and cold-start worker
+          name: product-runtime-linux-${{ matrix.arch }}
+          path: runtime-artifact
+      - name: Install and probe the same complete runtime archive
         shell: bash
         run: |
-          wheel="$(find "$GITHUB_WORKSPACE/python-distributions" -name 'openprogram-*.whl' -print -quit)"
-          OPENPROGRAM_WHEEL="$wheel" \
+          archive="$(find "$GITHUB_WORKSPACE/runtime-artifact" -name '*.tar.gz' -print -quit)"
+          OPENPROGRAM_RUNTIME_ARCHIVE="$archive" \
           OPENPROGRAM_STATE_DIR="$RUNNER_TEMP/openprogram-state" \
           OPENPROGRAM_BIN_DIR="$RUNNER_TEMP/openprogram-bin" \
             scripts/install-release.sh

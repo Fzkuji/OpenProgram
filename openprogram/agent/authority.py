@@ -360,10 +360,10 @@ _REPLY_LOCAL_TOOLS = {
 
 def capability_for_tool(tool_name: str, args: Mapping[str, Any] | None = None) -> str:
     name = str(tool_name or "")
-    if name == "cron":
+    if name in {"cron", "scheduler"}:
         action = str((args or {}).get("action") or "").lower()
         return "schedule.create" if action == "create" else (
-            "schedule.manage" if action == "delete" else "fs.read"
+            "schedule.manage" if action in {"update", "delete"} else "fs.read"
         )
     if name == "memory_update":
         # memory_update requires the revision returned by memory_status;

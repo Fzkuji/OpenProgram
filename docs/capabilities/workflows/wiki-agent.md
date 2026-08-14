@@ -2,13 +2,9 @@
 
 A personal knowledge-base agent: it pours sessions and notes into a template-driven HTML wiki. Pages are real HTML files — open them in any browser, host them statically, version them with git. The agent only fills named slots in fixed templates and never hand-writes HTML / CSS. It ships with full-text search, automatic folder indexing (each folder's `README.html` is regenerated from its current contents), and a curating ingest pipeline.
 
-## Install
+## Availability
 
-```bash
-openprogram programs install wiki
-```
-
-Dependencies are minimal: Jinja2 + PyYAML. The template shell uses Jinja2 + Bootstrap 5 (loaded from a CDN) — zero build steps, no Node required.
+Every supported release contains this Program with Jinja2 and PyYAML. No Program installation is required. The template shell uses Jinja2 + Bootstrap 5 (loaded from a CDN) and requires no Node build.
 
 ## Usage
 

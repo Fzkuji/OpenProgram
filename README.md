@@ -162,12 +162,10 @@ A **foundation, honestly labelled**: the plumbing is in place and the proactive 
 
 **macOS / Linux CLI or server release:**
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
-  | OPENPROGRAM_VERSION=0.6.1 sh
+curl -fsSL https://openprogram.io/install | sh
 ```
 
-Desktop users download the macOS DMG or Linux x86_64 AppImage from [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases). Platform scope, verification, and source-development installation are documented in **[docs/install/install.md](docs/install/install.md)**.
+macOS desktop users download the unsigned DMG from [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases). Linux users install the complete CLI/server runtime and use its Web UI or TUI; no Linux desktop package is published until a complete package passes the public-entry gate. All supported release installations contain the same complete product capabilities. Platform scope, verification, and source-development installation are documented in **[docs/install/install.md](docs/install/install.md)**.
 
 ### 2. Run
 
@@ -177,16 +175,17 @@ openprogram
 
 First run sets up your provider, then asks which surface to open. Skip the prompt with `openprogram tui` (terminal) or `openprogram web` (browser → http://localhost:18100).
 
-### 3. Add a harness
+### 3. Included Programs and additional harnesses
 
-Harnesses are programs under `openprogram/functions/agentics/`. Anything cloned into that folder auto-registers on the next worker restart — that's the universal way any program (including your own) plugs into OpenProgram. Pure-Python harnesses also have a one-line shortcut, `openprogram programs install <name>`, which clones them there for you.
+Every supported release installation already includes the three first-party Programs and their default runtime assets:
 
-| Harness | Install | What it does |
+| Program | Release status | What it does |
 |---|---|---|
-| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | `openprogram programs install gui` (pulls PyTorch), then its installer for the detector/OCR assets — **[guide](https://github.com/Fzkuji/GUI-Agent-Harness#1-install)** | Drives desktop apps & OSWorld VMs by vision. |
-| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | `openprogram programs install research` | Literature survey → experiments → paper draft. |
-| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | `openprogram programs install wiki` | Turns notes / docs / chats into an Obsidian vault with `[[wikilinks]]`. |
-| **Any third-party harness** | `openprogram programs install <owner>/<repo>` (or a full git URL) | Same flow — clone, deps, contract check; no registration anywhere. |
+| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Included with PyTorch, default OCR, and the detector model | Drives desktop apps & OSWorld VMs by vision. |
+| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | Included | Literature survey → experiments → paper draft. |
+| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | Included | Turns notes / docs / chats into an Obsidian vault with `[[wikilinks]]`. |
+
+Third-party harnesses are additional functionality. Mutable extension environments use `openprogram programs install <owner>/<repo>` (or a full git URL); source editing and replacement OCR/browser backends are developer features.
 
 Writing your own installable harness is one layout contract away — the
 full guide (install, manage, author, test, publish) is
@@ -255,7 +254,7 @@ runtime.exec("Read-only pass.", tools_deny=["bash", "edit"])  # restrict what it
 
 ### Level 4 — Package it as an installable harness
 
-A harness is a git repo laid out so `openprogram programs install <owner>/<repo>` can clone it, install its deps, and check its contract — the same path the GUI / Research / Wiki harnesses use. Nothing is registered centrally, so anyone can publish one:
+A third-party harness is a git repo laid out so `openprogram programs install <owner>/<repo>` can clone it, install its dependencies, and check its contract. The release builder pins and installs GUI / Research / Wiki in advance; the runtime command adds third-party functionality to a mutable extension environment. Nothing is registered centrally, so anyone can publish one:
 
 ```bash
 openprogram programs available            # what's installable + what you've installed

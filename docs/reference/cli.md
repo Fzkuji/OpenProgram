@@ -97,7 +97,7 @@ The `worker` subcommands offer finer control:
 
 | Verb | What it does |
 |------|------|
-| `install` | Install browser tool dependencies (Playwright + Chromium, patchright/camoufox, agent-browser); pick one target or `all` |
+| `install` | Developer command for adding or replacing browser backends (patchright/camoufox/agent-browser). Release installations already contain the default Playwright Chromium backend. |
 | `status` | Show install state, whether the sidecar Chrome is running, saved login count |
 | `refresh` | Re-copy the real Chrome profile into the sidecar (after logging in to a new site in your main Chrome) |
 | `reset` | Full reset: kill the sidecar, clear the profile + login state + port files |
@@ -135,7 +135,7 @@ The `worker` subcommands offer finer control:
 | `run <name>` | Run a program; `--arg key=value` (repeatable), `--provider`, `--model` |
 | `list` | List saved programs |
 | `available` | List installable programs and installed third-party harnesses |
-| `install` / `uninstall` | Install / uninstall a program (gui/research/wiki/all) or a third-party harness (git URL / owner/repo); `install --upgrade` reinstalls even if present |
+| `install` / `uninstall` | Developer-only first-party source overlays (gui/research/wiki/all), or install/uninstall an additional third-party harness (git URL / owner/repo); supported releases already include all first-party Programs and reject mutation of their immutable runtime |
 
 ### skills
 
@@ -187,4 +187,4 @@ One workspace per instance, shared by every agent and every conversation includi
 | `diagnostics` | Build a redacted support zip (version, config, logs, probes) to attach to a bug report — see [Diagnostics bundle](diagnostics.md) | `--output PATH` (default `./openprogram-diagnostics-<date>.zip`) |
 | `logs` | View logs | `list`; `tail [name]` (`-n` line count, `-f` follow); `path [name]`. name is worker / runtime / ink, default worker |
 | `update` | Check for and apply updates | `--check` only checks; `--force` bypasses the 6-hour throttle |
-| `cron-worker` | Foreground loop that fires scheduled `cron` entries and the built-in commitment heartbeat | `--once` evaluates one tick and exits; `--list` shows user cron entries only |
+| `scheduler-worker` (`cron-worker` alias) | Foreground loop that fires one-time, recurring, and monitor Scheduler tasks | `--once` evaluates one tick and exits; `--list` shows current task match state |

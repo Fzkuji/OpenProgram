@@ -12,10 +12,8 @@ const memoryCss = readFileSync(
 assert.doesNotMatch(memoryPage, /styles\.writerStatus/);
 assert.doesNotMatch(memoryPage, /pending turns/);
 assert.doesNotMatch(memoryCss, /\.writerStatus/);
-assert.match(memoryPage, /fetch\("\/api\/memory\/status"\)/);
-assert.match(memoryPage, /base_revision: memoryStatus\.revision/);
-assert.match(memoryPage, /\/api\/memory\/commitments\/transition/);
-assert.match(memoryPage, /"done"/);
-assert.match(memoryPage, /"dismissed"/);
+assert.doesNotMatch(memoryPage, /\/api\/memory\/status/);
+assert.doesNotMatch(memoryPage, /Commitments|commitments/);
+assert.doesNotMatch(memoryCss, /commitment/);
 
 console.log("check-memory-status: ok");

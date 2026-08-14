@@ -1,11 +1,10 @@
 # Harness
 
 **harness**（一个 *agentic program*）是一个自包含的、由 agentic
-function 组成的 git 仓库。`openprogram programs install`在
-`openprogram/programs/agentic_functions/` 下登记其来源，随后其函数会像内置函数一样注册。
-这是一套**通用机制**：第一方程序（gui / research / wiki）与任何第三方仓库
-在可变的 source-development 或 CLI 环境中使用相同安装方式；无需 symlink。
-immutable packaged desktop 当前拒绝 Program 安装、升级和卸载操作。
+function 组成的 git 仓库。每个受支持的 release 已经包含 GUI、Research、Wiki
+三项第一方 Programs、依赖和默认 runtime 资产。`openprogram programs install`
+用于额外第三方 Program 或开发者 source overlay，不是补齐 release 安装的步骤。
+immutable product runtime 拒绝原地安装、升级和卸载 Program。
 
 > **agent 在哪里读取本文档：** 本文件是规范流程。
 > 当用户要求安装某个 agent 尚未拥有的 harness 时，请遵循
@@ -14,17 +13,15 @@ immutable packaged desktop 当前拒绝 Program 安装、升级和卸载操作�
 ## TL;DR
 
 ```bash
-# 第一方程序——按名称：
-openprogram programs install research      # 轻量（无额外依赖）
-openprogram programs install gui           # 重量级（拉取 torch/opencv）
+# 第一方 Programs 已经存在：
+openprogram programs available
 
-# 任意第三方 harness——同一条命令，按 git 来源：
+# 在可变扩展或开发环境中增加第三方 harness：
 openprogram programs install https://github.com/<owner>/<Harness-Name>
 openprogram programs install <owner>/<Harness-Name>     # GitHub 简写
 
 # 管理：
 openprogram programs available             # 状态，含第三方
-openprogram programs uninstall research    # 第一方：按名称
 openprogram programs uninstall <Harness-Name>   # 第三方：按目录名
 openprogram programs install <ref> --upgrade    # git pull + 重新解析依赖
 
@@ -37,7 +34,7 @@ openprogram programs install <ref> --upgrade    # git pull + 重新解析依赖
 
 ## `programs install` 做了什么
 
-第一方和第三方都是相同的四个步骤：
+对于第三方 Program 或开发者 source overlay，该命令执行四个步骤：
 
 1. **浅克隆（shallow-clone）** 仓库到
    `openprogram/programs/agentic_functions/<Repo-Name>/`——一个真实、可编辑的
@@ -60,24 +57,17 @@ openprogram programs install <ref> --upgrade    # git pull + 重新解析依赖
 但不修改链接目标；同名且不是Git克隆的目录仍会被拒绝。对symlink执行`uninstall`
 只删除链接，不删除它指向的检出。
 
-## 第一方程序（gui / research / wiki）
+## 第一方 Programs（gui / research / wiki）
 
-| 程序 | 安装 | 说明 |
+| Program | Release 状态 | 说明 |
 |---|---|---|
-| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | `openprogram programs install research` | 无额外依赖 |
-| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | `openprogram programs install wiki` | Jinja2 + PyYAML（极小） |
-| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | `openprogram programs install gui` | 重量级：通过 ultralytics 引入 PyTorch + OpenCV。在无 GPU 的 Linux 上会自动选择 CPU 版 torch wheel（约 200 MB），而非约 3 GB 的 CUDA 构建。 |
+| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | 已包含 | 固定 source commit 和依赖记录在 product manifest 中。 |
+| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | 已包含 | 固定 source commit 和依赖记录在 product manifest 中。 |
+| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | 已包含 | PyTorch、OpenCV、默认 EasyOCR 数据、Playwright Chromium 和 GPA detector 模型均进入平台 runtime。 |
 
-`openprogram programs install all` 会安装这三个；首次运行的安装向导
-中的 “Agent programs” 步骤会以交互方式提供相同的选择。
-
-> **GUI agent —— 一个额外步骤。** 除了 pip 依赖，`gui_agent` 还需要
-> 一份 YOLO 检测器权重 + OCR 模型，它们不在 PyPI 上。安装完成后，
-> 运行 harness 自带的安装器来获取它们（由于你已经有了 host，它会
-> 跳过 host）：
-> `openprogram/programs/applications/gui_harness/scripts/install.sh --no-host`
-> （Windows：`…\scripts\install.ps1 -NoHost`）。参见
-> [GUI 安装指南](https://github.com/Fzkuji/GUI-Agent-Harness#1-install)。
+release 用户不执行 `programs install all`、首次启动 Program wizard 或 GUI
+harness 资产 installer。开发者可以用 editable checkout 替换第一方 Program，
+或配置不同的 OCR/Browser backend；这些 overlay 增加开发行为，但不改变 product manifest。
 
 ## 第三方 harness
 

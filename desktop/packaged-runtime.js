@@ -5,7 +5,7 @@ function resolvePackagedWorker(resourcesPath, expectedVersion) {
   const runtimeRoot = path.resolve(resourcesPath, "runtime");
   const manifestPath = path.join(runtimeRoot, "runtime-manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  if (manifest.schema !== 1) {
+  if (manifest.schema !== 2) {
     throw new Error(`unsupported runtime manifest schema: ${manifest.schema}`);
   }
   if (
@@ -27,9 +27,49 @@ function resolvePackagedWorker(resourcesPath, expectedVersion) {
   if (!fs.existsSync(python)) {
     throw new Error(`embedded Python is missing: ${python}`);
   }
+  const requiredCapabilities = [
+    "web",
+    "providers",
+    "mcp",
+    "memory",
+    "channels",
+    "search",
+    "browser.playwright",
+    "ocr.default",
+    "model.gpa_detector",
+    "program.gui",
+    "program.research",
+    "program.wiki",
+  ];
+  for (const capability of requiredCapabilities) {
+    const state = manifest.capabilities?.[capability];
+    if (state?.present !== true || state?.verified !== true) {
+      throw new Error(`runtime capability is incomplete: ${capability}`);
+    }
+  }
+  const resolveAsset = (key) => {
+    const value = manifest.assets?.[key];
+    if (typeof value !== "string" || !value) {
+      throw new Error(`runtime manifest has no ${key} asset`);
+    }
+    const asset = path.resolve(runtimeRoot, value);
+    const assetRelative = path.relative(runtimeRoot, asset);
+    if (assetRelative.startsWith("..") || path.isAbsolute(assetRelative)) {
+      throw new Error(`runtime ${key} asset escapes runtime resources`);
+    }
+    if (!fs.existsSync(asset)) {
+      throw new Error(`runtime ${key} asset is missing: ${asset}`);
+    }
+    return asset;
+  };
   return {
     command: python,
     args: ["-I", "-B", "-m", "openprogram", "worker", "start"],
+    env: {
+      PLAYWRIGHT_BROWSERS_PATH: resolveAsset("playwright"),
+      EASYOCR_MODULE_PATH: resolveAsset("easyocr"),
+      GPA_MODEL_PATH: resolveAsset("gpa_detector"),
+    },
   };
 }
 

@@ -1487,6 +1487,7 @@ const {
   visibleWebTab,
   waitForWebTabReady,
 } = await import("../lib/desktop-bridge.ts");
+const { measureWebTabBounds } = await import("../lib/web-tab-bounds.ts");
 const {
   focusCenterTabGroupMember,
   resolveCenterTabPanes,
@@ -1580,7 +1581,14 @@ assert.deepEqual(narrowPanes, [{ key: "w:two", kind: "tab", tabId: "w:two" }]);
       show(id) { singletonShowCalls.push(id); },
     },
   };
-  const boundsOne = { x: 0, y: 40, width: 500, height: 600 };
+  const boundsOne = measureWebTabBounds({
+    getBoundingClientRect: () => ({
+      left: 812.6333618164062,
+      top: 79.99031066894531,
+      width: 518.6390380859375,
+      height: 696.86279296875,
+    }),
+  });
   const boundsTwo = { x: 506, y: 40, width: 600, height: 600 };
   registerVisibleWebTabBounds(bridge, "w:one", boundsOne);
   registerVisibleWebTabBounds(bridge, "w:two", boundsTwo);
@@ -1590,6 +1598,12 @@ assert.deepEqual(narrowPanes, [{ key: "w:two", kind: "tab", tabId: "w:two" }]);
     { id: "w:one", bounds: boundsOne },
     { id: "w:two", bounds: boundsTwo },
   ]);
+  assert.deepEqual(syncCalls[0][0].bounds, {
+    x: 812.6333618164062,
+    y: 79.99031066894531,
+    width: 518.6390380859375,
+    height: 696.86279296875,
+  }, "renderer bridge must preserve fractional DOMRect bounds until main IPC");
   removeVisibleWebTabBounds(bridge, "w:one");
   await Promise.resolve();
   assert.deepEqual(syncCalls.at(-1), [{ id: "w:two", bounds: boundsTwo }]);
@@ -2042,15 +2056,15 @@ assert.match(
 );
 assert.match(
   webTabPaneSource,
-  /const roundedBounds = \{\s*x: Math\.round\(r\.left\),\s*y: Math\.round\(r\.top\),\s*width: Math\.round\(r\.width\),\s*height: Math\.round\(r\.height\),\s*\};/s,
+  /const bounds = measureWebTabBounds\(el\);/,
 );
 assert.match(
   webTabPaneSource,
-  /if \(occluded \|\| roundedBounds\.width <= 0 \|\| roundedBounds\.height <= 0\) \{\s*removeVisibleWebTabBounds\(bridge, tabId\);\s*setWebTabReady\(tabId, false\);/s,
+  /if \(occluded \|\| bounds\.width <= 0 \|\| bounds\.height <= 0\) \{\s*removeVisibleWebTabBounds\(bridge, tabId\);\s*setWebTabReady\(tabId, false\);/s,
 );
 assert.match(
   webTabPaneSource,
-  /registerVisibleWebTabBounds\(bridge, tabId, roundedBounds\);\s*setWebTabReady\(tabId, true\);/s,
+  /registerVisibleWebTabBounds\(bridge, tabId, bounds\);\s*setWebTabReady\(tabId, true\);/s,
 );
 assert.match(
   webTabPaneSource,

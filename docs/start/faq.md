@@ -30,7 +30,7 @@ Everything lives under `~/.openprogram/` by default: `config.json` (configuratio
 
 ## How do I update to the latest version?
 
-Stable desktop and CLI installations move only to an explicit published version. Desktop users replace the DMG/AppImage; CLI/server users run the installer from the target version tag. Source-checkout developers use `openprogram upgrade`. See [Upgrading](../install/upgrade.md).
+Stable desktop and CLI installations move only to an explicit published version. macOS desktop users replace the DMG; macOS/Linux CLI/server users run the installer from the target version tag. Source-checkout developers use `openprogram upgrade`. See [Upgrading](../install/upgrade.md).
 
 ## The page opened by `openprogram web` won't load?
 
@@ -56,17 +56,13 @@ openprogram logs tail -f         # follow live
 openprogram logs tail runtime    # pick a log: worker / runtime / ink
 ```
 
-## The GUI agent download is slow or failed?
+## Why is the release download large?
 
-`openprogram programs install gui` downloads PyTorch (~300 MB for the CPU build, ~3 GB on CUDA machines) and model weights, so a long download is normal. If it fails, re-run the same command to resume. If the GPA detector weight won't download, fetch it manually:
+The complete release includes managed Python, PyTorch, Playwright Chromium, EasyOCR data, the GPA detector, and the GUI, Research, and Wiki Programs. Normal installation does not download these product components separately.
 
-```bash
-hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector
-```
+## An included agent program doesn't show up in the UI?
 
-## I installed an agent program but it doesn't show up in the UI?
-
-Programs register at startup, so run `openprogram restart` after installing (or hit Refresh on the Programs page). Confirm it's installed with `openprogram programs available`.
+Run `openprogram programs available` to inspect registration, then restart OpenProgram or use Refresh on the Programs page. A missing first-party Program in a release is a packaging defect, not a feature that the user must install separately.
 
 ## Multiple accounts or keys for the same provider — how do I switch?
 
