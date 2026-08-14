@@ -65,10 +65,21 @@ jobs:
           version: "0.11.16"
       - name: Verify version
         run: python3 scripts/verify-release-version.py --tag "${GITHUB_REF_NAME}"
+      - name: Install Linux runtime test dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes xvfb xauth libgl1 libglib2.0-0
       - name: Build complete product runtime
         env:
           OPENPROGRAM_RUNTIME_ROOT: ${{ runner.temp }}/openprogram-runtime/runtime
-        run: scripts/build-product-runtime.sh
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform }}" = linux ]; then
+            xvfb-run -a scripts/build-product-runtime.sh
+          else
+            scripts/build-product-runtime.sh
+          fi
       - name: Archive complete product runtime
         env:
           OPENPROGRAM_RUNTIME_ROOT: ${{ runner.temp }}/openprogram-runtime/runtime

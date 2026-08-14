@@ -11,11 +11,7 @@ Channels connect chat platforms — **Telegram, Discord, Slack, and WeChat** —
 | Slack | Socket Mode (`slack_sdk`) | bot token (`xoxb-`) **and** app-level token (`xapp-`) | yes | yes (`files:read` scope) | yes (`files:write` scope) |
 | WeChat | iLink long-polling | QR scan with your personal WeChat | no (WeChat cannot edit sent messages) | no (iLink exposes text only) | no |
 
-Discord and Slack support requires the optional dependencies:
-
-```bash
-pip install openprogram[channels]
-```
+Supported releases include the Discord and Slack dependencies. Developers building from source receive the same channel dependencies through the complete development install.
 
 ## Quick Start
 
@@ -197,7 +193,7 @@ Telegram sends images as photos and everything else as documents; Discord upload
 | Reply says `[no agent configured]` | No binding routes the message. Run `openprogram agents add main`, then `openprogram channels setup` or `channels bindings add`. |
 | Worker exits: `account … has no bot_token` | Credentials never saved. `openprogram channels accounts login <channel> --id <account>`. |
 | Worker exits: `Slack account … needs both bot_token (xoxb-...) and app_token (xapp-...)` | Only one Slack token stored. Re-run login and paste both tokens. |
-| `Discord channel requires discord.py` / `Slack channel requires slack_sdk` | Optional deps missing: `pip install openprogram[channels]`. |
+| `Discord channel requires discord.py` / `Slack channel requires slack_sdk` | The runtime is incomplete. Reinstall the supported release, or rerun the complete source-development installer. |
 | Discord bot connects but never sees messages | Message Content Intent not enabled in the Developer Portal. |
 | WeChat log: `bot token invalid — relogin required` | iLink session expired. `openprogram channels accounts login wechat --id <account>` and rescan the QR. |
 | Worker log: `adapter crashed … reconnecting in Ns` | Transient network/gateway failure — the adapter reconnects on its own with growing backoff. Only `adapter exited on its own` needs action (usually a re-login). |

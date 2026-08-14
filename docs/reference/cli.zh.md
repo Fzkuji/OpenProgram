@@ -95,7 +95,7 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 
 | 动词 | 作用 |
 |------|------|
-| `install` | 安装浏览器工具依赖（Playwright + Chromium、patchright/camoufox、agent-browser），可选一个目标或 `all` |
+| `install` | 开发者用于增加或替换 Browser backend（patchright/camoufox/agent-browser）的命令。release 安装已包含默认 Playwright Chromium backend。 |
 | `status` | 显示安装情况、sidecar Chrome 是否在跑、保存的登录数 |
 | `refresh` | 重新把真实 Chrome profile 拷到 sidecar（在主 Chrome 登录新站点后用） |
 | `reset` | 完全重置：杀 sidecar、清 profile + 登录态 + 端口文件 |
@@ -133,7 +133,7 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 | `run <name>` | 运行一个 program；`--arg key=value`（可重复）、`--provider`、`--model` |
 | `list` | 列出保存的 program |
 | `available` | 列出可安装的 program 与已装的第三方 harness |
-| `install` / `uninstall` | 安装 / 卸载 program（gui/research/wiki/all）或第三方 harness（git URL / owner/repo）；`install --upgrade` 已装也重装 |
+| `install` / `uninstall` | 开发者使用的第一方源码 overlay（gui/research/wiki/all），或安装/卸载额外第三方 harness（git URL / owner/repo）；受支持的 release 已包含全部第一方 Program，并拒绝修改 immutable runtime |
 
 ### skills
 

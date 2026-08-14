@@ -1,5 +1,7 @@
 # Framework Adoption Homepage Design
 
+Status: superseded for distribution details by `docs/reference/design/distribution/installation-packaging.html`. The current product ships GUI, Research, and Wiki in every supported release.
+
 ## Goal
 
 Present OpenProgram first as an installable, general-purpose agent framework. The homepage should help visitors understand what they can use immediately, install the framework, select a ready-made harness, or build their own agent. Agentic Programming and the related papers remain supporting technical context rather than the primary message.
@@ -41,7 +43,7 @@ The section heading is `Use an agent or build your own.` It contains four paths:
 - Wiki Agent: organize source material into a maintainable knowledge base.
 - Build your own: show a compact `@agentic_function` example and link to the authoring documentation.
 
-Each ready-made harness links to its existing repository or installation guide. Do not imply that GUI Agent, Research Agent, or Wiki Agent ships inside the base framework.
+Each ready-made harness links to its existing repository or usage guide. State that GUI Agent, Research Agent, and Wiki Agent ship inside every supported release; third-party harnesses are additional extensions.
 
 ## Quick Start
 

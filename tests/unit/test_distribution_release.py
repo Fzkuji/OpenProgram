@@ -158,6 +158,9 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     assert "playwright.sync_api" in verifier
     assert "playwright install chromium" in staging
     assert "easyocr" in staging
+    assert '"${program_dir}[pdf]"' in staging
+    assert "https://download.pytorch.org/whl/cpu" in staging
+    assert 'importlib.metadata.version(distribution).split("+", 1)[0]' in verifier
     assert "Salesforce/GPA-GUI-Detector" in product_config
     assert "GUI-Agent-Harness" in product_config
     assert "Research-Agent-Harness" in product_config
@@ -184,8 +187,23 @@ def test_product_manifest_requires_one_complete_capability_set() -> None:
         "program.wiki",
     }
     assert set(manifest["programs"]) == {"gui", "research", "wiki"}
+    assert manifest["programs"]["gui"]["torch"] == "2.13.0"
+    assert manifest["programs"]["gui"]["torchvision"] == "0.28.0"
     for program in manifest["programs"].values():
         assert re.fullmatch(r"[0-9a-f]{40}", program["commit"])
+
+
+def test_source_development_installer_adds_to_complete_product() -> None:
+    installer = (ROOT / "scripts" / "install.sh").read_text(encoding="utf-8")
+    assert 'PIP install -e "$HOST_ROOT[all,search]"' in installer
+    assert '"$PY" -m playwright install chromium' in installer
+    assert '"$PY" -m openprogram programs install all' in installer
+    assert 'bash "$gui_installer" --no-host --python "$PY"' in installer
+    assert 'PIP install -e "$applications/research_harness[pdf]"' in installer
+    assert "prompt_programs_menu" not in installer
+    assert "--minimal was removed" in installer
+    assert "WITH_STEALTH" in installer
+    assert "WITH_AGENT_BROWSER" in installer
 
 
 def test_native_release_workflow_has_platform_jobs() -> None:
@@ -299,6 +317,66 @@ def test_linux_install_docs_use_the_built_appimage_name() -> None:
         contents = (ROOT / relative).read_text(encoding="utf-8")
         assert "linux-x86_64.AppImage" in contents
         assert "linux-x64.AppImage" not in contents
+
+
+def test_public_docs_describe_one_complete_release_product() -> None:
+    public_docs = [
+        ROOT / "README.md",
+        ROOT / "docs" / "README.md",
+        ROOT / "docs" / "README.zh.md",
+        ROOT / "docs" / "install" / "install.md",
+        ROOT / "docs" / "install" / "install.zh.md",
+        ROOT / "docs" / "install" / "upgrade.md",
+        ROOT / "docs" / "install" / "upgrade.zh.md",
+        ROOT / "docs" / "capabilities" / "installing-harnesses.md",
+        ROOT / "docs" / "capabilities" / "installing-harnesses.zh.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "README.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "README.zh.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "gui-agent.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "gui-agent.zh.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "research-agent.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "research-agent.zh.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "wiki-agent.md",
+        ROOT / "docs" / "capabilities" / "workflows" / "wiki-agent.zh.md",
+        ROOT / "docs" / "capabilities" / "tools.md",
+        ROOT / "docs" / "capabilities" / "tools.zh.md",
+        ROOT / "docs" / "capabilities" / "README.md",
+        ROOT
+        / "docs"
+        / "capabilities"
+        / "agentic-programming"
+        / "embedding-in-your-own-stack.md",
+        ROOT
+        / "docs"
+        / "capabilities"
+        / "agentic-programming"
+        / "embedding-in-your-own-stack.zh.md",
+        ROOT / "docs" / "integrations" / "channels.md",
+        ROOT / "docs" / "integrations" / "channels.zh.md",
+        ROOT / "docs" / "start" / "GETTING_STARTED.md",
+        ROOT / "docs" / "start" / "GETTING_STARTED.zh.md",
+        ROOT / "docs" / "start" / "faq.md",
+        ROOT / "docs" / "start" / "faq.zh.md",
+        ROOT / "docs" / "slides" / "openprogram-intro.html",
+        ROOT / "docs" / "reference" / "design" / "feature-matrix.html",
+    ]
+    forbidden = (
+        "openprogram programs install gui",
+        "openprogram programs install research",
+        "openprogram programs install wiki",
+        "Agent programs are not part",
+        "agent Program 不属于",
+        "notarized DMG",
+        "exact wheel",
+        "精确 wheel",
+        "pip install 'openprogram[search]'",
+        "pip install openprogram[channels]",
+    )
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in public_docs)
+    for phrase in forbidden:
+        assert phrase not in combined
+    assert "same complete product capabilities" in combined
+    assert "相同的完整产品能力" in combined
 
 
 def test_release_manifest_records_hashes(tmp_path: Path) -> None:

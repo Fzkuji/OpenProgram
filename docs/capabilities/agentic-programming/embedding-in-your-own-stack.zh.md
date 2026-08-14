@@ -137,10 +137,10 @@ for call in reply.choices[0].message.tool_calls:
 
 ## 与完整安装的关系
 
-只有一个 `pip install openprogram`，嵌入用的只是它的库面。Web UI 和终端 UI 与库装在
-同一个包里，但嵌入路径从不 import 它们——一旦 import，`tests/embed/` 的验收测试就会
-失败——所以它们只是安静躺着；把 FastAPI / Uvicorn / Textual 裁掉的部署环境照样能跑
-库面。之后再启动完整平台，你的嵌入代码一行都不用改。
+嵌入属于开发者集成模式，不是面向普通用户的精简版本。应使用完整源码开发安装；其
+Web、终端、provider、channel、search、browser 和第一方 Program 基线与 release 相同。
+嵌入路径只调用 library API，不会启动 Web UI 或 TUI；`tests/embed/` 验收测试约束这一
+import 边界，但已安装的产品功能仍保持完整。
 
 ## 宿主集成接缝
 

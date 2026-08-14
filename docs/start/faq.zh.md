@@ -56,17 +56,13 @@ openprogram logs tail -f         # 持续跟踪
 openprogram logs tail runtime    # 指定日志：worker / runtime / ink
 ```
 
-## GUI agent 下载太慢或失败了怎么办？
+## 为什么 release 下载体积较大？
 
-`openprogram programs install gui` 会下载 PyTorch（CPU 版约 300 MB，CUDA 机器约 3 GB）和模型权重，耗时正常。失败后重跑同一条命令即可续装。GPA 检测权重下不动时可手动获取：
+完整 release 已包含 managed Python、PyTorch、Playwright Chromium、EasyOCR 数据、GPA 检测模型，以及 GUI、Research、Wiki Program。普通安装不会再单独下载这些产品组件。
 
-```bash
-hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector
-```
+## 内置 agent Program 没出现在界面里？
 
-## 装完 agent 程序后界面里没出现？
-
-程序在启动时注册，装完后需要 `openprogram restart`（或在 Programs 页面点 Refresh）。用 `openprogram programs available` 确认它已安装。
+先用 `openprogram programs available` 查看注册状态，再重启 OpenProgram 或在 Programs 页面点 Refresh。release 缺少第一方 Program 属于打包缺陷，不是需要用户另行安装的功能。
 
 ## 同一个 provider 有多个账户或多个 key，怎么切换？
 

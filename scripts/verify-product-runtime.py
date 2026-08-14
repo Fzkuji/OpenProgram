@@ -54,6 +54,14 @@ def _probe(root: Path, product: dict) -> dict[str, dict[str, object]]:
     os.environ["EASYOCR_MODULE_PATH"] = str(easyocr_root)
     os.environ["GPA_MODEL_PATH"] = str(gpa_model)
 
+    gui = product["programs"]["gui"]
+    for distribution, key in (("torch", "torch"), ("torchvision", "torchvision")):
+        actual = importlib.metadata.version(distribution).split("+", 1)[0]
+        if actual != gui[key]:
+            raise RuntimeError(
+                f"{distribution} version mismatch: expected {gui[key]}, got {actual}"
+            )
+
     importlib.import_module("openprogram")
     frontend = importlib.import_module("openprogram.webui.frontend")
     if not (frontend.out_dir() / "index.html").is_file():
@@ -67,6 +75,7 @@ def _probe(root: Path, product: dict) -> dict[str, dict[str, object]]:
         "slack_sdk",
         "semble",
         "easyocr",
+        "pymupdf",
     ):
         importlib.import_module(module)
 

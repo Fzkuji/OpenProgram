@@ -16,14 +16,14 @@ OpenProgram 分别提供桌面 release 安装和 CLI/server release 安装。sou
 
 ## 桌面安装
 
-桌面产物包含 Electron、受控 CPython runtime、OpenProgram Python 依赖和预构建 Web UI，运行时不读取系统 Python、Node.js 或 Git。
+桌面产物包含 Electron 和完整的平台 product runtime。runtime 内含受控 CPython、OpenProgram、预构建 Web UI、providers、channels、search、Playwright Chromium、默认 OCR/模型数据，以及 GUI、Research、Wiki 三项第一方 Programs；运行时不读取系统 Python、Node.js 或 Git。
 
 ### macOS
 
-1. 从 GitHub Releases 下载与机器架构对应的 DMG。
+1. 从 GitHub Releases 下载与机器架构对应且文件名包含 `unsigned` 的 DMG。
 2. 用 release checksum 文件验证 SHA-256。
 3. 打开 DMG，把 `OpenProgram.app` 复制到 `/Applications`。
-4. 从 Applications 启动。正式发布的应用必须通过 Gatekeeper 验证。
+4. 从 Applications 启动。当前 release 没有使用 Apple Developer ID 签名，macOS 可能阻止首次启动。打开“系统设置 → 隐私与安全性”，找到 OpenProgram 提示并选择“仍要打开”。checksum 只验证下载内容，不能说明该应用已经通过 Apple 验证。
 
 ### Linux x86_64
 
@@ -40,7 +40,7 @@ AppImage 不要求 root。目前不发布 Linux arm64 桌面产物。
 
 ## CLI 和服务器安装
 
-release installer 支持 macOS 和 Linux。它在 `~/.openprogram/runtime/cli/releases/<version>` 下安装固定 uv、受控 CPython runtime 和一个精确版本的 OpenProgram wheel，不克隆仓库，也不构建 JavaScript。
+release installer 支持 macOS 和 Linux。它下载对应平台 Desktop 构建所使用的同一份完整 runtime archive，验证 SHA-256 和 capability manifest，再安装到 `~/.openprogram/runtime/cli/releases/<version>`。它不在用户机器上解析产品依赖、克隆仓库或构建 JavaScript。
 
 installer 必须与安装版本使用同一个不可变 release tag：
 
@@ -60,13 +60,13 @@ installer 在切换 `current` 前会自动执行版本检查和 worker cold-star
 ~/.local/bin/openprogram doctor
 ```
 
-Web UI 地址是 `http://localhost:18100`。release wheel 已包含预构建 Web UI，不需要 Node.js。`doctor` 检查完整工作环境；尚未配置 provider、未启动持久 worker 或没有开发工具时可能返回非零，不代表基础 release 安装失败。
+Web UI 地址是 `http://localhost:18100`。runtime 已包含预构建 Web UI，不需要 Node.js。激活前，installer 会验证 Web、providers、MCP、memory、channels、search、Chromium、OCR/模型数据和三项第一方 Programs。`doctor` 仍可能报告尚未配置 provider credential 等用户配置问题。
 
-## Programs 与可选组件
+## 已包含产品能力与额外扩展
 
-agent Program 不属于基础桌面或 CLI 产物。只有当对应 release 明确记录 Program environment 支持时，才使用 `openprogram programs install <name-or-git-source>`。当前 Program installer 会修改活动 Python 环境，因此尚未作为 immutable desktop package 内的受支持操作。
+GUI Agent、Research Agent 和 Wiki Agent 属于每个受支持的 Desktop 与 CLI/server release 安装。它们的 Python 依赖、默认 OCR 数据、GPA detector 模型和 Playwright Chromium 已包含，不需要首次使用时补装。
 
-浏览器模型、GUI-agent 权重、OCR 数据和第三方 Program 可能需要单独下载。缺少这些可选内容不影响基础安装验收。
+第三方 Program 是用户主动增加的额外功能，存放在只读 product runtime 之外。第一方 Program editable source、诊断工具、本地前端构建，以及 OCR/Browser 后端替换属于开发者附加能力，不用于补齐普通安装。
 
 ## 开发 checkout
 
@@ -78,7 +78,7 @@ cd OpenProgram
 ./scripts/install.sh
 ```
 
-该开发 installer 可以安装工具链、使用 editable Python package，并通过 npm 构建 Web 和 Ink 界面。它不适用于普通用户，也不定义 `stable` channel。
+该开发 installer 先安装同一套产品能力，再增加工具链、editable source、测试、诊断、本地 Web/Ink 构建和后端替换选项。它不适用于普通用户，也不定义 `stable` channel。
 
 ## 数据与移除
 

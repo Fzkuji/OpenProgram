@@ -11,11 +11,7 @@ Channels 把聊天平台——**Telegram、Discord、Slack、微信**——接�
 | Slack | Socket Mode（`slack_sdk`） | bot token（`xoxb-`）**加** app-level token（`xapp-`） | 支持 | 支持（需 `files:read` scope） | 支持（需 `files:write` scope） |
 | 微信 | iLink 长轮询 | 用个人微信扫码 | 不支持（微信消息发出后不能编辑） | 不支持（iLink 只暴露文本） | 不支持 |
 
-Discord 与 Slack 需要可选依赖：
-
-```bash
-pip install openprogram[channels]
-```
+受支持的 release 已包含 Discord 与 Slack 依赖。开发者从源码安装时，也会通过完整开发安装获得相同的 channel 依赖。
 
 ## 快速开始
 
@@ -197,7 +193,7 @@ Telegram 图片走 photo、其余走 document；Discord 把文件连同 caption 
 | 回复 `[no agent configured]` | 没有绑定路由这条消息。先 `openprogram agents add main`，再跑 `openprogram channels setup` 或 `channels bindings add`。 |
 | worker 退出：`account … has no bot_token` | 凭据没存过。`openprogram channels accounts login <channel> --id <account>`。 |
 | worker 退出：`Slack account … needs both bot_token (xoxb-...) and app_token (xapp-...)` | Slack 只存了一个 token。重跑 login，两个都粘贴。 |
-| `Discord channel requires discord.py` / `Slack channel requires slack_sdk` | 缺可选依赖：`pip install openprogram[channels]`。 |
+| `Discord channel requires discord.py` / `Slack channel requires slack_sdk` | runtime 不完整。重新安装受支持的 release，或重新执行完整的源码开发安装。 |
 | Discord bot 连上了但收不到消息 | Developer Portal 里没开 Message Content Intent。 |
 | 微信日志：`bot token invalid — relogin required` | iLink 会话过期。`openprogram channels accounts login wechat --id <account>` 重新扫码。 |
 | worker 日志：`adapter crashed … reconnecting in Ns` | 瞬态网络/gateway 故障——adapter 自动退避重连。只有 `adapter exited on its own` 需要处理（通常是重新登录）。 |

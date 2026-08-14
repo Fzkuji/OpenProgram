@@ -13,7 +13,7 @@ OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调�
 | `list` | 列目录内容 | 无 |
 | `glob` | 按文件名模式找文件 | 无 |
 | `grep` | 内容搜索，优先 ripgrep，缺 rg 回退 Python re | 无（装 `rg` 更快） |
-| `semble_search` / `semble_find_related` | 语义 + 词法代码搜索，返回排好序的代码块 | `pip install 'openprogram[search]'`（可选 extra；缺包时工具直接回这行安装提示） |
+| `semble_search` / `semble_find_related` | 语义 + 词法代码搜索，返回排好序的代码块 | 每个受支持的 release 已包含；source developer 通过锁定的项目环境安装 `search` extra |
 | `lsp_diagnostics` / `lsp_references` / `lsp_definition` | 从 language server 拿类型检查错误、真实调用点、真实定义位置，见[Language server 工具](lsp.md) | Python 装 `pyright`，TypeScript 装 `typescript-language-server`（缺哪个工具就报哪条安装命令） |
 
 ## 执行
@@ -30,8 +30,8 @@ OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调�
 |---|---|---|
 | `web_search` | 关键词 → 相关 URL 列表，多后端可选 | 见下方后端表 |
 | `web_fetch` | 拉取 URL 并转成可读文本 | 无（装 `trafilatura` 抽取更干净） |
-| `playwright_browser` | Playwright 驱动无头 Chromium（open / navigate 等动作） | Playwright + 浏览器（`openprogram browser install` 安装） |
-| `agent_browser` | 经 npm `agent-browser` CLI 驱动浏览器，snapshot 返回可访问性树 | npm 包 `agent-browser` |
+| `playwright_browser` | Playwright 驱动无头 Chromium（open / navigate 等动作） | 每个受支持的 release 已包含 Playwright Chromium |
+| `agent_browser` | 经 npm `agent-browser` CLI 驱动浏览器，snapshot 返回可访问性树 | 开发者增加的替代 backend，不用于补齐产品 Browser 功能 |
 
 `web_search` 后端与 key（DuckDuckGo 和 arXiv 免 key，开箱即用）：
 

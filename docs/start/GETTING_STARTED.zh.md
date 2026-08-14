@@ -50,16 +50,11 @@ openprogram --print "用一句话介绍你自己"
 
 它发送一条消息、打印回复、然后退出。之前的会话可以用 `openprogram --resume <session_id>` 续上，id 来自 `openprogram sessions list` 或 web 侧栏。
 
-## 第 5 步：装一个现成的 agent 程序
+## 第 5 步：使用内置 agent Program
 
-OpenProgram 是宿主；装入受支持 Program environment 的 agent Program 会出现在 Web UI 和函数列表中：
+每个 release 都包含 GUI、Research 和 Wiki Program，无需单独安装，启动后会出现在 Web UI 和函数列表中。可用 `openprogram programs available` 查看注册状态。
 
-```bash
-openprogram programs install research     # 或 wiki / gui
-openprogram programs available            # 查看安装状态
-```
-
-当前 Program installer 会修改活动 Python 环境，因此不支持在 immutable desktop package 内使用。只有当对应 release 明确记录 Program environment 支持时才执行这些命令。安装后运行 `openprogram restart`，或在 Programs 页面使用 Refresh。
+Program installer 只用于第三方 Program 和开发者源码 overlay，不用于区分普通用户版本的功能范围。
 
 ## 下一步
 

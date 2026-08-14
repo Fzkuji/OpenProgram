@@ -1,12 +1,11 @@
 # Harnesses
 
 A **harness** (an *agentic program*) is a self-contained git repo of
-agentic functions. `openprogram programs install` records its source under
-`openprogram/programs/agentic_functions/`, and its functions then register like
-built-ins. This is a **general mechanism**: the first-party programs
-(gui / research / wiki) and any third-party repo install the exact same
-way in a mutable source-development or CLI environment; no symlinks are
-required. The immutable packaged desktop currently rejects Program install,
+agentic functions. Every supported release already contains the GUI, Research,
+and Wiki first-party Programs, their dependencies, and their default runtime
+assets. `openprogram programs install` is for additional third-party Programs
+or developer source overlays; it is not a step required to complete a release
+installation. The immutable product runtime rejects in-place Program install,
 upgrade, and uninstall operations.
 
 > **Where the agent reads this:** this file is the canonical procedure.
@@ -16,17 +15,15 @@ upgrade, and uninstall operations.
 ## TL;DR
 
 ```bash
-# First-party programs — by name:
-openprogram programs install research      # light (no extra deps)
-openprogram programs install gui           # heavy (pulls torch/opencv)
+# First-party Programs are already present:
+openprogram programs available
 
-# ANY third-party harness — same command, by git source:
+# Add a third-party harness in a mutable extension/development environment:
 openprogram programs install https://github.com/<owner>/<Harness-Name>
 openprogram programs install <owner>/<Harness-Name>     # GitHub shorthand
 
 # Manage:
 openprogram programs available             # status, incl. third-party
-openprogram programs uninstall research    # first-party: by name
 openprogram programs uninstall <Harness-Name>   # third-party: by dir name
 openprogram programs install <ref> --upgrade    # git pull + re-resolve deps
 
@@ -39,7 +36,7 @@ openprogram programs install <ref> --upgrade    # git pull + re-resolve deps
 
 ## What `programs install` does
 
-The same four steps for first-party and third-party:
+For a third-party Program or developer source overlay, the command performs four steps:
 
 1. **Shallow-clone** the repo into
    `openprogram/programs/agentic_functions/<Repo-Name>/` — a real, editable
@@ -63,25 +60,18 @@ contract and records the link without modifying its target. It refuses a
 same-named non-git directory. `uninstall` on a symlink removes only the link,
 never the checkout it points to.
 
-## First-party programs (gui / research / wiki)
+## First-party Programs (gui / research / wiki)
 
-| Program | Install | Notes |
+| Program | Release status | Notes |
 |---|---|---|
-| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | `openprogram programs install research` | no extra deps |
-| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | `openprogram programs install wiki` | Jinja2 + PyYAML (tiny) |
-| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | `openprogram programs install gui` | heavy: PyTorch via ultralytics + OpenCV. On GPU-less Linux the CPU torch wheel (~200 MB) is auto-selected instead of the ~3 GB CUDA build. |
+| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | Included | Fixed source commit and dependencies are recorded in the product manifest. |
+| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | Included | Fixed source commit and dependencies are recorded in the product manifest. |
+| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Included | PyTorch, OpenCV, default EasyOCR data, Playwright Chromium, and the GPA detector model are built into the platform runtime. |
 
-`openprogram programs install all` installs the three; the first-run
-setup wizard's "Agent programs" step offers the same choice
-interactively.
-
-> **GUI agent — one extra step.** Beyond its pip deps, `gui_agent` needs
-> a YOLO detector weight + OCR models that aren't on PyPI. After the
-> install, run the harness's own installer to fetch them (it skips the
-> host since you already have it):
-> `openprogram/programs/applications/gui_harness/scripts/install.sh --no-host`
-> (Windows: `…\scripts\install.ps1 -NoHost`). See the
-> [GUI install guide](https://github.com/Fzkuji/GUI-Agent-Harness#1-install).
+Release users do not run `programs install all`, a first-run Program wizard,
+or the GUI harness asset installer. Developers may replace a first-party
+Program with an editable checkout or configure a different OCR/browser backend;
+those overlays add development behavior without changing the product manifest.
 
 ## Third-party harnesses
 

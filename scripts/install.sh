@@ -9,8 +9,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash
 # It clones OpenProgram to ~/OpenProgram (override with --target DIR), then
 # hands off to the cloned copy. Already inside a checkout? It skips the clone
-# and installs in place. When a terminal is attached it also offers a menu to
-# pick which agentic programs (GUI / Research / Wiki) to install.
+# and installs in place.
 #
 # The default install brings up EVERYTHING `openprogram` ships with:
 #   1. System toolchain: Python 3.11+, Node 20+, git (installed if missing)
@@ -18,18 +17,9 @@
 #   3. OpenProgram (editable) + its deps
 #   4. Web UI:   web/ -> npm install && npm run build  (served on :18100)
 #   5. TUI:      cli/ -> npm install && npm run build  (Ink TUI; POSIX)
-#   6. Default extras [all]: browser tool (Playwright + Chromium) + channels
-#
-#   Agentic programs (GUI / Research / Wiki) are NOT installed here — the
-#   first run of `openprogram` opens the setup wizard, whose "Agent
-#   programs" step lets the user pick which to install (sizes shown).
-#   Manual: openprogram programs install <gui|research|wiki|all>
-#   Non-interactive: pass --programs <gui|research|wiki|all> (repeatable
-#   or comma-separated) to install them right after the main install.
-#
-# `--minimal` skips 4(build)/5/6/7 — a bare host for servers; everything
-# it skipped can be added later (`openprogram programs install all`,
-# `pip install -e .[all]`, `cd web && npm run build`).
+#   6. Product extras [all,search] + Playwright Chromium
+#   7. GUI / Research / Wiki first-party Programs, default OCR/model data,
+#      and the Research PDF dependency
 #
 # The GUI harness's torch build is whatever pip resolves. If you need an
 # explicit CUDA/CPU variant, run the harness's own installer afterwards:
@@ -38,13 +28,11 @@
 # Re-runnable: every step is idempotent.
 #
 # Usage:
-#   curl -fsSL .../scripts/install.sh | bash    # web install, prompts for programs
+#   curl -fsSL .../scripts/install.sh | bash    # full development install
 #   ./scripts/install.sh                   # full install (everything above)
-#   ./scripts/install.sh --minimal         # bare host only
 #   ./scripts/install.sh --python /p/bin/python   # pick the interpreter
 #   ./scripts/install.sh --stealth         # + stealth browsers (patchright/camoufox)
 #   ./scripts/install.sh --agent-browser   # + agent-browser (global npm)
-#   ./scripts/install.sh --programs all    # + install agentic programs non-interactively
 #   ./scripts/install.sh --target DIR      # where to clone when run off the web (default ~/OpenProgram)
 #   ./scripts/install.sh --yes             # skip every prompt, use defaults (-y)
 #
@@ -52,7 +40,7 @@
 # / OPENPROGRAM_INSTALL_YES) to take every default with no prompts. Even without
 # it, no prompt can hang: each /dev/tty read times out after 60s (override with
 # OPENPROGRAM_PROMPT_TIMEOUT=<seconds>) and falls back to the default.
-#   curl -fsSL .../scripts/install.sh | bash -s -- --yes --programs all
+#   curl -fsSL .../scripts/install.sh | bash -s -- --yes
 # =============================================================================
 set -euo pipefail
 
@@ -105,16 +93,16 @@ else
 fi
 
 # ---- args -------------------------------------------------------------------
-PYTHON_BIN=""; MINIMAL=0; WITH_STEALTH=0; WITH_AGENT_BROWSER=0; PROGRAMS=""
-CLONE_TARGET=""; ASSUME_YES=0; BOOTSTRAPPED=0; BOOTSTRAP_ONLY=0; PROGRAMS_GIVEN=0
+PYTHON_BIN=""; WITH_STEALTH=0; WITH_AGENT_BROWSER=0
+CLONE_TARGET=""; ASSUME_YES=0; BOOTSTRAPPED=0; BOOTSTRAP_ONLY=0
 FORWARD_ARGS=()   # rebuilt to forward across the bootstrap exec
 while [ $# -gt 0 ]; do
   case "$1" in
-    --minimal) MINIMAL=1; FORWARD_ARGS+=("$1"); shift ;;
+    --minimal) die "--minimal was removed: development installs include the complete product" ;;
     --python) PYTHON_BIN="${2:?--python needs a path}"; FORWARD_ARGS+=("$1" "$2"); shift 2 ;;
     --stealth) WITH_STEALTH=1; FORWARD_ARGS+=("$1"); shift ;;
     --agent-browser) WITH_AGENT_BROWSER=1; FORWARD_ARGS+=("$1"); shift ;;
-    --programs) PROGRAMS="$PROGRAMS ${2:?--programs needs <gui|research|wiki|all>}"; PROGRAMS_GIVEN=1; FORWARD_ARGS+=("$1" "$2"); shift 2 ;;
+    --programs) [ $# -ge 2 ] || die "--programs needs a value"; warn "--programs is no longer needed; all first-party Programs are installed"; shift 2 ;;
     --target) CLONE_TARGET="${2:?--target needs a directory}"; shift 2 ;;   # consumed by bootstrap, not forwarded
     -y|--yes) ASSUME_YES=1; FORWARD_ARGS+=("$1"); shift ;;
     --bootstrapped) BOOTSTRAPPED=1; shift ;;   # internal: child skips re-bootstrapping
@@ -213,22 +201,17 @@ ok "openprogram installed"
 
 # ---- 4. web frontend (deps + production build) -------------------------------
 install_web() {
-  command -v npm >/dev/null 2>&1 || { warn "npm missing — skipping web UI deps"; return 0; }
-  [ -f "$HOST_ROOT/web/package.json" ] || { warn "web/ not found — skipping"; return 0; }
+  command -v npm >/dev/null 2>&1 || die "npm is required to build the Web UI"
+  [ -f "$HOST_ROOT/web/package.json" ] || die "web/package.json is missing"
   step "installing web UI deps (web/ — Next.js)"
   ( cd "$HOST_ROOT/web" && npm install )
-  if [ "$MINIMAL" = "1" ]; then
-    warn "skipping web production build (--minimal) — the worker builds it on first start"
-  else
-    step "building web production bundle"
-    ( cd "$HOST_ROOT/web" && npm run build ) || warn "web build failed — the worker retries on first start"
-  fi
+  step "building web production bundle"
+  ( cd "$HOST_ROOT/web" && npm run build )
   ok "web UI ready (single port :18100)"
 }
 
 # ---- 5. Ink TUI (deps + build; POSIX only) -----------------------------------
 install_tui() {
-  [ "$MINIMAL" = "1" ] && { warn "skipping TUI build (--minimal)"; return 0; }
   command -v npm >/dev/null 2>&1 || { warn "npm missing — skipping TUI"; return 0; }
   [ -f "$HOST_ROOT/cli/package.json" ] || return 0
   step "installing + building Ink TUI (cli/)"
@@ -238,11 +221,10 @@ install_tui() {
 
 # ---- 7. default extras: [all] = browser + channels ----------------------------
 install_default_extras() {
-  [ "$MINIMAL" = "1" ] && { warn "skipping default extras (--minimal)"; return 0; }
-  step "installing default extras [all] (browser tool + channels)"
-  PIP install -e "$HOST_ROOT[all]"
+  step "installing product extras [all,search]"
+  PIP install -e "$HOST_ROOT[all,search]"
   step "fetching Playwright Chromium (~150MB)"
-  "$PY" -m playwright install chromium || warn "playwright chromium download failed — run '\"$PY\" -m playwright install chromium' later (needs network)"
+  "$PY" -m playwright install chromium
 }
 
 # ---- 8. heavier opt-in extras: stealth browsers / agent-browser ---------------
@@ -259,95 +241,51 @@ install_extras() {
   fi
 }
 
-# ---- 9a. interactive program menu -------------------------------------------
-# Menu order == PROGRAM_KEYS index (1-based). Sizes mirror KNOWN_PROGRAMS.
-PROGRAM_KEYS=(gui research wiki)
-PROGRAM_MENU=(
-  "GUI harness      — autonomous desktop agent (downloads PyTorch: ~300 MB CPU / ~3 GB CUDA; ~1.5 GB on disk)"
-  "Research harness — topic → submission-ready paper (repo < 1 MB, only depends on openprogram)"
-  "Wiki harness     — ingest sessions into a knowledge vault (repo < 1 MB; Jinja2 + PyYAML)"
-)
+# ---- 9. complete first-party Programs ---------------------------------------
+install_first_party_programs() {
+  step "installing GUI, Research, and Wiki Programs"
+  "$PY" -m openprogram programs install all
+  local applications="$HOST_ROOT/openprogram/programs/applications"
+  local gui_installer="$applications/gui_harness/scripts/install.sh"
+  [ -f "$gui_installer" ] || die "GUI Program source is missing after install"
+  bash "$gui_installer" --no-host --python "$PY"
+  PIP install -e "$applications/research_harness[pdf]"
 
-# parse_program_choice "<raw input>" -> echoes space-separated keys (or nothing).
-# empty/none -> nothing; all -> every key; "1,3" -> gui wiki; invalid -> exit 1.
-parse_program_choice() {
-  local raw part idx keys=""
-  raw="$(printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
-  case "$raw" in
-    ""|none) return 0 ;;
-    all) printf '%s' "${PROGRAM_KEYS[*]}"; return 0 ;;
-  esac
-  local oldIFS="$IFS"; IFS=','
-  for part in $raw; do
-    case "$part" in
-      gui|research|wiki) keys="$keys $part" ;;
-      *[!0-9]*|"") IFS="$oldIFS"; return 1 ;;
-      *)
-        idx=$((part))
-        [ "$idx" -ge 1 ] && [ "$idx" -le "${#PROGRAM_KEYS[@]}" ] || { IFS="$oldIFS"; return 1; }
-        keys="$keys ${PROGRAM_KEYS[$((idx-1))]}" ;;
-    esac
-  done
-  IFS="$oldIFS"
-  # de-dup, preserve first-seen order
-  local out="" k seen
-  for k in $keys; do
-    case " $out " in *" $k "*) : ;; *) out="$out $k" ;; esac
-  done
-  printf '%s' "${out# }"
-}
+  local gpa_model="${GPA_MODEL_PATH:-$HOME/GPA-GUI-Detector/model.pt}"
+  [ -s "$gpa_model" ] || die "GPA detector model is missing: $gpa_model"
+  "$PY" - <<'PY'
+from pathlib import Path
 
-# Prompt on /dev/tty; re-prompt on invalid; empty -> none. Appends to PROGRAMS.
-prompt_programs_menu() {
-  [ "$PROGRAMS_GIVEN" = "1" ] && return 0        # --programs wins, no prompt
-  is_noninteractive && return 0                  # --yes / CI / etc: default (none)
-  # non-interactive (CI / detached / true pipe): default to none. Probe the
-  # device, not just its perms — a "readable" /dev/tty can still be unusable.
-  { [ -r /dev/tty ] && [ -w /dev/tty ] && { : </dev/tty; } 2>/dev/null; } || return 0
-  local i menu_num=1 picked
-  {
-    printf '\nAgentic programs — pick which to install now (or later via the first-run wizard):\n'
-    for i in "${!PROGRAM_MENU[@]}"; do printf '  %d) %s\n' "$menu_num" "${PROGRAM_MENU[$i]}"; menu_num=$((menu_num+1)); done
-    printf '  all)  install every harness\n'
-    printf '  none) skip (default — pick later in the wizard or: openprogram programs install <gui|research|wiki|all>)\n'
-  } > /dev/tty
-  while :; do
-    local reply=""
-    reply="$(tty_prompt 'Choose (comma-separated numbers, "all", or "none") [none]: ')"
-    if picked="$(parse_program_choice "$reply")"; then
-      [ -n "$picked" ] && PROGRAMS="$PROGRAMS $picked"
-      return 0
-    fi
-    printf '  invalid selection: %s\n' "$reply" > /dev/tty
-  done
-}
+import discord
+import easyocr
+import easyocr.config
+import pymupdf
+import qrcode
+import semble
+import slack_sdk
+from openprogram.programs._programs import import_installed_programs
 
-# ---- 9. optional: agentic programs (--programs) ------------------------------
-install_programs() {
-  [ -n "$PROGRAMS" ] || return 0
-  # Accept repeated flags and comma-separated values: "gui,research" or
-  # "--programs gui --programs research" both fan out to one call each.
-  local names; names="$(printf '%s' "$PROGRAMS" | tr ',' ' ')"
-  local name
-  for name in $names; do
-    step "installing agentic program: $name"
-    openprogram programs install "$name" || warn "program install failed: $name"
-  done
+if not any(Path(easyocr.config.MODULE_PATH).rglob("*.pth")):
+    raise SystemExit("default EasyOCR model data is missing")
+required = {"gui_agent", "research_agent", "wiki_agent"}
+registered = set(import_installed_programs())
+missing = required - registered
+if missing:
+    raise SystemExit(f"first-party Programs failed to register: {sorted(missing)}")
+PY
+  ok "complete first-party Programs ready"
 }
 
 # ---- run --------------------------------------------------------------------
-step "OpenProgram setup  (os=$OS, minimal=$MINIMAL)"
+step "OpenProgram development setup  (os=$OS)"
 install_web
 install_tui
 install_default_extras
 install_extras
-prompt_programs_menu
-install_programs
+install_first_party_programs
 
 # ---- done --------------------------------------------------------------------
 printf "\n${c_green}OpenProgram ready.${c_reset}\n"
 printf "  Start:     openprogram           # first run walks you through provider setup, then opens the chat\n"
 printf "  Web UI:    openprogram web        # -> http://localhost:18100\n"
-printf "  Programs:  pick which agentic programs to install in the first-run wizard\n"
-printf "             (or any time: openprogram programs install <gui|research|wiki|all>,\n"
-printf "              or non-interactively at install: ./scripts/install.sh --programs all)\n"
+printf "  Programs:  GUI, Research, and Wiki are installed; developer backend flags are additive\n"

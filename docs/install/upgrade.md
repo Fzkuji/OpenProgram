@@ -4,12 +4,12 @@ Upgrade behavior depends on the installation type. A stable installation always 
 
 ## Desktop release
 
-Desktop automatic update is not enabled until signed cross-version update acceptance passes. Upgrade manually from GitHub Releases:
+Desktop automatic update is not enabled for the current unsigned macOS distribution. Upgrade manually from GitHub Releases:
 
-- macOS: download the new notarized DMG and replace `OpenProgram.app`.
+- macOS: download the new architecture-matched `unsigned` DMG, verify its SHA-256, and replace `OpenProgram.app`; macOS may require **Privacy & Security → Open Anyway** again.
 - Linux: download the new AppImage, verify its SHA-256, add execute permission, and replace the previous AppImage.
 
-The application code and embedded Python are replaced together. State under `~/.openprogram` remains unchanged.
+The application shell and complete product runtime are replaced together. State under `~/.openprogram` remains unchanged.
 
 ## CLI and server release
 
@@ -21,7 +21,7 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
-The installer creates a new version directory, installs and probes the exact wheel, then changes the `current` symlink. A failure before the change leaves the previous version selected.
+The installer downloads the platform runtime archive used by Desktop, verifies its checksum and complete capability manifest in a new version directory, cold-starts the worker, then changes the `current` symlink. A failure before the change leaves the previous version selected.
 
 Restart a login service after upgrading:
 

@@ -2,13 +2,9 @@
 
 An autonomous research agent: take a research topic and walk the full pipeline of literature survey → idea generation → experiments → writing → review → rebuttal / presentation, producing a submission-ready paper. It does not trust its own output — every citation is verified against four indexes (Crossref / OpenAlex / Semantic Scholar / arXiv), every number in the paper must trace back to an experiment's `run_record.json`, and the review can run on a different model (author and reviewer use different models to avoid self-grading).
 
-## Install
+## Availability
 
-```bash
-openprogram programs install research
-```
-
-No extra dependencies — the harness uses only OpenProgram itself. Optional: install `pymupdf` for PDF parsing (needed by `load_paper` / wiki ingest), and install the wiki harness for knowledge-base integration (`openprogram programs install wiki`).
+Every supported release contains the Research and Wiki Programs together with PyMuPDF for PDF parsing. No Program or PDF dependency installation is required after installing OpenProgram. Developers can replace either Program with an editable checkout.
 
 ## Usage
 

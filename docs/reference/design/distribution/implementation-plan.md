@@ -47,6 +47,19 @@ git status --short
 
 The platform runtime and public desktop artifact probes run on native release runners. A platform artifact is absent rather than published with a reduced capability manifest.
 
+### Current-batch evidence
+
+| Field | Evidence |
+|---|---|
+| RED | The first focused distribution run reported 6 expected failures: no product manifest, no unified runtime builder, the CLI installer still resolved a wheel, Desktop and CLI assembled dependencies independently, and the workflow still required Apple/PyPI publication paths. |
+| Static GREEN | Distribution and packaged-file suite: 22 passed before the documentation/source-installer follow-up. Desktop checks, shell syntax, workflow YAML parsing, and diff checks passed. |
+| Real macOS arm64 runtime | CPython 3.12.10, locked OpenProgram dependencies, GUI/Research/Wiki pinned commits, Playwright Chromium, EasyOCR English/Chinese data, GPA detector, and all 12 capabilities built successfully. The complete runtime was about 2.5 GB before compression. |
+| Runtime verification | The schema 2 verifier launched a real headless Chromium page, imported channels/search/OCR/PDF dependencies, checked Web assets and model files, and required GUI/Research/Wiki registration. It records the product-manifest hash, `uv.lock` hash, exact installed distributions, platform, and architecture. |
+| Archive and CLI entry | A macOS arm64 archive was checksum-verified, extracted into a new CLI version directory, re-verified, cold-started and stopped a worker, switched `current`, and produced a working `openprogram 0.6.1` launcher. |
+| Workflow state | Release and Linux smoke workflows now build one archive per platform/architecture and pass the same artifact to Desktop and CLI jobs. Apple signing/notarization secrets and PyPI publication were removed. Native runner execution and a new stable tag remain pending. |
+| Review | Ponytail full review removed the first-party selection menu and reduced the model to one manifest, one builder, one verifier, and existing shell/workflow entry points. Manual specification review found and fixed unlocked dependency resolution, non-canonical archive roots, missing archive checksum/path validation, Playwright cleanup warnings, and the Research PDF extra. |
+| Incremental commits | Design commit `e2a1b691` and implementation commit `c75099d2` were merged and pushed incrementally; implementation reached `main` in merge `f26edbff`. |
+
 ## Prior packaging batch (historical evidence)
 
 - Base commit: `717d4e176307e08cc4ae4facd3c484511684746c`.

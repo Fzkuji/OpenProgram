@@ -13,7 +13,7 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 | `list` | List directory contents | Nothing |
 | `glob` | Find files by filename pattern | Nothing |
 | `grep` | Content search; prefers ripgrep, falls back to Python re without rg | Nothing (`rg` makes it faster) |
-| `semble_search` / `semble_find_related` | Semantic + lexical code search returning ranked code blocks | `pip install 'openprogram[search]'` (opt-in extra; the tools answer with this hint when it is missing) |
+| `semble_search` / `semble_find_related` | Semantic + lexical code search returning ranked code blocks | Included in every supported release; source developers install the `search` extra through the locked project environment |
 | `lsp_diagnostics` / `lsp_references` / `lsp_definition` | Type-checker errors, real call sites, and true definition sites from a language server — see [Language server tools](lsp.md) | `pyright` for Python, `typescript-language-server` for TypeScript (the tools name the install command when one is missing) |
 
 ## Execution
@@ -30,8 +30,8 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 |---|---|---|
 | `web_search` | Keywords to a list of relevant URLs, multiple backends | See the backend table below |
 | `web_fetch` | Fetch a URL and convert it to readable text | Nothing (`trafilatura` gives cleaner extraction) |
-| `playwright_browser` | Playwright-driven headless Chromium (open / navigate and other actions) | Playwright + a browser (install via `openprogram browser install`) |
-| `agent_browser` | Drive a browser through the npm `agent-browser` CLI; snapshot returns the accessibility tree | npm package `agent-browser` |
+| `playwright_browser` | Playwright-driven headless Chromium (open / navigate and other actions) | Playwright Chromium is included in every supported release |
+| `agent_browser` | Drive a browser through the npm `agent-browser` CLI; snapshot returns the accessibility tree | Developer-added alternative backend; not required for product browser functionality |
 
 `web_search` backends and keys (DuckDuckGo and arXiv are key-free and work out of the box):
 

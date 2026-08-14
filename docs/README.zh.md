@@ -81,7 +81,7 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
-桌面用户从 GitHub Releases 下载 macOS DMG 或 Linux x86_64 AppImage。校验、平台范围和 source development 安装见 **[install.md](install/install.md)**。
+桌面用户从 GitHub Releases 下载 unsigned macOS DMG 或 Linux x86_64 AppImage。Desktop 与 CLI/server release 具有相同的完整产品能力，区别只在启动外壳。校验、平台范围和 source development 安装见 **[install.md](install/install.md)**。
 
 ### 2. 运行
 
@@ -91,16 +91,17 @@ openprogram
 
 首次运行会先配置 provider,然后问你打开哪个界面。跳过询问可以直接 `openprogram tui`(终端)或 `openprogram web`(浏览器 → http://localhost:18100)。
 
-### 3. 添加 harness
+### 3. 已包含 Programs 与额外 harness
 
-Harness 是 `openprogram/programs/agentic_functions/` 下的程序。使用 `openprogram programs install <名称或Git来源>` 安装：该命令会克隆或检查仓库、登记owner批准的来源，并在下次worker重启后启用它。只把目录复制到这里不会触发导入。
+每个受支持的 release 安装都已经包含三项第一方 Programs 及其默认 runtime 资产：
 
-| Harness | 安装 | 功能 |
+| Program | Release 状态 | 功能 |
 |---|---|---|
-| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | `openprogram programs install gui`(会拉 PyTorch),再跑它的安装器装检测器/OCR 资产——**[指南](https://github.com/Fzkuji/GUI-Agent-Harness#1-install)** | 通过视觉操控桌面应用和 OSWorld 虚拟机。 |
-| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | `openprogram programs install research` | 文献调研 → 实验 → 论文初稿。 |
-| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | `openprogram programs install wiki` | 把笔记 / 文档 / 聊天整理成带 `[[wikilinks]]` 的 Obsidian 知识库。 |
-| **任意第三方 harness** | `openprogram programs install <owner>/<repo>`(或完整 git URL) | 同一套流程——克隆、依赖、契约检查和owner来源登记。 |
+| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | 已包含 PyTorch、默认 OCR 和 detector 模型 | 通过视觉操控桌面应用和 OSWorld 虚拟机。 |
+| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | 已包含 | 文献调研 → 实验 → 论文初稿。 |
+| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | 已包含 | 把笔记 / 文档 / 聊天整理成带 `[[wikilinks]]` 的 Obsidian 知识库。 |
+
+第三方 harness 是额外功能。可变扩展环境使用 `openprogram programs install <owner>/<repo>`（或完整 git URL）；源码编辑和 OCR/Browser 后端替换属于开发者功能。
 
 写一个自己的可安装 harness 只差一份布局契约——完整指南(安装、管理、编写、测试、发布)见
 **[installing-harnesses.md](capabilities/installing-harnesses.md)**。

@@ -1,34 +1,33 @@
 # Agentic workflows
 
-This page covers the ready-made agents that ship with OpenProgram: how to install them and how to manage them. If you want to use agents directly instead of writing your own functions, start here.
+This page covers the ready-made agents included in every supported OpenProgram release and how to use them. If you want to use agents directly instead of writing your own functions, start here.
 
 ## What they are
 
-An agentic workflow is a finished workflow built with [Agentic Programming](../agentic-programming/README.md) — called a **harness** or **agentic program** in the code: a self-contained git repository holding a set of `@agentic_function`s. Once installed, its functions register into OpenProgram and appear like built-in functions in chat, on the Web UI Programs page, and in `openprogram programs run`.
+An agentic workflow is a finished workflow built with [Agentic Programming](../agentic-programming/README.md) — called a **harness** or **agentic program** in the code: a self-contained git repository holding a set of `@agentic_function`s. The fixed release versions register into OpenProgram and appear like built-in functions in chat, on the Web UI Programs page, and in `openprogram programs run`.
 
 Three first-party workflows:
 
-| Workflow | Install name | In one line |
+| Workflow | Release status | In one line |
 |---|---|---|
-| [GUI Agent](gui-agent.md) | `gui` | Give it a task in one sentence and it operates the desktop autonomously (screenshot, detect, click, verify loop) |
-| [Research Agent](research-agent.md) | `research` | From research topic to submission-ready paper, with a deterministic verification layer |
-| [Wiki Agent](wiki-agent.md) | `wiki` | Distills sessions and notes into a templated HTML knowledge base |
+| [GUI Agent](gui-agent.md) | Included | Give it a task in one sentence and it operates the desktop autonomously (screenshot, detect, click, verify loop) |
+| [Research Agent](research-agent.md) | Included | From research topic to submission-ready paper, with a deterministic verification layer |
+| [Wiki Agent](wiki-agent.md) | Included | Distills sessions and notes into a templated HTML knowledge base |
 
 ## Management commands
 
 ```bash
 openprogram programs list          # all registered functions and programs
-openprogram programs available     # installable items + status of installed third-party harnesses
-openprogram programs install gui   # gui | research | wiki | all
+openprogram programs available     # first-party status + installed third-party harnesses
 openprogram programs install <owner>/<repo>   # any third-party harness (git URL also works)
 openprogram programs install <ref> --upgrade  # reinstall / upgrade
-openprogram programs uninstall research       # uninstall
+openprogram programs uninstall <Harness-Name> # remove a third-party harness
 openprogram programs run <name> -a key=value  # run a program directly
 ```
 
 `programs run` also accepts `--provider` (claude-code / openai-codex / gemini-cli / anthropic / openai / gemini, auto-detected by default) and `--model` to override the model.
 
-`programs install` clones the harness into `openprogram/programs/agentic_functions/`, installs the dependencies declared by its `pyproject.toml` / `requirements.txt`, and records the approved source. Only recorded harnesses register when the worker restarts; a manual clone can be recorded by running the same install command with its git source.
+First-party Programs are immutable product components. In a mutable extension or development environment, `programs install` clones an additional third-party harness, installs its declared dependencies, and records the approved source.
 
 ## How to trigger them
 

@@ -2,20 +2,9 @@
 
 Give it a natural-language task and it operates the desktop autonomously: taking screenshots, detecting UI components, clicking, typing, and verifying results, looping until the task completes or the step limit is reached. It works on the local desktop and can also drive remote virtual machines through a VM interface. The perception layer combines YOLO component detection (GPA-GUI-Detector), OCR (Apple Vision on macOS, EasyOCR on Linux / Windows), and template matching; the action layer covers mouse, keyboard, and clipboard. On the OSWorld benchmark it scores 79.8% on the Multi-Apps split ([results](https://github.com/Fzkuji/GUI-Agent-Harness/blob/main/benchmarks/osworld/multi_apps.md)).
 
-## Install
+## Availability
 
-```bash
-openprogram programs install gui
-```
-
-This is the heaviest of the three first-party workflows: dependencies include `torch` / `torchvision`, `opencv-python`, `ultralytics`, `easyocr`, `pynput`, and more. On Linux without a GPU it automatically picks the CPU torch wheel (about 300 MB) instead of the roughly 3 GB CUDA build.
-
-Beyond the pip dependencies you also need model files â€” the YOLO detector weights (downloaded via `huggingface-hub`) and the OCR models are not on PyPI. After installing, run the harness's bundled installer to fetch them:
-
-```bash
-openprogram/programs/applications/gui_harness/scripts/install.sh --no-host
-# Windows: ...\scripts\install.ps1 -NoHost
-```
+Every supported release contains this Program, PyTorch/OpenCV, Playwright Chromium, default EasyOCR data, and the fixed GPA detector model. No Program or model installation is required after installing OpenProgram. Developers can use an editable GUI harness checkout or replace the OCR/browser backend for debugging and backend work.
 
 ## Usage
 
@@ -39,9 +28,9 @@ Each step runs observe (screenshot + component detection + state recognition) â†
 
 ## Dependency notes
 
-- PyTorch + OpenCV are large; installation takes minutes. No transformers / accelerate needed.
-- The model weights are a separate download step (see above); without them the function registers but cannot perceive the screen.
-- Platforms: macOS / Windows / Linux; the OCR backend is selected automatically per platform.
+- PyTorch + OpenCV account for a substantial part of the release artifact size. No transformers / accelerate dependency is included.
+- The release capability probe rejects an artifact if the default OCR data or detector model is missing.
+- Supported product platforms are macOS and Linux; the bundled EasyOCR backend is available on both.
 - The runtime needs a working directory configured before running (screenshots and run records are written there).
 
 Source and README: `openprogram/programs/applications/gui_harness/`, upstream repository [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness).

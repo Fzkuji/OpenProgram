@@ -4,12 +4,12 @@
 
 ## 桌面 release
 
-签名后的跨版本更新验收通过前，不启用桌面自动更新。当前从 GitHub Releases 手动升级：
+当前 unsigned macOS 分发不启用桌面自动更新。目前从 GitHub Releases 手动升级：
 
-- macOS：下载新的 notarized DMG，替换 `OpenProgram.app`。
+- macOS：下载与架构匹配且文件名含 `unsigned` 的新 DMG，验证 SHA-256 后替换 `OpenProgram.app`；macOS 可能再次要求通过“隐私与安全性 → 仍要打开”授权。
 - Linux：下载新的 AppImage，验证 SHA-256，增加执行权限并替换旧文件。
 
-应用代码和内置 Python 一起替换；`~/.openprogram` 下的状态保持不变。
+应用外壳与完整 product runtime 一起替换；`~/.openprogram` 下的状态保持不变。
 
 ## CLI 和服务器 release
 
@@ -21,7 +21,7 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
-installer 创建新的版本目录，安装并 probe 精确 wheel，随后切换 `current` symlink。切换前失败时，旧版本仍保持选中状态。
+installer 下载 Desktop 使用的同平台 runtime archive，在新版本目录验证 checksum 和完整 capability manifest、执行 worker cold-start，随后切换 `current` symlink。切换前失败时，旧版本仍保持选中状态。
 
 升级后重启登录服务：
 
