@@ -19,6 +19,7 @@ const historyGroupsSource = read("../lib/history-groups.ts");
 for (const label of ["Files", "Side chat", "Browser", "Terminal"]) {
   assert.match(launcher, new RegExp(`text\\(\\"${label}\\"`));
 }
+assert.doesNotMatch(launcher, /Claude Code|openBuiltinTab\("claude"\)/);
 assert.doesNotMatch(launcher, /readBookmarks|readShortcuts|ntpUrlInput/);
 assert.match(browserHome, /BrowserImportDialog/);
 assert.match(browserHome, /importBookmarkTree/);
