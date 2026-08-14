@@ -61,10 +61,9 @@
         "zip"
       ],
       "icon": "build/icon.icns",
-      "hardenedRuntime": true,
-      "notarize": true,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.inherit.plist"
+      "identity": null,
+      "hardenedRuntime": false,
+      "notarize": false
     },
     "linux": {
       "target": [

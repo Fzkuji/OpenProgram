@@ -125,6 +125,7 @@ function spawnWorker() {
   if (app.isPackaged) {
     env.OPENPROGRAM_IMMUTABLE_RUNTIME = "1";
     launch = resolvePackagedWorker(process.resourcesPath, app.getVersion());
+    Object.assign(env, launch.env);
   } else {
     launch = { command: "openprogram", args: ["worker", "start"] };
   }

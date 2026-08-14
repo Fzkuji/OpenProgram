@@ -101,12 +101,13 @@ def test_packaged_runtime_rejects_program_mutation(monkeypatch, capsys) -> None:
 
 def test_release_installer_is_versioned_and_source_free() -> None:
     installer = (ROOT / "scripts" / "install-release.sh").read_text(encoding="utf-8")
-    assert "UV_VERSION=" in installer
-    assert "PYTHON_VERSION=" in installer
-    assert 'openprogram==${OPENPROGRAM_VERSION}' in installer
-    assert "OPENPROGRAM_WHEEL" in installer
-    assert "--no-bin" in installer
-    assert "--break-system-packages" in installer
+    assert "OPENPROGRAM_RUNTIME_ARCHIVE" in installer
+    assert "runtime-${platform}-${arch}.tar.gz" in installer
+    assert "runtime-manifest.json" in installer
+    assert "verify-product-runtime.py" in installer
+    assert "OPENPROGRAM_WHEEL" not in installer
+    assert "pypi" not in installer.lower()
+    assert "pip install" not in installer
     assert "git clone" not in installer
     assert "pip install -e" not in installer
     assert "npm" not in installer
@@ -133,20 +134,58 @@ def test_cli_exposes_distribution_version(capsys) -> None:
 
 
 def test_desktop_runtime_removes_absolute_python_aliases() -> None:
-    staging = (ROOT / "scripts" / "prepare-desktop-runtime.sh").read_text(
+    staging = (ROOT / "scripts" / "build-product-runtime.sh").read_text(
         encoding="utf-8"
     )
     assert 'readlink "$python_alias"' in staging
     assert 'unlink "$python_alias"' in staging
 
 
-def test_desktop_runtime_installs_playwright_for_cdp_without_browser_binary() -> None:
-    staging = (ROOT / "scripts" / "prepare-desktop-runtime.sh").read_text(
+def test_product_runtime_installs_complete_default_capabilities() -> None:
+    staging = (ROOT / "scripts" / "build-product-runtime.sh").read_text(
         encoding="utf-8"
     )
-    assert '"$wheel[browser]"' in staging
-    assert "import playwright.sync_api" in staging
-    assert "playwright install" not in staging
+    verifier = (ROOT / "scripts" / "verify-product-runtime.py").read_text(
+        encoding="utf-8"
+    )
+    product_config = (ROOT / "config" / "product-runtime.json").read_text(
+        encoding="utf-8"
+    )
+    assert "--frozen --no-dev" in staging
+    assert "--extra all --extra search" in staging
+    assert "--require-hashes" in staging
+    assert '--no-deps "$wheel"' in staging
+    assert "playwright.sync_api" in verifier
+    assert "playwright install chromium" in staging
+    assert "easyocr" in staging
+    assert "Salesforce/GPA-GUI-Detector" in product_config
+    assert "GUI-Agent-Harness" in product_config
+    assert "Research-Agent-Harness" in product_config
+    assert "Wiki-Agent-Harness" in product_config
+
+
+def test_product_manifest_requires_one_complete_capability_set() -> None:
+    manifest = json.loads(
+        (ROOT / "config" / "product-runtime.json").read_text(encoding="utf-8")
+    )
+    assert manifest["schema"] == 1
+    assert set(manifest["capabilities"]) == {
+        "web",
+        "providers",
+        "mcp",
+        "memory",
+        "channels",
+        "search",
+        "browser.playwright",
+        "ocr.default",
+        "model.gpa_detector",
+        "program.gui",
+        "program.research",
+        "program.wiki",
+    }
+    assert set(manifest["programs"]) == {"gui", "research", "wiki"}
+    for program in manifest["programs"].values():
+        assert re.fullmatch(r"[0-9a-f]{40}", program["commit"])
 
 
 def test_native_release_workflow_has_platform_jobs() -> None:
@@ -156,7 +195,11 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "macos-" in workflow
     assert "ubuntu-" in workflow
     assert "ubuntu-24.04-arm" in workflow
+    assert "product-runtime:" in workflow
     assert "cli-installer:" in workflow
+    assert "product-runtime-${{ matrix.platform }}-${{ matrix.arch }}" in workflow
+    assert "scripts/build-product-runtime.sh" in workflow
+    assert "scripts/archive-product-runtime.sh" in workflow
     assert "scripts/prepare-desktop-runtime.sh" in workflow
     assert "scripts/verify-release-version.py" in workflow
     assert "scripts/create-release-manifest.py" in workflow
@@ -203,13 +246,22 @@ def test_linux_packaged_smoke_launches_public_appimage_entry() -> None:
     assert "StartupWMClass=ai.openprogram.OpenProgram" in smoke
 
 
-def test_release_workflow_notarizes_the_distributed_dmg() -> None:
+def test_release_workflow_builds_explicitly_unsigned_macos_artifacts() -> None:
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
     )
-    assert "xcrun notarytool submit" in workflow
-    assert 'xcrun stapler staple "$dmg_path"' in workflow
-    assert 'xcrun stapler validate "$dmg_path"' in workflow
+    assert "unsigned" in workflow.lower()
+    assert "CSC_IDENTITY_AUTO_DISCOVERY: \"false\"" in workflow
+    for forbidden in (
+        "APPLE_API_KEY",
+        "APPLE_API_ISSUER",
+        "APPLE_TEAM_ID",
+        "MAC_CSC_LINK",
+        "notarytool",
+        "stapler",
+        "gh-action-pypi-publish",
+    ):
+        assert forbidden not in workflow
 
 
 def test_public_docs_follow_the_release_platform_policy() -> None:

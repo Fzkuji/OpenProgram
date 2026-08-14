@@ -37,6 +37,12 @@ runtime_python="$(sed -n 's/.*"python":"\([^"]*\)".*/\1/p' "$manifest")"
 test -n "$runtime_python"
 embedded_python="$resources/runtime/$runtime_python"
 test -x "$embedded_python"
+PLAYWRIGHT_BROWSERS_PATH="$resources/runtime/assets/playwright"
+EASYOCR_MODULE_PATH="$resources/runtime/assets/easyocr"
+GPA_MODEL_PATH="$resources/runtime/assets/gpa/model.pt"
+export PLAYWRIGHT_BROWSERS_PATH EASYOCR_MODULE_PATH GPA_MODEL_PATH
+"$embedded_python" -I "$resources/runtime/bin/verify-product-runtime.py" \
+  "$resources/runtime"
 
 port="$((19000 + RANDOM % 500))"
 cleanup() {
@@ -51,7 +57,6 @@ cleanup() {
 trap cleanup EXIT
 
 if test "$platform" = mac; then
-  codesign --verify --deep --strict "$app_path"
   HOME="$state_home" OPENPROGRAM_WEB_PORT="$port" OPENPROGRAM_IMMUTABLE_RUNTIME=1 \
     "$embedded_python" -I -B -m openprogram worker start
 else
@@ -90,7 +95,4 @@ if HOME="$state_home" OPENPROGRAM_IMMUTABLE_RUNTIME=1 \
 fi
 grep -q 'disabled in the packaged desktop runtime' "$temp_root/program-install.log"
 
-if test "$platform" = mac; then
-  codesign --verify --deep --strict "$app_path"
-fi
 printf 'packaged runtime smoke passed for %s\n' "$platform"
