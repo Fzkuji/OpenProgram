@@ -176,7 +176,7 @@ def test_distribution_workflows_use_node24_action_releases() -> None:
     for workflow in workflows:
         assert "actions/checkout@v7" in workflow
         assert "actions/setup-node@v7" in workflow
-        assert "astral-sh/setup-uv@v10" in workflow
+        assert "astral-sh/setup-uv@v10.0.1" in workflow
         assert "actions/upload-artifact@v7" in workflow
         assert "actions/download-artifact@v8" in workflow
 
