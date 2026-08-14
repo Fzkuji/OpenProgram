@@ -140,6 +140,14 @@ def test_single_agent_returns_handoff_and_keeps_full_result_internal(
     )
     assert conclusion not in json.dumps(result, ensure_ascii=False)
     assert conclusion not in summary_calls[0]["prompt"]
+    summary_prompt = summary_calls[0]["prompt"]
+    assert "Usually begin with a brief overview" in summary_prompt
+    assert "2-3 sentences are often enough" in summary_prompt
+    assert "use a short numbered list" in summary_prompt
+    assert "End with a clear assessment of whether the task was completed" in summary_prompt
+    assert "Do not force citations, references, or artifact paths" in summary_prompt
+    assert '"summary": "formatted Markdown"' in summary_prompt
+    assert '"summary": "1-5 short bullets"' not in summary_prompt
 
 
 def test_programmed_workflow_returns_handoff_and_keeps_full_result_internal(
@@ -156,6 +164,55 @@ def test_programmed_workflow_returns_handoff_and_keeps_full_result_internal(
     assert result["result"] is None
     assert _state(session_repo, result["run_id"])["result"] == conclusion
     assert conclusion not in json.dumps(result, ensure_ascii=False)
+
+
+def test_intermediate_result_reused_as_argument_stays_private(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    private_finding = "SUBSTANTIVE_PRIVATE_FINDING_7d14"
+    monkeypatch.setattr(
+        TL, "_registered_agentic_functions", lambda: {"lookup": lambda: private_finding},
+    )
+    _planner(monkeypatch, _code("""
+        finding = lookup()
+        agent("save this report: " + finding)
+        return "done"
+    """))
+    _executor(monkeypatch, lambda _prompt, _kwargs: "saved")
+    summary_calls = _summarizer(monkeypatch, "任务已完成。")
+
+    result = TL.agentic_workflow("research and save a report", session_id="s1")
+    state = _state(session_repo, result["run_id"])
+
+    assert private_finding in json.dumps(state, ensure_ascii=False)
+    assert private_finding not in summary_calls[0]["prompt"]
+    assert private_finding not in json.dumps(result, ensure_ascii=False)
+    assert all("argument_summary" not in item for item in result["items"])
+
+
+def test_repair_errors_stay_private_in_public_payload(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    private_error = "SUBSTANTIVE_PRIVATE_FINDING_91c2"
+
+    def fail() -> None:
+        raise RuntimeError(private_error)
+
+    monkeypatch.setattr(TL, "_registered_agentic_functions", lambda: {"lookup": fail})
+    _planner(
+        monkeypatch,
+        _code('lookup()\nreturn "unreachable"'),
+        _code('return "repaired"'),
+    )
+    _summarizer(monkeypatch, "任务已完成。")
+
+    result = TL.agentic_workflow("repair a failing workflow", session_id="s1")
+    state = _state(session_repo, result["run_id"])
+
+    assert private_error in json.dumps(state, ensure_ascii=False)
+    assert private_error not in json.dumps(result, ensure_ascii=False)
+    assert all("error" not in item for item in result["items"])
+    assert all("error" not in revision for revision in result["revisions"])
 
 
 def test_explicit_direct_return_includes_raw_result(
@@ -657,9 +714,10 @@ def test_caught_callable_error_writes_failed_after_checkpoint(
     result = TL.agentic_workflow("caught", session_id="s1")
 
     assert result["status"] == "completed"
-    record = result["items"][0]
+    record = _state(session_repo, result["run_id"])["items"][0]
     assert record["status"] == "failed"
     assert "ValueError: bad call" in record["error"]
+    assert "error" not in result["items"][0]
     assert record["finished_at"] is not None
 
 
