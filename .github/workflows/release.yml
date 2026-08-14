@@ -92,7 +92,7 @@ jobs:
         run: |
           npm run icon:build
           npm run icon:check
-          npx electron-builder --mac dmg zip --${{ matrix.arch }}
+          npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
         working-directory: desktop
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
@@ -125,7 +125,7 @@ jobs:
           xcrun stapler validate "$dmg_path"
       - name: Build Linux AppImage
         if: matrix.platform == 'linux'
-        run: npx electron-builder --linux AppImage --x64
+        run: npx electron-builder --linux AppImage --x64 --publish never
         working-directory: desktop
       - name: Verify embedded runtime
         run: scripts/smoke-packaged-runtime.sh "${{ matrix.platform }}" desktop/dist
