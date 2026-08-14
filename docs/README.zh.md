@@ -40,7 +40,7 @@
 
 ## 它有什么不同
 
-OpenProgram 正式支持 macOS 和 Linux release 安装、多 provider，以及终端、浏览器和聊天界面。Windows 与移动设备只作为浏览器客户端访问受支持的远程主机。harness 本体提供**三种构建 agent Program 的机制**。
+OpenProgram 当前 release 支持 macOS 和 Linux 安装、多 provider，以及终端、浏览器和聊天界面。Windows 原生打包暂缓到后续 release 决策；目前 Windows 与移动设备可以作为浏览器客户端访问受支持的远程主机。harness 本体提供**三种构建 agent Program 的机制**。
 
 ### ① DAG 上下文 —— 原生多 agent 系统的地基
 

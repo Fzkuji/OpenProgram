@@ -9,7 +9,7 @@ OpenProgram has separate release installations for desktop users and CLI/server 
 | macOS arm64 / x64 | DMG | Supported | Local or remote |
 | Linux x86_64 | No published desktop artifact | Supported | Local or remote |
 | Linux arm64 | No published desktop artifact | Supported | Local or remote |
-| Windows | Not supported | Not supported | May connect to a supported remote host |
+| Windows | Deferred for a later release decision | Deferred for a later release decision | May connect to a supported remote host |
 | iOS / Android / iPadOS | No native app | Not applicable | May connect to a supported remote host; mobile layout is not a support commitment |
 
 Only artifacts attached to a published [GitHub Release](https://github.com/Fzkuji/OpenProgram/releases) are release installations. CI artifacts and source-checkout builds are not stable releases.

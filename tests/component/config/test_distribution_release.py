@@ -260,11 +260,24 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     assert "easyocr" in staging
     assert '"${program_dir}[pdf]"' in staging
     assert "https://download.pytorch.org/whl/cpu" in staging
+    assert '"opencv-python==$opencv_version"' in staging
+    assert staging.count('--constraint "$program_constraints"') == 3
     assert 'importlib.metadata.version(distribution).split("+", 1)[0]' in verifier
     assert "Salesforce/GPA-GUI-Detector" in product_config
     assert "GUI-Agent-Harness" in product_config
     assert "Research-Agent-Harness" in product_config
     assert "Wiki-Agent-Harness" in product_config
+
+
+def test_search_runtime_dependency_supports_macos_x64() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
+    assert 'search = ["semble>=0.5.3"]' in pyproject
+    assert "tree-sitter-language-pack" not in lock
+    assert re.search(
+        r"semble_grammars-[^-]+-py3-none-macosx_[^-]+_x86_64\.whl",
+        lock,
+    )
 
 
 def test_product_manifest_requires_one_complete_capability_set() -> None:
@@ -287,8 +300,10 @@ def test_product_manifest_requires_one_complete_capability_set() -> None:
         "program.wiki",
     }
     assert set(manifest["programs"]) == {"gui", "research", "wiki"}
-    assert manifest["programs"]["gui"]["torch"] == "2.13.0"
-    assert manifest["programs"]["gui"]["torchvision"] == "0.28.0"
+    assert manifest["programs"]["gui"]["numpy"] == "1.26.4"
+    assert manifest["programs"]["gui"]["opencv"] == "4.11.0.86"
+    assert manifest["programs"]["gui"]["torch"] == "2.2.2"
+    assert manifest["programs"]["gui"]["torchvision"] == "0.17.2"
     for program in manifest["programs"].values():
         assert re.fullmatch(r"[0-9a-f]{40}", program["commit"])
 
@@ -325,6 +340,15 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "sha256" in workflow.lower()
     assert workflow.count("--publish never") == 1
     assert "AppImage" not in workflow
+
+
+def test_macos_desktop_matrix_maps_runtime_arch_to_electron_builder_arch() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "arch: x86_64\n            builder_arch: x64" in workflow
+    assert "arch: arm64\n            builder_arch: arm64" in workflow
+    assert "--${{ matrix.builder_arch }} --publish never" in workflow
 
 
 def test_linux_complete_runtime_smoke_is_runnable_without_release_credentials() -> None:
@@ -485,7 +509,7 @@ def test_release_manifest_records_hashes(tmp_path: Path) -> None:
 
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
-    (artifacts / "OpenProgram-0.6.1-mac-arm64.dmg").write_bytes(b"artifact")
+    (artifacts / "OpenProgram-0.6.4-mac-arm64.dmg").write_bytes(b"artifact")
     output = artifacts / "release-manifest.json"
     subprocess.run(
         [
@@ -493,14 +517,14 @@ def test_release_manifest_records_hashes(tmp_path: Path) -> None:
             str(ROOT / "scripts" / "create-release-manifest.py"),
             str(artifacts),
             "--version",
-            "v0.6.1",
+            "v0.6.4",
             "--output",
             str(output),
         ],
         check=True,
     )
     manifest = json.loads(output.read_text(encoding="utf-8"))
-    assert manifest["version"] == "0.6.1"
+    assert manifest["version"] == "0.6.4"
     assert manifest["files"][0]["sha256"] == (
         "c7c5c1d70c5dec4416ab6158afd0b223ef40c29b1dc1f97ed9428b94d4cadb1c"
     )

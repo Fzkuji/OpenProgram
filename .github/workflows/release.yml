@@ -102,10 +102,12 @@ jobs:
             platform: mac
             runtime_platform: macos
             arch: arm64
+            builder_arch: arm64
           - runner: macos-15-intel
             platform: mac
             runtime_platform: macos
             arch: x86_64
+            builder_arch: x64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -136,7 +138,7 @@ jobs:
         run: |
           npm run icon:build
           npm run icon:check
-          npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
+          npx electron-builder --mac dmg zip --${{ matrix.builder_arch }} --publish never
           for artifact in dist/*.dmg dist/*.zip; do
             extension="${artifact##*.}"
             mv "$artifact" "${artifact%.*}-unsigned.$extension"
