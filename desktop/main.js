@@ -106,7 +106,11 @@ function initializeDesktopUpdates() {
 
 function registerUpdateIpc() {
   ipcMain.handle("updates:get-state", () => desktopUpdates?.getState() || null);
-  ipcMain.handle("updates:check", () => desktopUpdates?.check({ force: true }) || null);
+  ipcMain.handle("updates:check", async () => {
+    const state = await desktopUpdates?.check({ force: true }) || null;
+    scheduleAutomaticUpdateCheck();
+    return state;
+  });
   ipcMain.handle("updates:set-automatic-checks", (_event, enabled) => {
     const state = desktopUpdates?.setAutomaticChecks(enabled) || null;
     scheduleAutomaticUpdateCheck();

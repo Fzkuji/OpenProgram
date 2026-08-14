@@ -177,6 +177,7 @@ const preloadSource = fs.readFileSync(path.join(__dirname, "..", "preload.js"), 
 assert.match(mainSource, /new DesktopUpdateService/);
 assert.match(mainSource, /ipcMain\.handle\("updates:get-state"/);
 assert.match(mainSource, /ipcMain\.handle\("updates:check"/);
+assert.match(mainSource, /updates:check"[\s\S]*scheduleAutomaticUpdateCheck\(\)/);
 assert.match(mainSource, /ipcMain\.handle\("updates:download"/);
 assert.match(mainSource, /powerMonitor\.on\("resume"/);
 assert.match(mainSource, /finally\s*{\s*scheduleAutomaticUpdateCheck\(\)/);
@@ -289,6 +290,32 @@ async function checkNetworkBoundaries() {
     assert.deepEqual(left, right);
   } finally {
     fs.rmSync(checkRoot, { recursive: true, force: true });
+  }
+
+  const retryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-check-retry-"));
+  try {
+    let now = 1_000;
+    let retryFetches = 0;
+    const retryService = new DesktopUpdateService({
+      currentVersion: "0.6.6",
+      arch: "arm64",
+      statePath: path.join(retryRoot, "state.json"),
+      fetchImpl: async () => {
+        retryFetches += 1;
+        throw new Error("offline");
+      },
+      chooseSavePath: async () => null,
+      openPath: async () => "",
+      now: () => now,
+    });
+    assert.equal((await retryService.check({ force: true })).status, "error");
+    assert.equal((await retryService.check()).status, "error");
+    assert.equal(retryFetches, 1);
+    now += 6 * 3600_000;
+    await retryService.check();
+    assert.equal(retryFetches, 2);
+  } finally {
+    fs.rmSync(retryRoot, { recursive: true, force: true });
   }
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-update-download-"));

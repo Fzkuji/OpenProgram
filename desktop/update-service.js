@@ -395,7 +395,8 @@ class DesktopUpdateService {
   async check({ force = false } = {}) {
     if (this.checkPromise) return this.checkPromise;
     const now = this.now();
-    if (!force && this.persisted.lastSuccessAt && now < this.persisted.lastSuccessAt + SUCCESS_INTERVAL_MS) {
+    const dueAt = this.automaticCheckDueAt();
+    if (!force && dueAt && now < dueAt) {
       return this.getState();
     }
     this.checkPromise = this.runCheck(now).finally(() => { this.checkPromise = null; });
