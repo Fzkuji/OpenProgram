@@ -35,6 +35,7 @@ import signal
 import tempfile
 import threading
 import time
+import uuid
 from typing import Any, Callable, Optional
 
 
@@ -46,6 +47,70 @@ _active: dict[str, mp.Process] = {}
 # so a graceful-stop request can reach the child before we SIGKILL it.
 _active_stop_q: dict[str, "mp.Queue"] = {}
 _active_lock = threading.Lock()
+
+
+def _new_child_webtab_bridge(event_queue):
+    pending: dict[str, tuple[threading.Event, dict]] = {}
+    lock = threading.Lock()
+
+    def request(command: dict, timeout: float) -> dict:
+        req_id = uuid.uuid4().hex
+        event = threading.Event()
+        holder: dict = {}
+        with lock:
+            pending[req_id] = (event, holder)
+        try:
+            event_queue.put({
+                "__op_webtab__": True,
+                "data": {
+                    "req_id": req_id,
+                    "command": command,
+                    "timeout": timeout,
+                },
+            })
+            if not event.wait(max(0.1, float(timeout)) + 1):
+                return {
+                    "ok": False,
+                    "error": "timeout: parent worker did not answer webtab bridge",
+                }
+            return holder.get("result") or {
+                "ok": False,
+                "error": "empty parent webtab bridge reply",
+            }
+        finally:
+            with lock:
+                pending.pop(req_id, None)
+
+    def handle_answer(message: dict) -> bool:
+        if not isinstance(message, dict) or not message.get("__op_webtab_result__"):
+            return False
+        with lock:
+            entry = pending.get(message.get("req_id") or "")
+            if entry is not None:
+                entry[1]["result"] = message.get("result")
+                entry[0].set()
+        return True
+
+    return request, handle_answer
+
+
+def _bridge_webtab_to_parent(data: dict, answer_queue) -> None:
+    command = data.get("command") if isinstance(data, dict) else None
+    if not isinstance(command, dict) or command.get("op") not in {"open", "active"}:
+        result = {"ok": False, "error": "unsupported webtab bridge operation"}
+    else:
+        try:
+            timeout = max(0.1, min(float(data.get("timeout", 15)), 15.0))
+            from openprogram.webui.ws_actions import webtab
+
+            result = webtab._request(command, timeout)
+        except Exception as exc:
+            result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    answer_queue.put({
+        "__op_webtab_result__": True,
+        "req_id": data.get("req_id") if isinstance(data, dict) else None,
+        "result": result,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -157,9 +222,17 @@ def _child_entry(
     # the local registry so the blocked ask returns. (The ask SIDE — sending the
     # question UP — is wired below as a QueueTransport on the child's runtime,
     # once that runtime exists.)
+    def handle_webtab_answer(_message):
+        return False
+
     if answer_queue is not None:
         try:
             from openprogram.agent.questions import get_question_registry
+            from openprogram.webui.ws_actions import webtab
+
+            webtab._request, handle_webtab_answer = _new_child_webtab_bridge(
+                event_queue
+            )
 
             def _answer_pump() -> None:
                 reg = get_question_registry()
@@ -170,6 +243,8 @@ def _child_entry(
                         return
                     if msg is None:  # shutdown sentinel
                         return
+                    if handle_webtab_answer(msg):
+                        continue
                     try:
                         qid = msg.get("id")
                         outcome = msg.get("outcome") or "declined"
@@ -543,6 +618,9 @@ def run_agentic_in_subprocess(
     pending_qids_lock = threading.Lock()
 
     def _handle(env) -> None:
+        if isinstance(env, dict) and env.get("__op_webtab__"):
+            _bridge_webtab_to_parent(env.get("data") or {}, answer_queue)
+            return
         # Intercept the user-input bridge envelope: a question the child
         # raised via runtime.ask. Register it on the PARENT registry +
         # broadcast to the frontend, and arrange to route the answer back

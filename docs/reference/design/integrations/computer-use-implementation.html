@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Browser Agent 实施与验证记录</title>
+<style>
+  :root{--bg:#16150f;--panel:#1d1c14;--border:#302d21;--text:#bebaa8;--muted:#8d8876;--title:#f2efe7;--accent:#d4843a;--green:#5aad4e;--yellow:#d5ad45;--red:#e0445a}
+  *{box-sizing:border-box}body{margin:0;padding:40px 24px 96px;background:var(--bg);color:var(--text);font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:1080px;margin:auto}h1{margin:0 0 8px;color:var(--title);font-size:25px}h2{margin:34px 0 10px;color:var(--accent);font-size:17px}p,li{max-width:92ch}a{color:#2db3d5}code{padding:1px 5px;background:#12110b;color:var(--accent);border-radius:4px;font:12px Menlo,monospace}.status{display:inline-block;padding:5px 10px;border:1px solid var(--yellow);border-radius:99px;color:var(--yellow);font:11px Menlo,monospace}.card{margin:12px 0;padding:15px 18px;border:1px solid var(--border);border-radius:10px;background:var(--panel)}table{width:100%;border-collapse:collapse;background:var(--panel);font-size:12.5px}th,td{padding:10px 12px;border:1px solid var(--border);text-align:left;vertical-align:top}th{color:var(--muted)}.pending{color:var(--yellow)}.pass{color:var(--green)}.fail{color:var(--red)}
+</style>
+</head>
+<body><main class="wrap">
+<h1>Browser Agent 实施与验证记录</h1>
+<p>本页只记录 <a href="computer-use.html">Computer Use 目标设计</a> 的实施任务、验证命令和 review 结论，不修改概念设计。第一项任务交付内置浏览器 Browser Agent 的低成本 baseline。</p>
+<span class="status">TASK 1 · COMPLETE</span>
+
+<h2>任务 1：DOM-first Browser Agent baseline</h2>
+<div class="card">
+  <p><strong>批准的设计：</strong><code>docs/reference/design/integrations/computer-use.html</code>。</p>
+  <p><strong>基线：</strong><code>717d4e17</code>。实现从隔离 worktree 和分支 <code>codex/browser-agent-20260814</code> 开始。</p>
+  <p><strong>生产文件：</strong><code>openprogram/programs/agentic_functions/browser_agent/__init__.py</code>、<code>openprogram/programs/_registry.py</code>、<code>openprogram/programs/__init__.py</code>、<code>openprogram/agent/authority.py</code>。</p>
+  <p><strong>测试文件：</strong><code>tests/unit/test_browser_agent.py</code>。</p>
+</div>
+
+<h2>行为契约</h2>
+<ul>
+  <li>公开入口名为 <code>browser_agent</code>，只控制 OpenProgram 桌面端当前可见的内置 web tab；底层固定使用现有 <code>engine=app</code>。</li>
+  <li>内部工具默认 <code>observe</code>，返回 URL、title、viewport、页面文本、ARIA snapshot 和当前 observation 有效的 element refs，不发送截图。</li>
+  <li>只有显式 <code>screenshot</code> 才返回一张当前 viewport PNG，并通过当前模型原生 vision 处理；不调用 <code>image_analyze</code>。</li>
+  <li>不导入或调用 OCR、YOLO、object detector、candidate boxes、zoom、component memory、vision memory、workflow replay 或自动学习。</li>
+  <li>每个会改变页面状态的动作必须携带最新 <code>frame_id</code> 和 element ref；动作后立即使旧 observation 失效。下一次写动作前必须重新 observe。</li>
+  <li>公开结果中的 <code>status=succeeded</code> 只在内部工具实际通过一次 DOM/URL assertion，且该 assertion 晚于最后一次写动作时产生。模型输出只提供 summary，不能决定 status。</li>
+  <li>不开放 JavaScript eval、cookie/storage、upload/download、sidecar、headless fallback 或用户 Chrome profile。</li>
+  <li>调用结束、取消、超时和异常均关闭本次 Playwright session；现有 <code>playwright_browser</code> API 保持不变。</li>
+</ul>
+
+<h2>Public-entry RED</h2>
+<p><code>python -m pytest -q tests/unit/test_browser_agent.py</code> 必须先证明以下缺口：</p>
+<ul>
+  <li><code>browser_agent</code> 尚未注册。</li>
+  <li>没有 DOM/ARIA/ref observation 与 viewport screenshot 的受限工具。</li>
+  <li>没有 stale frame 拒绝和动作后重新 observe 约束。</li>
+  <li>没有 Runtime 权威 completion，模型可以在无 verification 时声称成功。</li>
+</ul>
+
+<h2>安全、取消、错误与并发边界</h2>
+<ul>
+  <li>读取与 screenshot 不请求额外授权；外部 origin 的 navigate/click/type/press/select 每次经过现有 approval 机制。本地项目页面仍受 frame freshness 和 cancel 检查。</li>
+  <li>首版每个 <code>browser_agent</code> 调用只拥有一个 browser session。已有 <code>playwright_browser</code> session 不复用，避免跨任务 refs 和 verification 交叉。</li>
+  <li>首版不声称解决多窗口 responder 绑定；当桌面控制面无法唯一确认 tab 时返回 <code>target_lost</code> 或底层错误，不选择其他页面。</li>
+  <li>step limit、timeout、invalid structured reply、tool error 和 verification missing 都返回 failed/cancelled，不转换为 succeeded。</li>
+</ul>
+
+<h2>明确排除</h2>
+<p>桌面级 Computer Use、GUI Harness 视觉 pipeline、权限卡片新 UI、永久 origin grant、tab lease、多窗口路由重构、Windows、OS keychain/keyring、浏览器 profile 迁移均不属于任务 1。</p>
+
+<h2>Full gate manifest</h2>
+<ul>
+  <li><code>python -m pytest -q tests/unit/test_browser_agent.py tests/unit/test_browser_tool.py tests/unit/test_webtab_control.py</code></li>
+  <li><code>python -m pytest -q tests/unit/test_session_config_tools_intent.py tests/unit/test_tool_expansion_deterministic.py tests/agentic_programming/test_self_recursion_guard.py</code></li>
+  <li><code>python -m tools.docs_site.checklinks</code></li>
+  <li><code>git diff --check</code></li>
+</ul>
+
+<h2>任务账本</h2>
+<table>
+  <thead><tr><th>项目</th><th>证据</th><th>状态</th></tr></thead>
+  <tbody>
+    <tr><td>Base commit</td><td><code>717d4e17</code></td><td class="pass">记录完成</td></tr>
+    <tr><td>RED</td><td><code>python -m pytest -q tests/unit/test_browser_agent.py</code>：9 failed，缺失公开模块与全部约束。</td><td class="pass">记录完成</td></tr>
+    <tr><td>GREEN / affected</td><td>Focused browser/browser-control group：51 passed；registry/tool-selection group：25 passed。</td><td class="pass">通过</td></tr>
+    <tr><td>Specification review</td><td>独立只读 review 对实现提交 <code>37b2c37c</code> 逐项核对 8 条行为契约与安全边界；zero remaining findings。</td><td class="pass">PASS</td></tr>
+    <tr><td>Quality review</td><td>首轮 <code>CHANGES_REQUIRED</code> 的取消、URL scheme、cleanup 三项已由 <code>af33c608</code> 修复。Fresh review 对候选 <code>d0996f7b</code> 复核全部 changed boundary，确认此前 <code>KeyboardInterrupt</code> 结论为误判；zero remaining findings。</td><td class="pass">PASS</td></tr>
+    <tr><td>Full gate</td><td>Reviewed candidate：browser/browser-control 58 passed；registry/tool-selection 25 passed；Ruff passed；docs 0 broken links；diff check passed。</td><td class="pass">通过</td></tr>
+  </tbody>
+</table>
+</main></body></html>

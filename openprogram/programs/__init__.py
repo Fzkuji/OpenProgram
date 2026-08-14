@@ -96,6 +96,7 @@ DEFAULT_TOOLS: list[str] = [
     # schema only has to exist on the turn a skill is actually loaded.
     "skill",
     "playwright_browser",
+    "browser_agent",
     # Plan-mode gate — the LLM is allowed to enter plan mode on its
     # own when it judges the task warrants it (mirrors claude-code's
     # EnterPlanMode tool). The "plan" pseudo-channel filter in
@@ -144,6 +145,7 @@ DEFERRED_DEFAULT_TOOLS: set = {
     # 1172 tok，最大单个 schema。浏览器自动化是明确的小众意图，用户说
     # "打开网页/截图" 时模型再加载，日常编码会话完全用不到。
     "playwright_browser",
+    "browser_agent",
     # 378 tok。跨 session/branch 通信，多分支协作场景才用得上。
     "send_message",
     # 技能加载动词。<available_skills> 每轮已经列了名字和描述，模型要用

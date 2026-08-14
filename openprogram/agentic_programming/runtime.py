@@ -1224,7 +1224,7 @@ class Runtime:
             model:            Override the default model for this call.
 
             tools:            Optional list of tools the LLM may call. Each
-                              entry may be an @agentic_function, a
+                              entry may be an AgentTool, an @agentic_function, a
                               {"spec":..., "execute":...} dict, or an object
                               with .spec and .execute attributes. When set,
                               runs a tool loop until the model returns plain
@@ -2693,6 +2693,7 @@ def _adapt_tools(raw_tools: list) -> list:
     """Convert OpenProgram's tool entries into pi-agent ``AgentTool`` objects.
 
     Accepted input forms (per tool entry):
+      - a native ``AgentTool``
       - ``{"spec": {...}, "execute": callable}``
       - object with ``.spec`` and ``.execute``
       - a plain spec dict (``{"name": ..., "parameters": ...}``) — **requires**
@@ -2708,6 +2709,9 @@ def _adapt_tools(raw_tools: list) -> list:
 
     adapted: list = []
     for entry in raw_tools:
+        if isinstance(entry, AgentTool):
+            adapted.append(entry)
+            continue
         if isinstance(entry, dict) and "spec" in entry and "execute" in entry:
             spec, executor = entry["spec"], entry["execute"]
         elif hasattr(entry, "spec") and hasattr(entry, "execute"):

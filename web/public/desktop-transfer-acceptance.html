@@ -12,8 +12,8 @@
 <body>
 <h1>desktop-transfer-acceptance</h1>
 <input id="probe" placeholder="type here">
-<button id="pushBtn" onclick="history.pushState({n:(history.state&&history.state.n||0)+1},'', '?p='+((history.state&&history.state.n||0)+1)); render()">pushState</button>
-<button id="backBtn" onclick="history.back()">back</button>
+<button id="pushBtn">pushState</button>
+<button id="backBtn">back</button>
 <div id="state"></div>
 <div id="scrollRegion"></div>
 <script>
@@ -33,6 +33,12 @@
       scrollY: scrollY,
     });
   }
+  document.getElementById('pushBtn').addEventListener('click', () => {
+    const n = (history.state && history.state.n || 0) + 1;
+    history.pushState({ n }, '', '?p=' + n);
+    render();
+  });
+  document.getElementById('backBtn').addEventListener('click', () => history.back());
   addEventListener('scroll', render);
   addEventListener('popstate', render);
   render();

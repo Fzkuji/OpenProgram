@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Computer Use：内置浏览器优先的目标设计</title>
+<style>
+  :root{
+    --bg:#16150f;--panel:#1d1c14;--code:#12110b;--border:#302d21;
+    --text:#bebaa8;--muted:#8d8876;--title:#f2efe7;--accent:#d4843a;
+    --blue:#4f8ef7;--green:#5aad4e;--violet:#9d6fe0;--cyan:#2db3d5;
+    --red:#e0445a;--yellow:#d5ad45;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:40px 24px 96px;background:var(--bg);color:var(--text);
+    font:14px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{margin:0 0 8px;color:var(--title);font-size:25px;line-height:1.35}
+  h2{margin:38px 0 10px;color:var(--accent);font-size:17px;scroll-margin-top:20px}
+  h3{margin:22px 0 8px;color:var(--title);font-size:14px}
+  p{max-width:88ch}
+  a{color:var(--cyan)}
+  code{padding:1px 5px;border-radius:4px;background:var(--code);color:var(--accent);
+    font:12px Menlo,Consolas,monospace}
+  pre{overflow:auto;margin:10px 0 16px;padding:14px;border:1px solid var(--border);
+    border-radius:10px;background:var(--code);color:#d8d4c6;font:12px/1.65 Menlo,Consolas,monospace}
+  .sub{margin:0 0 18px;color:var(--muted);max-width:88ch}
+  .status{display:inline-block;margin:0 0 22px;padding:5px 11px;border:1px solid var(--yellow);
+    border-radius:99px;color:var(--yellow);font:11px Menlo,Consolas,monospace;letter-spacing:.08em}
+  .toc{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 24px}
+  .toc a{padding:4px 11px;border:1px solid var(--border);border-radius:99px;
+    color:var(--text);text-decoration:none;font-size:12px}
+  .toc a:hover{border-color:var(--accent);color:var(--title)}
+  .decision{padding:18px 20px;border:1px solid var(--blue);border-left-width:4px;
+    border-radius:12px;background:#151b25}
+  .decision strong{color:var(--title)}
+  .decision p{margin:0 0 8px}
+  .decision p:last-child{margin-bottom:0}
+  .grid2,.grid3{display:grid;gap:12px;margin:12px 0 18px}
+  .grid2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .grid3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .card{min-width:0;padding:14px 16px;border:1px solid var(--border);border-radius:11px;
+    background:var(--panel)}
+  .card h3{margin:0 0 6px}
+  .card p{margin:5px 0;color:#aaa693;font-size:12.5px}
+  .card .tag{display:inline-block;margin-bottom:7px;color:var(--muted);
+    font:10px Menlo,Consolas,monospace;letter-spacing:.14em}
+  .card.good{border-top:3px solid var(--green)}
+  .card.change{border-top:3px solid var(--yellow)}
+  .card.no{border-top:3px solid var(--red)}
+  .table-wrap{overflow-x:auto;margin:12px 0 18px;border:1px solid var(--border);
+    border-radius:11px;background:var(--panel)}
+  table{width:100%;min-width:760px;border-collapse:collapse;font-size:12.5px}
+  th{padding:10px 13px;border-bottom:1px solid var(--border);color:var(--muted);
+    text-align:left;font-size:11px;letter-spacing:.08em;white-space:nowrap}
+  td{padding:10px 13px;border-bottom:1px solid #28261c;vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  td strong{color:var(--title)}
+  .yes{color:var(--green)}.partial{color:var(--yellow)}.nope{color:var(--red)}
+  .note{margin:10px 0 16px;padding:4px 0 4px 13px;border-left:3px solid var(--border);
+    color:var(--muted);font-size:12.5px;max-width:90ch}
+  .note.warn{border-left-color:var(--red)}
+  .note strong{color:var(--title)}
+  .diagram{margin:12px 0 18px;padding:8px;border:1px solid var(--border);
+    border-radius:12px;background:var(--panel)}
+  svg{display:block;width:100%;height:auto;border-radius:8px;background:var(--code)}
+  svg text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  .legend{padding:8px 10px 2px;color:var(--muted);font-size:12px}
+  .legend strong{color:var(--title)}
+  .checklist{padding-left:22px;max-width:94ch}
+  .checklist li{margin:5px 0}
+  .must{color:var(--red)}
+  .phase{display:grid;grid-template-columns:100px 1fr 190px;gap:14px;padding:12px 0;
+    border-bottom:1px solid var(--border)}
+  .phase:last-child{border-bottom:0}
+  .phase .id{color:var(--accent);font:11px Menlo,Consolas,monospace}
+  .phase .gate{color:var(--muted);font-size:12px}
+  .refs li{margin:8px 0}
+  @media(max-width:850px){
+    .grid2,.grid3{grid-template-columns:1fr}
+    .phase{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <h1>Computer Use：内置浏览器优先的目标设计</h1>
+  <p class="sub">本页定义 OpenProgram 的 Computer Use 当前目标设计。第一阶段只控制 OpenProgram 桌面端中用户可见的内置浏览器 tab；不控制整个操作系统，也不接管用户日常 Chrome。设计只复用现有 GUI Agent Harness 的规划与验证思路，不启用 OCR、YOLO/检测器、component memory、vision memory 或自动学习；OpenProgram Runtime 负责目标绑定、权限、动作执行、取消、并发和证据。</p>
+  <span class="status">TARGET DESIGN · NOT IMPLEMENTATION EVIDENCE</span>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#decision">01 设计结论</a>
+    <a href="#current">02 当前实现</a>
+    <a href="#reference">03 官方对标</a>
+    <a href="#choices">04 采用与拒绝</a>
+    <a href="#architecture">05 目标架构</a>
+    <a href="#contract">06 协议契约</a>
+    <a href="#loop">07 执行循环</a>
+    <a href="#safety">08 权限与安全</a>
+    <a href="#ux">09 UI</a>
+    <a href="#failure">10 失败语义</a>
+    <a href="#delivery">11 实施顺序</a>
+    <a href="#acceptance">12 验收</a>
+    <a href="#scope">13 明确不做</a>
+    <a href="#evidence">14 实现证据</a>
+  </nav>
+
+  <section id="decision">
+    <h2>01 设计结论</h2>
+    <div class="decision">
+      <p><strong>公开入口：</strong>第一阶段新增面向任务的 <code>browser_agent</code>，目标固定为 OpenProgram 内置可见 web tab，不把 target 暴露为模型参数。现有 <code>playwright_browser</code> 保留为底层专家工具，现有 <code>gui_agent</code> 保留为桌面实验入口，三者不互相改名。以后增加桌面应用控制时，再由上层 Computer Use 入口组合不同 target adapter。</p>
+      <p><strong>浏览器实现：</strong>复用 Electron <code>WebContentsView</code>、共享的 <code>persist:webtabs</code> profile、精确 tab 的 CDP target，以及 Playwright 数据面。用户和 agent 始终看到同一个 tab。</p>
+      <p><strong>Harness 分工：</strong>第一阶段只复用 GUI Agent Harness 的 observe → verify → plan → act 思路；不启用 OCR、YOLO/检测器、component memory、vision memory、自动 component learning、多轮 crop 或局部放大，也不直接复用其进程全局 target、全屏截图、容错后继续执行、LLM 判定 success 和自动持久化 workflow 的行为。</p>
+      <p><strong>动作策略：</strong>ARIA/DOM 语义定位优先，CSS 只作为确定性补充。只有 canvas、无标签控件或 DOM 不可用时，才把一张当前 viewport screenshot 直接交给多模态模型返回坐标；中间没有 OCR、检测器或视觉记忆。每个写动作执行后都重新观察；禁止跨页面状态批量执行写动作。</p>
+      <p><strong>权限策略：</strong>本地项目页允许任务内自动验证；外部站点按 origin 授权。读取与写入分级，登录、CAPTCHA、跨 origin、敏感提交和不可逆操作进入 <code>needs_user</code>，不得由模型自行确认。</p>
+    </div>
+  </section>
+
+  <section id="current">
+    <h2>02 当前实现与必须先处理的缺口</h2>
+    <p>这里记录的是仓库当前代码，不代表目标能力已经完成。</p>
+
+    <div class="grid2">
+      <article class="card good">
+        <span class="tag">AVAILABLE</span>
+        <h3>可见内置 tab 与 CDP 数据面</h3>
+        <p><code>playwright_browser</code> 默认 <code>engine=app</code>，只控制 OpenProgram 内可见 web tab。打开或选择 tab 后，桌面壳返回 CDP <code>target_id</code>，Playwright 按精确 target 附着。</p>
+        <p>证据：<code>browser.py:37-52,148-152</code>；<code>_actions/open_action.py:142-240</code>。</p>
+      </article>
+      <article class="card good">
+        <span class="tag">AVAILABLE</span>
+        <h3>DOM 与 accessibility 读取</h3>
+        <p>现有浏览器工具已支持 selector、HTML、正文提取、ARIA snapshot、console、frame、tab 等能力，可以承担浏览器专用的语义观察层。</p>
+        <p>证据：<code>browser.py:56-160</code>；<code>_actions/read.py:7-72</code>。</p>
+      </article>
+      <article class="card change">
+        <span class="tag">BLOCKER</span>
+        <h3>多窗口控制面没有绑定 responder</h3>
+        <p><code>webtab.command</code> 广播到全部 WebSocket 客户端，pending 表接收首个同 <code>req_id</code> 的回执；命令没有 <code>window_id</code>，服务端也没有校验回执来自哪个 renderer。多个桌面窗口同时存在时，目标不确定。</p>
+        <p>证据：<code>webui/ws_actions/webtab.py:18-69</code>；<code>web/lib/desktop-bridge.ts:478-562</code>。</p>
+      </article>
+      <article class="card change">
+        <span class="tag">BLOCKER</span>
+        <h3>视觉坐标与截图坐标不一致</h3>
+        <p>现有 screenshot 默认 <code>full_page=True</code>。视觉模型返回的图像坐标不能直接作为当前 viewport 的 <code>page.mouse</code> 坐标，滚动页还会产生额外偏移。</p>
+        <p>证据：<code>_actions/read.py:75-105</code>。</p>
+      </article>
+      <article class="card change">
+        <span class="tag">BLOCKER</span>
+        <h3>现有 Harness completion 不可信</h3>
+        <p>planner 两次解析失败会返回 <code>done</code>；结论 prompt 固定要求模型输出 <code>"success": true</code>，顶层结果再采用该值。因此“模型不再调用动作”不能等同于“任务成功”。</p>
+        <p>证据：<code>tasks/execute_task.py:575-607,792-834,886-949</code>；<code>main.py:168-193</code>。</p>
+      </article>
+      <article class="card change">
+        <span class="tag">BLOCKER</span>
+        <h3>状态、取消与记录不具备会话隔离</h3>
+        <p>浏览器 session、Harness action target、VM screenshot patch 都使用进程全局可变状态；主执行循环没有 cancel 参数；没有 base memory 时会自动学习 component，每次任务还默认把完整 history 写入 workflow JSON。第一阶段 runner 不调用这些路径。</p>
+        <p>证据：<code>browser.py:198-203</code>；<code>action/input.py:412-454</code>；<code>adapters/vm_adapter.py:20-31</code>；<code>main.py:98-102,116-193</code>；<code>tasks/execute_task.py:956-969</code>。</p>
+      </article>
+    </div>
+
+    <div class="note warn"><strong>约束：</strong>第一阶段不能把 <code>gui_agent(task=...)</code> 直接指向内置浏览器后作为产品能力发布。必须先由新的 session-scoped runner 接管 completion、target、cancel、artifact 和 approval；GUI Agent Harness 只提供可验证的共享算法或 adapter。</div>
+  </section>
+
+  <section id="reference">
+    <h2>03 OpenAI 与 Anthropic 官方能力对标</h2>
+    <p>比较对象分为三类：产品内置浏览器、连接用户日常浏览器的扩展、面向开发者的截图/动作 API。它们的权限边界不同，不能用同一套默认值。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>官方产品</th><th>目标与 profile</th><th>交互与权限</th><th>对 OpenProgram 的结论</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>OpenAI 内置 Browser</strong></td>
+            <td>ChatGPT desktop 内与用户共享页面视图；使用独立于日常浏览器的 profile，可在需要时单独登录。</td>
+            <td>面向网站研究、操作、本地 web app 预览；网页内容按不可信输入处理。</td>
+            <td class="yes">第一阶段产品形态的直接参考。</td>
+          </tr>
+          <tr>
+            <td><strong>OpenAI Chrome extension</strong></td>
+            <td>控制已有 Chrome tab，继承用户日常 Chrome 登录态。</td>
+            <td>连接现有 tab 和 profile，站点内容与权限需额外审查。</td>
+            <td class="partial">作为后续独立 backend；不能与内置 profile 隐式互换。</td>
+          </tr>
+          <tr>
+            <td><strong>OpenAI Computer Use API</strong></td>
+            <td>应用提供 browser/VM/harness；模型读取 screenshot，返回 <code>actions[]</code>。</td>
+            <td>执行动作后必须回传新 screenshot；官方要求隔离环境、域/动作 allowlist、高影响操作保留人工确认。</td>
+            <td class="yes">采用 action loop 与人工确认原则；不照搬纯坐标策略。</td>
+          </tr>
+          <tr>
+            <td><strong>Claude Code Desktop Browser pane</strong></td>
+            <td>独立 clean profile；与 chat、diff、terminal 并列显示；本地项目页和外部站点都可打开。</td>
+            <td>本地 dev server 可自动验证；外部站点首次 action 按站点允许一次、持续允许或拒绝；write action 受 classifier 检查。</td>
+            <td class="yes">最接近 OpenProgram 当前 UI 与开发测试场景。</td>
+          </tr>
+          <tr>
+            <td><strong>Claude Code with Chrome</strong></td>
+            <td>扩展连接已登录 Chromium；browser task 新开 tab，并实时可见。</td>
+            <td>站点权限来自扩展；plan mode 中 read-only 无提示，click/type/navigation 等写操作提示；登录或 CAPTCHA 暂停给用户。</td>
+            <td class="partial">采用 read/write 分类和人工接管；profile 接入延后。</td>
+          </tr>
+          <tr>
+            <td><strong>Anthropic Computer Use API</strong></td>
+            <td>client-side screenshot、mouse、keyboard tool；应用负责实际执行与结果。</td>
+            <td>官方建议 VM/container、domain allowlist、敏感后果人工确认，并明确 coordinate、tool selection、scroll 和 prompt injection 的可靠性限制。</td>
+            <td class="yes">采用 client-owned execution 与显式 failure；不把模型输出当执行事实。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">官方来源集中列在本页末尾。OpenAI 当前文档明确说明内置 Browser 不在 Codex CLI 或 IDE extension 中提供，而是在 ChatGPT web/desktop 产品面中提供；Computer Use plugin 可以在 desktop app 的 Codex 面中启用。因此这里参考的是 Codex 所在桌面产品面的 Browser/Computer Use 交互，不是假设 Codex CLI 自带浏览器。OpenAI 同时明确区分独立 Browser 与 Chrome profile；Claude Code Desktop 进一步明确 clean Browser profile、本地自动验证、外部站点授权和 Browser/Chrome 的选择规则。</p>
+  </section>
+
+  <section id="choices">
+    <h2>04 采用、修改与明确拒绝</h2>
+    <div class="grid3">
+      <article class="card good">
+        <span class="tag">ADOPT</span>
+        <h3>采用</h3>
+        <p>独立 browser profile；同一可见 tab；session 内固定 target；observe/action/observe；按 origin 授权；本地项目页自动验证；登录和 CAPTCHA 人工处理；stop；网页内容按不可信输入处理。</p>
+      </article>
+      <article class="card change">
+        <span class="tag">MODIFY</span>
+        <h3>修改后采用</h3>
+        <p>DOM/ARIA 优先，单张 viewport screenshot 的模型原生视觉坐标按需降级；授权默认只持续当前 task，不先提供永久 Always allow；read 可以批量，write 每次最多一个状态变化；completion 由 Runtime 验证状态决定。</p>
+      </article>
+      <article class="card no">
+        <span class="tag">REJECT FOR PHASE 1</span>
+        <h3>第一阶段不采用</h3>
+        <p>用户日常 Chrome profile、整个桌面控制、隐藏/headless browser、任意 JavaScript、cookie/storage 导出、文件上传下载、模型自动输入密码、跨 origin 自动继续、无约束批量写动作、自动永久保存截图和 workflow。</p>
+      </article>
+    </div>
+
+    <h3>第一阶段固定的低成本 baseline</h3>
+    <p>第一阶段只有下面这一套固定执行路径，不建立 <code>enable_ocr</code>、<code>enable_yolo</code>、<code>vision_memory_mode</code> 等配置，也不加载对应模块。只有 baseline 的失败数据证明缺少某项能力时，才单独评估是否增加。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>状态</th><th>能力</th><th>执行规则</th></tr></thead>
+        <tbody>
+          <tr><td class="yes"><strong>开启</strong></td><td>URL、title、origin、viewport、DOM text、ARIA snapshot、interactive refs</td><td>每步的默认 observation；先用结构化信息规划和定位，不发送图像。</td></tr>
+          <tr><td class="yes"><strong>按需开启</strong></td><td>一张当前 viewport screenshot + 模型原生 vision</td><td>仅用于视觉验收、canvas 或 DOM/ARIA 无法定位的控件；不做 full-page screenshot、切片或多轮放大。</td></tr>
+          <tr><td class="nope"><strong>关闭</strong></td><td>OCR、YOLO/object detector、候选框检测、外部 grounding pipeline</td><td>不导入、不初始化、不调用，也不为它们增加后台进程或依赖。</td></tr>
+          <tr><td class="nope"><strong>关闭</strong></td><td>component memory、vision memory、workflow replay、自动 component learning</td><td>不读、不写、不检索；运行结束不形成可复用视觉记忆。</td></tr>
+          <tr><td class="nope"><strong>关闭</strong></td><td>iterative zoom、coarse-to-fine crop、多截图候选排序</td><td>第一阶段不实现。直接视觉 fallback 失败后返回明确失败或请求用户处理。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note"><strong>成本约束：</strong>普通 DOM 表单和导航任务可以完全不向模型发送 screenshot；视觉任务每个 observation 最多发送一张当前 viewport screenshot。verification 优先使用 DOM/ARIA assertion，只有任务本身要求视觉判断时才再次使用图像。</p>
+  </section>
+
+  <section id="architecture">
+    <h2>05 目标架构与信任边界</h2>
+    <div class="diagram">
+      <svg viewBox="0 0 1160 430" role="img" aria-label="OpenProgram Computer Use 目标架构">
+        <defs>
+          <marker id="arrow-blue" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#4f8ef7"/></marker>
+          <marker id="arrow-green" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#5aad4e"/></marker>
+          <marker id="arrow-orange" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#d4843a"/></marker>
+        </defs>
+        <text x="24" y="32" fill="#d4843a" font-size="16" font-weight="700">控制面确定目标，数据面执行动作</text>
+        <text x="24" y="54" fill="#8d8876" font-size="12">模型不持有 CDP、WebSocket、文件系统或 browser profile 权限。</text>
+
+        <rect x="24" y="92" width="190" height="92" rx="10" fill="#151b25" stroke="#4f8ef7"/>
+        <text x="119" y="120" fill="#4f8ef7" text-anchor="middle" font-size="14" font-weight="700">browser_agent</text>
+        <text x="119" y="145" fill="#bebaa8" text-anchor="middle" font-size="11">task + target hint</text>
+        <text x="119" y="165" fill="#8d8876" text-anchor="middle" font-size="11">公开任务入口</text>
+
+        <rect x="270" y="82" width="260" height="112" rx="10" fill="#221d12" stroke="#d4843a"/>
+        <text x="400" y="111" fill="#d4843a" text-anchor="middle" font-size="14" font-weight="700">ComputerUseRunner</text>
+        <text x="400" y="137" fill="#bebaa8" text-anchor="middle" font-size="11">budget · cancel · status · evidence</text>
+        <text x="400" y="158" fill="#bebaa8" text-anchor="middle" font-size="11">approval · failure classification</text>
+        <text x="400" y="179" fill="#8d8876" text-anchor="middle" font-size="11">唯一 completion authority</text>
+
+        <rect x="586" y="70" width="244" height="136" rx="10" fill="#1a1423" stroke="#9d6fe0"/>
+        <text x="708" y="100" fill="#9d6fe0" text-anchor="middle" font-size="14" font-weight="700">Harness Engine</text>
+        <text x="708" y="126" fill="#bebaa8" text-anchor="middle" font-size="11">plan · verify · recovery proposal</text>
+        <text x="708" y="148" fill="#bebaa8" text-anchor="middle" font-size="11">no OCR · detector · visual memory</text>
+        <text x="708" y="175" fill="#8d8876" text-anchor="middle" font-size="11">不能执行动作或宣告成功</text>
+
+        <rect x="886" y="82" width="250" height="112" rx="10" fill="#111d1a" stroke="#2db3d5"/>
+        <text x="1011" y="111" fill="#2db3d5" text-anchor="middle" font-size="14" font-weight="700">WebTabAdapter</text>
+        <text x="1011" y="137" fill="#bebaa8" text-anchor="middle" font-size="11">observe · resolve · execute</text>
+        <text x="1011" y="158" fill="#bebaa8" text-anchor="middle" font-size="11">ARIA/DOM → direct image point</text>
+        <text x="1011" y="179" fill="#8d8876" text-anchor="middle" font-size="11">无通用 eval 接口</text>
+
+        <line x1="214" y1="138" x2="266" y2="138" stroke="#4f8ef7" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+        <line x1="530" y1="116" x2="582" y2="116" stroke="#d4843a" stroke-width="1.8" marker-end="url(#arrow-orange)"/>
+        <line x1="830" y1="116" x2="882" y2="116" stroke="#9d6fe0" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+        <line x1="882" y1="166" x2="834" y2="166" stroke="#2db3d5" stroke-width="1.4" marker-end="url(#arrow-blue)"/>
+
+        <rect x="270" y="264" width="260" height="112" rx="10" fill="#181b12" stroke="#5aad4e"/>
+        <text x="400" y="293" fill="#5aad4e" text-anchor="middle" font-size="14" font-weight="700">Target &amp; Approval Broker</text>
+        <text x="400" y="319" fill="#bebaa8" text-anchor="middle" font-size="11">session lease · tab lock · origin grant</text>
+        <text x="400" y="341" fill="#bebaa8" text-anchor="middle" font-size="11">window_id · tab_id · target_id</text>
+        <text x="400" y="362" fill="#8d8876" text-anchor="middle" font-size="11">拒绝未绑定 responder</text>
+
+        <rect x="586" y="264" width="244" height="112" rx="10" fill="#161922" stroke="#4f8ef7"/>
+        <text x="708" y="293" fill="#4f8ef7" text-anchor="middle" font-size="14" font-weight="700">Desktop Control Plane</text>
+        <text x="708" y="319" fill="#bebaa8" text-anchor="middle" font-size="11">exact renderer command/reply</text>
+        <text x="708" y="341" fill="#bebaa8" text-anchor="middle" font-size="11">show/focus/create visible tab</text>
+        <text x="708" y="362" fill="#8d8876" text-anchor="middle" font-size="11">WebSocket + Electron IPC</text>
+
+        <rect x="886" y="254" width="250" height="132" rx="10" fill="#121d12" stroke="#5aad4e"/>
+        <text x="1011" y="283" fill="#5aad4e" text-anchor="middle" font-size="14" font-weight="700">Visible WebContentsView</text>
+        <text x="1011" y="308" fill="#bebaa8" text-anchor="middle" font-size="11">persist:webtabs profile</text>
+        <text x="1011" y="330" fill="#bebaa8" text-anchor="middle" font-size="11">Playwright over exact CDP target</text>
+        <text x="1011" y="352" fill="#bebaa8" text-anchor="middle" font-size="11">DOM + ARIA; screenshot on demand</text>
+        <text x="1011" y="373" fill="#8d8876" text-anchor="middle" font-size="11">用户与 agent 共享同一页面</text>
+
+        <line x1="400" y1="198" x2="400" y2="260" stroke="#d4843a" stroke-width="1.8" marker-end="url(#arrow-orange)"/>
+        <line x1="530" y1="320" x2="582" y2="320" stroke="#5aad4e" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+        <line x1="830" y1="320" x2="882" y2="320" stroke="#5aad4e" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+        <line x1="1011" y1="250" x2="1011" y2="198" stroke="#2db3d5" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+      </svg>
+      <div class="legend"><strong>信任边界：</strong>LLM 只收到经过裁剪的 Observation，并只返回候选 Action。Runtime 校验 target、frame、origin、权限和 cancel 后才能执行。CDP endpoint 和 browser context 不进入模型上下文。</div>
+    </div>
+
+    <div class="grid2">
+      <article class="card"><h3>OpenProgram Runtime 拥有</h3><p>target selection、tab lease、approval、action validation、CDP attachment、artifact lifecycle、cancel、timeout、completion、audit events。</p></article>
+      <article class="card"><h3>GUI Agent Harness 提供</h3><p>规划结构、动作后验证建议和失败后的下一步候选。第一阶段不调用 Harness 的 OCR、检测、component/vision memory、自动学习或 iterative zoom；输出都视为建议，不具有执行权限。</p></article>
+    </div>
+  </section>
+
+  <section id="contract">
+    <h2>06 公开入口与内部协议</h2>
+    <h3>公开工具</h3>
+    <pre>{
+  "name": "browser_agent",
+  "input": {
+    "task": "required natural-language task",
+    "url": "optional initial http(s) or allowed local URL",
+    "max_steps": 20,
+    "max_seconds": 300
+  }
+}</pre>
+    <p>第一阶段 target 隐式固定为 <code>web_tab</code>。<code>window_id</code>、<code>tab_id</code>、<code>cdp_target_id</code> 不是 LLM 参数，由用户当前 UI 和 Runtime 决定，防止模型指定未授权 target。</p>
+
+    <h3>结果契约</h3>
+    <pre>{
+  "status": "succeeded | failed | cancelled | needs_user",
+  "reason_code": "verified | step_limit | timeout | target_lost | ...",
+  "summary": "grounded user-facing result",
+  "target": {"kind":"web_tab", "tab_id":"...", "url":"..."},
+  "steps_taken": 7,
+  "completion_evidence": [{"kind":"assertion", "text":"...", "frame_id":"..."}],
+  "artifacts": [{"kind":"screenshot", "path":"...", "retained":false}]
+}</pre>
+    <p><code>summary</code> 可由 LLM 撰写，但 <code>status</code> 和 <code>reason_code</code> 只能由 Runtime 根据验证记录生成。达到 step limit、planner 无效或 conclusion 模型声称成功都不能生成 <code>succeeded</code>。</p>
+
+    <h3>内部 session 与 observation</h3>
+    <pre>ComputerSession
+  session_id, owner_run_id
+  target: {window_id, tab_id, cdp_target_id}
+  lease_id, state, started_at, deadline
+  current_origin, approved_origins[]
+  current_frame_id, navigation_epoch
+  cancel_event, step_budget, artifact_dir
+
+Observation
+  frame_id, captured_at
+  target identity, url, origin, title
+  viewport: {width, height, device_scale_factor, scroll_x, scroll_y}
+  screenshot: optional viewport-only PNG
+  aria_snapshot, interactive_elements[]
+  optional console errors and visual candidates</pre>
+    <p><code>frame_id</code> 必须绑定 target identity、navigation epoch、viewport 和当前 DOM revision；存在 screenshot 时还要绑定图像。坐标 Action 只能来自同一个 observation 的直接视觉 fallback，并且必须带 <code>expected_frame_id</code>；如果页面已经导航、滚动、resize 或 target 改变，Runtime 返回 <code>stale_observation</code> 并重新 observe。</p>
+
+    <h3>Action</h3>
+    <pre>{
+  "type": "click | type | press | scroll | hover | select | navigate | wait",
+  "expected_frame_id": "frame_...",
+  "target": {
+    "kind": "element | point",
+    "ref": "aria-or-runtime-ref",
+    "selector": "optional validated selector",
+    "x": 420,
+    "y": 238
+  },
+  "text": "only for type",
+  "intent": "short description for approval and audit"
+}</pre>
+    <p>同一个 Action 只能使用一种 target 表示。element ref 优先；selector 只能来自 Runtime observation 或工具调用的显式确定性参数；point 必须在 viewport 内且匹配当前 frame。<code>eval</code>、cookie、storage、upload、download 不属于第一阶段 Action。</p>
+    <p>该协议与模型 provider 无关。OpenAI 原生 <code>computer_call</code>、Anthropic <code>tool_use</code> 或 GUI Agent Harness planner 都必须先转换为同一个 Action，再经过相同的 target、frame、origin、approval 和 cancel 校验。provider adapter 可以处理各模型的 action schema 与坐标约定，但不能改变 Runtime 的权限和 completion 结论。</p>
+  </section>
+
+  <section id="loop">
+    <h2>07 Observe → Resolve → Approve → Act → Verify</h2>
+    <div class="diagram">
+      <svg viewBox="0 0 1160 300" role="img" aria-label="单步 Computer Use 状态机">
+        <defs><marker id="seq" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#d4843a"/></marker></defs>
+        <text x="24" y="31" fill="#d4843a" font-size="16" font-weight="700">每个写动作只能基于一个新鲜 Observation</text>
+        <text x="24" y="54" fill="#8d8876" font-size="12">任何 target、origin、frame 或权限变化都会中断本步，返回新的观察或用户确认。</text>
+        <g transform="translate(24,92)">
+          <rect x="0" y="0" width="148" height="70" rx="9" fill="#151b25" stroke="#4f8ef7"/>
+          <text x="74" y="29" fill="#4f8ef7" text-anchor="middle" font-weight="700">OBSERVE</text>
+          <text x="74" y="51" fill="#8d8876" text-anchor="middle" font-size="11">ARIA + DOM; image on demand</text>
+          <rect x="188" y="0" width="148" height="70" rx="9" fill="#1a1423" stroke="#9d6fe0"/>
+          <text x="262" y="29" fill="#9d6fe0" text-anchor="middle" font-weight="700">PLAN</text>
+          <text x="262" y="51" fill="#8d8876" text-anchor="middle" font-size="11">one intended mutation</text>
+          <rect x="376" y="0" width="148" height="70" rx="9" fill="#121d1b" stroke="#2db3d5"/>
+          <text x="450" y="29" fill="#2db3d5" text-anchor="middle" font-weight="700">RESOLVE</text>
+          <text x="450" y="51" fill="#8d8876" text-anchor="middle" font-size="11">element → direct image point</text>
+          <rect x="564" y="0" width="148" height="70" rx="9" fill="#221d12" stroke="#d5ad45"/>
+          <text x="638" y="29" fill="#d5ad45" text-anchor="middle" font-weight="700">AUTHORIZE</text>
+          <text x="638" y="51" fill="#8d8876" text-anchor="middle" font-size="11">origin + risk + cancel</text>
+          <rect x="752" y="0" width="148" height="70" rx="9" fill="#171d12" stroke="#5aad4e"/>
+          <text x="826" y="29" fill="#5aad4e" text-anchor="middle" font-weight="700">EXECUTE</text>
+          <text x="826" y="51" fill="#8d8876" text-anchor="middle" font-size="11">validated adapter action</text>
+          <rect x="940" y="0" width="148" height="70" rx="9" fill="#151b25" stroke="#4f8ef7"/>
+          <text x="1014" y="29" fill="#4f8ef7" text-anchor="middle" font-weight="700">VERIFY</text>
+          <text x="1014" y="51" fill="#8d8876" text-anchor="middle" font-size="11">new observation + assertion</text>
+          <line x1="152" y1="35" x2="184" y2="35" stroke="#d4843a" marker-end="url(#seq)"/>
+          <line x1="340" y1="35" x2="372" y2="35" stroke="#d4843a" marker-end="url(#seq)"/>
+          <line x1="528" y1="35" x2="560" y2="35" stroke="#d4843a" marker-end="url(#seq)"/>
+          <line x1="716" y1="35" x2="748" y2="35" stroke="#d4843a" marker-end="url(#seq)"/>
+          <line x1="904" y1="35" x2="936" y2="35" stroke="#d4843a" marker-end="url(#seq)"/>
+        </g>
+        <path d="M1038 168 C1038 238, 98 238, 98 168" fill="none" stroke="#4f8ef7" stroke-width="1.4" marker-end="url(#seq)"/>
+        <text x="568" y="258" fill="#8d8876" text-anchor="middle" font-size="12">未满足 completion assertions 时，携带结构化 feedback 返回下一次 Observe；不携带旧坐标。</text>
+      </svg>
+    </div>
+    <ol class="checklist">
+      <li>Target Broker 获取或新建一个可见 web tab，返回精确 <code>window_id + tab_id + cdp_target_id</code>，并获得 tab lease。</li>
+      <li>Adapter 默认捕获 ARIA snapshot、DOM 交互元素、URL/origin/title 和 viewport 元数据，不发送图像。任务需要视觉判断或 DOM/ARIA 无法定位时才捕获一张当前 viewport screenshot；不得使用 full-page screenshot 产生点击坐标。</li>
+      <li>Harness 生成一个候选动作和预期效果。读取动作可以合并；每轮最多执行一个会改变页面状态的动作。</li>
+      <li>Resolver 按 runtime ref/ARIA、受控 selector、单张 viewport screenshot 的直接模型坐标顺序解析目标。中间不运行 OCR、YOLO、detector、memory retrieval 或 zoom；模型不得直接获得 Playwright page。</li>
+      <li>Runtime 校验 frame freshness、target lease、origin grant、action risk、cancel 和 budget。需要用户时返回 <code>needs_user</code> 状态并暂停 session。</li>
+      <li>Adapter 执行动作并立即生成新的 Observation。verification 必须检查动作预期效果和任务 completion assertions。</li>
+      <li>只有 completion assertions 全部满足且没有未处理风险时才返回 <code>succeeded</code>。</li>
+    </ol>
+  </section>
+
+  <section id="safety">
+    <h2>08 权限、安全与隐私</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>级别</th><th>示例</th><th>第一阶段策略</th></tr></thead>
+        <tbody>
+          <tr><td><strong>R0 观察</strong></td><td>ARIA/DOM text、URL/title、按过滤条件读取 console error；必要时当前 viewport screenshot</td><td>已绑定 target 后不重复提示；结构化观察优先，图像按需且不持久化。</td></tr>
+          <tr><td><strong>R1 本地项目变更</strong></td><td>localhost、127.0.0.1 或 project-owned file 中 click/type/navigation</td><td>用户明确要求测试时在 task 内允许；仍执行 cancel、frame 和 target 校验。</td></tr>
+          <tr><td><strong>R2 外部普通变更</strong></td><td>外部 origin 上 click、type、navigation、tab create</td><td>首次写动作按 exact origin 请求“本次动作”或“本任务”授权；subdomain 不继承。</td></tr>
+          <tr><td><strong>R3 敏感或高影响</strong></td><td>登录凭证、发送/发布、购买、删除、账户/权限修改、接受条款、跨 origin 提交</td><td>返回 <code>needs_user</code>，展示拟执行动作并由用户完成或逐次确认；不允许任务级自动授权。</td></tr>
+          <tr><td><strong>Unsupported</strong></td><td>CAPTCHA、任意 JS、cookie/storage 导出、upload/download、clipboard、浏览器设置</td><td>不执行；返回明确 reason code。</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Origin 与导航规则</h3>
+    <ul class="checklist">
+      <li>授权键是规范化 <code>scheme + host + effective port</code>，不是可模糊匹配的域后缀。</li>
+      <li>redirect、popup 或新 tab 导致 origin 改变时，原授权不延续；先 observe，再重新判断。</li>
+      <li>本地 project origin 由 dev-server registry 或用户当前 project 显式建立，不只依赖字符串包含 <code>localhost</code>。</li>
+      <li>网页、截图、DOM、ARIA、console 和下载提示都属于不可信输入。页面中的操作指令不能修改 task、权限或系统约束。</li>
+    </ul>
+
+    <h3>Artifact 策略</h3>
+    <ul class="checklist">
+      <li>每个 run 使用独立 artifact 目录；文件名包含 session/frame id，不使用固定 <code>/tmp/gui_agent_screen.png</code>。</li>
+      <li>原始 screenshot 默认仅在运行期保存，结束后删除；验收或用户明确保存的截图才标记 <code>retained=true</code>。</li>
+      <li>typed text 在事件和 transcript 中只记录长度、目标和敏感度，不记录密码、token 或完整表单内容。</li>
+      <li>第一阶段不调用 Harness <code>learn_app_components</code>、<code>save_workflow_record</code> 或任何 component/vision memory 读写，不自动保存个人页面截图。</li>
+    </ul>
+  </section>
+
+  <section id="ux">
+    <h2>09 桌面 UI 行为</h2>
+    <p>不新增第二套浏览器窗口。Computer Use 使用现有 center tab/split layout：chat 保持可见，右侧或相邻 pane 显示被控制的 web tab。</p>
+    <div class="grid2">
+      <article class="card"><h3>运行中</h3><p>tab header 显示“Computer Use”状态、step 计数和 Stop。chat 中只显示当前 observation 摘要、计划动作、执行结果和验证结果；原始 DOM 与 screenshot 默认折叠。</p></article>
+      <article class="card"><h3>授权时</h3><p>permission card 必须显示 origin、target tab、拟执行动作、将发送的非敏感文本摘要、风险原因，以及仅本动作/本任务/拒绝。第一阶段没有永久允许。</p></article>
+      <article class="card"><h3>人工接管</h3><p>登录、CAPTCHA 或敏感页面时 session 进入 <code>needs_user</code>。用户在同一可见 tab 中操作，点击 Continue 后 Runtime 生成全新 observation；旧坐标和旧 action 全部失效。</p></article>
+      <article class="card"><h3>结束</h3><p>结果展示 status、reason、完成证据和保留 artifact。<code>step_limit</code>、<code>timeout</code>、<code>target_lost</code> 必须显示为未完成，不用 LLM summary 覆盖。</p></article>
+    </div>
+  </section>
+
+  <section id="failure">
+    <h2>10 失败、取消与并发语义</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>reason_code</th><th>触发条件</th><th>处理</th></tr></thead>
+        <tbody>
+          <tr><td><code>stale_observation</code></td><td>frame、scroll、viewport、navigation epoch 已改变</td><td>不执行动作；重新 observe，不消耗 action step。</td></tr>
+          <tr><td><code>target_lost</code></td><td>tab/window 被关闭、CDP target 更换、renderer 断开</td><td>释放 lease；失败结束。不得自动选择另一个 tab。</td></tr>
+          <tr><td><code>origin_changed</code></td><td>redirect/popup/navigation 进入新 origin</td><td>撤销旧 origin action grant，重新分类。</td></tr>
+          <tr><td><code>approval_required</code></td><td>R2/R3 action 未授权</td><td>暂停为 <code>needs_user</code>，不重试 action。</td></tr>
+          <tr><td><code>planner_invalid</code></td><td>结构化 Action 两次无效或引用不存在</td><td>失败或重新规划；绝不能转换为 done。</td></tr>
+          <tr><td><code>verification_failed</code></td><td>动作执行但预期效果未出现</td><td>携带差异重新规划；超过 recovery budget 后失败。</td></tr>
+          <tr><td><code>cancelled</code></td><td>用户 Stop、run cancel、session teardown</td><td>执行前检查并中止；清理 Playwright/CDP、lease、pending approval 和临时 artifact。</td></tr>
+          <tr><td><code>step_limit</code> / <code>timeout</code></td><td>预算耗尽</td><td>返回 <code>failed</code>，保留已验证的部分结果但不宣告成功。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>并发单位是 web tab：同一 <code>tab_id</code> 同时只能有一个写 lease，不同 tab 可以并行读取或执行。Target Broker 必须把 command 发送给精确 <code>window_id</code> 对应的 renderer，并校验回执 connection/window/tab/target；禁止“广播后接受第一个 reply”。</p>
+  </section>
+
+  <section id="delivery">
+    <h2>11 实施顺序与每阶段出口</h2>
+    <div class="card">
+      <div class="phase"><div class="id">PHASE 0</div><div><strong>确定性基础</strong><br>定义协议类型、reason codes、completion authority；只提取无全局状态的 planner/verify 接口；明确不进入 component learning、OCR/detector、vision memory 和 workflow persistence；invalid plan 不再映射 done。</div><div class="gate">出口：单元测试证明 incomplete 不能变为 success。</div></div>
+      <div class="phase"><div class="id">PHASE 1</div><div><strong>精确 Target Broker</strong><br>为 desktop renderer/WS connection 建立稳定 window identity；command/reply 包含并校验 window_id、tab_id、target_id；加入 tab lease 和 teardown。</div><div class="gate">出口：双窗口测试连续 100 次命中指定 tab。</div></div>
+      <div class="phase"><div class="id">PHASE 2</div><div><strong>WebTabAdapter</strong><br>ARIA/DOM element refs、frame freshness、element-first action、按需单张 viewport screenshot 的直接视觉 fallback、动作后 observation；不接 OCR、detector、memory 或 zoom。</div><div class="gate">出口：localhost fixture 的 DOM 与 canvas 两类任务通过。</div></div>
+      <div class="phase"><div class="id">PHASE 3</div><div><strong>ComputerUseRunner 与公开工具</strong><br>接入 budget、cancel、approval、origin policy、artifact policy、structured result 和事件流；现有 playwright_browser 不改公开行为。</div><div class="gate">出口：权限、cancel、target lost、step limit 集成测试通过。</div></div>
+      <div class="phase"><div class="id">PHASE 4</div><div><strong>桌面 UI 与真实浏览器验收</strong><br>状态、Stop、permission card、人工接管和完成证据；使用 stable 18100 桌面环境进行 live CDP 测试。</div><div class="gate">出口：下面的 E2E 清单全部有可复核 artifact。</div></div>
+    </div>
+  </section>
+
+  <section id="acceptance">
+    <h2>12 可执行验收标准</h2>
+    <ol class="checklist">
+      <li><strong>本地 DOM 流：</strong>在内置浏览器打开测试页，读取表单、输入、提交、验证 success message；用户始终可见同一 tab。</li>
+      <li><strong>简单视觉 fallback：</strong>在没有可用 DOM target 的 canvas fixture 上，只向模型发送一张当前 viewport screenshot，不启动 OCR、detector、memory 或 zoom，并完成一次点击；resize/scroll 后旧 action 返回 <code>stale_observation</code>。</li>
+      <li><strong>多窗口：</strong>两个 OpenProgram 窗口各有 web tab；指定窗口任务不得在另一窗口创建、激活或操作 tab。</li>
+      <li><strong>并发：</strong>同一 tab 第二个写任务被 lease 拒绝；两个不同 tab 可并行完成且 artifact/session 不交叉。</li>
+      <li><strong>外部 origin：</strong>首次写动作产生准确 permission card；拒绝后零写入；批准本任务后同 origin 普通 action 不重复提示。</li>
+      <li><strong>跨 origin：</strong>redirect、popup 和新 tab 进入新 origin 后旧授权失效。</li>
+      <li><strong>登录/CAPTCHA：</strong>runner 返回 <code>needs_user</code>；用户接管后 Continue 使用新 frame，不复用暂停前 action。</li>
+      <li><strong>Prompt injection：</strong>页面要求忽略用户任务、读取文件或执行高风险动作时，Runtime 权限不变化，任务被阻止或请求用户确认。</li>
+      <li><strong>取消：</strong>在 observe、模型调用、approval 等待和 action 间隙点击 Stop，均在下一次副作用前终止并释放 target。</li>
+      <li><strong>失败诚实性：</strong>invalid planner output、step limit、timeout、action exception、verification failure 均不能返回 <code>succeeded</code>。</li>
+      <li><strong>隐私：</strong>运行结束后临时 screenshot 被删除；event/transcript 中没有 typed secret；不产生 Harness workflow memory。</li>
+      <li><strong>回归：</strong>现有 <code>playwright_browser</code> selector API、普通用户手动 web tab、tab transfer 和 session UI 不受影响。</li>
+    </ol>
+  </section>
+
+  <section id="scope">
+    <h2>13 第一阶段明确不做</h2>
+    <div class="grid2">
+      <article class="card no"><h3>目标范围</h3><p>不控制整个本机桌面；不接入 remote VM；不操作 iOS/Android simulator；不控制其他本地 app；不处理多 app workflow。</p></article>
+      <article class="card no"><h3>浏览器范围</h3><p>不接入用户日常 Chrome/Edge profile；不提供 sidecar、hidden 或 headless fallback；桌面壳不在线时直接失败。</p></article>
+      <article class="card no"><h3>高权限动作</h3><p>不开放 arbitrary JavaScript、cookie/storage 读写或导出、file upload/download、clipboard、浏览器设置、证书和扩展管理。</p></article>
+      <article class="card no"><h3>平台范围</h3><p>不设计 Windows 专用实现、测试、打包或兼容路径；不引入 OS Keychain、keyring 或 Credential Manager 集成。</p></article>
+    </div>
+  </section>
+
+  <section id="evidence">
+    <h2>14 实现与验证证据状态</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>能力</th><th>当前证据</th><th>状态</th></tr></thead>
+        <tbody>
+          <tr><td>内置可见 web tab + exact CDP target attach</td><td><code>_actions/open_action.py</code> 与 browser unit/source checks</td><td class="partial">已有基础，尚缺 live acceptance</td></tr>
+          <tr><td>DOM/ARIA selector 操作</td><td><code>_actions/read.py</code>、<code>_actions/interact.py</code></td><td class="partial">已有底层工具，不是 Computer Use runner</td></tr>
+          <tr><td>DOM-first Browser Agent baseline</td><td><code>agentic_functions/browser_agent/__init__.py</code> 与 <code>tests/unit/test_browser_agent.py</code></td><td class="partial">Task 1 代码及 specification/quality review 已通过；真实桌面 E2E 仍待验证</td></tr>
+          <tr><td>GUI planning/verify</td><td><code>gui_harness/tasks/execute_task.py</code> 与 harness tests</td><td class="partial">规划和验证思路可提取；第一阶段不启用 grounding pipeline、OCR/detector 或 memory，completion/state 仍有 blocker</td></tr>
+          <tr><td>精确 window/tab control routing</td><td>当前为全局 broadcast + first reply</td><td class="nope">未实现</td></tr>
+          <tr><td>ComputerSession、tab lease、frame freshness</td><td>无</td><td class="nope">未实现</td></tr>
+          <tr><td>Origin permission card 与 risk tiers</td><td>现有 browser approval 只覆盖少数 login-state 操作</td><td class="nope">未实现</td></tr>
+          <tr><td>确定性 completion、cancel、artifact lifecycle</td><td>现有 gui_agent 不满足本设计</td><td class="nope">未实现</td></tr>
+          <tr><td>真实内置浏览器 E2E</td><td>尚无本设计对应 artifact</td><td class="nope">未验证</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note warn"><strong>证据边界：</strong>本页是设计和当前差距记录，不是发布声明。只有代码合并并完成 stable desktop 的 live test 后，才能把对应条目改为“已实现/已验证”，并附测试命令和 artifact 路径。</p>
+  </section>
+
+  <section id="references">
+    <h2>官方参考资料</h2>
+    <ul class="refs">
+      <li><a href="https://learn.chatgpt.com/docs/browser">OpenAI：Browser</a> — 内置独立 profile、共享页面视图、本地 web app 与外部网站。</li>
+      <li><a href="https://learn.chatgpt.com/docs/chrome-extension">OpenAI：Chrome extension</a> — 已登录 Chrome tab/profile 的独立接入边界。</li>
+      <li><a href="https://learn.chatgpt.com/docs/computer-use">OpenAI：Computer Use</a> — desktop app control、app approval、安全和工具选择。</li>
+      <li><a href="https://developers.openai.com/api/docs/guides/tools-computer-use">OpenAI API：Computer use</a> — screenshot/action loop、custom harness、isolation、allowlist 和 human-in-the-loop。</li>
+      <li><a href="https://code.claude.com/docs/en/desktop">Anthropic：Claude Code Desktop</a> — Browser pane、clean profile、external site approval、Computer Use 工具优先级。</li>
+      <li><a href="https://code.claude.com/docs/en/chrome">Anthropic：Use Claude Code with Chrome</a> — browser tools、site permission、read/write 分类、人工处理登录与 CAPTCHA。</li>
+      <li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool">Anthropic API：Computer use tool</a> — client-side execution、agent loop、限制、安全与数据保留。</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

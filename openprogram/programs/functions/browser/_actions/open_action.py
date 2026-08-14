@@ -93,20 +93,6 @@ def _start_engine(engine: str):
         return None, None, _b._install_hint()
 
 
-# 应用 UI 本体的地址前缀（stable 18100 / dev 18200，见 desktop/main.js 的
-# WEB_PORT）。attach 桌面应用时这些 target 永远跳过 —— agent 只能接管
-# 可见的 web tab，绝不能拿到壳页面本身。
-_SHELL_URL_PREFIXES = (
-    "http://127.0.0.1:18100", "http://localhost:18100",
-    "http://127.0.0.1:18200", "http://localhost:18200",
-)
-
-
-def _is_shell_page(page_url: str) -> bool:
-    u = (page_url or "").lower()
-    return u.startswith("devtools://") or u.startswith(_SHELL_URL_PREFIXES)
-
-
 def _choose_app_page(
     pages: list[Any],
     *,
@@ -185,9 +171,6 @@ def _open_app_session(
     def _all_pages():
         return [p for ctx in browser.contexts for p in ctx.pages]
 
-    def _visible_pages():
-        return [p for p in _all_pages() if not _is_shell_page(p.url)]
-
     try:
         from openprogram.webui.ws_actions.webtab import (
             request_active_tab,
@@ -210,7 +193,7 @@ def _open_app_session(
     deadline = _time.time() + 10.0
     while page is None and selection_error is None and _time.time() < deadline:
         page, selection_error = _choose_app_page(
-            _visible_pages(),
+            _all_pages(),
             target_id=target_id,
         )
         if page is None and selection_error is None:
