@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenProgram 测试系统</title>
+<style>
+  :root { --bg:#111318; --panel:#191d25; --line:#303746; --text:#d5d9e2;
+    --muted:#9299a8; --accent:#72a7ff; --ok:#66c07a; --warn:#e1aa55; --bad:#e36b72; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:40px 24px 80px; background:var(--bg); color:var(--text);
+    font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  main { max-width:1120px; margin:auto; }
+  h1 { margin:0 0 8px; font-size:27px; color:#fff; }
+  h2 { margin:34px 0 10px; font-size:18px; color:var(--accent); }
+  h3 { margin:20px 0 8px; font-size:15px; color:#fff; }
+  p { max-width:88ch; }
+  code, pre { font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  code { color:#a9c8ff; background:#0d1015; padding:2px 5px; border-radius:4px; }
+  pre { margin:0; padding:14px 16px; overflow:auto; background:#0d1015;
+    border:1px solid var(--line); border-radius:9px; color:#c9d2e4; }
+  a { color:#9fc3ff; }
+  .lead { color:var(--muted); font-size:15px; }
+  .cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .card b { display:block; margin-bottom:5px; color:#fff; }
+  .tag { display:inline-block; padding:2px 8px; border-radius:99px; font-size:11px;
+    border:1px solid var(--line); color:var(--muted); }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); }
+  .table { overflow:auto; border:1px solid var(--line); border-radius:10px; }
+  table { width:100%; border-collapse:collapse; min-width:760px; background:var(--panel); }
+  th, td { padding:10px 12px; text-align:left; vertical-align:top; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-size:11px; letter-spacing:.08em; }
+  tr:last-child td { border-bottom:0; }
+  .flow { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; }
+  .flow div { min-height:92px; background:var(--panel); border:1px solid var(--line);
+    border-top:3px solid var(--accent); border-radius:9px; padding:10px; }
+  .flow b { display:block; color:#fff; margin-bottom:4px; }
+  .flow span { color:var(--muted); font-size:12px; }
+  ul { padding-left:20px; max-width:90ch; }
+  @media(max-width:850px) { .cards,.flow { grid-template-columns:1fr 1fr; } }
+  @media(max-width:520px) { .cards,.flow { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>OpenProgram 测试系统</h1>
+  <p class="lead">本页定义测试分类、目录、依赖边界、执行命令和 CI 职责。测试层级由运行时依赖决定，产品域沿用 <code>openprogram/</code> 的模块名称。迁移只改变测试组织和基础设施，不改变产品行为。</p>
+
+  <h2>1. 当前实现与已验证差距</h2>
+  <div class="cards">
+    <div class="card"><b>Python 规模</b>383 个 tracked Python 测试文件，约 10.5 万行。大部分集中在 <code>tests/unit</code>，但其中包含 HTTP client、subprocess、临时状态库和真实线程。</div>
+    <div class="card"><b>共享状态</b><code>tests/conftest.py</code> 在 collection 阶段修改代理、HOME 和多个进程全局对象。临时 HOME 未自动删除，局部状态恢复依赖全局 autouse fixture。</div>
+    <div class="card"><b>并发与等待</b>测试中存在固定 <code>time.sleep</code>，部分测试替换全局 <code>threading.Thread</code>。这会影响 pytest-xdist 的控制线程和失败诊断。</div>
+    <div class="card"><b>仓库扫描</b>部分检查通过 <code>Path.rglob</code> 扫描工作目录，会包含 ignored Finder 副本和嵌套 application repository，因此相同 commit 可产生不同结果。</div>
+    <div class="card"><b>JavaScript</b>CLI 已使用 Vitest；Web 主要使用读取源代码后执行正则断言的脚本；desktop 主要使用 Node VM 和 fake Electron，CI 只执行其中一个脚本。</div>
+    <div class="card"><b>CI</b>Python matrix 排除 integration；未执行 Ruff、CLI test/build 和完整 desktop checks；Web 构建与 Python frontend integration fixture 没有统一契约。</div>
+  </div>
+
+  <h2>2. 参考框架及职责边界</h2>
+  <p>参考信息来自各项目官方文档。仓库继续使用现有工具；本设计不增加新的通用 test runner。</p>
+  <div class="table"><table>
+    <thead><tr><th>工具</th><th>采用能力</th><th>未提供的能力</th><th>OpenProgram 处理方式</th></tr></thead>
+    <tbody>
+      <tr><td><a href="https://docs.pytest.org/en/stable/explanation/goodpractices.html">pytest</a></td><td>Python discovery、fixture、marker、warning 和 xfail 策略</td><td>不执行 JavaScript，也不保证 fixture 自身具备进程隔离</td><td>负责 Python contracts、unit、component、integration、e2e 和 live</td></tr>
+      <tr><td><a href="https://pytest-xdist.readthedocs.io/">pytest-xdist</a></td><td>多进程分发</td><td>不能修复全局状态、后台线程或不安全 monkeypatch</td><td>隔离问题修复并重复验证后，只启用固定 worker 数</td></tr>
+      <tr><td><a href="https://nodejs.org/api/test.html">node:test</a></td><td>Node 22 内置断言、test 和 mock</td><td>不提供真实 DOM 和浏览器交互</td><td>用于 Web 纯 TypeScript/JavaScript 逻辑，避免新增依赖</td></tr>
+      <tr><td><a href="https://vitest.dev/guide/">Vitest</a></td><td>CLI 已有的 TypeScript test runner</td><td>不覆盖 Python worker 和真实浏览器</td><td>仅保留在 CLI，不在 Web 再安装一份</td></tr>
+      <tr><td><a href="https://playwright.dev/docs/best-practices">Playwright</a></td><td>真实浏览器、用户可见行为和跨页面状态</td><td>不替代 unit/component 测试</td><td>复用 Python browser extra，使用 Playwright 管理的 Chromium</td></tr>
+      <tr><td><a href="https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs">GitHub Actions</a></td><td>版本矩阵、job 隔离和 required checks</td><td>不定义测试语义</td><td>按测试层级拆分 jobs，使用相同的本地命令</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>3. 目标结构</h2>
+  <pre>tests/
+  contracts/{repository,security}/
+  unit/&lt;product-domain&gt;/
+  component/&lt;product-domain&gt;/
+  integration/&lt;product-domain&gt;/
+  e2e/{cli,web,desktop}/
+  live/{providers,channels}/
+  support/
+  conftest.py</pre>
+
+  <div class="table"><table>
+    <thead><tr><th>层级</th><th>允许依赖</th><th>禁止依赖</th><th>默认执行</th></tr></thead>
+    <tbody>
+      <tr><td><b>contracts</b></td><td>AST、tracked files、manifest、registry、schema</td><td>外部服务；用源码文本代替行为断言</td><td>每次 PR</td></tr>
+      <tr><td><b>unit</b></td><td>内存对象、纯函数、局部 fake</td><td>TestClient、socket、subprocess、真实后台线程、固定 sleep</td><td>Python 3.11/3.12/3.13</td></tr>
+      <tr><td><b>component</b></td><td>tmp_path、临时 SQLite、TestClient、fake provider、受控线程</td><td>外部网络和真实凭证</td><td>Python 3.12</td></tr>
+      <tr><td><b>integration</b></td><td>loopback HTTP/WS、真实 subprocess、多个生产模块</td><td>外部服务</td><td>Python 3.12</td></tr>
+      <tr><td><b>e2e</b></td><td>公开 CLI、真实 worker、构建后的 Web、浏览器</td><td>开发者真实 HOME 和预先存在的构建产物</td><td>专用 CI job</td></tr>
+      <tr><td><b>live</b></td><td>真实 provider、channel、远端服务</td><td>普通 PR required checks</td><td>手动或定时</td></tr>
+    </tbody>
+  </table></div>
+  <p>同一测试符合多个层级时，按依赖最强的层级分类。目录最多使用“层级/产品域”两级。marker 只描述执行能力：<code>slow</code>、<code>browser</code>、<code>sandbox</code>、<code>live</code>；不重复声明目录已经表达的层级。</p>
+
+  <h2>4. 执行和状态隔离</h2>
+  <ul>
+    <li>仓库级 contracts 只读取 Git tracked 文件。通用扫描器由调用方传入 roots，并排除嵌套 repository 和构建目录。</li>
+    <li>顶层 <code>conftest.py</code> 仅保留防止访问真实用户状态所必需的隔离；产品域 fixture 放在局部目录。</li>
+    <li>临时 HOME 具有确定的清理阶段。测试不能依赖真实 <code>~/.openprogram</code>。</li>
+    <li>等待并发结果使用 Event、Condition 或带截止时间的条件等待；unit 中禁止固定 sleep。</li>
+    <li>测试不能替换 Python 标准库的进程全局线程类。后台资源必须在 fixture teardown 中 join 或关闭。</li>
+    <li>一个生产缺陷对应一个通过最低公开边界复现的 regression test。</li>
+  </ul>
+
+  <h2>5. Web、CLI 与 desktop</h2>
+  <div class="table"><table>
+    <thead><tr><th>现有检查</th><th>目标</th><th>判定</th></tr></thead>
+    <tbody>
+      <tr><td>Web security/architecture source check</td><td><code>web/scripts/check-*.mjs</code></td><td>只有源代码结构本身属于契约时保留</td></tr>
+      <tr><td>Web pure helper behavior</td><td><code>web/tests/*.test.mjs</code> + <code>node:test</code></td><td>直接 import 并断言输入输出</td></tr>
+      <tr><td>Web user interaction</td><td><code>tests/e2e/web</code> + Playwright</td><td>操作构建后的页面并观察公开行为</td></tr>
+      <tr><td>CLI TypeScript</td><td>现有 Vitest</td><td>CI 执行 typecheck、test、build</td></tr>
+      <tr><td>desktop VM/fake Electron</td><td>desktop component checks</td><td>CI 执行完整 <code>npm run check</code></td></tr>
+      <tr><td>真实 Electron</td><td>release e2e</td><td>初始重构不新增打包测试基础设施</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>6. CI 数据流</h2>
+  <div class="flow" role="img" aria-label="从静态检查到发布验证的测试执行顺序">
+    <div><b>quality</b><span>Ruff<br>contracts<br>docs</span></div>
+    <div><b>unit matrix</b><span>Python<br>3.11 / 3.12 / 3.13</span></div>
+    <div><b>component</b><span>Python 3.12<br>local resources</span></div>
+    <div><b>integration</b><span>local HTTP/WS<br>subprocess/MCP</span></div>
+    <div><b>interfaces</b><span>Web<br>CLI<br>desktop</span></div>
+    <div><b>e2e / live</b><span>browser required<br>live manual</span></div>
+  </div>
+  <p>Python 命令使用 <code>uv run --locked</code>。矩阵关闭 fail-fast，避免一个版本失败后取消其他结果。普通 PR 不执行 live。所有 CI 命令同时写入贡献文档。</p>
+
+  <h2>7. 采用、调整与拒绝</h2>
+  <div class="table"><table>
+    <thead><tr><th>状态</th><th>决定</th><th>边界</th></tr></thead>
+    <tbody>
+      <tr><td class="ok">采用</td><td>层级优先目录、产品域二级目录、strict markers、strict xfail、固定 worker 数、Playwright-managed Chromium</td><td>迁移时保持测试语义和数量</td></tr>
+      <tr><td class="warn">调整</td><td>保留必要的 Web source contracts，同时把纯逻辑迁移到 node:test</td><td>不一次性重写全部 Web checks</td></tr>
+      <tr><td class="warn">调整</td><td>初期只生成 coverage 报告</td><td>稳定后依据实测数据设置阈值</td></tr>
+      <tr><td class="bad">拒绝</td><td>新增 tox/nox、在 Web 再安装 Vitest、<code>-n auto</code>、全局任意覆盖率阈值</td><td>现有工具已经覆盖需求，或当前状态不具备稳定并行条件</td></tr>
+      <tr><td class="bad">排除</td><td>Windows-specific 测试、打包和兼容性；keyring/Credential Manager</td><td>不属于本次测试系统重构</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>8. 验收标准</h2>
+  <ul>
+    <li>clean checkout 和包含 ignored/nested repository 文件的 checkout 收集相同 tracked tests，并产生相同 contracts 结果。</li>
+    <li>unit 不使用 TestClient、subprocess、socket、真实后台线程或固定 sleep。</li>
+    <li>Python required suites 无未处理线程 warning，连续三次固定 xdist worker 执行无 worker crash。</li>
+    <li>缺少前端产物的 component 行为与构建后 CSP 的 e2e 行为分别验证。</li>
+    <li>CLI、Web、desktop 的 package scripts 全部由 CI 执行。</li>
+    <li>测试迁移前后 test 数量、skip 和 xfail 变化均有明确记录。</li>
+    <li>覆盖率先作为报告，不以未验证阈值阻止合并。</li>
+  </ul>
+
+  <h2>9. 实现状态</h2>
+  <div class="table"><table>
+    <thead><tr><th>工作项</th><th>状态</th><th>完成证据</th></tr></thead>
+    <tbody>
+      <tr><td>设计与基线</td><td><span class="tag warn">实施中</span></td><td>本页和基线任务记录</td></tr>
+      <tr><td>输入枚举与共享状态</td><td><span class="tag">未实现</span></td><td>等待代码、测试和审查</td></tr>
+      <tr><td>Python 目录迁移</td><td><span class="tag">未实现</span></td><td>等待代码、测试和审查</td></tr>
+      <tr><td>Web/CLI/desktop</td><td><span class="tag">未实现</span></td><td>等待代码、测试和审查</td></tr>
+      <tr><td>CI 与贡献文档</td><td><span class="tag">未实现</span></td><td>等待代码、测试和审查</td></tr>
+      <tr><td>等待、并发与大文件</td><td><span class="tag">未实现</span></td><td>等待代码、测试和审查</td></tr>
+      <tr><td>覆盖率和最终验证</td><td><span class="tag">未实现</span></td><td>等待代码、测试和审查</td></tr>
+    </tbody>
+  </table></div>
+</main>
+</body>
+</html>

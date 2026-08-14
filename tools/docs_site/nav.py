@@ -388,6 +388,9 @@ PAGE_ORDER: dict[str, int] = {
     # Integrations: pin the authoritative server-side HTML design after the
     # alphabetical MCP client note.
     "reference/design/integrations/mcp-server.html": 1040,
+
+    # Test architecture and execution contracts.
+    "reference/design/testing/test-system.html": 1050,
     # Agentic program: the four-layer note that unifies tools, skills and
     # agentic functions as one concept sits after the calling-framework
     # note it builds on.
