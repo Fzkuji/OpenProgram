@@ -10,7 +10,7 @@
 curl -fsSL https://openprogram.io/install | sh
 ```
 
-installer 提供自己的 Python 并包含 Web UI；运行时不需要 Node.js 和 Git。macOS 桌面用户使用 GitHub Releases 中的 DMG。Linux 用户使用带 Web UI 或 TUI 的完整 CLI/server runtime；当前不发布 Linux 桌面包。平台范围和开发 checkout 安装见[安装](../install/install.zh.md)。
+installer 提供自己的 Python 并包含 Web UI，因此运行时不需要 Node.js。Session 与 Memory 历史需要 Git；`openprogram doctor` 会报告 Git 是否可用。macOS 桌面用户使用 GitHub Releases 中的 DMG。Linux 用户使用带 Web UI 或 TUI 的完整 CLI/server runtime；当前不发布 Linux 桌面包。平台范围和开发 checkout 安装见[安装](../install/install.zh.md)。
 
 ## 第 2 步：首次运行，接入 provider
 

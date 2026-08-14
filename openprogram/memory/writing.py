@@ -33,7 +33,7 @@ from .management.transaction import (
     workspace_write_lock,
 )
 from .runtime.online import OnlineMemoryRuntime
-from .runtime.state import SourceRecord
+from .runtime.state import RuntimeStateStore, SourceRecord
 
 if TYPE_CHECKING:
     from .agent_runtime import OpenProgramAgent
@@ -869,6 +869,7 @@ def reorganize(*, model: str | None = None) -> dict[str, Any]:
     try:
         with workspace_write_lock(root, timeout_s=5.0):
             audit = organize_topics(root, agent=_agent(model))
+            RuntimeStateStore(root).git_commit("memory: reorganize topics")
     except TransactionError as exc:
         if exc.code == "CONCURRENT_UPDATE":
             return {"status": "busy", "topics": len(topics), "changed_files": []}

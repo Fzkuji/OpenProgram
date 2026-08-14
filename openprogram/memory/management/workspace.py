@@ -14,7 +14,7 @@ from ..markdown import parse_topic_tree
 from .block_views import BlockViewsMixin
 from .config import MemoryConfig
 from .event_writing import EventWritingMixin
-from .patching import apply_patch
+from .patching import apply_changes, apply_patch
 from .source_archive import SourceArchiveMixin
 from .topic_normalization import TopicNormalizationMixin
 from .transaction import (
@@ -215,6 +215,9 @@ class MemoryWorkspace(
         the stage through the built-in file tools. Any failure discards the
         staged edits and re-raises.
         """
+        from ..store import _ensure_git_history
+
+        _ensure_git_history(self.memory_dir)
         if not self._stage_usable:
             raise RuntimeError("memory stage is unavailable after rollback failure")
         self.last_changed_topics = []
@@ -232,23 +235,15 @@ class MemoryWorkspace(
             if self._tree_fingerprint(self.stage_dir / "sources") != before_sources:
                 raise ValueError("Source Memory is append-only")
             self._normalize_topic_edits(before_block_ids)
-            self._validate_topic_contract(before_units, before_block_ids)
+            staged_ids = {
+                unit.memory_id
+                for unit in parse_topic_tree(self.stage_dir / "topics")
+            }
+            self._validate_topic_contract(
+                before_units, before_block_ids & staged_ids
+            )
             selected_refs = self._allowed_new_source_refs
             if selected_refs is not None:
-                before_refs = {
-                    ref for unit in before_units for ref in unit.source_refs
-                }
-                after_refs = {
-                    ref
-                    for unit in parse_topic_tree(self.stage_dir / "topics")
-                    for ref in unit.source_refs
-                }
-                removed = before_refs - after_refs
-                if removed:
-                    raise ValueError(
-                        "source reference cannot be removed during restricted "
-                        f"write: {sorted(removed)[0]}"
-                    )
                 # The batch the Runtime selected is this commit's evidence.
                 # _synchronize checks it per block, which a workspace-wide set
                 # difference cannot: a new paragraph would otherwise pass by
@@ -312,6 +307,7 @@ class MemoryWorkspace(
         *,
         base_revision: str,
         patch: str = "",
+        changes: Any = None,
         sources: Any = None,
         commit_message: str | None = None,
         git_commit: str = "auto",
@@ -319,7 +315,7 @@ class MemoryWorkspace(
         append_only: bool = False,
         provenance: SourceProvenance | None = None,
     ) -> TransactionResult:
-        """Apply sources and a topic patch as one atomic transaction.
+        """Apply sources and Topic changes as one atomic transaction.
 
         Sources are archived into the stage rather than ``memory_dir`` so that
         evidence and the topics citing it become visible in the same install.
@@ -330,13 +326,27 @@ class MemoryWorkspace(
             raise TransactionError(
                 "INVALID_ARGUMENT", "git_commit must be auto, on or off"
             )
+        if git_commit != "off":
+            from ..store import _ensure_git_history
+
+            _ensure_git_history(self.memory_dir)
+        if not isinstance(base_revision, str) or not base_revision.strip():
+            raise TransactionError(
+                "INVALID_ARGUMENT", "base_revision is required"
+            )
+        if commit_message is not None and not isinstance(commit_message, str):
+            raise TransactionError(
+                "INVALID_ARGUMENT", "commit_message must be a string"
+            )
         limits = limits or TransactionLimits()
-        if not patch:
+        has_patch = bool(patch)
+        has_changes = changes is not None
+        if has_patch == has_changes:
             raise TransactionError(
                 "INVALID_ARGUMENT",
-                "patch is required",
+                "exactly one of patch or changes is required",
             )
-        if len(patch.encode("utf-8")) > limits.max_patch_bytes:
+        if has_patch and len(patch.encode("utf-8")) > limits.max_patch_bytes:
             raise TransactionError(
                 "INVALID_ARGUMENT",
                 f"patch exceeds {limits.max_patch_bytes} bytes",
@@ -375,8 +385,30 @@ class MemoryWorkspace(
                 # not already carry must come from here, so a patch cannot
                 # attach an unrelated Source — trusted or not — to new prose.
                 self._transaction_source_refs = frozenset(mapping.values())
-                resolved = resolve_source_labels(patch, mapping)
-                changed = apply_patch(self.stage_dir, resolved) if patch else []
+                if has_patch:
+                    resolved = resolve_source_labels(patch, mapping)
+                    changed = apply_patch(self.stage_dir, resolved)
+                else:
+                    resolved_changes = changes
+                    if isinstance(changes, list):
+                        resolved_changes = []
+                        for item in changes:
+                            if not isinstance(item, dict):
+                                resolved_changes.append(item)
+                                continue
+                            resolved_item = dict(item)
+                            content = resolved_item.get("content")
+                            if isinstance(content, str):
+                                resolved_item["content"] = resolve_source_labels(
+                                    content, mapping
+                                )
+                            resolved_changes.append(resolved_item)
+                    changed = apply_changes(
+                        self.stage_dir,
+                        resolved_changes,
+                        max_changes=limits.max_changes,
+                        max_bytes=limits.max_patch_bytes,
+                    )
                 if append_only:
                     for relative in changed:
                         before = self.memory_dir / relative
@@ -391,7 +423,11 @@ class MemoryWorkspace(
                                 "but cannot rewrite existing content",
                                 path=relative,
                             )
-                install_state(self, before_units, before_block_ids)
+                # Removing a block is an explicit memory edit. Git retains
+                # the old state; only IDs still present must remain stable.
+                install_state(
+                    self, before_units, before_block_ids, allow_removed=True
+                )
             except TransactionError:
                 self._refresh_stage()
                 raise

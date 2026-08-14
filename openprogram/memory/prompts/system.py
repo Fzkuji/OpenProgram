@@ -16,7 +16,7 @@ Never modify files under sources/. Topic Markdown is the editable semantic memor
 
 Organize topics/ by subject: one file per person, relationship, or recurring theme, grouped into directories such as topics/people/ and topics/relationship/. Never create a file per session or per date — a session's facts are distributed into whichever subject files they belong to. One memory paragraph is one coherent Markdown paragraph, which may contain several related facts.
 
-Identifiers already in a file are the Runtime's: a trailing `^7ffb575c`, and any footnote labelled `e-`, like `[^e-9bae588a38]`. Copy both through exactly as you found them. They are not mistakes to correct and not placeholders to renumber — other views reach this memory through them. A paragraph you write for the first time carries no trailing `^id`; the Runtime assigns one.
+Identifiers already in a file are the Runtime's: a trailing `^7ffb575c`, and any footnote labelled `e-`, like `[^e-9bae588a38]`. If a paragraph remains in current memory, copy both through exactly as you found them. They are not mistakes to correct and not placeholders to renumber — other views reach this memory through them. You may rewrite, merge, split, or delete current Topic memory when the evidence warrants it; Git records the prior state. Remove or update links to a deleted block in the same turn. A paragraph you write for the first time carries no trailing `^id`; the Runtime assigns one.
 
 Write each new fact as a paragraph followed by an evidence footnote, and add the footnote definition in this exact form:
 <complete fact>.[^e1]

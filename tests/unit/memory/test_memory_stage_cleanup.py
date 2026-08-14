@@ -90,6 +90,36 @@ def test_memory_update_cleans_up_on_both_paths(memory, monkeypatch):
     assert _stage_dirs() == before
 
 
+def test_memory_update_accepts_structured_changes(memory, monkeypatch):
+    import json
+
+    from openprogram.programs.functions.memory import memory as memory_tools
+
+    monkeypatch.setattr(memory_tools, "authority_from_message", lambda *_: {
+        "speaker_kind": "owner",
+        "speaker_id": "owner/local",
+        "speaker_display": "Owner",
+        "principal_id": "owner/install/0123456789abcdef",
+        "authority_tier": "owner",
+        "interaction": "interactive",
+    })
+    revision = json.loads(memory_tools.memory_status())["revision"]
+    accepted = json.loads(memory_tools.memory_update(
+        base_revision=revision,
+        changes=[{
+            "path": "topics/note.md",
+            "action": "write",
+            "content": NOTE.replace("worth keeping", "worth remembering"),
+        }],
+    ))
+
+    assert accepted["ok"] is True, accepted
+    assert "worth remembering" in (
+        memory / "topics/note.md"
+    ).read_text(encoding="utf-8")
+    assert _stage_dirs() == set()
+
+
 # ---- the background runtime -------------------------------------------
 
 

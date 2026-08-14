@@ -16,7 +16,7 @@ OpenProgram 分别提供桌面 release 安装和 CLI/server release 安装。sou
 
 ## 桌面安装
 
-受支持的 macOS 桌面产物包含 Electron 和完整的平台 product runtime。runtime 内含受控 CPython、OpenProgram、预构建 Web UI、providers、channels、search、Playwright Chromium、默认 OCR/模型数据，以及 GUI、Research、Wiki 三项第一方 Programs；运行时不读取系统 Python、Node.js 或 Git。Linux 当前使用完整 CLI/server release，因为完整 AppImage 未通过打包门禁；不发布精简的 Linux 桌面产物。
+受支持的 macOS 桌面产物包含 Electron 和完整的平台 product runtime。runtime 内含受控 CPython、OpenProgram、预构建 Web UI、providers、channels、search、Playwright Chromium、默认 OCR/模型数据，以及 GUI、Research、Wiki 三项第一方 Programs；运行时不读取系统 Python 或 Node.js。Session 与 Memory 历史需要 Git，`openprogram doctor` 会检查 Git。Linux 当前使用完整 CLI/server release，因为完整 AppImage 未通过打包门禁；不发布精简的 Linux 桌面产物。
 
 ### macOS
 

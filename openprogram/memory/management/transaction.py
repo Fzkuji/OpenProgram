@@ -133,6 +133,7 @@ class TransactionResult:
 @dataclass(frozen=True)
 class TransactionLimits:
     max_sources: int = 64
+    max_changes: int = 64
     max_source_bytes: int = 256_000
     max_patch_bytes: int = 512_000
     max_commit_message_chars: int = 500
@@ -270,6 +271,7 @@ def staged_edit(
     *,
     deleting: str = "",
     timeout_s: float = 5.0,
+    commit_message: str = "memory: edit topics",
 ) -> tuple[bool, str]:
     """Apply a hand edit through the workspace stage, or not at all.
 
@@ -296,6 +298,9 @@ def staged_edit(
         # writer stages from this same tree and would otherwise install
         # over the edit, or be installed over by it.
         with workspace_write_lock(root, timeout_s=timeout_s):
+            from ..store import _ensure_git_history
+
+            _ensure_git_history(root)
             with closing(MemoryWorkspace(root)) as space:
                 units, block_ids = committed_baseline(space)
                 if deleting:
@@ -305,6 +310,13 @@ def staged_edit(
                     }
                 write(space.stage_dir)
                 install_state(space, units, block_ids)
+                try:
+                    git_commit_state(root, commit_message)
+                except Exception as exc:  # noqa: BLE001
+                    return True, (
+                        "memory changed but Git commit failed: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
     except TransactionError as exc:
         return False, exc.message
     except Exception as exc:  # noqa: BLE001
@@ -460,14 +472,25 @@ def committed_baseline(workspace: Any) -> tuple[list[Any], set[str]]:
 
 
 def install_state(
-    workspace: Any, before_units: list[Any], before_block_ids: set[str]
+    workspace: Any,
+    before_units: list[Any],
+    before_block_ids: set[str],
+    *,
+    allow_removed: bool = False,
 ) -> None:
     """Validate staged topics and install them over the committed workspace.
 
     Mirrors the successful branch of ``MemoryWorkspace.shell()``.
     """
     workspace._normalize_topic_edits(before_block_ids)
-    workspace._validate_topic_contract(before_units, before_block_ids)
+    required_ids = before_block_ids
+    if allow_removed:
+        staged_ids = {
+            unit.memory_id
+            for unit in parse_topic_tree(workspace.stage_dir / "topics")
+        }
+        required_ids = before_block_ids & staged_ids
+    workspace._validate_topic_contract(before_units, required_ids)
     workspace._synchronize()
 
 

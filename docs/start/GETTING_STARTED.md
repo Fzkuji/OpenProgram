@@ -10,7 +10,7 @@ Install the complete release runtime with its managed Python on macOS or Linux:
 curl -fsSL https://openprogram.io/install | sh
 ```
 
-The installer supplies its own Python and includes the Web UI; Node.js and Git are not runtime requirements. macOS desktop users use the DMG attached to GitHub Releases. Linux users use the complete CLI/server runtime with its Web UI or TUI; no Linux desktop package is currently published. Platform scope and development-checkout instructions are in [Install](../install/install.md).
+The installer supplies its own Python and includes the Web UI, so Node.js is not a runtime requirement. Git is required for session and Memory history; `openprogram doctor` reports whether it is available. macOS desktop users use the DMG attached to GitHub Releases. Linux users use the complete CLI/server runtime with its Web UI or TUI; no Linux desktop package is currently published. Platform scope and development-checkout instructions are in [Install](../install/install.md).
 
 ## Step 2: First run — connect a provider
 

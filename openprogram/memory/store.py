@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -124,6 +126,7 @@ def _set_aside_superseded(base: Path) -> Path | None:
 _MEMORY_FILE_MODE = 0o600
 _MEMORY_DIR_MODE = 0o700
 _permissions_migrated: set[Path] = set()
+_git_initialized: set[Path] = set()
 
 
 def restrict_workspace_permissions(base: Path) -> int:
@@ -172,9 +175,108 @@ def ensure() -> Path:
     _set_aside_superseded(base)
     for name in ("topics", "sources"):
         (base / name).mkdir(parents=True, exist_ok=True)
+    _ensure_git_history(base)
     _migrate_permissions_once(base)
     # Nothing seeds the always-on block. It is rendered from
     # ``topics/core.md``, so an empty workspace has no block, and a
     # placeholder written here would look like a master to the render and
     # let it replace a hand-written ``core.md`` that was never moved.
     return base
+
+
+def _ensure_git_history(base: Path) -> None:
+    """Create a private Git repository and snapshot pre-existing memory."""
+    from .management.transaction import TransactionError, workspace_write_lock
+    from .runtime.state import RuntimeStateStore
+    from .workspace_layout import RUNTIME_DIR_NAMES
+
+    if shutil.which("git") is None:
+        raise TransactionError(
+            "GIT_UNAVAILABLE",
+            "Git is required for Memory history but was not found",
+            details={"memory_committed": False, "git_committed": False},
+        )
+    if base in _git_initialized:
+        return
+    marker = base / ".git" / "openprogram-memory-ready"
+    if marker.is_file():
+        _git_initialized.add(base)
+        return
+    try:
+        with workspace_write_lock(base):
+            if base in _git_initialized or marker.is_file():
+                _git_initialized.add(base)
+                return
+            if not (base / ".git").exists():
+                subprocess.run(
+                    ["git", "init", "-q"], cwd=base, check=True,
+                    capture_output=True, text=True,
+                )
+            marker = base / ".git" / "openprogram-memory-ready"
+            for key, value in (
+                ("user.name", "OpenProgram Memory"),
+                ("user.email", "memory@openprogram.local"),
+            ):
+                configured = subprocess.run(
+                    ["git", "config", "--local", "--get", key],
+                    cwd=base,
+                    capture_output=True,
+                    text=True,
+                )
+                if configured.returncode != 0:
+                    subprocess.run(
+                        ["git", "config", "--local", key, value],
+                        cwd=base,
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+            exclude = base / ".git" / "info" / "exclude"
+            current_excludes = (
+                exclude.read_text(encoding="utf-8")
+                if exclude.is_file()
+                else ""
+            )
+            additions = [
+                f"/{name}*"
+                for name in RUNTIME_DIR_NAMES
+                if f"/{name}*" not in current_excludes.splitlines()
+            ]
+            if additions:
+                exclude.parent.mkdir(parents=True, exist_ok=True)
+                exclude.write_text(
+                    current_excludes.rstrip("\n")
+                    + ("\n" if current_excludes else "")
+                    + "\n".join(additions)
+                    + "\n",
+                    encoding="utf-8",
+                )
+            head = subprocess.run(
+                ["git", "rev-parse", "--verify", "HEAD"],
+                cwd=base,
+                capture_output=True,
+                text=True,
+            )
+            commit = RuntimeStateStore(base).git_commit(
+                "memory: initialize history"
+            )
+            if commit is None:
+                if head.returncode != 0:
+                    subprocess.run(
+                        [
+                            "git", "commit", "-q", "--allow-empty", "-m",
+                            "memory: initialize history",
+                        ],
+                        cwd=base,
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+            marker.write_text("ready\n", encoding="utf-8")
+            _git_initialized.add(base)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise TransactionError(
+            "GIT_UNAVAILABLE",
+            f"Memory Git history could not be initialized: {exc}",
+            details={"memory_committed": False, "git_committed": False},
+        ) from exc

@@ -1,8 +1,8 @@
-"""Restricted unified-diff application for the memory write transaction.
+"""Restricted file changes for the memory write transaction.
 
-Text create/update/delete under ``topics/**`` only. Renames,
-copies, mode changes, symlinks and binary hunks are rejected rather than
-approximated, so a patch can never move data outside the writable surface.
+The public contract is a list of whole-file ``write`` and ``delete`` changes.
+Unified diff remains supported for older callers. Both forms write only text
+under ``topics/**``; neither can rename files or alter filesystem metadata.
 """
 
 from __future__ import annotations
@@ -34,6 +34,100 @@ class FilePatch:
     hunks: list[tuple[int, list[str]]]
     creates: bool = False
     deletes: bool = False
+
+
+@dataclass(frozen=True)
+class FileChange:
+    path: str
+    action: str
+    content: str | None = None
+
+
+def apply_changes(
+    stage_dir: Path,
+    changes: object,
+    *,
+    max_changes: int = 64,
+    max_bytes: int = 512_000,
+) -> list[str]:
+    """Apply validated whole-file changes inside ``stage_dir``."""
+    if not isinstance(changes, list):
+        raise TransactionError("INVALID_ARGUMENT", "changes must be a list")
+    if not changes:
+        raise TransactionError("INVALID_ARGUMENT", "changes is empty")
+    if len(changes) > max_changes:
+        raise TransactionError(
+            "INVALID_ARGUMENT",
+            f"at most {max_changes} changes per transaction",
+        )
+
+    parsed: list[FileChange] = []
+    seen: set[str] = set()
+    total_bytes = 0
+    for index, item in enumerate(changes):
+        if not isinstance(item, dict):
+            raise TransactionError(
+                "INVALID_ARGUMENT", f"changes[{index}] must be an object"
+            )
+        unknown = set(item) - {"path", "action", "content"}
+        if unknown:
+            raise TransactionError(
+                "INVALID_ARGUMENT",
+                f"changes[{index}] has unknown field: {sorted(unknown)[0]}",
+            )
+        path = item.get("path")
+        action = item.get("action")
+        if not isinstance(path, str) or not path.strip():
+            raise TransactionError(
+                "INVALID_ARGUMENT", f"changes[{index}].path must be a string"
+            )
+        validate_writable_path(path)
+        normalized_path = Path(path).as_posix()
+        if normalized_path in seen:
+            raise TransactionError(
+                "INVALID_ARGUMENT", f"duplicate change path: {normalized_path}"
+            )
+        seen.add(normalized_path)
+        if action not in ("write", "delete"):
+            raise TransactionError(
+                "INVALID_ARGUMENT",
+                f"changes[{index}].action must be write or delete",
+            )
+        content = item.get("content")
+        if action == "write" and not isinstance(content, str):
+            raise TransactionError(
+                "INVALID_ARGUMENT",
+                f"changes[{index}].content must be a string for write",
+            )
+        if action == "delete" and "content" in item:
+            raise TransactionError(
+                "INVALID_ARGUMENT",
+                f"changes[{index}].content is not allowed for delete",
+            )
+        total_bytes += len(normalized_path.encode("utf-8"))
+        if content is not None:
+            total_bytes += len(content.encode("utf-8"))
+        if total_bytes > max_bytes:
+            raise TransactionError(
+                "INVALID_ARGUMENT", f"changes exceed {max_bytes} bytes"
+            )
+        target = stage_dir / normalized_path
+        if action == "delete" and not target.is_file():
+            raise TransactionError(
+                "PATCH_CONFLICT",
+                "change deletes a file that does not exist",
+                path=normalized_path,
+            )
+        parsed.append(FileChange(normalized_path, action, content))
+
+    for change in parsed:
+        target = stage_dir / change.path
+        if change.action == "delete":
+            target.unlink()
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(change.content or "", encoding="utf-8")
+    return sorted(change.path for change in parsed)
 
 
 def apply_patch(stage_dir: Path, patch: str) -> list[str]:
