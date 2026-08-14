@@ -1,9 +1,10 @@
-"""Execute planner-generated Agentic Programming workflows.
+"""Execute reusable planner-generated Agentic Programming projects.
 
-The planner returns ``SINGLE`` for one-agent work, otherwise a Python module
-with ``def workflow():``.  Each invocation owns
-``<session-repo>/workflows/<run_id>/`` with source history and automatic
-call-boundary checkpoints; the todo board is not involved.
+Every new invocation selects, revises, or creates a versioned multi-file
+workflow project. Each invocation also owns an immutable project snapshot under
+``<session-repo>/workflows/<run_id>/`` with automatic call-boundary checkpoints.
+The legacy ``code.py`` format remains readable only when explicitly resuming an
+existing run.
 """
 from __future__ import annotations
 
@@ -526,6 +527,10 @@ def _validate_project_candidate(value: object) -> dict:
         raise InvalidWorkflow(
             "workflow project must define exactly one def workflow() in entry.py"
         )
+    if not any(path.startswith("steps/") for path in clean_files):
+        raise InvalidWorkflow(
+            "workflow project must contain at least one Python helper under steps/"
+        )
     return {
         "project_metadata": metadata,
         "readme": readme.rstrip() + "\n",
@@ -659,11 +664,6 @@ def _request_project_decision(
             session_id, prompt, agent_id=agent_id,
             spawn_caller=spawn_caller, label="workflow project selection",
         )
-        # Old interrupted runs and test recordings may still contain the former
-        # SINGLE/code protocol. Keep it readable, but the new prompt never asks
-        # a planner to produce this shape.
-        if reply.strip() == "SINGLE" or _CODE_BLOCK.search(reply or ""):
-            return {"action": "legacy", "reply": reply}
         try:
             decision = _parse_json_reply(reply)
             action = str(decision.get("action") or "")
@@ -1465,34 +1465,13 @@ def _prepare_project_run(
     agent_id: str,
     spawn_caller: Optional[str],
     functions: dict[str, Callable],
-) -> tuple[str, str]:
+) -> None:
     candidates = _search_projects(state["task"])
     decision = _request_project_decision(
         state["task"], candidates, session_id=session_id,
         agent_id=agent_id, spawn_caller=spawn_caller,
     )
     action = decision["action"]
-    if action == "legacy":
-        reply = decision["reply"]
-        if reply.strip() == "SINGLE":
-            source = "SINGLE"
-        else:
-            candidate = _extract_source(reply)
-            try:
-                _validate_source(candidate)
-                source = candidate
-            except Exception as exc:
-                state["last_error"] = f"{type(exc).__name__}: {exc}"
-                source = _request_valid_source(
-                    state["task"], candidate, state, session_id=session_id,
-                    agent_id=agent_id, spawn_caller=spawn_caller,
-                    functions=functions,
-                )
-        atomic_write_text(
-            instance / "code.py", source + "\n" if source == "SINGLE" else source,
-        )
-        return "legacy", source
-
     project_id = str(decision.get("project_id") or "")
     if action == "reuse":
         index, candidate = _copy_active_snapshot(instance, project_id)
@@ -1521,29 +1500,18 @@ def _prepare_project_run(
         )
     _save_project_ref(instance, state)
     _save_state(instance / "state.json", state)
-    return "project", ""
 
 
-@_real_agentic_function(input={
-    "task": {"description": "The task to plan and execute", "multiline": True},
-})
-def agentic_workflow(task: str, **_deprecated) -> dict:
-    """Search, select, and execute a reusable workflow project.
-
-    Examples:
-        agentic_workflow("Review auth module for bugs")
-        agentic_workflow("Research recent papers and update the local report")
-
-    Note:
-        Old parameters (session_id, run_id, spawn_caller, agent_id) are deprecated
-        and ignored. They're accepted via **_deprecated for backward compatibility.
-    """
-    # Internal parameters from context (ignore deprecated kwargs)
-    sid = _deprecated.get("session_id") or current_session_id()
-    agent_id = _deprecated.get("agent_id") or "main"
-    spawn_caller = _deprecated.get("spawn_caller")
-    run_id = _deprecated.get("run_id", "")
-
+def _execute_workflow(
+    task: str,
+    *,
+    session_id: str,
+    agent_id: str = "main",
+    spawn_caller: Optional[str] = None,
+    run_id: str = "",
+) -> dict:
+    """Execute a new project run or explicitly resume one existing run."""
+    sid = session_id
     functions = _registered_agentic_functions()
     if run_id:
         instance = _instance_dir(sid, run_id)
@@ -1558,32 +1526,30 @@ def agentic_workflow(task: str, **_deprecated) -> dict:
                     functions=functions,
                 )
             code_path = instance / "code.py"
-            if not code_path.exists():
-                kind, source = _prepare_project_run(
-                    instance, state, session_id=sid, agent_id=agent_id,
-                    spawn_caller=spawn_caller, functions=functions,
-                )
-                if kind == "project":
-                    state = _load_state(instance / "state.json")
-                    state["status"] = "running"
-                    _save_state(instance / "state.json", state)
-                    return _run_project_instance_locked(
-                        instance, state, run_id=run_id, session_id=sid,
-                        agent_id=agent_id, spawn_caller=spawn_caller,
-                        functions=functions,
-                    )
-            else:
+            if code_path.exists():
                 source = code_path.read_text(encoding="utf-8")
-            if source.strip() == "SINGLE":
-                return _run_single(
-                    instance, run_id=run_id, session_id=sid, agent_id=agent_id,
-                    spawn_caller=spawn_caller,
+                if source.strip() == "SINGLE":
+                    return _run_single(
+                        instance, run_id=run_id, session_id=sid, agent_id=agent_id,
+                        spawn_caller=spawn_caller,
+                    )
+                _validate_source(source)
+                state["status"] = "running"
+                _save_state(instance / "state.json", state)
+                return _run_instance_locked(
+                    instance, state, source, run_id=run_id, session_id=sid,
+                    agent_id=agent_id, spawn_caller=spawn_caller,
+                    functions=functions,
                 )
-            _validate_source(source)
+            _prepare_project_run(
+                instance, state, session_id=sid, agent_id=agent_id,
+                spawn_caller=spawn_caller, functions=functions,
+            )
+            state = _load_state(instance / "state.json")
             state["status"] = "running"
             _save_state(instance / "state.json", state)
-            return _run_instance_locked(
-                instance, state, source, run_id=run_id, session_id=sid,
+            return _run_project_instance_locked(
+                instance, state, run_id=run_id, session_id=sid,
                 agent_id=agent_id, spawn_caller=spawn_caller,
                 functions=functions,
             )
@@ -1597,27 +1563,32 @@ def agentic_workflow(task: str, **_deprecated) -> dict:
         "last_error": "",
     }
     _save_state(instance / "state.json", state)
-    kind, source = _prepare_project_run(
+    _prepare_project_run(
         instance, state, session_id=sid, agent_id=agent_id,
         spawn_caller=spawn_caller, functions=functions,
     )
-    if kind == "project":
-        with _WORKFLOW_LOCK:
-            state = _load_state(instance / "state.json")
-            return _run_project_instance_locked(
-                instance, state, run_id=run_id, session_id=sid,
-                agent_id=agent_id, spawn_caller=spawn_caller,
-                functions=functions,
-            )
-    if source == "SINGLE":
-        return _run_single(
-            instance, run_id=run_id, session_id=sid, agent_id=agent_id,
-            spawn_caller=spawn_caller,
+    with _WORKFLOW_LOCK:
+        state = _load_state(instance / "state.json")
+        return _run_project_instance_locked(
+            instance, state, run_id=run_id, session_id=sid,
+            agent_id=agent_id, spawn_caller=spawn_caller,
+            functions=functions,
         )
-    return _run_instance(
-        instance, state, source, run_id=run_id, session_id=sid,
-        agent_id=agent_id, spawn_caller=spawn_caller,
-        functions=functions,
+
+
+@_real_agentic_function(input={
+    "task": {"description": "The task to plan and execute", "multiline": True},
+})
+def agentic_workflow(task: str) -> dict:
+    """Search, select, and execute a reusable workflow project.
+
+    Examples:
+        agentic_workflow("Review auth module for bugs")
+        agentic_workflow("Research recent papers and update the local report")
+    """
+    return _execute_workflow(
+        task,
+        session_id=current_session_id(),
     )
 
 
@@ -1631,8 +1602,13 @@ def resume_workflow(run_id: str, **_deprecated) -> dict:
     sid = _deprecated.get("session_id") or current_session_id()
     instance = _instance_dir(sid, run_id)
     state = _load_state(instance / "state.json")
-    # Pass run_id and other deprecated params through
-    return agentic_workflow(state["task"], run_id=run_id, **_deprecated)
+    return _execute_workflow(
+        state["task"],
+        session_id=sid,
+        agent_id=_deprecated.get("agent_id") or "main",
+        spawn_caller=_deprecated.get("spawn_caller"),
+        run_id=run_id,
+    )
 
 
 __all__ = [
