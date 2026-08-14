@@ -57,6 +57,7 @@ def _probe(root: Path, product: dict) -> dict[str, dict[str, object]]:
     gui = product["programs"]["gui"]
     for distribution, key in (
         ("numpy", "numpy"),
+        ("opencv-python", "opencv"),
         ("torch", "torch"),
         ("torchvision", "torchvision"),
     ):

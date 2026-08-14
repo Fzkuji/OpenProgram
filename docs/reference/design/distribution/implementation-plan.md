@@ -19,6 +19,8 @@ It tracks the bounded implementation, verification, and review evidence for the 
 - Regression gate: resolve the complete locked product requirements for CPython 3.12 on macOS x86_64 and assert the locked grammar artifact includes that platform. The release retry uses the higher patch version `v0.6.2`.
 - Tag `v0.6.2` remained immutable after run `31822787529` passed the search dependency step but found that `torch 2.13.0` no longer publishes macOS x86_64 wheels. No GitHub Release was published from that tag.
 - The `v0.6.3` retry uses the last upstream macOS x86_64-compatible pair, `torch 2.2.2` and `torchvision 0.17.2`, together with `numpy 1.26.4` for NumPy ABI compatibility. All four release targets must resolve this same GUI stack; Linux continues to use the official CPU wheel index.
+- Tag `v0.6.3` remained immutable after run `31823941178` showed that unconstrained GUI harness installation upgraded NumPy back to 2.x through the current OpenCV dependency, invalidating the Torch 2.2.2 NumPy ABI. No GitHub Release was published from that tag.
+- The `v0.6.4` retry pins `opencv-python 4.11.0.86` and applies one constraints file to every first-party Program installation so later dependency resolution cannot replace the verified NumPy, OpenCV, Torch, or Torchvision stack.
 
 ## Short public installer batch
 
