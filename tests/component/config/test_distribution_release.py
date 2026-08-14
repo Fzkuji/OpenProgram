@@ -363,7 +363,14 @@ def test_release_workflow_publishes_structured_release_notes() -> None:
         "## 🔄 版本指南",
     ):
         assert section in notes
-    assert "| 用户类型 | 平台 | 安装方式 |" in notes
+    assert "- **macOS**" in notes
+    assert "  - **安装包安装**" in notes
+    assert "  - **命令行安装**" in notes
+    assert "- **Linux**" in notes
+    assert "  - **命令行 / Server 安装**" in notes
+    assert notes.count("  - **开发安装**") == 2
+    assert "安装包和命令行安装包含相同的完整产品功能" in notes
+    assert "| 用户类型 |" not in notes
     assert "curl -fsSL https://openprogram.io/install | sh" in notes
 
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
