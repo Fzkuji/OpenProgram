@@ -298,8 +298,9 @@ def test_product_manifest_requires_one_complete_capability_set() -> None:
         "program.wiki",
     }
     assert set(manifest["programs"]) == {"gui", "research", "wiki"}
-    assert manifest["programs"]["gui"]["torch"] == "2.13.0"
-    assert manifest["programs"]["gui"]["torchvision"] == "0.28.0"
+    assert manifest["programs"]["gui"]["numpy"] == "1.26.4"
+    assert manifest["programs"]["gui"]["torch"] == "2.2.2"
+    assert manifest["programs"]["gui"]["torchvision"] == "0.17.2"
     for program in manifest["programs"].values():
         assert re.fullmatch(r"[0-9a-f]{40}", program["commit"])
 
@@ -496,7 +497,7 @@ def test_release_manifest_records_hashes(tmp_path: Path) -> None:
 
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
-    (artifacts / "OpenProgram-0.6.2-mac-arm64.dmg").write_bytes(b"artifact")
+    (artifacts / "OpenProgram-0.6.3-mac-arm64.dmg").write_bytes(b"artifact")
     output = artifacts / "release-manifest.json"
     subprocess.run(
         [
@@ -504,14 +505,14 @@ def test_release_manifest_records_hashes(tmp_path: Path) -> None:
             str(ROOT / "scripts" / "create-release-manifest.py"),
             str(artifacts),
             "--version",
-            "v0.6.2",
+            "v0.6.3",
             "--output",
             str(output),
         ],
         check=True,
     )
     manifest = json.loads(output.read_text(encoding="utf-8"))
-    assert manifest["version"] == "0.6.2"
+    assert manifest["version"] == "0.6.3"
     assert manifest["files"][0]["sha256"] == (
         "c7c5c1d70c5dec4416ab6158afd0b223ef40c29b1dc1f97ed9428b94d4cadb1c"
     )

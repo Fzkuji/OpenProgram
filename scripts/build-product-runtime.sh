@@ -89,12 +89,13 @@ test -n "$wheel" || {
 # Keep GUI inference CPU-only in distributable Linux runtimes. PyPI's Linux
 # Torch wheel can pull CUDA libraries even though the default product does not
 # require a GPU.
+numpy_version="$(read_config programs.gui.numpy)"
 torch_version="$(read_config programs.gui.torch)"
 torchvision_version="$(read_config programs.gui.torchvision)"
 torch_install=(
   "$uv_bin" pip install --python "$python_bin" --strict
   --break-system-packages
-  "torch==$torch_version" "torchvision==$torchvision_version"
+  "numpy==$numpy_version" "torch==$torch_version" "torchvision==$torchvision_version"
 )
 if test "$(uname -s)" = Linux; then
   torch_install+=(--index https://download.pytorch.org/whl/cpu)

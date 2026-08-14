@@ -55,7 +55,11 @@ def _probe(root: Path, product: dict) -> dict[str, dict[str, object]]:
     os.environ["GPA_MODEL_PATH"] = str(gpa_model)
 
     gui = product["programs"]["gui"]
-    for distribution, key in (("torch", "torch"), ("torchvision", "torchvision")):
+    for distribution, key in (
+        ("numpy", "numpy"),
+        ("torch", "torch"),
+        ("torchvision", "torchvision"),
+    ):
         actual = importlib.metadata.version(distribution).split("+", 1)[0]
         if actual != gui[key]:
             raise RuntimeError(
