@@ -3,9 +3,13 @@ from pathlib import Path
 import pytest
 
 
+ROOT = Path(__file__).resolve().parents[3]
+pytestmark = pytest.mark.browser
+
+
 def test_branch_resource_details_expand_without_clipping_and_support_keyboard():
     playwright = pytest.importorskip("playwright.sync_api")
-    css = Path("web/app/styles/right-dock/branches-panel.css").read_text()
+    css = (ROOT / "web/app/styles/right-dock/branches-panel.css").read_text()
     html = f"""<style>:root{{--ui-list-radius:6px}}{css}</style>
     <div class='branches-list'><div class='branch-item'>
       <span class='branch-item-dot'></span><span class='branch-item-name'>job</span>
@@ -15,17 +19,7 @@ def test_branch_resource_details_expand_without_clipping_and_support_keyboard():
       </details>
     </div></div>"""
     with playwright.sync_playwright() as runtime:
-        candidates = [Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")]
-        candidates.extend(Path("/Users").glob(
-            "*/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
-        ))
-        executable = next((path for path in candidates if path.exists()), None)
-        if executable is None:
-            pytest.skip("no installed Chromium/Chrome executable")
-        browser = runtime.chromium.launch(
-            headless=True,
-            executable_path=str(executable),
-        )
+        browser = runtime.chromium.launch(headless=True)
         page = browser.new_page()
         page.set_content(html)
         summary = page.get_by_label("Job resource details for job")

@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+_HOST_HOME = Path.home()
+
 # ---------------------------------------------------------------------------
 # Network isolation: the suite must not depend on the host's proxy setup.
 # A developer shell with HTTP(S)_PROXY / a socks ALL_PROXY / a macOS
@@ -74,6 +76,15 @@ if os.environ.get("OPENPROGRAM_TEST_REAL_HOME") != "1":
     os.environ["HOME"] = _TEST_HOME
     os.environ["USERPROFILE"] = _TEST_HOME
     Path(_TEST_HOME).mkdir(parents=True, exist_ok=True)
+
+    if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+        cache_root = None
+        if sys.platform == "darwin":
+            cache_root = _HOST_HOME / "Library/Caches/ms-playwright"
+        elif sys.platform.startswith("linux"):
+            cache_root = _HOST_HOME / ".cache/ms-playwright"
+        if cache_root is not None and cache_root.is_dir():
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(cache_root)
 
 
 # ---------------------------------------------------------------------------
@@ -218,4 +229,3 @@ def _drop_tmp_rooted_session_store():
         return
     if "openprogram-test-home" not in str(getattr(cached, "root_path", "")):
         session_store._default_store = None
-
