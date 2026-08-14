@@ -42,6 +42,7 @@ import {
   fileTabId,
   hostnameOf,
   nextNtpId,
+  nextBrowserHomeId,
   sessionTabId,
   webTabId,
 } from "@/lib/state/center-tab-ids";
@@ -286,6 +287,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
     if (
       activeIdx >= 0 &&
       (s.tabs[activeIdx].kind === "ntp" ||
+        (s.tabs[activeIdx].kind === "builtin" && s.tabs[activeIdx].page === "browser") ||
         replaceable.includes(s.tabs[activeIdx].id))
     ) {
       tabs = s.tabs.map((t, i) => (i === activeIdx ? make() : t));
@@ -555,17 +557,18 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         };
       }),
 
-    // Deterministic id ⇒ focusOrCreate already enforces the singleton:
-    // a second "open bookmarks" focuses the existing tab.
+    // Browser home belongs to the pane that selected Browser. Other built-ins
+    // keep deterministic singleton ids.
     openBuiltinTab: (page) =>
-      set((s) =>
-        focusOrCreate(
+      set((s) => {
+        const id = page === "browser" ? nextBrowserHomeId() : builtinTabId(page);
+        return focusOrCreate(
           s,
-          builtinTabId(page),
-          () => ({ id: builtinTabId(page), kind: "builtin", title: "", page }),
+          id,
+          () => ({ id, kind: "builtin", title: "", page }),
           [],
-        ),
-      ),
+        );
+      }),
 
     openWebTab: (url) =>
       set((s) => {
@@ -580,7 +583,10 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           );
         }
         const active = s.tabs.find((tab) => tab.id === s.activeId);
-        const consumeNtp = active?.kind === "ntp" && active.id !== id;
+        const consumeNtp = !!active && active.id !== id && (
+          active.kind === "ntp" ||
+          (active.kind === "builtin" && active.page === "browser")
+        );
         const restoreUrl = existing.url !== url;
         if (!consumeNtp && !restoreUrl && s.activeId === id) return {};
         let tabs = consumeNtp
@@ -675,7 +681,12 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       set((s) => {
         const index = s.tabs.findIndex((tab) => tab.id === id && tab.kind === "web");
         if (index < 0) return {};
-        const homeTab: CenterTab = { id: nextNtpId(), kind: "ntp", title: "" };
+        const homeTab: CenterTab = {
+          id: nextBrowserHomeId(),
+          kind: "builtin",
+          title: "",
+          page: "browser",
+        };
         const tabs = s.tabs.map((tab, tabIndex) =>
           tabIndex === index ? homeTab : tab
         );

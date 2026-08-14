@@ -9,7 +9,7 @@
  * state; every mutation is a prop callback owned by CenterTabStrip.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Bookmark, FileText, Globe, GripVertical, History, CirclePlus, X } from "lucide-react";
+import { Bookmark, FileText, Globe, GripVertical, History, CirclePlus, TerminalSquare, X } from "lucide-react";
 
 import {
   MessageCircleIcon,
@@ -323,7 +323,15 @@ export function TabItem({
               <Globe size={13} />
             )
           ) : tab.kind === "builtin" ? (
-            tab.page === "history" ? <History size={13} /> : <Bookmark size={13} />
+            tab.page === "files"
+              ? <FileText size={13} />
+              : tab.page === "history"
+              ? <History size={13} />
+              : tab.page === "browser"
+                ? <Globe size={13} />
+                : tab.page === "terminal"
+                  ? <TerminalSquare size={13} />
+                  : <Bookmark size={13} />
           ) : (
             <CirclePlus size={13} />
           )}

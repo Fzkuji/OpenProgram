@@ -61,6 +61,20 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     // Synchronous by contract: called from pointer/mouse down so the
     // token exists before a same-tick dragstart reads it.
     prepare: (payload) => ipcRenderer.sendSync("tab-transfer:prepare", payload),
+  browserImport: {
+    listSources: () => ipcRenderer.invoke("browser-import:list-sources"),
+    run: (request) => ipcRenderer.invoke("browser-import:run", request),
+  },
+  terminal: {
+    start: (request) => ipcRenderer.invoke("terminal:start", request),
+    write: (id, data) => ipcRenderer.send("terminal:write", id, data),
+    stop: (id) => ipcRenderer.send("terminal:stop", id),
+    onData: (cb) => {
+      const listener = (_event, payload) => cb(payload);
+      ipcRenderer.on("terminal:data", listener);
+      return () => ipcRenderer.removeListener("terminal:data", listener);
+    },
+  },
     inspect: (token) => ipcRenderer.invoke("tab-transfer:inspect", token),
     accept: (token, placement) =>
       ipcRenderer.invoke("tab-transfer:accept", token, placement),

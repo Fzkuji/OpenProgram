@@ -22,6 +22,7 @@ import {
   ChevronRight,
   Folder,
   Globe,
+  History,
   Pencil,
   Trash2,
   X,
@@ -46,10 +47,12 @@ import {
 } from "@/lib/desktop-bridge";
 import { useCenterTabs, type BuiltinPage } from "@/lib/state/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
+import { groupHistoryByLocalDate } from "@/lib/history-groups";
 import { SearchInput } from "@/components/ui/search-input";
 import styles from "./center-tabs.module.css";
 
-const HISTORY_LIST_LIMIT = 200;
+const HISTORY_PAGE_SIZE = 250;
+const HISTORY_LIST_LIMIT = 5_000;
 
 export function BuiltinTabPane({ page }: { page: BuiltinPage }) {
   return page === "bookmarks" ? <BookmarksPage /> : <HistoryPage />;
@@ -415,12 +418,27 @@ function BookmarksPage() {
 function formatVisitedAt(value: number, locale: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  const sameDay = new Date().toDateString() === date.toDateString();
-  return date.toLocaleString(locale, {
+  return date.toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
-    ...(sameDay ? {} : { month: "short", day: "numeric" }),
   });
+}
+
+function historyDateLabel(date: Date, locale: string, today: string, yesterday: string): string {
+  const current = new Date();
+  const startToday = new Date(current.getFullYear(), current.getMonth(), current.getDate()).getTime();
+  const startDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  if (startDate === startToday) return today;
+  if (startDate === startToday - 86_400_000) return yesterday;
+  return date.toLocaleDateString(locale, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+}
+
+function historyHost(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
 }
 
 /** 历史行的站点图标：加载失败或没有 favicon 时退回 Globe（同 tab 条）。 */
@@ -442,16 +460,18 @@ function HistoryPage() {
   const history = desktopBridge()?.history;
   const [entries, setEntries] = useState<DesktopHistoryEntry[] | null>(null);
   const [query, setQuery] = useState("");
+  const [visibleLimit, setVisibleLimit] = useState(HISTORY_PAGE_SIZE);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
 
   const refresh = useCallback(
     (needle: string) => {
       if (!history) return;
       void history
-        .list({ limit: HISTORY_LIST_LIMIT, query: needle })
+        .list({ limit: visibleLimit, query: needle })
         .then(setEntries)
         .catch(() => setEntries([]));
     },
-    [history],
+    [history, visibleLimit],
   );
 
   // Re-query the main process on each keystroke: the store does the
@@ -462,9 +482,15 @@ function HistoryPage() {
     return () => window.clearTimeout(timer);
   }, [history, query, refresh]);
 
+  useEffect(() => {
+    setVisibleLimit(HISTORY_PAGE_SIZE);
+    setSelected(new Set());
+  }, [query]);
+
   const title = text("Web history", "网页历史");
   const clearLabel = text("Clear browsing history", "清空浏览历史");
   const deleteLabel = text("Delete entry", "删除记录");
+  const selectedCount = selected.size;
 
   // Plain web mode has no bridge to record visits. The tab still opens
   // (the menu entry is unconditional) and explains why it is empty,
@@ -474,7 +500,7 @@ function HistoryPage() {
       <div className={styles.builtinPane}>
         <div className={styles.builtinInner}>
           <div className={styles.builtinHeader}>
-            <Globe size={18} aria-hidden="true" />
+            <History size={18} aria-hidden="true" />
             <h1 className={styles.builtinTitle}>{title}</h1>
           </div>
           <div className="bookmarks-empty">
@@ -489,28 +515,50 @@ function HistoryPage() {
   }
 
   const dateLocale = locale === "zh" ? "zh-CN" : "en-US";
+  const groups = groupHistoryByLocalDate(entries ?? []);
 
   return (
     <PageFrame
-      icon={<Globe size={18} aria-hidden="true" />}
+      icon={<History size={18} aria-hidden="true" />}
       title={title}
       query={query}
       onQueryChange={setQuery}
       searchPlaceholder={text("Search history", "搜索历史")}
       action={
         entries && entries.length > 0 ? (
-          <button
-            type="button"
-            className={styles.builtinClear}
-            onClick={() => {
-              void history.clear().then(() => setEntries([]));
-            }}
-            title={clearLabel}
-            aria-label={clearLabel}
-          >
-            <Trash2 size={14} aria-hidden="true" />
-            <span>{text("Clear all", "全部清空")}</span>
-          </button>
+          <div className={styles.builtinHeaderActions}>
+            {selectedCount > 0 && (
+              <button
+                type="button"
+                className={styles.builtinClear}
+                onClick={() => {
+                  const targets = entries.filter((entry) => selected.has(`${entry.url}:${entry.visitedAt}`));
+                  void Promise.all(targets.map((entry) => history.remove(entry.url, entry.visitedAt))).then(() => {
+                    setSelected(new Set());
+                    refresh(query);
+                  });
+                }}
+              >
+                <Trash2 size={14} aria-hidden="true" />
+                <span>{text(`Delete ${selectedCount}`, `删除 ${selectedCount} 项`)}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className={styles.builtinClear}
+              onClick={() => {
+                void history.clear().then(() => {
+                  setEntries([]);
+                  setSelected(new Set());
+                });
+              }}
+              title={clearLabel}
+              aria-label={clearLabel}
+            >
+              <Trash2 size={14} aria-hidden="true" />
+              <span>{text("Clear all", "全部清空")}</span>
+            </button>
+          </div>
         ) : null
       }
     >
@@ -521,45 +569,61 @@ function HistoryPage() {
             : text("No pages visited yet", "还没有浏览记录")}
         </div>
       ) : (
-        <div className="bookmarks-list">
-          {entries.map((entry) => (
-            <div
-              className="bookmark-row"
-              key={`${entry.url}:${entry.visitedAt}`}
-            >
-              <div className="bookmark-row-main">
-                <HistoryFavicon url={entry.faviconUrl} />
-                <button
-                  type="button"
-                  className="bookmark-title"
-                  onClick={() => useCenterTabs.getState().openWebTab(entry.url)}
-                  title={entry.title || entry.url}
-                >
-                  {entry.title || entry.url}
-                </button>
-                <div className="bookmark-actions">
-                  <span className="browsing-history-time">
-                    {formatVisitedAt(entry.visitedAt, dateLocale)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void history
-                        .remove(entry.url, entry.visitedAt)
-                        .then(() => refresh(query));
-                    }}
-                    title={deleteLabel}
-                    aria-label={deleteLabel}
-                  >
-                    <Trash2 size={14} aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-              <span className="bookmark-url" title={entry.url}>
-                {entry.url}
-              </span>
-            </div>
+        <div className="browsing-history-list">
+          {groups.map((group) => (
+            <section key={group.key} className="browsing-history-group">
+              <h2>{historyDateLabel(group.date, dateLocale, text("Today", "今天"), text("Yesterday", "昨天"))}</h2>
+              {group.entries.map((entry) => {
+                const entryKey = `${entry.url}:${entry.visitedAt}`;
+                return (
+                  <div className="browsing-history-row" key={entryKey}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(entryKey)}
+                      onChange={(event) => {
+                        setSelected((value) => {
+                          const next = new Set(value);
+                          if (event.target.checked) next.add(entryKey);
+                          else next.delete(entryKey);
+                          return next;
+                        });
+                      }}
+                      aria-label={text("Select history entry", "选择历史记录")}
+                    />
+                    <span className="browsing-history-time">{formatVisitedAt(entry.visitedAt, dateLocale)}</span>
+                    <HistoryFavicon url={entry.faviconUrl} />
+                    <button
+                      type="button"
+                      className="browsing-history-title"
+                      onClick={() => useCenterTabs.getState().openWebTab(entry.url)}
+                      title={entry.title || entry.url}
+                    >
+                      {entry.title || entry.url}
+                    </button>
+                    <span className="browsing-history-host" title={entry.url}>{historyHost(entry.url)}</span>
+                    <button
+                      type="button"
+                      className="browsing-history-delete"
+                      onClick={() => void history.remove(entry.url, entry.visitedAt).then(() => refresh(query))}
+                      title={deleteLabel}
+                      aria-label={deleteLabel}
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                    </button>
+                  </div>
+                );
+              })}
+            </section>
           ))}
+          {entries.length === visibleLimit && visibleLimit < HISTORY_LIST_LIMIT && (
+            <button
+              type="button"
+              className="browsing-history-more"
+              onClick={() => setVisibleLimit((value) => Math.min(value + HISTORY_PAGE_SIZE, HISTORY_LIST_LIMIT))}
+            >
+              {text("Load more", "加载更多")}
+            </button>
+          )}
         </div>
       )}
     </PageFrame>

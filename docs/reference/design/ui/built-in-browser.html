@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>内置浏览器、资料导入与新建 Pane</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #151514;
+      --panel: #1f1f1e;
+      --panel-2: #282725;
+      --line: #3b3935;
+      --text: #eceae3;
+      --muted: #aaa79d;
+      --accent: #d69a66;
+      --blue: #79a8ff;
+      --green: #80bd8a;
+      --red: #e2877d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 40px max(24px, 9vw) 80px;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.65 -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+    }
+    main { max-width: 1040px; }
+    h1 { margin: 0 0 8px; font-size: 26px; }
+    h2 { margin: 36px 0 12px; color: var(--accent); font-size: 18px; }
+    h3 { margin: 22px 0 8px; font-size: 15px; }
+    p, li, td { color: var(--muted); }
+    a { color: var(--blue); }
+    code { padding: 1px 5px; border-radius: 4px; background: #2a2927; color: var(--text); }
+    ul, ol { padding-left: 22px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: var(--panel-2); color: var(--text); }
+    .card { padding: 18px 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .entry { padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px; color: var(--text); background: var(--panel-2); }
+    .flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; align-items: stretch; }
+    .flow > div { position: relative; padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
+    .flow > div:not(:last-child)::after { content: "→"; position: absolute; right: -8px; top: 50%; z-index: 2; color: var(--accent); transform: translate(50%, -50%); }
+    .ok { color: var(--green); }
+    .pending { color: var(--accent); }
+    .no { color: var(--red); }
+    @media (max-width: 760px) {
+      .grid, .flow { grid-template-columns: 1fr; }
+      .flow > div:not(:last-child)::after { display: none; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>内置浏览器、资料导入与新建 Pane</h1>
+  <p>本设计把通用的新建内容入口与浏览器内部页面分离，并为大量 History、Bookmarks 与登录 Cookie 的显式导入定义边界。它不改变 Agent 的网页控制协议。</p>
+
+  <h2>1. 当前实现与问题</h2>
+  <div class="card">
+    <ul>
+      <li><code>NewTabPage</code> 同时承担“选择内容类型”和“浏览器首页”两个职责：新会话、网址输入、快捷网站与书签显示在同一页面。</li>
+      <li>当前一级入口只有新会话和网址输入，没有 Files、Side chat、Browser、Terminal 四个平级入口。</li>
+      <li>主页按钮把 web tab 退回通用 <code>ntp</code>，无法区分“新建 pane”与“浏览器主页”。</li>
+      <li>History 复用书签的两行卡片，完整 URL 单独占一行；大量记录下信息密度低。</li>
+      <li>桌面端只记录 OpenProgram 自己产生的最多 5000 条 History；没有来源浏览器/profile 发现和导入流程。</li>
+      <li>内置浏览器已经使用持久化 <code>persist:webtabs</code> session，具备写入 Cookie 的目标容器，但没有外部 Cookie 的可信来源适配器。</li>
+    </ul>
+  </div>
+
+  <h2>2. 参考行为与取舍</h2>
+  <table>
+    <thead><tr><th>参考</th><th>可验证行为</th><th>OpenProgram 选择</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>用户提供的 Codex 截图</td>
+        <td>空白 side pane 提供 Files、Side chat、Browser、Terminal；Browser 页面内再显示地址栏与导入提示。</td>
+        <td>采用内容类型一级入口；浏览器专属控件不得出现在通用 launcher。</td>
+      </tr>
+      <tr>
+        <td><a href="https://help.openai.com/en/articles/20001277-using-the-built-in-browser-in-the-chatgpt-desktop-app">OpenAI 内置浏览器说明</a></td>
+        <td>内置浏览器使用独立浏览状态；需要既有 Chrome 登录态时，官方说明使用 Chrome extension。</td>
+        <td>保持 OpenProgram 独立 profile；外部资料只能经用户发起的导入写入，不能直接复用或修改源 profile。</td>
+      </tr>
+      <tr>
+        <td><a href="https://support.google.com/chrome/answer/96816">Chrome 导入设置</a></td>
+        <td>导入项按类型选择；既有书签放入 Imported 文件夹，不覆盖当前数据。</td>
+        <td>来源浏览器、profile、数据类型分别确认；Bookmarks 合并到带来源名称的文件夹。</td>
+      </tr>
+      <tr>
+        <td><a href="https://chromium.googlesource.com/chromium/src/+/main/docs/user_data_dir.md">Chromium user data directory</a></td>
+        <td>History、Bookmarks、Cookies 等按 profile 存放在 user data directory。</td>
+        <td>只读发现 profile；读取前复制需要的文件到私有临时目录，避免对活动数据库加锁或写入。</td>
+      </tr>
+      <tr>
+        <td><a href="https://chromium.googlesource.com/chromium/src/+/refs/tags/145.0.7573.1/components/user_data_importer/">Chromium user_data_importer</a></td>
+        <td>Chromium 有 History、Bookmarks、Passwords 等导入组件，但该组件不作为 Electron JavaScript API 暴露；通用 Cookies import 标志仍未提供实现。</td>
+        <td>不复制 Chromium C++ importer；使用 Node/Electron 原生能力实现当前需要的最小适配。</td>
+      </tr>
+      <tr>
+        <td><a href="https://www.electronjs.org/docs/latest/api/session">Electron session</a> / <a href="https://www.electronjs.org/docs/latest/api/cookies">Cookies</a></td>
+        <td>持久化 partition 保存独立浏览状态，<code>session.cookies.set()</code> 可逐条写入 Cookie。</td>
+        <td>Cookie 只写入 <code>persist:webtabs</code>，不进入聊天、日志、History 或 renderer localStorage。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>3. 信息结构</h2>
+  <h3>3.1 通用 New pane launcher</h3>
+  <p>空白 pane 只显示四个一级入口，不显示地址栏、Bookmarks、快捷网站或 History。</p>
+  <div class="grid">
+    <div class="entry">Files — 打开当前项目文件视图</div>
+    <div class="entry">Side chat — 在当前 pane 创建独立会话</div>
+    <div class="entry">Browser — 将当前 pane 原位切换为浏览器主页</div>
+    <div class="entry">Terminal — 将当前 pane 原位切换为项目终端</div>
+  </div>
+
+  <h3>3.2 Browser home</h3>
+  <p>Browser 被选中后才显示浏览器 toolbar、地址输入、导入提示、快捷网站和 Bookmarks。主页按钮回到 Browser home，不回到通用 launcher。首次导入提示可以关闭，之后仍能从 toolbar 的导入按钮重新打开。</p>
+
+  <h3>3.3 History</h3>
+  <p>History 使用专用紧凑行：<code>选择框 | 时间 | favicon | 标题 | 域名 | 更多</code>。记录按本地日期分组；搜索结果仍保留日期分组。单行高度目标为 36–40px，标题与域名分别截断，不再显示第二行完整 URL。支持单条删除、批量删除和清空。</p>
+
+  <h2>4. 导入流程</h2>
+  <div class="flow">
+    <div><strong>发现</strong><br>列出已安装浏览器和本地 profile 名称，不读取内容。</div>
+    <div><strong>选择</strong><br>用户选择来源、profile、History、Bookmarks、Cookies。</div>
+    <div><strong>暂存</strong><br>只读复制目标文件到权限为 0700 的临时目录；校验类型、数量和上限。</div>
+    <div><strong>提交</strong><br>History/Bookmarks 合并；Cookies 逐条写入 <code>persist:webtabs</code>；返回计数。</div>
+  </div>
+
+  <h3>4.1 History</h3>
+  <ul>
+    <li>从来源 profile 的 Chromium History SQLite 副本读取 <code>http/https</code> 访问记录。</li>
+    <li>按 <code>url + visitedAt</code> 去重，保持 OpenProgram 当前记录，不覆盖标题更新之外的数据。</li>
+    <li>导入采用有界批次；错误时不清空现有 History。</li>
+  </ul>
+
+  <h3>4.2 Bookmarks</h3>
+  <ul>
+    <li>解析 Chromium Bookmarks JSON，只接受 <code>http/https</code> URL 与有界字符串。</li>
+    <li>导入到 <code>Imported from &lt;browser/profile&gt;</code> 文件夹；同 URL 不重复添加。</li>
+    <li>Bookmarks 仍使用现有树和 localStorage 格式，不新增数据库。</li>
+  </ul>
+
+  <h3>4.3 Cookies 与登录态</h3>
+  <ul>
+    <li>禁止把外部 Cookies 数据库直接复制到 OpenProgram partition；产品密钥、数据库版本与活动 WAL 都可能不同。</li>
+    <li>源浏览器必须负责解密：对 Chromium 浏览器，复制最小 profile 到临时目录后，由该浏览器自己的无界面进程打开副本，并经本机 CDP 返回 Cookies。</li>
+    <li>临时浏览器不导航网站、禁用扩展与后台联网；正常完成或报错后终止进程并删除临时目录。</li>
+    <li>只接受 <code>http/https</code> Cookie，校验 domain、path、sameSite、secure、expirationDate；写入失败逐条计数，不输出 Cookie 值。</li>
+    <li>导入可以减少重复登录，但网站仍可能因设备绑定、过期、二次验证或服务端撤销要求重新登录，UI 不承诺所有会话均可恢复。</li>
+  </ul>
+
+  <h3>4.4 明确排除</h3>
+  <ul>
+    <li>本阶段不导入 Passwords、支付信息、地址、扩展、下载记录、缓存、localStorage 或 Service Workers。</li>
+    <li>不实现 OpenProgram 密码管理器、系统 Credential Store 或自动填充。</li>
+    <li>不修改、关闭或以远程调试方式接管用户正在运行的源浏览器。</li>
+    <li>不在 Web-only 模式声称支持本地浏览器导入；该能力仅存在于桌面 App。</li>
+  </ul>
+
+  <h2>5. 信任边界与失败行为</h2>
+  <table>
+    <thead><tr><th>边界</th><th>要求</th></tr></thead>
+    <tbody>
+      <tr><td>renderer → main IPC</td><td>source/profile 必须来自 main 返回的 opaque id；数据类型使用 allowlist；禁止 renderer 传任意文件路径或可执行路径。</td></tr>
+      <tr><td>源 profile</td><td>只读；复制前解析真实路径并限制在已发现 browser root 内；拒绝符号链接逃逸。</td></tr>
+      <tr><td>临时数据</td><td>0700 目录、0600 文件；正常成功或失败后删除；日志只记录来源标签、类型、计数和错误码。</td></tr>
+      <tr><td>目标 profile</td><td>History 与 Bookmarks 合并提交；Cookies 通过 Electron API 写入，不直接替换目标数据库。</td></tr>
+      <tr><td>并发</td><td>全 App 同时只允许一个导入任务；重复点击返回 <code>import_busy</code>。当前基线不提供执行中的取消。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>6. 公共入口验收</h2>
+  <ol>
+    <li>新建 pane 只显示 Files、Side chat、Browser、Terminal 四项，DOM 中不存在 URL input、shortcut tile 或 bookmark row。</li>
+    <li>选择 Browser 后原位显示浏览器 toolbar、导入入口、快捷网站和 Bookmarks；导航 URL 后变为普通 web tab；Home 返回 Browser home。</li>
+    <li>导入对话框列出来源浏览器/profile 和实际支持的数据类型；执行前关闭对话框不产生目标变更。</li>
+    <li>导入 History 后按日期分组显示，至少 1000 条数据时行高保持紧凑、搜索和滚动可用。</li>
+    <li>导入 Bookmarks 后只增加一个来源文件夹，重复导入不产生重复 URL。</li>
+    <li>导入 Cookies 后目标 partition 可读取对应 Cookie；IPC、日志、History 和 renderer 均不出现 Cookie 值。</li>
+    <li>来源文件损坏、浏览器缺失、临时进程超时、Cookie 部分失败均返回稳定错误码，并保留导入前的数据。</li>
+    <li>可见验收只使用安装的 <code>/Applications/OpenProgram.app</code>、默认 18100 worker 和 <code>~/.openprogram</code>。</li>
+  </ol>
+
+  <h2>7. 任务 Brief 与 Gate</h2>
+  <div class="card">
+    <p><strong>生产范围：</strong><code>desktop/main.js</code>、<code>desktop/preload.js</code>、一个浏览器导入 helper、History store、center-tab state/persistence、New pane launcher、Browser home、History 页面和相关 CSS。</p>
+    <p><strong>测试范围：</strong>导入 helper 的 Node self-check、desktop IPC/source gate、center-tab/NTP source gate、History store 与 Web TypeScript/build。</p>
+    <p><strong>RED：</strong>公共入口检查先证明四入口分离、Browser home、日期分组 History 和浏览器导入 IPC 缺失。</p>
+    <p><strong>GREEN：</strong>focused tests 后运行 desktop navigation check、Web checks、TypeScript、production build、文档链接检查和安装版 App 验收。</p>
+  </div>
+
+  <h2>8. 实现状态</h2>
+  <ul>
+    <li class="ok">已实现：Files、Side chat、Browser、Terminal 四入口 launcher；Browser-only home；Chromium 来源/profile 发现；History、Bookmarks、Cookies 导入；紧凑日期分组 History。</li>
+    <li class="pending">当前限制：Terminal 是逐行命令 shell，不支持依赖 PTY 的全屏交互程序；执行中的浏览器导入不可取消。</li>
+    <li class="no">不在本阶段：Passwords、自动填充、支付/地址数据、源浏览器接管。</li>
+  </ul>
+</main>
+</body>
+</html>

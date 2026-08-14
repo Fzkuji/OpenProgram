@@ -1,5 +1,5 @@
 // OpenProgram desktop shell. Plain JS, no bundler.
-const { app, BrowserWindow, WebContentsView, Menu, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell } = require("electron");
 const { spawn } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
@@ -18,9 +18,14 @@ const {
 const {
   recordVisit,
   listHistory,
+  importHistoryEntries,
   deleteHistoryEntry,
   clearHistory,
 } = require("./browsing-history-store");
+const {
+  listBrowserSources,
+  runBrowserImport,
+} = require("./browser-profile-import");
 
 // 单实例：worker 单端口 18100（详见 docs/reference/design/cli/single-port.md）
 const WEB_PORT = process.env.OPENPROGRAM_WEB_PORT || "18100";
@@ -2277,6 +2282,104 @@ function registerWebTabIpc() {
       return false;
     }
   });
+
+  let activeBrowserImport = null;
+  ipcMain.handle("browser-import:list-sources", () => {
+    try {
+      return listBrowserSources();
+    } catch (_error) {
+      return [];
+    }
+  });
+  ipcMain.handle("browser-import:run", (_event, request) => {
+    if (activeBrowserImport) {
+      return { ok: false, error: "import_busy" };
+    }
+    activeBrowserImport = (async () => {
+      try {
+        const result = await runBrowserImport(request || {}, {
+          targetSession: session.fromPartition("persist:webtabs"),
+        });
+        const historyMerge = result.history.length
+          ? importHistoryEntries(browsingHistoryFile(), result.history)
+          : {
+              imported: 0,
+              total: listHistory(browsingHistoryFile(), { limit: 5000 }).length,
+            };
+        return {
+          ok: true,
+          source: result.source,
+          history: historyMerge,
+          bookmarks: result.bookmarks,
+          cookies: result.cookies,
+        };
+      } catch (error) {
+        return { ok: false, error: error?.code || "import_failed" };
+      } finally {
+        activeBrowserImport = null;
+      }
+    })();
+    return activeBrowserImport;
+  });
+
+  const terminals = new Map();
+  const terminalKey = (sender, id) => `${sender.id}:${id}`;
+  const stopTerminal = (sender, id) => {
+    const key = terminalKey(sender, id);
+    const child = terminals.get(key);
+    if (!child) return;
+    terminals.delete(key);
+    if (child.exitCode === null) child.kill("SIGTERM");
+  };
+  ipcMain.handle("terminal:start", (event, request) => {
+    const id = typeof request?.id === "string" ? request.id.slice(0, 128) : "";
+    if (!id) return { ok: false, error: "invalid_terminal" };
+    stopTerminal(event.sender, id);
+    let cwd;
+    try {
+      cwd = typeof request.cwd === "string" && request.cwd
+        ? fs.realpathSync(request.cwd)
+        : app.getPath("home");
+      if (!fs.statSync(cwd).isDirectory()) throw new Error("not a directory");
+    } catch (_error) {
+      return { ok: false, error: "invalid_cwd" };
+    }
+    const shellPath = process.env.SHELL && path.isAbsolute(process.env.SHELL)
+      ? process.env.SHELL
+      : "/bin/zsh";
+    const child = spawn(shellPath, ["-l"], {
+      cwd,
+      env: { ...process.env, TERM: "dumb", NO_COLOR: "1" },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const key = terminalKey(event.sender, id);
+    terminals.set(key, child);
+    const send = (data, done = false) => {
+      if (terminals.get(key) === child && !event.sender.isDestroyed()) {
+        event.sender.send("terminal:data", { id, data: String(data || ""), done });
+      }
+    };
+    let finished = false;
+    const finish = (message = "") => {
+      if (finished) return;
+      finished = true;
+      if (terminals.get(key) !== child) return;
+      send(message, true);
+      terminals.delete(key);
+    };
+    child.stdout.on("data", (data) => send(data));
+    child.stderr.on("data", (data) => send(data));
+    child.once("error", () => finish("Terminal process failed to start.\n"));
+    child.once("close", () => finish());
+    event.sender.once("destroyed", () => stopTerminal(event.sender, id));
+    return { ok: true };
+  });
+  ipcMain.on("terminal:write", (event, id, data) => {
+    const child = terminals.get(terminalKey(event.sender, String(id || "")));
+    if (!child?.stdin.writable || typeof data !== "string" || data.length > 64_000) return;
+    child.stdin.write(data);
+  });
+  ipcMain.on("terminal:stop", (event, id) => stopTerminal(event.sender, String(id || "")));
 
   ipcMain.on("desktop:open-external", (_e, url) => {
     try {

@@ -2128,9 +2128,9 @@ assert.equal(useCenterTabs.getState().splitWebTabId, null);
 assert.equal(JSON.parse(values.get("centerTabs")).splitWebTabId, null);
 assert.equal(JSON.parse(values.get("centerTabs")).splitRatio, 0.70);
 
-// Browser Home replaces the current web tab with the existing OpenProgram
-// new-tab page. The position and compound-tab membership stay intact, while
-// the native web-view id disappears so the desktop bridge can destroy it.
+// Browser Home replaces the current web tab with the Browser-only home page.
+// The position and compound-tab membership stay intact, while the native
+// web-view id disappears so the desktop bridge can destroy it.
 const homeWebId = "w:https://home-target.test/";
 useCenterTabs.setState({
   tabs: [
@@ -2151,8 +2151,9 @@ useCenterTabs.setState({
 useCenterTabs.getState().replaceWebTabWithNewTabPage(homeWebId);
 const homeState = useCenterTabs.getState();
 const homeTab = homeState.tabs[1];
-assert.equal(homeTab.kind, "ntp", "Home must show the OpenProgram new-tab page");
-assert.match(homeTab.id, /^ntp:/, "Home must allocate a fresh new-tab id");
+assert.equal(homeTab.kind, "builtin", "Home must show the Browser home page");
+assert.equal(homeTab.page, "browser");
+assert.match(homeTab.id, /^browser:/, "Home must allocate a pane-local Browser home id");
 assert.equal(homeState.activeId, homeTab.id, "the replacement remains active");
 assert.equal(homeState.tabs[2].id, "f:after", "Home must preserve tab order");
 assert.deepEqual(homeState.groups[0].memberIds, ["s:home-chat", homeTab.id]);
@@ -2179,6 +2180,26 @@ assert.equal(
   beforeWrongKind,
   "Home must ignore ids that do not belong to a web tab",
 );
+
+useCenterTabs.setState({
+  tabs: [
+    { id: "browser:existing", kind: "builtin", title: "", page: "browser" },
+    { id: "ntp:choice", kind: "ntp", title: "" },
+  ],
+  activeId: "ntp:choice",
+  groups: [],
+  splitWebTabId: null,
+  splitRatio: 0.45,
+});
+useCenterTabs.getState().openBuiltinTab("browser");
+const browserChoiceState = useCenterTabs.getState();
+assert.equal(browserChoiceState.tabs.length, 2);
+assert.equal(browserChoiceState.tabs[0].id, "browser:existing");
+assert.equal(browserChoiceState.tabs[1].kind, "builtin");
+assert.equal(browserChoiceState.tabs[1].page, "browser");
+assert.match(browserChoiceState.tabs[1].id, /^browser:/);
+assert.notEqual(browserChoiceState.tabs[1].id, "browser:existing");
+assert.equal(browserChoiceState.activeId, browserChoiceState.tabs[1].id);
 
 values.set("centerTabs", JSON.stringify({
   tabs: [

@@ -8,8 +8,11 @@ import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
 import { CenterTabStrip } from "./center-tabs/center-tab-strip";
 import { BuiltinTabPane } from "./center-tabs/builtin-tab-pane";
+import { BrowserHomePage } from "./center-tabs/browser-home-page";
 import { FileTabPane } from "./center-tabs/file-tab-pane";
+import { FilesPage } from "./center-tabs/files-page";
 import { NewTabPage } from "./center-tabs/new-tab-page";
+import { TerminalPage } from "./center-tabs/terminal-page";
 import { WebTabPane } from "./center-tabs/web-tab-pane";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
@@ -450,6 +453,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
     if (tab.kind === "ntp") return <NewTabPage />;
     if (tab.kind === "builtin" && tab.page) {
+      if (tab.page === "browser") return <BrowserHomePage />;
+      if (tab.page === "files") return <FilesPage />;
+      if (tab.page === "terminal") return <TerminalPage />;
       return <BuiltinTabPane page={tab.page} />;
     }
     return null;

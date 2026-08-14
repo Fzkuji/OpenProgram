@@ -275,3 +275,40 @@ export function renameBookmark(url: string, title: string): Bookmark[] {
 export function isBookmarked(url: string): boolean {
   return readBookmarks().some((bookmark) => bookmark.url === url);
 }
+
+export function importBookmarksFolder(title: string, values: Bookmark[]): number {
+  let root = readBookmarkTree();
+  const existingUrls = new Set(flattenBookmarks(root).map((item) => item.url));
+  const children: BookmarkLeaf[] = [];
+  for (const raw of values) {
+    let url: URL;
+    try { url = new URL(raw.url); } catch { continue; }
+    if ((url.protocol !== "http:" && url.protocol !== "https:") || existingUrls.has(url.href)) {
+      continue;
+    }
+    existingUrls.add(url.href);
+    children.push({
+      kind: "bookmark",
+      id: newId("b"),
+      title: raw.title.trim() || url.href,
+      url: url.href,
+    });
+  }
+  if (children.length === 0) return 0;
+  const folderTitle = title.trim() || "Imported bookmarks";
+  const existingFolder = root.children.find(
+    (node): node is BookmarkFolder => node.kind === "folder" && node.title === folderTitle,
+  );
+  if (existingFolder) {
+    for (const child of children) root = insertInto(root, existingFolder.id, child, -1);
+    saveTree(root);
+  } else {
+    saveTree(insertInto(root, BOOKMARKS_ROOT_ID, {
+      kind: "folder",
+      id: newId("f"),
+      title: folderTitle,
+      children,
+    }, -1));
+  }
+  return children.length;
+}

@@ -9,7 +9,7 @@ const sourcePath = new URL("../lib/bookmarks.ts", import.meta.url);
 const sessionStorePath = new URL("../lib/session-store/index.ts", import.meta.url);
 const navigationPath = new URL("../lib/bookmark-navigation.ts", import.meta.url);
 const webTabPath = new URL("../components/center-tabs/web-tab-pane.tsx", import.meta.url);
-const newTabPath = new URL("../components/center-tabs/new-tab-page.tsx", import.meta.url);
+const browserHomePath = new URL("../components/center-tabs/browser-home-page.tsx", import.meta.url);
 // Bookmarks + web history are CENTER TABS now, opened from the main
 // menu — not right-sidebar views. These paths are the new landing spot;
 // the assertions below are the same guard ("the feature exists and is
@@ -50,7 +50,7 @@ assert.match(packageJson.scripts?.check || "", /check:bookmarks/);
 const source = readFileSync(sourcePath, "utf8");
 const sessionStore = readFileSync(sessionStorePath, "utf8");
 const webTab = readFileSync(webTabPath, "utf8");
-const newTab = readFileSync(newTabPath, "utf8");
+const browserHome = readFileSync(browserHomePath, "utf8");
 const manager = readFileSync(managerPath, "utf8");
 const mainMenu = readFileSync(mainMenuPath, "utf8");
 const strip = readCenterTabStripSource(import.meta.url);
@@ -62,8 +62,8 @@ const rightDockCss = readRightDockCss(new URL("../", import.meta.url));
 assert.match(webTab, /function BookmarkButton/);
 assert.match(webTab, /toggleBookmark\(\{ url, title \}\)/);
 assert.match(webTab, /<BookmarkButton url=\{effectiveUrl\} title=\{title \|\| effectiveUrl\} \/>/);
-assert.match(newTab, /readBookmarks/);
-assert.match(newTab, /removeBookmark/);
+assert.match(browserHome, /readBookmarks/);
+assert.match(browserHome, /removeBookmark/);
 // The right dock no longer has a bookmarks view; a stale persisted
 // "bookmarks" value must fall back rather than restore a dead view.
 assert.doesNotMatch(
@@ -73,7 +73,7 @@ assert.doesNotMatch(
 );
 for (const [name, text] of [
   ["web-tab-pane.tsx", webTab],
-  ["new-tab-page.tsx", newTab],
+  ["browser-home-page.tsx", browserHome],
   ["builtin-tab-pane.tsx", manager],
 ]) {
   assert.match(text, /subscribeBookmarks\(refresh\)/, `${name} must use shared bookmark subscription`);
@@ -154,8 +154,8 @@ assert.doesNotMatch(strip, /data-plus-rail-aligned/, "the + must no longer be pi
 assert.match(tabIds, /export function builtinTabId\(page: BuiltinPage\): string \{\s*return `b:\$\{page\}`;/);
 assert.match(
   tabsStore,
-  /openBuiltinTab: \(page\) =>\s*set\(\(s\) =>\s*focusOrCreate\(\s*s,\s*builtinTabId\(page\)/,
-  "openBuiltinTab must go through focusOrCreate so each page has one tab",
+  /const id = page === "browser" \? nextBrowserHomeId\(\) : builtinTabId\(page\)/,
+  "Browser home must be pane-local while other built-ins keep singleton ids",
 );
 // Builtin tabs render in the center, so they work on chat routes.
 assert.match(appShell, /tab\.kind === "builtin" && tab\.page/);

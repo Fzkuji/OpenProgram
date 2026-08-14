@@ -1169,6 +1169,30 @@
 }
 
 /* Persistent slim hint — many sites refuse framing and the failure is
+.builtinHeaderActions {
+  margin-left: auto;
+  display: flex;
+  gap: 7px;
+}
+
+.filesPage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+.filesPage > div {
+  height: 100%;
+}
+.filesPageEmpty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+}
    not detectable from here, so the escape hatch is always visible. */
 .webHint {
   height: 24px;
@@ -1183,6 +1207,12 @@
   color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
+.ntpLauncher {
+  width: min(420px, calc(100% - 48px));
+  display: grid;
+  gap: 8px;
+}
+
 }
 .webHintLink {
   display: inline-flex;
@@ -1286,7 +1316,7 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  width: min(380px, 80%);
+  width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -1389,6 +1419,199 @@
   height: 24px;
 }
 .ntpTileInitial {
+
+/* Browser chrome and browser data appear only after the Browser entry opens. */
+.browserHome {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+}
+.browserHomeToolbar {
+  height: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.browserHomeToolbar input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  outline: none;
+  background: var(--bg-secondary);
+  color: var(--text-bright);
+  font-family: var(--font-mono);
+}
+.browserHomeToolbar input:focus {
+  border-color: var(--accent-blue);
+}
+.browserHomeToolbar button,
+.browserImportAction {
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.browserHomeToolbar button:hover:not(:disabled),
+.browserImportAction:hover:not(:disabled) {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+.browserHomeToolbar button:disabled,
+.browserImportAction:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.browserHomeBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  padding: 24px;
+}
+.browserImport {
+  width: min(720px, 100%);
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto 28px;
+  align-items: start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+.browserImportBody {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.browserImportBody strong {
+  color: var(--text-bright);
+  font-size: 14px;
+}
+.browserImportOptions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+.browserImportOptions select {
+  max-width: 190px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-primary);
+  color: var(--text-bright);
+}
+.browserImportOptions label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.browserImportOptions [role="status"] {
+  flex-basis: 100%;
+  color: var(--text-muted);
+}
+.browserImportDismiss {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.browserImportDismiss:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+@media (max-width: 620px) {
+  .browserHomeBody {
+    padding: 16px;
+  }
+  .browserImport {
+    grid-template-columns: 28px minmax(0, 1fr) 28px;
+  }
+  .browserImportAction {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+.terminalPane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr) 40px;
+  background: #111214;
+  color: #d7dbe0;
+  font-family: var(--font-mono);
+}
+.terminalHeader,
+.terminalInputRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #8f969f;
+  font-size: 12px;
+}
+.terminalOutput {
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.terminalInputRow {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 0;
+  color: #d7dbe0;
+}
+.terminalInputRow input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.terminalEmpty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
   display: flex;
   align-items: center;
   justify-content: center;

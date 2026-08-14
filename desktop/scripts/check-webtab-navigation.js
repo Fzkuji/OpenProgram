@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { EventEmitter } = require("node:events");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
@@ -22,6 +23,28 @@ let menuTemplate = null;
 let nextGeneratedWindowId = 1000;
 let generatedNativeViews = 0;
 const rendererQueue = [];
+
+const spawnedChildren = [];
+
+function fakeSpawn() {
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.stdin = {
+    writable: true,
+    writes: [],
+    write(value) { this.writes.push(value); },
+  };
+  child.kills = [];
+  child.kill = (signal) => {
+    child.kills.push(signal);
+    return true;
+  };
+  child.unref = () => {};
+  spawnedChildren.push(child);
+  return child;
+}
 
 function flushRendererQueue() {
   let delivered = 0;
@@ -163,6 +186,7 @@ const sandbox = {
   require(id) {
     if (id === "electron") return fakeElectron;
     if (id === "http") return fakeHttp;
+    if (id === "child_process") return { spawn: fakeSpawn };
     // Relative requires inside main.js resolve against THIS file, not
     // main.js — map the desktop-local modules explicitly.
     if (id.startsWith("./")) return require(path.join(__dirname, "..", id));
@@ -740,6 +764,51 @@ async function checkSenderOwnership() {
   ipcListeners.get("webtab:ensure")(eventB, "fresh-b", "");
   assert.equal(ctxB.views.get("fresh-b").ownerId, ctxB.id);
   assert.equal(ctxA.views.has("fresh-b"), false);
+}
+
+async function checkTerminalProcessIdentity() {
+  const start = ipcHandlers.get("terminal:start");
+  const stop = ipcListeners.get("terminal:stop");
+  const write = ipcListeners.get("terminal:write");
+  assert.equal(typeof start, "function", "terminal start handler is registered");
+  assert.equal(typeof stop, "function", "terminal stop handler is registered");
+  assert.equal(typeof write, "function", "terminal write handler is registered");
+
+  const sender = new EventEmitter();
+  sender.id = 7001;
+  sender.isDestroyed = () => false;
+  const sent = [];
+  sender.send = (channel, payload) => sent.push([channel, payload]);
+  const event = { sender };
+
+  assert.equal((await start(event, { id: "same", cwd: transferUserData })).ok, true);
+  const first = spawnedChildren.at(-1);
+  stop(event, "same");
+  assert.deepEqual(first.kills, ["SIGTERM"]);
+  assert.equal((await start(event, { id: "same", cwd: transferUserData })).ok, true);
+  const second = spawnedChildren.at(-1);
+  const beforeOldClose = sent.length;
+  first.emit("close", 0);
+  first.stdout.emit("data", "stale output");
+  assert.equal(sent.length, beforeOldClose, "stopped process cannot complete or write into its replacement");
+  write(event, "same", "echo current\n");
+  assert.deepEqual(second.stdin.writes, ["echo current\n"], "input targets the replacement process");
+
+  assert.equal((await start(event, { id: "spawn-error", cwd: transferUserData })).ok, true);
+  const failed = spawnedChildren.at(-1);
+  failed.emit("error", new Error("spawn failed"));
+  assert.equal(sent.at(-1)[0], "terminal:data");
+  assert.equal(sent.at(-1)[1].id, "spawn-error");
+  assert.equal(sent.at(-1)[1].data, "Terminal process failed to start.\n");
+  assert.equal(sent.at(-1)[1].done, true);
+  assert.equal(
+    (await start(event, { id: "spawn-error", cwd: transferUserData })).ok,
+    true,
+    "spawn error releases the terminal id for a restart",
+  );
+  const replacement = spawnedChildren.at(-1);
+  write(event, "spawn-error", "pwd\n");
+  assert.deepEqual(replacement.stdin.writes, ["pwd\n"]);
 }
 
 async function checkFocusedRoutingAndCleanup() {
@@ -3507,6 +3576,7 @@ Promise.all([
     checkPreloadWindowIdentity();
     checkPreloadTabTransfer();
     await checkSenderOwnership();
+    await checkTerminalProcessIdentity();
     await checkFocusedRoutingAndCleanup();
     assertTransferApiRegistered();
     await checkTransferPreparationValidationAndAuthorization();

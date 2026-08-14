@@ -224,6 +224,43 @@ export interface DesktopHistoryApi {
   clear(): Promise<boolean>;
 }
 
+export interface DesktopBrowserImportProfile {
+  id: string;
+  name: string;
+  available: { history: boolean; bookmarks: boolean; cookies: boolean };
+}
+
+export interface DesktopBrowserImportSource {
+  id: string;
+  name: string;
+  profiles: DesktopBrowserImportProfile[];
+}
+
+export interface DesktopBrowserImportResult {
+  ok: boolean;
+  error?: string;
+  source?: { browserId: string; profileId: string; label: string };
+  history?: { imported: number; total: number };
+  bookmarks?: Array<{ title: string; url: string }>;
+  cookies?: { imported: number; failed: number };
+}
+
+export interface DesktopBrowserImportApi {
+  listSources(): Promise<DesktopBrowserImportSource[]>;
+  run(request: {
+    browserId: string;
+    profileId: string;
+    items: Array<"history" | "bookmarks" | "cookies">;
+  }): Promise<DesktopBrowserImportResult>;
+}
+
+export interface DesktopTerminalApi {
+  start(request: { id: string; cwd?: string }): Promise<{ ok: boolean; error?: string }>;
+  write(id: string, data: string): void;
+  stop(id: string): void;
+  onData(cb: (payload: { id: string; data: string; done?: boolean }) => void): () => void;
+}
+
 /** The ⋮ main-menu overlay: a top-layer WebContentsView the desktop
  *  shell opens so the menu covers native web-tab views. `open` from the
  *  UI window; `onAction` receives the chosen action id back in the UI
@@ -269,6 +306,10 @@ export interface DesktopBridge {
   mainMenu?: DesktopMainMenuApi;
   /** Absent in shells older than the browsing-history build. */
   history?: DesktopHistoryApi;
+  /** Desktop-only, explicit import from a detected local browser profile. */
+  browserImport?: DesktopBrowserImportApi;
+  /** Desktop-only lightweight project shell. */
+  terminal?: DesktopTerminalApi;
 }
 
 /** The preload-exposed bridge, or null outside the desktop shell. */

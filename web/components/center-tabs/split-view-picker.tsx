@@ -12,7 +12,7 @@
  * sharing a split group with the subject — those would be no-ops.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bookmark, FileText, Globe, History, MessageCircle, CirclePlus, X } from "lucide-react";
+import { Bookmark, FileText, Globe, History, MessageCircle, CirclePlus, TerminalSquare, X } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
 import { builtinPageLabel } from "./builtin-page-label";
@@ -47,9 +47,11 @@ function IconFor({ tab }: { tab: CenterTab }) {
   if (tab.kind === "file") return <FileText size={15} aria-hidden="true" />;
   if (tab.kind === "ntp") return <CirclePlus size={15} aria-hidden="true" />;
   if (tab.kind === "builtin") {
-    return tab.page === "history"
-      ? <History size={15} aria-hidden="true" />
-      : <Bookmark size={15} aria-hidden="true" />;
+    if (tab.page === "files") return <FileText size={15} aria-hidden="true" />;
+    if (tab.page === "history") return <History size={15} aria-hidden="true" />;
+    if (tab.page === "browser") return <Globe size={15} aria-hidden="true" />;
+    if (tab.page === "terminal") return <TerminalSquare size={15} aria-hidden="true" />;
+    return <Bookmark size={15} aria-hidden="true" />;
   }
   return <MessageCircle size={15} aria-hidden="true" />;
 }

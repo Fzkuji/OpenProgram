@@ -38,7 +38,8 @@
       "packaged-runtime.js",
       "worker-start-url.js",
       "tab-transfer-store.js",
-      "browsing-history-store.js"
+      "browsing-history-store.js",
+      "browser-profile-import.js"
     ],
     "directories": {
       "output": "dist",
