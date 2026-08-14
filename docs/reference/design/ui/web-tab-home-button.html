@@ -47,7 +47,14 @@
   </ul>
 
   <h2>实现记录</h2>
-  <p class="status">已实现并通过自动化门禁；已安装应用的可见页面验收待完成。</p>
+  <p class="status">已实现并通过自动化门禁与已安装应用验收。</p>
+  <ul>
+    <li>Web 全部门禁、TypeScript 检查和生产构建通过。</li>
+    <li>已安装的 <code>/Applications/OpenProgram.app</code> 使用包内 Python runtime 启动默认 worker；未从 Electron 源码启动。</li>
+    <li>DOM/ARIA 验收确认工具栏只有一个 <code>Home</code> 按钮，<code>title</code> 与无障碍名称正确，地址栏显示 <code>https://example.com/</code>。</li>
+    <li>点击主页后显示现有 <code>New tab</code> 页面，标签数量保持不变，原 web tab 的 CDP target 被移除。</li>
+    <li>一张当前 viewport 截图用于确认按钮位置和视觉一致性；没有启用 OCR、候选框检测或多轮截图。</li>
+  </ul>
 </main>
 </body>
 </html>
