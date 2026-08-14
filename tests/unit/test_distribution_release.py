@@ -342,6 +342,15 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "AppImage" not in workflow
 
 
+def test_macos_desktop_matrix_maps_runtime_arch_to_electron_builder_arch() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "arch: x86_64\n            builder_arch: x64" in workflow
+    assert "arch: arm64\n            builder_arch: arm64" in workflow
+    assert "--${{ matrix.builder_arch }} --publish never" in workflow
+
+
 def test_linux_complete_runtime_smoke_is_runnable_without_release_credentials() -> None:
     workflow = (ROOT / ".github" / "workflows" / "linux-release-smoke.yml").read_text(
         encoding="utf-8"

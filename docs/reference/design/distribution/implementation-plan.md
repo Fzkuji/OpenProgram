@@ -21,6 +21,8 @@ It tracks the bounded implementation, verification, and review evidence for the 
 - The `v0.6.3` retry uses the last upstream macOS x86_64-compatible pair, `torch 2.2.2` and `torchvision 0.17.2`, together with `numpy 1.26.4` for NumPy ABI compatibility. All four release targets must resolve this same GUI stack; Linux continues to use the official CPU wheel index.
 - Tag `v0.6.3` remained immutable after run `31823941178` showed that unconstrained GUI harness installation upgraded NumPy back to 2.x through the current OpenCV dependency, invalidating the Torch 2.2.2 NumPy ABI. No GitHub Release was published from that tag.
 - The `v0.6.4` retry pins `opencv-python 4.11.0.86` and applies one constraints file to every first-party Program installation so later dependency resolution cannot replace the verified NumPy, OpenCV, Torch, or Torchvision stack.
+- Tag `v0.6.4` remained immutable after run `31824996497` built and installed all four complete runtimes but exposed an architecture-name mismatch in the Intel macOS Desktop command: release archives use `x86_64`, while electron-builder accepts `x64`. No GitHub Release was published from that tag.
+- The `v0.6.5` retry keeps runtime artifact naming unchanged and maps the Intel Desktop builder argument to `x64`; a release-workflow regression test enforces the explicit mapping for both macOS architectures.
 
 ## Short public installer batch
 
