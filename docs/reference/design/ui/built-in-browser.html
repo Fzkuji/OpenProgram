@@ -72,10 +72,42 @@
     .launcher-item strong { display: block; font-size: 14px; }
     .launcher-item small { display: block; color: var(--dark-muted); font-size: 11px; }
     .shortcut { color: #7f7d76; font: 11px var(--mono); }
-    .browser-toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--dark-line); }
-    .browser-actions { display: flex; gap: 6px; color: var(--dark-muted); }
-    .tool-button { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 7px; background: transparent; color: inherit; }
+    .browser-toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 52px; padding: 9px 12px; border-bottom: 1px solid var(--dark-line); }
+    .browser-actions { display: flex; align-items: center; gap: 3px; color: var(--dark-muted); }
+    .tool-button { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 7px; background: transparent; color: inherit; font: 14px/1 var(--sans); }
+    .tool-button.emphasis { background: #2d2c28; color: var(--dark-text); }
     .address { overflow: hidden; padding: 7px 12px; border: 1px solid var(--dark-line); border-radius: 9px; background: #11110f; color: #77756f; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+    .bookmarks-bar { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 4px 12px; border-bottom: 1px solid var(--dark-line); background: #1d1d1a; color: var(--dark-muted); }
+    .bookmark-chip { display: inline-flex; align-items: center; gap: 7px; min-width: 0; max-width: 150px; height: 27px; padding: 0 9px; border-radius: 6px; color: var(--dark-text); font-size: 11px; white-space: nowrap; }
+    .bookmark-chip i { flex: none; width: 14px; height: 14px; border-radius: 4px; background: #3c3b36; }
+    .bookmark-chip span { overflow: hidden; text-overflow: ellipsis; }
+    .bookmark-overflow { margin-left: auto; color: var(--dark-muted); font: 13px var(--mono); }
+    .toolbar-lab { overflow: hidden; margin-top: 26px; border: 1px solid var(--line-strong); border-radius: 15px; background: var(--surface); }
+    .toolbar-lab-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+    .toolbar-lab-head strong { font-size: 13px; }
+    .mode-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
+    .mode-switch button { padding: 5px 9px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; }
+    .mode-switch button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(23,25,34,.12); }
+    .toolbar-stage { padding: 24px; background: #e7e8ed; }
+    .toolbar-preview { width: 100%; overflow: hidden; margin: 0 auto; border: 1px solid #3d3c38; border-radius: 12px; background: var(--dark); box-shadow: 0 14px 36px rgba(23,25,34,.14); transition: max-width .18s ease; }
+    .preview-window-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 42px; padding: 0 12px; border-bottom: 1px solid var(--dark-line); background: #11110f; color: var(--dark-muted); font-size: 11px; }
+    .preview-window-bar strong { color: var(--dark-text); font-size: 12px; }
+    .toolbar-preview .bookmarks-bar { display: none; }
+    .toolbar-preview.mode-bookmarks .bookmarks-bar { display: flex; }
+    .toolbar-preview.mode-narrow { max-width: 430px; }
+    .toolbar-preview.mode-narrow .optional-medium,
+    .toolbar-preview.mode-narrow .optional-narrow { display: none; }
+    .toolbar-preview.mode-narrow .browser-toolbar { grid-template-columns: auto minmax(0,1fr) auto; gap: 6px; padding-inline: 8px; }
+    .toolbar-preview.mode-narrow .browser-actions { gap: 1px; }
+    .toolbar-preview.mode-narrow .bookmarks-bar { display: none; }
+    .toolbar-note { margin: 12px 16px 16px; color: var(--muted); font-size: 12px; }
+    .scope-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin-top: 24px; }
+    .scope-card { padding: 16px; border-top: 3px solid var(--line-strong); background: rgba(255,255,255,.55); }
+    .scope-card:nth-child(2) { border-color: var(--blue); }
+    .scope-card:nth-child(3) { border-color: var(--accent); }
+    .scope-card h3 { margin: 0 0 7px; font-size: 17px; }
+    .scope-card p { margin: 0; color: var(--muted); font-size: 12px; }
+    .scope-card code { font-size: 10px; }
     .browser-home { padding: 26px; }
     .import-banner { display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: 14px; padding: 16px; border: 1px solid #494842; border-radius: 12px; background: #20201d; }
     .browser-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: conic-gradient(#5d55d7 0 33%,#3569a8 0 66%,#367b5a 0); color: white; font-weight: 700; }
@@ -142,15 +174,17 @@
     @media (max-width: 980px) { .shell { grid-template-columns: 1fr; width: min(880px, calc(100% - 36px)); padding-top: 42px; } .rail { display: none; } .mobile-toc { display: block; } }
     @media (max-width: 720px) {
       body { font-size: 15px; }
-      .metrics, .compare-grid, .import-types, .home-grid, .exclusions { grid-template-columns: 1fr; }
+      .metrics, .compare-grid, .import-types, .home-grid, .exclusions, .scope-grid { grid-template-columns: 1fr; }
       .metrics { margin-bottom: 54px; padding: 0; }
       .metric, .metric:first-child { padding: 11px 0; border-left: 0; border-top: 1px solid var(--line); }
       .metric:first-child { border-top: 0; }
       .decision { grid-template-columns: 1fr; gap: 7px; }
       .section-intro { margin-left: 0; }
       .launcher { grid-template-columns: 1fr; padding: 36px 18px; }
-      .browser-toolbar { grid-template-columns: auto minmax(0,1fr); }
-      .browser-toolbar > .browser-actions:last-child { display: none; }
+      .demo-wrap .browser-toolbar { grid-template-columns: auto minmax(0,1fr) auto; gap: 6px; padding-inline: 8px; }
+      .demo-wrap .browser-toolbar .optional-medium { display: none; }
+      .toolbar-stage { padding: 14px; }
+      .toolbar-lab-head { align-items: flex-start; }
       .import-banner { grid-template-columns: 36px 1fr; }
       .import-banner .primary { grid-column: 1 / -1; }
       .history-head { grid-template-columns: 1fr; }
@@ -162,7 +196,8 @@
       .boundary-table tr { padding: 12px 0; border-bottom: 1px solid var(--line); }
       .boundary-table td { width: auto !important; padding: 3px 0; border: 0; }
     }
-    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    @media (max-width: 519px) { .demo-wrap .browser-toolbar .optional-narrow { display: none; } }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .toolbar-preview { transition: none; } }
   </style>
 </head>
 <body>
@@ -171,18 +206,18 @@
     <header>
       <div class="eyebrow">OpenProgram · UI design specification</div>
       <h1>内置浏览器、资料导入与新建 Pane</h1>
-      <p class="lede">新建 Pane 只负责选择内容类型；进入 Browser 后才显示地址栏、主页、History、Bookmarks 和资料导入。外部浏览器数据经用户明确选择后复制到 OpenProgram 独立 profile，源 profile 始终只读。</p>
-      <div class="meta"><span class="pill"><span class="dot"></span>设计已确定</span><span class="pill">桌面 App</span><span class="pill">独立浏览器 profile</span><span class="pill">不改变 Agent 控制协议</span></div>
+      <p class="lede">新建 Pane 只负责选择内容类型；进入 Browser 后才显示网页导航、书签、History 和资料导入。浏览器工具栏只处理当前网页和浏览资料，整个窗口的菜单只处理 OpenProgram 与 Pane。两类设置共用同一 Settings 页面，但使用不同入口。</p>
+      <div class="meta"><span class="pill"><span class="dot"></span>信息层级已确定</span><span class="pill">桌面 App</span><span class="pill">独立浏览器 profile</span><span class="pill">Toolbar 待对齐</span></div>
       <details class="mobile-toc">
         <summary>本页目录</summary>
-        <nav aria-label="移动端页内导航"><a href="#decisions">产品决策</a><a href="#surfaces">可见状态</a><a href="#references">参考行为</a><a href="#architecture">架构与数据流</a><a href="#boundaries">信任边界</a><a href="#acceptance">验收与状态</a></nav>
+        <nav aria-label="移动端页内导航"><a href="#decisions">产品决策</a><a href="#toolbar">工具栏与菜单</a><a href="#surfaces">可见状态</a><a href="#references">参考行为</a><a href="#architecture">架构与数据流</a><a href="#boundaries">信任边界</a><a href="#acceptance">验收与状态</a></nav>
       </details>
     </header>
 
     <section class="metrics" aria-label="设计范围摘要">
-      <div class="metric"><span class="metric-label">范围</span><span class="metric-value">Pane 层级 · Browser surfaces · Profile import</span></div>
+      <div class="metric"><span class="metric-label">范围</span><span class="metric-value">Pane 层级 · Browser chrome · Profile import</span></div>
       <div class="metric"><span class="metric-label">平台</span><span class="metric-value">桌面 App · 独立 profile · 源数据只读</span></div>
-      <div class="metric"><span class="metric-label">实现状态</span><span class="metric-value">浏览器导入已实现 · History 密度待对齐</span></div>
+      <div class="metric"><span class="metric-label">实现状态</span><span class="metric-value">资料导入已实现 · Toolbar 与 History 待对齐</span></div>
     </section>
 
     <section class="section" id="decisions">
@@ -190,15 +225,70 @@
       <p class="section-intro">当前问题来自内容入口、浏览器主页和资料管理共用一个页面。设计先分离职责，再定义每个页面出现的控件。</p>
       <div class="decision"><strong>New pane 只做选择</strong><p>空白 Pane 只显示 Files、Side chat、Browser、Terminal。地址栏、快捷网站、Bookmarks 和 History 不出现在这里。</p></div>
       <div class="decision"><strong>Browser 拥有独立主页</strong><p>选择 Browser 后原位进入浏览器主页。Home 返回该主页，不再退回通用 New pane launcher。</p></div>
-      <div class="decision"><strong>Bookmarks 是唯一书签入口</strong><p>Browser home 只显示搜索、导入入口和用户维护的快捷网站，不展开全部书签。右上角主菜单打开 Bookmarks 页面，由该页面统一浏览、搜索和编辑书签树。</p></div>
+      <div class="decision"><strong>书签分为保存与管理</strong><p>地址栏右侧的星标只保存或移除当前页；相邻的 Bookmarks 按钮打开完整书签页。Browser home 只显示用户维护的快捷网站，不展开全部书签。</p></div>
+      <div class="decision"><strong>书签栏默认关闭</strong><p>默认不占用第二行。用户从 Browser 的 <code>⋯</code> 主动开启后，地址栏下方显示一行；窄分屏不显示该行，仍可通过 Browser <code>⋯</code> 中的 Bookmarks 访问全部内容。</p></div>
+      <div class="decision"><strong>设置只有一个数据源</strong><p>窗口菜单的 Settings 打开 OpenProgram 设置；Browser 的 <code>⋯</code> 直接打开其中的 Browser 分区。工具栏不增加常驻齿轮，也不实现第二套浏览器设置存储。</p></div>
+      <div class="decision"><strong>分屏属于 Pane</strong><p>分屏、退出分屏和 Pane 排列适用于 Files、Chat、Browser、Terminal，不属于当前网页动作。它们放在 Tab/Pane 控件或 Tab 上下文菜单，不出现在浏览器工具栏。</p></div>
       <div class="decision"><strong>导入保留来源结构</strong><p>Chromium 的 bookmark bar、other bookmarks 以及嵌套文件夹按原有层级和顺序进入 OpenProgram bookmark tree；导入不得把书签压平成主页下方的独立条目。</p></div>
-      <div class="decision"><strong>菜单绑定触发按钮</strong><p>右上角主菜单使用触发按钮的实际屏幕矩形定位，菜单右边缘与按钮右边缘对齐，垂直间距为 4px；窗口宽度和 tab 数量变化不得改变该相对位置。</p></div>
+      <div class="decision"><strong>菜单分别绑定触发按钮</strong><p>Browser <code>⋯</code> 和窗口 <code>⋯</code> 都使用各自触发按钮的实际屏幕矩形定位，菜单右边缘与按钮右边缘对齐，垂直间距为 4px；二者不能共用位置或内容。</p></div>
       <div class="decision"><strong>History 使用紧凑行</strong><p>记录按本地日期分组，每行只显示时间、favicon、标题、域名和操作；完整 URL 不再单独占用第二行。</p></div>
       <div class="decision"><strong>导入必须显式触发</strong><p>来源浏览器、profile 和数据类型分别确认。OpenProgram 不读取或修改用户正在使用的源 profile。</p></div>
     </section>
 
+    <section class="section" id="toolbar">
+      <div class="section-head"><span class="section-no">02</span><h2>工具栏与菜单归属</h2></div>
+      <p class="section-intro">浏览器区域分为当前网页、浏览器资料和整个窗口三层。按钮是否常驻由操作频率、当前页面相关性和窄分屏占用共同决定。</p>
+
+      <div class="toolbar-lab">
+        <div class="toolbar-lab-head">
+          <strong>目标 Browser chrome</strong>
+          <div class="mode-switch" role="group" aria-label="预览工具栏状态">
+            <button type="button" data-chrome-mode="standard" aria-pressed="true">标准</button>
+            <button type="button" data-chrome-mode="bookmarks" aria-pressed="false">书签栏已开启</button>
+            <button type="button" data-chrome-mode="narrow" aria-pressed="false">窄分屏</button>
+          </div>
+        </div>
+        <div class="toolbar-stage">
+          <div class="toolbar-preview mode-standard" id="toolbar-preview" role="img" aria-label="标准浏览器工具栏：后退、前进、刷新、主页、地址栏、收藏当前页、书签、外部打开和浏览器菜单；书签栏关闭。">
+            <div class="preview-window-bar"><strong>Browser tab</strong><span>Pane controls · OpenProgram menu</span></div>
+            <div class="browser-toolbar">
+              <div class="browser-actions" aria-hidden="true"><span class="tool-button">←</span><span class="tool-button optional-narrow">→</span><span class="tool-button">↻</span><span class="tool-button optional-medium">⌂</span></div>
+              <div class="address">https://www.google.com/</div>
+              <div class="browser-actions" aria-hidden="true"><span class="tool-button">☆</span><span class="tool-button emphasis optional-medium">▤</span><span class="tool-button optional-medium">↗</span><span class="tool-button">•••</span></div>
+            </div>
+            <div class="bookmarks-bar" aria-label="可选书签栏">
+              <span class="bookmark-chip"><i></i><span>GitHub</span></span>
+              <span class="bookmark-chip"><i></i><span>OpenProgram Docs</span></span>
+              <span class="bookmark-chip"><i></i><span>Research</span></span>
+              <span class="bookmark-overflow">»</span>
+            </div>
+          </div>
+        </div>
+        <p class="toolbar-note" id="toolbar-note"><strong>标准：</strong>完整网页导航常驻；星标负责当前页，Bookmarks 按钮负责浏览与管理。分屏和全局 Settings 不在这一行。</p>
+      </div>
+
+      <h3>按钮顺序与收缩规则</h3>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="浏览器工具栏按钮顺序与收缩规则，可横向滚动">
+        <table class="acceptance-table">
+          <thead><tr><th>位置</th><th>常驻动作</th><th>窄分屏规则</th></tr></thead>
+          <tbody>
+            <tr><td>地址栏左侧</td><td>Back · Forward · Reload/Stop · Home</td><td><code>520–719px</code> 将 Home 移入 <code>⋯</code>；低于 <code>520px</code> 再将 Forward 移入 <code>⋯</code>。Back 与 Reload/Stop 始终保留。</td></tr>
+            <tr><td>地址栏</td><td>URL、搜索输入与安全状态；加载期间 Reload 原位变为 Stop。</td><td>始终占据剩余宽度，最低可用宽度 <code>160px</code>；不换行。</td></tr>
+            <tr><td>地址栏右侧</td><td>Bookmark current page · Bookmarks · Open externally · Browser menu</td><td><code>520–719px</code> 将 Bookmarks 与 Open externally 移入 <code>⋯</code>；星标和 <code>⋯</code> 始终保留。</td></tr>
+            <tr><td>地址栏下方</td><td>用户可选的单行 bookmarks bar，包含链接、文件夹与末尾溢出入口。</td><td>低于 <code>560px</code> 不渲染该行，从 Browser <code>⋯</code> 中打开 Bookmarks；禁止水平滚动条。</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="scope-grid">
+        <article class="scope-card"><h3>Browser toolbar</h3><p>只放与当前网页直接相关且频繁使用的动作：导航、地址、保存当前页、打开书签、外部打开和 Browser <code>⋯</code>。</p></article>
+        <article class="scope-card"><h3>Browser <code>⋯</code></h3><p>New browser tab、Bookmarks、History、Show bookmarks bar、Import browser data、Clear browsing data、Browser settings。</p></article>
+        <article class="scope-card"><h3>Window menu</h3><p>New pane/window、Pane 布局、OpenProgram Settings、Help 与 About。它不再直接放 Bookmarks、History 或网页级设置。</p></article>
+      </div>
+    </section>
+
     <section class="section" id="surfaces">
-      <div class="section-head"><span class="section-no">02</span><h2>三个可见状态</h2></div>
+      <div class="section-head"><span class="section-no">03</span><h2>三个可见状态</h2></div>
       <p class="section-intro">下面是信息结构验收图。切换状态即可检查控件是否出现在正确层级。</p>
       <div class="demo-wrap">
         <div class="demo-tabs" role="tablist" aria-label="内置浏览器状态">
@@ -218,9 +308,9 @@
         <div class="demo-panel" id="demo-browser" role="tabpanel" aria-labelledby="tab-browser" hidden>
           <div class="pane-head"><span class="window-dot"></span><strong>Browser</strong></div>
           <div class="browser-toolbar">
-            <div class="browser-actions" aria-hidden="true"><span class="tool-button">←</span><span class="tool-button">→</span><span class="tool-button">⌂</span></div>
+            <div class="browser-actions" aria-hidden="true"><span class="tool-button">←</span><span class="tool-button optional-narrow">→</span><span class="tool-button">↻</span><span class="tool-button optional-medium">⌂</span></div>
             <div class="address">输入 URL 或搜索内容</div>
-            <div class="browser-actions" aria-hidden="true"><span class="tool-button">↻</span><span class="tool-button">•••</span></div>
+            <div class="browser-actions" aria-hidden="true"><span class="tool-button">☆</span><span class="tool-button emphasis optional-medium">▤</span><span class="tool-button optional-medium">↗</span><span class="tool-button">•••</span></div>
           </div>
           <div class="browser-home">
             <div class="import-banner"><span class="browser-mark">O</span><span><strong>从浏览器导入资料</strong><span>选择 History、Bookmarks 和 Cookies</span></span><span class="primary" aria-hidden="true">Import</span></div>
@@ -247,15 +337,18 @@
     </section>
 
     <section class="section" id="references">
-      <div class="section-head"><span class="section-no">03</span><h2>参考行为与取舍</h2></div>
+      <div class="section-head"><span class="section-no">04</span><h2>参考行为与取舍</h2></div>
       <p class="section-intro">参考产品用于确认可见行为，平台文档用于确认可实现边界。OpenProgram 不复制完整 Chromium importer。</p>
       <div class="compare-grid">
         <article class="compare-card"><span class="label">Content hierarchy</span><h3>Codex 的 Pane 入口</h3><p>Files、Side chat、Browser、Terminal 作为一级内容类型；浏览器控件只在 Browser 内显示。</p><span class="choice">采用</span></article>
         <article class="compare-card"><span class="label">Browser profile</span><h3>独立浏览状态</h3><p>内置浏览器保持自己的 profile。需要既有资料时，由用户明确发起导入。</p><span class="choice modified">修改后采用</span></article>
+        <article class="compare-card"><span class="label">Bookmark access</span><h3>Chrome 的分层入口</h3><p>星标保存当前页；书签栏可开关；完整管理器独立存在。OpenProgram 保留三层，但针对分屏定义更严格的收缩规则。</p><span class="choice modified">修改后采用</span></article>
+        <article class="compare-card"><span class="label">Settings ownership</span><h3>OpenAI 的 App Settings</h3><p>内置浏览器保持独立状态，Cookies 与历史清理归桌面 App Settings。OpenProgram 增加 Browser <code>⋯</code> 深链，但不复制设置存储。</p><span class="choice modified">修改后采用</span></article>
         <article class="compare-card"><span class="label">Importer</span><h3>Chromium C++ importer</h3><p>组件不作为 Electron JavaScript API 暴露，且不提供通用 Cookies import 实现。</p><span class="choice rejected">不复制</span></article>
       </div>
       <ul class="source-list">
-        <li><a href="https://help.openai.com/en/articles/20001277-using-the-built-in-browser-in-the-chatgpt-desktop-app">OpenAI 内置浏览器说明</a>：确认独立浏览状态与外部浏览器使用边界。</li>
+        <li><a href="https://help.openai.com/en/articles/20001277-using-the-built-in-browser-in-the-chatgpt-desktop-app">OpenAI 内置浏览器说明</a>：确认独立浏览状态、外部浏览器边界，以及 Cookies 和 History 由桌面 App Settings 清理。</li>
+        <li><a href="https://support.google.com/chrome/answer/188842">Chrome 书签说明</a>：确认地址栏右侧保存当前页、书签栏可开关、完整 Bookmark manager 独立存在。</li>
         <li><a href="https://support.google.com/chrome/answer/96816">Chrome 导入设置</a>：确认按数据类型选择以及 Imported Bookmarks 的合并行为。</li>
         <li><a href="https://chromium.googlesource.com/chromium/src/+/main/docs/user_data_dir.md">Chromium user data directory</a>：确认 History、Bookmarks、Cookies 的 profile 存储位置。</li>
         <li><a href="https://chromium.googlesource.com/chromium/src/+/refs/tags/145.0.7573.1/components/user_data_importer/">Chromium user_data_importer</a>：确认原生导入组件的能力与 Electron 暴露边界。</li>
@@ -264,7 +357,7 @@
     </section>
 
     <section class="section" id="architecture">
-      <div class="section-head"><span class="section-no">04</span><h2>导入架构与数据流</h2></div>
+      <div class="section-head"><span class="section-no">05</span><h2>导入架构与数据流</h2></div>
       <p class="section-intro">renderer 只传递 main 进程签发的 opaque source/profile id。文件路径、源浏览器可执行路径和 Cookie 值都不能通过 renderer 自由指定。</p>
       <div class="architecture">
         <svg viewBox="0 0 900 390" role="img" aria-labelledby="flow-title flow-desc">
@@ -293,7 +386,7 @@
     </section>
 
     <section class="section" id="boundaries">
-      <div class="section-head"><span class="section-no">05</span><h2>信任边界与失败行为</h2></div>
+      <div class="section-head"><span class="section-no">06</span><h2>信任边界与失败行为</h2></div>
       <p class="section-intro">导入不是 profile 迁移。它只复制已选择的数据，并且不承诺所有网站登录态都能恢复。</p>
       <table class="boundary-table">
         <thead><tr><th>边界</th><th>约束</th><th>失败结果</th></tr></thead>
@@ -314,7 +407,7 @@
     </section>
 
     <section class="section" id="acceptance">
-      <div class="section-head"><span class="section-no">06</span><h2>验收与实现状态</h2></div>
+      <div class="section-head"><span class="section-no">07</span><h2>验收与实现状态</h2></div>
       <p class="section-intro">每项验收都对应一个外部可观察结果。设计状态和实现证据分列，不以文档存在本身证明功能完成。</p>
       <div class="table-scroll" tabindex="0" role="region" aria-label="内置浏览器验收结果与实现证据，可横向滚动">
       <table class="acceptance-table">
@@ -322,10 +415,14 @@
         <tbody>
           <tr><td>新建 Pane 只显示 Files、Side chat、Browser、Terminal；DOM 中不存在浏览器专属控件。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/new-tab-page.tsx"><code>new-tab-page.tsx</code></a>；<code>check-built-in-browser.mjs</code></td></tr>
           <tr><td>选择 Browser 后原位显示 toolbar、导入入口和快捷网站；Home 返回 Browser home，主页 DOM 不渲染全部 bookmark rows。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/browser-home-page.tsx"><code>browser-home-page.tsx</code></a>；<code>check-built-in-browser.mjs</code></td></tr>
+          <tr><td>标准宽度的 Browser toolbar 按顺序显示 Back、Forward、Reload/Stop、Home、地址栏、当前页星标、Bookmarks、外部打开和 Browser <code>⋯</code>；不显示分屏与 Settings 齿轮。</td><td><span class="status limit">需对齐</span></td><td>当前 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/web-tab-pane.tsx"><code>web-tab-pane.tsx</code></a> 已有导航、Home、星标和外部打开，但仍把分屏放在 toolbar，且缺少 Bookmarks 与 Browser <code>⋯</code>。</td></tr>
+          <tr><td>Browser <code>⋯</code> 提供 Bookmarks、History、书签栏开关、Import、Clear browsing data 和 Browser settings；窗口主菜单只保留 App、窗口与 Pane 操作。</td><td><span class="status limit">需对齐</span></td><td>当前 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/main-menu.tsx"><code>main-menu.tsx</code></a> 仍将 Bookmarks、History 和通用 Settings 放在窗口菜单。</td></tr>
+          <tr><td>书签栏默认关闭；开启时只显示一行，末尾提供溢出入口；Pane 低于 560px 时隐藏该行，但 Bookmarks 页面仍可到达。</td><td><span class="status limit">待实现</span></td><td>当前实现有 bookmark tree、当前页星标与 Bookmarks 页面，尚无书签栏偏好和响应式呈现。</td></tr>
+          <tr><td>Browser settings 与窗口 Settings 使用同一路由和同一配置源；Browser <code>⋯</code> 直接打开 Browser 分区，toolbar 不显示常驻齿轮。</td><td><span class="status limit">待实现</span></td><td>当前 Settings 尚无 Browser 分区。</td></tr>
           <tr><td>导入对话框列出来源浏览器、profile 和支持的数据类型；关闭对话框不产生目标变更。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/desktop/main.js"><code>desktop/main.js</code></a> 的 <code>browser-import:*</code> IPC；<code>check-built-in-browser.mjs</code></td></tr>
           <tr><td>History 按日期分组，至少 1000 条时保持 36–40px 行高，搜索和滚动可用。</td><td><span class="status limit">需对齐</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/desktop/browsing-history-store.js"><code>browsing-history-store.js</code></a> self-check已覆盖存储；当前 <code>web-history.css</code> 为 34px，且缺少 1000 条运行时滚动与搜索验收。</td></tr>
           <tr><td>Bookmarks 保留来源根目录、最多 64 层文件夹和同级顺序；无效 URL 被过滤，重复导入不产生重复 URL 或空文件夹。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/lib/bookmarks.ts"><code>web/lib/bookmarks.ts</code></a>；<code>check-bookmarks.mjs</code></td></tr>
-          <tr><td>右上角主菜单在桌面 App 和 Web 中都与触发按钮右对齐，按钮底部到菜单顶部的间距为 4px。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/main-menu.tsx"><code>main-menu.tsx</code></a>；<code>check-center-tabs.mjs</code></td></tr>
+          <tr><td>窗口主菜单在桌面 App 和 Web 中都与触发按钮右对齐，按钮底部到菜单顶部的间距为 4px。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/main-menu.tsx"><code>main-menu.tsx</code></a>；<code>check-center-tabs.mjs</code></td></tr>
           <tr><td>Cookies 只进入 <code>persist:webtabs</code>；IPC、日志、History 和 renderer 不出现 Cookie 值。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/desktop/browser-profile-import.js"><code>browser-profile-import.js</code></a> self-check；<code>desktop/main.js</code></td></tr>
           <tr><td>来源损坏、浏览器缺失、临时进程超时和 Cookie 部分失败返回稳定错误码并保留原数据。</td><td><span class="status">已实现</span></td><td><code>browser-profile-import.js</code> 与 <code>browsing-history-store.js</code> self-check</td></tr>
           <tr><td>依赖 PTY 的全屏终端程序以及执行中取消浏览器导入。</td><td><span class="status limit">当前限制</span></td><td>产品边界，不作为当前验收缺口。</td></tr>
@@ -341,7 +438,7 @@
 
   <aside class="rail" aria-label="页内导航">
     <div class="rail-title">On this page</div>
-    <nav><a href="#decisions">产品决策</a><a href="#surfaces">可见状态</a><a href="#references">参考行为</a><a href="#architecture">架构与数据流</a><a href="#boundaries">信任边界</a><a href="#acceptance">验收与状态</a></nav>
+    <nav><a href="#decisions">产品决策</a><a href="#toolbar">工具栏与菜单</a><a href="#surfaces">可见状态</a><a href="#references">参考行为</a><a href="#architecture">架构与数据流</a><a href="#boundaries">信任边界</a><a href="#acceptance">验收与状态</a></nav>
   </aside>
 </div>
 <script>
@@ -371,6 +468,29 @@
       if (!next) return;
       event.preventDefault();
       selectTab(next, true);
+    });
+  });
+
+  const toolbarPreview = document.getElementById('toolbar-preview');
+  const toolbarNote = document.getElementById('toolbar-note');
+  const toolbarModes = [...document.querySelectorAll('[data-chrome-mode]')];
+  const toolbarNotes = {
+    standard: '<strong>标准：</strong>完整网页导航常驻；星标负责当前页，Bookmarks 按钮负责浏览与管理。分屏和全局 Settings 不在这一行。',
+    bookmarks: '<strong>书签栏已开启：</strong>地址栏下方增加一行，只显示用户选择放入书签栏的链接和文件夹；末尾的 » 打开被截断的内容。',
+    narrow: '<strong>窄分屏：</strong>Home、Bookmarks、外部打开和 Forward 依次收入 Browser ⋯；地址栏、Back、Reload/Stop、星标和 ⋯ 保持可见。'
+  };
+  const toolbarLabels = {
+    standard: '标准浏览器工具栏：后退、前进、刷新、主页、地址栏、收藏当前页、书签、外部打开和浏览器菜单；书签栏关闭。',
+    bookmarks: '标准浏览器工具栏：后退、前进、刷新、主页、地址栏、收藏当前页、书签、外部打开和浏览器菜单；地址栏下方显示书签栏。',
+    narrow: '窄分屏浏览器工具栏：后退、刷新、地址栏、收藏当前页和浏览器菜单；其他操作位于浏览器菜单；书签栏隐藏。'
+  };
+  toolbarModes.forEach((button) => {
+    button.addEventListener('click', () => {
+      const mode = button.dataset.chromeMode;
+      toolbarModes.forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+      toolbarPreview.className = `toolbar-preview mode-${mode}`;
+      toolbarPreview.setAttribute('aria-label', toolbarLabels[mode]);
+      toolbarNote.innerHTML = toolbarNotes[mode];
     });
   });
 </script>
