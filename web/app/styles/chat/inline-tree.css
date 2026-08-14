@@ -156,7 +156,8 @@
   font-size: 13px;
   line-height: 1.55;
 }
-.runtime-program-conclusion-summary.message-content {
+.runtime-program-conclusion-summary.message-content,
+.runtime-program-conclusion-result.message-content {
   margin-top: 6px;
   padding: 0;
   color: var(--text-primary);

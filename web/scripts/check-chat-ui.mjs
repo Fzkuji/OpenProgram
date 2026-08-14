@@ -663,11 +663,29 @@ assert.match(
   /<div class="tl-collapse"><div class="tl-collapse-inner">[\s\S]*?<\/div><\/div>\s*<\/div>\s*<div class="run-footer">/,
   "the visual specification footer must remain outside the collapsible execution trace",
 );
-const conclusionRule = chatCss.match(/\.runtime-program-conclusion\s*\{([^}]*)\}/s)?.[1] ?? "";
-assert.doesNotMatch(
-  conclusionRule,
-  /(?:border-left|padding-left)\s*:/,
-  "workflow Conclusion must render as ordinary chat content, not a blockquote",
+function assertPlainConclusionRules(css) {
+  const rules = [...css.matchAll(/([^{}]*\.runtime-program-conclusion[^{}]*)\{([^}]*)\}/g)];
+  assert.ok(rules.length > 0, "workflow Conclusion CSS rules must exist");
+  for (const [_, selector, declarations] of rules) {
+    assert.doesNotMatch(
+      declarations,
+      /(?:border|padding)-(?:left|inline-start)(?:-[\w-]+)?\s*:/,
+      `${selector.trim()} must render as ordinary chat content, not a blockquote`,
+    );
+  }
+}
+assertPlainConclusionRules(chatCss);
+assert.throws(
+  () => assertPlainConclusionRules(
+    `${chatCss}\n.runtime-program-conclusion.is-error { border-inline-start: 2px solid red; padding-inline-start: 14px; }`,
+  ),
+  /must render as ordinary chat content/,
+  "the Conclusion style contract must reject error/cancelled quote-style variants",
+);
+assert.match(
+  chatCss,
+  /\.runtime-program-conclusion-summary\.message-content,\s*\.runtime-program-conclusion-result\.message-content\s*\{[^}]*padding:\s*0/s,
+  "workflow summary and direct result must share the same plain-content alignment",
 );
 assert.match(runtimeBlock, /className="runtime-program-avatar"[\s\S]*>ƒ<\/div>/);
 assert.match(runtimeBlock, /if \(nested\)/, "nested LLM tool calls must keep their current rendering");
