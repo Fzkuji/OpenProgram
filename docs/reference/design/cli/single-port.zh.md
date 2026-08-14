@@ -132,20 +132,14 @@ Electron 壳 → Python worker（FastAPI，单端口）
    端口这一整类故障从结构上消失。
 5. 全量测试通过；桌面应用重新打包并验证。
 
-## 路线图定位
+## 分发边界
 
-单端口是通向零依赖安装的三步中的第一步：
-
-1. **单端口**（本文）：worker 托管前端，Node 降为构建期依赖。
-2. **壳监管 worker**：Electron 负责 spawn、监视、重启 worker，配真实状态页，
-   覆盖首启引导进度。
-3. **零依赖安装（uv 引导）**：安装包携带 Electron、预构建的 `out/` 和独立的
-   uv 二进制（约 15 MB）。首次启动 `uv python install` 拉取
-   python-build-standalone 的独立 Python（装进应用私有目录，不碰系统
-   Python），再按锁文件 `uv sync` 装依赖；之后启动复用已装环境。国内首启
-   可靠性要求配置镜像（`UV_PYTHON_INSTALL_MIRROR` + 国内 PyPI 源）。
-   不用 PyInstaller。
+单端口让 Node 成为构建期依赖，并允许 release 携带预构建前端。安装与打包的
+规范来源是[安装、打包、发布与升级设计](../distribution/installation-packaging.html)。
+macOS 桌面应用把 CPython 和核心依赖放入签名 app bundle，不在首次启动时下载
+基础 Python runtime。CLI/server 安装使用 uv 管理的 Python 环境，source
+checkout 保留开发构建流程。
 
 ## 附录：实现状态
 
-设计已定。路线图第 2、3 步建立在本文之上，另有各自的设计文档。
+单端口设计已实现。桌面监管和分发状态由上面链接的安装与打包设计记录。

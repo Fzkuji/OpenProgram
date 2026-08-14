@@ -114,6 +114,21 @@ def test_build_gate_errors_without_out_and_npm(out_tree, monkeypatch):
         frontend.ensure_frontend_built()
 
 
+def test_installed_package_prefers_bundled_frontend(tmp_path, monkeypatch):
+    bundled = tmp_path / "site-packages" / "openprogram" / "webui" / "_frontend"
+    bundled.mkdir(parents=True)
+    (bundled / "index.html").write_text("bundled", encoding="utf-8")
+    checkout = tmp_path / "checkout" / "web" / "out"
+    checkout.mkdir(parents=True)
+    (checkout / "index.html").write_text("checkout", encoding="utf-8")
+
+    monkeypatch.setattr(frontend, "packaged_out_dir", lambda: bundled)
+    monkeypatch.setattr(frontend, "repo_out_dir", lambda: checkout)
+    monkeypatch.setattr(frontend, "web_dir", lambda: checkout.parent)
+
+    assert frontend.out_dir() == bundled
+
+
 def test_unknown_api_path_is_404_not_spa(client):
     r = client.get("/api/definitely-not-a-route")
     assert r.status_code == 404

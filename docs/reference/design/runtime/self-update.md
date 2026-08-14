@@ -1,4 +1,10 @@
-# Self-update: staying usable while OpenProgram modifies itself
+# Self-update for source checkouts
+
+> Scope: this document defines updates for development/source checkouts. The
+> release-installed desktop and CLI mechanisms are defined by
+> [Installation, packaging, release, and upgrade](../distribution/installation-packaging.html).
+> In release installations, `stable` means a published version; it never means
+> `origin/main`.
 
 ## 1. Problem
 
@@ -113,12 +119,11 @@ back: <reason>".
 Kept open deliberately so later needs slot in without reshaping the
 command:
 
-- **Channels.** `upgrade` never hard-codes a ref: it resolves
-  `channel → target ref` through one function, with a single built-in
-  channel today (`stable → origin/main`). Adding `beta → origin/beta` or
-  `dev → <worktree branch>` later is a table entry plus a persisted
-  `update.channel` config key (OpenClaw's model), not a rewrite. CLI shape
-  reserves `upgrade --channel <name>` and `upgrade status` from day one.
+- **Channels.** The current source-checkout implementation resolves its
+  historical `stable` name to `origin/main`. This name is incompatible with
+  release installation and must become `dev` during the distribution
+  migration. Release-installed `stable` resolves only to a published version.
+  CLI shape retains `upgrade --channel <name>` and `upgrade status`.
 - **Distribution methods.** The step chain is expressed as
   *resolve target → materialize → verify → activate*. Today "materialize"
   is `git checkout`; a future pip/npm package install implements the same

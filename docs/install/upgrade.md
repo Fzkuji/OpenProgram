@@ -1,42 +1,44 @@
 # Upgrading
 
-This page covers updating an existing OpenProgram install to the latest version, and when to re-run the install script.
+Upgrade behavior depends on the installation type. A stable installation always moves between published versions; it never follows `origin/main`.
 
-## openprogram update
+## Desktop release
 
-```bash
-openprogram update           # check and apply updates
-openprogram update --check   # check only, don't apply
-openprogram update --force   # bypass the 6-hour throttle, check now
-```
+Desktop automatic update is not enabled until signed cross-version update acceptance passes. Upgrade manually from GitHub Releases:
 
-The update strategy depends on how you installed. A git-clone install (`pip install -e .`, the install script's default) updates via `git fetch` + `git pull --ff-only`:
+- macOS: download the new notarized DMG and replace `OpenProgram.app`.
+- Linux: download the new AppImage, verify its SHA-256, add execute permission, and replace the previous AppImage.
 
-- The pull is **refused when the working tree has uncommitted changes**, to avoid creating merge conflicts on top of your edits;
-- Only fast-forwards are applied — if you have local commits of your own, nothing is force-merged.
+The application code and embedded Python are replaced together. State under `~/.openprogram` remains unchanged.
 
-An install from a PyPI wheel (`pip install openprogram`) updates via pip against the latest PyPI release instead; `openprogram update` detects the install method and picks the right path automatically.
+## CLI and server release
 
-A successful update writes a record, and the next `openprogram` start shows an "updated to X" notice. The update only changes the code on disk — a running service needs `openprogram restart` to pick up the new version.
-
-## Automatic updates
-
-The worker checks for and applies updates in the background at startup, at most once every 6 hours; failures are silent and never affect the service. Disable with `OPENPROGRAM_NO_AUTO_UPDATE=1`.
-
-## When to re-run the install script
-
-`openprogram update` only pulls code — it doesn't reinstall dependencies or rebuild the web frontend. If an update leaves you with missing dependencies or a broken page, re-run the install script:
+Run the installer from the target immutable tag and set the same package version:
 
 ```bash
-cd OpenProgram && ./scripts/install.sh    # Windows: .\scripts\install.ps1
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
+  | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
-Every step of the script is idempotent, so re-running is safe at any time — completed steps are skipped or refreshed in place, and your existing configuration and session data are untouched (they live in `~/.openprogram/`, which the script never touches).
+The installer creates a new version directory, installs and probes the exact wheel, then changes the `current` symlink. A failure before the change leaves the previous version selected.
 
-A manual upgrade is equivalent to these steps:
+Restart a login service after upgrading:
 
 ```bash
-git pull
-./scripts/install.sh
-openprogram restart
+openprogram worker restart
 ```
+
+## Development checkout
+
+`openprogram upgrade` applies only to source checkouts. It validates a Git target, updates dependencies and built assets when their source files changed, probes the new checkout, and restarts the worker only after the probe succeeds:
+
+```bash
+openprogram upgrade status
+openprogram upgrade --dry-run
+openprogram upgrade
+```
+
+The historical `openprogram update` command remains a compatibility path for existing installations. It does not define stable desktop or managed CLI release behavior.
+
+See [Server upgrading](../server/upgrading.md) for source-checkout recovery details.

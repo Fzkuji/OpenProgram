@@ -387,6 +387,16 @@ def build_parser() -> argparse.ArgumentParser:
     # (``openprogram web``) or just bare ``openprogram`` (chat).
     parser.add_argument("--print", dest="print_prompt", metavar="PROMPT",
         help="One-shot prompt; send, print reply, exit")
+    from importlib.metadata import PackageNotFoundError, version
+    try:
+        package_version = version("openprogram")
+    except PackageNotFoundError:
+        package_version = "unknown"
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {package_version}",
+    )
     parser.add_argument("--json-schema", dest="json_schema", metavar="PATH",
         help="Require JSON Schema output for a one-shot --print call; '-' reads stdin")
     parser.add_argument("--profile", default=None,

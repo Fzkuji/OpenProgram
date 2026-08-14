@@ -1,42 +1,44 @@
 # 升级
 
-这页说明如何把已安装的 OpenProgram 更新到最新版本，以及什么时候需要重跑安装脚本。
+升级行为取决于安装类型。stable 安装只在已发布版本之间变更，不跟随 `origin/main`。
 
-## openprogram update
+## 桌面 release
 
-```bash
-openprogram update           # 检查并应用更新
-openprogram update --check   # 只检查，不应用
-openprogram update --force   # 绕过 6 小时节流，立即检查
-```
+签名后的跨版本更新验收通过前，不启用桌面自动更新。当前从 GitHub Releases 手动升级：
 
-更新策略按安装方式区分。从 git clone 装的（`pip install -e .`，即安装脚本的默认方式）走 `git fetch` + `git pull --ff-only`：
+- macOS：下载新的 notarized DMG，替换 `OpenProgram.app`。
+- Linux：下载新的 AppImage，验证 SHA-256，增加执行权限并替换旧文件。
 
-- 工作树有未提交改动时**拒绝 pull**，避免在你改过的代码上制造合并冲突；
-- 只做 fast-forward，本地有自己的提交时不会强行合并。
+应用代码和内置 Python 一起替换；`~/.openprogram` 下的状态保持不变。
 
-从 PyPI wheel 装的（`pip install openprogram`）则改走 pip 更新到 PyPI 最新版；`openprogram update` 会自动识别安装方式并选对路径。
+## CLI 和服务器 release
 
-更新成功后会写入一条记录，下次启动 `openprogram` 时显示"updated to X"的提示。更新的是代码，正在运行的服务要 `openprogram restart` 才用上新版本。
-
-## 自动更新
-
-worker 启动时会在后台自动检查并应用更新，每 6 小时至多查一次，失败静默、不影响服务。设置 `OPENPROGRAM_NO_AUTO_UPDATE=1` 可关闭。
-
-## 什么时候重跑安装脚本
-
-`openprogram update` 只拉代码，不重装依赖、不重新构建 web 前端。更新后如果出现依赖缺失或页面异常，重跑安装脚本：
+使用目标版本的不可变 tag，并设置相同的 package version：
 
 ```bash
-cd OpenProgram && ./scripts/install.sh    # Windows: .\scripts\install.ps1
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
+  | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
-脚本的每一步都是幂等的，任何时候重跑都安全——已装好的步骤会跳过或原地刷新，不会破坏现有配置和会话数据（它们在 `~/.openprogram/`，脚本不碰）。
+installer 创建新的版本目录，安装并 probe 精确 wheel，随后切换 `current` symlink。切换前失败时，旧版本仍保持选中状态。
 
-手动升级等价于这几步：
+升级后重启登录服务：
 
 ```bash
-git pull
-./scripts/install.sh
-openprogram restart
+openprogram worker restart
 ```
+
+## 开发 checkout
+
+`openprogram upgrade` 只用于 source checkout。它验证 Git 目标，仅在相关源文件变化时更新依赖与构建产物，probe 新 checkout，并且只在 probe 成功后重启 worker：
+
+```bash
+openprogram upgrade status
+openprogram upgrade --dry-run
+openprogram upgrade
+```
+
+历史 `openprogram update` 命令保留为已有安装的兼容路径，不定义 stable desktop 或受控 CLI release 行为。
+
+source checkout 的恢复细节见[服务器升级](../server/upgrading.zh.md)。

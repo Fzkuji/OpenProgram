@@ -30,17 +30,11 @@ openprogram setup                # 重新走一遍配置向导
 
 ## 怎么更新到最新版本？
 
-```bash
-openprogram update           # 检查并应用更新
-openprogram update --check   # 只检查，不应用
-openprogram update --force   # 绕过 6 小时节流，立即检查
-```
-
-worker 启动时也会在后台自动检查更新（每 6 小时至多一次）。详见 [升级](../install/upgrade.md)。
+stable 桌面和 CLI 安装只变更到一个明确的已发布版本。桌面用户替换 DMG/AppImage；CLI/server 用户运行目标版本 tag 中的 installer。source checkout 开发者使用 `openprogram upgrade`。详见[升级](../install/upgrade.zh.md)。
 
 ## `openprogram web` 打开的页面加载不出来？
 
-打开的是 **http://localhost:18100**——web UI 和 API 共用的单端口。如果 18100 上什么都没有，多半是 web UI 没构建——重新运行 `./scripts/install.sh` 即可。
+打开的是 **http://localhost:18100**，Web UI 和 API 共用该端口。release wheel 已包含 Web export；如果缺失，重新安装同一个 release。在 source checkout 中，运行开发 installer 重新构建。
 
 ## 服务好像没起来 / 行为异常，怎么排查？
 

@@ -16,7 +16,7 @@
   <a href="https://github.com/Fzkuji/OpenProgram/releases/tag/v0.6.0"><img alt="Release" src="https://img.shields.io/github/v/release/Fzkuji/OpenProgram?style=flat-square&color=blue"></a>
   <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
   <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square"></a>
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey?style=flat-square">
   <a href="https://github.com/Fzkuji/OpenProgram/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/Fzkuji/OpenProgram/ci.yml?branch=main&style=flat-square&label=build"></a>
   <a href="https://github.com/Fzkuji/GUI-Agent-Harness"><img alt="OSWorld" src="https://img.shields.io/badge/OSWorld_Multi--Apps-79.8%25-brightgreen?style=flat-square"></a>
   <a href="https://github.com/Fzkuji/OpenProgram/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Fzkuji/OpenProgram?style=flat-square"></a>
@@ -40,7 +40,7 @@
 
 ## 它有什么不同
 
-多平台、多 provider、多渠道——这些是标配,OpenProgram 都有(macOS / Linux / Windows,任意 LLM,终端 / 浏览器 / 聊天渠道)。真正让它不同的,是 **harness 本体里的三个机制——每一个都是一类 agent 的地基,你可以在上面继续搭。**
+OpenProgram 正式支持 macOS 和 Linux release 安装、多 provider，以及终端、浏览器和聊天界面。Windows 与移动设备只作为浏览器客户端访问受支持的远程主机。harness 本体提供**三种构建 agent Program 的机制**。
 
 ### ① DAG 上下文 —— 原生多 agent 系统的地基
 
@@ -74,17 +74,14 @@
 
 ### 1. 安装
 
-**macOS / Linux:**
+**macOS / Linux CLI 或服务器 release：**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
+  | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
-**Windows(PowerShell):**
-```powershell
-iwr -useb https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.ps1 | iex
-```
-
-更多选项——参数、无人值守 / AI agent 安装、从 checkout 安装:**[install.md](install/install.md)**。
+桌面用户从 GitHub Releases 下载 macOS DMG 或 Linux x86_64 AppImage。校验、平台范围和 source development 安装见 **[install.md](install/install.md)**。
 
 ### 2. 运行
 
@@ -156,7 +153,7 @@ openprogram --print --resume <id>    # headless 接着之前的聊天继续
 
 ### 终端 UI —— `openprogram`
 
-同一个后端,不开浏览器——同样的命令、同样的聊天历史。按操作系统选原生渲染器:macOS / Linux 用 **Ink**,Windows 用 **Rich**。适合留在终端或走 SSH。一次性、无 UI:`openprogram --print "…"`。
+不打开浏览器时仍使用同一个后端、命令和聊天历史。release 安装包含 Python 终端界面；source development 安装可以在 macOS/Linux 额外构建 Ink。一次性无界面调用使用 `openprogram --print "…"`。
 
 <p align="center">
   <img src="images/tui_hero.png" alt="OpenProgram terminal UI — welcome screen listing the model, agents, sessions, and the registered skills / providers / tools / applications" width="570">

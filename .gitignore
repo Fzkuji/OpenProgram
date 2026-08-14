@@ -68,6 +68,8 @@ web/node_modules/
 web/.next/
 web/next-env.d.ts
 web/tsconfig.tsbuildinfo
+# Release staging copies web/out here before building the wheel.
+openprogram/webui/_frontend/
 
 # macOS Finder duplicates ("foo 2.py", "foo 3.json") — never source
 * [0-9].*
@@ -97,6 +99,7 @@ docs/reference/provider-registry.md
 # Electron desktop shell
 desktop/node_modules/
 desktop/dist/
+desktop/build/runtime/
 
 # Scratch state written by examples/embed_in_your_stack.py
 examples/embed_demo_state/

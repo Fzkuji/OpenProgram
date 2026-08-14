@@ -1,19 +1,28 @@
 {
   "name": "openprogram-desktop",
-  "version": "0.1.0",
+  "version": "0.6.1",
   "private": true,
   "description": "Electron desktop shell for OpenProgram",
+  "author": "Fzkuji",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://openprogram.io/",
+  "repository": "https://github.com/Fzkuji/OpenProgram",
   "main": "main.js",
   "scripts": {
     "dev": "electron .",
-    "check": "npm run check:webtabs && npm run check:tab-transfer-store && npm run check:worker-auth && npm run check:worker-recovery",
+    "check": "npm run check:webtabs && npm run check:tab-transfer-store && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime",
     "check:webtabs": "node scripts/check-webtab-navigation.js",
     "check:tab-transfer-store": "node scripts/check-tab-transfer-store.js",
     "check:worker-auth": "node scripts/check-worker-start-url.js",
     "check:worker-recovery": "node scripts/check-worker-recovery.js",
+    "check:packaged-runtime": "node scripts/check-packaged-runtime.js",
     "icon:build": "bash scripts/build-icon.sh",
     "icon:check": "bash scripts/check-icon.sh",
-    "dist": "npm run icon:build && npm run icon:check && electron-builder --dir"
+    "prepare:runtime": "bash ../scripts/prepare-desktop-runtime.sh",
+    "dist": "npm run dist:dir",
+    "dist:dir": "npm run prepare:runtime && electron-builder --dir",
+    "dist:mac": "npm run prepare:runtime && npm run icon:build && npm run icon:check && electron-builder --mac dmg zip",
+    "dist:linux": "npm run prepare:runtime && electron-builder --linux AppImage"
   },
   "devDependencies": {
     "electron": "^37.2.0",
@@ -25,6 +34,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "packaged-runtime.js",
       "worker-start-url.js",
       "tab-transfer-store.js",
       "browsing-history-store.js"
@@ -33,12 +43,34 @@
       "output": "dist",
       "buildResources": "build"
     },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "extraResources": [
+      {
+        "from": "build/runtime",
+        "to": "runtime",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "mac": {
       "target": [
-        "dir",
+        "dmg",
         "zip"
       ],
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "notarize": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.png",
+      "category": "Development",
+      "executableName": "openprogram"
     }
   }
 }

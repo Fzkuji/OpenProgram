@@ -30,17 +30,11 @@ Everything lives under `~/.openprogram/` by default: `config.json` (configuratio
 
 ## How do I update to the latest version?
 
-```bash
-openprogram update           # check and apply updates
-openprogram update --check   # check only, don't apply
-openprogram update --force   # bypass the 6-hour throttle, check now
-```
-
-The worker also auto-checks for updates in the background at startup (at most once every 6 hours). See [Upgrading](../install/upgrade.md).
+Stable desktop and CLI installations move only to an explicit published version. Desktop users replace the DMG/AppImage; CLI/server users run the installer from the target version tag. Source-checkout developers use `openprogram upgrade`. See [Upgrading](../install/upgrade.md).
 
 ## The page opened by `openprogram web` won't load?
 
-The page to open is **http://localhost:18100** — the single port that serves both the web UI and the API. If nothing is on 18100 at all, the web UI most likely wasn't built — re-run `./scripts/install.sh`.
+The page to open is **http://localhost:18100** — the single port that serves both the Web UI and API. A release wheel already contains the Web export; reinstall the exact release if it is missing. In a source checkout, run the development installer to rebuild it.
 
 ## The service doesn't seem to be up / behaves oddly — how do I debug?
 

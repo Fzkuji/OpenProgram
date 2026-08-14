@@ -1,273 +1,91 @@
 # Installation
 
-## The model — read this first
+OpenProgram has separate release installations for desktop users and CLI/server users. Source checkout installation is for development only.
 
-**OpenProgram is the host. You install it once, then add agent *programs* into it.**
+## Supported installation matrix
 
-```
-OpenProgram  (the host runtime — install this first, anywhere you like)
-└── openprogram/programs/agentic_functions/      ← owner-installed programs live here
-    ├── GUI-Agent-Harness/               ← `gui_agent`      (clone in + run its installer)
-    ├── Research-Agent-Harness/          ← `research_agent` (openprogram programs install research)
-    └── Wiki-Agent-Harness/              ← `wiki_agent`     (openprogram programs install wiki)
-```
+| Platform | Desktop | CLI / Server | Browser client |
+|---|---|---|---|
+| macOS arm64 / x64 | DMG | Supported | Local or remote |
+| Linux x86_64 | AppImage | Supported | Local or remote |
+| Linux arm64 | No desktop artifact | Supported | Local or remote |
+| Windows | Not supported | Not supported | May connect to a supported remote host |
+| iOS / Android / iPadOS | No native app | Not applicable | May connect to a supported remote host; mobile layout is not a support commitment |
 
-A program installed with `openprogram programs install` is source-recorded and
-registered at launch (`import_installed_programs()` imports its `agentics`
-sub-package, firing the `@agentic_function` decorator), so it appears in the
-**web UI** and function list. An unrecorded directory is not imported. Install
-order is therefore always: **OpenProgram first, then the program(s).**
+Only artifacts attached to a published [GitHub Release](https://github.com/Fzkuji/OpenProgram/releases) are release installations. CI artifacts and source-checkout builds are not stable releases.
 
-> ⚠️ Installing just the Python package is **not** the whole job — it doesn't
-> build the web UI (needs `npm`), fetch the GUI agent's model weight, or warm the
-> OCR models. **The install script below is the source of truth** — it does
-> everything.
+## Desktop installation
 
----
+Desktop artifacts contain Electron, a managed CPython runtime, OpenProgram's Python dependencies, and the prebuilt Web UI. They do not use a system Python, Node.js, or Git at runtime.
 
-## One command (recommended)
+### macOS
 
-**macOS / Linux**
-```bash
-curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash
-# from a checkout: ./scripts/install.sh   # everything · bare host: --minimal
-```
+1. Download the DMG for the machine architecture from GitHub Releases.
+2. Verify its SHA-256 against the release checksum file.
+3. Open the DMG and copy `OpenProgram.app` to `/Applications`.
+4. Start OpenProgram from Applications. The published app must pass Gatekeeper validation.
 
-**Windows (PowerShell)**
-```powershell
-iwr -useb https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.ps1 | iex
-# from a checkout: .\scripts\install.ps1   # everything · bare host: -Minimal
-```
+### Linux x86_64
 
-When not run from a checkout, the script first clones the repo to `~/OpenProgram`
-(change with `--target DIR`), then hands off to the install. The default install
-brings up **everything light** in the host: web UI (built), terminal UI, browser
-tool + channels. Agent programs (GUI / Research / Wiki) are **not part of the
-default install** — with a terminal attached the script shows a menu to pick
-them, or add them later with `openprogram programs install <research|wiki|gui>`
-(GUI downloads PyTorch), or via `openprogram setup` → programs. `--minimal`
-installs a bare host instead.
-
-Then just start it — the **first run walks you through provider setup**, then
-opens the chat:
-```bash
-openprogram                                   # first run = guided provider setup, then chat
-openprogram web                               # or the browser UI -> http://localhost:18100
-```
-
-The installer is **idempotent** — re-run it any time to repair or update.
-
----
-
-## What the installer does
-
-| Step | Action | Notes |
-|------|--------|-------|
-| 1 | Verify / install **Python 3.11+, Node 20+, git** | macOS `brew` / Linux `apt`·`dnf`·`pacman` / Windows `winget`. Best-effort. |
-| 2 | **Python env** | Active `venv`/conda if any, else creates `./.venv`. Override: `--python` / `-Python`. This is the "wherever you want" location. |
-| 3 | **OpenProgram** editable install (`pip install -e .`) | The host + base deps. |
-| 4 | **Web UI** — `npm install && npx next build` in `web/` | Builds the static export (`web/out/`) the Python worker serves on **:18100**. Node is needed at build time only. `--minimal` skips the build (the worker builds on first start). |
-| 5 | **Ink TUI** — `npm install && npm run build` in `cli/` | POSIX only; Windows uses the Rich REPL. `--minimal` skips. |
-| 6 | **Agent programs (opt-in)** — menu when a terminal is attached, or `--programs <research\|wiki\|gui\|all>` | **No program installs by default.** When selected: `research` / `wiki` are pure Python, cloned into `programs/agentic_functions/` as in-tree git checkouts that auto-register (`research` needs nothing beyond openprogram; `wiki` adds Jinja2 + PyYAML); `gui` pulls PyTorch (~300 MB — the CPU wheel is auto-selected on GPU-less Linux; ~3 GB only on CUDA boxes). Add any of them later with `openprogram programs install <name>`. |
-| 7 | **Browser tool + channels** | `pip install -e .[all]` + `playwright install chromium` (~150 MB). `--minimal` skips. Heavier stealth browsers / agent-browser stay opt-in — see [Extras](#extras). |
-
----
-
-## Flags
-
-The full flag matrix (`install.sh --help` prints it; the PowerShell flags are documented at the top of `install.ps1`):
-
-| Flag (POSIX) | Flag (Windows) | Controls | Default |
-|--------------|----------------|----------|---------|
-| `--minimal` | `-Minimal` | Bare host: skip web build / TUI / programs / extras | off (everything light) |
-| `--python /path/python` | `-Python C:\path\python.exe` | Target a specific Python interpreter | auto-detect (active venv/conda, else create `./.venv`) |
-| `--stealth` | `-Stealth` | Also install stealth browsers (patchright + camoufox, ~350 MB) | off |
-| `--agent-browser` | `-AgentBrowser` | Also install the global npm `agent-browser` (~150 MB) | off |
-| `--programs <gui\|research\|wiki\|all>` | `-Programs <…>` | Install agent programs non-interactively during the install (repeatable or comma-separated) | none (pick in the first-run wizard) |
-| `--target DIR` | `-Target DIR` | Where to clone when run from the web | `~/OpenProgram` (Win: `$HOME\OpenProgram`) |
-| `--yes` / `-y` | `-Yes` | Skip all prompts, take every default | off (menu when a terminal is attached) |
-
-Explicit CUDA/CPU PyTorch for the GUI harness: run its own installer after the
-host install — `openprogram/programs/applications/gui_harness/scripts/install.sh --cuda cu124`.
-
-### Non-interactive / AI-agent installs
-
-For agent-driven installs, **no special flags are needed**: the `curl … | bash`
-one-liner already runs unattended. Without a terminal (piped, CI) it takes the
-defaults automatically; even with a terminal, every `/dev/tty` read has a
-60-second timeout that falls back to the default (printing a one-line
-`(no input in 60s — using default)`) — so **no prompt can hang forever**. Change
-the timeout with `OPENPROGRAM_PROMPT_TIMEOUT=<seconds>`.
-
-To take the defaults immediately instead of waiting out the timeout, add
-`--yes` / `-y`; to also install agent programs non-interactively, add
-`--programs all` (or `gui` / `research` / `wiki`). These **environment
-variables** are equivalent to `--yes` — if any matches, all defaults are taken
-and no prompt is shown:
-
-| Environment variable | Triggers when |
-|----------------------|---------------|
-| `CI` | non-empty (the common CI convention — GitHub Actions etc.) |
-| `DEBIAN_FRONTEND` | equals `noninteractive` (the Debian/Ubuntu convention) |
-| `OPENPROGRAM_INSTALL_YES` | non-empty (this project's own switch) |
-
-Fully non-interactive, with agent programs included, in one command:
+1. Download the x86_64 AppImage and checksum file from GitHub Releases.
+2. Verify the SHA-256.
+3. Make the file executable and start it:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash -s -- -y --programs all
+chmod u+x OpenProgram-*-linux-x64.AppImage
+./OpenProgram-*-linux-x64.AppImage
 ```
 
-> Windows' `Read-Host` has no timeout mechanism, so `install.ps1` prompts do
-> **not** fall back to defaults on their own — on Windows an agent must pass
-> `-Yes` or set one of the environment variables above.
+The AppImage does not require root. A Linux arm64 desktop artifact is not currently published.
 
----
+## CLI and server installation
 
-## Adding agent programs
+The release installer supports macOS and Linux. It installs a pinned uv binary, a managed CPython runtime, and one exact OpenProgram wheel under `~/.openprogram/runtime/cli/releases/<version>`. It does not clone the repository or build JavaScript.
 
-Programs installed through the CLI land in `programs/agentic_functions/<Repo>/` and
-register on the next start. The same command works for bundled harnesses and
-third-party repositories; run a harness-specific installer afterward when it
-has additional assets:
+Use the installer from the same immutable release tag as the package version:
 
 ```bash
-openprogram programs install <harness-repo>
-cd openprogram/programs/agentic_functions/<Harness>
-./scripts/install.sh          # if it ships one (Windows: .\scripts\install.ps1)
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
+  | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
-The **GUI agent** has native deps (PyTorch, detector weight, OCR), so it ships its
-own per-platform installer — use it via the steps above; full guide in its
-[install section](https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/programs/applications/gui_harness#1-install).
-(When GUI is opted in — checked in the menu, or `--programs gui`/`all` — the install script clones it and pulls PyTorch; run the harness's own installer afterwards for its asset setup or an explicit CUDA/CPU torch.)
+The command creates `~/.local/bin/openprogram`. If that directory is not already on `PATH`, invoke it by its absolute path or add the directory to the shell configuration.
 
-For the bundled harnesses there's a one-line shortcut that clones, installs,
-and registers them for you:
-```bash
-openprogram programs install research     # or: wiki / gui / all
-openprogram programs available            # see install status
-```
-`programs install` clones the repo and pip-installs its declared deps
-(**non-editable**: deps go to site-packages, the code runs in-tree). For `gui`
-that includes PyTorch, but **not** native assets like the YOLO weight or the
-OCR warm-up — run the GUI harness's own installer (above) for those.
-
-After any of these, restart the worker (or hit **Refresh** on the Programs page)
-and the program shows in the web UI. Third-party harnesses install the same way —
-`openprogram programs install <git-url | owner/repo>`; details:
-[installing-harnesses.md](../capabilities/installing-harnesses.md).
-
----
-
-## Extras
-
-The **browser tool + chat channels install by default** (the `[all]` extra), and
-the installer fetches the Playwright Chromium binary for you — nothing to opt into.
-Pass `--minimal` / `-Minimal` to skip them (e.g. CI / air-gapped / bandwidth-limited).
-
-| Default extra | Installs | Post-install (automated) | Size |
-|---------------|----------|--------------------------|------|
-| browser (`[browser]`) | `playwright` | `playwright install chromium` | ~150 MB |
-| channels (`[channels]`) | `discord.py`, `slack_sdk`, `qrcode` | *(set tokens in `~/.openprogram/config.json`)* | small |
-
-Heavier, still opt-in (add the flag):
-
-| Flag / extra | Installs | Post-install (automated) | Size |
-|--------------|----------|--------------------------|------|
-| `--stealth` · `[browser-stealth]` | `patchright`, `camoufox` | `patchright install chromium`, `camoufox fetch` | ~350 MB |
-| `--agent-browser` · `[agent-browser]` | global npm `agent-browser` | `agent-browser install` | ~150 MB |
-
-Provider SDKs (`anthropic`, `openai`, `google-genai`) ship in the base install —
-no extra needed.
-
----
-
-## Providers / credentials
-
-At least one provider is required before any chat turn:
-```bash
-openprogram providers login openai-codex      # ChatGPT subscription (recommended)
-openprogram providers login anthropic          # Claude
-export ANTHROPIC_API_KEY=sk-ant-...             # …or an API key (Windows: $env:ANTHROPIC_API_KEY="...")
-```
-Auto-adopts an installed Claude Code / Codex / Gemini CLI. Check with `openprogram doctor`.
-
----
-
-## Ports
-
-One port serves everything — the FastAPI worker hosts the API, the WebSocket, and the web UI static export:
-
-| Port | Service | Notes |
-|------|---------|-------|
-| **18100** | Python worker (API + WebSocket + web UI) | `http://localhost:18100` |
-
-Change with `openprogram ports --port <p>` (or `OPENPROGRAM_WEB_PORT` for one run).
-
----
-
-## Full dependency matrix
-
-Everything beyond `pip`. The installer handles every "auto" row.
-
-### Host (OpenProgram)
-
-| Item | Required for | How | Platform | Auto? |
-|------|--------------|-----|----------|-------|
-| Python ≥ 3.11 | everything | system / pyenv / conda | all | check |
-| Node.js ≥ 20 + npm | web UI build, TUI (build time only — runtime is Python) | nodejs.org / pkg mgr | all | install |
-| git | sessions are git repos | pkg mgr | all | install |
-| `web/node_modules` | web UI (:18100) | `npm install` in `web/` | all | **auto** |
-| `cli/` Ink bundle | TUI | `npm install && npm run build` in `cli/` | macOS/Linux | **auto** |
-| provider credential | any chat turn | `openprogram providers login` (or settings UI) | all | manual |
-| Playwright / patchright / camoufox / agent-browser | browser tools | flags above | all | flag |
-
-### GUI-Agent-Harness program (opt-in — once selected; see [Adding agent programs](#adding-agent-programs))
-
-| Item | Required for | How | Platform | Auto? |
-|------|--------------|-----|----------|-------|
-| PyTorch (+ torchvision) | YOLO / OCR | pip resolves the default build; the harness's own installer auto-detects NVIDIA GPU → CUDA (`--cpu` / `--cuda cuXXX` to force) | all | **auto** |
-| harness Python deps | core | `pip install -e .[ocr]` (ultralytics, opencv, pynput, easyocr) | all | **auto** |
-| **GPA YOLO weight** `model.pt` | element detection | `Salesforce/GPA-GUI-Detector` → `~/GPA-GUI-Detector/model.pt` | all | **auto** |
-| EasyOCR models (en + ch_sim) | text detection | pre-warmed (`~/.EasyOCR/model`, ~300 MB) | Win/Linux | **auto** |
-| `xclip` (+ wmctrl/xdotool/scrot) | clipboard, windows | `apt install …` | Linux | **auto** |
-| Xcode CLT (Swift) | Apple Vision OCR | `xcode-select --install` | macOS | best-effort* |
-| Screen Recording + Accessibility | screenshots, clicks | System Settings → Privacy | macOS | manual |
-| Win32 + PowerShell clipboard | everything | built-in | Windows | n/a |
-
-\* EasyOCR is installed as a cross-platform fallback, so the GUI agent works on
-macOS without Xcode CLT — Apple Vision is just faster. Full GUI specifics:
-[GUI-Agent-Harness/docs/install.md](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/applications/gui_harness/docs/install.md).
-
----
-
-## Troubleshooting
-
-- **`openprogram web` showed a page that won't load.**
-  The web UI static export (`web/out/`) wasn't built — the `web/` `node_modules`
-  weren't installed. Re-run the installer, then open **http://localhost:18100**.
-- **`pip` can't reinstall: `WinError 32 … openprogram.exe is being used`.**
-  Stop the running `openprogram web` / worker first, then re-run.
-- **`gui_agent` doesn't appear in the UI.** Restart the worker (or Refresh the
-  Programs page). Confirm it's registered: `openprogram programs available`.
-- **NVIDIA GPU unused.** The installer auto-detects it; if it picked CPU (no driver at install time, or you passed `--cpu`): `pip uninstall -y torch torchvision`, then re-run the installer.
-- **GPA weight didn't download** (offline): `hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector`.
-
----
-
-## Manual / advanced
+Verify the installation:
 
 ```bash
-python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -e .                                  # host
-( cd web && npm install )                         # web UI
-( cd cli && npm install && npm run build )         # TUI (POSIX)
-# GUI program (editable, in-tree → auto-registers):
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-pip install -e "openprogram/programs/applications/gui_harness[ocr]"
-hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector
-python -c "import easyocr; easyocr.Reader(['en','ch_sim'], gpu=False)"
+~/.local/bin/openprogram --version
+~/.local/bin/openprogram doctor
+~/.local/bin/openprogram web
 ```
 
-Multi-repo local development (editing several harnesses side-by-side):
-[troubleshooting.md → Local-development install](../server/troubleshooting.md#local-development-install-multi-repo).
+The Web UI is served at `http://localhost:18100`. The released wheel contains the prebuilt Web UI, so Node.js is not required.
+
+## Programs and optional components
+
+Agent programs are not part of the base desktop or CLI artifact. Use `openprogram programs install <name-or-git-source>` only in an installation whose Program environment support is documented by that release. The current Program installer modifies its active Python environment, so it is not enabled as a supported operation inside an immutable desktop package yet.
+
+Browser models, GUI-agent weights, OCR data, and third-party Programs may require separate downloads. Their absence does not invalidate the base installation.
+
+## Development checkout
+
+Contributors use a source checkout:
+
+```bash
+git clone https://github.com/Fzkuji/OpenProgram.git
+cd OpenProgram
+./scripts/install.sh
+```
+
+This development installer may install toolchains, use an editable Python package, and build the Web and Ink interfaces with npm. It is not the recommended installation for ordinary users and does not define the `stable` channel.
+
+## Data and removal
+
+Configuration, sessions, logs, Programs, and caches live under `~/.openprogram`; replacing the desktop application or CLI runtime does not delete them.
+
+- Desktop: remove `OpenProgram.app` or the downloaded AppImage.
+- CLI runtime: remove `~/.local/bin/openprogram` and `~/.openprogram/runtime/cli`.
+- User data is removed only by an explicit purge of `~/.openprogram` after backup.
+
+See [Upgrading](upgrade.md) for version changes and [Profiles](profiles.md) for isolated state directories.

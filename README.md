@@ -16,7 +16,7 @@
   <a href="https://github.com/Fzkuji/OpenProgram/releases/tag/v0.6.0"><img alt="Release" src="https://img.shields.io/github/v/release/Fzkuji/OpenProgram?style=flat-square&color=blue"></a>
   <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
   <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square"></a>
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey?style=flat-square">
   <a href="https://github.com/Fzkuji/OpenProgram/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/Fzkuji/OpenProgram/ci.yml?branch=main&style=flat-square&label=build"></a>
   <a href="https://github.com/Fzkuji/GUI-Agent-Harness"><img alt="OSWorld" src="https://img.shields.io/badge/OSWorld_Multi--Apps-79.8%25-brightgreen?style=flat-square"></a>
   <a href="https://github.com/Fzkuji/OpenProgram/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Fzkuji/OpenProgram?style=flat-square"></a>
@@ -50,7 +50,7 @@
 
 ## What makes it different
 
-Multi-platform, multi-provider, multi-channel — table stakes; OpenProgram has them (macOS / Linux / Windows, any LLM, terminal / browser / chat). What sets it apart are **four mechanisms in the harness itself — one primitive and the three things it unlocks, each the foundation for a class of agent you can build on top.**
+OpenProgram supports macOS and Linux release installations, multiple providers, and terminal, browser, and chat interfaces. Windows and mobile devices can only act as browser clients to a supported remote host. The harness itself provides **four mechanisms — one primitive and the three capabilities it enables.**
 
 ### ① Agentic Function — the primitive everything else is built on
 
@@ -160,17 +160,14 @@ A **foundation, honestly labelled**: the plumbing is in place and the proactive 
 
 ### 1. Install
 
-**macOS / Linux:**
+**macOS / Linux CLI or server release:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
+  | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
-**Windows (PowerShell):**
-```powershell
-iwr -useb https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.ps1 | iex
-```
-
-More options — flags, unattended / AI-agent install, installing from a checkout: **[docs/install/install.md](docs/install/install.md)**.
+Desktop users download the macOS DMG or Linux x86_64 AppImage from [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases). Platform scope, verification, and source-development installation are documented in **[docs/install/install.md](docs/install/install.md)**.
 
 ### 2. Run
 
@@ -316,7 +313,7 @@ Opens at `http://localhost:18100`. The full surface: a live **mini-DAG** of the 
 
 ### Terminal UI — `openprogram`
 
-The same backend without the browser — same commands, same chat history. Picks the native renderer per OS: **Ink** on macOS / Linux, **Rich** on Windows. Best for staying in the terminal or over SSH. One-shot, no UI: `openprogram --print "…"`.
+The same backend without the browser — same commands, same chat history. Release installs include the Python terminal interface; source-development installs can also build Ink on macOS/Linux. One-shot, no UI: `openprogram --print "…"`.
 
 <p align="center">
   <img src="docs/images/tui_hero.png" alt="OpenProgram terminal UI — welcome screen listing the model, agents, sessions, and the registered skills / providers / tools / applications" width="570">
