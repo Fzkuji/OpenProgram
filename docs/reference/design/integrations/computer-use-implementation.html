@@ -62,6 +62,33 @@
   <li><code>git diff --check</code></li>
 </ul>
 
+<h2>安装版 E2E 验证</h2>
+<div class="card">
+  <p><strong>测试对象：</strong><code>/Applications/OpenProgram.app</code> 0.6.1。测试没有用 Electron 源码启动；桌面进程和 18101 worker 均来自应用包，worker Python 为 <code>Contents/Resources/runtime/python/cpython-3.12.10-macos-aarch64-none/bin/python3.12</code>。</p>
+  <p><strong>隔离方式：</strong>使用 profile <code>browser-agent-installed-20260814</code> 和端口 18101，避免影响同时运行的其他 OpenProgram worker。模型配置来自该 profile 的本地副本。</p>
+</div>
+<table>
+  <thead><tr><th>场景</th><th>运行证据</th><th>结论</th></tr></thead>
+  <tbody>
+    <tr><td>DOM-first 表单</td><td>Session <code>local_38e090f085</code>；输入 <code>browser-agent-installed-final</code>，点击 pushState，<code>url_contains ?p=1</code> 通过；2 次页面写动作，0 次 screenshot，0 个 tool error。</td><td class="pass">PASS</td></tr>
+    <tr><td>单图视觉输入</td><td>Session <code>local_7a8021f999</code>；tool trace 为 <code>observe → screenshot → verify</code>；恰好 1 次 screenshot，返回 <code>ImageContent</code> 与 <code>mime_type='image/png'</code>，无 validation error。</td><td class="pass">PASS</td></tr>
+    <tr><td>模型原生 vision 判断</td><td>模型基于该 screenshot 判断当前 viewport 含浅色紫色渐变区域。该项是模型语义判断，不是 DOM assertion。</td><td class="pass">已获得视觉结果</td></tr>
+    <tr><td>确定性完成判定</td><td>同一视觉 session 的 <code>title_contains Desktop Transfer Acceptance</code> 返回 <code>passed=true</code>，Runtime 因此输出 <code>status=succeeded</code>、<code>reason_code=verified</code>。该 assertion 只验证标题，不单独证明渐变判断正确。</td><td class="pass">PASS，证据范围受限</td></tr>
+  </tbody>
+</table>
+
+<h2>安装版缺陷闭环</h2>
+<table>
+  <thead><tr><th>缺陷</th><th>修复</th><th>验证</th></tr></thead>
+  <tbody>
+    <tr><td><code>ToolReturn</code> 用 <code>media_type</code> 构造 provider 图片，截图调用触发缺少 <code>mime_type</code> 的 Pydantic validation error。</td><td><code>3c850a91</code> 改为 provider 类型要求的 <code>mime_type</code>；screenshot 未传 frame ID 时复用最新 observation，并继续限制同一 frame 只截图一次。</td><td>Browser/tool runtime 相关测试 74 passed；安装版视觉 trace 中 PNG image block 成功到达模型。</td></tr>
+    <tr><td>自动检测到 provider.json 提供的 <code>minimax-cn-coding-plan</code> 后，<code>create_runtime()</code> 仍直接索引六项内置表，抛出 <code>KeyError</code>。</td><td><code>2acf630b</code> 将动态 provider 路由到通用 API Runtime，并规范化带 provider 前缀的 model。</td><td>Provider routing 6 passed；安装版 session 成功创建 <code>minimax-cn-coding-plan:MiniMax-M3</code> Runtime。</td></tr>
+    <tr><td>桌面内嵌 runtime 只安装基础 wheel，没有 Playwright Python 包，CDP session 无法创建。</td><td><code>334d0abc</code> 让桌面 runtime 安装 wheel 的 <code>[browser]</code> extra，并在构建时导入检查 <code>playwright.sync_api</code>；不下载 Playwright Chromium。</td><td>发布回归测试、Bash 语法和 Ruff 通过；安装包内嵌 Python 导入通过；DOM 与视觉 E2E 均通过。</td></tr>
+  </tbody>
+</table>
+
+<p>本地 macOS 构建未签名。依赖安装同时报告 Web 依赖 8 个 high severity、Desktop 依赖 2 个 moderate 与 5 个 high severity；本任务未执行会改写依赖树的 <code>npm audit fix</code>。</p>
+
 <h2>任务账本</h2>
 <table>
   <thead><tr><th>项目</th><th>证据</th><th>状态</th></tr></thead>
