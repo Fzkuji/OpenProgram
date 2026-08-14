@@ -86,7 +86,7 @@
     <thead><tr><th>层级</th><th>允许依赖</th><th>禁止依赖</th><th>默认执行</th></tr></thead>
     <tbody>
       <tr><td><b>contracts</b></td><td>AST、tracked files、manifest、registry、schema</td><td>外部服务；用源码文本代替行为断言</td><td>每次 PR</td></tr>
-      <tr><td><b>unit</b></td><td>内存对象、纯函数、局部 fake</td><td>TestClient、socket、subprocess、真实后台线程、固定 sleep</td><td>Python 3.11/3.12/3.13</td></tr>
+      <tr><td><b>unit</b></td><td>内存对象、纯函数、局部 fake、单模块使用的隔离临时文件；生产模块内部受控且可清理的线程资源</td><td>TestClient、socket、subprocess、测试代码直接创建的真实后台线程或线程池、固定 sleep</td><td>Python 3.11/3.12/3.13</td></tr>
       <tr><td><b>component</b></td><td>tmp_path、临时 SQLite、TestClient、fake provider、受控线程</td><td>外部网络和真实凭证</td><td>Python 3.12</td></tr>
       <tr><td><b>integration</b></td><td>loopback HTTP/WS、真实 subprocess、多个生产模块</td><td>外部服务</td><td>Python 3.12</td></tr>
       <tr><td><b>e2e</b></td><td>公开 CLI、真实 worker、构建后的 Web、浏览器</td><td>开发者真实 HOME 和预先存在的构建产物</td><td>专用 CI job</td></tr>
@@ -101,7 +101,7 @@
     <li>顶层 <code>conftest.py</code> 仅保留防止访问真实用户状态所必需的隔离；产品域 fixture 放在局部目录。</li>
     <li>临时 HOME 具有确定的清理阶段。测试不能依赖真实 <code>~/.openprogram</code>。</li>
     <li>等待并发结果使用 Event、Condition 或带截止时间的条件等待；unit 中禁止固定 sleep。</li>
-    <li>测试不能替换 Python 标准库的进程全局线程类。后台资源必须在 fixture teardown 中 join 或关闭。</li>
+    <li>测试不能替换 Python 标准库的进程全局线程类，也不能直接创建真实线程或线程池。生产模块内部创建的后台资源必须在 fixture teardown 中 join 或关闭。</li>
     <li>一个生产缺陷对应一个通过最低公开边界复现的 regression test。</li>
   </ul>
 
@@ -144,14 +144,14 @@
   <h2>8. 验收标准</h2>
   <ul>
     <li>clean checkout 和包含 ignored/nested repository 文件的 checkout 收集相同 tracked tests，并产生相同 contracts 结果。</li>
-    <li>unit 不使用 TestClient、subprocess、socket、真实后台线程或固定 sleep。</li>
+    <li>unit 测试代码不直接使用 TestClient、subprocess、socket、真实后台线程或线程池、固定 sleep；生产模块内部线程资源必须在 teardown 中回收。</li>
     <li>Python required suites 无未处理线程 warning，连续三次固定 xdist worker 执行无 worker crash。</li>
     <li>缺少前端产物的 component 行为与构建后 CSP 的 e2e 行为分别验证。</li>
     <li>CLI、Web、desktop 的 package scripts 全部由 CI 执行。</li>
     <li>测试迁移前后 test 数量、skip 和 xfail 变化均有明确记录。</li>
     <li>required Python suite 为零失败；已知产品缺陷不能作为完成状态保留。</li>
     <li>覆盖率先建立可复现基线，再以不高于实测基线的阈值阻止回退；阈值提高必须由新增有效测试支持。</li>
-    <li>unit 结构契约识别直接导入、别名导入和标准库线程类 monkeypatch，不只识别模块属性调用。</li>
+    <li>unit 结构契约识别直接和别名资源导入、sleep 函数直接导入与标准库线程类替换；autouse 运行时保护拦截测试代码直接启动真实线程、构造线程池或执行固定等待。unit 只允许模块限定的 <code>asyncio.sleep(0)</code>，其位置参数与关键字参数形式均作为调度让步允许。</li>
     <li>npm 依赖风险按 workspace 单独审计；只采用兼容当前构建和测试的升级，不使用强制破坏性升级。</li>
   </ul>
 
@@ -164,7 +164,7 @@
       <tr><td>Python 目录迁移</td><td><span class="tag ok">已完成</span></td><td>目录与 marker 迁移完成；HTTP inventory 重复实现、agentic context 结构契约误报和 retry 测试隔离问题已修复；最终 required suite 为 5356 passed、10 skipped、1 xfailed，独立规格与质量审查通过</td></tr>
       <tr><td>Web/CLI/desktop</td><td><span class="tag ok">已完成</span></td><td>Web pure helper 使用 node:test，component 与 built-Web/browser e2e 分离；Web check/build、CLI typecheck/Vitest/build、desktop check 与独立审查通过</td></tr>
       <tr><td>CI 与贡献文档</td><td><span class="tag ok">已完成</span></td><td>八类独立 CI 结果、三版本 unit matrix、locked uv、完整 Web/CLI/desktop/browser 命令与贡献文档 contract；独立审查通过</td></tr>
-      <tr><td>等待、并发与大文件</td><td><span class="tag warn">补强中</span></td><td>主要并发测试已改用 Event/单调截止时间，retry unit 测试已显式隔离共享运行状态；结构契约仍需覆盖别名导入和线程类 monkeypatch</td></tr>
+      <tr><td>等待、并发与大文件</td><td><span class="tag ok">已完成</span></td><td>结构契约覆盖资源导入、固定等待与全局线程类替换；unit autouse guard 检查测试直接创建线程/线程池、固定等待、生产资源 teardown 和全局状态恢复；4 个真实 runner/threadpool 文件共 83 个测试迁至 component；最终 required suite 为 5383 passed、10 skipped、2 deselected、1 xfailed</td></tr>
       <tr><td>覆盖率和最终验证</td><td><span class="tag warn">补强中</span></td><td>Python 3.12 串行 unit branch coverage 当前基线为 43%，尚未设置防回退阈值；完整门禁须在最后一个实现改动后重新执行</td></tr>
     </tbody>
   </table></div>
@@ -175,7 +175,7 @@
     <thead><tr><th>批次</th><th>范围</th><th>排除</th><th>门禁</th><th>状态</th></tr></thead>
     <tbody>
       <tr><td>required suite 归零</td><td>移除未被注册表使用的旧 channel 实现；修正 <code>@function</code> / <code>@agentic_function</code> 结构契约误报；隔离 retry 测试状态</td><td>不改变受管理 channel 实现和公开 API</td><td>4 个失败节点专项通过；最终 required suite 为 5356 passed、10 skipped、1 xfailed；独立规格与质量审查通过</td><td><span class="tag ok">已完成</span></td></tr>
-      <tr><td>结构与等待契约</td><td>识别别名导入、线程类 monkeypatch 和非零异步等待；迁移或改写实际违规测试</td><td>不按文件行数机械拆分测试</td><td>结构契约 RED/GREEN；unit 全量通过</td><td><span class="tag">待执行</span></td></tr>
+      <tr><td>结构与等待契约</td><td>识别别名资源导入、线程类替换和非零异步等待；运行时拦截测试直接创建线程或线程池；迁移或改写实际违规测试</td><td>不实现 Python 控制流解释器，不按文件行数机械拆分测试</td><td>结构与运行时契约通过；unit 为 2431 passed、3 skipped；4 个迁移 component 文件为 83 passed；独立规格和质量审查通过</td><td><span class="tag ok">已完成</span></td></tr>
       <tr><td>覆盖率门禁</td><td>记录精确 branch baseline；设置防回退阈值；只补关键未覆盖分支</td><td>不追求任意高覆盖率数字，不为覆盖率复制断言</td><td>串行 unit coverage 和 XML artifact 通过阈值</td><td><span class="tag">待执行</span></td></tr>
       <tr><td>JavaScript 依赖风险</td><td>分别审计 Web、CLI、desktop；升级可兼容依赖并验证 lockfile</td><td>不执行 <code>npm audit fix --force</code>，不引入新 runner</td><td>audit 结果记录；check/test/typecheck/build 全部通过</td><td><span class="tag">待执行</span></td></tr>
       <tr><td>最终集成</td><td>合入最新 main，执行 Python、Web、CLI、desktop、browser、docs、examples 和 diff/status 门禁</td><td>不覆盖主工作区未提交修改，不远程 push</td><td>最终候选独立规格和质量审查通过，工作树 clean</td><td><span class="tag">待执行</span></td></tr>

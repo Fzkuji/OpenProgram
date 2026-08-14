@@ -19,6 +19,8 @@ See docs/reference/design/runtime/agent-collaboration.md.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from openprogram.programs.functions.agent.agent.agent import _agent_impl
@@ -164,7 +166,11 @@ def test_same_session_dispatch_result_reaches_the_dispatcher(parent_turn, monkey
     def run_inline(target=None, daemon=None, **_kw):
         return type("_T", (), {"start": lambda self_: target()})()
 
-    monkeypatch.setattr(runner_mod.threading, "Thread", run_inline)
+    monkeypatch.setattr(
+        runner_mod,
+        "threading",
+        SimpleNamespace(Thread=run_inline, Lock=runner_mod.threading.Lock),
+    )
     runner_mod.get_runner()._dispatch_followup(task)
 
     assert seen["session_id"] == "p1"

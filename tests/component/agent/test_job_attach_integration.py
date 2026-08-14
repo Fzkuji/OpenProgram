@@ -1,4 +1,4 @@
-"""Async job → attach pointer integration.
+"""Async job → attach pointer component coverage.
 
 When an async job completes, the runner updates the placeholder
 attach card created by ``_run_spawn_async`` so its
@@ -11,11 +11,23 @@ ContextCommit.
 """
 from __future__ import annotations
 
+import atexit
 import json
 import threading
 import time
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def runner_lifecycle(monkeypatch):
+    """Run the real local pool under the worker lock and always close it."""
+    import openprogram.agent.job.runner as runner_mod
+
+    runner_mod.shutdown_runner()
+    monkeypatch.setattr("openprogram.worker.lock.is_held_by", lambda _pid: True)
+    yield
+    runner_mod.shutdown_runner()
 
 
 @pytest.fixture
@@ -38,7 +50,14 @@ def isolated_store(tmp_path, monkeypatch):
         "timestamp": 0, "predecessor": "u1",
     })
     s.commit_turn("p1", "init")
-    return s
+    try:
+        yield s
+    finally:
+        timer = s._index_timer
+        s._flush_index()
+        if timer is not None:
+            timer.join(timeout=1)
+        atexit.unregister(s._flush_index)
 
 
 def test_runner_updates_attach_card_on_completion(isolated_store, monkeypatch):

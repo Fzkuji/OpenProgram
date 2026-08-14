@@ -15,7 +15,7 @@ These lock:
 """
 from __future__ import annotations
 
-import threading
+from types import SimpleNamespace
 
 import pytest
 
@@ -84,7 +84,9 @@ def test_parent_precreates_node_and_moves_head(monkeypatch, tmp_path):
             def is_alive(_s):
                 return False
         return _T()
-    monkeypatch.setattr(threading, "Thread", _inline_thread)
+    monkeypatch.setattr(
+        routes_chat, "threading", SimpleNamespace(Thread=_inline_thread)
+    )
 
     res = routes_chat.run_agentic_function_call("word_count", {"text": "hi"}, "s1")
     assert "error" not in res

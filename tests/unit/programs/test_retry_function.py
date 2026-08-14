@@ -11,6 +11,7 @@ authoritative DAG node) and ``handle_retry_function`` (re-dispatch wiring).
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -379,9 +380,6 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
         "openprogram.webui.server._emit_running_task_event", lambda *a, **k: None
     )
 
-    import threading
-    real_thread = threading.Thread
-
     def _inline_thread(target=None, args=(), kwargs=None, daemon=None):
         class _T:
             def start(_s):
@@ -392,10 +390,11 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
             def is_alive(_s):
                 return False
         return _T()
-    monkeypatch.setattr(threading, "Thread", _inline_thread)
+    monkeypatch.setattr(
+        routes_chat, "threading", SimpleNamespace(Thread=_inline_thread)
+    )
 
     routes_chat.run_agentic_function_call("word_count", {"text": "hi"}, "s1")
-    threading.Thread = real_thread
     # Empty caller → decorator's top-level-call branch stamps the head.
     assert captured.get("anchor") == ""
 

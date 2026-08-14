@@ -8,6 +8,8 @@ See docs/design/runtime/agent-collaboration.md (C4).
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from openprogram.agent.job.types import Job, JobStatus
 
 
@@ -23,6 +25,17 @@ def _make_job(**kw):
     )
     base.update(kw)
     return Job(**base)
+
+
+def _runner_without_background_threads():
+    import threading
+
+    from openprogram.agent.job.runner import JobRunner
+
+    runner = JobRunner.__new__(JobRunner)
+    runner._lock = threading.Lock()
+    runner._followup_locks = {}
+    return runner
 
 
 def test_followup_delivers_to_caller_session_when_cross(monkeypatch):
@@ -45,13 +58,11 @@ def test_followup_delivers_to_caller_session_when_cross(monkeypatch):
     monkeypatch.setattr(sdb, "default_db", lambda: type("S", (), {
         "set_head": staticmethod(lambda *a, **k: None)})())
 
-    r = runner_mod.get_runner()
+    r = _runner_without_background_threads()
     job = _make_job(caller_session_id="A")  # A initiated, B ran
 
     import threading
     done = threading.Event()
-    orig = threading.Thread
-
     # Run the followup thread synchronously so we can assert.
     def run_inline(target=None, daemon=None, **kw):
         class _T:
@@ -59,7 +70,11 @@ def test_followup_delivers_to_caller_session_when_cross(monkeypatch):
                 target()
                 done.set()
         return _T()
-    monkeypatch.setattr(runner_mod.threading, "Thread", run_inline)
+    monkeypatch.setattr(
+        runner_mod,
+        "threading",
+        SimpleNamespace(Thread=run_inline, Lock=runner_mod.threading.Lock),
+    )
 
     r._dispatch_followup(job)
     assert done.is_set()
@@ -91,9 +106,13 @@ def _run_followup_inline(monkeypatch, job) -> dict:
             def start(self_):
                 target()
         return _T()
-    monkeypatch.setattr(runner_mod.threading, "Thread", run_inline)
+    monkeypatch.setattr(
+        runner_mod,
+        "threading",
+        SimpleNamespace(Thread=run_inline, Lock=runner_mod.threading.Lock),
+    )
 
-    runner_mod.get_runner()._dispatch_followup(job)
+    _runner_without_background_threads()._dispatch_followup(job)
     return seen
 
 
