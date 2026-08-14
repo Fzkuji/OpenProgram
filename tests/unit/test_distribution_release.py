@@ -41,6 +41,7 @@ def test_packaged_worker_uses_isolated_embedded_python() -> None:
     main = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
     assert '"-I", "-B", "-m", "openprogram", "worker", "start"' in helper
     assert "process.resourcesPath" in main
+    assert "app.getVersion()" in main
     packaged_branch = re.search(
         r"if \(app\.isPackaged\)(.*?)(?:\n\s*else|\n\s*})",
         main,
@@ -127,6 +128,45 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "scripts/create-release-manifest.py" in workflow
     assert "scripts/smoke-packaged-runtime.sh" in workflow
     assert "sha256" in workflow.lower()
+
+
+def test_release_workflow_notarizes_the_distributed_dmg() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "xcrun notarytool submit" in workflow
+    assert 'xcrun stapler staple "$dmg_path"' in workflow
+    assert 'xcrun stapler validate "$dmg_path"' in workflow
+
+
+def test_public_docs_follow_the_release_platform_policy() -> None:
+    public_docs = [
+        ROOT / "README.md",
+        ROOT / "docs" / "README.md",
+        ROOT / "docs" / "README.zh.md",
+        ROOT / "docs" / "capabilities" / "installing-harnesses.md",
+        ROOT / "docs" / "capabilities" / "installing-harnesses.zh.md",
+        ROOT / "docs" / "reference" / "cli.md",
+        ROOT / "docs" / "reference" / "cli.zh.md",
+        ROOT / "docs" / "slides" / "openprogram-intro.html",
+        ROOT
+        / "docs"
+        / "superpowers"
+        / "specs"
+        / "2026-08-11-framework-adoption-homepage-design.md",
+    ]
+    forbidden = [
+        "Any platform",
+        "任意平台",
+        "Native macOS / Linux / Windows",
+        "Cross-platform (macOS / Linux / Windows)",
+        "跨平台（macOS / Linux / Windows）",
+        "macOS/Linux/Windows",
+    ]
+    for path in public_docs:
+        contents = path.read_text(encoding="utf-8")
+        for phrase in forbidden:
+            assert phrase not in contents, f"{path.relative_to(ROOT)}: {phrase}"
 
 
 def test_release_manifest_records_hashes(tmp_path: Path) -> None:

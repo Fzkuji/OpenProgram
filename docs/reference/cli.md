@@ -28,7 +28,7 @@ openprogram --profile <name>     # state-directory profile, reroutes to ~/.openp
 | Command | What it does | Key flags |
 |------|------|----------|
 | `openprogram` | Open the chat; a bare run first asks terminal UI vs web UI, auto-launches a worker if none is running | — |
-| `openprogram tui` (alias `chat`) | Launch the terminal UI directly, skipping the surface prompt (Ink on macOS/Linux, Rich on Windows) | `--print`, `--resume` also work after the verb |
+| `openprogram tui` (alias `chat`) | Launch the terminal UI directly, skipping the surface prompt (Ink or Python terminal UI on supported macOS/Linux installs; Rich remains available only to unsupported Windows source checkouts) | `--print`, `--resume` also work after the verb |
 | `openprogram web` | Start the service and open the browser UI (`http://localhost:18100`) | `--port` (default: stored pref, then 18100), `--web-port` (legacy alias for the same single port), `--no-browser` |
 
 ## Background service
