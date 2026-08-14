@@ -875,7 +875,7 @@ assert.match(appShell, /tab\.kind === "ntp"[\s\S]*?<NewTabPage/);
 const ensureIndex = webTabPane.indexOf("ensureWebView(bridge, tabId, viewUrlRef.current)");
 const navigateIndex = webTabPane.indexOf("bridge.webTab.navigate(tabId, viewUrlRef.current)");
 const registerBoundsIndex = webTabPane.indexOf(
-  "registerVisibleWebTabBounds(bridge, tabId, roundedBounds)",
+  "registerVisibleWebTabBounds(bridge, tabId, bounds)",
 );
 assert.ok(ensureIndex >= 0 && ensureIndex < registerBoundsIndex);
 assert.equal(navigateIndex, -1);

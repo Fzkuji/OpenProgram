@@ -43,6 +43,7 @@ import {
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useSessionStore } from "@/lib/session-store";
 import { newSession } from "@/lib/runtime-bridge/conversations";
+import { measureWebTabBounds } from "@/lib/web-tab-bounds";
 import styles from "./center-tabs.module.css";
 
 export function WebTabPane({ tabId, url }: { tabId: string; url: string }) {
@@ -205,30 +206,24 @@ function DesktopWebTabPane({
     };
   }, [bridge, tabId]);
 
-  // Bounds: main positions the native view from the DIP rect of the
-  // body div. getBoundingClientRect is viewport-relative CSS px ==
-  // DIP relative to the window content area. Report on mount, when
-  // the div resizes, and on window resize / any ancestor scroll.
+  // Bounds: renderer reports the body's viewport-relative CSS px and
+  // main converts them to native DIP using the sender's current zoom.
+  // Preserve fractional values until main performs the final rounding.
+  // Report on mount, resize, and any ancestor scroll.
   useEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
     const report = () => {
-      const r = el.getBoundingClientRect();
-      const roundedBounds = {
-        x: Math.round(r.left),
-        y: Math.round(r.top),
-        width: Math.round(r.width),
-        height: Math.round(r.height),
-      };
+      const bounds = measureWebTabBounds(el);
       const occluded = !!document.querySelector(
         '[role="dialog"], .branches-merge-modal-backdrop, [data-native-view-occluder="true"]',
       );
-      if (occluded || roundedBounds.width <= 0 || roundedBounds.height <= 0) {
+      if (occluded || bounds.width <= 0 || bounds.height <= 0) {
         removeVisibleWebTabBounds(bridge, tabId);
         setWebTabReady(tabId, false);
         return;
       }
-      registerVisibleWebTabBounds(bridge, tabId, roundedBounds);
+      registerVisibleWebTabBounds(bridge, tabId, bounds);
       setWebTabReady(tabId, true);
     };
     report();
