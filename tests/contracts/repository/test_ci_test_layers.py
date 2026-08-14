@@ -27,6 +27,7 @@ def test_ci_assigns_each_test_runtime_to_an_explicit_job() -> None:
         "unit",
         "component",
         "integration",
+        "e2e",
         "web",
         "cli",
         "desktop",
@@ -47,6 +48,7 @@ def test_ci_assigns_each_test_runtime_to_an_explicit_job() -> None:
     assert "tests/unit" in _run_commands(jobs["unit"])
     assert "tests/component" in _run_commands(jobs["component"])
     assert "tests/integration" in _run_commands(jobs["integration"])
+    assert '-m "not browser" tests/e2e' in _run_commands(jobs["e2e"])
 
     web = _run_commands(jobs["web"])
     assert all(command in web for command in (
@@ -66,7 +68,7 @@ def test_ci_assigns_each_test_runtime_to_an_explicit_job() -> None:
 def test_ci_python_jobs_use_the_checked_lock() -> None:
     jobs = _workflow()["jobs"]
     for name in (
-        "quality", "unit", "component", "integration", "browser", "coverage",
+        "quality", "unit", "component", "integration", "e2e", "browser", "coverage",
     ):
         commands = _run_commands(jobs[name])
         assert "uv sync --locked" in commands, name
@@ -112,6 +114,7 @@ def test_contributor_commands_match_required_ci_entrypoints() -> None:
         "uv run --locked --extra dev python -m pytest -q tests/unit",
         "uv run --locked --extra dev python -m pytest -q tests/component",
         "uv run --locked --extra dev python -m pytest -q tests/integration",
+        'uv run --locked --extra dev python -m pytest -q -m "not browser" tests/e2e',
         "npm test",
         "npm run typecheck",
         "npm run check",
@@ -121,5 +124,6 @@ def test_contributor_commands_match_required_ci_entrypoints() -> None:
         "coverage run --branch --source=openprogram -m pytest -q tests/unit",
         "coverage xml -o coverage.xml",
         "coverage report --show-missing --precision=6 --fail-under=40",
+        "python -m pytest -q -n 4 tests/contracts tests/unit tests/component tests/integration tests/e2e",
     ):
         assert command in contributing

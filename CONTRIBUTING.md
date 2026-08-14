@@ -37,6 +37,7 @@ public APIs, installation profiles, and current capabilities.
    uv run --locked --extra dev python -m pytest -q tests/unit
    uv run --locked --extra dev python -m pytest -q tests/component
    uv run --locked --extra dev python -m pytest -q tests/integration
+   uv run --locked --extra dev python -m pytest -q -m "not browser" tests/e2e
    uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.build
    uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.check_landing
    uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.checklinks
@@ -88,6 +89,16 @@ public APIs, installation profiles, and current capabilities.
    uv run --locked --extra dev coverage xml -o coverage.xml
    uv run --locked --extra dev coverage report --show-missing --precision=6 --fail-under=40
    ```
+
+10. For changes to test infrastructure, shared fixtures, or process state,
+    verify the required Python selection three consecutive times with the fixed
+    worker count used by the test-system stability gate:
+
+    ```bash
+    for run in 1 2 3; do
+      uv run --locked --extra dev python -m pytest -q -n 4 tests/contracts tests/unit tests/component tests/integration tests/e2e || exit 1
+    done
+    ```
 
 External-service tests under `tests/live/` are not part of ordinary pull
 request checks. Run them explicitly only with the required credentials and

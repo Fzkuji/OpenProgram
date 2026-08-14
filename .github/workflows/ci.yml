@@ -85,6 +85,21 @@ jobs:
       - name: Integration tests
         run: uv run --locked --extra dev python -m pytest -q tests/integration
 
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install locked Python dependencies
+        run: uv sync --locked --extra dev
+      - name: Non-browser end-to-end tests
+        run: uv run --locked --extra dev python -m pytest -q -m "not browser" tests/e2e
+
   coverage:
     runs-on: ubuntu-latest
     steps:
