@@ -788,6 +788,7 @@ def _publish_snapshot(
         else:
             project_id = _safe_project_id(project_id)
         project_dir = root / project_id
+        project_existed = project_dir.exists()
         if project_dir.is_symlink():
             raise InvalidWorkflow("workflow project directory must not be a symlink")
         revisions = project_dir / "revisions"
@@ -801,29 +802,58 @@ def _publish_snapshot(
         revision = f"{max(existing, default=0) + 1:04d}"
         temporary = revisions / f".{revision}-{uuid.uuid4().hex}.tmp"
         final = revisions / revision
-        try:
-            shutil.copytree(instance / "snapshot", temporary, symlinks=True)
-            _read_candidate_directory(temporary, metadata)
-            if final.exists():
-                raise FileExistsError(final)
-            temporary.replace(final)
-        finally:
-            if temporary.exists():
-                shutil.rmtree(temporary)
+        readme_path = project_dir / "README.md"
+        readme_backup = project_dir / f".README-{uuid.uuid4().hex}.old"
+        if readme_path.is_symlink():
+            raise InvalidWorkflow("workflow project README must not be a symlink")
+        had_readme = readme_path.exists()
+        if had_readme:
+            shutil.copy2(readme_path, readme_backup)
         index = {
             "schema_version": PROJECT_SCHEMA_VERSION,
             "project_id": project_id,
             "project_metadata": metadata,
             "active_revision": revision,
         }
-        atomic_write_text(
-            project_dir / "project.json",
-            json.dumps(index, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        )
-        atomic_write_text(
-            project_dir / "README.md",
-            (final / "README.md").read_text(encoding="utf-8"),
-        )
+        committed = False
+        try:
+            shutil.copytree(instance / "snapshot", temporary, symlinks=True)
+            _read_candidate_directory(temporary, metadata)
+            if final.exists():
+                raise FileExistsError(final)
+            temporary.replace(final)
+            atomic_write_text(
+                readme_path,
+                (final / "README.md").read_text(encoding="utf-8"),
+            )
+            atomic_write_text(
+                project_dir / "project.json",
+                json.dumps(index, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            )
+            committed = True
+        except Exception:
+            try:
+                committed = _read_project_index(project_dir) == {
+                    "project_id": project_id,
+                    "active_revision": revision,
+                    "project_metadata": metadata,
+                }
+            except (OSError, ValueError, json.JSONDecodeError):
+                committed = False
+            if not committed:
+                if final.exists():
+                    shutil.rmtree(final)
+                if had_readme and readme_backup.exists():
+                    readme_backup.replace(readme_path)
+                else:
+                    readme_path.unlink(missing_ok=True)
+                if not project_existed and project_dir.exists():
+                    shutil.rmtree(project_dir)
+                raise
+        finally:
+            if temporary.exists():
+                shutil.rmtree(temporary)
+            readme_backup.unlink(missing_ok=True)
     return project_id, revision
 
 

@@ -1152,6 +1152,71 @@ def test_failed_candidate_repairs_snapshot_before_publishing_active_revision(
     assert len(list((project / "revisions").iterdir())) == 1
 
 
+@pytest.mark.parametrize("failed_name", ("README.md", "project.json"))
+def test_publish_failure_rolls_back_catalog_and_resume_commits_once(
+    monkeypatch: pytest.MonkeyPatch,
+    session_repo: Path,
+    failed_name: str,
+) -> None:
+    initial = _project(
+        readme="# Initial workflow\n",
+        files={
+            "steps/run.py": "def run():\n    return 'initial'\n",
+            "entry.py": "def workflow():\n    return run()\n",
+        },
+    )
+    revised = _project(
+        summary="Revised workflow",
+        readme="# Revised workflow\n",
+        files={
+            "steps/run.py": "def run():\n    return 'revised'\n",
+            "entry.py": "def workflow():\n    return run()\n",
+        },
+    )
+    _planner(
+        monkeypatch,
+        json.dumps({"action": "create"}), initial,
+        json.dumps({"action": "revise", "project_id": "research-workflow"}),
+        revised,
+    )
+    _executor(monkeypatch)
+    _summarizer(monkeypatch)
+
+    first = TL.agentic_workflow("create initial project")
+    project = session_repo / "catalog" / first["project_id"]
+    previous_readme = (project / "README.md").read_bytes()
+    existing_runs = set((session_repo / "workflows").iterdir())
+    real_atomic_write = TL.atomic_write_text
+    failed = False
+
+    def fail_once(path: Path, content: str) -> Path:
+        nonlocal failed
+        if not failed and Path(path) == project / failed_name:
+            failed = True
+            raise OSError(f"injected {failed_name} failure")
+        return real_atomic_write(path, content)
+
+    monkeypatch.setattr(TL, "atomic_write_text", fail_once)
+    with pytest.raises(OSError, match=f"injected {re.escape(failed_name)} failure"):
+        TL.agentic_workflow("revise existing project")
+
+    failed_run = (set((session_repo / "workflows").iterdir()) - existing_runs).pop()
+    assert json.loads((project / "project.json").read_text())["active_revision"] == "0001"
+    assert (project / "README.md").read_bytes() == previous_readme
+    assert not (project / "revisions" / "0002").exists()
+    assert _state(session_repo, failed_run.name)["publish_required"] is True
+
+    monkeypatch.setattr(TL, "atomic_write_text", real_atomic_write)
+    resumed = TL.resume_workflow(failed_run.name)
+
+    assert resumed["project_revision"] == "0002"
+    assert sorted(path.name for path in (project / "revisions").iterdir()) == [
+        "0001", "0002",
+    ]
+    assert json.loads((project / "project.json").read_text())["active_revision"] == "0002"
+    assert (project / "README.md").read_text() == "# Revised workflow\n"
+
+
 def test_cancelled_project_run_does_not_publish_candidate(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:

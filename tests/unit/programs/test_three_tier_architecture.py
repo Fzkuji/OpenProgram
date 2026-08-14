@@ -1,6 +1,7 @@
 """Test three-tier architecture: goal → agent → llm."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,13 @@ import openprogram.programs.agentic_functions.agentic_workflow as TL
 @pytest.fixture
 def session_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(TL, "_session_repo", lambda _sid: tmp_path)
+    monkeypatch.setattr(TL, "_workflow_projects_root", lambda: tmp_path / "catalog")
     monkeypatch.setattr(TL, "_registered_agentic_functions", lambda: {})
+    monkeypatch.setattr(TL, "current_session_id", lambda: "s1")
+    monkeypatch.setattr(
+        TL, "_summarize_workflow",
+        lambda state: {"summary": str(state["result"]), "return_result": False},
+    )
     return tmp_path
 
 
@@ -21,13 +28,25 @@ def test_workflow_can_call_all_three_tiers(
     """Workflow 程序里可以调用 llm、agent、goal 三层。"""
 
     def _planner(_sid, _prompt, **_kwargs):
-        return """```python
-def workflow():
-    summary = llm("总结一下任务")
-    result = agent("执行任务：" + summary)
-    final = goal("优化结果", "测试通过")
-    return final
-```"""
+        if "<workflow project candidates>" in _prompt:
+            return json.dumps({"action": "create"})
+        return json.dumps({
+            "project_metadata": {
+                "name": "Three tier workflow",
+                "summary": "Exercise llm, agent, and goal",
+                "tags": ["test"],
+            },
+            "readme": "# Three tier workflow\n",
+            "files": {
+                "steps/tiers.py": (
+                    "def run_tiers():\n"
+                    "    summary = llm('总结一下任务')\n"
+                    "    agent('执行任务：' + summary)\n"
+                    "    return goal('优化结果', '测试通过')\n"
+                ),
+                "entry.py": "def workflow():\n    return run_tiers()\n",
+            },
+        }, ensure_ascii=False)
 
     llm_calls = []
     agent_calls = []
@@ -52,7 +71,7 @@ def workflow():
     monkeypatch.setattr(TL, "_agent_function", lambda _sid, _spawn: fake_agent)
     monkeypatch.setattr(TL, "_goal_function", lambda: fake_goal)
 
-    result = TL.agentic_workflow("测试三层调用", session_id="s1")
+    result = TL.agentic_workflow("测试三层调用")
 
     assert result["status"] == "completed"
     assert llm_calls == ["总结一下任务"]
