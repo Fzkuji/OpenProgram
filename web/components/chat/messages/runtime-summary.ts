@@ -1,0 +1,246 @@
+type RuntimeTreeSummary = {
+  status?: string;
+  output?: unknown;
+  duration_ms?: number;
+  start_time?: number;
+  end_time?: number;
+  error?: string;
+  children?: RuntimeTreeSummary[];
+};
+
+type RuntimeSummaryInput = {
+  fnName: string;
+  status?: string;
+  timestamp?: number;
+  now?: number;
+  tree?: RuntimeTreeSummary | null;
+  text?: (en: string, zh: string) => string;
+};
+
+export type RuntimeConclusion = {
+  label: string;
+  meta: string;
+  summary: string;
+  result?: string;
+  tone: "success" | "error" | "cancelled";
+};
+
+const RUNNING = new Set(["pending", "running", "streaming"]);
+
+function epochMs(value: number): number {
+  return value > 1e12 ? value : value * 1000;
+}
+
+function durationMs({ status, timestamp, now = Date.now(), tree }: RuntimeSummaryInput): number | null {
+  if (Number.isFinite(tree?.duration_ms)) return Math.max(0, tree!.duration_ms!);
+  if (tree?.start_time && tree.end_time) {
+    return Math.max(0, epochMs(tree.end_time) - epochMs(tree.start_time));
+  }
+  if (timestamp && RUNNING.has((status || "").toLowerCase())) {
+    return Math.max(0, now - epochMs(timestamp));
+  }
+  return null;
+}
+
+function formatDuration(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = seconds % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`
+    : `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+}
+
+function preview(value: unknown, max = 48): string {
+  if (value === undefined || value === null) return "";
+  let raw: string;
+  if (typeof value === "string") raw = value;
+  else {
+    try { raw = JSON.stringify(value); } catch { raw = String(value); }
+  }
+  const oneLine = raw.replace(/\s+/g, " ").trim();
+  return oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine;
+}
+
+export function countRuntimeSteps(tree?: RuntimeTreeSummary | null): number {
+  if (!tree) return 0;
+  return 1 + (tree.children || []).reduce((sum, child) => sum + countRuntimeSteps(child), 0);
+}
+
+function workflowPayload(output: unknown): Record<string, unknown> | null {
+  if (output && typeof output === "object" && !Array.isArray(output)) {
+    return output as Record<string, unknown>;
+  }
+  if (typeof output !== "string") return null;
+  try {
+    const parsed = JSON.parse(output);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolvedStatus(input: RuntimeSummaryInput): string {
+  const outer = (input.status || input.tree?.status || "").toLowerCase();
+  if (RUNNING.has(outer) || input.fnName !== "agentic_workflow") return outer;
+
+  const payload = workflowPayload(input.tree?.output);
+  const inner = String(payload?.status || "").toLowerCase();
+  if (
+    (outer === "" || outer === "completed" || outer === "done" || outer === "success")
+    && ["capped", "interrupted", "cancelled", "canceled", "failed", "error"].includes(inner)
+  ) {
+    return inner;
+  }
+  return outer || inner;
+}
+
+function counted(noun: string, count: number): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/** Render the persisted backend handoff; this layer never starts a model call. */
+export function runtimeConclusion(input: RuntimeSummaryInput): RuntimeConclusion | null {
+  if (input.fnName !== "agentic_workflow") return null;
+  const text = input.text ?? ((en: string) => en);
+  const rawStatus = resolvedStatus(input);
+  if (RUNNING.has(rawStatus)) return null;
+
+  const payload = workflowPayload(input.tree?.output);
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  const revisions = Array.isArray(payload?.revisions) ? payload.revisions.length : 0;
+  const succeeded = items.filter((item) =>
+    item && typeof item === "object"
+    && String((item as Record<string, unknown>).status || "").toLowerCase() === "completed"
+  ).length;
+  const failedCalls = items.filter((item) => {
+    if (!item || typeof item !== "object") return false;
+    const status = String((item as Record<string, unknown>).status || "").toLowerCase();
+    return status === "failed" || status === "error";
+  }).length;
+  const isHandoff = payload?.summary_kind === "workflow_handoff_v1";
+  const summary = isHandoff && typeof payload?.summary === "string"
+    ? payload.summary.trim()
+    : "";
+  let directResult = "";
+  if (isHandoff && payload?.return_result === true && payload.result != null) {
+    directResult = typeof payload.result === "string"
+      ? payload.result.trim()
+      : JSON.stringify(payload.result, null, 2);
+  }
+  const cancelled = rawStatus === "cancelled" || rawStatus === "canceled";
+  const interrupted = rawStatus === "interrupted";
+  const failed = rawStatus === "error" || rawStatus === "failed" || Boolean(input.tree?.error);
+  const capped = rawStatus === "capped";
+
+  if (cancelled) {
+    return {
+      label: text("Conclusion", "结论"),
+      meta: items.length
+        ? text(
+            `Workflow was cancelled after ${counted("recorded call", items.length)}.`,
+            `工作流已取消；取消前记录了 ${items.length} 个调用。`,
+          )
+        : text("Workflow was cancelled.", "工作流已取消。"),
+      summary: "",
+      tone: "cancelled",
+    };
+  }
+
+  if (interrupted) {
+    return {
+      label: text("Conclusion", "结论"),
+      meta: text("Workflow was interrupted.", "工作流已中断。"),
+      summary: String(input.tree?.error || summary || "").trim(),
+      tone: "error",
+    };
+  }
+
+  if (failed || capped) {
+    return {
+      label: text("Conclusion", "结论"),
+      meta: capped
+        ? text(
+            items.length
+              ? `Workflow stopped at its execution limit after ${counted("recorded call", items.length)}.`
+              : "Workflow stopped at its execution limit.",
+            items.length
+              ? `工作流达到执行上限后停止，共记录 ${items.length} 个调用。`
+              : "工作流达到执行上限后停止。",
+          )
+        : items.length
+          ? text(
+              `Workflow failed after ${counted("recorded call", items.length)}.`,
+              `工作流在记录 ${items.length} 个调用后失败。`,
+            )
+          : text("Workflow failed.", "工作流失败。"),
+      summary: String(input.tree?.error || summary || "").trim(),
+      tone: "error",
+    };
+  }
+
+  const repair = revisions
+    ? text(
+        `, with ${counted("automatic repair", revisions)}`,
+        `，经过 ${revisions} 次自动修复`,
+      )
+    : "";
+  return {
+    label: text("Conclusion", "结论"),
+    meta: items.length
+      ? text(
+          `Completed ${counted("call", items.length)}: ${succeeded} succeeded, ${failedCalls} failed${repair}.`,
+          `已完成 ${items.length} 个调用：${succeeded} 个成功、${failedCalls} 个失败${repair}。`,
+        )
+      : text("Workflow completed.", "工作流已完成。"),
+    summary,
+    ...(directResult ? { result: directResult } : {}),
+    tone: "success",
+  };
+}
+
+export function runtimeSummaryLabel(input: RuntimeSummaryInput): string {
+  const text = input.text ?? ((en: string) => en);
+  const rawStatus = resolvedStatus(input);
+  const running = RUNNING.has(rawStatus);
+  const cancelled = rawStatus === "cancelled" || rawStatus === "canceled";
+  const interrupted = rawStatus === "interrupted";
+  const capped = rawStatus === "capped";
+  const failed = rawStatus === "error" || rawStatus === "failed" || Boolean(input.tree?.error);
+  const status = running
+    ? text("Running…", "运行中…")
+    : cancelled
+      ? text("Cancelled", "已取消")
+      : interrupted
+        ? text("Interrupted", "已中断")
+        : capped
+          ? text("Stopped", "已停止")
+          : failed
+            ? text("Error", "出错")
+            : text("Completed", "已完成");
+  const steps = countRuntimeSteps(input.tree);
+  const payload = input.fnName === "agentic_workflow"
+    ? workflowPayload(input.tree?.output)
+    : null;
+  const handoffPreview = payload?.summary_kind === "workflow_handoff_v1"
+    ? preview(payload.summary)
+    : "";
+  const stepCount = text(
+    `${steps} ${steps === 1 ? "step" : "steps"}`,
+    `${steps} 步`,
+  );
+  const result = running
+    ? (steps ? stepCount : text("Starting", "正在启动"))
+    : cancelled || interrupted || capped
+      ? stepCount
+      : failed
+        ? (preview(input.tree?.error) || stepCount)
+        : (handoffPreview || (payload ? stepCount : preview(input.tree?.output)) || stepCount);
+  const elapsed = durationMs(input);
+  return [input.fnName, status, elapsed === null ? "" : formatDuration(elapsed), result]
+    .filter(Boolean)
+    .join(" · ");
+}

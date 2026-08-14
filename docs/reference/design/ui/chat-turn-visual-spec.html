@@ -36,11 +36,17 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
 /* 开关 = GPT 式纯文字：无按钮底色、无内边距偏移，与正文左对齐；
    hover 只提亮文字。 */
 .tl-toggle{display:inline-flex;align-items:center;gap:8px;color:var(--text-muted);
-  font-size:13px;cursor:pointer;user-select:none;margin:2px 0;padding:3px 0;
+  font-size:13px;cursor:pointer;user-select:none;height:28px;margin:0 0 1.5px;padding:0;
   letter-spacing:.2px;border:none;background:transparent}
 .tl-toggle:hover{color:var(--text-secondary)}
 .tl-toggle .chev{font-size:11px;transition:transform .15s;display:inline-block}
 .tl.open .tl-toggle .chev{transform:rotate(90deg)}
+.runtime-program-run{display:grid;grid-template-columns:28px minmax(0,1fr);column-gap:24px;align-items:start}
+.runtime-program-avatar{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--border-light);
+  border-radius:8px;background:var(--bg-secondary);color:var(--accent-orange);font:14px/1 var(--font-mono)}
+.runtime-program-content{min-width:0;padding-right:52px}
+.runtime-program-content .tl-toggle{max-width:100%}
+.runtime-program-content .tl-toggle>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* 高度过渡：grid 0fr↔1fr。展开只向下推开、收起平滑抽走，视口不动。 */
 .tl-collapse{display:grid;grid-template-rows:0fr;transition:grid-template-rows .18s ease}
 .tl.open .tl-collapse{grid-template-rows:1fr}
@@ -179,8 +185,8 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
 
   <div class="reply">北京今天<b>小雨转暴雨</b>，现在 25.8°C、湿度 89%；全天 24～28°C，降水概率约 98%。<b>建议带伞</b>，尽量减少非必要外出。</div>
 </div>
-<div class="rule">规则：外层无框无底色；收起行 = 纯文字摘要 + ›（无按钮底色，与正文列左对齐）；回复文本永远直接可见。<br>
-<b>展开只向下</b>：高度过渡用 grid 0fr↔1fr（0.18s），展开把下方内容推开、收起平滑抽走；<b>视口不许跳</b>——聊天区关掉原生 scroll anchoring（overflow-anchor:none），且用户点击后的 600ms 内暂停贴底吸附，展开/收起时开关行在屏幕上纹丝不动。收起动画结束后卸载子树，折叠状态不付渲染成本。<b>流式进行中同样折叠</b>（用户裁决 2026-07-13）：摘要小字加 shimmer 扫光表示进行中，点击才展开；展开后的列表向下拼接新步骤（淡入下滑 0.22s），当前运行中的行图标位用呼吸点，思考行的 note 显示最新一行。落定后 shimmer 停止，其余不变——流式与落定共用同一条时间线渲染路径（伪 blocks 由实时字段合成，finalize 后由真 blocks 接管）。</div>
+<div class="rule">规则：外层无框无底色；收起行 = 纯文字摘要 + ›（无按钮底色，与正文列左对齐）；所有收起行固定高 28px，第一行文字、箭头与同轮 28px 头像严格上下居中，不使用 top、transform 或 translate 做垂直偏移；回复文本永远直接可见。<br>
+<b>展开只向下</b>：高度过渡用 grid 0fr↔1fr（0.18s），展开把下方内容推开、收起平滑抽走；<b>视口不许跳</b>——聊天区关掉原生 scroll anchoring（overflow-anchor:none），且用户点击后的 600ms 内暂停贴底吸附，展开/收起时开关行在屏幕上纹丝不动。收起动画结束后卸载子树，折叠状态不付渲染成本。<b>流式进行中默认展开</b>：摘要小字加 shimmer 扫光表示进行中，用户可手动折叠；展开后的列表向下拼接新步骤（淡入下滑 0.22s），当前运行中的行图标位用呼吸点，思考行的 note 显示最新一行。落定后保留用户手动选择；未手动操作时回到折叠态——流式与落定共用同一条时间线渲染路径（伪 blocks 由实时字段合成，finalize 后由真 blocks 接管）。</div>
 
 <!-- ═══════ 2. 时间线细节 ═══════ -->
 <h2><span class="num">2</span>时间线行：图标 + 标题 + 一行摘要 + 悬停动作</h2>
@@ -245,43 +251,51 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
 
 <!-- ═══════ 3. 手动函数运行 ═══════ -->
 <h2><span class="num">3</span>手动函数运行：同一条时间线 + 消息式 footer</h2>
-<div class="desc">表单（fn-form）或 <code>//run</code> 手动发起的函数调用<b>不再有独立卡片样式</b>——就是上面同一条无框时间线，根行子树默认展开（过程即内容）。操作不挂在行尾，而是收进树下方一条<b>消息式 footer</b>：时间戳 + 复制 / 重试 / 修改 + 版本切换，悬停显现，左缘对齐树的图标列。把鼠标移进下面区域试。</div>
+<div class="desc">表单（fn-form）或 <code>//run</code> 手动发起的函数调用<b>不再有独立卡片样式</b>——保留左侧 Function 类型头像，右侧使用同一条无框时间线；该头像只标识调用类型，不表示 Agent 发言。展开运行摘要后，根行只展示直接子节点；每个子节点的后代仍默认折叠，由用户逐层展开。操作不挂在行尾，而是收进树下方一条<b>消息式 footer</b>：时间戳 + 复制 / 重试 / 修改 + 版本切换，悬停显现，左缘对齐树的图标列。把鼠标移进下面区域试。</div>
 <div class="stage run-host">
-  <div class="tl open">
-    <div class="tl-collapse"><div class="tl-collapse-inner">
-    <div class="tl-body">
-      <div class="step">
-        <span class="step-icon k-function is-toggleable"><svg viewBox="0 0 24 24"><polyline points="15.5 18 21.5 12 15.5 6"/><polyline points="8.5 6 2.5 12 8.5 18"/></svg></span>
-        <div class="step-head"><span class="step-title link">weather_report</span>
-          <span class="step-note">{"city": "北京"} · 3.2s → 今天小雨转暴雨，24～28°C…</span></div>
-        <div class="tl-sub">
-          <div class="step">
-            <span class="step-icon k-function"><svg viewBox="0 0 24 24"><polyline points="15.5 18 21.5 12 15.5 6"/><polyline points="8.5 6 2.5 12 8.5 18"/></svg></span>
-            <div class="step-head"><span class="step-title link">web_search</span>
-              <span class="step-note">"北京 今日天气" → 12 results</span></div>
+  <div class="runtime-program-run">
+    <div class="runtime-program-avatar" aria-hidden="true">ƒ</div>
+    <div class="runtime-program-content">
+      <div class="tl" id="runtime-demo">
+        <button class="tl-toggle" type="button" onclick="document.getElementById('runtime-demo').classList.toggle('open')">
+          <span>weather_report · 已完成 · 00:03 · 今天小雨转暴雨，24～28°C…</span><span class="chev">›</span>
+        </button>
+        <div class="tl-collapse"><div class="tl-collapse-inner">
+          <div class="tl-body">
+            <div class="step">
+              <span class="step-icon k-function is-toggleable"><svg viewBox="0 0 24 24"><polyline points="15.5 18 21.5 12 15.5 6"/><polyline points="8.5 6 2.5 12 8.5 18"/></svg></span>
+              <div class="step-head"><span class="step-title link">weather_report</span>
+                <span class="step-note">{"city": "北京"} · 3.2s → 今天小雨转暴雨，24～28°C…</span></div>
+              <div class="tl-sub">
+                <div class="step">
+                  <span class="step-icon k-function"><svg viewBox="0 0 24 24"><polyline points="15.5 18 21.5 12 15.5 6"/><polyline points="8.5 6 2.5 12 8.5 18"/></svg></span>
+                  <div class="step-head"><span class="step-title link">web_search</span>
+                    <span class="step-note">"北京 今日天气" → 12 results · ⋯ 3 步</span></div>
+                </div>
+                <div class="step">
+                  <span class="step-icon k-llm"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg></span>
+                  <div class="step-head"><span class="step-title link">LLM</span>
+                    <span class="step-note">汇总两源数据 · 1.1s · ⋯ 2 步</span></div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="step">
-            <span class="step-icon k-llm"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg></span>
-            <div class="step-head"><span class="step-title link">LLM</span>
-              <span class="step-note">汇总两源数据 · 1.1s</span></div>
+          <div class="run-footer">
+            <span class="ts">16:32</span>
+            <span class="act">
+              <button class="icon-btn" title="复制结果"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+              <button class="icon-btn" title="重试"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.5 15a9 9 0 1 0 2-9.4L1 10"/></svg></button>
+              <button class="icon-btn" title="修改后重新运行"><svg viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
+              <span class="msg-nav">
+                <button class="icon-btn" title="上一版"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+                <span class="label">1 / 2</span>
+                <button class="icon-btn" title="下一版"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></button>
+              </span>
+            </span>
           </div>
-        </div>
+        </div></div>
       </div>
     </div>
-    </div></div>
-  </div>
-  <div class="run-footer">
-    <span class="ts">16:32</span>
-    <span class="act">
-      <button class="icon-btn" title="复制结果"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
-      <button class="icon-btn" title="重试"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.5 15a9 9 0 1 0 2-9.4L1 10"/></svg></button>
-      <button class="icon-btn" title="修改后重新运行"><svg viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
-      <span class="msg-nav">
-        <button class="icon-btn" title="上一版"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
-        <span class="label">1 / 2</span>
-        <button class="icon-btn" title="下一版"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></button>
-      </span>
-    </span>
   </div>
 </div>
 <div class="rule">footer 与聊天消息的 footer 同款（同一套图标按钮 + 时间戳，悬停显现），justify-content:flex-start、左缘对齐树最左的图标列；版本切换<b>复用聊天的 .message-nav 组件</b>（◀ N/M ▶），不另造样式。footer 的复制复制<b>根调用的实际结果</b>（error ?? output），不是参数 JSON。<br>

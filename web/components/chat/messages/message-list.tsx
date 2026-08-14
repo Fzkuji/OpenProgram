@@ -175,7 +175,7 @@ function dispatch(msg: ChatMsg) {
   if (msg.display === "runtime") {
     if (msg.role === "user") return null;
     // 手动函数运行（fn-form / /run）：RuntimeBlock 内部已统一为
-    // 时间线组件（根行 + 递归子树，默认全展开）。
+    // 时间线组件（根行 + 递归子树，子节点逐层展开）。
     return (
       <div className="runtime-card-host">
         <RuntimeBlock msg={msg} />

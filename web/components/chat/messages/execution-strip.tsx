@@ -110,10 +110,13 @@ export function ExecutionStrip({
   label,
   streaming,
   children,
+  after,
 }: {
   label: string;
   streaming?: boolean;
   children: React.ReactNode;
+  /** Content that collapses with the trace but stays outside its vertical line. */
+  after?: React.ReactNode;
 }) {
   const [userSet, setUserSet] = useState<boolean | null>(null);
   const open = userSet ?? !!streaming;
@@ -124,6 +127,7 @@ export function ExecutionStrip({
       <button
         type="button"
         className="tl-toggle"
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         title={open
           ? text("Collapse execution trace", "收起执行过程")
@@ -134,6 +138,7 @@ export function ExecutionStrip({
       </button>
       <Collapse open={open}>
         <div className="tl-body">{children}</div>
+        {after}
       </Collapse>
     </div>
   );
@@ -205,7 +210,7 @@ export function StepRow({
   inlineBody?: React.ReactNode;
   subSteps?: React.ReactNode;
   subCount?: number;
-  /** 子树初始展开（手动函数运行的根行用：过程即内容，不折叠）。 */
+  /** 仅当前行的直接子树初始展开。 */
   defaultKidsOpen?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -390,7 +395,7 @@ export function FunctionStep({
 }
 
 /** context_tree / caller 链节点 → 递归步骤行。点行 → 右栏详情。
- *  actions/defaultKidsOpen 供手动运行的根行透传（重试、版本切换）。 */
+ *  defaultKidsOpen 只作用于当前节点，不向后代传播。 */
 export function TreeStep({ node, actions, defaultKidsOpen }: {
   node: TNode;
   actions?: React.ReactNode;
@@ -438,7 +443,7 @@ export function TreeStep({ node, actions, defaultKidsOpen }: {
       detail={detail}
       subSteps={kids.length > 0
         ? kids.map((c, i) => (
-            <TreeStep key={c.path || i} node={c} defaultKidsOpen={defaultKidsOpen} />
+            <TreeStep key={c.path || i} node={c} />
           ))
         : undefined}
       subCount={kids.length || undefined}

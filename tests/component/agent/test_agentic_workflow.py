@@ -65,6 +65,8 @@ def _llm_executor(monkeypatch: pytest.MonkeyPatch, fn=None) -> list[dict]:
 
     def fake(prompt, *, model="", effort="", response_format=None,
              choices=None, web_search=False, timeout_s=None):
+        if "<workflow_summary>" in prompt:
+            return {"summary": "Completed the workflow.", "return_result": False}
         kwargs = {
             "model": model, "effort": effort,
             "response_format": response_format, "choices": choices,
@@ -72,6 +74,22 @@ def _llm_executor(monkeypatch: pytest.MonkeyPatch, fn=None) -> list[dict]:
         }
         calls.append({"prompt": prompt, **kwargs})
         return fn(prompt, kwargs) if fn else f"done: {prompt}"
+
+    monkeypatch.setattr(TL, "_llm_function", lambda: fake)
+    return calls
+
+
+def _summarizer(
+    monkeypatch: pytest.MonkeyPatch,
+    summary: str = "Completed the requested work.",
+    *,
+    return_result: bool = False,
+) -> list[dict]:
+    calls: list[dict] = []
+
+    def fake(prompt, **kwargs):
+        calls.append({"prompt": prompt, **kwargs})
+        return {"summary": summary, "return_result": return_result}
 
     monkeypatch.setattr(TL, "_llm_function", lambda: fake)
     return calls
@@ -94,11 +112,203 @@ def test_small_task_uses_single_agent_and_persists_independent_run(
     result = TL.agentic_workflow("rename one variable", session_id="s1")
 
     assert result["status"] == "completed"
-    assert calls[0]["prompt"] == "rename one variable"
+    assert calls[0]["prompt"].startswith("rename one variable")
+    assert "save substantive deliverables" in calls[0]["prompt"]
     assert "SINGLE" in prompts[0]
     assert (_instance(session_repo, result["run_id"]) / "code.py").exists()
     assert _state(session_repo, result["run_id"])["status"] == "completed"
     assert not (session_repo / "todos.json").exists()
+
+
+def test_single_agent_returns_handoff_and_keeps_full_result_internal(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    conclusion = "完整结论。" * 400
+    _planner(monkeypatch, "SINGLE")
+    _executor(monkeypatch, lambda _prompt, _kwargs: conclusion)
+    summary_calls = _summarizer(monkeypatch, "完成资料整理，结果已写入 research.md。")
+
+    result = TL.agentic_workflow("write conclusion", session_id="s1")
+
+    assert result["summary_kind"] == "workflow_handoff_v1"
+    assert result["summary"] == "完成资料整理，结果已写入 research.md。"
+    assert result["return_result"] is False
+    assert result["result"] is None
+    assert _state(session_repo, result["run_id"])["result"] == conclusion
+    assert conclusion in json.dumps(
+        _state(session_repo, result["run_id"]), ensure_ascii=False,
+    )
+    assert conclusion not in json.dumps(result, ensure_ascii=False)
+    assert conclusion not in summary_calls[0]["prompt"]
+
+
+def test_programmed_workflow_returns_handoff_and_keeps_full_result_internal(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    conclusion = "完整结论。" * 400
+    _planner(monkeypatch, _code(f"return {conclusion!r}"))
+    _summarizer(monkeypatch, "完成报告生成，文件保存在 report.md。")
+
+    result = TL.agentic_workflow("write conclusion", session_id="s1")
+
+    assert result["summary"] == "完成报告生成，文件保存在 report.md。"
+    assert result["return_result"] is False
+    assert result["result"] is None
+    assert _state(session_repo, result["run_id"])["result"] == conclusion
+    assert conclusion not in json.dumps(result, ensure_ascii=False)
+
+
+def test_explicit_direct_return_includes_raw_result(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    direct_result = "直接返回给用户的完整内容"
+    _planner(monkeypatch, _code(f"return {direct_result!r}"))
+    _summarizer(monkeypatch, "已完成直接回答。", return_result=True)
+
+    result = TL.agentic_workflow(
+        "请直接在聊天中返回完整内容，不要写文件", session_id="s1",
+    )
+
+    assert result["summary"] == "已完成直接回答。"
+    assert result["return_result"] is True
+    assert result["result"] == direct_result
+
+
+@pytest.mark.parametrize("task", (
+    "请勿在聊天中返回完整正文，写入文件",
+    "不将完整内容在聊天中返回，只给摘要",
+))
+def test_agent_preview_cannot_authorize_raw_result(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path, task: str,
+) -> None:
+    raw_result = "PRIVATE REPORT BODY"
+    _planner(monkeypatch, _code(f"return {raw_result!r}"))
+    _summarizer(monkeypatch, "完成报告生成。", return_result=True)
+
+    result = TL.agentic_workflow(task, session_id="s1")
+
+    assert result["return_result"] is False
+    assert result["result"] is None
+    assert raw_result not in json.dumps(result, ensure_ascii=False)
+
+
+def test_direct_result_authorization_handles_common_wording() -> None:
+    denied = (
+        "不要在聊天中返回完整内容，写入文件",
+        "在这里给出摘要，不要完整正文",
+        "不得在聊天中返回完整正文，请写入文件",
+        "不能在聊天中返回完整正文，请写入文件",
+        "不要保存文件，也不要直接返回完整正文，在聊天里只给摘要",
+        "不要保存文件，也不能直接把完整正文返回到聊天里，只给摘要",
+        "不要写入磁盘，也禁止直接将完整内容输出在当前消息中",
+        "请勿在聊天中返回完整正文，写入文件",
+        "不在聊天中返回完整正文，只显示摘要",
+        "不把完整正文返回到聊天里，只给摘要",
+        "不将完整内容在聊天中返回，只给摘要",
+        "Never return the full report here; save it to a file.",
+        "You must not return the complete report in chat.",
+        "Don’t return the full report here.",
+    )
+    allowed = (
+        "不要写文件，直接返回完整内容",
+        "Return the full report here",
+        "Return the complete report in chat",
+    )
+    assert all(not TL._direct_result_requested(task) for task in denied)
+    assert all(TL._direct_result_requested(task) for task in allowed)
+
+
+def test_summary_function_uses_trace_without_raw_deliverable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_deliverable = "正文机密内容" * 2000
+    calls = _summarizer(monkeypatch, "完成两项分析并保存到 /tmp/report.md。")
+    handoff = TL._summarize_workflow({
+        "task": "分析两份文件并生成报告",
+        "status": "completed",
+        "result": raw_deliverable,
+        "items": [{
+            "function": "registered",
+            "status": "completed",
+            "argument_summary": "生成报告并保存到 /tmp/report.md",
+            "result_summary": "正文发现：不应进入 workflow summary",
+        }, {
+            "function": "agent",
+            "status": "completed",
+            "argument_summary": "验证产物",
+            "result_summary": "Saved artifact: /tmp/report.md; warning: none",
+        }],
+    })
+
+    assert handoff == {
+        "summary": "完成两项分析并保存到 /tmp/report.md。",
+        "return_result": False,
+    }
+    assert raw_deliverable not in calls[0]["prompt"]
+    assert "正文发现" not in calls[0]["prompt"]
+    assert "Saved artifact: /tmp/report.md; warning: none" in calls[0]["prompt"]
+    assert calls[0]["response_format"] == {"type": "json_object"}
+
+
+def test_summary_failure_never_exposes_raw_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("summary provider unavailable")
+
+    monkeypatch.setattr(TL, "_llm_function", lambda: fail)
+    handoff = TL._summarize_workflow({
+        "task": "generate report",
+        "status": "completed",
+        "result": "FULL REPORT BODY",
+        "items": [{"function": "agent", "status": "completed"}],
+    })
+
+    assert handoff["return_result"] is False
+    assert "FULL REPORT BODY" not in handoff["summary"]
+    assert handoff["summary_error"] == "RuntimeError: summary provider unavailable"
+
+
+def test_summary_failure_is_persisted_but_not_public(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    raw_result = "PRIVATE REPORT BODY"
+    _planner(monkeypatch, _code(f"return {raw_result!r}"))
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("summary provider unavailable")
+
+    monkeypatch.setattr(TL, "_llm_function", lambda: fail)
+    result = TL.agentic_workflow("生成报告并保存到文件", session_id="s1")
+    state = _state(session_repo, result["run_id"])
+
+    assert state["handoff"]["summary_error"] == (
+        "RuntimeError: summary provider unavailable"
+    )
+    assert "completed" not in result["summary"].lower()
+    assert "summary_error" not in result
+    assert raw_result not in json.dumps(result, ensure_ascii=False)
+
+
+def test_non_string_summary_uses_safe_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    def malformed(*_args, **_kwargs):
+        return {"summary": {"report_body": "SUBSTANTIVE FINDING"}}
+
+    monkeypatch.setattr(TL, "_llm_function", lambda: malformed)
+    handoff = TL._summarize_workflow({
+        "task": "generate report",
+        "status": "completed",
+        "result": "FULL REPORT BODY",
+        "items": [{"function": "agent", "status": "completed"}],
+    })
+
+    assert handoff == {
+        "summary": (
+            "Workflow finished 1 recorded call(s): agent. "
+            "Summary generation was unavailable; verify generated artifacts."
+        ),
+        "return_result": False,
+        "summary_error": "ValueError: workflow summary text was not a string",
+    }
+    assert "SUBSTANTIVE FINDING" not in handoff["summary"]
 
 
 def test_plain_helper_uses_agent_and_its_result_in_workflow(
@@ -319,11 +529,12 @@ def test_registered_agentic_function_is_injected_and_checkpointed(
     monkeypatch.setattr(TL, "_registered_agentic_functions", lambda: {"registered": registered})
     _planner(monkeypatch, _code('return registered("value")'))
     _executor(monkeypatch)
+    _summarizer(monkeypatch, "Completed registered processing.")
 
     result = TL.agentic_workflow("registry", session_id="s1")
 
     assert result["status"] == "completed"
-    assert result["summary"] == "VALUE"
+    assert result["summary"] == "Completed registered processing."
     assert calls == ["value"]
     assert result["items"][0]["function"] == "registered"
 
@@ -363,6 +574,9 @@ def test_planner_prompt_documents_real_agentic_programming_convention(
     assert 'description="find issues"' in prompt
     assert "llm(prompt" in prompt
     assert "one model request" in prompt
+    assert "save substantive deliverables" in prompt
+    assert "explicitly asks for the content in chat" in prompt
+    assert "Do not return a report body as the workflow handoff" in prompt
     assert "step(" not in prompt
     assert "import" in prompt and "forbidden" in prompt
 
@@ -486,11 +700,12 @@ def test_generated_environment_excludes_runtime_and_agentic_function(
         return agent(",".join(missing) + ":" + registered())
     '''))
     _executor(monkeypatch)
+    _summarizer(monkeypatch, "Completed environment validation.")
 
     result = TL.agentic_workflow("environment", session_id="s1")
 
     assert result["status"] == "completed"
-    assert result["summary"] == "done: runtime,agentic_function:ok"
+    assert result["summary"] == "Completed environment validation."
     assert [item["function"] for item in result["items"]] == ["registered", "agent"]
 
 
@@ -545,11 +760,12 @@ def test_checkpoint_preserves_path_result_and_mixed_key_arguments(
             'return registered({1: "integer", "1": "string"})'
         ))
     )
+    _summarizer(monkeypatch, "Completed typed replay.")
 
     result = TL.resume_workflow(run_id, session_id="s1")
 
     assert result["status"] == "completed"
-    assert result["summary"] == "/tmp/result"
+    assert result["summary"] == "Completed typed replay."
     assert calls == 1
 
 
