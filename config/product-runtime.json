@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "python": "3.12.10",
+  "uv": "0.11.16",
+  "capabilities": [
+    "web",
+    "providers",
+    "mcp",
+    "memory",
+    "channels",
+    "search",
+    "browser.playwright",
+    "ocr.default",
+    "model.gpa_detector",
+    "program.gui",
+    "program.research",
+    "program.wiki"
+  ],
+  "programs": {
+    "gui": {
+      "distribution": "gui-agent-harness",
+      "import": "gui_harness",
+      "repository": "https://github.com/Fzkuji/GUI-Agent-Harness.git",
+      "commit": "c7c0ea03b1cc2b08fe03b3de1f86c6677fe1cb58"
+    },
+    "research": {
+      "distribution": "research-agent-harness",
+      "import": "research_harness",
+      "repository": "https://github.com/Fzkuji/Research-Agent-Harness.git",
+      "commit": "d324eb4b3b2c2ccc0954e7432e112ba13b818bb7"
+    },
+    "wiki": {
+      "distribution": "wiki-agent-harness",
+      "import": "wiki_agent_harness",
+      "repository": "https://github.com/Fzkuji/Wiki-Agent-Harness.git",
+      "commit": "18c459256888431e9d925a98c02559d4bd2be7ca"
+    }
+  },
+  "assets": {
+    "gpa_detector": {
+      "repository": "Salesforce/GPA-GUI-Detector",
+      "revision": "d04be6b715acb517068ca15d4b79159d26292713",
+      "filename": "model.pt"
+    },
+    "easyocr_languages": ["en", "ch_sim"]
+  }
+}

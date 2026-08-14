@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: write
-  id-token: write
 
 jobs:
   python:
@@ -23,7 +22,7 @@ jobs:
           version: "0.11.16"
       - name: Verify version
         run: python scripts/verify-release-version.py --tag "${GITHUB_REF_NAME}"
-      - name: Stage Web and build Python distributions
+      - name: Build developer Python distributions
         run: |
           scripts/stage-release-assets.sh
           uv build
@@ -33,24 +32,26 @@ jobs:
           uv run --with "$(find dist -name 'openprogram-*.whl' -print -quit)" --no-project -- python -c 'import openprogram.webui.server; from openprogram.webui.frontend import out_dir; assert (out_dir() / "index.html").is_file()'
       - uses: actions/upload-artifact@v7
         with:
-          name: python-distributions
+          name: developer-python-distributions
           path: dist/*
 
-  desktop:
-    environment: release
+  product-runtime:
     strategy:
       fail-fast: false
       matrix:
         include:
           - runner: macos-15
-            platform: mac
+            platform: macos
             arch: arm64
           - runner: macos-15-intel
-            platform: mac
-            arch: x64
+            platform: macos
+            arch: x86_64
           - runner: ubuntu-24.04
             platform: linux
-            arch: x64
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -58,12 +59,58 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: |
-            web/package-lock.json
-            desktop/package-lock.json
+          cache-dependency-path: web/package-lock.json
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.11.16"
+      - name: Verify version
+        run: python3 scripts/verify-release-version.py --tag "${GITHUB_REF_NAME}"
+      - name: Build complete product runtime
+        env:
+          OPENPROGRAM_RUNTIME_ROOT: ${{ runner.temp }}/openprogram-runtime/runtime
+        run: scripts/build-product-runtime.sh
+      - name: Archive complete product runtime
+        env:
+          OPENPROGRAM_RUNTIME_ROOT: ${{ runner.temp }}/openprogram-runtime/runtime
+          OPENPROGRAM_RUNTIME_OUTPUT_DIR: ${{ runner.temp }}/runtime-artifacts
+          OPENPROGRAM_RUNTIME_PLATFORM: ${{ matrix.platform }}
+          OPENPROGRAM_RUNTIME_ARCH: ${{ matrix.arch }}
+        run: scripts/archive-product-runtime.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: product-runtime-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/runtime-artifacts/*
+
+  desktop:
+    needs: product-runtime
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform: mac
+            runtime_platform: macos
+            arch: arm64
+          - runner: macos-15-intel
+            platform: mac
+            runtime_platform: macos
+            arch: x86_64
+          - runner: ubuntu-24.04
+            platform: linux
+            runtime_platform: linux
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: actions/download-artifact@v8
+        with:
+          name: product-runtime-${{ matrix.runtime_platform }}-${{ matrix.arch }}
+          path: runtime-artifact
       - name: Verify version
         run: python3 scripts/verify-release-version.py --tag "${GITHUB_REF_NAME}"
       - name: Install desktop dependencies
@@ -74,60 +121,30 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes xvfb
-      - name: Prepare App Store Connect API key
-        if: matrix.platform == 'mac'
+      - name: Prepare embedded runtime from release archive
         shell: bash
-        env:
-          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
         run: |
-          key_path="$RUNNER_TEMP/AuthKey.p8"
-          umask 077
-          printf '%s' "$APPLE_API_KEY_CONTENT" > "$key_path"
-          test -s "$key_path"
-          echo "APPLE_API_KEY=$key_path" >> "$GITHUB_ENV"
-      - name: Prepare embedded Python
-        run: scripts/prepare-desktop-runtime.sh
-      - name: Build macOS artifacts
+          archive="$(find "$GITHUB_WORKSPACE/runtime-artifact" -name '*.tar.gz' -print -quit)"
+          test -n "$archive"
+          OPENPROGRAM_RUNTIME_ARCHIVE="$archive" scripts/prepare-desktop-runtime.sh
+      - name: Build explicitly unsigned macOS artifacts
         if: matrix.platform == 'mac'
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: |
           npm run icon:build
           npm run icon:check
           npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
-        working-directory: desktop
-        env:
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      - name: Notarize and staple macOS DMG
-        if: matrix.platform == 'mac'
-        env:
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-        run: |
-          dmg_path="$(find desktop/dist -maxdepth 1 -type f -name '*.dmg' -print -quit)"
-          test -n "$dmg_path"
-          xcrun notarytool submit "$dmg_path" \
-            --key "$APPLE_API_KEY" \
-            --key-id "$APPLE_API_KEY_ID" \
-            --issuer "$APPLE_API_ISSUER" \
-            --wait
-          xcrun stapler staple "$dmg_path"
-      - name: Verify macOS signature and notarization
-        if: matrix.platform == 'mac'
-        run: |
-          app_path="$(find desktop/dist -type d -name OpenProgram.app -print -quit)"
-          dmg_path="$(find desktop/dist -maxdepth 1 -type f -name '*.dmg' -print -quit)"
-          codesign --verify --deep --strict --verbose=2 "$app_path"
-          spctl --assess --verbose --type exec "$app_path"
-          xcrun stapler validate "$app_path"
-          xcrun stapler validate "$dmg_path"
+          for artifact in dist/*.dmg dist/*.zip; do
+            extension="${artifact##*.}"
+            mv "$artifact" "${artifact%.*}-unsigned.$extension"
+          done
       - name: Build Linux AppImage
         if: matrix.platform == 'linux'
         run: npx electron-builder --linux AppImage --x64 --publish never
         working-directory: desktop
-      - name: Verify embedded runtime
+      - name: Verify embedded complete runtime
         run: scripts/smoke-packaged-runtime.sh "${{ matrix.platform }}" desktop/dist
       - name: Create SHA-256 checksums
         shell: bash
@@ -144,34 +161,45 @@ jobs:
             desktop/dist/SHA256SUMS-*
 
   cli-installer:
-    needs: python
+    needs: product-runtime
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-15, macos-15-intel, ubuntu-24.04, ubuntu-24.04-arm]
+        include:
+          - runner: macos-15
+            platform: macos
+            arch: arm64
+          - runner: macos-15-intel
+            platform: macos
+            arch: x86_64
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
-          name: python-distributions
-          path: python-distributions
-      - name: Install release wheel with managed CPython
+          name: product-runtime-${{ matrix.platform }}-${{ matrix.arch }}
+          path: runtime-artifact
+      - name: Install the same complete runtime archive
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
-          wheel="$(find "$GITHUB_WORKSPACE/python-distributions" -name 'openprogram-*.whl' -print -quit)"
+          archive="$(find "$GITHUB_WORKSPACE/runtime-artifact" -name '*.tar.gz' -print -quit)"
           OPENPROGRAM_VERSION="$version" \
-          OPENPROGRAM_WHEEL="$wheel" \
+          OPENPROGRAM_RUNTIME_ARCHIVE="$archive" \
           OPENPROGRAM_STATE_DIR="$RUNNER_TEMP/openprogram-state" \
           OPENPROGRAM_BIN_DIR="$RUNNER_TEMP/openprogram-bin" \
             scripts/install-release.sh
           "$RUNNER_TEMP/openprogram-bin/openprogram" --version
 
   publish:
-    needs: [python, desktop, cli-installer]
+    needs: [python, product-runtime, desktop, cli-installer]
     runs-on: ubuntu-24.04
-    environment: release
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
@@ -188,7 +216,3 @@ jobs:
           gh release create "$GITHUB_REF_NAME" "${files[@]}" --verify-tag --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Publish PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: release-artifacts/python-distributions/
