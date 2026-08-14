@@ -127,7 +127,7 @@ described above are all in place:
 - `providers/anthropic/_claude_code_direct_runtime.py` holds the direct
   ClaudeCodeRuntime.
 - `providers/registry.py` points `claude-code` at it.
-- `tests/unit/test_claude_code_direct_oauth.py` covers the path;
+- `tests/unit/providers/test_claude_code_direct_oauth.py` covers the path;
   `test_runtime_key_ladder.py` mock points target the unified resolution.
 
 `_max_proxy_runtime.py`, `_claude_max_proxy_registry.py`, and `_meridian_cli.py`

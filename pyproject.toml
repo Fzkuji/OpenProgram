@@ -248,9 +248,16 @@ include = ["openprogram*"]
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
-    "slow: real-subprocess integration tests (deselect with '-m \"not slow\"')",
+    "slow: tests whose expected runtime is materially longer than the layer default",
+    "browser: tests that require a Playwright-managed browser",
+    "sandbox: tests that require the host sandbox implementation",
+    "live: tests that require external services, network access, or credentials",
 ]
-addopts = "-m 'not slow'"
+addopts = "-m 'not live' --strict-markers --strict-config"
+xfail_strict = true
+filterwarnings = [
+    "error::pytest.PytestUnhandledThreadExceptionWarning",
+]
 # Any single test that runs 120 s is hung, not slow — fail it instead of
 # freezing the whole suite (a blind ws receive_text did exactly that once).
 timeout = 120

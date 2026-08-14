@@ -272,12 +272,12 @@ the wire:
 
 Getting either half wrong is easy to miss, because the two errors point in
 opposite directions and a plausible-looking total can hide both.
-`tests/context/test_budget.py` therefore checks each half against a real
+`tests/unit/context/test_budget.py` therefore checks each half against a real
 tokenized wire payload separately, within 15%.
 
 ### 7.6 Properties that should hold
 
-Regression coverage lives in `tests/context/test_tool_defer.py`:
+Regression coverage lives in `tests/unit/context/test_tool_defer.py`:
 
 - no member of `DEFERRED_DEFAULT_TOOLS` appears in the resident array of a
   fresh session, nor in `RESIDENT_TOOLS`
@@ -314,18 +314,18 @@ Regression coverage lives in `tests/context/test_tool_defer.py`:
 
 ### 9.2 Key design points (do not break)
 
-- **Expansion must be deterministic**: the tool array is at the root of the prompt cache prefix, and any ordering wobble misses the whole cache. Today `agent_tools` returns in names/registry order, which is naturally stable, and `tests/unit/test_tool_expansion_deterministic.py` locks that in. **When changing `agent_tools` / `_filter_agent_tools` later, do not introduce `set()` iteration or dict churn that breaks the order** — the cache would fail silently (no error, just quietly more expensive).
+- **Expansion must be deterministic**: the tool array is at the root of the prompt cache prefix, and any ordering wobble misses the whole cache. Today `agent_tools` returns in names/registry order, which is naturally stable, and `tests/unit/programs/test_tool_expansion_deterministic.py` locks that in. **When changing `agent_tools` / `_filter_agent_tools` later, do not introduce `set()` iteration or dict churn that breaks the order** — the cache would fail silently (no error, just quietly more expensive).
 - **Never materialize "all tools" into a list stored on the session**: all tools are always expanded live from `{enabled: True}` intent. `list[str]` denotes only the few tools a user explicitly picked. This is the design's hard line.
 - **Do not touch history**: tool toggles govern what can be called next, and never filter or rewrite historical tool_use (that would break tool_use↔tool_result pairing and cause a provider 400).
 - **The tools array changes only at turn boundaries** (§7.4). Anything that grows it mid-turn discards the cached prefix for the rest of that turn. When a tool needs to become usable sooner, hand the model its schema in a tool result — do not append to the array.
 
 ### 9.3 Tests (regression protection)
 
-- `tests/unit/test_tool_expansion_deterministic.py` — deterministic expansion (stable cache prefix)
-- `tests/unit/test_session_config_tools_intent.py` — intent round-trip, verbatim pass-through of user-picked lists, and end to end: the expanded intent includes new tools (send_message / list_agents) and web_search layering takes effect
-- `tests/unit/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` — `tools=True` produces `{enabled:True}` intent rather than a list snapshot
-- `tests/context/test_tool_defer.py` — the deferral properties of §7.6, including the turn-boundary freeze
-- `tests/context/test_budget.py` — each half of the tool pricing against a real tokenized payload (§7.5)
+- `tests/unit/programs/test_tool_expansion_deterministic.py` — deterministic expansion (stable cache prefix)
+- `tests/unit/store/test_session_config_tools_intent.py` — intent round-trip, verbatim pass-through of user-picked lists, and end to end: the expanded intent includes new tools (send_message / list_agents) and web_search layering takes effect
+- `tests/unit/store/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` — `tools=True` produces `{enabled:True}` intent rather than a list snapshot
+- `tests/unit/context/test_tool_defer.py` — the deferral properties of §7.6, including the turn-boundary freeze
+- `tests/unit/context/test_budget.py` — each half of the tool pricing against a real tokenized payload (§7.5)
 
 ### 9.4 Extension points
 

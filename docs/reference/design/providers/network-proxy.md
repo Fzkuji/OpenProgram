@@ -132,5 +132,5 @@ lifecycle validation and SSRF gating, which this design does not need.
 3. `get_proxy_mounts()` uses httpx's parser. If httpx ever privatises or
    moves `get_environment_proxies`, mirror its semantics — do not invent
    new ones, since divergent semantics is the problem described in §1.
-4. `tests/test_http_proxy.py` pins the resolution rules (override
+4. `tests/component/security/test_http_proxy.py` pins the resolution rules (override
    precedence, NO_PROXY bypass, per-URL transport selection).

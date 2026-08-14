@@ -238,12 +238,12 @@ token 全部按原价重读。
   具计价会把目录高估约一个数量级，因为描述恰恰是目录不发的那部分。
 
 两半中任何一半算错都很难被发现，因为两个误差方向相反，一个看着合理的总数可以同时
-掩盖两者。因此 `tests/context/test_budget.py` 拿真实 tokenize 的上线载荷，对两半分别
+掩盖两者。因此 `tests/unit/context/test_budget.py` 拿真实 tokenize 的上线载荷，对两半分别
 校验，各自不超 15%。
 
 ### 7.6 应当成立的性质
 
-回归保护在 `tests/context/test_tool_defer.py`：
+回归保护在 `tests/unit/context/test_tool_defer.py`：
 
 - 新会话的常驻数组里不出现任何 `DEFERRED_DEFAULT_TOOLS` 成员，`RESIDENT_TOOLS` 里也没有
 - 它们全都出现在目录里，以及装配后的系统提示里
@@ -277,7 +277,7 @@ token 全部按原价重读。
 ### 9.2 关键设计点（别破坏）
 
 - **展开必须确定性**：工具数组在 prompt 缓存前缀根部，顺序一抖整段缓存 miss。当前
-  `agent_tools` 按 names/registry 顺序返回，天然稳定——`tests/unit/test_tool_expansion_deterministic.py`
+  `agent_tools` 按 names/registry 顺序返回，天然稳定——`tests/unit/programs/test_tool_expansion_deterministic.py`
   锁住它。**以后改 `agent_tools` / `_filter_agent_tools` 切勿引入 `set()` 迭代 /
   dict churn 破坏顺序**，否则缓存会无声失效（不报错，只是悄悄变贵）。
 - **绝不把"全部工具"物化成 list 存进会话**：全部工具永远由 `{enabled: True}` 意图
@@ -290,13 +290,13 @@ token 全部按原价重读。
 
 ### 9.3 测试（回归保护）
 
-- `tests/unit/test_tool_expansion_deterministic.py` — 展开确定性（缓存前缀稳定）
-- `tests/unit/test_session_config_tools_intent.py` — 意图往返、用户精选 list 原样透传、
+- `tests/unit/programs/test_tool_expansion_deterministic.py` — 展开确定性（缓存前缀稳定）
+- `tests/unit/store/test_session_config_tools_intent.py` — 意图往返、用户精选 list 原样透传、
   端到端：意图展开含新工具（send_message/list_sessions）+ web_search 叠加生效
-- `tests/unit/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` —
+- `tests/unit/store/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` —
   `tools=True` 产出 `{enabled:True}` 意图而非 list 快照
-- `tests/context/test_tool_defer.py` — §7.6 的各项 defer 性质，含轮边界冻结
-- `tests/context/test_budget.py` — 工具计价两半各自对真实 tokenize 载荷校验（§7.5）
+- `tests/unit/context/test_tool_defer.py` — §7.6 的各项 defer 性质，含轮边界冻结
+- `tests/unit/context/test_budget.py` — 工具计价两半各自对真实 tokenize 载荷校验（§7.5）
 
 ### 9.4 扩展点
 

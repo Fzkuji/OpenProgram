@@ -100,7 +100,7 @@
   <div class="table-wrap"><table>
     <thead><tr><th>验证命令</th><th>实际结果</th></tr></thead><tbody>
       <tr><td><code>cd web &amp;&amp; npm run check</code></td><td><span class="pill ok">通过</span>，包含 send-queue、chat-ui、Markdown sanitize 和 WS action 合同。</td></tr>
-      <tr><td><code>python -m pytest tests/unit/test_webui_head_mirror_and_run_guard.py tests/unit/test_webui_chat_dispatcher.py tests/unit/test_turn_cancellation.py tests/unit/test_retry_function.py tests/unit/test_dispatcher_integration.py -q</code></td><td><span class="pill ok">61 passed, 1 skipped</span></td></tr>
+      <tr><td><code>python -m pytest tests/unit/webui/test_webui_head_mirror_and_run_guard.py tests/unit/webui/test_webui_chat_dispatcher.py tests/component/runtime/test_turn_cancellation.py tests/unit/programs/test_retry_function.py tests/unit/agent/test_dispatcher_integration.py -q</code></td><td><span class="pill ok">61 passed, 1 skipped</span></td></tr>
       <tr><td><code>cd web &amp;&amp; npx tsc --noEmit</code></td><td><span class="pill ok">通过</span></td></tr>
       <tr><td><code>cd web &amp;&amp; npm run build</code></td><td><span class="pill ok">27 个静态页面生成完成</span></td></tr>
     </tbody></table></div>

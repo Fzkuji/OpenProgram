@@ -194,6 +194,6 @@ append-only 替身节点对所有方案通用，换方案永不迁移数据：
   `webui/persistence.py` 的 `save_meta` 无条件剥离 `head_id`，`save_messages`
   已删除；CLI 轮次路径经 `db.append_message` 写行。
 - 第六节图契约——`webui/graph_builder.py`。
-- 第八节不变量——`tests/unit/test_compaction_covers.py`、
-  `tests/unit/test_graph_builder_covers.py`、
-  `tests/integration/test_dag_mutation_scenarios.py`。
+- 第八节不变量——`tests/unit/context/test_compaction_covers.py`、
+  `tests/unit/dag/test_graph_builder_covers.py`、
+  `tests/integration/dag/test_dag_mutation_scenarios.py`。

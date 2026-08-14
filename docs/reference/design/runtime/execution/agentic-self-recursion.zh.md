@@ -5,7 +5,7 @@
 > 相关代码：
 > - `openprogram/agentic_programming/function.py`
 > - `openprogram/agentic_programming/runtime.py`
-> - 测试：`tests/agentic_programming/test_self_recursion_guard.py`(8 用例)
+> - 测试：`tests/unit/programs/test_self_recursion_guard.py`(8 用例)
 
 ---
 
@@ -108,7 +108,7 @@ wrapper 不把函数自己的名字推进 `_current_tool_policy["deny"]`。内�
 
 ## 5. 行为契约(从测试提炼)
 
-来自 `tests/agentic_programming/test_self_recursion_guard.py`：
+来自 `tests/unit/programs/test_self_recursion_guard.py`：
 
 | # | 契约 | 测试 |
 |---|---|---|

@@ -147,7 +147,7 @@ reply/reject 走与 WS 同一收口 `_resolve_question`。
 `agentic_programming/runtime.py`（`set_question_transport`、`_ask_raw` 走
 `self._question_transport`）与 `agent/process_runner.py`（`answer_queue`、
 answer-pump、`_bridge_question_to_parent`、`_decline_bridged_question`）。
-由 `tests/agent/test_questions_subprocess_bridge.py`（8 个单测）与一次真 spawn
+由 `tests/component/agent/test_questions_subprocess_bridge.py`（8 个单测）与一次真 spawn
 子进程的端到端验证覆盖。
 
 尚未落地：TUI 界面（question/approval 提示放在输入槽位里，在 tui-upgrade.md

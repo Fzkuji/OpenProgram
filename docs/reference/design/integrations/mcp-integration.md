@@ -188,7 +188,7 @@ An `isError=True` return is reflected in `details["is_error"]`, and what the LLM
 
 ### 5. Test isolation — beware of `from openprogram.paths import get_state_dir`
 
-`tests/integration/test_attach_lazy_session.py` uses `monkeypatch.setattr("openprogram.paths.get_state_dir", ...)` to redirect the state directory. If `config.py` pulls it in via `from openprogram.paths import get_state_dir`, the first import happens **during** the attach test (because the webui startup hook triggers `_start_mcp_servers` → import `openprogram.mcp` → import `config`), and the lambda gets permanently bound into our module, leaking after the attach test ends.
+`tests/integration/store/test_attach_lazy_session.py` uses `monkeypatch.setattr("openprogram.paths.get_state_dir", ...)` to redirect the state directory. If `config.py` pulls it in via `from openprogram.paths import get_state_dir`, the first import happens **during** the attach test (because the webui startup hook triggers `_start_mcp_servers` → import `openprogram.mcp` → import `config`), and the lambda gets permanently bound into our module, leaking after the attach test ends.
 
 Fix: `from openprogram import paths as _paths`, and look up the attribute live on every call to `_paths.get_state_dir()`. Watch out: if the test suite adds a new paths monkeypatch, confirm our `config.py` still goes through the module reference.
 
@@ -202,7 +202,7 @@ what is built:
 3. **A config change takes effect on worker restart.** The server list is not hot-reloaded, and `MCPClient` has no `restart` between `start()` and `stop()`. A `restart_server(name)` API would remove the need to restart the whole worker.
 4. **Concurrent calls to one server serialize on the ClientSession lock.** `MCPClient._call_lock` queues them. This is not a performance problem — an MCP server is single-flight to begin with — but one slow tool blocks other tool calls on the same server.
 5. **The tool list is read once.** The supervisor pulls `list_tools` at startup and never asks again, so tools a server adds or removes mid-flight are invisible. The protocol's `tools/list_changed` notification is not listened for.
-6. **`_loaded` is a module global.** Tests reset it before re-testing; see the `tests/integration/test_mcp_client.py::_reset_mcp_loader_flag` fixture.
+6. **`_loaded` is a module global.** Tests reset it before re-testing; see the `tests/integration/programs/test_mcp_client.py::_reset_mcp_loader_flag` fixture.
 
 The webui settings page does not yet render `server_status()`; doing so would
 surface each server's status, error message, tool count, and most recent call

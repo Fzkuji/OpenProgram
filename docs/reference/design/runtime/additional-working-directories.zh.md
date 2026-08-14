@@ -106,10 +106,10 @@ composer 的 `envChips` 行从左到右就是会话的目录集合：`<ProjectBa
 ### 3.6 测试
 
 跟随既有文件风格：
-- `tests/unit/test_session_config.py`：`additional_working_dirs` save/load 往返（含 None 不动、`_as_str_list` 清洗）。
-- `tests/unit/test_permission_rules.py`：`_path_is_safe` 三例——额外目录内放行、目录外拦、ContextVar 绑定的项目 cwd 内放行（monkeypatch `current_worktree_path`）。
-- `tests/unit/test_ws_working_dirs.py`：ws action 的合法写入+广播、非目录整帧拒绝、`session_loaded` 回带。
-- `tests/unit/test_session_main_workdir.py`：主目录那侧的相反规则——定格、目录缺失时的解析、relocate 记录节点——外加把两者串起来的那条：主目录已定格的会话上照样增删额外目录。
+- `tests/unit/store/test_session_config.py`：`additional_working_dirs` save/load 往返（含 None 不动、`_as_str_list` 清洗）。
+- `tests/unit/security/test_permission_rules.py`：`_path_is_safe` 三例——额外目录内放行、目录外拦、ContextVar 绑定的项目 cwd 内放行（monkeypatch `current_worktree_path`）。
+- `tests/unit/webui/test_ws_working_dirs.py`：ws action 的合法写入+广播、非目录整帧拒绝、`session_loaded` 回带。
+- `tests/unit/store/test_session_main_workdir.py`：主目录那侧的相反规则——定格、目录缺失时的解析、relocate 记录节点——外加把两者串起来的那条：主目录已定格的会话上照样增删额外目录。
 
 ## 4. 数据流总览
 

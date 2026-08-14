@@ -83,7 +83,7 @@
 
   <section class="card" style="margin-top:14px">
     <h3>审查修复任务 brief</h3>
-    <p>批准基线为 <code>95e778aa</code>，最终集成实现证据为 <code>33dd7d2c</code>。本修复只允许修改 <code>openprogram/proactive/heartbeat.py</code>、<code>openprogram/memory/management/tools.py</code>、<code>openprogram/memory/management/workspace.py</code>、<code>tests/unit/test_memory_commitments.py</code> 与本页。公共 RED 必须覆盖首次检查已逾期记录的单向通知顺序、组合 create+transition 失败后 stage 与 committed workspace 均不变化，以及恢复写入失败后部分 stage 不可提交。兼容边界包括发送失败重试、正常并发 claim 对同一通知档位只发送一次、channel 成功后与状态写入前进程退出窗口的 at-least-once、malformed 行策略、owner 单项 transition、既有 stage 修改和不含 commitments 文件的 stage。排除新 scheduler、delivery journal、跨进程终止窗口的端到端 exactly-once、优先级、子任务、项目和 Windows 专项实现。验收命令为 commitments 专项 Python 测试、Memory Web 检查、scoped Ruff、文档构建与链接、独立规格复审、独立质量审查和最终组合门禁；任何实现或测试变更后均需重新审查。</p>
+    <p>批准基线为 <code>95e778aa</code>，最终集成实现证据为 <code>33dd7d2c</code>。本修复只允许修改 <code>openprogram/proactive/heartbeat.py</code>、<code>openprogram/memory/management/tools.py</code>、<code>openprogram/memory/management/workspace.py</code>、<code>tests/component/memory/test_memory_commitments.py</code> 与本页。公共 RED 必须覆盖首次检查已逾期记录的单向通知顺序、组合 create+transition 失败后 stage 与 committed workspace 均不变化，以及恢复写入失败后部分 stage 不可提交。兼容边界包括发送失败重试、正常并发 claim 对同一通知档位只发送一次、channel 成功后与状态写入前进程退出窗口的 at-least-once、malformed 行策略、owner 单项 transition、既有 stage 修改和不含 commitments 文件的 stage。排除新 scheduler、delivery journal、跨进程终止窗口的端到端 exactly-once、优先级、子任务、项目和 Windows 专项实现。验收命令为 commitments 专项 Python 测试、Memory Web 检查、scoped Ruff、文档构建与链接、独立规格复审、独立质量审查和最终组合门禁；任何实现或测试变更后均需重新审查。</p>
   </section>
 
   <section class="card" style="margin-top:14px">

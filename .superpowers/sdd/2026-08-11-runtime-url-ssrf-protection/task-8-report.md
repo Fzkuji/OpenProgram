@@ -2,13 +2,13 @@
 
 ## Scope
 
-- Added `tests/security/test_runtime_http_compatibility.py`.
+- Added `tests/component/security/test_runtime_http_compatibility.py`.
   Its 41 hand-written fixtures cover exactly every `CONSUMER_REGISTRY` key and
   assert trust class, accepted method, scheme, port, accepted fixed/configured/
   callback origin through the real policy boundary, redirect policy, redirect
   cap, decoded-body cap, MIME prefixes, credential-origin behavior,
   owner-exception scope, and SDK disposition.
-- Added `tests/security/test_runtime_http_acceptance.py` with real managed
+- Added `tests/component/security/test_runtime_http_acceptance.py` with real managed
   client and local socket scenarios only. No external network, credential, or
   keychain access is used. Test-only public-peer mapping preserves the real
   managed transport's peer check while routing local fixture traffic.
@@ -30,19 +30,19 @@
 
 ## TDD and verification
 
-- RED: `uv run pytest -q tests/security/test_runtime_http_compatibility.py tests/security/test_runtime_http_acceptance.py`
+- RED: `uv run pytest -q tests/component/security/test_runtime_http_compatibility.py tests/component/security/test_runtime_http_acceptance.py`
   returned `1 failed, 1 passed`. The incomplete fixture table contained only
   `tool.web_fetch`; the completeness assertion named the other registry keys
   as missing.
 - GREEN after completing the literal table and scenarios: the same command
   returned `53 passed in 6.66s`.
 - `uv run pytest -q tests/security`: exit 0, `631 passed in 84.33s`.
-- `uv run pytest -q tests/meta_functions tests/providers tests/unit tests/webui tests/integration/test_mcp_client.py`:
+- `uv run pytest -q tests/meta_functions tests/providers tests/unit tests/webui tests/integration/programs/test_mcp_client.py`:
   exit 0, `2932 passed, 12 skipped, 1 xfailed, 4 warnings in 164.32s`.
   The four warnings are existing websockets/uvicorn deprecations.
 - `uv run python scripts/check_runtime_http.py`: exit 0,
   `unregistered=0 active_unmanaged=0 registry_without_consumer=0 stale_exclusions=0`.
-- `uv run ruff check tests/security/test_runtime_http_compatibility.py tests/security/test_runtime_http_acceptance.py`:
+- `uv run ruff check tests/component/security/test_runtime_http_compatibility.py tests/component/security/test_runtime_http_acceptance.py`:
   exit 0.
 - `uv lock --check` and `git diff --check`: exit 0.
 
@@ -73,7 +73,7 @@ Task 8 does not modify those files.
   exception scope. SDK dispositions are exercised through their fail-closed
   runtime guard and the executable inventory checker.
 - F1 fixture RED:
-  `uv run pytest -q tests/security/test_runtime_http_compatibility.py -k fixed_origin_fixtures`
+  `uv run pytest -q tests/component/security/test_runtime_http_compatibility.py -k fixed_origin_fixtures`
   returned `1 failed, 42 deselected`; the exact missing key was `updater.pip`.
   After restoring its literal row, the full compatibility file was GREEN:
   `109 passed in 4.83s`.
@@ -99,10 +99,10 @@ Task 8 does not modify those files.
 
 ### Round-1 focused verification
 
-- `uv run pytest -q tests/security/test_runtime_http_compatibility.py tests/security/test_runtime_http_acceptance.py`:
+- `uv run pytest -q tests/component/security/test_runtime_http_compatibility.py tests/component/security/test_runtime_http_acceptance.py`:
   `120 passed in 11.57s`.
 - `uv run pytest -q tests/security`: exit 0, `698 passed in 88.11s`.
-- `uv run pytest -q tests/meta_functions tests/providers tests/unit tests/webui tests/integration/test_mcp_client.py`:
+- `uv run pytest -q tests/meta_functions tests/providers tests/unit tests/webui tests/integration/programs/test_mcp_client.py`:
   exit 0, `2932 passed, 12 skipped, 1 xfailed, 4 warnings in 192.44s`.
 - Runtime inventory checker: exit 0 with all four categories zero.
 - Changed-file Ruff, Ruff format check, `uv lock --check`, and `git diff --check`:
@@ -131,7 +131,7 @@ Task 8 does not modify those files.
   not produce `MIME_TYPE_FORBIDDEN`, and did not produce
   `BODY_TOO_LARGE`.  No external address is a possible socket target.
 - GREEN:
-  `uv run pytest -q tests/security/test_runtime_http_compatibility.py tests/security/test_runtime_http_acceptance.py`
+  `uv run pytest -q tests/component/security/test_runtime_http_compatibility.py tests/component/security/test_runtime_http_acceptance.py`
   returned `161 passed in 32.97s`.
 - SDK disposition remains bound to the executable runtime-inventory checker;
   disabled SDK consumers are also fail-closed by
@@ -141,7 +141,7 @@ Task 8 does not modify those files.
 ### Round-2 verification
 
 - `uv run pytest -q tests/security`: exit 0, `739 passed in 110.73s`.
-- `uv run pytest -q tests/meta_functions tests/providers tests/unit tests/webui tests/integration/test_mcp_client.py`:
+- `uv run pytest -q tests/meta_functions tests/providers tests/unit tests/webui tests/integration/programs/test_mcp_client.py`:
   exit 0, `2932 passed, 12 skipped, 1 xfailed, 4 warnings in 176.80s`.
   The four warnings are existing websockets/uvicorn deprecations.
 - No production file changed and F2's proxy-outage sentinel was not modified.
@@ -159,14 +159,14 @@ Task 8 does not modify those files.
 - RED: wrapping `_ManagedTransportBase._evaluate` so only
   `provider.configured_api` rejects `https://` produced
   `1 failed, 40 passed, 150 deselected, 1 warning` from
-  `uv run pytest -q tests/security/test_runtime_http_compatibility.py -k allowed_scheme`.
+  `uv run pytest -q tests/component/security/test_runtime_http_compatibility.py -k allowed_scheme`.
   The failing parametrized case named `provider.configured_api` and its
   declared `https://configured.example.test:17654` URL.  The warning is
   pytest assertion-rewrite state from the in-process mutation runner.
 - GREEN: the same focused new test returned `41 passed, 150 deselected in
   1.82s`; the complete Task 8 focused pair returned `202 passed in 34.93s`.
 - `uv run pytest -q tests/security`: exit 0, `780 passed in 112.33s`.
-- `uv run pytest -q tests/meta_functions tests/providers tests/unit tests/webui tests/integration/test_mcp_client.py`:
+- `uv run pytest -q tests/meta_functions tests/providers tests/unit tests/webui tests/integration/programs/test_mcp_client.py`:
   exit 0, `2932 passed, 12 skipped, 1 xfailed, 4 warnings in 163.91s`.
   The warnings are existing websockets/uvicorn deprecations.
 - No production or documentation file changed; the existing socket contract

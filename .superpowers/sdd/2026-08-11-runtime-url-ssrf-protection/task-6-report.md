@@ -107,24 +107,24 @@ SSE real SDK sessions list and invoke a tool. No deprecation warning remains.
 - The first broad non-integration run exposed eight legacy unit tests that
   still replaced the pre-migration raw `httpx`/`urllib` entry points. Their
   complete node IDs and causes were:
-  - `tests/unit/test_anthropic_subscription_login.py::test_refresh_posts_refresh_token`
+  - `tests/unit/providers/test_anthropic_subscription_login.py::test_refresh_posts_refresh_token`
     replaced `httpx.post` instead of `provider.oauth.fixed`.
-  - `tests/unit/test_backend_endpoint.py::test_resolve_backend_endpoint_never_transmits_the_token`
-    and `tests/unit/test_backend_identity.py::test_backend_identity_uses_worker_ownership_without_network_credentials`
+  - `tests/unit/core/test_backend_endpoint.py::test_resolve_backend_endpoint_never_transmits_the_token`
+    and `tests/unit/core/test_backend_identity.py::test_backend_identity_uses_worker_ownership_without_network_credentials`
     replaced `urllib.request.build_opener` instead of the exact-origin
     `runtime.local_probe` configured client.
-  - `tests/unit/test_model_fetch_routing.py::test_anthropic_fetcher_uses_provider_base_url`,
-    `tests/unit/test_model_fetch_routing.py::test_codex_browse_does_not_grow_registry`,
-    `tests/unit/test_model_fetch_routing.py::test_codex_fetch_drops_ultra_and_needs_token`,
-    and `tests/unit/test_model_fetch_routing.py::test_anthropic_fetcher_native_still_uses_anthropic_host`
+  - `tests/unit/providers/test_model_fetch_routing.py::test_anthropic_fetcher_uses_provider_base_url`,
+    `tests/unit/providers/test_model_fetch_routing.py::test_codex_browse_does_not_grow_registry`,
+    `tests/unit/providers/test_model_fetch_routing.py::test_codex_fetch_drops_ultra_and_needs_token`,
+    and `tests/unit/providers/test_model_fetch_routing.py::test_anthropic_fetcher_native_still_uses_anthropic_host`
     replaced raw `httpx.get` instead of the fixed/configured provider clients.
-  - `tests/unit/test_models_dev_disk_cache.py::test_successful_fetch_writes_disk_cache`
+  - `tests/unit/providers/test_models_dev_disk_cache.py::test_successful_fetch_writes_disk_cache`
     replaced raw `httpx.get` instead of `webui.model_listing.fixed`.
   Each test now asserts its registry consumer; configured-origin tests also
   assert the exact origin and matching `OwnerURLException`. The eight-node
   targeted run is `8 passed`; all five affected unit files are `40 passed`.
 - The same first broad run also failed
-  `tests/unit/test_recoverable_delete.py::test_wheel_contains_both_runtime_shims`
+  `tests/component/agent/test_recoverable_delete.py::test_wheel_contains_both_runtime_shims`
   because the frozen environment lacked the external `build` module. The
   identical node fails on a clean BASE archive for the same reason. With the
   pre-fix dev extra present the wheel built, then the unchanged test supplied
@@ -174,19 +174,19 @@ synchronizes `uv.lock`; production dependencies are unchanged.
 
 Tests changed or added:
 
-- `tests/security/test_runtime_sdk_transports.py`
-- `tests/security/test_runtime_service_consumers.py`
-- `tests/security/test_consumer_registry.py`
-- `tests/security/test_runtime_derived_url_consumers.py`
-- `tests/providers/test_shared_client_leak.py`
-- `tests/providers/test_stream_fixes.py`
-- `tests/test_http_proxy.py`
-- `tests/unit/test_channels_attachments.py`
-- `tests/unit/test_anthropic_subscription_login.py`
-- `tests/unit/test_backend_endpoint.py`
-- `tests/unit/test_backend_identity.py`
-- `tests/unit/test_model_fetch_routing.py`
-- `tests/unit/test_models_dev_disk_cache.py`
+- `tests/component/security/test_runtime_sdk_transports.py`
+- `tests/contracts/security/test_runtime_service_consumers.py`
+- `tests/contracts/security/test_consumer_registry.py`
+- `tests/contracts/security/test_runtime_derived_url_consumers.py`
+- `tests/component/providers/test_shared_client_leak.py`
+- `tests/component/providers/test_stream_fixes.py`
+- `tests/component/security/test_http_proxy.py`
+- `tests/unit/channels/test_channels_attachments.py`
+- `tests/unit/providers/test_anthropic_subscription_login.py`
+- `tests/unit/core/test_backend_endpoint.py`
+- `tests/unit/core/test_backend_identity.py`
+- `tests/unit/providers/test_model_fetch_routing.py`
+- `tests/unit/providers/test_models_dev_disk_cache.py`
 
 ## Concerns
 
@@ -205,14 +205,14 @@ Tests changed or added:
 ## Accepted spec-review fixes
 
 - MCP supervisor sanitization RED:
-  `uv run --frozen --extra dev pytest -q tests/security/test_runtime_sdk_transports.py -k 'mcp_supervisor_sanitizes_remote'`
+  `uv run --frozen --extra dev pytest -q tests/component/security/test_runtime_sdk_transports.py -k 'mcp_supervisor_sanitizes_remote'`
   failed `2` tests because OAuth and transient peer exception bodies reached
   `client.error` and stderr. A shared supervisor renderer now retains only the
   exception class and normalized configured origin for HTTP/SSE while preserving
   local stdio details and `needs_reauth`/`transient` classification. GREEN:
   `2 passed, 32 deselected`.
 - Direct short-loop cache RED:
-  `uv run --frozen --extra dev pytest -q tests/providers/test_shared_client_leak.py -k 'direct_short_lived_loops'`
+  `uv run --frozen --extra dev pytest -q tests/component/providers/test_shared_client_leak.py -k 'direct_short_lived_loops'`
   failed on loop 34 with `shared provider client cache limit exceeded`. An
   intermediate cross-loop close implementation was rejected by an owner-loop
   assertion. Each cached loop now owns a cleanup task whose cancellation closes
@@ -228,7 +228,7 @@ Tests changed or added:
 ## Spec re-review concurrent-cap fix
 
 - RED command:
-  `uv run --frozen --extra dev pytest -q tests/providers/test_shared_client_leak.py -k 'concurrent_loops_reserve_process_capacity_atomically or failed_shared_client_construction_restores_capacity'`
+  `uv run --frozen --extra dev pytest -q tests/component/providers/test_shared_client_leak.py -k 'concurrent_loops_reserve_process_capacity_atomically or failed_shared_client_construction_restores_capacity'`
 - RED result: `1 failed, 1 passed, 8 deselected`. Forty active
   thread-owned event loops inserted 40 live clients while the process limit was
   32; the expected assertion failed as `assert 40 == 32`. The independent
@@ -251,12 +251,12 @@ Tests changed or added:
 ## Quality-review fix round
 
 - Remote registered-tool secrecy RED:
-  `uv run --frozen --extra dev pytest -q tests/security/test_runtime_sdk_transports.py -k 'registered_remote_mcp_tool_sanitizes_peer_failures_and_exception_graph'`
+  `uv run --frozen --extra dev pytest -q tests/component/security/test_runtime_sdk_transports.py -k 'registered_remote_mcp_tool_sanitizes_peer_failures_and_exception_graph'`
   failed `2` cases. Both direct peer failure and a failed session-expired retry
   exposed peer body, signed path/query, and bearer-token sentinels in the
   model-visible registered-tool result.
 - Gateway constructor import-order RED:
-  `uv run --frozen --extra dev pytest -q tests/security/test_runtime_sdk_transports.py -k 'uninjectable_gateway_sdk_is_disabled_before_sdk_import'`
+  `uv run --frozen --extra dev pytest -q tests/component/security/test_runtime_sdk_transports.py -k 'uninjectable_gateway_sdk_is_disabled_before_sdk_import'`
   failed `2` cases. Normal Slack and Discord constructors attempted their
   disabled SDK imports and raised the import sentinel before reaching
   `UNMANAGED_TRANSPORT`.

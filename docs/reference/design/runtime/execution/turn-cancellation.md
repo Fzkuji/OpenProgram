@@ -147,7 +147,7 @@ the stop, and it is committed.
 Implemented. `CancelToken`, `begin_turn`, `end_turn` and `current_token` live
 in `openprogram/agent/run_control.py`; the cancel bridge is in
 `openprogram/agent/dispatcher/__init__.py`. Tests:
-`tests/unit/test_turn_cancellation.py`.
+`tests/component/runtime/test_turn_cancellation.py`.
 
 Pause/resume (`pause_execution` / `resume_execution`) is a separate, global,
 cooperative mechanism and is not part of the per-turn token model. `/api/stop`

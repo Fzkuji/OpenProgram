@@ -27,7 +27,7 @@ It tracks the bounded implementation, verification, and review evidence for the 
 ## Full gate manifest
 
 ```text
-python -m pytest tests/unit/test_webui_frontend.py tests/unit/test_desktop_packaged_files.py tests/unit/test_distribution_release.py
+python -m pytest tests/component/webui/test_webui_frontend.py tests/unit/webui/test_desktop_packaged_files.py tests/component/config/test_distribution_release.py
 python -m tools.docs_site.checklinks
 python -m tools.docs_site.build
 python -m pytest tests/ --ignore=tests/integration

@@ -109,7 +109,7 @@ claude-code 的账号走通用账号路由，而非 provider 专属路由。
 - `providers/anthropic/_claude_code_direct_runtime.py` 中是直连的
   ClaudeCodeRuntime。
 - `providers/registry.py` 把 `claude-code` 指向它。
-- `tests/unit/test_claude_code_direct_oauth.py` 覆盖该路径；
+- `tests/unit/providers/test_claude_code_direct_oauth.py` 覆盖该路径；
   `test_runtime_key_ladder.py` 的 mock 点指向统一解析。
 
 `_max_proxy_runtime.py`、`_claude_max_proxy_registry.py`、`_meridian_cli.py`

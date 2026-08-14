@@ -102,7 +102,7 @@ The core runs embedded in a host that is not OpenProgram — somebody else's
 service or agent framework using `@agentic_function` + the execution DAG as a
 component (see
 [Embedding in your own stack](../../../capabilities/agentic-programming/embedding-in-your-own-stack.md)).
-The contract, executed by `tests/embed/test_standalone_embed.py` rather than
+The contract, executed by `tests/component/runtime/test_standalone_embed.py` rather than
 stated in prose only:
 
 - **The library face never imports a UI surface.** `import openprogram` and a

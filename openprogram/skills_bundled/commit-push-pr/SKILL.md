@@ -73,7 +73,7 @@ git status --short -uall
 Read it. Then add **named paths only**:
 
 ```bash
-git add openprogram/commands/commit_message.py tests/unit/test_commit_trailers.py
+git add openprogram/commands/commit_message.py tests/component/core/test_commit_trailers.py
 ```
 
 Never `git add -A` / `git add .` over a tree you did not inspect. If the

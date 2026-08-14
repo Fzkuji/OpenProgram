@@ -118,7 +118,7 @@
   <h3>1. JSON Schema structured output: Tasks 6–7</h3>
   <ol>
     <li>Replace title text parsing in <code>openprogram/agent/dispatcher/titles.py</code> with <code>Runtime.exec(..., response_format=TITLE_SCHEMA)</code>. Preserve Unicode trim, the 80-code-point storage limit, and the existing placeholder on typed failure.</li>
-    <li>Update <code>docs/reference/design/runtime/session/name.md</code> and <code>tests/unit/test_dispatcher_compaction_title.py</code>.</li>
+    <li>Update <code>docs/reference/design/runtime/session/name.md</code> and <code>tests/unit/context/test_dispatcher_compaction_title.py</code>.</li>
     <li>After the title tests pass, update the structured-output HTML, Runtime API pages, session-title page, and feature matrix. The matrix may become complete only after Tasks 1–6 and fresh spec/quality reviews pass.</li>
     <li>Source plan: <code>docs/superpowers/plans/2026-08-12-json-schema-structured-output-completion.md</code> on the JSON branch.</li>
   </ol>

@@ -555,7 +555,7 @@ head往回走会把整个会话都收进来。
 
 验证结果如下：
 
-- `python -m pytest -q tests/unit/test_memory_written_marker.py tests/unit/test_memory_writing.py tests/unit/test_memory_write_timing.py`：59项通过。
+- `python -m pytest -q tests/unit/memory/test_memory_written_marker.py tests/unit/memory/test_memory_writing.py tests/unit/memory/test_memory_write_timing.py`：59项通过。
 - memory、DAG branch、predecessor和session branch相关回归组：159项通过。
 - `python -m tools.docs_site.build`构建415页；`python -m tools.docs_site.checklinks`
   报告0条断链。修改的Python文件通过ruff、`py_compile`和`git diff --check`。

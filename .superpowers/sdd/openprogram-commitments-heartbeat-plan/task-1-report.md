@@ -93,9 +93,9 @@ SHA，最终 report commit SHA 以任务最终回复为准。
   `web/components/memory/memory-page.module.css`、
   `web/components/memory/status.ts`、`web/components/memory/types.ts`、
   `web/scripts/check-memory-status.mjs`
-- tests：`tests/unit/test_memory_commitments.py`、
-  `tests/unit/test_memory_routes.py`、
-  `tests/unit/test_memory_runtime_config.py`
+- tests：`tests/component/memory/test_memory_commitments.py`、
+  `tests/component/memory/test_memory_routes.py`、
+  `tests/unit/memory/test_memory_runtime_config.py`
 - docs：`docs/reference/config.md`、`docs/reference/config.zh.md`、
   `docs/reference/cli.md`、`docs/reference/cli.zh.md`、
   `docs/reference/design/feature-matrix.html`、
@@ -107,7 +107,7 @@ SHA，最终 report commit SHA 以任务最终回复为准。
 
 ### TDD 证据
 
-- `python -m pytest tests/unit/test_memory_commitments.py -q`（接手基线）：
+- `python -m pytest tests/component/memory/test_memory_commitments.py -q`（接手基线）：
   `15 passed`。
 - 初始新增 backend tests：`5 failed, 24 passed`，失败分别确认 status、cron route、
   invalid config、Git candidate、config defaults 尚未集成。
@@ -117,7 +117,7 @@ SHA，最终 report commit SHA 以任务最终回复为准。
 - owner Web transition RED：route tests `2 failed`（404）；Node static check 因 endpoint
   wiring 缺失失败。实现后 route tests `2 passed`，Node static check passed。
 - 稳定证据/provenance/schema 首轮 RED：
-  `python -m pytest tests/unit/test_memory_commitments.py tests/unit/test_memory_routes.py -q`
+  `python -m pytest tests/component/memory/test_memory_commitments.py tests/component/memory/test_memory_routes.py -q`
   得到 `9 failed, 42 passed`；首轮实现后 `51 passed`。
 - tolerant/strict read、projection、malformed Web payload 回归 RED：5 个测试全部失败；
   实现后该组 `5 passed`。
@@ -127,18 +127,18 @@ SHA，最终 report commit SHA 以任务最终回复为准。
   `HH:MM` regex 后通过。due 同时先通过 `YYYY-MM-DD` regex 再 parse，并覆盖
   `20260812`；Runtime-derived overlong speaker_id 也有拒绝测试。
 - 最终 focused：
-  `python -m pytest tests/unit/test_memory_commitments.py tests/unit/test_memory_routes.py -q`
+  `python -m pytest tests/component/memory/test_memory_commitments.py tests/component/memory/test_memory_routes.py -q`
   → `59 passed, 6 warnings`。
 
 ### 最终验证
 
-- `python -m pytest tests/unit/test_memory_commitments.py tests/unit/test_memory_runtime_config.py tests/unit/test_cron_command.py tests/unit/test_channel_questions.py tests/unit/test_memory_writer_status.py tests/unit/test_memory_routes.py tests/unit/test_memory_scope.py tests/unit/test_memory_writing.py tests/unit/test_memory_stage_cleanup.py -q`
+- `python -m pytest tests/component/memory/test_memory_commitments.py tests/unit/memory/test_memory_runtime_config.py tests/unit/programs/test_cron_command.py tests/unit/channels/test_channel_questions.py tests/component/memory/test_memory_writer_status.py tests/component/memory/test_memory_routes.py tests/unit/memory/test_memory_scope.py tests/unit/memory/test_memory_writing.py tests/unit/memory/test_memory_stage_cleanup.py -q`
   → `180 passed, 6 warnings`。
 - `python -m pytest tests/unit -q`
   → `2728 passed, 8 skipped, 10 warnings in 139.24s`（最终重跑）。
-- `python -m ruff check openprogram/config_schema.py openprogram/functions/tools/cron/worker.py openprogram/functions/tools/memory/memory.py openprogram/memory/management/api.py openprogram/memory/management/block_views.py openprogram/memory/management/tools.py openprogram/memory/management/workspace.py openprogram/memory/prompts/write.py openprogram/memory/retrieval/inspect.py openprogram/memory/runtime/commitments.py openprogram/memory/runtime/state.py openprogram/memory/writing.py openprogram/proactive/heartbeat.py openprogram/webui/routes/memory.py tests/unit/test_memory_commitments.py tests/unit/test_memory_routes.py tests/unit/test_memory_runtime_config.py`
+- `python -m ruff check openprogram/config_schema.py openprogram/functions/tools/cron/worker.py openprogram/functions/tools/memory/memory.py openprogram/memory/management/api.py openprogram/memory/management/block_views.py openprogram/memory/management/tools.py openprogram/memory/management/workspace.py openprogram/memory/prompts/write.py openprogram/memory/retrieval/inspect.py openprogram/memory/runtime/commitments.py openprogram/memory/runtime/state.py openprogram/memory/writing.py openprogram/proactive/heartbeat.py openprogram/webui/routes/memory.py tests/component/memory/test_memory_commitments.py tests/component/memory/test_memory_routes.py tests/unit/memory/test_memory_runtime_config.py`
   → `All checks passed!`。
-- `python -m ruff format openprogram/memory/runtime/commitments.py openprogram/proactive/heartbeat.py tests/unit/test_memory_commitments.py`
+- `python -m ruff format openprogram/memory/runtime/commitments.py openprogram/proactive/heartbeat.py tests/component/memory/test_memory_commitments.py`
   → `2 files reformatted, 1 file left unchanged`；仅格式化本任务新增文件。
 - `python -m ruff format --check <全部 touched Python files>` 的早期检查：
   `14 files would be reformatted`。这些是仓库既有 tracked 文件的基线格式差异；

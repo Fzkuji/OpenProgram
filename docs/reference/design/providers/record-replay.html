@@ -467,8 +467,8 @@ replay:
       <tr><td><code>openprogram/webui/server.py</code></td><td>在线程启动前显式初始化 provider runtime。</td><td>保留现有单线程 preload 意图，并把失败边界变为显式 API。</td></tr>
       <tr><td><code>openprogram/worker/runner.py</code></td><td>在 <code>start_web()</code>、provider warm-up 和 channel 线程之前显式初始化。</td><td>worker 对无效 replay 配置统一 fail-fast，不允许后台线程独立触发首次初始化。</td></tr>
       <tr><td><code>openprogram/cli.py</code></td><td>删除 recordings 环境变量哨兵，继续直接分派管理函数。</td><td>管理恢复由模块边界保证。</td></tr>
-      <tr><td><code>tests/providers/test_provider_initialization.py</code></td><td>新增 import purity、状态机、并发、失败原子性、auth/Web 边界测试。</td><td>生命周期测试与格式、CLI 测试分开。</td></tr>
-      <tr><td><code>tests/providers/test_record_replay_cli.py</code></td><td>补 status/off 对 missing、corrupt、unsupported-version 文件的真实子进程恢复矩阵。</td><td>验证用户恢复入口，不用单元 mock 代替启动行为。</td></tr>
+      <tr><td><code>tests/component/providers/test_provider_initialization.py</code></td><td>新增 import purity、状态机、并发、失败原子性、auth/Web 边界测试。</td><td>生命周期测试与格式、CLI 测试分开。</td></tr>
+      <tr><td><code>tests/component/providers/test_record_replay_cli.py</code></td><td>补 status/off 对 missing、corrupt、unsupported-version 文件的真实子进程恢复矩阵。</td><td>验证用户恢复入口，不用单元 mock 代替启动行为。</td></tr>
     </tbody>
   </table>
   </div>
@@ -505,8 +505,8 @@ replay:
   </table>
   </div>
   <h3>实现后最小验证命令</h3>
-  <pre>pytest -q tests/providers/test_provider_initialization.py tests/providers/test_record_replay.py tests/providers/test_record_replay_registry.py tests/providers/test_record_replay_cli.py
-  pytest -q tests/providers/test_scripted_provider.py tests/providers/test_registry_from_config.py tests/unit/test_usage_stream_chokepoint.py tests/unit/test_auth_methods.py tests/unit/test_web_config_schema.py tests/unit/test_config_write_safety.py
+  <pre>pytest -q tests/component/providers/test_provider_initialization.py tests/component/providers/test_record_replay.py tests/component/providers/test_record_replay_registry.py tests/component/providers/test_record_replay_cli.py
+  pytest -q tests/component/providers/test_scripted_provider.py tests/component/providers/test_registry_from_config.py tests/unit/runtime/test_usage_stream_chokepoint.py tests/unit/providers/test_auth_methods.py tests/unit/webui/test_web_config_schema.py tests/component/config/test_config_write_safety.py
 python -m openprogram recordings --help
 python -m openprogram config get record_replay.mode
 python -m tools.docs_site.build

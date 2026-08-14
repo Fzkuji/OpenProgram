@@ -92,7 +92,7 @@ anthropic 把 OAuth 放在最前。它们回答的是不同的问题，因此 `_
 
 ## 6. 验证
 
-- `tests/unit/test_api_key_resolution.py` 固定了优先级、config 兜底、无 key 时
+- `tests/unit/providers/test_api_key_resolution.py` 固定了优先级、config 兜底、无 key 时
   云凭据 `is_configured` 为 True、反向映射、Anthropic OAuth 优先于 key，以及
   Google 的三个名称。
 - 跨界面：对每个已配置的 provider，运行时路径与 webui 路径解析结果一致。

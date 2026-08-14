@@ -109,10 +109,10 @@ The project chip next to them carries the main directory's state, including its 
 
 Following the style of the existing files:
 
-- `tests/unit/test_session_config.py`: `additional_working_dirs` save/load round-trip, including "None leaves it unchanged" and `_as_str_list` sanitizing.
-- `tests/unit/test_permission_rules.py`: three `_path_is_safe` cases — allowed inside an additional directory, blocked outside it, and allowed inside the project cwd bound to the ContextVar (monkeypatching `current_worktree_path`).
-- `tests/unit/test_ws_working_dirs.py`: the ws action's valid write plus broadcast, whole-frame rejection for a non-directory, and the `session_loaded` round-trip.
-- `tests/unit/test_session_main_workdir.py`: the main directory's contrasting rules — the freeze, the missing-directory resolution, the relocate record node — plus the case that ties the two together, adding and removing an additional directory on a session whose main directory has already frozen.
+- `tests/unit/store/test_session_config.py`: `additional_working_dirs` save/load round-trip, including "None leaves it unchanged" and `_as_str_list` sanitizing.
+- `tests/unit/security/test_permission_rules.py`: three `_path_is_safe` cases — allowed inside an additional directory, blocked outside it, and allowed inside the project cwd bound to the ContextVar (monkeypatching `current_worktree_path`).
+- `tests/unit/webui/test_ws_working_dirs.py`: the ws action's valid write plus broadcast, whole-frame rejection for a non-directory, and the `session_loaded` round-trip.
+- `tests/unit/store/test_session_main_workdir.py`: the main directory's contrasting rules — the freeze, the missing-directory resolution, the relocate record node — plus the case that ties the two together, adding and removing an additional directory on a session whose main directory has already frozen.
 
 ## 4. End-to-end flow
 

@@ -6,7 +6,7 @@
 > Related code:
 > - `openprogram/agentic_programming/function.py`
 > - `openprogram/agentic_programming/runtime.py`
-> - Tests: `tests/agentic_programming/test_self_recursion_guard.py` (8 cases)
+> - Tests: `tests/unit/programs/test_self_recursion_guard.py` (8 cases)
 
 ---
 
@@ -109,7 +109,7 @@ The wrapper does not push the function's own name into `_current_tool_policy["de
 
 ## 5. Behavioral contract (distilled from the tests)
 
-From `tests/agentic_programming/test_self_recursion_guard.py`:
+From `tests/unit/programs/test_self_recursion_guard.py`:
 
 | # | Contract | Test |
 |---|---|---|

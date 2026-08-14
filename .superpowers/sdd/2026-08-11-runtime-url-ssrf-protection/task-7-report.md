@@ -60,7 +60,7 @@ declaration reasons rather than false detected call sites.
 ## TDD evidence
 
 - Initial owner parser/write RED:
-  `uv run --frozen --extra dev pytest -q tests/security/test_owner_url_exceptions.py tests/unit/test_web_config_schema.py tests/unit/test_config_write_safety.py`
+  `uv run --frozen --extra dev pytest -q tests/component/security/test_owner_url_exceptions.py tests/unit/webui/test_web_config_schema.py tests/component/config/test_config_write_safety.py`
   -> `23 failed, 5 passed`; first GREEN -> `28 passed`.
 - Managed factory owner-policy RED -> `1 failed, 1 passed`; GREEN with the
   explicit-test-security isolation test -> `2 passed`.

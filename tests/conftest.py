@@ -18,10 +18,10 @@ if str(ROOT) not in sys.path:
 # requests through the proxy (hanging them) and flip httpx's proxy-mount
 # construction. Applied at import time so it precedes every client built
 # during collection. Tests that exercise proxy resolution itself
-# (tests/test_http_proxy.py) set their own env via monkeypatch.
+# (tests/component/security/test_http_proxy.py) set their own env via monkeypatch.
 #
-# Live smoke tests (``-m slow``) DO need the host's real network, proxy
-# included — run those as ``OPENPROGRAM_TEST_LIVE=1 pytest -m slow`` to
+# Live smoke tests DO need the host's real network, proxy included — run those
+# as ``OPENPROGRAM_TEST_LIVE=1 pytest -m live tests/live`` to
 # keep the proxy environment intact.
 # ---------------------------------------------------------------------------
 if os.environ.get("OPENPROGRAM_TEST_LIVE") != "1":
@@ -218,5 +218,4 @@ def _drop_tmp_rooted_session_store():
         return
     if "openprogram-test-home" not in str(getattr(cached, "root_path", "")):
         session_store._default_store = None
-
 

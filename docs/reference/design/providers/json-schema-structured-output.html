@@ -374,16 +374,16 @@ title = result["title"]</pre>
   <table>
     <thead><tr><th>层</th><th>必须覆盖</th><th>建议文件</th></tr></thead>
     <tbody>
-      <tr><td>规范化/validator</td><td>裸 schema、envelope、非法 meta-schema、object/array/scalar/null、非有限数、fence/尾随文本、稳定 issue path；remote ref 零网络、本地直接引用环、1 MiB/4096 nodes/8192 edges/100 depth 全局预算。</td><td><code>tests/providers/test_structured_output.py</code>（new）</td></tr>
+      <tr><td>规范化/validator</td><td>裸 schema、envelope、非法 meta-schema、object/array/scalar/null、非有限数、fence/尾随文本、稳定 issue path；remote ref 零网络、本地直接引用环、1 MiB/4096 nodes/8192 edges/100 depth 全局预算。</td><td><code>tests/component/providers/test_structured_output.py</code>（new）</td></tr>
       <tr><td>协商</td><td>true/false/unknown × adapter support；有损 schema；fallback none/auto/prompt；tool_choice/parallel 冲突。</td><td>同上 + <code>test_provider_meta.py</code></td></tr>
-      <tr><td>Provider payload</td><td>逐 adapter 快照测试；Anthropic effort+format 合并；Bedrock schema JSON 字符串；unknown adapter 不发送私有字段。</td><td>现有 <code>tests/providers/test_openai.py</code>、<code>test_anthropic.py</code>、<code>test_gemini.py</code> + 新 Bedrock cases</td></tr>
+      <tr><td>Provider payload</td><td>逐 adapter 快照测试；Anthropic effort+format 合并；Bedrock schema JSON 字符串；unknown adapter 不发送私有字段。</td><td>现有 <code>tests/component/providers/test_openai.py</code>、<code>test_anthropic.py</code>、<code>test_gemini.py</code> + 新 Bedrock cases</td></tr>
       <tr><td>Streaming</td><td>单次成功；invalid attempt 的 delta→retry→清空→成功；第 2 次失败无 done；取消/deadline 不重试；provider EOF 无 raw terminal 时不合成成功。</td><td><code>tests/providers/test_structured_output_streaming.py</code>（new）</td></tr>
-      <tr><td>Tools</td><td>原生+tools；hidden tool 单独提交；普通 tool 多轮后提交；普通+submit 同轮拒绝；forced/none/parallel 冲突。</td><td><code>tests/unit/test_tools_runtime.py</code> + new Agent loop cases</td></tr>
-      <tr><td>Runtime</td><td>无 schema 返回 str；有 schema 返回 JsonValue；默认 provider 路径确实透传；callable model 同样本地校验；同步/异步均证明初次调用、修复调用和 transport retry 共用 <code>max_retries</code> 预算。</td><td><code>tests/agentic_programming/test_runtime_structured_output.py</code>（new）</td></tr>
-      <tr><td>Record/replay</td><td>v2 单 call、validation retry 两 calls、schema mismatch path、v1 拒绝、离线派生事件一致。</td><td><code>tests/providers/test_record_replay.py</code></td></tr>
-      <tr><td>CLI</td><td>成功 stdout 仅 JSON；exit 2/3/4；stderr 无候选全文；普通 <code>--print</code> 不变。</td><td><code>tests/providers/test_cli.py</code> + CLI integration</td></tr>
-      <tr><td>WS/API</td><td>request schema、retry event、typed result、machine error、foreign session routing、旧客户端忽略新字段。</td><td><code>tests/unit/test_webui_chat_dispatcher.py</code> + TS tests</td></tr>
-      <tr><td>Session title</td><td>合法 title、structured failure 回退 placeholder、Unicode/80 字边界、无旧正则依赖。</td><td><code>tests/unit/test_dispatcher_compaction_title.py</code></td></tr>
+      <tr><td>Tools</td><td>原生+tools；hidden tool 单独提交；普通 tool 多轮后提交；普通+submit 同轮拒绝；forced/none/parallel 冲突。</td><td><code>tests/unit/programs/test_tools_runtime.py</code> + new Agent loop cases</td></tr>
+      <tr><td>Runtime</td><td>无 schema 返回 str；有 schema 返回 JsonValue；默认 provider 路径确实透传；callable model 同样本地校验；同步/异步均证明初次调用、修复调用和 transport retry 共用 <code>max_retries</code> 预算。</td><td><code>tests/component/programs/test_runtime_structured_output.py</code>（new）</td></tr>
+      <tr><td>Record/replay</td><td>v2 单 call、validation retry 两 calls、schema mismatch path、v1 拒绝、离线派生事件一致。</td><td><code>tests/component/providers/test_record_replay.py</code></td></tr>
+      <tr><td>CLI</td><td>成功 stdout 仅 JSON；exit 2/3/4；stderr 无候选全文；普通 <code>--print</code> 不变。</td><td><code>tests/component/providers/test_cli.py</code> + CLI integration</td></tr>
+      <tr><td>WS/API</td><td>request schema、retry event、typed result、machine error、foreign session routing、旧客户端忽略新字段。</td><td><code>tests/unit/webui/test_webui_chat_dispatcher.py</code> + TS tests</td></tr>
+      <tr><td>Session title</td><td>合法 title、structured failure 回退 placeholder、Unicode/80 字边界、无旧正则依赖。</td><td><code>tests/unit/context/test_dispatcher_compaction_title.py</code></td></tr>
       <tr><td>回归</td><td>全部 provider stream、tool loop、普通聊天、DAG、session persistence、typecheck、docs HTML。</td><td>现有 suites + <code>npm test</code>/<code>npm run typecheck</code></td></tr>
     </tbody>
   </table>

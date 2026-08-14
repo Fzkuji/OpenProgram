@@ -247,6 +247,6 @@ Every section above is implemented:
   `head_id` unconditionally and `save_messages` is gone; the CLI turn path
   writes rows through `db.append_message`.
 - §6 graph contract — `webui/graph_builder.py`.
-- §8 invariants — `tests/unit/test_compaction_covers.py`,
-  `tests/unit/test_graph_builder_covers.py`,
-  `tests/integration/test_dag_mutation_scenarios.py`.
+- §8 invariants — `tests/unit/context/test_compaction_covers.py`,
+  `tests/unit/dag/test_graph_builder_covers.py`,
+  `tests/integration/dag/test_dag_mutation_scenarios.py`.

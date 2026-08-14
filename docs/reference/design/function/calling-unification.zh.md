@@ -678,8 +678,8 @@ openprogram/programs/agentic_functions/*/__init__.py           @agentic_function
 
 ## Test invariants (what the suite locks down)
 
-单元测试套件（``tests/unit/test_tools_runtime.py``、
-``tests/unit/test_dispatcher_tools.py``）覆盖：
+单元测试套件（``tests/unit/programs/test_tools_runtime.py``、
+``tests/component/agent/test_dispatcher_tools.py``）覆盖：
 
 - Docstring + signature → parameters schema
 - Sync / async fn dispatch

@@ -187,7 +187,7 @@ opencode 是 lazy:服务实例化时不连,首次 `tools()` 调用才 spawn。�
 
 ### 5. 测试隔离 — 警惕 `from openprogram.paths import get_state_dir`
 
-`tests/integration/test_attach_lazy_session.py` 用 `monkeypatch.setattr("openprogram.paths.get_state_dir", ...)` 重定向 state 目录。如果 `config.py` 用 `from openprogram.paths import get_state_dir` 引入,首次 import 发生在 attach 测试**期间**(因为 webui startup hook 触发 `_start_mcp_servers` → import `openprogram.mcp` → import `config`),lambda 会被永久 binding 到我们模块,attach 测试结束后泄漏。
+`tests/integration/store/test_attach_lazy_session.py` 用 `monkeypatch.setattr("openprogram.paths.get_state_dir", ...)` 重定向 state 目录。如果 `config.py` 用 `from openprogram.paths import get_state_dir` 引入,首次 import 发生在 attach 测试**期间**(因为 webui startup hook 触发 `_start_mcp_servers` → import `openprogram.mcp` → import `config`),lambda 会被永久 binding 到我们模块,attach 测试结束后泄漏。
 
 修复:`from openprogram import paths as _paths`,每次调 `_paths.get_state_dir()` 现查 attribute。监控:test 套件如果加新的 paths monkeypatch,确认我们的 `config.py` 仍然走 module reference。
 
@@ -200,7 +200,7 @@ opencode 是 lazy:服务实例化时不连,首次 `tools()` 调用才 spawn。�
 3. **配置改动在 worker 重启后生效。** server 列表不做热重载，`MCPClient` 在 `start()` 与 `stop()` 之间没有 `restart`。提供 `restart_server(name)` API 可以免去重启整个 worker。
 4. **对同一 server 的并发调用在 ClientSession 锁上串行。** `MCPClient._call_lock` 让它们排队。这不是性能问题——MCP server 本来就是单飞行的——但一个慢工具会阻塞同 server 上的其他工具调用。
 5. **工具列表只读取一次。** supervisor 在启动时拉一次 `list_tools`，之后不再询问，因此 server 中途增删的工具不可见。协议的 `tools/list_changed` 通知没有被监听。
-6. **`_loaded` 是模块全局变量。** 测试需要重置后才能复测，见 `tests/integration/test_mcp_client.py::_reset_mcp_loader_flag` fixture。
+6. **`_loaded` 是模块全局变量。** 测试需要重置后才能复测，见 `tests/integration/programs/test_mcp_client.py::_reset_mcp_loader_flag` fixture。
 
 webui 设置页面尚未渲染 `server_status()`；渲染它可以展示每个 server 的状态、
 错误信息、工具数量与最近一次调用结果。

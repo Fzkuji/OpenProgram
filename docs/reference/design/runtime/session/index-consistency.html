@@ -69,7 +69,7 @@
   <div class="table"><table><thead><tr><th>文件</th><th>职责</th></tr></thead><tbody>
     <tr><td><code>openprogram/store/session/session_store.py</code></td><td>时间语义、registry state/write 锁、快照与延迟 flush。</td></tr>
     <tr><td><code>openprogram/store/session/session_node_writer.py</code></td><td>node append 的单一 activity timestamp 与 meta/index 同步。</td></tr>
-    <tr><td><code>tests/unit/test_session_index_consistency.py</code></td><td>排序时间、返回快照和并发写入的公共回归。</td></tr>
+    <tr><td><code>tests/component/store/test_session_index_consistency.py</code></td><td>排序时间、返回快照和并发写入的公共回归。</td></tr>
   </tbody></table></div>
   <p class="note"><span class="ok">已实现并完成独立审查。</span> 实现提交：<code>9fef648c</code>、<code>09480e0f</code>、<code>c50b5180</code>。规格审查与质量审查均通过；最终 gate 证据记录在任务台账。</p>
 </main></body></html>

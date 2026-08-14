@@ -330,7 +330,7 @@
     </div>
   </div>
 
-  <div class="note"><b>已有契约测试</b>：<code>tests/unit/test_diagnostic_mcp_route_contracts.py</code> 钉住
+  <div class="note"><b>已有契约测试</b>：<code>tests/component/webui/test_diagnostic_mcp_route_contracts.py</code> 钉住
     <code>/api/doctor</code> 的 <code>{"results", "all_ok"}</code>、<code>/api/mcp/servers</code> 的 15 键 status 字典、
     以及缺失 server 的 404 形状。三个测试都新建裸 <code>FastAPI()</code> 再 <code>register(app)</code>，所以 <code>OwnerAuthMiddleware</code> 不在路径上；断言用精确相等，加字段就挂。</div>
 
@@ -583,7 +583,7 @@
     Runtime normalization、approval refusal、agent loop、MCP client/server conversion 与 cache eligibility 均使用该 typed bit。
     旧 <code>details["is_error"]</code> 仅保留输入兼容桥，不再是仓库内生产者的 canonical 状态。</div>
 
-  <div class="note"><b>验收测试的形状</b>：<code>tests/integration/test_mcp_server.py</code> 以子进程拉起
+  <div class="note"><b>验收测试的形状</b>：<code>tests/integration/programs/test_mcp_server.py</code> 以子进程拉起
     <code>openprogram mcp serve</code>，<b>用 MCP SDK 自己的客户端</b>连上去，覆盖以下协议与安全行为：
     无 token、错 token 时子进程在握手前失败，正确环境 token 时 SDK 完成 <code>initialize</code>；<code>clientInfo</code> 的任意自报值不改变权限；
     MCP <code>tools/list</code> 精确返回六个固定入口，而其中的 <code>tools_list</code> 结果精确等于配置白名单、当前注册表与 paired scope 的交集；

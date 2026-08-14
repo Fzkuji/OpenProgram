@@ -1,0 +1,1288 @@
+from __future__ import annotations
+
+from pathlib import Path
+import sys
+from types import SimpleNamespace
+
+import pytest
+
+from openprogram.security import runtime_http_audit
+
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_runtime_http_inventory_has_no_unclassified_calls():
+    result = runtime_http_audit.scan_runtime_http(ROOT / "openprogram")
+
+    assert result.unregistered == ()
+    assert result.active_unmanaged_transports == ()
+    assert result.registry_without_consumer == ()
+    assert result.stale_exclusions == ()
+
+
+def test_runtime_http_inventory_ignores_embedded_virtualenv_sources(tmp_path):
+    (tmp_path / "owned.py").write_text("value = 1\n", encoding="utf-8")
+    foreign = tmp_path / ".venv311" / "lib" / "foreign.py"
+    foreign.parent.mkdir(parents=True)
+    foreign.write_bytes("# coding: big5\n# 中文\n".encode("big5"))
+
+    result = runtime_http_audit.scan_runtime_http(
+        tmp_path, exclusions=(), registry={}
+    )
+
+    assert result.unregistered == ()
+
+
+def test_runtime_http_inventory_ignores_unowned_source_trees(tmp_path):
+    (tmp_path / "owned.py").write_text("value = 1\n", encoding="utf-8")
+    (tmp_path / "owned 2.py").write_text(
+        'import requests\nrequests.get("https://example.com")\n',
+        encoding="utf-8",
+    )
+    nested = tmp_path / "embedded"
+    (nested / ".git").mkdir(parents=True)
+    (nested / "foreign.py").write_text(
+        'import requests\nrequests.get("https://example.com")\n',
+        encoding="utf-8",
+    )
+
+    result = runtime_http_audit.scan_runtime_http(
+        tmp_path, exclusions=(), registry={}
+    )
+
+    assert result.unregistered == ()
+
+
+def test_scanner_fails_closed_for_representative_raw_network_calls(tmp_path):
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "raw.py").write_text(
+        """
+import socket
+import urllib.request as request
+import requests
+import httpx
+
+request.urlopen("https://example.com")
+requests.get("https://example.com")
+httpx.Client()
+s = socket.socket()
+s.connect(("127.0.0.1", 80))
+""",
+        encoding="utf-8",
+    )
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry={},
+    )
+
+    assert {issue.kind for issue in result.unregistered} == {
+        "urllib.request.urlopen",
+        "requests.get",
+        "httpx.Client",
+        "socket.connect",
+    }
+
+
+def test_scanner_reports_stale_boundary_exclusions(tmp_path):
+    package = tmp_path / "runtime"
+    package.mkdir()
+    exclusion = runtime_http_audit.BoundaryExclusion(
+        path="missing.py",
+        boundary_owner="browser-control",
+        reason="browser navigation is outside Runtime fetch policy",
+    )
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(exclusion,),
+        registry={},
+    )
+
+    assert result.stale_exclusions == ("missing.py",)
+
+
+def test_scanner_reports_exclusion_whose_declared_call_no_longer_exists(tmp_path):
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "old.py").write_text("VALUE = 1\n", encoding="utf-8")
+    exclusion = runtime_http_audit.BoundaryExclusion(
+        path="old.py",
+        boundary_owner="browser-control",
+        reason="historical browser call",
+        kinds=frozenset({"urllib.request.urlopen"}),
+    )
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(exclusion,),
+        registry={},
+    )
+
+    assert result.stale_exclusions == (
+        "old.py:urllib.request.urlopen expected=1 actual=0",
+    )
+
+
+def test_scanner_detects_supported_raw_libraries_and_known_sdk(tmp_path):
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "raw.py").write_text(
+        """
+from urllib.request import urlopen as open_url
+from requests import Session
+from httpx import AsyncClient, AsyncHTTPTransport
+import httpcore
+import aiohttp
+import urllib3
+import socket
+import openai
+
+open_url("https://example.com")
+Session()
+AsyncClient()
+AsyncHTTPTransport()
+httpcore.AsyncConnectionPool()
+httpcore.AsyncHTTPProxy("http://proxy.example")
+aiohttp.ClientSession()
+urllib3.PoolManager()
+urllib3.ProxyManager("http://proxy.example")
+socket.socket().connect(("127.0.0.1", 80))
+openai.AsyncOpenAI()
+""",
+        encoding="utf-8",
+    )
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry={},
+    )
+
+    assert {issue.kind for issue in result.unregistered} == {
+        "urllib.request.urlopen",
+        "requests.Session",
+        "httpx.AsyncClient",
+        "httpx.AsyncHTTPTransport",
+        "httpcore.AsyncConnectionPool",
+        "httpcore.AsyncHTTPProxy",
+        "aiohttp.ClientSession",
+        "urllib3.PoolManager",
+        "urllib3.ProxyManager",
+        "socket.connect",
+        "sdk.openai.AsyncOpenAI",
+    }
+    assert result.active_unmanaged_transports == ("sdk.openai.AsyncOpenAI",)
+
+
+def test_boundary_manifest_is_explicit_and_auditable():
+    assert runtime_http_audit.BOUNDARY_MANIFEST
+    for exclusion in runtime_http_audit.BOUNDARY_MANIFEST:
+        assert exclusion.path
+        assert exclusion.boundary_owner
+        assert exclusion.reason
+
+
+def test_registry_consumer_cannot_be_satisfied_by_docstring_only(tmp_path):
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "claims.py").write_text(
+        '"""tool.web_fetch"""\n',
+        encoding="utf-8",
+    )
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry={"tool.web_fetch": object()},
+    )
+
+    assert result.registry_without_consumer == ("tool.web_fetch",)
+
+
+def test_registry_consumer_cannot_be_satisfied_by_unrelated_call_argument(
+    tmp_path,
+):
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "claims.py").write_text(
+        'print("tool.web_fetch")\n',
+        encoding="utf-8",
+    )
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry={"tool.web_fetch": object()},
+    )
+
+    assert result.registry_without_consumer == ("tool.web_fetch",)
+
+
+def test_registry_consumer_cannot_be_satisfied_by_lookalike_factory(tmp_path):
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "claims.py").write_text(
+        """
+from unrelated import safe_client as pretend
+pretend("tool.web_fetch")
+""",
+        encoding="utf-8",
+    )
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry={"tool.web_fetch": object()},
+    )
+
+    assert result.registry_without_consumer == ("tool.web_fetch",)
+
+
+def test_unmanaged_sdk_is_not_hidden_by_same_file_consumer_evidence(tmp_path):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "mixed.py").write_text(
+        """
+import openai
+from openprogram.security.safe_http import safe_client
+
+safe_client("provider.openai.sdk")
+openai.OpenAI()
+""",
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert {issue.kind for issue in result.unregistered} == {"sdk.openai.OpenAI"}
+    assert result.active_unmanaged_transports == ("provider.openai.sdk",)
+
+
+def test_sdk_injection_must_match_the_registered_consumer_disposition(tmp_path):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "mismatch.py").write_text(
+        """
+import openai
+openai.OpenAI(http_client=object())
+""",
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(sdk_disposition=SDKDisposition.DISABLED)
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == ["sdk.openai.OpenAI"]
+    assert result.active_unmanaged_transports == ("provider.openai.sdk",)
+
+
+@pytest.mark.parametrize(
+    ("source", "kind"),
+    [
+        (
+            'import boto3\nboto3.client("bedrock-runtime")\n',
+            "sdk.boto3.client",
+        ),
+        (
+            """
+import boto3.session
+session = boto3.session.Session(profile_name="prod")
+session.client("bedrock-runtime")
+""",
+            "sdk.boto3.session.Session.client",
+        ),
+    ],
+)
+def test_scanner_rejects_unguarded_bedrock_sdk_constructors(tmp_path, source, kind):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "bedrock.py").write_text(source, encoding="utf-8")
+    registry = {
+        "provider.amazon_bedrock.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.DISABLED
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == [kind]
+    assert result.active_unmanaged_transports == ("provider.amazon_bedrock.sdk",)
+
+
+@pytest.mark.parametrize(
+    "false_guard",
+    [
+        '"require_active_sdk_transport(\\"provider.amazon_bedrock.sdk\\")"',
+        """
+from unrelated import require_active_sdk_transport
+require_active_sdk_transport(
+    "provider.amazon_bedrock.sdk",
+    "https://bedrock-runtime.us-east-1.amazonaws.com",
+)
+""",
+        """
+from openprogram.security.safe_http import require_active_sdk_transport
+if enabled:
+    require_active_sdk_transport(
+        "provider.amazon_bedrock.sdk",
+        "https://bedrock-runtime.us-east-1.amazonaws.com",
+    )
+""",
+        """
+from openprogram.security.safe_http import require_active_sdk_transport
+boto3.client("bedrock-runtime")
+require_active_sdk_transport(
+    "provider.amazon_bedrock.sdk",
+    "https://bedrock-runtime.us-east-1.amazonaws.com",
+)
+""",
+    ],
+)
+def test_bedrock_sdk_constructor_rejects_non_dominating_or_fake_guard(
+    tmp_path, false_guard
+):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    source = "import boto3\nenabled = False\n" + false_guard
+    if 'boto3.client("bedrock-runtime")' not in false_guard:
+        source += '\nboto3.client("bedrock-runtime")\n'
+    (package / "bedrock.py").write_text(source, encoding="utf-8")
+    registry = {
+        "provider.amazon_bedrock.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.DISABLED
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == ["sdk.boto3.client"]
+    assert result.active_unmanaged_transports == ("provider.amazon_bedrock.sdk",)
+
+
+@pytest.mark.parametrize(
+    "constructor",
+    [
+        'boto3.client("bedrock-runtime")',
+        'boto3.session.Session(profile_name="prod").client("bedrock-runtime")',
+    ],
+)
+def test_scanner_accepts_exact_dominating_disabled_bedrock_guard(
+    tmp_path, constructor
+):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "bedrock.py").write_text(
+        f"""
+import boto3
+import boto3.session
+from openprogram.security.safe_http import require_active_sdk_transport
+
+require_active_sdk_transport(
+    "provider.amazon_bedrock.sdk",
+    "https://bedrock-runtime.us-east-1.amazonaws.com",
+)
+{constructor}
+""",
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.amazon_bedrock.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.DISABLED
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert result.unregistered == ()
+    assert result.active_unmanaged_transports == ()
+    assert result.registry_without_consumer == ()
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+import openai
+openai.OpenAI(http_client=object())
+""",
+        """
+import openai
+from openprogram.security.safe_http import safe_client
+openai.OpenAI(http_client=safe_client("tool.web_fetch"))
+""",
+        """
+import openai
+from openprogram.security.safe_http import safe_client
+safe_client("provider.openai.sdk")
+openai.OpenAI(http_client=object())
+""",
+        """
+import openai
+import unrelated.safe_http
+openai.OpenAI(
+    http_client=unrelated.safe_http.safe_client("provider.openai.sdk")
+)
+""",
+        """
+import openai
+from openprogram.security.safe_http import safe_client
+openai.OpenAI(
+    http_client=(safe_client("provider.openai.sdk"), object())[1]
+)
+""",
+        """
+import openai
+from openprogram.security.safe_http import safe_client
+client = safe_client("provider.openai.sdk")
+client = object()
+openai.OpenAI(http_client=client)
+""",
+    ],
+)
+def test_sdk_injection_requires_exact_managed_value_and_consumer(
+    tmp_path,
+    source,
+):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "unmanaged.py").write_text(source, encoding="utf-8")
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == ["sdk.openai.OpenAI"]
+    assert result.active_unmanaged_transports == ("provider.openai.sdk",)
+
+
+def test_sdk_injection_accepts_exact_managed_assignment_container(tmp_path):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "managed.py").write_text(
+        """
+import openai
+from openprogram.providers.utils.http_client import get_shared_async_client
+
+kwargs = {
+    "http_client": get_shared_async_client(
+        "openai-sdk",
+        consumer="provider.openai.sdk",
+        configured_origin="https://api.openai.com",
+    )
+}
+openai.AsyncOpenAI(**{k: v for k, v in kwargs.items()})
+""",
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert result.unregistered == ()
+    assert result.active_unmanaged_transports == ()
+    assert result.registry_without_consumer == ()
+
+
+@pytest.mark.parametrize(
+    "control_flow",
+    [
+        """
+if flag:
+    client = object()
+else:
+    client = safe_async_client("provider.openai.sdk")
+""",
+        """
+if flag:
+    client = safe_async_client("provider.openai.sdk")
+else:
+    client = object()
+""",
+        """
+try:
+    client = object()
+except Exception:
+    client = safe_async_client("provider.openai.sdk")
+""",
+        """
+try:
+    client = safe_async_client("provider.openai.sdk")
+except Exception:
+    client = object()
+""",
+        """
+client = object()
+for item in items:
+    client = safe_async_client("provider.openai.sdk")
+""",
+        """
+for item in items:
+    client = object()
+    break
+else:
+    client = safe_async_client("provider.openai.sdk")
+""",
+        """
+match value:
+    case 0:
+        client = object()
+    case _:
+        client = safe_async_client("provider.openai.sdk")
+""",
+        """
+match value:
+    case 0:
+        client = safe_async_client("provider.openai.sdk")
+    case _:
+        client = object()
+""",
+    ],
+)
+def test_sdk_injection_rejects_any_unmanaged_control_flow_exit(
+    tmp_path,
+    control_flow,
+):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    source = f"""
+import openai
+from openprogram.security.safe_http import safe_async_client
+
+{control_flow}
+openai.AsyncOpenAI(http_client=client)
+"""
+    (package / "branches.py").write_text(source, encoding="utf-8")
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == ["sdk.openai.AsyncOpenAI"]
+    assert result.active_unmanaged_transports == ("provider.openai.sdk",)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+client = safe_async_client("provider.openai.sdk")
+try:
+    client = object()
+    may_raise()
+    client = safe_async_client("provider.openai.sdk")
+except Exception:
+    pass
+openai.AsyncOpenAI(http_client=client)
+""",
+        """
+client = safe_async_client("provider.openai.sdk")
+try:
+    client = object()
+    may_raise()
+    client = safe_async_client("provider.openai.sdk")
+except* Exception:
+    pass
+openai.AsyncOpenAI(http_client=client)
+""",
+        """
+client = safe_async_client("provider.openai.sdk")
+try:
+    if flag:
+        client = object()
+        raise RuntimeError
+    client = safe_async_client("provider.openai.sdk")
+except Exception:
+    pass
+openai.AsyncOpenAI(http_client=client)
+""",
+        """
+client = safe_async_client("provider.openai.sdk")
+for client in items:
+    pass
+openai.AsyncOpenAI(http_client=client)
+""",
+        """
+async def f():
+    client = safe_async_client("provider.openai.sdk")
+    async for client in items:
+        pass
+    openai.AsyncOpenAI(http_client=client)
+""",
+        """
+client = safe_async_client("provider.openai.sdk")
+while flag:
+    client = object()
+    continue
+    client = safe_async_client("provider.openai.sdk")
+openai.AsyncOpenAI(http_client=client)
+""",
+        """
+client = safe_async_client("provider.openai.sdk")
+for item in items:
+    client = object()
+    break
+    client = safe_async_client("provider.openai.sdk")
+openai.AsyncOpenAI(http_client=client)
+""",
+        """
+client = safe_async_client("provider.openai.sdk")
+for item in items:
+    try:
+        break
+    finally:
+        client = object()
+openai.AsyncOpenAI(http_client=client)
+""",
+        """
+client = safe_async_client("provider.openai.sdk")
+for item in items:
+    def nested():
+        return None
+    client = object()
+openai.AsyncOpenAI(http_client=client)
+""",
+        """
+client = safe_async_client("provider.openai.sdk")
+match value:
+    case client:
+        pass
+openai.AsyncOpenAI(http_client=client)
+""",
+        """
+client = safe_async_client("provider.openai.sdk")
+match value:
+    case client if condition:
+        client = safe_async_client("provider.openai.sdk")
+openai.AsyncOpenAI(http_client=client)
+""",
+    ],
+)
+def test_sdk_injection_rejects_hidden_unmanaged_control_flow_state(
+    tmp_path,
+    source,
+):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "branches.py").write_text(
+        """
+import openai
+from openprogram.security.safe_http import safe_async_client
+"""
+        + source,
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == ["sdk.openai.AsyncOpenAI"]
+    assert result.active_unmanaged_transports == ("provider.openai.sdk",)
+
+
+@pytest.mark.parametrize(
+    "control_flow",
+    [
+        """
+if flag:
+    client = safe_async_client("provider.openai.sdk")
+else:
+    client = safe_async_client("provider.openai.sdk")
+""",
+        """
+try:
+    client = safe_async_client("provider.openai.sdk")
+except Exception:
+    client = safe_async_client("provider.openai.sdk")
+""",
+        """
+client = safe_async_client("provider.openai.sdk")
+for item in items:
+    client = safe_async_client("provider.openai.sdk")
+else:
+    client = safe_async_client("provider.openai.sdk")
+""",
+        """
+match value:
+    case 0:
+        client = safe_async_client("provider.openai.sdk")
+    case _:
+        client = safe_async_client("provider.openai.sdk")
+""",
+    ],
+)
+def test_sdk_injection_accepts_same_consumer_on_every_control_flow_exit(
+    tmp_path,
+    control_flow,
+):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    source = f"""
+import openai
+from openprogram.security.safe_http import safe_async_client
+
+{control_flow}
+openai.AsyncOpenAI(http_client=client)
+"""
+    (package / "branches.py").write_text(source, encoding="utf-8")
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert result.unregistered == ()
+    assert result.active_unmanaged_transports == ()
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+def build(flag):
+    if flag:
+        return None
+    client = safe_async_client("provider.openai.sdk")
+    return openai.AsyncOpenAI(http_client=client)
+""",
+        """
+def build(flag):
+    if flag:
+        raise RuntimeError
+    client = safe_async_client("provider.openai.sdk")
+    return openai.AsyncOpenAI(http_client=client)
+""",
+        """
+def build(flag):
+    try:
+        if flag:
+            return None
+        client = safe_async_client("provider.openai.sdk")
+    finally:
+        marker = 1
+    return openai.AsyncOpenAI(http_client=client)
+""",
+        """
+def build(flag):
+    try:
+        if flag:
+            raise RuntimeError
+        client = safe_async_client("provider.openai.sdk")
+    finally:
+        marker = 1
+    return openai.AsyncOpenAI(http_client=client)
+""",
+        """
+def build():
+    try:
+        client = object()
+        may_raise()
+        client = safe_async_client("provider.openai.sdk")
+    except Exception:
+        client = safe_async_client("provider.openai.sdk")
+    return openai.AsyncOpenAI(http_client=client)
+""",
+        """
+def build(items):
+    client = safe_async_client("provider.openai.sdk")
+    for item in items:
+        client = safe_async_client("provider.openai.sdk")
+        break
+        client = object()
+    else:
+        client = safe_async_client("provider.openai.sdk")
+    return openai.AsyncOpenAI(http_client=client)
+""",
+        """
+def build(value):
+    match value:
+        case 0:
+            return None
+        case _:
+            client = safe_async_client("provider.openai.sdk")
+    return openai.AsyncOpenAI(http_client=client)
+""",
+    ],
+)
+def test_sdk_injection_accepts_managed_continuing_exits(tmp_path, source):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "branches.py").write_text(
+        """
+import openai
+from openprogram.security.safe_http import safe_async_client
+"""
+        + source,
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert result.unregistered == ()
+    assert result.active_unmanaged_transports == ()
+
+
+def test_sdk_injection_preserves_managed_refutable_match_miss(tmp_path):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "match.py").write_text(
+        """
+import openai
+from openprogram.security.safe_http import safe_async_client
+
+client = safe_async_client("provider.openai.sdk")
+match value:
+    case [client]:
+        client = safe_async_client("provider.openai.sdk")
+openai.AsyncOpenAI(http_client=client)
+""",
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert result.unregistered == ()
+    assert result.active_unmanaged_transports == ()
+
+
+@pytest.mark.parametrize(
+    "root_source",
+    [
+        """
+def build():
+    try:
+        client = object()
+    finally:
+        raise RuntimeError
+    openai.AsyncOpenAI(http_client=client)
+""",
+        """
+def build():
+    try:
+        client = object()
+        raise RuntimeError
+    finally:
+        return None
+    openai.AsyncOpenAI(http_client=client)
+""",
+        """
+async def build():
+    try:
+        client = object()
+    finally:
+        raise RuntimeError
+    openai.AsyncOpenAI(http_client=client)
+""",
+        """
+class Build:
+    try:
+        client = object()
+    finally:
+        raise RuntimeError
+    openai.AsyncOpenAI(http_client=client)
+""",
+    ],
+)
+def test_scanner_skips_sdk_unreachable_after_terminating_finally(
+    tmp_path,
+    root_source,
+):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "unreachable.py").write_text(
+        "import openai\n" + root_source,
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert result.unregistered == ()
+    assert result.active_unmanaged_transports == ()
+
+
+@pytest.mark.parametrize(
+    "root_source",
+    [
+        """
+def build():
+    def nested_function():
+        return None
+
+    class NestedClass:
+        def nested_method(self):
+            return None
+
+    openai.AsyncOpenAI(http_client=object())
+""",
+        """
+async def build():
+    def nested_function():
+        return None
+
+    class NestedClass:
+        def nested_method(self):
+            return None
+
+    openai.AsyncOpenAI(http_client=object())
+""",
+        """
+class Build:
+    def nested_function():
+        return None
+
+    class NestedClass:
+        def nested_method(self):
+            return None
+
+    openai.AsyncOpenAI(http_client=object())
+""",
+    ],
+)
+def test_root_flow_keeps_reachable_sdk_after_nested_scopes(tmp_path, root_source):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "reachable.py").write_text(
+        "import openai\n" + root_source,
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == ["sdk.openai.AsyncOpenAI"]
+    assert result.active_unmanaged_transports == ("provider.openai.sdk",)
+
+
+def test_class_root_flow_keeps_scanning_header_expressions(tmp_path):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "class_header.py").write_text(
+        """
+import openai
+
+@openai.AsyncOpenAI(http_client=object())
+class Build(
+    openai.AsyncOpenAI(http_client=object()),
+    metaclass=openai.AsyncOpenAI(http_client=object()),
+):
+    pass
+""",
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == [
+        "sdk.openai.AsyncOpenAI",
+        "sdk.openai.AsyncOpenAI",
+        "sdk.openai.AsyncOpenAI",
+    ]
+    assert result.active_unmanaged_transports == ("provider.openai.sdk",)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="requires PEP 695 syntax")
+def test_class_root_flow_keeps_scanning_type_parameter_bounds(tmp_path):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "class_type_params.py").write_text(
+        """
+import openai
+
+class Build[T: openai.AsyncOpenAI(http_client=object())]:
+    pass
+""",
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == ["sdk.openai.AsyncOpenAI"]
+    assert result.active_unmanaged_transports == ("provider.openai.sdk",)
+
+
+def test_scanner_detects_socket_create_connection_and_imported_alias(tmp_path):
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "socket_calls.py").write_text(
+        """
+import socket
+from socket import create_connection as dial
+
+socket.create_connection(("127.0.0.1", 80))
+dial(("127.0.0.1", 81))
+""",
+        encoding="utf-8",
+    )
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry={},
+    )
+
+    assert [issue.kind for issue in result.unregistered] == [
+        "socket.create_connection",
+        "socket.create_connection",
+    ]
+
+
+def test_boundary_manifest_tracks_each_kind_and_exact_call_count(tmp_path):
+    package = tmp_path / "runtime"
+    package.mkdir()
+    source = package / "managed.py"
+    source.write_text(
+        """
+import httpcore
+httpcore.ConnectionPool()
+""",
+        encoding="utf-8",
+    )
+    exclusion = runtime_http_audit.BoundaryExclusion(
+        path="managed.py",
+        boundary_owner="managed-transport",
+        reason="test exact manifest binding",
+        kinds=frozenset({"httpcore.ConnectionPool", "httpcore.HTTPProxy"}),
+    )
+
+    missing = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(exclusion,),
+        registry={},
+    )
+    assert missing.stale_exclusions == (
+        "managed.py:httpcore.HTTPProxy expected=1 actual=0",
+    )
+
+    source.write_text(
+        """
+import httpcore
+httpcore.ConnectionPool()
+httpcore.ConnectionPool()
+httpcore.HTTPProxy("http://proxy.example")
+""",
+        encoding="utf-8",
+    )
+    extra = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(exclusion,),
+        registry={},
+    )
+    assert [issue.kind for issue in extra.unregistered] == ["httpcore.ConnectionPool"]
+    assert extra.stale_exclusions == ()
+
+
+def test_shared_denial_ring_is_bounded_and_origin_only():
+    runtime_http_audit.clear_runtime_http_audit()
+    for index in range(runtime_http_audit.RUNTIME_HTTP_AUDIT_CAPACITY + 3):
+        runtime_http_audit.record_runtime_http_denial(
+            consumer="tool.web_fetch",
+            reason=f"PRIVATE_ADDRESS_{index}",
+            url="https://user:BEARER-TOKEN@example.com/private?token=QUERY-SECRET",
+            delegated_to_policy_proxy=False,
+        )
+
+    events = runtime_http_audit.recent_runtime_http_denials()
+    assert len(events) == runtime_http_audit.RUNTIME_HTTP_AUDIT_CAPACITY
+    assert events[0].reason == "PRIVATE_ADDRESS_3"
+    assert events[-1].safe_origin == "https://example.com"
+    assert set(events[-1].__dict__) == {
+        "consumer",
+        "reason",
+        "safe_origin",
+        "delegated_to_policy_proxy",
+        "timestamp",
+    }
+    assert "BEARER-TOKEN" not in repr(events)
+    assert "QUERY-SECRET" not in repr(events)
+
+
+def test_safe_http_policy_denial_is_forwarded_to_shared_ring():
+    from openprogram.security.safe_http import OutboundSecurityConfig, safe_client
+    from openprogram.security.url_policy import URLPolicyError
+
+    runtime_http_audit.clear_runtime_http_audit()
+    with safe_client(
+        "tool.web_fetch",
+        security=OutboundSecurityConfig(resolver=lambda _host, _port: ("127.0.0.1",)),
+    ) as client:
+        with pytest.raises(URLPolicyError, match="NON_GLOBAL_ADDRESS"):
+            client.get("https://example.com/path?token=QUERY-SECRET")
+
+    events = runtime_http_audit.recent_runtime_http_denials()
+    assert len(events) == 1
+    assert events[0].consumer == "tool.web_fetch"
+    assert events[0].reason == "NON_GLOBAL_ADDRESS"
+    assert events[0].safe_origin == "https://example.com"
+    assert "QUERY-SECRET" not in repr(events)
+
+
+def test_shared_audit_rejects_unbounded_or_peer_controlled_fields():
+    runtime_http_audit.clear_runtime_http_audit()
+    runtime_http_audit.record_runtime_http_denial(
+        consumer="unknown/QUERY-SECRET",
+        reason="PEER-BODY QUERY-SECRET",
+        url="https://example.com/path?token=QUERY-SECRET",
+        delegated_to_policy_proxy=False,
+    )
+
+    assert runtime_http_audit.recent_runtime_http_denials() == (
+        runtime_http_audit.RuntimeHTTPAuditEvent(
+            consumer="<unknown-consumer>",
+            reason="INVALID_REASON",
+            safe_origin="https://example.com",
+            delegated_to_policy_proxy=False,
+            timestamp=runtime_http_audit.recent_runtime_http_denials()[0].timestamp,
+        ),
+    )
+    assert "QUERY-SECRET" not in repr(runtime_http_audit.recent_runtime_http_denials())

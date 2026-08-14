@@ -21,7 +21,7 @@ export interface TimelineDay {
 /**
  * One memory paragraph, as the derived recent view records it.
  * Field names match what `rebuild_derived_views` writes into
- * `recent_events.jsonl` — tests/unit/test_memory_recent_contract.py
+ * `recent_events.jsonl` — tests/unit/memory/test_memory_recent_contract.py
  * fails if either side renames one. `when` is null on a unit whose
  * date comes only from its evidence rows.
  */

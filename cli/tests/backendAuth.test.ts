@@ -168,7 +168,7 @@ describe('against the real backend listener', () => {
 
   beforeAll(async () => {
     if (!python) return;
-    server = spawn(python, ['-m', 'tests.helpers.owner_auth_listener'], {
+    server = spawn(python, ['-m', 'tests.support.helpers.owner_auth_listener'], {
       cwd: repoRoot,
       stdio: ['ignore', 'pipe', 'inherit'],
     });

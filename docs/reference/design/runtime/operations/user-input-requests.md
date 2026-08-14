@@ -174,7 +174,7 @@ transport classes + `emit_question_asked`), `agentic_programming/runtime.py`
 (`set_question_transport`, `_ask_raw` going through
 `self._question_transport`), and `agent/process_runner.py` (`answer_queue`,
 answer-pump, `_bridge_question_to_parent`, `_decline_bridged_question`).
-Covered by `tests/agent/test_questions_subprocess_bridge.py` (8 unit tests)
+Covered by `tests/component/agent/test_questions_subprocess_bridge.py` (8 unit tests)
 plus a real spawned-subprocess end-to-end check.
 
 Not yet landed: the TUI surface (question/approval prompt in the input slot,

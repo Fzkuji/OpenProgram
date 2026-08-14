@@ -107,7 +107,7 @@ semantics are reconciled.
 
 ## 6. Verification
 
-- `tests/unit/test_api_key_resolution.py` pins precedence, the config fallback,
+- `tests/unit/providers/test_api_key_resolution.py` pins precedence, the config fallback,
   cloud-credential `is_configured` returning True with no key, the reverse map,
   Anthropic OAuth-over-key, and Google's three names.
 - Cross-surface: for each configured provider, the runtime path and the webui

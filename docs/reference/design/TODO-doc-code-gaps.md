@@ -77,7 +77,7 @@ The following docs were audited and are fully consistent with the code; no chang
   - The situational hint (`runtime._situational_prefix`) is injected at the start of the user turn, telling the model "you are inside X, calling X = infinite recursion, use the lower-level tools", with the docstring demoted to the back → directly negating the premise "this should route to wiki_agent".
   - Backstop: `_MAX_AGENTIC_RECURSION_DEPTH=5`, counted per function name; exceeding 5 levels for the same name raises `RecursionError`.
   - self-deny has been removed, the tool list contains the function itself, relying on guidance rather than hiding.
-  - Design doc: `docs/reference/design/runtime/execution/agentic-self-recursion.md`; tests: `tests/agentic_programming/test_self_recursion_guard.py` (8 cases).
+  - Design doc: `docs/reference/design/runtime/execution/agentic-self-recursion.md`; tests: `tests/unit/programs/test_self_recursion_guard.py` (8 cases).
 - **Remaining** (to do, see #2): scoping the toolset for each harness's exec + detecting cross-function cycles (A→B→A) (currently only direct self-recursion is guarded).
 - Session record: `~/.openprogram/sessions/local_d125e9a9c3/history/`
   the context_tree shows 7 levels of nesting (4d76→0c07→0964→c6f9→f1c9→4379→8746→100c).

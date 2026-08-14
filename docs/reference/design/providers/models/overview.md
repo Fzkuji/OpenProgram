@@ -177,4 +177,4 @@ Properties that any change here must preserve:
 - **The claude-code borrowing chain**: browse data borrowed from anthropic via `models_from`, 3 models auto-enabled after login, and its own fetcher.
 - **Field-by-field fidelity**: nested `cost`, multimodal `input`, `headers` (copilot depends on it), and `compat` all travel in the spec written to config at enable time.
 - **Verification granularity**: multi-wire providers need one exec per `(api, base_url, headers, compat)` combination.
-- `tests/unit/test_provider_wire_invariants.py` and `tests/unit/test_model_fetch_routing.py` stay green.
+- `tests/unit/providers/test_provider_wire_invariants.py` and `tests/unit/providers/test_model_fetch_routing.py` stay green.

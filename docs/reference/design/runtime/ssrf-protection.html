@@ -195,7 +195,7 @@ or stale exclusion. Doctor exposes stable <code>runtime-http-registry</code>, <c
 <div class="tbl"><table>
 <tr><th>Command</th><th>Recorded result</th></tr>
 <tr><td><code>uv run --extra dev pytest -q tests/security</code></td><td class="yes"><code>804 passed</code></td></tr>
-<tr><td><code>uv run --with pip --with boto3 pytest -q tests/meta_functions tests/providers tests/unit tests/webui tests/integration/test_mcp_client.py</code></td><td class="yes"><code>3482 passed, 12 skipped, 1 xfailed</code></td></tr>
+<tr><td><code>uv run --with pip --with boto3 pytest -q tests/meta_functions tests/providers tests/unit tests/webui tests/integration/programs/test_mcp_client.py</code></td><td class="yes"><code>3482 passed, 12 skipped, 1 xfailed</code></td></tr>
 <tr><td><code>uv run --extra dev --with boto3 pytest -q</code></td><td class="yes"><code>4923 passed, 14 skipped, 2 deselected, 1 xfailed</code></td></tr>
 <tr><td><code>uv run python scripts/check_runtime_http.py</code></td><td class="yes"><code>unregistered=0 active_unmanaged=0 registry_without_consumer=0 stale_exclusions=0</code></td></tr>
 <tr><td><code>uv run python scripts/check_feature_matrix.py docs/reference/design/feature-matrix.html</code></td><td class="yes"><code>features=160 openprogram_score=78 openprogram_gaps=73 openprogram_only=6</code></td></tr>

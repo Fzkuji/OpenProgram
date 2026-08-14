@@ -101,7 +101,7 @@ id,以便函数体内 LLM 调用有 frame 可参照)。
 核心可以嵌在不是 OpenProgram 的宿主里运行——别人的服务或 agent 框架把
 `@agentic_function` + 执行 DAG 当作一个组件来用（见
 [嵌入到你自己的技术栈](../../../capabilities/agentic-programming/embedding-in-your-own-stack.zh.md)）。
-这份契约由 `tests/embed/test_standalone_embed.py` 执行，不只是纸面声明：
+这份契约由 `tests/component/runtime/test_standalone_embed.py` 执行，不只是纸面声明：
 
 - **库面永不 import UI 表面。** `import openprogram` 以及一次完整的
   `Runtime(call=...).exec()` 往返，不得拉起 `webui`、FastAPI、Uvicorn 或 Textual。

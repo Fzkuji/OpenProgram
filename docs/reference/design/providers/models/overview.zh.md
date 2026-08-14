@@ -164,4 +164,4 @@ webui 展示层（`_model_listing/`）不做任何合并推导——浏览合并
 - **claude-code 借用链**：浏览数据经 `models_from` 借自 anthropic、登录后自动启用 3 个模型，以及它自己的 fetcher。
 - **逐字段保真**：`cost` 嵌套对象、`input` 多模态、`headers`（copilot 依赖它）、`compat` 都随启用时写入 config 的规格一起传递。
 - **验证粒度**：多 wire provider 按每个 `(api, base_url, headers, compat)` 组合各 exec 一个模型。
-- `tests/unit/test_provider_wire_invariants.py` 与 `tests/unit/test_model_fetch_routing.py` 保持绿色。
+- `tests/unit/providers/test_provider_wire_invariants.py` 与 `tests/unit/providers/test_model_fetch_routing.py` 保持绿色。
