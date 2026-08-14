@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>内置浏览器主页按钮</title>
+  <style>
+    :root { color-scheme: dark; --bg:#161615; --panel:#20201f; --line:#3a3935; --text:#e8e7df; --muted:#aaa89d; --accent:#d19a66; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:40px max(24px,10vw) 80px; background:var(--bg); color:var(--text); font:14px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",sans-serif; }
+    main { max-width:920px; }
+    h1 { font-size:24px; margin:0 0 8px; }
+    h2 { margin:34px 0 10px; font-size:17px; color:var(--accent); }
+    p { color:var(--muted); margin:8px 0; }
+    code { color:var(--text); background:#2a2927; border-radius:4px; padding:1px 5px; }
+    ul { margin:8px 0; padding-left:22px; color:var(--muted); }
+    .card { border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:18px 20px; }
+    .status { color:var(--accent); font-weight:600; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>内置浏览器主页按钮</h1>
+  <p>为 OpenProgram 内置浏览器的导航栏增加主页入口，复用现有新标签页，不引入主页 URL 配置。</p>
+
+  <h2>行为</h2>
+  <div class="card">
+    <ul>
+      <li>桌面原生 WebContentsView 和普通浏览器 iframe 两套工具栏都显示 House 图标按钮。</li>
+      <li>按钮标题与无障碍名称按当前语言显示为 <code>Home</code> 或 <code>主页</code>。</li>
+      <li>点击后把当前 <code>web</code> tab 原位替换为现有 <code>ntp</code> 页面；不新增标签，不跳转外部网址。</li>
+      <li>保留标签顺序、当前激活状态和 compound-tab 成员位置；移除旧 web tab id，并清除指向它的 legacy split 状态。</li>
+    </ul>
+  </div>
+
+  <h2>边界</h2>
+  <p>不增加自定义主页设置、搜索引擎设置、依赖、后台进程或新的页面实现。后退、前进、地址输入、刷新、书签、分屏和外部打开行为保持不变。</p>
+
+  <h2>任务文件</h2>
+  <p>生产代码：<code>web/components/center-tabs/web-tab-pane.tsx</code>、<code>web/lib/state/center-tabs-store.ts</code>。测试：<code>web/scripts/check-web-split.mjs</code>。设计与验收记录：本文件。</p>
+
+  <h2>验收</h2>
+  <ul>
+    <li>RED：现有代码缺少 store action、House 按钮和两套工具栏接线。</li>
+    <li>GREEN：状态测试证明原位替换、分组更新和原生 web-view id 清理；源码门禁证明两套工具栏都有主页按钮。</li>
+    <li>构建后只使用已安装的 <code>/Applications/OpenProgram.app</code> 做可见页面验收，不从 Electron 源码启动。</li>
+  </ul>
+
+  <h2>实现记录</h2>
+  <p class="status">已实现并通过自动化门禁；已安装应用的可见页面验收待完成。</p>
+</main>
+</body>
+</html>

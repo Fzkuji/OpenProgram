@@ -1837,6 +1837,19 @@ const desktopBridgeSource = await readFile(
   "utf8",
 );
 
+assert.match(webTabPaneSource, /\bHouse\b/, "browser toolbar Home icon missing");
+assert.match(
+  webTabPaneSource,
+  /replaceWebTabWithNewTabPage\(tabId\)/,
+  "browser toolbar must navigate the current web tab to the OpenProgram home page",
+);
+assert.match(webTabPaneSource, /text\("Home",\s*"主页"\)/);
+assert.equal(
+  (webTabPaneSource.match(/<HomeButton tabId=\{tabId\} \/>/g) ?? []).length,
+  2,
+  "desktop and iframe browser toolbars must both expose Home",
+);
+
 assert.match(desktopBridgeSource, /function visibleWebTab\(\)/);
 assert.match(
   desktopBridgeSource,
@@ -2101,6 +2114,58 @@ assert.equal(useCenterTabs.getState().splitWebTabId, null);
 assert.equal(JSON.parse(values.get("centerTabs")).splitWebTabId, null);
 assert.equal(JSON.parse(values.get("centerTabs")).splitRatio, 0.70);
 
+// Browser Home replaces the current web tab with the existing OpenProgram
+// new-tab page. The position and compound-tab membership stay intact, while
+// the native web-view id disappears so the desktop bridge can destroy it.
+const homeWebId = "w:https://home-target.test/";
+useCenterTabs.setState({
+  tabs: [
+    { id: "s:home-chat", kind: "session", title: "Chat", sessionId: "home-chat" },
+    { id: homeWebId, kind: "web", title: "Target", url: "https://home-target.test/" },
+    { id: "f:after", kind: "file", title: "after.txt", projectId: "p", path: "after.txt" },
+  ],
+  activeId: homeWebId,
+  groups: [{
+    id: "g:home",
+    memberIds: ["s:home-chat", homeWebId],
+    visibleIds: ["s:home-chat", homeWebId],
+    focusedId: homeWebId,
+  }],
+  splitWebTabId: homeWebId,
+  splitRatio: 0.45,
+});
+useCenterTabs.getState().replaceWebTabWithNewTabPage(homeWebId);
+const homeState = useCenterTabs.getState();
+const homeTab = homeState.tabs[1];
+assert.equal(homeTab.kind, "ntp", "Home must show the OpenProgram new-tab page");
+assert.match(homeTab.id, /^ntp:/, "Home must allocate a fresh new-tab id");
+assert.equal(homeState.activeId, homeTab.id, "the replacement remains active");
+assert.equal(homeState.tabs[2].id, "f:after", "Home must preserve tab order");
+assert.deepEqual(homeState.groups[0].memberIds, ["s:home-chat", homeTab.id]);
+assert.deepEqual(homeState.groups[0].visibleIds, ["s:home-chat", homeTab.id]);
+assert.equal(homeState.groups[0].focusedId, homeTab.id);
+assert.equal(homeState.splitWebTabId, null, "the replaced web view must leave legacy split state");
+assert.equal(homeState.tabs.some((tab) => tab.id === homeWebId), false);
+const beforeWrongKind = JSON.stringify({
+  tabs: homeState.tabs,
+  activeId: homeState.activeId,
+  groups: homeState.groups,
+  splitWebTabId: homeState.splitWebTabId,
+  splitRatio: homeState.splitRatio,
+});
+useCenterTabs.getState().replaceWebTabWithNewTabPage("s:home-chat");
+assert.equal(
+  JSON.stringify({
+    tabs: useCenterTabs.getState().tabs,
+    activeId: useCenterTabs.getState().activeId,
+    groups: useCenterTabs.getState().groups,
+    splitWebTabId: useCenterTabs.getState().splitWebTabId,
+    splitRatio: useCenterTabs.getState().splitRatio,
+  }),
+  beforeWrongKind,
+  "Home must ignore ids that do not belong to a web tab",
+);
+
 values.set("centerTabs", JSON.stringify({
   tabs: [
     { id: "s:chat", kind: "session", title: "Chat", sessionId: "chat" },
@@ -2140,6 +2205,36 @@ const bridgeModule = await import("../lib/desktop-bridge.ts");
 const plainTabsModule = await import("../lib/state/center-tabs-store.ts");
 const plainSessionModule = await import("../lib/session-store/index.ts");
 const plainTabs = plainTabsModule.useCenterTabs;
+
+// Replacing the id is the cleanup signal used by the desktop bridge. Verify
+// the existing reconciler destroys the native view once Home removes that id.
+{
+  const calls = [];
+  const cleanupBridge = {
+    webTab: {
+      ensure: (...args) => calls.push(["ensure", ...args]),
+      destroy: (...args) => calls.push(["destroy", ...args]),
+      syncVisible: () => {},
+    },
+  };
+  const cleanupId = "w:https://cleanup-home.test/";
+  bridgeModule.ensureWebView(cleanupBridge, cleanupId, "https://cleanup-home.test/");
+  plainTabs.setState({
+    tabs: [{ id: cleanupId, kind: "web", title: "Cleanup", url: "https://cleanup-home.test/" }],
+    activeId: cleanupId,
+    groups: [],
+    splitWebTabId: null,
+  });
+  plainTabs.getState().replaceWebTabWithNewTabPage(cleanupId);
+  bridgeModule.destroyStaleWebViews(
+    cleanupBridge,
+    plainTabs.getState().tabs.map((tab) => tab.id),
+  );
+  assert.deepEqual(calls, [
+    ["ensure", cleanupId, "https://cleanup-home.test/"],
+    ["destroy", cleanupId],
+  ]);
+}
 
 function makeTransferBridge(payload, overrides = {}) {
   const calls = [];
