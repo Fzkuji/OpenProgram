@@ -164,6 +164,21 @@ def test_linux_smoke_workflow_is_runnable_without_release_credentials() -> None:
     assert "scripts/smoke-packaged-runtime.sh linux" in workflow
     assert "scripts/install-release.sh" in workflow
     assert "--publish never" in workflow
+    assert "debian:bullseye-slim" in workflow
+    assert "--network none" in workflow
+
+
+def test_distribution_workflows_use_node24_action_releases() -> None:
+    workflows = [
+        (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+        for name in ("release.yml", "linux-release-smoke.yml")
+    ]
+    for workflow in workflows:
+        assert "actions/checkout@v7" in workflow
+        assert "actions/setup-node@v7" in workflow
+        assert "astral-sh/setup-uv@v10" in workflow
+        assert "actions/upload-artifact@v7" in workflow
+        assert "actions/download-artifact@v8" in workflow
 
 
 def test_linux_packaged_smoke_launches_public_appimage_entry() -> None:
