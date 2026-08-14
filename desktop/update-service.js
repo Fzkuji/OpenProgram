@@ -80,8 +80,8 @@ function releaseAssetUrl(version, name) {
 }
 
 function resolveDesktopRelease(release, manifest, currentVersion, arch) {
-  if (!release || release.draft) throw new Error("draft release is not eligible");
-  if (release.prerelease) throw new Error("prerelease is not eligible");
+  if (!release || release.draft !== false) throw new Error("draft release is not eligible");
+  if (release.prerelease !== false) throw new Error("prerelease is not eligible");
   const tagMatch = VERSION_RE.exec(String(release.tag_name || ""));
   if (!tagMatch || !String(release.tag_name).startsWith("v")) throw new Error("release tag is invalid");
   const latestVersion = tagMatch.slice(1).join(".");
@@ -138,13 +138,20 @@ function normalizePersistedState(value) {
   };
 }
 
-function readStateFile(filePath) {
+function loadStateFile(filePath) {
   try {
-    return normalizePersistedState(JSON.parse(fs.readFileSync(filePath, "utf8")));
-  } catch (_error) {
-    return defaultPersistedState();
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const state = normalizePersistedState(parsed);
+    return { state, repaired: JSON.stringify(parsed) !== JSON.stringify(state) };
+  } catch (error) {
+    return {
+      state: defaultPersistedState(),
+      repaired: error?.code !== "ENOENT",
+    };
   }
 }
+
+function readStateFile(filePath) { return loadStateFile(filePath).state; }
 
 function saveStateFileAtomic(filePath, state) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -309,8 +316,9 @@ class DesktopUpdateService {
     this.openPath = openPath;
     this.emit = emit || (() => {});
     this.now = now;
-    this.persisted = readStateFile(statePath);
-    let repairedState = false;
+    const loaded = loadStateFile(statePath);
+    this.persisted = loaded.state;
+    let repairedState = loaded.repaired;
     const startupNow = this.now();
     if (
       this.persisted.lastAttemptAt > startupNow
@@ -384,9 +392,13 @@ class DesktopUpdateService {
   persist() { saveStateFileAtomic(this.statePath, this.persisted); }
 
   setAutomaticChecks(enabled) {
-    this.persisted.automaticChecks = Boolean(enabled);
-    this.persist();
-    this.publish({ automaticChecks: this.persisted.automaticChecks });
+    const next = {
+      ...this.persisted,
+      automaticChecks: Boolean(enabled),
+    };
+    saveStateFileAtomic(this.statePath, next);
+    this.persisted = next;
+    this.publish({ automaticChecks: next.automaticChecks });
     return this.getState();
   }
 

@@ -71,6 +71,14 @@ assert.throws(
   () => resolveDesktopRelease({ ...release, prerelease: true }, manifest, "0.6.6", "arm64"),
   /prerelease/,
 );
+assert.throws(
+  () => resolveDesktopRelease({ ...release, draft: undefined }, manifest, "0.6.6", "arm64"),
+  /draft/,
+);
+assert.throws(
+  () => resolveDesktopRelease({ ...release, prerelease: null }, manifest, "0.6.6", "arm64"),
+  /prerelease/,
+);
 
 for (const url of [
   "https://api.github.com/repos/Fzkuji/OpenProgram/releases/latest",
@@ -165,6 +173,15 @@ try {
   assert.equal(futureTimestampApp.automaticCheckDueAt(), 0);
   fs.writeFileSync(statePath, "not-json");
   assert.equal(readStateFile(statePath).automaticChecks, true);
+  new DesktopUpdateService({
+    currentVersion: "0.6.6",
+    arch: "arm64",
+    statePath,
+    fetchImpl: async () => { throw new Error("not used"); },
+    chooseSavePath: async () => null,
+    openPath: async () => "",
+  });
+  assert.equal(JSON.parse(fs.readFileSync(statePath, "utf8")).schema, 1);
   assert.equal(fs.readdirSync(root).some((name) => name.includes(".tmp-")), false);
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
@@ -212,6 +229,38 @@ async function checkNetworkBoundaries() {
     assert.equal(JSON.stringify(publicState).includes("releases/download"), false);
   } finally {
     fs.rmSync(publicStateRoot, { recursive: true, force: true });
+  }
+
+  const preferenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-update-preference-"));
+  try {
+    const preferencePath = path.join(preferenceRoot, "state.json");
+    saveStateFileAtomic(preferencePath, {
+      schema: 1,
+      automaticChecks: true,
+      lastAttemptAt: 0,
+      lastSuccessAt: 0,
+      release: null,
+    });
+    const service = new DesktopUpdateService({
+      currentVersion: "0.6.6",
+      arch: "arm64",
+      statePath: preferencePath,
+      fetchImpl: async () => { throw new Error("not used"); },
+      chooseSavePath: async () => null,
+      openPath: async () => "",
+    });
+    const originalRename = fs.renameSync;
+    try {
+      fs.renameSync = () => { throw new Error("disk unavailable"); };
+      assert.throws(() => service.setAutomaticChecks(false), /disk unavailable/);
+    } finally {
+      fs.renameSync = originalRename;
+    }
+    assert.equal(service.getState().automaticChecks, true);
+    service.persist();
+    assert.equal(JSON.parse(fs.readFileSync(preferencePath, "utf8")).automaticChecks, true);
+  } finally {
+    fs.rmSync(preferenceRoot, { recursive: true, force: true });
   }
 
   const allowedCalls = [];
