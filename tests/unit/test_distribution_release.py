@@ -140,6 +140,15 @@ def test_desktop_runtime_removes_absolute_python_aliases() -> None:
     assert 'unlink "$python_alias"' in staging
 
 
+def test_desktop_runtime_installs_playwright_for_cdp_without_browser_binary() -> None:
+    staging = (ROOT / "scripts" / "prepare-desktop-runtime.sh").read_text(
+        encoding="utf-8"
+    )
+    assert '"$wheel[browser]"' in staging
+    assert "import playwright.sync_api" in staging
+    assert "playwright install" not in staging
+
+
 def test_native_release_workflow_has_platform_jobs() -> None:
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
