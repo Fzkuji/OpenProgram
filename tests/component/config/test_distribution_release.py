@@ -342,6 +342,29 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "AppImage" not in workflow
 
 
+def test_release_workflow_publishes_structured_release_notes() -> None:
+    notes_path = ROOT / ".github" / "release-notes.md"
+    assert notes_path.is_file()
+    notes = notes_path.read_text(encoding="utf-8")
+    for section in (
+        "## Install",
+        "## Platform guide",
+        "## Included product capabilities",
+        "## Upgrade and verify",
+    ):
+        assert section in notes
+    assert "__TAG__" in notes
+    assert "__VERSION__" in notes
+
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    assert '.github/release-notes.md' in workflow
+    assert 'notes_file="$RUNNER_TEMP/openprogram-release-notes.md"' in workflow
+    assert '--notes-file "$notes_file"' in workflow
+    assert "--generate-notes" not in workflow
+
+
 def test_macos_desktop_matrix_maps_runtime_arch_to_electron_builder_arch() -> None:
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"

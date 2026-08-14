@@ -210,7 +210,16 @@ jobs:
             --output release-artifacts/release-manifest.json
       - name: Publish GitHub Release
         run: |
+          version="${GITHUB_REF_NAME#v}"
+          notes_file="$RUNNER_TEMP/openprogram-release-notes.md"
+          sed \
+            -e "s/__TAG__/$GITHUB_REF_NAME/g" \
+            -e "s/__VERSION__/$version/g" \
+            .github/release-notes.md > "$notes_file"
           mapfile -d '' files < <(find release-artifacts -type f -print0)
-          gh release create "$GITHUB_REF_NAME" "${files[@]}" --verify-tag --generate-notes
+          gh release create "$GITHUB_REF_NAME" "${files[@]}" \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file "$notes_file"
         env:
           GH_TOKEN: ${{ github.token }}
