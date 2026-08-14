@@ -131,15 +131,15 @@ updates.onState(callback)                 // 状态推送</pre>
     <li><strong>旧 updater 收敛：</strong>测试证明 worker 启动不再 apply 更新、immutable runtime 不进入 Git/PyPI 路径、<code>update</code> 兼容入口与 <code>upgrade</code> 使用同一正式语义。</li>
     <li><strong>安装类型：</strong>测试证明 Desktop/CLI 的 immutable runtime 均为 <code>managed_release</code>，源码仓库为 <code>source_checkout</code>，不存在把正式产品显示为 <code>pip_wheel</code> 的路径。</li>
     <li><strong>Desktop 检查与 UI：</strong>纯函数测试覆盖版本解析、latest 验证、真实 workflow 嵌套 manifest path 的 basename 唯一匹配、架构资产选择和状态转换；IPC 测试证明 renderer 不能指定 URL；Web 测试覆盖所有状态和非 Desktop 回退。</li>
-    <li><strong>Desktop 下载：</strong>本地 HTTP fixture 覆盖正常下载、允许的 GitHub 资产重定向、拒绝第三方/HTTP 重定向、重定向上限、超时、中断、大小不符、hash 不符、取消保存和并发请求；只有校验成功才调用打开 DMG。</li>
-    <li><strong>持久化与调度：</strong>覆盖重启后 24 小时成功缓存、应用连续运行到下一次检查、失败后 6 小时内不重复、失败后手动重试、sleep/resume 只触发一个检查、损坏文件、未知 schema 和原子写入。</li>
+    <li><strong>Desktop 下载：</strong>自动化测试通过注入的 <code>fetch</code>/<code>Response</code> 覆盖正常下载、允许的 GitHub 资产重定向、拒绝第三方/HTTP 重定向、重定向上限、body stall、大小不符、hash 不符、取消保存和并发请求；没有把该测试描述为真实 HTTP server 验收。只有校验成功才调用打开 DMG。</li>
+    <li><strong>持久化与调度：</strong>自动化测试覆盖 24 小时成功缓存、失败后 6 小时内不重复、6 小时到期重试、损坏/未来/未知 schema、原子写入及写失败回滚；main 的 timer、manual IPC 重排和 resume wiring 由源码合同检查覆盖。应用连续运行与实际 sleep/resume 属于首个 updater release 的可见验收，不列为本地自动化已执行。</li>
     <li><strong>CLI/Linux：</strong>fake GitHub/installer 测试覆盖 <code>--check</code>、无更新、缺资产、安装失败保留旧 <code>current</code>、成功切换且不重启现有 worker、显式 restart 后使用新版本，以及注入 archive/checksum/repository 环境变量不能改变产品命令的正式更新来源。</li>
-    <li><strong>发布门禁：</strong>release workflow 校验每个 Desktop 资产都存在 manifest 条目，每个 runtime 都有独立 checksum；Release 创建后用 latest endpoint 做一次公开入口检查。</li>
+    <li><strong>发布门禁：</strong>release workflow 校验每个 Desktop 资产都存在 manifest 条目，每个 runtime 都有独立 checksum；Release 创建后使用 workflow token 查询 GitHub latest endpoint，确认目标 tag、稳定状态和唯一 manifest 资产。</li>
     <li><strong>可见验收：</strong>在 <code>/Applications/OpenProgram.app</code> 的 default profile/18100 实例中验证设置页、版本号、手动检查、下载进度和失败提示；不启动第二个可见 Desktop 实例。</li>
   </ol>
   <h2 id="implementation">10. 实现与验证记录</h2>
   <ul>
-    <li><strong>已实现：</strong>Desktop 主进程更新服务、最小 IPC、Settings Application 状态；managed CLI Release 检查/升级；旧后台与 PyPI product updater 删除；installer old→new 原子替换；release 后 public latest gate。</li>
+    <li><strong>已实现：</strong>Desktop 主进程更新服务、最小 IPC、Settings Application 状态；managed CLI Release 检查/升级；旧后台与 PyPI product updater 删除；installer old→new 原子替换；release 后 GitHub latest endpoint gate。</li>
     <li><strong>已验证：</strong>版本/manifest/架构匹配、URL 和逐跳重定向约束、损坏/未来缓存、短写、metadata/download stall、checksum/size 失败清理、并发 Promise、dry-run 和 JSON 输出合同、已有 <code>current</code> 的真实替换。</li>
     <li><strong>待 release 验收：</strong>首个包含 updater 的正式版本发布后，在默认 <code>/Applications/OpenProgram.app</code> 与隔离 CLI state 中验证 v0.6.6 一次性过渡及后续版本发现。发布前不把本地候选描述为已交付客户端。</li>
   </ul>
