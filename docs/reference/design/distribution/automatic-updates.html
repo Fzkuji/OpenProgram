@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenProgram 正式版本更新设计</title>
+<style>
+  :root{--bg:#16150f;--panel:#1d1c14;--panel2:#12110b;--border:#302e22;--text:#c5c1af;--muted:#8e8a79;--title:#f2efe6;--accent:#d4843a;--blue:#4f8ef7;--green:#5aad4e;--purple:#9d6fe0;--red:#e35b6f;--yellow:#d9a441}
+  *{box-sizing:border-box}body{margin:0;padding:38px 22px 92px;background:var(--bg);color:var(--text);font:14px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:1120px;margin:0 auto}h1{margin:0 0 8px;color:var(--title);font-size:25px;line-height:1.3}h2{margin:38px 0 10px;color:var(--accent);font-size:18px;scroll-margin-top:20px}h3{margin:20px 0 7px;color:var(--title);font-size:15px}p{max-width:92ch}a{color:#78a8ff}code{padding:1px 5px;border-radius:4px;background:var(--panel2);color:#e2a15e;font:12px Menlo,Consolas,monospace}pre{margin:10px 0 16px;padding:14px 16px;overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--panel2);color:#d5d1c3;font:12px/1.7 Menlo,Consolas,monospace}ul,ol{max-width:94ch}li{margin:5px 0}.sub{margin:0 0 18px;color:var(--muted);max-width:94ch}.meta,.toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 22px}.pill,.toc a{padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:var(--panel);color:var(--muted);font-size:12px}.pill strong{color:var(--title)}.toc a{color:var(--text);text-decoration:none}.toc a:hover{border-color:var(--accent);color:var(--title)}.note{margin:12px 0 16px;padding:10px 14px;border-left:3px solid var(--accent);background:var(--panel);border-radius:0 8px 8px 0}.note strong{color:var(--title)}.note.warn{border-left-color:var(--red)}.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.card,.node{padding:15px;border:1px solid var(--border);border-radius:11px;background:var(--panel)}.card h3,.node strong{margin:0 0 7px;color:var(--title)}.card p{margin:0;font-size:13px}.desktop{border-top:3px solid var(--blue)}.cli{border-top:3px solid var(--green)}.dev{border-top:3px solid var(--purple)}.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:11px;background:var(--panel)}table{width:100%;min-width:780px;border-collapse:collapse}th{padding:10px 12px;color:var(--muted);font-size:11px;text-align:left;border-bottom:1px solid var(--border)}td{padding:10px 12px;border-bottom:1px solid #29271d;vertical-align:top}tr:last-child td{border-bottom:none}td strong{color:var(--title)}.yes{color:var(--green)}.partial{color:var(--yellow)}.no{color:var(--red)}.flow{display:grid;grid-template-columns:1fr 40px 1fr 40px 1fr 40px 1fr;align-items:stretch;gap:7px;margin:14px 0 18px}.arrow{display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:20px}.state{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.state .node{font-size:13px}.small{color:var(--muted);font-size:12px}@media(max-width:900px){.grid3,.state,.flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg);min-height:22px}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <h1>OpenProgram 正式版本更新设计</h1>
+  <p class="sub">本文定义普通 Desktop、CLI/server 与源码开发安装如何发现和应用新版本。稳定安装只消费完整、已发布、已验证的 GitHub Release；GitHub 仓库出现新提交不等于可安装更新。</p>
+  <div class="meta"><span class="pill"><strong>设计状态</strong>：已确定</span><span class="pill"><strong>目标版本</strong>：v0.6.7+</span><span class="pill"><strong>默认通道</strong>：stable</span><span class="pill"><strong>版本源</strong>：GitHub Release</span></div>
+  <nav class="toc" aria-label="目录"><a href="#decisions">约束</a><a href="#current">现状</a><a href="#references">规范比较</a><a href="#model">版本模型</a><a href="#desktop">Desktop</a><a href="#cli">CLI/Linux</a><a href="#settings">设置页</a><a href="#security">安全与失败</a><a href="#acceptance">验收</a></nav>
+
+  <h2 id="decisions">1. 已确定的设计约束</h2>
+  <ol>
+    <li><code>stable</code> 只解析 GitHub 上最新的非 draft、非 prerelease 正式 Release。普通用户永远不跟踪 <code>main</code>、任意 commit 或未完成的 tag。</li>
+    <li>更新单位是完整平台产物，不做 Python wheel、Web、Program、OCR、Browser 或模型的局部产品更新。新版本必须继续满足统一 capability manifest。</li>
+    <li>默认自动检查，首次启动延迟执行；成功检查后每 24 小时检查一次，失败后最早 6 小时重试。网络错误不影响应用启动，也不循环弹窗。</li>
+    <li>Desktop 与 CLI/server 共用版本解析、Release 选择和 checksum 规则，但安装动作按产物不同实现。</li>
+    <li>当前 macOS Desktop 使用 unsigned DMG。应用内负责检查、架构选择、完整下载和 SHA-256 校验，并在校验成功后打开 DMG；不实现自定义后台进程替换正在运行的 <code>.app</code>。</li>
+    <li>macOS/Linux CLI/server 复用现有 release installer：下载到新版本目录，验证完整 runtime 和 worker cold start，成功后原子切换 <code>current</code>，失败时保留原版本。</li>
+    <li>源码开发安装继续使用显式 Git ref 的 <code>openprogram upgrade</code> 流程。设置页不能把源码 checkout 更新解释为普通稳定更新。</li>
+    <li>当前只提供一个 <code>stable</code> 通道，不显示没有实际行为差异的通道选择器。</li>
+    <li>删除 worker 启动时的“检查并自动应用”行为。<code>OPENPROGRAM_IMMUTABLE_RUNTIME=1</code> 的 managed runtime 和 Desktop 不允许进入旧的 Git/PyPI updater；<code>openprogram update</code> 只保留为 <code>openprogram upgrade</code> 的兼容入口。</li>
+    <li>统一安装类型只有 <code>managed_release</code>、<code>source_checkout</code> 和 <code>unknown</code>。检测时 <code>OPENPROGRAM_IMMUTABLE_RUNTIME=1</code> 优先于 site-packages 等路径启发式规则；正式产品不得显示或使用 <code>pip_wheel</code> 更新语义。</li>
+  </ol>
+  <div class="note"><strong>产品语义：</strong>“自动检查更新”表示应用定期发现正式 Release。“下载更新”表示选择当前平台/架构的完整产物并校验。“安装更新”只有在现有安装机制能保证验证、切换和失败保留旧版本时才使用该名称。</div>
+
+  <h2 id="current">2. 当前实现与缺口</h2>
+  <div class="table-wrap"><table><thead><tr><th>范围</th><th>当前能力</th><th>本设计补充</th></tr></thead><tbody>
+    <tr><td><strong>Release</strong></td><td>v0.6.6 已包含 macOS arm64/x64 unsigned DMG/ZIP、macOS/Linux 完整 runtime、各 runtime checksum 与 <code>release-manifest.json</code>。</td><td>客户端解析 <code>/repos/Fzkuji/OpenProgram/releases/latest</code>，拒绝 draft、prerelease、非 <code>vX.Y.Z</code> tag 和缺少目标产物的 Release。</td></tr>
+    <tr><td><strong>Desktop</strong></td><td>Electron 版本为 0.6.6，设置页仍硬编码显示 0.1.0；没有更新 IPC、定期检查或下载校验。</td><td>版本改为 <code>app.getVersion()</code>；增加主进程更新服务、preload 最小 IPC 和设置页状态。</td></tr>
+    <tr><td><strong>CLI/server</strong></td><td>版本化 installer 已完成 checksum、capability manifest、cold start 和原子切换；公开短命令能解析最新正式 Release。</td><td>release 安装下的 <code>openprogram upgrade</code> 复用同一 installer；源码安装保留现有 Git 升级行为。</td></tr>
+    <tr><td><strong>旧后台 updater</strong></td><td>worker 启动会调用 <code>background_check_and_apply()</code>；Git checkout 会自动 pull，release runtime 可能被识别为 wheel 后执行 pip upgrade。</td><td>移除 worker 自动 apply；immutable runtime 只允许正式 Release 路径，源码 checkout 只允许显式 upgrade，普通产品不再执行 PyPI 局部更新。</td></tr>
+    <tr><td><strong>升级文档</strong></td><td>Desktop 仅说明手动下载 DMG，CLI 说明重新运行公开安装命令。</td><td>说明自动检查、校验下载、Desktop 用户确认替换和 CLI 原子升级的准确边界。</td></tr>
+  </tbody></table></div>
+
+  <h2 id="references">3. 官方规范与方案比较</h2>
+  <div class="table-wrap"><table><thead><tr><th>参考</th><th>明确能力/约束</th><th>采用方式</th></tr></thead><tbody>
+    <tr><td><a href="https://www.electronjs.org/docs/latest/api/auto-updater/">Electron autoUpdater</a></td><td>macOS 基于 Squirrel.Mac，原生自动更新要求应用已签名；Electron 本身不为 Linux 提供内置 updater。</td><td><strong>当前不采用安装模块</strong>。保留其事件状态模型，但不调用无法满足当前产物约束的 <code>quitAndInstall()</code>。</td></tr>
+    <tr><td><a href="https://www.electronjs.org/docs/latest/tutorial/updates">Electron Updating Applications</a></td><td>正式更新依赖平台产物、更新 metadata、检查/下载/重启事件；官方 GitHub 服务也把 macOS 签名列为条件。</td><td><strong>修改采用</strong>。GitHub Release 作为 metadata 和下载源；Desktop 停在经过校验的 DMG 打开步骤。</td></tr>
+    <tr><td><a href="https://www.electron.build/docs/features/auto-update/">electron-builder Auto Update</a></td><td>可生成 <code>latest-mac.yml</code> 并由 <code>electron-updater</code> 管理下载，但 macOS 自动更新同样要求签名。</td><td><strong>拒绝新增依赖</strong>。现有 Release API、manifest 和 Node/Electron API 足够完成本阶段，不引入未能执行安装的 updater 依赖。</td></tr>
+    <tr><td><a href="https://docs.github.com/en/rest/releases/releases#get-the-latest-release">GitHub Releases API</a></td><td>latest endpoint 返回最新发布的正式 Release，并排除 draft/prerelease；响应包含 tag、正文和 assets。</td><td><strong>采用</strong>。客户端仍再次校验字段和版本格式，并按确切文件名匹配资产。</td></tr>
+    <tr><td>自定义 Desktop 替换 helper</td><td>可等待应用退出后移动 <code>.app</code>，但需自行处理权限、DMG/App Translocation、备份、恢复、并发与启动确认。</td><td><strong>拒绝</strong>。新增高风险安装器不能达到现有 CLI 原子升级的验证水平。</td></tr>
+  </tbody></table></div>
+
+  <h2 id="model">4. 统一版本与 Release 模型</h2>
+  <div class="flow">
+    <div class="node"><strong>GitHub latest</strong><span>正式 Release<br><code>vX.Y.Z</code></span></div><div class="arrow">→</div>
+    <div class="node"><strong>严格验证</strong><span>tag、draft、prerelease、manifest</span></div><div class="arrow">→</div>
+    <div class="node"><strong>选择产物</strong><span>平台 + CPU 架构 + 完整产品</span></div><div class="arrow">→</div>
+    <div class="node"><strong>平台安装</strong><span>Desktop DMG / CLI runtime</span></div>
+  </div>
+  <ul>
+    <li>版本比较只接受三段数字 SemVer，去掉 tag 前缀 <code>v</code> 后逐段数值比较；不使用字符串排序。</li>
+    <li>发现相同或更低版本时返回 <code>up-to-date</code>，不允许稳定通道降级。</li>
+    <li>Release 必须同时包含 <code>release-manifest.json</code> 和当前安装类型要求的资产。manifest 以 <code>basename(path)</code> 建立索引，与 GitHub 的扁平 asset name 匹配；重复 basename、缺项或同名 metadata 不一致都使 Release 无效。缺失时不退回源码包或 wheel。</li>
+    <li>metadata 固定从 <code>https://api.github.com/repos/Fzkuji/OpenProgram/releases/latest</code> 读取；manifest/DMG/runtime 固定从该响应中同仓库的 <code>github.com/Fzkuji/OpenProgram/releases/download/vX.Y.Z/...</code> 入口读取；版本化 CLI installer 固定从 <code>raw.githubusercontent.com/Fzkuji/OpenProgram/vX.Y.Z/scripts/install-release.sh</code> 读取。</li>
+    <li>所有请求只允许 HTTPS，最多跟随 5 次重定向，并逐跳校验 host。允许的 host 精确为 <code>api.github.com</code>、<code>github.com</code>、<code>raw.githubusercontent.com</code> 和 <code>release-assets.githubusercontent.com</code>；任意其他 host、协议降级或凭据型 URL 都拒绝。renderer 不接收或构造下载 URL。</li>
+  </ul>
+
+  <h2 id="desktop">5. macOS Desktop 更新</h2>
+  <h3>5.1 主进程职责</h3>
+  <ol>
+    <li>启动后读取 <code>userData/update-state.json</code>；默认 <code>automaticChecks=true</code>。</li>
+    <li>持久化 schema 1 包含 <code>automaticChecks</code>、<code>lastAttemptAt</code>、<code>lastSuccessAt</code> 和最近一次成功的、经过验证的 release metadata。使用同目录临时文件加 rename 写入；损坏文件、未知 schema 或无效字段回退默认值。</li>
+    <li>packaged app 启动 30 秒后计算检查计划。成功后下一次自动检查安排在 <code>lastSuccessAt + 24h</code>；失败后安排在 <code>lastAttemptAt + 6h</code>，避免密集重试。手动检查始终跳过成功缓存和失败退避。</li>
+    <li>主进程只保留一个定时器和一个进行中的检查 Promise。每次完成、系统 sleep/resume 和 automaticChecks 设置变化后重新计算下一次时间；resume 不补发多个过期检查，最多立即启动一个，然后重新排程。开发模式不执行定时检查，但保留手动测试入口。</li>
+    <li>使用 Electron 主进程网络 API 请求 GitHub latest，设置固定 User-Agent、超时和响应大小上限。</li>
+    <li>按 <code>process.arch</code> 选择 <code>OpenProgram-X.Y.Z-mac-arm64-unsigned.dmg</code> 或 <code>OpenProgram-X.Y.Z-mac-x64-unsigned.dmg</code>，从 manifest 取得字节数和 SHA-256。</li>
+    <li>用户点击下载后显示系统保存对话框；写入同目录临时文件，流式计算 SHA-256，校验字节数和 hash 后原子改名。</li>
+    <li>校验成功后打开 DMG；失败时删除临时文件并显示可重试错误。不得打开未校验文件。</li>
+  </ol>
+  <h3>5.2 IPC 边界</h3>
+  <pre>updates.getState()                         // 只读当前状态
+updates.check({ force: true })            // 手动检查
+updates.setAutomaticChecks(enabled)       // 保存布尔偏好
+updates.download()                        // 只下载主进程已验证 metadata 对应的 DMG
+updates.openReleasePage()                 // 打开固定 Release 页面
+updates.onState(callback)                 // 状态推送</pre>
+  <p>renderer 不能传入仓库、URL、文件名、hash 或目标命令。主进程持有全部远端和文件系统权限，并只接受布尔偏好和无参数动作。</p>
+
+  <h2 id="cli">6. macOS/Linux CLI 与 server 更新</h2>
+  <div class="grid3">
+    <section class="card cli"><h3>Release 安装</h3><p><code>openprogram upgrade</code> 解析 latest，若有新版本则下载该 tag 的版本化 installer，并把目标版本显式传入。</p></section>
+    <section class="card cli"><h3>原子切换</h3><p>installer 在新目录完成 archive checksum、manifest、功能和 cold-start 验证，再切换 <code>current</code>。</p></section>
+    <section class="card dev"><h3>源码开发</h3><p>检测到 Git checkout 后继续执行现有 preflight、checkout、依赖、build、probe 和 restart 流程；界面明确标为 development。</p></section>
+  </div>
+  <ul>
+    <li><code>openprogram upgrade --check</code> 只报告当前/最新版本和是否可升级，不写文件、不重启。</li>
+    <li><code>openprogram upgrade</code> 默认需要用户显式执行，不在后台替换 server runtime。</li>
+    <li>managed upgrade 启动版本化 installer 时显式固定 <code>OPENPROGRAM_REPOSITORY=Fzkuji/OpenProgram</code> 和已验证的目标版本，并从子进程环境删除 <code>OPENPROGRAM_RUNTIME_ARCHIVE</code>、<code>OPENPROGRAM_RUNTIME_SHA256</code> 以及其他会改变正式产物来源的测试覆盖变量。installer 的本地 archive 注入只保留给直接执行脚本的 CI，不由产品命令继承。</li>
+    <li>运行中的 worker 不直接从旧进程内覆盖文件。升级命令只在隔离 cold start 成功后切换 <code>current</code>，不自动停止或重启现有 worker；旧 worker 继续运行当前代码，命令明确提示用户显式执行 <code>openprogram worker restart</code>。因此事务成功边界是 <code>current</code> 原子切换，不宣称新 worker 已接管。</li>
+    <li>Web 设置页第一阶段不请求远端版本，也不提供远程执行升级按钮；显示 host 当前版本、安装类型和 <code>openprogram upgrade --check</code>/<code>openprogram upgrade</code> 指令。</li>
+  </ul>
+
+  <h2 id="settings">7. 设置页信息结构</h2>
+  <p>入口固定在 <strong>Settings → General → Application</strong>。Desktop 和普通浏览器显示不同的可执行动作，但不按“desktop user/client user”重复分类。非 Desktop 页面通过 owner-auth 保护的只读 <code>GET /api/system/version</code> 取得 host 信息，响应 schema 为 <code>{currentVersion, installType}</code>；版本来自当前 Python distribution metadata，安装类型来自统一 detector。detector 先检查 immutable runtime，再区分源码 checkout，否则返回 unknown；该接口不访问 GitHub、不执行更新。</p>
+  <div class="state">
+    <div class="node"><strong>当前版本</strong><span>动态显示实际运行版本与安装类型。</span></div>
+    <div class="node"><strong>自动检查</strong><span>Desktop 开关，默认开启；只控制检查，不控制安装。</span></div>
+    <div class="node"><strong>更新状态</strong><span>未检查、检查中、已最新、有更新、下载中、失败。</span></div>
+    <div class="node"><strong>可用动作</strong><span>Check now、Download and open、View release notes。</span></div>
+  </div>
+  <ul>
+    <li>有更新时显示版本号、发布日期和 Release Notes 摘要；完整内容链接到该 Release。</li>
+    <li>下载进度显示已下载字节/总字节。保存完成前按钮不可重复触发。</li>
+    <li>普通 Web 页面没有 Desktop bridge 时，不显示 DMG 下载动作；加载 <code>/api/system/version</code> 后显示实际 host 版本、安装类型和 CLI 升级命令。请求失败时显示 unknown，不使用硬编码版本。</li>
+    <li>设置文字区分“Automatically check for updates”和“Download and open DMG”，不使用“Install and restart”。</li>
+  </ul>
+
+  <h2 id="security">8. 安全、隐私与失败处理</h2>
+  <div class="table-wrap"><table><thead><tr><th>情况</th><th>处理</th><th>保留状态</th></tr></thead><tbody>
+    <tr><td>离线、超时、GitHub 限流</td><td>记录简短错误；自动检查静默，手动检查在设置页显示重试。</td><td>应用和旧版本继续运行。</td></tr>
+    <tr><td>Release 字段或版本无效</td><td>拒绝该响应，不下载任何资产。</td><td>保留最近一次成功 metadata，但标明检查时间。</td></tr>
+    <tr><td>缺少架构资产/manifest 条目</td><td>显示“该版本没有当前架构的完整安装包”。</td><td>不退回错误架构、ZIP、wheel 或源码包。</td></tr>
+    <tr><td>下载中断/hash/size 不一致</td><td>删除临时文件；不得打开 DMG 或切换 CLI runtime。</td><td>已安装版本不变。</td></tr>
+    <tr><td>并发检查或下载</td><td>复用同一个进行中的 Promise；按钮进入 disabled 状态。</td><td>只有一个网络请求/下载任务。</td></tr>
+    <tr><td>Release Notes 内容</td><td>设置页显示纯文本摘要；不把 GitHub Markdown 当 HTML 注入。</td><td>完整正文只在外部 GitHub 页面打开。</td></tr>
+    <tr><td>更新状态文件损坏/未知 schema</td><td>忽略文件并恢复默认偏好；下一次成功检查以临时文件加 rename 重写。</td><td>不阻止应用启动，也不把损坏时间戳用于节流。</td></tr>
+  </tbody></table></div>
+  <p class="small">自动检查会向 GitHub 暴露普通 HTTPS 请求所含的 IP、User-Agent 与请求时间。不开启遥测，不上传 OpenProgram 配置、会话或设备标识。</p>
+
+  <h2 id="acceptance">9. 实现顺序与验收</h2>
+  <ol>
+    <li><strong>旧 updater 收敛：</strong>测试证明 worker 启动不再 apply 更新、immutable runtime 不进入 Git/PyPI 路径、<code>update</code> 兼容入口与 <code>upgrade</code> 使用同一正式语义。</li>
+    <li><strong>安装类型：</strong>测试证明 Desktop/CLI 的 immutable runtime 均为 <code>managed_release</code>，源码仓库为 <code>source_checkout</code>，不存在把正式产品显示为 <code>pip_wheel</code> 的路径。</li>
+    <li><strong>Desktop 检查与 UI：</strong>纯函数测试覆盖版本解析、latest 验证、真实 workflow 嵌套 manifest path 的 basename 唯一匹配、架构资产选择和状态转换；IPC 测试证明 renderer 不能指定 URL；Web 测试覆盖所有状态和非 Desktop 回退。</li>
+    <li><strong>Desktop 下载：</strong>本地 HTTP fixture 覆盖正常下载、允许的 GitHub 资产重定向、拒绝第三方/HTTP 重定向、重定向上限、超时、中断、大小不符、hash 不符、取消保存和并发请求；只有校验成功才调用打开 DMG。</li>
+    <li><strong>持久化与调度：</strong>覆盖重启后 24 小时成功缓存、应用连续运行到下一次检查、失败后 6 小时内不重复、失败后手动重试、sleep/resume 只触发一个检查、损坏文件、未知 schema 和原子写入。</li>
+    <li><strong>CLI/Linux：</strong>fake GitHub/installer 测试覆盖 <code>--check</code>、无更新、缺资产、安装失败保留旧 <code>current</code>、成功切换且不重启现有 worker、显式 restart 后使用新版本，以及注入 archive/checksum/repository 环境变量不能改变产品命令的正式更新来源。</li>
+    <li><strong>发布门禁：</strong>release workflow 校验每个 Desktop 资产都存在 manifest 条目，每个 runtime 都有独立 checksum；Release 创建后用 latest endpoint 做一次公开入口检查。</li>
+    <li><strong>可见验收：</strong>在 <code>/Applications/OpenProgram.app</code> 的 default profile/18100 实例中验证设置页、版本号、手动检查、下载进度和失败提示；不启动第二个可见 Desktop 实例。</li>
+  </ol>
+  <div class="note warn"><strong>不得宣称：</strong>当前 macOS Desktop 不得显示“自动安装”“后台替换”或“重启后自动完成安装”。完成标准是自动发现、经过校验的完整下载和明确安装交接；CLI/server 完成标准是原子切换成功并保留失败前版本。</div>
+</main>
+</body>
+</html>

@@ -3,6 +3,18 @@
 This engineering record is intentionally separate from the authoritative HTML design.
 It tracks the bounded implementation, verification, and review evidence for the current distribution work.
 
+## Formal release update batch
+
+- Authoritative design: `docs/reference/design/distribution/automatic-updates.html`.
+- Task brief: `docs/reference/design/plans/2026-08-15-formal-release-updates.md`.
+- Stable update source: the latest non-draft, non-prerelease GitHub Release; ordinary installations never follow `main` commits.
+- Desktop contract: automatically check, select the complete architecture-matched unsigned DMG, verify size and SHA-256, and open the verified DMG. The current distribution does not claim unattended app replacement.
+- CLI/server contract: reuse the existing complete-runtime installer and atomic `current` switch. Source checkouts keep the separate explicit Git update pipeline.
+- Existing-updater correction: remove worker-start automatic apply, prevent immutable runtimes from using Git/PyPI update paths, and make `openprogram update` a compatibility entry for the explicit upgrade command.
+- Runtime transaction boundary: a managed CLI upgrade succeeds when the verified new runtime becomes `current`; it does not stop or restart an existing worker and tells the user to restart explicitly.
+- Dependency boundary: use existing Electron/Node and Python facilities; do not add an updater package whose macOS install path cannot run under the current distribution contract.
+- Implementation and verification evidence will be recorded here incrementally after each reviewed slice.
+
 ## Release gate repair for v0.6.1
 
 - Removed four unreferenced legacy Channel modules after the implementations had moved under `openprogram/channels/implementations/`; the runtime HTTP inventory now scans only active Channel code.
