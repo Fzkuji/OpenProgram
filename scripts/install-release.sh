@@ -48,15 +48,18 @@ fi
 "$python_bin" -I -m openprogram --version
 
 probe_port="$((20000 + $$ % 10000))"
+probe_home="$release_dir/.probe-home-$$"
+mkdir -p "$probe_home"
 probe_active=1
 stop_probe() {
   if [ "$probe_active" = 1 ]; then
-    OPENPROGRAM_WEB_PORT="$probe_port" \
+    HOME="$probe_home" OPENPROGRAM_WEB_PORT="$probe_port" \
       "$python_bin" -I -B -m openprogram worker stop >/dev/null 2>&1 || true
   fi
+  rm -rf "$probe_home"
 }
 trap stop_probe EXIT HUP INT TERM
-OPENPROGRAM_WEB_PORT="$probe_port" \
+HOME="$probe_home" OPENPROGRAM_WEB_PORT="$probe_port" \
   "$python_bin" -I -B -m openprogram worker start
 "$python_bin" -I -B - "$probe_port" <<'PY'
 import json
@@ -78,9 +81,10 @@ for attempt in range(120):
 else:
     raise RuntimeError("OpenProgram worker did not become healthy")
 PY
-OPENPROGRAM_WEB_PORT="$probe_port" \
+HOME="$probe_home" OPENPROGRAM_WEB_PORT="$probe_port" \
   "$python_bin" -I -B -m openprogram worker stop
 probe_active=0
+rm -rf "$probe_home"
 trap - EXIT HUP INT TERM
 
 ln -sfn "$python_bin" "$release_dir/bin/python"
