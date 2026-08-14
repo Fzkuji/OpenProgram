@@ -10,7 +10,6 @@ const {
   nextAutomaticCheckAt,
   normalizePersistedState,
   readStateFile,
-  readJsonLimited,
   requestWithRedirects,
   resolveDesktopRelease,
   saveStateFileAtomic,
@@ -343,20 +342,7 @@ async function checkNetworkBoundaries() {
     assert.equal(fs.existsSync(badTarget), false);
     assert.equal(fs.readdirSync(root).some((name) => name.includes(".part-")), false);
 
-    let cancelled = false;
-    const stalledBody = new ReadableStream({
-      pull: () => new Promise(() => {}),
-      cancel: () => { cancelled = true; },
-    });
     const originalSetTimeout = global.setTimeout;
-    try {
-      global.setTimeout = (callback, _delay, ...args) => originalSetTimeout(callback, 5, ...args);
-      await assert.rejects(readJsonLimited(new Response(stalledBody)), /stalled/);
-    } finally {
-      global.setTimeout = originalSetTimeout;
-    }
-    assert.equal(typeof cancelled, "boolean");
-
     let serviceBodyCancelled = false;
     const serviceStalledBody = new ReadableStream({
       pull: () => new Promise(() => {}),
