@@ -233,6 +233,13 @@ def test_public_docs_follow_the_release_platform_policy() -> None:
             assert phrase not in contents, f"{path.relative_to(ROOT)}: {phrase}"
 
 
+def test_linux_install_docs_use_the_built_appimage_name() -> None:
+    for relative in ("docs/install/install.md", "docs/install/install.zh.md"):
+        contents = (ROOT / relative).read_text(encoding="utf-8")
+        assert "linux-x86_64.AppImage" in contents
+        assert "linux-x64.AppImage" not in contents
+
+
 def test_release_manifest_records_hashes(tmp_path: Path) -> None:
     import subprocess
 
