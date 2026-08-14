@@ -117,6 +117,9 @@
     .type-card h3 { margin: 0 0 8px; font-size: 19px; }
     .type-card ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
     .boundary-table, .acceptance-table { width: 100%; border-collapse: collapse; }
+    .table-scroll { max-width: 100%; overflow-x: auto; }
+    .table-scroll .acceptance-table { min-width: 760px; }
+    .table-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
     .boundary-table th, .boundary-table td, .acceptance-table th, .acceptance-table td { padding: 13px 11px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 13px; }
     .boundary-table th, .acceptance-table th { color: var(--faint); font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
     .boundary-table td:first-child { width: 25%; color: var(--ink); font-weight: 650; }
@@ -179,7 +182,7 @@
     <section class="metrics" aria-label="设计范围摘要">
       <div class="metric"><span class="metric-label">范围</span><span class="metric-value">Pane 层级 · Browser surfaces · Profile import</span></div>
       <div class="metric"><span class="metric-label">平台</span><span class="metric-value">桌面 App · 独立 profile · 源数据只读</span></div>
-      <div class="metric"><span class="metric-label">实现状态</span><span class="metric-value">浏览器与导入已实现 · Launcher 入口数量待对齐</span></div>
+      <div class="metric"><span class="metric-label">实现状态</span><span class="metric-value">浏览器导入已实现 · Launcher 数量与 History 密度待对齐</span></div>
     </section>
 
     <section class="section" id="decisions">
@@ -313,21 +316,23 @@
     <section class="section" id="acceptance">
       <div class="section-head"><span class="section-no">06</span><h2>验收与实现状态</h2></div>
       <p class="section-intro">每项验收都对应一个外部可观察结果。设计状态和实现证据分列，不以文档存在本身证明功能完成。</p>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="内置浏览器验收结果与实现证据，可横向滚动">
       <table class="acceptance-table">
-        <thead><tr><th>可观察结果</th><th>当前状态</th></tr></thead>
+        <thead><tr><th>可观察结果</th><th>当前状态</th><th>实现证据</th></tr></thead>
         <tbody>
-          <tr><td>新建 Pane 只显示 Files、Side chat、Browser、Terminal；DOM 中不存在 URL input、shortcut tile 或 bookmark row。</td><td><span class="status">已实现</span></td></tr>
-          <tr><td>选择 Browser 后原位显示 toolbar、导入入口和快捷网站；Home 返回 Browser home，主页 DOM 不渲染全部 bookmark rows。</td><td><span class="status">已实现</span></td></tr>
-          <tr><td>导入对话框列出来源浏览器、profile 和支持的数据类型；关闭对话框不产生目标变更。</td><td><span class="status">已实现</span></td></tr>
-          <tr><td>History 按日期分组，至少 1000 条时保持 36–40px 行高，搜索和滚动可用。</td><td><span class="status">已实现</span></td></tr>
-          <tr><td>Bookmarks 保留来源根目录、最多 64 层文件夹和同级顺序；无效 URL 被过滤，重复导入不产生重复 URL 或空文件夹。</td><td><span class="status">已实现</span></td></tr>
-          <tr><td>右上角主菜单在桌面 App 和 Web 中都与触发按钮右对齐，按钮底部到菜单顶部的间距为 4px。</td><td><span class="status">已实现</span></td></tr>
-          <tr><td>Cookies 只进入 <code>persist:webtabs</code>；IPC、日志、History 和 renderer 不出现 Cookie 值。</td><td><span class="status">已实现</span></td></tr>
-          <tr><td>来源损坏、浏览器缺失、临时进程超时和 Cookie 部分失败返回稳定错误码并保留原数据。</td><td><span class="status">已实现</span></td></tr>
-          <tr><td>依赖 PTY 的全屏终端程序以及执行中取消浏览器导入。</td><td><span class="status limit">当前限制</span></td></tr>
-          <tr><td>Passwords、自动填充、支付/地址数据和源浏览器接管。</td><td><span class="status out">明确排除</span></td></tr>
+          <tr><td>新建 Pane 只显示 Files、Side chat、Browser、Terminal；DOM 中不存在浏览器专属控件。</td><td><span class="status limit">需对齐</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/new-tab-page.tsx"><code>new-tab-page.tsx</code></a> 当前工作树还显示 Claude Code 第五入口；Browser 专属控件已经移出。</td></tr>
+          <tr><td>选择 Browser 后原位显示 toolbar、导入入口和快捷网站；Home 返回 Browser home，主页 DOM 不渲染全部 bookmark rows。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/browser-home-page.tsx"><code>browser-home-page.tsx</code></a>；<code>check-built-in-browser.mjs</code></td></tr>
+          <tr><td>导入对话框列出来源浏览器、profile 和支持的数据类型；关闭对话框不产生目标变更。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/desktop/main.js"><code>desktop/main.js</code></a> 的 <code>browser-import:*</code> IPC；<code>check-built-in-browser.mjs</code></td></tr>
+          <tr><td>History 按日期分组，至少 1000 条时保持 36–40px 行高，搜索和滚动可用。</td><td><span class="status limit">需对齐</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/desktop/browsing-history-store.js"><code>browsing-history-store.js</code></a> self-check已覆盖存储；当前 <code>web-history.css</code> 为 34px，且缺少 1000 条运行时滚动与搜索验收。</td></tr>
+          <tr><td>Bookmarks 保留来源根目录、最多 64 层文件夹和同级顺序；无效 URL 被过滤，重复导入不产生重复 URL 或空文件夹。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/lib/bookmarks.ts"><code>web/lib/bookmarks.ts</code></a>；<code>check-bookmarks.mjs</code></td></tr>
+          <tr><td>右上角主菜单在桌面 App 和 Web 中都与触发按钮右对齐，按钮底部到菜单顶部的间距为 4px。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/main-menu.tsx"><code>main-menu.tsx</code></a>；<code>check-center-tabs.mjs</code></td></tr>
+          <tr><td>Cookies 只进入 <code>persist:webtabs</code>；IPC、日志、History 和 renderer 不出现 Cookie 值。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/desktop/browser-profile-import.js"><code>browser-profile-import.js</code></a> self-check；<code>desktop/main.js</code></td></tr>
+          <tr><td>来源损坏、浏览器缺失、临时进程超时和 Cookie 部分失败返回稳定错误码并保留原数据。</td><td><span class="status">已实现</span></td><td><code>browser-profile-import.js</code> 与 <code>browsing-history-store.js</code> self-check</td></tr>
+          <tr><td>依赖 PTY 的全屏终端程序以及执行中取消浏览器导入。</td><td><span class="status limit">当前限制</span></td><td>产品边界，不作为当前验收缺口。</td></tr>
+          <tr><td>Passwords、自动填充、支付/地址数据和源浏览器接管。</td><td><span class="status out">明确排除</span></td><td><code>browser-profile-import.js</code> 的导入类型 allowlist。</td></tr>
         </tbody>
       </table>
+      </div>
       <h3>验证环境</h3>
       <p>可见验收只使用安装的 <code>/Applications/OpenProgram.app</code>、默认 18100 worker 和 <code>~/.openprogram</code>。文档更新不改变 Agent 的网页控制协议。</p>
     </section>
@@ -342,14 +347,32 @@
 <script>
   const tabs = [...document.querySelectorAll('.demo-tab')];
   const panels = [...document.querySelectorAll('.demo-panel')];
-  tabs.forEach((tab) => tab.addEventListener('click', () => {
-    tabs.forEach((item) => item.setAttribute('aria-selected', String(item === tab)));
+  function selectTab(tab, moveFocus = false) {
+    tabs.forEach((item) => {
+      const selected = item === tab;
+      item.setAttribute('aria-selected', String(selected));
+      item.tabIndex = selected ? 0 : -1;
+    });
     panels.forEach((panel) => {
       const active = panel.id === tab.getAttribute('aria-controls');
       panel.classList.toggle('active', active);
       panel.hidden = !active;
     });
-  }));
+    if (moveFocus) tab.focus();
+  }
+  tabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => selectTab(tab));
+    tab.addEventListener('keydown', (event) => {
+      let next = null;
+      if (event.key === 'ArrowRight') next = tabs[(index + 1) % tabs.length];
+      if (event.key === 'ArrowLeft') next = tabs[(index - 1 + tabs.length) % tabs.length];
+      if (event.key === 'Home') next = tabs[0];
+      if (event.key === 'End') next = tabs[tabs.length - 1];
+      if (!next) return;
+      event.preventDefault();
+      selectTab(next, true);
+    });
+  });
 </script>
 </body>
 </html>
