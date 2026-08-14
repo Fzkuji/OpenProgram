@@ -76,7 +76,6 @@ Set these in the shell that launches `openprogram` (or the worker). Every one ha
 | Variable | Purpose | Code |
 |------|------|------|
 | `OPENPROGRAM_NO_AUTO_WORKER` | `1` = the TUI does not auto-launch a worker; connects only to an existing one | `openprogram/cli_ink.py` |
-| `OPENPROGRAM_NO_AUTO_UPDATE` | `1` = disable auto-update | `openprogram/updater/runner.py` |
 | `OPENPROGRAM_NO_SLEEP` | `1` = disable the memory sleep-consolidation scheduler | `openprogram/memory/scheduler.py` |
 | `OPENPROGRAM_NO_PROGRAMS_WATCH` | `1` = disable the file watcher on the programs directory | `openprogram/programs/watcher.py` |
 | `OPENPROGRAM_PROJECT_AUTOCOMMIT` | `0` = turn off project auto-commit | `openprogram/store/project/project_commit.py` |

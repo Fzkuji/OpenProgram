@@ -15,6 +15,13 @@ It tracks the bounded implementation, verification, and review evidence for the 
 - Dependency boundary: use existing Electron/Node and Python facilities; do not add an updater package whose macOS install path cannot run under the current distribution contract.
 - Implementation and verification evidence will be recorded here incrementally after each reviewed slice.
 
+### Incremental implementation evidence
+
+- Design commit `2a1765b8` defined the stable Release boundary and passed an independent specification review after correcting the legacy updater, manifest-path, redirect, persistence, install-detection, and CLI transaction contracts.
+- Runtime correction commit `645de752` removed worker-start automatic apply, introduced `managed_release` / `source_checkout` detection with immutable-runtime precedence, and added the read-only host version endpoint. The focused source/update suite reported 24 passed.
+- Desktop commit `55803250` added dependency-free GitHub latest checks, strict stable metadata and architecture asset selection, unique manifest-basename matching, atomic state persistence, bounded scheduling, verified DMG download, minimal IPC, and the Settings application panel. Desktop and Web checks passed; a live v0.6.6 check resolved the published Release as up to date.
+- Managed CLI implementation resolves the same latest stable Release, requires the platform runtime plus checksum assets, reads the versioned installer from the immutable tag, removes archive/checksum source overrides, switches only after the installer's existing cold-start gate, and never restarts the running worker implicitly.
+
 ## Release gate repair for v0.6.1
 
 - Removed four unreferenced legacy Channel modules after the implementations had moved under `openprogram/channels/implementations/`; the runtime HTTP inventory now scans only active Channel code.

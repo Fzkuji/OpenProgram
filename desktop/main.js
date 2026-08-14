@@ -54,7 +54,13 @@ let updateTimer = null;
 
 function broadcastUpdateState(state) {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send("updates:state", state);
+    try {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send("updates:state", state);
+      }
+    } catch (_error) {
+      // Window teardown must not abort an update check or download.
+    }
   }
 }
 
@@ -69,9 +75,12 @@ function scheduleAutomaticUpdateCheck(initial = false) {
     : Math.max(1_000, dueAt - now);
   updateTimer = setTimeout(async () => {
     updateTimer = null;
-    await desktopUpdates.check();
-    scheduleAutomaticUpdateCheck();
-  }, delay);
+    try {
+      await desktopUpdates.check();
+    } finally {
+      scheduleAutomaticUpdateCheck();
+    }
+  }, Math.min(delay, 2_147_000_000));
 }
 
 function initializeDesktopUpdates() {

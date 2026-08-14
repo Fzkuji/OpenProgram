@@ -18,6 +18,7 @@ const FAILURE_INTERVAL_MS = 6 * 3600_000;
 const MAX_REDIRECTS = 5;
 const REQUEST_TIMEOUT_MS = 30_000;
 const DOWNLOAD_IDLE_TIMEOUT_MS = 60_000;
+const RESPONSE_ABORT = Symbol("openprogramUpdateAbort");
 
 function versionParts(value) {
   const match = VERSION_RE.exec(String(value || ""));
@@ -159,6 +160,12 @@ function saveStateFileAtomic(filePath, state) {
   }
 }
 
+function publicRelease(release) {
+  if (!release) return null;
+  const { asset: _asset, ...visible } = release;
+  return visible;
+}
+
 function nextAutomaticCheckAt(state) {
   if (state.lastSuccessAt && state.lastSuccessAt >= state.lastAttemptAt) {
     return state.lastSuccessAt + SUCCESS_INTERVAL_MS;
@@ -188,28 +195,67 @@ async function requestWithRedirects(fetchImpl, initialUrl, options = {}) {
       clearTimeout(timeout);
     }
     if ([301, 302, 303, 307, 308].includes(response.status)) {
+      controller.abort();
       if (redirects === MAX_REDIRECTS) throw new Error("update redirect limit exceeded");
       const location = response.headers.get("location");
       if (!location) throw new Error("update redirect is missing a location");
       current = validateUpdateUrl(new URL(location, current).toString());
       continue;
     }
-    if (!response.ok) throw new Error(`update request failed with HTTP ${response.status}`);
+    if (!response.ok) {
+      controller.abort();
+      throw new Error(`update request failed with HTTP ${response.status}`);
+    }
+    Object.defineProperty(response, RESPONSE_ABORT, {
+      value: () => controller.abort(),
+    });
     return response;
   }
   throw new Error("update redirect limit exceeded");
 }
 
+async function nextBodyChunk(iterator, timeoutMs) {
+  let timeout;
+  return Promise.race([
+    iterator.next(),
+    new Promise((_resolve, reject) => {
+      timeout = setTimeout(() => reject(new Error("response body stalled")), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timeout));
+}
+
 async function readJsonLimited(response, maxBytes = 2 * 1024 * 1024) {
   const chunks = [];
   let total = 0;
-  for await (const chunk of response.body) {
-    const buffer = Buffer.from(chunk);
-    total += buffer.length;
-    if (total > maxBytes) throw new Error("update metadata exceeds size limit");
-    chunks.push(buffer);
+  const iterator = response.body[Symbol.asyncIterator]();
+  try {
+    while (true) {
+      const next = await nextBodyChunk(iterator, REQUEST_TIMEOUT_MS);
+      if (next.done) break;
+      const buffer = Buffer.from(next.value);
+      total += buffer.length;
+      if (total > maxBytes) throw new Error("update metadata exceeds size limit");
+      chunks.push(buffer);
+    }
+  } catch (error) {
+    response[RESPONSE_ABORT]?.();
+    if (typeof iterator.return === "function") {
+      try { iterator.return().catch(() => {}); } catch (_cancelError) { /* best effort */ }
+    }
+    throw error;
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+async function writeAll(file, buffer) {
+  let offset = 0;
+  while (offset < buffer.length) {
+    const result = await file.write(buffer, offset, buffer.length - offset);
+    if (!result || !Number.isSafeInteger(result.bytesWritten) || result.bytesWritten <= 0) {
+      throw new Error("update file write made no progress");
+    }
+    offset += result.bytesWritten;
+  }
 }
 
 async function downloadVerified(fetchImpl, asset, targetPath, onProgress = () => {}) {
@@ -222,22 +268,23 @@ async function downloadVerified(fetchImpl, asset, targetPath, onProgress = () =>
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     file = await fs.promises.open(temporary, "w", 0o600);
     const iterator = response.body[Symbol.asyncIterator]();
-    while (true) {
-      let timeout;
-      const next = await Promise.race([
-        iterator.next(),
-        new Promise((_resolve, reject) => {
-          timeout = setTimeout(() => reject(new Error("download stalled")), DOWNLOAD_IDLE_TIMEOUT_MS);
-        }),
-      ]).finally(() => clearTimeout(timeout));
-      if (next.done) break;
-      const chunk = next.value;
-      const buffer = Buffer.from(chunk);
-      total += buffer.length;
-      if (total > asset.bytes) throw new Error("download exceeds expected size");
-      hash.update(buffer);
-      await file.write(buffer);
-      onProgress(total, asset.bytes);
+    try {
+      while (true) {
+        const next = await nextBodyChunk(iterator, DOWNLOAD_IDLE_TIMEOUT_MS);
+        if (next.done) break;
+        const buffer = Buffer.from(next.value);
+        if (total + buffer.length > asset.bytes) throw new Error("download exceeds expected size");
+        await writeAll(file, buffer);
+        total += buffer.length;
+        hash.update(buffer);
+        onProgress(total, asset.bytes);
+      }
+    } catch (error) {
+      response[RESPONSE_ABORT]?.();
+      if (typeof iterator.return === "function") {
+        try { iterator.return().catch(() => {}); } catch (_cancelError) { /* best effort */ }
+      }
+      throw error;
     }
     await file.close();
     file = null;
@@ -245,6 +292,7 @@ async function downloadVerified(fetchImpl, asset, targetPath, onProgress = () =>
     if (hash.digest("hex") !== asset.sha256) throw new Error("download checksum mismatch");
     await fs.promises.rename(temporary, targetPath);
   } catch (error) {
+    response[RESPONSE_ABORT]?.();
     if (file) await file.close().catch(() => {});
     await fs.promises.unlink(temporary).catch(() => {});
     throw error;
@@ -262,12 +310,63 @@ class DesktopUpdateService {
     this.emit = emit || (() => {});
     this.now = now;
     this.persisted = readStateFile(statePath);
+    let repairedState = false;
+    const startupNow = this.now();
+    if (
+      this.persisted.lastAttemptAt > startupNow
+      || this.persisted.lastSuccessAt > startupNow
+      || this.persisted.lastSuccessAt > this.persisted.lastAttemptAt
+    ) {
+      this.persisted.lastAttemptAt = 0;
+      this.persisted.lastSuccessAt = 0;
+      repairedState = true;
+    }
+    const cached = this.persisted.release;
+    if (cached === null && this.persisted.lastSuccessAt > 0) {
+      this.persisted.lastAttemptAt = 0;
+      this.persisted.lastSuccessAt = 0;
+      repairedState = true;
+    }
+    if (cached !== null) {
+      try {
+        if (
+          ![
+            cached.currentVersion,
+            cached.latestVersion,
+            cached.publishedAt,
+            cached.releaseName,
+            cached.releaseNotes,
+            cached.releaseUrl,
+          ].every((value) => typeof value === "string")
+          || cached.currentVersion !== currentVersion
+          || cached.releaseNotes.length > 20_000
+          || cached.asset?.name !== `OpenProgram-${cached.latestVersion}-mac-${arch}-unsigned.dmg`
+          || cached.asset?.url !== releaseAssetUrl(cached.latestVersion, cached.asset.name)
+          || cached.releaseUrl !== `https://github.com/${REPOSITORY}/releases/tag/v${cached.latestVersion}`
+          || !Number.isSafeInteger(cached.asset?.bytes)
+          || cached.asset.bytes < 0
+          || !/^[a-f0-9]{64}$/.test(cached.asset?.sha256 || "")
+        ) throw new Error("cached release is invalid");
+        this.persisted.release = {
+          ...cached,
+          status: compareVersions(cached.latestVersion, currentVersion) > 0 ? "available" : "up-to-date",
+        };
+      } catch (_error) {
+        this.persisted.release = null;
+        this.persisted.lastAttemptAt = 0;
+        this.persisted.lastSuccessAt = 0;
+        repairedState = true;
+      }
+    }
+    if (repairedState) {
+      try { saveStateFileAtomic(this.statePath, this.persisted); } catch (_error) { /* retry later */ }
+    }
     this.publicState = {
       status: this.persisted.release?.status || "idle",
       currentVersion,
       automaticChecks: this.persisted.automaticChecks,
       checkedAt: this.persisted.lastSuccessAt || null,
-      release: this.persisted.release,
+      release: publicRelease(this.persisted.release),
       progress: null,
       error: null,
     };
@@ -304,10 +403,10 @@ class DesktopUpdateService {
   }
 
   async runCheck(now) {
-    this.persisted.lastAttemptAt = now;
-    this.persist();
-    this.publish({ status: "checking", error: null });
     try {
+      this.persisted.lastAttemptAt = now;
+      this.persist();
+      this.publish({ status: "checking", error: null });
       const latestResponse = await requestWithRedirects(this.fetchImpl, LATEST_URL, {
         accept: "application/vnd.github+json",
       });
@@ -328,11 +427,11 @@ class DesktopUpdateService {
       this.publish({
         status: resolved.status,
         checkedAt: now,
-        release: resolved,
+        release: publicRelease(resolved),
         error: null,
       });
     } catch (error) {
-      this.persist();
+      try { this.persist(); } catch (_persistError) { /* state remains in memory */ }
       this.publish({ status: "error", error: error instanceof Error ? error.message : String(error) });
     }
     return this.getState();
@@ -353,8 +452,13 @@ class DesktopUpdateService {
     if (!targetPath) return this.getState();
     this.publish({ status: "downloading", progress: { downloaded: 0, total: release.asset.bytes }, error: null });
     try {
+      let lastProgressAt = 0;
       await downloadVerified(this.fetchImpl, release.asset, targetPath, (downloaded, total) => {
-        this.publish({ progress: { downloaded, total } });
+        const now = Date.now();
+        if (downloaded === total || now - lastProgressAt >= 250) {
+          lastProgressAt = now;
+          this.publish({ progress: { downloaded, total } });
+        }
       });
       const openError = await this.openPath(targetPath);
       if (openError) throw new Error(openError);
@@ -376,8 +480,10 @@ module.exports = {
   nextAutomaticCheckAt,
   normalizePersistedState,
   readStateFile,
+  readJsonLimited,
   requestWithRedirects,
   resolveDesktopRelease,
   saveStateFileAtomic,
   validateUpdateUrl,
+  writeAll,
 };

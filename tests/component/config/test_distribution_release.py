@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -118,8 +119,79 @@ def test_release_installer_cold_starts_before_switching_current() -> None:
     start = installer.index('"$python_bin" -I -B -m openprogram worker start')
     health = installer.index("/healthz", start)
     stop = installer.index('"$python_bin" -I -B -m openprogram worker stop', health)
-    switch = installer.index('mv -f "$next_link" "$runtime_root/current"', stop)
+    switch = installer.index("os.replace(sys.argv[1], sys.argv[2])", stop)
     assert start < health < stop < switch
+
+
+def test_release_installer_replaces_an_existing_current_symlink(tmp_path: Path) -> None:
+    runtime_root = tmp_path / "state" / "runtime" / "cli"
+    old_release = runtime_root / "releases" / "0.6.6"
+    old_release.mkdir(parents=True)
+    (runtime_root / "current").symlink_to(old_release)
+
+    archive_root = tmp_path / "archive" / "runtime"
+    (archive_root / "python" / "bin").mkdir(parents=True)
+    (archive_root / "bin").mkdir()
+    fake_python = archive_root / "python" / "bin" / "python3"
+    fake_python.write_text(
+        "#!/bin/sh\n"
+        f"if [ \"$#\" -eq 5 ] && [ \"$3\" = - ]; then exec {sys.executable!r} \"$@\"; fi\n"
+        "case \"$*\" in\n"
+        "  *'openprogram --version'*) printf 'openprogram 0.6.7\\n' ;;\n"
+        "  *) : ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    (archive_root / "bin" / "verify-product-runtime.py").write_text(
+        "# acceptance fixture\n", encoding="utf-8"
+    )
+    (archive_root / "runtime-manifest.json").write_text(
+        json.dumps({"python": "python/bin/python3"}, indent=2), encoding="utf-8"
+    )
+    archive = tmp_path / "OpenProgram-0.6.7-runtime-macos-arm64.tar.gz"
+    subprocess.run(
+        ["tar", "-C", str(tmp_path / "archive"), "-czf", str(archive), "runtime"],
+        check=True,
+    )
+    import hashlib
+
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    launcher_dir = tmp_path / "bin"
+    env = {
+        "PATH": os.environ["PATH"],
+        "HOME": str(tmp_path / "home"),
+        "TMPDIR": str(tmp_path),
+        "LC_ALL": "C",
+        "OPENPROGRAM_VERSION": "0.6.7",
+        "OPENPROGRAM_STATE_DIR": str(tmp_path / "state"),
+        "OPENPROGRAM_BIN_DIR": str(launcher_dir),
+        "OPENPROGRAM_RUNTIME_ARCHIVE": str(archive),
+        "OPENPROGRAM_RUNTIME_SHA256": digest,
+    }
+
+    launcher_dir.write_text("not a directory", encoding="utf-8")
+    failed = subprocess.run(
+        ["sh", str(ROOT / "scripts" / "install-release.sh")],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert failed.returncode != 0
+    assert (runtime_root / "current").resolve() == old_release
+    launcher_dir.unlink()
+
+    subprocess.run(
+        ["sh", str(ROOT / "scripts" / "install-release.sh")],
+        check=True,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert (runtime_root / "current").resolve() == runtime_root / "releases" / "0.6.7"
+    assert (launcher_dir / "openprogram").is_file()
 
 
 def test_short_public_installer_resolves_latest_and_accepts_a_pin(
@@ -171,9 +243,11 @@ esac
 
     result = tmp_path / "result"
     curl_log = tmp_path / "curl.log"
-    env = os.environ | {
+    env = {
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "HOME": str(tmp_path / "home"),
         "TMPDIR": str(tmp_path),
+        "LC_ALL": "C",
         "FAKE_INSTALLER": str(fake_installer),
         "FAKE_RESULT": str(result),
         "FAKE_CURL_LOG": str(curl_log),

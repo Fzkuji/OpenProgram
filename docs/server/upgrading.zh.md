@@ -99,5 +99,5 @@ $ openprogram upgrade --dry-run
 ## 相关
 
 - [故障排查](troubleshooting.zh.md)：与更新无关的问题。
-- `openprogram update` 是另一个更早的命令，用于更新 pip/npm 安装的副本。
-  `upgrade` 是源码检出的带闸门路径。
+- `openprogram update` 是 `openprogram upgrade` 的兼容别名。managed release
+  使用 stable GitHub Release 路径；source checkout 使用上文的 Git 升级流程。

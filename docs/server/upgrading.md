@@ -108,5 +108,6 @@ which is where to look if an upgrade dies partway.
 ## Related
 
 - [Troubleshooting](troubleshooting.md) for problems unrelated to updating.
-- `openprogram update` is a separate, older command that updates a
-  pip/npm-installed copy. `upgrade` is the gated path for source checkouts.
+- `openprogram update` is a compatibility alias for `openprogram upgrade`.
+  Managed releases use the stable GitHub Release path; source checkouts use
+  the gated Git pipeline described above.

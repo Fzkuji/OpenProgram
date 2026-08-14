@@ -104,9 +104,13 @@ def redact_value(value: Any) -> Any:
 
 
 def _version_info() -> dict[str, Any]:
-    from openprogram.updater.pip import installed_version
+    try:
+        from importlib.metadata import version
+        installed = version("openprogram")
+    except Exception:
+        installed = None
     return {
-        "openprogram": installed_version() or "unknown (not pip-installed)",
+        "openprogram": installed or "unknown",
         "python": sys.version.split()[0],
         "python_executable": sys.executable,
         "platform": platform.platform(),

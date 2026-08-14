@@ -76,7 +76,6 @@ openprogram config set ui.web_port 8101
 | 变量 | 用途 | 代码 |
 |------|------|------|
 | `OPENPROGRAM_NO_AUTO_WORKER` | `1` = TUI 不自动拉起 worker，只连已有的 | `openprogram/cli_ink.py` |
-| `OPENPROGRAM_NO_AUTO_UPDATE` | `1` = 禁用自动更新 | `openprogram/updater/runner.py` |
 | `OPENPROGRAM_NO_SLEEP` | `1` = 禁用记忆的 sleep 整理调度器 | `openprogram/memory/scheduler.py` |
 | `OPENPROGRAM_NO_PROGRAMS_WATCH` | `1` = 禁用 programs 目录的文件监听 | `openprogram/programs/watcher.py` |
 | `OPENPROGRAM_PROJECT_AUTOCOMMIT` | `0` = 关闭项目自动 commit | `openprogram/store/project/project_commit.py` |

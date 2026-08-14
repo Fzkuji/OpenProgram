@@ -138,7 +138,6 @@ _AUDITED_FIXED_ORIGINS = MappingProxyType(
             {"https://pypi.org", "https://registry.npmjs.org"}
         ),
         "updater.github": frozenset({"https://api.github.com"}),
-        "updater.pip": frozenset({"https://pypi.org"}),
         "provider.fixed_api": frozenset(
             {
                 "https://ai-gateway.vercel.sh",
@@ -350,7 +349,6 @@ _SPECS = (
     _download("plugins.marketplace", URLTrustClass.CONFIGURED_SERVICE),
     _download("plugins.autoupdate", URLTrustClass.FIXED_PUBLIC_SERVICE),
     _download("updater.github", URLTrustClass.FIXED_PUBLIC_SERVICE),
-    _download("updater.pip", URLTrustClass.FIXED_PUBLIC_SERVICE),
     _api("provider.fixed_api", URLTrustClass.FIXED_PUBLIC_SERVICE),
     _api("provider.configured_api", URLTrustClass.CONFIGURED_SERVICE),
     _api("provider.oauth.fixed", URLTrustClass.FIXED_PUBLIC_SERVICE),

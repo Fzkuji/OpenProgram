@@ -4,15 +4,18 @@ const os = require("node:os");
 const path = require("node:path");
 
 const {
+  DesktopUpdateService,
   compareVersions,
   downloadVerified,
   nextAutomaticCheckAt,
   normalizePersistedState,
   readStateFile,
+  readJsonLimited,
   requestWithRedirects,
   resolveDesktopRelease,
   saveStateFileAtomic,
   validateUpdateUrl,
+  writeAll,
 } = require("../update-service");
 
 assert.equal(compareVersions("0.6.7", "0.6.6"), 1);
@@ -98,6 +101,69 @@ try {
   });
   assert.equal(readStateFile(statePath).automaticChecks, false);
   assert.equal(readStateFile(statePath).release.latestVersion, "0.6.7");
+  const upgradedApp = new DesktopUpdateService({
+    currentVersion: "0.6.8",
+    arch: "arm64",
+    statePath,
+    fetchImpl: async () => { throw new Error("not used"); },
+    chooseSavePath: async () => null,
+    openPath: async () => "",
+  });
+  assert.equal(upgradedApp.getState().status, "idle");
+  assert.equal(upgradedApp.getState().release, null);
+  assert.equal(JSON.parse(fs.readFileSync(statePath, "utf8")).release, null);
+  saveStateFileAtomic(statePath, {
+    schema: 1,
+    automaticChecks: true,
+    lastAttemptAt: 10,
+    lastSuccessAt: 10,
+    release: null,
+  });
+  const missingReleaseApp = new DesktopUpdateService({
+    currentVersion: "0.6.6",
+    arch: "arm64",
+    statePath,
+    fetchImpl: async () => { throw new Error("not used"); },
+    chooseSavePath: async () => null,
+    openPath: async () => "",
+    now: () => 10,
+  });
+  assert.equal(missingReleaseApp.automaticCheckDueAt(), 0);
+  assert.equal(JSON.parse(fs.readFileSync(statePath, "utf8")).lastSuccessAt, 0);
+  saveStateFileAtomic(statePath, {
+    schema: 1,
+    automaticChecks: true,
+    lastAttemptAt: 20,
+    lastSuccessAt: 20,
+    release: { ...available, releaseNotes: { invalid: true } },
+  });
+  const invalidReleaseApp = new DesktopUpdateService({
+    currentVersion: "0.6.6",
+    arch: "arm64",
+    statePath,
+    fetchImpl: async () => { throw new Error("not used"); },
+    chooseSavePath: async () => null,
+    openPath: async () => "",
+    now: () => 20,
+  });
+  assert.equal(invalidReleaseApp.getState().release, null);
+  saveStateFileAtomic(statePath, {
+    schema: 1,
+    automaticChecks: true,
+    lastAttemptAt: 50,
+    lastSuccessAt: 50,
+    release: available,
+  });
+  const futureTimestampApp = new DesktopUpdateService({
+    currentVersion: "0.6.6",
+    arch: "arm64",
+    statePath,
+    fetchImpl: async () => { throw new Error("not used"); },
+    chooseSavePath: async () => null,
+    openPath: async () => "",
+    now: () => 40,
+  });
+  assert.equal(futureTimestampApp.automaticCheckDueAt(), 0);
   fs.writeFileSync(statePath, "not-json");
   assert.equal(readStateFile(statePath).automaticChecks, true);
   assert.equal(fs.readdirSync(root).some((name) => name.includes(".tmp-")), false);
@@ -114,11 +180,40 @@ assert.match(mainSource, /ipcMain\.handle\("updates:get-state"/);
 assert.match(mainSource, /ipcMain\.handle\("updates:check"/);
 assert.match(mainSource, /ipcMain\.handle\("updates:download"/);
 assert.match(mainSource, /powerMonitor\.on\("resume"/);
+assert.match(mainSource, /finally\s*{\s*scheduleAutomaticUpdateCheck\(\)/);
+assert.match(mainSource, /webContents\.isDestroyed\(\)/);
 assert.match(preloadSource, /updates:\s*\{/);
 assert.match(preloadSource, /getState:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("updates:get-state"\)/);
 assert.doesNotMatch(preloadSource, /updates:download"\s*,/);
 
 async function checkNetworkBoundaries() {
+  const publicStateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-public-update-state-"));
+  try {
+    const publicStatePath = path.join(publicStateRoot, "update-state.json");
+    saveStateFileAtomic(publicStatePath, {
+      schema: 1,
+      automaticChecks: true,
+      lastAttemptAt: 1,
+      lastSuccessAt: 1,
+      release: available,
+    });
+    const service = new DesktopUpdateService({
+      currentVersion: "0.6.6",
+      arch: "arm64",
+      statePath: publicStatePath,
+      fetchImpl: async () => { throw new Error("not used"); },
+      chooseSavePath: async () => null,
+      openPath: async () => "",
+      now: () => 2,
+    });
+    const publicState = service.getState();
+    assert.equal("asset" in publicState.release, false);
+    assert.equal(JSON.stringify(publicState).includes("sha256"), false);
+    assert.equal(JSON.stringify(publicState).includes("releases/download"), false);
+  } finally {
+    fs.rmSync(publicStateRoot, { recursive: true, force: true });
+  }
+
   const allowedCalls = [];
   const allowedFetch = async (url) => {
     allowedCalls.push(url);
@@ -144,6 +239,58 @@ async function checkNetworkBoundaries() {
     ),
     /host/,
   );
+  await assert.rejects(
+    requestWithRedirects(
+      async () => new Response(null, { status: 302, headers: { location: "http://github.com/file" } }),
+      "https://github.com/Fzkuji/OpenProgram/releases/download/v0.6.7/file",
+    ),
+    /HTTPS/,
+  );
+  await assert.rejects(
+    requestWithRedirects(
+      async () => new Response(null, { status: 302, headers: { location: "/next" } }),
+      "https://github.com/Fzkuji/OpenProgram/releases/download/v0.6.7/file",
+    ),
+    /limit/,
+  );
+  let httpErrorAborted = false;
+  await assert.rejects(
+    requestWithRedirects(
+      async (_url, options) => {
+        options.signal.addEventListener("abort", () => { httpErrorAborted = true; });
+        return new Response("error", { status: 500 });
+      },
+      "https://github.com/Fzkuji/OpenProgram/releases/download/v0.6.7/file",
+    ),
+    /HTTP 500/,
+  );
+  assert.equal(httpErrorAborted, true);
+
+  const checkRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-concurrent-check-"));
+  try {
+    let checkFetches = 0;
+    const service = new DesktopUpdateService({
+      currentVersion: "0.6.6",
+      arch: "arm64",
+      statePath: path.join(checkRoot, "state.json"),
+      fetchImpl: async () => {
+        checkFetches += 1;
+        return new Response(JSON.stringify(checkFetches === 1 ? release : manifest));
+      },
+      chooseSavePath: async () => null,
+      openPath: async () => "",
+      now: () => 100,
+    });
+    const [left, right] = await Promise.all([
+      service.check({ force: true }),
+      service.check({ force: true }),
+    ]);
+    assert.equal(checkFetches, 2);
+    assert.equal(left.status, "available");
+    assert.deepEqual(left, right);
+  } finally {
+    fs.rmSync(checkRoot, { recursive: true, force: true });
+  }
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-update-download-"));
   try {
@@ -157,19 +304,153 @@ async function checkNetworkBoundaries() {
     await downloadVerified(async () => new Response(bytes), asset, target);
     assert.deepEqual(fs.readFileSync(target), bytes);
 
+    const blockedParent = path.join(root, "blocked-parent");
+    fs.writeFileSync(blockedParent, "file");
+    let openFailureAborted = false;
+    await assert.rejects(
+      downloadVerified(
+        async (_url, options) => {
+          options.signal.addEventListener("abort", () => { openFailureAborted = true; });
+          return new Response(bytes);
+        },
+        asset,
+        path.join(blockedParent, "update.dmg"),
+      ),
+    );
+    assert.equal(openFailureAborted, true);
+
+    const shortWriteTarget = path.join(root, "short-write.dmg");
+    const handle = await fs.promises.open(shortWriteTarget, "w", 0o600);
+    await writeAll({
+      write: (buffer, offset, length) => handle.write(buffer, offset, Math.min(length, 3)),
+    }, bytes);
+    await handle.close();
+    assert.deepEqual(fs.readFileSync(shortWriteTarget), bytes);
+
     const badTarget = path.join(root, "bad.dmg");
     await assert.rejects(
       downloadVerified(async () => new Response(bytes), { ...asset, sha256: "0".repeat(64) }, badTarget),
       /checksum/,
     );
+    await assert.rejects(
+      downloadVerified(
+        async () => new Response(bytes),
+        { ...asset, bytes: bytes.length + 1 },
+        path.join(root, "bad-size.dmg"),
+      ),
+      /size/,
+    );
     assert.equal(fs.existsSync(badTarget), false);
     assert.equal(fs.readdirSync(root).some((name) => name.includes(".part-")), false);
+
+    let cancelled = false;
+    const stalledBody = new ReadableStream({
+      pull: () => new Promise(() => {}),
+      cancel: () => { cancelled = true; },
+    });
+    const originalSetTimeout = global.setTimeout;
+    try {
+      global.setTimeout = (callback, _delay, ...args) => originalSetTimeout(callback, 5, ...args);
+      await assert.rejects(readJsonLimited(new Response(stalledBody)), /stalled/);
+    } finally {
+      global.setTimeout = originalSetTimeout;
+    }
+    assert.equal(typeof cancelled, "boolean");
+
+    let serviceBodyCancelled = false;
+    const serviceStalledBody = new ReadableStream({
+      pull: () => new Promise(() => {}),
+      cancel: () => { serviceBodyCancelled = true; },
+    });
+    const stalledService = new DesktopUpdateService({
+      currentVersion: "0.6.6",
+      arch: "arm64",
+      statePath: path.join(root, "stalled-state.json"),
+      fetchImpl: async (_url, options) => {
+        options.signal.addEventListener("abort", () => { serviceBodyCancelled = true; });
+        return new Response(serviceStalledBody);
+      },
+      chooseSavePath: async () => null,
+      openPath: async () => "",
+      now: () => 3,
+    });
+    try {
+      global.setTimeout = (callback, _delay, ...args) => originalSetTimeout(callback, 5, ...args);
+      assert.equal((await stalledService.check({ force: true })).status, "error");
+    } finally {
+      global.setTimeout = originalSetTimeout;
+    }
+    assert.equal(serviceBodyCancelled, true);
+
+    const retryStatePath = path.join(root, "retry-state.json");
+    const verifiedRelease = {
+      ...available,
+      asset: {
+        ...asset,
+        name: available.asset.name,
+        url: available.asset.url,
+      },
+    };
+    saveStateFileAtomic(retryStatePath, {
+      schema: 1,
+      automaticChecks: true,
+      lastAttemptAt: 1,
+      lastSuccessAt: 1,
+      release: verifiedRelease,
+    });
+    let downloadFetches = 0;
+    let opened = 0;
+    const retryService = new DesktopUpdateService({
+      currentVersion: "0.6.6",
+      arch: "arm64",
+      statePath: retryStatePath,
+      fetchImpl: async () => {
+        downloadFetches += 1;
+        return new Response(downloadFetches === 1 ? Buffer.alloc(bytes.length) : bytes);
+      },
+      chooseSavePath: async () => path.join(root, "retry.dmg"),
+      openPath: async () => { opened += 1; return ""; },
+      now: () => 2,
+    });
+    const failedState = await retryService.download();
+    assert.equal(failedState.status, "error");
+    assert.equal(failedState.release.status, "available");
+    assert.equal(opened, 0);
+    const [completedState] = await Promise.all([
+      retryService.download(),
+      retryService.download(),
+    ]);
+    assert.equal(completedState.status, "downloaded");
+    assert.equal(downloadFetches, 2);
+    assert.equal(opened, 1);
+
+    const cancelService = new DesktopUpdateService({
+      currentVersion: "0.6.6",
+      arch: "arm64",
+      statePath: retryStatePath,
+      fetchImpl: async () => { throw new Error("cancel must not fetch"); },
+      chooseSavePath: async () => null,
+      openPath: async () => { throw new Error("cancel must not open"); },
+      now: () => 2,
+    });
+    assert.equal((await cancelService.download()).status, "available");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 }
 
+const watchdog = setTimeout(() => {
+  console.error("desktop update network checks timed out");
+  process.exit(1);
+}, 10_000);
 checkNetworkBoundaries().then(
-  () => console.log("desktop update network checks passed"),
-  (error) => { console.error(error); process.exitCode = 1; },
+  () => {
+    clearTimeout(watchdog);
+    console.log("desktop update network checks passed");
+  },
+  (error) => {
+    clearTimeout(watchdog);
+    console.error(error);
+    process.exitCode = 1;
+  },
 );
