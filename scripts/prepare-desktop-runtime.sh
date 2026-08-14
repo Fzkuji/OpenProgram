@@ -40,8 +40,8 @@ test -n "$wheel" || {
   exit 1
 }
 
-"$uv_bin" pip install --python "$python_bin" --strict --break-system-packages "$wheel"
-"$python_bin" -I -c 'import openprogram; import openprogram.webui.frontend'
+"$uv_bin" pip install --python "$python_bin" --strict --break-system-packages "$wheel[browser]"
+"$python_bin" -I -c 'import openprogram; import openprogram.webui.frontend; import playwright.sync_api'
 
 # uv creates a convenience alias whose target is the absolute staging path.
 # The versioned runtime path recorded below is self-contained; remove absolute

@@ -200,6 +200,8 @@ export interface CenterTabsState {
     id: string,
     patch: { url?: string; title?: string; faviconUrl?: string },
   ) => void;
+  /** Replace a web tab in place with the built-in new-tab page. */
+  replaceWebTabWithNewTabPage: (id: string) => void;
   /** Unsaved-changes marker groundwork — content owners call this;
    *  the strip renders ● instead of ✕ while dirty. */
   setTabDirty: (id: string, dirty: boolean) => void;
@@ -667,6 +669,22 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           t.id === id ? { ...t, url, title, faviconUrl } : t
         );
         return commitCenterTabsState(s, { tabs });
+      }),
+
+    replaceWebTabWithNewTabPage: (id) =>
+      set((s) => {
+        const index = s.tabs.findIndex((tab) => tab.id === id && tab.kind === "web");
+        if (index < 0) return {};
+        const homeTab: CenterTab = { id: nextNtpId(), kind: "ntp", title: "" };
+        const tabs = s.tabs.map((tab, tabIndex) =>
+          tabIndex === index ? homeTab : tab
+        );
+        return commitCenterTabsState(s, {
+          tabs,
+          activeId: s.activeId === id ? homeTab.id : s.activeId,
+          groups: replaceGroupTabId(s.groups, id, homeTab.id),
+          splitWebTabId: s.splitWebTabId === id ? null : s.splitWebTabId,
+        });
       }),
 
     setTabDirty: (id, dirty) =>

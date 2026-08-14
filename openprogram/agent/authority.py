@@ -344,7 +344,8 @@ _WRITE_TOOLS = {
 }
 _PROCESS_TOOLS = {
     "bash", "exec", "shell", "execute_code", "process", "agent",
-    "gui_agent", "research_agent", "wiki_agent", "playwright_browser",
+    "gui_agent", "research_agent", "wiki_agent", "browser_agent",
+    "playwright_browser",
 }
 _NETWORK_TOOLS = {
     "send_message", "send_file", "web_search", "list_mcp_resources",

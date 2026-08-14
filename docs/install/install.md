@@ -32,8 +32,8 @@ Desktop artifacts contain Electron, a managed CPython runtime, OpenProgram's Pyt
 3. Make the file executable and start it:
 
 ```bash
-chmod u+x OpenProgram-*-linux-x64.AppImage
-./OpenProgram-*-linux-x64.AppImage
+chmod u+x OpenProgram-*-linux-x86_64.AppImage
+./OpenProgram-*-linux-x86_64.AppImage
 ```
 
 The AppImage does not require root. A Linux arm64 desktop artifact is not currently published.
@@ -52,15 +52,15 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 
 The command creates `~/.local/bin/openprogram`. If that directory is not already on `PATH`, invoke it by its absolute path or add the directory to the shell configuration.
 
-Verify the installation:
+Before switching `current`, the installer automatically runs the version probe and a worker cold-start/health check. A failed probe leaves the current version unchanged. After installation, run:
 
 ```bash
 ~/.local/bin/openprogram --version
-~/.local/bin/openprogram doctor
 ~/.local/bin/openprogram web
+~/.local/bin/openprogram doctor
 ```
 
-The Web UI is served at `http://localhost:18100`. The released wheel contains the prebuilt Web UI, so Node.js is not required.
+The Web UI is served at `http://localhost:18100`. The released wheel contains the prebuilt Web UI, so Node.js is not required. `doctor` checks the complete working environment; it may return non-zero before a provider is configured, while the persistent worker is stopped, or when development tools are absent. Those results do not mean the base release installation failed.
 
 ## Programs and optional components
 

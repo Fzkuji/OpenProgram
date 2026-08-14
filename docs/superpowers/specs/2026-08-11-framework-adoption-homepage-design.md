@@ -30,7 +30,7 @@ Present OpenProgram first as an installable, general-purpose agent framework. Th
 - Primary action: `Install OpenProgram`, linking to Quick Start.
 - Secondary action: `Explore documentation`.
 - Visual: use a real OpenProgram Web UI screenshot. Move the code sample to the build-your-own card.
-- Facts: Python 3.11+, macOS/Linux/Windows, Web/TUI/CLI, and AGPL-3.0.
+- Facts: Python 3.11+, supported macOS/Linux release hosts, remote browser access for Windows/mobile clients, Web/TUI/CLI, and AGPL-3.0. The current distribution matrix is authoritative in `docs/reference/design/distribution/installation-packaging.html`.
 
 ## Use or Build
 
@@ -45,7 +45,7 @@ Each ready-made harness links to its existing repository or installation guide. 
 
 ## Quick Start
 
-Place Quick Start before the detailed capability explanation. Show the supported macOS/Linux installer followed by `openprogram`. Link Windows users and advanced installation options to the installation guide. Keep copy controls and their fallback behavior.
+Place Quick Start before the detailed capability explanation. Show the supported macOS/Linux installer followed by `openprogram`. Direct Windows users to remote browser access on a supported host and link advanced installation options to the installation guide. Keep copy controls and their fallback behavior.
 
 ## Included Capabilities
 

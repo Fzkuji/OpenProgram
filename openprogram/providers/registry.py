@@ -355,6 +355,13 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
 
     runtime_snapshot = initialize_provider_runtime()
 
+    if (
+        provider
+        and isinstance(model, str)
+        and model.startswith(f"{provider}:")
+    ):
+        model = model[len(provider) + 1:]
+
     if runtime_snapshot.mode == "replay":
         if not provider or provider == "auto":
             configured = _load_provider_config()
@@ -393,11 +400,13 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
         entry = PROVIDERS[provider]
     else:
         provider, detected_model = detect_provider()
+        model = model or detected_model
+        if provider not in PROVIDERS:
+            return _api_routed_runtime(provider, model, **kwargs)
         entry = PROVIDERS[provider]
         # detect_provider returns None for CLI providers ("we found
         # the binary but don't have an opinion on which model") — the
         # table default below covers that.
-        model = model or detected_model
 
     use_model = model or entry["default_model"]
 

@@ -27,6 +27,9 @@ def _enable_routed_models(monkeypatch):
     # for. They inherit their wire api from each provider.json.
     cfg = {
         "minimax-cn": {"models": [{"id": "MiniMax-M2.5", "name": "MiniMax M2.5"}]},
+        "minimax-cn-coding-plan": {"models": [
+            {"id": "MiniMax-M3", "name": "MiniMax M3"},
+        ]},
         "deepseek": {"models": [{"id": "deepseek-chat", "name": "DeepSeek Chat"}]},
     }
     monkeypatch.setattr(cr, "read_providers_config", lambda: cfg)
@@ -58,3 +61,25 @@ def test_api_routed_provider_builds_runtime_not_error(provider, model, expected_
 def test_api_routed_provider_defaults_to_a_known_model():
     rt = create_runtime(provider="minimax-cn")
     assert str(getattr(rt, "model", "")).startswith("minimax-cn:")
+
+
+def test_auto_detected_api_routed_provider_builds_runtime(monkeypatch):
+    import openprogram.providers.registry as registry
+
+    monkeypatch.setattr(
+        registry,
+        "detect_provider",
+        lambda: ("minimax-cn", "MiniMax-M2.5"),
+    )
+    rt = create_runtime()
+    assert rt.provider_id == "minimax-cn"
+    assert rt.model == "minimax-cn:MiniMax-M2.5"
+
+
+def test_explicit_api_routed_provider_accepts_runtime_prefixed_model():
+    rt = create_runtime(
+        provider="minimax-cn-coding-plan",
+        model="minimax-cn-coding-plan:MiniMax-M3",
+    )
+    assert rt.provider_id == "minimax-cn-coding-plan"
+    assert rt.model == "minimax-cn-coding-plan:MiniMax-M3"

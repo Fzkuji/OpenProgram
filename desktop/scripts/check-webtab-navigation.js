@@ -293,6 +293,7 @@ function controlledRecord(id, currentUrl = "", loading = false) {
   let bounds = { x: 0, y: 0, width: 0, height: 0 };
   let closeCalls = 0;
   let targetCalls = 0;
+  let debuggerAttached = false;
   const nativeCalls = { reload: 0, back: 0, forward: 0 };
   const webContents = {
     getURL: () => currentUrl,
@@ -312,9 +313,15 @@ function controlledRecord(id, currentUrl = "", loading = false) {
         });
       });
     },
-    getOrCreateDevToolsTargetId() {
-      targetCalls += 1;
-      return `${id}-target`;
+    debugger: {
+      isAttached() { return debuggerAttached; },
+      attach() { debuggerAttached = true; },
+      sendCommand(method) {
+        assert.equal(method, "Target.getTargetInfo");
+        targetCalls += 1;
+        return Promise.resolve({ targetInfo: { targetId: `${id}-target` } });
+      },
+      detach() { debuggerAttached = false; },
     },
     navigationHistory: {
       canGoBack: () => false,

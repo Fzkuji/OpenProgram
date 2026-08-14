@@ -22,7 +22,7 @@
  *    back/forward buttons: iframe history is unreliable cross-origin.
  */
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Columns2, ExternalLink, RotateCw, Star } from "lucide-react";
+import { ArrowLeft, ArrowRight, Columns2, ExternalLink, House, RotateCw, Star } from "lucide-react";
 
 import {
   desktopBridge,
@@ -75,6 +75,23 @@ function BookmarkButton({ url, title }: { url: string; title: string }) {
       aria-label={text(bookmarked ? "Remove bookmark" : "Bookmark", bookmarked ? "移除书签" : "添加书签")}
     >
       <Star size={14} fill={bookmarked ? "currentColor" : "none"} />
+    </button>
+  );
+}
+
+function HomeButton({ tabId }: { tabId: string }) {
+  const { text } = useTranslation();
+  const label = text("Home", "主页");
+
+  return (
+    <button
+      type="button"
+      className={styles.webToolbarBtn}
+      onClick={() => useCenterTabs.getState().replaceWebTabWithNewTabPage(tabId)}
+      title={label}
+      aria-label={label}
+    >
+      <House size={14} />
     </button>
   );
 }
@@ -309,6 +326,7 @@ function DesktopWebTabPane({
         >
           <ArrowRight size={14} />
         </button>
+        <HomeButton tabId={tabId} />
         <input
           ref={addressRef}
           className={styles.webAddress}
@@ -388,6 +406,7 @@ function IframeWebTabPane({ tabId, url }: { tabId: string; url: string }) {
   return (
     <div className={styles.webPane}>
       <div className={styles.webToolbar}>
+        <HomeButton tabId={tabId} />
         <input
           className={styles.webAddress}
           value={address}

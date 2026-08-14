@@ -32,8 +32,8 @@ OpenProgram 分别提供桌面 release 安装和 CLI/server release 安装。sou
 3. 增加当前用户执行权限并启动：
 
 ```bash
-chmod u+x OpenProgram-*-linux-x64.AppImage
-./OpenProgram-*-linux-x64.AppImage
+chmod u+x OpenProgram-*-linux-x86_64.AppImage
+./OpenProgram-*-linux-x86_64.AppImage
 ```
 
 AppImage 不要求 root。目前不发布 Linux arm64 桌面产物。
@@ -52,15 +52,15 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 
 命令创建 `~/.local/bin/openprogram`。如果该目录不在 `PATH`，可以使用绝对路径，或把它加入 shell 配置。
 
-验证安装：
+installer 在切换 `current` 前会自动执行版本检查和 worker cold-start/health check；失败时不会切换当前版本。安装后可以执行：
 
 ```bash
 ~/.local/bin/openprogram --version
-~/.local/bin/openprogram doctor
 ~/.local/bin/openprogram web
+~/.local/bin/openprogram doctor
 ```
 
-Web UI 地址是 `http://localhost:18100`。release wheel 已包含预构建 Web UI，不需要 Node.js。
+Web UI 地址是 `http://localhost:18100`。release wheel 已包含预构建 Web UI，不需要 Node.js。`doctor` 检查完整工作环境；尚未配置 provider、未启动持久 worker 或没有开发工具时可能返回非零，不代表基础 release 安装失败。
 
 ## Programs 与可选组件
 

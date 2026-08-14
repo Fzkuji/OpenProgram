@@ -47,6 +47,46 @@ fi
   "$package_spec"
 "$python_bin" -I -m openprogram --version
 
+probe_port="$((20000 + $$ % 10000))"
+probe_home="$release_dir/.probe-home-$$"
+mkdir -p "$probe_home"
+probe_active=1
+stop_probe() {
+  if [ "$probe_active" = 1 ]; then
+    HOME="$probe_home" OPENPROGRAM_WEB_PORT="$probe_port" \
+      "$python_bin" -I -B -m openprogram worker stop >/dev/null 2>&1 || true
+  fi
+  rm -rf "$probe_home"
+}
+trap stop_probe EXIT HUP INT TERM
+HOME="$probe_home" OPENPROGRAM_WEB_PORT="$probe_port" \
+  "$python_bin" -I -B -m openprogram worker start
+"$python_bin" -I -B - "$probe_port" <<'PY'
+import json
+import sys
+import time
+import urllib.request
+
+url = f"http://127.0.0.1:{sys.argv[1]}/healthz"
+for attempt in range(120):
+    try:
+        with urllib.request.urlopen(url, timeout=1) as response:
+            payload = json.load(response)
+        if payload.get("status") == "ok":
+            break
+    except Exception:
+        if attempt == 119:
+            raise
+        time.sleep(0.25)
+else:
+    raise RuntimeError("OpenProgram worker did not become healthy")
+PY
+HOME="$probe_home" OPENPROGRAM_WEB_PORT="$probe_port" \
+  "$python_bin" -I -B -m openprogram worker stop
+probe_active=0
+rm -rf "$probe_home"
+trap - EXIT HUP INT TERM
+
 ln -sfn "$python_bin" "$release_dir/bin/python"
 next_link="$runtime_root/.current-$OPENPROGRAM_VERSION-$$"
 ln -s "$release_dir" "$next_link"

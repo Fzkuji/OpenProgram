@@ -141,6 +141,22 @@ def test_app_page_selection_ignores_one_concurrent_new_page():
     assert error is None
 
 
+def test_app_attach_matches_control_plane_target_across_all_electron_pages():
+    source = (
+        REPO_ROOT
+        / "openprogram"
+        / "programs"
+        / "functions"
+        / "browser"
+        / "_actions"
+        / "open_action.py"
+    ).read_text(encoding="utf-8")
+    start = source.index("def _open_app_session")
+    end = source.index("\ndef _open(", start)
+    attach = source[start:end]
+    assert "_choose_app_page(\n            _all_pages()," in attach
+
+
 def test_desktop_activation_waits_for_navigation_before_target_receipt():
     source = (REPO_ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
     start = source.index("async function activateView")
@@ -148,8 +164,14 @@ def test_desktop_activation_waits_for_navigation_before_target_receipt():
     activate = source[start:end]
     assert "await navigateView(ctx, id, url)" in activate
     assert activate.index("await navigateView(ctx, id, url)") < activate.index(
-        "getOrCreateDevToolsTargetId()"
+        "devToolsTargetId(record.view.webContents)"
     )
+
+
+def test_desktop_target_id_uses_electron_debugger_api():
+    source = (REPO_ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    assert "getOrCreateDevToolsTargetId" not in source
+    assert 'client.sendCommand("Target.getTargetInfo")' in source
 
 
 def test_desktop_navigation_deduplicates_same_pending_url():
@@ -172,7 +194,7 @@ def test_desktop_activation_does_not_restore_a_tab_changed_while_loading():
     guard_index = activate.index(
         "if (recordFor(ctx, id) !== record || !ctx.visibleViewIds.has(id)) return null"
     )
-    target_index = activate.index("getOrCreateDevToolsTargetId()")
+    target_index = activate.index("devToolsTargetId(record.view.webContents)")
     assert show_index < navigate_index < guard_index < target_index
 
 
@@ -189,6 +211,15 @@ def test_desktop_renderer_reload_discards_pending_native_navigations():
     start = source.index("function runNativeNavigation")
     end = source.index("\nfunction", start + 1)
     assert "record.navigation = null" in source[start:end]
+
+
+def test_desktop_transfer_acceptance_page_uses_csp_compatible_handlers():
+    source = (REPO_ROOT / "web" / "public" / "desktop-transfer-acceptance.html").read_text(
+        encoding="utf-8"
+    )
+    assert "onclick=" not in source
+    assert "pushBtn').addEventListener('click'" in source
+    assert "backBtn').addEventListener('click'" in source
 
 
 def test_renderer_control_contract_targets_ready_session_split():

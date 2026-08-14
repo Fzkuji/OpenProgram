@@ -19,7 +19,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
 import { renderMarkdown } from "./markdown";
 import { formatDate, formatSize, groupByFolder } from "./format";
-import { commitmentStatusState, writerStatusState } from "./status";
+import { commitmentStatusState } from "./status";
 import { ClockIcon, TypeBadge } from "./icons";
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -53,7 +53,6 @@ export function MemoryPage() {
   const refreshIconRef = useRef<AnimatedNavIconHandle>(null);
   const [tab, setTab] = useState<Tab>("topics");
   const [memoryStatus, setMemoryStatus] = useState<MemoryStatus | null>(null);
-  const [statusLoadFailed, setStatusLoadFailed] = useState(false);
   const [commitmentSavingId, setCommitmentSavingId] = useState<string | null>(null);
   const [commitmentError, setCommitmentError] = useState("");
 
@@ -81,17 +80,13 @@ export function MemoryPage() {
   const [coreLoading, setCoreLoading] = useState(true);
 
   const fetchStatus = useCallback(() => {
-    setStatusLoadFailed(false);
     fetch("/api/memory/status")
       .then((r) => {
         if (!r.ok) throw new Error(`memory status ${r.status}`);
         return r.json();
       })
       .then((data: MemoryStatus) => setMemoryStatus(data))
-      .catch(() => {
-        setMemoryStatus(null);
-        setStatusLoadFailed(true);
-      });
+      .catch(() => setMemoryStatus(null));
   }, []);
 
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
@@ -283,19 +278,10 @@ export function MemoryPage() {
   }, [topicPages, search]);
 
   const topicGroups = groupByFolder(filteredTopics);
-  const writer = memoryStatus?.writer ?? null;
-  const writerState = writer ? writerStatusState(writer) : null;
   const commitments = memoryStatus?.commitments ?? null;
   const commitmentsState = commitments
     ? commitmentStatusState(commitments)
     : "empty";
-  const statusClass = writerState === "failed"
-    ? styles.writerStatusFailed
-    : writerState === "pending"
-      ? styles.writerStatusPending
-      : writerState === "up_to_date"
-        ? styles.writerStatusIdle
-        : styles.writerStatusEmpty;
 
   // Wikilink click handler: delegate from the preview container
   function handlePreviewClick(e: React.MouseEvent) {
@@ -314,67 +300,6 @@ export function MemoryPage() {
       {/* Header — same pattern as functions page */}
       <div className={styles.topbar}>
         <span className={styles.title}>{t("nav.memory")}</span>
-      </div>
-
-      <div
-        className={`${styles.writerStatus} ${statusClass}`}
-        role={writerState === "failed" ? "alert" : "status"}
-      >
-        <span className={styles.writerStatusDot} aria-hidden="true" />
-        <div className={styles.writerStatusText}>
-          {!writer && !statusLoadFailed && (
-            <span className={styles.writerStatusLabel}>{text("Loading writer status...", "正在加载写入器状态...")}</span>
-          )}
-          {!writer && statusLoadFailed && (
-            <span className={styles.writerStatusLabel}>{text("Writer status unavailable", "无法获取写入器状态")}</span>
-          )}
-          {writer && writerState === "unrecorded" && (
-            <span className={styles.writerStatusLabel}>{text("No writer status recorded yet", "尚无写入器状态记录")}</span>
-          )}
-          {writer && writerState === "failed" && writer.last_failure && (
-            <>
-              <span className={styles.writerStatusLabel}>{text("Memory writer failed", "记忆写入失败")}</span>
-              <code className={styles.writerStatusReason}>{writer.last_failure.reason_code}</code>
-              <span>{writer.last_failure.retryable
-                ? text("Retryable", "可重试")
-                : text("Not retryable", "不可重试")}</span>
-              <span>{formatDate(Date.parse(writer.last_failure.at) / 1000, locale)}</span>
-            </>
-          )}
-          {writer && writerState === "pending" && (
-            <span className={styles.writerStatusLabel}>{text("Memory writes pending", "存在待处理记忆")}</span>
-          )}
-          {writer && writerState === "up_to_date" && (
-            <span className={styles.writerStatusLabel}>{text("Memory is up to date", "记忆已写入最新状态")}</span>
-          )}
-          {writer && writerState === "pending_count_unavailable" && (
-            <span className={styles.writerStatusLabel}>{text("Pending count unavailable", "无法获取待处理数")}</span>
-          )}
-          {writer && writer.pending_turns !== null && (
-            <span>{writer.pending_turns} {text("pending turns", "个待处理回合")}</span>
-          )}
-          {writer?.last_success_at && (
-            <span>{text("Last write", "最近写入")} {formatDate(Date.parse(writer.last_success_at) / 1000, locale)}</span>
-          )}
-          {writer?.last_failure && writerState !== "failed" && (
-            <span>
-              {text("Last failure", "最近失败")}:{" "}
-              <code className={styles.writerStatusReason}>{writer.last_failure.reason_code}</code>{" "}
-              ({writer.last_failure.retryable
-                ? text("retryable", "可重试")
-                : text("not retryable", "不可重试")};{" "}
-              {formatDate(Date.parse(writer.last_failure.at) / 1000, locale)})
-            </span>
-          )}
-        </div>
-        <button
-          className={styles.writerStatusRefresh}
-          onClick={fetchStatus}
-          title={text("Refresh writer status", "刷新写入器状态")}
-          aria-label={text("Refresh writer status", "刷新写入器状态")}
-        >
-          <RefreshCwIcon size={13} />
-        </button>
       </div>
 
       {/* Body — single grid: tabBar (row 1 col 1) + tree (row 2 col 1) +

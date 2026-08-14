@@ -124,7 +124,7 @@ function spawnWorker() {
   let launch;
   if (app.isPackaged) {
     env.OPENPROGRAM_IMMUTABLE_RUNTIME = "1";
-    launch = resolvePackagedWorker(process.resourcesPath);
+    launch = resolvePackagedWorker(process.resourcesPath, app.getVersion());
   } else {
     launch = { command: "openprogram", args: ["worker", "start"] };
   }
@@ -1807,6 +1807,25 @@ function hideView(ctx, id) {
   return syncVisibleViews(ctx, currentVisibleItems(ctx, id));
 }
 
+async function devToolsTargetId(webContents) {
+  const client = webContents?.debugger;
+  if (!client) return null;
+  let attachedHere = false;
+  try {
+    if (!client.isAttached()) {
+      client.attach("1.3");
+      attachedHere = true;
+    }
+    const result = await client.sendCommand("Target.getTargetInfo");
+    const targetId = result?.targetInfo?.targetId;
+    return typeof targetId === "string" && targetId ? targetId : null;
+  } catch {
+    return null;
+  } finally {
+    if (attachedHere && client.isAttached()) client.detach();
+  }
+}
+
 async function activateView(ctx, id, url) {
   let record;
   if (url) {
@@ -1819,7 +1838,7 @@ async function activateView(ctx, id, url) {
     record = recordFor(ctx, id);
     if (!record || !showView(ctx, id)) return null;
   }
-  return record.view.webContents.getOrCreateDevToolsTargetId();
+  return devToolsTargetId(record.view.webContents);
 }
 
 function withView(ctx, id, fn) {

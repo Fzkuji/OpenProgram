@@ -4,7 +4,8 @@
 function 组成的 git 仓库。`openprogram programs install`在
 `openprogram/programs/agentic_functions/` 下登记其来源，随后其函数会像内置函数一样注册。
 这是一套**通用机制**：第一方程序（gui / research / wiki）与任何第三方仓库
-的安装方式完全相同。跨平台（macOS / Linux / Windows）；无需 symlink。
+在可变的 source-development 或 CLI 环境中使用相同安装方式；无需 symlink。
+immutable packaged desktop 当前拒绝 Program 安装、升级和卸载操作。
 
 > **agent 在哪里读取本文档：** 本文件是规范流程。
 > 当用户要求安装某个 agent 尚未拥有的 harness 时，请遵循
@@ -144,14 +145,17 @@ OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list
 
 ## 平台说明
 
-- **基础安装在每个操作系统上都是一条命令：** 克隆 OpenProgram 并运行
-  `./scripts/install.sh`（Windows：`.\scripts\install.ps1`）。
-- **无需 symlink**——把一个真实目录克隆到 `<AGENTICS>` 是受支持的
-  路径，因此不存在 Windows 管理员/开发者模式的门槛。
+- **受支持的 release host 是 macOS 和 Linux。** Windows 没有受支持的
+  release installer 或 native package；Windows 用户可以用浏览器连接运行在
+  受支持远程主机上的 OpenProgram。
+- **这些 Program 命令需要可变环境。** source-development checkout 可以使用；
+  CLI release 仅在对应 release notes 明确支持 Program mutation 时使用。
+  packaged desktop 在 Program 拥有隔离的外部环境前会拒绝这些修改命令。
+- **受支持的可变环境无需 symlink**——把真实目录克隆到 `<AGENTICS>` 是规范路径。
 - **harness 在自身代码中仍可以是平台相关的**（例如，桌面 GUI
   harness 可能只实现 macOS / Linux 后端）。
-  安装总能成功；每个函数是否能在你的操作系统上*运行*则是
-  harness 自己的事情——查看它的 README。
+  在受支持主机上能否安装、每个函数能否运行，取决于 harness 声明的依赖和
+  平台支持；需要检查它的 README。
 - **编码 / 路径：** OpenProgram 自身的工具链全程基于 UTF-8 和
   `os.path`；一个表现良好的 harness 也应如此。
 
@@ -164,7 +168,7 @@ OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list
 | harness 自身依赖出现 `ModuleNotFoundError` | 依赖安装步骤失败——对该克隆（或其 requirements.txt）执行 `pip install` 并检查错误。 |
 | harness 内部的导入失败（`from <pkg>.x import y`） | package 目录的命名与导入根不一致，或缺少 `__init__.py`。package 文件夹名必须等于导入名。 |
 | 现有dev symlink没有加载 | 运行一次`openprogram programs install <Git来源>`完成校验与登记；安装器不会修改链接目标。 |
-| 函数能加载，但在 Windows 上*运行*时报错 | harness 自身代码是平台相关的——这是它的事情，不是安装的事情。查看它的 README。 |
+| Windows source checkout 无法安装或运行 harness | Windows release 安装和兼容性不受支持。改用受支持的 macOS/Linux 主机，并检查 harness README 中的平台要求。 |
 
 ---
 
