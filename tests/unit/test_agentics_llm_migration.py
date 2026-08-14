@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.support.repository import tracked_python_files
+
 MIGRATED_FUNCTIONS = {
     "openprogram.programs.agentic_functions.deep_work": ("_clarify", "_evaluate"),
     "openprogram.programs.agentic_functions.extract_pdf_figures": ("extract_pdf_figures",),
@@ -101,7 +103,7 @@ def test_only_deferred_tool_loops_still_call_runtime_exec():
         "agentic_workflow",
     }
     remaining = []
-    for path in root.rglob("*.py"):
+    for path in tracked_python_files(root):
         if excluded.intersection(path.relative_to(root).parts):
             continue
         source = path.read_text(encoding="utf-8")

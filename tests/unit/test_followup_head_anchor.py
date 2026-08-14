@@ -31,33 +31,24 @@ def _make_job(**kw):
     return Job(**base)
 
 
-def _inline_threads(monkeypatch, runner_mod):
-    """Run ``_dispatch_followup``'s worker inline so assertions can run."""
-    def run_inline(target=None, daemon=None, **kw):
-        class _T:
-            def start(self_):
-                target()
-        return _T()
-    monkeypatch.setattr(runner_mod.threading, "Thread", run_inline)
-
-
 def test_followup_anchors_at_head_not_the_spawning_node(monkeypatch):
     """``branch_from`` stays INHERIT_PARENT — the dispatcher walks HEAD."""
     from openprogram.agent.job import runner as runner_mod
 
     seen = {}
+    done = threading.Event()
 
     def fake_process(req, **kw):
         seen["branch_from"] = req.branch_from
         seen["session_id"] = req.session_id
+        done.set()
         return type("_R", (), {})()
 
     import openprogram.agent.dispatcher as disp
     monkeypatch.setattr(disp, "process_user_turn", fake_process)
-    _inline_threads(monkeypatch, runner_mod)
-
     runner_mod.get_runner()._dispatch_followup(_make_job())
 
+    assert done.wait(2)
     assert seen["session_id"] == "S"
     # Not pinned to caller_msg_id — that pin is what forked the branch.
     assert seen["branch_from"] is INHERIT_PARENT
@@ -73,19 +64,21 @@ def test_followup_never_resets_head_backwards(monkeypatch):
     from openprogram.agent.job import runner as runner_mod
 
     calls = []
+    done = threading.Event()
 
     import openprogram.agent.dispatcher as disp
     monkeypatch.setattr(
-        disp, "process_user_turn", lambda req, **kw: type("_R", (), {})(),
+        disp,
+        "process_user_turn",
+        lambda req, **kw: (done.set(), type("_R", (), {})())[1],
     )
     from openprogram.agent import session_db as sdb
     monkeypatch.setattr(sdb, "default_db", lambda: type("S", (), {
         "set_head": staticmethod(lambda *a, **k: calls.append(a)),
     })())
-    _inline_threads(monkeypatch, runner_mod)
-
     runner_mod.get_runner()._dispatch_followup(_make_job())
 
+    assert done.wait(2)
     assert calls == []
 
 
@@ -102,6 +95,7 @@ def test_two_followups_form_a_serial_chain(monkeypatch):
     graph: list[tuple[str, str | None]] = [("spawning_reply", "user_msg")]
     head = {"id": "spawning_reply"}
     n = {"i": 0}
+    done = threading.Event()
 
     def fake_process(req, **kw):
         n["i"] += 1
@@ -113,16 +107,17 @@ def test_two_followups_form_a_serial_chain(monkeypatch):
         graph.append((notice, anchor))
         graph.append((answer, notice))
         head["id"] = answer
+        if n["i"] == 2:
+            done.set()
         return type("_R", (), {})()
 
     import openprogram.agent.dispatcher as disp
     monkeypatch.setattr(disp, "process_user_turn", fake_process)
-    _inline_threads(monkeypatch, runner_mod)
-
     r = runner_mod.get_runner()
     r._dispatch_followup(_make_job(id="t_1", label="后端架构"))
     r._dispatch_followup(_make_job(id="t_2", label="前端测试"))
 
+    assert done.wait(2)
     preds = dict(graph)
     # Serial: the second notification hangs off the first answer.
     assert preds["notice1"] == "spawning_reply"

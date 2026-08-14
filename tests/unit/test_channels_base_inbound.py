@@ -21,6 +21,7 @@ import pytest
 from openprogram.channels._message import ChannelMessage
 from openprogram.channels._transport import SendResult
 from openprogram.channels.base import Channel
+from tests.support.repository import tracked_python_files
 
 
 @pytest.fixture(autouse=True)
@@ -293,9 +294,8 @@ def test_web_and_cli_turns_are_untouched() -> None:
     root = Path(openprogram.__file__).parent
     callers = sorted(
         p.relative_to(root).as_posix()
-        for p in root.rglob("*.py")
-        if ".venv" not in p.parts
-        and "speaker_prefix(" in p.read_text(encoding="utf-8")
+        for p in tracked_python_files(root)
+        if "speaker_prefix(" in p.read_text(encoding="utf-8")
     )
     assert callers == ["channels/base.py"]
 

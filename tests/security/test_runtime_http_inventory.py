@@ -34,6 +34,26 @@ def test_runtime_http_inventory_ignores_embedded_virtualenv_sources(tmp_path):
     assert result.unregistered == ()
 
 
+def test_runtime_http_inventory_ignores_unowned_source_trees(tmp_path):
+    (tmp_path / "owned.py").write_text("value = 1\n", encoding="utf-8")
+    (tmp_path / "owned 2.py").write_text(
+        'import requests\nrequests.get("https://example.com")\n',
+        encoding="utf-8",
+    )
+    nested = tmp_path / "embedded"
+    (nested / ".git").mkdir(parents=True)
+    (nested / "foreign.py").write_text(
+        'import requests\nrequests.get("https://example.com")\n',
+        encoding="utf-8",
+    )
+
+    result = runtime_http_audit.scan_runtime_http(
+        tmp_path, exclusions=(), registry={}
+    )
+
+    assert result.unregistered == ()
+
+
 def test_scanner_fails_closed_for_representative_raw_network_calls(tmp_path):
     package = tmp_path / "runtime"
     package.mkdir()

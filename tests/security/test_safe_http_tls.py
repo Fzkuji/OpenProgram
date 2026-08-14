@@ -51,6 +51,10 @@ class _TLSServer:
                 raw, _address = self._socket.accept()
             except TimeoutError:
                 continue
+            except OSError:
+                if self._stop.is_set():
+                    return
+                raise
             threading.Thread(target=self._handle, args=(raw,), daemon=True).start()
 
     def _handle(self, raw: socket.socket) -> None:

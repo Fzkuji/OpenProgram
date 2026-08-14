@@ -67,37 +67,13 @@ if os.environ.get("OPENPROGRAM_TEST_LIVE") != "1":
 if os.environ.get("OPENPROGRAM_TEST_REAL_HOME") != "1":
     import tempfile  # noqa: E402
 
-    _TEST_HOME = tempfile.mkdtemp(prefix="openprogram-test-home-")
+    _TEST_HOME_MANAGER = tempfile.TemporaryDirectory(
+        prefix="openprogram-test-home-"
+    )
+    _TEST_HOME = _TEST_HOME_MANAGER.name
     os.environ["HOME"] = _TEST_HOME
-    os.environ["USERPROFILE"] = _TEST_HOME  # Windows equivalent
+    os.environ["USERPROFILE"] = _TEST_HOME
     Path(_TEST_HOME).mkdir(parents=True, exist_ok=True)
-
-
-# ---------------------------------------------------------------------------
-# Shared mock call functions (used across multiple test files)
-# ---------------------------------------------------------------------------
-
-def echo_call(content, model="test", response_format=None):
-    """Mock LLM that echoes the last text block."""
-    for block in reversed(content):
-        if block["type"] == "text":
-            return block["text"]
-    return ""
-
-
-def sync_echo(content, model="test", response_format=None):
-    """Sync echo — identical to echo_call, named for clarity in async tests."""
-    return echo_call(content, model, response_format)
-
-
-async def async_echo(content, model="test", response_format=None):
-    """Async echo — returns last text block."""
-    return echo_call(content, model, response_format)
-
-
-def noop_call(content, model="test", response_format=None):
-    """Mock LLM that always returns 'ok'."""
-    return "ok"
 
 
 # ---------------------------------------------------------------------------
@@ -124,25 +100,6 @@ def _has_default_provider() -> bool:
         return resolve_model(_load_agent_profile("main") or {}) is not None
     except Exception:
         return False
-
-
-# A reusable skip marker: applied to tests that can only run with a real
-# provider / model configured.
-no_provider = pytest.mark.skipif(
-    not _has_default_provider(),
-    reason="no LLM provider/model configured (bare CI) — test needs one",
-)
-
-
-# Integration tests that need a LIVE external service (a working MCP
-# subprocess, the Claude QR-login backend, …) — these fail in a bare CI
-# checkout and even locally without the service. Opt in by setting
-# OPENPROGRAM_LIVE_TESTS=1; otherwise they skip instead of failing.
-import os as _os
-requires_live_service = pytest.mark.skipif(
-    _os.environ.get("OPENPROGRAM_LIVE_TESTS") != "1",
-    reason="needs a live external service (set OPENPROGRAM_LIVE_TESTS=1 to run)",
-)
 
 
 # ---------------------------------------------------------------------------
@@ -261,38 +218,5 @@ def _drop_tmp_rooted_session_store():
         return
     if "openprogram-test-home" not in str(getattr(cached, "root_path", "")):
         session_store._default_store = None
-
-
-@pytest.fixture(autouse=True)
-def _unit_task_runner_owns_worker_lock(request, monkeypatch):
-    """Unit JobRunners model code executing inside the locked worker."""
-    path = Path(str(request.node.path))
-    if "unit" not in path.parts or path.name in {
-        "test_resource_governance.py", "test_worker_lock.py",
-    }:
-        yield
-        return
-    monkeypatch.setattr(
-        "openprogram.worker.lock.is_held_by", lambda _pid: True,
-    )
-    yield
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-@pytest.fixture
-def echo_runtime():
-    """A Runtime that echoes the last text block back."""
-    from openprogram.agentic_programming.runtime import Runtime
-    return Runtime(call=echo_call, model="test")
-
-
-@pytest.fixture
-def noop_runtime():
-    """A Runtime that always returns 'ok'."""
-    from openprogram.agentic_programming.runtime import Runtime
-    return Runtime(call=noop_call, model="test")
 
 

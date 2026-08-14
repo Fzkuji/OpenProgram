@@ -6,6 +6,7 @@ import ast
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 import re
 import threading
@@ -963,14 +964,25 @@ class _HTTPVisitor(ast.NodeVisitor):
 
 
 def _source_files(root: Path) -> tuple[Path, ...]:
-    return tuple(
-        sorted(
-            path
-            for path in root.rglob("*.py")
-            if "__pycache__" not in path.parts
-            and not any(part.startswith(".venv") for part in path.parts)
+    files: list[Path] = []
+    for directory, names, filenames in os.walk(root):
+        current = Path(directory)
+        if current != root and (current / ".git").exists():
+            names.clear()
+            continue
+        names[:] = [
+            name
+            for name in names
+            if name != "__pycache__"
+            and not name.startswith(".venv")
+            and name != ".git"
+        ]
+        files.extend(
+            current / name
+            for name in filenames
+            if name.endswith(".py") and not re.search(r" \d+\.py\Z", name)
         )
-    )
+    return tuple(sorted(files))
 
 
 def _expected_exclusion_counts(
