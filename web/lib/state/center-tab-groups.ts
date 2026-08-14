@@ -78,8 +78,8 @@ export function findCenterTabGroup(
   return groups.find((group) => group.memberIds.includes(tabId));
 }
 
-/** Tabs that can join `subjectId` in a split view: every other tab in the
- *  window except members of the subject's own group (those are no-ops).
+/** Single tabs that can join `subjectId` in a split view. Existing split
+ *  members are excluded because a complete pair cannot accept a third pane.
  *
  *  Session+session pairs are allowed: the focused session keeps the
  *  singleton chat shell and the other renders as a read-along
@@ -90,8 +90,10 @@ export function splitCandidates(
   subjectId: string,
 ): CenterTab[] {
   const ownGroup = findCenterTabGroup(groups, subjectId);
+  if (ownGroup) return [];
+  const groupedIds = new Set(groups.flatMap((group) => group.memberIds));
   return tabs.filter(
-    (tab) => tab.id !== subjectId && !ownGroup?.memberIds.includes(tab.id),
+    (tab) => tab.id !== subjectId && !groupedIds.has(tab.id),
   );
 }
 

@@ -8,8 +8,9 @@
  * center area; picking a row groups the two tabs through the same
  * store action the keyboard menu uses (groupTab).
  *
- * Candidates are every other tab in this window, minus the ones already
- * sharing a split group with the subject — those would be no-ops.
+ * Candidates are the other ungrouped tabs in this window. The selection is
+ * revalidated against the latest store before commit so a stale row cannot
+ * move a tab that another operation has already grouped.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bookmark, FileText, Globe, History, MessageCircle, CirclePlus, TerminalSquare, X } from "lucide-react";
@@ -65,13 +66,12 @@ export function SplitViewPicker({
   subjectId: string;
   /** Reuse the strip's label resolution so titles match the tabs. */
   titleOf: (tab: CenterTab) => string;
-  onClose: () => void;
+  onClose: (reason: "escape" | "close-button" | "outside") => void;
   onPicked: (accepted: boolean) => void;
 }) {
   const { text } = useTranslation();
   const tabs = useCenterTabs((s) => s.tabs);
   const groups = useCenterTabs((s) => s.groups);
-  const groupTab = useCenterTabs((s) => s.groupTab);
   const panelRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -80,12 +80,16 @@ export function SplitViewPicker({
     [tabs, groups, subjectId],
   );
 
-  // Focus the list on open so Up/Down/Enter work immediately.
+  // Keep focus inside the modal. With no candidate, the close button is the
+  // only interactive control and receives initial focus.
   useEffect(() => {
-    panelRef.current
-      ?.querySelector<HTMLButtonElement>("[data-split-option]")
-      ?.focus();
-  }, []);
+    const panel = panelRef.current;
+    if (!panel || panel.contains(document.activeElement)) return;
+    const target =
+      panel.querySelector<HTMLButtonElement>("[data-split-option]") ??
+      panel.querySelector<HTMLButtonElement>("[data-split-close]");
+    target?.focus();
+  }, [candidates.length]);
 
   // Escape closes; outside pointerdown closes. Capture phase so nothing
   // downstream can swallow the dismissal first (same rule as the menu).
@@ -93,13 +97,13 @@ export function SplitViewPicker({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        onClose("escape");
       }
     };
     const onOutside = (e: PointerEvent) => {
       const panel = panelRef.current;
       if (panel && e.target instanceof Node && panel.contains(e.target)) return;
-      onClose();
+      onClose("outside");
     };
     document.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("pointerdown", onOutside, true);
@@ -120,16 +124,31 @@ export function SplitViewPicker({
   }
 
   function choose(tab: CenterTab) {
-    // Same commit path as the keyboard menu: the picked tab joins the
-    // subject's group (or the two form a new one).
+    const latestState = useCenterTabs.getState();
+    const subjectExists = latestState.tabs.some((item) => item.id === subjectId);
+    const targetIsCurrent = splitCandidates(
+      latestState.tabs,
+      latestState.groups,
+      subjectId,
+    ).some((item) => item.id === tab.id);
+    if (!subjectExists || !targetIsCurrent) {
+      onPicked(false);
+      return;
+    }
+
     const subjectGroup = findCenterTabGroup(
-      useCenterTabs.getState().groups,
+      latestState.groups,
       subjectId,
     );
     const memberIndex = subjectGroup
       ? subjectGroup.memberIds.indexOf(subjectId) + 1
       : 1;
-    const accepted = groupTab(tab.id, subjectId, memberIndex, subjectGroup?.id);
+    const accepted = latestState.groupTab(
+      tab.id,
+      subjectId,
+      memberIndex,
+      subjectGroup?.id,
+    );
     onPicked(accepted);
   }
 
@@ -155,10 +174,11 @@ export function SplitViewPicker({
         </span>
         <button
           type="button"
+          data-split-close
           className={styles.splitPickerClose}
           aria-label={text("Close", "关闭")}
           title={text("Close", "关闭")}
-          onClick={onClose}
+          onClick={() => onClose("close-button")}
         >
           <X size={15} />
         </button>

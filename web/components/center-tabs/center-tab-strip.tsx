@@ -421,10 +421,12 @@ export function CenterTabStrip() {
             <SplitViewPicker
               subjectId={splitPickerTabId}
               titleOf={(tab) => labelOf(tab, t, text)}
-              onClose={() => {
+              onClose={(reason) => {
                 const subject = splitPickerTabId;
                 setSplitPickerTabId(null);
-                menu.returnFocusToMenuInvoker(subject);
+                if (reason !== "outside") {
+                  menu.returnFocusToMenuInvoker(subject);
+                }
               }}
               onPicked={(accepted) => {
                 const subject = splitPickerTabId;

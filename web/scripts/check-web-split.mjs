@@ -1831,6 +1831,10 @@ const webTabPaneSource = await readFile(
   new URL("../components/center-tabs/web-tab-pane.tsx", import.meta.url),
   "utf8",
 );
+const splitViewPickerSource = await readFile(
+  new URL("../components/center-tabs/split-view-picker.tsx", import.meta.url),
+  "utf8",
+);
 const appShellSource = await readFile(
   new URL("../components/app-shell.tsx", import.meta.url),
   "utf8",
@@ -2019,22 +2023,30 @@ assert.doesNotMatch(finishCloseSource, /activateSession/);
 
 assert.match(webTabPaneSource, /text\("Open split view", "打开分屏"\)/);
 assert.match(webTabPaneSource, /text\("Exit split view", "退出分屏"\)/);
-assert.match(webTabPaneSource, /setSplitWebTab\(null\)/);
-assert.match(webTabPaneSource, /setRightDockOpen\(false\)/);
-assert.match(webTabPaneSource, /openDraftSessionTab\(\)/);
-assert.match(webTabPaneSource, /newSession\(draftId\)/);
+assert.match(webTabPaneSource, /<SplitViewPicker/);
+assert.match(webTabPaneSource, /subjectId=\{tabId\}/);
+assert.match(webTabPaneSource, /createPortal\(/);
+assert.match(webTabPaneSource, /findCenterTabGroup\(s\.groups, tabId\)/);
+assert.match(webTabPaneSource, /state\.ungroupTab\(tabId\)/);
+assert.doesNotMatch(webTabPaneSource, /setSplitWebTab\(/);
+assert.doesNotMatch(webTabPaneSource, /openDraftSessionTab\(|newSession\(/);
 assert.match(
-  webTabPaneSource,
-  /const title = sessionState\.conversations\[routeSessionId\]\?\.title \?\? "";/,
+  splitViewPickerSource,
+  /const latestState = useCenterTabs\.getState\(\);[\s\S]*?splitCandidates\(\s*latestState\.tabs,\s*latestState\.groups,\s*subjectId,?\s*\)/,
+  "a stale picker row must be revalidated against the latest store before grouping",
 );
-assert.match(webTabPaneSource, /state\.openSessionTab\(routeSessionId, title\);/);
+assert.match(splitViewPickerSource, /onClose\("escape"\)/);
+assert.match(splitViewPickerSource, /onClose\("outside"\)/);
+assert.match(splitViewPickerSource, /onClose\("close-button"\)/);
 assert.match(
-  webTabPaneSource,
-  /if \(openedSession\) openedState\.setActive\(openedSession\.id\);/,
+  splitViewPickerSource,
+  /querySelector<HTMLButtonElement>\("\[data-split-option\]"\)[\s\S]*?\?\?[\s\S]*?querySelector<HTMLButtonElement>\("\[data-split-close\]"\)/,
+  "a picker must focus its first option, falling back to Close only when empty",
 );
 assert.match(
   webTabPaneSource,
-  /if \(routeSession\) \{[\s\S]*?state\.setActive\(routeSession\.id\);[\s\S]*?\} else if \(routeSessionId\) \{[\s\S]*?state\.openSessionTab\(routeSessionId, title\);[\s\S]*?\} else if \(activeDraft\) \{[\s\S]*?state\.setActive\(activeDraft\.id\);[\s\S]*?\} else \{[\s\S]*?state\.openDraftSessionTab\(\)/,
+  /if \(reason !== "outside"\)[\s\S]*?buttonRef\.current\?\.focus\(\)/,
+  "outside dismissal must preserve the newly clicked element's focus",
 );
 
 assert.doesNotMatch(tabStripSource, /splitPinned|data-split-pinned/);

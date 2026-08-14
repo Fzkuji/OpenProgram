@@ -22,6 +22,7 @@
  *    back/forward buttons: iframe history is unreliable cross-origin.
  */
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowLeft, ArrowRight, Columns2, ExternalLink, House, RotateCw, Star } from "lucide-react";
 
 import {
@@ -40,11 +41,12 @@ import {
   subscribeBookmarks,
   toggleBookmark,
 } from "@/lib/bookmarks";
+import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
-import { useSessionStore } from "@/lib/session-store";
-import { newSession } from "@/lib/runtime-bridge/conversations";
 import { measureWebTabBounds } from "@/lib/web-tab-bounds";
 import styles from "./center-tabs.module.css";
+import { SplitViewPicker } from "./split-view-picker";
+import { labelOf } from "./tab-items";
 
 export function WebTabPane({ tabId, url }: { tabId: string; url: string }) {
   // Bridge presence is fixed for the lifetime of the page (preload
@@ -98,65 +100,61 @@ function HomeButton({ tabId }: { tabId: string }) {
 }
 
 function SplitButton({ tabId }: { tabId: string }) {
-  const { text } = useTranslation();
-  const splitPinned = useCenterTabs((s) => s.splitWebTabId === tabId);
-  const label = splitPinned
+  const { t, text } = useTranslation();
+  const grouped = useCenterTabs((s) => Boolean(findCenterTabGroup(s.groups, tabId)));
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerHost, setPickerHost] = useState<Element | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const label = grouped
     ? text("Exit split view", "退出分屏")
     : text("Open split view", "打开分屏");
 
-  function toggleSplit() {
-    const state = useCenterTabs.getState();
-    if (splitPinned) {
-      state.setSplitWebTab(null);
-      return;
-    }
-    const routeSessionId = window.location.pathname.startsWith("/s/")
-      ? decodeURIComponent(window.location.pathname.slice(3))
-      : null;
-    const sessionState = useSessionStore.getState();
-    const routeSession = routeSessionId
-      ? state.tabs.find(
-          (tab) => tab.kind === "session" && tab.sessionId === routeSessionId,
-        )
-      : undefined;
-    const activeDraft = !routeSessionId
-      ? state.tabs.find(
-          (tab) =>
-            tab.kind === "session" &&
-            tab.draft &&
-            tab.sessionId === sessionState.activeChatKey,
-        )
-      : undefined;
-    state.setSplitWebTab(tabId);
-    sessionState.setRightDockOpen(false);
-    if (routeSession) {
-      state.setActive(routeSession.id);
-    } else if (routeSessionId) {
-      const title = sessionState.conversations[routeSessionId]?.title ?? "";
-      state.openSessionTab(routeSessionId, title);
-      const openedState = useCenterTabs.getState();
-      const openedSession = openedState.tabs.find(
-        (tab) => tab.kind === "session" && tab.sessionId === routeSessionId,
-      );
-      if (openedSession) openedState.setActive(openedSession.id);
-    } else if (activeDraft) {
-      state.setActive(activeDraft.id);
-    } else {
-      const draftId = state.openDraftSessionTab();
-      newSession(draftId);
+  useEffect(() => {
+    setPickerHost(pickerOpen ? document.querySelector(".center-body") : null);
+  }, [pickerOpen]);
+
+  function closePicker(
+    reason: "escape" | "close-button" | "outside" | "picked",
+  ) {
+    setPickerOpen(false);
+    if (reason !== "outside") {
+      requestAnimationFrame(() => buttonRef.current?.focus());
     }
   }
 
+  function toggleSplit() {
+    const state = useCenterTabs.getState();
+    if (grouped) {
+      state.ungroupTab(tabId);
+      return;
+    }
+    setPickerOpen(true);
+  }
+
   return (
-    <button
-      type="button"
-      className={styles.webToolbarBtn}
-      onClick={toggleSplit}
-      title={label}
-      aria-label={label}
-    >
-      <Columns2 size={14} />
-    </button>
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        className={styles.webToolbarBtn}
+        onClick={toggleSplit}
+        title={label}
+        aria-label={label}
+      >
+        <Columns2 size={14} />
+      </button>
+      {pickerOpen && pickerHost
+        ? createPortal(
+            <SplitViewPicker
+              subjectId={tabId}
+              titleOf={(tab) => labelOf(tab, t, text)}
+              onClose={closePicker}
+              onPicked={() => closePicker("picked")}
+            />,
+            pickerHost,
+          )
+        : null}
+    </>
   );
 }
 

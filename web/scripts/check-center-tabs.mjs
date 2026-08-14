@@ -544,7 +544,10 @@ const picker = readFileSync(
 // The picker lists other tabs and commits via groupTab.
 assert.match(picker, /Choose a tab to add to split view/);
 assert.match(picker, /选择要加入分屏的标签页/);
-assert.match(picker, /groupTab\(tab\.id, subjectId, memberIndex, subjectGroup\?\.id\)/);
+assert.match(
+  picker,
+  /latestState\.groupTab\(\s*tab\.id,\s*subjectId,\s*memberIndex,\s*subjectGroup\?\.id,?\s*\)/,
+);
 // Candidate filtering lives in the shared layout module (behaviourally
 // covered by check-compound-tabs) and is reused, not reimplemented.
 assert.match(picker, /splitCandidates\(tabs, groups, subjectId\)/);

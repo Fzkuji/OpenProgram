@@ -321,14 +321,19 @@ assert.equal(drag.SWAP_OVERLAP_RATIO, 0.5);
     ["b", "c"],
     "the subject itself is never offered",
   );
-  // a and b already split together: only c remains.
+  // a and b already form a complete split entry: it cannot accept c.
   const grouped = [
     { id: "g:ab", memberIds: ["a", "b"], visibleIds: ["a", "b"], focusedId: "a" },
   ];
   assert.deepEqual(
     splitCandidates(pickerTabs, grouped, "a").map((t) => t.id),
-    ["c"],
-    "existing split members are not offered again",
+    [],
+    "an existing split entry cannot grow a hidden third member",
+  );
+  assert.deepEqual(
+    splitCandidates(pickerTabs, grouped, "c").map((t) => t.id),
+    [],
+    "members of another complete split are not selectable targets",
   );
   // A lone tab has nothing to pair with.
   assert.deepEqual(splitCandidates([pickerTabs[0]], [], "a"), []);
