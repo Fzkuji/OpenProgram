@@ -44,8 +44,16 @@
     <li>视觉验收只使用一张当前 viewport 截图；不启用 OCR、候选框或多轮 crop。</li>
   </ul>
 
+  <h2>实现证据</h2>
+  <ul>
+    <li>desktop 与 web 完整检查通过，动态 renderer 测试保留 DOMRect 小数并验证 <code>syncVisible</code> payload。</li>
+    <li>安装版在约 109.5% shell 缩放下，DOM body 换算结果与 native viewport 均为 <code>568×763 DIP</code>。</li>
+    <li>窗口调整为 <code>1350×800</code> 后，DOM body 换算结果与 native viewport 均为 <code>526×712 DIP</code>；恢复窗口后仍一致。</li>
+    <li>默认 18100 worker 健康检查通过，CDP 9223 同时观察 shell 与当前 Bilibili 原生页面。</li>
+  </ul>
+
   <h2>实现状态</h2>
-  <p class="status">单位转换与自动化门禁已实现；已安装应用的分屏和窗口缩放验收待完成。</p>
+  <p class="status">单位转换、自动化门禁和已安装应用验收均已完成。</p>
 </main>
 </body>
 </html>
