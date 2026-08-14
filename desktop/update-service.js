@@ -260,13 +260,13 @@ async function writeAll(file, buffer) {
 
 async function downloadVerified(fetchImpl, asset, targetPath, onProgress = () => {}) {
   const response = await requestWithRedirects(fetchImpl, asset.url);
-  const temporary = `${targetPath}.part-${process.pid}`;
+  const temporary = `${targetPath}.part-${crypto.randomBytes(8).toString("hex")}`;
   const hash = crypto.createHash("sha256");
   let total = 0;
   let file;
   try {
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    file = await fs.promises.open(temporary, "w", 0o600);
+    file = await fs.promises.open(temporary, "wx", 0o600);
     const iterator = response.body[Symbol.asyncIterator]();
     try {
       while (true) {

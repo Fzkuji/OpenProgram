@@ -73,13 +73,11 @@ checksum() {
 
 mkdir -p "$runtime_root/releases"
 if [ ! -d "$release_dir" ]; then
-  staging="$runtime_root/.staging-$OPENPROGRAM_VERSION-$$"
+  staging="$(mktemp -d "$runtime_root/.staging-$OPENPROGRAM_VERSION.XXXXXX")"
   archive_name="OpenProgram-${OPENPROGRAM_VERSION}-runtime-${platform}-${arch}.tar.gz"
   archive="${OPENPROGRAM_RUNTIME_ARCHIVE:-$staging/$archive_name}"
   cleanup_staging() { rm -rf "$staging"; }
   trap cleanup_staging EXIT HUP INT TERM
-  mkdir -p "$staging"
-
   if [ -z "${OPENPROGRAM_RUNTIME_ARCHIVE:-}" ]; then
     release_url="https://github.com/$OPENPROGRAM_REPOSITORY/releases/download/v$OPENPROGRAM_VERSION"
     download "$release_url/$archive_name" "$archive"
@@ -178,7 +176,7 @@ trap - EXIT HUP INT TERM
 ln -sfn "$python_bin" "$release_dir/bin/python"
 launcher_dir="${OPENPROGRAM_BIN_DIR:-$HOME/.local/bin}"
 mkdir -p "$launcher_dir"
-launcher_tmp="$launcher_dir/.openprogram-$$"
+launcher_tmp="$(mktemp "$launcher_dir/.openprogram.XXXXXX")"
 cleanup_launcher() { rm -f "$launcher_tmp"; }
 trap cleanup_launcher EXIT HUP INT TERM
 cat > "$launcher_tmp" <<EOF
