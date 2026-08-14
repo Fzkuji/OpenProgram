@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import os
+import queue
 import subprocess
 import sys
 import threading
@@ -527,23 +528,45 @@ def test_successful_stdio_stdout_contains_only_jsonrpc_frames(tmp_path):
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         )
     )
-    completed = subprocess.run(
+    process = subprocess.Popen(
         [sys.executable, "-m", "openprogram.cli", "mcp", "serve"],
-        input=requests + "\n",
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        capture_output=True,
         cwd=os.getcwd(),
         env=environment,
-        timeout=10,
     )
-    frames = [json.loads(line) for line in completed.stdout.splitlines()]
-    assert completed.returncode == 0
+    assert process.stdin is not None
+    assert process.stdout is not None
+    assert process.stderr is not None
+    stdout_lines: queue.Queue[str] = queue.Queue()
+
+    def read_stdout() -> None:
+        for line in process.stdout:
+            stdout_lines.put(line)
+
+    reader = threading.Thread(target=read_stdout, daemon=True)
+    reader.start()
+    try:
+        process.stdin.write(requests + "\n")
+        process.stdin.flush()
+        lines = [stdout_lines.get(timeout=10) for _ in range(2)]
+    finally:
+        process.stdin.close()
+        process.wait(timeout=10)
+    reader.join(timeout=10)
+    while not stdout_lines.empty():
+        lines.append(stdout_lines.get_nowait())
+    stderr = process.stderr.read()
+    frames = [json.loads(line) for line in lines]
+    assert process.returncode == 0
     assert [frame["id"] for frame in frames] == [1, 2]
     assert frames[1]["result"]["tools"] == [
         tool.model_dump(by_alias=True, mode="json", exclude_none=True)
         for tool in get_mcp_tools()
     ]
-    combined = completed.stdout + completed.stderr
+    combined = "".join(lines) + stderr
     assert token not in combined
     assert "secret-client-info" not in combined
     assert "Traceback" not in combined
