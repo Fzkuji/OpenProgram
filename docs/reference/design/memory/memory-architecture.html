@@ -1044,32 +1044,35 @@
   <div class="note"><b>实现边界：</b><code>MemoryPage</code>不请求或渲染 writer 状态、pending 数、Commitments 或 writer 专用刷新按钮；相关 CSS 与 Web transition 路径已删除。Scheduler 通过独立的 MemoryRef API 在执行时读取当前 Topic block。</div>
 
   <h2 id="changes"><span class="num">10</span>统一修改接口</h2>
-  <p class="lead">改造前，模型工具只接收 unified diff，Web 编辑器则逐文件 PUT 或 DELETE。两者虽然使用同一套暂存、校验、派生视图和 Git 提交机制，但请求数据不同，多文件合并或拆分也无法通过一个 API 请求提交。现在结构化 <code>changes</code> 是模型与 owner REST 的统一主接口，旧入口保留兼容。</p>
+  <p class="lead">Memory 同时支持模型直接编辑 Topic 文件，以及模型或其他程序调用结构化接口。两种方式不互相替代；区别只在于调用方如何表达修改。所有修改最终进入同一套 Runtime 暂存、校验、派生视图、原子安装和 Git 流程。</p>
 
   <div class="grid2">
     <div class="oc">
-      <h4>统一数据</h4>
-      <div class="d"><code>base_revision</code> 加 <code>changes[]</code>。每项变更只有 <code>path</code>、<code>action</code> 和写入时的 <code>content</code>。<code>write</code> 创建或完整替换 Topic Markdown，<code>delete</code> 删除 Topic 文件。合并和拆分是多个 write/delete 的组合，不增加独立操作类型。</div>
+      <h4>方式一 · 直接编辑文件</h4>
+      <div class="d">后台 writer 或整理模型在 Runtime 提供的暂存目录中直接创建、重写、移动或删除 <code>topics/**/*.md</code>。编辑结束后不能直接覆盖正式 Memory；必须调用 <code>commit_edits</code>，由 Runtime 分配和保留 ID、检查 Source 与 block 链接、重建 Timeline/Recent/Relations/Core，再整体安装。Web 与 CLI 的文件编辑走同样的 <code>staged_edit</code> 收口。</div>
     </div>
     <div class="oc">
-      <h4>当前记忆与历史</h4>
-      <div class="d">变更可以新增、重写、合并、拆分或删除任意 <code>topics/**/*.md</code>。安装后的工作树是当前有效记忆；旧内容不在当前 Topic 里重复保留，由 Memory 工作区的 Git 历史记录。</div>
+      <h4>方式二 · 调用结构化接口</h4>
+      <div class="d">模型工具和 owner REST 接收 <code>memory_changes[]</code>。每项是 <code>create</code>、<code>update</code> 或 <code>delete</code>；调用方提交目标 <code>memory_id</code>、最终内容、时间和 <code>source_refs</code>，创建时再指定 Topic 与可选标题路径。Runtime 把记录操作渲染为 Topic Markdown，然后进入与直接编辑相同的安装流程。</div>
     </div>
   </div>
 
   <div class="tbl">
     <table>
-      <thead><tr><th>字段</th><th>契约</th><th>拒绝条件</th></tr></thead>
+      <thead><tr><th>结构化操作</th><th>必要数据</th><th>Runtime 行为</th></tr></thead>
       <tbody>
-        <tr><td><code>base_revision</code></td><td>调用方最后读取的工作区版本。</td><td>与当前版本不同时整笔拒绝，不覆盖并发修改。</td></tr>
-        <tr><td><code>changes</code></td><td>1–64 个唯一 Topic 路径；<code>write</code> 要求 UTF-8 文本，<code>delete</code> 不接受 content。</td><td>重复路径、越界路径、非 Topic Markdown、空变更、删除不存在文件或超过总字节上限。</td></tr>
-        <tr><td><code>sources</code></td><td>可选的新证据；Runtime 从已持久化的调用者权限生成 provenance。</td><td>请求数据不能自己声明为 trusted 或 owner。</td></tr>
-        <tr><td><code>commit_message</code></td><td>可选的可读 Git 提交说明。</td><td>控制字符被删除，长度受限。</td></tr>
+        <tr><td><code>create</code></td><td><code>topic_path</code>、最终 <code>content</code>、<code>time</code>、非空 <code>source_refs</code>；可选 <code>headings</code>。模型 schema 用 <code>undated</code> 表示无日期；owner REST 也接受 <code>null</code>。</td><td>验证 Topic 路径和 Source，写入规范 Markdown，分配新的 block 与 evidence ID。</td></tr>
+        <tr><td><code>update</code></td><td>现有 <code>memory_id</code> 加完整的最终 <code>content/time/source_refs</code>；时间格式与 create 相同。</td><td>定位当前 Topic block，保留 block ID，以最终值替换该段及其 evidence definition。旧 <code>mem_*</code> 记录保持原 ID 和兼容格式。</td></tr>
+        <tr><td><code>delete</code></td><td>现有 <code>memory_id</code>。</td><td>删除对应段落和不再使用的 evidence definition；存在悬空 block 链接时整笔拒绝。</td></tr>
       </tbody>
     </table>
   </div>
 
-  <div class="note"><b>公开入口：</b>模型继续使用 <code>memory_update</code>，可提交 <code>changes</code>；旧 <code>patch</code> 保留兼容。owner REST 使用 <code>POST /api/memory/changes</code>提交同样的结构。两个入口都调用 <code>MemoryWorkspace.update</code>。文件变更、Source 归档、Topic 校验和 Timeline/Recent/Relations/Core 重建原子安装；随后提交 Git。Git 失败不会撤销已经安装的 Memory，返回值以 <code>memory_committed</code> 与 <code>git_committed</code>明确区分。</div>
+  <div class="note"><b>共同事务：</b>两种方式都先修改暂存副本，再执行 Topic normalization、Source 和 relation 校验、Timeline/Recent/Relations/Core 重建与原子安装，最后记录 Git。任何安装前错误都不能改变正式 Memory。Git 失败发生在安装之后时不伪装成回滚，返回值用 <code>memory_committed</code> 与 <code>git_committed</code>区分。</div>
+  <div class="note"><b>兼容入口：</b><code>memory_update</code> 与 <code>POST /api/memory/changes</code>新增 <code>memory_changes</code>。现有整个 Topic 文件的 <code>changes[path/action/content]</code> 和旧 unified diff <code>patch</code>继续兼容；三种 API 表达格式每次只能选择一种，最终都调用 <code>MemoryWorkspace.update</code>。</div>
+  <div class="note"><b>Source 输入：</b><code>memory_changes.source_refs</code>可引用归档中已经存在且可验证的 Source，也可引用同一请求 <code>sources</code> 中的 <code>new-source-*</code>标签；后者先由 Runtime 转换为正式 Source ID。调用方不能提交 provenance、trust state 或 owner 身份。</div>
+  <div class="note"><b>组合操作：</b>合并由一次 update 加若干 delete 表达；拆分由一次 update 加若干 create 表达，不增加 merge/split 专用函数。直接文件编辑仍可完成复杂的跨段落重排。结构化接口只接受最终记录，不接收调用方指定的新 block/evidence ID。</div>
+  <div class="note"><b>旧格式边界：</b><code>mem_*</code> 记录继续保留原 ID。结构化操作不会改变同段的其他旧记录或未归属文本；如果删除最后一条旧记录会连带移除未归属文本，Runtime 拒绝该请求，调用方需改用直接文件编辑明确处理整段。</div>
   <div class="note"><b>明确延期：</b>Scheduler 是否获得 Memory 写权、外部 token 的 capability 模型与非 owner 的改写范围不由这个数据契约决定。本次 REST 入口沿用现有 owner 路由边界。</div>
   <div class="note"><b>模型修改范围：</b>交互模型、后台 writer 与整理模型都可重写、合并、拆分或删除当前 Topic。删除 block 时，同一事务必须移除或更新指向它的 Topic 链接；Source 归档仍只追加。增量写入和整理完成后均尝试记录 Git 提交。</div>
 
@@ -1077,14 +1080,15 @@
     <table>
       <thead><tr><th>验收入口</th><th>可观测结果</th></tr></thead>
       <tbody>
-        <tr><td><code>MemoryWorkspace.update(changes=...)</code></td><td>一次写多文件或写与删组合全部成功；任一项失败时 revision 和所有 Topic 字节不变。</td></tr>
-        <tr><td><code>memory_update</code></td><td>结构化变更和旧 unified diff 得到相同的修改结果与返回字段。</td></tr>
-        <tr><td><code>POST /api/memory/changes</code></td><td>返回 revision、changed_files、block_ids 与 Git 提交信息；稳定错误码区分参数、并发、路径、Topic 格式和 Git 失败。</td></tr>
+        <tr><td>直接文件编辑后 <code>commit_edits</code></td><td>正式 Topic、Timeline、Recent、Relations 和 Core 同时反映模型编辑；校验失败时正式文件不变。</td></tr>
+        <tr><td><code>MemoryWorkspace.update(memory_changes=...)</code></td><td>create/update/delete 可单独或组合执行；任一项失败时 revision 和所有 Memory 字节不变。</td></tr>
+        <tr><td><code>memory_update</code></td><td><code>memory_changes</code>、整个文件 <code>changes</code> 和旧 unified diff 得到相同的事务与返回字段。</td></tr>
+        <tr><td><code>POST /api/memory/changes</code></td><td>接收相同的 <code>memory_changes</code>，返回 revision、changed_files、block/evidence ID 与 Git 提交信息。</td></tr>
       </tbody>
     </table>
   </div>
 
-  <div class="legend"><b>实现状态：</b>已实现。<code>MemoryWorkspace.update</code>、<code>memory_update</code> 与 <code>POST /api/memory/changes</code> 已接入结构化变更；旧 unified diff、Web Topic/Core 编辑与 CLI 编辑继续兼容并记录 Git。测试覆盖多文件写删、整笔回滚、悬空链接、并发 revision、Git 初始化与历史恢复、Git 缺失、模型删除和 REST 稳定错误；需求审查与代码质量审查均通过。Scheduler 写权和外部 token capability 仍按本节边界延期。</div>
+  <div class="legend"><b>实现状态：</b>直接文件编辑、记录级 <code>memory_changes</code> create/update/delete、整个文件 <code>changes</code>、旧 unified diff、模型工具 schema、owner REST、共同派生视图事务和 Git 历史均已实现。记录接口覆盖规范 block、合并 block 别名和旧 <code>mem_*</code> 记录。旧格式只在被明确操作时修改，其他事务不会改变其 ID。Scheduler 写权和外部 token capability 仍按本节边界延期。</div>
 
   <div class="legend">
     <b>实现状态（2026-08-11）</b>：每轮写入与闲置写入使用同一事务；节点自身记录工作区写入标记；会话边界枚举活分支；常驻块由<code>topics/core.md</code>渲染；后台writer沿用默认聊天agent，并允许<code>memory.writer.model</code>实时覆盖；未分类异常默认不可重试。<code>memory.backend=none</code>既关闭提示、召回、自动写入、整理和记忆线程，也在创建工作区前拒绝全部CLI memory动词与<code>/api/memory/*</code>路由。writer最近成功、失败分类、retryable判定和待处理数可由工具、CLI及Web查询。一次性<code>memory backfill</code>已实现，只处理未被Topic引用的trusted Source、排除pending并按批复用正常writer事务；组合测试覆盖SessionDB、默认模型解析、managed tools、暂存安装、Topic、marker与watcher状态。正式工作区验收中，23个旧v1 source文件（154个frame）经<code>origin_scope</code>到<code>authority_tier</code>的只读兼容后全部解析；2条待处理消息提交为3个Topic文件、5个唯一block，6个source引用和relation目标均通过校验，两条节点marker写入成功，第二次扫描处理数为0且revision不变。该验收未执行历史backfill，因此152个未引用frame仍存在。仍未实现：越权请求hold队列、按请求方档位过滤读取结果、互斥分支语义、跨会话spawn关系和由head变化事件直接触发写入。写入失败原因码是封闭枚举，受限writer阶段看不到Source归档。

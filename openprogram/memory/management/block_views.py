@@ -13,6 +13,7 @@ from ..runtime.derived_views import (
     render_core_block,
 )
 from ..runtime.state import RuntimeStateStore
+from ..markdown.syntax import BLOCK_TARGET_ID
 from ..markdown import (
     definition_match,
     parse_topic_tree,
@@ -109,7 +110,7 @@ class BlockViewsMixin:
         }
         block_link = re.compile(
             r"(?P<prefix>\[[^]\n]+\]\()(?P<path>[^)\n#]*)"
-            r"#\^(?P<id>[A-Za-z0-9-]+)(?P<suffix>\))"
+            rf"#\^(?P<id>{BLOCK_TARGET_ID})(?P<suffix>\))"
         )
         for path in sorted(topics.rglob("*.md")):
             relative = path.relative_to(topics).as_posix()

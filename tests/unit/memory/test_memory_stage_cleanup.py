@@ -120,6 +120,41 @@ def test_memory_update_accepts_structured_changes(memory, monkeypatch):
     assert _stage_dirs() == set()
 
 
+def test_memory_update_accepts_record_changes(memory, monkeypatch):
+    import json
+
+    from openprogram.programs.functions.memory import memory as memory_tools
+
+    monkeypatch.setattr(memory_tools, "authority_from_message", lambda *_: {
+        "speaker_kind": "owner",
+        "speaker_id": "owner/local",
+        "speaker_display": "Owner",
+        "principal_id": "owner/install/0123456789abcdef",
+        "authority_tier": "owner",
+        "interaction": "interactive",
+    })
+    assert "memory_changes" in (
+        memory_tools.UPDATE_SPEC["parameters"]["properties"]
+    )
+    revision = json.loads(memory_tools.memory_status())["revision"]
+    accepted = json.loads(memory_tools.memory_update(
+        base_revision=revision,
+        memory_changes=[{
+            "op": "update",
+            "memory_id": "abc12345",
+            "content": "Updated as one record.",
+            "time": "2026-02-01",
+            "source_refs": ["D1:1"],
+        }],
+    ))
+
+    assert accepted["ok"] is True, accepted
+    assert "Updated as one record." in (
+        memory / "topics/note.md"
+    ).read_text(encoding="utf-8")
+    assert _stage_dirs() == set()
+
+
 # ---- the background runtime -------------------------------------------
 
 

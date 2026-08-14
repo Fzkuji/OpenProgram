@@ -9,10 +9,13 @@ from urllib.parse import unquote
 
 from ..markdown import (
     BLOCK_ID_LENGTH,
+    MEMORY_ID,
     definition_match,
+    paragraph_spans,
     parse_topic_tree,
     render_definition,
 )
+from ..markdown.syntax import BLOCK_TARGET_ID
 
 # Footnote labels the writer supplies, e.g. [^e1]. Stable IDs the Runtime
 # assigns look like e-1f4c7a2b90, so the digit-only suffix separates them.
@@ -53,41 +56,10 @@ class TopicNormalizationMixin:
 
     @staticmethod
     def _paragraph_spans(text: str) -> list[tuple[int, int]]:
-        """Line ranges of prose paragraphs, as [start, end) index pairs.
-
-        Headings, fenced code, footnote definitions, HTML anchors, and blank
-        runs are not paragraphs. The writer no longer supplies block IDs, so
-        this is how a paragraph needing one gets found.
-        """
-        lines = text.splitlines()
-        spans: list[tuple[int, int]] = []
-        start: int | None = None
-        fenced = False
-        for index, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith("```") or stripped.startswith("~~~"):
-                fenced = not fenced
-                if start is not None:
-                    spans.append((start, index))
-                    start = None
-                continue
-            breaks = (
-                fenced
-                or not stripped
-                or stripped.startswith("#")
-                or stripped.startswith("<")
-                or definition_match(line) is not None
-                or re.match(r"^\[\^[A-Za-z0-9_-]+\]:", stripped) is not None
-            )
-            if breaks:
-                if start is not None:
-                    spans.append((start, index))
-                    start = None
-            elif start is None:
-                start = index
-        if start is not None:
-            spans.append((start, len(lines)))
-        return spans
+        return [
+            (start, end)
+            for start, end, _headings in paragraph_spans(text.splitlines())
+        ]
 
     def _normalize_topic_edits(self, existing_block_ids: set[str]) -> None:
         # Callers that need to report assigned IDs read these afterwards.
@@ -205,6 +177,11 @@ class TopicNormalizationMixin:
                 # Only evidence-bearing prose is a memory. Topic intros
                 # carry no footnote and stay unidentified.
                 if not body or "[^" not in body:
+                    continue
+                citation_ids = CITATION.findall(body)
+                if citation_ids and all(
+                    re.fullmatch(MEMORY_ID, value) for value in citation_ids
+                ):
                     continue
                 assigned.setdefault(path, {})[end - 1] = (
                     self._stable_local_id(
@@ -331,7 +308,7 @@ class TopicNormalizationMixin:
                     and ".." not in relative.parts
                     and (
                         not separator
-                        or re.fullmatch(r"\^[A-Za-z0-9-]+", fragment) is None
+                        or re.fullmatch(rf"\^{BLOCK_TARGET_ID}", fragment) is None
                     )
                 ):
                     raise ValueError(

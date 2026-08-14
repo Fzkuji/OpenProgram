@@ -252,6 +252,61 @@ def test_structured_changes_api_uses_the_workspace_transaction(client, memory):
     assert payload["source_ids"]["new-source-api"] in written
 
 
+def test_record_changes_api_creates_a_memory_and_derived_views(client, memory):
+    from openprogram.memory.management.transaction import workspace_revision
+    from openprogram.memory.markdown import parse_topic_tree
+
+    response = client.post("/api/memory/changes", json={
+        "base_revision": workspace_revision(memory),
+        "memory_changes": [{
+            "op": "create",
+            "topic_path": "topics/from-api.md",
+            "headings": ["API"],
+            "content": "Created through the record API.",
+            "time": "2026-08-15",
+            "source_refs": ["new-source-record"],
+        }],
+        "sources": [{
+            "label": "new-source-record",
+            "role": "user",
+            "content": "Created through the record API.",
+            "observed_at": "2026-08-15",
+        }],
+    })
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["block_ids"]
+    created = [
+        unit for unit in parse_topic_tree(memory / "topics")
+        if unit.topic_path == "from-api.md"
+    ]
+    assert len(created) == 1
+    assert created[0].source_refs == (
+        payload["source_ids"]["new-source-record"],
+    )
+    assert (memory / "timeline/2026/08/15.md").is_file()
+    assert (memory / "recent_events.jsonl").is_file()
+    assert (memory / "relations.json").is_file()
+
+
+def test_memory_update_schema_constructs_a_google_function_declaration():
+    from google.genai import types as gtypes
+
+    from openprogram.programs.functions.memory.memory import UPDATE_SPEC
+    from openprogram.providers._schema import normalize
+
+    parameters = normalize(UPDATE_SPEC["parameters"], "gemini_openapi")
+    declaration = gtypes.FunctionDeclaration(
+        name="memory_update",
+        description="Update memory",
+        parameters=parameters,
+    )
+
+    assert declaration.name == "memory_update"
+
+
 def test_structured_changes_api_reports_stale_revision(client, memory):
     response = client.post("/api/memory/changes", json={
         "base_revision": "stale",

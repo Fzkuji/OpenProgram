@@ -14,7 +14,7 @@ from ..markdown import parse_topic_tree
 from .block_views import BlockViewsMixin
 from .config import MemoryConfig
 from .event_writing import EventWritingMixin
-from .patching import apply_changes, apply_patch
+from .patching import apply_changes, apply_memory_changes, apply_patch
 from .source_archive import SourceArchiveMixin
 from .topic_normalization import TopicNormalizationMixin
 from .transaction import (
@@ -308,6 +308,7 @@ class MemoryWorkspace(
         base_revision: str,
         patch: str = "",
         changes: Any = None,
+        memory_changes: Any = None,
         sources: Any = None,
         commit_message: str | None = None,
         git_commit: str = "auto",
@@ -341,10 +342,11 @@ class MemoryWorkspace(
         limits = limits or TransactionLimits()
         has_patch = bool(patch)
         has_changes = changes is not None
-        if has_patch == has_changes:
+        has_memory_changes = memory_changes is not None
+        if sum((has_patch, has_changes, has_memory_changes)) != 1:
             raise TransactionError(
                 "INVALID_ARGUMENT",
-                "exactly one of patch or changes is required",
+                "exactly one of patch, changes or memory_changes is required",
             )
         if has_patch and len(patch.encode("utf-8")) > limits.max_patch_bytes:
             raise TransactionError(
@@ -388,7 +390,7 @@ class MemoryWorkspace(
                 if has_patch:
                     resolved = resolve_source_labels(patch, mapping)
                     changed = apply_patch(self.stage_dir, resolved)
-                else:
+                elif has_changes:
                     resolved_changes = changes
                     if isinstance(changes, list):
                         resolved_changes = []
@@ -409,6 +411,43 @@ class MemoryWorkspace(
                         max_changes=limits.max_changes,
                         max_bytes=limits.max_patch_bytes,
                     )
+                else:
+                    resolved_memory_changes = memory_changes
+                    if isinstance(memory_changes, list):
+                        resolved_memory_changes = []
+                        for item in memory_changes:
+                            if not isinstance(item, dict):
+                                resolved_memory_changes.append(item)
+                                continue
+                            resolved_item = dict(item)
+                            refs = resolved_item.get("source_refs")
+                            if isinstance(refs, list):
+                                resolved_item["source_refs"] = [
+                                    resolve_source_labels(ref, mapping)
+                                    if isinstance(ref, str)
+                                    else ref
+                                    for ref in refs
+                                ]
+                            resolved_memory_changes.append(resolved_item)
+                        declared_refs = {
+                            ref
+                            for item in resolved_memory_changes
+                            if isinstance(item, dict)
+                            for ref in item.get("source_refs", [])
+                            if isinstance(ref, str)
+                        }
+                        # Unlike a raw file patch, the record API declares its
+                        # evidence explicitly. Existing valid Source refs are
+                        # therefore intentional inputs, not hidden additions.
+                        self._transaction_source_refs = frozenset(
+                            set(mapping.values()) | declared_refs
+                        )
+                    changed = apply_memory_changes(
+                        self,
+                        resolved_memory_changes,
+                        max_changes=limits.max_changes,
+                        max_bytes=limits.max_patch_bytes,
+                    )
                 if append_only:
                     for relative in changed:
                         before = self.memory_dir / relative
@@ -423,10 +462,23 @@ class MemoryWorkspace(
                                 "but cannot rewrite existing content",
                                 path=relative,
                             )
-                # Removing a block is an explicit memory edit. Git retains
-                # the old state; only IDs still present must remain stable.
+                # Whole-file inputs may intentionally remove any represented
+                # record. Record inputs may remove only IDs explicitly named
+                # by a delete operation.
+                allowed_removed: bool | set[str] = True
+                if has_memory_changes and isinstance(
+                    resolved_memory_changes, list
+                ):
+                    allowed_removed = {
+                        item.get("memory_id")
+                        for item in resolved_memory_changes
+                        if isinstance(item, dict) and item.get("op") == "delete"
+                    }
                 install_state(
-                    self, before_units, before_block_ids, allow_removed=True
+                    self,
+                    before_units,
+                    before_block_ids,
+                    allow_removed=allowed_removed,
                 )
             except TransactionError:
                 self._refresh_stage()

@@ -149,6 +149,7 @@ def register(app):
                 result = workspace.update(
                     base_revision=payload.get("base_revision", ""),
                     changes=payload.get("changes"),
+                    memory_changes=payload.get("memory_changes"),
                     sources=sources,
                     commit_message=payload.get("commit_message"),
                     provenance=provenance,
@@ -162,6 +163,8 @@ def register(app):
             if exc.details:
                 error["details"] = exc.details
             status = 409 if exc.code == "CONCURRENT_UPDATE" else 400
+            if exc.code == "MEMORY_NOT_FOUND":
+                status = 404
             if exc.code == "GIT_UNAVAILABLE":
                 status = 503
             if exc.code == "GIT_COMMIT_FAILED":

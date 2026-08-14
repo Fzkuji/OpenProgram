@@ -476,7 +476,7 @@ def install_state(
     before_units: list[Any],
     before_block_ids: set[str],
     *,
-    allow_removed: bool = False,
+    allow_removed: bool | set[str] = False,
 ) -> None:
     """Validate staged topics and install them over the committed workspace.
 
@@ -484,7 +484,9 @@ def install_state(
     """
     workspace._normalize_topic_edits(before_block_ids)
     required_ids = before_block_ids
-    if allow_removed:
+    if isinstance(allow_removed, set):
+        required_ids = before_block_ids - allow_removed
+    elif allow_removed:
         staged_ids = {
             unit.memory_id
             for unit in parse_topic_tree(workspace.stage_dir / "topics")

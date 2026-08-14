@@ -293,9 +293,10 @@ UPDATE_DESC = (
     "Conversation is written up in "
     "the background, so use this only for what the user asked you to "
     "remember right now, or to fix something you can see is wrong. "
-    "Prefer structured whole-file changes over topics/**/*.md, with the "
-    "revision you read from `memory_status`. Each change is write or delete. "
-    "The older unified-diff patch form remains accepted."
+    "Use record-level memory_changes when one or more final memory records "
+    "are known. The Runtime creates, updates or deletes their Topic blocks "
+    "and rebuilds derived views. Structured whole-file changes and the older "
+    "unified-diff patch form remain accepted for direct Markdown edits."
 )
 UPDATE_SPEC: dict[str, Any] = {
     "name": UPDATE_NAME,
@@ -319,6 +320,36 @@ UPDATE_SPEC: dict[str, Any] = {
                     "additionalProperties": False,
                 },
             },
+            "memory_changes": {
+                "type": "array",
+                "description": "atomic final-record create, update and delete",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "op": {
+                            "type": "string",
+                            "enum": ["create", "update", "delete"],
+                        },
+                        "memory_id": {"type": "string"},
+                        "topic_path": {"type": "string"},
+                        "headings": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "content": {"type": "string"},
+                        "time": {
+                            "type": "string",
+                            "description": "YYYY, YYYY-MM, YYYY-MM-DD, or undated",
+                        },
+                        "source_refs": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": ["op"],
+                    "additionalProperties": False,
+                },
+            },
             "sources": {
                 "type": "array",
                 "description": "quoted statements the edit rests on",
@@ -335,6 +366,7 @@ def memory_update(
     base_revision: str | None = None,
     patch: str | None = None,
     changes: list[dict[str, Any]] | None = None,
+    memory_changes: list[dict[str, Any]] | None = None,
     sources: list[dict[str, Any]] | None = None,
     commit_message: str | None = None,
     **_: Any,
@@ -368,6 +400,7 @@ def memory_update(
                 base_revision=base_revision,
                 patch=patch or "",
                 changes=changes,
+                memory_changes=memory_changes,
                 sources=sources,
                 commit_message=commit_message,
                 provenance=provenance,
