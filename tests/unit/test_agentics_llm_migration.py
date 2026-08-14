@@ -117,6 +117,7 @@ def test_only_deferred_tool_loops_still_call_runtime_exec():
 
     remaining.sort()
     assert [path for path, _ in remaining] == [
+        "browser_agent/__init__.py",
         "deep_work/__init__.py",
         "llm_call_example/__init__.py",
     ]

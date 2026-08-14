@@ -3,6 +3,14 @@
 This engineering record is intentionally separate from the authoritative HTML design.
 It tracks the bounded implementation, verification, and review evidence for the current distribution work.
 
+## Release gate repair for v0.6.1
+
+- Removed four unreferenced legacy Channel modules after the implementations had moved under `openprogram/channels/implementations/`; the runtime HTTP inventory now scans only active Channel code.
+- Renamed the Research writer's dropped `context` parameter to the runtime-supported `project_context` field.
+- Recorded Browser Agent as an explicitly deferred internal tool loop without changing its current behavior.
+- Local acceptance: the previously failing four tests pass; affected tests report 461 passed; the full non-integration suite reports 5274 passed, 11 skipped, and 1 expected failure. Desktop, Web, release-script, runtime-HTTP, Ruff, and documentation gates pass.
+- Windows native packaging remains deferred for a later release decision. This repair does not add a Windows artifact or introduce constraints that prevent a later implementation.
+
 ## Short public installer batch
 
 - Base commit: `c1886a3fdf7ba196c42ec9a2c19dca7fe86c12e7`.
@@ -23,7 +31,7 @@ It tracks the bounded implementation, verification, and review evidence for the 
 - Developer installations add editable sources, tests, diagnostics, local frontend builds, and replaceable OCR/browser backends. They do not define a smaller or different product edition.
 - Ordinary users install from GitHub Release artifacts. PyPI wheels remain internal build inputs and developer artifacts, not a product installation path.
 - macOS artifacts are explicitly unsigned DMG/ZIP files. Apple Developer ID signing and notarization are not release requirements. Linux publishes complete x86_64/arm64 CLI/server runtimes; no Linux Desktop artifact is published after the complete AppImage failed its packaging gate.
-- Windows-specific implementation, testing, packaging, and compatibility remain excluded. OS credential-store integration remains excluded.
+- Windows native packaging is deferred from this release, while the runtime/Desktop separation must preserve later implementation feasibility. OS credential-store integration remains excluded.
 
 ### Current-batch files
 
@@ -80,7 +88,7 @@ The platform runtime and public desktop artifact probes run on native release ru
 - Base commit: `717d4e176307e08cc4ae4facd3c484511684746c`.
 - Public behavior: released wheels serve prebuilt Web assets without Node.js; packaged Electron apps start an embedded CPython runtime; macOS builds DMG and ZIP artifacts; Linux builds AppImage artifacts; release CI verifies versions and checksums.
 - Product documentation describes only behavior whose acceptance checks pass.
-- Windows-specific implementation, testing, packaging, and compatibility remain excluded.
+- Windows native packaging was not implemented in this historical batch; it remains a deferred product decision rather than a rejected direction.
 - OS credential-store integration remains excluded.
 
 ### Prior-batch files
@@ -119,7 +127,7 @@ Platform artifact builds run in the release workflow because a macOS host cannot
 - Linux x86_64 acceptance: build the AppImage on a native x86_64 runner, execute its public entry under Xvfb, let Electron start the embedded worker, verify `/healthz`, `/chat`, immutable Program behavior, and matching freedesktop filename/`StartupWMClass` metadata.
 - Linux CLI acceptance: on native x86_64 and arm64 runners, install the release wheel with the pinned uv and managed CPython, cold-start the worker before switching `current`, and verify the installed launcher version.
 - Pre-release execution: the manually dispatched Linux smoke workflow requires no Apple signing or PyPI credentials and uploads the verified wheel and AppImage only as CI artifacts. It does not create a stable release.
-- Exclusions remain unchanged: no Linux arm64 desktop artifact, distro-native deb/rpm packages, Windows implementation, or OS credential-store integration.
+- This historical batch did not add Linux arm64 desktop artifacts, distro-native deb/rpm packages, Windows implementation, or OS credential-store integration. Windows remains deferred for a later product decision.
 
 ### Prior-batch ledger
 

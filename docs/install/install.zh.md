@@ -9,7 +9,7 @@ OpenProgram 分别提供桌面 release 安装和 CLI/server release 安装。sou
 | macOS arm64 / x64 | DMG | 支持 | 本地或远程 |
 | Linux x86_64 | 不发布桌面产物 | 支持 | 本地或远程 |
 | Linux arm64 | 不发布桌面产物 | 支持 | 本地或远程 |
-| Windows | 不支持 | 不支持 | 可以连接受支持的远程主机 |
+| Windows | 暂缓到后续 release 决策 | 暂缓到后续 release 决策 | 可以连接受支持的远程主机 |
 | iOS / Android / iPadOS | 无原生应用 | 不适用 | 可以连接受支持的远程主机；不承诺移动端布局 |
 
 只有发布在 [GitHub Release](https://github.com/Fzkuji/OpenProgram/releases) 中的产物才属于 release 安装。CI artifact 和 source checkout 构建不属于 stable release。
