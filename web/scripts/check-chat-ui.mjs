@@ -665,9 +665,10 @@ assert.match(
 );
 function assertPlainConclusionRules(css) {
   const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([_, selectors]) =>
-    selectors.split(",").some((selector) =>
-      /(?:^|[\s>+~])\.runtime-program-conclusion(?:\.[\w-]+)*$/.test(selector.trim()),
-    ),
+    selectors.split(",").some((selector) => {
+      const finalCompound = selector.trim().split(/[\s>+~]+/).at(-1) ?? "";
+      return /\.runtime-program-conclusion(?![\w-])/.test(finalCompound);
+    }),
   );
   assert.ok(rules.length > 0, "workflow Conclusion outer CSS rules must exist");
   for (const [_, selector, declarations] of rules) {
@@ -685,6 +686,13 @@ assert.throws(
   ),
   /must render as ordinary chat content/,
   "the Conclusion style contract must reject error/cancelled quote-style variants",
+);
+assert.throws(
+  () => assertPlainConclusionRules(
+    `${chatCss}\n.is-error.runtime-program-conclusion:hover { border-inline-start: 2px solid red; }`,
+  ),
+  /must render as ordinary chat content/,
+  "the Conclusion style contract must not depend on class order or pseudo-state",
 );
 assert.doesNotThrow(
   () => assertPlainConclusionRules(
