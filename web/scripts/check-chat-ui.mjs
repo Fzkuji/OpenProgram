@@ -663,7 +663,12 @@ assert.match(
   /<div class="tl-collapse"><div class="tl-collapse-inner">[\s\S]*?<\/div><\/div>\s*<\/div>\s*<div class="run-footer">/,
   "the visual specification footer must remain outside the collapsible execution trace",
 );
-assert.match(chatCss, /\.runtime-program-conclusion\s*\{[^}]*border-left:/s);
+const conclusionRule = chatCss.match(/\.runtime-program-conclusion\s*\{([^}]*)\}/s)?.[1] ?? "";
+assert.doesNotMatch(
+  conclusionRule,
+  /(?:border-left|padding-left)\s*:/,
+  "workflow Conclusion must render as ordinary chat content, not a blockquote",
+);
 assert.match(runtimeBlock, /className="runtime-program-avatar"[\s\S]*>ƒ<\/div>/);
 assert.match(runtimeBlock, /if \(nested\)/, "nested LLM tool calls must keep their current rendering");
 assert.match(executionStrip, /aria-expanded=\{open\}/);

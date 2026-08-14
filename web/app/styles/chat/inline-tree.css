@@ -143,14 +143,6 @@
 }
 .runtime-program-conclusion {
   margin-top: 12px;
-  padding-left: 14px;
-  border-left: 2px solid var(--border-light);
-}
-.runtime-program-conclusion.is-error {
-  border-left-color: var(--accent-red);
-}
-.runtime-program-conclusion.is-cancelled {
-  border-left-color: var(--text-muted);
 }
 .runtime-program-conclusion-label {
   margin-bottom: 3px;
