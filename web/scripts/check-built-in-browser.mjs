@@ -9,6 +9,7 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const launcher = read("../components/center-tabs/new-tab-page.tsx");
 const browserHome = read("../components/center-tabs/browser-home-page.tsx");
 const mainMenu = read("../components/center-tabs/main-menu.tsx");
+const dropdownMenu = read("../components/ui/dropdown-menu.tsx");
 const builtin = read("../components/center-tabs/builtin-tab-pane.tsx");
 const bridge = read("../lib/desktop-bridge.ts");
 const preload = read("../../desktop/preload.js");
@@ -25,7 +26,10 @@ assert.doesNotMatch(browserHome, /readBookmarks|removeBookmark|subscribeBookmark
 assert.match(browserHome, /readShortcuts/);
 assert.match(mainMenu, /getBoundingClientRect\(\)/);
 assert.match(mainMenu, /window\.innerWidth\s*-\s*trigger\.right/);
+assert.match(mainMenu, /top:\s*Math\.round\(trigger\.bottom\s*\+\s*4\)/);
 assert.doesNotMatch(mainMenu, /rightInset:\s*8/);
+assert.match(dropdownMenu, /align\s*=\s*"end"/);
+assert.match(dropdownMenu, /sideOffset\s*=\s*4/);
 assert.match(builtin, /groupHistoryByLocalDate/);
 assert.match(builtin, /browsing-history-row/);
 assert.match(bridge, /browserImport\?: DesktopBrowserImportApi/);

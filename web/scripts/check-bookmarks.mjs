@@ -560,6 +560,115 @@ assert.equal(bookmarks.importBookmarkTree([
 ]), 0, "re-importing the same source tree is a no-op");
 assert.equal(changes, 1);
 
+// A same-title folder with user-created nesting is not the legacy flat
+// importer shape and must never be reorganized automatically.
+storage.set(bookmarks.BOOKMARKS_STORAGE_KEY, JSON.stringify({
+  version: bookmarks.BOOKMARKS_VERSION,
+  root: {
+    kind: "folder",
+    id: bookmarks.BOOKMARKS_ROOT_ID,
+    title: "",
+    children: [{
+      kind: "folder",
+      id: "user-import-title",
+      title: "Imported from Google Chrome · Person 1",
+      children: [{
+        kind: "folder",
+        id: "user-personal",
+        title: "Personal",
+        children: [{
+          kind: "bookmark",
+          id: "user-paper",
+          title: "Paper",
+          url: "https://paper.example/",
+        }],
+      }],
+    }],
+  },
+}));
+changes = 0;
+assert.equal(bookmarks.importBookmarkTree([
+  {
+    kind: "folder",
+    title: "Bookmarks bar",
+    children: [{ kind: "bookmark", title: "Paper", url: "https://paper.example" }],
+  },
+], "Imported from Google Chrome · Person 1"), 0);
+assert.equal(changes, 0);
+assert.equal(bookmarks.findNode(bookmarks.readBookmarkTree(), "user-personal").children[0].id, "user-paper");
+
+// An empty same-title folder is ambiguous and is preserved as user data.
+storage.set(bookmarks.BOOKMARKS_STORAGE_KEY, JSON.stringify({
+  version: bookmarks.BOOKMARKS_VERSION,
+  root: {
+    kind: "folder",
+    id: bookmarks.BOOKMARKS_ROOT_ID,
+    title: "",
+    children: [{
+      kind: "folder",
+      id: "user-empty-import-title",
+      title: "Imported from Google Chrome · Person 1",
+      children: [],
+    }],
+  },
+}));
+changes = 0;
+assert.equal(bookmarks.importBookmarkTree([], "Imported from Google Chrome · Person 1"), 0);
+assert.equal(changes, 0);
+assert.ok(bookmarks.findNode(bookmarks.readBookmarkTree(), "user-empty-import-title"));
+
+// Existing legacy values use the same URL canonicalization as incoming rows.
+storage.set(bookmarks.BOOKMARKS_STORAGE_KEY, JSON.stringify([
+  { title: "Canonical", url: "https://canonical.example" },
+]));
+changes = 0;
+assert.equal(bookmarks.importBookmarkTree([
+  { kind: "bookmark", title: "Canonical again", url: "https://canonical.example/" },
+]), 0);
+assert.equal(changes, 0);
+assert.equal(bookmarks.readBookmarks().length, 1);
+
+// Same-title source siblings remain distinct, and the occurrence mapping is
+// stable across a repeated import.
+storage.set(bookmarks.BOOKMARKS_STORAGE_KEY, JSON.stringify({
+  version: bookmarks.BOOKMARKS_VERSION,
+  root: { kind: "folder", id: bookmarks.BOOKMARKS_ROOT_ID, title: "", children: [] },
+}));
+changes = 0;
+const sameNameSource = [
+  {
+    kind: "folder",
+    title: "Same",
+    children: [{ kind: "bookmark", title: "One", url: "https://one.example" }],
+  },
+  {
+    kind: "folder",
+    title: "Same",
+    children: [{ kind: "bookmark", title: "Two", url: "https://two.example" }],
+  },
+];
+assert.equal(bookmarks.importBookmarkTree(sameNameSource), 2);
+assert.deepEqual(
+  bookmarks.readBookmarkTree().children.map((folder) => folder.children[0].url),
+  ["https://one.example/", "https://two.example/"],
+);
+assert.equal(bookmarks.importBookmarkTree(sameNameSource), 0);
+assert.equal(bookmarks.readBookmarkTree().children.length, 2);
+
+// Import must not report a positive count when localStorage rejects the write.
+storage.set(bookmarks.BOOKMARKS_STORAGE_KEY, JSON.stringify({
+  version: bookmarks.BOOKMARKS_VERSION,
+  root: { kind: "folder", id: bookmarks.BOOKMARKS_ROOT_ID, title: "", children: [] },
+}));
+changes = 0;
+failWrites = true;
+assert.throws(() => bookmarks.importBookmarkTree([
+  { kind: "bookmark", title: "Not saved", url: "https://not-saved.example" },
+]), /bookmark storage unavailable/);
+failWrites = false;
+assert.equal(changes, 0);
+assert.deepEqual(bookmarks.readBookmarks(), []);
+
 // ---- Folder operations ----------------------------------------------
 storage.set(bookmarks.BOOKMARKS_STORAGE_KEY, JSON.stringify([first, second]));
 changes = 0;

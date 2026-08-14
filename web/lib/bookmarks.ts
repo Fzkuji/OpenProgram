@@ -119,17 +119,21 @@ export function readBookmarkTree(): BookmarkFolder {
   return emptyRoot();
 }
 
-function saveTree(root: BookmarkFolder): BookmarkFolder {
+function persistTree(root: BookmarkFolder): boolean {
   try {
     localStorage.setItem(
       BOOKMARKS_STORAGE_KEY,
       JSON.stringify({ version: BOOKMARKS_VERSION, root }),
     );
   } catch {
-    return readBookmarkTree();
+    return false;
   }
   window.dispatchEvent(new Event(BOOKMARKS_CHANGE_EVENT));
-  return root;
+  return true;
+}
+
+function saveTree(root: BookmarkFolder): BookmarkFolder {
+  return persistTree(root) ? root : readBookmarkTree();
 }
 
 /** Depth-first list of every bookmark in the tree, document order. */
@@ -289,37 +293,60 @@ export function isBookmarked(url: string): boolean {
   return readBookmarks().some((bookmark) => bookmark.url === url);
 }
 
+function canonicalHttpUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Merge a browser's folder tree into the manager tree. Folder titles are
- * matched only among siblings; bookmark URLs are deduplicated globally. */
+ * matched by sibling occurrence; bookmark URLs are deduplicated globally. */
 export function importBookmarkTree(
   values: ImportedBookmarkNode[],
   legacyFolderTitle?: string,
 ): number {
   const root = readBookmarkTree();
-  const existingUrls = new Set(flattenBookmarks(root).map((item) => item.url));
-  const legacyFolder = legacyFolderTitle
+  const existingUrls = new Set(
+    flattenBookmarks(root)
+      .map((item) => canonicalHttpUrl(item.url))
+      .filter((url): url is string => url !== null),
+  );
+  const legacyFolderCandidate = legacyFolderTitle
     ? root.children.find(
       (node): node is BookmarkFolder => node.kind === "folder" && node.title === legacyFolderTitle,
     )
     : undefined;
+  // Only the previous importer's flat folder is safe to reorganize. A
+  // same-title folder with nested user content is an ordinary bookmark tree.
+  const legacyFolder = legacyFolderCandidate
+    && legacyFolderCandidate.children.length > 0
+    && legacyFolderCandidate.children.every((child) => child.kind === "bookmark")
+    ? legacyFolderCandidate
+    : undefined;
   const legacyByUrl = new Map<string, { node: BookmarkLeaf; parent: BookmarkFolder }>();
-  const indexLegacy = (folder: BookmarkFolder) => {
-    for (const child of folder.children) {
-      if (child.kind === "folder") indexLegacy(child);
-      else legacyByUrl.set(child.url, { node: child, parent: folder });
+  if (legacyFolder) {
+    for (const child of legacyFolder.children) {
+      if (child.kind !== "bookmark") continue;
+      const url = canonicalHttpUrl(child.url);
+      if (url) legacyByUrl.set(url, { node: child, parent: legacyFolder });
     }
-  };
-  if (legacyFolder) indexLegacy(legacyFolder);
+  }
   let imported = 0;
   let changed = false;
 
   const merge = (target: BookmarkFolder, incoming: ImportedBookmarkNode[]) => {
+    const folderOccurrences = new Map<string, number>();
     for (const node of incoming) {
       if (node.kind === "folder") {
         const title = node.title.trim() || "Folder";
-        let folder = target.children.find(
+        const occurrence = folderOccurrences.get(title) ?? 0;
+        folderOccurrences.set(title, occurrence + 1);
+        let folder = target.children.filter(
           (child): child is BookmarkFolder => child.kind === "folder" && child.title === title,
-        );
+        )[occurrence];
         if (!folder) {
           folder = { kind: "folder", id: newId("f"), title, children: [] };
           const before = imported;
@@ -331,28 +358,25 @@ export function importBookmarkTree(
         continue;
       }
 
-      let url: URL;
-      try { url = new URL(node.url); } catch { continue; }
-      if (url.protocol !== "http:" && url.protocol !== "https:") {
-        continue;
-      }
-      const legacy = legacyByUrl.get(url.href);
+      const url = canonicalHttpUrl(node.url);
+      if (!url) continue;
+      const legacy = legacyByUrl.get(url);
       if (legacy) {
         const index = legacy.parent.children.findIndex((child) => child.id === legacy.node.id);
         if (index >= 0) legacy.parent.children.splice(index, 1);
         target.children.push(legacy.node);
-        legacyByUrl.delete(url.href);
+        legacyByUrl.delete(url);
         imported += 1;
         changed = true;
         continue;
       }
-      if (existingUrls.has(url.href)) continue;
-      existingUrls.add(url.href);
+      if (existingUrls.has(url)) continue;
+      existingUrls.add(url);
       target.children.push({
         kind: "bookmark",
         id: newId("b"),
-        title: node.title.trim() || url.href,
-        url: url.href,
+        title: node.title.trim() || url,
+        url,
         ...(node.faviconUrl ? { faviconUrl: node.faviconUrl } : {}),
       });
       imported += 1;
@@ -361,20 +385,12 @@ export function importBookmarkTree(
   };
 
   merge(root, values);
-  if (legacyFolder) {
-    const pruneEmptyFolders = (folder: BookmarkFolder) => {
-      folder.children = folder.children.filter((child) => {
-        if (child.kind !== "folder") return true;
-        pruneEmptyFolders(child);
-        return child.children.length > 0;
-      });
-    };
-    pruneEmptyFolders(legacyFolder);
-    if (legacyFolder.children.length === 0) {
-      root.children = root.children.filter((child) => child.id !== legacyFolder.id);
-      changed = true;
-    }
+  if (legacyFolder?.children.length === 0) {
+    root.children = root.children.filter((child) => child.id !== legacyFolder.id);
+    changed = true;
   }
-  if (changed) saveTree(root);
+  if (changed && !persistTree(root)) {
+    throw new Error("bookmark storage unavailable");
+  }
   return imported;
 }
