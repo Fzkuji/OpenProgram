@@ -3,6 +3,15 @@
 This engineering record is intentionally separate from the authoritative HTML design.
 It tracks the bounded implementation, verification, and review evidence for the current distribution work.
 
+## Short public installer batch
+
+- Base commit: `c1886a3fdf7ba196c42ec9a2c19dca7fe86c12e7`.
+- Public command: `curl -fsSL https://openprogram.io/install | sh` for normal macOS/Linux CLI and server installations.
+- Boundary: the root script resolves the latest stable GitHub Release, validates a three-part numeric version, downloads the immutable tagged installer, and forwards the version. It does not assemble a second installer and does not weaken runtime checksum, capability-manifest, or worker cold-start verification.
+- Reproducibility: advanced users and CI may pass `OPENPROGRAM_VERSION=X.Y.Z` to the `sh` process. The tagged `scripts/install-release.sh` remains the authoritative versioned installer.
+- Publication: `docs/_static_root/install` must be copied to the deployed site root as `/install`; leaving it under `/docs/` is a release failure.
+- Tests: execute the public root script with a fake `curl` for automatic latest-version resolution and explicit pinning, assert the tagged installer handoff, build the docs site, verify the assembled root file, and run the existing distribution release suite.
+
 ## Unified complete-product batch
 
 - Base commit: `e6ec8694977080153a3c94e50a5080d2ff43b69b`.
