@@ -27,6 +27,8 @@ from openprogram.auth.types import (
 
 @pytest.fixture
 def isolated(tmp_path, monkeypatch, capsys):
+    from openprogram.webui import _model_listing
+
     store = AuthStore(root=tmp_path / "store")
     set_store_for_testing(store)
     set_credential_provider_for_testing(CredentialProvider(store=store))
@@ -40,6 +42,7 @@ def isolated(tmp_path, monkeypatch, capsys):
     fake_home = tmp_path / "home"
     fake_home.mkdir(exist_ok=True)
     monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setattr(_model_listing, "fetch_models_remote", lambda _provider: {})
     yield store, pm, tmp_path, capsys
     set_store_for_testing(None)
     set_credential_provider_for_testing(None)

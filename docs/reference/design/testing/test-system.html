@@ -162,10 +162,10 @@
       <tr><td>设计与基线</td><td><span class="tag ok">已完成</span></td><td>设计、站点构建、链接检查、clean-checkout baseline 和两阶段独立审查</td></tr>
       <tr><td>输入枚举与共享状态</td><td><span class="tag ok">已完成</span></td><td>Git-owned 输入枚举、临时 HOME 清理、局部 fixture、线程与 TLS 资源回收；专项及 unit 回归、独立规格和质量审查通过</td></tr>
       <tr><td>Python 目录迁移</td><td><span class="tag ok">已完成</span></td><td>目录与 marker 迁移完成；HTTP inventory 重复实现、agentic context 结构契约误报和 retry 测试隔离问题已修复；最终 required suite 为 5356 passed、10 skipped、1 xfailed，独立规格与质量审查通过</td></tr>
-      <tr><td>Web/CLI/desktop</td><td><span class="tag ok">已完成</span></td><td>Web pure helper 使用 node:test，component 与 built-Web/browser e2e 分离；Web check/build、CLI typecheck/Vitest/build、desktop check 与独立审查通过</td></tr>
+      <tr><td>Web/CLI/desktop</td><td><span class="tag ok">已完成</span></td><td>Web pure helper 使用 node:test，component 与 built-Web/browser e2e 分离；当前 Scheduler view-model 为 4 个 Node 单元测试，Web check/build、CLI typecheck/Vitest/build、desktop check 与独立审查通过</td></tr>
       <tr><td>CI 与贡献文档</td><td><span class="tag ok">已完成</span></td><td>八类独立 CI 结果、三版本 unit matrix、locked uv、完整 Web/CLI/desktop/browser 命令与贡献文档 contract；独立审查通过</td></tr>
-      <tr><td>等待、并发与大文件</td><td><span class="tag ok">已完成</span></td><td>结构契约覆盖资源导入、固定等待与全局线程类替换；unit autouse guard 检查测试直接创建线程/线程池、固定等待、生产资源 teardown 和全局状态恢复；4 个真实 runner/threadpool 文件共 83 个测试迁至 component；最终 required suite 为 5383 passed、10 skipped、2 deselected、1 xfailed</td></tr>
-      <tr><td>覆盖率和最终验证</td><td><span class="tag warn">补强中</span></td><td>Python 3.12 串行 unit branch-mode coverage 重复基线为 42.444851%，CI 先生成并上传 XML artifact，再以 6 位精度执行 40% floor；完整门禁须在最后一个实现改动后重新执行</td></tr>
+      <tr><td>等待、并发与大文件</td><td><span class="tag ok">已完成</span></td><td>结构契约覆盖资源导入、固定等待与全局线程类替换；unit autouse guard 检查测试直接创建线程/线程池、固定等待、生产资源 teardown 和全局状态恢复；5 个真实 runner/threadpool 文件共 104 个测试迁至 component；最终 required suite 须在合并适配后重新执行</td></tr>
+      <tr><td>覆盖率和最终验证</td><td><span class="tag warn">补强中</span></td><td>API-key CLI unit 已隔离远程模型列表获取；Python 3.12 串行 unit branch-mode coverage 重复基线为 42.267228%，CI 先生成并上传 XML artifact，再以 6 位精度执行 40% floor；完整门禁须在最后一个实现改动后重新执行</td></tr>
     </tbody>
   </table></div>
 
@@ -175,8 +175,8 @@
     <thead><tr><th>批次</th><th>范围</th><th>排除</th><th>门禁</th><th>状态</th></tr></thead>
     <tbody>
       <tr><td>required suite 归零</td><td>移除未被注册表使用的旧 channel 实现；修正 <code>@function</code> / <code>@agentic_function</code> 结构契约误报；隔离 retry 测试状态</td><td>不改变受管理 channel 实现和公开 API</td><td>4 个失败节点专项通过；最终 required suite 为 5356 passed、10 skipped、1 xfailed；独立规格与质量审查通过</td><td><span class="tag ok">已完成</span></td></tr>
-      <tr><td>结构与等待契约</td><td>识别别名资源导入、线程类替换和非零异步等待；运行时拦截测试直接创建线程或线程池；迁移或改写实际违规测试</td><td>不实现 Python 控制流解释器，不按文件行数机械拆分测试</td><td>结构与运行时契约通过；unit 为 2431 passed、3 skipped；4 个迁移 component 文件为 83 passed；独立规格和质量审查通过</td><td><span class="tag ok">已完成</span></td></tr>
-      <tr><td>覆盖率门禁</td><td>记录精确 branch baseline；设置防回退阈值；只补关键未覆盖分支</td><td>不追求任意高覆盖率数字，不为覆盖率复制断言</td><td>隔离 Python 3.12.13 locked 环境连续两次均为 unit 2431 passed、3 skipped，branch-mode baseline 42.444851%；6 位精度的 40% floor 通过，43% 对照以退出码 2 失败；XML 在 floor 前上传，CI contract 通过</td><td><span class="tag ok">已完成</span></td></tr>
+      <tr><td>结构与等待契约</td><td>识别别名资源导入、线程类替换和非零异步等待；运行时拦截测试直接创建线程或线程池；迁移或改写实际违规测试</td><td>不实现 Python 控制流解释器，不按文件行数机械拆分测试</td><td>结构与运行时契约通过；unit 为 2434 passed、3 skipped；5 个迁移 component 文件为 104 passed；独立规格和质量审查通过</td><td><span class="tag ok">已完成</span></td></tr>
+      <tr><td>覆盖率门禁</td><td>记录精确 branch baseline；设置防回退阈值；只补关键未覆盖分支</td><td>不追求任意高覆盖率数字，不为覆盖率复制断言</td><td>隔离 Python 3.12.13 locked 环境连续两次均为 unit 2434 passed、3 skipped，branch-mode baseline 42.267228%；6 位精度的 40% floor 通过，43% 对照以退出码 2 失败；XML 在 floor 前上传，CI contract 通过</td><td><span class="tag ok">已完成</span></td></tr>
       <tr><td>JavaScript 依赖风险</td><td>分别审计 Web、CLI、desktop；升级可兼容依赖并验证 lockfile</td><td>不执行 <code>npm audit fix --force</code>，不引入新 runner</td><td>兼容升级后 Web 从 8 high 降至 5 high，CLI 从 4 high + 1 moderate 降至 1 moderate，desktop 从 5 high + 2 moderate 降至 2 high；剩余项分别要求 Next/eslint-config-next 16、esbuild 0.28、Electron 43 的独立兼容迁移；三个 workspace 的 npm ci 与既有 check/test/typecheck/build 全部通过</td><td><span class="tag ok">已完成</span></td></tr>
       <tr><td>最终集成</td><td>合入最新 main，执行 Python、Web、CLI、desktop、browser、docs、examples 和 diff/status 门禁</td><td>不覆盖主工作区未提交修改，不远程 push</td><td>最终候选独立规格和质量审查通过，工作树 clean</td><td><span class="tag">待执行</span></td></tr>
     </tbody>
