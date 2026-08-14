@@ -132,8 +132,8 @@ def test_short_public_installer_resolves_latest_and_accepts_a_pin(
     fake_bin.mkdir()
     fake_installer = tmp_path / "tagged-installer.sh"
     fake_installer.write_text(
-        '#!/bin/sh\n'
-        'printf \'%s|%s\\n\' "$OPENPROGRAM_VERSION" '
+        "#!/bin/sh\n"
+        "printf '%s|%s\\n' \"$OPENPROGRAM_VERSION\" "
         '"$OPENPROGRAM_REPOSITORY" > "$FAKE_RESULT"\n',
         encoding="utf-8",
     )
@@ -377,12 +377,42 @@ def test_distribution_workflows_use_node24_action_releases() -> None:
 
 
 def test_packaged_smoke_rejects_unreleased_linux_desktop() -> None:
-    smoke = (ROOT / "scripts" / "smoke-packaged-runtime.sh").read_text(
-        encoding="utf-8"
-    )
+    smoke = (ROOT / "scripts" / "smoke-packaged-runtime.sh").read_text(encoding="utf-8")
     assert "AppImage" not in smoke
     assert "linux)" not in smoke
     assert "python3 -c" not in smoke
+
+
+def test_packaged_smoke_reads_formatted_runtime_manifest(tmp_path: Path) -> None:
+    runtime = (
+        tmp_path
+        / "dist"
+        / "mac-arm64"
+        / "OpenProgram.app"
+        / "Contents"
+        / "Resources"
+        / "runtime"
+    )
+    runtime.mkdir(parents=True)
+    (runtime / "runtime-manifest.json").write_text(
+        json.dumps({"python": "python/bin/python3"}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            str(ROOT / "scripts" / "smoke-packaged-runtime.sh"),
+            "mac",
+            str(tmp_path / "dist"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "managed Python is not executable" in result.stderr
+    assert "managed Python path missing" not in result.stderr
 
 
 def test_release_workflow_builds_explicitly_unsigned_macos_artifacts() -> None:
@@ -390,7 +420,7 @@ def test_release_workflow_builds_explicitly_unsigned_macos_artifacts() -> None:
         encoding="utf-8"
     )
     assert "unsigned" in workflow.lower()
-    assert "CSC_IDENTITY_AUTO_DISCOVERY: \"false\"" in workflow
+    assert 'CSC_IDENTITY_AUTO_DISCOVERY: "false"' in workflow
     for forbidden in (
         "APPLE_API_KEY",
         "APPLE_API_ISSUER",

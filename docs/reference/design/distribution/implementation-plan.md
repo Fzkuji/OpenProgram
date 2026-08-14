@@ -23,6 +23,8 @@ It tracks the bounded implementation, verification, and review evidence for the 
 - The `v0.6.4` retry pins `opencv-python 4.11.0.86` and applies one constraints file to every first-party Program installation so later dependency resolution cannot replace the verified NumPy, OpenCV, Torch, or Torchvision stack.
 - Tag `v0.6.4` remained immutable after run `31824996497` built and installed all four complete runtimes but exposed an architecture-name mismatch in the Intel macOS Desktop command: release archives use `x86_64`, while electron-builder accepts `x64`. No GitHub Release was published from that tag.
 - The `v0.6.5` retry keeps runtime artifact naming unchanged and maps the Intel Desktop builder argument to `x64`; a release-workflow regression test enforces the explicit mapping for both macOS architectures.
+- Tag `v0.6.5` remained immutable after run `31827207974` built both macOS Desktop artifacts but exposed that the packaged-runtime smoke script only parsed compact JSON while the runtime manifest is formatted JSON. All four complete runtime and CLI installer jobs passed; no GitHub Release was published from that tag.
+- The `v0.6.6` retry uses the same whitespace-tolerant manifest parser already used by runtime archiving and Desktop preparation, reports actionable failures, and adds a regression test for formatted manifests.
 
 ## Short public installer batch
 

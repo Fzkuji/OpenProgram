@@ -1799,7 +1799,7 @@ wheels = [
 
 [[package]]
 name = "openprogram"
-version = "0.6.5"
+version = "0.6.6"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
