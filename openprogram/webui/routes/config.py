@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import importlib.metadata
 import json
 import os
 import threading
@@ -49,6 +50,19 @@ def _validate_api_key(env_var: str, value: str) -> str | None:
 
 def register(app):
     resource_limits_lock = threading.RLock()
+
+    @app.get("/api/system/version")
+    async def get_system_version_api():
+        from openprogram.updater.detect import detect_install_method
+
+        try:
+            current_version = importlib.metadata.version("openprogram")
+        except importlib.metadata.PackageNotFoundError:
+            current_version = "unknown"
+        return JSONResponse(content={
+            "currentVersion": current_version,
+            "installType": detect_install_method().value,
+        })
 
     def resource_limits_view(session_id: str) -> dict[str, Any]:
         from openprogram.agent.resource_governance import (

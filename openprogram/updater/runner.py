@@ -114,27 +114,8 @@ def check_for_update(*, force: bool = False) -> Optional[UpdateInfo]:
 
     method = detect_install_method()
 
-    if method == InstallMethod.GIT_CHECKOUT:
+    if method == InstallMethod.SOURCE_CHECKOUT:
         info = _check_git()
-        _write_last_check(now)
-        return info
-
-    if method == InstallMethod.BINARY:
-        from . import binary as _bin
-        manifest = _bin.check_for_update()
-        _write_last_check(now)
-        if manifest is None:
-            return None
-        return UpdateInfo(
-            method=method,
-            available=True,
-            current=manifest.get("current", "?"),
-            target=manifest.get("target", "?"),
-            summary=manifest.get("summary", "binary update available"),
-        )
-
-    if method == InstallMethod.PIP_WHEEL:
-        info = _check_pip()
         _write_last_check(now)
         return info
 
@@ -143,22 +124,8 @@ def check_for_update(*, force: bool = False) -> Optional[UpdateInfo]:
 
 def apply_update(info: UpdateInfo) -> tuple[bool, str]:
     """Apply a previously-detected update. Returns (ok, message)."""
-    if info.method == InstallMethod.GIT_CHECKOUT:
+    if info.method == InstallMethod.SOURCE_CHECKOUT:
         ok, msg = _apply_git()
-        if ok:
-            _write_staged_notice(info.target, info.summary)
-        return ok, msg
-
-    if info.method == InstallMethod.BINARY:
-        from . import binary as _bin
-        ok, msg = _bin.apply_update({"target": info.target})
-        if ok:
-            _write_staged_notice(info.target, info.summary)
-        return ok, msg
-
-    if info.method == InstallMethod.PIP_WHEEL:
-        from . import pip as _pip
-        ok, msg = _pip.apply()
         if ok:
             _write_staged_notice(info.target, info.summary)
         return ok, msg
@@ -204,7 +171,7 @@ def _check_git() -> Optional[UpdateInfo]:
     head_short = head[:7]
     if not _git.working_tree_clean(repo):
         return UpdateInfo(
-            method=InstallMethod.GIT_CHECKOUT,
+            method=InstallMethod.SOURCE_CHECKOUT,
             available=False,
             current=head_short,
             target=head_short,
@@ -213,7 +180,7 @@ def _check_git() -> Optional[UpdateInfo]:
     upstream = _git.upstream_ref(repo)
     if upstream is None:
         return UpdateInfo(
-            method=InstallMethod.GIT_CHECKOUT,
+            method=InstallMethod.SOURCE_CHECKOUT,
             available=False,
             current=head_short,
             target=head_short,
@@ -221,7 +188,7 @@ def _check_git() -> Optional[UpdateInfo]:
         )
     if not _git.fetch(repo):
         return UpdateInfo(
-            method=InstallMethod.GIT_CHECKOUT,
+            method=InstallMethod.SOURCE_CHECKOUT,
             available=False,
             current=head_short,
             target=head_short,
@@ -233,7 +200,7 @@ def _check_git() -> Optional[UpdateInfo]:
     behind, _ahead = counts
     if behind == 0:
         return UpdateInfo(
-            method=InstallMethod.GIT_CHECKOUT,
+            method=InstallMethod.SOURCE_CHECKOUT,
             available=False,
             current=head_short,
             target=head_short,
@@ -242,7 +209,7 @@ def _check_git() -> Optional[UpdateInfo]:
     rc, target_sha = _git._git(repo, "rev-parse", upstream)
     target_short = (target_sha or "")[:7] if rc == 0 else "?"
     return UpdateInfo(
-        method=InstallMethod.GIT_CHECKOUT,
+        method=InstallMethod.SOURCE_CHECKOUT,
         available=True,
         current=head_short,
         target=target_short,
@@ -258,46 +225,3 @@ def _apply_git() -> tuple[bool, str]:
     if not _git.working_tree_clean(repo):
         return False, "working tree dirty — skipping pull"
     return _git.pull(repo)
-
-
-# pip path
-
-
-def _check_pip() -> Optional[UpdateInfo]:
-    """Compare installed wheel version against the latest tagged release.
-
-    Queries GitHub Releases first (works regardless of PyPI publication
-    state), falls back to PyPI's JSON API. Returns ``None`` when we
-    can't read the local metadata or both remote sources fail — caller
-    treats None as "no update info" and proceeds normally.
-    """
-    from . import pip as _pip
-    from . import github as _gh
-
-    current = _pip.installed_version()
-    if current is None:
-        return None
-
-    source = "GitHub release"
-    target = _gh.latest_release_tag()
-    if target is None:
-        target = _pip.latest_pypi_version()
-        source = "PyPI"
-    if target is None:
-        return None
-
-    if not _pip.is_newer(current, target):
-        return UpdateInfo(
-            method=InstallMethod.PIP_WHEEL,
-            available=False,
-            current=current,
-            target=current,
-            summary="up to date",
-        )
-    return UpdateInfo(
-        method=InstallMethod.PIP_WHEEL,
-        available=True,
-        current=current,
-        target=target,
-        summary=f"openprogram {target} available ({source})",
-    )

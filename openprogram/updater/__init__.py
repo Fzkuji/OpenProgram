@@ -2,19 +2,17 @@
 
 Strategy is install-method aware:
 
-  * git checkout (``pip install -e .`` from a clone) → ``git pull``
-  * standalone binary (PyInstaller / similar)        → download + atomic swap
-  * pip wheel install                                  → currently a no-op,
-                                                         will become "pip install
-                                                         --upgrade" once OpenProgram
-                                                         ships to PyPI
+  * managed release runtime → formal GitHub Release updater
+  * source checkout         → explicit gated source upgrade
+  * anything else           → no product update path
 
 Public API:
 
-    detect_install_method()      — git_checkout | binary | pip_wheel | unknown
+    detect_install_method()      — managed_release | source_checkout | unknown
     check_for_update()           — query upstream; returns UpdateInfo or None
     apply_update()               — download / pull / install the new version
-    background_check_and_apply() — fire-and-forget thread used at worker start
+    background_check_and_apply() — deprecated compatibility helper; never
+                                    called by worker startup
     is_disabled()                — environment / config kill switch
 
 State files (under ``<state-dir>/``):
