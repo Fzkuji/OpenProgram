@@ -17,16 +17,12 @@ def test_writer_model_setting_is_live_and_defaults_to_chat_agent():
     assert row["apply"] == "live"
 
 
-def test_commitment_heartbeat_settings_have_safe_live_defaults():
+def test_commitment_heartbeat_settings_are_removed():
     from openprogram.config_schema import get_settings
 
-    rows = {item["key"]: item for item in get_settings()}
-
-    assert rows["proactive.heartbeat"]["value"] == "daily"
-    assert rows["proactive.heartbeat"]["choices"] == ["daily", "hourly", "off"]
-    assert rows["proactive.heartbeat"]["apply"] == "live"
-    assert rows["proactive.quiet_hours"]["value"] == "23:00-08:00"
-    assert rows["proactive.quiet_hours"]["apply"] == "live"
+    keys = {item["key"] for item in get_settings()}
+    assert "proactive.heartbeat" not in keys
+    assert "proactive.quiet_hours" not in keys
 
 
 def test_backend_none_disables_every_runtime_surface(monkeypatch, tmp_path):

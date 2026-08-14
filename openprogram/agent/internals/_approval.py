@@ -46,7 +46,7 @@ _PATCH_PATH_PREFIXES = (
     "*** Delete File: ",
     "*** Move to: ",
 )
-_NON_INTERACTIVE_SOURCES = {"agent_spawn", "cron", "mcp"}
+_NON_INTERACTIVE_SOURCES = {"agent_spawn", "cron", "scheduler", "mcp"}
 _CRON_READ_ONLY_TOOLS = {
     "read", "read_file", "grep", "glob", "list", "list_files", "tool_search",
 }
@@ -140,9 +140,9 @@ def _hard_constraint_violation(
                 if prefix and _targets_agentics(line[len(prefix):].strip()):
                     return "model tools cannot write auto-imported agentic Python"
 
-    if req.source == "cron":
+    if req.source in {"cron", "scheduler"}:
         if tool_name not in _CRON_READ_ONLY_TOOLS:
-            return f"cron cannot execute side-effect tool {tool_name}"
+            return f"{req.source} cannot execute side-effect tool {tool_name}"
         return None
     if req.source not in {"agent_spawn", "mcp"}:
         return None

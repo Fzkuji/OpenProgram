@@ -1152,9 +1152,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Mark an agent as the default")
     p_ag_def.add_argument("id", help="Agent id to make the default")
 
-    # ---- cron-worker ------------------------------------------------------
-    p_cron = sub.add_parser("cron-worker",
-        help="Foreground loop that fires scheduled entries from the `cron` tool")
+    # ---- scheduler-worker -------------------------------------------------
+    p_cron = sub.add_parser("scheduler-worker", aliases=["cron-worker"],
+        help="Foreground loop that fires Scheduler tasks")
     p_cron.add_argument("--once", action="store_true",
         help="Evaluate one tick and exit")
     p_cron.add_argument("--list", action="store_true",
@@ -1899,7 +1899,7 @@ def main():
             sys.exit(_cmd_subagent_cancel(args.job_id, as_json=args.json))
         _need_subcommand(args._cmd_parser)
 
-    if args.command == "cron-worker":
+    if args.command in ("scheduler-worker", "cron-worker"):
         _cmd_cron_worker(args.once, args.list)
         return
 

@@ -187,4 +187,4 @@ One workspace per instance, shared by every agent and every conversation includi
 | `diagnostics` | Build a redacted support zip (version, config, logs, probes) to attach to a bug report — see [Diagnostics bundle](diagnostics.md) | `--output PATH` (default `./openprogram-diagnostics-<date>.zip`) |
 | `logs` | View logs | `list`; `tail [name]` (`-n` line count, `-f` follow); `path [name]`. name is worker / runtime / ink, default worker |
 | `update` | Check for and apply updates | `--check` only checks; `--force` bypasses the 6-hour throttle |
-| `cron-worker` | Foreground loop that fires scheduled `cron` entries and the built-in commitment heartbeat | `--once` evaluates one tick and exits; `--list` shows user cron entries only |
+| `scheduler-worker` (`cron-worker` alias) | Foreground loop that fires one-time, recurring, and monitor Scheduler tasks | `--once` evaluates one tick and exits; `--list` shows current task match state |

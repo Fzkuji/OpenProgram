@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Memory page — topics, timeline, recent, commitments, core.
+ * Memory page — topics, timeline, recent, core.
  *
- * Five tabs for the five things memory holds. Topics is the only one
+ * Four tabs for the four things memory holds. Topics is the only one
  * that is edited; timeline and recent are rebuilt from it after every
  * write, and core is the block on every system prompt.
  *
@@ -19,7 +19,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
 import { renderMarkdown } from "./markdown";
 import { formatDate, formatSize, groupByFolder } from "./format";
-import { commitmentStatusState } from "./status";
 import { ClockIcon, TypeBadge } from "./icons";
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -39,7 +38,6 @@ import {
 } from "./parts";
 import type {
   EditorState,
-  MemoryStatus,
   RecentEvent,
   Tab,
   TimelineDay,
@@ -52,9 +50,6 @@ export function MemoryPage() {
   const { t, text, locale } = useTranslation();
   const refreshIconRef = useRef<AnimatedNavIconHandle>(null);
   const [tab, setTab] = useState<Tab>("topics");
-  const [memoryStatus, setMemoryStatus] = useState<MemoryStatus | null>(null);
-  const [commitmentSavingId, setCommitmentSavingId] = useState<string | null>(null);
-  const [commitmentError, setCommitmentError] = useState("");
 
   // Topics state
   const [topicPages, setTopicPages] = useState<TopicPage[]>([]);
@@ -78,18 +73,6 @@ export function MemoryPage() {
   const [coreEditor, setCoreEditor] = useState<EditorState>({ content: "", saving: false, saveStatus: "", viewMode: "edit" });
   const [coreMeta, setCoreMeta] = useState<{ size: number; mtime: number } | null>(null);
   const [coreLoading, setCoreLoading] = useState(true);
-
-  const fetchStatus = useCallback(() => {
-    fetch("/api/memory/status")
-      .then((r) => {
-        if (!r.ok) throw new Error(`memory status ${r.status}`);
-        return r.json();
-      })
-      .then((data: MemoryStatus) => setMemoryStatus(data))
-      .catch(() => setMemoryStatus(null));
-  }, []);
-
-  useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
   const fetchTopics = useCallback(() => {
     setTopicsLoading(true);
@@ -213,45 +196,6 @@ export function MemoryPage() {
     }
   }
 
-  async function transitionCommitment(
-    id: string,
-    status: "done" | "dismissed",
-  ) {
-    if (!memoryStatus) return;
-    const action = status === "done" ? text("mark done", "标记完成") : text("dismiss", "忽略");
-    if (!confirm(text(
-      `Confirm ${action}? This transition cannot be undone.`,
-      `确认${action}？此状态变更无法撤销。`,
-    ))) return;
-    setCommitmentSavingId(id);
-    setCommitmentError("");
-    try {
-      const response = await fetch("/api/memory/commitments/transition", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          base_revision: memoryStatus.revision,
-          id,
-          status,
-        }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(result.error?.message || text("Transition failed", "状态变更失败"));
-      }
-      setMemoryStatus((current) => current ? {
-        ...current,
-        revision: result.revision,
-        commitments: result.commitments,
-      } : current);
-    } catch (error) {
-      setCommitmentError(error instanceof Error ? error.message : text("Transition failed", "状态变更失败"));
-      fetchStatus();
-    } finally {
-      setCommitmentSavingId(null);
-    }
-  }
-
   function openTimelineDay(date: string) {
     setSelectedDate(date);
     setTimelineContent("");
@@ -278,10 +222,6 @@ export function MemoryPage() {
   }, [topicPages, search]);
 
   const topicGroups = groupByFolder(filteredTopics);
-  const commitments = memoryStatus?.commitments ?? null;
-  const commitmentsState = commitments
-    ? commitmentStatusState(commitments)
-    : "empty";
 
   // Wikilink click handler: delegate from the preview container
   function handlePreviewClick(e: React.MouseEvent) {
@@ -311,7 +251,6 @@ export function MemoryPage() {
             <TabButton active={tab === "topics"} onClick={() => setTab("topics")} icon={<FileTextIcon size={13} />}>{text("Topics", "主题")}</TabButton>
             <TabButton active={tab === "timeline"} onClick={() => setTab("timeline")} icon={<ClockIcon className={styles.fileIcon} />}>{text("Timeline", "时间线")}</TabButton>
             <TabButton active={tab === "recent"} onClick={() => setTab("recent")} icon={<ActivityIcon size={13} />}>{text("Recent", "最近")}</TabButton>
-            <TabButton active={tab === "commitments"} onClick={() => setTab("commitments")} icon={<ActivityIcon size={13} />}>{text("Commitments", "承诺")}</TabButton>
             <TabButton active={tab === "core"} onClick={() => setTab("core")} icon={<SparklesIcon size={13} />}>{text("Core", "核心")}</TabButton>
           </div>
 
@@ -484,87 +423,6 @@ export function MemoryPage() {
                         ))}
                       </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* ── Commitments ── */}
-          {tab === "commitments" && (
-            <>
-              <div className={styles.tree}>
-                <div className={styles.coreSidebar}>
-                  <div className={styles.coreInfoIcon}>
-                    <ActivityIcon size={22} />
-                  </div>
-                  <div className={styles.coreInfoTitle}>{text("Commitments", "承诺")}</div>
-                  <div className={styles.coreInfoDesc}>
-                    {text(
-                      "Conversation-backed obligations. Done and dismiss reuse the owner-only revision-checked memory transaction.",
-                      "来自对话证据的义务。完成与忽略复用仅 owner 可用且校验 revision 的 memory 事务。",
-                    )}
-                  </div>
-                  {commitments && (
-                    <div className={styles.coreInfoMeta}>
-                      <span>{commitments.counts.open} {text("open", "条未完成")}</span>
-                      <span>{commitments.counts.done} {text("done", "条已完成")}</span>
-                      <span>{commitments.counts.dismissed} {text("dismissed", "条已忽略")}</span>
-                      {!!commitments.counts.invalid && (
-                        <span>{commitments.counts.invalid} {text("invalid", "条无效")}</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className={styles.rightPane}>
-                {!commitments || commitmentsState === "empty" ? (
-                  <Placeholder icon="clock" text={text("No commitments recorded", "尚未记录承诺")} />
-                ) : (
-                  <div className={styles.commitmentList}>
-                    {commitmentError && (
-                      <div className={styles.commitmentError} role="alert">{commitmentError}</div>
-                    )}
-                    {commitments.records.map((record) => (
-                      <article className={styles.commitmentCard} key={record.id}>
-                        <div className={styles.commitmentHeader}>
-                          <code>{record.id}</code>
-                          <span className={styles.commitmentStatus}>{record.status}</span>
-                        </div>
-                        <div className={styles.commitmentText}>{record.text}</div>
-                        <div className={styles.commitmentMeta}>
-                          <span>{text("Due", "截止")}: {record.due ?? text("undated", "无日期")}</span>
-                          <span>{record.speaker_id}</span>
-                          <code>{record.source}</code>
-                          {record.status_source && (
-                            <span>
-                              {text("Closed by", "状态来源")}: {record.status_source}
-                              {record.status_changed_at ? ` · ${record.status_changed_at}` : ""}
-                            </span>
-                          )}
-                        </div>
-                        {record.status === "open" && (
-                          <div className={styles.commitmentActions}>
-                            <button
-                              className={styles.saveBtn}
-                              disabled={commitmentSavingId !== null}
-                              onClick={() => transitionCommitment(record.id, "done")}
-                              type="button"
-                            >
-                              {commitmentSavingId === record.id ? text("Saving…", "保存中…") : text("Mark done", "标记完成")}
-                            </button>
-                            <button
-                              className={`${styles.saveBtn} ${styles.commitmentDismissBtn}`}
-                              disabled={commitmentSavingId !== null}
-                              onClick={() => transitionCommitment(record.id, "dismissed")}
-                              type="button"
-                            >
-                              {text("Dismiss", "忽略")}
-                            </button>
-                          </div>
-                        )}
-                      </article>
-                    ))}
                   </div>
                 )}
               </div>

@@ -17,10 +17,11 @@ import styles from "./shell-loading.module.css";
  * /s/<id> don't suspense because their UI is mounted inside AppShell
  * itself — their page.tsx is just ``return null;``.
  */
-const ROUTE_KEYS: Record<string, "nav.functions"|"nav.skills"|"nav.memory"|"nav.mcp"|"nav.plugins"|"nav.chats"> = {
+const ROUTE_KEYS: Record<string, "nav.functions"|"nav.skills"|"nav.memory"|"nav.scheduler"|"nav.mcp"|"nav.plugins"|"nav.chats"> = {
   functions: "nav.functions",
   skills: "nav.skills",
   memory: "nav.memory",
+  scheduler: "nav.scheduler",
   mcp: "nav.mcp",
   plugins: "nav.plugins",
   chats: "nav.chats",

@@ -107,6 +107,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       "/skills",
       "/settings/general",
       "/memory",
+      "/scheduler",
       "/settings/channels",
       "/settings/search",
       "/mcp",
@@ -211,6 +212,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const items: Array<[string, string]> = [
       ["navPrograms", "/functions"],
       ["navMemory", "/memory"],
+      ["navScheduler", "/scheduler"],
       ["navChats", "/chats"],
     ];
     for (const [id, path] of items) {

@@ -236,6 +236,16 @@ def run_foreground() -> int:
     else:
         print("[worker] channels: none configured (worker still running)")
 
+    scheduler_stop = None
+    scheduler_thread = None
+    try:
+        from openprogram.programs.functions.cron.worker import start_in_worker
+
+        scheduler_stop, scheduler_thread = start_in_worker()
+        print("[worker] scheduler: running")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[worker] scheduler failed to start: {exc}")
+
     # Fire-and-forget update check. Result lands in the staged-notice
     # file; the TUI reads it on next launch and shows a banner.
     try:
@@ -311,6 +321,8 @@ def run_foreground() -> int:
         print("\n[worker] stopping...")
         if stop_event is not None:
             stop_event.set()
+        if scheduler_stop is not None:
+            scheduler_stop.set()
         # Shared join budget, not 3s per thread: `openprogram stop` waits
         # 5s after SIGTERM before force-killing, and two channel bots at
         # 3s each already blew that window — every stop ended in SIGKILL.
@@ -320,6 +332,8 @@ def run_foreground() -> int:
             t.join(timeout=max(0.1, _join_deadline - time.time()))
             if t.is_alive():
                 print(f"[{label}] still running; drops on process exit")
+        if scheduler_thread is not None:
+            scheduler_thread.join(timeout=max(0.1, _join_deadline - time.time()))
     finally:
         lock.release()
         clear_pid_file()

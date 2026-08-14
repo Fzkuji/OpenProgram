@@ -116,6 +116,7 @@ DEFAULT_TOOLS: list[str] = [
     # deferred below, so the model sees the names and descriptions here but
     # only loads the full contracts when it needs to inspect or edit memory.
     *MEMORY_TOOL_NAMES,
+    "scheduler",
     # Agentic harness entry points — these are the user-facing
     # programs (gui_agent / research_agent / wiki_agent) that the
     # LLM should know about by default. Without them in DEFAULT_TOOLS
@@ -135,6 +136,7 @@ DEFAULT_TOOLS: list[str] = [
 # 而绝大多数会话一次都不调它们。
 DEFERRED_DEFAULT_TOOLS: set = {
     *MEMORY_TOOL_NAMES,
+    "scheduler",
     # 1052 tok。进 plan mode 有两条路：用户在 web chip / TUI 选 "Plan mode"
     # 档位（agent/plan_mode.py sync_tier，不经此工具），或模型自己判断要规划。
     # 后者罕见，且一旦 plan mode 激活，plan_mode 系统提示块会明确点名
