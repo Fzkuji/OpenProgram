@@ -12,13 +12,13 @@ jobs:
   python:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           version: "0.11.16"
       - name: Verify version
@@ -31,7 +31,7 @@ jobs:
         run: |
           python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram/webui/_frontend/index.html'
           uv run --with "$(find dist -name 'openprogram-*.whl' -print -quit)" --no-project -- python -c 'import openprogram.webui.server; from openprogram.webui.frontend import out_dir; assert (out_dir() / "index.html").is_file()'
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: python-distributions
           path: dist/*
@@ -53,15 +53,15 @@ jobs:
             arch: x64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: |
             web/package-lock.json
             desktop/package-lock.json
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           version: "0.11.16"
       - name: Verify version
@@ -134,7 +134,7 @@ jobs:
         run: |
           cd desktop/dist
           find . -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' \) -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
@@ -151,8 +151,8 @@ jobs:
         runner: [macos-15, macos-15-intel, ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v6
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: python-distributions
           path: python-distributions
@@ -173,8 +173,8 @@ jobs:
     runs-on: ubuntu-24.04
     environment: release
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v6
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: release-artifacts
       - name: Create release manifest

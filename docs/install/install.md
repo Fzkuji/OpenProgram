@@ -52,15 +52,15 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 
 The command creates `~/.local/bin/openprogram`. If that directory is not already on `PATH`, invoke it by its absolute path or add the directory to the shell configuration.
 
-Verify the installation:
+Before switching `current`, the installer automatically runs the version probe and a worker cold-start/health check. A failed probe leaves the current version unchanged. After installation, run:
 
 ```bash
 ~/.local/bin/openprogram --version
-~/.local/bin/openprogram doctor
 ~/.local/bin/openprogram web
+~/.local/bin/openprogram doctor
 ```
 
-The Web UI is served at `http://localhost:18100`. The released wheel contains the prebuilt Web UI, so Node.js is not required.
+The Web UI is served at `http://localhost:18100`. The released wheel contains the prebuilt Web UI, so Node.js is not required. `doctor` checks the complete working environment; it may return non-zero before a provider is configured, while the persistent worker is stopped, or when development tools are absent. Those results do not mean the base release installation failed.
 
 ## Programs and optional components
 
