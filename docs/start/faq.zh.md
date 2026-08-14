@@ -30,7 +30,7 @@ openprogram setup                # 重新走一遍配置向导
 
 ## 怎么更新到最新版本？
 
-stable 桌面和 CLI 安装只变更到一个明确的已发布版本。桌面用户替换 DMG/AppImage；CLI/server 用户运行目标版本 tag 中的 installer。source checkout 开发者使用 `openprogram upgrade`。详见[升级](../install/upgrade.zh.md)。
+stable 桌面和 CLI 安装只变更到一个明确的已发布版本。macOS 桌面用户替换 DMG；macOS/Linux CLI/server 用户运行目标版本 tag 中的 installer。source checkout 开发者使用 `openprogram upgrade`。详见[升级](../install/upgrade.zh.md)。
 
 ## `openprogram web` 打开的页面加载不出来？
 

@@ -167,7 +167,7 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
-Desktop users download the unsigned macOS DMG or Linux x86_64 AppImage from [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases). Desktop and CLI/server releases contain the same complete product capabilities; only the launch shell differs. Platform scope, verification, and source-development installation are documented in **[docs/install/install.md](docs/install/install.md)**.
+macOS desktop users download the unsigned DMG from [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases). Linux users install the complete CLI/server runtime and use its Web UI or TUI; no Linux desktop package is published until a complete package passes the public-entry gate. All supported release installations contain the same complete product capabilities. Platform scope, verification, and source-development installation are documented in **[docs/install/install.md](docs/install/install.md)**.
 
 ### 2. Run
 

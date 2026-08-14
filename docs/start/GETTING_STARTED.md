@@ -12,7 +12,7 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
-The installer supplies its own Python and the released wheel supplies the Web UI; Node.js and Git are not runtime requirements. Desktop users use the DMG or AppImage attached to GitHub Releases. Platform scope and development-checkout instructions are in [Install](../install/install.md).
+The installer supplies its own Python and includes the Web UI; Node.js and Git are not runtime requirements. macOS desktop users use the DMG attached to GitHub Releases. Linux users use the complete CLI/server runtime with its Web UI or TUI; no Linux desktop package is currently published. Platform scope and development-checkout instructions are in [Install](../install/install.md).
 
 ## Step 2: First run — connect a provider
 

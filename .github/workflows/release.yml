@@ -106,10 +106,6 @@ jobs:
             platform: mac
             runtime_platform: macos
             arch: x86_64
-          - runner: ubuntu-24.04
-            platform: linux
-            runtime_platform: linux
-            arch: x86_64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -127,11 +123,6 @@ jobs:
       - name: Install desktop dependencies
         run: npm ci
         working-directory: desktop
-      - name: Install Linux display test dependency
-        if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes xvfb
       - name: Prepare embedded runtime from release archive
         shell: bash
         run: |
@@ -139,7 +130,6 @@ jobs:
           test -n "$archive"
           OPENPROGRAM_RUNTIME_ARCHIVE="$archive" scripts/prepare-desktop-runtime.sh
       - name: Build explicitly unsigned macOS artifacts
-        if: matrix.platform == 'mac'
         working-directory: desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -151,24 +141,19 @@ jobs:
             extension="${artifact##*.}"
             mv "$artifact" "${artifact%.*}-unsigned.$extension"
           done
-      - name: Build Linux AppImage
-        if: matrix.platform == 'linux'
-        run: npx electron-builder --linux AppImage --x64 --publish never
-        working-directory: desktop
       - name: Verify embedded complete runtime
-        run: scripts/smoke-packaged-runtime.sh "${{ matrix.platform }}" desktop/dist
+        run: scripts/smoke-packaged-runtime.sh mac desktop/dist
       - name: Create SHA-256 checksums
         shell: bash
         run: |
           cd desktop/dist
-          find . -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' \) -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}
+          find . -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' \) -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}
       - uses: actions/upload-artifact@v7
         with:
           name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             desktop/dist/*.dmg
             desktop/dist/*.zip
-            desktop/dist/*.AppImage
             desktop/dist/SHA256SUMS-*
 
   cli-installer:

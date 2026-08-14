@@ -23,8 +23,7 @@
     "prepare:runtime": "bash ../scripts/prepare-desktop-runtime.sh",
     "dist": "npm run dist:dir",
     "dist:dir": "npm run prepare:runtime && electron-builder --dir",
-    "dist:mac": "npm run prepare:runtime && npm run icon:build && npm run icon:check && electron-builder --mac dmg zip",
-    "dist:linux": "npm run prepare:runtime && electron-builder --linux AppImage"
+    "dist:mac": "npm run prepare:runtime && npm run icon:build && npm run icon:check && electron-builder --mac dmg zip"
   },
   "devDependencies": {
     "electron": "^37.2.0",
@@ -64,15 +63,6 @@
       "identity": null,
       "hardenedRuntime": false,
       "notarize": false
-    },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "icon": "build/icon.png",
-      "category": "Development",
-      "executableName": "openprogram",
-      "syncDesktopName": true
     }
   }
 }

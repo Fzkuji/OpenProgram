@@ -81,7 +81,7 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
-桌面用户从 GitHub Releases 下载 unsigned macOS DMG 或 Linux x86_64 AppImage。Desktop 与 CLI/server release 具有相同的完整产品能力，区别只在启动外壳。校验、平台范围和 source development 安装见 **[install.md](install/install.md)**。
+macOS 桌面用户从 GitHub Releases 下载 unsigned DMG。Linux 用户安装完整 CLI/server runtime，并使用其中的 Web UI 或 TUI；完整桌面包通过公共入口验收前不发布 Linux 桌面产物。所有受支持的 release 安装都具有相同的完整产品能力。校验、平台范围和 source development 安装见 **[install.md](install/install.md)**。
 
 ### 2. 运行
 

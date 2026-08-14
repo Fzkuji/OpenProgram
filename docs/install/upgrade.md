@@ -7,7 +7,7 @@ Upgrade behavior depends on the installation type. A stable installation always 
 Desktop automatic update is not enabled for the current unsigned macOS distribution. Upgrade manually from GitHub Releases:
 
 - macOS: download the new architecture-matched `unsigned` DMG, verify its SHA-256, and replace `OpenProgram.app`; macOS may require **Privacy & Security → Open Anyway** again.
-- Linux: download the new AppImage, verify its SHA-256, add execute permission, and replace the previous AppImage.
+- Linux: rerun the release installer from the target immutable tag. Linux currently has no published desktop package.
 
 The application shell and complete product runtime are replaced together. State under `~/.openprogram` remains unchanged.
 

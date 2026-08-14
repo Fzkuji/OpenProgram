@@ -47,57 +47,6 @@ jobs:
           name: product-runtime-linux-${{ matrix.arch }}
           path: ${{ runner.temp }}/runtime-artifacts/*
 
-  appimage:
-    needs: product-runtime
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
-      - uses: actions/download-artifact@v8
-        with:
-          name: product-runtime-linux-x86_64
-          path: runtime-artifact
-      - name: Install build and display dependencies
-        run: |
-          npm ci --prefix desktop
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes xvfb xauth libgl1 libglib2.0-0
-      - name: Build and launch AppImage from the complete runtime archive
-        run: |
-          archive="$(find "$GITHUB_WORKSPACE/runtime-artifact" -name '*.tar.gz' -print -quit)"
-          OPENPROGRAM_RUNTIME_ARCHIVE="$archive" scripts/prepare-desktop-runtime.sh
-          (cd desktop && npx electron-builder --linux AppImage --x64 --publish never)
-          scripts/smoke-packaged-runtime.sh linux desktop/dist
-      - name: Verify AppImage on glibc 2.31 without build tools or network
-        run: |
-          docker build --tag openprogram-appimage-bullseye --file - . <<'DOCKERFILE'
-          FROM debian:bullseye-slim
-          RUN apt-get update \
-              && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
-                ca-certificates curl xvfb xauth libgtk-3-0 libnss3 libasound2 \
-                libxss1 libgbm1 libatk-bridge2.0-0 libgl1 libglib2.0-0 \
-              && useradd --create-home tester \
-              && ! command -v python3 \
-              && ! command -v node \
-              && ! command -v git \
-              && rm -rf /var/lib/apt/lists/*
-          USER tester
-          ENV HOME=/home/tester
-          WORKDIR /workspace
-          DOCKERFILE
-          docker run --rm --network none \
-            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
-            openprogram-appimage-bullseye \
-            scripts/smoke-packaged-runtime.sh linux desktop/dist
-      - uses: actions/upload-artifact@v7
-        with:
-          name: linux-x86_64-appimage
-          path: desktop/dist/*.AppImage
-
   cli-installer:
     needs: product-runtime
     strategy:

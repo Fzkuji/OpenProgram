@@ -6,11 +6,11 @@ It tracks the bounded implementation, verification, and review evidence for the 
 ## Unified complete-product batch
 
 - Base commit: `e6ec8694977080153a3c94e50a5080d2ff43b69b`.
-- Product contract: every supported non-developer installation contains the same complete capability set for its platform and architecture. Desktop and CLI/server use the same runtime archive; only their launch shell differs.
+- Product contract: every supported non-developer installation contains the same complete capability set for its platform and architecture. A Desktop artifact must use the same runtime archive as CLI/server and may differ only by its Electron shell. If that complete packaged entry does not pass, the Desktop artifact is absent rather than reduced.
 - Required capabilities: Web, providers, MCP, memory, channels, search, default Playwright Chromium, default OCR, the GUI detector model, and the GUI, Research, and Wiki first-party Programs.
 - Developer installations add editable sources, tests, diagnostics, local frontend builds, and replaceable OCR/browser backends. They do not define a smaller or different product edition.
 - Ordinary users install from GitHub Release artifacts. PyPI wheels remain internal build inputs and developer artifacts, not a product installation path.
-- macOS artifacts are explicitly unsigned DMG/ZIP files. Apple Developer ID signing and notarization are not release requirements.
+- macOS artifacts are explicitly unsigned DMG/ZIP files. Apple Developer ID signing and notarization are not release requirements. Linux publishes complete x86_64/arm64 CLI/server runtimes; no Linux Desktop artifact is published after the complete AppImage failed its packaging gate.
 - Windows-specific implementation, testing, packaging, and compatibility remain excluded. OS credential-store integration remains excluded.
 
 ### Current-batch files
@@ -25,11 +25,11 @@ It tracks the bounded implementation, verification, and review evidence for the 
 ### Current-batch public-entry acceptance
 
 1. Each platform runtime archive contains a manifest with `present` and `verified` entries for `web`, `providers`, `mcp`, `memory`, `channels`, `search`, `browser.playwright`, `ocr.default`, `model.gpa_detector`, `program.gui`, `program.research`, and `program.wiki`.
-2. Desktop packaging consumes the already-built runtime archive. The CLI installer consumes the byte-identical archive from GitHub Release. Neither path resolves product dependencies independently.
+2. Supported Desktop packaging consumes the already-built runtime archive. The CLI installer consumes the byte-identical archive from GitHub Release. Neither path resolves product dependencies independently.
 3. A normal-user install performs no PyPI dependency resolution, repository clone, npm build, or first-use download for the default browser, OCR, detector model, or first-party Programs.
 4. Public-entry probes verify the worker, Web assets, first-party Program registration, channel/search imports, Playwright Chromium executable, OCR model data, and detector model before an artifact is published or a CLI `current` link is switched.
 5. macOS artifact names and documentation state `unsigned`; the release workflow requires no Apple or PyPI credentials and does not run signing, notarization, or PyPI publication.
-6. Documentation does not present `pip install openprogram`, optional GUI/Research/Wiki installation, or component-selection prompts as normal product installation.
+6. Documentation does not present `pip install openprogram`, optional GUI/Research/Wiki installation, component-selection prompts, or an unverified Linux Desktop package as normal product installation.
 
 ### Current-batch gate manifest
 
@@ -52,13 +52,15 @@ The platform runtime and public desktop artifact probes run on native release ru
 | Field | Evidence |
 |---|---|
 | RED | The first focused distribution run reported 6 expected failures: no product manifest, no unified runtime builder, the CLI installer still resolved a wheel, Desktop and CLI assembled dependencies independently, and the workflow still required Apple/PyPI publication paths. |
-| Static GREEN | Distribution and packaged-file suite: 22 passed before the documentation/source-installer follow-up. Desktop checks, shell syntax, workflow YAML parsing, and diff checks passed. |
+| Static GREEN | Distribution, packaged-file, and Web frontend suite: 35 passed after removing the unverified Linux Desktop target. Desktop and Web checks, shell syntax, Ruff, docs build (507 pages), link check (0 broken), and diff checks passed. |
 | Real macOS arm64 runtime | CPython 3.12.10, locked OpenProgram dependencies, GUI/Research/Wiki pinned commits, Playwright Chromium, EasyOCR English/Chinese data, GPA detector, and all 12 capabilities built successfully. The complete runtime was about 2.5 GB before compression. |
 | Runtime verification | The schema 2 verifier launched a real headless Chromium page, imported channels/search/OCR/PDF dependencies, checked Web assets and model files, and required GUI/Research/Wiki registration. It records the product-manifest hash, `uv.lock` hash, exact installed distributions, platform, and architecture. |
 | Archive and CLI entry | A macOS arm64 archive was checksum-verified, extracted into a new CLI version directory, re-verified, cold-started and stopped a worker, switched `current`, and produced a working `openprogram 0.6.1` launcher. |
-| Workflow state | Release and Linux smoke workflows now build one archive per platform/architecture and pass the same artifact to Desktop and CLI jobs. Apple signing/notarization secrets and PyPI publication were removed. Native runner execution and a new stable tag remain pending. |
+| Native Linux run | GitHub Actions run `31809407776` at `c49596ef` built and verified the complete Linux x86_64 and arm64 runtimes. Both CLI installer jobs passed checksum, extraction, capability verifier, worker cold-start, atomic activation, and version probes. The AppImage job failed during electron-builder's embedded block-map stage after the complete runtime itself passed; no AppImage reached public-entry or Debian 11 verification. |
+| Packaging decision | Linux AppImage build and publication were removed. Linux remains supported through the complete x86_64/arm64 CLI/server archives with Web UI and TUI. No reduced Linux Desktop artifact is offered. |
+| Full local gate | `tests/ --ignore=tests/integration`: 5285 passed, 11 skipped, 1 xfailed, 5 failed. Four deterministic failures are outside this batch (two existing channel HTTP inventory failures, one Research `context` parameter failure, and one browser-agent migration inventory failure). The fifth was a multiprocessing timeout and passed immediately in isolation. |
 | Review | Ponytail full review removed the first-party selection menu and reduced the model to one manifest, one builder, one verifier, and existing shell/workflow entry points. Manual specification review found and fixed unlocked dependency resolution, non-canonical archive roots, missing archive checksum/path validation, Playwright cleanup warnings, and the Research PDF extra. |
-| Incremental commits | Design commit `e2a1b691` and implementation commit `c75099d2` were merged and pushed incrementally; implementation reached `main` in merge `f26edbff`. |
+| Incremental commits | Design commit `e2a1b691`, implementation commit `c75099d2`, and complete-install follow-up `685833cc` were merged and pushed incrementally; the follow-up reached `main` in `c49596ef`. |
 
 ## Prior packaging batch (historical evidence)
 

@@ -22,15 +22,11 @@ def test_desktop_targets_and_embedded_runtime_are_declared() -> None:
         target if isinstance(target, str) else target["target"]
         for target in build["mac"]["target"]
     }
-    linux_targets = {
-        target if isinstance(target, str) else target["target"]
-        for target in build["linux"]["target"]
-    }
     assert {"dmg", "zip"} <= mac_targets
-    assert "AppImage" in linux_targets
+    assert "linux" not in build
+    assert "dist:linux" not in package["scripts"]
     assert {item["to"] for item in build["extraResources"]} >= {"runtime"}
     assert package["desktopName"] == "ai.openprogram.OpenProgram.desktop"
-    assert build["linux"]["syncDesktopName"] is True
 
 
 def test_core_agentic_functions_are_not_excluded_from_wheel() -> None:
@@ -223,21 +219,20 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "scripts/create-release-manifest.py" in workflow
     assert "scripts/smoke-packaged-runtime.sh" in workflow
     assert "sha256" in workflow.lower()
-    assert workflow.count("--publish never") == 2
+    assert workflow.count("--publish never") == 1
+    assert "AppImage" not in workflow
 
 
-def test_linux_smoke_workflow_is_runnable_without_release_credentials() -> None:
+def test_linux_complete_runtime_smoke_is_runnable_without_release_credentials() -> None:
     workflow = (ROOT / ".github" / "workflows" / "linux-release-smoke.yml").read_text(
         encoding="utf-8"
     )
     assert "workflow_dispatch:" in workflow
     assert "environment: release" not in workflow
     assert "ubuntu-24.04-arm" in workflow
-    assert "scripts/smoke-packaged-runtime.sh linux" in workflow
     assert "scripts/install-release.sh" in workflow
-    assert "--publish never" in workflow
-    assert "debian:bullseye-slim" in workflow
-    assert "--network none" in workflow
+    assert "AppImage" not in workflow
+    assert "electron-builder" not in workflow
 
 
 def test_distribution_workflows_use_node24_action_releases() -> None:
@@ -253,15 +248,13 @@ def test_distribution_workflows_use_node24_action_releases() -> None:
         assert "actions/download-artifact@v8" in workflow
 
 
-def test_linux_packaged_smoke_launches_public_appimage_entry() -> None:
+def test_packaged_smoke_rejects_unreleased_linux_desktop() -> None:
     smoke = (ROOT / "scripts" / "smoke-packaged-runtime.sh").read_text(
         encoding="utf-8"
     )
-    assert "APPIMAGE_EXTRACT_AND_RUN=1" in smoke
-    assert '"$appimage"' in smoke
-    assert "app_pid=$!" in smoke
+    assert "AppImage" not in smoke
+    assert "linux)" not in smoke
     assert "python3 -c" not in smoke
-    assert "StartupWMClass=ai.openprogram.OpenProgram" in smoke
 
 
 def test_release_workflow_builds_explicitly_unsigned_macos_artifacts() -> None:
@@ -312,11 +305,15 @@ def test_public_docs_follow_the_release_platform_policy() -> None:
             assert phrase not in contents, f"{path.relative_to(ROOT)}: {phrase}"
 
 
-def test_linux_install_docs_use_the_built_appimage_name() -> None:
-    for relative in ("docs/install/install.md", "docs/install/install.zh.md"):
+def test_linux_install_docs_do_not_claim_a_desktop_artifact() -> None:
+    expectations = {
+        "docs/install/install.md": "no reduced Linux desktop artifact is published",
+        "docs/install/install.zh.md": "不发布精简的 Linux 桌面产物",
+    }
+    for relative, expected in expectations.items():
         contents = (ROOT / relative).read_text(encoding="utf-8")
-        assert "linux-x86_64.AppImage" in contents
-        assert "linux-x64.AppImage" not in contents
+        assert "linux-x86_64.AppImage" not in contents
+        assert expected in contents
 
 
 def test_public_docs_describe_one_complete_release_product() -> None:

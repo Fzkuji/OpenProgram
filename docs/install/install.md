@@ -7,8 +7,8 @@ OpenProgram has separate release installations for desktop users and CLI/server 
 | Platform | Desktop | CLI / Server | Browser client |
 |---|---|---|---|
 | macOS arm64 / x64 | DMG | Supported | Local or remote |
-| Linux x86_64 | AppImage | Supported | Local or remote |
-| Linux arm64 | No desktop artifact | Supported | Local or remote |
+| Linux x86_64 | No published desktop artifact | Supported | Local or remote |
+| Linux arm64 | No published desktop artifact | Supported | Local or remote |
 | Windows | Not supported | Not supported | May connect to a supported remote host |
 | iOS / Android / iPadOS | No native app | Not applicable | May connect to a supported remote host; mobile layout is not a support commitment |
 
@@ -16,7 +16,7 @@ Only artifacts attached to a published [GitHub Release](https://github.com/Fzkuj
 
 ## Desktop installation
 
-Desktop artifacts contain Electron and the complete platform product runtime. The runtime includes managed CPython, OpenProgram, the prebuilt Web UI, providers, channels, search, Playwright Chromium, default OCR/model data, and the GUI, Research, and Wiki first-party Programs. It does not use a system Python, Node.js, or Git at runtime.
+The supported macOS desktop artifact contains Electron and the complete platform product runtime. The runtime includes managed CPython, OpenProgram, the prebuilt Web UI, providers, channels, search, Playwright Chromium, default OCR/model data, and the GUI, Research, and Wiki first-party Programs. It does not use a system Python, Node.js, or Git at runtime. Linux currently uses the complete CLI/server release because the complete AppImage failed its packaging gate; no reduced Linux desktop artifact is published.
 
 ### macOS
 
@@ -25,22 +25,9 @@ Desktop artifacts contain Electron and the complete platform product runtime. Th
 3. Open the DMG and copy `OpenProgram.app` to `/Applications`.
 4. Start OpenProgram from Applications. Because the current release is not signed with Apple Developer ID, macOS may block the first launch. Open **System Settings → Privacy & Security**, find the OpenProgram notice, and select **Open Anyway**. The checksum verifies the downloaded bytes; the app is not Apple-verified.
 
-### Linux x86_64
-
-1. Download the x86_64 AppImage and checksum file from GitHub Releases.
-2. Verify the SHA-256.
-3. Make the file executable and start it:
-
-```bash
-chmod u+x OpenProgram-*-linux-x86_64.AppImage
-./OpenProgram-*-linux-x86_64.AppImage
-```
-
-The AppImage does not require root. A Linux arm64 desktop artifact is not currently published.
-
 ## CLI and server installation
 
-The release installer supports macOS and Linux. It downloads the same complete platform runtime archive used by the corresponding Desktop build, verifies its SHA-256 and capability manifest, and installs it under `~/.openprogram/runtime/cli/releases/<version>`. It does not resolve product dependencies, clone the repository, or build JavaScript on the user's machine.
+The release installer supports macOS and Linux. It downloads the complete platform runtime archive, verifies its SHA-256 and capability manifest, and installs it under `~/.openprogram/runtime/cli/releases/<version>`. On macOS, the same archive is also the Desktop build input. It does not resolve product dependencies, clone the repository, or build JavaScript on the user's machine.
 
 Use the installer from the same immutable release tag as the package version:
 
@@ -64,7 +51,7 @@ The Web UI is served at `http://localhost:18100`. The runtime contains the prebu
 
 ## Included product and additional extensions
 
-GUI Agent, Research Agent, and Wiki Agent are part of every supported Desktop and CLI/server release installation. Their Python dependencies, default OCR data, GPA detector model, and Playwright Chromium are included and require no first-use installation.
+GUI Agent, Research Agent, and Wiki Agent are part of every supported release installation. Their Python dependencies, default OCR data, GPA detector model, and Playwright Chromium are included and require no first-use installation.
 
 Third-party Programs are additional user-selected functionality and are stored separately from the read-only product runtime. Editable first-party Program sources, diagnostics, local frontend builds, and replacement OCR/browser backends are developer additions; they are not required to make a normal installation complete.
 
@@ -84,7 +71,7 @@ This development installer installs the same product capabilities, then adds too
 
 Configuration, sessions, logs, Programs, and caches live under `~/.openprogram`; replacing the desktop application or CLI runtime does not delete them.
 
-- Desktop: remove `OpenProgram.app` or the downloaded AppImage.
+- macOS Desktop: remove `OpenProgram.app`.
 - CLI runtime: remove `~/.local/bin/openprogram` and `~/.openprogram/runtime/cli`.
 - User data is removed only by an explicit purge of `~/.openprogram` after backup.
 

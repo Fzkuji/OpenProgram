@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 # This script creates an editable checkout and builds local assets. It is for
 # contributors and source development, not stable release installation. See
-# docs/install/install.md for DMG, AppImage, and managed CLI installation.
+# docs/install/install.md for the macOS DMG and managed CLI installation.
 # It can still be run straight off the web for a development checkout:
 #   curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash
 # It clones OpenProgram to ~/OpenProgram (override with --target DIR), then

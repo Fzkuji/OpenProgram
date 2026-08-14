@@ -7,7 +7,7 @@
 当前 unsigned macOS 分发不启用桌面自动更新。目前从 GitHub Releases 手动升级：
 
 - macOS：下载与架构匹配且文件名含 `unsigned` 的新 DMG，验证 SHA-256 后替换 `OpenProgram.app`；macOS 可能再次要求通过“隐私与安全性 → 仍要打开”授权。
-- Linux：下载新的 AppImage，验证 SHA-256，增加执行权限并替换旧文件。
+- Linux：从目标不可变 tag 重新执行 release installer。当前不发布 Linux 桌面包。
 
 应用外壳与完整 product runtime 一起替换；`~/.openprogram` 下的状态保持不变。
 
