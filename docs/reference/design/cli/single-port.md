@@ -145,23 +145,17 @@ The backend port is *the* port; web-port knobs are retired:
    fixed-at-build-time port failure class is gone by construction.
 5. Full test suite passes; desktop app repackaged and verified.
 
-## Roadmap context
+## Distribution boundary
 
-Single port is the first of three steps toward a zero-dependency install:
-
-1. **Single port** (this document): the worker serves the frontend; Node
-   becomes build-time only.
-2. **Shell supervises worker**: Electron spawns, watches, and restarts the
-   worker with a real status page, covering first-run bootstrap progress.
-3. **Zero-dependency install via uv**: the packaged app ships Electron, the
-   prebuilt `out/`, and the standalone `uv` binary (~15 MB). First launch
-   runs `uv python install` (python-build-standalone, app-private, never
-   touching the system Python) and `uv sync` from the lockfile; later
-   launches reuse the installed environment. Mirrors
-   (`UV_PYTHON_INSTALL_MIRROR`, a CN PyPI mirror) are required for first-run
-   reliability in China. No PyInstaller.
+Single port makes Node a build-time dependency and lets every release ship a
+prebuilt frontend. The authoritative installation and packaging design is
+[Installation, packaging, release, and upgrade](../distribution/installation-packaging.html).
+The macOS desktop app embeds CPython and the core dependencies inside the
+signed app bundle; it does not download the base Python runtime on first
+launch. CLI/server installs use a uv-managed Python environment, while source
+checkouts retain the development build flow.
 
 ## Appendix: Implementation Status
 
-The design is approved. Steps 2 and 3 of the roadmap build on this one and
-get their own documents.
+The single-port design is implemented. Desktop supervision and distribution
+status are tracked by the installation and packaging design linked above.

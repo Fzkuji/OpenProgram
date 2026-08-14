@@ -11,7 +11,7 @@ openprogram tui      # 直接进入终端聊天（别名：openprogram chat）
 openprogram          # 裸命令会先询问：进终端 UI 还是 Web UI
 ```
 
-macOS / Linux 上的 TUI 是 Node.js（Ink）实现，通过 WebSocket 连接本地 worker（没有在跑会自动拉起）；Windows 上回退到一个较简单的 Rich REPL。会话与 Web UI 共用，见[界面总览](README.md)。
+release CLI 始终包含 Python 终端界面。macOS 和 Linux 的 source development 安装还可以构建 Node.js Ink 界面。两者都通过 WebSocket 连接同一个本地 worker，并与 Web UI 共用会话。Windows release 安装不受支持。
 
 退出：`/quit`，或空闲时快速按两次 `Ctrl-C`。
 
@@ -61,5 +61,3 @@ macOS / Linux 上的 TUI 是 Node.js（Ink）实现，通过 WebSocket 连接本
 另有 `/search`、`/review`、`/diff`、`/init`、`/browser`、`/welcome`。完整清单以 `/help` 输出为准。
 
 除这些内置命令外，补全菜单还会列出统一命令注册表里的全部命令——skill、MCP prompt、插件命令，以及你放在 `~/.openprogram/commands/` 或 `<项目>/.openprogram/commands/` 下的自定义命令文件（markdown，可带 YAML frontmatter）。执行时命令正文展开后作为消息发送，与 Web composer 完全一致：TUI 和 Web UI 读同一张注册表，命令定义一次两边都有。
-
-Windows 的 Rich REPL 走同一张注册表。它的内置集合较小：`/help`、`/web`、`/model`、`/agent`、`/new`、`/copy`、`/tools`、`/skills`、`/programs`、`/apps`、`/mcp`、`/session`、`/login`、`/attach`、`/detach`、`/connections`、`/profile`、`/compact`、`/context`、`/rewind`、`/sandbox`、`/clear`、`/quit`——但 skill / user / project 命令同样可用，`/help` 列出全部。退出也可用 `Ctrl-C` 或 `Ctrl-D`。

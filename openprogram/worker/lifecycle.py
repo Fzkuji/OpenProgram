@@ -227,6 +227,18 @@ def current_worker_pid() -> Optional[int]:
 # start / stop
 
 
+def _detached_worker_command(flags=None) -> list[str]:
+    """Preserve isolation and bytecode policy across the worker re-exec."""
+    active_flags = sys.flags if flags is None else flags
+    command = [sys.executable]
+    if active_flags.isolated:
+        command.append("-I")
+    if active_flags.dont_write_bytecode:
+        command.append("-B")
+    command.extend(["-u", "-m", "openprogram", "worker", "run"])
+    return command
+
+
 def spawn_detached() -> int:
     """Fork a background worker. Returns 0 on success, 1 if already running."""
     existing = current_worker_pid()
@@ -242,7 +254,7 @@ def spawn_detached() -> int:
     log_file = paths.log_path()
     # -u: unbuffered, so 'worker status' shows fresh output immediately.
     # --foreground: re-exec must not loop back through spawn_detached.
-    cmd = [sys.executable, "-u", "-m", "openprogram", "worker", "run"]
+    cmd = _detached_worker_command()
     log = open(log_file, "a", buffering=1, encoding="utf-8")
     log.write(f"\n--- worker starting at {time.ctime()} ---\n")
     log.flush()

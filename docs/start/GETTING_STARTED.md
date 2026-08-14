@@ -4,14 +4,15 @@ This page takes you through five minutes of setup: install, connect an LLM provi
 
 ## Step 1: Install
 
-The one-command install script sets up the Python package, web UI, terminal UI, browser tools, and channels:
+Install the exact released wheel and a managed Python runtime on macOS or Linux:
 
 ```bash
-git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
-./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh \
+  | OPENPROGRAM_VERSION=0.6.1 sh
 ```
 
-Requires Python ≥ 3.11, Node ≥ 20, and git (the script makes a best effort to install what's missing). The script is idempotent — re-run it any time. Agent programs (GUI / Research / Wiki) are not installed by default; pick them in the interactive menu during install, or add them later (see Step 5). Full flags and the dependency matrix: [Install](../install/install.md).
+The installer supplies its own Python and the released wheel supplies the Web UI; Node.js and Git are not runtime requirements. Desktop users use the DMG or AppImage attached to GitHub Releases. Platform scope and development-checkout instructions are in [Install](../install/install.md).
 
 ## Step 2: First run — connect a provider
 
@@ -51,14 +52,14 @@ It sends one message, prints the reply, and exits. Resume an earlier session wit
 
 ## Step 5: Install a ready-made agent program
 
-OpenProgram is the host; agent programs installed into it show up in the web UI and the function list:
+OpenProgram is the host; agent programs installed into a supported Program environment show up in the Web UI and function list:
 
 ```bash
 openprogram programs install research     # or wiki / gui
 openprogram programs available            # check install status
 ```
 
-`research` / `wiki` are pure Python and install quickly; `gui` downloads PyTorch and model weights, which is much larger. After installing, run `openprogram restart` (or hit Refresh on the Programs page) and the program appears in the UI.
+The current Program installer changes its active Python environment and is therefore not supported inside an immutable desktop package. Use it only when the installed release explicitly records Program environment support. After installing, run `openprogram restart` or use Refresh on the Programs page.
 
 ## Next steps
 
