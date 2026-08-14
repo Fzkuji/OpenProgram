@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Shared chrome for /skills, /mcp and /plugins — the three pages that
- * all answer "what extensions do I have, and which are on?".
+ * Shared chrome for OpenProgram management pages such as /skills, /mcp,
+ * /plugins and /scheduler.
  *
  * Before this, each page hand-rolled its own topbar, tab pills, action
  * buttons and list rows; the same 64px bar existed three times with
@@ -35,21 +35,23 @@ export interface ManageAction {
 }
 
 /**
- * The 64px page header: title, optional tab pills, right-aligned
- * actions. All three pages render the same element tree so heights,
- * gaps and button styling can never drift again.
+ * The 64px page header: title, optional tab pills, right-aligned custom
+ * toolbar content and actions. Every consumer renders the same element
+ * tree so heights, gaps and button styling do not drift.
  */
 export function ManagePageHeader({
   title,
   tabs,
   activeTab,
   onTabChange,
+  toolbar,
   actions = [],
 }: {
   title: string;
   tabs?: ManageTab[];
   activeTab?: string;
   onTabChange?: (id: string) => void;
+  toolbar?: ReactNode;
   actions?: ManageAction[];
 }) {
   return (
@@ -69,8 +71,9 @@ export function ManagePageHeader({
           ))}
         </div>
       )}
-      {actions.length > 0 && (
+      {(toolbar || actions.length > 0) && (
         <div className={styles.toolbar}>
+          {toolbar}
           {actions.map((a) => (
             <Button
               key={a.label}
