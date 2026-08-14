@@ -114,6 +114,8 @@ def test_release_installer_is_versioned_and_source_free() -> None:
 
 def test_release_installer_cold_starts_before_switching_current() -> None:
     installer = (ROOT / "scripts" / "install-release.sh").read_text(encoding="utf-8")
+    assert 'probe_home="$release_dir/.probe-home-$$"' in installer
+    assert 'HOME="$probe_home" OPENPROGRAM_WEB_PORT="$probe_port"' in installer
     start = installer.index('"$python_bin" -I -B -m openprogram worker start')
     health = installer.index("/healthz", start)
     stop = installer.index('"$python_bin" -I -B -m openprogram worker stop', health)
