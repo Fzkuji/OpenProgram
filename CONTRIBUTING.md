@@ -79,6 +79,15 @@ public APIs, installation profiles, and current capabilities.
    uv run --locked --extra dev --extra browser python -m pytest -q -m browser tests/e2e/web
    ```
 
+9. Generate the same serial unit coverage report as CI when reviewing test
+   coverage. The report is informational and currently has no failure threshold:
+
+   ```bash
+   uv run --locked --extra dev coverage run --branch --source=openprogram -m pytest -q tests/unit
+   uv run --locked --extra dev coverage report --show-missing
+   uv run --locked --extra dev coverage xml -o coverage.xml
+   ```
+
 External-service tests under `tests/live/` are not part of ordinary pull
 request checks. Run them explicitly only with the required credentials and
 network access.

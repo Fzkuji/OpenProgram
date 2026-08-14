@@ -31,6 +31,7 @@ def test_ci_assigns_each_test_runtime_to_an_explicit_job() -> None:
         "cli",
         "desktop",
         "browser",
+        "coverage",
     } <= set(jobs)
     assert jobs["unit"]["strategy"]["fail-fast"] is False
     assert jobs["unit"]["strategy"]["matrix"]["python-version"] == [
@@ -64,11 +65,32 @@ def test_ci_assigns_each_test_runtime_to_an_explicit_job() -> None:
 
 def test_ci_python_jobs_use_the_checked_lock() -> None:
     jobs = _workflow()["jobs"]
-    for name in ("quality", "unit", "component", "integration", "browser"):
+    for name in (
+        "quality", "unit", "component", "integration", "browser", "coverage",
+    ):
         commands = _run_commands(jobs[name])
         assert "uv sync --locked" in commands, name
         assert "uv run --locked" in commands, name
         assert "pip install" not in commands, name
+
+
+def test_ci_reports_unit_coverage_without_an_unverified_threshold() -> None:
+    workflow = _workflow()
+    coverage = workflow["jobs"]["coverage"]
+    commands = _run_commands(coverage)
+    assert "coverage run --branch --source=openprogram -m pytest -q tests/unit" in commands
+    assert "coverage report --show-missing" in commands
+    assert "coverage xml -o coverage.xml" in commands
+    assert "fail-under" not in commands
+    assert "fail_under" not in (ROOT / "pyproject.toml").read_text()
+    upload_steps = [
+        step for step in coverage["steps"]
+        if isinstance(step, dict) and str(step.get("uses", "")).startswith(
+            "actions/upload-artifact@"
+        )
+    ]
+    assert len(upload_steps) == 1
+    assert upload_steps[0]["with"]["path"] == "coverage.xml"
 
 
 def test_contributor_commands_match_required_ci_entrypoints() -> None:
@@ -84,5 +106,8 @@ def test_contributor_commands_match_required_ci_entrypoints() -> None:
         "npm run build",
         "playwright install --with-deps chromium",
         "-m browser tests/e2e/web",
+        "coverage run --branch --source=openprogram -m pytest -q tests/unit",
+        "coverage report --show-missing",
+        "coverage xml -o coverage.xml",
     ):
         assert command in contributing
