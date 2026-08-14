@@ -11,7 +11,7 @@ Covers (design: agent-collaboration.md §5.3):
   * session-level cancel clears the target's inbox and leaves a system
     notice in each sender session
 
-Fake-worker technique mirrors tests/component/agent/test_async_job.py.
+Fake-worker technique mirrors tests/component/agent/async_job_support.py.
 """
 from __future__ import annotations
 

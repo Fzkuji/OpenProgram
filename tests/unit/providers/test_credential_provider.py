@@ -198,11 +198,13 @@ def test_concurrent_refresh_is_deduped(tmp_path: Path):
     expired = _oauth(access="old", expires_at_ms=0)
     store.add_credential(expired)
     call_count = {"n": 0}
+    refresh_entered = asyncio.Event()
+    release_refresh = asyncio.Event()
 
     async def async_refresh(c):
         call_count["n"] += 1
-        # Simulate a slow refresh so all 10 acquires overlap.
-        await asyncio.sleep(0.05)
+        refresh_entered.set()
+        await release_refresh.wait()
         return Credential(
             provider_id=c.provider_id, account_id=c.account_id,
             kind="oauth", credential_id=c.credential_id,
@@ -221,7 +223,14 @@ def test_concurrent_refresh_is_deduped(tmp_path: Path):
     ))
 
     async def run():
-        return await asyncio.gather(*(m.acquire("openai-codex") for _ in range(10)))
+        tasks = [
+            asyncio.create_task(m.acquire("openai-codex"))
+            for _ in range(10)
+        ]
+        await refresh_entered.wait()
+        await asyncio.sleep(0)
+        release_refresh.set()
+        return await asyncio.gather(*tasks)
 
     results = asyncio.run(run())
     # Every caller got the same result from a single refresh.

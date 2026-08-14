@@ -453,7 +453,7 @@ def test_timeout_kills_long_tool() -> None:
     @function(timeout=0.05)
     async def slow() -> str:
         """Hangs."""
-        await asyncio.sleep(5)
+        await asyncio.Event().wait()
         return "never"
 
     result = _run(slow.execute("c1", {}, None, None))
@@ -488,7 +488,7 @@ def test_governed_async_tool_uses_task_deadline_and_records_activity(
     @function
     async def progress(on_update=None) -> str:
         on_update("working")
-        await asyncio.sleep(1)
+        await asyncio.Event().wait()
         return "late"
 
     result = _run(progress.execute("governed", {}, None, None))

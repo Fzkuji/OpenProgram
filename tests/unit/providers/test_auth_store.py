@@ -272,20 +272,32 @@ def test_async_lock_serializes(tmp_path: Path):
     async def run():
         lock = s.async_lock("p", "d")
         timeline = []
+        first_entered = asyncio.Event()
+        release_first = asyncio.Event()
 
-        async def worker(name: str, hold: float):
+        async def first():
             async with lock:
-                timeline.append(f"enter-{name}")
-                await asyncio.sleep(hold)
-                timeline.append(f"exit-{name}")
+                timeline.append("enter-a")
+                first_entered.set()
+                await release_first.wait()
+                timeline.append("exit-a")
 
-        await asyncio.gather(worker("a", 0.05), worker("b", 0.0))
+        async def second():
+            async with lock:
+                timeline.append("enter-b")
+                timeline.append("exit-b")
+
+        first_task = asyncio.create_task(first())
+        await first_entered.wait()
+        second_task = asyncio.create_task(second())
+        await asyncio.sleep(0)
+        assert timeline == ["enter-a"]
+        release_first.set()
+        await asyncio.gather(first_task, second_task)
         return timeline
 
     timeline = asyncio.run(run())
-    # Whoever entered first completes their exit before the other enters.
-    assert timeline.index("exit-a") < timeline.index("enter-b") or \
-           timeline.index("exit-b") < timeline.index("enter-a")
+    assert timeline == ["enter-a", "exit-a", "enter-b", "exit-b"]
 
 
 # ---- singleton -------------------------------------------------------------

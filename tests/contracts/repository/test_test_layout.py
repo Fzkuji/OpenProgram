@@ -58,6 +58,12 @@ def _unit_dependency_violations(path: Path) -> set[str]:
                 name = f"{owner}.{node.func.attr}"
             if name in {"time.sleep", "threading.Thread"}:
                 violations.add(name)
+            if name == "asyncio.sleep" and (
+                not node.args
+                or not isinstance(node.args[0], ast.Constant)
+                or node.args[0].value != 0
+            ):
+                violations.add(name)
             if name.endswith(".TestClient") or name == "TestClient":
                 violations.add("TestClient")
     return violations
