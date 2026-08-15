@@ -103,8 +103,10 @@ def test_embedding_status_requires_the_model_to_load_locally(monkeypatch):
 def test_embedding_search_never_requests_network_model_loading(
     tmp_path, monkeypatch,
 ):
+    import sys
+    from types import SimpleNamespace
+
     import numpy as np
-    import sentence_transformers
 
     from openprogram.memory.retrieval import embedding, inspect
     from openprogram.memory.retrieval.bm25 import MemoryEvent
@@ -123,7 +125,11 @@ def test_embedding_search_never_requests_network_model_loading(
         headings=["One"], date="2026-08-16", dates=["2026-08-16"],
         content="remember the local model", refs=[],
     )
-    monkeypatch.setattr(sentence_transformers, "SentenceTransformer", FakeEncoder)
+    monkeypatch.setitem(
+        sys.modules,
+        "sentence_transformers",
+        SimpleNamespace(SentenceTransformer=FakeEncoder),
+    )
     monkeypatch.setattr(embedding, "_default_encoder", None)
     monkeypatch.setattr(embedding.MemoryEmbeddingIndex, "_events", lambda _self: [event])
 
