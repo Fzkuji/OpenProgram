@@ -63,7 +63,10 @@ async function main() {
   if (!exactPage) throw new Error("exact Page target was not found");
 
   const context = filteredContext(exactPage.context(), exactPage);
-  const server = await createConnection({}, async () => context);
+  const server = await createConnection(
+    { capabilities: ["core", "vision"] },
+    async () => context,
+  );
   await server.connect(new StdioServerTransport());
 
   const shutdown = async () => {
