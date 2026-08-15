@@ -45,7 +45,12 @@ import {
   subscribeBrowserPrefs,
 } from "@/lib/browser-prefs";
 import { desktopBridge, type DesktopContextMenuItem } from "@/lib/desktop-bridge";
-import { browserResponsiveMenuItems } from "@/lib/browser-layout";
+import {
+  bookmarkFolderActionPrefix,
+  browserActionPrefix,
+  browserResponsiveMenuItems,
+  ownedActionId,
+} from "@/lib/browser-layout";
 import { useTranslation } from "@/lib/i18n";
 import { faviconUrl } from "@/lib/ntp-shortcuts";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
@@ -105,11 +110,11 @@ function runBrowserAction(
 }
 
 export function BrowserMenu({
-  tabId,
+  ownerId,
   actions,
   canGoForward = true,
 }: {
-  tabId: string;
+  ownerId: string;
   actions: BrowserMenuActions;
   canGoForward?: boolean;
 }) {
@@ -127,7 +132,7 @@ export function BrowserMenu({
   const responsive = browserResponsiveMenuItems(paneWidth, {
     forward: Boolean(actions.forward),
   });
-  const actionPrefix = `browsermenu:${tabId}:`;
+  const actionPrefix = browserActionPrefix(ownerId);
 
   useEffect(() => {
     const pane = triggerRef.current?.closest(`.${styles.webPane}`);
@@ -142,8 +147,9 @@ export function BrowserMenu({
   useEffect(() => {
     if (!mainMenu) return;
     return mainMenu.onAction((id) => {
-      if (!id.startsWith(actionPrefix)) return;
-      runBrowserAction(id.slice(actionPrefix.length), router, actionsRef.current);
+      const action = ownedActionId(id, actionPrefix);
+      if (action === null) return;
+      runBrowserAction(action, router, actionsRef.current);
     });
   }, [actionPrefix, mainMenu, router]);
 
@@ -253,7 +259,7 @@ export function BookmarksLibraryButton() {
 
 function folderItems(folder: BookmarkFolder, ownerId: string): DesktopContextMenuItem[] {
   return flattenBookmarks(folder).map((bookmark, index) => ({
-    id: `bookmarkfolder:${ownerId}:${folder.id}:${index}`,
+    id: `${bookmarkFolderActionPrefix(ownerId, folder.id)}${index}`,
     label: bookmark.title || bookmark.url,
   }));
 }
@@ -273,9 +279,9 @@ function BookmarkFolderButton({
   useEffect(() => {
     if (!mainMenu) return;
     return mainMenu.onAction((id) => {
-      const prefix = `bookmarkfolder:${ownerId}:${folder.id}:`;
-      if (!id.startsWith(prefix)) return;
-      const bookmark = bookmarks[Number(id.slice(prefix.length))];
+      const action = ownedActionId(id, bookmarkFolderActionPrefix(ownerId, folder.id));
+      if (action === null) return;
+      const bookmark = bookmarks[Number(action)];
       if (bookmark) onNavigate(bookmark.url);
     });
   }, [bookmarks, folder.id, mainMenu, onNavigate, ownerId]);
@@ -292,7 +298,7 @@ function BookmarkFolderButton({
             theme: document.documentElement.dataset.theme as "light" | "dark" | undefined,
             items: folderItems(folder, ownerId).length > 0
               ? folderItems(folder, ownerId)
-              : [{ id: `bookmarkfolder:${ownerId}:${folder.id}:empty`, label: "Empty folder", disabled: true }],
+              : [{ id: `${bookmarkFolderActionPrefix(ownerId, folder.id)}empty`, label: "Empty folder", disabled: true }],
           });
         }}
         title={folder.title}
@@ -343,7 +349,7 @@ function BookmarkLeafButton({ node, onNavigate }: { node: Extract<BookmarkNode, 
   );
 }
 
-export function BookmarkBar({ tabId, onNavigate }: { tabId: string; onNavigate(url: string): void }) {
+export function BookmarkBar({ ownerId, onNavigate }: { ownerId: string; onNavigate(url: string): void }) {
   const { text } = useTranslation();
   const visible = useBookmarksBarPreference();
   const [nodes, setNodes] = useState(() => readBookmarkTree().children);
@@ -356,7 +362,7 @@ export function BookmarkBar({ tabId, onNavigate }: { tabId: string; onNavigate(u
     <div className={styles.bookmarkBar} aria-label={text("Bookmarks bar", "书签栏")}>
       <div className={styles.bookmarkBarItems}>
         {nodes.map((node) => node.kind === "folder" ? (
-          <BookmarkFolderButton key={node.id} folder={node} ownerId={tabId} onNavigate={onNavigate} />
+          <BookmarkFolderButton key={node.id} folder={node} ownerId={ownerId} onNavigate={onNavigate} />
         ) : (
           <BookmarkLeafButton key={node.id} node={node} onNavigate={onNavigate} />
         ))}

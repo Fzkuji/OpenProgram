@@ -48,14 +48,15 @@ assert.match(browserPrefs, /SHOW_BOOKMARKS_BAR_KEY/);
 assert.match(browserPrefs, /BROWSER_IMPORT_PROMPT_FINISHED_KEY/);
 assert.match(browserControls, /function BrowserMenu/);
 assert.match(browserControls, /function BookmarkBar/);
-assert.match(browserControls, /actionPrefix = `browsermenu:\$\{tabId\}:/);
-assert.match(browserControls, /bookmarkfolder:\$\{ownerId\}:/);
+assert.match(webTabPane, /const menuOwnerId = useId\(\)/);
+assert.match(browserControls, /browserActionPrefix\(ownerId\)/);
+assert.match(browserControls, /bookmarkFolderActionPrefix\(ownerId, folder\.id\)/);
 assert.match(browserControls, /anchor: \{ right: rect\.right, y: rect\.bottom \+ 4, align: "end"/);
 assert.doesNotMatch(webTabPane, /SplitButton|Open split view|Columns2/);
 assert.match(webTabPane, /goBack\(tabId\)[\s\S]*className=\{`\$\{styles\.webToolbarBtn\} \$\{styles\.webToolbarForward\}`\}[\s\S]*goForward\(tabId\)/);
 assert.match(webTabPane, /function BookmarkButton[\s\S]*className=\{styles\.webToolbarBtn\}/);
 assert.match(webTabPane, /function HomeButton[\s\S]*styles\.webToolbarMedium/);
-assert.match(webTabPane, /<BookmarkBar tabId=\{tabId\}/);
+assert.match(webTabPane, /<BookmarkBar ownerId=\{menuOwnerId\}/);
 assert.match(browserControls, /Show bookmarks bar/);
 assert.match(browserControls, /Clear browsing data/);
 assert.match(browserControls, /Browser settings/);
@@ -135,6 +136,17 @@ assert.deepEqual(browserLayout.browserResponsiveMenuItems(500, { forward: false 
   forward: false,
   openExternal: true,
 });
+const sensitiveTabId = "w:https://example.test/path?token=SECRET#fragment";
+const browserOwnerA = browserLayout.browserActionPrefix("pane-a");
+const browserOwnerB = browserLayout.browserActionPrefix("pane-b");
+assert.equal(browserOwnerA.includes(sensitiveTabId), false);
+assert.equal(browserLayout.ownedActionId(`${browserOwnerA}history`, browserOwnerA), "history");
+assert.equal(browserLayout.ownedActionId(`${browserOwnerB}history`, browserOwnerA), null);
+const folderOwnerA = browserLayout.bookmarkFolderActionPrefix("pane-a", "folder-1");
+const folderOwnerB = browserLayout.bookmarkFolderActionPrefix("pane-b", "folder-1");
+assert.equal(folderOwnerA.includes(sensitiveTabId), false);
+assert.equal(browserLayout.ownedActionId(`${folderOwnerA}0`, folderOwnerA), "0");
+assert.equal(browserLayout.ownedActionId(`${folderOwnerB}0`, folderOwnerA), null);
 
 const historyGroupsCompiled = ts.transpileModule(historyGroupsSource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },

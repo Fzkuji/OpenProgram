@@ -21,7 +21,7 @@
  *    open-externally escape hatch stays always visible. No
  *    back/forward buttons: iframe history is unreliable cross-origin.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, ExternalLink, House, RotateCw, Star, X } from "lucide-react";
 
 import {
@@ -50,10 +50,11 @@ export function WebTabPane({ tabId, url }: { tabId: string; url: string }) {
   // ran or it didn't), so branching in render is stable. Web tabs
   // never server-render (the tabs store is empty during SSR).
   const bridge = desktopBridge();
+  const menuOwnerId = useId();
   if (bridge) {
-    return <DesktopWebTabPane bridge={bridge} tabId={tabId} url={url} />;
+    return <DesktopWebTabPane bridge={bridge} tabId={tabId} url={url} menuOwnerId={menuOwnerId} />;
   }
-  return <IframeWebTabPane tabId={tabId} url={url} />;
+  return <IframeWebTabPane tabId={tabId} url={url} menuOwnerId={menuOwnerId} />;
 }
 
 function BookmarkButton({ url, title }: { url: string; title: string }) {
@@ -102,10 +103,12 @@ function DesktopWebTabPane({
   bridge,
   tabId,
   url,
+  menuOwnerId,
 }: {
   bridge: DesktopBridge;
   tabId: string;
   url: string;
+  menuOwnerId: string;
 }) {
   const { text } = useTranslation();
   const updateWebTab = useCenterTabs((s) => s.updateWebTab);
@@ -299,7 +302,7 @@ function DesktopWebTabPane({
           <ExternalLink size={14} />
         </button>
         <BrowserMenu
-          tabId={tabId}
+          ownerId={menuOwnerId}
           actions={{
             home: () => useCenterTabs.getState().replaceWebTabWithNewTabPage(tabId),
             forward: () => bridge.webTab.goForward(tabId),
@@ -308,7 +311,7 @@ function DesktopWebTabPane({
           canGoForward={canGoForward}
         />
       </div>
-      <BookmarkBar tabId={tabId} onNavigate={navigateTo} />
+      <BookmarkBar ownerId={menuOwnerId} onNavigate={navigateTo} />
       {/* Empty body — the native view is drawn here by the main
           process at the bounds reported above. */}
       <div ref={bodyRef} className={styles.webFrame} />
@@ -318,7 +321,7 @@ function DesktopWebTabPane({
 
 /* ---- Browser fallback: sandboxed iframe ---------------------------- */
 
-function IframeWebTabPane({ tabId, url }: { tabId: string; url: string }) {
+function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: string; menuOwnerId: string }) {
   const { text } = useTranslation();
   const updateWebTab = useCenterTabs((s) => s.updateWebTab);
   const title = useCenterTabs((s) => s.tabs.find((tab) => tab.id === tabId)?.title || url);
@@ -389,14 +392,14 @@ function IframeWebTabPane({ tabId, url }: { tabId: string; url: string }) {
           <ExternalLink size={14} />
         </button>
         <BrowserMenu
-          tabId={tabId}
+          ownerId={menuOwnerId}
           actions={{
             home: () => useCenterTabs.getState().replaceWebTabWithNewTabPage(tabId),
             openExternal,
           }}
         />
       </div>
-      <BookmarkBar tabId={tabId} onNavigate={navigateTo} />
+      <BookmarkBar ownerId={menuOwnerId} onNavigate={navigateTo} />
       {url.startsWith("file:") ? (
         /* Browsers silently block file:// in iframes — say so instead of
            showing a blank frame. */
