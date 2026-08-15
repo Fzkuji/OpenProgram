@@ -316,7 +316,7 @@ printf '<html>docs</html>\\n' > "$PWD/docs/_site/index.html"
         text=True,
     )
     assert uv_log.read_text(encoding="utf-8").strip() == (
-        "run --locked --with markdown-it-py --with mdit-py-plugins "
+        "run --isolated --locked --with markdown-it-py --with mdit-py-plugins "
         "--with pygments python -m tools.docs_site.build"
     )
 
