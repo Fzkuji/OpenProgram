@@ -49,10 +49,22 @@ assert.equal(
   3,
   "the three non-browser launchers must use the same icon container as Browser",
 );
-for (const tone of ["files", "chat", "terminal"]) {
-  assert.match(launcher, new RegExp(`data-tone="${tone}"`));
-  assert.match(centerTabsCss, new RegExp(`\\.ntpGlyph\\[data-tone="${tone}"\\]`));
+for (const [tone, icon, primary, secondary] of [
+  ["files", "FileText", "var\\(--meter-fill\\)", "var\\(--accent-cyan\\)"],
+  ["chat", "MessageCirclePlus", "var\\(--accent-green\\)", "var\\(--accent-cyan\\)"],
+  ["terminal", "TerminalSquare", "var\\(--accent-purple\\)", "var\\(--meter-fill\\)"],
+]) {
+  assert.match(
+    launcher,
+    new RegExp(`data-tone="${tone}"[^>]*>[\\s\\S]*?<${icon} size=\\{11\\} strokeWidth=\\{2\\.1\\}`),
+  );
+  assert.match(
+    centerTabsCss,
+    new RegExp(`\\.ntpGlyph\\[data-tone="${tone}"\\] \\{[^}]*--glyph-primary: ${primary};[^}]*--glyph-secondary: ${secondary};`),
+  );
 }
+assert.match(launcher, /<BrowserGlyph size=\{18\} \/>/);
+assert.match(centerTabsCss, /\.ntpGlyph \{[^}]*width: 18px;[^}]*height: 18px;/s);
 assert.match(
   centerTabsCss,
   /\.browserGlyph,\s*\.ntpGlyph\s*\{[^}]*--glyph-primary:[^}]*--glyph-secondary:[^}]*border:[^}]*linear-gradient/s,
