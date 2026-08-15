@@ -282,9 +282,6 @@ class OfficialMCPPageBackend:
     def act(self, session, arguments: Mapping[str, Any]):
         controller = self._controller(session)
         frame_id = str(arguments.get("expected_frame_id") or "")
-        stale = controller._require_fresh(frame_id)
-        if stale is not None:
-            return stale
         action = str(arguments.get("action") or "")
         if action == "screenshot":
             return controller.execute(

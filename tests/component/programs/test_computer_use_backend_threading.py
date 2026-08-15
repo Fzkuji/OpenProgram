@@ -84,3 +84,48 @@ def test_chrome_backend_marker_stays_on_playwright_owner_thread(monkeypatch):
         assert session.state["upstream_page"] == 7
     finally:
         adapter.close(session)
+
+
+def test_official_backend_action_uses_controller_thread_boundary():
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSession,
+    )
+    from openprogram.programs.agentic_functions.browser_agent.mcp_backends import (
+        OfficialMCPPageBackend,
+    )
+
+    class Controller:
+        def _require_fresh(self, _frame_id):
+            raise AssertionError("private freshness check escaped owner boundary")
+
+        def prepare_external_action(self, arguments):
+            assert arguments["expected_frame_id"] == "frame-1"
+            return None
+
+        def record_external_mutation(self, detail):
+            return {"ok": True, "detail": detail, "observe_required": True}
+
+    class Client:
+        def call(self, name, arguments):
+            assert name == "browser_navigate"
+            assert arguments == {"url": "https://example.com"}
+            return SimpleNamespace(content=[], structuredContent={})
+
+    controller = Controller()
+    adapter = OfficialMCPPageBackend("playwright_mcp", lambda: controller)
+    session = ComputerUseSession(
+        id="cs-action-thread",
+        backend="playwright_mcp",
+        binding_id="binding-1",
+        controller=controller,
+    )
+    session.state["mcp_client"] = Client()
+
+    result = adapter.act(session, {
+        "action": "navigate",
+        "url": "https://example.com",
+        "expected_frame_id": "frame-1",
+    })
+
+    assert result["ok"] is True
+    assert result["observe_required"] is True
