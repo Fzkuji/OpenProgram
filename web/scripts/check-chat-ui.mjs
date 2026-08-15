@@ -24,6 +24,7 @@ const queuedMessages = source("components/chat/messages/queued-messages.tsx");
 const runtimeBlock = source("components/chat/messages/runtime-block.tsx");
 const attachCard = source("components/chat/messages/attach-card.tsx");
 const executionStrip = source("components/chat/messages/execution-strip.tsx");
+const executionCss = source("app/styles/chat/execution-strip.css");
 const runtimeHelpers = source("lib/runtime-bridge/helpers.ts");
 const markdownRenderer = source("lib/runtime-bridge/markdown-render.ts");
 const chatVisualSpec = source("../docs/reference/design/ui/chat-turn-visual-spec.html");
@@ -806,6 +807,11 @@ assert.match(
   chatCss,
   /@media\s*\(hover:\s*none\)[\s\S]*\.message \.message-actions,[\s\S]*\.attach-card \.message-actions[\s\S]*opacity:\s*1/,
   "touch devices must expose timestamps without relying on hover",
+);
+assert.match(
+  executionCss,
+  /@media\s*\(hover:\s*none\)[\s\S]*\.runtime-card-host \.message-actions,[\s\S]*\.tl-step-act[\s\S]*opacity:\s*1/,
+  "touch devices must also expose top-level runtime and sub-agent timestamps",
 );
 assert.match(
   assistantBubble,
