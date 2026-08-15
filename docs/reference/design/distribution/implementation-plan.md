@@ -44,7 +44,9 @@ duplicated in this historical distribution ledger.
   profile aligned with built-in macOS Apps, all ten legacy representations, and
   an ICNS round trip; transaction fault injection preserves `previous.app`; launchd tests
   cover loaded, stale, and unload-failure states; a corrupt assembled runtime is
-  rejected before installation. After reviews, one real `npm run dist` replaces
+  rejected before installation. The runtime verifier also requires the installed
+  OpenProgram package metadata to equal the runtime manifest version. After
+  reviews, one real `npm run dist` replaces
   the installed App, Launch Services is refreshed, and Finder/Launchpad output is
   inspected.
 - Exclusions: no Developer ID signing, notarization, Windows package, new icon
@@ -56,8 +58,9 @@ duplicated in this historical distribution ledger.
 - Installed acceptance (2026-08-16): one complete `npm run dist` build passed
   the runtime and packaged-App smokes, then atomically replaced
   `/Applications/OpenProgram.app`. The installed bundle reports version 0.6.6
-  and identifier `ai.openprogram.desktop`; its ICNS SHA-256 matches the
-  generated source asset. The default worker runs the bundle's CPython 3.12.10
+  and identifier `ai.openprogram.desktop`; the runtime manifest, CLI version,
+  and installed Python distribution metadata all report 0.6.6, and its ICNS
+  SHA-256 matches the generated source asset. The default worker runs the bundle's CPython 3.12.10
   and `/healthz` reports `ok`. Launch Services reports the canonical 0.6.6 App,
   the Launchpad database contains its application item, and the visible Dock
   icon has the same footprint and corner profile as adjacent macOS Apps.
