@@ -230,6 +230,11 @@ fi
 
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$target_app/Contents/Info.plist")"
 if [[ -z "$install_root" ]]; then
+  launch_services_register="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+  if [[ ! -x "$launch_services_register" ]] || ! "$launch_services_register" -f "$target_app"; then
+    printf 'OpenProgram was installed but Launch Services registration failed\n' >&2
+    exit 1
+  fi
   installed_python="$(app_runtime_python "$target_app")"
   if [[ "$launchd_was_installed" == 1 ]]; then
     "$installed_python" -I -B -m openprogram worker install >/dev/null

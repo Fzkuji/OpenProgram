@@ -75,6 +75,7 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     assert 'target_app="$applications_dir/OpenProgram.app"' in installer_text
     assert 'open "$target_app"' in installer_text
     assert 'open "$source_app"' not in installer_text
+    assert '"$launch_services_register" -f "$target_app"' in installer_text
     assert 'openprogram worker stop' in installer_text
     assert 'openprogram worker uninstall' in installer_text
     assert 'openprogram worker install' in installer_text
