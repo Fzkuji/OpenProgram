@@ -133,6 +133,11 @@ fi
 printf '%s\n' "$revision" > \
   "$app_path/Contents/Resources/openprogram-source-revision"
 
+# A KeepAlive launchd service can restart the worker while the wheel is still
+# being replaced. Stop that interim process after installation so the next
+# worker necessarily imports the refreshed runtime.
+"$local_python" -m openprogram worker stop >/dev/null 2>&1
+
 for _ in {1..50}; do
   curl -fsS http://127.0.0.1:18100/healthz >/dev/null 2>&1 && break
   "$local_python" -m openprogram worker start >/dev/null 2>&1 || true

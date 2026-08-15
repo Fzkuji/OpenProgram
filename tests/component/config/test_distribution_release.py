@@ -241,6 +241,29 @@ def test_desktop_runtime_removes_absolute_python_aliases() -> None:
     assert 'unlink "$python_alias"' in staging
 
 
+def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
+    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+        encoding="utf-8"
+    )
+    install = refresh.index('"$app_python" -I -m pip install')
+    stops = [
+        match.start()
+        for match in re.finditer(
+            r'"\$local_python" -m openprogram worker stop', refresh
+        )
+    ]
+    health = refresh.index(
+        'curl -fsS http://127.0.0.1:18100/healthz', install
+    )
+    assert any(install < stop < health for stop in stops)
+    final_window = refresh[install:health]
+    assert (
+        '"$local_python" -m openprogram worker stop >/dev/null 2>&1\n'
+        in final_window
+    )
+    assert "worker stop >/dev/null 2>&1 || true" not in final_window
+
+
 def test_release_frontend_staging_removes_stale_export_before_build() -> None:
     staging = (ROOT / "scripts" / "stage-release-assets.sh").read_text(
         encoding="utf-8"
