@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="OpenProgram">
   <defs>
-    <linearGradient id="op-background" x1="176" y1="132" x2="856" y2="900" gradientUnits="userSpaceOnUse">
+    <linearGradient id="op-background-gradient" x1="176" y1="132" x2="856" y2="900" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#29374D"/>
       <stop offset="0.52" stop-color="#19243A"/>
       <stop offset="1" stop-color="#101622"/>
@@ -31,13 +31,6 @@
       <stop offset="0.52" stop-color="#7283DE"/>
       <stop offset="1" stop-color="#5059B8"/>
     </linearGradient>
-    <linearGradient id="op-rim-light" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
-      <stop offset="0.28" stop-color="#FFFFFF" stop-opacity="0.06"/>
-      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0"/>
-      <stop offset="0.88" stop-color="#000000" stop-opacity="0"/>
-      <stop offset="1" stop-color="#000000" stop-opacity="0.18"/>
-    </linearGradient>
     <linearGradient id="op-top-sheen" x1="400" y1="100" x2="560" y2="560" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.07"/>
       <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
@@ -45,20 +38,10 @@
     <clipPath id="op-mark-interior">
       <circle cx="512" cy="512" r="228"/>
     </clipPath>
-    <clipPath id="op-squircle-clip">
-      <path d="M512 72C752 72 842 72 897 127C952 182 952 272 952 512C952 752 952 842 897 897C842 952 752 952 512 952C272 952 182 952 127 897C72 842 72 752 72 512C72 272 72 182 127 127C182 72 272 72 512 72Z"/>
-    </clipPath>
   </defs>
 
-  <path
-    id="op-squircle"
-    d="M512 72C752 72 842 72 897 127C952 182 952 272 952 512C952 752 952 842 897 897C842 952 752 952 512 952C272 952 182 952 127 897C72 842 72 752 72 512C72 272 72 182 127 127C182 72 272 72 512 72Z"
-    fill="url(#op-background)"
-  />
-  <path
-    d="M512 72C752 72 842 72 897 127C952 182 952 272 952 512C952 752 952 842 897 897C842 952 752 952 512 952C272 952 182 952 127 897C72 842 72 752 72 512C72 272 72 182 127 127C182 72 272 72 512 72Z"
-    fill="url(#op-background-light)"
-  />
+  <rect id="op-icon-background" width="1024" height="1024" fill="url(#op-background-gradient)"/>
+  <rect width="1024" height="1024" fill="url(#op-background-light)"/>
 
   <circle cx="512" cy="512" r="252" fill="none" stroke="url(#op-ring)" stroke-width="44"/>
   <g clip-path="url(#op-mark-interior)">
@@ -67,16 +50,5 @@
     <circle id="op-node-c" cx="456" cy="650" r="44" fill="url(#op-node-indigo)" stroke="#E0E5FF" stroke-opacity="0.16" stroke-width="6"/>
   </g>
 
-  <g clip-path="url(#op-squircle-clip)">
-    <path
-      d="M512 72C752 72 842 72 897 127C952 182 952 272 952 512C952 752 952 842 897 897C842 952 752 952 512 952C272 952 182 952 127 897C72 842 72 752 72 512C72 272 72 182 127 127C182 72 272 72 512 72Z"
-      fill="url(#op-top-sheen)"
-    />
-    <path
-      d="M512 72C752 72 842 72 897 127C952 182 952 272 952 512C952 752 952 842 897 897C842 952 752 952 512 952C272 952 182 952 127 897C72 842 72 752 72 512C72 272 72 182 127 127C182 72 272 72 512 72Z"
-      fill="none"
-      stroke="url(#op-rim-light)"
-      stroke-width="10"
-    />
-  </g>
+  <rect width="1024" height="1024" fill="url(#op-top-sheen)"/>
 </svg>

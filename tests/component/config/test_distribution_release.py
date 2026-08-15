@@ -88,9 +88,14 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     assert wait_index < installer_text.index('open "$target_app"', wait_index)
     assert 'mktemp -d "${TMPDIR:-/tmp}/openprogram-app-package.XXXXXX"' in packager
     assert '"$builder" --dir --mac --publish never' in packager
+    smoke = 'bash "$repo_root/scripts/smoke-packaged-runtime.sh" mac "$package_dir"'
+    assert smoke in packager
     assert 'env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"' in packager
+    assert packager.index(smoke) < packager.index(
+        'env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"'
+    )
     assert 'mkdir "$lock_dir"' in packager
-    assert 'rm -rf "$work_dir" "$runtime_dir" "$python_build_dir" "$lock_dir"' in packager
+    assert '"$web_build_dir" "$web_output_dir" "$frontend_stage_dir" "$lock_dir"' in packager
     assert 'rm -rf "$repo_root/build"' in (
         ROOT / "scripts" / "build-product-runtime.sh"
     ).read_text(encoding="utf-8")
@@ -111,6 +116,7 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     subprocess.run(["bash", str(installer), str(second)], check=True, env=env)
     with (target / "Contents" / "Info.plist").open("rb") as stream:
         assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
+
     applications = target.parent
     assert sorted(path.name for path in applications.glob("*.app")) == ["OpenProgram.app"]
     assert not list(applications.glob(".openprogram-app-install.*"))
@@ -128,6 +134,59 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     assert failed.returncode != 0
     with (target / "Contents" / "Info.plist").open("rb") as stream:
         assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
+
+
+def test_local_desktop_install_preserves_recovery_copy_when_restore_fails(
+    tmp_path: Path,
+) -> None:
+    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    original = _fake_desktop_app(tmp_path / "original", "0.6.2")
+    subprocess.run(["bash", str(installer), str(original)], check=True, env=env)
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    move_count = tmp_path / "move-count"
+    fake_mv = fake_bin / "mv"
+    fake_mv.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'count="$(cat "$FAKE_MV_COUNT" 2>/dev/null || printf 0)"\n'
+        'count="$((count + 1))"\n'
+        'printf "%s\\n" "$count" >"$FAKE_MV_COUNT"\n'
+        'if [ "$count" -ge 2 ]; then exit 73; fi\n'
+        'exec /bin/mv "$@"\n',
+        encoding="utf-8",
+    )
+    fake_mv.chmod(0o755)
+    replacement = _fake_desktop_app(tmp_path / "replacement", "0.6.4")
+    failed_restore_env = env | {
+        "PATH": f"{fake_bin}:{env['PATH']}",
+        "FAKE_MV_COUNT": str(move_count),
+    }
+    failed_restore = subprocess.run(
+        ["bash", str(installer), str(replacement)],
+        check=False,
+        env=failed_restore_env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert failed_restore.returncode != 0
+    assert not target.exists()
+    recovery_dirs = list(target.parent.glob(".openprogram-app-install.*"))
+    assert len(recovery_dirs) == 1
+    recovered_app = recovery_dirs[0] / "previous.app"
+    with (recovered_app / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
+    assert str(recovered_app) in failed_restore.stderr
 
 
 def test_launchd_replacement_unloads_keepalive_before_stopping_worker(
@@ -152,7 +211,83 @@ def test_launchd_replacement_unloads_keepalive_before_stopping_worker(
     )
 
     assert launchd.install() == 0
-    assert events == ["launchctl:unload", "stop", "launchctl:load"]
+    assert events == ["launchctl:list", "launchctl:unload", "stop", "launchctl:load"]
+
+
+def test_launchd_replaces_an_unloaded_stale_plist(tmp_path: Path, monkeypatch) -> None:
+    from openprogram.worker.services import launchd
+    from openprogram.worker import lifecycle
+
+    plist_path = tmp_path / "ai.openprogram.worker.plist"
+    plist_path.write_bytes(plistlib.dumps({"Label": launchd.LABEL}))
+    events: list[str] = []
+
+    def fake_launchctl(*args: str) -> tuple[int, str]:
+        events.append(f"launchctl:{args[0]}")
+        if args[0] == "list":
+            return 113, f'Could not find service "{launchd.LABEL}"'
+        return 0, ""
+
+    monkeypatch.setattr(launchd, "_plist_path", lambda: plist_path)
+    monkeypatch.setattr(launchd, "_launchctl", fake_launchctl)
+    monkeypatch.setattr(lifecycle, "current_worker_pid", lambda: None)
+
+    assert launchd.install() == 0
+    assert events == ["launchctl:list", "launchctl:load"]
+    assert plist_path.is_file()
+
+
+def test_launchd_unload_failure_preserves_the_service_plist(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from openprogram.worker.services import launchd
+
+    plist_path = tmp_path / "ai.openprogram.worker.plist"
+    original = plistlib.dumps({"Label": launchd.LABEL})
+    plist_path.write_bytes(original)
+
+    def fake_launchctl(*args: str) -> tuple[int, str]:
+        if args[0] == "list":
+            return 0, "loaded"
+        return 5, "synthetic unload failure"
+
+    monkeypatch.setattr(launchd, "_plist_path", lambda: plist_path)
+    monkeypatch.setattr(launchd, "_launchctl", fake_launchctl)
+
+    assert launchd.uninstall() == 5
+    assert plist_path.read_bytes() == original
+
+
+def test_packaged_runtime_smoke_rejects_an_incomplete_app_before_install(
+    tmp_path: Path,
+) -> None:
+    install_root = tmp_path / "installed"
+    current = _fake_desktop_app(install_root / "Applications", "0.6.2")
+    package_dir = tmp_path / "package"
+    _fake_desktop_app(package_dir, "0.6.3")
+
+    failed = subprocess.run(
+        [
+            "bash",
+            str(ROOT / "scripts" / "smoke-packaged-runtime.sh"),
+            "mac",
+            str(package_dir),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert failed.returncode != 0
+    with (current / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
+
+
+def test_macos_icon_source_leaves_canvas_masking_to_the_system() -> None:
+    source = (ROOT / "desktop" / "build" / "icon.svg").read_text(encoding="utf-8")
+    assert 'id="op-icon-background" width="1024" height="1024"' in source
+    assert "op-squircle" not in source
+    assert "squircle-clip" not in source
 
 
 def test_launchd_worker_preserves_packaged_python_flags(monkeypatch) -> None:

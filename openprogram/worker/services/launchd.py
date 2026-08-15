@@ -61,6 +61,15 @@ def _launchctl(*args: str) -> tuple[int, str]:
     return out.returncode, (out.stdout + out.stderr).strip()
 
 
+def _loaded_state() -> tuple[bool | None, int, str]:
+    rc, msg = _launchctl("list", LABEL)
+    if rc == 0:
+        return True, rc, msg
+    if rc == 113 or "could not find service" in msg.lower():
+        return False, rc, msg
+    return None, rc, msg
+
+
 def install() -> int:
     plist_file = _plist_path()
     plist_file.parent.mkdir(parents=True, exist_ok=True)
@@ -68,10 +77,15 @@ def install() -> int:
     # Disable KeepAlive before stopping the worker. Stopping first lets the
     # old job immediately spawn another process before launchctl is unloaded.
     if plist_file.exists():
-        rc, msg = _launchctl("unload", str(plist_file))
-        if rc != 0:
-            print(f"launchctl unload failed (rc={rc}): {msg}")
-            return rc
+        loaded, rc, msg = _loaded_state()
+        if loaded is None:
+            print(f"launchctl status failed (rc={rc}): {msg}")
+            return rc or 1
+        if loaded:
+            rc, msg = _launchctl("unload", str(plist_file))
+            if rc != 0:
+                print(f"launchctl unload failed (rc={rc}): {msg}")
+                return rc
 
     from openprogram.worker.lifecycle import current_worker_pid, stop_worker
     if current_worker_pid() is not None and stop_worker() != 0:
@@ -99,10 +113,15 @@ def uninstall() -> int:
     if not plist_file.exists():
         print(f"openprogram worker: no launchd service installed at {plist_file}.")
         return 0
-    rc, msg = _launchctl("unload", "-w", str(plist_file))
-    if rc != 0:
-        print(f"launchctl unload failed (rc={rc}): {msg}")
-        # Continue and remove the plist file anyway — the user wants it gone.
+    loaded, rc, msg = _loaded_state()
+    if loaded is None:
+        print(f"launchctl status failed (rc={rc}): {msg}")
+        return rc or 1
+    if loaded:
+        rc, msg = _launchctl("unload", "-w", str(plist_file))
+        if rc != 0:
+            print(f"launchctl unload failed (rc={rc}): {msg}")
+            return rc
     try:
         plist_file.unlink()
     except OSError as e:

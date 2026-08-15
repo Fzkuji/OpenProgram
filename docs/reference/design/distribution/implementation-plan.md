@@ -8,6 +8,42 @@ and release-visible acceptance are maintained together in
 `docs/reference/design/distribution/automatic-updates.html`. They are not
 duplicated in this historical distribution ledger.
 
+## Local canonical App and Apple icon batch
+
+- Base commit: `9477273e`.
+- Public entry: `cd desktop && npm run dist` builds one complete temporary
+  `OpenProgram.app`, verifies it, and replaces only
+  `/Applications/OpenProgram.app`.
+- Icon contract: `desktop/build/icon.svg` is a deterministic 1024 x 1024 square
+  source whose opaque background covers the canvas. It contains no exported
+  canvas mask, rounded outer path, or transparent margin; macOS applies the
+  platform icon mask. The brand ring and three nodes remain unchanged.
+- Transaction contract: a failed activation never deletes the old App's only
+  recoverable copy. A genuine launchd unload failure stops before App mutation;
+  an unloaded stale plist can be replaced. The assembled App passes the existing
+  complete packaged-runtime smoke before installation.
+- Cleanup boundary: packaging removes its random App directory, staged runtime,
+  Python wheel build, generated Web build/output, copied Web frontend, and lock.
+  Installed App data, source files, package dependencies, and user state are not
+  removed.
+- Production files: `desktop/build/icon.svg`, generated icon assets,
+  `desktop/scripts/check-icon.sh`, `desktop/scripts/package-and-install-app.sh`,
+  `desktop/scripts/install-app.sh`, and
+  `openprogram/worker/services/launchd.py`.
+- Acceptance: the icon gate requires full-canvas alpha bounds and opaque
+  corners; transaction fault injection preserves `previous.app`; launchd tests
+  cover loaded, stale, and unload-failure states; a corrupt assembled runtime is
+  rejected before installation. After reviews, one real `npm run dist` replaces
+  the installed App, Launch Services is refreshed, and Finder/Launchpad output is
+  inspected.
+- Exclusions: no Developer ID signing, notarization, Windows package, new icon
+  dependency, second installed App, or generated-image model.
+- Gate manifest: focused distribution tests, Desktop checks, icon generation and
+  round-trip check, packaged-runtime smoke, documentation build/link check,
+  Ruff, shell syntax, diff check, independent specification review, and fresh
+  independent quality review.
+- Status: implementation pending.
+
 ## Release gate repair for v0.6.1
 
 - Removed four unreferenced legacy Channel modules after the implementations had moved under `openprogram/channels/implementations/`; the runtime HTTP inventory now scans only active Channel code.

@@ -7,6 +7,9 @@ repo_root="$(cd -- "$desktop_dir/.." && pwd)"
 builder="$desktop_dir/node_modules/.bin/electron-builder"
 runtime_dir="$desktop_dir/build/runtime"
 python_build_dir="$repo_root/build"
+web_build_dir="$repo_root/web/.next"
+web_output_dir="$repo_root/web/out"
+frontend_stage_dir="$repo_root/openprogram/webui/_frontend"
 lock_dir="$desktop_dir/build/.app-package.lock"
 
 [[ "$(uname -s)" == "Darwin" ]] || {
@@ -37,7 +40,11 @@ cleanup() {
   local status="$?"
   [[ "$runtime_dir" == "$desktop_dir/build/runtime" ]] || exit "$status"
   [[ "$python_build_dir" == "$repo_root/build" ]] || exit "$status"
-  rm -rf "$work_dir" "$runtime_dir" "$python_build_dir" "$lock_dir"
+  [[ "$web_build_dir" == "$repo_root/web/.next" ]] || exit "$status"
+  [[ "$web_output_dir" == "$repo_root/web/out" ]] || exit "$status"
+  [[ "$frontend_stage_dir" == "$repo_root/openprogram/webui/_frontend" ]] || exit "$status"
+  rm -rf "$work_dir" "$runtime_dir" "$python_build_dir" \
+    "$web_build_dir" "$web_output_dir" "$frontend_stage_dir" "$lock_dir"
   exit "$status"
 }
 trap cleanup EXIT
@@ -59,4 +66,5 @@ app_count="$(wc -l <"$app_list" | tr -d ' ')"
   exit 1
 }
 built_app="$(sed -n '1p' "$app_list")"
+bash "$repo_root/scripts/smoke-packaged-runtime.sh" mac "$package_dir"
 env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"

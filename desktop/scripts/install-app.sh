@@ -102,17 +102,27 @@ app_was_running=0
 worker_was_running=0
 launchd_was_installed=0
 resume_after_failure=0
+preserve_transaction=0
 
 cleanup() {
   local status="$?"
   if [[ "$status" != 0 && "$old_moved" == 1 && "$activated" == 1 && -d "$target_app" ]]; then
-    mv "$target_app" "$transaction_dir/failed.app" || :
-    activated=0
+    if mv "$target_app" "$transaction_dir/failed.app"; then
+      activated=0
+    else
+      preserve_transaction=1
+      printf 'failed to move the new App aside; old App remains at %s\n' "$previous_app" >&2
+    fi
   fi
   if [[ "$old_moved" == 1 && "$activated" == 0 && ! -e "$target_app" && -d "$previous_app" ]]; then
-    mv "$previous_app" "$target_app" || :
+    if mv "$previous_app" "$target_app"; then
+      old_moved=0
+    else
+      preserve_transaction=1
+      printf 'failed to restore the old App; recover it from %s\n' "$previous_app" >&2
+    fi
   fi
-  if [[ "$status" != 0 && "$resume_after_failure" == 1 && -d "$target_app" ]]; then
+  if [[ "$status" != 0 && "$resume_after_failure" == 1 && "$preserve_transaction" == 0 && -d "$target_app" ]]; then
     restored_python="$(app_runtime_python "$target_app" 2>/dev/null || :)"
     if [[ "$launchd_was_installed" == 1 && -x "$restored_python" ]]; then
       "$restored_python" -I -B -m openprogram worker install >/dev/null 2>&1 || :
@@ -121,7 +131,11 @@ cleanup() {
     fi
     [[ "$app_was_running" == 1 ]] && open "$target_app" || :
   fi
-  rm -rf "$transaction_dir"
+  if [[ "$preserve_transaction" == 0 ]]; then
+    rm -rf "$transaction_dir"
+  else
+    printf 'OpenProgram recovery files were preserved at %s\n' "$transaction_dir" >&2
+  fi
   exit "$status"
 }
 trap cleanup EXIT
@@ -190,8 +204,9 @@ fi
 activated=1
 
 if ! validate_app "$target_app"; then
-  mv "$target_app" "$transaction_dir/invalid.app" || :
-  activated=0
+  if mv "$target_app" "$transaction_dir/invalid.app"; then
+    activated=0
+  fi
   printf 'installed OpenProgram app failed validation\n' >&2
   exit 1
 fi

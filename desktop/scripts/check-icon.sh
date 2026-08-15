@@ -26,8 +26,11 @@ done
 
 grep -q 'viewBox="0 0 1024 1024"' "$source_svg" \
   || fail "icon.svg must use a 1024 x 1024 viewBox"
-grep -q 'id="op-squircle"' "$source_svg" \
-  || fail "icon.svg must contain the macOS squircle"
+grep -Eq '<rect[^>]+id="op-icon-background"[^>]+width="1024"[^>]+height="1024"' "$source_svg" \
+  || fail "icon.svg background must cover the full 1024 x 1024 canvas"
+if grep -Eq 'op-squircle|squircle-clip' "$source_svg"; then
+  fail "icon.svg must not export a rounded canvas mask"
+fi
 for background_color in '#29374D' '#19243A' '#101622'; do
   grep -q "stop-color=\"$background_color\"" "$source_svg" \
     || fail "icon.svg must preserve the approved deep-blue background"
@@ -65,12 +68,9 @@ image_size() {
 
 [[ "$(image_size "$master_png")" == "1024x1024" ]] \
   || fail "icon.png must be 1024 x 1024"
-[[ "$(sips -g hasAlpha "$master_png" 2>/dev/null | awk '/hasAlpha:/{print $2}')" == "yes" ]] \
-  || fail "icon.png must retain alpha outside the squircle"
 
-# The prior 100 px inset made the installed icon visibly smaller and rounder
-# than the surrounding macOS app icons. Check rendered alpha bounds instead of
-# trusting SVG metadata so generated assets cannot drift from the source.
+# Apple applies the platform mask. The exported source must cover the full
+# square canvas instead of embedding a second rounded mask and transparent inset.
 xcrun swift - "$master_png" <<'SWIFT'
 import AppKit
 import Foundation
@@ -116,10 +116,19 @@ for y in 0..<height {
 }
 let renderedWidth = maxX - minX + 1
 let renderedHeight = maxY - minY + 1
-let margins = [minX, minY, width - 1 - maxX, height - 1 - maxY]
-if renderedWidth < 870 || renderedHeight < 870 ||
-   margins.max()! - margins.min()! > 2 || margins.min()! < 60 {
-    fputs("icon check failed: squircle must be centered and fill about 86% of the canvas\n", stderr)
+if minX != 0 || minY != 0 || maxX != width - 1 || maxY != height - 1 ||
+   renderedWidth != width || renderedHeight != height {
+    fputs("icon check failed: artwork must cover the full square canvas\n", stderr)
+    exit(1)
+}
+let cornerAlpha = [
+    bytes[3],
+    bytes[(width - 1) * 4 + 3],
+    bytes[((height - 1) * width) * 4 + 3],
+    bytes[((height * width) - 1) * 4 + 3],
+]
+if cornerAlpha.min()! < 250 {
+    fputs("icon check failed: canvas corners must be opaque for system masking\n", stderr)
     exit(1)
 }
 print("icon alpha bounds: \(minX),\(minY) ... \(maxX),\(maxY)")
