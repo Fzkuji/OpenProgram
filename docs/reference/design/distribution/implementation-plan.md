@@ -14,10 +14,14 @@ duplicated in this historical distribution ledger.
 - Public entry: `cd desktop && npm run dist` builds one complete temporary
   `OpenProgram.app`, verifies it, and replaces only
   `/Applications/OpenProgram.app`.
-- Icon contract: `desktop/build/icon.svg` is a deterministic 1024 x 1024 square
-  source whose opaque background covers the canvas. It contains no exported
-  canvas mask, rounded outer path, or transparent margin; macOS applies the
-  platform icon mask. The brand ring and three nodes remain unchanged.
+- Icon contract: `desktop/build/icon.svg` is the deterministic 1024 x 1024
+  source for the legacy ICNS consumed by Electron on the supported macOS 15
+  build host. Its visible body uses the 100...923 template bounds with
+  transparent canvas corners and a restrained lower shadow, matching the
+  apparent 824 x 824 footprint of current installed macOS Apps. The brand ring
+  and three nodes remain unchanged. A future Icon Composer `.icon` migration
+  requires a full Xcode toolchain with `actool`; a square unmasked layer must
+  not be passed directly through the current legacy ICNS path.
 - Transaction contract: a failed activation never deletes the old App's only
   recoverable copy. A genuine launchd unload failure stops before App mutation;
   an unloaded stale plist can be replaced. The assembled App passes the existing
@@ -34,8 +38,9 @@ duplicated in this historical distribution ledger.
   `desktop/scripts/check-icon.sh`, `desktop/scripts/package-and-install-app.sh`,
   `desktop/scripts/install-app.sh`, and
   `openprogram/worker/services/launchd.py`.
-- Acceptance: the icon gate requires full-canvas alpha bounds and opaque
-  corners; transaction fault injection preserves `previous.app`; launchd tests
+- Acceptance: the icon gate requires a 1024 x 1024 source, transparent corners,
+  the 824 x 824 opaque body bounds, all ten legacy representations, and an ICNS
+  round trip; transaction fault injection preserves `previous.app`; launchd tests
   cover loaded, stale, and unload-failure states; a corrupt assembled runtime is
   rejected before installation. After reviews, one real `npm run dist` replaces
   the installed App, Launch Services is refreshed, and Finder/Launchpad output is

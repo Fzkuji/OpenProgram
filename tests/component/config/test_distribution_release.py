@@ -389,11 +389,13 @@ def test_packaged_runtime_smoke_rejects_an_incomplete_app_before_install(
         assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
 
 
-def test_macos_icon_source_leaves_canvas_masking_to_the_system() -> None:
+def test_macos_legacy_icon_source_uses_the_standard_visible_bounds() -> None:
     source = (ROOT / "desktop" / "build" / "icon.svg").read_text(encoding="utf-8")
-    assert 'id="op-icon-background" width="1024" height="1024"' in source
-    assert "op-squircle" not in source
-    assert "squircle-clip" not in source
+    assert 'id="op-macos-icon-mask"' in source
+    assert 'id="op-icon-background"' in source
+    assert 'clip-path="url(#op-macos-icon-clip)"' in source
+    assert "M512 100" in source
+    assert "924 512" in source
 
 
 def test_launchd_worker_preserves_packaged_python_flags(monkeypatch) -> None:

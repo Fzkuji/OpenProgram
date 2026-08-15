@@ -38,17 +38,27 @@
     <clipPath id="op-mark-interior">
       <circle cx="512" cy="512" r="228"/>
     </clipPath>
+    <path
+      id="op-macos-icon-mask"
+      d="M512 100C737 100 821 100 873 151C924 203 924 287 924 512C924 737 924 821 873 873C821 924 737 924 512 924C287 924 203 924 151 873C100 821 100 737 100 512C100 287 100 203 151 151C203 100 287 100 512 100Z"
+    />
+    <clipPath id="op-macos-icon-clip">
+      <use href="#op-macos-icon-mask"/>
+    </clipPath>
   </defs>
 
-  <rect id="op-icon-background" width="1024" height="1024" fill="url(#op-background-gradient)"/>
-  <rect width="1024" height="1024" fill="url(#op-background-light)"/>
+  <use href="#op-macos-icon-mask" transform="translate(0 14)" fill="#000000" fill-opacity="0.28"/>
+  <g clip-path="url(#op-macos-icon-clip)">
+    <rect id="op-icon-background" width="1024" height="1024" fill="url(#op-background-gradient)"/>
+    <rect width="1024" height="1024" fill="url(#op-background-light)"/>
 
-  <circle cx="512" cy="512" r="252" fill="none" stroke="url(#op-ring)" stroke-width="44"/>
-  <g clip-path="url(#op-mark-interior)">
-    <circle id="op-node-a" cx="432" cy="432" r="112" fill="url(#op-node-blue)" stroke="#D9EEFF" stroke-opacity="0.16" stroke-width="6"/>
-    <circle id="op-node-b" cx="612" cy="572" r="84" fill="url(#op-node-purple)" stroke="#EFE3FF" stroke-opacity="0.16" stroke-width="6"/>
-    <circle id="op-node-c" cx="456" cy="650" r="44" fill="url(#op-node-indigo)" stroke="#E0E5FF" stroke-opacity="0.16" stroke-width="6"/>
+    <circle cx="512" cy="512" r="252" fill="none" stroke="url(#op-ring)" stroke-width="44"/>
+    <g clip-path="url(#op-mark-interior)">
+      <circle id="op-node-a" cx="432" cy="432" r="112" fill="url(#op-node-blue)" stroke="#D9EEFF" stroke-opacity="0.16" stroke-width="6"/>
+      <circle id="op-node-b" cx="612" cy="572" r="84" fill="url(#op-node-purple)" stroke="#EFE3FF" stroke-opacity="0.16" stroke-width="6"/>
+      <circle id="op-node-c" cx="456" cy="650" r="44" fill="url(#op-node-indigo)" stroke="#E0E5FF" stroke-opacity="0.16" stroke-width="6"/>
+    </g>
+
+    <rect width="1024" height="1024" fill="url(#op-top-sheen)"/>
   </g>
-
-  <rect width="1024" height="1024" fill="url(#op-top-sheen)"/>
 </svg>

@@ -26,11 +26,14 @@ done
 
 grep -q 'viewBox="0 0 1024 1024"' "$source_svg" \
   || fail "icon.svg must use a 1024 x 1024 viewBox"
-grep -Eq '<rect[^>]+id="op-icon-background"[^>]+width="1024"[^>]+height="1024"' "$source_svg" \
-  || fail "icon.svg background must cover the full 1024 x 1024 canvas"
-if grep -Eq 'op-squircle|squircle-clip' "$source_svg"; then
-  fail "icon.svg must not export a rounded canvas mask"
-fi
+grep -q 'id="op-macos-icon-mask"' "$source_svg" \
+  || fail "icon.svg must define the legacy macOS icon mask"
+grep -q 'clip-path="url(#op-macos-icon-clip)"' "$source_svg" \
+  || fail "icon.svg artwork must use the legacy macOS icon mask"
+grep -q 'M512 100' "$source_svg" \
+  || fail "icon.svg mask must use the standard 100 px top inset"
+grep -q '924 512' "$source_svg" \
+  || fail "icon.svg mask must use the standard 924 px right bound"
 for background_color in '#29374D' '#19243A' '#101622'; do
   grep -q "stop-color=\"$background_color\"" "$source_svg" \
     || fail "icon.svg must preserve the approved deep-blue background"
@@ -69,8 +72,8 @@ image_size() {
 [[ "$(image_size "$master_png")" == "1024x1024" ]] \
   || fail "icon.png must be 1024 x 1024"
 
-# Apple applies the platform mask. The exported source must cover the full
-# square canvas instead of embedding a second rounded mask and transparent inset.
+# A legacy ICNS is displayed as-is by Electron/macOS 15. Keep the visible body
+# on the 824 px macOS template bounds and leave the canvas corners transparent.
 xcrun swift - "$master_png" <<'SWIFT'
 import AppKit
 import Foundation
@@ -102,23 +105,26 @@ bytes.withUnsafeMutableBytes { raw in
     )!
     context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
 }
-var minX = width
-var minY = height
-var maxX = -1
-var maxY = -1
-for y in 0..<height {
-    for x in 0..<width where bytes[(y * width + x) * 4 + 3] > 8 {
-        minX = min(minX, x)
-        minY = min(minY, y)
-        maxX = max(maxX, x)
-        maxY = max(maxY, y)
+func alphaBounds(threshold: UInt8) -> (Int, Int, Int, Int) {
+    var minX = width
+    var minY = height
+    var maxX = -1
+    var maxY = -1
+    for y in 0..<height {
+        for x in 0..<width where bytes[(y * width + x) * 4 + 3] >= threshold {
+            minX = min(minX, x)
+            minY = min(minY, y)
+            maxX = max(maxX, x)
+            maxY = max(maxY, y)
+        }
     }
+    return (minX, minY, maxX, maxY)
 }
-let renderedWidth = maxX - minX + 1
-let renderedHeight = maxY - minY + 1
-if minX != 0 || minY != 0 || maxX != width - 1 || maxY != height - 1 ||
-   renderedWidth != width || renderedHeight != height {
-    fputs("icon check failed: artwork must cover the full square canvas\n", stderr)
+
+let solid = alphaBounds(threshold: 128)
+if !(99...101).contains(solid.0) || !(99...101).contains(solid.1) ||
+   !(922...924).contains(solid.2) || !(922...924).contains(solid.3) {
+    fputs("icon check failed: opaque icon body must use the 100...923 template bounds\n", stderr)
     exit(1)
 }
 let cornerAlpha = [
@@ -127,11 +133,12 @@ let cornerAlpha = [
     bytes[((height - 1) * width) * 4 + 3],
     bytes[((height * width) - 1) * 4 + 3],
 ]
-if cornerAlpha.min()! < 250 {
-    fputs("icon check failed: canvas corners must be opaque for system masking\n", stderr)
+if cornerAlpha.max()! > 8 {
+    fputs("icon check failed: legacy ICNS canvas corners must be transparent\n", stderr)
     exit(1)
 }
-print("icon alpha bounds: \(minX),\(minY) ... \(maxX),\(maxY)")
+let visible = alphaBounds(threshold: 8)
+print("icon alpha bounds: visible \(visible.0),\(visible.1) ... \(visible.2),\(visible.3); body \(solid.0),\(solid.1) ... \(solid.2),\(solid.3)")
 SWIFT
 
 icon_names=(
