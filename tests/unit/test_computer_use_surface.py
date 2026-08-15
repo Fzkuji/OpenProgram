@@ -196,6 +196,14 @@ def test_bound_browser_task_bypasses_only_the_nested_default_ask(monkeypatch):
         binding_id = ""
         max_steps = 0
         _terminal_reason = ""
+        _frame = {"frame_id": "frame-1", "url": "http://localhost/"}
+        _last_result = None
+
+        def execute(self, **_kwargs):
+            return self._frame
+
+        def tool_for_actions(self, _actions):
+            return self.tool
 
         def final_result(self, *, summary: str, reason_code: str | None = None):
             return {
@@ -234,7 +242,8 @@ def test_bound_browser_task_bypasses_only_the_nested_default_ask(monkeypatch):
             runtime=_Runtime(),
             binding_id="binding-1",
         )
-        assert seen_modes == ["bypass"]
+        assert len(seen_modes) == 12
+        assert set(seen_modes) == {"bypass"}
         assert get_turn_request() is outer
     finally:
         reset_turn_request(token)

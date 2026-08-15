@@ -679,6 +679,25 @@ const wholeGroupTabs = [
   { id: "c", kind: "web", title: "C", url: "https://c.test/" },
   { id: "d", kind: "web", title: "D", url: "https://d.test/" },
 ];
+
+// A newly accepted pair is one atomic UI transition: it becomes the active
+// entry immediately and always starts from an even divider, independent of a
+// ratio left by an older split.
+useCenterTabs.setState({
+  tabs: wholeGroupTabs,
+  groups: [],
+  activeId: "d",
+  splitWebTabId: null,
+  splitRatio: 0.37,
+});
+storageWrites.length = 0;
+assert.equal(useCenterTabs.getState().groupTab("a", "b", 1, "g:new"), true);
+let newlyGroupedState = useCenterTabs.getState();
+assert.deepEqual(newlyGroupedState.groups[0].memberIds, ["b", "a"]);
+assert.equal(newlyGroupedState.activeId, "a", "the selected member activates the new pair immediately");
+assert.equal(newlyGroupedState.splitRatio, 0.5, "a new pair never inherits an old ratio");
+assert.equal(storageWrites.length, 1, "group, activation and ratio persist atomically");
+
 useCenterTabs.setState({
   tabs: wholeGroupTabs,
   groups: wholeGroupLayout.groups,

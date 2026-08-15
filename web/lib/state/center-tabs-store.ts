@@ -384,6 +384,9 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
     groupTab: (sourceId, targetId, memberIndex, groupId) => {
       let accepted = false;
       set((s) => {
+        const pairAlreadyGrouped = s.groups.some((group) =>
+          group.memberIds.includes(sourceId) && group.memberIds.includes(targetId),
+        );
         const result = groupCenterTabs({
           tabIds: s.tabs.map((tab) => tab.id),
           groups: s.groups,
@@ -393,6 +396,8 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         return commitCenterTabsState(s, {
           tabs: tabsForLayout(s.tabs, result.layout),
           groups: result.layout.groups,
+          activeId: sourceId,
+          splitRatio: pairAlreadyGrouped ? s.splitRatio : 0.5,
         });
       });
       return accepted;
