@@ -25,6 +25,8 @@ class ComputerUseSession:
     backend: str
     binding_id: str
     page_key: str = ""
+    page_revision: int = 0
+    access_revision: int = 0
     owner_id: str = ""
     page_context: dict[str, Any] | None = None
     controller: Any = None
@@ -75,6 +77,8 @@ class ComputerUseSessionRegistry:
         controller_factory: Callable[[], Any] | None = None,
         release_context: Callable[[dict | None], None] | None = None,
         page_key_resolver: Callable[[str], str] | None = None,
+        binding_revision_resolver: Callable[[str], Mapping[str, int]] | None = None,
+        binding_validator: Callable[[str], Mapping[str, Any]] | None = None,
     ) -> None:
         if adapters is None:
             if controller_factory is None:
@@ -107,8 +111,16 @@ class ComputerUseSessionRegistry:
         if page_key_resolver is None:
             from openprogram.webui.ws_actions.webtab import binding_page_key
             page_key_resolver = binding_page_key
+        if binding_revision_resolver is None:
+            from openprogram.webui.ws_actions.webtab import binding_revisions
+            binding_revision_resolver = binding_revisions
+        if binding_validator is None:
+            from openprogram.webui.ws_actions.webtab import request_bound_tab
+            binding_validator = request_bound_tab
         self._release_context = release_context
         self._page_key_resolver = page_key_resolver
+        self._binding_revision_resolver = binding_revision_resolver
+        self._binding_validator = binding_validator
         self._lock = threading.RLock()
 
     def _detach_locked(self, session: ComputerUseSession) -> None:
@@ -209,11 +221,14 @@ class ComputerUseSessionRegistry:
             if not binding_id:
                 return {"ok": False, "reason_code": "page_context_required"}
             page_key = page_key or self._page_key_resolver(binding_id) or binding_id
+            revisions = self._binding_revision_resolver(binding_id)
             session = ComputerUseSession(
                 id="cs_" + uuid.uuid4().hex,
                 backend=selected,
                 binding_id=binding_id,
                 page_key=page_key,
+                page_revision=int(revisions.get("page_revision") or 0),
+                access_revision=int(revisions.get("access_revision") or 0),
                 owner_id=owner_id,
                 page_context=page_context,
             )
@@ -255,6 +270,37 @@ class ComputerUseSessionRegistry:
                     "computer_session_id": session.id,
                     "backend": session.backend,
                 }
+
+            if not created_session and command in {"observe", "act", "verify"}:
+                revisions = self._binding_revision_resolver(session.binding_id)
+                revision_changed = (
+                    session.page_revision
+                    and int(revisions.get("page_revision") or 0)
+                    != session.page_revision
+                ) or (
+                    session.access_revision
+                    and int(revisions.get("access_revision") or 0)
+                    != session.access_revision
+                )
+                try:
+                    validation = (
+                        {"ok": False, "reason_code": "page_context_stale"}
+                        if revision_changed
+                        else self._binding_validator(session.binding_id)
+                    )
+                except Exception:
+                    validation = {"ok": False, "reason_code": "target_lost"}
+                if not validation.get("ok"):
+                    reason_code = str(
+                        validation.get("reason_code") or "page_context_stale"
+                    )
+                    self._cleanup_session(session, suppress_errors=True)
+                    return {
+                        "ok": False,
+                        "reason_code": reason_code,
+                        "computer_session_id": session.id,
+                        "backend": session.backend,
+                    }
 
             adapter = self._adapters[session.backend]
             try:

@@ -29,6 +29,10 @@ class _Adapter:
         self.calls.append(("close", {}))
 
 
+def _allow_binding(_binding_id):
+    return {"ok": True}
+
+
 def test_registry_supports_three_backends_and_freezes_one_per_session():
     from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
         ComputerUseSessionRegistry,
@@ -41,7 +45,9 @@ def test_registry_supports_three_backends_and_freezes_one_per_session():
         "open_claude_chrome",
     )
     adapters = {name: _Adapter(name) for name in SUPPORTED_BACKENDS}
-    registry = ComputerUseSessionRegistry(adapters=adapters)
+    registry = ComputerUseSessionRegistry(
+        adapters=adapters, binding_validator=_allow_binding,
+    )
 
     observed = registry.execute(
         command="observe",
@@ -79,6 +85,88 @@ def test_registry_supports_three_backends_and_freezes_one_per_session():
     ]
 
 
+def test_registry_rejects_action_when_bound_page_revision_changes():
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSessionRegistry,
+    )
+
+    adapter = _Adapter("open_claude_chrome")
+    adapters = {
+        "playwright_mcp": _Adapter("playwright_mcp"),
+        "chrome_devtools_mcp": _Adapter("chrome_devtools_mcp"),
+        "open_claude_chrome": adapter,
+    }
+    revisions = {"page_revision": 11, "access_revision": 12}
+    validations = []
+    released = []
+    registry = ComputerUseSessionRegistry(
+        adapters=adapters,
+        binding_revision_resolver=lambda _binding: dict(revisions),
+        binding_validator=lambda binding: (
+            validations.append(binding) or {"ok": True}
+        ),
+        release_context=lambda context: released.append(context["context_id"]),
+    )
+    observed = registry.execute(
+        command="observe", backend="open_claude_chrome",
+        binding_id="binding-1", owner_id="owner-1",
+        page_context={"context_id": "ctx-1"},
+    )
+
+    revisions["access_revision"] = 13
+    rejected = registry.execute(
+        command="act", computer_session_id=observed["computer_session_id"],
+        owner_id="owner-1", arguments={"action": "click"},
+    )
+
+    assert rejected["reason_code"] == "page_context_stale"
+    assert validations == []
+    assert adapter.calls == [("observe", {}), ("close", {})]
+    assert released == ["ctx-1"]
+    assert registry.execute(
+        command="act", computer_session_id=observed["computer_session_id"],
+        owner_id="owner-1",
+    )["reason_code"] == "computer_session_not_found"
+
+
+def test_registry_revalidates_visibility_before_each_existing_session_command():
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSessionRegistry,
+    )
+
+    adapter = _Adapter("open_claude_chrome")
+    adapters = {
+        "playwright_mcp": _Adapter("playwright_mcp"),
+        "chrome_devtools_mcp": _Adapter("chrome_devtools_mcp"),
+        "open_claude_chrome": adapter,
+    }
+    visible = {"ok": True}
+    released = []
+    registry = ComputerUseSessionRegistry(
+        adapters=adapters,
+        binding_revision_resolver=lambda _binding: {
+            "page_revision": 21, "access_revision": 22,
+        },
+        binding_validator=lambda _binding: dict(visible),
+        release_context=lambda context: released.append(context["context_id"]),
+    )
+    observed = registry.execute(
+        command="observe", backend="open_claude_chrome",
+        binding_id="binding-1", owner_id="owner-1",
+        page_context={"context_id": "ctx-1"},
+    )
+
+    visible.update(ok=False, reason_code="page_context_stale")
+    rejected = registry.execute(
+        command="verify", computer_session_id=observed["computer_session_id"],
+        owner_id="owner-1", arguments={"assertion": "text_contains"},
+    )
+
+    assert rejected["reason_code"] == "page_context_stale"
+    assert adapter.calls == [("observe", {}), ("close", {})]
+    assert released == ["ctx-1"]
+
+
 def test_registry_leases_one_exact_page_to_one_session_until_close():
     from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
         ComputerUseSessionRegistry,
@@ -92,6 +180,7 @@ def test_registry_leases_one_exact_page_to_one_session_until_close():
         page_key_resolver=lambda binding: {
             "binding-1": "page-1", "binding-2": "page-1",
         }[binding],
+        binding_validator=_allow_binding,
     )
 
     first = registry.execute(
@@ -139,6 +228,7 @@ def test_page_lease_remains_held_until_close_cleanup_finishes():
         adapters=adapters,
         release_context=release_context,
         page_key_resolver=lambda _binding: "page-1",
+        binding_validator=_allow_binding,
     )
     observed = registry.execute(
         command="observe", backend="open_claude_chrome",
@@ -200,6 +290,7 @@ def test_cleanup_waits_for_inflight_action_before_releasing_page(cleanup):
     registry = ComputerUseSessionRegistry(
         adapters=adapters,
         page_key_resolver=lambda _binding: "page-1",
+        binding_validator=_allow_binding,
     )
     observed = registry.execute(
         command="observe", backend="open_claude_chrome",
@@ -267,6 +358,7 @@ def test_close_failure_still_releases_page_lease_and_context():
     registry = ComputerUseSessionRegistry(
         adapters=adapters,
         release_context=lambda context: released.append(context["context_id"]),
+        binding_validator=_allow_binding,
     )
     observed = registry.execute(
         command="observe", backend="open_claude_chrome",
@@ -301,6 +393,7 @@ def test_close_all_releases_sessions_capabilities_and_page_leases():
     registry = ComputerUseSessionRegistry(
         adapters=adapters,
         release_context=lambda context: released.append(context["context_id"]),
+        binding_validator=_allow_binding,
     )
     registry.execute(
         command="observe", backend="open_claude_chrome",
@@ -488,6 +581,7 @@ def test_registry_binds_session_to_owner_and_consumes_exact_page_capability():
     registry = ComputerUseSessionRegistry(
         adapters=adapters,
         release_context=lambda context: released.append(context["context_id"]),
+        binding_validator=_allow_binding,
     )
     context = {
         "context_id": "ctx-1",
@@ -546,6 +640,7 @@ def test_failed_first_observe_releases_session_and_page_context():
     registry = ComputerUseSessionRegistry(
         adapters=adapters,
         release_context=lambda context: released.append(context["context_id"]),
+        binding_validator=_allow_binding,
     )
     result = registry.execute(
         command="observe", backend="open_claude_chrome",
