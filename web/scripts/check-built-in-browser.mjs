@@ -76,9 +76,11 @@ assert.equal(finalTopLevelDecl(".ntpGlyph", "width"), "18px");
 assert.equal(finalTopLevelDecl(".ntpGlyph", "height"), "18px");
 assert.equal(finalTopLevelDecl(".browserGlyph", "--glyph-primary"), "var(--accent-blue)");
 assert.equal(finalTopLevelDecl(".browserGlyph", "--glyph-secondary"), "#8b5cf6");
-const launcherGlyphBackground = finalTopLevelDecl(".browserGlyph", "background");
-assert.match(launcherGlyphBackground, /radial-gradient\(/);
-assert.match(launcherGlyphBackground, /linear-gradient\(/);
+for (const selector of [".browserGlyph", ".ntpGlyph"]) {
+  const background = finalTopLevelDecl(selector, "background");
+  assert.match(background, /radial-gradient\(/);
+  assert.match(background, /linear-gradient\(/);
+}
 assert.match(browserPrefs, /SHOW_BOOKMARKS_BAR_KEY/);
 assert.match(browserPrefs, /BROWSER_IMPORT_PROMPT_FINISHED_KEY/);
 assert.match(browserControls, /function BrowserMenu/);
