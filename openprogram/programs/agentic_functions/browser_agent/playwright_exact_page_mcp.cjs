@@ -68,8 +68,9 @@ async function main() {
 
   const shutdown = async () => {
     await server.close().catch(() => {});
-    await browser.close().catch(() => {});
+    process.exit(0);
   };
+  process.stdin.once("end", shutdown);
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
 }

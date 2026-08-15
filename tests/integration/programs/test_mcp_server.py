@@ -41,12 +41,19 @@ from openprogram.agent.types import AgentTool, AgentToolResult
 from openprogram.events import get_event_bus, make_event
 from openprogram.programs._runtime import register
 from openprogram.providers.types import TextContent
+import openprogram.mcp_server.service as mcp_service_module
 
 evidence = Path(os.environ["OPENPROGRAM_MCP_TEST_EVIDENCE"])
 
 def record(kind, **values):
     with evidence.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps({"kind": kind, **values}, sort_keys=True) + "\\n")
+
+def computer_use_dispatch(arguments, *, owner_id):
+    record("computer_use", arguments=arguments, owner_id=owner_id)
+    return {"ok": True, "owner_bound": owner_id.startswith("mcp:")}
+
+mcp_service_module._default_computer_use_dispatch = computer_use_dispatch
 
 async def execute(call_id, arguments, cancel_event, on_update):
     record("execute", call_id=call_id, arguments=arguments,
@@ -192,10 +199,13 @@ def test_real_stdio_subprocess_calls_all_six_wrappers(tmp_path, client_name):
             runtime = await session.call_tool(
                 "tool_call", {"name": "memory_status", "arguments": {}}
             )
-        return listed, sessions, session_get, prompt, completed_cancel, tools, runtime
+            computer = await session.call_tool(
+                "computer_use", {"command": "list_pages"}
+            )
+        return listed, sessions, session_get, prompt, completed_cancel, tools, runtime, computer
 
     results = asyncio.run(asyncio.wait_for(scenario(), 10))
-    listed, sessions, session_get, prompt, completed_cancel, tools, runtime = results
+    listed, sessions, session_get, prompt, completed_cancel, tools, runtime, computer = results
     assert listed.tools == list(get_mcp_tools())
     session_rows = json.loads(sessions.content[0].text)
     assert len(session_rows) == 1
@@ -214,6 +224,9 @@ def test_real_stdio_subprocess_calls_all_six_wrappers(tmp_path, client_name):
     )
     assert tools.content[0].text.startswith('[{"description":')
     assert runtime.content[0].text == "runtime-ok"
+    assert json.loads(computer.content[0].text) == {
+        "ok": True, "owner_bound": True,
+    }
     evidence = [
         json.loads(line)
         for line in (tmp_path / "evidence.jsonl")
