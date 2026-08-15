@@ -56,6 +56,7 @@ import {
   clearPendingUserText,
   getPendingUserText,
 } from "@/lib/pending-user-text";
+import { shouldHydrateTranscriptForTreeUpdate } from "./transcript-hydration";
 
 /** The app's single draft-channel-choice host (module-level, backed by
  *  `runtimeState._pendingChannelChoice`). */
@@ -449,12 +450,20 @@ export function clearHydratedTreePaths(): void {
 function hydrateTranscriptForTreeUpdate(data: ChatResponseData): void {
   const sid = (data as { session_id?: string }).session_id;
   const path = ((data as { tree?: { path?: string } }).tree || {}).path;
-  if (!sid || !path || sid !== runtimeState.currentSessionId) return;
-  if (hydratedTreePaths.has(path)) return;
-  hydratedTreePaths.add(path);
-  // Card already in the transcript (chat-issued tool call, or the
-  // session was freshly loaded) — nothing to hydrate.
-  if (useSessionStore.getState().messagesById[path]) return;
+  if (!sid || !path) return;
+  const store = useSessionStore.getState();
+  if (
+    !shouldHydrateTranscriptForTreeUpdate({
+      currentSessionId: runtimeState.currentSessionId,
+      sessionId: sid,
+      path,
+      messagesById: store.messagesById,
+      messageOrder: store.messageOrder,
+      hydratedPaths: hydratedTreePaths,
+    })
+  ) {
+    return;
+  }
   runtimeState.__reloadOnTaskClear = sid;
   const sock = getSocket();
   if (sock && sock.readyState === WebSocket.OPEN) {
