@@ -36,7 +36,22 @@ def _relative_dir(root: Path, value: str, label: str) -> Path:
     return path
 
 
-def _probe(root: Path, product: dict) -> dict[str, dict[str, object]]:
+def _verify_openprogram_version(expected: object) -> None:
+    if not isinstance(expected, str) or not expected:
+        raise RuntimeError("runtime manifest OpenProgram version is invalid")
+    actual = importlib.metadata.version("openprogram")
+    if actual != expected:
+        raise RuntimeError(
+            f"OpenProgram version mismatch: expected {expected}, got {actual}"
+        )
+
+
+def _probe(
+    root: Path,
+    product: dict,
+    expected_openprogram_version: object,
+) -> dict[str, dict[str, object]]:
+    _verify_openprogram_version(expected_openprogram_version)
     assets = {
         "playwright": "assets/playwright",
         "easyocr": "assets/easyocr",
@@ -151,7 +166,7 @@ def main() -> int:
         ):
             parser.error("--write requires Python, OpenProgram, and uv versions")
         _relative_file(root, args.python_relative, "managed Python")
-        capabilities = _probe(root, product)
+        capabilities = _probe(root, product, args.openprogram_version)
         manifest = {
             "schema": 2,
             "openprogram": args.openprogram_version,
@@ -210,7 +225,7 @@ def main() -> int:
             for value in actual.values()
         ):
             raise RuntimeError("runtime capability manifest is incomplete")
-        _probe(root, product)
+        _probe(root, product, manifest.get("openprogram"))
 
     print(f"verified complete OpenProgram runtime: {root}")
     return 0

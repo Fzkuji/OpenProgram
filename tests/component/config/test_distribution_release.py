@@ -4,6 +4,7 @@ import json
 import os
 import plistlib
 import re
+import runpy
 import subprocess
 import sys
 import time
@@ -735,6 +736,20 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     assert "GUI-Agent-Harness" in product_config
     assert "Research-Agent-Harness" in product_config
     assert "Wiki-Agent-Harness" in product_config
+
+
+def test_product_runtime_rejects_installed_openprogram_version_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verifier = runpy.run_path(str(ROOT / "scripts" / "verify-product-runtime.py"))
+    verify_version = verifier["_verify_openprogram_version"]
+
+    monkeypatch.setattr("importlib.metadata.version", lambda _name: "0.6.1")
+    with pytest.raises(
+        RuntimeError,
+        match=r"OpenProgram version mismatch: expected 0\.6\.6, got 0\.6\.1",
+    ):
+        verify_version("0.6.6")
 
 
 def test_search_runtime_dependency_supports_macos_x64() -> None:
