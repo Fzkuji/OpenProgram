@@ -41,6 +41,16 @@ assert.match(fileTreeCss, /\.treeHeader\s*\{[^}]*flex-direction:\s*column/s);
 assert.match(fileTreeCss, /\.treeRootPath\s*\{/);
 assert.match(fileTreeCss, /\.treeToolbar\s*\{/);
 assert.match(fileTreeCss, /\.treeSearchRow\s*\{/);
+assert.match(fileTree, /const TREE_LABEL_OFFSET = 44/);
+assert.doesNotMatch(fileTree, /\bROW_PAD\b|\bFILE_PAD\b/);
+assert.match(fileTree, /className=\{styles\.chevronSlot\}/);
+assert.match(fileTreeCss, /\.treeHeader\s*\{[^}]*padding:\s*4px 16px/s);
+assert.match(fileTreeCss, /\.treeRootPath\s*\{[^}]*height:\s*32px[^}]*gap:\s*12px/s);
+assert.match(
+  fileTreeCss,
+  /\.treeRow\s*\{[^}]*grid-template-columns:\s*16px 16px minmax\(0, 1fr\)/s,
+);
+assert.match(fileTreeCss, /\.treeName,[\s\S]*\.treePath\s*\{[^}]*margin-left:\s*12px/);
 assert.match(
   projectMenu,
   /\{list\.filter\(\(p\) => !p\.path_missing\)\.map\(/,

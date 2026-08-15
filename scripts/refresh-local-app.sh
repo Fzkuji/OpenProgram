@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+app_path="${OPENPROGRAM_APP_PATH:-/Applications/OpenProgram.app}"
+runtime_root="$app_path/Contents/Resources/runtime"
+manifest="$runtime_root/runtime-manifest.json"
+installed_asar="$app_path/Contents/Resources/app.asar"
+uv_bin="${OPENPROGRAM_UV_BIN:-$(command -v uv || true)}"
+
+if test -n "${OPENPROGRAM_LOCAL_PYTHON:-}"; then
+  local_python="$OPENPROGRAM_LOCAL_PYTHON"
+else
+  openprogram_bin="$(command -v openprogram || true)"
+  local_python=""
+  if test -n "$openprogram_bin"; then
+    local_python="$(sed -n '1s/^#!//p' "$openprogram_bin")"
+  fi
+  if test -z "$local_python"; then
+    local_python="$(command -v python3 || true)"
+  fi
+fi
+
+test -n "$uv_bin" && test -x "$uv_bin" || {
+  printf 'uv is required to refresh the local App\n' >&2
+  exit 1
+}
+test -n "$local_python" && test -x "$local_python" || {
+  printf 'the local OpenProgram Python executable was not found: %s\n' \
+    "$local_python" >&2
+  exit 1
+}
+test -f "$manifest" || {
+  printf 'the installed App runtime manifest was not found: %s\n' "$manifest" >&2
+  exit 1
+}
+test -f "$installed_asar" || {
+  printf 'the installed App archive was not found: %s\n' "$installed_asar" >&2
+  exit 1
+}
+
+app_python_relative="$("$local_python" - "$manifest" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    print(json.load(stream)["python"])
+PY
+)"
+app_python="$runtime_root/$app_python_relative"
+case "$app_python" in
+  "$runtime_root"/*) ;;
+  *) printf 'the App Python path escapes its runtime: %s\n' "$app_python" >&2; exit 1 ;;
+esac
+test -x "$app_python" || {
+  printf 'the App Python executable was not found: %s\n' "$app_python" >&2
+  exit 1
+}
+
+wheel_dir="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-local-wheel.XXXXXX")"
+cleanup() { rm -rf "$wheel_dir"; }
+trap cleanup EXIT HUP INT TERM
+
+asar_cli="$repo_root/desktop/node_modules/@electron/asar/bin/asar.js"
+if ! test -f "$asar_cli"; then
+  npm ci --prefix "$repo_root/desktop" --ignore-scripts
+fi
+test -f "$asar_cli" || {
+  printf 'the Electron asar tool was not installed: %s\n' "$asar_cli" >&2
+  exit 1
+}
+
+attempt=0
+while true; do
+  attempt=$((attempt + 1))
+  build_revision="$(git -C "$repo_root" rev-parse HEAD)"
+  attempt_dir="$wheel_dir/attempt-$attempt"
+  mkdir -p "$attempt_dir"
+
+  "$repo_root/scripts/stage-release-assets.sh"
+  rm -rf "$repo_root/build"
+  "$uv_bin" build --wheel --out-dir "$attempt_dir" "$repo_root"
+  wheel="$(find "$attempt_dir" -maxdepth 1 -type f \
+    -name 'openprogram-*.whl' -print -quit)"
+  test -n "$wheel" || {
+    printf 'OpenProgram wheel was not built\n' >&2
+    exit 1
+  }
+
+  desktop_stage="$attempt_dir/desktop"
+  desktop_asar="$attempt_dir/app.asar"
+  node "$asar_cli" extract "$installed_asar" "$desktop_stage"
+  for desktop_file in \
+    main.js preload.js packaged-runtime.js worker-start-url.js \
+    tab-transfer-store.js browsing-history-store.js browser-profile-import.js; do
+    cp "$repo_root/desktop/$desktop_file" "$desktop_stage/$desktop_file"
+  done
+  node "$asar_cli" pack "$desktop_stage" "$desktop_asar" \
+    --unpack-dir node_modules/node-pty
+
+  test "$(git -C "$repo_root" rev-parse HEAD)" = "$build_revision" && break
+  printf 'HEAD changed during packaging; rebuilding the current checkout\n'
+done
+
+if pgrep -x OpenProgram >/dev/null 2>&1; then
+  osascript -e 'tell application "OpenProgram" to quit'
+  for _ in {1..50}; do
+    pgrep -x OpenProgram >/dev/null 2>&1 || break
+    sleep 0.2
+  done
+  pgrep -x OpenProgram >/dev/null 2>&1 && {
+    printf 'OpenProgram did not quit before the refresh\n' >&2
+    exit 1
+  }
+fi
+"$local_python" -m openprogram worker stop >/dev/null 2>&1 || true
+
+"$local_python" -m pip install --disable-pip-version-check \
+  --no-deps --force-reinstall "$wheel"
+"$app_python" -I -m pip install --disable-pip-version-check \
+  --break-system-packages --no-deps --force-reinstall "$wheel"
+cp "$desktop_asar" "$installed_asar"
+if test -d "$desktop_asar.unpacked"; then
+  rsync -a --delete "$desktop_asar.unpacked/" \
+    "$app_path/Contents/Resources/app.asar.unpacked/"
+fi
+
+revision="$build_revision"
+if test -n "$(git -C "$repo_root" status --porcelain --untracked-files=no)"; then
+  revision="$revision-dirty"
+fi
+printf '%s\n' "$revision" > \
+  "$app_path/Contents/Resources/openprogram-source-revision"
+
+"$local_python" -m openprogram worker start || true
+for _ in {1..50}; do
+  curl -fsS http://127.0.0.1:18100/healthz >/dev/null 2>&1 && break
+  sleep 0.2
+done
+curl -fsS http://127.0.0.1:18100/healthz >/dev/null
+open -a "$app_path"
+
+trap - EXIT HUP INT TERM
+cleanup
+printf 'refreshed %s from %s\n' "$app_path" "$revision"

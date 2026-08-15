@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 web_dir="$repo_root/web"
 source_dir="$web_dir/out"
+next_build_dir="$web_dir/.next"
 target_dir="$repo_root/openprogram/webui/_frontend"
 
 command -v npm >/dev/null 2>&1 || {
@@ -12,7 +13,7 @@ command -v npm >/dev/null 2>&1 || {
 }
 
 npm ci --prefix "$web_dir"
-rm -rf "$source_dir"
+rm -rf "$source_dir" "$next_build_dir"
 npm run build --prefix "$web_dir"
 test -f "$source_dir/index.html" || {
   printf 'Next.js export did not produce %s/index.html\n' "$source_dir" >&2

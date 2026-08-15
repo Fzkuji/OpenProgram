@@ -118,12 +118,10 @@ async function copyText(value: string): Promise<void> {
   document.body.removeChild(ta);
 }
 
-/* VS Code-ish geometry: 16px per depth level; folder rows lead with a
-   14px chevron + 6px flex gap (see .treeRow), so file rows (no chevron)
-   indent 20px extra so their icon sits exactly under the folder glyph. */
+/* One 16px disclosure slot + one 16px icon slot per row. Each nested
+   level adds another 16px before those slots; labels start at x=44. */
 const INDENT = 16;
-const ROW_PAD = 4;
-const FILE_PAD = ROW_PAD + 20;
+const TREE_LABEL_OFFSET = 44;
 
 /** Extension bucket → icon + colour (existing accent tokens only). */
 const ICON_BUCKETS: [Set<string>, typeof File, string | undefined][] = [
@@ -520,16 +518,13 @@ export function FileTree({
 
   function renderDir(dir: string, depth: number): React.ReactNode {
     const state = dirs[dir];
-    const hintPad = FILE_PAD + depth * INDENT;
+    const hintPad = TREE_LABEL_OFFSET + depth * INDENT;
     // Editable "new entry" row, rendered at the top of the target dir.
     const createRow =
       creating && creating.dir === dir ? (
         <div
           className={styles.treeRow}
-          style={{
-            paddingLeft:
-              (creating.kind === "dir" ? ROW_PAD : FILE_PAD) + depth * INDENT,
-          }}
+          style={{ paddingLeft: depth * INDENT }}
         >
           {creating.kind === "dir" ? (
             <>
@@ -537,7 +532,10 @@ export function FileTree({
               <Folder size={14} className={styles.treeIconFolder} />
             </>
           ) : (
-            <File size={14} className={styles.treeIcon} />
+            <>
+              <span className={styles.chevronSlot} aria-hidden="true" />
+              <File size={14} className={styles.treeIcon} />
+            </>
           )}
           <InlineNameInput
             initial=""
@@ -576,7 +574,7 @@ export function FileTree({
           <div key={full}>
             <div
               className={`${styles.treeRow} ${DIM_DIRS.has(e.name) ? styles.treeRowDim : ""} ${selectedCls}`}
-              style={{ paddingLeft: ROW_PAD + depth * INDENT }}
+              style={{ paddingLeft: depth * INDENT }}
               onClick={() => {
                 setSelected({ path: full, type: "dir" });
                 toggleDir(full);
@@ -605,7 +603,7 @@ export function FileTree({
               // the whole panel (guide is an ::before in the CSS).
               <div
                 className={styles.treeKids}
-                style={{ "--guide-x": `${ROW_PAD + 7 + depth * INDENT}px` } as React.CSSProperties}
+                style={{ "--guide-x": `${8 + depth * INDENT}px` } as React.CSSProperties}
               >
                 {renderDir(full, depth + 1)}
               </div>
@@ -618,7 +616,7 @@ export function FileTree({
           key={full}
           data-tree-path={full}
           className={`${styles.treeRow} ${full === activePath ? styles.treeRowActive : ""} ${selectedCls}`}
-          style={{ paddingLeft: FILE_PAD + depth * INDENT }}
+          style={{ paddingLeft: depth * INDENT }}
           onClick={() => {
             setSelected({ path: full, type: "file" });
             openFile(full);
@@ -626,6 +624,7 @@ export function FileTree({
           onContextMenu={(ev) => onRowContextMenu(ev, full, "file")}
           title={full}
         >
+          <span className={styles.chevronSlot} aria-hidden="true" />
           <FileGlyph name={e.name} />
           {renaming === full ? (
             <InlineNameInput
@@ -743,6 +742,7 @@ export function FileTree({
                     onContextMenu={(ev) => onRowContextMenu(ev, path, "file")}
                     title={path}
                   >
+                    <span className={styles.chevronSlot} aria-hidden="true" />
                     <FileGlyph name={path} />
                     <span className={styles.treePath}>{path}</span>
                   </div>

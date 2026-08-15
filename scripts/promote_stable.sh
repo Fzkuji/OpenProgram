@@ -1,37 +1,13 @@
 #!/usr/bin/env bash
-# Promote a verified commit to the stable instance.
-#
-# Layout this script assumes (see docs in the repo root README):
-#   dev    = this repo checkout, run via `openprogram-dev`
-#            (profile ~/.openprogram-dev, port 18200)
-#   stable = git worktree ../OpenProgram-stable on branch `stable`,
-#            run via `openprogram` (venv ~/.openprogram-stable-env,
-#            default profile ~/.openprogram, port 18100)
-#
-# Usage:
-#   scripts/promote_stable.sh            # promote origin/main
-#   scripts/promote_stable.sh <commit>   # promote a specific commit
 set -euo pipefail
 
-STABLE_DIR="${OPENPROGRAM_STABLE_DIR:-$HOME/Documents/LLM Agent Harness/OpenProgram-stable}"
-STABLE_BIN="$HOME/.openprogram-stable-env/bin/openprogram"
-TARGET="${1:-origin/main}"
+# Kept as a compatibility entry point. Local development no longer uses a
+# second stable worktree or a second Python environment.
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
-cd "$STABLE_DIR"
-git fetch origin
-git merge --ff-only "$TARGET"
-git push origin stable
+if test "$#" -ne 0; then
+  printf 'promote_stable no longer accepts a separate commit; checkout the desired commit first\n' >&2
+  exit 2
+fi
 
-# Rebuild the bundled frontend (no-op ~seconds when nothing changed).
-( cd web && npm install --silent && npm run build )
-
-# Prebuild the docs site (gitignored build artifact) so the first /docs visit
-# after a promote serves immediately instead of waiting on the auto-rebuild.
-"$HOME/.openprogram-stable-env/bin/python" -m tools.docs_site.build
-
-# Snapshot the live data dir's config before the new code touches it,
-# so a bad release can be rolled back together with its config.
-cp ~/.openprogram/config.json ~/.openprogram/config.json.pre-promote 2>/dev/null || true
-
-"$STABLE_BIN" restart
-echo "stable promoted to $(git rev-parse --short HEAD)"
+exec "$repo_root/scripts/refresh-local-app.sh"

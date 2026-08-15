@@ -3,49 +3,237 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpenProgram 右侧文件栏</title>
+<title>OpenProgram 右侧文件栏对齐设计</title>
 <style>
-  :root{color-scheme:dark;--bg:#171719;--row:#202023;--hover:#2a2a2e;--line:#303036;--text:#ededf0;--muted:#96969f;--accent:#74a7ff}
-  *{box-sizing:border-box}body{margin:0;background:#111113;color:var(--text);font:14px/1.55 Inter,system-ui,sans-serif}
-  main{max-width:920px;margin:auto;padding:40px 24px 64px}h1{margin:0 0 8px;font-size:28px}h2{margin:30px 0 10px;font-size:18px}.lead,p,li{color:var(--muted)}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.card,.mock{border:1px solid var(--line);border-radius:12px;background:var(--bg)}.card{padding:14px}
-  .mock{width:288px;overflow:hidden}.bar{height:40px;padding:6px 8px;display:flex;align-items:center;gap:4px;border-bottom:1px solid var(--line)}
-  .name{min-width:0;flex:1;display:flex;align-items:center;gap:7px;font-size:12px;font-weight:650;letter-spacing:.04em;text-transform:uppercase}.name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .button{width:24px;height:24px;display:grid;place-items:center;border-radius:6px;color:var(--muted)}.button.active,.button:hover{background:var(--hover);color:var(--text)}
-  .search{margin:6px 8px;height:30px;border:1px solid var(--line);border-radius:9px;display:flex;align-items:center;padding:0 9px;color:var(--muted)}
-  .tree{padding:6px 0}.item{height:26px;display:flex;align-items:center;gap:7px;padding:0 9px;color:var(--muted)}.item:hover{background:var(--hover);color:var(--text)}
-  code{color:#b8d2ff}.ok{color:#78d89a}.pending{color:#efb766}table{width:100%;border-collapse:collapse}td,th{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line)}th{color:var(--muted);font-size:12px}
+  :root {
+    color-scheme: dark;
+    --page: #101012;
+    --panel: #18181b;
+    --panel-2: #202024;
+    --hover: #2a2a2f;
+    --line: #323238;
+    --text: #f0f0f2;
+    --muted: #9b9ba4;
+    --dim: #6f6f79;
+    --accent: #7eacff;
+    --folder: #d4a73e;
+    --good: #79d59b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text);
+    font: 14px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 40px 24px 72px; }
+  header { max-width: 760px; margin-bottom: 30px; }
+  .status { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  h1 { margin: 8px 0 10px; font-size: clamp(26px, 4vw, 38px); line-height: 1.12; letter-spacing: -.025em; }
+  h2 { margin: 34px 0 12px; font-size: 18px; }
+  p, li { color: var(--muted); }
+  code { color: #bed4ff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .fact { border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; color: var(--muted); font-size: 12px; }
+  .fact b { color: var(--text); font-weight: 650; }
+  .boards { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+  .board { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .board-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+  .board-title strong { font-size: 13px; }
+  .board-title span { color: var(--dim); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .sidebar {
+    --side-w: 288px;
+    width: var(--side-w);
+    max-width: 100%;
+    position: relative;
+    overflow: hidden;
+    margin: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #17171a;
+  }
+  .top { height: 48px; padding: 8px; display: flex; align-items: center; }
+  .toggle { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; color: var(--muted); }
+  .nav-wrap { height: 40px; padding: 8px 8px 0; }
+  .nav {
+    height: 32px;
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-radius: 10px;
+    background: var(--hover);
+    color: var(--text);
+  }
+  .icon-slot { width: 16px; height: 20px; flex: 0 0 16px; display: grid; place-items: center; }
+  .nav-label { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .project-head { min-height: 40px; padding: 4px 16px; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); }
+  .project-bar { height: 32px; display: flex; align-items: center; gap: 4px; }
+  .project-name {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .project-name span:last-child { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .action { width: 24px; height: 24px; flex: 0 0 24px; display: grid; place-items: center; border-radius: 6px; color: var(--muted); }
+  .action.searching { background: var(--hover); color: var(--text); }
+  .search-row { height: 36px; padding-top: 4px; }
+  .search-box { height: 28px; display: flex; align-items: center; gap: 7px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--dim); }
+  .tree { padding: 6px 0; }
+  .tree-row {
+    height: 26px;
+    display: grid;
+    grid-template-columns: 16px 16px minmax(0, 1fr);
+    align-items: center;
+    padding-right: 8px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .tree-row .chev { width: 16px; text-align: center; }
+  .tree-row .folder { width: 16px; display: grid; place-items: center; color: var(--folder); }
+  .tree-row .label { min-width: 0; margin-left: 12px; overflow: hidden; text-overflow: ellipsis; }
+  .guides { position: absolute; inset: 0; pointer-events: none; opacity: .8; }
+  .guide { position: absolute; top: 0; bottom: 0; border-left: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); }
+  .guide.g8 { left: 8px; }
+  .guide.g24 { left: 24px; }
+  .guide.g44 { left: 44px; }
+  .guide-label { position: absolute; top: 2px; padding: 1px 3px; color: var(--accent); background: #17171a; font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .guide-label.l8 { left: 9px; }
+  .guide-label.l24 { left: 25px; }
+  .guide-label.l44 { left: 45px; }
+  .spec-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .spec { padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  .spec b { display: block; margin-bottom: 4px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); }
+  .spec span { color: var(--muted); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  td { color: var(--muted); }
+  td:first-child { color: var(--text); white-space: nowrap; }
+  .ok { color: var(--good); }
+  .pending { color: #efb766; }
+  ul { padding-left: 20px; }
+  @media (max-width: 760px) {
+    main { padding: 24px 14px 48px; }
+    .boards { grid-template-columns: 1fr; }
+    .spec-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 420px) {
+    .spec-grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
-<body><main>
-  <h1>右侧文件栏：项目优先，搜索按需</h1>
-  <p class="lead">文件栏默认先说明当前浏览的是哪个项目；搜索是操作，不长期占用头部宽度。</p>
-  <h2>当前缺口</h2>
-  <div class="grid">
-    <section class="card"><b>搜索框长期占位</b><p>默认没有搜索意图时仍占据整行，项目上下文只能在另一行以弱文本显示。</p></section>
-    <section class="card"><b>信息层级相反</b><p>文件树的根项目是持续上下文，筛选是临时状态；现有布局却让临时控件更显眼。</p></section>
-    <section class="card"><b>侧栏纵向空间浪费</b><p>两行头部固定占用约 66px，文件树可见行数减少。</p></section>
-  </div>
-  <h2>目标布局</h2>
-  <div class="grid">
-    <div class="mock">
-      <div class="bar"><div class="name">▣ <span>OpenProgram</span></div><div class="button">⌕</div><div class="button">＋</div><div class="button">▣</div><div class="button">↻</div></div>
-      <div class="tree"><div class="item">›　.claude</div><div class="item">›　docs</div><div class="item">　 package.json</div></div>
+<body>
+<main>
+  <header>
+    <div class="status">设计稿 · 尚未修改生产代码</div>
+    <h1>右侧文件栏使用同一条侧栏网格</h1>
+    <p>当前项目行比顶部折叠按钮和 <code>Files</code> 导航向左偏移；根级文件夹图标又落在另一条中轴线上。目标是让顶部、项目行和根级文件树共用 8 / 24 / 44px 三列网格，不改变搜索、创建、刷新或文件树行为。</p>
+    <div class="facts">
+      <span class="fact"><b>对象</b> 右侧 Files 文件浏览器</span>
+      <span class="fact"><b>受众</b> 桌面端项目用户</span>
+      <span class="fact"><b>范围</b> 几何、间距、视觉层级</span>
+      <span class="fact"><b>排除</b> 新功能、索引、树数据与交互变更</span>
     </div>
-    <div class="mock">
-      <div class="bar"><div class="name">▣ <span>OpenProgram</span></div><div class="button active">⌕</div><div class="button">＋</div><div class="button">▣</div><div class="button">↻</div></div>
-      <div class="search">⌕　筛选文件…</div>
-      <div class="tree"><div class="item">　 web/components/files/file-tree.tsx</div></div>
-    </div>
+  </header>
+
+  <h2>目标状态</h2>
+  <div class="boards">
+    <section class="board">
+      <div class="board-title"><strong>默认 · 288px</strong><span>显示对齐线</span></div>
+      <div class="sidebar">
+        <div class="top"><div class="toggle">◧</div></div>
+        <div class="nav-wrap"><div class="nav"><span class="icon-slot">▱</span><span class="nav-label">Files</span></div></div>
+        <div class="project-head">
+          <div class="project-bar">
+            <div class="project-name"><span class="icon-slot">▱</span><span>OpenProgram</span></div>
+            <span class="action">⌕</span><span class="action">♧</span><span class="action">▣</span><span class="action">↻</span>
+          </div>
+        </div>
+        <div class="tree">
+          <div class="tree-row"><span class="chev">›</span><span class="folder">▱</span><span class="label">.claude</span></div>
+          <div class="tree-row"><span class="chev">›</span><span class="folder">▱</span><span class="label">docs</span></div>
+          <div class="tree-row"><span class="chev">›</span><span class="folder">▱</span><span class="label">web</span></div>
+        </div>
+        <div class="guides" aria-hidden="true">
+          <i class="guide g8"></i><i class="guide g24"></i><i class="guide g44"></i>
+          <span class="guide-label l8">8</span><span class="guide-label l24">24</span><span class="guide-label l44">44</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="board">
+      <div class="board-title"><strong>搜索展开 · 240px</strong><span>最窄支持宽度</span></div>
+      <div class="sidebar" style="--side-w:240px">
+        <div class="top"><div class="toggle">◧</div></div>
+        <div class="nav-wrap"><div class="nav"><span class="icon-slot">▱</span><span class="nav-label">Files</span></div></div>
+        <div class="project-head">
+          <div class="project-bar">
+            <div class="project-name"><span class="icon-slot">▱</span><span>OpenProgram</span></div>
+            <span class="action searching">⌕</span><span class="action">♧</span><span class="action">▣</span><span class="action">↻</span>
+          </div>
+          <div class="search-row"><div class="search-box">⌕ <span>Search files…</span></div></div>
+        </div>
+        <div class="tree">
+          <div class="tree-row"><span class="chev">›</span><span class="folder">▱</span><span class="label">components</span></div>
+          <div class="tree-row"><span class="chev">›</span><span class="folder">▱</span><span class="label">docs</span></div>
+        </div>
+      </div>
+    </section>
   </div>
-  <h2>交互与边界</h2>
+
+  <h2>对齐规格</h2>
+  <div class="spec-grid">
+    <div class="spec"><b>x = 8</b><span>导航选中面的外边界，也是根级展开箭头的中心线。</span></div>
+    <div class="spec"><b>x = 24</b><span>折叠按钮、Files、项目和根级文件图标的共同中心线。</span></div>
+    <div class="spec"><b>x = 44</b><span>Files、项目名和根级树节点的共同文字起点。</span></div>
+    <div class="spec"><b>right = 16</b><span>项目操作按钮和展开搜索框的右内容边界。</span></div>
+  </div>
+
+  <h2>组件尺寸</h2>
+  <table>
+    <thead><tr><th>区域</th><th>尺寸</th><th>处理</th></tr></thead>
+    <tbody>
+      <tr><td>顶部折叠区</td><td>48px；按钮 32px</td><td>保持不变，作为侧栏图标中心基准。</td></tr>
+      <tr><td>Files 导航</td><td>32px；外层顶部 8px</td><td>保持现有 <code>ui-list-item</code> 规格。</td></tr>
+      <tr><td>项目工具栏</td><td>40px；内部行 32px</td><td>左右内容边距改为 16px；图标槽改为 16px，图文间距改为 12px。</td></tr>
+      <tr><td>操作按钮</td><td>24 × 24px；间距 4px</td><td>保持现状，只移动整个操作组。</td></tr>
+      <tr><td>文件树行</td><td>26px；16 + 16 + 12px</td><td>根级使用 16px 展开槽、16px 图标槽和 12px 图文间距；每层继续增加 16px。</td></tr>
+      <tr><td>搜索展开</td><td>项目行下方 36px</td><td>搜索框左右边界与项目工具栏内容边界一致。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>采用与排除</h2>
   <ul>
-    <li>默认头部保持一行：项目根目录名在左，搜索、新建文件、新建文件夹、刷新在右。</li>
-    <li>完整绝对路径保留在标题 tooltip；可见文本使用目录 basename，避免窄栏中只显示路径中段。</li>
-    <li>点击搜索按钮后在头部下方展开共享 <code>SearchInput</code> 并自动聚焦；再次点击或按 Escape 关闭并清除筛选。</li>
-    <li>切换项目、新建项目项、外部 reveal 文件时退出筛选，避免隐藏筛选条件继续影响文件树。</li>
-    <li>不增加搜索服务、全量索引、根目录折叠或新的依赖；筛选仍只作用于已加载节点。</li>
+    <li>采用：让项目行复用顶部导航的水平内容结构；项目名保持较小、较粗的上下文标签样式。</li>
+    <li>采用：文件树改为固定三列；展开箭头中心 8px，文件图标中心 24px，名称从 44px 开始。</li>
+    <li>采用：项目行继续使用底部分隔线，不增加卡片背景、阴影或第二个选中面。</li>
+    <li>不采用：为项目名增加展开箭头。当前项目根不可折叠，箭头会表达不存在的操作。</li>
+    <li>不采用：把四个操作平均分布。它们是一个右对齐的操作组，平均分布会削弱项目名与操作的关系。</li>
+    <li>不采用：改变 16px 的层级递增量；本轮只重排每一层内部的展开槽、图标槽和文字间距。</li>
   </ul>
-  <h2>验收</h2>
-  <table><tr><th>状态</th><th>可见结果</th></tr><tr><td>默认</td><td>单行 40px 头部，项目名和四个操作均可见，无搜索框。</td></tr><tr><td>搜索打开</td><td>搜索框从操作行下方展开并获得焦点，输入立即筛选。</td></tr><tr><td>窄宽度</td><td>项目名省略，四个 24px 按钮不被挤掉。</td></tr><tr><td>实现状态</td><td class="ok">已实现；默认 App 已确认项目标题、四个操作、默认无搜索框和搜索展开自动聚焦。</td></tr></table>
-</main></body></html>
+
+  <h2>验收与实现状态</h2>
+  <table>
+    <thead><tr><th>检查项</th><th>可见结果</th></tr></thead>
+    <tbody>
+      <tr><td>左侧图标</td><td>折叠按钮、Files、项目、根级文件夹和文件图标中心均位于 24px。</td></tr>
+      <tr><td>文字</td><td>Files、项目名、根级文件名均从 44px 开始。</td></tr>
+      <tr><td>右侧操作</td><td>刷新按钮点击区右缘距离侧栏 16px；240px 下四个操作仍完整。</td></tr>
+      <tr><td>搜索</td><td>默认隐藏；展开后左右边界与项目工具栏一致。</td></tr>
+      <tr><td>主题</td><td>仅使用现有背景、文字、边框与 hover token，不写死产品色。</td></tr>
+      <tr><td>实现状态</td><td class="done">已实现并在默认 18100 的安装版 App 中完成可视验收。</td></tr>
+    </tbody>
+  </table>
+</main>
+</body>
+</html>
