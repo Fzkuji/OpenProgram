@@ -732,8 +732,8 @@ assert.match(
 );
 assert.match(
   css,
-  /:global\(html\.is-desktop\) \.strip \{[^}]*--tab-active-bg: color-mix\(\s*in oklch,\s*var\(--bg-primary\) 82%,\s*light-dark\(black, white\) 18%\s*\);/s,
-  "desktop selected tabs must follow the actual light or dark color-scheme",
+  /:global\(html\.is-desktop\) \.strip \{[^}]*--tab-active-bg: var\(--bg-primary\);/s,
+  "desktop selected tabs must use the brighter content surface",
 );
 assert.match(css, /\.tabActive,\s*\.tab\.tabActive:hover \{[^}]*background: var\(--tab-active-bg\);/s);
 assert.match(css, /\.compoundTabActive \{[^}]*background: var\(--tab-active-bg\);/s);

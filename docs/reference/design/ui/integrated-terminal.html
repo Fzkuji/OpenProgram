@@ -7,7 +7,9 @@
 <h2>已验证缺口</h2><div class="grid">
 <section class="card"><h3>普通管道不是 PTY</h3><p>旧草稿使用 <code>child_process.spawn</code>、<code>TERM=dumb</code> 和 pipe。交互式程序没有终端设备，Claude Code 的光标、全屏刷新、颜色和快捷键不能正常工作。</p></section>
 <section class="card"><h3>输入输出控件不具备终端语义</h3><p><code>&lt;pre&gt;</code> 和单行 <code>&lt;input&gt;</code> 不解释 ANSI、光标移动、alternate screen、粘贴和 Ctrl+C。</p></section>
-<section class="card"><h3>入口与能力不一致</h3><p>旧入口只显示 Terminal，且只能逐行提交命令；没有直接启动 Claude Code 的入口。</p></section></div>
+<section class="card"><h3>入口与能力不一致</h3><p>旧入口只显示 Terminal，且只能逐行提交命令；没有直接启动 Claude Code 的入口。</p></section>
+<section class="card"><h3>终端视图没有接入主题契约</h3><p>终端背景、前景、光标和选择色被写死为单套深色值，ANSI 16 色也没有显式定义；切换浅色、暖色或自定义主题时，终端与 App 其余区域不一致。</p></section>
+<section class="card"><h3>进程操作与状态缺失</h3><p>原有视图只能输入，不能从工具栏复制选择、粘贴、清屏、重启或停止进程，也没有区分启动中、运行中、已退出和错误状态。</p></section></div>
 <h2>方案比较</h2><div class="table"><table><thead><tr><th>方案</th><th>能力</th><th>决策</th></tr></thead><tbody>
 <tr><td><a href="https://github.com/microsoft/node-pty">node-pty</a></td><td>真实 PTY，支持 input、output、resize 与生命周期；官方包含 Electron main + IPC + xterm.js 示例。</td><td class="ok">采用；只运行在 Electron main。</td></tr>
 <tr><td><a href="https://xtermjs.org/docs/">xterm.js</a> + FitAddon</td><td>解释终端序列，产生原始输入，按 pane 计算 cols/rows。</td><td class="ok">采用；不自行实现终端协议。</td></tr>
@@ -16,11 +18,14 @@
 <h2>目标交互</h2><div class="grid">
 <section class="card"><h3>Terminal</h3><p>在当前项目目录打开登录 shell。切换普通 tab 不终止会话；关闭 Terminal tab 才终止 PTY。</p></section>
 <section class="card"><h3>Claude Code</h3><p>提供独立入口，点击后在同一项目目录直接执行 <code>claude</code>。</p></section>
-<section class="card"><h3>失败状态</h3><p>bridge、PTY 模块或 CLI 不可用时显示明确错误；Web 模式不显示可交互假控件。</p></section></div>
+<section class="card"><h3>失败状态</h3><p>bridge、PTY 模块或 CLI 不可用时显示明确错误；Web 模式不显示可交互假控件。项目 WebSocket 尚未解析时不得留下空白页面：短暂等待后以主目录启动，且本次终端 cwd 一经启动不因迟到的项目回复重启。</p></section>
+<section class="card"><h3>主题与 ANSI</h3><p>xterm 的背景、前景、光标、选择色和 ANSI 16 色全部来自全站语义 token。主题或 Custom CSS 变化时只更新 xterm theme，不重启 PTY，不丢失缓冲区。</p></section>
+<section class="card"><h3>终端工具栏</h3><p>顶部显示 preset、运行状态和本次进程实际 cwd；右侧提供复制、粘贴、清屏、重启和停止。按钮使用紧凑无边框样式，hover 和 focus 服从全站 token。</p></section>
+<section class="card"><h3>键盘与粘贴</h3><p><code>Cmd/Ctrl+Shift+C</code> 仅在有选择时复制；<code>Cmd/Ctrl+Shift+V</code> 读取剪贴板并写入 PTY；普通 <code>Ctrl+C</code> 继续发送中断字符。<code>Cmd+K</code> 只清理当前 xterm 视口。</p></section></div>
 <h2>数据流与信任边界</h2><div class="flow"><b>xterm.js</b> ── write / resize ──▶ preload allowlist ──▶ Electron main ──▶ <b>node-pty</b> ──▶ login shell / Claude Code<br>◀──────── terminal:data / exit ────────◀</div>
 <ul><li>renderer 只能选择 <code>shell</code> 或 <code>claude</code> preset，不能提交任意 executable/argv。</li><li><code>cwd</code> 经 realpath 解析且必须为目录；PTY 绑定 renderer sender 与 terminal id。</li><li>单次输入上限 64 KiB；cols/rows 限定范围；替代进程屏蔽旧进程输出。</li><li>进程按 tab 生命周期保留；普通 tab 切换只卸载 xterm 视图。标签关闭、renderer 销毁或显式 stop 才释放 PTY。</li><li>PTY 使用 App 当前本机用户权限，不提供远程沙箱。</li></ul>
-<h2>实现范围</h2><p>变更限定为 built-in tab 的 id、label、launcher、renderer，terminal page/CSS，desktop bridge、preload、main，两份 package manifest、xterm 全局 CSS 和对应测试。</p>
+<h2>实现范围</h2><p>变更限定为 built-in tab 的 id、label、launcher、renderer，terminal page/CSS、终端语义主题 token，desktop bridge、preload、main，两份 package manifest、xterm 全局 CSS 和对应测试。</p>
 <ol><li>Terminal 与 Claude Code 均使用 PTY + xterm.js。</li><li>保留现有 session、file、browser、web、bookmark、history、split、close 与 drag 行为。</li><li>排除远程 cloud session、通用终端会话管理、shell profile 编辑器、命令历史持久化、Windows 与 Web 主机终端。</li></ol>
-<h2>验收条件</h2><ol><li>默认 App 中 Terminal 可执行 <code>pwd</code>。</li><li>Claude Code 入口直接显示本机 CLI，输入与 Ctrl+C 到达进程。</li><li>pane 宽度变化会同步 xterm 和 PTY cols/rows。</li><li>切换 tab 后 PTY pid 不变；单独关闭 Claude Code 不影响 Terminal。</li><li>公共入口、desktop IPC、TypeScript、Web build、desktop package 和默认 App E2E 全部通过。</li></ol>
-<h2>实现状态与证据</h2><div class="table"><table><thead><tr><th>阶段</th><th>状态</th></tr></thead><tbody><tr><td>设计与边界</td><td class="ok">完成</td></tr><tr><td>public-entry RED / GREEN</td><td class="ok">入口、IPC、生命周期与打包检查通过</td></tr><tr><td>规格审查 / 质量审查</td><td class="ok">独立规格审查与质量审查通过</td></tr><tr><td>默认 App 可见验收</td><td class="ok">默认 18100 App E2E 通过；验证 Claude Code、Ctrl+C、resize、tab 保活与关闭清理</td></tr></tbody></table></div>
+<h2>验收条件</h2><ol><li>默认 App 中 Terminal 可执行 <code>pwd</code>。</li><li>Claude Code 入口直接显示本机 CLI，输入与 Ctrl+C 到达进程。</li><li>项目列表正常返回时 cwd 使用当前主项目；项目连接未返回时最多等待短暂窗口，随后在主目录提供可输入 shell，不显示空白页。</li><li>pane 宽度变化会同步 xterm 和 PTY cols/rows。</li><li>切换 tab 后 PTY pid 不变；单独关闭 Claude Code 不影响 Terminal。</li><li>深浅、暖色和自定义主题切换会更新终端表面与 ANSI 16 色，且不改变 PTY pid。</li><li>复制、粘贴、清屏、重启和停止均可用；Ctrl+C 保持进程中断语义；工具栏明确显示 running、exited 与 error。</li><li>专项检查、TypeScript 与 Web production build 通过，并更新默认 App 资产。</li></ol>
+<h2>实现状态与证据</h2><div class="table"><table><thead><tr><th>阶段</th><th>状态</th></tr></thead><tbody><tr><td>设计与边界</td><td class="ok">完成</td></tr><tr><td>完整 renderer 与主题契约</td><td class="ok">完成：ANSI 16 色、主题热更新、状态、cwd 与五项工具栏操作已实现</td></tr><tr><td>专项检查 / TypeScript / production build</td><td class="ok"><code>check:integrated-terminal</code>、<code>tsc --noEmit</code> 与 Next.js production build 通过</td></tr><tr><td>默认 App 更新</td><td class="ok">已更新 <code>/Applications/OpenProgram.app</code>；默认 18100 App 实测输入、ANSI、清屏、粘贴、停止、重启、PID 变化与关闭清理通过</td></tr></tbody></table></div>
 </main></body></html>

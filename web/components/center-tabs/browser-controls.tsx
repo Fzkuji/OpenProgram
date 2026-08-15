@@ -8,6 +8,7 @@ import {
   Check,
   ChevronRight,
   Clock3,
+  Download,
   Folder,
   House,
   Import,
@@ -96,6 +97,9 @@ function runBrowserAction(
       break;
     case "history":
       tabs.openBuiltinTab("history");
+      break;
+    case "downloads":
+      tabs.openBuiltinTab("downloads");
       break;
     case "toggle-bookmarks-bar":
       setShowBookmarksBar(!showBookmarksBar());
@@ -191,6 +195,7 @@ export function BrowserMenu({
               ...(responsive.openExternal ? [item("open-external", "Open in browser", "在浏览器中打开", { disabled: !canOpenExternal })] : []),
               item("bookmarks", "Bookmarks", "书签", { separatorBefore: true }),
               item("history", "History", "历史"),
+              item("downloads", "Downloads", "下载内容"),
               item("toggle-bookmarks-bar", "Show bookmarks bar", "显示书签栏", { checked: visible }),
               item("import", "Import browser data", "导入浏览器资料", { separatorBefore: true, disabled: !canImport }),
               item("clear-data", "Clear browsing data", "清除浏览数据"),
@@ -237,6 +242,7 @@ export function BrowserMenu({
         <DropdownMenuSeparator className={MENU_SEPARATOR} />
         {row("bookmarks", <Bookmark size={14} />, "Bookmarks", "书签")}
         {row("history", <Clock3 size={14} />, "History", "历史")}
+        {row("downloads", <Download size={14} />, "Downloads", "下载内容")}
         {row("toggle-bookmarks-bar", <span className="w-[14px]" />, "Show bookmarks bar", "显示书签栏", visible)}
         <DropdownMenuSeparator className={MENU_SEPARATOR} />
         {canImport ? row("import", <Import size={14} />, "Import browser data", "导入浏览器资料") : null}

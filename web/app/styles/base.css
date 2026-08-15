@@ -179,6 +179,28 @@
   /* ===== Phase 2 语义 token（原本散在各 CSS 里的硬编码色） ===== */
   --selection-bg: color-mix(in srgb, var(--accent-orange) 25%, transparent);
   --focus-ring: color-mix(in srgb, var(--text-bright) 50%, transparent);
+  /* Integrated terminal palette. Values derive from the active App theme;
+     Custom CSS can override these terminal roles directly when needed. */
+  --terminal-bg: var(--bg-primary);
+  --terminal-fg: var(--text-primary);
+  --terminal-cursor: var(--accent-blue);
+  --terminal-selection: color-mix(in srgb, var(--accent-blue) 28%, transparent);
+  --terminal-black: var(--text-muted);
+  --terminal-red: var(--accent-red);
+  --terminal-green: var(--accent-green);
+  --terminal-yellow: var(--accent-yellow);
+  --terminal-blue: var(--accent-blue);
+  --terminal-magenta: var(--accent-purple);
+  --terminal-cyan: var(--accent-cyan);
+  --terminal-white: var(--text-primary);
+  --terminal-bright-black: var(--text-secondary);
+  --terminal-bright-red: color-mix(in srgb, var(--accent-red) 72%, var(--text-bright));
+  --terminal-bright-green: color-mix(in srgb, var(--accent-green) 72%, var(--text-bright));
+  --terminal-bright-yellow: color-mix(in srgb, var(--accent-yellow) 72%, var(--text-bright));
+  --terminal-bright-blue: color-mix(in srgb, var(--accent-blue) 72%, var(--text-bright));
+  --terminal-bright-magenta: color-mix(in srgb, var(--accent-purple) 72%, var(--text-bright));
+  --terminal-bright-cyan: color-mix(in srgb, var(--accent-cyan) 72%, var(--text-bright));
+  --terminal-bright-white: var(--text-bright);
   /* 全屏/图片遮罩。深色主题下就是黑纱。 */
   --scrim: rgba(0, 0, 0, 0.55);
   --scrim-strong: rgba(0, 0, 0, 0.75);
@@ -539,7 +561,7 @@ html.is-desktop {
      lightness — the frame goes muddy grey. oklch keeps the hue/chroma, so
      the cream base just steps down to a warm beige-grey; in dark themes the
      same mix only lowers lightness. */
-  --tabrow-bg: color-mix(in oklch, var(--bg-secondary) 91%, #2a2117 9%);
+  --tabrow-bg: color-mix(in oklch, var(--bg-secondary) 88%, #2a2117 12%);
 }
 .desktop-tab-row {
   display: flex;

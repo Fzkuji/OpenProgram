@@ -184,13 +184,28 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
         ? ((await res.json()) as { path?: string | null; unsupported?: boolean })
         : null;
       if (data?.path) {
-        await wsRequest(
+        const created = await wsRequest<{
+          ok: boolean;
+          project?: Project | null;
+          error?: string | null;
+        }>(
           "create_project",
           { path: data.path, session_id: sessionId ?? "" },
           "project_created",
         );
-        await refresh();
-        notifyProjectChanged();
+        if (created?.ok && created.project?.id) {
+          if (activeChatKey) {
+            setPendingProject(activeChatKey, created.project.id);
+          }
+          setCurrentId(created.project.id);
+          await refresh();
+          notifyProjectChanged();
+          onClose();
+        } else {
+          setErr(
+            created?.error ?? text("Couldn't add this project.", "无法添加此项目。"),
+          );
+        }
       } else if (!data || data.unsupported) {
         setErr(
           text(

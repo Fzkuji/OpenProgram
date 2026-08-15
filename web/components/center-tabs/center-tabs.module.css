@@ -43,11 +43,7 @@
 :global(html.is-desktop) .strip {
   height: 40px;
   align-items: center;
-  --tab-active-bg: color-mix(
-    in oklch,
-    var(--bg-primary) 82%,
-    light-dark(black, white) 18%
-  );
+  --tab-active-bg: var(--bg-primary);
   -webkit-app-region: drag;
   /* 10px 右缘留白：主菜单钮（28px）中心距窗口右缘 10+14=24px，正好落在
      右侧收起轨的图标轴上——最右那一列现在属于菜单钮，不再属于 ＋号。 */
@@ -1920,34 +1916,92 @@
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: 38px minmax(0, 1fr);
+  grid-template-rows: 40px minmax(0, 1fr);
   overflow: hidden;
-  background: #111214;
-  color: #d7dbe0;
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
 }
 .terminalHeader {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   min-width: 0;
-  padding: 0 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  color: #8f969f;
-  font-size: 12px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  background: var(--bg-secondary);
 }
 .terminalHeader strong {
-  color: #d7dbe0;
+  color: var(--text-bright);
   font-weight: 600;
+  white-space: nowrap;
 }
-.terminalHeader > span:not(.terminalError) {
+.terminalPath {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
 }
 .terminalError {
-  margin-left: auto;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--accent-red);
+}
+.terminalStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.terminalStatus > i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.terminalStatus_running > i { background: var(--accent-green); }
+.terminalStatus_starting > i { background: var(--accent-yellow); }
+.terminalStatus_exited > i { background: var(--text-muted); }
+.terminalStatus_error { color: var(--accent-red); }
+.terminalStatus_error > i { background: var(--accent-red); }
+.terminalActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.terminalAction {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.terminalAction:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+.terminalAction:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.terminalAction:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 .terminalHost {
   min-width: 0;
@@ -1959,11 +2013,15 @@
   height: 100%;
 }
 .terminalHost :global(.xterm-viewport) {
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  scrollbar-color: var(--border-light) transparent;
 }
 .terminalEmpty {
   flex: 1;
   display: grid;
   place-items: center;
   color: var(--text-muted);
+}
+@media (max-width: 720px) {
+  .terminalStatusText { display: none; }
+  .terminalHeader { gap: 5px; }
 }

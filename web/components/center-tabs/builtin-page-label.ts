@@ -11,6 +11,7 @@ export function builtinPageLabel(
 ): string {
   if (page === "files") return text("Files", "文件");
   if (page === "history") return text("Web history", "网页历史");
+  if (page === "downloads") return text("Downloads", "下载内容");
   if (page === "bookmarks") return text("Bookmarks", "书签");
   if (page === "terminal") return text("Terminal", "终端");
   if (page === "claude") return "Claude Code";

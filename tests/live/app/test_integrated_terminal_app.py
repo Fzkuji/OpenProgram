@@ -85,6 +85,9 @@ def test_packaged_app_opens_real_terminal_and_claude_code():
             )
             terminal.locator(".xterm-helper-textarea").wait_for(state="attached")
             label = terminal.get_attribute("aria-label")
+            pane = terminal.locator("xpath=..")
+            pane.get_by_role("status").filter(has_text=re.compile(r"Running|运行中")).wait_for()
+            assert pane.get_by_title(re.compile(r"^/|主目录|Home directory")).count() == 1
 
             marker = f"OP_TERM_{time.time_ns()}"
             _type_command(page, label, f"echo {marker}:$$")
@@ -94,6 +97,42 @@ def test_packaged_app_opens_real_terminal_and_claude_code():
             terminal_pid = int(terminal.get_attribute("data-process-id") or "0")
             assert terminal_pid == int(pid.group(1))
             live_pids.add(terminal_pid)
+
+            clear_marker = f"OP_CLEAR_{time.time_ns()}"
+            _type_command(page, label, f"echo {clear_marker}")
+            _wait_for_pattern(page, label, rf"^{clear_marker}$")
+            pane.get_by_role("button", name=re.compile(r"^(Clear terminal|清屏)$")).click()
+            page.wait_for_timeout(100)
+            assert clear_marker not in _terminal_text(page, label)
+
+            paste_marker = f"OP_PASTE_{time.time_ns()}"
+            page.evaluate("command => navigator.clipboard.writeText(command)", f"echo {paste_marker}")
+            pane.get_by_role("button", name=re.compile(r"^(Paste|粘贴)$")).click()
+            page.keyboard.press("Enter")
+            _wait_for_pattern(page, label, rf"^{paste_marker}$")
+
+            pane.get_by_role("button", name=re.compile(r"^(Stop process|停止进程)$")).click()
+            pane.get_by_role("status").filter(has_text=re.compile(r"Stopped|已停止")).wait_for()
+            _wait_for_process_exit(terminal_pid)
+            live_pids.remove(terminal_pid)
+            pane.get_by_role("button", name=re.compile(r"^(Restart process|重启进程)$")).click()
+            pane.get_by_role("status").filter(has_text=re.compile(r"Running|运行中")).wait_for()
+            page.wait_for_function(
+                """([label, oldPid]) => {
+                  const host = [...document.querySelectorAll('[aria-label]')]
+                    .find((node) => node.getAttribute('aria-label') === label && node.querySelector('.xterm'));
+                  return Number(host?.dataset.processId ?? 0) > 0
+                    && Number(host?.dataset.processId) !== oldPid;
+                }""",
+                arg=[label, terminal_pid],
+            )
+            terminal_pid = int(terminal.get_attribute("data-process-id") or "0")
+            live_pids.add(terminal_pid)
+            restarted_marker = f"OP_RESTARTED_{time.time_ns()}"
+            _type_command(page, label, f"echo {restarted_marker}:$$")
+            restarted = _wait_for_pattern(page, label, rf"^{restarted_marker}:\d+$")
+            restarted_pid = re.search(rf"{restarted_marker}:(\d+)", restarted)
+            assert restarted_pid and int(restarted_pid.group(1)) == terminal_pid
 
             _type_command(page, label, "sleep 30")
             page.wait_for_timeout(250)
@@ -139,7 +178,7 @@ def test_packaged_app_opens_real_terminal_and_claude_code():
             _type_command(page, label, f"echo {resumed_marker}:$$")
             resumed = _wait_for_pattern(page, label, rf"^{resumed_marker}:\d+$")
             resumed_pid = re.search(rf"{resumed_marker}:(\d+)", resumed)
-            assert resumed_pid and resumed_pid.group(1) == pid.group(1)
+            assert resumed_pid and int(resumed_pid.group(1)) == terminal_pid
 
             claude_tab = page.locator('[role="tab"][data-tab-id="b:claude"]')
             claude_tab.locator("xpath=..").get_by_label(re.compile(r"^(Close tab|关闭标签)$")).click()

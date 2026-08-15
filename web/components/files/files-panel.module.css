@@ -224,14 +224,58 @@
 
 .treeHeader {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px 0 8px;
-  /* 与左侧栏头部同一 48px 行高，顶缝连成一条线 */
-  height: 48px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  min-height: 40px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+.treeRootPath {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 28px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.treeRootPath span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.treeRootIcon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.treeToolbar {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.treeSearchRow {
+  width: 100%;
+  min-width: 0;
+  animation: treeSearchReveal 120ms ease-out;
+}
+@keyframes treeSearchReveal {
+  from { opacity: 0; transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .treeSearchRow { animation: none; }
 }
 
 
@@ -249,6 +293,10 @@
   cursor: pointer;
 }
 .iconBtn:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+.iconBtnActive {
   color: var(--text-bright);
   background: var(--bg-hover);
 }

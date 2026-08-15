@@ -303,6 +303,107 @@ const transferDecisionFile = () =>
 
 const browsingHistoryFile = () =>
   path.join(app.getPath("userData"), "browsing-history.json");
+const downloadsFile = () => path.join(app.getPath("userData"), "downloads.json");
+const downloads = new Map();
+const activeDownloads = new Map();
+
+function loadDownloads() {
+  downloads.clear();
+  try {
+    const parsed = JSON.parse(fs.readFileSync(downloadsFile(), "utf8"));
+    for (const entry of Array.isArray(parsed?.entries) ? parsed.entries : []) {
+      if (!entry || typeof entry.id !== "string") continue;
+      downloads.set(entry.id, {
+        ...entry,
+        state: entry.state === "progressing" ? "interrupted" : entry.state,
+      });
+    }
+  } catch (_error) {
+    /* first run or malformed best-effort history */
+  }
+}
+
+function saveDownloads() {
+  const file = downloadsFile();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporary = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, JSON.stringify({
+    version: 1,
+    entries: [...downloads.values()]
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .slice(0, 1000),
+  }));
+  fs.renameSync(temporary, file);
+}
+
+function downloadEntry(id) {
+  const entry = downloads.get(id);
+  return entry ? { ...entry } : null;
+}
+
+function broadcastDownload(entry) {
+  for (const ctx of windows.values()) {
+    if (!ctx.win.isDestroyed()) ctx.win.webContents.send("downloads:changed", { ...entry });
+  }
+}
+
+function uniqueDownloadPath(filename) {
+  const directory = app.getPath("downloads");
+  fs.mkdirSync(directory, { recursive: true });
+  const safeName = path.basename(filename || "download") || "download";
+  const extension = path.extname(safeName);
+  const stem = path.basename(safeName, extension);
+  let candidate = path.join(directory, safeName);
+  const unavailable = (value) => fs.existsSync(value)
+    || [...downloads.values()].some(
+      (entry) => activeDownloads.has(entry.id) && entry.path === value,
+    );
+  for (let index = 1; unavailable(candidate); index += 1) {
+    candidate = path.join(directory, `${stem} (${index})${extension}`);
+  }
+  return candidate;
+}
+
+function registerDownloads(targetSession = session.fromPartition("persist:webtabs")) {
+  loadDownloads();
+  targetSession.on("will-download", (_event, item) => {
+    const id = crypto.randomUUID();
+    const savePath = uniqueDownloadPath(item.getFilename());
+    item.setSavePath(savePath);
+    const entry = {
+      id,
+      filename: path.basename(savePath),
+      path: savePath,
+      url: item.getURL(),
+      state: "progressing",
+      receivedBytes: 0,
+      totalBytes: Math.max(0, item.getTotalBytes()),
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    downloads.set(id, entry);
+    activeDownloads.set(id, item);
+    try { saveDownloads(); } catch (_error) { /* best effort */ }
+    broadcastDownload(entry);
+    item.on("updated", (_itemEvent, state) => {
+      if (!downloads.has(id)) return;
+      entry.state = state === "interrupted" ? "interrupted" : "progressing";
+      entry.receivedBytes = Math.max(0, item.getReceivedBytes());
+      entry.totalBytes = Math.max(0, item.getTotalBytes());
+      entry.updatedAt = Date.now();
+      broadcastDownload(entry);
+    });
+    item.once("done", (_itemEvent, state) => {
+      entry.state = state;
+      entry.receivedBytes = Math.max(0, item.getReceivedBytes());
+      entry.totalBytes = Math.max(0, item.getTotalBytes());
+      entry.updatedAt = Date.now();
+      activeDownloads.delete(id);
+      try { saveDownloads(); } catch (_error) { /* best effort */ }
+      broadcastDownload(entry);
+    });
+  });
+}
 
 // History is best-effort: a failed write must never break navigation.
 function safeRecordVisit(visit) {
@@ -2398,6 +2499,43 @@ function registerWebTabIpc() {
       return false;
     }
   });
+  ipcMain.handle("downloads:list", (event, options) => {
+    if (!contextForSender(event)) return [];
+    const query = String(options?.query || "").trim().toLowerCase();
+    return [...downloads.values()]
+      .filter((entry) => !query || entry.filename.toLowerCase().includes(query)
+        || entry.url.toLowerCase().includes(query))
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .map((entry) => ({ ...entry }));
+  });
+  ipcMain.handle("downloads:open", async (event, id) => {
+    if (!contextForSender(event)) return false;
+    const entry = downloadEntry(String(id || ""));
+    if (!entry || entry.state !== "completed" || !fs.existsSync(entry.path)) return false;
+    return (await shell.openPath(entry.path)) === "";
+  });
+  ipcMain.handle("downloads:show", (event, id) => {
+    if (!contextForSender(event)) return false;
+    const entry = downloadEntry(String(id || ""));
+    if (!entry || !fs.existsSync(entry.path)) return false;
+    shell.showItemInFolder(entry.path);
+    return true;
+  });
+  ipcMain.handle("downloads:cancel", (event, id) => {
+    if (!contextForSender(event)) return false;
+    const item = activeDownloads.get(String(id || ""));
+    if (!item) return false;
+    item.cancel();
+    return true;
+  });
+  ipcMain.handle("downloads:clear", (event) => {
+    if (!contextForSender(event)) return false;
+    for (const [id, entry] of downloads) {
+      if (entry.state !== "progressing") downloads.delete(id);
+    }
+    try { saveDownloads(); } catch (_error) { return false; }
+    return true;
+  });
 
   let activeBrowserImport = null;
   ipcMain.handle("browser-import:list-sources", () => {
@@ -3099,6 +3237,7 @@ if (!primaryInstance) {
 
   app.whenReady().then(() => {
     registerFileDirectoryListing();
+    registerDownloads();
     registerWebTabIpc();
     registerTabTransferIpc();
     buildMenu();

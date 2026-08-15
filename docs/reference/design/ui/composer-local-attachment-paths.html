@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Composer local attachment paths</title>
+  <title>Composer local paths</title>
   <style>
     :root { color-scheme: dark; --bg:#171719; --panel:#202023; --line:#38383d; --text:#f1f0f3; --muted:#aaa8af; --blue:#7198ff; }
     * { box-sizing: border-box; }
@@ -24,7 +24,7 @@
 </head>
 <body>
 <main>
-  <h1>Composer local attachment paths</h1>
+  <h1>Composer local paths</h1>
   <p>When a user drops or selects a local file, image, or folder in the Electron desktop app, the outgoing message must identify the original absolute path. The existing attachment tiles and byte-upload behavior remain unchanged.</p>
 
   <h2>Verified gap</h2>
@@ -56,6 +56,14 @@
     <li>For local preview, the stored marker keeps the original path in <code>@json</code> for the agent and adds an immutable session-copy path in <code>@previewjson</code> for the UI. Older messages without a preview path remain readable. The raw-file endpoint does not add the source path's parent directory to the readable roots.</li>
     <li>The backend removes <code>source_path</code> from image attachment metadata before provider dispatch. The path intentionally remains in the user-message marker.</li>
     <li>Clipboard-created blobs and plain-browser files have no native path. They retain the existing upload/save behavior and generated session path.</li>
+  </ul>
+
+  <h2>Project and additional-directory controls</h2>
+  <p>The environment-chip row contains two different path controls. The project chip chooses the draft's main working directory; after the first committed turn it becomes read-only because cwd, permission baseline, and session-repository placement are already fixed. The folder-plus control manages additional working directories and remains editable for an active session.</p>
+  <ul>
+    <li>Choosing an existing project in a draft updates that draft only. Opening a new folder creates or resolves the project and immediately selects the returned project; a refresh without selection is not a completed picker action.</li>
+    <li>The additional-directory menu derives the effective main project from the draft's pending project choice when no session exists. It must not offer the main project path as an additional directory.</li>
+    <li>A connected backend reply remains authoritative. If project requests cannot be completed, controls retain their prior state instead of displaying a false successful selection.</li>
   </ul>
 
   <h2>Boundaries and rejected changes</h2>

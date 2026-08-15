@@ -26,6 +26,8 @@ const rendererQueue = [];
 const spawnedChildren = [];
 const spawnedPtys = [];
 const clearedStorageRequests = [];
+const openedDownloadPaths = [];
+const shownDownloadPaths = [];
 
 function fakeSpawn() {
   const child = new EventEmitter();
@@ -191,7 +193,11 @@ const fakeElectron = {
     on(channel, handler) { ipcListeners.set(channel, handler); },
     handle(channel, handler) { ipcHandlers.set(channel, handler); },
   },
-  shell: { openExternal() {} },
+  shell: {
+    openExternal() {},
+    async openPath(value) { openedDownloadPaths.push(value); return ""; },
+    showItemInFolder(value) { shownDownloadPaths.push(value); },
+  },
   session: {
     fromPartition(partition) {
       assert.equal(partition, "persist:webtabs");
@@ -258,6 +264,8 @@ vm.runInContext(
     activateView,
     runNativeNavigation,
     registerWebTabIpc,
+    registerDownloads,
+    downloads,
     buildMenu,
     createWindow,
     cleanupWindowContext,
@@ -937,6 +945,68 @@ async function checkSenderOwnership() {
   ipcListeners.get("webtab:ensure")(eventB, "fresh-b", "");
   assert.equal(ctxB.views.get("fresh-b").ownerId, ctxB.id);
   assert.equal(ctxA.views.has("fresh-b"), false);
+}
+
+async function checkDownloadsLifecycle() {
+  const targetSession = new EventEmitter();
+  hooks.registerDownloads(targetSession);
+  const win = fakeWindow(42);
+  registerContext("downloads-window", win);
+  const item = new EventEmitter();
+  let received = 0;
+  let savePath = "";
+  let cancelled = false;
+  item.getFilename = () => "report.pdf";
+  item.getURL = () => "https://downloads.example/report.pdf";
+  item.getTotalBytes = () => 100;
+  item.getReceivedBytes = () => received;
+  item.setSavePath = (value) => { savePath = value; };
+  item.cancel = () => { cancelled = true; };
+
+  targetSession.emit("will-download", {}, item);
+  const [id] = [...hooks.downloads.keys()];
+  assert.ok(id);
+  assert.equal(path.basename(savePath), "report.pdf");
+  assert.equal(hooks.downloads.get(id).state, "progressing");
+  assert.equal(win.sent.at(-1)[0], "downloads:changed");
+  item.emit("updated", {}, "interrupted");
+  assert.equal(hooks.downloads.get(id).state, "interrupted");
+
+  const second = new EventEmitter();
+  let secondPath = "";
+  second.getFilename = item.getFilename;
+  second.getURL = () => "https://downloads.example/report-copy.pdf";
+  second.getTotalBytes = () => 10;
+  second.getReceivedBytes = () => 0;
+  second.setSavePath = (value) => { secondPath = value; };
+  second.cancel = () => {};
+  targetSession.emit("will-download", {}, second);
+  assert.equal(
+    path.basename(secondPath),
+    "report (1).pdf",
+    "an interrupted item remains path-active until done",
+  );
+  const secondId = [...hooks.downloads.keys()].find((value) => value !== id);
+
+  const event = { sender: win.webContents };
+  assert.equal(await ipcHandlers.get("downloads:cancel")(event, id), true);
+  assert.equal(cancelled, true);
+  received = 50;
+  item.emit("updated", {}, "progressing");
+  assert.equal(hooks.downloads.get(id).receivedBytes, 50);
+  received = 100;
+  item.emit("done", {}, "completed");
+  assert.equal(hooks.downloads.get(id).state, "completed");
+  fs.writeFileSync(savePath, "downloaded");
+  assert.equal(await ipcHandlers.get("downloads:open")(event, id), true);
+  assert.equal(ipcHandlers.get("downloads:show")(event, id), true);
+  assert.equal(openedDownloadPaths.at(-1), savePath);
+  assert.equal(shownDownloadPaths.at(-1), savePath);
+  assert.equal((await ipcHandlers.get("downloads:list")(event, { query: "report.pdf" })).length, 1);
+  second.emit("done", {}, "cancelled");
+  assert.equal(hooks.downloads.get(secondId).state, "cancelled");
+  assert.equal(ipcHandlers.get("downloads:clear")(event), true);
+  assert.equal(hooks.downloads.has(id), false);
 }
 
 function checkContextMenuEndAlignment() {
@@ -3911,6 +3981,7 @@ Promise.all([
     checkPreloadTabTransfer();
     checkContextMenuEndAlignment();
     await checkSenderOwnership();
+    await checkDownloadsLifecycle();
     await checkTerminalProcessIdentity();
     await checkFocusedRoutingAndCleanup();
     checkPopupCreatesIndependentRendererTab();

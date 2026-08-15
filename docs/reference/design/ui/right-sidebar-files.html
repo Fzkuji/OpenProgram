@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenProgram 右侧文件栏</title>
+<style>
+  :root{color-scheme:dark;--bg:#171719;--row:#202023;--hover:#2a2a2e;--line:#303036;--text:#ededf0;--muted:#96969f;--accent:#74a7ff}
+  *{box-sizing:border-box}body{margin:0;background:#111113;color:var(--text);font:14px/1.55 Inter,system-ui,sans-serif}
+  main{max-width:920px;margin:auto;padding:40px 24px 64px}h1{margin:0 0 8px;font-size:28px}h2{margin:30px 0 10px;font-size:18px}.lead,p,li{color:var(--muted)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.card,.mock{border:1px solid var(--line);border-radius:12px;background:var(--bg)}.card{padding:14px}
+  .mock{width:288px;overflow:hidden}.bar{height:40px;padding:6px 8px;display:flex;align-items:center;gap:4px;border-bottom:1px solid var(--line)}
+  .name{min-width:0;flex:1;display:flex;align-items:center;gap:7px;font-size:12px;font-weight:650;letter-spacing:.04em;text-transform:uppercase}.name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .button{width:24px;height:24px;display:grid;place-items:center;border-radius:6px;color:var(--muted)}.button.active,.button:hover{background:var(--hover);color:var(--text)}
+  .search{margin:6px 8px;height:30px;border:1px solid var(--line);border-radius:9px;display:flex;align-items:center;padding:0 9px;color:var(--muted)}
+  .tree{padding:6px 0}.item{height:26px;display:flex;align-items:center;gap:7px;padding:0 9px;color:var(--muted)}.item:hover{background:var(--hover);color:var(--text)}
+  code{color:#b8d2ff}.ok{color:#78d89a}.pending{color:#efb766}table{width:100%;border-collapse:collapse}td,th{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line)}th{color:var(--muted);font-size:12px}
+</style>
+</head>
+<body><main>
+  <h1>右侧文件栏：项目优先，搜索按需</h1>
+  <p class="lead">文件栏默认先说明当前浏览的是哪个项目；搜索是操作，不长期占用头部宽度。</p>
+  <h2>当前缺口</h2>
+  <div class="grid">
+    <section class="card"><b>搜索框长期占位</b><p>默认没有搜索意图时仍占据整行，项目上下文只能在另一行以弱文本显示。</p></section>
+    <section class="card"><b>信息层级相反</b><p>文件树的根项目是持续上下文，筛选是临时状态；现有布局却让临时控件更显眼。</p></section>
+    <section class="card"><b>侧栏纵向空间浪费</b><p>两行头部固定占用约 66px，文件树可见行数减少。</p></section>
+  </div>
+  <h2>目标布局</h2>
+  <div class="grid">
+    <div class="mock">
+      <div class="bar"><div class="name">▣ <span>OpenProgram</span></div><div class="button">⌕</div><div class="button">＋</div><div class="button">▣</div><div class="button">↻</div></div>
+      <div class="tree"><div class="item">›　.claude</div><div class="item">›　docs</div><div class="item">　 package.json</div></div>
+    </div>
+    <div class="mock">
+      <div class="bar"><div class="name">▣ <span>OpenProgram</span></div><div class="button active">⌕</div><div class="button">＋</div><div class="button">▣</div><div class="button">↻</div></div>
+      <div class="search">⌕　筛选文件…</div>
+      <div class="tree"><div class="item">　 web/components/files/file-tree.tsx</div></div>
+    </div>
+  </div>
+  <h2>交互与边界</h2>
+  <ul>
+    <li>默认头部保持一行：项目根目录名在左，搜索、新建文件、新建文件夹、刷新在右。</li>
+    <li>完整绝对路径保留在标题 tooltip；可见文本使用目录 basename，避免窄栏中只显示路径中段。</li>
+    <li>点击搜索按钮后在头部下方展开共享 <code>SearchInput</code> 并自动聚焦；再次点击或按 Escape 关闭并清除筛选。</li>
+    <li>切换项目、新建项目项、外部 reveal 文件时退出筛选，避免隐藏筛选条件继续影响文件树。</li>
+    <li>不增加搜索服务、全量索引、根目录折叠或新的依赖；筛选仍只作用于已加载节点。</li>
+  </ul>
+  <h2>验收</h2>
+  <table><tr><th>状态</th><th>可见结果</th></tr><tr><td>默认</td><td>单行 40px 头部，项目名和四个操作均可见，无搜索框。</td></tr><tr><td>搜索打开</td><td>搜索框从操作行下方展开并获得焦点，输入立即筛选。</td></tr><tr><td>窄宽度</td><td>项目名省略，四个 24px 按钮不被挤掉。</td></tr><tr><td>实现状态</td><td class="ok">已实现；默认 App 已确认项目标题、四个操作、默认无搜索框和搜索展开自动聚焦。</td></tr></table>
+</main></body></html>

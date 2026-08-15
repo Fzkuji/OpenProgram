@@ -22,6 +22,7 @@ import {
   Folder,
   FolderPlus,
   RotateCw,
+  Search,
 } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
@@ -81,10 +82,12 @@ const projectPathCache = new Map<string, string>();
 async function projectAbsPath(projectId: string): Promise<string | null> {
   const hit = projectPathCache.get(projectId);
   if (hit) return hit;
-  const data = await wsRequest<{ projects: Project[] }>(
+  const sessionId = useSessionStore.getState().currentSessionId ?? "";
+  const data = await wsRequest<{ projects: Project[]; session_id?: string | null }>(
     "list_projects",
-    { session_id: useSessionStore.getState().currentSessionId ?? "" },
+    { session_id: sessionId },
     "projects_list",
+    (d) => (d.session_id ?? null) === (sessionId || null),
   );
   const p = data?.projects?.find((x) => x.id === projectId);
   if (!p?.path) return null;
@@ -233,6 +236,8 @@ export function FileTree({
   const [dirs, setDirs] = useState<Record<string, DirState>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [projectRoot, setProjectRoot] = useState<string | null>(null);
   // File-management state: selected row (targets the header's New
   // File/Folder), inline create/rename editors, context menu, delete
   // confirm. Selection is UI-only — clicking still opens files.
@@ -276,8 +281,29 @@ export function FileTree({
     setRenaming(null);
     setMenu(null);
     setFilter("");
+    setSearchOpen(false);
     load("");
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const resolveRoot = () => {
+      void projectAbsPath(projectId).then((path) => {
+        if (!cancelled) setProjectRoot(path);
+      });
+    };
+    setProjectRoot(null);
+    resolveRoot();
+    const onProjectChanged = () => {
+      projectPathCache.delete(projectId);
+      resolveRoot();
+    };
+    window.addEventListener("project-changed", onProjectChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("project-changed", onProjectChanged);
+    };
+  }, [projectId]);
 
   function toggleDir(path: string) {
     setExpanded((prev) => {
@@ -352,6 +378,7 @@ export function FileTree({
       const d = (ev as CustomEvent<{ projectId?: string; path?: string }>).detail;
       if (!d?.path || (d.projectId && d.projectId !== projectId)) return;
       setFilter(""); // rows only render in tree mode
+      setSearchOpen(false);
       expandChain(parentOf(d.path));
       setSelected({ path: d.path, type: "file" });
       revealTarget.current = d.path;
@@ -380,6 +407,7 @@ export function FileTree({
     const target =
       dir ?? (selected ? (selected.type === "dir" ? selected.path : parentOf(selected.path)) : "");
     setFilter(""); // the editable row only renders in tree mode
+    setSearchOpen(false);
     expandChain(target);
     setCreating({ dir: target, kind });
   }
@@ -622,37 +650,73 @@ export function FileTree({
   return (
     <div className={styles.treeCol} ref={rootRef}>
       <div className={styles.treeHeader}>
-        {headerExtra}
-        <SearchInput
-          className="flex-1 min-w-0"
-          value={filter}
-          onChange={setFilter}
-          placeholder={text("Filter files…", "筛选文件…")}
-        />
-        <button
-          type="button"
-          className={styles.iconBtn}
-          onClick={() => startCreate("file")}
-          title={text("New File", "新建文件")}
-        >
-          <FilePlus size={13} />
-        </button>
-        <button
-          type="button"
-          className={styles.iconBtn}
-          onClick={() => startCreate("dir")}
-          title={text("New Folder", "新建文件夹")}
-        >
-          <FolderPlus size={13} />
-        </button>
-        <button
-          type="button"
-          className={styles.iconBtn}
-          onClick={refetchRoot}
-          title={text("Refresh", "刷新")}
-        >
-          <RotateCw size={13} />
-        </button>
+        <div className={styles.treeToolbar}>
+          {headerExtra}
+          <div
+            className={styles.treeRootPath}
+            title={projectRoot ?? text("Resolving project path…", "正在读取项目路径…")}
+          >
+            <Folder size={14} className={styles.treeRootIcon} aria-hidden="true" />
+            <span>
+              {projectRoot
+                ? baseOf(projectRoot)
+                : text("Resolving project…", "正在读取项目…")}
+            </span>
+          </div>
+          <button
+            type="button"
+            className={`${styles.iconBtn} ${searchOpen ? styles.iconBtnActive : ""}`}
+            onClick={() => {
+              if (searchOpen) setFilter("");
+              setSearchOpen((value) => !value);
+            }}
+            aria-expanded={searchOpen}
+            title={searchOpen ? text("Close search", "关闭搜索") : text("Search files", "搜索文件")}
+          >
+            <Search size={13} />
+          </button>
+          <button
+            type="button"
+            className={styles.iconBtn}
+            onClick={() => startCreate("file")}
+            title={text("New File", "新建文件")}
+          >
+            <FilePlus size={13} />
+          </button>
+          <button
+            type="button"
+            className={styles.iconBtn}
+            onClick={() => startCreate("dir")}
+            title={text("New Folder", "新建文件夹")}
+          >
+            <FolderPlus size={13} />
+          </button>
+          <button
+            type="button"
+            className={styles.iconBtn}
+            onClick={refetchRoot}
+            title={text("Refresh", "刷新")}
+          >
+            <RotateCw size={13} />
+          </button>
+        </div>
+        {searchOpen ? (
+          <div className={styles.treeSearchRow}>
+            <SearchInput
+              className="w-full min-w-0"
+              value={filter}
+              onChange={setFilter}
+              placeholder={text("Filter files…", "筛选文件…")}
+              aria-label={text("Filter files", "筛选文件")}
+              autoFocus
+              onKeyDown={(event) => {
+                if (event.key !== "Escape") return;
+                setFilter("");
+                setSearchOpen(false);
+              }}
+            />
+          </div>
+        ) : null}
       </div>
       <div className={styles.treeBody}>
         {filtered
@@ -730,6 +794,7 @@ export function FileTree({
               }
               onRename={() => {
                 setFilter(""); // inline editor only renders in tree mode
+                setSearchOpen(false);
                 expandChain(parentOf(menu.path)); // row must be visible
                 setRenaming(menu.path);
               }}

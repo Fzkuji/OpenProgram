@@ -12,6 +12,8 @@ const page = read("components/center-tabs/terminal-page.tsx");
 const bridge = read("lib/desktop-bridge.ts");
 const preload = read("../desktop/preload.js");
 const layout = read("app/layout.tsx");
+const css = read("components/center-tabs/center-tabs.module.css");
+const base = read("app/styles/base.css");
 const pkg = JSON.parse(read("package.json"));
 
 assert.match(ids, /"terminal"/);
@@ -24,8 +26,33 @@ assert.match(page, /import\("@xterm\/addon-fit"\)/);
 assert.match(page, /new ResizeObserver/);
 assert.match(page, /api\.resize/);
 assert.match(page, /dataset\.processId/);
-assert.doesNotMatch(page, /api\.stop/);
+assert.match(page, /PROJECT_RESOLVE_GRACE_MS/);
+assert.match(page, /setStartCwd\(\(current\) => current === undefined \? null : current\)/);
+assert.match(page, /cwd: startCwd \?\? undefined/);
+assert.match(page, /readTerminalTheme/);
+for (const color of [
+  "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+  "brightBlack", "brightRed", "brightGreen", "brightYellow", "brightBlue",
+  "brightMagenta", "brightCyan", "brightWhite",
+]) assert.match(page, new RegExp(`\\b${color}:`));
+assert.match(page, /attachCustomKeyEventHandler/);
+assert.match(page, /navigator\.clipboard\.writeText/);
+assert.match(page, /navigator\.clipboard\.readText/);
+assert.match(page, /terminal\.clear\(\)/);
+assert.match(page, /\\x1b\[2J\\x1b\[3J\\x1b\[H/);
+assert.match(page, /restartTerminal/);
+assert.match(page, /stopTerminal/);
+assert.match(page, /api\.stop\(id\)/);
+assert.match(page, /status === "running"/);
+assert.match(page, /payload\.done/);
+assert.match(page, /options\.disableStdin = true/);
 assert.doesNotMatch(page, /<input|terminalInputRow/);
+assert.doesNotMatch(page, /background:\s*"#[0-9a-f]{3,8}"/i);
+assert.match(css, /\.terminalActions/);
+assert.match(css, /\.terminalAction/);
+assert.match(css, /background:\s*var\(--terminal-bg\)/);
+assert.match(base, /--terminal-bg:/);
+assert.match(base, /--terminal-bright-white:/);
 assert.match(bridge, /export function destroyStaleTerminals/);
 assert.match(bridge, /destroyStaleTerminals\(bridge, tabs\)/);
 assert.match(bridge, /useCenterTabs\.subscribe\(reconcileNativeResources\)/);

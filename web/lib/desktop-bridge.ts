@@ -228,6 +228,27 @@ export interface DesktopHistoryApi {
   clear(): Promise<boolean>;
 }
 
+export interface DesktopDownloadEntry {
+  id: string;
+  filename: string;
+  path: string;
+  url: string;
+  state: "progressing" | "completed" | "cancelled" | "interrupted";
+  receivedBytes: number;
+  totalBytes: number;
+  startedAt: number;
+  updatedAt: number;
+}
+
+export interface DesktopDownloadsApi {
+  list(options?: { query?: string }): Promise<DesktopDownloadEntry[]>;
+  open(id: string): Promise<boolean>;
+  show(id: string): Promise<boolean>;
+  cancel(id: string): Promise<boolean>;
+  clear(): Promise<boolean>;
+  onChanged(cb: (entry: DesktopDownloadEntry) => void): () => void;
+}
+
 export interface DesktopBrowserImportProfile {
   id: string;
   name: string;
@@ -336,6 +357,8 @@ export interface DesktopBridge {
   mainMenu?: DesktopMainMenuApi;
   /** Absent in shells older than the browsing-history build. */
   history?: DesktopHistoryApi;
+  /** Desktop-only download history and active download controls. */
+  downloads?: DesktopDownloadsApi;
   /** Desktop-only, explicit import from a detected local browser profile. */
   browserImport?: DesktopBrowserImportApi;
   /** Desktop-only clearing of the built-in browser profile. */

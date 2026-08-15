@@ -67,6 +67,18 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
       ipcRenderer.invoke("history:delete", url, visitedAt),
     clear: () => ipcRenderer.invoke("history:clear"),
   },
+  downloads: {
+    list: (options) => ipcRenderer.invoke("downloads:list", options),
+    open: (id) => ipcRenderer.invoke("downloads:open", id),
+    show: (id) => ipcRenderer.invoke("downloads:show", id),
+    cancel: (id) => ipcRenderer.invoke("downloads:cancel", id),
+    clear: () => ipcRenderer.invoke("downloads:clear"),
+    onChanged: (cb) => {
+      const listener = (_event, entry) => cb(entry);
+      ipcRenderer.on("downloads:changed", listener);
+      return () => ipcRenderer.removeListener("downloads:changed", listener);
+    },
+  },
   browserImport: {
     listSources: () => ipcRenderer.invoke("browser-import:list-sources"),
     run: (request) => ipcRenderer.invoke("browser-import:run", request),

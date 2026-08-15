@@ -92,7 +92,9 @@
 
   /* ═══ 右侧栏：纯文件树（可被 History DAG 临时覆盖） ═══ */
   .right{width:250px;flex-shrink:0;border-left:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column;position:relative}
-  .rhead{height:40px;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid var(--border);flex-shrink:0}
+  .rhead{min-height:66px;display:flex;flex-direction:column;gap:4px;padding:6px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
+  .rootpath{width:100%;height:20px;display:flex;align-items:center;gap:6px;color:var(--text2);font:11px/20px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .roottools{width:100%;display:flex;align-items:center;gap:6px}
   .filter{flex:1;display:flex;gap:7px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:5px 9px;color:var(--text3);font-size:12px}
   .rbody{flex:1;overflow-y:auto;padding:8px}
   .tnode{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:7px;cursor:pointer;color:var(--text2);font-size:12.5px}
@@ -160,7 +162,10 @@
 
   <!-- ═══ 右：纯文件树 ═══ -->
   <div class="right">
-    <div class="rhead"><div class="filter">🔍 Filter files…</div></div>
+    <div class="rhead">
+      <div class="rootpath" title="/Users/fzkuji/Documents/LLM Agent Harness/OpenProgram">📁 /Users/fzkuji/Documents/LLM Agent Harness/OpenProgram</div>
+      <div class="roottools"><div class="filter">🔍 Filter files…</div><span>＋</span><span>↻</span></div>
+    </div>
     <div class="rbody" id="ftree"></div>
     <div class="dagpanel" id="dagpanel">
       <div class="daghead">🕘 History — proxy 重构 <span class="x" onclick="dag(false)">✕</span></div>

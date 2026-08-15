@@ -18,6 +18,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Download,
   Folder,
   Globe,
   History,
@@ -52,6 +53,7 @@ import {
 } from "@/lib/bookmarks";
 import {
   desktopBridge,
+  type DesktopDownloadEntry,
   type DesktopHistoryEntry,
 } from "@/lib/desktop-bridge";
 import { useCenterTabs, type BuiltinPage } from "@/lib/state/center-tabs-store";
@@ -64,7 +66,9 @@ const HISTORY_PAGE_SIZE = 250;
 const HISTORY_LIST_LIMIT = 5_000;
 
 export function BuiltinTabPane({ page }: { page: BuiltinPage }) {
-  return page === "bookmarks" ? <BookmarksPage /> : <HistoryPage />;
+  if (page === "bookmarks") return <BookmarksPage />;
+  if (page === "downloads") return <DownloadsPage />;
+  return <HistoryPage />;
 }
 
 /** Shared page chrome: title row + search box, then the caller's list. */
@@ -694,6 +698,131 @@ function HistoryPage() {
               {text("Load more", "加载更多")}
             </button>
           )}
+        </div>
+      )}
+    </PageFrame>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
+function DownloadsPage() {
+  const { text } = useTranslation();
+  const api = desktopBridge()?.downloads;
+  const [entries, setEntries] = useState<DesktopDownloadEntry[] | null>(null);
+  const [query, setQuery] = useState("");
+  const refresh = useCallback(() => {
+    if (!api) return;
+    void api.list({ query }).then(setEntries).catch(() => setEntries([]));
+  }, [api, query]);
+
+  useEffect(() => {
+    if (!api) return undefined;
+    const timer = window.setTimeout(refresh, 100);
+    const unsubscribe = api.onChanged(refresh);
+    return () => {
+      window.clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [api, refresh]);
+
+  const title = text("Downloads", "下载内容");
+  if (!api) {
+    return (
+      <div className={styles.builtinPane}>
+        <div className={styles.builtinInner}>
+          <div className={styles.builtinHeader}>
+            <Download size={18} aria-hidden="true" />
+            <h1 className={styles.builtinTitle}>{title}</h1>
+          </div>
+          <div className="bookmarks-empty">
+            {text("Downloads are managed by the desktop app only.", "下载内容仅由桌面应用管理。")}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <PageFrame
+      icon={<Download size={18} aria-hidden="true" />}
+      title={title}
+      query={query}
+      onQueryChange={setQuery}
+      searchPlaceholder={text("Search downloads", "搜索下载内容")}
+      action={entries?.some((entry) => entry.state !== "progressing") ? (
+        <button
+          type="button"
+          className={styles.builtinClear}
+          onClick={() => void api.clear().then(refresh)}
+        >
+          <Trash2 size={14} aria-hidden="true" />
+          <span>{text("Clear", "清除记录")}</span>
+        </button>
+      ) : null}
+    >
+      {entries === null ? null : entries.length === 0 ? (
+        <div className="bookmarks-empty">
+          {query.trim()
+            ? text("No matching downloads", "没有匹配的下载内容")
+            : text("No downloads yet", "还没有下载内容")}
+        </div>
+      ) : (
+        <div className="browsing-history-list">
+          {entries.map((entry) => {
+            const progress = entry.totalBytes > 0
+              ? `${formatBytes(entry.receivedBytes)} / ${formatBytes(entry.totalBytes)}`
+              : formatBytes(entry.receivedBytes);
+            const state = entry.state === "completed"
+              ? text("Completed", "已完成")
+              : entry.state === "progressing"
+                ? text("Downloading", "下载中")
+                : entry.state === "cancelled"
+                  ? text("Cancelled", "已取消")
+                  : text("Interrupted", "已中断");
+            return (
+              <div className="browsing-history-row" key={entry.id}>
+                <Download size={15} aria-hidden="true" />
+                <span className="browsing-history-time">{state}</span>
+                <button
+                  type="button"
+                  className="browsing-history-title"
+                  disabled={entry.state !== "completed"}
+                  onClick={() => void api.open(entry.id)}
+                  title={entry.filename}
+                >
+                  {entry.filename}
+                </button>
+                <span className="browsing-history-host" title={entry.url}>{progress}</span>
+                {entry.state === "progressing" ? (
+                  <button
+                    type="button"
+                    className="browsing-history-delete"
+                    onClick={() => void api.cancel(entry.id)}
+                    title={text("Cancel download", "取消下载")}
+                    aria-label={text("Cancel download", "取消下载")}
+                  >
+                    <X size={14} aria-hidden="true" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="browsing-history-delete"
+                    onClick={() => void api.show(entry.id)}
+                    title={text("Show in folder", "在文件夹中显示")}
+                    aria-label={text("Show in folder", "在文件夹中显示")}
+                  >
+                    <Folder size={14} aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </PageFrame>

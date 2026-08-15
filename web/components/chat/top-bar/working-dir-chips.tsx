@@ -51,6 +51,9 @@ interface Project {
 export function WorkingDirChips() {
   const { text } = useTranslation();
   const { sessionId, chatKey: activeChatKey } = useBoundChat();
+  const pendingProjectId = useSessionStore((s) =>
+    activeChatKey ? s.pendingProjectsByChat[activeChatKey] ?? null : null,
+  );
   const workingDirsKey = sessionId ?? activeChatKey;
   const workingDirs = useSessionStore((s) =>
     workingDirsKey
@@ -149,8 +152,11 @@ export function WorkingDirChips() {
   // 未绑定项目的会话 current_project_id 为 null，但它实际生效的是默认
   // 项目（chip 显示的就是它）——回落到 is_default，别让"当前项目"混进
   // 最近列表。
+  const effectiveProjectId = !sessionId
+    ? pendingProjectId ?? currentProjectId
+    : currentProjectId;
   const currentProjectPath =
-    projects.find((p) => p.id === currentProjectId)?.path ??
+    projects.find((p) => p.id === effectiveProjectId)?.path ??
     projects.find((p) => p.is_default)?.path ??
     null;
   const recent = projects.filter(

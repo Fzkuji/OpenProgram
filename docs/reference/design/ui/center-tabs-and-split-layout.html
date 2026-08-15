@@ -188,7 +188,7 @@
     <div class="card problem">
       <p><strong>原问题：</strong><code>CompoundTabItem</code> 曾把 <code>group.memberIds</code> 分别渲染为多个 <code>TabItem</code>。每个 segment 都有 click target、close button、<code>active</code> 和 <code>aria-selected</code>，顶部因此错误地表达“当前选中了左侧或右侧成员”。</p>
       <p><strong>原问题：</strong><code>normalizeCenterTabsPayload()</code> 曾根据活动 session 与 <code>splitWebTabId</code> 自动 regroup。切换到另一个会话后，Web 会被重新挂到新会话旁边，表现为浏览器固定在窗口右侧。</p>
-      <p><strong>当前视觉缺口：</strong>桌面顶部栏使用比内容区更深的 <code>--tabrow-bg</code>，选中条目仍直接使用 <code>--bg-primary</code>。在深色主题中两者亮度接近，在浅色主题中选中面也缺少明确的反向层级，导致选中与未选中条目难以快速区分。</p>
+      <p><strong>当前视觉缺口：</strong>桌面顶部栏应始终比内容区更深，选中条目使用内容区的 <code>--bg-primary</code>。此前桌面覆盖规则在浅色主题中又向选中面混入黑色，结果选中条目反而变灰，破坏“暗栏面、亮选中面”的单向层级。</p>
       <p><strong>已修正的交互缺口：</strong>旧版 Web toolbar 的 <code>SplitButton.toggleSplit()</code> 会调用 <code>setSplitWebTab()</code>，并根据当前 route 激活或创建 session/draft。现在 toolbar 与顶部 tab 右键菜单复用同一个 <code>SplitViewPicker</code> 和 <code>groupTab()</code> 提交路径；选择 target 前不修改布局或会话状态。</p>
       <p><strong>已实施：</strong>group 通过 <code>centerTabStripEntries()</code> 投影为一个顶部条目；切换普通条目只改变 <code>activeId</code>，不改变原 group 的成员和顺序。复合条目只渲染一个 <code>role="tab"</code> 和一个 group drag target，内部两个等宽成员格分别提供自己的图标、标题和关闭按钮。</p>
       <p><strong>已修复回归：</strong>divider 的 pointer drag 原本会更新并持久化 <code>splitRatio</code>，但左侧会话 pane 同时匹配 <code>.center-split-primary</code> 与后加载的 <code>.center-pane-chat</code>；后者的 <code>flex: 1</code> 覆盖主 pane 的固定宽度，使两侧在拖动后仍被 flex 成等宽。现在使用组合选择器保持主 pane 的 <code>flex: 0 0 auto</code>，ratio 可以直接控制实际 pane bounding width；顶部复合 tab、group ownership 和拖动语义未改变。</p>
@@ -325,7 +325,7 @@
     <ul>
       <li>每个 entry 对应一个 <code>role="tab"</code>。split entry 仍只有一个 tab target；两个成员槽位是视觉内容，不是两个可独立选择的 tab。</li>
       <li>只有包含 <code>activeId</code> 的 entry 使用 active 背景与 <code>aria-selected="true"</code>。</li>
-      <li>active 背景由共享 <code>--tab-active-bg</code> 控制，普通条目与复合条目必须一致。浏览器模式保持 <code>--bg-primary</code>，继续与内容区及 fillet 连续；桌面模式根据元素实际 <code>color-scheme</code> 使用 <code>light-dark(black, white)</code>：浅色向黑色、深色向白色混合 18%。因此内置主题和声明了正确 <code>color-scheme</code> 的 custom 主题使用同一规则。未选中条目继续透明显示 <code>--tabrow-bg</code>，不增加边框或 active 动画。</li>
+      <li>active 背景由共享 <code>--tab-active-bg</code> 控制，普通条目与复合条目必须一致，并在浏览器与桌面模式统一取 <code>--bg-primary</code>。未选中条目继续透明显示更深的 <code>--tabrow-bg</code>，不增加边框或 active 动画；主题只负责提供各自的 surface token，不再对选中 tab 做反向明暗混合。</li>
       <li>桌面最顶部全局 tab strip 固定为 <code>40px</code>；普通 tab 与复合分屏 tab 都固定为 <code>28px</code> 并垂直居中，使上下各保留 <code>6px</code>。tab 使用固定 <code>8px</code> 圆角，不使用半高圆角或悬浮阴影形成胶囊。成员关闭按钮继续使用 <code>20px</code> 点击区域；独立的新增与主菜单按钮保持 <code>28px</code>。</li>
       <li>条目生命周期保留可见的几何动画：普通 Tab 新建时以 <code>180ms ease-out</code> 展开，关闭时以 <code>160ms ease-in</code> 收缩；关闭 split 的单个成员时，该成员淡出，外层复合条目同步在 <code>160ms</code> 内收缩为 single 宽度。active 切换仍然即时，split 仍只有整个条目可拖动。</li>
       <li>两个成员槽位固定等宽，各自显示图标和省略标题；长标题只在本侧截断，不能压缩另一侧。两侧使用相同背景和文字层级，不显示当前侧高亮。</li>
@@ -463,7 +463,7 @@
     <ol>
       <li><strong>整体选中：</strong>顶部 split(A,W) 只有一个 active 背景和一个 <code>aria-selected=true</code>，内部没有两个 tab target；同时必须清楚显示两个成员身份。</li>
       <li><strong>顶部几何：</strong>Electron 最顶部全局 tab strip 为 <code>40px</code>；普通与复合 tab 都为 <code>28px</code>，上下间距各为 <code>6px</code>。关闭按钮保持 <code>20px</code> 点击区域，新增与主菜单按钮保持 <code>28px</code>。</li>
-      <li><strong>主题对比：</strong>桌面深色主题的选中条目明显亮于未选中栏面；桌面 light 与 beige-light 的选中条目明显深于未选中栏面。普通 tab 与 split tab 使用同一个 active token，hover、focus、drag 和非选中背景不改变。</li>
+      <li><strong>主题对比：</strong>桌面深色、light 与 beige-light 主题都保持选中条目明显亮于未选中栏面。普通 tab 与 split tab 使用同一个 active token，hover、focus、drag 和非选中背景不改变。</li>
       <li><strong>等宽成员：</strong>两个成员槽位的 bounding width 相等；任一标题变长后仍相等，并且只在自己的槽位内省略。</li>
       <li><strong>无 pane 选中：</strong>依次点击左右 pane，顶部 DOM、class、entry 状态和 pane 边框不变化；只允许自然 DOM focus 变化。</li>
       <li><strong>整体切换：</strong>从 split(A,W) 选择 B 后，A 与 W 同时不可见，B 单独显示；Electron 中 W 的 native view 同时隐藏。</li>
@@ -512,7 +512,7 @@ git diff --check</code></pre>
     <div class="card">
       <p><strong>顶部复合 tab、分屏宽度调整与 Web toolbar 显式成员选择均已实现并通过独立规格与质量复核。</strong></p>
       <p>toolbar picker 的 focused checks、TypeScript、production build、Desktop WebTab/transfer checks 与文档链接检查通过。默认安装版验证了：选择前不创建 group；选择指定 target 后只生成该精确 pair；Escape 不改持久化状态；非空候选首项获得焦点；空候选 Close 获得焦点；outside dismissal 保留实际点击目标焦点。验收结束后恢复原 tabs、groups、activeId、URL 与 split ratio。</p>
-      <p><strong>主题化 active 对比度：</strong>设计、实现、独立 specification/quality review 与默认安装版双主题验收均已完成。深色模式下，选中复合 tab 背景亮度为 <code>OKLCH 0.373</code>，tab 栏为 <code>0.210</code>；浅色模式下分别为 <code>0.820</code> 与 <code>0.906</code>。未选中 tab 保持透明，并显示 tab 栏背景。</p>
+      <p><strong>主题化 active 对比度：</strong>选中 tab 统一使用内容 surface，未选中 tab 保持透明并显示更深的 tab 栏 surface；浅色和深色主题均遵循“栏面更暗、选中面更亮”，不再使用浅色主题下的反向灰色 active 面。</p>
       <p><strong>桌面顶部几何：</strong>最顶部全局 tab strip 固定为 <code>40px</code>，普通与复合 tab 固定为 <code>28px</code> 并垂直居中，上下各保留 <code>6px</code>；关闭按钮为 <code>20px</code>，新增与主菜单按钮为 <code>28px</code>。默认 18100 安装版实测 strip 为 <code>39.995px</code>、普通 tab 为 <code>27.999px</code>、tab 顶部位置为 <code>5.998px</code>；独立 specification 与 quality review 均为 PASS。</p>
       <p>顶部 split entry 有两个等宽成员格、两套图标、标题和关闭入口，以及一个外层 active、tab 和 drag target；不存在成员拖动拆分或成员级 selected 状态。</p>
       <p>默认安装版保留显式 Separate 入口；拖动左右任一成员正文只移动整个 group。切换普通 entry 后原 group 不改 owner、不 regroup，重新选择后恢复原两侧内容和 ratio。divider 可在两个方向调整 pane 宽度，会话位于任一侧时均遵守同一 ratio 和最小宽度约束。</p>

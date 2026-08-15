@@ -7,6 +7,9 @@ const root = new URL("../", import.meta.url);
 const source = (path) => readFileSync(new URL(path, root), "utf8");
 
 const projectMenu = source("components/chat/top-bar/project-menu.tsx");
+const workingDirs = source("components/chat/top-bar/working-dir-chips.tsx");
+const fileTree = source("components/files/file-tree.tsx");
+const fileTreeCss = source("components/files/files-panel.module.css");
 const projectsPage = source("components/projects/projects-page.tsx");
 const projectsCss = source("components/projects/projects-page.module.css");
 const sessionsList = source("components/sidebar/sessions-list.tsx");
@@ -22,6 +25,22 @@ assert.doesNotMatch(projectMenu, /Remove from list|从列表移除/);
 assert.match(projectMenu, /<PopoverTrigger asChild>[\s\S]*id="projectBadge"/);
 assert.match(projectMenu, /<Check\b/);
 assert.match(projectMenu, /Open folder…/);
+assert.match(projectMenu, /const created = await wsRequest/);
+assert.match(projectMenu, /created\?\.ok && created\.project\?\.id/);
+assert.match(projectMenu, /setPendingProject\(activeChatKey, created\.project\.id\)/);
+assert.match(workingDirs, /pendingProjectsByChat\[activeChatKey\]/);
+assert.match(workingDirs, /pendingProjectId \?\? currentProjectId/);
+assert.match(fileTree, /className=\{styles\.treeRootPath\}/);
+assert.match(fileTree, /className=\{styles\.treeToolbar\}/);
+assert.match(fileTree, /baseOf\(projectRoot\)/);
+assert.match(fileTree, /aria-expanded=\{searchOpen\}/);
+assert.match(fileTree, /searchOpen \? \(/);
+assert.match(fileTree, /autoFocus/);
+assert.match(fileTree, /event\.key !== "Escape"/);
+assert.match(fileTreeCss, /\.treeHeader\s*\{[^}]*flex-direction:\s*column/s);
+assert.match(fileTreeCss, /\.treeRootPath\s*\{/);
+assert.match(fileTreeCss, /\.treeToolbar\s*\{/);
+assert.match(fileTreeCss, /\.treeSearchRow\s*\{/);
 assert.match(
   projectMenu,
   /\{list\.filter\(\(p\) => !p\.path_missing\)\.map\(/,
