@@ -674,11 +674,11 @@ export const useSessionStore = create<ConvState>((set) => ({
 
   setMessages: (sessionId, msgs) =>
     set((s) => {
-      const timedMessages = msgs.map(withMessageTimestamp);
+      const timedMessages = msgs.map((msg) => withMessageTimestamp(msg));
       // Drop any old ids for this conv so stale entries don't leak.
       const byId = { ...s.messagesById };
       for (const oldId of s.messageOrder[sessionId] ?? []) delete byId[oldId];
-      for (const m of timedMessages) {
+      for (const [index, m] of timedMessages.entries()) {
         // A load_session reply can land mid-turn (WS reconnect,
         // session_reload, Switch-back from a sub-agent, or the
         // tree_update hydrate that runs *by design* during a run).
@@ -692,8 +692,8 @@ export const useSessionStore = create<ConvState>((set) => ({
         byId[m.id] = cur && isLiveRow(cur) && isEmptyRow(m)
           ? withMessageTimestamp({
               ...cur,
-              ...(validMessageTimestamp(m.timestamp)
-                ? { timestamp: m.timestamp }
+              ...(validMessageTimestamp(msgs[index]?.timestamp)
+                ? { timestamp: msgs[index].timestamp }
                 : {}),
             })
           : m;

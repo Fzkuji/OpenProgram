@@ -80,20 +80,27 @@ assert.ok(
   Number.isFinite(runStartedAt),
   "a live runtime reply must record its start timestamp",
 );
-send({
-  type: "sub_agent",
-  card_id: "card_a",
-  tool_call_id: "tc_1",
-  agent_id: "worker",
-  content: "",
-  attach: {
-    session_id: SID,
-    head_id: null,
-    label: "probe",
-    prompt: "do the thing",
-    status: "running",
-  },
-});
+const realDateNow = Date.now;
+let subAgentNow = 5_000;
+Date.now = () => subAgentNow;
+try {
+  send({
+    type: "sub_agent",
+    card_id: "card_a",
+    tool_call_id: "tc_1",
+    agent_id: "worker",
+    content: "",
+    attach: {
+      session_id: SID,
+      head_id: null,
+      label: "probe",
+      prompt: "do the thing",
+      status: "running",
+    },
+  });
+} finally {
+  Date.now = realDateNow;
+}
 
 let cards = reply().attachCards;
 assert.equal(cards.length, 1, "running spawn must create a card immediately");
@@ -104,23 +111,31 @@ assert.equal(cards[0].status, "running");
 assert.equal(cards[0].attach.status, "running");
 assert.equal(cards[0].attach.label, "probe");
 assert.equal(cards[0].calledBy, RID, "card must anchor to the caller turn");
+assert.equal(cards[0].timestamp, 5_000, "a sub-agent card owns its first visible time");
+const subAgentStartedAt = cards[0].timestamp;
 
 // Terminal event for the SAME spawn patches in place rather than
 // appending — otherwise one spawn renders as two cards.
-send({
-  type: "sub_agent",
-  card_id: "card_a",
-  tool_call_id: "tc_1",
-  agent_id: "worker",
-  content: "the answer",
-  attach: {
-    session_id: SID,
-    head_id: "head_9",
-    label: "probe",
-    prompt: "do the thing",
-    status: "completed",
-  },
-});
+subAgentNow = 9_000;
+Date.now = () => subAgentNow;
+try {
+  send({
+    type: "sub_agent",
+    card_id: "card_a",
+    tool_call_id: "tc_1",
+    agent_id: "worker",
+    content: "the answer",
+    attach: {
+      session_id: SID,
+      head_id: "head_9",
+      label: "probe",
+      prompt: "do the thing",
+      status: "completed",
+    },
+  });
+} finally {
+  Date.now = realDateNow;
+}
 
 cards = reply().attachCards;
 assert.equal(cards.length, 1, "terminal event must patch, not append");
@@ -128,6 +143,11 @@ assert.equal(cards[0].status, "done");
 assert.equal(cards[0].attach.status, "completed");
 assert.equal(cards[0].attach.head_id, "head_9", "Switch ↗ needs the head id");
 assert.equal(cards[0].content, "the answer");
+assert.equal(
+  cards[0].timestamp,
+  subAgentStartedAt,
+  "a sub-agent terminal event must preserve its first visible time",
+);
 
 // A second, distinct spawn is a second card.
 send({

@@ -132,31 +132,48 @@ assert.ok(
 );
 
 const persistedTimestamp = 1_700_000_000;
-useSessionStore.getState().setMessages("timestamp-history", [
-  {
-    id: "history-authoritative-time",
-    role: "assistant",
-    content: "persisted",
-    status: "done",
-    timestamp: persistedTimestamp,
-  },
-  {
-    id: "history-missing-time",
-    role: "user",
-    content: "legacy",
-    status: "done",
-  },
-]);
+const originalDateNow = Date.now;
+const historyFallbackTimestamp = 1_700_000_009_000;
+Date.now = () => historyFallbackTimestamp;
+try {
+  useSessionStore.getState().setMessages("timestamp-history", [
+    {
+      id: "history-authoritative-time",
+      role: "assistant",
+      content: "persisted",
+      status: "done",
+      timestamp: persistedTimestamp,
+    },
+    {
+      id: "history-missing-time",
+      role: "user",
+      content: "legacy",
+      status: "done",
+    },
+    {
+      id: "history-second-missing-time",
+      role: "assistant",
+      content: "legacy reply",
+      status: "done",
+    },
+  ]);
+} finally {
+  Date.now = originalDateNow;
+}
 assert.equal(
   useSessionStore.getState().messagesById["history-authoritative-time"].timestamp,
   persistedTimestamp,
   "history hydration must preserve the persisted authoritative timestamp",
 );
-assert.ok(
-  Number.isFinite(
-    useSessionStore.getState().messagesById["history-missing-time"].timestamp,
-  ),
-  "legacy history rows without time must still render a timestamp",
+assert.equal(
+  useSessionStore.getState().messagesById["history-missing-time"].timestamp,
+  historyFallbackTimestamp,
+  "legacy history rows without time must use the load time, not their array index",
+);
+assert.equal(
+  useSessionStore.getState().messagesById["history-second-missing-time"].timestamp,
+  historyFallbackTimestamp,
+  "every missing historical timestamp must use the same positive load time",
 );
 
 useSessionStore.getState().appendMessage("timestamp-hydrate", {
@@ -179,6 +196,35 @@ assert.equal(
   useSessionStore.getState().messagesById["live-placeholder"].timestamp,
   persistedTimestamp,
   "mid-run hydration must prefer a persisted authoritative timestamp",
+);
+
+useSessionStore.getState().appendMessage("timestamp-hydrate-missing", {
+  id: "live-placeholder-without-persisted-time",
+  role: "assistant",
+  content: "",
+  status: "streaming",
+  timestamp: 2_222,
+});
+useSessionStore.getState().setMessages("timestamp-hydrate-missing", [
+  {
+    id: "unrelated-before-placeholder",
+    role: "user",
+    content: "older",
+    status: "done",
+  },
+  {
+    id: "live-placeholder-without-persisted-time",
+    role: "assistant",
+    content: "",
+    status: "running",
+  },
+]);
+assert.equal(
+  useSessionStore.getState().messagesById[
+    "live-placeholder-without-persisted-time"
+  ].timestamp,
+  2_222,
+  "a historical placeholder without an authoritative timestamp must retain its live start time",
 );
 
 useSessionStore.getState().setMessages("timestamp-nested", [
@@ -316,6 +362,32 @@ assert.equal(
   "the caught send exception must remain observable",
 );
 
+const rollbackSession = "existing-pending-send";
+pendingUserText.setPendingUserText(rollbackSession, "older pending", 777);
+console.error = () => {};
+setSocket({
+  readyState: 1,
+  send: () => { throw sendFailure; },
+});
+try {
+  assert.equal(sendChatMessage({
+    text: "new send that fails",
+    sessionId: rollbackSession,
+    thinking: "medium",
+    toolsEnabled: true,
+    webSearchEnabled: false,
+  }), false);
+} finally {
+  console.error = originalConsoleError;
+}
+assert.equal(pendingUserText.getPendingUserText(rollbackSession), "older pending");
+assert.equal(
+  pendingUserText.getPendingUserTimestamp(rollbackSession),
+  777,
+  "a failed send must restore the previous pending timestamp",
+);
+pendingUserText.clearPendingUserText(rollbackSession);
+
 const closingDraft = "local_send-closes";
 useSessionStore.getState().setRunningTaskFor(closingDraft, {
   session_id: closingDraft,
@@ -338,6 +410,45 @@ assert.equal(pendingUserText.hasPendingFirstAck(closingDraft), false);
 assert.equal(pendingUserText.getPendingUserText(closingDraft), undefined);
 assert.equal(useSessionStore.getState().runningTasks[closingDraft], undefined);
 
+setSocket({
+  readyState: 1,
+  send: (payload) => sent.push(JSON.parse(payload)),
+});
+
+const acceptedSession = "timestamp-send-success";
+const realNowAfterFailures = Date.now;
+let sendClock = 1_000;
+Date.now = () => sendClock;
+setSocket({
+  readyState: 1,
+  send: (payload) => {
+    sent.push(JSON.parse(payload));
+    sendClock = 5_000;
+  },
+});
+try {
+  assert.equal(sendChatMessage({
+    text: "accepted now",
+    sessionId: acceptedSession,
+    thinking: "medium",
+    toolsEnabled: true,
+    webSearchEnabled: false,
+  }), true);
+} finally {
+  Date.now = realNowAfterFailures;
+}
+assert.equal(
+  pendingUserText.getPendingUserTimestamp(acceptedSession),
+  5_000,
+  "the user timestamp must be recorded after the socket accepts the send",
+);
+assert.equal(
+  useSessionStore.getState().runningTasks[acceptedSession].started_at,
+  5,
+  "the optimistic run and user bubble must share the accepted-send time",
+);
+pendingUserText.clearPendingUserText(acceptedSession);
+useSessionStore.getState().setRunningTaskFor(acceptedSession, null);
 setSocket({
   readyState: 1,
   send: (payload) => sent.push(JSON.parse(payload)),

@@ -193,7 +193,7 @@ const setMessagesBody = sessionStore.slice(
 assert.ok(setMessagesBody, "setMessages not found in the session store");
 assert.match(
   setMessagesBody,
-  /isLiveRow\(cur\)\s*&&\s*isEmptyRow\(m\)[\s\S]*withMessageTimestamp\([\s\S]*\.\.\.cur[\s\S]*validMessageTimestamp\(m\.timestamp\)[\s\S]*timestamp:\s*m\.timestamp/,
+  /isLiveRow\(cur\)\s*&&\s*isEmptyRow\(m\)[\s\S]*withMessageTimestamp\([\s\S]*\.\.\.cur[\s\S]*validMessageTimestamp\(msgs\[index\]\?\.timestamp\)[\s\S]*timestamp:\s*msgs\[index\]\.timestamp/,
   "setMessages must preserve an in-flight streaming row when the "
     + "incoming load_session payload row is an empty placeholder while accepting its authoritative timestamp",
 );
@@ -821,6 +821,15 @@ assert.match(
   runtimeBlock,
   /const footer = \([\s\S]*<MessageTimestamp timestamp=\{msg\.timestamp\}/,
   "nested and top-level runtime rows must both render their start timestamp",
+);
+const nestedRuntimeBranch = runtimeBlock.slice(
+  runtimeBlock.indexOf("if (nested)"),
+  runtimeBlock.indexOf("// The function marker identifies"),
+);
+assert.match(
+  nestedRuntimeBranch,
+  /\{footer\}/,
+  "the nested runtime return path must mount the shared timestamp footer",
 );
 assert.match(
   attachCard,

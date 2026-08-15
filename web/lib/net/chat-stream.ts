@@ -684,6 +684,9 @@ function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
       const cardId = evt.card_id;
       if (!cardId) break;
       const running = evt.attach?.status === "running";
+      const prev = cur.attachCards ?? [];
+      const at = prev.findIndex((c) => c.id === cardId);
+      const existingCard = at >= 0 ? prev[at] : undefined;
       const card: ChatMsg = {
         id: cardId,
         role: "assistant",
@@ -697,12 +700,11 @@ function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
             : "done",
         attach: evt.attach,
         agentId: evt.agent_id || undefined,
+        timestamp: existingCard?.timestamp ?? Date.now(),
         // The block this spawn was called from; the bubble prefers it
         // over FIFO when placing the card in the execution timeline.
         calledBy: rid,
       };
-      const prev = cur.attachCards ?? [];
-      const at = prev.findIndex((c) => c.id === cardId);
       const attachCards =
         at >= 0
           // Terminal event for a card already on screen: patch in

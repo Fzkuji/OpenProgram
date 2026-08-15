@@ -361,6 +361,7 @@ export function RuntimeBlock({
       >
         <div className="tl-body">{body}</div>
         {runtimeAfter}
+        {footer}
       </div>
     );
   }

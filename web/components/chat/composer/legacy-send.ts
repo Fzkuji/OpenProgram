@@ -232,6 +232,8 @@ export function sendChatMessage({
     console.error("[sendChatMessage] WebSocket send failed:", error);
     return false;
   }
+  const acceptedAt = Date.now();
+  if (sessionId) setPendingUserText(sessionId, text, acceptedAt);
   // Close the clear→ACK race for every session, not only provisional
   // drafts. A queued send is already in flight once the socket accepted
   // the frame; marking that session busy now prevents a repeated
@@ -240,7 +242,7 @@ export function sendChatMessage({
     useSessionStore.getState().setRunningTaskFor(sessionId, {
       session_id: sessionId,
       msg_id: "",
-      started_at: Date.now() / 1000,
+      started_at: acceptedAt / 1000,
     });
   }
   // `setRunning` is the focused shell's global run flag (drives its send/stop
