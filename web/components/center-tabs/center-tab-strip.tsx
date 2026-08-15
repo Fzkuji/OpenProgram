@@ -77,7 +77,7 @@ export function CenterTabStrip() {
   const stripRef = useRef<HTMLDivElement>(null);
   const tabsFlowRef = useRef<HTMLDivElement>(null);
 
-  const { targetBeforeId, applyDrop, moveGroupByKeyboard } = useTabDropActions();
+  const { targetBeforeId, applyDrop } = useTabDropActions();
 
   // ---- Chrome's close-with-the-mouse width freeze --------------------
   // Closing a tab with the × pins every survivor to its current pixel
@@ -152,9 +152,6 @@ export function CenterTabStrip() {
   // callback. The forward edges are passed directly.
   const cancelDragRef = useRef<(announce?: boolean) => void>(() => {});
   const clearDragStateRef = useRef<() => void>(() => {});
-  const onTabCloseRef = useRef<(e: React.SyntheticEvent, tab: CenterTab) => void>(
-    () => {},
-  );
   const tabMenuRef = useRef<{ tabId: string } | null>(null);
 
   const {
@@ -166,6 +163,7 @@ export function CenterTabStrip() {
     onTabClickFromPointer,
     onOpenNewTab,
     onTabClose,
+    onTabsClose,
     finishClose,
   } = useTabLifecycle({
     cancelDrag: () => cancelDragRef.current(),
@@ -174,8 +172,6 @@ export function CenterTabStrip() {
     freezeWidthsForMouseClose,
     releaseFrozenWidths,
   });
-  onTabCloseRef.current = onTabClose;
-
   const {
     draggedIds,
     dropMarker,
@@ -207,7 +203,7 @@ export function CenterTabStrip() {
 
   const menu = useTabMenu({
     stripRef,
-    onTabClose: (event, tab) => onTabCloseRef.current(event, tab),
+    onTabsClose,
     setFocusedTabId,
     setDragAnnouncement,
     clearDragState: () => clearDragStateRef.current(),
@@ -342,18 +338,14 @@ export function CenterTabStrip() {
                 tabs={tabs}
                 activeId={activeId}
                 focusedTabId={focusedTabId}
-                enteringIds={enteringIds}
                 closingIds={closingIds}
                 onActivate={onTabClickFromPointer}
                 onFocusTab={setFocusedTabId}
                 onOpenMenu={menu.openTabMenu}
-                onClose={onTabClose}
+                onClose={onTabsClose}
                 onExited={finishClose}
                 shiftX={liveShifts.get(entry.id) ?? 0}
                 onDragPointerDown={onTabPointerDown}
-                onMoveGroup={(groupId, direction) =>
-                  moveGroupByKeyboard(stripEntries, groupId, direction)
-                }
               />
             );
           }
@@ -399,19 +391,17 @@ export function CenterTabStrip() {
       {tabMenu ? (
         <TabContextMenu
           tabMenu={tabMenu}
-          tabs={tabs}
           groups={groups}
           canMoveToNewWindow={menu.canMoveToNewWindow}
           canMoveMenuTab={menu.canMoveMenuTab}
           moveMenuTab={menu.moveMenuTab}
+          closeMenuTab={menu.closeMenuTab}
           closableTabsAround={menu.closableTabsAround}
           closeMenuTabs={menu.closeMenuTabs}
           canOpenSplitPicker={menu.canOpenSplitPicker}
           openSplitPicker={menu.openSplitPicker}
           removeMenuTabFromGroup={menu.removeMenuTabFromGroup}
           moveMenuTabToNewWindow={menu.moveMenuTabToNewWindow}
-          setTabMenu={menu.setTabMenu}
-          onTabClose={onTabClose}
         />
       ) : null}
       {/* Split picker lives in the center body (the strip is a 40px band
@@ -421,10 +411,12 @@ export function CenterTabStrip() {
             <SplitViewPicker
               subjectId={splitPickerTabId}
               titleOf={(tab) => labelOf(tab, t, text)}
-              onClose={() => {
+              onClose={(reason) => {
                 const subject = splitPickerTabId;
                 setSplitPickerTabId(null);
-                menu.returnFocusToMenuInvoker(subject);
+                if (reason !== "outside") {
+                  menu.returnFocusToMenuInvoker(subject);
+                }
               }}
               onPicked={(accepted) => {
                 const subject = splitPickerTabId;
@@ -433,8 +425,8 @@ export function CenterTabStrip() {
                   accepted
                     ? text("Tab added to split", "标签已加入分屏")
                     : text(
-                        "Split supports up to three tabs",
-                        "分屏最多支持三个标签",
+                        "A split tab contains two views",
+                        "一个分屏标签包含两个视图",
                       ),
                 );
                 menu.returnFocusToMenuInvoker(subject);

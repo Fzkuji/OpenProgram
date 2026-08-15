@@ -7,6 +7,35 @@ import sys
 import pytest
 
 
+def test_ensure_reports_missing_git(tmp_path, monkeypatch):
+    state = tmp_path / "state"
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+
+    from openprogram.memory import store
+    from openprogram.memory.management.transaction import TransactionError
+
+    monkeypatch.setattr(store.shutil, "which", lambda _name: None)
+    with pytest.raises(TransactionError) as caught:
+        store.ensure()
+    assert caught.value.code == "GIT_UNAVAILABLE"
+
+
+def test_ensure_rechecks_git_after_repository_initialization(
+    tmp_path, monkeypatch,
+):
+    state = tmp_path / "state"
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+
+    from openprogram.memory import store
+    from openprogram.memory.management.transaction import TransactionError
+
+    store.ensure()
+    monkeypatch.setattr(store.shutil, "which", lambda _name: None)
+    with pytest.raises(TransactionError) as caught:
+        store.ensure()
+    assert caught.value.code == "GIT_UNAVAILABLE"
+
+
 def test_writer_model_setting_is_live_and_defaults_to_chat_agent():
     from openprogram.config_schema import get_settings
 

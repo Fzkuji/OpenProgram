@@ -4,7 +4,7 @@
  * Manual function run — renders a fn-form///run function call as the
  * same frameless execution timeline chat turns use
  * (docs/design/ui/chat-turn-visual-spec.html §3): TreeStep root with
- * the subtree open by default (the process IS the content), plus a
+ * only its direct children open by default, plus a
  * message-style footer below the tree — timestamp + Copy(result) /
  * Retry / Edit + the shared ``.message-nav`` version switcher.
  *
@@ -29,9 +29,10 @@ import { showToast } from "@/lib/format-utils/toast";
 import { optimisticAction } from "@/lib/runtime-bridge/optimistic-action";
 
 import type { TNode } from "./tree-types";
-import { StepRow, TreeStep, decodeEscapes } from "./execution-strip";
+import { ExecutionStrip, StepRow, TreeStep, decodeEscapes } from "./execution-strip";
 import { ActionButton, SVG } from "./message-actions";
-import { useMarkdownReady } from "./markdown";
+import { renderMarkdown, useMarkdownReady } from "./markdown";
+import { runtimeConclusion, runtimeSummaryLabel } from "./runtime-summary";
 
 function wsSend(payload: unknown): boolean {
   const sock = getSocket();
@@ -103,8 +104,8 @@ function parseRun(cmd: string): { fn: string } {
 /** Tree for this run. Each Retry is a separate sibling node with its
  *  OWN contextTree (only the active branch's node renders), so we read
  *  the node's tree directly — no per-message attempts array anymore. */
-function displayTree(msg: ChatMsg): unknown {
-  return msg.contextTree || null;
+function displayTree(msg: ChatMsg): TNode | null {
+  return (msg.contextTree as TNode | undefined) || null;
 }
 
 export function RuntimeBlock({
@@ -121,6 +122,7 @@ export function RuntimeBlock({
   const ref = useRef<HTMLDivElement>(null);
   const { text } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   useMarkdownReady();
 
   const sessionId = useSessionStore((s) => s.currentSessionId);
@@ -131,6 +133,12 @@ export function RuntimeBlock({
   const { fn } = parseRun(msg.function || msg.content || "");
   const fnName = msg.function || fn;
   const tree = displayTree(msg);
+
+  useEffect(() => {
+    if (nested || !streaming) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [nested, streaming]);
 
   useEffect(() => {
     const el = ref.current;
@@ -156,12 +164,22 @@ export function RuntimeBlock({
       )
     : "";
 
-  // Static header label — the function name + args are already
-  // visible on the body's root tree row, so repeating them up here
-  // both wastes space and forces a choice ("which call gets the
-  // title?") that has no good answer when the tree contains many
-  // nested calls. Drop the signature; keep the frame.
+  // Fallback for malformed legacy runs without a stored function name.
   const headerLabel = text("Function call", "函数调用");
+  const summaryLabel = runtimeSummaryLabel({
+    fnName: fnName || headerLabel,
+    status: msg.status,
+    timestamp: msg.timestamp,
+    now,
+    tree,
+    text,
+  });
+  const conclusion = runtimeConclusion({
+    fnName: fnName || headerLabel,
+    status: msg.status,
+    tree,
+    text,
+  });
 
   // Re-run the SAME function with its LAST kwargs in the SAME session.
   // The backend looks up the prior call's stored args and dispatches via
@@ -205,7 +223,7 @@ export function RuntimeBlock({
   // 复制 = 根调用的返回值（用户关心的是结果，不是内部树结构）；
   // 还没有输出时退回 "函数名 + 入参"。
   function copyResult() {
-    const root = tree as TNode | null;
+    const root = tree;
     const out = root?.error ?? root?.output;
     const payload = out !== undefined && out !== null && String(out).trim() !== ""
       ? decodeEscapes(String(out))
@@ -222,7 +240,7 @@ export function RuntimeBlock({
   // 修改：重新弹出 fn-form，预填上次的参数；提交时以本次运行为锚点
   // fork 兄弟分支（旧运行保留在 ◀ N/M ▶ 里），语义 = 可改参数的重试。
   function editCall() {
-    const root = tree as TNode | null;
+    const root = tree;
     const fn = (runtimeState.availableFunctions as AgenticFunction[]).find(
       (f) => f.name === fnName,
     );
@@ -318,10 +336,27 @@ export function RuntimeBlock({
     </div>
   ) : null;
 
-  // 与聊天时间线同一套组件（无框、圆图标压竖线）。手动运行的
-  // 过程即内容：整棵树默认展开，根行挂重试/版本切换动作。
-  // No tree yet (just-spawned placeholder) — a single running row.
-  if (!tree) {
+  const body = tree ? (
+    <TreeStep node={tree} defaultKidsOpen />
+  ) : (
+    <StepRow
+      icon="function"
+      title={fnName || headerLabel}
+      note={text("Running…", "运行中…")}
+      running
+    />
+  );
+  const runtimeAfter = (
+    usageHtml ? (
+      <div
+        className="runtime-usage-footer"
+        dangerouslySetInnerHTML={{ __html: usageHtml }}
+      />
+    ) : null
+  );
+
+  // LLM-initiated calls keep the existing frameless tree unchanged.
+  if (nested) {
     return (
       <div
         ref={ref}
@@ -331,38 +366,62 @@ export function RuntimeBlock({
         data-function={fnName || undefined}
         data-msg-id={msg.id}
       >
-        <div className="tl-body">
-          <StepRow
-            icon="function"
-            title={fnName || headerLabel}
-            note={text("Running…", "运行中…")}
-            running
-          />
-        </div>
-        {footer}
+        <div className="tl-body">{body}</div>
+        {runtimeAfter}
       </div>
     );
   }
 
+  // The function marker identifies the runtime row's type; it does not turn
+  // the workflow into an assistant/agent message identity.
   return (
     <div
       ref={ref}
-      className="tl"
-      data-open="1"
+      className="runtime-program-run"
       id={streaming ? "runtime_pending" : undefined}
       data-function={fnName || undefined}
       data-msg-id={msg.id}
+      role="article"
+      aria-label={`${text("Workflow", "工作流")} ${fnName || headerLabel}`}
     >
-      <div className="tl-body">
-        <TreeStep node={tree as TNode} defaultKidsOpen />
+      <div className="runtime-program-avatar" aria-hidden="true">ƒ</div>
+      <div className="runtime-program-content">
+        <ExecutionStrip
+          label={summaryLabel}
+          streaming={streaming}
+          after={runtimeAfter}
+        >
+          {body}
+        </ExecutionStrip>
+        {conclusion ? (
+          <section
+            className={`runtime-program-conclusion is-${conclusion.tone}`}
+            aria-label={conclusion.label}
+          >
+            <div className="runtime-program-conclusion-label">
+              {conclusion.label}
+            </div>
+            <p className="runtime-program-conclusion-meta">{conclusion.meta}</p>
+            {conclusion.summary ? (
+              <div
+                className="runtime-program-conclusion-summary message-content"
+                dangerouslySetInnerHTML={{
+                  __html: renderMarkdown(conclusion.summary),
+                }}
+              />
+            ) : null}
+            {conclusion.result ? (
+              <div
+                className="runtime-program-conclusion-result message-content"
+                dangerouslySetInnerHTML={{
+                  __html: renderMarkdown(conclusion.result),
+                }}
+              />
+            ) : null}
+          </section>
+        ) : null}
+        {footer}
       </div>
-      {usageHtml ? (
-        <div
-          className="runtime-usage-footer"
-          dangerouslySetInnerHTML={{ __html: usageHtml }}
-        />
-      ) : null}
-      {footer}
     </div>
   );
 }

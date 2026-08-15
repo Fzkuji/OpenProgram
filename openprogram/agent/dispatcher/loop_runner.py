@@ -85,7 +85,20 @@ def run_loop_blocking(
 
     # Resolve agent profile → tools, system_prompt, model.
     agent_profile = _dispatcher._load_agent_profile(req.agent_id)
+    from openprogram.agent.surface_context import (
+        render_for_model as _render_surface_context,
+        tool_enabled as _surface_tool_enabled,
+    )
     tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)
+    if _surface_tool_enabled(req.surface_context):
+        if not any(tool.name == "computer_use" for tool in tools or []):
+            from openprogram.programs import get_agent_tool
+
+            surface_tool = get_agent_tool("computer_use")
+            if surface_tool is not None:
+                tools = [*(tools or []), surface_tool]
+    elif tools:
+        tools = [tool for tool in tools if tool.name != "computer_use"]
     # Plan mode: hide write/mutate tools when the session is currently
     # in plan mode. ``apply_tool_policy(source="plan", ...)`` filters
     # out every tool that lists "plan" in its ``unsafe_in`` set — see
@@ -131,6 +144,10 @@ def run_loop_blocking(
         additional_working_dirs=getattr(req, "additional_working_dirs", None),
         plan_mode=_plan_mode.is_plan_mode(req.session_id),
     )
+    recordable_system_prompt = system_prompt
+    surface_prompt = _render_surface_context(req.surface_context)
+    if surface_prompt:
+        system_prompt = f"{system_prompt}\n\n{surface_prompt}"
     model = _dispatcher._resolve_model(agent_profile, req.model_override)
 
     # Route history through the context engine: applies tool-result
@@ -146,7 +163,7 @@ def run_loop_blocking(
     # context/system_prompt node whenever the assembled text's hash moves.
     # No-op when it didn't — a stable prompt records once per session.
     from openprogram.context.system_prompt_node import record_system_prompt
-    record_system_prompt(db, req.session_id, system_prompt)
+    record_system_prompt(db, req.session_id, recordable_system_prompt)
     session = db.get_session(req.session_id) or {}
     prep = _ctx_engine.prepare(
         agent=agent_profile,

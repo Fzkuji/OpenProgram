@@ -67,6 +67,8 @@ export interface PendingImage {
   /** Outgoing attachment payload. ``data`` is empty while reading;
    *  callers must wait for ``loading: false`` before sending. */
   attachment: ChatAttachment;
+  /** Original native path when Electron supplied this File. */
+  sourcePath?: string;
   sizeBytes: number;
   /** True while the decode + base64 + thumbnail pipeline is still
    *  running. The UI uses this to render a placeholder tile that

@@ -13,6 +13,7 @@ from ..runtime.derived_views import (
     render_core_block,
 )
 from ..runtime.state import RuntimeStateStore
+from ..markdown.syntax import BLOCK_TARGET_ID
 from ..markdown import (
     definition_match,
     parse_topic_tree,
@@ -109,7 +110,7 @@ class BlockViewsMixin:
         }
         block_link = re.compile(
             r"(?P<prefix>\[[^]\n]+\]\()(?P<path>[^)\n#]*)"
-            r"#\^(?P<id>[A-Za-z0-9-]+)(?P<suffix>\))"
+            rf"#\^(?P<id>{BLOCK_TARGET_ID})(?P<suffix>\))"
         )
         for path in sorted(topics.rglob("*.md")):
             relative = path.relative_to(topics).as_posix()
@@ -192,6 +193,11 @@ class BlockViewsMixin:
         state_store.save(state)
         # The always-on block is a view of one topic file, rebuilt beside
         # the others. Nothing writes it: an edit there is replaced here.
+        if (
+            not (self.stage_dir / "topics" / "core.md").is_file()
+            and (self.memory_dir / "topics" / "core.md").is_file()
+        ):
+            (self.stage_dir / "core.md").unlink(missing_ok=True)
         self.last_core_block = render_core_block(
             self.stage_dir, budget_tokens=self.config.core_max_tokens
         )

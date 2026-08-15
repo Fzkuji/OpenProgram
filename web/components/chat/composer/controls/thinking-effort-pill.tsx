@@ -30,6 +30,7 @@ import { Slider } from "@/components/ui/slider";
 import { UltraRain } from "./ultra-rain";
 import { HoverTip } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
+import { effortLevelColor } from "@/lib/effort-color";
 import {
   type AnimatedNavIconHandle,
   BicepsFlexedIcon,
@@ -153,13 +154,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
   // earthy and looked drab in the slider. `off` keeps neutral
   // bright-white. Everything below derives from this single hue so the
   // collapsed tint / range / glyph all agree.
-  const nonOff = options.filter((o) => o.value !== "off");
-  const nonOffIdx = nonOff.findIndex((o) => o.value === value);
-  const heat = nonOff.length > 1 ? nonOffIdx / (nonOff.length - 1) : 1;
-  const warmHue =
-    value === "off" || nonOffIdx < 0
-      ? "var(--text-bright)"
-      : `hsl(${Math.round(48 - 48 * heat)}, ${Math.round(96 + 4 * heat)}%, ${Math.round(56 + 12 * heat)}%)`;
+  const warmHue = effortLevelColor(options, value);
 
   // Effort-level tint for the COLLAPSED pill — `warmHue` at low
   // opacity so it sits softly on the panel surface. `off` is special:

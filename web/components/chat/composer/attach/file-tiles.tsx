@@ -21,6 +21,8 @@ import { useTranslation } from "@/lib/i18n";
 export interface PendingDoc {
   id: string;
   filename: string;
+  /** Original native path when Electron supplied this File. */
+  sourcePath?: string;
   /** Lower-cased extension without the dot — used for the badge.
    *  Empty when the file has no recognizable extension. */
   ext: string;

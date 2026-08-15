@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { parseHTML } from "linkedom";
 
 import { readCenterTabStripSource } from "./center-tab-strip-source.mjs";
 import { readChatCss } from "./_chat-css.mjs";
@@ -18,15 +19,49 @@ const conversations = source("lib/runtime-bridge/conversations.ts");
 const chatHandlers = source("lib/runtime-bridge/chat-handlers.ts");
 const sessionStore = source("lib/session-store/index.ts");
 const assistantBubble = source("components/chat/messages/assistant-bubble.tsx");
+const runtimeBlock = source("components/chat/messages/runtime-block.tsx");
+const executionStrip = source("components/chat/messages/execution-strip.tsx");
 const runtimeHelpers = source("lib/runtime-bridge/helpers.ts");
+const markdownRenderer = source("lib/runtime-bridge/markdown-render.ts");
+const chatVisualSpec = source("../docs/reference/design/ui/chat-turn-visual-spec.html");
+const controlsCluster = source("components/chat/composer/controls/controls-cluster.tsx");
+const composerCss = source("components/chat/composer/composer.module.css");
 const chatCss = readChatCss(root);
+const baseCss = source("app/styles/base.css");
+const globalsCss = source("app/globals.css");
+const darkTheme = source("app/styles/themes/dark.css");
+const lightTheme = source("app/styles/themes/light.css");
+const beigeDarkTheme = source("app/styles/themes/beige-dark.css");
+const beigeLightTheme = source("app/styles/themes/beige-light.css");
+const auroraTheme = source("app/styles/themes/aurora.css");
+
+// Mouse focus and non-tab buttons never draw an outer halo. Top tabs retain a
+// theme-owned focus cue, so focus does not impose one fixed product colour.
+assert.match(baseCss, /--accent-blue:\s*var\(--theme-accent\);/);
+assert.match(globalsCss, /--primary:\s*var\(--accent-blue\);/);
+assert.match(globalsCss, /--ring:\s*var\(--focus-ring\);/);
+assert.match(
+  baseCss,
+  /button:focus:not\(\[role="tab"\]\),\s*\[role="button"\]:focus\s*\{[^}]*outline:\s*none\s*!important;[^}]*--tw-ring-shadow:\s*0 0 #0000\s*!important;[^}]*--tw-ring-offset-shadow:\s*0 0 #0000\s*!important;/s,
+);
+assert.match(
+  baseCss,
+  /button:focus-visible:not\(\[role="tab"\]\),\s*\[role="button"\]:focus-visible\s*\{[^}]*box-shadow:\s*none\s*!important;[^}]*filter:\s*brightness\(1\.08\);/s,
+);
+for (const themeCss of [darkTheme, beigeDarkTheme]) {
+  assert.match(themeCss, /--focus-ring:\s*color-mix\(in srgb, var\(--text-bright\) 50%, transparent\);/);
+}
+for (const themeCss of [lightTheme, beigeLightTheme]) {
+  assert.match(themeCss, /--focus-ring:\s*color-mix\(in srgb, var\(--text-bright\) 45%, transparent\);/);
+}
+assert.match(auroraTheme, /--focus-ring:\s*color-mix\(in srgb, var\(--accent-cyan\) 60%, transparent\);/);
 
 // Markdown must not depend on the optional CDN script. A missing/blocked CDN
 // previously left every assistant response in renderMd's bordered <pre>
 // fallback for the lifetime of the page.
-assert.match(runtimeHelpers, /import \{ marked as npmMarked \} from "marked";/);
-assert.match(runtimeHelpers, /window\.marked\s*\?\?\s*npmMarked/);
-assert.doesNotMatch(runtimeHelpers, /return "<pre>" \+ escHtml\(str\) \+ "<\/pre>";/);
+assert.match(markdownRenderer, /import \{ marked as npmMarked \} from "marked";/);
+assert.match(markdownRenderer, /window\.marked\s*\?\?\s*npmMarked/);
+assert.doesNotMatch(markdownRenderer, /return "<pre>" \+ escHtml\(str\) \+ "<\/pre>";/);
 
 assert.match(welcome, /src=["{]?["']\/icon\.svg["']/);
 assert.doesNotMatch(welcome, /styles\.(?:l1|l2|m|caret)\b/);
@@ -273,12 +308,12 @@ const tabItem = tabs.slice(tabItemStart);
 assert.match(compound, /role="presentation"/);
 assert.match(compound, /active \? styles\.compoundTabActive : ""/);
 assert.doesNotMatch(compound, /active \? styles\.tabActive : ""/);
-assert.match(compound, /group\.memberIds\.map\(\(tabId\) =>/);
-assert.match(compound, /<TabItem/);
-assert.match(compound, /enter=\{enteringIds\.has\(tab\.id\)\}/);
-assert.match(compound, /closing=\{closingIds\.has\(tab\.id\)\}/);
-assert.match(compound, /onClose=\{onClose\}/);
-assert.match(compound, /onExited=\{onExited\}/);
+assert.equal(compound.match(/role="tab"/g)?.length, 1);
+assert.doesNotMatch(compound, /group\.memberIds\.map|<TabItem/);
+assert.doesNotMatch(compound, /enteringIds|styles\.tabEnter/);
+assert.match(compound, /memberTabs\.filter\(\(tab\) => closingIds\.has\(tab\.id\)\)/);
+assert.match(compound, /onClose\(event, memberTabs\)/);
+assert.match(compound, /closingTabs\.forEach\(onExited\)/);
 assert.match(tabItem, /className=\{styles\.tabTarget\}[\s\S]*role="tab"/);
 assert.match(tabItem, /data-tab-id=\{tab\.id\}/);
 assert.match(tabItem, /e\.shiftKey && e\.key === "F10"/);
@@ -298,7 +333,9 @@ assert.ok(
   "the close button must be a sibling of the role=tab target",
 );
 assert.match(tabsCss, /\.tab:has\(\.tabTarget:focus-visible\)/);
-assert.match(tabsCss, /\.tabClose:focus-visible/);
+assert.match(tabsCss, /\.tab:has\(\.tabTarget:focus-visible\)\s*\{[^}]*outline:\s*2px solid var\(--focus-ring\)/s);
+assert.match(tabsCss, /\.compoundTab:has\(\.compoundTarget:focus-visible\)\s*\{[^}]*outline:\s*2px solid var\(--focus-ring\)/s);
+assert.doesNotMatch(tabsCss, /\.tabClose:focus-visible/);
 
 const menuStart = tabs.indexOf("role=\"menu\"");
 assert.ok(menuStart >= 0, "compound tab actions must use an ARIA menu");
@@ -324,5 +361,942 @@ assert.match(
 assert.match(tabs, /if \(e\.key !== "Escape"\) return;[\s\S]*setTabMenu\(null\)/);
 assert.match(tabsCss, /\.tabMenu\s*\{/);
 assert.match(tabsCss, /\.tabMenuItem\s*\{/);
+
+// A split pane can be narrow while the application viewport remains wide, so
+// the composer controls must compact through their own inline-size container.
+assert.match(controlsCluster, /BicepsFlexedIcon/);
+assert.match(controlsCluster, /styles\.compactEffortIcon/);
+assert.match(controlsCluster, /styles\.effortValue/);
+assert.match(controlsCluster, /effortLevelColor\(thinkingOptions, thinking\)/);
+assert.match(
+  controlsCluster,
+  /className=\{styles\.compactEffortIcon\}[\s\S]*style=\{\{ color: thinking === "max" \? "#8E6BD9" : effortColor \}\}/,
+);
+assert.match(
+  controlsCluster,
+  /className=\{styles\.effortText\}[\s\S]*style=\{thinking === "max" \? \{ color: "#8E6BD9" \} : undefined\}/,
+);
+const compactControlsStart = composerCss.indexOf("/* Narrow composer control labels");
+const compactControlsEnd = composerCss.indexOf(
+  "/* Plus dropdown.",
+  compactControlsStart,
+);
+assert.ok(
+  compactControlsStart >= 0 && compactControlsEnd > compactControlsStart,
+  "narrow composer controls must have a bounded container-query block",
+);
+const compactControls = composerCss.slice(compactControlsStart, compactControlsEnd);
+assert.match(compactControls, /@container \(max-width:\s*560px\)/);
+assert.match(compactControls, /\.permission-badge[\s\S]*\.badge-details/);
+assert.match(compactControls, /\.agent-badge[\s\S]*\.badge-details/);
+assert.match(compactControls, /\.effortValue/);
+assert.match(compactControls, /position:\s*absolute/);
+assert.match(compactControls, /\.permission-badge\s*>\s*:has\(svg\)[\s\S]*display:\s*inline-flex\s*!important/);
+assert.match(compactControls, /\.compactEffortIcon[\s\S]*display:\s*inline-flex/);
+assert.match(compactControls, /\.permission-badge[\s\S]*width:\s*20px/);
+assert.match(compactControls, /\.agent-badge[\s\S]*width:\s*20px/);
+assert.doesNotMatch(compactControls, /\.(?:permission-badge|agent-badge|effort-pill-host)[^{]*\{[^}]*display:\s*none/s);
+const { effortLevelColor } = await import("../lib/effort-color.ts");
+const effortOptions = ["low", "medium", "high", "max"].map((value) => ({ value }));
+const nonMaxColors = effortOptions
+  .filter(({ value }) => value !== "max")
+  .map(({ value }) => effortLevelColor(effortOptions, value));
+assert.equal(
+  new Set(nonMaxColors).size,
+  nonMaxColors.length,
+  "every non-max effort level must retain a distinct compact-icon color",
+);
+
+const surfaceControlsStart = composerCss.indexOf("/* Persistent composer control surfaces");
+const surfaceControlsEnd = composerCss.indexOf(
+  "/* Narrow composer control labels",
+  surfaceControlsStart,
+);
+assert.ok(
+  surfaceControlsStart >= 0 && surfaceControlsEnd > surfaceControlsStart,
+  "composer control surfaces must have one bounded style block",
+);
+const surfaceControls = composerCss.slice(surfaceControlsStart, surfaceControlsEnd);
+for (const selector of [
+  ".permission-badge",
+  ".agent-badge",
+  ".plusBtn",
+  ".toolChip",
+  ".effortText",
+  ".context-ring-badge",
+  ".effort-pill-fixed",
+]) {
+  assert.match(surfaceControls, new RegExp(selector.replace(".", "\\.")));
+}
+assert.match(surfaceControls, /background:\s*var\(--chip-bg\)/);
+assert.doesNotMatch(
+  surfaceControls,
+  /box-shadow|border\s*:/,
+  "20px composer controls must use a fill without a border or inset ring",
+);
+assert.match(
+  surfaceControls,
+  /\.effortControl\[aria-expanded="true"\]\s+\.effortText/,
+  "the effort trigger must retain its stronger surface while its parent popover is open",
+);
+for (const openSelector of [
+  '.permission-badge[aria-expanded="true"]',
+  '.agent-badge[aria-expanded="true"]',
+  '.plusBtn[aria-expanded="true"]',
+  '.context-ring-badge[aria-expanded="true"]',
+]) {
+  assert.ok(
+    surfaceControls.includes(openSelector),
+    `${openSelector} must retain the stronger surface while open`,
+  );
+}
+assert.match(
+  surfaceControls,
+  /background(?:-color)?:\s*color-mix\(in srgb, var\(--text-bright\) 8%, var\(--chip-bg\)\)/,
+);
+
+const { runtimeConclusion, runtimeSummaryLabel } = await import(
+  "../components/chat/messages/runtime-summary.ts"
+);
+const { convToChatMsgs } = await import("../lib/conv-mapper.ts");
+const directRunAfterAssistant = convToChatMsgs([
+  { id: "assistant-1", role: "assistant", content: "parent reply" },
+  {
+    id: "direct-run",
+    role: "assistant",
+    type: "status",
+    display: "runtime",
+    function: "agentic_workflow",
+    status: "completed",
+    caller: "",
+    predecessor: "assistant-1",
+    content: "",
+  },
+]);
+assert.equal(
+  directRunAfterAssistant.length,
+  2,
+  "a direct runtime run must stay top-level when only predecessor points at an assistant",
+);
+assert.equal(directRunAfterAssistant[0].runtimeChildren, undefined);
+assert.equal(directRunAfterAssistant[1].id, "direct-run");
+assert.equal(directRunAfterAssistant[1].display, "runtime");
+
+const assistantOwnedRun = convToChatMsgs([
+  { id: "assistant-1", role: "assistant", content: "parent reply" },
+  {
+    id: "owned-run",
+    role: "assistant",
+    type: "status",
+    display: "runtime",
+    function: "research_agent",
+    status: "completed",
+    caller: "assistant-1",
+    predecessor: "assistant-1",
+    content: "",
+  },
+]);
+assert.equal(assistantOwnedRun.length, 1);
+assert.equal(assistantOwnedRun[0].runtimeChildren?.length, 1);
+assert.equal(assistantOwnedRun[0].runtimeChildren?.[0].id, "owned-run");
+assert.equal(assistantOwnedRun[0].runtimeChildren?.[0].calledBy, "assistant-1");
+
+const startedAt = 1_700_000_000;
+assert.equal(
+  runtimeSummaryLabel({
+    fnName: "agentic_workflow",
+    status: "running",
+    timestamp: startedAt,
+    now: (startedAt + 130) * 1000,
+    tree: { name: "root", children: [{ name: "read_file" }] },
+  }),
+  "agentic_workflow · Running… · 02:10 · 2 steps",
+);
+assert.equal(
+  runtimeSummaryLabel({
+    fnName: "agentic_workflow",
+    status: "completed",
+    tree: { duration_ms: 166_000, output: " 2 files\nprocessed " },
+  }),
+  "agentic_workflow · Completed · 02:46 · 2 files processed",
+);
+assert.equal(
+  runtimeSummaryLabel({
+    fnName: "agentic_workflow",
+    status: "error",
+    tree: { duration_ms: 82_000, error: "Permission denied" },
+  }),
+  "agentic_workflow · Error · 01:22 · Permission denied",
+);
+assert.equal(
+  runtimeSummaryLabel({
+    fnName: "agentic_workflow",
+    status: "cancelled",
+    tree: { duration_ms: 42_000, error: "cancelled by user", children: [{}, {}] },
+  }),
+  "agentic_workflow · Cancelled · 00:42 · 3 steps",
+);
+for (const [payloadStatus, expectedStatus] of [
+  ["capped", "Stopped"],
+  ["interrupted", "Interrupted"],
+  ["cancelled", "Cancelled"],
+  ["failed", "Error"],
+]) {
+  for (const outerStatus of ["completed", "done"]) {
+    assert.match(
+      runtimeSummaryLabel({
+        fnName: "agentic_workflow",
+        status: outerStatus,
+        tree: {
+          duration_ms: 42_000,
+          output: JSON.stringify({ status: payloadStatus, summary: "Partial result" }),
+        },
+      }),
+      new RegExp(`^agentic_workflow · ${expectedStatus} · 00:42 ·`),
+      `workflow payload status ${payloadStatus} must override generic outer status ${outerStatus}`,
+    );
+  }
+}
+assert.match(
+  runtimeSummaryLabel({
+    fnName: "agentic_workflow",
+    status: "running",
+    tree: {
+      output: JSON.stringify({ status: "failed", summary: "stale terminal payload" }),
+    },
+  }),
+  /^agentic_workflow · Running… ·/,
+  "the live outer status must take precedence over a stale terminal payload",
+);
+
+assert.deepEqual(
+  runtimeConclusion({
+    fnName: "agentic_workflow",
+    status: "completed",
+    tree: {
+      output: JSON.stringify({
+        status: "completed",
+        task: "Review two papers",
+        items: [
+          { status: "completed" },
+          { status: "completed" },
+          { status: "failed" },
+        ],
+        revisions: [{}, {}],
+        summary_kind: "workflow_handoff_v1",
+        summary: "Produced the final survey.",
+        return_result: false,
+      }),
+    },
+  }),
+  {
+    label: "Conclusion",
+    meta: "Completed 3 calls: 2 succeeded, 1 failed, with 2 automatic repairs.",
+    summary: "Produced the final survey.",
+    tone: "success",
+  },
+);
+assert.deepEqual(
+  runtimeConclusion({
+    fnName: "agentic_workflow",
+    status: "interrupted",
+    tree: { error: "Worker restarted" },
+  }),
+  {
+    label: "Conclusion",
+    meta: "Workflow was interrupted.",
+    summary: "Worker restarted",
+    tone: "error",
+  },
+);
+assert.deepEqual(
+  runtimeConclusion({
+    fnName: "agentic_workflow",
+    status: "completed",
+    tree: {
+      output: JSON.stringify({
+        status: "interrupted",
+        summary_kind: "workflow_handoff_v1",
+        summary: "Partial result",
+      }),
+    },
+  }),
+  {
+    label: "Conclusion",
+    meta: "Workflow was interrupted.",
+    summary: "Partial result",
+    tone: "error",
+  },
+);
+const fullWorkflowSummary = "第一部分已完成并生成研究综述。".repeat(100);
+const fullConclusion = runtimeConclusion({
+  fnName: "agentic_workflow",
+  status: "completed",
+  tree: {
+    output: JSON.stringify({
+      status: "completed",
+      summary: fullWorkflowSummary,
+    }),
+  },
+});
+assert.ok(fullConclusion);
+assert.equal(
+  fullConclusion.summary,
+  "",
+  "legacy workflow payloads must not expose the raw task result as a handoff",
+);
+assert.deepEqual(
+  runtimeConclusion({
+    fnName: "agentic_workflow",
+    status: "completed",
+    tree: {
+      output: JSON.stringify({
+        status: "completed",
+        summary_kind: "workflow_handoff_v1",
+        summary: "完成文件分析并保存到 report.md。",
+        return_result: true,
+        result: "用户明确要求直接返回的完整正文",
+      }),
+    },
+  }),
+  {
+    label: "Conclusion",
+    meta: "Workflow completed.",
+    summary: "完成文件分析并保存到 report.md。",
+    result: "用户明确要求直接返回的完整正文",
+    tone: "success",
+  },
+);
+assert.deepEqual(
+  runtimeConclusion({
+    fnName: "agentic_workflow",
+    status: "error",
+    tree: { error: "Permission denied" },
+  }),
+  {
+    label: "Conclusion",
+    meta: "Workflow failed.",
+    summary: "Permission denied",
+    tone: "error",
+  },
+);
+assert.deepEqual(
+  runtimeConclusion({
+    fnName: "agentic_workflow",
+    status: "cancelled",
+    tree: { output: JSON.stringify({ items: [{ status: "completed" }] }) },
+  }),
+  {
+    label: "Conclusion",
+    meta: "Workflow was cancelled after 1 recorded call.",
+    summary: "",
+    tone: "cancelled",
+  },
+);
+assert.deepEqual(
+  runtimeConclusion({
+    fnName: "agentic_workflow",
+    status: "completed",
+    tree: {
+      output: JSON.stringify({
+        status: "cancelled",
+        items: [{ status: "completed" }],
+        summary: "Partial result",
+      }),
+    },
+  }),
+  {
+    label: "Conclusion",
+    meta: "Workflow was cancelled after 1 recorded call.",
+    summary: "",
+    tone: "cancelled",
+  },
+);
+assert.deepEqual(
+  runtimeConclusion({
+    fnName: "agentic_workflow",
+    status: "completed",
+    tree: { output: "Legacy workflow result" },
+  }),
+  {
+    label: "Conclusion",
+    meta: "Workflow completed.",
+    summary: "",
+    tone: "success",
+  },
+);
+assert.equal(runtimeConclusion({
+  fnName: "agentic_workflow",
+  status: "running",
+  tree: { output: "partial" },
+}), null);
+assert.equal(runtimeConclusion({
+  fnName: "extract_pdf_tables",
+  status: "completed",
+  tree: { output: "done" },
+}), null);
+
+assert.match(
+  runtimeBlock,
+  /<ExecutionStrip[\s\S]*label=\{summaryLabel\}[\s\S]*streaming=\{streaming\}[\s\S]*after=\{runtimeAfter\}/,
+);
+assert.match(
+  runtimeBlock,
+  /<\/ExecutionStrip>[\s\S]*conclusion \? \([\s\S]*className=\{`runtime-program-conclusion is-\$\{conclusion\.tone\}`\}/,
+  "workflow conclusion must remain outside the collapsible execution trace",
+);
+assert.match(
+  runtimeBlock,
+  /conclusion\.result \? \([\s\S]*runtime-program-conclusion-result/,
+  "an explicitly requested direct result must render separately from the workflow handoff",
+);
+const runtimeAfterBlock = runtimeBlock.slice(
+  runtimeBlock.indexOf("const runtimeAfter ="),
+  runtimeBlock.indexOf("// LLM-initiated calls keep"),
+);
+assert.doesNotMatch(
+  runtimeAfterBlock,
+  /\{footer\}/,
+  "the top-level message footer must not be passed into ExecutionStrip.after",
+);
+const topLevelProgram = runtimeBlock.slice(
+  runtimeBlock.indexOf("// The function marker identifies"),
+);
+const topExecution = topLevelProgram.indexOf("<ExecutionStrip");
+const topConclusion = topLevelProgram.indexOf("conclusion ? (");
+const topFooter = topLevelProgram.indexOf("{footer}");
+assert.ok(
+  topExecution >= 0 && topConclusion > topExecution && topFooter > topConclusion,
+  "the top-level footer must remain visible at the message bottom, after Conclusion",
+);
+assert.match(
+  chatCss,
+  /\.message\.assistant \.message-actions-footer\s*\{[^}]*margin-top:\s*12px/s,
+  "assistant messages define the shared 12px body-to-footer paragraph gap",
+);
+assert.match(
+  chatCss,
+  /\.runtime-actions-footer\s*\{[^}]*margin-top:\s*12px/s,
+  "workflow Conclusion-to-footer spacing must match assistant messages",
+);
+assert.match(
+  chatVisualSpec,
+  /\.run-footer\{[^}]*margin-top:12px/s,
+  "the visual specification must show the shared 12px footer spacing",
+);
+assert.match(
+  chatVisualSpec,
+  /<div class="tl-collapse"><div class="tl-collapse-inner">[\s\S]*?<\/div><\/div>\s*<\/div>\s*<section class="runtime-program-conclusion">[\s\S]*?<\/section>\s*<div class="run-footer">/,
+  "the visual specification must keep collapse, Conclusion, and footer in that order",
+);
+assert.doesNotMatch(
+  chatVisualSpec,
+  /<div class="step(?:\s[^"]*)?"[^>]*>\s*<span class="step-icon/,
+  "timeline icons must be anchored inside the row head, not centered against the whole subtree",
+);
+assert.match(
+  chatVisualSpec,
+  /<div class="step-head"><span class="step-icon/,
+  "the visual specification must mirror StepRow's production DOM hierarchy",
+);
+assert.doesNotMatch(
+  chatVisualSpec,
+  /\.step-head:hover\s+\.step-icon/,
+  "the proposed timeline design must not restore per-icon hover rings",
+);
+assert.match(
+  chatVisualSpec,
+  /\.step-title\.link:hover\{[^}]*text-decoration:underline/,
+  "detail titles must retain their underline affordance",
+);
+assert.doesNotMatch(
+  chatVisualSpec,
+  />详情<\/button>/,
+  "details must remain on the underlined title, not a duplicate row action",
+);
+const designExpandableIconRule = chatVisualSpec.match(
+  /\.step\[data-step-toggle\]>\.step-head>\.step-icon\{([^}]*)\}/,
+)?.[1] ?? "";
+assert.match(
+  designExpandableIconRule,
+  /box-shadow:\s*0 0 0 3px var\(--bg-primary\),\s*0 0 0 4px var\(--border-light\)/,
+  "expandable design rows must use the enlarged neutral ring",
+);
+assert.match(
+  designExpandableIconRule,
+  /border-radius:\s*50%/,
+  "the expandable icon treatment must be circular",
+);
+assert.doesNotMatch(
+  chatVisualSpec,
+  /step-disclosure/,
+  "the design must not add a separate disclosure arrow",
+);
+assert.doesNotMatch(
+  chatVisualSpec,
+  /fold-hint|⋯\s*\d+\s*步/,
+  "timeline rows must not show inconsistent descendant-step counts",
+);
+const designDocument = parseHTML(chatVisualSpec).document;
+const designFunctionIcons = [
+  ...designDocument.querySelectorAll(".step-icon.k-function svg"),
+];
+assert.ok(designFunctionIcons.length > 0, "the design must include function timeline icons");
+for (const [index, icon] of designFunctionIcons.entries()) {
+  assert.equal(
+    icon.querySelector("path")?.getAttribute("d"),
+    "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z",
+    `design function icon ${index + 1} must use Lucide Wrench`,
+  );
+}
+for (const [index, head] of [...designDocument.querySelectorAll(".step-head")].entries()) {
+  assert.ok(
+    [...head.querySelectorAll(":scope > .step-act > .btn")]
+      .some((button) => button.textContent?.trim() === "复制"),
+    `design timeline row ${index + 1} must expose Copy`,
+  );
+}
+assert.match(
+  chatVisualSpec,
+  /\[data-step-toggle\][\s\S]*event\.key!==['"]Enter['"][\s\S]*event\.key!==['"] ['"]/,
+  "the interactive design sample must support Enter and Space expansion",
+);
+assert.match(
+  chatVisualSpec,
+  /event\.target\.closest\(['"]button,\.step-title\.link['"]\)/,
+  "clicking a detail title must not also expand or collapse its row",
+);
+const designTimelineActionRule = chatVisualSpec.match(/\.step-act\{([^}]*)\}/)?.[1] ?? "";
+assert.doesNotMatch(
+  designTimelineActionRule,
+  /transition\s*:/,
+  "the design sample must switch timeline row actions immediately",
+);
+const designRailRule = chatVisualSpec.match(/\.mini\{([^}]*)\}/)?.[1] ?? "";
+assert.match(designRailRule, /left:\s*10px/);
+assert.doesNotMatch(designRailRule, /right\s*:/);
+assert.match(chatVisualSpec, /<h2><span class="num">6<\/span>左缘消息导航/);
+const subagentCurrentStart = chatVisualSpec.indexOf("Sub-agent 实时显示现状");
+const subagentCurrentEnd = chatVisualSpec.indexOf("<!-- ═══════ 5. 父子分支导航");
+assert.ok(
+  subagentCurrentStart >= 0 && subagentCurrentEnd > subagentCurrentStart,
+  "the visual specification must document the current sub-agent lifecycle",
+);
+const subagentCurrentState = chatVisualSpec.slice(subagentCurrentStart, subagentCurrentEnd);
+for (const state of ["T0 · 父级 RUNNING", "T1 · 子代理开始", "T2 · 子代理结束", "T3 · 父级 TERMINAL", "T4 · 用户重新展开"]) {
+  assert.match(subagentCurrentState, new RegExp(state));
+}
+assert.match(subagentCurrentState, /open = userSet \?\? !!streaming/);
+assert.match(subagentCurrentState, /id="replay-subagent"[\s\S]*id="demo-subagent-row"/);
+assert.match(
+  subagentCurrentState,
+  /id="demo-subagent-row"[\s\S]*class="step-act"[\s\S]*Switch ↗/,
+  "the reopened sub-agent record must retain the ordinary timeline-row switch action",
+);
+assert.match(
+  chatVisualSpec,
+  /subagentLabel\.textContent='agentic_workflow · 已完成';\s*setSubagentOpen\(false\)/,
+  "the slow replay must demonstrate the current parent-terminal auto-collapse",
+);
+assert.match(
+  chatVisualSpec,
+  /setSubagentOpen\(true\);\s*subagentRow\.className='step demo-subagent is-mounted';\s*subagentStatus\.textContent='T4：用户重新展开，仍是同一条时间线行'/,
+  "the slow replay must demonstrate that manual reopening preserves the timeline row",
+);
+const branchNavigationStart = chatVisualSpec.indexOf("Sub-agent 父子分支导航");
+const branchNavigationEnd = chatVisualSpec.indexOf("<!-- ═══════ 6. 消息导航");
+assert.ok(
+  branchNavigationStart >= 0 && branchNavigationEnd > branchNavigationStart,
+  "the visual specification must draw the parent/child branch navigation",
+);
+const branchNavigation = chatVisualSpec.slice(branchNavigationStart, branchNavigationEnd);
+for (const contract of [
+  'data-branch-destination="child">Switch ↗',
+  'data-branch-destination="latest">返回主对话',
+  'data-branch-destination="caller">切回调用处 ↗',
+  'id="branch-landing-latest"',
+  'id="branch-landing-caller"',
+]) {
+  assert.ok(branchNavigation.includes(contract), `missing navigation design contract: ${contract}`);
+}
+assert.match(
+  branchNavigation,
+  /class="tl open branch-parent-strip"[\s\S]*class="step" id="branch-parent-call"[\s\S]*class="step-head"[\s\S]*class="step-act"/,
+  "returning to the parent must preserve the ordinary timeline-row structure",
+);
+assert.doesNotMatch(branchNavigation, /class="branch-call"/);
+assert.doesNotMatch(chatVisualSpec, /\.branch-call(?:\{|\.|:|#|\[)/);
+assert.match(
+  chatVisualSpec,
+  /is-return-flash'[\s\S]*setTimeout\(\(\)=>branchParentCall\.classList\.remove\('is-return-flash'\),1200\)/,
+  "the calling row may flash briefly after return but must not keep a card treatment",
+);
+assert.match(
+  chatVisualSpec,
+  /branchContinuation\.hidden=destination==='caller'/,
+  "the design must demonstrate that the exact-caller return omits later parent messages",
+);
+function assertPlainConclusionRules(css) {
+  const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([_, selectors]) =>
+    selectors.split(",").some((selector) => {
+      const finalCompound = selector.trim().split(/[\s>+~]+/).at(-1) ?? "";
+      return /\.runtime-program-conclusion(?![\w-])/.test(finalCompound);
+    }),
+  );
+  assert.ok(rules.length > 0, "workflow Conclusion outer CSS rules must exist");
+  for (const [_, selector, declarations] of rules) {
+    assert.doesNotMatch(
+      declarations,
+      /(?:border|padding)-(?:left|inline-start)(?:-[\w-]+)?\s*:/,
+      `${selector.trim()} must render as ordinary chat content, not a blockquote`,
+    );
+  }
+}
+assertPlainConclusionRules(chatCss);
+assert.throws(
+  () => assertPlainConclusionRules(
+    `${chatCss}\n.runtime-program-conclusion.is-error { border-inline-start: 2px solid red; padding-inline-start: 14px; }`,
+  ),
+  /must render as ordinary chat content/,
+  "the Conclusion style contract must reject error/cancelled quote-style variants",
+);
+assert.throws(
+  () => assertPlainConclusionRules(
+    `${chatCss}\n.is-error.runtime-program-conclusion:hover { border-inline-start: 2px solid red; }`,
+  ),
+  /must render as ordinary chat content/,
+  "the Conclusion style contract must not depend on class order or pseudo-state",
+);
+assert.doesNotThrow(
+  () => assertPlainConclusionRules(
+    `${chatCss}\n.runtime-program-conclusion .message-content ul { padding-inline-start: 20px; }`,
+  ),
+  "semantic Markdown list indentation must remain valid inside Conclusion",
+);
+assert.match(
+  chatCss,
+  /\.runtime-program-conclusion-summary\.message-content,\s*\.runtime-program-conclusion-result\.message-content\s*\{[^}]*padding:\s*0/s,
+  "workflow summary and direct result must share the same plain-content alignment",
+);
+assert.match(runtimeBlock, /className="runtime-program-avatar"[\s\S]*>ƒ<\/div>/);
+assert.match(runtimeBlock, /if \(nested\)/, "nested LLM tool calls must keep their current rendering");
+assert.match(executionStrip, /aria-expanded=\{open\}/);
+const timelineBaseIconRule = chatCss.match(/\.tl-step-icon\s*\{([^}]*)\}/)?.[1] ?? "";
+assert.match(
+  timelineBaseIconRule,
+  /position:\s*absolute;[^}]*left:\s*-36px;[^}]*top:\s*50%;[^}]*transform:\s*translateY\(-50%\);[^}]*width:\s*20px;[^}]*height:\s*20px/s,
+  "the top-level timeline icon box and center must remain unchanged",
+);
+assert.match(
+  timelineBaseIconRule,
+  /background:\s*var\(--bg-primary\)/,
+  "timeline icon boxes must mask the vertical line behind them",
+);
+assert.match(
+  timelineBaseIconRule,
+  /--marker-size:\s*26px;[^}]*--marker-radius:\s*13px;[^}]*isolation:\s*isolate/s,
+  "top-level expandable markers must preserve a fixed 26px outer geometry",
+);
+assert.doesNotMatch(
+  timelineBaseIconRule,
+  /(?:border-radius|box-shadow)\s*:/,
+  "leaf timeline icons must remain unframed",
+);
+assert.match(
+  chatCss,
+  /\.tl-body::before\s*\{[^}]*left:\s*13\.25px;[^}]*width:\s*1\.5px/s,
+  "the top-level timeline line must remain centered behind the icon",
+);
+assert.match(
+  chatCss,
+  /\.tl-sub::before\s*\{[^}]*left:\s*11\.75px;[^}]*width:\s*1\.5px/s,
+  "the nested timeline line must remain centered behind the icon",
+);
+assert.match(
+  chatCss,
+  /\.tl-sub\s+\.tl-step-icon\s*\{[^}]*left:\s*-32px;[^}]*width:\s*17px;[^}]*height:\s*17px/s,
+  "the nested timeline icon box and center must remain unchanged",
+);
+for (const [kind, color] of [
+  ["thinking", "timeline-thinking"],
+  ["function", "timeline-function"],
+  ["llm", "timeline-llm"],
+  ["subagent", "timeline-subagent"],
+]) {
+  assert.match(
+    chatCss,
+    new RegExp(`\\.tl-step-icon\\.k-${kind}\\s*\\{[^}]*color:\\s*var\\(--${color}(?:,[^)]+)?\\)`),
+    `${kind} timeline rows must retain their type color`,
+  );
+}
+const timelineToggleIconRule = chatCss.match(/\.tl-step-icon\.is-toggleable\s*\{([^}]*)\}/)?.[1] ?? "";
+assert.match(
+  timelineToggleIconRule,
+  /background-color:\s*transparent;[^}]*box-shadow:\s*0 0 0 1\.5px var\(--timeline-fill\),\s*0 0 0 3px var\(--timeline-fill\)/s,
+  "collapsed expandable rows must use the persistent neutral solid marker",
+);
+assert.match(
+  timelineToggleIconRule,
+  /border-radius:\s*50%/,
+  "the expandability ring must be circular",
+);
+assert.doesNotMatch(
+  timelineToggleIconRule,
+  /(?:position|left|right|top|bottom|transform|translate)\s*:/,
+  "the ring must share the icon element's existing center instead of adding an offset",
+);
+const timelineMarkerCoreRule = chatCss.match(
+  /\.tl-step-icon\.is-toggleable::before\s*\{([^}]*)\}/,
+)?.[1] ?? "";
+assert.match(
+  timelineMarkerCoreRule,
+  /width:\s*var\(--marker-size\);[^}]*height:\s*var\(--marker-size\);[^}]*background:\s*var\(--timeline-fill\)/s,
+  "the collapsed marker core must fill the fixed outer circle",
+);
+assert.match(
+  timelineMarkerCoreRule,
+  /transition:[^;]*top 0\.22s cubic-bezier\(0\.2,\s*0\.7,\s*0\.2,\s*1\)[\s\S]*background-color 0\.18s ease/,
+  "marker geometry and colour must transition without a JavaScript animation state",
+);
+const timelineOpenMarkerSelector = ".tl-step:has(> .tl-collapse.is-open) > .tl-step-head > .tl-step-icon.is-toggleable";
+const timelineOpenMarkerRule = [...chatCss.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+  .find(([_, selectors]) => selectors.trim() === timelineOpenMarkerSelector)?.[2] ?? "";
+assert.match(
+  timelineOpenMarkerRule,
+  /background-color:\s*var\(--bg-primary\);[^}]*box-shadow:\s*0 0 0 1\.5px var\(--bg-primary\),\s*0 0 0 3px var\(--timeline-line\)/s,
+  "expanded markers must become hollow without moving their outer geometry",
+);
+const timelineOpenCoreRule = [...chatCss.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+  .find(([_, selectors]) => selectors.trim() === `${timelineOpenMarkerSelector}::before`)?.[2] ?? "";
+assert.match(
+  timelineOpenCoreRule,
+  /top:\s*calc\(50% \+ var\(--marker-radius\) \+ 6px\);[^}]*width:\s*1\.5px;[^}]*height:\s*12px;[^}]*background-color:\s*transparent/s,
+  "the marker core must shrink downward and reveal the existing line instead of painting a second line",
+);
+assert.doesNotMatch(
+  timelineOpenCoreRule,
+  /background(?:-color)?:\s*var\(--timeline-line\)/,
+  "the open marker must not double-paint and brighten the existing timeline",
+);
+const timelineRowCollapseRule = chatCss.match(
+  /\.tl-step > \.tl-collapse\s*\{([^}]*)\}/,
+)?.[1] ?? "";
+assert.match(
+  timelineRowCollapseRule,
+  /opacity:\s*0;[^}]*transform:\s*translateY\(-3px\);[^}]*pointer-events:\s*none;[^}]*grid-template-rows 0\.22s cubic-bezier\(0\.2,\s*0\.7,\s*0\.2,\s*1\)[\s\S]*opacity 0\.14s ease/s,
+  "row details must animate from a clipped zero-height state",
+);
+assert.match(
+  chatCss,
+  /\.tl-step > \.tl-collapse\.is-open\s*\{[^}]*opacity:\s*1;[^}]*transform:\s*translateY\(0\);[^}]*pointer-events:\s*auto/s,
+  "row details must share the open state with the marker animation",
+);
+assert.match(
+  chatCss,
+  /\.tl-sub \.tl-step-icon\s*\{[^}]*--marker-size:\s*23px;[^}]*--marker-radius:\s*11\.5px/s,
+  "nested expandable markers must retain the 23px geometry",
+);
+assert.match(
+  chatCss,
+  /\.tl-collapse\s*\{[^}]*transition:\s*grid-template-rows 0\.18s ease/s,
+  "the whole execution strip must retain its existing 180ms transition",
+);
+assert.match(
+  baseCss,
+  /@media \(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*?transition-duration:\s*0\.01ms !important;/,
+  "timeline motion must inherit the product reduced-motion duration",
+);
+assert.match(
+  executionStrip,
+  /return afterTwoAnimationFrames\(\(\) => setShown\(true\)\);/,
+  "Collapse must cancel both staged animation frames when a row closes quickly",
+);
+assert.match(
+  chatCss,
+  /\.tl\s*\{[^}]*--timeline-line:\s*light-dark\([^;]+\);[^}]*--timeline-fill:\s*light-dark\(#92928b,\s*#464644\)/s,
+  "timeline line and fill colours must adapt to light and dark themes",
+);
+const timelineIconCssRules = [...chatCss.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([_, selectors]) =>
+  selectors.includes(".tl-step-icon"),
+);
+for (const [_, selectors, declarations] of timelineIconCssRules) {
+  const normalizedSelectors = selectors.split(",").map((selector) => selector.trim()).filter(Boolean);
+  if (/box-shadow\s*:/.test(declarations)) {
+    assert.equal(
+      normalizedSelectors.length === 1 && [
+        ".tl-step-icon.is-toggleable",
+        timelineOpenMarkerSelector,
+      ].includes(normalizedSelectors[0]),
+      true,
+      "only the collapsed and expanded toggleable-marker rules may draw a timeline ring",
+    );
+  }
+  assert.equal(
+    normalizedSelectors.some((selector) => selector.includes(":hover")),
+    false,
+    "timeline step icons must not gain a hover-only ring",
+  );
+}
+const designBaseIconRule = chatVisualSpec.match(/\.step-icon\s*\{([^}]*)\}/)?.[1] ?? "";
+assert.match(
+  designBaseIconRule,
+  /left:\s*-36px;[^}]*top:\s*50%;[^}]*transform:\s*translateY\(-50%\);[^}]*width:\s*20px;[^}]*height:\s*20px/s,
+  "the design must preserve the top-level icon geometry",
+);
+assert.match(
+  designBaseIconRule,
+  /background:\s*var\(--bg-primary\)/,
+  "the design icon boxes must mask the vertical line behind them",
+);
+assert.doesNotMatch(
+  designBaseIconRule,
+  /(?:border-radius|box-shadow)\s*:/,
+  "the design must keep leaf timeline icons unframed",
+);
+assert.match(
+  chatVisualSpec,
+  /\.tl-body::before\s*\{[^}]*left:\s*13\.25px;[^}]*width:\s*1\.5px/s,
+  "the design must preserve the top-level line center",
+);
+assert.match(
+  chatVisualSpec,
+  /\.tl-sub::before\s*\{[^}]*left:\s*11\.75px;[^}]*width:\s*1\.5px/s,
+  "the design must preserve the nested line center",
+);
+assert.match(
+  chatVisualSpec,
+  /\.tl-sub\s+\.step-icon\s*\{[^}]*left:\s*-32px;[^}]*width:\s*17px;[^}]*height:\s*17px/s,
+  "the design must preserve the nested icon geometry",
+);
+assert.match(
+  executionStrip,
+  /\+ \(toggleable \? " is-toggleable" : ""\)/,
+  "only expandable rows must mark their existing icon as toggleable",
+);
+assert.match(
+  executionStrip,
+  /import \{ Wrench \} from "lucide-react";/,
+  "function timeline rows must use the installed Lucide Wrench",
+);
+assert.match(
+  executionStrip,
+  /: icon === "llm" \? CpuIcon : Wrench;/,
+  "only the function timeline icon should switch to Lucide Wrench",
+);
+assert.doesNotMatch(
+  executionStrip,
+  /\bWrenchIcon\b/,
+  "the timeline must not retain the animated wrench",
+);
+assert.doesNotMatch(
+  executionStrip,
+  /else if \(detail\) useSessionStore\.getState\(\)\.showDetail\(detail\)/,
+  "clicking outside the underlined title must not open details",
+);
+assert.doesNotMatch(
+  executionStrip,
+  /tl-step-disclosure|tl-fold-hint|\bsubCount\b/,
+  "timeline rows must not render a separate arrow or descendant-step count",
+);
+assert.doesNotMatch(
+  chatCss,
+  /tl-step-disclosure|tl-fold-hint/,
+  "timeline CSS must not retain obsolete arrow or step-count styles",
+);
+assert.match(
+  executionStrip,
+  /const copyValue = copyText \?\? \[title, note\][\s\S]*\.join\(" · "\)/,
+  "every timeline row must have a deterministic copy value",
+);
+assert.match(
+  executionStrip,
+  /<span className="tl-step-act">\s*<button type="button" className="tl-btn" onClick=\{copy\}>/,
+  "every timeline row must render Copy before row-specific actions",
+);
+const timelineActionRule = chatCss.match(/\.tl-step-act\s*\{([^}]*)\}/)?.[1] ?? "";
+assert.doesNotMatch(
+  timelineActionRule,
+  /transition\s*:/,
+  "timeline row actions must switch immediately when the pointer changes rows",
+);
+assert.doesNotMatch(
+  chatCss,
+  /\.tl-step-head:focus-within\s+\.tl-step-act/,
+  "pointer focus must not leave actions visible on a row after hover moves away",
+);
+assert.match(
+  chatCss,
+  /\.tl-step-head:has\(:focus-visible\)\s+\.tl-step-act/,
+  "keyboard focus must still reveal timeline row actions",
+);
+assert.match(
+  chatCss,
+  /\.tl-toggle\s*\{[^}]*display:\s*inline-flex[^}]*align-items:\s*center[^}]*height:\s*28px[^}]*margin:\s*0 0 1\.5px[^}]*padding:\s*0/s,
+);
+assert.match(runtimeBlock, /<TreeStep node=\{tree\} defaultKidsOpen\s*\/>/);
+assert.doesNotMatch(
+  executionStrip,
+  /<TreeStep key=\{c\.path \|\| i\} node=\{c\} defaultKidsOpen=\{defaultKidsOpen\}/,
+  "manual workflow expansion must stop after one tree level",
+);
+assert.match(chatCss, /\.runtime-card-host\s*\{[^}]*margin:\s*20px 8px/s);
+assert.match(
+  chatCss,
+  /\.runtime-program-run\s*\{[^}]*grid-template-columns:\s*28px minmax\(0, 1fr\)[^}]*align-items:\s*start/s,
+);
+assert.match(chatCss, /\.runtime-program-avatar\s*\{[^}]*width:\s*28px[^}]*height:\s*28px[^}]*border-radius:\s*8px/s);
+assert.match(chatCss, /\.runtime-program-content\s*\{[^}]*min-width:\s*0/s);
+function assertNoSummaryVerticalOffset(css, sourceLabel) {
+  for (const [, selector, declarations] of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    if (!/\.runtime-program-avatar|\.runtime-program-content|\.tl-toggle|\.tl-chev/.test(selector)) continue;
+    assert.doesNotMatch(
+      declarations,
+      /(?:^|;)\s*(?:top|bottom|translate|vertical-align|align-self|place-self|margin-top|margin-block(?:-start|-end)?|padding-top|padding-block(?:-start|-end)?|inset-block(?:-start|-end)?)\s*:/,
+      `${sourceLabel} must not vertically offset the Function summary`,
+    );
+    assert.doesNotMatch(
+      declarations,
+      /(?:^|;)\s*transform\s*:[^;]*translate/i,
+      `${sourceLabel} must not translate the Function summary`,
+    );
+  }
+}
+assertNoSummaryVerticalOffset(chatCss, "production CSS");
+assert.throws(() => assertNoSummaryVerticalOffset(
+  ".runtime-program-avatar { transform: translateY(1px); }",
+  "avatar offset mutation",
+));
+assert.throws(() => assertNoSummaryVerticalOffset(
+  ".runtime-program-content > .tl > .tl-toggle > span { bottom: -1px; }",
+  "label offset mutation",
+));
+assert.match(
+  chatVisualSpec,
+  /class="runtime-program-run"[\s\S]*class="runtime-program-avatar"[\s\S]*class="runtime-program-content"[\s\S]*class="tl-toggle"/,
+  "the interactive design sample must show the production Function summary structure",
+);
+assertNoSummaryVerticalOffset(chatVisualSpec, "interactive design sample");
+
+const zh = (en, cn) => cn;
+assert.equal(
+  runtimeSummaryLabel({
+    fnName: "agentic_workflow",
+    status: "running",
+    timestamp: startedAt,
+    now: (startedAt + 8) * 1000,
+    tree: { name: "root", children: [{ name: "read_file" }] },
+    text: zh,
+  }),
+  "agentic_workflow · 运行中… · 00:08 · 2 步",
+);
+assert.equal(
+  runtimeSummaryLabel({
+    fnName: "agentic_workflow",
+    status: "completed",
+    tree: { duration_ms: 12_000 },
+    text: zh,
+  }),
+  "agentic_workflow · 已完成 · 00:12 · 1 步",
+);
 
 console.log("chat-ui checks passed");

@@ -131,6 +131,7 @@ def _open_app_session(
     url: str | None,
     timeout_ms: int,
     strict: bool,
+    binding_id: str | None = None,
 ) -> str | None:
     """Attach to the visible web tabs inside the OpenProgram desktop app.
 
@@ -174,9 +175,13 @@ def _open_app_session(
     try:
         from openprogram.webui.ws_actions.webtab import (
             request_active_tab,
+            request_bound_tab,
             request_open_tab,
         )
-        reply = request_open_tab(url) if url else request_active_tab()
+        if binding_id:
+            reply = request_bound_tab(binding_id, url=url or "", timeout=10.0)
+        else:
+            reply = request_open_tab(url) if url else request_active_tab()
     except Exception as e:
         reply = {"ok": False, "error": f"{type(e).__name__}: {e}"}
     target_id = reply.get("target_id") if reply.get("ok") else None
@@ -239,6 +244,7 @@ def _open(
     url: str | None = None,
     storage_state: str | None = None,
     cdp_url: str | None = None,
+    binding_id: str | None = None,
 ) -> str:
     """Open a browser session, optionally pre-loading a saved login.
 
@@ -273,6 +279,7 @@ def _open(
         if app_cdp is not None:
             res = _open_app_session(
                 app_cdp, url=url, timeout_ms=timeout_ms, strict=app_engine,
+                binding_id=binding_id,
             )
             if res is not None:
                 return res

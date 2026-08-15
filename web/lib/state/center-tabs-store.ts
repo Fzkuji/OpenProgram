@@ -19,6 +19,7 @@
  */
 import { create } from "zustand";
 import {
+  MAX_CENTER_TAB_GROUP_MEMBERS,
   findCenterTabGroup,
   focusCenterTabGroupMember,
   groupCenterTabs,
@@ -41,6 +42,7 @@ import {
   builtinTabId,
   fileTabId,
   hostnameOf,
+  nextBrowserHomeId,
   nextNtpId,
   sessionTabId,
   webTabId,
@@ -190,7 +192,7 @@ export interface CenterTabsState {
   /** Focus-or-create a web tab for `url` (must already be a valid
    *  http(s) URL — run user input through normalizeWebUrl first). */
   openWebTab: (url: string) => void;
-  /** Appends or reuses a web tab for the split pane without changing focus. */
+  /** Appends or reuses a split web tab; an existing owner composite becomes active. */
   openWebTabInSplit: (url: string) => string;
   setSplitWebTab: (id: string | null) => void;
   setSplitRatio: (ratio: number) => void;
@@ -251,9 +253,7 @@ function detachesSplitPair(state: CenterTabsState, tabId: string): boolean {
   const splitId = state.splitWebTabId;
   if (!splitId) return false;
   if (tabId === splitId) return true;
-  const tab = state.tabs.find((candidate) => candidate.id === tabId);
-  return tabId === state.activeId && tab?.kind === "session" &&
-    !!findCenterTabGroup(state.groups, tabId)?.memberIds.includes(splitId);
+  return !!findCenterTabGroup(state.groups, tabId)?.memberIds.includes(splitId);
 }
 
 export const useCenterTabs = create<CenterTabsState>((set) => {
@@ -286,6 +286,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
     if (
       activeIdx >= 0 &&
       (s.tabs[activeIdx].kind === "ntp" ||
+        (s.tabs[activeIdx].kind === "builtin" && s.tabs[activeIdx].page === "browser") ||
         replaceable.includes(s.tabs[activeIdx].id))
     ) {
       tabs = s.tabs.map((t, i) => (i === activeIdx ? make() : t));
@@ -382,6 +383,9 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
     groupTab: (sourceId, targetId, memberIndex, groupId) => {
       let accepted = false;
       set((s) => {
+        const pairAlreadyGrouped = s.groups.some((group) =>
+          group.memberIds.includes(sourceId) && group.memberIds.includes(targetId),
+        );
         const result = groupCenterTabs({
           tabIds: s.tabs.map((tab) => tab.id),
           groups: s.groups,
@@ -391,6 +395,8 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         return commitCenterTabsState(s, {
           tabs: tabsForLayout(s.tabs, result.layout),
           groups: result.layout.groups,
+          activeId: sourceId,
+          splitRatio: pairAlreadyGrouped ? s.splitRatio : 0.5,
         });
       });
       return accepted;
@@ -555,17 +561,18 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         };
       }),
 
-    // Deterministic id ⇒ focusOrCreate already enforces the singleton:
-    // a second "open bookmarks" focuses the existing tab.
+    // Browser home belongs to the pane that selected Browser. Other built-ins
+    // keep deterministic singleton ids.
     openBuiltinTab: (page) =>
-      set((s) =>
-        focusOrCreate(
+      set((s) => {
+        const id = page === "browser" ? nextBrowserHomeId() : builtinTabId(page);
+        return focusOrCreate(
           s,
-          builtinTabId(page),
-          () => ({ id: builtinTabId(page), kind: "builtin", title: "", page }),
+          id,
+          () => ({ id, kind: "builtin", title: "", page }),
           [],
-        ),
-      ),
+        );
+      }),
 
     openWebTab: (url) =>
       set((s) => {
@@ -580,7 +587,10 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           );
         }
         const active = s.tabs.find((tab) => tab.id === s.activeId);
-        const consumeNtp = active?.kind === "ntp" && active.id !== id;
+        const consumeNtp = !!active && active.id !== id && (
+          active.kind === "ntp" ||
+          (active.kind === "builtin" && active.page === "browser")
+        );
         const restoreUrl = existing.url !== url;
         if (!consumeNtp && !restoreUrl && s.activeId === id) return {};
         let tabs = consumeNtp
@@ -597,8 +607,53 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       }),
 
     openWebTabInSplit: (url) => {
-      const id = webTabId(url);
+      let id = webTabId(url);
       set((s) => {
+        const ownedGroup = findCenterTabGroup(s.groups, id);
+        if (ownedGroup && !ownedGroup.memberIds.includes(s.activeId ?? "")) {
+          const ownedWeb = s.tabs.find((tab) => tab.id === id && tab.kind === "web");
+          const tabs = ownedWeb?.url === url
+            ? s.tabs
+            : s.tabs.map((tab) => tab.id === id
+              ? {
+                  ...tab,
+                  url,
+                  title: hostnameOf(url),
+                  faviconUrl: undefined,
+                }
+              : tab);
+          const ownerActiveId = ownedGroup.memberIds.find((memberId) =>
+            s.tabs.some((tab) => tab.id === memberId && tab.kind === "session"),
+          ) ?? ownedGroup.focusedId;
+          return commitCenterTabsState(s, {
+            tabs,
+            activeId: ownerActiveId,
+            splitWebTabId: id,
+          });
+        }
+        const activeGroup = s.activeId
+          ? findCenterTabGroup(s.groups, s.activeId)
+          : undefined;
+        const groupedWeb = activeGroup?.memberIds
+          .map((memberId) => s.tabs.find((tab) => tab.id === memberId))
+          .find((tab) => tab?.kind === "web");
+        if (groupedWeb) {
+          id = groupedWeb.id;
+          const tabs = groupedWeb.url === url
+            ? s.tabs
+            : s.tabs.map((tab) => tab.id === groupedWeb.id
+              ? {
+                  ...tab,
+                  url,
+                  title: hostnameOf(url),
+                  faviconUrl: undefined,
+                }
+              : tab);
+          return commitCenterTabsState(s, {
+            tabs,
+            splitWebTabId: groupedWeb.id,
+          });
+        }
         const existing = s.tabs.find((tab) => tab.id === id);
         const tabs = !existing
           ? [...s.tabs, { id, kind: "web" as const, title: hostnameOf(url), url }]
@@ -675,7 +730,12 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       set((s) => {
         const index = s.tabs.findIndex((tab) => tab.id === id && tab.kind === "web");
         if (index < 0) return {};
-        const homeTab: CenterTab = { id: nextNtpId(), kind: "ntp", title: "" };
+        const homeTab: CenterTab = {
+          id: nextBrowserHomeId(),
+          kind: "builtin",
+          title: "",
+          page: "browser",
+        };
         const tabs = s.tabs.map((tab, tabIndex) =>
           tabIndex === index ? homeTab : tab
         );
@@ -974,7 +1034,7 @@ export function validateTransferredTabs(
     if (!memberIds) return { ok: false, reason: "invalid" };
     const visibleIds = payload.source.visibleIds ?? memberIds?.slice(0, 2) ?? [];
     const focusedId = payload.source.focusedId ?? visibleIds[0];
-    if (payload.source.kind === "group" && ids.length > 3) {
+    if (payload.source.kind === "group" && ids.length > MAX_CENTER_TAB_GROUP_MEMBERS) {
       return { ok: false, reason: "group-full" };
     }
     const segmentAt = payload.source.memberIndex;
@@ -1007,7 +1067,7 @@ export function validateTransferredTabs(
   }
   if (placement.kind === "merge") {
     const targetGroup = findCenterTabGroup(before.groups, placement.targetTabId);
-    if ((targetGroup?.memberIds.length ?? 1) + ids.length > 3) {
+    if ((targetGroup?.memberIds.length ?? 1) + ids.length > MAX_CENTER_TAB_GROUP_MEMBERS) {
       return { ok: false, reason: "group-full" };
     }
   }

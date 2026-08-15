@@ -8,9 +8,10 @@ const {
   ipcMain,
   net,
   powerMonitor,
+  session,
   shell,
 } = require("electron");
-const { spawn } = require("child_process");
+const { execFileSync, spawn } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
 const http = require("http");
@@ -29,14 +30,20 @@ const {
 const {
   recordVisit,
   listHistory,
+  importHistoryEntries,
   deleteHistoryEntry,
   clearHistory,
 } = require("./browsing-history-store");
+const {
+  listBrowserSources,
+  runBrowserImport,
+} = require("./browser-profile-import");
 
 // 单实例：worker 单端口 18100（详见 docs/reference/design/cli/single-port.md）
 const WEB_PORT = process.env.OPENPROGRAM_WEB_PORT || "18100";
 const START_URL =
   process.env.OPENPROGRAM_DESKTOP_URL || `http://127.0.0.1:${WEB_PORT}/chat`;
+const UI_ORIGIN = new URL(START_URL).origin;
 const HEALTH_URL = new URL("/healthz", START_URL).toString();
 const WORKER_COMMAND = "openprogram worker start";
 const RECOVERY_INTERVAL_MS = 3_000;
@@ -1844,15 +1851,37 @@ function normalizedBounds(bounds) {
   };
 }
 
-function normalizedRendererBounds(event, bounds) {
+function rendererZoomFactor(event) {
   const senderZoom = Number(event?.sender?.getZoomFactor?.());
-  const zoom = Number.isFinite(senderZoom) && senderZoom > 0 ? senderZoom : 1;
+  return Number.isFinite(senderZoom) && senderZoom > 0 ? senderZoom : 1;
+}
+
+function normalizedRendererBounds(event, bounds) {
+  const zoom = rendererZoomFactor(event);
   return normalizedBounds({
     x: Number(bounds?.x) * zoom,
     y: Number(bounds?.y) * zoom,
     width: Number(bounds?.width) * zoom,
     height: Number(bounds?.height) * zoom,
   });
+}
+
+function normalizedRendererMenuOptions(event, options) {
+  const source = options && typeof options === "object" ? options : {};
+  const anchor = source.anchor && typeof source.anchor === "object"
+    ? { ...source.anchor }
+    : {};
+  const zoom = rendererZoomFactor(event);
+  for (const key of ["x", "right", "y", "rightInset", "top", "vw", "vh"]) {
+    const value = Number(anchor[key]);
+    if (Number.isFinite(value)) anchor[key] = value * zoom;
+  }
+  const normalized = { ...source, anchor };
+  for (const key of ["width", "height"]) {
+    const value = Number(source[key]);
+    if (Number.isFinite(value)) normalized[key] = value * zoom;
+  }
+  return normalized;
 }
 
 function syncVisibleViews(ctx, items) {
@@ -1939,6 +1968,80 @@ async function activateView(ctx, id, url) {
   return devToolsTargetId(record.view.webContents);
 }
 
+const SURFACE_PREVIEW_SCRIPT = `(() => {
+  const visible = (element) => {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden"
+      && rect.width > 0 && rect.height > 0
+      && rect.bottom > 0 && rect.right > 0
+      && rect.top < innerHeight && rect.left < innerWidth;
+  };
+  let bodyText = "";
+  if (document.body) {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode() && bodyText.length <= 2000) {
+      const parent = walker.currentNode.parentElement;
+      if (!parent || !visible(parent)) continue;
+      const text = (walker.currentNode.textContent || "").replace(/\\s+/g, " ").trim();
+      if (text) bodyText += (bodyText ? " " : "") + text;
+    }
+  }
+  const landmarkSelector = [
+    "header", "nav", "main", "aside", "footer",
+    "[role=banner]", "[role=navigation]", "[role=main]",
+    "[role=complementary]", "[role=contentinfo]", "[role=search]",
+  ].join(",");
+  const visibleLandmarks = Array.from(document.querySelectorAll(landmarkSelector))
+    .filter(visible);
+  const landmarks = visibleLandmarks
+    .slice(0, 12)
+    .map((element) => ({
+      role: element.getAttribute("role") || element.tagName.toLowerCase(),
+      name: (
+        element.getAttribute("aria-label") || element.getAttribute("title") || ""
+      ).replace(/\\s+/g, " ").trim().slice(0, 160),
+    }));
+  const interactiveSelector = [
+    "a[href]", "button", "input", "textarea", "select", "summary",
+    "[role=button]", "[role=link]", "[role=checkbox]", "[role=radio]",
+    "[role=tab]", "[role=menuitem]", "[contenteditable=true]",
+    "[tabindex]:not([tabindex='-1'])",
+  ].join(",");
+  return {
+    visible_text_excerpt: bodyText.slice(0, 2000),
+    text_truncated: bodyText.length > 2000,
+    aria_landmarks: landmarks,
+    landmarks_truncated: visibleLandmarks.length > landmarks.length,
+    interactive_count: Array.from(document.querySelectorAll(interactiveSelector))
+      .filter(visible).length,
+  };
+})()`;
+
+async function previewView(ctx, id) {
+  const record = recordFor(ctx, id);
+  if (!record || !ctx.visibleViewIds.has(id)) return null;
+  const wc = record.view.webContents;
+  try {
+    const [preview, targetId] = await Promise.all([
+      wc.executeJavaScript(SURFACE_PREVIEW_SCRIPT, true),
+      devToolsTargetId(wc),
+    ]);
+    if (!targetId || recordFor(ctx, id) !== record || !ctx.visibleViewIds.has(id)) {
+      return null;
+    }
+    return {
+      tab_id: id,
+      target_id: targetId,
+      url: wc.getURL(),
+      title: wc.getTitle(),
+      preview,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function withView(ctx, id, fn) {
   const record = recordFor(ctx, id);
   if (!record) return false;
@@ -2009,7 +2112,7 @@ function cleanupWindowContext(ctx) {
 // DOM). Singleton per window; closes on outside click (its own blur),
 // Esc, window blur/resize, and after a choice.
 const MAIN_MENU_WIDTH = 224;
-const MAIN_MENU_HEIGHT = 220;
+const MAIN_MENU_HEIGHT = 88;
 // Extra room around the panel so its drop shadow isn't clipped by the
 // view's own edge (the panel itself is smaller than the view).
 const MAIN_MENU_GUTTER = 24;
@@ -2022,12 +2125,35 @@ const MAIN_MENU_GUTTER = 24;
 const CONTEXT_MENU_WIDTH = 200;
 const CONTEXT_MENU_ROW_HEIGHT = 24;
 const CONTEXT_MENU_CHROME = 16;
+const MENU_THEME_IDS = [
+  "beige-dark",
+  "beige-light",
+  "dark",
+  "light",
+  "aurora",
+  "custom",
+];
+const MENU_THEME_ID_SET = new Set(MENU_THEME_IDS);
+
+function contextMenuRequestedX(anchor, panelW) {
+  return anchor.align === "end" ? anchor.right - panelW : anchor.x;
+}
 
 /** Context-menu panel top-left, clamped to an 8px margin inside the window. */
 function clampContextMenuPanel(anchor, panelW, panelH) {
+  const zoom = Number.isFinite(Number(anchor.zoom)) && Number(anchor.zoom) > 0
+    ? Number(anchor.zoom)
+    : 1;
+  const margin = 8 * zoom;
   return {
-    x: Math.min(Math.max(8, anchor.x), Math.max(8, anchor.winW - panelW - 8)),
-    y: Math.min(Math.max(8, anchor.y), Math.max(8, anchor.winH - panelH - 8)),
+    x: Math.min(
+      Math.max(margin, contextMenuRequestedX(anchor, panelW)),
+      Math.max(margin, anchor.winW - panelW - margin),
+    ),
+    y: Math.min(
+      Math.max(margin, anchor.y),
+      Math.max(margin, anchor.winH - panelH - margin),
+    ),
   };
 }
 
@@ -2039,19 +2165,30 @@ function resizeMenuOverlay(ctx, size) {
   const view = ctx && ctx.mainMenuView;
   const anchor = ctx && ctx.mainMenuAnchor;
   if (!view || !anchor || view.webContents.isDestroyed()) return;
+  const zoom = Number.isFinite(Number(anchor.zoom)) && Number(anchor.zoom) > 0
+    ? Number(anchor.zoom)
+    : 1;
+  const gutter = MAIN_MENU_GUTTER * zoom;
   const panelW = Math.max(1, Math.round(Number(size && size.width) || 0));
-  const panelH = Math.max(1, Math.round(Number(size && size.height) || 0));
+  let panelH = Math.max(1, Math.round(Number(size && size.height) || 0));
+  panelH = Math.min(panelH, Math.max(1, anchor.winH - 16 * zoom));
   if (!panelW || !panelH) return;
   const { x, y } = clampContextMenuPanel(anchor, panelW, panelH);
   view.setBounds({
-    x: Math.round(x - MAIN_MENU_GUTTER),
-    y: Math.round(y - MAIN_MENU_GUTTER),
-    width: panelW + MAIN_MENU_GUTTER * 2,
-    height: panelH + MAIN_MENU_GUTTER * 2,
+    x: Math.round(x - gutter),
+    y: Math.round(y - gutter),
+    width: Math.round(panelW + gutter * 2),
+    height: Math.round(panelH + gutter * 2),
   });
 }
 
-function menuOverlayUrl(theme, items) {
+function hasNestedMenuItems(items) {
+  return Array.isArray(items) && items.some((item) =>
+    Array.isArray(item && item.children) && item.children.length > 0,
+  );
+}
+
+function menuOverlayUrl(theme, items, anchor, width) {
   let origin = "http://127.0.0.1:" + WEB_PORT;
   try {
     origin = new URL(START_URL).origin;
@@ -2059,8 +2196,13 @@ function menuOverlayUrl(theme, items) {
     /* keep fallback */
   }
   const q = new URLSearchParams();
-  if (theme === "dark" || theme === "light") q.set("theme", theme);
+  if (MENU_THEME_ID_SET.has(theme)) q.set("theme", theme);
   if (items) q.set("items", JSON.stringify(items));
+  if (anchor) {
+    q.set("x", String(anchor.x));
+    q.set("y", String(anchor.y));
+  }
+  if (Number.isFinite(width) && width > 0) q.set("width", String(width));
   return (
     origin
     + (items ? "/menu-overlay/context-menu?" : "/menu-overlay/main-menu?")
@@ -2085,9 +2227,13 @@ function closeMainMenu(ctx) {
   }
 }
 
-function openMainMenu(ctx, opts) {
+function openMainMenu(ctx, opts, zoom = 1) {
   if (!ctx || ctx.win.isDestroyed()) return;
   closeMainMenu(ctx);
+  const menuZoom = Number.isFinite(Number(zoom)) && Number(zoom) > 0
+    ? Number(zoom)
+    : 1;
+  const gutter = MAIN_MENU_GUTTER * menuZoom;
   const view = new WebContentsView({
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -2097,6 +2243,7 @@ function openMainMenu(ctx, opts) {
       additionalArguments: [`--openprogram-window-id=${ctx.id}`],
     },
   });
+  view.webContents.setZoomFactor(menuZoom);
   view.setBackgroundColor("#00000000");
   ctx.mainMenuView = view;
   ctx.win.contentView.addChildView(view);
@@ -2113,19 +2260,50 @@ function openMainMenu(ctx, opts) {
   const winW = Number(anchor.vw) || cbW;
   const winH = Number(anchor.vh) || cbH;
   const items = Array.isArray(opts && opts.items) ? opts.items : null;
+  const nestedItems = hasNestedMenuItems(items);
+  const overlayWidth = Number.isFinite(Number(opts && opts.width))
+    ? Number(opts.width) / menuZoom
+    : null;
+  let overlayAnchor = null;
   let panelW;
   let panelH;
   let panelX;
   let panelY;
-  if (items) {
+  if (items && nestedItems) {
+    // Cascading bookmark folders need the overlay document to cover the
+    // content area so submenu portals are not clipped by root-panel bounds.
+    ctx.mainMenuAnchor = null;
+    overlayAnchor = {
+      x: (Number(anchor.x) || 0) / menuZoom,
+      y: (Number(anchor.y) || 0) / menuZoom,
+    };
+    panelW = winW;
+    panelH = winH;
+    panelX = 0;
+    panelY = 0;
+  } else if (items) {
     // Generic context menu: panel top-left at anchor {x, y}, clamped to an
     // 8px margin inside the window (same clamp the DOM tab menu used).
-    panelW = Number(opts.width) || CONTEXT_MENU_WIDTH;
-    panelH = Number(opts.height)
-      || items.length * CONTEXT_MENU_ROW_HEIGHT + CONTEXT_MENU_CHROME;
+    panelW = Number(opts.width) || CONTEXT_MENU_WIDTH * menuZoom;
+    panelH = Math.min(
+      Number(opts.height)
+        || (items.length * CONTEXT_MENU_ROW_HEIGHT + CONTEXT_MENU_CHROME) * menuZoom,
+      Math.max(1, winH - 16 * menuZoom),
+    );
     // Remember the anchor + viewport so main-menu:resize can re-clamp the
     // view once the overlay reports its measured panel size.
-    ctx.mainMenuAnchor = { x: Number(anchor.x) || 0, y: Number(anchor.y) || 0, winW, winH };
+    const align = anchor.align === "end" && Number.isFinite(Number(anchor.right))
+      ? "end"
+      : "start";
+    ctx.mainMenuAnchor = {
+      x: Number(anchor.x) || 0,
+      right: Number(anchor.right) || 0,
+      align,
+      y: Number(anchor.y) || 0,
+      winW,
+      winH,
+      zoom: menuZoom,
+    };
     const clamped = clampContextMenuPanel(ctx.mainMenuAnchor, panelW, panelH);
     panelX = clamped.x;
     panelY = clamped.y;
@@ -2133,28 +2311,32 @@ function openMainMenu(ctx, opts) {
     ctx.mainMenuAnchor = null;
     // Main menu: panel right edge sits `rightInset` from the window right,
     // top edge on the strip's bottom divider.
-    panelW = MAIN_MENU_WIDTH;
-    panelH = MAIN_MENU_HEIGHT;
+    panelW = MAIN_MENU_WIDTH * menuZoom;
+    panelH = MAIN_MENU_HEIGHT * menuZoom;
     const rightInset = Number.isFinite(anchor.rightInset)
       ? anchor.rightInset
-      : 8;
+      : 8 * menuZoom;
     panelX = Math.max(0, winW - rightInset - panelW);
-    panelY = Number.isFinite(anchor.top) ? anchor.top : 40;
+    panelY = Number.isFinite(anchor.top) ? anchor.top : 40 * menuZoom;
   }
-  const viewW = panelW + MAIN_MENU_GUTTER * 2;
-  const viewH = panelH + MAIN_MENU_GUTTER * 2;
-  // Panel is inset by GUTTER inside the view (transparent room for the
-  // drop shadow) — offset the view accordingly.
-  view.setBounds({
-    x: Math.round(panelX - MAIN_MENU_GUTTER),
-    y: Math.round(panelY - MAIN_MENU_GUTTER),
-    width: viewW,
-    height: viewH,
-  });
+  if (nestedItems) {
+    view.setBounds({ x: 0, y: 0, width: Math.round(winW), height: Math.round(winH) });
+  } else {
+    const viewW = panelW + gutter * 2;
+    const viewH = panelH + gutter * 2;
+    // Panel is inset by GUTTER inside the view (transparent room for the
+    // drop shadow) — offset the view accordingly.
+    view.setBounds({
+      x: Math.round(panelX - gutter),
+      y: Math.round(panelY - gutter),
+      width: Math.round(viewW),
+      height: Math.round(viewH),
+    });
+  }
 
   const theme = opts && opts.theme;
   view.webContents
-    .loadURL(menuOverlayUrl(theme, items))
+    .loadURL(menuOverlayUrl(theme, items, overlayAnchor, overlayWidth))
     .then(() => {
       if (ctx.mainMenuView === view && !view.webContents.isDestroyed()) {
         view.webContents.focus();
@@ -2190,7 +2372,13 @@ function contextForMenuSender(event) {
 function registerWebTabIpc() {
   ipcMain.on("main-menu:open", (event, opts) => {
     const ctx = contextForSender(event);
-    if (ctx) openMainMenu(ctx, opts || {});
+    if (ctx) {
+      openMainMenu(
+        ctx,
+        normalizedRendererMenuOptions(event, opts),
+        rendererZoomFactor(event),
+      );
+    }
   });
   ipcMain.on("main-menu:close", (event) => {
     const ctx = contextForMenuSender(event);
@@ -2198,7 +2386,7 @@ function registerWebTabIpc() {
   });
   ipcMain.on("main-menu:resize", (event, size) => {
     const ctx = contextForMenuSender(event);
-    if (ctx) resizeMenuOverlay(ctx, size);
+    if (ctx) resizeMenuOverlay(ctx, normalizedRendererBounds(event, size));
   });
   ipcMain.on("main-menu:choose", (event, id) => {
     const ctx = contextForMenuSender(event);
@@ -2219,6 +2407,10 @@ function registerWebTabIpc() {
     return ctx && typeof id === "string"
       ? activateView(ctx, id, typeof url === "string" ? url : "")
       : null;
+  });
+  ipcMain.handle("webtab:preview", (event, id) => {
+    const ctx = contextForSender(event);
+    return ctx && typeof id === "string" ? previewView(ctx, id) : null;
   });
   ipcMain.on("webtab:sync-visible", (event, items) => {
     const ctx = contextForSender(event);
@@ -2256,6 +2448,10 @@ function registerWebTabIpc() {
     const ctx = contextForSender(event);
     if (ctx) runNativeNavigation(ctx, id, (wc) => wc.reload());
   });
+  ipcMain.on("webtab:stop", (event, id) => {
+    const ctx = contextForSender(event);
+    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.stop());
+  });
   ipcMain.on("webtab:go-back", (event, id) => {
     const ctx = contextForSender(event);
     if (ctx) runNativeNavigation(ctx, id, (wc) => wc.navigationHistory.goBack());
@@ -2284,6 +2480,274 @@ function registerWebTabIpc() {
     } catch (_error) {
       return false;
     }
+  });
+
+  let activeBrowserImport = null;
+  ipcMain.handle("browser-import:list-sources", () => {
+    try {
+      return listBrowserSources();
+    } catch (_error) {
+      return [];
+    }
+  });
+  ipcMain.handle("browser-import:run", (_event, request) => {
+    if (activeBrowserImport) {
+      return { ok: false, error: "import_busy" };
+    }
+    activeBrowserImport = (async () => {
+      try {
+        const result = await runBrowserImport(request || {}, {
+          targetSession: session.fromPartition("persist:webtabs"),
+        });
+        const historyMerge = result.history.length
+          ? importHistoryEntries(browsingHistoryFile(), result.history)
+          : {
+              imported: 0,
+              total: listHistory(browsingHistoryFile(), { limit: 5000 }).length,
+            };
+        return {
+          ok: true,
+          source: result.source,
+          history: historyMerge,
+          bookmarks: result.bookmarks,
+          cookies: result.cookies,
+        };
+      } catch (error) {
+        return { ok: false, error: error?.code || "import_failed" };
+      } finally {
+        activeBrowserImport = null;
+      }
+    })();
+    return activeBrowserImport;
+  });
+  ipcMain.handle("browser-data:clear", async (event, options) => {
+    try {
+      if (!contextForSender(event)) return { ok: false };
+      const request = options && typeof options === "object" ? options : {};
+      if (request.history) clearHistory(browsingHistoryFile());
+      if (request.cookies) {
+        await session.fromPartition("persist:webtabs").clearStorageData({ storages: ["cookies"] });
+      }
+      return { ok: true };
+    } catch (_error) {
+      return { ok: false };
+    }
+  });
+
+  // A renderer may choose one of two fixed programs, never an arbitrary
+  // executable/argv pair. The PTY remains in the main process and is keyed by
+  // sender so another window cannot write to or resize it by guessing the id.
+  const terminals = new Map();
+  const terminalSenders = new WeakSet();
+  const terminalKey = (sender, id) => `${sender.id}:${id}`;
+  const terminalContextForSender = (event) => {
+    const ctx = contextForSender(event);
+    if (!ctx) return null;
+    try {
+      return new URL(event.sender.getURL()).origin === UI_ORIGIN ? ctx : null;
+    } catch (_error) {
+      return null;
+    }
+  };
+  const terminalIdFor = (ctx, preset) => `terminal:${ctx.id}:${preset}`;
+  const terminalIdAllowed = (ctx, id) =>
+    id === terminalIdFor(ctx, "shell") || id === terminalIdFor(ctx, "claude");
+  const terminalDescendants = (rootPid) => {
+    if (process.platform === "win32" || !Number.isInteger(rootPid)) return [];
+    try {
+      const children = new Map();
+      const rows = execFileSync("/bin/ps", ["-axo", "pid=,ppid="], {
+        encoding: "utf8",
+      });
+      for (const line of rows.split("\n")) {
+        const match = line.trim().match(/^(\d+)\s+(\d+)$/);
+        if (!match) continue;
+        const pid = Number(match[1]);
+        const parent = Number(match[2]);
+        const list = children.get(parent) ?? [];
+        list.push(pid);
+        children.set(parent, list);
+      }
+      const descendants = [];
+      const pending = [...(children.get(rootPid) ?? [])];
+      while (pending.length > 0) {
+        const pid = pending.pop();
+        descendants.push(pid);
+        pending.push(...(children.get(pid) ?? []));
+      }
+      return descendants;
+    } catch (_error) {
+      return [];
+    }
+  };
+  const signalTerminal = (entry, signal) => {
+    let groupSignaled = false;
+    if (process.platform !== "win32" && Number.isInteger(entry.process.pid)) {
+      try {
+        process.kill(-entry.process.pid, signal);
+        groupSignaled = true;
+      } catch (_error) {
+        /* fall back to node-pty's root process signal */
+      }
+    }
+    for (const pid of entry.descendantPids ?? []) {
+      try {
+        process.kill(pid, signal);
+      } catch (_error) {
+        /* descendant already exited */
+      }
+    }
+    if (groupSignaled) return;
+    try {
+      entry.process.kill(signal);
+    } catch (_error) {
+      /* process already exited */
+    }
+  };
+  const stopTerminal = (sender, id) => {
+    const key = terminalKey(sender, id);
+    const entry = terminals.get(key);
+    if (!entry) return;
+    terminals.delete(key);
+    entry.descendantPids = terminalDescendants(entry.process.pid);
+    entry.killTimer = setTimeout(() => {
+      entry.killTimer = null;
+      if (entry.exited) return;
+      signalTerminal(entry, "SIGKILL");
+    }, 1_000);
+    entry.killTimer.unref?.();
+    signalTerminal(entry, "SIGTERM");
+  };
+  const ensureTerminalSenderCleanup = (sender) => {
+    if (terminalSenders.has(sender)) return;
+    terminalSenders.add(sender);
+    sender.once("destroyed", () => {
+      const prefix = `${sender.id}:`;
+      for (const key of [...terminals.keys()]) {
+        if (key.startsWith(prefix)) stopTerminal(sender, key.slice(prefix.length));
+      }
+      terminalSenders.delete(sender);
+    });
+  };
+  ipcMain.handle("terminal:start", (event, request) => {
+    const ctx = terminalContextForSender(event);
+    if (!ctx) {
+      return { ok: false, error: "unauthorized_sender" };
+    }
+    const preset = request?.preset;
+    if (preset !== "shell" && preset !== "claude") {
+      return { ok: false, error: "invalid_preset" };
+    }
+    const id = typeof request?.id === "string" && request.id.length <= 128
+      ? request.id
+      : "";
+    if (id !== terminalIdFor(ctx, preset)) {
+      return { ok: false, error: "invalid_terminal" };
+    }
+
+    let cwd;
+    try {
+      cwd = typeof request.cwd === "string" && request.cwd
+        ? fs.realpathSync(request.cwd)
+        : app.getPath("home");
+      if (!fs.statSync(cwd).isDirectory()) throw new Error("not a directory");
+    } catch (_error) {
+      return { ok: false, error: "invalid_cwd" };
+    }
+
+    const cols = Number.isInteger(request.cols)
+      ? Math.min(500, Math.max(20, request.cols))
+      : 80;
+    const rows = Number.isInteger(request.rows)
+      ? Math.min(200, Math.max(5, request.rows))
+      : 24;
+    const shellPath = process.env.SHELL && path.isAbsolute(process.env.SHELL)
+      ? process.env.SHELL
+      : "/bin/zsh";
+    const args = preset === "claude"
+      ? ["-l", "-i", "-c", "exec claude"]
+      : ["-l"];
+    const key = terminalKey(event.sender, id);
+    const existing = terminals.get(key);
+    if (existing && existing.preset === preset && existing.cwd === cwd) {
+      if (existing.buffer && !event.sender.isDestroyed()) {
+        event.sender.send("terminal:data", { id, data: existing.buffer });
+      }
+      existing.process.resize(cols, rows);
+      return { ok: true, reused: true, pid: existing.process.pid };
+    }
+
+    stopTerminal(event.sender, id);
+    let child;
+    try {
+      child = require("node-pty").spawn(shellPath, args, {
+        name: "xterm-256color",
+        cols,
+        rows,
+        cwd,
+        env: {
+          ...process.env,
+          TERM: "xterm-256color",
+          COLORTERM: "truecolor",
+        },
+      });
+    } catch (_error) {
+      return { ok: false, error: "terminal_start_failed" };
+    }
+
+    const entry = {
+      process: child,
+      preset,
+      cwd,
+      buffer: "",
+      exited: false,
+      killTimer: null,
+    };
+    terminals.set(key, entry);
+    ensureTerminalSenderCleanup(event.sender);
+    child.onData((data) => {
+      if (terminals.get(key) !== entry || event.sender.isDestroyed()) return;
+      entry.buffer = `${entry.buffer}${data}`.slice(-1_000_000);
+      event.sender.send("terminal:data", { id, data });
+    });
+    child.onExit(({ exitCode }) => {
+      entry.exited = true;
+      if (entry.killTimer !== null) {
+        clearTimeout(entry.killTimer);
+        entry.killTimer = null;
+      }
+      if (terminals.get(key) !== entry) return;
+      terminals.delete(key);
+      if (!event.sender.isDestroyed()) {
+        event.sender.send("terminal:data", { id, data: "", done: true, exitCode });
+      }
+    });
+    return { ok: true, pid: child.pid };
+  });
+  ipcMain.on("terminal:write", (event, id, data) => {
+    const ctx = terminalContextForSender(event);
+    const terminalId = String(id || "");
+    if (!ctx || !terminalIdAllowed(ctx, terminalId)) return;
+    const entry = terminals.get(terminalKey(event.sender, terminalId));
+    if (!entry || typeof data !== "string" || Buffer.byteLength(data, "utf8") > 65_536) return;
+    entry.process.write(data);
+  });
+  ipcMain.on("terminal:resize", (event, id, cols, rows) => {
+    const ctx = terminalContextForSender(event);
+    const terminalId = String(id || "");
+    if (!ctx || !terminalIdAllowed(ctx, terminalId)) return;
+    const entry = terminals.get(terminalKey(event.sender, terminalId));
+    if (!entry || !Number.isInteger(cols) || !Number.isInteger(rows)) return;
+    entry.process.resize(
+      Math.min(500, Math.max(20, cols)),
+      Math.min(200, Math.max(5, rows)),
+    );
+  });
+  ipcMain.on("terminal:stop", (event, id) => {
+    const ctx = terminalContextForSender(event);
+    const terminalId = String(id || "");
+    if (!ctx || !terminalIdAllowed(ctx, terminalId)) return;
+    stopTerminal(event.sender, terminalId);
   });
 
   ipcMain.on("desktop:open-external", (_e, url) => {
@@ -2590,7 +3054,7 @@ async function createWindow(options = {}) {
   win.webContents.on("will-navigate", (e, url) => {
     try {
       const dest = new URL(url);
-      if (dest.hostname === "127.0.0.1" || dest.hostname === "localhost") return;
+      if (dest.origin === UI_ORIGIN) return;
       e.preventDefault();
       if (dest.protocol === "http:" || dest.protocol === "https:")
         shell.openExternal(url);

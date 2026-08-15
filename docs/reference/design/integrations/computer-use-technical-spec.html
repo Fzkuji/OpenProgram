@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Computer Use 技术规格</title>
+<style>
+  :root{--bg:#15140f;--text:#c4c0b1;--muted:#858173;--title:#f3f0e8;--line:#343126;--accent:#e08a3e;--blue:#5b91f2;--green:#63b15a;--violet:#a679e4;--red:#e15b68;--code:#100f0b}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  main{max-width:1180px;margin:auto;padding:56px 28px 100px}header{max-width:940px;padding-bottom:42px}
+  .eyebrow{color:var(--accent);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase}
+  h1{max-width:850px;margin:14px 0 18px;color:var(--title);font-size:42px;line-height:1.16;letter-spacing:-.025em}
+  h2{margin:0 0 22px;color:var(--title);font-size:25px;line-height:1.3}h3{margin:26px 0 8px;color:var(--title);font-size:16px}
+  p{max-width:88ch;margin:8px 0}a{color:#55bdd6}code{color:var(--accent);font:13px ui-monospace,SFMono-Regular,Menlo,monospace}
+  .lead{max-width:820px;color:#aaa696;font-size:17px}.status{margin-top:22px;color:var(--muted);font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em}
+  nav{display:flex;flex-wrap:wrap;gap:10px 22px;padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  nav a{color:var(--muted);text-decoration:none;font-size:13px}nav a:hover,nav a:focus-visible{color:var(--title);text-decoration:underline;text-underline-offset:4px}
+  section{padding:48px 0;border-top:1px solid var(--line);scroll-margin-top:18px}section:first-of-type{border-top:0}
+  .caption{color:var(--muted);font-size:12px}
+  table{width:100%;border-collapse:collapse;margin:14px 0 22px;font-size:13.5px}th{padding:11px 12px;border-bottom:1px solid #5a5544;color:var(--muted);text-align:left;font-size:11px;letter-spacing:.06em;white-space:nowrap}
+  td{padding:14px 12px;border-bottom:1px solid var(--line);vertical-align:top}td:first-child{color:var(--title);font-weight:650}.table-scroll{overflow-x:auto}.table-scroll table{min-width:760px}.default,.evidence-yes{color:var(--green)}
+  .tool-flow{display:grid;grid-template-columns:repeat(4,1fr);gap:28px;margin:28px 0}.tool{padding-top:12px;border-top:2px solid var(--line)}.tool .n{color:var(--accent);font:22px ui-monospace,SFMono-Regular,Menlo,monospace}.tool strong{display:block;margin:4px 0;color:var(--title)}.tool p{font-size:13px;color:var(--muted)}
+  .rules{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;margin:24px 0}.rule{padding-top:12px;border-top:1px solid var(--line)}.rule .k{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em}.rule h3{margin:8px 0 5px}.rule p{color:var(--muted);font-size:13px}.on{color:var(--green)}.fallback,.evidence-partial{color:var(--accent)}.off,.evidence-no{color:var(--red)}
+  pre{margin:16px 0;padding:16px 18px;overflow:auto;background:var(--code);color:#ded9c9;font:12px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace}
+  .phase{display:grid;grid-template-columns:84px 1fr 280px;gap:24px;padding:18px 0;border-bottom:1px solid var(--line)}.phase:last-child{border-bottom:0}.phase-id{color:var(--accent);font:11px ui-monospace,SFMono-Regular,Menlo,monospace}.phase strong{color:var(--title)}.gate{color:var(--muted);font-size:12.5px}
+  .checks{columns:2;column-gap:48px;padding-left:20px}.checks li{break-inside:avoid;margin:0 0 12px;padding-left:4px}.checks strong{color:var(--title)}
+  details{border-top:1px solid var(--line)}details:last-child{border-bottom:1px solid var(--line)}summary{padding:16px 0;color:var(--title);cursor:pointer;font-weight:650}details>div{padding:0 0 22px;color:var(--muted)}.refs{padding-left:20px}.refs li{margin:8px 0}
+  @media(max-width:760px){main{padding:32px 20px 72px}h1{font-size:32px}section{padding:38px 0}.tool-flow,.rules{grid-template-columns:1fr}.phase{grid-template-columns:1fr;gap:5px}.checks{columns:1}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">OpenProgram · technical specification</div>
+    <h1>Computer Use 技术规格</h1>
+    <p class="lead">本页只保留实现需要的模式、工具、权限、失败和验收规格。结构与交互图见 <a href="computer-use.html">设计概览</a>。</p>
+    <p class="status">IMPLEMENTATION REFERENCE · MULTI-BACKEND NOT IMPLEMENTED</p>
+  </header>
+
+  <nav aria-label="目录"><a href="#modes">三个 backend</a><a href="#reuse">开源与复用</a><a href="#contract">工具契约</a><a href="#boundaries">成本与边界</a><a href="#delivery">实施顺序</a><a href="#acceptance">验收</a><a href="#evidence">当前证据</a></nav>
+
+  <section id="modes">
+    <h2>三个执行 backend</h2>
+    <div class="table-scroll"><table><thead><tr><th></th><th>Playwright MCP</th><th>Chrome DevTools MCP</th><th>Open Claude in Chrome-compatible</th></tr></thead><tbody>
+      <tr><td>设置值</td><td><code>playwright_mcp</code> <span class="default">默认</span></td><td><code>chrome_devtools_mcp</code></td><td><code>open_claude_chrome</code></td></tr>
+      <tr><td>Runtime adapter</td><td>固定版本的官方 <code>@playwright/mcp</code>，作为私有 child process 通过 stdio 接入。</td><td>固定版本的官方 <code>chrome-devtools-mcp</code>，通过 MCP adapter 绑定已授权 CDP target。</td><td>OpenProgram 实现兼容工具契约，并通过第一方 Electron/CDP adapter 绑定已授权 WebContents target；不运行原始 Chrome extension/native host。</td></tr>
+      <tr><td>观察</td><td>Accessibility snapshot、DOM/ARIA、稳定 ref。</td><td>DOM snapshot、可访问性信息和受限 console/network diagnostics。</td><td>页面结构、ref；语义定位不足时返回一张 viewport screenshot。</td></tr>
+      <tr><td>动作</td><td>一个 canonical Action 映射为一个 allowlisted upstream action。</td><td>同一个 Action 映射为一次 bound CDP action。</td><td>同一个 Action 映射为一次 bound Electron/CDP action。</td></tr>
+      <tr><td>接入条件</td><td>禁用 tabs/eval/storage/files 等越界工具；先通过 exact Page 隔离测试。</td><td>禁止自行枚举或切换 Page；所有 target 由 Runtime adapter 指定。</td><td>只复用工具契约与交互语义；Page identity、权限、transport 和 verification 均由 Runtime 决定。</td></tr>
+    </tbody></table></div>
+    <p>设置只影响新的 ComputerSession。session 创建后 backend 冻结；失败、超时或 stale frame 都不能自动切换 backend，避免重复点击和重复提交。</p>
+  </section>
+
+  <section id="reuse">
+    <h2>开源、开放接口与不可直接复用部分</h2>
+    <div class="table-scroll"><table><thead><tr><th>组件</th><th>公开状态</th><th>能否直接用</th><th>在 OpenProgram 中的处理</th></tr></thead><tbody>
+      <tr><td><a href="https://github.com/microsoft/playwright-mcp">Microsoft Playwright MCP</a></td><td class="evidence-yes">开源 · Apache-2.0</td><td>可以</td><td>使用官方 <code>@playwright/mcp</code>，固定版本；外层保留 Page token、权限与 verification。</td></tr>
+      <tr><td><a href="https://github.com/microsoft/playwright">Playwright / playwright-core</a></td><td class="evidence-yes">开源 · Apache-2.0</td><td>可以</td><td>作为 Playwright MCP 的执行层；不再实现第二套 DOM locator。</td></tr>
+      <tr><td><a href="https://github.com/modelcontextprotocol/typescript-sdk">MCP TypeScript SDK</a></td><td class="evidence-yes">SDK code：新贡献 Apache-2.0、未重许可 legacy code 为 MIT</td><td>可以作为代码依赖</td><td>复用现有 OpenProgram MCP server/client；MCP 只承担工具协议，不决定点击方式。</td></tr>
+      <tr><td><a href="https://github.com/modelcontextprotocol/modelcontextprotocol">MCP protocol / specification</a></td><td class="evidence-yes">spec contributions：Apache-2.0；未重许可 legacy 内容为 MIT</td><td>可以按规范实现</td><td>采用标准 tools/list、tools/call、content 与 cancellation 语义，不复制特定 client 的浏览器工具。</td></tr>
+      <tr><td><a href="https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/LICENSE">MCP 非 specification 文档</a></td><td class="evidence-partial">CC-BY-4.0</td><td>可以引用或复用并署名</td><td>只作为实现参考，不作为运行依赖。</td></tr>
+      <tr><td><a href="https://github.com/ChromeDevTools/devtools-protocol">Chrome DevTools Protocol</a></td><td class="evidence-yes">开放协议与类型 · BSD-3-Clause</td><td>可以</td><td>直接调用 <code>Page.captureScreenshot</code>、<code>Input.dispatchMouseEvent</code> 等命令，不需要 Claude 代码。</td></tr>
+      <tr><td><a href="https://www.electronjs.org/docs/latest/api/debugger">Electron webContents.debugger</a></td><td class="evidence-yes">Electron 开源 · MIT；API 已内置</td><td>可以</td><td>内置浏览器的首选 CDP transport；绑定 exact WebContents/target，不要求窗口置前。</td></tr>
+      <tr><td><a href="https://developer.chrome.com/docs/extensions/reference/api/debugger">Chrome debugger API</a> 与 <a href="https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging">Native Messaging</a></td><td class="evidence-partial">Chrome/Chromium 的公开内置接口，不是独立库</td><td>可以调用</td><td>只在以后控制独立 Chrome 扩展时需要；OpenProgram 内置浏览器不需要 Native Messaging host。</td></tr>
+      <tr><td><a href="https://github.com/noemica-io/open-claude-in-chrome">Open Claude in Chrome</a></td><td class="evidence-partial">第三方 source-available 实现 · PolyForm Noncommercial 1.0.0；不是 Anthropic 官方项目</td><td>当前非商业范围可评估其契约与实现</td><td>内置浏览器只采用兼容工具契约与交互语义；运行 transport 是 OpenProgram Electron/CDP adapter，不依赖原始 extension/native host。</td></tr>
+      <tr><td><a href="https://github.com/anthropics/claude-code/blob/main/LICENSE.md">Claude Code 公开仓库</a></td><td class="evidence-no">仓库内容 all rights reserved；该结论只适用于此仓库</td><td>不可以按开源代码复制</td><td>不依赖其内部代码，只参考官方公开产品行为。</td></tr>
+      <tr><td>Anthropic 官方 Claude Chrome 扩展的 action handler、视觉光标、权限 UI 与 native host</td><td class="evidence-no">发布产品可安装；未公开可复用源码或明确的开源许可证</td><td>不可以直接复制</td><td>只参考官方公开行为；OpenProgram 保持自己的 <code>computer_use</code> contract 和 backend adapter。</td></tr>
+      <tr><td>Claude 模型的视觉定位能力</td><td class="evidence-no">托管模型能力，不开源</td><td>只能通过服务使用</td><td>不依赖 Claude 专用实现；把单张截图交给当前所选模型的原生 vision。</td></tr>
+    </tbody></table></div>
+    <p>这里没有“CDP 只能由 Claude 使用”的限制。Anthropic 官方工具编排、扩展实现和产品权限层没有公开可复用源码；截图与坐标点击所用的 CDP 命令是公开接口。第三方 clean-room 项目可以作为实现参考，但不代表 Anthropic 官方实现已经开源。</p>
+  </section>
+
+  <section id="contract">
+    <h2>Agent 只需要四个 command</h2>
+    <div class="tool-flow">
+      <div class="tool"><span class="n">01</span><strong>list_pages</strong><p>读取当前 turn 已授权 Page inventory，不调用 upstream tab 枚举。</p></div>
+      <div class="tool"><span class="n">02</span><strong>observe</strong><p>选择 Page 并创建 ComputerSession；返回有界文本、ARIA 和 refs。</p></div>
+      <div class="tool"><span class="n">03</span><strong>act</strong><p>携带最新 frame，只执行一个 click、type、press、scroll、select 或 navigate。</p></div>
+      <div class="tool"><span class="n">04</span><strong>verify</strong><p>只执行 Runtime assertion；模型声称“完成”不能产生成功。</p></div>
+    </div>
+    <pre>computer_use({ command: "list_pages" })
+computer_use({ command: "observe", page: "left", detail: "interactive" })
+computer_use({ command: "act", computer_session_id: "cs_…", action: { … } })
+computer_use({ command: "verify", computer_session_id: "cs_…", assertion: { … } })</pre>
+    <p>第一方 MCP client adapter 在模型参数之外附加一次性 <code>page_context_token</code>。它绑定 MCP connection、turn、provider request、tool call、Page revisions 和 access revision；缺少、重放或跨连接使用时，在 backend 调用前返回 <code>invalid_capability</code>。</p>
+  </section>
+
+  <section id="boundaries">
+    <h2>成本与功能边界</h2>
+    <div class="rules">
+      <div class="rule"><span class="k on">DEFAULT</span><h3>DOM / ARIA</h3><p>URL、title、页面文本、accessibility snapshot 和 element refs。普通网页交互不发送截图。</p></div>
+      <div class="rule"><span class="k fallback">FALLBACK</span><h3>一张 viewport screenshot</h3><p>仅用于视觉验收、canvas 或语义定位失败。图片只进入紧邻的下一次模型请求，坐标权限随后撤销。</p></div>
+      <div class="rule"><span class="k off">OFF</span><h3>昂贵视觉管线</h3><p>不启用 OCR、YOLO、object detector、crop/zoom、component memory、vision memory、workflow replay 或自动学习。</p></div>
+    </div>
+    <ul><li>Page 在左、右、上或下由真实 pane geometry 计算；不写死“右侧”。</li><li>操作 exact Page 不要求 OpenProgram 或目标 pane 置前，不使用 OS 鼠标、桌面坐标或整屏截图。</li><li>同一 Page 的写动作排他；任何写动作后重新观察。</li><li>登录、CAPTCHA、敏感提交和不可逆动作返回 <code>needs_user</code>。</li><li>网页内容是不可信数据，不能改变 target、权限、mode 或动作数量。</li></ul>
+  </section>
+
+  <section id="delivery">
+    <h2>实施顺序</h2>
+    <div class="phase"><div class="phase-id">PHASE 0</div><div><strong>验证官方 MCP 隔离能力</strong><br>连接测试 Electron CDP，验证 snapshot/ref 和 exact Page 限制。</div><div class="gate">出口：A/B 两个 web Page 与 chat Page 的越权测试通过；否则选 upstream contract adapter。</div></div>
+    <div class="phase"><div class="phase-id">PHASE 1</div><div><strong>扩展现有 OpenProgram MCP server</strong><br>新增一个 browser-control tool 和一次性 Page token；保留现有非浏览器 tools。</div><div class="gate">出口：真实 initialize/list/call/cancel 通过，伪造与重放在 backend 前拒绝。</div></div>
+    <div class="phase"><div class="phase-id">PHASE 2</div><div><strong>完成 Page Registry</strong><br>动态 geometry、revisions、access、exact resolve、hide/transfer/close invalidation。</div><div class="gate">出口：左右互换、上下分屏、双窗口与 target replacement 通过。</div></div>
+    <div class="phase"><div class="phase-id">PHASE 3</div><div><strong>接入 Playwright MCP backend</strong><br>只开放 snapshot/ref 和允许的动作，复用共同 policy/verification。</div><div class="gate">出口：DOM、canvas、非前台、多 Page、popup 和失败路径通过。</div></div>
+    <div class="phase"><div class="phase-id">PHASE 4</div><div><strong>接入 Chrome DevTools MCP backend</strong><br>实现 exact target adapter，禁止 upstream 自行选择 Page。</div><div class="gate">出口：与 Playwright backend 共用的 parity suite 通过。</div></div>
+    <div class="phase"><div class="phase-id">PHASE 5</div><div><strong>接入 Open Claude in Chrome-compatible backend</strong><br>在 Electron/CDP adapter 上实现兼容工具契约、结构化读取、截图和 action cursor。</div><div class="gate">出口：同一 Page、权限、失败与 verification parity suite 通过；运行时没有 Chrome extension/native host。</div></div>
+    <div class="phase"><div class="phase-id">PHASE 6</div><div><strong>设置与安装版验收</strong><br>增加一个 backend selector，并在默认 18100、<code>/Applications/OpenProgram.app</code> 中运行相同任务集。</div><div class="gate">出口：当前 session backend 冻结；没有双执行或自动 fallback。</div></div>
+  </section>
+
+  <section id="acceptance">
+    <h2>发布前必须证明</h2>
+    <ol class="checks">
+      <li><strong>工具面：</strong>浏览器控制只有一个 <code>computer_use</code>，不暴露 backend 自带的第二套工具。</li><li><strong>Page 隔离：</strong>授权 A 时，对 B、chat Page 和另一窗口的读写调用次数都是 0。</li><li><strong>backend 冻结：</strong>设置变更不影响当前 ComputerSession，只影响下一 session。</li><li><strong>副作用唯一：</strong>backend failure 不触发另一 backend；一个 Action 最多一次真实写入。</li><li><strong>跨 backend 一致：</strong>同一任务得到相同 Page/frame 生命周期、权限、reason code 和 verification。</li><li><strong>Page Awareness：</strong>页面换到 chat 左侧或右侧后，下一 turn relation 与 preview 正确更新。</li><li><strong>非前台执行：</strong>应用被遮挡时仍操作相同 Page，且没有 focus/OS input 调用。</li><li><strong>视觉限制：</strong>普通 DOM 流截图数为 0；canvas 流每次 observation 最多 1 张。</li><li><strong>失败诚实性：</strong>空 assertion、stale frame、timeout、cancel、target lost 都不能返回 succeeded。</li><li><strong>Chat 稳定：</strong>GUI tool update 不重建历史 message/avatar/markdown DOM。</li>
+    </ol>
+  </section>
+
+  <section id="evidence">
+    <h2>当前实现证据</h2>
+    <div class="table-scroll"><table><thead><tr><th>能力</th><th>当前状态</th><th>直接证据</th></tr></thead><tbody>
+      <tr><td>内置 web tab exact CDP attach</td><td class="evidence-yes">已验证</td><td><code>desktop/main.js</code>、<code>_actions/open_action.py</code></td></tr>
+      <tr><td>DOM-first task wrapper 与 point fallback</td><td class="evidence-yes">已验证 baseline</td><td><code>agentic_functions/browser_agent/__init__.py</code> 与 component tests</td></tr>
+      <tr><td>通用 MCP server/client 与 image content</td><td class="evidence-partial">已有基础</td><td><code>openprogram/mcp_server/</code>、<code>openprogram/mcp/</code></td></tr>
+      <tr><td>动态 Page geometry、registry、lease</td><td class="evidence-partial">部分实现</td><td>当前仍有旧 <code>surface</code> 命名和固定 relation baseline</td></tr>
+      <tr><td>Playwright MCP backend</td><td class="evidence-no">未实现</td><td>只有官方文档研究与本页设计</td></tr>
+      <tr><td>Chrome DevTools MCP backend</td><td class="evidence-no">未实现</td><td>只有官方工具研究与本页 adapter 设计</td></tr>
+      <tr><td>Open Claude in Chrome-compatible backend</td><td class="evidence-no">未实现</td><td>只有第三方工具契约研究与本页 Electron/CDP adapter 设计</td></tr>
+      <tr><td>multi-backend selector</td><td class="evidence-no">未实现</td><td>当前 ComputerSession 尚未保存三个 setting 之一</td></tr>
+    </tbody></table></div>
+    <p class="caption">本文没有把目标能力写成已实现。完整实施记录继续维护在 <a href="computer-use-implementation.html">Computer Use 实施记录</a>。</p>
+    <h3>需要实现者展开时再读</h3>
+    <details><summary>Page identity 与生命周期</summary><div>Canonical Page 绑定 <code>window_id + registry_page_id + tab_id + cdp_target_id + revisions</code>。首次 observe 建立 ComputerSession binding；focus 和 pane 位置变化不改变 target，hide、移组、transfer、close、target replacement、access disable 或 disconnect 会在下一次副作用前使 binding 失效。</div></details>
+    <details><summary>Popup 与并发</summary><div>同一 exact Page 的写 lease 与 popup attribution 在 ComputerSession 间排他。popup 必须创建独立 Page，未登记前不能进入 Page Context。任何不确定的 popup watch 状态都阻止后续写动作与 verified 终态，直到 replay、drain 或 teardown 证明完成。</div></details>
+    <details><summary>统一失败语义</summary><div><code>invalid_arguments</code>、<code>invalid_capability</code>、<code>ambiguous_page</code>、<code>page_context_stale</code>、<code>stale_observation</code>、<code>page_access_disabled</code>、<code>target_lost</code>、<code>needs_user</code>、<code>timeout</code>、<code>cancelled</code> 和 <code>verification_failed</code> 都由 Runtime 生成。backend 文本不能覆盖 reason code 或 completion。</div></details>
+  </section>
+
+  <section id="references">
+    <h2>官方参考</h2>
+    <ul class="refs"><li><a href="https://playwright.dev/docs/api/class-browsercontext">Playwright BrowserContext</a> 与 <a href="https://playwright.dev/docs/pages">Playwright Pages</a></li><li><a href="https://github.com/microsoft/playwright-mcp">Microsoft Playwright MCP</a> 与 <a href="https://github.com/microsoft/playwright.dev/blob/main/mcp/introduction.mdx">官方 MCP introduction</a></li><li><a href="https://code.claude.com/docs/en/desktop">Claude Code Desktop Browser</a>、<a href="https://code.claude.com/docs/en/chrome">Claude Code with Chrome</a> 与 <a href="https://github.com/anthropics/claude-code/blob/main/LICENSE.md">Claude Code license</a></li><li><a href="https://chromedevtools.github.io/devtools-protocol/">Chrome DevTools Protocol</a>、<a href="https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot">Page.captureScreenshot</a> 与 <a href="https://chromedevtools.github.io/devtools-protocol/tot/Input/#method-dispatchMouseEvent">Input.dispatchMouseEvent</a></li><li><a href="https://www.electronjs.org/docs/latest/api/debugger">Electron Debugger</a>、<a href="https://developer.chrome.com/docs/extensions/reference/api/debugger">Chrome debugger API</a> 与 <a href="https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging">Native Messaging</a></li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool">Anthropic Computer Use</a></li><li><a href="https://developers.openai.com/api/docs/guides/tools-computer-use">OpenAI Computer Use</a></li></ul>
+  </section>
+</main>
+</body>
+</html>

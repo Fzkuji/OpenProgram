@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
+import postcss from "postcss";
 
 import { readCenterTabStripSource } from "./center-tab-strip-source.mjs";
 import { readChatCss } from "./_chat-css.mjs";
@@ -8,6 +9,15 @@ const css = readFileSync(
   new URL("../components/center-tabs/center-tabs.module.css", import.meta.url),
   "utf8",
 );
+const cssRoot = postcss.parse(css);
+function finalDeclaration(selector, property) {
+  let value;
+  cssRoot.walkRules((rule) => {
+    if (!rule.selectors?.includes(selector)) return;
+    rule.walkDecls(property, (declaration) => { value = declaration.value; });
+  });
+  return value;
+}
 const ntp = readFileSync(
   new URL("../components/center-tabs/new-tab-page.tsx", import.meta.url),
   "utf8",
@@ -85,6 +95,11 @@ const pointerMove = strip.slice(
 // 4px threshold before the press becomes a drag; then the coordinator starts.
 assert.match(pointerMove, /Math\.hypot\(dx, dy\) < DRAG_START_THRESHOLD_PX\) return;/);
 assert.match(pointerMove, /dragCoordinator\.start\(\)/);
+assert.match(
+  pointerMove,
+  /drag\.started = true;[\s\S]*?activatedOnPressRef\.current = activationTabId\(drag\.subject\);/,
+  "a completed drag must consume its synthetic follow-up click",
+);
 // The tab element itself follows the pointer, clamped to the slot span.
 assert.match(pointerMove, /drag\.element\.style\.transform = `translateX\(\$\{tx\}px\)`/);
 assert.match(pointerMove, /Math\.min\(Math\.max\(dx, drag\.minTx\), drag\.maxTx\)/);
@@ -366,8 +381,8 @@ assert.ok(
 assert.match(pointerUp, /const intent = drag\.lastIntent;/);
 assert.match(pointerUp, /tabTransfer\.cancel\(committed\.transferToken\)/,
   "a same-window drop must release the unused prepared token");
-assert.match(pointerUp, /const fourthMemberRejected = isFourthMemberRejection\(/);
-assert.match(pointerUp, /cancelDrag\(!fourthMemberRejected\)/);
+assert.match(pointerUp, /const splitCapacityRejected = isSplitCapacityRejection\(/);
+assert.match(pointerUp, /cancelDrag\(!splitCapacityRejected\)/);
 // Cancel paths: pointercancel, window blur, Escape — return-home + cleanup.
 assert.match(strip, /window\.addEventListener\("pointercancel", cancel\);/);
 assert.match(strip, /window\.addEventListener\("blur", cancel\);/);
@@ -463,6 +478,11 @@ assert.match(
   "only activate when it actually changes",
 );
 assert.match(pointerDown, /activatedOnPressRef\.current = pressed\.id;/);
+assert.match(
+  pointerDown,
+  /const element = event\.currentTarget as HTMLElement;/,
+  "whole-composite drag must transform the composite element, not its tab-flow parent",
+);
 // Right/middle button and an open context menu both return before this.
 assert.ok(
   pointerDown.indexOf("event.button !== 0") < pointerDown.indexOf("onTabClick(pressed)"),
@@ -472,7 +492,8 @@ assert.ok(
   pointerDown.indexOf("tabMenuRef.current") < pointerDown.indexOf("onTabClick(pressed)"),
   "an open context menu must return before activating",
 );
-// A group handle carries no single tab, so it never activates.
+// A composite press carries no member-level activation; its click activates
+// the canonical member only when the gesture remains a click.
 assert.match(pointerDown, /subject\.kind !== "group"/);
 // The follow-up click is consumed once, preserving click-to-reload for a
 // genuine click on the already-active tab.
@@ -485,7 +506,7 @@ assert.match(
 assert.equal(
   strip.match(/onActivate=\{onTabClickFromPointer\}/g)?.length,
   2,
-  "both plain tabs and compound segments use the press-aware click path",
+  "both plain tabs and the composite split tab use the press-aware click path",
 );
 assert.match(strip, /moveGroupMember\(/);
 assert.match(strip, /moveGroup\(/);
@@ -493,14 +514,17 @@ assert.match(strip, /ungroupTab\(/);
 assert.match(strip, /groupTab\(/);
 const applyDrop = strip.slice(
   strip.indexOf("function applyDrop"),
-  strip.indexOf("function moveGroupByKeyboard"),
+  strip.indexOf("return { targetBeforeId, applyDrop }"),
 );
 assert.match(applyDrop, /subject\.kind === "group"[\s\S]*return mergeGroup\(/);
 assert.doesNotMatch(applyDrop, /if \(subject\.kind === "group"\) return false;/);
-assert.match(strip, /className=\{styles\.groupDragHandle\}[\s\S]*kind: "group"/);
-assert.match(strip, /onMoveGroup\(group\.id,/);
+assert.match(
+  strip,
+  /className=\{`\$\{styles\.compoundTab\}[\s\S]*?onPointerDown=\{\(event\) => onDragPointerDown\(\{[\s\S]*?kind: "group"/,
+  "the composite tab itself must drag the whole split group",
+);
 assert.match(strip, /window\.addEventListener\("pointerup", cancelUnstarted, \{ once: true \}\)/);
-assert.match(strip, /function isFourthMemberRejection/);
+assert.match(strip, /function isSplitCapacityRejection/);
 
 const rovingFocus = strip.slice(
   strip.indexOf("function onTabListKeyDown"),
@@ -520,13 +544,18 @@ const moveMenuTab = strip.slice(
   strip.indexOf("function moveMenuTab"),
   strip.indexOf("function canOpenSplitPicker"),
 );
-assert.match(moveMenuTab, /moveGroupMember\(/);
-assert.match(moveMenuTab, /ungroupTab\(/);
+assert.match(moveMenuTab, /moveGroup\(/);
+assert.doesNotMatch(moveMenuTab, /moveGroupMember\(|ungroupTab\(/);
 assert.match(moveMenuTab, /moveTab\(/);
 // ---- Split view picker (Chrome's "New Split View with Current Tab") ---
 // The menu entry opens a picker instead of silently pairing with the
 // active tab; the picker commits through the same groupTab store action.
 assert.match(strip, /function canOpenSplitPicker/);
+assert.match(
+  strip,
+  /function canOpenSplitPicker[\s\S]*?findCenterTabGroup\(state\.groups, tabId\)\) return false;/,
+  "an existing composite tab cannot add another independently selectable member",
+);
 assert.match(strip, /function openSplitPicker/);
 assert.match(strip, /New split view with this tab/);
 assert.match(strip, /与此标签页新建分屏/);
@@ -544,7 +573,10 @@ const picker = readFileSync(
 // The picker lists other tabs and commits via groupTab.
 assert.match(picker, /Choose a tab to add to split view/);
 assert.match(picker, /选择要加入分屏的标签页/);
-assert.match(picker, /groupTab\(tab\.id, subjectId, memberIndex, subjectGroup\?\.id\)/);
+assert.match(
+  picker,
+  /latestState\.groupTab\(\s*tab\.id,\s*subjectId,\s*memberIndex,\s*subjectGroup\?\.id,?\s*\)/,
+);
 // Candidate filtering lives in the shared layout module (behaviourally
 // covered by check-compound-tabs) and is reused, not reimplemented.
 assert.match(picker, /splitCandidates\(tabs, groups, subjectId\)/);
@@ -582,7 +614,7 @@ for (const announcement of [
   "Tab reordered",
   "Tab added to split",
   "Tab removed from group",
-  "Split supports up to three tabs",
+  "A split tab contains two views",
   "Tab move cancelled",
   "Tab moved to new window",
 ]) {
@@ -591,7 +623,14 @@ for (const announcement of [
 assert.match(strip, /function returnFocusToMenuInvoker/);
 assert.match(strip, /if \(e\.key !== "Escape"\) return;[\s\S]*cancelCoordinator\(\)[\s\S]*setDropMarker\(null\)[\s\S]*setTabMenu\(null\)/);
 
-const closeButton = strip.slice(strip.indexOf("<button\n        type=\"button\"", strip.indexOf("function TabItem")), strip.indexOf("<X size={14} />"));
+const closeButtonStart = strip.indexOf(
+  "<button\n        type=\"button\"",
+  strip.indexOf("function TabItem"),
+);
+const closeButton = strip.slice(
+  closeButtonStart,
+  strip.indexOf("<X size={14} />", closeButtonStart),
+);
 assert.match(closeButton, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}/);
 assert.match(closeButton, /onMouseDown=\{\(event\) => event\.stopPropagation\(\)\}/);
 assert.doesNotMatch(closeButton, /onDragPointerDown/);
@@ -678,6 +717,9 @@ assert.doesNotMatch(
 // 72px = ＋号 36 (8px gap + 28px) + 主菜单钮 36, so the menu button lands
 // on the 49px right rail and the ＋ stays in natural flow before it.
 assert.match(css, /max-width: calc\(100% - 72px\);/);
+assert.equal(finalDeclaration(":global(html.is-desktop) .strip", "height"), "40px");
+assert.equal(finalDeclaration(":global(html.is-desktop) .strip", "align-items"), "center");
+assert.equal(finalDeclaration(":global(html.is-desktop) .tabsFlow", "align-items"), "center");
 assert.match(css, /:global\(html\.is-desktop\) \.strip \{[^}]*padding-right: 10px;/s);
 assert.match(
   css,
@@ -685,33 +727,98 @@ assert.match(
 );
 assert.match(
   css,
+  /\.strip \{[^}]*--tab-active-bg: var\(--bg-primary\);/s,
+  "browser tabs must retain the content-surface active background",
+);
+assert.match(
+  css,
+  /:global\(html\.is-desktop\) \.strip \{[^}]*--tab-active-bg: color-mix\(\s*in oklch,\s*var\(--bg-primary\) 82%,\s*light-dark\(black, white\) 18%\s*\);/s,
+  "desktop selected tabs must follow the actual light or dark color-scheme",
+);
+assert.match(css, /\.tabActive,\s*\.tab\.tabActive:hover \{[^}]*background: var\(--tab-active-bg\);/s);
+assert.match(css, /\.compoundTabActive \{[^}]*background: var\(--tab-active-bg\);/s);
+assert.match(css, /\.tab\.tabActive::after \{[^}]*var\(--tab-active-bg\) 8px/s);
+assert.match(css, /\.tab\.tabActive::before \{[^}]*var\(--tab-active-bg\) 8px/s);
+assert.match(css, /\.compoundTabActive::before \{[^}]*var\(--tab-active-bg\) 8px/s);
+assert.match(css, /\.compoundTabActive::after \{[^}]*var\(--tab-active-bg\) 8px/s);
+assert.match(
+  css,
   /:global\(html\.is-desktop\) \.tabsFlow::\-webkit-scrollbar \{[^}]*display: none;/s,
 );
 assert.match(css, /:global\(html\.is-desktop\) \.tabsFlow > \.tab \{[^}]*width: 240px;[^}]*flex: 0 1 240px;[^}]*max-width: 240px;/s);
 assert.match(
   css,
-  /:global\(html\.is-desktop\) \.tab \{[^}]*height: 30px;[^}]*padding-right: 5px;[^}]*border-radius: 8px;/s,
-  "desktop tab close controls must have the same 5px right gap as their vertical gaps",
+  /:global\(html\.is-desktop\) \.tab \{[^}]*padding-right: 5px;[^}]*border-radius: 8px;/s,
+  "desktop tab close controls retain their compact right inset",
 );
-assert.match(css, /\.tabClose \{[^}]*width: 20px;[^}]*height: 20px;/s);
+assert.equal(finalDeclaration(":global(html.is-desktop) .tab", "height"), "28px");
+assert.equal(finalDeclaration(":global(html.is-desktop) .tab.tabActive", "height"), "28px");
+assert.equal(finalDeclaration(":global(html.is-desktop) .tab.tabActive", "border-radius"), "8px");
+assert.equal(finalDeclaration(":global(html.is-desktop) .tab.tabActive", "box-shadow"), "none");
+assert.equal(finalDeclaration(":global(html.is-desktop) .compoundTab", "height"), "28px");
+assert.equal(finalDeclaration(":global(html.is-desktop) .compoundTabActive", "height"), "28px");
+assert.equal(finalDeclaration(":global(html.is-desktop) .compoundTabActive", "border-radius"), "8px");
+assert.equal(finalDeclaration(":global(html.is-desktop) .compoundTabActive", "box-shadow"), "none");
+assert.equal(finalDeclaration(".tabClose", "width"), "20px");
+assert.equal(finalDeclaration(".tabClose", "height"), "20px");
 assert.match(strip, /<X size=\{14\} \/>/);
-assert.match(css, /@keyframes desktopTabEnter \{\s*from \{ opacity: 0; \}\s*\}/);
-assert.match(css, /:global\(html\.is-desktop\) \.tabEnter \{[^}]*animation: desktopTabEnter 120ms ease-out;/s);
+assert.equal(finalDeclaration(".tabEnter", "animation"), "tabEnter 180ms ease-out");
+assert.doesNotMatch(
+  css,
+  /desktopTabEnter|:global\(html\.is-desktop\) \.tabEnter/,
+  "desktop new tabs must retain the visible width-expansion animation",
+);
 assert.match(css, /\.tabExit \{[^}]*animation: tabExit 160ms ease-in forwards;/s);
-assert.match(css, /:global\(html\.is-desktop\) \.tabExit \{[^}]*animation: tabExit 120ms ease-in forwards;/s);
+assert.doesNotMatch(
+  css,
+  /:global\(html\.is-desktop\) \.tabExit/,
+  "desktop closes must retain the full width-collapse duration",
+);
+assert.match(css, /@keyframes compoundMemberCollapse \{[^}]*width: var\(--compound-collapse-width\);[^}]*flex-basis: var\(--compound-collapse-width\);[^}]*max-width: var\(--compound-collapse-width\);/s);
+assert.match(css, /\.compoundMemberClosing \{[^}]*animation: compoundMemberCollapse 160ms ease-in forwards;/s);
+assert.match(css, /\.compoundMemberExit \{[^}]*animation: compoundMemberExit 160ms ease-in forwards;/s);
 assert.match(strip, /centerTabStripEntries/);
 assert.match(strip, /function CompoundTabItem/);
+const compoundItem = strip.slice(
+  strip.indexOf("function CompoundTabItem"),
+  strip.indexOf("/** One strip tab."),
+);
+assert.match(compoundItem, /styles\.compoundTab/);
+assert.equal(compoundItem.match(/role="tab"/g)?.length, 1);
+assert.doesNotMatch(compoundItem, /<TabItem|group\.memberIds\.map/);
+assert.match(compoundItem, /styles\.compoundMembers/);
+assert.match(compoundItem, /memberTabs\.map\(\(tab\) =>/);
+assert.match(compoundItem, /styles\.compoundMember/);
+assert.match(compoundItem, /styles\.compoundMemberClose/);
+assert.match(compoundItem, /onClose\(event, \[tab\]\)/);
+assert.doesNotMatch(compoundItem, /<Columns2\b|\bColumns2\b/);
+assert.match(compoundItem, /closingTabs\.length === memberTabs\.length/);
+assert.match(compoundItem, /const memberClosing = closingTabs\.length > 0 && !closing;/);
+assert.match(compoundItem, /memberClosing \? styles\.compoundMemberClosing : ""/);
+assert.match(compoundItem, /const \[hovered, setHovered\] = useState\(false\);/);
+assert.match(compoundItem, /onMouseEnter=\{\(\) => setHovered\(true\)\}/);
+assert.match(compoundItem, /onMouseLeave=\{\(\) => setHovered\(false\)\}/);
+assert.match(compoundItem, /<CompoundMemberIcon tab=\{tab\} animate=\{hovered\} \/>/);
 assert.match(
   strip,
-  /className=\{`\$\{styles\.compoundTab\} \$\{active \? styles\.compoundTabActive : ""\}`\}/,
+  /function CompoundMemberIcon\(\{ tab, animate \}[\s\S]*?MessageCircleIcon ref=\{iconRef\}/,
+  "hovering the single composite entry must still animate its session icons",
 );
-assert.match(strip, /group\.memberIds\.map\(\(tabId\) =>/);
-assert.match(strip, /enteringIds\.has\(tab\.id\)/);
-assert.match(strip, /closingIds\.has\(tab\.id\)/);
+assert.doesNotMatch(
+  compoundItem,
+  /enteringIds|styles\.tabEnter/,
+  "a composite entry must not retain the ordinary tab enter class",
+);
+assert.match(
+  compoundItem,
+  /const tabStop = group\.memberIds\.includes\(focusedTabId \?\? ""\);/,
+  "a composite entry participates in the same single roving tab stop as ordinary tabs",
+);
 assert.match(strip, /onAnimationEnd/);
-assert.match(strip, /onExited\(tab\)/);
+assert.match(compoundItem, /closingTabs\.forEach\(onExited\)/);
 assert.match(strip, /onExited=\{finishClose\}/);
 assert.match(strip, /onClose=\{onTabClose\}/);
+assert.match(strip, /onClose=\{onTabsClose\}/);
 assert.doesNotMatch(strip, /splitPinned|data-split-pinned/);
 assert.doesNotMatch(
   css,
@@ -719,63 +826,64 @@ assert.doesNotMatch(
 );
 assert.match(
   css,
-  /\.compoundTab\[data-member-count="2"\]\s*\{[^}]*width:\s*360px;[^}]*flex:\s*0 1 360px;[^}]*max-width:\s*360px;/s,
+  /\.compoundTab \{[^}]*width:\s*280px;[^}]*flex:\s*0 1 280px;[^}]*max-width:\s*280px;/s,
+  "the composite tab uses one bounded top-level tab width",
 );
 assert.match(
   css,
-  /\.compoundTab\[data-member-count="3"\]\s*\{[^}]*width:\s*440px;[^}]*flex:\s*0 1 440px;[^}]*max-width:\s*440px;/s,
+  /\.compoundTab \{[^}]*min-width:\s*136px;/s,
+  "the composite tab must not shrink below two non-overlapping icon and close targets",
 );
 assert.match(
   css,
-  /\.compoundSegment \+ \.compoundSegment\s*\{[^}]*border-left:\s*1px solid var\(--border\);/s,
+  /\.compoundMembers \{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/s,
+  "split members must always receive equal top-strip width",
 );
 assert.match(
   css,
-  /:global\(html\.is-desktop\) \.compoundSegment,\s*:global\(html\.is-desktop\) \.compoundTab \.compoundSegment\.tabActive,\s*:global\(html\.is-desktop\) \.compoundTab \.compoundSegment\.tabActive:hover \{[^}]*border-radius: 0;[^}]*box-shadow: none;/s,
-  "desktop segments must stay flat partitions — no nested capsule radius or shadow",
+  /\.compoundTarget \{[^}]*z-index:\s*1;/s,
+  "the single role=tab target must receive pointer focus across both member bodies",
+);
+assert.match(
+  css,
+  /\.compoundMembers \{[^}]*pointer-events:\s*none;/s,
+  "member presentation must not intercept the composite tab target",
+);
+assert.match(
+  css,
+  /\.compoundMemberClose \{[^}]*position:\s*relative;[^}]*z-index:\s*2;[^}]*pointer-events:\s*auto;/s,
+  "each member close button must remain independently clickable above the composite target",
+);
+assert.match(compoundItem, /aria-disabled=\{closingIds\.has\(tab\.id\) \|\| undefined\}/);
+assert.doesNotMatch(compoundItem, /\bdisabled=\{closingIds\.has\(tab\.id\)\}/);
+assert.match(
+  compoundItem,
+  /onClick=\{\(event\) => \{\s*event\.stopPropagation\(\);\s*if \(!closingIds\.has\(tab\.id\)\) onClose\(event, \[tab\]\);\s*\}\}/,
+  "a closing member must keep intercepting pointer clicks without starting another close or group drag",
+);
+assert.doesNotMatch(css, /\.compoundMemberClose:disabled/);
+assert.match(css, /\.compoundMember \{[^}]*min-width:\s*0;/s);
+assert.match(css, /\.compoundMemberName \{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/s);
+assert.doesNotMatch(css, /groupDragHandle|data-closing-count/);
+assert.match(
+  compoundItem,
+  /onPointerDown=\{\(event\) => onDragPointerDown\(\{[\s\S]*?kind: "group"[\s\S]*?tabIds: \[\.\.\.group\.memberIds\]/,
+  "the outer composite remains the only drag subject",
 );
 assert.match(
   strip,
-  /previousLeft - child\.offsetLeft[\s\S]*duration: 180, easing: "ease"/,
-  "compound member reorders must animate via FLIP position swap",
+  /window\.addEventListener\("op-desktop-close-tab", onDesktopClose\)/,
+  "the strip lifecycle must route Cmd+W through the whole-entry close transaction",
 );
-assert.match(
-  strip,
-  /const closingCount = group\.memberIds\.filter\(\(tabId\) =>\s*closingIds\.has\(tabId\),\s*\)\.length;/,
-  "compound geometry must account for every concurrently closing segment",
-);
-assert.match(strip, /const remainingCount = group\.memberIds\.length - closingCount;/);
-assert.match(strip, /data-closing-count=\{closingCount \|\| undefined\}/);
-assert.match(strip, /data-remaining-count=\{remainingCount\}/);
-assert.match(
-  css,
-  /\.compoundTab \{[^}]*transition:\s*width 160ms ease-in,\s*flex-basis 160ms ease-in,\s*max-width 160ms ease-in,\s*transform 160ms ease;/s,
-  "the compound outer width must animate for the full browser segment-exit duration",
-);
-assert.match(
-  css,
-  /\.compoundTab\[data-closing-count\]\[data-remaining-count="2"\]\s*\{[^}]*width:\s*360px;[^}]*flex-basis:\s*360px;[^}]*max-width:\s*360px;/s,
-  "three members closing to two must animate the outer width to 360 DIP",
-);
-assert.match(
-  css,
-  /\.compoundTab\[data-closing-count\]\[data-remaining-count="1"\]\s*\{[^}]*width:\s*200px;[^}]*flex-basis:\s*200px;[^}]*max-width:\s*200px;/s,
-  "browser two-to-one collapse must end at the ordinary 200 DIP tab width",
-);
-assert.match(
-  css,
-  /:global\(html\.is-desktop\) \.compoundTab\[data-closing-count\]\[data-remaining-count="1"\]\s*\{[^}]*width:\s*240px;[^}]*flex-basis:\s*240px;[^}]*max-width:\s*240px;/s,
-  "desktop two-to-one collapse must end at the ordinary 240 DIP tab width",
-);
-assert.match(
-  css,
-  /:global\(html\.is-desktop\) \.compoundTab\s*\{[^}]*transition-duration:\s*120ms;/s,
-  "desktop compound width and segment exit must use the same 120ms duration",
+assert.doesNotMatch(
+  desktopBridge,
+  /op-desktop-close-tab[\s\S]{0,300}closeTab\(/,
+  "the desktop bridge must not bypass the strip's dirty-check and composite close path",
 );
 assert.match(
   strip,
   /tabRef\.current\?\.closest<HTMLElement>\('\[role="tablist"\]'\)/,
-  "compound segments must observe the actual tab flow, not the compound wrapper",
+  "ordinary tabs must observe the actual tab flow",
 );
 assert.doesNotMatch(
   strip.slice(strip.indexOf("function TabItem")),
@@ -834,11 +942,11 @@ assert.ok(
   strip.indexOf("styles.plusBtn") < strip.indexOf("<MainMenu />"),
   "the main menu button must follow the + button",
 );
-assert.match(
-  css,
-  /\.menuBtn \{[^}]*margin-left: auto;[^}]*width: 28px;[^}]*height: 28px;/s,
-  "the main menu button owns the reserved right column",
-);
+assert.equal(finalDeclaration(".plusBtn", "width"), "28px");
+assert.equal(finalDeclaration(".plusBtn", "height"), "28px");
+assert.equal(finalDeclaration(".menuBtn", "margin-left"), "auto");
+assert.equal(finalDeclaration(".menuBtn", "width"), "28px");
+assert.equal(finalDeclaration(".menuBtn", "height"), "28px");
 assert.match(
   css,
   /:global\(html\.is-desktop\) \.menuBtn \{\s*-webkit-app-region: no-drag;|:global\(html\.is-desktop\) \.plusBtn,\s*:global\(html\.is-desktop\) \.menuBtn \{[^}]*-webkit-app-region: no-drag;/s,
@@ -1025,7 +1133,6 @@ assert.match(
   "a closing tab must keep its shrinking width, not be pinned",
 );
 assert.match(strip, /data-tab-closing=\{closing \|\| undefined\}/);
-assert.match(strip, /data-tab-closing=\{closingCount \? true : undefined\}/);
 // Releasing must ease, not snap: the marker survives the width clear so
 // the transition rule still matches while the survivors grow back.
 assert.match(
@@ -1080,7 +1187,7 @@ assert.match(
   "a strip-box resize must release the freeze",
 );
 const onTabClose = strip.slice(
-  strip.indexOf("function onTabClose"),
+  strip.indexOf("function onTabsClose"),
   strip.indexOf("function finishClose"),
 );
 assert.ok(

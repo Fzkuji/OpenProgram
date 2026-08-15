@@ -393,7 +393,7 @@ def test_backfill_restricts_intermediate_workspace_commits(
     assert list((root / "topics").rglob("*.md")) == []
 
 
-def test_restricted_backfill_transaction_cannot_remove_an_existing_source_ref(
+def test_restricted_backfill_transaction_can_replace_current_memory(
     tmp_path: Path,
 ):
     from openprogram.memory.management import MemoryWorkspace
@@ -418,10 +418,9 @@ def test_restricted_backfill_transaction_cannot_remove_an_existing_source_ref(
             ),
             encoding="utf-8",
         )
-        with pytest.raises(ValueError, match="cannot be removed"):
-            workspace.commit_edits(*baseline)
+        workspace.commit_edits(*baseline)
 
-    assert _topic_refs(root) == {cited.source_id}
+    assert _topic_refs(root) == {fresh.source_id}
 
 
 def test_a_failed_batch_rolls_back_and_a_retry_resumes_at_its_first_uncited_ref(

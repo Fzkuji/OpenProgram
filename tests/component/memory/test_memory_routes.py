@@ -17,6 +17,7 @@ import glob
 import json
 import os
 import tempfile
+import subprocess
 
 import pytest
 from fastapi import FastAPI
@@ -168,6 +169,222 @@ def test_memory_refs_expose_stable_block_identity(client):
     assert rows[0]["workspace_id"].startswith("w-")
 
 
+def test_ensure_initializes_git_and_snapshots_existing_memory(
+    tmp_path, monkeypatch,
+):
+    state = tmp_path / "state"
+    root = state / "memory"
+    topic = root / "topics/note.md"
+    topic.parent.mkdir(parents=True)
+    topic.write_text("# Existing\n", encoding="utf-8")
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+
+    from openprogram.memory import store
+
+    assert store.ensure() == root
+    assert (root / ".git").is_dir()
+    assert subprocess.check_output(
+        ["git", "status", "--short"], cwd=root, text=True
+    ) == ""
+    saved = subprocess.check_output(
+        ["git", "show", "HEAD:topics/note.md"], cwd=root, text=True
+    )
+    assert saved == "# Existing\n"
+
+
+def test_structured_delete_is_recorded_in_git_history(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+
+    root = tmp_path / "memory"
+    (root / "sources").mkdir(parents=True)
+    (root / "topics").mkdir()
+    (root / "sources/D1.md").write_text(SOURCE, encoding="utf-8")
+    (root / "topics/note.md").write_text(NOTE, encoding="utf-8")
+    workspace = MemoryWorkspace(root)
+    try:
+        result = workspace.update(
+            base_revision=workspace.revision(),
+            changes=[{"path": "topics/note.md", "action": "delete"}],
+            commit_message="Remove obsolete memory",
+            git_commit="on",
+        )
+    finally:
+        workspace.close()
+
+    assert result.git_committed is True
+    assert result.git_commit
+    assert not (root / "topics/note.md").exists()
+    previous = subprocess.check_output(
+        ["git", "show", "HEAD^:topics/note.md"], cwd=root, text=True
+    )
+    assert "A fact worth keeping" in previous
+
+
+def test_structured_changes_api_uses_the_workspace_transaction(client, memory):
+    from openprogram.memory.management.transaction import workspace_revision
+
+    response = client.post("/api/memory/changes", json={
+        "base_revision": workspace_revision(memory),
+        "changes": [{
+            "path": "topics/new.md",
+            "action": "write",
+            "content": (
+                "# New\n\n"
+                "A new fact.[^e1]\n\n"
+                "[^e1]: Time: `2026-08-15`; Sources: new-source-api\n"
+            ),
+        }],
+        "sources": [{
+            "label": "new-source-api",
+            "role": "user",
+            "content": "A new fact.",
+            "observed_at": "2026-08-15",
+        }],
+        "commit_message": "Add API memory",
+    })
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["source_ids"]["new-source-api"].startswith("claude-code/")
+    written = (memory / "topics/new.md").read_text(encoding="utf-8")
+    assert "new-source-api" not in written
+    assert payload["source_ids"]["new-source-api"] in written
+
+
+def test_record_changes_api_creates_a_memory_and_derived_views(client, memory):
+    from openprogram.memory.management.transaction import workspace_revision
+    from openprogram.memory.markdown import parse_topic_tree
+
+    response = client.post("/api/memory/changes", json={
+        "base_revision": workspace_revision(memory),
+        "memory_changes": [{
+            "op": "create_record",
+            "content": "Created through the record API.",
+            "time": "2026-08-15",
+            "source_refs": ["new-source-record"],
+            "destination": {
+                "topic_path": "topics/from-api.md",
+                "headings": ["API"],
+                "position": "end",
+            },
+        }],
+        "sources": [{
+            "label": "new-source-record",
+            "role": "user",
+            "content": "Created through the record API.",
+            "observed_at": "2026-08-15",
+        }],
+    })
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["block_ids"]
+    created = [
+        unit for unit in parse_topic_tree(memory / "topics")
+        if unit.topic_path == "from-api.md"
+    ]
+    assert len(created) == 1
+    assert created[0].source_refs == (
+        payload["source_ids"]["new-source-record"],
+    )
+    assert (memory / "timeline/2026/08/15.md").is_file()
+    assert (memory / "recent_events.jsonl").is_file()
+    assert (memory / "relations.json").is_file()
+
+
+def test_memory_update_schema_constructs_a_google_function_declaration():
+    from google.genai import types as gtypes
+
+    from openprogram.programs.functions.memory.memory import UPDATE_SPEC
+    from openprogram.providers._schema import normalize
+
+    parameters = normalize(UPDATE_SPEC["parameters"], "gemini_openapi")
+    declaration = gtypes.FunctionDeclaration(
+        name="memory_update",
+        description="Update memory",
+        parameters=parameters,
+    )
+
+    assert declaration.name == "memory_update"
+    item = UPDATE_SPEC["parameters"]["properties"]["memory_changes"]["items"]
+    assert item["properties"]["op"]["enum"] == [
+        "create_record",
+        "update_record",
+        "delete_record",
+        "move_records",
+    ]
+    assert item["properties"]["destination"]["properties"]["position"][
+        "enum"
+    ] == ["start", "end", "before", "after"]
+
+
+def test_structured_changes_api_reports_stale_revision(client, memory):
+    response = client.post("/api/memory/changes", json={
+        "base_revision": "stale",
+        "changes": [{"path": "topics/note.md", "action": "delete"}],
+    })
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "CONCURRENT_UPDATE"
+    assert (memory / "topics/note.md").is_file()
+
+
+def test_memory_changes_api_accepts_the_compatible_unified_diff(client, memory):
+    from openprogram.memory.management.transaction import workspace_revision
+
+    original = (memory / "topics/note.md").read_text(encoding="utf-8")
+    updated = original.replace("A fact", "A corrected fact")
+    response = client.post("/api/memory/changes", json={
+        "base_revision": workspace_revision(memory),
+        "patch": (
+            "--- a/topics/note.md\n"
+            "+++ b/topics/note.md\n"
+            "@@ -1,5 +1,5 @@\n"
+            + "".join(
+                ("-" if old != new else " ") + old
+                + (("+" + new) if old != new else "")
+                for old, new in zip(
+                    original.splitlines(keepends=True),
+                    updated.splitlines(keepends=True),
+                )
+            )
+        ),
+    })
+
+    assert response.status_code == 200, response.text
+    assert "A corrected fact" in (
+        memory / "topics/note.md"
+    ).read_text(encoding="utf-8")
+
+
+def test_structured_changes_api_requires_base_revision(client, memory):
+    response = client.post("/api/memory/changes", json={
+        "changes": [{"path": "topics/note.md", "action": "delete"}],
+    })
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_ARGUMENT"
+    assert (memory / "topics/note.md").is_file()
+
+
+def test_structured_changes_api_rejects_non_string_commit_message(
+    client, memory,
+):
+    from openprogram.memory.management.transaction import workspace_revision
+
+    response = client.post("/api/memory/changes", json={
+        "base_revision": workspace_revision(memory),
+        "changes": [{"path": "topics/note.md", "action": "delete"}],
+        "commit_message": 1,
+    })
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_ARGUMENT"
+    assert (memory / "topics/note.md").is_file()
+
+
 # ---- a save either lands whole or not at all --------------------------
 
 
@@ -185,6 +402,9 @@ def test_put_keeping_the_block_id_lands(client, memory):
     assert "worth remembering" in (
         memory / "topics/note.md"
     ).read_text(encoding="utf-8")
+    assert subprocess.check_output(
+        ["git", "log", "-1", "--format=%s"], cwd=memory, text=True
+    ).strip() == "memory: edit topics/note.md"
 
 
 CORE = (
@@ -277,6 +497,11 @@ def test_stage_directories_are_cleaned_up_on_both_paths(client):
         ("GET", "/api/memory/topics/example.md", None),
         ("PUT", "/api/memory/topics/example.md", {"content": "# Example\n"}),
         ("DELETE", "/api/memory/topics/example.md", None),
+        (
+            "POST",
+            "/api/memory/changes",
+            {"base_revision": "x", "changes": []},
+        ),
         ("GET", "/api/memory/timeline", None),
         ("GET", "/api/memory/timeline/2026-01-01", None),
         ("GET", "/api/memory/recent", None),

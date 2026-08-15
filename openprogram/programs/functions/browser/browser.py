@@ -334,6 +334,7 @@ def execute(
         eng = engine or read_string_param(kw, "engine", "backend") or "app"
         ss = storage_state or read_string_param(kw, "storage_state", "state")
         cdp = read_string_param(kw, "cdp_url", "cdp")
+        binding_id = read_string_param(kw, "binding_id")
         return open_action._open(
             headless=headless,
             timeout_ms=timeout_ms,
@@ -342,6 +343,7 @@ def execute(
             url=url,
             storage_state=ss,
             cdp_url=cdp,
+            binding_id=binding_id,
         )
     if action == "save_login":
         nm = name or read_string_param(kw, "name", "host", "label")

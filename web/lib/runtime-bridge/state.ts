@@ -87,11 +87,9 @@ export interface RuntimeState {
    *  `load_session` that follows a branch checkout. Set by the checkout
    *  callers, read + cleared once by `renderConversation`. */
   _postCheckoutScrollTo: string | null;
-  /** After "back to main conversation": the spawn card to reveal.
-   *  ``head`` = the card's attach.head_id, ``anchor`` = the reply
-   *  bubble that dispatched the spawn. MessageList consumes it after
-   *  the reload renders: scroll to the anchor, open its execution
-   *  strip, expand + flash the card. */
+  /** After returning to the parent branch: the sub-agent row to reveal.
+   *  ``head`` = attach.head_id, ``anchor`` = the reply that dispatched
+   *  the spawn. MessageList opens the owning strip and flashes the row. */
   _pendingExpandAttach: { head: string; anchor: string } | null;
   /** Session id whose transcript must be reloaded when its running task
    *  clears (a dispatched function run whose card is already on disk). */

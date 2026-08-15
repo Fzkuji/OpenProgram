@@ -100,16 +100,73 @@
 .chat-stream-body > .inline-tree {
   margin: 10px 0 0;
 }
-/* Top-level RuntimeBlock — a message whose display === "runtime"
- * (e.g. a fn-form spawn). Without a host bubble providing 36px chat
- * column indent, the inline-tree would span full chat-area width.
- * Wrap it in this margin-aware host so it aligns with chat text
- * (avatar 28px + gap 8px + parent .message 24px padding = 60px). */
+/* Top-level RuntimeBlock — a Function marker plus the compact run summary. */
 .runtime-card-host {
-  margin: 20px 60px;
+  margin: 20px 8px;
 }
-.runtime-card-host > div > .inline-tree {
+.runtime-program-run {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  column-gap: 24px;
+  align-items: start;
+}
+.runtime-program-avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--accent-orange, #d19a66);
+  font: 14px/1 var(--font-mono);
+  user-select: none;
+}
+.runtime-program-content {
+  min-width: 0;
+  padding-right: 52px;
+}
+.runtime-program-content > .tl {
   margin: 0;
+}
+.runtime-program-content .tl-toggle {
+  max-width: 100%;
+}
+.runtime-program-content .tl-toggle > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.runtime-program-content .tl-chev {
+  flex: 0 0 auto;
+}
+.runtime-program-conclusion {
+  margin-top: 12px;
+}
+.runtime-program-conclusion-label {
+  margin-bottom: 3px;
+  color: var(--text-bright);
+  font-size: 12px;
+  font-weight: 600;
+}
+.runtime-program-conclusion-meta {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.runtime-program-conclusion-summary.message-content,
+.runtime-program-conclusion-result.message-content {
+  margin-top: 6px;
+  padding: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.65;
+}
+@media (max-width: 640px) {
+  .runtime-program-run { column-gap: 12px; }
+  .runtime-program-content { padding-right: 8px; }
 }
 /* Truncate the inline-tree-header label so long ``fnName(params)``
  * signatures don't shove the Retry / Copy JSON / collapse buttons

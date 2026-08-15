@@ -155,3 +155,24 @@ def test_catalogued_clone_with_matching_origin_is_migrated_once(tmp_path, monkey
     assert _programs.is_owner_controlled_program_path(repo / "demo_pkg")
     row = json.loads((state / "program-sources.json").read_text())["programs"][0]
     assert row["kind"] == "git-migration"
+
+
+def test_untrusted_clone_does_not_hide_installed_distribution(tmp_path, monkeypatch):
+    from openprogram.programs import _programs
+
+    base = tmp_path / "agentics"
+    base.mkdir()
+    _harness(base, "demo_pkg")
+    monkeypatch.setattr(_programs, "applications_dir", lambda: str(base))
+    monkeypatch.setattr(_programs, "_catalogued_clone_origin", lambda *_: None)
+    monkeypatch.setattr(_programs.importlib.util, "find_spec", lambda _: object())
+    program = _programs.Program(
+        function="demo_agent",
+        package="demo_pkg",
+        extra="demo",
+        repo="https://github.com/example/Demo-Harness",
+        summary="test",
+        install_dir="demo_pkg",
+    )
+
+    assert program.is_installed()

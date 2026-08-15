@@ -127,3 +127,54 @@ def test_session_loaded_returns_additional_working_dirs(
     assert loaded
     settings = loaded[0]["data"]["settings"]
     assert settings["additional_working_dirs"] == [str(extra)]
+
+
+def test_session_loaded_keeps_workflow_llm_output_inside_runtime_card(
+    env, monkeypatch: pytest.MonkeyPatch,
+):
+    """Internal workflow LLM nodes belong to context_tree, not Chat bubbles."""
+    db, _, sid = env
+    db.create_session(sid, "main")
+    db.append_message(sid, {
+        "id": "u1", "role": "user", "content": "run workflow",
+        "predecessor": "ROOT",
+    })
+    db.append_message(sid, {
+        "id": "a1", "role": "assistant", "content": "starting",
+        "predecessor": "u1",
+    })
+    from openprogram.context.nodes import Call, ROLE_CODE, ROLE_LLM
+    from openprogram.store import SessionNodeWriter
+    writer = SessionNodeWriter(db, sid)
+    writer.append(Call(
+        id="run1", role=ROLE_CODE, name="agentic_workflow",
+        output={"status": "completed"}, predecessor="a1",
+        metadata={"status": "completed"},
+    ))
+    writer.append(Call(
+        id="inner-llm", role=ROLE_LLM,
+        output="workflow internal final output", caller="run1",
+        metadata={"status": "completed"},
+    ))
+
+    from openprogram.webui import server as _s
+    with _s._sessions_lock:
+        _s._sessions[sid] = {"id": sid}
+    monkeypatch.setattr(_s, "_get_provider_info", lambda sid=None: {})
+    monkeypatch.setattr(_s, "_is_run_active", lambda sid: False)
+
+    ws = FakeWS()
+    try:
+        asyncio.run(ws_session.handle_load_session(ws, {"session_id": sid}))
+    finally:
+        with _s._sessions_lock:
+            _s._sessions.pop(sid, None)
+
+    loaded = next(f for f in ws.sent if f.get("type") == "session_loaded")
+    messages = loaded["data"]["messages"]
+    assert [m["id"] for m in messages] == ["u1", "a1", "run1"]
+    runtime = messages[-1]
+    assert runtime["display"] == "runtime"
+    assert runtime["function"] == "agentic_workflow"
+    assert runtime["context_tree"]
+    assert "inner-llm" not in {m["id"] for m in messages}

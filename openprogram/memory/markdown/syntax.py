@@ -6,6 +6,7 @@ from collections.abc import Iterable, Iterator
 from .models import (
     BLOCK_ID,
     FOOTNOTE_ID,
+    MEMORY_ID,
     TEMPORAL_VALUE_PATTERN,
     TopicFormatError,
     is_valid_temporal_value,
@@ -29,7 +30,8 @@ LINK = re.compile(r"\[([^]]+)\]\(([^)]+)\)")
 BLOCK_SUFFIX = re.compile(rf"(?:\s+\^{BLOCK_ID})*\s+\^(?P<id>{BLOCK_ID})\s*$")
 BLOCK_SUFFIX_RUN = re.compile(rf"(?:\s+\^{BLOCK_ID})+\s*$")
 ANY_BLOCK_SUFFIX = re.compile(r"\s+\^(?P<id>\S+)\s*$")
-BLOCK_LINK = re.compile(rf"\[[^]]+\]\([^)#]*#\^(?P<id>{BLOCK_ID})\)")
+BLOCK_TARGET_ID = rf"(?:{MEMORY_ID}|{BLOCK_ID})"
+BLOCK_LINK = re.compile(rf"\[[^]]+\]\([^)#]*#\^(?P<id>{BLOCK_TARGET_ID})\)")
 SOURCE_HANDLE = re.compile(
     r"^(D\d+:\d+|[^/\s,]+/[^/\s,]+/[^/\s,]+)(?:\s*(?:,|·)\s*|\s+|$)"
 )
@@ -88,42 +90,52 @@ def definitions(
     return values
 
 
-def paragraphs(lines: list[str]) -> Iterator[tuple[str, tuple[str, ...]]]:
+def paragraph_spans(
+    lines: list[str],
+) -> Iterator[tuple[int, int, tuple[str, ...]]]:
+    """Yield the exact line spans and heading path parsed as Topic prose."""
     headings: list[str] = []
-    paragraph: list[str] = []
+    start: int | None = None
     paragraph_headings: tuple[str, ...] = ()
     in_fence = False
 
-    def take() -> tuple[str, tuple[str, ...]] | None:
-        nonlocal paragraph
-        if not paragraph:
+    def take(end: int) -> tuple[int, int, tuple[str, ...]] | None:
+        nonlocal start
+        if start is None:
             return None
-        value = "\n".join(paragraph).strip()
-        paragraph = []
-        return (value, paragraph_headings) if value else None
+        result = (start, end, paragraph_headings)
+        start = None
+        return result
 
-    for line in lines + [""]:
+    for index, line in enumerate(lines + [""]):
         if line.lstrip().startswith("```"):
-            if result := take():
+            if result := take(index):
                 yield result
             in_fence = not in_fence
             continue
         if in_fence or definition_match(line) or re.match(
             r"\s*(?:<!--|<a\s)", line
         ):
-            if result := take():
+            if result := take(index):
                 yield result
             continue
         if heading := re.match(r"^(#{1,6})\s+(.+?)\s*$", line):
-            if result := take():
+            if result := take(index):
                 yield result
             level = len(heading.group(1))
             headings = headings[: level - 1] + [heading.group(2)]
             continue
         if not line.strip():
-            if result := take():
+            if result := take(index):
                 yield result
             continue
-        if not paragraph:
+        if start is None:
+            start = index
             paragraph_headings = tuple(headings)
-        paragraph.append(line)
+
+
+def paragraphs(lines: list[str]) -> Iterator[tuple[str, tuple[str, ...]]]:
+    for start, end, headings in paragraph_spans(lines):
+        value = "\n".join(lines[start:end]).strip()
+        if value:
+            yield value, headings

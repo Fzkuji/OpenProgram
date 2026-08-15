@@ -36,10 +36,10 @@ def reset_usage_context():
 def test_child_entry_accepts_usage_snapshot_param():
     from openprogram.agent.process_runner import _child_entry
     params = list(inspect.signature(_child_entry).parameters)
-    # New snapshots append after this one; usage keeps its original
-    # positional slot so older callers that supplied it still bind correctly.
+    # Provider/model additions append after the original payload; usage keeps
+    # its positional slot so older callers still bind correctly.
     assert "usage_ctx_snapshot" in params
-    assert params[-3:] == [
+    assert params[12:15] == [
         "usage_ctx_snapshot", "sandbox_policy_snapshot", "authority_snapshot",
     ]
     # and it must be optional (defaults to None) so non-metering callers work

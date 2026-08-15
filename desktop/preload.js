@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 const windowIdArgument = process.argv.find((argument) =>
   argument.startsWith("--openprogram-window-id="),
@@ -10,6 +10,10 @@ const windowId = windowIdArgument
 contextBridge.exposeInMainWorld("openprogramDesktop", {
   isDesktop: true,
   windowId,
+  // Electron removed the renderer's legacy File.path property. This is the
+  // supported path boundary for a File explicitly selected or dropped by
+  // the user; it does not expose general filesystem access to the renderer.
+  getPathForFile: (file) => webUtils.getPathForFile(file),
   openExternal: (url) => ipcRenderer.send("desktop:open-external", url),
   // Close this window (Chrome parity: closing the last tab closes the window).
   closeWindow: () => ipcRenderer.send("window:close-self"),
@@ -19,12 +23,14 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     ensure: (id, url) => ipcRenderer.send("webtab:ensure", id, url),
     navigate: (id, url) => ipcRenderer.send("webtab:navigate", id, url),
     activate: (id, url) => ipcRenderer.invoke("webtab:activate", id, url),
+    preview: (id) => ipcRenderer.invoke("webtab:preview", id),
     setBounds: (id, bounds) => ipcRenderer.send("webtab:set-bounds", id, bounds),
     show: (id) => ipcRenderer.send("webtab:show", id),
     hide: (id) => ipcRenderer.send("webtab:hide", id),
     syncVisible: (items) => ipcRenderer.send("webtab:sync-visible", items),
     destroy: (id) => ipcRenderer.send("webtab:destroy", id),
     reload: (id) => ipcRenderer.send("webtab:reload", id),
+    stop: (id) => ipcRenderer.send("webtab:stop", id),
     goBack: (id) => ipcRenderer.send("webtab:go-back", id),
     goForward: (id) => ipcRenderer.send("webtab:go-forward", id),
     onState: (cb) => {
@@ -64,6 +70,24 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     download: () => ipcRenderer.invoke("updates:download"),
     openRelease: () => ipcRenderer.invoke("updates:open-release"),
     onState: (cb) => subscribe("updates:state")(cb),
+  },
+  browserImport: {
+    listSources: () => ipcRenderer.invoke("browser-import:list-sources"),
+    run: (request) => ipcRenderer.invoke("browser-import:run", request),
+  },
+  browserData: {
+    clear: (options) => ipcRenderer.invoke("browser-data:clear", options),
+  },
+  terminal: {
+    start: (request) => ipcRenderer.invoke("terminal:start", request),
+    write: (id, data) => ipcRenderer.send("terminal:write", id, data),
+    resize: (id, cols, rows) => ipcRenderer.send("terminal:resize", id, cols, rows),
+    stop: (id) => ipcRenderer.send("terminal:stop", id),
+    onData: (cb) => {
+      const listener = (_event, payload) => cb(payload);
+      ipcRenderer.on("terminal:data", listener);
+      return () => ipcRenderer.removeListener("terminal:data", listener);
+    },
   },
   tabTransfer: {
     // Synchronous by contract: called from pointer/mouse down so the

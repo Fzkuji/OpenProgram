@@ -147,11 +147,14 @@ Proactivity applications (built on the base):
 | [`ui/chat-turn-visual-spec.html`](ui/chat-turn-visual-spec.html) | Chat-turn visual spec (execution timeline + manual runs + message minimap) |
 | [`ui/interaction-feedback.md`](ui/interaction-feedback.md) | The 0ms interaction-feedback rule |
 | [`ui/surface-system.md`](ui/surface-system.md) | Surface system |
+| [`ui/theme-system.html`](ui/theme-system.html) | Theme entry, complete token contract, component consumption, and desktop-overlay propagation |
+| [`ui/settings-collapsible-columns.html`](ui/settings-collapsible-columns.html) | Collapsible app, Settings, and Provider navigation columns |
 | [`ui/indicator-dots.md`](ui/indicator-dots.md) | Indicator dots |
 | [`ui/attachment-handling.md`](ui/attachment-handling.md) | Attachment handling ([rendered](ui/attachment-handling.html)) |
 | [`ui/composer-interaction-modes.md`](ui/composer-interaction-modes.md) | Composer interaction modes |
 | [`ui/gui-agent-context.md`](ui/gui-agent-context.md) | GUI agent context flow |
 | [`ui/state-layer.md`](ui/state-layer.md) | Web state layer: per-session vs global stores, session-scope container plan |
+| [`ui/center-tabs-and-split-layout.html`](ui/center-tabs-and-split-layout.html) | Authoritative single-tab and composite split-tab lifecycle, rendering, persistence, and transfer design |
 | [`ui/project-workspace.md`](ui/project-workspace.md) | Project workspace — files, tabs, multi-session ([prototype](ui/project-workspace-prototype.html)) |
 
 ## integrations/ — MCP, skills/plugins, harness standard

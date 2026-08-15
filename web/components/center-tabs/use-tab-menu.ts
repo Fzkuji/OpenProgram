@@ -23,6 +23,7 @@ import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
 import { buildTransferPayload, desktopBridge } from "@/lib/desktop-bridge";
 import { dragCoordinator } from "@/lib/tab-drag-coordinator";
 import { useTranslation } from "@/lib/i18n";
+import { activeThemeId } from "@/lib/prefs/theme-pref";
 import {
   cancelCoordinator,
   menuDragSubject,
@@ -37,9 +38,9 @@ export interface TabMenuState {
 
 export interface TabMenuOptions {
   stripRef: React.RefObject<HTMLDivElement | null>;
-  /** Close a single tab through the strip's dirty-check + exit-animation
-   *  path — bulk closes must not bypass either. */
-  onTabClose(event: React.SyntheticEvent, tab: CenterTab): void;
+  /** Close one strip entry through a single dirty-check + exit-animation
+   *  transaction. A composite split entry contributes all of its members. */
+  onTabsClose(event: React.SyntheticEvent, tabs: CenterTab[]): void;
   setFocusedTabId(tabId: string | null): void;
   setDragAnnouncement(message: string): void;
   clearDragState(): void;
@@ -50,7 +51,7 @@ export interface TabMenuOptions {
 
 export function useTabMenu({
   stripRef,
-  onTabClose,
+  onTabsClose,
   setFocusedTabId,
   setDragAnnouncement,
   clearDragState,
@@ -58,7 +59,7 @@ export function useTabMenu({
 }: TabMenuOptions) {
   const { text } = useTranslation();
   const moveTab = useCenterTabs((s) => s.moveTab);
-  const moveGroupMember = useCenterTabs((s) => s.moveGroupMember);
+  const moveGroup = useCenterTabs((s) => s.moveGroup);
   const ungroupTab = useCenterTabs((s) => s.ungroupTab);
 
   const [tabMenu, setTabMenu] = useState<TabMenuState | null>(null);
@@ -90,8 +91,7 @@ export function useTabMenu({
         moveMenuTab(tabId, 1);
         break;
       case "close": {
-        const tab = useCenterTabs.getState().tabs.find((x) => x.id === tabId);
-        if (tab) onTabClose({ stopPropagation: () => {} } as React.SyntheticEvent, tab);
+        closeMenuTab(tabId);
         break;
       }
       case "close-others":
@@ -156,10 +156,9 @@ export function useTabMenu({
     const mainMenu = desktopBridge()?.mainMenu;
     if (mainMenu) {
       overlayMenuTabIdRef.current = tabId;
-      const theme = document.documentElement.dataset.theme;
       mainMenu.open({
         anchor: { x: left, y: top, vw: window.innerWidth, vh: window.innerHeight },
-        theme: theme === "dark" || theme === "light" ? theme : undefined,
+        theme: activeThemeId(),
         items: [
           {
             id: "tabmenu:move-left",
@@ -218,14 +217,13 @@ export function useTabMenu({
 
   function canMoveMenuTab(tabId: string, direction: -1 | 1) {
     const state = useCenterTabs.getState();
-    if (findCenterTabGroup(state.groups, tabId)) return true;
     const entries = centerTabStripEntries({
       tabIds: state.tabs.map((tab) => tab.id),
       groups: state.groups,
     });
-    const index = entries.findIndex(
-      (entry) => entry.kind === "tab" && entry.tabId === tabId,
-    );
+    const index = entries.findIndex((entry) => entry.kind === "group"
+      ? entry.group.memberIds.includes(tabId)
+      : entry.tabId === tabId);
     return index >= 0 && Boolean(entries[index + direction]);
   }
 
@@ -233,16 +231,22 @@ export function useTabMenu({
     const state = useCenterTabs.getState();
     const sourceGroup = findCenterTabGroup(state.groups, tabId);
     if (sourceGroup) {
-      const memberIndex = sourceGroup.memberIds.indexOf(tabId);
-      const nextIndex = memberIndex + direction;
-      if (nextIndex >= 0 && nextIndex < sourceGroup.memberIds.length) {
-        moveGroupMember(sourceGroup.id, tabId, nextIndex);
-      } else {
-        const beforeId = direction < 0
-          ? sourceGroup.memberIds[1] ?? null
-          : targetBeforeId(sourceGroup.memberIds.at(-1) ?? tabId, true);
-        ungroupTab(tabId, beforeId);
-      }
+      const entries = centerTabStripEntries({
+        tabIds: state.tabs.map((tab) => tab.id),
+        groups: state.groups,
+      });
+      const sourceIndex = entries.findIndex(
+        (entry) => entry.kind === "group" && entry.group.id === sourceGroup.id,
+      );
+      const target = entries[sourceIndex + direction];
+      if (!target) return;
+      const targetId = target.kind === "group"
+        ? target.group.memberIds[0]
+        : target.tabId;
+      moveGroup(
+        sourceGroup.id,
+        direction < 0 ? targetId : targetBeforeId(targetId, true),
+      );
     } else {
       const entries = centerTabStripEntries({
         tabIds: state.tabs.map((tab) => tab.id),
@@ -268,6 +272,7 @@ export function useTabMenu({
    *  to pair with — Chrome keeps it enabled and lets the picker decide. */
   function canOpenSplitPicker(tabId: string) {
     const state = useCenterTabs.getState();
+    if (findCenterTabGroup(state.groups, tabId)) return false;
     return splitCandidates(state.tabs, state.groups, tabId).length > 0;
   }
 
@@ -279,8 +284,9 @@ export function useTabMenu({
   }
 
   function removeMenuTabFromGroup(tabId: string) {
-    if (!findCenterTabGroup(useCenterTabs.getState().groups, tabId)) return;
-    ungroupTab(tabId);
+    const group = findCenterTabGroup(useCenterTabs.getState().groups, tabId);
+    if (!group) return;
+    for (const memberId of group.memberIds.slice(0, -1)) ungroupTab(memberId);
     finishMenuAction(tabId, text("Tab removed from group", "标签已移出分组"));
   }
 
@@ -324,40 +330,61 @@ export function useTabMenu({
     );
   }
 
+  function tabsForEntry(tabId: string): CenterTab[] {
+    const state = useCenterTabs.getState();
+    const group = findCenterTabGroup(state.groups, tabId);
+    const ids = group?.memberIds ?? [tabId];
+    return ids.flatMap((id) => {
+      const tab = state.tabs.find((candidate) => candidate.id === id);
+      return tab ? [tab] : [];
+    });
+  }
+
+  function closeMenuTab(tabId: string) {
+    const victims = tabsForEntry(tabId);
+    setTabMenu(null);
+    if (victims.length > 0) {
+      onTabsClose(
+        { stopPropagation: () => {} } as React.SyntheticEvent,
+        victims,
+      );
+    }
+  }
+
   /** Tabs the "close others / close to the right" menu items would act
-   *  on, in strip order. Group members count individually — closing
-   *  "others" from inside a group still clears the rest of the strip,
-   *  which is what every browser does. `after` restricts to tabs that
-   *  sit past the subject. */
+   *  on, in strip-entry order. A split group is one entry, so its members
+   *  are retained or closed together. */
   function closableTabsAround(tabId: string, after: boolean): CenterTab[] {
     const state = useCenterTabs.getState();
-    const order = centerTabStripEntries({
+    const entries = centerTabStripEntries({
       tabIds: state.tabs.map((tab) => tab.id),
       groups: state.groups,
-    }).flatMap((entry) =>
+    });
+    const at = entries.findIndex((entry) => entry.kind === "group"
+      ? entry.group.memberIds.includes(tabId)
+      : entry.tabId === tabId);
+    if (at < 0) return [];
+    const victims = after
+      ? entries.slice(at + 1)
+      : entries.filter((_, index) => index !== at);
+    const ids = victims.flatMap((entry) =>
       entry.kind === "group" ? entry.group.memberIds : [entry.tabId],
     );
-    const at = order.indexOf(tabId);
-    if (at < 0) return [];
-    const ids = after ? order.slice(at + 1) : order.filter((id) => id !== tabId);
     return ids
       .map((id) => state.tabs.find((tab) => tab.id === id))
       .filter((tab): tab is CenterTab => !!tab);
   }
 
-  /** Bulk close. Routed through onTabClose one tab at a time so each
-   *  keeps its dirty-check prompt and exit animation — a bulk path that
-   *  skipped those would silently discard unsaved file edits. */
+  /** Bulk close is one transaction so a composite entry cannot close only
+   *  one member after a later dirty prompt is cancelled. */
   function closeMenuTabs(tabId: string, after: boolean) {
     const victims = closableTabsAround(tabId, after);
     setTabMenu(null);
     returnFocusToMenuInvoker(tabId);
-    for (const tab of victims) {
-      onTabClose(
-        { stopPropagation: () => {} } as React.SyntheticEvent,
-        tab,
-      );
-    }
+    if (victims.length > 0) onTabsClose(
+      { stopPropagation: () => {} } as React.SyntheticEvent,
+      victims,
+    );
   }
 
   // Dismiss the tab context menu on any interaction outside it. The menu
@@ -402,6 +429,7 @@ export function useTabMenu({
     moveMenuTabToNewWindow,
     closableTabsAround,
     closeMenuTabs,
+    closeMenuTab,
     returnFocusToMenuInvoker,
     finishMenuAction,
   };

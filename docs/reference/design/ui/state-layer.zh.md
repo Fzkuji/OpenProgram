@@ -417,6 +417,8 @@ React context 提供键，让消费方读 `map[scopeKey]` 而不是读全局。`
 ---
 ## 相关
 
+- [`center-tabs-and-split-layout.html`](center-tabs-and-split-layout.html) ——
+  普通与复合分屏条目、整体激活、持久化与跨窗口转移的权威模型
 - [`composer-interaction-modes.zh.md`](composer-interaction-modes.zh.md) ——
   composer 如何在 idle、fn-form、question、approval 之间仲裁
 - [`invariants.zh.md`](invariants.zh.md) —— 跨模块 UI 不变量

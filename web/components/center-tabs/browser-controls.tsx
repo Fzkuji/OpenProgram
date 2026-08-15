@@ -1,0 +1,478 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Bookmark,
+  ArrowRight,
+  Check,
+  ChevronRight,
+  Clock3,
+  Folder,
+  House,
+  Import,
+  Library,
+  MoreVertical,
+  Plus,
+  Settings,
+  Trash2,
+  ExternalLink,
+} from "lucide-react";
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  itemCls,
+  MENU_PANEL,
+  MENU_SEPARATOR,
+} from "@/components/chat/top-bar/menu-styles";
+import {
+  bookmarkBarLayout,
+  readBookmarkTree,
+  subscribeBookmarks,
+  type BookmarkFolder,
+  type BookmarkNode,
+} from "@/lib/bookmarks";
+import { activeThemeId } from "@/lib/prefs/theme-pref";
+import {
+  requestBrowserImport,
+  setShowBookmarksBar,
+  showBookmarksBar,
+  subscribeBrowserPrefs,
+} from "@/lib/browser-prefs";
+import { desktopBridge, type DesktopContextMenuItem } from "@/lib/desktop-bridge";
+import {
+  bookmarkFolderActionPrefix,
+  browserActionPrefix,
+  browserResponsiveMenuItems,
+  ownedActionId,
+} from "@/lib/browser-layout";
+import { useTranslation } from "@/lib/i18n";
+import { faviconUrl } from "@/lib/ntp-shortcuts";
+import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import styles from "./center-tabs.module.css";
+
+function useBookmarksBarPreference() {
+  const [visible, setVisible] = useState(showBookmarksBar);
+  useEffect(() => subscribeBrowserPrefs(() => setVisible(showBookmarksBar())), []);
+  return visible;
+}
+
+type BrowserMenuActions = {
+  home(): void;
+  forward?: () => void;
+  openExternal(): void;
+};
+
+function runBrowserAction(
+  id: string,
+  router: ReturnType<typeof useRouter>,
+  actions: BrowserMenuActions,
+) {
+  const tabs = useCenterTabs.getState();
+  switch (id) {
+    case "new-tab":
+      tabs.openBuiltinTab("browser");
+      break;
+    case "home":
+      actions.home();
+      break;
+    case "forward":
+      actions.forward?.();
+      break;
+    case "open-external":
+      actions.openExternal();
+      break;
+    case "bookmarks":
+      tabs.openBuiltinTab("bookmarks");
+      break;
+    case "history":
+      tabs.openBuiltinTab("history");
+      break;
+    case "toggle-bookmarks-bar":
+      setShowBookmarksBar(!showBookmarksBar());
+      break;
+    case "import":
+      requestBrowserImport();
+      tabs.openBuiltinTab("browser");
+      break;
+    case "clear-data":
+      router.push("/settings/browser#clear-data");
+      break;
+    case "settings":
+      router.push("/settings/browser");
+      break;
+  }
+}
+
+export function BrowserMenu({
+  ownerId,
+  actions,
+  canGoForward = true,
+  canGoHome = true,
+  canOpenExternal = true,
+}: {
+  ownerId: string;
+  actions: BrowserMenuActions;
+  canGoForward?: boolean;
+  canGoHome?: boolean;
+  canOpenExternal?: boolean;
+}) {
+  const router = useRouter();
+  const { text } = useTranslation();
+  const visible = useBookmarksBarPreference();
+  const bridge = desktopBridge();
+  const mainMenu = bridge?.mainMenu;
+  const canImport = Boolean(bridge?.browserImport);
+  const label = text("Browser menu", "浏览器菜单");
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
+  const [paneWidth, setPaneWidth] = useState(Number.POSITIVE_INFINITY);
+  const responsive = browserResponsiveMenuItems(paneWidth, {
+    forward: Boolean(actions.forward),
+  });
+  const actionPrefix = browserActionPrefix(ownerId);
+
+  useEffect(() => {
+    const pane = triggerRef.current?.closest(`.${styles.webPane}`);
+    if (!pane) return;
+    const update = () => setPaneWidth(pane.getBoundingClientRect().width);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(pane);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!mainMenu) return;
+    return mainMenu.onAction((id) => {
+      const action = ownedActionId(id, actionPrefix);
+      if (action === null) return;
+      runBrowserAction(action, router, actionsRef.current);
+    });
+  }, [actionPrefix, mainMenu, router]);
+
+  if (mainMenu) {
+    return (
+      <button
+        ref={triggerRef}
+        type="button"
+        className={styles.webToolbarBtn}
+        title={label}
+        aria-label={label}
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          const item = (
+            id: string,
+            english: string,
+            chinese: string,
+            extra?: Pick<DesktopContextMenuItem, "separatorBefore" | "checked" | "disabled">,
+          ): DesktopContextMenuItem => ({
+            id: `${actionPrefix}${id}`,
+            label: text(english, chinese),
+            ...extra,
+          });
+          mainMenu.open({
+            anchor: { right: rect.right, y: rect.bottom + 4, align: "end", vw: innerWidth, vh: innerHeight },
+            theme: activeThemeId(),
+            items: [
+              item("new-tab", "New browser tab", "新建浏览器标签页"),
+              ...(responsive.home ? [item("home", "Home", "主页", { disabled: !canGoHome })] : []),
+              ...(responsive.forward ? [item("forward", "Forward", "前进", { disabled: !canGoForward })] : []),
+              ...(responsive.openExternal ? [item("open-external", "Open in browser", "在浏览器中打开", { disabled: !canOpenExternal })] : []),
+              item("bookmarks", "Bookmarks", "书签", { separatorBefore: true }),
+              item("history", "History", "历史"),
+              item("toggle-bookmarks-bar", "Show bookmarks bar", "显示书签栏", { checked: visible }),
+              item("import", "Import browser data", "导入浏览器资料", { separatorBefore: true, disabled: !canImport }),
+              item("clear-data", "Clear browsing data", "清除浏览数据"),
+              item("settings", "Browser settings", "浏览器设置", { separatorBefore: true }),
+            ],
+          });
+        }}
+      >
+        <MoreVertical size={15} />
+      </button>
+    );
+  }
+
+  const row = (
+    id: string,
+    icon: React.ReactNode,
+    english: string,
+    chinese: string,
+    checked = false,
+    disabled = false,
+  ) => (
+    <DropdownMenuItem
+      className={itemCls(false)}
+      disabled={disabled}
+      onSelect={() => runBrowserAction(id, router, actions)}
+    >
+      {checked ? <Check size={14} aria-hidden="true" /> : icon}
+      <span className="flex-1">{text(english, chinese)}</span>
+    </DropdownMenuItem>
+  );
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button ref={triggerRef} type="button" className={styles.webToolbarBtn} title={label} aria-label={label}>
+          <MoreVertical size={15} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className={MENU_PANEL}>
+        {row("new-tab", <Plus size={14} />, "New browser tab", "新建浏览器标签页")}
+        {responsive.home ? row("home", <House size={14} />, "Home", "主页", false, !canGoHome) : null}
+        {responsive.forward ? row("forward", <ArrowRight size={14} />, "Forward", "前进", false, !canGoForward) : null}
+        {responsive.openExternal ? row("open-external", <ExternalLink size={14} />, "Open in browser", "在浏览器中打开", false, !canOpenExternal) : null}
+        <DropdownMenuSeparator className={MENU_SEPARATOR} />
+        {row("bookmarks", <Bookmark size={14} />, "Bookmarks", "书签")}
+        {row("history", <Clock3 size={14} />, "History", "历史")}
+        {row("toggle-bookmarks-bar", <span className="w-[14px]" />, "Show bookmarks bar", "显示书签栏", visible)}
+        <DropdownMenuSeparator className={MENU_SEPARATOR} />
+        {canImport ? row("import", <Import size={14} />, "Import browser data", "导入浏览器资料") : null}
+        {row("clear-data", <Trash2 size={14} />, "Clear browsing data", "清除浏览数据")}
+        <DropdownMenuSeparator className={MENU_SEPARATOR} />
+        {row("settings", <Settings size={14} />, "Browser settings", "浏览器设置")}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function BookmarksLibraryButton() {
+  const { text } = useTranslation();
+  const openBuiltinTab = useCenterTabs((state) => state.openBuiltinTab);
+  const label = text("Bookmarks", "书签");
+  return (
+    <button
+      type="button"
+      className={`${styles.webToolbarBtn} ${styles.webToolbarMedium}`}
+      onClick={() => openBuiltinTab("bookmarks")}
+      title={label}
+      aria-label={label}
+    >
+      <Library size={14} />
+    </button>
+  );
+}
+
+function folderItems(
+  folder: BookmarkFolder,
+  ownerId: string,
+  rootFolderId = folder.id,
+): DesktopContextMenuItem[] {
+  const prefix = bookmarkFolderActionPrefix(ownerId, rootFolderId);
+  return folder.children.map((node) => node.kind === "folder" ? {
+    id: `${prefix}folder:${node.id}`,
+    label: node.title || "Folder",
+    children: node.children.length > 0
+      ? folderItems(node, ownerId, rootFolderId)
+      : [{ id: `${prefix}empty:${node.id}`, label: "Empty folder", disabled: true }],
+  } : {
+    id: `${prefix}bookmark:${node.id}`,
+    label: node.title || node.url,
+  });
+}
+
+function bookmarkUrlById(folder: BookmarkFolder, id: string): string | null {
+  for (const node of folder.children) {
+    if (node.kind === "bookmark" && node.id === id) return node.url;
+    if (node.kind === "folder") {
+      const nested = bookmarkUrlById(node, id);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+function BookmarkMenuNodes({
+  nodes,
+  onNavigate,
+}: {
+  nodes: BookmarkNode[];
+  onNavigate(url: string): void;
+}) {
+  if (nodes.length === 0) {
+    return <DropdownMenuItem className={itemCls(false)} disabled>Empty folder</DropdownMenuItem>;
+  }
+  return nodes.map((node) => node.kind === "folder" ? (
+    <DropdownMenuSub key={node.id}>
+      <DropdownMenuSubTrigger
+        className={`${itemCls(false)} w-full min-w-0 outline-none data-[highlighted]:bg-bg-hover data-[highlighted]:text-text-bright data-[state=open]:bg-bg-hover data-[state=open]:text-text-bright`}
+      >
+        <Folder size={13} fill="currentColor" className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-left">{node.title || "Folder"}</span>
+        <ChevronRight size={13} className="ml-auto shrink-0" aria-hidden="true" />
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className={`${MENU_PANEL} w-[280px] max-w-[calc(100vw-16px)]`}>
+        <BookmarkMenuNodes nodes={node.children} onNavigate={onNavigate} />
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  ) : (
+    <DropdownMenuItem
+      key={node.id}
+      className={`${itemCls(false)} w-full min-w-0 outline-none data-[highlighted]:bg-bg-hover data-[highlighted]:text-text-bright`}
+      onSelect={() => onNavigate(node.url)}
+      title={node.title || node.url}
+    >
+      <Bookmark size={13} className="shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{node.title || node.url}</span>
+    </DropdownMenuItem>
+  ));
+}
+
+function BookmarkFolderButton({
+  folder,
+  ownerId,
+  onNavigate,
+  appearance = "folder",
+  label,
+}: {
+  folder: BookmarkFolder;
+  ownerId: string;
+  onNavigate(url: string): void;
+  appearance?: "folder" | "overflow";
+  label?: string;
+}) {
+  const mainMenu = desktopBridge()?.mainMenu;
+  const buttonLabel = label || folder.title;
+  const buttonClass = appearance === "overflow" ? styles.bookmarkBarMore : styles.bookmarkBarItem;
+  const buttonContent = appearance === "overflow" ? (
+    <ChevronRight size={14} />
+  ) : (
+    <><Folder size={13} fill="currentColor" /><span>{folder.title}</span></>
+  );
+
+  useEffect(() => {
+    if (!mainMenu) return;
+    return mainMenu.onAction((id) => {
+      const action = ownedActionId(id, bookmarkFolderActionPrefix(ownerId, folder.id));
+      if (action === null || !action.startsWith("bookmark:")) return;
+      const url = bookmarkUrlById(folder, action.slice("bookmark:".length));
+      if (url) onNavigate(url);
+    });
+  }, [folder, mainMenu, onNavigate, ownerId]);
+
+  if (mainMenu) {
+    return (
+      <button
+        type="button"
+        className={buttonClass}
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          mainMenu.open({
+            anchor: { x: rect.left, y: rect.bottom + 2, vw: innerWidth, vh: innerHeight },
+            theme: activeThemeId(),
+            items: folderItems(folder, ownerId).length > 0
+              ? folderItems(folder, ownerId)
+              : [{ id: `${bookmarkFolderActionPrefix(ownerId, folder.id)}empty`, label: "Empty folder", disabled: true }],
+            width: 280,
+          });
+        }}
+        title={buttonLabel}
+        aria-label={buttonLabel}
+      >
+        {buttonContent}
+      </button>
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" className={buttonClass} title={buttonLabel} aria-label={buttonLabel}>
+          {buttonContent}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        className={`${MENU_PANEL} w-[280px] max-w-[calc(100vw-16px)]`}
+        align="start"
+      >
+        <BookmarkMenuNodes nodes={folder.children} onNavigate={onNavigate} />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function BookmarkLeafButton({ node, onNavigate }: { node: Extract<BookmarkNode, { kind: "bookmark" }>; onNavigate(url: string): void }) {
+  const [broken, setBroken] = useState(false);
+  const icon = node.faviconUrl || faviconUrl(node.url);
+  return (
+    <button type="button" className={styles.bookmarkBarItem} onClick={() => onNavigate(node.url)} title={node.url}>
+      {!broken && icon ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={icon} alt="" width={13} height={13} onError={() => setBroken(true)} />
+      ) : <Bookmark size={13} />}
+      <span>{node.title || node.url}</span>
+    </button>
+  );
+}
+
+export function BookmarkBar({ ownerId, onNavigate }: { ownerId: string; onNavigate(url: string): void }) {
+  const { text } = useTranslation();
+  const visible = useBookmarksBarPreference();
+  const [tree, setTree] = useState(readBookmarkTree);
+  const { items, trailingFolders } = bookmarkBarLayout(tree);
+  const itemsRef = useRef<HTMLDivElement>(null);
+  const [overflowStart, setOverflowStart] = useState(items.length);
+  const bookmarkOverflowFolder: BookmarkFolder = {
+    kind: "folder",
+    id: "bookmark-bar-overflow",
+    title: text("All bookmarks", "所有书签"),
+    children: items.slice(overflowStart),
+  };
+
+  useEffect(() => subscribeBookmarks(() => setTree(readBookmarkTree())), []);
+  useEffect(() => {
+    const container = itemsRef.current;
+    if (!container) return;
+    const updateOverflow = () => {
+      const right = container.getBoundingClientRect().right;
+      const children = Array.from(container.children) as HTMLElement[];
+      const firstHidden = children.findIndex(
+        (child) => child.getBoundingClientRect().right > right + 0.5,
+      );
+      setOverflowStart(firstHidden < 0 ? items.length : firstHidden);
+    };
+    updateOverflow();
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [items.length, tree, visible]);
+  if (!visible) return null;
+
+  return (
+    <div className={styles.bookmarkBar} aria-label={text("Bookmarks bar", "书签栏")}>
+      <div ref={itemsRef} className={styles.bookmarkBarItems}>
+        {items.map((node) => node.kind === "folder" ? (
+          <BookmarkFolderButton key={node.id} folder={node} ownerId={ownerId} onNavigate={onNavigate} />
+        ) : (
+          <BookmarkLeafButton key={node.id} node={node} onNavigate={onNavigate} />
+        ))}
+      </div>
+      {trailingFolders.map((folder) => (
+        <BookmarkFolderButton key={folder.id} folder={folder} ownerId={ownerId} onNavigate={onNavigate} />
+      ))}
+      <span className={styles.bookmarkBarMoreSlot}>
+        {overflowStart < items.length ? (
+          <BookmarkFolderButton
+            folder={bookmarkOverflowFolder}
+            ownerId={ownerId}
+            onNavigate={onNavigate}
+            appearance="overflow"
+            label={text("Show hidden bookmarks", "显示隐藏的书签")}
+          />
+        ) : null}
+      </span>
+    </div>
+  );
+}

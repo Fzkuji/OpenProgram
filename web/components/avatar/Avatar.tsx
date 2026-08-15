@@ -205,7 +205,6 @@ export function Avatar({
       return null;
     }
   }, [style, seed]);
-
   const sharedStyle: CSSProperties = {
     width: size,
     height: size,

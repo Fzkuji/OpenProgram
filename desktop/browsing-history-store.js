@@ -127,6 +127,31 @@ function listHistory(filePath, { limit = 200, query = "" } = {}) {
   return matched.slice(0, Number.isFinite(count) && count > 0 ? count : 200);
 }
 
+function importHistoryEntries(filePath, values) {
+  const store = loadHistory(filePath);
+  const existingKeys = new Set(
+    store.entries.map((entry) => `${entry.url}\n${entry.visitedAt}`),
+  );
+  const byVisit = new Map(
+    store.entries.map((entry) => [`${entry.url}\n${entry.visitedAt}`, entry]),
+  );
+  for (const raw of Array.isArray(values) ? values : []) {
+    const entry = normalizeEntry(raw);
+    if (!entry) continue;
+    const key = `${entry.url}\n${entry.visitedAt}`;
+    if (!byVisit.has(key)) byVisit.set(key, entry);
+  }
+  store.entries = [...byVisit.values()]
+    .sort((a, b) => b.visitedAt - a.visitedAt)
+    .slice(0, MAX_ENTRIES);
+  saveHistoryAtomic(filePath, store);
+  const imported = store.entries.reduce(
+    (count, entry) => count + (existingKeys.has(`${entry.url}\n${entry.visitedAt}`) ? 0 : 1),
+    0,
+  );
+  return { imported, total: store.entries.length };
+}
+
 function deleteHistoryEntry(filePath, url, visitedAt) {
   const store = loadHistory(filePath);
   const before = store.entries.length;
@@ -152,6 +177,7 @@ module.exports = {
   saveHistoryAtomic,
   recordVisit,
   listHistory,
+  importHistoryEntries,
   deleteHistoryEntry,
   clearHistory,
 };
@@ -205,11 +231,23 @@ if (require.main === module) {
   );
   assert.strictEqual(listHistory(file, { limit: 1 }).length, 1);
 
+  // Batch import preserves existing visits, deduplicates exact visits, and sorts.
+  assert.deepStrictEqual(importHistoryEntries(file, [
+    { url: "https://imported.test/", title: "Imported", visitedAt: 8 },
+    { url: "https://imported.test/", title: "Duplicate", visitedAt: 8 },
+    { url: "javascript:alert(1)", visitedAt: 9 },
+  ]), { imported: 1, total: 4 });
+  assert.deepStrictEqual(importHistoryEntries(file, [
+    { url: "https://imported.test/", title: "Repeated import", visitedAt: 8 },
+  ]), { imported: 0, total: 4 }, "re-import reports zero actual additions");
+  rows = listHistory(file);
+  assert.strictEqual(rows[0].url, "https://imported.test/");
+
   // Delete targets one visit, not every row sharing the URL.
   assert.strictEqual(deleteHistoryEntry(file, "https://a.test/", 4), true);
   assert.deepStrictEqual(
     listHistory(file).map((row) => row.visitedAt),
-    [3, 2],
+    [8, 3, 2],
   );
   assert.strictEqual(deleteHistoryEntry(file, "https://nope.test/", 1), false);
 

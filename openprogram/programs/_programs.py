@@ -272,15 +272,16 @@ class Program:
                 return True
             root = os.path.dirname(pkg_dir)
             origin = _catalogued_clone_origin(root, self.repo)
-            if origin is None:
-                return False
-            try:
-                record_program_source(
-                    root, source=origin, kind="git-migration",
-                )
-            except (OSError, ValueError):
-                return False
-            return is_owner_controlled_program_path(pkg_dir)
+            if origin is not None:
+                try:
+                    record_program_source(
+                        root, source=origin, kind="git-migration",
+                    )
+                except (OSError, ValueError):
+                    pass
+                else:
+                    if is_owner_controlled_program_path(pkg_dir):
+                        return True
         try:
             return importlib.util.find_spec(self.package) is not None
         except (ImportError, ValueError):

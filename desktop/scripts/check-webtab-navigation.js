@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { EventEmitter } = require("node:events");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
@@ -22,6 +23,53 @@ let menuTemplate = null;
 let nextGeneratedWindowId = 1000;
 let generatedNativeViews = 0;
 const rendererQueue = [];
+const spawnedChildren = [];
+const spawnedPtys = [];
+const clearedStorageRequests = [];
+
+function fakeSpawn() {
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.stdin = {
+    writable: true,
+    writes: [],
+    write(value) { this.writes.push(value); },
+  };
+  child.kills = [];
+  child.kill = (signal) => {
+    child.kills.push(signal);
+    return true;
+  };
+  child.unref = () => {};
+  spawnedChildren.push(child);
+  return child;
+}
+
+function fakePtySpawn(file, args, options) {
+  const process = new EventEmitter();
+  process.pid = 50_000 + spawnedPtys.length;
+  process.file = file;
+  process.args = args;
+  process.options = options;
+  process.writes = [];
+  process.resizes = [];
+  process.kills = [];
+  process.write = (data) => process.writes.push(data);
+  process.resize = (cols, rows) => process.resizes.push([cols, rows]);
+  process.kill = (signal) => process.kills.push(signal);
+  process.onData = (listener) => {
+    process.on("data", listener);
+    return { dispose: () => process.off("data", listener) };
+  };
+  process.onExit = (listener) => {
+    process.on("exit", listener);
+    return { dispose: () => process.off("exit", listener) };
+  };
+  spawnedPtys.push(process);
+  return process;
+}
 
 function flushRendererQueue() {
   let delivered = 0;
@@ -144,6 +192,23 @@ const fakeElectron = {
     handle(channel, handler) { ipcHandlers.set(channel, handler); },
   },
   shell: { openExternal() {} },
+  session: {
+    fromPartition(partition) {
+      assert.equal(partition, "persist:webtabs");
+      return {
+        async clearStorageData(options) {
+          clearedStorageRequests.push(options);
+        },
+      };
+    },
+  },
+};
+
+const processSignals = [];
+const sandboxProcess = Object.create(process);
+sandboxProcess.kill = (pid, signal) => {
+  processSignals.push([pid, signal]);
+  spawnedPtys.find((child) => child.pid === Math.abs(pid))?.kill(signal);
 };
 
 const sandbox = {
@@ -157,12 +222,21 @@ const sandbox = {
   clearTimeout: clock.clearTimeout,
   setInterval: clock.setInterval,
   clearInterval: clock.clearInterval,
-  process,
+  process: sandboxProcess,
   __dirname: path.join(__dirname, ".."),
   __filename: path.join(__dirname, "..", "main.js"),
   require(id) {
     if (id === "electron") return fakeElectron;
     if (id === "http") return fakeHttp;
+    if (id === "child_process") {
+      return {
+        spawn: fakeSpawn,
+        execFileSync: () => spawnedPtys
+          .map((child) => `${child.pid + 1_000} ${child.pid}`)
+          .join("\n"),
+      };
+    }
+    if (id === "node-pty") return { spawn: fakePtySpawn };
     // Relative requires inside main.js resolve against THIS file, not
     // main.js — map the desktop-local modules explicitly.
     if (id.startsWith("./")) return require(path.join(__dirname, "..", id));
@@ -187,6 +261,8 @@ vm.runInContext(
     buildMenu,
     createWindow,
     cleanupWindowContext,
+    clampContextMenuPanel,
+    contextMenuRequestedX,
     ensureView,
     destroyView,
     validateTransferPayload:
@@ -294,7 +370,7 @@ function controlledRecord(id, currentUrl = "", loading = false) {
   let closeCalls = 0;
   let targetCalls = 0;
   let debuggerAttached = false;
-  const nativeCalls = { reload: 0, back: 0, forward: 0 };
+  const nativeCalls = { reload: 0, stop: 0, back: 0, forward: 0 };
   const webContents = {
     getURL: () => currentUrl,
     getTitle: () => id,
@@ -330,6 +406,7 @@ function controlledRecord(id, currentUrl = "", loading = false) {
       goForward() { nativeCalls.forward += 1; },
     },
     reload() { nativeCalls.reload += 1; },
+    stop() { nativeCalls.stop += 1; },
     close() { closeCalls += 1; },
     setWindowOpenHandler() {},
     on() {},
@@ -415,6 +492,44 @@ function checkPreloadWindowIdentity() {
   exposed.webTab.syncVisible(items);
   assert.deepEqual(sent.at(-1), ["webtab:sync-visible", items]);
   assert.deepEqual(invoked, []);
+}
+
+function checkPreloadLocalFilePath() {
+  let exposed = null;
+  const nativeFile = { name: "Project Folder" };
+  const expectedPath = "/Users/test/Project Folder";
+  const preloadSandbox = {
+    CustomEvent: class CustomEvent {},
+    process: { argv: ["electron"] },
+    window: { dispatchEvent() {} },
+    require(id) {
+      if (id !== "electron") return require(id);
+      return {
+        contextBridge: {
+          exposeInMainWorld(_name, value) { exposed = value; },
+        },
+        ipcRenderer: {
+          send() {},
+          invoke() { return Promise.resolve(null); },
+          on() {},
+          removeListener() {},
+        },
+        webUtils: {
+          getPathForFile(file) {
+            assert.equal(file, nativeFile, "preload must pass the original File object");
+            return expectedPath;
+          },
+        },
+      };
+    },
+  };
+  vm.createContext(preloadSandbox);
+  vm.runInContext(preloadSource, preloadSandbox, { filename: "desktop/preload.js" });
+  assert.equal(
+    exposed.getPathForFile(nativeFile),
+    expectedPath,
+    "preload must return Electron's exact native file path",
+  );
 }
 
 function checkPreloadTabTransfer() {
@@ -574,6 +689,8 @@ async function checkLoadView() {
   assert.strictEqual(interrupted.record.navigation.promise, replacement);
   interrupted.controls[1].resolve();
   assert.strictEqual(await replacement, interrupted.record);
+  hooks.runNativeNavigation(ctx, "tab-interrupted", (wc) => wc.stop());
+  assert.equal(interrupted.nativeCalls.stop, 1);
 
   // A stable committed URL uses the zero-navigation path.
   const stable = controlledRecord("tab-stable", "https://example.com/one");
@@ -702,6 +819,7 @@ async function checkSenderOwnership() {
     "https://example.com/blocked",
   );
   ipcListeners.get("webtab:reload")(eventB, "owned-a");
+  ipcListeners.get("webtab:stop")(eventB, "owned-a");
   ipcListeners.get("webtab:go-back")(eventB, "owned-a");
   ipcListeners.get("webtab:go-forward")(eventB, "owned-a");
   ipcListeners.get("webtab:set-bounds")(
@@ -725,7 +843,7 @@ async function checkSenderOwnership() {
   );
   ctxB.views.delete("owned-a");
   assert.deepEqual(a.calls, []);
-  assert.deepEqual(a.nativeCalls, { reload: 0, back: 0, forward: 0 });
+  assert.deepEqual(a.nativeCalls, { reload: 0, stop: 0, back: 0, forward: 0 });
   assert.deepEqual(a.currentBounds(), initialBounds);
   assert.equal(a.visibility.at(-1), true);
   assert.equal(a.closeCallCount(), 0);
@@ -740,6 +858,188 @@ async function checkSenderOwnership() {
   ipcListeners.get("webtab:ensure")(eventB, "fresh-b", "");
   assert.equal(ctxB.views.get("fresh-b").ownerId, ctxB.id);
   assert.equal(ctxA.views.has("fresh-b"), false);
+}
+
+function checkContextMenuEndAlignment() {
+  const anchor = {
+    align: "end",
+    right: 600,
+    x: 0,
+    y: 40,
+    winW: 800,
+    winH: 600,
+  };
+  assert.equal(hooks.contextMenuRequestedX(anchor, 224), 376);
+  assert.equal(hooks.clampContextMenuPanel(anchor, 224, 120).x, 376);
+  assert.equal(
+    hooks.clampContextMenuPanel(anchor, 300, 120).x,
+    300,
+    "a measured width change keeps the context-menu right edge on its trigger",
+  );
+}
+
+async function checkTerminalProcessIdentity() {
+  const start = ipcHandlers.get("terminal:start");
+  const write = ipcListeners.get("terminal:write");
+  const resize = ipcListeners.get("terminal:resize");
+  const stop = ipcListeners.get("terminal:stop");
+  assert.equal(typeof start, "function", "terminal start handler is registered");
+  assert.equal(typeof write, "function", "terminal write handler is registered");
+  assert.equal(typeof resize, "function", "terminal resize handler is registered");
+  assert.equal(typeof stop, "function", "terminal stop handler is registered");
+
+  const unauthorizedSender = new EventEmitter();
+  unauthorizedSender.id = 7000;
+  unauthorizedSender.isDestroyed = () => false;
+  unauthorizedSender.send = () => {};
+  const spawnedBeforeUnauthorized = spawnedPtys.length;
+  const unauthorized = await start({ sender: unauthorizedSender }, {
+    id: "terminal", cwd: transferUserData, preset: "shell", cols: 80, rows: 24,
+  });
+  assert.equal(unauthorized.ok, false);
+  assert.equal(unauthorized.error, "unauthorized_sender");
+  assert.equal(spawnedPtys.length, spawnedBeforeUnauthorized);
+
+  const terminalWindow = fakeWindow(7001);
+  registerContext("terminal-owner", terminalWindow);
+  const sender = terminalWindow.webContents;
+  const senderEvents = new EventEmitter();
+  sender.id = 7001;
+  sender.isDestroyed = () => false;
+  sender.once = senderEvents.once.bind(senderEvents);
+  sender.emit = senderEvents.emit.bind(senderEvents);
+  sender.listenerCount = senderEvents.listenerCount.bind(senderEvents);
+  sender.getURL = () => "http://127.0.0.1:18100/chat";
+  const sent = [];
+  sender.send = (channel, payload) => sent.push([channel, payload]);
+  const event = { sender };
+  const claudeId = "terminal:terminal-owner:claude";
+  const shellId = "terminal:terminal-owner:shell";
+
+  sender.getURL = () => "http://127.0.0.1:18101/chat";
+  const wrongOrigin = await start(event, {
+    id: shellId, cwd: transferUserData, preset: "shell", cols: 80, rows: 24,
+  });
+  assert.equal(wrongOrigin.error, "unauthorized_sender");
+  sender.getURL = () => "http://127.0.0.1:18100/chat";
+
+  const invalid = await start(event, {
+    id: claudeId, cwd: transferUserData, preset: "unknown", cols: 80, rows: 24,
+  });
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.error, "invalid_preset");
+  const invalidId = await start(event, {
+    id: "claude", cwd: transferUserData, preset: "claude", cols: 80, rows: 24,
+  });
+  assert.equal(invalidId.error, "invalid_terminal");
+  assert.equal(
+    (await start(event, { id: claudeId, cwd: transferUserData, preset: "claude", cols: 90, rows: 31 })).ok,
+    true,
+  );
+  const first = spawnedPtys.at(-1);
+  assert.deepEqual(Array.from(first.args), ["-l", "-i", "-c", "exec claude"]);
+  assert.equal(first.options.cwd, fs.realpathSync(transferUserData));
+  assert.equal(first.options.name, "xterm-256color");
+  assert.deepEqual([first.options.cols, first.options.rows], [90, 31]);
+  assert.equal(sender.listenerCount("destroyed"), 1);
+
+  first.emit("data", "Claude Code ready");
+  assert.equal(sent.at(-1)[0], "terminal:data");
+  assert.equal(sent.at(-1)[1].id, claudeId);
+  assert.equal(sent.at(-1)[1].data, "Claude Code ready");
+  assert.equal(
+    (await start(event, { id: claudeId, cwd: transferUserData, preset: "claude", cols: 100, rows: 35 })).reused,
+    true,
+  );
+  assert.strictEqual(spawnedPtys.at(-1), first, "remounting a live terminal must reuse its PTY");
+  assert.deepEqual(first.resizes.at(-1), [100, 35]);
+  assert.equal(sent.at(-1)[1].data, "Claude Code ready", "remount replays buffered output");
+  write(event, claudeId, "hello\r");
+  resize(event, claudeId, 120, 40);
+  assert.deepEqual(first.writes, ["hello\r"]);
+  assert.deepEqual(first.resizes, [[100, 35], [120, 40]]);
+  write(event, claudeId, "你".repeat(22_000));
+  assert.deepEqual(
+    first.writes,
+    ["hello\r"],
+    "terminal input over 64 KiB in UTF-8 bytes must be rejected",
+  );
+  const boundaryInput = "a".repeat(65_536);
+  write(event, claudeId, boundaryInput);
+  assert.equal(first.writes.at(-1), boundaryInput, "exactly 64 KiB remains accepted");
+
+  const timersBeforeReplace = new Set(clock.pendingIds());
+  assert.equal(
+    (await start(event, {
+      id: claudeId,
+      cwd: path.dirname(transferUserData),
+      preset: "claude",
+      cols: 80,
+      rows: 24,
+    })).ok,
+    true,
+  );
+  const second = spawnedPtys.at(-1);
+  const firstKillTimer = clock.pendingIds().find((id) => !timersBeforeReplace.has(id));
+  assert.notEqual(firstKillTimer, undefined);
+  assert.deepEqual(first.kills, ["SIGTERM"]);
+  assert.deepEqual(processSignals.slice(-2), [
+    [-first.pid, "SIGTERM"],
+    [first.pid + 1_000, "SIGTERM"],
+  ]);
+  assert.equal(
+    sender.listenerCount("destroyed"),
+    1,
+    "replacing or remounting terminals must not accumulate sender listeners",
+  );
+  const sentBeforeStale = sent.length;
+  const signalsBeforeFirstExit = processSignals.length;
+  first.emit("data", "stale");
+  first.emit("exit", { exitCode: 0, signal: 0 });
+  assert.equal(sent.length, sentBeforeStale, "replaced PTY cannot write or exit into its successor");
+  assert.equal(
+    clock.pendingIds().includes(firstKillTimer),
+    false,
+    "a PTY that exits after SIGTERM cancels its SIGKILL timer",
+  );
+  clock.runCleared(firstKillTimer);
+  assert.deepEqual(first.kills, ["SIGTERM"]);
+  assert.equal(
+    processSignals.length,
+    signalsBeforeFirstExit,
+    "a cleared escalation callback cannot signal a reused process id",
+  );
+  const timersBeforeStop = new Set(clock.pendingIds());
+  stop(event, claudeId);
+  assert.deepEqual(second.kills, ["SIGTERM"]);
+  const secondKillTimer = clock.pendingIds().find((id) => !timersBeforeStop.has(id));
+  assert.notEqual(secondKillTimer, undefined);
+  clock.runCleared(secondKillTimer);
+  clock.clearTimeout(secondKillTimer);
+  assert.deepEqual(second.kills, ["SIGTERM", "SIGKILL"]);
+  assert.deepEqual(processSignals.slice(-2), [
+    [-second.pid, "SIGKILL"],
+    [second.pid + 1_000, "SIGKILL"],
+  ]);
+  second.emit("exit", { exitCode: 137, signal: 9 });
+
+  await start(event, {
+    id: shellId, cwd: transferUserData, preset: "shell", cols: 80, rows: 24,
+  });
+  const third = spawnedPtys.at(-1);
+  const timersBeforeDestroy = new Set(clock.pendingIds());
+  sender.emit("destroyed");
+  assert.deepEqual(third.kills, ["SIGTERM"], "renderer destruction kills all owned PTYs");
+  const thirdKillTimer = clock.pendingIds().find((id) => !timersBeforeDestroy.has(id));
+  assert.notEqual(thirdKillTimer, undefined);
+  clock.runCleared(thirdKillTimer);
+  clock.clearTimeout(thirdKillTimer);
+  assert.deepEqual(third.kills, ["SIGTERM", "SIGKILL"]);
+  assert.deepEqual(processSignals.slice(-2), [
+    [-third.pid, "SIGKILL"],
+    [third.pid + 1_000, "SIGKILL"],
+  ]);
+  third.emit("exit", { exitCode: 137, signal: 9 });
 }
 
 async function checkFocusedRoutingAndCleanup() {
@@ -1518,6 +1818,7 @@ async function checkLockedRecordsRejectOrdinaryIpc() {
     { x: 999, y: 999, width: 999, height: 999 },
   );
   ipcListeners.get("webtab:reload")(eventFor(destinationWin), "locked-ipc-web");
+  ipcListeners.get("webtab:stop")(eventFor(destinationWin), "locked-ipc-web");
   ipcListeners.get("webtab:go-back")(eventFor(destinationWin), "locked-ipc-web");
   ipcListeners.get("webtab:go-forward")(eventFor(destinationWin), "locked-ipc-web");
   ipcListeners.get("webtab:show")(eventFor(destinationWin), "locked-ipc-web");
@@ -1545,7 +1846,7 @@ async function checkLockedRecordsRejectOrdinaryIpc() {
   assert.equal(sourceCtx.views.has("locked-ipc-web"), false);
   assert.strictEqual(destinationCtx.views.get("locked-ipc-web"), controlled.record);
   assert.deepEqual(controlled.calls, []);
-  assert.deepEqual(controlled.nativeCalls, { reload: 0, back: 0, forward: 0 });
+  assert.deepEqual(controlled.nativeCalls, { reload: 0, stop: 0, back: 0, forward: 0 });
   assert.deepEqual(controlled.currentBounds(), boundsBefore);
   assert.equal(controlled.visibility.length, visibilityCallsBefore);
   assert.equal(controlled.closeCallCount(), 0);
@@ -3386,6 +3687,27 @@ for (const handler of ["cancel", "detach", "deliver"]) {
   assert.match(body, /setTransferHoverTarget\(null\)/,
     `drag end (${handler}) must clear the hover highlight`);
 }
+async function checkBrowserDataClear() {
+  assert.deepEqual(
+    plain(await ipcHandlers.get("browser-data:clear")(
+      { sender: {} },
+      { history: true, cookies: true },
+    )),
+    { ok: false },
+  );
+  const win = fakeWindow(930);
+  const ctx = registerContext("browser-data-window", win);
+  assert.deepEqual(
+    plain(await ipcHandlers.get("browser-data:clear")(
+      { sender: win.webContents },
+      { history: false, cookies: true },
+    )),
+    { ok: true },
+  );
+  assert.deepEqual(clearedStorageRequests.map(plain), [{ storages: ["cookies"] }]);
+  hooks.windows.delete(ctx.id);
+}
+
 assert.match(preloadSource, /onTransferHover/, "preload must expose onTransferHover");
 assert.match(preloadSource, /"tab-transfer:hover-enter"[\s\S]*?"tab-transfer:hover-leave"/,
   "preload onTransferHover must subscribe both hover channels");
@@ -3505,8 +3827,11 @@ Promise.all([
 ])
   .then(async () => {
     checkPreloadWindowIdentity();
+    checkPreloadLocalFilePath();
     checkPreloadTabTransfer();
+    checkContextMenuEndAlignment();
     await checkSenderOwnership();
+    await checkTerminalProcessIdentity();
     await checkFocusedRoutingAndCleanup();
     assertTransferApiRegistered();
     await checkTransferPreparationValidationAndAuthorization();
@@ -3523,6 +3848,7 @@ Promise.all([
     await checkOrphanFinalizationPendingTerminalAndWindowClose();
     await checkCrossWindowHoverCue();
     await checkCrossWindowHoverZOrder();
+    await checkBrowserDataClear();
     assert.equal(rendererQueue.length, 0, "all fake renderer deliveries must be flushed");
     console.log("webtab navigation checks passed");
   })

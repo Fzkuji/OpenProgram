@@ -233,7 +233,9 @@ def _memory_edit(root, path: str) -> int:
         return 0
 
     ok, message = staged_edit(
-        root, lambda stage: (stage / relative).write_text(edited, encoding="utf-8")
+        root,
+        lambda stage: (stage / relative).write_text(edited, encoding="utf-8"),
+        commit_message=f"memory: edit {relative}",
     )
     if not ok:
         print(f"Rejected: {message}")
@@ -241,6 +243,8 @@ def _memory_edit(root, path: str) -> int:
         return 1
     shutil.rmtree(scratch, ignore_errors=True)
     print(f"{relative} validated and derived views rebuilt")
+    if message:
+        print(f"Warning: {message}")
     return 0
 
 

@@ -9,10 +9,13 @@ from urllib.parse import unquote
 
 from ..markdown import (
     BLOCK_ID_LENGTH,
+    MEMORY_ID,
     definition_match,
+    paragraph_spans,
     parse_topic_tree,
     render_definition,
 )
+from ..markdown.syntax import BLOCK_SUFFIX, BLOCK_TARGET_ID, SINGLE_CITATION
 
 # Footnote labels the writer supplies, e.g. [^e1]. Stable IDs the Runtime
 # assigns look like e-1f4c7a2b90, so the digit-only suffix separates them.
@@ -23,6 +26,47 @@ CITATION = re.compile(r"\[\^([A-Za-z0-9_-]+)\]")
 
 def _is_local_label(value: str) -> bool:
     return bool(LOCAL_EVIDENCE_LABEL.fullmatch(value))
+
+
+def prune_empty_topic_file(path: Path) -> None:
+    """Remove record-free sections and delete a Topic with no records."""
+    if not path.is_file():
+        return
+    lines = path.read_text(encoding="utf-8").splitlines()
+    defined = {
+        match.group("id")
+        for line in lines
+        if (match := definition_match(line))
+    }
+    record_paths: list[tuple[str, ...]] = []
+    referenced: set[str] = set()
+    for start, end, headings in paragraph_spans(lines):
+        paragraph = "\n".join(lines[start:end])
+        citations = set(SINGLE_CITATION.findall(paragraph))
+        if BLOCK_SUFFIX.search(paragraph) or citations & defined:
+            record_paths.append(headings)
+            referenced.update(citations)
+    if not record_paths:
+        path.unlink()
+        return
+    kept: list[str] = []
+    active = True
+    headings: list[str] = []
+    for line in lines:
+        match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
+        if match:
+            level = len(match.group(1))
+            headings = headings[: level - 1] + [match.group(2)]
+            current = tuple(headings)
+            active = any(
+                record[: len(current)] == current for record in record_paths
+            )
+        definition = definition_match(line)
+        if active or (
+            definition is not None and definition.group("id") in referenced
+        ):
+            kept.append(line)
+    path.write_text("\n".join(kept).rstrip() + "\n", encoding="utf-8")
 
 
 class TopicNormalizationMixin:
@@ -53,41 +97,10 @@ class TopicNormalizationMixin:
 
     @staticmethod
     def _paragraph_spans(text: str) -> list[tuple[int, int]]:
-        """Line ranges of prose paragraphs, as [start, end) index pairs.
-
-        Headings, fenced code, footnote definitions, HTML anchors, and blank
-        runs are not paragraphs. The writer no longer supplies block IDs, so
-        this is how a paragraph needing one gets found.
-        """
-        lines = text.splitlines()
-        spans: list[tuple[int, int]] = []
-        start: int | None = None
-        fenced = False
-        for index, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith("```") or stripped.startswith("~~~"):
-                fenced = not fenced
-                if start is not None:
-                    spans.append((start, index))
-                    start = None
-                continue
-            breaks = (
-                fenced
-                or not stripped
-                or stripped.startswith("#")
-                or stripped.startswith("<")
-                or definition_match(line) is not None
-                or re.match(r"^\[\^[A-Za-z0-9_-]+\]:", stripped) is not None
-            )
-            if breaks:
-                if start is not None:
-                    spans.append((start, index))
-                    start = None
-            elif start is None:
-                start = index
-        if start is not None:
-            spans.append((start, len(lines)))
-        return spans
+        return [
+            (start, end)
+            for start, end, _headings in paragraph_spans(text.splitlines())
+        ]
 
     def _normalize_topic_edits(self, existing_block_ids: set[str]) -> None:
         # Callers that need to report assigned IDs read these afterwards.
@@ -206,6 +219,11 @@ class TopicNormalizationMixin:
                 # carry no footnote and stay unidentified.
                 if not body or "[^" not in body:
                     continue
+                citation_ids = CITATION.findall(body)
+                if citation_ids and all(
+                    re.fullmatch(MEMORY_ID, value) for value in citation_ids
+                ):
+                    continue
                 assigned.setdefault(path, {})[end - 1] = (
                     self._stable_local_id(
                         f"block|{path.name}|{body}", used_blocks
@@ -282,6 +300,8 @@ class TopicNormalizationMixin:
             normalized = "\n".join(rendered).rstrip() + "\n"
             if normalized != on_disk[path]:
                 path.write_text(normalized, encoding="utf-8")
+        for path in sorted(topics.rglob("*.md")):
+            prune_empty_topic_file(path)
 
     def _validate_topic_contract(
         self,
@@ -331,7 +351,7 @@ class TopicNormalizationMixin:
                     and ".." not in relative.parts
                     and (
                         not separator
-                        or re.fullmatch(r"\^[A-Za-z0-9-]+", fragment) is None
+                        or re.fullmatch(rf"\^{BLOCK_TARGET_ID}", fragment) is None
                     )
                 ):
                     raise ValueError(

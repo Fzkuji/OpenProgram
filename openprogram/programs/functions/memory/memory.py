@@ -54,11 +54,10 @@ def _root():
 
 
 def _fail(exc: TransactionError) -> str:
-    return json.dumps(
-        {"ok": False, "error": {"code": exc.code, "message": exc.message,
-                                "path": exc.path}},
-        ensure_ascii=False,
-    )
+    error = {"code": exc.code, "message": exc.message, "path": exc.path}
+    if exc.details:
+        error["details"] = exc.details
+    return json.dumps({"ok": False, "error": error}, ensure_ascii=False)
 
 
 def _dump(payload: dict[str, Any]) -> str:
@@ -294,8 +293,10 @@ UPDATE_DESC = (
     "Conversation is written up in "
     "the background, so use this only for what the user asked you to "
     "remember right now, or to fix something you can see is wrong. "
-    "Send a unified diff over topics/**/*.md, with the "
-    "revision you read from `memory_status`."
+    "Use record-level memory_changes when one or more final memory records "
+    "are known. The Runtime creates, updates, deletes or moves Topic records "
+    "and rebuilds derived views. Structured whole-file changes and the older "
+    "unified-diff patch form remain accepted for direct Markdown edits."
 )
 UPDATE_SPEC: dict[str, Any] = {
     "name": UPDATE_NAME,
@@ -305,6 +306,71 @@ UPDATE_SPEC: dict[str, Any] = {
         "properties": {
             "base_revision": {"type": "string"},
             "patch": {"type": "string", "description": "unified diff"},
+            "changes": {
+                "type": "array",
+                "description": "atomic whole-file writes and deletes",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "action": {"type": "string", "enum": ["write", "delete"]},
+                        "content": {"type": "string"},
+                    },
+                    "required": ["path", "action"],
+                    "additionalProperties": False,
+                },
+            },
+            "memory_changes": {
+                "type": "array",
+                "description": "atomic final-record CRUD and structural move",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "op": {
+                            "type": "string",
+                            "enum": [
+                                "create_record",
+                                "update_record",
+                                "delete_record",
+                                "move_records",
+                            ],
+                        },
+                        "memory_id": {"type": "string"},
+                        "memory_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "destination": {
+                            "type": "object",
+                            "properties": {
+                                "topic_path": {"type": "string"},
+                                "headings": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                                "position": {
+                                    "type": "string",
+                                    "enum": ["start", "end", "before", "after"],
+                                },
+                                "anchor_memory_id": {"type": "string"},
+                            },
+                            "required": ["topic_path", "headings", "position"],
+                            "additionalProperties": False,
+                        },
+                        "content": {"type": "string"},
+                        "time": {
+                            "type": "string",
+                            "description": "YYYY, YYYY-MM, YYYY-MM-DD, or undated",
+                        },
+                        "source_refs": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": ["op"],
+                    "additionalProperties": False,
+                },
+            },
             "sources": {
                 "type": "array",
                 "description": "quoted statements the edit rests on",
@@ -320,12 +386,16 @@ UPDATE_SPEC: dict[str, Any] = {
 def memory_update(
     base_revision: str | None = None,
     patch: str | None = None,
+    changes: list[dict[str, Any]] | None = None,
+    memory_changes: list[dict[str, Any]] | None = None,
     sources: list[dict[str, Any]] | None = None,
     commit_message: str | None = None,
     **_: Any,
 ) -> str:
-    if not (base_revision or "").strip() or not (patch or "").strip():
-        return "memory_update needs base_revision and a patch."
+    if not (base_revision or "").strip():
+        return _fail(TransactionError(
+            "INVALID_ARGUMENT", "base_revision is required"
+        ))
     try:
         # The workspace stages a copy of memory under the temp directory;
         # dropped without closing, one copy is left behind per call.
@@ -350,6 +420,8 @@ def memory_update(
             result = space.update(
                 base_revision=base_revision,
                 patch=patch or "",
+                changes=changes,
+                memory_changes=memory_changes,
                 sources=sources,
                 commit_message=commit_message,
                 provenance=provenance,
@@ -362,8 +434,13 @@ def memory_update(
     return _dump({
         "ok": True,
         "revision": result.revision,
+        "source_ids": result.source_ids,
         "block_ids": result.block_ids,
+        "evidence_ids": result.evidence_ids,
         "changed_files": result.changed_files,
+        "memory_committed": result.memory_committed,
+        "git_committed": result.git_committed,
+        "git_commit": result.git_commit,
     })
 
 
@@ -591,8 +668,8 @@ STATUS_SPEC: dict[str, Any] = {
 
 
 def memory_status(**_: Any) -> str:
-    root = _root()
     try:
+        root = _root()
         return _dump(inspect.status(root))
     except TransactionError as exc:
         return _fail(exc)

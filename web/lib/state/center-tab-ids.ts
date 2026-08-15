@@ -5,15 +5,20 @@
  * one has no zustand / store coupling.
  */
 
-/** Built-in pages that live in the center as their own tab (Chrome's
- *  chrome://bookmarks / chrome://history). One tab per page, ever. */
-export type BuiltinPage = "bookmarks" | "history";
+/** Built-in pages that live in the center as their own tab. Files, bookmarks,
+ *  history, and terminal are singletons; Browser home is pane-local. */
+export type BuiltinPage = "files" | "browser" | "bookmarks" | "history" | "terminal" | "claude";
 
 /** New-tab 页不再是单例（Chrome 行为：＋ 想开几个开几个），每个实例一个
  *  唯一 id。时间戳 + 自增序号，避免与持久化恢复的旧 id 撞车。 */
 let ntpSeq = 0;
 export function nextNtpId(): string {
   return `ntp:${Date.now().toString(36)}:${(ntpSeq++).toString(36)}`;
+}
+
+let browserHomeSeq = 0;
+export function nextBrowserHomeId(): string {
+  return `browser:${Date.now().toString(36)}:${(browserHomeSeq++).toString(36)}`;
 }
 
 export function nextDraftSessionId(): string {

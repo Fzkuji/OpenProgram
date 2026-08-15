@@ -55,31 +55,22 @@
      and first paint fell back to Times before the script caught up. */
   --font-sans: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif;
 
-  /* Accent colors (shared)
-     ---------------------------------------------------------------
-     ``--accent-orange`` is the canonical "primary action" colour —
-     Claude's coral, same value in both themes. All buttons / active
-     states / focus rings / links that used to be blue resolve here
-     now. The historical ``--accent-blue`` token is kept as an alias
-     so the 300+ existing references update in one place; new code
-     should prefer ``--accent-orange`` directly. Blue is no longer a
-     UI colour in this product — only used informationally in chrome
-     (file paths, hashes) where it survives via the alias.
-     --------------------------------------------------------------- */
-  --accent-orange: #d97757;
-  /* Coral as a FILL (primary buttons, avatar chips). Same value in
-     both themes — light mode darkens ``--accent-orange`` for
-     text-contrast, but a solid coral tile with white text on top
-     keeps the brand-bright fill. */
-  --accent-fill: #d97757;
-  --accent-orange-hover: #c86a4a; /* hover/pressed state of the coral fill */
-  --accent-blue: var(--accent-orange);
+  /* Theme-owned primary colour family. The accent-orange names are legacy
+     Custom CSS entry points, so keep them writable and derive semantic roles
+     from them. Neutral themes use blue, warm themes coral, Aurora teal. */
+  --accent-orange: #6ea8fe;
+  --accent-fill: #3b82f6;
+  --accent-orange-hover: #2563eb;
+  --theme-accent: var(--accent-orange);
+  --theme-accent-fill: var(--accent-fill);
+  --theme-accent-fill-hover: var(--accent-orange-hover);
+  --accent-blue: var(--theme-accent);
   --accent-green: #6e9b76;
   --accent-red: #c24e42;
   --accent-yellow: #d4a346;
   --accent-purple: #a371f7;
   --accent-cyan: #3bc9db;
-  accent-color: var(--accent-orange); /* native checkbox/radio tint */
+  accent-color: var(--theme-accent); /* native checkbox/radio tint */
 
   /* ===== Composer / fn-form geometry tokens ============================
      The chat input wrapper, its corner buttons (send / stop / close /
@@ -132,7 +123,7 @@
   --fs-lg: 20px;
 }
 
-/* :root 兜底 —— 取值等同 beige-dark（产品默认外观）。
+/* :root 兜底 —— 表面取值等同 beige-dark，主色使用 neutral blue。
    具名主题全部搬到 app/styles/themes/ 下，由 globals.css import；
    这里留一份完整取值，是为了 data-theme 是未知值（用户自定义主题
    片段没写全、或存量 localStorage 里的旧值）时页面仍然画得出来。 */
@@ -170,8 +161,8 @@
   /* Collapsed `off` effort-pill chip. Solid, a step above --bg-input
      so it reads as a distinct chip on the dark composer. */
   --effort-off-bg: #3a3a38;
-  /* Text colour on coral primary buttons — Claude uses white-on-coral
-     in both themes. */
+  /* Text colour on filled primary buttons. Aurora overrides this for its
+     lighter teal fill. */
   --primary-foreground: #ffffff;
   /* Soft danger-tier accents — used for the permission chip + menu so
      the tier colour reads calm (a step lighter than the base
@@ -187,7 +178,7 @@
 
   /* ===== Phase 2 语义 token（原本散在各 CSS 里的硬编码色） ===== */
   --selection-bg: color-mix(in srgb, var(--accent-orange) 25%, transparent);
-  --focus-ring: color-mix(in srgb, var(--accent-orange) 50%, transparent);
+  --focus-ring: color-mix(in srgb, var(--text-bright) 50%, transparent);
   /* 全屏/图片遮罩。深色主题下就是黑纱。 */
   --scrim: rgba(0, 0, 0, 0.55);
   --scrim-strong: rgba(0, 0, 0, 0.75);
@@ -197,12 +188,18 @@
   /* 输入框（composer）外圈发丝线，常态 / 聚焦。 */
   --composer-ring: rgba(255, 255, 255, 0.08);
   --composer-ring-focus: rgba(255, 255, 255, 0.14);
+  --composer-surface: var(--bg-input);
+  --composer-backdrop-filter: none;
+  --composer-shadow: 0 0 0 1px var(--composer-ring);
+  --composer-shadow-focus: 0 0 0 1px var(--composer-ring-focus);
   /* 环境 pill 芯片底 + 描边。 */
   --chip-bg: var(--bg-tertiary);
   --chip-ring: var(--border-light);
-  /* 用量条（context breakdown）：蓝色刻意区别于珊瑚色动作色。 */
+  /* 用量条（context breakdown）保持信息蓝，不跟随主题主色。 */
   --meter-fill: #5b9cf8;
   --meter-track: rgba(255, 255, 255, 0.08);
+  --provider-icon-bg: var(--bg-tertiary);
+  --dag-ghost: #57564f;
 }
 
 html, body {
@@ -300,17 +297,32 @@ button, input, select, textarea, optgroup {
 /* ===== Shared Claude-style primitives ===== */
 /* Warm coral-tinted text selection, readable in both themes. */
 ::selection { background: var(--selection-bg); }
-/* Keyboard focus ring — coral at low alpha instead of the browser
-   blue. :focus-visible only, so mouse clicks stay ring-free.
-   Component rules with their own focus styling override this. */
+/* Keyboard focus for fields and top-level navigation uses each theme's
+   --focus-ring. Mouse focus does not match :focus-visible. */
 :focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+/* Buttons never draw an outer focus halo. Top tabs are the sole exception and
+   use role="tab", so they keep their theme-owned focus treatment. Clearing the
+   Tailwind ring variables also covers components that use focus:ring-* while
+   preserving their ordinary non-focus shadow. */
+button:focus:not([role="tab"]),
+[role="button"]:focus {
+  outline: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  --tw-inset-ring-shadow: 0 0 #0000 !important;
+}
+button:focus-visible:not([role="tab"]),
+[role="button"]:focus-visible {
+  box-shadow: none !important;
+  filter: brightness(1.08);
+}
 /* Popover / dropdown / menu panels receive programmatic focus when they
    open (Radix moves focus into the panel). That's not keyboard navigation,
-   so the coral focus ring above must not paint a ring around the whole
-   floating panel — it read as a stray orange border. Radix wraps every
+   so the focus ring above must not paint a ring around the whole
+   floating panel. Radix wraps every
    popover/dropdown in [data-radix-popper-content-wrapper]; suppress the
    ring on the wrapper and on any panel it contains. */
 [data-radix-popper-content-wrapper] :focus-visible,
@@ -321,8 +333,8 @@ button, input, select, textarea, optgroup {
 }
 /* SearchInput draws its own focus on the wrapping container
    (focus-within → accent-blue border), so the inner <input> must not
-   also paint the coral :focus-visible ring — that stacked a second,
-   offset orange outline outside the container. */
+   also paint the global :focus-visible ring — that would stack a second
+   outline outside the container. */
 .search-input-field:focus-visible {
   outline: none;
 }
@@ -377,6 +389,9 @@ button, input, select, textarea, optgroup {
   flex: 0 0 auto;
   min-width: 360px;
   min-height: 0;
+}
+.center-split-primary.center-pane-chat {
+  flex: 0 0 auto;
 }
 .center-split-divider {
   width: 6px;

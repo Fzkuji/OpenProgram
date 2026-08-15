@@ -315,6 +315,15 @@ def test_desktop_runtime_removes_absolute_python_aliases() -> None:
     assert 'unlink "$python_alias"' in staging
 
 
+def test_release_frontend_staging_removes_stale_export_before_build() -> None:
+    staging = (ROOT / "scripts" / "stage-release-assets.sh").read_text(
+        encoding="utf-8"
+    )
+    cleanup = staging.index('rm -rf "$source_dir"')
+    build = staging.index('npm run build --prefix "$web_dir"')
+    assert cleanup < build
+
+
 def test_product_runtime_installs_complete_default_capabilities() -> None:
     staging = (ROOT / "scripts" / "build-product-runtime.sh").read_text(
         encoding="utf-8"

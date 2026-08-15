@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
  * engine → drop actions → menu state/actions → menu panel → lifecycle →
  * tab items. Slice sentinels used by the assertions (onPrepareDrag,
  * onPointerDragMove, onPointerDragUp, targetBeforeId, applyDrop,
- * moveGroupByKeyboard, onTabListKeyDown, onTabListWheel, moveMenuTab,
+ * onTabListKeyDown, onTabListWheel, moveMenuTab,
  * onTabClick, onOpenNewTab, finishClose, labelOf, CompoundTabItem,
  * TabItem) keep their relative order under this concatenation.
  */

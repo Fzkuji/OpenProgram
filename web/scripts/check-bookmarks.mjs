@@ -9,13 +9,15 @@ const sourcePath = new URL("../lib/bookmarks.ts", import.meta.url);
 const sessionStorePath = new URL("../lib/session-store/index.ts", import.meta.url);
 const navigationPath = new URL("../lib/bookmark-navigation.ts", import.meta.url);
 const webTabPath = new URL("../components/center-tabs/web-tab-pane.tsx", import.meta.url);
-const newTabPath = new URL("../components/center-tabs/new-tab-page.tsx", import.meta.url);
+const browserHomePath = new URL("../components/center-tabs/browser-home-page.tsx", import.meta.url);
 // Bookmarks + web history are CENTER TABS now, opened from the main
 // menu — not right-sidebar views. These paths are the new landing spot;
 // the assertions below are the same guard ("the feature exists and is
 // reachable") pointed at it.
 const managerPath = new URL("../components/center-tabs/builtin-tab-pane.tsx", import.meta.url);
 const mainMenuPath = new URL("../components/center-tabs/main-menu.tsx", import.meta.url);
+const browserControlsPath = new URL("../components/center-tabs/browser-controls.tsx", import.meta.url);
+const contextMenuOverlayPath = new URL("../app/menu-overlay/context-menu/page.tsx", import.meta.url);
 // The strip is split across center-tab-strip.tsx and its submodules;
 // readCenterTabStripSource concatenates them in source order.
 const appShellPath = new URL("../components/app-shell.tsx", import.meta.url);
@@ -50,9 +52,15 @@ assert.match(packageJson.scripts?.check || "", /check:bookmarks/);
 const source = readFileSync(sourcePath, "utf8");
 const sessionStore = readFileSync(sessionStorePath, "utf8");
 const webTab = readFileSync(webTabPath, "utf8");
-const newTab = readFileSync(newTabPath, "utf8");
+const browserHome = readFileSync(browserHomePath, "utf8");
 const manager = readFileSync(managerPath, "utf8");
+const centerTabsCss = readFileSync(
+  new URL("../components/center-tabs/center-tabs.module.css", import.meta.url),
+  "utf8",
+);
 const mainMenu = readFileSync(mainMenuPath, "utf8");
+const browserControls = readFileSync(browserControlsPath, "utf8");
+const contextMenuOverlay = readFileSync(contextMenuOverlayPath, "utf8");
 const strip = readCenterTabStripSource(import.meta.url);
 const appShell = readFileSync(appShellPath, "utf8");
 const tabsStore = readFileSync(tabsStorePath, "utf8");
@@ -62,8 +70,7 @@ const rightDockCss = readRightDockCss(new URL("../", import.meta.url));
 assert.match(webTab, /function BookmarkButton/);
 assert.match(webTab, /toggleBookmark\(\{ url, title \}\)/);
 assert.match(webTab, /<BookmarkButton url=\{effectiveUrl\} title=\{title \|\| effectiveUrl\} \/>/);
-assert.match(newTab, /readBookmarks/);
-assert.match(newTab, /removeBookmark/);
+assert.doesNotMatch(browserHome, /readBookmarks|removeBookmark|subscribeBookmarks/);
 // The right dock no longer has a bookmarks view; a stale persisted
 // "bookmarks" value must fall back rather than restore a dead view.
 assert.doesNotMatch(
@@ -73,66 +80,127 @@ assert.doesNotMatch(
 );
 for (const [name, text] of [
   ["web-tab-pane.tsx", webTab],
-  ["new-tab-page.tsx", newTab],
   ["builtin-tab-pane.tsx", manager],
 ]) {
   assert.match(text, /subscribeBookmarks\(refresh\)/, `${name} must use shared bookmark subscription`);
 }
-// The manager is a folder TREE now: search matches a node by its own
-// title/url and keeps the folders leading to a hit, rows nest by depth,
-// and every folder operation is reachable from the page.
+assert.match(browserHome, /importBookmarkTree/, "browser import must write the source tree");
+// Bookmark-bar folder menus retain the imported hierarchy instead of
+// flattening every descendant into a long path label. Both the web fallback
+// and desktop top-layer overlay use a bounded 280px panel with truncated
+// labels and real cascading submenus.
+assert.doesNotMatch(browserControls, /bookmarkMenuEntries/,
+  "bookmark-bar menus must not flatten nested folders into path strings");
+assert.match(browserControls, /children:\s*node\.children\.length[\s\S]*?folderItems\(node, ownerId, rootFolderId\)/,
+  "desktop bookmark folder items must keep recursive children");
+assert.match(browserControls, /<DropdownMenuSub key=\{node\.id\}>/,
+  "web bookmark folder menus must render nested submenus");
+assert.match(browserControls, /width:\s*280/,
+  "desktop bookmark folder menus must request a finite width");
+assert.match(browserControls, /w-\[280px\][^"`]*max-w-\[calc\(100vw-16px\)\]/,
+  "web bookmark folder menus must stay inside a bounded panel");
+assert.match(contextMenuOverlay, /children\?: ContextMenuItem\[\]/,
+  "desktop context-menu payload must support nested folder items");
+assert.match(contextMenuOverlay, /<DropdownMenuPrimitive\.Sub>/,
+  "desktop bookmark folders must open cascading submenus");
+assert.match(contextMenuOverlay, /min-w-0 flex-1 truncate/,
+  "desktop bookmark titles must truncate instead of widening the menu");
+assert.match(contextMenuOverlay, /data-\[highlighted\]:bg-bg-hover/,
+  "desktop nested bookmark rows need a visible keyboard highlight");
+assert.match(browserControls, /data-\[highlighted\]:bg-bg-hover/,
+  "web nested bookmark rows need a visible keyboard highlight");
+assert.match(contextMenuOverlay, /width: requestedWidth \|\| "max-content"/,
+  "desktop context-menu overlay must honor a caller-supplied finite width");
+// Chrome-style manager: folders stay in the navigation tree while the
+// content pane shows the selected folder or flattened search results.
 assert.match(manager, /node\.title\.toLowerCase\(\)\.includes\(needle\)/);
 assert.match(manager, /node\.url\.toLowerCase\(\)\.includes\(needle\)/);
 assert.match(manager, /function matchesQuery/, "search must recurse into folders");
 assert.match(manager, /readBookmarkTree/, "manager must read the tree, not the flat list");
 assert.match(manager, /renameNode\(id,\s*draftTitle\)/);
 assert.match(manager, /deleteNode\(node\.id\)/);
-assert.match(manager, /createFolder\(newFolderLabel\)/, "new-folder button missing");
+assert.match(manager, /createFolder\(newFolderLabel,\s*selectedFolder\.id\)/, "new-folder action missing");
 assert.match(manager, /moveNode\(dragId,\s*parentId\)/, "drag-to-move missing");
 assert.match(manager, /openWebTab\(node\.url\)/);
-assert.match(manager, /renderChildren\(node,\s*depth \+ 1\)/, "folders must render children");
-// Dropping on the list background moves a node back out to the root.
-assert.match(manager, /handleDrop\(BOOKMARKS_ROOT_ID\)/);
+assert.match(manager, /childFolders\.map\(\(child\) => renderFolder\(child, depth \+ 1\)\)/,
+  "folder navigation must recurse through child folders");
+assert.match(manager, /handleDrop\(selectedFolder\.id\)/,
+  "dropping on the content background must target the selected folder");
 // Between-row drop zones reorder among siblings (moveNode with an index),
 // on top of the existing drop-INTO-a-folder path.
 assert.match(manager, /function handleReorderDrop/, "sibling reorder handler missing");
 assert.match(manager, /moveNode\(dragId,\s*parentId,\s*from >= 0 && from < index \? index - 1 : index\)/,
   "reorder must compensate for the node being spliced out before re-insertion");
 assert.match(manager, /function dropZone/, "between-row drop zones missing");
-assert.match(manager, /className="bookmark-drop-zone"/, "insertion line needs its own class");
+assert.match(manager, /className=\{styles\.bookmarkManagerDropZone\}/, "insertion line needs its own class");
 assert.match(manager, /handleReorderDrop\(parentId,\s*index\)/);
 // The zone marks itself with the same attribute the row highlight uses.
 assert.match(manager, /data-drop-target=\{active \? "true" : undefined\}/);
-// A zone before every row plus one after the last: every slot reachable.
-assert.match(manager, /function renderChildren/, "sibling lists must render drop zones");
-assert.match(manager, /dropZone\(parent\.id,\s*parent\.children\.length,\s*depth\)/,
+// A zone before every row plus one after the last makes every slot reachable.
+assert.match(manager, /visibleNodes\.forEach\(\(node, index\) =>/);
+assert.match(manager, /dropZone\(selectedFolder\.id,\s*selectedFolder\.children\.length\)/,
   "the trailing zone (append to end) is missing");
 // Zones index the unfiltered children, so they are suppressed during a
 // search — otherwise a visible gap would point at the wrong slot.
-assert.match(manager, /if \(!needle\) \{\n\s*out\.push\(/, "drop zones must be hidden while searching");
-assert.match(manager, /if \(!needle && out\.length > 0\)/, "the trailing zone must be hidden too");
+assert.match(manager, /if \(!needle\) \{\n\s*contentRows\.push\(/, "drop zones must be hidden while searching");
+assert.match(manager, /if \(!needle && visibleNodes\.length > 0\)/, "the trailing zone must be hidden too");
 // The insertion line must be styled, not invisible.
-assert.match(rightDockCss, /\.bookmark-drop-zone\b/, "drop zone has no styling");
+assert.match(centerTabsCss, /\.bookmarkManagerDropZone\b/, "drop zone has no styling");
 assert.match(
-  rightDockCss,
-  /\.bookmark-drop-zone\[data-drop-target="true"\]/,
+  centerTabsCss,
+  /\.bookmarkManagerDropZone\[data-drop-target="true"\]/,
   "the active insertion line must be visually distinct",
 );
 assert.match(manager, /text\("No bookmarks yet",\s*"还没有书签"\)/);
 assert.match(manager, /text\("No matching bookmarks",\s*"没有匹配的书签"\)/);
-// Icons: animated-icons first, lucide static second, never emoji.
-assert.match(manager, /FolderPlusIcon/, "new-folder button must use the animated icon");
+// The manager follows Chrome's information architecture: one fixed header,
+// a folder-only navigation tree, and the selected folder's direct children.
+assert.match(manager, /className=\{styles\.bookmarkManager\}/);
+assert.match(manager, /className=\{styles\.bookmarkFolderTree\}/);
+assert.match(manager, /className=\{styles\.bookmarkContentList\}/);
+assert.match(manager, /const \[selectedFolderId, setSelectedFolderId\]/);
+assert.match(manager, /findNode\(tree, selectedFolderId\)/);
+assert.match(manager, /createFolder\(newFolderLabel, selectedFolder\.id\)/);
+assert.match(manager, /DropdownMenuTrigger asChild/);
+assert.match(manager, /MoreVertical/, "Chrome-style row and page menus need one overflow glyph");
+assert.doesNotMatch(manager, /\bPencil\b/,
+  "rename must live in the overflow menu instead of crowding every row");
+assert.match(centerTabsCss, /\.bookmarkManagerBody\s*\{[^}]*grid-template-columns:\s*240px minmax\(0, 1fr\)/s);
+assert.match(centerTabsCss, /\.bookmarkFolderSelected\s*\{/);
+assert.match(centerTabsCss, /@container bookmark-manager \(max-width:\s*700px\)/);
+assert.match(
+  centerTabsCss,
+  /\.bookmarkManager\s*\{[^}]*--bookmark-manager-header-h:\s*52px;[^}]*--bookmark-manager-row-h:\s*36px;[^}]*--bookmark-manager-action-size:\s*28px;/s,
+  "bookmark manager must define one compact header and row scale",
+);
+assert.match(
+  centerTabsCss,
+  /\.bookmarkFolderRow\s*\{[^}]*height:\s*var\(--bookmark-manager-row-h\);/s,
+  "folder rows must use the shared bookmark row height",
+);
+assert.match(
+  centerTabsCss,
+  /\.bookmarkContentRow\s*\{[^}]*height:\s*var\(--bookmark-manager-row-h\);/s,
+  "content rows must use the same bookmark row height",
+);
+assert.match(
+  centerTabsCss,
+  /\.bookmarkManagerContent\s*\{[^}]*padding:\s*16px clamp\(12px, 3vw, 36px\) 28px;/s,
+  "content pane must keep the compact 16px first-screen inset",
+);
 assert.doesNotMatch(
   manager,
   /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u,
   "builtin-tab-pane must not use emoji",
 );
 
-// ---- Reachability: main menu → builtin center tab -------------------
-// The two library pages must stay openable. The menu is the entry
-// point, the store action is the singleton, the shell renders it.
-assert.match(mainMenu, /openBuiltinTab\("bookmarks"\)/, "main menu must open bookmarks");
-assert.match(mainMenu, /openBuiltinTab\("history"\)/, "main menu must open web history");
+// ---- Reachability: Browser menu → builtin center tab ----------------
+// Browser-specific library pages stay inside browser chrome; the global
+// window menu remains limited to app/window actions.
+assert.match(browserControls, /openBuiltinTab\("bookmarks"\)/, "browser menu must open bookmarks");
+assert.match(browserControls, /openBuiltinTab\("history"\)/, "browser menu must open web history");
+assert.doesNotMatch(mainMenu, /openBuiltinTab\("bookmarks"\)|openBuiltinTab\("history"\)/,
+  "the global menu must not duplicate browser-only library actions");
 assert.match(mainMenu, /router\.push\("\/settings"\)/, "main menu must reach settings");
 assert.match(mainMenu, /openNewTabPage\(\)/, "main menu must open a new tab");
 // Flat menu — no submenus, by design.
@@ -154,8 +222,8 @@ assert.doesNotMatch(strip, /data-plus-rail-aligned/, "the + must no longer be pi
 assert.match(tabIds, /export function builtinTabId\(page: BuiltinPage\): string \{\s*return `b:\$\{page\}`;/);
 assert.match(
   tabsStore,
-  /openBuiltinTab: \(page\) =>\s*set\(\(s\) =>\s*focusOrCreate\(\s*s,\s*builtinTabId\(page\)/,
-  "openBuiltinTab must go through focusOrCreate so each page has one tab",
+  /const id = page === "browser" \? nextBrowserHomeId\(\) : builtinTabId\(page\)/,
+  "Browser home must be pane-local while other built-ins keep singleton ids",
 );
 // Builtin tabs render in the center, so they work on chat routes.
 assert.match(appShell, /tab\.kind === "builtin" && tab\.page/);
@@ -244,8 +312,8 @@ assert.match(
   "the search box must show a visible focus indicator",
 );
 assert.match(
-  rightDockCss,
-  /\.bookmark-title-input:focus-visible\s*\{[^}]*outline:\s*(?!0)[^;}]+;/s,
+  centerTabsCss,
+  /\.bookmarkContentTitleInput:focus-visible\s*\{[^}]*outline:\s*(?!0)[^;}]+;/s,
 );
 // Flat color-block panel: the compact "floating card" wrapper
 // (.right-sidebar-panel with margin/radius/shadow, reverted in
@@ -290,8 +358,7 @@ assertNoNestedButtons(manager, "builtin-tab-pane.tsx");
 assertNoNestedButtons(rightSidebar, "right-sidebar.tsx");
 
 const managerFile = parseTsx(manager, "builtin-tab-pane.tsx");
-// One file hosts both pages; scope the walk to BookmarksPage so the
-// history page's own .bookmark-actions group isn't what we measure.
+// One file hosts both pages; scope the walk to BookmarksPage.
 let bookmarksPage;
 function findBookmarksPage(node) {
   if (ts.isFunctionDeclaration(node) && node.name?.text === "BookmarksPage") {
@@ -302,20 +369,21 @@ function findBookmarksPage(node) {
 }
 findBookmarksPage(managerFile);
 assert.ok(bookmarksPage, "BookmarksPage component missing");
-let actions;
+let editActions;
 function findActions(node) {
   if (
     ts.isJsxElement(node) &&
     node.openingElement.tagName.getText(managerFile) === "div" &&
-    attr(node.openingElement, "className")?.initializer?.text === "bookmark-actions"
+    attr(node.openingElement, "className")?.initializer?.getText(managerFile)
+      === "{styles.bookmarkContentEditActions}"
   ) {
-    actions = node;
+    editActions = node;
     return;
   }
   ts.forEachChild(node, findActions);
 }
 findActions(bookmarksPage);
-assert.ok(actions, "bookmark action group missing");
+assert.ok(editActions, "bookmark inline edit action group missing");
 const iconButtons = [];
 function collectButtons(node) {
   if (
@@ -326,10 +394,8 @@ function collectButtons(node) {
   }
   ts.forEachChild(node, collectButtons);
 }
-collectButtons(actions);
-// Wide page: the row title itself opens the bookmark, so there is no
-// separate "open in full tab" control — edit/save/cancel/delete only.
-assert.equal(iconButtons.length, 4, "expected edit/save/cancel/delete controls");
+collectButtons(editActions);
+assert.equal(iconButtons.length, 2, "expected save/cancel controls while editing");
 for (const button of iconButtons) {
   assert.ok(attr(button, "title"), "icon-only bookmark control missing title");
   assert.ok(attr(button, "aria-label"), "icon-only bookmark control missing aria-label");
@@ -477,6 +543,62 @@ assert.ok(
 );
 assert.deepEqual(bookmarks.flattenBookmarks(migrated), [first, second]);
 assert.deepEqual(bookmarks.readBookmarks(), [first, second]);
+
+// The imported Chromium roots are containers, not bookmark-bar buttons.
+// Show Bookmarks bar's direct children in the row, keep ordinary root items
+// in the row, and reserve non-empty secondary roots for the trailing edge.
+assert.equal(typeof bookmarks.bookmarkBarLayout, "function");
+const looseRootBookmark = {
+  kind: "bookmark",
+  id: "loose",
+  title: "Loose",
+  url: "https://loose.example/",
+};
+const barFolder = {
+  kind: "folder",
+  id: "bar",
+  title: "Bookmarks bar",
+  children: [
+    { kind: "bookmark", id: "github", title: "GitHub", url: "https://github.com/" },
+    { kind: "folder", id: "research", title: "Research", children: [] },
+  ],
+};
+const otherFolder = {
+  kind: "folder",
+  id: "other",
+  title: "Other bookmarks",
+  children: [{ kind: "bookmark", id: "docs", title: "Docs", url: "https://docs.example/" }],
+};
+const emptyMobileFolder = {
+  kind: "folder",
+  id: "mobile",
+  title: "Mobile bookmarks",
+  children: [],
+};
+const barLayout = bookmarks.bookmarkBarLayout({
+  kind: "folder",
+  id: bookmarks.BOOKMARKS_ROOT_ID,
+  title: "",
+  children: [barFolder, otherFolder, emptyMobileFolder, looseRootBookmark],
+});
+assert.deepEqual(barLayout.items, [...barFolder.children, looseRootBookmark]);
+assert.deepEqual(barLayout.trailingFolders, [otherFolder]);
+
+assert.equal(typeof bookmarks.bookmarkMenuEntries, "function");
+assert.deepEqual(
+  bookmarks.bookmarkMenuEntries({
+    kind: "folder",
+    id: "folder",
+    title: "Folder",
+    children: [{
+      kind: "folder",
+      id: "nested",
+      title: "Nested",
+      children: [{ kind: "bookmark", id: "paper", title: "Paper", url: "https://paper.example/" }],
+    }],
+  }),
+  [{ title: "Paper", url: "https://paper.example/", path: ["Nested", "Paper"] }],
+);
 // Junk entries in the legacy array are dropped, the good ones survive.
 storage.set(
   bookmarks.BOOKMARKS_STORAGE_KEY,
@@ -490,6 +612,185 @@ assert.deepEqual(bookmarks.readBookmarks(), [
   second,
   { title: "Kept", url: "https://kept.example/" },
 ]);
+
+// ---- Import: preserve the source browser's folder tree -------------
+storage.set(bookmarks.BOOKMARKS_STORAGE_KEY, JSON.stringify({
+  version: bookmarks.BOOKMARKS_VERSION,
+  root: {
+    kind: "folder",
+    id: bookmarks.BOOKMARKS_ROOT_ID,
+    title: "",
+    children: [
+      { kind: "folder", id: "existing-bar", title: "Bookmarks bar", children: [] },
+      {
+        kind: "folder",
+        id: "legacy-import",
+        title: "Imported from Google Chrome · Person 1",
+        children: [{
+          kind: "bookmark",
+          id: "legacy-paper",
+          title: "Paper",
+          url: "https://paper.example/",
+        }],
+      },
+    ],
+  },
+}));
+changes = 0;
+assert.equal(bookmarks.importBookmarkTree([
+  {
+    kind: "folder",
+    title: "Bookmarks bar",
+    children: [{
+      kind: "folder",
+      title: "Research",
+      children: [
+        { kind: "bookmark", title: "Paper", url: "https://paper.example" },
+        { kind: "bookmark", title: "Unsafe", url: "javascript:alert(1)" },
+      ],
+    }],
+  },
+  {
+    kind: "folder",
+    title: "Other bookmarks",
+    children: [{ kind: "bookmark", title: "Docs", url: "https://docs.example" }],
+  },
+], "Imported from Google Chrome · Person 1"), 2);
+assert.equal(changes, 1, "one import writes the merged tree once");
+const importedTree = bookmarks.readBookmarkTree();
+const importedBar = importedTree.children.find((node) => node.title === "Bookmarks bar");
+assert.equal(importedBar.id, "existing-bar", "same-name source roots merge instead of duplicating");
+assert.equal(importedBar.children[0].title, "Research");
+assert.equal(importedBar.children[0].children[0].url, "https://paper.example/");
+assert.equal(importedBar.children[0].children[0].id, "legacy-paper", "legacy import is moved, not duplicated");
+assert.equal(importedTree.children[1].title, "Other bookmarks");
+assert.equal(importedTree.children[1].children[0].url, "https://docs.example/");
+assert.equal(
+  importedTree.children.some((node) => node.id === "legacy-import"),
+  false,
+  "empty legacy flat folder is removed after its bookmarks are restructured",
+);
+assert.equal(bookmarks.importBookmarkTree([
+  {
+    kind: "folder",
+    title: "Bookmarks bar",
+    children: [{
+      kind: "folder",
+      title: "Research",
+      children: [{ kind: "bookmark", title: "Paper", url: "https://paper.example" }],
+    }],
+  },
+]), 0, "re-importing the same source tree is a no-op");
+assert.equal(changes, 1);
+
+// A same-title folder with user-created nesting is not the legacy flat
+// importer shape and must never be reorganized automatically.
+storage.set(bookmarks.BOOKMARKS_STORAGE_KEY, JSON.stringify({
+  version: bookmarks.BOOKMARKS_VERSION,
+  root: {
+    kind: "folder",
+    id: bookmarks.BOOKMARKS_ROOT_ID,
+    title: "",
+    children: [{
+      kind: "folder",
+      id: "user-import-title",
+      title: "Imported from Google Chrome · Person 1",
+      children: [{
+        kind: "folder",
+        id: "user-personal",
+        title: "Personal",
+        children: [{
+          kind: "bookmark",
+          id: "user-paper",
+          title: "Paper",
+          url: "https://paper.example/",
+        }],
+      }],
+    }],
+  },
+}));
+changes = 0;
+assert.equal(bookmarks.importBookmarkTree([
+  {
+    kind: "folder",
+    title: "Bookmarks bar",
+    children: [{ kind: "bookmark", title: "Paper", url: "https://paper.example" }],
+  },
+], "Imported from Google Chrome · Person 1"), 0);
+assert.equal(changes, 0);
+assert.equal(bookmarks.findNode(bookmarks.readBookmarkTree(), "user-personal").children[0].id, "user-paper");
+
+// An empty same-title folder is ambiguous and is preserved as user data.
+storage.set(bookmarks.BOOKMARKS_STORAGE_KEY, JSON.stringify({
+  version: bookmarks.BOOKMARKS_VERSION,
+  root: {
+    kind: "folder",
+    id: bookmarks.BOOKMARKS_ROOT_ID,
+    title: "",
+    children: [{
+      kind: "folder",
+      id: "user-empty-import-title",
+      title: "Imported from Google Chrome · Person 1",
+      children: [],
+    }],
+  },
+}));
+changes = 0;
+assert.equal(bookmarks.importBookmarkTree([], "Imported from Google Chrome · Person 1"), 0);
+assert.equal(changes, 0);
+assert.ok(bookmarks.findNode(bookmarks.readBookmarkTree(), "user-empty-import-title"));
+
+// Existing legacy values use the same URL canonicalization as incoming rows.
+storage.set(bookmarks.BOOKMARKS_STORAGE_KEY, JSON.stringify([
+  { title: "Canonical", url: "https://canonical.example" },
+]));
+changes = 0;
+assert.equal(bookmarks.importBookmarkTree([
+  { kind: "bookmark", title: "Canonical again", url: "https://canonical.example/" },
+]), 0);
+assert.equal(changes, 0);
+assert.equal(bookmarks.readBookmarks().length, 1);
+
+// Same-title source siblings remain distinct, and the occurrence mapping is
+// stable across a repeated import.
+storage.set(bookmarks.BOOKMARKS_STORAGE_KEY, JSON.stringify({
+  version: bookmarks.BOOKMARKS_VERSION,
+  root: { kind: "folder", id: bookmarks.BOOKMARKS_ROOT_ID, title: "", children: [] },
+}));
+changes = 0;
+const sameNameSource = [
+  {
+    kind: "folder",
+    title: "Same",
+    children: [{ kind: "bookmark", title: "One", url: "https://one.example" }],
+  },
+  {
+    kind: "folder",
+    title: "Same",
+    children: [{ kind: "bookmark", title: "Two", url: "https://two.example" }],
+  },
+];
+assert.equal(bookmarks.importBookmarkTree(sameNameSource), 2);
+assert.deepEqual(
+  bookmarks.readBookmarkTree().children.map((folder) => folder.children[0].url),
+  ["https://one.example/", "https://two.example/"],
+);
+assert.equal(bookmarks.importBookmarkTree(sameNameSource), 0);
+assert.equal(bookmarks.readBookmarkTree().children.length, 2);
+
+// Import must not report a positive count when localStorage rejects the write.
+storage.set(bookmarks.BOOKMARKS_STORAGE_KEY, JSON.stringify({
+  version: bookmarks.BOOKMARKS_VERSION,
+  root: { kind: "folder", id: bookmarks.BOOKMARKS_ROOT_ID, title: "", children: [] },
+}));
+changes = 0;
+failWrites = true;
+assert.throws(() => bookmarks.importBookmarkTree([
+  { kind: "bookmark", title: "Not saved", url: "https://not-saved.example" },
+]), /bookmark storage unavailable/);
+failWrites = false;
+assert.equal(changes, 0);
+assert.deepEqual(bookmarks.readBookmarks(), []);
 
 // ---- Folder operations ----------------------------------------------
 storage.set(bookmarks.BOOKMARKS_STORAGE_KEY, JSON.stringify([first, second]));

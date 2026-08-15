@@ -21,8 +21,8 @@
  *    open-externally escape hatch stays always visible. No
  *    back/forward buttons: iframe history is unreliable cross-origin.
  */
-import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Columns2, ExternalLink, House, RotateCw, Star } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, ExternalLink, House, RotateCw, Star, X } from "lucide-react";
 
 import {
   desktopBridge,
@@ -41,20 +41,20 @@ import {
   toggleBookmark,
 } from "@/lib/bookmarks";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
-import { useSessionStore } from "@/lib/session-store";
-import { newSession } from "@/lib/runtime-bridge/conversations";
 import { measureWebTabBounds } from "@/lib/web-tab-bounds";
 import styles from "./center-tabs.module.css";
+import { BookmarkBar, BookmarksLibraryButton, BrowserMenu } from "./browser-controls";
 
 export function WebTabPane({ tabId, url }: { tabId: string; url: string }) {
   // Bridge presence is fixed for the lifetime of the page (preload
   // ran or it didn't), so branching in render is stable. Web tabs
   // never server-render (the tabs store is empty during SSR).
   const bridge = desktopBridge();
+  const menuOwnerId = useId();
   if (bridge) {
-    return <DesktopWebTabPane bridge={bridge} tabId={tabId} url={url} />;
+    return <DesktopWebTabPane bridge={bridge} tabId={tabId} url={url} menuOwnerId={menuOwnerId} />;
   }
-  return <IframeWebTabPane tabId={tabId} url={url} />;
+  return <IframeWebTabPane tabId={tabId} url={url} menuOwnerId={menuOwnerId} />;
 }
 
 function BookmarkButton({ url, title }: { url: string; title: string }) {
@@ -87,75 +87,12 @@ function HomeButton({ tabId }: { tabId: string }) {
   return (
     <button
       type="button"
-      className={styles.webToolbarBtn}
+      className={`${styles.webToolbarBtn} ${styles.webToolbarMedium}`}
       onClick={() => useCenterTabs.getState().replaceWebTabWithNewTabPage(tabId)}
       title={label}
       aria-label={label}
     >
       <House size={14} />
-    </button>
-  );
-}
-
-function SplitButton({ tabId }: { tabId: string }) {
-  const { text } = useTranslation();
-  const splitPinned = useCenterTabs((s) => s.splitWebTabId === tabId);
-  const label = splitPinned
-    ? text("Exit split view", "退出分屏")
-    : text("Open split view", "打开分屏");
-
-  function toggleSplit() {
-    const state = useCenterTabs.getState();
-    if (splitPinned) {
-      state.setSplitWebTab(null);
-      return;
-    }
-    const routeSessionId = window.location.pathname.startsWith("/s/")
-      ? decodeURIComponent(window.location.pathname.slice(3))
-      : null;
-    const sessionState = useSessionStore.getState();
-    const routeSession = routeSessionId
-      ? state.tabs.find(
-          (tab) => tab.kind === "session" && tab.sessionId === routeSessionId,
-        )
-      : undefined;
-    const activeDraft = !routeSessionId
-      ? state.tabs.find(
-          (tab) =>
-            tab.kind === "session" &&
-            tab.draft &&
-            tab.sessionId === sessionState.activeChatKey,
-        )
-      : undefined;
-    state.setSplitWebTab(tabId);
-    sessionState.setRightDockOpen(false);
-    if (routeSession) {
-      state.setActive(routeSession.id);
-    } else if (routeSessionId) {
-      const title = sessionState.conversations[routeSessionId]?.title ?? "";
-      state.openSessionTab(routeSessionId, title);
-      const openedState = useCenterTabs.getState();
-      const openedSession = openedState.tabs.find(
-        (tab) => tab.kind === "session" && tab.sessionId === routeSessionId,
-      );
-      if (openedSession) openedState.setActive(openedSession.id);
-    } else if (activeDraft) {
-      state.setActive(activeDraft.id);
-    } else {
-      const draftId = state.openDraftSessionTab();
-      newSession(draftId);
-    }
-  }
-
-  return (
-    <button
-      type="button"
-      className={styles.webToolbarBtn}
-      onClick={toggleSplit}
-      title={label}
-      aria-label={label}
-    >
-      <Columns2 size={14} />
     </button>
   );
 }
@@ -166,10 +103,12 @@ function DesktopWebTabPane({
   bridge,
   tabId,
   url,
+  menuOwnerId,
 }: {
   bridge: DesktopBridge;
   tabId: string;
   url: string;
+  menuOwnerId: string;
 }) {
   const { text } = useTranslation();
   const updateWebTab = useCenterTabs((s) => s.updateWebTab);
@@ -296,6 +235,15 @@ function DesktopWebTabPane({
     }
   }
 
+  function navigateTo(nextUrl: string) {
+    const normalized = normalizeWebUrl(nextUrl);
+    if (!normalized) return;
+    setAddress(normalized);
+    viewUrlRef.current = normalized;
+    bridge.webTab.navigate(tabId, normalized);
+    updateWebTab(tabId, { url: normalized });
+  }
+
   const disabledStyle = { opacity: 0.35, cursor: "default" } as const;
 
   return (
@@ -313,13 +261,22 @@ function DesktopWebTabPane({
         </button>
         <button
           type="button"
-          className={styles.webToolbarBtn}
+          className={`${styles.webToolbarBtn} ${styles.webToolbarForward}`}
           onClick={() => bridge.webTab.goForward(tabId)}
           disabled={!canGoForward}
           style={canGoForward ? undefined : disabledStyle}
           title={text("Forward", "前进")}
         >
           <ArrowRight size={14} />
+        </button>
+        <button
+          type="button"
+          className={styles.webToolbarBtn}
+          onClick={() => loading ? bridge.webTab.stop(tabId) : bridge.webTab.reload(tabId)}
+          title={loading ? text("Stop", "停止") : text("Reload", "重新加载")}
+          aria-label={loading ? text("Stop", "停止") : text("Reload", "重新加载")}
+        >
+          {loading ? <X size={14} /> : <RotateCw size={14} />}
         </button>
         <HomeButton tabId={tabId} />
         <input
@@ -334,31 +291,27 @@ function DesktopWebTabPane({
           autoComplete="off"
           aria-label={text("Address", "地址")}
         />
-        <button
-          type="button"
-          className={styles.webToolbarBtn}
-          onClick={() => bridge.webTab.reload(tabId)}
-          title={text("Reload", "重新加载")}
-        >
-          <RotateCw
-            size={14}
-            style={
-              loading ? { animation: "opWebTabSpin 0.8s linear infinite" } : undefined
-            }
-          />
-        </button>
         <BookmarkButton url={effectiveUrl} title={title || effectiveUrl} />
-        <SplitButton tabId={tabId} />
+        <BookmarksLibraryButton />
         <button
           type="button"
-          className={styles.webToolbarBtn}
+          className={`${styles.webToolbarBtn} ${styles.webToolbarMedium}`}
           onClick={() => bridge.openExternal(viewUrlRef.current)}
           title={text("Open in browser", "在浏览器中打开")}
         >
           <ExternalLink size={14} />
         </button>
+        <BrowserMenu
+          ownerId={menuOwnerId}
+          actions={{
+            home: () => useCenterTabs.getState().replaceWebTabWithNewTabPage(tabId),
+            forward: () => bridge.webTab.goForward(tabId),
+            openExternal: () => bridge.openExternal(viewUrlRef.current),
+          }}
+          canGoForward={canGoForward}
+        />
       </div>
-      <style>{`@keyframes opWebTabSpin { to { transform: rotate(360deg); } }`}</style>
+      <BookmarkBar ownerId={menuOwnerId} onNavigate={navigateTo} />
       {/* Empty body — the native view is drawn here by the main
           process at the bounds reported above. */}
       <div ref={bodyRef} className={styles.webFrame} />
@@ -368,7 +321,7 @@ function DesktopWebTabPane({
 
 /* ---- Browser fallback: sandboxed iframe ---------------------------- */
 
-function IframeWebTabPane({ tabId, url }: { tabId: string; url: string }) {
+function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: string; menuOwnerId: string }) {
   const { text } = useTranslation();
   const updateWebTab = useCenterTabs((s) => s.updateWebTab);
   const title = useCenterTabs((s) => s.tabs.find((tab) => tab.id === tabId)?.title || url);
@@ -398,9 +351,24 @@ function IframeWebTabPane({ tabId, url }: { tabId: string; url: string }) {
     window.open(url, "_blank", "noopener");
   }
 
+  function navigateTo(nextUrl: string) {
+    const normalized = normalizeWebUrl(nextUrl);
+    if (!normalized) return;
+    setAddress(normalized);
+    updateWebTab(tabId, { url: normalized });
+  }
+
   return (
     <div className={styles.webPane}>
       <div className={styles.webToolbar}>
+        <button
+          type="button"
+          className={styles.webToolbarBtn}
+          onClick={() => setFrameEpoch((e) => e + 1)}
+          title={text("Reload", "重新加载")}
+        >
+          <RotateCw size={14} />
+        </button>
         <HomeButton tabId={tabId} />
         <input
           className={styles.webAddress}
@@ -413,24 +381,25 @@ function IframeWebTabPane({ tabId, url }: { tabId: string; url: string }) {
           autoComplete="off"
           aria-label={text("Address", "地址")}
         />
-        <button
-          type="button"
-          className={styles.webToolbarBtn}
-          onClick={() => setFrameEpoch((e) => e + 1)}
-          title={text("Reload", "重新加载")}
-        >
-          <RotateCw size={14} />
-        </button>
         <BookmarkButton url={url} title={title} />
+        <BookmarksLibraryButton />
         <button
           type="button"
-          className={styles.webToolbarBtn}
+          className={`${styles.webToolbarBtn} ${styles.webToolbarMedium}`}
           onClick={openExternal}
           title={text("Open in browser", "在浏览器中打开")}
         >
           <ExternalLink size={14} />
         </button>
+        <BrowserMenu
+          ownerId={menuOwnerId}
+          actions={{
+            home: () => useCenterTabs.getState().replaceWebTabWithNewTabPage(tabId),
+            openExternal,
+          }}
+        />
       </div>
+      <BookmarkBar ownerId={menuOwnerId} onNavigate={navigateTo} />
       {url.startsWith("file:") ? (
         /* Browsers silently block file:// in iframes — say so instead of
            showing a blank frame. */

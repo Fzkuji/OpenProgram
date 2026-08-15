@@ -2,8 +2,40 @@
    对应组件：components/center-tabs/builtin-tab-pane.tsx */
 
 /* ============ Web browsing history ============ */
-/* The history page is a center tab now (builtin-tab-pane.tsx); it reuses
-   the bookmark row styles above, plus this timestamp cell. */
+/* The History center page uses Chrome-like one-line rows grouped by day. */
+.browsing-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.browsing-history-group > h2 {
+  margin: 0 0 5px;
+  padding: 0 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.browsing-history-row {
+  display: grid;
+  grid-template-columns: 18px 64px 16px minmax(120px, 1fr) minmax(80px, 150px) 28px;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+}
+
+.browsing-history-row:hover {
+  background: var(--bg-hover);
+}
+
+.browsing-history-row > input {
+  margin: 0;
+}
+
 .browsing-history-favicon {
   width: 16px;
   height: 16px;
@@ -13,8 +45,78 @@
 
 .browsing-history-time {
   flex-shrink: 0;
-  padding-right: 2px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
+}
+
+.browsing-history-title {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-bright);
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.browsing-history-host {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browsing-history-delete {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.browsing-history-row:hover .browsing-history-delete,
+.browsing-history-delete:focus-visible {
+  opacity: 1;
+}
+
+.browsing-history-delete:hover {
+  color: var(--accent-red);
+  background: var(--bg-secondary);
+}
+
+.browsing-history-more {
+  align-self: center;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.browsing-history-more:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+
+@media (max-width: 680px) {
+  .browsing-history-row {
+    grid-template-columns: 18px 48px 16px minmax(0, 1fr) 28px;
+  }
+  .browsing-history-host {
+    display: none;
+  }
 }

@@ -175,7 +175,7 @@ function dispatch(msg: ChatMsg) {
   if (msg.display === "runtime") {
     if (msg.role === "user") return null;
     // 手动函数运行（fn-form / /run）：RuntimeBlock 内部已统一为
-    // 时间线组件（根行 + 递归子树，默认全展开）。
+    // 时间线组件（根行 + 递归子树，子节点逐层展开）。
     return (
       <div className="runtime-card-host">
         <RuntimeBlock msg={msg} />
@@ -417,10 +417,9 @@ export function MessageList() {
     lastRole === "user",
   );
 
-  // "Back to main conversation" (agent-branch-banner): once the reload
-  // has rows on screen, reveal the spawn card — scroll to the
-  // dispatching reply, open its execution strip (collapsed strips
-  // unmount their children), then centre + expand + flash the card.
+  // Parent-return actions: once the reload has rows on screen, reveal the
+  // original sub-agent timeline row. Collapsed strips unmount their children,
+  // so first open the exact strip indexed by branch head, then locate the row.
   // The flag is consumed only when the reveal actually runs, so a
   // mid-hydration re-render just reschedules it.
   useEffect(() => {
@@ -436,22 +435,19 @@ export function MessageList() {
         + esc(pend.anchor) + '"]',
       ) as HTMLElement | null;
       anchorEl?.scrollIntoView({ block: "center" });
-      if (anchorEl
-          && !document.querySelector(
-            '[data-head-id="' + esc(pend.head) + '"]')) {
-        (anchorEl.querySelector(
-          '.tl[data-open="0"] .tl-toggle') as HTMLElement | null)?.click();
+      const strip = anchorEl?.querySelector(
+        '.tl[data-subagent-heads~="' + esc(pend.head) + '"]',
+      ) as HTMLElement | null;
+      if (strip?.getAttribute("data-open") === "0") {
+        (strip.querySelector('.tl-toggle') as HTMLElement | null)?.click();
       }
       window.setTimeout(() => {
-        const card = document.querySelector(
-          '[data-head-id="' + esc(pend.head) + '"]') as HTMLElement | null;
-        const target = card || anchorEl;
+        const row = document.querySelector(
+          '.tl-step[data-head-id="' + esc(pend.head) + '"]',
+        ) as HTMLElement | null;
+        const target = row || anchorEl;
         if (!target) return;
         target.scrollIntoView({ behavior: "smooth", block: "center" });
-        if (card && card.getAttribute("data-expanded") === "0") {
-          (card.querySelector(".attach-card-header") as
-            HTMLElement | null)?.click();
-        }
         target.classList.add("dag-flash");
         window.setTimeout(() => target.classList.remove("dag-flash"), 1400);
       }, 280);

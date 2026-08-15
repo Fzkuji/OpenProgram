@@ -3,9 +3,11 @@
 Every file that travels through a chat message is referenced by an
 absolute path in a single marker::
 
-    [attachment: <name> (<ext>, <N> KB[, <count>]) @ <abs path>]
+    [attachment: <name> (<ext>, <N> KB[, <count>]) @json "<abs path>"]
 
-The same spelling is written by all four producers — browser upload,
+The JSON string makes every legal path delimiter and trailing space
+reversible. The historical unquoted ``@ <path>`` spelling remains readable.
+The current spelling is written by all four producers — browser upload,
 ``@``-mention, inbound channel attachment, and the agent's own
 ``send_file`` — and read by all four consumers: the web chip parser
 (``web/components/chat/messages/user-attachments.tsx``), the sidebar
@@ -33,6 +35,7 @@ use (hermes ``validate_media_delivery_path``, weclaw's allowed root).
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 from pathlib import Path
@@ -43,15 +46,19 @@ from typing import Iterable, Optional
 #: bracket or paren inside a filename would truncate it at parse time.
 _MARKER_UNSAFE = re.compile(r"[\[\]()]+")
 
-#: The one mention regex. Mirrors ``ATTACHED_MENTION`` in
-#: ``web/components/chat/messages/user-attachments.tsx``; the trailing
-#: ``@ <path>`` is REQUIRED here because every Python-side consumer wants
-#: the path (the web parser keeps it optional — a browser upload's
-#: optimistic bubble renders before the backend appends it).
+#: Current marker uses a JSON string so every absolute-path character,
+#: including ``]``, quotes, backslashes, and trailing spaces, round-trips.
+JSON_MENTION_RE = re.compile(
+    r"\[attach(?:ed|ment):\s*([^()\[\]]+?)\s*"
+    r"\(([^,)]+),\s*([\d.]+)\s*KB(?:,\s*([^)]+))?\)"
+    r"\s*@json\s*(\"(?:\\.|[^\"\\])*\")"
+    r"(?:\s*@previewjson\s*(\"(?:\\.|[^\"\\])*\"))?\]"
+)
+#: Historical unquoted marker, retained for stored conversations.
 MENTION_RE = re.compile(
     r"\[attach(?:ed|ment):\s*([^()\[\]]+?)\s*"
     r"\(([^,)]+),\s*([\d.]+)\s*KB(?:,\s*([^)]+))?\)"
-    r"\s*@\s*([^\]]+)\]"
+    r"\s*@(?!json\s)\s*([^\]]+)\]"
 )
 
 
@@ -80,20 +87,45 @@ def ext_of(name: str, mime: str = "") -> str:
 def format_marker(
     name: str, path: str | os.PathLike, size_bytes: int,
     mime: str = "", count: str = "",
+    preview_path: str | os.PathLike | None = None,
 ) -> str:
     """One attachment marker. ``count`` is the optional scope badge
     ("500 pages" / "4210 lines") the web chip shows as a third field."""
     safe_name = safe_marker_text(name or os.path.basename(str(path)))
     extra = f", {count}" if count else ""
+    encoded_path = json.dumps(str(path), ensure_ascii=False)
+    preview = (f" @previewjson {json.dumps(str(preview_path), ensure_ascii=False)}"
+               if preview_path is not None else "")
     return (f"[attachment: {safe_name} "
             f"({ext_of(safe_name, mime)}, {kb_of(size_bytes)} KB{extra})"
-            f" @ {path}]")
+            f" @json {encoded_path}{preview}]")
 
 
 def find_markers(text: str) -> list[tuple[str, str, str]]:
     """``[(whole marker, display name, absolute path), …]`` in ``text``."""
-    return [(m.group(0), m.group(1).strip(), m.group(5).strip())
-            for m in MENTION_RE.finditer(text or "")]
+    found: list[tuple[int, str, str, str]] = []
+    for match in JSON_MENTION_RE.finditer(text or ""):
+        try:
+            path = json.loads(match.group(5))
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(path, str):
+            found.append((match.start(), match.group(0),
+                          match.group(1).strip(), path))
+    for match in MENTION_RE.finditer(text or ""):
+        found.append((match.start(), match.group(0), match.group(1).strip(),
+                      match.group(5).strip()))
+    found.sort(key=lambda item: item[0])
+    return [(whole, name, path) for _, whole, name, path in found]
+
+
+def strip_markers(text: str) -> str:
+    """Remove current and historical path-bearing attachment markers."""
+    matches = [*JSON_MENTION_RE.finditer(text or ""),
+               *MENTION_RE.finditer(text or "")]
+    for match in sorted(matches, key=lambda item: item.start(), reverse=True):
+        text = text[:match.start()] + text[match.end():]
+    return text
 
 
 # ---------------------------------------------------------------------------

@@ -16,7 +16,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Bookmark, History, Plus, Settings } from "lucide-react";
+import { Plus, Settings } from "lucide-react";
 
 import {
   itemCls,
@@ -25,8 +25,9 @@ import {
   SHORTCUT,
 } from "@/components/chat/top-bar/menu-styles";
 import { useTranslation } from "@/lib/i18n";
+import { isThemeId } from "@/lib/prefs/theme-pref";
 
-type ActionId = "new-tab" | "bookmarks" | "history" | "settings";
+type ActionId = "new-tab" | "settings";
 
 interface MainMenuBridge {
   choose(id: string): void;
@@ -60,7 +61,7 @@ function MainMenuOverlayPage() {
   // off documentElement[data-theme].
   useEffect(() => {
     const theme = params.get("theme");
-    if (theme === "dark" || theme === "light") {
+    if (isThemeId(theme)) {
       document.documentElement.dataset.theme = theme;
     }
     document.documentElement.style.background = "transparent";
@@ -69,11 +70,9 @@ function MainMenuOverlayPage() {
 
   // ponytail: New window is browser-only (no create-window IPC), so the
   // desktop overlay never shows it — matches main-menu.tsx's canOpenWindow.
-  const separators = new Set([0, 2]); // divider AFTER these indices
+  const separators = new Set([0]); // divider AFTER these indices
   const rows: Row[] = [
     { id: "new-tab", icon: Plus, label: text("New tab", "新标签页"), shortcut: "⌘T" },
-    { id: "bookmarks", icon: Bookmark, label: text("Bookmarks", "书签") },
-    { id: "history", icon: History, label: text("Web history", "网页历史") },
     { id: "settings", icon: Settings, label: text("Settings", "设置"), shortcut: "⌘," },
   ];
 

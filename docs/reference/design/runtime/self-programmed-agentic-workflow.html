@@ -3,272 +3,257 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Self-Programmed Agentic Workflow — agent 自己写程序，再自己执行</title>
+<title>Self-Programmed Agentic Workflow — 可搜索、可修订、可复用的 workflow project</title>
 <style>
   :root { color-scheme: dark; }
   body { background:#12110b; color:#bdb9a6; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
-         max-width:1000px; margin:0 auto; padding:40px 24px 80px; line-height:1.75; }
-  h1 { color:#e8e4d4; font-size:26px; letter-spacing:1px; }
+         max-width:1060px; margin:0 auto; padding:40px 24px 80px; line-height:1.72; }
+  h1 { color:#e8e4d4; font-size:26px; letter-spacing:.5px; }
   h2 { color:#e8e4d4; font-size:19px; margin-top:44px; border-bottom:1px solid #2e2c20; padding-bottom:8px; }
-  p.lead { color:#8a8675; }
+  h3 { color:#d9d4bf; font-size:15px; margin-top:26px; }
+  p.lead,.muted { color:#8a8675; }
   .card { background:#181712; border:1px solid #2e2c20; border-radius:10px; padding:18px 20px; margin:16px 0; }
+  .implemented { border-left:3px solid #5aad4e; }
+  .pending { border-left:3px solid #d4843a; }
   figure { margin:20px 0; }
   figcaption { color:#8a8675; font-size:13px; margin-top:8px; }
   svg { max-width:100%; height:auto; display:block; }
-  code { background:#221f18; padding:1px 6px; border-radius:4px; color:#d9d4bf; font-size:0.92em; }
-  pre { background:#181712; border:1px solid #2e2c20; border-radius:10px; padding:16px 18px; overflow-x:auto;
-        font-size:13px; line-height:1.6; }
+  code { background:#221f18; padding:1px 6px; border-radius:4px; color:#d9d4bf; font-size:.92em; }
+  pre { background:#181712; border:1px solid #2e2c20; border-radius:10px; padding:16px 18px; overflow-x:auto; font-size:13px; line-height:1.6; }
   pre code { background:none; padding:0; }
   table { border-collapse:collapse; width:100%; font-size:14px; }
-  th,td { border:1px solid #2e2c20; padding:8px 12px; text-align:left; }
+  th,td { border:1px solid #2e2c20; padding:8px 12px; text-align:left; vertical-align:top; }
   th { color:#e8e4d4; background:#181712; }
-  .blue { color:#4f8ef7; } .green { color:#5aad4e; } .orange { color:#d4843a; }
+  a { color:#78a8ff; }
 </style>
 </head>
 <body>
 
 <h1>Self-Programmed Agentic Workflow</h1>
-<p class="lead">agent 自己把任务写成一个真正的 Python 程序，再由框架执行。程序用框架的积木
-（注册的 agentic function、自由 agent 调用）组合而成，控制流就是 Python 本身的控制流。
-运行模型和人写代码一样：整个程序一次跑完；报错就看报错、改代码、整个重跑，
-已完成的调用直接用上次结果，效果上从出错处继续。入口是内置 agentic function
-<code>agentic_workflow</code>。</p>
+<p class="lead"><code>agentic_workflow(task)</code> 只有一个入口。每次调用都先检索已有 workflow project，
+再由 planner 根据任务和候选项目决定直接复用、基于已有项目创建新修订，或创建新项目。
+用户不选择“新建”或“继续”模式。workflow project 是可跨会话复用的多文件程序；workflow run
+是一次执行及其固定代码快照、调用记录和终态。两者分别持久化。</p>
 
-<h2>1. 全流程</h2>
+<h2>1. 当前实现与已验证缺口</h2>
+<table>
+<tr><th>当前行为</th><th>缺口</th><th>目标</th></tr>
+<tr><td>每次普通调用在 session 内创建 <code>workflows/&lt;run_id&gt;/code.py</code>。</td>
+<td>代码属于运行，无法跨会话查找或维护。</td><td>代码属于全局 workflow project；运行只保存项目修订的不可变快照。</td></tr>
+<tr><td>以“continue / resume / 继续 / 接着”前缀猜测是否恢复最近一次运行。</td>
+<td>任务文本承担控制协议，容易误选；相似新任务也无法复用已有程序。</td>
+<td>所有新任务统一进入候选检索与 planner 决策；只有明确 <code>run_id</code> 恢复同一次中断运行。</td></tr>
+<tr><td>planner 返回 <code>SINGLE</code> 或单个 Python code block。</td>
+<td>复杂流程全部集中在一个文件，职责、测试和局部修订难以维护。</td>
+<td>planner 返回一个有 manifest、README、入口文件和步骤文件的小项目。</td></tr>
+<tr><td>运行失败后覆盖当前 <code>code.py</code>，旧文件按编号留档。</td>
+<td>失败候选会先改变运行目录，项目没有稳定的可用修订。</td>
+<td>候选先在 staging 校验并复制到 run snapshot；snapshot 执行成功后才发布项目 revision。</td></tr>
+</table>
+
+<h2>2. 参考框架比较</h2>
+<p>比较基于当前官方文档，不把这些框架的文件格式直接引入 OpenProgram。</p>
+<table>
+<tr><th>参考</th><th>采用</th><th>调整</th><th>不采用或缺失</th></tr>
+<tr><td><a href="https://docs.langchain.com/oss/python/langgraph/persistence">LangGraph persistence</a></td>
+<td>运行状态和可恢复 checkpoint 分开；已成功任务在恢复时不重复执行。</td>
+<td>OpenProgram 保留现有调用边界 checkpoint，不引入 graph/super-step 数据模型。</td>
+<td>其 checkpoint/store 解决执行状态，不负责搜索和版本化 agent 生成的多文件 workflow project。</td></tr>
+<tr><td><a href="https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows">GitHub reusable workflows</a></td>
+<td>复用稳定定义，并让运行引用确定版本；可维护代码和运行记录分离。</td>
+<td>OpenProgram 用本地目录和 revision，不用 YAML、仓库 ref 或远程分发。</td>
+<td>GitHub Actions 不根据自然语言任务检索并修订 workflow，也不执行 LLM 生成的受限 Python。</td></tr>
+<tr><td>OpenProgram <code>@agentic_function</code> / Runtime</td>
+<td>继续使用现有函数注册表、DAG、调用 checkpoint、provider/model 和 Conclusion。</td>
+<td>增加 project catalog 与多文件加载，不增加第二种运行时函数类型。</td>
+<td>当前没有跨 session workflow catalog、稳定 revision 或项目级搜索。</td></tr>
+</table>
+
+<h2>3. 统一入口与完整流程</h2>
 <figure>
-<svg viewBox="0 0 980 560" role="img" aria-label="全流程：agentic_workflow 新建独立实例，planner 用只读工具对着函数注册表写出 code.py 程序，框架校验后 exec 整个程序，成功返回 completed；校验不过就打回 planner 重写直到能跑；程序抛异常时，planner 带着报错和运行记录修改代码，整个程序重跑，已完成的调用直接回放上次结果，相当于从出错处继续；实例目录存 code.py 与 state.json，多实例并发互不相关">
-  <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-    <path d="M0,0 L10,5 L0,10 z" fill="#8a8675"/></marker></defs>
-  <rect x="0" y="0" width="980" height="560" fill="#12110b"/>
-
-  <!-- 入口 -->
-  <rect x="40" y="28" width="250" height="60" rx="10" fill="#181712" stroke="#e8e4d4" stroke-width="1.2"/>
-  <text x="165" y="53" fill="#e8e4d4" font-size="14" text-anchor="middle">agentic_workflow(task)</text>
-  <text x="165" y="74" fill="#8a8675" font-size="11" text-anchor="middle">每次调用 = 新建一个独立实例</text>
-  <line x1="165" y1="88" x2="165" y2="122" stroke="#8a8675" marker-end="url(#ar)"/>
-
-  <!-- planner -->
-  <rect x="40" y="126" width="250" height="116" rx="10" fill="#181712" stroke="#4f8ef7" stroke-width="1.5"/>
-  <text x="165" y="151" fill="#e8e4d4" font-size="14" text-anchor="middle">planner：把任务写成程序</text>
-  <text x="165" y="174" fill="#8a8675" font-size="11" text-anchor="middle">只读工具 read / grep / glob / list</text>
-  <text x="165" y="192" fill="#8a8675" font-size="11" text-anchor="middle">输入：任务 + 函数注册表（积木清单）</text>
-  <text x="165" y="210" fill="#8a8675" font-size="11" text-anchor="middle">产出：code.py，def workflow()</text>
-  <text x="165" y="228" fill="#8a8675" font-size="11" text-anchor="middle">if / for / 异常处理随便写</text>
-  <line x1="165" y1="242" x2="165" y2="276" stroke="#8a8675" marker-end="url(#ar)"/>
-
-  <!-- 校验 -->
-  <rect x="40" y="280" width="250" height="78" rx="10" fill="#181712" stroke="#3a382d"/>
-  <text x="165" y="305" fill="#e8e4d4" font-size="13" text-anchor="middle">校验</text>
-  <text x="165" y="326" fill="#8a8675" font-size="11" text-anchor="middle">ast 能解析 · 必须有 def workflow()</text>
-  <text x="165" y="344" fill="#8a8675" font-size="11" text-anchor="middle">禁止 import（积木由框架注入）</text>
-  <line x1="290" y1="319" x2="420" y2="319" stroke="#8a8675" marker-end="url(#ar)"/>
-  <text x="355" y="311" fill="#8a8675" font-size="11" text-anchor="middle">通过</text>
-  <path d="M40,319 L24,319 L24,184 L36,184" stroke="#8a8675" fill="none" marker-end="url(#ar)"/>
-  <text transform="rotate(-90 14 252)" x="14" y="252" fill="#8a8675" font-size="11" text-anchor="middle">无效：打回重写，直到能跑</text>
-
-  <!-- 运行 -->
-  <rect x="424" y="272" width="270" height="96" rx="10" fill="#181712" stroke="#5aad4e" stroke-width="1.5"/>
-  <text x="559" y="298" fill="#e8e4d4" font-size="14" text-anchor="middle">exec 整个程序</text>
-  <text x="559" y="321" fill="#8a8675" font-size="11" text-anchor="middle">workflow() 从头到尾跑完</text>
-  <text x="559" y="339" fill="#8a8675" font-size="11" text-anchor="middle">没有调度器，没有"取下一项"</text>
-  <text x="559" y="357" fill="#8a8675" font-size="11" text-anchor="middle">已完成的调用直接回放上次结果</text>
-
-  <!-- 成功 -->
-  <line x1="559" y1="368" x2="559" y2="466" stroke="#5aad4e" marker-end="url(#ar)"/>
-  <text x="567" y="420" fill="#5aad4e" font-size="11">正常返回</text>
-  <rect x="424" y="470" width="270" height="56" rx="10" fill="#181712" stroke="#5aad4e"/>
-  <text x="559" y="492" fill="#5aad4e" font-size="13" text-anchor="middle">completed</text>
-  <text x="559" y="512" fill="#8a8675" font-size="11" text-anchor="middle">返回结果与全部运行记录</text>
-
-  <!-- 修代码回环 -->
-  <path d="M694,300 L790,300 L790,180 L294,180" stroke="#d4843a" fill="none" marker-end="url(#ar)"/>
-  <text x="560" y="172" fill="#d4843a" font-size="11" text-anchor="middle">程序抛异常：planner 看报错和运行记录，改代码</text>
-  <text x="798" y="248" fill="#d4843a" font-size="11">带着异常栈、</text>
-  <text x="798" y="266" fill="#d4843a" font-size="11">state.json 现场</text>
-  <text x="380" y="230" fill="#8a8675" font-size="11">改完整个程序重跑 = 从出错处继续</text>
-
-  <!-- 实例目录 -->
-  <rect x="730" y="330" width="220" height="196" rx="10" fill="#181712" stroke="#3a382d" stroke-dasharray="5 4"/>
-  <text x="840" y="358" fill="#e8e4d4" font-size="13" text-anchor="middle">实例目录</text>
-  <text x="840" y="380" fill="#bdb9a6" font-size="11" text-anchor="middle">workflows/&lt;run_id&gt;/</text>
-  <text x="840" y="402" fill="#8a8675" font-size="11" text-anchor="middle">code.py：当前程序（修订即重写）</text>
-  <text x="840" y="420" fill="#8a8675" font-size="11" text-anchor="middle">state.json：每次调用的全量记录</text>
-  <text x="840" y="442" fill="#8a8675" font-size="11" text-anchor="middle">状态变化先写盘再动手</text>
-  <text x="840" y="472" fill="#bdb9a6" font-size="11" text-anchor="middle">实例之间完全独立：</text>
-  <text x="840" y="490" fill="#8a8675" font-size="11" text-anchor="middle">想同时跑几个流程就跑几个，</text>
-  <text x="840" y="508" fill="#8a8675" font-size="11" text-anchor="middle">没有共享的板，没有互相匹配</text>
-  <line x1="740" y1="340" x2="700" y2="360" stroke="#8a8675" stroke-dasharray="4 4"/>
-
+<svg viewBox="0 0 1040 650" role="img" aria-label="agentic_workflow 统一流程：接收任务后创建 run，检索已有 workflow projects；planner 第一阶段只选择复用、修订或创建。复用直接把已有 active revision 复制为 run snapshot；修订先读取选中项目全部源码，创建和修订都由第二阶段 planner 生成完整项目并在 staging 校验，再复制为 run snapshot。snapshot 执行成功后才发布不可变 revision 和更新 active；失败时 repair planner 基于失败 snapshot、错误和 checkpoint 生成新候选，取消或 capped 不发布">
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#8a8675"/></marker></defs>
+  <rect x="0" y="0" width="1040" height="650" fill="#12110b"/>
+  <rect x="30" y="24" width="250" height="62" rx="10" fill="#181712" stroke="#e8e4d4"/>
+  <text x="155" y="50" fill="#e8e4d4" font-size="14" text-anchor="middle">agentic_workflow(task)</text>
+  <text x="155" y="72" fill="#8a8675" font-size="11" text-anchor="middle">唯一任务入口；先建立独立 run</text>
+  <line x1="155" y1="86" x2="155" y2="122" stroke="#8a8675" marker-end="url(#arrow)"/>
+  <rect x="30" y="126" width="250" height="92" rx="10" fill="#181712" stroke="#4f8ef7"/>
+  <text x="155" y="152" fill="#e8e4d4" font-size="14" text-anchor="middle">确定性候选检索</text>
+  <text x="155" y="176" fill="#8a8675" font-size="11" text-anchor="middle">扫描 manifest 的 name / summary / tags</text>
+  <text x="155" y="196" fill="#8a8675" font-size="11" text-anchor="middle">只返回有限候选，不自动执行</text>
+  <line x1="280" y1="172" x2="350" y2="172" stroke="#8a8675" marker-end="url(#arrow)"/>
+  <rect x="354" y="116" width="310" height="112" rx="10" fill="#181712" stroke="#4f8ef7" stroke-width="1.5"/>
+  <text x="509" y="143" fill="#e8e4d4" font-size="14" text-anchor="middle">planner phase 1：只做语义决策</text>
+  <text x="509" y="168" fill="#8a8675" font-size="11" text-anchor="middle">任务 + 候选 manifest + 函数注册表</text>
+  <text x="509" y="190" fill="#bdb9a6" font-size="11" text-anchor="middle">reuse · revise · create</text>
+  <text x="509" y="211" fill="#8a8675" font-size="11" text-anchor="middle">只返回 action 与选中候选；reuse 不返回文件</text>
+  <line x1="509" y1="228" x2="509" y2="270" stroke="#d4843a" marker-end="url(#arrow)"/>
+  <rect x="354" y="274" width="310" height="112" rx="10" fill="#181712" stroke="#d4843a"/>
+  <text x="509" y="300" fill="#e8e4d4" font-size="14" text-anchor="middle">revise/create：phase 2 + staging</text>
+  <text x="509" y="324" fill="#8a8675" font-size="11" text-anchor="middle">revise 先加载 active README / manifest / 全部源码</text>
+  <text x="509" y="346" fill="#8a8675" font-size="11" text-anchor="middle">生成完整项目后校验路径、AST、入口与文件顺序</text>
+  <text x="509" y="368" fill="#8a8675" font-size="11" text-anchor="middle">失败只重写 staging；尚不发布、不改变 active</text>
+  <path d="M354,330 L320,330 L320,172 L350,172" fill="none" stroke="#d4843a" marker-end="url(#arrow)"/>
+  <line x1="664" y1="330" x2="728" y2="330" stroke="#5aad4e" marker-end="url(#arrow)"/>
+  <text x="696" y="319" fill="#5aad4e" font-size="11" text-anchor="middle">候选通过</text>
+  <rect x="732" y="274" width="278" height="112" rx="10" fill="#181712" stroke="#5aad4e"/>
+  <text x="871" y="301" fill="#e8e4d4" font-size="14" text-anchor="middle">固定 run snapshot（尚不发布）</text>
+  <text x="871" y="326" fill="#8a8675" font-size="11" text-anchor="middle">reuse：复制候选 active revision</text>
+  <text x="871" y="348" fill="#8a8675" font-size="11" text-anchor="middle">revise/create：复制已校验 staging</text>
+  <text x="871" y="370" fill="#8a8675" font-size="11" text-anchor="middle">后续只执行 run/snapshot/</text>
+  <path d="M664,172 L871,172 L871,270" fill="none" stroke="#5aad4e" marker-end="url(#arrow)"/>
+  <text x="760" y="162" fill="#5aad4e" font-size="11" text-anchor="middle">reuse：绕过生成与发布</text>
+  <line x1="871" y1="386" x2="871" y2="430" stroke="#8a8675" marker-end="url(#arrow)"/>
+  <rect x="732" y="434" width="278" height="104" rx="10" fill="#181712" stroke="#5aad4e" stroke-width="1.5"/>
+  <text x="871" y="461" fill="#e8e4d4" font-size="14" text-anchor="middle">按 manifest 顺序加载并执行</text>
+  <text x="871" y="486" fill="#8a8675" font-size="11" text-anchor="middle">共享受限 namespace；调用边界 checkpoint</text>
+  <text x="871" y="510" fill="#8a8675" font-size="11" text-anchor="middle">entry.py 的 workflow() 是唯一入口</text>
+  <path d="M732,486 L682,486 L682,330 L668,330" fill="none" stroke="#d4843a" marker-end="url(#arrow)"/>
+  <text x="690" y="462" fill="#d4843a" font-size="11">运行失败：repair planner 读取</text>
+  <text x="690" y="480" fill="#d4843a" font-size="11">失败 snapshot + error + checkpoint</text>
+  <text x="690" y="498" fill="#d4843a" font-size="11">取消 / capped：终止，不发布</text>
+  <line x1="871" y1="538" x2="871" y2="578" stroke="#5aad4e" marker-end="url(#arrow)"/>
+  <rect x="732" y="582" width="278" height="52" rx="10" fill="#181712" stroke="#5aad4e"/>
+  <text x="871" y="604" fill="#5aad4e" font-size="13" text-anchor="middle">成功后发布 revision + Conclusion</text>
+  <text x="871" y="622" fill="#8a8675" font-size="11" text-anchor="middle">更新 active；reuse 不创建 revision</text>
+  <rect x="30" y="430" width="568" height="178" rx="10" fill="#181712" stroke="#3a382d" stroke-dasharray="5 4"/>
+  <text x="314" y="458" fill="#e8e4d4" font-size="13" text-anchor="middle">两类持久化对象</text>
+  <text x="52" y="488" fill="#bdb9a6" font-size="12">~/.openprogram/workflow-projects/&lt;project_id&gt;/</text>
+  <text x="70" y="511" fill="#8a8675" font-size="11">project.json · README.md(派生) · revisions/&lt;revision&gt;/{README.md, workflow.json, entry.py, steps/*.py}</text>
+  <text x="52" y="546" fill="#bdb9a6" font-size="12">&lt;session-repo&gt;/workflows/&lt;run_id&gt;/</text>
+  <text x="70" y="569" fill="#8a8675" font-size="11">state.json · snapshot/ · project_ref.json</text>
+  <text x="52" y="594" fill="#8a8675" font-size="11">project 跨会话共享；run 只保存一次执行，不参与相似任务检索</text>
 </svg>
-<figcaption>全流程。planner 写程序，框架 exec；出错就改代码整个重跑，调用回放让重跑等价于断点续跑。
-每个实例一个目录，并发互不相关。</figcaption>
+<figcaption>检索是确定性的候选缩减，复用判断由 planner 完成。无候选时仍走同一 planner 协议并创建项目，
+不是另一套执行入口。显式 <code>run_id</code> 只恢复同一次运行。</figcaption>
 </figure>
 
-<h2>2. 生成的程序长什么样</h2>
-<p>planner 产出的是一个普通 Python 模块，入口 <code>workflow()</code>，组合就是函数互调，
-控制流就是 Python 的控制流。程序里有三层 LLM 原语和三个控制流原语:</p>
-<ul style="color:#bdb9a6; margin:12px 0 12px 24px; line-height:1.8;">
-<li><code>llm(prompt, ...)</code> — 单次模型请求，无工具，无循环</li>
-<li><code>agent(prompt, ...)</code> — 工具循环，反复调 llm + 执行工具直到完成</li>
-<li><code>goal(prompt, condition, ...)</code> — 判定循环，反复调 agent + 用 llm 判定条件直到满足</li>
-<li><code>validate_and_retry(action, check, retry, ...)</code> — 验证和回溯，用 llm 判定结果，失败则重试</li>
-<li><code>route(question, options, ...)</code> — 路由选择，让 llm 从列表中选一个</li>
-<li><code>conditional(condition, if_true, if_false, ...)</code> — 条件分支，llm 判定 YES/NO 执行分支</li>
+<h2>4. Workflow project 目录合同</h2>
+<pre><code>~/.openprogram/workflow-projects/paper-lineage-review/
+├── project.json
+├── README.md
+└── revisions/
+    ├── 0001/
+    │   ├── README.md
+    │   ├── workflow.json
+    │   ├── entry.py
+    │   └── steps/
+    │       ├── discover.py
+    │       ├── inspect.py
+    │       └── synthesize.py
+    └── 0002/
+        ├── README.md
+        ├── workflow.json
+        ├── entry.py
+        └── steps/...
+</code></pre>
+<table>
+<tr><th>文件</th><th>稳定合同</th></tr>
+<tr><td><code>project.json</code></td><td>稳定 <code>project_id</code>、当前名称、任务摘要、tags、active revision。只含索引元数据，不含运行结果或秘密；这些搜索字段与 active revision 同一次发布。</td></tr>
+<tr><td><code>revisions/*/README.md</code></td><td>该 revision 的权威 README：适用任务、输入假设、产物与限制。project 根 <code>README.md</code> 只是 active README 的原子派生副本，搜索与修订读取不依赖该副本。</td></tr>
+<tr><td><code>workflow.json</code></td><td>schema version、项目文件加载顺序、入口文件与入口函数。路径必须是项目内相对路径。</td></tr>
+<tr><td><code>entry.py</code></td><td>只定义一个零参数 <code>workflow()</code> 入口；从共享 namespace 调用步骤函数和受管函数。</td></tr>
+<tr><td><code>steps/*.py</code></td><td>普通 helper function。按 manifest 顺序执行到同一个受限 namespace，首版不实现 Python import。</td></tr>
+</table>
+<div class="card">多文件不是任意 Python package。首版继续禁止 <code>import</code>，也不增加依赖管理和自定义 importer。
+这保留现有受限执行边界，同时允许按职责拆文件。需要第三方包时由受管 function 提供能力，而不是由生成项目直接加载。</div>
+
+<h2>5. 搜索、选择和修订</h2>
+<h3>候选检索</h3>
+<p>框架扫描合法 <code>project.json</code>，把任务和 <code>name + summary + tags</code> 规范化为 token，
+按共有 token 数量排序并截取少量候选。检索不调用模型、不读运行结果、不执行项目。候选只缩小 planner
+需要阅读的范围；零候选、低分候选和高分候选都交给同一 planner phase 1 决策。</p>
+<h3>planner 输出</h3>
+<p>phase 1 返回一个 JSON envelope：<code>action</code> 为 <code>reuse</code>、<code>revise</code> 或
+<code>create</code>。<code>reuse/revise</code> 的 <code>project_id</code> 必须来自本次候选集合，revision
+由框架读取该候选的 active pointer，模型不能指定；<code>create</code> 不接受模型指定的 id，框架根据名称
+分配未占用 id，冲突时追加稳定短后缀，不能把 create 降级成 revise。<code>reuse</code> envelope 不含文件。</p>
+<p>选择 <code>revise</code> 后，框架读取该 active revision 的 README、workflow manifest 和全部源码，
+连同新任务交给 phase 2。选择 <code>create</code> 时 phase 2 没有基础源码。phase 2 和运行 repair 都必须返回
+结构化对象 <code>{project_metadata:{name,summary,tags}, readme, files}</code>；<code>files</code> 是完整 Python
+文件映射，不能只返回 diff。create 的搜索 metadata 由 phase 2 产生，project id 仍由框架分配；revise 可随
+任务更新 metadata。README、metadata 与完整源码一起进入 run staging 和 snapshot。</p>
+<h3>修订发布</h3>
+<p>完整候选先写到 run 私有 staging，逐文件验证后复制到 run snapshot 并执行。执行成功后才在 catalog
+锁内分配 revision，并在 catalog 根内建立临时 revision 目录；框架从 run snapshot 复制 README、manifest
+与源码到该目录并再次校验，再在同一文件系统内原子 rename 到最终 revision。随后原子更新
+<code>project.json</code> 的 metadata 与 active pointer，并原子刷新根 README 派生副本。run snapshot 始终保留且
+字节不变。运行失败时 repair planner 必须接收失败 snapshot、结构化错误和 checkpoint 状态，修好的
+完整候选重新校验并替换该 run 的 snapshot；旧 active revision 在整个过程中保持不变。失败、取消或
+<code>capped</code> 都不发布 revision。<code>reuse</code> 始终不创建 revision。</p>
+
+<h2>6. 执行、恢复与兼容</h2>
+<ul>
+<li>新任务总是创建新 <code>run_id</code>，即使复用同一 project；不同任务不会共享 checkpoint 结果。</li>
+<li>run 开始执行前复制 project revision 到 <code>snapshot/</code>，随后只执行 snapshot。</li>
+<li>明确传入既有 <code>run_id</code> 时恢复该 run；不再根据自然语言前缀猜测恢复。</li>
+<li>恢复仍从 <code>workflow()</code> 第一行重跑，已完成且 key 一致的受管调用从 <code>state.json</code> 回放。</li>
+<li>旧 run 若只有 <code>code.py</code>，继续按单文件兼容路径恢复；它不自动发布到全局 project catalog。</li>
+<li><code>SINGLE</code> 作为旧 run 兼容格式保留；所有新任务即使只需一次 agent，也创建一个最小 project，避免不可复用分支。</li>
 </ul>
-<p>三层是组合关系：goal 基于 agent，agent 基于 llm。控制流原语用 llm 做判定，简化 planner 的代码生成。</p>
-<pre><code>def find_issues() -&gt; str:
-    return agent(
-        "审查 openprogram/auth/ 的代码，逐文件检查错误处理与并发安全，"
-        "输出问题清单，按 HIGH / MEDIUM / LOW 分级，每条带文件路径与行号。",
-        description="find issues")
 
-
-def workflow() -&gt; str:
-    findings = find_issues()
-    if "HIGH" in findings:
-        agent("按清单修复 HIGH 级问题，改完跑通相关测试：" + findings,
-              description="fix auth")          # 干活的 agent，profile 带工具
-        checks = run_tests()                    # 注册表里的 agentic function 直接调
-        if "failed" in checks:
-            raise RuntimeError("修复后测试仍失败：" + checks)
-    return agent("汇总以上结果写报告", description="report")
-</code></pre>
-<p><strong>使用控制流原语的示例</strong>（更声明式，意图更清晰）：</p>
-<pre><code>def workflow() -&gt; str:
-    # 验证和回溯：第一次结果不满足就重试
-    files = validate_and_retry(
-        action=lambda: agent("找 auth 相关文件"),
-        check="文件数量&gt;=3 且包含 oauth",
-        retry=lambda: agent("扩大范围，包括 oauth、openid 相关文件")
-    )
-
-    # 路由选择：让 llm 选策略
-    strategy = route(
-        question="选择迁移策略",
-        options=["直接迁移", "重构后迁移"],
-        context=files
-    )
-
-    # 条件分支：根据 llm 判定执行不同分支
-    return conditional(
-        condition="策略是直接迁移",
-        context=strategy,
-        if_true=lambda: agent("写直接迁移方案：" + files),
-        if_false=lambda: agent("写重构方案：" + files)
-    )
-</code></pre>
-<p>可用的积木由框架在 exec 时注入，程序里禁止 <code>import</code>：</p>
+<h2>7. 信任边界与失败处理</h2>
 <table>
-<tr><th>注入的名字</th><th>说明</th></tr>
-<tr><td><code>llm</code></td><td>单次模型请求，无工具，无循环。
-签名为 <code>llm(prompt, model=, effort=, response_format=, choices=, web_search=,
-timeout_s=)</code>。</td></tr>
-<tr><td><code>agent</code></td><td>工具循环，反复调 llm + 执行工具直到完成。
-签名为 <code>agent(prompt, model=, effort=, tools=, max_iterations=20, timeout_s=)</code>。</td></tr>
-<tr><td><code>goal</code></td><td>判定循环，反复调 agent + 用 llm 判定条件直到满足。
-签名为 <code>goal(prompt, condition, model=, effort=, max_rounds=10, timeout_s=)</code>。</td></tr>
-<tr><td><code>validate_and_retry</code></td><td>验证和回溯，执行 action，用 llm 判定结果是否满足 check，不满足则执行 retry。
-签名为 <code>validate_and_retry(action, check, retry, max_retries=2)</code>。check 和 condition 都是自然语言字符串。</td></tr>
-<tr><td><code>route</code></td><td>路由选择，让 llm 从 options 列表中选择一个。
-签名为 <code>route(question, options, context="")</code>。options 是字符串列表，返回其中一个。</td></tr>
-<tr><td><code>conditional</code></td><td>条件分支，llm 判定 condition（YES/NO）并执行对应分支。
-签名为 <code>conditional(condition, context="", if_true, if_false)</code>。分支是可调用对象。</td></tr>
-<tr><td>注册的 agentic function</td><td><code>AGENTIC_MODULES</code> 注册表里的全部函数，按名直接调用。
-planner 的 prompt 里带着这份清单（函数名、签名、docstring 首行），它据此选材。</td></tr>
-</table>
-<div class="card">
-程序里没有任何 checkpoint 语法。存档是框架的事：注入环境里的每个可调用都被包了一层，
-真实执行前后写 state.json，键 =（函数名，该名第几次被调，参数摘要）。验证也不是框架强加的：
-要验证就像上面那样把检查写成程序的一步，不满足就 <code>raise</code>，交给修订回环。
-</div>
-
-<h2>3. 断点续跑：整个程序重跑，调用回放</h2>
-<p>没有"记录几个点、完成的打勾"的调度逻辑。续跑就是把 <code>workflow()</code> 从第一行重新执行一遍，
-唯一的机制是调用边界的短路：state.json 里已 completed 的调用（同名、同次序、同参数摘要），
-不真正执行，直接返回上次的结果。于是重跑时程序飞速掠过做完的部分，
-到第一个没做完的调用才真正干活——控制流每次都是完整走的（if 重新判断、for 重新循环），
-恢复的只是昂贵调用的结果。</p>
-<figure>
-<svg viewBox="0 0 960 250" role="img" aria-label="首跑与重跑对比：首跑中 find_issues 和修复 agent 真实执行成功，run_tests 中途崩溃；重跑时整个程序从第一行重新执行，前两个调用由 state.json 回放上次结果，瞬间掠过，run_tests 从头真实执行，效果等于从出错处继续">
-  <defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-    <path d="M0,0 L10,5 L0,10 z" fill="#8a8675"/></marker></defs>
-  <rect x="0" y="0" width="960" height="250" fill="#12110b"/>
-
-  <text x="30" y="40" fill="#e8e4d4" font-size="13">首跑</text>
-  <line x1="90" y1="52" x2="930" y2="52" stroke="#2e2c20"/>
-  <rect x="110" y="26" width="220" height="30" rx="6" fill="#181712" stroke="#5aad4e"/>
-  <text x="220" y="46" fill="#bdb9a6" font-size="12" text-anchor="middle">find_issues()　实跑 ✓</text>
-  <rect x="350" y="26" width="220" height="30" rx="6" fill="#181712" stroke="#5aad4e"/>
-  <text x="460" y="46" fill="#bdb9a6" font-size="12" text-anchor="middle">agent("修复…")　实跑 ✓</text>
-  <rect x="590" y="26" width="200" height="30" rx="6" fill="#181712" stroke="#d4843a" stroke-width="1.5"/>
-  <text x="690" y="46" fill="#d4843a" font-size="12" text-anchor="middle">run_tests()　崩溃 ✗</text>
-  <text x="810" y="46" fill="#8a8675" font-size="11">进程死 / 抛异常</text>
-
-  <text x="30" y="100" fill="#8a8675" font-size="12">前两个调用的结果已在 state.json；planner 若需要改代码，改完仍走下面这条路</text>
-
-  <text x="30" y="152" fill="#e8e4d4" font-size="13">重跑</text>
-  <line x1="90" y1="164" x2="930" y2="164" stroke="#2e2c20"/>
-  <rect x="110" y="138" width="130" height="30" rx="6" fill="#181712" stroke="#3a382d" stroke-dasharray="4 3"/>
-  <text x="175" y="158" fill="#8a8675" font-size="12" text-anchor="middle">find_issues 回放</text>
-  <rect x="252" y="138" width="130" height="30" rx="6" fill="#181712" stroke="#3a382d" stroke-dasharray="4 3"/>
-  <text x="317" y="158" fill="#8a8675" font-size="12" text-anchor="middle">agent 回放</text>
-  <rect x="394" y="138" width="300" height="30" rx="6" fill="#181712" stroke="#5aad4e" stroke-width="1.5"/>
-  <text x="544" y="158" fill="#5aad4e" font-size="12" text-anchor="middle">run_tests　从头实跑 →　继续往后</text>
-  <line x1="694" y1="153" x2="750" y2="153" stroke="#8a8675" marker-end="url(#ar3)"/>
-  <rect x="754" y="138" width="150" height="30" rx="6" fill="#181712" stroke="#5aad4e"/>
-  <text x="829" y="158" fill="#5aad4e" font-size="12" text-anchor="middle">completed</text>
-
-  <text x="110" y="204" fill="#8a8675" font-size="11">虚线 = 不执行，从 state.json 直接取上次结果，耗时≈0</text>
-  <text x="110" y="226" fill="#8a8675" font-size="11">整个 workflow() 仍从第一行完整执行：if 重新判断、for 重新循环，恢复的只是昂贵调用的结果</text>
-</svg>
-<figcaption>重跑即续跑。程序每次都完整执行，做完的调用瞬间回放，第一个未完成的调用起真实运行。</figcaption>
-</figure>
-<div class="card">
-进程被杀同理：state.json 每次状态变化先写盘，重启后拿 <code>run_id</code> 再跑一遍即续。
-续跑是显式的——每次 <code>agentic_workflow(task)</code> 都新建实例（返回值带 <code>run_id</code>），
-续跑要传入既有实例的 <code>run_id</code>。不存在按任务文本匹配旧运行这种事。
-</div>
-
-<h2>4. 出错后的修订：改代码，重跑</h2>
-<p>程序抛异常——语法错、积木调用失败、planner 自己写的检查 <code>raise</code>——处理方式和开发者一样：
-planner 拿到异常栈、当前代码和 state.json 里的运行记录，重写 code.py（改错的那段、拆步骤、
-补前置，随它），然后整个程序重跑。没改动的已完成调用照旧回放，所以修订不推翻已完成的工作。
-旧版代码留档在实例目录里，修订历史进返回值的 <code>revisions</code>。校验不过、修完还错，
-都是打回 planner 再改——改到能跑为止，运行的强制停止只有 <code>capped</code> 一种。</p>
-
-<h2>5. 与现有机制的关系</h2>
-<table>
-<tr><th>机制</th><th>关系</th></tr>
-<tr><td>Agentic Programming 核心（<code>@agentic_function</code> / <code>Runtime</code>）</td>
-<td>生成的程序就是一个标准 agentics 模块，执行走同一套 DAG 追踪；本设计不引入第二种函数形态。</td></tr>
-<tr><td>todo 计划板</td><td>不参与。workflow 的状态在自己的实例目录里，todo 板继续做它自己的事。</td></tr>
-<tr><td>goal 判定 / continuation loop</td><td>不参与。程序的验证由 planner 写进代码，失败即异常。</td></tr>
-<tr><td>函数注册表（<code>AGENTIC_MODULES</code>）</td><td>planner 的积木清单来源，也是 exec 时注入执行环境的白名单。</td></tr>
+<tr><th>边界</th><th>要求</th></tr>
+<tr><td>路径</td><td>project id、revision、manifest file 均拒绝绝对路径、<code>..</code>、重复文件和 symlink；只读取 catalog 根目录内文件。</td></tr>
+<tr><td>代码</td><td>每个 Python 文件先 AST 解析；禁止 import、class、async entry 与非白名单顶层语句；全项目只能有一个 <code>workflow()</code>。</td></tr>
+<tr><td>信息</td><td>catalog manifest 不记录 task 原文、调用参数、结果、错误正文或凭据；这些只保存在受现有策略约束的 run state。</td></tr>
+<tr><td>取消</td><td><code>KeyboardInterrupt</code> / <code>CancelledError</code> 直接传播，不触发 planner 修订，也不发布候选 revision。</td></tr>
+<tr><td>失败</td><td>invalid plan 在 staging 内重写；执行异常生成新的 repair candidate 并替换 run snapshot；只有 candidate 执行成功后才发布 revision。达到真实调用上限后保持 <code>capped</code>，不再修订或发布。</td></tr>
+<tr><td>并发</td><td>catalog 根目录使用跨进程文件锁；revision 分配、目标不存在检查、catalog 临时 revision 目录 rename 与 active pointer 更新全部在锁内。run snapshot 不移动。进程内锁继续保护同一 run checkpoint，不同 run 的执行不持有 catalog 锁。</td></tr>
 </table>
 
-<h2>6. 边界与取舍</h2>
+<h2>8. 明确不包含</h2>
+<ul>
+<li>不增加向量数据库、embedding、远程 registry、Marketplace 或项目 UI 编辑器。</li>
+<li>不允许生成项目安装依赖、执行任意 import、访问 catalog 外路径。</li>
+<li>不把 workflow project 和用户聊天 Project、Skills、Programs 分类合并。</li>
+<li>不根据历史运行成功率自动决定复用；planner 必须看到候选元数据后明确给出 action。</li>
+<li>不改变 DAG、聊天折叠、Conclusion、provider/model 继承和 18100 单实例合同。</li>
+</ul>
+
+<h2>9. 公共入口验收</h2>
 <table>
-<tr><th>决定</th><th>理由</th></tr>
-<tr><td>planner 直接写 Python 代码</td><td>表达力优先：分支、循环、异常处理是任务编排的常态，
-不为它们发明第二种规格语言。写错的风险由校验（ast、禁 import、必须 def workflow()）和修订回环兜住。</td></tr>
-<tr><td>续跑 = 重跑 + 调用回放</td><td>Python 无法从函数中间恢复执行，重跑整个程序、回放已完成调用
-是代码级断点续跑的唯一正确形态；控制流重走保证修订后的逻辑立即生效。</td></tr>
-<tr><td>checkpoint 自动，代码里无痕</td><td>存档语法一旦要生成方手写就会被写错；包在注入环境的
-调用边界上，生成的代码和手写的 agentics 模块长得一模一样。</td></tr>
-<tr><td>实例独立，无共享板</td><td>一个 workflow 是一个程序的一次运行，多个流程并发是常态；
-共享清单带来的匹配、认领、串扰问题一概不要。</td></tr>
-<tr><td>小任务不写程序</td><td>planner 第一步仍做规模判断，单 agent 一口气能完成的直接执行，
-写程序的开销只花在配得上它的任务上。</td></tr>
-<tr><td>失败不放弃</td><td>没有 abandoned：无效代码、运行报错都带着具体错误打回 planner 重写，
-改到能跑为止。防失控的唯一闸门是 40 次真实调用执行触发 <code>capped</code>（回放不计数）。</td></tr>
+<tr><th>公共路径</th><th>可观察结果</th></tr>
+<tr><td>首次调用 <code>agentic_workflow(task)</code></td><td>创建 project revision 和独立 run snapshot；多文件 helper 被实际调用；发布后 run snapshot 字节不变并可恢复；结果带 project id/revision。</td></tr>
+<tr><td>另一 session 调用语义相近任务</td><td>planner prompt 收到已有候选；选择 reuse 时不生成新代码，仍创建新的 run 和 checkpoint。</td></tr>
+<tr><td>相近但需要调整的任务</td><td>phase 2 收到选中 active revision 的 README、manifest 与全部源码；发布同一 project 的新 revision，未要求修改的文件与旧 revision 一致，旧 run snapshot 字节不变且可恢复；搜索 metadata、revision README 与 active pointer 属于同一次发布。</td></tr>
+<tr><td>无关任务</td><td>同一入口创建新的 project，不依赖“新建”关键词。</td></tr>
+<tr><td>非法 action / project 绑定</td><td>reuse/revise 指向非候选 project或模型指定 revision时拒绝并重新规划；create 的名称产生已占用 id 时，框架在 catalog 锁内分配唯一短后缀，不覆盖已有 project，也不重新调用 planner。</td></tr>
+<tr><td>项目校验或运行修复失败</td><td>旧 active revision 仍可复用；非法路径、symlink、import 或无效入口都不改变 catalog。</td></tr>
+<tr><td>取消或 capped</td><td>不进入 repair planner，不发布候选 revision，不改变 active pointer。</td></tr>
+<tr><td>两个进程并发修订同一 project</td><td>得到不同 revision；两个目录完整，project.json 指向其中一个完整 revision且仍可读取。</td></tr>
+<tr><td><code>resume_workflow(run_id)</code> 或 Retry</td><td>恢复指定 run snapshot，不重新搜索 project，也不切换到最新 revision。</td></tr>
+<tr><td>旧单文件 run</td><td>仍能恢复并完成；不会被错误加入新 catalog。</td></tr>
 </table>
 
-<h2>实现状态</h2>
-<div class="card">
-代码在 <code>openprogram/programs/agentic_functions/agentic_workflow/</code>，注册在 <code>AGENTIC_MODULES</code>，
-入口 <code>agentic_workflow</code>。正在按本设计从 JSON item 清单形态重实现为生成代码形态；
-产品文档 <code>docs/capabilities/agentic-workflow.md</code> 随实现落地后同步改写。
-</div>
+<h2>10. 实现状态</h2>
+<div class="card implemented"><strong>已实现并保持：</strong>受限 Python 执行、函数注册表注入、调用边界 checkpoint、
+按 run 恢复、运行异常修订、40 次真实调用上限、provider/model 继承、聊天 RuntimeBlock 与 Conclusion。</div>
+<div class="card implemented"><strong>本设计已实现：</strong>全局 workflow project catalog、确定性候选检索、
+单入口两阶段 planner、reuse/revise/create、多文件校验与共享 namespace 执行、不可变 revision、run snapshot、
+事务式 active revision 发布、跨进程 catalog 锁，以及仅在显式 resume 时读取旧 <code>code.py</code>。</div>
+
+<h3>10.1 实现与审阅证据</h3>
+<table>
+<tr><th>项目</th><th>记录</th></tr>
+<tr><td>生产实现</td><td><code>openprogram/programs/agentic_functions/agentic_workflow/__init__.py</code></td></tr>
+<tr><td>公共入口回归</td><td><code>tests/component/agent/test_agentic_workflow.py</code>：首次创建、跨 session reuse、revise、非法候选、取消、capped、故障回滚、显式 resume、旧 run、多进程并发发布。</td></tr>
+<tr><td>协议迁移回归</td><td><code>tests/unit/programs/test_three_tier_architecture.py</code> 与 <code>test_workflow_with_control_flow.py</code> 均通过单参数入口和两阶段多文件项目执行。</td></tr>
+<tr><td>提交</td><td><code>9bb08747</code> 设计；<code>1c7b5788</code> 初始实现；<code>b1297e3b</code> 单入口与多文件约束；<code>382de4b2</code> 事务发布；<code>b2f78ded</code> 并发验证与实现记录。</td></tr>
+<tr><td>独立审阅</td><td>设计 reader test：PASS；specification review：PASS；quality review：PASS。</td></tr>
+</table>
+
+<h3>10.2 验证记录</h3>
+<ul>
+<li>workflow 定向与故障/多进程探针：通过。</li>
+<li><code>tests/component/agent</code>：257 passed，1 skipped。</li>
+<li><code>tests/integration</code>：59 passed，4 skipped。</li>
+<li><code>tests/unit</code>：2457 passed，3 skipped；3 项失败均位于未修改的 process runner 参数位置断言。</li>
+<li><code>tests/contracts</code>：447 passed，1 skipped；2 项失败均位于未修改的 browser-agent 注释和既有测试目录布局合同。</li>
+<li>Ruff、Python compile、文档链接检查（0 broken links）和 <code>git diff --check</code>：通过。</li>
+</ul>
 
 </body>
 </html>

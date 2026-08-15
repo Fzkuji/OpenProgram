@@ -18,7 +18,7 @@
  */
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Detail } from "./detail";
 import { ProviderItem } from "./provider-item";
@@ -30,11 +30,22 @@ import { cachedFetch, invalidate } from "@/lib/prefs/settings-cache";
 import { refreshAgentChip } from "./types";
 import { useTranslation } from "@/lib/i18n";
 import { pushPath } from "@/lib/shallow-nav";
+import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "../../animated-icons";
+import { sidebarToggleClass } from "../../sidebar/nav-classes";
 
 // Re-export ApiKey for search-providers-section.tsx (the only other
 // consumer outside this subdirectory).
 export { ApiKey } from "./api-key";
 export type { Provider, Model } from "./types";
+
+function readProviderListOpen(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return localStorage.getItem("providerListOpen") !== "0";
+  } catch {
+    return true;
+  }
+}
 
 export function ProvidersSection({ initialProviderId }: { initialProviderId?: string } = {}) {
   const { t, text } = useTranslation();
@@ -48,7 +59,18 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
   // new URL, which re-renders this with a new initialProviderId.
   const [selectedId, setSelectedId] = useState<string | null>(initialProviderId ?? null);
   const [search, setSearch] = useState("");
+  const [listOpen, setListOpen] = useState(true);
   const sidebarRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => { setListOpen(readProviderListOpen()); }, []);
+
+  function toggleList() {
+    setListOpen((current) => {
+      const next = !current;
+      try { localStorage.setItem("providerListOpen", next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  }
 
   // Sidebar scroll is intentionally CONTAINED — see the matching
   // `overscroll-behavior: contain` in settings-page.module.css. The
@@ -142,24 +164,44 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
         </p>
       </div>
       <div className={`${styles.pageBody} ${styles.pageBodyTwoPane}`}>
-        <div className={styles.providersLayout}>
+        <div className={styles.providersLayout + (!listOpen ? " " + styles.providerListCollapsed : "")}>
           <div className={styles.providersSidebar} ref={sidebarRef}>
             <div className={styles.providersStickyHeader}>
-              <SearchInput
-                placeholder={text("Search providers...", "搜索 Provider...")}
-                value={search}
-                onChange={setSearch}
-              />
-              <AddCustomProvider
-                onCreated={(id) => {
-                  invalidate("/api/providers/list");
-                  reload(true).then(() => selectProvider(id));
-                }}
-              />
+              <div className={styles.providersToolbar}>
+                {listOpen && (
+                  <div className={styles.providerSearch}>
+                    <SearchInput
+                      placeholder={text("Search providers...", "搜索 Provider...")}
+                      value={search}
+                      onChange={setSearch}
+                    />
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className={sidebarToggleClass}
+                  onClick={toggleList}
+                  aria-expanded={listOpen}
+                  aria-controls="provider-list-items"
+                  aria-label={text(listOpen ? "Collapse provider list" : "Expand provider list", listOpen ? "收起 Provider 列表" : "展开 Provider 列表")}
+                  title={text(listOpen ? "Collapse provider list" : "Expand provider list", listOpen ? "收起 Provider 列表" : "展开 Provider 列表")}
+                >
+                  {listOpen ? <PanelLeftCloseIcon size={20} /> : <PanelLeftOpenIcon size={20} />}
+                </button>
+              </div>
+              {listOpen && (
+                <AddCustomProvider
+                  onCreated={(id) => {
+                    invalidate("/api/providers/list");
+                    reload(true).then(() => selectProvider(id));
+                  }}
+                />
+              )}
             </div>
+          <div id="provider-list-items" className={styles.providerListItems}>
           {enabled.filter(matches).length > 0 && (
             <>
-              <div className={styles.providersGroupLabel}>{text("Enabled", "已启用")}</div>
+              {listOpen && <div className={styles.providersGroupLabel}>{text("Enabled", "已启用")}</div>}
               {enabled.filter(matches).map((p) => (
                 <ProviderItem
                   key={p.id}
@@ -172,7 +214,7 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
           )}
           {disabled.filter(matches).length > 0 && (
             <>
-              <div className={styles.providersGroupLabel}>{text("Not enabled", "未启用")}</div>
+              {listOpen && <div className={styles.providersGroupLabel}>{text("Not enabled", "未启用")}</div>}
               {disabled.filter(matches).map((p) => (
                 <ProviderItem
                   key={p.id}
@@ -183,6 +225,7 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
               ))}
             </>
           )}
+          </div>
         </div>
           <div className={styles.detail}>
             {!selected ? (

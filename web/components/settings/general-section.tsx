@@ -25,20 +25,10 @@ import {
 import {
   useThemePref,
   AUTO_DARK,
+  THEME_PREFS,
   type ThemePref,
 } from "@/lib/prefs/theme-pref";
 import styles from "./settings-page.module.css";
-
-/** 选择器里的条目顺序。'auto' 排最前（默认值）。 */
-const THEME_CHOICES: ThemePref[] = [
-  "auto",
-  "beige-dark",
-  "beige-light",
-  "dark",
-  "light",
-  "aurora",
-  "custom",
-];
 
 /** 自定义 CSS 的起手模板 —— 直接写在 placeholder 里，复制即用。
  *  只列必须覆写的一组；其余 token 不写就继承 :root 兜底值。 */
@@ -63,9 +53,10 @@ const CUSTOM_CSS_TEMPLATE = `[data-theme="custom"] {
   --border: rgba(255, 255, 255, 0.07);
   --border-light: rgba(255, 255, 255, 0.12);
 
-  /* 强调色 */
-  --accent-orange: #d97757;
-  --accent-fill: #d97757;
+  /* 主题主色：文字/边界、填充、填充 hover */
+  --accent-orange: #6ea8fe;
+  --accent-fill: #3b82f6;
+  --accent-orange-hover: #2563eb;
 }`;
 
 const FONT_OPTIONS: FontKey[] = ["system", "inter", "serif", "mono"];
@@ -589,7 +580,7 @@ export function GeneralSection() {
               <div className={styles.label}>{t("general.appearance")}</div>
               <div className={styles.value + " " + styles.valueWide}>
                 <div className={styles.themeGrid}>
-                  {THEME_CHOICES.map((id) => (
+                  {THEME_PREFS.map((id) => (
                     <button
                       key={id}
                       type="button"

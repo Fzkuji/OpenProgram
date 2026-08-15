@@ -17,6 +17,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
+import { desktopBridge } from "@/lib/desktop-bridge";
+import { localSourcePath } from "@/lib/attachment-marker";
 import {
   type PendingImage,
   readDroppedTextFile,
@@ -460,11 +462,13 @@ export function useComposerAttachments(
         media_type: f.type || "image/png",
         ...(f.name ? { filename: f.name } : {}),
       },
+      sourcePath: localSourcePath(f, desktopBridge()),
       loading: true,
     }));
     const docPlaceholders: PendingDoc[] = otherFiles.map((f) => ({
       id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       filename: f.name,
+      sourcePath: localSourcePath(f, desktopBridge()),
       ext: f.name.includes(".")
         ? f.name.split(".").pop()!.toLowerCase()
         : "",

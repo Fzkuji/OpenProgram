@@ -344,7 +344,7 @@ _WRITE_TOOLS = {
 }
 _PROCESS_TOOLS = {
     "bash", "exec", "shell", "execute_code", "process", "agent",
-    "gui_agent", "research_agent", "wiki_agent", "browser_agent",
+    "gui_agent", "research_agent", "wiki_agent", "browser_agent", "computer_use",
     "playwright_browser",
 }
 _NETWORK_TOOLS = {

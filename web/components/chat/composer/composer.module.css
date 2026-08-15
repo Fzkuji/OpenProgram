@@ -82,7 +82,9 @@
      消息刻度条。 */
   max-width: min(var(--chat-column-max), calc(100% - 64px));
   margin: 0 auto;
-  background: var(--bg-tertiary);
+  background: var(--composer-surface);
+  backdrop-filter: var(--composer-backdrop-filter);
+  -webkit-backdrop-filter: var(--composer-backdrop-filter);
   border: none;
   /* Claude Code measured: 10px box radius (was 32px concentric-corner
      geometry — the corner buttons keep their own 50% radius). */
@@ -92,30 +94,13 @@
   padding: 0;
   /* Claude Code measured ring: 1px hairline via box-shadow (no layout
      shift), slightly stronger on focus. */
-  box-shadow: 0 0 0 1px var(--composer-ring);
+  box-shadow: var(--composer-shadow);
   overflow: hidden;
   transition: box-shadow 180ms ease,
     height var(--composer-height-transition);
 }
 .inputWrapper:focus-within {
-  box-shadow: 0 0 0 1px var(--composer-ring-focus);
-}
-:global([data-theme="light"]) .inputWrapper,
-:global([data-theme="beige-light"]) .inputWrapper {
-  background: color-mix(in srgb, var(--bg-input) 80%, transparent);
-  /* 半透明底会把滚到输入框后面的消息透出来 —— 毛玻璃糊掉。 */
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 0 0 1px var(--composer-ring), var(--shadow-sm);
-}
-/* 米色浅色主题页面本身就近白（#faf9f5），80% 白叠上去几乎没差；
-   提到 96% 让输入框明显比背景亮一档。 */
-:global([data-theme="beige-light"]) .inputWrapper {
-  background: color-mix(in srgb, var(--bg-input) 96%, transparent);
-}
-:global([data-theme="light"]) .inputWrapper:focus-within,
-:global([data-theme="beige-light"]) .inputWrapper:focus-within {
-  box-shadow: 0 0 0 1px var(--composer-ring-focus), var(--shadow-sm);
+  box-shadow: var(--composer-shadow-focus);
 }
 /* Crossfade overlay shown briefly during fn-form A → fn-form B
    switches. Sits on top of the new form (z-index 1) and fades opacity
@@ -322,8 +307,8 @@
 }
 .imageAttachImg[data-loading="true"]::after {
   content: "";
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   border: 2px solid var(--border);
   border-top-color: var(--text-secondary);
@@ -419,6 +404,18 @@
    边距，把文本推离 768px 列左缘（Claude 实测文本缩进 = 6px padding）。 */
 .inputOptions :global(.permission-badge > :has(svg)) {
   display: none;
+}
+
+.surfaceChip {
+  max-width: min(240px, 35vw);
+  cursor: pointer;
+  font: inherit;
+}
+.surfaceChipLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Env chips — floating row ABOVE the input box (Claude Code
@@ -1043,6 +1040,85 @@
   height: 12px;
 }
 
+/* Persistent composer control surfaces. Reuse only the environment-chip
+   fill; borders and inset rings reduce the perceived interior space of
+   these 20px controls. Hover/open increases the borderless fill. */
+.controlsRow :global(.runtime-badge.permission-badge),
+.controlsRow :global(.runtime-badge.agent-badge),
+.controlsRow .plusBtn,
+.controlsRow .toolChip,
+.controlsRow .effortText,
+.controlsRow :global(.context-ring-badge) {
+  background: var(--chip-bg);
+}
+
+.controlsRow :global(.runtime-badge.permission-badge:hover),
+.controlsRow :global(.runtime-badge.permission-badge[aria-expanded="true"]),
+.controlsRow :global(.runtime-badge.agent-badge:hover),
+.controlsRow :global(.runtime-badge.agent-badge[aria-expanded="true"]),
+.controlsRow .plusBtn:hover,
+.controlsRow .plusBtn[aria-expanded="true"],
+.controlsRow .toolChip:hover,
+.controlsRow .effortText:hover,
+.controlsRow .effortControl[aria-expanded="true"] .effortText,
+.controlsRow :global(.context-ring-badge:hover),
+.controlsRow :global(.context-ring-badge[aria-expanded="true"]) {
+  background: color-mix(in srgb, var(--text-bright) 8%, var(--chip-bg));
+}
+
+.controlsRow :global(.effort-pill-fixed) {
+  background-color: var(--chip-bg) !important;
+}
+.controlsRow :global(.effort-pill-fixed:hover) {
+  background-color: color-mix(in srgb, var(--text-bright) 8%, var(--chip-bg)) !important;
+}
+
+/* Narrow composer control labels collapse to their existing role icons.
+   The labels use the visually-hidden pattern instead of display:none so
+   each popover trigger keeps its accessible name. The unnamed query uses
+   the nearest inline-size container: .composer-bottom-row itself. */
+.compactEffortIcon {
+  display: none;
+}
+
+@container (max-width: 560px) {
+  .controlsRow :global(.permission-badge .badge-details),
+  .controlsRow :global(.agent-badge .badge-details),
+  .controlsRow .effortValue {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .controlsRow :global(.permission-badge),
+  .controlsRow :global(.agent-badge),
+  .controlsRow .effortText {
+    width: 20px;
+    min-width: 20px;
+    padding: 0 !important;
+    justify-content: center;
+  }
+
+  .controlsRow :global(.permission-badge > :has(svg)) {
+    display: inline-flex !important;
+  }
+
+  .controlsRow :global(.permission-badge > :has(svg)),
+  .controlsRow :global(.agent-badge > :has(svg)) {
+    margin-right: 0 !important;
+  }
+
+  .controlsRow .compactEffortIcon {
+    display: inline-flex;
+  }
+}
+
 /* Plus dropdown. Shadow stack mirrors shadcn's `shadow-md` (a soft 1-2px
    ambient + a wider 12-24px diffuse) instead of one heavy 16px / 0.32 alpha
    drop, which read as too dark on the light theme's beige surface. */
@@ -1079,6 +1155,19 @@
 .plusMenuRow[data-highlighted] .plusMenuItem,
 .plusMenuRow[data-popup-open] .plusMenuItem {
   background: var(--bg-hover);
+}
+.plusMenuSplitRow {
+  position: relative;
+}
+.plusMenuSplitRow:hover .plusMenuItem {
+  background: var(--bg-hover);
+}
+.plusMenuPrimary {
+  width: 100%;
+  min-width: 0;
+}
+.plusMenuPrimary .plusMenuItem {
+  width: 100%;
 }
 .plusMenuItem {
   display: flex;
@@ -1140,12 +1229,16 @@
    按钮 22px、图标 14px 居中，比裸 14px 的勾多出 4px 衬——用负
    右边距抵掉，让 ⚙ 图标和其他行的 ✓ 落在同一竖列上。 */
 .plusMenuGear {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 22px;
   height: 22px;
-  margin-right: -4px;
+  margin-right: 0;
   padding: 0;
   border: none;
   border-radius: 6px;
@@ -1153,8 +1246,12 @@
   color: var(--text-muted);
   cursor: pointer;
 }
+.plusMenuSplitRow[data-tools-active] .plusMenuGear {
+  right: 24px;
+}
 .plusMenuGear:hover,
-.plusMenuGear[aria-expanded="true"] {
+.plusMenuGear[data-highlighted],
+.plusMenuGear[data-popup-open] {
   background: color-mix(in srgb, var(--text-bright) 10%, transparent);
   color: var(--text-bright);
 }

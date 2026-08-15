@@ -72,6 +72,10 @@ interface LegacyMsg {
    *  Used by sweep to detect orphaned ``running`` rows. */
   started_at?: number;
   last_update_at?: number;
+  /** Runtime ownership edge. Empty/ROOT means a top-level conversation
+   *  run; an assistant id means the runtime belongs inside that reply. */
+  caller?: string;
+  /** Conversation-order edge only; it must not decide runtime ownership. */
   predecessor?: string;
   source?: string;
 }
@@ -218,13 +222,13 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
       return;
     }
 
-    // LLM-issued @agentic_function runtime-block placeholder: if its
-    // predecessor points at an assistant row we've already emitted, merge
-    // it into that assistant's `runtimeChildren` and DO NOT push it
-    // onto the top-level `out` list. fn-form / direct-run runtime
-    // blocks (predecessor is a user msg) fall through and stay top-level.
+    // LLM-issued @agentic_function runtime-block placeholder: only `caller`
+    // expresses ownership. `predecessor` is the conversation-order edge, so
+    // a direct run may legitimately follow an assistant while staying top-level.
     if (_isRuntimePlaceholder && m.role === "assistant") {
-      const calledBy = typeof m.predecessor === "string" ? m.predecessor : undefined;
+      const calledBy = typeof m.caller === "string" && m.caller && m.caller !== "ROOT"
+        ? m.caller
+        : undefined;
       const parent = calledBy ? assistantById.get(calledBy) : undefined;
       if (parent) {
         const child: ChatMsg = {

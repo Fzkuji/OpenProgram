@@ -16,7 +16,7 @@ Only artifacts attached to a published [GitHub Release](https://github.com/Fzkuj
 
 ## Desktop installation
 
-The supported macOS desktop artifact contains Electron and the complete platform product runtime. The runtime includes managed CPython, OpenProgram, the prebuilt Web UI, providers, channels, search, Playwright Chromium, default OCR/model data, and the GUI, Research, and Wiki first-party Programs. It does not use a system Python, Node.js, or Git at runtime. Linux currently uses the complete CLI/server release because the complete AppImage failed its packaging gate; no reduced Linux desktop artifact is published.
+The supported macOS desktop artifact contains Electron and the complete platform product runtime. The runtime includes managed CPython, OpenProgram, the prebuilt Web UI, providers, channels, search, Playwright Chromium, default OCR/model data, and the GUI, Research, and Wiki first-party Programs. It does not use a system Python or Node.js at runtime. Git is required for session and Memory history and is checked by `openprogram doctor`. Linux currently uses the complete CLI/server release because the complete AppImage failed its packaging gate; no reduced Linux desktop artifact is published.
 
 ### macOS
 

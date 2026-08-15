@@ -1,6 +1,7 @@
 """Test workflow can use control flow primitives."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -11,8 +12,34 @@ import openprogram.programs.agentic_functions.agentic_workflow as TL
 @pytest.fixture
 def session_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(TL, "_session_repo", lambda _sid: tmp_path)
+    monkeypatch.setattr(TL, "_workflow_projects_root", lambda: tmp_path / "catalog")
     monkeypatch.setattr(TL, "_registered_agentic_functions", lambda: {})
+    monkeypatch.setattr(TL, "current_session_id", lambda: "s1")
+    monkeypatch.setattr(
+        TL, "_summarize_workflow",
+        lambda state: {"summary": str(state["result"]), "return_result": False},
+    )
     return tmp_path
+
+
+def _project_planner(result: str):
+    def planner(_sid, prompt, **_kwargs):
+        if "<workflow project candidates>" in prompt:
+            return json.dumps({"action": "create"})
+        return json.dumps({
+            "project_metadata": {
+                "name": f"{result} workflow",
+                "summary": f"Return {result}",
+                "tags": ["test"],
+            },
+            "readme": f"# {result} workflow\n",
+            "files": {
+                "steps/run.py": f"def run():\n    return {result!r}\n",
+                "entry.py": "def workflow():\n    return run()\n",
+            },
+        })
+
+    return planner
 
 
 def test_workflow_can_use_validate_and_retry(
@@ -20,15 +47,11 @@ def test_workflow_can_use_validate_and_retry(
 ) -> None:
     """Workflow 可以使用 validate_and_retry 控制流原语。"""
 
-    def _planner(_sid, _prompt, **_kwargs):
-        return """```python
-def workflow():
-    return "validate_and_retry executed"
-```"""
+    monkeypatch.setattr(
+        TL, "_run_planner_turn", _project_planner("validate_and_retry executed"),
+    )
 
-    monkeypatch.setattr(TL, "_run_planner_turn", _planner)
-
-    result = TL.agentic_workflow("test validate_and_retry", session_id="s1")
+    result = TL.agentic_workflow("test validate_and_retry")
 
     assert result["status"] == "completed"
     assert "validate_and_retry executed" in result["summary"]
@@ -39,15 +62,9 @@ def test_workflow_can_use_route(
 ) -> None:
     """Workflow 可以使用 route 控制流原语。"""
 
-    def _planner(_sid, _prompt, **_kwargs):
-        return """```python
-def workflow():
-    return "route executed"
-```"""
+    monkeypatch.setattr(TL, "_run_planner_turn", _project_planner("route executed"))
 
-    monkeypatch.setattr(TL, "_run_planner_turn", _planner)
-
-    result = TL.agentic_workflow("test route", session_id="s1")
+    result = TL.agentic_workflow("test route")
 
     assert result["status"] == "completed"
     assert "route executed" in result["summary"]
@@ -58,15 +75,11 @@ def test_workflow_can_use_conditional(
 ) -> None:
     """Workflow 可以使用 conditional 控制流原语。"""
 
-    def _planner(_sid, _prompt, **_kwargs):
-        return """```python
-def workflow():
-    return "conditional executed"
-```"""
+    monkeypatch.setattr(
+        TL, "_run_planner_turn", _project_planner("conditional executed"),
+    )
 
-    monkeypatch.setattr(TL, "_run_planner_turn", _planner)
-
-    result = TL.agentic_workflow("test conditional", session_id="s1")
+    result = TL.agentic_workflow("test conditional")
 
     assert result["status"] == "completed"
     assert "conditional executed" in result["summary"]
@@ -77,15 +90,11 @@ def test_workflow_control_flow_compose(
 ) -> None:
     """Workflow 可以组合使用多个控制流原语。"""
 
-    def _planner(_sid, _prompt, **_kwargs):
-        return """```python
-def workflow():
-    return "all primitives available"
-```"""
+    monkeypatch.setattr(
+        TL, "_run_planner_turn", _project_planner("all primitives available"),
+    )
 
-    monkeypatch.setattr(TL, "_run_planner_turn", _planner)
-
-    result = TL.agentic_workflow("test compose", session_id="s1")
+    result = TL.agentic_workflow("test compose")
 
     assert result["status"] == "completed"
     assert "all primitives available" in result["summary"]

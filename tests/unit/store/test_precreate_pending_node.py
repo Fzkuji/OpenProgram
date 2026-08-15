@@ -63,12 +63,18 @@ def test_parent_precreates_node_and_moves_head(monkeypatch, tmp_path):
     class _RM:
         def _enabled_model_keys(self):
             return ["k"]
+
+        def _resolve_session_provider_model(self, conv):
+            assert conv["id"] == "s1"
+            return "minimax-cn-coding-plan", "MiniMax-M3"
     monkeypatch.setattr("openprogram.webui.server._runtime_management", _RM())
 
     captured = {}
 
     def _stop_dispatch(**kw):
         captured["anchor"] = kw.get("anchor_msg_id")
+        captured["provider"] = kw.get("provider")
+        captured["model"] = kw.get("model")
         return {"runtime_msg_id": None, "ok": True}
     monkeypatch.setattr(
         "openprogram.agent.dispatcher.dispatch_forced_tool_call", _stop_dispatch)
@@ -103,6 +109,54 @@ def test_parent_precreates_node_and_moves_head(monkeypatch, tmp_path):
     # The child received the pre-created id as a ``|node:<id>`` anchor
     # suffix so its wrapper reuses it instead of appending a second node.
     assert captured["anchor"] == f"|node:{node.id}"
+    assert captured["provider"] == "minimax-cn-coding-plan"
+    assert captured["model"] == "MiniMax-M3"
+
+
+def test_missing_session_model_refuses_before_dispatch(monkeypatch):
+    from openprogram.webui.routes import chat as routes_chat
+
+    monkeypatch.setattr(
+        "openprogram.webui.server._get_or_create_session",
+        lambda sid=None, **kwargs: {"id": sid or "s1"},
+    )
+    monkeypatch.setattr(
+        "openprogram.webui.server._is_run_active",
+        lambda session_id: False,
+    )
+
+    class Tool:
+        name = "word_count"
+        _is_agentic = True
+
+    monkeypatch.setattr(
+        "openprogram.programs.agent_tools",
+        lambda names=None: [Tool()],
+    )
+
+    class RuntimeManagement:
+        def _enabled_model_keys(self):
+            return [("some-provider", "some-model")]
+
+        def _resolve_session_provider_model(self, conv):
+            return None, None
+
+    monkeypatch.setattr(
+        "openprogram.webui.server._runtime_management",
+        RuntimeManagement(),
+    )
+    dispatched = []
+    monkeypatch.setattr(
+        "openprogram.agent.dispatcher.dispatch_forced_tool_call",
+        lambda **kwargs: dispatched.append(kwargs),
+    )
+
+    result = routes_chat.run_agentic_function_call(
+        "word_count", {}, "s1",
+    )
+    assert result["status_code"] == 409
+    assert result["code"] == "no_model"
+    assert dispatched == []
 
 
 # ---- 2. child reuse: wrapper with _forced_node_id set does not dupe -----

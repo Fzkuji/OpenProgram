@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Center Tabs 与复合分屏 Tab 设计</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #151714;
+      --panel: #1d211d;
+      --panel-2: #232823;
+      --line: #3a4239;
+      --text: #e7ebe4;
+      --muted: #a8b0a5;
+      --accent: #85b882;
+      --accent-2: #d6a45e;
+      --warn: #e0b463;
+      --bad: #df7777;
+      --code: #111410;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      padding: 36px 24px 88px;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+    }
+    .wrap { max-width: 1120px; margin: 0 auto; }
+    header { margin-bottom: 26px; }
+    h1 { margin: 0 0 7px; font-size: 27px; line-height: 1.25; }
+    h2 { margin: 40px 0 12px; color: var(--accent); font-size: 19px; }
+    h3 { margin: 24px 0 8px; color: var(--accent-2); font-size: 15px; }
+    p, li { max-width: 98ch; }
+    p { margin: 8px 0; color: var(--muted); }
+    ul, ol { margin: 8px 0; padding-left: 23px; color: var(--muted); }
+    li + li { margin-top: 5px; }
+    a { color: #72bed1; }
+    strong { color: var(--text); }
+    code {
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: var(--code);
+      color: #d8d0a8;
+      font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    pre {
+      overflow: auto;
+      margin: 12px 0;
+      padding: 15px 17px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--code);
+      color: #dce4d9;
+      font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    pre code { padding: 0; background: transparent; color: inherit; }
+    nav { display: flex; flex-wrap: wrap; gap: 7px; margin: 20px 0 28px; }
+    nav a {
+      padding: 5px 9px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 12px;
+    }
+    .status {
+      display: inline-block;
+      padding: 4px 10px;
+      border: 1px solid var(--warn);
+      border-radius: 99px;
+      color: var(--warn);
+      font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .card {
+      margin: 12px 0;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+    }
+    .decision { border-left: 4px solid var(--accent); }
+    .problem { border-left: 4px solid var(--bad); }
+    .table-wrap { overflow-x: auto; margin: 12px 0; }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); font-size: 12.5px; }
+    th, td { padding: 10px 11px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--text); background: var(--panel-2); }
+    td { color: var(--muted); }
+    .wireframe { margin: 15px 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--code); }
+    .strip { display: flex; gap: 7px; margin-bottom: 12px; overflow: hidden; }
+    .entry {
+      min-width: 112px;
+      padding: 7px 10px;
+      border: 1px solid #444b43;
+      border-radius: 8px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .entry.composite {
+      min-width: 280px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      padding: 0;
+      overflow: hidden;
+      border-color: var(--accent);
+      background: #293027;
+      color: var(--text);
+    }
+    .member-cell { display: flex; gap: 7px; align-items: center; min-width: 0; padding: 7px 8px; }
+    .member-cell + .member-cell { border-left: 1px solid var(--line); }
+    .member-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .panes { display: grid; grid-template-columns: 1fr 6px 1fr; min-height: 125px; }
+    .pane { padding: 20px; border: 1px solid var(--line); background: var(--panel); }
+    .pane:first-child { border-radius: 8px 0 0 8px; }
+    .pane:last-child { border-radius: 0 8px 8px 0; }
+    .divider { background: #4a5248; }
+    .flow { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; margin: 14px 0; }
+    .node { padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); }
+    .arrow { color: var(--accent); font-size: 18px; text-align: center; }
+    .warn { color: var(--warn); }
+    @media (max-width: 760px) {
+      body { padding: 24px 16px 64px; }
+      .flow { grid-template-columns: 1fr; }
+      .arrow { transform: rotate(90deg); }
+      .panes { grid-template-columns: 1fr; gap: 6px; }
+      .divider { height: 6px; }
+      .pane:first-child, .pane:last-child { border-radius: 8px; }
+    }
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <h1>Center Tabs 与复合分屏 Tab 设计</h1>
+    <p>本页定义顶部 tab 条目、复合分屏 tab、整体切换、持久化和跨窗口转移。会话内部数据所有权仍由 <a href="state-layer.html">Web state layer</a> 定义。</p>
+    <span class="status">BASELINE IMPLEMENTED · TOOLBAR PICKER REVIEWED</span>
+  </header>
+
+  <nav aria-label="文档章节">
+    <a href="#decision">设计结论</a>
+    <a href="#current">当前问题</a>
+    <a href="#terms">概念与不变量</a>
+    <a href="#references">参考比较</a>
+    <a href="#model">目标模型</a>
+    <a href="#transitions">状态转移</a>
+    <a href="#visual">显示与无障碍</a>
+    <a href="#routing">操作路由</a>
+    <a href="#persistence">持久化与迁移</a>
+    <a href="#lifecycle">关闭与转移</a>
+    <a href="#acceptance">实施与验收</a>
+    <a href="#status">实现状态</a>
+  </nav>
+
+  <section id="decision">
+    <h2>01 OpenProgram 的设计结论</h2>
+    <div class="card decision">
+      <p><strong>分屏是一个复合顶部 tab，不是窗口级固定布局。</strong>复合 tab 包含两个内容视图。选择另一个顶部 tab 时，左右两侧一起隐藏；再次选择该复合 tab 时，两个视图和比例一起恢复。</p>
+      <p><strong>左右两侧没有产品级“当前选中侧”。</strong>点击左侧或右侧不会改变顶部样式，不显示 active pane 边框、方向图标或成员高亮，也不持久化 <code>focusedId</code>。</p>
+      <p><strong>顶部只选择条目，但必须看得出两个成员。</strong>单 tab 是一个条目，分屏 pair 也是一个条目。复合条目内部显示两个等宽成员槽位，各自保留图标、截断标题和成员关闭按钮；它们不产生独立 <code>aria-selected</code>、active 背景或拖动对象。</p>
+      <p><strong>Web 不固定在整个窗口。</strong>Web 只在包含它的复合条目被选择时显示。切换到另一个会话、文件或页面条目时，Web 必须同时隐藏，不能跟随新的条目重新组合。</p>
+      <p><strong>创建分屏必须显式选择两个成员。</strong>用户从某个 Web toolbar 点击 Split 时，该 Web tab 是固定 source；界面必须先列出同一窗口内可用的其他 single tabs，用户选择 target 后才调用 <code>groupTab()</code>。不得根据 route、active session、draft 或 tab 顺序自动选择另一成员。</p>
+      <p><strong>新分屏从确定状态开始。</strong>合法 target 提交后，新复合条目必须立即成为 active entry，并把当前窗口的 <code>splitRatio</code> 重置为 <code>0.5</code>。此前其他分屏或已拆分条目留下的比例不能影响新组合；用户随后拖动 divider 产生的新比例仍按 version 2 payload 持久化。</p>
+    </div>
+
+    <div class="wireframe" aria-label="复合分屏 tab 示例">
+      <div class="strip">
+        <span class="entry">New chat</span>
+        <span class="entry composite">
+          <span class="member-cell"><span aria-hidden="true">◯</span><span class="member-label">会话标题</span><span aria-hidden="true">×</span></span>
+          <span class="member-cell"><span aria-hidden="true">◎</span><span class="member-label">bilibili.com</span><span aria-hidden="true">×</span></span>
+        </span>
+        <span class="entry">文件</span>
+        <span class="entry">Programs</span>
+      </div>
+      <div class="panes">
+        <div class="pane"><strong>会话</strong><br>复合 tab 的左侧成员</div>
+        <div class="divider" aria-hidden="true"></div>
+        <div class="pane"><strong>网页</strong><br>复合 tab 的右侧成员</div>
+      </div>
+      <p>顶部只有整个复合条目处于选中状态。两个 pane 视觉权重相同，没有 pane-level active 样式。</p>
+    </div>
+  </section>
+
+  <section id="current">
+    <h2>02 原问题与实施结果</h2>
+    <div class="card problem">
+      <p><strong>原问题：</strong><code>CompoundTabItem</code> 曾把 <code>group.memberIds</code> 分别渲染为多个 <code>TabItem</code>。每个 segment 都有 click target、close button、<code>active</code> 和 <code>aria-selected</code>，顶部因此错误地表达“当前选中了左侧或右侧成员”。</p>
+      <p><strong>原问题：</strong><code>normalizeCenterTabsPayload()</code> 曾根据活动 session 与 <code>splitWebTabId</code> 自动 regroup。切换到另一个会话后，Web 会被重新挂到新会话旁边，表现为浏览器固定在窗口右侧。</p>
+      <p><strong>当前视觉缺口：</strong>桌面顶部栏使用比内容区更深的 <code>--tabrow-bg</code>，选中条目仍直接使用 <code>--bg-primary</code>。在深色主题中两者亮度接近，在浅色主题中选中面也缺少明确的反向层级，导致选中与未选中条目难以快速区分。</p>
+      <p><strong>已修正的交互缺口：</strong>旧版 Web toolbar 的 <code>SplitButton.toggleSplit()</code> 会调用 <code>setSplitWebTab()</code>，并根据当前 route 激活或创建 session/draft。现在 toolbar 与顶部 tab 右键菜单复用同一个 <code>SplitViewPicker</code> 和 <code>groupTab()</code> 提交路径；选择 target 前不修改布局或会话状态。</p>
+      <p><strong>已实施：</strong>group 通过 <code>centerTabStripEntries()</code> 投影为一个顶部条目；切换普通条目只改变 <code>activeId</code>，不改变原 group 的成员和顺序。复合条目只渲染一个 <code>role="tab"</code> 和一个 group drag target，内部两个等宽成员格分别提供自己的图标、标题和关闭按钮。</p>
+      <p><strong>已修复回归：</strong>divider 的 pointer drag 原本会更新并持久化 <code>splitRatio</code>，但左侧会话 pane 同时匹配 <code>.center-split-primary</code> 与后加载的 <code>.center-pane-chat</code>；后者的 <code>flex: 1</code> 覆盖主 pane 的固定宽度，使两侧在拖动后仍被 flex 成等宽。现在使用组合选择器保持主 pane 的 <code>flex: 0 0 auto</code>，ratio 可以直接控制实际 pane bounding width；顶部复合 tab、group ownership 和拖动语义未改变。</p>
+    </div>
+
+    <div class="flow" aria-label="当前错误切换与目标切换">
+      <div class="node"><strong>当前错误</strong><br>选择 B<br><code>[A + W] → [B + W]</code></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node"><strong>目标行为</strong><br>选择 B 条目<br><code>[A + W] 隐藏，B 显示</code></div>
+    </div>
+    <p><code>scrollIntoView()</code> 只会放大可见跳动，不是状态错误的来源。只删除滚动或动画不能修复 Web 固定、成员选中和自动 regroup。</p>
+  </section>
+
+  <section id="terms">
+    <h2>03 概念、所有权与不变量</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>概念</th><th>含义</th><th>权威状态</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Leaf tab</strong></td><td>session、file、web、builtin 或 NTP 内容对象</td><td><code>tabs[]</code></td></tr>
+          <tr><td><strong>Single entry</strong></td><td>顶部一个普通 tab，包含一个 leaf tab</td><td><code>centerTabStripEntries()</code> 生成的 <code>{kind:"tab", tabId}</code></td></tr>
+          <tr><td><strong>Split entry</strong></td><td>顶部一个复合 tab，固定包含两个 leaf tab</td><td><code>CenterTabGroup.memberIds</code>，上限为 2</td></tr>
+          <tr><td><strong>Active entry</strong></td><td>包含 <code>activeId</code> 的普通条目或 group；顶部按整个条目显示选中</td><td><code>activeId + groups[]</code> 的派生结果</td></tr>
+          <tr><td><strong>DOM focus</strong></td><td>键盘当前所在元素，只服务输入和无障碍</td><td>浏览器 DOM，不进入产品持久化状态</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>硬性不变量</h3>
+    <ol>
+      <li>每个 leaf tab 恰好属于一个 entry；不能同时是普通 tab 和某个 split entry 的成员。</li>
+      <li>split entry 恰好有两个不同成员；本设计不支持第三个 pane。</li>
+      <li>顶部顺序由规范化后的 <code>tabs[]</code> 与 <code>groups[]</code> 投影；group 的两个成员在 leaf 顺序中保持连续。</li>
+      <li>顶部只有一个条目级选中样式。<code>activeId</code> 与 <code>focusedId</code> 仍用于路由和内部 bookkeeping，但不产生成员 segment 或 pane-level active 样式。</li>
+      <li>点击 pane 内部可以更新内部会话路由，但不能改变 entry membership、entry order 或顶部复合条目的整体选中样式。</li>
+      <li>选择另一个顶部 entry 必须整体替换 center body；旧 split 的两个 pane 同时停止显示。</li>
+      <li>打开、关闭、分屏、拆分、显式移动和 transfer 可以改变 entries；普通 activation 不得改变 entries。</li>
+    </ol>
+  </section>
+
+  <section id="references">
+    <h2>04 官方参考与取舍</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>参考</th><th>官方行为</th><th>OpenProgram 采用</th><th>OpenProgram 拒绝或修改</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><a href="https://support.google.com/chrome/answer/16971124">Chrome Split View</a></td>
+            <td>一个 opened tab 内同时显示两个网站；支持关闭单侧、交换和 Separate split view；官方同时定义 active/inactive view、粗细边框和 active 方向图标。</td>
+            <td>split 与一个顶部 tab 的生命周期关联；支持关闭单侧与显式拆分。</td>
+            <td>不采用 active/inactive view、pane 选中边框和方向图标。OpenProgram 的 pane 操作从事件来源精确路由，不需要全局 active side。</td>
+          </tr>
+          <tr>
+            <td><a href="https://support.google.com/chrome/answer/2391819">Chrome Tabs and Tab Groups</a></td>
+            <td>tab 切换与 tab reorder 分离；顺序和 group 由显式 drag/add/remove 改变。</td>
+            <td>普通 activation 只改变当前 entry；拖动才改变 entry 顺序。</td>
+            <td>不引入 group 名称、颜色、同步或收藏。split entry 不是通用 Chrome tab group。</td>
+          </tr>
+          <tr>
+            <td><a href="https://code.visualstudio.com/docs/editing/userinterface">VS Code Editor Groups</a></td>
+            <td>每个 editor group 有自己的 active editor、tab strip 和 focus。</td>
+            <td>只采用 pane 内容与布局可独立渲染的实现经验。</td>
+            <td>不采用 active group、每个 pane 独立 tab strip、任意网格或 pane-local tab history。</td>
+          </tr>
+          <tr>
+            <td><a href="https://code.visualstudio.com/docs/configure/custom-layout">VS Code Custom Layout</a></td>
+            <td>支持 Split in Group，并提供 first、second 和 other side 的显式 focus 命令。</td>
+            <td>采用同一容器内渲染两个内容视图和可调整 divider。</td>
+            <td>不采用 side focus 作为产品状态；OpenProgram 不提供 first/second side 选中命令。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Chrome 官方设计中的 pane active 状态不是本设计的要求。OpenProgram 的修改点是：复合条目整体选中，pane 只保留各自局部控件和自然 DOM focus。</p>
+  </section>
+
+  <section id="model">
+    <h2>05 已实施状态模型</h2>
+    <p>本次采用兼容性最小改动，持久化格式保持 version 2。<code>groups[]</code> 是复合条目的所有权；<code>centerTabStripEntries()</code> 在显示层把 leaf tabs 和 groups 投影为一个有序顶部列表。这样不需要迁移已有窗口数据，也不改变 transfer journal 的 payload 边界。</p>
+    <pre><code>interface CenterTabsPersistedPayload {
+  version: 2;
+  tabs: CenterTab[];
+  activeId: string | null;       // 内部路由；顶部按所属 entry 整体选中
+  groups: CenterTabGroup[];      // 每组恰好两个成员
+  splitWebTabId: string | null;  // 兼容旧入口，不再触发跨 group reparent
+  splitRatio: number;            // 当前兼容格式仍为窗口级比例
+}</code></pre>
+
+    <h3>不保存的状态</h3>
+    <ul>
+      <li>不增加 pane-level selected 状态。DOM focus 与内部 <code>focusedId</code> 不映射为 pane 边框或顶部成员高亮。</li>
+      <li>不增加新的窗口级 Web pin。Web 是否可见由包含它的 active group 决定；<code>splitWebTabId</code> 只保留旧入口兼容。</li>
+      <li>不增加成员级顶部 selected 状态。两个 leaf tab 各自提供图标、标题、dirty 和成员关闭入口，但 active 状态仍只属于外层复合条目。</li>
+      <li>本次不升级 ratio schema；version 2 的 <code>splitRatio</code> 仍按原兼容行为保存。</li>
+    </ul>
+
+    <h3>复合标签结构</h3>
+    <p>复合条目使用一个外层容器和两个 <code>1fr</code> 等宽成员槽位。每个槽位显示自己的 favicon/类型图标、单独截断的标题和成员关闭按钮；标题长度不得改变两侧宽度。外层只有一个背景、一个 active 状态、一个 <code>role="tab"</code> 和一个 group drag target。不再显示额外的前置分屏图标或拖动手柄。</p>
+  </section>
+
+  <section id="transitions">
+    <h2>06 状态转移</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>当前状态</th><th>动作</th><th>目标状态</th><th>顶部结果</th></tr></thead>
+        <tbody>
+          <tr><td>active split(A,W)</td><td>点击普通 entry B</td><td>active=B；A 与 W 一起隐藏</td><td>split(A,W) 原位保留，不 regroup</td></tr>
+          <tr><td>active=B</td><td>点击 split(A,W)</td><td>A 与 W 一起恢复，ratio 恢复</td><td>整个 split entry 选中</td></tr>
+          <tr><td>active split(A,W)</td><td>点击 A 或 W pane</td><td>只发生局部输入/DOM focus</td><td>顶部完全不变</td></tr>
+          <tr><td>single A + single W</td><td>在 W 点击 Split，并在 picker 选择 A</td><td>用 active split(W,A) 替换 W，移除 A entry；ratio=0.5</td><td>source W 保持固定；确认前不改变状态，确认后立即显示所选 pair</td></tr>
+          <tr><td>split(A,W)</td><td>Separate split</td><td>生成相邻 single A、single W，并保持 A active</td><td>A 在原 split 位置，W 紧随其后</td></tr>
+          <tr><td>split(A,W)</td><td>拖动任一非按钮区域</td><td>A/W 按原内部顺序共同移动</td><td>只能 reorder/transfer 完整复合条目，不能拖出单个成员</td></tr>
+          <tr><td>split(A,W)</td><td>点击 W 成员关闭按钮</td><td>原位折叠为 single A</td><td>不移动其他 entry</td></tr>
+          <tr><td>split(A,W)</td><td>Cmd+W / entry close</td><td>关闭 A 与 W</td><td>按 entry 邻居选择下一个 active entry</td></tr>
+          <tr><td>split(A,W)</td><td>右键 Separate / pane 内退出分屏</td><td>生成相邻 single A、single W</td><td>拆分必须来自显式命令，不是拖动结果</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Web toolbar 与 Runtime</h3>
+    <ul>
+      <li>Web toolbar 从 single(W) 创建 split 时始终显示现有 <code>SplitViewPicker</code>。W 固定为 source，候选项来自 <code>splitCandidates(tabs, groups, W)</code>；只有用户选择 target 后才通过 <code>groupTab(target, W, 1)</code> 创建复合条目。</li>
+      <li><code>groupTab()</code> 接受一个此前未组成 pair 的 source/target 后，在同一次持久状态提交中写入新 group、把 <code>activeId</code> 设为用户刚选择的成员，并写入 <code>splitRatio=0.5</code>。选择 session 时，这个 activeId 变化还会触发现有 session route 同步，保证 composer 与所选 pane 使用同一 session；不能只激活 Web 成员而保留旧会话路由，也不能继承旧 ratio。</li>
+      <li>关闭 picker、按 Escape、点外部或没有候选项都不修改 tabs、groups、activeId、route 或 session store；不得为创建分屏自动创建 draft/session。</li>
+      <li><code>openWebTabInSplit(url)</code> 在当前复合条目已有 Web 时复用该 Web 成员并导航，不创建不可见的第三成员。</li>
+      <li>相同 deterministic URL 已属于另一个非活动复合条目时，激活该 owner composite；不能把 Web 移到当前会话，也不能在不可见状态下返回成功。</li>
+      <li>session 已属于完整 split 时，不替换现有成员、不创建第三 pane。普通顶部 activation 不能重新组合成员。</li>
+    </ul>
+  </section>
+
+  <section id="visual">
+    <h2>07 顶部显示、pane 显示与无障碍</h2>
+    <h3>顶部 tab strip</h3>
+    <ul>
+      <li>每个 entry 对应一个 <code>role="tab"</code>。split entry 仍只有一个 tab target；两个成员槽位是视觉内容，不是两个可独立选择的 tab。</li>
+      <li>只有包含 <code>activeId</code> 的 entry 使用 active 背景与 <code>aria-selected="true"</code>。</li>
+      <li>active 背景由共享 <code>--tab-active-bg</code> 控制，普通条目与复合条目必须一致。浏览器模式保持 <code>--bg-primary</code>，继续与内容区及 fillet 连续；桌面模式根据元素实际 <code>color-scheme</code> 使用 <code>light-dark(black, white)</code>：浅色向黑色、深色向白色混合 18%。因此内置主题和声明了正确 <code>color-scheme</code> 的 custom 主题使用同一规则。未选中条目继续透明显示 <code>--tabrow-bg</code>，不增加边框或 active 动画。</li>
+      <li>桌面最顶部全局 tab strip 固定为 <code>40px</code>；普通 tab 与复合分屏 tab 都固定为 <code>28px</code> 并垂直居中，使上下各保留 <code>6px</code>。tab 使用固定 <code>8px</code> 圆角，不使用半高圆角或悬浮阴影形成胶囊。成员关闭按钮继续使用 <code>20px</code> 点击区域；独立的新增与主菜单按钮保持 <code>28px</code>。</li>
+      <li>条目生命周期保留可见的几何动画：普通 Tab 新建时以 <code>180ms ease-out</code> 展开，关闭时以 <code>160ms ease-in</code> 收缩；关闭 split 的单个成员时，该成员淡出，外层复合条目同步在 <code>160ms</code> 内收缩为 single 宽度。active 切换仍然即时，split 仍只有整个条目可拖动。</li>
+      <li>两个成员槽位固定等宽，各自显示图标和省略标题；长标题只在本侧截断，不能压缩另一侧。两侧使用相同背景和文字层级，不显示当前侧高亮。</li>
+      <li>可访问名称为“Split tab: {left label} and {right label}”。两个成员关闭按钮分别标记“Close {member label}”；关闭后复合条目原位降为剩余 single tab。</li>
+      <li>拖动、键盘移动、中键关闭和跨窗口 transfer 都作用于整个 entry。成员槽位不注册 drag subject；移动单个成员前必须通过右键菜单或 pane 内按钮执行 Separate split。</li>
+    </ul>
+
+    <h3>两个 pane</h3>
+    <ul>
+      <li>两个 pane 使用相同背景、边框宽度和视觉层级。点击后不得新增强调边框或改变 divider 方向图标。</li>
+      <li>divider 只表示可调整尺寸，不表示哪侧 active；键盘 focus outline 只满足操作可见性，不等于 pane 被产品选中。</li>
+      <li>拖动 divider 或使用其左右方向键后，第一 pane 的实际宽度必须随 <code>splitRatio</code> 改变；会话 pane 作为第一 pane 时不得被通用 <code>.center-pane-chat</code> flex 规则重新均分。比例继续限制在既有最小宽度范围内并通过 version 2 payload 持久化。</li>
+      <li>本次不新增基于宽度或 focus 隐藏、重排任一 pane 的逻辑。两个 pane 继续使用既有左右布局、最小宽度和 divider 约束。</li>
+      <li>split entry 变为 inactive 时，两个 pane 都从可见布局中移除。Electron native WebContentsView 同步隐藏并注销 visible bounds。</li>
+    </ul>
+  </section>
+
+  <section id="routing">
+    <h2>08 操作路由与会话语义</h2>
+    <p>取消 pane-level active 状态不等于取消精确目标。所有操作必须从事件来源或显式 tab id 路由，不能读取“最后聚焦 pane”作为业务所有权。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>操作</th><th>目标解析</th><th>禁止行为</th></tr></thead>
+        <tbody>
+          <tr><td>Web Back/Forward/Home/Reload/address</td><td>使用该 toolbar 所属 <code>WebTabPane.tabId</code></td><td>读取全局 active web 或 focusedId</td></tr>
+          <tr><td>Composer send</td><td>使用该 session pane 的 sessionId</td><td>把另一 pane 的 session 当作当前会话</td></tr>
+          <tr><td>Computer Use / native target</td><td>使用调用中的 windowId、tabId 和精确 targetId</td><td>从当前可见 Web 中任意选一个</td></tr>
+          <tr><td>Cmd+W / entry close</td><td>关闭包含 <code>activeId</code> 的整个 entry</td><td>根据最后 DOM focus 猜测关闭某一 pane</td></tr>
+          <tr><td>成员关闭按钮</td><td>使用按钮绑定的 leaf tab id</td><td>关闭整个 split 或另一成员</td></tr>
+          <tr><td>Pane-local close</td><td>按钮所属 leaf tab</td><td>关闭整个 split 或另一成员</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>共享 session UI</h3>
+    <ul>
+      <li>split 中只有一个 session 时，窗口级 session 摘要可绑定该唯一 session。</li>
+      <li>split 中有两个 session 时，pane 交互可以更新内部 session 路由和控件归属，但顶部仍只显示整个复合条目选中，不显示当前侧。</li>
+      <li>两个 session 各自的消息、composer、任务状态和局部控件由各自 pane 持有。</li>
+    </ul>
+  </section>
+
+  <section id="persistence">
+    <h2>09 持久化、恢复与兼容</h2>
+    <h3>Version 2 normalization</h3>
+    <ul>
+      <li>按首次出现去重 tabs 和 group 成员；每个 leaf tab 最多属于一个 group。</li>
+      <li>group 只保留前两个合法成员；少于两个成员时 group 解散，剩余 leaf tab 继续作为普通顶部条目。</li>
+      <li>旧三成员 group 恢复为一个双成员复合条目和一个普通条目，不丢失第三个 leaf tab。</li>
+      <li>当 <code>splitWebTabId</code> 已属于某个合法 group 时，normalization 保留该所有权；切换 <code>activeId</code> 不得重新组合。</li>
+      <li>只有 Web 尚未属于 group 且兼容入口明确请求 split 时，才允许与当前 session 建组。</li>
+      <li><code>activeId</code> 无效时选择第一个 leaf tab；顶部再根据它所属的 group 派生整个 active entry。</li>
+    </ul>
+
+    <h3>兼容边界</h3>
+    <ol>
+      <li>不修改 storage key、payload version、tab id、group id 或 transfer journal 版本。</li>
+      <li><code>focusedId</code> 保留给会话路由、URL 和内部控件所有权；顶部不根据它渲染成员 selected 状态。</li>
+      <li><code>visibleIds</code> 在两成员上限下等于可显示成员集合，不再用于隐藏第三成员。</li>
+      <li>跨窗口 group payload 超过两个成员时返回 <code>group-full</code>，不部分插入。</li>
+    </ol>
+  </section>
+
+  <section id="lifecycle">
+    <h2>10 关闭、移动、跨窗口转移与失败</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>动作</th><th>结果</th><th>原子性要求</th></tr></thead>
+        <tbody>
+          <tr><td>关闭复合顶部 tab</td><td>关闭两个成员；dirty 成员沿用现有保护</td><td>任一成员拒绝关闭时，不提交半关闭 entry</td></tr>
+          <tr><td>关闭单侧 pane</td><td>复合 entry 原位降为另一成员的 single entry</td><td>tabs 与 groups 通过同一 store commit 规范化</td></tr>
+          <tr><td>拖动复合 tab</td><td>整个 entry 改变顶部位置</td><td>成员 left/right 顺序不变</td></tr>
+          <tr><td>转移复合 tab 到新窗口</td><td>两个成员与 group 元数据一起转移</td><td>journal prepare/commit/rollback 覆盖整个 entry</td></tr>
+          <tr><td>转移单侧</td><td>先显式 Separate split，再转移生成的 single entry</td><td>不提供隐式 segment drag</td></tr>
+          <tr><td>目标窗口拒绝 transfer</td><td>源窗口完整恢复 split entry</td><td>不能只恢复一个成员</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>失败与并发</h3>
+    <ul>
+      <li>native WebContentsView 未 ready、CDP target 丢失或 bounds 暂时不可用时，split entry 不自动拆分或替换成员；对应 pane 显示现有加载/错误状态。</li>
+      <li>inactive split entry 的后台 title、favicon、dirty 或任务状态更新只更新 leaf tab 数据，不激活 entry。</li>
+      <li>连续顶部 activation 同步更新 <code>activeId</code>；不增加队列或锁，且不能修改 group membership。</li>
+      <li>transfer 继续使用现有 journal；group 与 tabs 在同一 payload transaction 中提交。</li>
+    </ul>
+  </section>
+
+  <section id="acceptance">
+    <h2>11 实施边界与可执行验收</h2>
+    <div class="card">
+      <p><strong>设计权威：</strong>本页定义 center tab 与 split entry 行为；<a href="state-layer.html">state-layer.md</a> 定义 session 数据所有权；<a href="web-tab-native-bounds.html">web-tab-native-bounds.html</a> 定义 native Web bounds。</p>
+      <p><strong>生产范围：</strong><code>center-tab-groups.ts</code>、<code>center-tabs-persistence.ts</code>、<code>center-tabs-store.ts</code>、center-tabs 组件与 hooks、<code>desktop-bridge.ts</code>。既有 AppShell pane 解析、transfer journal 与 pending projection 继续复用。</p>
+      <p><strong>测试范围：</strong><code>check:center-tabs</code>、<code>check:compound-tabs</code>、<code>check:web-split</code>、desktop webtab/transfer checks、TypeScript 和 production build。</p>
+    </div>
+
+    <h3>顶部复合 tab 视觉约束</h3>
+    <div class="card">
+      <p><strong>生产范围：</strong><code>web/components/center-tabs/tab-items.tsx</code> 和 <code>center-tabs.module.css</code>；回归入口为 <code>web/scripts/check-center-tabs.mjs</code> 与相关 <code>check-chat-ui.mjs</code> 断言。</p>
+      <p><strong>检查契约：</strong><code>npm --prefix web run check:center-tabs</code> 必须证明一个 <code>role=tab</code>、两个 <code>1fr</code> 成员槽位、两个成员关闭按钮和唯一 group drag subject，并拒绝前置 <code>Columns2</code> 图标。</p>
+      <p><strong>不改：</strong>version 2 payload、group normalization、active entry 推导、pane 渲染、Runtime Web ownership、transfer journal、pointer drag 状态机和跨窗口协议。拖动继续只做整个 entry 的 reorder/transfer；不新增依赖、动画系统或成员拖动。</p>
+      <p><strong>证据：</strong>定向 RED/GREEN、TypeScript、Web 全量检查、production build、desktop webtab/transfer、Python desktop checks、文档构建/断链、diff 检查、两个独立 review，以及默认 18100 安装版的实际相等宽度和切换行为。</p>
+    </div>
+
+    <h3>分屏宽度回归修复任务说明</h3>
+    <div class="card">
+      <p><strong>生产范围：</strong><code>web/app/styles/base.css</code>；测试范围限定为现有公开入口 <code>web/scripts/check-web-split.mjs</code>。不修改 pointer handler、ratio store、持久化 schema、pane 顺序或最小宽度常量。</p>
+      <p><strong>public-entry RED：</strong><code>npm --prefix web run check:web-split</code> 必须先证明第一 pane 同时为 <code>center-split-primary center-pane-chat</code> 时，主 pane 的固定 flex 规则具有足够 specificity，不会被通用 chat pane flex 覆盖。GREEN 后默认安装版必须证明真实 divider pointer drag 同时改变 store ratio 与两个 pane 的 bounding width。</p>
+      <p><strong>证据：</strong>定向 RED/GREEN、Web 全量检查、TypeScript、production build、desktop webtab/transfer checks、Python desktop checks、文档构建/断链、diff 检查、两个独立 review，以及默认 18100 安装版的拖动前后 ratio、pane width 和刷新恢复数据。</p>
+    </div>
+
+    <h3>Web toolbar 显式成员选择任务说明</h3>
+    <div class="card">
+      <p><strong>生产范围：</strong><code>web/components/center-tabs/web-tab-pane.tsx</code>；复用 <code>split-view-picker.tsx</code>、<code>labelOf()</code> 和现有 <code>groupTab()</code>，不新增 store 字段、持久化格式、弹窗组件或依赖。</p>
+      <p><strong>public-entry RED 证据：</strong><code>npm --prefix web run check:web-split</code> 曾因 toolbar 未渲染 <code>SplitViewPicker subjectId={tabId}</code> 而失败；旧实现同时包含 <code>setSplitWebTab(tabId)</code>、<code>openDraftSessionTab()</code> 和 <code>newSession()</code> 的自动配对路径。实现后，同一检查要求 picker 存在并拒绝上述自动路径。</p>
+      <p><strong>目标行为：</strong>single Web 的 Split 点击只打开 picker；picker 列出所有合法其他 single tabs，选中后才合并。提交成功时新 pair 立即成为 active entry，两个成员立即显示且 divider 为 50/50；不能继续显示原先 active 的其他 entry，也不能继承旧 ratio。已在 split 中的 Web 点击同一按钮执行现有 Separate 行为。取消、空候选和提交拒绝都不自动选择或创建 tab。</p>
+      <p><strong>提交与焦点约束：</strong>选择候选时必须用最新 <code>tabs/groups</code> 重新执行 <code>splitCandidates()</code> 校验；候选已被其他操作加入分屏时拒绝提交，不得把它从现有 owner 移出。空候选时焦点进入 picker 的 Close；Escape、Close 与成功选择恢复 toolbar trigger，outside pointer dismissal 保留用户新点击元素的焦点。</p>
+      <p><strong>明确排除：</strong>不修改候选排序、不增加搜索/MRU、不允许第三 pane、不改变右键菜单、drag、transfer、ratio 或 Computer Use target 绑定。</p>
+    </div>
+
+    <h3>当前实现约束</h3>
+    <ol>
+      <li>version 2 normalization 保持已被 group 拥有的 Web owner，不随 <code>activeId</code> 改变。</li>
+      <li>group 最多包含两个成员；恢复旧三成员状态时，第三个成员保留为普通条目。</li>
+      <li><code>CompoundTabItem</code> 只有一个 tab target 和一个 drag target；菜单、键盘、拖动和 Cmd+W 以完整条目为单位。</li>
+      <li>Runtime Web open、非活动 owner composite 激活、dirty 关闭、roving tabindex、drag root 与 post-drag synthetic click 均由现有检查覆盖。</li>
+      <li>顶部条目显示两个等宽成员格、成员图标、标题和关闭入口，不显示前置 <code>Columns2</code> 图标；成员展示层不截获 pointer focus。</li>
+      <li>成员最小宽度为 136px；关闭中的按钮使用 <code>aria-disabled</code> 并继续截获 pointer，避免下一次按压触发 group drag。</li>
+      <li>默认 18100 安装版中，两个成员宽度为 <code>131.67px / 131.67px</code>，包含一个 <code>role=tab</code>、一个 selected target 和两个关闭按钮；从任一成员正文拖动均保持成员 ID 与 group 不变。</li>
+      <li>组合选择器保证 ratio 变化会反映到两侧 pane 宽度；定向检查、Web 全量检查、TypeScript、production build、desktop checks、Python checks 与文档检查覆盖该约束。</li>
+      <li>默认 18100 安装版中，会话位于第一 pane 时从 <code>557.27px / 480.01px</code> 拖到 <code>460.26px / 577.01px</code>，反向拖动为 <code>533.25px / 504.02px</code>；交换成员顺序后两侧同样随 ratio 改变。重新选择复合条目和刷新页面后，ratio 与 bounding width 均保持一致，并已恢复原成员顺序。</li>
+    </ol>
+
+    <h3>验收标准</h3>
+    <ol>
+      <li><strong>整体选中：</strong>顶部 split(A,W) 只有一个 active 背景和一个 <code>aria-selected=true</code>，内部没有两个 tab target；同时必须清楚显示两个成员身份。</li>
+      <li><strong>顶部几何：</strong>Electron 最顶部全局 tab strip 为 <code>40px</code>；普通与复合 tab 都为 <code>28px</code>，上下间距各为 <code>6px</code>。关闭按钮保持 <code>20px</code> 点击区域，新增与主菜单按钮保持 <code>28px</code>。</li>
+      <li><strong>主题对比：</strong>桌面深色主题的选中条目明显亮于未选中栏面；桌面 light 与 beige-light 的选中条目明显深于未选中栏面。普通 tab 与 split tab 使用同一个 active token，hover、focus、drag 和非选中背景不改变。</li>
+      <li><strong>等宽成员：</strong>两个成员槽位的 bounding width 相等；任一标题变长后仍相等，并且只在自己的槽位内省略。</li>
+      <li><strong>无 pane 选中：</strong>依次点击左右 pane，顶部 DOM、class、entry 状态和 pane 边框不变化；只允许自然 DOM focus 变化。</li>
+      <li><strong>整体切换：</strong>从 split(A,W) 选择 B 后，A 与 W 同时不可见，B 单独显示；Electron 中 W 的 native view 同时隐藏。</li>
+      <li><strong>整体恢复：</strong>重新选择 split(A,W) 后，两侧内容、滚动/会话状态和 ratio 恢复。</li>
+      <li><strong>宽度调整：</strong>从 divider 向左或向右拖动后，两侧 bounding width 按受约束的 <code>splitRatio</code> 改变；刷新或重新选择该 split entry 后恢复相同比例。会话位于第一 pane 与第二 pane 两种顺序都成立。</li>
+      <li><strong>不固定 Web：</strong>连续选择 session、file、builtin、NTP 和另一个 web entry，W 都不跟随、不 regroup、不改变 entry order。</li>
+      <li><strong>局部路由：</strong>左右 toolbar、composer、close 与 Computer Use 都作用于事件来源的精确 tab/session/target。</li>
+      <li><strong>创建与拆分：</strong>两个 single entries 合成一个 split entry；Separate 后恢复为相邻 singles，顺序确定。</li>
+      <li><strong>显式成员选择：</strong>从 Web toolbar 点击 Split 后，当前 Web 固定为 source，必须选择另一个可用 tab 才创建分屏；取消前后 tabs、groups、activeId 和 session 数量完全不变。</li>
+      <li><strong>新组合初始状态：</strong>在 ratio=0.35、0.5、0.65 三种旧状态下分别提交新 pair，成功后都必须得到 <code>splitRatio=0.5</code>，<code>activeId</code> 等于用户刚选择的成员，center body 立即只显示这两个成员；若该成员是 session，pathname、<code>runtimeState.currentSessionId</code>、composer 和 Page binding 必须全部指向它。同一次 store mutation 只写一个持久 payload。</li>
+      <li><strong>并发与焦点：</strong>picker 打开后 target 若被其他操作分组，旧选择提交必须拒绝且原 group 不变；空候选时 Close 获得焦点；outside click 关闭后焦点停留在实际点击目标。</li>
+      <li><strong>关闭：</strong>两个成员关闭按钮分别关闭对应 leaf 并原位折叠为 single；Cmd+W/entry close 关闭整个 split；dirty 拒绝不产生半状态。</li>
+      <li><strong>移动与 transfer：</strong>从任一成员的非按钮区域拖动都只产生 group drag，复合 tab 作为一个单位 reorder 和跨窗口转移；不存在成员 drag 或拖动拆分，rollback 同时恢复两个成员。</li>
+      <li><strong>显式拆分：</strong>Separate split 只由右键菜单或 pane 内现有退出分屏按钮触发；拖动不能调用 <code>ungroupTab</code>。</li>
+      <li><strong>恢复：</strong>version 2 payload 不新增错误 pair；三成员 group 规范化为一个双成员 split 加一个 single。</li>
+      <li><strong>窄窗口：</strong>两个 pane 仍属于同一 active entry，保持既有左右布局与最小宽度约束，不根据 focus 隐藏或重排一侧。</li>
+      <li><strong>回归：</strong>single tab、Home/NTP 原位替换、bookmark、file draft、session composer、browser iframe 和 native WebContentsView 不退化。</li>
+    </ol>
+
+    <h3>明确排除</h3>
+    <ul>
+      <li>窗口级 Web pin、pane active/inactive 状态、active pane 视觉、pane-local tab strip。</li>
+      <li>三个以上 pane、三成员复合 tab、任意二维网格。</li>
+      <li>tab group 名称、颜色、云同步、收藏或自动分类。</li>
+      <li>新的 MRU、动画系统、拖动算法重写或新增依赖。</li>
+      <li>外部浏览器 profile、隐藏浏览器、sidecar 或 headless fallback。</li>
+      <li>Windows 专用实现、测试、打包、兼容，以及 OS Keychain/keyring/Credential Manager。</li>
+    </ul>
+
+    <h3>Full gate manifest</h3>
+    <pre><code>npm --prefix web run check:center-tabs
+npm --prefix web run check:compound-tabs
+npm --prefix web run check:web-split
+npm --prefix web run check
+web/node_modules/.bin/tsc -p web/tsconfig.json --noEmit
+npm --prefix web run build
+npm --prefix desktop run check:webtabs
+npm --prefix desktop run check:tab-transfer-store
+python -m pytest -q tests/component/webui/test_desktop_checks.py
+python -m tools.docs_site.checklinks
+git diff --check</code></pre>
+  </section>
+
+  <section id="status">
+    <h2>12 实现与验证状态</h2>
+    <div class="card">
+      <p><strong>顶部复合 tab、分屏宽度调整与 Web toolbar 显式成员选择均已实现并通过独立规格与质量复核。</strong></p>
+      <p>toolbar picker 的 focused checks、TypeScript、production build、Desktop WebTab/transfer checks 与文档链接检查通过。默认安装版验证了：选择前不创建 group；选择指定 target 后只生成该精确 pair；Escape 不改持久化状态；非空候选首项获得焦点；空候选 Close 获得焦点；outside dismissal 保留实际点击目标焦点。验收结束后恢复原 tabs、groups、activeId、URL 与 split ratio。</p>
+      <p><strong>主题化 active 对比度：</strong>设计、实现、独立 specification/quality review 与默认安装版双主题验收均已完成。深色模式下，选中复合 tab 背景亮度为 <code>OKLCH 0.373</code>，tab 栏为 <code>0.210</code>；浅色模式下分别为 <code>0.820</code> 与 <code>0.906</code>。未选中 tab 保持透明，并显示 tab 栏背景。</p>
+      <p><strong>桌面顶部几何：</strong>最顶部全局 tab strip 固定为 <code>40px</code>，普通与复合 tab 固定为 <code>28px</code> 并垂直居中，上下各保留 <code>6px</code>；关闭按钮为 <code>20px</code>，新增与主菜单按钮为 <code>28px</code>。默认 18100 安装版实测 strip 为 <code>39.995px</code>、普通 tab 为 <code>27.999px</code>、tab 顶部位置为 <code>5.998px</code>；独立 specification 与 quality review 均为 PASS。</p>
+      <p>顶部 split entry 有两个等宽成员格、两套图标、标题和关闭入口，以及一个外层 active、tab 和 drag target；不存在成员拖动拆分或成员级 selected 状态。</p>
+      <p>默认安装版保留显式 Separate 入口；拖动左右任一成员正文只移动整个 group。切换普通 entry 后原 group 不改 owner、不 regroup，重新选择后恢复原两侧内容和 ratio。divider 可在两个方向调整 pane 宽度，会话位于任一侧时均遵守同一 ratio 和最小宽度约束。</p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

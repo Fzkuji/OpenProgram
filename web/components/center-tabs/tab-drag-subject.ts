@@ -58,21 +58,20 @@ export function snapshotTabDragSubject(subject: TabDragSubject): TabDragSubject 
 }
 
 /** The drag subject a context-menu action operates on: a lone tab, or the
- *  segment it occupies inside its compound. */
+ *  complete composite entry that contains it. */
 export function menuDragSubject(tabId: string): TabDragSubject | null {
   const state = useCenterTabs.getState();
   if (!state.tabs.some((tab) => tab.id === tabId)) return null;
   const sourceGroup = findCenterTabGroup(state.groups, tabId);
   if (!sourceGroup) return { kind: "tab", tabIds: [tabId] };
   return snapshotTabDragSubject({
-    kind: "segment",
-    tabIds: [tabId],
+    kind: "group",
+    tabIds: [...sourceGroup.memberIds],
     sourceGroup,
-    memberIndex: sourceGroup.memberIds.indexOf(tabId),
   });
 }
 
-export function isFourthMemberRejection(
+export function isSplitCapacityRejection(
   subject: TabDragSubject,
   intent: TabDropIntent,
 ) {

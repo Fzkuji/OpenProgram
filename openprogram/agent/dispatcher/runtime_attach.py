@@ -29,6 +29,15 @@ from openprogram.agent.dispatcher.types import EventCallback, TurnRequest
 _log = logging.getLogger(__name__)
 
 
+def _permission_rules_snapshot(rules) -> dict | None:
+    if rules is None:
+        return None
+    def values(name: str) -> list:
+        value = rules.get(name) if isinstance(rules, dict) else getattr(rules, name, None)
+        return list(value or [])
+    return {name: values(name) for name in ("allow", "deny", "ask")}
+
+
 def _wrap_agentic_runtime_block(
     agent_tool,
     req: "TurnRequest",
@@ -169,6 +178,10 @@ def _wrap_agentic_runtime_block(
                         authority=runtime_authority(
                             req, f"agentic/{tool_name}"
                         ),
+                        permission_rules_snapshot=_permission_rules_snapshot(
+                            req.permission_rules
+                        ),
+                        surface_context_snapshot=req.surface_context,
                         render_range=req.render_range,
                     ),
                 )

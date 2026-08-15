@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -126,6 +127,22 @@ def test_round_trip_switch_then_restart(cfg_path):
     assert rt.model == "opus-x"
 
 
+def test_session_global_fallback_preserves_runtime_prefixed_model(monkeypatch):
+    monkeypatch.setattr(rm, "_enabled_model_keys", lambda: {
+        ("minimax-cn-coding-plan", "MiniMax-M3"),
+    })
+    monkeypatch.setattr(rm, "_chat_provider", "minimax-cn-coding-plan")
+    monkeypatch.setattr(
+        rm,
+        "_chat_model",
+        "minimax-cn-coding-plan:MiniMax-M3",
+    )
+    assert rm._resolve_session_provider_model({"id": "s"}) == (
+        "minimax-cn-coding-plan",
+        "minimax-cn-coding-plan:MiniMax-M3",
+    )
+
+
 # --- all three global write entry points route through save_default_model --
 
 def test_all_global_entry_points_persist(monkeypatch):
@@ -158,3 +175,94 @@ def test_session_switch_sets_picker_overrides():
         assert 'conv["provider_override"]' in src
         assert 'conv["model_override"]' in src
         assert "_save_session" in src
+
+
+def test_restored_session_function_run_uses_its_agent_model(monkeypatch):
+    from openprogram.webui import server
+    from openprogram.webui.routes import chat as routes_chat
+
+    class Persist:
+        def list_sessions(self):
+            return [("agent-custom", "restored-s1")]
+
+        def load_session(self, agent_id, session_id):
+            return {
+                "agent_id": agent_id,
+                "title": "restored",
+                "messages": [],
+            }
+
+    monkeypatch.setattr(server, "_persist", Persist())
+    monkeypatch.setattr(server, "_sessions", {})
+    server._restore_sessions()
+    conv = server._sessions["restored-s1"]
+
+    monkeypatch.setattr(rm, "_enabled_model_keys", lambda: {
+        ("agent-provider", "agent-model"),
+        ("global-provider", "global-model"),
+    })
+    monkeypatch.setattr(rm, "_chat_provider", "global-provider")
+    monkeypatch.setattr(rm, "_chat_model", "global-model")
+    monkeypatch.setattr(
+        "openprogram.agent.management.manager.get",
+        lambda agent_id: SimpleNamespace(
+            model=SimpleNamespace(
+                provider="agent-provider",
+                id="agent-model",
+            ),
+        ),
+    )
+    monkeypatch.setattr(server, "_get_or_create_session", lambda sid=None: conv)
+    monkeypatch.setattr(server, "_is_run_active", lambda sid: False)
+    monkeypatch.setattr(server, "_default_agent_id", lambda: "main")
+    monkeypatch.setattr(server, "_emit_running_task_event", lambda *a: None)
+    monkeypatch.setattr(
+        "openprogram.webui.ws_actions.session.broadcast_sessions_list",
+        lambda: None,
+    )
+
+    class Tool:
+        name = "agentic_probe"
+        _is_agentic = True
+
+    monkeypatch.setattr(
+        "openprogram.programs.agent_tools",
+        lambda names=None: [Tool()],
+    )
+
+    class DB:
+        def message_exists(self, session_id, msg_id):
+            return True
+
+        def get_session(self, session_id):
+            return {"agent_id": "agent-custom", "created_at": 1}
+
+        def update_session(self, *args, **kwargs):
+            pass
+
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: DB())
+
+    captured = {}
+    monkeypatch.setattr(
+        "openprogram.agent.dispatcher.dispatch_forced_tool_call",
+        lambda **kwargs: captured.update(kwargs) or {"ok": False},
+    )
+
+    def inline_thread(target=None, args=(), kwargs=None, daemon=None):
+        return SimpleNamespace(
+            start=lambda: target(*(args or ()), **(kwargs or {})),
+            is_alive=lambda: False,
+        )
+
+    monkeypatch.setattr(
+        routes_chat,
+        "threading",
+        SimpleNamespace(Thread=inline_thread),
+    )
+
+    result = routes_chat.run_agentic_function_call(
+        "agentic_probe", {}, "restored-s1",
+    )
+    assert "error" not in result
+    assert captured["provider"] == "agent-provider"
+    assert captured["model"] == "agent-model"

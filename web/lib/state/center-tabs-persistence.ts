@@ -125,7 +125,10 @@ export function normalizeCenterTabsPayload(
     : null;
 
   const activeTab = tabs.find((tab) => tab.id === activeId);
-  if (activeTab?.kind === "session" && splitWebTabId) {
+  const persistedSplitGroup = splitWebTabId
+    ? findCenterTabGroup(layout.groups, splitWebTabId)
+    : undefined;
+  if (activeTab?.kind === "session" && splitWebTabId && !persistedSplitGroup) {
     const splitId = splitWebTabId;
     const activeGroup = findCenterTabGroup(layout.groups, activeTab.id);
     const memberIndex = activeGroup

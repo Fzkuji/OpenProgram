@@ -85,11 +85,6 @@ def _repair_guidance(error: str) -> str:
     The raw message names the rule that was broken; a writer that has just
     broken it needs the correction instead.
     """
-    if "block ID must not be removed" in error:
-        return (
-            "A paragraph that already ends in `^id` keeps that ID. Copy it "
-            "through unchanged rather than dropping or renumbering it."
-        )
     if "memory source links required" in error or "undefined footnote" in error:
         return (
             "A citation needs its `[^eN]:` definition line in the same file. "

@@ -321,14 +321,19 @@ assert.equal(drag.SWAP_OVERLAP_RATIO, 0.5);
     ["b", "c"],
     "the subject itself is never offered",
   );
-  // a and b already split together: only c remains.
+  // a and b already form a complete split entry: it cannot accept c.
   const grouped = [
     { id: "g:ab", memberIds: ["a", "b"], visibleIds: ["a", "b"], focusedId: "a" },
   ];
   assert.deepEqual(
     splitCandidates(pickerTabs, grouped, "a").map((t) => t.id),
-    ["c"],
-    "existing split members are not offered again",
+    [],
+    "an existing split entry cannot grow a hidden third member",
+  );
+  assert.deepEqual(
+    splitCandidates(pickerTabs, grouped, "c").map((t) => t.id),
+    [],
+    "members of another complete split are not selectable targets",
   );
   // A lone tab has nothing to pair with.
   assert.deepEqual(splitCandidates([pickerTabs[0]], [], "a"), []);
@@ -413,8 +418,8 @@ assert.deepEqual(result.layout.groups[0].memberIds, ["a", "b"]);
 assert.deepEqual(result.layout.tabIds, ["a", "b", "c", "d"]);
 
 result = groups.groupCenterTabs(result.layout, "c", "a", 2, "unused");
-assert.equal(result.accepted, true);
-assert.deepEqual(result.layout.groups[0].memberIds, ["a", "b", "c"]);
+assert.equal(result.accepted, false);
+assert.deepEqual(result.layout.groups[0].memberIds, ["a", "b"]);
 assert.deepEqual(result.layout.groups[0].visibleIds, ["a", "b"]);
 
 const full = groups.groupCenterTabs(result.layout, "d", "a", 3, "unused");
@@ -436,14 +441,8 @@ const mergedWholeGroup = groups.mergeCenterTabGroup(
   "c",
   1,
 );
-assert.equal(mergedWholeGroup.accepted, true);
-assert.deepEqual(mergedWholeGroup.layout.tabIds, ["c", "a", "b", "d"]);
-assert.deepEqual(mergedWholeGroup.layout.groups, [{
-  id: "g:whole",
-  memberIds: ["c", "a", "b"],
-  visibleIds: ["a", "b"],
-  focusedId: "b",
-}]);
+assert.equal(mergedWholeGroup.accepted, false);
+assert.equal(mergedWholeGroup.layout, wholeGroupLayout);
 
 const threeMemberGroupLayout = {
   tabIds: ["a", "b", "c", "d"],
@@ -464,21 +463,9 @@ assert.equal(rejectedWholeGroup.accepted, false);
 assert.equal(rejectedWholeGroup.layout, threeMemberGroupLayout);
 
 const focusedA = groups.focusCenterTabGroupMember(result.layout, "g:ab", "a");
-const focusedC = groups.focusCenterTabGroupMember(focusedA, "g:ab", "c");
-assert.deepEqual(focusedC.groups[0].visibleIds, ["c", "b"]);
-assert.equal(focusedC.groups[0].focusedId, "c");
-
-const reorderedWithinGroup = groups.groupCenterTabs(focusedC, "c", "a", 1, "unused");
-assert.equal(reorderedWithinGroup.accepted, true);
-assert.deepEqual(reorderedWithinGroup.layout.tabIds, ["a", "c", "b", "d"]);
-assert.deepEqual(reorderedWithinGroup.layout.groups[0].memberIds, ["a", "c", "b"]);
-assert.deepEqual(reorderedWithinGroup.layout.groups[0].visibleIds, ["c", "b"]);
-assert.equal(reorderedWithinGroup.layout.groups[0].focusedId, "c");
-
-const ungroupedC = groups.ungroupCenterTab(focusedC, "c", "d");
-assert.deepEqual(ungroupedC.groups[0].memberIds, ["a", "b"]);
-assert.deepEqual(ungroupedC.tabIds, ["a", "b", "c", "d"]);
-const dissolved = groups.ungroupCenterTab(ungroupedC, "b");
+assert.deepEqual(focusedA.groups[0].visibleIds, ["a", "b"]);
+assert.equal(focusedA.groups[0].focusedId, "a");
+const dissolved = groups.ungroupCenterTab(focusedA, "b");
 assert.deepEqual(dissolved.groups, []);
 
 const moved = groups.moveCenterTab(
@@ -560,13 +547,6 @@ assert.deepEqual(groups.resolveCenterTabPanes(webOnly, paneTabs, "w:two"), [
   { key: "w:two", kind: "tab", tabId: "w:two" },
 ]);
 
-const hiddenThird = {
-  id: "g:hidden",
-  memberIds: ["s:a", "w:one", "w:two"],
-  visibleIds: ["s:a", "w:one", "w:two"],
-  focusedId: "w:two",
-};
-assert.equal(groups.resolveCenterTabPanes(hiddenThird, paneTabs, "w:two").length, 2);
 assert.deepEqual(groups.resolveCenterTabPanes({
   ...webOnly,
   visibleIds: ["missing", "w:two"],
@@ -575,32 +555,8 @@ assert.deepEqual(groups.resolveCenterTabPanes({
   { key: "w:two", kind: "tab", tabId: "w:two" },
 ]);
 
-const memberLayout = {
-  tabIds: ["s:a", "w:one", "w:two"],
-  groups: [{
-    id: "g:member",
-    memberIds: ["s:a", "w:one", "w:two"],
-    visibleIds: ["s:a", "w:one"],
-    focusedId: "w:one",
-  }],
-};
-const movedMember = groups.moveCenterTabGroupMember(
-  memberLayout,
-  "g:member",
-  "w:two",
-  0,
-);
-assert.deepEqual(movedMember.groups[0].memberIds, ["w:two", "s:a", "w:one"]);
-assert.deepEqual(movedMember.tabIds, ["w:two", "s:a", "w:one"]);
-assert.deepEqual(movedMember.groups[0].visibleIds, ["s:a", "w:one"]);
-assert.equal(movedMember.groups[0].focusedId, "w:one");
-assert.deepEqual(
-  movedMember.tabIds.slice(0, movedMember.groups[0].memberIds.length),
-  movedMember.groups[0].memberIds,
-);
-
 const entries = groups.centerTabStripEntries(result.layout);
-assert.deepEqual(entries.map((entry) => entry.id), ["group:g:ab", "tab:d"]);
+assert.deepEqual(entries.map((entry) => entry.id), ["group:g:ab", "tab:c", "tab:d"]);
 
 const storageValues = new Map([
   ["centerTabs", JSON.stringify({
@@ -645,6 +601,30 @@ assert.equal(
   "the unified persisted payload has one exported definition",
 );
 
+const tabItemsSource = await readFile(
+  new URL("../components/center-tabs/tab-items.tsx", import.meta.url),
+  "utf8",
+);
+const compoundItemSource = tabItemsSource.slice(
+  tabItemsSource.indexOf("export function CompoundTabItem"),
+  tabItemsSource.indexOf("/** One strip tab."),
+);
+assert.equal(
+  compoundItemSource.match(/role="tab"/g)?.length,
+  1,
+  "a split group must expose one top-level tab target",
+);
+assert.doesNotMatch(
+  compoundItemSource,
+  /<TabItem/,
+  "split members must not render as independent top-level tabs",
+);
+assert.doesNotMatch(
+  compoundItemSource,
+  /group\.memberIds\.map/,
+  "the top strip must not render one selectable segment per split member",
+);
+
 const { useCenterTabs } = await import(
   "../lib/state/center-tabs-store.ts?compound-main"
 );
@@ -674,6 +654,25 @@ const wholeGroupTabs = [
   { id: "c", kind: "web", title: "C", url: "https://c.test/" },
   { id: "d", kind: "web", title: "D", url: "https://d.test/" },
 ];
+
+// A newly accepted pair is one atomic UI transition: it becomes the active
+// entry immediately and always starts from an even divider, independent of a
+// ratio left by an older split.
+useCenterTabs.setState({
+  tabs: wholeGroupTabs,
+  groups: [],
+  activeId: "d",
+  splitWebTabId: null,
+  splitRatio: 0.37,
+});
+storageWrites.length = 0;
+assert.equal(useCenterTabs.getState().groupTab("a", "b", 1, "g:new"), true);
+let newlyGroupedState = useCenterTabs.getState();
+assert.deepEqual(newlyGroupedState.groups[0].memberIds, ["b", "a"]);
+assert.equal(newlyGroupedState.activeId, "a", "the selected member activates the new pair immediately");
+assert.equal(newlyGroupedState.splitRatio, 0.5, "a new pair never inherits an old ratio");
+assert.equal(storageWrites.length, 1, "group, activation and ratio persist atomically");
+
 useCenterTabs.setState({
   tabs: wholeGroupTabs,
   groups: wholeGroupLayout.groups,
@@ -682,14 +681,14 @@ useCenterTabs.setState({
   splitRatio: 0.44,
 });
 storageWrites.length = 0;
-assert.equal(useCenterTabs.getState().mergeGroup("g:whole", "c", 1), true);
+assert.equal(useCenterTabs.getState().mergeGroup("g:whole", "c", 1), false);
 let wholeGroupState = useCenterTabs.getState();
-assert.deepEqual(wholeGroupState.tabs.map((tab) => tab.id), ["c", "a", "b", "d"]);
-assert.deepEqual(wholeGroupState.groups[0].memberIds, ["c", "a", "b"]);
+assert.deepEqual(wholeGroupState.tabs.map((tab) => tab.id), ["a", "b", "c", "d"]);
+assert.deepEqual(wholeGroupState.groups[0].memberIds, ["a", "b"]);
 assert.equal(wholeGroupState.activeId, "b");
 assert.equal(wholeGroupState.groups[0].focusedId, "b");
 assert.deepEqual(wholeGroupState.groups[0].visibleIds, ["a", "b"]);
-assert.equal(storageWrites.length, 1, "whole-group merge must persist atomically");
+assert.equal(storageWrites.length, 0, "a complete split group rejects a third member");
 
 useCenterTabs.setState({
   tabs: wholeGroupTabs,
@@ -698,11 +697,11 @@ useCenterTabs.setState({
   splitWebTabId: null,
   splitRatio: 0.44,
 });
-assert.equal(useCenterTabs.getState().mergeGroup("g:whole", "c", 1), true);
+assert.equal(useCenterTabs.getState().mergeGroup("g:whole", "c", 1), false);
 wholeGroupState = useCenterTabs.getState();
 assert.equal(wholeGroupState.activeId, "c");
-assert.equal(wholeGroupState.groups[0].focusedId, "c");
-assert.deepEqual(wholeGroupState.groups[0].visibleIds, ["a", "c"]);
+assert.equal(wholeGroupState.groups[0].focusedId, "b");
+assert.deepEqual(wholeGroupState.groups[0].visibleIds, ["a", "b"]);
 
 useCenterTabs.setState({
   tabs: migrated.tabs,
@@ -742,6 +741,20 @@ assert.equal(state.splitWebTabId, null);
 
 state.setSplitWebTab("w:one");
 state = useCenterTabs.getState();
+state.setActive("w:one");
+state = useCenterTabs.getState();
+state.ungroupTab("s:chat");
+state = useCenterTabs.getState();
+assert.deepEqual(state.groups, [], "dissolving a composite removes the group");
+assert.equal(
+  state.splitWebTabId,
+  null,
+  "dissolving a composite clears split ownership even when the web member is active",
+);
+
+state.setActive("s:chat");
+state.setSplitWebTab("w:one");
+state = useCenterTabs.getState();
 state.moveTab("s:chat", "w:two");
 state = useCenterTabs.getState();
 assert.deepEqual(state.groups, [], "moving the active split session must detach it");
@@ -750,26 +763,13 @@ assert.deepEqual(state.tabs.map((tab) => tab.id), ["w:one", "s:chat", "w:two"]);
 
 state.setSplitWebTab("w:one");
 state = useCenterTabs.getState();
-assert.equal(state.groupTab("w:two", "s:chat", 2), true);
+assert.equal(state.groupTab("w:two", "s:chat", 2), false);
 state = useCenterTabs.getState();
-const groupId = state.groups[0].id;
-state.setActive("w:two");
-state = useCenterTabs.getState();
-assert.deepEqual(state.groups[0].memberIds, ["s:chat", "w:one", "w:two"]);
-assert.deepEqual(state.groups[0].visibleIds, ["w:two", "w:one"]);
-assert.equal(state.groups[0].focusedId, "w:two");
+assert.deepEqual(state.groups[0].memberIds, ["s:chat", "w:one"]);
+assert.deepEqual(state.groups[0].visibleIds, ["s:chat", "w:one"]);
 let persisted = JSON.parse(storageValues.get("centerTabs:main"));
 assert.equal(persisted.groups[0].visibleIds.includes(persisted.groups[0].focusedId), true);
 
-state.moveGroupMember(groupId, "w:two", 0);
-state = useCenterTabs.getState();
-assert.deepEqual(state.groups[0].memberIds, ["w:two", "s:chat", "w:one"]);
-assert.deepEqual(
-  state.tabs.slice(0, state.groups[0].memberIds.length).map((tab) => tab.id),
-  state.groups[0].memberIds,
-);
-
-state.ungroupTab("w:two");
 useCenterTabs.getState().closeTab("w:one");
 state = useCenterTabs.getState();
 assert.deepEqual(state.groups, [], "a one-member group dissolves after close");

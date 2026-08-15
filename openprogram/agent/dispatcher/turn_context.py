@@ -40,6 +40,7 @@ class TurnBindings:
         self._session_id_token = None
         self._turn_request_token = None
         self._render_range_token = None
+        self._surface_token = None
         self._req_session_id: Optional[str] = None
 
     @classmethod
@@ -156,6 +157,8 @@ class TurnBindings:
             # without an auto-injected runtime.
             self._runtime_token = None
         self._render_range_token = _render_range_var.set(req.render_range)
+        from openprogram.agent.surface_context import bind as _bind_surface
+        self._surface_token = _bind_surface(req.surface_context)
         return self
 
     def release(self) -> None:
@@ -175,6 +178,14 @@ class TurnBindings:
             _render_range_override as _render_range_var,
         )
         try:
+            if self._surface_token is not None:
+                from openprogram.agent.surface_context import (
+                    current as _current_surface,
+                    release_bindings as _release_surface_bindings,
+                    reset as _reset_surface,
+                )
+                _release_surface_bindings(_current_surface())
+                _reset_surface(self._surface_token)
             if self._runtime_token is not None:
                 _current_runtime_var.reset(self._runtime_token)
             if self._store_token is not None:

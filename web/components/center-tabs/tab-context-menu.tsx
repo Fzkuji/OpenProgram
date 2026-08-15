@@ -12,36 +12,32 @@ import styles from "./center-tabs.module.css";
 
 export interface TabContextMenuProps {
   tabMenu: TabMenuState;
-  tabs: CenterTab[];
   groups: CenterTabGroup[];
   canMoveToNewWindow: boolean;
   canMoveMenuTab(tabId: string, direction: -1 | 1): boolean;
   moveMenuTab(tabId: string, direction: -1 | 1): void;
+  closeMenuTab(tabId: string): void;
   closableTabsAround(tabId: string, after: boolean): CenterTab[];
   closeMenuTabs(tabId: string, after: boolean): void;
   canOpenSplitPicker(tabId: string): boolean;
   openSplitPicker(tabId: string): void;
   removeMenuTabFromGroup(tabId: string): void;
   moveMenuTabToNewWindow(tabId: string): void;
-  setTabMenu(next: TabMenuState | null): void;
-  onTabClose(event: React.SyntheticEvent, tab: CenterTab): void;
 }
 
 export function TabContextMenu({
   tabMenu,
-  tabs,
   groups,
   canMoveToNewWindow,
   canMoveMenuTab,
   moveMenuTab,
+  closeMenuTab,
   closableTabsAround,
   closeMenuTabs,
   canOpenSplitPicker,
   openSplitPicker,
   removeMenuTabFromGroup,
   moveMenuTabToNewWindow,
-  setTabMenu,
-  onTabClose,
 }: TabContextMenuProps) {
   const { text } = useTranslation();
   return (
@@ -74,11 +70,7 @@ export function TabContextMenu({
         type="button"
         role="menuitem"
         className={styles.tabMenuItem}
-        onClick={() => {
-          const tab = tabs.find((x) => x.id === tabMenu.tabId);
-          setTabMenu(null);
-          if (tab) onTabClose({ stopPropagation: () => {} } as React.SyntheticEvent, tab);
-        }}
+        onClick={() => closeMenuTab(tabMenu.tabId)}
       >
         {text("Close tab", "关闭标签页")}
       </button>

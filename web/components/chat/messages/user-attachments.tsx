@@ -8,7 +8,7 @@
  * (@-mentions / typed paths), downloaded to the channel account dir
  * (inbound Telegram / Discord / Slack), or produced by the agent and
  * registered with ``send_file``. Whichever it was, the message carries
- * the same one-line ``[attachment: paper.pdf (pdf, 1531 KB) @ /abs/path]``
+ * the same one-line ``[attachment: paper.pdf (pdf, 1531 KB) @json "/abs/path"]``
  * mention. The agent reads the file on demand with its ``read`` / ``pdf``
  * tools — the file body never enters the prompt.
  *
@@ -26,6 +26,7 @@ import { useState } from "react";
 import { useTranslation } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/session-store";
 import { absRawFileUrl } from "@/lib/state/files-shared";
+import { extractAttachmentMentions } from "@/lib/attachment-marker";
 import { AttachmentPreview } from "./attachment-preview";
 
 export interface ParsedAttachment {
@@ -35,9 +36,12 @@ export interface ParsedAttachment {
   kind: "binary" | "file";
   /** Absolute path on the worker's disk, once one exists. Empty while a
    *  browser upload's optimistic bubble is still in flight (the backend
-   *  appends ``@ <path>`` when the bytes land) — a chip with no path
+   *  appends the encoded path when the bytes land) — a chip with no path
    *  renders, it just isn't clickable yet. */
   path: string;
+  /** Original local path kept for provenance when ``path`` points at an
+   * immutable session preview copy. */
+  sourcePath?: string;
 }
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp"]);
@@ -62,15 +66,9 @@ const FILE_BLOCK = /<file (?:name|path)="([^"]*)">[\s\S]*?<\/file>/g;
 // the whole block from the bubble. Stripped BEFORE the mention scan so any
 // "[attachment:" inside previewed file content can't spawn a false chip.
 const PREVIEW_BLOCK = /<attachment-preview[^>]*>[\s\S]*?<\/attachment-preview>/g;
-// Current "[attachment: name (type, N KB[, <count>]) @ <abs path>]" mention
-// plus the older "[attached: …]" spelling. The backend appends " @ <abs
-// path>" once the file is saved (uploads); @-mentions carry the path from
-// the frontend. The optional 4th group is the page/line count (e.g.
-// "500 pages", "4210 lines") or an oversize note ("too large …"). The path
-// was already being matched here and thrown away; capturing it is what
-// turns a chip into something that opens the file.
-const ATTACHED_MENTION =
-  /\[attach(?:ed|ment):\s*([^()]+?)\s*\(([^,)]+),\s*([\d.]+)\s*KB(?:,\s*([^)]+))?\)(?:\s*@\s*([^\]]+))?\]/g;
+// Current path-bearing markers use an escaped JSON string so legal path
+// delimiters and trailing spaces round-trip. `extractAttachmentMentions`
+// also accepts historical unquoted markers and optimistic path-less uploads.
 // Fallback mention with no size/ext: "[attachment: name @ path]" (current)
 // or "[attached file: name @ path]" (legacy).
 const ATTACHED_FILE = /\[attach(?:ment|ed file):\s*([^(@\]]+?)\s*@\s*([^\]]+)\]/g;
@@ -101,21 +99,20 @@ export function parseAttachments(
   });
 
   // [attachment: NAME (EXT, N KB[, COUNT])] mentions (optionally with a
-  // backend-injected " @ <path>"). COUNT is the page/line scope badge or an
+  // backend-injected encoded or historical path). COUNT is the scope badge or an
   // oversize note.
-  text = text.replace(
-    ATTACHED_MENTION,
-    (_m, name: string, ext: string, kb: string, count?: string, path?: string) => {
-      const scope = (count || "").trim();
-      attachments.push({
-        filename: (name || "").trim() || "file",
-        meta: `${(ext || "").trim()} · ${kb} KB` + (scope ? ` · ${scope}` : ""),
-        kind: "binary",
-        path: (path || "").trim(),
-      });
-      return "";
-    },
-  );
+  const extracted = extractAttachmentMentions(text);
+  for (const mention of extracted.mentions) {
+    attachments.push({
+      filename: mention.filename,
+      meta: `${mention.ext} · ${mention.kb} KB`
+        + (mention.count ? ` · ${mention.count}` : ""),
+      kind: "binary",
+      path: mention.previewPath || mention.path,
+      ...(mention.previewPath ? { sourcePath: mention.path } : {}),
+    });
+  }
+  text = extracted.text;
 
   // [attached file: NAME @ PATH] — backend fallback with no size/ext.
   text = text.replace(ATTACHED_FILE, (_m, name: string, path?: string) => {
@@ -187,7 +184,7 @@ export function AttachmentChips({ items }: { items: ParsedAttachment[] }) {
               "user-attach-chip user-attach-open"
               + (isImage ? " user-attach-image" : "")
             }
-            title={`${a.filename} — ${a.path}`}
+            title={`${a.filename} — ${a.sourcePath || a.path}`}
             onClick={() => setOpen(a)}
           >
             {isImage ? (

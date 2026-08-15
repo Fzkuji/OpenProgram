@@ -80,14 +80,17 @@ _RETITLE_AT_TURNS = (1, 6, 16, 40)
 def _strip_attachment_markers(text: str) -> str:
     """Strip attachment / file markers from raw user text before
     truncating it into a phase-1 placeholder title, so a severed
-    ``[attachment: … @ /long/path]`` never leaks into the sidebar.
+    a long path-bearing attachment marker never leaks into the sidebar.
 
     Mirrors the web parser (``user-attachments.tsx``) on the backend.
     The frontend strips markers for display too, but only when the
     closing bracket survives; truncating at 50 chars can sever it, so
     we clean first, then truncate.
     """
+    from openprogram import attachments as _attachments
+
     t = re.sub(r"<attachment-preview[^>]*>.*?</attachment-preview>", "", text, flags=re.S)
+    t = _attachments.strip_markers(t)
     t = re.sub(r"\[attachment:[^\]]*\]", "", t)
     t = re.sub(r"\[attached(?: file)?:[^\]]*\]", "", t)
     t = re.sub(r"<file [^>]*>.*?</file>", "", t, flags=re.S)

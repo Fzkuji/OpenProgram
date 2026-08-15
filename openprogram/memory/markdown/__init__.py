@@ -12,7 +12,7 @@ from .models import (
     is_valid_temporal_value,
 )
 from .parser import parse_topic_tree, topic_prose
-from .syntax import definition_match, render_definition
+from .syntax import definition_match, paragraph_spans, render_definition
 from .writer import append_memory_unit
 
 __all__ = [
@@ -28,6 +28,7 @@ __all__ = [
     "definition_match",
     "is_valid_temporal_value",
     "parse_topic_tree",
+    "paragraph_spans",
     "render_definition",
     "topic_prose",
 ]

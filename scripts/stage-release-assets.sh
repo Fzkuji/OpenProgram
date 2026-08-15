@@ -12,6 +12,7 @@ command -v npm >/dev/null 2>&1 || {
 }
 
 npm ci --prefix "$web_dir"
+rm -rf "$source_dir"
 npm run build --prefix "$web_dir"
 test -f "$source_dir/index.html" || {
   printf 'Next.js export did not produce %s/index.html\n' "$source_dir" >&2

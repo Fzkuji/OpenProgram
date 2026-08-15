@@ -13,6 +13,7 @@
 <h1>Browser Agent 实施与验证记录</h1>
 <p>本页只记录 <a href="computer-use.html">Computer Use 目标设计</a> 的实施任务、验证命令和 review 结论，不修改概念设计。第一项任务交付内置浏览器 Browser Agent 的低成本 baseline。</p>
 <span class="status">TASK 1 · COMPLETE</span>
+<span class="status">TASK 2 · COMPLETE</span>
 
 <h2>任务 1：DOM-first Browser Agent baseline</h2>
 <div class="card">
@@ -99,6 +100,60 @@
     <tr><td>Specification review</td><td>独立只读 review 对实现提交 <code>37b2c37c</code> 逐项核对 8 条行为契约与安全边界；zero remaining findings。</td><td class="pass">PASS</td></tr>
     <tr><td>Quality review</td><td>首轮 <code>CHANGES_REQUIRED</code> 的取消、URL scheme、cleanup 三项已由 <code>af33c608</code> 修复。Fresh review 对候选 <code>d0996f7b</code> 复核全部 changed boundary，确认此前 <code>KeyboardInterrupt</code> 结论为误判；zero remaining findings。</td><td class="pass">PASS</td></tr>
     <tr><td>Full gate</td><td>Reviewed candidate：browser/browser-control 58 passed；registry/tool-selection 25 passed；Ruff passed；docs 0 broken links；diff check passed。</td><td class="pass">通过</td></tr>
+  </tbody>
+</table>
+
+<h2>任务 2：Turn-scoped Surface Awareness 与绑定式 Computer Use</h2>
+<div class="card">
+  <p><strong>实现范围：</strong>chat turn 自动携带当前 split web surface；模型首轮上下文包含有界 DOM/ARIA preview；仅在有效 surface 存在时提供 <code>computer_use</code>；读取和动作固定到 originating WebSocket 的 <code>window_id + tab_id + target_id</code>。</p>
+  <p><strong>前台要求：</strong>没有。Electron 直接读取绑定 <code>WebContents</code> 并返回其 CDP target；<code>activateView</code> 不调用 <code>BrowserWindow.focus()</code> 或其他 OS focus API。目标 pane 不需要拥有键盘焦点，普通 DOM/ARIA action 不使用桌面坐标和 screenshot。</p>
+  <p><strong>运行对象：</strong>默认 profile <code>~/.openprogram</code>、端口 18100、<code>/Applications/OpenProgram.app</code>。没有从 Electron 源码启动第二个桌面进程或第二个可见 worker。</p>
+</div>
+
+<h2>任务 2 实现分层</h2>
+<table>
+  <thead><tr><th>步骤</th><th>实现</th><th>边界</th></tr></thead>
+  <tbody>
+    <tr><td>1. Turn surface reference</td><td>composer 从当前 compound group 生成 version/window/tab/region/access/focused/title/url 引用，并随 chat command 提交；surface chip 显示当前绑定目标。</td><td>关闭访问时只保留 disabled descriptor，不提供 preview 或执行工具。</td></tr>
+    <tr><td>2. Exact preview</td><td>服务端只向发起 chat 的 WebSocket 请求 preview，并校验 exact window/tab/target；Electron 从当前 viewport 的 DOM、ARIA landmarks、title 与 URL 生成结果。</td><td>文本最多 2,000 字符，landmark 最多 12 项且 name 最多 160 字符；URL 只保留 origin，不包含 query value；不发送 screenshot。</td></tr>
+    <tr><td>3. Model context and tool schema</td><td>dispatcher 在首个模型调用前注入 Surface Context。<code>computer_use</code> 是 resident tool，但仅在 surface binding 有效时进入 provider tool array；没有 surface 时主动移除。</td><td>模型不能提交 window/tab/CDP target，只能使用当前 turn 的 surface alias。</td></tr>
+    <tr><td>4. Bound execution</td><td>binding registry 保存 originating WebSocket、window、tab、target 与 expiry；subprocess bridge 只允许 exact binding 的 activate。Browser Agent 继续使用 DOM/ARIA refs 和 post-action observation。</td><td>不使用 OS 输入、桌面坐标、app window focus 或默认 active tab；binding 缺失、过期或 identity 不匹配时失败。</td></tr>
+    <tr><td>5. Approval and verification</td><td>用户发送带 exact surface 的 turn 后，外层 <code>computer_use</code> 不请求第二次通用 approval；hard constraints、authority 和显式 deny/ask rules仍先执行。Plan mode 不提供 <code>computer_use</code>。父 turn 的 permission rules 以纯数据快照传入 agentic 子进程；内部 <code>browser_page</code> 只在该绑定调用期间使用 scoped bypass，结束后恢复。Runtime assertion 决定终态。</td><td>高风险 action 规则仍可 ask/deny；写动作继续要求新鲜 DOM frame。动态页面的 verification 读取同一 bound target 的当前 DOM，不因无关 mutation 永久 stale。</td></tr>
+    <tr><td>6. Cleanup ownership</td><td>chat query 从 surface capture 开始进入 <code>try/finally</code>，直接 owner 无条件幂等释放 binding；正常 dispatcher teardown 也执行相同释放。</td><td><code>prepare_turn</code>、<code>TurnBindings.bind</code> 或 provider 初始化在 context 建立前失败时，binding 不继续持有 originating WebSocket。</td></tr>
+  </tbody>
+</table>
+
+<h2>任务 2 安装版验收</h2>
+<table>
+  <thead><tr><th>场景</th><th>证据</th><th>结论</th></tr></thead>
+  <tbody>
+    <tr><td>首轮页面感知</td><td>安装版 chat command 包含 exact surface；服务端向同一 originating WebSocket 发出 <code>preview</code>，provider 在首个回复前获得 Bilibili title、origin、DOM excerpt、ARIA landmarks 和 <code>computer_use</code> schema。</td><td class="pass">PASS，无 screenshot</td></tr>
+    <tr><td>绑定页面点击</td><td>Session <code>local_340bc50ccd2c4eafb1fc12378e0489ab</code>；模型调用 <code>computer_use</code>，内部以 DOM ref 点击首页导航“番剧”。命令记录同时包含 exact window/tab 的 <code>preview</code> 和 <code>activate</code>。</td><td class="pass">PASS</td></tr>
+    <tr><td>确定性结果</td><td>目标变为 <code>https://www.bilibili.com/anime/?spm_id_from=333.1007.0.0</code>；<code>title_contains=番剧</code> 在 <code>frame_6_a628e0d2</code> 返回 <code>passed=true</code>。外层工具结果为 <code>status=succeeded</code>、<code>reason_code=verified</code>。</td><td class="pass">PASS</td></tr>
+    <tr><td>无需应用置顶</td><td><code>activateView</code> 的 source invariant test 要求 exact target attach，且拒绝 <code>.focus(</code> 和 <code>BrowserWindow.getFocusedWindow</code>；安装版动作使用 WebContents/CDP，不调用屏幕截图或 OS input。</td><td class="pass">架构与 source gate 通过；独立遮挡场景待增加自动化 E2E</td></tr>
+  </tbody>
+</table>
+
+<h2>任务 2 验证命令</h2>
+<ul>
+  <li><code>python -m pytest -q tests/unit/test_computer_use_surface.py tests/unit/context/test_tool_defer.py tests/unit/security/test_permission_rules.py tests/component/programs/test_browser_agent.py tests/component/agent/test_process_runner_webtab_bridge.py tests/component/agent/test_dispatcher_tools.py tests/unit/security/test_process_runner_sandbox.py</code>：125 passed。</li>
+  <li><code>./web/node_modules/.bin/tsc --noEmit -p web/tsconfig.json</code></li>
+  <li><code>npm --prefix web run build</code></li>
+  <li><code>node desktop/scripts/check-webtab-navigation.js</code></li>
+  <li><code>node web/scripts/check-web-split.mjs</code></li>
+  <li><code>python -m tools.docs_site.checklinks</code></li>
+  <li><code>git diff --check</code></li>
+</ul>
+
+<h2>任务 2 尚未覆盖</h2>
+<p>当前实现是单个已登记 split web surface 的 turn-scoped baseline。完整 server-owned monotonic registry revisions、tab write lease、hide/move/跨窗口 transfer invalidation、多窗口压力测试、专用 permission card、canvas 视觉 fallback 和 artifact retention policy 仍未实现。已完成的安装版验收不作为这些能力的证据。</p>
+
+<h2>任务 2 审查记录</h2>
+<table>
+  <thead><tr><th>审查</th><th>发现与处理</th><th>结论</th></tr></thead>
+  <tbody>
+    <tr><td>Specification review</td><td>首轮发现目标设计仍保留旧的“Surface Awareness 未实现”和“完整 registry 完成前不得向 provider 注入”表述。已改为当前 turn-scoped baseline 与后续完整架构分别记录；复核未发现新矛盾。</td><td class="pass">PASS，zero findings</td></tr>
+    <tr><td>Quality review</td><td>首轮发现 Plan mode 未过滤、子进程丢失 permission rules、capture 后早期异常未释放 binding。已分别增加 plan policy、permission rule snapshot/reconstruction、capture-owner <code>try/finally</code> 及回归测试。</td><td class="pass">PASS，zero findings</td></tr>
   </tbody>
 </table>
 </main></body></html>

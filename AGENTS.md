@@ -1,5 +1,13 @@
 # AGENTS.md
 
+## 本地运行实例
+
+- App、Web 和本地验收统一使用默认 profile、端口 `18100` 和状态目录 `~/.openprogram`。
+- 不为日常开发或验收启动 `OPENPROGRAM_PROFILE=dev`、`18200` 或另一套前端实例。
+- App 启动和可视验收只使用 `/Applications/OpenProgram.app`；禁止运行 `desktop/node_modules/electron`、`npm --prefix desktop run dev` 或临时 E2E Electron 作为用户可见 App。
+- 前端代码变化后重启默认 worker，并重新加载 App/浏览器，让认证 token 和静态资源版本同时更新。
+- CLI 的 profile 功能属于产品能力，保留；本仓库的本地运行不使用额外 profile。
+
 ## 文档管理规则
 
 `docs/` 是**产品文档站**（http://localhost:18100/docs），按用户问题组织成九个 Tab：

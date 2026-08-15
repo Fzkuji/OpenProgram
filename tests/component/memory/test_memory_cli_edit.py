@@ -134,6 +134,9 @@ def test_edit_keeping_the_block_id_lands(memory, editor):
     assert "worth remembering" in (
         memory / "topics/note.md"
     ).read_text(encoding="utf-8")
+    assert subprocess.check_output(
+        ["git", "log", "-1", "--format=%s"], cwd=memory, text=True
+    ).strip() == "memory: edit topics/note.md"
 
 
 def test_edit_that_changes_nothing_is_not_a_write(memory, editor, capsys):

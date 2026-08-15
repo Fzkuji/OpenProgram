@@ -391,6 +391,17 @@ def wrap_with_approval(
                 )
             return await _approve_then_run(call_id, args, cancel, on_update)
 
+        # The owner granted this turn access to one exact in-app web surface
+        # when sending the message.  Requiring a second generic process
+        # approval here would make that explicit, turn-scoped grant unusable.
+        # Deny/ask rules, authority checks, and hard constraints above remain
+        # authoritative; this exception applies only to the bound public tool.
+        if name == "computer_use":
+            from openprogram.agent.surface_context import tool_enabled
+
+            if tool_enabled(getattr(req, "surface_context", None)):
+                return await _run_original(call_id, args, cancel, on_update)
+
         # ③ bypass 短路（deny/ask/force 之后）
         if mode == "bypass":
             return await _run_original(call_id, args, cancel, on_update)

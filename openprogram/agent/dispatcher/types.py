@@ -136,6 +136,9 @@ class TurnRequest:
     # Kept at the end for positional-constructor compatibility. An explicit
     # decorator value takes precedence.
     render_range: Optional[dict[str, int]] = None
+    # Validated, turn-scoped descriptor and DOM/ARIA preview for a visible
+    # OpenProgram desktop surface. Raw renderer refs never reach providers.
+    surface_context: Optional[dict[str, Any]] = None
 
 
 @dataclass

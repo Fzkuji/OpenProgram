@@ -30,6 +30,11 @@ above the navigation.
 
 ## Interaction language per surface
 
+Mouse interaction never draws an outer focus ring on buttons. Keyboard focus
+on buttons uses a small brightness change without an outline or box-shadow.
+The top tab strip is the exception: its `role="tab"` targets use each theme's
+own `--focus-ring`, which is lighter in dark themes and darker in light themes.
+
 ### Deep surface (sidebars)
 
 Components on the deep surface are **list rows** — conversation

@@ -7,14 +7,12 @@
  * so they belong in the center as their own tab (Chrome's
  * chrome://bookmarks / chrome://history), reachable from the main menu.
  *
- * The rows reuse the shared `.bookmark-*` / `.bookmarks-*` vocabulary
- * from right-dock.css — same list grammar, just laid out in a wider
- * centered column with a page header and a select-and-delete mode.
- * Bookmarks is a folder TREE (Chrome's bookmark manager): rows nest by
- * depth, folders collapse, and any row can be dragged into a folder.
+ * Bookmarks follows the browser-manager structure: fixed search header,
+ * folder-only navigation, and one content list for the selected folder.
+ * Web history keeps the shared wide list frame below.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Bookmark,
   Check,
@@ -22,12 +20,24 @@ import {
   ChevronRight,
   Folder,
   Globe,
-  Pencil,
+  History,
+  MoreVertical,
   Trash2,
   X,
 } from "lucide-react";
 
-import { FolderPlusIcon, type AnimatedNavIconHandle } from "@/components/animated-icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  MENU_PANEL,
+  MENU_SEPARATOR,
+  itemCls,
+} from "@/components/chat/top-bar/menu-styles";
 import {
   BOOKMARKS_ROOT_ID,
   createFolder,
@@ -46,10 +56,12 @@ import {
 } from "@/lib/desktop-bridge";
 import { useCenterTabs, type BuiltinPage } from "@/lib/state/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
+import { groupHistoryByLocalDate } from "@/lib/history-groups";
 import { SearchInput } from "@/components/ui/search-input";
 import styles from "./center-tabs.module.css";
 
-const HISTORY_LIST_LIMIT = 200;
+const HISTORY_PAGE_SIZE = 250;
+const HISTORY_LIST_LIMIT = 5_000;
 
 export function BuiltinTabPane({ page }: { page: BuiltinPage }) {
   return page === "bookmarks" ? <BookmarksPage /> : <HistoryPage />;
@@ -94,8 +106,7 @@ function PageFrame({
   );
 }
 
-/** A node matches if it, or anything under it, matches the needle — so
- *  searching keeps the folders that lead to a hit. */
+/** Folder navigation keeps ancestors visible while searching. */
 function matchesQuery(node: BookmarkNode, needle: string): boolean {
   if (!needle) return true;
   if (node.title.toLowerCase().includes(needle)) return true;
@@ -104,18 +115,40 @@ function matchesQuery(node: BookmarkNode, needle: string): boolean {
     : node.url.toLowerCase().includes(needle);
 }
 
+function bookmarkSearchResults(folder: BookmarkFolder, needle: string): BookmarkNode[] {
+  const results: BookmarkNode[] = [];
+  const visit = (node: BookmarkNode) => {
+    const ownMatch = node.title.toLowerCase().includes(needle)
+      || (node.kind === "bookmark" && node.url.toLowerCase().includes(needle));
+    if (ownMatch) results.push(node);
+    if (node.kind === "folder") node.children.forEach(visit);
+  };
+  folder.children.forEach(visit);
+  return results;
+}
+
+function BookmarkFavicon({ node }: { node: BookmarkNode }) {
+  const [broken, setBroken] = useState(false);
+  if (node.kind === "folder") {
+    return <Folder size={17} aria-hidden="true" />;
+  }
+  if (!node.faviconUrl || broken) {
+    return <Globe size={16} aria-hidden="true" />;
+  }
+  return <img src={node.faviconUrl} alt="" onError={() => setBroken(true)} />;
+}
+
 function BookmarksPage() {
   const { text } = useTranslation();
   const [tree, setTree] = useState<BookmarkFolder>(readBookmarkTree);
   const [query, setQuery] = useState("");
+  const [selectedFolderId, setSelectedFolderId] = useState(BOOKMARKS_ROOT_ID);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropId, setDropId] = useState<string | null>(null);
-  // Between-row insertion point: which sibling list, and where in it.
   const [dropAt, setDropAt] = useState<{ parentId: string; index: number } | null>(null);
-  const newFolderIconRef = useRef<AnimatedNavIconHandle>(null);
 
   useEffect(() => {
     const refresh = () => setTree(readBookmarkTree());
@@ -124,6 +157,15 @@ function BookmarksPage() {
   }, []);
 
   const needle = query.trim().toLowerCase();
+  const selectedNode = findNode(tree, selectedFolderId);
+  const selectedFolder = selectedNode?.kind === "folder" ? selectedNode : tree;
+  const visibleNodes = needle
+    ? bookmarkSearchResults(tree, needle)
+    : selectedFolder.children;
+
+  useEffect(() => {
+    if (selectedNode?.kind !== "folder") setSelectedFolderId(BOOKMARKS_ROOT_ID);
+  }, [selectedNode]);
 
   function saveRename(id: string) {
     renameNode(id, draftTitle);
@@ -145,8 +187,6 @@ function BookmarksPage() {
     setDropAt(null);
   }
 
-  /** Drop onto a folder row moves into it; drop on the page background
-   *  moves back out to the root. */
   function handleDrop(parentId: string) {
     if (dragId) moveNode(dragId, parentId);
     clearDrag();
@@ -167,13 +207,11 @@ function BookmarksPage() {
     clearDrag();
   }
 
-  /** The insertion line between two sibling rows. */
-  function dropZone(parentId: string, index: number, depth: number) {
+  function dropZone(parentId: string, index: number) {
     const active = dropAt?.parentId === parentId && dropAt.index === index;
     return (
       <div
-        className="bookmark-drop-zone"
-        style={{ marginInlineStart: depth * 16 }}
+        className={styles.bookmarkManagerDropZone}
         data-drop-target={active ? "true" : undefined}
         onDragOver={(event) => {
           if (!dragId) return;
@@ -200,227 +238,277 @@ function BookmarksPage() {
   const newFolderLabel = text("New folder", "新建文件夹");
   const expandLabel = text("Expand folder", "展开文件夹");
   const collapseLabel = text("Collapse folder", "折叠文件夹");
+  const pageActionsLabel = text("Bookmark actions", "书签操作");
+  const allBookmarksLabel = text("All bookmarks", "全部书签");
 
-  /** A sibling list, with an insertion zone before every row and one
-   *  after the last — so any position among the siblings is reachable.
-   *  Zones carry the index into the real (unfiltered) children, which is
-   *  what moveNode wants; a search hides rows, so the gaps would point at
-   *  the wrong slots and reordering is left out while one is active. */
-  function renderChildren(parent: BookmarkFolder, depth: number): React.ReactNode[] {
-    const out: React.ReactNode[] = [];
-    parent.children.forEach((child, index) => {
-      if (!matchesQuery(child, needle)) return;
-      if (!needle) {
-        out.push(
-          <div key={`zone-${parent.id}-${index}`}>{dropZone(parent.id, index, depth)}</div>,
-        );
-      }
-      out.push(renderNode(child, depth));
-    });
-    if (!needle && out.length > 0) {
-      out.push(
-        <div key={`zone-${parent.id}-end`}>
-          {dropZone(parent.id, parent.children.length, depth)}
-        </div>,
-      );
-    }
-    return out;
-  }
-
-  function renderNode(node: BookmarkNode, depth: number): React.ReactNode {
-    if (!matchesQuery(node, needle)) return null;
-    const editing = editingId === node.id;
-    const isFolder = node.kind === "folder";
-    // A search always shows its hits, however deep they sit.
-    const open = isFolder && (!collapsed.has(node.id) || Boolean(needle));
+  function renderFolder(folder: BookmarkFolder, depth: number): React.ReactNode {
+    const childFolders = folder.children.filter(
+      (node): node is BookmarkFolder => node.kind === "folder" && matchesQuery(node, needle),
+    );
+    const open = folder.id === BOOKMARKS_ROOT_ID || !collapsed.has(folder.id) || Boolean(needle);
+    const selected = selectedFolder.id === folder.id;
+    const label = folder.id === BOOKMARKS_ROOT_ID ? allBookmarksLabel : folder.title;
     return (
-      <div key={node.id}>
+      <div key={folder.id}>
         <div
-          className="bookmark-row"
-          style={{ marginInlineStart: depth * 16 }}
-          data-drop-target={dropId === node.id ? "true" : undefined}
-          draggable={!editing}
-          onDragStart={(event) => {
-            event.dataTransfer.effectAllowed = "move";
-            setDragId(node.id);
+          className={styles.bookmarkFolderRow + (selected ? ` ${styles.bookmarkFolderSelected}` : "")}
+          style={{ paddingInlineStart: 8 + depth * 16 }}
+          data-drop-target={dropId === folder.id ? "true" : undefined}
+          onDragOver={(event) => {
+            if (!dragId || dragId === folder.id) return;
+            event.preventDefault();
+            event.stopPropagation();
+            setDropId(folder.id);
           }}
-          onDragEnd={clearDrag}
-          onDragOver={
-            isFolder && dragId && dragId !== node.id
-              ? (event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  event.dataTransfer.dropEffect = "move";
-                  setDropId(node.id);
-                }
-              : undefined
-          }
-          onDragLeave={isFolder ? () => setDropId(null) : undefined}
-          onDrop={
-            isFolder
-              ? (event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  handleDrop(node.id);
-                }
-              : undefined
-          }
+          onDragLeave={() => setDropId(null)}
+          onDrop={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            handleDrop(folder.id);
+          }}
         >
-          <div className="bookmark-row-main">
-            {isFolder ? (
-              <button
-                type="button"
-                className="bookmark-twisty"
-                onClick={() => toggleCollapsed(node.id)}
-                title={open ? collapseLabel : expandLabel}
-                aria-label={open ? collapseLabel : expandLabel}
-              >
-                {open ? (
-                  <ChevronDown size={14} aria-hidden="true" />
-                ) : (
-                  <ChevronRight size={14} aria-hidden="true" />
-                )}
-              </button>
-            ) : null}
-            {isFolder ? (
-              <Folder size={14} aria-hidden="true" className="bookmark-node-icon" />
-            ) : null}
-            {editing ? (
-              <input
-                className="bookmark-title-input"
-                value={draftTitle}
-                onChange={(event) => setDraftTitle(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") saveRename(node.id);
-                  if (event.key === "Escape") setEditingId(null);
-                }}
-                aria-label={editLabel}
-                autoFocus
-              />
-            ) : (
-              <button
-                type="button"
-                className="bookmark-title"
-                onClick={() =>
-                  isFolder
-                    ? toggleCollapsed(node.id)
-                    : useCenterTabs.getState().openWebTab(node.url)
-                }
-                title={node.title}
-              >
-                {node.title}
-              </button>
-            )}
-            <div className="bookmark-actions">
-              {editing ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => saveRename(node.id)}
-                    title={saveLabel}
-                    aria-label={saveLabel}
-                  >
-                    <Check size={14} aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditingId(null)}
-                    title={cancelLabel}
-                    aria-label={cancelLabel}
-                  >
-                    <X size={14} aria-hidden="true" />
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingId(node.id);
-                    setDraftTitle(node.title);
-                  }}
-                  title={editLabel}
-                  aria-label={editLabel}
-                >
-                  <Pencil size={14} aria-hidden="true" />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => deleteNode(node.id)}
-                title={deleteLabel}
-                aria-label={deleteLabel}
-              >
-                <Trash2 size={14} aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-          {node.kind === "bookmark" ? (
-            <span className="bookmark-url" title={node.url}>
-              {node.url}
-            </span>
-          ) : null}
+          {childFolders.length > 0 && folder.id !== BOOKMARKS_ROOT_ID ? (
+            <button
+              type="button"
+              className={styles.bookmarkFolderTwisty}
+              onClick={() => toggleCollapsed(folder.id)}
+              title={open ? collapseLabel : expandLabel}
+              aria-label={open ? collapseLabel : expandLabel}
+            >
+              {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+          ) : (
+            <span className={styles.bookmarkFolderTwisty} />
+          )}
+          <Folder size={16} aria-hidden="true" />
+          <button
+            type="button"
+            className={styles.bookmarkFolderTitle}
+            onClick={() => setSelectedFolderId(folder.id)}
+            title={label}
+          >
+            {label}
+          </button>
         </div>
-        {isFolder && open ? renderChildren(node, depth + 1) : null}
+        {open ? childFolders.map((child) => renderFolder(child, depth + 1)) : null}
       </div>
     );
   }
 
-  const rows = renderChildren(tree, 0);
+  function openNode(node: BookmarkNode) {
+    if (node.kind === "folder") {
+      setSelectedFolderId(node.id);
+      setQuery("");
+    } else {
+      useCenterTabs.getState().openWebTab(node.url);
+    }
+  }
+
+  function renderContentNode(node: BookmarkNode): React.ReactNode {
+    const editing = editingId === node.id;
+    const isFolder = node.kind === "folder";
+    return (
+      <div
+        key={node.id}
+        className={styles.bookmarkContentRow}
+        data-drop-target={dropId === node.id ? "true" : undefined}
+        draggable={!editing && !needle}
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = "move";
+          setDragId(node.id);
+        }}
+        onDragEnd={clearDrag}
+        onDragOver={isFolder && dragId && dragId !== node.id ? (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setDropId(node.id);
+        } : undefined}
+        onDragLeave={isFolder ? () => setDropId(null) : undefined}
+        onDrop={isFolder ? (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          handleDrop(node.id);
+        } : undefined}
+      >
+        <span className={styles.bookmarkContentIcon}>
+          <BookmarkFavicon node={node} />
+        </span>
+        {editing ? (
+          <input
+            className={styles.bookmarkContentTitleInput}
+            value={draftTitle}
+            onChange={(event) => setDraftTitle(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") saveRename(node.id);
+              if (event.key === "Escape") setEditingId(null);
+            }}
+            aria-label={editLabel}
+            autoFocus
+          />
+        ) : (
+          <button
+            type="button"
+            className={styles.bookmarkContentTitle}
+            onClick={() => openNode(node)}
+            title={node.title}
+          >
+            {node.title || (node.kind === "bookmark" ? node.url : newFolderLabel)}
+          </button>
+        )}
+        {editing ? (
+          <div className={styles.bookmarkContentEditActions}>
+            <button type="button" onClick={() => saveRename(node.id)} title={saveLabel} aria-label={saveLabel}>
+              <Check size={15} />
+            </button>
+            <button type="button" onClick={() => setEditingId(null)} title={cancelLabel} aria-label={cancelLabel}>
+              <X size={15} />
+            </button>
+          </div>
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={styles.bookmarkManagerMenuButton}
+                title={`${pageActionsLabel}: ${node.title}`}
+                aria-label={`${pageActionsLabel}: ${node.title}`}
+              >
+                <MoreVertical size={17} aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className={MENU_PANEL + " min-w-[180px]"}>
+              <DropdownMenuItem
+                className={itemCls(false)}
+                onSelect={() => {
+                  setEditingId(node.id);
+                  setDraftTitle(node.title);
+                }}
+              >
+                {editLabel}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className={MENU_SEPARATOR} />
+              <DropdownMenuItem className={itemCls(false, true)} onSelect={() => deleteNode(node.id)}>
+                {deleteLabel}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+    );
+  }
+
+  const contentRows: React.ReactNode[] = [];
+  visibleNodes.forEach((node, index) => {
+    if (!needle) {
+      contentRows.push(
+        <div key={`zone-${selectedFolder.id}-${index}`}>
+          {dropZone(selectedFolder.id, index)}
+        </div>,
+      );
+    }
+    contentRows.push(renderContentNode(node));
+  });
+  if (!needle && visibleNodes.length > 0) {
+    contentRows.push(
+      <div key={`zone-${selectedFolder.id}-end`}>
+        {dropZone(selectedFolder.id, selectedFolder.children.length)}
+      </div>,
+    );
+  }
 
   return (
-    <PageFrame
-      icon={<Bookmark size={18} aria-hidden="true" />}
-      title={text("Bookmarks", "书签")}
-      query={query}
-      onQueryChange={setQuery}
-      searchPlaceholder={text("Search bookmarks", "搜索书签")}
-      action={
-        <button
-          type="button"
-          className={styles.builtinClear}
-          onClick={() => createFolder(newFolderLabel)}
-          onMouseEnter={() => newFolderIconRef.current?.startAnimation()}
-          onMouseLeave={() => newFolderIconRef.current?.stopAnimation()}
-          title={newFolderLabel}
-          aria-label={newFolderLabel}
-        >
-          <FolderPlusIcon ref={newFolderIconRef} size={14} aria-hidden="true" />
-          <span>{newFolderLabel}</span>
-        </button>
-      }
-    >
-      {tree.children.length === 0 ? (
-        <div className="bookmarks-empty">
-          {text("No bookmarks yet", "还没有书签")}
+    <div className={styles.bookmarkManager}>
+      <header className={styles.bookmarkManagerHeader}>
+        <div className={styles.bookmarkManagerBrand}>
+          <Bookmark size={19} aria-hidden="true" />
+          <h1>{text("Bookmarks", "书签")}</h1>
         </div>
-      ) : rows.length === 0 ? (
-        <div className="bookmarks-empty">
-          {text("No matching bookmarks", "没有匹配的书签")}
-        </div>
-      ) : (
-        <div
-          className="bookmarks-list"
+        <SearchInput
+          className={styles.bookmarkManagerSearch}
+          value={query}
+          onChange={setQuery}
+          placeholder={text("Search bookmarks", "搜索书签")}
+          aria-label={text("Search bookmarks", "搜索书签")}
+        />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className={styles.bookmarkManagerMenuButton}
+              title={pageActionsLabel}
+              aria-label={pageActionsLabel}
+            >
+              <MoreVertical size={18} aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className={MENU_PANEL + " min-w-[180px]"}>
+            <DropdownMenuItem
+              className={itemCls(false)}
+              onSelect={() => createFolder(newFolderLabel, selectedFolder.id)}
+            >
+              {newFolderLabel}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </header>
+      <div className={styles.bookmarkManagerBody}>
+        <nav className={styles.bookmarkFolderTree} aria-label={text("Bookmark folders", "书签文件夹")}>
+          {renderFolder(tree, 0)}
+        </nav>
+        <main
+          className={styles.bookmarkManagerContent}
           onDragOver={(event) => {
-            if (dragId) event.preventDefault();
+            if (dragId && !needle) event.preventDefault();
           }}
-          onDrop={() => handleDrop(BOOKMARKS_ROOT_ID)}
+          onDrop={() => {
+            if (!needle) handleDrop(selectedFolder.id);
+          }}
         >
-          {rows}
-        </div>
-      )}
-    </PageFrame>
+          <div className={styles.bookmarkContentPanel}>
+            {tree.children.length === 0 ? (
+              <div className={styles.bookmarkContentEmpty}>
+                {text("No bookmarks yet", "还没有书签")}
+              </div>
+            ) : visibleNodes.length === 0 ? (
+              <div className={styles.bookmarkContentEmpty}>
+                {needle
+                  ? text("No matching bookmarks", "没有匹配的书签")
+                  : text("This folder is empty", "此文件夹为空")}
+              </div>
+            ) : (
+              <div className={styles.bookmarkContentList}>{contentRows}</div>
+            )}
+          </div>
+        </main>
+      </div>
+    </div>
   );
 }
 
 function formatVisitedAt(value: number, locale: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  const sameDay = new Date().toDateString() === date.toDateString();
-  return date.toLocaleString(locale, {
+  return date.toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
-    ...(sameDay ? {} : { month: "short", day: "numeric" }),
   });
+}
+
+function historyDateLabel(date: Date, locale: string, today: string, yesterday: string): string {
+  const current = new Date();
+  const startToday = new Date(current.getFullYear(), current.getMonth(), current.getDate()).getTime();
+  const startDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  if (startDate === startToday) return today;
+  if (startDate === startToday - 86_400_000) return yesterday;
+  return date.toLocaleDateString(locale, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+}
+
+function historyHost(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
 }
 
 /** 历史行的站点图标：加载失败或没有 favicon 时退回 Globe（同 tab 条）。 */
@@ -442,16 +530,18 @@ function HistoryPage() {
   const history = desktopBridge()?.history;
   const [entries, setEntries] = useState<DesktopHistoryEntry[] | null>(null);
   const [query, setQuery] = useState("");
+  const [visibleLimit, setVisibleLimit] = useState(HISTORY_PAGE_SIZE);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
 
   const refresh = useCallback(
     (needle: string) => {
       if (!history) return;
       void history
-        .list({ limit: HISTORY_LIST_LIMIT, query: needle })
+        .list({ limit: visibleLimit, query: needle })
         .then(setEntries)
         .catch(() => setEntries([]));
     },
-    [history],
+    [history, visibleLimit],
   );
 
   // Re-query the main process on each keystroke: the store does the
@@ -462,9 +552,15 @@ function HistoryPage() {
     return () => window.clearTimeout(timer);
   }, [history, query, refresh]);
 
+  useEffect(() => {
+    setVisibleLimit(HISTORY_PAGE_SIZE);
+    setSelected(new Set());
+  }, [query]);
+
   const title = text("Web history", "网页历史");
   const clearLabel = text("Clear browsing history", "清空浏览历史");
   const deleteLabel = text("Delete entry", "删除记录");
+  const selectedCount = selected.size;
 
   // Plain web mode has no bridge to record visits. The tab still opens
   // (the menu entry is unconditional) and explains why it is empty,
@@ -474,7 +570,7 @@ function HistoryPage() {
       <div className={styles.builtinPane}>
         <div className={styles.builtinInner}>
           <div className={styles.builtinHeader}>
-            <Globe size={18} aria-hidden="true" />
+            <History size={18} aria-hidden="true" />
             <h1 className={styles.builtinTitle}>{title}</h1>
           </div>
           <div className="bookmarks-empty">
@@ -489,28 +585,50 @@ function HistoryPage() {
   }
 
   const dateLocale = locale === "zh" ? "zh-CN" : "en-US";
+  const groups = groupHistoryByLocalDate(entries ?? []);
 
   return (
     <PageFrame
-      icon={<Globe size={18} aria-hidden="true" />}
+      icon={<History size={18} aria-hidden="true" />}
       title={title}
       query={query}
       onQueryChange={setQuery}
       searchPlaceholder={text("Search history", "搜索历史")}
       action={
         entries && entries.length > 0 ? (
-          <button
-            type="button"
-            className={styles.builtinClear}
-            onClick={() => {
-              void history.clear().then(() => setEntries([]));
-            }}
-            title={clearLabel}
-            aria-label={clearLabel}
-          >
-            <Trash2 size={14} aria-hidden="true" />
-            <span>{text("Clear all", "全部清空")}</span>
-          </button>
+          <div className={styles.builtinHeaderActions}>
+            {selectedCount > 0 && (
+              <button
+                type="button"
+                className={styles.builtinClear}
+                onClick={() => {
+                  const targets = entries.filter((entry) => selected.has(`${entry.url}:${entry.visitedAt}`));
+                  void Promise.all(targets.map((entry) => history.remove(entry.url, entry.visitedAt))).then(() => {
+                    setSelected(new Set());
+                    refresh(query);
+                  });
+                }}
+              >
+                <Trash2 size={14} aria-hidden="true" />
+                <span>{text(`Delete ${selectedCount}`, `删除 ${selectedCount} 项`)}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className={styles.builtinClear}
+              onClick={() => {
+                void history.clear().then(() => {
+                  setEntries([]);
+                  setSelected(new Set());
+                });
+              }}
+              title={clearLabel}
+              aria-label={clearLabel}
+            >
+              <Trash2 size={14} aria-hidden="true" />
+              <span>{text("Clear all", "全部清空")}</span>
+            </button>
+          </div>
         ) : null
       }
     >
@@ -521,45 +639,61 @@ function HistoryPage() {
             : text("No pages visited yet", "还没有浏览记录")}
         </div>
       ) : (
-        <div className="bookmarks-list">
-          {entries.map((entry) => (
-            <div
-              className="bookmark-row"
-              key={`${entry.url}:${entry.visitedAt}`}
-            >
-              <div className="bookmark-row-main">
-                <HistoryFavicon url={entry.faviconUrl} />
-                <button
-                  type="button"
-                  className="bookmark-title"
-                  onClick={() => useCenterTabs.getState().openWebTab(entry.url)}
-                  title={entry.title || entry.url}
-                >
-                  {entry.title || entry.url}
-                </button>
-                <div className="bookmark-actions">
-                  <span className="browsing-history-time">
-                    {formatVisitedAt(entry.visitedAt, dateLocale)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void history
-                        .remove(entry.url, entry.visitedAt)
-                        .then(() => refresh(query));
-                    }}
-                    title={deleteLabel}
-                    aria-label={deleteLabel}
-                  >
-                    <Trash2 size={14} aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-              <span className="bookmark-url" title={entry.url}>
-                {entry.url}
-              </span>
-            </div>
+        <div className="browsing-history-list">
+          {groups.map((group) => (
+            <section key={group.key} className="browsing-history-group">
+              <h2>{historyDateLabel(group.date, dateLocale, text("Today", "今天"), text("Yesterday", "昨天"))}</h2>
+              {group.entries.map((entry) => {
+                const entryKey = `${entry.url}:${entry.visitedAt}`;
+                return (
+                  <div className="browsing-history-row" key={entryKey}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(entryKey)}
+                      onChange={(event) => {
+                        setSelected((value) => {
+                          const next = new Set(value);
+                          if (event.target.checked) next.add(entryKey);
+                          else next.delete(entryKey);
+                          return next;
+                        });
+                      }}
+                      aria-label={text("Select history entry", "选择历史记录")}
+                    />
+                    <span className="browsing-history-time">{formatVisitedAt(entry.visitedAt, dateLocale)}</span>
+                    <HistoryFavicon url={entry.faviconUrl} />
+                    <button
+                      type="button"
+                      className="browsing-history-title"
+                      onClick={() => useCenterTabs.getState().openWebTab(entry.url)}
+                      title={entry.title || entry.url}
+                    >
+                      {entry.title || entry.url}
+                    </button>
+                    <span className="browsing-history-host" title={entry.url}>{historyHost(entry.url)}</span>
+                    <button
+                      type="button"
+                      className="browsing-history-delete"
+                      onClick={() => void history.remove(entry.url, entry.visitedAt).then(() => refresh(query))}
+                      title={deleteLabel}
+                      aria-label={deleteLabel}
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                    </button>
+                  </div>
+                );
+              })}
+            </section>
           ))}
+          {entries.length === visibleLimit && visibleLimit < HISTORY_LIST_LIMIT && (
+            <button
+              type="button"
+              className="browsing-history-more"
+              onClick={() => setVisibleLimit((value) => Math.min(value + HISTORY_PAGE_SIZE, HISTORY_LIST_LIMIT))}
+            >
+              {text("Load more", "加载更多")}
+            </button>
+          )}
         </div>
       )}
     </PageFrame>

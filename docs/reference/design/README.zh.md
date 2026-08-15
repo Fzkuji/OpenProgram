@@ -140,11 +140,14 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`ui/chat-turn-visual-spec.html`](ui/chat-turn-visual-spec.html) | 聊天轮次视觉规范（执行时间线 + 手动函数运行 + 消息导航） |
 | [`ui/interaction-feedback.md`](ui/interaction-feedback.md) | 交互反馈 0ms 规则 |
 | [`ui/surface-system.md`](ui/surface-system.md) | Surface 系统 |
+| [`ui/theme-system.html`](ui/theme-system.html) | 主题入口、完整 token 契约、组件消费与桌面浮层传播 |
+| [`ui/settings-collapsible-columns.html`](ui/settings-collapsible-columns.html) | 应用、设置分类与 Provider 三层导航列折叠设计 |
 | [`ui/indicator-dots.md`](ui/indicator-dots.md) | 指示点 |
 | [`ui/attachment-handling.md`](ui/attachment-handling.md) | 附件处理（[已渲染](ui/attachment-handling.html)） |
 | [`ui/composer-interaction-modes.md`](ui/composer-interaction-modes.md) | Composer 交互模式 |
 | [`ui/gui-agent-context.md`](ui/gui-agent-context.md) | GUI agent 上下文流转 |
 | [`ui/state-layer.md`](ui/state-layer.zh.md) | Web 状态层：会话级 vs 全局 store，会话作用域容器方案 |
+| [`ui/center-tabs-and-split-layout.html`](ui/center-tabs-and-split-layout.html) | 普通 tab 与复合分屏 tab 的生命周期、显示、持久化和跨窗口转移权威设计 |
 | [`ui/project-workspace.md`](ui/project-workspace.md) | 项目工作区——文件、标签页、多会话（[原型](ui/project-workspace-prototype.html)） |
 
 ## integrations/ — MCP、skills/plugins、harness 标准

@@ -38,6 +38,16 @@ def _require_memory_enabled() -> None:
             status_code=503,
             detail={"code": "MEMORY_DISABLED", "message": DISABLED_MESSAGE},
         )
+    from openprogram.memory import store
+    from openprogram.memory.management.transaction import TransactionError
+
+    try:
+        store.ensure()
+    except TransactionError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
 
 
 def _title_of(text: str, fallback: str) -> str:
@@ -59,6 +69,7 @@ def _staged_edit(
     write: Callable[[Path], None],
     *,
     deleting: str = "",
+    commit_message: str = "memory: edit topics",
 ) -> tuple[bool, str]:
     """Bind this module's lock timeout to the shared staged edit.
 
@@ -68,7 +79,11 @@ def _staged_edit(
     """
     from openprogram.memory.management.transaction import staged_edit
     return staged_edit(
-        root, write, deleting=deleting, timeout_s=WRITE_LOCK_TIMEOUT_S
+        root,
+        write,
+        deleting=deleting,
+        timeout_s=WRITE_LOCK_TIMEOUT_S,
+        commit_message=commit_message,
     )
 
 
@@ -94,6 +109,81 @@ def register(app):
             return JSONResponse(content=list_refs(q, limit=limit))
         except ValueError as exc:
             return JSONResponse(content={"error": str(exc)}, status_code=400)
+
+    @router.post("/api/memory/changes")
+    async def apply_memory_changes(request: Request):
+        """Apply the owner API's structured changes through MemoryWorkspace."""
+        try:
+            payload = await request.json()
+        except (UnicodeDecodeError, ValueError):
+            payload = None
+        if not isinstance(payload, dict):
+            return JSONResponse(
+                content={"ok": False, "error": {
+                    "code": "INVALID_ARGUMENT",
+                    "message": "request body must be a JSON object",
+                }},
+                status_code=400,
+            )
+
+        from openprogram.agent.authority import local_owner_authority
+        from openprogram.memory import store
+        from openprogram.memory.management import MemoryWorkspace
+        from openprogram.memory.management.transaction import (
+            TransactionError,
+            provenance_from_authority,
+        )
+
+        sources = payload.get("sources")
+        provenance = (
+            provenance_from_authority(
+                local_owner_authority(), origin_id="owner-rest/memory-changes"
+            )
+            if sources
+            else None
+        )
+        try:
+            from contextlib import closing
+
+            with closing(MemoryWorkspace(store.ensure())) as workspace:
+                result = workspace.update(
+                    base_revision=payload.get("base_revision", ""),
+                    patch=payload.get("patch", ""),
+                    changes=payload.get("changes"),
+                    memory_changes=payload.get("memory_changes"),
+                    sources=sources,
+                    commit_message=payload.get("commit_message"),
+                    provenance=provenance,
+                )
+        except TransactionError as exc:
+            error = {
+                "code": exc.code,
+                "message": exc.message,
+                "path": exc.path,
+            }
+            if exc.details:
+                error["details"] = exc.details
+            status = 409 if exc.code == "CONCURRENT_UPDATE" else 400
+            if exc.code == "MEMORY_NOT_FOUND":
+                status = 404
+            if exc.code == "GIT_UNAVAILABLE":
+                status = 503
+            if exc.code == "GIT_COMMIT_FAILED":
+                status = 500
+            return JSONResponse(
+                content={"ok": False, "error": error}, status_code=status
+            )
+        return JSONResponse(content={
+            "ok": True,
+            "revision": result.revision,
+            "source_ids": result.source_ids,
+            "block_ids": result.block_ids,
+            "evidence_ids": result.evidence_ids,
+            "changed_files": result.changed_files,
+            "memory_committed": result.memory_committed,
+            "git_committed": result.git_committed,
+            "git_commit": result.git_commit,
+        })
 
     # -- topics ------------------------------------------------------------
 
@@ -148,10 +238,15 @@ def register(app):
             staged.parent.mkdir(parents=True, exist_ok=True)
             staged.write_text(content, encoding="utf-8")
 
-        ok, message = _staged_edit(root, write)
+        ok, message = _staged_edit(
+            root, write, commit_message=f"memory: edit topics/{relative.as_posix()}"
+        )
         if not ok:
             return JSONResponse(content={"error": message}, status_code=400)
-        return JSONResponse(content={"ok": True})
+        content = {"ok": True}
+        if message:
+            content["warning"] = message
+        return JSONResponse(content=content)
 
     @router.delete("/api/memory/topics/{path:path}")
     async def delete_topic(path: str):
@@ -171,10 +266,18 @@ def register(app):
         # Dropping this topic's own blocks is the point of the request. A
         # block another topic still links to is a different matter, and the
         # install refuses it.
-        ok, message = _staged_edit(root, write, deleting=relative.as_posix())
+        ok, message = _staged_edit(
+            root,
+            write,
+            deleting=relative.as_posix(),
+            commit_message=f"memory: delete topics/{relative.as_posix()}",
+        )
         if not ok:
             return JSONResponse(content={"error": message}, status_code=400)
-        return JSONResponse(content={"ok": True})
+        content = {"ok": True}
+        if message:
+            content["warning"] = message
+        return JSONResponse(content=content)
 
     # -- timeline ----------------------------------------------------------
 
@@ -286,9 +389,14 @@ def register(app):
 
         # The block reaches every system prompt, so a malformed edit is
         # refused here rather than breaking the next render.
-        ok, message = _staged_edit(root, write)
+        ok, message = _staged_edit(
+            root, write, commit_message="memory: edit topics/core.md"
+        )
         if not ok:
             return JSONResponse(content={"error": message}, status_code=400)
-        return JSONResponse(content={"ok": True})
+        content = {"ok": True}
+        if message:
+            content["warning"] = message
+        return JSONResponse(content=content)
 
     app.include_router(router)
