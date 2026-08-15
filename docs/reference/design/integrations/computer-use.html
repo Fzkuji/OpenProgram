@@ -18,23 +18,24 @@
 <body><main>
   <header>
     <div class="eyebrow">OpenProgram · Computer Use</div>
-    <h1>一个浏览器工具，两种执行模式，同一个 Page</h1>
-    <p>目标是 GUI Agent Harness 只调用统一的 <code>computer_use</code>；设置将决定由 Microsoft Playwright MCP 或 Claude-compatible CDP backend 执行。</p>
-    <p class="status">TARGET ARCHITECTURE · DUAL MODE NOT IMPLEMENTED</p>
+    <h1>一个浏览器工具，三个可选 backend，同一个 Page</h1>
+    <p>目标是 GUI Agent Harness 只调用统一的 <code>computer_use</code>；设置将决定由 Playwright MCP、Chrome DevTools MCP 或 Open Claude in Chrome backend 执行。</p>
+    <p class="status">TARGET ARCHITECTURE · MULTI-BACKEND NOT IMPLEMENTED</p>
   </header>
 
   <section aria-labelledby="architecture-title">
     <h2 id="architecture-title">系统结构</h2>
     <div class="diagram architecture-diagram"><svg viewBox="0 0 1120 640" role="img">
-      <title>GUI Agent Harness 与浏览器 backend 的分层关系</title><desc>Chat Agent 把网页任务交给 GUI Agent Harness。Harness 只调用 OpenProgram 的统一 computer_use 工具；Runtime 为当前 ComputerSession 固定 Playwright MCP 或 Claude-compatible CDP backend，并操作绑定的精确 Page。Open Claude in Chrome 与 Chrome DevTools MCP 仅为 CDP 模式的参考实现。</desc>
+      <title>GUI Agent Harness 与三个可选浏览器 backend 的分层关系</title><desc>Chat Agent 把网页任务交给 GUI Agent Harness。Harness 只调用 OpenProgram 的统一 computer_use 工具；Runtime 为当前 ComputerSession 固定 Playwright MCP、Chrome DevTools MCP 或 Open Claude in Chrome backend，并由选中的一个 backend 操作绑定的精确 Page。</desc>
       <defs>
         <linearGradient id="arch-harness" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2b2116"/><stop offset="1" stop-color="#17140f"/></linearGradient>
         <linearGradient id="arch-runtime" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#251a32"/><stop offset="1" stop-color="#15121b"/></linearGradient>
-        <linearGradient id="arch-page-stroke" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#63b15a"/><stop offset="1" stop-color="#5b91f2"/></linearGradient>
+        <linearGradient id="arch-page-stroke" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#63b15a"/><stop offset=".5" stop-color="#55bdd6"/><stop offset="1" stop-color="#e08a3e"/></linearGradient>
         <filter id="arch-shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000" flood-opacity=".35"/></filter>
         <marker id="arch-arrow" markerWidth="10" markerHeight="10" refX="9" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8Z" fill="#858173"/></marker>
         <marker id="arch-green-arrow" markerWidth="10" markerHeight="10" refX="9" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8Z" fill="#63b15a"/></marker>
-        <marker id="arch-blue-arrow" markerWidth="10" markerHeight="10" refX="9" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8Z" fill="#5b91f2"/></marker>
+        <marker id="arch-cyan-arrow" markerWidth="10" markerHeight="10" refX="9" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8Z" fill="#55bdd6"/></marker>
+        <marker id="arch-orange-arrow" markerWidth="10" markerHeight="10" refX="9" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8Z" fill="#e08a3e"/></marker>
       </defs>
       <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
         <text x="42" y="31" fill="#5a5544" font-size="10" font-weight="700" letter-spacing="2">AGENT / CONTROL</text><line x1="166" y1="27" x2="1078" y2="27" stroke="#29271f"/>
@@ -61,33 +62,33 @@
         <text x="774" y="160" fill="#858173" font-size="11">ComputerSession 创建后冻结 backend</text>
 
         <text x="42" y="245" fill="#5a5544" font-size="10" font-weight="700" letter-spacing="2">EXECUTION / CHOOSE ONE</text><line x1="224" y1="241" x2="1078" y2="241" stroke="#29271f"/>
-        <path d="M908 177 V216 C908 252 696 250 696 287" fill="none" stroke="#858173" stroke-width="1.8" marker-end="url(#arch-arrow)"/><path d="M908 216 C908 252 960 250 960 287" fill="none" stroke="#858173" stroke-width="1.8" marker-end="url(#arch-arrow)"/>
-        <text x="829" y="271" fill="#858173" font-size="11" letter-spacing="1.2" text-anchor="middle">ONE BACKEND PER SESSION</text>
+        <path d="M908 177 V217" fill="none" stroke="#858173" stroke-width="1.8"/>
+        <path d="M210 251 V287 M560 251 V287 M910 217 V287" fill="none" stroke="#858173" stroke-width="1.8" marker-end="url(#arch-arrow)"/><line x1="210" y1="251" x2="910" y2="251" stroke="#858173" stroke-width="1.8"/>
+        <text x="560" y="232" fill="#858173" font-size="11" letter-spacing="1.2" text-anchor="middle">ONE BACKEND PER COMPUTERSESSION</text>
 
-        <line x1="47" y1="296" x2="47" y2="389" stroke="#5a5544"/><text x="62" y="305" fill="#858173" font-size="11" font-weight="700" letter-spacing="1.5">REFERENCE ONLY</text>
-        <circle cx="70" cy="336" r="3" fill="#e08a3e"/><text x="84" y="340" fill="#f3f0e8" font-size="12.5" font-weight="650">Open Claude in Chrome</text><text x="84" y="359" fill="#858173" font-size="11">source-available · noncommercial</text>
-        <circle cx="70" cy="381" r="3" fill="#63b15a"/><text x="84" y="385" fill="#f3f0e8" font-size="12.5" font-weight="650">Chrome DevTools MCP</text><text x="260" y="385" fill="#858173" font-size="11">Apache-2.0</text>
-        <text x="62" y="414" fill="#858173" font-size="11">不参与 OpenProgram 运行路径</text>
+        <g filter="url(#arch-shadow)"><rect x="70" y="291" width="280" height="108" rx="16" fill="#111a15" stroke="#63b15a" stroke-width="1.5"/></g>
+        <circle cx="112" cy="345" r="21" fill="#17251c" stroke="#63b15a" stroke-opacity=".55"/><text x="112" y="349" fill="#63b15a" font-size="9" font-weight="800" text-anchor="middle">DOM</text>
+        <text x="148" y="329" fill="#63b15a" font-size="14" font-weight="750">Playwright MCP</text><text x="148" y="351" fill="#c4c0b1" font-size="11">DOM · ARIA · element refs</text><text x="148" y="374" fill="#858173" font-size="11">默认：结构化页面操作</text>
 
-        <g filter="url(#arch-shadow)"><rect x="580" y="291" width="230" height="98" rx="16" fill="#111a15" stroke="#63b15a" stroke-width="1.5"/></g>
-        <circle cx="620" cy="340" r="20" fill="#17251c" stroke="#63b15a" stroke-opacity=".55"/><text x="620" y="344" fill="#63b15a" font-size="9" font-weight="800" text-anchor="middle">DOM</text>
-        <text x="653" y="329" fill="#63b15a" font-size="14" font-weight="750">Playwright MCP</text><text x="653" y="350" fill="#c4c0b1" font-size="11">DOM · ARIA · element refs</text><text x="653" y="370" fill="#858173" font-size="11">默认模式</text>
+        <g filter="url(#arch-shadow)"><rect x="420" y="291" width="280" height="108" rx="16" fill="#10191c" stroke="#55bdd6" stroke-width="1.5"/></g>
+        <circle cx="462" cy="345" r="21" fill="#132329" stroke="#55bdd6" stroke-opacity=".55"/><text x="462" y="349" fill="#55bdd6" font-size="9" font-weight="800" text-anchor="middle">CDP</text>
+        <text x="498" y="329" fill="#55bdd6" font-size="14" font-weight="750">Chrome DevTools MCP</text><text x="498" y="351" fill="#c4c0b1" font-size="11">CDP · snapshot · diagnostics</text><text x="498" y="374" fill="#858173" font-size="11">通过 MCP adapter 接入 Runtime</text>
 
-        <g filter="url(#arch-shadow)"><rect x="850" y="291" width="230" height="98" rx="16" fill="#111722" stroke="#5b91f2" stroke-width="1.5"/></g>
-        <circle cx="890" cy="340" r="20" fill="#172238" stroke="#5b91f2" stroke-opacity=".55"/><text x="890" y="344" fill="#5b91f2" font-size="9" font-weight="800" text-anchor="middle">CDP</text>
-        <text x="923" y="329" fill="#5b91f2" font-size="14" font-weight="750">Visual backend</text><text x="923" y="350" fill="#c4c0b1" font-size="11">screenshot · coordinates</text><text x="923" y="370" fill="#858173" font-size="11">Claude-compatible</text>
+        <g filter="url(#arch-shadow)"><rect x="770" y="291" width="280" height="108" rx="16" fill="#1c1610" stroke="#e08a3e" stroke-width="1.5"/></g>
+        <circle cx="812" cy="345" r="21" fill="#2a1d12" stroke="#e08a3e" stroke-opacity=".55"/><text x="812" y="349" fill="#e08a3e" font-size="9" font-weight="800" text-anchor="middle">EXT</text>
+        <text x="848" y="329" fill="#e08a3e" font-size="13.5" font-weight="750">Open Claude in Chrome</text><text x="848" y="351" fill="#c4c0b1" font-size="11">extension · native host · CDP</text><text x="848" y="374" fill="#858173" font-size="11">通过 bridge adapter 接入 Runtime</text>
 
         <text x="42" y="455" fill="#5a5544" font-size="10" font-weight="700" letter-spacing="2">BOUND PAGE</text><line x1="137" y1="451" x2="1078" y2="451" stroke="#29271f"/>
-        <path d="M696 389 V425 C696 446 752 446 752 468" fill="none" stroke="#63b15a" stroke-width="2" marker-end="url(#arch-green-arrow)"/><path d="M960 389 V425 C960 446 936 446 936 468" fill="none" stroke="#5b91f2" stroke-width="2" marker-end="url(#arch-blue-arrow)"/>
+        <path d="M210 399 V426 C210 451 420 442 420 468" fill="none" stroke="#63b15a" stroke-width="2" marker-end="url(#arch-green-arrow)"/><path d="M560 399 V468" fill="none" stroke="#55bdd6" stroke-width="2" marker-end="url(#arch-cyan-arrow)"/><path d="M910 399 V426 C910 451 700 442 700 468" fill="none" stroke="#e08a3e" stroke-width="2" marker-end="url(#arch-orange-arrow)"/>
 
-        <g filter="url(#arch-shadow)"><rect x="610" y="472" width="450" height="126" rx="17" fill="#11120f" stroke="url(#arch-page-stroke)" stroke-width="1.7"/></g>
-        <path d="M610 501 H1060" stroke="#343126"/><circle cx="635" cy="487" r="4" fill="#e15b68"/><circle cx="650" cy="487" r="4" fill="#e0b23e"/><circle cx="665" cy="487" r="4" fill="#63b15a"/>
-        <text x="835" y="491" fill="#f3f0e8" font-size="12" font-weight="700" text-anchor="middle">exact Page</text><rect x="970" y="478" width="72" height="19" rx="9.5" fill="#17251c"/><circle cx="983" cy="487.5" r="3" fill="#63b15a"/><text x="1012" y="491.5" fill="#63b15a" font-size="11" font-weight="700" text-anchor="middle">BOUND</text>
-        <rect x="630" y="518" width="78" height="60" rx="8" fill="#181913"/><rect x="724" y="518" width="310" height="13" rx="6.5" fill="#1e2019"/><rect x="724" y="540" width="238" height="9" rx="4.5" fill="#282a22"/><rect x="724" y="558" width="276" height="9" rx="4.5" fill="#20231f"/><rect x="724" y="576" width="168" height="6" rx="3" fill="#34362f"/>
-        <text x="835" y="623" fill="#858173" font-size="11" text-anchor="middle">同一个 Page · 分屏在任意方向 · 无需窗口置前</text>
+        <g filter="url(#arch-shadow)"><rect x="335" y="472" width="450" height="126" rx="17" fill="#11120f" stroke="url(#arch-page-stroke)" stroke-width="1.7"/></g>
+        <path d="M335 501 H785" stroke="#343126"/><circle cx="360" cy="487" r="4" fill="#e15b68"/><circle cx="375" cy="487" r="4" fill="#e0b23e"/><circle cx="390" cy="487" r="4" fill="#63b15a"/>
+        <text x="560" y="491" fill="#f3f0e8" font-size="12" font-weight="700" text-anchor="middle">exact Page</text><rect x="695" y="478" width="72" height="19" rx="9.5" fill="#17251c"/><circle cx="708" cy="487.5" r="3" fill="#63b15a"/><text x="737" y="491.5" fill="#63b15a" font-size="11" font-weight="700" text-anchor="middle">BOUND</text>
+        <rect x="355" y="518" width="78" height="60" rx="8" fill="#181913"/><rect x="449" y="518" width="310" height="13" rx="6.5" fill="#1e2019"/><rect x="449" y="540" width="238" height="9" rx="4.5" fill="#282a22"/><rect x="449" y="558" width="276" height="9" rx="4.5" fill="#20231f"/><rect x="449" y="576" width="168" height="6" rx="3" fill="#34362f"/>
+        <text x="560" y="623" fill="#858173" font-size="11" text-anchor="middle">同一个 Page · 分屏在任意方向 · 无需窗口置前</text>
       </g>
     </svg></div>
-    <p class="caption">Harness 负责 observe / act / verify；Runtime 固定 backend，并把所有动作限制到同一个 Page。两个参考项目不参与运行。</p>
+    <p class="caption">三个 backend 都是可选执行路径；Runtime 在 ComputerSession 创建时固定其中一个，并把所有动作限制到同一个 Page。</p>
   </section>
 
   <section aria-labelledby="click-title">
