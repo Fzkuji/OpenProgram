@@ -1,8 +1,8 @@
 """Agent tool for one-time, recurring, and monitor Scheduler tasks.
 
 Tasks are persisted under the active OpenProgram profile and executed by the
-persistent worker. Prompt tasks may hold stable, read-only Memory references
-that are resolved when the task runs.
+persistent worker. Prompt tasks may hold stable Memory references that are
+resolved when the task runs and maintained through the existing Memory tools.
 """
 
 from __future__ import annotations
@@ -37,7 +37,10 @@ LEGACY_REL_PATH = "cron/schedule.json"
 DESCRIPTION = (
     "Create, list, update, and delete one-time, recurring, or monitor tasks. "
     "Tasks run in the persistent OpenProgram worker and may attach stable, "
-    "read-only Memory references."
+    "Memory references. For a task worth retaining in long-term Memory, use "
+    "memory_update to create or update its record and attach that record here; "
+    "when the task closes, update the record or delete it if nothing durable "
+    "remains."
 )
 _STORE_THREAD_LOCK = threading.RLock()
 

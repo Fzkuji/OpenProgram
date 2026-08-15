@@ -232,6 +232,8 @@ def _run_prompt_job(spec: dict[str, Any], log_path: str) -> None:
                     if context:
                         prompt = f"{prompt}\n\n{context}"
                 from openprogram.agent.dispatcher import TurnRequest, process_user_turn
+                from openprogram.programs.permission_rule import load_merged_rules
+
                 result = process_user_turn(TurnRequest(
                     session_id=spec["session_id"],
                     user_text=prompt,
@@ -245,6 +247,7 @@ def _run_prompt_job(spec: dict[str, Any], log_path: str) -> None:
                     principal_id=job_authority["principal_id"],
                     authority_tier=job_authority["authority_tier"],
                     interaction="non-interactive",
+                    permission_rules=load_merged_rules(spec["session_id"]),
                 ))
                 if result.final_text:
                     print(result.final_text)

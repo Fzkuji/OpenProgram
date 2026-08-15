@@ -47,9 +47,12 @@ _PATCH_PATH_PREFIXES = (
     "*** Move to: ",
 )
 _NON_INTERACTIVE_SOURCES = {"agent_spawn", "cron", "scheduler", "mcp"}
-_CRON_READ_ONLY_TOOLS = {
-    "read", "read_file", "grep", "glob", "list", "list_files", "tool_search",
+_SCHEDULED_MEMORY_TOOLS = {
+    "memory_status", "memory_get", "memory_update",
 }
+_SCHEDULED_ALLOWED_TOOLS = {
+    "read", "read_file", "grep", "glob", "list", "list_files", "tool_search",
+} | _SCHEDULED_MEMORY_TOOLS
 
 
 # 审批合流到 QuestionRegistry（kind="approval"）——不再有独立的 ApprovalRegistry。
@@ -141,8 +144,13 @@ def _hard_constraint_violation(
                     return "model tools cannot write auto-imported agentic Python"
 
     if req.source in {"cron", "scheduler"}:
-        if tool_name not in _CRON_READ_ONLY_TOOLS:
+        if tool_name not in _SCHEDULED_ALLOWED_TOOLS:
             return f"{req.source} cannot execute side-effect tool {tool_name}"
+        if (
+            tool_name in _SCHEDULED_MEMORY_TOOLS
+            and req.authority_tier != "owner"
+        ):
+            return f"{req.source} Memory lifecycle requires owner authority"
         return None
     if req.source not in {"agent_spawn", "mcp"}:
         return None
@@ -408,6 +416,12 @@ def wrap_with_approval(
 
         # ④ 规则层 allow —— bypass 之后
         if verdict == "allow":
+            return await _run_original(call_id, args, cancel, on_update)
+
+        # A signed owner-created prompt task may keep its linked Memory record
+        # current without an approval UI. Explicit deny/ask rules above still
+        # win, and the hard constraint limits scheduled turns to these tools.
+        if req.source in {"cron", "scheduler"} and name in _SCHEDULED_MEMORY_TOOLS:
             return await _run_original(call_id, args, cancel, on_update)
 
         # ⑤ 只读安全工具全模式放行（对齐 CC：Ask / Accept edits / Plan 下

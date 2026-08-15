@@ -170,10 +170,47 @@ def test_scheduler_resolves_memory_refs_at_execution_time(scheduler_env):
     )
     second = references.resolve([ref])
     assert second[0]["content"] == "Use the Scheduler API."
+    context = references.render_context([ref])
+    assert "topics/projects/memory.md" in context
+    assert "memory_status" in context
+    assert "memory_update" in context
+    assert "delete it only when no durable value remains" in context
     with pytest.raises(ValueError, match="workspace"):
         references.resolve([
             {"workspace_id": "w-deadbeef", "memory_id": "mem-project"}
         ])
+
+
+def test_scheduler_context_keeps_every_ref_when_content_is_truncated(
+    scheduler_env,
+):
+    from openprogram.memory import references, store
+
+    _tmp_path, _schedule = scheduler_env
+    topics = store.ensure() / "topics"
+    long_content = "A" * 11_800
+    (topics / "first.md").write_text(
+        "# First\n\n"
+        f"{long_content}[^e-first] ^mem-first\n\n"
+        "[^e-first]: Time: `2026-08-14`; Sources: [Source](source://s-a)\n",
+        encoding="utf-8",
+    )
+    (topics / "second.md").write_text(
+        "# Second\n\nSECOND RECORD[^e-second] ^mem-second\n\n"
+        "[^e-second]: Time: `2026-08-14`; Sources: [Source](source://s-a)\n",
+        encoding="utf-8",
+    )
+    workspace_id = store.workspace_id()
+    context = references.render_context([
+        {"workspace_id": workspace_id, "memory_id": "mem-first"},
+        {"workspace_id": workspace_id, "memory_id": "mem-second"},
+    ])
+
+    assert len(context) <= 12_000
+    assert "[mem-first] topics/first.md" in context
+    assert "[mem-second] topics/second.md" in context
+    assert "SECOND RECORD" in context
+    assert "[content truncated]" in context
 
 
 def test_once_task_fires_only_once_and_recurring_task_keeps_running(

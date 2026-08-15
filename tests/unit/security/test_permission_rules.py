@@ -447,6 +447,63 @@ def test_scheduled_noninteractive_turn_denies_side_effect_tools(source, tool_nam
     assert not ran["called"]
 
 
+@pytest.mark.parametrize("source", ["cron", "scheduler"])
+@pytest.mark.parametrize(
+    "tool_name", ["memory_status", "memory_get", "memory_update"]
+)
+def test_scheduled_owner_turn_can_use_memory_lifecycle_tools(
+    source, tool_name,
+):
+    tool, ran = _make_tool(tool_name)
+    req = TurnRequest(
+        session_id="s",
+        user_text="",
+        agent_id="main",
+        source=source,
+        permission_mode="ask",
+    )
+    result = _run_with_args(tool, req, {}, approve=False)
+    assert not _denied(result)
+    assert ran["called"]
+
+
+def test_scheduled_memory_update_still_respects_an_explicit_deny_rule():
+    tool, ran = _make_tool("memory_update")
+    req = TurnRequest(
+        session_id="s",
+        user_text="",
+        agent_id="main",
+        source="scheduler",
+        permission_mode="ask",
+        permission_rules=PermissionRules(deny=["memory_update"]),
+    )
+    result = _run_with_args(tool, req, {}, approve=False)
+    assert _denied(result)
+    assert result.details["reason_code"] == "PERMISSION_RULE_DENY"
+    assert not ran["called"]
+
+
+def test_scheduled_memory_update_requires_owner_authority():
+    tool, ran = _make_tool("memory_update")
+    req = TurnRequest(
+        session_id="s",
+        user_text="",
+        agent_id="main",
+        source="scheduler",
+        permission_mode="bypass",
+        speaker_kind="runtime",
+        speaker_id="runtime/scheduler",
+        speaker_display="scheduler",
+        principal_id="paired/test",
+        authority_tier="paired",
+        interaction="non-interactive",
+    )
+    result = _run_with_args(tool, req, {}, approve=False)
+    assert _denied(result)
+    assert result.details["reason_code"] == "HARD_CONSTRAINT_DENIED"
+    assert not ran["called"]
+
+
 def test_ask_denies_when_user_declines():
     tool, ran = _make_tool("bash")
     req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",

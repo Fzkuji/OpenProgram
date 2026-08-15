@@ -208,6 +208,56 @@ def test_prompt_job_rebuilds_a_noninteractive_cron_turn(sched, tmp_path,
     assert "policy_hash=" + spec["policy_hash"] in log_path.read_text()
 
 
+@pytest.mark.parametrize(("rule_kind", "reason_code"), [
+    ("deny", "PERMISSION_RULE_DENY"),
+    ("ask", "APPROVAL_UNAVAILABLE_NON_INTERACTIVE"),
+])
+def test_prompt_job_applies_memory_permission_rules(
+    sched, tmp_path, monkeypatch, rule_kind, reason_code,
+):
+    import asyncio
+
+    from openprogram.agent.internals import _approval
+    from openprogram.agent.session_config import PermissionRules
+    from openprogram.agent.types import AgentTool, AgentToolResult
+    from openprogram.programs import permission_rule
+
+    _create(cron="@daily", prompt="update memory", cwd=str(tmp_path))
+    spec = cron_tool._load(str(sched))[0]["execution"]
+    rules = PermissionRules(**{rule_kind: ["memory_update"]})
+    monkeypatch.setattr(
+        permission_rule, "load_merged_rules", lambda _session_id: rules,
+    )
+    seen = {}
+
+    async def execute(_call_id, _args, _cancel, _on_update):
+        raise AssertionError("blocked memory_update must not execute")
+
+    def fake_turn(req, **_):
+        tool = AgentTool(
+            name="memory_update",
+            description="",
+            parameters={},
+            label="memory_update",
+            execute=execute,
+        )
+        result = asyncio.run(
+            _approval.wrap_with_approval(
+                tool, req, lambda _event: None,
+            ).execute("call", {}, None, None)
+        )
+        seen.update(req=req, result=result)
+        return type("Result", (), {
+            "failed": False, "final_text": "done", "error": None,
+        })()
+
+    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", fake_turn)
+    worker._run_prompt_job(spec, str(tmp_path / f"{rule_kind}.log"))
+
+    assert seen["req"].permission_rules is rules
+    assert seen["result"].details["reason_code"] == reason_code
+
+
 def test_prompt_job_installs_the_frozen_policy_before_the_turn(
     sched, tmp_path, monkeypatch,
 ):

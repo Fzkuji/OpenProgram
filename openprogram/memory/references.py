@@ -89,12 +89,33 @@ def render_context(refs: Any, *, max_chars: int = 12_000) -> str:
     rows = resolve(refs)
     if not rows:
         return ""
-    parts = ["Referenced Memory (read-only; current content):"]
-    for row in rows:
-        parts.append(
-            f"- [{row['memory_id']}] {row['topic_path']}: {row['content']}"
-        )
-    return "\n".join(parts)[:max_chars]
+    intro = [
+        "Referenced Memory (current content):",
+        "When a referenced record describes this scheduled task, keep its "
+        "status current with memory_status, memory_get, and memory_update; "
+        "delete it only when no durable value remains.",
+    ]
+    prefixes = [
+        f"- [{row['memory_id']}] topics/{row['topic_path']}: " for row in rows
+    ]
+    fixed_size = len("\n".join([*intro, *prefixes]))
+    if fixed_size > max_chars:
+        raise ValueError("max_chars is too small to identify every memory ref")
+    remaining = max_chars - fixed_size
+    marker = " … [content truncated]"
+    lines = list(intro)
+    for index, (row, prefix) in enumerate(zip(rows, prefixes)):
+        quota = remaining // (len(rows) - index)
+        content = str(row["content"])
+        if len(content) > quota:
+            if quota < len(marker):
+                raise ValueError(
+                    "max_chars is too small to mark truncated memory refs"
+                )
+            content = content[:quota - len(marker)].rstrip() + marker
+        lines.append(prefix + content)
+        remaining -= len(content)
+    return "\n".join(lines)
 
 
 __all__ = ["MAX_REFS", "list_refs", "normalize", "resolve", "render_context"]

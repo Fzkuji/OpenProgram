@@ -295,7 +295,9 @@ UPDATE_DESC = (
     "remember right now, or to fix something you can see is wrong. "
     "Use record-level memory_changes when one or more final memory records "
     "are known. The Runtime creates, updates, deletes or moves Topic records "
-    "and rebuilds derived views. Structured whole-file changes and the older "
+    "and rebuilds derived views. A Scheduler lifecycle may be recorded when "
+    "it has durable value; update it when the task closes, or delete it when "
+    "nothing should remain. Structured whole-file changes and the older "
     "unified-diff patch form remain accepted for direct Markdown edits."
 )
 UPDATE_SPEC: dict[str, Any] = {
