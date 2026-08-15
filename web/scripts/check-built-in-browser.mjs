@@ -44,6 +44,20 @@ assert.doesNotMatch(browserHome, /readBookmarks|removeBookmark|subscribeBookmark
 assert.match(browserHome, /readShortcuts/);
 assert.match(browserGlyph, /BrowserGlyph/);
 assert.match(browserHome, /<BrowserGlyph/);
+assert.equal(
+  launcher.match(/className=\{styles\.ntpGlyph\}/g)?.length,
+  3,
+  "the three non-browser launchers must use the same icon container as Browser",
+);
+for (const tone of ["files", "chat", "terminal"]) {
+  assert.match(launcher, new RegExp(`data-tone="${tone}"`));
+  assert.match(centerTabsCss, new RegExp(`\\.ntpGlyph\\[data-tone="${tone}"\\]`));
+}
+assert.match(
+  centerTabsCss,
+  /\.browserGlyph,\s*\.ntpGlyph\s*\{[^}]*--glyph-primary:[^}]*--glyph-secondary:[^}]*border:[^}]*linear-gradient/s,
+  "all launcher glyphs must reuse the Browser colored-container treatment",
+);
 assert.match(browserPrefs, /SHOW_BOOKMARKS_BAR_KEY/);
 assert.match(browserPrefs, /BROWSER_IMPORT_PROMPT_FINISHED_KEY/);
 assert.match(browserControls, /function BrowserMenu/);

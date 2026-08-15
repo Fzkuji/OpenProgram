@@ -1506,18 +1506,37 @@
   flex-direction: column;
   background: var(--bg-primary);
 }
-.browserGlyph {
+.browserGlyph,
+.ntpGlyph {
+  --glyph-primary: var(--accent-blue);
+  --glyph-secondary: #8b5cf6;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  border: 1px solid color-mix(in srgb, var(--accent-blue) 34%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--glyph-primary) 34%, var(--border));
   border-radius: 31%;
-  color: color-mix(in srgb, var(--accent-blue) 82%, white);
+  color: color-mix(in srgb, var(--glyph-primary) 82%, white);
   background:
     radial-gradient(circle at 31% 28%, rgba(255, 255, 255, 0.24), transparent 34%),
-    linear-gradient(145deg, color-mix(in srgb, var(--accent-blue) 30%, var(--bg-tertiary)), color-mix(in srgb, #8b5cf6 24%, var(--bg-secondary)));
+    linear-gradient(145deg, color-mix(in srgb, var(--glyph-primary) 30%, var(--bg-tertiary)), color-mix(in srgb, var(--glyph-secondary) 24%, var(--bg-secondary)));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.ntpGlyph {
+  width: 18px;
+  height: 18px;
+}
+.ntpGlyph[data-tone="files"] {
+  --glyph-primary: var(--meter-fill);
+  --glyph-secondary: var(--accent-cyan);
+}
+.ntpGlyph[data-tone="chat"] {
+  --glyph-primary: var(--accent-green);
+  --glyph-secondary: var(--accent-cyan);
+}
+.ntpGlyph[data-tone="terminal"] {
+  --glyph-primary: var(--accent-purple);
+  --glyph-secondary: var(--meter-fill);
 }
 .browserHomeToolbar {
   height: 48px;

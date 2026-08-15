@@ -224,6 +224,7 @@
       <div class="section-head"><span class="section-no">01</span><h2>产品决策</h2></div>
       <p class="section-intro">当前问题来自内容入口、浏览器主页和资料管理共用一个页面。设计先分离职责，再定义每个页面出现的控件。</p>
       <div class="decision"><strong>New pane 只做选择</strong><p>空白 Pane 只显示 Files、Side chat、Browser、Terminal。地址栏、快捷网站、Bookmarks 和 History 不出现在这里。</p></div>
+      <div class="decision"><strong>四个入口使用同级彩色识别</strong><p>Files、Side chat、Browser、Terminal 都使用相同尺寸的圆角图标容器和 Lucide 线性图标；Files 使用蓝色、Side chat 使用绿色、Browser 保留橙紫色、Terminal 使用紫色。颜色只帮助识别内容类型，不改变卡片层级、交互状态或可访问名称，也不引入品牌 Logo、外部素材和额外动画。</p></div>
       <div class="decision"><strong>Browser 拥有独立主页</strong><p>选择 Browser 后原位进入浏览器主页。Home 返回该主页，不再退回通用 New pane launcher。</p></div>
       <div class="decision"><strong>书签分为保存与管理</strong><p>地址栏右侧的星标只保存或移除当前页；相邻的 Bookmarks 按钮打开完整书签页。Browser home 只显示用户维护的快捷网站，不展开全部书签。</p></div>
       <div class="decision"><strong>书签栏默认关闭</strong><p>默认不占用第二行。用户从 Browser 的 <code>⋯</code> 主动开启后，地址栏下方显示一行；窄分屏不显示该行，仍可通过 Browser <code>⋯</code> 中的 Bookmarks 访问全部内容。</p></div>
@@ -413,7 +414,7 @@
       <table class="acceptance-table">
         <thead><tr><th>可观察结果</th><th>当前状态</th><th>实现证据</th></tr></thead>
         <tbody>
-          <tr><td>新建 Pane 只显示 Files、Side chat、Browser、Terminal；DOM 中不存在浏览器专属控件。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/new-tab-page.tsx"><code>new-tab-page.tsx</code></a>；<code>check-built-in-browser.mjs</code></td></tr>
+          <tr><td>新建 Pane 只显示 Files、Side chat、Browser、Terminal；四个入口使用同尺寸、不同语义色的圆角图标容器，DOM 中不存在浏览器专属控件。</td><td><span class="status limit">设计完成，待实现验收</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/new-tab-page.tsx"><code>new-tab-page.tsx</code></a>；<code>check-built-in-browser.mjs</code></td></tr>
           <tr><td>选择 Browser 后原位显示 toolbar、导入入口和快捷网站；Home 返回 Browser home，主页 DOM 不渲染全部 bookmark rows。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/browser-home-page.tsx"><code>browser-home-page.tsx</code></a>；<code>check-built-in-browser.mjs</code></td></tr>
           <tr><td>标准宽度的 Browser toolbar 按顺序显示 Back、Forward、Reload/Stop、Home、地址栏、当前页星标、Bookmarks、外部打开和 Browser <code>⋯</code>；不显示分屏与 Settings 齿轮。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/web-tab-pane.tsx"><code>web-tab-pane.tsx</code></a>；<code>check-built-in-browser.mjs</code>；<code>check-web-split.mjs</code></td></tr>
           <tr><td>Browser <code>⋯</code> 提供 Bookmarks、History、书签栏开关、Import、Clear browsing data 和 Browser settings；窗口主菜单只保留 App、窗口与 Pane 操作。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/browser-controls.tsx"><code>browser-controls.tsx</code></a>；<a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/main-menu.tsx"><code>main-menu.tsx</code></a>；<code>check-built-in-browser.mjs</code></td></tr>
