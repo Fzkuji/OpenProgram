@@ -77,22 +77,26 @@ function profileDirectories(dataRoot) {
     /* an unreadable browser root has no additional discoverable profiles */
   }
   return [...candidates].flatMap((id) => {
-    const profilePath = path.join(dataRoot, id);
-    if (!fs.existsSync(profilePath) || !fs.statSync(profilePath).isDirectory()) return [];
-    if (!isInside(dataRoot, profilePath)) return [];
-    const hasHistory = fs.existsSync(path.join(profilePath, "History"));
-    const hasBookmarks = fs.existsSync(path.join(profilePath, "Bookmarks"));
-    const hasCookies = !!cookieFileForProfile(profilePath);
-    if (!hasHistory && !hasBookmarks && !hasCookies) return [];
-    return [{
-      id,
-      name: typeof names[id]?.name === "string" && names[id].name ? names[id].name : id,
-      available: {
-        history: hasHistory,
-        bookmarks: hasBookmarks,
-        cookies: hasCookies,
-      },
-    }];
+    try {
+      const profilePath = path.join(dataRoot, id);
+      if (!fs.existsSync(profilePath) || !fs.statSync(profilePath).isDirectory()) return [];
+      if (!isInside(dataRoot, profilePath)) return [];
+      const hasHistory = fs.existsSync(path.join(profilePath, "History"));
+      const hasBookmarks = fs.existsSync(path.join(profilePath, "Bookmarks"));
+      const hasCookies = !!cookieFileForProfile(profilePath);
+      if (!hasHistory && !hasBookmarks && !hasCookies) return [];
+      return [{
+        id,
+        name: typeof names[id]?.name === "string" && names[id].name ? names[id].name : id,
+        available: {
+          history: hasHistory,
+          bookmarks: hasBookmarks,
+          cookies: hasCookies,
+        },
+      }];
+    } catch (_error) {
+      return [];
+    }
   });
 }
 
@@ -514,6 +518,21 @@ if (require.main === module) {
         listed[0].profiles.some((item) => item.id === "Profile 9"),
         "on-disk Chromium profiles are discovered even when info_cache is stale",
       );
+      const originalStatSync = fs.statSync;
+      try {
+        fs.statSync = (value) => {
+          if (String(value).endsWith("Profile 9")) {
+            throw Object.assign(new Error("I/O error"), { code: "EIO" });
+          }
+          return originalStatSync(value);
+        };
+        assert.ok(
+          listBrowserSources(options)[0].profiles.some((item) => item.id === "Default"),
+          "one unreadable profile does not hide valid profiles",
+        );
+      } finally {
+        fs.statSync = originalStatSync;
+      }
       assert.deepStrictEqual(readBookmarks(profile), [
         {
           kind: "folder",
