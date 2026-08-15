@@ -200,6 +200,8 @@ assert.match(builtin, /api\.onChanged\(refresh\)/);
 assert.match(builtin, /api\.open\(entry\.id\)/);
 assert.match(builtin, /api\.show\(entry\.id\)/);
 assert.match(builtin, /api\.cancel\(entry\.id\)/);
+assert.match(builtin, /entry\.active \? \(/);
+assert.match(builtin, /entries\?\.some\(\(entry\) => !entry\.active\)/);
 assert.match(bridge, /downloads\?: DesktopDownloadsApi/);
 assert.match(bridge, /browserImport\?: DesktopBrowserImportApi/);
 assert.match(bridge, /browserData\?: DesktopBrowserDataApi/);

@@ -755,7 +755,7 @@ function DownloadsPage() {
       query={query}
       onQueryChange={setQuery}
       searchPlaceholder={text("Search downloads", "搜索下载内容")}
-      action={entries?.some((entry) => entry.state !== "progressing") ? (
+      action={entries?.some((entry) => !entry.active) ? (
         <button
           type="button"
           className={styles.builtinClear}
@@ -799,7 +799,7 @@ function DownloadsPage() {
                   {entry.filename}
                 </button>
                 <span className="browsing-history-host" title={entry.url}>{progress}</span>
-                {entry.state === "progressing" ? (
+                {entry.active ? (
                   <button
                     type="button"
                     className="browsing-history-delete"

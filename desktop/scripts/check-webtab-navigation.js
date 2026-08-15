@@ -266,6 +266,7 @@ vm.runInContext(
     registerWebTabIpc,
     registerDownloads,
     downloads,
+    downloadReservationKey,
     buildMenu,
     createWindow,
     cleanupWindowContext,
@@ -948,10 +949,72 @@ async function checkSenderOwnership() {
 }
 
 async function checkDownloadsLifecycle() {
+  const outsideDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-download-escape-"));
+  const outsideFile = path.join(outsideDirectory, "outside.pdf");
+  fs.writeFileSync(outsideFile, "outside");
+  const symlinkPath = path.join(transferUserData, "escape.pdf");
+  fs.symlinkSync(outsideFile, symlinkPath);
+  const sameRootTarget = path.join(transferUserData, "target.pdf");
+  const sameRootSymlink = path.join(transferUserData, "alias.pdf");
+  fs.writeFileSync(sameRootTarget, "target");
+  fs.symlinkSync(sameRootTarget, sameRootSymlink);
+  const validShape = (id, filePath, overrides = {}) => ({
+    id,
+    filename: path.basename(filePath),
+    path: filePath,
+    url: "https://downloads.example/file.pdf",
+    state: "completed",
+    receivedBytes: 1,
+    totalBytes: 1,
+    startedAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  });
+  fs.writeFileSync(path.join(transferUserData, "downloads.json"), JSON.stringify({
+    version: 1,
+    entries: [
+      validShape("parent", path.join(transferUserData, "..", "parent.pdf")),
+      validShape("prefix", `${transferUserData}-outside/prefix.pdf`),
+      validShape("symlink", symlinkPath),
+      validShape("same-root-symlink", sameRootSymlink),
+      validShape("bad-type", path.join(transferUserData, "bad.pdf"), { url: 42 }),
+      validShape("pending", path.join(transferUserData, "pending.pdf"), {
+        state: "progressing",
+        receivedBytes: 0,
+        totalBytes: 100,
+      }),
+    ],
+  }));
   const targetSession = new EventEmitter();
   hooks.registerDownloads(targetSession);
+  assert.deepEqual(
+    [...hooks.downloads.values()].map((entry) => [entry.id, entry.state]),
+    [["pending", "interrupted"]],
+    "safe pending records recover as interrupted while malformed paths are rejected",
+  );
+  hooks.downloads.clear();
+  if (process.platform === "darwin" || process.platform === "win32") {
+    assert.equal(
+      hooks.downloadReservationKey(path.join(transferUserData, "Report.pdf")),
+      hooks.downloadReservationKey(path.join(transferUserData, "report.pdf")),
+    );
+    assert.equal(
+      hooks.downloadReservationKey(path.join(transferUserData, "re\u0301sume.pdf")),
+      hooks.downloadReservationKey(path.join(transferUserData, "résume.pdf")),
+    );
+    assert.equal(
+      hooks.downloadReservationKey(path.join(transferUserData, "straße.pdf")),
+      hooks.downloadReservationKey(path.join(transferUserData, "STRASSE.pdf")),
+    );
+    assert.equal(
+      hooks.downloadReservationKey(path.join(transferUserData, "Σ.pdf")),
+      hooks.downloadReservationKey(path.join(transferUserData, "ς.pdf")),
+    );
+  }
   const win = fakeWindow(42);
   registerContext("downloads-window", win);
+  const secondWindow = fakeWindow(43);
+  registerContext("downloads-window-second", secondWindow);
   const item = new EventEmitter();
   let received = 0;
   let savePath = "";
@@ -988,7 +1051,43 @@ async function checkDownloadsLifecycle() {
   );
   const secondId = [...hooks.downloads.keys()].find((value) => value !== id);
 
+  if (process.platform === "darwin" || process.platform === "win32") {
+    const unicodeFirst = new EventEmitter();
+    let unicodeFirstPath = "";
+    unicodeFirst.getFilename = () => "straße.pdf";
+    unicodeFirst.getURL = () => "https://downloads.example/strasse.pdf";
+    unicodeFirst.getTotalBytes = () => 1;
+    unicodeFirst.getReceivedBytes = () => 0;
+    unicodeFirst.setSavePath = (value) => { unicodeFirstPath = value; };
+    unicodeFirst.cancel = () => {};
+    targetSession.emit("will-download", {}, unicodeFirst);
+
+    const unicodeSecond = new EventEmitter();
+    let unicodeSecondPath = "";
+    unicodeSecond.getFilename = () => "STRASSE.pdf";
+    unicodeSecond.getURL = () => "https://downloads.example/STRASSE.pdf";
+    unicodeSecond.getTotalBytes = () => 1;
+    unicodeSecond.getReceivedBytes = () => 0;
+    unicodeSecond.setSavePath = (value) => { unicodeSecondPath = value; };
+    unicodeSecond.cancel = () => {};
+    targetSession.emit("will-download", {}, unicodeSecond);
+    assert.equal(path.basename(unicodeFirstPath), "straße.pdf");
+    assert.equal(
+      path.basename(unicodeSecondPath),
+      "STRASSE (1).pdf",
+      "concurrent downloads use the target filesystem's Unicode case folding",
+    );
+    unicodeFirst.emit("done", {}, "cancelled");
+    unicodeSecond.emit("done", {}, "cancelled");
+  }
+
   const event = { sender: win.webContents };
+  hooks.downloads.set("runtime-symlink", validShape("runtime-symlink", sameRootSymlink));
+  assert.equal(await ipcHandlers.get("downloads:open")(event, "runtime-symlink"), false);
+  assert.equal(ipcHandlers.get("downloads:show")(event, "runtime-symlink"), false);
+  hooks.downloads.delete("runtime-symlink");
+  assert.equal(ipcHandlers.get("downloads:clear")(event), true);
+  assert.equal(hooks.downloads.has(id), true, "clear must preserve every active item");
   assert.equal(await ipcHandlers.get("downloads:cancel")(event, id), true);
   assert.equal(cancelled, true);
   received = 50;
@@ -1005,8 +1104,23 @@ async function checkDownloadsLifecycle() {
   assert.equal((await ipcHandlers.get("downloads:list")(event, { query: "report.pdf" })).length, 1);
   second.emit("done", {}, "cancelled");
   assert.equal(hooks.downloads.get(secondId).state, "cancelled");
+  const entriesBeforeFailedClear = [...hooks.downloads.keys()];
+  const originalWriteFileSync = fs.writeFileSync;
+  fs.writeFileSync = () => { throw new Error("injected downloads save failure"); };
+  try {
+    assert.equal(ipcHandlers.get("downloads:clear")(event), false);
+  } finally {
+    fs.writeFileSync = originalWriteFileSync;
+  }
+  assert.deepEqual(
+    [...hooks.downloads.keys()],
+    entriesBeforeFailedClear,
+    "failed persistence must restore the in-memory download list",
+  );
   assert.equal(ipcHandlers.get("downloads:clear")(event), true);
   assert.equal(hooks.downloads.has(id), false);
+  assert.deepEqual(plain(secondWindow.sent.at(-1)), ["downloads:changed", null]);
+  fs.rmSync(outsideDirectory, { recursive: true, force: true });
 }
 
 function checkContextMenuEndAlignment() {

@@ -238,6 +238,7 @@ export interface DesktopDownloadEntry {
   totalBytes: number;
   startedAt: number;
   updatedAt: number;
+  active: boolean;
 }
 
 export interface DesktopDownloadsApi {
@@ -246,7 +247,7 @@ export interface DesktopDownloadsApi {
   show(id: string): Promise<boolean>;
   cancel(id: string): Promise<boolean>;
   clear(): Promise<boolean>;
-  onChanged(cb: (entry: DesktopDownloadEntry) => void): () => void;
+  onChanged(cb: (entry: DesktopDownloadEntry | null) => void): () => void;
 }
 
 export interface DesktopBrowserImportProfile {

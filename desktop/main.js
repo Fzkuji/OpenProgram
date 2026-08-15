@@ -306,13 +306,64 @@ const browsingHistoryFile = () =>
 const downloadsFile = () => path.join(app.getPath("userData"), "downloads.json");
 const downloads = new Map();
 const activeDownloads = new Map();
+const DOWNLOAD_STATES = new Set(["progressing", "completed", "cancelled", "interrupted"]);
+
+function downloadsRoot() {
+  const directory = app.getPath("downloads");
+  fs.mkdirSync(directory, { recursive: true });
+  return fs.realpathSync(directory);
+}
+
+function pathInside(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative !== "" && !relative.startsWith(`..${path.sep}`) && relative !== ".."
+    && !path.isAbsolute(relative);
+}
+
+function pathInsideOrEqual(root, candidate) {
+  return root === candidate || pathInside(root, candidate);
+}
+
+function allowedDownloadPath(value, mustExist = false) {
+  if (typeof value !== "string" || !value) return false;
+  try {
+    const requestedRoot = path.resolve(app.getPath("downloads"));
+    const root = downloadsRoot();
+    const resolved = path.resolve(value);
+    if (!pathInside(requestedRoot, resolved) && !pathInside(root, resolved)) return false;
+    if (fs.existsSync(resolved)) {
+      if (fs.lstatSync(resolved).isSymbolicLink()) return false;
+      return pathInside(root, fs.realpathSync(resolved));
+    }
+    if (mustExist) return false;
+    return pathInsideOrEqual(root, fs.realpathSync(path.dirname(resolved)));
+  } catch (_error) {
+    return false;
+  }
+}
+
+function validDownloadEntry(entry) {
+  return !!entry
+    && typeof entry.id === "string" && entry.id.length > 0
+    && typeof entry.path === "string"
+    && typeof entry.filename === "string" && entry.filename === path.basename(entry.path)
+    && typeof entry.url === "string"
+    && DOWNLOAD_STATES.has(entry.state)
+    && [entry.receivedBytes, entry.totalBytes, entry.startedAt, entry.updatedAt]
+      .every((value) => Number.isFinite(value) && value >= 0)
+    && allowedDownloadPath(entry.path);
+}
+
+function publicDownloadEntry(entry) {
+  return { ...entry, active: activeDownloads.has(entry.id) };
+}
 
 function loadDownloads() {
   downloads.clear();
   try {
     const parsed = JSON.parse(fs.readFileSync(downloadsFile(), "utf8"));
     for (const entry of Array.isArray(parsed?.entries) ? parsed.entries : []) {
-      if (!entry || typeof entry.id !== "string") continue;
+      if (!validDownloadEntry(entry)) continue;
       downloads.set(entry.id, {
         ...entry,
         state: entry.state === "progressing" ? "interrupted" : entry.state,
@@ -338,25 +389,37 @@ function saveDownloads() {
 
 function downloadEntry(id) {
   const entry = downloads.get(id);
-  return entry ? { ...entry } : null;
+  return entry ? publicDownloadEntry(entry) : null;
 }
 
 function broadcastDownload(entry) {
   for (const ctx of windows.values()) {
-    if (!ctx.win.isDestroyed()) ctx.win.webContents.send("downloads:changed", { ...entry });
+    if (!ctx.win.isDestroyed()) {
+      ctx.win.webContents.send(
+        "downloads:changed",
+        entry ? publicDownloadEntry(entry) : null,
+      );
+    }
   }
 }
 
+function downloadReservationKey(value) {
+  const normalized = path.resolve(value).normalize("NFD");
+  return process.platform === "darwin" || process.platform === "win32"
+    ? normalized.toUpperCase().normalize("NFD")
+    : normalized;
+}
+
 function uniqueDownloadPath(filename) {
-  const directory = app.getPath("downloads");
-  fs.mkdirSync(directory, { recursive: true });
+  const directory = downloadsRoot();
   const safeName = path.basename(filename || "download") || "download";
   const extension = path.extname(safeName);
   const stem = path.basename(safeName, extension);
   let candidate = path.join(directory, safeName);
   const unavailable = (value) => fs.existsSync(value)
     || [...downloads.values()].some(
-      (entry) => activeDownloads.has(entry.id) && entry.path === value,
+      (entry) => activeDownloads.has(entry.id)
+        && downloadReservationKey(entry.path) === downloadReservationKey(value),
     );
   for (let index = 1; unavailable(candidate); index += 1) {
     candidate = path.join(directory, `${stem} (${index})${extension}`);
@@ -2506,18 +2569,18 @@ function registerWebTabIpc() {
       .filter((entry) => !query || entry.filename.toLowerCase().includes(query)
         || entry.url.toLowerCase().includes(query))
       .sort((a, b) => b.startedAt - a.startedAt)
-      .map((entry) => ({ ...entry }));
+      .map(publicDownloadEntry);
   });
   ipcMain.handle("downloads:open", async (event, id) => {
     if (!contextForSender(event)) return false;
     const entry = downloadEntry(String(id || ""));
-    if (!entry || entry.state !== "completed" || !fs.existsSync(entry.path)) return false;
+    if (!entry || entry.state !== "completed" || !allowedDownloadPath(entry.path, true)) return false;
     return (await shell.openPath(entry.path)) === "";
   });
   ipcMain.handle("downloads:show", (event, id) => {
     if (!contextForSender(event)) return false;
     const entry = downloadEntry(String(id || ""));
-    if (!entry || !fs.existsSync(entry.path)) return false;
+    if (!entry || !allowedDownloadPath(entry.path, true)) return false;
     shell.showItemInFolder(entry.path);
     return true;
   });
@@ -2530,10 +2593,18 @@ function registerWebTabIpc() {
   });
   ipcMain.handle("downloads:clear", (event) => {
     if (!contextForSender(event)) return false;
+    const prior = new Map(downloads);
     for (const [id, entry] of downloads) {
-      if (entry.state !== "progressing") downloads.delete(id);
+      if (!activeDownloads.has(id)) downloads.delete(id);
     }
-    try { saveDownloads(); } catch (_error) { return false; }
+    try {
+      saveDownloads();
+    } catch (_error) {
+      downloads.clear();
+      for (const [id, entry] of prior) downloads.set(id, entry);
+      return false;
+    }
+    broadcastDownload(null);
     return true;
   });
 
