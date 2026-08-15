@@ -74,12 +74,26 @@ function isEmptyRow(m: ChatMsg): boolean {
  * rows keep their authoritative value; live/legacy rows missing one use the
  * local arrival time. Later patches spread over the stored row and therefore
  * cannot replace this value unless they explicitly carry a timestamp. */
-function withMessageTimestamp(msg: ChatMsg): ChatMsg {
-  return typeof msg.timestamp === "number"
-    && Number.isFinite(msg.timestamp)
-    && msg.timestamp > 0
-    ? msg
-    : { ...msg, timestamp: Date.now() };
+function validMessageTimestamp(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function withMessageTimestamp(msg: ChatMsg, fallback = Date.now()): ChatMsg {
+  const timestamp = validMessageTimestamp(msg.timestamp)
+    ? msg.timestamp
+    : fallback;
+  const runtimeChildren = msg.runtimeChildren?.map((child) =>
+    withMessageTimestamp(child, timestamp));
+  const attachCards = msg.attachCards?.map((child) =>
+    withMessageTimestamp(child, timestamp));
+  if (
+    timestamp === msg.timestamp
+    && runtimeChildren === undefined
+    && attachCards === undefined
+  ) {
+    return msg;
+  }
+  return { ...msg, timestamp, runtimeChildren, attachCards };
 }
 
 interface ConvState {
@@ -675,7 +689,14 @@ export const useSessionStore = create<ConvState>((set) => ({
         // add — deltas keep flowing into it and the finalize frame
         // writes the authoritative content.
         const cur = s.messagesById[m.id];
-        byId[m.id] = cur && isLiveRow(cur) && isEmptyRow(m) ? cur : m;
+        byId[m.id] = cur && isLiveRow(cur) && isEmptyRow(m)
+          ? withMessageTimestamp({
+              ...cur,
+              ...(validMessageTimestamp(m.timestamp)
+                ? { timestamp: m.timestamp }
+                : {}),
+            })
+          : m;
       }
       return {
         messagesById: byId,
@@ -703,7 +724,10 @@ export const useSessionStore = create<ConvState>((set) => ({
       const cur = s.messagesById[msgId];
       if (!cur) return {};
       return {
-        messagesById: { ...s.messagesById, [msgId]: { ...cur, ...patch } },
+        messagesById: {
+          ...s.messagesById,
+          [msgId]: withMessageTimestamp({ ...cur, ...patch }),
+        },
       };
     }),
 

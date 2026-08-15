@@ -33,7 +33,7 @@ import {
   ThinkingStep,
 } from "./execution-strip";
 import type { TNode } from "./tree-types";
-import { MessageActions } from "./message-actions";
+import { MessageActions, MessageTimestamp } from "./message-actions";
 import { useAvatarAlign } from "./use-avatar-align";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 import { RuntimeBlock } from "./runtime-block";
@@ -552,11 +552,15 @@ export function AssistantBubble({ msg, verdict }: {
       {/* Action row at the BOTTOM-RIGHT of the message — you finish
           reading, then reach for copy/retry/branch right where your
           eyes land, instead of back up at the header. */}
-      {!streaming ? (
-        <div className="message-actions-footer">
+      <div className="message-actions-footer">
+        {streaming ? (
+          <div className="message-actions">
+            <MessageTimestamp timestamp={msg.timestamp} />
+          </div>
+        ) : (
           <MessageActions msg={msg} />
-        </div>
-      ) : null}
+        )}
+      </div>
     </div>
   );
 }

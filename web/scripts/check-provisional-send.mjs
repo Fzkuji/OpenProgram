@@ -159,6 +159,87 @@ assert.ok(
   "legacy history rows without time must still render a timestamp",
 );
 
+useSessionStore.getState().appendMessage("timestamp-hydrate", {
+  id: "live-placeholder",
+  role: "assistant",
+  content: "",
+  status: "streaming",
+  timestamp: 1_111,
+});
+useSessionStore.getState().setMessages("timestamp-hydrate", [
+  {
+    id: "live-placeholder",
+    role: "assistant",
+    content: "",
+    status: "running",
+    timestamp: persistedTimestamp,
+  },
+]);
+assert.equal(
+  useSessionStore.getState().messagesById["live-placeholder"].timestamp,
+  persistedTimestamp,
+  "mid-run hydration must prefer a persisted authoritative timestamp",
+);
+
+useSessionStore.getState().setMessages("timestamp-nested", [
+  {
+    id: "parent-with-nested-rows",
+    role: "assistant",
+    content: "parent",
+    status: "done",
+    timestamp: persistedTimestamp,
+    runtimeChildren: [
+      { id: "nested-runtime", role: "assistant", content: "", status: "running" },
+    ],
+    attachCards: [
+      { id: "nested-attach", role: "assistant", content: "", status: "running" },
+    ],
+  },
+]);
+const nestedParent = useSessionStore.getState().messagesById["parent-with-nested-rows"];
+assert.equal(
+  nestedParent.runtimeChildren[0].timestamp,
+  persistedTimestamp,
+  "a nested runtime without its own time must inherit the stable parent time",
+);
+assert.equal(
+  nestedParent.attachCards[0].timestamp,
+  persistedTimestamp,
+  "a nested attach row without its own time must inherit the stable parent time",
+);
+
+applyChatWsMessage({
+  type: "chat_response",
+  data: {
+    type: "user_message",
+    session_id: "timestamp-peer",
+    msg_id: "peer-user-seconds",
+    content: "peer",
+    timestamp: persistedTimestamp,
+  },
+});
+assert.equal(
+  useSessionStore.getState().messagesById["peer-user-seconds"].timestamp,
+  persistedTimestamp,
+  "a peer user_message must preserve its server timestamp before refresh",
+);
+const persistedTimestampMs = 1_700_000_000_123;
+applyChatWsMessage({
+  type: "chat_response",
+  data: {
+    type: "user_message",
+    session_id: "timestamp-peer",
+    msg_id: "peer-user-ms",
+    content: "peer ms",
+    timestamp: persistedTimestampMs,
+  },
+});
+assert.equal(
+  useSessionStore.getState().messagesById["peer-user-ms"].timestamp,
+  persistedTimestampMs,
+  "millisecond wire timestamps must remain unchanged",
+);
+
 // Callable local commands return no chat_ack/result envelope. Their dedicated
 // response must release the provisional send reservation and running state so
 // the same draft can still send a normal turn afterwards.
@@ -496,6 +577,15 @@ assert.match(attachmentHook, /if \(!mountedRef\.current\) \{[\s\S]*releaseAttach
 const chatHandlers = readFileSync(
   new URL("../lib/runtime-bridge/chat-handlers.ts", import.meta.url),
   "utf8",
+);
+const useWs = readFileSync(
+  new URL("../lib/net/use-ws.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  useWs,
+  /case "chat_ack":[\s\S]*applyChatWsMessage\(\{ type: "chat_ack", data: d \}\);[\s\S]*wsHandleChatAck/,
+  "chat_ack must append timestamped live rows before bookkeeping clears the pending send timestamp",
 );
 assert.match(
   chatHandlers,

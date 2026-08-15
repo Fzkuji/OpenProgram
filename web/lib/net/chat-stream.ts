@@ -74,6 +74,7 @@ interface ChatResponseData {
   event?: StreamEvent;
   content?: string;
   text?: string;
+  timestamp?: number | string | null;
   /** Ordered execution blocks (thinking / text / tool) the persisted
    *  message carries. conv-mapper rebuilds these on reload; the final
    *  chat_response envelope also ships them so a live turn can converge
@@ -151,13 +152,10 @@ export function applyChatWsMessage(msg: WsEnvelope): void {
   }
 }
 
-/** A `chat_ack` only tells us which conversation the turn belongs to —
- *  for a brand-new chat that's the first time the server-assigned id is
- *  known. The assistant reply bubble is NOT created here: doing so
- *  would land it in `messageOrder` before the user turn (whose
- *  `user_message` broadcast can arrive either side of the ack). The
- *  reply is created lazily on the first stream event / result instead,
- *  by which point the user turn is already in place. */
+/** A `chat_ack` tells us which conversation the turn belongs to — for a
+ *  brand-new chat that's the first time the server-assigned id is known.
+ *  Add the locally stashed user turn first, then create its assistant
+ *  placeholder so both rows and both start times appear on the ACK. */
 function handleAck(
   d: { session_id?: string; msg_id?: string; text?: string } | undefined,
 ): void {
@@ -532,6 +530,12 @@ function handleUserMessage(sid: string, d: ChatResponseData): void {
     content: d.content ?? d.text ?? "",
     display: d.display === "runtime" ? "runtime" : undefined,
     status: "done",
+    timestamp:
+      typeof d.timestamp === "number"
+      && Number.isFinite(d.timestamp)
+      && d.timestamp > 0
+        ? d.timestamp
+        : undefined,
   });
 }
 

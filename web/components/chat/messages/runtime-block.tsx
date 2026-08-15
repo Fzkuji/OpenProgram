@@ -30,7 +30,7 @@ import { optimisticAction } from "@/lib/runtime-bridge/optimistic-action";
 
 import type { TNode } from "./tree-types";
 import { ExecutionStrip, StepRow, TreeStep, decodeEscapes } from "./execution-strip";
-import { ActionButton, SVG } from "./message-actions";
+import { ActionButton, MessageTimestamp, SVG } from "./message-actions";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 import { runtimeConclusion, runtimeSummaryLabel } from "./runtime-summary";
 
@@ -260,28 +260,21 @@ export function RuntimeBlock({
     useSessionStore.getState().openFnFormEdit(fn, prefill, msg.id);
   }
 
-  const ts = msg.timestamp
-    ? new Date(msg.timestamp > 1e12 ? msg.timestamp : msg.timestamp * 1000)
-    : null;
-
-  // 底部操作行：与聊天消息的 footer 同款（悬停显现的图标行），
-  // 不再把重试/版本切换塞在根行右侧。仅顶层手动运行渲染；
-  // 嵌在 assistant 气泡里的调用没有 footer。
-  const footer = !nested ? (
+  // 底部行始终提供开始时间；顶层手动运行另外提供
+  // 复制/重试/修改和版本切换，嵌套调用不暴露这些操作。
+  const footer = (
     <div className="message-actions-footer runtime-actions-footer">
       <div className="message-actions">
-        {ts ? (
-          <span className="message-timestamp" title={ts.toLocaleString()}>
-            {ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-          </span>
+        <MessageTimestamp timestamp={msg.timestamp} />
+        {!nested ? (
+          <ActionButton
+            icon={copied ? SVG.check : SVG.copy}
+            title={text("Copy result", "复制结果")}
+            extraClass={copied ? "is-copied" : undefined}
+            onClick={copyResult}
+          />
         ) : null}
-        <ActionButton
-          icon={copied ? SVG.check : SVG.copy}
-          title={text("Copy result", "复制结果")}
-          extraClass={copied ? "is-copied" : undefined}
-          onClick={copyResult}
-        />
-        {!streaming && fnName ? (
+        {!nested && !streaming && fnName ? (
           <>
             <ActionButton
               icon={SVG.retry}
@@ -295,7 +288,7 @@ export function RuntimeBlock({
             />
           </>
         ) : null}
-        {hasSiblings ? (
+        {!nested && hasSiblings ? (
           <div className="message-nav">
             <button
               type="button"
@@ -334,7 +327,7 @@ export function RuntimeBlock({
         ) : null}
       </div>
     </div>
-  ) : null;
+  );
 
   const body = tree ? (
     <TreeStep node={tree} defaultKidsOpen />

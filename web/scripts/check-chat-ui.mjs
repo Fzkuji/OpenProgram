@@ -11,6 +11,7 @@ const source = (path) => readFileSync(new URL(path, root), "utf8");
 const welcome = source("components/chat/welcome-screen.tsx");
 const welcomeCss = source("components/chat/welcome-screen.module.css");
 const messageList = source("components/chat/messages/message-list.tsx");
+const messageActions = source("components/chat/messages/message-actions.tsx");
 // The strip is split across center-tab-strip.tsx and its submodules;
 // read them as one text so the assertions below are unchanged.
 const tabs = readCenterTabStripSource(import.meta.url);
@@ -21,6 +22,7 @@ const sessionStore = source("lib/session-store/index.ts");
 const assistantBubble = source("components/chat/messages/assistant-bubble.tsx");
 const queuedMessages = source("components/chat/messages/queued-messages.tsx");
 const runtimeBlock = source("components/chat/messages/runtime-block.tsx");
+const attachCard = source("components/chat/messages/attach-card.tsx");
 const executionStrip = source("components/chat/messages/execution-strip.tsx");
 const runtimeHelpers = source("lib/runtime-bridge/helpers.ts");
 const markdownRenderer = source("lib/runtime-bridge/markdown-render.ts");
@@ -191,9 +193,9 @@ const setMessagesBody = sessionStore.slice(
 assert.ok(setMessagesBody, "setMessages not found in the session store");
 assert.match(
   setMessagesBody,
-  /isLiveRow\(cur\)\s*&&\s*isEmptyRow\(m\)\s*\?\s*cur\s*:\s*m/,
+  /isLiveRow\(cur\)\s*&&\s*isEmptyRow\(m\)[\s\S]*withMessageTimestamp\([\s\S]*\.\.\.cur[\s\S]*validMessageTimestamp\(m\.timestamp\)[\s\S]*timestamp:\s*m\.timestamp/,
   "setMessages must preserve an in-flight streaming row when the "
-    + "incoming load_session payload row is an empty placeholder",
+    + "incoming load_session payload row is an empty placeholder while accepting its authoritative timestamp",
 );
 // The two predicates are what make that guard correct — a live row is
 // any not-yet-finalized status, and emptiness must consider every
@@ -782,7 +784,7 @@ assert.match(
 );
 assert.match(
   chatCss,
-  /\.message:hover \.message-actions,\s*\.message-actions:focus-within\s*\{[^}]*opacity:\s*1/s,
+  /\.message:hover \.message-actions,\s*\.attach-card:hover \.message-actions,\s*\.message-actions:focus-within\s*\{[^}]*opacity:\s*1/s,
   "chat message timestamps and actions must appear together on hover or keyboard focus",
 );
 assert.doesNotMatch(
@@ -794,6 +796,41 @@ assert.match(
   queuedMessages,
   /queuedAt:[\s\S]*className="message-timestamp"[\s\S]*new Date\(row\.queuedAt\)\.toLocaleTimeString/,
   "queued user messages must show their enqueue timestamp before dispatch",
+);
+assert.match(
+  messageActions,
+  /export function MessageTimestamp[\s\S]*className="message-timestamp"/,
+  "all message kinds must share one timestamp renderer",
+);
+assert.match(
+  assistantBubble,
+  /streaming \? \([\s\S]*<MessageTimestamp timestamp=\{msg\.timestamp\}/,
+  "a streaming assistant must render its start timestamp",
+);
+assert.match(
+  messageList,
+  /function PendingReplyIndicator[\s\S]*<MessageTimestamp timestamp=\{timestamp \?\? fallbackTimestamp\}/,
+  "the pre-reply pending indicator must render a timestamp immediately",
+);
+assert.match(
+  messageList,
+  /msg\.role === "system"[\s\S]*<MessageTimestamp timestamp=\{msg\.timestamp\}/,
+  "transient system messages must render their store timestamp",
+);
+assert.match(
+  runtimeBlock,
+  /const footer = \([\s\S]*<MessageTimestamp timestamp=\{msg\.timestamp\}/,
+  "nested and top-level runtime rows must both render their start timestamp",
+);
+assert.match(
+  attachCard,
+  /attach-card-time[\s\S]*<MessageTimestamp timestamp=\{msg\.timestamp\}/,
+  "attach cards must render their message timestamp",
+);
+assert.match(
+  executionStrip,
+  /export function SubAgentStep[\s\S]*<MessageTimestamp timestamp=\{card\.timestamp\}/,
+  "sub-agent timeline rows must render their own timestamp",
 );
 assert.match(
   chatVisualSpec,

@@ -14,6 +14,7 @@
   transition: opacity 150ms ease;
 }
 .message:hover .message-actions,
+.attach-card:hover .message-actions,
 .message-actions:focus-within {
   opacity: 1;
 }

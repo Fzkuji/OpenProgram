@@ -25,6 +25,7 @@ import {
   ArrowUpRightIcon,
 } from "@/components/animated-icons";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
+import { MessageTimestamp } from "./message-actions";
 
 function wsSend(payload: unknown): void {
   const sock = getSocket();
@@ -403,6 +404,11 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
           <div className="attach-card-followup-body">{followupNotice}</div>
         </div>
       ) : null}
+      <div className="message-actions-footer attach-card-time">
+        <div className="message-actions">
+          <MessageTimestamp timestamp={msg.timestamp} />
+        </div>
+      </div>
     </div>
   );
 }

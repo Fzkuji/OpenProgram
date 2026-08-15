@@ -123,6 +123,20 @@ export function ActionButton({
   );
 }
 
+export function MessageTimestamp({ timestamp }: { timestamp?: number }) {
+  if (
+    typeof timestamp !== "number"
+    || !Number.isFinite(timestamp)
+    || timestamp <= 0
+  ) return null;
+  const value = new Date(timestamp > 1e12 ? timestamp : timestamp * 1000);
+  return (
+    <span className="message-timestamp" title={value.toLocaleString()}>
+      {value.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+    </span>
+  );
+}
+
 export function MessageActions({
   msg,
   onEdit,
@@ -295,19 +309,12 @@ export function MessageActions({
       });
   }
 
-  const ts = msg.timestamp
-    ? new Date(msg.timestamp > 1e12 ? msg.timestamp : msg.timestamp * 1000)
-    : null;
   const total = msg.siblingTotal ?? 0;
   const idx = msg.siblingIndex ?? 0;
 
   return (
     <div className="message-actions">
-      {ts ? (
-        <span className="message-timestamp" title={ts.toLocaleString()}>
-          {ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-        </span>
-      ) : null}
+      <MessageTimestamp timestamp={msg.timestamp} />
       <ActionButton
         icon={copied ? SVG.check : SVG.copy}
         title={tr("Copy", "复制")}
