@@ -3,162 +3,65 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Computer Use：MCP 与 Page 控制设计</title>
+<title>Computer Use 设计概览</title>
 <style>
-  :root{--bg:#15140f;--text:#c4c0b1;--muted:#858173;--title:#f3f0e8;--line:#343126;--accent:#e08a3e;--blue:#5b91f2;--green:#63b15a;--violet:#a679e4;--red:#e15b68;--code:#100f0b}
-  *{box-sizing:border-box}html{scroll-behavior:smooth}
-  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-  main{max-width:1180px;margin:auto;padding:56px 28px 100px}header{max-width:940px;padding-bottom:42px}
-  .eyebrow{color:var(--accent);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase}
-  h1{max-width:850px;margin:14px 0 18px;color:var(--title);font-size:42px;line-height:1.16;letter-spacing:-.025em}
-  h2{margin:0 0 22px;color:var(--title);font-size:25px;line-height:1.3}h3{margin:26px 0 8px;color:var(--title);font-size:16px}
-  p{max-width:88ch;margin:8px 0}a{color:#55bdd6}code{color:var(--accent);font:13px ui-monospace,SFMono-Regular,Menlo,monospace}
-  .lead{max-width:820px;color:#aaa696;font-size:17px}.status{margin-top:22px;color:var(--muted);font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em}
-  nav{display:flex;flex-wrap:wrap;gap:10px 22px;padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-  nav a{color:var(--muted);text-decoration:none;font-size:13px}nav a:hover,nav a:focus-visible{color:var(--title);text-decoration:underline;text-underline-offset:4px}
-  section{padding:48px 0;border-top:1px solid var(--line);scroll-margin-top:18px}section:first-of-type{border-top:0}
-  .decision{max-width:900px;font-size:18px;color:var(--title)}.decision strong{color:var(--accent)}
-  .diagram{margin:26px 0 10px;overflow-x:auto;background:var(--code)}.diagram svg{display:block;width:100%;min-width:900px;height:auto}.caption{color:var(--muted);font-size:12px}
-  table{width:100%;border-collapse:collapse;margin:14px 0 22px;font-size:13.5px}th{padding:11px 12px;border-bottom:1px solid #5a5544;color:var(--muted);text-align:left;font-size:11px;letter-spacing:.06em;white-space:nowrap}
-  td{padding:14px 12px;border-bottom:1px solid var(--line);vertical-align:top}td:first-child{color:var(--title);font-weight:650}.table-scroll{overflow-x:auto}.table-scroll table{min-width:760px}.default,.evidence-yes{color:var(--green)}
-  .tool-flow{display:grid;grid-template-columns:repeat(4,1fr);gap:28px;margin:28px 0}.tool{padding-top:12px;border-top:2px solid var(--line)}.tool .n{color:var(--accent);font:22px ui-monospace,SFMono-Regular,Menlo,monospace}.tool strong{display:block;margin:4px 0;color:var(--title)}.tool p{font-size:13px;color:var(--muted)}
-  .rules{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;margin:24px 0}.rule{padding-top:12px;border-top:1px solid var(--line)}.rule .k{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em}.rule h3{margin:8px 0 5px}.rule p{color:var(--muted);font-size:13px}.on{color:var(--green)}.fallback,.evidence-partial{color:var(--accent)}.off,.evidence-no{color:var(--red)}
-  pre{margin:16px 0;padding:16px 18px;overflow:auto;background:var(--code);color:#ded9c9;font:12px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace}
-  .phase{display:grid;grid-template-columns:84px 1fr 280px;gap:24px;padding:18px 0;border-bottom:1px solid var(--line)}.phase:last-child{border-bottom:0}.phase-id{color:var(--accent);font:11px ui-monospace,SFMono-Regular,Menlo,monospace}.phase strong{color:var(--title)}.gate{color:var(--muted);font-size:12.5px}
-  .checks{columns:2;column-gap:48px;padding-left:20px}.checks li{break-inside:avoid;margin:0 0 12px;padding-left:4px}.checks strong{color:var(--title)}
-  details{border-top:1px solid var(--line)}details:last-child{border-bottom:1px solid var(--line)}summary{padding:16px 0;color:var(--title);cursor:pointer;font-weight:650}details>div{padding:0 0 22px;color:var(--muted)}.refs{padding-left:20px}.refs li{margin:8px 0}
-  @media(max-width:760px){main{padding:32px 20px 72px}h1{font-size:32px}section{padding:38px 0}.tool-flow,.rules{grid-template-columns:1fr}.phase{grid-template-columns:1fr;gap:5px}.checks{columns:1}}
+  :root{--bg:#15140f;--text:#c4c0b1;--muted:#858173;--title:#f3f0e8;--line:#343126;--accent:#e08a3e;--blue:#5b91f2;--green:#63b15a;--violet:#a679e4;--code:#100f0b}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  main{max-width:1180px;margin:auto;padding:58px 28px 80px}header{padding-bottom:44px}.eyebrow{color:var(--accent);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase}
+  h1{max-width:900px;margin:14px 0 16px;color:var(--title);font-size:44px;line-height:1.15;letter-spacing:-.025em}header p{max-width:820px;margin:0;color:#aaa696;font-size:18px}
+  section{padding:44px 0;border-top:1px solid var(--line)}h2{margin:0 0 20px;color:var(--title);font-size:24px}.diagram{overflow-x:auto;background:var(--code)}svg{display:block;width:100%;min-width:900px;height:auto}
+  .links{display:flex;flex-wrap:wrap;gap:12px 28px;padding-top:34px;border-top:1px solid var(--line)}a{color:#55bdd6;text-underline-offset:4px}.links a{font-size:14px}
+  @media(max-width:760px){main{padding:34px 20px 60px}h1{font-size:33px}header p{font-size:16px}section{padding:34px 0}}
 </style>
 </head>
-<body>
-<main>
+<body><main>
   <header>
-    <div class="eyebrow">OpenProgram · target design</div>
+    <div class="eyebrow">OpenProgram · Computer Use</div>
     <h1>一个浏览器工具，两种执行模式，同一个 Page</h1>
-    <p class="lead">Agent 通过 OpenProgram MCP 调用 <code>computer_use</code>。Runtime 把调用绑定到当前分屏中的精确 Page，再由 Microsoft Playwright MCP 或 Claude-compatible bridge 执行。两种模式共用 Page identity、权限、frame、验证和失败语义。</p>
-    <p class="status">DESIGN ONLY · DUAL MODE NOT IMPLEMENTED</p>
+    <p>Agent 始终调用 <code>computer_use</code>；设置决定由 Microsoft Playwright MCP 或 Claude-compatible backend 执行。</p>
   </header>
 
-  <nav aria-label="目录"><a href="#architecture">架构</a><a href="#modes">两种模式</a><a href="#interaction">交互循环</a><a href="#contract">工具契约</a><a href="#boundaries">成本与边界</a><a href="#delivery">实施顺序</a><a href="#acceptance">验收</a><a href="#evidence">当前证据</a></nav>
-
-  <section id="architecture">
-    <h2>目标架构</h2>
-    <p class="decision"><strong>唯一公开入口是 OpenProgram MCP 中的 <code>computer_use</code>。</strong> Microsoft 官方 MCP 是私有 backend，不直接注册给 Agent；Claude-compatible 也不增加第二组模型工具。模型不能指定 mode、window、tab、CDP target 或 backend。</p>
-    <div class="diagram">
-      <svg viewBox="0 0 1120 500" role="img">
-        <title>OpenProgram Computer Use 双模式架构</title><desc>Agent 经 OpenProgram MCP 和 Runtime 权限层，选择一个冻结的执行模式，最终操作同一个精确 Page。</desc>
-        <defs><marker id="a" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#858173"/></marker><marker id="ab" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#5b91f2"/></marker><marker id="ag" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#63b15a"/></marker></defs>
-        <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-          <text x="42" y="42" fill="#f3f0e8" font-size="18" font-weight="700">控制路径</text><text x="42" y="66" fill="#858173" font-size="12">Page 的选择发生在 Runtime，不发生在模型或 backend。</text>
-          <rect x="42" y="118" width="172" height="88" rx="8" fill="#151b25" stroke="#5b91f2"/><text x="128" y="151" fill="#5b91f2" font-size="15" font-weight="700" text-anchor="middle">Chat Agent</text><text x="128" y="176" fill="#c4c0b1" font-size="12" text-anchor="middle">command · alias · frame</text>
-          <rect x="278" y="106" width="210" height="112" rx="8" fill="#211b12" stroke="#e08a3e"/><text x="383" y="142" fill="#e08a3e" font-size="15" font-weight="700" text-anchor="middle">OpenProgram MCP</text><text x="383" y="167" fill="#c4c0b1" font-size="12" text-anchor="middle">computer_use</text><text x="383" y="190" fill="#858173" font-size="11" text-anchor="middle">page_context_token</text>
-          <rect x="552" y="92" width="244" height="140" rx="8" fill="#1a1423" stroke="#a679e4"/><text x="674" y="128" fill="#a679e4" font-size="15" font-weight="700" text-anchor="middle">Runtime authority</text><text x="674" y="154" fill="#c4c0b1" font-size="12" text-anchor="middle">PageRegistry · lease · frame</text><text x="674" y="176" fill="#c4c0b1" font-size="12" text-anchor="middle">permission · verification</text><text x="674" y="204" fill="#858173" font-size="11" text-anchor="middle">冻结 execution mode</text>
-          <line x1="214" y1="162" x2="274" y2="162" stroke="#5b91f2" stroke-width="2" marker-end="url(#ab)"/><line x1="488" y1="162" x2="548" y2="162" stroke="#858173" stroke-width="2" marker-end="url(#a)"/>
-          <path d="M796 142 H862 V118" fill="none" stroke="#858173" stroke-width="2" marker-end="url(#a)"/><path d="M796 182 H862 V300" fill="none" stroke="#858173" stroke-width="2" marker-end="url(#a)"/>
-          <rect x="868" y="72" width="210" height="104" rx="8" fill="#121d1a" stroke="#63b15a"/><text x="973" y="108" fill="#63b15a" font-size="15" font-weight="700" text-anchor="middle">Playwright MCP</text><text x="973" y="133" fill="#c4c0b1" font-size="12" text-anchor="middle">官方 child MCP server</text><text x="973" y="154" fill="#858173" font-size="11" text-anchor="middle">snapshot · ref · action</text>
-          <rect x="868" y="254" width="210" height="104" rx="8" fill="#171821" stroke="#5b91f2"/><text x="973" y="290" fill="#5b91f2" font-size="15" font-weight="700" text-anchor="middle">Claude-compatible</text><text x="973" y="315" fill="#c4c0b1" font-size="12" text-anchor="middle">WebContents / CDP bridge</text><text x="973" y="336" fill="#858173" font-size="11" text-anchor="middle">clean-room 公开行为</text>
-          <path d="M973 176 V412 H790" fill="none" stroke="#63b15a" stroke-width="2" marker-end="url(#ag)"/><path d="M973 358 V412 H790" fill="none" stroke="#5b91f2" stroke-width="2" marker-end="url(#ab)"/>
-          <rect x="450" y="376" width="340" height="76" rx="8" fill="#181b12" stroke="#63b15a"/><text x="620" y="407" fill="#63b15a" font-size="16" font-weight="700" text-anchor="middle">Exact Page</text><text x="620" y="431" fill="#c4c0b1" font-size="12" text-anchor="middle">window + tab + CDP target + revisions</text>
-          <text x="42" y="420" fill="#858173" font-size="12">分屏位置只改变 alias。</text><text x="42" y="442" fill="#858173" font-size="12">Page identity 与前台焦点无关。</text>
-        </g>
-      </svg>
-    </div>
-    <p class="caption">信任边界：模型只得到 Page Context 和 opaque session/frame；CDP endpoint、WebContents、真实 Page handle 与 execution mode 都留在 Runtime。</p>
-  </section>
-
-  <section id="modes">
-    <h2>两种执行模式</h2>
-    <div class="table-scroll"><table><thead><tr><th></th><th>Microsoft Playwright MCP</th><th>Claude-compatible Browser Control</th></tr></thead><tbody>
-      <tr><td>设置值</td><td><code>playwright_mcp</code> <span class="default">默认</span></td><td><code>claude_compatible</code></td></tr>
-      <tr><td>实现</td><td>固定版本的官方 <code>@playwright/mcp</code>，作为 Runtime 私有 child process，通过 stdio 接入。</td><td>OpenProgram 基于 exact WebContents/CDP target 的 clean-room bridge。</td></tr>
-      <tr><td>观察</td><td>Accessibility snapshot、DOM/ARIA、稳定 ref。</td><td>DOM/accessibility snapshot、exact node handle、受限 console/network diagnostics。</td></tr>
-      <tr><td>动作</td><td>一个 canonical Action 映射为一个 allowlisted upstream action。</td><td>同一个 Action 映射为一次 bound WebContents/CDP action。</td></tr>
-      <tr><td>限制</td><td>不暴露 upstream tabs/eval/storage/files；必须先通过 exact Page 隔离测试。</td><td>不声称兼容 Claude 私有协议、源码或内部 locator 算法。</td></tr>
-    </tbody></table></div>
-    <p>设置只影响新的 ComputerSession。session 创建后 mode 冻结；失败、超时或 stale frame 都不能自动切换 backend，避免重复点击和重复提交。</p>
-  </section>
-
-  <section id="interaction">
-    <h2>一次页面交互怎么运行</h2>
-    <div class="diagram"><svg viewBox="0 0 1120 330" role="img">
-      <title>Computer Use 单步执行循环</title><desc>Page Awareness 在模型回复前发生，随后 Agent 按观察、单步动作、重新观察和验证运行。</desc>
-      <defs><marker id="seq" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#e08a3e"/></marker></defs>
-      <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><text x="38" y="42" fill="#f3f0e8" font-size="18" font-weight="700">Page Awareness 先于第一个模型 token</text><text x="38" y="65" fill="#858173" font-size="12">每个写动作之后，旧 frame 立即失效。</text>
-      <g transform="translate(38,108)">
-        <g><rect width="170" height="78" rx="8" fill="#151b25" stroke="#5b91f2"/><text x="85" y="31" fill="#5b91f2" text-anchor="middle" font-size="14" font-weight="700">1 · Page sync</text><text x="85" y="54" fill="#c4c0b1" text-anchor="middle" font-size="11">pane bounds 与 revisions</text></g>
-        <g transform="translate(216,0)"><rect width="170" height="78" rx="8" fill="#211b12" stroke="#e08a3e"/><text x="85" y="31" fill="#e08a3e" text-anchor="middle" font-size="14" font-weight="700">2 · Context</text><text x="85" y="54" fill="#c4c0b1" text-anchor="middle" font-size="11">inventory + preview</text></g>
-        <g transform="translate(432,0)"><rect width="170" height="78" rx="8" fill="#1a1423" stroke="#a679e4"/><text x="85" y="31" fill="#a679e4" text-anchor="middle" font-size="14" font-weight="700">3 · Observe</text><text x="85" y="54" fill="#c4c0b1" text-anchor="middle" font-size="11">DOM/ARIA 或一张图</text></g>
-        <g transform="translate(648,0)"><rect width="170" height="78" rx="8" fill="#171821" stroke="#5b91f2"/><text x="85" y="31" fill="#5b91f2" text-anchor="middle" font-size="14" font-weight="700">4 · Act</text><text x="85" y="54" fill="#c4c0b1" text-anchor="middle" font-size="11">一个状态变化</text></g>
-        <g transform="translate(864,0)"><rect width="170" height="78" rx="8" fill="#181b12" stroke="#63b15a"/><text x="85" y="31" fill="#63b15a" text-anchor="middle" font-size="14" font-weight="700">5 · Verify</text><text x="85" y="54" fill="#c4c0b1" text-anchor="middle" font-size="11">新 observation assertion</text></g>
-        <line x1="170" y1="39" x2="212" y2="39" stroke="#e08a3e" stroke-width="2" marker-end="url(#seq)"/><line x1="386" y1="39" x2="428" y2="39" stroke="#e08a3e" stroke-width="2" marker-end="url(#seq)"/><line x1="602" y1="39" x2="644" y2="39" stroke="#e08a3e" stroke-width="2" marker-end="url(#seq)"/><line x1="818" y1="39" x2="860" y2="39" stroke="#e08a3e" stroke-width="2" marker-end="url(#seq)"/>
-        <path d="M949 84 V145 H517 V84" fill="none" stroke="#858173" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#seq)"/><text x="733" y="167" fill="#858173" font-size="11" text-anchor="middle">未完成时重新 observe；不能复用旧 frame</text>
-      </g></g>
+  <section aria-labelledby="architecture-title">
+    <h2 id="architecture-title">系统结构</h2>
+    <div class="diagram"><svg viewBox="0 0 1120 440" role="img">
+      <title>Computer Use 双模式结构</title><desc>Agent 经 OpenProgram MCP 与 Runtime，选择一个冻结的执行模式，操作当前精确 Page。</desc>
+      <defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#858173"/></marker><marker id="blue-arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#5b91f2"/></marker></defs>
+      <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+        <rect x="38" y="118" width="176" height="82" rx="8" fill="#151b25" stroke="#5b91f2"/><text x="126" y="151" fill="#5b91f2" font-size="16" font-weight="700" text-anchor="middle">Chat Agent</text><text x="126" y="176" fill="#c4c0b1" font-size="12" text-anchor="middle">computer_use</text>
+        <rect x="282" y="106" width="214" height="106" rx="8" fill="#211b12" stroke="#e08a3e"/><text x="389" y="145" fill="#e08a3e" font-size="16" font-weight="700" text-anchor="middle">OpenProgram MCP</text><text x="389" y="174" fill="#c4c0b1" font-size="12" text-anchor="middle">统一工具契约</text>
+        <rect x="564" y="92" width="238" height="134" rx="8" fill="#1a1423" stroke="#a679e4"/><text x="683" y="130" fill="#a679e4" font-size="16" font-weight="700" text-anchor="middle">Runtime</text><text x="683" y="159" fill="#c4c0b1" font-size="12" text-anchor="middle">Page binding · permission</text><text x="683" y="183" fill="#c4c0b1" font-size="12" text-anchor="middle">frame · verification</text>
+        <line x1="214" y1="159" x2="278" y2="159" stroke="#5b91f2" stroke-width="2" marker-end="url(#blue-arrow)"/><line x1="496" y1="159" x2="560" y2="159" stroke="#858173" stroke-width="2" marker-end="url(#arrow)"/>
+        <path d="M802 137 H864 V86" fill="none" stroke="#858173" stroke-width="2" marker-end="url(#arrow)"/><path d="M802 182 H864 V257" fill="none" stroke="#858173" stroke-width="2" marker-end="url(#arrow)"/>
+        <rect x="870" y="42" width="212" height="92" rx="8" fill="#121d1a" stroke="#63b15a"/><text x="976" y="79" fill="#63b15a" font-size="15" font-weight="700" text-anchor="middle">Playwright MCP</text><text x="976" y="105" fill="#c4c0b1" font-size="12" text-anchor="middle">官方 backend</text>
+        <rect x="870" y="216" width="212" height="92" rx="8" fill="#151b25" stroke="#5b91f2"/><text x="976" y="253" fill="#5b91f2" font-size="15" font-weight="700" text-anchor="middle">Claude-compatible</text><text x="976" y="279" fill="#c4c0b1" font-size="12" text-anchor="middle">OpenProgram bridge</text>
+        <path d="M976 134 V366 H792" fill="none" stroke="#63b15a" stroke-width="2" marker-end="url(#arrow)"/><path d="M976 308 V366 H792" fill="none" stroke="#5b91f2" stroke-width="2" marker-end="url(#blue-arrow)"/>
+        <rect x="466" y="330" width="326" height="72" rx="8" fill="#181b12" stroke="#63b15a"/><text x="629" y="360" fill="#63b15a" font-size="16" font-weight="700" text-anchor="middle">当前精确 Page</text><text x="629" y="383" fill="#c4c0b1" font-size="12" text-anchor="middle">不依赖窗口置前或分屏方向</text>
+      </g>
     </svg></div>
   </section>
 
-  <section id="contract">
-    <h2>Agent 只需要四个 command</h2>
-    <div class="tool-flow">
-      <div class="tool"><span class="n">01</span><strong>list_pages</strong><p>读取当前 turn 已授权 Page inventory，不调用 upstream tab 枚举。</p></div>
-      <div class="tool"><span class="n">02</span><strong>observe</strong><p>选择 Page 并创建 ComputerSession；返回有界文本、ARIA 和 refs。</p></div>
-      <div class="tool"><span class="n">03</span><strong>act</strong><p>携带最新 frame，只执行一个 click、type、press、scroll、select 或 navigate。</p></div>
-      <div class="tool"><span class="n">04</span><strong>verify</strong><p>只执行 Runtime assertion；模型声称“完成”不能产生成功。</p></div>
-    </div>
-    <pre>computer_use({ command: "list_pages" })
-computer_use({ command: "observe", page: "left", detail: "interactive" })
-computer_use({ command: "act", computer_session_id: "cs_…", action: { … } })
-computer_use({ command: "verify", computer_session_id: "cs_…", assertion: { … } })</pre>
-    <p>第一方 MCP client adapter 在模型参数之外附加一次性 <code>page_context_token</code>。它绑定 MCP connection、turn、provider request、tool call、Page revisions 和 access revision；缺少、重放或跨连接使用时，在 backend 调用前返回 <code>invalid_capability</code>。</p>
+  <section aria-labelledby="loop-title">
+    <h2 id="loop-title">Agent 交互循环</h2>
+    <div class="diagram"><svg viewBox="0 0 1120 280" role="img">
+      <title>Computer Use 交互循环</title><desc>Page context 先进入 Agent，随后观察、执行单个动作、重新观察并验证。</desc>
+      <defs><marker id="orange-arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#e08a3e"/></marker></defs>
+      <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" transform="translate(42,72)">
+        <g><rect width="174" height="78" rx="8" fill="#151b25" stroke="#5b91f2"/><text x="87" y="32" fill="#5b91f2" text-anchor="middle" font-size="14" font-weight="700">Page Context</text><text x="87" y="55" fill="#c4c0b1" text-anchor="middle" font-size="11">当前分屏与页面摘要</text></g>
+        <g transform="translate(216,0)"><rect width="174" height="78" rx="8" fill="#1a1423" stroke="#a679e4"/><text x="87" y="32" fill="#a679e4" text-anchor="middle" font-size="14" font-weight="700">Observe</text><text x="87" y="55" fill="#c4c0b1" text-anchor="middle" font-size="11">DOM / ARIA / 一张图</text></g>
+        <g transform="translate(432,0)"><rect width="174" height="78" rx="8" fill="#171821" stroke="#5b91f2"/><text x="87" y="32" fill="#5b91f2" text-anchor="middle" font-size="14" font-weight="700">Act</text><text x="87" y="55" fill="#c4c0b1" text-anchor="middle" font-size="11">一个页面动作</text></g>
+        <g transform="translate(648,0)"><rect width="174" height="78" rx="8" fill="#1a1423" stroke="#a679e4"/><text x="87" y="32" fill="#a679e4" text-anchor="middle" font-size="14" font-weight="700">Observe</text><text x="87" y="55" fill="#c4c0b1" text-anchor="middle" font-size="11">生成新 frame</text></g>
+        <g transform="translate(864,0)"><rect width="174" height="78" rx="8" fill="#181b12" stroke="#63b15a"/><text x="87" y="32" fill="#63b15a" text-anchor="middle" font-size="14" font-weight="700">Verify</text><text x="87" y="55" fill="#c4c0b1" text-anchor="middle" font-size="11">Runtime 判定结果</text></g>
+        <line x1="174" y1="39" x2="212" y2="39" stroke="#e08a3e" stroke-width="2" marker-end="url(#orange-arrow)"/><line x1="390" y1="39" x2="428" y2="39" stroke="#e08a3e" stroke-width="2" marker-end="url(#orange-arrow)"/><line x1="606" y1="39" x2="644" y2="39" stroke="#e08a3e" stroke-width="2" marker-end="url(#orange-arrow)"/><line x1="822" y1="39" x2="860" y2="39" stroke="#e08a3e" stroke-width="2" marker-end="url(#orange-arrow)"/>
+        <text x="519" y="132" fill="#858173" font-size="12" text-anchor="middle">默认 DOM / ARIA；只有视觉任务或 canvas 才发送一张 viewport screenshot</text>
+      </g>
+    </svg></div>
   </section>
 
-  <section id="boundaries">
-    <h2>成本与功能边界</h2>
-    <div class="rules">
-      <div class="rule"><span class="k on">DEFAULT</span><h3>DOM / ARIA</h3><p>URL、title、页面文本、accessibility snapshot 和 element refs。普通网页交互不发送截图。</p></div>
-      <div class="rule"><span class="k fallback">FALLBACK</span><h3>一张 viewport screenshot</h3><p>仅用于视觉验收、canvas 或语义定位失败。图片只进入紧邻的下一次模型请求，坐标权限随后撤销。</p></div>
-      <div class="rule"><span class="k off">OFF</span><h3>昂贵视觉管线</h3><p>不启用 OCR、YOLO、object detector、crop/zoom、component memory、vision memory、workflow replay 或自动学习。</p></div>
-    </div>
-    <ul><li>Page 在左、右、上或下由真实 pane geometry 计算；不写死“右侧”。</li><li>操作 exact Page 不要求 OpenProgram 或目标 pane 置前，不使用 OS 鼠标、桌面坐标或整屏截图。</li><li>同一 Page 的写动作排他；任何写动作后重新观察。</li><li>登录、CAPTCHA、敏感提交和不可逆动作返回 <code>needs_user</code>。</li><li>网页内容是不可信数据，不能改变 target、权限、mode 或动作数量。</li></ul>
-  </section>
-
-  <section id="delivery">
-    <h2>实施顺序</h2>
-    <div class="phase"><div class="phase-id">PHASE 0</div><div><strong>验证官方 MCP 隔离能力</strong><br>连接测试 Electron CDP，验证 snapshot/ref 和 exact Page 限制。</div><div class="gate">出口：A/B 两个 web Page 与 chat Page 的越权测试通过；否则选 upstream contract adapter。</div></div>
-    <div class="phase"><div class="phase-id">PHASE 1</div><div><strong>扩展现有 OpenProgram MCP server</strong><br>新增一个 browser-control tool 和一次性 Page token；保留现有非浏览器 tools。</div><div class="gate">出口：真实 initialize/list/call/cancel 通过，伪造与重放在 backend 前拒绝。</div></div>
-    <div class="phase"><div class="phase-id">PHASE 2</div><div><strong>完成 Page Registry</strong><br>动态 geometry、revisions、access、exact resolve、hide/transfer/close invalidation。</div><div class="gate">出口：左右互换、上下分屏、双窗口与 target replacement 通过。</div></div>
-    <div class="phase"><div class="phase-id">PHASE 3</div><div><strong>接入 Playwright MCP mode</strong><br>只开放 snapshot/ref 和允许的动作，复用共同 policy/verification。</div><div class="gate">出口：DOM、canvas、非前台、多 Page、popup 和失败路径通过。</div></div>
-    <div class="phase"><div class="phase-id">PHASE 4</div><div><strong>实现 Claude-compatible mode</strong><br>结构化读取、动作、截图、受限诊断和用户可见 action cursor。</div><div class="gate">出口：与 Playwright mode 共用的 parity suite 通过。</div></div>
-    <div class="phase"><div class="phase-id">PHASE 5</div><div><strong>设置与安装版验收</strong><br>增加一个 mode selector，并在默认 18100、<code>/Applications/OpenProgram.app</code> 中运行相同任务集。</div><div class="gate">出口：当前 session mode 冻结；没有双执行或自动 fallback。</div></div>
-  </section>
-
-  <section id="acceptance">
-    <h2>发布前必须证明</h2>
-    <ol class="checks">
-      <li><strong>工具面：</strong>浏览器控制只有一个 <code>computer_use</code>，不暴露 upstream/Claude 第二套工具。</li><li><strong>Page 隔离：</strong>授权 A 时，对 B、chat Page 和另一窗口的读写调用次数都是 0。</li><li><strong>模式冻结：</strong>设置变更不影响当前 ComputerSession，只影响下一 session。</li><li><strong>副作用唯一：</strong>backend failure 不触发另一 backend；一个 Action 最多一次真实写入。</li><li><strong>跨模式一致：</strong>同一任务得到相同 Page/frame 生命周期、权限、reason code 和 verification。</li><li><strong>Page Awareness：</strong>页面换到 chat 左侧或右侧后，下一 turn relation 与 preview 正确更新。</li><li><strong>非前台执行：</strong>应用被遮挡时仍操作相同 Page，且没有 focus/OS input 调用。</li><li><strong>视觉限制：</strong>普通 DOM 流截图数为 0；canvas 流每次 observation 最多 1 张。</li><li><strong>失败诚实性：</strong>空 assertion、stale frame、timeout、cancel、target lost 都不能返回 succeeded。</li><li><strong>Chat 稳定：</strong>GUI tool update 不重建历史 message/avatar/markdown DOM。</li>
-    </ol>
-  </section>
-
-  <section id="evidence">
-    <h2>当前实现证据</h2>
-    <div class="table-scroll"><table><thead><tr><th>能力</th><th>当前状态</th><th>直接证据</th></tr></thead><tbody>
-      <tr><td>内置 web tab exact CDP attach</td><td class="evidence-yes">已验证</td><td><code>desktop/main.js</code>、<code>_actions/open_action.py</code></td></tr>
-      <tr><td>DOM-first task wrapper 与 point fallback</td><td class="evidence-yes">已验证 baseline</td><td><code>agentic_functions/browser_agent/__init__.py</code> 与 component tests</td></tr>
-      <tr><td>通用 MCP server/client 与 image content</td><td class="evidence-partial">已有基础</td><td><code>openprogram/mcp_server/</code>、<code>openprogram/mcp/</code></td></tr>
-      <tr><td>动态 Page geometry、registry、lease</td><td class="evidence-partial">部分实现</td><td>当前仍有旧 <code>surface</code> 命名和固定 relation baseline</td></tr>
-      <tr><td>Microsoft Playwright MCP backend</td><td class="evidence-no">未实现</td><td>只有官方文档研究与本页设计</td></tr>
-      <tr><td>Claude-compatible backend 与 selector</td><td class="evidence-no">未实现</td><td>只有公开行为规格与本页设计</td></tr>
-    </tbody></table></div>
-    <p class="caption">本文没有把目标能力写成已实现。完整实施记录继续维护在 <a href="computer-use-implementation.html">Computer Use 实施记录</a>。</p>
-    <h3>需要实现者展开时再读</h3>
-    <details><summary>Page identity 与生命周期</summary><div>Canonical Page 绑定 <code>window_id + registry_page_id + tab_id + cdp_target_id + revisions</code>。首次 observe 建立 ComputerSession binding；focus 和 pane 位置变化不改变 target，hide、移组、transfer、close、target replacement、access disable 或 disconnect 会在下一次副作用前使 binding 失效。</div></details>
-    <details><summary>Popup 与并发</summary><div>同一 exact Page 的写 lease 与 popup attribution 在 ComputerSession 间排他。popup 必须创建独立 Page，未登记前不能进入 Page Context。任何不确定的 popup watch 状态都阻止后续写动作与 verified 终态，直到 replay、drain 或 teardown 证明完成。</div></details>
-    <details><summary>统一失败语义</summary><div><code>invalid_arguments</code>、<code>invalid_capability</code>、<code>ambiguous_page</code>、<code>page_context_stale</code>、<code>stale_observation</code>、<code>page_access_disabled</code>、<code>target_lost</code>、<code>needs_user</code>、<code>timeout</code>、<code>cancelled</code> 和 <code>verification_failed</code> 都由 Runtime 生成。backend 文本不能覆盖 reason code 或 completion。</div></details>
-  </section>
-
-  <section id="references">
-    <h2>官方参考</h2>
-    <ul class="refs"><li><a href="https://playwright.dev/docs/api/class-browsercontext">Playwright BrowserContext</a> 与 <a href="https://playwright.dev/docs/pages">Playwright Pages</a></li><li><a href="https://github.com/microsoft/playwright-mcp">Microsoft Playwright MCP</a> 与 <a href="https://github.com/microsoft/playwright.dev/blob/main/mcp/introduction.mdx">官方 MCP introduction</a></li><li><a href="https://code.claude.com/docs/en/desktop">Claude Code Desktop Browser</a> 与 <a href="https://code.claude.com/docs/en/chrome">Claude Code with Chrome</a></li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool">Anthropic Computer Use</a></li><li><a href="https://developers.openai.com/api/docs/guides/tools-computer-use">OpenAI Computer Use</a></li></ul>
-  </section>
-</main>
-</body>
+  <footer class="links">
+    <a href="computer-use-technical-spec.html">技术规格与实施阶段</a>
+    <a href="computer-use-implementation.html">当前实现与验证记录</a>
+    <a href="https://github.com/microsoft/playwright-mcp">Microsoft Playwright MCP</a>
+    <a href="https://code.claude.com/docs/en/chrome">Claude Code Browser 文档</a>
+  </footer>
+</main></body>
 </html>
