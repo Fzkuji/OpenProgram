@@ -63,12 +63,12 @@
       <tr><td><a href="https://github.com/ChromeDevTools/devtools-protocol">Chrome DevTools Protocol</a></td><td class="evidence-yes">开放协议与类型 · BSD-3-Clause</td><td>可以</td><td>直接调用 <code>Page.captureScreenshot</code>、<code>Input.dispatchMouseEvent</code> 等命令，不需要 Claude 代码。</td></tr>
       <tr><td><a href="https://www.electronjs.org/docs/latest/api/debugger">Electron webContents.debugger</a></td><td class="evidence-yes">Electron 开源 · MIT；API 已内置</td><td>可以</td><td>内置浏览器的首选 CDP transport；绑定 exact WebContents/target，不要求窗口置前。</td></tr>
       <tr><td><a href="https://developer.chrome.com/docs/extensions/reference/api/debugger">Chrome debugger API</a> 与 <a href="https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging">Native Messaging</a></td><td class="evidence-partial">Chrome/Chromium 的公开内置接口，不是独立库</td><td>可以调用</td><td>只在以后控制独立 Chrome 扩展时需要；OpenProgram 内置浏览器不需要 Native Messaging host。</td></tr>
+      <tr><td><a href="https://github.com/noemica-io/open-claude-in-chrome">Open Claude in Chrome</a></td><td class="evidence-partial">第三方 source-available 实现 · PolyForm Noncommercial 1.0.0；不是 Anthropic 官方项目</td><td>仅可审查行为与架构</td><td>未经单独授权不复制或集成到 OpenProgram；内置浏览器不采用其 Chrome 扩展和 Native Messaging host，也不继承其 parity 声明。</td></tr>
       <tr><td><a href="https://github.com/anthropics/claude-code/blob/main/LICENSE.md">Claude Code 公开仓库</a></td><td class="evidence-no">仓库内容 all rights reserved；该结论只适用于此仓库</td><td>不可以按开源代码复制</td><td>不依赖其内部代码，只参考官方公开产品行为。</td></tr>
-      <tr><td>Claude <code>computer</code> / <code>read_page</code> 工具实现与 <code>claude-in-chrome</code> bridge</td><td class="evidence-no">行为有官方文档；没有可复用的开源包或实现源码</td><td>不可以直接导入</td><td>只参考工具行为；OpenProgram 保持自己的 <code>computer_use</code> contract 和 backend adapter。</td></tr>
-      <tr><td>Claude Chrome 扩展的 action handler、视觉光标、权限 UI 与 native host</td><td class="evidence-no">发布产品可安装；未公开可复用源码或明确的开源许可证</td><td>不可以直接复制</td><td>用 content script + CDP + OpenProgram permission UI 做最小 clean-room 实现。</td></tr>
+      <tr><td>Anthropic 官方 Claude Chrome 扩展的 action handler、视觉光标、权限 UI 与 native host</td><td class="evidence-no">发布产品可安装；未公开可复用源码或明确的开源许可证</td><td>不可以直接复制</td><td>只参考官方公开行为；OpenProgram 保持自己的 <code>computer_use</code> contract 和 backend adapter。</td></tr>
       <tr><td>Claude 模型的视觉定位能力</td><td class="evidence-no">托管模型能力，不开源</td><td>只能通过服务使用</td><td>不依赖 Claude 专用实现；把单张截图交给当前所选模型的原生 vision。</td></tr>
     </tbody></table></div>
-    <p>这里没有“CDP 只能由 Claude 使用”的限制。Claude 专有的是其工具编排、扩展实现和产品权限层；截图与坐标点击所用的 CDP 命令是公开接口。公开页面没有提供 Claude 扩展源码，因此“不可直接复用”不等于没有文档，而是没有带可复用许可证的实现包。</p>
+    <p>这里没有“CDP 只能由 Claude 使用”的限制。Anthropic 官方工具编排、扩展实现和产品权限层没有公开可复用源码；截图与坐标点击所用的 CDP 命令是公开接口。第三方 clean-room 项目可以作为实现参考，但不代表 Anthropic 官方实现已经开源。</p>
   </section>
 
   <section id="contract">

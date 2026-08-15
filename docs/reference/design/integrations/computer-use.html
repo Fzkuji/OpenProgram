@@ -19,27 +19,35 @@
   <header>
     <div class="eyebrow">OpenProgram · Computer Use</div>
     <h1>一个浏览器工具，两种执行模式，同一个 Page</h1>
-    <p>目标是 Agent 始终调用 <code>computer_use</code>；设置将决定由 Microsoft Playwright MCP 或 Claude-compatible backend 执行。</p>
+    <p>目标是 GUI Agent Harness 只调用统一的 <code>computer_use</code>；设置将决定由 Microsoft Playwright MCP 或 Claude-compatible CDP backend 执行。</p>
     <p class="status">TARGET ARCHITECTURE · DUAL MODE NOT IMPLEMENTED</p>
   </header>
 
   <section aria-labelledby="architecture-title">
     <h2 id="architecture-title">系统结构</h2>
-    <div class="diagram"><svg viewBox="0 0 1120 440" role="img">
-      <title>Computer Use 双模式目标结构</title><desc>目标架构中，Agent 经 OpenProgram MCP 与 Runtime，选择一个冻结的执行模式，操作绑定的精确 Page。</desc>
+    <div class="diagram"><svg viewBox="0 0 1120 520" role="img">
+      <title>GUI Agent Harness 与浏览器 backend 的分层关系</title><desc>Chat Agent 把网页任务交给 GUI Agent Harness。Harness 只调用 OpenProgram 的统一 computer_use 工具；Runtime 为当前 ComputerSession 固定 Playwright MCP 或 Claude-compatible CDP backend，并操作绑定的精确 Page。Open Claude in Chrome 与 Chrome DevTools MCP 仅为 CDP 模式的参考实现。</desc>
       <defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#858173"/></marker><marker id="blue-arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#5b91f2"/></marker></defs>
       <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-        <rect x="38" y="118" width="176" height="82" rx="8" fill="#151b25" stroke="#5b91f2"/><text x="126" y="151" fill="#5b91f2" font-size="16" font-weight="700" text-anchor="middle">Chat Agent</text><text x="126" y="176" fill="#c4c0b1" font-size="12" text-anchor="middle">computer_use</text>
-        <rect x="282" y="106" width="214" height="106" rx="8" fill="#211b12" stroke="#e08a3e"/><text x="389" y="145" fill="#e08a3e" font-size="16" font-weight="700" text-anchor="middle">OpenProgram MCP</text><text x="389" y="174" fill="#c4c0b1" font-size="12" text-anchor="middle">统一工具契约</text>
-        <rect x="564" y="92" width="238" height="134" rx="8" fill="#1a1423" stroke="#a679e4"/><text x="683" y="130" fill="#a679e4" font-size="16" font-weight="700" text-anchor="middle">Runtime</text><text x="683" y="159" fill="#c4c0b1" font-size="12" text-anchor="middle">Page binding · permission</text><text x="683" y="183" fill="#c4c0b1" font-size="12" text-anchor="middle">frame · verification</text>
-        <line x1="214" y1="159" x2="278" y2="159" stroke="#5b91f2" stroke-width="2" marker-end="url(#blue-arrow)"/><line x1="496" y1="159" x2="560" y2="159" stroke="#858173" stroke-width="2" marker-end="url(#arrow)"/>
-        <path d="M802 137 H864 V86" fill="none" stroke="#858173" stroke-width="2" marker-end="url(#arrow)"/><path d="M802 182 H864 V257" fill="none" stroke="#858173" stroke-width="2" marker-end="url(#arrow)"/>
-        <rect x="870" y="42" width="212" height="92" rx="8" fill="#121d1a" stroke="#63b15a"/><text x="976" y="79" fill="#63b15a" font-size="15" font-weight="700" text-anchor="middle">Playwright MCP</text><text x="976" y="105" fill="#c4c0b1" font-size="12" text-anchor="middle">官方 backend</text>
-        <rect x="870" y="216" width="212" height="92" rx="8" fill="#151b25" stroke="#5b91f2"/><text x="976" y="253" fill="#5b91f2" font-size="15" font-weight="700" text-anchor="middle">Claude-compatible</text><text x="976" y="279" fill="#c4c0b1" font-size="12" text-anchor="middle">OpenProgram bridge</text>
-        <path d="M976 134 V366 H792" fill="none" stroke="#63b15a" stroke-width="2" marker-end="url(#arrow)"/><path d="M976 308 V366 H792" fill="none" stroke="#5b91f2" stroke-width="2" marker-end="url(#blue-arrow)"/>
-        <rect x="466" y="330" width="326" height="72" rx="8" fill="#181b12" stroke="#63b15a"/><text x="629" y="360" fill="#63b15a" font-size="16" font-weight="700" text-anchor="middle">绑定的 exact Page（目标）</text><text x="629" y="383" fill="#c4c0b1" font-size="12" text-anchor="middle">不依赖窗口置前或分屏方向</text>
+        <rect x="24" y="76" width="148" height="76" rx="8" fill="#151b25" stroke="#5b91f2"/><text x="98" y="108" fill="#5b91f2" font-size="15" font-weight="700" text-anchor="middle">Chat Agent</text><text x="98" y="132" fill="#c4c0b1" font-size="11.5" text-anchor="middle">用户任务</text>
+        <rect x="204" y="64" width="196" height="100" rx="8" fill="#211b12" stroke="#e08a3e"/><text x="302" y="101" fill="#e08a3e" font-size="15" font-weight="700" text-anchor="middle">GUI Agent Harness</text><text x="302" y="126" fill="#c4c0b1" font-size="11.5" text-anchor="middle">observe · act · verify</text><text x="302" y="146" fill="#858173" font-size="10.5" text-anchor="middle">Agent 编排层</text>
+        <rect x="432" y="64" width="196" height="100" rx="8" fill="#211b12" stroke="#e08a3e"/><text x="530" y="101" fill="#e08a3e" font-size="15" font-weight="700" text-anchor="middle">computer_use</text><text x="530" y="126" fill="#c4c0b1" font-size="11.5" text-anchor="middle">OpenProgram MCP</text><text x="530" y="146" fill="#858173" font-size="10.5" text-anchor="middle">统一工具契约</text>
+        <rect x="660" y="52" width="218" height="124" rx="8" fill="#1a1423" stroke="#a679e4"/><text x="769" y="89" fill="#a679e4" font-size="15" font-weight="700" text-anchor="middle">Runtime</text><text x="769" y="115" fill="#c4c0b1" font-size="11.5" text-anchor="middle">Page binding · permission</text><text x="769" y="137" fill="#c4c0b1" font-size="11.5" text-anchor="middle">backend selector · verification</text><text x="769" y="158" fill="#858173" font-size="10.5" text-anchor="middle">每个 ComputerSession 固定一种模式</text>
+        <line x1="172" y1="114" x2="200" y2="114" stroke="#5b91f2" stroke-width="2" marker-end="url(#blue-arrow)"/><line x1="400" y1="114" x2="428" y2="114" stroke="#858173" stroke-width="2" marker-end="url(#arrow)"/><line x1="628" y1="114" x2="656" y2="114" stroke="#858173" stroke-width="2" marker-end="url(#arrow)"/>
+
+        <path d="M769 176 V212 H662 V238" fill="none" stroke="#858173" stroke-width="2" marker-end="url(#arrow)"/><path d="M769 212 H936 V238" fill="none" stroke="#858173" stroke-width="2" marker-end="url(#arrow)"/>
+        <rect x="548" y="242" width="228" height="88" rx="8" fill="#121d1a" stroke="#63b15a"/><text x="662" y="277" fill="#63b15a" font-size="15" font-weight="700" text-anchor="middle">Microsoft Playwright MCP</text><text x="662" y="302" fill="#c4c0b1" font-size="11.5" text-anchor="middle">DOM · ARIA · element refs</text>
+        <rect x="816" y="242" width="240" height="88" rx="8" fill="#151b25" stroke="#5b91f2"/><text x="936" y="277" fill="#5b91f2" font-size="15" font-weight="700" text-anchor="middle">Claude-compatible CDP</text><text x="936" y="302" fill="#c4c0b1" font-size="11.5" text-anchor="middle">screenshot · coordinates · cursor</text>
+
+        <rect x="24" y="254" width="210" height="68" rx="8" fill="#171611" stroke="#5a5544" stroke-dasharray="5 5"/><text x="129" y="282" fill="#f3f0e8" font-size="13" font-weight="700" text-anchor="middle">Open Claude in Chrome</text><text x="129" y="304" fill="#858173" font-size="10.5" text-anchor="middle">第三方 source-available 参考</text>
+        <rect x="270" y="254" width="220" height="68" rx="8" fill="#171611" stroke="#5a5544" stroke-dasharray="5 5"/><text x="380" y="282" fill="#f3f0e8" font-size="13" font-weight="700" text-anchor="middle">Chrome DevTools MCP</text><text x="380" y="304" fill="#858173" font-size="10.5" text-anchor="middle">官方开源参考</text>
+        <text x="257" y="344" fill="#858173" font-size="10.5" text-anchor="middle">仅作工具行为与 CDP 调用参考，不参与运行路径</text>
+
+        <path d="M662 330 V406 H720" fill="none" stroke="#63b15a" stroke-width="2" marker-end="url(#arrow)"/><path d="M936 330 V406 H900" fill="none" stroke="#5b91f2" stroke-width="2" marker-end="url(#blue-arrow)"/>
+        <rect x="720" y="374" width="180" height="72" rx="8" fill="#181b12" stroke="#63b15a"/><text x="810" y="404" fill="#63b15a" font-size="15" font-weight="700" text-anchor="middle">绑定的 exact Page</text><text x="810" y="428" fill="#c4c0b1" font-size="11" text-anchor="middle">无需窗口置前</text>
       </g>
     </svg></div>
+    <p class="caption">GUI Agent Harness 负责决策与循环；Playwright MCP 和 CDP 负责执行。Open Claude in Chrome 与 Chrome DevTools MCP 不作为第三、第四个 Agent。</p>
   </section>
 
   <section aria-labelledby="click-title">
@@ -73,7 +81,9 @@
     <div class="table-scroll"><table><thead><tr><th>结论</th><th>组件</th><th>OpenProgram 处理</th></tr></thead><tbody>
       <tr><td class="use">直接使用</td><td>Microsoft Playwright MCP、Playwright、MCP SDK</td><td>开源依赖；固定版本后接入。</td></tr>
       <tr><td class="adapt">直接调用接口</td><td>CDP、Electron <code>webContents.debugger</code>、Chrome <code>debugger</code> / Native Messaging</td><td>不需要复制 Claude 代码；内置浏览器直接使用 Electron/CDP，不需要另装 Chrome 扩展。</td></tr>
-      <tr><td class="rebuild">自行实现</td><td>Claude 的 <code>computer</code> 工具实现、<code>claude-in-chrome</code> bridge、扩展 action handler、视觉光标与权限 UI</td><td>只有公开行为和已发布产品，没有可复用的开源实现；按公开接口 clean-room 实现。</td></tr>
+      <tr><td class="adapt">开源参考</td><td><a href="https://github.com/ChromeDevTools/chrome-devtools-mcp">Chrome DevTools MCP</a></td><td>参考工具契约与 CDP 调用；不把它接成新的 Agent 或第三种 backend。</td></tr>
+      <tr><td class="adapt">受限源码参考</td><td><a href="https://github.com/noemica-io/open-claude-in-chrome">Open Claude in Chrome</a></td><td>PolyForm Noncommercial 1.0.0；仅审查行为与架构，未经单独授权不复制或集成到 OpenProgram。</td></tr>
+      <tr><td class="rebuild">自行实现</td><td>OpenProgram exact Page adapter、视觉光标与权限 UI</td><td>基于公开接口实现；内置浏览器不需要第三方 Chrome 扩展或 Native Messaging host。</td></tr>
     </tbody></table></div>
   </section>
 
@@ -82,6 +92,8 @@
     <a href="computer-use-technical-spec.html">技术规格与实施阶段</a>
     <a href="computer-use-implementation.html">当前实现与验证记录</a>
     <a href="https://github.com/microsoft/playwright-mcp">Microsoft Playwright MCP</a>
+    <a href="https://github.com/ChromeDevTools/chrome-devtools-mcp">Chrome DevTools MCP</a>
+    <a href="https://github.com/noemica-io/open-claude-in-chrome">Open Claude in Chrome</a>
     <a href="https://code.claude.com/docs/en/chrome">Claude Code Browser 文档</a>
   </footer>
 </main></body>
