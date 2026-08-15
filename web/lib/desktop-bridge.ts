@@ -127,6 +127,8 @@ export interface DesktopWebTabApi {
   /** Navigation/title/loading events pushed from main; returns the
    *  unsubscribe function. */
   onState(cb: (state: DesktopWebTabState) => void): () => void;
+  /** Valid http(s) page popup delegated by the owning native web view. */
+  onPopup?(cb: (popup: { openerId: string; url: string }) => void): () => void;
 }
 
 export interface DesktopTransferReceipt {
@@ -498,6 +500,24 @@ function showCenterSurface(): boolean {
   return true;
 }
 
+export function subscribeWebTabPopups(
+  bridge: { webTab: Pick<DesktopWebTabApi, "onPopup"> },
+): () => void {
+  return bridge.webTab.onPopup?.((popup) => {
+    if (
+      !popup
+      || typeof popup.openerId !== "string"
+      || typeof popup.url !== "string"
+    ) return;
+    const state = useCenterTabs.getState();
+    if (!state.tabs.some((tab) => tab.id === popup.openerId && tab.kind === "web")) {
+      return;
+    }
+    state.openPopupWebTab(popup.url);
+    showCenterSurface();
+  }) ?? (() => {});
+}
+
 export function visibleWebTab() {
   const state = useCenterTabs.getState();
   const group = state.activeId
@@ -621,6 +641,7 @@ export function installDesktopMenuHandlers(): void {
     useCenterTabs.getState().openNewTabPage();
     showCenterSurface();
   });
+  subscribeWebTabPopups(bridge);
   // Agent 控制面：后端广播 webtab.command(op=open) → 在可见 UI 里开
   // web tab，并经同一条 WS 回执 webtab_result(req_id)。非桌面客户端不装
   // 本 handler（上面 bridge 为空即返回），该消息自然被忽略。

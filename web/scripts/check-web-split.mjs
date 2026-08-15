@@ -1869,6 +1869,8 @@ assert.match(desktopBridgeSource, /const visibleWebBounds = new Map/);
 assert.match(desktopBridgeSource, /targetBridge\.webTab\.syncVisible/);
 assert.match(desktopBridgeSource, /state\.openWebTabInSplit\(d\.url\)/);
 assert.match(desktopBridgeSource, /waitForWebTabReady\(id, 2000\)/);
+assert.match(desktopBridgeSource, /subscribeWebTabPopups\(bridge\)/);
+assert.match(desktopBridgeSource, /state\.openPopupWebTab\(popup\.url\)/);
 assert.match(
   desktopBridgeSource,
   /if \(!split && !routeVisible\) \{\s*const routed = showCenterSurface\(\);\s*if \(!routed\)/,
@@ -2316,6 +2318,58 @@ const bridgeModule = await import("../lib/desktop-bridge.ts");
 const plainTabsModule = await import("../lib/state/center-tabs-store.ts");
 const plainSessionModule = await import("../lib/session-store/index.ts");
 const plainTabs = plainTabsModule.useCenterTabs;
+
+const popupOpenerGroup = {
+  id: "g:popup-opener",
+  memberIds: ["s:popup-chat", "w:opener"],
+  visibleIds: ["s:popup-chat", "w:opener"],
+  focusedId: "w:opener",
+};
+plainTabs.setState({
+  tabs: [
+    { id: "s:popup-chat", kind: "session", title: "Chat", sessionId: "popup-chat" },
+    { id: "w:opener", kind: "web", title: "Opener", url: "https://opener.test/" },
+  ],
+  activeId: "w:opener",
+  groups: [popupOpenerGroup],
+  splitWebTabId: "w:opener",
+  splitRatio: 0.45,
+});
+let popupCallback = null;
+const popupBridge = {
+  webTab: {
+    onPopup(callback) {
+      popupCallback = callback;
+      return () => { popupCallback = null; };
+    },
+  },
+};
+const unsubscribePopup = bridgeModule.subscribeWebTabPopups(popupBridge);
+const beforeRejectedPopup = plainTabsModule.snapshotCenterTabsPayload();
+popupCallback({ openerId: "missing", url: "https://popup.test/" });
+popupCallback({ openerId: "s:popup-chat", url: "https://popup.test/" });
+assert.deepEqual(
+  plainTabsModule.snapshotCenterTabsPayload(),
+  beforeRejectedPopup,
+  "missing and non-web openers must not create popup tabs",
+);
+
+popupCallback({ openerId: "w:opener", url: "https://popup.test/" });
+const popupOne = plainTabs.getState().activeId;
+popupCallback({ openerId: "w:opener", url: "https://popup.test/" });
+const popupTwo = plainTabs.getState().activeId;
+assert.notEqual(popupOne, popupTwo, "two popup requests must create distinct tabs");
+assert.ok(plainTabs.getState().tabs.some((tab) => tab.id === "w:opener"));
+assert.equal(plainTabs.getState().activeId, popupTwo);
+assert.deepEqual(plainTabs.getState().groups, [popupOpenerGroup]);
+assert.equal(plainTabs.getState().splitWebTabId, "w:opener");
+assert.equal(
+  plainTabs.getState().tabs.filter((tab) => tab.url === "https://popup.test/").length,
+  2,
+  "popup URLs must not reuse a normal deterministic web tab",
+);
+unsubscribePopup();
+assert.equal(popupCallback, null);
 
 const surfaceTabs = [
   { id: "s:surface-chat", kind: "session", title: "Chat", sessionId: "surface-chat" },

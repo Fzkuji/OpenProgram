@@ -8,7 +8,8 @@
  *   session  →  "s:<sessionId>"   (drafts pre-allocate a local_* id)
  *   file     →  "f:<projectId>:<path>"
  *   web      →  "w:<url>"         (id is fixed at open; in-pane
- *                                  navigation updates url, not id)
+ *                                  navigation updates url, not id; popup
+ *                                  tabs add a unique suffix)
  *   ntp      →  "ntp"
  *   builtin  →  "b:<page>"       (bookmarks / history — singleton per
  *                                 page, the Chrome chrome:// analogue)
@@ -44,6 +45,7 @@ import {
   hostnameOf,
   nextBrowserHomeId,
   nextNtpId,
+  nextPopupWebTabId,
   sessionTabId,
   webTabId,
 } from "@/lib/state/center-tab-ids";
@@ -192,6 +194,8 @@ export interface CenterTabsState {
   /** Focus-or-create a web tab for `url` (must already be a valid
    *  http(s) URL — run user input through normalizeWebUrl first). */
   openWebTab: (url: string) => void;
+  /** Always append a distinct web tab for a native page popup. */
+  openPopupWebTab: (url: string) => string;
   /** Appends or reuses a split web tab; an existing owner composite becomes active. */
   openWebTabInSplit: (url: string) => string;
   setSplitWebTab: (id: string | null) => void;
@@ -605,6 +609,18 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         }
         return commitCenterTabsState(s, { tabs, activeId: id });
       }),
+
+    openPopupWebTab: (url) => {
+      const id = nextPopupWebTabId(url);
+      set((s) => commitCenterTabsState(s, {
+        tabs: [
+          ...s.tabs,
+          { id, kind: "web", title: hostnameOf(url), url },
+        ],
+        activeId: id,
+      }));
+      return id;
+    },
 
     openWebTabInSplit: (url) => {
       let id = webTabId(url);

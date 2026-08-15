@@ -1698,12 +1698,16 @@ function ensureView(ctx, id, url) {
     ctx.win.contentView.addChildView(view);
     view.setVisible(false);
     const wc = view.webContents;
-    // Popups navigate the same view instead of opening a window.
-    // Same http/https gate as every other egress point.
+    // Native popup windows are disabled. A valid web popup is delegated to
+    // this record's renderer window, which creates a distinct Browser tab and
+    // leaves the opener Page (and any exact-page agent session) unchanged.
     wc.setWindowOpenHandler(({ url: popupUrl }) => {
       if (isWebUrl(popupUrl)) {
         const owner = ownerOf(record);
-        if (owner) void navigateView(owner, id, popupUrl).catch(() => {});
+        owner?.win.webContents.send("webtab:popup", {
+          openerId: id,
+          url: popupUrl,
+        });
       }
       return { action: "deny" };
     });

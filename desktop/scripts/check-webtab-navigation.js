@@ -370,6 +370,7 @@ function controlledRecord(id, currentUrl = "", loading = false) {
   let closeCalls = 0;
   let targetCalls = 0;
   let debuggerAttached = false;
+  let windowOpenHandler = null;
   const nativeCalls = { reload: 0, stop: 0, back: 0, forward: 0 };
   const webContents = {
     getURL: () => currentUrl,
@@ -408,7 +409,10 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     reload() { nativeCalls.reload += 1; },
     stop() { nativeCalls.stop += 1; },
     close() { closeCalls += 1; },
-    setWindowOpenHandler() {},
+    setWindowOpenHandler(handler) {
+      windowOpenHandler = handler;
+      this.windowOpen = handler;
+    },
     on() {},
   };
   const view = {
@@ -428,9 +432,43 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     boundsCalls,
     closeCallCount: () => closeCalls,
     targetCallCount: () => targetCalls,
+    windowOpen: (details) => windowOpenHandler?.(details),
     nativeCalls,
     currentBounds: () => ({ ...bounds }),
   };
+}
+
+function checkPopupCreatesIndependentRendererTab() {
+  const win = fakeWindow(41);
+  const ctx = registerContext("popup-window", win);
+  const opener = hooks.ensureView(ctx, "popup-opener", "");
+  assert.ok(opener, "opener view must be created");
+
+  const result = opener.view.webContents.windowOpen?.({
+    url: "https://popup.example/path",
+  });
+  assert.deepEqual(plain(result), { action: "deny" });
+  assert.deepEqual(plain(win.sent.at(-1)), [
+    "webtab:popup",
+    { openerId: "popup-opener", url: "https://popup.example/path" },
+  ]);
+
+  const sentBeforeRejectedPopup = win.sent.length;
+  opener.view.webContents.windowOpen?.({ url: "file:///Users/test/private.txt" });
+  assert.equal(
+    win.sent.length,
+    sentBeforeRejectedPopup,
+    "popup egress must reject non-http(s) URLs",
+  );
+
+  ctx.views.delete("popup-opener");
+  const sentBeforeDetachedOpener = win.sent.length;
+  opener.view.webContents.windowOpen?.({ url: "https://detached.example/" });
+  assert.equal(
+    win.sent.length,
+    sentBeforeDetachedOpener,
+    "a record no longer owned by this window must not emit popup IPC",
+  );
 }
 
 function registerContext(id, win) {
@@ -492,6 +530,47 @@ function checkPreloadWindowIdentity() {
   exposed.webTab.syncVisible(items);
   assert.deepEqual(sent.at(-1), ["webtab:sync-visible", items]);
   assert.deepEqual(invoked, []);
+}
+
+function checkPreloadPopupSubscription() {
+  const listeners = new Map();
+  let exposed = null;
+  const preloadSandbox = {
+    CustomEvent: class CustomEvent {},
+    process: { argv: ["electron"] },
+    window: { dispatchEvent() {} },
+    require(id) {
+      if (id !== "electron") return require(id);
+      return {
+        contextBridge: {
+          exposeInMainWorld(_name, value) { exposed = value; },
+        },
+        ipcRenderer: {
+          send() {},
+          invoke() { return Promise.resolve(null); },
+          on(channel, listener) { listeners.set(channel, listener); },
+          removeListener(channel, listener) {
+            if (listeners.get(channel) === listener) listeners.delete(channel);
+          },
+        },
+      };
+    },
+  };
+  vm.createContext(preloadSandbox);
+  vm.runInContext(preloadSource, preloadSandbox, { filename: "desktop/preload.js" });
+
+  const received = [];
+  const unsubscribe = exposed.webTab.onPopup((popup) => received.push(popup));
+  listeners.get("webtab:popup")?.({}, {
+    openerId: "opener",
+    url: "https://popup.example/",
+  });
+  assert.deepEqual(received, [{
+    openerId: "opener",
+    url: "https://popup.example/",
+  }]);
+  unsubscribe();
+  assert.equal(listeners.has("webtab:popup"), false);
 }
 
 function checkPreloadLocalFilePath() {
@@ -3827,12 +3906,14 @@ Promise.all([
 ])
   .then(async () => {
     checkPreloadWindowIdentity();
+    checkPreloadPopupSubscription();
     checkPreloadLocalFilePath();
     checkPreloadTabTransfer();
     checkContextMenuEndAlignment();
     await checkSenderOwnership();
     await checkTerminalProcessIdentity();
     await checkFocusedRoutingAndCleanup();
+    checkPopupCreatesIndependentRendererTab();
     assertTransferApiRegistered();
     await checkTransferPreparationValidationAndAuthorization();
     await checkSuccessfulTransferAndDurableCommit();

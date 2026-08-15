@@ -21,6 +21,11 @@ export function nextBrowserHomeId(): string {
   return `browser:${Date.now().toString(36)}:${(browserHomeSeq++).toString(36)}`;
 }
 
+let popupWebSeq = 0;
+export function nextPopupWebTabId(url: string): string {
+  return `${webTabId(url)}:popup:${Date.now().toString(36)}:${(popupWebSeq++).toString(36)}`;
+}
+
 export function nextDraftSessionId(): string {
   return `local_${crypto.randomUUID()}`;
 }
