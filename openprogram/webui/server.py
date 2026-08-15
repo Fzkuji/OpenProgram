@@ -1304,6 +1304,9 @@ async def _websocket_handler(ws):
         # structured + carries the traceback; never dumps a raw trace to stdout
         logging.getLogger("openprogram.webui").exception("[ws] connection error")
     finally:
+        from openprogram.webui.ws_actions.webtab import release_connection
+
+        release_connection(ws)
         with _ws_lock:
             try:
                 _ws_connections.remove(ws)

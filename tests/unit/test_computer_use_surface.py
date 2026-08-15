@@ -135,6 +135,32 @@ def test_webtab_page_key_is_shared_across_recaptures_of_the_same_target():
             webtab.release_binding(binding_id)
 
 
+def test_webtab_disconnect_revokes_owned_bindings_and_wakes_waiters():
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    other = _WS()
+    owned = webtab.register_binding(owner, "window-1", "tab-1", "target-1")
+    retained = webtab.register_binding(other, "window-2", "tab-2", "target-2")
+    event = threading.Event()
+    holder: dict = {}
+    webtab._pending["owned-request"] = (event, holder, owner)
+    try:
+        webtab.release_connection(owner)
+
+        assert owned not in webtab._bindings
+        assert retained in webtab._bindings
+        assert event.is_set()
+        assert holder["result"] == {
+            "ok": False,
+            "error": "originating desktop connection disconnected",
+        }
+    finally:
+        webtab._pending.pop("owned-request", None)
+        webtab.release_binding(owned)
+        webtab.release_binding(retained)
+
+
 def test_webtab_result_is_claimed_only_by_expected_socket():
     from openprogram.webui.ws_actions import webtab
 
@@ -417,6 +443,15 @@ def test_chat_query_owner_always_releases_captured_surface_bindings():
     finish_at = source.index("_s._finish_owned_run", finally_at)
 
     assert capture_at < finally_at < release_at < finish_at
+
+
+def test_websocket_disconnect_releases_owned_surface_bindings():
+    source = (REPO_ROOT / "openprogram/webui/server.py").read_text()
+    finally_at = source.index("    finally:\n", source.index("async def _websocket_handler"))
+    remove_at = source.index("_ws_connections.remove(ws)", finally_at)
+    release_at = source.index("release_connection(ws)", finally_at)
+
+    assert finally_at < release_at < remove_at
 
 
 def test_electron_bound_surface_control_does_not_focus_the_app_window():

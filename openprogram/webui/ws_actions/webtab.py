@@ -99,6 +99,24 @@ def release_binding(binding_id: str) -> None:
         _bindings.pop(binding_id, None)
 
 
+def release_connection(ws) -> None:
+    """Revoke bindings and wake exact-socket requests on disconnect."""
+    wake = []
+    with _lock:
+        for binding_id, entry in list(_bindings.items()):
+            if entry[0] is ws:
+                _bindings.pop(binding_id, None)
+        for ev, holder, expected_ws in _pending.values():
+            if expected_ws is ws and "result" not in holder:
+                holder["result"] = {
+                    "ok": False,
+                    "error": "originating desktop connection disconnected",
+                }
+                wake.append(ev)
+    for ev in wake:
+        ev.set()
+
+
 def binding_page_key(binding_id: str) -> str:
     """Return a server-owned identity shared by captures of one CDP Page."""
     with _lock:
