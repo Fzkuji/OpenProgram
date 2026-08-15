@@ -167,8 +167,9 @@ def test_computer_use_is_registered_as_surface_aware_public_tool():
     assert "computer_use" in DEFAULT_TOOLS
     assert "computer_use" not in DEFERRED_DEFAULT_TOOLS
     tool = next(item for item in agent_tools(names=["computer_use"]) if item.name == "computer_use")
-    assert "surface" in tool.parameters["properties"]
-    assert "pattern" not in tool.parameters["properties"]["url"]
+    assert "page" in tool.parameters["properties"]
+    assert "command" in tool.parameters["properties"]
+    assert "arguments" in tool.parameters["properties"]
     assert apply_tool_policy([tool], source="plan") == []
 
 

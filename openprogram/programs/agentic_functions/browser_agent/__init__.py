@@ -793,43 +793,71 @@ def browser_agent(
     parameters={
         "type": "object",
         "properties": {
-            "task": {"type": "string", "minLength": 1, "maxLength": 8000},
-            "surface": {
+            "command": {
                 "type": "string",
-                "enum": ["right", "focused", "web:1", "s1"],
+                "enum": ["list_pages", "observe", "act", "verify", "close"],
             },
-            "url": {"type": "string", "maxLength": 2048},
-            "max_steps": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
-            "max_seconds": {"type": "integer", "minimum": 1, "maximum": 1800, "default": 300},
+            "backend": {
+                "type": "string",
+                "enum": [
+                    "playwright_mcp", "chrome_devtools_mcp",
+                    "open_claude_chrome",
+                ],
+            },
+            "page": {"type": "string", "maxLength": 512},
+            "computer_session_id": {"type": "string", "maxLength": 128},
+            "arguments": {"type": "object", "additionalProperties": True},
         },
-        "required": ["task"],
+        "required": ["command"],
         "additionalProperties": False,
     },
     input={
-        "task": {"description": "Task in the visible OpenProgram web surface", "multiline": True},
-        "surface": {
-            "description": "Turn surface alias",
-            "options": ["right", "focused", "web:1", "s1"],
-        },
-        "url": {"description": "Optional http(s) navigation in the same tab"},
-        "max_steps": {"description": "Maximum state-changing actions"},
-        "max_seconds": {"description": "Wall-clock limit in seconds"},
+        "command": {"description": "list_pages, observe, act, verify, or close"},
+        "backend": {"description": "Backend used when observe creates a session"},
+        "page": {"description": "Turn Page alias used by observe"},
+        "computer_session_id": {"description": "Session returned by observe"},
+        "arguments": {"description": "Command-specific arguments"},
         "runtime": {"hidden": True},
     },
 )
 def computer_use(
-    task: str,
-    surface: str = "",
-    url: str = "",
-    max_steps: int = 20,
-    max_seconds: int = 300,
+    command: str,
+    backend: str = "",
+    page: str = "",
+    computer_session_id: str = "",
+    arguments: dict | None = None,
     runtime=None,
 ) -> dict:
-    """Observe or control the web surface attached to the current chat turn."""
-    from openprogram.agent.surface_context import resolve_binding
-    return _run_browser_task(
-        task=task, url=url, max_steps=max_steps, max_seconds=max_seconds,
-        runtime=runtime, binding_id=resolve_binding(surface),
+    """Observe or control an exact Page attached to the current chat turn."""
+    del runtime
+    from openprogram.agent import surface_context
+    from .computer_use_runtime import get_registry
+
+    if command == "list_pages":
+        context = surface_context.current() or {}
+        pages = []
+        for item in context.get("surfaces") or []:
+            if not isinstance(item, dict) or not item.get("binding_id"):
+                continue
+            pages.append({
+                "page": item.get("surface_key"),
+                "aliases": list(item.get("aliases") or []),
+                "region": item.get("region"),
+                "title": item.get("title") or "",
+                "origin": item.get("origin") or "",
+                "capabilities": list(item.get("capabilities") or []),
+            })
+        return {"ok": True, "pages": pages}
+
+    binding_id = ""
+    if command == "observe" and not computer_session_id:
+        binding_id = surface_context.resolve_binding(page)
+    return get_registry().execute(
+        command=command,
+        backend=backend,
+        computer_session_id=computer_session_id,
+        binding_id=binding_id,
+        arguments=arguments,
     )
 
 

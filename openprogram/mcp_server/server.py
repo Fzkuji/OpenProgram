@@ -115,6 +115,14 @@ def build_server(context: MCPClientContext) -> Server:
                 result = service.prompt_cancel(arguments["session_id"])
             elif name == "tools_list":
                 result = service.tools_list()
+            elif name == "computer_use":
+                result = await service.tool_call(
+                    "computer_use",
+                    arguments,
+                    call_id=request_id,
+                    cancel_event=cancel_event,
+                    on_progress=progress,
+                )
             else:
                 result = await service.tool_call(
                     arguments["name"],

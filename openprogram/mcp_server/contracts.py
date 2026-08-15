@@ -61,6 +61,29 @@ _RAW_TOOL_DEFINITIONS: tuple[tuple[str, str, dict[str, Any]], ...] = (
             ["name"],
         ),
     ),
+    (
+        "computer_use",
+        "Observe or control an authorized OpenProgram browser Page.",
+        _object(
+            {
+                "command": {
+                    "type": "string",
+                    "enum": ["list_pages", "observe", "act", "verify", "close"],
+                },
+                "backend": {
+                    "type": "string",
+                    "enum": [
+                        "playwright_mcp", "chrome_devtools_mcp",
+                        "open_claude_chrome",
+                    ],
+                },
+                "page": {"type": "string", "maxLength": 512},
+                "computer_session_id": {"type": "string", "maxLength": 128},
+                "arguments": {"type": "object", "default": {}},
+            },
+            ["command"],
+        ),
+    ),
 )
 
 _TOOL_DEFINITIONS = tuple(
