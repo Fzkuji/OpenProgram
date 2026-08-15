@@ -20,6 +20,11 @@ def test_memory_settings_are_declared_and_validated(monkeypatch):
     assert "error" in set_setting("memory.writer.trigger_tokens", 12_345)
     assert "error" in set_setting("memory.retrieval.top_k", 11)
     assert "error" in set_setting("memory.recent.limit", 0)
+    for invalid in (True, 8.9, "8.9"):
+        assert "error" in set_setting("memory.retrieval.top_k", invalid)
+    for invalid in (True, 25.5, "25.5"):
+        assert "error" in set_setting("memory.recent.limit", invalid)
+    assert "error" in set_setting("memory.writer.trigger_tokens", 8_000.9)
 
 
 def test_runtime_memory_config_reads_nested_settings():
@@ -45,6 +50,22 @@ def test_runtime_memory_config_reads_nested_settings():
     assert config.retrieval_include_sources is False
     assert config.core_inject is False
     assert config.recent_limit == 25
+
+
+def test_runtime_memory_config_rejects_fractional_and_boolean_integers():
+    from openprogram.memory.management.config import load_memory_config
+
+    config = load_memory_config({
+        "memory": {
+            "writer": {"trigger_tokens": 8_000.9},
+            "retrieval": {"top_k": True},
+            "recent": {"limit": "25.5"},
+        },
+    })
+
+    assert config.writer_trigger_tokens == 16_000
+    assert config.retrieval_top_k == 5
+    assert config.recent_limit == 50
 
 
 def test_organize_topics_uses_live_recent_limit(tmp_path, monkeypatch):
@@ -77,6 +98,39 @@ def test_embedding_status_requires_the_model_to_load_locally(monkeypatch):
     )
 
     assert inspect.embedding_is_available() is False
+
+
+def test_embedding_search_never_requests_network_model_loading(
+    tmp_path, monkeypatch,
+):
+    import numpy as np
+    import sentence_transformers
+
+    from openprogram.memory.retrieval import embedding, inspect
+    from openprogram.memory.retrieval.bm25 import MemoryEvent
+
+    seen = []
+
+    class FakeEncoder:
+        def __init__(self, _model_id, **kwargs):
+            seen.append(kwargs)
+
+        def encode(self, values):
+            return np.ones((len(values), 2), dtype=float)
+
+    event = MemoryEvent(
+        event_id="ev_one", path="topics/one.md", line=1,
+        headings=["One"], date="2026-08-16", dates=["2026-08-16"],
+        content="remember the local model", refs=[],
+    )
+    monkeypatch.setattr(sentence_transformers, "SentenceTransformer", FakeEncoder)
+    monkeypatch.setattr(embedding, "_default_encoder", None)
+    monkeypatch.setattr(embedding.MemoryEmbeddingIndex, "_events", lambda _self: [event])
+
+    result = inspect.search(tmp_path, "local model", method="embedding")
+
+    assert result["results"][0]["event_id"] == "ev_one"
+    assert seen == [{"local_files_only": True}]
 
 
 def test_local_backend_uses_live_memory_settings(tmp_path, monkeypatch):

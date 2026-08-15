@@ -25,8 +25,8 @@ _default_encoder: Any | None = None
 _default_encoder_lock = threading.RLock()
 
 
-def load_default_encoder(*, local_files_only: bool = False) -> Any:
-    """Load the fixed encoder once; probes can forbid network access."""
+def load_default_encoder(*, local_files_only: bool = True) -> Any:
+    """Load the fixed encoder once without downloading runtime assets."""
     global _default_encoder
     if _default_encoder is None:
         with _default_encoder_lock:
@@ -71,7 +71,7 @@ class MemoryEmbeddingIndex:
         if self._encoder is None:
             with self._lock:
                 if self._encoder is None:
-                    self._encoder = load_default_encoder()
+                    self._encoder = load_default_encoder(local_files_only=True)
         return self._encoder
 
     def _events(self) -> list[MemoryEvent]:

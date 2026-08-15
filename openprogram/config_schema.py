@@ -396,6 +396,15 @@ def _sandbox_default_deny_write() -> tuple[str, ...]:
 
 def _coerce(widget: str, value: Any) -> Any:
     if widget == "number":
+        if isinstance(value, bool):
+            raise ValueError("boolean is not a whole number")
+        if isinstance(value, float) and not value.is_integer():
+            raise ValueError("fractional value is not a whole number")
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not re.fullmatch(r"[+-]?\d+", stripped):
+                raise ValueError("value is not a whole number")
+            value = stripped
         return int(value)
     if widget == "toggle":
         if isinstance(value, str):
@@ -1042,6 +1051,20 @@ def set_setting(key: str, value: Any) -> dict:
         opts = list(spec.choices())
         if coerced not in opts:
             return {"error": f"{spec.label}: must be one of {', '.join(opts)}"}
+
+    if spec.key == "memory.retrieval.method" and coerced in {
+        "embedding", "hybrid",
+    }:
+        from openprogram.memory.retrieval.embedding import (
+            default_model_is_available,
+        )
+
+        if not default_model_is_available():
+            return {
+                "error": (
+                    f"{spec.label}: embedding model is not available locally"
+                )
+            }
 
     if spec.key in {"record_replay.mode", "record_replay.file"}:
         current = _setup._read_config().get("record_replay", {})

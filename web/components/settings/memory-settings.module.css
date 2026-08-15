@@ -23,7 +23,8 @@
 .statusMissing { color: var(--accent-red); background: color-mix(in srgb, var(--accent-red) 14%, transparent); }
 .monoValue { max-width: 460px; color: var(--text-secondary); font-family: "JetBrains Mono", monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .saveBar { position: absolute; right: 0; bottom: 0; left: 0; min-height: 60px; display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding: 10px 28px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--bg-primary) 92%, transparent); backdrop-filter: blur(8px); }
-.saved, .error { display: inline-flex; align-items: center; gap: 5px; color: var(--accent-green); font-size: 12px; }
+.saved, .notice, .error { display: inline-flex; align-items: center; gap: 5px; color: var(--accent-green); font-size: 12px; }
+.notice { color: var(--accent-yellow); }
 .error { color: var(--accent-red); }
 .saveButton { height: 34px; padding: 0 16px; border: 1px solid color-mix(in srgb, var(--accent-blue) 55%, var(--border)); border-radius: var(--ui-button-radius); background: color-mix(in srgb, var(--accent-blue) 18%, var(--bg-tertiary)); color: var(--text-bright); cursor: pointer; font: inherit; font-size: 13px; font-weight: 550; }
 .saveButton:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-blue) 25%, var(--bg-tertiary)); }

@@ -15,6 +15,14 @@ assert.match(settings, /\/api\/memory\/status/);
 assert.match(settings, /embedding_available/);
 assert.match(settings, /memory\.writer\.model/);
 assert.match(settings, /memory\.retrieval\.method/);
+assert.equal(
+  (settings.match(/<Switch[^>]+aria-label=/g) || []).length,
+  4,
+  "each Memory switch needs an accessible name",
+);
+assert.match(settings, /disabled=\{saving\}/);
+assert.match(settings, /role=\{messageKind === "error" \? "alert" : "status"\}/);
+assert.match(settings, /saveVersion\.current !== startedVersion/);
 assert.match(pageCss, /@media \(max-width: 720px\)/);
 assert.match(pageCss, /grid-template-rows: auto minmax\(0, 1fr\)/);
 assert.doesNotMatch(pageCss, /\.tabBar\s*\{[^}]*display:\s*none/s);

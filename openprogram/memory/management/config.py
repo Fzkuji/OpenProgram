@@ -50,6 +50,13 @@ def _integer(
 ) -> int:
     if isinstance(value, bool):
         return default
+    if isinstance(value, float) and not value.is_integer():
+        return default
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped or not stripped.lstrip("+-").isdigit():
+            return default
+        value = stripped
     try:
         parsed = int(value)
     except (TypeError, ValueError):
