@@ -22,8 +22,8 @@
     "icon:build": "bash scripts/build-icon.sh",
     "icon:check": "bash scripts/check-icon.sh",
     "prepare:runtime": "bash ../scripts/prepare-desktop-runtime.sh",
-    "dist": "npm run dist:dir",
-    "dist:dir": "npm run prepare:runtime && electron-builder --dir",
+    "dist": "npm run app:install",
+    "app:install": "bash scripts/package-and-install-app.sh",
     "dist:mac": "npm run prepare:runtime && npm run icon:build && npm run icon:check && electron-builder --mac dmg zip"
   },
   "devDependencies": {

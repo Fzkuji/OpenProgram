@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import plistlib
 import re
 import subprocess
 from pathlib import Path
@@ -29,6 +30,87 @@ def test_desktop_targets_and_embedded_runtime_are_declared() -> None:
     assert "dist:linux" not in package["scripts"]
     assert {item["to"] for item in build["extraResources"]} >= {"runtime"}
     assert package["desktopName"] == "ai.openprogram.OpenProgram.desktop"
+
+
+def _fake_desktop_app(root: Path, version: str, *, app_id: str = "ai.openprogram.desktop") -> Path:
+    app = root / "OpenProgram.app"
+    executable = app / "Contents" / "MacOS" / "OpenProgram"
+    resources = app / "Contents" / "Resources"
+    runtime = resources / "runtime"
+    executable.parent.mkdir(parents=True)
+    runtime.mkdir(parents=True)
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(0o755)
+    (resources / "icon.icns").write_bytes(b"icns")
+    (runtime / "runtime-manifest.json").write_text(
+        json.dumps({"schema": 2, "openprogram": version}), encoding="utf-8"
+    )
+    with (app / "Contents" / "Info.plist").open("wb") as stream:
+        plistlib.dump(
+            {
+                "CFBundleIdentifier": app_id,
+                "CFBundleShortVersionString": version,
+                "CFBundleExecutable": "OpenProgram",
+                "CFBundleIconFile": "icon.icns",
+            },
+            stream,
+        )
+    return app
+
+
+def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
+    package = _desktop_package()
+    assert package["scripts"]["dist"] == "npm run app:install"
+    assert package["scripts"]["app:install"] == "bash scripts/package-and-install-app.sh"
+    assert "dist:dir" not in package["scripts"]
+
+    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    packager = (ROOT / "desktop" / "scripts" / "package-and-install-app.sh").read_text(
+        encoding="utf-8"
+    )
+    installer_text = installer.read_text(encoding="utf-8")
+    assert 'target_app="$applications_dir/OpenProgram.app"' in installer_text
+    assert 'open "$target_app"' in installer_text
+    assert 'open "$source_app"' not in installer_text
+    assert 'mktemp -d "${TMPDIR:-/tmp}/openprogram-app-package.XXXXXX"' in packager
+    assert '"$builder" --dir --mac --publish never' in packager
+    assert 'env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"' in packager
+    assert 'mkdir "$lock_dir"' in packager
+    assert 'rm -rf "$work_dir" "$runtime_dir" "$lock_dir"' in packager
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+
+    first = _fake_desktop_app(tmp_path / "first", "0.6.1")
+    subprocess.run(["bash", str(installer), str(first)], check=True, env=env)
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    assert target.is_dir()
+
+    second = _fake_desktop_app(tmp_path / "second", "0.6.2")
+    subprocess.run(["bash", str(installer), str(second)], check=True, env=env)
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
+    applications = target.parent
+    assert sorted(path.name for path in applications.glob("*.app")) == ["OpenProgram.app"]
+    assert not list(applications.glob(".openprogram-app-install.*"))
+
+    invalid = _fake_desktop_app(
+        tmp_path / "invalid", "0.6.3", app_id="example.invalid"
+    )
+    failed = subprocess.run(
+        ["bash", str(installer), str(invalid)],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert failed.returncode != 0
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
 
 
 def test_core_agentic_functions_are_not_excluded_from_wheel() -> None:

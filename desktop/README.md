@@ -17,8 +17,16 @@ Release builds stage the Web export, build an OpenProgram wheel, install it into
 a uv-managed portable CPython runtime, and include that runtime under Electron
 resources:
 
-    npm run dist:dir    # developer-only unpacked artifact
-    npm run dist:mac    # explicitly unsigned DMG + ZIP
+    npm run dist        # build, validate, and replace /Applications/OpenProgram.app
+    npm run dist:mac    # release-only, explicitly unsigned DMG + ZIP
+
+`npm run dist` builds the unpacked app in a random temporary directory. It never
+opens that temporary bundle. After validation it replaces the single canonical
+`/Applications/OpenProgram.app`, removes the previous bundle and build staging,
+and reopens only the canonical path if the app was already running. Repeating the
+command does not retain versioned or task-named `.app` copies. Versioned DMG/ZIP
+files remain release artifacts because immutable releases and automatic updates
+need them.
 
 Packaged builds never fall back to `PATH`, system Python, conda, or the source
 checkout. The tag workflow builds explicitly unsigned macOS artifacts and uses

@@ -68,6 +68,63 @@ image_size() {
 [[ "$(sips -g hasAlpha "$master_png" 2>/dev/null | awk '/hasAlpha:/{print $2}')" == "yes" ]] \
   || fail "icon.png must retain alpha outside the squircle"
 
+# The prior 100 px inset made the installed icon visibly smaller and rounder
+# than the surrounding macOS app icons. Check rendered alpha bounds instead of
+# trusting SVG metadata so generated assets cannot drift from the source.
+xcrun swift - "$master_png" <<'SWIFT'
+import AppKit
+import Foundation
+
+let path = CommandLine.arguments[1]
+guard let image = NSImage(contentsOfFile: path) else {
+    fputs("icon check failed: cannot load icon.png\n", stderr)
+    exit(1)
+}
+var rect = NSRect(origin: .zero, size: image.size)
+guard let source = image.cgImage(forProposedRect: &rect, context: nil, hints: nil) else {
+    fputs("icon check failed: cannot decode icon.png\n", stderr)
+    exit(1)
+}
+let width = source.width
+let height = source.height
+var bytes = [UInt8](repeating: 0, count: width * height * 4)
+let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+bytes.withUnsafeMutableBytes { raw in
+    let context = CGContext(
+        data: raw.baseAddress,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: width * 4,
+        space: colorSpace,
+        bitmapInfo: bitmapInfo.rawValue
+    )!
+    context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
+}
+var minX = width
+var minY = height
+var maxX = -1
+var maxY = -1
+for y in 0..<height {
+    for x in 0..<width where bytes[(y * width + x) * 4 + 3] > 8 {
+        minX = min(minX, x)
+        minY = min(minY, y)
+        maxX = max(maxX, x)
+        maxY = max(maxY, y)
+    }
+}
+let renderedWidth = maxX - minX + 1
+let renderedHeight = maxY - minY + 1
+let margins = [minX, minY, width - 1 - maxX, height - 1 - maxY]
+if renderedWidth < 870 || renderedHeight < 870 ||
+   margins.max()! - margins.min()! > 2 || margins.min()! < 60 {
+    fputs("icon check failed: squircle must be centered and fill about 86% of the canvas\n", stderr)
+    exit(1)
+}
+print("icon alpha bounds: \(minX),\(minY) ... \(maxX),\(maxY)")
+SWIFT
+
 icon_names=(
   icon_16x16.png
   icon_16x16@2x.png
