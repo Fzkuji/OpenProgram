@@ -38,7 +38,7 @@
     <p class="status">IMPLEMENTATION REFERENCE · DUAL MODE NOT IMPLEMENTED</p>
   </header>
 
-  <nav aria-label="目录"><a href="#modes">两种模式</a><a href="#contract">工具契约</a><a href="#boundaries">成本与边界</a><a href="#delivery">实施顺序</a><a href="#acceptance">验收</a><a href="#evidence">当前证据</a></nav>
+  <nav aria-label="目录"><a href="#modes">两种模式</a><a href="#reuse">开源与复用</a><a href="#contract">工具契约</a><a href="#boundaries">成本与边界</a><a href="#delivery">实施顺序</a><a href="#acceptance">验收</a><a href="#evidence">当前证据</a></nav>
 
   <section id="modes">
     <h2>两种执行模式</h2>
@@ -50,6 +50,25 @@
       <tr><td>限制</td><td>不暴露 upstream tabs/eval/storage/files；必须先通过 exact Page 隔离测试。</td><td>不声称兼容 Claude 私有协议、源码或内部 locator 算法。</td></tr>
     </tbody></table></div>
     <p>设置只影响新的 ComputerSession。session 创建后 mode 冻结；失败、超时或 stale frame 都不能自动切换 backend，避免重复点击和重复提交。</p>
+  </section>
+
+  <section id="reuse">
+    <h2>开源、开放接口与不可直接复用部分</h2>
+    <div class="table-scroll"><table><thead><tr><th>组件</th><th>公开状态</th><th>能否直接用</th><th>在 OpenProgram 中的处理</th></tr></thead><tbody>
+      <tr><td><a href="https://github.com/microsoft/playwright-mcp">Microsoft Playwright MCP</a></td><td class="evidence-yes">开源 · Apache-2.0</td><td>可以</td><td>使用官方 <code>@playwright/mcp</code>，固定版本；外层保留 Page token、权限与 verification。</td></tr>
+      <tr><td><a href="https://github.com/microsoft/playwright">Playwright / playwright-core</a></td><td class="evidence-yes">开源 · Apache-2.0</td><td>可以</td><td>作为 Playwright MCP 的执行层；不再实现第二套 DOM locator。</td></tr>
+      <tr><td><a href="https://github.com/modelcontextprotocol/typescript-sdk">MCP TypeScript SDK</a></td><td class="evidence-yes">SDK code：新贡献 Apache-2.0、未重许可 legacy code 为 MIT</td><td>可以作为代码依赖</td><td>复用现有 OpenProgram MCP server/client；MCP 只承担工具协议，不决定点击方式。</td></tr>
+      <tr><td><a href="https://github.com/modelcontextprotocol/modelcontextprotocol">MCP protocol / specification</a></td><td class="evidence-yes">spec contributions：Apache-2.0；未重许可 legacy 内容为 MIT</td><td>可以按规范实现</td><td>采用标准 tools/list、tools/call、content 与 cancellation 语义，不复制特定 client 的浏览器工具。</td></tr>
+      <tr><td><a href="https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/LICENSE">MCP 非 specification 文档</a></td><td class="evidence-partial">CC-BY-4.0</td><td>可以引用或复用并署名</td><td>只作为实现参考，不作为运行依赖。</td></tr>
+      <tr><td><a href="https://github.com/ChromeDevTools/devtools-protocol">Chrome DevTools Protocol</a></td><td class="evidence-yes">开放协议与类型 · BSD-3-Clause</td><td>可以</td><td>直接调用 <code>Page.captureScreenshot</code>、<code>Input.dispatchMouseEvent</code> 等命令，不需要 Claude 代码。</td></tr>
+      <tr><td><a href="https://www.electronjs.org/docs/latest/api/debugger">Electron webContents.debugger</a></td><td class="evidence-yes">Electron 开源 · MIT；API 已内置</td><td>可以</td><td>内置浏览器的首选 CDP transport；绑定 exact WebContents/target，不要求窗口置前。</td></tr>
+      <tr><td><a href="https://developer.chrome.com/docs/extensions/reference/api/debugger">Chrome debugger API</a> 与 <a href="https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging">Native Messaging</a></td><td class="evidence-partial">Chrome/Chromium 的公开内置接口，不是独立库</td><td>可以调用</td><td>只在以后控制独立 Chrome 扩展时需要；OpenProgram 内置浏览器不需要 Native Messaging host。</td></tr>
+      <tr><td><a href="https://github.com/anthropics/claude-code/blob/main/LICENSE.md">Claude Code 公开仓库</a></td><td class="evidence-no">仓库内容 all rights reserved；该结论只适用于此仓库</td><td>不可以按开源代码复制</td><td>不依赖其内部代码，只参考官方公开产品行为。</td></tr>
+      <tr><td>Claude <code>computer</code> / <code>read_page</code> 工具实现与 <code>claude-in-chrome</code> bridge</td><td class="evidence-no">行为有官方文档；没有可复用的开源包或实现源码</td><td>不可以直接导入</td><td>只参考工具行为；OpenProgram 保持自己的 <code>computer_use</code> contract 和 backend adapter。</td></tr>
+      <tr><td>Claude Chrome 扩展的 action handler、视觉光标、权限 UI 与 native host</td><td class="evidence-no">发布产品可安装；未公开可复用源码或明确的开源许可证</td><td>不可以直接复制</td><td>用 content script + CDP + OpenProgram permission UI 做最小 clean-room 实现。</td></tr>
+      <tr><td>Claude 模型的视觉定位能力</td><td class="evidence-no">托管模型能力，不开源</td><td>只能通过服务使用</td><td>不依赖 Claude 专用实现；把单张截图交给当前所选模型的原生 vision。</td></tr>
+    </tbody></table></div>
+    <p>这里没有“CDP 只能由 Claude 使用”的限制。Claude 专有的是其工具编排、扩展实现和产品权限层；截图与坐标点击所用的 CDP 命令是公开接口。公开页面没有提供 Claude 扩展源码，因此“不可直接复用”不等于没有文档，而是没有带可复用许可证的实现包。</p>
   </section>
 
   <section id="contract">
@@ -113,7 +132,7 @@ computer_use({ command: "verify", computer_session_id: "cs_…", assertion: { �
 
   <section id="references">
     <h2>官方参考</h2>
-    <ul class="refs"><li><a href="https://playwright.dev/docs/api/class-browsercontext">Playwright BrowserContext</a> 与 <a href="https://playwright.dev/docs/pages">Playwright Pages</a></li><li><a href="https://github.com/microsoft/playwright-mcp">Microsoft Playwright MCP</a> 与 <a href="https://github.com/microsoft/playwright.dev/blob/main/mcp/introduction.mdx">官方 MCP introduction</a></li><li><a href="https://code.claude.com/docs/en/desktop">Claude Code Desktop Browser</a> 与 <a href="https://code.claude.com/docs/en/chrome">Claude Code with Chrome</a></li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool">Anthropic Computer Use</a></li><li><a href="https://developers.openai.com/api/docs/guides/tools-computer-use">OpenAI Computer Use</a></li></ul>
+    <ul class="refs"><li><a href="https://playwright.dev/docs/api/class-browsercontext">Playwright BrowserContext</a> 与 <a href="https://playwright.dev/docs/pages">Playwright Pages</a></li><li><a href="https://github.com/microsoft/playwright-mcp">Microsoft Playwright MCP</a> 与 <a href="https://github.com/microsoft/playwright.dev/blob/main/mcp/introduction.mdx">官方 MCP introduction</a></li><li><a href="https://code.claude.com/docs/en/desktop">Claude Code Desktop Browser</a>、<a href="https://code.claude.com/docs/en/chrome">Claude Code with Chrome</a> 与 <a href="https://github.com/anthropics/claude-code/blob/main/LICENSE.md">Claude Code license</a></li><li><a href="https://chromedevtools.github.io/devtools-protocol/">Chrome DevTools Protocol</a>、<a href="https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot">Page.captureScreenshot</a> 与 <a href="https://chromedevtools.github.io/devtools-protocol/tot/Input/#method-dispatchMouseEvent">Input.dispatchMouseEvent</a></li><li><a href="https://www.electronjs.org/docs/latest/api/debugger">Electron Debugger</a>、<a href="https://developer.chrome.com/docs/extensions/reference/api/debugger">Chrome debugger API</a> 与 <a href="https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging">Native Messaging</a></li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool">Anthropic Computer Use</a></li><li><a href="https://developers.openai.com/api/docs/guides/tools-computer-use">OpenAI Computer Use</a></li></ul>
   </section>
 </main>
 </body>
