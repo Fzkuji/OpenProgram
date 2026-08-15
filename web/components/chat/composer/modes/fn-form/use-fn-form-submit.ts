@@ -134,7 +134,8 @@ export function useFnFormSubmit({
     let placeholderId: string | null = null;
     if (dispatchSessionId) {
       const store = useSessionStore.getState();
-      placeholderId = `__optimistic_fn__:${fn.name}:${Date.now()}`;
+      const startedAt = Date.now();
+      placeholderId = `__optimistic_fn__:${fn.name}:${startedAt}`;
       store.appendMessage(dispatchSessionId, {
         id: placeholderId,
         role: "assistant",
@@ -142,12 +143,13 @@ export function useFnFormSubmit({
         display: "runtime",
         function: fn.name,
         status: "running",
+        timestamp: startedAt,
       });
       store.setRunningTaskFor(dispatchSessionId, {
         session_id: dispatchSessionId,
         msg_id: placeholderId,
         func_name: fn.name,
-        started_at: Date.now() / 1000,
+        started_at: startedAt / 1000,
       });
     }
 

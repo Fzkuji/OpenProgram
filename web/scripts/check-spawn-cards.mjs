@@ -180,6 +180,47 @@ assert.equal(
   "completing a runtime reply must preserve its start timestamp",
 );
 
+// A dispatcher-owned runtime row uses status/result envelopes rather than
+// the ordinary reply id. Its terminal result must not replace the time at
+// which the visible run first appeared.
+const runtimeId = "runtime_timestamp";
+const originalNow = Date.now;
+let fakeNow = 1_700_000_001_000;
+Date.now = () => fakeNow;
+try {
+  applyChatWsMessage({
+    type: "chat_response",
+    data: {
+      type: "status",
+      session_id: SID,
+      msg_id: runtimeId,
+      display: "runtime",
+      function: "computer_use",
+      status: "running",
+    },
+  });
+  const dispatcherStartedAt = useSessionStore.getState().messagesById[runtimeId].timestamp;
+  fakeNow += 1_000;
+  applyChatWsMessage({
+    type: "chat_response",
+    data: {
+      type: "result",
+      session_id: SID,
+      msg_id: runtimeId,
+      display: "runtime",
+      function: "computer_use",
+      content: "done",
+    },
+  });
+  assert.equal(
+    useSessionStore.getState().messagesById[runtimeId].timestamp,
+    dispatcherStartedAt,
+    "a runtime result must not replace the status timestamp",
+  );
+} finally {
+  Date.now = originalNow;
+}
+
 // --- execution strip: visible while the assistant works ------------------
 const strip = readFileSync(
   new URL("../components/chat/messages/execution-strip.tsx", import.meta.url),

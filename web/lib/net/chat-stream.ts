@@ -447,8 +447,8 @@ function handleRuntimeRow(sid: string, d: ChatResponseData): void {
     status: "done",
     rawType: d.type,
     contextTree: (d.context_tree as never) || undefined,
-    timestamp: Date.now(),
   };
+  const resultTimestamp = Date.now();
   if (mergeIntoAssistant && calledBy) {
     // Update inside the parent's runtimeChildren.
     const parent = store.messagesById[calledBy];
@@ -469,7 +469,7 @@ function handleRuntimeRow(sid: string, d: ChatResponseData): void {
         status: "done",
         rawType: patch.rawType,
         contextTree: patch.contextTree,
-        timestamp: patch.timestamp,
+        timestamp: resultTimestamp,
         calledBy,
       };
       _mergeRuntimeIntoParent(sid, calledBy, child);
@@ -508,7 +508,7 @@ function handleRuntimeRow(sid: string, d: ChatResponseData): void {
       status: "done",
       rawType: patch.rawType,
       contextTree: patch.contextTree,
-      timestamp: patch.timestamp,
+      timestamp: resultTimestamp,
     });
   }
 }
