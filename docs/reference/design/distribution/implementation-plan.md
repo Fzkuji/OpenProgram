@@ -53,7 +53,18 @@ duplicated in this historical distribution ledger.
   round-trip check, packaged-runtime smoke, documentation build/link check,
   Ruff, shell syntax, diff check, independent specification review, and fresh
   independent quality review.
-- Status: implementation pending.
+- Installed acceptance (2026-08-16): one complete `npm run dist` build passed
+  the runtime and packaged-App smokes, then atomically replaced
+  `/Applications/OpenProgram.app`. The installed bundle reports version 0.6.6
+  and identifier `ai.openprogram.desktop`; its ICNS SHA-256 matches the
+  generated source asset. The default worker runs the bundle's CPython 3.12.10
+  and `/healthz` reports `ok`. Launch Services reports the canonical 0.6.6 App,
+  the Launchpad database contains its application item, and the visible Dock
+  icon has the same footprint and corner profile as adjacent macOS Apps.
+- Cleanup acceptance: only `/Applications/OpenProgram.app` remains; the random
+  package directory, staged runtime, Python wheel build, Web `.next`/`out`, and
+  copied frontend are absent after installation.
+- Status: implemented, independently reviewed, installed, and visually accepted.
 
 ## Release gate repair for v0.6.1
 
