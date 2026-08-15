@@ -51,6 +51,13 @@ assert.match(browserControls, /function BookmarkBar/);
 assert.match(webTabPane, /const menuOwnerId = useId\(\)/);
 assert.match(browserControls, /browserActionPrefix\(ownerId\)/);
 assert.match(browserControls, /bookmarkFolderActionPrefix\(ownerId, folder\.id\)/);
+const browserMenuOwners = [...webTabPane.matchAll(/<BrowserMenu[\s\S]*?ownerId=\{([^}]+)\}/g)]
+  .map((match) => match[1]);
+const bookmarkBarOwners = [...webTabPane.matchAll(/<BookmarkBar\s+ownerId=\{([^}]+)\}/g)]
+  .map((match) => match[1]);
+assert.deepEqual(browserMenuOwners, ["menuOwnerId", "menuOwnerId"]);
+assert.deepEqual(bookmarkBarOwners, ["menuOwnerId", "menuOwnerId"]);
+assert.doesNotMatch(webTabPane, /<(?:BrowserMenu|BookmarkBar)[^>]*ownerId=\{tabId\}/);
 assert.match(browserControls, /anchor: \{ right: rect\.right, y: rect\.bottom \+ 4, align: "end"/);
 assert.doesNotMatch(webTabPane, /SplitButton|Open split view|Columns2/);
 assert.match(webTabPane, /goBack\(tabId\)[\s\S]*className=\{`\$\{styles\.webToolbarBtn\} \$\{styles\.webToolbarForward\}`\}[\s\S]*goForward\(tabId\)/);
@@ -136,15 +143,18 @@ assert.deepEqual(browserLayout.browserResponsiveMenuItems(500, { forward: false 
   forward: false,
   openExternal: true,
 });
-const sensitiveTabId = "w:https://example.test/path?token=SECRET#fragment";
-const browserOwnerA = browserLayout.browserActionPrefix("pane-a");
+const sensitivePane = {
+  tabId: "w:https://example.test/path?token=SECRET#fragment",
+  menuOwnerId: "pane-a",
+};
+const browserOwnerA = browserLayout.browserActionPrefix(sensitivePane.menuOwnerId);
 const browserOwnerB = browserLayout.browserActionPrefix("pane-b");
-assert.equal(browserOwnerA.includes(sensitiveTabId), false);
+assert.equal(browserOwnerA.includes(sensitivePane.tabId), false);
 assert.equal(browserLayout.ownedActionId(`${browserOwnerA}history`, browserOwnerA), "history");
 assert.equal(browserLayout.ownedActionId(`${browserOwnerB}history`, browserOwnerA), null);
-const folderOwnerA = browserLayout.bookmarkFolderActionPrefix("pane-a", "folder-1");
+const folderOwnerA = browserLayout.bookmarkFolderActionPrefix(sensitivePane.menuOwnerId, "folder-1");
 const folderOwnerB = browserLayout.bookmarkFolderActionPrefix("pane-b", "folder-1");
-assert.equal(folderOwnerA.includes(sensitiveTabId), false);
+assert.equal(folderOwnerA.includes(sensitivePane.tabId), false);
 assert.equal(browserLayout.ownedActionId(`${folderOwnerA}0`, folderOwnerA), "0");
 assert.equal(browserLayout.ownedActionId(`${folderOwnerB}0`, folderOwnerA), null);
 
