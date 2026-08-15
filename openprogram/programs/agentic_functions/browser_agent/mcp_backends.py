@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import math
 import os
 import threading
 import uuid
@@ -141,10 +140,9 @@ class OfficialMCPPageBackend:
             session.state["upstream_page"] = 0
             return client
 
-        page = controller._page()
         marker_name = "__openprogram_mcp_" + uuid.uuid4().hex
         marker_value = uuid.uuid4().hex
-        page.evaluate(
+        controller.evaluate_bound_page(
             "([name, value]) => Object.defineProperty(globalThis, name, "
             "{value, configurable: true})",
             [marker_name, marker_value],
@@ -168,7 +166,9 @@ class OfficialMCPPageBackend:
             raise
         finally:
             try:
-                page.evaluate("name => delete globalThis[name]", marker_name)
+                controller.evaluate_bound_page(
+                    "name => delete globalThis[name]", marker_name,
+                )
             except Exception:
                 pass
 
@@ -290,28 +290,9 @@ class OfficialMCPPageBackend:
             return controller.execute(
                 action="screenshot", expected_frame_id=frame_id,
             )
-        if action == "click" and not arguments.get("ref"):
-            if controller._screenshot_frame != frame_id:
-                return {"ok": False, "reason_code": "visual_observation_required"}
-            try:
-                point_x = float(arguments.get("x"))
-                point_y = float(arguments.get("y"))
-            except (TypeError, ValueError):
-                return {"ok": False, "reason_code": "invalid_coordinate"}
-            from . import _VIEWPORT_SCRIPT
-            page = controller._page()
-            viewport = controller._viewport(page, page.evaluate(_VIEWPORT_SCRIPT))
-            if viewport != controller._screenshot_viewport:
-                return controller._invalidate_frame()
-            if (
-                not math.isfinite(point_x) or not math.isfinite(point_y)
-                or point_x < 0 or point_y < 0
-                or point_x >= viewport["width"] or point_y >= viewport["height"]
-            ):
-                return {"ok": False, "reason_code": "invalid_coordinate"}
-        capped = controller._write_allowed()
-        if capped:
-            return capped
+        rejected = controller.prepare_external_action(arguments)
+        if rejected is not None:
+            return rejected
         call = self._action_call(session, arguments)
         if call is None:
             return {"ok": False, "reason_code": "unsupported_action"}
@@ -322,14 +303,14 @@ class OfficialMCPPageBackend:
             or getattr(result, "is_error", False)
         )
         if is_error:
-            controller._invalidate_frame()
+            controller.invalidate_external_frame()
             return {
                 "ok": False,
                 "reason_code": "backend_action_failed",
                 "result": _result_text(result),
                 "observe_required": True,
             }
-        mutation = controller._mutated(f"{self.name}:{action}")
+        mutation = controller.record_external_mutation(f"{self.name}:{action}")
         return {
             **mutation,
             "result": _result_text(result),

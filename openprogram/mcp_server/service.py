@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 import threading
+import urllib.error
+import urllib.request
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -133,10 +136,57 @@ def _default_event_bus():
 
 
 def _default_computer_use_dispatch(arguments, *, owner_id):
-    from openprogram.programs.agentic_functions.browser_agent import (
-        execute_direct_computer_use,
+    """Execute browser control inside the running worker process.
+
+    The stdio MCP server is a separate process.  Page bindings and the
+    renderer WebSocket registry live in the worker, so importing the browser
+    tool here would create an empty, unrelated registry.
+    """
+    payload = _worker_computer_use_request(
+        "/api/computer-use",
+        {"arguments": dict(arguments), "owner_id": owner_id},
+        timeout=120,
     )
-    return execute_direct_computer_use(arguments, owner_id=owner_id)
+    from openprogram.agent.types import AgentToolResult
+
+    return AgentToolResult.model_validate(payload["result"])
+
+
+def _default_computer_use_release_owner(owner_id: str) -> None:
+    _worker_computer_use_request(
+        "/api/computer-use/release-owner",
+        {"owner_id": owner_id},
+        timeout=5,
+    )
+
+
+def _worker_computer_use_request(
+    path: str, body: Mapping[str, Any], *, timeout: float,
+) -> dict[str, Any]:
+    from openprogram.backend_endpoint import resolve_backend_endpoint
+
+    endpoint = resolve_backend_endpoint()
+    request = urllib.request.Request(
+        endpoint.base_url + path,
+        data=json.dumps(dict(body)).encode("utf-8"),
+        method="POST",
+        headers={
+            "Accept": "application/json",
+            "Authorization": endpoint.authorization_header,
+            "Content-Type": "application/json",
+            "Host": endpoint.host,
+            "X-Forwarded-Proto": endpoint.scheme,
+        },
+    )
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError, urllib.error.HTTPError) as exc:
+        raise RuntimeError("computer_use_worker_unavailable") from exc
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        raise RuntimeError("computer_use_worker_failed")
+    return payload
 
 
 def _best_effort(callback: Callable[..., Any], *args: Any) -> Any:
@@ -293,6 +343,7 @@ class MCPService:
         question_registry_getter: Callable[[], Any] | None = None,
         event_bus_getter: Callable[[], Any] | None = None,
         computer_use_dispatch: Callable[..., Any] | None = None,
+        computer_use_release_owner: Callable[[str], Any] | None = None,
     ) -> None:
         self.context = context
         self._session_db = session_db or default_db()
@@ -332,6 +383,9 @@ class MCPService:
         )
         self._computer_use_dispatch = (
             computer_use_dispatch or _default_computer_use_dispatch
+        )
+        self._computer_use_release_owner = (
+            computer_use_release_owner or _default_computer_use_release_owner
         )
         self._active_lock = threading.RLock()
         self._active_by_request: dict[str, ActiveMCPRequest] = {}
@@ -486,10 +540,10 @@ class MCPService:
             _best_effort(unsubscribe)
         for request_id in request_ids:
             self.cancel_request(request_id, reason="connection_closed")
-        from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-            get_registry,
+        _best_effort(
+            self._computer_use_release_owner,
+            self._computer_use_owner_id,
         )
-        _best_effort(get_registry().release_owner, self._computer_use_owner_id)
 
     async def computer_use_call(
         self,

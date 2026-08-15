@@ -153,6 +153,7 @@ def _service(
     registry=None,
     exposed=None,
     computer_use_dispatch=None,
+    computer_use_release_owner=None,
 ) -> MCPService:
     registry = {} if registry is None else registry
     exposed = set(registry) if exposed is None else exposed
@@ -163,6 +164,9 @@ def _service(
         registry_get=registry.get,
         registry_exposed_names=lambda: set(exposed),
         computer_use_dispatch=computer_use_dispatch,
+        computer_use_release_owner=(
+            computer_use_release_owner or (lambda _owner_id: None)
+        ),
     )
 
 
@@ -191,6 +195,21 @@ def test_first_class_computer_use_has_narrow_connection_owned_authority(
     assert calls[0][1].startswith(f"mcp:{client_context.client_id}:")
     from openprogram.agent.authority import decide_tool_authority
     assert decide_tool_authority(client_context.authority, "computer_use").allowed is False
+
+
+def test_mcp_connection_close_releases_worker_owned_computer_use_sessions(
+    client_context,
+) -> None:
+    released = []
+    service = _service(
+        client_context,
+        computer_use_release_owner=released.append,
+    )
+    owner_id = service._computer_use_owner_id
+
+    service.close()
+
+    assert released == [owner_id]
 
 
 def test_sessions_list_preserves_db_order_and_exposes_only_public_fields(

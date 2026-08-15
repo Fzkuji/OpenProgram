@@ -1743,6 +1743,11 @@ def create_app(*, owner_auth=None, port: int = 18100):
     from openprogram.webui.routes import mcp as _routes_mcp
     _routes_mcp.register(app)
 
+    # Narrow owner-authenticated bridge used by the independent stdio MCP
+    # process. Browser Page bindings remain owned by this worker process.
+    from openprogram.webui.routes import computer_use as _routes_computer_use
+    _routes_computer_use.register(app)
+
     # /api/skills/* — Skills management
     from openprogram.webui.routes import skills as _routes_skills
     _routes_skills.register(app)

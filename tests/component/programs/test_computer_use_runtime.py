@@ -169,6 +169,9 @@ class _Controller:
     def _page(self):
         return self.page
 
+    def evaluate_bound_page(self, script, arg=None):
+        return self.page.evaluate(script, arg)
+
     def execute(self, **params):
         if params["action"] == "observe":
             return dict(self.frame)
@@ -179,8 +182,15 @@ class _Controller:
             "ok": False, "reason_code": "stale_observation",
         }
 
+    def prepare_external_action(self, arguments):
+        rejected = self._require_fresh(arguments.get("expected_frame_id"))
+        return rejected if rejected is not None else self._write_allowed()
+
     def _invalidate_frame(self):
         self.invalidated += 1
+
+    def invalidate_external_frame(self):
+        return self._invalidate_frame()
 
     def _write_allowed(self):
         return None
@@ -188,6 +198,9 @@ class _Controller:
     def _mutated(self, detail):
         self.invalidated += 1
         return {"ok": True, "detail": detail, "observe_required": True}
+
+    def record_external_mutation(self, detail):
+        return self._mutated(detail)
 
     def close(self):
         self.closed += 1

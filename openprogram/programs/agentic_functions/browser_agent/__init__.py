@@ -9,7 +9,7 @@ import math
 import re
 import time
 import uuid
-from typing import Any
+from typing import Any, Mapping
 from urllib.parse import urlparse
 
 from openprogram.agentic_programming.function import CancelledError, agentic_function
@@ -266,6 +266,56 @@ class BrowserPageController:
         session = self._session()
         current = getattr(self.browser_api, "_current_page", None)
         return current(session) if callable(current) else session["page"]
+
+    def evaluate_bound_page(self, expression: str, argument: Any = None) -> Any:
+        """Evaluate against the Page on the controller's Playwright thread."""
+        return self._owner.submit(
+            self._evaluate_bound_page, expression, argument,
+        ).result()
+
+    def _evaluate_bound_page(self, expression: str, argument: Any) -> Any:
+        page = self._page()
+        if argument is None:
+            return page.evaluate(expression)
+        return page.evaluate(expression, argument)
+
+    def prepare_external_action(self, arguments: Mapping[str, Any]) -> dict | None:
+        """Validate an MCP action without moving Playwright objects off-owner."""
+        return self._owner.submit(
+            self._prepare_external_action, dict(arguments),
+        ).result()
+
+    def _prepare_external_action(self, arguments: dict[str, Any]) -> dict | None:
+        frame_id = str(arguments.get("expected_frame_id") or "")
+        stale = self._require_fresh(frame_id)
+        if stale is not None:
+            return stale
+        action = str(arguments.get("action") or "")
+        if action == "click" and not arguments.get("ref"):
+            if self._screenshot_frame != frame_id:
+                return {"ok": False, "reason_code": "visual_observation_required"}
+            try:
+                point_x = float(arguments.get("x"))
+                point_y = float(arguments.get("y"))
+            except (TypeError, ValueError):
+                return {"ok": False, "reason_code": "invalid_coordinate"}
+            page = self._page()
+            viewport = self._viewport(page, page.evaluate(_VIEWPORT_SCRIPT))
+            if viewport != self._screenshot_viewport:
+                return self._invalidate_frame()
+            if (
+                not math.isfinite(point_x) or not math.isfinite(point_y)
+                or point_x < 0 or point_y < 0
+                or point_x >= viewport["width"] or point_y >= viewport["height"]
+            ):
+                return {"ok": False, "reason_code": "invalid_coordinate"}
+        return self._write_allowed()
+
+    def invalidate_external_frame(self) -> dict[str, Any]:
+        return self._owner.submit(self._invalidate_frame).result()
+
+    def record_external_mutation(self, detail: str) -> dict[str, Any]:
+        return self._owner.submit(self._mutated, detail).result()
 
     def _viewport(self, page, snapshot: dict[str, Any]) -> dict[str, Any]:
         size = page.viewport_size or {}
