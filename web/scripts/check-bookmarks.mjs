@@ -54,6 +54,10 @@ const sessionStore = readFileSync(sessionStorePath, "utf8");
 const webTab = readFileSync(webTabPath, "utf8");
 const browserHome = readFileSync(browserHomePath, "utf8");
 const manager = readFileSync(managerPath, "utf8");
+const centerTabsCss = readFileSync(
+  new URL("../components/center-tabs/center-tabs.module.css", import.meta.url),
+  "utf8",
+);
 const mainMenu = readFileSync(mainMenuPath, "utf8");
 const browserControls = readFileSync(browserControlsPath, "utf8");
 const contextMenuOverlay = readFileSync(contextMenuOverlayPath, "utf8");
@@ -107,50 +111,63 @@ assert.match(browserControls, /data-\[highlighted\]:bg-bg-hover/,
   "web nested bookmark rows need a visible keyboard highlight");
 assert.match(contextMenuOverlay, /width: requestedWidth \|\| "max-content"/,
   "desktop context-menu overlay must honor a caller-supplied finite width");
-// The manager is a folder TREE now: search matches a node by its own
-// title/url and keeps the folders leading to a hit, rows nest by depth,
-// and every folder operation is reachable from the page.
+// Chrome-style manager: folders stay in the navigation tree while the
+// content pane shows the selected folder or flattened search results.
 assert.match(manager, /node\.title\.toLowerCase\(\)\.includes\(needle\)/);
 assert.match(manager, /node\.url\.toLowerCase\(\)\.includes\(needle\)/);
 assert.match(manager, /function matchesQuery/, "search must recurse into folders");
 assert.match(manager, /readBookmarkTree/, "manager must read the tree, not the flat list");
 assert.match(manager, /renameNode\(id,\s*draftTitle\)/);
 assert.match(manager, /deleteNode\(node\.id\)/);
-assert.match(manager, /createFolder\(newFolderLabel\)/, "new-folder button missing");
+assert.match(manager, /createFolder\(newFolderLabel,\s*selectedFolder\.id\)/, "new-folder action missing");
 assert.match(manager, /moveNode\(dragId,\s*parentId\)/, "drag-to-move missing");
 assert.match(manager, /openWebTab\(node\.url\)/);
-assert.match(manager, /renderChildren\(node,\s*depth \+ 1\)/, "folders must render children");
-// Dropping on the list background moves a node back out to the root.
-assert.match(manager, /handleDrop\(BOOKMARKS_ROOT_ID\)/);
+assert.match(manager, /childFolders\.map\(\(child\) => renderFolder\(child, depth \+ 1\)\)/,
+  "folder navigation must recurse through child folders");
+assert.match(manager, /handleDrop\(selectedFolder\.id\)/,
+  "dropping on the content background must target the selected folder");
 // Between-row drop zones reorder among siblings (moveNode with an index),
 // on top of the existing drop-INTO-a-folder path.
 assert.match(manager, /function handleReorderDrop/, "sibling reorder handler missing");
 assert.match(manager, /moveNode\(dragId,\s*parentId,\s*from >= 0 && from < index \? index - 1 : index\)/,
   "reorder must compensate for the node being spliced out before re-insertion");
 assert.match(manager, /function dropZone/, "between-row drop zones missing");
-assert.match(manager, /className="bookmark-drop-zone"/, "insertion line needs its own class");
+assert.match(manager, /className=\{styles\.bookmarkManagerDropZone\}/, "insertion line needs its own class");
 assert.match(manager, /handleReorderDrop\(parentId,\s*index\)/);
 // The zone marks itself with the same attribute the row highlight uses.
 assert.match(manager, /data-drop-target=\{active \? "true" : undefined\}/);
-// A zone before every row plus one after the last: every slot reachable.
-assert.match(manager, /function renderChildren/, "sibling lists must render drop zones");
-assert.match(manager, /dropZone\(parent\.id,\s*parent\.children\.length,\s*depth\)/,
+// A zone before every row plus one after the last makes every slot reachable.
+assert.match(manager, /visibleNodes\.forEach\(\(node, index\) =>/);
+assert.match(manager, /dropZone\(selectedFolder\.id,\s*selectedFolder\.children\.length\)/,
   "the trailing zone (append to end) is missing");
 // Zones index the unfiltered children, so they are suppressed during a
 // search — otherwise a visible gap would point at the wrong slot.
-assert.match(manager, /if \(!needle\) \{\n\s*out\.push\(/, "drop zones must be hidden while searching");
-assert.match(manager, /if \(!needle && out\.length > 0\)/, "the trailing zone must be hidden too");
+assert.match(manager, /if \(!needle\) \{\n\s*contentRows\.push\(/, "drop zones must be hidden while searching");
+assert.match(manager, /if \(!needle && visibleNodes\.length > 0\)/, "the trailing zone must be hidden too");
 // The insertion line must be styled, not invisible.
-assert.match(rightDockCss, /\.bookmark-drop-zone\b/, "drop zone has no styling");
+assert.match(centerTabsCss, /\.bookmarkManagerDropZone\b/, "drop zone has no styling");
 assert.match(
-  rightDockCss,
-  /\.bookmark-drop-zone\[data-drop-target="true"\]/,
+  centerTabsCss,
+  /\.bookmarkManagerDropZone\[data-drop-target="true"\]/,
   "the active insertion line must be visually distinct",
 );
 assert.match(manager, /text\("No bookmarks yet",\s*"还没有书签"\)/);
 assert.match(manager, /text\("No matching bookmarks",\s*"没有匹配的书签"\)/);
-// Icons: animated-icons first, lucide static second, never emoji.
-assert.match(manager, /FolderPlusIcon/, "new-folder button must use the animated icon");
+// The manager follows Chrome's information architecture: one fixed header,
+// a folder-only navigation tree, and the selected folder's direct children.
+assert.match(manager, /className=\{styles\.bookmarkManager\}/);
+assert.match(manager, /className=\{styles\.bookmarkFolderTree\}/);
+assert.match(manager, /className=\{styles\.bookmarkContentList\}/);
+assert.match(manager, /const \[selectedFolderId, setSelectedFolderId\]/);
+assert.match(manager, /findNode\(tree, selectedFolderId\)/);
+assert.match(manager, /createFolder\(newFolderLabel, selectedFolder\.id\)/);
+assert.match(manager, /DropdownMenuTrigger asChild/);
+assert.match(manager, /MoreVertical/, "Chrome-style row and page menus need one overflow glyph");
+assert.doesNotMatch(manager, /\bPencil\b/,
+  "rename must live in the overflow menu instead of crowding every row");
+assert.match(centerTabsCss, /\.bookmarkManagerBody\s*\{[^}]*grid-template-columns:\s*240px minmax\(0, 1fr\)/s);
+assert.match(centerTabsCss, /\.bookmarkFolderSelected\s*\{/);
+assert.match(centerTabsCss, /@container bookmark-manager \(max-width:\s*700px\)/);
 assert.doesNotMatch(
   manager,
   /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u,
@@ -275,8 +292,8 @@ assert.match(
   "the search box must show a visible focus indicator",
 );
 assert.match(
-  rightDockCss,
-  /\.bookmark-title-input:focus-visible\s*\{[^}]*outline:\s*(?!0)[^;}]+;/s,
+  centerTabsCss,
+  /\.bookmarkContentTitleInput:focus-visible\s*\{[^}]*outline:\s*(?!0)[^;}]+;/s,
 );
 // Flat color-block panel: the compact "floating card" wrapper
 // (.right-sidebar-panel with margin/radius/shadow, reverted in
@@ -321,8 +338,7 @@ assertNoNestedButtons(manager, "builtin-tab-pane.tsx");
 assertNoNestedButtons(rightSidebar, "right-sidebar.tsx");
 
 const managerFile = parseTsx(manager, "builtin-tab-pane.tsx");
-// One file hosts both pages; scope the walk to BookmarksPage so the
-// history page's own .bookmark-actions group isn't what we measure.
+// One file hosts both pages; scope the walk to BookmarksPage.
 let bookmarksPage;
 function findBookmarksPage(node) {
   if (ts.isFunctionDeclaration(node) && node.name?.text === "BookmarksPage") {
@@ -333,20 +349,21 @@ function findBookmarksPage(node) {
 }
 findBookmarksPage(managerFile);
 assert.ok(bookmarksPage, "BookmarksPage component missing");
-let actions;
+let editActions;
 function findActions(node) {
   if (
     ts.isJsxElement(node) &&
     node.openingElement.tagName.getText(managerFile) === "div" &&
-    attr(node.openingElement, "className")?.initializer?.text === "bookmark-actions"
+    attr(node.openingElement, "className")?.initializer?.getText(managerFile)
+      === "{styles.bookmarkContentEditActions}"
   ) {
-    actions = node;
+    editActions = node;
     return;
   }
   ts.forEachChild(node, findActions);
 }
 findActions(bookmarksPage);
-assert.ok(actions, "bookmark action group missing");
+assert.ok(editActions, "bookmark inline edit action group missing");
 const iconButtons = [];
 function collectButtons(node) {
   if (
@@ -357,10 +374,8 @@ function collectButtons(node) {
   }
   ts.forEachChild(node, collectButtons);
 }
-collectButtons(actions);
-// Wide page: the row title itself opens the bookmark, so there is no
-// separate "open in full tab" control — edit/save/cancel/delete only.
-assert.equal(iconButtons.length, 4, "expected edit/save/cancel/delete controls");
+collectButtons(editActions);
+assert.equal(iconButtons.length, 2, "expected save/cancel controls while editing");
 for (const button of iconButtons) {
   assert.ok(attr(button, "title"), "icon-only bookmark control missing title");
   assert.ok(attr(button, "aria-label"), "icon-only bookmark control missing aria-label");
