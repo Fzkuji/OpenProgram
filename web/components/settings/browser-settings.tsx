@@ -74,28 +74,25 @@ export function BrowserSettings() {
           </div>
         </section>
 
-        <section>
-          <h2 className={styles.sectionTitle}>{text("Import", "导入")}</h2>
-          {showImport ? (
-            <BrowserImportDialog onDismiss={() => setShowImport(false)} />
-          ) : (
-            <div className={styles.card}>
-              <div className={styles.row}>
-                <span className={styles.label}>
-                  {text("Import history, bookmarks, and cookies from a local browser", "从本地浏览器导入历史、书签和 Cookie")}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!bridge?.browserImport}
-                  onClick={() => setShowImport(true)}
-                >
-                  {text("Import data", "导入资料")}
-                </Button>
+        {bridge?.browserImport ? (
+          <section>
+            <h2 className={styles.sectionTitle}>{text("Import", "导入")}</h2>
+            {showImport ? (
+              <BrowserImportDialog onDismiss={() => setShowImport(false)} />
+            ) : (
+              <div className={styles.card}>
+                <div className={styles.row}>
+                  <span className={styles.label}>
+                    {text("Import history, bookmarks, and cookies from a local browser", "从本地浏览器导入历史、书签和 Cookie")}
+                  </span>
+                  <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
+                    {text("Import data", "导入资料")}
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
-        </section>
+            )}
+          </section>
+        ) : null}
 
         <section id="clear-data">
           <h2 className={styles.sectionTitle}>{text("Clear browsing data", "清除浏览数据")}</h2>

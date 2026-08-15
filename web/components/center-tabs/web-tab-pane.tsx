@@ -69,7 +69,7 @@ function BookmarkButton({ url, title }: { url: string; title: string }) {
   return (
     <button
       type="button"
-      className={`${styles.webToolbarBtn} ${styles.webToolbarOptional}`}
+      className={styles.webToolbarBtn}
       onClick={() => toggleBookmark({ url, title })}
       title={text(bookmarked ? "Remove bookmark" : "Bookmark", bookmarked ? "移除书签" : "添加书签")}
       aria-label={text(bookmarked ? "Remove bookmark" : "Bookmark", bookmarked ? "移除书签" : "添加书签")}
@@ -86,7 +86,7 @@ function HomeButton({ tabId }: { tabId: string }) {
   return (
     <button
       type="button"
-      className={styles.webToolbarBtn}
+      className={`${styles.webToolbarBtn} ${styles.webToolbarMedium}`}
       onClick={() => useCenterTabs.getState().replaceWebTabWithNewTabPage(tabId)}
       title={label}
       aria-label={label}
@@ -248,7 +248,7 @@ function DesktopWebTabPane({
       <div className={styles.webToolbar}>
         <button
           type="button"
-          className={`${styles.webToolbarBtn} ${styles.webToolbarForward}`}
+          className={styles.webToolbarBtn}
           onClick={() => bridge.webTab.goBack(tabId)}
           disabled={!canGoBack}
           style={canGoBack ? undefined : disabledStyle}
@@ -258,13 +258,22 @@ function DesktopWebTabPane({
         </button>
         <button
           type="button"
-          className={styles.webToolbarBtn}
+          className={`${styles.webToolbarBtn} ${styles.webToolbarForward}`}
           onClick={() => bridge.webTab.goForward(tabId)}
           disabled={!canGoForward}
           style={canGoForward ? undefined : disabledStyle}
           title={text("Forward", "前进")}
         >
           <ArrowRight size={14} />
+        </button>
+        <button
+          type="button"
+          className={styles.webToolbarBtn}
+          onClick={() => loading ? bridge.webTab.stop(tabId) : bridge.webTab.reload(tabId)}
+          title={loading ? text("Stop", "停止") : text("Reload", "重新加载")}
+          aria-label={loading ? text("Stop", "停止") : text("Reload", "重新加载")}
+        >
+          {loading ? <X size={14} /> : <RotateCw size={14} />}
         </button>
         <HomeButton tabId={tabId} />
         <input
@@ -279,28 +288,27 @@ function DesktopWebTabPane({
           autoComplete="off"
           aria-label={text("Address", "地址")}
         />
-        <button
-          type="button"
-          className={styles.webToolbarBtn}
-          onClick={() => loading ? bridge.webTab.stop(tabId) : bridge.webTab.reload(tabId)}
-          title={loading ? text("Stop", "停止") : text("Reload", "重新加载")}
-          aria-label={loading ? text("Stop", "停止") : text("Reload", "重新加载")}
-        >
-          {loading ? <X size={14} /> : <RotateCw size={14} />}
-        </button>
         <BookmarkButton url={effectiveUrl} title={title || effectiveUrl} />
         <BookmarksLibraryButton />
         <button
           type="button"
-          className={`${styles.webToolbarBtn} ${styles.webToolbarOptional}`}
+          className={`${styles.webToolbarBtn} ${styles.webToolbarMedium}`}
           onClick={() => bridge.openExternal(viewUrlRef.current)}
           title={text("Open in browser", "在浏览器中打开")}
         >
           <ExternalLink size={14} />
         </button>
-        <BrowserMenu />
+        <BrowserMenu
+          tabId={tabId}
+          actions={{
+            home: () => useCenterTabs.getState().replaceWebTabWithNewTabPage(tabId),
+            forward: () => bridge.webTab.goForward(tabId),
+            openExternal: () => bridge.openExternal(viewUrlRef.current),
+          }}
+          canGoForward={canGoForward}
+        />
       </div>
-      <BookmarkBar onNavigate={navigateTo} />
+      <BookmarkBar tabId={tabId} onNavigate={navigateTo} />
       {/* Empty body — the native view is drawn here by the main
           process at the bounds reported above. */}
       <div ref={bodyRef} className={styles.webFrame} />
@@ -350,6 +358,14 @@ function IframeWebTabPane({ tabId, url }: { tabId: string; url: string }) {
   return (
     <div className={styles.webPane}>
       <div className={styles.webToolbar}>
+        <button
+          type="button"
+          className={styles.webToolbarBtn}
+          onClick={() => setFrameEpoch((e) => e + 1)}
+          title={text("Reload", "重新加载")}
+        >
+          <RotateCw size={14} />
+        </button>
         <HomeButton tabId={tabId} />
         <input
           className={styles.webAddress}
@@ -362,27 +378,25 @@ function IframeWebTabPane({ tabId, url }: { tabId: string; url: string }) {
           autoComplete="off"
           aria-label={text("Address", "地址")}
         />
-        <button
-          type="button"
-          className={styles.webToolbarBtn}
-          onClick={() => setFrameEpoch((e) => e + 1)}
-          title={text("Reload", "重新加载")}
-        >
-          <RotateCw size={14} />
-        </button>
         <BookmarkButton url={url} title={title} />
         <BookmarksLibraryButton />
         <button
           type="button"
-          className={`${styles.webToolbarBtn} ${styles.webToolbarOptional}`}
+          className={`${styles.webToolbarBtn} ${styles.webToolbarMedium}`}
           onClick={openExternal}
           title={text("Open in browser", "在浏览器中打开")}
         >
           <ExternalLink size={14} />
         </button>
-        <BrowserMenu />
+        <BrowserMenu
+          tabId={tabId}
+          actions={{
+            home: () => useCenterTabs.getState().replaceWebTabWithNewTabPage(tabId),
+            openExternal,
+          }}
+        />
       </div>
-      <BookmarkBar onNavigate={navigateTo} />
+      <BookmarkBar tabId={tabId} onNavigate={navigateTo} />
       {url.startsWith("file:") ? (
         /* Browsers silently block file:// in iframes — say so instead of
            showing a blank frame. */

@@ -2016,10 +2016,17 @@ const CONTEXT_MENU_WIDTH = 200;
 const CONTEXT_MENU_ROW_HEIGHT = 24;
 const CONTEXT_MENU_CHROME = 16;
 
+function contextMenuRequestedX(anchor, panelW) {
+  return anchor.align === "end" ? anchor.right - panelW : anchor.x;
+}
+
 /** Context-menu panel top-left, clamped to an 8px margin inside the window. */
 function clampContextMenuPanel(anchor, panelW, panelH) {
   return {
-    x: Math.min(Math.max(8, anchor.x), Math.max(8, anchor.winW - panelW - 8)),
+    x: Math.min(
+      Math.max(8, contextMenuRequestedX(anchor, panelW)),
+      Math.max(8, anchor.winW - panelW - 8),
+    ),
     y: Math.min(Math.max(8, anchor.y), Math.max(8, anchor.winH - panelH - 8)),
   };
 }
@@ -2118,7 +2125,17 @@ function openMainMenu(ctx, opts) {
       || items.length * CONTEXT_MENU_ROW_HEIGHT + CONTEXT_MENU_CHROME;
     // Remember the anchor + viewport so main-menu:resize can re-clamp the
     // view once the overlay reports its measured panel size.
-    ctx.mainMenuAnchor = { x: Number(anchor.x) || 0, y: Number(anchor.y) || 0, winW, winH };
+    const align = anchor.align === "end" && Number.isFinite(Number(anchor.right))
+      ? "end"
+      : "start";
+    ctx.mainMenuAnchor = {
+      x: Number(anchor.x) || 0,
+      right: Number(anchor.right) || 0,
+      align,
+      y: Number(anchor.y) || 0,
+      winW,
+      winH,
+    };
     const clamped = clampContextMenuPanel(ctx.mainMenuAnchor, panelW, panelH);
     panelX = clamped.x;
     panelY = clamped.y;

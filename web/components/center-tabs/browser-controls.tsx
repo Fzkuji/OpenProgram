@@ -1,19 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Bookmark,
+  ArrowRight,
   Check,
   ChevronRight,
   Clock3,
   Folder,
+  House,
   Import,
   Library,
   MoreVertical,
   Plus,
   Settings,
   Trash2,
+  ExternalLink,
 } from "lucide-react";
 
 import {
@@ -42,6 +45,7 @@ import {
   subscribeBrowserPrefs,
 } from "@/lib/browser-prefs";
 import { desktopBridge, type DesktopContextMenuItem } from "@/lib/desktop-bridge";
+import { browserResponsiveMenuItems } from "@/lib/browser-layout";
 import { useTranslation } from "@/lib/i18n";
 import { faviconUrl } from "@/lib/ntp-shortcuts";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
@@ -53,11 +57,30 @@ function useBookmarksBarPreference() {
   return visible;
 }
 
-function runBrowserAction(id: string, router: ReturnType<typeof useRouter>) {
+type BrowserMenuActions = {
+  home(): void;
+  forward?: () => void;
+  openExternal(): void;
+};
+
+function runBrowserAction(
+  id: string,
+  router: ReturnType<typeof useRouter>,
+  actions: BrowserMenuActions,
+) {
   const tabs = useCenterTabs.getState();
   switch (id) {
     case "new-tab":
       tabs.openBuiltinTab("browser");
+      break;
+    case "home":
+      actions.home();
+      break;
+    case "forward":
+      actions.forward?.();
+      break;
+    case "open-external":
+      actions.openExternal();
       break;
     case "bookmarks":
       tabs.openBuiltinTab("bookmarks");
@@ -81,7 +104,15 @@ function runBrowserAction(id: string, router: ReturnType<typeof useRouter>) {
   }
 }
 
-export function BrowserMenu() {
+export function BrowserMenu({
+  tabId,
+  actions,
+  canGoForward = true,
+}: {
+  tabId: string;
+  actions: BrowserMenuActions;
+  canGoForward?: boolean;
+}) {
   const router = useRouter();
   const { text } = useTranslation();
   const visible = useBookmarksBarPreference();
@@ -89,18 +120,35 @@ export function BrowserMenu() {
   const mainMenu = bridge?.mainMenu;
   const canImport = Boolean(bridge?.browserImport);
   const label = text("Browser menu", "浏览器菜单");
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
+  const [paneWidth, setPaneWidth] = useState(Number.POSITIVE_INFINITY);
+  const responsive = browserResponsiveMenuItems(paneWidth);
+  const actionPrefix = `browsermenu:${tabId}:`;
+
+  useEffect(() => {
+    const pane = triggerRef.current?.closest(`.${styles.webPane}`);
+    if (!pane) return;
+    const update = () => setPaneWidth(pane.getBoundingClientRect().width);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(pane);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!mainMenu) return;
     return mainMenu.onAction((id) => {
-      if (!id.startsWith("browsermenu:")) return;
-      runBrowserAction(id.slice("browsermenu:".length), router);
+      if (!id.startsWith(actionPrefix)) return;
+      runBrowserAction(id.slice(actionPrefix.length), router, actionsRef.current);
     });
-  }, [mainMenu, router]);
+  }, [actionPrefix, mainMenu, router]);
 
   if (mainMenu) {
     return (
       <button
+        ref={triggerRef}
         type="button"
         className={styles.webToolbarBtn}
         title={label}
@@ -113,15 +161,18 @@ export function BrowserMenu() {
             chinese: string,
             extra?: Pick<DesktopContextMenuItem, "separatorBefore" | "checked" | "disabled">,
           ): DesktopContextMenuItem => ({
-            id: `browsermenu:${id}`,
+            id: `${actionPrefix}${id}`,
             label: text(english, chinese),
             ...extra,
           });
           mainMenu.open({
-            anchor: { x: rect.right - 224, y: rect.bottom + 4, vw: innerWidth, vh: innerHeight },
+            anchor: { right: rect.right, y: rect.bottom + 4, align: "end", vw: innerWidth, vh: innerHeight },
             theme: document.documentElement.dataset.theme as "light" | "dark" | undefined,
             items: [
               item("new-tab", "New browser tab", "新建浏览器标签页"),
+              ...(responsive.home ? [item("home", "Home", "主页")] : []),
+              ...(responsive.forward ? [item("forward", "Forward", "前进", { disabled: !canGoForward })] : []),
+              ...(responsive.openExternal ? [item("open-external", "Open in browser", "在浏览器中打开")] : []),
               item("bookmarks", "Bookmarks", "书签", { separatorBefore: true }),
               item("history", "History", "历史"),
               item("toggle-bookmarks-bar", "Show bookmarks bar", "显示书签栏", { checked: visible }),
@@ -143,8 +194,13 @@ export function BrowserMenu() {
     english: string,
     chinese: string,
     checked = false,
+    disabled = false,
   ) => (
-    <DropdownMenuItem className={itemCls(false)} onSelect={() => runBrowserAction(id, router)}>
+    <DropdownMenuItem
+      className={itemCls(false)}
+      disabled={disabled}
+      onSelect={() => runBrowserAction(id, router, actions)}
+    >
       {checked ? <Check size={14} aria-hidden="true" /> : icon}
       <span className="flex-1">{text(english, chinese)}</span>
     </DropdownMenuItem>
@@ -153,12 +209,15 @@ export function BrowserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className={styles.webToolbarBtn} title={label} aria-label={label}>
+        <button ref={triggerRef} type="button" className={styles.webToolbarBtn} title={label} aria-label={label}>
           <MoreVertical size={15} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className={MENU_PANEL}>
         {row("new-tab", <Plus size={14} />, "New browser tab", "新建浏览器标签页")}
+        {responsive.home ? row("home", <House size={14} />, "Home", "主页") : null}
+        {responsive.forward ? row("forward", <ArrowRight size={14} />, "Forward", "前进", false, !canGoForward) : null}
+        {responsive.openExternal ? row("open-external", <ExternalLink size={14} />, "Open in browser", "在浏览器中打开") : null}
         <DropdownMenuSeparator className={MENU_SEPARATOR} />
         {row("bookmarks", <Bookmark size={14} />, "Bookmarks", "书签")}
         {row("history", <Clock3 size={14} />, "History", "历史")}
@@ -180,7 +239,7 @@ export function BookmarksLibraryButton() {
   return (
     <button
       type="button"
-      className={`${styles.webToolbarBtn} ${styles.webToolbarOptional}`}
+      className={`${styles.webToolbarBtn} ${styles.webToolbarMedium}`}
       onClick={() => openBuiltinTab("bookmarks")}
       title={label}
       aria-label={label}
@@ -190,26 +249,34 @@ export function BookmarksLibraryButton() {
   );
 }
 
-function folderItems(folder: BookmarkFolder): DesktopContextMenuItem[] {
+function folderItems(folder: BookmarkFolder, ownerId: string): DesktopContextMenuItem[] {
   return flattenBookmarks(folder).map((bookmark, index) => ({
-    id: `bookmarkfolder:${folder.id}:${index}`,
+    id: `bookmarkfolder:${ownerId}:${folder.id}:${index}`,
     label: bookmark.title || bookmark.url,
   }));
 }
 
-function BookmarkFolderButton({ folder, onNavigate }: { folder: BookmarkFolder; onNavigate(url: string): void }) {
+function BookmarkFolderButton({
+  folder,
+  ownerId,
+  onNavigate,
+}: {
+  folder: BookmarkFolder;
+  ownerId: string;
+  onNavigate(url: string): void;
+}) {
   const mainMenu = desktopBridge()?.mainMenu;
   const bookmarks = flattenBookmarks(folder);
 
   useEffect(() => {
     if (!mainMenu) return;
     return mainMenu.onAction((id) => {
-      const prefix = `bookmarkfolder:${folder.id}:`;
+      const prefix = `bookmarkfolder:${ownerId}:${folder.id}:`;
       if (!id.startsWith(prefix)) return;
       const bookmark = bookmarks[Number(id.slice(prefix.length))];
       if (bookmark) onNavigate(bookmark.url);
     });
-  }, [bookmarks, folder.id, mainMenu, onNavigate]);
+  }, [bookmarks, folder.id, mainMenu, onNavigate, ownerId]);
 
   if (mainMenu) {
     return (
@@ -221,9 +288,9 @@ function BookmarkFolderButton({ folder, onNavigate }: { folder: BookmarkFolder; 
           mainMenu.open({
             anchor: { x: rect.left, y: rect.bottom + 2, vw: innerWidth, vh: innerHeight },
             theme: document.documentElement.dataset.theme as "light" | "dark" | undefined,
-            items: folderItems(folder).length > 0
-              ? folderItems(folder)
-              : [{ id: `bookmarkfolder:${folder.id}:empty`, label: "Empty folder", disabled: true }],
+            items: folderItems(folder, ownerId).length > 0
+              ? folderItems(folder, ownerId)
+              : [{ id: `bookmarkfolder:${ownerId}:${folder.id}:empty`, label: "Empty folder", disabled: true }],
           });
         }}
         title={folder.title}
@@ -274,7 +341,7 @@ function BookmarkLeafButton({ node, onNavigate }: { node: Extract<BookmarkNode, 
   );
 }
 
-export function BookmarkBar({ onNavigate }: { onNavigate(url: string): void }) {
+export function BookmarkBar({ tabId, onNavigate }: { tabId: string; onNavigate(url: string): void }) {
   const { text } = useTranslation();
   const visible = useBookmarksBarPreference();
   const [nodes, setNodes] = useState(() => readBookmarkTree().children);
@@ -287,7 +354,7 @@ export function BookmarkBar({ onNavigate }: { onNavigate(url: string): void }) {
     <div className={styles.bookmarkBar} aria-label={text("Bookmarks bar", "书签栏")}>
       <div className={styles.bookmarkBarItems}>
         {nodes.map((node) => node.kind === "folder" ? (
-          <BookmarkFolderButton key={node.id} folder={node} onNavigate={onNavigate} />
+          <BookmarkFolderButton key={node.id} folder={node} ownerId={tabId} onNavigate={onNavigate} />
         ) : (
           <BookmarkLeafButton key={node.id} node={node} onNavigate={onNavigate} />
         ))}

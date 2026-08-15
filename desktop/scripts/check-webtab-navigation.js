@@ -211,6 +211,8 @@ vm.runInContext(
     buildMenu,
     createWindow,
     cleanupWindowContext,
+    clampContextMenuPanel,
+    contextMenuRequestedX,
     ensureView,
     destroyView,
     validateTransferPayload:
@@ -764,6 +766,24 @@ async function checkSenderOwnership() {
   ipcListeners.get("webtab:ensure")(eventB, "fresh-b", "");
   assert.equal(ctxB.views.get("fresh-b").ownerId, ctxB.id);
   assert.equal(ctxA.views.has("fresh-b"), false);
+}
+
+function checkContextMenuEndAlignment() {
+  const anchor = {
+    align: "end",
+    right: 600,
+    x: 0,
+    y: 40,
+    winW: 800,
+    winH: 600,
+  };
+  assert.equal(hooks.contextMenuRequestedX(anchor, 224), 376);
+  assert.equal(hooks.clampContextMenuPanel(anchor, 224, 120).x, 376);
+  assert.equal(
+    hooks.clampContextMenuPanel(anchor, 300, 120).x,
+    300,
+    "a measured width change keeps the context-menu right edge on its trigger",
+  );
 }
 
 async function checkTerminalProcessIdentity() {
@@ -3575,6 +3595,7 @@ Promise.all([
   .then(async () => {
     checkPreloadWindowIdentity();
     checkPreloadTabTransfer();
+    checkContextMenuEndAlignment();
     await checkSenderOwnership();
     await checkTerminalProcessIdentity();
     await checkFocusedRoutingAndCleanup();

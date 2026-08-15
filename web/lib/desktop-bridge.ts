@@ -289,7 +289,8 @@ export interface DesktopMainMenuApi {
      *  given): panel top-left at {x, y}, clamped inside the window. */
     anchor:
       | { rightInset: number; top: number; vw: number }
-      | { x: number; y: number; vw: number; vh: number };
+      | { x: number; y: number; vw: number; vh: number }
+      | { right: number; y: number; align: "end"; vw: number; vh: number };
     theme?: "light" | "dark";
     /** Present → generic context-menu overlay instead of the ⋮ menu.
      *  Namespace the ids (e.g. "tabmenu:*") — every onAction subscriber

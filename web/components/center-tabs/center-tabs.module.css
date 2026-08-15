@@ -1226,7 +1226,7 @@
 }
 
 @container (max-width: 719px) {
-  .webToolbarOptional { display: none; }
+  .webToolbarMedium { display: none; }
   .webAddress { min-width: 0; }
 }
 @container (max-width: 559px) {
@@ -1237,30 +1237,6 @@
 }
 
 /* Persistent slim hint — many sites refuse framing and the failure is
-.builtinHeaderActions {
-  margin-left: auto;
-  display: flex;
-  gap: 7px;
-}
-
-.filesPage {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--bg-primary);
-}
-.filesPage > div {
-  height: 100%;
-}
-.filesPageEmpty {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--text-muted);
-}
    not detectable from here, so the escape hatch is always visible. */
 .webHint {
   height: 24px;
@@ -1275,12 +1251,6 @@
   color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
-.ntpLauncher {
-  width: min(420px, calc(100% - 48px));
-  display: grid;
-  gap: 8px;
-}
-
 }
 .webHintLink {
   display: inline-flex;
@@ -1359,6 +1329,30 @@
   color: var(--accent-red);
   border-color: var(--accent-red);
 }
+.builtinHeaderActions {
+  margin-left: auto;
+  display: flex;
+  gap: 7px;
+}
+
+.filesPage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+.filesPage > div {
+  height: 100%;
+}
+.filesPageEmpty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+}
 
 /* ---- New-tab page -------------------------------------------------- */
 
@@ -1371,6 +1365,12 @@
   justify-content: center;
   gap: 18px;
   background: var(--bg-primary);
+}
+
+.ntpLauncher {
+  width: min(420px, calc(100% - 48px));
+  display: grid;
+  gap: 8px;
 }
 
 .ntpTitle {
@@ -1487,6 +1487,15 @@
   height: 24px;
 }
 .ntpTileInitial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 16px;
+  font-weight: 650;
+  color: #fff;
+}
 
 /* Browser chrome and browser data appear only after the Browser entry opens. */
 .browserHome {
@@ -1692,15 +1701,6 @@
   display: grid;
   place-items: center;
   color: var(--text-muted);
-}
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  font-size: 16px;
-  font-weight: 650;
-  color: #fff;
 }
 .ntpTileAdd {
   border-style: dashed;

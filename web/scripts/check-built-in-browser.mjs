@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import postcss from "postcss";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
@@ -11,6 +12,7 @@ const browserHome = read("../components/center-tabs/browser-home-page.tsx");
 const browserControls = read("../components/center-tabs/browser-controls.tsx");
 const browserGlyph = read("../components/center-tabs/browser-glyph.tsx");
 const browserPrefs = read("../lib/browser-prefs.ts");
+const browserLayoutSource = read("../lib/browser-layout.ts");
 const webTabPane = read("../components/center-tabs/web-tab-pane.tsx");
 const mainMenu = read("../components/center-tabs/main-menu.tsx");
 const desktopMainMenu = read("../app/menu-overlay/main-menu/page.tsx");
@@ -46,7 +48,14 @@ assert.match(browserPrefs, /SHOW_BOOKMARKS_BAR_KEY/);
 assert.match(browserPrefs, /BROWSER_IMPORT_PROMPT_FINISHED_KEY/);
 assert.match(browserControls, /function BrowserMenu/);
 assert.match(browserControls, /function BookmarkBar/);
+assert.match(browserControls, /actionPrefix = `browsermenu:\$\{tabId\}:/);
+assert.match(browserControls, /bookmarkfolder:\$\{ownerId\}:/);
+assert.match(browserControls, /anchor: \{ right: rect\.right, y: rect\.bottom \+ 4, align: "end"/);
 assert.doesNotMatch(webTabPane, /SplitButton|Open split view|Columns2/);
+assert.match(webTabPane, /goBack\(tabId\)[\s\S]*className=\{`\$\{styles\.webToolbarBtn\} \$\{styles\.webToolbarForward\}`\}[\s\S]*goForward\(tabId\)/);
+assert.match(webTabPane, /function BookmarkButton[\s\S]*className=\{styles\.webToolbarBtn\}/);
+assert.match(webTabPane, /function HomeButton[\s\S]*styles\.webToolbarMedium/);
+assert.match(webTabPane, /<BookmarkBar tabId=\{tabId\}/);
 assert.match(browserControls, /Show bookmarks bar/);
 assert.match(browserControls, /Clear browsing data/);
 assert.match(browserControls, /Browser settings/);
@@ -57,6 +66,8 @@ assert.match(browserControls, /disabled: !canImport/);
 assert.match(browserControls, /separatorBefore/);
 assert.match(browserControls, /checked/);
 assert.match(browserSettings, /BrowserImportDialog/);
+assert.match(browserSettings, /bridge\?\.browserImport \? \(/);
+assert.doesNotMatch(browserSettings, /disabled=\{!bridge\?\.browserImport\}/);
 assert.match(browserSettings, /browserData\.clear/);
 assert.match(settingsLayout, /\/settings\/browser/);
 assert.match(browserSettingsRoute, /<BrowserSettings/);
@@ -66,6 +77,15 @@ assert.match(centerTabsCss, /container-type:\s*inline-size/);
 assert.match(centerTabsCss, /@container\s*\(max-width:\s*719px\)/);
 assert.match(centerTabsCss, /@container\s*\(max-width:\s*559px\)/);
 assert.match(centerTabsCss, /@container\s*\(max-width:\s*519px\)/);
+const cssRoot = postcss.parse(centerTabsCss);
+const topLevelSelectors = new Set(
+  cssRoot.nodes
+    .filter((node) => node.type === "rule")
+    .flatMap((node) => node.selectors ?? []),
+);
+for (const selector of [".builtinHeaderActions", ".filesPage", ".ntpLauncher", ".ntpTileInitial", ".browserHome"]) {
+  assert.ok(topLevelSelectors.has(selector), `${selector} must remain a top-level CSS rule`);
+}
 assert.match(historyCss, /\.browsing-history-row\s*\{[^}]*min-height:\s*38px/s);
 assert.doesNotMatch(mainMenu, /openBuiltinTab\("bookmarks"\)|openBuiltinTab\("history"\)/);
 assert.doesNotMatch(desktopMainMenu, /"bookmarks"|"history"/);
@@ -88,6 +108,28 @@ assert.match(main, /browser-data:clear/);
 assert.match(main, /webtab:stop/);
 assert.match(main, /cookies:\s*result\.cookies/);
 assert.doesNotMatch(main, /cookies:\s*result\.(?:cookies\.)?(?:name|value)/);
+
+const browserLayoutCompiled = ts.transpileModule(browserLayoutSource, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const browserLayout = await import(
+  `data:text/javascript;base64,${Buffer.from(browserLayoutCompiled).toString("base64")}`
+);
+assert.deepEqual(browserLayout.browserResponsiveMenuItems(720), {
+  home: false,
+  forward: false,
+  openExternal: false,
+});
+assert.deepEqual(browserLayout.browserResponsiveMenuItems(600), {
+  home: true,
+  forward: false,
+  openExternal: true,
+});
+assert.deepEqual(browserLayout.browserResponsiveMenuItems(500), {
+  home: true,
+  forward: true,
+  openExternal: true,
+});
 
 const historyGroupsCompiled = ts.transpileModule(historyGroupsSource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
