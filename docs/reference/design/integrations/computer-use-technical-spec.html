@@ -35,7 +35,7 @@
     <div class="eyebrow">OpenProgram · technical specification</div>
     <h1>Computer Use 技术规格</h1>
     <p class="lead">本页只保留实现需要的模式、工具、权限、失败和验收规格。结构与交互图见 <a href="computer-use.html">设计概览</a>。</p>
-    <p class="status">IMPLEMENTATION REFERENCE · MULTI-BACKEND NOT IMPLEMENTED</p>
+    <p class="status">MULTI-BACKEND BASELINE IMPLEMENTED · APP E2E PENDING</p>
   </header>
 
   <nav aria-label="目录"><a href="#modes">三个 backend</a><a href="#reuse">开源与复用</a><a href="#contract">工具契约</a><a href="#boundaries">成本与边界</a><a href="#delivery">实施顺序</a><a href="#acceptance">验收</a><a href="#evidence">当前证据</a></nav>
@@ -121,10 +121,10 @@ computer_use({ command: "verify", computer_session_id: "cs_…", assertion: { �
       <tr><td>DOM-first task wrapper 与 point fallback</td><td class="evidence-yes">已验证 baseline</td><td><code>agentic_functions/browser_agent/__init__.py</code> 与 component tests</td></tr>
       <tr><td>通用 MCP server/client 与 image content</td><td class="evidence-partial">已有基础</td><td><code>openprogram/mcp_server/</code>、<code>openprogram/mcp/</code></td></tr>
       <tr><td>动态 Page geometry、registry、lease</td><td class="evidence-partial">部分实现</td><td>当前 turn surface 已按实际 pane 顺序生成 left、right 或 center；完整 registry revisions 与 lease 仍未实现</td></tr>
-      <tr><td>Playwright MCP backend</td><td class="evidence-no">未实现</td><td>只有官方文档研究与本页设计</td></tr>
-      <tr><td>Chrome DevTools MCP backend</td><td class="evidence-no">未实现</td><td>只有官方工具研究与本页 adapter 设计</td></tr>
-      <tr><td>Open Claude in Chrome-compatible backend</td><td class="evidence-no">未实现</td><td>只有第三方工具契约研究与本页 Electron/CDP adapter 设计</td></tr>
-      <tr><td>multi-backend selector</td><td class="evidence-no">未实现</td><td>当前 ComputerSession 尚未保存三个 setting 之一</td></tr>
+      <tr><td>Playwright MCP backend</td><td class="evidence-partial">已实现，安装版待验收</td><td>固定 <code>@playwright/mcp@0.0.79</code>；marker 绑定 exact tab index；只映射 allowlisted action。</td></tr>
+      <tr><td>Chrome DevTools MCP backend</td><td class="evidence-partial">已实现，安装版待验收</td><td>固定 <code>chrome-devtools-mcp@1.7.0</code>；marker 绑定 exact pageId；启用 pageId routing。</td></tr>
+      <tr><td>Open Claude in Chrome-compatible backend</td><td class="evidence-yes">已实现 baseline</td><td>复用现有 exact Page DOM/ref、单截图和坐标 action；不运行 Chrome extension/native host。</td></tr>
+      <tr><td>multi-backend selector</td><td class="evidence-yes">已实现 command selector</td><td><code>observe</code> 选择 backend 并冻结到 ComputerSession；后续变更返回 <code>backend_mismatch</code>。</td></tr>
     </tbody></table></div>
     <p class="caption">本文没有把目标能力写成已实现。完整实施记录继续维护在 <a href="computer-use-implementation.html">Computer Use 实施记录</a>。</p>
     <h3>需要实现者展开时再读</h3>

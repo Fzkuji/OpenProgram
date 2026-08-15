@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -236,3 +237,57 @@ def test_official_backend_rejects_stale_frame_before_upstream_call(monkeypatch):
     })
     assert result["reason_code"] == "stale_observation"
     assert client.calls == before
+
+
+def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.agentic_functions import browser_agent as module
+    from openprogram.programs.agentic_functions.browser_agent import (
+        computer_use_runtime,
+    )
+
+    class _Registry:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def execute(self, **kwargs):
+            self.calls.append(kwargs)
+            if kwargs["command"] == "observe":
+                return {
+                    "ok": True, "frame_id": "frame-1",
+                    "computer_session_id": "cs-1",
+                    "backend": kwargs.get("backend") or "chrome_devtools_mcp",
+                }
+            if kwargs["command"] == "verify":
+                return {"ok": True, "passed": True, "backend": "chrome_devtools_mcp"}
+            return {"ok": True}
+
+    registry = _Registry()
+    monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(surface_context, "current", lambda: {"surfaces": [{}]})
+    monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "binding-1")
+
+    class _Runtime:
+        def exec(self, **kwargs):
+            tool = kwargs["tools"][0]
+            asyncio.run(tool.execute(
+                "call-1",
+                {
+                    "action": "verify", "expected_frame_id": "frame-1",
+                    "assertion": "text_contains", "value": "done",
+                },
+                asyncio.Event(),
+                None,
+            ))
+            return "verified"
+
+    result = module.browser_agent(
+        task="Verify the page",
+        backend="chrome_devtools_mcp",
+        runtime=_Runtime(),
+    )
+    assert result["status"] == "succeeded"
+    assert registry.calls[0]["backend"] == "chrome_devtools_mcp"
+    assert registry.calls[-1] == {
+        "command": "close", "computer_session_id": "cs-1",
+    }

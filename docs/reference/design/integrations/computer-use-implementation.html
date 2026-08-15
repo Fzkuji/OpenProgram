@@ -14,6 +14,7 @@
 <p>本页只记录 <a href="computer-use.html">Computer Use 目标设计</a> 的实施任务、验证命令和 review 结论，不修改概念设计。第一项任务交付内置浏览器 Browser Agent 的低成本 baseline。</p>
 <span class="status">TASK 1 · COMPLETE</span>
 <span class="status">TASK 2 · COMPLETE</span>
+<span class="status">TASK 3 · CODE COMPLETE / APP E2E PENDING</span>
 
 <h2>任务 1：DOM-first Browser Agent baseline</h2>
 <div class="card">
@@ -154,6 +155,19 @@
   <tbody>
     <tr><td>Specification review</td><td>首轮发现目标设计仍保留旧的“Surface Awareness 未实现”和“完整 registry 完成前不得向 provider 注入”表述。已改为当前 turn-scoped baseline 与后续完整架构分别记录；复核未发现新矛盾。</td><td class="pass">PASS，zero findings</td></tr>
     <tr><td>Quality review</td><td>首轮发现 Plan mode 未过滤、子进程丢失 permission rules、capture 后早期异常未释放 binding。已分别增加 plan policy、permission rule snapshot/reconstruction、capture-owner <code>try/finally</code> 及回归测试。</td><td class="pass">PASS，zero findings</td></tr>
+  </tbody>
+</table>
+
+<h2>任务 3：统一 command API 与三个 backend</h2>
+<table>
+  <thead><tr><th>交付</th><th>直接证据</th><th>状态</th></tr></thead>
+  <tbody>
+    <tr><td>统一入口</td><td><code>computer_use(list_pages / observe / act / verify / close)</code>；OpenProgram MCP 同名第一方工具。</td><td class="pass">完成</td></tr>
+    <tr><td>Session selector</td><td><code>observe</code> 选择 <code>playwright_mcp</code>、<code>chrome_devtools_mcp</code> 或 <code>open_claude_chrome</code>；当前 session 禁止切换和自动 fallback。</td><td class="pass">完成</td></tr>
+    <tr><td>Exact Page</td><td>两个官方 MCP 私有进程使用一次性 page marker 解析唯一 tab index/pageId；每次 action 前继续校验原绑定 target 与 frame。</td><td class="pass">component 通过</td></tr>
+    <tr><td>Direct MCP</td><td>单一桌面控制连接时可获取当前 in-app Page；多个连接直接拒绝，不随机选择窗口。</td><td class="pass">component 通过</td></tr>
+    <tr><td>验证</td><td><code>test_computer_use_runtime.py</code>、Browser Agent、surface、MCP contract/service/integration 共 172 passed。</td><td class="pass">通过</td></tr>
+    <tr><td>安装版</td><td><code>/Applications/OpenProgram.app</code> 三 backend 同任务 parity。</td><td class="pending">待执行</td></tr>
   </tbody>
 </table>
 </main></body></html>

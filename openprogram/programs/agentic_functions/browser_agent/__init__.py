@@ -767,6 +767,12 @@ def _screenshot_image_block(result: Any) -> dict[str, str] | None:
         "url": {"description": "Optional initial http(s) URL"},
         "max_steps": {"description": "Maximum state-changing actions"},
         "max_seconds": {"description": "Wall-clock limit in seconds"},
+        "backend": {
+            "description": "Optional computer_use backend for GUI Agent Harness",
+            "options": [
+                "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
+            ],
+        },
         "runtime": {"hidden": True},
     },
 )
@@ -775,13 +781,135 @@ def browser_agent(
     url: str = "",
     max_steps: int = 20,
     max_seconds: int = 300,
+    backend: str = "",
     runtime=None,
 ) -> dict:
     """Complete a task in OpenProgram's visible built-in browser tab."""
+    if backend:
+        return _run_browser_task_commands(
+            task=task,
+            backend=backend,
+            max_steps=max_steps,
+            max_seconds=max_seconds,
+            runtime=runtime,
+        )
     return _run_browser_task(
         task=task, url=url, max_steps=max_steps, max_seconds=max_seconds,
         runtime=runtime,
     )
+
+
+def _run_browser_task_commands(
+    *, task: str, backend: str, max_steps: int, max_seconds: int, runtime,
+) -> dict:
+    """Optional GUI Agent Harness over the same public command contract."""
+    if runtime is None:
+        raise ValueError("browser_agent requires a runtime argument")
+    from openprogram.agent import surface_context
+    from .computer_use_runtime import get_registry
+
+    context = surface_context.current() or surface_context.capture_active()
+    token = surface_context.bind(context)
+    try:
+        binding_id = surface_context.resolve_binding("")
+    finally:
+        surface_context.reset(token)
+    registry = get_registry()
+    observed = registry.execute(
+        command="observe", backend=backend, binding_id=binding_id,
+    )
+    session_id = str(observed.get("computer_session_id") or "")
+    if not session_id or "frame_id" not in observed:
+        return {
+            "status": "failed",
+            "reason_code": observed.get("reason_code", "page_unavailable"),
+            "summary": "The selected Page could not be observed.",
+            "backend": backend,
+        }
+
+    last: dict[str, Any] = {"result": None, "action": "", "seq": 0}
+
+    def dispatch(action: str, **arguments):
+        command = "verify" if action == "verify" else "act"
+        arguments["action"] = action
+        result = registry.execute(
+            command=command,
+            computer_session_id=session_id,
+            arguments=arguments,
+        )
+        last.update(result=result, action=action, seq=last["seq"] + 1)
+        return result
+
+    action_tool = function(
+        name="browser_page",
+        description=(
+            "Act on the exact Page observation. Use DOM/ARIA refs by default. "
+            "Use screenshot only when refs cannot identify a visual target."
+        ),
+        parameters=_TOOL_PARAMETERS,
+        register_globally=False,
+    )(dispatch)
+    deadline = time.monotonic() + max(1, min(int(max_seconds), 1800))
+    pending_screenshot = None
+    summary = ""
+    try:
+        for _ in range(min(max(1, int(max_steps)) * 3 + 3, 303)):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return {
+                    "status": "failed", "reason_code": "timeout",
+                    "summary": "GUI Agent Harness exceeded its time limit.",
+                    "backend": backend, "computer_session_id": session_id,
+                }
+            content: list[dict[str, Any]] = [{
+                "type": "text",
+                "text": _step_prompt(task, "", observed, last["result"]),
+            }]
+            if pending_screenshot is not None:
+                content.append(pending_screenshot)
+                pending_screenshot = None
+            seq_before = last["seq"]
+            reply = runtime.exec(
+                content=content,
+                tools=[action_tool],
+                tool_choice={"type": "function", "name": "browser_page"},
+                parallel_tool_calls=False,
+                max_iterations=1,
+                timeout_s=max(1, remaining),
+                execution_kind="browser_agent",
+            )
+            if isinstance(reply, str) and reply.strip():
+                summary = reply.strip()
+            if last["seq"] == seq_before:
+                last["result"] = {"ok": False, "reason_code": "tool_not_executed"}
+                continue
+            result = last["result"]
+            if last["action"] == "verify" and isinstance(result, dict) and result.get("passed"):
+                return {
+                    "status": "succeeded", "reason_code": "verified",
+                    "summary": summary or "Browser task completed and verified.",
+                    "backend": backend, "computer_session_id": session_id,
+                }
+            if last["action"] == "screenshot":
+                pending_screenshot = _screenshot_image_block(result)
+            if isinstance(result, dict) and result.get("observe_required"):
+                observed = registry.execute(
+                    command="observe", computer_session_id=session_id,
+                )
+                if "frame_id" not in observed:
+                    return {
+                        "status": "failed",
+                        "reason_code": observed.get("reason_code", "page_unavailable"),
+                        "summary": "The Page could not be observed after an action.",
+                        "backend": backend, "computer_session_id": session_id,
+                    }
+        return {
+            "status": "failed", "reason_code": "verification_missing",
+            "summary": summary or "Browser task ended without verification.",
+            "backend": backend, "computer_session_id": session_id,
+        }
+    finally:
+        registry.execute(command="close", computer_session_id=session_id)
 
 
 @agentic_function(
