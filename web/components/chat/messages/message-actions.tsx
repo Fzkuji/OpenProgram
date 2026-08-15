@@ -130,8 +130,14 @@ export function MessageTimestamp({ timestamp }: { timestamp?: number }) {
     || timestamp <= 0
   ) return null;
   const value = new Date(timestamp > 1e12 ? timestamp : timestamp * 1000);
+  const fullTime = value.toLocaleString();
   return (
-    <span className="message-timestamp" title={value.toLocaleString()}>
+    <span
+      className="message-timestamp"
+      title={fullTime}
+      aria-label={fullTime}
+      tabIndex={0}
+    >
       {value.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
     </span>
   );

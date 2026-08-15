@@ -799,8 +799,13 @@ assert.match(
 );
 assert.match(
   messageActions,
-  /export function MessageTimestamp[\s\S]*className="message-timestamp"/,
-  "all message kinds must share one timestamp renderer",
+  /export function MessageTimestamp[\s\S]*className="message-timestamp"[\s\S]*aria-label=\{fullTime\}[\s\S]*tabIndex=\{0\}/,
+  "all message kinds must share one keyboard-focusable timestamp renderer",
+);
+assert.match(
+  chatCss,
+  /@media\s*\(hover:\s*none\)[\s\S]*\.message \.message-actions,[\s\S]*\.attach-card \.message-actions[\s\S]*opacity:\s*1/,
+  "touch devices must expose timestamps without relying on hover",
 );
 assert.match(
   assistantBubble,
