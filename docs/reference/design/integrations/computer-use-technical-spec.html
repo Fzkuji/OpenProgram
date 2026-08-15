@@ -120,7 +120,7 @@ computer_use({ command: "verify", computer_session_id: "cs_…", assertion: { �
       <tr><td>内置 web tab exact CDP attach</td><td class="evidence-yes">已验证</td><td><code>desktop/main.js</code>、<code>_actions/open_action.py</code></td></tr>
       <tr><td>DOM-first task wrapper 与 point fallback</td><td class="evidence-yes">已验证 baseline</td><td><code>agentic_functions/browser_agent/__init__.py</code> 与 component tests</td></tr>
       <tr><td>通用 MCP server/client 与 image content</td><td class="evidence-partial">已有基础</td><td><code>openprogram/mcp_server/</code>、<code>openprogram/mcp/</code></td></tr>
-      <tr><td>动态 Page geometry、registry、lease</td><td class="evidence-partial">部分实现</td><td>当前仍有旧 <code>surface</code> 命名和固定 relation baseline</td></tr>
+      <tr><td>动态 Page geometry、registry、lease</td><td class="evidence-partial">部分实现</td><td>当前 turn surface 已按实际 pane 顺序生成 left、right 或 center；完整 registry revisions 与 lease 仍未实现</td></tr>
       <tr><td>Playwright MCP backend</td><td class="evidence-no">未实现</td><td>只有官方文档研究与本页设计</td></tr>
       <tr><td>Chrome DevTools MCP backend</td><td class="evidence-no">未实现</td><td>只有官方工具研究与本页 adapter 设计</td></tr>
       <tr><td>Open Claude in Chrome-compatible backend</td><td class="evidence-no">未实现</td><td>只有第三方工具契约研究与本页 Electron/CDP adapter 设计</td></tr>

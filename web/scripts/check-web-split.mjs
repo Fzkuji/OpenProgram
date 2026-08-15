@@ -2317,6 +2317,69 @@ const plainTabsModule = await import("../lib/state/center-tabs-store.ts");
 const plainSessionModule = await import("../lib/session-store/index.ts");
 const plainTabs = plainTabsModule.useCenterTabs;
 
+const surfaceTabs = [
+  { id: "s:surface-chat", kind: "session", title: "Chat", sessionId: "surface-chat" },
+  { id: "w:surface-page", kind: "web", title: "Page", url: "https://surface.test/" },
+];
+for (const [visibleIds, expectedRegion] of [
+  [["w:surface-page", "s:surface-chat"], "left"],
+  [["s:surface-chat", "w:surface-page"], "right"],
+]) {
+  plainTabsModule.replaceCenterTabsPayload({
+    version: 2,
+    tabs: surfaceTabs,
+    activeId: "s:surface-chat",
+    groups: [{
+      id: "g:surface",
+      memberIds: visibleIds,
+      visibleIds,
+      focusedId: "s:surface-chat",
+    }],
+    splitWebTabId: null,
+    splitRatio: 0.5,
+  }, { persist: false });
+  assert.equal(
+    bridgeModule.surfaceRefForChat("surface-chat", true)?.region,
+    expectedRegion,
+  );
+}
+plainTabs.setState({
+  tabs: surfaceTabs,
+  activeId: "s:surface-chat",
+  groups: [{
+    id: "g:surface",
+    memberIds: ["s:surface-chat", "w:surface-page"],
+    visibleIds: ["w:surface-page"],
+    focusedId: "w:surface-page",
+  }],
+  splitWebTabId: null,
+  splitRatio: 0.5,
+});
+assert.equal(
+  bridgeModule.surfaceRefForChat("surface-chat", true)?.region,
+  "center",
+);
+plainTabs.setState({
+  tabs: surfaceTabs,
+  activeId: "s:surface-chat",
+  groups: [],
+  splitWebTabId: "w:surface-page",
+  splitRatio: 0.5,
+});
+assert.equal(
+  bridgeModule.surfaceRefForChat("surface-chat", true)?.region,
+  "right",
+);
+plainTabsModule.replaceCenterTabsPayload({
+  version: 2,
+  tabs: surfaceTabs,
+  activeId: "s:surface-chat",
+  groups: [],
+  splitWebTabId: null,
+  splitRatio: 0.5,
+}, { persist: false });
+assert.equal(bridgeModule.surfaceRefForChat("surface-chat", true), null);
+
 // Replacing the id is the cleanup signal used by the desktop bridge. Verify
 // the existing reconciler destroys the native view once Home removes that id.
 {

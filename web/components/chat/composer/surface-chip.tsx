@@ -29,18 +29,23 @@ export function SurfaceChip({
     ? text("Agent can access", "Agent 可访问")
     : text("Web control disabled", "网页控制未启用");
   const title = surface.title || new URL(surface.url || "about:blank").hostname || "Web";
+  const regionLabel = surface.region === "left"
+    ? text("Left", "左侧")
+    : surface.region === "right"
+      ? text("Right", "右侧")
+      : text("Center", "中间");
   return (
-    <HoverTip label={`${stateLabel} · right · ${title}`}>
+    <HoverTip label={`${stateLabel} · ${regionLabel} · ${title}`}>
       <button
         type="button"
         className={`status-badge ${styles.surfaceChip} ${toolsEnabled ? "" : "paused"}`}
-        aria-label={`${stateLabel}: ${title}`}
+        aria-label={`${stateLabel}: ${regionLabel} · ${title}`}
         aria-pressed={toolsEnabled}
         onClick={onToggleAccess}
       >
         <Globe2 size={14} aria-hidden="true" />
         <span className={styles.surfaceChipLabel}>
-          {text("Right", "右侧")} · {title}
+          {regionLabel} · {title}
         </span>
       </button>
     </HoverTip>

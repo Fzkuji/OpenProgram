@@ -151,6 +151,9 @@ def test_frontend_and_electron_expose_turn_surface_preview_contract():
     assert "visible_text_excerpt" in main
     assert "Agent can access" in chip
     assert "surfaceRefForChat(sessionId, toolsEnabled)" in chip
+    assert "surface.region" in chip
+    assert "· right ·" not in chip
+    assert 'aria-label={`${stateLabel}: ${regionLabel} · ${title}`}' in chip
 
 
 def test_computer_use_is_registered_as_surface_aware_public_tool():

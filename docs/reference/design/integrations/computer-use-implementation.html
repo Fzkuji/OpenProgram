@@ -114,7 +114,7 @@
 <table>
   <thead><tr><th>步骤</th><th>实现</th><th>边界</th></tr></thead>
   <tbody>
-    <tr><td>1. Turn surface reference</td><td>composer 从当前 compound group 生成 version/window/tab/region/access/focused/title/url 引用，并随 chat command 提交；surface chip 显示当前绑定目标。</td><td>关闭访问时只保留 disabled descriptor，不提供 preview 或执行工具。</td></tr>
+    <tr><td>1. Turn surface reference</td><td>composer 从当前 compound group 生成 version/window/tab/region/access/focused/title/url 引用，并随 chat command 提交；region 按实际 pane 顺序区分 left、right 与 center，surface chip 显示当前绑定目标和位置。</td><td>关闭访问时只保留 disabled descriptor，不提供 preview 或执行工具。</td></tr>
     <tr><td>2. Exact preview</td><td>服务端只向发起 chat 的 WebSocket 请求 preview，并校验 exact window/tab/target；Electron 从当前 viewport 的 DOM、ARIA landmarks、title 与 URL 生成结果。</td><td>文本最多 2,000 字符，landmark 最多 12 项且 name 最多 160 字符；URL 只保留 origin，不包含 query value；不发送 screenshot。</td></tr>
     <tr><td>3. Model context and tool schema</td><td>dispatcher 在首个模型调用前注入 Surface Context。<code>computer_use</code> 是 resident tool，但仅在 surface binding 有效时进入 provider tool array；没有 surface 时主动移除。</td><td>模型不能提交 window/tab/CDP target，只能使用当前 turn 的 surface alias。</td></tr>
     <tr><td>4. Bound execution</td><td>binding registry 保存 originating WebSocket、window、tab、target 与 expiry；subprocess bridge 只允许 exact binding 的 activate。Browser Agent 继续使用 DOM/ARIA refs 和 post-action observation。</td><td>不使用 OS 输入、桌面坐标、app window focus 或默认 active tab；binding 缺失、过期或 identity 不匹配时失败。</td></tr>

@@ -521,7 +521,7 @@ export interface TurnSurfaceRef {
   version: 1;
   window_id: string;
   tab_id: string;
-  region: "right";
+  region: "left" | "right" | "center";
   access: "enabled" | "disabled";
   focused: boolean;
   title: string;
@@ -550,11 +550,16 @@ export function surfaceRefForChat(
     );
   }
   if (!web || web.kind !== "web") return null;
+  const region = !group
+    ? "right"
+    : group.visibleIds.length === 1
+      ? "center"
+      : group.visibleIds.indexOf(web.id) === 0 ? "left" : "right";
   return {
     version: 1,
     window_id: bridge.windowId,
     tab_id: web.id,
-    region: "right",
+    region,
     access: toolsEnabled ? "enabled" : "disabled",
     focused: group?.focusedId === web.id,
     title: web.title,
