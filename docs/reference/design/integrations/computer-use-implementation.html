@@ -147,7 +147,7 @@
 </ul>
 
 <h2>任务 2 尚未覆盖</h2>
-<p>当前实现支持 turn-scoped exact Page binding、server-owned connection/Page/access monotonic revision、基于 Page revision canonical key 的 ComputerSession 排他 lease，以及显式 <code>screenshot</code> 的单张当前 viewport 原生视觉输入。session 内 action、verify、observe 与 close 串行执行；close、首次 observe 失败、owner disconnect 或进程清理完成前 lease 不会提前释放。tab 隐藏或移出当前窗口后，agent activation 只验证当前 visible collection，不会把旧 Page 重新显示；target replacement 会撤销旧 Page identity；owner WebSocket disconnect 会立即撤销该连接的全部 binding 并唤醒 pending exact-socket request。两个 connection、48 个 binding 的 component 并发验证确认命令只发送到 originating connection，断开其中一个不影响另一个。显式 revision CAS、事件驱动 geometry revision、安装版双窗口/transfer 压力验收、专用 permission card 和 artifact retention policy 仍未实现；既有安装版三 backend 验收不作为这些后续能力的证据。</p>
+<p>当前实现支持 turn-scoped exact Page binding、server-owned connection/Page/access monotonic revision、基于 Page revision canonical key 的 ComputerSession 排他 lease，以及显式 <code>screenshot</code> 的单张当前 viewport 原生视觉输入。session 内 action、verify、observe 与 close 串行执行；首次 observe 之后，每次 observe、act 和 verify 都在 backend 前重新验证 exact visible binding，同进程 Runtime 还会先比较保存的 page/access revision。revision 变化、目标隐藏、转移、替换或连接失效时，当前 ComputerSession 立即清理，旧 Page 不再接收动作。close、首次 observe 失败、owner disconnect 或进程清理完成前 lease 不会提前释放。tab 隐藏或移出当前窗口后，agent activation 只验证当前 visible collection，不会把旧 Page 重新显示；target replacement 会撤销旧 Page identity；owner WebSocket disconnect 会立即撤销该连接的全部 binding 并唤醒 pending exact-socket request。两个 connection、48 个 binding 的 component 并发验证确认命令只发送到 originating connection，断开其中一个不影响另一个。跨进程原子 revision CAS、事件驱动 geometry revision、安装版双窗口/transfer 压力验收、专用 permission card 和 artifact retention policy 仍未实现；既有安装版三 backend 验收不作为这些后续能力的证据。</p>
 
 <h2>任务 2 审查记录</h2>
 <table>
@@ -164,7 +164,7 @@
   <tbody>
     <tr><td>统一入口</td><td><code>computer_use(list_pages / observe / act / verify / close)</code>；OpenProgram MCP 同名第一方工具。</td><td class="pass">完成</td></tr>
     <tr><td>Session selector</td><td><code>observe</code> 选择 <code>playwright_mcp</code>、<code>chrome_devtools_mcp</code> 或 <code>open_claude_chrome</code>；当前 session 禁止切换和自动 fallback。</td><td class="pass">完成</td></tr>
-    <tr><td>Exact Page</td><td>Playwright MCP 通过官方 <code>createConnection(contextGetter)</code> 获得只含 exact target 的 BrowserContext 视图；Chrome DevTools MCP 使用一次性 marker 解析 pageId。两者每次 action 前继续校验原绑定 target 与 frame，均不选择或置前 tab。</td><td class="pass">component 通过</td></tr>
+    <tr><td>Exact Page</td><td>Playwright MCP 通过官方 <code>createConnection(contextGetter)</code> 获得只含 exact target 的 BrowserContext 视图；Chrome DevTools MCP 使用一次性 marker 解析 pageId。Runtime 在首次 observe 后的每次 observe、act 和 verify 前重新验证原绑定 target 的可见性与 identity；revision 或 identity 变化时先清理 session，不调用 backend。三个 backend 均不选择或置前 tab。</td><td class="pass">component 通过</td></tr>
     <tr><td>Direct MCP</td><td>单一桌面控制连接时可获取当前 in-app Page；多个连接直接拒绝，不随机选择窗口。</td><td class="pass">component 通过</td></tr>
     <tr><td>验证</td><td>当前复核覆盖 <code>test_computer_use_runtime.py</code>、backend threading、Browser Agent、surface、MCP contract/route、permission、dispatcher 与 process sandbox，共 214 passed；安装包 Runtime manifest 另在安装版验收中复核。</td><td class="pass">通过</td></tr>
     <tr><td>安装版</td><td><code>f2dbc73d</code> 已打包并安装到 <code>/Applications/OpenProgram.app</code>。三个 backend 依次绑定同一 target <code>2770E11AD9A39A13E80184816A67CD3B</code>，完成 <code>navigate → observe → click → observe → verify → close</code>；页面文本均由 <code>Count: 0</code> 变为 <code>Count: 1</code>，DOM assertion 均返回 <code>passed=true</code>。安装包 Runtime manifest 复核通过。</td><td class="pass">PASS</td></tr>
