@@ -29,6 +29,7 @@ else
   applications_dir="/Applications"
 fi
 target_app="$applications_dir/OpenProgram.app"
+launch_services_register="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 validate_app() {
   local app_path="$1"
@@ -133,6 +134,9 @@ cleanup() {
   if [[ "$old_moved" == 1 && "$activated" == 0 && ! -e "$target_app" && -d "$previous_app" ]]; then
     if mv "$previous_app" "$target_app"; then
       old_moved=0
+      if [[ -z "$install_root" && -x "$launch_services_register" ]]; then
+        "$launch_services_register" -f "$target_app" >/dev/null 2>&1 || :
+      fi
     else
       preserve_transaction=1
       printf 'failed to restore the old App; recover it from %s\n' "$previous_app" >&2
@@ -230,7 +234,6 @@ fi
 
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$target_app/Contents/Info.plist")"
 if [[ -z "$install_root" ]]; then
-  launch_services_register="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
   if [[ ! -x "$launch_services_register" ]] || ! "$launch_services_register" -f "$target_app"; then
     printf 'OpenProgram was installed but Launch Services registration failed\n' >&2
     exit 1

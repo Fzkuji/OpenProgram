@@ -75,7 +75,23 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     assert 'target_app="$applications_dir/OpenProgram.app"' in installer_text
     assert 'open "$target_app"' in installer_text
     assert 'open "$source_app"' not in installer_text
-    assert '"$launch_services_register" -f "$target_app"' in installer_text
+    assert installer_text.count(
+        '"$launch_services_register" -f "$target_app"'
+    ) == 2
+    rollback_start = installer_text.index(
+        'if [[ "$old_moved" == 1 && "$activated" == 0'
+    )
+    rollback_end = installer_text.index(
+        'if [[ "$status" != 0 && "$resume_after_failure"', rollback_start
+    )
+    rollback = installer_text[rollback_start:rollback_end]
+    assert rollback.index('mv "$previous_app" "$target_app"') < rollback.index(
+        '"$launch_services_register" -f "$target_app"'
+    )
+    assert (
+        '"$launch_services_register" -f "$target_app" >/dev/null 2>&1 || :'
+        in rollback
+    )
     assert 'openprogram worker stop' in installer_text
     assert 'openprogram worker uninstall' in installer_text
     assert 'openprogram worker install' in installer_text

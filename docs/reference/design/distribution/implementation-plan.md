@@ -25,7 +25,9 @@ duplicated in this historical distribution ledger.
   not be passed directly through the current legacy ICNS path.
 - Transaction contract: a failed activation never deletes the old App's only
   recoverable copy. A genuine launchd unload failure stops before App mutation;
-  an unloaded stale plist can be replaced. The assembled App passes the existing
+  an unloaded stale plist can be replaced. A failure after Launch Services
+  registration restores and re-registers the previous canonical App without
+  replacing the original installation error. The assembled App passes the existing
   complete packaged-runtime smoke before installation.
 - Concurrency contract: packaging uses one stable per-user lock across
   worktrees, and installation uses an atomic lock in the target Applications
