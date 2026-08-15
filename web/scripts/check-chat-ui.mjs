@@ -1113,7 +1113,7 @@ assert.match(
 );
 assert.match(
   chatCss,
-  /\.tl\s*\{[^}]*--timeline-line:\s*light-dark\([^;]+\);[^}]*--timeline-fill:\s*light-dark\(#92928b,\s*#464644\)/s,
+  /\.tl\s*\{[^}]*--timeline-line:\s*light-dark\([^;]+\);[^}]*--timeline-fill:\s*light-dark\(#92928b,\s*#70706b\)/s,
   "timeline line and fill colours must adapt to light and dark themes",
 );
 const timelineIconCssRules = [...chatCss.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([_, selectors]) =>

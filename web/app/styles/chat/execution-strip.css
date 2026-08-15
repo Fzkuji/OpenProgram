@@ -8,7 +8,7 @@
 .tl {
   margin: 6px 0 4px;
   --timeline-line: light-dark(rgba(36, 36, 32, 0.52), rgba(226, 225, 218, 0.4));
-  --timeline-fill: light-dark(#92928b, #464644);
+  --timeline-fill: light-dark(#92928b, #70706b);
   --timeline-thinking: light-dark(#522690, var(--accent-purple, #a371f7));
   --timeline-function: light-dark(#683000, var(--accent-orange, #d19a66));
   --timeline-llm: light-dark(#004853, var(--accent-cyan, #3bc9db));
