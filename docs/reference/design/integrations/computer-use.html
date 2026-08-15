@@ -9,7 +9,7 @@
   *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
   main{max-width:1180px;margin:auto;padding:58px 28px 80px}header{padding-bottom:44px}.eyebrow{color:var(--accent);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase}.status{margin-top:18px;color:var(--muted);font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em}.caption{margin:12px 0 0;color:var(--muted);font-size:12px}
   h1{max-width:900px;margin:14px 0 16px;color:var(--title);font-size:44px;line-height:1.15;letter-spacing:-.025em}header p{max-width:820px;margin:0;color:#aaa696;font-size:18px}
-  section{padding:44px 0;border-top:1px solid var(--line)}h2{margin:0 0 20px;color:var(--title);font-size:24px}.diagram{overflow-x:auto;background:var(--code)}.architecture-diagram{border:1px solid #29271f;border-radius:18px;background:radial-gradient(circle at 78% 72%,rgba(91,145,242,.09),transparent 30%),radial-gradient(circle at 40% 14%,rgba(224,138,62,.08),transparent 27%),#0d0e0b;box-shadow:inset 0 1px rgba(255,255,255,.025)}svg{display:block;width:100%;min-width:900px;height:auto}
+  section{padding:44px 0;border-top:1px solid var(--line)}h2{margin:0 0 20px;color:var(--title);font-size:24px}.diagram{overflow-x:auto;background:var(--code)}.architecture-diagram{border:1px solid #29271f;border-radius:18px;background:radial-gradient(circle at 78% 72%,rgba(91,145,242,.09),transparent 30%),radial-gradient(circle at 40% 14%,rgba(224,138,62,.08),transparent 27%),#0d0e0b;box-shadow:inset 0 1px rgba(255,255,255,.025)}.architecture-diagram svg{min-width:1120px}svg{display:block;width:100%;min-width:900px;height:auto}
   table{width:100%;border-collapse:collapse;font-size:13.5px}th{padding:10px 12px;border-bottom:1px solid #5a5544;color:var(--muted);text-align:left;font-size:11px;letter-spacing:.06em;white-space:nowrap}td{padding:14px 12px;border-bottom:1px solid var(--line);vertical-align:top}td:first-child{width:120px;color:var(--title);font-weight:700}.table-scroll{overflow-x:auto}.table-scroll table{min-width:760px}.use{color:var(--green)}.adapt{color:var(--accent)}.rebuild{color:#e15b68}
   .links{display:flex;flex-wrap:wrap;gap:12px 28px;padding-top:34px;border-top:1px solid var(--line)}a{color:#55bdd6;text-underline-offset:4px}.links a{font-size:14px}
   @media(max-width:760px){main{padding:34px 20px 60px}h1{font-size:33px}header p{font-size:16px}section{padding:34px 0}}
@@ -47,44 +47,44 @@
         <text x="424" y="86" fill="#e08a3e" font-size="10" font-weight="700" letter-spacing="1.6" text-anchor="middle">AGENT LOOP</text><text x="424" y="112" fill="#f3f0e8" font-size="18" font-weight="750" text-anchor="middle">GUI Agent Harness</text>
         <line x1="334" y1="140" x2="514" y2="140" stroke="#5a5544" stroke-width="1.5"/>
         <g fill="#0d0e0b" stroke="#e08a3e"><circle cx="334" cy="140" r="7"/><circle cx="424" cy="140" r="7"/><circle cx="514" cy="140" r="7"/></g>
-        <g fill="#aaa696" font-size="9.5" text-anchor="middle"><text x="334" y="162">OBSERVE</text><text x="424" y="162">ACT</text><text x="514" y="162">VERIFY</text></g>
+        <g fill="#aaa696" font-size="11" text-anchor="middle"><text x="334" y="162">OBSERVE</text><text x="424" y="162">ACT</text><text x="514" y="162">VERIFY</text></g>
 
         <path d="M562 115 H623" fill="none" stroke="#858173" stroke-width="2" marker-end="url(#arch-arrow)"/>
         <text x="650" y="75" fill="#e08a3e" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700" text-anchor="middle">computer_use</text>
         <path d="M650 94 L671 115 L650 136 L629 115Z" fill="#211b12" stroke="#e08a3e" stroke-width="1.5"/><circle cx="650" cy="115" r="4" fill="#e08a3e"/>
-        <text x="650" y="158" fill="#858173" font-size="10" text-anchor="middle">OpenProgram MCP</text>
+        <text x="650" y="158" fill="#858173" font-size="11" text-anchor="middle">OpenProgram MCP</text>
         <path d="M677 115 H727" fill="none" stroke="#858173" stroke-width="2" marker-end="url(#arch-arrow)"/>
 
         <g filter="url(#arch-shadow)"><rect x="742" y="53" width="332" height="124" rx="20" fill="url(#arch-runtime)" stroke="#a679e4" stroke-width="1.5"/></g>
         <text x="774" y="83" fill="#a679e4" font-size="10" font-weight="700" letter-spacing="1.6">RUNTIME</text><text x="774" y="111" fill="#f3f0e8" font-size="18" font-weight="750">Bind once. Execute exactly.</text>
-        <g fill="#aaa696" font-size="10.5"><text x="774" y="139">Page binding</text><text x="856" y="139" fill="#5a5544">•</text><text x="872" y="139">permission</text><text x="944" y="139" fill="#5a5544">•</text><text x="960" y="139">verification</text></g>
-        <text x="774" y="160" fill="#858173" font-size="10">ComputerSession 创建后冻结 backend</text>
+        <g fill="#aaa696" font-size="11"><text x="774" y="139">Page binding</text><text x="856" y="139" fill="#5a5544">•</text><text x="872" y="139">permission</text><text x="944" y="139" fill="#5a5544">•</text><text x="960" y="139">verification</text></g>
+        <text x="774" y="160" fill="#858173" font-size="11">ComputerSession 创建后冻结 backend</text>
 
         <text x="42" y="245" fill="#5a5544" font-size="10" font-weight="700" letter-spacing="2">EXECUTION / CHOOSE ONE</text><line x1="224" y1="241" x2="1078" y2="241" stroke="#29271f"/>
         <path d="M908 177 V216 C908 252 696 250 696 287" fill="none" stroke="#858173" stroke-width="1.8" marker-end="url(#arch-arrow)"/><path d="M908 216 C908 252 960 250 960 287" fill="none" stroke="#858173" stroke-width="1.8" marker-end="url(#arch-arrow)"/>
-        <text x="829" y="271" fill="#858173" font-size="9.5" letter-spacing="1.2" text-anchor="middle">ONE BACKEND PER SESSION</text>
+        <text x="829" y="271" fill="#858173" font-size="11" letter-spacing="1.2" text-anchor="middle">ONE BACKEND PER SESSION</text>
 
-        <line x1="47" y1="296" x2="47" y2="389" stroke="#5a5544"/><text x="62" y="305" fill="#858173" font-size="9.5" font-weight="700" letter-spacing="1.5">REFERENCE ONLY</text>
-        <circle cx="70" cy="336" r="3" fill="#e08a3e"/><text x="84" y="340" fill="#f3f0e8" font-size="12.5" font-weight="650">Open Claude in Chrome</text><text x="84" y="358" fill="#858173" font-size="9.5">source-available · noncommercial</text>
-        <circle cx="70" cy="381" r="3" fill="#63b15a"/><text x="84" y="385" fill="#f3f0e8" font-size="12.5" font-weight="650">Chrome DevTools MCP</text><text x="260" y="385" fill="#858173" font-size="9.5">Apache-2.0</text>
-        <text x="62" y="414" fill="#5a5544" font-size="9.5">不参与 OpenProgram 运行路径</text>
+        <line x1="47" y1="296" x2="47" y2="389" stroke="#5a5544"/><text x="62" y="305" fill="#858173" font-size="11" font-weight="700" letter-spacing="1.5">REFERENCE ONLY</text>
+        <circle cx="70" cy="336" r="3" fill="#e08a3e"/><text x="84" y="340" fill="#f3f0e8" font-size="12.5" font-weight="650">Open Claude in Chrome</text><text x="84" y="359" fill="#858173" font-size="11">source-available · noncommercial</text>
+        <circle cx="70" cy="381" r="3" fill="#63b15a"/><text x="84" y="385" fill="#f3f0e8" font-size="12.5" font-weight="650">Chrome DevTools MCP</text><text x="260" y="385" fill="#858173" font-size="11">Apache-2.0</text>
+        <text x="62" y="414" fill="#858173" font-size="11">不参与 OpenProgram 运行路径</text>
 
         <g filter="url(#arch-shadow)"><rect x="580" y="291" width="230" height="98" rx="16" fill="#111a15" stroke="#63b15a" stroke-width="1.5"/></g>
         <circle cx="620" cy="340" r="20" fill="#17251c" stroke="#63b15a" stroke-opacity=".55"/><text x="620" y="344" fill="#63b15a" font-size="9" font-weight="800" text-anchor="middle">DOM</text>
-        <text x="653" y="329" fill="#63b15a" font-size="14" font-weight="750">Playwright MCP</text><text x="653" y="350" fill="#c4c0b1" font-size="10.5">DOM · ARIA · element refs</text><text x="653" y="370" fill="#858173" font-size="9.5">默认模式</text>
+        <text x="653" y="329" fill="#63b15a" font-size="14" font-weight="750">Playwright MCP</text><text x="653" y="350" fill="#c4c0b1" font-size="11">DOM · ARIA · element refs</text><text x="653" y="370" fill="#858173" font-size="11">默认模式</text>
 
         <g filter="url(#arch-shadow)"><rect x="850" y="291" width="230" height="98" rx="16" fill="#111722" stroke="#5b91f2" stroke-width="1.5"/></g>
         <circle cx="890" cy="340" r="20" fill="#172238" stroke="#5b91f2" stroke-opacity=".55"/><text x="890" y="344" fill="#5b91f2" font-size="9" font-weight="800" text-anchor="middle">CDP</text>
-        <text x="923" y="329" fill="#5b91f2" font-size="14" font-weight="750">Visual backend</text><text x="923" y="350" fill="#c4c0b1" font-size="10.5">screenshot · coordinates</text><text x="923" y="370" fill="#858173" font-size="9.5">Claude-compatible</text>
+        <text x="923" y="329" fill="#5b91f2" font-size="14" font-weight="750">Visual backend</text><text x="923" y="350" fill="#c4c0b1" font-size="11">screenshot · coordinates</text><text x="923" y="370" fill="#858173" font-size="11">Claude-compatible</text>
 
         <text x="42" y="455" fill="#5a5544" font-size="10" font-weight="700" letter-spacing="2">BOUND PAGE</text><line x1="137" y1="451" x2="1078" y2="451" stroke="#29271f"/>
         <path d="M696 389 V425 C696 446 752 446 752 468" fill="none" stroke="#63b15a" stroke-width="2" marker-end="url(#arch-green-arrow)"/><path d="M960 389 V425 C960 446 936 446 936 468" fill="none" stroke="#5b91f2" stroke-width="2" marker-end="url(#arch-blue-arrow)"/>
 
         <g filter="url(#arch-shadow)"><rect x="610" y="472" width="450" height="126" rx="17" fill="#11120f" stroke="url(#arch-page-stroke)" stroke-width="1.7"/></g>
         <path d="M610 501 H1060" stroke="#343126"/><circle cx="635" cy="487" r="4" fill="#e15b68"/><circle cx="650" cy="487" r="4" fill="#e0b23e"/><circle cx="665" cy="487" r="4" fill="#63b15a"/>
-        <text x="835" y="491" fill="#f3f0e8" font-size="12" font-weight="700" text-anchor="middle">exact Page</text><rect x="979" y="480" width="62" height="15" rx="7.5" fill="#17251c"/><circle cx="991" cy="487.5" r="3" fill="#63b15a"/><text x="1015" y="491" fill="#63b15a" font-size="8.5" font-weight="700" text-anchor="middle">BOUND</text>
+        <text x="835" y="491" fill="#f3f0e8" font-size="12" font-weight="700" text-anchor="middle">exact Page</text><rect x="970" y="478" width="72" height="19" rx="9.5" fill="#17251c"/><circle cx="983" cy="487.5" r="3" fill="#63b15a"/><text x="1012" y="491.5" fill="#63b15a" font-size="11" font-weight="700" text-anchor="middle">BOUND</text>
         <rect x="630" y="518" width="78" height="60" rx="8" fill="#181913"/><rect x="724" y="518" width="310" height="13" rx="6.5" fill="#1e2019"/><rect x="724" y="540" width="238" height="9" rx="4.5" fill="#282a22"/><rect x="724" y="558" width="276" height="9" rx="4.5" fill="#20231f"/><rect x="724" y="576" width="168" height="6" rx="3" fill="#34362f"/>
-        <text x="835" y="623" fill="#858173" font-size="10.5" text-anchor="middle">同一个 Page · 分屏在任意方向 · 无需窗口置前</text>
+        <text x="835" y="623" fill="#858173" font-size="11" text-anchor="middle">同一个 Page · 分屏在任意方向 · 无需窗口置前</text>
       </g>
     </svg></div>
     <p class="caption">Harness 负责 observe / act / verify；Runtime 固定 backend，并把所有动作限制到同一个 Page。两个参考项目不参与运行。</p>
