@@ -1,5 +1,5 @@
 // OpenProgram desktop shell. Plain JS, no bundler.
-const { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, session, shell } = require("electron");
 const { execFileSync, spawn } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
@@ -2036,19 +2036,32 @@ function zoomView(ctx, id, action) {
   }
 }
 
-function printView(ctx, id) {
+function printPdfDefaultName(title) {
+  const stem = String(title || "page")
+    .normalize("NFC")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/[.\s]+$/g, "")
+    .slice(0, 120);
+  return `${stem || "page"}.pdf`;
+}
+
+async function printView(ctx, id) {
   const record = recordFor(ctx, id);
-  if (!record) return Promise.resolve(false);
-  return new Promise((resolve) => {
-    const wc = record.view.webContents;
+  if (!record) return false;
+  const wc = record.view.webContents;
+  let destroyed = false;
+  const printResult = await new Promise((resolve) => {
     let settled = false;
-    const finish = (success) => {
+    const finish = (success, failureReason = "") => {
       if (settled) return;
       settled = true;
       wc.removeListener("destroyed", onDestroyed);
-      resolve(Boolean(success));
+      resolve({ success: Boolean(success), failureReason: String(failureReason || "") });
     };
-    const onDestroyed = () => finish(false);
+    const onDestroyed = () => {
+      destroyed = true;
+      finish(false);
+    };
     wc.once("destroyed", onDestroyed);
     try {
       wc.print(
@@ -2059,6 +2072,46 @@ function printView(ctx, id) {
       finish(false);
     }
   });
+  if (printResult.success) return true;
+  if (printResult.failureReason === "Print job canceled") return false;
+  if (
+    destroyed
+    || wc.isDestroyed()
+    || ctx.win.isDestroyed()
+    || recordFor(ctx, id) !== record
+  ) return false;
+  let stagedPdfPath = "";
+  try {
+    const selected = await dialog.showSaveDialog(ctx.win, {
+      title: "Save page as PDF",
+      defaultPath: path.join(app.getPath("downloads"), printPdfDefaultName(wc.getTitle())),
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    if (selected.canceled || !selected.filePath) return false;
+    if (wc.isDestroyed() || ctx.win.isDestroyed() || recordFor(ctx, id) !== record) return false;
+    const pdf = await wc.printToPDF({ printBackground: true, preferCSSPageSize: true });
+    if (!Buffer.isBuffer(pdf)) return false;
+    if (wc.isDestroyed() || ctx.win.isDestroyed() || recordFor(ctx, id) !== record) return false;
+    stagedPdfPath = path.join(
+      path.dirname(selected.filePath),
+      `.${path.basename(selected.filePath)}.${process.pid}.${crypto.randomUUID()}.tmp`,
+    );
+    await fs.promises.writeFile(stagedPdfPath, pdf, { flag: "wx", mode: 0o600 });
+    if (wc.isDestroyed() || ctx.win.isDestroyed() || recordFor(ctx, id) !== record) return false;
+    await fs.promises.rename(stagedPdfPath, selected.filePath);
+    stagedPdfPath = "";
+    return true;
+  } catch (_error) {
+    return false;
+  } finally {
+    if (stagedPdfPath) {
+      try {
+        await fs.promises.unlink(stagedPdfPath);
+      } catch (_error) {
+        // Best effort: the selected destination remains untouched.
+      }
+    }
+  }
 }
 
 function normalizedBounds(bounds) {

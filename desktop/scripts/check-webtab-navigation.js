@@ -28,6 +28,8 @@ const spawnedPtys = [];
 const clearedStorageRequests = [];
 const openedDownloadPaths = [];
 const shownDownloadPaths = [];
+const shownPrintSaveDialogs = [];
+let nextPrintSaveDialogResult = { canceled: true };
 let fakeBrowserImportRunner = async () => ({
   source: { browserId: "chrome", profileId: "Default", label: "Chrome · Default" },
   history: [],
@@ -198,6 +200,12 @@ const fakeElectron = {
   ipcMain: {
     on(channel, handler) { ipcListeners.set(channel, handler); },
     handle(channel, handler) { ipcHandlers.set(channel, handler); },
+  },
+  dialog: {
+    async showSaveDialog(win, options) {
+      shownPrintSaveDialogs.push({ win, options });
+      return nextPrintSaveDialogResult;
+    },
   },
   shell: {
     openExternal() {},
@@ -397,6 +405,12 @@ function controlledRecord(id, currentUrl = "", loading = false) {
   let windowOpenHandler = null;
   let delayPrint = false;
   let pendingPrintCallback = null;
+  let printResult = true;
+  let printFailureReason = "";
+  let printPdfResult = Buffer.from("%PDF-openprogram-test");
+  let delayPrintPdf = false;
+  let pendingPrintPdfResolve = null;
+  let webContentsDestroyed = false;
   const webContentsListeners = new Map();
   const nativeCalls = {
     reload: 0,
@@ -407,6 +421,7 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     stopFind: [],
     zoom: [],
     print: [],
+    printToPDF: [],
   };
   let zoomFactor = 1;
   const webContents = {
@@ -458,8 +473,16 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     print(options, callback) {
       nativeCalls.print.push(options);
       if (delayPrint) pendingPrintCallback = callback;
-      else callback(true);
+      else callback(printResult, printFailureReason);
     },
+    printToPDF(options) {
+      nativeCalls.printToPDF.push(options);
+      if (delayPrintPdf) {
+        return new Promise((resolve) => { pendingPrintPdfResolve = resolve; });
+      }
+      return Promise.resolve(printPdfResult);
+    },
+    isDestroyed() { return webContentsDestroyed; },
     close() { closeCalls += 1; },
     setWindowOpenHandler(handler) {
       windowOpenHandler = handler;
@@ -511,13 +534,26 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     windowOpen: (details) => windowOpenHandler?.(details),
     nativeCalls,
     emitWebContents(event, ...args) {
+      if (event === "destroyed") webContentsDestroyed = true;
       for (const handler of webContentsListeners.get(event) ?? []) handler(...args);
     },
     delayPrintCallback() { delayPrint = true; },
-    completePrint(success) {
+    setPrintResult(value, failureReason = "") {
+      printResult = value;
+      printFailureReason = failureReason;
+    },
+    setPrintPdfResult(value) { printPdfResult = value; },
+    delayPrintPdf() { delayPrintPdf = true; },
+    completePrintPdf() {
+      delayPrintPdf = false;
+      const resolve = pendingPrintPdfResolve;
+      pendingPrintPdfResolve = null;
+      resolve?.(printPdfResult);
+    },
+    completePrint(success, failureReason = "") {
       const callback = pendingPrintCallback;
       pendingPrintCallback = null;
-      callback?.(success);
+      callback?.(success, failureReason);
     },
     currentBounds: () => ({ ...bounds }),
   };
@@ -1032,6 +1068,7 @@ async function checkSenderOwnership() {
     stopFind: [],
     zoom: [],
     print: [],
+    printToPDF: [],
   });
   assert.deepEqual(a.currentBounds(), initialBounds);
   assert.equal(a.visibility.at(-1), true);
@@ -1060,6 +1097,67 @@ async function checkSenderOwnership() {
   assert.deepEqual(a.nativeCalls.stopFind, ["clearSelection"]);
   assert.deepEqual(a.nativeCalls.zoom, [1.1, 1, 1]);
   assert.deepEqual(plain(a.nativeCalls.print), [{ silent: false, printBackground: true }]);
+  assert.deepEqual(a.nativeCalls.printToPDF, []);
+  assert.deepEqual(shownPrintSaveDialogs, []);
+
+  a.setPrintResult(false, "Print job canceled");
+  const dialogsBeforeSystemCancel = shownPrintSaveDialogs.length;
+  assert.equal(await ipcHandlers.get("webtab:print")(eventA, "owned-a"), false);
+  assert.equal(shownPrintSaveDialogs.length, dialogsBeforeSystemCancel);
+  assert.deepEqual(a.nativeCalls.printToPDF, []);
+
+  a.setPrintResult(false);
+  const savedPdfPath = path.join(transferUserData, "owned-a.pdf");
+  nextPrintSaveDialogResult = { canceled: false, filePath: savedPdfPath };
+  assert.equal(await ipcHandlers.get("webtab:print")(eventA, "owned-a"), true);
+  assert.equal(fs.readFileSync(savedPdfPath, "utf8"), "%PDF-openprogram-test");
+  assert.equal(shownPrintSaveDialogs.at(-1).win, winA);
+  assert.equal(shownPrintSaveDialogs.at(-1).options.defaultPath, savedPdfPath);
+  assert.deepEqual(plain(a.nativeCalls.printToPDF.at(-1)), {
+    printBackground: true,
+    preferCSSPageSize: true,
+  });
+
+  const cancelledPdfPath = path.join(transferUserData, "cancelled.pdf");
+  nextPrintSaveDialogResult = { canceled: true, filePath: cancelledPdfPath };
+  const pdfCallsBeforeCancel = a.nativeCalls.printToPDF.length;
+  assert.equal(await ipcHandlers.get("webtab:print")(eventA, "owned-a"), false);
+  assert.equal(fs.existsSync(cancelledPdfPath), false);
+  assert.equal(a.nativeCalls.printToPDF.length, pdfCallsBeforeCancel);
+
+  const ownershipLostPdfPath = path.join(transferUserData, "ownership-lost.pdf");
+  nextPrintSaveDialogResult = { canceled: false, filePath: ownershipLostPdfPath };
+  a.delayPrintPdf();
+  const pdfCallsBeforeOwnershipLoss = a.nativeCalls.printToPDF.length;
+  const ownershipLostPrint = ipcHandlers.get("webtab:print")(eventA, "owned-a");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(a.nativeCalls.printToPDF.length, pdfCallsBeforeOwnershipLoss + 1);
+  a.record.ownerId = ctxB.id;
+  a.completePrintPdf();
+  assert.equal(await ownershipLostPrint, false);
+  assert.equal(fs.existsSync(ownershipLostPdfPath), false);
+  a.record.ownerId = ctxA.id;
+
+  const preservedPdfPath = path.join(transferUserData, "preserved.pdf");
+  fs.writeFileSync(preservedPdfPath, "existing-user-file");
+  nextPrintSaveDialogResult = { canceled: false, filePath: preservedPdfPath };
+  const originalWriteFile = fs.promises.writeFile;
+  fs.promises.writeFile = async (filePath, data, options) => {
+    await originalWriteFile(filePath, data.subarray(0, 5), options);
+    throw new Error("injected partial PDF write failure");
+  };
+  try {
+    assert.equal(await ipcHandlers.get("webtab:print")(eventA, "owned-a"), false);
+  } finally {
+    fs.promises.writeFile = originalWriteFile;
+  }
+  assert.equal(fs.readFileSync(preservedPdfPath, "utf8"), "existing-user-file");
+  assert.deepEqual(
+    fs.readdirSync(transferUserData).filter((name) => name.startsWith(".preserved.pdf.")),
+    [],
+  );
+
+  a.setPrintResult(true);
   a.delayPrintCallback();
   const destroyedPrint = ipcHandlers.get("webtab:print")(eventA, "owned-a");
   a.emitWebContents("destroyed");
@@ -2308,6 +2406,7 @@ async function checkLockedRecordsRejectOrdinaryIpc() {
     stopFind: [],
     zoom: [],
     print: [],
+    printToPDF: [],
   });
   assert.deepEqual(controlled.currentBounds(), boundsBefore);
   assert.equal(controlled.visibility.length, visibilityCallsBefore);
