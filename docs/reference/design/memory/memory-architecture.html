@@ -1090,7 +1090,7 @@
   <div class="note"><b>旧格式边界：</b><code>mem_*</code> 记录继续保留原 ID。结构操作不得拆开共享同一物理段落的多个旧 ID 或规范 block alias；需要移动时必须把该物理段落的全部 ID 按段内原顺序、连续放进同一个 <code>move_records</code>。</div>
   <div class="note"><b>Evidence 冲突：</b>跨 Topic 移动时，若目标 Topic 或同批其他源 Topic 已有相同 evidence label，但时间或 Source 语义不同，Runtime 以 <code>INVALID_ARGUMENT</code> 原子拒绝整个事务；相同语义仅因相对链接路径不同不视为冲突。</div>
   <div class="note"><b>预发布兼容：</b>早期结构化接口的 <code>create/update/delete</code>输入仍由 Runtime 转换为新名称；模型 schema 和本文档只公开四个正式操作，旧别名不再扩展。</div>
-  <div class="note"><b>Scheduler 边界：</b>本地 owner 创建的 prompt task 可以显式调用 <code>memory_status</code>、<code>memory_get</code> 与 <code>memory_update</code>，维护通过 MemoryRef 关联的长期记录；Scheduler service 不隐式双写。外部 token capability、非 owner 改写范围与删除 ID redirect 继续延期。</div>
+  <div class="note"><b>Scheduler 边界：</b>本地 owner 创建的 prompt task 可以显式调用 <code>memory_status</code>、<code>memory_get</code> 与 <code>memory_update</code>，维护通过 MemoryRef 关联的长期记录；Scheduler service 不隐式双写。记录删除后不保留占位对象或 ID 转发，旧 <code>memory_id</code> 的当前查询返回 <code>NOT_FOUND</code>。外部 token capability 与非 owner 改写范围继续延期。</div>
   <div class="note"><b>模型修改范围：</b>交互模型、后台 writer 与整理模型都可重写、合并、拆分或删除当前 Topic。删除 block 时，同一事务必须移除或更新指向它的 Topic 链接；Source 归档仍只追加。增量写入和整理完成后均尝试记录 Git 提交。</div>
 
   <div class="tbl">
@@ -1105,7 +1105,7 @@
     </table>
   </div>
 
-  <div class="legend"><b>实现状态（2026-08-15）：</b>模型工具与 owner REST 已统一提供上述四个正式操作；整个文件 <code>changes</code> 和旧 unified diff 保持兼容。直接编辑 Topic 与结构化操作共用暂存、格式校验、空结构清理、Timeline/Recent/Core 派生、原子安装和 Git 历史。批量 move、位置与共享物理段落校验、首次结构调整时的 Recent 创建顺序保留、跨 Topic evidence 冲突拒绝均有公共入口回归测试。Scheduler 的内部 Agent 生命周期写入按 Scheduler 设计文档执行；外部 token capability 与被删除 ID 的 alias/redirect 模型仍按本节边界延期。</div>
+  <div class="legend"><b>实现状态（2026-08-15）：</b>模型工具与 owner REST 已统一提供上述四个正式操作；整个文件 <code>changes</code> 和旧 unified diff 保持兼容。直接编辑 Topic 与结构化操作共用暂存、格式校验、空结构清理、Timeline/Recent/Core 派生、原子安装和 Git 历史。批量 move、位置与共享物理段落校验、首次结构调整时的 Recent 创建顺序保留、跨 Topic evidence 冲突拒绝均有公共入口回归测试。Scheduler 的内部 Agent 生命周期写入按 Scheduler 设计文档执行；记录删除后旧 <code>memory_id</code> 的当前查询返回 <code>NOT_FOUND</code>，不保留已删除记录或旧 ID 映射。外部 token capability 仍按本节边界延期。</div>
 
   <div class="legend">
     <b>实现状态（2026-08-11）</b>：每轮写入与闲置写入使用同一事务；节点自身记录工作区写入标记；会话边界枚举活分支；常驻块由<code>topics/core.md</code>渲染；后台writer沿用默认聊天agent，并允许<code>memory.writer.model</code>实时覆盖；未分类异常默认不可重试。<code>memory.backend=none</code>既关闭提示、召回、自动写入、整理和记忆线程，也在创建工作区前拒绝全部CLI memory动词与<code>/api/memory/*</code>路由。writer最近成功、失败分类、retryable判定和待处理数可由工具、CLI及Web查询。一次性<code>memory backfill</code>已实现，只处理未被Topic引用的trusted Source、排除pending并按批复用正常writer事务；组合测试覆盖SessionDB、默认模型解析、managed tools、暂存安装、Topic、marker与watcher状态。正式工作区验收中，23个旧v1 source文件（154个frame）经<code>origin_scope</code>到<code>authority_tier</code>的只读兼容后全部解析；2条待处理消息提交为3个Topic文件、5个唯一block，6个source引用和relation目标均通过校验，两条节点marker写入成功，第二次扫描处理数为0且revision不变。该验收未执行历史backfill，因此152个未引用frame仍存在。仍未实现：越权请求hold队列、按请求方档位过滤读取结果、互斥分支语义、跨会话spawn关系和由head变化事件直接触发写入。写入失败原因码是封闭枚举，受限writer阶段看不到Source归档。

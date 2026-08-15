@@ -21,7 +21,7 @@
   <section class="card"><h3>周期任务</h3><p>复用现有五字段 cron 解析、owner 签名、冻结 sandbox policy 和非交互执行边界。</p></section>
   <section class="card"><h3>监控任务</h3><p>使用 cron 周期执行观察 prompt。首版记录执行日志和状态，不承诺跨渠道 exactly-once 通知。</p></section>
 </div>
-<section class="card boundary" style="margin-top:12px"><h3>明确排除</h3><p>Memory writer 不推断任务；Memory 页面不显示 Commitments；Scheduler service 不隐式创建或修改 Memory；不新增跨 Scheduler 与 Memory 的联合事务、外部 token 权限模型、删除 ID redirect、第二套执行器、项目管理、任务依赖或子任务。</p></section>
+<section class="card boundary" style="margin-top:12px"><h3>明确排除</h3><p>Memory writer 不推断任务；Memory 页面不显示 Commitments；Scheduler service 不隐式创建或修改 Memory；不新增跨 Scheduler 与 Memory 的联合事务、外部 token 权限模型、已删除记录的占位对象或 ID 转发、第二套执行器、项目管理、任务依赖或子任务。</p></section>
 
 <h2>2. 目标数据关系</h2>
 <div class="flow">
@@ -69,7 +69,7 @@
 </tbody></table>
 
 <h2>8. 实施 brief 与验收</h2>
-<p>本轮修改限定为 Scheduler prompt task 的内部 Memory 生命周期：保留现有 Scheduler service、REST、UI 和 Memory 数据格式；允许 Scheduler 来源调用 <code>memory_status</code>、<code>memory_get</code> 与 <code>memory_update</code>，补充 Agent 工具说明和执行上下文提示。公共 RED 必须证明上述三个工具可执行，同时 shell、普通文件写入、网络发送和 Scheduler 自修改仍被硬约束拒绝；Memory 写入继续经过现有 authority、revision、transaction 与 Git 路径。外部 API 权限和删除 ID redirect 不在本轮实现。</p>
+<p>本轮修改限定为 Scheduler prompt task 的内部 Memory 生命周期：保留现有 Scheduler service、REST、UI 和 Memory 数据格式；允许 Scheduler 来源调用 <code>memory_status</code>、<code>memory_get</code> 与 <code>memory_update</code>，补充 Agent 工具说明和执行上下文提示。公共 RED 必须证明上述三个工具可执行，同时 shell、普通文件写入、网络发送和 Scheduler 自修改仍被硬约束拒绝；Memory 写入继续经过现有 authority、revision、transaction 与 Git 路径。外部 API 权限不在本轮实现；记录删除后，旧 <code>memory_id</code> 的当前查询按最终语义返回 <code>NOT_FOUND</code>。</p>
 <table><thead><tr><th>验收项</th><th>当前证据</th></tr></thead><tbody>
   <tr><td>专项 Python</td><td>Scheduler、权限、cron CLI、Memory routes/runtime 共 <code>133 passed</code>；Ruff 通过。</td></tr>
   <tr><td>Memory 生命周期</td><td>真实 Scheduler prompt worker 会加载 merged permission rules；本地 owner 任务可使用 <code>memory_status</code>、<code>memory_get</code> 与 <code>memory_update</code>，deny/ask 仍优先，其他副作用仍拒绝。真实 ScriptedProvider 链路已更新 Topic 并产生 Memory Git 提交；多条 MemoryRef 超限时保留每条 ID 与 Topic 路径，只截断内容并显式标记。规格复审与质量复审均通过。</td></tr>
@@ -77,5 +77,5 @@
   <tr><td>Web</td><td>全量静态检查、Scheduler 检查与 <code>tsc --noEmit</code> 通过；独立页面包含首次加载错误、操作错误和 icon button 可访问名称。视觉验收要求只有一个页面标题、64px 管理页 topbar、搜索与主操作同栏、topbar 下方保持左栏分类和右栏内容、任务按可见顺序编号、空状态在右栏显示三条建议，并在默认 18100 App 中截图确认。</td></tr>
   <tr><td>独立审查</td><td>规格审查通过；质量审查提出的权限、状态 claim、并发、MemoryRef、兼容入口与 UI 错误处理问题全部修复，复审通过。管理页结构统一修订另行完成规格 PASS；质量审查要求补充窄分栏重排、可区分操作名称和可执行视图逻辑检查，修复后 scoped re-review PASS。</td></tr>
 </tbody></table>
-<p><b>本轮实现状态：</b>内部 Agent 的 Scheduler-Memory 生命周期关联已经实现；外部 token 权限模型与删除 ID redirect 仍按边界延期。</p>
+<p><b>本轮实现状态：</b>内部 Agent 的 Scheduler-Memory 生命周期关联已经实现；记录删除后不保留占位对象或 ID 转发，旧 <code>memory_id</code> 的当前查询返回 <code>NOT_FOUND</code>。外部 token 权限模型仍按边界延期。</p>
 </main></body></html>
