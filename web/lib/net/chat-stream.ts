@@ -212,6 +212,7 @@ function ensureReply(sid: string, rid: string): ChatMsg {
     role: "assistant",
     content: "",
     status: "streaming",
+    timestamp: Date.now(),
   });
   return useSessionStore.getState().messagesById[rid];
 }
@@ -411,11 +412,18 @@ function handleRuntimeRow(sid: string, d: ChatResponseData): void {
   const existing = store.messagesById[d.msg_id];
   const calledBy = d.predecessor;
   const mergeIntoAssistant = _isAssistantCaller(calledBy);
+  const parent = mergeIntoAssistant && calledBy
+    ? store.messagesById[calledBy]
+    : undefined;
+  const nestedExisting = parent?.runtimeChildren?.find(
+    (child) => child.id === d.msg_id,
+  );
+  const current = existing ?? nestedExisting;
 
   if (d.type === "status") {
     // First sighting — create the row. Idempotent on duplicate
     // broadcasts (e.g. cross-tab re-emit).
-    if (existing) return;
+    if (current) return;
     const child: ChatMsg = {
       id: d.msg_id,
       role: "assistant",
@@ -442,15 +450,14 @@ function handleRuntimeRow(sid: string, d: ChatResponseData): void {
   const patch: Partial<ChatMsg> = {
     content: d.content ?? "",
     display: "runtime",
-    function: d.function ?? existing?.function,
+    function: d.function ?? current?.function,
     status: "done",
     rawType: d.type,
     contextTree: (d.context_tree as never) || undefined,
-    timestamp: Date.now(),
   };
+  const resultTimestamp = current?.timestamp ?? Date.now();
   if (mergeIntoAssistant && calledBy) {
     // Update inside the parent's runtimeChildren.
-    const parent = store.messagesById[calledBy];
     const list = parent?.runtimeChildren ?? [];
     const idx = list.findIndex((c) => c.id === d.msg_id);
     if (idx >= 0) {
@@ -468,7 +475,7 @@ function handleRuntimeRow(sid: string, d: ChatResponseData): void {
         status: "done",
         rawType: patch.rawType,
         contextTree: patch.contextTree,
-        timestamp: patch.timestamp,
+        timestamp: resultTimestamp,
         calledBy,
       };
       _mergeRuntimeIntoParent(sid, calledBy, child);
@@ -507,7 +514,7 @@ function handleRuntimeRow(sid: string, d: ChatResponseData): void {
       status: "done",
       rawType: patch.rawType,
       contextTree: patch.contextTree,
-      timestamp: patch.timestamp,
+      timestamp: resultTimestamp,
     });
   }
 }

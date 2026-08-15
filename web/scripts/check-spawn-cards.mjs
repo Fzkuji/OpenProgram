@@ -75,6 +75,11 @@ applyChatWsMessage({
 
 // The spawning tool call, then the spawn announcing itself as running.
 send({ type: "tool_use", tool: "task", tool_call_id: "tc_1", input: "{}" });
+const runStartedAt = reply().timestamp;
+assert.ok(
+  Number.isFinite(runStartedAt),
+  "a live runtime reply must record its start timestamp",
+);
 send({
   type: "sub_agent",
   card_id: "card_a",
@@ -169,6 +174,141 @@ assert.equal(
   "finalize must not clobber live attachCards",
 );
 assert.equal(reply().status, "done");
+assert.equal(
+  reply().timestamp,
+  runStartedAt,
+  "completing a runtime reply must preserve its start timestamp",
+);
+
+// A dispatcher-owned runtime row uses status/result envelopes rather than
+// the ordinary reply id. Its terminal result must not replace the time at
+// which the visible run first appeared.
+const runtimeId = "runtime_timestamp";
+const originalNow = Date.now;
+let fakeNow = 1_700_000_001_000;
+Date.now = () => fakeNow;
+try {
+  applyChatWsMessage({
+    type: "chat_response",
+    data: {
+      type: "status",
+      session_id: SID,
+      msg_id: runtimeId,
+      display: "runtime",
+      function: "computer_use",
+      status: "running",
+    },
+  });
+  const dispatcherStartedAt = useSessionStore.getState().messagesById[runtimeId].timestamp;
+  fakeNow += 1_000;
+  applyChatWsMessage({
+    type: "chat_response",
+    data: {
+      type: "result",
+      session_id: SID,
+      msg_id: runtimeId,
+      display: "runtime",
+      function: "computer_use",
+      content: "done",
+    },
+  });
+  assert.equal(
+    useSessionStore.getState().messagesById[runtimeId].timestamp,
+    dispatcherStartedAt,
+    "a runtime result must not replace the status timestamp",
+  );
+
+  const nestedRuntimeId = "nested_runtime_timestamp";
+  fakeNow += 1_000;
+  applyChatWsMessage({
+    type: "chat_response",
+    data: {
+      type: "status",
+      session_id: SID,
+      msg_id: nestedRuntimeId,
+      predecessor: RID,
+      display: "runtime",
+      function: "computer_use",
+      status: "running",
+    },
+  });
+  const nestedStartedAt = reply().runtimeChildren.find(
+    (child) => child.id === nestedRuntimeId,
+  ).timestamp;
+  fakeNow += 5_000;
+  applyChatWsMessage({
+    type: "chat_response",
+    data: {
+      type: "status",
+      session_id: SID,
+      msg_id: nestedRuntimeId,
+      predecessor: RID,
+      display: "runtime",
+      function: "computer_use",
+      status: "running",
+    },
+  });
+  assert.equal(
+    reply().runtimeChildren.find((child) => child.id === nestedRuntimeId).timestamp,
+    nestedStartedAt,
+    "a duplicate nested status must preserve the first timestamp",
+  );
+
+  const futureUid = "runtime_future_parent";
+  const futureParentId = `${futureUid}_reply`;
+  const migratingRuntimeId = "migrating_runtime_timestamp";
+  fakeNow += 1_000;
+  applyChatWsMessage({
+    type: "chat_response",
+    data: {
+      type: "status",
+      session_id: SID,
+      msg_id: migratingRuntimeId,
+      predecessor: futureParentId,
+      display: "runtime",
+      function: "computer_use",
+      status: "running",
+    },
+  });
+  const migratingStartedAt = useSessionStore.getState()
+    .messagesById[migratingRuntimeId].timestamp;
+  applyChatWsMessage({
+    type: "chat_response",
+    data: {
+      type: "stream_event",
+      session_id: SID,
+      msg_id: futureUid,
+      event: { type: "text", text: "parent" },
+    },
+  });
+  fakeNow += 5_000;
+  applyChatWsMessage({
+    type: "chat_response",
+    data: {
+      type: "result",
+      session_id: SID,
+      msg_id: migratingRuntimeId,
+      predecessor: futureParentId,
+      display: "runtime",
+      function: "computer_use",
+      content: "done",
+    },
+  });
+  const migrated = useSessionStore.getState().messagesById[futureParentId]
+    .runtimeChildren.find((child) => child.id === migratingRuntimeId);
+  assert.equal(
+    migrated.timestamp,
+    migratingStartedAt,
+    "moving a runtime row under its assistant must preserve the start timestamp",
+  );
+  assert.equal(
+    useSessionStore.getState().messagesById[migratingRuntimeId],
+    undefined,
+    "the top-level copy must be removed after migration",
+  );
+} finally {
+  Date.now = originalNow;
+}
 
 // --- execution strip: visible while the assistant works ------------------
 const strip = readFileSync(
