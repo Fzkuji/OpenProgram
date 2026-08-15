@@ -30,9 +30,10 @@ const preload = read("../../desktop/preload.js");
 const main = read("../../desktop/main.js");
 const historyGroupsSource = read("../lib/history-groups.ts");
 
-for (const label of ["Files", "Side chat", "Browser", "Terminal"]) {
+for (const label of ["Files", "New chat", "Browser", "Terminal"]) {
   assert.match(launcher, new RegExp(`text\\(\\"${label}\\"`));
 }
+assert.doesNotMatch(launcher, /Side chat|侧边聊天/);
 assert.doesNotMatch(launcher, /Claude Code|openBuiltinTab\("claude"\)/);
 assert.doesNotMatch(launcher, /readBookmarks|readShortcuts|ntpUrlInput/);
 assert.match(browserHome, /BrowserImportDialog/);

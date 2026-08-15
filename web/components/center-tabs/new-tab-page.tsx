@@ -12,7 +12,7 @@ export function NewTabPage() {
   const { text } = useTranslation();
   const openBuiltinTab = useCenterTabs((state) => state.openBuiltinTab);
 
-  function openSideChat() {
+  function openNewChat() {
     const draftId = useCenterTabs.getState().claimDraftSessionTab();
     newSession(draftId);
   }
@@ -26,11 +26,11 @@ export function NewTabPage() {
           </span>
           {text("Files", "文件")}
         </button>
-        <button type="button" className={styles.ntpCard} onClick={openSideChat}>
+        <button type="button" className={styles.ntpCard} onClick={openNewChat}>
           <span className={styles.ntpGlyph} data-tone="chat" aria-hidden="true">
             <MessageCirclePlus size={11} strokeWidth={2.1} />
           </span>
-          {text("Side chat", "侧边聊天")}
+          {text("New chat", "新建对话")}
         </button>
         <button type="button" className={styles.ntpCard} onClick={() => openBuiltinTab("browser")}>
           <BrowserGlyph size={18} />
