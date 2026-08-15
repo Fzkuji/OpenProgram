@@ -7,6 +7,8 @@ import threading
 import uuid
 from typing import Any, Callable, Mapping
 
+from openprogram.programs import ToolReturn
+
 
 SUPPORTED_BACKENDS = (
     "playwright_mcp",
@@ -136,6 +138,14 @@ class ComputerUseSessionRegistry:
         else:
             return {"ok": False, "reason_code": "invalid_command"}
 
+        if isinstance(result, ToolReturn):
+            metadata = (
+                dict(result.json_data) if isinstance(result.json_data, dict) else {}
+            )
+            metadata.setdefault("computer_session_id", session.id)
+            metadata.setdefault("backend", session.backend)
+            result.json_data = metadata
+            return result
         payload = dict(result) if isinstance(result, dict) else {"result": result}
         payload.setdefault("computer_session_id", session.id)
         payload.setdefault("backend", session.backend)

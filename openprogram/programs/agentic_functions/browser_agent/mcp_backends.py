@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import re
 import threading
 import uuid
@@ -98,6 +99,7 @@ class OfficialMCPPageBackend:
             return [
                 "npx", "-y", f"@playwright/mcp@{_PLAYWRIGHT_MCP_VERSION}",
                 "--cdp-endpoint", endpoint,
+                "--caps", "vision",
             ]
         return [
             "npx", "-y",
@@ -105,6 +107,11 @@ class OfficialMCPPageBackend:
             "--wsEndpoint", endpoint,
             "--experimentalPageIdRouting",
             "--experimentalStructuredContent",
+            "--experimentalVision",
+            "--no-usage-statistics",
+            "--no-category-performance",
+            "--no-category-network",
+            "--no-category-emulation",
         ]
 
     def _ensure_bound(self, session) -> Any:
@@ -202,8 +209,15 @@ class OfficialMCPPageBackend:
         action = str(arguments.get("action") or "")
         ref = str(arguments.get("ref") or "").lstrip("@")
         if self.name == "playwright_mcp":
+            click = (
+                ("browser_click", {"target": ref})
+                if ref else (
+                    "browser_mouse_click_xy",
+                    {"x": arguments.get("x"), "y": arguments.get("y")},
+                )
+            )
             mapping = {
-                "click": ("browser_click", {"target": ref}),
+                "click": click,
                 "type": ("browser_type", {
                     "target": ref, "text": str(arguments.get("text") or ""),
                 }),
@@ -213,11 +227,25 @@ class OfficialMCPPageBackend:
                     "target": ref, "values": [str(arguments.get("value") or "")],
                 }),
                 "navigate": ("browser_navigate", {"url": arguments.get("url")}),
+                "scroll": ("browser_mouse_wheel", {
+                    "deltaY": int(arguments.get("amount") or 600),
+                    "deltaX": 0,
+                }),
             }
         else:
             page_id = session.state["upstream_page"]
+            click = (
+                ("click", {"uid": ref, "pageId": page_id})
+                if ref else (
+                    "click_at",
+                    {
+                        "x": arguments.get("x"), "y": arguments.get("y"),
+                        "pageId": page_id,
+                    },
+                )
+            )
             mapping = {
-                "click": ("click", {"uid": ref, "pageId": page_id}),
+                "click": click,
                 "type": ("fill", {
                     "uid": ref, "value": str(arguments.get("text") or ""),
                     "pageId": page_id,
@@ -226,8 +254,19 @@ class OfficialMCPPageBackend:
                     "key": arguments.get("key"), "pageId": page_id,
                 }),
                 "hover": ("hover", {"uid": ref, "pageId": page_id}),
+                "select": ("fill", {
+                    "uid": ref, "value": str(arguments.get("value") or ""),
+                    "pageId": page_id,
+                }),
                 "navigate": ("navigate_page", {
                     "type": "url", "url": arguments.get("url"),
+                    "pageId": page_id,
+                }),
+                "scroll": ("evaluate_script", {
+                    "function": (
+                        "() => window.scrollBy(0, "
+                        f"{int(arguments.get('amount') or 600)})"
+                    ),
                     "pageId": page_id,
                 }),
             }
@@ -241,16 +280,54 @@ class OfficialMCPPageBackend:
         stale = controller._require_fresh(frame_id)
         if stale is not None:
             return stale
+        action = str(arguments.get("action") or "")
+        if action == "screenshot":
+            return controller.execute(
+                action="screenshot", expected_frame_id=frame_id,
+            )
+        if action == "click" and not arguments.get("ref"):
+            if controller._screenshot_frame != frame_id:
+                return {"ok": False, "reason_code": "visual_observation_required"}
+            try:
+                point_x = float(arguments.get("x"))
+                point_y = float(arguments.get("y"))
+            except (TypeError, ValueError):
+                return {"ok": False, "reason_code": "invalid_coordinate"}
+            from . import _VIEWPORT_SCRIPT
+            page = controller._page()
+            viewport = controller._viewport(page, page.evaluate(_VIEWPORT_SCRIPT))
+            if viewport != controller._screenshot_viewport:
+                return controller._invalidate_frame()
+            if (
+                not math.isfinite(point_x) or not math.isfinite(point_y)
+                or point_x < 0 or point_y < 0
+                or point_x >= viewport["width"] or point_y >= viewport["height"]
+            ):
+                return {"ok": False, "reason_code": "invalid_coordinate"}
+        capped = controller._write_allowed()
+        if capped:
+            return capped
         call = self._action_call(session, arguments)
         if call is None:
             return {"ok": False, "reason_code": "unsupported_action"}
         client = self._ensure_bound(session)
         result = client.call(call[0], call[1])
-        controller._invalidate_frame()
+        is_error = bool(
+            getattr(result, "isError", False)
+            or getattr(result, "is_error", False)
+        )
+        if is_error:
+            controller._invalidate_frame()
+            return {
+                "ok": False,
+                "reason_code": "backend_action_failed",
+                "result": _result_text(result),
+                "observe_required": True,
+            }
+        mutation = controller._mutated(f"{self.name}:{action}")
         return {
-            "ok": not bool(getattr(result, "isError", False)),
+            **mutation,
             "result": _result_text(result),
-            "observe_required": True,
         }
 
     def verify(self, session, arguments: Mapping[str, Any]):

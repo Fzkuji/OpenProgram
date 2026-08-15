@@ -134,6 +134,37 @@ def test_webtab_result_is_claimed_only_by_expected_socket():
     webtab._pending.clear()
 
 
+def test_direct_mcp_page_capture_requires_one_desktop_connection(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    monkeypatch.setattr(webtab, "request_active_tab", lambda timeout=5.0: {
+        "ok": True,
+        "_owner_ws": owner,
+        "window_id": "window-1",
+        "tab_id": "tab-1",
+        "target_id": "target-1",
+        "url": "https://example.test/",
+        "title": "Example",
+    })
+    context = surface_context.capture_active()
+    surface = context["surfaces"][0]
+    assert surface["surface_key"] == "p1"
+    assert webtab._bindings[surface["binding_id"]][0] is owner
+    webtab.release_binding(surface["binding_id"])
+
+    monkeypatch.setattr(server, "_ws_connections", [owner, _WS()])
+    try:
+        surface_context.capture_active()
+    except RuntimeError as exc:
+        assert "one desktop connection" in str(exc)
+    else:
+        raise AssertionError("multiple desktop connections must be rejected")
+
+
 def test_frontend_and_electron_expose_turn_surface_preview_contract():
     send = (REPO_ROOT / "web/components/chat/composer/legacy-send.ts").read_text()
     bridge = (REPO_ROOT / "web/lib/desktop-bridge.ts").read_text()

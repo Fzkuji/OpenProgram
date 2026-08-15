@@ -122,6 +122,7 @@ def build_server(context: MCPClientContext) -> Server:
                     call_id=request_id,
                     cancel_event=cancel_event,
                     on_progress=progress,
+                    require_exposed=False,
                 )
             else:
                 result = await service.tool_call(

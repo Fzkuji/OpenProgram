@@ -58,6 +58,27 @@ EXPECTED_SCHEMAS = {
         "required": ["name"],
         "additionalProperties": False,
     },
+    "computer_use": {
+        "type": "object",
+        "properties": {
+            "command": {
+                "type": "string",
+                "enum": ["list_pages", "observe", "act", "verify", "close"],
+            },
+            "backend": {
+                "type": "string",
+                "enum": [
+                    "playwright_mcp", "chrome_devtools_mcp",
+                    "open_claude_chrome",
+                ],
+            },
+            "page": {"type": "string", "maxLength": 512},
+            "computer_session_id": {"type": "string", "maxLength": 128},
+            "arguments": {"type": "object", "default": {}},
+        },
+        "required": ["command"],
+        "additionalProperties": False,
+    },
 }
 
 
@@ -70,6 +91,7 @@ def test_contract_exposes_exact_ordered_wrapper_tools_and_schemas() -> None:
         "prompt_cancel",
         "tools_list",
         "tool_call",
+        "computer_use",
     ]
     assert {
         tool.name: tool.model_dump()["inputSchema"] for tool in tools

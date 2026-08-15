@@ -143,6 +143,13 @@ class _Controller:
     def _invalidate_frame(self):
         self.invalidated += 1
 
+    def _write_allowed(self):
+        return None
+
+    def _mutated(self, detail):
+        self.invalidated += 1
+        return {"ok": True, "detail": detail, "observe_required": True}
+
     def close(self):
         self.closed += 1
 

@@ -833,8 +833,12 @@ def computer_use(
     from openprogram.agent import surface_context
     from .computer_use_runtime import get_registry
 
+    context = surface_context.current()
+    if context is None and command in {"list_pages", "observe"}:
+        context = surface_context.capture_active()
+
     if command == "list_pages":
-        context = surface_context.current() or {}
+        context = context or {}
         pages = []
         for item in context.get("surfaces") or []:
             if not isinstance(item, dict) or not item.get("binding_id"):
@@ -851,7 +855,11 @@ def computer_use(
 
     binding_id = ""
     if command == "observe" and not computer_session_id:
-        binding_id = surface_context.resolve_binding(page)
+        token = surface_context.bind(context)
+        try:
+            binding_id = surface_context.resolve_binding(page)
+        finally:
+            surface_context.reset(token)
     return get_registry().execute(
         command=command,
         backend=backend,

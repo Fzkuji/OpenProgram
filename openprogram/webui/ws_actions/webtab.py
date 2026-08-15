@@ -157,6 +157,7 @@ async def handle_webtab_result(ws, cmd: dict):
         holder["result"] = {
             "ok": bool(cmd.get("ok")),
             "error": cmd.get("error"),
+            "_owner_ws": ws,
             **({"window_id": cmd["window_id"]}
                if isinstance(cmd.get("window_id"), str) else {}),
             **({"url": cmd["url"]} if isinstance(cmd.get("url"), str) else {}),

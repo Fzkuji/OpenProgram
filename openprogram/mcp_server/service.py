@@ -705,6 +705,7 @@ class MCPService:
         call_id: str,
         cancel_event: asyncio.Event,
         on_progress: Callable[[str], None] | None,
+        require_exposed: bool = True,
     ) -> AgentToolResult:
         """Execute one currently exposed Runtime tool under fixed MCP authority."""
         tool: AgentTool | None = None
@@ -716,7 +717,7 @@ class MCPService:
             if (
                 not isinstance(configured, list)
                 or not all(isinstance(item, str) for item in configured)
-                or name not in configured
+                or (require_exposed and name not in configured)
                 or name not in exposed
             ):
                 raise LookupError

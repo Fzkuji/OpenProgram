@@ -199,6 +199,42 @@ def resolve_binding(surface: str = "") -> str:
     raise RuntimeError(f"surface {surface!r} is not available in this turn")
 
 
+def capture_active() -> dict:
+    """Capture one active desktop Page for a direct MCP computer_use call."""
+    from openprogram.webui import server as _server
+    from openprogram.webui.ws_actions import webtab
+
+    if len(_server._ws_connections) != 1:
+        raise RuntimeError("direct Page selection requires one desktop connection")
+    result = webtab.request_active_tab()
+    owner_ws = result.get("_owner_ws") if isinstance(result, dict) else None
+    window_id = _text(result.get("window_id"), 160) if isinstance(result, dict) else ""
+    tab_id = _text(result.get("tab_id"), 512) if isinstance(result, dict) else ""
+    target_id = _text(result.get("target_id"), 512) if isinstance(result, dict) else ""
+    if not result.get("ok") or owner_ws is None or not window_id or not tab_id or not target_id:
+        raise RuntimeError("no active OpenProgram Page is available")
+    binding_id = webtab.register_binding(
+        owner_ws, window_id, tab_id, target_id,
+    )
+    surface = {
+        "surface_key": "p1",
+        "aliases": ["focused", "web:1"],
+        "kind": "web_tab",
+        "region": "center",
+        "title": _text(result.get("title"), 240),
+        "origin": _origin(str(result.get("url") or "")),
+        "capabilities": ["observe", "interact", "navigate"],
+        "preview_status": "ready",
+        "binding_id": binding_id,
+    }
+    return {
+        "context_id": "page_ctx_" + uuid.uuid4().hex,
+        "primary_surface_key": "p1",
+        "alias_map": {"p1": "p1", "focused": "p1", "web:1": "p1"},
+        "surfaces": [surface],
+    }
+
+
 def release_bindings(context: dict | None) -> None:
     if not context:
         return
