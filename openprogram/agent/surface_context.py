@@ -124,6 +124,7 @@ def capture(raw: Any, ws) -> dict | None:
     binding_id = webtab.register_binding(
         ws, descriptor["window_id"], descriptor["tab_id"], target_id,
     )
+    revisions = webtab.binding_revisions(binding_id)
     surface.update({
         "title": _text(result.get("title"), 240) or surface["title"],
         "origin": _origin(str(result.get("url") or "")) or surface["origin"],
@@ -132,6 +133,7 @@ def capture(raw: Any, ws) -> dict | None:
         "preview": _preview(result.get("preview")),
         "binding_id": binding_id,
         "page_key": webtab.binding_page_key(binding_id),
+        **revisions,
     })
     return context
 
@@ -231,6 +233,7 @@ def capture_active() -> dict:
     binding_id = webtab.register_binding(
         owner_ws, window_id, tab_id, target_id,
     )
+    revisions = webtab.binding_revisions(binding_id)
     surface = {
         "surface_key": "p1",
         "aliases": ["focused", "web:1"],
@@ -242,6 +245,7 @@ def capture_active() -> dict:
         "preview_status": "ready",
         "binding_id": binding_id,
         "page_key": webtab.binding_page_key(binding_id),
+        **revisions,
     }
     return {
         "context_id": "page_ctx_" + uuid.uuid4().hex,

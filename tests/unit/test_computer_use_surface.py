@@ -55,6 +55,8 @@ def test_surface_context_captures_preview_from_the_originating_socket(monkeypatc
     assert context["alias_map"]["right"] == "s1"
     assert context["surfaces"][0]["preview"]["visible_text_excerpt"] == "Visible page text"
     assert context["surfaces"][0]["origin"] == "https://example.com"
+    assert context["surfaces"][0]["page_revision"] > 0
+    assert context["surfaces"][0]["access_revision"] > 0
     assert "token=secret" not in surface_context.render_for_model(context)
     assert "preview_status" in surface_context.render_for_model(context)
     assert "do not claim that the page is invisible" in surface_context.render_for_model(context)
@@ -130,6 +132,10 @@ def test_webtab_page_key_is_shared_across_recaptures_of_the_same_target():
     try:
         assert webtab.binding_page_key(first) == webtab.binding_page_key(moved)
         assert webtab.binding_page_key(first) != webtab.binding_page_key(other_owner)
+        first_revisions = webtab.binding_revisions(first)
+        moved_revisions = webtab.binding_revisions(moved)
+        assert first_revisions["page_revision"] == moved_revisions["page_revision"]
+        assert first_revisions["access_revision"] < moved_revisions["access_revision"]
     finally:
         for binding_id in (first, moved, other_owner):
             webtab.release_binding(binding_id)
@@ -159,6 +165,36 @@ def test_webtab_disconnect_revokes_owned_bindings_and_wakes_waiters():
         webtab._pending.pop("owned-request", None)
         webtab.release_binding(owned)
         webtab.release_binding(retained)
+
+
+def test_webtab_connection_and_target_replacement_advance_page_revision(monkeypatch):
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    first = webtab.register_binding(owner, "window-1", "tab-1", "target-1")
+    first_key = webtab.binding_page_key(first)
+    monkeypatch.setattr(webtab, "request_on_ws", lambda *_args, **_kwargs: {
+        "ok": True,
+        "window_id": "window-1",
+        "tab_id": "tab-1",
+        "target_id": "target-replaced",
+    })
+    changed = webtab.request_bound_tab(first)
+    assert changed["reason_code"] == "page_context_stale"
+    assert first not in webtab._bindings
+
+    replacement = webtab.register_binding(
+        owner, "window-1", "tab-1", "target-1",
+    )
+    replacement_key = webtab.binding_page_key(replacement)
+    assert replacement_key != first_key
+
+    webtab.release_connection(owner)
+    reconnected = webtab.register_binding(
+        owner, "window-1", "tab-1", "target-1",
+    )
+    assert webtab.binding_page_key(reconnected) != replacement_key
+    webtab.release_connection(owner)
 
 
 def test_webtab_result_is_claimed_only_by_expected_socket():

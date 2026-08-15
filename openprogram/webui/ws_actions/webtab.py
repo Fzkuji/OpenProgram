@@ -11,6 +11,7 @@ installDesktopMenuHandlers）收到后 openWebTab(url) 并经同一条 WS 回
 """
 from __future__ import annotations
 
+import itertools
 import json
 import threading
 import time
@@ -21,7 +22,10 @@ from typing import Any
 # "result" 键（claim-once），后续同 req_id 的回执直接忽略。
 _pending: dict[str, tuple[threading.Event, dict, Any | None]] = {}
 _lock = threading.Lock()
-_bindings: dict[str, tuple[Any, str, str, str, float]] = {}
+_bindings: dict[str, tuple[Any, str, str, str, float, int, int]] = {}
+_connection_revisions: dict[Any, int] = {}
+_page_revisions: dict[tuple[int, str], int] = {}
+_next_revision = itertools.count(1)
 
 
 def _payload(command: dict, req_id: str) -> str:
@@ -88,8 +92,24 @@ def register_binding(
 ) -> str:
     binding_id = "surface_" + uuid.uuid4().hex
     with _lock:
+        connection_revision = _connection_revisions.get(ws)
+        if connection_revision is None:
+            connection_revision = next(_next_revision)
+            _connection_revisions[ws] = connection_revision
+        page_identity = (connection_revision, target_id)
+        page_revision = _page_revisions.get(page_identity)
+        if page_revision is None:
+            page_revision = next(_next_revision)
+            _page_revisions[page_identity] = page_revision
+        access_revision = next(_next_revision)
         _bindings[binding_id] = (
-            ws, window_id, tab_id, target_id, time.monotonic() + ttl,
+            ws,
+            window_id,
+            tab_id,
+            target_id,
+            time.monotonic() + ttl,
+            page_revision,
+            access_revision,
         )
     return binding_id
 
@@ -103,9 +123,14 @@ def release_connection(ws) -> None:
     """Revoke bindings and wake exact-socket requests on disconnect."""
     wake = []
     with _lock:
+        connection_revision = _connection_revisions.pop(ws, None)
         for binding_id, entry in list(_bindings.items()):
             if entry[0] is ws:
                 _bindings.pop(binding_id, None)
+        if connection_revision is not None:
+            for identity in list(_page_revisions):
+                if identity[0] == connection_revision:
+                    _page_revisions.pop(identity, None)
         for ev, holder, expected_ws in _pending.values():
             if expected_ws is ws and "result" not in holder:
                 holder["result"] = {
@@ -123,8 +148,26 @@ def binding_page_key(binding_id: str) -> str:
         entry = _bindings.get(binding_id)
     if entry is None:
         return ""
-    ws, _window_id, _tab_id, target_id, _expires_at = entry
-    return f"{id(ws)}:{target_id}"
+    return f"page:{entry[5]}"
+
+
+def binding_revisions(binding_id: str) -> dict[str, int]:
+    """Return server-owned Page/access revisions for one live capability."""
+    with _lock:
+        entry = _bindings.get(binding_id)
+    if entry is None:
+        return {}
+    return {"page_revision": entry[5], "access_revision": entry[6]}
+
+
+def _invalidate_page(ws, target_id: str) -> None:
+    with _lock:
+        connection_revision = _connection_revisions.get(ws)
+        if connection_revision is not None:
+            _page_revisions.pop((connection_revision, target_id), None)
+        for binding_id, entry in list(_bindings.items()):
+            if entry[0] is ws and entry[3] == target_id:
+                _bindings.pop(binding_id, None)
 
 
 def request_bound_tab(
@@ -143,23 +186,37 @@ def request_bound_tab(
     with _lock:
         entry = _bindings.get(binding_id)
     if entry is None:
-        return {"ok": False, "error": "surface binding is unavailable"}
-    ws, window_id, tab_id, target_id, expires_at = entry
+        return {
+            "ok": False,
+            "error": "surface binding is unavailable",
+            "reason_code": "page_context_stale",
+        }
+    ws, window_id, tab_id, target_id, expires_at, _, _ = entry
     if time.monotonic() >= expires_at:
         release_binding(binding_id)
-        return {"ok": False, "error": "surface binding expired"}
+        return {
+            "ok": False,
+            "error": "surface binding expired",
+            "reason_code": "page_context_stale",
+        }
     command = {"op": "activate", "window_id": window_id, "tab_id": tab_id}
     if url:
         command["url"] = url
     result = request_on_ws(ws, command, timeout)
     if not result.get("ok"):
+        release_binding(binding_id)
         return result
     if (
         result.get("window_id") != window_id
         or result.get("tab_id") != tab_id
         or result.get("target_id") != target_id
     ):
-        return {"ok": False, "error": "bound web tab changed"}
+        _invalidate_page(ws, target_id)
+        return {
+            "ok": False,
+            "error": "bound web tab changed",
+            "reason_code": "page_context_stale",
+        }
     return result
 
 
