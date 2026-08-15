@@ -260,6 +260,8 @@ vm.runInContext(
     showView,
     hideView,
     sendState,
+    forwardFindResult,
+    handleWebTabShortcut,
     loadView,
     activateView,
     runNativeNavigation,
@@ -380,7 +382,20 @@ function controlledRecord(id, currentUrl = "", loading = false) {
   let targetCalls = 0;
   let debuggerAttached = false;
   let windowOpenHandler = null;
-  const nativeCalls = { reload: 0, stop: 0, back: 0, forward: 0 };
+  let delayPrint = false;
+  let pendingPrintCallback = null;
+  const webContentsListeners = new Map();
+  const nativeCalls = {
+    reload: 0,
+    stop: 0,
+    back: 0,
+    forward: 0,
+    find: [],
+    stopFind: [],
+    zoom: [],
+    print: [],
+  };
+  let zoomFactor = 1;
   const webContents = {
     getURL: () => currentUrl,
     getTitle: () => id,
@@ -417,12 +432,51 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     },
     reload() { nativeCalls.reload += 1; },
     stop() { nativeCalls.stop += 1; },
+    findInPage(query, options) {
+      nativeCalls.find.push([query, options]);
+      return nativeCalls.find.length;
+    },
+    stopFindInPage(action) { nativeCalls.stopFind.push(action); },
+    getZoomFactor() { return zoomFactor; },
+    setZoomFactor(value) {
+      zoomFactor = value;
+      nativeCalls.zoom.push(value);
+    },
+    print(options, callback) {
+      nativeCalls.print.push(options);
+      if (delayPrint) pendingPrintCallback = callback;
+      else callback(true);
+    },
     close() { closeCalls += 1; },
     setWindowOpenHandler(handler) {
       windowOpenHandler = handler;
       this.windowOpen = handler;
     },
-    on() {},
+    on(event, handler) {
+      webContentsListeners.set(event, [
+        ...(webContentsListeners.get(event) ?? []),
+        handler,
+      ]);
+    },
+    once(event, handler) {
+      const wrapper = (...args) => {
+        this.removeListener(event, wrapper);
+        handler(...args);
+      };
+      wrapper.original = handler;
+      this.on(event, wrapper);
+    },
+    removeListener(event, handler) {
+      webContentsListeners.set(
+        event,
+        (webContentsListeners.get(event) ?? []).filter(
+          (item) => item !== handler && item.original !== handler,
+        ),
+      );
+    },
+    emit(event, ...args) {
+      for (const handler of webContentsListeners.get(event) ?? []) handler(...args);
+    },
   };
   const view = {
     webContents,
@@ -443,6 +497,15 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     targetCallCount: () => targetCalls,
     windowOpen: (details) => windowOpenHandler?.(details),
     nativeCalls,
+    emitWebContents(event, ...args) {
+      for (const handler of webContentsListeners.get(event) ?? []) handler(...args);
+    },
+    delayPrintCallback() { delayPrint = true; },
+    completePrint(success) {
+      const callback = pendingPrintCallback;
+      pendingPrintCallback = null;
+      callback?.(success);
+    },
     currentBounds: () => ({ ...bounds }),
   };
 }
@@ -539,6 +602,18 @@ function checkPreloadWindowIdentity() {
   exposed.webTab.syncVisible(items);
   assert.deepEqual(sent.at(-1), ["webtab:sync-visible", items]);
   assert.deepEqual(invoked, []);
+  exposed.webTab.find("pane-a", "needle", { forward: false, findNext: true });
+  exposed.webTab.stopFind("pane-a", "clearSelection");
+  exposed.webTab.zoom("pane-a", "in");
+  exposed.webTab.print("pane-a");
+  assert.deepEqual(sent.slice(-2), [
+    ["webtab:find", "pane-a", "needle", { forward: false, findNext: true }],
+    ["webtab:stop-find", "pane-a", "clearSelection"],
+  ]);
+  assert.deepEqual(invoked, [
+    ["webtab:zoom", "pane-a", "in"],
+    ["webtab:print", "pane-a"],
+  ]);
 }
 
 function checkPreloadPopupSubscription() {
@@ -910,6 +985,10 @@ async function checkSenderOwnership() {
   ipcListeners.get("webtab:stop")(eventB, "owned-a");
   ipcListeners.get("webtab:go-back")(eventB, "owned-a");
   ipcListeners.get("webtab:go-forward")(eventB, "owned-a");
+  ipcListeners.get("webtab:find")(eventB, "owned-a", "blocked", {});
+  ipcListeners.get("webtab:stop-find")(eventB, "owned-a", "clearSelection");
+  assert.equal(await ipcHandlers.get("webtab:zoom")(eventB, "owned-a", "in"), null);
+  assert.equal(await ipcHandlers.get("webtab:print")(eventB, "owned-a"), false);
   ipcListeners.get("webtab:set-bounds")(
     eventB,
     "owned-a",
@@ -931,12 +1010,48 @@ async function checkSenderOwnership() {
   );
   ctxB.views.delete("owned-a");
   assert.deepEqual(a.calls, []);
-  assert.deepEqual(a.nativeCalls, { reload: 0, stop: 0, back: 0, forward: 0 });
+  assert.deepEqual(a.nativeCalls, {
+    reload: 0,
+    stop: 0,
+    back: 0,
+    forward: 0,
+    find: [],
+    stopFind: [],
+    zoom: [],
+    print: [],
+  });
   assert.deepEqual(a.currentBounds(), initialBounds);
   assert.equal(a.visibility.at(-1), true);
   assert.equal(a.closeCallCount(), 0);
   assert.equal(ctxA.views.has("owned-a"), true);
   assert.deepEqual([...ctxB.visibleViewIds], ["owned-b"]);
+
+  const eventA = { sender: winA.webContents };
+  ipcListeners.get("webtab:find")(eventA, "owned-a", "needle", {
+    forward: false,
+    findNext: true,
+  });
+  ipcListeners.get("webtab:find")(eventA, "owned-a", "needle", {
+    forward: true,
+    findNext: false,
+  });
+  ipcListeners.get("webtab:stop-find")(eventA, "owned-a", "clearSelection");
+  assert.equal(await ipcHandlers.get("webtab:zoom")(eventA, "owned-a", "in"), 110);
+  assert.equal(await ipcHandlers.get("webtab:zoom")(eventA, "owned-a", "out"), 100);
+  assert.equal(await ipcHandlers.get("webtab:zoom")(eventA, "owned-a", "reset"), 100);
+  assert.equal(await ipcHandlers.get("webtab:print")(eventA, "owned-a"), true);
+  assert.deepEqual(plain(a.nativeCalls.find), [
+    ["needle", { forward: false, findNext: true }],
+    ["needle", { forward: true, findNext: false }],
+  ]);
+  assert.deepEqual(a.nativeCalls.stopFind, ["clearSelection"]);
+  assert.deepEqual(a.nativeCalls.zoom, [1.1, 1, 1]);
+  assert.deepEqual(plain(a.nativeCalls.print), [{ silent: false, printBackground: true }]);
+  a.delayPrintCallback();
+  const destroyedPrint = ipcHandlers.get("webtab:print")(eventA, "owned-a");
+  a.emitWebContents("destroyed");
+  assert.equal(await destroyedPrint, false);
+  a.completePrint(true);
 
   ipcListeners.get("webtab:destroy")({ sender: winA.webContents }, "owned-a");
   assert.equal(a.closeCallCount(), 1);
@@ -946,6 +1061,37 @@ async function checkSenderOwnership() {
   ipcListeners.get("webtab:ensure")(eventB, "fresh-b", "");
   assert.equal(ctxB.views.get("fresh-b").ownerId, ctxB.id);
   assert.equal(ctxA.views.has("fresh-b"), false);
+  const fresh = ctxB.views.get("fresh-b").view.webContents;
+  ipcListeners.get("webtab:find")(eventB, "fresh-b", "old", { findNext: true });
+  ipcListeners.get("webtab:find")(eventB, "fresh-b", "new", { findNext: true });
+  assert.equal(ctxB.views.get("fresh-b").findRequestId, 2);
+  const sentBeforeStaleFind = winB.sent.length;
+  fresh.emit("found-in-page", {}, {
+    requestId: 1,
+    activeMatchOrdinal: 1,
+    matches: 1,
+    finalUpdate: true,
+  });
+  assert.equal(winB.sent.length, sentBeforeStaleFind, "stale find results must be ignored");
+  fresh.emit("found-in-page", {}, {
+    requestId: 2,
+    activeMatchOrdinal: 2,
+    matches: 5,
+    finalUpdate: true,
+  });
+  assert.deepEqual(plain(winB.sent.at(-1)), [
+    "webtab:find-result",
+    { id: "fresh-b", activeMatchOrdinal: 2, matches: 5, finalUpdate: true },
+  ]);
+  let shortcutPrevented = false;
+  fresh.emit("before-input-event", {
+    preventDefault() { shortcutPrevented = true; },
+  }, { type: "keyDown", meta: true, key: "f" });
+  assert.equal(shortcutPrevented, true);
+  assert.deepEqual(plain(winB.sent.at(-1)), [
+    "webtab:command",
+    { id: "fresh-b", command: "find" },
+  ]);
 }
 
 async function checkDownloadsLifecycle() {
@@ -1831,6 +1977,7 @@ async function checkSuccessfulTransferAndDurableCommit() {
   const destinationCtx = registerContext("success-destination", destinationWin);
   const first = controlledRecord("success-a");
   const second = controlledRecord("success-b");
+  first.record.findRequestId = 7;
   attachControlledRecord(sourceCtx, first, { x: 1, y: 2, width: 300, height: 400 });
   attachControlledRecord(sourceCtx, second, { x: 301, y: 2, width: 320, height: 400 });
 
@@ -1880,6 +2027,8 @@ async function checkSuccessfulTransferAndDurableCommit() {
   assert.equal(sourceCtx.views.has("success-b"), false);
   assert.equal(hooks.tabTransfers.isLocked("success-a"), true);
   assert.equal(hooks.tabTransfers.isLocked("success-b"), true);
+  assert.equal(first.record.findRequestId, 7);
+  assert.deepEqual(first.nativeCalls.stopFind, []);
   trace.push("native destination ownership");
 
   for (const tab of accepted.payload.tabs) {
@@ -1990,6 +2139,8 @@ async function checkSuccessfulTransferAndDurableCommit() {
   assert.equal(clock.pendingIds().includes(expirationTimer), false);
   assert.equal(first.record.ownerId, destinationCtx.id);
   assert.equal(second.record.ownerId, destinationCtx.id);
+  assert.equal(first.record.findRequestId, null);
+  assert.deepEqual(first.nativeCalls.stopFind, ["clearSelection"]);
   assert.equal(hooks.tabTransfers.inspect(destinationCtx, token), null);
   assert.equal(
     hooks.tabTransfers.accept(destinationCtx, token, { kind: "strip-end" }),
@@ -2021,7 +2172,7 @@ async function checkSuccessfulTransferAndDurableCommit() {
   assert.equal(second.closeCallCount(), 0);
 }
 
-async function stageTransferForRollback(prefix, { ready = true } = {}) {
+async function stageTransferForRollback(prefix, { ready = true, activeFind = false } = {}) {
   const sourceWin = fakeWindow(nextGeneratedWindowId++);
   const destinationWin = fakeWindow(nextGeneratedWindowId++);
   const sourceCtx = registerContext(`${prefix}-source`, sourceWin);
@@ -2029,6 +2180,7 @@ async function stageTransferForRollback(prefix, { ready = true } = {}) {
   const controlled = controlledRecord(`${prefix}-web`);
   const originalBounds = { x: 17, y: 19, width: 410, height: 330 };
   attachControlledRecord(sourceCtx, controlled, originalBounds);
+  if (activeFind) controlled.record.findRequestId = 7;
   const token = prepareThroughIpc(sourceWin, webTransferPayload([`${prefix}-web`]));
   assert.ok(hooks.tabTransfers.inspect(destinationCtx, token));
   assert.equal(hooks.tabTransfers.journalOpened(destinationCtx, token, "destination"), true);
@@ -2050,12 +2202,27 @@ async function stageTransferForRollback(prefix, { ready = true } = {}) {
 }
 
 async function checkLockedRecordsRejectOrdinaryIpc() {
-  const transaction = await stageTransferForRollback("locked-ipc");
+  const transaction = await stageTransferForRollback("locked-ipc", { activeFind: true });
   const { controlled, destinationCtx, destinationWin, sourceCtx, sourceWin, token } =
     transaction;
   const boundsBefore = controlled.currentBounds();
   const visibilityCallsBefore = controlled.visibility.length;
   const generatedBefore = generatedNativeViews;
+  assert.equal(controlled.record.findRequestId, 7);
+  assert.deepEqual(controlled.nativeCalls.stopFind, []);
+  const destinationMessagesBeforeFind = destinationWin.sent.length;
+  assert.equal(hooks.forwardFindResult(controlled.record, {
+    requestId: 7,
+    activeMatchOrdinal: 1,
+    matches: 1,
+    finalUpdate: true,
+  }), false);
+  let lockedShortcutPrevented = false;
+  assert.equal(hooks.handleWebTabShortcut(controlled.record, {
+    preventDefault() { lockedShortcutPrevented = true; },
+  }, { type: "keyDown", meta: true, key: "f" }), false);
+  assert.equal(lockedShortcutPrevented, false);
+  assert.equal(destinationWin.sent.length, destinationMessagesBeforeFind);
 
   ipcListeners.get("webtab:ensure")(
     eventFor(sourceWin),
@@ -2084,6 +2251,16 @@ async function checkLockedRecordsRejectOrdinaryIpc() {
   ipcListeners.get("webtab:stop")(eventFor(destinationWin), "locked-ipc-web");
   ipcListeners.get("webtab:go-back")(eventFor(destinationWin), "locked-ipc-web");
   ipcListeners.get("webtab:go-forward")(eventFor(destinationWin), "locked-ipc-web");
+  ipcListeners.get("webtab:find")(eventFor(destinationWin), "locked-ipc-web", "blocked", {});
+  ipcListeners.get("webtab:stop-find")(eventFor(destinationWin), "locked-ipc-web", "clearSelection");
+  assert.equal(
+    await ipcHandlers.get("webtab:zoom")(eventFor(destinationWin), "locked-ipc-web", "in"),
+    null,
+  );
+  assert.equal(
+    await ipcHandlers.get("webtab:print")(eventFor(destinationWin), "locked-ipc-web"),
+    false,
+  );
   ipcListeners.get("webtab:show")(eventFor(destinationWin), "locked-ipc-web");
   ipcListeners.get("webtab:hide")(eventFor(destinationWin), "locked-ipc-web");
   ipcListeners.get("webtab:sync-visible")(eventFor(destinationWin), [{
@@ -2109,7 +2286,16 @@ async function checkLockedRecordsRejectOrdinaryIpc() {
   assert.equal(sourceCtx.views.has("locked-ipc-web"), false);
   assert.strictEqual(destinationCtx.views.get("locked-ipc-web"), controlled.record);
   assert.deepEqual(controlled.calls, []);
-  assert.deepEqual(controlled.nativeCalls, { reload: 0, stop: 0, back: 0, forward: 0 });
+  assert.deepEqual(controlled.nativeCalls, {
+    reload: 0,
+    stop: 0,
+    back: 0,
+    forward: 0,
+    find: [],
+    stopFind: [],
+    zoom: [],
+    print: [],
+  });
   assert.deepEqual(controlled.currentBounds(), boundsBefore);
   assert.equal(controlled.visibility.length, visibilityCallsBefore);
   assert.equal(controlled.closeCallCount(), 0);
@@ -2117,6 +2303,9 @@ async function checkLockedRecordsRejectOrdinaryIpc() {
   assert.equal(hooks.tabTransfers.sourceRemoved(sourceCtx, token, { ok: false }), true);
   assert.equal(hooks.tabTransfers.destinationUndone(destinationCtx, token, true), true);
   await finalizeBoth(transaction);
+  assert.equal(controlled.record.ownerId, sourceCtx.id);
+  assert.equal(controlled.record.findRequestId, 7);
+  assert.deepEqual(controlled.nativeCalls.stopFind, []);
 }
 
 async function finalizeBoth(transaction) {

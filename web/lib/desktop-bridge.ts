@@ -80,6 +80,13 @@ export interface DesktopWebTabState {
   faviconUrl?: string;
 }
 
+export interface DesktopWebTabFindResult {
+  id: string;
+  activeMatchOrdinal: number;
+  matches: number;
+  finalUpdate: boolean;
+}
+
 export interface DesktopWebTabBounds {
   x: number;
   y: number;
@@ -124,11 +131,21 @@ export interface DesktopWebTabApi {
   stop(id: string): void;
   goBack(id: string): void;
   goForward(id: string): void;
+  find(
+    id: string,
+    query: string,
+    options?: { forward?: boolean; findNext?: boolean },
+  ): void;
+  stopFind(id: string, action: "clearSelection" | "keepSelection" | "activateSelection"): void;
+  zoom(id: string, action: "in" | "out" | "reset"): Promise<number | null>;
+  print(id: string): Promise<boolean>;
   /** Navigation/title/loading events pushed from main; returns the
    *  unsubscribe function. */
   onState(cb: (state: DesktopWebTabState) => void): () => void;
   /** Valid http(s) page popup delegated by the owning native web view. */
   onPopup?(cb: (popup: { openerId: string; url: string }) => void): () => void;
+  onFindResult?(cb: (result: DesktopWebTabFindResult) => void): () => void;
+  onCommand?(cb: (command: { id: string; command: "find" }) => void): () => void;
 }
 
 export interface DesktopTransferReceipt {

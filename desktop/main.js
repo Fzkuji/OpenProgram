@@ -1176,6 +1176,15 @@ function makeTransferCoordinator(options = {}) {
   }
 
   function finishCommittedTransfer(transaction, decision) {
+    for (const record of transaction.records) {
+      if (!Number.isInteger(record.findRequestId)) continue;
+      try {
+        record.view.webContents.stopFindInPage("clearSelection");
+      } catch (_error) {
+        /* the page may have closed after the durable commit */
+      }
+      record.findRequestId = null;
+    }
     transaction.status = "committed";
     transaction.commitIndeterminate = false;
     clearActive(transaction);
@@ -1801,6 +1810,50 @@ function sendState(record, extra) {
   });
 }
 
+function forwardFindResult(record, result) {
+  if (tabTransfers.isLocked(record.id) || result?.requestId !== record.findRequestId) return false;
+  const owner = ownerOf(record);
+  if (!owner) return false;
+  owner.win.webContents.send("webtab:find-result", {
+    id: record.id,
+    activeMatchOrdinal: Number(result?.activeMatchOrdinal) || 0,
+    matches: Number(result?.matches) || 0,
+    finalUpdate: Boolean(result?.finalUpdate),
+  });
+  return true;
+}
+
+function handleWebTabShortcut(record, event, input) {
+  if (
+    input?.type !== "keyDown"
+    || (!input.meta && !input.control)
+    || tabTransfers.isLocked(record.id)
+  ) return false;
+  const key = String(input.key || "").toLowerCase();
+  const owner = ownerOf(record);
+  if (!owner) return false;
+  if (key === "f") {
+    event.preventDefault();
+    owner.win.webContents.send("webtab:command", { id: record.id, command: "find" });
+    owner.win.webContents.focus?.();
+  } else if (key === "p") {
+    event.preventDefault();
+    void printView(owner, record.id);
+  } else if (key === "+" || key === "=") {
+    event.preventDefault();
+    zoomView(owner, record.id, "in");
+  } else if (key === "-") {
+    event.preventDefault();
+    zoomView(owner, record.id, "out");
+  } else if (key === "0") {
+    event.preventDefault();
+    zoomView(owner, record.id, "reset");
+  } else {
+    return false;
+  }
+  return true;
+}
+
 function isWebUrl(u) {
   try {
     const p = new URL(u).protocol;
@@ -1857,7 +1910,7 @@ function ensureView(ctx, id, url) {
     const view = new WebContentsView({
       webPreferences: { partition: "persist:webtabs" },
     });
-    record = { id, view, ownerId: ctx.id, navigation: null };
+    record = { id, view, ownerId: ctx.id, navigation: null, findRequestId: null };
     ctx.views.set(id, record);
     ctx.win.contentView.addChildView(view);
     view.setVisible(false);
@@ -1912,6 +1965,8 @@ function ensureView(ctx, id, url) {
       record.faviconUrl = "";
       sendState(record, { faviconUrl: "" });
     });
+    wc.on("found-in-page", (_event, result) => forwardFindResult(record, result));
+    wc.on("before-input-event", (event, input) => handleWebTabShortcut(record, event, input));
     if (url && isTabUrl(url)) void loadView(record, url).catch(() => {});
   }
   return record;
@@ -1921,6 +1976,88 @@ async function navigateView(ctx, id, url) {
   if (!url || !isTabUrl(url)) return null;
   const record = recordFor(ctx, id) || ensureView(ctx, id, "");
   return record ? loadView(record, url) : null;
+}
+
+const WEBTAB_ZOOM_FACTORS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+
+function findView(ctx, id, query, options) {
+  const record = recordFor(ctx, id);
+  const needle = typeof query === "string" ? query.slice(0, 512) : "";
+  if (!record || !needle) return false;
+  try {
+    record.findRequestId = record.view.webContents.findInPage(needle, {
+      forward: options?.forward !== false,
+      findNext: options?.findNext === true,
+    });
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function stopFindView(ctx, id, action) {
+  const record = recordFor(ctx, id);
+  if (!record || !["clearSelection", "keepSelection", "activateSelection"].includes(action)) {
+    return false;
+  }
+  try {
+    record.findRequestId = null;
+    record.view.webContents.stopFindInPage(action);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function zoomView(ctx, id, action) {
+  const record = recordFor(ctx, id);
+  if (!record || !["in", "out", "reset"].includes(action)) return null;
+  try {
+    const wc = record.view.webContents;
+    const current = wc.getZoomFactor();
+    const nearest = WEBTAB_ZOOM_FACTORS.reduce(
+      (best, value, index) => Math.abs(value - current) < Math.abs(WEBTAB_ZOOM_FACTORS[best] - current)
+        ? index
+        : best,
+      0,
+    );
+    const index = action === "reset"
+      ? WEBTAB_ZOOM_FACTORS.indexOf(1)
+      : Math.max(
+          0,
+          Math.min(WEBTAB_ZOOM_FACTORS.length - 1, nearest + (action === "in" ? 1 : -1)),
+        );
+    const factor = WEBTAB_ZOOM_FACTORS[index];
+    wc.setZoomFactor(factor);
+    return Math.round(factor * 100);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function printView(ctx, id) {
+  const record = recordFor(ctx, id);
+  if (!record) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const wc = record.view.webContents;
+    let settled = false;
+    const finish = (success) => {
+      if (settled) return;
+      settled = true;
+      wc.removeListener("destroyed", onDestroyed);
+      resolve(Boolean(success));
+    };
+    const onDestroyed = () => finish(false);
+    wc.once("destroyed", onDestroyed);
+    try {
+      wc.print(
+        { silent: false, printBackground: true },
+        finish,
+      );
+    } catch (_error) {
+      finish(false);
+    }
+  });
 }
 
 function normalizedBounds(bounds) {
@@ -2540,6 +2677,22 @@ function registerWebTabIpc() {
   ipcMain.on("webtab:go-forward", (event, id) => {
     const ctx = contextForSender(event);
     if (ctx) runNativeNavigation(ctx, id, (wc) => wc.navigationHistory.goForward());
+  });
+  ipcMain.on("webtab:find", (event, id, query, options) => {
+    const ctx = contextForSender(event);
+    if (ctx) findView(ctx, id, query, options);
+  });
+  ipcMain.on("webtab:stop-find", (event, id, action) => {
+    const ctx = contextForSender(event);
+    if (ctx) stopFindView(ctx, id, action);
+  });
+  ipcMain.handle("webtab:zoom", (event, id, action) => {
+    const ctx = contextForSender(event);
+    return ctx ? zoomView(ctx, id, action) : null;
+  });
+  ipcMain.handle("webtab:print", (event, id) => {
+    const ctx = contextForSender(event);
+    return ctx ? printView(ctx, id) : false;
   });
   ipcMain.handle("history:list", (_event, options) => {
     try {

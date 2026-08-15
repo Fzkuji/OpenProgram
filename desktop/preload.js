@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     stop: (id) => ipcRenderer.send("webtab:stop", id),
     goBack: (id) => ipcRenderer.send("webtab:go-back", id),
     goForward: (id) => ipcRenderer.send("webtab:go-forward", id),
+    find: (id, query, options) => ipcRenderer.send("webtab:find", id, query, options),
+    stopFind: (id, action) => ipcRenderer.send("webtab:stop-find", id, action),
+    zoom: (id, action) => ipcRenderer.invoke("webtab:zoom", id, action),
+    print: (id) => ipcRenderer.invoke("webtab:print", id),
     onState: (cb) => {
       const listener = (_event, state) => cb(state);
       ipcRenderer.on("webtab:state", listener);
@@ -42,6 +46,16 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
       const listener = (_event, popup) => cb(popup);
       ipcRenderer.on("webtab:popup", listener);
       return () => ipcRenderer.removeListener("webtab:popup", listener);
+    },
+    onFindResult: (cb) => {
+      const listener = (_event, result) => cb(result);
+      ipcRenderer.on("webtab:find-result", listener);
+      return () => ipcRenderer.removeListener("webtab:find-result", listener);
+    },
+    onCommand: (cb) => {
+      const listener = (_event, command) => cb(command);
+      ipcRenderer.on("webtab:command", listener);
+      return () => ipcRenderer.removeListener("webtab:command", listener);
     },
   },
   // Main-menu overlay. The ⋮ menu is a top-layer WebContentsView (so it

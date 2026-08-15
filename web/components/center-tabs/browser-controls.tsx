@@ -15,8 +15,13 @@ import {
   Library,
   MoreVertical,
   Plus,
+  Printer,
+  RotateCcw,
+  Search,
   Settings,
   Trash2,
+  ZoomIn,
+  ZoomOut,
   ExternalLink,
 } from "lucide-react";
 
@@ -71,6 +76,11 @@ type BrowserMenuActions = {
   home(): void;
   forward?: () => void;
   openExternal(): void;
+  find?: () => void;
+  zoomIn?: () => void;
+  zoomOut?: () => void;
+  resetZoom?: () => void;
+  print?: () => void;
 };
 
 function runBrowserAction(
@@ -91,6 +101,21 @@ function runBrowserAction(
       break;
     case "open-external":
       actions.openExternal();
+      break;
+    case "find":
+      actions.find?.();
+      break;
+    case "zoom-in":
+      actions.zoomIn?.();
+      break;
+    case "zoom-out":
+      actions.zoomOut?.();
+      break;
+    case "reset-zoom":
+      actions.resetZoom?.();
+      break;
+    case "print":
+      actions.print?.();
       break;
     case "bookmarks":
       tabs.openBuiltinTab("bookmarks");
@@ -193,6 +218,11 @@ export function BrowserMenu({
               ...(responsive.home ? [item("home", "Home", "主页", { disabled: !canGoHome })] : []),
               ...(responsive.forward ? [item("forward", "Forward", "前进", { disabled: !canGoForward })] : []),
               ...(responsive.openExternal ? [item("open-external", "Open in browser", "在浏览器中打开", { disabled: !canOpenExternal })] : []),
+              item("find", "Find in page", "在页面中查找", { separatorBefore: true, disabled: !actions.find }),
+              item("zoom-in", "Zoom in", "放大", { disabled: !actions.zoomIn }),
+              item("zoom-out", "Zoom out", "缩小", { disabled: !actions.zoomOut }),
+              item("reset-zoom", "Reset zoom", "重置缩放", { disabled: !actions.resetZoom }),
+              item("print", "Print", "打印", { disabled: !actions.print }),
               item("bookmarks", "Bookmarks", "书签", { separatorBefore: true }),
               item("history", "History", "历史"),
               item("downloads", "Downloads", "下载内容"),
@@ -239,6 +269,12 @@ export function BrowserMenu({
         {responsive.home ? row("home", <House size={14} />, "Home", "主页", false, !canGoHome) : null}
         {responsive.forward ? row("forward", <ArrowRight size={14} />, "Forward", "前进", false, !canGoForward) : null}
         {responsive.openExternal ? row("open-external", <ExternalLink size={14} />, "Open in browser", "在浏览器中打开", false, !canOpenExternal) : null}
+        <DropdownMenuSeparator className={MENU_SEPARATOR} />
+        {row("find", <Search size={14} />, "Find in page", "在页面中查找", false, !actions.find)}
+        {row("zoom-in", <ZoomIn size={14} />, "Zoom in", "放大", false, !actions.zoomIn)}
+        {row("zoom-out", <ZoomOut size={14} />, "Zoom out", "缩小", false, !actions.zoomOut)}
+        {row("reset-zoom", <RotateCcw size={14} />, "Reset zoom", "重置缩放", false, !actions.resetZoom)}
+        {row("print", <Printer size={14} />, "Print", "打印", false, !actions.print)}
         <DropdownMenuSeparator className={MENU_SEPARATOR} />
         {row("bookmarks", <Bookmark size={14} />, "Bookmarks", "书签")}
         {row("history", <Clock3 size={14} />, "History", "历史")}

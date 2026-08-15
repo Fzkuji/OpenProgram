@@ -22,7 +22,8 @@
  *    back/forward buttons: iframe history is unreliable cross-origin.
  */
 import { useEffect, useId, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, ExternalLink, House, RotateCw, Star, X } from "lucide-react";
+import type { KeyboardEvent } from "react";
+import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, ExternalLink, House, RotateCw, Star, X } from "lucide-react";
 
 import {
   desktopBridge,
@@ -35,6 +36,7 @@ import {
   type DesktopBridge,
 } from "@/lib/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
+import { browserPageShortcut } from "@/lib/browser-layout";
 import {
   isBookmarked,
   subscribeBookmarks,
@@ -121,8 +123,12 @@ function DesktopWebTabPane({
   const [loading, setLoading] = useState(false);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findResult, setFindResult] = useState({ activeMatchOrdinal: 0, matches: 0 });
   const bodyRef = useRef<HTMLDivElement>(null);
   const addressRef = useRef<HTMLInputElement>(null);
+  const findRef = useRef<HTMLInputElement>(null);
   // Last URL the native view is known to be at (our navigate calls +
   // onState reports). The store-url effect below only steers the view
   // on real drift, so onState → updateWebTab echoes never re-navigate.
@@ -209,6 +215,20 @@ function DesktopWebTabPane({
     });
   }, [bridge, tabId, updateWebTab]);
 
+  useEffect(() => bridge.webTab.onFindResult?.((result) => {
+    if (result.id === tabId) setFindResult(result);
+  }), [bridge, tabId]);
+
+  useEffect(() => bridge.webTab.onCommand?.((command) => {
+    if (command.id !== tabId || command.command !== "find") return;
+    setFindOpen(true);
+    window.requestAnimationFrame(() => findRef.current?.focus());
+  }), [bridge, tabId]);
+
+  useEffect(() => () => {
+    bridge.webTab.stopFind(tabId, "clearSelection");
+  }, [bridge, tabId]);
+
   // Store url changed by someone else (session restore, future agent
   // navigation) → steer the view. Our own updates (navigate() below,
   // onState echoes) already advanced viewUrlRef, so they no-op here.
@@ -244,10 +264,45 @@ function DesktopWebTabPane({
     updateWebTab(tabId, { url: normalized });
   }
 
+  function openFind() {
+    setFindOpen(true);
+    window.requestAnimationFrame(() => {
+      findRef.current?.focus();
+      findRef.current?.select();
+    });
+  }
+
+  function closeFind() {
+    bridge.webTab.stopFind(tabId, "clearSelection");
+    setFindOpen(false);
+    setFindResult({ activeMatchOrdinal: 0, matches: 0 });
+  }
+
+  function runFind(nextQuery: string, forward = true, findNext = true) {
+    setFindQuery(nextQuery);
+    if (!nextQuery) {
+      bridge.webTab.stopFind(tabId, "clearSelection");
+      setFindResult({ activeMatchOrdinal: 0, matches: 0 });
+      return;
+    }
+    bridge.webTab.find(tabId, nextQuery, { forward, findNext });
+  }
+
+  function handleRendererShortcut(event: KeyboardEvent<HTMLDivElement>) {
+    const action = browserPageShortcut(event);
+    if (!action) return;
+    event.preventDefault();
+    if (action === "find") openFind();
+    if (action === "zoom-in") void bridge.webTab.zoom(tabId, "in");
+    if (action === "zoom-out") void bridge.webTab.zoom(tabId, "out");
+    if (action === "reset-zoom") void bridge.webTab.zoom(tabId, "reset");
+    if (action === "print") void bridge.webTab.print(tabId);
+  }
+
   const disabledStyle = { opacity: 0.35, cursor: "default" } as const;
 
   return (
-    <div className={styles.webPane}>
+    <div className={styles.webPane} onKeyDownCapture={handleRendererShortcut}>
       <div className={styles.webToolbar}>
         <button
           type="button"
@@ -307,11 +362,45 @@ function DesktopWebTabPane({
             home: () => useCenterTabs.getState().replaceWebTabWithNewTabPage(tabId),
             forward: () => bridge.webTab.goForward(tabId),
             openExternal: () => bridge.openExternal(viewUrlRef.current),
+            find: openFind,
+            zoomIn: () => { void bridge.webTab.zoom(tabId, "in"); },
+            zoomOut: () => { void bridge.webTab.zoom(tabId, "out"); },
+            resetZoom: () => { void bridge.webTab.zoom(tabId, "reset"); },
+            print: () => { void bridge.webTab.print(tabId); },
           }}
           canGoForward={canGoForward}
         />
       </div>
       <BookmarkBar ownerId={menuOwnerId} onNavigate={navigateTo} />
+      {findOpen ? (
+        <div className={styles.webFindBar}>
+          <input
+            ref={findRef}
+            value={findQuery}
+            onChange={(event) => runFind(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") closeFind();
+              if (event.key === "Enter" && findQuery) {
+                runFind(findQuery, !event.shiftKey, false);
+              }
+            }}
+            placeholder={text("Find in page", "在页面中查找")}
+            aria-label={text("Find in page", "在页面中查找")}
+          />
+          <span aria-live="polite">
+            {findResult.matches > 0 ? `${findResult.activeMatchOrdinal}/${findResult.matches}` : "0/0"}
+          </span>
+          <button type="button" onClick={() => runFind(findQuery, false, false)} disabled={!findQuery} aria-label={text("Previous match", "上一个匹配项")}>
+            <ChevronUp size={14} />
+          </button>
+          <button type="button" onClick={() => runFind(findQuery, true, false)} disabled={!findQuery} aria-label={text("Next match", "下一个匹配项")}>
+            <ChevronDown size={14} />
+          </button>
+          <button type="button" onClick={closeFind} aria-label={text("Close find", "关闭查找")}>
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
       {/* Empty body — the native view is drawn here by the main
           process at the bounds reported above. */}
       <div ref={bodyRef} className={styles.webFrame} />

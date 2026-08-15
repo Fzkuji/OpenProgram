@@ -1070,6 +1070,52 @@
   cursor: default;
 }
 
+.webFindBar {
+  height: 32px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 3px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.webFindBar input {
+  width: min(220px, 45cqw);
+  height: 24px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  color: var(--text-bright);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  outline: none;
+  font-size: 11.5px;
+}
+.webFindBar input:focus { border-color: var(--text-dim); }
+.webFindBar span { min-width: 34px; text-align: center; }
+.webFindBar button {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.webFindBar button:hover:not(:disabled) {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+.webFindBar button:disabled { opacity: .35; cursor: default; }
+
 .bookmarkBar {
   height: 30px;
   box-sizing: border-box;

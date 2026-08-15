@@ -25,3 +25,20 @@ export function browserResponsiveMenuItems(
     openExternal: medium,
   };
 }
+
+export function browserPageShortcut(input: {
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+}): "find" | "zoom-in" | "zoom-out" | "reset-zoom" | "print" | null {
+  if (!input.metaKey && !input.ctrlKey) return null;
+  switch (input.key.toLowerCase()) {
+    case "f": return "find";
+    case "+":
+    case "=": return "zoom-in";
+    case "-": return "zoom-out";
+    case "0": return "reset-zoom";
+    case "p": return "print";
+    default: return null;
+  }
+}

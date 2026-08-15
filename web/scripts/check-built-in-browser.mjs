@@ -206,6 +206,13 @@ assert.match(bridge, /downloads\?: DesktopDownloadsApi/);
 assert.match(bridge, /browserImport\?: DesktopBrowserImportApi/);
 assert.match(bridge, /browserData\?: DesktopBrowserDataApi/);
 assert.match(bridge, /stop\(id: string\): void/);
+assert.match(bridge, /find\(\s*id: string,\s*query: string/s);
+assert.match(bridge, /zoom\(id: string, action: "in" \| "out" \| "reset"\)/);
+assert.match(bridge, /print\(id: string\): Promise<boolean>/);
+assert.match(webTabPane, /className=\{styles\.webFindBar\}/);
+assert.match(browserControls, /case "find":/);
+assert.match(browserControls, /case "zoom-in":/);
+assert.match(browserControls, /case "print":/);
 assert.match(preload, /browser-import:list-sources/);
 assert.match(preload, /browser-data:clear/);
 assert.match(preload, /downloads:changed/);
@@ -235,6 +242,28 @@ assert.deepEqual(browserLayout.browserResponsiveMenuItems(600, { forward: true }
   forward: false,
   openExternal: true,
 });
+for (const [key, action] of [
+  ["f", "find"],
+  ["+", "zoom-in"],
+  ["=", "zoom-in"],
+  ["-", "zoom-out"],
+  ["0", "reset-zoom"],
+  ["p", "print"],
+]) {
+  assert.equal(
+    browserLayout.browserPageShortcut({ key, metaKey: true, ctrlKey: false }),
+    action,
+  );
+  assert.equal(
+    browserLayout.browserPageShortcut({ key, metaKey: false, ctrlKey: true }),
+    action,
+  );
+}
+assert.equal(
+  browserLayout.browserPageShortcut({ key: "f", metaKey: false, ctrlKey: false }),
+  null,
+);
+assert.match(webTabPane, /onKeyDownCapture=\{handleRendererShortcut\}/);
 assert.deepEqual(browserLayout.browserResponsiveMenuItems(500, { forward: true }), {
   home: true,
   forward: true,
