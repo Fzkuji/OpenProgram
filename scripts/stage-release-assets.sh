@@ -6,6 +6,8 @@ web_dir="$repo_root/web"
 source_dir="$web_dir/out"
 next_build_dir="$web_dir/.next"
 target_dir="$repo_root/openprogram/webui/_frontend"
+docs_source_dir="$repo_root/docs/_site"
+docs_target_dir="$target_dir/docs"
 
 command -v npm >/dev/null 2>&1 || {
   printf 'npm is required to stage release Web assets\n' >&2
@@ -20,7 +22,25 @@ test -f "$source_dir/index.html" || {
   exit 1
 }
 
+uv_bin="$(command -v uv || true)"
+test -n "$uv_bin" || {
+  printf 'uv is required to stage release documentation\n' >&2
+  exit 1
+}
+(
+  cd "$repo_root"
+  "$uv_bin" run --locked \
+    --with markdown-it-py --with mdit-py-plugins --with pygments \
+    python -m tools.docs_site.build
+)
+test -f "$docs_source_dir/index.html" || {
+  printf 'Docs build did not produce %s/index.html\n' "$docs_source_dir" >&2
+  exit 1
+}
+
 rm -rf "$target_dir"
 mkdir -p "$target_dir"
 cp -R "$source_dir/." "$target_dir/"
-printf 'staged release Web assets in %s\n' "$target_dir"
+mkdir -p "$docs_target_dir"
+cp -R "$docs_source_dir/." "$docs_target_dir/"
+printf 'staged release Web and docs assets in %s\n' "$target_dir"

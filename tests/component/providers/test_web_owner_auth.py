@@ -354,6 +354,26 @@ def test_public_docs_requests_only_read_prebuilt_files(tmp_path, monkeypatch):
     assert rebuild_checks == ["startup"]
 
 
+def test_installed_package_prefers_bundled_docs(tmp_path, monkeypatch):
+    checkout = tmp_path / "checkout"
+    source = checkout / "docs" / "_site"
+    bundled = tmp_path / "site-packages" / "openprogram" / "webui" / "_frontend" / "docs"
+    source.mkdir(parents=True)
+    bundled.mkdir(parents=True)
+    (source / "index.html").write_text("source", encoding="utf-8")
+    (bundled / "index.html").write_text("bundled", encoding="utf-8")
+    package_json = checkout / "web" / "package.json"
+    package_json.parent.mkdir(parents=True)
+    package_json.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(docs_route, "_repo_root", lambda: checkout)
+    monkeypatch.setattr(docs_route, "_packaged_site_dir", lambda: bundled)
+    assert docs_route._site_dir() == source
+
+    package_json.unlink()
+    assert docs_route._site_dir() == bundled
+
+
 def test_public_challenge_proves_listener_ownership_without_receiving_token():
     state = _state()
     nonce = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"

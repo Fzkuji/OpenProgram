@@ -250,6 +250,77 @@ def test_release_frontend_staging_removes_stale_export_before_build() -> None:
     assert cleanup < build
 
 
+def test_release_frontend_staging_includes_prebuilt_docs() -> None:
+    staging = (ROOT / "scripts" / "stage-release-assets.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "tools.docs_site.build" in staging
+    assert 'docs_target_dir="$target_dir/docs"' in staging
+    assert 'cp -R "$docs_source_dir/." "$docs_target_dir/"' in staging
+
+
+def test_release_asset_staging_invokes_locked_docs_builder(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    scripts = repo / "scripts"
+    fake_bin = tmp_path / "bin"
+    scripts.mkdir(parents=True)
+    fake_bin.mkdir()
+    (repo / "web").mkdir()
+    script = scripts / "stage-release-assets.sh"
+    script.write_text(
+        (ROOT / "scripts" / "stage-release-assets.sh").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+
+    fake_npm = fake_bin / "npm"
+    fake_npm.write_text(
+        """#!/bin/sh
+prefix=""
+previous=""
+for argument in "$@"; do
+  if [ "$previous" = "--prefix" ]; then prefix="$argument"; fi
+  previous="$argument"
+done
+if [ "$1" = "run" ] && [ "$2" = "build" ]; then
+  mkdir -p "$prefix/out"
+  printf '<html>web</html>\\n' > "$prefix/out/index.html"
+fi
+""",
+        encoding="utf-8",
+    )
+    fake_npm.chmod(0o755)
+
+    uv_log = tmp_path / "uv.log"
+    fake_uv = fake_bin / "uv"
+    fake_uv.write_text(
+        """#!/bin/sh
+printf '%s\\n' "$*" > "$UV_LOG"
+mkdir -p "$PWD/docs/_site"
+printf '<html>docs</html>\\n' > "$PWD/docs/_site/index.html"
+""",
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o755)
+
+    subprocess.run(
+        ["bash", str(script)],
+        cwd=repo,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "UV_LOG": str(uv_log),
+        },
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert uv_log.read_text(encoding="utf-8").strip() == (
+        "run --locked --with markdown-it-py --with mdit-py-plugins "
+        "--with pygments python -m tools.docs_site.build"
+    )
+
+
 def test_product_runtime_installs_complete_default_capabilities() -> None:
     staging = (ROOT / "scripts" / "build-product-runtime.sh").read_text(
         encoding="utf-8"

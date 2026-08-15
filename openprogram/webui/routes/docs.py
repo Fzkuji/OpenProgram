@@ -24,7 +24,18 @@ def _docs_dir() -> Path:
     return _repo_root() / "docs"
 
 
+def _packaged_site_dir() -> Path:
+    return Path(__file__).resolve().parents[1] / "_frontend" / "docs"
+
+
+def _is_source_checkout() -> bool:
+    return (_repo_root() / "web" / "package.json").is_file()
+
+
 def _site_dir() -> Path:
+    bundled = _packaged_site_dir()
+    if (bundled / "index.html").is_file() and not _is_source_checkout():
+        return bundled
     return _docs_dir() / "_site"
 
 
@@ -81,6 +92,8 @@ def _rebuild_in_background() -> None:
 
 def _maybe_rebuild() -> None:
     global _LAST_CHECK
+    if not _is_source_checkout():
+        return
     now = time.time()
     if now - _LAST_CHECK < _CHECK_INTERVAL:
         return
