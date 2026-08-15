@@ -32,6 +32,15 @@ export interface BookmarkFolder extends BookmarkNodeBase {
 }
 export type BookmarkNode = BookmarkLeaf | BookmarkFolder;
 
+export interface BookmarkMenuEntry extends Bookmark {
+  path: string[];
+}
+
+export interface BookmarkBarLayout {
+  items: BookmarkNode[];
+  trailingFolders: BookmarkFolder[];
+}
+
 export interface ImportedBookmarkLeaf {
   kind: "bookmark";
   title: string;
@@ -152,6 +161,47 @@ export function flattenBookmarks(folder: BookmarkFolder): Bookmark[] {
   };
   folder.children.forEach(walk);
   return out;
+}
+
+/** Convert Chromium's imported root containers into visible bookmark-bar
+ *  content. The bookmark-bar root itself is not a user-facing button. */
+export function bookmarkBarLayout(root: BookmarkFolder): BookmarkBarLayout {
+  const items: BookmarkNode[] = [];
+  const trailingFolders: BookmarkFolder[] = [];
+  for (const node of root.children) {
+    const title = node.title.trim().toLocaleLowerCase("en-US");
+    if (node.kind === "folder" && title === "bookmarks bar") {
+      items.push(...node.children);
+    } else if (
+      node.kind === "folder"
+      && (title === "other bookmarks" || title === "mobile bookmarks")
+    ) {
+      if (node.children.length > 0) trailingFolders.push(node);
+    } else {
+      items.push(node);
+    }
+  }
+  return { items, trailingFolders };
+}
+
+/** Flatten a folder for the compact overlay while retaining its hierarchy in
+ *  each label. This keeps a long imported tree usable without nested views. */
+export function bookmarkMenuEntries(folder: BookmarkFolder): BookmarkMenuEntry[] {
+  const entries: BookmarkMenuEntry[] = [];
+  const walk = (node: BookmarkNode, parents: string[]) => {
+    if (node.kind === "folder") {
+      node.children.forEach((child) => walk(child, [...parents, node.title]));
+      return;
+    }
+    entries.push({
+      title: node.title,
+      url: node.url,
+      ...(node.faviconUrl ? { faviconUrl: node.faviconUrl } : {}),
+      path: [...parents, node.title || node.url],
+    });
+  };
+  folder.children.forEach((node) => walk(node, []));
+  return entries;
 }
 
 /** Rebuild a folder by mapping every node through `fn`; returning null

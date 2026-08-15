@@ -1224,6 +1224,12 @@
   padding: 0;
   justify-content: center;
 }
+.bookmarkBarMoreSlot {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  flex: 0 0 24px;
+}
 
 @container (max-width: 719px) {
   .webToolbarMedium { display: none; }

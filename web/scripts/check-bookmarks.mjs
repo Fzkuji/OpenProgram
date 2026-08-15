@@ -480,6 +480,62 @@ assert.ok(
 );
 assert.deepEqual(bookmarks.flattenBookmarks(migrated), [first, second]);
 assert.deepEqual(bookmarks.readBookmarks(), [first, second]);
+
+// The imported Chromium roots are containers, not bookmark-bar buttons.
+// Show Bookmarks bar's direct children in the row, keep ordinary root items
+// in the row, and reserve non-empty secondary roots for the trailing edge.
+assert.equal(typeof bookmarks.bookmarkBarLayout, "function");
+const looseRootBookmark = {
+  kind: "bookmark",
+  id: "loose",
+  title: "Loose",
+  url: "https://loose.example/",
+};
+const barFolder = {
+  kind: "folder",
+  id: "bar",
+  title: "Bookmarks bar",
+  children: [
+    { kind: "bookmark", id: "github", title: "GitHub", url: "https://github.com/" },
+    { kind: "folder", id: "research", title: "Research", children: [] },
+  ],
+};
+const otherFolder = {
+  kind: "folder",
+  id: "other",
+  title: "Other bookmarks",
+  children: [{ kind: "bookmark", id: "docs", title: "Docs", url: "https://docs.example/" }],
+};
+const emptyMobileFolder = {
+  kind: "folder",
+  id: "mobile",
+  title: "Mobile bookmarks",
+  children: [],
+};
+const barLayout = bookmarks.bookmarkBarLayout({
+  kind: "folder",
+  id: bookmarks.BOOKMARKS_ROOT_ID,
+  title: "",
+  children: [barFolder, otherFolder, emptyMobileFolder, looseRootBookmark],
+});
+assert.deepEqual(barLayout.items, [...barFolder.children, looseRootBookmark]);
+assert.deepEqual(barLayout.trailingFolders, [otherFolder]);
+
+assert.equal(typeof bookmarks.bookmarkMenuEntries, "function");
+assert.deepEqual(
+  bookmarks.bookmarkMenuEntries({
+    kind: "folder",
+    id: "folder",
+    title: "Folder",
+    children: [{
+      kind: "folder",
+      id: "nested",
+      title: "Nested",
+      children: [{ kind: "bookmark", id: "paper", title: "Paper", url: "https://paper.example/" }],
+    }],
+  }),
+  [{ title: "Paper", url: "https://paper.example/", path: ["Nested", "Paper"] }],
+);
 // Junk entries in the legacy array are dropped, the good ones survive.
 storage.set(
   bookmarks.BOOKMARKS_STORAGE_KEY,

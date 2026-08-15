@@ -227,6 +227,8 @@
       <div class="decision"><strong>Browser 拥有独立主页</strong><p>选择 Browser 后原位进入浏览器主页。Home 返回该主页，不再退回通用 New pane launcher。</p></div>
       <div class="decision"><strong>书签分为保存与管理</strong><p>地址栏右侧的星标只保存或移除当前页；相邻的 Bookmarks 按钮打开完整书签页。Browser home 只显示用户维护的快捷网站，不展开全部书签。</p></div>
       <div class="decision"><strong>书签栏默认关闭</strong><p>默认不占用第二行。用户从 Browser 的 <code>⋯</code> 主动开启后，地址栏下方显示一行；窄分屏不显示该行，仍可通过 Browser <code>⋯</code> 中的 Bookmarks 访问全部内容。</p></div>
+      <div class="decision"><strong>书签栏显示来源目录的内容</strong><p>Chromium 的 <code>Bookmarks bar</code> 是书签栏容器，不作为普通文件夹按钮显示。该容器的直接子项按原顺序进入栏内；<code>Other bookmarks</code> 和 <code>Mobile bookmarks</code> 作为右侧文件夹入口，仅在非空时显示。普通根级书签继续作为栏内项目。</p></div>
+      <div class="decision"><strong>溢出和长菜单必须可访问</strong><p>单行书签栏不出现水平滚动条；被宽度截断的项目由右侧溢出入口列出。文件夹和溢出菜单保留项目路径，菜单高度受当前窗口约束并支持鼠标、触控板与键盘滚动。</p></div>
       <div class="decision"><strong>设置只有一个数据源</strong><p>窗口菜单的 Settings 打开 OpenProgram 设置；Browser 的 <code>⋯</code> 直接打开其中的 Browser 分区。工具栏不增加常驻齿轮，也不实现第二套浏览器设置存储。</p></div>
       <div class="decision"><strong>分屏属于 Pane</strong><p>分屏、退出分屏和 Pane 排列适用于 Files、Chat、Browser、Terminal，不属于当前网页动作。它们放在 Tab/Pane 控件或 Tab 上下文菜单，不出现在浏览器工具栏。</p></div>
       <div class="decision"><strong>导入保留来源结构</strong><p>Chromium 的 bookmark bar、other bookmarks 以及嵌套文件夹按原有层级和顺序进入 OpenProgram bookmark tree；导入不得把书签压平成主页下方的独立条目。</p></div>
@@ -275,7 +277,7 @@
             <tr><td>地址栏左侧</td><td>Back · Forward · Reload/Stop · Home</td><td><code>520–719px</code> 将 Home 移入 <code>⋯</code>；低于 <code>520px</code> 再将 Forward 移入 <code>⋯</code>。Back 与 Reload/Stop 始终保留。</td></tr>
             <tr><td>地址栏</td><td>URL、搜索输入与安全状态；加载期间 Reload 原位变为 Stop。</td><td>始终占据剩余宽度，最低可用宽度 <code>160px</code>；不换行。</td></tr>
             <tr><td>地址栏右侧</td><td>Bookmark current page · Bookmarks · Open externally · Browser menu</td><td><code>520–719px</code> 将 Bookmarks 与 Open externally 移入 <code>⋯</code>；星标和 <code>⋯</code> 始终保留。</td></tr>
-            <tr><td>地址栏下方</td><td>用户可选的单行 bookmarks bar，包含链接、文件夹与末尾溢出入口。</td><td>低于 <code>560px</code> 不渲染该行，从 Browser <code>⋯</code> 中打开 Bookmarks；禁止水平滚动条。</td></tr>
+            <tr><td>地址栏下方</td><td>用户可选的单行 bookmarks bar，直接显示 <code>Bookmarks bar</code> 的子项；非空的 <code>Other bookmarks</code> / <code>Mobile bookmarks</code> 固定在右侧，末尾是溢出入口。</td><td>低于 <code>560px</code> 不渲染该行，从 Browser <code>⋯</code> 中打开 Bookmarks；禁止水平滚动条。文件夹与溢出菜单的最大高度不得超过当前窗口可用高度，并允许纵向滚动。</td></tr>
           </tbody>
         </table>
       </div>
@@ -417,7 +419,7 @@
           <tr><td>选择 Browser 后原位显示 toolbar、导入入口和快捷网站；Home 返回 Browser home，主页 DOM 不渲染全部 bookmark rows。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/browser-home-page.tsx"><code>browser-home-page.tsx</code></a>；<code>check-built-in-browser.mjs</code></td></tr>
           <tr><td>标准宽度的 Browser toolbar 按顺序显示 Back、Forward、Reload/Stop、Home、地址栏、当前页星标、Bookmarks、外部打开和 Browser <code>⋯</code>；不显示分屏与 Settings 齿轮。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/web-tab-pane.tsx"><code>web-tab-pane.tsx</code></a>；<code>check-built-in-browser.mjs</code>；<code>check-web-split.mjs</code></td></tr>
           <tr><td>Browser <code>⋯</code> 提供 Bookmarks、History、书签栏开关、Import、Clear browsing data 和 Browser settings；窗口主菜单只保留 App、窗口与 Pane 操作。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/browser-controls.tsx"><code>browser-controls.tsx</code></a>；<a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/main-menu.tsx"><code>main-menu.tsx</code></a>；<code>check-built-in-browser.mjs</code></td></tr>
-          <tr><td>书签栏默认关闭；开启时只显示一行，末尾提供溢出入口；Pane 低于 560px 时隐藏该行，但 Bookmarks 页面仍可到达。</td><td><span class="status">已实现</span></td><td><code>browser-controls.tsx</code>；<code>browser-prefs.ts</code>；<code>center-tabs.module.css</code> 的 container query；<code>check-built-in-browser.mjs</code></td></tr>
+          <tr><td>书签栏默认关闭；开启后直接显示 <code>Bookmarks bar</code> 的子项，非空的其他根目录位于右侧；末尾溢出入口可访问被截断的项目，长文件夹菜单可纵向滚动；Pane 低于 560px 时隐藏该行，但 Bookmarks 页面仍可到达。</td><td><span class="status limit">修复中</span></td><td>当前版本错误地把来源根目录显示成普通文件夹，桌面文件夹菜单取消了滚动；验收由 <code>check-bookmarks.mjs</code>、<code>check-built-in-browser.mjs</code> 和已安装 App 可见检查共同覆盖。</td></tr>
           <tr><td>Browser settings 与窗口 Settings 使用同一路由和同一配置源；Browser <code>⋯</code> 直接打开 Browser 分区，toolbar 不显示常驻齿轮。</td><td><span class="status">已实现</span></td><td><code>/settings/browser</code>；<code>browser-settings.tsx</code>；<code>browser-prefs.ts</code></td></tr>
           <tr><td>导入对话框列出来源浏览器、profile 和支持的数据类型；关闭对话框不产生目标变更。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/desktop/main.js"><code>desktop/main.js</code></a> 的 <code>browser-import:*</code> IPC；<code>check-built-in-browser.mjs</code></td></tr>
           <tr><td>History 按日期分组，至少 1000 条时保持 36–40px 行高，搜索和滚动可用。</td><td><span class="status limit">实现完成，规模验收待补</span></td><td><code>web-history.css</code> 为 38px；History 分页上限 5000，搜索在 main 进程完成；存储 self-check 覆盖 5000 条上限，尚未记录 1000 条可见 UI 性能数据。</td></tr>

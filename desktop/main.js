@@ -2040,7 +2040,8 @@ function resizeMenuOverlay(ctx, size) {
   const anchor = ctx && ctx.mainMenuAnchor;
   if (!view || !anchor || view.webContents.isDestroyed()) return;
   const panelW = Math.max(1, Math.round(Number(size && size.width) || 0));
-  const panelH = Math.max(1, Math.round(Number(size && size.height) || 0));
+  let panelH = Math.max(1, Math.round(Number(size && size.height) || 0));
+  panelH = Math.min(panelH, Math.max(1, anchor.winH - 16));
   if (!panelW || !panelH) return;
   const { x, y } = clampContextMenuPanel(anchor, panelW, panelH);
   view.setBounds({
@@ -2121,8 +2122,10 @@ function openMainMenu(ctx, opts) {
     // Generic context menu: panel top-left at anchor {x, y}, clamped to an
     // 8px margin inside the window (same clamp the DOM tab menu used).
     panelW = Number(opts.width) || CONTEXT_MENU_WIDTH;
-    panelH = Number(opts.height)
-      || items.length * CONTEXT_MENU_ROW_HEIGHT + CONTEXT_MENU_CHROME;
+    panelH = Math.min(
+      Number(opts.height) || items.length * CONTEXT_MENU_ROW_HEIGHT + CONTEXT_MENU_CHROME,
+      Math.max(1, winH - 16),
+    );
     // Remember the anchor + viewport so main-menu:resize can re-clamp the
     // view once the overlay reports its measured panel size.
     const align = anchor.align === "end" && Number.isFinite(Number(anchor.right))

@@ -32,7 +32,8 @@ import {
   MENU_SEPARATOR,
 } from "@/components/chat/top-bar/menu-styles";
 import {
-  flattenBookmarks,
+  bookmarkBarLayout,
+  bookmarkMenuEntries,
   readBookmarkTree,
   subscribeBookmarks,
   type BookmarkFolder,
@@ -258,9 +259,9 @@ export function BookmarksLibraryButton() {
 }
 
 function folderItems(folder: BookmarkFolder, ownerId: string): DesktopContextMenuItem[] {
-  return flattenBookmarks(folder).map((bookmark, index) => ({
+  return bookmarkMenuEntries(folder).map((bookmark, index) => ({
     id: `${bookmarkFolderActionPrefix(ownerId, folder.id)}${index}`,
-    label: bookmark.title || bookmark.url,
+    label: bookmark.path.join(" / "),
   }));
 }
 
@@ -268,13 +269,24 @@ function BookmarkFolderButton({
   folder,
   ownerId,
   onNavigate,
+  appearance = "folder",
+  label,
 }: {
   folder: BookmarkFolder;
   ownerId: string;
   onNavigate(url: string): void;
+  appearance?: "folder" | "overflow";
+  label?: string;
 }) {
   const mainMenu = desktopBridge()?.mainMenu;
-  const bookmarks = flattenBookmarks(folder);
+  const bookmarks = bookmarkMenuEntries(folder);
+  const buttonLabel = label || folder.title;
+  const buttonClass = appearance === "overflow" ? styles.bookmarkBarMore : styles.bookmarkBarItem;
+  const buttonContent = appearance === "overflow" ? (
+    <ChevronRight size={14} />
+  ) : (
+    <><Folder size={13} fill="currentColor" /><span>{folder.title}</span></>
+  );
 
   useEffect(() => {
     if (!mainMenu) return;
@@ -290,7 +302,7 @@ function BookmarkFolderButton({
     return (
       <button
         type="button"
-        className={styles.bookmarkBarItem}
+        className={buttonClass}
         onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
           mainMenu.open({
@@ -301,10 +313,10 @@ function BookmarkFolderButton({
               : [{ id: `${bookmarkFolderActionPrefix(ownerId, folder.id)}empty`, label: "Empty folder", disabled: true }],
           });
         }}
-        title={folder.title}
+        title={buttonLabel}
+        aria-label={buttonLabel}
       >
-        <Folder size={13} fill="currentColor" />
-        <span>{folder.title}</span>
+        {buttonContent}
       </button>
     );
   }
@@ -312,22 +324,21 @@ function BookmarkFolderButton({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className={styles.bookmarkBarItem} title={folder.title}>
-          <Folder size={13} fill="currentColor" />
-          <span>{folder.title}</span>
+        <button type="button" className={buttonClass} title={buttonLabel} aria-label={buttonLabel}>
+          {buttonContent}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className={MENU_PANEL} align="start">
         {bookmarks.length === 0 ? (
           <DropdownMenuItem className={itemCls(false)} disabled>Empty folder</DropdownMenuItem>
-        ) : bookmarks.map((bookmark) => (
+        ) : bookmarks.map((bookmark, index) => (
           <DropdownMenuItem
-            key={bookmark.url}
+            key={`${bookmark.url}-${index}`}
             className={itemCls(false)}
             onSelect={() => onNavigate(bookmark.url)}
           >
             <Bookmark size={13} />
-            <span className="max-w-[280px] truncate">{bookmark.title || bookmark.url}</span>
+            <span className="max-w-[320px] truncate">{bookmark.path.join(" / ")}</span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -352,30 +363,59 @@ function BookmarkLeafButton({ node, onNavigate }: { node: Extract<BookmarkNode, 
 export function BookmarkBar({ ownerId, onNavigate }: { ownerId: string; onNavigate(url: string): void }) {
   const { text } = useTranslation();
   const visible = useBookmarksBarPreference();
-  const [nodes, setNodes] = useState(() => readBookmarkTree().children);
-  const openBuiltinTab = useCenterTabs((state) => state.openBuiltinTab);
+  const [tree, setTree] = useState(readBookmarkTree);
+  const { items, trailingFolders } = bookmarkBarLayout(tree);
+  const itemsRef = useRef<HTMLDivElement>(null);
+  const [overflowStart, setOverflowStart] = useState(items.length);
+  const bookmarkOverflowFolder: BookmarkFolder = {
+    kind: "folder",
+    id: "bookmark-bar-overflow",
+    title: text("All bookmarks", "所有书签"),
+    children: items.slice(overflowStart),
+  };
 
-  useEffect(() => subscribeBookmarks(() => setNodes(readBookmarkTree().children)), []);
+  useEffect(() => subscribeBookmarks(() => setTree(readBookmarkTree())), []);
+  useEffect(() => {
+    const container = itemsRef.current;
+    if (!container) return;
+    const updateOverflow = () => {
+      const right = container.getBoundingClientRect().right;
+      const children = Array.from(container.children) as HTMLElement[];
+      const firstHidden = children.findIndex(
+        (child) => child.getBoundingClientRect().right > right + 0.5,
+      );
+      setOverflowStart(firstHidden < 0 ? items.length : firstHidden);
+    };
+    updateOverflow();
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [items.length, tree, visible]);
   if (!visible) return null;
 
   return (
     <div className={styles.bookmarkBar} aria-label={text("Bookmarks bar", "书签栏")}>
-      <div className={styles.bookmarkBarItems}>
-        {nodes.map((node) => node.kind === "folder" ? (
+      <div ref={itemsRef} className={styles.bookmarkBarItems}>
+        {items.map((node) => node.kind === "folder" ? (
           <BookmarkFolderButton key={node.id} folder={node} ownerId={ownerId} onNavigate={onNavigate} />
         ) : (
           <BookmarkLeafButton key={node.id} node={node} onNavigate={onNavigate} />
         ))}
       </div>
-      <button
-        type="button"
-        className={styles.bookmarkBarMore}
-        onClick={() => openBuiltinTab("bookmarks")}
-        title={text("Manage bookmarks", "管理书签")}
-        aria-label={text("Manage bookmarks", "管理书签")}
-      >
-        <ChevronRight size={14} />
-      </button>
+      {trailingFolders.map((folder) => (
+        <BookmarkFolderButton key={folder.id} folder={folder} ownerId={ownerId} onNavigate={onNavigate} />
+      ))}
+      <span className={styles.bookmarkBarMoreSlot}>
+        {overflowStart < items.length ? (
+          <BookmarkFolderButton
+            folder={bookmarkOverflowFolder}
+            ownerId={ownerId}
+            onNavigate={onNavigate}
+            appearance="overflow"
+            label={text("Show hidden bookmarks", "显示隐藏的书签")}
+          />
+        ) : null}
+      </span>
     </div>
   );
 }

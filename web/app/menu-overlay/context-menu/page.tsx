@@ -163,22 +163,17 @@ function ContextMenuOverlayPage() {
         alignItems: "flex-start",
       }}
     >
-      {/* `max-content` (not 100%) so the panel is exactly as wide as its
-         longest nowrap row — the measured size is then reported back to
-         main.js, which resizes the host view to match. A minimum keeps
-         short menus from looking cramped. */}
+      {/* Width follows the longest row. Height stays inside the host view;
+         long imported bookmark folders scroll instead of extending beyond
+         the application window. */}
       <div
         ref={panelRef}
         className={MENU_PANEL}
-        // MENU_PANEL caps at 60vh and scrolls — but here `vh` is the tiny
-        // overlay view, not the window, so that cap would clip the panel
-        // before it can be measured. The overlay is sized to the panel, so
-        // let it grow and drop the scroll.
         style={{
           width: "max-content",
           minWidth: 180,
-          maxHeight: "none",
-          overflow: "visible",
+          maxHeight: "calc(100vh - 48px)",
+          overflowY: "auto",
         }}
         role="menu"
       >
