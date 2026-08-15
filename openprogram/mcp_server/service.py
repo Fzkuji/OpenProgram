@@ -486,13 +486,10 @@ class MCPService:
             _best_effort(unsubscribe)
         for request_id in request_ids:
             self.cancel_request(request_id, reason="connection_closed")
-        try:
-            from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-                get_registry,
-            )
-            get_registry().release_owner(self._computer_use_owner_id)
-        except Exception:
-            pass
+        from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+            get_registry,
+        )
+        _best_effort(get_registry().release_owner, self._computer_use_owner_id)
 
     async def computer_use_call(
         self,
