@@ -30,9 +30,17 @@ const preload = read("../../desktop/preload.js");
 const main = read("../../desktop/main.js");
 const historyGroupsSource = read("../lib/history-groups.ts");
 
-for (const label of ["Files", "New chat", "Browser", "Terminal"]) {
+for (const label of ["Files", "Browser", "Terminal"]) {
   assert.match(launcher, new RegExp(`text\\(\\"${label}\\"`));
 }
+assert.match(
+  launcher,
+  /<button[^>]*onClick=\{openNewChat\}>[\s\S]*?text\("New chat", "新建对话"\)[\s\S]*?<\/button>/,
+);
+assert.match(
+  launcher,
+  /function openNewChat\(\) \{[\s\S]*?claimDraftSessionTab\(\);[\s\S]*?newSession\(draftId\);[\s\S]*?\}/,
+);
 assert.doesNotMatch(launcher, /Side chat|侧边聊天/);
 assert.doesNotMatch(launcher, /Claude Code|openBuiltinTab\("claude"\)/);
 assert.doesNotMatch(launcher, /readBookmarks|readShortcuts|ntpUrlInput/);
