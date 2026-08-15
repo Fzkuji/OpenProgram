@@ -809,6 +809,7 @@ def _run_browser_task_commands(
     from .computer_use_runtime import get_registry
 
     context = surface_context.current() or surface_context.capture_active()
+    owner_id = "harness:" + str(context.get("context_id") or "unknown")
     token = surface_context.bind(context)
     try:
         binding_id = surface_context.resolve_binding("")
@@ -817,6 +818,7 @@ def _run_browser_task_commands(
     registry = get_registry()
     observed = registry.execute(
         command="observe", backend=backend, binding_id=binding_id,
+        owner_id=owner_id, page_context=context,
     )
     session_id = str(observed.get("computer_session_id") or "")
     if not session_id or "frame_id" not in observed:
@@ -835,6 +837,7 @@ def _run_browser_task_commands(
         result = registry.execute(
             command=command,
             computer_session_id=session_id,
+            owner_id=owner_id,
             arguments=arguments,
         )
         last.update(result=result, action=action, seq=last["seq"] + 1)
@@ -900,6 +903,7 @@ def _run_browser_task_commands(
             if isinstance(result, dict) and result.get("observe_required"):
                 observed = registry.execute(
                     command="observe", computer_session_id=session_id,
+                    owner_id=owner_id,
                 )
                 if "frame_id" not in observed:
                     return {
@@ -914,7 +918,9 @@ def _run_browser_task_commands(
             "backend": backend, "computer_session_id": session_id,
         }
     finally:
-        registry.execute(command="close", computer_session_id=session_id)
+        registry.execute(
+            command="close", computer_session_id=session_id, owner_id=owner_id,
+        )
 
 
 @agentic_function(

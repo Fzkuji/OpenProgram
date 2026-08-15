@@ -90,6 +90,7 @@ class ComputerUseSessionRegistry:
             raise ValueError(f"missing computer use adapters: {sorted(missing)}")
         self._adapters = dict(adapters)
         self._sessions: dict[str, ComputerUseSession] = {}
+        self._page_leases: dict[str, str] = {}
         self._page_capabilities: dict[str, dict[str, Any]] = {}
         if release_context is None:
             from openprogram.agent.surface_context import release_bindings
@@ -149,7 +150,6 @@ class ComputerUseSessionRegistry:
                         return {"ok": False, "reason_code": "page_context_owner_mismatch"}
                     if capability["consumed"]:
                         return {"ok": False, "reason_code": "page_context_consumed"}
-                    capability["consumed"] = True
                     binding_id = capability["binding_id"]
                     page_context = capability["context"]
             if not binding_id:
@@ -162,7 +162,17 @@ class ComputerUseSessionRegistry:
                 page_context=page_context,
             )
             with self._lock:
+                if binding_id in self._page_leases:
+                    return {"ok": False, "reason_code": "page_in_use"}
+                if page_context_token:
+                    capability = self._page_capabilities.get(page_context_token)
+                    if capability is None:
+                        return {"ok": False, "reason_code": "page_context_not_found"}
+                    if capability["consumed"]:
+                        return {"ok": False, "reason_code": "page_context_consumed"}
+                    capability["consumed"] = True
                 self._sessions[session.id] = session
+                self._page_leases[binding_id] = session.id
         else:
             with self._lock:
                 session = self._sessions.get(computer_session_id)
@@ -197,6 +207,8 @@ class ComputerUseSessionRegistry:
             if command == "observe":
                 with self._lock:
                     self._sessions.pop(session.id, None)
+                    if self._page_leases.get(session.binding_id) == session.id:
+                        self._page_leases.pop(session.binding_id, None)
                 try:
                     adapter.close(session)
                 finally:
@@ -213,6 +225,8 @@ class ComputerUseSessionRegistry:
             if not frame_id:
                 with self._lock:
                     self._sessions.pop(session.id, None)
+                    if self._page_leases.get(session.binding_id) == session.id:
+                        self._page_leases.pop(session.binding_id, None)
                     for token, capability in list(self._page_capabilities.items()):
                         if capability.get("context") is session.page_context:
                             self._page_capabilities.pop(token, None)
@@ -223,6 +237,8 @@ class ComputerUseSessionRegistry:
         if command == "close":
             with self._lock:
                 self._sessions.pop(session.id, None)
+                if self._page_leases.get(session.binding_id) == session.id:
+                    self._page_leases.pop(session.binding_id, None)
                 for token, capability in list(self._page_capabilities.items()):
                     if capability.get("context") is session.page_context:
                         self._page_capabilities.pop(token, None)
@@ -245,6 +261,7 @@ class ComputerUseSessionRegistry:
         with self._lock:
             sessions = list(self._sessions.values())
             self._sessions.clear()
+            self._page_leases.clear()
         for session in sessions:
             self._adapters[session.backend].close(session)
             self._release_context(session.page_context)

@@ -79,6 +79,42 @@ def test_registry_supports_three_backends_and_freezes_one_per_session():
     ]
 
 
+def test_registry_leases_one_exact_page_to_one_session_until_close():
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSessionRegistry,
+    )
+
+    adapters = {name: _Adapter(name) for name in (
+        "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
+    )}
+    registry = ComputerUseSessionRegistry(adapters=adapters)
+
+    first = registry.execute(
+        command="observe", backend="open_claude_chrome",
+        binding_id="binding-1", owner_id="owner-1",
+    )
+    second = registry.execute(
+        command="observe", backend="playwright_mcp",
+        binding_id="binding-1", owner_id="owner-2",
+    )
+
+    assert second == {"ok": False, "reason_code": "page_in_use"}
+    assert adapters["playwright_mcp"].calls == []
+
+    registry.execute(
+        command="close", computer_session_id=first["computer_session_id"],
+        owner_id="owner-1",
+    )
+    third = registry.execute(
+        command="observe", backend="playwright_mcp",
+        binding_id="binding-1", owner_id="owner-2",
+    )
+    assert third["frame_id"] == "frame-1"
+    assert adapters["playwright_mcp"].calls == [
+        ("observe", {}),
+    ]
+
+
 def test_public_computer_use_schema_is_command_based():
     from openprogram.programs import agent_tools
 
@@ -296,8 +332,14 @@ def test_failed_first_observe_releases_session_and_page_context():
     assert registry.execute(
         command="act", computer_session_id=session_id, owner_id="owner-1",
     )["reason_code"] == "computer_session_not_found"
-    assert adapter.calls == [("close", {})]
-    assert released == ["ctx-failed"]
+    retry = registry.execute(
+        command="observe", backend="open_claude_chrome",
+        binding_id="binding-1", owner_id="owner-1",
+        page_context={"context_id": "ctx-retry"},
+    )
+    assert retry["reason_code"] == "target_lost"
+    assert adapter.calls == [("close", {}), ("close", {})]
+    assert released == ["ctx-failed", "ctx-retry"]
 
 
 def test_sync_mcp_client_cleans_thread_when_start_fails(monkeypatch):
@@ -420,7 +462,8 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
 
     registry = _Registry()
     monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: registry)
-    monkeypatch.setattr(surface_context, "current", lambda: {"surfaces": [{}]})
+    context = {"context_id": "ctx-1", "surfaces": [{}]}
+    monkeypatch.setattr(surface_context, "current", lambda: context)
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "binding-1")
 
     class _Runtime:
@@ -443,9 +486,16 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
         runtime=_Runtime(),
     )
     assert result["status"] == "succeeded"
-    assert registry.calls[0]["backend"] == "chrome_devtools_mcp"
+    assert registry.calls[0] == {
+        "command": "observe",
+        "backend": "chrome_devtools_mcp",
+        "binding_id": "binding-1",
+        "owner_id": "harness:ctx-1",
+        "page_context": context,
+    }
     assert registry.calls[-1] == {
         "command": "close", "computer_session_id": "cs-1",
+        "owner_id": "harness:ctx-1",
     }
 
 
