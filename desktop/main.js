@@ -234,13 +234,24 @@ function spawnWorker() {
   child.unref();
 }
 
+function resolveWorkerStartUrl() {
+  if (!app.isPackaged) return resolveAuthenticatedStartUrl(START_URL);
+  const launch = resolvePackagedWorker(process.resourcesPath, app.getVersion());
+  return resolveAuthenticatedStartUrl(START_URL, process.env, [
+    {
+      command: launch.command,
+      args: ["-I", "-B", "-m", "openprogram"],
+    },
+  ]);
+}
+
 async function resolveStartUrl() {
   let workerWasReachable = false;
   for (let i = 0; i < 3; i++) {
     if (await probe(HEALTH_URL, 1000)) {
       workerWasReachable = true;
       recoveryCoordinator.workerSpawned = false;
-      const authenticated = resolveAuthenticatedStartUrl(START_URL);
+      const authenticated = resolveWorkerStartUrl();
       if (authenticated) return authenticated;
     }
   }
@@ -263,7 +274,7 @@ async function runWindowRecoveryProbe(ctx) {
   const state = ctx.recovery;
   if (ctx.win.isDestroyed() || !beginRecoveryProbe(state, Date.now())) return;
   const reachable = await probe(HEALTH_URL, 1000);
-  const authenticated = reachable ? resolveAuthenticatedStartUrl(START_URL) : null;
+  const authenticated = reachable ? resolveWorkerStartUrl() : null;
   const action = finishRecoveryProbe(
     state,
     recoveryCoordinator,

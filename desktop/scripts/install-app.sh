@@ -54,6 +54,35 @@ if (manifest.schema !== 2 || manifest.openprogram !== process.argv[3]) {
 NODE
 }
 
+app_runtime_python() {
+  local app_path="$1"
+  node - "$app_path/Contents/Resources/runtime" <<'NODE'
+const fs = require("fs");
+const path = require("path");
+const root = path.resolve(process.argv[2]);
+const manifest = JSON.parse(
+  fs.readFileSync(path.join(root, "runtime-manifest.json"), "utf8"),
+);
+if (typeof manifest.python !== "string" || path.isAbsolute(manifest.python)) {
+  process.exit(1);
+}
+const python = path.resolve(root, manifest.python);
+if (!python.startsWith(`${root}${path.sep}`)) process.exit(1);
+process.stdout.write(python);
+NODE
+}
+
+wait_for_worker_health() {
+  for _ in {1..120}; do
+    if /usr/bin/curl --silent --fail --connect-timeout 1 --max-time 2 \
+      "http://127.0.0.1:18100/healthz" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 validate_app "$source_app" || {
   printf 'invalid OpenProgram app bundle: %s\n' "$source_app" >&2
   exit 1
@@ -69,11 +98,28 @@ staged_app="$transaction_dir/OpenProgram.app"
 previous_app="$transaction_dir/previous.app"
 old_moved=0
 activated=0
+app_was_running=0
+worker_was_running=0
+launchd_was_installed=0
+resume_after_failure=0
 
 cleanup() {
   local status="$?"
+  if [[ "$status" != 0 && "$old_moved" == 1 && "$activated" == 1 && -d "$target_app" ]]; then
+    mv "$target_app" "$transaction_dir/failed.app" || :
+    activated=0
+  fi
   if [[ "$old_moved" == 1 && "$activated" == 0 && ! -e "$target_app" && -d "$previous_app" ]]; then
     mv "$previous_app" "$target_app" || :
+  fi
+  if [[ "$status" != 0 && "$resume_after_failure" == 1 && -d "$target_app" ]]; then
+    restored_python="$(app_runtime_python "$target_app" 2>/dev/null || :)"
+    if [[ "$launchd_was_installed" == 1 && -x "$restored_python" ]]; then
+      "$restored_python" -I -B -m openprogram worker install >/dev/null 2>&1 || :
+    elif [[ "$worker_was_running" == 1 && -x "$restored_python" ]]; then
+      "$restored_python" -I -B -m openprogram worker start >/dev/null 2>&1 || :
+    fi
+    [[ "$app_was_running" == 1 ]] && open "$target_app" || :
   fi
   rm -rf "$transaction_dir"
   exit "$status"
@@ -89,9 +135,9 @@ validate_app "$staged_app" || {
   exit 1
 }
 
-was_running=0
 if [[ -z "$install_root" ]] && pgrep -f "$target_app/Contents/MacOS/OpenProgram" >/dev/null 2>&1; then
-  was_running=1
+  app_was_running=1
+  resume_after_failure=1
   osascript -e 'tell application id "ai.openprogram.desktop" to quit' >/dev/null 2>&1 || :
   for _ in {1..40}; do
     pgrep -f "$target_app/Contents/MacOS/OpenProgram" >/dev/null 2>&1 || break
@@ -100,6 +146,36 @@ if [[ -z "$install_root" ]] && pgrep -f "$target_app/Contents/MacOS/OpenProgram"
   if pgrep -f "$target_app/Contents/MacOS/OpenProgram" >/dev/null 2>&1; then
     printf 'OpenProgram is still running; installation was not changed\n' >&2
     exit 1
+  fi
+fi
+
+if [[ -z "$install_root" ]]; then
+  control_app="$staged_app"
+  [[ -d "$target_app" ]] && control_app="$target_app"
+  control_python="$(app_runtime_python "$control_app")"
+  worker_state_dir="${OPENPROGRAM_HOME:-$HOME/.openprogram}"
+  for worker_state_file in "$worker_state_dir/worker.lock" "$worker_state_dir/worker.pid"; do
+    worker_pid="$(sed -n '1p' "$worker_state_file" 2>/dev/null || :)"
+    if [[ "$worker_pid" =~ ^[0-9]+$ ]] && kill -0 "$worker_pid" 2>/dev/null; then
+      worker_was_running=1
+      resume_after_failure=1
+      break
+    fi
+  done
+  launchd_plist="$HOME/Library/LaunchAgents/ai.openprogram.worker.plist"
+  if [[ -f "$launchd_plist" ]]; then
+    launchd_was_installed=1
+    resume_after_failure=1
+    if ! "$control_python" -I -B -m openprogram worker uninstall >/dev/null 2>&1; then
+      printf 'the existing OpenProgram launchd service could not be unloaded; installation was not changed\n' >&2
+      exit 1
+    fi
+  fi
+  if [[ "$worker_was_running" == 1 ]]; then
+    if ! "$control_python" -I -B -m openprogram worker stop >/dev/null 2>&1; then
+      printf 'the existing OpenProgram worker could not be stopped; installation was not changed\n' >&2
+      exit 1
+    fi
   fi
 fi
 
@@ -120,13 +196,28 @@ if ! validate_app "$target_app"; then
   exit 1
 fi
 
+version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$target_app/Contents/Info.plist")"
+if [[ -z "$install_root" ]]; then
+  installed_python="$(app_runtime_python "$target_app")"
+  if [[ "$launchd_was_installed" == 1 ]]; then
+    "$installed_python" -I -B -m openprogram worker install >/dev/null
+    wait_for_worker_health || {
+      printf 'OpenProgram was installed but its launchd worker did not start\n' >&2
+      exit 1
+    }
+  fi
+  if [[ "$app_was_running" == 1 ]]; then
+    open "$target_app" || {
+      printf 'OpenProgram was installed but could not be reopened\n' >&2
+      exit 1
+    }
+  elif [[ "$worker_was_running" == 1 && "$launchd_was_installed" == 0 ]]; then
+    "$installed_python" -I -B -m openprogram worker start >/dev/null
+  fi
+fi
 if [[ "$old_moved" == 1 ]]; then
   rm -rf "$previous_app"
   old_moved=0
 fi
-
-version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$target_app/Contents/Info.plist")"
+resume_after_failure=0
 printf 'OpenProgram %s installed at %s\n' "$version" "$target_app"
-if [[ "$was_running" == 1 ]]; then
-  open "$target_app" || printf 'OpenProgram was installed but could not be reopened\n' >&2
-fi

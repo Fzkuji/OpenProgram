@@ -3,8 +3,10 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 desktop_dir="$(cd -- "$script_dir/.." && pwd)"
+repo_root="$(cd -- "$desktop_dir/.." && pwd)"
 builder="$desktop_dir/node_modules/.bin/electron-builder"
 runtime_dir="$desktop_dir/build/runtime"
+python_build_dir="$repo_root/build"
 lock_dir="$desktop_dir/build/.app-package.lock"
 
 [[ "$(uname -s)" == "Darwin" ]] || {
@@ -34,7 +36,8 @@ package_dir="$work_dir/package"
 cleanup() {
   local status="$?"
   [[ "$runtime_dir" == "$desktop_dir/build/runtime" ]] || exit "$status"
-  rm -rf "$work_dir" "$runtime_dir" "$lock_dir"
+  [[ "$python_build_dir" == "$repo_root/build" ]] || exit "$status"
+  rm -rf "$work_dir" "$runtime_dir" "$python_build_dir" "$lock_dir"
   exit "$status"
 }
 trap cleanup EXIT

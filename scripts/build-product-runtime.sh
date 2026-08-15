@@ -57,6 +57,7 @@ test "$actual_uv_version" = "$UV_VERSION" || {
 
 "$repo_root/scripts/stage-release-assets.sh"
 rm -rf "$runtime_root"
+rm -rf "$repo_root/build"
 mkdir -p \
   "$runtime_root/assets/playwright" \
   "$runtime_root/assets/easyocr" \

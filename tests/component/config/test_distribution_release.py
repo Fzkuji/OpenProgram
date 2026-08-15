@@ -73,11 +73,27 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     assert 'target_app="$applications_dir/OpenProgram.app"' in installer_text
     assert 'open "$target_app"' in installer_text
     assert 'open "$source_app"' not in installer_text
+    assert 'openprogram worker stop' in installer_text
+    assert 'openprogram worker uninstall' in installer_text
+    assert 'openprogram worker install' in installer_text
+    assert 'wait_for_worker_health' in installer_text
+    assert "process.stdout.write(python);\nNODE\n}\n\nwait_for_worker_health()" in installer_text
+    assert installer_text.index('openprogram worker uninstall') < installer_text.index(
+        'openprogram worker stop'
+    )
+    assert installer_text.index('openprogram worker stop') < installer_text.index(
+        'mv "$target_app" "$previous_app"'
+    )
+    wait_index = installer_text.index('wait_for_worker_health ||')
+    assert wait_index < installer_text.index('open "$target_app"', wait_index)
     assert 'mktemp -d "${TMPDIR:-/tmp}/openprogram-app-package.XXXXXX"' in packager
     assert '"$builder" --dir --mac --publish never' in packager
     assert 'env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"' in packager
     assert 'mkdir "$lock_dir"' in packager
-    assert 'rm -rf "$work_dir" "$runtime_dir" "$lock_dir"' in packager
+    assert 'rm -rf "$work_dir" "$runtime_dir" "$python_build_dir" "$lock_dir"' in packager
+    assert 'rm -rf "$repo_root/build"' in (
+        ROOT / "scripts" / "build-product-runtime.sh"
+    ).read_text(encoding="utf-8")
     env = {
         "DESTDIR": str(tmp_path / "root"),
         "HOME": str(tmp_path / "home"),
@@ -112,6 +128,51 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     assert failed.returncode != 0
     with (target / "Contents" / "Info.plist").open("rb") as stream:
         assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
+
+
+def test_launchd_replacement_unloads_keepalive_before_stopping_worker(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from openprogram.worker.services import launchd
+    from openprogram.worker import lifecycle
+
+    plist_path = tmp_path / "ai.openprogram.worker.plist"
+    plist_path.write_bytes(plistlib.dumps({"Label": launchd.LABEL}))
+    events: list[str] = []
+
+    monkeypatch.setattr(launchd, "_plist_path", lambda: plist_path)
+    monkeypatch.setattr(
+        launchd,
+        "_launchctl",
+        lambda *args: (events.append(f"launchctl:{args[0]}") or (0, "")),
+    )
+    monkeypatch.setattr(lifecycle, "current_worker_pid", lambda: 12345)
+    monkeypatch.setattr(
+        lifecycle, "stop_worker", lambda: (events.append("stop") or 0)
+    )
+
+    assert launchd.install() == 0
+    assert events == ["launchctl:unload", "stop", "launchctl:load"]
+
+
+def test_launchd_worker_preserves_packaged_python_flags(monkeypatch) -> None:
+    from openprogram.worker import lifecycle
+    from openprogram.worker.services import launchd
+
+    flags = SimpleNamespace(isolated=1, dont_write_bytecode=1)
+    monkeypatch.setattr(lifecycle.sys, "flags", flags)
+
+    assert launchd._build_plist()["ProgramArguments"] == [
+        sys.executable,
+        "-I",
+        "-B",
+        "-u",
+        "-m",
+        "openprogram",
+        "worker",
+        "run",
+    ]
+    assert "ProcessType" not in launchd._build_plist()
 
 
 def test_core_agentic_functions_are_not_excluded_from_wheel() -> None:
