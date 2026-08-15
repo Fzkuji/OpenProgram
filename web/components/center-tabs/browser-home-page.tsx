@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -101,7 +101,9 @@ export function BrowserImportDialog({
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState({ history: true, bookmarks: true, cookies: true });
   const [busy, setBusy] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [result, setResult] = useState("");
+  const activeRequestId = useRef<string | null>(null);
 
   useEffect(() => {
     if (!api) return;
@@ -123,12 +125,17 @@ export function BrowserImportDialog({
       (item) => selected[item] && profile.available[item],
     );
     if (items.length === 0) return;
+    const requestId = crypto.randomUUID();
+    activeRequestId.current = requestId;
     setBusy(true);
+    setCancelling(false);
     setResult("");
     try {
-      const response = await api!.run({ browserId: browser.id, profileId: profile.id, items });
+      const response = await api!.run({ requestId, browserId: browser.id, profileId: profile.id, items });
       if (!response.ok) {
-        setResult(text(`Import failed: ${response.error ?? "unknown error"}`, `导入失败：${response.error ?? "未知错误"}`));
+        setResult(response.error === "import_cancelled"
+          ? text("Import cancelled", "已取消导入")
+          : text(`Import failed: ${response.error ?? "unknown error"}`, `导入失败：${response.error ?? "未知错误"}`));
         return;
       }
       const bookmarks = response.bookmarks ?? [];
@@ -145,8 +152,18 @@ export function BrowserImportDialog({
     } catch {
       setResult(text("Import failed", "导入失败"));
     } finally {
+      if (activeRequestId.current === requestId) activeRequestId.current = null;
       setBusy(false);
+      setCancelling(false);
     }
+  }
+
+  async function cancelImport() {
+    const requestId = activeRequestId.current;
+    if (!requestId || typeof api?.cancel !== "function" || cancelling) return;
+    setCancelling(true);
+    const accepted = await api.cancel(requestId).catch(() => false);
+    if (!accepted) setCancelling(false);
   }
 
   return (
@@ -203,12 +220,18 @@ export function BrowserImportDialog({
       <button
         type="button"
         className={styles.browserImportAction}
-        disabled={busy || (expanded && sources.length === 0)}
-        onClick={() => expanded ? void runImport() : setExpanded(true)}
+        disabled={cancelling || (busy && typeof api.cancel !== "function") || (!busy && expanded && sources.length === 0)}
+        onClick={() => busy ? void cancelImport() : expanded ? void runImport() : setExpanded(true)}
       >
-        {busy ? text("Importing…", "正在导入…") : text("Import", "导入")}
+        {cancelling
+          ? text("Cancelling…", "正在取消…")
+          : busy && typeof api.cancel === "function"
+            ? text("Cancel", "取消")
+            : busy
+              ? text("Importing…", "正在导入…")
+              : text("Import", "导入")}
       </button>
-      <button type="button" className={styles.browserImportDismiss} onClick={onDismiss} aria-label={text("Dismiss", "关闭")}>
+      <button type="button" className={styles.browserImportDismiss} disabled={busy} onClick={onDismiss} aria-label={text("Dismiss", "关闭")}>
         <X size={16} aria-hidden="true" />
       </button>
     </section>

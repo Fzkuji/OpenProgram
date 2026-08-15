@@ -96,6 +96,7 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
   browserImport: {
     listSources: () => ipcRenderer.invoke("browser-import:list-sources"),
     run: (request) => ipcRenderer.invoke("browser-import:run", request),
+    cancel: (requestId) => ipcRenderer.invoke("browser-import:cancel", requestId),
   },
   browserData: {
     clear: (options) => ipcRenderer.invoke("browser-data:clear", options),

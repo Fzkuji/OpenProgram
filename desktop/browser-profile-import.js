@@ -11,6 +11,15 @@ function importError(code, message) {
   return Object.assign(new Error(message), { code });
 }
 
+function throwIfCancelled(signal) {
+  if (signal?.aborted) throw importError("import_cancelled", "Browser import cancelled");
+}
+
+async function cancellationPoint(signal) {
+  await new Promise((resolve) => setImmediate(resolve));
+  throwIfCancelled(signal);
+}
+
 const MAC_BROWSERS = [
   {
     id: "chrome",
@@ -252,20 +261,29 @@ function readBookmarks(profilePath) {
     .filter(Boolean);
 }
 
-function waitForFile(filePath, child, timeoutMs = CDP_TIMEOUT_MS) {
+function waitForFile(filePath, child, timeoutMs = CDP_TIMEOUT_MS, signal) {
   return new Promise((resolve, reject) => {
     const started = Date.now();
     let settled = false;
+    let pollTimer = null;
     const finish = (callback, value) => {
       if (settled) return;
       settled = true;
+      if (pollTimer !== null) clearTimeout(pollTimer);
       child.removeListener("error", onError);
+      signal?.removeEventListener("abort", onAbort);
       callback(value);
     };
+    const onAbort = () => finish(
+      reject,
+      importError("import_cancelled", "Browser import cancelled"),
+    );
     const onError = () => finish(
       reject,
       importError("browser_start_failed", "source browser failed to start"),
     );
+    if (signal?.aborted) return onAbort();
+    signal?.addEventListener("abort", onAbort, { once: true });
     child.once("error", onError);
     const poll = () => {
       if (settled) return;
@@ -276,19 +294,33 @@ function waitForFile(filePath, child, timeoutMs = CDP_TIMEOUT_MS) {
       if (Date.now() - started >= timeoutMs) {
         return finish(reject, importError("browser_start_timeout", "source browser CDP startup timed out"));
       }
-      setTimeout(poll, 75);
+      pollTimer = setTimeout(poll, 75);
     };
     poll();
   });
 }
 
-function cdpRequest(webSocketUrl, method, params = {}, timeoutMs = CDP_TIMEOUT_MS) {
+function cdpRequest(webSocketUrl, method, params = {}, timeoutMs = CDP_TIMEOUT_MS, signal) {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(webSocketUrl);
-    const timer = setTimeout(() => {
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
       socket.close();
-      reject(Object.assign(new Error("CDP request timed out"), { code: "cdp_timeout" }));
+      callback(value);
+    };
+    const onAbort = () => finish(
+      reject,
+      importError("import_cancelled", "Browser import cancelled"),
+    );
+    const timer = setTimeout(() => {
+      finish(reject, Object.assign(new Error("CDP request timed out"), { code: "cdp_timeout" }));
     }, timeoutMs);
+    if (signal?.aborted) return onAbort();
+    signal?.addEventListener("abort", onAbort, { once: true });
     socket.addEventListener("open", () => {
       socket.send(JSON.stringify({ id: 1, method, params }));
     });
@@ -296,17 +328,14 @@ function cdpRequest(webSocketUrl, method, params = {}, timeoutMs = CDP_TIMEOUT_M
       let payload;
       try { payload = JSON.parse(String(event.data)); } catch (_error) { return; }
       if (payload.id !== 1) return;
-      clearTimeout(timer);
-      socket.close();
       if (payload.error) {
-        reject(Object.assign(new Error(payload.error.message || "CDP request failed"), { code: "cdp_failed" }));
+        finish(reject, Object.assign(new Error(payload.error.message || "CDP request failed"), { code: "cdp_failed" }));
       } else {
-        resolve(payload.result || {});
+        finish(resolve, payload.result || {});
       }
     });
     socket.addEventListener("error", () => {
-      clearTimeout(timer);
-      reject(Object.assign(new Error("CDP connection failed"), { code: "cdp_failed" }));
+      finish(reject, Object.assign(new Error("CDP connection failed"), { code: "cdp_failed" }));
     });
   });
 }
@@ -333,7 +362,8 @@ async function terminateChild(child, timeoutMs = 1_500) {
   }
 }
 
-async function readCookies(source) {
+async function readCookies(source, signal) {
+  throwIfCancelled(signal);
   const cookieSource = cookieFileForProfile(source.profilePath);
   if (!cookieSource) throw importError("cookies_missing", "Cookies file disappeared");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-cookie-import-"));
@@ -364,15 +394,23 @@ async function readCookies(source) {
       "about:blank",
     ], { stdio: "ignore" });
     const activePort = path.join(root, "DevToolsActivePort");
-    await waitForFile(activePort, child);
+    await waitForFile(activePort, child, CDP_TIMEOUT_MS, signal);
+    throwIfCancelled(signal);
     const [port, browserPath] = fs.readFileSync(activePort, "utf8").trim().split(/\r?\n/);
     if (!/^\d+$/.test(port) || !browserPath?.startsWith("/")) {
       throw Object.assign(new Error("invalid CDP endpoint"), { code: "cdp_failed" });
     }
-    const result = await cdpRequest(`ws://127.0.0.1:${port}${browserPath}`, "Storage.getCookies");
+    const result = await cdpRequest(
+      `ws://127.0.0.1:${port}${browserPath}`,
+      "Storage.getCookies",
+      {},
+      CDP_TIMEOUT_MS,
+      signal,
+    );
+    throwIfCancelled(signal);
     return Array.isArray(result.cookies) ? result.cookies : [];
   } catch (error) {
-    if (["cookies_missing", "browser_start_failed", "browser_start_timeout", "cdp_timeout", "cdp_failed"].includes(error?.code)) {
+    if (["import_cancelled", "cookies_missing", "browser_start_failed", "browser_start_timeout", "cdp_timeout", "cdp_failed"].includes(error?.code)) {
       throw error;
     }
     throw importError("cookies_read_failed", "Cookies could not be read");
@@ -411,32 +449,42 @@ function electronCookie(raw) {
   return cookie;
 }
 
-async function importCookies(source, targetSession, read = readCookies) {
+async function importCookies(source, targetSession, read = readCookies, signal) {
+  throwIfCancelled(signal);
   if (!targetSession?.cookies?.set) {
     throw Object.assign(new Error("target browser session unavailable"), { code: "target_unavailable" });
   }
-  const sourceCookies = await read(source);
+  const sourceCookies = await read(source, signal);
+  throwIfCancelled(signal);
   let imported = 0;
   let failed = 0;
   for (const raw of sourceCookies) {
+    throwIfCancelled(signal);
     const cookie = electronCookie(raw);
     if (!cookie) { failed += 1; continue; }
     try {
       await targetSession.cookies.set(cookie);
       imported += 1;
     } catch (_error) {
+      throwIfCancelled(signal);
       failed += 1;
     }
+    throwIfCancelled(signal);
   }
   return { imported, failed };
 }
 
-async function runBrowserImport({ browserId, profileId, items }, { targetSession, options } = {}) {
+async function runBrowserImport(
+  { browserId, profileId, items },
+  { targetSession, options, signal } = {},
+) {
+  throwIfCancelled(signal);
   const selected = new Set(Array.isArray(items) ? items : []);
   if (selected.size === 0 || [...selected].some((item) => !["history", "bookmarks", "cookies"].includes(item))) {
     throw Object.assign(new Error("unsupported import item"), { code: "invalid_items" });
   }
   const source = resolveSource(browserId, profileId, options);
+  throwIfCancelled(signal);
   for (const item of selected) {
     if (!source.profile.available[item]) {
       throw importError(`${item}_unavailable`, `${item} is unavailable in the selected profile`);
@@ -448,9 +496,18 @@ async function runBrowserImport({ browserId, profileId, items }, { targetSession
     bookmarks: [],
     cookies: { imported: 0, failed: 0 },
   };
-  if (selected.has("history")) result.history = readHistory(source.profilePath);
-  if (selected.has("bookmarks")) result.bookmarks = readBookmarks(source.profilePath);
-  if (selected.has("cookies")) result.cookies = await importCookies(source, targetSession);
+  if (selected.has("history")) {
+    result.history = readHistory(source.profilePath);
+    await cancellationPoint(signal);
+  }
+  if (selected.has("bookmarks")) {
+    result.bookmarks = readBookmarks(source.profilePath);
+    await cancellationPoint(signal);
+  }
+  if (selected.has("cookies")) {
+    result.cookies = await importCookies(source, targetSession, readCookies, signal);
+    await cancellationPoint(signal);
+  }
   return result;
 }
 
@@ -576,6 +633,35 @@ if (require.main === module) {
       ]);
       assert.deepStrictEqual(cookieCounts, { imported: 1, failed: 0 });
       assert.doesNotMatch(JSON.stringify(cookieCounts), /private-name|private-value/);
+
+      const cookieCancel = new AbortController();
+      let cookieWrites = 0;
+      await assert.rejects(
+        importCookies(
+          {},
+          { cookies: { set: async () => {
+            cookieWrites += 1;
+            cookieCancel.abort();
+          } } },
+          async () => [
+            { domain: ".example.com", name: "first", value: "1", path: "/" },
+            { domain: ".example.com", name: "second", value: "2", path: "/" },
+          ],
+          cookieCancel.signal,
+        ),
+        (error) => error.code === "import_cancelled",
+      );
+      assert.strictEqual(cookieWrites, 1, "cancellation stops later cookie writes");
+
+      const historyCancel = new AbortController();
+      setImmediate(() => historyCancel.abort());
+      await assert.rejects(
+        runBrowserImport(
+          { browserId: "chrome", profileId: "Default", items: ["history"] },
+          { options, signal: historyCancel.signal },
+        ),
+        (error) => error.code === "import_cancelled",
+      );
 
       const { EventEmitter } = require("node:events");
       const stubborn = new EventEmitter();

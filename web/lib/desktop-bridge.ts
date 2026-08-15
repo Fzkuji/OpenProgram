@@ -295,10 +295,12 @@ export interface DesktopBrowserImportResult {
 export interface DesktopBrowserImportApi {
   listSources(): Promise<DesktopBrowserImportSource[]>;
   run(request: {
+    requestId: string;
     browserId: string;
     profileId: string;
     items: Array<"history" | "bookmarks" | "cookies">;
   }): Promise<DesktopBrowserImportResult>;
+  cancel?(requestId: string): Promise<boolean>;
 }
 
 export interface DesktopBrowserDataApi {

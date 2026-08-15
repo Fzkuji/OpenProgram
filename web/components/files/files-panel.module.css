@@ -404,7 +404,7 @@
   top: 0;
   bottom: 0;
   width: 1px;
-  background: color-mix(in srgb, var(--text-dim) 42%, transparent);
+  background: color-mix(in srgb, var(--text-dim) 60%, transparent);
   pointer-events: none;
 }
 .treeKids > .treeNode:last-child::before {
@@ -418,7 +418,7 @@
   top: 50%;
   width: 9px;
   height: 1px;
-  background: color-mix(in srgb, var(--text-dim) 42%, transparent);
+  background: color-mix(in srgb, var(--text-dim) 60%, transparent);
   pointer-events: none;
 }
 

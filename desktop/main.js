@@ -306,6 +306,7 @@ const browsingHistoryFile = () =>
 const downloadsFile = () => path.join(app.getPath("userData"), "downloads.json");
 const downloads = new Map();
 const activeDownloads = new Map();
+let activeBrowserImport = null;
 const DOWNLOAD_STATES = new Set(["progressing", "completed", "cancelled", "interrupted"]);
 
 function downloadsRoot() {
@@ -2306,6 +2307,12 @@ function clearOwnedViews(ctx) {
 }
 
 function cleanupWindowContext(ctx) {
+  if (
+    activeBrowserImport?.ownerId === ctx.id
+    && !activeBrowserImport.controller.signal.aborted
+  ) {
+    activeBrowserImport.controller.abort();
+  }
   stopWindowRecovery(ctx);
   closeMainMenu(ctx);
   tabTransfers.contextDestroyed(ctx);
@@ -2761,22 +2768,40 @@ function registerWebTabIpc() {
     return true;
   });
 
-  let activeBrowserImport = null;
-  ipcMain.handle("browser-import:list-sources", () => {
+  ipcMain.handle("browser-import:list-sources", (event) => {
+    if (!contextForSender(event)) return [];
     try {
       return listBrowserSources();
     } catch (_error) {
       return [];
     }
   });
-  ipcMain.handle("browser-import:run", (_event, request) => {
+  ipcMain.handle("browser-import:run", (event, request) => {
+    const ctx = contextForSender(event);
+    if (!ctx) return { ok: false, error: "unauthorized" };
+    const requestId = request?.requestId;
+    if (
+      typeof requestId !== "string"
+      || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(requestId)
+    ) {
+      return { ok: false, error: "invalid_request" };
+    }
     if (activeBrowserImport) {
       return { ok: false, error: "import_busy" };
     }
-    activeBrowserImport = (async () => {
+    const task = {
+      requestId,
+      ownerId: ctx.id,
+      ownerSender: event.sender,
+      controller: new AbortController(),
+      promise: null,
+    };
+    activeBrowserImport = task;
+    task.promise = (async () => {
       try {
         const result = await runBrowserImport(request || {}, {
           targetSession: session.fromPartition("persist:webtabs"),
+          signal: task.controller.signal,
         });
         const historyMerge = result.history.length
           ? importHistoryEntries(browsingHistoryFile(), result.history)
@@ -2794,10 +2819,25 @@ function registerWebTabIpc() {
       } catch (error) {
         return { ok: false, error: error?.code || "import_failed" };
       } finally {
-        activeBrowserImport = null;
+        if (activeBrowserImport === task) activeBrowserImport = null;
       }
     })();
-    return activeBrowserImport;
+    return task.promise;
+  });
+  ipcMain.handle("browser-import:cancel", (event, requestId) => {
+    const ctx = contextForSender(event);
+    if (
+      !ctx
+      || !activeBrowserImport
+      || activeBrowserImport.ownerId !== ctx.id
+      || activeBrowserImport.ownerSender !== event.sender
+      || activeBrowserImport.requestId !== requestId
+      || activeBrowserImport.controller.signal.aborted
+    ) {
+      return false;
+    }
+    activeBrowserImport.controller.abort();
+    return true;
   });
   ipcMain.handle("browser-data:clear", async (event, options) => {
     try {

@@ -28,6 +28,12 @@ const spawnedPtys = [];
 const clearedStorageRequests = [];
 const openedDownloadPaths = [];
 const shownDownloadPaths = [];
+let fakeBrowserImportRunner = async () => ({
+  source: { browserId: "chrome", profileId: "Default", label: "Chrome · Default" },
+  history: [],
+  bookmarks: [],
+  cookies: { imported: 0, failed: 0 },
+});
 
 function fakeSpawn() {
   const child = new EventEmitter();
@@ -219,6 +225,7 @@ sandboxProcess.kill = (pid, signal) => {
 
 const sandbox = {
   Promise,
+  AbortController,
   Map,
   Set,
   URL,
@@ -243,6 +250,12 @@ const sandbox = {
       };
     }
     if (id === "node-pty") return { spawn: fakePtySpawn };
+    if (id === "./browser-profile-import") {
+      return {
+        listBrowserSources: () => [],
+        runBrowserImport: (...args) => fakeBrowserImportRunner(...args),
+      };
+    }
     // Relative requires inside main.js resolve against THIS file, not
     // main.js — map the desktop-local modules explicitly.
     if (id.startsWith("./")) return require(path.join(__dirname, "..", id));
@@ -4160,6 +4173,70 @@ async function checkBrowserDataClear() {
   hooks.windows.delete(ctx.id);
 }
 
+async function checkBrowserImportCancellation() {
+  const ownerWin = fakeWindow(931);
+  const otherWin = fakeWindow(932);
+  const owner = registerContext("browser-import-owner", ownerWin);
+  const other = registerContext("browser-import-other", otherWin);
+  let observedSignal = null;
+  fakeBrowserImportRunner = (_request, { signal }) => new Promise((resolve, reject) => {
+    observedSignal = signal;
+    signal.addEventListener("abort", () => {
+      reject(Object.assign(new Error("cancelled"), { code: "import_cancelled" }));
+    }, { once: true });
+  });
+  const run = ipcHandlers.get("browser-import:run");
+  const cancel = ipcHandlers.get("browser-import:cancel");
+  assert.equal(typeof cancel, "function", "browser import cancel IPC must be registered");
+  assert.deepEqual(
+    plain(await run({ sender: {} }, { requestId: "unauthorized", browserId: "chrome", profileId: "Default", items: ["history"] })),
+    { ok: false, error: "unauthorized" },
+  );
+  const pending = run(
+    { sender: ownerWin.webContents },
+    { requestId: "request-owner", browserId: "chrome", profileId: "Default", items: ["history"] },
+  );
+  await Promise.resolve();
+  assert.equal(observedSignal?.aborted, false);
+  assert.deepEqual(
+    plain(await run(
+      { sender: otherWin.webContents },
+      { requestId: "request-other", browserId: "chrome", profileId: "Default", items: ["history"] },
+    )),
+    { ok: false, error: "import_busy" },
+  );
+  assert.equal(cancel({ sender: otherWin.webContents }, "request-owner"), false);
+  assert.equal(cancel({ sender: ownerWin.webContents }, "wrong-request"), false);
+  assert.equal(cancel({ sender: ownerWin.webContents }, "request-owner"), true);
+  assert.deepEqual(plain(await pending), { ok: false, error: "import_cancelled" });
+  assert.equal(observedSignal.aborted, true);
+
+  fakeBrowserImportRunner = async () => ({
+    source: { browserId: "chrome", profileId: "Default", label: "Chrome · Default" },
+    history: [],
+    bookmarks: [],
+    cookies: { imported: 0, failed: 0 },
+  });
+  assert.equal((await run(
+    { sender: ownerWin.webContents },
+    { requestId: "request-next", browserId: "chrome", profileId: "Default", items: ["history"] },
+  )).ok, true, "cancelled import must release the global lease");
+
+  fakeBrowserImportRunner = (_request, { signal }) => new Promise((_resolve, reject) => {
+    signal.addEventListener("abort", () => {
+      reject(Object.assign(new Error("cancelled"), { code: "import_cancelled" }));
+    }, { once: true });
+  });
+  const closing = run(
+    { sender: ownerWin.webContents },
+    { requestId: "request-closing", browserId: "chrome", profileId: "Default", items: ["history"] },
+  );
+  await Promise.resolve();
+  hooks.cleanupWindowContext(owner);
+  assert.deepEqual(plain(await closing), { ok: false, error: "import_cancelled" });
+  hooks.windows.delete(other.id);
+}
+
 assert.match(preloadSource, /onTransferHover/, "preload must expose onTransferHover");
 assert.match(preloadSource, /"tab-transfer:hover-enter"[\s\S]*?"tab-transfer:hover-leave"/,
   "preload onTransferHover must subscribe both hover channels");
@@ -4304,6 +4381,7 @@ Promise.all([
     await checkCrossWindowHoverCue();
     await checkCrossWindowHoverZOrder();
     await checkBrowserDataClear();
+    await checkBrowserImportCancellation();
     assert.equal(rendererQueue.length, 0, "all fake renderer deliveries must be flushed");
     console.log("webtab navigation checks passed");
   })
