@@ -394,8 +394,7 @@ def test_macos_legacy_icon_source_uses_the_standard_visible_bounds() -> None:
     assert 'id="op-macos-icon-mask"' in source
     assert 'id="op-icon-background"' in source
     assert 'clip-path="url(#op-macos-icon-clip)"' in source
-    assert "M512 100" in source
-    assert "924 512" in source
+    assert 'x="100" y="100" width="824" height="824" rx="185"' in source
 
 
 def test_launchd_worker_preserves_packaged_python_flags(monkeypatch) -> None:

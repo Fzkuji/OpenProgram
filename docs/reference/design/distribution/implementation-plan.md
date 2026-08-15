@@ -16,7 +16,8 @@ duplicated in this historical distribution ledger.
   `/Applications/OpenProgram.app`.
 - Icon contract: `desktop/build/icon.svg` is the deterministic 1024 x 1024
   source for the legacy ICNS consumed by Electron on the supported macOS 15
-  build host. Its visible body uses the 100...923 template bounds with
+  build host. Its visible body uses the 100...923 template bounds and a 185 px
+  corner radius, with
   transparent canvas corners and a restrained lower shadow, matching the
   apparent 824 x 824 footprint of current installed macOS Apps. The brand ring
   and three nodes remain unchanged. A future Icon Composer `.icon` migration
@@ -39,8 +40,9 @@ duplicated in this historical distribution ledger.
   `desktop/scripts/install-app.sh`, and
   `openprogram/worker/services/launchd.py`.
 - Acceptance: the icon gate requires a 1024 x 1024 source, transparent corners,
-  the 824 x 824 opaque body bounds, all ten legacy representations, and an ICNS
-  round trip; transaction fault injection preserves `previous.app`; launchd tests
+  the 824 x 824 opaque body bounds, a 256 px raster contour and solid-area
+  profile aligned with built-in macOS Apps, all ten legacy representations, and
+  an ICNS round trip; transaction fault injection preserves `previous.app`; launchd tests
   cover loaded, stale, and unload-failure states; a corrupt assembled runtime is
   rejected before installation. After reviews, one real `npm run dist` replaces
   the installed App, Launch Services is refreshed, and Finder/Launchpad output is

@@ -38,10 +38,7 @@
     <clipPath id="op-mark-interior">
       <circle cx="512" cy="512" r="228"/>
     </clipPath>
-    <path
-      id="op-macos-icon-mask"
-      d="M512 100C737 100 821 100 873 151C924 203 924 287 924 512C924 737 924 821 873 873C821 924 737 924 512 924C287 924 203 924 151 873C100 821 100 737 100 512C100 287 100 203 151 151C203 100 287 100 512 100Z"
-    />
+    <rect id="op-macos-icon-mask" x="100" y="100" width="824" height="824" rx="185"/>
     <clipPath id="op-macos-icon-clip">
       <use href="#op-macos-icon-mask"/>
     </clipPath>

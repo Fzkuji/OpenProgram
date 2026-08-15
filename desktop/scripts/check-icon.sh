@@ -30,10 +30,8 @@ grep -q 'id="op-macos-icon-mask"' "$source_svg" \
   || fail "icon.svg must define the legacy macOS icon mask"
 grep -q 'clip-path="url(#op-macos-icon-clip)"' "$source_svg" \
   || fail "icon.svg artwork must use the legacy macOS icon mask"
-grep -q 'M512 100' "$source_svg" \
-  || fail "icon.svg mask must use the standard 100 px top inset"
-grep -q '924 512' "$source_svg" \
-  || fail "icon.svg mask must use the standard 924 px right bound"
+grep -q 'x="100" y="100" width="824" height="824" rx="185"' "$source_svg" \
+  || fail "icon.svg mask must use the 824 px body and 185 px corner radius"
 for background_color in '#29374D' '#19243A' '#101622'; do
   grep -q "stop-color=\"$background_color\"" "$source_svg" \
     || fail "icon.svg must preserve the approved deep-blue background"
@@ -127,6 +125,15 @@ if !(99...101).contains(solid.0) || !(99...101).contains(solid.1) ||
     fputs("icon check failed: opaque icon body must use the 100...923 template bounds\n", stderr)
     exit(1)
 }
+let topBodyPixels = (0..<width).filter {
+    bytes[(100 * width + $0) * 4 + 3] >= 128
+}
+if !(265...280).contains(topBodyPixels.first ?? -1) ||
+   !(743...758).contains(topBodyPixels.last ?? -1) ||
+   !(470...490).contains(topBodyPixels.count) {
+    fputs("icon check failed: top corner profile does not match the macOS legacy mask\n", stderr)
+    exit(1)
+}
 let cornerAlpha = [
     bytes[3],
     bytes[(width - 1) * 4 + 3],
@@ -188,7 +195,7 @@ sips -z 48 48 "$roundtrip_dir/icon_32x32@2x.png" \
 # Decode into premultiplied sRGB pixels before comparing. This ignores hidden
 # RGB values in fully transparent pixels while still detecting the malformed
 # low-resolution ICNS entries produced by the old automatic conversion.
-xcrun swift - 8.0 \
+OPENPROGRAM_ICON_PROFILE="$iconset_dir/icon_256x256.png" xcrun swift - 8.0 \
   16-source "$audit_dir/expected-16.png" "$iconset_dir/icon_16x16.png" \
   16-icns "$audit_dir/expected-16.png" "$roundtrip_dir/icon_16x16.png" \
   32-source "$audit_dir/expected-32.png" "$iconset_dir/icon_32x32.png" \
@@ -252,6 +259,41 @@ for index in stride(from: 2, to: arguments.count, by: 3) {
         exit(1)
     }
 }
+
+let profilePath = ProcessInfo.processInfo.environment["OPENPROGRAM_ICON_PROFILE"]!
+let profile = try decodedRGBA(profilePath)
+guard profile.width == 256, profile.height == 256 else {
+    fputs("icon check failed: contour profile must be 256 x 256\n", stderr)
+    exit(1)
+}
+func solidSpan(y: Int) -> (first: Int, last: Int, count: Int) {
+    let pixels = (0..<profile.width).filter {
+        profile.bytes[(y * profile.width + $0) * 4 + 3] >= 128
+    }
+    return (pixels.first ?? -1, pixels.last ?? -1, pixels.count)
+}
+let solidArea = stride(from: 3, to: profile.bytes.count, by: 4).reduce(0) {
+    $0 + (profile.bytes[$1] >= 128 ? 1 : 0)
+}
+let expectedSpans = [
+    (25, 67...70, 185...188, 118...124),
+    (30, 49...51, 204...207, 154...159),
+    (40, 36...38, 217...219, 180...184),
+    (70, 25...25, 230...230, 206...206),
+]
+if !(40_480...40_650).contains(solidArea) {
+    fputs("icon check failed: 256 px legacy mask has the wrong solid area\n", stderr)
+    exit(1)
+}
+for (y, firstRange, lastRange, countRange) in expectedSpans {
+    let span = solidSpan(y: y)
+    if !firstRange.contains(span.first) || !lastRange.contains(span.last) ||
+       !countRange.contains(span.count) {
+        fputs("icon check failed: 256 px legacy mask contour differs at y=\(y)\n", stderr)
+        exit(1)
+    }
+}
+print("256-mask: solid area \(solidArea); contour checks passed")
 SWIFT
 
 printf 'icon checks passed\n'
