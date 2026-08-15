@@ -29,9 +29,15 @@
   --shadow-sidebar-left: 4px 0 16px rgba(10, 10, 15, 0.07);
   --shadow-sidebar-right: -4px 0 16px rgba(10, 10, 15, 0.07);
   --effort-off-bg: #ebebef;
-  /* 深一档珊瑚 / 琥珀：品牌值作为文字色在白底上过不了 AA。 */
-  --accent-orange: #c15f3c;
+  /* Neutral light uses a deeper blue so text and filled actions keep contrast. */
+  --accent-orange: #2563eb;
+  --accent-fill: #2563eb;
+  --accent-orange-hover: #1d4ed8;
+  --accent-green: #6e9b76;
+  --accent-red: #c24e42;
   --accent-yellow: #96701f;
+  --accent-purple: #a371f7;
+  --accent-cyan: #3bc9db;
   --primary-foreground: #ffffff;
   --success-soft: #5f8a67;
   --warning-soft: #b98f3d;
@@ -40,16 +46,22 @@
   --stream-info: var(--text-secondary);
 
   --selection-bg: color-mix(in srgb, var(--accent-orange) 25%, transparent);
-  --focus-ring: color-mix(in srgb, var(--accent-orange) 50%, transparent);
+  --focus-ring: color-mix(in srgb, var(--text-bright) 45%, transparent);
   --scrim: rgba(0, 0, 0, 0.45);
   --scrim-strong: rgba(0, 0, 0, 0.65);
   --surface-tooltip: #131317;
   --text-on-tooltip: #ffffff;
   --composer-ring: rgba(10, 10, 15, 0.1);
   --composer-ring-focus: rgba(10, 10, 15, 0.2);
+  --composer-surface: color-mix(in srgb, var(--bg-input) 80%, transparent);
+  --composer-backdrop-filter: blur(12px);
+  --composer-shadow: 0 0 0 1px var(--composer-ring), var(--shadow-sm);
+  --composer-shadow-focus: 0 0 0 1px var(--composer-ring-focus), var(--shadow-sm);
   --chip-bg: #ffffff;
   --chip-ring: rgba(10, 10, 15, 0.1);
   --meter-fill: #3b82f6;
   --meter-track: var(--bg-tertiary);
+  --provider-icon-bg: var(--bg-tertiary);
+  --dag-ghost: #b8b8c0;
   color-scheme: light;
 }

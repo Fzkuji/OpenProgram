@@ -631,7 +631,13 @@ async def handle_load_session(ws, cmd: dict):
 
         _exec_rows: list = []
         for _m in chain:
-            if _m.get("role") == "assistant":
+            # A top-level runtime card already carries its complete caller
+            # subtree in context_tree. Re-appending those descendants here
+            # makes conv-mapper see the rebuilt root as role=assistant rather
+            # than its original role=tool, so direct LLM children fail the
+            # call-tree test and leak out as ordinary assistant chat bubbles.
+            if (_m.get("role") == "assistant"
+                    and _m.get("display") != "runtime"):
                 _collect_exec_rows(_m.get("id"), _exec_rows)
         shown.extend(_exec_rows)
 

@@ -35,6 +35,14 @@
   /* Collapsed `off` effort-pill chip. Solid, a step above --bg-input
      so it reads as a distinct chip on the dark composer. */
   --effort-off-bg: #3a3a38;
+  --accent-orange: #d97757;
+  --accent-fill: #d97757;
+  --accent-orange-hover: #c86a4a;
+  --accent-green: #6e9b76;
+  --accent-red: #c24e42;
+  --accent-yellow: #d4a346;
+  --accent-purple: #a371f7;
+  --accent-cyan: #3bc9db;
   /* Text colour on coral primary buttons — Claude uses white-on-coral
      in both themes. */
   --primary-foreground: #ffffff;
@@ -52,7 +60,7 @@
 
   /* ===== Phase 2 语义 token（原本散在各 CSS 里的硬编码色） ===== */
   --selection-bg: color-mix(in srgb, var(--accent-orange) 25%, transparent);
-  --focus-ring: color-mix(in srgb, var(--accent-orange) 50%, transparent);
+  --focus-ring: color-mix(in srgb, var(--text-bright) 50%, transparent);
   /* 全屏/图片遮罩。深色主题下就是黑纱。 */
   --scrim: rgba(0, 0, 0, 0.55);
   --scrim-strong: rgba(0, 0, 0, 0.75);
@@ -62,10 +70,16 @@
   /* 输入框（composer）外圈发丝线，常态 / 聚焦。 */
   --composer-ring: rgba(255, 255, 255, 0.08);
   --composer-ring-focus: rgba(255, 255, 255, 0.14);
+  --composer-surface: var(--bg-input);
+  --composer-backdrop-filter: none;
+  --composer-shadow: 0 0 0 1px var(--composer-ring);
+  --composer-shadow-focus: 0 0 0 1px var(--composer-ring-focus);
   /* 环境 pill 芯片底 + 描边。 */
   --chip-bg: var(--bg-tertiary);
   --chip-ring: var(--border-light);
   /* 用量条（context breakdown）：蓝色刻意区别于珊瑚色动作色。 */
   --meter-fill: #5b9cf8;
   --meter-track: rgba(255, 255, 255, 0.08);
+  --provider-icon-bg: var(--bg-tertiary);
+  --dag-ghost: #57564f;
 }

@@ -265,10 +265,22 @@ export interface DesktopBrowserDataApi {
 }
 
 export interface DesktopTerminalApi {
-  start(request: { id: string; cwd?: string }): Promise<{ ok: boolean; error?: string }>;
+  start(request: {
+    id: string;
+    cwd?: string;
+    preset: "shell" | "claude";
+    cols: number;
+    rows: number;
+  }): Promise<{ ok: boolean; error?: string; reused?: boolean; pid?: number }>;
   write(id: string, data: string): void;
+  resize(id: string, cols: number, rows: number): void;
   stop(id: string): void;
-  onData(cb: (payload: { id: string; data: string; done?: boolean }) => void): () => void;
+  onData(cb: (payload: {
+    id: string;
+    data: string;
+    done?: boolean;
+    exitCode?: number;
+  }) => void): () => void;
 }
 
 /** The ⋮ main-menu overlay: a top-layer WebContentsView the desktop
@@ -308,6 +320,8 @@ export interface DesktopMainMenuApi {
 export interface DesktopBridge {
   readonly isDesktop: true;
   readonly windowId: string;
+  /** Absolute native path for a user-selected/dropped File. */
+  getPathForFile?(file: File): string;
   /** shell.openExternal — http/https only. */
   openExternal(url: string): void;
   /** Close this window (last tab closed → close window). */
@@ -324,7 +338,7 @@ export interface DesktopBridge {
   browserImport?: DesktopBrowserImportApi;
   /** Desktop-only clearing of the built-in browser profile. */
   browserData?: DesktopBrowserDataApi;
-  /** Desktop-only lightweight project shell. */
+  /** Desktop-only local PTY. Never exposed by the Web server. */
   terminal?: DesktopTerminalApi;
 }
 
@@ -453,22 +467,35 @@ export function destroyStaleWebViews(
   }
 }
 
+export function desktopTerminalId(
+  bridge: Pick<DesktopBridge, "windowId">,
+  preset: "shell" | "claude",
+): string {
+  return `terminal:${bridge.windowId}:${preset}`;
+}
+
+/** Terminal processes follow tab lifetime, not component lifetime. Switching
+ *  tabs unmounts inactive panes, so stopping from TerminalPage cleanup would
+ *  terminate a still-open terminal. Store reconciliation stops only the two
+ *  fixed presets whose built-in tab has actually been closed. */
+export function destroyStaleTerminals(
+  bridge: DesktopBridge,
+  tabs: ReadonlyArray<{ kind: string; page?: string }>,
+): void {
+  if (!bridge.terminal) return;
+  for (const preset of ["shell", "claude"] as const) {
+    const page = preset === "shell" ? "terminal" : "claude";
+    const alive = tabs.some((tab) => tab.kind === "builtin" && tab.page === page);
+    if (!alive) bridge.terminal.stop(desktopTerminalId(bridge, preset));
+  }
+}
+
 let installed = false;
 
 function showCenterSurface(): boolean {
   if (!hasNavigate()) return false;
   navigate("/chat");
   return true;
-}
-
-function showActiveCenterTab(): void {
-  const state = useCenterTabs.getState();
-  const active = state.tabs.find((tab) => tab.id === state.activeId);
-  const path =
-    active?.kind === "session" && !active.draft && active.sessionId
-      ? `/s/${encodeURIComponent(active.sessionId)}`
-      : "/chat";
-  navigate(path);
 }
 
 export function visibleWebTab() {
@@ -573,9 +600,9 @@ function sendWebTabResult(
  * (web-tab-pane.tsx); app-shell should ALSO call it once at startup
  * so the app menu works before the first web tab ever opens.
  *
- *  - "op-desktop-new-tab" / "op-desktop-close-tab" CustomEvents
- *    (dispatched on window by preload for menu accelerators) →
- *    openNewTabPage / closeTab(activeId).
+ *  - "op-desktop-new-tab" CustomEvent (dispatched on window by preload for
+ *    menu accelerators) → openNewTabPage. The strip lifecycle owns the close
+ *    event because it must close a composite as one dirty-checked entry.
  *  - Store subscription that destroys native views the moment their
  *    tab closes — a closed tab's pane is already unmounted (or never
  *    was, for background tabs), so no component can do this cleanup.
@@ -588,11 +615,6 @@ export function installDesktopMenuHandlers(): void {
   window.addEventListener("op-desktop-new-tab", () => {
     useCenterTabs.getState().openNewTabPage();
     showCenterSurface();
-  });
-  window.addEventListener("op-desktop-close-tab", () => {
-    const s = useCenterTabs.getState();
-    if (s.activeId) s.closeTab(s.activeId);
-    showActiveCenterTab();
   });
   // Agent 控制面：后端广播 webtab.command(op=open) → 在可见 UI 里开
   // web tab，并经同一条 WS 回执 webtab_result(req_id)。非桌面客户端不装
@@ -664,7 +686,15 @@ export function installDesktopMenuHandlers(): void {
       const state = useCenterTabs.getState();
       const active = state.tabs.find((tab) => tab.id === state.activeId);
       const priorActiveId = state.activeId;
-      const split = active?.kind === "session" && isDesktopSplitLayoutAvailable();
+      const activeGroup = active
+        ? findCenterTabGroup(state.groups, active.id)
+        : undefined;
+      const activeGroupHasWeb = activeGroup?.memberIds.some((memberId) =>
+        state.tabs.some((tab) => tab.id === memberId && tab.kind === "web"),
+      ) ?? false;
+      const split = active?.kind === "session"
+        && isDesktopSplitLayoutAvailable()
+        && (!activeGroup || activeGroupHasWeb);
       const routeVisible =
         window.location.pathname === "/chat" ||
         window.location.pathname.startsWith("/s/");
@@ -738,12 +768,16 @@ export function installDesktopMenuHandlers(): void {
   // journal recovery → terminal/orphan acks → ordinary native-view
   // reconciliation → claimPending for a detached window's pending token.
   void recoverPendingTabTransfers(bridge, () => {
-    useCenterTabs.subscribe((s) => {
+    const reconcileNativeResources = () => {
+      const tabs = useCenterTabs.getState().tabs;
       destroyStaleWebViews(
         bridge,
-        s.tabs.map((t) => t.id),
+        tabs.map((t) => t.id),
       );
-    });
+      destroyStaleTerminals(bridge, tabs);
+    };
+    useCenterTabs.subscribe(reconcileNativeResources);
+    reconcileNativeResources();
   });
 }
 

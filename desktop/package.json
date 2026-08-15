@@ -10,6 +10,7 @@
   "main": "main.js",
   "desktopName": "ai.openprogram.OpenProgram.desktop",
   "scripts": {
+    "postinstall": "electron-builder install-app-deps",
     "dev": "electron .",
     "check": "npm run check:webtabs && npm run check:webtab-zoom-bounds && npm run check:tab-transfer-store && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime",
     "check:webtabs": "node scripts/check-webtab-navigation.js",
@@ -46,6 +47,9 @@
       "buildResources": "build"
     },
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "asarUnpack": [
+      "node_modules/node-pty/**"
+    ],
     "extraResources": [
       {
         "from": "build/runtime",
@@ -65,5 +69,8 @@
       "hardenedRuntime": false,
       "notarize": false
     }
+  },
+  "dependencies": {
+    "node-pty": "1.0.0"
   }
 }

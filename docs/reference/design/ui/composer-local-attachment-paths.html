@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Composer local attachment paths</title>
+  <style>
+    :root { color-scheme: dark; --bg:#171719; --panel:#202023; --line:#38383d; --text:#f1f0f3; --muted:#aaa8af; --blue:#7198ff; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:15px/1.55 Inter,ui-sans-serif,system-ui,sans-serif; }
+    main { width:min(980px,calc(100% - 40px)); margin:44px auto 72px; }
+    h1 { margin:0 0 8px; font-size:30px; }
+    h2 { margin:30px 0 10px; font-size:18px; }
+    p,li,td { color:var(--muted); }
+    code { color:#cbd8ff; font:13px/1.5 "JetBrains Mono",ui-monospace,monospace; }
+    table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); }
+    th,td { padding:11px 13px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--text); }
+    .flow { display:grid; grid-template-columns:1fr auto 1fr auto 1fr; gap:10px; align-items:center; padding:18px; background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+    .step { padding:12px; border:1px solid var(--line); border-radius:7px; }
+    .arrow { color:var(--blue); }
+    @media (max-width:760px) { .flow { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); text-align:center; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Composer local attachment paths</h1>
+  <p>When a user drops or selects a local file, image, or folder in the Electron desktop app, the outgoing message must identify the original absolute path. The existing attachment tiles and byte-upload behavior remain unchanged.</p>
+
+  <h2>Verified gap</h2>
+  <table>
+    <thead><tr><th>Boundary</th><th>Current behavior</th><th>Required behavior</th></tr></thead>
+    <tbody>
+      <tr><td>Electron preload</td><td>Exposes window and web-tab APIs but no approved file-path accessor.</td><td>Expose <code>webUtils.getPathForFile</code> through the existing bridge.</td></tr>
+      <tr><td>Composer pending state</td><td>Stores only the basename from <code>File.name</code>.</td><td>Store an optional immutable <code>sourcePath</code> for images and documents.</td></tr>
+      <tr><td>Submit</td><td>Documents receive a path only after the backend saves a copy; images receive no original path; unreadable folders are described as unsent.</td><td>Emit the attachment marker with a JSON-encoded original absolute path whenever <code>sourcePath</code> exists.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Data flow</h2>
+  <div class="flow" aria-label="Attachment path data flow">
+    <div class="step">User drop or picker<br><code>File</code></div><div class="arrow">→</div>
+    <div class="step">Preload<br><code>getPathForFile(file)</code></div><div class="arrow">→</div>
+    <div class="step">Pending state and message marker<br><code>[attachment: … @json "/abs/path"]</code></div>
+  </div>
+
+  <h2>Behavior contract</h2>
+  <ul>
+    <li>The desktop bridge is the only renderer-accessible source of a native path. The renderer does not receive Node filesystem access.</li>
+    <li>Every dropped or picker-selected <code>File</code> is queried once before asynchronous reads begin. Images and non-images retain the returned path.</li>
+    <li>A document with bytes keeps the current upload and preview pipeline. Its visible/model marker uses the original path; the backend may still persist a session copy.</li>
+    <li>A folder or unreadable local item with a source path is a valid path reference even when no bytes can be uploaded. It must not be marked “too large — not sent”.</li>
+    <li>An image keeps its multimodal payload and additionally receives one original-path marker.</li>
+    <li>Current path-bearing markers encode the path as a JSON string. This preserves brackets, quotes, backslashes, and trailing spaces; readers remain compatible with historical unquoted markers.</li>
+    <li>Each uploaded attachment carries its own optional <code>source_path</code> provenance. The backend preserves a frontend marker only when that attachment's exact source path is present, preventing same-name browser uploads from being conflated.</li>
+    <li>For local preview, the stored marker keeps the original path in <code>@json</code> for the agent and adds an immutable session-copy path in <code>@previewjson</code> for the UI. Older messages without a preview path remain readable. The raw-file endpoint does not add the source path's parent directory to the readable roots.</li>
+    <li>The backend removes <code>source_path</code> from image attachment metadata before provider dispatch. The path intentionally remains in the user-message marker.</li>
+    <li>Clipboard-created blobs and plain-browser files have no native path. They retain the existing upload/save behavior and generated session path.</li>
+  </ul>
+
+  <h2>Boundaries and rejected changes</h2>
+  <p>Included files are the Electron preload bridge, bridge TypeScript contract, composer attachment state, submit marker construction, and the existing backend marker rewrite. Excluded are attachment tile styling, directory traversal, recursive browser uploads, arbitrary filesystem scanning, new IPC handlers, upload-size changes, Programs UI changes, and dependencies.</p>
+  <p>Rejected: using the non-standard legacy <code>File.path</code>; requesting Node integration in the renderer; replacing uploads with path-only messages for readable files; inventing a relative path in a normal browser; recursively enumerating a dropped directory.</p>
+
+  <h2>Acceptance and verification</h2>
+  <p>Focused checks must prove: preload returns the exact native path for the same <code>File</code> object; path capture handles an absent bridge, empty result, and exception; document, image, and unreadable-folder markers contain the full path; filenames with parentheses are display-safe; paths containing <code>]</code>, quotes, and trailing spaces round-trip through both parsers; path-less browser attachments retain their current marker; same-name browser and mixed-source attachments remain distinct; backend persistence does not duplicate a pre-path-marked attachment; TypeScript, desktop checks, web checks, backend attachment tests, build, documentation links, and diff whitespace checks pass.</p>
+
+  <h2>Implementation status</h2>
+  <p>Implemented and reviewed. The focused RED established the missing preload path boundary, absent composer provenance, and duplicate backend marker behavior. The final implementation preserves Electron paths for files, images, and folders; keeps plain-browser uploads unchanged; distinguishes same-name attachment sources; and uses a JSON-encoded path marker that round-trips legal delimiters and trailing spaces while reading historical markers. Focused Web and Python checks, TypeScript, full Web and Desktop checks, production build, documentation build/link check, Ruff, and diff whitespace checks pass. Independent specification and quality reviews pass. The preload boundary is exercised in a VM with the same <code>File</code> object; real-window manual dragging was not part of this verification.</p>
+</main>
+</body>
+</html>

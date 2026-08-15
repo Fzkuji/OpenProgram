@@ -1,6 +1,6 @@
 import type { CenterTab } from "./center-tabs-store";
 
-export const MAX_CENTER_TAB_GROUP_MEMBERS = 3;
+export const MAX_CENTER_TAB_GROUP_MEMBERS = 2;
 export const MAX_CENTER_TAB_PANES = 2;
 export const MAX_CENTER_TAB_GROUP_VISIBLE = MAX_CENTER_TAB_PANES;
 

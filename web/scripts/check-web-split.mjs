@@ -824,18 +824,11 @@ const groupedMerge = secondaryTabsModule.insertTransferredTabs(
   { kind: "merge", targetTabId: "s:existing", memberIndex: 1 },
   { persist: false },
 );
-assert.equal(groupedMerge.ok, true);
+assert.equal(groupedMerge.ok, false);
 assert.deepEqual(secondaryTabs.getState().tabs.map((tab) => tab.id), [
   "s:existing",
-  "w:left",
-  "w:right",
 ]);
-assert.deepEqual(secondaryTabs.getState().groups[0], {
-  id: "g:source",
-  memberIds: ["s:existing", "w:left", "w:right"],
-  visibleIds: ["w:left", "w:right"],
-  focusedId: "w:right",
-});
+assert.deepEqual(secondaryTabs.getState().groups, []);
 const segmentPayload = {
   ...transferPayload,
   tabs: [{ id: "w:segment-b", kind: "web", title: "B", url: "https://b.test/" }],
@@ -936,12 +929,7 @@ assert.deepEqual(secondaryTabs.getState().tabs.map((tab) => tab.id), [
   "w:segment-a",
   "w:segment-c",
 ]);
-assert.deepEqual(secondaryTabs.getState().groups, [{
-  id: "g:segment",
-  memberIds: ["w:segment-a", "w:segment-c"],
-  visibleIds: ["w:segment-c"],
-  focusedId: "w:segment-c",
-}]);
+assert.deepEqual(secondaryTabs.getState().groups, []);
 
 const oversizedGroupPayload = {
   ...groupedPayload,
@@ -1563,12 +1551,12 @@ const hiddenThird = focusCenterTabGroupMember({
   }],
 }, "g:hidden", "w:two").groups[0];
 const hiddenThirdPanes = resolveCenterTabPanes(hiddenThird, paneTabs, "w:two");
-assert.equal(hiddenThirdPanes.length <= 2, true);
-assert.equal(hiddenThirdPanes.some((pane) => pane.tabId === "w:two"), true);
+assert.deepEqual(hiddenThird.memberIds, ["s:a", "w:one"]);
+assert.equal(hiddenThirdPanes.some((pane) => pane.tabId === "w:two"), false);
 const narrowPanes = resolveCenterTabPanes(
   undefined,
   paneTabs,
-  hiddenThird.focusedId,
+  "w:two",
 );
 assert.deepEqual(narrowPanes, [{ key: "w:two", kind: "tab", tabId: "w:two" }]);
 
@@ -2052,6 +2040,11 @@ assert.match(tabStripSource, /active=\{tab\.id === activeId\}/);
 assert.doesNotMatch(tabsCssSource, /\[data-split-pinned="true"\]/);
 assert.match(baseCssSource, /\.center-split-divider\s*\{[^}]*width:\s*6px;/s);
 assert.match(baseCssSource, /\.center-split-primary\s*\{[^}]*min-width:\s*360px;/s);
+assert.match(
+  baseCssSource,
+  /\.center-split-primary\.center-pane-chat\s*\{[^}]*flex:\s*0\s+0\s+auto;/s,
+  "a chat pane in the primary split slot must keep the ratio-controlled width",
+);
 assert.match(baseCssSource, /\.center-split-secondary\s*\{[^}]*min-width:\s*480px;/s);
 assert.match(webTabPaneSource, /setWebTabReady/);
 assert.doesNotMatch(webTabPaneSource, /bridge\.webTab\.(?:show|hide|setBounds)\(/);
@@ -2107,6 +2100,59 @@ assert.equal(useCenterTabs.getState().splitWebTabId, id);
 assert.deepEqual(useCenterTabs.getState().groups[0].memberIds, ["s:chat", id]);
 assert.equal(JSON.parse(values.get("centerTabs")).splitWebTabId, id);
 assert.equal(JSON.parse(values.get("centerTabs")).splitRatio, 0.45);
+
+// A split group is one top-level tab. Activating another top-level tab must
+// hide the whole split without moving its web member into the new tab.
+useCenterTabs.setState((state) => ({
+  tabs: [
+    ...state.tabs,
+    { id: "s:other", kind: "session", title: "Other", sessionId: "other" },
+  ],
+}));
+const splitMembersBeforeSwitch = useCenterTabs.getState().groups[0].memberIds;
+const tabOrderBeforeSwitch = useCenterTabs.getState().tabs.map((tab) => tab.id);
+useCenterTabs.getState().setActive("s:other");
+assert.equal(useCenterTabs.getState().activeId, "s:other");
+assert.deepEqual(
+  useCenterTabs.getState().groups[0].memberIds,
+  splitMembersBeforeSwitch,
+  "switching top-level tabs must not re-parent the split web view",
+);
+assert.deepEqual(
+  useCenterTabs.getState().tabs.map((tab) => tab.id),
+  tabOrderBeforeSwitch,
+  "switching top-level tabs must not reorder split members",
+);
+assert.equal(
+  useCenterTabs.getState().groups.some((group) =>
+    group.memberIds.includes("s:other") && group.memberIds.includes(id)),
+  false,
+  "the browser must remain owned by its original composite tab",
+);
+
+// Explicitly opening a URL already owned by another composite selects that
+// whole entry. It must not claim success while leaving its native view hidden.
+const ownedId = useCenterTabs.getState().openWebTabInSplit(
+  "https://example.com/",
+);
+assert.equal(ownedId, id);
+assert.equal(useCenterTabs.getState().activeId, "s:chat");
+assert.deepEqual(useCenterTabs.getState().groups[0].memberIds, ["s:chat", id]);
+
+// Repeated agent opens reuse the browser pane owned by the active composite.
+// A two-view composite must not append an invisible third member or orphan tab.
+useCenterTabs.getState().setActive("s:chat");
+const tabCountBeforeRepeatedOpen = useCenterTabs.getState().tabs.length;
+const repeatedId = useCenterTabs.getState().openWebTabInSplit(
+  "https://second.example/",
+);
+assert.equal(repeatedId, id, "the existing composite browser owns the new navigation");
+assert.equal(useCenterTabs.getState().tabs.length, tabCountBeforeRepeatedOpen);
+assert.deepEqual(useCenterTabs.getState().groups[0].memberIds, ["s:chat", id]);
+assert.equal(
+  useCenterTabs.getState().tabs.find((tab) => tab.id === id)?.url,
+  "https://second.example/",
+);
 useCenterTabs.setState({
   tabs: [
     { id: "s:chat", kind: "session", title: "Chat", sessionId: "chat" },
@@ -2139,8 +2185,8 @@ assert.equal(JSON.parse(values.get("centerTabs")).splitWebTabId, null);
 assert.equal(JSON.parse(values.get("centerTabs")).splitRatio, 0.70);
 
 // Browser Home replaces the current web tab with the Browser-only home page.
-// The position and compound-tab membership stay intact, while the native
-// web-view id disappears so the desktop bridge can destroy it.
+// The position and compound-tab membership stay intact, while
+// the native web-view id disappears so the desktop bridge can destroy it.
 const homeWebId = "w:https://home-target.test/";
 useCenterTabs.setState({
   tabs: [
@@ -2171,6 +2217,46 @@ assert.deepEqual(homeState.groups[0].visibleIds, ["s:home-chat", homeTab.id]);
 assert.equal(homeState.groups[0].focusedId, homeTab.id);
 assert.equal(homeState.splitWebTabId, null, "the replaced web view must leave legacy split state");
 assert.equal(homeState.tabs.some((tab) => tab.id === homeWebId), false);
+
+// A Browser home in another tab must not steal the current pane or create a
+// duplicate deterministic id.
+useCenterTabs.setState({
+  tabs: [
+    { id: "browser:existing", kind: "builtin", title: "", page: "browser" },
+    { id: "ntp:browser-choice", kind: "ntp", title: "" },
+  ],
+  activeId: "ntp:browser-choice",
+  groups: [],
+  splitWebTabId: null,
+});
+useCenterTabs.getState().openBuiltinTab("browser");
+const browserChoiceState = useCenterTabs.getState();
+assert.equal(browserChoiceState.tabs.length, 2);
+assert.equal(browserChoiceState.tabs[0].id, "browser:existing");
+assert.equal(browserChoiceState.tabs[1].kind, "builtin");
+assert.equal(browserChoiceState.tabs[1].page, "browser");
+assert.match(browserChoiceState.tabs[1].id, /^browser:/);
+assert.notEqual(browserChoiceState.tabs[1].id, "browser:existing");
+assert.equal(browserChoiceState.activeId, browserChoiceState.tabs[1].id);
+
+useCenterTabs.setState({
+  tabs: [
+    { id: "browser:existing", kind: "builtin", title: "", page: "browser" },
+    { id: "w:https://home-second.test/", kind: "web", title: "Second", url: "https://home-second.test/" },
+  ],
+  activeId: "w:https://home-second.test/",
+  groups: [],
+  splitWebTabId: null,
+});
+useCenterTabs.getState().replaceWebTabWithNewTabPage("w:https://home-second.test/");
+const secondHomeState = useCenterTabs.getState();
+assert.equal(secondHomeState.tabs.length, 2);
+assert.equal(secondHomeState.tabs[0].id, "browser:existing");
+assert.equal(secondHomeState.tabs[1].page, "browser");
+assert.notEqual(secondHomeState.tabs[1].id, "browser:existing");
+assert.equal(secondHomeState.activeId, secondHomeState.tabs[1].id);
+
+useCenterTabs.setState(homeState);
 const beforeWrongKind = JSON.stringify({
   tabs: homeState.tabs,
   activeId: homeState.activeId,
@@ -2190,26 +2276,6 @@ assert.equal(
   beforeWrongKind,
   "Home must ignore ids that do not belong to a web tab",
 );
-
-useCenterTabs.setState({
-  tabs: [
-    { id: "browser:existing", kind: "builtin", title: "", page: "browser" },
-    { id: "ntp:choice", kind: "ntp", title: "" },
-  ],
-  activeId: "ntp:choice",
-  groups: [],
-  splitWebTabId: null,
-  splitRatio: 0.45,
-});
-useCenterTabs.getState().openBuiltinTab("browser");
-const browserChoiceState = useCenterTabs.getState();
-assert.equal(browserChoiceState.tabs.length, 2);
-assert.equal(browserChoiceState.tabs[0].id, "browser:existing");
-assert.equal(browserChoiceState.tabs[1].kind, "builtin");
-assert.equal(browserChoiceState.tabs[1].page, "browser");
-assert.match(browserChoiceState.tabs[1].id, /^browser:/);
-assert.notEqual(browserChoiceState.tabs[1].id, "browser:existing");
-assert.equal(browserChoiceState.activeId, browserChoiceState.tabs[1].id);
 
 values.set("centerTabs", JSON.stringify({
   tabs: [

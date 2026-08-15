@@ -28,7 +28,7 @@ import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
 import {
   cancelCoordinator,
-  isFourthMemberRejection,
+  isSplitCapacityRejection,
   removeReleaseListener,
   setPreparedReleaseListener,
   snapshotTabDragSubject,
@@ -99,6 +99,16 @@ export interface TabPointerDragOptions {
     intent: TabDropIntent,
   ): boolean;
   setDragAnnouncement(message: string): void;
+}
+
+function activationTabId(subject: TabDragSubject): string | null {
+  if (subject.kind !== "group") return subject.tabIds[0] ?? null;
+  const tabs = useCenterTabs.getState().tabs;
+  return subject.tabIds.find((id) =>
+    tabs.some((tab) => tab.id === id && tab.kind === "session"),
+  ) ?? (subject.tabIds.includes(subject.sourceGroup.focusedId)
+    ? subject.sourceGroup.focusedId
+    : subject.tabIds[0] ?? null);
 }
 
 export function useTabPointerDrag({
@@ -262,7 +272,7 @@ export function useTabPointerDrag({
     // Chrome activates on press, not on release: the pressed tab is live
     // for the whole drag and stays selected afterwards. Reuse the click
     // path so session/web/file tabs each activate the way they already do.
-    // A group handle carries no single tab, so it does not activate.
+    // A composite group has no member-level activation on pointer press.
     if (subject.kind !== "group") {
       const pressed = useCenterTabs
         .getState()
@@ -281,9 +291,7 @@ export function useTabPointerDrag({
     onPrepareDrag(subject);
     const prepared = dragCoordinator.current();
     if (!prepared) return;
-    const element = (subject.kind === "group"
-      ? event.currentTarget.parentElement ?? event.currentTarget
-      : event.currentTarget) as HTMLElement;
+    const element = event.currentTarget as HTMLElement;
     const pointerId = event.pointerId;
     const move = (nativeEvent: PointerEvent) => onPointerDragMove(nativeEvent);
     const up = (nativeEvent: PointerEvent) => onPointerDragUp(nativeEvent);
@@ -340,6 +348,10 @@ export function useTabPointerDrag({
         return;
       }
       drag.started = true;
+      // Pointer capture still produces a click after pointerup. Consume that
+      // click once a real drag starts so reordering has no activation side
+      // effect. For a composite, use the same canonical member as its one tab.
+      activatedOnPressRef.current = activationTabId(drag.subject);
       removeReleaseListener();
       // Static slot geometry snapshot — every later hit test runs
       // against these unshifted rects (bystanders only ever move via
@@ -642,7 +654,7 @@ export function useTabPointerDrag({
       cancelDrag(true);
       return;
     }
-    const fourthMemberRejected = isFourthMemberRejection(prepared.subject, intent);
+    const splitCapacityRejected = isSplitCapacityRejection(prepared.subject, intent);
     const beforeRect = drag.element.getBoundingClientRect();
     if (applyDrop(prepared, intent)) {
       const committed = dragCoordinator.commit();
@@ -671,10 +683,10 @@ export function useTabPointerDrag({
       clearDragState();
     } else {
       restorePointerDragElement(drag.element, true);
-      cancelDrag(!fourthMemberRejected);
-      if (fourthMemberRejected) {
+      cancelDrag(!splitCapacityRejected);
+      if (splitCapacityRejected) {
         setDragAnnouncement(
-          text("Split supports up to three tabs", "分屏最多支持三个标签"),
+          text("A split tab contains two views", "一个分屏标签包含两个视图"),
         );
       }
     }

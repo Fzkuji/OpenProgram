@@ -455,7 +455,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (tab.kind === "builtin" && tab.page) {
       if (tab.page === "browser") return <BrowserHomePage />;
       if (tab.page === "files") return <FilesPage />;
-      if (tab.page === "terminal") return <TerminalPage />;
+      if (tab.page === "terminal") return <TerminalPage preset="shell" />;
+      if (tab.page === "claude") return <TerminalPage preset="claude" />;
       return <BuiltinTabPane page={tab.page} />;
     }
     return null;

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenProgram · Composer Tool Profile 菜单</title>
+<style>
+  :root { color-scheme:dark; --bg:#11141a; --panel:#181d26; --line:#303a4a;
+    --text:#dce3ec; --muted:#96a1b1; --blue:#72a8ff; --green:#55d69c;
+    --amber:#f0c562; --mono:ui-monospace,SFMono-Regular,Menlo,monospace }
+  * { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--text);
+    font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif }
+  main { max-width:1000px; margin:auto; padding:42px 28px 80px }
+  h1 { margin:0 0 8px; font-size:29px } h2 { margin:38px 0 12px; padding-top:15px;
+    border-top:1px solid var(--line); font-size:20px } p { margin:8px 0 }
+  code { padding:1px 5px; border:1px solid #2b3544; border-radius:5px;
+    background:#0d1015; font-family:var(--mono); font-size:.91em }
+  .sub { color:var(--muted) } .lead,.card,.table-wrap { border:1px solid var(--line);
+    border-radius:11px; background:var(--panel) } .lead { margin-top:20px; padding:15px 17px;
+    border-left:4px solid var(--blue) } .grid { display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px } .card { padding:14px 15px }
+  h3 { margin:0 0 6px; font-size:15px } ul { margin:6px 0; padding-left:20px }
+  .table-wrap { overflow:auto } table { width:100%; border-collapse:collapse }
+  th,td { padding:9px 11px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top }
+  th { color:#cbd5e3 } tr:last-child td { border-bottom:0 }
+  .ok { color:var(--green) } .pending { color:var(--amber) }
+  @media(max-width:760px) { .grid { grid-template-columns:1fr } }
+</style>
+</head>
+<body><main>
+  <h1>Composer Tool Profile 菜单设计</h1>
+  <p class="sub">范围：<code>ControlsCluster</code> 中 Tools 行右侧齿轮打开的二级菜单。本文同时作为单任务设计、实施 brief 和证据 ledger。</p>
+  <div class="lead">二级菜单使用已安装的 Base UI <code>Menu.SubmenuRoot</code>、<code>SubmenuTrigger</code>、<code>Portal</code> 和 <code>Positioner</code>。打开状态受 React 控制；齿轮只响应点击，鼠标移出不关闭；点击外部、Escape、选择 profile 或关闭一级菜单时关闭。</div>
+
+  <h2>当前实现与已验证缺口</h2>
+  <p>一级菜单通过 <code>Menu.Portal</code> 挂载到 document body，positioner 使用 <code>z-index: 200</code>。失败实现把二级菜单作为 composer 内的 <code>position: fixed</code> 节点，并增加透明 backdrop。composer 的 <code>.inputArea</code> 自身是 <code>z-index: 5</code> 的层叠上下文，因此二级节点即使设置 <code>z-index: 9999</code>，仍位于 body portal 的一级菜单之后。截图中的一级菜单覆盖二级菜单由此产生。</p>
+
+  <h2>参考实现比较</h2>
+  <div class="table-wrap"><table><thead><tr><th>方案</th><th>能力</th><th>结论</th></tr></thead><tbody>
+    <tr><td>Base UI submenu</td><td>受控 open、click trigger、outside press、Escape、focus、portal、floating position</td><td class="ok">采用；项目已安装且原代码已使用</td></tr>
+    <tr><td>手写 fixed + backdrop</td><td>点击状态可实现；缺少 portal 层级、自动 flip、完整键盘与 focus 行为</td><td>拒绝；重复已有基础设施并产生当前缺陷</td></tr>
+    <tr><td>原生 Popover API</td><td>top layer 与 light dismiss；不提供现有 Menu 的 roving focus、submenu 关系和定位合同</td><td>本次不采用；会同时维护两套菜单语义</td></tr>
+  </tbody></table></div>
+
+  <h2>目标状态与边界</h2>
+  <div class="grid">
+    <section class="card"><h3>状态</h3><ul><li><code>profileMenuOpen</code> 是唯一二级 open 状态。</li><li>一级关闭时显式清除二级状态。</li><li>profile 选择沿用 <code>switchProfile</code>。</li></ul></section>
+    <section class="card"><h3>DOM 与层级</h3><ul><li>两级菜单均由 Base UI portal 挂到 body。</li><li>一级 positioner 为 200，二级为 201。</li><li>Base UI 负责 anchor、flip 和碰撞处理。</li></ul></section>
+    <section class="card"><h3>明确排除</h3><ul><li>不修改 Tools 行开关语义。</li><li>不增加依赖或全局 overlay 管理器。</li><li>不改 profile 数据、后端或其他弹层。</li></ul></section>
+  </div>
+  <p>信任边界、隐私、并发和取消均不涉及：本改动只控制本地展示状态，不读写新的持久数据，不发起网络请求。</p>
+  <p>Tools 视觉行使用一个 <code>role="none"</code> 容器，内部放置两个同级且非嵌套的 menuitem：Tools <code>Menu.Item</code> 和齿轮 <code>SubmenuTrigger</code>。鼠标和键盘都能分别激活两个动作；激活 Tools 会切换开关并关闭 profile，激活齿轮只切换 profile。视觉必须保持原布局：Tools 标签在左，右侧先显示齿轮，启用时再在最右侧显示勾；齿轮的 22px 尺寸、14px 图标及其与勾的间距不变。Base UI 会用 <code>sibling-open</code> 原因报告父菜单 item 的 pointer move，本组件只忽略这一种关闭原因；outside press、Escape、item press 和父菜单关闭等其他原因仍由 Base UI 处理。</p>
+
+  <h2>实施 brief 与验收</h2>
+  <p>生产文件：<code>web/components/chat/composer/controls/controls-cluster.tsx</code>、<code>composer.module.css</code>。回归入口：<code>npm run check:composer-tool-profile</code>。兼容要求：Tools 行仍切换 tools；profile 项仍调用现有回调；一级菜单其他项不变。</p>
+  <ul>
+    <li>点击齿轮打开二级菜单，移动鼠标到菜单外不会关闭。</li>
+    <li>二级面板全部绘制在一级面板之上，不受 composer 层叠上下文限制。</li>
+    <li>点击外部、按 Escape、选择 profile、关闭一级菜单均关闭二级菜单。</li>
+    <li>Tools 行保持原视觉顺序：<code>标签 · 齿轮 · 勾</code>，不得改成 <code>标签 · 勾 · 齿轮</code>。</li>
+    <li>不再存在 <code>menuPosition</code>、<code>profileMenuBackdrop</code> 或手写 fixed 坐标。</li>
+  </ul>
+
+  <h2>当前实现与验证证据</h2>
+  <div class="table-wrap"><table><thead><tr><th>项目</th><th>证据</th><th>状态</th></tr></thead><tbody>
+    <tr><td>菜单行为</td><td><code>npm run check:composer-tool-profile</code> 覆盖受控二级菜单、父菜单关闭、层级、键盘和 store 归属</td><td class="ok">通过</td></tr>
+    <tr><td>类型检查</td><td><code>npx tsc --noEmit</code></td><td class="ok">通过</td></tr>
+    <tr><td>实现约束</td><td><code>sibling-open</code> 是唯一被忽略的父菜单关闭原因；outside press、Escape、item press 与父菜单关闭保持有效</td><td class="ok">符合</td></tr>
+    <tr><td>安装版入口</td><td>可见验收使用 <code>/Applications/OpenProgram.app</code>、默认 profile 和端口 <code>18100</code>；本页不以第二实例作为验收依据</td><td class="ok">固定</td></tr>
+    <tr><td>完整前端检查</td><td><code>cd web &amp;&amp; npm run check</code>，包含新增菜单检查</td><td class="ok">通过</td></tr>
+    <tr><td>生产构建</td><td><code>cd web &amp;&amp; npm run build</code>，29 个静态页面生成</td><td class="ok">通过</td></tr>
+    <tr><td>文档</td><td><code>python -m tools.docs_site.checklinks</code>：0 broken links</td><td class="ok">通过</td></tr>
+    <tr><td>视觉约束</td><td>gear 位于 check 左侧，按钮为 22×22px、图标为 14px，并保留既有间距与整行 hover</td><td class="ok">符合</td></tr>
+  </tbody></table></div>
+</main></body></html>

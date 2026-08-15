@@ -25,6 +25,7 @@ import {
   SHORTCUT,
 } from "@/components/chat/top-bar/menu-styles";
 import { useTranslation } from "@/lib/i18n";
+import { isThemeId } from "@/lib/prefs/theme-pref";
 
 type ActionId = "new-tab" | "settings";
 
@@ -60,7 +61,7 @@ function MainMenuOverlayPage() {
   // off documentElement[data-theme].
   useEffect(() => {
     const theme = params.get("theme");
-    if (theme === "dark" || theme === "light") {
+    if (isThemeId(theme)) {
       document.documentElement.dataset.theme = theme;
     }
     document.documentElement.style.background = "transparent";

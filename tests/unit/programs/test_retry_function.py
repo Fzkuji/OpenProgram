@@ -354,6 +354,9 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
     class _RM:
         def _enabled_model_keys(self):
             return ["k"]
+
+        def _resolve_session_provider_model(self, conv):
+            return "minimax-cn-coding-plan", "MiniMax-M3"
     monkeypatch.setattr("openprogram.webui.server._runtime_management", _RM())
 
     class _DB:

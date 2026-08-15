@@ -8,7 +8,12 @@
  * card, then the answer text. While the turn is still streaming with
  * nothing rendered yet, a typing indicator stands in.
  */
-import type { AssistantBlock, ChatMsg, ChatToolCall } from "@/lib/session-store";
+import {
+  useSessionStore,
+  type AssistantBlock,
+  type ChatMsg,
+  type ChatToolCall,
+} from "@/lib/session-store";
 import {
   agentColor,
   agentDisplayName,
@@ -111,6 +116,7 @@ export function AssistantBubble({ msg, verdict }: {
   // Subscribed so the avatar/name pick up edits made in
   // /settings/general → Agent without a reload.
   const profile = useAgentProfile();
+  const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const { text } = useTranslation();
   // Align the side avatar to the first line of text (re-measures as the
   // message grows / blocks expand).
@@ -163,7 +169,20 @@ export function AssistantBubble({ msg, verdict }: {
   // 一张，画在该工具块的紧后面——思考 → 工具调用 → Spawned 卡 → 回复
   //（在哪调用就画在哪）。剩下没配到块的卡（老数据没记 blocks）兜底画
   // 在回复文本之前。
-  const attachFifo = [...(msg.attachCards ?? [])];
+  const attachFifo = (msg.attachCards ?? []).filter((card) =>
+    !card.attach?.manual
+    && (!currentSessionId || !card.attach?.session_id
+      || card.attach.session_id === currentSessionId));
+  const externalAttachCards = (msg.attachCards ?? []).filter((card) =>
+    card.attach?.manual
+    || (!!currentSessionId && !!card.attach?.session_id
+      && card.attach.session_id !== currentSessionId));
+  const spawnNames = (cards: ChatMsg[]) => cards.map((card) =>
+    (card.attach?.label || "").trim()
+    || (card.attach?.head_id || "").slice(0, 8)
+    || text("sub-agent", "子代理"));
+  const spawnHeads = (cards: ChatMsg[]) =>
+    cards.map((card) => card.attach?.head_id);
   // Renders one block in its source-order position.
   const renderBlock = (b: AssistantBlock, idx: number, fifo: ChatMsg[]) => {
     if (b.type === "thinking") {
@@ -360,9 +379,7 @@ export function AssistantBubble({ msg, verdict }: {
                   if (SPAWNING_TOOL_NAMES.has(tname) && cardFifo.length > 0) {
                     const card = cardFifo.shift()!;
                     steps.push(
-                      <div key={`sub_${card.id}`} data-msg-id={card.id}>
-                        <SubAgentStep card={card} />
-                      </div>,
+                      <SubAgentStep key={`sub_${card.id}`} card={card} />,
                     );
                     return;
                   }
@@ -388,21 +405,16 @@ export function AssistantBubble({ msg, verdict }: {
                 // 没配到 spawn 块的卡兜底成子代理行，不丢。
                 cardFifo.forEach((card) => {
                   steps.push(
-                    <div key={`sub_${card.id}`} data-msg-id={card.id}>
-                      <SubAgentStep card={card} />
-                    </div>,
+                    <SubAgentStep key={`sub_${card.id}`} card={card} />,
                   );
                 });
-                const spawnNames = seg.cards.map((c) =>
-                  (c.attach?.label || "").trim()
-                  || (c.attach?.head_id || "").slice(0, 8)
-                  || text("sub-agent", "子代理"));
                 rendered.push(
                   <ExecutionStrip
                     key={`seg_${si}`}
                     streaming={streaming}
+                    subagentHeads={spawnHeads(seg.cards)}
                     label={execStripLabel(
-                      seg.items.map(({ b }) => b), spawnNames, text)}
+                      seg.items.map(({ b }) => b), spawnNames(seg.cards), text)}
                   >
                     {steps}
                   </ExecutionStrip>,
@@ -435,9 +447,23 @@ export function AssistantBubble({ msg, verdict }: {
                   </div>,
                 );
               }
-              // 兜底：blocks 里没记 task 调用块的老数据——剩余的
-              // Spawned 卡仍画在本轮内部（尾部），不丢。
-              attachFifo.forEach((card) => {
+              // 兜底：blocks 里没记 agent/task 调用块的老数据。仍使用
+              // 同一时间线行，不退回 AttachCard，避免刷新前后形态变化。
+              if (attachFifo.length > 0) {
+                rendered.push(
+                  <ExecutionStrip
+                    key="legacy_subagents"
+                    streaming={streaming}
+                    subagentHeads={spawnHeads(attachFifo)}
+                    label={execStripLabel([], spawnNames(attachFifo), text)}
+                  >
+                    {attachFifo.map((card) => (
+                      <SubAgentStep key={`sub_${card.id}`} card={card} />
+                    ))}
+                  </ExecutionStrip>,
+                );
+              }
+              externalAttachCards.forEach((card) => {
                 rendered.push(
                   <div
                     key={`attach_${card.id}`}
@@ -472,9 +498,19 @@ export function AssistantBubble({ msg, verdict }: {
                   ? <ToolsBlock tools={nonAgentic} />
                   : null;
               })()}
-              {/* Spawned 卡：无 blocks 的回退分支里画在工具卡之后、
-                  回复文本之前——与调用发生的位置一致。 */}
-              {attachFifo.map((card) => (
+              {/* 无 blocks 的旧会话仍用普通时间线行，不切回卡片 UI。 */}
+              {attachFifo.length > 0 ? (
+                <ExecutionStrip
+                  streaming={streaming}
+                  subagentHeads={spawnHeads(attachFifo)}
+                  label={execStripLabel([], spawnNames(attachFifo), text)}
+                >
+                  {attachFifo.map((card) => (
+                    <SubAgentStep key={`sub_${card.id}`} card={card} />
+                  ))}
+                </ExecutionStrip>
+              ) : null}
+              {externalAttachCards.map((card) => (
                 <div key={`attach_${card.id}`} className="attach-row" data-msg-id={card.id}>
                   <AttachCard msg={card} />
                 </div>

@@ -1,6 +1,6 @@
 // OpenProgram desktop shell. Plain JS, no bundler.
 const { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell } = require("electron");
-const { spawn } = require("child_process");
+const { execFileSync, spawn } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
 const http = require("http");
@@ -31,6 +31,7 @@ const {
 const WEB_PORT = process.env.OPENPROGRAM_WEB_PORT || "18100";
 const START_URL =
   process.env.OPENPROGRAM_DESKTOP_URL || `http://127.0.0.1:${WEB_PORT}/chat`;
+const UI_ORIGIN = new URL(START_URL).origin;
 const HEALTH_URL = new URL("/healthz", START_URL).toString();
 const WORKER_COMMAND = "openprogram worker start";
 const RECOVERY_INTERVAL_MS = 3_000;
@@ -2446,19 +2447,117 @@ function registerWebTabIpc() {
     }
   });
 
+  // A renderer may choose one of two fixed programs, never an arbitrary
+  // executable/argv pair. The PTY remains in the main process and is keyed by
+  // sender so another window cannot write to or resize it by guessing the id.
   const terminals = new Map();
+  const terminalSenders = new WeakSet();
   const terminalKey = (sender, id) => `${sender.id}:${id}`;
+  const terminalContextForSender = (event) => {
+    const ctx = contextForSender(event);
+    if (!ctx) return null;
+    try {
+      return new URL(event.sender.getURL()).origin === UI_ORIGIN ? ctx : null;
+    } catch (_error) {
+      return null;
+    }
+  };
+  const terminalIdFor = (ctx, preset) => `terminal:${ctx.id}:${preset}`;
+  const terminalIdAllowed = (ctx, id) =>
+    id === terminalIdFor(ctx, "shell") || id === terminalIdFor(ctx, "claude");
+  const terminalDescendants = (rootPid) => {
+    if (process.platform === "win32" || !Number.isInteger(rootPid)) return [];
+    try {
+      const children = new Map();
+      const rows = execFileSync("/bin/ps", ["-axo", "pid=,ppid="], {
+        encoding: "utf8",
+      });
+      for (const line of rows.split("\n")) {
+        const match = line.trim().match(/^(\d+)\s+(\d+)$/);
+        if (!match) continue;
+        const pid = Number(match[1]);
+        const parent = Number(match[2]);
+        const list = children.get(parent) ?? [];
+        list.push(pid);
+        children.set(parent, list);
+      }
+      const descendants = [];
+      const pending = [...(children.get(rootPid) ?? [])];
+      while (pending.length > 0) {
+        const pid = pending.pop();
+        descendants.push(pid);
+        pending.push(...(children.get(pid) ?? []));
+      }
+      return descendants;
+    } catch (_error) {
+      return [];
+    }
+  };
+  const signalTerminal = (entry, signal) => {
+    let groupSignaled = false;
+    if (process.platform !== "win32" && Number.isInteger(entry.process.pid)) {
+      try {
+        process.kill(-entry.process.pid, signal);
+        groupSignaled = true;
+      } catch (_error) {
+        /* fall back to node-pty's root process signal */
+      }
+    }
+    for (const pid of entry.descendantPids ?? []) {
+      try {
+        process.kill(pid, signal);
+      } catch (_error) {
+        /* descendant already exited */
+      }
+    }
+    if (groupSignaled) return;
+    try {
+      entry.process.kill(signal);
+    } catch (_error) {
+      /* process already exited */
+    }
+  };
   const stopTerminal = (sender, id) => {
     const key = terminalKey(sender, id);
-    const child = terminals.get(key);
-    if (!child) return;
+    const entry = terminals.get(key);
+    if (!entry) return;
     terminals.delete(key);
-    if (child.exitCode === null) child.kill("SIGTERM");
+    entry.descendantPids = terminalDescendants(entry.process.pid);
+    entry.killTimer = setTimeout(() => {
+      entry.killTimer = null;
+      if (entry.exited) return;
+      signalTerminal(entry, "SIGKILL");
+    }, 1_000);
+    entry.killTimer.unref?.();
+    signalTerminal(entry, "SIGTERM");
+  };
+  const ensureTerminalSenderCleanup = (sender) => {
+    if (terminalSenders.has(sender)) return;
+    terminalSenders.add(sender);
+    sender.once("destroyed", () => {
+      const prefix = `${sender.id}:`;
+      for (const key of [...terminals.keys()]) {
+        if (key.startsWith(prefix)) stopTerminal(sender, key.slice(prefix.length));
+      }
+      terminalSenders.delete(sender);
+    });
   };
   ipcMain.handle("terminal:start", (event, request) => {
-    const id = typeof request?.id === "string" ? request.id.slice(0, 128) : "";
-    if (!id) return { ok: false, error: "invalid_terminal" };
-    stopTerminal(event.sender, id);
+    const ctx = terminalContextForSender(event);
+    if (!ctx) {
+      return { ok: false, error: "unauthorized_sender" };
+    }
+    const preset = request?.preset;
+    if (preset !== "shell" && preset !== "claude") {
+      return { ok: false, error: "invalid_preset" };
+    }
+    const id = typeof request?.id === "string" && request.id.length <= 128
+      ? request.id
+      : "";
+    if (id !== terminalIdFor(ctx, preset)) {
+      return { ok: false, error: "invalid_terminal" };
+    }
+
     let cwd;
     try {
       cwd = typeof request.cwd === "string" && request.cwd
@@ -2468,42 +2567,101 @@ function registerWebTabIpc() {
     } catch (_error) {
       return { ok: false, error: "invalid_cwd" };
     }
+
+    const cols = Number.isInteger(request.cols)
+      ? Math.min(500, Math.max(20, request.cols))
+      : 80;
+    const rows = Number.isInteger(request.rows)
+      ? Math.min(200, Math.max(5, request.rows))
+      : 24;
     const shellPath = process.env.SHELL && path.isAbsolute(process.env.SHELL)
       ? process.env.SHELL
       : "/bin/zsh";
-    const child = spawn(shellPath, ["-l"], {
-      cwd,
-      env: { ...process.env, TERM: "dumb", NO_COLOR: "1" },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    const args = preset === "claude"
+      ? ["-l", "-i", "-c", "exec claude"]
+      : ["-l"];
     const key = terminalKey(event.sender, id);
-    terminals.set(key, child);
-    const send = (data, done = false) => {
-      if (terminals.get(key) === child && !event.sender.isDestroyed()) {
-        event.sender.send("terminal:data", { id, data: String(data || ""), done });
+    const existing = terminals.get(key);
+    if (existing && existing.preset === preset && existing.cwd === cwd) {
+      if (existing.buffer && !event.sender.isDestroyed()) {
+        event.sender.send("terminal:data", { id, data: existing.buffer });
       }
+      existing.process.resize(cols, rows);
+      return { ok: true, reused: true, pid: existing.process.pid };
+    }
+
+    stopTerminal(event.sender, id);
+    let child;
+    try {
+      child = require("node-pty").spawn(shellPath, args, {
+        name: "xterm-256color",
+        cols,
+        rows,
+        cwd,
+        env: {
+          ...process.env,
+          TERM: "xterm-256color",
+          COLORTERM: "truecolor",
+        },
+      });
+    } catch (_error) {
+      return { ok: false, error: "terminal_start_failed" };
+    }
+
+    const entry = {
+      process: child,
+      preset,
+      cwd,
+      buffer: "",
+      exited: false,
+      killTimer: null,
     };
-    let finished = false;
-    const finish = (message = "") => {
-      if (finished) return;
-      finished = true;
-      if (terminals.get(key) !== child) return;
-      send(message, true);
+    terminals.set(key, entry);
+    ensureTerminalSenderCleanup(event.sender);
+    child.onData((data) => {
+      if (terminals.get(key) !== entry || event.sender.isDestroyed()) return;
+      entry.buffer = `${entry.buffer}${data}`.slice(-1_000_000);
+      event.sender.send("terminal:data", { id, data });
+    });
+    child.onExit(({ exitCode }) => {
+      entry.exited = true;
+      if (entry.killTimer !== null) {
+        clearTimeout(entry.killTimer);
+        entry.killTimer = null;
+      }
+      if (terminals.get(key) !== entry) return;
       terminals.delete(key);
-    };
-    child.stdout.on("data", (data) => send(data));
-    child.stderr.on("data", (data) => send(data));
-    child.once("error", () => finish("Terminal process failed to start.\n"));
-    child.once("close", () => finish());
-    event.sender.once("destroyed", () => stopTerminal(event.sender, id));
-    return { ok: true };
+      if (!event.sender.isDestroyed()) {
+        event.sender.send("terminal:data", { id, data: "", done: true, exitCode });
+      }
+    });
+    return { ok: true, pid: child.pid };
   });
   ipcMain.on("terminal:write", (event, id, data) => {
-    const child = terminals.get(terminalKey(event.sender, String(id || "")));
-    if (!child?.stdin.writable || typeof data !== "string" || data.length > 64_000) return;
-    child.stdin.write(data);
+    const ctx = terminalContextForSender(event);
+    const terminalId = String(id || "");
+    if (!ctx || !terminalIdAllowed(ctx, terminalId)) return;
+    const entry = terminals.get(terminalKey(event.sender, terminalId));
+    if (!entry || typeof data !== "string" || Buffer.byteLength(data, "utf8") > 65_536) return;
+    entry.process.write(data);
   });
-  ipcMain.on("terminal:stop", (event, id) => stopTerminal(event.sender, String(id || "")));
+  ipcMain.on("terminal:resize", (event, id, cols, rows) => {
+    const ctx = terminalContextForSender(event);
+    const terminalId = String(id || "");
+    if (!ctx || !terminalIdAllowed(ctx, terminalId)) return;
+    const entry = terminals.get(terminalKey(event.sender, terminalId));
+    if (!entry || !Number.isInteger(cols) || !Number.isInteger(rows)) return;
+    entry.process.resize(
+      Math.min(500, Math.max(20, cols)),
+      Math.min(200, Math.max(5, rows)),
+    );
+  });
+  ipcMain.on("terminal:stop", (event, id) => {
+    const ctx = terminalContextForSender(event);
+    const terminalId = String(id || "");
+    if (!ctx || !terminalIdAllowed(ctx, terminalId)) return;
+    stopTerminal(event.sender, terminalId);
+  });
 
   ipcMain.on("desktop:open-external", (_e, url) => {
     try {
@@ -2809,7 +2967,7 @@ async function createWindow(options = {}) {
   win.webContents.on("will-navigate", (e, url) => {
     try {
       const dest = new URL(url);
-      if (dest.hostname === "127.0.0.1" || dest.hostname === "localhost") return;
+      if (dest.origin === UI_ORIGIN) return;
       e.preventDefault();
       if (dest.protocol === "http:" || dest.protocol === "https:")
         shell.openExternal(url);

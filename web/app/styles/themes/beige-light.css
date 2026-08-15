@@ -44,14 +44,17 @@
   --shadow-sidebar-right: -4px 0 16px rgba(20, 20, 19, 0.06);
   /* Collapsed `off` effort-pill chip — light-theme counterpart. */
   --effort-off-bg: #e8e6dc;
-  /* Deeper coral in light mode — the shared `#d97757` only reaches
-     2.96:1 as TEXT against the cream background; this darker coral
-     hits 4.01:1 on --bg-primary. Fills that must stay brand-bright
-     use `--accent-fill` (see :root), which does not flip per theme. */
+  /* Warm light uses a deeper coral for both text and filled actions. */
   --accent-orange: #c15f3c;
+  --accent-fill: #c15f3c;
+  --accent-orange-hover: #a94e30;
+  --accent-green: #6e9b76;
+  --accent-red: #c24e42;
   /* Deeper amber for the same reason — `#d4a346` is 2.18:1 as text
      on cream; this one is 3.60:1. */
   --accent-yellow: #a67c2e;
+  --accent-purple: #a371f7;
+  --accent-cyan: #3bc9db;
   /* White-on-coral, same as dark. */
   --primary-foreground: #ffffff;
   /* Soft danger-tier accents — a touch deeper than the dark-theme set
@@ -67,7 +70,7 @@
 
   /* ===== Phase 2 语义 token ===== */
   --selection-bg: color-mix(in srgb, var(--accent-orange) 25%, transparent);
-  --focus-ring: color-mix(in srgb, var(--accent-orange) 50%, transparent);
+  --focus-ring: color-mix(in srgb, var(--text-bright) 45%, transparent);
   --scrim: rgba(0, 0, 0, 0.45);
   --scrim-strong: rgba(0, 0, 0, 0.65);
   /* 浅色主题下 tooltip 反色：深墨底白字（实测 Claude）。 */
@@ -75,8 +78,14 @@
   --text-on-tooltip: #ffffff;
   --composer-ring: rgba(10, 10, 10, 0.1);
   --composer-ring-focus: rgba(10, 10, 10, 0.18);
+  --composer-surface: color-mix(in srgb, var(--bg-input) 96%, transparent);
+  --composer-backdrop-filter: blur(12px);
+  --composer-shadow: 0 0 0 1px var(--composer-ring), var(--shadow-sm);
+  --composer-shadow-focus: 0 0 0 1px var(--composer-ring-focus), var(--shadow-sm);
   --chip-bg: #ffffff;
   --chip-ring: rgba(10, 10, 10, 0.1);
   --meter-fill: #3b82f6;
   --meter-track: var(--bg-tertiary);
+  --provider-icon-bg: var(--bg-tertiary);
+  --dag-ghost: #b9b7ae;
 }

@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Programs source categories</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #171719;
+      --panel: #1e1e21;
+      --panel-2: #252529;
+      --line: #35353a;
+      --text: #f0eff2;
+      --muted: #a8a6ad;
+      --blue: #6897ff;
+      --violet: #a878f4;
+      --orange: #dc7957;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.55 Inter, ui-sans-serif, system-ui, sans-serif;
+    }
+    main { width: min(1080px, calc(100% - 40px)); margin: 44px auto 72px; }
+    h1 { margin: 0 0 8px; font-size: 32px; line-height: 1.15; }
+    h2 { margin: 34px 0 12px; font-size: 18px; }
+    p { max-width: 830px; color: var(--muted); }
+    code { font: 13px/1.5 "JetBrains Mono", ui-monospace, monospace; color: #c9d7ff; }
+    .lead { font-size: 17px; }
+    .contract {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      margin-top: 28px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--panel);
+    }
+    .nav { padding: 12px; border-right: 1px solid var(--line); }
+    .row {
+      display: grid;
+      grid-template-columns: 22px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 34px;
+      padding: 5px 9px;
+      border-radius: 7px;
+      color: #c5c3ca;
+    }
+    .row.active { background: var(--panel-2); color: var(--text); }
+    .icon { color: #bbb9c0; text-align: center; }
+    .count { padding: 0 7px; border-radius: 12px; background: #2d2d32; color: #98969e; font-size: 12px; }
+    .sep { height: 1px; margin: 8px 0; background: var(--line); }
+    .content { padding: 28px; }
+    .content strong { display: block; margin-bottom: 6px; }
+    .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .tag { padding: 5px 9px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); }
+    th, td { padding: 11px 13px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--text); background: var(--panel-2); font-size: 13px; }
+    td { color: var(--muted); }
+    ul { color: var(--muted); }
+    .status { border-left: 3px solid var(--violet); padding: 10px 14px; background: var(--panel); }
+    @media (max-width: 720px) {
+      .contract { grid-template-columns: 1fr; }
+      .nav { border-right: 0; border-bottom: 1px solid var(--line); }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Programs source categories</h1>
+  <p class="lead">The Programs sidebar separates immutable code-source categories from editable tool profiles. Source categories describe where a callable is registered; profiles describe which callables a user wants available together.</p>
+
+  <section class="contract" aria-label="Target Programs sidebar structure">
+    <div class="nav">
+      <div class="row"><span class="icon">▧</span><span>All Programs</span><span class="count">54</span></div>
+      <div class="row active"><span class="icon">⌁</span><span>Functions</span><span class="count">43</span></div>
+      <div class="row"><span class="icon">◎</span><span>Agentic Functions</span><span class="count">8</span></div>
+      <div class="row"><span class="icon">◇</span><span>Applications</span><span class="count">3</span></div>
+      <div class="row"><span class="icon">♡</span><span>Favorites</span><span class="count">4</span></div>
+      <div class="row"><span class="icon">□</span><span>Uncategorized</span><span class="count">1</span></div>
+      <div class="sep"></div>
+      <div class="row"><span class="icon">□</span><span>BUILT-IN</span><span class="count">43</span></div>
+      <div class="row"><span class="icon">□</span><span>FULL</span><span class="count">54</span></div>
+      <div class="row"><span class="icon">□</span><span>research</span><span class="count">6</span></div>
+      <div class="row"><span class="icon">⊞</span><span>New Profile</span><span></span></div>
+    </div>
+    <div class="content">
+      <strong>Functions</strong>
+      <p>Selecting a fixed category filters the existing catalog. It does not edit profile membership and is not a drag-and-drop target.</p>
+      <div class="tags">
+        <span class="tag">source-derived</span>
+        <span class="tag">read-only</span>
+        <span class="tag">existing row style</span>
+        <span class="tag">existing card style</span>
+      </div>
+    </div>
+  </section>
+
+  <h2>Verified current implementation and gap</h2>
+  <table>
+    <thead><tr><th>Current boundary</th><th>Verified behavior</th><th>Gap</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /api/tools</code></td><td>Returns regular non-agentic tools registered from the functions layer.</td><td>The sidebar has no fixed Functions filter and the All Programs count omits these tools.</td></tr>
+      <tr><td><code>GET /api/programs</code></td><td>Returns agentic entries with <code>category="agentic"</code> and application entries with <code>category="app"</code>.</td><td>Both are shown under the same All Programs/profile filter.</td></tr>
+      <tr><td><code>GET /api/tool-profiles</code></td><td>Returns immutable and user-defined named tool sets.</td><td>Profile rows are visually separated, but the rows above them do not describe source types.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Classification contract</h2>
+  <table>
+    <thead><tr><th>Sidebar row</th><th>Canonical evidence</th><th>Items shown</th><th>Mutation</th></tr></thead>
+    <tbody>
+      <tr><td>All Programs</td><td><code>/api/tools</code> + <code>/api/programs</code></td><td>All regular tools, agentic functions, and applications.</td><td>None</td></tr>
+      <tr><td>Functions</td><td><code>/api/tools</code></td><td>Regular non-agentic tools from <code>programs/functions/</code>.</td><td>Global enable switch remains available on each card.</td></tr>
+      <tr><td>Agentic Functions</td><td><code>/api/programs category=agentic</code></td><td>Agentic functions from <code>programs/agentic_functions/</code>.</td><td>Existing favorite, icon, edit, and profile actions remain available.</td></tr>
+      <tr><td>Applications</td><td><code>/api/programs category=app</code></td><td>Installed programs from <code>programs/applications/</code>.</td><td>Existing program actions remain available.</td></tr>
+      <tr><td>Favorites</td><td><code>programs/meta favorites</code></td><td>Favorited agentic functions and applications.</td><td>Existing favorite action.</td></tr>
+      <tr><td>Uncategorized</td><td>Profile membership</td><td>Catalog entries absent from every stored profile.</td><td>Existing profile assignment actions.</td></tr>
+      <tr><td>Rows below divider</td><td><code>/api/tool-profiles</code></td><td>Named tool profiles such as FULL, BUILT-IN, and research.</td><td>Create, rename, delete, and membership actions remain unchanged.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Reference comparison and decisions</h2>
+  <table>
+    <thead><tr><th>Reference</th><th>Relevant model</th><th>Decision here</th></tr></thead>
+    <tbody>
+      <tr><td>OpenProgram registry</td><td>Regular functions and agentic functions register into one callable surface while retaining source-layer metadata.</td><td>Adopt the unified runtime catalog; add read-only source filters only in the management UI.</td></tr>
+      <tr><td>Hermes toolsets</td><td>Named toolsets represent selection, not source ownership.</td><td>Keep tool profiles separate from source categories.</td></tr>
+      <tr><td>Claude Code and OpenClaw references</td><td>Registration and policy decide callable availability; neither reference exposes OpenProgram's three-directory source tree as a Programs sidebar.</td><td>Do not infer source categories from policy, permissions, enabled state, or profile membership.</td></tr>
+    </tbody>
+  </table>
+  <p>Adopted: three fixed rows derived from the two existing endpoints and the existing program category. Modified: All Programs includes both endpoint result sets. Rejected: a new persisted category field, a user-editable category configuration system, source labels inside every card, nested directory rows, and a new tab layout.</p>
+
+  <h2>Behavior, compatibility, and failures</h2>
+  <ul>
+    <li>Fixed source rows are click filters only. Dragging a program onto them must not create or modify a profile.</li>
+    <li>Profile rows remain valid drop targets and retain context-menu behavior.</li>
+    <li>Search applies to the selected category and covers both regular tools and agentic entries.</li>
+    <li>An empty selection renders one empty state only; selecting Functions must not render an agentic-empty message above regular tool cards.</li>
+    <li>Unknown program categories remain in Agentic Functions because <code>/api/programs</code> is the agentic catalog and only <code>category="app"</code> is an application.</li>
+    <li>Fetch cancellation, global enable switches, favorites, icon overrides, profile persistence, and chat launch behavior are unchanged.</li>
+  </ul>
+
+  <h2>Task brief and gate manifest</h2>
+  <p><strong>Production files:</strong> <code>web/components/functions/functions-page.tsx</code> and its existing shared types/presentational files only when required. <strong>Test file:</strong> one runnable Programs category check under <code>web/scripts/</code>. <strong>Excluded:</strong> registry changes, new API fields, profile storage migration, card restyling, tabs, per-directory nested filters, dependencies, and release operations.</p>
+  <p><strong>Acceptance:</strong> the Programs page renders All Programs, Functions, Agentic Functions, Applications, Favorites, and Uncategorized above the existing divider; counts use live data; each fixed category shows only its defined source class; All Programs includes regular tools; profiles remain below the divider and retain mutation behavior; source rows cannot receive drops.</p>
+  <p><strong>Verification:</strong> focused category check in RED and GREEN; TypeScript compile; full <code>npm run check</code>; production build; documentation link check; <code>git diff --check</code>; independent specification review; independent quality review.</p>
+
+  <h2>Implementation status</h2>
+  <div class="status">Implemented in the Programs page with one shared pure filtering module and one runnable acceptance check. The focused RED failed because the fixed Functions source row was absent. The reviewed implementation passes the focused category check, TypeScript compilation, the full frontend check, production build, documentation link check, and diff check. Independent specification and quality reviews both passed after their confirmed test-integrity and reserved-name compatibility findings were repaired.</div>
+</main>
+</body>
+</html>

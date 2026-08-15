@@ -15,7 +15,7 @@ import type { ChatMsg } from "@/lib/session-store";
 
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
-import { getSocket } from "@/lib/runtime-bridge/state";
+import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import {
   type AnimatedNavIconHandle,
   ArrowUpRightIcon,
@@ -39,6 +39,17 @@ export function SpawnedFromCard({ msg }: { msg: ChatMsg }) {
 
   function switchBack() {
     if (!sessionId || !sf || !sf.callerId) return;
+    const state = useSessionStore.getState();
+    const firstReply = (state.messageOrder[sessionId] || [])
+      .map((id) => state.messagesById[id])
+      .find((row) => row?.role === "assistant" && row.calledBy === msg.id)?.id;
+    if (firstReply) {
+      runtimeState._pendingExpandAttach = {
+        head: firstReply,
+        anchor: sf.callerId,
+      };
+      runtimeState._skipScrollToBottom = true;
+    }
     wsSend({
       action: "checkout_branch",
       session_id: sessionId,

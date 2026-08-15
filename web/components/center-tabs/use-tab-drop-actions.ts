@@ -10,7 +10,6 @@
  */
 import {
   findCenterTabGroup,
-  type centerTabStripEntries,
 } from "@/lib/state/center-tab-groups";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import type {
@@ -94,22 +93,5 @@ export function useTabDropActions() {
     return true;
   }
 
-  /** Keyboard Move left / right on a compound's drag handle — the group
-   *  travels as one unit, landing where a drag to that side would. */
-  function moveGroupByKeyboard(
-    entries: ReturnType<typeof centerTabStripEntries>,
-    groupId: string,
-    direction: -1 | 1,
-  ) {
-    const index = entries.findIndex(
-      (entry) => entry.kind === "group" && entry.group.id === groupId,
-    );
-    const target = entries[index + direction];
-    if (!target) return;
-    const targetTabId = target.kind === "group" ? target.group.memberIds[0] : target.tabId;
-    const beforeId = direction < 0 ? targetTabId : targetBeforeId(targetTabId, true);
-    moveGroup(groupId, beforeId);
-  }
-
-  return { targetBeforeId, applyDrop, moveGroupByKeyboard };
+  return { targetBeforeId, applyDrop };
 }

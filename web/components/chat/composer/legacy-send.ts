@@ -57,6 +57,8 @@ export interface ChatAttachment {
   data: string;
   media_type: string;
   filename?: string;
+  /** Internal provenance used by the web backend's path-marker rewrite. */
+  source_path?: string;
 }
 
 interface SendMessageBridgeArgs {
@@ -200,6 +202,7 @@ export function sendChatMessage({
       data: a.data.replace(/^data:[^;]+;base64,/, ""),
       media_type: a.media_type,
       ...(a.filename ? { filename: a.filename } : {}),
+      ...(a.source_path ? { source_path: a.source_path } : {}),
     }));
   }
   // First message of a brand-new conversation: attach the channel

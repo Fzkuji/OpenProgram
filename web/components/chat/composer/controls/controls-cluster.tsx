@@ -9,13 +9,17 @@
  * every composer mode shares the same row, this component only knows
  * the cluster's contents.
  */
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import { Menu } from "@base-ui-components/react/menu";
 import { Paperclip, Settings } from "lucide-react";
 
-import { type AnimatedNavIconHandle } from "@/components/animated-icons";
+import {
+  type AnimatedNavIconHandle,
+  BicepsFlexedIcon,
+} from "@/components/animated-icons";
 import { HoverTip } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
+import { effortLevelColor } from "@/lib/effort-color";
 import { GROUP_LABEL } from "../../top-bar/menu-styles";
 import { AgentBadge, PermissionBadge } from "../../top-bar";
 import { ContextBadge } from "../../context-badge";
@@ -119,8 +123,11 @@ export function ControlsCluster({
 }: ControlsClusterProps) {
   const { text } = useTranslation();
   const plusIconRef = useRef<AnimatedNavIconHandle>(null);
+  const effortIconRef = useRef<AnimatedNavIconHandle>(null);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const anyToolActive =
     toolsEnabled || webSearchEnabled || (fastEnabled && fastSupported) || unattended;
+  const effortColor = effortLevelColor(thinkingOptions, thinking);
 
   return (
     <>
@@ -133,6 +140,7 @@ export function ControlsCluster({
               open={plusMenuOpen}
               onOpenChange={(o) => {
                 setPlusMenuOpen(o);
+                if (!o) setProfileMenuOpen(false);
                 // Opening the plus menu collapses the effort pill (they
                 // shared the bottom row and shouldn't be open at once).
                 if (o) setThinkingMenuOpen(false);
@@ -179,73 +187,83 @@ export function ControlsCluster({
 
                     <Menu.Separator className={styles.plusMenuDivider} />
 
-                    {/* Tools — 行点击 = 开关；勾左边的 ⚙ 点击才弹
-                        "Tool Profile" 子面板（学 claude.ai 环境菜单：
-                        ⚙ 与 ✓ 并排、行为分开）。悬停整行不再飞出子
-                        菜单——触发器只剩小小的 ⚙。 */}
-                    <Menu.SubmenuRoot>
+                    {/* Tools — row click toggles tools; the gear opens a
+                        click-controlled submenu that stays open when the
+                        pointer leaves and closes on outside interaction. */}
+                    <div
+                      className={styles.plusMenuSplitRow}
+                      role="none"
+                      data-tools-active={toolsEnabled || undefined}
+                    >
                       <Menu.Item
-                        className={styles.plusMenuRow}
+                        className={`${styles.plusMenuRow} ${styles.plusMenuPrimary}`}
                         closeOnClick={false}
-                        onClick={() => toggleTools()}
+                        onClick={() => {
+                          toggleTools();
+                          setProfileMenuOpen(false);
+                        }}
                       >
                         <PlusMenuItem
                           active={toolsEnabled}
                           onClick={noop}
                           icon={<ToolsIcon size={16} />}
                           label={text("Tools", "工具")}
-                          trailing={
-                            <Menu.SubmenuTrigger
-                              // 默认 openOnHover 下 base-ui 会 ignoreMouse
-                              // ——鼠标点击被吞掉，⚙ 点了没反应。关掉后
-                              // click 才是开关。
-                              openOnHover={false}
-                              render={
-                                <button
-                                  type="button"
-                                  className={styles.plusMenuGear}
-                                  aria-label={text("Tool profile", "工具配置")}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <Settings size={14} />
-                                </button>
-                              }
-                            />
-                          }
                         />
                       </Menu.Item>
-                      <Menu.Portal>
-                        <Menu.Positioner side="right" align="end" sideOffset={6} style={{ zIndex: 200 }}>
-                          <Menu.Popup
-                            className={styles.plusMenu}
-                            style={POPUP_STATIC_RESET}
+                      <Menu.SubmenuRoot
+                        open={profileMenuOpen}
+                        onOpenChange={(open, { reason }) => {
+                          // Base UI closes submenus when a sibling parent-menu
+                          // item receives mousemove. Pointer movement is not a
+                          // dismissal action for this click-only submenu.
+                          if (open || reason !== "sibling-open") {
+                            setProfileMenuOpen(open);
+                          }
+                        }}
+                      >
+                        <Menu.SubmenuTrigger
+                          className={`${styles.plusMenuRow} ${styles.plusMenuGear}`}
+                          openOnHover={false}
+                          label={text("Tool profile", "工具配置")}
+                          aria-label={text("Tool profile", "工具配置")}
+                        >
+                          <Settings size={14} />
+                        </Menu.SubmenuTrigger>
+                        <Menu.Portal>
+                          <Menu.Positioner
+                            side="right"
+                            align="end"
+                            sideOffset={6}
+                            style={{ zIndex: 201 }}
                           >
-                            {/* Selection submenu (grammar A): GROUP_LABEL
-                                header naming the dimension, plain rows,
-                                check on the selected one. */}
-                            <div className={GROUP_LABEL}>
-                              {text("Tool Profile", "工具配置")}
-                            </div>
-                            {Object.keys(toolProfiles).sort().map((pName) => (
-                              <Menu.Item
-                                key={pName}
-                                className={styles.plusMenuRow}
-                                onClick={() => switchProfile(pName)}
-                              >
-                                <PlusMenuItem
-                                  active={activeProfile === pName}
-                                  onClick={noop}
-                                  icon={null}
-                                  label={pName === "full"
-                                    ? text("All Tools", "全部工具")
-                                    : pName}
-                                />
-                              </Menu.Item>
-                            ))}
-                          </Menu.Popup>
-                        </Menu.Positioner>
-                      </Menu.Portal>
-                    </Menu.SubmenuRoot>
+                            <Menu.Popup
+                              className={styles.plusMenu}
+                              style={POPUP_STATIC_RESET}
+                            >
+                              <div className={GROUP_LABEL}>
+                                {text("Tool Profile", "工具配置")}
+                              </div>
+                              {Object.keys(toolProfiles).sort().map((pName) => (
+                                <Menu.Item
+                                  key={pName}
+                                  className={styles.plusMenuRow}
+                                  onClick={() => switchProfile(pName)}
+                                >
+                                  <PlusMenuItem
+                                    active={activeProfile === pName}
+                                    onClick={noop}
+                                    icon={null}
+                                    label={pName === "full"
+                                      ? text("All Tools", "全部工具")
+                                      : pName}
+                                  />
+                                </Menu.Item>
+                              ))}
+                            </Menu.Popup>
+                          </Menu.Positioner>
+                        </Menu.Portal>
+                      </Menu.SubmenuRoot>
+                    </div>
 
                     {/* Web Search / Fast — toggles that must NOT close the
                         menu, so closeOnClick={false}. */}
@@ -392,6 +410,8 @@ export function ControlsCluster({
                     <button
                       type="button"
                       className={styles.effortText}
+                      onMouseEnter={() => effortIconRef.current?.startAnimation?.()}
+                      onMouseLeave={() => effortIconRef.current?.stopAnimation?.()}
                       // ponytail: the pill ignores its expanded/onToggle
                       // props (internal useState) — a programmatic click
                       // on its own (hidden) collapsed chip is the only
@@ -403,10 +423,20 @@ export function ControlsCluster({
                           ?.querySelector<HTMLElement>(".effort-pill-collapsed")
                           ?.click();
                       }}
-                      // 最高档 = 紫色标识（Claude 的 Ultracode 形制）。
+                      // 常规宽度保持原有文字配色；最高档仍用紫色标识。
                       style={thinking === "max" ? { color: "#8E6BD9" } : undefined}
                     >
-                      {thinking ? thinking[0].toUpperCase() + thinking.slice(1) : ""}
+                      <BicepsFlexedIcon
+                        ref={effortIconRef}
+                        size={14}
+                        className={styles.compactEffortIcon}
+                        // 图标只在窄态显示，因此逐级颜色不会改变常规宽度文字。
+                        style={{ color: thinking === "max" ? "#8E6BD9" : effortColor }}
+                        aria-hidden="true"
+                      />
+                      <span className={styles.effortValue}>
+                        {thinking ? thinking[0].toUpperCase() + thinking.slice(1) : ""}
+                      </span>
                     </button>
                   )}
                   <ThinkingEffortPill
@@ -430,6 +460,7 @@ export function ControlsCluster({
             ) : null}
             <ContextBadge sessionId={bound ?? undefined} />
           </div>
+
     </>
   );
 }

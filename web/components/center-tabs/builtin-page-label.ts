@@ -13,5 +13,6 @@ export function builtinPageLabel(
   if (page === "history") return text("Web history", "网页历史");
   if (page === "bookmarks") return text("Bookmarks", "书签");
   if (page === "terminal") return text("Terminal", "终端");
+  if (page === "claude") return "Claude Code";
   return text("Browser", "浏览器");
 }

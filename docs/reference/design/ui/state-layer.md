@@ -523,6 +523,9 @@ Not yet landed:
 
 ## Related
 
+- [`center-tabs-and-split-layout.html`](center-tabs-and-split-layout.html) — the
+  authoritative model for single and composite split entries, whole-entry
+  activation, persistence, and transfer
 - [`composer-interaction-modes.md`](composer-interaction-modes.md) — how the
   composer arbitrates between idle, fn-form, question, and approval modes
 - [`invariants.md`](invariants.md) — cross-module UI invariants

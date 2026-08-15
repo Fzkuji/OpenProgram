@@ -29,6 +29,14 @@
   --shadow-sidebar-left: 4px 0 20px rgba(0, 0, 0, 0.34);
   --shadow-sidebar-right: -4px 0 20px rgba(0, 0, 0, 0.34);
   --effort-off-bg: #303035;
+  --accent-orange: #6ea8fe;
+  --accent-fill: #3b82f6;
+  --accent-orange-hover: #2563eb;
+  --accent-green: #6e9b76;
+  --accent-red: #c24e42;
+  --accent-yellow: #d4a346;
+  --accent-purple: #a371f7;
+  --accent-cyan: #3bc9db;
   --primary-foreground: #ffffff;
   --success-soft: #82a98a;
   --warning-soft: #ddb25f;
@@ -37,16 +45,22 @@
   --stream-info: var(--accent-yellow);
 
   --selection-bg: color-mix(in srgb, var(--accent-orange) 25%, transparent);
-  --focus-ring: color-mix(in srgb, var(--accent-orange) 50%, transparent);
+  --focus-ring: color-mix(in srgb, var(--text-bright) 50%, transparent);
   --scrim: rgba(0, 0, 0, 0.55);
   --scrim-strong: rgba(0, 0, 0, 0.75);
   --surface-tooltip: #45454b;
   --text-on-tooltip: #ffffff;
   --composer-ring: rgba(255, 255, 255, 0.08);
   --composer-ring-focus: rgba(255, 255, 255, 0.16);
+  --composer-surface: var(--bg-input);
+  --composer-backdrop-filter: none;
+  --composer-shadow: 0 0 0 1px var(--composer-ring);
+  --composer-shadow-focus: 0 0 0 1px var(--composer-ring-focus);
   --chip-bg: var(--bg-tertiary);
   --chip-ring: var(--border-light);
   --meter-fill: #5b9cf8;
   --meter-track: rgba(255, 255, 255, 0.08);
+  --provider-icon-bg: var(--bg-hover);
+  --dag-ghost: #5c5c64;
   color-scheme: dark;
 }

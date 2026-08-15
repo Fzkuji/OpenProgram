@@ -20,12 +20,53 @@ def _db_agent_id(session_id: str) -> str:
     return (default_db().get_session(session_id) or {}).get("agent_id") or _default_agent_id()
 
 
+_INTERNAL_ATTACHMENT_NAMES = {".opdedup.json", ".opsourcepaths.json"}
+
+
 def _safe_attach_name(name: str) -> str:
     """Filesystem-safe basename for a saved attachment."""
     import os
     base = os.path.basename((name or "file").strip()) or "file"
     out = "".join(c if (c.isalnum() or c in "._- ") else "_" for c in base).strip()
-    return out[:120] or "file"
+    out = out[:120] or "file"
+    if out.casefold() in _INTERNAL_ATTACHMENT_NAMES:
+        out = f"attachment-{out.lstrip('.')}"
+    return out
+
+
+def _write_private_json(path, data: dict) -> None:
+    """Atomically replace a private attachment index."""
+    import json
+    import os
+    import tempfile
+
+    fd = -1
+    temp_path = ""
+    try:
+        fd, temp_path = tempfile.mkstemp(
+            dir=path.parent,
+            prefix=f".{path.name}.",
+        )
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            fd = -1
+            json.dump(data, handle, ensure_ascii=False)
+        os.replace(temp_path, path)
+        temp_path = ""
+        os.chmod(path, 0o600)
+    except (OSError, TypeError):
+        pass
+    finally:
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        if temp_path:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
 
 
 # Hard per-file / per-turn caps. Browser uploads are also frontend-capped
@@ -115,7 +156,8 @@ def _count_and_preview(raw: bytes, kind: str):
 
 
 def _inject_mention(text: str, name: str, dest, count, oversize: bool,
-                    size_bytes: int = 0, mime: str = "") -> str:
+                    size_bytes: int = 0, mime: str = "",
+                    source_path: str = "") -> str:
     """Rewrite this file's path-less ``[attachment: name (meta)]`` mention
     to embed the saved absolute path + (page/line) count — or mark it
     oversize. The count goes INSIDE the captured parens group so the
@@ -129,22 +171,46 @@ def _inject_mention(text: str, name: str, dest, count, oversize: bool,
     """
     import re
     from openprogram import attachments as _att
-    pat = re.compile(r"\[attachment:\s*" + re.escape(name) + r"\s*\(([^)\]]*)\)\]")
+    marker_name = _att.safe_marker_text(name)
+    pat = re.compile(
+        r"\[attachment:\s*" + re.escape(marker_name)
+        + r"\s*\(([^)\]]*)\)\]"
+    )
+    if source_path:
+        # Only the current payload's provenance can preserve an existing
+        # marker. A same-name browser upload has no source_path and must still
+        # receive its own saved path.
+        for whole, found_name, found_path in _att.find_markers(text):
+            encoded = _att.JSON_MENTION_RE.fullmatch(whole)
+            if encoded is not None and encoded.group(6):
+                continue
+            if marker_name != found_name or source_path != found_path:
+                continue
+            if oversize or dest is None:
+                return text
+            marker = _att.format_marker(
+                marker_name,
+                source_path,
+                size_bytes,
+                mime=mime,
+                count=count or "",
+                preview_path=dest,
+            )
+            return text.replace(whole, marker, 1)
     if oversize:
         if pat.search(text):
             return pat.sub(
-                lambda m: (f"[attachment: {name} ({m.group(1)}, "
+                lambda m: (f"[attachment: {marker_name} ({m.group(1)}, "
                            f"too large >{MAX_ATTACH_MB}MB, not stored)]"),
                 text, count=1,
             )
-        return (text + f"\n[attachment: {name} "
+        return (text + f"\n[attachment: {marker_name} "
                        f"(too large >{MAX_ATTACH_MB}MB, not stored)]").strip()
-    suffix = f", {count}" if count else ""
     if pat.search(text):
-        return pat.sub(
-            lambda m: f"[attachment: {name} ({m.group(1)}{suffix}) @ {dest}]",
-            text, count=1,
+        marker = _att.format_marker(
+            marker_name, dest, size_bytes, mime=mime, count=count or "",
         )
+        return pat.sub(lambda _match: marker, text, count=1)
     marker = _att.format_marker(name, dest, size_bytes, mime=mime,
                                 count=count or "")
     return (text + "\n" + marker).strip()
@@ -191,12 +257,14 @@ def _persist_attachments(session_id: str, incoming: list, text: str) -> str:
     is what lets the chat render it back.
 
     This is the backend half of the uniform "every file is a path"
-    model: a browser upload only carries bytes + a basename (the
-    sandbox hides the source path), so we materialise the bytes ONCE
-    under ``<session workdir>/attachments/`` — the agent's cwd — and
-    tell the model exactly where. The agent reads it on demand; the
-    file body is never inlined into the prompt. The web UI's chip
-    parser hides the ``@ <path>`` suffix so the bubble reads cleanly.
+    model. A browser upload has no source path, so its bytes are saved
+    under ``<session workdir>/attachments/`` and that generated path is
+    written into the marker. An Electron upload already carries the
+    original path; the stored marker keeps it for the agent and adds the
+    immutable session-copy path used by local previews. The raw-file endpoint
+    therefore stays within its existing readable roots. The agent reads the
+    original marker path on demand; the file body is never inlined into the
+    prompt.
 
     (Files that already live on disk — ``@``-mentions / typed paths —
     skip this entirely: the frontend emits the absolute path directly,
@@ -257,7 +325,10 @@ def _persist_attachments(session_id: str, incoming: list, text: str) -> str:
         # Oversize (per-file + per-turn aggregate): tell the model it was
         # dropped rather than hand it a path to a file that isn't there.
         if len(raw) > MAX_ATTACH_BYTES or (turn_bytes + len(raw)) > MAX_TURN_ATTACH_BYTES:
-            new_text = _inject_mention(new_text, name, None, None, oversize=True)
+            new_text = _inject_mention(
+                new_text, name, None, None, oversize=True,
+                source_path=d.get("source_path") or "",
+            )
             continue
 
         sha = hashlib.sha256(raw).hexdigest()
@@ -298,17 +369,17 @@ def _persist_attachments(session_id: str, incoming: list, text: str) -> str:
 
         kind = _decoded_kind(raw, name)
         count_str, preview = _count_and_preview(raw, kind)
+        raw_source_path = d.get("source_path")
+        source_path = raw_source_path if isinstance(raw_source_path, str) else ""
         new_text = _inject_mention(new_text, name, dest, count_str,
                                    oversize=False, size_bytes=len(raw),
-                                   mime=d.get("media_type") or "")
+                                   mime=d.get("media_type") or "",
+                                   source_path=source_path)
         if preview:
             previews.append(_preview_block(str(dest), preview, count_str, kind))
 
     if index_dirty:
-        try:
-            index_path.write_text(json.dumps(dedup))
-        except OSError:
-            pass
+        _write_private_json(index_path, dedup)
     # Append the one-time head previews after the prose. They are bounded
     # (<=PREVIEW_CAP each, this turn only) and stripped from the bubble by
     # the chip parser, so the user sees a chip while the model gets a look.
@@ -317,10 +388,23 @@ def _persist_attachments(session_id: str, incoming: list, text: str) -> str:
     return new_text
 
 
+def _attachments_for_dispatch(incoming: list) -> list | None:
+    """Keep image blocks and remove the web-only source_path metadata field.
+
+    The path remains in the user-message marker and is intentionally visible
+    to the model; only the duplicate attachment-object metadata is removed.
+    """
+    images = [
+        {key: value for key, value in item.items() if key != "source_path"}
+        for item in incoming if item.get("type") != "document"
+    ]
+    return images or None
+
+
 def _title_from_text(text: str) -> str:
     """Conversation title from the first user message, with attachment
     markers + legacy inline blocks stripped so a truncated
-    ``[attachment: … @ /long/path]`` never leaks into the sidebar.
+    a long path-bearing attachment marker never leaks into the sidebar.
 
     Mirrors the web parser (``user-attachments.tsx``) on the backend so
     the stored title is already clean — the frontend strips markers for
@@ -328,7 +412,9 @@ def _title_from_text(text: str) -> str:
     at 50 chars can sever it, so we clean first, then truncate.
     """
     import re
+    from openprogram import attachments as _attachments
     t = re.sub(r"<attachment-preview[^>]*>.*?</attachment-preview>", "", text, flags=re.S)
+    t = _attachments.strip_markers(t)
     t = re.sub(r"\[attachment:[^\]]*\]", "", t)
     t = re.sub(r"\[attached(?: file)?:[^\]]*\]", "", t)
     t = re.sub(r"<file [^>]*>.*?</file>", "", t, flags=re.S)
@@ -650,8 +736,7 @@ async def handle_chat(ws, cmd: dict):
         except BaseException:
             _s._release_run_reservation(session_id, msg_id)
             raise
-        attachments = [a for a in attachments
-                       if a.get("type") != "document"] or None
+        attachments = _attachments_for_dispatch(attachments)
 
     # Stage 1 (immediate, zero-latency sidebar placeholder): truncate the
     # user's first line into a title the instant the message is sent, so the
@@ -740,7 +825,7 @@ async def handle_chat(ws, cmd: dict):
         raise
 
     # Echo the STORED text back. The composer only knows the path-less
-    # mention it wrote (``@ <abs path>`` is appended above, after the
+    # mention it wrote (the encoded absolute path is appended above, after the
     # bytes hit disk), so an optimistic bubble built from the client's
     # own draft has no path to open. Handing it the final text is what
     # makes an attachment clickable in the turn you sent it, instead of

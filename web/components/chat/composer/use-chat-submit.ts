@@ -21,6 +21,7 @@ import { useCallback } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
 import { enqueueMessage } from "@/lib/state/send-queue";
+import { buildAttachmentEnvelope } from "@/lib/attachment-marker";
 import { expandAtMentions } from "./attach/at-mention";
 import { expandPasteTokens, missingPasteIds } from "./paste/paste-store";
 import { sendChatMessage } from "./legacy-send";
@@ -151,40 +152,18 @@ export function useChatSubmit({
     } catch {
       /* network blip — fall through with raw text */
     }
-    // Attached docs are referenced by PATH, never inlined. Each one's
-    // bytes ride along as a ``type:"document"`` attachment; the backend
-    // saves it under the session workdir and appends " @ <abs path>" to
-    // the mention (see ws_actions/chat.py). We emit the path-less
-    // ``[attachment: …]`` mention here so the optimistic bubble + chip
-    // parser have something to show before the server-side save lands.
-    // (Docs without captured bytes — over the 25 MB cap — are dropped:
-    // there's no way to ship them, and a mention with no backing file
-    // the agent can read would only mislead it.)
-    if (pendingDocs.length > 0) {
-      // Emit a mention for EVERY doc so none vanishes silently. Docs with
-      // captured bytes get the normal path-less mention (backend appends
-      // the @path + page/line count). Docs that couldn't be read (over the
-      // size cap → dataB64 null) get an honest "too large" note instead of
-      // being dropped — the chip still shows, the model is told.
-      const mentions = pendingDocs.map((d) => {
-        const meta = `${d.ext || "file"}, ${Math.max(1, Math.round(d.sizeBytes / 1024))} KB`;
-        return d.dataB64
-          ? `[attachment: ${d.filename} (${meta})]`
-          : `[attachment: ${d.filename} (${meta}, too large — not sent)]`;
-      });
-      if (mentions.length > 0) {
-        expanded = `${mentions.join("\n")}\n\n${expanded}`;
-      }
+    // Attached docs are referenced by PATH, never inlined. Electron files
+    // use the original native path captured at drop/pick time. Plain-browser
+    // files have no source path, so their bytes ride as a document attachment
+    // and the backend appends the saved session-workdir path. Images retain
+    // their multimodal payload and get an original-path marker when available.
+    const { mentions, imagesPayload, docsPayload } = buildAttachmentEnvelope(
+      pendingImages,
+      pendingDocs,
+    );
+    if (mentions.length > 0) {
+      expanded = `${mentions.join("\n")}\n\n${expanded}`;
     }
-    const imagesPayload = pendingImages.map((p) => p.attachment);
-    const docsPayload = pendingDocs
-      .filter((d) => d.dataB64)
-      .map((d) => ({
-        type: "document" as const,
-        data: d.dataB64 as string,
-        media_type: d.mediaType || "application/octet-stream",
-        filename: d.filename,
-      }));
     const attachmentsPayload = [...imagesPayload, ...docsPayload];
     // Delegate to legacy `sendMessage` (chat.js) so the user bubble +
     // welcome-hide + assistant placeholder + isRunning flip all fire

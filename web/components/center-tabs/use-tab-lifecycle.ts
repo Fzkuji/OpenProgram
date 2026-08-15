@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
+import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
 import { useSessionStore } from "@/lib/session-store";
 import { newSession } from "@/lib/runtime-bridge/conversations";
 import { fileDraftKey, fileDrafts } from "@/lib/state/files-shared";
@@ -254,16 +255,18 @@ export function useTabLifecycle({
     );
   }
 
-  function onTabClose(e: React.SyntheticEvent, tab: CenterTab) {
+  function onTabsClose(e: React.SyntheticEvent, tabsToClose: CenterTab[]) {
     e.stopPropagation();
     cancelDrag();
-    if (tab.dirty) {
+    if (tabsToClose.some((tab) => tab.dirty)) {
       if (!window.confirm(text("Discard unsaved changes?", "放弃未保存的修改？")))
         return;
       // Discard confirmed — drop the surviving draft buffer too, so
       // reopening the file starts from disk, not the "discarded" edit.
-      if (tab.kind === "file" && tab.projectId && tab.path)
-        fileDrafts.delete(fileDraftKey(tab.projectId, tab.path));
+      for (const tab of tabsToClose) {
+        if (tab.kind === "file" && tab.projectId && tab.path)
+          fileDrafts.delete(fileDraftKey(tab.projectId, tab.path));
+      }
     }
     // Pin the survivors' widths for a mouse close (Chrome), so the next
     // tab's × stays under the cursor; every other close path reflows now.
@@ -277,8 +280,39 @@ export function useTabLifecycle({
     else releaseFrozenWidths();
     // 先播退场动画（.tabExit 收缩到 0），animationend 再 finishClose 真正
     // 移除 —— 和新建 tab 的挤压动画成镜像。
-    closingInstances.current.set(tab.id, tab);
-    setClosingIds((prev) => new Set(prev).add(tab.id));
+    for (const tab of tabsToClose) closingInstances.current.set(tab.id, tab);
+    setClosingIds((prev) => {
+      const next = new Set(prev);
+      for (const tab of tabsToClose) next.add(tab.id);
+      return next;
+    });
+  }
+
+  const onTabsCloseRef = useRef(onTabsClose);
+  onTabsCloseRef.current = onTabsClose;
+  useEffect(() => {
+    const onDesktopClose = () => {
+      const state = useCenterTabs.getState();
+      if (!state.activeId) return;
+      const group = findCenterTabGroup(state.groups, state.activeId);
+      const ids = group?.memberIds ?? [state.activeId];
+      const tabsToClose = ids.flatMap((id) => {
+        const tab = state.tabs.find((candidate) => candidate.id === id);
+        return tab ? [tab] : [];
+      });
+      if (tabsToClose.length > 0) {
+        onTabsCloseRef.current(
+          { stopPropagation: () => {} } as React.SyntheticEvent,
+          tabsToClose,
+        );
+      }
+    };
+    window.addEventListener("op-desktop-close-tab", onDesktopClose);
+    return () => window.removeEventListener("op-desktop-close-tab", onDesktopClose);
+  }, []);
+
+  function onTabClose(e: React.SyntheticEvent, tab: CenterTab) {
+    onTabsClose(e, [tab]);
   }
 
   /** 退场动画播完后的真正关闭：移出 store + 焦点交给邻居。 */
@@ -310,6 +344,7 @@ export function useTabLifecycle({
     onTabClickFromPointer,
     onOpenNewTab,
     onTabClose,
+    onTabsClose,
     finishClose,
   };
 }

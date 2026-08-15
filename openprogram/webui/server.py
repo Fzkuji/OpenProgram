@@ -466,6 +466,7 @@ def _restore_sessions():
             with _sessions_lock:
                 _sessions[session_id] = {
                     "id": session_id,
+                    "agent_id": data.get("agent_id") or agent_id,
                     "runtime": runtime,
                     "provider_name": provider_override or None,
                     "provider_override": provider_override,

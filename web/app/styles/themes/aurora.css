@@ -54,9 +54,15 @@
   --text-on-tooltip: #f2f0ff;
   --composer-ring: rgba(180, 165, 255, 0.14);
   --composer-ring-focus: rgba(99, 220, 255, 0.4);
+  --composer-surface: var(--bg-input);
+  --composer-backdrop-filter: none;
+  --composer-shadow: 0 0 0 1px var(--composer-ring);
+  --composer-shadow-focus: 0 0 0 1px var(--composer-ring-focus);
   --chip-bg: var(--bg-tertiary);
   --chip-ring: var(--border-light);
   --meter-fill: #63dcff;
   --meter-track: rgba(180, 165, 255, 0.12);
+  --provider-icon-bg: var(--bg-tertiary);
+  --dag-ghost: #666287;
   color-scheme: dark;
 }

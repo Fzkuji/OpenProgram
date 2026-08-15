@@ -14,7 +14,9 @@ Covers the four seams the two-way flow rests on:
 from __future__ import annotations
 
 import base64
+import json
 import re
+import stat
 from pathlib import Path
 
 import pytest
@@ -46,7 +48,7 @@ def state(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_marker_round_trips():
     marker = att.format_marker("shot.png", "/tmp/a/shot.png", 20481)
-    assert marker == "[attachment: shot.png (png, 20 KB) @ /tmp/a/shot.png]"
+    assert marker == '[attachment: shot.png (png, 20 KB) @json "/tmp/a/shot.png"]'
     assert att.find_markers(f"hi\n{marker}") == [
         (marker, "shot.png", "/tmp/a/shot.png")]
 
@@ -57,8 +59,25 @@ def test_marker_uses_mime_when_the_name_has_no_extension():
 
 def test_marker_keeps_the_count_badge_inside_the_parens():
     marker = att.format_marker("spec.pdf", "/p/spec.pdf", 2048, count="500 pages")
-    assert marker == "[attachment: spec.pdf (pdf, 2 KB, 500 pages) @ /p/spec.pdf]"
+    assert marker == ('[attachment: spec.pdf (pdf, 2 KB, 500 pages) '
+                      '@json "/p/spec.pdf"]')
     assert att.find_markers(marker)[0][2] == "/p/spec.pdf"
+
+
+def test_marker_keeps_source_path_and_immutable_preview_path():
+    marker = att.format_marker(
+        "spec.pdf",
+        "/Users/test/spec.pdf",
+        2048,
+        preview_path="/state/sessions/s1/workdir/attachments/spec.pdf",
+    )
+    match = att.JSON_MENTION_RE.fullmatch(marker)
+    assert match is not None
+    assert json.loads(match.group(5)) == "/Users/test/spec.pdf"
+    assert json.loads(match.group(6)) == (
+        "/state/sessions/s1/workdir/attachments/spec.pdf"
+    )
+    assert att.find_markers(marker)[0][2] == "/Users/test/spec.pdf"
 
 
 def test_marker_neutralises_brackets_in_a_filename():
@@ -68,18 +87,29 @@ def test_marker_neutralises_brackets_in_a_filename():
     assert att.find_markers(marker)[0][2] == "/p/x.png"
 
 
+def test_marker_round_trips_path_delimiters_quotes_and_trailing_space():
+    path = '/Users/test/dir]name/report "final".pdf '
+    marker = att.format_marker("report (final).pdf", path, 1024)
+    assert att.find_markers(marker) == [
+        (marker, "report _final_.pdf", path),
+    ]
+    assert att.strip_markers(f"{marker}\n\nexplain").strip() == "explain"
+    from openprogram.webui.ws_actions import chat
+    assert chat._title_from_text(f"{marker}\n\nexplain") == "explain"
+
+
 def test_marker_matches_the_regex_the_web_chip_actually_ships():
     """The chip parser is a separate implementation in TypeScript. Read
     its regex out of the shipped source and run the produced marker
     through it, so the two can't drift apart unnoticed."""
     src = (Path(__file__).resolve().parents[3]
-           / "web/components/chat/messages/user-attachments.tsx").read_text()
-    body = re.search(r"const ATTACHED_MENTION =\s*\n\s*/(.+)/g;", src).group(1)
+           / "web/lib/attachment-marker.ts").read_text()
+    body = re.search(r"const JSON_ATTACHED_MENTION =\s*\n\s*/(.+)/g;", src).group(1)
     ts_re = re.compile(body.replace("(?:", "(?:"))
     marker = att.format_marker("a.png", "/tmp/a.png", 20481)
     m = ts_re.search(marker)
     assert m is not None
-    assert m.group(1) == "a.png" and m.group(5) == "/tmp/a.png"
+    assert m.group(1) == "a.png"
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +217,188 @@ def test_document_mention_is_still_rewritten_in_place(state):
     }], text)
     assert len(att.find_markers(out)) == 1
     assert "2 lines" in out
+
+
+def test_original_local_path_marker_is_not_duplicated(state):
+    """Desktop uploads keep their source path and an immutable preview copy."""
+    from openprogram.webui.ws_actions import chat
+    original = "/Users/test/Research Files/notes.txt"
+    text = att.format_marker("notes.txt", original, 1024, mime="text/plain")
+    text = f"{text}\n\nread this"
+    out = chat._persist_attachments("sess-local-path", [{
+        "type": "document",
+        "data": base64.b64encode(b"hello\nworld\n").decode(),
+        "media_type": "text/plain",
+        "filename": "notes.txt",
+        "source_path": original,
+    }], text)
+    markers = att.find_markers(out)
+    assert len(markers) == 1
+    assert markers[0][2] == original
+    match = att.JSON_MENTION_RE.search(out)
+    assert match is not None and match.group(6)
+    preview = Path(json.loads(match.group(6)))
+    assert preview.read_bytes() == b"hello\nworld\n"
+    assert preview.parent == (
+        state / "sessions" / "sess-local-path" / "workdir" / "attachments"
+    )
+    assert Path.home().resolve() not in att.readable_roots("sess-local-path")
+
+
+def test_same_source_path_versions_keep_distinct_preview_copies(state):
+    from openprogram.webui.ws_actions import chat
+
+    original = "/Users/test/notes.txt"
+    previews = []
+    for body in (b"first version\n", b"second version\n"):
+        out = chat._persist_attachments("sess-versions", [{
+            "type": "document",
+            "data": base64.b64encode(body).decode(),
+            "media_type": "text/plain",
+            "filename": "notes.txt",
+            "source_path": original,
+        }], att.format_marker("notes.txt", original, len(body)))
+        match = att.JSON_MENTION_RE.search(out)
+        assert match is not None and match.group(6)
+        previews.append(Path(json.loads(match.group(6))))
+    assert previews[0] != previews[1]
+    assert previews[0].read_bytes() == b"first version\n"
+    assert previews[1].read_bytes() == b"second version\n"
+
+
+def test_duplicate_source_path_in_one_turn_updates_each_marker_once(state):
+    from openprogram.webui.ws_actions import chat
+
+    original = "/Users/test/notes.txt"
+    marker = att.format_marker("notes.txt", original, 1024)
+    out = chat._persist_attachments("sess-duplicate-source", [{
+        "type": "document",
+        "data": base64.b64encode(body).decode(),
+        "media_type": "text/plain",
+        "filename": "notes.txt",
+        "source_path": original,
+    } for body in (b"first copy\n", b"second copy\n")], f"{marker}\n{marker}")
+    matches = list(att.JSON_MENTION_RE.finditer(out))
+    assert len(matches) == 2
+    previews = [Path(json.loads(match.group(6))) for match in matches]
+    assert previews[0] != previews[1]
+    assert previews[0].read_bytes() == b"first copy\n"
+    assert previews[1].read_bytes() == b"second copy\n"
+
+
+def test_preview_token_text_inside_source_path_is_not_a_preview_field(state):
+    from openprogram.webui.ws_actions import chat
+
+    original = "/Users/test/@previewjson/notes.txt"
+    body = b"content\n"
+    out = chat._persist_attachments("sess-preview-text", [{
+        "type": "document",
+        "data": base64.b64encode(body).decode(),
+        "media_type": "text/plain",
+        "filename": "notes.txt",
+        "source_path": original,
+    }], att.format_marker("notes.txt", original, len(body)))
+    matches = list(att.JSON_MENTION_RE.finditer(out))
+    assert len(matches) == 1
+    assert json.loads(matches[0].group(5)) == original
+    assert Path(json.loads(matches[0].group(6))).read_bytes() == body
+
+
+@pytest.mark.parametrize("reserved", [".opdedup.json", ".opsourcepaths.json"])
+def test_reserved_attachment_names_do_not_overwrite_internal_indexes(
+    state, reserved,
+):
+    from openprogram.webui.ws_actions import chat
+
+    body = b"user payload\n"
+    out = chat._persist_attachments("sess-reserved", [{
+        "type": "document",
+        "data": base64.b64encode(body).decode(),
+        "media_type": "application/json",
+        "filename": reserved,
+    }], f"[attachment: {reserved} (json, 1 KB)]")
+    saved = Path(att.find_markers(out)[0][2])
+    assert saved.name.startswith("attachment-")
+    assert saved.read_bytes() == body
+    index = saved.parent / ".opdedup.json"
+    assert isinstance(json.loads(index.read_text()), dict)
+    assert stat.S_IMODE(index.stat().st_mode) == 0o600
+
+
+def test_same_name_browser_documents_each_get_a_saved_path(state):
+    from openprogram.webui.ws_actions import chat
+    text = ("[attachment: notes.txt (txt, 1 KB)]\n"
+            "[attachment: notes.txt (txt, 1 KB)]")
+    incoming = [{
+        "type": "document",
+        "data": base64.b64encode(body).decode(),
+        "media_type": "text/plain",
+        "filename": "notes.txt",
+    } for body in (b"first\n", b"second\n")]
+    out = chat._persist_attachments("sess-browser-docs", incoming, text)
+    markers = att.find_markers(out)
+    assert len(markers) == 2
+    assert all(Path(marker[2]).is_file() for marker in markers)
+
+
+def test_same_name_browser_images_each_get_a_saved_path(state):
+    from openprogram.webui.ws_actions import chat
+    incoming = [{
+        "type": "image",
+        "data": base64.b64encode(_PNG + suffix).decode(),
+        "media_type": "image/png",
+        "filename": "photo.png",
+    } for suffix in (b"a", b"b")]
+    out = chat._persist_attachments("sess-browser-images", incoming, "compare")
+    markers = att.find_markers(out)
+    assert len(markers) == 2
+    assert len({marker[2] for marker in markers}) == 2
+
+
+def test_local_and_browser_same_name_keep_both_paths(state):
+    from openprogram.webui.ws_actions import chat
+    original = "/Users/test/notes.txt"
+    text = (f"[attachment: notes.txt (txt, 1 KB) @ {original}]\n"
+            "[attachment: notes.txt (txt, 1 KB)]")
+    incoming = [{
+        "type": "document",
+        "data": base64.b64encode(b"local\n").decode(),
+        "media_type": "text/plain",
+        "filename": "notes.txt",
+        "source_path": original,
+    }, {
+        "type": "document",
+        "data": base64.b64encode(b"browser\n").decode(),
+        "media_type": "text/plain",
+        "filename": "notes.txt",
+    }]
+    out = chat._persist_attachments("sess-mixed-docs", incoming, text)
+    markers = att.find_markers(out)
+    assert len(markers) == 2
+    assert markers[0][2] == original
+    assert Path(markers[1][2]).is_file()
+
+
+def test_source_path_metadata_is_removed_before_provider_dispatch():
+    """The message marker still sends the path; only duplicate attachment
+    object metadata is removed before the provider call."""
+    from openprogram.webui.ws_actions import chat
+    image = {
+        "type": "image",
+        "data": "png-data",
+        "media_type": "image/png",
+        "filename": "photo.png",
+        "source_path": "/Users/test/photo.png",
+    }
+    assert chat._attachments_for_dispatch([image]) == [{
+        "type": "image",
+        "data": "png-data",
+        "media_type": "image/png",
+        "filename": "photo.png",
+    }]
+    assert chat._attachments_for_dispatch([{
+        "type": "document", "data": "doc-data", "source_path": "/tmp/doc",
+    }]) is None
 
 
 # ---------------------------------------------------------------------------

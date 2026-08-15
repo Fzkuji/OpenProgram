@@ -51,7 +51,7 @@ function IconFor({ tab }: { tab: CenterTab }) {
     if (tab.page === "files") return <FileText size={15} aria-hidden="true" />;
     if (tab.page === "history") return <History size={15} aria-hidden="true" />;
     if (tab.page === "browser") return <Globe size={15} aria-hidden="true" />;
-    if (tab.page === "terminal") return <TerminalSquare size={15} aria-hidden="true" />;
+    if (tab.page === "terminal" || tab.page === "claude") return <TerminalSquare size={15} aria-hidden="true" />;
     return <Bookmark size={15} aria-hidden="true" />;
   }
   return <MessageCircle size={15} aria-hidden="true" />;

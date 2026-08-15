@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "@xterm/xterm/css/xterm.css";
 import { Providers } from "./providers";
 
 // Google Fonts (next/font/google) was hitting fonts.googleapis.com at

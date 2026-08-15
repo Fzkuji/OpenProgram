@@ -19,6 +19,7 @@
  */
 import { create } from "zustand";
 import {
+  MAX_CENTER_TAB_GROUP_MEMBERS,
   findCenterTabGroup,
   focusCenterTabGroupMember,
   groupCenterTabs,
@@ -41,8 +42,8 @@ import {
   builtinTabId,
   fileTabId,
   hostnameOf,
-  nextNtpId,
   nextBrowserHomeId,
+  nextNtpId,
   sessionTabId,
   webTabId,
 } from "@/lib/state/center-tab-ids";
@@ -191,7 +192,7 @@ export interface CenterTabsState {
   /** Focus-or-create a web tab for `url` (must already be a valid
    *  http(s) URL — run user input through normalizeWebUrl first). */
   openWebTab: (url: string) => void;
-  /** Appends or reuses a web tab for the split pane without changing focus. */
+  /** Appends or reuses a split web tab; an existing owner composite becomes active. */
   openWebTabInSplit: (url: string) => string;
   setSplitWebTab: (id: string | null) => void;
   setSplitRatio: (ratio: number) => void;
@@ -252,9 +253,7 @@ function detachesSplitPair(state: CenterTabsState, tabId: string): boolean {
   const splitId = state.splitWebTabId;
   if (!splitId) return false;
   if (tabId === splitId) return true;
-  const tab = state.tabs.find((candidate) => candidate.id === tabId);
-  return tabId === state.activeId && tab?.kind === "session" &&
-    !!findCenterTabGroup(state.groups, tabId)?.memberIds.includes(splitId);
+  return !!findCenterTabGroup(state.groups, tabId)?.memberIds.includes(splitId);
 }
 
 export const useCenterTabs = create<CenterTabsState>((set) => {
@@ -608,8 +607,53 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       }),
 
     openWebTabInSplit: (url) => {
-      const id = webTabId(url);
+      let id = webTabId(url);
       set((s) => {
+        const ownedGroup = findCenterTabGroup(s.groups, id);
+        if (ownedGroup && !ownedGroup.memberIds.includes(s.activeId ?? "")) {
+          const ownedWeb = s.tabs.find((tab) => tab.id === id && tab.kind === "web");
+          const tabs = ownedWeb?.url === url
+            ? s.tabs
+            : s.tabs.map((tab) => tab.id === id
+              ? {
+                  ...tab,
+                  url,
+                  title: hostnameOf(url),
+                  faviconUrl: undefined,
+                }
+              : tab);
+          const ownerActiveId = ownedGroup.memberIds.find((memberId) =>
+            s.tabs.some((tab) => tab.id === memberId && tab.kind === "session"),
+          ) ?? ownedGroup.focusedId;
+          return commitCenterTabsState(s, {
+            tabs,
+            activeId: ownerActiveId,
+            splitWebTabId: id,
+          });
+        }
+        const activeGroup = s.activeId
+          ? findCenterTabGroup(s.groups, s.activeId)
+          : undefined;
+        const groupedWeb = activeGroup?.memberIds
+          .map((memberId) => s.tabs.find((tab) => tab.id === memberId))
+          .find((tab) => tab?.kind === "web");
+        if (groupedWeb) {
+          id = groupedWeb.id;
+          const tabs = groupedWeb.url === url
+            ? s.tabs
+            : s.tabs.map((tab) => tab.id === groupedWeb.id
+              ? {
+                  ...tab,
+                  url,
+                  title: hostnameOf(url),
+                  faviconUrl: undefined,
+                }
+              : tab);
+          return commitCenterTabsState(s, {
+            tabs,
+            splitWebTabId: groupedWeb.id,
+          });
+        }
         const existing = s.tabs.find((tab) => tab.id === id);
         const tabs = !existing
           ? [...s.tabs, { id, kind: "web" as const, title: hostnameOf(url), url }]
@@ -990,7 +1034,7 @@ export function validateTransferredTabs(
     if (!memberIds) return { ok: false, reason: "invalid" };
     const visibleIds = payload.source.visibleIds ?? memberIds?.slice(0, 2) ?? [];
     const focusedId = payload.source.focusedId ?? visibleIds[0];
-    if (payload.source.kind === "group" && ids.length > 3) {
+    if (payload.source.kind === "group" && ids.length > MAX_CENTER_TAB_GROUP_MEMBERS) {
       return { ok: false, reason: "group-full" };
     }
     const segmentAt = payload.source.memberIndex;
@@ -1023,7 +1067,7 @@ export function validateTransferredTabs(
   }
   if (placement.kind === "merge") {
     const targetGroup = findCenterTabGroup(before.groups, placement.targetTabId);
-    if ((targetGroup?.memberIds.length ?? 1) + ids.length > 3) {
+    if ((targetGroup?.memberIds.length ?? 1) + ids.length > MAX_CENTER_TAB_GROUP_MEMBERS) {
       return { ok: false, reason: "group-full" };
     }
   }

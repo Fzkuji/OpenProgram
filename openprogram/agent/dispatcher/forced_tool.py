@@ -31,6 +31,8 @@ def dispatch_forced_tool_call(
     *,
     agent_id: str = "main",
     source: str = "web",
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
     response_format=None,
     on_event: Optional[EventCallback] = None,
 ) -> dict:
@@ -98,6 +100,8 @@ def dispatch_forced_tool_call(
             anchor_msg_id=anchor_msg_id,
             work_dir=work_dir,
             on_event=on_event,
+            provider=provider,
+            model=model,
             response_format=response_format,
         )
     finally:

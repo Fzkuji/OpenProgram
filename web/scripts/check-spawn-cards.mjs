@@ -175,6 +175,18 @@ const strip = readFileSync(
   new URL("../components/chat/messages/execution-strip.tsx", import.meta.url),
   "utf8",
 );
+const assistantBubble = readFileSync(
+  new URL("../components/chat/messages/assistant-bubble.tsx", import.meta.url),
+  "utf8",
+);
+const messageList = readFileSync(
+  new URL("../components/chat/messages/message-list.tsx", import.meta.url),
+  "utf8",
+);
+const spawnedFromCard = readFileSync(
+  new URL("../components/chat/messages/spawned-from-card.tsx", import.meta.url),
+  "utf8",
+);
 // Scope to ExecutionStrip's own body — `Collapse` and `StepRow` further
 // down the file keep their own unrelated useState(false) toggles.
 const stripBody = strip.slice(
@@ -191,6 +203,51 @@ assert.doesNotMatch(
   stripBody,
   /useState\(false\)/,
   "the old always-collapsed default must be gone",
+);
+
+// Every assistant-owned spawn uses the ordinary timeline row, including
+// legacy/mid-stream records that cannot be paired with a tool block. Returning
+// from the child branch opens the exact strip and highlights that same row.
+assert.match(
+  assistantBubble,
+  /const attachFifo = \(msg\.attachCards \?\? \[\]\)\.filter\(\(card\) =>\s*!card\.attach\?\.manual/s,
+  "same-session spawned agents must enter the timeline-row queue",
+);
+assert.match(
+  assistantBubble,
+  /const externalAttachCards = \(msg\.attachCards \?\? \[\]\)\.filter\(\(card\) =>\s*card\.attach\?\.manual/s,
+  "manual and cross-session attach cards must retain their separate UI",
+);
+assert.doesNotMatch(
+  assistantBubble,
+  /attachFifo\.map\([\s\S]{0,240}<AttachCard\b/,
+  "spawn fallback rows must not render AttachCard",
+);
+assert.match(
+  assistantBubble,
+  /subagentHeads=\{spawnHeads\(/,
+  "each execution strip must expose the sub-agent heads it owns",
+);
+assert.match(
+  strip,
+  /data-head-id=\{dataHeadId\}/,
+  "SubAgentStep must keep the branch head on its timeline-row DOM node",
+);
+assert.match(
+  messageList,
+  /\.tl\[data-subagent-heads~=/,
+  "return navigation must open the exact strip containing the sub-agent",
+);
+assert.match(messageList, /strip\.querySelector\('\.tl-toggle'\)/);
+assert.match(
+  messageList,
+  /\.tl-step\[data-head-id=/,
+  "return navigation must reveal the timeline row rather than an attach card",
+);
+assert.match(
+  spawnedFromCard,
+  /runtimeState\._pendingExpandAttach\s*=\s*\{\s*head:\s*firstReply,\s*anchor:\s*sf\.callerId/s,
+  "the exact-caller return must reveal the same parent timeline row",
 );
 
 console.log("spawn-card checks passed");

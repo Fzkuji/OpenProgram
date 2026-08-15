@@ -176,6 +176,6 @@
   --destructive: var(--accent-red);
   --destructive-foreground: #ffffff;
   --input: var(--bg-input);
-  --ring: var(--accent-blue);
+  --ring: var(--focus-ring);
   --radius-lg: 12px;
 }

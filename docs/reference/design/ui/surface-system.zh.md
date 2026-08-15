@@ -28,6 +28,10 @@ panel          slightly lifted greyish   chat stream, settings
 
 ## 各表面的交互语言
 
+鼠标操作任何按钮时都不绘制外部焦点圈。键盘聚焦普通按钮时只轻微提高亮度，
+不使用 outline 或 box-shadow。顶部 `role="tab"` 是唯一例外：它使用当前主题的
+`--focus-ring`，深色主题更亮，浅色主题更深。
+
 ### Deep 表面（侧边栏）
 
 deep 表面上的组件是**列表行**——会话项、分支条目、

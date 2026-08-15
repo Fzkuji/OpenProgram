@@ -6,17 +6,12 @@
  */
 
 import { useSessionStore } from "@/lib/session-store";
-import { marked as npmMarked } from "marked";
+import { escHtml, renderMathInChat } from "./markdown-render";
+
+export { escHtml, renderMathInChat, renderMd, sanitizeHtml } from "./markdown-render";
 
 /** Module-local flag replacing the old `window.__stickListenerInstalled`. */
 let stickListenerInstalled = false;
-
-export function escHtml(s: unknown): string {
-  if (typeof s !== "string") s = String(s ?? "");
-  const div = document.createElement("div");
-  div.textContent = s as string;
-  return div.innerHTML;
-}
 
 export function escAttr(s: unknown): string {
   if (typeof s !== "string") s = String(s ?? "");
@@ -31,101 +26,6 @@ export function escAttr(s: unknown): string {
 export function truncate(s: string, len: number): string {
   if (!s) return "";
   return s.length > len ? s.slice(0, len - 3) + "..." : s;
-}
-
-/** Tags dropped whole (contents included) when they appear in rendered
- *  markdown. `<script>` inserted via innerHTML never executes, but the
- *  rest of these do their damage without a parser run. */
-const DROP_TAGS = new Set([
-  "SCRIPT", "IFRAME", "OBJECT", "EMBED", "LINK", "META", "BASE", "FORM",
-  "STYLE", "NOSCRIPT", "TEMPLATE",
-]);
-
-/** Attribute values that may carry a URL. Anything resolving to a
- *  script-ish scheme is stripped. */
-const URL_ATTRS = new Set(["href", "src", "xlink:href", "action", "formaction"]);
-
-const SAFE_URL = /^(?:https?:|mailto:|tel:|data:image\/(?:png|jpe?g|gif|webp|svg\+xml);|#|\/|\.{0,2}\/)/i;
-
-/** Strip anything executable out of parsed markdown.
- *
- *  marked does NOT sanitize: raw HTML in the source passes straight to
- *  the DOM. The threat is not the user typing `<script>` at themselves —
- *  it is content the model relays from a tool: a fetched web page, a repo
- *  file, an MCP result, an inbound Discord/Telegram message. Any of those
- *  reaching a bubble would run `<img onerror>`, `<svg onload>` or
- *  `<iframe src=javascript:>`.
- *
- *  Parsing into a detached template means nothing loads or executes while
- *  we inspect it, and we walk the real DOM rather than regexing HTML —
- *  attribute-level injection is exactly what a tag-level filter misses. */
-export function sanitizeHtml(html: string): string {
-  if (typeof document === "undefined") return html;
-  const tpl = document.createElement("template");
-  tpl.innerHTML = html;
-  const walk = (root: ParentNode): void => {
-    for (const el of Array.from(root.querySelectorAll("*"))) {
-      if (DROP_TAGS.has(el.tagName)) {
-        el.remove();
-        continue;
-      }
-      for (const attr of Array.from(el.attributes)) {
-        const name = attr.name.toLowerCase();
-        // Every on* handler, plus any URL attribute pointing at a
-        // scheme that can execute (javascript:, vbscript:, data:text/html).
-        if (name.startsWith("on")) {
-          el.removeAttribute(attr.name);
-          continue;
-        }
-        if (URL_ATTRS.has(name) && !SAFE_URL.test(attr.value.trim())) {
-          el.removeAttribute(attr.name);
-        }
-      }
-    }
-  };
-  walk(tpl.content);
-  return tpl.innerHTML;
-}
-
-export function renderMd(s: unknown): string {
-  if (typeof s !== "string") s = String(s ?? "");
-  let str = s as string;
-  const markdown = window.marked ?? npmMarked;
-  const mathBlocks: string[] = [];
-  const stash = (m: string): string => {
-    mathBlocks.push(m);
-    return "%%MATH" + (mathBlocks.length - 1) + "%%";
-  };
-  str = str.replace(/\$\$([\s\S]*?)\$\$/g, stash);
-  str = str.replace(/\\\[([\s\S]*?)\\\]/g, stash);
-  str = str.replace(/\\\(([\s\S]*?)\\\)/g, stash);
-  str = str.replace(/\$([^$\n]+?)\$/g, stash);
-  // Sanitize BEFORE restoring math: the placeholders are inert text, so
-  // the LaTeX source can't be mangled by the strip, and KaTeX renders
-  // from the original string afterwards.
-  let html = sanitizeHtml(markdown.parse(str, { breaks: true }) as string);
-  for (let i = 0; i < mathBlocks.length; i++) {
-    html = html.replace("%%MATH" + i + "%%", mathBlocks[i]);
-  }
-  return '<span class="md-rendered">' + html + "</span>";
-}
-
-export function renderMathInChat(): void {
-  const renderMath = window.renderMathInElement;
-  if (typeof renderMath !== "function") return;
-  document.querySelectorAll<HTMLElement>(".md-rendered").forEach((el) => {
-    if (el.dataset.mathRendered) return;
-    renderMath(el, {
-      delimiters: [
-        { left: "$$", right: "$$", display: true },
-        { left: "$", right: "$", display: false },
-        { left: "\\[", right: "\\]", display: true },
-        { left: "\\(", right: "\\)", display: false },
-      ],
-      throwOnError: false,
-    });
-    el.dataset.mathRendered = "1";
-  });
 }
 
 let stickToBottom = true;

@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 const windowIdArgument = process.argv.find((argument) =>
   argument.startsWith("--openprogram-window-id="),
@@ -10,6 +10,10 @@ const windowId = windowIdArgument
 contextBridge.exposeInMainWorld("openprogramDesktop", {
   isDesktop: true,
   windowId,
+  // Electron removed the renderer's legacy File.path property. This is the
+  // supported path boundary for a File explicitly selected or dropped by
+  // the user; it does not expose general filesystem access to the renderer.
+  getPathForFile: (file) => webUtils.getPathForFile(file),
   openExternal: (url) => ipcRenderer.send("desktop:open-external", url),
   // Close this window (Chrome parity: closing the last tab closes the window).
   closeWindow: () => ipcRenderer.send("window:close-self"),
@@ -68,6 +72,7 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
   terminal: {
     start: (request) => ipcRenderer.invoke("terminal:start", request),
     write: (id, data) => ipcRenderer.send("terminal:write", id, data),
+    resize: (id, cols, rows) => ipcRenderer.send("terminal:resize", id, cols, rows),
     stop: (id) => ipcRenderer.send("terminal:stop", id),
     onData: (cb) => {
       const listener = (_event, payload) => cb(payload);

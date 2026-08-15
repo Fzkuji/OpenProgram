@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenProgram · Composer 底部控制栏响应式设计</title>
+<style>
+  :root { color-scheme:dark; --bg:#11141a; --panel:#181d26; --line:#303a4a;
+    --text:#dce3ec; --muted:#96a1b1; --blue:#72a8ff; --green:#55d69c;
+    --amber:#f0c562; --mono:ui-monospace,SFMono-Regular,Menlo,monospace }
+  * { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--text);
+    font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif }
+  main { max-width:1040px; margin:auto; padding:42px 28px 80px }
+  h1 { margin:0 0 8px; font-size:29px } h2 { margin:38px 0 12px; padding-top:15px;
+    border-top:1px solid var(--line); font-size:20px } h3 { margin:0 0 6px; font-size:15px }
+  p { margin:8px 0 } code { padding:1px 5px; border:1px solid #2b3544;
+    border-radius:5px; background:#0d1015; font-family:var(--mono); font-size:.91em }
+  a { color:var(--blue) } .sub { color:var(--muted) } .lead,.card,.table-wrap,.demo {
+    border:1px solid var(--line); border-radius:11px; background:var(--panel) }
+  .lead { margin-top:20px; padding:15px 17px; border-left:4px solid var(--blue) }
+  .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px }
+  .card { padding:14px 15px } ul,ol { margin:6px 0; padding-left:20px }
+  .table-wrap { overflow:auto } table { width:100%; border-collapse:collapse }
+  th,td { padding:9px 11px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top }
+  th { color:#cbd5e3 } tr:last-child td { border-bottom:0 }
+  .demo { display:grid; grid-template-columns:1fr auto; gap:8px; margin-top:12px; padding:14px }
+  .cluster { display:flex; align-items:center; gap:8px; min-width:0 }
+  .cluster:last-child { justify-content:flex-end; gap:12px }
+  .control { display:inline-flex; align-items:center; gap:5px; height:24px; padding:0 6px;
+    border-radius:5px; background:#232a35; white-space:nowrap }
+  .icon { display:inline-grid; place-items:center; width:16px; height:16px; color:var(--blue) }
+  .compact .label { display:none } .compact .control { width:24px; padding:0; justify-content:center }
+  .ok { color:var(--green) } .pending { color:var(--amber) }
+  @media(max-width:760px) { .grid { grid-template-columns:1fr } .demo { grid-template-columns:1fr }
+    .cluster:last-child { justify-content:flex-start } }
+</style>
+</head>
+<body><main>
+  <h1>Composer 底部控制栏响应式设计</h1>
+  <p class="sub">范围：聊天输入框下方的 permission、more、active tools、chat model、execution model、effort 和 context 控件。</p>
+  <div class="lead">控制栏按 composer 自身可用宽度响应，而不是按窗口宽度响应。正常宽度显示图标和文字；窄到既有文字会互相覆盖时，permission、两个 model 和 effort 只保留可点击图标。菜单、当前值、键盘操作、tooltip 和 accessible name 保持不变。</div>
+
+  <h2>当前实现与缺口</h2>
+  <p><code>.composer-bottom-row</code> 已声明 <code>container-type:inline-size</code>，因此 split pane 可以按自己的实际宽度响应。当前左右 cluster 虽然允许内部横向滚动，但 permission、两个模型和 effort 的文字仍设置为不可换行、不可收缩。分屏缩窄后，flex 会压缩 cluster，最终出现文本截断、控件覆盖或整个 execution model 触发器不可见。</p>
+  <p>现有组件已经提供四类互异图标：Shield 表示权限，Message 表示 chat model，Terminal 表示 execution model，Biceps 表示 effort。所有触发器已经具备 Popover/Menu、tooltip 或 accessible name，因此不新增图标组件和菜单。</p>
+
+  <h2>参考与选择</h2>
+  <div class="table-wrap"><table><thead><tr><th>参考</th><th>适用能力</th><th>采用方式</th></tr></thead><tbody>
+    <tr><td><a href="https://www.w3.org/TR/css-contain-3/">W3C CSS Containment Level 3</a></td><td><code>@container</code> 根据组件容器尺寸控制后代样式，不依赖 viewport。</td><td class="ok">采用现有 <code>.composer-bottom-row</code> 容器；split pane 与普通会话共用同一规则。</td></tr>
+    <tr><td><a href="https://www.w3.org/WAI/ARIA/apg/practices/names-and-descriptions/">WAI accessible names</a></td><td>隐藏可见文字时，交互控件仍需保留可计算的名称。</td><td class="ok">沿用现有 tooltip、Popover trigger 和标签；视觉隐藏不删除 DOM 语义。</td></tr>
+    <tr><td>横向滚动</td><td>保留任意长度的文字，但会让部分设置入口离开当前可见范围。</td><td>保留为极窄宽度的后备；不作为主要响应方式。</td></tr>
+    <tr><td>换成两行</td><td>全部文字可见，但会改变 composer 高度并影响 transcript 底部预留。</td><td>拒绝；本任务保持单行。</td></tr>
+  </tbody></table></div>
+
+  <h2>目标显示</h2>
+  <div class="demo" aria-label="正常宽度示意">
+    <div class="cluster"><span class="control"><span class="icon">◇</span><span class="label">Ask permissions</span></span><span class="control">＋</span></div>
+    <div class="cluster"><span class="control"><span class="icon">◯</span><span class="label">Chat model</span></span><span class="control"><span class="icon">〉_</span><span class="label">Execution model</span></span><span class="control"><span class="icon">⌁</span><span class="label">Medium</span></span><span class="control">◌</span></div>
+  </div>
+  <div class="demo compact" aria-label="窄宽度示意">
+    <div class="cluster"><span class="control"><span class="icon">◇</span><span class="label">Ask permissions</span></span><span class="control">＋</span></div>
+    <div class="cluster"><span class="control"><span class="icon">◯</span><span class="label">Chat model</span></span><span class="control"><span class="icon">〉_</span><span class="label">Execution model</span></span><span class="control"><span class="icon">⌁</span><span class="label">Medium</span></span><span class="control">◌</span></div>
+  </div>
+
+  <h2>控制按钮 surface 层级</h2>
+  <p>上方 environment chips 使用填充与边缘层级，底部 controls 则只有 20px 高。底部 permission、more、active tools、chat model、execution model、effort 与 context 只复用主题级 <code>--chip-bg</code>，形成始终可见的浅色填充；常态 surface 不新增 border、内描边或外部阴影，避免压缩小控件的内部视觉空间。既有 hover 前景色和键盘 <code>focus-visible</code> 指示保持不变。</p>
+  <div class="table-wrap"><table><thead><tr><th>状态</th><th>surface</th><th>保持不变</th></tr></thead><tbody>
+    <tr><td>常态</td><td><code>background:var(--chip-bg)</code>；computed border 为 0、shadow 为 none</td><td>20px 高度、5px 圆角、图标与文字颜色</td></tr>
+    <tr><td>hover / open</td><td>在 <code>--chip-bg</code> 上混入 8% <code>--text-bright</code></td><td>原菜单、tooltip、动画、既有 hover 前景色与 effort 等级色</td></tr>
+    <tr><td>窄态</td><td>与常态同一 surface，不因文字视觉隐藏而改变</td><td>四个核心触发器仍为 20px 图标按钮</td></tr>
+  </tbody></table></div>
+
+  <div class="grid">
+    <section class="card"><h3>收缩优先级</h3><ol><li>在 <code>.composer-bottom-row ≤ 560px</code> 时视觉隐藏四类文字。</li><li>各图标触发器保持 20px 控件尺寸和原顺序。</li><li>active tool chips 与 context ring 本来就是图标，不改变。</li></ol></section>
+    <section class="card"><h3>交互与无障碍</h3><ul><li>点击图标打开原菜单。</li><li>chat 与 execution 使用不同图标。</li><li>effort 图标颜色继续反映当前级别。</li><li>focus、tooltip 和 accessible name 不随文字隐藏而消失。</li></ul></section>
+    <section class="card"><h3>边界</h3><ul><li>不改模型、权限和 effort 状态。</li><li>不新增断点监听、ResizeObserver 或依赖。</li><li>不换行、不隐藏整个控件。</li><li>不调整 composer 高度和 splitRatio。</li></ul></section>
+  </div>
+
+  <h2>实施 brief 与验收</h2>
+  <p>生产文件限定为 <code>web/components/chat/composer/composer.module.css</code>、<code>controls/controls-cluster.tsx</code>、<code>controls/thinking-effort-pill.tsx</code> 和纯函数 <code>web/lib/effort-color.ts</code>。纯函数只抽取既有 effort 逐级颜色计算，让原 pill 与窄宽度图标使用同一来源。回归入口使用现有 <code>npm --prefix web run check:chat-ui</code>。不修改 Popover、Menu、provider、session store 或提交逻辑。</p>
+  <ol>
+    <li>public-entry RED 必须证明 <code>.composer-bottom-row ≤ 560px</code> 时 permission、chat model、execution model 和 effort 的文字均视觉隐藏。</li>
+    <li>同一规则必须证明四个触发器的图标仍显示；不得使用 <code>display:none</code> 隐藏完整 badge 或 effort host。至少两个非 <code>max</code> effort 级别必须生成不同图标颜色。</li>
+    <li>默认安装版在 split pane 中把 divider 向左拖到触发阈值后，右侧四个设置入口和左侧 permission/more 均可见、无重叠。</li>
+    <li>分别点击 permission、chat model、execution model 和 effort 图标，原菜单或面板正常展开。</li>
+    <li>把 pane 拉宽超过阈值后文字恢复；重新选择 split 和刷新不改变该行为。</li>
+    <li>底部所有可见控制按钮在未 hover 时均有非透明的 <code>--chip-bg</code> surface，computed border 为 0 且 shadow 为 none；hover 或菜单展开时背景必须比常态更明显。键盘 <code>focus-visible</code> 指示不属于常态边框，继续保留。</li>
+  </ol>
+
+  <h2>实现状态</h2>
+  <div class="table-wrap"><table><thead><tr><th>项目</th><th>状态</th></tr></thead><tbody>
+    <tr><td>设计与任务边界</td><td class="ok">完成</td></tr>
+    <tr><td>public-entry RED / GREEN</td><td class="ok">完成：静态入口先因缺少窄态 effort 图标失败，实施后通过；真实 App E2E 覆盖 700px 与 360px 两种容器宽度。</td></tr>
+    <tr><td>specification review / quality review</td><td class="ok">完成：规格审查与修复后的独立质量审查均通过。</td></tr>
+    <tr><td>完整检查与默认安装版可见验收</td><td class="ok">完成：Web 全量检查、TypeScript、构建、desktop webtab/transfer、单元测试和默认安装版 CDP 验收均通过。</td></tr>
+    <tr><td>底部控制按钮常态 surface</td><td class="ok">完成：常态仅使用 <code>--chip-bg</code> 填充，不增加边框或内描边；真实 App computed style 验证 border 为 0、shadow 为 none，hover/open 仅增强背景。</td></tr>
+  </tbody></table></div>
+  <p class="sub">可见验收使用实际 <code>/Applications/OpenProgram.app</code>、默认 <code>18100</code> 页面和 <code>9223</code> CDP。测试操作真实 permission、more、active tool、chat model、execution model、effort 与 context 触发器，确认常态无边框、hover/open 背景增强、窄态无重叠且菜单可打开，并在结束时关闭菜单、恢复焦点与原始页面样式。</p>
+</main></body></html>

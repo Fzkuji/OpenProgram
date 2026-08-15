@@ -3,21 +3,17 @@
 /**
  * /programs — Programs catalog page.
  *
- * No built-in categories: every entry is "a function". Organisation is
- * entirely user-driven — built-in folders (All / Favorites /
- * Uncategorized) + user folders with rename / delete; drag-and-drop
- * into folders; favourites toggle; per-function flat-icon override
- * (right-click → Change Icon…); search; sort; grid/list view toggle.
+ * Fixed source categories mirror openprogram/programs/{functions,
+ * agentic_functions,applications}; named profiles remain user-managed.
+ * Profiles support rename/delete and drag-and-drop membership; the fixed
+ * source categories are read-only filters.
  */
 import {
-  cloneElement,
-  isValidElement,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ReactElement,
 } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./functions-page.module.css";
@@ -28,12 +24,14 @@ import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
 import { useFunctions } from "@/lib/state/functions-store";
 import {
-  type AnimatedNavIconHandle,
+  BotIcon,
+  BoxesIcon,
   FileTextIcon,
   FolderOpenIcon,
   FolderPlusIcon,
   FoldersIcon,
   HeartIcon,
+  WrenchIcon,
 } from "@/components/animated-icons";
 import { CustomSelect } from "./custom-select";
 import { CtxMenu, type CtxItem, type CtxMenuState } from "./ctx-menu";
@@ -45,6 +43,13 @@ import { getLastChatPath } from "@/lib/last-chat-path";
 import { setPendingRunFunction } from "@/lib/use-pending-run-function";
 import { jsonFetch } from "@/lib/net/fetch-client";
 import type { FunctionInfo, FunctionsMeta } from "./types";
+import {
+  matchesProgramSearch,
+  profileSelection,
+  programsForSelection,
+  selectionProfileName,
+  toolsForSelection,
+} from "./program-source-categories";
 
 export function FunctionsPage() {
   const { t, text, locale } = useTranslation();
@@ -67,6 +72,10 @@ export function FunctionsPage() {
   const [iconPickerFor, setIconPickerFor] = useState<string | null>(null);
   const [tools, setTools] = useState<{ name: string; description: string; disabled?: boolean }[]>([]);
   const draggedRef = useRef<string | null>(null);
+  const selectedProfileName = selectionProfileName(profile);
+  const selectProfileName = useCallback((name: string | null) => {
+    setProfile(name === null ? "__all__" : profileSelection(name));
+  }, []);
 
   // Initial data load (functions list + saved meta). ``signal`` is
   // optional so the manual "refresh" callers (if any are added later)
@@ -181,19 +190,11 @@ export function FunctionsPage() {
   }
 
   function getFunctionsInProfile(id: string): FunctionInfo[] {
-    if (id === "__all__") return functions;
-    if (id === "__uncategorized__") {
-      const assigned = new Set<string>();
-      for (const k of Object.keys(meta.profiles))
-        for (const n of meta.profiles[k] || []) assigned.add(n);
-      return functions.filter((p) => !assigned.has(p.name));
-    }
-    if (id === "__favorites__") {
-      const fav = new Set(meta.favorites);
-      return functions.filter((p) => fav.has(p.name));
-    }
-    const arr = new Set(meta.profiles[id] || []);
-    return functions.filter((p) => arr.has(p.name));
+    return programsForSelection(id, functions, meta.favorites, meta.profiles);
+  }
+
+  function getToolsInProfile(id: string) {
+    return toolsForSelection(id, tools, meta.profiles);
   }
 
   function formatDate(ts?: number): string {
@@ -216,11 +217,7 @@ export function FunctionsPage() {
     let arr = getFunctionsInProfile(profile);
     const q = search.toLowerCase();
     if (q) {
-      arr = arr.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          (p.description || "").toLowerCase().includes(q),
-      );
+      arr = arr.filter((program) => matchesProgramSearch(program, q));
     }
     if (filter === "favorites") {
       const fav = new Set(meta.favorites);
@@ -232,6 +229,14 @@ export function FunctionsPage() {
     return arr;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [functions, meta, profile, search, filter, sort]);
+
+  const visibleTools = useMemo(() => {
+    if (filter === "favorites") return [];
+    return getToolsInProfile(profile)
+      .filter((tool) => matchesProgramSearch(tool, search))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tools, meta.profiles, profile, search, filter]);
 
   // ---- actions --------------------------------------------------------
   // Return to the conversation the user came from (not a blank /chat),
@@ -290,7 +295,7 @@ export function FunctionsPage() {
     createProfile,
     renameProfile,
     applyIcon,
-  } = useProfileMeta(meta, saveMeta, profile, setProfile);
+  } = useProfileMeta(meta, saveMeta, selectedProfileName, selectProfileName);
 
   // ---- DnD ------------------------------------------------------------
   function onProgramDragStart(e: React.DragEvent, name: string) {
@@ -312,15 +317,7 @@ export function FunctionsPage() {
     const name = draggedRef.current;
     draggedRef.current = null;
     if (!name) return;
-    if (
-      target === "__all__" ||
-      target === "__uncategorized__" ||
-      target === "__favorites__"
-    ) {
-      moveToProfile(name, null);
-    } else {
-      moveToProfile(name, target);
-    }
+    moveToProfile(name, target);
   }
 
   // ---- Context menus --------------------------------------------------
@@ -405,17 +402,35 @@ export function FunctionsPage() {
 
   // ---- Render ---------------------------------------------------------
   const existingNames = useMemo(
-    () => new Set(functions.map((p) => p.name)),
-    [functions],
+    () => new Set([...functions.map((p) => p.name), ...tools.map((tool) => tool.name)]),
+    [functions, tools],
   );
   const liveCount = (names: string[] | undefined) =>
     (names || []).filter((n) => existingNames.has(n)).length;
-  const builtinFolders = [
+  const sourceFolders = [
     {
       id: "__all__",
       name: text("All Programs", "全部程序"),
       icon: <FileTextIcon size={16} />,
-      count: functions.length,
+      count: functions.length + tools.length,
+    },
+    {
+      id: "__functions__",
+      name: text("Functions", "函数"),
+      icon: <WrenchIcon size={16} />,
+      count: tools.length,
+    },
+    {
+      id: "__agentic_functions__",
+      name: text("Agentic Functions", "Agentic 函数"),
+      icon: <BotIcon size={16} />,
+      count: functions.filter((p) => p.category !== "app").length,
+    },
+    {
+      id: "__applications__",
+      name: text("Applications", "应用"),
+      icon: <BoxesIcon size={16} />,
+      count: functions.filter((p) => p.category === "app").length,
     },
     {
       id: "__favorites__",
@@ -427,7 +442,9 @@ export function FunctionsPage() {
       id: "__uncategorized__",
       name: text("Uncategorized", "未分类"),
       icon: <FolderOpenIcon size={16} />,
-      count: getFunctionsInProfile("__uncategorized__").length,
+      count:
+        getFunctionsInProfile("__uncategorized__").length +
+        getToolsInProfile("__uncategorized__").length,
     },
   ];
   const userProfiles = Object.keys(meta.profiles).sort();
@@ -487,18 +504,14 @@ export function FunctionsPage() {
             className={styles.profilesNav}
             onContextMenu={sidebarCtx}
           >
-            {builtinFolders.map((f) => (
+            {sourceFolders.map((f) => (
               <ProfileNavRow
                 key={f.id}
                 icon={f.icon}
                 name={f.name}
                 count={f.count}
                 active={profile === f.id}
-                dragOver={dragOver === f.id}
                 onClick={() => setProfile(f.id)}
-                onDragOver={(e) => onFolderDragOver(e, f.id)}
-                onDragLeave={onFolderDragLeave}
-                onDrop={(e) => onFolderDrop(e, f.id)}
               />
             ))}
             <div className={styles.profileSep} />
@@ -509,7 +522,7 @@ export function FunctionsPage() {
                     key={name}
                     className={cls(
                       styles.profileItem,
-                      profile === name && styles.active,
+                      profile === profileSelection(name) && styles.active,
                     )}
                   >
                     <span className={styles.profileIcon}><FoldersIcon size={16} /></span>
@@ -531,9 +544,9 @@ export function FunctionsPage() {
                   icon={<FoldersIcon size={16} />}
                   name={name}
                   count={count}
-                  active={profile === name}
+                  active={profile === profileSelection(name)}
                   dragOver={dragOver === name}
-                  onClick={() => setProfile(name)}
+                  onClick={() => setProfile(profileSelection(name))}
                   onDragOver={(e) => onFolderDragOver(e, name)}
                   onDragLeave={onFolderDragLeave}
                   onDrop={(e) => onFolderDrop(e, name)}
@@ -574,19 +587,25 @@ export function FunctionsPage() {
             className={styles.content}
             onContextMenu={contentCtx}
           >
-            {visibleFunctions.length === 0 ? (
+            {visibleFunctions.length === 0 && visibleTools.length === 0 ? (
               <div className={styles.empty}>
                 <div className={styles.emptyIcon}><FolderOpenIcon size={40} /></div>
                 <div className={styles.emptyText}>
-                  {search ? text("No matching programs", "没有匹配的程序") : text("This profile is empty", "配置为空")}
+                  {search
+                    ? text("No matching programs", "没有匹配的程序")
+                    : profile.startsWith("__")
+                      ? text("This category is empty", "分类为空")
+                      : text("This profile is empty", "配置为空")}
                 </div>
-                <div className={styles.emptyHint}>
-                  {text("Drag programs here to organize", "拖动程序到这里进行整理")}
-                </div>
+                {!profile.startsWith("__") && (
+                  <div className={styles.emptyHint}>
+                    {text("Drag programs here to organize", "拖动程序到这里进行整理")}
+                  </div>
+                )}
               </div>
             ) : (
               <>
-                {profile === "__all__" && !search && (
+                {visibleFunctions.length > 0 && profile === "__all__" && !search && (
                   <div className={styles.toolsHeader}>
                     {text("Agentic functions", "Agentic 函数")}
                     <span className={styles.toolsHint}>
@@ -597,41 +616,34 @@ export function FunctionsPage() {
                     </span>
                   </div>
                 )}
-              <div className={view === "grid" ? cardGridClass : cardListClass}>
-                {visibleFunctions.map((p) => (
-                  <FunctionCard
-                    key={p.name}
-                    p={p}
-                    icon={normalizeIcon(meta.icons[p.name])}
-                    fav={isFavorite(p.name)}
-                    profileName={getProfileForProgram(p.name)}
-                    formatDate={formatDate}
-                    onClick={() => runProgram(p.name, p.category)}
-                    onContextMenu={(e) => programCtx(e, p.name)}
-                    onDragStart={(e) => onProgramDragStart(e, p.name)}
-                    onToggleFav={(e) => toggleFav(p.name, e)}
-                    onChangeIcon={(e) => {
-                      e.stopPropagation();
-                      setIconPickerFor(p.name);
-                    }}
-                  />
-                ))}
-              </div>
+                {visibleFunctions.length > 0 && (
+                  <div className={view === "grid" ? cardGridClass : cardListClass}>
+                    {visibleFunctions.map((p) => (
+                      <FunctionCard
+                        key={p.name}
+                        p={p}
+                        icon={normalizeIcon(meta.icons[p.name])}
+                        fav={isFavorite(p.name)}
+                        profileName={getProfileForProgram(p.name)}
+                        formatDate={formatDate}
+                        onClick={() => runProgram(p.name, p.category)}
+                        onContextMenu={(e) => programCtx(e, p.name)}
+                        onDragStart={(e) => onProgramDragStart(e, p.name)}
+                        onToggleFav={(e) => toggleFav(p.name, e)}
+                        onChangeIcon={(e) => {
+                          e.stopPropagation();
+                          setIconPickerFor(p.name);
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
               </>
             )}
-            {tools.length > 0 && !search && (() => {
-              // Tools show in "all" (full list) and inside user-folders that
-              // include them. When a folder is selected, only its tools render.
-              const folderTools = profile === "__all__"
-                ? tools
-                : profile === "__favorites__" || profile === "__uncat__"
-                  ? []  // built-in virtual folders: no tools (tools have their own toggle, not fav/uncat)
-                  : tools.filter((tl) => (meta.profiles[profile] || []).includes(tl.name));
-              if (folderTools.length === 0) return null;
-              return (
-              <div className={styles.toolsSection}>
+            {visibleTools.length > 0 && (
+              <div className={visibleFunctions.length > 0 ? styles.toolsSection : undefined}>
                 <div className={styles.toolsHeader}>
-                  {text("Built-in tools", "内置工具")}
+                  {text("Functions", "函数")}
                   <span className={styles.toolsHint}>
                     {text(
                       "Toggle a tool off to hide it from the agent.",
@@ -640,7 +652,7 @@ export function FunctionsPage() {
                   </span>
                 </div>
                 <div className={view === "grid" ? cardGridClass : cardListClass}>
-                  {folderTools.map((tl) => (
+                  {visibleTools.map((tl) => (
                     <ToolCard
                       key={tl.name}
                       name={tl.name}
@@ -651,8 +663,7 @@ export function FunctionsPage() {
                   ))}
                 </div>
               </div>
-              );
-            })()}
+            )}
           </div>
         </div>
       </div>

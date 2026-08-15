@@ -8,11 +8,13 @@
  * （与 ExecutionDag、ToolsBlock 同一机制）。行尾 ⌄N 只展开子行
  * （递归层级），不在聊天里倒 JSON。思考行例外：内容轻，点行内联展开。
  *
- * 图标统一走 animated-icons 系列（Brain / Wrench / Bot），行悬停播放
- * 动画；图标绝对定位在标题行内部，天然与文字对齐。流式进行中的一轮
+ * 思考、LLM、子代理沿用 animated-icons；函数行使用静态 Lucide Wrench。
+ * 图标绝对定位在标题行内部，与文字共用同一垂直中心。流式进行中的一轮
  * 不走这里（assistant-bubble 平铺实时块），落定后切到本组件。
  */
 import { useEffect, useState } from "react";
+import { Wrench } from "lucide-react";
+import { afterTwoAnimationFrames } from "./collapse-frame";
 
 import type { AssistantBlock, ChatMsg, DetailNode } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
@@ -24,14 +26,13 @@ import {
   BotIcon,
   BrainIcon,
   CpuIcon,
-  WrenchIcon,
 } from "@/components/animated-icons";
 
 /** spawn 类工具：在摘要里算"子代理"，不算普通函数调用。
  * `agent` 生新分支；`send_message` 虽不再 spawn，但它仍触发目标分支跑
  * 一轮、仍在 caller 轮上落 attach 指针卡（runner 的 attach 路径），所以
  * 摘要里同样按"子代理活动"计。 */
-export const SPAWNING_TOOL_NAMES = new Set(["agent", "send_message"]);
+export const SPAWNING_TOOL_NAMES = new Set(["agent", "task", "send_message"]);
 
 function wsSend(payload: unknown): void {
   const sock = getSocket();
@@ -81,9 +82,7 @@ function Collapse({ open, children }: {
   useEffect(() => {
     if (open) {
       setMounted(true);
-      const raf = requestAnimationFrame(() =>
-        requestAnimationFrame(() => setShown(true)));
-      return () => cancelAnimationFrame(raf);
+      return afterTwoAnimationFrames(() => setShown(true));
     }
     setShown(false);
     const t = setTimeout(() => setMounted(false), 220);
@@ -111,19 +110,26 @@ export function ExecutionStrip({
   streaming,
   children,
   after,
+  subagentHeads,
 }: {
   label: string;
   streaming?: boolean;
   children: React.ReactNode;
   /** Content that collapses with the trace but stays outside its vertical line. */
   after?: React.ReactNode;
+  /** Branch heads owned by this strip, used to reopen the exact row on return. */
+  subagentHeads?: Array<string | undefined>;
 }) {
   const [userSet, setUserSet] = useState<boolean | null>(null);
   const open = userSet ?? !!streaming;
   const setOpen = (next: (o: boolean) => boolean) => setUserSet(next(open));
   const { text } = useTranslation();
   return (
-    <div className="tl" data-open={open ? "1" : "0"}>
+    <div
+      className="tl"
+      data-open={open ? "1" : "0"}
+      data-subagent-heads={subagentHeads?.filter(Boolean).join(" ") || undefined}
+    >
       <button
         type="button"
         className="tl-toggle"
@@ -182,9 +188,9 @@ function plainNote(s: string): string {
  *  点击语义（用户裁决 2026-07-11）：
  *  - **标题文字 = 超链接**：点标题 → 右栏 Executions 显示详情。
  *  - **行空白 / 图标 = 展开开关**：有子树切子树（默认折叠），思考行切
- *    内联全文；两者都没有的叶子行，点空白也进右栏。
+ *    内联全文；两者都没有的叶子行不响应。
  *  图标静态不动画；三类配色区分（思考紫 / 函数橙 / LLM 青 / 子代理绿）；
- *  折叠时行尾淡字 "⋯ N 步" 提示。 */
+ *  可展开行在原图标外增加常驻细圆圈；每一行都有复制动作。 */
 export function StepRow({
   icon,
   title,
@@ -196,8 +202,9 @@ export function StepRow({
   detail,
   inlineBody,
   subSteps,
-  subCount,
   defaultKidsOpen,
+  dataMsgId,
+  dataHeadId,
 }: {
   icon: "thinking" | "function" | "llm" | "subagent";
   title: string;
@@ -209,29 +216,31 @@ export function StepRow({
   detail?: DetailNode;
   inlineBody?: React.ReactNode;
   subSteps?: React.ReactNode;
-  subCount?: number;
   /** 仅当前行的直接子树初始展开。 */
   defaultKidsOpen?: boolean;
+  dataMsgId?: string;
+  dataHeadId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [kidsOpen, setKidsOpen] = useState(!!defaultKidsOpen);
   const [copied, setCopied] = useState(false);
   const { text } = useTranslation();
   const toggleable = !!subSteps || !!inlineBody;
+  const expanded = subSteps ? kidsOpen : open;
+  const copyValue = copyText ?? [title, note].filter(Boolean).join(" · ");
   function copy(e: React.MouseEvent) {
     e.stopPropagation();
     const done = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     };
-    if (copyText && navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(copyText).then(done, done);
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(copyValue).then(done, done);
     } else done();
   }
   function toggle() {
     if (subSteps) setKidsOpen((v) => !v);
     else if (inlineBody) setOpen((v) => !v);
-    else if (detail) useSessionStore.getState().showDetail(detail);
   }
   function openDetail(e: React.MouseEvent) {
     if (!detail) return;
@@ -240,13 +249,18 @@ export function StepRow({
   }
   const Icon = icon === "thinking" ? BrainIcon
     : icon === "subagent" ? BotIcon
-    : icon === "llm" ? CpuIcon : WrenchIcon;
+    : icon === "llm" ? CpuIcon : Wrench;
   return (
-    <div className={"tl-step" + (open ? " open" : "")}>
+    <div
+      className={"tl-step" + (expanded ? " open" : "")}
+      data-msg-id={dataMsgId}
+      data-head-id={dataHeadId}
+    >
       <div
         className="tl-step-head"
         onClick={toggle}
-        style={toggleable || detail ? undefined : { cursor: "default" }}
+        aria-expanded={toggleable ? expanded : undefined}
+        style={toggleable ? undefined : { cursor: "default" }}
       >
         <span
           className={
@@ -280,17 +294,10 @@ export function StepRow({
         {/* 不加 title：流式中 note 每个 delta 都在变，原生 tooltip 会
             钉死在视口角落变成"漂浮黑框"；全文本来就有行内展开可看。 */}
         {note ? <span className="tl-step-note">{note}</span> : null}
-        {subSteps && !kidsOpen ? (
-          <span className="tl-fold-hint">
-            {`⋯ ${subCount || ""} ${text("steps", "步")}`.replace("  ", " ")}
-          </span>
-        ) : null}
         <span className="tl-step-act">
-          {copyText ? (
-            <button type="button" className="tl-btn" onClick={copy}>
-              {copied ? text("Copied", "已复制") : text("Copy", "复制")}
-            </button>
-          ) : null}
+          <button type="button" className="tl-btn" onClick={copy}>
+            {copied ? text("Copied", "已复制") : text("Copy", "复制")}
+          </button>
           {actions}
         </span>
       </div>
@@ -349,7 +356,7 @@ function parseParams(input?: string): Record<string, unknown> | undefined {
   }
 }
 
-/** 普通函数调用步骤：点行 → 右栏详情；子调用层级用 ⌄N 展开。
+/** 普通函数调用步骤：点行 → 右栏详情；有子调用时图标外圈表示可展开。
  *  running：流式中结果还没回来的调用——图标位换呼吸点。 */
 export function FunctionStep({
   block,
@@ -389,7 +396,6 @@ export function FunctionStep({
       subSteps={kids.length > 0
         ? kids.map((c, i) => <TreeStep key={c.path || i} node={c} />)
         : undefined}
-      subCount={kids.length || undefined}
     />
   );
 }
@@ -446,7 +452,6 @@ export function TreeStep({ node, actions, defaultKidsOpen }: {
             <TreeStep key={c.path || i} node={c} />
           ))
         : undefined}
-      subCount={kids.length || undefined}
       defaultKidsOpen={defaultKidsOpen}
     />
   );
@@ -501,6 +506,8 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
       running={running}
       error={isError}
       detail={detail}
+      dataMsgId={card.id}
+      dataHeadId={targetHead || undefined}
       actions={
         <>
           {running && attach.job_id ? (

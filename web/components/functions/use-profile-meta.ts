@@ -29,8 +29,8 @@ export interface UseProfileMetaResult {
 export function useProfileMeta(
   meta: FunctionsMeta,
   saveMeta: (next: FunctionsMeta) => Promise<void>,
-  profile: string,
-  setProfile: (id: string) => void,
+  profile: string | null,
+  setProfile: (name: string | null) => void,
 ): UseProfileMetaResult {
   const cloneMeta = useCallback((): FunctionsMeta => ({
     favorites: [...meta.favorites],
@@ -79,7 +79,7 @@ export function useProfileMeta(
     setPendingDelete(null);
     const next = cloneMeta();
     delete next.profiles[name];
-    if (profile === name) setProfile("__all__");
+    if (profile === name) setProfile(null);
     await saveMeta(next);
   }, [cloneMeta, pendingDelete, profile, saveMeta, setProfile]);
 

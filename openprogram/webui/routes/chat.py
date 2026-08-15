@@ -292,6 +292,16 @@ def run_agentic_function_call(
             "code": "run_active",
             "status_code": 409,
         }
+    provider, model = _s._runtime_management._resolve_session_provider_model(conv)
+    if not provider:
+        return {
+            "error": (
+                "No model available for this session. Enable a model or "
+                "select one before running a function."
+            ),
+            "code": "no_model",
+            "status_code": 409,
+        }
     # A NEW run (anchor left unset) passes an EMPTY caller so the
     # @agentic_function decorator stamps its the predecessor field with the
     # session's current head (function.py's top-level-call branch) — the
@@ -434,6 +444,8 @@ def run_agentic_function_call(
                     work_dir=work_dir,
                     agent_id=agent_id,
                     source="fn-form",
+                    provider=provider,
+                    model=model,
                     response_format=response_format,
                     on_event=lambda env: _s._broadcast_envelope(env)
                         if hasattr(_s, "_broadcast_envelope")

@@ -3,13 +3,12 @@
 /**
  * Strip tab presentation — the two components the strip maps over.
  *
- * `TabItem` is one tab (or one segment inside a compound); `CompoundTabItem`
- * is a split-view group: a drag handle plus its member TabItems, with a FLIP
- * animation for member reorders. Both are pure render + local animation
- * state; every mutation is a prop callback owned by CenterTabStrip.
+ * `TabItem` is one ordinary top-level tab. `CompoundTabItem` is one top-level
+ * tab whose content surface contains a split-view group. Split members are
+ * not independently selectable from the strip.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Bookmark, FileText, Globe, GripVertical, History, CirclePlus, TerminalSquare, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Bookmark, CirclePlus, FileText, Globe, History, TerminalSquare, X } from "lucide-react";
 
 import {
   MessageCircleIcon,
@@ -41,7 +40,6 @@ interface CompoundTabItemProps {
   tabs: CenterTab[];
   activeId: string | null;
   focusedTabId: string | null;
-  enteringIds: ReadonlySet<string>;
   closingIds: ReadonlySet<string>;
   onActivate(tab: CenterTab): void;
   onFocusTab(tabId: string): void;
@@ -49,14 +47,54 @@ interface CompoundTabItemProps {
     event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>,
     tabId: string,
   ): void;
-  onClose(event: React.SyntheticEvent, tab: CenterTab): void;
+  onClose(event: React.SyntheticEvent, tabs: CenterTab[]): void;
   onExited(tab: CenterTab): void;
   shiftX: number;
   onDragPointerDown(
     subject: TabDragSubject,
     event: React.PointerEvent<HTMLElement>,
   ): void;
-  onMoveGroup(groupId: string, direction: -1 | 1): void;
+}
+
+function CompoundMemberIcon({ tab, animate }: { tab: CenterTab; animate: boolean }) {
+  const iconRef = useRef<AnimatedNavIconHandle>(null);
+  const [brokenFavicon, setBrokenFavicon] = useState("");
+  useEffect(() => {
+    if (animate) iconRef.current?.startAnimation?.();
+    else iconRef.current?.stopAnimation?.();
+  }, [animate]);
+  return (
+    <span className={styles.tabIcon} aria-hidden="true">
+      {tab.kind === "session" ? (
+        <MessageCircleIcon ref={iconRef} size={14} />
+      ) : tab.kind === "file" ? (
+        <FileText size={13} />
+      ) : tab.kind === "web" ? (
+        tab.faviconUrl && tab.faviconUrl !== brokenFavicon ? (
+          <img
+            className={styles.tabFavicon}
+            src={tab.faviconUrl}
+            alt=""
+            onError={() => setBrokenFavicon(tab.faviconUrl ?? "")}
+          />
+        ) : (
+          <Globe size={13} />
+        )
+      ) : tab.kind === "builtin" ? (
+        tab.page === "files"
+          ? <FileText size={13} />
+          : tab.page === "history"
+          ? <History size={13} />
+          : tab.page === "browser"
+            ? <Globe size={13} />
+            : tab.page === "terminal" || tab.page === "claude"
+              ? <TerminalSquare size={13} />
+              : <Bookmark size={13} />
+      ) : (
+        <CirclePlus size={13} />
+      )}
+    </span>
+  );
 }
 
 export function CompoundTabItem({
@@ -64,7 +102,6 @@ export function CompoundTabItem({
   tabs,
   activeId,
   focusedTabId,
-  enteringIds,
   closingIds,
   onActivate,
   onFocusTab,
@@ -73,124 +110,113 @@ export function CompoundTabItem({
   onExited,
   shiftX,
   onDragPointerDown,
-  onMoveGroup,
 }: CompoundTabItemProps) {
   const { t, text } = useTranslation();
+  const [hovered, setHovered] = useState(false);
   const active = group.memberIds.includes(activeId ?? "");
-  const closingCount = group.memberIds.filter((tabId) =>
-    closingIds.has(tabId),
-  ).length;
-  const remainingCount = group.memberIds.length - closingCount;
-  // FLIP: when members reorder within the compound (drag drop or keyboard
-  // Move left/right), slide each segment from its previous offset to its
-  // new one. Membership changes (enter/exit) keep their own animations.
-  const rootRef = useRef<HTMLDivElement>(null);
-  const segmentOffsets = useRef(new Map<string, number>());
-  const previousOrder = useRef<string[]>(group.memberIds);
-  const orderKey = group.memberIds.join("\0");
-  useLayoutEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const sameMembers =
-      previousOrder.current.length === group.memberIds.length
-      && group.memberIds.every((tabId) => previousOrder.current.includes(tabId));
-    previousOrder.current = [...group.memberIds];
-    const reducedMotion =
-      typeof window.matchMedia === "function"
-      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const nextOffsets = new Map<string, number>();
-    for (const child of Array.from(root.children) as HTMLElement[]) {
-      const tabId = child.querySelector<HTMLElement>("[data-tab-id]")?.dataset.tabId;
-      if (!tabId) continue; // group drag handle
-      nextOffsets.set(tabId, child.offsetLeft);
-      const previousLeft = segmentOffsets.current.get(tabId);
-      if (
-        sameMembers && !reducedMotion
-        && previousLeft !== undefined && previousLeft !== child.offsetLeft
-      ) {
-        child.animate(
-          [
-            { transform: `translateX(${previousLeft - child.offsetLeft}px)` },
-            { transform: "translateX(0)" },
-          ],
-          { duration: 180, easing: "ease" },
-        );
-      }
-    }
-    segmentOffsets.current = nextOffsets;
-    // ponytail: keyed on member order only — resize between reorders just
-    // replays from a stale offset for one 180ms slide, not worth observing.
-  }, [orderKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const memberTabs = group.memberIds.flatMap((tabId) => {
+    const tab = tabs.find((candidate) => candidate.id === tabId);
+    return tab ? [tab] : [];
+  });
+  const canonicalTab = memberTabs.find((tab) => tab.kind === "session")
+    ?? memberTabs.find((tab) => tab.id === group.focusedId)
+    ?? memberTabs[0];
+  if (!canonicalTab) return null;
+  const combinedLabel = memberTabs.map((tab) => labelOf(tab, t, text)).join(" · ");
+  const closingTabs = memberTabs.filter((tab) => closingIds.has(tab.id));
+  const closing = closingTabs.length === memberTabs.length;
+  const memberClosing = closingTabs.length > 0 && !closing;
+  const tabStop = group.memberIds.includes(focusedTabId ?? "");
   return (
     <div
-      ref={rootRef}
-      className={`${styles.compoundTab} ${active ? styles.compoundTabActive : ""}`}
+      className={`${styles.compoundTab} ${active ? styles.compoundTabActive : ""} ${closing ? styles.tabExit : ""} ${memberClosing ? styles.compoundMemberClosing : ""}`}
       data-member-count={group.memberIds.length}
-      data-closing-count={closingCount || undefined}
-      // A compound mid-collapse animates its own outer width (see
-      // data-closing-count in the stylesheet) — freezeStripWidths must
-      // leave it alone, same as a single closing tab.
-      data-tab-closing={closingCount ? true : undefined}
-      data-remaining-count={remainingCount}
+      data-tab-closing={closing || undefined}
       style={shiftStyle(shiftX)}
       role="presentation"
+      title={combinedLabel}
+      onClick={() => onActivate(canonicalTab)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onContextMenu={(event) => onOpenMenu(event, canonicalTab.id)}
+      onPointerDown={(event) => onDragPointerDown({
+        kind: "group",
+        tabIds: [...group.memberIds],
+        sourceGroup: group,
+      }, event)}
+      onMouseDown={(event) => {
+        if (event.button === 1) event.preventDefault();
+      }}
+      onAuxClick={(event) => {
+        if (event.button !== 1) return;
+        event.preventDefault();
+        onClose(event, memberTabs);
+      }}
+      onAnimationEnd={(event) => {
+        if (event.target !== event.currentTarget || !closing) return;
+        closingTabs.forEach(onExited);
+      }}
     >
-      <button
-        type="button"
-        className={styles.groupDragHandle}
-        aria-label={text("Move tab group", "移动标签组")}
-        title={text("Move tab group", "移动标签组")}
-        onPointerDown={(event) => {
-          if (event.button !== 0) return;
-          event.stopPropagation();
-          onDragPointerDown(
-            {
-              kind: "group",
-              tabIds: [...group.memberIds],
-              sourceGroup: group,
-            },
-            event,
-          );
-        }}
+      <div
+        className={styles.compoundTarget}
+        role="tab"
+        data-tab-id={canonicalTab.id}
+        aria-selected={active}
+        aria-label={`${text("Split tab", "分屏标签")}: ${combinedLabel}`}
+        tabIndex={tabStop ? 0 : -1}
+        onFocus={() => onFocusTab(canonicalTab.id)}
         onKeyDown={(event) => {
-          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          if (event.shiftKey && event.key === "F10") {
+            onOpenMenu(event, canonicalTab.id);
+            return;
+          }
+          if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();
-          event.stopPropagation();
-          onMoveGroup(group.id, event.key === "ArrowLeft" ? -1 : 1);
+          onActivate(canonicalTab);
         }}
-      >
-        <GripVertical size={10} aria-hidden="true" />
-      </button>
-      {group.memberIds.map((tabId) => {
-        const tab = tabs.find((candidate) => candidate.id === tabId);
-        if (!tab) return null;
-        const memberIndex = group.memberIds.indexOf(tabId);
-        return (
-          <TabItem
-            key={tab.id}
-            tab={tab}
-            active={tab.id === activeId}
-            tabStop={tab.id === focusedTabId}
-            enter={enteringIds.has(tab.id)}
-            closing={closingIds.has(tab.id)}
-            label={labelOf(tab, t, text)}
-            closeLabel={text("Close tab", "关闭标签")}
-            segment
-            onActivate={onActivate}
-            onFocusTab={onFocusTab}
-            onOpenMenu={onOpenMenu}
-            onClose={onClose}
-            onExited={onExited}
-            dragSubject={{
-              kind: "segment",
-              tabIds: [tab.id],
-              sourceGroup: group,
-              memberIndex,
-            }}
-            onDragPointerDown={onDragPointerDown}
-          />
-        );
-      })}
+      />
+      <div className={styles.compoundMembers}>
+        {memberTabs.map((tab) => {
+          const memberClosing = !closing && closingIds.has(tab.id);
+          const memberLabel = labelOf(tab, t, text);
+          const closeLabel = `${text("Close", "关闭")} ${memberLabel}`;
+          return (
+            <span
+              key={tab.id}
+              className={`${styles.compoundMember} ${memberClosing ? styles.compoundMemberExit : ""}`}
+              onAnimationEnd={(event) => {
+                if (event.target === event.currentTarget && memberClosing) onExited(tab);
+              }}
+            >
+              <CompoundMemberIcon tab={tab} animate={hovered} />
+              <span className={styles.compoundMemberName} aria-hidden="true">
+                {memberLabel}
+              </span>
+              {tab.dirty ? (
+                <span className={styles.tabDirtyDot} aria-hidden="true">
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "currentColor" }} />
+                </span>
+              ) : null}
+              <button
+                type="button"
+                className={`${styles.tabClose} ${styles.compoundMemberClose}`}
+                aria-label={closeLabel}
+                title={closeLabel}
+                tabIndex={active ? 0 : -1}
+                aria-disabled={closingIds.has(tab.id) || undefined}
+                onPointerDown={(event) => event.stopPropagation()}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (!closingIds.has(tab.id)) onClose(event, [tab]);
+                }}
+              >
+                <X size={14} />
+              </button>
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -205,7 +231,6 @@ export function TabItem({
   closing,
   label,
   closeLabel,
-  segment = false,
   onActivate,
   onFocusTab,
   onOpenMenu,
@@ -222,7 +247,6 @@ export function TabItem({
   closing: boolean;
   label: string;
   closeLabel: string;
-  segment?: boolean;
   onActivate: (tab: CenterTab) => void;
   onFocusTab: (tabId: string) => void;
   onOpenMenu: (
@@ -259,7 +283,7 @@ export function TabItem({
   return (
     <div
       ref={tabRef}
-      className={`${styles.tab} ${segment ? styles.compoundSegment : ""} ${active ? styles.tabActive : ""} ${entering ? styles.tabEnter : ""} ${closing ? styles.tabExit : ""}`}
+      className={`${styles.tab} ${active ? styles.tabActive : ""} ${entering ? styles.tabEnter : ""} ${closing ? styles.tabExit : ""}`}
       style={shiftStyle(shiftX)}
       // Read by freezeStripWidths: a tab mid-exit must keep its shrinking
       // width, not be pinned to the width it had when the freeze ran.
@@ -329,7 +353,7 @@ export function TabItem({
               ? <History size={13} />
               : tab.page === "browser"
                 ? <Globe size={13} />
-                : tab.page === "terminal"
+                : tab.page === "terminal" || tab.page === "claude"
                   ? <TerminalSquare size={13} />
                   : <Bookmark size={13} />
           ) : (
