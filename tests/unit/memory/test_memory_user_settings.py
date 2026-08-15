@@ -47,6 +47,38 @@ def test_runtime_memory_config_reads_nested_settings():
     assert config.recent_limit == 25
 
 
+def test_organize_topics_uses_live_recent_limit(tmp_path, monkeypatch):
+    from openprogram.memory.management import api
+
+    (tmp_path / "topics").mkdir()
+    (tmp_path / "topics/note.md").write_text("# Note\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "openprogram.setup._read_config",
+        lambda: {"memory": {"recent": {"limit": 25}}},
+    )
+    seen = {}
+
+    def fake_run(_root, **kwargs):
+        seen["config"] = kwargs["config"]
+        return []
+
+    monkeypatch.setattr(api, "_run_agent", fake_run)
+
+    assert api.organize_topics(tmp_path, agent=object()) == []
+    assert seen["config"].recent_limit == 25
+
+
+def test_embedding_status_requires_the_model_to_load_locally(monkeypatch):
+    from openprogram.memory.retrieval import embedding, inspect
+
+    monkeypatch.setattr(
+        embedding, "load_default_encoder",
+        lambda **_kwargs: (_ for _ in ()).throw(OSError("model not cached")),
+    )
+
+    assert inspect.embedding_is_available() is False
+
+
 def test_local_backend_uses_live_memory_settings(tmp_path, monkeypatch):
     from openprogram.memory.local_backend import LocalMemoryBackend
     from openprogram.memory.management.config import MemoryConfig

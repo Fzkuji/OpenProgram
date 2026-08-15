@@ -20,6 +20,32 @@ from .bm25 import (
     prefer_v2_source_events,
 )
 
+MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+_default_encoder: Any | None = None
+_default_encoder_lock = threading.RLock()
+
+
+def load_default_encoder(*, local_files_only: bool = False) -> Any:
+    """Load the fixed encoder once; probes can forbid network access."""
+    global _default_encoder
+    if _default_encoder is None:
+        with _default_encoder_lock:
+            if _default_encoder is None:
+                from sentence_transformers import SentenceTransformer
+
+                _default_encoder = SentenceTransformer(
+                    MODEL_ID, local_files_only=local_files_only,
+                )
+    return _default_encoder
+
+
+def default_model_is_available() -> bool:
+    try:
+        load_default_encoder(local_files_only=True)
+    except Exception:
+        return False
+    return True
+
 
 class MemoryEmbeddingIndex:
     """Rebuild an in-memory embedding index from Topic and Source files."""
@@ -45,11 +71,7 @@ class MemoryEmbeddingIndex:
         if self._encoder is None:
             with self._lock:
                 if self._encoder is None:
-                    from sentence_transformers import SentenceTransformer
-
-                    self._encoder = SentenceTransformer(
-                        "sentence-transformers/all-MiniLM-L6-v2"
-                    )
+                    self._encoder = load_default_encoder()
         return self._encoder
 
     def _events(self) -> list[MemoryEvent]:

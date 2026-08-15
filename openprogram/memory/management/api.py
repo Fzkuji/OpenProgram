@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .config import MemoryConfig
+from .config import MemoryConfig, load_memory_config
 from .agent import _run_agent, render_conversation
 from ..prompts import ORGANIZE_MEMORY, SYSTEM_PROMPT, WRITE_MEMORY
 from .tools import TOOLS
@@ -88,7 +88,7 @@ def organize_topics(
 
     Passing None organizes every Topic file, which is the end-of-build pass.
     """
-    config = config or MemoryConfig()
+    config = config or load_memory_config()
     root = Path(memory_dir) / "topics"
     if touched is None:
         paths = sorted(

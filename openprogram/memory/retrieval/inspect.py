@@ -8,7 +8,6 @@ tool result must not be.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import re
 from dataclasses import dataclass
@@ -154,7 +153,11 @@ def status(
 
 
 def embedding_is_available() -> bool:
-    return importlib.util.find_spec("sentence_transformers") is not None
+    try:
+        from .embedding import default_model_is_available
+    except Exception:
+        return False
+    return default_model_is_available()
 
 
 def list_files(
