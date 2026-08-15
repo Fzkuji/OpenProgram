@@ -570,6 +570,8 @@ class MCPService:
                     copied, owner_id=self._computer_use_owner_id,
                 )
             )
+            if isinstance(raw, AgentToolResult):
+                return raw
             from openprogram.programs._runtime import _normalize_result
             return _normalize_result(
                 raw, call_id=call_id, max_chars=100_000,

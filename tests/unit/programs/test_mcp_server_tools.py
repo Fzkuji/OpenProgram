@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import json
 import sys
 from copy import deepcopy
@@ -210,6 +211,31 @@ def test_mcp_connection_close_releases_worker_owned_computer_use_sessions(
     service.close()
 
     assert released == [owner_id]
+
+
+def test_computer_use_does_not_reimport_tool_registry_for_normalized_result(
+    client_context, monkeypatch,
+) -> None:
+    expected = json_result({"ok": True})
+    service = _service(
+        client_context,
+        computer_use_dispatch=lambda _arguments, *, owner_id: expected,
+    )
+    original_import = builtins.__import__
+
+    def guarded_import(name, *args, **kwargs):
+        if name == "openprogram.programs._runtime":
+            raise AssertionError("normalized computer_use result reimported Runtime")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    result = asyncio.run(service.computer_use_call(
+        {"command": "list_pages"},
+        call_id="computer-normalized",
+        cancel_event=asyncio.Event(),
+    ))
+
+    assert result is expected
 
 
 def test_sessions_list_preserves_db_order_and_exposes_only_public_fields(
