@@ -64,6 +64,18 @@ function profileDirectories(dataRoot) {
   const info = state?.profile?.info_cache;
   const names = info && typeof info === "object" ? info : {};
   const candidates = new Set(["Default", ...Object.keys(names)]);
+  // Local State is an index, not the source of truth. It can lag behind a
+  // profile directory created or restored by Chromium, so include ordinary
+  // on-disk profiles even when info_cache does not mention them yet.
+  try {
+    for (const entry of fs.readdirSync(dataRoot, { withFileTypes: true })) {
+      if (entry.isDirectory() && /^Profile \d+$/.test(entry.name)) {
+        candidates.add(entry.name);
+      }
+    }
+  } catch (_error) {
+    /* an unreadable browser root has no additional discoverable profiles */
+  }
   return [...candidates].flatMap((id) => {
     const profilePath = path.join(dataRoot, id);
     if (!fs.existsSync(profilePath) || !fs.statSync(profilePath).isDirectory()) return [];
@@ -86,9 +98,13 @@ function profileDirectories(dataRoot) {
 
 function browserDefinitions({ homeDir = os.homedir(), applicationsDir = "/Applications" } = {}) {
   if (process.platform !== "darwin") return [];
+  const applicationRoots = [...new Set([applicationsDir, path.join(homeDir, "Applications")])];
   return MAC_BROWSERS.map((browser) => ({
     ...browser,
-    executable: path.join(applicationsDir, browser.app),
+    executable: applicationRoots
+      .map((root) => path.join(root, browser.app))
+      .find((candidate) => fs.existsSync(candidate))
+      || path.join(applicationsDir, browser.app),
     dataRoot: path.join(homeDir, browser.data),
   }));
 }
@@ -469,6 +485,15 @@ if (require.main === module) {
     ] },
   } }));
   fs.writeFileSync(path.join(profile, "Cookies"), "");
+  const braveApp = path.join(home, "Applications", MAC_BROWSERS[1].app);
+  const braveProfile = path.join(home, MAC_BROWSERS[1].data, "Default");
+  fs.mkdirSync(path.dirname(braveApp), { recursive: true });
+  fs.writeFileSync(braveApp, "");
+  fs.mkdirSync(braveProfile, { recursive: true });
+  fs.writeFileSync(path.join(braveProfile, "History"), "");
+  const unindexedProfile = path.join(chromeRoot, "Profile 9");
+  fs.mkdirSync(unindexedProfile, { recursive: true });
+  fs.writeFileSync(path.join(unindexedProfile, "History"), "");
   const { DatabaseSync } = require("node:sqlite");
   const historyDb = new DatabaseSync(path.join(profile, "History"));
   historyDb.exec("CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT, title TEXT); CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER, visit_time INTEGER)");
@@ -481,6 +506,14 @@ if (require.main === module) {
       const listed = listBrowserSources(options);
       assert.strictEqual(listed[0].profiles[0].name, "Person 1");
       assert.strictEqual(listed[0].profiles[0].available.cookies, true);
+      assert.ok(
+        listed.some((item) => item.id === "brave"),
+        "browsers installed under ~/Applications are discovered",
+      );
+      assert.ok(
+        listed[0].profiles.some((item) => item.id === "Profile 9"),
+        "on-disk Chromium profiles are discovered even when info_cache is stale",
+      );
       assert.deepStrictEqual(readBookmarks(profile), [
         {
           kind: "folder",
