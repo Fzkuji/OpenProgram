@@ -74,6 +74,40 @@ def test_parent_webtab_bridge_result_crosses_process_queue(monkeypatch):
         replies.join_thread()
 
 
+def test_parent_webtab_bridge_forwards_expected_binding_revisions(monkeypatch):
+    from openprogram.agent import process_runner
+    from openprogram.webui.ws_actions import webtab
+
+    seen = []
+    monkeypatch.setattr(
+        webtab,
+        "request_bound_tab",
+        lambda binding_id, **kwargs: seen.append((binding_id, kwargs)) or {
+            "ok": True,
+        },
+    )
+    replies = Queue()
+
+    process_runner._bridge_webtab_to_parent({
+        "req_id": "bound",
+        "command": {
+            "op": "activate",
+            "binding_id": "surface-1",
+            "expected_page_revision": 31,
+            "expected_access_revision": 32,
+        },
+        "timeout": 1,
+    }, replies)
+
+    assert replies.get(timeout=1)["result"] == {"ok": True}
+    assert seen == [("surface-1", {
+        "url": "",
+        "timeout": 1,
+        "expected_page_revision": 31,
+        "expected_access_revision": 32,
+    })]
+
+
 def test_multiwindow_bindings_remain_isolated_under_concurrency(monkeypatch):
     from openprogram.webui.ws_actions import webtab
 

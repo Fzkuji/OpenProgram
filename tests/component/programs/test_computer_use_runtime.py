@@ -29,7 +29,7 @@ class _Adapter:
         self.calls.append(("close", {}))
 
 
-def _allow_binding(_binding_id):
+def _allow_binding(_binding_id, **_expected_revisions):
     return {"ok": True}
 
 
@@ -102,7 +102,7 @@ def test_registry_rejects_action_when_bound_page_revision_changes():
     registry = ComputerUseSessionRegistry(
         adapters=adapters,
         binding_revision_resolver=lambda _binding: dict(revisions),
-        binding_validator=lambda binding: (
+        binding_validator=lambda binding, **_expected: (
             validations.append(binding) or {"ok": True}
         ),
         release_context=lambda context: released.append(context["context_id"]),
@@ -147,7 +147,7 @@ def test_registry_revalidates_visibility_before_each_existing_session_command():
         binding_revision_resolver=lambda _binding: {
             "page_revision": 21, "access_revision": 22,
         },
-        binding_validator=lambda _binding: dict(visible),
+        binding_validator=lambda _binding, **_expected: dict(visible),
         release_context=lambda context: released.append(context["context_id"]),
     )
     observed = registry.execute(
@@ -165,6 +165,58 @@ def test_registry_revalidates_visibility_before_each_existing_session_command():
     assert rejected["reason_code"] == "page_context_stale"
     assert adapter.calls == [("observe", {}), ("close", {})]
     assert released == ["ctx-1"]
+
+
+def test_page_capability_revisions_cross_the_session_validation_boundary():
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSessionRegistry,
+    )
+
+    adapter = _Adapter("open_claude_chrome")
+    adapters = {
+        "playwright_mcp": _Adapter("playwright_mcp"),
+        "chrome_devtools_mcp": _Adapter("chrome_devtools_mcp"),
+        "open_claude_chrome": adapter,
+    }
+    validations = []
+
+    def validate(binding_id, **expected):
+        validations.append((binding_id, expected))
+        return {"ok": True}
+
+    registry = ComputerUseSessionRegistry(
+        adapters=adapters,
+        binding_revision_resolver=lambda _binding: {},
+        binding_validator=validate,
+    )
+    context = {
+        "context_id": "ctx-1",
+        "surfaces": [{
+            "surface_key": "p1",
+            "binding_id": "binding-1",
+            "page_key": "page:41",
+            "page_revision": 41,
+            "access_revision": 42,
+        }],
+    }
+    token = registry.list_pages(
+        context=context, owner_id="owner-1",
+    )["pages"][0]["page_context_token"]
+    observed = registry.execute(
+        command="observe", backend="open_claude_chrome",
+        owner_id="owner-1", page_context_token=token,
+    )
+
+    acted = registry.execute(
+        command="act", computer_session_id=observed["computer_session_id"],
+        owner_id="owner-1", arguments={"action": "click"},
+    )
+
+    assert acted["ok"] is True
+    assert validations == [("binding-1", {
+        "expected_page_revision": 41,
+        "expected_access_revision": 42,
+    })]
 
 
 def test_registry_leases_one_exact_page_to_one_session_until_close():

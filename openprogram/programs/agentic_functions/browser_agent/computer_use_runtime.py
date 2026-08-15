@@ -78,7 +78,7 @@ class ComputerUseSessionRegistry:
         release_context: Callable[[dict | None], None] | None = None,
         page_key_resolver: Callable[[str], str] | None = None,
         binding_revision_resolver: Callable[[str], Mapping[str, int]] | None = None,
-        binding_validator: Callable[[str], Mapping[str, Any]] | None = None,
+        binding_validator: Callable[..., Mapping[str, Any]] | None = None,
     ) -> None:
         if adapters is None:
             if controller_factory is None:
@@ -174,6 +174,8 @@ class ComputerUseSessionRegistry:
                         or binding_id
                     ),
                     "context": context,
+                    "page_revision": int(item.get("page_revision") or 0),
+                    "access_revision": int(item.get("access_revision") or 0),
                     "consumed": False,
                 }
                 pages.append({
@@ -203,6 +205,7 @@ class ComputerUseSessionRegistry:
         params = dict(arguments or {})
         created_session = command == "observe" and not computer_session_id
         if created_session:
+            revisions: Mapping[str, int] = {}
             selected = backend or DEFAULT_BACKEND
             if selected not in self._adapters:
                 return {"ok": False, "reason_code": "unsupported_backend"}
@@ -218,10 +221,20 @@ class ComputerUseSessionRegistry:
                     binding_id = capability["binding_id"]
                     page_key = capability["page_key"]
                     page_context = capability["context"]
+                    revisions = {
+                        "page_revision": capability["page_revision"],
+                        "access_revision": capability["access_revision"],
+                    }
             if not binding_id:
                 return {"ok": False, "reason_code": "page_context_required"}
             page_key = page_key or self._page_key_resolver(binding_id) or binding_id
-            revisions = self._binding_revision_resolver(binding_id)
+            revisions = revisions or self._binding_revision_resolver(binding_id)
+            if not revisions and page_context:
+                revisions = next((
+                    item for item in page_context.get("surfaces") or []
+                    if isinstance(item, dict)
+                    and item.get("binding_id") == binding_id
+                ), {})
             session = ComputerUseSession(
                 id="cs_" + uuid.uuid4().hex,
                 backend=selected,
@@ -273,7 +286,7 @@ class ComputerUseSessionRegistry:
 
             if not created_session and command in {"observe", "act", "verify"}:
                 revisions = self._binding_revision_resolver(session.binding_id)
-                revision_changed = (
+                revision_changed = bool(revisions) and ((
                     session.page_revision
                     and int(revisions.get("page_revision") or 0)
                     != session.page_revision
@@ -281,12 +294,16 @@ class ComputerUseSessionRegistry:
                     session.access_revision
                     and int(revisions.get("access_revision") or 0)
                     != session.access_revision
-                )
+                ))
                 try:
                     validation = (
                         {"ok": False, "reason_code": "page_context_stale"}
                         if revision_changed
-                        else self._binding_validator(session.binding_id)
+                        else self._binding_validator(
+                            session.binding_id,
+                            expected_page_revision=session.page_revision,
+                            expected_access_revision=session.access_revision,
+                        )
                     )
                 except Exception:
                     validation = {"ok": False, "reason_code": "target_lost"}

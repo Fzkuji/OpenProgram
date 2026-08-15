@@ -116,6 +116,35 @@ def test_bound_webtab_request_uses_only_the_registered_socket(monkeypatch):
     assert webtab.request_bound_tab(binding_id)["ok"] is False
 
 
+def test_bound_webtab_request_rejects_stale_expected_revision_before_ipc(
+    monkeypatch,
+):
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    binding_id = webtab.register_binding(
+        owner, "window-1", "tab-1", "target-1",
+    )
+    revisions = webtab.binding_revisions(binding_id)
+    sent = []
+    monkeypatch.setattr(
+        webtab,
+        "request_on_ws",
+        lambda *args, **kwargs: sent.append((args, kwargs)) or {"ok": True},
+    )
+    try:
+        result = webtab.request_bound_tab(
+            binding_id,
+            expected_page_revision=revisions["page_revision"],
+            expected_access_revision=revisions["access_revision"] + 1,
+        )
+    finally:
+        webtab.release_binding(binding_id)
+
+    assert result["reason_code"] == "page_context_stale"
+    assert sent == []
+
+
 def test_webtab_page_key_is_shared_across_recaptures_of_the_same_target():
     from openprogram.webui.ws_actions import webtab
 

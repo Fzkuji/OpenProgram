@@ -175,6 +175,8 @@ def request_bound_tab(
     *,
     url: str = "",
     timeout: float = 5.0,
+    expected_page_revision: int = 0,
+    expected_access_revision: int = 0,
 ) -> dict:
     """Activate the exact visible tab captured for this turn."""
     import os
@@ -182,13 +184,34 @@ def request_bound_tab(
         command = {"op": "activate", "binding_id": binding_id}
         if url:
             command["url"] = url
+        if expected_page_revision:
+            command["expected_page_revision"] = expected_page_revision
+        if expected_access_revision:
+            command["expected_access_revision"] = expected_access_revision
         return _request(command, timeout)
     with _lock:
         entry = _bindings.get(binding_id)
+        revision_mismatch = entry is not None and (
+            (
+                expected_page_revision
+                and entry[5] != expected_page_revision
+            ) or (
+                expected_access_revision
+                and entry[6] != expected_access_revision
+            )
+        )
+        if revision_mismatch:
+            _bindings.pop(binding_id, None)
     if entry is None:
         return {
             "ok": False,
             "error": "surface binding is unavailable",
+            "reason_code": "page_context_stale",
+        }
+    if revision_mismatch:
+        return {
+            "ok": False,
+            "error": "surface binding revision changed",
             "reason_code": "page_context_stale",
         }
     ws, window_id, tab_id, target_id, expires_at, _, _ = entry

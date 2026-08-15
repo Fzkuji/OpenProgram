@@ -116,6 +116,12 @@ def _bridge_webtab_to_parent(data: dict, answer_queue) -> None:
                     binding_id,
                     url=command.get("url") or "",
                     timeout=timeout,
+                    expected_page_revision=int(
+                        command.get("expected_page_revision") or 0
+                    ),
+                    expected_access_revision=int(
+                        command.get("expected_access_revision") or 0
+                    ),
                 )
             else:
                 result = webtab._request(command, timeout)
