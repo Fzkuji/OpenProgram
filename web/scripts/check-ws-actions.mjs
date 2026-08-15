@@ -75,6 +75,12 @@ function isHttpBody(lines, i) {
     .some((l) => /\bbody:/.test(l));
 }
 
+/** TypeScript method parameter types can also contain `action: "…"`.
+ * They describe a local bridge argument, not a WebSocket frame field. */
+function isMethodParameterType(line) {
+  return /^\s*\w+\??\([^)]*\baction:\s*["'][^;]+\)\s*:/.test(line);
+}
+
 /** `wsRequest("action", …)` / `filesWsRequest<T>("action", …)` pass the
  *  action as a positional first argument, usually on its own line — the
  *  per-line `action:` regex above never sees those. The generic parameter
@@ -93,6 +99,7 @@ for (const path of sources(webRoot)) {
   const lines = text.split("\n");
   lines.forEach((line, i) => {
     if (/^\s*(\*|\/\/)/.test(line)) return;
+    if (isMethodParameterType(line)) return;
     for (const m of line.matchAll(/\baction:\s*["']([\w.:-]+)["']/g)) {
       const act = m[1];
       if (registered.has(act) || DYNAMIC.has(act)) continue;
