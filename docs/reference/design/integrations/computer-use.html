@@ -19,14 +19,14 @@
   <header>
     <div class="eyebrow">OpenProgram · Computer Use</div>
     <h1>一个浏览器工具，三个可选 backend，同一个 Page</h1>
-    <p>目标是 GUI Agent Harness 只调用统一的 <code>computer_use</code>；设置将决定由 Playwright MCP、Chrome DevTools MCP 或 Open Claude in Chrome backend 执行。</p>
+    <p>目标是 GUI Agent Harness 只调用统一的 <code>computer_use</code>；设置将决定由 Playwright MCP、Chrome DevTools MCP 或 Open Claude in Chrome-compatible backend 执行。</p>
     <p class="status">TARGET ARCHITECTURE · MULTI-BACKEND NOT IMPLEMENTED</p>
   </header>
 
   <section aria-labelledby="architecture-title">
     <h2 id="architecture-title">系统结构</h2>
     <div class="diagram architecture-diagram"><svg viewBox="0 0 1120 640" role="img">
-      <title>GUI Agent Harness 与三个可选浏览器 backend 的分层关系</title><desc>Chat Agent 把网页任务交给 GUI Agent Harness。Harness 只调用 OpenProgram 的统一 computer_use 工具；Runtime 为当前 ComputerSession 固定 Playwright MCP、Chrome DevTools MCP 或 Open Claude in Chrome backend，并由选中的一个 backend 操作绑定的精确 Page。</desc>
+      <title>GUI Agent Harness 与三个可选浏览器 backend 的分层关系</title><desc>Chat Agent 把网页任务交给 GUI Agent Harness。Harness 只调用 OpenProgram 的统一 computer_use 工具；Runtime 为当前 ComputerSession 固定 Playwright MCP、Chrome DevTools MCP 或 Open Claude in Chrome-compatible backend，并由选中的一个 backend 操作绑定的精确 Page。</desc>
       <defs>
         <linearGradient id="arch-harness" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2b2116"/><stop offset="1" stop-color="#17140f"/></linearGradient>
         <linearGradient id="arch-runtime" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#251a32"/><stop offset="1" stop-color="#15121b"/></linearGradient>
@@ -76,8 +76,8 @@
         <text x="498" y="329" fill="#55bdd6" font-size="14" font-weight="750">Chrome DevTools MCP</text><text x="498" y="351" fill="#c4c0b1" font-size="11">CDP · snapshot · diagnostics</text><text x="498" y="374" fill="#858173" font-size="11">通过 MCP adapter 接入 Runtime</text>
 
         <g filter="url(#arch-shadow)"><rect x="770" y="291" width="280" height="108" rx="16" fill="#1c1610" stroke="#e08a3e" stroke-width="1.5"/></g>
-        <circle cx="812" cy="345" r="21" fill="#2a1d12" stroke="#e08a3e" stroke-opacity=".55"/><text x="812" y="349" fill="#e08a3e" font-size="9" font-weight="800" text-anchor="middle">EXT</text>
-        <text x="848" y="329" fill="#e08a3e" font-size="13.5" font-weight="750">Open Claude in Chrome</text><text x="848" y="351" fill="#c4c0b1" font-size="11">extension · native host · CDP</text><text x="848" y="374" fill="#858173" font-size="11">通过 bridge adapter 接入 Runtime</text>
+        <circle cx="812" cy="345" r="21" fill="#2a1d12" stroke="#e08a3e" stroke-opacity=".55"/><text x="812" y="349" fill="#e08a3e" font-size="9" font-weight="800" text-anchor="middle">VIS</text>
+        <text x="848" y="329" fill="#e08a3e" font-size="13.5" font-weight="750">Open Claude in Chrome</text><text x="848" y="351" fill="#c4c0b1" font-size="11">tool contract · visual actions</text><text x="848" y="374" fill="#858173" font-size="11">OpenProgram Electron / CDP adapter</text>
 
         <text x="42" y="455" fill="#5a5544" font-size="10" font-weight="700" letter-spacing="2">BOUND PAGE</text><line x1="137" y1="451" x2="1078" y2="451" stroke="#29271f"/>
         <path d="M210 399 V426 C210 451 420 442 420 468" fill="none" stroke="#63b15a" stroke-width="2" marker-end="url(#arch-green-arrow)"/><path d="M560 399 V468" fill="none" stroke="#55bdd6" stroke-width="2" marker-end="url(#arch-cyan-arrow)"/><path d="M910 399 V426 C910 451 700 442 700 468" fill="none" stroke="#e08a3e" stroke-width="2" marker-end="url(#arch-orange-arrow)"/>
@@ -124,7 +124,7 @@
       <tr><td class="use">直接使用</td><td>Microsoft Playwright MCP、Playwright、MCP SDK</td><td>开源依赖；固定版本后接入。</td></tr>
       <tr><td class="adapt">直接调用接口</td><td>CDP、Electron <code>webContents.debugger</code>、Chrome <code>debugger</code> / Native Messaging</td><td>不需要复制 Claude 代码；内置浏览器直接使用 Electron/CDP，不需要另装 Chrome 扩展。</td></tr>
       <tr><td class="use">可选 backend</td><td><a href="https://github.com/ChromeDevTools/chrome-devtools-mcp">Chrome DevTools MCP</a></td><td>通过 MCP adapter 接入统一 Runtime，并绑定 exact Page。</td></tr>
-      <tr><td class="adapt">可选 backend</td><td><a href="https://github.com/noemica-io/open-claude-in-chrome">Open Claude in Chrome</a></td><td>通过 extension / native-host bridge adapter 接入统一 Runtime，并绑定 exact Page。</td></tr>
+      <tr><td class="adapt">可选 backend</td><td><a href="https://github.com/noemica-io/open-claude-in-chrome">Open Claude in Chrome-compatible</a></td><td>采用其工具契约与视觉操作方式；由 OpenProgram Electron/CDP adapter 绑定 exact Page。</td></tr>
       <tr><td class="rebuild">OpenProgram 层</td><td>exact Page adapter、统一权限、verification 与 backend selector</td><td>三个 backend 共用；单个 ComputerSession 只允许一个 backend 执行动作。</td></tr>
     </tbody></table></div>
   </section>
