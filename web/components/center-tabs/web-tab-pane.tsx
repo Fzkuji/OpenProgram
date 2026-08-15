@@ -126,6 +126,10 @@ function DesktopWebTabPane({
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [findResult, setFindResult] = useState({ activeMatchOrdinal: 0, matches: 0 });
+  const canFind = typeof bridge.webTab.find === "function"
+    && typeof bridge.webTab.stopFind === "function";
+  const canZoom = typeof bridge.webTab.zoom === "function";
+  const canPrint = typeof bridge.webTab.print === "function";
   const bodyRef = useRef<HTMLDivElement>(null);
   const addressRef = useRef<HTMLInputElement>(null);
   const findRef = useRef<HTMLInputElement>(null);
@@ -226,7 +230,7 @@ function DesktopWebTabPane({
   }), [bridge, tabId]);
 
   useEffect(() => () => {
-    bridge.webTab.stopFind(tabId, "clearSelection");
+    bridge.webTab.stopFind?.(tabId, "clearSelection");
   }, [bridge, tabId]);
 
   // Store url changed by someone else (session restore, future agent
@@ -265,6 +269,7 @@ function DesktopWebTabPane({
   }
 
   function openFind() {
+    if (!canFind) return;
     setFindOpen(true);
     window.requestAnimationFrame(() => {
       findRef.current?.focus();
@@ -273,7 +278,7 @@ function DesktopWebTabPane({
   }
 
   function closeFind() {
-    bridge.webTab.stopFind(tabId, "clearSelection");
+    bridge.webTab.stopFind?.(tabId, "clearSelection");
     setFindOpen(false);
     setFindResult({ activeMatchOrdinal: 0, matches: 0 });
   }
@@ -281,22 +286,25 @@ function DesktopWebTabPane({
   function runFind(nextQuery: string, forward = true, findNext = true) {
     setFindQuery(nextQuery);
     if (!nextQuery) {
-      bridge.webTab.stopFind(tabId, "clearSelection");
+      bridge.webTab.stopFind?.(tabId, "clearSelection");
       setFindResult({ activeMatchOrdinal: 0, matches: 0 });
       return;
     }
-    bridge.webTab.find(tabId, nextQuery, { forward, findNext });
+    bridge.webTab.find?.(tabId, nextQuery, { forward, findNext });
   }
 
   function handleRendererShortcut(event: KeyboardEvent<HTMLDivElement>) {
     const action = browserPageShortcut(event);
     if (!action) return;
+    if (action === "find" && !canFind) return;
+    if ((action === "zoom-in" || action === "zoom-out" || action === "reset-zoom") && !canZoom) return;
+    if (action === "print" && !canPrint) return;
     event.preventDefault();
     if (action === "find") openFind();
-    if (action === "zoom-in") void bridge.webTab.zoom(tabId, "in");
-    if (action === "zoom-out") void bridge.webTab.zoom(tabId, "out");
-    if (action === "reset-zoom") void bridge.webTab.zoom(tabId, "reset");
-    if (action === "print") void bridge.webTab.print(tabId);
+    if (action === "zoom-in") void bridge.webTab.zoom?.(tabId, "in");
+    if (action === "zoom-out") void bridge.webTab.zoom?.(tabId, "out");
+    if (action === "reset-zoom") void bridge.webTab.zoom?.(tabId, "reset");
+    if (action === "print") void bridge.webTab.print?.(tabId);
   }
 
   const disabledStyle = { opacity: 0.35, cursor: "default" } as const;
@@ -362,11 +370,11 @@ function DesktopWebTabPane({
             home: () => useCenterTabs.getState().replaceWebTabWithNewTabPage(tabId),
             forward: () => bridge.webTab.goForward(tabId),
             openExternal: () => bridge.openExternal(viewUrlRef.current),
-            find: openFind,
-            zoomIn: () => { void bridge.webTab.zoom(tabId, "in"); },
-            zoomOut: () => { void bridge.webTab.zoom(tabId, "out"); },
-            resetZoom: () => { void bridge.webTab.zoom(tabId, "reset"); },
-            print: () => { void bridge.webTab.print(tabId); },
+            find: canFind ? openFind : undefined,
+            zoomIn: canZoom ? () => { void bridge.webTab.zoom?.(tabId, "in"); } : undefined,
+            zoomOut: canZoom ? () => { void bridge.webTab.zoom?.(tabId, "out"); } : undefined,
+            resetZoom: canZoom ? () => { void bridge.webTab.zoom?.(tabId, "reset"); } : undefined,
+            print: canPrint ? () => { void bridge.webTab.print?.(tabId); } : undefined,
           }}
           canGoForward={canGoForward}
         />

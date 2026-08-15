@@ -131,14 +131,14 @@ export interface DesktopWebTabApi {
   stop(id: string): void;
   goBack(id: string): void;
   goForward(id: string): void;
-  find(
+  find?(
     id: string,
     query: string,
     options?: { forward?: boolean; findNext?: boolean },
   ): void;
-  stopFind(id: string, action: "clearSelection" | "keepSelection" | "activateSelection"): void;
-  zoom(id: string, action: "in" | "out" | "reset"): Promise<number | null>;
-  print(id: string): Promise<boolean>;
+  stopFind?(id: string, action: "clearSelection" | "keepSelection" | "activateSelection"): void;
+  zoom?(id: string, action: "in" | "out" | "reset"): Promise<number | null>;
+  print?(id: string): Promise<boolean>;
   /** Navigation/title/loading events pushed from main; returns the
    *  unsubscribe function. */
   onState(cb: (state: DesktopWebTabState) => void): () => void;
