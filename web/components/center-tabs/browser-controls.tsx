@@ -124,7 +124,9 @@ export function BrowserMenu({
   const actionsRef = useRef(actions);
   actionsRef.current = actions;
   const [paneWidth, setPaneWidth] = useState(Number.POSITIVE_INFINITY);
-  const responsive = browserResponsiveMenuItems(paneWidth);
+  const responsive = browserResponsiveMenuItems(paneWidth, {
+    forward: Boolean(actions.forward),
+  });
   const actionPrefix = `browsermenu:${tabId}:`;
 
   useEffect(() => {

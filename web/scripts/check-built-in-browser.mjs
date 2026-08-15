@@ -115,19 +115,24 @@ const browserLayoutCompiled = ts.transpileModule(browserLayoutSource, {
 const browserLayout = await import(
   `data:text/javascript;base64,${Buffer.from(browserLayoutCompiled).toString("base64")}`
 );
-assert.deepEqual(browserLayout.browserResponsiveMenuItems(720), {
+assert.deepEqual(browserLayout.browserResponsiveMenuItems(720, { forward: true }), {
   home: false,
   forward: false,
   openExternal: false,
 });
-assert.deepEqual(browserLayout.browserResponsiveMenuItems(600), {
+assert.deepEqual(browserLayout.browserResponsiveMenuItems(600, { forward: true }), {
   home: true,
   forward: false,
   openExternal: true,
 });
-assert.deepEqual(browserLayout.browserResponsiveMenuItems(500), {
+assert.deepEqual(browserLayout.browserResponsiveMenuItems(500, { forward: true }), {
   home: true,
   forward: true,
+  openExternal: true,
+});
+assert.deepEqual(browserLayout.browserResponsiveMenuItems(500, { forward: false }), {
+  home: true,
+  forward: false,
   openExternal: true,
 });
 
