@@ -206,6 +206,7 @@ export function BrowserImportDialog({
 
 export function BrowserHomePage() {
   const { text } = useTranslation();
+  const canImport = Boolean(desktopBridge()?.browserImport);
   const openWebTab = useCenterTabs((state) => state.openWebTab);
   const [url, setUrl] = useState("");
   const [shortcuts, setShortcuts] = useState<Shortcut[]>(readShortcuts);
@@ -248,18 +249,20 @@ export function BrowserHomePage() {
           aria-label={text("Address", "地址")}
           autoFocus
         />
-        <button
-          type="button"
-          onClick={() => setShowImport(true)}
-          title={text("Import browser data", "导入浏览器资料")}
-          aria-label={text("Import browser data", "导入浏览器资料")}
-        >
-          <Download size={15} aria-hidden="true" />
-        </button>
+        {canImport ? (
+          <button
+            type="button"
+            onClick={() => setShowImport(true)}
+            title={text("Import browser data", "导入浏览器资料")}
+            aria-label={text("Import browser data", "导入浏览器资料")}
+          >
+            <Download size={15} aria-hidden="true" />
+          </button>
+        ) : null}
         <button type="button" disabled={!canGo} onClick={() => go()}>{text("Open", "打开")}</button>
       </div>
       <div className={styles.browserHomeBody}>
-        {showImport && (
+        {canImport && showImport && (
           <BrowserImportDialog onDismiss={() => {
             markBrowserImportPromptFinished();
             setShowImport(false);

@@ -85,7 +85,9 @@ export function BrowserMenu() {
   const router = useRouter();
   const { text } = useTranslation();
   const visible = useBookmarksBarPreference();
-  const mainMenu = desktopBridge()?.mainMenu;
+  const bridge = desktopBridge();
+  const mainMenu = bridge?.mainMenu;
+  const canImport = Boolean(bridge?.browserImport);
   const label = text("Browser menu", "浏览器菜单");
 
   useEffect(() => {
@@ -109,7 +111,7 @@ export function BrowserMenu() {
             id: string,
             english: string,
             chinese: string,
-            extra?: Pick<DesktopContextMenuItem, "separatorBefore" | "checked">,
+            extra?: Pick<DesktopContextMenuItem, "separatorBefore" | "checked" | "disabled">,
           ): DesktopContextMenuItem => ({
             id: `browsermenu:${id}`,
             label: text(english, chinese),
@@ -123,7 +125,7 @@ export function BrowserMenu() {
               item("bookmarks", "Bookmarks", "书签", { separatorBefore: true }),
               item("history", "History", "历史"),
               item("toggle-bookmarks-bar", "Show bookmarks bar", "显示书签栏", { checked: visible }),
-              item("import", "Import browser data", "导入浏览器资料", { separatorBefore: true }),
+              item("import", "Import browser data", "导入浏览器资料", { separatorBefore: true, disabled: !canImport }),
               item("clear-data", "Clear browsing data", "清除浏览数据"),
               item("settings", "Browser settings", "浏览器设置", { separatorBefore: true }),
             ],
@@ -162,7 +164,7 @@ export function BrowserMenu() {
         {row("history", <Clock3 size={14} />, "History", "历史")}
         {row("toggle-bookmarks-bar", <span className="w-[14px]" />, "Show bookmarks bar", "显示书签栏", visible)}
         <DropdownMenuSeparator className={MENU_SEPARATOR} />
-        {row("import", <Import size={14} />, "Import browser data", "导入浏览器资料")}
+        {canImport ? row("import", <Import size={14} />, "Import browser data", "导入浏览器资料") : null}
         {row("clear-data", <Trash2 size={14} />, "Clear browsing data", "清除浏览数据")}
         <DropdownMenuSeparator className={MENU_SEPARATOR} />
         {row("settings", <Settings size={14} />, "Browser settings", "浏览器设置")}
