@@ -43,6 +43,7 @@ import {
 import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   clearPendingUserText,
+  getPendingUserTimestamp,
   getPendingUserText,
 } from "@/lib/pending-user-text";
 
@@ -175,6 +176,7 @@ function handleAck(
   // IS the user turn's id — keying it here lets the reply (`_reply`
   // suffix) and the later result anchor to the same turn.
   const text = getPendingUserText(sid);
+  const timestamp = getPendingUserTimestamp(sid);
   if (d.msg_id && typeof text === "string" && text) {
     const isRun = /^(run|create|fix)\s/i.test(text);
     // The ack echoes the STORED text, which differs from the draft in
@@ -187,6 +189,7 @@ function handleAck(
       d.msg_id,
       typeof d.text === "string" && d.text ? d.text : text,
       isRun ? "runtime" : undefined,
+      timestamp,
     );
     // Create the reply bubble right away (after the user turn, so the
     // order is right) — gives an immediate typing indicator / pending
@@ -543,6 +546,7 @@ export function appendLocalUserTurn(
   msgId: string,
   text: string,
   display?: "runtime" | "normal",
+  timestamp = Date.now(),
 ): void {
   const store = useSessionStore.getState();
   if (store.messagesById[msgId]) return;
@@ -552,6 +556,7 @@ export function appendLocalUserTurn(
     content: text,
     display: display === "runtime" ? "runtime" : undefined,
     status: "done",
+    timestamp,
   });
 }
 

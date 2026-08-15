@@ -16,6 +16,7 @@ import {
 import {
   clearPendingFirstAck,
   clearPendingUserText,
+  getPendingUserTimestamp,
   getPendingUserText,
   hasPendingFirstAck,
   hasPendingUserText,
@@ -91,6 +92,7 @@ function reservePendingChatSend(
     return null;
   }
   const previousText = getPendingUserText(sessionId);
+  const previousTimestamp = getPendingUserTimestamp(sessionId);
   const hadPreviousText = hasPendingUserText(sessionId);
   setPendingUserText(sessionId, text);
   if (sessionId.startsWith("local_")) {
@@ -99,7 +101,7 @@ function reservePendingChatSend(
   return () => {
     if (getPendingUserText(sessionId) === text) {
       if (hadPreviousText && previousText !== undefined) {
-        setPendingUserText(sessionId, previousText);
+        setPendingUserText(sessionId, previousText, previousTimestamp ?? Date.now());
       } else {
         clearPendingUserText(sessionId);
       }

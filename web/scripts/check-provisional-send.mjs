@@ -97,6 +97,67 @@ assert.ok(
   useSessionStore.getState().runningTasks[provisional],
   "the provisional chat key becomes running immediately",
 );
+const sentAt = pendingUserText.getPendingUserTimestamp(provisional);
+assert.ok(
+  Number.isFinite(sentAt),
+  "a successful send must capture the user-message timestamp immediately",
+);
+
+const { applyChatWsMessage } = await import("../lib/net/chat-stream.ts");
+applyChatWsMessage({
+  type: "chat_ack",
+  data: { session_id: provisional, msg_id: "sent-user-1", text: "first" },
+});
+assert.equal(
+  useSessionStore.getState().messagesById["sent-user-1"].timestamp,
+  sentAt,
+  "the live user bubble must use the original send timestamp before refresh",
+);
+assert.ok(
+  Number.isFinite(useSessionStore.getState().messagesById["sent-user-1_reply"].timestamp),
+  "the live assistant placeholder must have a timestamp as soon as it appears",
+);
+
+useSessionStore.getState().appendMessage("timestamp-system", {
+  id: "system-without-explicit-time",
+  role: "system",
+  content: "transient notice",
+  status: "done",
+});
+assert.ok(
+  Number.isFinite(
+    useSessionStore.getState().messagesById["system-without-explicit-time"].timestamp,
+  ),
+  "every live message appended to the shared store must receive a timestamp",
+);
+
+const persistedTimestamp = 1_700_000_000;
+useSessionStore.getState().setMessages("timestamp-history", [
+  {
+    id: "history-authoritative-time",
+    role: "assistant",
+    content: "persisted",
+    status: "done",
+    timestamp: persistedTimestamp,
+  },
+  {
+    id: "history-missing-time",
+    role: "user",
+    content: "legacy",
+    status: "done",
+  },
+]);
+assert.equal(
+  useSessionStore.getState().messagesById["history-authoritative-time"].timestamp,
+  persistedTimestamp,
+  "history hydration must preserve the persisted authoritative timestamp",
+);
+assert.ok(
+  Number.isFinite(
+    useSessionStore.getState().messagesById["history-missing-time"].timestamp,
+  ),
+  "legacy history rows without time must still render a timestamp",
+);
 
 // Callable local commands return no chat_ack/result envelope. Their dedicated
 // response must release the provisional send reservation and running state so

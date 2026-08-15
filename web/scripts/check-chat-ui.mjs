@@ -19,6 +19,7 @@ const conversations = source("lib/runtime-bridge/conversations.ts");
 const chatHandlers = source("lib/runtime-bridge/chat-handlers.ts");
 const sessionStore = source("lib/session-store/index.ts");
 const assistantBubble = source("components/chat/messages/assistant-bubble.tsx");
+const queuedMessages = source("components/chat/messages/queued-messages.tsx");
 const runtimeBlock = source("components/chat/messages/runtime-block.tsx");
 const executionStrip = source("components/chat/messages/execution-strip.tsx");
 const runtimeHelpers = source("lib/runtime-bridge/helpers.ts");
@@ -788,6 +789,11 @@ assert.doesNotMatch(
   chatCss,
   /\.message \.message-actions-footer \.message-actions\s*\{[^}]*opacity:\s*1/s,
   "chat message footers must not force the timestamp visible without hover",
+);
+assert.match(
+  queuedMessages,
+  /queuedAt:[\s\S]*className="message-timestamp"[\s\S]*new Date\(row\.queuedAt\)\.toLocaleTimeString/,
+  "queued user messages must show their enqueue timestamp before dispatch",
 );
 assert.match(
   chatVisualSpec,
