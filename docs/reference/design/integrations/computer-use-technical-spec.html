@@ -35,21 +35,21 @@
     <div class="eyebrow">OpenProgram · technical specification</div>
     <h1>Computer Use 技术规格</h1>
     <p class="lead">本页只保留实现需要的模式、工具、权限、失败和验收规格。结构与交互图见 <a href="computer-use.html">设计概览</a>。</p>
-    <p class="status">IMPLEMENTATION REFERENCE · DUAL MODE NOT IMPLEMENTED</p>
+    <p class="status">IMPLEMENTATION REFERENCE · MULTI-BACKEND NOT IMPLEMENTED</p>
   </header>
 
-  <nav aria-label="目录"><a href="#modes">两种模式</a><a href="#reuse">开源与复用</a><a href="#contract">工具契约</a><a href="#boundaries">成本与边界</a><a href="#delivery">实施顺序</a><a href="#acceptance">验收</a><a href="#evidence">当前证据</a></nav>
+  <nav aria-label="目录"><a href="#modes">三个 backend</a><a href="#reuse">开源与复用</a><a href="#contract">工具契约</a><a href="#boundaries">成本与边界</a><a href="#delivery">实施顺序</a><a href="#acceptance">验收</a><a href="#evidence">当前证据</a></nav>
 
   <section id="modes">
-    <h2>两种执行模式</h2>
-    <div class="table-scroll"><table><thead><tr><th></th><th>Microsoft Playwright MCP</th><th>Claude-compatible Browser Control</th></tr></thead><tbody>
-      <tr><td>设置值</td><td><code>playwright_mcp</code> <span class="default">默认</span></td><td><code>claude_compatible</code></td></tr>
-      <tr><td>实现</td><td>固定版本的官方 <code>@playwright/mcp</code>，作为 Runtime 私有 child process，通过 stdio 接入。</td><td>OpenProgram 基于 exact WebContents/CDP target 的 clean-room bridge。</td></tr>
-      <tr><td>观察</td><td>Accessibility snapshot、DOM/ARIA、稳定 ref。</td><td>DOM/accessibility snapshot、exact node handle、受限 console/network diagnostics。</td></tr>
-      <tr><td>动作</td><td>一个 canonical Action 映射为一个 allowlisted upstream action。</td><td>同一个 Action 映射为一次 bound WebContents/CDP action。</td></tr>
-      <tr><td>限制</td><td>不暴露 upstream tabs/eval/storage/files；必须先通过 exact Page 隔离测试。</td><td>不声称兼容 Claude 私有协议、源码或内部 locator 算法。</td></tr>
+    <h2>三个执行 backend</h2>
+    <div class="table-scroll"><table><thead><tr><th></th><th>Playwright MCP</th><th>Chrome DevTools MCP</th><th>Open Claude in Chrome</th></tr></thead><tbody>
+      <tr><td>设置值</td><td><code>playwright_mcp</code> <span class="default">默认</span></td><td><code>chrome_devtools_mcp</code></td><td><code>open_claude_chrome</code></td></tr>
+      <tr><td>Runtime adapter</td><td>固定版本的官方 <code>@playwright/mcp</code>，作为私有 child process 通过 stdio 接入。</td><td>固定版本的官方 <code>chrome-devtools-mcp</code>，通过 MCP adapter 绑定已授权 CDP target。</td><td>extension / native-host bridge adapter 把工具调用绑定到已授权 WebContents/CDP target。</td></tr>
+      <tr><td>观察</td><td>Accessibility snapshot、DOM/ARIA、稳定 ref。</td><td>DOM snapshot、可访问性信息和受限 console/network diagnostics。</td><td>页面结构、ref；语义定位不足时返回一张 viewport screenshot。</td></tr>
+      <tr><td>动作</td><td>一个 canonical Action 映射为一个 allowlisted upstream action。</td><td>同一个 Action 映射为一次 bound CDP action。</td><td>同一个 Action 映射为一次 bound extension/CDP action。</td></tr>
+      <tr><td>接入条件</td><td>禁用 tabs/eval/storage/files 等越界工具；先通过 exact Page 隔离测试。</td><td>禁止自行枚举或切换 Page；所有 target 由 Runtime adapter 指定。</td><td>bridge 不接受 extension 自报 target；Page identity、权限和 verification 仍由 Runtime 决定。</td></tr>
     </tbody></table></div>
-    <p>设置只影响新的 ComputerSession。session 创建后 mode 冻结；失败、超时或 stale frame 都不能自动切换 backend，避免重复点击和重复提交。</p>
+    <p>设置只影响新的 ComputerSession。session 创建后 backend 冻结；失败、超时或 stale frame 都不能自动切换 backend，避免重复点击和重复提交。</p>
   </section>
 
   <section id="reuse">
@@ -63,7 +63,7 @@
       <tr><td><a href="https://github.com/ChromeDevTools/devtools-protocol">Chrome DevTools Protocol</a></td><td class="evidence-yes">开放协议与类型 · BSD-3-Clause</td><td>可以</td><td>直接调用 <code>Page.captureScreenshot</code>、<code>Input.dispatchMouseEvent</code> 等命令，不需要 Claude 代码。</td></tr>
       <tr><td><a href="https://www.electronjs.org/docs/latest/api/debugger">Electron webContents.debugger</a></td><td class="evidence-yes">Electron 开源 · MIT；API 已内置</td><td>可以</td><td>内置浏览器的首选 CDP transport；绑定 exact WebContents/target，不要求窗口置前。</td></tr>
       <tr><td><a href="https://developer.chrome.com/docs/extensions/reference/api/debugger">Chrome debugger API</a> 与 <a href="https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging">Native Messaging</a></td><td class="evidence-partial">Chrome/Chromium 的公开内置接口，不是独立库</td><td>可以调用</td><td>只在以后控制独立 Chrome 扩展时需要；OpenProgram 内置浏览器不需要 Native Messaging host。</td></tr>
-      <tr><td><a href="https://github.com/noemica-io/open-claude-in-chrome">Open Claude in Chrome</a></td><td class="evidence-partial">第三方 source-available 实现 · PolyForm Noncommercial 1.0.0；不是 Anthropic 官方项目</td><td>仅可审查行为与架构</td><td>未经单独授权不复制或集成到 OpenProgram；内置浏览器不采用其 Chrome 扩展和 Native Messaging host，也不继承其 parity 声明。</td></tr>
+      <tr><td><a href="https://github.com/noemica-io/open-claude-in-chrome">Open Claude in Chrome</a></td><td class="evidence-partial">第三方 source-available 实现 · PolyForm Noncommercial 1.0.0；不是 Anthropic 官方项目</td><td>当前非商业范围可评估接入</td><td>作为可选 backend 时必须经过 OpenProgram bridge adapter；Page identity、权限和 verification 不交给扩展决定。</td></tr>
       <tr><td><a href="https://github.com/anthropics/claude-code/blob/main/LICENSE.md">Claude Code 公开仓库</a></td><td class="evidence-no">仓库内容 all rights reserved；该结论只适用于此仓库</td><td>不可以按开源代码复制</td><td>不依赖其内部代码，只参考官方公开产品行为。</td></tr>
       <tr><td>Anthropic 官方 Claude Chrome 扩展的 action handler、视觉光标、权限 UI 与 native host</td><td class="evidence-no">发布产品可安装；未公开可复用源码或明确的开源许可证</td><td>不可以直接复制</td><td>只参考官方公开行为；OpenProgram 保持自己的 <code>computer_use</code> contract 和 backend adapter。</td></tr>
       <tr><td>Claude 模型的视觉定位能力</td><td class="evidence-no">托管模型能力，不开源</td><td>只能通过服务使用</td><td>不依赖 Claude 专用实现；把单张截图交给当前所选模型的原生 vision。</td></tr>
@@ -101,15 +101,16 @@ computer_use({ command: "verify", computer_session_id: "cs_…", assertion: { �
     <div class="phase"><div class="phase-id">PHASE 0</div><div><strong>验证官方 MCP 隔离能力</strong><br>连接测试 Electron CDP，验证 snapshot/ref 和 exact Page 限制。</div><div class="gate">出口：A/B 两个 web Page 与 chat Page 的越权测试通过；否则选 upstream contract adapter。</div></div>
     <div class="phase"><div class="phase-id">PHASE 1</div><div><strong>扩展现有 OpenProgram MCP server</strong><br>新增一个 browser-control tool 和一次性 Page token；保留现有非浏览器 tools。</div><div class="gate">出口：真实 initialize/list/call/cancel 通过，伪造与重放在 backend 前拒绝。</div></div>
     <div class="phase"><div class="phase-id">PHASE 2</div><div><strong>完成 Page Registry</strong><br>动态 geometry、revisions、access、exact resolve、hide/transfer/close invalidation。</div><div class="gate">出口：左右互换、上下分屏、双窗口与 target replacement 通过。</div></div>
-    <div class="phase"><div class="phase-id">PHASE 3</div><div><strong>接入 Playwright MCP mode</strong><br>只开放 snapshot/ref 和允许的动作，复用共同 policy/verification。</div><div class="gate">出口：DOM、canvas、非前台、多 Page、popup 和失败路径通过。</div></div>
-    <div class="phase"><div class="phase-id">PHASE 4</div><div><strong>实现 Claude-compatible mode</strong><br>结构化读取、动作、截图、受限诊断和用户可见 action cursor。</div><div class="gate">出口：与 Playwright mode 共用的 parity suite 通过。</div></div>
-    <div class="phase"><div class="phase-id">PHASE 5</div><div><strong>设置与安装版验收</strong><br>增加一个 mode selector，并在默认 18100、<code>/Applications/OpenProgram.app</code> 中运行相同任务集。</div><div class="gate">出口：当前 session mode 冻结；没有双执行或自动 fallback。</div></div>
+    <div class="phase"><div class="phase-id">PHASE 3</div><div><strong>接入 Playwright MCP backend</strong><br>只开放 snapshot/ref 和允许的动作，复用共同 policy/verification。</div><div class="gate">出口：DOM、canvas、非前台、多 Page、popup 和失败路径通过。</div></div>
+    <div class="phase"><div class="phase-id">PHASE 4</div><div><strong>接入 Chrome DevTools MCP backend</strong><br>实现 exact target adapter，禁止 upstream 自行选择 Page。</div><div class="gate">出口：与 Playwright backend 共用的 parity suite 通过。</div></div>
+    <div class="phase"><div class="phase-id">PHASE 5</div><div><strong>接入 Open Claude in Chrome backend</strong><br>实现 extension / native-host bridge、结构化读取、截图和 action cursor。</div><div class="gate">出口：同一 Page、权限、失败与 verification parity suite 通过。</div></div>
+    <div class="phase"><div class="phase-id">PHASE 6</div><div><strong>设置与安装版验收</strong><br>增加一个 backend selector，并在默认 18100、<code>/Applications/OpenProgram.app</code> 中运行相同任务集。</div><div class="gate">出口：当前 session backend 冻结；没有双执行或自动 fallback。</div></div>
   </section>
 
   <section id="acceptance">
     <h2>发布前必须证明</h2>
     <ol class="checks">
-      <li><strong>工具面：</strong>浏览器控制只有一个 <code>computer_use</code>，不暴露 upstream/Claude 第二套工具。</li><li><strong>Page 隔离：</strong>授权 A 时，对 B、chat Page 和另一窗口的读写调用次数都是 0。</li><li><strong>模式冻结：</strong>设置变更不影响当前 ComputerSession，只影响下一 session。</li><li><strong>副作用唯一：</strong>backend failure 不触发另一 backend；一个 Action 最多一次真实写入。</li><li><strong>跨模式一致：</strong>同一任务得到相同 Page/frame 生命周期、权限、reason code 和 verification。</li><li><strong>Page Awareness：</strong>页面换到 chat 左侧或右侧后，下一 turn relation 与 preview 正确更新。</li><li><strong>非前台执行：</strong>应用被遮挡时仍操作相同 Page，且没有 focus/OS input 调用。</li><li><strong>视觉限制：</strong>普通 DOM 流截图数为 0；canvas 流每次 observation 最多 1 张。</li><li><strong>失败诚实性：</strong>空 assertion、stale frame、timeout、cancel、target lost 都不能返回 succeeded。</li><li><strong>Chat 稳定：</strong>GUI tool update 不重建历史 message/avatar/markdown DOM。</li>
+      <li><strong>工具面：</strong>浏览器控制只有一个 <code>computer_use</code>，不暴露 backend 自带的第二套工具。</li><li><strong>Page 隔离：</strong>授权 A 时，对 B、chat Page 和另一窗口的读写调用次数都是 0。</li><li><strong>backend 冻结：</strong>设置变更不影响当前 ComputerSession，只影响下一 session。</li><li><strong>副作用唯一：</strong>backend failure 不触发另一 backend；一个 Action 最多一次真实写入。</li><li><strong>跨 backend 一致：</strong>同一任务得到相同 Page/frame 生命周期、权限、reason code 和 verification。</li><li><strong>Page Awareness：</strong>页面换到 chat 左侧或右侧后，下一 turn relation 与 preview 正确更新。</li><li><strong>非前台执行：</strong>应用被遮挡时仍操作相同 Page，且没有 focus/OS input 调用。</li><li><strong>视觉限制：</strong>普通 DOM 流截图数为 0；canvas 流每次 observation 最多 1 张。</li><li><strong>失败诚实性：</strong>空 assertion、stale frame、timeout、cancel、target lost 都不能返回 succeeded。</li><li><strong>Chat 稳定：</strong>GUI tool update 不重建历史 message/avatar/markdown DOM。</li>
     </ol>
   </section>
 
@@ -120,8 +121,10 @@ computer_use({ command: "verify", computer_session_id: "cs_…", assertion: { �
       <tr><td>DOM-first task wrapper 与 point fallback</td><td class="evidence-yes">已验证 baseline</td><td><code>agentic_functions/browser_agent/__init__.py</code> 与 component tests</td></tr>
       <tr><td>通用 MCP server/client 与 image content</td><td class="evidence-partial">已有基础</td><td><code>openprogram/mcp_server/</code>、<code>openprogram/mcp/</code></td></tr>
       <tr><td>动态 Page geometry、registry、lease</td><td class="evidence-partial">部分实现</td><td>当前仍有旧 <code>surface</code> 命名和固定 relation baseline</td></tr>
-      <tr><td>Microsoft Playwright MCP backend</td><td class="evidence-no">未实现</td><td>只有官方文档研究与本页设计</td></tr>
-      <tr><td>Claude-compatible backend 与 selector</td><td class="evidence-no">未实现</td><td>只有公开行为规格与本页设计</td></tr>
+      <tr><td>Playwright MCP backend</td><td class="evidence-no">未实现</td><td>只有官方文档研究与本页设计</td></tr>
+      <tr><td>Chrome DevTools MCP backend</td><td class="evidence-no">未实现</td><td>只有官方工具研究与本页 adapter 设计</td></tr>
+      <tr><td>Open Claude in Chrome backend</td><td class="evidence-no">未实现</td><td>只有第三方实现研究与本页 bridge 设计</td></tr>
+      <tr><td>multi-backend selector</td><td class="evidence-no">未实现</td><td>当前 ComputerSession 尚未保存三个 setting 之一</td></tr>
     </tbody></table></div>
     <p class="caption">本文没有把目标能力写成已实现。完整实施记录继续维护在 <a href="computer-use-implementation.html">Computer Use 实施记录</a>。</p>
     <h3>需要实现者展开时再读</h3>

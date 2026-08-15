@@ -33,6 +33,7 @@
         <linearGradient id="arch-page-stroke" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#63b15a"/><stop offset=".5" stop-color="#55bdd6"/><stop offset="1" stop-color="#e08a3e"/></linearGradient>
         <filter id="arch-shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000" flood-opacity=".35"/></filter>
         <marker id="arch-arrow" markerWidth="10" markerHeight="10" refX="9" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8Z" fill="#858173"/></marker>
+        <marker id="arch-blue-arrow" markerWidth="10" markerHeight="10" refX="9" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8Z" fill="#5b91f2"/></marker>
         <marker id="arch-green-arrow" markerWidth="10" markerHeight="10" refX="9" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8Z" fill="#63b15a"/></marker>
         <marker id="arch-cyan-arrow" markerWidth="10" markerHeight="10" refX="9" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8Z" fill="#55bdd6"/></marker>
         <marker id="arch-orange-arrow" markerWidth="10" markerHeight="10" refX="9" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8Z" fill="#e08a3e"/></marker>
@@ -122,9 +123,9 @@
     <div class="table-scroll"><table><thead><tr><th>结论</th><th>组件</th><th>OpenProgram 处理</th></tr></thead><tbody>
       <tr><td class="use">直接使用</td><td>Microsoft Playwright MCP、Playwright、MCP SDK</td><td>开源依赖；固定版本后接入。</td></tr>
       <tr><td class="adapt">直接调用接口</td><td>CDP、Electron <code>webContents.debugger</code>、Chrome <code>debugger</code> / Native Messaging</td><td>不需要复制 Claude 代码；内置浏览器直接使用 Electron/CDP，不需要另装 Chrome 扩展。</td></tr>
-      <tr><td class="adapt">开源参考</td><td><a href="https://github.com/ChromeDevTools/chrome-devtools-mcp">Chrome DevTools MCP</a></td><td>参考工具契约与 CDP 调用；不把它接成新的 Agent 或第三种 backend。</td></tr>
-      <tr><td class="adapt">受限源码参考</td><td><a href="https://github.com/noemica-io/open-claude-in-chrome">Open Claude in Chrome</a></td><td>PolyForm Noncommercial 1.0.0；仅审查行为与架构，未经单独授权不复制或集成到 OpenProgram。</td></tr>
-      <tr><td class="rebuild">自行实现</td><td>OpenProgram exact Page adapter、视觉光标与权限 UI</td><td>基于公开接口实现；内置浏览器不需要第三方 Chrome 扩展或 Native Messaging host。</td></tr>
+      <tr><td class="use">可选 backend</td><td><a href="https://github.com/ChromeDevTools/chrome-devtools-mcp">Chrome DevTools MCP</a></td><td>通过 MCP adapter 接入统一 Runtime，并绑定 exact Page。</td></tr>
+      <tr><td class="adapt">可选 backend</td><td><a href="https://github.com/noemica-io/open-claude-in-chrome">Open Claude in Chrome</a></td><td>通过 extension / native-host bridge adapter 接入统一 Runtime，并绑定 exact Page。</td></tr>
+      <tr><td class="rebuild">OpenProgram 层</td><td>exact Page adapter、统一权限、verification 与 backend selector</td><td>三个 backend 共用；单个 ComputerSession 只允许一个 backend 执行动作。</td></tr>
     </tbody></table></div>
   </section>
 
