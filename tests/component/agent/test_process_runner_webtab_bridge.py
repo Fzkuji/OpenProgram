@@ -1,6 +1,7 @@
 import multiprocessing
+from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
-from threading import Thread
+from threading import Lock, Thread
 
 
 def test_child_webtab_bridge_round_trips_one_request():
@@ -71,3 +72,59 @@ def test_parent_webtab_bridge_result_crosses_process_queue(monkeypatch):
     finally:
         replies.close()
         replies.join_thread()
+
+
+def test_multiwindow_bindings_remain_isolated_under_concurrency(monkeypatch):
+    from openprogram.webui.ws_actions import webtab
+
+    owners = [object(), object()]
+    bindings = []
+    expected = {}
+    targets = {}
+    for owner_index, owner in enumerate(owners):
+        for tab_index in range(24):
+            window_id = f"window-{owner_index}"
+            tab_id = f"tab-{tab_index}"
+            target_id = f"target-{tab_index}"
+            binding_id = webtab.register_binding(
+                owner, window_id, tab_id, target_id,
+            )
+            bindings.append(binding_id)
+            expected[binding_id] = (owner, window_id, tab_id, target_id)
+            targets[(owner, window_id, tab_id)] = target_id
+
+    seen = []
+    seen_lock = Lock()
+
+    def request(owner, command, timeout=5.0):
+        del timeout
+        with seen_lock:
+            seen.append((owner, command["window_id"], command["tab_id"]))
+        return {
+            "ok": True,
+            "window_id": command["window_id"],
+            "tab_id": command["tab_id"],
+            "target_id": targets[(owner, command["window_id"], command["tab_id"])],
+        }
+
+    monkeypatch.setattr(webtab, "request_on_ws", request)
+    try:
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            results = list(pool.map(webtab.request_bound_tab, bindings))
+
+        assert all(result["ok"] for result in results)
+        assert len(seen) == len(bindings)
+        for binding_id in bindings:
+            owner, window_id, tab_id, _ = expected[binding_id]
+            assert (owner, window_id, tab_id) in seen
+        for tab_index in range(24):
+            assert webtab.binding_page_key(bindings[tab_index]) != (
+                webtab.binding_page_key(bindings[24 + tab_index])
+            )
+
+        webtab.release_connection(owners[0])
+        assert all(binding_id not in webtab._bindings for binding_id in bindings[:24])
+        assert all(binding_id in webtab._bindings for binding_id in bindings[24:])
+    finally:
+        for owner in owners:
+            webtab.release_connection(owner)
