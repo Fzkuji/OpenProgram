@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -262,6 +264,75 @@ def test_registry_binds_session_to_owner_and_consumes_exact_page_capability():
     )
     assert closed["closed"] is True
     assert released == ["ctx-1"]
+
+
+def test_failed_first_observe_releases_session_and_page_context():
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSessionRegistry,
+    )
+
+    class _FailingAdapter(_Adapter):
+        def observe(self, session, arguments):
+            return {"ok": False, "reason_code": "target_lost"}
+
+    adapter = _FailingAdapter("open_claude_chrome")
+    adapters = {name: _Adapter(name) for name in (
+        "playwright_mcp", "chrome_devtools_mcp",
+    )}
+    adapters["open_claude_chrome"] = adapter
+    released = []
+    registry = ComputerUseSessionRegistry(
+        adapters=adapters,
+        release_context=lambda context: released.append(context["context_id"]),
+    )
+    result = registry.execute(
+        command="observe", backend="open_claude_chrome",
+        binding_id="binding-1", owner_id="owner-1",
+        page_context={"context_id": "ctx-failed"},
+    )
+    session_id = result["computer_session_id"]
+
+    assert result["reason_code"] == "target_lost"
+    assert registry.execute(
+        command="act", computer_session_id=session_id, owner_id="owner-1",
+    )["reason_code"] == "computer_session_not_found"
+    assert adapter.calls == [("close", {})]
+    assert released == ["ctx-failed"]
+
+
+def test_sync_mcp_client_cleans_thread_when_start_fails(monkeypatch):
+    from openprogram.programs.agentic_functions.browser_agent import mcp_backends
+
+    instances = []
+
+    class _FailingClient:
+        error = None
+
+        def __init__(self, _config):
+            self.stopped = False
+            instances.append(self)
+
+        async def start(self):
+            raise RuntimeError("start failed")
+
+        async def stop(self):
+            self.stopped = True
+
+    monkeypatch.setattr(mcp_backends, "MCPClient", _FailingClient)
+    before = {thread.ident for thread in threading.enumerate()}
+    with pytest.raises(RuntimeError, match="start failed"):
+        mcp_backends._SyncMCPClient(["missing"], timeout=0.1)
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline and any(
+        thread.name == "computer-use-mcp" and thread.ident not in before
+        for thread in threading.enumerate()
+    ):
+        time.sleep(0.01)
+    assert instances[0].stopped is True
+    assert not any(
+        thread.name == "computer-use-mcp" and thread.ident not in before
+        for thread in threading.enumerate()
+    )
 
 
 def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):

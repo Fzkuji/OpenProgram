@@ -37,19 +37,23 @@ class _SyncMCPClient:
 
     def __init__(self, command: list[str], *, timeout: float = 30.0) -> None:
         self._loop = asyncio.new_event_loop()
+        self._client = None
         self._thread = threading.Thread(
             target=self._run, name="computer-use-mcp", daemon=True,
         )
         self._thread.start()
-        self._client = MCPClient(MCPServerConfig(
-            name="computer-use-private",
-            command=command,
-            timeout_seconds=timeout,
-        ))
-        self._submit(self._client.start(), timeout + 5)
-        if self._client.error:
+        try:
+            self._client = MCPClient(MCPServerConfig(
+                name="computer-use-private",
+                command=command,
+                timeout_seconds=timeout,
+            ))
+            self._submit(self._client.start(), timeout + 5)
+            if self._client.error:
+                raise RuntimeError("computer_use_backend_unavailable")
+        except BaseException:
             self.close()
-            raise RuntimeError("computer_use_backend_unavailable")
+            raise
 
     def _run(self) -> None:
         asyncio.set_event_loop(self._loop)

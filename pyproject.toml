@@ -223,6 +223,7 @@ include = ["openprogram*"]
 "openprogram" = [
     "sandbox/shims/*.cjs",
     "sandbox/shims/*.py",
+    "programs/agentic_functions/browser_agent/*.cjs",
     # Provider registry — endpoints/model metadata read by
     # providers/_provider_meta.py and enabled_models.py.
     "providers/provider.json",

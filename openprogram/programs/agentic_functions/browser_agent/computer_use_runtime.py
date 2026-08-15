@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from dataclasses import field
+from contextlib import suppress
 import threading
 import uuid
 from typing import Any, Callable, Mapping
@@ -134,7 +135,8 @@ class ComputerUseSessionRegistry:
         arguments: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         params = dict(arguments or {})
-        if command == "observe" and not computer_session_id:
+        created_session = command == "observe" and not computer_session_id
+        if created_session:
             selected = backend or DEFAULT_BACKEND
             if selected not in self._adapters:
                 return {"ok": False, "reason_code": "unsupported_backend"}
@@ -200,6 +202,23 @@ class ComputerUseSessionRegistry:
                 finally:
                     self._release_context(session.page_context)
             raise
+
+        if created_session:
+            frame_id = (
+                result.json_data.get("frame_id")
+                if isinstance(result, ToolReturn)
+                and isinstance(result.json_data, dict)
+                else result.get("frame_id") if isinstance(result, dict) else None
+            )
+            if not frame_id:
+                with self._lock:
+                    self._sessions.pop(session.id, None)
+                    for token, capability in list(self._page_capabilities.items()):
+                        if capability.get("context") is session.page_context:
+                            self._page_capabilities.pop(token, None)
+                with suppress(Exception):
+                    adapter.close(session)
+                self._release_context(session.page_context)
 
         if command == "close":
             with self._lock:

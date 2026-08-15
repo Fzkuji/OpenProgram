@@ -679,6 +679,7 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
     config = tomllib.loads((repo / "pyproject.toml").read_text())
     package_data = config["tool"]["setuptools"]["package-data"]["openprogram"]
     assert "sandbox/shims/*.py" in package_data
+    assert "programs/agentic_functions/browser_agent/*.cjs" in package_data
 
     project = tmp_path / "project"
     (project / "openprogram" / "sandbox" / "shims").mkdir(parents=True)
@@ -686,6 +687,10 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
         "pyproject.toml", "README.md", "LICENSE", "openprogram/__init__.py",
         "openprogram/sandbox/__init__.py", "openprogram/sandbox/shims/sitecustomize.py",
         "openprogram/sandbox/shims/node_preload.cjs",
+        "openprogram/programs/__init__.py",
+        "openprogram/programs/agentic_functions/__init__.py",
+        "openprogram/programs/agentic_functions/browser_agent/__init__.py",
+        "openprogram/programs/agentic_functions/browser_agent/playwright_exact_page_mcp.cjs",
         "openprogram/sandbox/recoverable_delete.py",
         "openprogram/webui/__init__.py", "openprogram/webui/functions_meta.json",
     ):
@@ -712,6 +717,10 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
         names = set(archive.namelist())
     assert "openprogram/sandbox/shims/sitecustomize.py" in names
     assert "openprogram/sandbox/shims/node_preload.cjs" in names
+    assert (
+        "openprogram/programs/agentic_functions/browser_agent/"
+        "playwright_exact_page_mcp.cjs"
+    ) in names
     assert "openprogram/webui/functions_meta.json" not in names
     assert "openprogram/webui/programs_meta.json" not in names
     installed = tmp_path / "installed"
@@ -729,6 +738,10 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
     installed_shims = installed / "openprogram/sandbox/shims"
     assert (installed_shims / "sitecustomize.py").is_file()
     assert (installed / "openprogram/sandbox/shims/node_preload.cjs").is_file()
+    assert (
+        installed / "openprogram/programs/agentic_functions/browser_agent/"
+        "playwright_exact_page_mcp.cjs"
+    ).is_file()
 
     runtime_work = tmp_path / "runtime-work"
     runtime_work.mkdir()
