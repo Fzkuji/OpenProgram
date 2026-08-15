@@ -104,8 +104,12 @@ export interface DesktopWebTabApi {
   ensure(id: string, url: string): void;
   /** loadURL on the existing view (created if missing). */
   navigate(id: string, url: string): void;
-  /** Ensure/navigate/show this view and return its CDP target id. */
-  activate(id: string, url?: string): Promise<string | null>;
+  /** Resolve this view's CDP target, optionally navigating it first. */
+  activate(
+    id: string,
+    url?: string,
+    requireVisible?: boolean,
+  ): Promise<string | null>;
   /** Bounded DOM/ARIA preview for a currently visible native view. */
   preview(id: string): Promise<{
     tab_id: string;
@@ -743,7 +747,7 @@ export function installDesktopMenuHandlers(): void {
           }));
         });
       } else {
-        void bridge.webTab.activate(tab.id, d.url).then((targetId) =>
+        void bridge.webTab.activate(tab.id, d.url, true).then((targetId) =>
           sendWebTabResult(ws, d.req_id!, tab, targetId),
         ).catch(() => sendWebTabResult(ws, d.req_id!, tab, null));
       }

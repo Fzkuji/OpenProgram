@@ -428,3 +428,17 @@ def test_electron_bound_surface_control_does_not_focus_the_app_window():
     assert "devToolsTargetId(record.view.webContents)" in activate_source
     assert ".focus(" not in activate_source
     assert "BrowserWindow.getFocusedWindow" not in activate_source
+
+
+def test_electron_bound_surface_activation_requires_existing_visibility():
+    bridge = (REPO_ROOT / "web/lib/desktop-bridge.ts").read_text()
+    preload = (REPO_ROOT / "desktop/preload.js").read_text()
+    main = (REPO_ROOT / "desktop/main.js").read_text()
+
+    assert "bridge.webTab.activate(tab.id, d.url, true)" in bridge
+    assert 'ipcRenderer.invoke("webtab:activate", id, url, requireVisible)' in preload
+    start = main.index("async function activateView")
+    end = main.index("const SURFACE_PREVIEW_SCRIPT", start)
+    activate_source = main[start:end]
+    assert "requireVisible" in activate_source
+    assert "!ctx.visibleViewIds.has(id)" in activate_source

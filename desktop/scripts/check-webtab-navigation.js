@@ -950,6 +950,15 @@ async function checkVisibleCollectionAndActivation() {
   assert.deepEqual([...ctx.visibleViewIds], ["b"]);
   assert.equal(b.visibility.at(-1), true);
 
+  // An agent-bound activation validates the current layout without revealing
+  // a tab that became hidden after the renderer issued its command.
+  const hiddenVisibilityCalls = a.visibility.length;
+  const hiddenTargetCalls = a.targetCallCount();
+  assert.equal(await hooks.activateView(ctx, "a", "", true), null);
+  assert.deepEqual([...ctx.visibleViewIds], ["b"]);
+  assert.equal(a.visibility.length, hiddenVisibilityCalls);
+  assert.equal(a.targetCallCount(), hiddenTargetCalls);
+
   // Ownership validation happens before any visibility mutation.
   const foreign = controlledRecord("foreign");
   foreign.record.ownerId = "another-window";

@@ -22,7 +22,8 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
   webTab: {
     ensure: (id, url) => ipcRenderer.send("webtab:ensure", id, url),
     navigate: (id, url) => ipcRenderer.send("webtab:navigate", id, url),
-    activate: (id, url) => ipcRenderer.invoke("webtab:activate", id, url),
+    activate: (id, url, requireVisible) =>
+      ipcRenderer.invoke("webtab:activate", id, url, requireVisible),
     preview: (id) => ipcRenderer.invoke("webtab:preview", id),
     setBounds: (id, bounds) => ipcRenderer.send("webtab:set-bounds", id, bounds),
     show: (id) => ipcRenderer.send("webtab:show", id),

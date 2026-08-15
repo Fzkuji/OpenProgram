@@ -2225,19 +2225,32 @@ async function devToolsTargetId(webContents) {
   }
 }
 
-async function activateView(ctx, id, url) {
+async function activateView(ctx, id, url, requireVisible = false) {
   let record;
   if (url) {
     if (!isTabUrl(url)) return null;
-    record = recordFor(ctx, id) || ensureView(ctx, id, "");
-    if (!record || !showView(ctx, id)) return null;
+    record = recordFor(ctx, id)
+      || (!requireVisible ? ensureView(ctx, id, "") : null);
+    if (
+      !record
+      || (requireVisible
+        ? !ctx.visibleViewIds.has(id)
+        : !showView(ctx, id))
+    ) return null;
     record = await navigateView(ctx, id, url);
     if (recordFor(ctx, id) !== record || !ctx.visibleViewIds.has(id)) return null;
   } else {
     record = recordFor(ctx, id);
-    if (!record || !showView(ctx, id)) return null;
+    if (
+      !record
+      || (requireVisible
+        ? !ctx.visibleViewIds.has(id)
+        : !showView(ctx, id))
+    ) return null;
   }
-  return devToolsTargetId(record.view.webContents);
+  const targetId = await devToolsTargetId(record.view.webContents);
+  if (recordFor(ctx, id) !== record || !ctx.visibleViewIds.has(id)) return null;
+  return targetId;
 }
 
 const SURFACE_PREVIEW_SCRIPT = `(() => {
@@ -2680,10 +2693,15 @@ function registerWebTabIpc() {
     const ctx = contextForSender(event);
     if (ctx) void navigateView(ctx, id, url).catch(() => {});
   });
-  ipcMain.handle("webtab:activate", (event, id, url) => {
+  ipcMain.handle("webtab:activate", (event, id, url, requireVisible) => {
     const ctx = contextForSender(event);
     return ctx && typeof id === "string"
-      ? activateView(ctx, id, typeof url === "string" ? url : "")
+      ? activateView(
+          ctx,
+          id,
+          typeof url === "string" ? url : "",
+          requireVisible === true,
+        )
       : null;
   });
   ipcMain.handle("webtab:preview", (event, id) => {
