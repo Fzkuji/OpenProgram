@@ -18,7 +18,7 @@ class AuthorityError(RuntimeError):
     pass
 
 
-AuthorityTier = Literal["owner", "paired"]
+AuthorityTier = Literal["owner", "paired", "mcp_browser"]
 
 # Stamped on every turn node this build persists. Its presence is what
 # separates "written before authority existed" from "written now and
@@ -54,6 +54,7 @@ _OWNER_CAPABILITIES = frozenset({
     "network.send",
     "approval.request",
     "runtime.control",
+    "browser.control",
 })
 # Reading memory is its own capability, separate from ``fs.read``. A
 # paired speaker gets the first and not the second: they may ask what
@@ -65,9 +66,11 @@ _OWNER_CAPABILITIES = frozenset({
 _PAIRED_CAPABILITIES = frozenset({
     "reply", "memory.read", "memory.source.append",
 })
+_MCP_BROWSER_CAPABILITIES = frozenset({"browser.control"})
 TIER_CAPABILITIES: Mapping[AuthorityTier, frozenset[str]] = {
     "owner": _OWNER_CAPABILITIES,
     "paired": _PAIRED_CAPABILITIES,
+    "mcp_browser": _MCP_BROWSER_CAPABILITIES,
 }
 
 _OWNER_RE = re.compile(r"^owner/install/[0-9a-f]{16}$")
@@ -194,6 +197,18 @@ def mcp_client_authority(client_id: str) -> dict[str, Any]:
         "authority_tier": "paired",
         "interaction": "non-interactive",
     }
+
+
+def mcp_browser_control_authority(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Narrow authority used only by the first-class MCP computer_use route."""
+    authority = normalize_authority(value)
+    if (
+        authority.get("speaker_kind") != "client"
+        or authority.get("authority_tier") != "paired"
+        or not str(authority.get("speaker_id") or "").startswith("mcp/")
+    ):
+        raise AuthorityError("MCP browser-control authority is invalid")
+    return {**authority, "authority_tier": "mcp_browser"}
 
 
 _AUTHORITY_FIELDS = (
@@ -344,9 +359,10 @@ _WRITE_TOOLS = {
 }
 _PROCESS_TOOLS = {
     "bash", "exec", "shell", "execute_code", "process", "agent",
-    "gui_agent", "research_agent", "wiki_agent", "browser_agent", "computer_use",
+    "gui_agent", "research_agent", "wiki_agent", "browser_agent",
     "playwright_browser",
 }
+_BROWSER_CONTROL_TOOLS = {"computer_use"}
 _NETWORK_TOOLS = {
     "send_message", "send_file", "web_search", "list_mcp_resources",
     "read_mcp_resource", "list_mcp_prompts", "get_mcp_prompt",
@@ -379,6 +395,8 @@ def capability_for_tool(tool_name: str, args: Mapping[str, Any] | None = None) -
         return "fs.write"
     if name in _PROCESS_TOOLS:
         return "process.exec"
+    if name in _BROWSER_CONTROL_TOOLS:
+        return "browser.control"
     if name in _NETWORK_TOOLS:
         return "network.send"
     if name in _REPLY_LOCAL_TOOLS:
@@ -402,6 +420,7 @@ __all__ = [
     "MESSAGE_SCHEMA_VERSION", "MESSAGE_SCHEMA_FIELD",
     "stamp_schema", "is_legacy_message",
     "owner_principal_id", "owner_authority", "local_owner_authority",
+    "mcp_browser_control_authority",
     "paired_channel_authority", "mcp_client_authority",
     "runtime_authority", "normalize_authority",
     "authority_from_message", "has_capability", "decide_capability",

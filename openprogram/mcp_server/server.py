@@ -116,13 +116,10 @@ def build_server(context: MCPClientContext) -> Server:
             elif name == "tools_list":
                 result = service.tools_list()
             elif name == "computer_use":
-                result = await service.tool_call(
-                    "computer_use",
+                result = await service.computer_use_call(
                     arguments,
                     call_id=request_id,
                     cancel_event=cancel_event,
-                    on_progress=progress,
-                    require_exposed=False,
                 )
             else:
                 result = await service.tool_call(

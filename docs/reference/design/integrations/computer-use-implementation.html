@@ -164,7 +164,7 @@
   <tbody>
     <tr><td>统一入口</td><td><code>computer_use(list_pages / observe / act / verify / close)</code>；OpenProgram MCP 同名第一方工具。</td><td class="pass">完成</td></tr>
     <tr><td>Session selector</td><td><code>observe</code> 选择 <code>playwright_mcp</code>、<code>chrome_devtools_mcp</code> 或 <code>open_claude_chrome</code>；当前 session 禁止切换和自动 fallback。</td><td class="pass">完成</td></tr>
-    <tr><td>Exact Page</td><td>两个官方 MCP 私有进程使用一次性 page marker 解析唯一 tab index/pageId；每次 action 前继续校验原绑定 target 与 frame。</td><td class="pass">component 通过</td></tr>
+    <tr><td>Exact Page</td><td>Playwright MCP 通过官方 <code>createConnection(contextGetter)</code> 获得只含 exact target 的 BrowserContext 视图；Chrome DevTools MCP 使用一次性 marker 解析 pageId。两者每次 action 前继续校验原绑定 target 与 frame，均不选择或置前 tab。</td><td class="pass">component 通过</td></tr>
     <tr><td>Direct MCP</td><td>单一桌面控制连接时可获取当前 in-app Page；多个连接直接拒绝，不随机选择窗口。</td><td class="pass">component 通过</td></tr>
     <tr><td>验证</td><td><code>test_computer_use_runtime.py</code>、Browser Agent、surface、MCP contract/service/integration 共 172 passed。</td><td class="pass">通过</td></tr>
     <tr><td>安装版</td><td><code>/Applications/OpenProgram.app</code> 三 backend 同任务 parity。</td><td class="pending">待执行</td></tr>

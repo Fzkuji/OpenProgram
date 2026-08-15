@@ -72,18 +72,20 @@
   </section>
 
   <section id="contract">
-    <h2>Agent 只需要四个 command</h2>
+    <h2>Agent 只需要五个 command</h2>
     <div class="tool-flow">
       <div class="tool"><span class="n">01</span><strong>list_pages</strong><p>读取当前 turn 已授权 Page inventory，不调用 upstream tab 枚举。</p></div>
       <div class="tool"><span class="n">02</span><strong>observe</strong><p>选择 Page 并创建 ComputerSession；返回有界文本、ARIA 和 refs。</p></div>
       <div class="tool"><span class="n">03</span><strong>act</strong><p>携带最新 frame，只执行一个 click、type、press、scroll、select 或 navigate。</p></div>
       <div class="tool"><span class="n">04</span><strong>verify</strong><p>只执行 Runtime assertion；模型声称“完成”不能产生成功。</p></div>
+      <div class="tool"><span class="n">05</span><strong>close</strong><p>释放 ComputerSession、Page binding 和调用方持有的 capability。</p></div>
     </div>
     <pre>computer_use({ command: "list_pages" })
-computer_use({ command: "observe", page: "left", detail: "interactive" })
-computer_use({ command: "act", computer_session_id: "cs_…", action: { … } })
-computer_use({ command: "verify", computer_session_id: "cs_…", assertion: { … } })</pre>
-    <p>第一方 MCP client adapter 在模型参数之外附加一次性 <code>page_context_token</code>。它绑定 MCP connection、turn、provider request、tool call、Page revisions 和 access revision；缺少、重放或跨连接使用时，在 backend 调用前返回 <code>invalid_capability</code>。</p>
+computer_use({ command: "observe", page_context_token: "pct_…", arguments: { detail: "interactive" } })
+computer_use({ command: "act", computer_session_id: "cs_…", arguments: { action: "click", expected_frame_id: "f_…", ref: "e1" } })
+computer_use({ command: "verify", computer_session_id: "cs_…", arguments: { action: "verify", expected_frame_id: "f_…", assertion: "text_contains", value: "Saved" } })
+computer_use({ command: "close", computer_session_id: "cs_…" })</pre>
+    <p><code>list_pages</code> 返回一次性 <code>page_context_token</code>，调用方在首次 <code>observe</code> 中原样回传。当前实现把它绑定到 MCP control connection 和 exact Page binding；缺少、重放或跨连接使用时会在 backend 调用前拒绝。完整 Page/access revision CAS 仍属于后续 registry 阶段。</p>
   </section>
 
   <section id="boundaries">
@@ -121,7 +123,7 @@ computer_use({ command: "verify", computer_session_id: "cs_…", assertion: { �
       <tr><td>DOM-first task wrapper 与 point fallback</td><td class="evidence-yes">已验证 baseline</td><td><code>agentic_functions/browser_agent/__init__.py</code> 与 component tests</td></tr>
       <tr><td>通用 MCP server/client 与 image content</td><td class="evidence-partial">已有基础</td><td><code>openprogram/mcp_server/</code>、<code>openprogram/mcp/</code></td></tr>
       <tr><td>动态 Page geometry、registry、lease</td><td class="evidence-partial">部分实现</td><td>当前 turn surface 已按实际 pane 顺序生成 left、right 或 center；完整 registry revisions 与 lease 仍未实现</td></tr>
-      <tr><td>Playwright MCP backend</td><td class="evidence-partial">已实现，安装版待验收</td><td>固定 <code>@playwright/mcp@0.0.79</code>；marker 绑定 exact tab index；只映射 allowlisted action。</td></tr>
+      <tr><td>Playwright MCP backend</td><td class="evidence-partial">已实现，安装版待验收</td><td>固定 <code>@playwright/mcp@0.0.79</code>；通过官方 <code>createConnection(contextGetter)</code> 只提供 exact Page，不调用 tab select 或 <code>bringToFront()</code>；只映射 allowlisted action。</td></tr>
       <tr><td>Chrome DevTools MCP backend</td><td class="evidence-partial">已实现，安装版待验收</td><td>固定 <code>chrome-devtools-mcp@1.7.0</code>；marker 绑定 exact pageId；启用 pageId routing。</td></tr>
       <tr><td>Open Claude in Chrome-compatible backend</td><td class="evidence-yes">已实现 baseline</td><td>复用现有 exact Page DOM/ref、单截图和坐标 action；不运行 Chrome extension/native host。</td></tr>
       <tr><td>multi-backend selector</td><td class="evidence-yes">已实现 command selector</td><td><code>observe</code> 选择 backend 并冻结到 ComputerSession；后续变更返回 <code>backend_mismatch</code>。</td></tr>

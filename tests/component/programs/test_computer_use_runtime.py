@@ -170,13 +170,6 @@ class _PlaywrightClient:
 
     def call(self, name, arguments):
         self.calls.append((name, dict(arguments)))
-        if name == "browser_tabs" and arguments["action"] == "list":
-            return _Result("- 0: [Chat](about:blank)\n- 1: [Web](https://example.test/)")
-        if name == "browser_tabs":
-            self.selected = arguments["index"]
-            return _Result("selected")
-        if name == "browser_evaluate":
-            return _Result(self.page.marker_value if self.selected == 1 else "null")
         if name == "browser_snapshot":
             return _Result('- button "Save" [ref=e7]')
         return _Result("done")
@@ -197,21 +190,113 @@ def test_official_playwright_adapter_binds_marker_and_routes_one_action(monkeypa
     controller = _Controller()
     client = _PlaywrightClient(controller.page)
     monkeypatch.setattr(_chrome_bootstrap, "desktop_app_ws_url", lambda: "ws://cdp")
+    commands = []
     adapter = OfficialMCPPageBackend(
         "playwright_mcp", lambda: controller,
-        client_factory=lambda _command: client,
+        client_factory=lambda command: commands.append(command) or client,
     )
     session = ComputerUseSession("cs-1", "playwright_mcp", "binding-1")
 
     observed = adapter.observe(session, {})
     assert observed["aria_snapshot"] == '- button "Save" [ref=e7]'
-    assert session.state["upstream_page"] == 1
+    assert session.state["upstream_page"] == 0
+    assert session.state["target_id"] == "target-1"
+    assert all(name != "browser_tabs" for name, _ in client.calls)
+    assert "target-1" in commands[0]
+    assert not any("bringToFront" in part for part in commands[0])
     acted = adapter.act(session, {
         "action": "click", "expected_frame_id": "frame-1", "ref": "e7",
     })
     assert acted["ok"] is True
     assert ("browser_click", {"target": "e7"}) in client.calls
     assert controller.invalidated == 1
+
+
+def test_registry_binds_session_to_owner_and_consumes_exact_page_capability():
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSessionRegistry,
+    )
+
+    adapters = {name: _Adapter(name) for name in (
+        "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
+    )}
+    released = []
+    registry = ComputerUseSessionRegistry(
+        adapters=adapters,
+        release_context=lambda context: released.append(context["context_id"]),
+    )
+    context = {
+        "context_id": "ctx-1",
+        "surfaces": [{
+            "surface_key": "p1", "binding_id": "binding-1",
+            "capabilities": ["observe", "interact"],
+        }],
+    }
+    pages = registry.list_pages(context=context, owner_id="mcp:connection-a")
+    token = pages["pages"][0]["page_context_token"]
+
+    denied = registry.execute(
+        command="observe", backend="open_claude_chrome",
+        owner_id="mcp:connection-b", page_context_token=token,
+    )
+    assert denied["reason_code"] == "page_context_owner_mismatch"
+
+    observed = registry.execute(
+        command="observe", backend="open_claude_chrome",
+        owner_id="mcp:connection-a", page_context_token=token,
+    )
+    session_id = observed["computer_session_id"]
+    reused = registry.execute(
+        command="observe", backend="open_claude_chrome",
+        owner_id="mcp:connection-a", page_context_token=token,
+    )
+    assert reused["reason_code"] == "page_context_consumed"
+    wrong_owner = registry.execute(
+        command="act", computer_session_id=session_id,
+        owner_id="mcp:connection-b", arguments={"action": "click"},
+    )
+    assert wrong_owner["reason_code"] == "computer_session_owner_mismatch"
+    closed = registry.execute(
+        command="close", computer_session_id=session_id,
+        owner_id="mcp:connection-a",
+    )
+    assert closed["closed"] is True
+    assert released == ["ctx-1"]
+
+
+def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
+    from openprogram.programs import _runtime
+    from openprogram.programs.agentic_functions import browser_agent as browser_module
+    from openprogram.programs.gui_harness_bridge import (
+        install_gui_harness_computer_use,
+    )
+
+    calls = []
+
+    def original(**kwargs):
+        calls.append(("original", kwargs))
+        return {"mode": "desktop"}
+
+    monkeypatch.setattr(
+        browser_module,
+        "_run_browser_task_commands",
+        lambda **kwargs: calls.append(("computer_use", kwargs)) or {
+            "mode": "computer_use", "backend": kwargs["backend"],
+        },
+    )
+    wrapped = install_gui_harness_computer_use(original)
+    tool = _runtime.get("gui_agent")
+    assert tool is not None
+    assert tool.parameters["properties"]["backend"]["enum"] == [
+        "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
+    ]
+
+    result = wrapped(
+        task="click Save", backend="chrome_devtools_mcp",
+        runtime=SimpleNamespace(),
+    )
+    assert result == {"mode": "computer_use", "backend": "chrome_devtools_mcp"}
+    assert calls[0][0] == "computer_use"
 
 
 def test_official_backend_rejects_stale_frame_before_upstream_call(monkeypatch):
@@ -291,3 +376,64 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
     assert registry.calls[-1] == {
         "command": "close", "computer_session_id": "cs-1",
     }
+
+
+def test_gui_harness_screenshot_capability_is_one_request_only(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs import ToolReturn
+    from openprogram.programs.agentic_functions import browser_agent as module
+    from openprogram.programs.agentic_functions.browser_agent import (
+        computer_use_runtime,
+    )
+
+    class _Registry:
+        def __init__(self):
+            self.revoked = 0
+
+        def execute(self, **kwargs):
+            command = kwargs["command"]
+            if command == "observe":
+                return {"frame_id": "f1", "computer_session_id": "cs1"}
+            if command == "act" and kwargs["arguments"]["action"] == "screenshot":
+                return ToolReturn(images=[b"png"], json_data={"frame_id": "f1"})
+            if command == "verify":
+                return {"passed": True}
+            return {"ok": True}
+
+        def revoke_screenshot(self, _session_id):
+            self.revoked += 1
+
+    registry = _Registry()
+    monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(surface_context, "current", lambda: {"context_id": "ctx"})
+    monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "b1")
+
+    class _Runtime:
+        def __init__(self):
+            self.requests = []
+
+        def exec(self, **kwargs):
+            self.requests.append([block["type"] for block in kwargs["content"]])
+            index = len(self.requests)
+            if index == 1:
+                asyncio.run(kwargs["tools"][0].execute(
+                    "c1", {"action": "screenshot", "expected_frame_id": "f1"},
+                    asyncio.Event(), None,
+                ))
+            elif index == 3:
+                asyncio.run(kwargs["tools"][0].execute(
+                    "c3", {
+                        "action": "verify", "expected_frame_id": "f1",
+                        "assertion": "text_contains", "value": "done",
+                    }, asyncio.Event(), None,
+                ))
+            return ""
+
+    runtime = _Runtime()
+    result = module._run_browser_task_commands(
+        task="visual task", backend="open_claude_chrome",
+        max_steps=1, max_seconds=30, runtime=runtime,
+    )
+    assert result["status"] == "succeeded"
+    assert runtime.requests == [["text"], ["text", "image"], ["text"]]
+    assert registry.revoked == 1

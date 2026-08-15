@@ -15,7 +15,9 @@ from jsonschema import Draft202012Validator
 from mcp.shared.exceptions import McpError
 
 from openprogram.agent.authority import (
+    decide_capability,
     decide_tool_authority,
+    mcp_browser_control_authority,
     mcp_client_authority,
 )
 from openprogram.agent.session_db import SessionDB, default_db
@@ -128,6 +130,13 @@ def _default_event_bus():
     from openprogram.events import get_event_bus
 
     return get_event_bus()
+
+
+def _default_computer_use_dispatch(arguments, *, owner_id):
+    from openprogram.programs.agentic_functions.browser_agent import (
+        execute_direct_computer_use,
+    )
+    return execute_direct_computer_use(arguments, owner_id=owner_id)
 
 
 def _best_effort(callback: Callable[..., Any], *args: Any) -> Any:
@@ -283,6 +292,7 @@ class MCPService:
         kill_active_runtime: Callable[[str], Any] | None = None,
         question_registry_getter: Callable[[], Any] | None = None,
         event_bus_getter: Callable[[], Any] | None = None,
+        computer_use_dispatch: Callable[..., Any] | None = None,
     ) -> None:
         self.context = context
         self._session_db = session_db or default_db()
@@ -316,6 +326,13 @@ class MCPService:
             question_registry_getter or _default_question_registry
         )
         self._event_bus = (event_bus_getter or _default_event_bus)()
+        self._control_connection_id = uuid.uuid4().hex
+        self._computer_use_owner_id = (
+            f"mcp:{self.context.client_id}:{self._control_connection_id}"
+        )
+        self._computer_use_dispatch = (
+            computer_use_dispatch or _default_computer_use_dispatch
+        )
         self._active_lock = threading.RLock()
         self._active_by_request: dict[str, ActiveMCPRequest] = {}
         self._request_by_session: dict[str, str] = {}
@@ -469,6 +486,46 @@ class MCPService:
             _best_effort(unsubscribe)
         for request_id in request_ids:
             self.cancel_request(request_id, reason="connection_closed")
+        try:
+            from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+                get_registry,
+            )
+            get_registry().release_owner(self._computer_use_owner_id)
+        except Exception:
+            pass
+
+    async def computer_use_call(
+        self,
+        arguments: Mapping[str, Any],
+        *,
+        call_id: str,
+        cancel_event: asyncio.Event,
+    ) -> AgentToolResult:
+        """Run the narrow browser-control route owned by this MCP connection."""
+        authority = mcp_browser_control_authority(self.context.authority)
+        decision = decide_capability(authority, "browser.control")
+        if not decision.allowed:
+            return AgentToolResult(
+                content=[TextContent(text="[denied] browser control unavailable")],
+                details={"denied": True, "reason_code": decision.reason_code},
+                is_error=True,
+            )
+        if cancel_event.is_set():
+            return _execution_error()
+        try:
+            copied = _copy_json(arguments)
+            raw = await anyio.to_thread.run_sync(
+                lambda: self._computer_use_dispatch(
+                    copied, owner_id=self._computer_use_owner_id,
+                )
+            )
+            from openprogram.programs._runtime import _normalize_result
+            return _normalize_result(
+                raw, call_id=call_id, max_chars=100_000,
+                persist_full=False, head_ratio=0.7,
+            )
+        except Exception:
+            return _execution_error()
 
     async def prompt_send(
         self,

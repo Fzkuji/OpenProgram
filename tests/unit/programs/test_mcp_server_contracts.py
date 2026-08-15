@@ -73,6 +73,7 @@ EXPECTED_SCHEMAS = {
                 ],
             },
             "page": {"type": "string", "maxLength": 512},
+            "page_context_token": {"type": "string", "maxLength": 128},
             "computer_session_id": {"type": "string", "maxLength": 128},
             "arguments": {"type": "object", "default": {}},
         },

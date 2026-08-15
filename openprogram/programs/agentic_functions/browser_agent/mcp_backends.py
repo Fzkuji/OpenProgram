@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import math
-import re
+import os
 import threading
 import uuid
 from typing import Any, Callable, Mapping
@@ -94,12 +94,15 @@ class OfficialMCPPageBackend:
             session.controller = controller
         return session.controller
 
-    def _command(self, endpoint: str) -> list[str]:
+    def _command(self, endpoint: str, target_id: str = "") -> list[str]:
         if self.name == "playwright_mcp":
+            bridge = os.path.join(os.path.dirname(__file__), "playwright_exact_page_mcp.cjs")
             return [
-                "npx", "-y", f"@playwright/mcp@{_PLAYWRIGHT_MCP_VERSION}",
-                "--cdp-endpoint", endpoint,
-                "--caps", "vision",
+                "npx", "-y", "--package",
+                f"@playwright/mcp@{_PLAYWRIGHT_MCP_VERSION}", "--", "sh", "-c",
+                'export NODE_PATH="$(dirname "$(dirname "$(command -v playwright-mcp)")")"; '
+                'exec node "$1" "$2" "$3"',
+                "openprogram-playwright-mcp", bridge, endpoint, target_id,
             ]
         return [
             "npx", "-y",
@@ -119,6 +122,21 @@ class OfficialMCPPageBackend:
         if existing is not None:
             return existing
         controller = self._controller(session)
+        target_id = str(session.state.get("target_id") or "")
+        if self.name == "playwright_mcp":
+            if not target_id:
+                raise RuntimeError("exact_page_not_found")
+            from openprogram.programs.functions.browser._chrome_bootstrap import (
+                desktop_app_ws_url,
+            )
+            endpoint = desktop_app_ws_url()
+            if not endpoint:
+                raise RuntimeError("computer_use_backend_unavailable")
+            client = self._client_factory(self._command(endpoint, target_id))
+            session.state["mcp_client"] = client
+            session.state["upstream_page"] = 0
+            return client
+
         page = controller._page()
         marker_name = "__openprogram_mcp_" + uuid.uuid4().hex
         marker_value = uuid.uuid4().hex
@@ -135,11 +153,7 @@ class OfficialMCPPageBackend:
             raise RuntimeError("computer_use_backend_unavailable")
         client = self._client_factory(self._command(endpoint))
         try:
-            selected = (
-                self._bind_playwright(client, marker_name, marker_value)
-                if self.name == "playwright_mcp"
-                else self._bind_chrome(client, marker_name, marker_value)
-            )
+            selected = self._bind_chrome(client, marker_name, marker_value)
             if selected is None:
                 raise RuntimeError("exact_page_not_found")
             session.state["mcp_client"] = client
@@ -153,21 +167,6 @@ class OfficialMCPPageBackend:
                 page.evaluate("name => delete globalThis[name]", marker_name)
             except Exception:
                 pass
-
-    def _bind_playwright(self, client, marker_name: str, marker_value: str):
-        listed = client.call("browser_tabs", {"action": "list"})
-        indices = [
-            int(value) for value in re.findall(
-                r"(?m)^-\s+(\d+):", _result_text(listed),
-            )
-        ]
-        expression = f"() => globalThis[{marker_name!r}] || null"
-        for index in indices:
-            client.call("browser_tabs", {"action": "select", "index": index})
-            result = client.call("browser_evaluate", {"function": expression})
-            if marker_value in _result_text(result):
-                return index
-        return None
 
     def _bind_chrome(self, client, marker_name: str, marker_value: str):
         listed = client.call("list_pages", {})
@@ -189,6 +188,8 @@ class OfficialMCPPageBackend:
         identity = controller.execute(action="observe")
         if not isinstance(identity, dict) or "frame_id" not in identity:
             return identity
+        target = identity.get("target") if isinstance(identity.get("target"), dict) else {}
+        session.state["target_id"] = str(target.get("target_id") or "")
         client = self._ensure_bound(session)
         if self.name == "playwright_mcp":
             upstream = client.call("browser_snapshot", {})

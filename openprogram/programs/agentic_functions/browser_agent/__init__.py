@@ -865,19 +865,24 @@ def _run_browser_task_commands(
                 "type": "text",
                 "text": _step_prompt(task, "", observed, last["result"]),
             }]
+            sent_screenshot = pending_screenshot is not None
             if pending_screenshot is not None:
                 content.append(pending_screenshot)
                 pending_screenshot = None
             seq_before = last["seq"]
-            reply = runtime.exec(
-                content=content,
-                tools=[action_tool],
-                tool_choice={"type": "function", "name": "browser_page"},
-                parallel_tool_calls=False,
-                max_iterations=1,
-                timeout_s=max(1, remaining),
-                execution_kind="browser_agent",
-            )
+            try:
+                reply = runtime.exec(
+                    content=content,
+                    tools=[action_tool],
+                    tool_choice={"type": "function", "name": "browser_page"},
+                    parallel_tool_calls=False,
+                    max_iterations=1,
+                    timeout_s=max(1, remaining),
+                    execution_kind="browser_agent",
+                )
+            finally:
+                if sent_screenshot:
+                    registry.revoke_screenshot(session_id)
             if isinstance(reply, str) and reply.strip():
                 summary = reply.strip()
             if last["seq"] == seq_before:
@@ -933,6 +938,7 @@ def _run_browser_task_commands(
                 ],
             },
             "page": {"type": "string", "maxLength": 512},
+            "page_context_token": {"type": "string", "maxLength": 128},
             "computer_session_id": {"type": "string", "maxLength": 128},
             "arguments": {"type": "object", "additionalProperties": True},
         },
@@ -952,6 +958,7 @@ def computer_use(
     command: str,
     backend: str = "",
     page: str = "",
+    page_context_token: str = "",
     computer_session_id: str = "",
     arguments: dict | None = None,
     runtime=None,
@@ -967,19 +974,8 @@ def computer_use(
 
     if command == "list_pages":
         context = context or {}
-        pages = []
-        for item in context.get("surfaces") or []:
-            if not isinstance(item, dict) or not item.get("binding_id"):
-                continue
-            pages.append({
-                "page": item.get("surface_key"),
-                "aliases": list(item.get("aliases") or []),
-                "region": item.get("region"),
-                "title": item.get("title") or "",
-                "origin": item.get("origin") or "",
-                "capabilities": list(item.get("capabilities") or []),
-            })
-        return {"ok": True, "pages": pages}
+        owner_id = "turn:" + str(context.get("context_id") or "unknown")
+        return get_registry().list_pages(context=context, owner_id=owner_id)
 
     binding_id = ""
     if command == "observe" and not computer_session_id:
@@ -993,7 +989,30 @@ def computer_use(
         backend=backend,
         computer_session_id=computer_session_id,
         binding_id=binding_id,
+        owner_id=("turn:" + str((context or {}).get("context_id") or "")),
+        page_context_token=page_context_token,
+        page_context=context,
         arguments=arguments,
+    )
+
+
+def execute_direct_computer_use(arguments: dict, *, owner_id: str):
+    """Execute the first-class MCP contract with server-injected ownership."""
+    from openprogram.agent import surface_context
+    from .computer_use_runtime import get_registry
+
+    command = str(arguments.get("command") or "")
+    registry = get_registry()
+    if command == "list_pages":
+        context = surface_context.capture_active()
+        return registry.list_pages(context=context, owner_id=owner_id)
+    return registry.execute(
+        command=command,
+        backend=str(arguments.get("backend") or ""),
+        computer_session_id=str(arguments.get("computer_session_id") or ""),
+        owner_id=owner_id,
+        page_context_token=str(arguments.get("page_context_token") or ""),
+        arguments=arguments.get("arguments") or {},
     )
 
 

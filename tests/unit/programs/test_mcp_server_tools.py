@@ -152,6 +152,7 @@ def _service(
     config=None,
     registry=None,
     exposed=None,
+    computer_use_dispatch=None,
 ) -> MCPService:
     registry = {} if registry is None else registry
     exposed = set(registry) if exposed is None else exposed
@@ -161,7 +162,35 @@ def _service(
         config_getter=lambda: {} if config is None else config,
         registry_get=registry.get,
         registry_exposed_names=lambda: set(exposed),
+        computer_use_dispatch=computer_use_dispatch,
     )
+
+
+def test_first_class_computer_use_has_narrow_connection_owned_authority(
+    client_context,
+) -> None:
+    calls = []
+
+    def dispatch(arguments, *, owner_id):
+        calls.append((deepcopy(arguments), owner_id))
+        return {"ok": True, "owner_bound": True}
+
+    service = _service(
+        client_context,
+        computer_use_dispatch=dispatch,
+    )
+    result = asyncio.run(service.computer_use_call(
+        {"command": "list_pages"},
+        call_id="computer-call",
+        cancel_event=asyncio.Event(),
+    ))
+
+    assert result.is_error is False
+    assert _payload(result) == {"ok": True, "owner_bound": True}
+    assert calls[0][0] == {"command": "list_pages"}
+    assert calls[0][1].startswith(f"mcp:{client_context.client_id}:")
+    from openprogram.agent.authority import decide_tool_authority
+    assert decide_tool_authority(client_context.authority, "computer_use").allowed is False
 
 
 def test_sessions_list_preserves_db_order_and_exposes_only_public_fields(
