@@ -30,9 +30,18 @@ const preload = read("../../desktop/preload.js");
 const main = read("../../desktop/main.js");
 const historyGroupsSource = read("../lib/history-groups.ts");
 
-for (const label of ["Files", "Side chat", "Browser", "Terminal"]) {
+for (const label of ["Files", "Browser", "Terminal"]) {
   assert.match(launcher, new RegExp(`text\\(\\"${label}\\"`));
 }
+assert.match(
+  launcher,
+  /<button[^>]*onClick=\{openNewChat\}>[\s\S]*?text\("New chat", "新建对话"\)[\s\S]*?<\/button>/,
+);
+assert.match(
+  launcher,
+  /function openNewChat\(\) \{[\s\S]*?claimDraftSessionTab\(\);[\s\S]*?newSession\(draftId\);[\s\S]*?\}/,
+);
+assert.doesNotMatch(launcher, /Side chat|侧边聊天/);
 assert.doesNotMatch(launcher, /Claude Code|openBuiltinTab\("claude"\)/);
 assert.doesNotMatch(launcher, /readBookmarks|readShortcuts|ntpUrlInput/);
 assert.match(browserHome, /BrowserImportDialog/);
@@ -43,11 +52,69 @@ assert.match(browserHome, /canImport && showImport/);
 assert.doesNotMatch(browserHome, /browser-import-dismissed/);
 assert.doesNotMatch(browserHome, /readBookmarks|removeBookmark|subscribeBookmarks|ntpBookmarks|ntpBookmark/);
 assert.match(browserHome, /readShortcuts/);
+assert.match(browserHome, /className=\{styles\.webToolbar\}/);
+assert.match(browserHome, /<BookmarkBar ownerId=\{menuOwnerId\} onNavigate=\{go\}/);
+assert.match(browserHome, /<BrowserMenu[\s\S]*ownerId=\{menuOwnerId\}/);
+assert.match(browserHome, /canGoHome=\{false\}/);
+assert.match(browserHome, /canOpenExternal=\{false\}/);
+assert.match(browserHome, /<BookmarksLibraryButton \/>/);
+assert.match(browserHome, /ArrowLeft[\s\S]*ArrowRight[\s\S]*RotateCw[\s\S]*House/);
+for (const label of ["Back", "Forward", "Reload", "Home", "Bookmark", "Open in browser"]) {
+  assert.match(
+    browserHome,
+    new RegExp(`<button[^>]*disabled[^>]*title=\\{text\\("${label}"`),
+    `Browser home ${label} must remain visible but disabled`,
+  );
+}
+assert.match(browserHome, /actions=\{\{ home: \(\) => \{\}, forward: \(\) => \{\}, openExternal: \(\) => \{\} \}\}/);
+assert.doesNotMatch(browserHome, /browserHomeToolbar|text\("Open", "打开"\)/);
 assert.match(browserGlyph, /BrowserGlyph/);
 assert.match(browserHome, /<BrowserGlyph/);
+assert.equal(
+  launcher.match(/className=\{styles\.ntpGlyph\}/g)?.length,
+  3,
+  "the three non-browser launchers must use the same icon container as Browser",
+);
+function finalTopLevelDecl(selector, property) {
+  let value;
+  for (const node of cssRoot.nodes) {
+    if (node.type !== "rule" || !node.selectors?.includes(selector)) continue;
+    node.walkDecls(property, (declaration) => { value = declaration.value; });
+  }
+  return value;
+}
+for (const [tone, icon, primary, secondary] of [
+  ["files", "FileText", "var(--meter-fill)", "var(--accent-cyan)"],
+  ["chat", "MessageCirclePlus", "var(--accent-green)", "var(--accent-cyan)"],
+  ["terminal", "TerminalSquare", "var(--accent-purple)", "var(--meter-fill)"],
+]) {
+  assert.match(
+    launcher,
+    new RegExp(`data-tone="${tone}"[^>]*>[\\s\\S]*?<${icon} size=\\{11\\} strokeWidth=\\{2\\.1\\}`),
+  );
+  const selector = `.ntpGlyph[data-tone="${tone}"]`;
+  assert.equal(finalTopLevelDecl(selector, "--glyph-primary"), primary);
+  assert.equal(finalTopLevelDecl(selector, "--glyph-secondary"), secondary);
+}
+assert.match(launcher, /<BrowserGlyph size=\{18\} \/>/);
+assert.equal(finalTopLevelDecl(".ntpGlyph", "width"), "18px");
+assert.equal(finalTopLevelDecl(".ntpGlyph", "height"), "18px");
+assert.equal(finalTopLevelDecl(".browserGlyph", "--glyph-primary"), "var(--accent-blue)");
+assert.equal(finalTopLevelDecl(".browserGlyph", "--glyph-secondary"), "#8b5cf6");
+for (const selector of [".browserGlyph", ".ntpGlyph"]) {
+  const background = finalTopLevelDecl(selector, "background");
+  assert.match(background, /radial-gradient\(/);
+  assert.match(background, /linear-gradient\(/);
+}
 assert.match(browserPrefs, /SHOW_BOOKMARKS_BAR_KEY/);
 assert.match(browserPrefs, /BROWSER_IMPORT_PROMPT_FINISHED_KEY/);
 assert.match(browserControls, /function BrowserMenu/);
+assert.match(browserControls, /canGoHome = true/);
+assert.match(browserControls, /canOpenExternal = true/);
+assert.match(browserControls, /item\("home", "Home", "主页", \{ disabled: !canGoHome \}\)/);
+assert.match(browserControls, /item\("open-external", "Open in browser", "在浏览器中打开", \{ disabled: !canOpenExternal \}\)/);
+assert.match(browserControls, /row\("home", <House size=\{14\} \/>, "Home", "主页", false, !canGoHome\)/);
+assert.match(browserControls, /row\("open-external", <ExternalLink size=\{14\} \/>, "Open in browser", "在浏览器中打开", false, !canOpenExternal\)/);
 assert.match(browserControls, /function BookmarkBar/);
 assert.match(browserControls, /bookmarkBarLayout\(tree\)/);
 assert.doesNotMatch(browserControls, /setNodes\(readBookmarkTree\(\)\.children\)/);
@@ -222,6 +289,8 @@ const oldSessionStorage = globalThis.sessionStorage;
 globalThis.window = new EventTarget();
 globalThis.localStorage = storage();
 globalThis.sessionStorage = storage();
+assert.equal(prefs.showBookmarksBar(), true);
+prefs.setShowBookmarksBar(false);
 assert.equal(prefs.showBookmarksBar(), false);
 prefs.setShowBookmarksBar(true);
 assert.equal(prefs.showBookmarksBar(), true);

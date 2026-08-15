@@ -25,6 +25,7 @@
    --bg-primary(=内容区色) + 底部两侧 fillet，从灰底里"长"进内容区，衔接
    处全部同色。切 tab 不做任何过渡动画，瞬时切换。 */
 .strip {
+  --tab-active-bg: var(--bg-primary);
   height: 40px;
   box-sizing: border-box;
   display: flex;
@@ -40,6 +41,13 @@
 /* 桌面（Electron）：tab 条空白处可拖拽窗口（Chrome 同款）；tab、＋号
    与主菜单钮仍要接收点击，标回 no-drag。 */
 :global(html.is-desktop) .strip {
+  height: 40px;
+  align-items: center;
+  --tab-active-bg: color-mix(
+    in oklch,
+    var(--bg-primary) 82%,
+    light-dark(black, white) 18%
+  );
   -webkit-app-region: drag;
   /* 10px 右缘留白：主菜单钮（28px）中心距窗口右缘 10+14=24px，正好落在
      右侧收起轨的图标轴上——最右那一列现在属于菜单钮，不再属于 ＋号。 */
@@ -126,15 +134,6 @@
   animation: tabEnter 180ms ease-out;
   overflow: hidden;
 }
-/* 桌面新增 tab 直接采用最终宽度，只淡入内容；已有 tab 的宽度一次重排，
-   不再由 flex-basis 动画逐帧压缩。浏览器模式保留原动画。 */
-@keyframes desktopTabEnter {
-  from { opacity: 0; }
-}
-:global(html.is-desktop) .tabEnter {
-  animation: desktopTabEnter 120ms ease-out;
-}
-
 /* 关闭 tab 退场动画：入场的镜像 —— 宽度收缩到 0，邻居平滑回填。真正从
    store 移除发生在 animationend 之后（strip 组件里延迟 closeTab），
    forwards 保住收缩完的终态、避免移除前闪回原宽。 */
@@ -152,11 +151,6 @@
   overflow: hidden;
   pointer-events: none; /* 退场中不可再点 */
 }
-/* 刚新增的桌面 tab 若立即关闭，退场应覆盖上面的桌面淡入动画。 */
-:global(html.is-desktop) .tabExit {
-  animation: tabExit 120ms ease-in forwards;
-}
-
 /* 非活动 tab 之间的竖分隔条（2px 宽、圆角、竖直居中，用户 Chrome 同款）。
    画在非活动 tab 左侧 gap 里（gap 8px → 条心在 -4px，条宽 2px → left:-5px）。
    首个 tab、紧贴活动 tab 右侧、以及分隔条两侧任一 tab 悬停时淡出。 */
@@ -185,7 +179,7 @@
   color: var(--text-bright);
 }
 .tab:has(.tabTarget:focus-visible) {
-  outline: 2px solid var(--accent-blue);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
   z-index: 2;
 }
@@ -198,7 +192,7 @@
   align-self: flex-end; /* 底边贴 strip 底边（y=40），与内容区零距离 */
   padding-bottom: 6px; /* 内容压回上方 28px 区，与邻居文字同线 */
   border-radius: 8px 8px 0 0;
-  background: var(--bg-primary);
+  background: var(--tab-active-bg);
   color: var(--text-bright);
   z-index: 1;
 }
@@ -214,7 +208,7 @@
   background: radial-gradient(
     circle 8px at 100% 0,
     transparent 7.5px,
-    var(--bg-primary) 8px
+    var(--tab-active-bg) 8px
   );
 }
 /* 左下 fillet（活动 tab 不画分隔条，::before 空闲；全属性自包含，覆盖掉
@@ -232,96 +226,137 @@
   background: radial-gradient(
     circle 8px at 0 0,
     transparent 7.5px,
-    var(--bg-primary) 8px
+    var(--tab-active-bg) 8px
   );
 }
 
-/* ── 桌面（Electron）全宽栏：活动 tab 改悬浮胶囊 ──────────────────────
-   融合式 fillet 在全宽栏下会撞上内容区/右栏的竖向分界缝（tab 底角的
-   内凹弧对着一条竖缝，成了错位倒角），桌面模式放弃"长进内容区"的
-   造型：所有 tab 都是 30px 高的垂直居中胶囊（40px 栏，上下各 5px 缝，
-   strip 的 align-items:center 直接给出），活动胶囊靠 --bg-primary 底
-   色 + 轻投影浮在 frame 色上。浏览器模式不受影响。 */
+/* ── 桌面（Electron）全宽栏 ──────────────────────────────────────────
+   桌面 tab 固定 28px 高，在 40px strip 内上下各留 6px。8px 圆角保持
+   紧凑矩形轮廓；不得使用半高圆角或悬浮阴影形成胶囊。 */
 :global(html.is-desktop) .tab {
-  height: 30px;
-  /* 20px close target inside a 30px tab leaves 5px above and below; use the
-     same inset at the right edge so the control is optically centered. */
+  height: 28px;
   padding-right: 5px;
   border-radius: 8px;
 }
 :global(html.is-desktop) .tab.tabActive,
 :global(html.is-desktop) .tab.tabActive:hover {
-  height: 30px;
-  align-self: center; /* 覆盖 flex-end：不再贴 strip 底边 */
+  height: 28px;
+  align-self: center;
   padding-bottom: 0;
   border-radius: 8px;
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.1),
-    0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  box-shadow: none;
 }
 :global(html.is-desktop) .tab.tabActive::before,
 :global(html.is-desktop) .tab.tabActive::after {
-  content: none; /* 胶囊无 fillet */
+  content: none;
 }
 
-/* A compound tab is one strip item with two or three independently focusable
-   tab segments. The outer surface owns strip geometry; segments keep the
-   existing TabItem DOM and close-animation lifecycle. */
+/* A split group is one top-level strip item with two equal identity cells.
+   The cells never receive separate selected surfaces or drag subjects. */
 .compoundTab {
+  --compound-collapse-width: 200px;
   position: relative;
   isolation: isolate;
-  display: flex;
-  align-items: stretch;
+  display: block;
   height: 28px;
-  min-width: 96px;
+  min-width: 136px;
+  width: 280px;
+  flex: 0 1 280px;
+  max-width: 280px;
+  padding: 0;
   box-sizing: border-box;
   border-radius: 8px;
-  background: var(--bg-hover);
+  background: transparent;
   color: var(--text-secondary);
-  transition:
-    width 160ms ease-in,
-    flex-basis 160ms ease-in,
-    max-width 160ms ease-in,
-    transform 160ms ease;
-}
-.compoundTab[data-member-count="2"] {
-  width: 360px;
-  flex: 0 1 360px;
-  max-width: 360px;
-}
-.compoundTab[data-member-count="3"] {
-  width: 440px;
-  flex: 0 1 440px;
-  max-width: 440px;
-  min-width: 144px;
-}
-.compoundTab[data-closing-count][data-remaining-count="2"] {
-  width: 360px;
-  flex-basis: 360px;
-  max-width: 360px;
-}
-.compoundTab[data-closing-count][data-remaining-count="1"] {
-  width: 200px;
-  flex-basis: 200px;
-  max-width: 200px;
-}
-.compoundTab[data-closing-count][data-remaining-count="0"] {
-  width: 0;
-  min-width: 0;
-  flex-basis: 0;
-  max-width: 0;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: transform 160ms ease;
 }
 .compoundTabActive {
   height: 34px;
   align-self: flex-end;
   padding-bottom: 6px;
   border-radius: 8px 8px 0 0;
-  background: var(--bg-primary);
+  background: var(--tab-active-bg);
+  color: var(--text-bright);
   z-index: 1;
+}
+.compoundTab:not(.compoundTabActive):hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+.compoundTab:has(.compoundTarget:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+  z-index: 2;
+}
+
+.compoundTarget {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  outline: none;
+  cursor: pointer;
+}
+
+.compoundMembers {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.compoundMember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 5px 0 10px;
+  box-sizing: border-box;
+}
+.compoundMember + .compoundMember {
+  border-left: 1px solid var(--border);
+}
+.compoundMemberName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes compoundMemberExit {
+  to { opacity: 0; }
+}
+.compoundMemberExit {
+  animation: compoundMemberExit 160ms ease-in forwards;
+}
+@keyframes compoundMemberCollapse {
+  to {
+    width: var(--compound-collapse-width);
+    flex-basis: var(--compound-collapse-width);
+    max-width: var(--compound-collapse-width);
+  }
+}
+.compoundMemberClosing {
+  animation: compoundMemberCollapse 160ms ease-in forwards;
+  overflow: hidden;
+}
+
+.compoundMemberClose {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+}
+.compoundMemberClose[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.55;
 }
 
 /* The outer edge follows the same separator and active-fillet rules as an
-   ordinary tab. Internal edges are the 1 DIP borders below. */
+   ordinary tab. */
 .compoundTab:not(.compoundTabActive)::before {
   content: "";
   position: absolute;
@@ -358,7 +393,7 @@
   background: radial-gradient(
     circle 8px at 0 0,
     transparent 7.5px,
-    var(--bg-primary) 8px
+    var(--tab-active-bg) 8px
   );
 }
 .compoundTabActive::after {
@@ -366,108 +401,8 @@
   background: radial-gradient(
     circle 8px at 100% 0,
     transparent 7.5px,
-    var(--bg-primary) 8px
+    var(--tab-active-bg) 8px
   );
-}
-
-/* Segments are flat partitions of the compound surface — square inner
-   edges, no per-segment shadow. Only the outermost segment corners
-   inherit the container radius (first-/last-child rules below); the
-   selected state reads from background/text color alone. */
-.compoundSegment,
-.compoundTab .compoundSegment.tabActive,
-.compoundTab .compoundSegment.tabActive:hover {
-  height: 100%;
-  min-width: 48px;
-  max-width: none;
-  flex: 1 1 140px;
-  align-self: stretch;
-  padding: 0 8px;
-  border-radius: 0;
-  box-shadow: none;
-}
-.compoundSegment:first-child,
-.compoundTab .compoundSegment.tabActive:first-child,
-.compoundTab .compoundSegment.tabActive:hover:first-child {
-  border-radius: 8px 0 0 8px;
-}
-.compoundSegment:last-child,
-.compoundTab .compoundSegment.tabActive:last-child,
-.compoundTab .compoundSegment.tabActive:hover:last-child {
-  border-radius: 0 8px 8px 0;
-}
-.compoundTabActive .compoundSegment:first-child,
-.compoundTabActive .compoundSegment.tabActive:first-child,
-.compoundTabActive .compoundSegment.tabActive:hover:first-child {
-  border-radius: 8px 0 0 0;
-}
-.compoundTabActive .compoundSegment:last-child,
-.compoundTabActive .compoundSegment.tabActive:last-child,
-.compoundTabActive .compoundSegment.tabActive:hover:last-child {
-  border-radius: 0 8px 0 0;
-}
-.compoundTabActive .compoundSegment:not(.tabActive) {
-  background: var(--bg-hover);
-}
-.compoundSegment + .compoundSegment {
-  border-left: 1px solid var(--border);
-}
-.compoundSegment:not(.tabActive)::before,
-.compoundSegment.tabActive::before,
-.compoundSegment.tabActive::after {
-  content: none;
-}
-
-@keyframes compoundTabEnter {
-  from {
-    flex-grow: 0;
-    flex-basis: 0;
-    min-width: 0;
-    padding-left: 0;
-    padding-right: 0;
-    opacity: 0;
-  }
-}
-@keyframes compoundTabExit {
-  from {
-    flex-grow: 1;
-  }
-  to {
-    flex-grow: 0;
-    flex-basis: 0;
-    min-width: 0;
-    padding-left: 0;
-    padding-right: 0;
-    opacity: 0;
-  }
-}
-.compoundSegment.tabEnter {
-  animation: compoundTabEnter 180ms ease-out;
-}
-.compoundSegment.tabExit {
-  animation: compoundTabExit 160ms ease-in forwards;
-}
-
-.groupDragHandle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  flex: 0 0 14px;
-  padding: 0;
-  border: 0;
-  border-right: 1px solid var(--border);
-  border-radius: 8px 0 0 8px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: grab;
-}
-.groupDragHandle:focus-visible {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: -2px;
-}
-.groupDragHandle:active {
-  cursor: grabbing;
 }
 
 /* 指针驱动拖动（Chrome 式）：tab 本体跟手 —— transform 由 JS 直写，
@@ -783,55 +718,21 @@
 
 :global(html.is-desktop) .compoundTab,
 :global(html.is-desktop) .compoundTabActive {
-  height: 30px;
+  height: 28px;
   align-self: center;
   padding-bottom: 0;
   border-radius: 8px;
 }
 :global(html.is-desktop) .compoundTabActive {
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.1),
-    0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  box-shadow: none;
 }
 :global(html.is-desktop) .compoundTab {
+  --compound-collapse-width: 240px;
   transition-duration: 120ms;
-}
-:global(html.is-desktop) .compoundTab[data-closing-count][data-remaining-count="1"] {
-  width: 240px;
-  flex-basis: 240px;
-  max-width: 240px;
 }
 :global(html.is-desktop) .compoundTabActive::before,
 :global(html.is-desktop) .compoundTabActive::after {
   content: none;
-}
-:global(html.is-desktop) .compoundSegment.tabEnter {
-  animation: compoundTabEnter 120ms ease-out;
-}
-:global(html.is-desktop) .compoundSegment.tabExit {
-  animation: compoundTabExit 120ms ease-in forwards;
-}
-/* 桌面：普通 tab 的胶囊规则（30px 圆角 + 活动阴影）优先级更高，会把
-   segment 渲染成"胶囊套胶囊"。此处按同源顺序压回平面分区：只剩容器
-   一个外轮廓，活动段仅靠底色区分。 */
-:global(html.is-desktop) .compoundSegment,
-:global(html.is-desktop) .compoundTab .compoundSegment.tabActive,
-:global(html.is-desktop) .compoundTab .compoundSegment.tabActive:hover {
-  height: 100%;
-  align-self: stretch;
-  padding: 0 8px;
-  border-radius: 0;
-  box-shadow: none;
-}
-:global(html.is-desktop) .compoundSegment:first-child,
-:global(html.is-desktop) .compoundTab .compoundSegment.tabActive:first-child,
-:global(html.is-desktop) .compoundTab .compoundSegment.tabActive:hover:first-child {
-  border-radius: 8px 0 0 8px;
-}
-:global(html.is-desktop) .compoundSegment:last-child,
-:global(html.is-desktop) .compoundTab .compoundSegment.tabActive:last-child,
-:global(html.is-desktop) .compoundTab .compoundSegment.tabActive:hover:last-child {
-  border-radius: 0 8px 8px 0;
 }
 
 .tabTarget {
@@ -852,7 +753,8 @@
   color: var(--text-dim);
   flex-shrink: 0;
 }
-.tabActive .tabIcon { color: var(--text-bright); }
+.tabActive .tabIcon,
+.compoundTabActive .tabIcon { color: var(--text-bright); }
 
 .tabFavicon {
   width: 16px;
@@ -895,11 +797,6 @@
   color: var(--text-bright);
   background: var(--bg-hover);
 }
-.tabClose:focus-visible {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: 1px;
-}
-
 /* Dirty marker ● — shown instead of ✕ until hover swaps them back. */
 .tabDirtyDot {
   display: flex;
@@ -912,11 +809,15 @@
   font-size: 8px;
   color: var(--text-secondary);
 }
-.tab:hover .tabDirtyDot { display: none; }
+.tab:hover .tabDirtyDot,
+.compoundTab:hover .tabDirtyDot { display: none; }
 .tabDirtyDot + .tabClose { display: none; }
-.tab:hover .tabDirtyDot + .tabClose { display: flex; }
-.tab:focus-within .tabDirtyDot { display: none; }
-.tab:focus-within .tabDirtyDot + .tabClose { display: flex; }
+.tab:hover .tabDirtyDot + .tabClose,
+.compoundTab:hover .tabDirtyDot + .tabClose { display: flex; }
+.tab:focus-within .tabDirtyDot,
+.compoundTab:focus-within .tabDirtyDot { display: none; }
+.tab:focus-within .tabDirtyDot + .tabClose,
+.compoundTab:focus-within .tabDirtyDot + .tabClose { display: flex; }
 
 /* ＋ 新建：紧跟最后一个标签、比标签矮的安静圆角钮，悬停才有底色。
    align-self:center 让它在 40px 栏里垂直居中（栏本身 align-items 是
@@ -1164,9 +1065,13 @@
   border-radius: 6px;
   cursor: pointer;
 }
-.webToolbarBtn:hover {
+.webToolbarBtn:hover:not(:disabled) {
   color: var(--text-bright);
   background: var(--bg-hover);
+}
+.webToolbarBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .bookmarkBar {
@@ -1502,6 +1407,89 @@
   font-weight: 650;
   color: #fff;
 }
+.ntpTileAdd {
+  border-style: dashed;
+}
+.ntpTileLabel {
+  max-width: 100%;
+  font-size: 11.5px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ntpTileRemove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.ntpTile:hover .ntpTileRemove {
+  display: flex;
+}
+.ntpTileRemove:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+.ntpTileFormLabel {
+  width: 90px;
+  flex-shrink: 0;
+  font-size: 12.5px;
+  color: var(--text-bright);
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+}
+
+.ntpBookmarks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  width: min(560px, 82%);
+}
+.ntpBookmark {
+  display: flex;
+  align-items: center;
+  max-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.ntpBookmarkOpen,
+.ntpBookmarkDelete {
+  display: flex;
+  align-items: center;
+  border: none;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.ntpBookmarkOpen {
+  min-width: 0;
+  gap: 5px;
+  padding: 6px 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ntpBookmarkDelete {
+  padding: 6px;
+}
+.ntpBookmarkOpen:hover,
+.ntpBookmarkDelete:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
 
 /* Browser chrome and browser data appear only after the Browser entry opens. */
 .browserHome {
@@ -1512,45 +1500,38 @@
   flex-direction: column;
   background: var(--bg-primary);
 }
-.browserGlyph {
+.browserGlyph,
+.ntpGlyph {
+  --glyph-primary: var(--accent-blue);
+  --glyph-secondary: #8b5cf6;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  border: 1px solid color-mix(in srgb, var(--accent-blue) 34%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--glyph-primary) 34%, var(--border));
   border-radius: 31%;
-  color: color-mix(in srgb, var(--accent-blue) 82%, white);
+  color: color-mix(in srgb, var(--glyph-primary) 82%, white);
   background:
     radial-gradient(circle at 31% 28%, rgba(255, 255, 255, 0.24), transparent 34%),
-    linear-gradient(145deg, color-mix(in srgb, var(--accent-blue) 30%, var(--bg-tertiary)), color-mix(in srgb, #8b5cf6 24%, var(--bg-secondary)));
+    linear-gradient(145deg, color-mix(in srgb, var(--glyph-primary) 30%, var(--bg-tertiary)), color-mix(in srgb, var(--glyph-secondary) 24%, var(--bg-secondary)));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
-.browserHomeToolbar {
-  height: 48px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-muted);
+.ntpGlyph {
+  width: 18px;
+  height: 18px;
 }
-.browserHomeToolbar input {
-  flex: 1;
-  min-width: 0;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  outline: none;
-  background: var(--bg-secondary);
-  color: var(--text-bright);
-  font-family: var(--font-mono);
+.ntpGlyph[data-tone="files"] {
+  --glyph-primary: var(--meter-fill);
+  --glyph-secondary: var(--accent-cyan);
 }
-.browserHomeToolbar input:focus {
-  border-color: var(--accent-blue);
+.ntpGlyph[data-tone="chat"] {
+  --glyph-primary: var(--accent-green);
+  --glyph-secondary: var(--accent-cyan);
 }
-.browserHomeToolbar button,
+.ntpGlyph[data-tone="terminal"] {
+  --glyph-primary: var(--accent-purple);
+  --glyph-secondary: var(--meter-fill);
+}
 .browserImportAction {
   height: 32px;
   padding: 0 13px;
@@ -1560,12 +1541,10 @@
   color: var(--text-secondary);
   cursor: pointer;
 }
-.browserHomeToolbar button:hover:not(:disabled),
 .browserImportAction:hover:not(:disabled) {
   color: var(--text-bright);
   background: var(--bg-hover);
 }
-.browserHomeToolbar button:disabled,
 .browserImportAction:disabled {
   opacity: 0.45;
   cursor: default;
@@ -1662,132 +1641,50 @@
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: 38px minmax(0, 1fr) 40px;
+  grid-template-rows: 38px minmax(0, 1fr);
+  overflow: hidden;
   background: #111214;
   color: #d7dbe0;
-  font-family: var(--font-mono);
 }
-.terminalHeader,
-.terminalInputRow {
+.terminalHeader {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   padding: 0 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   color: #8f969f;
   font-size: 12px;
 }
-.terminalOutput {
-  min-height: 0;
-  overflow: auto;
-  margin: 0;
-  padding: 12px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font: inherit;
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-.terminalInputRow {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  border-bottom: 0;
+.terminalHeader strong {
   color: #d7dbe0;
+  font-weight: 600;
 }
-.terminalInputRow input {
-  flex: 1;
+.terminalHeader > span:not(.terminalError) {
   min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.terminalError {
+  margin-left: auto;
+  color: var(--accent-red);
+}
+.terminalHost {
+  min-width: 0;
+  min-height: 0;
+  padding: 8px 8px 4px;
+  overflow: hidden;
+}
+.terminalHost :global(.xterm) {
+  height: 100%;
+}
+.terminalHost :global(.xterm-viewport) {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 .terminalEmpty {
   flex: 1;
   display: grid;
   place-items: center;
   color: var(--text-muted);
-}
-.ntpTileAdd {
-  border-style: dashed;
-}
-.ntpTileLabel {
-  max-width: 100%;
-  font-size: 11.5px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.ntpTileRemove {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-.ntpTile:hover .ntpTileRemove {
-  display: flex;
-}
-.ntpTileRemove:hover {
-  color: var(--text-bright);
-  background: var(--bg-hover);
-}
-.ntpTileFormLabel {
-  width: 90px;
-  flex-shrink: 0;
-  font-size: 12.5px;
-  color: var(--text-bright);
-  background: transparent;
-  border: none;
-  outline: none;
-  padding: 0;
-}
-
-.ntpBookmarks {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-  width: min(560px, 82%);
-}
-.ntpBookmark {
-  display: flex;
-  align-items: center;
-  max-width: 220px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.ntpBookmarkOpen,
-.ntpBookmarkDelete {
-  display: flex;
-  align-items: center;
-  border: none;
-  color: var(--text-secondary);
-  background: transparent;
-  cursor: pointer;
-}
-.ntpBookmarkOpen {
-  min-width: 0;
-  gap: 5px;
-  padding: 6px 8px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.ntpBookmarkDelete {
-  padding: 6px;
-}
-.ntpBookmarkOpen:hover,
-.ntpBookmarkDelete:hover {
-  color: var(--text-bright);
-  background: var(--bg-hover);
 }

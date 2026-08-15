@@ -117,10 +117,14 @@ export function BrowserMenu({
   ownerId,
   actions,
   canGoForward = true,
+  canGoHome = true,
+  canOpenExternal = true,
 }: {
   ownerId: string;
   actions: BrowserMenuActions;
   canGoForward?: boolean;
+  canGoHome?: boolean;
+  canOpenExternal?: boolean;
 }) {
   const router = useRouter();
   const { text } = useTranslation();
@@ -182,9 +186,9 @@ export function BrowserMenu({
             theme: activeThemeId(),
             items: [
               item("new-tab", "New browser tab", "新建浏览器标签页"),
-              ...(responsive.home ? [item("home", "Home", "主页")] : []),
+              ...(responsive.home ? [item("home", "Home", "主页", { disabled: !canGoHome })] : []),
               ...(responsive.forward ? [item("forward", "Forward", "前进", { disabled: !canGoForward })] : []),
-              ...(responsive.openExternal ? [item("open-external", "Open in browser", "在浏览器中打开")] : []),
+              ...(responsive.openExternal ? [item("open-external", "Open in browser", "在浏览器中打开", { disabled: !canOpenExternal })] : []),
               item("bookmarks", "Bookmarks", "书签", { separatorBefore: true }),
               item("history", "History", "历史"),
               item("toggle-bookmarks-bar", "Show bookmarks bar", "显示书签栏", { checked: visible }),
@@ -227,9 +231,9 @@ export function BrowserMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent className={MENU_PANEL}>
         {row("new-tab", <Plus size={14} />, "New browser tab", "新建浏览器标签页")}
-        {responsive.home ? row("home", <House size={14} />, "Home", "主页") : null}
+        {responsive.home ? row("home", <House size={14} />, "Home", "主页", false, !canGoHome) : null}
         {responsive.forward ? row("forward", <ArrowRight size={14} />, "Forward", "前进", false, !canGoForward) : null}
-        {responsive.openExternal ? row("open-external", <ExternalLink size={14} />, "Open in browser", "在浏览器中打开") : null}
+        {responsive.openExternal ? row("open-external", <ExternalLink size={14} />, "Open in browser", "在浏览器中打开", false, !canOpenExternal) : null}
         <DropdownMenuSeparator className={MENU_SEPARATOR} />
         {row("bookmarks", <Bookmark size={14} />, "Bookmarks", "书签")}
         {row("history", <Clock3 size={14} />, "History", "历史")}
