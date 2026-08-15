@@ -99,6 +99,16 @@ def release_binding(binding_id: str) -> None:
         _bindings.pop(binding_id, None)
 
 
+def binding_page_key(binding_id: str) -> str:
+    """Return a server-owned identity shared by captures of one CDP Page."""
+    with _lock:
+        entry = _bindings.get(binding_id)
+    if entry is None:
+        return ""
+    ws, _window_id, _tab_id, target_id, _expires_at = entry
+    return f"{id(ws)}:{target_id}"
+
+
 def request_bound_tab(
     binding_id: str,
     *,

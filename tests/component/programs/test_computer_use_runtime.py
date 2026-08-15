@@ -87,7 +87,12 @@ def test_registry_leases_one_exact_page_to_one_session_until_close():
     adapters = {name: _Adapter(name) for name in (
         "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
     )}
-    registry = ComputerUseSessionRegistry(adapters=adapters)
+    registry = ComputerUseSessionRegistry(
+        adapters=adapters,
+        page_key_resolver=lambda binding: {
+            "binding-1": "page-1", "binding-2": "page-1",
+        }[binding],
+    )
 
     first = registry.execute(
         command="observe", backend="open_claude_chrome",
@@ -95,7 +100,7 @@ def test_registry_leases_one_exact_page_to_one_session_until_close():
     )
     second = registry.execute(
         command="observe", backend="playwright_mcp",
-        binding_id="binding-1", owner_id="owner-2",
+        binding_id="binding-2", owner_id="owner-2",
     )
 
     assert second == {"ok": False, "reason_code": "page_in_use"}
@@ -107,12 +112,220 @@ def test_registry_leases_one_exact_page_to_one_session_until_close():
     )
     third = registry.execute(
         command="observe", backend="playwright_mcp",
-        binding_id="binding-1", owner_id="owner-2",
+        binding_id="binding-2", owner_id="owner-2",
     )
     assert third["frame_id"] == "frame-1"
     assert adapters["playwright_mcp"].calls == [
         ("observe", {}),
     ]
+
+
+def test_page_lease_remains_held_until_close_cleanup_finishes():
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSessionRegistry,
+    )
+
+    entered = threading.Event()
+    finish = threading.Event()
+
+    def release_context(_context):
+        entered.set()
+        assert finish.wait(2)
+
+    adapters = {name: _Adapter(name) for name in (
+        "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
+    )}
+    registry = ComputerUseSessionRegistry(
+        adapters=adapters,
+        release_context=release_context,
+        page_key_resolver=lambda _binding: "page-1",
+    )
+    observed = registry.execute(
+        command="observe", backend="open_claude_chrome",
+        binding_id="binding-1", owner_id="owner-1",
+        page_context={"context_id": "ctx-1"},
+    )
+    errors = []
+
+    def close_session():
+        try:
+            registry.execute(
+                command="close",
+                computer_session_id=observed["computer_session_id"],
+                owner_id="owner-1",
+            )
+        except Exception as exc:  # pragma: no cover - assertion reports detail
+            errors.append(exc)
+
+    thread = threading.Thread(target=close_session)
+    thread.start()
+    assert entered.wait(2)
+    assert registry.execute(
+        command="observe", backend="playwright_mcp",
+        binding_id="binding-2", owner_id="owner-2",
+    )["reason_code"] == "page_in_use"
+    finish.set()
+    thread.join(2)
+    assert not thread.is_alive()
+    assert errors == []
+    assert registry.execute(
+        command="observe", backend="playwright_mcp",
+        binding_id="binding-2", owner_id="owner-2",
+    )["frame_id"] == "frame-1"
+
+
+@pytest.mark.parametrize("cleanup", ["release_owner", "close_all"])
+def test_cleanup_waits_for_inflight_action_before_releasing_page(cleanup):
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSessionRegistry,
+    )
+
+    class _BlockingAdapter(_Adapter):
+        def __init__(self, name):
+            super().__init__(name)
+            self.entered = threading.Event()
+            self.finish = threading.Event()
+
+        def act(self, session, arguments):
+            self.entered.set()
+            assert self.finish.wait(2)
+            return super().act(session, arguments)
+
+    blocking = _BlockingAdapter("open_claude_chrome")
+    adapters = {
+        "playwright_mcp": _Adapter("playwright_mcp"),
+        "chrome_devtools_mcp": _Adapter("chrome_devtools_mcp"),
+        "open_claude_chrome": blocking,
+    }
+    registry = ComputerUseSessionRegistry(
+        adapters=adapters,
+        page_key_resolver=lambda _binding: "page-1",
+    )
+    observed = registry.execute(
+        command="observe", backend="open_claude_chrome",
+        binding_id="binding-1", owner_id="owner-1",
+    )
+    action_thread = threading.Thread(target=lambda: registry.execute(
+        command="act", computer_session_id=observed["computer_session_id"],
+        owner_id="owner-1", arguments={"action": "click"},
+    ))
+    action_thread.start()
+    assert blocking.entered.wait(2)
+    cleanup_thread = threading.Thread(
+        target=registry.release_owner if cleanup == "release_owner" else registry.close_all,
+        args=("owner-1",) if cleanup == "release_owner" else (),
+    )
+    cleanup_thread.start()
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        with registry._lock:
+            started = registry._closing_all or "owner-1" in registry._closing_owners
+        if started:
+            break
+        time.sleep(0.01)
+    assert started
+    blocked_owner = "owner-2" if cleanup == "close_all" else "owner-1"
+    assert registry.list_pages(
+        context={
+            "context_id": "ctx-new",
+            "surfaces": [{"surface_key": "p1", "binding_id": "binding-3"}],
+        },
+        owner_id=blocked_owner,
+    )["reason_code"] == "owner_closing"
+    rejected = registry.execute(
+        command="observe", backend="playwright_mcp",
+        binding_id="binding-2", owner_id="owner-2",
+    )
+    assert rejected["reason_code"] in {"page_in_use", "owner_closing"}
+    blocking.finish.set()
+    action_thread.join(2)
+    cleanup_thread.join(2)
+    assert not action_thread.is_alive()
+    assert not cleanup_thread.is_alive()
+    assert registry.execute(
+        command="observe", backend="playwright_mcp",
+        binding_id="binding-2", owner_id="owner-2",
+    )["frame_id"] == "frame-1"
+
+
+def test_close_failure_still_releases_page_lease_and_context():
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSessionRegistry,
+    )
+
+    class _CloseFails(_Adapter):
+        def close(self, session):
+            super().close(session)
+            raise RuntimeError("close failed")
+
+    adapters = {
+        "playwright_mcp": _Adapter("playwright_mcp"),
+        "chrome_devtools_mcp": _Adapter("chrome_devtools_mcp"),
+        "open_claude_chrome": _CloseFails("open_claude_chrome"),
+    }
+    released = []
+    registry = ComputerUseSessionRegistry(
+        adapters=adapters,
+        release_context=lambda context: released.append(context["context_id"]),
+    )
+    observed = registry.execute(
+        command="observe", backend="open_claude_chrome",
+        binding_id="binding-1", owner_id="owner-1",
+        page_context={"context_id": "ctx-1"},
+    )
+
+    with pytest.raises(RuntimeError, match="close failed"):
+        registry.execute(
+            command="close",
+            computer_session_id=observed["computer_session_id"],
+            owner_id="owner-1",
+        )
+
+    retry = registry.execute(
+        command="observe", backend="playwright_mcp",
+        binding_id="binding-1", owner_id="owner-2",
+    )
+    assert retry["frame_id"] == "frame-1"
+    assert released == ["ctx-1"]
+
+
+def test_close_all_releases_sessions_capabilities_and_page_leases():
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSessionRegistry,
+    )
+
+    adapters = {name: _Adapter(name) for name in (
+        "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
+    )}
+    released = []
+    registry = ComputerUseSessionRegistry(
+        adapters=adapters,
+        release_context=lambda context: released.append(context["context_id"]),
+    )
+    registry.execute(
+        command="observe", backend="open_claude_chrome",
+        binding_id="binding-1", owner_id="owner-1",
+        page_context={"context_id": "ctx-session"},
+    )
+    context = {
+        "context_id": "ctx-capability",
+        "surfaces": [{"surface_key": "p1", "binding_id": "binding-2"}],
+    }
+    token = registry.list_pages(
+        context=context, owner_id="owner-2",
+    )["pages"][0]["page_context_token"]
+
+    registry.close_all()
+
+    assert set(released) == {"ctx-session", "ctx-capability"}
+    assert registry.execute(
+        command="observe", backend="playwright_mcp",
+        binding_id="binding-1", owner_id="owner-3",
+    )["frame_id"] == "frame-1"
+    assert registry.execute(
+        command="observe", backend="playwright_mcp",
+        owner_id="owner-2", page_context_token=token,
+    )["reason_code"] == "page_context_not_found"
 
 
 def test_public_computer_use_schema_is_command_based():
@@ -425,6 +638,101 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
     assert calls[0][0] == "computer_use"
 
 
+def test_direct_list_pages_releases_capture_when_registry_rejects(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.agentic_functions import browser_agent as module
+    from openprogram.programs.agentic_functions.browser_agent import (
+        computer_use_runtime,
+    )
+
+    context = {"context_id": "ctx-rejected", "surfaces": []}
+    released = []
+
+    class _Registry:
+        def list_pages(self, **_kwargs):
+            return {"ok": False, "reason_code": "owner_closing", "pages": []}
+
+    monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "capture_active", lambda: context)
+    monkeypatch.setattr(
+        surface_context, "release_bindings", lambda value: released.append(value),
+    )
+
+    result = module.execute_direct_computer_use(
+        {"command": "list_pages"}, owner_id="mcp:closing",
+    )
+    assert result["reason_code"] == "owner_closing"
+    assert released == [context]
+
+
+@pytest.mark.parametrize("route", ["harness", "public"])
+def test_temporary_page_capture_is_released_when_lease_rejects(monkeypatch, route):
+    from openprogram.agent import surface_context
+    from openprogram.programs.agentic_functions import browser_agent as module
+    from openprogram.programs.agentic_functions.browser_agent import (
+        computer_use_runtime,
+    )
+
+    context = {"context_id": "ctx-temp", "surfaces": [{}]}
+    released = []
+
+    class _Registry:
+        def execute(self, **_kwargs):
+            return {"ok": False, "reason_code": "page_in_use"}
+
+    monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(surface_context, "capture_active", lambda: context)
+    monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "binding-1")
+    monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "page-1")
+    monkeypatch.setattr(
+        surface_context, "release_bindings", lambda value: released.append(value),
+    )
+
+    if route == "harness":
+        result = module._run_browser_task_commands(
+            task="observe", backend="playwright_mcp",
+            max_steps=1, max_seconds=10, runtime=SimpleNamespace(),
+        )
+        assert result["reason_code"] == "page_in_use"
+    else:
+        result = module.computer_use(
+            command="observe", backend="playwright_mcp",
+        )
+        assert result["reason_code"] == "page_in_use"
+    assert released == [context]
+
+
+@pytest.mark.parametrize("route", ["harness", "public"])
+def test_temporary_page_capture_is_released_when_binding_resolution_fails(
+    monkeypatch, route,
+):
+    from openprogram.agent import surface_context
+    from openprogram.programs.agentic_functions import browser_agent as module
+
+    context = {"context_id": "ctx-temp", "surfaces": [{}]}
+    released = []
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(surface_context, "capture_active", lambda: context)
+    monkeypatch.setattr(
+        surface_context, "resolve_binding",
+        lambda _page="": (_ for _ in ()).throw(RuntimeError("binding failed")),
+    )
+    monkeypatch.setattr(
+        surface_context, "release_bindings", lambda value: released.append(value),
+    )
+
+    with pytest.raises(RuntimeError, match="binding failed"):
+        if route == "harness":
+            module._run_browser_task_commands(
+                task="observe", backend="playwright_mcp",
+                max_steps=1, max_seconds=10, runtime=SimpleNamespace(),
+            )
+        else:
+            module.computer_use(command="observe", backend="playwright_mcp")
+    assert released == [context]
+
+
 def test_official_backend_rejects_stale_frame_before_upstream_call(monkeypatch):
     from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
         ComputerUseSession,
@@ -478,6 +786,7 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
     context = {"context_id": "ctx-1", "surfaces": [{}]}
     monkeypatch.setattr(surface_context, "current", lambda: context)
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "binding-1")
+    monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "page-1")
 
     class _Runtime:
         def exec(self, **kwargs):
@@ -503,6 +812,7 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
         "command": "observe",
         "backend": "chrome_devtools_mcp",
         "binding_id": "binding-1",
+        "page_key": "page-1",
         "owner_id": "harness:ctx-1",
         "page_context": context,
     }
@@ -541,6 +851,7 @@ def test_gui_harness_screenshot_capability_is_one_request_only(monkeypatch):
     monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: registry)
     monkeypatch.setattr(surface_context, "current", lambda: {"context_id": "ctx"})
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "b1")
+    monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "p1")
 
     class _Runtime:
         def __init__(self):

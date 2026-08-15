@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import anyio
 import mcp.types as mcp_types
@@ -142,7 +143,8 @@ if db.get_session("fixture-session") is None:
     )
     state.joinpath("config.json").chmod(0o600)
     environment = dict(os.environ)
-    python_path = str(fixture_path)
+    repo_root = str(Path(__file__).resolve().parents[3])
+    python_path = os.pathsep.join((str(fixture_path), repo_root))
     if environment.get("PYTHONPATH"):
         python_path += os.pathsep + environment["PYTHONPATH"]
     environment.update(
@@ -178,7 +180,7 @@ async def _stdio_sdk_client(environment, *, client_name="acceptance"):
 
 
 @pytest.mark.parametrize("client_name", ["acceptance-a", "acceptance-b"])
-def test_real_stdio_subprocess_calls_all_six_wrappers(tmp_path, client_name):
+def test_real_stdio_subprocess_calls_all_wrappers(tmp_path, client_name):
     environment = _stdio_subprocess_environment(tmp_path)
 
     async def scenario():

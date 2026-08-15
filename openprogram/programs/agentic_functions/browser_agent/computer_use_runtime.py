@@ -24,10 +24,16 @@ class ComputerUseSession:
     id: str
     backend: str
     binding_id: str
+    page_key: str = ""
     owner_id: str = ""
     page_context: dict[str, Any] | None = None
     controller: Any = None
     state: dict[str, Any] = field(default_factory=dict)
+    operation_lock: threading.RLock = field(
+        default_factory=threading.RLock, repr=False,
+    )
+    closing: bool = False
+    closed: bool = False
 
 
 class ControllerBackend:
@@ -68,6 +74,7 @@ class ComputerUseSessionRegistry:
         adapters: Mapping[str, Any] | None = None,
         controller_factory: Callable[[], Any] | None = None,
         release_context: Callable[[dict | None], None] | None = None,
+        page_key_resolver: Callable[[str], str] | None = None,
     ) -> None:
         if adapters is None:
             if controller_factory is None:
@@ -92,23 +99,68 @@ class ComputerUseSessionRegistry:
         self._sessions: dict[str, ComputerUseSession] = {}
         self._page_leases: dict[str, str] = {}
         self._page_capabilities: dict[str, dict[str, Any]] = {}
+        self._closing_all = False
+        self._closing_owners: set[str] = set()
         if release_context is None:
             from openprogram.agent.surface_context import release_bindings
             release_context = release_bindings
+        if page_key_resolver is None:
+            from openprogram.webui.ws_actions.webtab import binding_page_key
+            page_key_resolver = binding_page_key
         self._release_context = release_context
+        self._page_key_resolver = page_key_resolver
         self._lock = threading.RLock()
+
+    def _detach_locked(self, session: ComputerUseSession) -> None:
+        self._sessions.pop(session.id, None)
+        for token, capability in list(self._page_capabilities.items()):
+            if capability.get("context") is session.page_context:
+                self._page_capabilities.pop(token, None)
+
+    def _cleanup_session(
+        self, session: ComputerUseSession, *, suppress_errors: bool,
+    ) -> None:
+        """Close one locked session before making its Page available again."""
+        session.closing = True
+        with self._lock:
+            self._detach_locked(session)
+        error: Exception | None = None
+        try:
+            self._adapters[session.backend].close(session)
+        except Exception as exc:
+            error = exc
+        try:
+            self._release_context(session.page_context)
+        except Exception as exc:
+            if error is None:
+                error = exc
+        finally:
+            session.closed = True
+            with self._lock:
+                if self._page_leases.get(session.page_key) == session.id:
+                    self._page_leases.pop(session.page_key, None)
+        if error is not None and not suppress_errors:
+            raise error
 
     def list_pages(self, *, context: dict, owner_id: str) -> dict[str, Any]:
         """Issue opaque, single-use capabilities for exact Page bindings."""
         pages = []
         with self._lock:
+            if self._closing_all or owner_id in self._closing_owners:
+                return {"ok": False, "reason_code": "owner_closing", "pages": []}
             for item in context.get("surfaces") or []:
                 if not isinstance(item, dict) or not item.get("binding_id"):
                     continue
                 token = "pct_" + uuid.uuid4().hex
+                binding_id = str(item["binding_id"])
                 self._page_capabilities[token] = {
                     "owner_id": owner_id,
-                    "binding_id": str(item["binding_id"]),
+                    "binding_id": binding_id,
+                    "page_key": (
+                        str(item.get("page_key") or "")
+                        or self._page_key_resolver(binding_id)
+                        or binding_id
+                    ),
                     "context": context,
                     "consumed": False,
                 }
@@ -130,6 +182,7 @@ class ComputerUseSessionRegistry:
         backend: str = "",
         computer_session_id: str = "",
         binding_id: str = "",
+        page_key: str = "",
         owner_id: str = "",
         page_context_token: str = "",
         page_context: dict[str, Any] | None = None,
@@ -151,98 +204,85 @@ class ComputerUseSessionRegistry:
                     if capability["consumed"]:
                         return {"ok": False, "reason_code": "page_context_consumed"}
                     binding_id = capability["binding_id"]
+                    page_key = capability["page_key"]
                     page_context = capability["context"]
             if not binding_id:
                 return {"ok": False, "reason_code": "page_context_required"}
+            page_key = page_key or self._page_key_resolver(binding_id) or binding_id
             session = ComputerUseSession(
                 id="cs_" + uuid.uuid4().hex,
                 backend=selected,
                 binding_id=binding_id,
+                page_key=page_key,
                 owner_id=owner_id,
                 page_context=page_context,
             )
             with self._lock:
-                if binding_id in self._page_leases:
+                if self._closing_all or owner_id in self._closing_owners:
+                    return {"ok": False, "reason_code": "owner_closing"}
+                if page_key in self._page_leases:
                     return {"ok": False, "reason_code": "page_in_use"}
                 if page_context_token:
                     capability = self._page_capabilities.get(page_context_token)
                     if capability is None:
                         return {"ok": False, "reason_code": "page_context_not_found"}
+                    if capability["owner_id"] != owner_id:
+                        return {"ok": False, "reason_code": "page_context_owner_mismatch"}
                     if capability["consumed"]:
                         return {"ok": False, "reason_code": "page_context_consumed"}
                     capability["consumed"] = True
                 self._sessions[session.id] = session
-                self._page_leases[binding_id] = session.id
+                self._page_leases[page_key] = session.id
         else:
             with self._lock:
                 session = self._sessions.get(computer_session_id)
             if session is None:
                 return {"ok": False, "reason_code": "computer_session_not_found"}
 
-        if session.owner_id and owner_id != session.owner_id:
-            return {"ok": False, "reason_code": "computer_session_owner_mismatch"}
-
-        if backend and backend != session.backend:
-            return {
-                "ok": False,
-                "reason_code": "backend_mismatch",
-                "computer_session_id": session.id,
-                "backend": session.backend,
-            }
-
-        adapter = self._adapters[session.backend]
-        try:
-            if command == "observe":
-                result = adapter.observe(session, params)
-            elif command == "act":
-                result = adapter.act(session, params)
-            elif command == "verify":
-                result = adapter.verify(session, params)
-            elif command == "close":
-                adapter.close(session)
-                result = {"ok": True, "closed": True}
-            else:
-                return {"ok": False, "reason_code": "invalid_command"}
-        except Exception:
-            if command == "observe":
-                with self._lock:
-                    self._sessions.pop(session.id, None)
-                    if self._page_leases.get(session.binding_id) == session.id:
-                        self._page_leases.pop(session.binding_id, None)
-                try:
-                    adapter.close(session)
-                finally:
-                    self._release_context(session.page_context)
-            raise
-
-        if created_session:
-            frame_id = (
-                result.json_data.get("frame_id")
-                if isinstance(result, ToolReturn)
-                and isinstance(result.json_data, dict)
-                else result.get("frame_id") if isinstance(result, dict) else None
-            )
-            if not frame_id:
-                with self._lock:
-                    self._sessions.pop(session.id, None)
-                    if self._page_leases.get(session.binding_id) == session.id:
-                        self._page_leases.pop(session.binding_id, None)
-                    for token, capability in list(self._page_capabilities.items()):
-                        if capability.get("context") is session.page_context:
-                            self._page_capabilities.pop(token, None)
-                with suppress(Exception):
-                    adapter.close(session)
-                self._release_context(session.page_context)
-
-        if command == "close":
+        with session.operation_lock:
             with self._lock:
-                self._sessions.pop(session.id, None)
-                if self._page_leases.get(session.binding_id) == session.id:
-                    self._page_leases.pop(session.binding_id, None)
-                for token, capability in list(self._page_capabilities.items()):
-                    if capability.get("context") is session.page_context:
-                        self._page_capabilities.pop(token, None)
-            self._release_context(session.page_context)
+                owner_closing = (
+                    self._closing_all or session.owner_id in self._closing_owners
+                )
+            if session.closing or session.closed or owner_closing:
+                return {"ok": False, "reason_code": "computer_session_not_found"}
+            if session.owner_id and owner_id != session.owner_id:
+                return {"ok": False, "reason_code": "computer_session_owner_mismatch"}
+            if backend and backend != session.backend:
+                return {
+                    "ok": False,
+                    "reason_code": "backend_mismatch",
+                    "computer_session_id": session.id,
+                    "backend": session.backend,
+                }
+
+            adapter = self._adapters[session.backend]
+            try:
+                if command == "observe":
+                    result = adapter.observe(session, params)
+                elif command == "act":
+                    result = adapter.act(session, params)
+                elif command == "verify":
+                    result = adapter.verify(session, params)
+                elif command == "close":
+                    self._cleanup_session(session, suppress_errors=False)
+                    result = {"ok": True, "closed": True}
+                else:
+                    return {"ok": False, "reason_code": "invalid_command"}
+            except Exception:
+                if command == "observe" and not session.closing:
+                    self._cleanup_session(session, suppress_errors=True)
+                raise
+
+            if created_session:
+                frame_id = (
+                    result.json_data.get("frame_id")
+                    if isinstance(result, ToolReturn)
+                    and isinstance(result.json_data, dict)
+                    else result.get("frame_id") if isinstance(result, dict) else None
+                )
+                if not frame_id:
+                    self._cleanup_session(session, suppress_errors=True)
 
         if isinstance(result, ToolReturn):
             metadata = (
@@ -259,28 +299,52 @@ class ComputerUseSessionRegistry:
 
     def close_all(self) -> None:
         with self._lock:
+            if self._closing_all:
+                return
+            self._closing_all = True
             sessions = list(self._sessions.values())
-            self._sessions.clear()
-            self._page_leases.clear()
-        for session in sessions:
-            self._adapters[session.backend].close(session)
-            self._release_context(session.page_context)
+            capabilities = [
+                value for value in self._page_capabilities.values()
+                if not value["consumed"]
+            ]
+            self._page_capabilities.clear()
+        released = set()
+        try:
+            for session in sessions:
+                with session.operation_lock:
+                    if not session.closed:
+                        self._cleanup_session(session, suppress_errors=True)
+                    released.add(id(session.page_context))
+            for capability in capabilities:
+                context = capability["context"]
+                key = id(context)
+                if key not in released:
+                    with suppress(Exception):
+                        self._release_context(context)
+                    released.add(key)
+        finally:
+            with self._lock:
+                self._closing_all = False
 
     def revoke_screenshot(self, computer_session_id: str) -> None:
         with self._lock:
             session = self._sessions.get(computer_session_id)
-        if session is None or session.controller is None:
+        if session is None:
             return
-        revoke = getattr(session.controller, "revoke_screenshot", None)
-        if callable(revoke):
-            revoke()
+        with session.operation_lock:
+            if session.closing or session.closed or session.controller is None:
+                return
+            revoke = getattr(session.controller, "revoke_screenshot", None)
+            if callable(revoke):
+                revoke()
 
     def release_owner(self, owner_id: str) -> None:
         """Release every session and unconsumed Page capability for one caller."""
         with self._lock:
+            if owner_id in self._closing_owners:
+                return
+            self._closing_owners.add(owner_id)
             sessions = [s for s in self._sessions.values() if s.owner_id == owner_id]
-            for session in sessions:
-                self._sessions.pop(session.id, None)
             capabilities = []
             for token, value in list(self._page_capabilities.items()):
                 if value["owner_id"] != owner_id:
@@ -289,19 +353,22 @@ class ComputerUseSessionRegistry:
                 if not value["consumed"]:
                     capabilities.append(value)
         released = set()
-        for session in sessions:
-            self._adapters[session.backend].close(session)
-            context = session.page_context
-            key = id(context)
-            if key not in released:
-                self._release_context(context)
-                released.add(key)
-        for capability in capabilities:
-            context = capability["context"]
-            key = id(context)
-            if key not in released:
-                self._release_context(context)
-                released.add(key)
+        try:
+            for session in sessions:
+                with session.operation_lock:
+                    if not session.closed:
+                        self._cleanup_session(session, suppress_errors=True)
+                    released.add(id(session.page_context))
+            for capability in capabilities:
+                context = capability["context"]
+                key = id(context)
+                if key not in released:
+                    with suppress(Exception):
+                        self._release_context(context)
+                    released.add(key)
+        finally:
+            with self._lock:
+                self._closing_owners.discard(owner_id)
 
 
 _registry: ComputerUseSessionRegistry | None = None

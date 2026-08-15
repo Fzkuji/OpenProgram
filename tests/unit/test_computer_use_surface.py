@@ -59,6 +59,7 @@ def test_surface_context_captures_preview_from_the_originating_socket(monkeypatc
     assert "preview_status" in surface_context.render_for_model(context)
     assert "do not claim that the page is invisible" in surface_context.render_for_model(context)
     binding_id = context["surfaces"][0]["binding_id"]
+    assert context["surfaces"][0]["page_key"] == webtab.binding_page_key(binding_id)
     assert webtab._bindings[binding_id][2] == "w:right"
     webtab.release_binding(binding_id)
 
@@ -113,6 +114,27 @@ def test_bound_webtab_request_uses_only_the_registered_socket(monkeypatch):
     assert webtab.request_bound_tab(binding_id)["ok"] is False
 
 
+def test_webtab_page_key_is_shared_across_recaptures_of_the_same_target():
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    first = webtab.register_binding(
+        owner, "window-1", "tab-1", "target-1",
+    )
+    moved = webtab.register_binding(
+        owner, "window-2", "tab-2", "target-1",
+    )
+    other_owner = webtab.register_binding(
+        _WS(), "window-1", "tab-1", "target-1",
+    )
+    try:
+        assert webtab.binding_page_key(first) == webtab.binding_page_key(moved)
+        assert webtab.binding_page_key(first) != webtab.binding_page_key(other_owner)
+    finally:
+        for binding_id in (first, moved, other_owner):
+            webtab.release_binding(binding_id)
+
+
 def test_webtab_result_is_claimed_only_by_expected_socket():
     from openprogram.webui.ws_actions import webtab
 
@@ -153,6 +175,7 @@ def test_direct_mcp_page_capture_requires_one_desktop_connection(monkeypatch):
     context = surface_context.capture_active()
     surface = context["surfaces"][0]
     assert surface["surface_key"] == "p1"
+    assert surface["page_key"] == webtab.binding_page_key(surface["binding_id"])
     assert webtab._bindings[surface["binding_id"]][0] is owner
     webtab.release_binding(surface["binding_id"])
 

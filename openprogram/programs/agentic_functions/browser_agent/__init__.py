@@ -858,20 +858,35 @@ def _run_browser_task_commands(
     from openprogram.agent import surface_context
     from .computer_use_runtime import get_registry
 
-    context = surface_context.current() or surface_context.capture_active()
+    context = surface_context.current()
+    captured_here = context is None
+    if context is None:
+        context = surface_context.capture_active()
     owner_id = "harness:" + str(context.get("context_id") or "unknown")
     token = surface_context.bind(context)
     try:
         binding_id = surface_context.resolve_binding("")
+        page_key = surface_context.resolve_page_key("")
+    except Exception:
+        if captured_here:
+            surface_context.release_bindings(context)
+        raise
     finally:
         surface_context.reset(token)
     registry = get_registry()
-    observed = registry.execute(
-        command="observe", backend=backend, binding_id=binding_id,
-        owner_id=owner_id, page_context=context,
-    )
+    try:
+        observed = registry.execute(
+            command="observe", backend=backend, binding_id=binding_id,
+            page_key=page_key, owner_id=owner_id, page_context=context,
+        )
+    except Exception:
+        if captured_here:
+            surface_context.release_bindings(context)
+        raise
     session_id = str(observed.get("computer_session_id") or "")
     if not session_id or "frame_id" not in observed:
+        if captured_here and not session_id:
+            surface_context.release_bindings(context)
         return {
             "status": "failed",
             "reason_code": observed.get("reason_code", "page_unavailable"),
@@ -1025,31 +1040,56 @@ def computer_use(
     from .computer_use_runtime import get_registry
 
     context = surface_context.current()
+    captured_here = False
     if context is None and command in {"list_pages", "observe"}:
         context = surface_context.capture_active()
+        captured_here = True
 
     if command == "list_pages":
         context = context or {}
         owner_id = "turn:" + str(context.get("context_id") or "unknown")
-        return get_registry().list_pages(context=context, owner_id=owner_id)
+        try:
+            result = get_registry().list_pages(context=context, owner_id=owner_id)
+        except Exception:
+            if captured_here:
+                surface_context.release_bindings(context)
+            raise
+        if captured_here and not result.get("ok"):
+            surface_context.release_bindings(context)
+        return result
 
     binding_id = ""
+    page_key = ""
     if command == "observe" and not computer_session_id:
         token = surface_context.bind(context)
         try:
             binding_id = surface_context.resolve_binding(page)
+            page_key = surface_context.resolve_page_key(page)
+        except Exception:
+            if captured_here:
+                surface_context.release_bindings(context)
+            raise
         finally:
             surface_context.reset(token)
-    return get_registry().execute(
-        command=command,
-        backend=backend,
-        computer_session_id=computer_session_id,
-        binding_id=binding_id,
-        owner_id=("turn:" + str((context or {}).get("context_id") or "")),
-        page_context_token=page_context_token,
-        page_context=context,
-        arguments=arguments,
-    )
+    try:
+        result = get_registry().execute(
+            command=command,
+            backend=backend,
+            computer_session_id=computer_session_id,
+            binding_id=binding_id,
+            page_key=page_key,
+            owner_id=("turn:" + str((context or {}).get("context_id") or "")),
+            page_context_token=page_context_token,
+            page_context=context,
+            arguments=arguments,
+        )
+    except Exception:
+        if captured_here:
+            surface_context.release_bindings(context)
+        raise
+    if captured_here and command == "observe" and not result.get("computer_session_id"):
+        surface_context.release_bindings(context)
+    return result
 
 
 def execute_direct_computer_use(arguments: dict, *, owner_id: str):
@@ -1061,7 +1101,14 @@ def execute_direct_computer_use(arguments: dict, *, owner_id: str):
     registry = get_registry()
     if command == "list_pages":
         context = surface_context.capture_active()
-        return registry.list_pages(context=context, owner_id=owner_id)
+        try:
+            result = registry.list_pages(context=context, owner_id=owner_id)
+        except Exception:
+            surface_context.release_bindings(context)
+            raise
+        if not result.get("ok"):
+            surface_context.release_bindings(context)
+        return result
     return registry.execute(
         command=command,
         backend=str(arguments.get("backend") or ""),

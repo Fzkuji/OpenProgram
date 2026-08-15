@@ -147,7 +147,7 @@
 </ul>
 
 <h2>任务 2 尚未覆盖</h2>
-<p>当前实现支持 turn-scoped exact Page binding、同一 Page 的 ComputerSession 排他 lease，以及显式 <code>screenshot</code> 的单张当前 viewport 原生视觉输入。tab 隐藏、移出当前窗口或 target 变化时，下一次绑定请求会因 visible window/tab/target 校验失败而停止。完整 server-owned monotonic registry revisions、多窗口压力测试、专用 permission card 和 artifact retention policy 仍未实现。已完成的安装版验收不作为这些后续能力的证据。</p>
+<p>当前实现支持 turn-scoped exact Page binding、基于 originating connection + CDP target canonical key 的 ComputerSession 排他 lease，以及显式 <code>screenshot</code> 的单张当前 viewport 原生视觉输入。session 内 action、verify、observe 与 close 串行执行；close、首次 observe 失败、owner disconnect 或进程清理完成前 lease 不会提前释放。tab 隐藏、移出当前窗口或 target 变化时，下一次绑定请求会因 visible window/tab/target 校验失败而停止。完整 server-owned monotonic registry revisions、多窗口压力测试、专用 permission card 和 artifact retention policy 仍未实现。已完成的安装版验收不作为这些后续能力的证据。</p>
 
 <h2>任务 2 审查记录</h2>
 <table>

@@ -121,15 +121,17 @@ def capture(raw: Any, ws) -> dict | None:
     ):
         surface["preview_status"] = "unavailable"
         return context
+    binding_id = webtab.register_binding(
+        ws, descriptor["window_id"], descriptor["tab_id"], target_id,
+    )
     surface.update({
         "title": _text(result.get("title"), 240) or surface["title"],
         "origin": _origin(str(result.get("url") or "")) or surface["origin"],
         "capabilities": ["observe", "interact", "navigate"],
         "preview_status": "ready",
         "preview": _preview(result.get("preview")),
-        "binding_id": webtab.register_binding(
-            ws, descriptor["window_id"], descriptor["tab_id"], target_id,
-        ),
+        "binding_id": binding_id,
+        "page_key": webtab.binding_page_key(binding_id),
     })
     return context
 
@@ -199,6 +201,18 @@ def resolve_binding(surface: str = "") -> str:
     raise RuntimeError(f"surface {surface!r} is not available in this turn")
 
 
+def resolve_page_key(surface: str = "") -> str:
+    context = current()
+    if not tool_enabled(context):
+        raise RuntimeError("no accessible surface is bound to this turn")
+    key = (surface or "").strip() or context.get("primary_surface_key")
+    key = (context.get("alias_map") or {}).get(key, key)
+    for item in context.get("surfaces") or []:
+        if item.get("surface_key") == key and item.get("binding_id"):
+            return str(item.get("page_key") or item["binding_id"])
+    raise RuntimeError(f"surface {surface!r} is not available in this turn")
+
+
 def capture_active() -> dict:
     """Capture one active desktop Page for a direct MCP computer_use call."""
     from openprogram.webui import server as _server
@@ -226,6 +240,7 @@ def capture_active() -> dict:
         "capabilities": ["observe", "interact", "navigate"],
         "preview_status": "ready",
         "binding_id": binding_id,
+        "page_key": webtab.binding_page_key(binding_id),
     }
     return {
         "context_id": "page_ctx_" + uuid.uuid4().hex,
