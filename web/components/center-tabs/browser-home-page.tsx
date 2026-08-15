@@ -294,6 +294,8 @@ export function BrowserHomePage() {
           ownerId={menuOwnerId}
           actions={{ home: () => {}, openExternal: () => {} }}
           canGoForward={false}
+          canGoHome={false}
+          canOpenExternal={false}
         />
       </div>
       <BookmarkBar ownerId={menuOwnerId} onNavigate={go} />
