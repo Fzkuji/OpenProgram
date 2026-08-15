@@ -4,11 +4,9 @@ The site is built by ``tools.docs_site.build`` into ``docs/_site/``. We mount it
 as static files so every page, asset, and the search index are served from the
 same single port as the rest of the web UI.
 
-Auto-rebuild: before serving, we compare the newest mtime under ``docs/``
-(sources) against ``docs/_site/`` (output). If a source is newer, we rebuild
-once. So editing a doc + refreshing the browser is enough — no manual build
-step, no watcher process. The check stats the tree (no file reads) and is
-debounced, so it adds negligible latency.
+Auto-rebuild: when the worker registers the route, compare the newest mtime
+under ``docs/`` (sources) against ``docs/_site/`` (output) and start one
+background rebuild when needed. HTTP reads never scan or rebuild the tree.
 """
 from __future__ import annotations
 
@@ -104,22 +102,16 @@ def _maybe_rebuild() -> None:
 def register(app) -> None:
     from fastapi.responses import JSONResponse
     from fastapi.staticfiles import StaticFiles
-    from starlette.types import Receive, Scope, Send
 
     repo_root = _repo_root()
     site = _site_dir()
     site.mkdir(parents=True, exist_ok=True)  # ensure mountable even pre-build
 
-    class AutoRebuildStatic(StaticFiles):
-        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-            if scope["type"] == "http":
-                _maybe_rebuild()
-            await super().__call__(scope, receive, send)
-
     # Make `tools` importable (it's a top-level package at the repo root).
     import sys
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
+    _maybe_rebuild()
 
     # Bare /docs never reaches the mount: Mount's path regex needs the
     # trailing slash, and the SPA catch-all (registered last) fully matches
@@ -127,10 +119,10 @@ def register(app) -> None:
     # the chat shell came back instead of the docs site. Redirect explicitly.
     from fastapi.responses import RedirectResponse
 
-    @app.get("/docs", include_in_schema=False)
+    @app.api_route("/docs", methods=["GET", "HEAD"], include_in_schema=False)
     async def _docs_slash_redirect():  # noqa: ANN202
         return RedirectResponse(url="/docs/", status_code=307)
 
     # html=True → /docs/ resolves to index.html; extensionless paths fall back
     # to <name>.html.
-    app.mount("/docs", AutoRebuildStatic(directory=str(site), html=True), name="docs")
+    app.mount("/docs", StaticFiles(directory=str(site), html=True), name="docs")

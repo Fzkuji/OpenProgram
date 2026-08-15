@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import (
@@ -27,6 +28,7 @@ from openprogram.webui.owner_auth import (
     OwnerAuthMiddleware,
     OwnerAuthState,
 )
+from openprogram.webui.routes import docs as docs_route
 
 
 RAW_TOKEN = bytes(range(32))
@@ -310,6 +312,46 @@ def test_scheduler_shell_is_public_before_cookie_bootstrap():
         # The fixture has no Scheduler route, so 404 proves auth middleware
         # allowed the frontend shell path instead of returning 401.
         assert client.get("/scheduler").status_code == 404
+
+
+def test_static_docs_are_public_but_keep_host_and_method_guards():
+    state = _state()
+    with TestClient(_app(state), base_url=LOCAL_ORIGIN) as client:
+        # The fixture has no docs mount, so 404 proves the auth middleware
+        # allowed the static docs paths instead of returning 401.
+        assert client.get("/docs").status_code == 404
+        assert client.head("/docs/reference/design/test.html").status_code == 404
+        assert client.get("/docs/assets/site.js").status_code == 404
+        assert client.post("/docs").status_code == 401
+        assert client.get("/docs", headers={"host": "evil.example"}).status_code == 403
+
+
+def test_public_docs_requests_only_read_prebuilt_files(tmp_path, monkeypatch):
+    site = tmp_path / "site"
+    nested = site / "assets"
+    nested.mkdir(parents=True)
+    (site / "index.html").write_text("<h1>Docs</h1>", encoding="utf-8")
+    (nested / "site.js").write_text("window.docs = true", encoding="utf-8")
+    rebuild_checks = []
+    monkeypatch.setattr(docs_route, "_site_dir", lambda: site)
+    monkeypatch.setattr(docs_route, "_maybe_rebuild", lambda: rebuild_checks.append("startup"))
+
+    app = FastAPI(docs_url=None, redoc_url=None)
+    docs_route.register(app)
+    assert rebuild_checks == ["startup"]
+    protected = OwnerAuthMiddleware(app, auth_state=_state())
+    with TestClient(protected, base_url=LOCAL_ORIGIN) as client:
+        get_root = client.get("/docs", follow_redirects=False)
+        assert get_root.status_code == 307
+        assert get_root.headers["location"] == "/docs/"
+        head_root = client.head("/docs", follow_redirects=False)
+        assert head_root.status_code == 307
+        assert head_root.headers["location"] == "/docs/"
+        assert client.get("/docs/").status_code == 200
+        assert client.head("/docs/assets/site.js").status_code == 200
+        assert client.post("/docs").status_code == 401
+        assert client.get("/docs", headers={"host": "evil.example"}).status_code == 403
+    assert rebuild_checks == ["startup"]
 
 
 def test_public_challenge_proves_listener_ownership_without_receiving_token():

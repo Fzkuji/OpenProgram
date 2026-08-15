@@ -396,6 +396,8 @@ def _public_shell(scope) -> bool:
         route in _PUBLIC_FRONTEND_ROUTES
         or path in _PUBLIC_STATIC_FILES
         or path.startswith(_PUBLIC_STATIC_PREFIXES)
+        or path == "/docs"
+        or path.startswith("/docs/")
     )
 
 

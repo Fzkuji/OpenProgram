@@ -77,6 +77,7 @@ while true; do
   attempt_dir="$wheel_dir/attempt-$attempt"
   mkdir -p "$attempt_dir"
 
+  rm -rf "$repo_root/desktop/dist"
   "$repo_root/scripts/stage-release-assets.sh"
   rm -rf "$repo_root/build"
   "$uv_bin" build --wheel --out-dir "$attempt_dir" "$repo_root"
@@ -132,9 +133,9 @@ fi
 printf '%s\n' "$revision" > \
   "$app_path/Contents/Resources/openprogram-source-revision"
 
-"$local_python" -m openprogram worker start || true
 for _ in {1..50}; do
   curl -fsS http://127.0.0.1:18100/healthz >/dev/null 2>&1 && break
+  "$local_python" -m openprogram worker start >/dev/null 2>&1 || true
   sleep 0.2
 done
 curl -fsS http://127.0.0.1:18100/healthz >/dev/null
