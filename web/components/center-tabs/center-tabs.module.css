@@ -1194,9 +1194,12 @@
    the selected folder's direct children. The accent comes from the active
    theme rather than copying Chrome's blue. */
 .bookmarkManager {
+  --bookmark-manager-header-h: 52px;
+  --bookmark-manager-row-h: 36px;
+  --bookmark-manager-action-size: 28px;
   container: bookmark-manager / inline-size;
   display: grid;
-  grid-template-rows: 64px minmax(0, 1fr);
+  grid-template-rows: var(--bookmark-manager-header-h) minmax(0, 1fr);
   width: 100%;
   height: 100%;
   min-width: 0;
@@ -1210,22 +1213,22 @@
   grid-template-columns: 216px minmax(220px, 720px) 28px;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 0 20px 0 24px;
+  gap: 12px;
+  padding: 0 16px 0 20px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-primary);
 }
 .bookmarkManagerBrand {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 9px;
   min-width: 0;
   color: var(--text-bright);
 }
 .bookmarkManagerBrand h1 {
   margin: 0;
   overflow: hidden;
-  font-size: 19px;
+  font-size: 18px;
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1241,9 +1244,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+  width: var(--bookmark-manager-action-size);
+  height: var(--bookmark-manager-action-size);
+  flex: 0 0 var(--bookmark-manager-action-size);
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -1266,17 +1269,17 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 14px 8px 24px 0;
+  padding: 8px 8px 16px 0;
   border-right: 1px solid var(--border);
   background: var(--bg-primary);
 }
 .bookmarkFolderRow {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 36px;
+  gap: 7px;
+  height: var(--bookmark-manager-row-h);
   min-width: 0;
-  padding-right: 12px;
+  padding-right: 10px;
   border-radius: 0 18px 18px 0;
   color: var(--text-secondary);
 }
@@ -1329,16 +1332,16 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 28px clamp(16px, 5vw, 72px) 48px;
+  padding: 16px clamp(12px, 3vw, 36px) 28px;
   background: var(--bg-primary);
 }
 .bookmarkContentPanel {
   width: min(100%, 920px);
-  min-height: 48px;
+  min-height: var(--bookmark-manager-row-h);
   margin: 0 auto;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 11px;
+  border-radius: 8px;
   background: var(--bg-secondary);
 }
 .bookmarkContentList {
@@ -1348,10 +1351,10 @@
 .bookmarkContentRow {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
-  height: 48px;
-  padding: 0 10px 0 18px;
+  height: var(--bookmark-manager-row-h);
+  padding: 0 8px 0 14px;
   border-bottom: 1px solid var(--border);
   color: var(--text-primary);
 }
@@ -1371,15 +1374,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
   color: var(--text-muted);
 }
 .bookmarkContentIcon img {
-  width: 17px;
-  height: 17px;
-  border-radius: 4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
   object-fit: contain;
 }
 .bookmarkContentTitle,
@@ -1404,10 +1407,10 @@
   color: var(--text-bright);
 }
 .bookmarkContentTitleInput {
-  height: 30px;
+  height: 28px;
   padding: 0 8px;
   border: 1px solid var(--accent-blue);
-  border-radius: 7px;
+  border-radius: 6px;
   outline: none;
   background: var(--bg-primary);
   color: var(--text-bright);
@@ -1422,9 +1425,9 @@
 }
 .bookmarkContentEmpty {
   display: grid;
-  min-height: 180px;
+  min-height: 120px;
   place-items: center;
-  padding: 24px;
+  padding: 16px;
   color: var(--text-muted);
   font-size: 13px;
   text-align: center;
@@ -1441,9 +1444,6 @@
 }
 
 @container bookmark-manager (max-width: 700px) {
-  .bookmarkManager {
-    grid-template-rows: 54px minmax(0, 1fr);
-  }
   .bookmarkManagerHeader {
     grid-template-columns: minmax(0, 1fr) 28px;
     gap: 10px;
@@ -1457,15 +1457,15 @@
   }
   .bookmarkManagerBody {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(116px, 30%) minmax(0, 1fr);
+    grid-template-rows: minmax(108px, 30%) minmax(0, 1fr);
   }
   .bookmarkFolderTree {
-    padding: 8px 8px 10px 0;
+    padding: 6px 8px 8px 0;
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
   .bookmarkManagerContent {
-    padding: 14px 12px 28px;
+    padding: 10px 8px 20px;
   }
 }
 

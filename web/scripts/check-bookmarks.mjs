@@ -168,6 +168,26 @@ assert.doesNotMatch(manager, /\bPencil\b/,
 assert.match(centerTabsCss, /\.bookmarkManagerBody\s*\{[^}]*grid-template-columns:\s*240px minmax\(0, 1fr\)/s);
 assert.match(centerTabsCss, /\.bookmarkFolderSelected\s*\{/);
 assert.match(centerTabsCss, /@container bookmark-manager \(max-width:\s*700px\)/);
+assert.match(
+  centerTabsCss,
+  /\.bookmarkManager\s*\{[^}]*--bookmark-manager-header-h:\s*52px;[^}]*--bookmark-manager-row-h:\s*36px;[^}]*--bookmark-manager-action-size:\s*28px;/s,
+  "bookmark manager must define one compact header and row scale",
+);
+assert.match(
+  centerTabsCss,
+  /\.bookmarkFolderRow\s*\{[^}]*height:\s*var\(--bookmark-manager-row-h\);/s,
+  "folder rows must use the shared bookmark row height",
+);
+assert.match(
+  centerTabsCss,
+  /\.bookmarkContentRow\s*\{[^}]*height:\s*var\(--bookmark-manager-row-h\);/s,
+  "content rows must use the same bookmark row height",
+);
+assert.match(
+  centerTabsCss,
+  /\.bookmarkManagerContent\s*\{[^}]*padding:\s*16px clamp\(12px, 3vw, 36px\) 28px;/s,
+  "content pane must keep the compact 16px first-screen inset",
+);
 assert.doesNotMatch(
   manager,
   /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u,
