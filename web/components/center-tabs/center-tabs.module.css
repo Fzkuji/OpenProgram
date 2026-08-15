@@ -1122,46 +1122,48 @@
 }
 
 .webToolbar {
-  /* 40px box-border — same row height as the file toolbar, so both
-     toolbar-bearing tab kinds share one second header line at y=80. */
-  height: 40px;
+  height: 42px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 10px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
   flex-shrink: 0;
 }
 
 .webAddress {
   flex: 1;
   min-width: 160px;
-  height: 26px;
+  height: 30px;
   box-sizing: border-box;
-  padding: 0 10px;
+  padding: 0 12px;
   font-family: var(--font-mono);
   font-size: 12.5px;
   color: var(--text-bright);
-  background: var(--bg-secondary);
+  background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 15px;
   outline: none;
 }
-.webAddress:focus { border-color: var(--text-dim); }
+.webAddress:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 28%, transparent);
+}
 
 .webToolbarBtn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
   padding: 0;
   color: var(--text-dim);
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: 50%;
   cursor: pointer;
 }
 .webToolbarBtn:hover {
@@ -1170,7 +1172,7 @@
 }
 
 .bookmarkBar {
-  height: 30px;
+  height: 28px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -1190,14 +1192,14 @@
 }
 .bookmarkBarItem,
 .bookmarkBarMore {
-  height: 24px;
+  height: 22px;
   min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 0 7px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-secondary);
   font-size: 11.5px;
@@ -1220,15 +1222,15 @@
   white-space: nowrap;
 }
 .bookmarkBarMore {
-  width: 24px;
+  width: 22px;
   padding: 0;
   justify-content: center;
 }
 .bookmarkBarMoreSlot {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   display: inline-flex;
-  flex: 0 0 24px;
+  flex: 0 0 22px;
 }
 
 @container (max-width: 719px) {
