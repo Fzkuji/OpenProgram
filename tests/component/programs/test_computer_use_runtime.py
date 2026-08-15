@@ -29,7 +29,7 @@ class _Adapter:
         self.calls.append(("close", {}))
 
 
-def _allow_binding(_binding_id, **_expected_revisions):
+def _allow_binding(_binding_id):
     return {"ok": True}
 
 
@@ -85,6 +85,33 @@ def test_registry_supports_three_backends_and_freezes_one_per_session():
     ]
 
 
+def test_registry_preserves_one_argument_binding_validator_compatibility():
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSessionRegistry,
+    )
+
+    adapters = {
+        name: _Adapter(name) for name in (
+            "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
+        )
+    }
+    registry = ComputerUseSessionRegistry(
+        adapters=adapters,
+        binding_validator=lambda _binding_id: {"ok": True},
+    )
+    observed = registry.execute(
+        command="observe", backend="open_claude_chrome",
+        binding_id="binding-1",
+    )
+
+    acted = registry.execute(
+        command="act", computer_session_id=observed["computer_session_id"],
+        arguments={"action": "click"},
+    )
+
+    assert acted["ok"] is True
+
+
 def test_registry_rejects_action_when_bound_page_revision_changes():
     from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
         ComputerUseSessionRegistry,
@@ -102,7 +129,7 @@ def test_registry_rejects_action_when_bound_page_revision_changes():
     registry = ComputerUseSessionRegistry(
         adapters=adapters,
         binding_revision_resolver=lambda _binding: dict(revisions),
-        binding_validator=lambda binding, **_expected: (
+        binding_validator=lambda binding: (
             validations.append(binding) or {"ok": True}
         ),
         release_context=lambda context: released.append(context["context_id"]),
@@ -147,7 +174,7 @@ def test_registry_revalidates_visibility_before_each_existing_session_command():
         binding_revision_resolver=lambda _binding: {
             "page_revision": 21, "access_revision": 22,
         },
-        binding_validator=lambda _binding, **_expected: dict(visible),
+        binding_validator=lambda _binding: dict(visible),
         release_context=lambda context: released.append(context["context_id"]),
     )
     observed = registry.execute(
@@ -167,10 +194,11 @@ def test_registry_revalidates_visibility_before_each_existing_session_command():
     assert released == ["ctx-1"]
 
 
-def test_page_capability_revisions_cross_the_session_validation_boundary():
+def test_page_capability_revisions_cross_the_session_validation_boundary(monkeypatch):
     from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
         ComputerUseSessionRegistry,
     )
+    from openprogram.webui.ws_actions import webtab
 
     adapter = _Adapter("open_claude_chrome")
     adapters = {
@@ -184,10 +212,11 @@ def test_page_capability_revisions_cross_the_session_validation_boundary():
         validations.append((binding_id, expected))
         return {"ok": True}
 
+    monkeypatch.setattr(webtab, "request_bound_tab", validate)
+
     registry = ComputerUseSessionRegistry(
         adapters=adapters,
         binding_revision_resolver=lambda _binding: {},
-        binding_validator=validate,
     )
     context = {
         "context_id": "ctx-1",

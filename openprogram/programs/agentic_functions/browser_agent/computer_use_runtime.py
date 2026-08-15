@@ -78,7 +78,7 @@ class ComputerUseSessionRegistry:
         release_context: Callable[[dict | None], None] | None = None,
         page_key_resolver: Callable[[str], str] | None = None,
         binding_revision_resolver: Callable[[str], Mapping[str, int]] | None = None,
-        binding_validator: Callable[..., Mapping[str, Any]] | None = None,
+        binding_validator: Callable[[str], Mapping[str, Any]] | None = None,
     ) -> None:
         if adapters is None:
             if controller_factory is None:
@@ -114,6 +114,7 @@ class ComputerUseSessionRegistry:
         if binding_revision_resolver is None:
             from openprogram.webui.ws_actions.webtab import binding_revisions
             binding_revision_resolver = binding_revisions
+        self._binding_validator_accepts_revisions = binding_validator is None
         if binding_validator is None:
             from openprogram.webui.ws_actions.webtab import request_bound_tab
             binding_validator = request_bound_tab
@@ -299,10 +300,14 @@ class ComputerUseSessionRegistry:
                     validation = (
                         {"ok": False, "reason_code": "page_context_stale"}
                         if revision_changed
-                        else self._binding_validator(
-                            session.binding_id,
-                            expected_page_revision=session.page_revision,
-                            expected_access_revision=session.access_revision,
+                        else (
+                            self._binding_validator(
+                                session.binding_id,
+                                expected_page_revision=session.page_revision,
+                                expected_access_revision=session.access_revision,
+                            )
+                            if self._binding_validator_accepts_revisions
+                            else self._binding_validator(session.binding_id)
                         )
                     )
                 except Exception:
