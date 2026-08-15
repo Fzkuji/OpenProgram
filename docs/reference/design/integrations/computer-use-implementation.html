@@ -14,7 +14,7 @@
 <p>本页只记录 <a href="computer-use.html">Computer Use 目标设计</a> 的实施任务、验证命令和 review 结论，不修改概念设计。第一项任务交付内置浏览器 Browser Agent 的低成本 baseline。</p>
 <span class="status">TASK 1 · COMPLETE</span>
 <span class="status">TASK 2 · COMPLETE</span>
-<span class="status">TASK 3 · CODE COMPLETE / APP E2E PENDING</span>
+<span class="status">TASK 3 · BASELINE COMPLETE / APP E2E PASSED</span>
 
 <h2>任务 1：DOM-first Browser Agent baseline</h2>
 <div class="card">
@@ -166,7 +166,7 @@
     <tr><td>Session selector</td><td><code>observe</code> 选择 <code>playwright_mcp</code>、<code>chrome_devtools_mcp</code> 或 <code>open_claude_chrome</code>；当前 session 禁止切换和自动 fallback。</td><td class="pass">完成</td></tr>
     <tr><td>Exact Page</td><td>Playwright MCP 通过官方 <code>createConnection(contextGetter)</code> 获得只含 exact target 的 BrowserContext 视图；Chrome DevTools MCP 使用一次性 marker 解析 pageId。两者每次 action 前继续校验原绑定 target 与 frame，均不选择或置前 tab。</td><td class="pass">component 通过</td></tr>
     <tr><td>Direct MCP</td><td>单一桌面控制连接时可获取当前 in-app Page；多个连接直接拒绝，不随机选择窗口。</td><td class="pass">component 通过</td></tr>
-    <tr><td>验证</td><td><code>test_computer_use_runtime.py</code>、Browser Agent、surface、MCP contract/service/integration 与 wheel archive 共 212 passed。</td><td class="pass">通过</td></tr>
+    <tr><td>验证</td><td>当前复核覆盖 <code>test_computer_use_runtime.py</code>、backend threading、Browser Agent、surface、MCP contract/route、permission、dispatcher 与 process sandbox，共 214 passed；安装包 Runtime manifest 另在安装版验收中复核。</td><td class="pass">通过</td></tr>
     <tr><td>安装版</td><td><code>f2dbc73d</code> 已打包并安装到 <code>/Applications/OpenProgram.app</code>。三个 backend 依次绑定同一 target <code>2770E11AD9A39A13E80184816A67CD3B</code>，完成 <code>navigate → observe → click → observe → verify → close</code>；页面文本均由 <code>Count: 0</code> 变为 <code>Count: 1</code>，DOM assertion 均返回 <code>passed=true</code>。安装包 Runtime manifest 复核通过。</td><td class="pass">PASS</td></tr>
   </tbody>
 </table>

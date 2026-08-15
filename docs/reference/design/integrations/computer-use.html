@@ -20,7 +20,7 @@
     <div class="eyebrow">OpenProgram · Computer Use</div>
     <h1>一个浏览器工具，三个可选 backend，同一个 Page</h1>
     <p>目标是 GUI Agent Harness 只调用统一的 <code>computer_use</code>；设置将决定由 Playwright MCP、Chrome DevTools MCP 或 Open Claude in Chrome-compatible backend 执行。</p>
-    <p class="status">MULTI-BACKEND BASELINE IMPLEMENTED · APP E2E PENDING</p>
+    <p class="status">MULTI-BACKEND BASELINE IMPLEMENTED · THREE-BACKEND APP E2E PASSED · FULL TARGET ARCHITECTURE DEFERRED</p>
   </header>
 
   <section aria-labelledby="architecture-title">
@@ -116,6 +116,11 @@
       </g>
     </svg></div>
     <p class="caption">本图来自本机 Claude Code 2.1.227 与 Chrome 扩展 1.0.85 的安装包观察，只描述视觉坐标分支，不是官方稳定内部接口。<code>computer</code> 也支持使用页面 ref 点击；该分支不要求先截图。</p>
+  </section>
+
+  <section aria-labelledby="chat-stability-title">
+    <h2 id="chat-stability-title">Chat 渲染稳定性</h2>
+    <p>存在 live normal assistant reply 或对应 runtime card 已存在时，Computer Use 的 tree update 不得触发 transcript reload。standalone run 缺少 persisted runtime card 时允许首次单次 hydrate。该约束确保已有历史 message element identity 保持不变，避免流式回复、滚动位置和消息操作状态被重置。</p>
   </section>
 
   <section aria-labelledby="reuse-title">
