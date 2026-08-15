@@ -217,6 +217,95 @@ try {
     dispatcherStartedAt,
     "a runtime result must not replace the status timestamp",
   );
+
+  const nestedRuntimeId = "nested_runtime_timestamp";
+  fakeNow += 1_000;
+  applyChatWsMessage({
+    type: "chat_response",
+    data: {
+      type: "status",
+      session_id: SID,
+      msg_id: nestedRuntimeId,
+      predecessor: RID,
+      display: "runtime",
+      function: "computer_use",
+      status: "running",
+    },
+  });
+  const nestedStartedAt = reply().runtimeChildren.find(
+    (child) => child.id === nestedRuntimeId,
+  ).timestamp;
+  fakeNow += 5_000;
+  applyChatWsMessage({
+    type: "chat_response",
+    data: {
+      type: "status",
+      session_id: SID,
+      msg_id: nestedRuntimeId,
+      predecessor: RID,
+      display: "runtime",
+      function: "computer_use",
+      status: "running",
+    },
+  });
+  assert.equal(
+    reply().runtimeChildren.find((child) => child.id === nestedRuntimeId).timestamp,
+    nestedStartedAt,
+    "a duplicate nested status must preserve the first timestamp",
+  );
+
+  const futureUid = "runtime_future_parent";
+  const futureParentId = `${futureUid}_reply`;
+  const migratingRuntimeId = "migrating_runtime_timestamp";
+  fakeNow += 1_000;
+  applyChatWsMessage({
+    type: "chat_response",
+    data: {
+      type: "status",
+      session_id: SID,
+      msg_id: migratingRuntimeId,
+      predecessor: futureParentId,
+      display: "runtime",
+      function: "computer_use",
+      status: "running",
+    },
+  });
+  const migratingStartedAt = useSessionStore.getState()
+    .messagesById[migratingRuntimeId].timestamp;
+  applyChatWsMessage({
+    type: "chat_response",
+    data: {
+      type: "stream_event",
+      session_id: SID,
+      msg_id: futureUid,
+      event: { type: "text", text: "parent" },
+    },
+  });
+  fakeNow += 5_000;
+  applyChatWsMessage({
+    type: "chat_response",
+    data: {
+      type: "result",
+      session_id: SID,
+      msg_id: migratingRuntimeId,
+      predecessor: futureParentId,
+      display: "runtime",
+      function: "computer_use",
+      content: "done",
+    },
+  });
+  const migrated = useSessionStore.getState().messagesById[futureParentId]
+    .runtimeChildren.find((child) => child.id === migratingRuntimeId);
+  assert.equal(
+    migrated.timestamp,
+    migratingStartedAt,
+    "moving a runtime row under its assistant must preserve the start timestamp",
+  );
+  assert.equal(
+    useSessionStore.getState().messagesById[migratingRuntimeId],
+    undefined,
+    "the top-level copy must be removed after migration",
+  );
 } finally {
   Date.now = originalNow;
 }
