@@ -22,6 +22,10 @@ duplicated in this historical distribution ledger.
   recoverable copy. A genuine launchd unload failure stops before App mutation;
   an unloaded stale plist can be replaced. The assembled App passes the existing
   complete packaged-runtime smoke before installation.
+- Concurrency contract: packaging uses one stable per-user lock across
+  worktrees, and installation uses an atomic lock in the target Applications
+  directory for the full transaction. A competing installer fails before App
+  or service mutation and cannot create a nested bundle.
 - Cleanup boundary: packaging removes its random App directory, staged runtime,
   Python wheel build, generated Web build/output, copied Web frontend, and lock.
   Installed App data, source files, package dependencies, and user state are not

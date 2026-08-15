@@ -93,6 +93,22 @@ validate_app "$source_app" || {
 }
 
 mkdir -p "$applications_dir"
+install_lock_file="$applications_dir/.openprogram-app-install.lock"
+install_lock_owned=0
+release_install_lock() {
+  if [[ "$install_lock_owned" == 1 && "$(sed -n '1p' "$install_lock_file" 2>/dev/null || :)" == "$$" ]]; then
+    rm -f "$install_lock_file" || :
+  fi
+}
+if ! /usr/bin/shlock -p "$$" -f "$install_lock_file"; then
+  lock_pid="$(sed -n '1p' "$install_lock_file" 2>/dev/null || :)"
+  printf 'another OpenProgram App installation is running%s\n' \
+    "${lock_pid:+ (pid $lock_pid)}" >&2
+  exit 1
+fi
+install_lock_owned=1
+trap release_install_lock EXIT
+
 transaction_dir="$(mktemp -d "$applications_dir/.openprogram-app-install.XXXXXX")"
 staged_app="$transaction_dir/OpenProgram.app"
 previous_app="$transaction_dir/previous.app"
@@ -132,10 +148,11 @@ cleanup() {
     [[ "$app_was_running" == 1 ]] && open "$target_app" || :
   fi
   if [[ "$preserve_transaction" == 0 ]]; then
-    rm -rf "$transaction_dir"
+    rm -rf "$transaction_dir" || :
   else
     printf 'OpenProgram recovery files were preserved at %s\n' "$transaction_dir" >&2
   fi
+  release_install_lock
   exit "$status"
 }
 trap cleanup EXIT

@@ -10,7 +10,15 @@ python_build_dir="$repo_root/build"
 web_build_dir="$repo_root/web/.next"
 web_output_dir="$repo_root/web/out"
 frontend_stage_dir="$repo_root/openprogram/webui/_frontend"
-lock_dir="$desktop_dir/build/.app-package.lock"
+lock_root="$HOME/Library/Caches/OpenProgram"
+lock_file="$lock_root/app-package.lock"
+lock_owned=0
+
+release_package_lock() {
+  if [[ "$lock_owned" == 1 && "$(sed -n '1p' "$lock_file" 2>/dev/null || :)" == "$$" ]]; then
+    rm -f "$lock_file" || :
+  fi
+}
 
 [[ "$(uname -s)" == "Darwin" ]] || {
   printf 'OpenProgram App packaging requires macOS\n' >&2
@@ -21,30 +29,28 @@ lock_dir="$desktop_dir/build/.app-package.lock"
   exit 1
 }
 
-mkdir -p "$desktop_dir/build"
-if ! mkdir "$lock_dir" 2>/dev/null; then
-  lock_pid="$(sed -n '1p' "$lock_dir/pid" 2>/dev/null || :)"
-  if [[ "$lock_pid" =~ ^[0-9]+$ ]] && kill -0 "$lock_pid" 2>/dev/null; then
-    printf 'another OpenProgram App package is running (pid %s)\n' "$lock_pid" >&2
-    exit 1
-  fi
-  rm -rf "$lock_dir"
-  mkdir "$lock_dir"
+mkdir -p "$desktop_dir/build" "$lock_root"
+if ! /usr/bin/shlock -p "$$" -f "$lock_file"; then
+  lock_pid="$(sed -n '1p' "$lock_file" 2>/dev/null || :)"
+  printf 'another OpenProgram App package is running%s\n' \
+    "${lock_pid:+ (pid $lock_pid)}" >&2
+  exit 1
 fi
-printf '%s\n' "$$" >"$lock_dir/pid"
+lock_owned=1
 
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-app-package.XXXXXX")"
 package_dir="$work_dir/package"
 
 cleanup() {
   local status="$?"
-  [[ "$runtime_dir" == "$desktop_dir/build/runtime" ]] || exit "$status"
-  [[ "$python_build_dir" == "$repo_root/build" ]] || exit "$status"
-  [[ "$web_build_dir" == "$repo_root/web/.next" ]] || exit "$status"
-  [[ "$web_output_dir" == "$repo_root/web/out" ]] || exit "$status"
-  [[ "$frontend_stage_dir" == "$repo_root/openprogram/webui/_frontend" ]] || exit "$status"
+  [[ "$runtime_dir" == "$desktop_dir/build/runtime" ]] || { release_package_lock; exit "$status"; }
+  [[ "$python_build_dir" == "$repo_root/build" ]] || { release_package_lock; exit "$status"; }
+  [[ "$web_build_dir" == "$repo_root/web/.next" ]] || { release_package_lock; exit "$status"; }
+  [[ "$web_output_dir" == "$repo_root/web/out" ]] || { release_package_lock; exit "$status"; }
+  [[ "$frontend_stage_dir" == "$repo_root/openprogram/webui/_frontend" ]] || { release_package_lock; exit "$status"; }
   rm -rf "$work_dir" "$runtime_dir" "$python_build_dir" \
-    "$web_build_dir" "$web_output_dir" "$frontend_stage_dir" "$lock_dir"
+    "$web_build_dir" "$web_output_dir" "$frontend_stage_dir" || :
+  release_package_lock
   exit "$status"
 }
 trap cleanup EXIT

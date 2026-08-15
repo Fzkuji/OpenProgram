@@ -6,6 +6,7 @@ import plistlib
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -94,8 +95,9 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     assert packager.index(smoke) < packager.index(
         'env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"'
     )
-    assert 'mkdir "$lock_dir"' in packager
-    assert '"$web_build_dir" "$web_output_dir" "$frontend_stage_dir" "$lock_dir"' in packager
+    assert 'lock_root="$HOME/Library/Caches/OpenProgram"' in packager
+    assert '/usr/bin/shlock -p "$$" -f "$lock_file"' in packager
+    assert '"$web_build_dir" "$web_output_dir" "$frontend_stage_dir"' in packager
     assert 'rm -rf "$repo_root/build"' in (
         ROOT / "scripts" / "build-product-runtime.sh"
     ).read_text(encoding="utf-8")
@@ -187,6 +189,110 @@ def test_local_desktop_install_preserves_recovery_copy_when_restore_fails(
     with (recovered_app / "Contents" / "Info.plist").open("rb") as stream:
         assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
     assert str(recovered_app) in failed_restore.stderr
+
+
+def test_concurrent_local_desktop_install_cannot_nest_the_canonical_app(
+    tmp_path: Path,
+) -> None:
+    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    temp_dir = tmp_path / "tmp"
+    temp_dir.mkdir()
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(temp_dir),
+    }
+    original = _fake_desktop_app(tmp_path / "original", "0.6.0")
+    subprocess.run(["bash", str(installer), str(original)], check=True, env=env)
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    entered = tmp_path / "ditto-entered"
+    release = tmp_path / "ditto-release"
+    fake_ditto = fake_bin / "ditto"
+    fake_ditto.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'touch "$DITTO_ENTERED"\n'
+        'while [ ! -f "$DITTO_RELEASE" ]; do sleep 0.01; done\n'
+        'exec /usr/bin/ditto "$@"\n',
+        encoding="utf-8",
+    )
+    fake_ditto.chmod(0o755)
+    concurrent_env = env | {
+        "PATH": f"{fake_bin}:{env['PATH']}",
+        "DITTO_ENTERED": str(entered),
+        "DITTO_RELEASE": str(release),
+    }
+    first_source = _fake_desktop_app(tmp_path / "first-concurrent", "0.6.1")
+    second_source = _fake_desktop_app(tmp_path / "second-concurrent", "0.6.2")
+
+    first = subprocess.Popen(
+        ["bash", str(installer), str(first_source)],
+        env=concurrent_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not entered.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert entered.exists()
+        second = subprocess.run(
+            ["bash", str(installer), str(second_source)],
+            check=False,
+            env=concurrent_env,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    finally:
+        release.touch()
+        first_stdout, first_stderr = first.communicate(timeout=10)
+
+    assert first.returncode == 0, (first_stdout, first_stderr)
+    assert second.returncode != 0
+    assert "another OpenProgram App installation is running" in second.stderr
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.1"
+    assert not (target / "OpenProgram.app").exists()
+    assert sorted(path.name for path in target.parent.glob("*.app")) == [
+        "OpenProgram.app"
+    ]
+    assert not (target.parent / ".openprogram-app-install.lock").exists()
+
+
+def test_packager_honors_one_stable_user_lock_across_worktrees(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    lock_file = home / "Library" / "Caches" / "OpenProgram" / "app-package.lock"
+    lock_file.parent.mkdir(parents=True)
+    subprocess.run(
+        ["/usr/bin/shlock", "-p", str(os.getpid()), "-f", str(lock_file)],
+        check=True,
+    )
+    env = {
+        "HOME": str(home),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path),
+    }
+
+    competing = subprocess.run(
+        ["bash", str(ROOT / "desktop" / "scripts" / "package-and-install-app.sh")],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+
+    assert competing.returncode != 0
+    assert "another OpenProgram App package is running" in competing.stderr
+    assert lock_file.read_text(encoding="utf-8").strip() == str(os.getpid())
 
 
 def test_launchd_replacement_unloads_keepalive_before_stopping_worker(
