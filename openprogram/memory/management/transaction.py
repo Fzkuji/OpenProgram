@@ -291,6 +291,7 @@ def staged_edit(
     ``deleting`` names a topic whose block IDs go away on purpose. Every
     other committed ID must still be reachable after the edit.
     """
+    from .config import load_memory_config
     from .workspace import MemoryWorkspace
 
     try:
@@ -301,7 +302,9 @@ def staged_edit(
             from ..store import _ensure_git_history
 
             _ensure_git_history(root)
-            with closing(MemoryWorkspace(root)) as space:
+            with closing(MemoryWorkspace(
+                root, config=load_memory_config(),
+            )) as space:
                 units, block_ids = committed_baseline(space)
                 if deleting:
                     block_ids -= {

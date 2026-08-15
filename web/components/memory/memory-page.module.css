@@ -25,6 +25,23 @@
   flex-shrink: 0;
 }
 
+.settingsLink {
+  margin-left: auto;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--ui-button-radius);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 13px;
+  text-decoration: none;
+}
+.settingsLink:hover { background: var(--bg-hover); color: var(--text-bright); }
+.settingsLink:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+
 .headerStats {
   display: flex;
   align-items: center;
@@ -48,7 +65,7 @@
   grid-column: 1;
   grid-row: 1;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 2px;
   padding: 8px;
   border-right: 1px solid var(--border);
@@ -61,15 +78,15 @@
   /* Grow from the label's own width, so "Timeline" keeps the room it
      needs and "Core" gives its spare back. Fixed equal-width tabs clip
      the longest label once all five tabs are present. */
-  flex: 1 1 64px;
+  flex: 0 0 auto;
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   white-space: nowrap;
   gap: 4px;
   height: 32px;
-  padding: 0 5px;
+  padding: 0 10px;
   font-size: 13px;
   font-weight: 400;
   line-height: 1;
@@ -108,7 +125,7 @@
 .layout {
   display: grid;
   grid-template-columns: calc(var(--sidebar-width) - 1px) 1fr;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
   min-height: 0;
 }
@@ -134,6 +151,55 @@
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+}
+
+.emptyPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 32px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.emptyPanel h2 { margin: 5px 0 0; color: var(--text-bright); font-size: 17px; font-weight: 600; }
+.emptyPanel p { max-width: 520px; margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+.emptySettingsLink { margin-top: 7px; padding: 7px 11px; border: 1px solid var(--border); border-radius: var(--ui-button-radius); background: var(--bg-tertiary); color: var(--text-primary); font-size: 13px; text-decoration: none; }
+.emptySettingsLink:hover { background: var(--bg-hover); color: var(--text-bright); }
+.emptySettingsLink:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+
+@media (max-width: 720px) {
+  .topbar { padding: 12px 14px; }
+  .settingsLink { padding: 0 9px; }
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(180px, .7fr) minmax(220px, 1.3fr);
+  }
+  .tabBar {
+    grid-column: 1;
+    grid-row: 1;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: 0;
+  }
+  .tabBtn { flex: 0 0 auto; }
+  .tree {
+    grid-column: 1;
+    grid-row: 2;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .rightPane {
+    grid-column: 1;
+    grid-row: 3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabBtn, .settingsLink, .emptySettingsLink { transition: none; }
+  .skeleton { animation: none; }
 }
 
 .treeContent {

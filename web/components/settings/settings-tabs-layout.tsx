@@ -6,6 +6,7 @@ import {
   Bot,
   ChartNoAxesColumn,
   Globe2,
+  Brain,
   MonitorCog,
   RadioTower,
   Search,
@@ -18,7 +19,7 @@ import { useTranslation } from "@/lib/i18n";
 import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "../animated-icons";
 import { sidebarToggleClass } from "../sidebar/nav-classes";
 
-export type SettingsTab = "providers" | "usage" | "search" | "channels" | "browser" | "general" | "system";
+export type SettingsTab = "providers" | "usage" | "search" | "channels" | "browser" | "memory" | "general" | "system";
 
 function readSettingsNavOpen(): boolean {
   if (typeof window === "undefined") return true;
@@ -70,6 +71,7 @@ export function SettingsTabsLayout({
     if (pathname.startsWith("/settings/search")) return "search";
     if (pathname.startsWith("/settings/channels")) return "channels";
     if (pathname.startsWith("/settings/browser")) return "browser";
+    if (pathname.startsWith("/settings/memory")) return "memory";
     if (pathname.startsWith("/settings/general")) return "general";
     if (pathname.startsWith("/settings/system")) return "system";
     return "providers";
@@ -83,6 +85,7 @@ export function SettingsTabsLayout({
     { id: "usage" as const, href: "/settings/usage", label: t("settings.tab.usage"), Icon: ChartNoAxesColumn },
     { id: "search" as const, href: "/settings/search", label: t("settings.tab.search"), Icon: Search },
     { id: "channels" as const, href: "/settings/channels", label: t("settings.tab.channels"), Icon: RadioTower },
+    { id: "memory" as const, href: "/settings/memory", label: t("settings.tab.memory"), Icon: Brain },
     { id: "general" as const, href: "/settings/general", label: t("settings.tab.general"), Icon: SlidersHorizontal },
     { id: "system" as const, href: "/settings/system", label: t("settings.tab.system"), Icon: MonitorCog },
   ];

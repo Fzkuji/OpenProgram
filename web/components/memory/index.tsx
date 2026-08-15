@@ -16,6 +16,8 @@
  *                        LoadingSkeleton, EmptyState, Placeholder
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import Link from "next/link";
+import { Settings2 } from "lucide-react";
 
 import { renderMarkdown } from "./markdown";
 import { formatDate, formatSize, groupByFolder } from "./format";
@@ -240,6 +242,10 @@ export function MemoryPage() {
       {/* Header — same pattern as functions page */}
       <div className={styles.topbar}>
         <span className={styles.title}>{t("nav.memory")}</span>
+        <Link className={styles.settingsLink} href="/settings/memory">
+          <Settings2 size={15} />
+          {text("Memory settings", "Memory 设置")}
+        </Link>
       </div>
 
       {/* Body — single grid: tabBar (row 1 col 1) + tree (row 2 col 1) +
@@ -247,12 +253,12 @@ export function MemoryPage() {
           the topbar, ignoring the tab bar's height). */}
       <div className={styles.body}>
         <div className={styles.layout}>
-          <div className={styles.tabBar}>
+          <nav className={styles.tabBar} aria-label={text("Memory sections", "Memory 分区")}>
             <TabButton active={tab === "topics"} onClick={() => setTab("topics")} icon={<FileTextIcon size={13} />}>{text("Topics", "主题")}</TabButton>
             <TabButton active={tab === "timeline"} onClick={() => setTab("timeline")} icon={<ClockIcon className={styles.fileIcon} />}>{text("Timeline", "时间线")}</TabButton>
             <TabButton active={tab === "recent"} onClick={() => setTab("recent")} icon={<ActivityIcon size={13} />}>{text("Recent", "最近")}</TabButton>
             <TabButton active={tab === "core"} onClick={() => setTab("core")} icon={<SparklesIcon size={13} />}>{text("Core", "核心")}</TabButton>
-          </div>
+          </nav>
 
           {/* ── Topics ── */}
           {tab === "topics" && (
@@ -316,6 +322,18 @@ export function MemoryPage() {
                     onViewMode={(m) => setTopicEditor((e) => ({ ...e, viewMode: m }))}
                     onPreviewClick={handlePreviewClick}
                   />
+                ) : !topicsLoading && topicPages.length === 0 && !search ? (
+                  <div className={styles.emptyPanel}>
+                    <FileTextIcon size={25} />
+                    <h2>{text("No memory has been written yet", "还没有写入记忆")}</h2>
+                    <p>{text(
+                      "OpenProgram writes durable topics after enough conversation has accumulated. Configure the writer model and recall method first if needed.",
+                      "OpenProgram 会在积累足够对话后写入持久 Topic；你也可以先设置写入模型和检索方法。",
+                    )}</p>
+                    <Link className={styles.emptySettingsLink} href="/settings/memory">
+                      {text("Open Memory settings", "打开 Memory 设置")}
+                    </Link>
+                  </div>
                 ) : (
                   <Placeholder icon="doc" text={text("Select a topic to view or edit", "选择一个主题进行查看或编辑")} />
                 )}

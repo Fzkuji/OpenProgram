@@ -129,6 +129,7 @@ def register(app):
         from openprogram.agent.authority import local_owner_authority
         from openprogram.memory import store
         from openprogram.memory.management import MemoryWorkspace
+        from openprogram.memory.management.config import load_memory_config
         from openprogram.memory.management.transaction import (
             TransactionError,
             provenance_from_authority,
@@ -145,7 +146,9 @@ def register(app):
         try:
             from contextlib import closing
 
-            with closing(MemoryWorkspace(store.ensure())) as workspace:
+            with closing(MemoryWorkspace(
+                store.ensure(), config=load_memory_config(),
+            )) as workspace:
                 result = workspace.update(
                     base_revision=payload.get("base_revision", ""),
                     patch=payload.get("patch", ""),

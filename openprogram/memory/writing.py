@@ -24,7 +24,7 @@ from typing import Any, TYPE_CHECKING
 from urllib.parse import quote
 
 from .backend import MemoryWriteFailureCode, WriteFailure
-from .management import organize_topics
+from .management import load_memory_config, organize_topics
 from .management.agent import _run_agent
 from .management.api import render_writer_task
 from .management.transaction import (
@@ -277,7 +277,7 @@ def archive_unpaired_group_message(
 ) -> str:
     """Archive denied group speech as pending evidence, without an agent turn."""
     from . import is_enabled, store
-    from .management import MemoryWorkspace
+    from .management import MemoryWorkspace, load_memory_config
 
     if not is_enabled():
         return ""
@@ -329,7 +329,9 @@ def archive_unpaired_group_message(
             logger.debug("memory: unpaired group archive quota reached")
             return ""
         try:
-            with closing(MemoryWorkspace(root)) as workspace:
+            with closing(MemoryWorkspace(
+                root, config=load_memory_config(),
+            )) as workspace:
                 workspace.archive_source_records([record])
         except BaseException:
             # The slot was reserved for an archive that never happened.
@@ -410,7 +412,8 @@ def write_session(
     db = default_db()
     counter = _counter()
     runtime = OnlineMemoryRuntime(
-        root, token_counter=counter, token_threshold=token_threshold
+        root, token_counter=counter, token_threshold=token_threshold,
+        memory_config=load_memory_config(),
     )
     marked_ids = _marked_ids(messages, workspace_id)
     pending = runtime.pending(records, marked_ids)
@@ -717,7 +720,7 @@ def _prepare_legacy_core(memory_dir: str | Path) -> None:
     """Promote a valid legacy core or archive an invalid one as evidence."""
     from openprogram.agent.authority import owner_principal_id
 
-    from .management import MemoryWorkspace
+    from .management import MemoryWorkspace, load_memory_config
     from .runtime.derived_views import promote_legacy_core
 
     root = Path(memory_dir)
@@ -728,7 +731,9 @@ def _prepare_legacy_core(memory_dir: str | Path) -> None:
     if not raw.strip():
         return
     text = raw.decode("utf-8")
-    with closing(MemoryWorkspace(root)) as workspace:
+    with closing(MemoryWorkspace(
+        root, config=load_memory_config(),
+    )) as workspace:
         baseline = workspace.baseline()
         if promote_legacy_core(workspace.stage_dir):
             workspace.commit_edits(*baseline)

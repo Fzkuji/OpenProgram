@@ -152,7 +152,10 @@ def _run_agent(
     stage: str | None = None,
     allowed_new_source_refs: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    config = config or MemoryConfig()
+    if config is None:
+        from .config import load_memory_config
+
+        config = load_memory_config()
     # Verification runs against a throwaway copy of the memory. Its history
     # belongs with the real workspace, or it is deleted with the copy.
     history_dir = memory_dir if history_dir is None else history_dir

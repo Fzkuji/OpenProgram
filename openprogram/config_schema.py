@@ -440,6 +440,24 @@ def _validate_positive_decimal_optional(v: Any) -> Optional[str]:
     return None
 
 
+def _validate_memory_writer_trigger(v: Any) -> Optional[str]:
+    if v not in {8_000, 16_000, 32_000}:
+        return "must be one of 8000, 16000, 32000"
+    return None
+
+
+def _validate_memory_top_k(v: Any) -> Optional[str]:
+    if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 10:
+        return "must be a whole number in 1–10"
+    return None
+
+
+def _validate_memory_recent_limit(v: Any) -> Optional[str]:
+    if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 500:
+        return "must be a whole number in 1–500"
+    return None
+
+
 def _validate_hooks(v: Any) -> Optional[str]:
     if not isinstance(v, dict):
         return 'must be a JSON object: {"<event>": [{"command": "...", "timeout": 60}]}'
@@ -549,6 +567,55 @@ SETTINGS: list[SettingSpec] = [
         apply=APPLY_LIVE, default="",
         help="Empty uses the default chat agent's provider and model. Set "
              "provider/model to override only background memory writing.",
+    ),
+    SettingSpec(
+        key="memory.writer.enabled", path=("memory", "writer", "enabled"),
+        group="Memory", label="Automatic writing", widget="toggle",
+        apply=APPLY_LIVE, default=True,
+        help="Turn completed conversations into Topic records in the background.",
+    ),
+    SettingSpec(
+        key="memory.writer.trigger_tokens",
+        path=("memory", "writer", "trigger_tokens"),
+        group="Memory", label="Write frequency", widget="number",
+        apply=APPLY_LIVE, default=16_000,
+        validate=_validate_memory_writer_trigger,
+        help="Conversation tokens accumulated before a background write.",
+    ),
+    SettingSpec(
+        key="memory.retrieval.method",
+        path=("memory", "retrieval", "method"),
+        group="Memory", label="Recall method", widget="enum",
+        apply=APPLY_LIVE, default="bm25",
+        choices=lambda: ["bm25", "embedding", "hybrid"],
+        help="Retrieval used for automatic recall and Memory search.",
+    ),
+    SettingSpec(
+        key="memory.retrieval.top_k",
+        path=("memory", "retrieval", "top_k"),
+        group="Memory", label="Recall depth", widget="number",
+        apply=APPLY_LIVE, default=5, validate=_validate_memory_top_k,
+        help="Maximum matching records added automatically to a turn.",
+    ),
+    SettingSpec(
+        key="memory.retrieval.include_sources",
+        path=("memory", "retrieval", "include_sources"),
+        group="Memory", label="Search Source evidence", widget="toggle",
+        apply=APPLY_LIVE, default=True,
+        help="Include archived evidence alongside curated Topic records.",
+    ),
+    SettingSpec(
+        key="memory.core.inject", path=("memory", "core", "inject"),
+        group="Memory", label="Core Memory in every chat", widget="toggle",
+        apply=APPLY_LIVE, default=True,
+        help="Inject the compact Core view into each system prompt.",
+    ),
+    SettingSpec(
+        key="memory.recent.limit", path=("memory", "recent", "limit"),
+        group="Memory", label="Recent view size", widget="number",
+        apply=APPLY_LIVE, default=50,
+        validate=_validate_memory_recent_limit,
+        help="Latest records retained in the Recent derived view.",
     ),
     SettingSpec(
         key="record_replay.mode", path=("record_replay", "mode"),

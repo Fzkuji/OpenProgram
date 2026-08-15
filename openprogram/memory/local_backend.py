@@ -18,6 +18,7 @@ from .backend import (
     classify_memory_write_failure,
     fence_memory,
 )
+from .management.config import load_memory_config
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,8 @@ class LocalMemoryBackend(MemoryBackend):
         backend rather than being looked up again here; per-tier
         redaction of the block itself is not yet rendered.
         """
+        if not load_memory_config().core_inject:
+            return ""
         from . import store
 
         try:
@@ -106,7 +109,13 @@ class LocalMemoryBackend(MemoryBackend):
             from .retrieval import inspect
             from . import store
 
-            found = inspect.search(store.ensure(), query, top_k=5)
+            config = load_memory_config()
+            found = inspect.search(
+                store.ensure(), query,
+                method=config.retrieval_method,
+                top_k=config.retrieval_top_k,
+                include_sources=config.retrieval_include_sources,
+            )
         except Exception as exc:  # noqa: BLE001
             # An empty or unindexed workspace is the ordinary case on a
             # fresh install, not something to surface mid-turn.
@@ -151,10 +160,13 @@ class LocalMemoryBackend(MemoryBackend):
         """
         from . import writing
 
+        config = load_memory_config()
+        if not config.writer_enabled:
+            return None
         try:
             return writing.write(
                 session_id or self._session_id, messages,
-                token_threshold=WRITE_TOKEN_THRESHOLD, force=force,
+                token_threshold=config.writer_trigger_tokens, force=force,
             )
         except Exception as exc:  # noqa: BLE001
             # Memory must never take a conversation down with it. Retry only

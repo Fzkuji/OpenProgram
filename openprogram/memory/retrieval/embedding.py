@@ -13,6 +13,8 @@ from .bm25 import (
     _event_overlaps_window,
     _indexable_files,
     _query_time_window,
+    _normalize_path_prefix,
+    event_matches_path_prefix,
     parse_source_file,
     parse_topic_file,
     prefer_v2_source_events,
@@ -81,6 +83,7 @@ class MemoryEmbeddingIndex:
         top_k: int = 10,
         date_from: str | None = None,
         date_to: str | None = None,
+        path_prefix: str | None = None,
     ) -> list[dict[str, Any]]:
         query = str(query).strip()
         events = self._events()
@@ -99,6 +102,12 @@ class MemoryEmbeddingIndex:
             index
             for index, event in enumerate(events)
             if _event_overlaps_window(event, time_window)
+            and (
+                not path_prefix
+                or event_matches_path_prefix(
+                    event.path, _normalize_path_prefix(path_prefix),
+                )
+            )
         ]
         if not candidate_indices:
             return []

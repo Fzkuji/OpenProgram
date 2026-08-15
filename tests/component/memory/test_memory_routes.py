@@ -294,6 +294,31 @@ def test_record_changes_api_creates_a_memory_and_derived_views(client, memory):
     assert (memory / "relations.json").is_file()
 
 
+def test_topic_edit_uses_configured_recent_view_limit(
+    client, memory, monkeypatch,
+):
+    from openprogram.memory.management.config import MemoryConfig
+
+    (memory / "topics/other.md").write_text(LINKING, encoding="utf-8")
+    monkeypatch.setattr(
+        "openprogram.memory.management.config.load_memory_config",
+        lambda: MemoryConfig(recent_limit=1),
+    )
+
+    response = client.put(
+        "/api/memory/topics/note.md",
+        json={"content": NOTE.replace("worth keeping", "worth retaining")},
+    )
+
+    assert response.status_code == 200, response.text
+    rows = [
+        json.loads(line)
+        for line in (memory / "recent_events.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    assert len(rows) == 1
+
+
 def test_memory_update_schema_constructs_a_google_function_declaration():
     from google.genai import types as gtypes
 

@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenProgram Memory — UI proposal</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --canvas: #11110f;
+    --app: #1d1d1b;
+    --sidebar: #191917;
+    --panel: #222220;
+    --panel-2: #262624;
+    --hover: #2c2c29;
+    --selected: #30302d;
+    --border: #353532;
+    --border-strong: #454540;
+    --text: #f1f0ec;
+    --text-2: #c5c2bb;
+    --muted: #929089;
+    --faint: #6e6c66;
+    --blue: #8ba4ff;
+    --green: #75c79a;
+    --amber: #d8ad65;
+    --red: #e28276;
+    --purple: #b89cff;
+    --radius: 8px;
+    --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: var(--canvas);
+    color: var(--text);
+    font: 14px/1.45 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  button, select, input { font: inherit; }
+  button, select { color: inherit; }
+  button:focus-visible, select:focus-visible, input:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+  }
+  .review-shell { min-height: 100vh; padding: 18px; }
+  .review-head {
+    max-width: 1440px;
+    margin: 0 auto 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .review-copy { min-width: 0; }
+  .eyebrow {
+    margin: 0 0 4px;
+    color: var(--muted);
+    font: 600 11px/1.2 var(--mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .review-title { margin: 0; font-size: 18px; font-weight: 620; letter-spacing: -.01em; }
+  .review-sub { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+  .prototype-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--sidebar);
+    flex-shrink: 0;
+  }
+  .prototype-controls button {
+    height: 30px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 6px;
+    color: var(--muted);
+    background: transparent;
+    cursor: pointer;
+  }
+  .prototype-controls button[aria-selected="true"] { color: var(--text); background: var(--selected); }
+
+  .app-frame {
+    max-width: 1440px;
+    height: min(850px, calc(100vh - 96px));
+    min-height: 650px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 238px minmax(0, 1fr);
+    overflow: hidden;
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    background: var(--app);
+    box-shadow: 0 18px 70px rgba(0,0,0,.36);
+  }
+  .global-sidebar {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    background: var(--sidebar);
+  }
+  .brand {
+    height: 64px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 730;
+    font-size: 17px;
+  }
+  .brand-gradient {
+    background: linear-gradient(90deg,#f0efeb 0 38%,#89a7ff 54%,#ae93ff 72%,#ec9e79 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .collapse-icon { color: var(--muted); font-size: 13px; }
+  .global-nav { padding: 4px 8px; display: grid; gap: 2px; }
+  .global-link {
+    height: 34px;
+    padding: 0 9px;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-2);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .global-link:hover { background: var(--hover); color: var(--text); }
+  .global-link.active { background: var(--selected); color: var(--text); }
+  .nav-icon {
+    width: 18px;
+    height: 18px;
+    display: inline-grid;
+    place-items: center;
+    color: currentColor;
+    flex: 0 0 18px;
+  }
+  .nav-icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; }
+  .nav-spacer { flex: 1; }
+  .account {
+    min-height: 64px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .avatar { width: 31px; height: 31px; border-radius: 50%; background: conic-gradient(#87a9ff,#88c7a1,#e7bb73,#87a9ff); border: 2px solid #d8d6d0; }
+  .account strong { display: block; font-weight: 500; font-size: 13px; }
+  .account small { color: var(--muted); font-size: 11px; }
+
+  .main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .topbar {
+    height: 64px;
+    flex: 0 0 64px;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-title { font-size: 18px; font-weight: 620; letter-spacing: -.01em; }
+  .button {
+    height: 32px;
+    padding: 0 11px;
+    border: 1px solid var(--border-strong);
+    border-radius: 7px;
+    background: var(--panel-2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    cursor: pointer;
+  }
+  .button:hover { background: var(--hover); }
+  .button.primary { background: var(--text); color: #181816; border-color: var(--text); font-weight: 600; }
+  .button.ghost { background: transparent; }
+  .button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+
+  .memory-body { min-height: 0; flex: 1; display: grid; grid-template-columns: 286px minmax(0,1fr); }
+  .memory-nav { min-height: 0; border-right: 1px solid var(--border); background: var(--sidebar); display: flex; flex-direction: column; }
+  .memory-sections { padding: 10px 8px 9px; display: grid; gap: 2px; border-bottom: 1px solid var(--border); }
+  .memory-section {
+    width: 100%; height: 34px; padding: 0 9px; border: 0; border-radius: 6px;
+    background: transparent; color: var(--text-2); display: flex; align-items: center; gap: 9px; cursor: pointer; text-align: left;
+  }
+  .memory-section:hover { background: var(--hover); color: var(--text); }
+  .memory-section.active { background: var(--selected); color: var(--text); }
+  .memory-section .count { margin-left: auto; color: var(--muted); font: 11px var(--mono); }
+  .topic-tools { padding: 9px 10px; border-bottom: 1px solid var(--border); }
+  .search {
+    height: 32px; width: 100%; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px;
+    color: var(--text); background: var(--panel); outline: none;
+  }
+  .search::placeholder { color: var(--muted); }
+  .search:focus { border-color: var(--blue); }
+  .topic-tree { min-height: 0; overflow: auto; padding: 8px; }
+  .folder-label {
+    height: 26px; padding: 0 7px; display: flex; align-items: center; gap: 7px;
+    color: var(--muted); font: 600 11px var(--mono); letter-spacing: .06em; text-transform: uppercase;
+  }
+  .topic-row {
+    height: 33px; padding: 0 8px 0 21px; border-radius: 6px; display: flex; align-items: center; gap: 8px;
+    color: var(--text-2); cursor: pointer;
+  }
+  .topic-row:hover { background: var(--hover); color: var(--text); }
+  .topic-row.active { background: color-mix(in srgb,var(--blue) 15%,transparent); color: var(--text); }
+  .topic-row small { margin-left: auto; color: var(--muted); font-size: 11px; }
+
+  .memory-content { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .document-head {
+    min-height: 58px; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--border);
+  }
+  .document-title { min-width: 0; }
+  .document-title strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+  .document-title span { color: var(--muted); font: 11px var(--mono); }
+  .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+  .segmented button { height: 29px; padding: 0 11px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+  .segmented button + button { border-left: 1px solid var(--border); }
+  .segmented button.active { background: var(--selected); color: var(--text); }
+  .document {
+    flex: 1; min-height: 0; overflow: auto; padding: 34px clamp(24px,6vw,78px) 80px;
+  }
+  .document article { max-width: 780px; margin: 0 auto; }
+  .document h1 { margin: 0 0 6px; font-size: 25px; letter-spacing: -.025em; }
+  .document .meta { margin-bottom: 30px; color: var(--muted); font-size: 12px; }
+  .document h2 { margin: 29px 0 10px; font-size: 16px; }
+  .document p { color: var(--text-2); line-height: 1.72; }
+  .memory-block { margin: 12px 0; padding: 13px 15px; border-left: 2px solid var(--purple); background: var(--panel); color: var(--text-2); border-radius: 0 7px 7px 0; }
+  .memory-block code { color: var(--muted); font: 11px var(--mono); }
+  .empty-panel { display: none; flex: 1; place-items: center; padding: 24px; }
+  .empty-copy { max-width: 440px; text-align: center; }
+  .empty-glyph { width: 46px; height: 46px; margin: 0 auto 15px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 11px; background: var(--panel); color: var(--muted); }
+  .empty-copy h2 { margin: 0 0 6px; font-size: 18px; }
+  .empty-copy p { margin: 0 0 18px; color: var(--muted); }
+  .page-empty .topic-tree { display: none; }
+  .page-empty .memory-content > :not(.empty-panel) { display: none; }
+  .page-empty .empty-panel { display: grid; }
+
+  .settings-body { min-height: 0; flex: 1; display: grid; grid-template-columns: 242px minmax(0,1fr); }
+  .settings-nav { border-right: 1px solid var(--border); background: var(--sidebar); padding: 12px 8px; overflow: auto; }
+  .settings-link { height: 35px; padding: 0 10px; border-radius: 7px; display: flex; align-items: center; gap: 10px; color: var(--muted); text-decoration: none; white-space: nowrap; }
+  .settings-link:hover { background: var(--hover); color: var(--text); }
+  .settings-link.active { background: var(--selected); color: var(--text); }
+  .settings-content { min-width: 0; overflow: auto; }
+  .settings-page { width: min(820px,calc(100% - 48px)); margin: 0 auto; padding: 28px 0 80px; }
+  .settings-intro { margin-bottom: 26px; }
+  .settings-intro h1 { margin: 0 0 5px; font-size: 22px; letter-spacing: -.02em; }
+  .settings-intro p { margin: 0; color: var(--muted); }
+  .memory-route {
+    display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 0; margin: 20px 0 28px;
+    border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--panel);
+  }
+  .route-step { position: relative; padding: 12px 13px; border-right: 1px solid var(--border); }
+  .route-step:last-child { border-right: 0; }
+  .route-step small { display: block; color: var(--muted); font: 10px var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+  .route-step strong { display: block; margin-top: 4px; font-size: 12px; font-weight: 560; }
+  .route-dot { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px rgba(117,199,154,.12); }
+  .route-dot.warn { background: var(--amber); box-shadow: 0 0 0 3px rgba(216,173,101,.12); }
+  .settings-section { margin-top: 26px; }
+  .settings-section h2 { margin: 0 0 9px; color: var(--text-2); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; }
+  .settings-card { border: 1px solid var(--border); border-radius: 9px; background: var(--panel); overflow: hidden; }
+  .setting-row { min-height: 66px; padding: 13px 15px; display: grid; grid-template-columns: minmax(0,1fr) minmax(190px,280px); gap: 24px; align-items: center; }
+  .setting-row + .setting-row { border-top: 1px solid var(--border); }
+  .setting-label strong { display: block; margin-bottom: 3px; font-size: 13px; font-weight: 570; }
+  .setting-label span { display: block; color: var(--muted); font-size: 12px; }
+  .setting-control { display: flex; align-items: center; justify-content: flex-end; gap: 9px; min-width: 0; }
+  .select {
+    width: 100%; height: 34px; padding: 0 30px 0 10px; border: 1px solid var(--border-strong); border-radius: 7px;
+    background: var(--panel-2); color: var(--text); outline: none;
+  }
+  .status { flex-shrink: 0; padding: 3px 7px; border-radius: 999px; font: 10px var(--mono); }
+  .status.live { color: var(--green); background: rgba(117,199,154,.1); }
+  .status.restart { color: var(--amber); background: rgba(216,173,101,.1); }
+  .status.missing { color: var(--red); background: rgba(226,130,118,.1); }
+  .switch { position: relative; display: inline-flex; align-items: center; cursor: pointer; }
+  .switch input { position: absolute; opacity: 0; pointer-events: none; }
+  .switch-track { width: 38px; height: 22px; padding: 2px; border: 1px solid var(--border-strong); border-radius: 999px; background: #30302d; transition: .16s ease; }
+  .switch-track::after { content: ""; display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); transition: .16s ease; }
+  .switch input:checked + .switch-track { background: #466b58; border-color: #5f9c78; }
+  .switch input:checked + .switch-track::after { transform: translateX(16px); background: #eef7f1; }
+  .switch input:focus-visible + .switch-track { outline: 2px solid var(--blue); outline-offset: 2px; }
+  .path-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font: 11px var(--mono); }
+  .save-strip { margin-top: 16px; display: flex; justify-content: flex-end; align-items: center; gap: 10px; }
+  .saved-text { color: var(--green); font-size: 12px; opacity: 0; transition: opacity .15s; }
+  .saved-text.show { opacity: 1; }
+
+  .design-notes {
+    max-width: 1440px; margin: 18px auto 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .note-card { padding: 16px 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--sidebar); }
+  .note-card h2 { margin: 0 0 10px; font-size: 13px; }
+  .note-card ul { margin: 0; padding-left: 18px; color: var(--text-2); }
+  .note-card li { margin: 6px 0; }
+  .note-card code { color: var(--blue); font: 11px var(--mono); }
+  .note-card .proposed { color: var(--amber); }
+
+  [data-view] { display: none; }
+  [data-view].visible { display: flex; }
+  .settings-view.visible { display: flex; }
+
+  @media (max-width: 980px) {
+    .app-frame { grid-template-columns: 64px minmax(0,1fr); }
+    .brand { padding: 0; justify-content: center; font-size: 0; }
+    .brand-gradient::first-letter { font-size: 16px; }
+    .brand-gradient::after { content: "OP"; font-size: 14px; color: var(--text); }
+    .collapse-icon, .global-link span:not(.nav-icon), .account > :not(.avatar) { display: none; }
+    .global-link { padding: 0; justify-content: center; }
+    .account { justify-content: center; padding: 8px; }
+    .memory-body { grid-template-columns: 260px minmax(0,1fr); }
+    .settings-body { grid-template-columns: 210px minmax(0,1fr); }
+  }
+  @media (max-width: 720px) {
+    .review-shell { padding: 8px; }
+    .review-head { align-items: flex-start; flex-direction: column; }
+    .app-frame { height: 760px; min-height: 0; grid-template-columns: 52px minmax(0,1fr); border-radius: 9px; }
+    .global-nav { padding: 4px 5px; }
+    .topbar { padding: 0 14px; }
+    .memory-body { display: flex; flex-direction: column; }
+    .memory-nav { flex: 0 0 auto; border-right: 0; border-bottom: 1px solid var(--border); }
+    .memory-sections { grid-template-columns: repeat(4,1fr); padding: 7px; }
+    .memory-section { justify-content: center; padding: 0 5px; font-size: 12px; }
+    .memory-section .count { display: none; }
+    .topic-tools { padding: 7px 10px; }
+    .topic-tree { display: none; }
+    .memory-content { min-height: 0; flex: 1; }
+    .document { padding: 26px 20px 60px; }
+    .settings-body { display: flex; flex-direction: column; }
+    .settings-nav { flex: 0 0 auto; display: flex; gap: 2px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); padding: 7px; }
+    .settings-link { flex: 0 0 auto; height: 32px; font-size: 12px; }
+    .settings-page { width: calc(100% - 28px); padding-top: 20px; }
+    .memory-route { grid-template-columns: 1fr 1fr; }
+    .route-step:nth-child(2) { border-right: 0; }
+    .route-step:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+    .setting-row { grid-template-columns: 1fr; gap: 10px; }
+    .setting-control { justify-content: flex-start; }
+    .design-notes { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="review-shell">
+  <header class="review-head">
+    <div class="review-copy">
+      <p class="eyebrow">Approved design · implementation under review</p>
+      <h1 class="review-title">Memory page and Memory settings</h1>
+      <p class="review-sub">One consistent shell, one clear settings entry, and only settings that map to real runtime behavior.</p>
+    </div>
+    <div class="prototype-controls" role="tablist" aria-label="Prototype view">
+      <button id="showMemory" role="tab" aria-selected="true">Memory page</button>
+      <button id="showSettings" role="tab" aria-selected="false">Settings → Memory</button>
+      <button id="toggleEmpty" aria-pressed="false">Show empty state</button>
+    </div>
+  </header>
+
+  <div class="app-frame" id="appFrame">
+    <aside class="global-sidebar" aria-label="OpenProgram navigation">
+      <div class="brand"><span class="brand-gradient">OpenProgram</span><span class="collapse-icon">◧</span></div>
+      <nav class="global-nav">
+        <a class="global-link" href="#"><span class="nav-icon">＋</span><span>New chat</span></a>
+        <a class="global-link" href="#"><span class="nav-icon">⌘</span><span>Programs</span></a>
+        <a class="global-link" href="#"><span class="nav-icon">◇</span><span>Skills</span></a>
+        <a class="global-link" href="#"><span class="nav-icon">□</span><span>Projects</span></a>
+        <a class="global-link" href="#"><span class="nav-icon">⌘</span><span>Plugins</span></a>
+        <a class="global-link" href="#"><span class="nav-icon">▱</span><span>MCP Servers</span></a>
+        <a class="global-link" href="#"><span class="nav-icon">◷</span><span>Scheduler</span></a>
+        <a class="global-link active" id="memoryGlobalLink" href="#"><span class="nav-icon">♧</span><span>Memory</span></a>
+        <a class="global-link" href="#"><span class="nav-icon">◯</span><span>Chats</span></a>
+      </nav>
+      <div class="nav-spacer"></div>
+      <div class="account"><span class="avatar"></span><span><strong>User</strong><small>Local instance</small></span></div>
+    </aside>
+
+    <main class="main memory-view visible" data-view="memory">
+      <header class="topbar">
+        <span class="topbar-title">Memory</span>
+        <button class="button" id="openSettings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21h-4v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3.1 14H3v-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V3h4v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.1v4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+          Memory settings
+        </button>
+      </header>
+      <div class="memory-body">
+        <aside class="memory-nav" aria-label="Memory sections">
+          <div class="memory-sections">
+            <button class="memory-section active"><span>▤</span><span>Topics</span><span class="count">9</span></button>
+            <button class="memory-section"><span>◷</span><span>Timeline</span><span class="count">9</span></button>
+            <button class="memory-section"><span>⌁</span><span>Recent</span><span class="count">50</span></button>
+            <button class="memory-section"><span>✦</span><span>Core</span></button>
+          </div>
+          <div class="topic-tools"><input class="search" aria-label="Search topics" placeholder="Search topics…"></div>
+          <div class="topic-tree">
+            <div class="folder-label">⌄ Projects</div>
+            <div class="topic-row active"><span>▤</span><span>OpenProgram Memory</span><small>4 KB</small></div>
+            <div class="topic-row"><span>▤</span><span>Research Wiki</span><small>2 KB</small></div>
+            <div class="folder-label">⌄ People</div>
+            <div class="topic-row"><span>▤</span><span>User preferences</span><small>3 KB</small></div>
+            <div class="folder-label">⌄ Workflows</div>
+            <div class="topic-row"><span>▤</span><span>Review process</span><small>2 KB</small></div>
+          </div>
+        </aside>
+        <section class="memory-content">
+          <div class="document-head">
+            <div class="document-title"><strong>OpenProgram Memory</strong><span>topics/projects/openprogram-memory.md · modified today</span></div>
+            <div class="segmented" aria-label="Document mode"><button class="active">Edit</button><button>Preview</button></div>
+          </div>
+          <div class="document">
+            <article>
+              <h1>OpenProgram Memory</h1>
+              <div class="meta">4 records · Git history available</div>
+              <h2>Memory operations</h2>
+              <p>Models can edit Topic files directly or submit structured changes through the Memory API. Runtime validation and derived views are shared by both paths.</p>
+              <div class="memory-block">The Scheduler agent may create a durable Memory record while planning, update it during execution, and close or delete it when the task ends.<br><code>^7a12e4c9 · source refs 3</code></div>
+              <h2>Current retrieval</h2>
+              <p>Keyword retrieval uses BM25 over Topic and Source events. Semantic retrieval remains unavailable until its embedding model is installed and selected.</p>
+            </article>
+          </div>
+          <div class="empty-panel">
+            <div class="empty-copy">
+              <div class="empty-glyph">▤</div>
+              <h2>No memory has been written yet</h2>
+              <p>OpenProgram writes durable topics after enough conversation has accumulated. You can configure the writer model and recall method first.</p>
+              <button class="button" id="emptySettings">Open Memory settings</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <main class="main settings-view" data-view="settings">
+      <header class="topbar"><span class="topbar-title">Settings</span></header>
+      <div class="settings-body">
+        <nav class="settings-nav" aria-label="Settings sections">
+          <a class="settings-link" href="#">◉ <span>Browser</span></a>
+          <a class="settings-link" href="#">▣ <span>LLM Providers</span></a>
+          <a class="settings-link" href="#">▥ <span>Token Usage</span></a>
+          <a class="settings-link" href="#">⌕ <span>Web Search</span></a>
+          <a class="settings-link" href="#">⌁ <span>Channels</span></a>
+          <a class="settings-link active" href="#">♧ <span>Memory</span></a>
+          <a class="settings-link" href="#">☷ <span>General</span></a>
+          <a class="settings-link" href="#">▣ <span>System</span></a>
+        </nav>
+        <section class="settings-content">
+          <div class="settings-page">
+            <div class="settings-intro"><h1>Memory</h1><p>Choose how OpenProgram writes, stores, and recalls long-term memory.</p></div>
+            <div class="memory-route" aria-label="Memory lifecycle">
+              <div class="route-step"><small>Capture</small><strong><span class="route-dot"></span>Conversation archive</strong></div>
+              <div class="route-step"><small>Write</small><strong><span class="route-dot"></span>MiniMax-M3</strong></div>
+              <div class="route-step"><small>Store</small><strong><span class="route-dot"></span>Local + Git</strong></div>
+              <div class="route-step"><small>Recall</small><strong><span class="route-dot warn"></span>BM25 only</strong></div>
+            </div>
+
+            <section class="settings-section"><h2>Memory service</h2><div class="settings-card">
+              <div class="setting-row"><div class="setting-label"><strong>Enable Memory</strong><span>Turns on recall, background writing, organization, and Memory tools.</span></div><div class="setting-control"><span class="status restart">Next start</span><label class="switch"><input type="checkbox" checked aria-label="Enable Memory"><span class="switch-track"></span></label></div></div>
+              <div class="setting-row"><div class="setting-label"><strong>Storage</strong><span>Topic Markdown with derived views and Git history.</span></div><div class="setting-control"><span class="path-value">Local workspace · Git enabled</span></div></div>
+            </div></section>
+
+            <section class="settings-section"><h2>Background writing</h2><div class="settings-card">
+              <div class="setting-row"><div class="setting-label"><strong>Writer model</strong><span>Uses the default chat model unless you select an enabled model here.</span></div><div class="setting-control"><select class="select" aria-label="Writer model"><option>Default chat model · MiniMax-M3</option><option>MiniMax-M3</option></select><span class="status live">Live</span></div></div>
+              <div class="setting-row"><div class="setting-label"><strong>Automatic writing</strong><span>Turn completed conversations into Topic records in the background.</span></div><div class="setting-control"><label class="switch"><input type="checkbox" checked aria-label="Automatic writing"><span class="switch-track"></span></label></div></div>
+              <div class="setting-row"><div class="setting-label"><strong>Write frequency</strong><span>Controls how much conversation accumulates before a background write.</span></div><div class="setting-control"><select class="select" aria-label="Write frequency"><option>Balanced · about 16K tokens</option><option>More frequent · about 8K tokens</option><option>Less frequent · about 32K tokens</option></select></div></div>
+            </div></section>
+
+            <section class="settings-section"><h2>Retrieval</h2><div class="settings-card">
+              <div class="setting-row"><div class="setting-label"><strong>Recall method</strong><span>Select the retrieval path used before each model turn.</span></div><div class="setting-control"><select class="select" aria-label="Recall method"><option>Keyword · BM25</option><option disabled>Semantic · Embeddings (unavailable)</option><option disabled>Hybrid · BM25 + Embeddings (unavailable)</option></select><span class="status live">Live</span></div></div>
+              <div class="setting-row"><div class="setting-label"><strong>Embedding model</strong><span>Required for semantic and hybrid retrieval.</span></div><div class="setting-control"><span class="status missing">Not installed</span></div></div>
+              <div class="setting-row"><div class="setting-label"><strong>Recall depth</strong><span>Maximum number of matching records added to a turn.</span></div><div class="setting-control"><select class="select" aria-label="Recall depth"><option>5 records</option><option>8 records</option><option>10 records</option></select></div></div>
+              <div class="setting-row"><div class="setting-label"><strong>Search Source evidence</strong><span>Include archived evidence alongside curated Topic records.</span></div><div class="setting-control"><label class="switch"><input type="checkbox" checked aria-label="Search Source evidence"><span class="switch-track"></span></label></div></div>
+            </div></section>
+
+            <section class="settings-section"><h2>Context and history</h2><div class="settings-card">
+              <div class="setting-row"><div class="setting-label"><strong>Core Memory in every chat</strong><span>Inject the compact Core view into each system prompt.</span></div><div class="setting-control"><label class="switch"><input type="checkbox" checked aria-label="Core Memory in every chat"><span class="switch-track"></span></label></div></div>
+              <div class="setting-row"><div class="setting-label"><strong>Recent view size</strong><span>Number of latest records kept in the Recent derived view.</span></div><div class="setting-control"><select class="select" aria-label="Recent view size"><option>50 records</option><option>25 records</option><option>100 records</option></select></div></div>
+              <div class="setting-row"><div class="setting-label"><strong>Workspace</strong><span>Current Memory data location. Runtime-managed files remain read-only.</span></div><div class="setting-control"><span class="path-value">~/.openprogram/memory</span></div></div>
+            </div></section>
+            <div class="save-strip"><span class="saved-text" id="savedText">Settings saved</span><button class="button primary" id="saveSettings">Save changes</button></div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <section class="design-notes" aria-label="Design notes">
+    <article class="note-card"><h2>Implemented interface contract</h2><ul>
+      <li>Memory keeps the standard 64px title bar and exposes a direct <code>/settings/memory</code> link.</li>
+      <li>Topics, Timeline, Recent, and Core form a vertical section list above the Topic tree.</li>
+      <li>At a 720px viewport the section list, tree, and content stack without removing Memory navigation.</li>
+      <li>Settings reads and writes the same schema used by the CLI and TUI.</li>
+    </ul></article>
+    <article class="note-card"><h2>Implementation and acceptance</h2><ul>
+      <li>Public entries: <code>/memory</code>, <code>/settings/memory</code>, <code>GET/POST /api/settings</code>, automatic recall, <code>memory_search</code>, and Topic/API writes.</li>
+      <li>Runtime settings cover automatic writing, write frequency, recall method, recall depth, Source scope, Core injection, and Recent size.</li>
+      <li>Semantic and Hybrid remain disabled until an embedding model is actually available.</li>
+      <li>No external API permission controls are added to this page.</li>
+      <li>The candidate requires focused tests, TypeScript validation, two independent reviews, and visible default-App acceptance before implementation status is complete.</li>
+    </ul></article>
+  </section>
+</div>
+<script>
+  (function () {
+    var memory = document.querySelector('[data-view="memory"]');
+    var settings = document.querySelector('[data-view="settings"]');
+    var showMemory = document.getElementById('showMemory');
+    var showSettings = document.getElementById('showSettings');
+    var toggleEmpty = document.getElementById('toggleEmpty');
+    var appFrame = document.getElementById('appFrame');
+    function setView(name) {
+      var isMemory = name === 'memory';
+      memory.classList.toggle('visible', isMemory);
+      settings.classList.toggle('visible', !isMemory);
+      showMemory.setAttribute('aria-selected', String(isMemory));
+      showSettings.setAttribute('aria-selected', String(!isMemory));
+    }
+    showMemory.addEventListener('click', function () { setView('memory'); });
+    showSettings.addEventListener('click', function () { setView('settings'); });
+    document.getElementById('openSettings').addEventListener('click', function () { setView('settings'); });
+    document.getElementById('emptySettings').addEventListener('click', function () { setView('settings'); });
+    toggleEmpty.addEventListener('click', function () {
+      var next = !appFrame.classList.contains('page-empty');
+      appFrame.classList.toggle('page-empty', next);
+      toggleEmpty.setAttribute('aria-pressed', String(next));
+      toggleEmpty.textContent = next ? 'Show populated state' : 'Show empty state';
+      setView('memory');
+    });
+    document.getElementById('saveSettings').addEventListener('click', function () {
+      var saved = document.getElementById('savedText');
+      saved.classList.add('show');
+      window.setTimeout(function () { saved.classList.remove('show'); }, 1600);
+    });
+    document.querySelectorAll('a[href="#"]').forEach(function (link) {
+      link.addEventListener('click', function (event) { event.preventDefault(); });
+    });
+  })();
+</script>
+</body>
+</html>

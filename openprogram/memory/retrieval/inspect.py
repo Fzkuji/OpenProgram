@@ -8,6 +8,7 @@ tool result must not be.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 from dataclasses import dataclass
@@ -94,7 +95,7 @@ def workspace_identity(memory_dir: Path) -> str:
 def status(
     memory_dir: Path,
     *,
-    embedding_available: bool = False,
+    embedding_available: bool | None = None,
     include_path: bool = False,
 ) -> dict[str, Any]:
     """Committed workspace counts. Never rebuilds and never calls a model.
@@ -143,9 +144,17 @@ def status(
         "recent_events": recent_count,
         "relations": relation_count,
         "core_exists": (root / "core.md").is_file(),
-        "embedding_available": embedding_available,
+        "embedding_available": (
+            embedding_is_available()
+            if embedding_available is None
+            else embedding_available
+        ),
         "writer": writer_status(root),
     }
+
+
+def embedding_is_available() -> bool:
+    return importlib.util.find_spec("sentence_transformers") is not None
 
 
 def list_files(
@@ -365,23 +374,33 @@ def search(
     date_from: str | None = None,
     date_to: str | None = None,
     speaker: str | None = None,
+    include_sources: bool = True,
 ) -> dict[str, Any]:
-    if method not in ("bm25", "embedding"):
+    if method not in ("bm25", "embedding", "hybrid"):
         raise TransactionError(
-            "INVALID_ARGUMENT", "method must be bm25 or embedding"
+            "INVALID_ARGUMENT", "method must be bm25, embedding or hybrid"
         )
     if not str(query or "").strip():
         raise TransactionError("INVALID_ARGUMENT", "query is required")
     capped = max(1, min(int(top_k), 10))
     root = Path(memory_dir).resolve()
-    if method == "embedding":
+    effective_prefix = path_prefix
+    if not include_sources:
+        from .bm25 import _normalize_path_prefix
+
+        normalized = _normalize_path_prefix(str(path_prefix or "topics"))
+        if normalized.startswith("sources"):
+            return {"method": method, "results": []}
+        effective_prefix = normalized
+    if method in {"embedding", "hybrid"}:
         if speaker is not None:
             raise TransactionError(
                 "INVALID_ARGUMENT",
                 "speaker filter is not supported with embedding search",
             )
+    if method == "embedding":
         return {"method": "embedding", "results": _embedding_search(
-            root, query, capped, path_prefix, date_from, date_to,
+            root, query, capped, effective_prefix, date_from, date_to,
         )}
     from .bm25 import MemoryBM25Index
 
@@ -389,12 +408,21 @@ def search(
     hits = index.search(
         query,
         top_k=capped,
-        path_prefix=path_prefix,
+        path_prefix=effective_prefix,
         date_from=date_from,
         date_to=date_to,
         speaker=speaker,
     )
-    return {"method": "bm25", "results": [_present(hit) for hit in hits]}
+    lexical = [_present(hit) for hit in hits]
+    if method == "bm25":
+        return {"method": "bm25", "results": lexical}
+    semantic = _embedding_search(
+        root, query, capped, effective_prefix, date_from, date_to,
+    )
+    return {
+        "method": "hybrid",
+        "results": _fuse_ranked(lexical, semantic)[:capped],
+    }
 
 
 def _embedding_search(
@@ -412,6 +440,7 @@ def _embedding_search(
         # The encoder loads lazily, so an absent backend only surfaces here.
         hits = index.search(
             query, top_k=top_k, date_from=date_from, date_to=date_to,
+            path_prefix=path_prefix,
         )
     except Exception as exc:
         # Never silently fall back to BM25: the caller asked for embeddings
@@ -419,16 +448,29 @@ def _embedding_search(
         raise TransactionError(
             "EMBEDDING_UNAVAILABLE", f"embedding search unavailable: {exc}"
         ) from exc
-    if path_prefix:
-        # Same prefix semantics as BM25; embedding search has no built-in filter.
-        from .bm25 import _normalize_path_prefix, event_matches_path_prefix
-
-        normalized = _normalize_path_prefix(str(path_prefix))
-        hits = [
-            hit for hit in hits
-            if event_matches_path_prefix(str(hit.get("path", "")), normalized)
-        ]
     return [_present(hit) for hit in hits]
+
+
+def _fuse_ranked(*rankings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    scores: dict[tuple[Any, ...], float] = {}
+    rows: dict[tuple[Any, ...], dict[str, Any]] = {}
+    first_rank: dict[tuple[Any, ...], int] = {}
+    for ranking in rankings:
+        for rank, row in enumerate(ranking, start=1):
+            key = (
+                row.get("event_id"), row.get("path"), row.get("line"),
+            )
+            rows.setdefault(key, row)
+            first_rank[key] = min(first_rank.get(key, rank), rank)
+            scores[key] = scores.get(key, 0.0) + 1.0 / (60 + rank)
+    ordered = sorted(
+        rows,
+        key=lambda key: (
+            -scores[key], first_rank[key], str(key[1]), int(key[2] or 0),
+            str(key[0]),
+        ),
+    )
+    return [{**rows[key], "final_score": scores[key]} for key in ordered]
 
 
 def _present(hit: dict[str, Any]) -> dict[str, Any]:
@@ -436,9 +478,11 @@ def _present(hit: dict[str, Any]) -> dict[str, Any]:
         "event_id", "path", "line", "headings", "date", "dates",
         "content", "refs", "speaker_id", "speaker_display", "speaker_label",
         "speaker_trusted", "trust_state", "speaker_kind", "principal_id",
-        "authority_tier", "final_score", "score",
+        "authority_tier", "final_score", "score", "similarity",
     )
     result = {key: hit[key] for key in keep if key in hit}
+    if "event_id" not in result and hit.get("event"):
+        result["event_id"] = hit["event"]
     if isinstance(result.get("content"), str):
         result["content"] = result["content"][:MAX_SNIPPET_CHARS * 4]
     return result

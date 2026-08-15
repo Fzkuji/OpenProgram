@@ -30,6 +30,7 @@ from openprogram.agent.authority import (
 )
 from openprogram.memory import store
 from openprogram.memory.management import MemoryWorkspace
+from openprogram.memory.management.config import load_memory_config
 from openprogram.memory.management.transaction import (
     TransactionError,
     provenance_from_authority,
@@ -105,10 +106,13 @@ def memory_search(
     if not (query or "").strip():
         return "memory_search needs a query."
     try:
+        config = load_memory_config()
         found = inspect.search(
             _root(), query, top_k=int(top_k or MAX_SNIPPETS),
             path_prefix=path_prefix or None,
             speaker=speaker or None,
+            method=config.retrieval_method,
+            include_sources=config.retrieval_include_sources,
         )
     except TransactionError as exc:
         return _fail(exc)
@@ -418,7 +422,9 @@ def memory_update(
             if sources
             else None
         )
-        with closing(MemoryWorkspace(_root())) as space:
+        with closing(MemoryWorkspace(
+            _root(), config=load_memory_config(),
+        )) as space:
             result = space.update(
                 base_revision=base_revision,
                 patch=patch or "",
