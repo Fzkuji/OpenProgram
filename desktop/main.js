@@ -1763,15 +1763,37 @@ function normalizedBounds(bounds) {
   };
 }
 
-function normalizedRendererBounds(event, bounds) {
+function rendererZoomFactor(event) {
   const senderZoom = Number(event?.sender?.getZoomFactor?.());
-  const zoom = Number.isFinite(senderZoom) && senderZoom > 0 ? senderZoom : 1;
+  return Number.isFinite(senderZoom) && senderZoom > 0 ? senderZoom : 1;
+}
+
+function normalizedRendererBounds(event, bounds) {
+  const zoom = rendererZoomFactor(event);
   return normalizedBounds({
     x: Number(bounds?.x) * zoom,
     y: Number(bounds?.y) * zoom,
     width: Number(bounds?.width) * zoom,
     height: Number(bounds?.height) * zoom,
   });
+}
+
+function normalizedRendererMenuOptions(event, options) {
+  const source = options && typeof options === "object" ? options : {};
+  const anchor = source.anchor && typeof source.anchor === "object"
+    ? { ...source.anchor }
+    : {};
+  const zoom = rendererZoomFactor(event);
+  for (const key of ["x", "right", "y", "rightInset", "top", "vw", "vh"]) {
+    const value = Number(anchor[key]);
+    if (Number.isFinite(value)) anchor[key] = value * zoom;
+  }
+  const normalized = { ...source, anchor };
+  for (const key of ["width", "height"]) {
+    const value = Number(source[key]);
+    if (Number.isFinite(value)) normalized[key] = value * zoom;
+  }
+  return normalized;
 }
 
 function syncVisibleViews(ctx, items) {
@@ -2015,6 +2037,15 @@ const MAIN_MENU_GUTTER = 24;
 const CONTEXT_MENU_WIDTH = 200;
 const CONTEXT_MENU_ROW_HEIGHT = 24;
 const CONTEXT_MENU_CHROME = 16;
+const MENU_THEME_IDS = [
+  "beige-dark",
+  "beige-light",
+  "dark",
+  "light",
+  "aurora",
+  "custom",
+];
+const MENU_THEME_ID_SET = new Set(MENU_THEME_IDS);
 
 function contextMenuRequestedX(anchor, panelW) {
   return anchor.align === "end" ? anchor.right - panelW : anchor.x;
@@ -2022,12 +2053,19 @@ function contextMenuRequestedX(anchor, panelW) {
 
 /** Context-menu panel top-left, clamped to an 8px margin inside the window. */
 function clampContextMenuPanel(anchor, panelW, panelH) {
+  const zoom = Number.isFinite(Number(anchor.zoom)) && Number(anchor.zoom) > 0
+    ? Number(anchor.zoom)
+    : 1;
+  const margin = 8 * zoom;
   return {
     x: Math.min(
-      Math.max(8, contextMenuRequestedX(anchor, panelW)),
-      Math.max(8, anchor.winW - panelW - 8),
+      Math.max(margin, contextMenuRequestedX(anchor, panelW)),
+      Math.max(margin, anchor.winW - panelW - margin),
     ),
-    y: Math.min(Math.max(8, anchor.y), Math.max(8, anchor.winH - panelH - 8)),
+    y: Math.min(
+      Math.max(margin, anchor.y),
+      Math.max(margin, anchor.winH - panelH - margin),
+    ),
   };
 }
 
@@ -2039,20 +2077,30 @@ function resizeMenuOverlay(ctx, size) {
   const view = ctx && ctx.mainMenuView;
   const anchor = ctx && ctx.mainMenuAnchor;
   if (!view || !anchor || view.webContents.isDestroyed()) return;
+  const zoom = Number.isFinite(Number(anchor.zoom)) && Number(anchor.zoom) > 0
+    ? Number(anchor.zoom)
+    : 1;
+  const gutter = MAIN_MENU_GUTTER * zoom;
   const panelW = Math.max(1, Math.round(Number(size && size.width) || 0));
   let panelH = Math.max(1, Math.round(Number(size && size.height) || 0));
-  panelH = Math.min(panelH, Math.max(1, anchor.winH - 16));
+  panelH = Math.min(panelH, Math.max(1, anchor.winH - 16 * zoom));
   if (!panelW || !panelH) return;
   const { x, y } = clampContextMenuPanel(anchor, panelW, panelH);
   view.setBounds({
-    x: Math.round(x - MAIN_MENU_GUTTER),
-    y: Math.round(y - MAIN_MENU_GUTTER),
-    width: panelW + MAIN_MENU_GUTTER * 2,
-    height: panelH + MAIN_MENU_GUTTER * 2,
+    x: Math.round(x - gutter),
+    y: Math.round(y - gutter),
+    width: Math.round(panelW + gutter * 2),
+    height: Math.round(panelH + gutter * 2),
   });
 }
 
-function menuOverlayUrl(theme, items) {
+function hasNestedMenuItems(items) {
+  return Array.isArray(items) && items.some((item) =>
+    Array.isArray(item && item.children) && item.children.length > 0,
+  );
+}
+
+function menuOverlayUrl(theme, items, anchor, width) {
   let origin = "http://127.0.0.1:" + WEB_PORT;
   try {
     origin = new URL(START_URL).origin;
@@ -2060,8 +2108,13 @@ function menuOverlayUrl(theme, items) {
     /* keep fallback */
   }
   const q = new URLSearchParams();
-  if (theme === "dark" || theme === "light") q.set("theme", theme);
+  if (MENU_THEME_ID_SET.has(theme)) q.set("theme", theme);
   if (items) q.set("items", JSON.stringify(items));
+  if (anchor) {
+    q.set("x", String(anchor.x));
+    q.set("y", String(anchor.y));
+  }
+  if (Number.isFinite(width) && width > 0) q.set("width", String(width));
   return (
     origin
     + (items ? "/menu-overlay/context-menu?" : "/menu-overlay/main-menu?")
@@ -2086,9 +2139,13 @@ function closeMainMenu(ctx) {
   }
 }
 
-function openMainMenu(ctx, opts) {
+function openMainMenu(ctx, opts, zoom = 1) {
   if (!ctx || ctx.win.isDestroyed()) return;
   closeMainMenu(ctx);
+  const menuZoom = Number.isFinite(Number(zoom)) && Number(zoom) > 0
+    ? Number(zoom)
+    : 1;
+  const gutter = MAIN_MENU_GUTTER * menuZoom;
   const view = new WebContentsView({
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -2098,6 +2155,7 @@ function openMainMenu(ctx, opts) {
       additionalArguments: [`--openprogram-window-id=${ctx.id}`],
     },
   });
+  view.webContents.setZoomFactor(menuZoom);
   view.setBackgroundColor("#00000000");
   ctx.mainMenuView = view;
   ctx.win.contentView.addChildView(view);
@@ -2114,17 +2172,35 @@ function openMainMenu(ctx, opts) {
   const winW = Number(anchor.vw) || cbW;
   const winH = Number(anchor.vh) || cbH;
   const items = Array.isArray(opts && opts.items) ? opts.items : null;
+  const nestedItems = hasNestedMenuItems(items);
+  const overlayWidth = Number.isFinite(Number(opts && opts.width))
+    ? Number(opts.width) / menuZoom
+    : null;
+  let overlayAnchor = null;
   let panelW;
   let panelH;
   let panelX;
   let panelY;
-  if (items) {
+  if (items && nestedItems) {
+    // Cascading bookmark folders need the overlay document to cover the
+    // content area so submenu portals are not clipped by root-panel bounds.
+    ctx.mainMenuAnchor = null;
+    overlayAnchor = {
+      x: (Number(anchor.x) || 0) / menuZoom,
+      y: (Number(anchor.y) || 0) / menuZoom,
+    };
+    panelW = winW;
+    panelH = winH;
+    panelX = 0;
+    panelY = 0;
+  } else if (items) {
     // Generic context menu: panel top-left at anchor {x, y}, clamped to an
     // 8px margin inside the window (same clamp the DOM tab menu used).
-    panelW = Number(opts.width) || CONTEXT_MENU_WIDTH;
+    panelW = Number(opts.width) || CONTEXT_MENU_WIDTH * menuZoom;
     panelH = Math.min(
-      Number(opts.height) || items.length * CONTEXT_MENU_ROW_HEIGHT + CONTEXT_MENU_CHROME,
-      Math.max(1, winH - 16),
+      Number(opts.height)
+        || (items.length * CONTEXT_MENU_ROW_HEIGHT + CONTEXT_MENU_CHROME) * menuZoom,
+      Math.max(1, winH - 16 * menuZoom),
     );
     // Remember the anchor + viewport so main-menu:resize can re-clamp the
     // view once the overlay reports its measured panel size.
@@ -2138,6 +2214,7 @@ function openMainMenu(ctx, opts) {
       y: Number(anchor.y) || 0,
       winW,
       winH,
+      zoom: menuZoom,
     };
     const clamped = clampContextMenuPanel(ctx.mainMenuAnchor, panelW, panelH);
     panelX = clamped.x;
@@ -2146,28 +2223,32 @@ function openMainMenu(ctx, opts) {
     ctx.mainMenuAnchor = null;
     // Main menu: panel right edge sits `rightInset` from the window right,
     // top edge on the strip's bottom divider.
-    panelW = MAIN_MENU_WIDTH;
-    panelH = MAIN_MENU_HEIGHT;
+    panelW = MAIN_MENU_WIDTH * menuZoom;
+    panelH = MAIN_MENU_HEIGHT * menuZoom;
     const rightInset = Number.isFinite(anchor.rightInset)
       ? anchor.rightInset
-      : 8;
+      : 8 * menuZoom;
     panelX = Math.max(0, winW - rightInset - panelW);
-    panelY = Number.isFinite(anchor.top) ? anchor.top : 40;
+    panelY = Number.isFinite(anchor.top) ? anchor.top : 40 * menuZoom;
   }
-  const viewW = panelW + MAIN_MENU_GUTTER * 2;
-  const viewH = panelH + MAIN_MENU_GUTTER * 2;
-  // Panel is inset by GUTTER inside the view (transparent room for the
-  // drop shadow) — offset the view accordingly.
-  view.setBounds({
-    x: Math.round(panelX - MAIN_MENU_GUTTER),
-    y: Math.round(panelY - MAIN_MENU_GUTTER),
-    width: viewW,
-    height: viewH,
-  });
+  if (nestedItems) {
+    view.setBounds({ x: 0, y: 0, width: Math.round(winW), height: Math.round(winH) });
+  } else {
+    const viewW = panelW + gutter * 2;
+    const viewH = panelH + gutter * 2;
+    // Panel is inset by GUTTER inside the view (transparent room for the
+    // drop shadow) — offset the view accordingly.
+    view.setBounds({
+      x: Math.round(panelX - gutter),
+      y: Math.round(panelY - gutter),
+      width: Math.round(viewW),
+      height: Math.round(viewH),
+    });
+  }
 
   const theme = opts && opts.theme;
   view.webContents
-    .loadURL(menuOverlayUrl(theme, items))
+    .loadURL(menuOverlayUrl(theme, items, overlayAnchor, overlayWidth))
     .then(() => {
       if (ctx.mainMenuView === view && !view.webContents.isDestroyed()) {
         view.webContents.focus();
@@ -2203,7 +2284,13 @@ function contextForMenuSender(event) {
 function registerWebTabIpc() {
   ipcMain.on("main-menu:open", (event, opts) => {
     const ctx = contextForSender(event);
-    if (ctx) openMainMenu(ctx, opts || {});
+    if (ctx) {
+      openMainMenu(
+        ctx,
+        normalizedRendererMenuOptions(event, opts),
+        rendererZoomFactor(event),
+      );
+    }
   });
   ipcMain.on("main-menu:close", (event) => {
     const ctx = contextForMenuSender(event);
@@ -2211,7 +2298,7 @@ function registerWebTabIpc() {
   });
   ipcMain.on("main-menu:resize", (event, size) => {
     const ctx = contextForMenuSender(event);
-    if (ctx) resizeMenuOverlay(ctx, size);
+    if (ctx) resizeMenuOverlay(ctx, normalizedRendererBounds(event, size));
   });
   ipcMain.on("main-menu:choose", (event, id) => {
     const ctx = contextForMenuSender(event);

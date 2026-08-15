@@ -24,6 +24,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -33,12 +36,12 @@ import {
 } from "@/components/chat/top-bar/menu-styles";
 import {
   bookmarkBarLayout,
-  bookmarkMenuEntries,
   readBookmarkTree,
   subscribeBookmarks,
   type BookmarkFolder,
   type BookmarkNode,
 } from "@/lib/bookmarks";
+import { activeThemeId } from "@/lib/prefs/theme-pref";
 import {
   requestBrowserImport,
   setShowBookmarksBar,
@@ -176,7 +179,7 @@ export function BrowserMenu({
           });
           mainMenu.open({
             anchor: { right: rect.right, y: rect.bottom + 4, align: "end", vw: innerWidth, vh: innerHeight },
-            theme: document.documentElement.dataset.theme as "light" | "dark" | undefined,
+            theme: activeThemeId(),
             items: [
               item("new-tab", "New browser tab", "新建浏览器标签页"),
               ...(responsive.home ? [item("home", "Home", "主页")] : []),
@@ -258,11 +261,69 @@ export function BookmarksLibraryButton() {
   );
 }
 
-function folderItems(folder: BookmarkFolder, ownerId: string): DesktopContextMenuItem[] {
-  return bookmarkMenuEntries(folder).map((bookmark, index) => ({
-    id: `${bookmarkFolderActionPrefix(ownerId, folder.id)}${index}`,
-    label: bookmark.path.join(" / "),
-  }));
+function folderItems(
+  folder: BookmarkFolder,
+  ownerId: string,
+  rootFolderId = folder.id,
+): DesktopContextMenuItem[] {
+  const prefix = bookmarkFolderActionPrefix(ownerId, rootFolderId);
+  return folder.children.map((node) => node.kind === "folder" ? {
+    id: `${prefix}folder:${node.id}`,
+    label: node.title || "Folder",
+    children: node.children.length > 0
+      ? folderItems(node, ownerId, rootFolderId)
+      : [{ id: `${prefix}empty:${node.id}`, label: "Empty folder", disabled: true }],
+  } : {
+    id: `${prefix}bookmark:${node.id}`,
+    label: node.title || node.url,
+  });
+}
+
+function bookmarkUrlById(folder: BookmarkFolder, id: string): string | null {
+  for (const node of folder.children) {
+    if (node.kind === "bookmark" && node.id === id) return node.url;
+    if (node.kind === "folder") {
+      const nested = bookmarkUrlById(node, id);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+function BookmarkMenuNodes({
+  nodes,
+  onNavigate,
+}: {
+  nodes: BookmarkNode[];
+  onNavigate(url: string): void;
+}) {
+  if (nodes.length === 0) {
+    return <DropdownMenuItem className={itemCls(false)} disabled>Empty folder</DropdownMenuItem>;
+  }
+  return nodes.map((node) => node.kind === "folder" ? (
+    <DropdownMenuSub key={node.id}>
+      <DropdownMenuSubTrigger
+        className={`${itemCls(false)} w-full min-w-0 outline-none data-[highlighted]:bg-bg-hover data-[highlighted]:text-text-bright data-[state=open]:bg-bg-hover data-[state=open]:text-text-bright`}
+      >
+        <Folder size={13} fill="currentColor" className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-left">{node.title || "Folder"}</span>
+        <ChevronRight size={13} className="ml-auto shrink-0" aria-hidden="true" />
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className={`${MENU_PANEL} w-[280px] max-w-[calc(100vw-16px)]`}>
+        <BookmarkMenuNodes nodes={node.children} onNavigate={onNavigate} />
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  ) : (
+    <DropdownMenuItem
+      key={node.id}
+      className={`${itemCls(false)} w-full min-w-0 outline-none data-[highlighted]:bg-bg-hover data-[highlighted]:text-text-bright`}
+      onSelect={() => onNavigate(node.url)}
+      title={node.title || node.url}
+    >
+      <Bookmark size={13} className="shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{node.title || node.url}</span>
+    </DropdownMenuItem>
+  ));
 }
 
 function BookmarkFolderButton({
@@ -279,7 +340,6 @@ function BookmarkFolderButton({
   label?: string;
 }) {
   const mainMenu = desktopBridge()?.mainMenu;
-  const bookmarks = bookmarkMenuEntries(folder);
   const buttonLabel = label || folder.title;
   const buttonClass = appearance === "overflow" ? styles.bookmarkBarMore : styles.bookmarkBarItem;
   const buttonContent = appearance === "overflow" ? (
@@ -292,11 +352,11 @@ function BookmarkFolderButton({
     if (!mainMenu) return;
     return mainMenu.onAction((id) => {
       const action = ownedActionId(id, bookmarkFolderActionPrefix(ownerId, folder.id));
-      if (action === null) return;
-      const bookmark = bookmarks[Number(action)];
-      if (bookmark) onNavigate(bookmark.url);
+      if (action === null || !action.startsWith("bookmark:")) return;
+      const url = bookmarkUrlById(folder, action.slice("bookmark:".length));
+      if (url) onNavigate(url);
     });
-  }, [bookmarks, folder.id, mainMenu, onNavigate, ownerId]);
+  }, [folder, mainMenu, onNavigate, ownerId]);
 
   if (mainMenu) {
     return (
@@ -307,10 +367,11 @@ function BookmarkFolderButton({
           const rect = event.currentTarget.getBoundingClientRect();
           mainMenu.open({
             anchor: { x: rect.left, y: rect.bottom + 2, vw: innerWidth, vh: innerHeight },
-            theme: document.documentElement.dataset.theme as "light" | "dark" | undefined,
+            theme: activeThemeId(),
             items: folderItems(folder, ownerId).length > 0
               ? folderItems(folder, ownerId)
               : [{ id: `${bookmarkFolderActionPrefix(ownerId, folder.id)}empty`, label: "Empty folder", disabled: true }],
+            width: 280,
           });
         }}
         title={buttonLabel}
@@ -328,19 +389,11 @@ function BookmarkFolderButton({
           {buttonContent}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className={MENU_PANEL} align="start">
-        {bookmarks.length === 0 ? (
-          <DropdownMenuItem className={itemCls(false)} disabled>Empty folder</DropdownMenuItem>
-        ) : bookmarks.map((bookmark, index) => (
-          <DropdownMenuItem
-            key={`${bookmark.url}-${index}`}
-            className={itemCls(false)}
-            onSelect={() => onNavigate(bookmark.url)}
-          >
-            <Bookmark size={13} />
-            <span className="max-w-[320px] truncate">{bookmark.path.join(" / ")}</span>
-          </DropdownMenuItem>
-        ))}
+      <DropdownMenuContent
+        className={`${MENU_PANEL} w-[280px] max-w-[calc(100vw-16px)]`}
+        align="start"
+      >
+        <BookmarkMenuNodes nodes={folder.children} onNavigate={onNavigate} />
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -17,6 +17,7 @@ const browserHomePath = new URL("../components/center-tabs/browser-home-page.tsx
 const managerPath = new URL("../components/center-tabs/builtin-tab-pane.tsx", import.meta.url);
 const mainMenuPath = new URL("../components/center-tabs/main-menu.tsx", import.meta.url);
 const browserControlsPath = new URL("../components/center-tabs/browser-controls.tsx", import.meta.url);
+const contextMenuOverlayPath = new URL("../app/menu-overlay/context-menu/page.tsx", import.meta.url);
 // The strip is split across center-tab-strip.tsx and its submodules;
 // readCenterTabStripSource concatenates them in source order.
 const appShellPath = new URL("../components/app-shell.tsx", import.meta.url);
@@ -55,6 +56,7 @@ const browserHome = readFileSync(browserHomePath, "utf8");
 const manager = readFileSync(managerPath, "utf8");
 const mainMenu = readFileSync(mainMenuPath, "utf8");
 const browserControls = readFileSync(browserControlsPath, "utf8");
+const contextMenuOverlay = readFileSync(contextMenuOverlayPath, "utf8");
 const strip = readCenterTabStripSource(import.meta.url);
 const appShell = readFileSync(appShellPath, "utf8");
 const tabsStore = readFileSync(tabsStorePath, "utf8");
@@ -79,6 +81,32 @@ for (const [name, text] of [
   assert.match(text, /subscribeBookmarks\(refresh\)/, `${name} must use shared bookmark subscription`);
 }
 assert.match(browserHome, /importBookmarkTree/, "browser import must write the source tree");
+// Bookmark-bar folder menus retain the imported hierarchy instead of
+// flattening every descendant into a long path label. Both the web fallback
+// and desktop top-layer overlay use a bounded 280px panel with truncated
+// labels and real cascading submenus.
+assert.doesNotMatch(browserControls, /bookmarkMenuEntries/,
+  "bookmark-bar menus must not flatten nested folders into path strings");
+assert.match(browserControls, /children:\s*node\.children\.length[\s\S]*?folderItems\(node, ownerId, rootFolderId\)/,
+  "desktop bookmark folder items must keep recursive children");
+assert.match(browserControls, /<DropdownMenuSub key=\{node\.id\}>/,
+  "web bookmark folder menus must render nested submenus");
+assert.match(browserControls, /width:\s*280/,
+  "desktop bookmark folder menus must request a finite width");
+assert.match(browserControls, /w-\[280px\][^"`]*max-w-\[calc\(100vw-16px\)\]/,
+  "web bookmark folder menus must stay inside a bounded panel");
+assert.match(contextMenuOverlay, /children\?: ContextMenuItem\[\]/,
+  "desktop context-menu payload must support nested folder items");
+assert.match(contextMenuOverlay, /<DropdownMenuPrimitive\.Sub>/,
+  "desktop bookmark folders must open cascading submenus");
+assert.match(contextMenuOverlay, /min-w-0 flex-1 truncate/,
+  "desktop bookmark titles must truncate instead of widening the menu");
+assert.match(contextMenuOverlay, /data-\[highlighted\]:bg-bg-hover/,
+  "desktop nested bookmark rows need a visible keyboard highlight");
+assert.match(browserControls, /data-\[highlighted\]:bg-bg-hover/,
+  "web nested bookmark rows need a visible keyboard highlight");
+assert.match(contextMenuOverlay, /width: requestedWidth \|\| "max-content"/,
+  "desktop context-menu overlay must honor a caller-supplied finite width");
 // The manager is a folder TREE now: search matches a node by its own
 // title/url and keeps the folders leading to a hit, rows nest by depth,
 // and every folder operation is reachable from the page.

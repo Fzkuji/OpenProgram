@@ -12,6 +12,7 @@
  * Absent bridge (plain browser) ⇒ every helper is a no-op and
  * desktopBridge() returns null; callers keep their web fallbacks.
  */
+import type { ThemeId } from "@/lib/prefs/theme-pref";
 import {
   insertTransferredTabs,
   rebaseCenterTabsPayload,
@@ -281,6 +282,7 @@ export interface DesktopContextMenuItem {
   disabled?: boolean;
   checked?: boolean;
   separatorBefore?: boolean;
+  children?: DesktopContextMenuItem[];
 }
 
 export interface DesktopMainMenuApi {
@@ -291,7 +293,7 @@ export interface DesktopMainMenuApi {
       | { rightInset: number; top: number; vw: number }
       | { x: number; y: number; vw: number; vh: number }
       | { right: number; y: number; align: "end"; vw: number; vh: number };
-    theme?: "light" | "dark";
+    theme?: ThemeId;
     /** Present → generic context-menu overlay instead of the ⋮ menu.
      *  Namespace the ids (e.g. "tabmenu:*") — every onAction subscriber
      *  shares one channel and must recognise only its own prefix. */

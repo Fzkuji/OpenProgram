@@ -17,9 +17,11 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Check } from "lucide-react";
+import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
+import { Check, ChevronRight } from "lucide-react";
 
 import { itemCls, MENU_PANEL, MENU_SEPARATOR } from "@/components/chat/top-bar/menu-styles";
+import { isThemeId } from "@/lib/prefs/theme-pref";
 
 interface ContextMenuItem {
   id: string;
@@ -27,6 +29,7 @@ interface ContextMenuItem {
   disabled?: boolean;
   checked?: boolean;
   separatorBefore?: boolean;
+  children?: ContextMenuItem[];
 }
 
 interface MainMenuBridge {
@@ -42,6 +45,95 @@ function mainMenuBridge(): MainMenuBridge | null {
     }
   ).openprogramDesktop?.mainMenu;
   return api ?? null;
+}
+
+const NESTED_MENU_WIDTH = 280;
+
+function NestedMenuItems({ items }: { items: ContextMenuItem[] }) {
+  const choose = (item: ContextMenuItem) => {
+    if (!item.disabled) mainMenuBridge()?.choose(item.id);
+  };
+  return items.map((item) => (
+    <div key={item.id}>
+      {item.separatorBefore ? <div className={MENU_SEPARATOR} /> : null}
+      {item.children?.length ? (
+        <DropdownMenuPrimitive.Sub>
+          <DropdownMenuPrimitive.SubTrigger
+            disabled={item.disabled}
+            className={`${itemCls(false)} w-full min-w-0 outline-none data-[highlighted]:bg-bg-hover data-[highlighted]:text-text-bright data-[state=open]:bg-bg-hover data-[state=open]:text-text-bright`}
+            title={item.label}
+          >
+            <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
+              {item.checked ? <Check size={13} aria-hidden="true" /> : null}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
+            <ChevronRight size={13} className="ml-auto shrink-0" aria-hidden="true" />
+          </DropdownMenuPrimitive.SubTrigger>
+          <DropdownMenuPrimitive.Portal>
+            <DropdownMenuPrimitive.SubContent
+              sideOffset={2}
+              alignOffset={-6}
+              collisionPadding={8}
+              className={`${MENU_PANEL} w-[280px] max-w-[calc(100vw-16px)] outline-none`}
+            >
+              <NestedMenuItems items={item.children} />
+            </DropdownMenuPrimitive.SubContent>
+          </DropdownMenuPrimitive.Portal>
+        </DropdownMenuPrimitive.Sub>
+      ) : (
+        <DropdownMenuPrimitive.Item
+          disabled={item.disabled}
+          className={`${itemCls(false)} w-full min-w-0 outline-none data-[highlighted]:bg-bg-hover data-[highlighted]:text-text-bright data-[disabled]:pointer-events-none data-[disabled]:opacity-55`}
+          title={item.label}
+          onSelect={() => choose(item)}
+        >
+          <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
+            {item.checked ? <Check size={13} aria-hidden="true" /> : null}
+          </span>
+          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+        </DropdownMenuPrimitive.Item>
+      )}
+    </div>
+  ));
+}
+
+function NestedContextMenu({
+  items,
+  x,
+  y,
+}: {
+  items: ContextMenuItem[];
+  x: number;
+  y: number;
+}) {
+  const close = () => mainMenuBridge()?.close();
+  return (
+    <DropdownMenuPrimitive.Root open modal={false} onOpenChange={(open) => { if (!open) close(); }}>
+      <DropdownMenuPrimitive.Trigger asChild>
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-hidden="true"
+          style={{ position: "fixed", left: x, top: y, width: 1, height: 1, opacity: 0 }}
+        />
+      </DropdownMenuPrimitive.Trigger>
+      <DropdownMenuPrimitive.Portal>
+        <DropdownMenuPrimitive.Content
+          side="bottom"
+          align="start"
+          sideOffset={0}
+          collisionPadding={8}
+          className={`${MENU_PANEL} w-[280px] max-w-[calc(100vw-16px)] outline-none`}
+          style={{ width: NESTED_MENU_WIDTH }}
+          onEscapeKeyDown={close}
+          onPointerDownOutside={close}
+          onCloseAutoFocus={(event) => event.preventDefault()}
+        >
+          <NestedMenuItems items={items} />
+        </DropdownMenuPrimitive.Content>
+      </DropdownMenuPrimitive.Portal>
+    </DropdownMenuPrimitive.Root>
+  );
 }
 
 function ContextMenuOverlayPage() {
@@ -66,12 +158,14 @@ function ContextMenuOverlayPage() {
 
   const firstEnabled = items.findIndex((item) => !item.disabled);
   const [active, setActive] = useState(firstEnabled < 0 ? 0 : firstEnabled);
+  const nested = items.some((item) => Boolean(item.children?.length));
+  const requestedWidth = Math.max(0, Number(params.get("width")) || 0);
 
   // Theme comes from the opener (query) — same contract as the
   // main-menu overlay page.
   useEffect(() => {
     const theme = params.get("theme");
-    if (theme === "dark" || theme === "light") {
+    if (isThemeId(theme)) {
       document.documentElement.dataset.theme = theme;
     }
     document.documentElement.style.background = "transparent";
@@ -85,12 +179,21 @@ function ContextMenuOverlayPage() {
   // longest label — and report it back. Without this, long labels wrapped
   // inside the 200px guess and tall menus were clipped.
   useEffect(() => {
+    if (nested) return;
     const panel = panelRef.current;
     if (!panel) return;
     const report = () => {
       const rect = panel.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {
-        mainMenuBridge()?.resize?.({ width: rect.width, height: rect.height });
+        // `maxHeight: calc(100vh - 48px)` is relative to this overlay's
+        // current WebContentsView. Reporting only rect.height makes every
+        // host resize reduce the next measurement by another 48px until the
+        // menu becomes an unusable strip. scrollHeight/scrollWidth retain the
+        // intrinsic menu size even while the current host clips it.
+        mainMenuBridge()?.resize?.({
+          width: Math.max(rect.width, panel.scrollWidth),
+          height: Math.max(rect.height, panel.scrollHeight),
+        });
       }
     };
     report();
@@ -98,7 +201,7 @@ function ContextMenuOverlayPage() {
     const observer = new ResizeObserver(report);
     observer.observe(panel);
     return () => observer.disconnect();
-  }, [items]);
+  }, [items, nested, requestedWidth]);
 
   const choose = (item: ContextMenuItem) => {
     if (item.disabled) return;
@@ -107,6 +210,7 @@ function ContextMenuOverlayPage() {
   const close = () => mainMenuBridge()?.close();
 
   useEffect(() => {
+    if (nested) return;
     const step = (from: number, dir: 1 | -1) => {
       // Next enabled row, wrapping.
       for (let n = 1; n <= items.length; n += 1) {
@@ -145,7 +249,17 @@ function ContextMenuOverlayPage() {
       window.removeEventListener("pointerdown", onDown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, items]);
+  }, [active, items, nested]);
+
+  if (nested) {
+    return (
+      <NestedContextMenu
+        items={items}
+        x={Number(params.get("x")) || 0}
+        y={Number(params.get("y")) || 0}
+      />
+    );
+  }
 
   return (
     // The view is 24px (gutter) wider/taller than the panel on every side
@@ -163,15 +277,16 @@ function ContextMenuOverlayPage() {
         alignItems: "flex-start",
       }}
     >
-      {/* Width follows the longest row. Height stays inside the host view;
-         long imported bookmark folders scroll instead of extending beyond
-         the application window. */}
+      {/* Generic menus keep their intrinsic width unless the caller supplies
+         a finite width. Bookmark folders use the finite form so imported
+         titles truncate instead of expanding the overlay. */}
       <div
         ref={panelRef}
         className={MENU_PANEL}
         style={{
-          width: "max-content",
+          width: requestedWidth || "max-content",
           minWidth: 180,
+          maxWidth: requestedWidth ? "calc(100vw - 48px)" : undefined,
           maxHeight: "calc(100vh - 48px)",
           overflowY: "auto",
         }}
@@ -199,9 +314,14 @@ function ContextMenuOverlayPage() {
               <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
                 {item.checked ? <Check size={13} aria-hidden="true" /> : null}
               </span>
-              {/* nowrap: the panel is max-content wide, so a wrapping label
-                 would instead collapse the panel to the narrowest line. */}
-              <span className="flex-1 whitespace-nowrap">{item.label}</span>
+              <span
+                className={requestedWidth
+                  ? "min-w-0 flex-1 truncate"
+                  : "flex-1 whitespace-nowrap"}
+                title={item.label}
+              >
+                {item.label}
+              </span>
             </div>
           </div>
         ))}

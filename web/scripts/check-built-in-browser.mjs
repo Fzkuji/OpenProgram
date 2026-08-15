@@ -21,6 +21,7 @@ const browserSettings = read("../components/settings/browser-settings.tsx");
 const settingsLayout = read("../components/settings/settings-tabs-layout.tsx");
 const browserSettingsRoute = read("../app/(shell)/settings/browser/page.tsx");
 const centerTabsCss = read("../components/center-tabs/center-tabs.module.css");
+const cssRoot = postcss.parse(centerTabsCss);
 const historyCss = read("../app/styles/right-dock/web-history.css");
 const dropdownMenu = read("../components/ui/dropdown-menu.tsx");
 const builtin = read("../components/center-tabs/builtin-tab-pane.tsx");
@@ -91,12 +92,21 @@ assert.match(contextMenu, /item\.checked/);
 assert.match(contextMenu, /item\.separatorBefore/);
 assert.match(contextMenu, /maxHeight:\s*"calc\(100vh - 48px\)"/);
 assert.match(contextMenu, /overflowY:\s*"auto"/);
-assert.match(main, /Math\.min\(panelH,\s*Math\.max\(1,\s*anchor\.winH - 16\)\)/);
+assert.match(
+  contextMenu,
+  /width:\s*Math\.max\(rect\.width, panel\.scrollWidth\)/,
+  "the overlay must report its intrinsic width instead of a clipped viewport width",
+);
+assert.match(
+  contextMenu,
+  /height:\s*Math\.max\(rect\.height, panel\.scrollHeight\)/,
+  "the overlay must report its intrinsic height instead of recursively shrinking to its own viewport",
+);
+assert.match(main, /Math\.min\(panelH,\s*Math\.max\(1,\s*anchor\.winH - 16 \* zoom\)\)/);
 assert.match(centerTabsCss, /container-type:\s*inline-size/);
 assert.match(centerTabsCss, /@container\s*\(max-width:\s*719px\)/);
 assert.match(centerTabsCss, /@container\s*\(max-width:\s*559px\)/);
 assert.match(centerTabsCss, /@container\s*\(max-width:\s*519px\)/);
-const cssRoot = postcss.parse(centerTabsCss);
 const topLevelSelectors = new Set(
   cssRoot.nodes
     .filter((node) => node.type === "rule")
@@ -165,9 +175,16 @@ assert.equal(browserLayout.ownedActionId(`${browserOwnerA}history`, browserOwner
 assert.equal(browserLayout.ownedActionId(`${browserOwnerB}history`, browserOwnerA), null);
 const folderOwnerA = browserLayout.bookmarkFolderActionPrefix(sensitivePane.menuOwnerId, "folder-1");
 const folderOwnerB = browserLayout.bookmarkFolderActionPrefix("pane-b", "folder-1");
+const folderOwnerOtherRoot = browserLayout.bookmarkFolderActionPrefix(sensitivePane.menuOwnerId, "folder-2");
 assert.equal(folderOwnerA.includes(sensitivePane.tabId), false);
-assert.equal(browserLayout.ownedActionId(`${folderOwnerA}0`, folderOwnerA), "0");
-assert.equal(browserLayout.ownedActionId(`${folderOwnerB}0`, folderOwnerA), null);
+assert.equal(
+  browserLayout.ownedActionId(`${folderOwnerA}bookmark:node-7`, folderOwnerA),
+  "bookmark:node-7",
+);
+assert.equal(browserLayout.ownedActionId(`${folderOwnerA}folder:node-8`, folderOwnerA), "folder:node-8");
+assert.equal(browserLayout.ownedActionId(`${folderOwnerA}empty:node-9`, folderOwnerA), "empty:node-9");
+assert.equal(browserLayout.ownedActionId(`${folderOwnerB}bookmark:node-7`, folderOwnerA), null);
+assert.equal(browserLayout.ownedActionId(`${folderOwnerOtherRoot}bookmark:node-7`, folderOwnerA), null);
 
 const historyGroupsCompiled = ts.transpileModule(historyGroupsSource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },

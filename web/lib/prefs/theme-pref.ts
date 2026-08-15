@@ -28,7 +28,8 @@ export const THEME_IDS = [
 export type ThemeId = (typeof THEME_IDS)[number];
 
 /** 存进 localStorage 的值：主题 id，或 'auto'（跟随系统）。 */
-export type ThemePref = ThemeId | "auto";
+export const THEME_PREFS = ["auto", ...THEME_IDS] as const;
+export type ThemePref = (typeof THEME_PREFS)[number];
 
 export const DEFAULT_THEME: ThemePref = "auto";
 
@@ -65,9 +66,19 @@ export function migrateLegacyTheme(): void {
 export function coerceTheme(v: string | null | undefined): ThemePref {
   if (!v) return DEFAULT_THEME;
   if (v === "auto") return "auto";
-  return (THEME_IDS as readonly string[]).includes(v)
-    ? (v as ThemeId)
-    : DEFAULT_THEME;
+  return isThemeId(v) ? v : DEFAULT_THEME;
+}
+
+export function isThemeId(value: string | null | undefined): value is ThemeId {
+  return typeof value === "string"
+    && (THEME_IDS as readonly string[]).includes(value);
+}
+
+/** Resolved theme already stamped on <html>; desktop child surfaces forward it. */
+export function activeThemeId(): ThemeId | undefined {
+  if (typeof document === "undefined") return undefined;
+  const value = document.documentElement.dataset.theme;
+  return isThemeId(value) ? value : undefined;
 }
 
 /** 把偏好解析成实际要打在 <html> 上的主题 id。 */
