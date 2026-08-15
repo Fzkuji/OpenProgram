@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Computer Use：BrowserContext 与 Page 控制设计</title>
+<title>Computer Use：MCP 与 Page 控制设计</title>
 <style>
   :root{
     --bg:#16150f;--panel:#1d1c14;--code:#12110b;--border:#302d21;
@@ -84,8 +84,8 @@
 </head>
 <body>
 <main class="wrap">
-  <h1>Computer Use：BrowserContext 与 Page 控制设计</h1>
-  <p class="sub">本页定义 OpenProgram 的 Computer Use 当前目标设计。运行模型采用 Playwright 的 <code>BrowserContext + Page</code>：Runtime 管理内置浏览器 profile 对应的 BrowserContext，每个 tab 或 popup 对应一个 Page；分屏 pane 只描述 Page 当前显示位置，不作为执行身份。每个 chat turn 自动获得与该会话关联的可见 Page，并在需要时直接观察和操作。第一阶段不控制整个操作系统，也不接管用户日常 Chrome；不启用 OCR、YOLO/检测器、component memory、vision memory 或自动学习。</p>
+  <h1>Computer Use：MCP 与 Page 控制设计</h1>
+  <p class="sub">本页定义 OpenProgram 内置浏览器的 Computer Use 目标设计。产品对象统一为 <code>BrowserContext + Page</code>：每个 tab 或 popup 对应一个 Page，分屏 pane 只描述 Page 当前显示位置，不作为执行身份。Agent 通过 OpenProgram 已有 MCP server 获得一个 <code>computer_use</code> 工具；Runtime 在 ComputerSession 开始时从 <code>Microsoft Playwright MCP</code> 与 <code>Claude-compatible Browser Control</code> 两种执行模式中选择一种，并把两者限制在同一个精确 Page capability 内。本文是实现前设计，不表示这两种模式已经接入。第一阶段不控制整个操作系统，不接入外部浏览器；不启用 OCR、YOLO/检测器、component memory、vision memory 或自动学习。</p>
   <span class="status">TARGET DESIGN · NOT IMPLEMENTATION EVIDENCE</span>
 
   <nav class="toc" aria-label="目录">
@@ -110,11 +110,13 @@
     <div class="decision">
       <p><strong>自动 Page Awareness：</strong>renderer 通过 <code>desktop.page.sync</code> 持续登记 Page identity、pane order 和 bounds；每次发送消息时，chat command 只引用该 registry 中的 Page ID 与 revision。Runtime 根据同一 revision 的真实 pane geometry 计算 Page 与 chat 的空间关系，再把 Page inventory 和 primary Page 的一个有界 DOM/ARIA preview 加入本 turn 上下文。模型从推理开始就知道当前有哪些相邻 Page、分别位于哪里、是否可读写，不依赖固定的“右侧”常量。</p>
       <p><strong>公开入口：</strong>Agent 只使用一个 <code>computer_use</code> 工具，通过 <code>list_pages → observe → act → verify</code> 四个 command 获取当前信息并执行单步动作。工具接收当轮 canonical <code>page_key</code> 或 Runtime 动态生成的 alias，不接收 <code>BrowserContext</code>、Playwright <code>Page</code> 对象、<code>window_id</code>、<code>tab_id</code>、CDP target 或任意 selector。现有 task-based <code>computer_use(task=...)</code> 是过渡实现，不是最终 Agent 接口。</p>
+      <p><strong>MCP 边界：</strong>复用现有 <code>openprogram mcp serve</code>，在其中增加一等 <code>computer_use</code> 工具，不新建第二个面向 Agent 的 MCP endpoint。<code>playwright_mcp</code> 模式可以把 Microsoft 官方 server 作为私有 child process 连接，但它不出现在 Agent 的 server/tool 列表中。MCP 负责标准工具发现、调用和 text/image result 传输；PageRegistry、Page access、lease、approval、verification 和 completion 仍由 OpenProgram Runtime 持有。Agent 不能通过 MCP 参数提交 window、tab、target、CDP endpoint 或执行模式。</p>
+      <p><strong>两种执行模式：</strong><code>computer_use.mode</code> 只有 <code>playwright_mcp</code> 与 <code>claude_compatible</code> 两个值，默认使用官方 Microsoft Playwright MCP。模式在首次 observe 创建 ComputerSession 时冻结，设置变更只影响下一 ComputerSession；同一 session 不并行运行两种 backend，也不在动作失败后自动换 backend 重试。</p>
       <p><strong>工具可用性：</strong>存在已验证、可观察 Page 时，dispatcher 必须在该 turn 主动加入 <code>computer_use</code> schema，不受 deferred 默认加载影响。简单页面问答使用 turn-start primary preview；布局变化、需要完整交互元素或任何页面动作时由 Agent 调用工具。用户显式关闭网页控制时，Runtime 只提供不含页面内容的 inventory descriptor，不提供 observe/act capability。</p>
-      <p><strong>浏览器实现：</strong>复用 Electron <code>WebContentsView</code> 和 <code>persist:webtabs</code> profile。Runtime 通过 CDP 获得对应的 Playwright <code>BrowserContext</code>，再把经过验证的 UI tab 精确映射到其中的 <code>Page</code>。一个 BrowserContext 可以包含多个 Page；只有登记在当前 compound group 且允许访问的 Page 才进入 Agent 上下文。</p>
+      <p><strong>浏览器实现：</strong>复用 Electron <code>WebContentsView</code> 和 <code>persist:webtabs</code> profile。<code>playwright_mcp</code> 连接内置浏览器 CDP endpoint，并把官方 Playwright MCP 的结构化 snapshot/ref 行为约束到 Runtime 已绑定的 exact Page；<code>claude_compatible</code> 使用 OpenProgram 自己的 WebContents/CDP bridge 复现公开可观察的页面读取、点击、输入、滚动、导航、截图和诊断行为。两种模式都不能自行枚举或切换到 Registry 外的 Page。</p>
       <p><strong>后台位置无关：</strong>页面读取和点击绑定 <code>window_id + tab_id + cdp_target_id</code>，通过该 tab 的 <code>WebContents</code>/CDP 执行，不使用桌面屏幕坐标、OS 鼠标事件或 <code>BrowserWindow.focus()</code>。OpenProgram 可以位于其他窗口后方，目标 pane 也不必拥有键盘焦点；普通 DOM/ARIA 操作不截图。</p>
       <p><strong>Harness 分工：</strong>第一阶段只复用 GUI Agent Harness 的 observe → verify → plan → act 思路；不启用 OCR、YOLO/检测器、component memory、vision memory、自动 component learning、多轮 crop 或局部放大，也不直接复用其进程全局 target、全屏截图、容错后继续执行、LLM 判定 success 和自动持久化 workflow 的行为。</p>
-      <p><strong>动作策略：</strong>ARIA/DOM 语义定位优先，PageService 在页面侧一次选取至多 120 个可见节点的 exact JS handles，并从这些 handle 直接生成 element ref 和 role/name 指纹；不得先创建整页所有 handles，也不得用旧 snapshot 的 index 再解析 live locator。页面中无关的推荐、计数或轮播变化不能使该 ref 自动失效。Page identity、navigation epoch、节点 detached/replacement 或目标 element identity 改变时才拒绝 DOM 动作。只有 canvas、无标签控件或 DOM 不可用时，才把一张 <code>scale=css</code> 的当前 viewport screenshot 直接交给紧邻的下一次多模态模型请求，由模型返回 viewport CSS pixel 坐标；图像像素与 Playwright mouse 坐标一一对应，截图发布前必须确认 capture 前后的 viewport、scroll 与 navigation 未变化，坐标权限只在携带该图像的单次请求内有效，请求返回或异常后立即撤销。中间没有 OCR、检测器或视觉记忆。每个写动作执行后都重新观察；禁止跨页面状态批量执行写动作。</p>
+      <p><strong>动作策略：</strong>ARIA/DOM 语义定位优先，PageService 在页面侧一次选取至多 120 个可见节点的 exact JS handles，并从这些 handle 直接生成 element ref 和 role/name 指纹；不得先创建整页所有 handles，也不得用旧 snapshot 的 index 再解析 live locator。页面中无关的推荐、计数或轮播变化不能使该 ref 自动失效。Page identity、navigation epoch、节点 detached/replacement 或目标 element identity 改变时才拒绝 DOM 动作。只有 canvas、无标签控件或 DOM 不可用时，才把一张 <code>scale=css</code> 的当前 viewport screenshot 直接交给紧邻的下一次多模态模型请求，由模型返回 viewport CSS pixel 坐标；图像像素与两种 backend 的 canonical CSS point 坐标一一对应，截图发布前必须确认 capture 前后的 viewport、scroll 与 navigation 未变化，坐标权限只在携带该图像的单次请求内有效，请求返回或异常后立即撤销。中间没有 OCR、检测器或视觉记忆。每个写动作执行后都重新观察；禁止跨页面状态批量执行写动作。</p>
       <p><strong>权限策略：</strong>Page access 开关按 chat + Page 关联保存；发送消息时，Runtime 把当时的 access revision 冻结到当前 turn binding。外层 <code>computer_use</code> 不再请求第二次通用工具批准，但这不等于授予所有动作：Runtime 仍先执行 hard constraints、authority、origin/action grant 和显式 deny/ask rules。登录、CAPTCHA、跨 origin、敏感提交和不可逆操作继续进入 <code>needs_user</code>，不得由模型自行确认。</p>
     </div>
 
@@ -123,19 +125,21 @@
       <table>
         <thead><tr><th>术语</th><th>所有者与生命周期</th><th>含义</th></tr></thead>
         <tbody>
-          <tr><td><strong>BrowserContext</strong></td><td>Playwright/Runtime；内置浏览器 profile connection</td><td>承载同一浏览会话中的多个 Page，保存 cookie、storage 和 profile 状态。它是 Runtime 对象，不进入模型参数。</td></tr>
-          <tr><td><strong>Page</strong></td><td>Playwright；从 tab/popup 创建到 close</td><td>一个 tab 或 popup 的可操作页面对象。Page identity 不由 left/right 位置决定；操作 Page 不要求先置前。</td></tr>
+          <tr><td><strong>BrowserContext</strong></td><td>Runtime；内置浏览器 profile connection</td><td>承载同一浏览会话中的多个 Page，保存 cookie、storage 和 profile 状态。Playwright 模式映射为 Playwright BrowserContext；Claude-compatible 模式映射为同一 Electron session/target 集合。它不进入模型参数。</td></tr>
+          <tr><td><strong>Page</strong></td><td>Runtime Registry；从 tab/popup 创建到 close</td><td>一个 tab 或 popup 的 canonical 可操作身份。Playwright 模式绑定 Playwright Page；Claude-compatible 模式绑定 exact WebContents/CDP target。Page identity 不由 left/right 位置决定，操作不要求先置前。</td></tr>
           <tr><td><strong>center tab / pane</strong></td><td>Desktop layout store</td><td>center tab 是 OpenProgram 中承载 chat 或内置网页的 UI tab；pane 是它在 split layout 中当前显示的区域，只提供 group、order 和 bounds。移动 pane 不会创建新的 Page。</td></tr>
           <tr><td><strong>compound group</strong></td><td>Desktop layout store</td><td>把 chat pane 与相邻 Page pane 组成同一可见布局；它决定 BrowserContext 中哪些 Page 可以进入该 chat 的候选集合。</td></tr>
           <tr><td><strong>Page Context</strong></td><td>Runtime；单个 provider request/turn</td><td>经过校验的 Page inventory、alias、capability 和有界 preview。它是模型开始推理前的上下文快照，不是 Playwright BrowserContext。</td></tr>
           <tr><td><strong>turn binding</strong></td><td>Runtime；单个 provider request</td><td><code>PageService.snapshot()</code> 在模型调用前把每个可访问 Page candidate 定向解析为精确 BrowserContext/Page/window/renderer/tab/target；模型只看到 key/alias，不看到 binding。</td></tr>
           <tr><td><strong>ComputerSession binding</strong></td><td>Runtime；单个 ComputerSession</td><td>首次 observe 校验 source provider request 的 turn binding 后，把同一个精确 Page 固定到 ComputerSession。后续 provider request 不再依赖 alias map，也不重新选择 Page。</td></tr>
+          <tr><td><strong>MCP Page capability</strong></td><td>Runtime；单个 turn binding / ComputerSession</td><td>服务端生成的 opaque capability，绑定 chat、Page identity、revisions、access 和 backend mode。它作为 MCP 调用的服务端上下文附加，不是模型可写参数；MCP backend 只能操作该 capability 指向的 Page。</td></tr>
+          <tr><td><strong>execution mode</strong></td><td>Runtime settings；ComputerSession 创建时冻结</td><td><code>playwright_mcp</code> 或 <code>claude_compatible</code>。模式只决定 observation/action 的内部执行方式，不改变公开 schema、Page identity、权限或 verification 规则。</td></tr>
           <tr><td><strong>Page access / action grant</strong></td><td>Runtime policy</td><td>Page access 是按 chat + Page 关联保存的可见性与读取开关；turn binding 冻结其 revision。action grant 是按 origin、风险和动作判断的写权限，不能由 Page access 自动扩大。</td></tr>
           <tr><td><strong>ComputerSession</strong></td><td>Runtime；一个 user turn 内的一次 Computer Use 序列</td><td>跨多个 provider request/tool call 承载 <code>observe → act → observe → verify</code>，是 target、frame registry、budget、deadline、artifact、approval 和 cancel 的唯一所有者；不能跨 user turn 复用。目标 command API 没有第二个 run 对象；兼容 task wrapper 每次调用只创建一个 ComputerSession。</td></tr>
           <tr><td><strong>lease</strong></td><td>PageBroker；单个 read/write command</td><td>每次 Page 操作前取得的使用权。写 lease 对同一 Page 排他；command 结束即释放，ComputerSession 的 Page binding 继续保留到 sequence 终止。</td></tr>
           <tr><td><strong>popup-attribution lock</strong></td><td>PageBroker；同一 exact Page 上单个 ComputerSession</td><td>首次写 action 安装 popup watch 前取得，并在该 ComputerSession 的后续 action 之间保留。同一 Page 跨 ComputerSession 排他；尚未生成 install outbound record 的 reserved lock 可用 <code>not_installed</code> 证明释放；install 进入发送阶段后，只有 install 未应用的已校验 ack、close-drained，或 main-side sweep/expiry/target teardown 已确认删除 watch 后才释放。replace 未应用只表示旧 watch 仍 active，不能释放 lock。它不替代单 command 的 read/write lease。</td></tr>
           <tr><td><strong>preview</strong></td><td>Runtime；单个 turn</td><td>在首个模型 token 前提供的低成本结构化页面摘录，不含 screenshot 或 element refs。</td></tr>
-          <tr><td><strong>Observation</strong></td><td>PageService；单个 frame</td><td>从绑定的 Playwright Page 捕获的完整受限 DOM/ARIA/refs 状态；每个写动作后必须更新。</td></tr>
+          <tr><td><strong>Observation</strong></td><td>PageService；单个 frame</td><td>由当前 backend 从绑定的 exact Page 捕获并归一化的完整受限 DOM/ARIA/refs 状态；每个写动作后必须更新。</td></tr>
           <tr><td><strong>turn / provider request / command</strong></td><td>Chat / dispatcher / tool runner</td><td>turn 是一条用户消息及其后续 tool loop；provider request 是该 turn 的一次模型调用；command 是一次 <code>computer_use</code> tool call。一个 ComputerSession 可以跨该 turn 内多个 provider request 和 command。</td></tr>
         </tbody>
       </table>
@@ -176,6 +180,18 @@
         <h3>布局与 Agent 工具接口仍是固定 baseline</h3>
         <p>当前 renderer 只提交一个旧 <code>surface</code> ref，并把 <code>region</code>、chip 文案和工具 enum 固定为 <code>right</code>；公开 <code>computer_use</code> 仍接收自由文本 <code>task</code> 并启动内部 planner。浏览器 pane 位于左侧时仍可能按 tab identity 被控制，但位置语义错误；主 Agent 也没有可独立调用的 list/observe/act/verify 契约。</p>
         <p>证据：<code>web/lib/desktop-bridge.ts</code> 的 <code>TurnSurfaceRef</code>/<code>surfaceRefForChat</code>；<code>web/components/chat/composer/surface-chip.tsx</code>；<code>agentic_functions/browser_agent/__init__.py</code>。</p>
+      </article>
+      <article class="card change">
+        <span class="tag">DESIGN GAP</span>
+        <h3>MCP server 尚未提供 Page-scoped Computer Use</h3>
+        <p>仓库已有 authenticated local stdio MCP server、client adapter、通用 <code>tool_call</code> 和 text/image content 转换，但当前固定 MCP tool 列表中没有一等 <code>computer_use</code>，通用调用也没有携带当前 turn 的 opaque Page capability。直接把现有 Runtime tool 暴露出去不能证明它只操作当前 split Page。</p>
+        <p>证据：<code>openprogram/mcp_server/server.py</code>、<code>contracts.py</code>、<code>service.py</code>、<code>openprogram/mcp/client.py</code> 与 <code>adapter.py</code>。</p>
+      </article>
+      <article class="card change">
+        <span class="tag">NOT IMPLEMENTED</span>
+        <h3>两种执行模式仍是目标设计</h3>
+        <p>尚未验证官方 <code>@playwright/mcp</code> 连接内置 Electron CDP 后能否被安全限制到一个 exact Page；也没有实现 Claude-compatible WebContents/CDP bridge、动作指示器或共享 parity suite。完成隔离 spike 前不能把上游 Playwright MCP 直接作为产品 backend。</p>
+        <p>本文只确定接口、选择规则和出口条件，不把设计结论写成当前能力。</p>
       </article>
       <article class="card good">
         <span class="tag">BASELINE AVAILABLE</span>
@@ -220,7 +236,7 @@
 
   <section id="reference">
     <h2>03 官方能力与 Playwright 对标</h2>
-    <p>产品层比较内置浏览器、连接用户日常浏览器的扩展和截图/动作 API；执行对象直接采用 Playwright 的 BrowserContext 与 Page 术语。</p>
+    <p>本节只提取可用于 OpenProgram 内置浏览器的公开能力。外部浏览器 extension 仅用于理解行为，不属于本设计的目标运行环境；执行对象继续采用 BrowserContext 与 Page 术语。</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>官方产品</th><th>目标与 profile</th><th>交互与权限</th><th>对 OpenProgram 的结论</th></tr></thead>
@@ -230,6 +246,12 @@
             <td>一个 BrowserContext 是独立浏览会话，可包含多个 Page；一个 Page 对应 tab 或 popup。</td>
             <td>通过 Page locator、DOM、ARIA、keyboard、mouse 和 screenshot 操作；Page 不需要先 <code>bringToFront()</code>。</td>
             <td class="yes">直接采用为 OpenProgram 浏览器执行模型；pane 位置只用于发现 Page。</td>
+          </tr>
+          <tr>
+            <td><strong>Microsoft Playwright MCP</strong></td>
+            <td>官方 MCP server 基于 Playwright，通过 accessibility snapshot、稳定 element ref 和浏览器动作提供结构化控制；支持连接现有 Chromium CDP endpoint。</td>
+            <td>默认工具面包含 core、navigation、input、tabs 等能力，也可选 vision/devtools。官方截图工具明确不用于后续动作定位，动作应优先依赖 snapshot/ref。</td>
+            <td class="partial">优先采用官方实现，但必须先证明其在多 Page Electron context 中只能访问 Runtime 授权的 exact Page；不能原样暴露 tabs、eval、storage、files 等扩大权限的工具。</td>
           </tr>
           <tr>
             <td><strong>OpenAI 内置 Browser</strong></td>
@@ -259,7 +281,7 @@
             <td><strong>Claude Code with Chrome</strong></td>
             <td>扩展连接已登录 Chromium；browser task 新开 tab，并实时可见。</td>
             <td>站点权限来自扩展；plan mode 中 read-only 无提示，click/type/navigation 等写操作提示；登录或 CAPTCHA 暂停给用户。</td>
-            <td class="partial">采用 read/write 分类和人工接管；profile 接入延后。</td>
+            <td class="partial">只复现其公开可观察的页面控制行为和人工接管语义；不接入外部 profile，不声称兼容其未公开协议或内部 locator 算法。</td>
           </tr>
           <tr>
             <td><strong>Anthropic Computer Use API</strong></td>
@@ -270,7 +292,7 @@
         </tbody>
       </table>
     </div>
-    <p class="note">官方来源集中列在本页末尾。OpenAI 当前文档明确说明内置 Browser 不在 Codex CLI 或 IDE extension 中提供，而是在 ChatGPT web/desktop 产品面中提供；Computer Use plugin 可以在 desktop app 的 Codex 面中启用。因此这里参考的是 Codex 所在桌面产品面的 Browser/Computer Use 交互，不是假设 Codex CLI 自带浏览器。OpenAI 同时明确区分独立 Browser 与 Chrome profile；Claude Code Desktop 进一步明确 clean Browser profile、本地自动验证、外部站点授权和 Browser/Chrome 的选择规则。</p>
+    <p class="note">官方来源集中列在本页末尾。Microsoft Playwright MCP 的 CDP 连接能力不等于 exact Page 隔离：上游 server 可以看到连接中多个 context/page，因此是否直接采用上游运行时必须由双 Page 隔离测试决定。Claude Code 浏览器插件的完整源码、私有通信协议和具体定位算法没有公开；本文的 Claude-compatible 模式是基于官方文档与可观察行为编写的 clean-room 功能规格，不宣称二进制、协议或内部实现兼容。</p>
   </section>
 
   <section id="choices">
@@ -293,6 +315,28 @@
       </article>
     </div>
 
+    <h3>执行模式与选择规则</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>设置值</th><th>实现来源</th><th>Page 数据面</th><th>必须满足的限制</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong><code>playwright_mcp</code></strong><br><span class="yes">默认</span></td>
+            <td>优先使用 Microsoft 官方 <code>@playwright/mcp</code>，通过 CDP 连接现有内置浏览器。</td>
+            <td>accessibility snapshot/ref、DOM/ARIA、click/type/press/scroll/navigate；视觉观察是 OpenProgram 的受限扩展。</td>
+            <td>上游 tools 经过 allowlist；Page 选择由 Runtime capability 固定；不能访问 chat UI、其他 tab、其他 window 或 Registry 外 Page。若官方运行时无法证明此隔离，则改用相同公开 tool contract 驱动现有 Playwright PageService，不分叉上游源码。</td>
+          </tr>
+          <tr>
+            <td><strong><code>claude_compatible</code></strong></td>
+            <td>OpenProgram clean-room bridge，只依据 Anthropic 官方文档与公开可观察行为。</td>
+            <td>exact WebContents/CDP target 上的结构化页面读取、click/type/press/scroll/navigate、单张 viewport screenshot、受限 console/network diagnostics 和可见动作指示。</td>
+            <td>不复制或推断未公开源码；不声称 Claude 私有协议兼容；仍使用同一 PageRegistry、frame、permission、single-action、verification 和 screenshot 规则。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note"><strong>选择规则：</strong>设置只影响新建 ComputerSession。session 建立后 mode 不可变；两种 backend 不同时执行，不做 shadow write，不因单次失败自动切换。失败必须返回当前 backend 的结构化 reason code，避免重复点击、重复提交或跨 backend 使用旧 frame/ref。</p>
+
     <h3>第一阶段固定的低成本 baseline</h3>
     <p>第一阶段只有下面这一套固定执行路径，不建立 <code>enable_ocr</code>、<code>enable_yolo</code>、<code>vision_memory_mode</code> 等配置，也不加载对应模块。只有 baseline 的失败数据证明缺少某项能力时，才单独评估是否增加。</p>
     <div class="table-wrap">
@@ -314,8 +358,12 @@
     <h2>05 目标架构与信任边界</h2>
     <div class="grid3">
       <article class="card good"><span class="tag">TURN INPUT</span><h3>Page Context</h3><p>每次发送消息时由 <code>PageService.snapshot(chat_session_id)</code> 生成。它包含已关联 Page inventory、根据实际 pane geometry 计算的 alias、capability，以及 primary Page 的一个有界 preview；不是 renderer 拼接的固定 prompt，也不是长期 memory。</p></article>
-      <article class="card change"><span class="tag">RUNTIME AUTHORITY</span><h3>BrowserContext + Page Registry</h3><p>Runtime 从 Playwright BrowserContext 获取真实 Page，再以 window、renderer、compound group 和 layout revision 校验 UI 关联。只有同时存在于 BrowserContext 与 Registry 的 Page 才能进入模型上下文或成为工具目标。</p></article>
-      <article class="card"><span class="tag">TOOL EXECUTION</span><h3>Playwright Page</h3><p>PageService 直接调用绑定 Page 的 locator、DOM、ARIA、keyboard、mouse 和 screenshot 能力。第一阶段不增加 PageAdapter、adapter factory、插件配置或后台服务。</p></article>
+      <article class="card change"><span class="tag">RUNTIME AUTHORITY</span><h3>BrowserContext + Page Registry</h3><p>Runtime 以 window、renderer、compound group、tab/target 和 revision 校验 UI 关联，并生成 opaque MCP Page capability。只有同时存在于内置浏览器连接与 Registry 的 Page 才能进入模型上下文或成为工具目标。</p></article>
+      <article class="card"><span class="tag">TOOL EXECUTION</span><h3>MCP Mode Gateway</h3><p>现有 OpenProgram MCP server 暴露唯一 canonical <code>computer_use</code>。Gateway 读取服务端 capability 和 session-frozen mode，再调用官方 Playwright MCP 或 Claude-compatible bridge；模型参数与 tool result 不随 mode 改变。</p></article>
+    </div>
+    <div class="grid2">
+      <article class="card good"><span class="tag">MODE · PLAYWRIGHT MCP</span><h3>官方优先，隔离后采用</h3><p>以固定版本使用 Microsoft 官方 package，通过 <code>cdpEndpoint</code> 连接内置浏览器。只允许 snapshot/ref 和本设计列出的动作；Runtime 在每次调用前后复核 exact Page identity。上游直接运行必须先通过“同一 context 两个 web Page + 一个 chat Page”的越权测试。</p></article>
+      <article class="card change"><span class="tag">MODE · CLAUDE-COMPATIBLE</span><h3>公开行为的 clean-room 实现</h3><p>Bridge 绑定 exact Electron WebContents/CDP target，提供结构化页面状态、动作、单张截图、受限 console/network 信息和动作指示。动作指示只帮助用户看见当前操作，不作为模型定位数据，也不能替代 frame/ref 校验。</p></article>
     </div>
     <div class="diagram">
       <svg viewBox="0 0 1160 430" role="img" aria-label="OpenProgram Computer Use 目标架构">
@@ -328,9 +376,9 @@
         <text x="24" y="54" fill="#8d8876" font-size="12">模型不持有 CDP、WebSocket、文件系统或 browser profile 权限。</text>
 
         <rect x="24" y="92" width="190" height="92" rx="10" fill="#151b25" stroke="#4f8ef7"/>
-        <text x="119" y="120" fill="#4f8ef7" text-anchor="middle" font-size="14" font-weight="700">computer_use</text>
-        <text x="119" y="145" fill="#bebaa8" text-anchor="middle" font-size="11">command + page + frame</text>
-        <text x="119" y="165" fill="#8d8876" text-anchor="middle" font-size="11">当轮动态工具</text>
+        <text x="119" y="120" fill="#4f8ef7" text-anchor="middle" font-size="14" font-weight="700">OpenProgram MCP</text>
+        <text x="119" y="145" fill="#bebaa8" text-anchor="middle" font-size="11">computer_use + Page capability</text>
+        <text x="119" y="165" fill="#8d8876" text-anchor="middle" font-size="11">一个公开浏览器工具</text>
 
         <rect x="270" y="82" width="260" height="112" rx="10" fill="#221d12" stroke="#d4843a"/>
         <text x="400" y="111" fill="#d4843a" text-anchor="middle" font-size="14" font-weight="700">ComputerUseRunner</text>
@@ -345,10 +393,10 @@
         <text x="708" y="175" fill="#8d8876" text-anchor="middle" font-size="11">不启动嵌套 planner</text>
 
         <rect x="886" y="82" width="250" height="112" rx="10" fill="#111d1a" stroke="#2db3d5"/>
-        <text x="1011" y="111" fill="#2db3d5" text-anchor="middle" font-size="14" font-weight="700">PageService</text>
-        <text x="1011" y="137" fill="#bebaa8" text-anchor="middle" font-size="11">observe · act · verify</text>
-        <text x="1011" y="158" fill="#bebaa8" text-anchor="middle" font-size="11">ARIA/DOM → direct image point</text>
-        <text x="1011" y="179" fill="#8d8876" text-anchor="middle" font-size="11">无通用 eval 接口</text>
+        <text x="1011" y="111" fill="#2db3d5" text-anchor="middle" font-size="14" font-weight="700">MCP Mode Gateway</text>
+        <text x="1011" y="137" fill="#bebaa8" text-anchor="middle" font-size="11">playwright_mcp | claude_compatible</text>
+        <text x="1011" y="158" fill="#bebaa8" text-anchor="middle" font-size="11">session-frozen · exact Page only</text>
+        <text x="1011" y="179" fill="#8d8876" text-anchor="middle" font-size="11">无自动跨模式重试</text>
 
         <line x1="214" y1="138" x2="266" y2="138" stroke="#4f8ef7" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
         <line x1="530" y1="116" x2="582" y2="116" stroke="#d4843a" stroke-width="1.8" marker-end="url(#arrow-orange)"/>
@@ -368,9 +416,9 @@
         <text x="708" y="362" fill="#8d8876" text-anchor="middle" font-size="11">WebSocket + Electron IPC</text>
 
         <rect x="886" y="254" width="250" height="132" rx="10" fill="#121d12" stroke="#5aad4e"/>
-        <text x="1011" y="283" fill="#5aad4e" text-anchor="middle" font-size="14" font-weight="700">BrowserContext + Page</text>
+        <text x="1011" y="283" fill="#5aad4e" text-anchor="middle" font-size="14" font-weight="700">PageService + exact Page</text>
         <text x="1011" y="308" fill="#bebaa8" text-anchor="middle" font-size="11">persist:webtabs profile</text>
-        <text x="1011" y="330" fill="#bebaa8" text-anchor="middle" font-size="11">Page ↔ WebContents/CDP target</text>
+        <text x="1011" y="330" fill="#bebaa8" text-anchor="middle" font-size="11">Playwright Page | WebContents/CDP</text>
         <text x="1011" y="352" fill="#bebaa8" text-anchor="middle" font-size="11">DOM + ARIA; screenshot on demand</text>
         <text x="1011" y="373" fill="#8d8876" text-anchor="middle" font-size="11">无需 bringToFront()</text>
 
@@ -379,11 +427,11 @@
         <line x1="830" y1="320" x2="882" y2="320" stroke="#5aad4e" stroke-width="1.8" marker-end="url(#arrow-green)"/>
         <line x1="1011" y1="250" x2="1011" y2="198" stroke="#2db3d5" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
       </svg>
-      <div class="legend"><strong>信任边界：</strong>LLM 先收到经过校验和裁剪的 Page Context，调用工具后再收到 Observation，并只返回候选 Action。Runtime 校验 binding、Page identity、frame、origin、权限和 cancel 后才能执行。Playwright BrowserContext/Page 对象、CDP endpoint 和客户端声明的原始 target id 不进入模型上下文。</div>
+      <div class="legend"><strong>信任边界：</strong>LLM 先收到经过校验和裁剪的 Page Context，调用同一个 MCP 工具后再收到 Observation，并只返回候选 Action。Runtime 校验 binding、MCP Page capability、session mode、Page identity、frame、origin、权限和 cancel 后才能执行。Playwright BrowserContext/Page 对象、WebContents、CDP endpoint、mode 和客户端声明的原始 target id 不进入模型参数。</div>
     </div>
 
     <div class="grid2">
-      <article class="card"><h3>OpenProgram Runtime 拥有</h3><p>BrowserContext connection、Page discovery、layout relation、turn preview、tool availability、Page selection、Page lease、approval、action validation、CDP attachment、artifact lifecycle、cancel、timeout、completion、audit events。</p></article>
+      <article class="card"><h3>OpenProgram Runtime 拥有</h3><p>MCP Page capability、execution mode、BrowserContext connection、Page discovery、layout relation、turn preview、tool availability、Page selection、Page lease、approval、action validation、CDP attachment、artifact lifecycle、cancel、timeout、completion、audit events。</p></article>
       <article class="card"><h3>GUI Agent Harness 可复用</h3><p>复用 action/observation 结构、动作后验证规则和失败分类，不把 Harness 的内部 LLM planner 放在主 Agent 与工具之间。第一阶段不调用其 OCR、检测、component/vision memory、自动学习或 iterative zoom。</p></article>
     </div>
   </section>
@@ -395,10 +443,33 @@
         <thead><tr><th>调用方</th><th>稳定接口</th><th>职责</th><th>不得暴露</th></tr></thead>
         <tbody>
           <tr><td>主 Chat Agent</td><td><code>computer_use(command, page/session, detail/frame/action/assertion)</code></td><td>发现、观察、单步动作、确定性验证</td><td>window/tab/target/WebSocket/selector</td></tr>
+          <tr><td>OpenProgram MCP server</td><td><code>tools/list</code> + <code>tools/call(computer_use)</code></td><td>标准工具发现、调用、取消和 text/image content 传输；附加服务端 Page capability</td><td>未经绑定的 Runtime tool、客户端伪造 capability、backend 原始工具全集</td></tr>
           <tr><td>Dispatcher</td><td><code>PageService.snapshot(...)</code></td><td>生成 turn inventory、primary preview 和动态 tool schema</td><td>未经校验的 renderer 文本与 identity</td></tr>
           <tr><td>Computer Use tool</td><td><code>PageRegistry.resolve(...)</code> + <code>PageBroker</code></td><td>把当轮 key/alias 解析为 turn binding，再取得 command lease</td><td>跨 turn 最新 alias、任意 active tab</td></tr>
-          <tr><td>Page Broker</td><td><code>desktop.page.resolve/resolved/invalidate</code></td><td>把 registry Page 定向解析为 BrowserContext 中的 exact Playwright Page</td><td>广播选择、第一个 responder</td></tr>
-          <tr><td>Runner</td><td><code>PageService.observe/act/verify</code></td><td>在已租用的 Playwright Page 上执行数据面操作</td><td>BrowserContext/Page handle、扩大 capability、绕过 approval</td></tr>
+          <tr><td>Page Broker</td><td><code>desktop.page.resolve/resolved/invalidate</code></td><td>把 registry Page 定向解析为 exact Page capability</td><td>广播选择、第一个 responder</td></tr>
+          <tr><td>MCP Mode Gateway</td><td><code>ComputerBackend.observe/act/diagnostics</code></td><td>按 session-frozen mode 调用一种 backend，并归一化结果</td><td>切换 mode、跨 Page fallback、扩大上游 tool capability</td></tr>
+          <tr><td>Runner</td><td><code>PageService.observe/act/verify</code></td><td>在已租用的 exact Page 上执行数据面操作和确定性验证</td><td>BrowserContext/Page/WebContents handle、扩大 capability、绕过 approval</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>MCP transport 与模式配置</h3>
+    <pre>{
+  "computer_use": {
+    "mode": "playwright_mcp"
+  }
+}</pre>
+    <p>这是唯一新增设置；另一个合法值为 <code>claude_compatible</code>。不增加 <code>enable_playwright</code>、<code>enable_claude</code>、自动 fallback、双写、shadow execution 或每个能力独立开关。设置由 Runtime 读取，不能出现在 Agent tool 参数中。首次 observe 创建 ComputerSession 时记录 <code>execution_mode + backend_version</code>，直至 session 终态保持不变。</p>
+    <p>复用现有 MCP server，而不是把 upstream Playwright MCP 直接注册给每个模型。现有 session/prompt/tool 等非浏览器 MCP tools 保持不变；浏览器控制只新增一个 OpenProgram <code>computer_use</code>，不增加第二组 upstream/Claude browser tools。Dispatcher 在生成 provider tool call envelope 后创建一次性 <code>page_context_token</code>，并在模型参数之外由第一方 MCP client adapter 写入 <code>params._meta.openprogram/page_context_token</code>；server 消费 token 后从服务端映射取得 <code>mcp_page_capability</code>，再调用 Mode Gateway。token 至少绑定 <code>mcp_connection_id + chat_session_id + owner_turn_id + source_provider_request_id + tool_call_id + registry_page_id + expected revisions + access_revision</code>，只能使用一次；首次 observe 成功后由 ComputerSession capability 继续承载 exact target。缺少 token、客户端在 arguments 中提交同名字段、跨连接重放或 capability 与 page alias 不一致时，在 backend 调用前返回 <code>invalid_capability</code>。普通第三方 MCP client 可以发现工具，但没有第一方 token 时不能读取或操作 Page。</p>
+    <p><code>playwright_mcp</code> 模式优先把固定版本的 Microsoft 官方 package 作为 Runtime 私有 child process 启动；Mode Gateway 作为该 child 的 MCP client，通过 stdio 调用 allowlisted snapshot/ref/action，child 再使用 OpenProgram 提供的 CDP endpoint。child 的 lifecycle、版本、capabilities 和 stderr 由 Runtime 管理，不把其 server 或 tool list 注册给 Agent。必须先验证 upstream runtime 能在同一 BrowserContext 的多个 Page 中接受外部 exact-Page 约束；若做不到，不修改或复制上游私有实现，而是在 OpenProgram MCP server 内实现其公开 contract adapter，以现有 Playwright PageService 执行同一 command。两条实现路径的选择是 build-time integration decision，不是用户可见的第三种 mode。</p>
+    <p><code>claude_compatible</code> 模式直接在已绑定 WebContents/CDP target 上实现公开功能，不需要安装 Claude extension。它可以返回有界 console error 与 network failure 诊断，并在用户可见页面上显示短暂 action cursor/target outline；诊断和指示不改变 canonical Observation，也不能形成 element ref、截图坐标或完成证据。登录和 CAPTCHA 返回 <code>needs_user</code>。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Canonical command</th><th>Playwright MCP mode</th><th>Claude-compatible mode</th><th>共同的 Runtime 处理</th></tr></thead>
+        <tbody>
+          <tr><td><strong>list_pages</strong></td><td>不调用 upstream tabs；只读 PageRegistry</td><td>不枚举 WebContents；只读 PageRegistry</td><td>返回当前 turn 已授权 inventory</td></tr>
+          <tr><td><strong>observe</strong></td><td>allowlisted accessibility snapshot/ref；visual 时由 OpenProgram 捕获一张 viewport PNG</td><td>CDP DOM/accessibility snapshot 与 exact node handle；visual 时捕获一张 viewport PNG</td><td>统一 limits、redaction、frame id、untrusted 标记</td></tr>
+          <tr><td><strong>act</strong></td><td>把一个 canonical Action 映射为一个 allowlisted upstream action</td><td>把同一个 Action 映射为一次 bound WebContents/CDP action</td><td>先校验 capability/lease/frame/policy，后使旧 frame 失效</td></tr>
+          <tr><td><strong>verify</strong></td><td>不委托 upstream completion</td><td>不委托 bridge completion</td><td>只由 PageService 对新 Observation 执行确定性 assertion</td></tr>
         </tbody>
       </table>
     </div>
@@ -448,7 +519,7 @@
     ]
   }
 }</pre>
-    <p>本 schema 是唯一 canonical source。主 Agent 不再为 discovery、DOM、ARIA、click 和 verify 分别加载多个顶层工具。provider 支持 <code>oneOf</code> 时直接发送该 schema；不支持时，provider adapter 只把同一组完整字段与 description 平铺，并保留 <code>command</code> enum，Runtime 继续用 canonical schema 校验，不能把 <code>action</code> 降为无字段 object。<code>list_pages</code> 不需要 page/session；首次 <code>observe</code> 需要 page，并创建返回一个 opaque <code>computer_session_id</code>；后续 <code>observe</code> 只需要 session；<code>act</code> 需要 session 和 action；<code>verify</code> 需要 session、顶层 frame 和 assertion。session 建立后不得同时再传 page。多余或缺失字段在 Page resolve 前返回 <code>invalid_arguments</code>。</p>
+    <p>本 schema 是唯一 canonical source，也是两种执行模式共同的 MCP tool contract。主 Agent 不再为 discovery、DOM、ARIA、click 和 verify 分别加载多个顶层工具，也不直接看到上游 Playwright MCP 的多个 browser tools。provider 支持 <code>oneOf</code> 时直接发送该 schema；不支持时，provider adapter 只把同一组完整字段与 description 平铺，并保留 <code>command</code> enum，Runtime 继续用 canonical schema 校验，不能把 <code>action</code> 降为无字段 object。<code>list_pages</code> 不需要 page/session；首次 <code>observe</code> 需要 page，并创建返回一个 opaque <code>computer_session_id</code>；后续 <code>observe</code> 只需要 session；<code>act</code> 需要 session 和 action；<code>verify</code> 需要 session、顶层 frame 和 assertion。session 建立后不得同时再传 page。多余或缺失字段在 Page resolve 前返回 <code>invalid_arguments</code>。</p>
     <p><code>element_present</code> 不接受 selector 或模糊 DOM 查询；它按当前 observation 的 accessibility role 和 accessible name 匹配，<code>match=exact</code> 为默认推荐，<code>contains</code> 仅用于页面名称包含动态计数等已知情况。</p>
     <p><code>page</code> 只能使用 Runtime 在当前 Page Context 中提供的 canonical key 或动态 alias，例如 <code>p1</code>、<code>left</code>、<code>focused</code> 或 <code>page:1</code>；provider 实际收到的 schema 可以把当前可用值展开为 enum。首次 observe 必须显式提交该值；Agent 可以直接提交 Page Context 中的 <code>primary_page_key</code>，但 Runtime 不根据省略字段隐式选择目标。未知、缺失、过期或没有唯一映射的值返回 <code>ambiguous_page</code>。<code>browser_context_id</code>、Playwright Page handle、<code>window_id</code>、<code>tab_id</code>、<code>cdp_target_id</code>、CSS selector 不成为 LLM 参数。</p>
     <p><code>list_pages</code> 读取当前 Registry 并返回最新 inventory；它不修改产生本次调用的旧 provider request/alias map，tool result 之后的下一次 provider request 会获得新 revision 的 Page Context。首次 <code>observe(page=...)</code> 使用 source provider request 的 immutable alias map 和 turn binding 创建 ComputerSession；若此时 context 的 layout/page/access revision 或 Page identity 已过期，则在创建 ComputerSession 前返回 <code>page_context_stale</code>、<code>page_access_disabled</code> 或 <code>target_lost</code>。session 建立后，后续 command 只使用 session id，focus、其他 pane 或不改变目标成员身份的 layout 更新不会使 session 失效；目标被隐藏、移出 group、转移、关闭或 target identity 改变时返回 <code>target_lost</code>。这些失败都不自动迁移 session。<code>observe(detail="summary")</code> 返回有界文本与 landmark；<code>interactive</code> 额外返回 ARIA snapshot 和 element refs；<code>visual</code> 只在任务本身要求视觉判断、canvas 或 interactive observation 无法定位时返回一张当前 viewport screenshot。</p>
@@ -481,7 +552,24 @@
     <p>各 command 只填充相关字段：list 返回 <code>pages[]</code> 而不是单个 page；observe 返回 observation；act 返回 action_result 并在页面可能变化时设置 <code>observe_required=true</code>；verify 返回 verification。失败和取消也使用同一 envelope，禁止用异常字符串替代可分支的 reason code；取消固定返回 <code>ok=false</code>、<code>status=cancelled</code>、<code>reason_code=cancelled</code>，并在返回前终止待执行动作、释放 lease/approval、关闭 ComputerSession 和删除未保留 artifact。title、正文、ARIA、console 和 screenshot 都继续标记为不可信页面数据。</p>
 
     <h3>Runtime 内部接口</h3>
-    <pre>Playwright BrowserContext + Page (Runtime-only)
+    <pre>OpenProgramMcpServer
+  list_tools(authenticated_context) -&gt; existing_tools[] + [computer_use]
+  consume_page_context_token(mcp_connection_id, token) -&gt; McpPageCapability
+  call_computer_use(arguments, server_page_capability) -&gt; McpContent[]
+
+ComputerBackend
+  observe(bound_page, detail) -&gt; BackendObservation
+  act(bound_page, canonical_action) -&gt; BackendActionResult
+  diagnostics(bound_page, limits) -&gt; optional BackendDiagnostics
+
+PlaywrightMcpBackend
+  upstream_version, allowed_capabilities
+  bind(exact_page_capability) -&gt; BoundPlaywrightMcpPage
+
+ClaudeCompatibleBackend
+  bind(exact_webcontents_target) -&gt; BoundClaudePage
+
+Playwright BrowserContext + Page (Runtime-only)
   BrowserContext.pages() -&gt; Page[]
   BrowserContext.on("page")
   leased Page.on("popup")
@@ -507,10 +595,10 @@ PageBroker
 
 PageService
   snapshot(chat_session_id, provider_request_id) -&gt; PageContext
-  observe(page_lease_id, detail) -&gt; Observation
-  act(page_lease_id, action) -&gt; ActionResult
+  observe(page_lease_id, execution_mode, detail) -&gt; Observation
+  act(page_lease_id, execution_mode, action) -&gt; ActionResult
   verify(page_lease_id, assertion, expected_frame_id) -&gt; VerificationResult</pre>
-    <p>第一阶段直接复用 Playwright BrowserContext 和 Page，不实现 PageAdapter、adapter factory、插件配置或后台服务。<code>PageService</code> 同时服务 turn context 和工具调用，因此 chip、模型 inventory、alias 和实际 Playwright Page 不会各自维护一套判断。terminal、文件预览和其他非浏览器对象不属于本协议；以后确有需求时另行设计，不提前扩展 Page 的含义。</p>
+    <p>只实现上面两个固定 backend，不增加通用 plugin factory、第三种 backend、任意工具映射 DSL 或独立常驻 orchestration 进程。<code>ComputerBackend</code> 只隔离上游/bridge 的数据面差异；PageRegistry、PageService、policy、verification 和 result envelope 仍各有一个实现。<code>PageService</code> 同时服务 turn context 和工具调用，因此 chip、模型 inventory、alias 和实际 Page 不会各自维护一套判断。terminal、文件预览和其他非浏览器对象不属于本协议。</p>
 
     <h3>Desktop/Runtime 跨进程接口</h3>
     <pre>desktop.page.sync (Electron/renderer → Runtime)
@@ -561,12 +649,12 @@ page.access.update (authenticated UI → Runtime)
 page.access.updated (Runtime → authenticated UI)
   request_id, ok, chat_session_id, registry_page_id,
   access, actual_access_revision, reason_code</pre>
-    <p>这些是桌面控制面接口，不是 LLM tools。所有消息都绑定已认证的 originating WebSocket，request/reply 必须校验 request、connection、window、registry Page、tab、CDP target 和全部 revision；Runtime 不广播请求，也不接受第一个返回者。<code>desktop.page.resolve</code> 中的 <code>registry_page_id</code> 来自 Runtime 已校验的 Page candidate，renderer 用它唯一查找 center tab。Runtime 再在已连接的 BrowserContext 中按精确 <code>cdp_target_id</code> 找到 Playwright Page，并分配只在服务端存在的 <code>runtime_page_id</code>。同一个 BrowserContext 中的同一个 Page 在其生命周期内保持该 ID；Page close、target replacement 或 BrowserContext disconnect 后立即失效，且不得复用。找不到唯一 Page 或 tab/target 不一致时返回 <code>target_lost</code>。<code>desktop.page.sync</code> 只报告 Electron 当前实际显示的 pane geometry 和 UI identity，不携带 title、origin、DOM 或 capability 结论；这些数据由绑定的 Playwright Page 读取。普通 Web 客户端没有 window registration，不能注册可执行 Page。</p>
+    <p>这些是桌面控制面接口，不是 LLM tools。所有消息都绑定已认证的 originating WebSocket，request/reply 必须校验 request、connection、window、registry Page、tab、CDP target 和全部 revision；Runtime 不广播请求，也不接受第一个返回者。<code>desktop.page.resolve</code> 中的 <code>registry_page_id</code> 来自 Runtime 已校验的 Page candidate，renderer 用它唯一查找 center tab。Runtime 再按精确 <code>cdp_target_id</code> 建立 canonical Page identity：Playwright mode 解析为 BrowserContext 中的 Playwright Page，Claude-compatible mode 解析为同一 WebContents/CDP target；两者共享只在服务端存在的 <code>runtime_page_id</code>。同一个 Page 在其生命周期内保持该 ID；Page close、target replacement 或 connection disconnect 后立即失效，且不得复用。找不到唯一 Page 或 tab/target 不一致时返回 <code>target_lost</code>。<code>desktop.page.sync</code> 只报告 Electron 当前实际显示的 pane geometry 和 UI identity，不携带 title、origin、DOM 或 capability 结论；这些数据由当前 backend 从绑定 Page 读取。普通 Web 客户端没有 window registration，不能注册可执行 Page。</p>
     <p><code>desktop.page.sync.pages[]</code> 只包含已经具有 center tab/pane identity 的 Page。当前 Electron popup handler 不创建新 WebContents，因此只能按同一 Page navigation 处理。目标实现必须把 handler 改为：为 popup 创建独立 WebContentsView/center tab 和 CDP target、保留 opener 关系、默认不聚焦，并在 renderer 接受该 tab identity 后通过下一份 sync snapshot 分配 <code>registry_page_id</code>。Runtime 在每个写 action 前使用 <code>desktop.page.popup.watch</code> 为 exact opener Page 安装或替换 opaque watch，并等待 <code>desktop.page.popup.watched(ok=true)</code> 后才调用 PageService.act；控制 channel 正常时，verify-success 或任一 session 终态前必须发送 close 并等待 drained ack。Electron main 用同一串行状态机处理 watch install/replace/close 和 <code>setWindowOpenHandler</code>：窗口请求发生时先分配单调 <code>window_event_seq</code> 并发送 <code>desktop.page.popup.requested</code>，replace/close ack 只能在旧 watch 已接收的全部 requested event 都已进入同一 ordered IPC → originating WebSocket stream 后发送。renderer 不得重排该 stream；Runtime 按 seq 检查缺口，并且只有处理到 ack 的 <code>drained_through_event_seq</code> 后才能继续下一写 action或成功终态。</p>
     <p>Popup watch 的 main-side owner key 是 <code>control_owner_token + window_id + opener_registry_page_id + opener_tab_id + opener_cdp_target_id</code>；它唯一标识该 control generation 下的 exact opener Page，不包含 ComputerSession。watch record 另存所属 <code>session_page_binding_id + action_epoch</code>。同一 owner key 全局最多一个 active watch：同一 session 只有携带当前 <code>previous_popup_watch_id</code> 才能 replace；另一 ComputerSession 的 install/replace 必须返回 <code>popup_attribution_busy</code>，不能替换旧 watch。install/replace/close 以 <code>control_owner_token + request_id</code> 幂等；Electron main 在 watch/session expiry 之前缓存相同 request 的同一 ack 和 drained result，Runtime 可安全重试。watch 的 <code>expires_at</code> 不得晚于 ComputerSession deadline；Page/window/renderer WebContents 销毁、control registration generation 替换、target replacement 或 expiry 都由 Electron main 强制删除 watch。任何 install/replace/close 结果不确定状态，包括 ack timeout、identity mismatch、seq gap 或 drained validation failure，都会立即把该 window/control connection 标记为 popup-control quarantined：不得为其开始 action、创建新 ComputerSession 或产生 verified 终态。只有结果未知时，Runtime 才继续用持久记录中的同一 request id 和参数重放。解除该 operation 的不确定状态必须先通过 owner/request/identity/seq 校验，并满足对应确定结果：install 的 <code>ok=false + applied=false + active_popup_watch_id=null</code> 可以证明未安装；replace 的 <code>applied=true + active=next</code> 提升新 watch，或 <code>applied=false + active=previous</code> 恢复旧 active watch；close 的 <code>applied=false + active=previous</code> 恢复旧 active watch，只有 <code>applied=true + active=null</code> 且 drained seq 已处理才释放 watch；或者旧 <code>control_owner_token</code> 已被 Electron main sweep 并撤销，随后新的 control registration generation 完成注册和 sync。replace 未应用后 attribution lock 仍由原 session 持有，该 action 仍未执行，必须使用新的 request id 重新完成 replace 或终止 session 并 close-drain。close 未应用后同样保留 lock 和旧 active watch；若仍需终止，必须生成新的 close request id，不能重放已缓存确定失败的旧 request。若 install 重放返回 <code>applied=true</code>，已失败的 session 必须再用返回的 active watch id 执行幂等 close/drain，完成前不解除 quarantine。WebSocket disconnect 返回 <code>target_lost</code>、停止全部副作用并执行本地清理，不等待已不可达的 ack；main-side watch 由 registration replacement/sweep 或 expiry 删除。该 control event 是阻止后续副作用的即时信号；随后到达的 Playwright <code>Page.on("popup")</code>/<code>BrowserContext.on("page")</code> event 用于把 pending tab/CDP target 解析为实际 Page，不承担唯一的早期安全判断。在 sync 完成前，新 Page 只是 pending popup，不进入 Page Context 或可控 inventory；登记后仍需满足 visible、同 compound group 和 access 条件，下一 turn 才能建立 binding。不得为尚未登记的 popup 虚构 <code>group_id</code>、<code>pane_order</code> 或 <code>bounds</code>。</p>
     <p><code>PageService.snapshot()</code> 在生成模型上下文前，对当前 chat 引用且 access enabled 的每个 Page candidate 调用一次定向 resolve，建立只服务当前 provider request 的 turn binding；然后从 Page 读取 title、origin 和 capability，并且只从 primary Page 读取有界 preview。access disabled 的 Page 不 resolve、不读取 title/origin/DOM，只返回位置、类型和禁用状态。第一次 <code>observe</code> 不重新选择 Page，而是校验 source Page Context 的 binding 和 revision，再把同一 <code>browser_context_id + runtime_page_id</code> 固定到 ComputerSession。</p>
     <p><code>page.access.update</code> 由当前 chat 的可见 access chip 用户操作触发，经 owner-authenticated WebSocket 写入 Runtime。首次关联时，Runtime 只根据该 chat 当前经过认证的 tools/access 状态初始化 enabled/disabled；状态随后以 <code>chat_session_id + registry_page_id</code> 为 key，持续到 Page/chat 关闭、移组或 renderer disconnect。客户端只能提交上次收到的 <code>expected_access_revision</code>，Runtime 原子比较后生成下一 <code>actual_access_revision</code>；不匹配返回 <code>access_revision_conflict</code> 和当前状态，客户端不能指定新 revision。renderer 不能通过 registry snapshot 自行授予 capability。每个 turn binding 冻结当时的 access revision；disabled 会立即使该 key 的 turn binding、ComputerSession 和未执行写 lease 失效，下一次副作用前返回 <code>page_access_disabled</code>。重新关联后的新 Page identity 不继承旧状态。R1-R3 action grant 另按 origin、风险和动作求值，不能从 enabled Page access 推导。</p>
-    <p>数据面由 Runtime 通过精确 CDP target 获得 BrowserContext 中的 Playwright Page，再由 PageService 执行 observe/act/verify；Agent command 不经 renderer 转换为桌面坐标。pane 位于左侧、右侧或 OpenProgram 被其他应用遮挡时，DOM/ARIA 动作仍调用同一个 Page，布局只影响 discovery alias，不影响 Page identity 或点击坐标系。</p>
+    <p>数据面由 Runtime 通过精确 CDP target 建立 canonical Page；Playwright mode 把它解析为 BrowserContext 中的 Playwright Page，Claude-compatible mode 保持 exact WebContents/CDP target。PageService 经当前 backend 执行 observe/act/verify，Agent command 不经 renderer 转换为桌面坐标。pane 位于左侧、右侧或 OpenProgram 被其他应用遮挡时，DOM/ARIA 动作仍调用同一个 Page，布局只影响 discovery alias，不影响 Page identity 或点击坐标系。</p>
 
     <h3>Page Registry 与聊天 turn</h3>
     <pre>desktop window registration (Electron main → Runtime)
@@ -636,14 +724,14 @@ server-owned popup attribution lock
     <p>Electron main 为每次 renderer control registration generation 签发不可复用的 <code>control_owner_token + one_time_connection_nonce</code>，并通过已有本地认证边界把它们与 <code>window_id + renderer_instance_id + control_registration_generation</code> 登记到 Runtime。renderer 建立 WebSocket 时只能提交 nonce；Runtime 消费 nonce 后从服务端 registration 解析 owner token，renderer hello 不能声明或替换它。Runtime 转发 popup watch 时必须回传该 token；Electron main 同时校验 IPC sender WebContents、window、renderer instance、registration generation 和 token，旧 token、其他 renderer sender 或跨窗口重放全部拒绝。WebSocket 断开后，下一次连接必须由 Electron main 先 sweep 并撤销旧 generation 的 watches，再签发新的 token/nonce；新 registration 和 sync 完成前不恢复 Computer Use。普通 Web 客户端不能自行声明 desktop window identity。连接关闭时，Runtime 删除该连接下全部 registry entries，并使关联 binding 和 lease 失效。</p>
     <p>renderer 通过完整 <code>desktop.page.sync</code> snapshot 维护 server-owned registry，而不是在 chat command 中临时声明页面状态。每个窗口的 <code>window_revision</code> 和 <code>layout_revision</code>、每个 page 的 <code>page_revision</code> 都必须单调递增；重复或旧 revision 被拒绝。snapshot 原子更新 visibility、focus、compound group、pane order 和 bounds。renderer 不提交 <code>region="right"</code> 这类语义结论；Runtime 使用同一 layout revision 下的 chat bounds 与 page bounds 计算 relation。仅 focus、其他 pane或同组内位置变化只影响下一 turn 的 inventory/alias，不改变已建立 ComputerSession 的 target binding；若目标 pane resize 导致 viewport 变化，只使旧 frame 返回 <code>stale_observation</code>。hide、移出当前 group、跨窗口 transfer、close、renderer/window disconnect 通过 snapshot 差异或显式 invalidate 立即使 session/binding 失效，下一次副作用前返回 <code>target_lost</code>。</p>
     <p><code>focused_registry_page_id</code> 是一个 window/layout revision 内的单值字段，必须同时存在于 <code>visible_pages[]</code>，并使用该项的 <code>expected_page_revision</code>；因此 registry 不会出现两个 focused Page，也不存在缺少 revision 的 focused 引用。跨窗口 transfer 不更新原 entry 的 window id；源连接必须先 invalidate 旧 entry 和 lease，目标连接再以新的 <code>registry_page_id</code> 出现在自己的 authenticated snapshot 中。binding、page revision、alias 和 lease 都不跨窗口继承。</p>
-    <p>renderer 在每次 chat command 中只引用 registry 已登记的可见 Page ID、发送瞬间对应的 expected Page revision，以及当前 chat pane identity；chat bounds 不随 command 重复提交，Runtime 必须按 <code>chat_tab_id + session_id</code> 从同一 accepted registry snapshot 的 <code>chat_panes[]</code> 读取。Runtime 对 <code>window_revision + layout_revision + visible_pages[].expected_page_revision</code> 与最后接受的 registry snapshot 做 CAS 校验，再确认 connection、session、group、visibility、focus 和 BrowserContext Page identity。候选可以来自左侧、右侧、上方或下方相邻 pane，也可以来自用户从 sidebar/按钮打开并已登记到当前 compound group 的 Page；普通独立 chat、隐藏 group member、其他窗口和未登记的 native window 不进入引用集合。任何 chat pane 查找失败、revision 变化或 Page identity 不匹配时，在 preview 或 turn binding 产生前返回 <code>page_context_stale</code> 或 <code>target_lost</code>，不得采用客户端 bounds 或解析 replacement Page。最终 origin、title 和 capabilities 从绑定的 Playwright Page 读取，不采用 renderer payload 中的同名值。</p>
+    <p>renderer 在每次 chat command 中只引用 registry 已登记的可见 Page ID、发送瞬间对应的 expected Page revision，以及当前 chat pane identity；chat bounds 不随 command 重复提交，Runtime 必须按 <code>chat_tab_id + session_id</code> 从同一 accepted registry snapshot 的 <code>chat_panes[]</code> 读取。Runtime 对 <code>window_revision + layout_revision + visible_pages[].expected_page_revision</code> 与最后接受的 registry snapshot 做 CAS 校验，再确认 connection、session、group、visibility、focus 和 BrowserContext Page identity。候选可以来自左侧、右侧、上方或下方相邻 pane，也可以来自用户从 sidebar/按钮打开并已登记到当前 compound group 的 Page；普通独立 chat、隐藏 group member、其他窗口和未登记的 native window 不进入引用集合。任何 chat pane 查找失败、revision 变化或 Page identity 不匹配时，在 preview 或 turn binding 产生前返回 <code>page_context_stale</code> 或 <code>target_lost</code>，不得采用客户端 bounds 或解析 replacement Page。最终 origin、title 和 capabilities 从当前 backend 绑定的 exact Page 读取，不采用 renderer payload 中的同名值。</p>
     <p>Runtime 在模型调用前为全部已验证 Page 生成轻量 descriptor，只对 primary Page 生成有界 preview。descriptor 包含 type、relation、title、origin、capability 和 access 状态；primary preview 的序列化顺序固定为 DOM 顺序的 viewport 可见文本、ARIA landmark、interactive count。合并连续空白后，可见文本最多 2,000 个 Unicode 字符，landmark 最多 12 项且每项 name 最多 160 个字符，整个 preview 最多 8 KiB UTF-8。每个受限字段都有独立 <code>*_truncated</code>，总大小触顶时还有 <code>payload_truncated</code>。preview 不包含 screenshot、完整 DOM、完整 accessibility tree、element refs、iframe 隐藏内容或不可见节点。非 primary Page 通过 <code>computer_use(command="observe")</code> 按需读取，避免每 turn 重复提交所有页面正文。</p>
     <p>preview 携带 <code>captured_at + preview_frame_id + content_epoch + window_revision + page_revision + layout_revision + navigation_epoch</code>。PageService 为每个 Page 维护 DOM mutation/navigation 驱动的 <code>content_epoch</code>，并在同一 Page 的 snapshot barrier 内捕获 DOM text 与 ARIA。捕获前后各读取一次 Page identity、navigation、viewport、content epoch 和 registry revision；任一值变化就丢弃整份结果并重试一次，第二次仍不一致则标记 <code>preview_status=unavailable</code>，不能混合两个 frame 的内容。捕获超过本地 deadline 或页面暂不可读时也只返回 unavailable descriptor，模型随后使用工具重试观察。preview 只服务当前 turn，页面变化后失效，不进入 component memory、vision memory 或 workflow replay。</p>
     <p>Page Context 中的 title、正文和 ARIA 文本都标记为 <code>untrusted_content</code>，与用户消息和系统规则分隔。网页文字不能要求模型更换 page、启用工具、扩大权限或执行动作；Runtime 也不能根据 preview 文本修改 capability 和 risk tier。</p>
     <p>只要存在至少一个具备 <code>observe</code> capability 的 Page，dispatcher 就在该 turn 将 <code>computer_use</code> schema 放入 provider tool array，并追加 Page Context。<code>interact</code> 和 <code>navigate</code> 都以 <code>observe</code> 为前置能力；Registry 拒绝缺少 observe 的 interact/navigate 组合。该规则优先于工具的 deferred 默认状态。模型因此在生成第一个 token 前已经知道实际相邻页面及其 relation；简单问题可直接依据 primary preview 回答，信息不足时调用 <code>computer_use(command="observe", page="left")</code>。任何 click、type、navigate 等页面变更都必须调用 <code>act</code>，不能只根据 preview 声称已执行。</p>
     <p>PageService 生成 snapshot 时从 server-owned access map 读取并冻结 <code>access + access_revision</code>，不接受 renderer/chat payload 中的同名字段。用户显式关闭网页控制时，Runtime 仍可告诉模型“存在一个未授权 Page”，但不附带页面内容；若当前 turn 没有其他可观察 Page，则不注入执行工具。UI 必须显示“Agent 无法访问”，避免模型把权限禁用误判为页面不存在。将 chat 与 web tab 合并为同一 compound group，默认只授予该 Page 的 R0 结构化读取；R1-R3 写操作仍按后文策略处理。</p>
     <p>第一次 observe 校验 Page Context 中已有的 <code>turn_binding_id</code>，随后创建新的 <code>session_page_binding_id</code>，把同一个 <code>browser_context_id + runtime_page_id + window_id + registry_page_id + tab_id + cdp_target_id</code> 及全部 revision 原样复制到 ComputerSession；它不是转移原 turn binding，也不重新解析 alias 或 Page。turn binding 继续由 source provider request 持有，并在该 response 的 tool calls settled 后按原 TTL 删除；session binding 只由 ComputerSession 持有，持续到 verify 终态、needs_user 终止、失败、取消、target/access 失效或 turn teardown。两类 binding 通过同一 <code>browser_context_id + runtime_page_id</code> 接收 close/transfer/access invalidation。每个 observe/act/verify command 只对 session binding 取得短 lease。运行期间切换焦点不会改变 Page；Page close、移出 compound group、跨窗口转移、target replacement 或 renderer 断开会使两类 binding 失效，并返回 <code>target_lost</code>，不得自动选择另一个 Page。</p>
-    <p>这里的“可见 Page”描述布局归属和用户可检查性，不要求 OpenProgram 成为 macOS/桌面环境的前台应用，也不要求目标 pane 当前接收键盘事件。读取和动作直接调用绑定的 Playwright Page；禁止先调用 <code>Page.bringToFront()</code>、激活操作系统窗口、按桌面坐标点击或截取整个屏幕。只有目标仍登记在当前 compound group 内且 BrowserContext 中仍存在同一个 Page 时绑定才有效；hide、移出 group、跨窗口 transfer、Page close、disconnect 或 target identity 变化后必须返回 <code>target_lost</code>。同组内重新排布本身不会解除已建立的绑定。</p>
+    <p>这里的“可见 Page”描述布局归属和用户可检查性，不要求 OpenProgram 成为 macOS/桌面环境的前台应用，也不要求目标 pane 当前接收键盘事件。读取和动作直接调用当前 backend 绑定的 exact Page；禁止调用 <code>Page.bringToFront()</code>、<code>BrowserWindow.focus()</code>、OS 输入注入、桌面坐标或整屏截图。只有目标仍登记在当前 compound group 内且 backend connection 中仍存在同一个 Page 时绑定才有效；hide、移出 group、跨窗口 transfer、Page close、disconnect 或 target identity 变化后必须返回 <code>target_lost</code>。同组内重新排布本身不会解除已建立的绑定。</p>
     <p>Dispatcher 保存不可变映射 <code>provider_request_id → turn_id + context_id + context_revision + alias_map + turn_bindings</code>。每个 tool call 的执行 envelope 由 Runtime 写入 <code>tool_call_id + source_provider_request_id</code>，模型不能提交或覆盖它；alias 只能在产生该 tool schema 的同一个 provider request 快照中解析。即使同一 chat session 有重叠 turn 或后续 Page Context，旧工具调用也不得查询 session 的“最新 alias map”。模型 response stream 结束不立即删除映射：没有 tool call 时可以释放；存在 tool call 时保留到该 response 产生的全部 tool call settled。首次 observe 成功后，ComputerSession 以 <code>computer_session_id → owner_turn_id + session_page_binding_id + frame_registry</code> 独立持有 exact target，provider-request alias map 和 turn binding 可以按各自生命周期释放。</p>
     <p>ComputerSession 只允许 owner turn 的后续 provider requests 使用；Runtime 从 tool execution envelope 取得 turn id，不信任模型提交。Observation frame 保留到同 session 的下一次 observation 替换它、任何写动作使它失效、target/navigation/access revision 改变，或 turn 被完成、取消、超时、session teardown。DOM ref 另外在执行前复核目标元素 fingerprint；point action 另外绑定 screenshot 时的 viewport、scroll、scale 和 zoom。无关 content、focus 或 layout revision 不单独使仍匹配的 DOM ref 或 session 失效。跨 user turn、跨 ComputerSession 或跨 target 提交 frame 一律返回 <code>stale_observation</code>。read-only ComputerSession 在 turn 结束时释放；发生写动作的 ComputerSession 在 verify 终态、needs_user 终止、失败、取消或 turn teardown 时释放。异常遗留 session 按短 TTL 清理。</p>
 
@@ -660,10 +748,11 @@ server-owned popup attribution lock
     <h3>从普通聊天到一次页面操作</h3>
     <ol class="checklist">
       <li>Desktop bridge 已通过单调 revision 的 registry events 登记窗口与 page。用户在 chat + web tab 的 compound group 中提交消息；composer 只引用当前可见 registry page ID 和 revision，不发送 screenshot 或 CDP target。</li>
-      <li>Page Registry 验证引用，PageService 从绑定的 Playwright Page 捕获有界 preview。服务端在模型调用前加入 Page Context。当前 baseline 已注入 task-wrapper <code>computer_use</code>；PHASE 0 gate 通过后，主 Chat Agent schema 替换为本节 command contract，后续 registry/lease gate 不否定当前 baseline 的已验证能力。</li>
+      <li>Page Registry 验证引用，PageService 从绑定的 exact Page 捕获有界 preview。服务端在模型调用前加入 Page Context。当前 baseline 已注入 task-wrapper <code>computer_use</code>；PHASE 1–2 gate 通过后，主 Chat Agent 改由现有 MCP server 使用本节 command contract，后续 registry/lease gate 不否定当前 baseline 的已验证能力。</li>
       <li>模型从 turn 开始就知道实际相邻页面及其 relation。简单页面概述可以使用 primary preview；需要其他 page、更多内容或任何交互时调用公开工具。</li>
-      <li>PageService 已在 snapshot 阶段定向解析 exact BrowserContext/Page/renderer/tab/target。首次 observe 校验该 turn binding，创建绑定 owner turn 的 ComputerSession，并为该 command 获取 read lease；校验失败返回结构化错误，不让普通聊天模型自行解释为“看不到”。</li>
-      <li>主 Agent 通过跨 provider request 的 command loop 执行 DOM/ARIA-first 观察与单步动作；每个 command 由 Runner 校验 session、frame 和短 lease。只有视觉任务、canvas 或语义定位失败时发送一张当前 viewport screenshot。</li>
+      <li>主 Agent 通过已有 OpenProgram MCP connection 调用唯一 <code>computer_use</code>。MCP server 从本次 authenticated call context 取得 opaque Page capability，不接受模型提交 capability、mode、tab 或 target。</li>
+      <li>PageService 已在 snapshot 阶段定向解析 exact BrowserContext/Page/renderer/tab/target。首次 observe 校验该 turn binding，冻结当前 <code>execution_mode</code>，创建绑定 owner turn 的 ComputerSession，并为该 command 获取 read lease；校验失败返回结构化错误，不让普通聊天模型自行解释为“看不到”。</li>
+      <li>Mode Gateway 在该 ComputerSession 内只调用一种 backend。主 Agent 通过跨 provider request 的 command loop执行 DOM/ARIA-first 观察与单步动作；每个 command 由 Runner 校验 session、mode、frame 和短 lease。只有视觉任务、canvas 或语义定位失败时发送一张当前 viewport screenshot。</li>
       <li>每个状态变化后重新观察和验证，事件回写同一 chat turn；Stop、授权和人工接管都绑定同一个 ComputerSession 与 target。</li>
     </ol>
 
@@ -684,7 +773,8 @@ server-owned popup attribution lock
   computer_session_id, owner_turn_id, source_context_id
   target: {browser_context_id, runtime_page_id, window_id,
            registry_page_id, tab_id, cdp_target_id}
-  session_page_binding_id, access_revision, state, started_at, deadline
+  session_page_binding_id, mcp_page_capability_id, access_revision
+  execution_mode, backend_version, state, started_at, deadline
   current_origin, approved_origins[]
   frame_registry[], current_frame_id, navigation_epoch, action_epoch
   cancel_event, step_budget, artifact_dir
@@ -830,27 +920,35 @@ Observation
         </tbody>
       </table>
     </div>
-    <p>并发单位是 Playwright Page。短 lease 与 popup-attribution lock 是两个独立层级：同一 <code>runtime_page_id</code> 同时只能有一个写 lease，command 结束即释放；发生过写 action 的 ComputerSession 还在同一 exact Page 上持有 attribution lock，直至其 active watch 完成 close-drained，或 main-side sweep/expiry/target teardown 已确认删除 watch。尚未生成 install outbound record 的 reserved lock 可以用 <code>not_installed</code> 本地证明释放；进入 installing 后不得回退到该证明。另一个 ComputerSession 在此之前不能取得该 Page 的写 lease 或安装 watch；同一 session 可在持锁期间按顺序 replace watch。不同 Page 的 attribution lock 相互独立，可以并行读取或执行。同一 Page 的 preview/Observation 捕获使用 snapshot read barrier，任何 action 使用 write barrier；两者的临界区不得重叠。捕获过程中发生 DOM mutation 时丢弃整份尚未发布的 snapshot 并重试；snapshot 已发布后，无关 content mutation 不撤销仍匹配的 element ref，point action 则继续要求 screenshot viewport state 完全一致。Page Broker 只把 <code>desktop.page.resolve</code> 控制面请求定向发送给 originating renderer，并校验回执中的 connection/window/tab/target/revision；observe/act/verify 数据面始终由 Runtime 的 PageService 直接调用绑定的 BrowserContext/Page，禁止广播后接受第一个 reply。</p>
+    <p>并发单位是 canonical Page。短 lease 与 popup-attribution lock 是两个独立层级：同一 <code>runtime_page_id</code> 同时只能有一个写 lease，command 结束即释放；发生过写 action 的 ComputerSession 还在同一 exact Page 上持有 attribution lock，直至其 active watch 完成 close-drained，或 main-side sweep/expiry/target teardown 已确认删除 watch。尚未生成 install outbound record 的 reserved lock 可以用 <code>not_installed</code> 本地证明释放；进入 installing 后不得回退到该证明。另一个 ComputerSession 在此之前不能取得该 Page 的写 lease 或安装 watch；同一 session 可在持锁期间按顺序 replace watch。不同 Page 的 attribution lock 相互独立，可以并行读取或执行。同一 Page 的 preview/Observation 捕获使用 snapshot read barrier，任何 action 使用 write barrier；两者的临界区不得重叠。捕获过程中发生 DOM mutation 时丢弃整份尚未发布的 snapshot 并重试；snapshot 已发布后，无关 content mutation 不撤销仍匹配的 element ref，point action 则继续要求 screenshot viewport state 完全一致。Page Broker 只把 <code>desktop.page.resolve</code> 控制面请求定向发送给 originating renderer，并校验回执中的 connection/window/tab/target/revision；observe/act/verify 数据面始终由 Runtime 的 PageService 通过 session-frozen backend 调用同一 exact Page，禁止广播后接受第一个 reply。</p>
   </section>
 
   <section id="delivery">
     <h2>11 实施顺序与每阶段出口</h2>
-    <p class="note warn"><strong>交付边界：</strong>当前 turn-scoped baseline 已在单一 visible split web page 范围内向真实 provider 提供 <code>computer_use</code>，并完成默认 18100 安装版 live E2E；内部 task wrapper 也具备一张 viewport screenshot 后的受限 CSS point click。下面 PHASE 0–4 描述完整目标架构的后续强化顺序；只有对应 phase gate 通过后，才能宣称 authoritative multiwindow registry、排他 lease、完整 Safety UI、跨 provider 的统一视觉坐标适配或相关发布能力，不能用当前 baseline 证据替代。</p>
+    <p class="note warn"><strong>交付边界：</strong>当前 turn-scoped baseline 已在单一 visible split web page 范围内向真实 provider 提供 <code>computer_use</code>，并完成默认 18100 安装版 live E2E；内部 task wrapper 也具备一张 viewport screenshot 后的受限 CSS point click。下面 PHASE 0–6 是设计规定的后续顺序；Microsoft Playwright MCP、Claude-compatible bridge、MCP Page capability 和 mode selector 当前都没有实现。只有对应 phase gate 通过后才能标记完成，不能用现有 task wrapper 证据替代。</p>
     <div class="card">
-      <div class="phase"><div class="id">PHASE 0</div><div><strong>Agent 工具与布局协议</strong><br>把主 Agent schema 改为 <code>list_pages/observe/act/verify</code> command；PageService 同时服务 turn context、chip 和 tool；renderer 提交 pane identity/order/bounds，Runtime 计算 relation，不接受固定 region。</div><div class="gate">出口：左右互换、上下分屏、对角/重叠/非法 bounds 和每个 command 的 public-entry 测试通过；主 Agent 与公开 Page 协议不再包含旧 surface 参数或 alias。</div></div>
-      <div class="phase"><div class="id">PHASE 1</div><div><strong>Authoritative Page Registry 与精确 Broker</strong><br>建立 BrowserContext connection；实现 desktop window registration、WebSocket 绑定、单调 registry events 和连接清理；command/reply 定向发送并校验 BrowserContext/Page/window/renderer/tab/target revision；实现 alias 解析、Page lease、exact-Page popup-attribution lock、hide/leave-group/transfer/close invalidation 和 teardown；迁移 Electron popup handler，使其创建保留 opener 的独立 WebContentsView/center tab/CDP target，而不是导航原 Page；实现 action-scoped <code>popup.watch/requested</code> control event 和 Playwright Page 的延迟解析。</div><div class="gate">出口：伪造/旧 ID 被拒绝；双窗口测试连续 100 次命中指定 Page；隐藏、移出 group、关闭和转移不会改用其他 Page；popup 产生独立 Page 且不改变 opener Page，未登记 popup 不进入 Page Context，慢初始响应不允许后续副作用或 verified 终态；同一 Page 跨 session 的 popup 归因保持排他，不同 Page 仍可并行。</div></div>
-      <div class="phase"><div class="id">PHASE 2</div><div><strong>完整 Page Awareness</strong><br>在现有 turn ref/preview/chip baseline 上增加 authoritative registry revision、frame-consistent snapshot barrier、稳定多 Page alias 和显式关闭状态；自动上下文只预览 primary Page，其余 Page 由 observe 按需读取。</div><div class="gate">出口：provider 能稳定获得正确 inventory/primary preview/alias；超限、navigation race、focus race 与禁用状态测试通过。</div></div>
-      <div class="phase"><div class="id">PHASE 3</div><div><strong>完整 PageService 与 Runner</strong><br>在现有 DOM/ARIA refs、frame freshness 和确定性 verification 上增加排他 Page lease、完整 capability/risk policy、cancel、target-lost lifecycle、单张 viewport visual fallback 和 artifact policy。</div><div class="gate">出口：DOM/canvas、权限、cancel、target lost、step limit 集成测试通过。</div></div>
-      <div class="phase"><div class="id">PHASE 4</div><div><strong>完整桌面交互与 Safety UI</strong><br>补齐运行状态、Stop、专用 permission card、人工接管和多窗口完成证据；继续使用默认 18100 安装版测试。</div><div class="gate">出口：下面与完整目标能力对应的 E2E 清单均有可复核 artifact，相关能力才可标为发布完成。</div></div>
+      <div class="phase"><div class="id">PHASE 0</div><div><strong>MCP contract 与官方隔离 spike</strong><br>冻结本文的 canonical <code>computer_use</code> schema、MCP Page capability 和两个 mode 值；固定 Microsoft <code>@playwright/mcp</code> 版本，通过 <code>cdpEndpoint</code> 连接测试用 Electron context，验证其工具发现、snapshot/ref、图片 content 与 exact Page 限制。</div><div class="gate">出口：同一 context 中两个 web Page 和一个 chat Page 的越权测试通过，或明确记录 upstream 不能安全限制并选择 contract adapter；不得在结果未定时进入产品接入。</div></div>
+      <div class="phase"><div class="id">PHASE 1</div><div><strong>复用现有 OpenProgram MCP server</strong><br>在已有 server/client/adapter 中新增一个 browser-control tool <code>computer_use</code>，由第一方 client adapter 在模型参数外注入一次性 <code>page_context_token</code>，server 消费 token 后取得 Page capability；实现 mode 配置读取、ComputerSession 冻结和统一 text/image result，不暴露 upstream 工具全集。</div><div class="gate">出口：真实 MCP initialize/list/call/cancel 测试通过；现有非浏览器 tools 不变，浏览器控制只有一个 <code>computer_use</code>；缺少/重放 token、伪造 capability、mode、tab、target 和跨连接调用在 backend 前拒绝。</div></div>
+      <div class="phase"><div class="id">PHASE 2</div><div><strong>Authoritative Page Registry 与 Page Awareness</strong><br>把主 Agent schema 改为 <code>list_pages/observe/act/verify</code>；renderer 提交 pane identity/order/bounds，Runtime 计算 relation；补齐 window registration、单调 revisions、exact Page resolve、access、frame-consistent preview 和 hide/transfer/close invalidation。</div><div class="gate">出口：左右互换、上下分屏、双窗口、target replacement、禁用状态和多 Page alias 测试通过；公开协议不再包含旧 surface 字段。</div></div>
+      <div class="phase"><div class="id">PHASE 3</div><div><strong>Playwright MCP backend</strong><br>按 PHASE 0 决策接入官方运行时或 upstream contract adapter；只启用 snapshot/ref 与 allowlisted action，将一张 viewport screenshot 作为 OpenProgram 受限扩展，复用 Page lease、popup attribution、approval、verification、cancel 和 artifact policy。</div><div class="gate">出口：DOM/ARIA、动态 ref、canvas fallback、非前台操作、多 Page 隔离、popup 和失败诚实性集成测试通过。</div></div>
+      <div class="phase"><div class="id">PHASE 4</div><div><strong>Claude-compatible backend</strong><br>基于 exact WebContents/CDP target 实现结构化 read、click/type/press/scroll/navigate、单张 screenshot、受限 console/network diagnostics、动作 cursor/outline 和人工接管；不得使用未公开 Claude 源码或私有协议。</div><div class="gate">出口：与 Playwright mode 共用的 parity suite 全部通过；诊断有上限且被标记为不可信；动作指示不进入 grounding 或 verification。</div></div>
+      <div class="phase"><div class="id">PHASE 5</div><div><strong>设置与切换 UI</strong><br>设置页只提供一个 Computer Use mode selector，默认 Microsoft Playwright MCP；当前 ComputerSession 显示 frozen mode，变更只影响下一 session。补齐运行状态、Stop、permission card 和人工接管。</div><div class="gate">出口：session 中切换设置不改变 backend；下一 session 使用新 mode；没有双 backend 执行、自动 fallback 或重复副作用。</div></div>
+      <div class="phase"><div class="id">PHASE 6</div><div><strong>安装版完整验收</strong><br>在默认 profile、18100 和 <code>/Applications/OpenProgram.app</code> 中分别运行两个 mode 的相同任务集、故障注入和多窗口压力测试，并保存 mode/version、Page identity、commands 和 verification artifact。</div><div class="gate">出口：下面全部 E2E 对两个 mode 都有可复核证据，差异只允许出现在明确列出的 diagnostics/visual metadata。</div></div>
     </div>
   </section>
 
   <section id="acceptance">
     <h2>12 可执行验收标准</h2>
     <ol class="checklist">
+      <li><strong>MCP 公开面：</strong>对现有 OpenProgram MCP server 执行 initialize、<code>tools/list</code> 与 <code>tools/call</code>，既有非浏览器 tools 保持原契约，浏览器控制只新增一个 canonical <code>computer_use</code>；不得同时暴露 upstream Playwright MCP 的 tabs、eval、storage、files 或另一套 Claude 工具。text、结构化 JSON 和唯一 screenshot 必须使用标准 MCP content 传输。</li>
+      <li><strong>MCP Page capability：</strong>同一内置 BrowserContext 中打开 web Page A、web Page B 和 OpenProgram chat Page；turn 只授权 A 时，两种 mode 对 B/chat 的 enumerate、snapshot、click、navigate 和 screenshot 调用次数均为 0。第一方 client adapter 注入的 <code>page_context_token</code> 只能由同一 MCP connection、turn、provider request 和 tool call 消费一次；缺少 token、重放、模型 arguments 中伪造 capability/mode/tab/target 或跨 connection 使用时，在任何 CDP/WebContents 副作用前返回 <code>invalid_capability</code>。</li>
+      <li><strong>Playwright MCP 采用门槛：</strong>固定版本的官方 <code>@playwright/mcp</code> 必须证明可连接现有 Electron CDP endpoint，并在 OpenProgram gateway 下只操作 exact Page。若 upstream runtime 无法被限制，测试必须阻止直接发布，改由 upstream public contract adapter 调用现有 Playwright PageService；两条路径不能同时启用。</li>
+      <li><strong>Claude-compatible 行为：</strong>在同一组本地 fixtures 上完成结构化页面读取、element click、type、press、scroll、navigate、单张 viewport screenshot point、受限 console/network failure、action cursor/outline 和 login/CAPTCHA <code>needs_user</code>。该测试只验证公开功能等价，不把 Claude extension 的私有协议、源码或 locator 算法作为验收目标。</li>
+      <li><strong>Mode 冻结与副作用唯一性：</strong>以 <code>playwright_mcp</code> 创建 ComputerSession 后修改设置为 <code>claude_compatible</code>，当前 session 的全部 command 仍只调用 Playwright backend；下一 session 才调用 Claude-compatible backend。backend failure、timeout 或 stale frame 不得触发另一 backend，单个 canonical action 的累计实际写调用最多一次。</li>
+      <li><strong>跨模式 parity：</strong>除 backend/version、允许的诊断字段和视觉元数据外，两种 mode 对同一 fixture 必须产生相同 Page key、ComputerSession/frame 生命周期、reason code、approval、verification 和终态。任何 mode 都不能扩大 Page access、origin grant 或 Action schema。</li>
       <li><strong>Turn-start awareness：</strong>chat 与 Bilibili fixture 合并为 compound group 后，每次 chat command 都产生经过服务端校验的 Page Context。浏览器在 chat 左侧时 provider 得到 <code>left</code>，互换 pane 后下一 turn 得到 <code>right</code>；两种情况都在首个 token 前具有 title、origin、primary preview、capabilities 和 <code>computer_use</code> schema。</li>
       <li><strong>页面问答：</strong>输入“左边有什么”“右边有什么”或“旁边页面是什么”时，回复必须对应实际 relation。primary preview 不足时，Agent 调用 <code>computer_use(command="observe", page="left|right")</code>；全程不要求用户粘贴 URL、文字或截图，普通 DOM 页面不发送 screenshot。</li>
-      <li><strong>页面交互：</strong>Agent 依次调用 <code>observe → act → observe → verify</code>，使用最新 DOM/ARIA refs、同一 <code>page_key</code> 和 frame；操作精确绑定 Playwright Page，不得操作 BrowserContext 中其他 Page 或另一个窗口。写动作后使用旧 frame 的下一次 act 必须返回 <code>stale_observation</code>。</li>
+      <li><strong>页面交互：</strong>Agent 依次调用 <code>observe → act → observe → verify</code>，使用最新 DOM/ARIA refs、同一 <code>page_key</code> 和 frame；当前 backend 只能操作精确绑定的 canonical Page，不得操作 BrowserContext 中其他 Page 或另一个窗口。写动作后使用旧 frame 的下一次 act 必须返回 <code>stale_observation</code>。</li>
       <li><strong>Chat 渲染稳定性：</strong>由普通 chat turn 发起的 <code>computer_use</code> 已经拥有父 assistant/tool 占位行；其嵌套执行树更新只能增量更新当前行，不得再次发送 <code>load_session</code>、替换 <code>#messages-mount</code> 或重建此前已完成的 message/avatar/markdown DOM。只有从函数页、欢迎入口或 Retry 独立启动且 transcript 中没有占位行的函数运行，才允许在第一次持久化 <code>tree_update</code> 后执行一次 hydration。运行期间历史 message element identity 保持不变。</li>
       <li><strong>非前台交互：</strong>OpenProgram 被其他应用遮挡，或用户焦点位于 chat/其他 pane 时，对已绑定 Page 的 DOM/ARIA 读取与点击仍调用同一 <code>browser_context_id + runtime_page_id</code>。执行不得调用 <code>Page.bringToFront()</code>、<code>BrowserWindow.focus()</code>、OS 鼠标/键盘注入、桌面坐标或屏幕截图。</li>
       <li><strong>用户打开的 Page：</strong>用户通过 sidebar、center-tab 按钮或 split 操作打开一个已登记 web tab 后，下一 turn 的 Page Context 自动反映新的 visible/focused/relation 状态，不需要用户再次说明窗口身份。</li>
@@ -906,8 +1004,9 @@ Observation
     <h2>13 第一阶段明确不做</h2>
     <div class="grid2">
       <article class="card no"><h3>目标范围</h3><p>不控制整个本机桌面；不接入 remote VM；不操作 iOS/Android simulator；不控制其他本地 app；不处理多 app workflow。</p></article>
-      <article class="card no"><h3>浏览器范围</h3><p>不接入用户日常 Chrome/Edge profile；不提供 sidecar、hidden 或 headless fallback；不自动接管 popup/new tab；桌面壳不在线时直接失败。</p></article>
+      <article class="card no"><h3>浏览器范围</h3><p>只控制 OpenProgram 内置浏览器；不接入用户日常 Chrome/Edge profile，不安装外部浏览器 extension；不提供 hidden 或 headless fallback；不自动接管未登记 popup/new tab；桌面壳不在线时直接失败。</p></article>
       <article class="card no"><h3>高权限动作</h3><p>不开放 arbitrary JavaScript、cookie/storage 读写或导出、file upload/download、clipboard、浏览器设置、证书和扩展管理。</p></article>
+      <article class="card no"><h3>Backend 范围</h3><p>不直接向模型暴露 Microsoft Playwright MCP 的完整工具集；不同时运行两个 backend；不提供自动 backend fallback。Claude-compatible 只实现公开行为，不复制、反编译或声称兼容未公开源码、私有协议和内部 locator 算法。</p></article>
       <article class="card no"><h3>平台范围</h3><p>不设计 Windows 专用实现、测试、打包或兼容路径；不引入 OS Keychain、keyring 或 Credential Manager 集成。</p></article>
     </div>
   </section>
@@ -918,6 +1017,10 @@ Observation
       <table>
         <thead><tr><th>能力</th><th>当前证据</th><th>状态</th></tr></thead>
         <tbody>
+          <tr><td>OpenProgram MCP server/client 基础</td><td><code>openprogram/mcp_server/server.py</code>、<code>contracts.py</code>、<code>service.py</code>、<code>openprogram/mcp/client.py</code> 与 <code>adapter.py</code></td><td class="partial">已有认证、本地 stdio、通用工具调用及 text/image content 转换；尚无一等 <code>computer_use</code> 或 Page capability</td></tr>
+          <tr><td>Microsoft Playwright MCP backend</td><td>Microsoft 官方 repo/docs 说明 accessibility snapshot/ref、CDP endpoint 和 capability 配置；尚无 OpenProgram exact-Page isolation spike、固定版本或安装版 E2E</td><td class="nope">目标已设计，未实现</td></tr>
+          <tr><td>Claude-compatible browser backend</td><td>Anthropic 官方文档公开页面读取、动作、截图、console/network 和人工处理登录/CAPTCHA 等行为；OpenProgram 尚无对应 clean-room backend 与 parity suite</td><td class="nope">目标已设计，未实现</td></tr>
+          <tr><td>双模式 selector 与 session freeze</td><td>本文规定 <code>playwright_mcp | claude_compatible</code>、默认值、冻结和无 fallback 规则；代码中没有设置或 Mode Gateway</td><td class="nope">仅设计</td></tr>
           <tr><td>内置可见 web tab + exact CDP target attach</td><td><code>desktop/main.js</code>、<code>_actions/open_action.py</code> 与安装版 session <code>local_340bc50ccd2c4eafb1fc12378e0489ab</code></td><td class="yes">已验证绑定 tab 的 DOM 点击与确定性验证</td></tr>
           <tr><td>DOM/ARIA selector 操作</td><td><code>_actions/read.py</code>、<code>_actions/interact.py</code></td><td class="partial">已有底层工具，不是 Computer Use runner</td></tr>
           <tr><td>DOM-first Browser Agent baseline</td><td><code>agentic_functions/browser_agent/__init__.py</code>、<code>tests/unit/test_browser_agent.py</code> 与 <code>test_computer_use_surface.py</code></td><td class="yes">公开 <code>computer_use</code> 复用受限 runner，并已接入旧名 turn-start Surface Context；目标接口改名为 Page Context</td></tr>
@@ -937,7 +1040,7 @@ Observation
         </tbody>
       </table>
     </div>
-    <p class="note warn"><strong>证据边界：</strong>当前证据只覆盖单个已登记 split web tab 的 turn-scoped 精确绑定、DOM-first task wrapper、受限 viewport point baseline 和安装版验证。目标 BrowserContext/Page identity、动态 geometry/relation、Agent command contract、完整 authoritative registry revisions、Page lease、hide/move/transfer invalidation、跨 provider 坐标适配、权限卡片和多窗口压力测试仍按上文标记，不因本次基线验证而视为已实现。</p>
+    <p class="note warn"><strong>证据边界：</strong>当前证据只覆盖单个已登记 split web tab 的 turn-scoped 精确绑定、DOM-first task wrapper、受限 viewport point baseline、已有通用 MCP 基础和安装版验证。目标 MCP Page capability、Microsoft Playwright MCP backend、Claude-compatible backend、mode selector/session freeze、BrowserContext/Page identity、动态 geometry/relation、Agent command contract、完整 authoritative registry revisions、Page lease、hide/move/transfer invalidation、跨 provider 坐标适配、权限卡片和多窗口压力测试仍按上文标记，不因本次设计而视为已实现。</p>
   </section>
 
   <section id="references">
@@ -946,12 +1049,15 @@ Observation
       <li><a href="https://playwright.dev/docs/api/class-browsercontext">Playwright：BrowserContext</a> — 独立浏览会话、多个 Page 及 context 生命周期。</li>
       <li><a href="https://playwright.dev/docs/pages">Playwright：Pages</a> — Page 对应 tab/popup，多个 Page 可直接操作且不要求置前。</li>
       <li><a href="https://playwright.dev/docs/api/class-page#page-event-popup">Playwright：Page popup event</a> — 只报告与指定 opener Page 相关的 popup，但可能到初始响应开始后才触发，因此用于 Page 解析而不是唯一的早期安全信号。</li>
+      <li><a href="https://github.com/microsoft/playwright-mcp">Microsoft：Playwright MCP</a> — 官方 MCP server、accessibility snapshot/ref、capabilities、现有 Chromium CDP endpoint 连接与工具配置。</li>
+      <li><a href="https://github.com/microsoft/playwright.dev/blob/main/mcp/introduction.mdx">Microsoft Playwright 文档源码：MCP introduction</a> — MCP 使用方式、结构化 snapshot 与工具行为的官方说明。</li>
       <li><a href="https://learn.chatgpt.com/docs/browser">OpenAI：Browser</a> — 内置独立 profile、共享页面视图、本地 web app 与外部网站。</li>
       <li><a href="https://learn.chatgpt.com/docs/chrome-extension">OpenAI：Chrome extension</a> — 已登录 Chrome tab/profile 的独立接入边界。</li>
       <li><a href="https://learn.chatgpt.com/docs/computer-use">OpenAI：Computer Use</a> — desktop app control、app approval、安全和工具选择。</li>
       <li><a href="https://developers.openai.com/api/docs/guides/tools-computer-use">OpenAI API：Computer use</a> — screenshot/action loop、custom harness、isolation、allowlist 和 human-in-the-loop。</li>
       <li><a href="https://code.claude.com/docs/en/desktop">Anthropic：Claude Code Desktop</a> — Browser pane、clean profile、external site approval、Computer Use 工具优先级。</li>
       <li><a href="https://code.claude.com/docs/en/chrome">Anthropic：Use Claude Code with Chrome</a> — browser tools、site permission、read/write 分类、人工处理登录与 CAPTCHA。</li>
+      <li><a href="https://support.claude.com/en/articles/12012173-get-started-with-claude-in-chrome">Anthropic Help Center：Get started with Claude in Chrome</a> — extension 的公开能力、可见页面交互、console/network 与人工接管行为。</li>
       <li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool">Anthropic API：Computer use tool</a> — client-side execution、agent loop、限制、安全与数据保留。</li>
     </ul>
   </section>
