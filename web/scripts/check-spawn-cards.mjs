@@ -75,6 +75,11 @@ applyChatWsMessage({
 
 // The spawning tool call, then the spawn announcing itself as running.
 send({ type: "tool_use", tool: "task", tool_call_id: "tc_1", input: "{}" });
+const runStartedAt = reply().timestamp;
+assert.ok(
+  Number.isFinite(runStartedAt),
+  "a live runtime reply must record its start timestamp",
+);
 send({
   type: "sub_agent",
   card_id: "card_a",
@@ -169,6 +174,11 @@ assert.equal(
   "finalize must not clobber live attachCards",
 );
 assert.equal(reply().status, "done");
+assert.equal(
+  reply().timestamp,
+  runStartedAt,
+  "completing a runtime reply must preserve its start timestamp",
+);
 
 // --- execution strip: visible while the assistant works ------------------
 const strip = readFileSync(

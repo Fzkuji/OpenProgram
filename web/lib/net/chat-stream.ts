@@ -212,6 +212,7 @@ function ensureReply(sid: string, rid: string): ChatMsg {
     role: "assistant",
     content: "",
     status: "streaming",
+    timestamp: Date.now(),
   });
   return useSessionStore.getState().messagesById[rid];
 }
