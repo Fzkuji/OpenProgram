@@ -2021,13 +2021,11 @@ const finishCloseSource = tabStripSource.slice(
 );
 assert.doesNotMatch(finishCloseSource, /activateSession/);
 
-assert.match(webTabPaneSource, /text\("Open split view", "打开分屏"\)/);
-assert.match(webTabPaneSource, /text\("Exit split view", "退出分屏"\)/);
-assert.match(webTabPaneSource, /<SplitViewPicker/);
-assert.match(webTabPaneSource, /subjectId=\{tabId\}/);
-assert.match(webTabPaneSource, /createPortal\(/);
-assert.match(webTabPaneSource, /findCenterTabGroup\(s\.groups, tabId\)/);
-assert.match(webTabPaneSource, /state\.ungroupTab\(tabId\)/);
+assert.doesNotMatch(
+  webTabPaneSource,
+  /Open split view|Exit split view|SplitViewPicker|Columns2/,
+  "split controls belong to the tab and pane layer, not the browser toolbar",
+);
 assert.doesNotMatch(webTabPaneSource, /setSplitWebTab\(/);
 assert.doesNotMatch(webTabPaneSource, /openDraftSessionTab\(|newSession\(/);
 assert.match(
@@ -2044,8 +2042,8 @@ assert.match(
   "a picker must focus its first option, falling back to Close only when empty",
 );
 assert.match(
-  webTabPaneSource,
-  /if \(reason !== "outside"\)[\s\S]*?buttonRef\.current\?\.focus\(\)/,
+  tabStripSource,
+  /if \(reason !== "outside"\)[\s\S]*?returnFocusToMenuInvoker\(subject\)/,
   "outside dismissal must preserve the newly clicked element's focus",
 );
 

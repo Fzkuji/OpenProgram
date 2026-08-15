@@ -17,13 +17,16 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { Check } from "lucide-react";
 
-import { itemCls, MENU_PANEL } from "@/components/chat/top-bar/menu-styles";
+import { itemCls, MENU_PANEL, MENU_SEPARATOR } from "@/components/chat/top-bar/menu-styles";
 
 interface ContextMenuItem {
   id: string;
   label: string;
   disabled?: boolean;
+  checked?: boolean;
+  separatorBefore?: boolean;
 }
 
 interface MainMenuBridge {
@@ -180,25 +183,31 @@ function ContextMenuOverlayPage() {
         role="menu"
       >
         {items.map((item, i) => (
-          <div
-            key={item.id}
-            role="menuitem"
-            aria-disabled={item.disabled || undefined}
-            tabIndex={-1}
-            className={itemCls(i === active && !item.disabled)}
-            style={
-              item.disabled
-                ? { opacity: 0.55, cursor: "default", color: "var(--text-muted)" }
-                : undefined
-            }
-            onMouseEnter={() => {
-              if (!item.disabled) setActive(i);
-            }}
-            onClick={() => choose(item)}
-          >
-            {/* nowrap: the panel is max-content wide, so a wrapping label
-               would instead collapse the panel to the narrowest line. */}
-            <span className="flex-1 whitespace-nowrap">{item.label}</span>
+          <div key={item.id}>
+            {item.separatorBefore ? <div className={MENU_SEPARATOR} /> : null}
+            <div
+              role="menuitemcheckbox"
+              aria-checked={item.checked || undefined}
+              aria-disabled={item.disabled || undefined}
+              tabIndex={-1}
+              className={itemCls(i === active && !item.disabled)}
+              style={
+                item.disabled
+                  ? { opacity: 0.55, cursor: "default", color: "var(--text-muted)" }
+                  : undefined
+              }
+              onMouseEnter={() => {
+                if (!item.disabled) setActive(i);
+              }}
+              onClick={() => choose(item)}
+            >
+              <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
+                {item.checked ? <Check size={13} aria-hidden="true" /> : null}
+              </span>
+              {/* nowrap: the panel is max-content wide, so a wrapping label
+                 would instead collapse the panel to the narrowest line. */}
+              <span className="flex-1 whitespace-nowrap">{item.label}</span>
+            </div>
           </div>
         ))}
       </div>

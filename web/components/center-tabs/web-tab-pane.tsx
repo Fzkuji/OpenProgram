@@ -22,8 +22,7 @@
  *    back/forward buttons: iframe history is unreliable cross-origin.
  */
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { ArrowLeft, ArrowRight, Columns2, ExternalLink, House, RotateCw, Star } from "lucide-react";
+import { ArrowLeft, ArrowRight, ExternalLink, House, RotateCw, Star, X } from "lucide-react";
 
 import {
   desktopBridge,
@@ -41,12 +40,10 @@ import {
   subscribeBookmarks,
   toggleBookmark,
 } from "@/lib/bookmarks";
-import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
 import { measureWebTabBounds } from "@/lib/web-tab-bounds";
 import styles from "./center-tabs.module.css";
-import { SplitViewPicker } from "./split-view-picker";
-import { labelOf } from "./tab-items";
+import { BookmarkBar, BookmarksLibraryButton, BrowserMenu } from "./browser-controls";
 
 export function WebTabPane({ tabId, url }: { tabId: string; url: string }) {
   // Bridge presence is fixed for the lifetime of the page (preload
@@ -72,7 +69,7 @@ function BookmarkButton({ url, title }: { url: string; title: string }) {
   return (
     <button
       type="button"
-      className={styles.webToolbarBtn}
+      className={`${styles.webToolbarBtn} ${styles.webToolbarOptional}`}
       onClick={() => toggleBookmark({ url, title })}
       title={text(bookmarked ? "Remove bookmark" : "Bookmark", bookmarked ? "移除书签" : "添加书签")}
       aria-label={text(bookmarked ? "Remove bookmark" : "Bookmark", bookmarked ? "移除书签" : "添加书签")}
@@ -96,65 +93,6 @@ function HomeButton({ tabId }: { tabId: string }) {
     >
       <House size={14} />
     </button>
-  );
-}
-
-function SplitButton({ tabId }: { tabId: string }) {
-  const { t, text } = useTranslation();
-  const grouped = useCenterTabs((s) => Boolean(findCenterTabGroup(s.groups, tabId)));
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerHost, setPickerHost] = useState<Element | null>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const label = grouped
-    ? text("Exit split view", "退出分屏")
-    : text("Open split view", "打开分屏");
-
-  useEffect(() => {
-    setPickerHost(pickerOpen ? document.querySelector(".center-body") : null);
-  }, [pickerOpen]);
-
-  function closePicker(
-    reason: "escape" | "close-button" | "outside" | "picked",
-  ) {
-    setPickerOpen(false);
-    if (reason !== "outside") {
-      requestAnimationFrame(() => buttonRef.current?.focus());
-    }
-  }
-
-  function toggleSplit() {
-    const state = useCenterTabs.getState();
-    if (grouped) {
-      state.ungroupTab(tabId);
-      return;
-    }
-    setPickerOpen(true);
-  }
-
-  return (
-    <>
-      <button
-        ref={buttonRef}
-        type="button"
-        className={styles.webToolbarBtn}
-        onClick={toggleSplit}
-        title={label}
-        aria-label={label}
-      >
-        <Columns2 size={14} />
-      </button>
-      {pickerOpen && pickerHost
-        ? createPortal(
-            <SplitViewPicker
-              subjectId={tabId}
-              titleOf={(tab) => labelOf(tab, t, text)}
-              onClose={closePicker}
-              onPicked={() => closePicker("picked")}
-            />,
-            pickerHost,
-          )
-        : null}
-    </>
   );
 }
 
@@ -294,6 +232,15 @@ function DesktopWebTabPane({
     }
   }
 
+  function navigateTo(nextUrl: string) {
+    const normalized = normalizeWebUrl(nextUrl);
+    if (!normalized) return;
+    setAddress(normalized);
+    viewUrlRef.current = normalized;
+    bridge.webTab.navigate(tabId, normalized);
+    updateWebTab(tabId, { url: normalized });
+  }
+
   const disabledStyle = { opacity: 0.35, cursor: "default" } as const;
 
   return (
@@ -301,7 +248,7 @@ function DesktopWebTabPane({
       <div className={styles.webToolbar}>
         <button
           type="button"
-          className={styles.webToolbarBtn}
+          className={`${styles.webToolbarBtn} ${styles.webToolbarForward}`}
           onClick={() => bridge.webTab.goBack(tabId)}
           disabled={!canGoBack}
           style={canGoBack ? undefined : disabledStyle}
@@ -335,28 +282,25 @@ function DesktopWebTabPane({
         <button
           type="button"
           className={styles.webToolbarBtn}
-          onClick={() => bridge.webTab.reload(tabId)}
-          title={text("Reload", "重新加载")}
+          onClick={() => loading ? bridge.webTab.stop(tabId) : bridge.webTab.reload(tabId)}
+          title={loading ? text("Stop", "停止") : text("Reload", "重新加载")}
+          aria-label={loading ? text("Stop", "停止") : text("Reload", "重新加载")}
         >
-          <RotateCw
-            size={14}
-            style={
-              loading ? { animation: "opWebTabSpin 0.8s linear infinite" } : undefined
-            }
-          />
+          {loading ? <X size={14} /> : <RotateCw size={14} />}
         </button>
         <BookmarkButton url={effectiveUrl} title={title || effectiveUrl} />
-        <SplitButton tabId={tabId} />
+        <BookmarksLibraryButton />
         <button
           type="button"
-          className={styles.webToolbarBtn}
+          className={`${styles.webToolbarBtn} ${styles.webToolbarOptional}`}
           onClick={() => bridge.openExternal(viewUrlRef.current)}
           title={text("Open in browser", "在浏览器中打开")}
         >
           <ExternalLink size={14} />
         </button>
+        <BrowserMenu />
       </div>
-      <style>{`@keyframes opWebTabSpin { to { transform: rotate(360deg); } }`}</style>
+      <BookmarkBar onNavigate={navigateTo} />
       {/* Empty body — the native view is drawn here by the main
           process at the bounds reported above. */}
       <div ref={bodyRef} className={styles.webFrame} />
@@ -396,6 +340,13 @@ function IframeWebTabPane({ tabId, url }: { tabId: string; url: string }) {
     window.open(url, "_blank", "noopener");
   }
 
+  function navigateTo(nextUrl: string) {
+    const normalized = normalizeWebUrl(nextUrl);
+    if (!normalized) return;
+    setAddress(normalized);
+    updateWebTab(tabId, { url: normalized });
+  }
+
   return (
     <div className={styles.webPane}>
       <div className={styles.webToolbar}>
@@ -420,15 +371,18 @@ function IframeWebTabPane({ tabId, url }: { tabId: string; url: string }) {
           <RotateCw size={14} />
         </button>
         <BookmarkButton url={url} title={title} />
+        <BookmarksLibraryButton />
         <button
           type="button"
-          className={styles.webToolbarBtn}
+          className={`${styles.webToolbarBtn} ${styles.webToolbarOptional}`}
           onClick={openExternal}
           title={text("Open in browser", "在浏览器中打开")}
         >
           <ExternalLink size={14} />
         </button>
+        <BrowserMenu />
       </div>
+      <BookmarkBar onNavigate={navigateTo} />
       {url.startsWith("file:") ? (
         /* Browsers silently block file:// in iframes — say so instead of
            showing a blank frame. */

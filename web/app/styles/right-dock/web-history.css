@@ -22,7 +22,7 @@
   grid-template-columns: 18px 64px 16px minmax(120px, 1fr) minmax(80px, 150px) 28px;
   align-items: center;
   gap: 10px;
-  min-height: 34px;
+  min-height: 38px;
   padding: 0 8px;
   border-radius: 6px;
   color: var(--text-secondary);

@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     syncVisible: (items) => ipcRenderer.send("webtab:sync-visible", items),
     destroy: (id) => ipcRenderer.send("webtab:destroy", id),
     reload: (id) => ipcRenderer.send("webtab:reload", id),
+    stop: (id) => ipcRenderer.send("webtab:stop", id),
     goBack: (id) => ipcRenderer.send("webtab:go-back", id),
     goForward: (id) => ipcRenderer.send("webtab:go-forward", id),
     onState: (cb) => {
@@ -57,13 +58,12 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
       ipcRenderer.invoke("history:delete", url, visitedAt),
     clear: () => ipcRenderer.invoke("history:clear"),
   },
-  tabTransfer: {
-    // Synchronous by contract: called from pointer/mouse down so the
-    // token exists before a same-tick dragstart reads it.
-    prepare: (payload) => ipcRenderer.sendSync("tab-transfer:prepare", payload),
   browserImport: {
     listSources: () => ipcRenderer.invoke("browser-import:list-sources"),
     run: (request) => ipcRenderer.invoke("browser-import:run", request),
+  },
+  browserData: {
+    clear: (options) => ipcRenderer.invoke("browser-data:clear", options),
   },
   terminal: {
     start: (request) => ipcRenderer.invoke("terminal:start", request),
@@ -75,6 +75,10 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
       return () => ipcRenderer.removeListener("terminal:data", listener);
     },
   },
+  tabTransfer: {
+    // Synchronous by contract: called from pointer/mouse down so the
+    // token exists before a same-tick dragstart reads it.
+    prepare: (payload) => ipcRenderer.sendSync("tab-transfer:prepare", payload),
     inspect: (token) => ipcRenderer.invoke("tab-transfer:inspect", token),
     accept: (token, placement) =>
       ipcRenderer.invoke("tab-transfer:accept", token, placement),

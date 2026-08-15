@@ -2,8 +2,8 @@
 
 /**
  * MainMenu — the Chrome ⋮ at the right end of the tab strip. One flat
- * level, no submenus: tab/window creation, the two built-in library
- * pages (bookmarks / history, which open as center tabs), and settings.
+ * level, no submenus: tab/window creation and app settings. Browser-only
+ * history/bookmark actions live in the Browser menu inside web tabs.
  *
  * Radix supplies keyboard roving, typeahead, Esc and outside-click, so
  * this file owns no listeners. The look is entirely menu-styles.ts —
@@ -12,7 +12,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Bookmark, History, MoreVertical, Plus, Settings, SquarePlus } from "lucide-react";
+import { MoreVertical, Plus, Settings, SquarePlus } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -36,7 +36,6 @@ export function MainMenu() {
   const router = useRouter();
   const { text } = useTranslation();
   const openNewTabPage = useCenterTabs((s) => s.openNewTabPage);
-  const openBuiltinTab = useCenterTabs((s) => s.openBuiltinTab);
   // ponytail: the desktop shell has no "blank new window" IPC — only
   // detach-a-tab-into-one. Rather than ship a dead row there, the entry
   // is browser-only, where window.open is the native answer. Add an
@@ -55,18 +54,12 @@ export function MainMenu() {
         case "new-tab":
           openNewTabPage();
           break;
-        case "bookmarks":
-          openBuiltinTab("bookmarks");
-          break;
-        case "history":
-          openBuiltinTab("history");
-          break;
         case "settings":
           router.push("/settings");
           break;
       }
     });
-  }, [mainMenu, openNewTabPage, openBuiltinTab, router]);
+  }, [mainMenu, openNewTabPage, router]);
 
   if (mainMenu) {
     return (
@@ -121,21 +114,6 @@ export function MainMenu() {
             <span className={SHORTCUT}>⌘N</span>
           </DropdownMenuItem>
         ) : null}
-        <DropdownMenuSeparator className={MENU_SEPARATOR} />
-        <DropdownMenuItem
-          className={itemCls(false)}
-          onSelect={() => openBuiltinTab("bookmarks")}
-        >
-          <Bookmark size={14} aria-hidden="true" />
-          <span className="flex-1">{text("Bookmarks", "书签")}</span>
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className={itemCls(false)}
-          onSelect={() => openBuiltinTab("history")}
-        >
-          <History size={14} aria-hidden="true" />
-          <span className="flex-1">{text("Web history", "网页历史")}</span>
-        </DropdownMenuItem>
         <DropdownMenuSeparator className={MENU_SEPARATOR} />
         <DropdownMenuItem
           className={itemCls(false)}

@@ -7,7 +7,7 @@ import styles from "./settings-page.module.css";
 import { prefetchSettings } from "@/lib/prefs/settings-cache";
 import { useTranslation } from "@/lib/i18n";
 
-export type SettingsTab = "providers" | "usage" | "search" | "channels" | "general" | "system";
+export type SettingsTab = "providers" | "usage" | "search" | "channels" | "browser" | "general" | "system";
 
 /**
  * Shell for the Settings tabs — topbar, sticky nav column, content
@@ -24,7 +24,7 @@ export function SettingsTabsLayout({
 }: {
   children: ReactNode;
 }) {
-  const { t } = useTranslation();
+  const { t, text } = useTranslation();
   // Mounted once when the user enters /settings/* (now an app-router
   // layout). useEffect fires once for the whole settings visit — no
   // remount per tab click — so the topbar + nav don't tear down + set
@@ -39,6 +39,7 @@ export function SettingsTabsLayout({
     if (pathname.startsWith("/settings/usage")) return "usage";
     if (pathname.startsWith("/settings/search")) return "search";
     if (pathname.startsWith("/settings/channels")) return "channels";
+    if (pathname.startsWith("/settings/browser")) return "browser";
     if (pathname.startsWith("/settings/general")) return "general";
     if (pathname.startsWith("/settings/system")) return "system";
     return "providers";
@@ -60,6 +61,16 @@ export function SettingsTabsLayout({
               reader being able to find the tab column and hear which
               tab is open. */}
           <nav className={styles.nav} aria-label={t("settings.title")}>
+            <Link
+              href="/settings/browser"
+              className={
+                styles.navItem +
+                (active === "browser" ? " " + styles.active : "")
+              }
+              aria-current={active === "browser" ? "page" : undefined}
+            >
+              {text("Browser", "浏览器")}
+            </Link>
             <Link
               href="/settings/providers"
               className={

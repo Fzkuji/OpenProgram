@@ -120,6 +120,7 @@ export interface DesktopWebTabApi {
   syncVisible(items: DesktopVisibleWebView[]): void;
   destroy(id: string): void;
   reload(id: string): void;
+  stop(id: string): void;
   goBack(id: string): void;
   goForward(id: string): void;
   /** Navigation/title/loading events pushed from main; returns the
@@ -258,6 +259,10 @@ export interface DesktopBrowserImportApi {
   }): Promise<DesktopBrowserImportResult>;
 }
 
+export interface DesktopBrowserDataApi {
+  clear(options: { history: boolean; cookies: boolean }): Promise<{ ok: boolean }>;
+}
+
 export interface DesktopTerminalApi {
   start(request: { id: string; cwd?: string }): Promise<{ ok: boolean; error?: string }>;
   write(id: string, data: string): void;
@@ -274,6 +279,8 @@ export interface DesktopContextMenuItem {
   id: string;
   label: string;
   disabled?: boolean;
+  checked?: boolean;
+  separatorBefore?: boolean;
 }
 
 export interface DesktopMainMenuApi {
@@ -312,6 +319,8 @@ export interface DesktopBridge {
   history?: DesktopHistoryApi;
   /** Desktop-only, explicit import from a detected local browser profile. */
   browserImport?: DesktopBrowserImportApi;
+  /** Desktop-only clearing of the built-in browser profile. */
+  browserData?: DesktopBrowserDataApi;
   /** Desktop-only lightweight project shell. */
   terminal?: DesktopTerminalApi;
 }

@@ -16,6 +16,7 @@ const browserHomePath = new URL("../components/center-tabs/browser-home-page.tsx
 // reachable") pointed at it.
 const managerPath = new URL("../components/center-tabs/builtin-tab-pane.tsx", import.meta.url);
 const mainMenuPath = new URL("../components/center-tabs/main-menu.tsx", import.meta.url);
+const browserControlsPath = new URL("../components/center-tabs/browser-controls.tsx", import.meta.url);
 // The strip is split across center-tab-strip.tsx and its submodules;
 // readCenterTabStripSource concatenates them in source order.
 const appShellPath = new URL("../components/app-shell.tsx", import.meta.url);
@@ -53,6 +54,7 @@ const webTab = readFileSync(webTabPath, "utf8");
 const browserHome = readFileSync(browserHomePath, "utf8");
 const manager = readFileSync(managerPath, "utf8");
 const mainMenu = readFileSync(mainMenuPath, "utf8");
+const browserControls = readFileSync(browserControlsPath, "utf8");
 const strip = readCenterTabStripSource(import.meta.url);
 const appShell = readFileSync(appShellPath, "utf8");
 const tabsStore = readFileSync(tabsStorePath, "utf8");
@@ -127,11 +129,13 @@ assert.doesNotMatch(
   "builtin-tab-pane must not use emoji",
 );
 
-// ---- Reachability: main menu → builtin center tab -------------------
-// The two library pages must stay openable. The menu is the entry
-// point, the store action is the singleton, the shell renders it.
-assert.match(mainMenu, /openBuiltinTab\("bookmarks"\)/, "main menu must open bookmarks");
-assert.match(mainMenu, /openBuiltinTab\("history"\)/, "main menu must open web history");
+// ---- Reachability: Browser menu → builtin center tab ----------------
+// Browser-specific library pages stay inside browser chrome; the global
+// window menu remains limited to app/window actions.
+assert.match(browserControls, /openBuiltinTab\("bookmarks"\)/, "browser menu must open bookmarks");
+assert.match(browserControls, /openBuiltinTab\("history"\)/, "browser menu must open web history");
+assert.doesNotMatch(mainMenu, /openBuiltinTab\("bookmarks"\)|openBuiltinTab\("history"\)/,
+  "the global menu must not duplicate browser-only library actions");
 assert.match(mainMenu, /router\.push\("\/settings"\)/, "main menu must reach settings");
 assert.match(mainMenu, /openNewTabPage\(\)/, "main menu must open a new tab");
 // Flat menu — no submenus, by design.

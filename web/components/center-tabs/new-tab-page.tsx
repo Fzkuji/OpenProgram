@@ -1,11 +1,12 @@
 "use client";
 
-import { FileText, Globe2, MessageCirclePlus, TerminalSquare } from "lucide-react";
+import { FileText, MessageCirclePlus, TerminalSquare } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
 import { newSession } from "@/lib/runtime-bridge/conversations";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import styles from "./center-tabs.module.css";
+import { BrowserGlyph } from "./browser-glyph";
 
 export function NewTabPage() {
   const { text } = useTranslation();
@@ -28,7 +29,7 @@ export function NewTabPage() {
           {text("Side chat", "侧边聊天")}
         </button>
         <button type="button" className={styles.ntpCard} onClick={() => openBuiltinTab("browser")}>
-          <Globe2 size={15} aria-hidden="true" />
+          <BrowserGlyph size={18} />
           {text("Browser", "浏览器")}
         </button>
         <button type="button" className={styles.ntpCard} onClick={() => openBuiltinTab("terminal")}>

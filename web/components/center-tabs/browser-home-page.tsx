@@ -1,10 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, Globe2, Plus, X } from "lucide-react";
+import { Download, Plus, X } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
 import { importBookmarkTree } from "@/lib/bookmarks";
+import {
+  browserImportPromptFinished,
+  consumeBrowserImportRequest,
+  markBrowserImportPromptFinished,
+} from "@/lib/browser-prefs";
 import {
   addShortcut,
   faviconUrl,
@@ -20,9 +25,8 @@ import {
 } from "@/lib/desktop-bridge";
 import { LANE_COLORS } from "@/lib/format-utils/lane-colors";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
+import { BrowserGlyph } from "./browser-glyph";
 import styles from "./center-tabs.module.css";
-
-const IMPORT_DISMISSED_KEY = "openprogram.browser-import-dismissed";
 
 function hostColor(host: string): string {
   let hash = 0;
@@ -71,7 +75,13 @@ function ShortcutTile({ shortcut, onOpen }: { shortcut: Shortcut; onOpen(): void
   );
 }
 
-export function BrowserImportDialog({ onDismiss }: { onDismiss(): void }) {
+export function BrowserImportDialog({
+  onDismiss,
+  onImported,
+}: {
+  onDismiss(): void;
+  onImported?(): void;
+}) {
   const { text } = useTranslation();
   const api = desktopBridge()?.browserImport;
   const [sources, setSources] = useState<DesktopBrowserImportSource[]>([]);
@@ -119,6 +129,8 @@ export function BrowserImportDialog({ onDismiss }: { onDismiss(): void }) {
         `Imported ${response.history?.imported ?? 0} history entries, ${bookmarkCount} bookmarks, and ${response.cookies?.imported ?? 0} cookies.`,
         `已导入 ${response.history?.imported ?? 0} 条历史、${bookmarkCount} 个书签和 ${response.cookies?.imported ?? 0} 个 Cookie。`,
       ));
+      markBrowserImportPromptFinished();
+      onImported?.();
     } catch {
       setResult(text("Import failed", "导入失败"));
     } finally {
@@ -128,7 +140,7 @@ export function BrowserImportDialog({ onDismiss }: { onDismiss(): void }) {
 
   return (
     <section className={styles.browserImport} aria-label={text("Import browser data", "导入浏览器资料")}>
-      <Download size={22} aria-hidden="true" />
+      <BrowserGlyph size={30} />
       <div className={styles.browserImportBody}>
         <strong>{text("Import data from your browser", "从浏览器导入资料")}</strong>
         <span>{text("Bring over history, bookmarks, and signed-in cookies", "导入历史、书签和登录 Cookie")}</span>
@@ -202,7 +214,7 @@ export function BrowserHomePage() {
   const [newUrl, setNewUrl] = useState("");
   const [showImport, setShowImport] = useState(() => {
     if (typeof window === "undefined") return false;
-    return localStorage.getItem(IMPORT_DISMISSED_KEY) !== "1";
+    return consumeBrowserImportRequest() || !browserImportPromptFinished();
   });
 
   useEffect(() => {
@@ -227,7 +239,7 @@ export function BrowserHomePage() {
   return (
     <div className={styles.browserHome}>
       <div className={styles.browserHomeToolbar}>
-        <Globe2 size={17} aria-hidden="true" />
+        <BrowserGlyph size={25} />
         <input
           value={url}
           onChange={(event) => setUrl(event.target.value)}
@@ -238,10 +250,7 @@ export function BrowserHomePage() {
         />
         <button
           type="button"
-          onClick={() => {
-            localStorage.removeItem(IMPORT_DISMISSED_KEY);
-            setShowImport(true);
-          }}
+          onClick={() => setShowImport(true)}
           title={text("Import browser data", "导入浏览器资料")}
           aria-label={text("Import browser data", "导入浏览器资料")}
         >
@@ -252,7 +261,7 @@ export function BrowserHomePage() {
       <div className={styles.browserHomeBody}>
         {showImport && (
           <BrowserImportDialog onDismiss={() => {
-            localStorage.setItem(IMPORT_DISMISSED_KEY, "1");
+            markBrowserImportPromptFinished();
             setShowImport(false);
           }} />
         )}

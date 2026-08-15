@@ -2002,7 +2002,7 @@ function cleanupWindowContext(ctx) {
 // DOM). Singleton per window; closes on outside click (its own blur),
 // Esc, window blur/resize, and after a choice.
 const MAIN_MENU_WIDTH = 224;
-const MAIN_MENU_HEIGHT = 220;
+const MAIN_MENU_HEIGHT = 88;
 // Extra room around the panel so its drop shadow isn't clipped by the
 // view's own edge (the panel itself is smaller than the view).
 const MAIN_MENU_GUTTER = 24;
@@ -2253,6 +2253,10 @@ function registerWebTabIpc() {
     const ctx = contextForSender(event);
     if (ctx) runNativeNavigation(ctx, id, (wc) => wc.reload());
   });
+  ipcMain.on("webtab:stop", (event, id) => {
+    const ctx = contextForSender(event);
+    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.stop());
+  });
   ipcMain.on("webtab:go-back", (event, id) => {
     const ctx = contextForSender(event);
     if (ctx) runNativeNavigation(ctx, id, (wc) => wc.navigationHistory.goBack());
@@ -2320,6 +2324,19 @@ function registerWebTabIpc() {
       }
     })();
     return activeBrowserImport;
+  });
+  ipcMain.handle("browser-data:clear", async (event, options) => {
+    try {
+      if (!contextForSender(event)) return { ok: false };
+      const request = options && typeof options === "object" ? options : {};
+      if (request.history) clearHistory(browsingHistoryFile());
+      if (request.cookies) {
+        await session.fromPartition("persist:webtabs").clearStorageData({ storages: ["cookies"] });
+      }
+      return { ok: true };
+    } catch (_error) {
+      return { ok: false };
+    }
   });
 
   const terminals = new Map();
