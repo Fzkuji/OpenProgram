@@ -284,6 +284,12 @@
 .runtime-actions-footer .message-timestamp { padding-left: 0; }
 .runtime-card-host:hover .message-actions,
 .runtime-actions-footer .message-actions:focus-within { opacity: 1; }
+@media (hover: none) {
+  .runtime-card-host .message-actions,
+  .tl-step-act {
+    opacity: 1;
+  }
+}
 
 /* 标题超链接化：点标题进右栏详情。 */
 .tl-step-link { cursor: pointer; }

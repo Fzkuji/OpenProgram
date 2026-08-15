@@ -14,8 +14,15 @@
   transition: opacity 150ms ease;
 }
 .message:hover .message-actions,
+.attach-card:hover .message-actions,
 .message-actions:focus-within {
   opacity: 1;
+}
+@media (hover: none) {
+  .message .message-actions,
+  .attach-card .message-actions {
+    opacity: 1;
+  }
 }
 /* Bottom action row: copy/retry/branch buttons live at the END of a
    message. They follow the message's side — user (right bubble) → bottom

@@ -97,6 +97,194 @@ assert.ok(
   useSessionStore.getState().runningTasks[provisional],
   "the provisional chat key becomes running immediately",
 );
+const sentAt = pendingUserText.getPendingUserTimestamp(provisional);
+assert.ok(
+  Number.isFinite(sentAt),
+  "a successful send must capture the user-message timestamp immediately",
+);
+
+const { applyChatWsMessage } = await import("../lib/net/chat-stream.ts");
+applyChatWsMessage({
+  type: "chat_ack",
+  data: { session_id: provisional, msg_id: "sent-user-1", text: "first" },
+});
+assert.equal(
+  useSessionStore.getState().messagesById["sent-user-1"].timestamp,
+  sentAt,
+  "the live user bubble must use the original send timestamp before refresh",
+);
+assert.ok(
+  Number.isFinite(useSessionStore.getState().messagesById["sent-user-1_reply"].timestamp),
+  "the live assistant placeholder must have a timestamp as soon as it appears",
+);
+
+useSessionStore.getState().appendMessage("timestamp-system", {
+  id: "system-without-explicit-time",
+  role: "system",
+  content: "transient notice",
+  status: "done",
+});
+assert.ok(
+  Number.isFinite(
+    useSessionStore.getState().messagesById["system-without-explicit-time"].timestamp,
+  ),
+  "every live message appended to the shared store must receive a timestamp",
+);
+
+const persistedTimestamp = 1_700_000_000;
+const originalDateNow = Date.now;
+const historyFallbackTimestamp = 1_700_000_009_000;
+Date.now = () => historyFallbackTimestamp;
+try {
+  useSessionStore.getState().setMessages("timestamp-history", [
+    {
+      id: "history-authoritative-time",
+      role: "assistant",
+      content: "persisted",
+      status: "done",
+      timestamp: persistedTimestamp,
+    },
+    {
+      id: "history-missing-time",
+      role: "user",
+      content: "legacy",
+      status: "done",
+    },
+    {
+      id: "history-second-missing-time",
+      role: "assistant",
+      content: "legacy reply",
+      status: "done",
+    },
+  ]);
+} finally {
+  Date.now = originalDateNow;
+}
+assert.equal(
+  useSessionStore.getState().messagesById["history-authoritative-time"].timestamp,
+  persistedTimestamp,
+  "history hydration must preserve the persisted authoritative timestamp",
+);
+assert.equal(
+  useSessionStore.getState().messagesById["history-missing-time"].timestamp,
+  historyFallbackTimestamp,
+  "legacy history rows without time must use the load time, not their array index",
+);
+assert.equal(
+  useSessionStore.getState().messagesById["history-second-missing-time"].timestamp,
+  historyFallbackTimestamp,
+  "every missing historical timestamp must use the same positive load time",
+);
+
+useSessionStore.getState().appendMessage("timestamp-hydrate", {
+  id: "live-placeholder",
+  role: "assistant",
+  content: "",
+  status: "streaming",
+  timestamp: 1_111,
+});
+useSessionStore.getState().setMessages("timestamp-hydrate", [
+  {
+    id: "live-placeholder",
+    role: "assistant",
+    content: "",
+    status: "running",
+    timestamp: persistedTimestamp,
+  },
+]);
+assert.equal(
+  useSessionStore.getState().messagesById["live-placeholder"].timestamp,
+  persistedTimestamp,
+  "mid-run hydration must prefer a persisted authoritative timestamp",
+);
+
+useSessionStore.getState().appendMessage("timestamp-hydrate-missing", {
+  id: "live-placeholder-without-persisted-time",
+  role: "assistant",
+  content: "",
+  status: "streaming",
+  timestamp: 2_222,
+});
+useSessionStore.getState().setMessages("timestamp-hydrate-missing", [
+  {
+    id: "unrelated-before-placeholder",
+    role: "user",
+    content: "older",
+    status: "done",
+  },
+  {
+    id: "live-placeholder-without-persisted-time",
+    role: "assistant",
+    content: "",
+    status: "running",
+  },
+]);
+assert.equal(
+  useSessionStore.getState().messagesById[
+    "live-placeholder-without-persisted-time"
+  ].timestamp,
+  2_222,
+  "a historical placeholder without an authoritative timestamp must retain its live start time",
+);
+
+useSessionStore.getState().setMessages("timestamp-nested", [
+  {
+    id: "parent-with-nested-rows",
+    role: "assistant",
+    content: "parent",
+    status: "done",
+    timestamp: persistedTimestamp,
+    runtimeChildren: [
+      { id: "nested-runtime", role: "assistant", content: "", status: "running" },
+    ],
+    attachCards: [
+      { id: "nested-attach", role: "assistant", content: "", status: "running" },
+    ],
+  },
+]);
+const nestedParent = useSessionStore.getState().messagesById["parent-with-nested-rows"];
+assert.equal(
+  nestedParent.runtimeChildren[0].timestamp,
+  persistedTimestamp,
+  "a nested runtime without its own time must inherit the stable parent time",
+);
+assert.equal(
+  nestedParent.attachCards[0].timestamp,
+  persistedTimestamp,
+  "a nested attach row without its own time must inherit the stable parent time",
+);
+
+applyChatWsMessage({
+  type: "chat_response",
+  data: {
+    type: "user_message",
+    session_id: "timestamp-peer",
+    msg_id: "peer-user-seconds",
+    content: "peer",
+    timestamp: persistedTimestamp,
+  },
+});
+assert.equal(
+  useSessionStore.getState().messagesById["peer-user-seconds"].timestamp,
+  persistedTimestamp,
+  "a peer user_message must preserve its server timestamp before refresh",
+);
+const persistedTimestampMs = 1_700_000_000_123;
+applyChatWsMessage({
+  type: "chat_response",
+  data: {
+    type: "user_message",
+    session_id: "timestamp-peer",
+    msg_id: "peer-user-ms",
+    content: "peer ms",
+    timestamp: persistedTimestampMs,
+  },
+});
+assert.equal(
+  useSessionStore.getState().messagesById["peer-user-ms"].timestamp,
+  persistedTimestampMs,
+  "millisecond wire timestamps must remain unchanged",
+);
 
 // Callable local commands return no chat_ack/result envelope. Their dedicated
 // response must release the provisional send reservation and running state so
@@ -174,6 +362,32 @@ assert.equal(
   "the caught send exception must remain observable",
 );
 
+const rollbackSession = "existing-pending-send";
+pendingUserText.setPendingUserText(rollbackSession, "older pending", 777);
+console.error = () => {};
+setSocket({
+  readyState: 1,
+  send: () => { throw sendFailure; },
+});
+try {
+  assert.equal(sendChatMessage({
+    text: "new send that fails",
+    sessionId: rollbackSession,
+    thinking: "medium",
+    toolsEnabled: true,
+    webSearchEnabled: false,
+  }), false);
+} finally {
+  console.error = originalConsoleError;
+}
+assert.equal(pendingUserText.getPendingUserText(rollbackSession), "older pending");
+assert.equal(
+  pendingUserText.getPendingUserTimestamp(rollbackSession),
+  777,
+  "a failed send must restore the previous pending timestamp",
+);
+pendingUserText.clearPendingUserText(rollbackSession);
+
 const closingDraft = "local_send-closes";
 useSessionStore.getState().setRunningTaskFor(closingDraft, {
   session_id: closingDraft,
@@ -196,6 +410,45 @@ assert.equal(pendingUserText.hasPendingFirstAck(closingDraft), false);
 assert.equal(pendingUserText.getPendingUserText(closingDraft), undefined);
 assert.equal(useSessionStore.getState().runningTasks[closingDraft], undefined);
 
+setSocket({
+  readyState: 1,
+  send: (payload) => sent.push(JSON.parse(payload)),
+});
+
+const acceptedSession = "timestamp-send-success";
+const realNowAfterFailures = Date.now;
+let sendClock = 1_000;
+Date.now = () => sendClock;
+setSocket({
+  readyState: 1,
+  send: (payload) => {
+    sent.push(JSON.parse(payload));
+    sendClock = 5_000;
+  },
+});
+try {
+  assert.equal(sendChatMessage({
+    text: "accepted now",
+    sessionId: acceptedSession,
+    thinking: "medium",
+    toolsEnabled: true,
+    webSearchEnabled: false,
+  }), true);
+} finally {
+  Date.now = realNowAfterFailures;
+}
+assert.equal(
+  pendingUserText.getPendingUserTimestamp(acceptedSession),
+  5_000,
+  "the user timestamp must be recorded after the socket accepts the send",
+);
+assert.equal(
+  useSessionStore.getState().runningTasks[acceptedSession].started_at,
+  5,
+  "the optimistic run and user bubble must share the accepted-send time",
+);
+pendingUserText.clearPendingUserText(acceptedSession);
+useSessionStore.getState().setRunningTaskFor(acceptedSession, null);
 setSocket({
   readyState: 1,
   send: (payload) => sent.push(JSON.parse(payload)),
@@ -435,6 +688,15 @@ assert.match(attachmentHook, /if \(!mountedRef\.current\) \{[\s\S]*releaseAttach
 const chatHandlers = readFileSync(
   new URL("../lib/runtime-bridge/chat-handlers.ts", import.meta.url),
   "utf8",
+);
+const useWs = readFileSync(
+  new URL("../lib/net/use-ws.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  useWs,
+  /case "chat_ack":[\s\S]*applyChatWsMessage\(\{ type: "chat_ack", data: d \}\);[\s\S]*wsHandleChatAck/,
+  "chat_ack must append timestamped live rows before bookkeeping clears the pending send timestamp",
 );
 assert.match(
   chatHandlers,

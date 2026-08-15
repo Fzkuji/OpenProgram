@@ -50,6 +50,7 @@ import { RuntimeBlock } from "./runtime-block";
 import { SpawnedFromCard } from "./spawned-from-card";
 import { UserBubble } from "./user-bubble";
 import { QueuedMessages } from "./queued-messages";
+import { MessageTimestamp } from "./message-actions";
 
 /** goal 循环的内部 spawn 轮 label（openprogram/programs/agentic_functions/goal/
  *  __init__.py 的 run_agent_turn(label=...)，经 spawnedFrom.label 到达）。
@@ -153,7 +154,16 @@ function AssistantMessage({ msg }: { msg: ChatMsg }) {
 
 function dispatch(msg: ChatMsg) {
   if (msg.role === "system") {
-    return <div className="message system">{msg.content}</div>;
+    return (
+      <div className="message system" data-msg-id={msg.id}>
+        {msg.content}
+        <div className="message-actions-footer">
+          <div className="message-actions">
+            <MessageTimestamp timestamp={msg.timestamp} />
+          </div>
+        </div>
+      </div>
+    );
   }
   if (msg.role === "assistant" && msg.function === "attach") {
     return (
@@ -334,13 +344,14 @@ function useChatAreaStick(
  *  child), that bubble's own streaming UI takes over and this is
  *  hidden by ``MessageList``.
  */
-function PendingReplyIndicator() {
+function PendingReplyIndicator({ timestamp }: { timestamp?: number }) {
   const { text } = useTranslation();
   // Same avatar as the assistant bubble that replaces this on the first
   // delta (same .message-header placement, same profile config), so the
   // agent identity is continuous from the moment the user hits send —
   // no logo blink-out during the transient "thinking…" state.
   const profile = useAgentProfile();
+  const [fallbackTimestamp] = useState(() => Date.now());
   return (
     <div className="message assistant pending-standalone">
       <div className="message-header">
@@ -369,6 +380,11 @@ function PendingReplyIndicator() {
       >
         <span className="thinking-spinner" aria-hidden="true" />
         <span className="pending-label">{text("thinking…", "思考中…")}</span>
+      </div>
+      <div className="message-actions-footer">
+        <div className="message-actions">
+          <MessageTimestamp timestamp={timestamp ?? fallbackTimestamp} />
+        </div>
       </div>
     </div>
   );
@@ -521,7 +537,9 @@ export function MessageList() {
       {ids.map((id) => (
         <MessageRow key={id} id={id} />
       ))}
-      {showPending ? <PendingReplyIndicator /> : null}
+      {showPending ? (
+        <PendingReplyIndicator timestamp={runningTask?.started_at} />
+      ) : null}
       {/* Messages typed during the run — dimmed rows under the live
           turn, drained one at a time when it ends. */}
       <QueuedMessages sessionId={sessionId} onStopAndSend={stopAndSend} />

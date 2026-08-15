@@ -27,6 +27,7 @@ import {
   BrainIcon,
   CpuIcon,
 } from "@/components/animated-icons";
+import { MessageTimestamp } from "./message-actions";
 
 /** spawn 类工具：在摘要里算"子代理"，不算普通函数调用。
  * `agent` 生新分支；`send_message` 虽不再 spawn，但它仍触发目标分支跑
@@ -510,6 +511,7 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
       dataHeadId={targetHead || undefined}
       actions={
         <>
+          <MessageTimestamp timestamp={card.timestamp} />
           {running && attach.job_id ? (
             <button type="button" className="tl-btn" onClick={cancel}>
               {text("Cancel", "取消")}

@@ -16,6 +16,7 @@
  */
 
 const pendingText: Record<string, string> = Object.create(null);
+const pendingTimestamp: Record<string, number> = Object.create(null);
 const pendingFirstAck: Record<string, true> = Object.create(null);
 
 export function getPendingUserText(sessionId: string): string | undefined {
@@ -26,12 +27,22 @@ export function hasPendingUserText(sessionId: string): boolean {
   return sessionId in pendingText;
 }
 
-export function setPendingUserText(sessionId: string, text: string): void {
+export function getPendingUserTimestamp(sessionId: string): number | undefined {
+  return pendingTimestamp[sessionId];
+}
+
+export function setPendingUserText(
+  sessionId: string,
+  text: string,
+  timestamp = Date.now(),
+): void {
   pendingText[sessionId] = text;
+  pendingTimestamp[sessionId] = timestamp;
 }
 
 export function clearPendingUserText(sessionId: string): void {
   delete pendingText[sessionId];
+  delete pendingTimestamp[sessionId];
 }
 
 export function hasPendingFirstAck(sessionId: string): boolean {

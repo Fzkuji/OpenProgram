@@ -70,6 +70,32 @@ function isEmptyRow(m: ChatMsg): boolean {
   );
 }
 
+/** Every transcript row gets its time at first materialization. Persisted
+ * rows keep their authoritative value; live/legacy rows missing one use the
+ * local arrival time. Later patches spread over the stored row and therefore
+ * cannot replace this value unless they explicitly carry a timestamp. */
+function validMessageTimestamp(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function withMessageTimestamp(msg: ChatMsg, fallback = Date.now()): ChatMsg {
+  const timestamp = validMessageTimestamp(msg.timestamp)
+    ? msg.timestamp
+    : fallback;
+  const runtimeChildren = msg.runtimeChildren?.map((child) =>
+    withMessageTimestamp(child, timestamp));
+  const attachCards = msg.attachCards?.map((child) =>
+    withMessageTimestamp(child, timestamp));
+  if (
+    timestamp === msg.timestamp
+    && runtimeChildren === undefined
+    && attachCards === undefined
+  ) {
+    return msg;
+  }
+  return { ...msg, timestamp, runtimeChildren, attachCards };
+}
+
 interface ConvState {
   /** WS status for UI. */
   wsStatus: "connecting" | "open" | "closed";
@@ -648,10 +674,11 @@ export const useSessionStore = create<ConvState>((set) => ({
 
   setMessages: (sessionId, msgs) =>
     set((s) => {
+      const timedMessages = msgs.map((msg) => withMessageTimestamp(msg));
       // Drop any old ids for this conv so stale entries don't leak.
       const byId = { ...s.messagesById };
       for (const oldId of s.messageOrder[sessionId] ?? []) delete byId[oldId];
-      for (const m of msgs) {
+      for (const [index, m] of timedMessages.entries()) {
         // A load_session reply can land mid-turn (WS reconnect,
         // session_reload, Switch-back from a sub-agent, or the
         // tree_update hydrate that runs *by design* during a run).
@@ -662,29 +689,45 @@ export const useSessionStore = create<ConvState>((set) => ({
         // add — deltas keep flowing into it and the finalize frame
         // writes the authoritative content.
         const cur = s.messagesById[m.id];
-        byId[m.id] = cur && isLiveRow(cur) && isEmptyRow(m) ? cur : m;
+        byId[m.id] = cur && isLiveRow(cur) && isEmptyRow(m)
+          ? withMessageTimestamp({
+              ...cur,
+              ...(validMessageTimestamp(msgs[index]?.timestamp)
+                ? { timestamp: msgs[index].timestamp }
+                : {}),
+            })
+          : m;
       }
       return {
         messagesById: byId,
-        messageOrder: { ...s.messageOrder, [sessionId]: msgs.map((m) => m.id) },
+        messageOrder: {
+          ...s.messageOrder,
+          [sessionId]: timedMessages.map((m) => m.id),
+        },
       };
     }),
 
   appendMessage: (sessionId, msg) =>
-    set((s) => ({
-      messagesById: { ...s.messagesById, [msg.id]: msg },
-      messageOrder: {
-        ...s.messageOrder,
-        [sessionId]: [...(s.messageOrder[sessionId] ?? []), msg.id],
-      },
-    })),
+    set((s) => {
+      const timedMessage = withMessageTimestamp(msg);
+      return {
+        messagesById: { ...s.messagesById, [msg.id]: timedMessage },
+        messageOrder: {
+          ...s.messageOrder,
+          [sessionId]: [...(s.messageOrder[sessionId] ?? []), msg.id],
+        },
+      };
+    }),
 
   updateMessage: (_sessionId, msgId, patch) =>
     set((s) => {
       const cur = s.messagesById[msgId];
       if (!cur) return {};
       return {
-        messagesById: { ...s.messagesById, [msgId]: { ...cur, ...patch } },
+        messagesById: {
+          ...s.messagesById,
+          [msgId]: withMessageTimestamp({ ...cur, ...patch }),
+        },
       };
     }),
 

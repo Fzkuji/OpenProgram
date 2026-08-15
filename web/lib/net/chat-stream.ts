@@ -43,6 +43,7 @@ import {
 import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   clearPendingUserText,
+  getPendingUserTimestamp,
   getPendingUserText,
 } from "@/lib/pending-user-text";
 
@@ -73,6 +74,7 @@ interface ChatResponseData {
   event?: StreamEvent;
   content?: string;
   text?: string;
+  timestamp?: number | string | null;
   /** Ordered execution blocks (thinking / text / tool) the persisted
    *  message carries. conv-mapper rebuilds these on reload; the final
    *  chat_response envelope also ships them so a live turn can converge
@@ -150,13 +152,10 @@ export function applyChatWsMessage(msg: WsEnvelope): void {
   }
 }
 
-/** A `chat_ack` only tells us which conversation the turn belongs to —
- *  for a brand-new chat that's the first time the server-assigned id is
- *  known. The assistant reply bubble is NOT created here: doing so
- *  would land it in `messageOrder` before the user turn (whose
- *  `user_message` broadcast can arrive either side of the ack). The
- *  reply is created lazily on the first stream event / result instead,
- *  by which point the user turn is already in place. */
+/** A `chat_ack` tells us which conversation the turn belongs to — for a
+ *  brand-new chat that's the first time the server-assigned id is known.
+ *  Add the locally stashed user turn first, then create its assistant
+ *  placeholder so both rows and both start times appear on the ACK. */
 function handleAck(
   d: { session_id?: string; msg_id?: string; text?: string } | undefined,
 ): void {
@@ -175,6 +174,7 @@ function handleAck(
   // IS the user turn's id — keying it here lets the reply (`_reply`
   // suffix) and the later result anchor to the same turn.
   const text = getPendingUserText(sid);
+  const timestamp = getPendingUserTimestamp(sid);
   if (d.msg_id && typeof text === "string" && text) {
     const isRun = /^(run|create|fix)\s/i.test(text);
     // The ack echoes the STORED text, which differs from the draft in
@@ -187,6 +187,7 @@ function handleAck(
       d.msg_id,
       typeof d.text === "string" && d.text ? d.text : text,
       isRun ? "runtime" : undefined,
+      timestamp,
     );
     // Create the reply bubble right away (after the user turn, so the
     // order is right) — gives an immediate typing indicator / pending
@@ -529,6 +530,12 @@ function handleUserMessage(sid: string, d: ChatResponseData): void {
     content: d.content ?? d.text ?? "",
     display: d.display === "runtime" ? "runtime" : undefined,
     status: "done",
+    timestamp:
+      typeof d.timestamp === "number"
+      && Number.isFinite(d.timestamp)
+      && d.timestamp > 0
+        ? d.timestamp
+        : undefined,
   });
 }
 
@@ -543,6 +550,7 @@ export function appendLocalUserTurn(
   msgId: string,
   text: string,
   display?: "runtime" | "normal",
+  timestamp = Date.now(),
 ): void {
   const store = useSessionStore.getState();
   if (store.messagesById[msgId]) return;
@@ -552,6 +560,7 @@ export function appendLocalUserTurn(
     content: text,
     display: display === "runtime" ? "runtime" : undefined,
     status: "done",
+    timestamp,
   });
 }
 
@@ -675,6 +684,9 @@ function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
       const cardId = evt.card_id;
       if (!cardId) break;
       const running = evt.attach?.status === "running";
+      const prev = cur.attachCards ?? [];
+      const at = prev.findIndex((c) => c.id === cardId);
+      const existingCard = at >= 0 ? prev[at] : undefined;
       const card: ChatMsg = {
         id: cardId,
         role: "assistant",
@@ -688,12 +700,11 @@ function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
             : "done",
         attach: evt.attach,
         agentId: evt.agent_id || undefined,
+        timestamp: existingCard?.timestamp ?? Date.now(),
         // The block this spawn was called from; the bubble prefers it
         // over FIFO when placing the card in the execution timeline.
         calledBy: rid,
       };
-      const prev = cur.attachCards ?? [];
-      const at = prev.findIndex((c) => c.id === cardId);
       const attachCards =
         at >= 0
           // Terminal event for a card already on screen: patch in
