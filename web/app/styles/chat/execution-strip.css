@@ -7,12 +7,11 @@
    函数内部的 context_tree 递归成缩进一层的子时间线（.tl-sub）。 */
 .tl {
   margin: 6px 0 4px;
-  --timeline-line: light-dark(rgba(36, 36, 32, 0.52), rgba(226, 225, 218, 0.4));
-  --timeline-fill: light-dark(#92928b, #464644);
-  --timeline-thinking: light-dark(#522690, var(--accent-purple, #a371f7));
-  --timeline-function: light-dark(#683000, var(--accent-orange, #d19a66));
-  --timeline-llm: light-dark(#004853, var(--accent-cyan, #3bc9db));
-  --timeline-subagent: light-dark(#004a2b, var(--accent-green, #18a96b));
+  --timeline-line: light-dark(rgba(36, 36, 32, 0.22), rgba(226, 225, 218, 0.28));
+  --timeline-thinking: light-dark(#7c3aed, #b78cff);
+  --timeline-function: light-dark(#d14a1f, #ff9a66);
+  --timeline-llm: light-dark(#00849a, #45d7e8);
+  --timeline-subagent: light-dark(#0b8a4b, #4bd58a);
 }
 /* 展开/收起高度过渡：grid 0fr↔1fr，展开向下推开、收起平滑抽走。 */
 .tl-collapse {
@@ -128,12 +127,27 @@
   isolation: isolate;
 }
 .tl-step-icon.is-toggleable {
+  --marker-surface: light-dark(
+    color-mix(in srgb, currentColor 8%, var(--bg-primary)),
+    color-mix(in srgb, currentColor 14%, var(--bg-primary))
+  );
   border-radius: 50%;
   background-color: transparent;
-  box-shadow:
-    0 0 0 1.5px var(--timeline-fill),
-    0 0 0 3px var(--timeline-fill);
-  transition: background-color 0.18s ease, box-shadow 0.18s ease;
+  transition: background-color 0.18s ease;
+}
+.tl-step-icon.is-toggleable::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: 50%;
+  top: 50%;
+  box-sizing: border-box;
+  width: var(--marker-size);
+  height: var(--marker-size);
+  border: 2px solid var(--marker-surface);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
 }
 .tl-step-icon.is-toggleable::before {
   content: "";
@@ -144,7 +158,7 @@
   width: var(--marker-size);
   height: var(--marker-size);
   border-radius: 50%;
-  background: var(--timeline-fill);
+  background: var(--marker-surface);
   transform: translate(-50%, -50%);
   transform-origin: center top;
   pointer-events: none;
@@ -157,9 +171,7 @@
 }
 .tl-step:has(> .tl-collapse.is-open) > .tl-step-head > .tl-step-icon.is-toggleable {
   background-color: var(--bg-primary);
-  box-shadow:
-    0 0 0 1.5px var(--bg-primary),
-    0 0 0 3px var(--timeline-line);
+  box-shadow: 0 0 0 1px var(--bg-primary);
 }
 .tl-step:has(> .tl-collapse.is-open) > .tl-step-head > .tl-step-icon.is-toggleable::before {
   top: calc(50% + var(--marker-radius) + 6px);
@@ -266,8 +278,8 @@
    悬停显现），左缘对齐步骤行的标题文字列。 */
 .runtime-actions-footer {
   justify-content: flex-start; /* 与 assistant 消息一致：底部靠左 */
-  padding-left: 2px; /* 对齐树最左缘（根图标列），不悬空在半截缩进上 */
-  margin-top: 12px;
+  padding-left: 0;
+  margin-top: 14px;
 }
 .runtime-actions-footer .message-timestamp { padding-left: 0; }
 .runtime-card-host:hover .message-actions,

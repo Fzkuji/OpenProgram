@@ -11,8 +11,9 @@
   --page-bg:#141413;
   --bg-primary:#1f1f1e; --bg-secondary:#171716; --bg-tertiary:#252524;
   --bg-hover:#2e2e2c; --border-light:rgba(226,225,218,0.2);
-  --timeline-line:rgba(226,225,218,0.4);
-  --timeline-fill:#464644;
+  --timeline-line:rgba(226,225,218,0.28);
+  --timeline-thinking:#b78cff;--timeline-function:#ff9a66;
+  --timeline-llm:#45d7e8;--timeline-subagent:#4bd58a;
   --text-primary:#c3c2b7; --text-secondary:#97958c; --text-muted:#6b6a63;
   --text-bright:#f8f8f6; --radius:8px;
   --font-sans:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;
@@ -23,7 +24,9 @@
     --accent-orange:#683000;--accent-green:#004a2b;--accent-cyan:#004853;--accent-purple:#522690;
     --page-bg:#f7f7f5;
     --bg-primary:#ffffff;--bg-secondary:#f1f1ee;--bg-tertiary:#e9e9e5;--bg-hover:#e4e4df;
-    --border-light:rgba(36,36,32,.18);--timeline-line:rgba(36,36,32,.52);--timeline-fill:#92928b;
+    --border-light:rgba(36,36,32,.18);--timeline-line:rgba(36,36,32,.22);
+    --timeline-thinking:#7c3aed;--timeline-function:#d14a1f;
+    --timeline-llm:#00849a;--timeline-subagent:#0b8a4b;
     --text-primary:#3f3f3a;--text-secondary:#66665f;--text-muted:#8a8a82;--text-bright:#191917;
   }
   .num{color:#fff}
@@ -49,6 +52,10 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
 .u-bubble{background:var(--bg-tertiary);border-radius:14px;padding:9px 14px;max-width:70%;color:var(--text-primary)}
 .reply{margin:10px 0;color:var(--text-primary)}
 .reply b{color:var(--text-bright)}
+.reply-footer{display:flex;align-items:center;gap:2px;margin-top:14px;color:var(--text-muted);font-size:12px;opacity:0}
+.reply-footer .ts{padding-right:6px;font-variant-numeric:tabular-nums}
+.reply-footer .act{display:inline-flex;align-items:center;gap:2px}
+.reply-message:hover .reply-footer,.reply-footer:focus-within{opacity:1}
 
 /* ── 执行时间线（无外框） ── */
 /* 开关 = GPT 式纯文字：无按钮底色、无内边距偏移，与正文左对齐；
@@ -83,29 +90,31 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
   --marker-size:26px;--marker-radius:13px;display:flex;align-items:center;justify-content:center;
   background:var(--bg-primary);color:var(--text-secondary);isolation:isolate}
 .step[data-step-toggle]>.step-head>.step-icon{border-radius:50%;
-  box-shadow:0 0 0 3px var(--bg-primary),0 0 0 4px var(--border-light);
-  transition:background-color .18s ease,box-shadow .18s ease}
+  --marker-surface:light-dark(color-mix(in srgb,currentColor 8%,var(--bg-primary)),
+    color-mix(in srgb,currentColor 14%,var(--bg-primary)));
+  transition:background-color .18s ease}
+.step[data-step-toggle]>.step-head>.step-icon::after{content:"";position:absolute;z-index:0;left:50%;top:50%;
+  box-sizing:border-box;width:var(--marker-size);height:var(--marker-size);border:2px solid var(--marker-surface);
+  border-radius:50%;transform:translate(-50%,-50%);pointer-events:none}
 .step[data-step-toggle]>.step-head>.step-icon::before{content:"";position:absolute;z-index:-1;left:50%;top:50%;
-  width:var(--marker-size);height:var(--marker-size);border-radius:50%;background:var(--timeline-fill);
+  width:var(--marker-size);height:var(--marker-size);border-radius:50%;background:var(--marker-surface);
   transform:translate(-50%,-50%);transform-origin:center top;pointer-events:none;
   transition:top .22s cubic-bezier(.2,.7,.2,1),width .18s ease,height .22s cubic-bezier(.2,.7,.2,1),
     border-radius .18s ease,background-color .18s ease}
 .step[data-step-toggle]:not(.open)>.step-head>.step-icon{
-  background-color:transparent;
-  box-shadow:0 0 0 1.5px var(--timeline-fill),0 0 0 3px var(--timeline-fill)}
+  background-color:transparent}
 .step[data-step-toggle].open>.step-head>.step-icon{
-  background-color:var(--bg-primary);
-  box-shadow:0 0 0 1.5px var(--bg-primary),0 0 0 3px var(--timeline-line)}
+  background-color:var(--bg-primary);box-shadow:0 0 0 1px var(--bg-primary)}
 .step[data-step-toggle].open>.step-head>.step-icon::before{
   top:calc(50% + var(--marker-radius) + 6px);width:1.5px;height:12px;border-radius:1px;
   background-color:transparent}
 .step-icon svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;
   stroke-linecap:round;stroke-linejoin:round}
 /* 三类配色：思考紫 / 函数橙 / LLM 青 / 子代理绿（静态不动画）。 */
-.step-icon.k-thinking{color:var(--accent-purple)}
-.step-icon.k-function{color:var(--accent-orange)}
-.step-icon.k-llm{color:var(--accent-cyan)}
-.step-icon.k-subagent{color:var(--accent-green)}
+.step-icon.k-thinking{color:var(--timeline-thinking)}
+.step-icon.k-function{color:var(--timeline-function)}
+.step-icon.k-llm{color:var(--timeline-llm)}
+.step-icon.k-subagent{color:var(--timeline-subagent)}
 .step-icon.is-error{color:var(--accent-red)}
 .step-title{flex:0 0 auto}
 /* 标题 = 详情入口：悬停下划线；行内其他位置只负责展开/折叠。 */
@@ -153,7 +162,7 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
 .runtime-program-conclusion-label{margin-bottom:3px;color:var(--text-bright);font-size:12px;font-weight:600}
 .runtime-program-conclusion-meta{margin:0;color:var(--text-secondary);font-size:13px;line-height:1.55}
 .run-footer{display:flex;align-items:center;gap:2px;justify-content:flex-start;
-  padding-left:0;margin-top:12px;font-size:12px;color:var(--text-muted)}
+  padding-left:0;margin-top:14px;font-size:12px;color:var(--text-muted)}
 .run-footer .ts{margin-right:6px}
 .run-footer .act{opacity:0;display:inline-flex;gap:2px;align-items:center;transition:opacity .15s}
 .run-host:hover .run-footer .act{opacity:1}
@@ -340,14 +349,23 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
     </div></div>
   </div>
 
-  <div class="reply">北京今天<b>小雨转暴雨</b>，现在 25.8°C、湿度 89%；全天 24～28°C，降水概率约 98%。<b>建议带伞</b>，尽量减少非必要外出。</div>
+  <div class="reply-message">
+    <div class="reply">北京今天<b>小雨转暴雨</b>，现在 25.8°C、湿度 89%；全天 24～28°C，降水概率约 98%。<b>建议带伞</b>，尽量减少非必要外出。</div>
+    <div class="reply-footer">
+      <span class="ts">16:33</span>
+      <span class="act">
+        <button class="icon-btn" title="复制"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        <button class="icon-btn" title="重试"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.5 15a9 9 0 1 0 2-9.4L1 10"/></svg></button>
+      </span>
+    </div>
+  </div>
 </div>
-<div class="rule">规则：外层无框无底色；收起行 = 纯文字摘要 + ›（无按钮底色，与正文列左对齐）；所有收起行固定高 28px，第一行文字、箭头与同轮 28px 头像严格上下居中，不使用 top、transform 或 translate 做垂直偏移；回复文本永远直接可见。<br>
+<div class="rule">规则：外层无框无底色；收起行 = 纯文字摘要 + ›（无按钮底色，与正文列左对齐）；所有收起行固定高 28px，第一行文字、箭头与同轮 28px 头像严格上下居中，不使用 top、transform 或 translate 做垂直偏移；回复文本永远直接可见，底部发送时间和复制、重试等操作只在消息 hover 或 footer 键盘 focus 时一起显示。执行摘要、正文和时间戳采用不同字号与行高，因此正文到 footer 使用 14px 视觉间距，使两段可见文字之间的留白一致；不改变折叠行高度或头像位置。<br>
 <b>展开只向下</b>：高度过渡用 grid 0fr↔1fr（0.18s），展开把下方内容推开、收起平滑抽走；<b>视口不许跳</b>——聊天区关掉原生 scroll anchoring（overflow-anchor:none），且用户点击后的 600ms 内暂停贴底吸附，展开/收起时开关行在屏幕上纹丝不动。收起动画结束后卸载子树，折叠状态不付渲染成本。<b>流式进行中默认展开</b>：摘要小字加 shimmer 扫光表示进行中，用户可手动折叠；展开后的列表向下拼接新步骤（淡入下滑 0.22s），当前运行中的行图标位用呼吸点，思考行的 note 显示最新一行。落定后保留用户手动选择；未手动操作时回到折叠态——流式与落定共用同一条时间线渲染路径（伪 blocks 由实时字段合成，finalize 后由真 blocks 接管）。</div>
 
 <!-- ═══════ 2. 时间线细节 ═══════ -->
 <h2><span class="num">2</span>时间线行：圆圈同时表示可展开与开合状态</h2>
-<div class="desc">左列始终是原有类型图标，图标采用统一的 24×24 线性 SVG，其中函数行使用 Lucide Wrench；图标按类配色：<b style="color:var(--accent-purple)">思考紫</b> / <b style="color:var(--accent-orange)">函数橙</b> / <b style="color:var(--accent-cyan)">LLM 青</b> / <b style="color:var(--accent-green)">子代理绿</b>。只要一行有直接子内容，圆形状态就始终可见：<b>收起时为低对比度实心圆，展开时为空心圆环</b>，不依赖鼠标悬停。两种状态外径一致，主层 26px、子层 23px；空心态由 1.5px 页面底色间隔加 1.5px 中性外沿组成。展开时，圆内填充在 220ms 内缩为 1.5px 宽、12px 高的竖段，从圆心向下移动到圆环下缘，并同步渐变为透明，露出原有时间线；不在原有时间线上再绘制第二条半透明线。子内容同时以 0fr→1fr、高度 220ms、透明度 140ms 和 -3px→0 的位移显示。折叠使用完全相反的 transition，连续点击时从当前动画进度反向执行。圆心、外径和图标位置不参与动画。时间线和空心外沿使用由主题 token 决定的中性色；收起态使用不透明的中性填充遮住背后的竖线。叶子行不画圈，圆圈不继承图标颜色。不增加任何箭头，也不显示后代步数。交互仍分为两个区域：<b>带下划线的标题</b>点击后打开右侧具体信息；点击图标、摘要或行内空白只展开/折叠。</div>
+<div class="desc">左列始终是原有类型图标，图标采用统一的 24×24 线性 SVG，其中函数行使用 Lucide Wrench；图标按类配色：<b style="color:var(--timeline-thinking)">思考紫</b> / <b style="color:var(--timeline-function)">函数橙</b> / <b style="color:var(--timeline-llm)">LLM 青</b> / <b style="color:var(--timeline-subagent)">子代理绿</b>。深色和浅色模式分别使用清晰、鲜艳的类型色。只要一行有直接子内容，圆形状态就始终可见：<b>收起时为同类型的均匀浅色实心圆，展开时为空心圆环</b>，不依赖鼠标悬停。收起态只有一个完整色面，不区分内心和外圈；浅色模式混入 8% 类型色，深色模式混入 14% 类型色，并与页面底色生成不透明颜色，因此会完全遮住背后的时间线。外圈由独立静态层绘制，固定为 2px，外径始终为主层 26px、子层 23px；外圈不参与任何 transition 或 animation，展开和收起只改变内部是同色填充还是页面底色。展开时，内部圆形色面在 220ms 内缩为 1.5px 宽、12px 高的竖段，从圆心向下移动到圆环下缘，并同步渐变为透明，露出原有中性时间线；不在原有时间线上再绘制第二条半透明线。子内容同时以 0fr→1fr、高度 220ms、透明度 140ms 和 -3px→0 的位移显示。折叠使用完全相反的 transition，连续点击时从当前动画进度反向执行。圆心、外径和图标位置不参与动画。叶子行不画圈。不增加任何箭头，也不显示后代步数。交互仍分为两个区域：<b>带下划线的标题</b>点击后打开右侧具体信息；点击图标、摘要或行内空白只展开/折叠。</div>
 <div class="stage">
   <div class="tl open">
     <div class="tl-toggle"><span>思考 ×1 · 函数 ×2（进行中）</span><span class="chev">›</span></div>
@@ -413,12 +431,12 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
     </div></div>
   </div>
 </div>
-<div class="rule">状态就画在图标位：运行中 = 呼吸点（青），失败 = 红 ✗，正常 = 类型图标（按类配色）；可展开性和开合状态也只在图标位表达——有子内容时始终显示圆形状态，收起实心、展开空心，叶子行不画圈。圆圈不继承类型颜色，也不是 hover 效果，鼠标移动不会改变它。<br>
-几何：主层 tl-body 左内边距 38px，20px 图标落在 4..24（中心 14），1.5px 竖线压在 13.25px；子层左内边距 34px，17px 图标（中心 12.5），竖线压在 11.75px。图标盒、圆心和竖线位置保持不变；收起态用 3px 中性填充扩展原图标盒，展开态用 1.5px 页面底色间隔加 1.5px 中性外沿，两者外径均为主层 26px、子层 23px，不改变行高和列宽。内部填充只改变自身宽高、纵向位置和透明度：26/23px 圆形填充缩为 1.5×12px 竖段并渐变透明，竖段上缘落在对应圆环下缘，最终由原有 1.5px 时间线单独显示连接关系。<br>
-动画：圆内填充、圆环配色和子内容在同一帧开始。填充、子内容高度和子时间线起点使用同一个 220ms cubic-bezier(.2,.7,.2,1)；子时间线自身的 -3px→0 位移之外，线起点再执行 -9.5px→-0.5px，使它和上方 12px 竖段在所有中间帧保持相接。圆环配色与内容透明度使用 140–180ms ease；折叠按相反方向执行。实现只依据同一个 open 状态，不增加中间状态。暗色与浅色模式分别使用对应的页面底色、时间线填充和中性线色；浅色模式的圆圈对白底、类型图标对实心填充均至少达到 3:1。prefers-reduced-motion 下所有过渡缩短为 0.01ms。<br>
+<div class="rule">状态就画在图标位：运行中 = 呼吸点（青），失败 = 红 ✗，正常 = 类型图标（按类配色）；可展开性和开合状态也只在图标位表达——有子内容时始终显示圆形状态，收起实心、展开空心，叶子行不画圈。圆圈继承当前行的类型色；收起态为单一、均匀、不透明的浅色面，不是 hover 效果，鼠标移动不会改变它。<br>
+几何：主层 tl-body 左内边距 38px，20px 图标落在 4..24（中心 14），1.5px 竖线压在 13.25px；子层左内边距 34px，17px 图标（中心 12.5），竖线压在 11.75px。图标盒、圆心和竖线位置保持不变；收起态直接绘制主层 26px、子层 23px 的完整色面，内部和边缘颜色完全一致，并遮住背后的时间线。独立外圈固定为 2px，展开和收起时都不变化；展开态在图标盒外增加 1px 页面底色内遮罩，恰好覆盖到圆环内缘，灰色时间线只能从圆环外缘下方开始。总外径不改变行高和列宽。内部色面只改变自身宽高、纵向位置和透明度：26/23px 圆形缩为 1.5×12px 竖段并渐变透明，竖段上缘落在对应圆环下缘，最终由原有 1.5px 中性时间线单独显示连接关系。<br>
+动画：圆形色面、圆环配色和子内容在同一帧开始。色面、子内容高度和子时间线起点使用同一个 220ms cubic-bezier(.2,.7,.2,1)；子时间线自身的 -3px→0 位移之外，线起点再执行 -9.5px→-0.5px，使它和上方 12px 竖段在所有中间帧保持相接。圆环配色与内容透明度使用 140–180ms ease；折叠按相反方向执行。实现只依据同一个 open 状态，不增加中间状态。暗色与浅色模式分别使用独立的鲜艳类型色；浅色模式时间线使用 22% 中性色，深色模式使用 28%，均低于类型图标和文字的视觉权重。prefers-reduced-motion 下所有过渡缩短为 0.01ms。<br>
 不增加独立箭头，不预留箭头槽，也不显示“⋯ N 步”。右侧只保留 Copy、Switch 等动作，动作右缘不受行是否可展开影响。带下划线的标题始终是详情入口；辅助动作只在鼠标压着的那一行出现，进入和离开均即时切换，不做 opacity 过渡。:hover 必须挂在 step-head 而非整个 step——嵌套树里子行悬停不会同时显示祖先行的动作；键盘操作只由 :focus-visible 保持动作可见，鼠标点击留下的 focus 不会让旧行残留。点击图标、摘要或行内空白只展开/折叠，不打开详情。<br>
 嵌套层级：函数内部还有子调用时（@agentic_function 的执行树、工具的多层 call-tree），展开就是<b>缩进一层的子时间线</b>——同一套行样式递归下去，层数不限。<br>
-<b>实现状态：</b>生产组件已使用收起实心、展开空心的圆点状态；圆内填充连续缩小并露出原有连接线，子内容以同一个 220ms 过渡展开或折叠，外径统一为主层 26px、子层 23px。其余既有行为不变：所有时间线行均提供复制操作，右侧展开箭头和步骤数提示已移除。</div>
+<b>实现状态：</b>生产组件已使用收起实心、展开空心的圆点状态；收起态是均匀、不透明、能够遮住连接线的浅色色面，圆形色面连续缩小并露出原有连接线，子内容以同一个 220ms 过渡展开或折叠，外径统一为主层 26px、子层 23px。其余既有行为不变：所有时间线行均提供复制操作，右侧展开箭头和步骤数提示已移除。</div>
 
 <!-- ═══════ 3. 手动函数运行 ═══════ -->
 <h2><span class="num">3</span>手动函数运行：同一条时间线 + 消息式 footer</h2>
@@ -476,9 +494,9 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
     </div>
   </div>
 </div>
-<div class="rule">顶部折叠标题、Conclusion 和 footer 共享同一个内容列起点，不使用各自的 left、padding-left、margin-left 或 transform 做视觉补偿。footer 与聊天消息的 footer 同款（同一套图标按钮 + 时间戳，悬停显现），justify-content:flex-start；Conclusion 或直接结果到 footer 的垂直间距固定复用 assistant 正文到 footer 的 12px 段落间距，不另设紧凑间距；版本切换<b>复用聊天的 .message-nav 组件</b>（◀ N/M ▶），不另造样式。footer 的复制复制<b>根调用的实际结果</b>（error ?? output），不是参数 JSON。<br>
+<div class="rule">顶部折叠标题、Conclusion 和 footer 共享同一个内容列起点，不使用各自的 left、padding-left、margin-left 或 transform 做视觉补偿。footer 与聊天消息的 footer 同款（同一套图标按钮 + 时间戳，悬停显现），justify-content:flex-start；Conclusion 或直接结果到 footer 的垂直间距固定复用 assistant 正文到 footer 的 14px 视觉段落间距，不另设紧凑间距；版本切换<b>复用聊天的 .message-nav 组件</b>（◀ N/M ▶），不另造样式。footer 的复制复制<b>根调用的实际结果</b>（error ?? output），不是参数 JSON。<br>
 <b>分支语义</b>：重试 = <b>参数不变的兄弟分支</b>；修改（Edit）= 把上一次的参数预填回表单、提交后作为<b>可改参数的兄弟分支</b>运行（fork_of_node → 锚到原调用的前驱）。两者都在原位替换显示、旧运行经 ◀ N/M ▶ 仍可回看——<b>绝不在会话尾部追加新调用</b>。运行中占位 = 单条呼吸点行；嵌套在别的消息里（nested）时不渲染 footer。<br>
-<b>实现状态：</b>生产函数 footer 当前额外带 2px 左内边距，因此时间行比折叠标题和 Conclusion 略向右；本页目标为三者严格共享同一左缘，尚未实施。</div>
+<b>实现状态：</b>生产函数 footer 已移除额外左内边距，时间行、折叠标题和 Conclusion 严格共享同一左缘。</div>
 
 <!-- ═══════ 4. Sub-agent 当前行为 ═══════ -->
 <h2><span class="num">4</span>Sub-agent 实时显示现状：记录保留，父级结束时自动收起</h2>
@@ -609,7 +627,7 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
       </div>
       <div class="branch-continuation" id="branch-parent-continuation">
         <div class="reply">已继续处理父对话：对 sub-agent 返回的论文清单去重，并将研究脉络写入项目文件。</div>
-        <div class="run-footer" style="margin-top:12px"><span class="ts">15:42</span></div>
+        <div class="run-footer" style="margin-top:14px"><span class="ts">15:42</span></div>
       </div>
     </section>
 

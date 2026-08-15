@@ -771,18 +771,43 @@ assert.ok(
 );
 assert.match(
   chatCss,
-  /\.message\.assistant \.message-actions-footer\s*\{[^}]*margin-top:\s*12px/s,
-  "assistant messages define the shared 12px body-to-footer paragraph gap",
+  /\.message\.assistant \.message-actions-footer\s*\{[^}]*margin-top:\s*14px/s,
+  "assistant messages define the optically balanced 14px body-to-footer gap",
 );
 assert.match(
   chatCss,
-  /\.runtime-actions-footer\s*\{[^}]*margin-top:\s*12px/s,
-  "workflow Conclusion-to-footer spacing must match assistant messages",
+  /\.message-actions\s*\{[^}]*opacity:\s*0/s,
+  "chat message timestamps and actions must stay hidden without hover",
+);
+assert.match(
+  chatCss,
+  /\.message:hover \.message-actions,\s*\.message-actions:focus-within\s*\{[^}]*opacity:\s*1/s,
+  "chat message timestamps and actions must appear together on hover or keyboard focus",
+);
+assert.doesNotMatch(
+  chatCss,
+  /\.message \.message-actions-footer \.message-actions\s*\{[^}]*opacity:\s*1/s,
+  "chat message footers must not force the timestamp visible without hover",
 );
 assert.match(
   chatVisualSpec,
-  /\.run-footer\{[^}]*margin-top:12px/s,
-  "the visual specification must show the shared 12px footer spacing",
+  /\.reply-footer\{[^}]*margin-top:14px[^}]*opacity:0[^}]*\}[\s\S]*\.reply-message:hover \.reply-footer,\.reply-footer:focus-within\{opacity:1\}[\s\S]*class="reply-footer"[\s\S]*class="ts">16:33</,
+  "the visual specification must hide the whole assistant footer until hover or keyboard focus",
+);
+assert.match(
+  chatCss,
+  /\.runtime-actions-footer\s*\{[^}]*margin-top:\s*14px/s,
+  "workflow Conclusion-to-footer spacing must match assistant messages",
+);
+assert.match(
+  chatCss,
+  /\.runtime-actions-footer\s*\{[^}]*padding-left:\s*0(?:px)?\s*;/s,
+  "workflow header, Conclusion, and footer must share the exact same left edge",
+);
+assert.match(
+  chatVisualSpec,
+  /\.run-footer\{[^}]*margin-top:14px/s,
+  "the visual specification must show the shared 14px footer spacing",
 );
 assert.match(
   chatVisualSpec,
@@ -819,8 +844,8 @@ const designExpandableIconRule = chatVisualSpec.match(
 )?.[1] ?? "";
 assert.match(
   designExpandableIconRule,
-  /box-shadow:\s*0 0 0 3px var\(--bg-primary\),\s*0 0 0 4px var\(--border-light\)/,
-  "expandable design rows must use the enlarged neutral ring",
+  /--marker-surface:\s*light-dark\(color-mix\(in srgb,currentColor 8%,var\(--bg-primary\)\),\s*color-mix\(in srgb,currentColor 14%,var\(--bg-primary\)\)\);[^}]*transition:\s*background-color \.18s ease/s,
+  "the design must animate only the marker interior",
 );
 assert.match(
   designExpandableIconRule,
@@ -995,7 +1020,7 @@ assert.match(
 assert.match(
   timelineBaseIconRule,
   /--marker-size:\s*26px;[^}]*--marker-radius:\s*13px;[^}]*isolation:\s*isolate/s,
-  "top-level expandable markers must preserve a fixed 26px outer geometry",
+  "top-level collapsed markers must preserve the 26px uniform surface and 13px radius",
 );
 assert.doesNotMatch(
   timelineBaseIconRule,
@@ -1017,12 +1042,17 @@ assert.match(
   /\.tl-sub\s+\.tl-step-icon\s*\{[^}]*left:\s*-32px;[^}]*width:\s*17px;[^}]*height:\s*17px/s,
   "the nested timeline icon box and center must remain unchanged",
 );
-for (const [kind, color] of [
-  ["thinking", "timeline-thinking"],
-  ["function", "timeline-function"],
-  ["llm", "timeline-llm"],
-  ["subagent", "timeline-subagent"],
+for (const [kind, color, light, dark] of [
+  ["thinking", "timeline-thinking", "#7c3aed", "#b78cff"],
+  ["function", "timeline-function", "#d14a1f", "#ff9a66"],
+  ["llm", "timeline-llm", "#00849a", "#45d7e8"],
+  ["subagent", "timeline-subagent", "#0b8a4b", "#4bd58a"],
 ]) {
+  assert.match(
+    chatCss,
+    new RegExp(`--${color}:\\s*light-dark\\(${light},\\s*${dark}\\)`),
+    `${kind} timeline icons must use the vivid light/dark palette`,
+  );
   assert.match(
     chatCss,
     new RegExp(`\\.tl-step-icon\\.k-${kind}\\s*\\{[^}]*color:\\s*var\\(--${color}(?:,[^)]+)?\\)`),
@@ -1032,8 +1062,18 @@ for (const [kind, color] of [
 const timelineToggleIconRule = chatCss.match(/\.tl-step-icon\.is-toggleable\s*\{([^}]*)\}/)?.[1] ?? "";
 assert.match(
   timelineToggleIconRule,
-  /background-color:\s*transparent;[^}]*box-shadow:\s*0 0 0 1\.5px var\(--timeline-fill\),\s*0 0 0 3px var\(--timeline-fill\)/s,
-  "collapsed expandable rows must use the persistent neutral solid marker",
+  /--marker-surface:\s*light-dark\(\s*color-mix\(in srgb, currentColor 8%, var\(--bg-primary\)\),\s*color-mix\(in srgb, currentColor 14%, var\(--bg-primary\)\)\s*\);[^}]*background-color:\s*transparent;[^}]*transition:\s*background-color 0\.18s ease/s,
+  "toggleable markers must animate only their interior background",
+);
+assert.doesNotMatch(
+  timelineToggleIconRule,
+  /box-shadow|transition:[^;]*box-shadow/,
+  "the outer ring must not be part of the state transition",
+);
+assert.doesNotMatch(
+  timelineToggleIconRule,
+  /--marker-(?:fill|ring)|color-mix\([^)]*transparent/,
+  "collapsed marker colours must not be translucent or split into fill and ring tokens",
 );
 assert.match(
   timelineToggleIconRule,
@@ -1048,10 +1088,28 @@ assert.doesNotMatch(
 const timelineMarkerCoreRule = chatCss.match(
   /\.tl-step-icon\.is-toggleable::before\s*\{([^}]*)\}/,
 )?.[1] ?? "";
+const timelineMarkerRingRule = chatCss.match(
+  /\.tl-step-icon\.is-toggleable::after\s*\{([^}]*)\}/,
+)?.[1] ?? "";
+assert.match(
+  timelineMarkerRingRule,
+  /position:\s*absolute;[^}]*box-sizing:\s*border-box;[^}]*width:\s*var\(--marker-size\);[^}]*height:\s*var\(--marker-size\);[^}]*border:\s*2px solid var\(--marker-surface\);[^}]*border-radius:\s*50%/s,
+  "one independent 2px ring must preserve the marker's fixed outer geometry",
+);
+assert.doesNotMatch(
+  timelineMarkerRingRule,
+  /transition|animation|opacity/,
+  "the outer ring must remain completely static while the marker opens or closes",
+);
+assert.match(
+  timelineBaseIconRule,
+  /--marker-size:\s*26px;[^}]*--marker-radius:\s*13px/s,
+  "the top-level marker surface must cover the full 26px circle",
+);
 assert.match(
   timelineMarkerCoreRule,
-  /width:\s*var\(--marker-size\);[^}]*height:\s*var\(--marker-size\);[^}]*background:\s*var\(--timeline-fill\)/s,
-  "the collapsed marker core must fill the fixed outer circle",
+  /width:\s*var\(--marker-size\);[^}]*height:\s*var\(--marker-size\);[^}]*background:\s*var\(--marker-surface\)/s,
+  "one opaque surface must cover the full collapsed marker and mask the line behind it",
 );
 assert.match(
   timelineMarkerCoreRule,
@@ -1063,8 +1121,13 @@ const timelineOpenMarkerRule = [...chatCss.matchAll(/([^{}]+)\{([^}]*)\}/g)]
   .find(([_, selectors]) => selectors.trim() === timelineOpenMarkerSelector)?.[2] ?? "";
 assert.match(
   timelineOpenMarkerRule,
-  /background-color:\s*var\(--bg-primary\);[^}]*box-shadow:\s*0 0 0 1\.5px var\(--bg-primary\),\s*0 0 0 3px var\(--timeline-line\)/s,
-  "expanded markers must become hollow without moving their outer geometry",
+  /background-color:\s*var\(--bg-primary\);[^}]*box-shadow:\s*0 0 0 1px var\(--bg-primary\)/s,
+  "expanded markers must mask the timeline exactly to the 2px ring's inner edge",
+);
+assert.doesNotMatch(
+  timelineOpenMarkerRule,
+  /border|opacity|transition|animation|box-shadow:[^;]*(?:marker-surface|timeline-line)/,
+  "the expanded state must not restyle or animate the independent outer ring",
 );
 const timelineOpenCoreRule = [...chatCss.matchAll(/([^{}]+)\{([^}]*)\}/g)]
   .find(([_, selectors]) => selectors.trim() === `${timelineOpenMarkerSelector}::before`)?.[2] ?? "";
@@ -1094,7 +1157,7 @@ assert.match(
 assert.match(
   chatCss,
   /\.tl-sub \.tl-step-icon\s*\{[^}]*--marker-size:\s*23px;[^}]*--marker-radius:\s*11\.5px/s,
-  "nested expandable markers must retain the 23px geometry",
+  "nested collapsed markers must retain the uniform 23px surface",
 );
 assert.match(
   chatCss,
@@ -1113,8 +1176,13 @@ assert.match(
 );
 assert.match(
   chatCss,
-  /\.tl\s*\{[^}]*--timeline-line:\s*light-dark\([^;]+\);[^}]*--timeline-fill:\s*light-dark\(#92928b,\s*#464644\)/s,
-  "timeline line and fill colours must adapt to light and dark themes",
+  /\.tl\s*\{[^}]*--timeline-line:\s*light-dark\(rgba\(36, 36, 32, 0\.22\),\s*rgba\(226, 225, 218, 0\.28\)\);/s,
+  "the timeline line must stay subdued in both light and dark themes",
+);
+assert.doesNotMatch(
+  chatCss,
+  /--timeline-fill|var\(--timeline-fill\)/,
+  "expandable markers must not fall back to a neutral grey fill",
 );
 const timelineIconCssRules = [...chatCss.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([_, selectors]) =>
   selectors.includes(".tl-step-icon"),
