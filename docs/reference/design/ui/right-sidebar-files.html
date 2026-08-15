@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpenProgram 右侧文件栏对齐设计</title>
+<title>OpenProgram 右侧文件树层级设计</title>
 <style>
   :root {
     color-scheme: dark;
@@ -92,15 +92,18 @@
   .tree-row {
     height: 26px;
     display: grid;
-    grid-template-columns: 16px 16px minmax(0, 1fr);
+    grid-template-columns: 16px minmax(0, 1fr);
     align-items: center;
     padding-right: 8px;
     color: var(--muted);
     white-space: nowrap;
   }
-  .tree-row .chev { width: 16px; text-align: center; }
   .tree-row .folder { width: 16px; display: grid; place-items: center; color: var(--folder); }
   .tree-row .label { min-width: 0; margin-left: 12px; overflow: hidden; text-overflow: ellipsis; }
+  .tree-branch { position: relative; }
+  .tree-branch::before { content: ""; position: absolute; left: 8px; top: 26px; bottom: 13px; width: 1px; background: #55555e; }
+  .tree-child { position: relative; padding-left: 16px; }
+  .tree-child::before { content: ""; position: absolute; left: 8px; top: 13px; width: 9px; height: 1px; background: #55555e; }
   .guides { position: absolute; inset: 0; pointer-events: none; opacity: .8; }
   .guide { position: absolute; top: 0; bottom: 0; border-left: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); }
   .guide.g8 { left: 8px; }
@@ -135,14 +138,14 @@
 <body>
 <main>
   <header>
-    <div class="status">设计稿 · 尚未修改生产代码</div>
-    <h1>右侧文件栏使用同一条侧栏网格</h1>
-    <p>当前项目行比顶部折叠按钮和 <code>Files</code> 导航向左偏移；根级文件夹图标又落在另一条中轴线上。目标是让顶部、项目行和根级文件树共用 8 / 24 / 44px 三列网格，不改变搜索、创建、刷新或文件树行为。</p>
+    <div class="status">当前设计 · 已实现</div>
+    <h1>文件夹图标直接表达展开状态</h1>
+    <p>文件树不再为每个目录增加独立折叠箭头。目录图标本身负责展开与收起；展开后的竖线从父目录图标中心向下延伸，子项通过短横线接入，形成命令行文件树的父子结构。项目工具栏继续保持既有对齐，不改变搜索、创建、刷新或文件操作。</p>
     <div class="facts">
       <span class="fact"><b>对象</b> 右侧 Files 文件浏览器</span>
       <span class="fact"><b>受众</b> 桌面端项目用户</span>
-      <span class="fact"><b>范围</b> 几何、间距、视觉层级</span>
-      <span class="fact"><b>排除</b> 新功能、索引、树数据与交互变更</span>
+      <span class="fact"><b>范围</b> 目录展开符号、层级线、水平留白</span>
+      <span class="fact"><b>排除</b> 文件数据、右键菜单、搜索与编辑行为</span>
     </div>
   </header>
 
@@ -160,13 +163,17 @@
           </div>
         </div>
         <div class="tree">
-          <div class="tree-row"><span class="chev">›</span><span class="folder">▱</span><span class="label">.claude</span></div>
-          <div class="tree-row"><span class="chev">›</span><span class="folder">▱</span><span class="label">docs</span></div>
-          <div class="tree-row"><span class="chev">›</span><span class="folder">▱</span><span class="label">web</span></div>
+          <div class="tree-row"><span class="folder">▱</span><span class="label">.claude</span></div>
+          <div class="tree-row"><span class="folder">▱</span><span class="label">docs</span></div>
+          <div class="tree-branch">
+            <div class="tree-row"><span class="folder">▰</span><span class="label">web</span></div>
+            <div class="tree-row tree-child"><span class="folder">▱</span><span class="label">components</span></div>
+            <div class="tree-row tree-child"><span class="folder">□</span><span class="label">package.json</span></div>
+          </div>
         </div>
         <div class="guides" aria-hidden="true">
-          <i class="guide g8"></i><i class="guide g24"></i><i class="guide g44"></i>
-          <span class="guide-label l8">8</span><span class="guide-label l24">24</span><span class="guide-label l44">44</span>
+          <i class="guide g8"></i><i class="guide g24"></i>
+          <span class="guide-label l8">root 8</span><span class="guide-label l24">child 24</span>
         </div>
       </div>
     </section>
@@ -184,8 +191,8 @@
           <div class="search-row"><div class="search-box">⌕ <span>Search files…</span></div></div>
         </div>
         <div class="tree">
-          <div class="tree-row"><span class="chev">›</span><span class="folder">▱</span><span class="label">components</span></div>
-          <div class="tree-row"><span class="chev">›</span><span class="folder">▱</span><span class="label">docs</span></div>
+          <div class="tree-row"><span class="folder">▱</span><span class="label">components</span></div>
+          <div class="tree-row"><span class="folder">▱</span><span class="label">docs</span></div>
         </div>
       </div>
     </section>
@@ -193,9 +200,9 @@
 
   <h2>对齐规格</h2>
   <div class="spec-grid">
-    <div class="spec"><b>x = 8</b><span>导航选中面的外边界，也是根级展开箭头的中心线。</span></div>
-    <div class="spec"><b>x = 24</b><span>折叠按钮、Files、项目和根级文件图标的共同中心线。</span></div>
-    <div class="spec"><b>x = 44</b><span>Files、项目名和根级树节点的共同文字起点。</span></div>
+    <div class="spec"><b>x = 8</b><span>根级目录图标中心，也是该目录展开后的父级竖线。</span></div>
+    <div class="spec"><b>x = 24</b><span>一级子项图标中心；每深入一层继续增加 16px。</span></div>
+    <div class="spec"><b>x = 28</b><span>根级名称起点；子项名称随层级按 16px 递增。</span></div>
     <div class="spec"><b>right = 16</b><span>项目操作按钮和展开搜索框的右内容边界。</span></div>
   </div>
 
@@ -207,27 +214,32 @@
       <tr><td>Files 导航</td><td>32px；外层顶部 8px</td><td>保持现有 <code>ui-list-item</code> 规格。</td></tr>
       <tr><td>项目工具栏</td><td>40px；内部行 32px</td><td>左右内容边距改为 16px；图标槽改为 16px，图文间距改为 12px。</td></tr>
       <tr><td>操作按钮</td><td>24 × 24px；间距 4px</td><td>保持现状，只移动整个操作组。</td></tr>
-      <tr><td>文件树行</td><td>26px；16 + 16 + 12px</td><td>根级使用 16px 展开槽、16px 图标槽和 12px 图文间距；每层继续增加 16px。</td></tr>
+      <tr><td>文件树行</td><td>26px；16 + 12px</td><td>移除展开槽；目录图标切换开合状态，名称与图标保持 12px 间距。</td></tr>
+      <tr><td>层级连接</td><td>1px；层级步长 16px</td><td>父目录图标中心向下画竖线，子项用 9px 短横线接到自身图标左缘。</td></tr>
       <tr><td>搜索展开</td><td>项目行下方 36px</td><td>搜索框左右边界与项目工具栏内容边界一致。</td></tr>
     </tbody>
   </table>
 
   <h2>采用与排除</h2>
   <ul>
-    <li>采用：让项目行复用顶部导航的水平内容结构；项目名保持较小、较粗的上下文标签样式。</li>
-    <li>采用：文件树改为固定三列；展开箭头中心 8px，文件图标中心 24px，名称从 44px 开始。</li>
+    <li>采用：项目工具栏继续复用顶部导航的水平内容结构；项目名保持较小、较粗的上下文标签样式。</li>
+    <li>采用：文件树使用图标与名称两列；根级图标占用原展开箭头的位置，减少左侧空白。</li>
+    <li>采用：目录关闭时显示普通文件夹，展开时显示打开文件夹；整行继续作为展开点击区。</li>
+    <li>采用：层级线只出现在已经展开的父子关系中，最后一个子项的竖线停在该行中点。</li>
     <li>采用：项目行继续使用底部分隔线，不增加卡片背景、阴影或第二个选中面。</li>
     <li>不采用：为项目名增加展开箭头。当前项目根不可折叠，箭头会表达不存在的操作。</li>
     <li>不采用：把四个操作平均分布。它们是一个右对齐的操作组，平均分布会削弱项目名与操作的关系。</li>
-    <li>不采用：改变 16px 的层级递增量；本轮只重排每一层内部的展开槽、图标槽和文字间距。</li>
+    <li>不采用：保留独立箭头、圆点或额外展开按钮；它们会重复表达目录状态。</li>
+    <li>不采用：改变 16px 的层级递增量；层级线直接复用现有缩进刻度。</li>
   </ul>
 
   <h2>验收与实现状态</h2>
   <table>
     <thead><tr><th>检查项</th><th>可见结果</th></tr></thead>
     <tbody>
-      <tr><td>左侧图标</td><td>折叠按钮、Files、项目、根级文件夹和文件图标中心均位于 24px。</td></tr>
-      <tr><td>文字</td><td>Files、项目名、根级文件名均从 44px 开始。</td></tr>
+      <tr><td>目录状态</td><td>文件树中不出现折叠箭头；目录图标的开合状态与实际展开状态一致。</td></tr>
+      <tr><td>层级结构</td><td>展开目录的竖线从父图标中心延伸，所有直接子项均通过短横线连接。</td></tr>
+      <tr><td>水平空间</td><td>根级图标位于原箭头中心，根级名称从 28px 开始；每层增加 16px。</td></tr>
       <tr><td>右侧操作</td><td>刷新按钮点击区右缘距离侧栏 16px；240px 下四个操作仍完整。</td></tr>
       <tr><td>搜索</td><td>默认隐藏；展开后左右边界与项目工具栏一致。</td></tr>
       <tr><td>主题</td><td>仅使用现有背景、文字、边框与 hover token，不写死产品色。</td></tr>

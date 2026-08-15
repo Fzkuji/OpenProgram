@@ -316,11 +316,16 @@
   scrollbar-width: thin;
 }
 
-/* VS Code explorer row: 22px tall, 13px text, full-width hover, and
-   the active file carries a 2px accent bar on its left edge. */
+/* Compact two-column tree row: the folder glyph is also the disclosure
+   control, so there is no separate arrow column. */
+.treeNode {
+  position: relative;
+}
+
 .treeRow {
+  position: relative;
   display: grid;
-  grid-template-columns: 16px 16px minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
   height: 26px; /* 22 太挤，放宽一档 */
   padding: 0 8px 0 0; /* nested depth is added inline */
@@ -372,16 +377,6 @@
   outline: none;
 }
 
-.chevron {
-  justify-self: center;
-  transition: transform 120ms ease-out;
-}
-.chevronSlot {
-  width: 16px;
-  height: 16px;
-}
-.chevronOpen { transform: rotate(90deg); }
-
 .treeIcon {
   justify-self: center;
   color: var(--text-dim);
@@ -395,21 +390,35 @@
   fill: color-mix(in srgb, var(--accent-yellow) 30%, transparent);
 }
 
-/* Children of one expanded folder. Rows inside stay full-width (so
-   hover spans the panel); the 1px indent guide is drawn at the parent
-   chevron's center via --guide-x set inline per depth. Always visible
-   (VS Code shows on hover; always-on is simpler). */
+/* Command-line tree structure. Each direct child owns one vertical
+   segment on its parent's icon axis. The last child stops that segment
+   at its row midpoint; the short horizontal stroke meets the child
+   glyph without adding another disclosure control. */
 .treeKids {
   position: relative;
 }
-.treeKids::before {
+.treeKids > .treeNode::before {
   content: "";
   position: absolute;
   left: var(--guide-x);
   top: 0;
   bottom: 0;
   width: 1px;
-  background: var(--border);
+  background: color-mix(in srgb, var(--text-dim) 42%, transparent);
+  pointer-events: none;
+}
+.treeKids > .treeNode:last-child::before {
+  bottom: auto;
+  height: 13px;
+}
+.treeKids > .treeNode > .treeRow::before {
+  content: "";
+  position: absolute;
+  left: var(--guide-x);
+  top: 50%;
+  width: 9px;
+  height: 1px;
+  background: color-mix(in srgb, var(--text-dim) 42%, transparent);
   pointer-events: none;
 }
 

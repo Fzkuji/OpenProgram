@@ -12,7 +12,6 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ChevronRight,
   File,
   FileCode,
   FileImage,
@@ -20,6 +19,7 @@ import {
   FilePlus,
   FileText,
   Folder,
+  FolderOpen,
   FolderPlus,
   RotateCw,
   Search,
@@ -118,10 +118,10 @@ async function copyText(value: string): Promise<void> {
   document.body.removeChild(ta);
 }
 
-/* One 16px disclosure slot + one 16px icon slot per row. Each nested
-   level adds another 16px before those slots; labels start at x=44. */
+/* The folder glyph is the disclosure control. Each nested level adds
+   one 16px tree rail; root labels start at x=28. */
 const INDENT = 16;
-const TREE_LABEL_OFFSET = 44;
+const TREE_LABEL_OFFSET = 28;
 
 /** Extension bucket → icon + colour (existing accent tokens only). */
 const ICON_BUCKETS: [Set<string>, typeof File, string | undefined][] = [
@@ -522,26 +522,22 @@ export function FileTree({
     // Editable "new entry" row, rendered at the top of the target dir.
     const createRow =
       creating && creating.dir === dir ? (
-        <div
-          className={styles.treeRow}
-          style={{ paddingLeft: depth * INDENT }}
-        >
-          {creating.kind === "dir" ? (
-            <>
-              <ChevronRight size={14} className={styles.chevron} />
+        <div className={styles.treeNode}>
+          <div
+            className={styles.treeRow}
+            style={{ paddingLeft: depth * INDENT }}
+          >
+            {creating.kind === "dir" ? (
               <Folder size={14} className={styles.treeIconFolder} />
-            </>
-          ) : (
-            <>
-              <span className={styles.chevronSlot} aria-hidden="true" />
+            ) : (
               <File size={14} className={styles.treeIcon} />
-            </>
-          )}
-          <InlineNameInput
-            initial=""
-            onCommit={commitCreate}
-            onCancel={() => setCreating(null)}
-          />
+            )}
+            <InlineNameInput
+              initial=""
+              onCommit={commitCreate}
+              onCancel={() => setCreating(null)}
+            />
+          </div>
         </div>
       ) : null;
     if (state === "loading" || state === undefined) {
@@ -571,7 +567,7 @@ export function FileTree({
       if (e.type === "dir") {
         const isOpen = expanded.has(full);
         return (
-          <div key={full}>
+          <div key={full} className={styles.treeNode}>
             <div
               className={`${styles.treeRow} ${DIM_DIRS.has(e.name) ? styles.treeRowDim : ""} ${selectedCls}`}
               style={{ paddingLeft: depth * INDENT }}
@@ -582,11 +578,11 @@ export function FileTree({
               onContextMenu={(ev) => onRowContextMenu(ev, full, "dir")}
               title={full}
             >
-              <ChevronRight
-                size={14}
-                className={`${styles.chevron} ${isOpen ? styles.chevronOpen : ""}`}
-              />
-              <Folder size={14} className={styles.treeIconFolder} />
+              {isOpen ? (
+                <FolderOpen size={14} className={styles.treeIconFolder} />
+              ) : (
+                <Folder size={14} className={styles.treeIconFolder} />
+              )}
               {renaming === full ? (
                 <InlineNameInput
                   initial={e.name}
@@ -598,9 +594,9 @@ export function FileTree({
               )}
             </div>
             {isOpen ? (
-              // Indent guide under this folder's chevron center; the
-              // kids container is full-width so row hover still spans
-              // the whole panel (guide is an ::before in the CSS).
+              // The child container inherits the parent folder's icon
+              // center as its tree rail. Each direct child draws its
+              // own vertical segment and a short connector to its icon.
               <div
                 className={styles.treeKids}
                 style={{ "--guide-x": `${8 + depth * INDENT}px` } as React.CSSProperties}
@@ -612,29 +608,29 @@ export function FileTree({
         );
       }
       return (
-        <div
-          key={full}
-          data-tree-path={full}
-          className={`${styles.treeRow} ${full === activePath ? styles.treeRowActive : ""} ${selectedCls}`}
-          style={{ paddingLeft: depth * INDENT }}
-          onClick={() => {
-            setSelected({ path: full, type: "file" });
-            openFile(full);
-          }}
-          onContextMenu={(ev) => onRowContextMenu(ev, full, "file")}
-          title={full}
-        >
-          <span className={styles.chevronSlot} aria-hidden="true" />
-          <FileGlyph name={e.name} />
-          {renaming === full ? (
-            <InlineNameInput
-              initial={e.name}
-              onCommit={(v) => commitRename(full, v)}
-              onCancel={() => setRenaming(null)}
-            />
-          ) : (
-            <span className={styles.treeName}>{e.name}</span>
-          )}
+        <div key={full} className={styles.treeNode}>
+          <div
+            data-tree-path={full}
+            className={`${styles.treeRow} ${full === activePath ? styles.treeRowActive : ""} ${selectedCls}`}
+            style={{ paddingLeft: depth * INDENT }}
+            onClick={() => {
+              setSelected({ path: full, type: "file" });
+              openFile(full);
+            }}
+            onContextMenu={(ev) => onRowContextMenu(ev, full, "file")}
+            title={full}
+          >
+            <FileGlyph name={e.name} />
+            {renaming === full ? (
+              <InlineNameInput
+                initial={e.name}
+                onCommit={(v) => commitRename(full, v)}
+                onCancel={() => setRenaming(null)}
+              />
+            ) : (
+              <span className={styles.treeName}>{e.name}</span>
+            )}
+          </div>
         </div>
       );
     });
@@ -730,7 +726,6 @@ export function FileTree({
                     onContextMenu={(ev) => onRowContextMenu(ev, path, "dir")}
                     title={path}
                   >
-                    <ChevronRight size={14} className={styles.chevron} />
                     <Folder size={14} className={styles.treeIconFolder} />
                     <span className={styles.treePath}>{path}</span>
                   </div>
@@ -742,7 +737,6 @@ export function FileTree({
                     onContextMenu={(ev) => onRowContextMenu(ev, path, "file")}
                     title={path}
                   >
-                    <span className={styles.chevronSlot} aria-hidden="true" />
                     <FileGlyph name={path} />
                     <span className={styles.treePath}>{path}</span>
                   </div>
