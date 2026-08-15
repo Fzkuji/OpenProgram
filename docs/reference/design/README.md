@@ -76,7 +76,7 @@ Proactivity applications (built on the base):
 | [`runtime/operations/rewind.md`](runtime/operations/rewind.md) | Rewind |
 | [`runtime/operations/branch-naming.md`](runtime/operations/branch-naming.md) | Branch naming ([rendered](runtime/operations/branch-naming.html)) |
 | [`runtime/session/README.md`](runtime/session/README.md) | Session subsystem: data model, storage, naming, listing, lifecycle |
-| [`runtime/self-update.md`](runtime/self-update.md) | Self-update: staying usable while OpenProgram modifies itself |
+| [`runtime/self-update.md`](runtime/self-update.md) | Source-checkout upgrades: gated Git flow, channel semantics, verification, and manual recovery |
 | [`runtime/permission-model.md`](runtime/permission-model.md) | Permission system design |
 | [`runtime/sandbox.md`](runtime/sandbox.md) | Sandbox: the boundary on both platforms, where the switch is lost, coverage, how eight reference harnesses compare, repair order ([rendered](runtime/sandbox-architecture.html)) |
 | [`runtime/ssrf-protection.html`](runtime/ssrf-protection.html) | Outbound URL and SSRF design: current gaps, Hermes/OpenClaw/OWASP comparison, scoped trust policy, transport requirements, and full acceptance gates |
@@ -182,6 +182,14 @@ Extension gating design + reference comparison — see
 | Doc | Topic |
 |---|---|
 | [`research/execution-trace-model-selection.md`](research/execution-trace-model-selection.md) | Choosing the data model for agent execution traces (span concept, what's novel) |
+
+## distribution/ — installation, packaging, and updates
+
+| Doc | Topic |
+|---|---|
+| [`distribution/installation-packaging.html`](distribution/installation-packaging.html) | Complete-product installation, packaging, platform support, and release artifacts |
+| [`distribution/automatic-updates.html`](distribution/automatic-updates.html) | Stable Release discovery, Desktop verified DMG handoff, managed CLI atomic activation, trust boundaries, UI states, and implementation evidence |
+| [`distribution/implementation-plan.md`](distribution/implementation-plan.md) | Historical distribution implementation evidence not duplicated by the current designs |
 
 ## plans/ — dated implementation plans
 

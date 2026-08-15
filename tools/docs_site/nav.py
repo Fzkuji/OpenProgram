@@ -385,10 +385,11 @@ PAGE_ORDER: dict[str, int] = {
     "reference/design/framework-overview.md": 1020,
     "reference/design/framework-comparison.html": 1021,
     "reference/design/feature-matrix.html": 1022,
-    # Distribution: authoritative conceptual design followed by its separate
+    # Distribution: product packaging, then formal updates, then the historical
     # implementation ledger.
     "reference/design/distribution/installation-packaging.html": 1035,
-    "reference/design/distribution/implementation-plan.md": 1036,
+    "reference/design/distribution/automatic-updates.html": 1036,
+    "reference/design/distribution/implementation-plan.md": 1037,
     # Integrations: pin the authoritative server-side HTML design after the
     # alphabetical MCP client note.
     "reference/design/integrations/mcp-server.html": 1040,

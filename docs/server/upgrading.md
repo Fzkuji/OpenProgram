@@ -1,8 +1,18 @@
 # Upgrading
 
-`openprogram upgrade` updates the code and restarts the service, but only
-after proving the new code actually boots. It is the safe replacement for
-"`git pull` then `openprogram restart`".
+`openprogram upgrade` selects behavior from the installation type. A managed
+release installs the latest stable GitHub Release and leaves the running worker
+unchanged until you restart it explicitly. A source checkout uses the gated Git
+pipeline documented on this page: it updates the code and restarts the service
+only after proving the new code boots.
+
+For Desktop and managed CLI/server releases, including the one-time v0.6.6
+transition, see [Upgrading a release installation](../install/upgrade.md).
+
+## Source checkout behavior
+
+For a source checkout, `upgrade` is the safe replacement for "`git pull` then
+`openprogram restart`".
 
 The problem it solves: OpenProgram is installed as an editable checkout, so
 the repo it serves from is the repo it develops. A bad commit is invisible
@@ -14,7 +24,7 @@ process that nobody depends on.
 
 ```bash
 openprogram upgrade status          # what would change? read-only
-openprogram upgrade --dry-run       # print the plan, change nothing
+openprogram upgrade --dry-run       # print the plan; do not move code or worker
 openprogram upgrade                 # do it
 ```
 
@@ -53,7 +63,8 @@ Add `--json` for machine output (`head_sha`, `target_sha`,
 `update_available`).
 
 `--dry-run` resolves the target and prints the steps it would run without
-touching anything:
+moving the checkout, worker, or upgrade state. If it is combined with an
+explicit `--channel`, that source-channel choice is still persisted:
 
 ```console
 $ openprogram upgrade --dry-run
@@ -70,17 +81,18 @@ $ openprogram upgrade --dry-run
 
 | Flag | Effect |
 |---|---|
-| `--dry-run` | Print the planned steps, change nothing |
+| `--dry-run` | Print the planned steps without changing checkout, worker, or upgrade state; an explicit `--channel` is still persisted |
 | `--no-restart` | Stop after the probe. The checkout moves and the code is verified, but the running service keeps the old code until you restart it yourself |
 | `--yes`, `-y` | Skip the confirmation a downgrade requires |
 | `--channel NAME` | Follow a different release line, and remember it |
 | `--json` | Emit a machine-readable result including every step |
 
-## Channels
+## Source checkout channels
 
-A channel is a name for the ref to track. `stable` follows `origin/main` and
-is the only one built in. `--channel` persists your choice as the
-`update.channel` setting, so later runs need no flag.
+A source-checkout channel is a name for the ref to track. `stable` follows
+`origin/main` and is the only one built in. It is a development ref here, not
+the stable GitHub Release consumed by managed installations. `--channel`
+persists the choice as the `update.channel` setting, so later runs need no flag.
 
 ## When a step fails
 

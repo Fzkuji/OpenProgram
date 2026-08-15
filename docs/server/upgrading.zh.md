@@ -1,7 +1,15 @@
 # 升级
 
-`openprogram upgrade` 更新代码并重启服务，但只在验证过新代码确实能启动之后才重启。
-它是"`git pull` 然后 `openprogram restart`"的安全替代。
+`openprogram upgrade` 根据安装类型选择行为。managed release 安装最新 stable
+GitHub Release，但在用户显式重启前不改变运行中的 worker。source checkout 使用本文
+记录的 Git 门禁流程：只有证明新代码能够启动后，才更新代码并重启服务。
+
+Desktop 与 managed CLI/server 的 release 升级，以及 v0.6.6 的一次性过渡，见
+[升级 release 安装](../install/upgrade.zh.md)。
+
+## Source checkout 行为
+
+对于 source checkout，`upgrade` 是"`git pull` 然后 `openprogram restart`"的安全替代。
 
 它解决的问题是：OpenProgram 以可编辑安装（editable install）的方式装在仓库里，
 所以它运行的仓库就是它开发的仓库。一个坏提交在下次重启前都看不出来，
@@ -12,7 +20,7 @@
 
 ```bash
 openprogram upgrade status          # 会变什么？只读
-openprogram upgrade --dry-run       # 打印计划，什么都不改
+openprogram upgrade --dry-run       # 打印计划，不移动代码或 worker
 openprogram upgrade                 # 执行
 ```
 
@@ -47,7 +55,8 @@ $ openprogram upgrade status
 
 加 `--json` 得到机器可读输出（`head_sha`、`target_sha`、`update_available`）。
 
-`--dry-run` 解析目标并打印将要执行的步骤，不改动任何东西：
+`--dry-run` 解析目标并打印将要执行的步骤，不修改 checkout、worker 或 upgrade
+state；如果同时显式传入 `--channel`，该 source-channel 选择仍会持久化：
 
 ```console
 $ openprogram upgrade --dry-run
@@ -64,16 +73,17 @@ $ openprogram upgrade --dry-run
 
 | 参数 | 效果 |
 |---|---|
-| `--dry-run` | 打印计划步骤，不做改动 |
+| `--dry-run` | 打印计划步骤，不修改 checkout、worker 或 upgrade state；显式传入的 `--channel` 仍会持久化 |
 | `--no-restart` | 在 probe 之后停止。检出会移动、代码会被验证，但运行中的服务在你手动重启前仍用旧代码 |
 | `--yes`、`-y` | 跳过降级所需的确认 |
 | `--channel NAME` | 跟随另一条发布线，并记住它 |
 | `--json` | 输出包含每个步骤的机器可读结果 |
 
-## 通道（Channel）
+## Source checkout 通道（Channel）
 
-通道是要跟踪的 ref 的名字。`stable` 跟随 `origin/main`，也是唯一内置的通道。
-`--channel` 会把你的选择持久化为 `update.channel` 设置，之后运行就不用再加参数。
+source-checkout channel 是要跟踪的 ref 名称。`stable` 跟随 `origin/main`，也是唯一
+内置的通道；这里的 stable 是开发 ref，不是 managed installation 使用的 stable GitHub
+Release。`--channel` 会把选择持久化为 `update.channel` 设置，之后运行不必重复传参。
 
 ## 某个步骤失败时
 

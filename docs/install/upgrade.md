@@ -55,3 +55,5 @@ openprogram upgrade
 The historical `openprogram update` command is a compatibility alias for `openprogram upgrade`.
 
 See [Server upgrading](../server/upgrading.md) for source-checkout recovery details.
+The maintained architecture, trust boundaries, UI states, and implementation
+evidence are in [Automatic updates](../reference/design/distribution/automatic-updates.html).

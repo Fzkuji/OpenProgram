@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -67,6 +68,78 @@ def test_legacy_settings_reads_the_runtime_version():
     source = Path("openprogram/webui/static/js/settings.js").read_text(encoding="utf-8")
     assert ">0.1.0<" not in source
     assert "fetch('/api/system/version')" in source
+
+
+def test_automatic_update_design_is_one_accessible_review_page():
+    design = Path(
+        "docs/reference/design/distribution/automatic-updates.html"
+    ).read_text(encoding="utf-8")
+
+    for contract in (
+        'data-document="automatic-updates"',
+        'id="question"',
+        'id="audience"',
+        'id="scope"',
+        'id="exclusions"',
+        'id="architecture"',
+        'id="desktop-states"',
+        'id="trust-boundaries"',
+        'id="implementation-evidence"',
+        '<title>Automatic update architecture</title>',
+        '<desc>',
+        'data-update-state="available"',
+        'data-update-state="error"',
+        'prefers-reduced-motion',
+        'https://github.com/Fzkuji/OpenProgram/blob/main/desktop/update-service.js',
+        'https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/_cli_cmds/upgrade.py',
+    ):
+        assert contract in design
+
+    assert not Path(
+        "docs/reference/design/plans/2026-08-15-formal-release-updates.md"
+    ).exists()
+
+    source_design = Path(
+        "docs/reference/design/runtime/self-update.md"
+    ).read_text(encoding="utf-8")
+    faq = Path("docs/start/faq.md").read_text(encoding="utf-8")
+    assert "Automatic updates" in source_design
+    assert "stable` channel intentionally resolves to" in source_design
+    assert "never\nfalls back to Git, PyPI, a wheel, or an npm package" in source_design
+    assert "first updater-enabled release" in faq
+    assert "managed CLI/server and source-checkout users both run" in faq
+    assert "Supplying `--channel` still persists" in source_design
+    assert "in normal text output it also prints" in source_design
+    assert 'class="diagram-mobile" aria-hidden' not in design
+
+    design_index = Path("docs/reference/design/README.md").read_text(encoding="utf-8")
+    design_index_zh = Path("docs/reference/design/README.zh.md").read_text(
+        encoding="utf-8"
+    )
+    assert "distribution/automatic-updates.html" in design_index
+    assert "distribution/automatic-updates.html" in design_index_zh
+    assert "Source-checkout upgrades" in design_index
+    assert "Source checkout 升级" in design_index_zh
+
+
+def test_upgrade_help_discloses_channel_persistence_during_read_only_actions():
+    result = subprocess.run(
+        [sys.executable, "-m", "openprogram.cli", "upgrade", "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    status_result = subprocess.run(
+        [sys.executable, "-m", "openprogram.cli", "upgrade", "status", "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    help_text = " ".join(result.stdout.split())
+
+    assert "A source checkout still persists an explicit --channel." in help_text
+    assert "Read-only; source checkouts persist an explicit --channel." in help_text
+    assert "For a source checkout, report against and persist" in status_result.stdout
 
 
 def _latest_release(version="0.6.7"):

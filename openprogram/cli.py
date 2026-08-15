@@ -918,18 +918,22 @@ def build_parser() -> argparse.ArgumentParser:
     upgrade_sub = p_upgrade.add_subparsers(dest="upgrade_verb", metavar="verb")
     p_upgrade_status = upgrade_sub.add_parser("status",
         help="Show current/target version or SHA and whether an update is "
-             "available. Read-only.")
+             "available. Read-only; source checkouts persist an explicit "
+             "--channel.")
     # Repeated on the subparser so both `upgrade --json status` and the
     # natural `upgrade status --json` work.
     p_upgrade_status.add_argument("--json", action="store_true",
         help="Emit JSON")
     p_upgrade_status.add_argument("--channel", metavar="NAME",
-        help="Report against this channel instead of the configured one.")
+        help="For a source checkout, report against and persist this channel "
+             "instead of the configured one.")
     p_upgrade.add_argument("--channel", metavar="NAME",
-        help="Release line to follow (default: stable). Persisted as the "
-             "`update.channel` setting.")
+        help="Release line to follow (default: stable). Source checkouts "
+             "persist it as the `update.channel` setting.")
     p_upgrade.add_argument("--dry-run", action="store_true",
-        help="Print the planned steps and change nothing.")
+        help="Print planned steps without changing checkout, worker, or "
+             "upgrade state. A source checkout still persists an explicit "
+             "--channel.")
     p_upgrade.add_argument("--no-restart", action="store_true",
         help="Source checkout only: stop after the probe without restarting.")
     p_upgrade.add_argument("--yes", "-y", action="store_true",

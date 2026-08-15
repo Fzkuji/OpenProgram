@@ -57,6 +57,6 @@ openprogram web
 | `/mcp` | MCP server 管理：从目录添加、编辑配置、查看每个 server 的状态 |
 | `/memory` | 持久记忆：wiki、journal 和核心记忆的浏览与编辑，支持 markdown 和 wikilink |
 | `/projects` | 项目管理：每个项目的权限规则、默认设置、关联会话 |
-| `/settings` | 设置：providers（模型与凭据）、search、general（含明暗主题）、system、usage、auth、channels |
+| `/settings` | 设置：providers（模型与凭据）、search、general（含主题、运行版本，以及存在 Electron bridge 时的 Desktop 更新状态）、system、usage、auth、channels |
 
 `/settings` 直接打开会跳到 `/settings/providers`，模型配置入口见[配置模型](../models/README.md)。
