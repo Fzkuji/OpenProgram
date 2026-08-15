@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openprogram"
-version = "0.6.1"
+version = "0.6.6"
 description = "OpenProgram: Self-Programming AI Agent Framework"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -147,7 +147,7 @@ dev = [
 # embeddings + BM25) behind the `semble_search` / `semble_find_related`
 # tools. Heavy transitive deps for one leaf tool, so it is opt-in; the
 # tools answer with the install hint when the package is absent.
-search = ["semble>=0.2.0"]
+search = ["semble>=0.5.3"]
 # Runtime deps for the GUI program (gui_agent / gui_harness). The
 # NOTE: the agentic *programs* (gui / research / wiki harnesses) no
 # longer have extras here. Each harness is self-describing — its own

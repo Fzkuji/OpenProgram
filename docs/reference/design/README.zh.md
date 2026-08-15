@@ -71,7 +71,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`runtime/operations/rewind.md`](runtime/operations/rewind.md) | Rewind 回退 |
 | [`runtime/operations/branch-naming.md`](runtime/operations/branch-naming.md) | 分支命名（[已渲染](runtime/operations/branch-naming.html)） |
 | [`runtime/session/README.md`](runtime/session/README.md) | Session 子系统：数据模型、存储、命名、列表、生命周期 |
-| [`runtime/self-update.md`](runtime/self-update.zh.md) | 自我更新：一边改自己一边保持可用 |
+| [`runtime/self-update.md`](runtime/self-update.zh.md) | Source checkout 升级：Git 门禁、channel 语义、验证与手动恢复 |
 | [`runtime/permission-model.md`](runtime/permission-model.md) | 权限系统设计 |
 | [`runtime/sandbox.md`](runtime/sandbox.md) | 沙箱：两个平台的边界、开关在哪里丢掉、覆盖面、八个参考框架的对标、修复顺序（[图示](runtime/sandbox-architecture.html)） |
 | [`runtime/ssrf-protection.html`](runtime/ssrf-protection.html) | 出站 URL 与 SSRF：当前缺口、Hermes/OpenClaw/OWASP 对照、分 scope 信任策略、transport 要求与完整验收门槛 |
@@ -178,6 +178,14 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | Doc | Topic |
 |---|---|
 | [`research/execution-trace-model-selection.md`](research/execution-trace-model-selection.md) | Agent 执行轨迹的数据模型选型（span 概念、创新点） |
+
+## distribution/ — 安装、打包与更新
+
+| Doc | Topic |
+|---|---|
+| [`distribution/installation-packaging.html`](distribution/installation-packaging.html) | 完整产品安装、打包、平台支持与 Release 产物 |
+| [`distribution/automatic-updates.html`](distribution/automatic-updates.html) | Stable Release 发现、Desktop 校验后打开 DMG、managed CLI 原子激活、信任边界、界面状态与实现证据 |
+| [`distribution/implementation-plan.md`](distribution/implementation-plan.md) | 不与当前设计重复的历史分发实现证据 |
 
 ## plans/ — 带日期的实施计划
 

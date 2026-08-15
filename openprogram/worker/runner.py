@@ -246,14 +246,6 @@ def run_foreground() -> int:
     except Exception as exc:  # noqa: BLE001
         print(f"[worker] scheduler failed to start: {exc}")
 
-    # Fire-and-forget update check. Result lands in the staged-notice
-    # file; the TUI reads it on next launch and shows a banner.
-    try:
-        from openprogram.updater import background_check_and_apply
-        background_check_and_apply()
-    except Exception:  # noqa: BLE001
-        pass
-
     # Memory subsystem — nightly reorganisation + session-end writer.
     try:
         from openprogram.memory.scheduler import start_nightly_reorganizer

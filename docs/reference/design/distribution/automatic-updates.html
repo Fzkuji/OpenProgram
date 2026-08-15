@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenProgram 正式版本自动更新</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0e14;
+    --surface: #111722;
+    --surface-2: #161e2b;
+    --surface-3: #0d121b;
+    --border: #283344;
+    --border-strong: #3a4a61;
+    --text: #d8e0ec;
+    --muted: #8f9caf;
+    --title: #f6f8fb;
+    --blue: #6aa6ff;
+    --cyan: #50d5d0;
+    --green: #78d69a;
+    --amber: #f0b866;
+    --red: #ff7d91;
+    --violet: #b59aff;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+    --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --radius: 16px;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(circle at 18% -5%, rgba(80, 213, 208, .10), transparent 31rem),
+      radial-gradient(circle at 92% 5%, rgba(181, 154, 255, .10), transparent 28rem),
+      var(--bg);
+    color: var(--text);
+    font: 15px/1.65 var(--sans);
+  }
+  a { color: var(--blue); text-underline-offset: 3px; }
+  a:hover { color: #9fc6ff; }
+  code {
+    padding: 2px 6px;
+    border: 1px solid rgba(106, 166, 255, .16);
+    border-radius: 6px;
+    background: rgba(106, 166, 255, .07);
+    color: #a9ccff;
+    font: .84em/1.5 var(--mono);
+  }
+  pre {
+    margin: 0;
+    padding: 18px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-3);
+    color: #c9d4e3;
+    font: 12px/1.7 var(--mono);
+  }
+  button { font: inherit; }
+  :focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+
+  .page {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 44px;
+    width: min(1280px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 42px 0 100px;
+  }
+  .rail {
+    position: sticky;
+    top: 24px;
+    align-self: start;
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+  }
+  .rail-mark {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 24px;
+    color: var(--title);
+    font: 700 13px var(--mono);
+  }
+  .rail-mark::before {
+    width: 11px;
+    height: 11px;
+    border: 3px solid var(--cyan);
+    border-radius: 50%;
+    content: "";
+    box-shadow: 8px 7px 0 -4px var(--violet);
+  }
+  .rail nav { display: grid; gap: 4px; }
+  .rail a {
+    padding: 7px 10px;
+    border-left: 2px solid transparent;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 12px;
+  }
+  .rail a:hover,
+  .rail a[aria-current="true"] {
+    border-left-color: var(--cyan);
+    color: var(--title);
+    background: rgba(80, 213, 208, .05);
+  }
+  .rail-note {
+    margin-top: 24px;
+    padding: 13px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 11px;
+  }
+  main { min-width: 0; }
+  section { scroll-margin-top: 24px; margin-top: 70px; }
+  .hero { margin-top: 0; }
+  .eyebrow {
+    margin: 0 0 11px;
+    color: var(--cyan);
+    font: 700 11px var(--mono);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1, h2, h3 { color: var(--title); }
+  h1 {
+    max-width: 820px;
+    margin: 0;
+    font-size: clamp(36px, 6vw, 72px);
+    line-height: 1.02;
+    letter-spacing: -.045em;
+  }
+  .lede {
+    max-width: 840px;
+    margin: 24px 0 0;
+    color: #b9c5d5;
+    font-size: clamp(17px, 2vw, 21px);
+    line-height: 1.55;
+  }
+  .status-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 32px;
+  }
+  .status-cell {
+    min-height: 104px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    background: rgba(17, 23, 34, .84);
+  }
+  .status-cell .k {
+    color: var(--muted);
+    font: 10px var(--mono);
+    letter-spacing: .11em;
+    text-transform: uppercase;
+  }
+  .status-cell .v { margin-top: 9px; color: var(--title); font-weight: 680; }
+  .status-cell .detail { margin-top: 3px; color: var(--muted); font-size: 12px; }
+  .status-cell.ready { border-top: 3px solid var(--green); }
+  .status-cell.pending { border-top: 3px solid var(--amber); }
+
+  .brief {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr 1fr;
+    gap: 12px;
+    margin-top: 18px;
+  }
+  .brief article,
+  .panel,
+  .decision,
+  .boundary,
+  .evidence-card,
+  .reference-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .brief article { padding: 18px; }
+  .brief h2 {
+    margin: 0 0 7px;
+    color: var(--muted);
+    font: 700 10px var(--mono);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .brief p { margin: 0; font-size: 13px; }
+
+  .section-head {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+    margin-bottom: 22px;
+  }
+  .section-num {
+    padding-top: 6px;
+    color: var(--cyan);
+    font: 700 12px var(--mono);
+  }
+  .section-head h2 {
+    margin: 0;
+    font-size: clamp(24px, 3vw, 34px);
+    line-height: 1.2;
+    letter-spacing: -.025em;
+  }
+  .section-head p { max-width: 780px; margin: 7px 0 0; color: var(--muted); }
+
+  .decision-grid,
+  .boundary-grid,
+  .evidence-grid,
+  .reference-grid,
+  .file-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .decision { padding: 18px; }
+  .decision .label,
+  .boundary .label,
+  .evidence-card .label {
+    color: var(--muted);
+    font: 700 10px var(--mono);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .decision h3,
+  .boundary h3,
+  .evidence-card h3,
+  .reference-card h3 { margin: 8px 0 6px; font-size: 16px; }
+  .decision p,
+  .boundary p,
+  .evidence-card p,
+  .reference-card p { margin: 0; color: #b0bdcf; font-size: 13px; }
+  .decision.desktop { border-top: 3px solid var(--blue); }
+  .decision.cli { border-top: 3px solid var(--green); }
+  .decision.complete { border-top: 3px solid var(--cyan); }
+  .decision.dev { border-top: 3px solid var(--violet); }
+
+  .diagram {
+    padding: 22px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-3);
+  }
+  .diagram svg { display: block; width: 100%; height: auto; }
+  .diagram-mobile { display: none; }
+  .diagram-caption { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 14px; color: var(--muted); font-size: 11px; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 20px; height: 2px; background: var(--blue); }
+  .legend .verified i { background: var(--green); }
+  .legend .boundary-line i { height: 8px; border-top: 2px dashed var(--amber); background: none; }
+
+  .path-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .path-card {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .path-head { padding: 18px 20px; border-bottom: 1px solid var(--border); }
+  .path-head.desktop { background: linear-gradient(110deg, rgba(106,166,255,.12), transparent); }
+  .path-head.cli { background: linear-gradient(110deg, rgba(120,214,154,.12), transparent); }
+  .path-head h3 { margin: 0; font-size: 19px; }
+  .path-head p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+  .steps { list-style: none; margin: 0; padding: 5px 20px 18px; counter-reset: step; }
+  .steps li {
+    position: relative;
+    padding: 15px 0 15px 40px;
+    border-bottom: 1px solid rgba(40, 51, 68, .75);
+    counter-increment: step;
+  }
+  .steps li:last-child { border-bottom: 0; }
+  .steps li::before {
+    position: absolute;
+    left: 0;
+    top: 15px;
+    width: 25px;
+    height: 25px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--border-strong);
+    border-radius: 50%;
+    color: var(--cyan);
+    content: counter(step);
+    font: 700 10px var(--mono);
+  }
+  .steps strong { display: block; color: var(--title); font-size: 13px; }
+  .steps span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+
+  .state-review {
+    display: grid;
+    grid-template-columns: 190px minmax(0, 1fr);
+    min-height: 440px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .state-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px;
+    border-right: 1px solid var(--border);
+    background: var(--surface-3);
+  }
+  .state-tab {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--muted);
+    text-align: left;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .state-tab[aria-selected="true"] {
+    border-color: var(--border-strong);
+    background: var(--surface-2);
+    color: var(--title);
+  }
+  .state-stage { display: grid; place-items: center; padding: 24px; }
+  .update-state { display: none; width: min(100%, 620px); }
+  .update-state.active { display: block; }
+  .settings-shell {
+    overflow: hidden;
+    border: 1px solid #334159;
+    border-radius: 13px;
+    background: #101722;
+    box-shadow: 0 18px 50px rgba(0,0,0,.24);
+  }
+  .settings-title {
+    padding: 11px 16px;
+    border-bottom: 1px solid #283449;
+    color: #96a4b8;
+    font: 10px var(--mono);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .settings-body { padding: 20px; }
+  .settings-body h3 { margin: 0 0 18px; font-size: 17px; }
+  .setting-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 13px 0;
+    border-top: 1px solid #253044;
+  }
+  .setting-row:first-of-type { border-top: 0; }
+  .setting-row .name { color: #95a3b7; font-size: 12px; }
+  .setting-row .value { color: var(--title); font-size: 12px; text-align: right; }
+  .toggle {
+    width: 34px;
+    height: 19px;
+    padding: 2px;
+    border-radius: 999px;
+    background: var(--cyan);
+  }
+  .toggle::after { display: block; width: 15px; height: 15px; margin-left: 15px; border-radius: 50%; background: #061012; content: ""; }
+  .state-message {
+    margin-top: 14px;
+    padding: 12px 13px;
+    border-left: 3px solid var(--blue);
+    border-radius: 0 8px 8px 0;
+    background: rgba(106, 166, 255, .08);
+    color: #c5d2e3;
+    font-size: 12px;
+  }
+  .state-message.ok { border-color: var(--green); background: rgba(120,214,154,.08); }
+  .state-message.error { border-color: var(--red); background: rgba(255,125,145,.08); }
+  .progress-track { height: 7px; margin-top: 9px; overflow: hidden; border-radius: 999px; background: #273144; }
+  .progress-track span { display: block; width: 62%; height: 100%; background: linear-gradient(90deg, var(--blue), var(--cyan)); }
+  .mock-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
+  .mock-button { padding: 7px 11px; border: 1px solid #3a4960; border-radius: 8px; background: #182233; color: #dce4ef; font-size: 11px; }
+  .mock-button.primary { border-color: transparent; background: var(--blue); color: #08111f; font-weight: 700; }
+  .state-note { margin: 14px 0 0; color: var(--muted); font-size: 12px; }
+
+  .schedule {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    margin-top: 16px;
+  }
+  .schedule article {
+    position: relative;
+    padding: 18px 16px;
+    border-top: 2px solid var(--border-strong);
+  }
+  .schedule article::before {
+    position: absolute;
+    top: -7px;
+    left: 16px;
+    width: 11px;
+    height: 11px;
+    border: 2px solid var(--bg);
+    border-radius: 50%;
+    background: var(--cyan);
+    content: "";
+  }
+  .schedule strong { display: block; color: var(--title); font-size: 12px; }
+  .schedule span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+
+  .boundary { padding: 18px; }
+  .boundary.remote { border-left: 3px solid var(--amber); }
+  .boundary.renderer { border-left: 3px solid var(--blue); }
+  .boundary.files { border-left: 3px solid var(--green); }
+  .boundary.state { border-left: 3px solid var(--violet); }
+  .contract-list { margin: 10px 0 0; padding-left: 18px; color: #b0bdcf; font-size: 12px; }
+  .contract-list li { margin: 5px 0; }
+
+  .failure-list {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .failure-row {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr 1fr;
+    gap: 0;
+    border-top: 1px solid var(--border);
+  }
+  .failure-row:first-child { border-top: 0; }
+  .failure-row > div { padding: 13px 16px; font-size: 12px; }
+  .failure-row > div + div { border-left: 1px solid var(--border); }
+  .failure-row .case { color: var(--title); font-weight: 650; }
+  .failure-row .result { color: var(--muted); }
+  .failure-row .preserve { color: var(--green); }
+
+  .route {
+    display: grid;
+    grid-template-columns: 1fr 48px 1.2fr;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .route .from,
+  .route .to { padding: 14px 16px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); }
+  .route .from { color: var(--title); font: 12px var(--mono); }
+  .route .arrow { color: var(--cyan); text-align: center; }
+  .route .to strong { display: block; color: var(--title); font-size: 13px; }
+  .route .to span { color: var(--muted); font-size: 11px; }
+
+  .reference-card { padding: 18px; }
+  .reference-card .choice {
+    display: inline-flex;
+    margin-bottom: 7px;
+    padding: 3px 7px;
+    border-radius: 6px;
+    background: rgba(120,214,154,.10);
+    color: var(--green);
+    font: 700 10px var(--mono);
+  }
+  .reference-card .choice.modified { background: rgba(240,184,102,.10); color: var(--amber); }
+  .reference-card .choice.rejected { background: rgba(255,125,145,.10); color: var(--red); }
+
+  .file-card {
+    display: block;
+    padding: 15px 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    color: inherit;
+    text-decoration: none;
+  }
+  .file-card:hover { border-color: var(--border-strong); color: inherit; }
+  .file-card .path { color: var(--blue); font: 11px var(--mono); word-break: break-all; }
+  .file-card p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+
+  .evidence-card { padding: 18px; }
+  .evidence-card.pass { border-top: 3px solid var(--green); }
+  .evidence-card.pending { border-top: 3px solid var(--amber); }
+  .evidence-card code { display: inline-block; max-width: 100%; margin-top: 9px; overflow-wrap: anywhere; }
+  .release-handoff {
+    margin-top: 16px;
+    padding: 18px;
+    border: 1px solid rgba(240, 184, 102, .35);
+    border-radius: var(--radius);
+    background: rgba(240, 184, 102, .06);
+  }
+  .release-handoff h3 { margin: 0 0 7px; color: var(--amber); }
+  .release-handoff p { margin: 0; }
+
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    margin-top: 70px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  @media (max-width: 980px) {
+    .page { grid-template-columns: 1fr; width: min(100% - 28px, 900px); padding-top: 20px; }
+    .rail {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      max-height: none;
+      margin: 0 -14px;
+      padding: 10px 14px;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--border);
+      background: rgba(11, 14, 20, .94);
+      backdrop-filter: blur(14px);
+    }
+    .rail-mark, .rail-note { display: none; }
+    .rail nav { display: flex; width: max-content; gap: 4px; }
+    .rail a { border-left: 0; border-bottom: 2px solid transparent; white-space: nowrap; }
+    .rail a:hover, .rail a[aria-current="true"] { border-left-color: transparent; border-bottom-color: var(--cyan); }
+    .status-strip, .brief { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .brief article:first-child { grid-column: 1 / -1; }
+    .path-columns { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 680px) {
+    .page { width: min(100% - 24px, 640px); gap: 26px; }
+    .rail { margin: 0 -12px; padding-left: 12px; padding-right: 12px; }
+    .hero { padding-top: 8px; }
+    .status-strip, .brief, .decision-grid, .boundary-grid, .evidence-grid, .reference-grid, .file-grid { grid-template-columns: 1fr; }
+    .brief article:first-child { grid-column: auto; }
+    .section-head { grid-template-columns: 38px minmax(0, 1fr); }
+    .diagram svg { display: none; }
+    .diagram-mobile { display: grid; gap: 8px; }
+    .diagram-mobile div { padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 12px; }
+    .diagram-mobile strong { color: var(--title); }
+    .state-review { grid-template-columns: 1fr; }
+    .state-tabs { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+    .state-tab { width: auto; white-space: nowrap; }
+    .state-stage { padding: 14px; }
+    .setting-row { align-items: flex-start; }
+    .schedule { grid-template-columns: 1fr; gap: 0; }
+    .schedule article { border-top: 0; border-left: 2px solid var(--border-strong); }
+    .schedule article::before { top: 22px; left: -7px; }
+    .failure-row { grid-template-columns: 1fr; }
+    .failure-row > div + div { border-left: 0; border-top: 1px dashed var(--border); }
+    .route { grid-template-columns: 1fr; }
+    .route .arrow { transform: rotate(90deg); }
+    .footer { flex-direction: column; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body>
+<div class="page" data-document="automatic-updates">
+  <aside class="rail" aria-label="文档目录">
+    <div class="rail-mark">OpenProgram / Updates</div>
+    <nav>
+      <a href="#overview">结论</a>
+      <a href="#architecture">系统路径</a>
+      <a href="#platform-paths">平台行为</a>
+      <a href="#desktop-states">设置状态</a>
+      <a href="#scheduling">调度与缓存</a>
+      <a href="#trust-boundaries">信任边界</a>
+      <a href="#failures">失败语义</a>
+      <a href="#routing">安装类型</a>
+      <a href="#references">方案选择</a>
+      <a href="#source-map">实现入口</a>
+      <a href="#implementation-evidence">实现证据</a>
+    </nav>
+    <div class="rail-note">权威设计 · 当前状态<br>只描述已实现合同及明确标记的 release 验收。</div>
+  </aside>
+
+  <main>
+    <section class="hero" id="overview">
+      <p class="eyebrow">Distribution architecture · stable channel</p>
+      <h1>正式版本自动更新</h1>
+      <p class="lede">OpenProgram 只把完整、稳定、经过 manifest 验证的 GitHub Release 视为可安装更新。Desktop 自动发现并校验 DMG；managed CLI/server 验证完整 runtime 后原子切换。仓库出现新提交不构成用户更新。</p>
+
+      <div class="status-strip" aria-label="实现状态">
+        <div class="status-cell ready"><div class="k">Design</div><div class="v">已确定</div><div class="detail">一个 stable 通道，一套 Release 合同</div></div>
+        <div class="status-cell ready"><div class="k">Implementation</div><div class="v">已合入 main</div><div class="detail">Desktop、managed CLI、Release gate</div></div>
+        <div class="status-cell pending"><div class="k">Delivery</div><div class="v">待首个 updater Release</div><div class="detail">现有 v0.6.6 需要一次手动过渡</div></div>
+        <div class="status-cell ready"><div class="k">Dependency</div><div class="v">0 个新增 updater 包</div><div class="detail">Electron/Node、Python 与 shell 原生能力</div></div>
+      </div>
+
+      <div class="brief">
+        <article id="question"><h2>Question</h2><p>如何让正式安装发现和应用新版本，同时不跟踪 <code>main</code>、不降级产品功能，并保证失败时保留可用版本？</p></article>
+        <article id="audience"><h2>Audience</h2><p>维护 Release、Desktop、CLI/server、设置页和安装文档的开发者与发布人员。</p></article>
+        <article id="scope"><h2>Scope</h2><p>macOS Desktop，macOS/Linux managed CLI/server，以及 source checkout 的明确分流。</p></article>
+        <article id="exclusions"><h2>Exclusions</h2><p>Windows 实现、macOS 签名、Linux Desktop、PyPI 产品安装、后台替换运行中的应用。</p></article>
+      </div>
+    </section>
+
+    <section aria-labelledby="decisions-title">
+      <div class="section-head"><div class="section-num">01</div><div><h2 id="decisions-title">必须保持的产品合同</h2><p>平台动作不同，但版本来源、完整产品定义和验证结果必须一致。</p></div></div>
+      <div class="decision-grid">
+        <article class="decision complete"><div class="label">Release unit</div><h3>更新单位是完整产品</h3><p>不单独更新 wheel、Web、Program、OCR、Browser 或模型。每个受支持产物都满足统一 capability manifest，并包含固定 CPython。</p></article>
+        <article class="decision desktop"><div class="label">Desktop</div><h3>自动检查，校验后打开 DMG</h3><p>主进程选择当前架构的 unsigned DMG，验证 bytes 与 SHA-256。renderer 不能提供 URL、hash 或文件名。</p></article>
+        <article class="decision cli"><div class="label">CLI / server</div><h3>显式命令，原子切换 runtime</h3><p><code>openprogram upgrade</code> 验证 Release、runtime、capabilities 和 cold start，最后替换 <code>current</code>；不自动重启现有 worker。</p></article>
+        <article class="decision dev"><div class="label">Development</div><h3>源码安装保留 Git 流程</h3><p>source checkout 继续使用显式 ref、preflight、build 与 probe，不把开发分支伪装成 stable Release。</p></article>
+      </div>
+    </section>
+
+    <section id="architecture" aria-labelledby="architecture-title">
+      <div class="section-head"><div class="section-num">02</div><div><h2 id="architecture-title">从 GitHub Release 到平台动作</h2><p>两条用户路径在严格验证后分开。任何缺失、重复或不一致都在进入下载或安装前停止。</p></div></div>
+      <div class="diagram">
+        <svg viewBox="0 0 1040 470" role="img" aria-labelledby="update-architecture-title update-architecture-desc">
+          <title>Automatic update architecture</title>
+          <desc>GitHub latest Release 经过稳定版本、manifest、资产和架构验证后，分别进入 Desktop 的校验 DMG 下载路径和 managed CLI 的完整 runtime 原子切换路径。</desc>
+          <defs>
+            <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6aa6ff"/></marker>
+            <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#78d69a"/></marker>
+          </defs>
+          <g font-family="ui-monospace, monospace">
+            <rect x="35" y="48" width="190" height="72" rx="12" fill="#161e2b" stroke="#3a4a61"/>
+            <text x="130" y="76" text-anchor="middle" fill="#f6f8fb" font-size="14">GitHub latest</text>
+            <text x="130" y="98" text-anchor="middle" fill="#8f9caf" font-size="11">non-draft · non-prerelease</text>
+            <rect x="300" y="48" width="200" height="72" rx="12" fill="#161e2b" stroke="#f0b866" stroke-width="1.5"/>
+            <text x="400" y="76" text-anchor="middle" fill="#f6f8fb" font-size="14">Release gate</text>
+            <text x="400" y="98" text-anchor="middle" fill="#8f9caf" font-size="11">vX.Y.Z · unique assets</text>
+            <rect x="575" y="48" width="200" height="72" rx="12" fill="#161e2b" stroke="#f0b866" stroke-width="1.5"/>
+            <text x="675" y="76" text-anchor="middle" fill="#f6f8fb" font-size="14">Manifest gate</text>
+            <text x="675" y="98" text-anchor="middle" fill="#8f9caf" font-size="11">version · bytes · sha256</text>
+            <rect x="850" y="48" width="155" height="72" rx="12" fill="#161e2b" stroke="#3a4a61"/>
+            <text x="928" y="76" text-anchor="middle" fill="#f6f8fb" font-size="14">Platform route</text>
+            <text x="928" y="98" text-anchor="middle" fill="#8f9caf" font-size="11">install type + arch</text>
+            <path d="M225 84H300" stroke="#6aa6ff" stroke-width="2" marker-end="url(#arrow-blue)"/>
+            <path d="M500 84H575" stroke="#6aa6ff" stroke-width="2" marker-end="url(#arrow-blue)"/>
+            <path d="M775 84H850" stroke="#6aa6ff" stroke-width="2" marker-end="url(#arrow-blue)"/>
+            <path d="M928 120V185H290V225" fill="none" stroke="#6aa6ff" stroke-width="2" marker-end="url(#arrow-blue)"/>
+            <path d="M928 120V185H750V225" fill="none" stroke="#78d69a" stroke-width="2" marker-end="url(#arrow-green)"/>
+            <text x="350" y="177" fill="#6aa6ff" font-size="11">macOS Desktop · arm64/x64</text>
+            <text x="760" y="177" fill="#78d69a" font-size="11">managed CLI · macOS/Linux</text>
+            <rect x="95" y="225" width="390" height="190" rx="14" fill="#111722" stroke="#6aa6ff"/>
+            <text x="120" y="258" fill="#f6f8fb" font-size="15">Desktop main process</text>
+            <text x="120" y="287" fill="#8f9caf" font-size="11">1 · select architecture-matched unsigned DMG</text>
+            <text x="120" y="311" fill="#8f9caf" font-size="11">2 · stream to exclusive random .part file</text>
+            <text x="120" y="335" fill="#8f9caf" font-size="11">3 · verify exact bytes + SHA-256</text>
+            <text x="120" y="359" fill="#8f9caf" font-size="11">4 · atomic rename, then open DMG</text>
+            <text x="120" y="390" fill="#6aa6ff" font-size="11">User replaces OpenProgram.app</text>
+            <rect x="555" y="225" width="390" height="190" rx="14" fill="#111722" stroke="#78d69a"/>
+            <text x="580" y="258" fill="#f6f8fb" font-size="15">Managed CLI installer</text>
+            <text x="580" y="287" fill="#8f9caf" font-size="11">1 · fetch installer from immutable tag</text>
+            <text x="580" y="311" fill="#8f9caf" font-size="11">2 · verify archive + capability manifest</text>
+            <text x="580" y="335" fill="#8f9caf" font-size="11">3 · version probe + isolated worker cold start</text>
+            <text x="580" y="359" fill="#8f9caf" font-size="11">4 · os.replace current symlink</text>
+            <text x="580" y="390" fill="#78d69a" font-size="11">User explicitly restarts running worker</text>
+            <line x1="260" y1="22" x2="260" y2="442" stroke="#f0b866" stroke-dasharray="6 7" opacity=".75"/>
+            <text x="270" y="440" fill="#f0b866" font-size="10">remote metadata becomes trusted only after validation</text>
+          </g>
+        </svg>
+        <div class="diagram-mobile">
+          <div><strong>1 · GitHub latest</strong><br>只接受 non-draft、non-prerelease、<code>vX.Y.Z</code>。</div>
+          <div><strong>2 · Release + manifest gate</strong><br>验证唯一资产、版本、bytes、SHA-256 和平台架构。</div>
+          <div><strong>3A · Desktop</strong><br>校验 DMG 后打开，由用户替换应用。</div>
+          <div><strong>3B · managed CLI</strong><br>验证完整 runtime 与 cold start，最后原子切换 <code>current</code>。</div>
+        </div>
+        <div class="legend"><span><i></i>metadata / Desktop</span><span class="verified"><i></i>完整 runtime 安装</span><span class="boundary-line"><i></i>信任边界</span></div>
+        <p class="diagram-caption">renderer 从未获得资产 URL、文件名或 hash；CLI 子进程只继承安装所需的最小环境变量。</p>
+      </div>
+    </section>
+
+    <section id="platform-paths" aria-labelledby="paths-title">
+      <div class="section-head"><div class="section-num">03</div><div><h2 id="paths-title">Desktop 与 CLI 的完成边界</h2><p>“检查”“下载”“安装”分别对应可验证的动作。两个平台不使用同一套替换机制。</p></div></div>
+      <div class="path-columns">
+        <article class="path-card">
+          <div class="path-head desktop"><h3>macOS Desktop</h3><p>自动发现 + 完整下载 + 明确安装交接</p></div>
+          <ol class="steps">
+            <li><strong>启动调度</strong><span>packaged app 启动 30 秒后首次检查；开发模式不自动检查。</span></li>
+            <li><strong>严格选择</strong><span>仅匹配当前 <code>process.arch</code> 的完整 unsigned DMG。</span></li>
+            <li><strong>安全保存</strong><span>用户选择目标；随机 exclusive 临时文件；流式 size/hash 验证。</span></li>
+            <li><strong>打开安装介质</strong><span>校验成功后打开 DMG。应用不后台替换运行中的 <code>.app</code>。</span></li>
+          </ol>
+        </article>
+        <article class="path-card">
+          <div class="path-head cli"><h3>macOS / Linux CLI &amp; server</h3><p>显式执行 + 完整 runtime 验证 + 原子激活</p></div>
+          <ol class="steps">
+            <li><strong>检查</strong><span><code>openprogram upgrade --check</code> 只读报告当前与最新版本。</span></li>
+            <li><strong>版本化 installer</strong><span>从已验证的不可变 tag 读取脚本，并固定 repository/version。</span></li>
+            <li><strong>隔离验收</strong><span>checksum、capability manifest、version probe、worker cold start 全部成功。</span></li>
+            <li><strong>激活</strong><span>准备 launcher 后以 <code>os.replace</code> 切换 <code>current</code>；用户显式重启 worker。</span></li>
+          </ol>
+        </article>
+      </div>
+    </section>
+
+    <section id="desktop-states" aria-labelledby="states-title">
+      <div class="section-head"><div class="section-num">04</div><div><h2 id="states-title">Settings → General → Application</h2><p>下面是同一设置区的真实信息状态，不是独立产品版本。使用按钮或左右方向键切换。</p></div></div>
+      <div class="state-review">
+        <div class="state-tabs" role="tablist" aria-label="更新状态">
+          <button class="state-tab" role="tab" aria-selected="false" aria-controls="state-idle" id="tab-idle" data-target="idle">未检查</button>
+          <button class="state-tab" role="tab" aria-selected="false" aria-controls="state-checking" id="tab-checking" data-target="checking">检查中</button>
+          <button class="state-tab" role="tab" aria-selected="false" aria-controls="state-current" id="tab-current" data-target="current">已是最新</button>
+          <button class="state-tab" role="tab" aria-selected="true" aria-controls="state-available" id="tab-available" data-target="available">有新版本</button>
+          <button class="state-tab" role="tab" aria-selected="false" aria-controls="state-downloading" id="tab-downloading" data-target="downloading">下载中</button>
+          <button class="state-tab" role="tab" aria-selected="false" aria-controls="state-error" id="tab-error" data-target="error">可重试错误</button>
+        </div>
+        <div class="state-stage">
+          <article class="update-state" id="state-idle" role="tabpanel" aria-labelledby="tab-idle" data-update-state="idle"><div class="settings-shell"><div class="settings-title">Application</div><div class="settings-body"><h3>OpenProgram</h3><div class="setting-row"><span class="name">Current version</span><span class="value">0.6.6</span></div><div class="setting-row"><span class="name">Automatically check for updates</span><span class="toggle" aria-hidden="true"></span></div><div class="state-message">Not checked yet</div><div class="mock-actions"><span class="mock-button primary">Check now</span></div></div></div><p class="state-note">缓存不存在或已失效。默认开启自动检查。</p></article>
+          <article class="update-state" id="state-checking" role="tabpanel" aria-labelledby="tab-checking" data-update-state="checking"><div class="settings-shell"><div class="settings-title">Application</div><div class="settings-body"><h3>OpenProgram</h3><div class="setting-row"><span class="name">Current version</span><span class="value">0.6.6</span></div><div class="setting-row"><span class="name">Automatically check for updates</span><span class="toggle" aria-hidden="true"></span></div><div class="state-message">Checking GitHub Releases…</div><div class="mock-actions"><span class="mock-button">Check now · disabled</span></div></div></div><p class="state-note">一个进行中的 Promise 被所有窗口复用，不产生并发 metadata 请求。</p></article>
+          <article class="update-state" id="state-current" role="tabpanel" aria-labelledby="tab-current" data-update-state="up-to-date"><div class="settings-shell"><div class="settings-title">Application</div><div class="settings-body"><h3>OpenProgram</h3><div class="setting-row"><span class="name">Current version</span><span class="value">0.6.7</span></div><div class="setting-row"><span class="name">Latest stable release</span><span class="value">0.6.7</span></div><div class="state-message ok">OpenProgram is up to date</div><div class="mock-actions"><span class="mock-button">Check now</span><span class="mock-button">View release notes</span></div></div></div><p class="state-note">相同或更低的版本都显示 up to date，不允许 stable 降级。</p></article>
+          <article class="update-state active" id="state-available" role="tabpanel" aria-labelledby="tab-available" data-update-state="available"><div class="settings-shell"><div class="settings-title">Application</div><div class="settings-body"><h3>OpenProgram</h3><div class="setting-row"><span class="name">Current version</span><span class="value">0.6.6</span></div><div class="setting-row"><span class="name">Available version</span><span class="value">0.6.7 · stable</span></div><div class="setting-row"><span class="name">Published</span><span class="value">GitHub Release date</span></div><div class="state-message ok">A complete update for this Mac is available.</div><div class="mock-actions"><span class="mock-button primary">Download and open DMG</span><span class="mock-button">View release notes</span></div></div></div><p class="state-note">Release Notes 在应用内按纯文本摘要显示；完整正文只打开固定 GitHub Release 页面。</p></article>
+          <article class="update-state" id="state-downloading" role="tabpanel" aria-labelledby="tab-downloading" data-update-state="downloading"><div class="settings-shell"><div class="settings-title">Application</div><div class="settings-body"><h3>OpenProgram</h3><div class="setting-row"><span class="name">Downloading</span><span class="value">1.52 GB / 2.45 GB · 62%</span></div><div class="state-message">Downloading and verifying the complete DMG<div class="progress-track"><span></span></div></div><div class="mock-actions"><span class="mock-button">Download in progress · disabled</span></div></div></div><p class="state-note">主进程最多每 250ms 发布一次进度；完成时保证发送最终状态。</p></article>
+          <article class="update-state" id="state-error" role="tabpanel" aria-labelledby="tab-error" data-update-state="error"><div class="settings-shell"><div class="settings-title">Application</div><div class="settings-body"><h3>OpenProgram</h3><div class="setting-row"><span class="name">Available version</span><span class="value">0.6.7</span></div><div class="state-message error">Download checksum mismatch. The temporary file was removed.</div><div class="mock-actions"><span class="mock-button primary">Retry download</span><span class="mock-button">Check now</span><span class="mock-button">View release notes</span></div></div></div><p class="state-note">错误状态保留已验证的 release metadata，因此用户可直接重试，不需要先重新检查。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="scheduling" aria-labelledby="schedule-title">
+      <div class="section-head"><div class="section-num">05</div><div><h2 id="schedule-title">调度、持久化与恢复</h2><p>自动检查只影响发现，不触发无人值守安装。手动检查始终强制刷新。</p></div></div>
+      <div class="schedule" aria-label="自动检查时间线">
+        <article><strong>启动 + 30s</strong><span>packaged app 首次调度；已有缓存时先计算 due time。</span></article>
+        <article><strong>检查成功 + 24h</strong><span><code>lastSuccessAt</code> 决定下一次自动检查。</span></article>
+        <article><strong>检查失败 + 6h</strong><span><code>lastAttemptAt</code> 提供失败退避，不连续访问 GitHub。</span></article>
+        <article><strong>resume / 设置变化</strong><span>清除旧 timer，最多立即检查一次，然后重新排程。</span></article>
+      </div>
+      <div class="decision-grid" style="margin-top:16px">
+        <article class="decision"><div class="label">Persisted schema 1</div><h3><code>update-state.json</code></h3><p>保存 automaticChecks、lastAttemptAt、lastSuccessAt 和最近一次经过验证的 release metadata；使用 0600 临时文件加 rename。</p></article>
+        <article class="decision"><div class="label">Repair</div><h3>损坏状态不能控制调度</h3><p>无效 JSON、未知 schema、未来时间、版本/架构不匹配和缺失 release 都被归一化并重写。写入失败时不提交隐藏的内存设置变化。</p></article>
+      </div>
+    </section>
+
+    <section id="trust-boundaries" aria-labelledby="trust-title">
+      <div class="section-head"><div class="section-num">06</div><div><h2 id="trust-title">信任边界</h2><p>验证发生在获得权限的进程中；低权限界面只接收用于展示的投影状态。</p></div></div>
+      <div class="boundary-grid">
+        <article class="boundary remote"><div class="label">Remote metadata</div><h3>GitHub 响应默认不可信</h3><p>HTTPS、固定 host、最多 5 次重定向、逐跳验证、大小与 body idle timeout；再次要求 <code>draft === false</code> 和 <code>prerelease === false</code>。</p><ul class="contract-list"><li>tag 必须是 <code>vX.Y.Z</code></li><li>asset name 与 manifest basename 唯一</li><li>GitHub size 与 manifest bytes 一致</li></ul></article>
+        <article class="boundary renderer"><div class="label">Renderer IPC</div><h3>renderer 不能选择远端目标</h3><p>preload 只暴露 <code>getState</code>、<code>check</code>、布尔设置、<code>download</code>、<code>openRelease</code> 和状态订阅。</p><ul class="contract-list"><li>不接受 URL、path、hash、repository 或命令</li><li>公开状态剥离 asset name/URL/SHA-256</li><li>窗口关闭不能中止检查或下载</li></ul></article>
+        <article class="boundary files"><div class="label">Downloaded files</div><h3>完成校验前不激活</h3><p>Desktop 使用随机、exclusive、0600 临时文件并处理 short write；CLI 在新版本目录验证完整 runtime 后才替换 <code>current</code>。</p><ul class="contract-list"><li>大小/hash 不符立即删除临时文件</li><li>archive path traversal 被拒绝</li><li>launcher 准备失败保留旧 current</li></ul></article>
+        <article class="boundary state"><div class="label">Child process</div><h3>版本化 installer 使用最小环境</h3><p>managed upgrade 固定 repository 和目标 version，只传 PATH/HOME/temp/locale/proxy/XDG/OpenProgram state 等允许项。</p><ul class="contract-list"><li>不继承 provider/API 凭据</li><li>不继承 archive/checksum source override</li><li><code>--json</code> 始终输出单一 JSON 文档</li></ul></article>
+      </div>
+    </section>
+
+    <section id="failures" aria-labelledby="failures-title">
+      <div class="section-head"><div class="section-num">07</div><div><h2 id="failures-title">失败语义</h2><p>每个错误都说明停止位置和保留内容，不用模糊的“更新失败”代替事务边界。</p></div></div>
+      <div class="failure-list">
+        <div class="failure-row"><div class="case">离线、超时、GitHub 限流</div><div class="result">自动检查记录错误并按 6 小时退避；手动检查显示可重试错误。</div><div class="preserve">应用和当前版本继续运行</div></div>
+        <div class="failure-row"><div class="case">Release / manifest 无效</div><div class="result">拒绝响应，不下载；不回退 wheel、source archive、其他架构或旧版本。</div><div class="preserve">最近一次有效 metadata 可保留</div></div>
+        <div class="failure-row"><div class="case">DMG body stall / size / hash 错误</div><div class="result">中止 response，关闭文件，删除随机临时文件，恢复可重试动作。</div><div class="preserve">未校验文件绝不打开</div></div>
+        <div class="failure-row"><div class="case">CLI archive / cold start / launcher 失败</div><div class="result">installer 非零退出；不执行最后的 <code>current</code> 替换。</div><div class="preserve">旧 runtime 仍为 current</div></div>
+        <div class="failure-row"><div class="case">切换成功但 worker 仍运行旧版本</div><div class="result">命令明确报告 active runtime 已更新，并打印显式 restart 指令。</div><div class="preserve">运行中请求不被隐式中断</div></div>
+      </div>
+    </section>
+
+    <section id="routing" aria-labelledby="routing-title">
+      <div class="section-head"><div class="section-num">08</div><div><h2 id="routing-title">安装类型决定更新路径</h2><p>安装检测只回答当前运行方式，不创造功能不同的产品版本。</p></div></div>
+      <div class="route"><div class="from">managed_release</div><div class="arrow">→</div><div class="to"><strong>正式 GitHub Release</strong><span>Desktop bridge 或 complete runtime installer；immutable marker 优先。</span></div></div>
+      <div class="route"><div class="from">source_checkout</div><div class="arrow">→</div><div class="to"><strong>显式 Git ref pipeline</strong><span>preflight、checkout、依赖/构建、probe，必要时按开发合同重启。</span></div></div>
+      <div class="route"><div class="from">unknown</div><div class="arrow">→</div><div class="to"><strong>稳定错误</strong><span>不猜测 PyPI、binary 或 Git 路径；提示使用正式 installer 或源码 checkout。</span></div></div>
+      <p class="diagram-caption"><code>pip_wheel</code> 不属于正式产品安装类型。开发者 wheel 可以作为构建输入，但不提供功能不完整的普通用户版本。</p>
+    </section>
+
+    <section id="references" aria-labelledby="references-title">
+      <div class="section-head"><div class="section-num">09</div><div><h2 id="references-title">参考实现与采用方式</h2><p>参考用于确定平台限制和状态模型；最终方案服从 OpenProgram 的 unsigned Desktop 与完整 runtime 合同。</p></div></div>
+      <div class="reference-grid">
+        <article class="reference-card"><span class="choice">采用</span><h3><a href="https://docs.github.com/en/rest/releases/releases#get-the-latest-release">GitHub Releases API</a></h3><p>latest stable metadata、Release Notes 和 assets。客户端仍对 stable 字段、tag、唯一资产和 manifest 做独立验证。</p></article>
+        <article class="reference-card"><span class="choice modified">修改采用</span><h3><a href="https://www.electronjs.org/docs/latest/tutorial/updates">Electron update lifecycle</a></h3><p>采用 check / available / download / error 状态模型；Desktop 完成边界为校验后打开 DMG，不调用自动替换。</p></article>
+        <article class="reference-card"><span class="choice rejected">当前不采用</span><h3><a href="https://www.electronjs.org/docs/latest/api/auto-updater/">Electron autoUpdater</a></h3><p>macOS 原生自动安装要求签名，Electron 不提供 Linux 内置 updater；与当前产物和平台合同不匹配。</p></article>
+        <article class="reference-card"><span class="choice rejected">不新增依赖</span><h3><a href="https://www.electron.build/docs/features/auto-update/">electron-updater</a></h3><p>现有 Release manifest、Node/Electron API、Python 和 shell 已覆盖本阶段；新增包不能改变当前 Desktop 安装边界。</p></article>
+      </div>
+    </section>
+
+    <section id="source-map" aria-labelledby="source-title">
+      <div class="section-head"><div class="section-num">10</div><div><h2 id="source-title">实现入口</h2><p>链接指向当前主分支的公共入口和根实现；设计结论不依赖本页中的代码副本。</p></div></div>
+      <div class="file-grid">
+        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/desktop/update-service.js"><span class="path">desktop/update-service.js</span><p>Desktop metadata、状态、缓存、调度、下载、hash 与公开投影。</p></a>
+        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/desktop/main.js"><span class="path">desktop/main.js</span><p>自动检查 timer、resume、IPC handler 和多窗口状态广播。</p></a>
+        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/desktop/preload.js"><span class="path">desktop/preload.js</span><p>固定、无 URL 参数的 renderer bridge。</p></a>
+        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/settings/general-section.tsx"><span class="path">web/components/settings/general-section.tsx</span><p>Desktop 更新状态和普通 Web 的 CLI 指令回退。</p></a>
+        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/_cli_cmds/upgrade.py"><span class="path">openprogram/_cli_cmds/upgrade.py</span><p>安装类型分流、managed Release gate、dry-run/JSON 与 installer 执行。</p></a>
+        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/updater/github.py"><span class="path">openprogram/updater/github.py</span><p>GitHub stable metadata、manifest 和 immutable installer 获取。</p></a>
+        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/install-release.sh"><span class="path">scripts/install-release.sh</span><p>完整 runtime 下载、校验、cold start、launcher staging 和原子激活。</p></a>
+        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/workflows/release.yml"><span class="path">.github/workflows/release.yml</span><p>完整资产发布和创建 Release 后的 latest endpoint 门禁。</p></a>
+      </div>
+    </section>
+
+    <section id="implementation-evidence" aria-labelledby="evidence-title">
+      <div class="section-head"><div class="section-num">11</div><div><h2 id="evidence-title">实现状态与验收证据</h2><p>实现事实和仍需 Release 环境验证的事实分开记录。这里不保留日期化变更日志或 commit 清单。</p></div></div>
+      <div class="evidence-grid">
+        <article class="evidence-card pass"><div class="label">Implemented</div><h3>Desktop 完整路径</h3><p>stable metadata、架构选择、状态缓存、24h/6h 调度、最小 IPC、verified download、Settings 状态和 Web fallback 已实现。</p><code>npm run check --prefix desktop</code></article>
+        <article class="evidence-card pass"><div class="label">Implemented</div><h3>Managed CLI 完整路径</h3><p>Release manifest gate、immutable installer、环境隔离、dry-run/JSON、真实 old→new current 切换与 launcher 失败保留旧版本已覆盖。</p><code>uv run pytest -q tests/component/config/test_formal_release_updates.py tests/component/config/test_distribution_release.py</code></article>
+        <article class="evidence-card pass"><div class="label">Verified</div><h3>安全与失败路径</h3><p>逐跳 host 验证、metadata/download stall abort、short write、随机 exclusive 临时文件、checksum/size 清理、并发 Promise 和状态修复已验证。</p><code>desktop/scripts/check-update-service.js</code></article>
+        <article class="evidence-card pass"><div class="label">Verified</div><h3>文档与发布门禁</h3><p>双语安装/升级文档、Release latest 验证、文档构建、链接、Desktop/Web/TypeScript 与 workflow 静态门禁纳入发布检查。</p><code>python -m tools.docs_site.checklinks</code></article>
+        <article class="evidence-card pending"><div class="label">Release-visible acceptance</div><h3>首个 updater-enabled Release</h3><p>在默认 <code>/Applications/OpenProgram.app</code>、18100 profile 中验证真实新版本发现、长时间连续运行和系统 sleep/resume 后单次重排。</p></article>
+        <article class="evidence-card pending"><div class="label">Compatibility acceptance</div><h3>v0.6.6 一次性过渡</h3><p>Desktop 手动安装首个含 updater 的 DMG；CLI/server 重新运行一次公开 installer。后续版本才使用新 UI 和 managed upgrade 命令。</p></article>
+      </div>
+      <div class="release-handoff"><h3>发布前后的明确状态</h3><p>代码进入 <code>main</code> 不会触发普通用户更新。只有包含完整资产、唯一 <code>release-manifest.json</code>、正确 stable 字段并通过 Release workflow gate 的正式 GitHub Release 才会被发现。首个这样的 Release 发布前，不把自动更新描述为已交付现有客户端。</p></div>
+    </section>
+
+    <footer class="footer"><span>Canonical design: distribution / automatic updates</span><span>设计与代码持续同步 · 历史通过 Git 查看</span></footer>
+  </main>
+</div>
+
+<script>
+  (function () {
+    var tabs = Array.from(document.querySelectorAll('.state-tab'));
+    var panels = Array.from(document.querySelectorAll('.update-state'));
+    function activate(tab, moveFocus) {
+      tabs.forEach(function (item) {
+        var selected = item === tab;
+        item.setAttribute('aria-selected', String(selected));
+        item.tabIndex = selected ? 0 : -1;
+      });
+      panels.forEach(function (panel) {
+        panel.classList.toggle('active', panel.id === 'state-' + tab.dataset.target);
+      });
+      if (moveFocus) tab.focus();
+    }
+    tabs.forEach(function (tab, index) {
+      tab.addEventListener('click', function () { activate(tab, false); });
+      tab.addEventListener('keydown', function (event) {
+        var next = index;
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % tabs.length;
+        else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + tabs.length) % tabs.length;
+        else if (event.key === 'Home') next = 0;
+        else if (event.key === 'End') next = tabs.length - 1;
+        else return;
+        event.preventDefault();
+        activate(tabs[next], true);
+      });
+    });
+    activate(document.querySelector('.state-tab[aria-selected="true"]'), false);
+    var links = Array.from(document.querySelectorAll('.rail nav a'));
+    var sections = links.map(function (link) { return document.querySelector(link.getAttribute('href')); }).filter(Boolean);
+    if ('IntersectionObserver' in window) {
+      var observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          links.forEach(function (link) {
+            link.setAttribute('aria-current', String(link.getAttribute('href') === '#' + entry.target.id));
+          });
+        });
+      }, { rootMargin: '-15% 0px -75% 0px' });
+      sections.forEach(function (section) { observer.observe(section); });
+    }
+  }());
+</script>
+</body>
+</html>

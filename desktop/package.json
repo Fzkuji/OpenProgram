@@ -1,6 +1,6 @@
 {
   "name": "openprogram-desktop",
-  "version": "0.6.1",
+  "version": "0.6.6",
   "private": true,
   "description": "Electron desktop shell for OpenProgram",
   "author": "Fzkuji",
@@ -12,13 +12,14 @@
   "scripts": {
     "postinstall": "electron-builder install-app-deps",
     "dev": "electron .",
-    "check": "npm run check:webtabs && npm run check:webtab-zoom-bounds && npm run check:tab-transfer-store && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime",
+    "check": "npm run check:webtabs && npm run check:webtab-zoom-bounds && npm run check:tab-transfer-store && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime && npm run check:updates",
     "check:webtabs": "node scripts/check-webtab-navigation.js",
     "check:webtab-zoom-bounds": "node scripts/check-webtab-zoom-bounds.js",
     "check:tab-transfer-store": "node scripts/check-tab-transfer-store.js",
     "check:worker-auth": "node scripts/check-worker-start-url.js",
     "check:worker-recovery": "node scripts/check-worker-recovery.js",
     "check:packaged-runtime": "node scripts/check-packaged-runtime.js",
+    "check:updates": "node scripts/check-update-service.js",
     "icon:build": "bash scripts/build-icon.sh",
     "icon:check": "bash scripts/check-icon.sh",
     "prepare:runtime": "bash ../scripts/prepare-desktop-runtime.sh",
@@ -36,6 +37,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "update-service.js",
       "packaged-runtime.js",
       "worker-start-url.js",
       "tab-transfer-store.js",

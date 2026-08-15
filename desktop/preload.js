@@ -79,6 +79,15 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
       return () => ipcRenderer.removeListener("downloads:changed", listener);
     },
   },
+  updates: {
+    getState: () => ipcRenderer.invoke("updates:get-state"),
+    check: () => ipcRenderer.invoke("updates:check"),
+    setAutomaticChecks: (enabled) =>
+      ipcRenderer.invoke("updates:set-automatic-checks", Boolean(enabled)),
+    download: () => ipcRenderer.invoke("updates:download"),
+    openRelease: () => ipcRenderer.invoke("updates:open-release"),
+    onState: (cb) => subscribe("updates:state")(cb),
+  },
   browserImport: {
     listSources: () => ipcRenderer.invoke("browser-import:list-sources"),
     run: (request) => ipcRenderer.invoke("browser-import:run", request),

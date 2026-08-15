@@ -30,7 +30,7 @@ openprogram setup                # 重新走一遍配置向导
 
 ## 怎么更新到最新版本？
 
-stable 桌面和 CLI 安装只变更到一个明确的已发布版本。macOS 桌面用户替换 DMG；macOS/Linux CLI/server 用户运行目标版本 tag 中的 installer。source checkout 开发者使用 `openprogram upgrade`。详见[升级](../install/upgrade.zh.md)。
+stable installation 只变更到明确的已发布版本。首个含 updater 的 release 需要从 v0.6.6 完成一次过渡：macOS Desktop 用户手动安装该版本的 DMG，macOS/Linux CLI/server 用户重新运行一次公开 installer。后续 Desktop release 在 Settings 中发现；managed CLI/server 和 source-checkout 用户都运行 `openprogram upgrade`，命令根据安装类型选择 release 路径或 Git 门禁路径。详见[升级](../install/upgrade.zh.md)。
 
 ## `openprogram web` 打开的页面加载不出来？
 

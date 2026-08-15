@@ -303,23 +303,6 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
         )
         sys.exit(2)
 
-    # Surface any update that was applied since the last launch.
-    # Goes to the saved tty so the user sees it even after the dup2
-    # redirect that ``cli._maybe_redirect_for_tui`` performed at
-    # module import.
-    try:
-        from openprogram.updater import pop_staged_notice
-        notice = pop_staged_notice()
-        if notice:
-            target = notice.get("version") or "?"
-            summary = notice.get("summary") or ""
-            line = f"openprogram: updated to {target}"
-            if summary and summary != "up to date":
-                line += f" ({summary})"
-            _tty_write(line + "\n")
-    except Exception:  # noqa: BLE001
-        pass
-
     # Auto-start the worker if missing (overridable via env var for the rare
     # case where the user wants a strictly-connecting TUI). The worker manages
     # its own singleton lock, so concurrent CLI launches won't race-spawn.

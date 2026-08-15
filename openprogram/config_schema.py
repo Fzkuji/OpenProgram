@@ -781,7 +781,8 @@ SETTINGS: list[SettingSpec] = [
         label="Update channel", widget="enum", apply=APPLY_LIVE,
         default="stable", choices=_update_channels,
         help="Which line of releases `openprogram upgrade` follows. "
-             "`stable` tracks origin/main.",
+             "Managed installs use the latest stable GitHub Release; "
+             "source checkouts use origin/main.",
     ),
 ]
 

@@ -89,12 +89,14 @@ test -n "$wheel" || {
 # Keep GUI inference CPU-only in distributable Linux runtimes. PyPI's Linux
 # Torch wheel can pull CUDA libraries even though the default product does not
 # require a GPU.
+numpy_version="$(read_config programs.gui.numpy)"
+opencv_version="$(read_config programs.gui.opencv)"
 torch_version="$(read_config programs.gui.torch)"
 torchvision_version="$(read_config programs.gui.torchvision)"
 torch_install=(
   "$uv_bin" pip install --python "$python_bin" --strict
   --break-system-packages
-  "torch==$torch_version" "torchvision==$torchvision_version"
+  "numpy==$numpy_version" "torch==$torch_version" "torchvision==$torchvision_version"
 )
 if test "$(uname -s)" = Linux; then
   torch_install+=(--index https://download.pytorch.org/whl/cpu)
@@ -104,6 +106,13 @@ fi
 program_staging="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-programs.XXXXXX")"
 cleanup() { rm -rf "$program_staging"; }
 trap cleanup EXIT HUP INT TERM
+program_constraints="$program_staging/product-constraints.txt"
+printf '%s\n' \
+  "numpy==$numpy_version" \
+  "opencv-python==$opencv_version" \
+  "torch==$torch_version" \
+  "torchvision==$torchvision_version" \
+  > "$program_constraints"
 
 for program_name in gui research wiki; do
   program_repo="$(read_config "programs.$program_name.repository")"
@@ -115,13 +124,16 @@ for program_name in gui research wiki; do
   git -C "$program_dir" checkout -q --detach FETCH_HEAD
   if test "$program_name" = gui; then
     "$uv_bin" pip install --python "$python_bin" --strict \
-      --break-system-packages "${program_dir}[ocr]"
+      --break-system-packages --constraint "$program_constraints" \
+      "${program_dir}[ocr]"
   elif test "$program_name" = research; then
     "$uv_bin" pip install --python "$python_bin" --strict \
-      --break-system-packages "${program_dir}[pdf]"
+      --break-system-packages --constraint "$program_constraints" \
+      "${program_dir}[pdf]"
   else
     "$uv_bin" pip install --python "$python_bin" --strict \
-      --break-system-packages "$program_dir"
+      --break-system-packages --constraint "$program_constraints" \
+      "$program_dir"
   fi
 done
 

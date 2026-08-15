@@ -250,6 +250,35 @@ export interface DesktopDownloadsApi {
   onChanged(cb: (entry: DesktopDownloadEntry | null) => void): () => void;
 }
 
+export interface DesktopUpdateRelease {
+  status: "available" | "up-to-date";
+  currentVersion: string;
+  latestVersion: string;
+  publishedAt: string;
+  releaseName: string;
+  releaseNotes: string;
+  releaseUrl: string;
+}
+
+export interface DesktopUpdateState {
+  status: "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "error";
+  currentVersion: string;
+  automaticChecks: boolean;
+  checkedAt: number | null;
+  release: DesktopUpdateRelease | null;
+  progress: { downloaded: number; total: number } | null;
+  error: string | null;
+}
+
+export interface DesktopUpdateApi {
+  getState(): Promise<DesktopUpdateState | null>;
+  check(): Promise<DesktopUpdateState | null>;
+  setAutomaticChecks(enabled: boolean): Promise<DesktopUpdateState | null>;
+  download(): Promise<DesktopUpdateState | null>;
+  openRelease(): Promise<void>;
+  onState(cb: (state: DesktopUpdateState) => void): () => void;
+}
+
 export interface DesktopBrowserImportProfile {
   id: string;
   name: string;
@@ -360,6 +389,7 @@ export interface DesktopBridge {
   history?: DesktopHistoryApi;
   /** Desktop-only download history and active download controls. */
   downloads?: DesktopDownloadsApi;
+  updates: DesktopUpdateApi;
   /** Desktop-only, explicit import from a detected local browser profile. */
   browserImport?: DesktopBrowserImportApi;
   /** Desktop-only clearing of the built-in browser profile. */
