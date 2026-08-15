@@ -59,6 +59,14 @@ assert.match(browserHome, /canGoHome=\{false\}/);
 assert.match(browserHome, /canOpenExternal=\{false\}/);
 assert.match(browserHome, /<BookmarksLibraryButton \/>/);
 assert.match(browserHome, /ArrowLeft[\s\S]*ArrowRight[\s\S]*RotateCw[\s\S]*House/);
+for (const label of ["Back", "Forward", "Reload", "Home", "Bookmark", "Open in browser"]) {
+  assert.match(
+    browserHome,
+    new RegExp(`<button[^>]*disabled[^>]*title=\\{text\\("${label}"`),
+    `Browser home ${label} must remain visible but disabled`,
+  );
+}
+assert.match(browserHome, /actions=\{\{ home: \(\) => \{\}, forward: \(\) => \{\}, openExternal: \(\) => \{\} \}\}/);
 assert.doesNotMatch(browserHome, /browserHomeToolbar|text\("Open", "打开"\)/);
 assert.match(browserGlyph, /BrowserGlyph/);
 assert.match(browserHome, /<BrowserGlyph/);

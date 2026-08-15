@@ -292,7 +292,7 @@ export function BrowserHomePage() {
         </button>
         <BrowserMenu
           ownerId={menuOwnerId}
-          actions={{ home: () => {}, openExternal: () => {} }}
+          actions={{ home: () => {}, forward: () => {}, openExternal: () => {} }}
           canGoForward={false}
           canGoHome={false}
           canOpenExternal={false}
