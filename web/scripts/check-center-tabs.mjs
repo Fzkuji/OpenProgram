@@ -681,7 +681,11 @@ assert.doesNotMatch(
 // 72px = ＋号 36 (8px gap + 28px) + 主菜单钮 36, so the menu button lands
 // on the 49px right rail and the ＋ stays in natural flow before it.
 assert.match(css, /max-width: calc\(100% - 72px\);/);
-assert.match(css, /:global\(html\.is-desktop\) \.strip \{[^}]*padding-right: 10px;/s);
+assert.match(
+  css,
+  /:global\(html\.is-desktop\) \.strip \{[^}]*height: 36px;[^}]*padding-right: 10px;/s,
+  "desktop tab strip must keep the compact 36px chrome height",
+);
 assert.match(
   css,
   /:global\(html\.is-desktop\) \.tabsFlow \{[^}]*overflow-x: auto;[^}]*overflow-y: hidden;[^}]*scrollbar-width: none;/s,
@@ -693,8 +697,13 @@ assert.match(
 assert.match(css, /:global\(html\.is-desktop\) \.tabsFlow > \.tab \{[^}]*width: 240px;[^}]*flex: 0 1 240px;[^}]*max-width: 240px;/s);
 assert.match(
   css,
-  /:global\(html\.is-desktop\) \.tab \{[^}]*height: 30px;[^}]*padding-right: 5px;[^}]*border-radius: 8px;/s,
+  /:global\(html\.is-desktop\) \.tab \{[^}]*height: 28px;[^}]*padding-right: 5px;[^}]*border-radius: 8px;/s,
   "desktop tab close controls must have the same 5px right gap as their vertical gaps",
+);
+assert.match(
+  css,
+  /:global\(html\.is-desktop\) \.compoundTab,[\s\S]*?:global\(html\.is-desktop\) \.compoundTabActive \{[^}]*height: 28px;/s,
+  "desktop compound tabs must use the same compact height as ordinary tabs",
 );
 assert.match(css, /\.tabClose \{[^}]*width: 20px;[^}]*height: 20px;/s);
 assert.match(strip, /<X size=\{14\} \/>/);

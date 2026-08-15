@@ -1,7 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Download, Plus, X } from "lucide-react";
+import { useEffect, useId, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Download,
+  ExternalLink,
+  House,
+  Plus,
+  RotateCw,
+  Star,
+  X,
+} from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
 import { importBookmarkTree } from "@/lib/bookmarks";
@@ -26,6 +36,7 @@ import {
 import { LANE_COLORS } from "@/lib/format-utils/lane-colors";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
 import { BrowserGlyph } from "./browser-glyph";
+import { BookmarkBar, BookmarksLibraryButton, BrowserMenu } from "./browser-controls";
 import styles from "./center-tabs.module.css";
 
 function hostColor(host: string): string {
@@ -206,6 +217,7 @@ export function BrowserImportDialog({
 
 export function BrowserHomePage() {
   const { text } = useTranslation();
+  const menuOwnerId = useId();
   const canImport = Boolean(desktopBridge()?.browserImport);
   const openWebTab = useCenterTabs((state) => state.openWebTab);
   const [url, setUrl] = useState("");
@@ -223,7 +235,6 @@ export function BrowserHomePage() {
     return subscribeShortcuts(refresh);
   }, []);
 
-  const canGo = useMemo(() => !!normalizeWebUrl(url), [url]);
   function go(value = url) {
     const normalized = normalizeWebUrl(value);
     if (normalized) openWebTab(normalized);
@@ -238,10 +249,22 @@ export function BrowserHomePage() {
   }
 
   return (
-    <div className={styles.browserHome}>
-      <div className={styles.browserHomeToolbar}>
-        <BrowserGlyph size={25} />
+    <div className={`${styles.browserHome} ${styles.webPane}`}>
+      <div className={styles.webToolbar}>
+        <button type="button" className={styles.webToolbarBtn} disabled title={text("Back", "后退")} aria-label={text("Back", "后退")}>
+          <ArrowLeft size={14} aria-hidden="true" />
+        </button>
+        <button type="button" className={`${styles.webToolbarBtn} ${styles.webToolbarForward}`} disabled title={text("Forward", "前进")} aria-label={text("Forward", "前进")}>
+          <ArrowRight size={14} aria-hidden="true" />
+        </button>
+        <button type="button" className={styles.webToolbarBtn} disabled title={text("Reload", "重新加载")} aria-label={text("Reload", "重新加载")}>
+          <RotateCw size={14} aria-hidden="true" />
+        </button>
+        <button type="button" className={`${styles.webToolbarBtn} ${styles.webToolbarMedium}`} disabled title={text("Home", "主页")} aria-label={text("Home", "主页")}>
+          <House size={14} aria-hidden="true" />
+        </button>
         <input
+          className={styles.webAddress}
           value={url}
           onChange={(event) => setUrl(event.target.value)}
           onKeyDown={(event) => { if (event.key === "Enter") go(); }}
@@ -249,9 +272,14 @@ export function BrowserHomePage() {
           aria-label={text("Address", "地址")}
           autoFocus
         />
+        <button type="button" className={styles.webToolbarBtn} disabled title={text("Bookmark", "添加书签")} aria-label={text("Bookmark", "添加书签")}>
+          <Star size={14} aria-hidden="true" />
+        </button>
+        <BookmarksLibraryButton />
         {canImport ? (
           <button
             type="button"
+            className={`${styles.webToolbarBtn} ${styles.webToolbarMedium}`}
             onClick={() => setShowImport(true)}
             title={text("Import browser data", "导入浏览器资料")}
             aria-label={text("Import browser data", "导入浏览器资料")}
@@ -259,8 +287,16 @@ export function BrowserHomePage() {
             <Download size={15} aria-hidden="true" />
           </button>
         ) : null}
-        <button type="button" disabled={!canGo} onClick={() => go()}>{text("Open", "打开")}</button>
+        <button type="button" className={`${styles.webToolbarBtn} ${styles.webToolbarMedium}`} disabled title={text("Open in browser", "在浏览器中打开")} aria-label={text("Open in browser", "在浏览器中打开")}>
+          <ExternalLink size={14} aria-hidden="true" />
+        </button>
+        <BrowserMenu
+          ownerId={menuOwnerId}
+          actions={{ home: () => {}, openExternal: () => {} }}
+          canGoForward={false}
+        />
       </div>
+      <BookmarkBar ownerId={menuOwnerId} onNavigate={go} />
       <div className={styles.browserHomeBody}>
         {canImport && showImport && (
           <BrowserImportDialog onDismiss={() => {

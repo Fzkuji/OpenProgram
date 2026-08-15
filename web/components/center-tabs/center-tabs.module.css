@@ -40,6 +40,7 @@
 /* 桌面（Electron）：tab 条空白处可拖拽窗口（Chrome 同款）；tab、＋号
    与主菜单钮仍要接收点击，标回 no-drag。 */
 :global(html.is-desktop) .strip {
+  height: 36px;
   -webkit-app-region: drag;
   /* 10px 右缘留白：主菜单钮（28px）中心距窗口右缘 10+14=24px，正好落在
      右侧收起轨的图标轴上——最右那一列现在属于菜单钮，不再属于 ＋号。 */
@@ -239,19 +240,19 @@
 /* ── 桌面（Electron）全宽栏：活动 tab 改悬浮胶囊 ──────────────────────
    融合式 fillet 在全宽栏下会撞上内容区/右栏的竖向分界缝（tab 底角的
    内凹弧对着一条竖缝，成了错位倒角），桌面模式放弃"长进内容区"的
-   造型：所有 tab 都是 30px 高的垂直居中胶囊（40px 栏，上下各 5px 缝，
+   造型：所有 tab 都是 28px 高的垂直居中胶囊（36px 栏，上下各 4px 缝，
    strip 的 align-items:center 直接给出），活动胶囊靠 --bg-primary 底
    色 + 轻投影浮在 frame 色上。浏览器模式不受影响。 */
 :global(html.is-desktop) .tab {
-  height: 30px;
-  /* 20px close target inside a 30px tab leaves 5px above and below; use the
+  height: 28px;
+  /* 20px close target inside a 28px tab leaves 4px above and below; keep the
      same inset at the right edge so the control is optically centered. */
   padding-right: 5px;
   border-radius: 8px;
 }
 :global(html.is-desktop) .tab.tabActive,
 :global(html.is-desktop) .tab.tabActive:hover {
-  height: 30px;
+  height: 28px;
   align-self: center; /* 覆盖 flex-end：不再贴 strip 底边 */
   padding-bottom: 0;
   border-radius: 8px;
@@ -783,7 +784,7 @@
 
 :global(html.is-desktop) .compoundTab,
 :global(html.is-desktop) .compoundTabActive {
-  height: 30px;
+  height: 28px;
   align-self: center;
   padding-bottom: 0;
   border-radius: 8px;
@@ -1164,9 +1165,13 @@
   border-radius: 6px;
   cursor: pointer;
 }
-.webToolbarBtn:hover {
+.webToolbarBtn:hover:not(:disabled) {
   color: var(--text-bright);
   background: var(--bg-hover);
+}
+.webToolbarBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .bookmarkBar {
@@ -1538,32 +1543,6 @@
   --glyph-primary: var(--accent-purple);
   --glyph-secondary: var(--meter-fill);
 }
-.browserHomeToolbar {
-  height: 48px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-muted);
-}
-.browserHomeToolbar input {
-  flex: 1;
-  min-width: 0;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  outline: none;
-  background: var(--bg-secondary);
-  color: var(--text-bright);
-  font-family: var(--font-mono);
-}
-.browserHomeToolbar input:focus {
-  border-color: var(--accent-blue);
-}
-.browserHomeToolbar button,
 .browserImportAction {
   height: 32px;
   padding: 0 13px;
@@ -1573,12 +1552,10 @@
   color: var(--text-secondary);
   cursor: pointer;
 }
-.browserHomeToolbar button:hover:not(:disabled),
 .browserImportAction:hover:not(:disabled) {
   color: var(--text-bright);
   background: var(--bg-hover);
 }
-.browserHomeToolbar button:disabled,
 .browserImportAction:disabled {
   opacity: 0.45;
   cursor: default;

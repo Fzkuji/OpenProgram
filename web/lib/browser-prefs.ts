@@ -5,7 +5,7 @@ const BROWSER_PREFS_CHANGE_EVENT = "openprogram:browser-prefs-changed";
 
 export function showBookmarksBar(): boolean {
   return typeof window !== "undefined"
-    && localStorage.getItem(SHOW_BOOKMARKS_BAR_KEY) === "1";
+    && localStorage.getItem(SHOW_BOOKMARKS_BAR_KEY) !== "0";
 }
 
 export function setShowBookmarksBar(visible: boolean): void {
