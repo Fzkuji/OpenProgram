@@ -21,6 +21,7 @@ const browserSettings = read("../components/settings/browser-settings.tsx");
 const settingsLayout = read("../components/settings/settings-tabs-layout.tsx");
 const browserSettingsRoute = read("../app/(shell)/settings/browser/page.tsx");
 const centerTabsCss = read("../components/center-tabs/center-tabs.module.css");
+const cssRoot = postcss.parse(centerTabsCss);
 const historyCss = read("../app/styles/right-dock/web-history.css");
 const dropdownMenu = read("../components/ui/dropdown-menu.tsx");
 const builtin = read("../components/center-tabs/builtin-tab-pane.tsx");
@@ -49,27 +50,35 @@ assert.equal(
   3,
   "the three non-browser launchers must use the same icon container as Browser",
 );
+function finalTopLevelDecl(selector, property) {
+  let value;
+  for (const node of cssRoot.nodes) {
+    if (node.type !== "rule" || !node.selectors?.includes(selector)) continue;
+    node.walkDecls(property, (declaration) => { value = declaration.value; });
+  }
+  return value;
+}
 for (const [tone, icon, primary, secondary] of [
-  ["files", "FileText", "var\\(--meter-fill\\)", "var\\(--accent-cyan\\)"],
-  ["chat", "MessageCirclePlus", "var\\(--accent-green\\)", "var\\(--accent-cyan\\)"],
-  ["terminal", "TerminalSquare", "var\\(--accent-purple\\)", "var\\(--meter-fill\\)"],
+  ["files", "FileText", "var(--meter-fill)", "var(--accent-cyan)"],
+  ["chat", "MessageCirclePlus", "var(--accent-green)", "var(--accent-cyan)"],
+  ["terminal", "TerminalSquare", "var(--accent-purple)", "var(--meter-fill)"],
 ]) {
   assert.match(
     launcher,
     new RegExp(`data-tone="${tone}"[^>]*>[\\s\\S]*?<${icon} size=\\{11\\} strokeWidth=\\{2\\.1\\}`),
   );
-  assert.match(
-    centerTabsCss,
-    new RegExp(`\\.ntpGlyph\\[data-tone="${tone}"\\] \\{[^}]*--glyph-primary: ${primary};[^}]*--glyph-secondary: ${secondary};`),
-  );
+  const selector = `.ntpGlyph[data-tone="${tone}"]`;
+  assert.equal(finalTopLevelDecl(selector, "--glyph-primary"), primary);
+  assert.equal(finalTopLevelDecl(selector, "--glyph-secondary"), secondary);
 }
 assert.match(launcher, /<BrowserGlyph size=\{18\} \/>/);
-assert.match(centerTabsCss, /\.ntpGlyph \{[^}]*width: 18px;[^}]*height: 18px;/s);
-assert.match(
-  centerTabsCss,
-  /\.browserGlyph,\s*\.ntpGlyph\s*\{[^}]*--glyph-primary:[^}]*--glyph-secondary:[^}]*border:[^}]*linear-gradient/s,
-  "all launcher glyphs must reuse the Browser colored-container treatment",
-);
+assert.equal(finalTopLevelDecl(".ntpGlyph", "width"), "18px");
+assert.equal(finalTopLevelDecl(".ntpGlyph", "height"), "18px");
+assert.equal(finalTopLevelDecl(".browserGlyph", "--glyph-primary"), "var(--accent-blue)");
+assert.equal(finalTopLevelDecl(".browserGlyph", "--glyph-secondary"), "#8b5cf6");
+const launcherGlyphBackground = finalTopLevelDecl(".browserGlyph", "background");
+assert.match(launcherGlyphBackground, /radial-gradient\(/);
+assert.match(launcherGlyphBackground, /linear-gradient\(/);
 assert.match(browserPrefs, /SHOW_BOOKMARKS_BAR_KEY/);
 assert.match(browserPrefs, /BROWSER_IMPORT_PROMPT_FINISHED_KEY/);
 assert.match(browserControls, /function BrowserMenu/);
@@ -111,7 +120,6 @@ assert.match(centerTabsCss, /container-type:\s*inline-size/);
 assert.match(centerTabsCss, /@container\s*\(max-width:\s*719px\)/);
 assert.match(centerTabsCss, /@container\s*\(max-width:\s*559px\)/);
 assert.match(centerTabsCss, /@container\s*\(max-width:\s*519px\)/);
-const cssRoot = postcss.parse(centerTabsCss);
 const topLevelSelectors = new Set(
   cssRoot.nodes
     .filter((node) => node.type === "rule")
