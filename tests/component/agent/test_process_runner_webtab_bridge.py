@@ -1,3 +1,4 @@
+import multiprocessing
 from queue import Queue
 from threading import Thread
 
@@ -49,3 +50,24 @@ def test_parent_webtab_bridge_rejects_unknown_operations(monkeypatch):
         "ok": False,
         "error": "unsupported webtab bridge operation",
     }
+
+
+def test_parent_webtab_bridge_result_crosses_process_queue(monkeypatch):
+    from openprogram.agent import process_runner
+    from openprogram.webui.ws_actions import webtab
+
+    expected = {"ok": True, "tab_id": "tab-1", "target_id": "target-1"}
+    monkeypatch.setattr(webtab, "_request", lambda command, timeout: expected)
+    replies = multiprocessing.get_context("spawn").Queue()
+    try:
+        process_runner._bridge_webtab_to_parent(
+            {"req_id": "active", "command": {"op": "active"}, "timeout": 1},
+            replies,
+        )
+
+        envelope = replies.get(timeout=3)
+        assert envelope["result"] == expected
+        assert "_owner_ws" not in envelope["result"]
+    finally:
+        replies.close()
+        replies.join_thread()

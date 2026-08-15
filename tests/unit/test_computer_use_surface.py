@@ -163,9 +163,8 @@ def test_direct_mcp_page_capture_requires_one_desktop_connection(monkeypatch):
 
     owner = _WS()
     monkeypatch.setattr(server, "_ws_connections", [owner])
-    monkeypatch.setattr(webtab, "request_active_tab", lambda timeout=5.0: {
+    monkeypatch.setattr(webtab, "request_on_ws", lambda ws, command, timeout=5.0: {
         "ok": True,
-        "_owner_ws": owner,
         "window_id": "window-1",
         "tab_id": "tab-1",
         "target_id": "target-1",

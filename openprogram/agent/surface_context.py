@@ -218,14 +218,15 @@ def capture_active() -> dict:
     from openprogram.webui import server as _server
     from openprogram.webui.ws_actions import webtab
 
-    if len(_server._ws_connections) != 1:
+    connections = list(_server._ws_connections)
+    if len(connections) != 1:
         raise RuntimeError("direct Page selection requires one desktop connection")
-    result = webtab.request_active_tab()
-    owner_ws = result.get("_owner_ws") if isinstance(result, dict) else None
+    owner_ws = connections[0]
+    result = webtab.request_on_ws(owner_ws, {"op": "active"})
     window_id = _text(result.get("window_id"), 160) if isinstance(result, dict) else ""
     tab_id = _text(result.get("tab_id"), 512) if isinstance(result, dict) else ""
     target_id = _text(result.get("target_id"), 512) if isinstance(result, dict) else ""
-    if not result.get("ok") or owner_ws is None or not window_id or not tab_id or not target_id:
+    if not result.get("ok") or not window_id or not tab_id or not target_id:
         raise RuntimeError("no active OpenProgram Page is available")
     binding_id = webtab.register_binding(
         owner_ws, window_id, tab_id, target_id,
