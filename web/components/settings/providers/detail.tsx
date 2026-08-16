@@ -154,7 +154,7 @@ export function Detail({
   }, [manualId, provider.id, reloadModels, onChanged]);
 
   return (
-    <>
+    <div className={styles.detailSurface}>
       <div className={styles.detailHeader}>
         <div className={styles.detailIcon}>
           <ProviderIcon id={provider.id} size={40} />
@@ -200,7 +200,7 @@ export function Detail({
       {(provider.id === "claude-code" ||
         !!provider.api_key_env ||
         (provider.login_methods?.length ?? 0) > 0) && (
-        <AccountManager provider={provider} onChanged={autoCheckAndFetch} />
+        <AccountManager key={provider.id} provider={provider} onChanged={autoCheckAndFetch} />
       )}
       {provider.api_key_env && provider.id !== "claude-code" && (
         <BaseUrl provider={provider} onChanged={onChanged} />
@@ -265,6 +265,6 @@ export function Detail({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

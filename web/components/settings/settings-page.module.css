@@ -624,10 +624,6 @@
 }
 
 .detail {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px 20px 20px;
   /* Detail column owns its own scroll — wheeling here doesn't move
      the provider list on the left. */
   overflow-y: auto;
@@ -635,6 +631,13 @@
   min-height: 0;
   min-width: 0;
   container-type: inline-size;
+}
+.detailSurface {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px 20px 20px;
 }
 .detailEmpty {
   color: var(--text-muted);
@@ -858,6 +861,9 @@
   gap: 8px;
   align-items: center;
 }
+.addCredentialFieldsSingle {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
 .addCredentialFields > input {
   min-width: 0;
 }
@@ -882,7 +888,7 @@
    user keeps either navigation column open. Reflow the detail's own controls
    from its available width without changing either manually controlled rail. */
 @container (max-width: 680px) {
-  .detail {
+  .detailSurface {
     padding-left: 12px;
     padding-right: 12px;
   }
@@ -962,7 +968,7 @@
 }
 
 @container (max-width: 300px) {
-  .detail {
+  .detailSurface {
     padding-left: 8px;
     padding-right: 8px;
   }

@@ -270,6 +270,7 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
 
   const [state, setState] = useState<State | null>(null);
   const [newKey, setNewKey] = useState("");
+  const [newKeyName, setNewKeyName] = useState("");
   const [newName, setNewName] = useState("");
   const [addingKey, setAddingKey] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -326,11 +327,19 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
     if (!key) return;
     setBusy(true); setMsg(text("Validating…", "验证中…"));
     // A rejected key answers 4xx with {error}; only a 2xx {ok:true} stored it.
-    const r = await fetch(`${base}/keys`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ name: newName.trim(), api_key: key, validate: true }) });
+    const r = await fetch(`${base}/keys`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ name: newKeyName.trim(), api_key: key, validate: true }) });
     const d = await r.json().catch(() => ({}));
     setBusy(false);
-    if (r.ok && d.ok) { setNewKey(""); setNewName(""); setAddingKey(false); setMsg(""); await load(); onChanged?.(); }
+    if (r.ok && d.ok) { setNewKey(""); setNewKeyName(""); setAddingKey(false); setMsg(""); await load(); onChanged?.(); }
     else setMsg(d.error || text("Could not add the key.", "添加失败。"));
+  }
+  function toggleAddingKey() {
+    if (addingKey) {
+      setNewKey("");
+      setNewKeyName("");
+    }
+    setAddingKey((open) => !open);
+    setMsg("");
   }
   async function toggleRotation(enabled: boolean) {
     await fetch(`${base}/rotation`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ enabled, strategy: state?.strategy }) });
@@ -453,7 +462,7 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
           {accounts.length > 0 && (
             <button type="button" className={styles.addCredentialTrigger}
               aria-expanded={addingKey} aria-controls="add-api-key-form"
-              onClick={() => { setAddingKey((open) => !open); setMsg(""); }}>
+              onClick={toggleAddingKey}>
               {addingKey ? <X size={15} /> : <Plus size={15} />}
               <span>{addingKey ? text("Cancel adding key", "取消添加密钥") : text("Add API key", "添加 API 密钥")}</span>
             </button>
@@ -463,10 +472,10 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
               <div className={styles.addCredentialTitle}>
                 {accounts.length === 0 ? text("Add your API key", "添加 API 密钥") : text("New API key", "新 API 密钥")}
               </div>
-              <div className={styles.addCredentialFields}>
+              <div className={`${styles.addCredentialFields} ${accounts.length === 0 ? styles.addCredentialFieldsSingle : ""}`}>
                 {accounts.length > 0 && (
                   <Input className="font-mono" placeholder={text("Account name (optional)", "账号名称（可选）")}
-                    value={newName} onChange={(e) => setNewName(e.target.value)} disabled={busy} />
+                    value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)} disabled={busy} />
                 )}
                 <Input className="font-mono" type="password" placeholder={text("Paste API key", "粘贴 API 密钥")}
                   value={newKey} onChange={(e) => setNewKey(e.target.value)} disabled={busy} />
