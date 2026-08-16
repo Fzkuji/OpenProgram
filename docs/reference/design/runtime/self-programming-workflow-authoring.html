@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Self-Programming Workflow — 创建、隔离与发布</title>
+<style>
+  :root{color-scheme:dark;--bg:#121316;--surface:#181a1f;--surface2:#1e2127;--line:#30343d;--text:#e8e9ed;--muted:#9ca1ac;--cyan:#58cadb;--green:#72d09a;--orange:#ef9b6b;--red:#ed7777;--purple:#b99cff;--mono:ui-monospace,"SFMono-Regular",Menlo,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.68 var(--sans)}a{color:#79aaff}code,pre{font-family:var(--mono)}code{padding:1px 5px;border-radius:4px;background:#24272e;color:#d9dce4;font-size:.9em}.page{width:min(1040px,calc(100% - 32px));margin:auto;padding:30px 0 70px}.set-nav{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:22px}.set-nav a{padding:5px 9px;border:1px solid var(--line);border-radius:7px;color:#aeb3bd;text-decoration:none;font-size:12px}.set-nav a[aria-current="page"]{border-color:#39717b;background:#172126;color:#8ddbe6}header{padding-bottom:22px;border-bottom:1px solid var(--line)}.eyebrow{color:var(--cyan);font:11px var(--mono);letter-spacing:.08em;text-transform:uppercase}h1{margin:8px 0 9px;font-size:clamp(27px,4vw,40px);line-height:1.18}h2{margin:0 0 13px;font-size:23px}h3{margin:22px 0 8px;font-size:16px}.lead{max-width:830px;margin:0;color:#c5c8d0;font-size:16px}section{padding:30px 0;border-bottom:1px solid var(--line)}p{margin:9px 0}ul{padding-left:22px}li+li{margin-top:5px}table{width:100%;margin:14px 0;border-collapse:collapse;font-size:13px}th,td{padding:10px 11px;border:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--surface2)}td{color:#bcc0c9}pre{overflow:auto;padding:15px 17px;border:1px solid var(--line);border-radius:10px;background:#0d0e11;color:#d8dbe3;font-size:12.5px;line-height:1.58}pre code{padding:0;background:transparent;color:inherit}.callout{margin:14px 0;padding:12px 14px;border-left:3px solid var(--cyan);background:#162126;color:#c7d8dc}.warning{border-left-color:var(--orange);background:#241d18;color:#daccc1}.choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:17px 0}.choice{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}.choice strong{display:block;margin-bottom:3px}.choice p{margin:0;color:var(--muted);font-size:12px}.flow{counter-reset:flow;border-top:1px solid var(--line);margin-top:15px}.step{display:grid;grid-template-columns:31px 1fr;gap:11px;padding:14px 0;border-bottom:1px solid var(--line)}.step:before{counter-increment:flow;content:counter(flow);display:grid;place-items:center;width:26px;height:26px;border:1px solid #48505c;border-radius:50%;color:var(--cyan);font:11px var(--mono)}.step p{margin:1px 0;color:var(--muted);font-size:13px}.state{display:inline-block;padding:2px 7px;border-radius:999px;font-size:10px}.state.done{background:#183023;color:#8bd9aa}.state.target{background:#222b3d;color:#99b9ef}.state.compat{background:#362020;color:#f09a9a}@media(max-width:700px){.choices{grid-template-columns:1fr}table{display:block;overflow:auto}}
+</style>
+</head>
+<body><div class="page">
+  <nav class="set-nav" aria-label="Self-Programming Workflow 文档集"><a href="./self-programmed-agentic-workflow.html">总览</a><a href="./self-programming-workflow-model.html">编程模型与组合</a><a href="./self-programming-workflow-authoring.html" aria-current="page">创建、隔离与发布</a><a href="./self-programming-workflow-ui.html">DAG 与 Programs</a><a href="./agent-tool-configuration-ui.html">Agent 工具配置</a></nav>
+  <header><div class="eyebrow">Self-Programming Workflow · 2 / 3</div><h1>创建、隔离与发布</h1><p class="lead">本页只定义 <code>agentic_workflow(task)</code> 如何复用、修改或创建项目，以及candidate隔离、可执行测试门、发布判定与实现交付顺序。</p></header>
+
+  <section id="author"><h2>1. 一次调用只使用一个 authoring Agent</h2>
+    <p><code>agentic_workflow(task)</code> 仍是现有 <code>@agentic_function</code>。它不是所有Workflow的调用网关，也不先要求模型返回 <code>reuse / revise / create</code> JSON。Agent直接查看任务、可用公开入口和只读源码；只有需要改代码时才写candidate。</p>
+<pre><code>&lt;author-root&gt;/
+├── available/workflows/&lt;package&gt;/   # 固定HEAD的只读git archive快照
+└── candidate/                       # 唯一可写根项目；初始为空</code></pre>
+    <div class="choices"><div class="choice"><strong>直接复用</strong><p>调用一个现有公开入口；无源码变化，不创建仓库。</p></div><div class="choice"><strong>修改现有项目</strong><p>把一个只读快照复制到candidate后修改；依赖项目保持只读。</p></div><div class="choice"><strong>创建组合项目</strong><p>写一个多文件package，通过静态Python import复用已有Workflow。</p></div></div>
+    <div class="callout">外部进程在authoring期间提交新代码不会改变本次快照。Agent不能直接写 <code>~/.openprogram/workflows</code>，也不能产生多个candidate根项目。</div>
+  </section>
+
+  <section id="decision"><h2>2. Runtime 根据事实判定结果</h2>
+    <ul><li>candidate没有变化时，本次调用树必须恰好有一个成功的顶层公开Workflow调用，Runtime直接采用它的返回值。</li><li>candidate包含一个有效package时，名称命中已有仓库就是修改，否则就是创建；随后进入发布门。</li><li>多个根package、写只读依赖或无法归属的文件均拒绝，并把具体错误交回同一个Agent继续修正。</li><li>Agent最终自然语言只用于Conclusion，不参与控制判定。</li></ul>
+    <div class="callout warning">删除“selection turn → decision JSON → author turn → project JSON”。只保留一个 <code>agent()</code> loop和一个确定性收尾函数；不增加新装饰器、resolver、dispatcher或模型工具协议。</div>
+  </section>
+
+  <section id="publication"><h2>3. 发布门必须执行真实测试</h2>
+    <div class="flow"><div class="step"><div><strong>冻结候选</strong><p>固定根项目与全部可达依赖；后续检查和执行使用同一份源码。</p></div></div><div class="step"><div><strong>结构与依赖检查</strong><p>验证标准package、唯一参数化入口、允许的import、缺失依赖和循环依赖。</p></div></div><div class="step"><div><strong>运行项目测试</strong><p>执行 <code>python -m unittest discover -s tests -p "test_*.py"</code>；测试只存在或可解析不算通过。</p></div></div><div class="step"><div><strong>执行本次任务</strong><p>在同一候选快照调用公开入口并记录DAG；失败回到同一个Agent修正。</p></div></div><div class="step"><div><strong>提交和发布</strong><p>测试与入口执行都成功后才创建commit并fast-forward目标仓库。</p></div></div></div>
+    <table><thead><tr><th>测试进程边界</th><th>合同</th></tr></thead><tbody><tr><td>写入</td><td>只允许写本次临时目录，不能写源仓库、其他Workflow或用户目录。</td></tr><tr><td>网络与凭据</td><td>入口测试替换模型和外部Workflow调用；不获得provider凭据，不自动访问网络或安装依赖。</td></tr><tr><td>时间与输出</td><td>使用有界超时和输出上限；超时终止整个测试进程树。</td></tr><tr><td>取消</td><td>立即终止测试，删除临时候选，不创建commit，也不更新管理页面测试状态。</td></tr></tbody></table>
+  </section>
+
+  <section id="acceptance"><h2>4. 公共入口验收</h2>
+    <table><thead><tr><th>公共路径</th><th>必须观察到的结果</th></tr></thead><tbody>
+      <tr><td>发现现有入口可完成</td><td>同一个Agent直接调用并返回；没有selection JSON、第二个author turn或新仓库。</td></tr>
+      <tr><td>创建缺失能力</td><td>生成独立Git仓库和多文件package，公开入口是现有 <code>@agentic_function(task)</code>。</td></tr>
+      <tr><td>现有B/C可完成新任务</td><td>只生成import B/C的编排项目，不复制B/C源码。</td></tr>
+      <tr><td>测试失败、超时或取消</td><td>不提交、不fast-forward，原仓库HEAD保持不变。</td></tr>
+      <tr><td>仓库有未提交修改</td><td>本次执行仍使用固定commit；修改只在authoring worktree验证后发布。</td></tr>
+      <tr><td>循环或缺失依赖</td><td>隔离worker启动前返回结构化错误。</td></tr>
+    </tbody></table>
+  </section>
+
+  <section id="handoff"><h2>5. 实现交付顺序</h2>
+    <table><thead><tr><th>任务</th><th>代码边界</th><th>完成证据</th></tr></thead><tbody><tr><td>A · 单一Agent authoring</td><td><code>openprogram/programs/agentic_functions/agentic_workflow/__init__.py</code></td><td>直接复用、修改现有项目、创建组合项目三条公共RED。</td></tr><tr><td>B · 可执行测试门</td><td>同一Workflow runtime与component测试</td><td>失败、超时、取消保持HEAD不变；通过时只发布一个commit。</td></tr><tr><td>C · 只读管理视图</td><td>仓库扫描结果由Programs route与前端共用</td><td>详见<a href="./self-programming-workflow-ui.html">DAG与管理网页</a>。</td></tr></tbody></table>
+    <h3>明确不做</h3><ul><li>不增加 <code>@workflow</code>、<code>call_workflow()</code>、<code>invoke_workflow()</code> 或字符串dispatcher。</li><li>不建立项目数据库、测试结果数据库、后台Git轮询、远程push或Marketplace。</li><li>不改变旧run的显式resume兼容；历史 <code>workflow.json</code> / <code>entry.py</code> 不参与新任务。</li></ul>
+  </section>
+</div></body></html>

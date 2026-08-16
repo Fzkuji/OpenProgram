@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Self-Programming Workflow — 编程模型与组合</title>
+<style>
+  :root{color-scheme:dark;--bg:#121316;--surface:#181a1f;--surface2:#1e2127;--line:#30343d;--text:#e8e9ed;--muted:#9ca1ac;--cyan:#58cadb;--orange:#ef9b6b;--purple:#b99cff;--mono:ui-monospace,"SFMono-Regular",Menlo,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.68 var(--sans)}a{color:#79aaff}code,pre{font-family:var(--mono)}code{padding:1px 5px;border-radius:4px;background:#24272e;color:#d9dce4;font-size:.9em}.page{width:min(1040px,calc(100% - 32px));margin:auto;padding:30px 0 70px}.set-nav{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:22px}.set-nav a{padding:5px 9px;border:1px solid var(--line);border-radius:7px;color:#aeb3bd;text-decoration:none;font-size:12px}.set-nav a[aria-current="page"]{border-color:#39717b;background:#172126;color:#8ddbe6}header{padding-bottom:22px;border-bottom:1px solid var(--line)}.eyebrow{color:var(--cyan);font:11px var(--mono);letter-spacing:.08em;text-transform:uppercase}h1{margin:8px 0 9px;font-size:clamp(27px,4vw,40px);line-height:1.18}h2{margin:0 0 13px;font-size:23px}h3{margin:22px 0 8px;font-size:16px}.lead{max-width:830px;margin:0;color:#c5c8d0;font-size:16px}section{padding:30px 0;border-bottom:1px solid var(--line)}p{margin:9px 0}table{width:100%;margin:14px 0;border-collapse:collapse;font-size:13px}th,td{padding:10px 11px;border:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--surface2)}td{color:#bcc0c9}pre{overflow:auto;padding:15px 17px;border:1px solid var(--line);border-radius:10px;background:#0d0e11;color:#d8dbe3;font-size:12.5px;line-height:1.58}pre code{padding:0;background:transparent;color:inherit}.callout{margin:14px 0;padding:12px 14px;border-left:3px solid var(--cyan);background:#162126;color:#c7d8dc}.model{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0}.node{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}.node strong{display:block}.node span{color:var(--muted);font-size:12px}.dependency{display:grid;grid-template-columns:1fr 34px 1fr 34px 1fr;align-items:center;margin:18px 0}.dependency .node{text-align:center}.arrow{color:#69717d;text-align:center}.project-tree{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(260px,.9fr);gap:14px}.steps{counter-reset:step;border-top:1px solid var(--line)}.step{display:grid;grid-template-columns:30px 1fr;gap:11px;padding:13px 0;border-bottom:1px solid var(--line)}.step:before{counter-increment:step;content:counter(step);display:grid;place-items:center;width:25px;height:25px;border:1px solid #48505c;border-radius:50%;color:var(--cyan);font:11px var(--mono)}.step p{margin:1px 0;color:var(--muted);font-size:13px}@media(max-width:700px){.model,.project-tree{grid-template-columns:1fr}.dependency{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}table{display:block;overflow:auto}}
+</style>
+</head>
+<body><div class="page">
+  <nav class="set-nav" aria-label="Self-Programming Workflow 文档集">
+    <a href="./self-programmed-agentic-workflow.html">总览</a>
+    <a href="./self-programming-workflow-model.html" aria-current="page">编程模型与组合</a>
+    <a href="./self-programming-workflow-authoring.html">创建、隔离与发布</a>
+    <a href="./self-programming-workflow-ui.html">DAG 与 Programs</a>
+    <a href="./agent-tool-configuration-ui.html">Agent 工具配置</a>
+  </nav>
+  <header><div class="eyebrow">Self-Programming Workflow · 1 / 3</div><h1>编程模型与组合</h1><p class="lead">本页只定义 Workflow、<code>goal()</code>、<code>agent()</code>、<code>llm()</code>、Python package、跨 Workflow import 和运行快照。创建与发布、DAG 和管理网页分别位于另外两页。</p></header>
+
+  <section id="model"><h2>1. Workflow 是最高层 Python 组合</h2>
+    <div class="model"><div class="node"><strong>Workflow → goal()</strong><span>任务具有明确完成条件，需要多轮工作与判定。</span></div><div class="node"><strong>Workflow → agent()</strong><span>需要开放式工具循环，但不需要独立 Goal 条件。</span></div><div class="node"><strong>Workflow → llm()</strong><span>只需一次分类、提取、判断或局部生成。</span></div></div>
+    <div class="dependency"><div class="node"><strong>Goal</strong><span>建立在 Agent loop 上</span></div><div class="arrow">→</div><div class="node"><strong>Agent loop</strong><span>反复调用模型和工具</span></div><div class="arrow">→</div><div class="node"><strong>Model call</strong><span><code>llm()</code> 是直接入口</span></div></div>
+    <div class="callout">Workflow 可以任选三层中的一种或多种进行组合；能力依赖顺序固定为 Goal → Agent loop → 单次模型调用 → Model Runtime。Workflow 不要求包含 Goal。</div>
+  </section>
+
+  <section id="primitives"><h2>2. 四个现有入口的职责</h2>
+    <table><thead><tr><th>入口</th><th>执行语义</th><th>适用位置</th></tr></thead><tbody>
+      <tr><td><code>@agentic_function</code></td><td>包装普通Python函数，建立ambient Runtime、模型工具入口和DAG call node。</td><td>公开Workflow入口，以及需要独立显示的内部Goal函数。</td></tr>
+      <tr><td><code>goal(prompt, condition)</code></td><td>以 <code>agent()</code> 执行每轮工作，以内部模型调用判断condition。</td><td>有明确完成条件、需要多轮修正的阶段目标。</td></tr>
+      <tr><td><code>agent(prompt, tools)</code></td><td>模型可反复请求工具，直到文本完成或达到迭代上限。</td><td>Goal的执行基础，也可作为Workflow的直接步骤。</td></tr>
+      <tr><td><code>llm(prompt)</code></td><td>一次模型调用，<code>tools=[]</code>、<code>max_iterations=1</code>。</td><td>分类、提取、判断、改写和局部生成。</td></tr>
+    </tbody></table>
+  </section>
+
+  <section id="example"><h2>3. 具体例子：论文调研</h2>
+<pre><code>from openprogram.agentic_programming import agentic_function, goal, llm
+
+@agentic_function(as_tool=False)
+def collect_evidence(topic: str) -> str:
+    return goal(
+        prompt=f"检索并核对与 {topic} 有关的论文",
+        condition="候选论文已核对年份、出处和研究问题",
+    )
+
+@agentic_function(as_tool=False)
+def screen_papers(evidence: str) -> str:
+    return llm(f"筛选与任务直接相关且来源可核对的论文：\n{evidence}")
+
+@agentic_function
+def literature_review(task: str) -> str:
+    evidence = collect_evidence(task)
+    return screen_papers(evidence)</code></pre>
+    <p>内部Goal函数使用 <code>@agentic_function(as_tool=False)</code> 保留Python调用与DAG记录，但不注册成模型工具。确定性helper保持普通函数。</p>
+  </section>
+
+  <section id="project"><h2>4. 一个 Workflow 是一个 Git 管理的 Python 小项目</h2>
+    <div class="project-tree"><pre><code>~/.openprogram/workflows/literature_review/
+├── .git/
+├── README.md
+├── pyproject.toml
+├── __init__.py
+├── workflow.py
+├── goals/              # 可选
+├── helpers/
+└── tests/
+    └── test_workflow.py</code></pre><div><table><tbody><tr><th>公开入口</th><td><code>workflow.py</code> 中与项目同名的 <code>@agentic_function(task)</code>。</td></tr><tr><th>项目元数据</th><td><code>pyproject.toml</code> 与 <code>openprogram.workflows</code> entry point。</td></tr><tr><th>内部代码</th><td>相对import组织goals与helpers。</td></tr><tr><th>验证</th><td>标准库 <code>unittest</code>；替换模型和外部Workflow调用。</td></tr></tbody></table></div></div>
+    <p>研究主题、输入路径、输出目录和条件必须来自每次调用参数，不能写死在首次生成的源码中。</p>
+  </section>
+
+  <section id="compose"><h2>5. Workflow 之间只使用 import 和函数调用</h2>
+<pre><code>from openprogram.agentic_programming import agentic_function
+from workflows.paper_search import paper_search
+from workflows.paper_screening import paper_screening
+from workflows.research_synthesis import research_synthesis
+
+@agentic_function
+def research_pipeline(task: str, output_dir: str) -> str:
+    papers = paper_search(task, year_from=2025)
+    selected = paper_screening(papers)
+    return research_synthesis(task, selected, output_dir)</code></pre>
+    <p>不增加字符串dispatcher、callee id、<code>@workflow</code>、<code>call_workflow()</code> 或 <code>invoke_workflow()</code>。跨Workflow调用只接受静态 <code>from workflows.&lt;package&gt; import &lt;function&gt;</code>，以便运行前计算Calls / Used by、循环和缺失依赖。</p>
+  </section>
+
+  <section id="runtime"><h2>6. 加载与执行只准备 import 环境</h2>
+    <div class="steps"><div class="step"><div><strong>扫描依赖</strong><p>从根项目的静态imports计算全部可达Workflow。</p></div></div><div class="step"><div><strong>固定版本</strong><p>用 <code>git archive HEAD</code> 把根项目和依赖放入同一临时namespace。</p></div></div><div class="step"><div><strong>准备import path</strong><p>隔离worker只把本次run root加入普通Python import path，不实现自定义importer。</p></div></div><div class="step"><div><strong>正常调用</strong><p>导入顶层 <code>@agentic_function</code> 后直接调用；所有嵌套调用继承同一Runtime、权限、取消和DAG caller。</p></div></div></div>
+    <table><thead><tr><th>边界</th><th>合同</th></tr></thead><tbody><tr><td>代码版本</td><td>一次执行固定完整commit；未提交工作树内容不进入run。</td></tr><tr><td>Import范围</td><td>只包含本次可达Workflow快照、OpenProgram和获准依赖。</td></tr><tr><td>失败</td><td>ImportError、函数异常、Goal未满足和Agent超限按普通错误进入caller，不自动修改代码。</td></tr><tr><td>循环</td><td>静态依赖环在worker启动前拒绝。</td></tr></tbody></table>
+  </section>
+</div></body></html>
