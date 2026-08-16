@@ -177,6 +177,8 @@ function AccountRow({
   }
 
   const status = vres?.status ?? "checking";
+  const statusText = status === "checking" ? text("Checking", "验证中") : statusLabel(status, text);
+  const validateLabel = `${statusText}. ${text("Validate account", "验证账号")}`;
 
   return (
     <Reorder.Item value={account} dragListener={false} dragControls={controls}
@@ -191,6 +193,7 @@ function AccountRow({
         )}
         {renaming ? (
           <Input className={styles.acctRenameInput} autoFocus value={renameVal}
+            aria-label={text("Account name", "账号名称")}
             onChange={(e) => setRenameVal(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") doRename(); if (e.key === "Escape") setRenaming(false); }}
             onBlur={doRename} />
@@ -210,12 +213,12 @@ function AccountRow({
           type="button"
           className={`${styles.acctStatusButton} ${statusTone(status)}`}
           onClick={validate}
-          aria-label={text("Validate account", "验证账号")}
+          aria-label={validateLabel}
           aria-busy={status === "checking"}
           title={vres?.detail || text("Validate account", "验证账号")}
         >
           <RefreshCw size={13} />
-          <span>{status === "checking" ? text("Checking", "验证中") : statusLabel(status, text)}</span>
+          <span>{statusText}</span>
         </button>
 
         <button type="button" className={`${styles.iconBtn} ${styles.dangerIconBtn}`}
