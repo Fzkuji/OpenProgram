@@ -454,7 +454,9 @@ async function managerChecks() {
   assert.match(webTabSource, /currentUrlRef\.current !== requestUrl/);
   assert.equal(packageJson.dependencies["extract-zip"], "2.0.1");
   assert.equal(packageJson.build.files.includes("browser-extension-manager.js"), true);
-  assert.match(refreshSource, /main\.js preload\.js browser-extension-manager\.js packaged-runtime\.js/);
+  for (const desktopFile of ["main.js", "preload.js", "browser-extension-manager.js", "update-service.js", "packaged-runtime.js"]) {
+    assert.match(refreshSource, new RegExp(`(?:^|\\s)${desktopFile.replace(".", "\\.")}(?:\\s|$)`));
+  }
   for (const moduleName of ["extract-zip", "debug", "get-stream", "yauzl"]) {
     assert.match(refreshSource, new RegExp(`(?:^|\\s)${moduleName}(?:\\s|$)`));
   }

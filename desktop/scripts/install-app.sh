@@ -34,7 +34,7 @@ launch_services_register="/System/Library/Frameworks/CoreServices.framework/Fram
 validate_app() {
   local app_path="$1"
   local plist="$app_path/Contents/Info.plist"
-  local identifier version executable runtime_manifest
+  local identifier version executable runtime_manifest runtime_python metadata_version
   [[ -d "$app_path" && -f "$plist" ]] || return 1
   identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" 2>/dev/null)" || return 1
   version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist" 2>/dev/null)" || return 1
@@ -53,6 +53,14 @@ if (manifest.schema !== 2 || manifest.openprogram !== process.argv[3]) {
   process.exit(1);
 }
 NODE
+  runtime_python="$(app_runtime_python "$app_path")" || return 1
+  [[ -x "$runtime_python" ]] || return 1
+  metadata_version="$(
+    env -i PATH=/usr/bin:/bin HOME=/dev/null \
+      "$runtime_python" -I -B -c \
+      'import importlib.metadata; print(importlib.metadata.version("openprogram"))'
+  )" || return 1
+  [[ "$metadata_version" == "$version" ]]
 }
 
 app_runtime_python() {
@@ -107,8 +115,9 @@ NODE
 }
 
 reject_downgrade() {
+  local candidate_app="${1:-$source_app}"
   [[ -e "$target_app" ]] && validate_app "$target_app" || return 0
-  candidate_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$source_app/Contents/Info.plist")"
+  candidate_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$candidate_app/Contents/Info.plist")"
   installed_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$target_app/Contents/Info.plist")"
   if version_is_older "$candidate_version" "$installed_version"; then
     printf 'refusing to replace OpenProgram %s with older version %s\n' \
@@ -117,7 +126,7 @@ reject_downgrade() {
   fi
 }
 
-reject_downgrade
+reject_downgrade "$source_app"
 
 mkdir -p "$applications_dir"
 install_lock_file="$applications_dir/.openprogram-app-install.lock"
@@ -135,10 +144,6 @@ if ! /usr/bin/shlock -p "$$" -f "$install_lock_file"; then
 fi
 install_lock_owned=1
 trap release_install_lock EXIT
-
-# The canonical App may have changed between the initial fast check and lock
-# acquisition. Re-read it under the lock before stopping workers or moving files.
-reject_downgrade
 
 transaction_dir="$(mktemp -d "$applications_dir/.openprogram-app-install.XXXXXX")"
 staged_app="$transaction_dir/OpenProgram.app"
@@ -199,6 +204,10 @@ validate_app "$staged_app" || {
   printf 'staged OpenProgram app failed validation\n' >&2
   exit 1
 }
+# The source and canonical App may have changed since the initial fast check.
+# Compare the immutable staged copy under the lock before stopping workers or
+# moving files.
+reject_downgrade "$staged_app"
 
 if [[ -z "$install_root" ]] && pgrep -f "$target_app/Contents/MacOS/OpenProgram" >/dev/null 2>&1; then
   app_was_running=1

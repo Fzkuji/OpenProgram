@@ -348,7 +348,7 @@ def test_local_desktop_install_rechecks_downgrade_after_lock(
     installer = ROOT / "desktop" / "scripts" / "install-app.sh"
     instrumented = tmp_path / "install-app-with-barrier.sh"
     installer_text = installer.read_text(encoding="utf-8")
-    marker = "reject_downgrade\n\nmkdir -p"
+    marker = 'reject_downgrade "$source_app"\n\nmkdir -p'
     assert installer_text.count(marker) == 1
     instrumented.write_text(
         installer_text.replace(
@@ -394,6 +394,83 @@ def test_local_desktop_install_rechecks_downgrade_after_lock(
     assert stale.returncode != 0, stale_stdout
     assert "refusing to replace OpenProgram 0.6.3 with older version 0.6.2" in (
         stale_stderr
+    )
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.3"
+
+
+def test_local_desktop_install_compares_the_staged_candidate(
+    tmp_path: Path,
+) -> None:
+    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    temp_dir = tmp_path / "tmp"
+    temp_dir.mkdir()
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(temp_dir),
+    }
+    installed = _fake_desktop_app(tmp_path / "installed", "0.6.3")
+    subprocess.run(["bash", str(installer), str(installed)], check=True, env=env)
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    entered = tmp_path / "ditto-entered"
+    release = tmp_path / "ditto-release"
+    fake_ditto = fake_bin / "ditto"
+    fake_ditto.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'touch "$DITTO_ENTERED"\n'
+        'while [ ! -f "$DITTO_RELEASE" ]; do sleep 0.01; done\n'
+        'exec /usr/bin/ditto "$@"\n',
+        encoding="utf-8",
+    )
+    fake_ditto.chmod(0o755)
+    candidate = _fake_desktop_app(tmp_path / "candidate", "0.6.4")
+    candidate_env = env | {
+        "PATH": f"{fake_bin}:{env['PATH']}",
+        "DITTO_ENTERED": str(entered),
+        "DITTO_RELEASE": str(release),
+    }
+    installing = subprocess.Popen(
+        ["bash", str(installer), str(candidate)],
+        env=candidate_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not entered.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert entered.exists()
+        plist_path = candidate / "Contents" / "Info.plist"
+        with plist_path.open("rb") as stream:
+            plist = plistlib.load(stream)
+        plist["CFBundleShortVersionString"] = "0.6.2"
+        with plist_path.open("wb") as stream:
+            plistlib.dump(plist, stream)
+        runtime = candidate / "Contents" / "Resources" / "runtime"
+        manifest_path = runtime / "runtime-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["openprogram"] = "0.6.2"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        runtime_python = runtime / manifest["python"]
+        runtime_python.write_text(
+            "#!/bin/sh\nprintf '%s\\n' '0.6.2'\n",
+            encoding="utf-8",
+        )
+        runtime_python.chmod(0o755)
+    finally:
+        release.touch()
+        install_stdout, install_stderr = installing.communicate(timeout=10)
+
+    assert installing.returncode != 0, install_stdout
+    assert "refusing to replace OpenProgram 0.6.3 with older version 0.6.2" in (
+        install_stderr
     )
     target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
     with (target / "Contents" / "Info.plist").open("rb") as stream:
