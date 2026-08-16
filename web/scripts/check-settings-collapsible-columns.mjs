@@ -8,6 +8,7 @@ const layout = source("components/settings/settings-tabs-layout.tsx");
 const providers = source("components/settings/providers/index.tsx");
 const providerItem = source("components/settings/providers/provider-item.tsx");
 const memory = source("components/settings/memory-settings.tsx");
+const loading = source("app/(shell)/settings/loading.tsx");
 const css = source("components/settings/settings-page.module.css");
 
 assert.match(layout, /localStorage\.getItem\("settingsNavOpen"\)/);
@@ -26,6 +27,8 @@ assert.match(providers, /styles\.providerListCollapsed/);
 assert.match(providers, /styles\.railHeader[\s\S]*styles\.railTitle[\s\S]*settings\.tab\.providers[\s\S]*sidebarToggleClass/);
 assert.doesNotMatch(providers, /styles\.pageHeader/);
 assert.doesNotMatch(memory, /shared\.pageHeader/);
+assert.match(loading, /tab === "providers" \|\| tab === "memory"/);
+assert.match(loading, /\{!headerless[\s\S]*styles\.pageHeader/);
 assert.match(providerItem, /title=\{p\.label\}/);
 
 assert.match(css, /\.body\.settingsNavCollapsed\s*\{[^}]*grid-template-columns:\s*49px minmax\(0, 1fr\)/s);

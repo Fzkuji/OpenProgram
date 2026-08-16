@@ -10,7 +10,7 @@ import styles from "@/components/settings/settings-page.module.css";
  * compiled. The OLD page is unmounted right away — no more "click,
  * nothing happens for a second, snap to new page" jank.
  *
- * Two cheap UX wins layered on top of the generic skeleton:
+ * The generic skeleton keeps the destination page's stable chrome:
  *
  * 1. The real page TITLE is rendered synchronously (no JS work — it's
  *    just a string keyed off pathname). The user sees "Channels"
@@ -18,9 +18,8 @@ import styles from "@/components/settings/settings-page.module.css";
  *    grey rectangle. The body is still a skeleton until the page
  *    chunk lands.
  *
- * 2. The skeleton shapes mirror the real `.pageHeader` + `.pageBody`
- *    layout, so when the actual page replaces the fallback there's
- *    no width/height shift.
+ * Providers and Memory intentionally omit the repeated content header,
+ * so their fallback does the same. Other tabs keep their page title.
  */
 const TAB_KEYS: Record<string, "settings.tab.providers"|"settings.tab.search"|"settings.tab.channels"|"settings.tab.general"> = {
   providers: "settings.tab.providers",
@@ -33,15 +32,18 @@ export default function SettingsLoading() {
   const { t } = useTranslation();
   const pathname = usePathname() || "";
   const tab = pathname.split("/")[2] || "providers";
+  const headerless = tab === "providers" || tab === "memory";
   const key = TAB_KEYS[tab];
   const title = key ? t(key) : t("settings.title");
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h2 className={styles.pageTitle}>{title}</h2>
-        <div className={styles.skelMeta} />
-      </div>
+      {!headerless && (
+        <div className={styles.pageHeader}>
+          <h2 className={styles.pageTitle}>{title}</h2>
+          <div className={styles.skelMeta} />
+        </div>
+      )}
       <div className={styles.pageBody}>
         <div className={styles.skelBlock} />
         <div className={styles.skelBlock} />
