@@ -19,16 +19,48 @@ case "$(uname -m)" in
 esac
 
 download() {
-  source_url="$1"
+  current_url="$1"
   destination="$2"
-  if command -v curl >/dev/null 2>&1; then
-    curl --proto '=https' --tlsv1.2 -LsSf "$source_url" -o "$destination"
-  elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$destination" "$source_url"
-  else
-    printf 'curl or wget is required to download OpenProgram.\n' >&2
+  command -v curl >/dev/null 2>&1 || {
+    printf 'curl is required to download OpenProgram.\n' >&2
     exit 1
-  fi
+  }
+  redirects=0
+  while [ "$redirects" -le 5 ]; do
+    case "$current_url" in
+      https://github.com/*|https://release-assets.githubusercontent.com/*) ;;
+      *) printf 'release URL is not allowed: %s\n' "$current_url" >&2; exit 1 ;;
+    esac
+    headers="$(mktemp "$(dirname "$destination")/.openprogram-headers.XXXXXX")"
+    if ! status="$(curl --disable --proto '=https' --tlsv1.2 \
+      --silent --show-error --connect-timeout 15 \
+      --speed-limit 1024 --speed-time 120 \
+      --dump-header "$headers" --output "$destination" \
+      --write-out '%{http_code}' "$current_url")"; then
+      rm -f "$headers"
+      exit 1
+    fi
+    case "$status" in
+      200|201|202|203|204|205|206)
+        rm -f "$headers"
+        return 0
+        ;;
+      301|302|303|307|308)
+        next_url="$(awk 'tolower($1) == "location:" {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); value=$0} END {print value}' "$headers")"
+        rm -f "$headers"
+        test -n "$next_url" || { printf 'release redirect has no location.\n' >&2; exit 1; }
+        current_url="$next_url"
+        redirects="$((redirects + 1))"
+        ;;
+      *)
+        rm -f "$headers"
+        printf 'release download failed with HTTP %s.\n' "$status" >&2
+        exit 1
+        ;;
+    esac
+  done
+  printf 'release redirect limit exceeded.\n' >&2
+  exit 1
 }
 
 checksum() {
@@ -41,13 +73,11 @@ checksum() {
 
 mkdir -p "$runtime_root/releases"
 if [ ! -d "$release_dir" ]; then
-  staging="$runtime_root/.staging-$OPENPROGRAM_VERSION-$$"
+  staging="$(mktemp -d "$runtime_root/.staging-$OPENPROGRAM_VERSION.XXXXXX")"
   archive_name="OpenProgram-${OPENPROGRAM_VERSION}-runtime-${platform}-${arch}.tar.gz"
   archive="${OPENPROGRAM_RUNTIME_ARCHIVE:-$staging/$archive_name}"
   cleanup_staging() { rm -rf "$staging"; }
   trap cleanup_staging EXIT HUP INT TERM
-  mkdir -p "$staging"
-
   if [ -z "${OPENPROGRAM_RUNTIME_ARCHIVE:-}" ]; then
     release_url="https://github.com/$OPENPROGRAM_REPOSITORY/releases/download/v$OPENPROGRAM_VERSION"
     download "$release_url/$archive_name" "$archive"
@@ -144,13 +174,11 @@ rm -rf "$probe_home"
 trap - EXIT HUP INT TERM
 
 ln -sfn "$python_bin" "$release_dir/bin/python"
-next_link="$runtime_root/.current-$OPENPROGRAM_VERSION-$$"
-ln -s "$release_dir" "$next_link"
-mv -f "$next_link" "$runtime_root/current"
-
 launcher_dir="${OPENPROGRAM_BIN_DIR:-$HOME/.local/bin}"
 mkdir -p "$launcher_dir"
-launcher_tmp="$launcher_dir/.openprogram-$$"
+launcher_tmp="$(mktemp "$launcher_dir/.openprogram.XXXXXX")"
+cleanup_launcher() { rm -f "$launcher_tmp"; }
+trap cleanup_launcher EXIT HUP INT TERM
 cat > "$launcher_tmp" <<EOF
 #!/bin/sh
 export PLAYWRIGHT_BROWSERS_PATH="$runtime_root/current/assets/playwright"
@@ -161,7 +189,19 @@ exec "$runtime_root/current/bin/python" -I -m openprogram "\$@"
 EOF
 chmod 0755 "$launcher_tmp"
 mv -f "$launcher_tmp" "$launcher_dir/openprogram"
+trap - EXIT HUP INT TERM
 
+next_link="$runtime_root/.current-$OPENPROGRAM_VERSION-$$"
+ln -s "$release_dir" "$next_link"
+"$python_bin" -I -B - "$next_link" "$runtime_root/current" <<'PY'
+import os
+import sys
+
+os.replace(sys.argv[1], sys.argv[2])
+PY
+
+set +e
 printf 'OpenProgram %s installed.\n' "$OPENPROGRAM_VERSION"
 printf 'Executable: %s/openprogram\n' "$launcher_dir"
 printf 'Runtime: %s\n' "$release_dir"
+exit 0

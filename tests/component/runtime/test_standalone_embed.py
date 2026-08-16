@@ -1,8 +1,8 @@
 """Embedding contract: the DAG-context function-calling core must work as a
 plain library inside somebody else's stack.
 
-The scenario under test is `pip install openprogram` followed by nothing but
-``from openprogram import ...``: the host app brings its own LLM client, picks
+The scenario under test is importing OpenProgram from a source-development
+environment: the host app brings its own LLM client, picks
 its own directory for session state, and never starts the webui / TUI / CLI.
 
 Three properties are pinned here, each of which has broken before:

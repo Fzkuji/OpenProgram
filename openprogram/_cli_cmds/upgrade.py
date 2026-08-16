@@ -1,33 +1,17 @@
-"""``openprogram upgrade`` — gated self-update (phase 2 of
-``docs/reference/design/runtime/self-update.md``).
-
-Replaces a bare ``restart`` for code updates. The step chain is fixed:
-
-    preflight → checkout → deps → build → probe → restart → verify
-
-Every step records ``{name, ok, detail, duration_s}``; the first failure
-aborts the chain. Any failure before ``restart`` leaves the running
-instance completely untouched — nothing has been activated yet, only the
-working tree moved (which the running process does not re-read until it
-restarts).
-
-Automatic rollback on a failed verify is phase 3; today a verify failure
-prints the exact manual rollback command and exits non-zero.
-
-The channel table and the resolve → materialize → verify → activate
-shape are the extension points from §4.4: adding ``beta`` is one table
-entry, and a future non-git distribution method reimplements only the
-first two steps.
-"""
+"""Explicit stable-Release or source-checkout upgrades."""
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import os
+import platform
+import re
 import socket
 import subprocess
 import sys
+import tempfile
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Optional
 
 
@@ -41,6 +25,8 @@ CHANNELS: dict[str, tuple[str, str]] = {
 
 DEFAULT_CHANNEL = "stable"
 CONFIG_KEY = "update.channel"
+PRODUCT_REPOSITORY = "Fzkuji/OpenProgram"
+_VERSION = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
 
 class UpgradeError(Exception):
@@ -78,6 +64,232 @@ def _configured_channel() -> str:
     except Exception:
         return DEFAULT_CHANNEL
     return value if isinstance(value, str) and value else DEFAULT_CHANNEL
+
+
+def _version_parts(value: str) -> tuple[int, int, int]:
+    match = _VERSION.fullmatch(value)
+    if match is None:
+        raise UpgradeError("invalid-version", f"invalid release version: {value!r}")
+    return tuple(int(part) for part in match.groups())
+
+
+def _installed_version() -> str:
+    try:
+        return importlib.metadata.version("openprogram")
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise UpgradeError(
+            "unknown-version",
+            "cannot read the installed OpenProgram version",
+        ) from exc
+
+
+def _platform_runtime_names(version: str) -> tuple[str, str]:
+    system = platform.system()
+    machine = platform.machine().lower()
+    platform_name = {"Darwin": "macos", "Linux": "linux"}.get(system)
+    arch = {
+        "arm64": "arm64",
+        "aarch64": "arm64",
+        "x86_64": "x86_64",
+        "amd64": "x86_64",
+    }.get(machine)
+    if platform_name is None or arch is None:
+        raise UpgradeError(
+            "unsupported-platform",
+            f"managed releases do not support {system} {platform.machine()}",
+        )
+    archive = f"OpenProgram-{version}-runtime-{platform_name}-{arch}.tar.gz"
+    return archive, f"{archive}.sha256"
+
+
+def _managed_release_status() -> dict[str, Any]:
+    from openprogram.updater import github
+
+    current = _installed_version()
+    _version_parts(current)
+    release = github.latest_release()
+    if release is None:
+        raise UpgradeError(
+            "release-unavailable",
+            "cannot read the latest stable GitHub Release",
+        )
+    target = release["tag_name"][1:]
+    _version_parts(target)
+    archive, checksum = _platform_runtime_names(target)
+    assets: dict[str, dict] = {}
+    for asset in release["assets"]:
+        if (
+            not isinstance(asset, dict)
+            or not isinstance(asset.get("name"), str)
+            or not isinstance(asset.get("size"), int)
+            or asset["size"] < 0
+            or asset["name"] in assets
+        ):
+            raise UpgradeError("incomplete-release", "latest Release asset metadata is invalid")
+        assets[asset["name"]] = asset
+    required = ("release-manifest.json", archive, checksum)
+    missing = [name for name in required if name not in assets]
+    if missing:
+        raise UpgradeError(
+            "incomplete-release",
+            "latest Release lacks the complete runtime asset(s): "
+            + ", ".join(missing),
+        )
+    manifest = github.release_manifest(target)
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schema") != 1
+        or manifest.get("version") != target
+        or not isinstance(manifest.get("files"), list)
+    ):
+        raise UpgradeError("incomplete-release", "latest Release manifest is invalid")
+    files: dict[str, dict] = {}
+    for item in manifest["files"]:
+        if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+            raise UpgradeError("incomplete-release", "latest Release manifest entry is invalid")
+        name = PurePosixPath(item["path"].replace("\\", "/")).name
+        if (
+            not name
+            or name in files
+            or not isinstance(item.get("bytes"), int)
+            or item["bytes"] < 0
+            or re.fullmatch(r"[a-f0-9]{64}", str(item.get("sha256", ""))) is None
+        ):
+            raise UpgradeError("incomplete-release", "latest Release manifest entry is invalid")
+        files[name] = item
+    for name in (archive, checksum):
+        if name not in files or files[name]["bytes"] != assets[name]["size"]:
+            raise UpgradeError(
+                "incomplete-release",
+                f"latest Release manifest does not match {name}",
+            )
+    return {
+        "current_version": current,
+        "latest_version": target,
+        "update_available": _version_parts(target) > _version_parts(current),
+        "archive": archive,
+    }
+
+
+def run_managed_release_upgrade(
+    *,
+    check_only: bool,
+    as_json: bool,
+    dry_run: bool = False,
+) -> int:
+    from openprogram.updater import github
+
+    try:
+        status = _managed_release_status()
+        if check_only or not status["update_available"]:
+            if as_json:
+                print(json.dumps({"ok": True, **status, "dry_run": dry_run}, indent=2))
+            else:
+                print(f"  current        {status['current_version']}")
+                print(f"  latest         {status['latest_version']}")
+                print(
+                    "  update         "
+                    + ("available" if status["update_available"] else "up to date")
+                )
+            return 0
+
+        if dry_run:
+            payload = {
+                "ok": True,
+                **status,
+                "dry_run": True,
+                "planned": [
+                    "download-versioned-installer",
+                    "verify-complete-runtime",
+                    "activate-current",
+                ],
+            }
+            if as_json:
+                print(json.dumps(payload, indent=2))
+            else:
+                print(f"  current        {status['current_version']}")
+                print(f"  latest         {status['latest_version']}")
+                print("  dry run        no files or processes changed")
+            return 0
+
+        target = status["latest_version"]
+        installer = github.release_installer(target)
+        if installer is None:
+            raise UpgradeError(
+                "installer-unavailable",
+                f"cannot read the versioned installer for v{target}",
+            )
+        installer_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(
+                prefix=f"openprogram-{target}-installer-",
+                suffix=".sh",
+                delete=False,
+            ) as temporary:
+                temporary.write(installer)
+                installer_path = temporary.name
+            os.chmod(installer_path, 0o700)
+            allowed_environment = {
+                "PATH", "HOME", "TMPDIR", "TMP", "TEMP",
+                "LANG", "LC_ALL", "LC_CTYPE",
+                "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY",
+                "https_proxy", "http_proxy", "all_proxy", "no_proxy",
+                "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_CONFIG_HOME",
+                "XDG_STATE_HOME", "OPENPROGRAM_STATE_DIR", "OPENPROGRAM_BIN_DIR",
+            }
+            env = {
+                key: value
+                for key, value in os.environ.items()
+                if key in allowed_environment
+            }
+            env["OPENPROGRAM_VERSION"] = target
+            env["OPENPROGRAM_REPOSITORY"] = PRODUCT_REPOSITORY
+            completed = subprocess.run(
+                ["sh", installer_path],
+                env=env,
+                capture_output=as_json,
+                text=as_json,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise UpgradeError(
+                "installer-execution-failed",
+                f"cannot execute the versioned installer: {type(exc).__name__}",
+            ) from exc
+        finally:
+            if installer_path:
+                try:
+                    Path(installer_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+        if completed.returncode != 0:
+            raise UpgradeError(
+                "installer-failed",
+                f"versioned installer exited {completed.returncode}; "
+                "current remains unchanged"
+                + (
+                    f": {(completed.stderr or completed.stdout or '').strip()[-1000:]}"
+                    if as_json and (completed.stderr or completed.stdout)
+                    else ""
+                ),
+            )
+        if as_json:
+            print(json.dumps({"ok": True, **status, "activated": target}, indent=2))
+        else:
+            print(f"\nOpenProgram {target} is now the active CLI runtime.")
+            print("The existing worker is still running its previous version.")
+            print("Restart it when ready:")
+            print("  openprogram worker restart")
+        return 0
+    except UpgradeError as exc:
+        if as_json:
+            print(json.dumps({
+                "ok": False,
+                "reason": exc.reason,
+                "detail": exc.detail,
+            }))
+        else:
+            print(f"{exc.reason}: {exc.detail}")
+        return 1
 
 
 def persist_channel(name: str) -> None:
@@ -452,16 +664,39 @@ def run_status(*, channel: Optional[str] = None, as_json: bool = False) -> int:
 
 
 def _cmd_upgrade(args) -> int:
+    from openprogram.updater.detect import InstallMethod, detect_install_method
+
     channel = getattr(args, "channel", None)
+    as_json = bool(getattr(args, "json", False))
+    method = detect_install_method()
+    check_only = bool(
+        getattr(args, "check", False)
+        or getattr(args, "upgrade_verb", None) == "status"
+    )
+    if method is InstallMethod.MANAGED_RELEASE:
+        if channel not in (None, "stable"):
+            detail = f"managed releases only support 'stable', not {channel!r}"
+            print(json.dumps({"ok": False, "reason": "unknown-channel", "detail": detail}) if as_json else f"unknown-channel: {detail}")
+            return 1
+        return run_managed_release_upgrade(
+            check_only=check_only,
+            as_json=as_json,
+            dry_run=getattr(args, "dry_run", False),
+        )
+    if method is InstallMethod.UNKNOWN:
+        detail = "no supported product update path for this installation"
+        print(json.dumps({"ok": False, "reason": "unknown-install", "detail": detail}) if as_json else f"unknown-install: {detail}")
+        return 1
+
     if channel:
         # `--channel` both selects and persists (§4.4), so the next bare
         # `upgrade` follows the same line without repeating the flag.
         try:
             persist_channel(channel)
         except UpgradeError as e:
-            print(f"{e.reason}: {e.detail}")
+            print(json.dumps({"ok": False, "reason": e.reason, "detail": e.detail}) if as_json else f"{e.reason}: {e.detail}")
             return 1
-    if getattr(args, "upgrade_verb", None) == "status":
+    if check_only:
         return run_status(channel=channel,
                           as_json=getattr(args, "json", False))
     return run_upgrade(

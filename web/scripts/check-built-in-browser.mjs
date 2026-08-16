@@ -135,7 +135,10 @@ assert.match(
   "desktop bookmark-folder payloads must include each website favicon",
 );
 assert.match(browserControls, /icon:\s*"folder"/);
-assert.match(browserControls, /onMouseEnter=\{\(event\) => openFolderMenu\(event\.currentTarget\)\}/);
+assert.match(
+  browserControls,
+  /onMouseEnter=\{\(event\) => \{[\s\S]*?mainMenu\.cancelClose\?\.\(\);[\s\S]*?openFolderMenu\(event\.currentTarget\);[\s\S]*?\}\}/,
+);
 assert.match(browserControls, /cascade:\s*true/);
 const browserMenuOwners = [...webTabPane.matchAll(/<BrowserMenu[\s\S]*?ownerId=\{([^}]+)\}/g)]
   .map((match) => match[1]);

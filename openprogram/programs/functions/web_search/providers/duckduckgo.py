@@ -39,8 +39,8 @@ class DuckDuckGoProvider:
             from ddgs import DDGS  # type: ignore
         except Exception as e:
             raise RuntimeError(
-                "DuckDuckGo provider requires the `ddgs` pip package. "
-                "Install with: pip install ddgs"
+                "The optional DuckDuckGo provider is unavailable in this "
+                "runtime. Configure a bundled search provider instead."
             ) from e
         results: list[SearchResult] = []
         # Context-manage the DDGS session so sockets close promptly —

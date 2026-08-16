@@ -7,7 +7,7 @@ just spawns the detached worker and opens the browser at that port.
 The frontend is auto-started only for a source checkout (the ``web/``
 dir with ``node_modules`` sits next to the package — true for an editable
 install). It is skipped when :18100 is already serving, when ``web/`` /
-``node_modules`` is absent (a plain ``pip install``), or when
+``node_modules`` is absent (a packaged release), or when
 ``OPENPROGRAM_WEB_NO_FRONTEND`` is set.
 """
 from __future__ import annotations
@@ -276,8 +276,8 @@ def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
     try:
         from openprogram.webui import start_web
     except ImportError:
-        print("Web UI dependencies not installed.")
-        print("Install with: pip install openprogram[web]")
+        print("Web UI dependencies are missing from this installation.")
+        print("Reinstall the complete OpenProgram release.")
         sys.exit(1)
 
     if open_browser is None:

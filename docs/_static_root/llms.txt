@@ -25,4 +25,3 @@
 ## Optional
 
 - [GitHub Discussions](https://github.com/Fzkuji/OpenProgram/discussions): Announcements and community questions
-- [PyPI](https://pypi.org/project/openprogram/): Python package releases

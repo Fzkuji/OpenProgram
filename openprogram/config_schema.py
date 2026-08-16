@@ -804,7 +804,7 @@ SETTINGS: list[SettingSpec] = [
         apply=APPLY_LIVE, default=False,
         help="Off means a sandboxed command has no network at all, which "
              "is what stops anything it read from leaving the machine. "
-             "Turn it on and a sandboxed `pip install` works again, along "
+             "Turn it on and sandboxed package downloads work again, along "
              "with every other outbound connection.",
     ),
     SettingSpec(
@@ -857,7 +857,8 @@ SETTINGS: list[SettingSpec] = [
         label="Update channel", widget="enum", apply=APPLY_LIVE,
         default="stable", choices=_update_channels,
         help="Which line of releases `openprogram upgrade` follows. "
-             "`stable` tracks origin/main.",
+             "Managed installs use the latest stable GitHub Release; "
+             "source checkouts use origin/main.",
     ),
 ]
 

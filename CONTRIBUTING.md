@@ -15,9 +15,6 @@ programs are welcome.
 ```bash
 git clone https://github.com/Fzkuji/OpenProgram.git
 cd OpenProgram
-python -m venv .venv
-source .venv/bin/activate
-pip install uv
 uv sync --locked --extra dev
 ```
 

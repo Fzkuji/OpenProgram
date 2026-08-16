@@ -47,9 +47,8 @@ DESCRIPTION = (
     "LLMs that prefer accessibility-tree reasoning over CSS selectors. "
     "Default engine is `app` and only controls visible web tabs inside the "
     "OpenProgram desktop app. Explicit `auto` mode may use a sidecar copy of "
-    "the user's Chrome profile and therefore requires approval. Setup: "
-    "`pip install \"openprogram[browser]\" "
-    "&& playwright install chromium`."
+    "the user's Chrome profile and therefore requires approval. Complete "
+    "releases include the default Playwright browser."
 )
 
 
@@ -246,9 +245,8 @@ def check_playwright() -> bool:
 
 def _install_hint() -> str:
     return (
-        "Error: Playwright not installed. Run:\n"
-        "  pip install playwright\n"
-        "  playwright install chromium"
+        "Error: the bundled Playwright browser is unavailable. "
+        "Reinstall the complete OpenProgram release."
     )
 
 

@@ -7,10 +7,12 @@ import argparse
 import hashlib
 import importlib
 import importlib.metadata
+import io
 import json
 import os
 import platform
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -36,7 +38,52 @@ def _relative_dir(root: Path, value: str, label: str) -> Path:
     return path
 
 
-def _probe(root: Path, product: dict) -> dict[str, dict[str, object]]:
+def _verify_openprogram_version(expected: object) -> None:
+    if not isinstance(expected, str) or not expected:
+        raise RuntimeError("runtime manifest OpenProgram version is invalid")
+    actual = importlib.metadata.version("openprogram")
+    if actual != expected:
+        raise RuntimeError(
+            f"OpenProgram version mismatch: expected {expected}, got {actual}"
+        )
+
+
+def _probe_pdf_tools() -> None:
+    from pypdf import PdfWriter
+
+    from openprogram.programs.functions.pdf.pdf import execute as pdf_extract
+    from openprogram.programs.functions.read.read import _read_pdf
+
+    with tempfile.TemporaryDirectory(prefix="openprogram-pdf-probe-") as temp_dir:
+        pdf_path = Path(temp_dir) / "probe.pdf"
+        writer = PdfWriter()
+        writer.add_blank_page(width=72, height=72)
+        with pdf_path.open("wb") as stream:
+            writer.write(stream)
+
+        pdf_result = pdf_extract(file_path=str(pdf_path))
+        read_result = _read_pdf(str(pdf_path), offset=1, limit=1)
+        if "unavailable" in pdf_result.lower():
+            raise RuntimeError("built-in pdf tool is unavailable")
+        if "unavailable" in read_result.lower():
+            raise RuntimeError("built-in read PDF support is unavailable")
+
+
+def _probe_rich_terminal() -> None:
+    from rich.console import Console
+
+    output = io.StringIO()
+    Console(file=output, force_terminal=False).print("OpenProgram terminal probe")
+    if "OpenProgram terminal probe" not in output.getvalue():
+        raise RuntimeError("built-in Rich terminal UI probe failed")
+
+
+def _probe(
+    root: Path,
+    product: dict,
+    expected_openprogram_version: object,
+) -> dict[str, dict[str, object]]:
+    _verify_openprogram_version(expected_openprogram_version)
     assets = {
         "playwright": "assets/playwright",
         "easyocr": "assets/easyocr",
@@ -55,7 +102,12 @@ def _probe(root: Path, product: dict) -> dict[str, dict[str, object]]:
     os.environ["GPA_MODEL_PATH"] = str(gpa_model)
 
     gui = product["programs"]["gui"]
-    for distribution, key in (("torch", "torch"), ("torchvision", "torchvision")):
+    for distribution, key in (
+        ("numpy", "numpy"),
+        ("opencv-python", "opencv"),
+        ("torch", "torch"),
+        ("torchvision", "torchvision"),
+    ):
         actual = importlib.metadata.version(distribution).split("+", 1)[0]
         if actual != gui[key]:
             raise RuntimeError(
@@ -76,8 +128,13 @@ def _probe(root: Path, product: dict) -> dict[str, dict[str, object]]:
         "semble",
         "easyocr",
         "pymupdf",
+        "pypdf",
+        "rich",
     ):
         importlib.import_module(module)
+
+    _probe_pdf_tools()
+    _probe_rich_terminal()
 
     from playwright.sync_api import sync_playwright
 
@@ -146,7 +203,7 @@ def main() -> int:
         ):
             parser.error("--write requires Python, OpenProgram, and uv versions")
         _relative_file(root, args.python_relative, "managed Python")
-        capabilities = _probe(root, product)
+        capabilities = _probe(root, product, args.openprogram_version)
         manifest = {
             "schema": 2,
             "openprogram": args.openprogram_version,
@@ -205,7 +262,7 @@ def main() -> int:
             for value in actual.values()
         ):
             raise RuntimeError("runtime capability manifest is incomplete")
-        _probe(root, product)
+        _probe(root, product, manifest.get("openprogram"))
 
     print(f"verified complete OpenProgram runtime: {root}")
     return 0

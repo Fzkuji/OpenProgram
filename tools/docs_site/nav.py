@@ -460,7 +460,8 @@ PAGE_ORDER: dict[str, int] = {
     # Distribution: authoritative conceptual design followed by its separate
     # implementation ledger.
     "reference/design/distribution/installation-packaging.html": 1035,
-    "reference/design/distribution/implementation-plan.md": 1036,
+    "reference/design/distribution/automatic-updates.html": 1036,
+    "reference/design/distribution/implementation-plan.md": 1037,
     # Integrations: keep the current Web Use and MCP server HTML designs
     # together after the alphabetical integration notes.
     "reference/design/integrations/web-use.html": 1039,

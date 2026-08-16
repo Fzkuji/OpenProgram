@@ -99,7 +99,8 @@ def execute(
         import pypdf  # type: ignore
     except ImportError:
         return (
-            "Error: pypdf is not installed. Install with: pip install pypdf"
+            "Error: PDF support is unavailable in this installation; "
+            "reinstall the complete OpenProgram release."
         )
 
     try:

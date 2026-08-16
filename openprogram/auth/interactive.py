@@ -7,8 +7,8 @@ OpenClaw uses `@clack/prompts`. The closest Python equivalent is
   * ``checkbox(choices)``     — multi-select, space to toggle
   * ``confirm(message)``      — y/n
 
-If questionary isn't installed (``pip install openprogram`` with no
-extras, or a minimal sandbox), every primitive falls back to plain
+If questionary isn't installed (for example in a minimal development
+environment), every primitive falls back to plain
 ``input()`` — same behaviour as before, just less ergonomic. No hard
 dependency at import time so ``openprogram providers list`` keeps
 working in environments that don't have questionary.

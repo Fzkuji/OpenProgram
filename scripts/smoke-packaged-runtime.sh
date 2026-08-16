@@ -18,11 +18,22 @@ case "$platform" in
 esac
 
 manifest="$resources/runtime/runtime-manifest.json"
-test -f "$manifest"
-runtime_python="$(sed -n 's/.*"python":"\([^"]*\)".*/\1/p' "$manifest")"
-test -n "$runtime_python"
+test -f "$manifest" || {
+  printf 'packaged runtime manifest not found: %s\n' "$manifest" >&2
+  exit 1
+}
+runtime_python="$(sed -n \
+  's/^[[:space:]]*"python":[[:space:]]*"\([^"]*\)".*/\1/p' \
+  "$manifest")"
+test -n "$runtime_python" || {
+  printf 'managed Python path missing from packaged runtime manifest\n' >&2
+  exit 1
+}
 embedded_python="$resources/runtime/$runtime_python"
-test -x "$embedded_python"
+test -x "$embedded_python" || {
+  printf 'managed Python is not executable: %s\n' "$embedded_python" >&2
+  exit 1
+}
 PLAYWRIGHT_BROWSERS_PATH="$resources/runtime/assets/playwright"
 EASYOCR_MODULE_PATH="$resources/runtime/assets/easyocr"
 GPA_MODEL_PATH="$resources/runtime/assets/gpa/model.pt"

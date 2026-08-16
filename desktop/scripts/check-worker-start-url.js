@@ -33,6 +33,28 @@ try {
     `http://localhost:18100/chat?profile=worker#token=${token}`,
     "desktop must preserve its route while bootstrapping the active worker token",
   );
+
+  const embeddedPython = path.join(temp, "embedded-python");
+  fs.writeFileSync(
+    embeddedPython,
+    `#!/bin/sh\n` +
+      `test "$1" = "-I" && test "$2" = "-B" || exit 2\n` +
+      `test "$3" = "-m" && test "$4" = "openprogram" || exit 3\n` +
+      `test "$5" = "web" && test "$6" = "auth-url" || exit 4\n` +
+      `test "$7" = "--base-url" && test "$8" = "http://127.0.0.1:18100" || exit 5\n` +
+      `printf 'http://127.0.0.1:18100/#token=${token}\n'\n`,
+    { mode: 0o700 },
+  );
+  const packaged = resolveAuthenticatedStartUrl(
+    "http://127.0.0.1:18100/settings/general",
+    { ...process.env, PATH: "/usr/bin:/bin" },
+    [{ command: embeddedPython, args: ["-I", "-B", "-m", "openprogram"] }],
+  );
+  assert.equal(
+    packaged,
+    `http://127.0.0.1:18100/settings/general#token=${token}`,
+    "packaged desktop must bootstrap auth with its embedded Python",
+  );
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

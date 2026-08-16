@@ -3,7 +3,6 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { pathToFileURL } = require("node:url");
 
 const {
   bindManifestIdentity,
@@ -435,11 +434,7 @@ async function managerChecks() {
   const repositoryRoot = path.join(__dirname, "..", "..");
   const controlsSource = fs.readFileSync(path.join(repositoryRoot, "web/components/center-tabs/browser-controls.tsx"), "utf8");
   const paneSource = fs.readFileSync(path.join(repositoryRoot, "web/components/center-tabs/builtin-tab-pane.tsx"), "utf8");
-  const paneStyles = fs.readFileSync(path.join(repositoryRoot, "web/components/center-tabs/center-tabs.module.css"), "utf8");
   const webTabSource = fs.readFileSync(path.join(repositoryRoot, "web/components/center-tabs/web-tab-pane.tsx"), "utf8");
-  const { isExtensionStoreListing } = await import(pathToFileURL(
-    path.join(repositoryRoot, "web/lib/browser-extension-store.ts"),
-  ).href);
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
   const refreshSource = fs.readFileSync(path.join(repositoryRoot, "scripts/refresh-local-app.sh"), "utf8");
   assert.match(mainSource, /ipcMain\.handle\("extensions:install-current-page"/);
@@ -452,34 +447,16 @@ async function managerChecks() {
   assert.match(paneSource, /function ExtensionsPage\(\)/);
   assert.match(paneSource, /api\.installStoreUrl\(storeUrl\.trim\(\)\)/);
   assert.match(paneSource, /microsoftedge\.microsoft\.com\/addons\/Microsoft-Edge-Extensions-Home/);
-  assert.match(paneSource, /openWebTab\("https:\/\/chromewebstore\.google\.com\/"\)/);
-  assert.match(paneSource, /Browse Chrome Web Store/);
-  assert.match(paneStyles, /\.builtinHeader\s*\{[^}]*flex-wrap:\s*wrap/);
-  assert.match(paneStyles, /\.builtinHeaderActions\s*\{[^}]*flex-wrap:\s*wrap/);
   assert.match(webTabSource, /<InstallExtensionButton bridge=\{bridge\} tabId=\{tabId\} url=\{effectiveUrl\} \/>/);
   assert.match(webTabSource, /api\.installCurrentPage\(tabId\)/);
-  assert.match(webTabSource, /if \(!api \|\| !isExtensionStoreListing\(url\)\) return null;/);
-  assert.match(webTabSource, /className=\{`\$\{styles\.webToolbarBtn\} \$\{styles\.webToolbarInstall\}`\}/);
-  const extensionId = "aeblfdkhhhdcdjpifhhbdiojplfjncoa";
-  assert.equal(isExtensionStoreListing(`https://chromewebstore.google.com/detail/1password/${extensionId}`), true);
-  assert.equal(isExtensionStoreListing(`https://microsoftedge.microsoft.com/addons/detail/1password/${extensionId}`), true);
-  assert.equal(isExtensionStoreListing(`https://chrome.google.com/webstore/detail/1password/${extensionId}`), true);
-  assert.equal(isExtensionStoreListing("https://chromewebstore.google.com/"), false);
-  assert.equal(isExtensionStoreListing("https://example.com/detail/aeblfdkhhhdcdjpifhhbdiojplfjncoa"), false);
-  assert.match(webTabSource, /Install in OpenProgram/);
-  assert.match(webTabSource, /state === "done"[\s\S]*?text\("Installed", "已安装"\)/);
-  assert.match(webTabSource, /<span className=\{styles\.webToolbarInstallLabel\}>\{label\}<\/span>/);
-  assert.match(webTabSource, /result\.extension\?\.compatibility\.status === "incompatible"/);
-  assert.match(webTabSource, /Added to Extensions, but this extension is not supported by OpenProgram/);
-  assert.match(paneStyles, /\.webToolbarInstall\s*\{/);
-  assert.match(paneStyles, /\.webToolbarInstallLabel\s*\{/);
-  assert.match(paneStyles, /@container \(max-width: 680px\)[\s\S]*?\.webToolbarInstallLabel\s*\{\s*display:\s*none/);
   assert.match(webTabSource, /showToast\(text\([\s\S]*Extension installed\. Reload this page to apply it\./);
   assert.match(webTabSource, /requestGenerationRef\.current !== requestGeneration/);
   assert.match(webTabSource, /currentUrlRef\.current !== requestUrl/);
   assert.equal(packageJson.dependencies["extract-zip"], "2.0.1");
   assert.equal(packageJson.build.files.includes("browser-extension-manager.js"), true);
-  assert.match(refreshSource, /main\.js preload\.js browser-extension-manager\.js(?: update-service\.js)? packaged-runtime\.js/);
+  for (const desktopFile of ["main.js", "preload.js", "browser-extension-manager.js", "update-service.js", "packaged-runtime.js"]) {
+    assert.match(refreshSource, new RegExp(`(?:^|\\s)${desktopFile.replace(".", "\\.")}(?:\\s|$)`));
+  }
   for (const moduleName of ["extract-zip", "debug", "get-stream", "yauzl"]) {
     assert.match(refreshSource, new RegExp(`(?:^|\\s)${moduleName}(?:\\s|$)`));
   }

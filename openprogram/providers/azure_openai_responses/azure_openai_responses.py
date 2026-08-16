@@ -44,7 +44,9 @@ def stream_azure_openai_responses(
         try:
             from openai import AsyncAzureOpenAI  # noqa: F401 — import check
         except ImportError:
-            raise ImportError("openai is required: pip install openai")
+            raise ImportError(
+                "The OpenAI SDK is missing; reinstall the complete OpenProgram release."
+            )
 
         deployment_name = _resolve_deployment_name(model, opts)
 

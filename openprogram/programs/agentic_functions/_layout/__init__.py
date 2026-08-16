@@ -98,7 +98,10 @@ def page_layout(page) -> PageLayout:
 def render_page_png(page, out_path: str | Path, *, dpi: int = 150) -> Path:
     """Render a page to a PNG (used for scanned / image-only pages)."""
     if fitz is None:
-        raise ImportError("pymupdf is required: pip install pymupdf")
+        raise ImportError(
+            "pymupdf is unavailable in this installation; "
+            "reinstall the complete OpenProgram release"
+        )
     out_path = Path(out_path)
     mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
     pix = page.get_pixmap(matrix=mat, alpha=False)
@@ -113,7 +116,10 @@ def pdf_pages(
 ) -> list[PageLayout]:
     """Render a PDF (or page range) as a list of :class:`PageLayout`."""
     if fitz is None:
-        raise ImportError("pymupdf is required: pip install pymupdf")
+        raise ImportError(
+            "pymupdf is unavailable in this installation; "
+            "reinstall the complete OpenProgram release"
+        )
     doc = fitz.open(str(pdf_path))
     n = len(doc)
     if pages is None:

@@ -125,7 +125,9 @@ def stream_bedrock(
         try:
             import boto3
         except ImportError:
-            raise ImportError("boto3 is required for Bedrock provider: pip install boto3")
+            raise ImportError(
+                "The optional Bedrock provider is unavailable in this runtime."
+            )
 
         from openprogram.providers._shared.transform_messages import transform_messages
 

@@ -30,7 +30,7 @@ Everything lives under `~/.openprogram/` by default: `config.json` (configuratio
 
 ## How do I update to the latest version?
 
-Stable desktop and CLI installations move only to an explicit published version. macOS desktop users replace the DMG; macOS/Linux CLI/server users run the installer from the target version tag. Source-checkout developers use `openprogram upgrade`. See [Upgrading](../install/upgrade.md).
+Stable installations move only to an explicit published version. The first updater-enabled release requires one transition from v0.6.6: macOS Desktop users install its DMG manually, while macOS/Linux CLI/server users rerun the public installer once. Later Desktop releases are discovered in Settings; managed CLI/server and source-checkout users both run `openprogram upgrade`, which selects the release or gated Git path from the installation type. See [Upgrading](../install/upgrade.md).
 
 ## The page opened by `openprogram web` won't load?
 

@@ -616,30 +616,34 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ---- upgrade ----------------------------------------------------------
     p_upgrade = sub.add_parser("upgrade",
-        help="Update to the latest code through a gated step chain "
-             "(preflight, build, cold-start probe, restart, verify). "
-             "Use this instead of `restart` after pulling code.")
+        help="Install the latest complete stable Release. In a source checkout, "
+             "run the gated Git/build/probe/restart pipeline instead.")
     upgrade_sub = p_upgrade.add_subparsers(dest="upgrade_verb", metavar="verb")
     p_upgrade_status = upgrade_sub.add_parser("status",
-        help="Show the channel, current sha, target sha, and whether an "
-             "update is available. Read-only.")
+        help="Show current/target version or SHA and whether an update is "
+             "available. Read-only; source checkouts persist an explicit "
+             "--channel.")
     # Repeated on the subparser so both `upgrade --json status` and the
     # natural `upgrade status --json` work.
     p_upgrade_status.add_argument("--json", action="store_true",
         help="Emit JSON")
     p_upgrade_status.add_argument("--channel", metavar="NAME",
-        help="Report against this channel instead of the configured one.")
+        help="For a source checkout, report against and persist this channel "
+             "instead of the configured one.")
     p_upgrade.add_argument("--channel", metavar="NAME",
-        help="Release line to follow (default: stable). Persisted as the "
-             "`update.channel` setting.")
+        help="Release line to follow (default: stable). Source checkouts "
+             "persist it as the `update.channel` setting.")
     p_upgrade.add_argument("--dry-run", action="store_true",
-        help="Print the planned steps and change nothing.")
+        help="Print planned steps without changing checkout, worker, or "
+             "upgrade state. A source checkout still persists an explicit "
+             "--channel.")
     p_upgrade.add_argument("--no-restart", action="store_true",
-        help="Stop after the probe — build and verify the new code without "
-             "restarting the running instance.")
+        help="Source checkout only: stop after the probe without restarting.")
     p_upgrade.add_argument("--yes", "-y", action="store_true",
-        help="Skip the confirmation a downgrade would otherwise require.")
+        help="Source checkout only: allow a confirmed Git downgrade.")
     p_upgrade.add_argument("--json", action="store_true", help="Emit JSON")
+    p_upgrade.add_argument("--check", action="store_true",
+        help="Only report whether a stable update is available.")
 
     # ---- channels ---------------------------------------------------------
     p_channels = sub.add_parser("channels",
@@ -804,7 +808,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_browser_sub = p_browser.add_subparsers(dest="browser_verb", metavar="verb")
     p_br_install = p_browser_sub.add_parser("install",
         help="Install browser-tool dependencies (Playwright + Chromium, "
-             "patchright/camoufox, agent-browser). Pick one target or 'all'.")
+             "patchright/camoufox, agent-browser) in a source checkout. "
+             "Packaged releases reject this command.",
+        description="Source checkout only: install optional browser backends. "
+                    "Packaged releases reject this command.")
     p_br_install.add_argument("target", nargs="?", default="playwright",
         choices=["playwright", "patchright", "camoufox", "agent", "all"],
         help="What to install (default: playwright).")

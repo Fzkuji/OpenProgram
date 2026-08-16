@@ -6,11 +6,14 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
 from openprogram.security.runtime_http_audit import scan_runtime_http
 
 
 def main() -> int:
-    root = Path(__file__).resolve().parents[1] / "openprogram"
+    root = ROOT / "openprogram"
     result = scan_runtime_http(root)
     print(
         "runtime-http inventory: "

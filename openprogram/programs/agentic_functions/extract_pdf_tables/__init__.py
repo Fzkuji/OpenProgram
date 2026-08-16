@@ -79,7 +79,10 @@ def extract_pdf_tables(
     try:
         import fitz  # type: ignore
     except ImportError:
-        raise ImportError("pymupdf is required: pip install pymupdf")
+        raise ImportError(
+            "pymupdf is unavailable in this installation; "
+            "reinstall the complete OpenProgram release"
+        )
 
     src = Path(pdf_path)
     if not src.is_absolute():

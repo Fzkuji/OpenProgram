@@ -191,11 +191,11 @@ def test_missing_action():
     assert "action" in tool.execute().lower()
 
 
-def test_install_hint_when_playwright_missing(monkeypatch):
+def test_reinstall_hint_when_playwright_missing(monkeypatch):
     # Simulate environment without playwright installed.
     monkeypatch.setattr(tool, "check_playwright", lambda: False)
     out = tool.execute(action="open")
-    assert "pip install playwright" in out
+    assert "reinstall the complete openprogram release" in out.lower()
 
 
 def test_default_open_is_app_only_and_never_bootstraps_profile(

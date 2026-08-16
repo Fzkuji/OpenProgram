@@ -288,7 +288,7 @@ def _probe_proxy_env() -> Finding:
                 "FAIL", "Outbound proxy",
                 f"{detail} — socks proxy configured but 'socksio' is missing; "
                 "every HTTP provider call will fail at client construction",
-                fix="pip install 'httpx[socks]'",
+                fix="reinstall the complete OpenProgram release",
             )
     return Finding("OK", "Outbound proxy", detail)
 

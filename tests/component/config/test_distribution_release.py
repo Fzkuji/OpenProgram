@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import plistlib
 import re
+import runpy
+import signal
 import subprocess
+import sys
+import time
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -29,6 +35,643 @@ def test_desktop_targets_and_embedded_runtime_are_declared() -> None:
     assert "dist:linux" not in package["scripts"]
     assert {item["to"] for item in build["extraResources"]} >= {"runtime"}
     assert package["desktopName"] == "ai.openprogram.OpenProgram.desktop"
+
+
+def _fake_desktop_app(root: Path, version: str, *, app_id: str = "ai.openprogram.desktop") -> Path:
+    app = root / "OpenProgram.app"
+    executable = app / "Contents" / "MacOS" / "OpenProgram"
+    resources = app / "Contents" / "Resources"
+    runtime = resources / "runtime"
+    runtime_python = runtime / "python" / "bin" / "python3"
+    executable.parent.mkdir(parents=True)
+    runtime_python.parent.mkdir(parents=True)
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(0o755)
+    (resources / "icon.icns").write_bytes(b"icns")
+    runtime_python.write_text(
+        f"#!/bin/sh\nprintf '%s\\n' '{version}'\n",
+        encoding="utf-8",
+    )
+    runtime_python.chmod(0o755)
+    (runtime / "runtime-manifest.json").write_text(
+        json.dumps(
+            {
+                "schema": 2,
+                "openprogram": version,
+                "python": "python/bin/python3",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with (app / "Contents" / "Info.plist").open("wb") as stream:
+        plistlib.dump(
+            {
+                "CFBundleIdentifier": app_id,
+                "CFBundleShortVersionString": version,
+                "CFBundleExecutable": "OpenProgram",
+                "CFBundleIconFile": "icon.icns",
+            },
+            stream,
+        )
+    return app
+
+
+def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
+    package = _desktop_package()
+    assert package["scripts"]["dist"] == "npm run app:install"
+    assert package["scripts"]["app:install"] == "bash scripts/package-and-install-app.sh"
+    assert "dist:dir" not in package["scripts"]
+
+    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    packager = (ROOT / "desktop" / "scripts" / "package-and-install-app.sh").read_text(
+        encoding="utf-8"
+    )
+    installer_text = installer.read_text(encoding="utf-8")
+    assert 'target_app="$applications_dir/OpenProgram.app"' in installer_text
+    assert 'open "$target_app"' in installer_text
+    assert 'open "$source_app"' not in installer_text
+    assert installer_text.count(
+        '"$launch_services_register" -f "$target_app"'
+    ) == 2
+    rollback_start = installer_text.index(
+        'if [[ "$old_moved" == 1 && "$activated" == 0'
+    )
+    rollback_end = installer_text.index(
+        'if [[ "$status" != 0 && "$resume_after_failure"', rollback_start
+    )
+    rollback = installer_text[rollback_start:rollback_end]
+    assert rollback.index('mv "$previous_app" "$target_app"') < rollback.index(
+        '"$launch_services_register" -f "$target_app"'
+    )
+    assert (
+        '"$launch_services_register" -f "$target_app" >/dev/null 2>&1 || :'
+        in rollback
+    )
+    assert 'openprogram worker stop' in installer_text
+    assert 'openprogram worker uninstall' in installer_text
+    assert 'openprogram worker install' in installer_text
+    assert 'wait_for_worker_health' in installer_text
+    assert "process.stdout.write(python);\nNODE\n}\n\nwait_for_worker_health()" in installer_text
+    assert installer_text.index('openprogram worker uninstall') < installer_text.index(
+        'openprogram worker stop'
+    )
+    assert installer_text.index('openprogram worker stop') < installer_text.index(
+        'mv "$target_app" "$previous_app"'
+    )
+    wait_index = installer_text.index('wait_for_worker_health ||')
+    assert wait_index < installer_text.index('open "$target_app"', wait_index)
+    assert 'mktemp -d "${TMPDIR:-/tmp}/openprogram-app-package.XXXXXX"' in packager
+    assert '"$builder" --dir --mac --publish never' in packager
+    smoke = 'bash "$repo_root/scripts/smoke-packaged-runtime.sh" mac "$package_dir"'
+    assert smoke in packager
+    assert 'env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"' in packager
+    assert packager.index(smoke) < packager.index(
+        'env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"'
+    )
+    assert 'lock_root="$HOME/Library/Caches/OpenProgram"' in packager
+    assert '/usr/bin/shlock -p "$$" -f "$lock_file"' in packager
+    assert '"$web_build_dir" "$web_output_dir" "$frontend_stage_dir"' in packager
+    assert 'rm -rf "$repo_root/build"' in (
+        ROOT / "scripts" / "build-product-runtime.sh"
+    ).read_text(encoding="utf-8")
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+
+    first = _fake_desktop_app(tmp_path / "first", "0.6.1")
+    subprocess.run(["bash", str(installer), str(first)], check=True, env=env)
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    assert target.is_dir()
+
+    second = _fake_desktop_app(tmp_path / "second", "0.6.2")
+    subprocess.run(["bash", str(installer), str(second)], check=True, env=env)
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
+
+    applications = target.parent
+    assert sorted(path.name for path in applications.glob("*.app")) == ["OpenProgram.app"]
+    assert not list(applications.glob(".openprogram-app-install.*"))
+
+    invalid = _fake_desktop_app(
+        tmp_path / "invalid", "0.6.3", app_id="example.invalid"
+    )
+    failed = subprocess.run(
+        ["bash", str(installer), str(invalid)],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert failed.returncode != 0
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
+
+    downgrade = _fake_desktop_app(tmp_path / "downgrade", "0.6.1")
+    rejected = subprocess.run(
+        ["bash", str(installer), str(downgrade)],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert rejected.returncode != 0
+    assert "refusing to replace OpenProgram 0.6.2 with older version 0.6.1" in (
+        rejected.stderr
+    )
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
+
+
+def test_local_desktop_install_compares_numeric_versions_as_decimal(
+    tmp_path: Path,
+) -> None:
+    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    installed = _fake_desktop_app(tmp_path / "installed", "0.9.0")
+    subprocess.run(["bash", str(installer), str(installed)], check=True, env=env)
+    leading_zero = _fake_desktop_app(tmp_path / "leading-zero", "0.08.0")
+
+    rejected = subprocess.run(
+        ["bash", str(installer), str(leading_zero)],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert rejected.returncode != 0
+    assert "refusing to replace OpenProgram 0.9.0 with older version 0.08.0" in (
+        rejected.stderr
+    )
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.9.0"
+
+
+def test_local_desktop_install_preserves_an_invalid_existing_app(
+    tmp_path: Path,
+) -> None:
+    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    installed = _fake_desktop_app(tmp_path / "installed", "0.6.4")
+    subprocess.run(["bash", str(installer), str(installed)], check=True, env=env)
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    runtime = target / "Contents" / "Resources" / "runtime"
+    manifest = json.loads(
+        (runtime / "runtime-manifest.json").read_text(encoding="utf-8")
+    )
+    runtime_python = runtime / manifest["python"]
+    runtime_python.write_text(
+        "#!/bin/sh\nprintf '%s\\n' '0.6.1'\n",
+        encoding="utf-8",
+    )
+    runtime_python.chmod(0o755)
+    candidate = _fake_desktop_app(tmp_path / "candidate", "0.6.2")
+
+    rejected = subprocess.run(
+        ["bash", str(installer), str(candidate)],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert rejected.returncode != 0
+    assert "existing OpenProgram app failed validation" in rejected.stderr
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.4"
+    assert runtime_python.read_text(encoding="utf-8").endswith("'0.6.1'\n")
+
+def test_local_desktop_install_preserves_recovery_copy_when_restore_fails(
+    tmp_path: Path,
+) -> None:
+    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    original = _fake_desktop_app(tmp_path / "original", "0.6.2")
+    subprocess.run(["bash", str(installer), str(original)], check=True, env=env)
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    move_count = tmp_path / "move-count"
+    fake_mv = fake_bin / "mv"
+    fake_mv.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'count="$(cat "$FAKE_MV_COUNT" 2>/dev/null || printf 0)"\n'
+        'count="$((count + 1))"\n'
+        'printf "%s\\n" "$count" >"$FAKE_MV_COUNT"\n'
+        'if [ "$count" -ge 2 ]; then exit 73; fi\n'
+        'exec /bin/mv "$@"\n',
+        encoding="utf-8",
+    )
+    fake_mv.chmod(0o755)
+    replacement = _fake_desktop_app(tmp_path / "replacement", "0.6.4")
+    failed_restore_env = env | {
+        "PATH": f"{fake_bin}:{env['PATH']}",
+        "FAKE_MV_COUNT": str(move_count),
+    }
+    failed_restore = subprocess.run(
+        ["bash", str(installer), str(replacement)],
+        check=False,
+        env=failed_restore_env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert failed_restore.returncode != 0
+    assert not target.exists()
+    recovery_dirs = list(target.parent.glob(".openprogram-app-install.*"))
+    assert len(recovery_dirs) == 1
+    recovered_app = recovery_dirs[0] / "previous.app"
+    with (recovered_app / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
+    assert str(recovered_app) in failed_restore.stderr
+
+
+def test_concurrent_local_desktop_install_cannot_nest_the_canonical_app(
+    tmp_path: Path,
+) -> None:
+    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    temp_dir = tmp_path / "tmp"
+    temp_dir.mkdir()
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(temp_dir),
+    }
+    original = _fake_desktop_app(tmp_path / "original", "0.6.0")
+    subprocess.run(["bash", str(installer), str(original)], check=True, env=env)
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    entered = tmp_path / "ditto-entered"
+    release = tmp_path / "ditto-release"
+    fake_ditto = fake_bin / "ditto"
+    fake_ditto.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'touch "$DITTO_ENTERED"\n'
+        'while [ ! -f "$DITTO_RELEASE" ]; do sleep 0.01; done\n'
+        'exec /usr/bin/ditto "$@"\n',
+        encoding="utf-8",
+    )
+    fake_ditto.chmod(0o755)
+    concurrent_env = env | {
+        "PATH": f"{fake_bin}:{env['PATH']}",
+        "DITTO_ENTERED": str(entered),
+        "DITTO_RELEASE": str(release),
+    }
+    first_source = _fake_desktop_app(tmp_path / "first-concurrent", "0.6.1")
+    second_source = _fake_desktop_app(tmp_path / "second-concurrent", "0.6.2")
+
+    first = subprocess.Popen(
+        ["bash", str(installer), str(first_source)],
+        env=concurrent_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not entered.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert entered.exists()
+        second = subprocess.run(
+            ["bash", str(installer), str(second_source)],
+            check=False,
+            env=concurrent_env,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    finally:
+        release.touch()
+        first_stdout, first_stderr = first.communicate(timeout=10)
+
+    assert first.returncode == 0, (first_stdout, first_stderr)
+    assert second.returncode != 0
+    assert "another OpenProgram App installation is running" in second.stderr
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.1"
+    assert not (target / "OpenProgram.app").exists()
+    assert sorted(path.name for path in target.parent.glob("*.app")) == [
+        "OpenProgram.app"
+    ]
+    assert not (target.parent / ".openprogram-app-install.lock").exists()
+
+
+def test_local_desktop_install_rechecks_downgrade_after_lock(
+    tmp_path: Path,
+) -> None:
+    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    instrumented = tmp_path / "install-app-with-barrier.sh"
+    installer_text = installer.read_text(encoding="utf-8")
+    marker = 'reject_downgrade "$source_app"\n\nmkdir -p'
+    assert installer_text.count(marker) == 1
+    instrumented.write_text(
+        installer_text.replace(
+            marker,
+            'reject_downgrade\n'
+            'touch "$TOCTOU_CHECKED"\n'
+            'while [[ ! -f "$TOCTOU_RELEASE" ]]; do sleep 0.01; done\n\n'
+            "mkdir -p",
+        ),
+        encoding="utf-8",
+    )
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    installed = _fake_desktop_app(tmp_path / "installed", "0.6.1")
+    subprocess.run(["bash", str(installer), str(installed)], check=True, env=env)
+
+    checked = tmp_path / "checked"
+    release = tmp_path / "release"
+    stale_candidate = _fake_desktop_app(tmp_path / "stale", "0.6.2")
+    stale = subprocess.Popen(
+        ["bash", str(instrumented), str(stale_candidate)],
+        env=env | {"TOCTOU_CHECKED": str(checked), "TOCTOU_RELEASE": str(release)},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not checked.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert checked.exists()
+        newer = _fake_desktop_app(tmp_path / "newer", "0.6.3")
+        subprocess.run(["bash", str(installer), str(newer)], check=True, env=env)
+    finally:
+        release.touch()
+        stale_stdout, stale_stderr = stale.communicate(timeout=10)
+
+    assert stale.returncode != 0, stale_stdout
+    assert "refusing to replace OpenProgram 0.6.3 with older version 0.6.2" in (
+        stale_stderr
+    )
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.3"
+
+
+def test_local_desktop_install_compares_the_staged_candidate(
+    tmp_path: Path,
+) -> None:
+    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    temp_dir = tmp_path / "tmp"
+    temp_dir.mkdir()
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(temp_dir),
+    }
+    installed = _fake_desktop_app(tmp_path / "installed", "0.6.3")
+    subprocess.run(["bash", str(installer), str(installed)], check=True, env=env)
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    entered = tmp_path / "ditto-entered"
+    release = tmp_path / "ditto-release"
+    fake_ditto = fake_bin / "ditto"
+    fake_ditto.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'touch "$DITTO_ENTERED"\n'
+        'while [ ! -f "$DITTO_RELEASE" ]; do sleep 0.01; done\n'
+        'exec /usr/bin/ditto "$@"\n',
+        encoding="utf-8",
+    )
+    fake_ditto.chmod(0o755)
+    candidate = _fake_desktop_app(tmp_path / "candidate", "0.6.4")
+    candidate_env = env | {
+        "PATH": f"{fake_bin}:{env['PATH']}",
+        "DITTO_ENTERED": str(entered),
+        "DITTO_RELEASE": str(release),
+    }
+    installing = subprocess.Popen(
+        ["bash", str(installer), str(candidate)],
+        env=candidate_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not entered.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert entered.exists()
+        plist_path = candidate / "Contents" / "Info.plist"
+        with plist_path.open("rb") as stream:
+            plist = plistlib.load(stream)
+        plist["CFBundleShortVersionString"] = "0.6.2"
+        with plist_path.open("wb") as stream:
+            plistlib.dump(plist, stream)
+        runtime = candidate / "Contents" / "Resources" / "runtime"
+        manifest_path = runtime / "runtime-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["openprogram"] = "0.6.2"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        runtime_python = runtime / manifest["python"]
+        runtime_python.write_text(
+            "#!/bin/sh\nprintf '%s\\n' '0.6.2'\n",
+            encoding="utf-8",
+        )
+        runtime_python.chmod(0o755)
+    finally:
+        release.touch()
+        install_stdout, install_stderr = installing.communicate(timeout=10)
+
+    assert installing.returncode != 0, install_stdout
+    assert "refusing to replace OpenProgram 0.6.3 with older version 0.6.2" in (
+        install_stderr
+    )
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.3"
+
+
+def test_packager_honors_one_stable_user_lock_across_worktrees(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    lock_file = home / "Library" / "Caches" / "OpenProgram" / "app-package.lock"
+    lock_file.parent.mkdir(parents=True)
+    subprocess.run(
+        ["/usr/bin/shlock", "-p", str(os.getpid()), "-f", str(lock_file)],
+        check=True,
+    )
+    env = {
+        "HOME": str(home),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path),
+    }
+
+    competing = subprocess.run(
+        ["bash", str(ROOT / "desktop" / "scripts" / "package-and-install-app.sh")],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+
+    assert competing.returncode != 0
+    assert "another OpenProgram App package is running" in competing.stderr
+    assert lock_file.read_text(encoding="utf-8").strip() == str(os.getpid())
+
+
+def test_launchd_replacement_unloads_keepalive_before_stopping_worker(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from openprogram.worker.services import launchd
+    from openprogram.worker import lifecycle
+
+    plist_path = tmp_path / "ai.openprogram.worker.plist"
+    plist_path.write_bytes(plistlib.dumps({"Label": launchd.LABEL}))
+    events: list[str] = []
+
+    monkeypatch.setattr(launchd, "_plist_path", lambda: plist_path)
+    monkeypatch.setattr(
+        launchd,
+        "_launchctl",
+        lambda *args: (events.append(f"launchctl:{args[0]}") or (0, "")),
+    )
+    monkeypatch.setattr(lifecycle, "current_worker_pid", lambda: 12345)
+    monkeypatch.setattr(
+        lifecycle, "stop_worker", lambda: (events.append("stop") or 0)
+    )
+
+    assert launchd.install() == 0
+    assert events == ["launchctl:list", "launchctl:unload", "stop", "launchctl:load"]
+
+
+def test_launchd_replaces_an_unloaded_stale_plist(tmp_path: Path, monkeypatch) -> None:
+    from openprogram.worker.services import launchd
+    from openprogram.worker import lifecycle
+
+    plist_path = tmp_path / "ai.openprogram.worker.plist"
+    plist_path.write_bytes(plistlib.dumps({"Label": launchd.LABEL}))
+    events: list[str] = []
+
+    def fake_launchctl(*args: str) -> tuple[int, str]:
+        events.append(f"launchctl:{args[0]}")
+        if args[0] == "list":
+            return 113, f'Could not find service "{launchd.LABEL}"'
+        return 0, ""
+
+    monkeypatch.setattr(launchd, "_plist_path", lambda: plist_path)
+    monkeypatch.setattr(launchd, "_launchctl", fake_launchctl)
+    monkeypatch.setattr(lifecycle, "current_worker_pid", lambda: None)
+
+    assert launchd.install() == 0
+    assert events == ["launchctl:list", "launchctl:load"]
+    assert plist_path.is_file()
+
+
+def test_launchd_unload_failure_preserves_the_service_plist(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from openprogram.worker.services import launchd
+
+    plist_path = tmp_path / "ai.openprogram.worker.plist"
+    original = plistlib.dumps({"Label": launchd.LABEL})
+    plist_path.write_bytes(original)
+
+    def fake_launchctl(*args: str) -> tuple[int, str]:
+        if args[0] == "list":
+            return 0, "loaded"
+        return 5, "synthetic unload failure"
+
+    monkeypatch.setattr(launchd, "_plist_path", lambda: plist_path)
+    monkeypatch.setattr(launchd, "_launchctl", fake_launchctl)
+
+    assert launchd.uninstall() == 5
+    assert plist_path.read_bytes() == original
+
+
+def test_packaged_runtime_smoke_rejects_an_incomplete_app_before_install(
+    tmp_path: Path,
+) -> None:
+    install_root = tmp_path / "installed"
+    current = _fake_desktop_app(install_root / "Applications", "0.6.2")
+    package_dir = tmp_path / "package"
+    _fake_desktop_app(package_dir, "0.6.3")
+
+    failed = subprocess.run(
+        [
+            "bash",
+            str(ROOT / "scripts" / "smoke-packaged-runtime.sh"),
+            "mac",
+            str(package_dir),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert failed.returncode != 0
+    with (current / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
+
+
+def test_macos_icon_uses_the_apple_icon_source_format() -> None:
+    desktop = ROOT / "desktop"
+    package = json.loads((desktop / "package.json").read_text(encoding="utf-8"))
+    icon_source = desktop / "build" / "AppIcon.icon"
+    assert package["build"]["mac"]["icon"] == "build/AppIcon.icon"
+    assert (icon_source / "icon.json").is_file()
+    assert not (desktop / "build" / "icon.svg").exists()
+    assert not (desktop / "build" / "icon.iconset").exists()
+
+
+def test_launchd_worker_preserves_packaged_python_flags(monkeypatch) -> None:
+    from openprogram.worker import lifecycle
+    from openprogram.worker.services import launchd
+
+    flags = SimpleNamespace(isolated=1, dont_write_bytecode=1)
+    monkeypatch.setattr(lifecycle.sys, "flags", flags)
+
+    assert launchd._build_plist()["ProgramArguments"] == [
+        sys.executable,
+        "-I",
+        "-B",
+        "-u",
+        "-m",
+        "openprogram",
+        "worker",
+        "run",
+    ]
+    assert "ProcessType" not in launchd._build_plist()
 
 
 def test_core_agentic_functions_are_not_excluded_from_wheel() -> None:
@@ -118,8 +761,79 @@ def test_release_installer_cold_starts_before_switching_current() -> None:
     start = installer.index('"$python_bin" -I -B -m openprogram worker start')
     health = installer.index("/healthz", start)
     stop = installer.index('"$python_bin" -I -B -m openprogram worker stop', health)
-    switch = installer.index('mv -f "$next_link" "$runtime_root/current"', stop)
+    switch = installer.index("os.replace(sys.argv[1], sys.argv[2])", stop)
     assert start < health < stop < switch
+
+
+def test_release_installer_replaces_an_existing_current_symlink(tmp_path: Path) -> None:
+    runtime_root = tmp_path / "state" / "runtime" / "cli"
+    old_release = runtime_root / "releases" / "0.6.6"
+    old_release.mkdir(parents=True)
+    (runtime_root / "current").symlink_to(old_release)
+
+    archive_root = tmp_path / "archive" / "runtime"
+    (archive_root / "python" / "bin").mkdir(parents=True)
+    (archive_root / "bin").mkdir()
+    fake_python = archive_root / "python" / "bin" / "python3"
+    fake_python.write_text(
+        "#!/bin/sh\n"
+        f"if [ \"$#\" -eq 5 ] && [ \"$3\" = - ]; then exec {sys.executable!r} \"$@\"; fi\n"
+        "case \"$*\" in\n"
+        "  *'openprogram --version'*) printf 'openprogram 0.6.7\\n' ;;\n"
+        "  *) : ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    (archive_root / "bin" / "verify-product-runtime.py").write_text(
+        "# acceptance fixture\n", encoding="utf-8"
+    )
+    (archive_root / "runtime-manifest.json").write_text(
+        json.dumps({"python": "python/bin/python3"}, indent=2), encoding="utf-8"
+    )
+    archive = tmp_path / "OpenProgram-0.6.7-runtime-macos-arm64.tar.gz"
+    subprocess.run(
+        ["tar", "-C", str(tmp_path / "archive"), "-czf", str(archive), "runtime"],
+        check=True,
+    )
+    import hashlib
+
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    launcher_dir = tmp_path / "bin"
+    env = {
+        "PATH": os.environ["PATH"],
+        "HOME": str(tmp_path / "home"),
+        "TMPDIR": str(tmp_path),
+        "LC_ALL": "C",
+        "OPENPROGRAM_VERSION": "0.6.7",
+        "OPENPROGRAM_STATE_DIR": str(tmp_path / "state"),
+        "OPENPROGRAM_BIN_DIR": str(launcher_dir),
+        "OPENPROGRAM_RUNTIME_ARCHIVE": str(archive),
+        "OPENPROGRAM_RUNTIME_SHA256": digest,
+    }
+
+    launcher_dir.write_text("not a directory", encoding="utf-8")
+    failed = subprocess.run(
+        ["sh", str(ROOT / "scripts" / "install-release.sh")],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert failed.returncode != 0
+    assert (runtime_root / "current").resolve() == old_release
+    launcher_dir.unlink()
+
+    subprocess.run(
+        ["sh", str(ROOT / "scripts" / "install-release.sh")],
+        check=True,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert (runtime_root / "current").resolve() == runtime_root / "releases" / "0.6.7"
+    assert (launcher_dir / "openprogram").is_file()
 
 
 def test_short_public_installer_resolves_latest_and_accepts_a_pin(
@@ -132,8 +846,8 @@ def test_short_public_installer_resolves_latest_and_accepts_a_pin(
     fake_bin.mkdir()
     fake_installer = tmp_path / "tagged-installer.sh"
     fake_installer.write_text(
-        '#!/bin/sh\n'
-        'printf \'%s|%s\\n\' "$OPENPROGRAM_VERSION" '
+        "#!/bin/sh\n"
+        "printf '%s|%s\\n' \"$OPENPROGRAM_VERSION\" "
         '"$OPENPROGRAM_REPOSITORY" > "$FAKE_RESULT"\n',
         encoding="utf-8",
     )
@@ -171,9 +885,11 @@ esac
 
     result = tmp_path / "result"
     curl_log = tmp_path / "curl.log"
-    env = os.environ | {
+    env = {
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "HOME": str(tmp_path / "home"),
         "TMPDIR": str(tmp_path),
+        "LC_ALL": "C",
         "FAKE_INSTALLER": str(fake_installer),
         "FAKE_RESULT": str(result),
         "FAKE_CURL_LOG": str(curl_log),
@@ -257,11 +973,342 @@ def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
     )
     assert any(install < stop < health for stop in stops)
     final_window = refresh[install:health]
+    assert "update-service.js" in refresh
     assert (
         '"$local_python" -m openprogram worker stop >/dev/null 2>&1\n'
         in final_window
     )
     assert "worker stop >/dev/null 2>&1 || true" not in final_window
+
+
+def test_local_app_refresh_rejects_a_different_product_version_before_build(
+    tmp_path: Path,
+) -> None:
+    installed = _fake_desktop_app(tmp_path, "0.6.7")
+    verifier = ROOT / "scripts" / "verify-release-version.py"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(verifier),
+            "--installed-app",
+            str(installed),
+            "--require-source-match",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "source version 0.6.6 != installed App version 0.6.7" in result.stderr
+
+    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+        encoding="utf-8"
+    )
+    gate = refresh.index("--require-source-match")
+    assert gate < refresh.index('wheel_dir="$(mktemp')
+    assert gate < refresh.index('"$repo_root/scripts/stage-release-assets.sh"')
+    assert gate < refresh.index("openprogram worker stop")
+    post_build_gate = refresh.index('--wheel "$wheel"')
+    lock = refresh.index('/usr/bin/shlock -p "$$" -f "$install_lock_file"')
+    archive = refresh.index('node "$asar_cli" pack')
+    first_worker_mutation = refresh.index("pgrep -x OpenProgram")
+    first_pip_mutation = refresh.index('"$local_python" -m pip install')
+    assert refresh.count("--require-source-match") == 2
+    assert archive < lock < post_build_gate < first_worker_mutation
+    assert post_build_gate < first_pip_mutation
+    assert '$(dirname -- "$app_path")/.openprogram-app-install.lock' in refresh
+
+
+def test_release_version_verifier_rejects_a_mismatched_built_wheel(
+    tmp_path: Path,
+) -> None:
+    installed = _fake_desktop_app(tmp_path / "installed", "0.6.6")
+    wheel = tmp_path / "openprogram-0.6.1-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(
+            "openprogram-0.6.1.dist-info/METADATA",
+            "Metadata-Version: 2.1\nName: openprogram\nVersion: 0.6.1\n",
+        )
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "verify-release-version.py"),
+            "--installed-app",
+            str(installed),
+            "--require-source-match",
+            "--wheel",
+            str(wheel),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "wheel version 0.6.1 != source version 0.6.6" in result.stderr
+
+
+def test_local_app_refresh_rejects_dirty_version_change_after_build(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    scripts = repo / "scripts"
+    desktop = repo / "desktop"
+    scripts.mkdir(parents=True)
+    desktop.mkdir()
+    (scripts / "refresh-local-app.sh").write_text(
+        (ROOT / "scripts" / "refresh-local-app.sh").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (scripts / "verify-release-version.py").write_text(
+        (ROOT / "scripts" / "verify-release-version.py").read_text(
+            encoding="utf-8"
+        ),
+        encoding="utf-8",
+    )
+    stage_assets = scripts / "stage-release-assets.sh"
+    stage_assets.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    stage_assets.chmod(0o755)
+    (repo / "pyproject.toml").write_text(
+        '[project]\nname = "openprogram"\nversion = "0.6.6"\n',
+        encoding="utf-8",
+    )
+    (desktop / "package.json").write_text(
+        json.dumps({"version": "0.6.6"}), encoding="utf-8"
+    )
+    desktop_files = [
+        "main.js",
+        "preload.js",
+        "browser-extension-manager.js",
+        "update-service.js",
+        "packaged-runtime.js",
+        "worker-start-url.js",
+        "tab-transfer-store.js",
+        "browsing-history-store.js",
+        "browser-profile-import.js",
+    ]
+    for desktop_file in desktop_files:
+        (desktop / desktop_file).write_text("module.exports = {};\n", encoding="utf-8")
+    asar_cli = desktop / "node_modules" / "@electron" / "asar" / "bin" / "asar.js"
+    asar_cli.parent.mkdir(parents=True)
+    asar_cli.write_text("", encoding="utf-8")
+    for module_name in [
+        "extract-zip",
+        "debug",
+        "ms",
+        "get-stream",
+        "pump",
+        "end-of-stream",
+        "once",
+        "wrappy",
+        "yauzl",
+        "fd-slicer",
+        "pend",
+        "buffer-crc32",
+    ]:
+        module_dir = desktop / "node_modules" / module_name
+        module_dir.mkdir(parents=True)
+        (module_dir / "index.js").write_text("", encoding="utf-8")
+
+    app = _fake_desktop_app(tmp_path / "installed", "0.6.6")
+    installed_asar = app / "Contents" / "Resources" / "app.asar"
+    installed_asar.write_bytes(b"original-asar")
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    mutation_log = tmp_path / "mutation.log"
+    local_python = fake_bin / "local-python"
+    local_python.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'case "${1:-}" in\n'
+        '  *.py|-) exec "$REAL_PYTHON" "$@" ;;\n'
+        "esac\n"
+        'printf "unexpected local Python mutation: %s\\n" "$*" >> "$MUTATION_LOG"\n'
+        "exit 90\n",
+        encoding="utf-8",
+    )
+    local_python.chmod(0o755)
+    fake_git = fake_bin / "git"
+    fake_git.write_text("#!/bin/sh\nprintf 'fixed-head\\n'\n", encoding="utf-8")
+    fake_git.chmod(0o755)
+    fake_node = fake_bin / "node"
+    fake_node.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'case "$2" in\n'
+        '  extract) mkdir -p "$4/node_modules" ;;\n'
+        '  pack) : > "$4" ;;\n'
+        '  *) printf "unexpected node call: %s\\n" "$*" >&2; exit 91 ;;\n'
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_node.chmod(0o755)
+    fake_uv = fake_bin / "uv"
+    fake_uv.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        "out=\n"
+        "while [ \"$#\" -gt 0 ]; do\n"
+        '  if [ "$1" = "--out-dir" ]; then out="$2"; shift 2; else shift; fi\n'
+        "done\n"
+        'printf \'[project]\\nname = "openprogram"\\nversion = "0.6.1"\\n\' > "$REPO_ROOT/pyproject.toml"\n'
+        'printf \'{"version":"0.6.1"}\\n\' > "$REPO_ROOT/desktop/package.json"\n'
+        'mkdir -p "$out"\n'
+        'exec "$REAL_PYTHON" - "$out/openprogram-0.6.1-py3-none-any.whl" <<\'PY\'\n'
+        "import sys, zipfile\n"
+        "with zipfile.ZipFile(sys.argv[1], 'w') as archive:\n"
+        "    archive.writestr('openprogram-0.6.1.dist-info/METADATA', "
+        "'Metadata-Version: 2.1\\nName: openprogram\\nVersion: 0.6.1\\n')\n"
+        "PY\n",
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o755)
+
+    env = {
+        "PATH": f"{fake_bin}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+        "HOME": str(tmp_path / "home"),
+        "TMPDIR": str(tmp_path / "tmp"),
+        "OPENPROGRAM_APP_PATH": str(app),
+        "OPENPROGRAM_LOCAL_PYTHON": str(local_python),
+        "OPENPROGRAM_UV_BIN": str(fake_uv),
+        "REAL_PYTHON": sys.executable,
+        "REPO_ROOT": str(repo),
+        "MUTATION_LOG": str(mutation_log),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    result = subprocess.run(
+        ["bash", str(scripts / "refresh-local-app.sh")],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+
+    assert result.returncode != 0
+    assert "source version 0.6.1 != installed App version 0.6.6" in result.stderr
+    assert not mutation_log.exists()
+    assert installed_asar.read_bytes() == b"original-asar"
+    assert not (app.parent / ".openprogram-app-install.lock").exists()
+
+    (repo / "pyproject.toml").write_text(
+        '[project]\nname = "openprogram"\nversion = "0.6.6"\n',
+        encoding="utf-8",
+    )
+    (desktop / "package.json").write_text(
+        json.dumps({"version": "0.6.6"}), encoding="utf-8"
+    )
+    fake_uv.write_text(
+        fake_uv.read_text(encoding="utf-8").replace("0.6.1", "0.6.6"),
+        encoding="utf-8",
+    )
+    lock_file = app.parent / ".openprogram-app-install.lock"
+    subprocess.run(
+        ["/usr/bin/shlock", "-p", str(os.getpid()), "-f", str(lock_file)],
+        check=True,
+    )
+    try:
+        blocked = subprocess.run(
+            ["bash", str(scripts / "refresh-local-app.sh")],
+            check=False,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    finally:
+        lock_file.unlink()
+
+    assert blocked.returncode != 0
+    assert "another OpenProgram App installation is running" in blocked.stderr
+    assert not mutation_log.exists()
+    assert installed_asar.read_bytes() == b"original-asar"
+
+    signal_ready = tmp_path / "signal-ready"
+    fake_pgrep = fake_bin / "pgrep"
+    fake_pgrep.write_text(
+        "#!/bin/sh\n"
+        'touch "$SIGNAL_READY"\n'
+        "sleep 10\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    fake_pgrep.chmod(0o755)
+    signal_env = env | {"SIGNAL_READY": str(signal_ready)}
+    interrupted = subprocess.Popen(
+        ["bash", str(scripts / "refresh-local-app.sh")],
+        env=signal_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+        text=True,
+    )
+    deadline = time.monotonic() + 10
+    while not signal_ready.exists() and interrupted.poll() is None:
+        if time.monotonic() >= deadline:
+            interrupted.kill()
+            raise AssertionError("refresh did not acquire the install lock")
+        time.sleep(0.02)
+    os.killpg(interrupted.pid, signal.SIGTERM)
+    stdout, stderr = interrupted.communicate(timeout=5)
+
+    assert interrupted.returncode == 143, (stdout, stderr)
+    assert not mutation_log.exists()
+    assert installed_asar.read_bytes() == b"original-asar"
+    assert not lock_file.exists()
+
+    local_python.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'case "${1:-}" in\n'
+        '  *.py|-) exec "$REAL_PYTHON" "$@" ;;\n'
+        "  *) exit 0 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_pgrep.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    fake_open = fake_bin / "open"
+    fake_open.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_open.chmod(0o755)
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_curl.chmod(0o755)
+    cleanup_ready = tmp_path / "cleanup-ready"
+    fake_rm = fake_bin / "rm"
+    fake_rm.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'case "$*" in\n'
+        '  *".openprogram-app-install.lock"*)\n'
+        '    /bin/rm "$@"\n'
+        '    touch "$CLEANUP_READY"\n'
+        "    sleep 10\n"
+        "    ;;\n"
+        '  *) exec /bin/rm "$@" ;;\n'
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_rm.chmod(0o755)
+    cleanup_env = env | {"CLEANUP_READY": str(cleanup_ready)}
+    cleanup_interrupted = subprocess.Popen(
+        ["bash", str(scripts / "refresh-local-app.sh")],
+        env=cleanup_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+        text=True,
+    )
+    deadline = time.monotonic() + 10
+    while not cleanup_ready.exists() and cleanup_interrupted.poll() is None:
+        if time.monotonic() >= deadline:
+            cleanup_interrupted.kill()
+            raise AssertionError("refresh did not enter final cleanup")
+        time.sleep(0.02)
+    os.killpg(cleanup_interrupted.pid, signal.SIGTERM)
+    stdout, stderr = cleanup_interrupted.communicate(timeout=5)
+
+    assert cleanup_interrupted.returncode == 143, (stdout, stderr)
+    assert not lock_file.exists()
+    assert not list(Path(env["TMPDIR"]).glob("openprogram-local-wheel.*"))
 
 
 def test_release_frontend_staging_removes_stale_export_before_build() -> None:
@@ -363,11 +1410,116 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     assert "easyocr" in staging
     assert '"${program_dir}[pdf]"' in staging
     assert "https://download.pytorch.org/whl/cpu" in staging
+    assert '"opencv-python==$opencv_version"' in staging
+    assert staging.count('--constraint "$program_constraints"') == 3
     assert 'importlib.metadata.version(distribution).split("+", 1)[0]' in verifier
+    assert '"pypdf>=5.0"' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert '"rich>=13.0"' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert '"pypdf",' in verifier
+    assert "_probe_pdf_tools()" in verifier
+    assert "_probe_rich_terminal()" in verifier
     assert "Salesforce/GPA-GUI-Detector" in product_config
     assert "GUI-Agent-Harness" in product_config
     assert "Research-Agent-Harness" in product_config
     assert "Wiki-Agent-Harness" in product_config
+
+
+def test_product_runtime_pdf_tool_probe() -> None:
+    verifier = runpy.run_path(str(ROOT / "scripts" / "verify-product-runtime.py"))
+    verifier["_probe_pdf_tools"]()
+
+
+def test_product_runtime_rich_terminal_probe() -> None:
+    verifier = runpy.run_path(str(ROOT / "scripts" / "verify-product-runtime.py"))
+    verifier["_probe_rich_terminal"]()
+
+
+def test_packaged_cli_falls_back_when_ink_runtime_is_absent(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from types import SimpleNamespace
+
+    from openprogram import cli_chat, cli_ink
+    from openprogram.agent.management import manager
+
+    monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
+    monkeypatch.setattr(
+        cli_ink,
+        "_resolve_node",
+        lambda: (_ for _ in ()).throw(RuntimeError("node unavailable")),
+    )
+    with pytest.raises(RuntimeError, match="node unavailable"):
+        cli_ink.run_ink_tui()
+
+    monkeypatch.setattr(
+        cli_chat, "_get_chat_runtime", lambda: ("test", SimpleNamespace(model="test"))
+    )
+    monkeypatch.setattr(manager, "get_default", lambda: SimpleNamespace(id="main"))
+    monkeypatch.setattr(
+        cli_ink,
+        "run_ink_tui",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("Ink unavailable")),
+    )
+    monkeypatch.setattr(cli_chat, "_print_banner", lambda *_args, **_kwargs: None)
+
+    from rich.console import Console
+
+    monkeypatch.setattr(
+        Console,
+        "input",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(EOFError()),
+    )
+    cli_chat.run_cli_chat(tui=True)
+    output = capsys.readouterr()
+    assert "falling back to REPL" in output.out
+    assert "Goodbye" in output.out
+
+
+def test_missing_bundled_pdf_dependency_requires_complete_reinstall(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import sys
+
+    from openprogram.programs.functions.pdf.pdf import execute as pdf_extract
+    from openprogram.programs.functions.read.read import _read_pdf
+
+    pdf_path = tmp_path / "probe.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    monkeypatch.setitem(sys.modules, "pypdf", None)
+
+    for result in (
+        pdf_extract(file_path=str(pdf_path)),
+        _read_pdf(str(pdf_path), offset=1, limit=1),
+    ):
+        assert "reinstall the complete OpenProgram release" in result
+        assert "pip install" not in result
+
+
+def test_product_runtime_rejects_installed_openprogram_version_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verifier = runpy.run_path(str(ROOT / "scripts" / "verify-product-runtime.py"))
+    verify_version = verifier["_verify_openprogram_version"]
+
+    monkeypatch.setattr("importlib.metadata.version", lambda _name: "0.6.1")
+    with pytest.raises(
+        RuntimeError,
+        match=r"OpenProgram version mismatch: expected 0\.6\.6, got 0\.6\.1",
+    ):
+        verify_version("0.6.6")
+
+
+def test_search_runtime_dependency_supports_macos_x64() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
+    assert 'search = ["semble>=0.5.3"]' in pyproject
+    assert "tree-sitter-language-pack" not in lock
+    assert re.search(
+        r"semble_grammars-[^-]+-py3-none-macosx_[^-]+_x86_64\.whl",
+        lock,
+    )
 
 
 def test_product_manifest_requires_one_complete_capability_set() -> None:
@@ -390,8 +1542,10 @@ def test_product_manifest_requires_one_complete_capability_set() -> None:
         "program.wiki",
     }
     assert set(manifest["programs"]) == {"gui", "research", "wiki"}
-    assert manifest["programs"]["gui"]["torch"] == "2.13.0"
-    assert manifest["programs"]["gui"]["torchvision"] == "0.28.0"
+    assert manifest["programs"]["gui"]["numpy"] == "1.26.4"
+    assert manifest["programs"]["gui"]["opencv"] == "4.11.0.86"
+    assert manifest["programs"]["gui"]["torch"] == "2.2.2"
+    assert manifest["programs"]["gui"]["torchvision"] == "0.17.2"
     for program in manifest["programs"].values():
         assert re.fullmatch(r"[0-9a-f]{40}", program["commit"])
 
@@ -430,6 +1584,65 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "AppImage" not in workflow
 
 
+def test_release_workflow_publishes_structured_release_notes() -> None:
+    version = _desktop_package()["version"]
+    notes_path = (
+        ROOT
+        / ".github"
+        / "release-notes"
+        / f"v{version}.md"
+    )
+    assert notes_path.is_file()
+    notes = notes_path.read_text(encoding="utf-8")
+    assert notes.startswith(f"# OpenProgram {version} Release Notes\n")
+    assert f"OpenProgram-{version}-mac-arm64-unsigned.dmg" in notes
+    assert f"OpenProgram-{version}-mac-x64-unsigned.dmg" in notes
+    for section in (
+        "## 🐞 修复问题",
+        "## ✨ 新增功能",
+        "## 🚀 优化改进",
+        "## 📦 下载与安装",
+        "## 🔄 版本指南",
+    ):
+        assert section in notes
+    assert "- **macOS**" in notes
+    assert "  - **安装包安装**" in notes
+    assert "  - **命令行安装**" in notes
+    assert "- **Linux**" in notes
+    assert "  - **命令行 / Server 安装**" in notes
+    assert notes.count("  - **开发安装**") == 2
+    assert "安装包和命令行安装包含相同的完整产品功能" in notes
+    assert "| 用户类型 |" not in notes
+    assert "curl -fsSL https://openprogram.io/install | sh" in notes
+
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    assert 'notes_file=".github/release-notes/$GITHUB_REF_NAME.md"' in workflow
+    assert 'release_version="${GITHUB_REF_NAME#v}"' in workflow
+    assert 'test -s "$notes_file"' in workflow
+    assert '--title "OpenProgram $release_version Release"' in workflow
+    assert '--notes-file "$notes_file"' in workflow
+    assert "--generate-notes" not in workflow
+
+
+def test_all_versioned_release_notes_use_the_public_english_title() -> None:
+    notes_dir = ROOT / ".github" / "release-notes"
+    for notes_path in sorted(notes_dir.glob("v*.md")):
+        version = notes_path.stem.removeprefix("v")
+        heading = notes_path.read_text(encoding="utf-8").splitlines()[0]
+        assert heading == f"# OpenProgram {version} Release Notes"
+
+
+def test_macos_desktop_matrix_maps_runtime_arch_to_electron_builder_arch() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "arch: x86_64\n            builder_arch: x64" in workflow
+    assert "arch: arm64\n            builder_arch: arm64" in workflow
+    assert "--${{ matrix.builder_arch }} --publish never" in workflow
+
+
 def test_linux_complete_runtime_smoke_is_runnable_without_release_credentials() -> None:
     workflow = (ROOT / ".github" / "workflows" / "linux-release-smoke.yml").read_text(
         encoding="utf-8"
@@ -456,12 +1669,42 @@ def test_distribution_workflows_use_node24_action_releases() -> None:
 
 
 def test_packaged_smoke_rejects_unreleased_linux_desktop() -> None:
-    smoke = (ROOT / "scripts" / "smoke-packaged-runtime.sh").read_text(
-        encoding="utf-8"
-    )
+    smoke = (ROOT / "scripts" / "smoke-packaged-runtime.sh").read_text(encoding="utf-8")
     assert "AppImage" not in smoke
     assert "linux)" not in smoke
     assert "python3 -c" not in smoke
+
+
+def test_packaged_smoke_reads_formatted_runtime_manifest(tmp_path: Path) -> None:
+    runtime = (
+        tmp_path
+        / "dist"
+        / "mac-arm64"
+        / "OpenProgram.app"
+        / "Contents"
+        / "Resources"
+        / "runtime"
+    )
+    runtime.mkdir(parents=True)
+    (runtime / "runtime-manifest.json").write_text(
+        json.dumps({"python": "python/bin/python3"}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            str(ROOT / "scripts" / "smoke-packaged-runtime.sh"),
+            "mac",
+            str(tmp_path / "dist"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "managed Python is not executable" in result.stderr
+    assert "managed Python path missing" not in result.stderr
 
 
 def test_release_workflow_builds_explicitly_unsigned_macos_artifacts() -> None:
@@ -469,7 +1712,7 @@ def test_release_workflow_builds_explicitly_unsigned_macos_artifacts() -> None:
         encoding="utf-8"
     )
     assert "unsigned" in workflow.lower()
-    assert "CSC_IDENTITY_AUTO_DISCOVERY: \"false\"" in workflow
+    assert 'CSC_IDENTITY_AUTO_DISCOVERY: "false"' in workflow
     for forbidden in (
         "APPLE_API_KEY",
         "APPLE_API_ISSUER",
@@ -583,12 +1826,103 @@ def test_public_docs_describe_one_complete_release_product() -> None:
     assert "相同的完整产品能力" in combined
 
 
+def test_public_product_surfaces_do_not_offer_python_package_install() -> None:
+    public_files = [
+        ROOT / "CONTRIBUTING.md",
+        ROOT / "examples" / "quickstart.py",
+        ROOT / "docs" / "_static_root" / "llms.txt",
+        ROOT / "docs" / "server" / "troubleshooting.md",
+        ROOT / "docs" / "server" / "troubleshooting.zh.md",
+        ROOT / "docs" / "integrations" / "openclaw.md",
+        ROOT / "docs" / "integrations" / "openclaw.zh.md",
+    ]
+    internal_python_installers = {
+        ROOT / "openprogram" / "_cli_cmds" / "browser.py",
+        ROOT / "openprogram" / "_cli_cmds" / "plugins.py",
+        ROOT / "openprogram" / "_cli_cmds" / "programs.py",
+        ROOT / "openprogram" / "_cli_cmds" / "upgrade.py",
+        ROOT / "openprogram" / "_setup_sections" / "sections.py",
+        ROOT / "openprogram" / "programs" / "_programs.py",
+        ROOT / "openprogram" / "programs" / "_registry.py",
+        ROOT / "openprogram" / "updater" / "detect.py",
+    }
+    public_files.extend(
+        path
+        for path in (ROOT / "openprogram").rglob("*.py")
+        if path not in internal_python_installers
+        and ROOT / "openprogram" / "programs" / "applications" not in path.parents
+    )
+    forbidden = (
+        "pip install",
+        "pip3 install",
+        "pipx install",
+        "uv tool install openprogram",
+        "pypi.org/project/openprogram",
+    )
+    for path in public_files:
+        source = path.read_text(encoding="utf-8").lower()
+        for phrase in forbidden:
+            assert phrase not in source, f"{path.relative_to(ROOT)}: {phrase}"
+
+
+def test_openclaw_source_checkout_uses_its_locked_environment() -> None:
+    for relative_path in (
+        "docs/integrations/openclaw.md",
+        "docs/integrations/openclaw.zh.md",
+    ):
+        source = (ROOT / relative_path).read_text(encoding="utf-8")
+        assert "uv sync --locked" in source
+        assert "uv run --project ~/.openclaw/workspace/OpenProgram python" in source
+        assert (
+            "python3 ~/.openclaw/workspace/skills/my-agentic-skill/scripts/analyze.py"
+            not in source
+        )
+
+
+def test_python_import_troubleshooting_distinguishes_managed_and_source() -> None:
+    for relative_path in (
+        "docs/server/troubleshooting.md",
+        "docs/server/troubleshooting.zh.md",
+    ):
+        source = (ROOT / relative_path).read_text(encoding="utf-8")
+        assert "uv sync --locked" in source
+        assert "uv run --project /path/to/OpenProgram python" in source
+        assert "./scripts/install.sh" not in source
+
+
+def test_packaged_browser_install_does_not_modify_python_environment(
+    monkeypatch, capsys
+) -> None:
+    from openprogram._cli_cmds.browser import _cmd_browser_install
+
+    monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
+    monkeypatch.setattr(
+        "openprogram._cli_cmds.browser._pip_install",
+        lambda _spec: (_ for _ in ()).throw(AssertionError("pip invoked")),
+    )
+
+    assert _cmd_browser_install("playwright") == 1
+    output = capsys.readouterr().out.lower()
+    assert "complete release" in output
+    assert "source checkout" in output
+
+    help_output = subprocess.run(
+        [sys.executable, "-m", "openprogram", "browser", "install", "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.lower()
+    help_output = " ".join(help_output.split())
+    assert "source checkout only" in help_output
+    assert "packaged releases reject this command" in help_output
+
+
 def test_release_manifest_records_hashes(tmp_path: Path) -> None:
     import subprocess
 
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
-    (artifacts / "OpenProgram-0.6.1-mac-arm64.dmg").write_bytes(b"artifact")
+    (artifacts / "OpenProgram-0.6.4-mac-arm64.dmg").write_bytes(b"artifact")
     output = artifacts / "release-manifest.json"
     subprocess.run(
         [
@@ -596,14 +1930,14 @@ def test_release_manifest_records_hashes(tmp_path: Path) -> None:
             str(ROOT / "scripts" / "create-release-manifest.py"),
             str(artifacts),
             "--version",
-            "v0.6.1",
+            "v0.6.4",
             "--output",
             str(output),
         ],
         check=True,
     )
     manifest = json.loads(output.read_text(encoding="utf-8"))
-    assert manifest["version"] == "0.6.1"
+    assert manifest["version"] == "0.6.4"
     assert manifest["files"][0]["sha256"] == (
         "c7c5c1d70c5dec4416ab6158afd0b223ef40c29b1dc1f97ed9428b94d4cadb1c"
     )

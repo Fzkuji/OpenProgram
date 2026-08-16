@@ -184,7 +184,7 @@ function _loadGeneralSettings() {
   html += '<div class="settings-card">';
   html += '<div class="settings-row">';
   html += '<div class="settings-label">Version</div>';
-  html += '<div class="settings-value">0.1.0</div>';
+  html += '<div class="settings-value" id="app-version">Loading…</div>';
   html += '</div>';
   html += '<div class="settings-row">';
   html += '<div class="settings-label">Framework</div>';
@@ -194,6 +194,16 @@ function _loadGeneralSettings() {
   html += '</div>';
 
   content.innerHTML = html;
+  fetch('/api/system/version')
+    .then(function(response) { return response.ok ? response.json() : Promise.reject(new Error('version request failed')); })
+    .then(function(payload) {
+      var target = document.getElementById('app-version');
+      if (target) target.textContent = typeof payload.currentVersion === 'string' ? payload.currentVersion : 'unknown';
+    })
+    .catch(function() {
+      var target = document.getElementById('app-version');
+      if (target) target.textContent = 'unknown';
+    });
 }
 
 function _setTheme(theme) {

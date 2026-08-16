@@ -9,9 +9,8 @@ from typing import Optional
 
 
 class InstallMethod(str, Enum):
-    GIT_CHECKOUT = "git_checkout"  # ``pip install -e <clone>`` from a git repo
-    BINARY = "binary"              # PyInstaller / Nuitka standalone executable
-    PIP_WHEEL = "pip_wheel"        # ``pip install openprogram`` from PyPI / wheel
+    MANAGED_RELEASE = "managed_release"
+    SOURCE_CHECKOUT = "source_checkout"
     UNKNOWN = "unknown"
 
 
@@ -43,14 +42,18 @@ def is_pyinstaller_binary() -> bool:
 
 
 def detect_install_method() -> InstallMethod:
-    """Best-effort classification of the install."""
+    """Classify the product update path.
+
+    Release launchers set ``OPENPROGRAM_IMMUTABLE_RUNTIME=1``.  Check that
+    first because their Python package naturally lives in site-packages and a
+    packaged Desktop may also be launched from a source worktree during tests.
+    """
+    if os.environ.get("OPENPROGRAM_IMMUTABLE_RUNTIME", "").strip() in {
+        "1", "true", "True", "yes",
+    }:
+        return InstallMethod.MANAGED_RELEASE
     if is_pyinstaller_binary():
-        return InstallMethod.BINARY
+        return InstallMethod.MANAGED_RELEASE
     if repo_root() is not None:
-        return InstallMethod.GIT_CHECKOUT
-    # Heuristic: if the package dir lives under a site-packages tree it's
-    # almost certainly a wheel install.
-    pkg = package_root()
-    if "site-packages" in pkg.parts or "dist-packages" in pkg.parts:
-        return InstallMethod.PIP_WHEEL
+        return InstallMethod.SOURCE_CHECKOUT
     return InstallMethod.UNKNOWN

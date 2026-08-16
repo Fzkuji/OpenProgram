@@ -72,9 +72,8 @@ def _resolve_cli_entry() -> Path:
     if not cli_dir.exists():
         raise FileNotFoundError(
             f"Ink TUI source missing: no {cli_dir} directory. "
-            "The TUI ships with the source tree — install openprogram "
-            "from a git clone (``pip install -e .``) for the full "
-            "experience, or use ``openprogram web`` for the browser UI."
+            "Source checkouts prepare it with `uv sync`; packaged runtimes "
+            "fall back to the built-in Rich terminal UI."
         )
 
     _build_ink_bundle(cli_dir, candidate)
@@ -285,7 +284,7 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
         node = _resolve_node()
     except RuntimeError as e:
         _tty_write(f"openprogram: {e}\n")
-        sys.exit(2)
+        raise RuntimeError(str(e)) from e
     try:
         entry = _resolve_cli_entry()
     except (FileNotFoundError, RuntimeError) as e:
@@ -301,24 +300,7 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
             "  openprogram --print \"...\"     # one-shot prompt\n"
             "  openprogram --print \"hi\"      # one-shot prompt\n"
         )
-        sys.exit(2)
-
-    # Surface any update that was applied since the last launch.
-    # Goes to the saved tty so the user sees it even after the dup2
-    # redirect that ``cli._maybe_redirect_for_tui`` performed at
-    # module import.
-    try:
-        from openprogram.updater import pop_staged_notice
-        notice = pop_staged_notice()
-        if notice:
-            target = notice.get("version") or "?"
-            summary = notice.get("summary") or ""
-            line = f"openprogram: updated to {target}"
-            if summary and summary != "up to date":
-                line += f" ({summary})"
-            _tty_write(line + "\n")
-    except Exception:  # noqa: BLE001
-        pass
+        raise RuntimeError(str(e)) from e
 
     # Auto-start the worker if missing (overridable via env var for the rare
     # case where the user wants a strictly-connecting TUI). The worker manages
@@ -333,7 +315,7 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
     port = _resolve_worker_port(autostart=autostart)
     if port is None:
         _print_no_worker_hint()
-        sys.exit(2)
+        raise RuntimeError("the background service is unavailable")
 
     # cli.py already did the early dup2 for the TUI path and stashed the
     # original tty fds on the cli module. Reuse those so the Node child

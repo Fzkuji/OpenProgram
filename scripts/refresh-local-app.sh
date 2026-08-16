@@ -109,7 +109,7 @@ while true; do
   desktop_asar="$attempt_dir/app.asar"
   node "$asar_cli" extract "$installed_asar" "$desktop_stage"
   for desktop_file in \
-    main.js preload.js browser-extension-manager.js packaged-runtime.js worker-start-url.js \
+    main.js preload.js browser-extension-manager.js update-service.js packaged-runtime.js worker-start-url.js \
     tab-transfer-store.js browsing-history-store.js browser-profile-import.js; do
     cp "$repo_root/desktop/$desktop_file" "$desktop_stage/$desktop_file"
   done

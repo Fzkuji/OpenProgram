@@ -259,18 +259,6 @@ wheels = [
 ]
 
 [[package]]
-name = "bm25s"
-version = "0.3.9"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/7c/ab/39d08d4589dad6f5735a6b03ee083088dc37fba57fa45d4a0749393b9295/bm25s-0.3.9.tar.gz", hash = "sha256:895c679d952b7de8355edb5f3e1a620a1e2f294d1d42b919bf0821cce2e2f597", size = 80528, upload-time = "2026-05-13T23:08:20.952Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/48/83/06582913e2af0cf498cc478350070490b019c6f6b523cb8b6cfafd32f009/bm25s-0.3.9-py3-none-any.whl", hash = "sha256:db997475e82c9e81262b83fefe6a71304f2fdd0dafd037c8929828865fa6d465", size = 74475, upload-time = "2026-05-13T23:08:19.557Z" },
-]
-
-[[package]]
 name = "boto3"
 version = "1.43.69"
 source = { registry = "https://pypi.org/simple" }
@@ -1811,7 +1799,7 @@ wheels = [
 
 [[package]]
 name = "openprogram"
-version = "0.6.1"
+version = "0.6.6"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -1824,11 +1812,13 @@ dependencies = [
     { name = "mcp" },
     { name = "openai" },
     { name = "pydantic" },
+    { name = "pypdf" },
     { name = "pywinpty", marker = "sys_platform == 'win32'" },
     { name = "pyyaml" },
     { name = "questionary" },
     { name = "rank-bm25" },
     { name = "requests" },
+    { name = "rich" },
     { name = "tiktoken" },
     { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1896,6 +1886,7 @@ requires-dist = [
     { name = "playwright", marker = "extra == 'browser'", specifier = ">=1.45.0" },
     { name = "playwright", marker = "extra == 'browser-stealth'", specifier = ">=1.45.0" },
     { name = "pydantic", specifier = ">=2.0" },
+    { name = "pypdf", specifier = ">=5.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-timeout", marker = "extra == 'dev'", specifier = ">=2.3" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5" },
@@ -1906,8 +1897,9 @@ requires-dist = [
     { name = "questionary", specifier = ">=2.0.0" },
     { name = "rank-bm25", specifier = ">=0.2.2" },
     { name = "requests", specifier = ">=2.31.0" },
+    { name = "rich", specifier = ">=13.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.16" },
-    { name = "semble", marker = "extra == 'search'", specifier = ">=0.2.0" },
+    { name = "semble", marker = "extra == 'search'", specifier = ">=0.5.3" },
     { name = "setuptools", marker = "extra == 'dev'", specifier = ">=68,<75" },
     { name = "slack-sdk", marker = "extra == 'all'", specifier = ">=3.27.0" },
     { name = "slack-sdk", marker = "extra == 'channels'", specifier = ">=3.27.0" },
@@ -2430,6 +2422,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/23/3b/b9f61be7b9f9b4e0a6db18b3c35c4c4d589f2d04e963e2174d38c6555a92/pyobjc_framework_cocoa-12.1-cp313-cp313t-macosx_10_13_universal2.whl", hash = "sha256:914b74328c22d8ca261d78c23ef2befc29776e0b85555973927b338c5734ca44", size = 388843, upload-time = "2025-11-14T09:42:05.719Z" },
     { url = "https://files.pythonhosted.org/packages/59/bb/f777cc9e775fc7dae77b569254570fe46eb842516b3e4fe383ab49eab598/pyobjc_framework_cocoa-12.1-cp314-cp314-macosx_10_15_universal2.whl", hash = "sha256:03342a60fc0015bcdf9b93ac0b4f457d3938e9ef761b28df9564c91a14f0129a", size = 384932, upload-time = "2025-11-14T09:42:29.771Z" },
     { url = "https://files.pythonhosted.org/packages/58/27/b457b7b37089cad692c8aada90119162dfb4c4a16f513b79a8b2b022b33b/pyobjc_framework_cocoa-12.1-cp314-cp314t-macosx_10_15_universal2.whl", hash = "sha256:6ba1dc1bfa4da42d04e93d2363491275fb2e2be5c20790e561c8a9e09b8cf2cc", size = 388970, upload-time = "2025-11-14T09:42:53.964Z" },
+]
+
+[[package]]
+name = "pypdf"
+version = "6.16.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b6/5a/df92d1c1ef8806ca28f20f978ee059894868d93de797a7e2edebe7fe1a43/pypdf-6.16.1.tar.gz", hash = "sha256:c4d1b43ddae921387321cf63936cd16a7743b91d2da92f165c149a195c972ba9", size = 7003737, upload-time = "2026-08-14T12:24:04.531Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/a1/724b18d6757ab7253a8fecd3a430eb8d980ed26872ba16651e7b5ddfc63f/pypdf-6.16.1-py3-none-any.whl", hash = "sha256:63fec31c4092ae50b6729beedcb469055b60d20c834bde1c402df241f371f644", size = 382924, upload-time = "2026-08-14T12:24:02.854Z" },
 ]
 
 [[package]]
@@ -2997,20 +2998,36 @@ wheels = [
 
 [[package]]
 name = "semble"
-version = "0.2.0"
+version = "0.5.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "bm25s" },
     { name = "model2vec" },
     { name = "numpy" },
+    { name = "orjson" },
     { name = "pathspec" },
-    { name = "tree-sitter" },
-    { name = "tree-sitter-language-pack" },
+    { name = "questionary" },
+    { name = "semble-grammars" },
     { name = "vicinity" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2c/3a/702d4a82bf8fff71b8b0f55d84f705dd379040ab1335aa2577779d21722e/semble-0.2.0.tar.gz", hash = "sha256:c3b730978f9d8daa2ae4e79bedd32c71435263a3bdf5d95ae519cf1e5865f204", size = 65083, upload-time = "2026-05-21T08:34:49.471Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ac/a4/7780bd81f98c4d0c9b7e03030ec112248b96f281743843b21af0ae4e5e19/semble-0.5.5.tar.gz", hash = "sha256:72cab788f01316c6e4559ccb55a3268eb39d8fa17cb862cb5cc6fdd3ecd93f79", size = 107284, upload-time = "2026-08-12T05:40:21.291Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/78/68/8a61e1a9b24d6e7e54e1fe61aa37b238bb74daab79137e7d9cfb2cc318af/semble-0.2.0-py3-none-any.whl", hash = "sha256:bd4c977f0cde64b1be509137ca3ca83066e301aaead0914d833402facf063817", size = 46795, upload-time = "2026-05-21T08:34:48.042Z" },
+    { url = "https://files.pythonhosted.org/packages/03/69/2e352da907ce1ffb446e7300f84f5fbc696b12b679c669addf6bdc199e68/semble-0.5.5-py3-none-any.whl", hash = "sha256:9511e0a83b9ebe3cc8e6fa4158769617fb6de47e5f9f63d68abd9bc6089b28b5", size = 78498, upload-time = "2026-08-12T05:40:19.935Z" },
+]
+
+[[package]]
+name = "semble-grammars"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "tree-sitter" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b6/bd/2c0491654f9ce320faa72e6e047e07b11e696d8d737dad2a68629a294831/semble_grammars-0.1.2-py3-none-macosx_10_13_x86_64.whl", hash = "sha256:52fe698f1d2489e6ad3e6462c9322e77796769b203f74a294f801e5a8bd10f19", size = 6690645, upload-time = "2026-08-01T11:24:46.97Z" },
+    { url = "https://files.pythonhosted.org/packages/da/42/85eca6563cf3794a68e6b0fd6c03d3ed39b1466e68fd14e0b25b70084c19/semble_grammars-0.1.2-py3-none-macosx_11_0_arm64.whl", hash = "sha256:772e7011ce5e2ff5d9347a2f027a447c713d3f0d62983dd38457f04aa2215c6c", size = 7258590, upload-time = "2026-08-01T11:24:48.88Z" },
+    { url = "https://files.pythonhosted.org/packages/32/e2/bec01f956cd7aa52505a57954f3259febd00092715eac6f0ea1fff6058e0/semble_grammars-0.1.2-py3-none-manylinux2014_aarch64.whl", hash = "sha256:f24f63a04e569f2de28aaf39166c8dddd8e296aa0390ac816df6ad1bd814e3bf", size = 6868770, upload-time = "2026-08-01T11:24:50.944Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/d9/e93eb269ccd2494cf4b5ac2f201b5badb959800bf21a2ae700d6d7f6418a/semble_grammars-0.1.2-py3-none-manylinux2014_x86_64.whl", hash = "sha256:c040595ca4e117969a349807dce05c1a51dbb368e80de80b005539fd86ef9c07", size = 6906388, upload-time = "2026-08-01T11:24:53.005Z" },
+    { url = "https://files.pythonhosted.org/packages/26/d0/3a783d2eda7e4f8f631ae1890cb87bdfaa6cb97efbc74135b66641b89dde/semble_grammars-0.1.2-py3-none-win_amd64.whl", hash = "sha256:078ae79ad15442a2922dae46620f778fa237b191ac06e9c29832f079915d4d39", size = 11078076, upload-time = "2026-08-01T11:24:55.007Z" },
+    { url = "https://files.pythonhosted.org/packages/04/20/96078011af0d3b0e5b1c1f4b8937ba6f89f7dd5edef71902e9949845e513/semble_grammars-0.1.2-py3-none-win_arm64.whl", hash = "sha256:6bb406d0fc9594b9bfd3cad82fb538748109d6c72066c0e76ea102c64f12c4d9", size = 10363135, upload-time = "2026-08-01T11:24:57.472Z" },
 ]
 
 [[package]]
@@ -3238,20 +3255,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/57/e2/d42d55bf56360987c32bc7b16adb06744e425670b823fb8a5786a1cea991/tree_sitter-0.25.2-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:7d2ee1acbacebe50ba0f85fff1bc05e65d877958f00880f49f9b2af38dce1af0", size = 631522, upload-time = "2025-09-25T17:37:55.833Z" },
     { url = "https://files.pythonhosted.org/packages/03/87/af9604ebe275a9345d88c3ace0cf2a1341aa3f8ef49dd9fc11662132df8a/tree_sitter-0.25.2-cp314-cp314-win_amd64.whl", hash = "sha256:4973b718fcadfb04e59e746abfbb0288694159c6aeecd2add59320c03368c721", size = 130864, upload-time = "2025-09-25T17:37:57.453Z" },
     { url = "https://files.pythonhosted.org/packages/a6/6e/e64621037357acb83d912276ffd30a859ef117f9c680f2e3cb955f47c680/tree_sitter-0.25.2-cp314-cp314-win_arm64.whl", hash = "sha256:b8d4429954a3beb3e844e2872610d2a4800ba4eb42bb1990c6a4b1949b18459f", size = 117470, upload-time = "2025-09-25T17:37:58.431Z" },
-]
-
-[[package]]
-name = "tree-sitter-language-pack"
-version = "1.6.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "tree-sitter" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/09/bd/ac34ab0ee92b2d27802754c575965e921490ce11b5357bf89f74a78e8309/tree_sitter_language_pack-1.6.2-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:f5998cfee5735a8e7e691f577062ff7eb3a7ea405ae5654c9cecaa4a1e6c81b0", size = 2241997, upload-time = "2026-04-18T07:04:36.042Z" },
-    { url = "https://files.pythonhosted.org/packages/a1/e0/b997b8c3e0886288a47890e6313c3a7e74ea8192e2d141b3eab64d59a276/tree_sitter_language_pack-1.6.2-cp310-abi3-manylinux_2_34_aarch64.whl", hash = "sha256:8ce814ede4e295f3419ba179b523889c52cc3a998ac085356a470e776596c026", size = 2419565, upload-time = "2026-04-18T07:04:37.67Z" },
-    { url = "https://files.pythonhosted.org/packages/fa/a4/629e6983a93fbb52dc50af495ec0431565c6477eea4680d4298238e9831e/tree_sitter_language_pack-1.6.2-cp310-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:2305df7835c1cb3d34b71450b79d135878bc25ea5d02d9984cee864607a4ad60", size = 2555465, upload-time = "2026-04-18T07:04:39.57Z" },
-    { url = "https://files.pythonhosted.org/packages/b5/9c/0f486ca7344f6f3345441e8516b464214c7c5a0f3775d11fda1368901c38/tree_sitter_language_pack-1.6.2-cp310-abi3-win_amd64.whl", hash = "sha256:08351222b43c3a73665571eaa440366add2093a2492bb35f032fb7a31945e720", size = 2351156, upload-time = "2026-04-18T07:04:41.377Z" },
 ]
 
 [[package]]

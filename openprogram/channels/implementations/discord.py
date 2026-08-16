@@ -42,7 +42,7 @@ class DiscordChannel(Channel):
         except ImportError as e:
             raise RuntimeError(
                 "Discord channel requires `discord.py`. "
-                "`pip install openprogram[channels]`."
+                "Reinstall the complete OpenProgram release."
             ) from e
         self.account_id = account_id
         self.token = token

@@ -66,7 +66,7 @@ AGENTIC_FUNCTIONS = [my_agent]
 
 OpenProgram auto-discovers any harness symlinked (or cloned as a plain directory) into `openprogram/functions/agentics/`: it scans for `<pkg>/agentics/__init__.py` inside each such directory, imports it, and the `@agentic_function` decorators inside fire and self-register. **No edit to `_registry.py::AGENTIC_MODULES` is needed for external harnesses** — that list is now only for internal `openprogram/functions/agentics/<name>/` modules.
 
-To wire a new external harness in, the primary path is to pip-install its package (`pip install -e /path/to/Your-Harness`) — installed harness packages are imported and self-register. A plain `git clone` into `openprogram/functions/agentics/` is also auto-discovered, and symlinks (`ln -s /path/to/Your-Harness openprogram/functions/agentics/`) remain supported for local dev. Restart the server after any of these (see `openprogram/functions/_registry.py`).
+To wire a new external harness in, use `openprogram programs install file:///path/to/Your-Harness`; the Program installer prepares its isolated environment and records the source. A plain `git clone` into `openprogram/functions/agentics/` is also auto-discovered, and symlinks (`ln -s /path/to/Your-Harness openprogram/functions/agentics/`) remain supported for local development. Restart the server after any of these (see `openprogram/functions/_registry.py`).
 
 ## 2. agentic_function vs plain Python vs @function
 

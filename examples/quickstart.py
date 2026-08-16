@@ -9,8 +9,8 @@ Settings — no per-provider wiring needed.
 
 Run:
     cd OpenProgram
-    pip install -e .
-    python examples/quickstart.py
+    uv sync --locked
+    uv run python examples/quickstart.py
 
 To pin a provider instead of auto-detecting:
     runtime = create_runtime(provider="claude-code", model="haiku")

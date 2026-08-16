@@ -15,7 +15,6 @@ import os
 import plistlib
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -29,10 +28,12 @@ def _plist_path() -> Path:
 
 
 def _build_plist() -> dict[str, Any]:
+    from openprogram.worker.lifecycle import _detached_worker_command
+
     log = str(worker_paths.log_path())
     return {
         "Label": LABEL,
-        "ProgramArguments": [sys.executable, "-u", "-m", "openprogram", "worker", "run"],
+        "ProgramArguments": _detached_worker_command(),
         "EnvironmentVariables": {
             "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
             "HOME": str(Path.home()),
@@ -42,7 +43,6 @@ def _build_plist() -> dict[str, Any]:
         "KeepAlive": True,
         "StandardOutPath": log,
         "StandardErrorPath": log,
-        "ProcessType": "Background",
     }
 
 
@@ -61,20 +61,35 @@ def _launchctl(*args: str) -> tuple[int, str]:
     return out.returncode, (out.stdout + out.stderr).strip()
 
 
+def _loaded_state() -> tuple[bool | None, int, str]:
+    rc, msg = _launchctl("list", LABEL)
+    if rc == 0:
+        return True, rc, msg
+    if rc == 113 or "could not find service" in msg.lower():
+        return False, rc, msg
+    return None, rc, msg
+
+
 def install() -> int:
     plist_file = _plist_path()
     plist_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Stop any in-flight worker before swapping the plist; otherwise the
-    # newly-loaded job fights the existing PID for the lock file.
-    from openprogram.worker.lifecycle import current_worker_pid, stop_worker
-    if current_worker_pid() is not None:
-        stop_worker()
-
-    # If a previous plist is loaded, unload first so launchctl picks up
-    # the new contents instead of caching the old definition.
+    # Disable KeepAlive before stopping the worker. Stopping first lets the
+    # old job immediately spawn another process before launchctl is unloaded.
     if plist_file.exists():
-        _launchctl("unload", str(plist_file))
+        loaded, rc, msg = _loaded_state()
+        if loaded is None:
+            print(f"launchctl status failed (rc={rc}): {msg}")
+            return rc or 1
+        if loaded:
+            rc, msg = _launchctl("unload", str(plist_file))
+            if rc != 0:
+                print(f"launchctl unload failed (rc={rc}): {msg}")
+                return rc
+
+    from openprogram.worker.lifecycle import current_worker_pid, stop_worker
+    if current_worker_pid() is not None and stop_worker() != 0:
+        return 1
 
     with open(plist_file, "wb") as f:
         plistlib.dump(_build_plist(), f)
@@ -98,10 +113,15 @@ def uninstall() -> int:
     if not plist_file.exists():
         print(f"openprogram worker: no launchd service installed at {plist_file}.")
         return 0
-    rc, msg = _launchctl("unload", "-w", str(plist_file))
-    if rc != 0:
-        print(f"launchctl unload failed (rc={rc}): {msg}")
-        # Continue and remove the plist file anyway — the user wants it gone.
+    loaded, rc, msg = _loaded_state()
+    if loaded is None:
+        print(f"launchctl status failed (rc={rc}): {msg}")
+        return rc or 1
+    if loaded:
+        rc, msg = _launchctl("unload", "-w", str(plist_file))
+        if rc != 0:
+            print(f"launchctl unload failed (rc={rc}): {msg}")
+            return rc
     try:
         plist_file.unlink()
     except OSError as e:

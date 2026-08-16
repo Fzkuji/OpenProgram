@@ -207,7 +207,9 @@ async def stream_simple(
     try:
         from google import genai
     except ImportError:
-        raise ImportError("google-genai package required: pip install google-genai")
+        raise ImportError(
+            "The Google GenAI SDK is missing; reinstall the complete OpenProgram release."
+        )
 
     opts = options or SimpleStreamOptions()
     api_key = opts.api_key

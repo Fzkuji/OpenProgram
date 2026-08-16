@@ -140,7 +140,9 @@ def stream_openai_codex_responses(
         try:
             import httpx
         except ImportError:
-            raise ImportError("httpx is required: pip install httpx")
+            raise ImportError(
+                "The HTTP client is missing; reinstall the complete OpenProgram release."
+            )
 
         from openprogram.providers.types import AssistantMessage, Usage
 

@@ -311,7 +311,7 @@ async def _run_callback_server(cfg: PkceConfig, expected_state: str) -> str:
     except ImportError as e:
         raise RuntimeError(
             "aiohttp is required for the OAuth callback server. "
-            "Install with: pip install aiohttp"
+            "Reinstall the complete OpenProgram release."
         ) from e
 
     code_future: asyncio.Future[str] = asyncio.get_event_loop().create_future()

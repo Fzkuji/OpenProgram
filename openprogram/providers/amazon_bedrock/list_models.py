@@ -5,8 +5,8 @@ dispatcher loads ``fetch(provider_id, timeout)`` by directory name.
 
 Uses the AWS credentials chain (env, profile, instance metadata, …) so there's
 no API key to resolve — Bedrock auth is the standard SigV4 dance boto3 handles.
-boto3 is an optional dependency (``pip install boto3``); absent it, we return a
-friendly error rather than tracebacking. We filter to text-in / text-out
+boto3 is an optional development dependency; absent it, we return a friendly
+error rather than tracebacking. We filter to text-in / text-out
 models; image / embedding / video entries don't belong in the chat picker.
 
 Contract: success → ``list[dict]``, failure → ``{"error": ...}``.
@@ -26,7 +26,7 @@ def fetch(provider_id: str, timeout: float) -> Any:
     try:
         import boto3
     except ImportError:
-        return {"error": "boto3 not installed (pip install boto3)"}
+        return {"error": "optional Bedrock provider unavailable"}
     try:
         client = boto3.client("bedrock")
         resp = client.list_foundation_models()

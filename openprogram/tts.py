@@ -212,8 +212,7 @@ def _edge_tts(text: str, cfg: dict[str, Any]) -> str | None:
     try:
         import edge_tts  # type: ignore
     except ImportError:
-        print("[tts] `edge-tts` not installed. Install with: "
-              "pip install edge-tts")
+        print("[tts] the optional Edge TTS backend is unavailable in this runtime")
         return None
     import asyncio
 
