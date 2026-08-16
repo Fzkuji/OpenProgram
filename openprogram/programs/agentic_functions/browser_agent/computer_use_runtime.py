@@ -349,10 +349,25 @@ class ComputerUseSessionRegistry:
                     result = {"ok": True, "closed": True}
                 else:
                     return {"ok": False, "reason_code": "invalid_command"}
-            except Exception:
+            except Exception as exc:
                 if command == "observe" and not session.closing:
                     self._cleanup_session(session, suppress_errors=True)
-                raise
+                    raise
+                if command != "act":
+                    raise
+                controller = session.controller
+                invalidate = getattr(controller, "invalidate_external_frame", None)
+                if callable(invalidate):
+                    with suppress(Exception):
+                        invalidate()
+                result = {
+                    "ok": False,
+                    "reason_code": (
+                        "timeout" if isinstance(exc, TimeoutError)
+                        else "backend_action_failed"
+                    ),
+                    "observe_required": True,
+                }
 
             if created_session:
                 frame_id = (
