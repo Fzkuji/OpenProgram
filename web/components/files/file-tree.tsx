@@ -118,10 +118,11 @@ async function copyText(value: string): Promise<void> {
   document.body.removeChild(ta);
 }
 
-/* The folder glyph is the disclosure control. Each nested level adds
-   one 16px tree rail; root labels start at x=28. */
+/* The folder glyph is the disclosure control. Root rows reuse the
+   toolbar's 16px inset; each nested level adds one 16px tree rail. */
 const INDENT = 16;
-const TREE_LABEL_OFFSET = 28;
+const TREE_BASE_PAD = 16;
+const TREE_LABEL_OFFSET = 44;
 
 /** Extension bucket → icon + colour (existing accent tokens only). */
 const ICON_BUCKETS: [Set<string>, typeof File, string | undefined][] = [
@@ -525,7 +526,7 @@ export function FileTree({
         <div className={styles.treeNode}>
           <div
             className={styles.treeRow}
-            style={{ paddingLeft: depth * INDENT }}
+            style={{ paddingLeft: TREE_BASE_PAD + depth * INDENT }}
           >
             {creating.kind === "dir" ? (
               <Folder size={14} className={styles.treeIconFolder} />
@@ -570,7 +571,7 @@ export function FileTree({
           <div key={full} className={styles.treeNode}>
             <div
               className={`${styles.treeRow} ${DIM_DIRS.has(e.name) ? styles.treeRowDim : ""} ${selectedCls}`}
-              style={{ paddingLeft: depth * INDENT }}
+              style={{ paddingLeft: TREE_BASE_PAD + depth * INDENT }}
               onClick={() => {
                 setSelected({ path: full, type: "dir" });
                 toggleDir(full);
@@ -599,7 +600,7 @@ export function FileTree({
               // own vertical segment and a short connector to its icon.
               <div
                 className={styles.treeKids}
-                style={{ "--guide-x": `${8 + depth * INDENT}px` } as React.CSSProperties}
+                style={{ "--guide-x": `${TREE_BASE_PAD + 8 + depth * INDENT}px` } as React.CSSProperties}
               >
                 {renderDir(full, depth + 1)}
               </div>
@@ -612,7 +613,7 @@ export function FileTree({
           <div
             data-tree-path={full}
             className={`${styles.treeRow} ${full === activePath ? styles.treeRowActive : ""} ${selectedCls}`}
-            style={{ paddingLeft: depth * INDENT }}
+            style={{ paddingLeft: TREE_BASE_PAD + depth * INDENT }}
             onClick={() => {
               setSelected({ path: full, type: "file" });
               openFile(full);
@@ -722,6 +723,7 @@ export function FileTree({
                   <div
                     key={path}
                     className={`${styles.treeRow} ${styles.treeRowDim}`}
+                    style={{ paddingLeft: TREE_BASE_PAD }}
                     onClick={() => toggleDir(path)}
                     onContextMenu={(ev) => onRowContextMenu(ev, path, "dir")}
                     title={path}
@@ -733,6 +735,7 @@ export function FileTree({
                   <div
                     key={path}
                     className={`${styles.treeRow} ${path === activePath ? styles.treeRowActive : ""}`}
+                    style={{ paddingLeft: TREE_BASE_PAD }}
                     onClick={() => openFile(path)}
                     onContextMenu={(ev) => onRowContextMenu(ev, path, "file")}
                     title={path}

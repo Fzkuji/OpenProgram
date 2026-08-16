@@ -94,23 +94,21 @@
     display: grid;
     grid-template-columns: 16px minmax(0, 1fr);
     align-items: center;
-    padding-right: 8px;
+    padding: 0 8px 0 16px;
     color: var(--muted);
     white-space: nowrap;
   }
   .tree-row .folder { width: 16px; display: grid; place-items: center; color: var(--folder); }
   .tree-row .label { min-width: 0; margin-left: 12px; overflow: hidden; text-overflow: ellipsis; }
   .tree-branch { position: relative; }
-  .tree-branch::before { content: ""; position: absolute; left: 8px; top: 26px; bottom: 13px; width: 1px; background: #55555e; }
-  .tree-child { position: relative; padding-left: 16px; }
-  .tree-child::before { content: ""; position: absolute; left: 8px; top: 13px; width: 9px; height: 1px; background: #55555e; }
+  .tree-branch::before { content: ""; position: absolute; left: 24px; top: 26px; bottom: 13px; width: 1px; background: #55555e; }
+  .tree-child { position: relative; padding-left: 32px; }
+  .tree-child::before { content: ""; position: absolute; left: 24px; top: 13px; width: 9px; height: 1px; background: #55555e; }
   .guides { position: absolute; inset: 0; pointer-events: none; opacity: .8; }
   .guide { position: absolute; top: 0; bottom: 0; border-left: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); }
-  .guide.g8 { left: 8px; }
   .guide.g24 { left: 24px; }
   .guide.g44 { left: 44px; }
   .guide-label { position: absolute; top: 2px; padding: 1px 3px; color: var(--accent); background: #17171a; font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .guide-label.l8 { left: 9px; }
   .guide-label.l24 { left: 25px; }
   .guide-label.l44 { left: 45px; }
   .spec-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
@@ -172,8 +170,8 @@
           </div>
         </div>
         <div class="guides" aria-hidden="true">
-          <i class="guide g8"></i><i class="guide g24"></i>
-          <span class="guide-label l8">root 8</span><span class="guide-label l24">child 24</span>
+          <i class="guide g24"></i><i class="guide g44"></i>
+          <span class="guide-label l24">icon 24</span><span class="guide-label l44">label 44</span>
         </div>
       </div>
     </section>
@@ -200,9 +198,9 @@
 
   <h2>对齐规格</h2>
   <div class="spec-grid">
-    <div class="spec"><b>x = 8</b><span>根级目录图标中心，也是该目录展开后的父级竖线。</span></div>
-    <div class="spec"><b>x = 24</b><span>一级子项图标中心；每深入一层继续增加 16px。</span></div>
-    <div class="spec"><b>x = 28</b><span>根级名称起点；子项名称随层级按 16px 递增。</span></div>
+    <div class="spec"><b>x = 24</b><span>项目图标、根级目录图标和根级父线共用同一中轴线。</span></div>
+    <div class="spec"><b>x = 40</b><span>一级子项图标中心；每深入一层继续增加 16px。</span></div>
+    <div class="spec"><b>x = 44</b><span>项目名和根级名称共用同一起点；子项名称随层级按 16px 递增。</span></div>
     <div class="spec"><b>right = 16</b><span>项目操作按钮和展开搜索框的右内容边界。</span></div>
   </div>
 
@@ -223,7 +221,7 @@
   <h2>采用与排除</h2>
   <ul>
     <li>采用：项目工具栏继续复用顶部导航的水平内容结构；项目名保持较小、较粗的上下文标签样式。</li>
-    <li>采用：文件树使用图标与名称两列；根级图标占用原展开箭头的位置，减少左侧空白。</li>
+    <li>采用：文件树使用图标与名称两列；根级图标和名称分别与项目工具栏的图标和项目名对齐。</li>
     <li>采用：目录关闭时显示普通文件夹，展开时显示打开文件夹；整行继续作为展开点击区。</li>
     <li>采用：层级线只出现在已经展开的父子关系中，最后一个子项的竖线停在该行中点。</li>
     <li>采用：项目行继续使用底部分隔线，不增加卡片背景、阴影或第二个选中面。</li>
@@ -239,7 +237,7 @@
     <tbody>
       <tr><td>目录状态</td><td>文件树中不出现折叠箭头；目录图标的开合状态与实际展开状态一致。</td></tr>
       <tr><td>层级结构</td><td>展开目录的竖线从父图标中心延伸，所有直接子项均通过短横线连接。</td></tr>
-      <tr><td>水平空间</td><td>根级图标位于原箭头中心，根级名称从 28px 开始；每层增加 16px。</td></tr>
+      <tr><td>水平空间</td><td>根级图标中心为 24px，根级名称从 44px 开始，与项目工具栏一致；每层增加 16px。</td></tr>
       <tr><td>右侧操作</td><td>刷新按钮点击区右缘距离侧栏 16px；240px 下四个操作仍完整。</td></tr>
       <tr><td>搜索</td><td>默认隐藏；展开后左右边界与项目工具栏一致。</td></tr>
       <tr><td>主题</td><td>仅使用现有背景、文字、边框与 hover token，不写死产品色。</td></tr>
