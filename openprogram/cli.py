@@ -350,7 +350,7 @@ def build_parser() -> argparse.ArgumentParser:
             "    status          is the background service running? (PID, port, uptime)\n"
             "    stop            stop it (web UI stays up until you do)\n"
             "    restart         restart it (after changing code / config)\n"
-            "    upgrade         update the code, then restart only if it works\n"
+            "    upgrade         install the latest stable release, or update a source checkout\n"
             "\n"
             "  setup & config\n"
             "    setup           first-run setup wizard\n"
@@ -873,15 +873,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_mexp.add_argument("--out", default=None,
         help="Output path (default: ./openprogram-memory-<date>.tar.gz)")
 
-    # ---- update (auto-update from upstream) -------------------------------
+    # ---- update (compatibility alias for upgrade) -------------------------
     p_update = sub.add_parser("update",
-        help="Check for + apply updates from upstream. The worker also "
-             "runs this in the background at startup; this command is "
-             "the manual entry point.")
+        help="Compatibility alias for `openprogram upgrade`.")
     p_update.add_argument("--check", action="store_true",
         help="Only check; don't apply any update.")
     p_update.add_argument("--force", action="store_true",
-        help="Bypass the 6-hour throttle.")
+        help="Accepted for compatibility; explicit checks are never throttled.")
 
     # ---- worker (persistent backend process) ------------------------------
     p_worker = sub.add_parser("worker",
@@ -919,30 +917,34 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ---- upgrade ----------------------------------------------------------
     p_upgrade = sub.add_parser("upgrade",
-        help="Update to the latest code through a gated step chain "
-             "(preflight, build, cold-start probe, restart, verify). "
-             "Use this instead of `restart` after pulling code.")
+        help="Install the latest complete stable Release. In a source checkout, "
+             "run the gated Git/build/probe/restart pipeline instead.")
     upgrade_sub = p_upgrade.add_subparsers(dest="upgrade_verb", metavar="verb")
     p_upgrade_status = upgrade_sub.add_parser("status",
-        help="Show the channel, current sha, target sha, and whether an "
-             "update is available. Read-only.")
+        help="Show current/target version or SHA and whether an update is "
+             "available. Read-only; source checkouts persist an explicit "
+             "--channel.")
     # Repeated on the subparser so both `upgrade --json status` and the
     # natural `upgrade status --json` work.
     p_upgrade_status.add_argument("--json", action="store_true",
         help="Emit JSON")
     p_upgrade_status.add_argument("--channel", metavar="NAME",
-        help="Report against this channel instead of the configured one.")
+        help="For a source checkout, report against and persist this channel "
+             "instead of the configured one.")
     p_upgrade.add_argument("--channel", metavar="NAME",
-        help="Release line to follow (default: stable). Persisted as the "
-             "`update.channel` setting.")
+        help="Release line to follow (default: stable). Source checkouts "
+             "persist it as the `update.channel` setting.")
     p_upgrade.add_argument("--dry-run", action="store_true",
-        help="Print the planned steps and change nothing.")
+        help="Print planned steps without changing checkout, worker, or "
+             "upgrade state. A source checkout still persists an explicit "
+             "--channel.")
     p_upgrade.add_argument("--no-restart", action="store_true",
-        help="Stop after the probe — build and verify the new code without "
-             "restarting the running instance.")
+        help="Source checkout only: stop after the probe without restarting.")
     p_upgrade.add_argument("--yes", "-y", action="store_true",
-        help="Skip the confirmation a downgrade would otherwise require.")
+        help="Source checkout only: allow a confirmed Git downgrade.")
     p_upgrade.add_argument("--json", action="store_true", help="Emit JSON")
+    p_upgrade.add_argument("--check", action="store_true",
+        help="Only report whether a stable update is available.")
 
     # ---- channels ---------------------------------------------------------
     p_channels = sub.add_parser("channels",
@@ -1713,32 +1715,8 @@ def main():
         _need_subcommand(args._cmd_parser)
 
     if args.command == "update":
-        from openprogram.updater import (
-            apply_update, check_for_update, detect_install_method, is_disabled,
-        )
-        if is_disabled() and not args.force:
-            print("auto-update disabled by OPENPROGRAM_NO_AUTO_UPDATE.")
-            print("Use `openprogram update --force` to override.")
-            sys.exit(0)
-        method = detect_install_method()
-        info = check_for_update(force=args.force)
-        if info is None:
-            print(f"No update path for install method: {method.value}.")
-            sys.exit(0)
-        if not info.available:
-            print(f"openprogram {info.current} ({method.value}): {info.summary}.")
-            sys.exit(0)
-        print(f"update available: {info.current} → {info.target} ({info.summary})")
-        if args.check:
-            sys.exit(0)
-        ok, msg = apply_update(info)
-        if ok:
-            print(f"updated to {info.target}.")
-            print("Restart the worker so the new code takes effect:")
-            print("  openprogram worker restart")
-            sys.exit(0)
-        print(f"update failed: {msg}")
-        sys.exit(1)
+        from openprogram._cli_cmds.upgrade import _cmd_upgrade
+        sys.exit(_cmd_upgrade(args))
 
     # Top-level aliases for the background service — no "worker" noun.
     if args.command == "stop":

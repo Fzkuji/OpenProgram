@@ -8,7 +8,9 @@ The maintained source remains `desktop/build/icon.svg`. The existing icon build 
 
 ## Approved Appearance
 
-- Preserve the existing macOS squircle silhouette and transparent pixels outside it.
+- Keep a centered macOS squircle and transparent pixels outside it. Use a 72px
+  inset on every side so the rendered background fills about 86% of the canvas;
+  the previous 100px inset made the installed icon appear undersized.
 - Use a restrained deep-blue background: `#2C3C54` at the upper-left, `#202D43` through the middle, and `#101622` at the lower-right.
 - Add only low-opacity light across the top and left portions of the background. Do not add a central glow, a concentrated corner glow, or a strong directional brightness change.
 - Use a `268px` outer-ring radius and `44px` stroke. Keep the ring separate from every node; the blue node and ring inner edge retain roughly `21px` of clear space.

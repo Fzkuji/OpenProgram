@@ -3,6 +3,105 @@
 This engineering record is intentionally separate from the authoritative HTML design.
 It tracks the bounded implementation, verification, and review evidence for the current distribution work.
 
+Formal release update architecture, implementation status, verification evidence,
+and release-visible acceptance are maintained together in
+`docs/reference/design/distribution/automatic-updates.html`. They are not
+duplicated in this historical distribution ledger.
+
+## Local canonical App and Apple icon batch
+
+- Base commit: `9477273e`.
+- Public entry: `cd desktop && npm run dist` builds one complete temporary
+  `OpenProgram.app`, verifies it, and replaces only
+  `/Applications/OpenProgram.app`.
+- Icon contract: `desktop/build/icon.svg` is the deterministic 1024 x 1024
+  source for the legacy ICNS consumed by Electron on the supported macOS 15
+  build host. Its visible body uses the 100...923 template bounds and a 185 px
+  corner radius, with
+  transparent canvas corners and a restrained lower shadow, matching the
+  apparent 824 x 824 footprint of current installed macOS Apps. The brand ring
+  and three nodes remain unchanged. A future Icon Composer `.icon` migration
+  requires a full Xcode toolchain with `actool`; a square unmasked layer must
+  not be passed directly through the current legacy ICNS path.
+- Transaction contract: a failed activation never deletes the old App's only
+  recoverable copy. A genuine launchd unload failure stops before App mutation;
+  an unloaded stale plist can be replaced. A failure after Launch Services
+  registration restores and re-registers the previous canonical App without
+  replacing the original installation error. The assembled App passes the existing
+  complete packaged-runtime smoke before installation.
+- Concurrency contract: packaging uses one stable per-user lock across
+  worktrees, and installation uses an atomic lock in the target Applications
+  directory for the full transaction. A competing installer fails before App
+  or service mutation and cannot create a nested bundle.
+- Cleanup boundary: packaging removes its random App directory, staged runtime,
+  Python wheel build, generated Web build/output, copied Web frontend, and lock.
+  Installed App data, source files, package dependencies, and user state are not
+  removed.
+- Production files: `desktop/build/icon.svg`, generated icon assets,
+  `desktop/scripts/check-icon.sh`, `desktop/scripts/package-and-install-app.sh`,
+  `desktop/scripts/install-app.sh`, and
+  `openprogram/worker/services/launchd.py`.
+- Acceptance: the icon gate requires a 1024 x 1024 source, transparent corners,
+  the 824 x 824 opaque body bounds, a 256 px raster contour and solid-area
+  profile aligned with built-in macOS Apps, all ten legacy representations, and
+  an ICNS round trip; transaction fault injection preserves `previous.app`; launchd tests
+  cover loaded, stale, and unload-failure states; a corrupt assembled runtime is
+  rejected before installation. The runtime verifier also requires the installed
+  OpenProgram package metadata to equal the runtime manifest version. After
+  reviews, one real `npm run dist` replaces
+  the installed App, Launch Services is refreshed, and Finder/Launchpad output is
+  inspected.
+- Exclusions: no Developer ID signing, notarization, Windows package, new icon
+  dependency, second installed App, or generated-image model.
+- Gate manifest: focused distribution tests, Desktop checks, icon generation and
+  round-trip check, packaged-runtime smoke, documentation build/link check,
+  Ruff, shell syntax, diff check, independent specification review, and fresh
+  independent quality review.
+- Installed acceptance (2026-08-16): one complete `npm run dist` build passed
+  the runtime and packaged-App smokes, then atomically replaced
+  `/Applications/OpenProgram.app`. The installed bundle reports version 0.6.6
+  and identifier `ai.openprogram.desktop`; the runtime manifest, CLI version,
+  and installed Python distribution metadata all report 0.6.6, and its ICNS
+  SHA-256 matches the generated source asset. The default worker runs the bundle's CPython 3.12.10
+  and `/healthz` reports `ok`. Launch Services reports the canonical 0.6.6 App,
+  the Launchpad database contains its application item, and the visible Dock
+  icon has the same footprint and corner profile as adjacent macOS Apps.
+- Cleanup acceptance: only `/Applications/OpenProgram.app` remains; the random
+  package directory, staged runtime, Python wheel build, Web `.next`/`out`, and
+  copied frontend are absent after installation.
+- Status: implemented, independently reviewed, installed, and visually accepted.
+
+## Release gate repair for v0.6.1
+
+- Removed four unreferenced legacy Channel modules after the implementations had moved under `openprogram/channels/implementations/`; the runtime HTTP inventory now scans only active Channel code.
+- Renamed the Research writer's dropped `context` parameter to the runtime-supported `project_context` field.
+- Recorded Browser Agent as an explicitly deferred internal tool loop without changing its current behavior.
+- Local acceptance: the previously failing four tests pass; affected tests report 461 passed; the full non-integration suite reports 5274 passed, 11 skipped, and 1 expected failure. Desktop, Web, release-script, runtime-HTTP, Ruff, and documentation gates pass.
+- Windows native packaging remains deferred for a later release decision. This repair does not add a Windows artifact or introduce constraints that prevent a later implementation.
+
+### Native release result and v0.6.2 correction
+
+- Tag `v0.6.1` remained immutable after release run `31820999574` failed while resolving the complete macOS x86_64 runtime. No GitHub Release was published from that tag.
+- Root cause: `semble 0.2.0` constrained `tree-sitter-language-pack` below 1.8, and the locked 1.6.2 package published no macOS x86_64 wheel.
+- Correction: require `semble>=0.5.3`, whose grammar dependency is `semble-grammars`; the locked grammar package publishes native wheels for macOS x86_64/arm64 and Linux x86_64/arm64 while preserving the search capability.
+- Regression gate: resolve the complete locked product requirements for CPython 3.12 on macOS x86_64 and assert the locked grammar artifact includes that platform. The release retry uses the higher patch version `v0.6.2`.
+- Tag `v0.6.2` remained immutable after run `31822787529` passed the search dependency step but found that `torch 2.13.0` no longer publishes macOS x86_64 wheels. No GitHub Release was published from that tag.
+- The `v0.6.3` retry uses the last upstream macOS x86_64-compatible pair, `torch 2.2.2` and `torchvision 0.17.2`, together with `numpy 1.26.4` for NumPy ABI compatibility. All four release targets must resolve this same GUI stack; Linux continues to use the official CPU wheel index.
+- Tag `v0.6.3` remained immutable after run `31823941178` showed that unconstrained GUI harness installation upgraded NumPy back to 2.x through the current OpenCV dependency, invalidating the Torch 2.2.2 NumPy ABI. No GitHub Release was published from that tag.
+- The `v0.6.4` retry pins `opencv-python 4.11.0.86` and applies one constraints file to every first-party Program installation so later dependency resolution cannot replace the verified NumPy, OpenCV, Torch, or Torchvision stack.
+- Tag `v0.6.4` remained immutable after run `31824996497` built and installed all four complete runtimes but exposed an architecture-name mismatch in the Intel macOS Desktop command: release archives use `x86_64`, while electron-builder accepts `x64`. No GitHub Release was published from that tag.
+- The `v0.6.5` retry keeps runtime artifact naming unchanged and maps the Intel Desktop builder argument to `x64`; a release-workflow regression test enforces the explicit mapping for both macOS architectures.
+- Tag `v0.6.5` remained immutable after run `31827207974` built both macOS Desktop artifacts but exposed that the packaged-runtime smoke script only parsed compact JSON while the runtime manifest is formatted JSON. All four complete runtime and CLI installer jobs passed; no GitHub Release was published from that tag.
+- The `v0.6.6` retry uses the same whitespace-tolerant manifest parser already used by runtime archiving and Desktop preparation, reports actionable failures, and adds a regression test for formatted manifests.
+
+### v0.6.6 formal release acceptance
+
+- Tag `v0.6.6` points to `d08486953e19cf168fd8aba0704fe968b2a7f3a8`; release run `31829278086` completed successfully without moving any earlier tag.
+- The stable GitHub Release was published at `https://github.com/Fzkuji/OpenProgram/releases/tag/v0.6.6` as a non-draft, non-prerelease release. It contains four complete runtime archives and checksums, unsigned macOS arm64/x64 DMG and ZIP artifacts and checksums, developer wheel/sdist artifacts, and `release-manifest.json`.
+- Native release acceptance passed for macOS arm64/x86_64 and Linux arm64/x86_64. Each runtime was assembled and archived on its native runner; all four CLI installer jobs verified checksum, extraction, complete-product capabilities, worker cold start, atomic activation, and launcher version. Both macOS Desktop jobs verified the same embedded runtime before uploading their artifacts.
+- Main CI run `31828655714` passed Python 3.11/3.12/3.13, Web, and documentation/example jobs. The documentation publication run `31828655717` also passed.
+- Post-release public-entry acceptance resolved `https://openprogram.io/install` through GitHub `latest` to `v0.6.6`, installed the macOS arm64 archive into an isolated state and launcher directory, reported `openprogram 0.6.6`, passed the installer's complete-runtime and `/healthz` probes, and passed `openprogram doctor`.
+
 ## Short public installer batch
 
 - Base commit: `c1886a3fdf7ba196c42ec9a2c19dca7fe86c12e7`.
@@ -13,7 +112,7 @@ It tracks the bounded implementation, verification, and review evidence for the 
 - Tests: execute the public root script with a fake `curl` for automatic latest-version resolution and explicit pinning, assert the tagged installer handoff, build the docs site, verify the assembled root file, and run the existing distribution release suite.
 - RED evidence: the two public-entry tests initially failed because the root bootstrap did not exist and the Pages workflow did not publish `/install`.
 - GREEN evidence: the distribution release file reports 25 passed; docs build reports 509 pages; landing check passes; link check reports 0 broken links; an assembled-site probe preserves `/docs/install/` and validates the root `/install` script.
-- Release-state evidence on 2026-08-15: GitHub `latest` resolves to `v0.6.0`, whose release has no assets and whose tag has no `scripts/install-release.sh`; `v0.6.1` has not been tagged. The bootstrap therefore fails without installing a reduced product until a complete release is published. This batch does not create or move a tag.
+- Pre-release evidence on 2026-08-15: GitHub `latest` initially resolved to `v0.6.0`, whose release had no assets and whose tag had no `scripts/install-release.sh`. The installer correctly failed instead of installing a reduced product. The `v0.6.6` formal release acceptance above supersedes that observed release state.
 
 ## Unified complete-product batch
 
@@ -23,7 +122,7 @@ It tracks the bounded implementation, verification, and review evidence for the 
 - Developer installations add editable sources, tests, diagnostics, local frontend builds, and replaceable OCR/browser backends. They do not define a smaller or different product edition.
 - Ordinary users install from GitHub Release artifacts. PyPI wheels remain internal build inputs and developer artifacts, not a product installation path.
 - macOS artifacts are explicitly unsigned DMG/ZIP files. Apple Developer ID signing and notarization are not release requirements. Linux publishes complete x86_64/arm64 CLI/server runtimes; no Linux Desktop artifact is published after the complete AppImage failed its packaging gate.
-- Windows-specific implementation, testing, packaging, and compatibility remain excluded. OS credential-store integration remains excluded.
+- Windows native packaging is deferred from this release, while the runtime/Desktop separation must preserve later implementation feasibility. OS credential-store integration remains excluded.
 
 ### Current-batch files
 
@@ -80,7 +179,7 @@ The platform runtime and public desktop artifact probes run on native release ru
 - Base commit: `717d4e176307e08cc4ae4facd3c484511684746c`.
 - Public behavior: released wheels serve prebuilt Web assets without Node.js; packaged Electron apps start an embedded CPython runtime; macOS builds DMG and ZIP artifacts; Linux builds AppImage artifacts; release CI verifies versions and checksums.
 - Product documentation describes only behavior whose acceptance checks pass.
-- Windows-specific implementation, testing, packaging, and compatibility remain excluded.
+- Windows native packaging was not implemented in this historical batch; it remains a deferred product decision rather than a rejected direction.
 - OS credential-store integration remains excluded.
 
 ### Prior-batch files
@@ -119,7 +218,7 @@ Platform artifact builds run in the release workflow because a macOS host cannot
 - Linux x86_64 acceptance: build the AppImage on a native x86_64 runner, execute its public entry under Xvfb, let Electron start the embedded worker, verify `/healthz`, `/chat`, immutable Program behavior, and matching freedesktop filename/`StartupWMClass` metadata.
 - Linux CLI acceptance: on native x86_64 and arm64 runners, install the release wheel with the pinned uv and managed CPython, cold-start the worker before switching `current`, and verify the installed launcher version.
 - Pre-release execution: the manually dispatched Linux smoke workflow requires no Apple signing or PyPI credentials and uploads the verified wheel and AppImage only as CI artifacts. It does not create a stable release.
-- Exclusions remain unchanged: no Linux arm64 desktop artifact, distro-native deb/rpm packages, Windows implementation, or OS credential-store integration.
+- This historical batch did not add Linux arm64 desktop artifacts, distro-native deb/rpm packages, Windows implementation, or OS credential-store integration. Windows remains deferred for a later product decision.
 
 ### Prior-batch ledger
 

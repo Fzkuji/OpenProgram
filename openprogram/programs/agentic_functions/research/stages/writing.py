@@ -20,7 +20,7 @@ from openprogram.agentic_programming import agentic_function, llm
 # ---------------------------------------------------------------------------
 
 @agentic_function(render_range={"depth": 0, "siblings": 0})
-def write_section(section: str, context: str) -> str:
+def write_section(section: str, project_context: str) -> str:
     """Write one section of an academic paper in LaTeX.
 
     Write at the level expected by a top venue (NeurIPS/ICML/ICLR).
@@ -43,7 +43,7 @@ def write_section(section: str, context: str) -> str:
     return llm([
         {"type": "text", "text": (
             f"Section to write: {section}\n\n"
-            f"Project context:\n{context}"
+            f"Project context:\n{project_context}"
         )},
     ])
 

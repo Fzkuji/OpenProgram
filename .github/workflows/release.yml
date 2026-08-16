@@ -102,10 +102,12 @@ jobs:
             platform: mac
             runtime_platform: macos
             arch: arm64
+            builder_arch: arm64
           - runner: macos-15-intel
             platform: mac
             runtime_platform: macos
             arch: x86_64
+            builder_arch: x64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -136,7 +138,7 @@ jobs:
         run: |
           npm run icon:build
           npm run icon:check
-          npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
+          npx electron-builder --mac dmg zip --${{ matrix.builder_arch }} --publish never
           for artifact in dist/*.dmg dist/*.zip; do
             extension="${artifact##*.}"
             mv "$artifact" "${artifact%.*}-unsigned.$extension"
@@ -208,7 +210,43 @@ jobs:
             --output release-artifacts/release-manifest.json
       - name: Publish GitHub Release
         run: |
+          notes_file=".github/release-notes/$GITHUB_REF_NAME.md"
+          release_version="${GITHUB_REF_NAME#v}"
+          test -s "$notes_file" || {
+            echo "missing release notes: $notes_file" >&2
+            exit 1
+          }
           mapfile -d '' files < <(find release-artifacts -type f -print0)
-          gh release create "$GITHUB_REF_NAME" "${files[@]}" --verify-tag --generate-notes
+          gh release create "$GITHUB_REF_NAME" "${files[@]}" \
+            --verify-tag \
+            --title "OpenProgram $release_version Release" \
+            --notes-file "$notes_file"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Verify public latest Release entry
+        run: |
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest"
+          for attempt in $(seq 1 12); do
+            if curl --disable --proto '=https' --tlsv1.2 -fsS \
+              --connect-timeout 5 --max-time 15 --max-filesize 2097152 \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header 'Accept: application/vnd.github+json' \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              --header 'User-Agent: OpenProgram-release-gate' \
+              "$api" > latest.json; then
+              tag="$(jq -r '.tag_name // empty' latest.json)"
+              draft="$(jq -r '.draft' latest.json)"
+              prerelease="$(jq -r '.prerelease' latest.json)"
+              manifest_count="$(jq '[.assets[] | select(.name == "release-manifest.json")] | length' latest.json)"
+              if [ "$tag" = "$GITHUB_REF_NAME" ] && \
+                 [ "$draft" = false ] && [ "$prerelease" = false ] && \
+                 [ "$manifest_count" = 1 ]; then
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo "public latest Release did not expose the complete $GITHUB_REF_NAME release" >&2
+          exit 1
         env:
           GH_TOKEN: ${{ github.token }}

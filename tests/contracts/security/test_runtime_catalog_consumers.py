@@ -340,9 +340,7 @@ def test_plugin_marketplace_uses_configured_catalog_client(
     [
         ("plugin_pip", "plugins.autoupdate"),
         ("plugin_npm", "plugins.autoupdate"),
-        ("github_tag", "updater.github"),
-        ("github_asset", "updater.github"),
-        ("pip", "updater.pip"),
+        ("github_release", "updater.github"),
     ],
 )
 def test_update_metadata_uses_fixed_registry_client(managed_clients, call, consumer):
@@ -353,18 +351,10 @@ def test_update_metadata_uses_fixed_registry_client(managed_clients, call, consu
             autoupdate._check_pip("demo", "0")
         else:
             autoupdate._check_npm("demo", "0")
-    elif call.startswith("github"):
+    else:
         from openprogram.updater import github
 
-        if call == "github_tag":
-            github.latest_release_tag()
-        else:
-            github.asset_for("demo.zip")
-    else:
-        from openprogram.updater import pip
-
-        pip.latest_pypi_version()
-
+        github.latest_release()
     assert managed_clients[0] == ("client", consumer, None)
 
 
@@ -373,9 +363,7 @@ def test_update_metadata_uses_fixed_registry_client(managed_clients, call, consu
     [
         ("plugin_pip", "9.9.9"),
         ("plugin_npm", "9.9.9"),
-        ("github_tag", "9.9.9"),
-        ("github_asset", "https://downloads.example/demo.zip"),
-        ("pip", "9.9.9"),
+        ("github_release", "release-payload"),
     ],
 )
 @pytest.mark.parametrize(
@@ -394,6 +382,8 @@ def test_update_metadata_requires_json_mime(
         "info": {"version": "9.9.9"},
         "version": "9.9.9",
         "tag_name": "v9.9.9",
+        "draft": False,
+        "prerelease": False,
         "assets": [
             {
                 "name": "demo.zip",
@@ -434,20 +424,12 @@ def test_update_metadata_requires_json_mime(
             if call == "plugin_pip"
             else autoupdate._check_npm("demo", "0")
         )
-    elif call.startswith("github"):
+    else:
         from openprogram.updater import github
 
-        result = (
-            github.latest_release_tag()
-            if call == "github_tag"
-            else github.asset_for("demo.zip")
-        )
-    else:
-        from openprogram.updater import pip
-
-        result = pip.latest_pypi_version()
-
-    assert result == (expected if accepted else None)
+        result = github.latest_release()
+    wanted = payload if expected == "release-payload" else expected
+    assert result == (wanted if accepted else None)
 
 
 def test_model_listing_openai_compat_freezes_configured_origin(

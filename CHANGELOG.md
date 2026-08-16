@@ -116,7 +116,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Detail panel resize/collapse conflict
 - Codex default model showing as null
 
-## [0.3.0] - 2025-04-04
+## [0.3.0] - 2026-04-04
 
 ### Added
 - **Built-in providers**: `AnthropicRuntime`, `OpenAIRuntime`, `GeminiRuntime` in `openprogram/providers/`
@@ -143,14 +143,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - `meta.py` renamed to `meta_function.py` for clarity
 
-## [0.2.0] - 2025-04-03
+## [0.2.0] - 2026-04-01
 
 ### Added
 - **`create()` meta function**: Generate `@agentic_function` from natural language descriptions
 - **Safety sandbox**: Generated code runs with restricted builtins (no imports, no file I/O)
 - **`meta_demo.py`**: Example showing `create()` usage
 
-## [0.1.0] - 2025-04-03
+## [0.1.0] - 2026-03-31
 
 ### Added
 - **`@agentic_function` decorator**: Auto-records execution into Context tree

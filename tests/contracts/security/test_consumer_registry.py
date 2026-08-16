@@ -37,7 +37,6 @@ EXPECTED_CONSUMERS = {
     "plugins.marketplace",
     "plugins.autoupdate",
     "updater.github",
-    "updater.pip",
     "provider.fixed_api",
     "provider.configured_api",
     "provider.oauth.fixed",
@@ -104,7 +103,6 @@ EXPECTED_FIXED_ORIGINS = {
     ),
     "plugins.autoupdate": frozenset({"https://pypi.org", "https://registry.npmjs.org"}),
     "updater.github": frozenset({"https://api.github.com"}),
-    "updater.pip": frozenset({"https://pypi.org"}),
     "provider.fixed_api": frozenset(
         {
             "https://ai-gateway.vercel.sh",

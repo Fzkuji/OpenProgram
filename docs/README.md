@@ -42,7 +42,7 @@
 
 ## What makes it different
 
-OpenProgram supports macOS and Linux release installations, multiple providers, and terminal, browser, and chat interfaces. Windows and mobile devices can only act as browser clients to a supported remote host. The harness itself provides **three mechanisms for building agent programs.**
+The current OpenProgram release supports macOS and Linux installations, multiple providers, and terminal, browser, and chat interfaces. Windows native packaging is deferred for a later release decision; Windows and mobile devices can currently use the browser client against a supported remote host. The harness itself provides **three mechanisms for building agent programs.**
 
 ### ① DAG Context — for native multi-agent systems
 
