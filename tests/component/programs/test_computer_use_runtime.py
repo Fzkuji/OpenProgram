@@ -865,6 +865,68 @@ def test_list_pages_returns_group_aware_snapshot_with_page_tokens():
     }
 
 
+def test_closing_one_page_session_keeps_sibling_page_binding_alive(monkeypatch):
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSessionRegistry,
+    )
+    from openprogram.webui.ws_actions import webtab
+
+    owner = object()
+    binding_1 = webtab.register_binding(owner, "window-1", "tab-1", "target-1")
+    binding_2 = webtab.register_binding(owner, "window-1", "tab-2", "target-2")
+    monkeypatch.setattr(webtab, "request_on_ws", lambda _ws, command, _timeout=5.0: {
+        "ok": True,
+        "window_id": "window-1",
+        "tab_id": command["tab_id"],
+        "target_id": "target-1" if command["tab_id"] == "tab-1" else "target-2",
+    })
+    registry = ComputerUseSessionRegistry(
+        adapters={name: _Adapter(name) for name in (
+            "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
+        )},
+    )
+    context = {
+        "context_id": "ctx-pages",
+        "surfaces": [
+            {
+                "surface_key": "p1", "aliases": ["p1"],
+                "binding_id": binding_1, "tab_id": "tab-1",
+                "page_key": webtab.binding_page_key(binding_1),
+                **webtab.binding_revisions(binding_1),
+            },
+            {
+                "surface_key": "p2", "aliases": ["p2"],
+                "binding_id": binding_2, "tab_id": "tab-2",
+                "page_key": webtab.binding_page_key(binding_2),
+                **webtab.binding_revisions(binding_2),
+            },
+        ],
+    }
+    listed = registry.list_pages(context=context, owner_id="owner-1")
+    first = registry.execute(
+        command="observe", backend="open_claude_chrome", owner_id="owner-1",
+        page_context_token=listed["pages"][0]["page_context_token"],
+    )
+    second = registry.execute(
+        command="observe", backend="open_claude_chrome", owner_id="owner-1",
+        page_context_token=listed["pages"][1]["page_context_token"],
+    )
+
+    registry.execute(
+        command="close", computer_session_id=first["computer_session_id"],
+        owner_id="owner-1",
+    )
+    acted = registry.execute(
+        command="act", computer_session_id=second["computer_session_id"],
+        owner_id="owner-1", arguments={"action": "click"},
+    )
+
+    assert acted["ok"] is True
+    assert webtab.binding_revisions(binding_1) == {}
+    assert webtab.binding_revisions(binding_2)
+    registry.release_owner("owner-1")
+
+
 def test_failed_first_observe_releases_session_and_page_context():
     from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
         ComputerUseSessionRegistry,

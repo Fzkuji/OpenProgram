@@ -1631,6 +1631,34 @@ assert.ok(
   "a split ratio change advances the inventory revision",
 );
 assert.equal(resizedPageInventory.tab_entries[2].split.ratio, 0.6);
+let releaseOldInventory;
+const oldInventoryGate = new Promise((resolve) => { releaseOldInventory = resolve; });
+let blockOldInventory = true;
+const concurrentBridge = {
+  ...inventoryBridge,
+  webTab: {
+    ...inventoryBridge.webTab,
+    inspect: async (id) => {
+      if (blockOldInventory) await oldInventoryGate;
+      return inventoryBridge.webTab.inspect(id);
+    },
+  },
+};
+useCenterTabs.setState({ splitRatio: 0.55 });
+const oldInventoryPromise = browserPageInventory(concurrentBridge);
+await Promise.resolve();
+blockOldInventory = false;
+useCenterTabs.setState({ splitRatio: 0.65 });
+const newConcurrentInventory = await browserPageInventory(concurrentBridge);
+releaseOldInventory();
+const oldConcurrentInventory = await oldInventoryPromise;
+assert.equal(oldConcurrentInventory.tab_entries[2].split.ratio, 0.55);
+assert.equal(newConcurrentInventory.tab_entries[2].split.ratio, 0.65);
+assert.ok(
+  oldConcurrentInventory.inventory_revision
+    < newConcurrentInventory.inventory_revision,
+  "an older blocked snapshot must keep an older inventory revision",
+);
 useCenterTabs.getState().moveGroupMember("g3", "w:bilibili", 1);
 const reorderedPageInventory = await browserPageInventory(inventoryBridge);
 assert.deepEqual(

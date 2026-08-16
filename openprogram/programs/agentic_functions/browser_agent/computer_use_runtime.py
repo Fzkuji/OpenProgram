@@ -181,6 +181,16 @@ class ComputerUseSessionRegistry:
                     continue
                 token = "pct_" + uuid.uuid4().hex
                 binding_id = str(item["binding_id"])
+                surface_key = str(item.get("surface_key") or "")
+                capability_context = {
+                    "context_id": str(context.get("context_id") or ""),
+                    "primary_surface_key": surface_key,
+                    "alias_map": {
+                        str(alias): surface_key
+                        for alias in item.get("aliases") or []
+                    },
+                    "surfaces": [copy.deepcopy(item)],
+                }
                 self._page_capabilities[token] = {
                     "owner_id": owner_id,
                     "binding_id": binding_id,
@@ -189,7 +199,7 @@ class ComputerUseSessionRegistry:
                         or self._page_key_resolver(binding_id)
                         or binding_id
                     ),
-                    "context": context,
+                    "context": capability_context,
                     "page_revision": int(item.get("page_revision") or 0),
                     "access_revision": int(item.get("access_revision") or 0),
                     "geometry_revision": int(item.get("geometry_revision") or 0),

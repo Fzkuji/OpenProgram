@@ -840,6 +840,7 @@ export async function browserPageInventory(
       tabId, current.visible, current.geometryRevision,
     ]),
   });
+  const inventoryRevision = browserInventoryRevision(windowId, layoutFingerprint);
   const pages = await Promise.all(tabs
     .filter((tab) => tab.kind === "web")
     .map(async (tab): Promise<BrowserPageInventoryItem | null> => {
@@ -925,7 +926,7 @@ export async function browserPageInventory(
     : state.activeId ? `tab:${state.activeId}` : "";
   return {
     window_id: windowId,
-    inventory_revision: browserInventoryRevision(windowId, layoutFingerprint),
+    inventory_revision: inventoryRevision,
     active_tab_entry_id: tabEntries.some((entry) => entry.id === activeTabEntryId)
       ? activeTabEntryId
       : "",
