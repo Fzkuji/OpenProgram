@@ -152,11 +152,11 @@
     <header>
       <div class="eyebrow">OpenProgram · Browser architecture specification</div>
       <h1>Chromium 浏览器扩展</h1>
-      <p class="lede">OpenProgram 在桌面 App 的 <code>persist:webtabs</code> session 中加载受信任的 unpacked Chromium extension。Chrome 与 Edge 使用同一扩展包模型；OpenProgram 只承诺 Electron 已实现的 API 子集，不宣称兼容 Chrome Web Store 或 Edge Add-ons 中的任意扩展。</p>
+      <p class="lede">用户可以在 OpenProgram 内置浏览器中打开 Edge Add-ons 或 Chrome Web Store，在扩展详情页点击 OpenProgram 提供的安装操作，确认权限后自动下载、校验、解包并启用。OpenProgram 只承诺 Electron 已实现的 API 子集，不宣称商店中的任意扩展都能正常工作。</p>
       <div class="meta">
         <span class="pill"><span class="dot"></span>设计完成 · 尚未实现</span>
         <span class="pill">Desktop only</span>
-        <span class="pill">Unpacked extension</span>
+        <span class="pill">Store + local folder</span>
         <span class="pill">User approval required</span>
       </div>
       <details class="mobile-toc">
@@ -170,8 +170,8 @@
     <section class="metrics" aria-label="扩展设计摘要">
       <div class="metric"><span class="metric-label">Runtime</span><span class="metric-value">Electron 37 · Extensions API</span></div>
       <div class="metric"><span class="metric-label">Session</span><span class="metric-value">共享 <code>persist:webtabs</code></span></div>
-      <div class="metric"><span class="metric-label">Install</span><span class="metric-value">文件夹 · Chrome/Edge 代码导入</span></div>
-      <div class="metric"><span class="metric-label">Excluded</span><span class="metric-value">CRX · Store · 自动更新</span></div>
+      <div class="metric"><span class="metric-label">Install</span><span class="metric-value">商店详情页 · 本地文件夹</span></div>
+      <div class="metric"><span class="metric-label">Default store</span><span class="metric-value">Edge Add-ons · Chrome 可选</span></div>
     </section>
 
     <section class="section" id="decision">
@@ -192,12 +192,12 @@
         </article>
         <article class="card">
           <span class="label">Reject</span>
-          <h3>完整 Chromium 分发</h3>
-          <p>自行维护 Chromium、商店安装、更新服务和完整 extension API 会改变桌面运行时与发布模型，不属于本功能范围。</p>
+          <h3>完整 Chromium 扩展平台</h3>
+          <p>商店下载只作为安装来源；OpenProgram 不复制 Chrome 的完整 extension API、账号同步、企业策略、商店支付或发布能力。</p>
           <span class="choice no">不采用</span>
         </article>
       </div>
-      <div class="notice">设计中的“支持 Chrome/Edge 插件”指支持其 Chromium extension 目录格式，并在安装时显示兼容性结果；不等于 OpenProgram 具备 Chrome 或 Edge 的完整扩展平台。</div>
+      <div class="notice">商店页面负责发现扩展，OpenProgram 负责安装。网页不能静默安装：用户必须点击 OpenProgram 的安装操作并确认权限。商店原生按钮不作为稳定接口；详情页识别失败时可粘贴当前商店链接到扩展管理页。</div>
     </section>
 
     <section class="section" id="contract">
@@ -207,15 +207,17 @@
         <table class="matrix">
           <thead><tr><th>能力</th><th>第一版</th><th>行为</th><th>原因</th></tr></thead>
           <tbody>
+            <tr><td>Edge Add-ons 详情页安装</td><td><span class="status yes">首选入口</span></td><td>识别正式详情页和扩展 ID，显示 OpenProgram 安装操作；确认权限后从 Microsoft 官方更新服务下载并安装。</td><td>作为默认商店入口，避免把 Chrome Web Store 的可达性作为安装前提。</td></tr>
+            <tr><td>Chrome Web Store 详情页安装</td><td><span class="status yes">可选入口</span></td><td>商店可访问时使用同一流程；无法访问时提示改用 Edge Add-ons 或本地目录，不代理商店网页。</td><td>Google 官方更新服务提供商店扩展包，但网页可达性不由 OpenProgram 保证。</td></tr>
             <tr><td>加载 unpacked extension 文件夹</td><td><span class="status yes">支持</span></td><td>main process 选择目录、复制到 App 管理目录、校验后加载。</td><td>Electron 的正式入口。</td></tr>
             <tr><td>Chrome / Edge 已安装扩展代码</td><td><span class="status partial">第二阶段</span></td><td>从用户选择的 browser profile 发现版本目录，复制代码后按同一流程安装。</td><td>两者采用 Chromium extension 格式；仍需处理 identity 与兼容性。</td></tr>
             <tr><td><code>content_scripts</code>、<code>chrome.scripting</code>、<code>storage.local</code>、<code>runtime</code>、<code>webRequest</code></td><td><span class="status yes">Electron 子集</span></td><td>按 Electron 实际 API 提供；<code>tabs</code> 只承诺官方列出的部分字段与方法。</td><td>Electron 官方支持清单。</td></tr>
             <tr><td>Manifest V3 background service worker / declarativeNetRequest</td><td><span class="status no">不兼容</span></td><td>manifest preflight 标记为不可用并保持禁用；不能把仅能加载 manifest 的结果报告为扩展可工作。</td><td>Electron 官方支持表只列出 Manifest V2 <code>background</code>，未列出 MV3 service worker 或 <code>declarativeNetRequest</code>。</td></tr>
             <tr><td>扩展管理页</td><td><span class="status yes">支持</span></td><td>显示图标、名称、版本、来源、权限、兼容状态、启停、重新加载和移除。</td><td>OpenProgram 自己提供管理 UI。</td></tr>
-            <tr><td>Chrome Web Store / Edge Add-ons 直接安装</td><td><span class="status no">不支持</span></td><td>不拦截商店 Install 按钮，不下载商店 CRX。</td><td>Electron 不支持任意商店扩展或 packed <code>.crx</code>。</td></tr>
-            <tr><td><code>.crx</code> 文件</td><td><span class="status no">不支持</span></td><td>选择文件时直接说明只接受已解压目录。</td><td><code>loadExtension</code> 明确拒绝 packed extension。</td></tr>
+            <tr><td>商店扩展包</td><td><span class="status partial">安装传输格式</span></td><td>只从 Microsoft 或 Google 的固定官方更新服务下载；先验证来源、包签名、扩展 ID 和归档边界，再解包到 App 管理目录。Electron 只接收解包后的目录。</td><td>Electron 不能直接加载 packed <code>.crx</code>，所以下载、验证和解包属于 OpenProgram 安装器职责。</td></tr>
+            <tr><td>用户选择任意 <code>.crx</code> 文件</td><td><span class="status no">不支持</span></td><td>本地安装只接受已解压目录，不接受来源和签名关系无法确认的单独文件。</td><td>避免把商店受控下载扩大为任意软件包安装入口。</td></tr>
             <tr><td>Chrome 工具栏 action、动态 badge、完整 popup 行为</td><td><span class="status partial">暂不承诺</span></td><td>管理页显示静态扩展图标；不新增常驻 toolbar action。</td><td>Electron 官方支持表未承诺 <code>chrome.action</code> 或 <code>browserAction</code>。</td></tr>
-            <tr><td>自动更新、同步、企业策略、native messaging</td><td><span class="status no">不支持</span></td><td>更新使用重新安装；<code>storage.sync</code>、<code>storage.managed</code> 与 native host 不可用。</td><td>避免隐式代码替换与本机进程权限扩张。</td></tr>
+            <tr><td>后台自动更新、同步、企业策略、native messaging</td><td><span class="status no">不支持</span></td><td>第一版在管理页显示“检查更新”，仍需用户确认新增权限；<code>storage.sync</code>、<code>storage.managed</code> 与 native host 不可用。</td><td>商店安装不等于允许后台静默替换代码或扩大权限。</td></tr>
           </tbody>
         </table>
       </div>
@@ -223,20 +225,21 @@
       <ul>
         <li><a href="https://www.electronjs.org/docs/latest/api/extensions-api">Electron Extensions class</a>：只接受 unpacked 目录、仅 persistent session 可用、每次 App 启动都必须重新加载。</li>
         <li><a href="https://www.electronjs.org/docs/latest/api/extensions/">Electron Chrome Extension Support</a>：只支持 Chrome Extension API 子集，完整 Chrome 兼容不是 Electron 的目标。</li>
-        <li><a href="https://developer.chrome.com/docs/extensions/how-to/distribute">Chrome extension distribution</a>：unpacked extension 用于受信任的本地开发，面向普通用户的直接安装依赖 Chrome Web Store。</li>
+        <li><a href="https://developer.chrome.com/docs/extensions/how-to/distribute/install-extensions">Chrome alternative installation</a>：Chrome Web Store 的官方更新服务为 <code>https://clients2.google.com/service/update2/crx</code>，扩展 ID 来自商店详情页。</li>
+        <li><a href="https://learn.microsoft.com/en-us/deployedge/microsoft-edge-manage-extensions-faq">Microsoft Edge extensions FAQ</a>：Edge Add-ons 的官方更新服务为 <code>https://edge.microsoft.com/extensionwebstorebase/v1/crx</code>。</li>
         <li><a href="https://learn.microsoft.com/en-us/microsoft-edge/extensions/developer-guide/port-chrome-extension">Microsoft Edge porting guide</a>：Chrome 与 Edge 的 manifest 和 API 大体代码兼容，但仍需检查具体 API。</li>
       </ul>
     </section>
 
     <section class="section" id="experience">
       <div class="section-head"><span class="section-no">03</span><h2>入口和用户流程</h2></div>
-      <p class="section-intro">不修改现有 tab 外形、地址栏高度和书签栏。Browser <code>⋯</code> 增加 Extensions，打开单例 <code>b:extensions</code> 管理页；Browser Settings 只提供同一页面的文字链接，不复制管理功能。</p>
-      <div class="mock" role="img" aria-label="扩展管理页示意，包含安装按钮、两个扩展条目、兼容性状态、启停和移除动作">
-        <div class="mock-head"><strong>Extensions</strong><span class="mock-button">Add from folder</span></div>
+      <p class="section-intro">不修改现有 tab 外形、地址栏高度和书签栏。Browser <code>⋯</code> 增加 Extensions，打开单例 <code>b:extensions</code> 管理页。普通用户的主入口是 Browse Edge Add-ons；本地目录安装放在页面次要操作中。</p>
+      <div class="mock" role="img" aria-label="扩展管理页示意，包含浏览商店按钮、两个扩展条目、兼容性状态、启停和移除动作">
+        <div class="mock-head"><strong>Extensions</strong><span class="mock-button">Browse Edge Add-ons</span></div>
         <div class="mock-body">
           <div class="extension-row">
             <span class="ext-icon">A</span>
-            <span class="ext-copy"><strong>Article Cleaner</strong><span>1.4.0 · Unpacked folder · Compatible</span></span>
+            <span class="ext-copy"><strong>Article Cleaner</strong><span>1.4.0 · Edge Add-ons · Compatible</span></span>
             <span class="row-actions">Details&nbsp;&nbsp; Remove <span class="switch on" aria-hidden="true"></span></span>
           </div>
           <div class="extension-row">
@@ -248,12 +251,13 @@
         </div>
       </div>
       <div class="steps" aria-label="扩展安装流程">
-        <div class="step"><span class="step-num">1</span><div><strong>选择来源</strong><p>第一阶段只有 Add from folder。第二阶段增加 Import from Chrome or Edge，列出浏览器、profile 和扩展，不允许 renderer 提供任意磁盘路径。</p></div></div>
-        <div class="step"><span class="step-num">2</span><div><strong>复制并校验</strong><p>main process 解析 <code>manifest.json</code>、限定文件数量和总大小、拒绝符号链接逃逸，并复制到 App 管理目录。来源目录后续变化不直接影响已安装版本。</p></div></div>
-        <div class="step"><span class="step-num">3</span><div><strong>权限与兼容性确认</strong><p>显示 host permissions、content scripts、file access 和未支持的 manifest key。请求全部网站访问、存在未验证能力或来源为浏览器 profile 时，默认保持禁用；不通过 AST 或正则分析 JavaScript 来猜测 API 兼容性。</p></div></div>
-        <div class="step"><span class="step-num">4</span><div><strong>加载到浏览器 session</strong><p>用户启用后调用 <code>persist:webtabs</code> 的 <code>loadExtension</code>。启停对所有内置网页 tab 同时生效，不绑定某一个 tab 或窗口。</p></div></div>
-        <div class="step"><span class="step-num">5</span><div><strong>启动恢复与失败隔离</strong><p>每次 App 启动在首个 WebTab 导航前重新加载 enabled 项。单个扩展失败只更新该项状态，不阻止窗口和其他扩展启动。</p></div></div>
+        <div class="step"><span class="step-num">1</span><div><strong>进入商店</strong><p>用户从 Extensions 管理页打开 Edge Add-ons；Chrome Web Store 可访问时也可直接输入其网址。商店详情页被识别后，浏览器显示“Install in OpenProgram”。</p></div></div>
+        <div class="step"><span class="step-num">2</span><div><strong>点击安装</strong><p>用户点击 OpenProgram 安装操作。网页只能提交当前详情页身份，不能指定下载地址、磁盘路径或自动批准权限。识别失败时，用户可把当前详情页链接粘贴到管理页。</p></div></div>
+        <div class="step"><span class="step-num">3</span><div><strong>自动下载并校验</strong><p>main process 根据商店和扩展 ID 请求固定的官方更新服务，验证包签名、扩展 ID、文件数量、总大小与解包路径，再写入 App 管理目录。临时文件在成功、失败或取消后都清理。</p></div></div>
+        <div class="step"><span class="step-num">4</span><div><strong>确认权限与兼容性</strong><p>显示扩展名称、来源、host permissions、content scripts、file access 和 Electron 未支持的 manifest 能力。用户确认后才启用；明确不兼容的扩展保持禁用。</p></div></div>
+        <div class="step"><span class="step-num">5</span><div><strong>立即使用</strong><p>扩展加载到 <code>persist:webtabs</code>，对所有内置网页 tab 生效。App 重启时恢复已启用扩展；单个扩展失败不阻止浏览器启动。</p></div></div>
       </div>
+      <div class="notice">本地开发者仍可使用 Add from folder。Import from Chrome or Edge 继续作为第二阶段入口；这两项不会取代面向普通用户的商店安装流程。</div>
     </section>
 
     <section class="section" id="architecture">
@@ -262,15 +266,15 @@
       <div class="architecture">
         <svg viewBox="0 0 900 420" role="img" aria-labelledby="extension-arch-title extension-arch-desc" xmlns="http://www.w3.org/2000/svg">
           <title id="extension-arch-title">OpenProgram 浏览器扩展架构</title>
-          <desc id="extension-arch-desc">扩展来源经 main process 校验复制到管理目录，registry 保存配置，启动时加载进 persist webtabs session，作用于所有内置网页视图。renderer 只通过受限 IPC 管理扩展。</desc>
+          <desc id="extension-arch-desc">商店详情页只提供商店类型和扩展 ID，main process 从固定官方更新服务下载、验签、解包；本地目录和浏览器 profile 经同一校验流程复制到管理目录。registry 保存配置，启动时加载进 persist webtabs session，作用于所有内置网页视图。</desc>
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6f7481"/></marker>
             <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5d55d7"/></marker>
             <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3569a8"/></marker>
           </defs>
-          <rect x="20" y="42" width="180" height="68" rx="10" fill="#e8f0fa" stroke="#3569a8"/><text x="110" y="69" text-anchor="middle" font-family="ui-monospace" font-size="12">Unpacked folder</text><text x="110" y="89" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">Chrome / Edge code</text>
-          <rect x="20" y="180" width="180" height="68" rx="10" fill="#e8f0fa" stroke="#3569a8"/><text x="110" y="207" text-anchor="middle" font-family="ui-monospace" font-size="12">Browser profiles</text><text x="110" y="227" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">phase 2 · read only</text>
-          <rect x="270" y="92" width="190" height="112" rx="12" fill="#eceafd" stroke="#5d55d7"/><text x="365" y="122" text-anchor="middle" font-family="ui-monospace" font-size="12">browser-extension-manager.js</text><text x="365" y="146" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">validate · copy · permissions</text><text x="365" y="168" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">load · unload · status</text>
+          <rect x="20" y="42" width="180" height="68" rx="10" fill="#e8f0fa" stroke="#3569a8"/><text x="110" y="69" text-anchor="middle" font-family="ui-monospace" font-size="12">Official store package</text><text x="110" y="89" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">Edge / Chrome · signed CRX</text>
+          <rect x="20" y="180" width="180" height="68" rx="10" fill="#e8f0fa" stroke="#3569a8"/><text x="110" y="207" text-anchor="middle" font-family="ui-monospace" font-size="12">Local folder / profiles</text><text x="110" y="227" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">folder now · profiles phase 2</text>
+          <rect x="270" y="92" width="190" height="112" rx="12" fill="#eceafd" stroke="#5d55d7"/><text x="365" y="122" text-anchor="middle" font-family="ui-monospace" font-size="12">browser-extension-manager.js</text><text x="365" y="146" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">download · verify · unpack</text><text x="365" y="168" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">permissions · load · status</text>
           <rect x="530" y="42" width="170" height="68" rx="10" fill="#ffffff" stroke="#b9bfcc"/><text x="615" y="69" text-anchor="middle" font-family="ui-monospace" font-size="12">registry.json</text><text x="615" y="89" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">desired state · hashes</text>
           <rect x="530" y="180" width="170" height="68" rx="10" fill="#ffffff" stroke="#b9bfcc"/><text x="615" y="207" text-anchor="middle" font-family="ui-monospace" font-size="12">packages/&lt;id&gt;/&lt;ver&gt;</text><text x="615" y="227" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">App-managed copy</text>
           <rect x="742" y="104" width="140" height="82" rx="10" fill="#e6f1eb" stroke="#367b5a"/><text x="812" y="135" text-anchor="middle" font-family="ui-monospace" font-size="12">persist:webtabs</text><text x="812" y="157" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">Extensions API</text>
@@ -280,14 +284,14 @@
           <path d="M460 120H530" stroke="#5d55d7" stroke-width="1.8" marker-end="url(#arrow-accent)"/><path d="M460 174C492 174 500 214 530 214" fill="none" stroke="#5d55d7" stroke-width="1.8" marker-end="url(#arrow-accent)"/>
           <path d="M700 76C742 76 725 129 742 129" fill="none" stroke="#6f7481" stroke-width="1.6" marker-end="url(#arrow)"/><path d="M700 214C742 214 725 161 742 161" fill="none" stroke="#5d55d7" stroke-width="1.8" marker-end="url(#arrow-accent)"/>
           <path d="M812 186V310" stroke="#6f7481" stroke-width="1.6" marker-end="url(#arrow)"/><path d="M520 347H626" stroke="#5d55d7" stroke-width="1.8" marker-end="url(#arrow-accent)"/>
-          <text x="219" y="65" font-family="ui-monospace" font-size="10" fill="#3569a8">copy</text><text x="482" y="110" font-family="ui-monospace" font-size="10" fill="#5d55d7">write</text><text x="710" y="92" font-family="ui-monospace" font-size="10" fill="#646977">restore</text><text x="823" y="262" font-family="ui-monospace" font-size="10" fill="#646977">inject</text><text x="550" y="338" font-family="ui-monospace" font-size="10" fill="#5d55d7">IPC</text>
+          <text x="213" y="65" font-family="ui-monospace" font-size="10" fill="#3569a8">verify</text><text x="482" y="110" font-family="ui-monospace" font-size="10" fill="#5d55d7">write</text><text x="710" y="92" font-family="ui-monospace" font-size="10" fill="#646977">restore</text><text x="823" y="262" font-family="ui-monospace" font-size="10" fill="#646977">inject</text><text x="550" y="338" font-family="ui-monospace" font-size="10" fill="#5d55d7">IPC</text>
         </svg>
       </div>
       <div class="legend"><span>运行状态</span><span class="privileged">main process 特权操作</span><span class="source">外部只读来源</span></div>
       <h3>registry 最小字段</h3>
       <div class="code-grid">
         <article class="code-card"><strong>identity</strong><p><code>id</code>、<code>name</code>、<code>version</code>、<code>manifestHash</code>、<code>managedPath</code>。renderer 不接收原始来源路径。</p></article>
-        <article class="code-card"><strong>source</strong><p><code>folder</code> 或 <code>browser-profile</code>，以及非敏感的浏览器/profile 标签。扩展数据和浏览记录不进入 registry。</p></article>
+        <article class="code-card"><strong>source</strong><p><code>edge-addons</code>、<code>chrome-web-store</code>、<code>folder</code> 或 <code>browser-profile</code>。商店项只保存扩展 ID 和详情页；不保存任意下载 URL。</p></article>
         <article class="code-card"><strong>desired state</strong><p><code>enabled</code>、<code>allowFileAccess=false</code>、已批准的 manifest hash。manifest 改变后必须重新确认。</p></article>
         <article class="code-card"><strong>observed state</strong><p><code>loaded</code>、<code>loadErrorCode</code>、<code>manifestCompatibility</code>。进程启动后根据 Electron 实际结果刷新。</p></article>
       </div>
@@ -297,7 +301,8 @@
       <div class="section-head"><span class="section-no">05</span><h2>权限与信任边界</h2></div>
       <p class="section-intro">浏览器扩展可以读取或修改网页内容，因此安装、启用和权限扩张都必须是明确的用户操作。网页、Agent 和普通 renderer 不能静默完成这些操作。</p>
       <div class="boundary-grid">
-        <article class="boundary"><strong>安装来源</strong><p>只接受用户通过原生选择器确认的目录，或 main process 返回的 opaque browser/profile/extension id。拒绝 symlink 逃逸、超量文件、无效 manifest 和可写出管理根目录的路径。</p></article>
+        <article class="boundary"><strong>安装来源</strong><p>商店安装只接受 Edge Add-ons 与 Chrome Web Store 的正式详情页，并由 main process 根据扩展 ID 生成固定官方更新请求；网页和 renderer 不能传入下载 URL。目录安装只接受用户通过原生选择器确认的路径。</p></article>
+        <article class="boundary"><strong>软件包验证</strong><p>下载完成后验证 CRX3 签名、由公钥导出的扩展 ID 与详情页 ID 一致，再执行受限解包。拒绝重定向到非官方主机、超量文件、路径穿越、符号链接和无效 manifest。</p></article>
         <article class="boundary"><strong>权限确认</strong><p>将 <code>host_permissions</code>、<code>content_scripts.matches</code>、全部网站访问和 file access 转换为用户可读摘要。新权限或 manifest hash 变化会撤销旧批准。</p></article>
         <article class="boundary"><strong>session 隔离</strong><p>扩展只加载到 <code>persist:webtabs</code>。OpenProgram chat、Settings 和 Extensions manager 运行在默认 session，扩展不能注入这些页面。</p></article>
         <article class="boundary"><strong>本地文件</strong><p><code>allowFileAccess</code> 默认且第一版固定为 false。即使 WebTab 打开 <code>file://</code> 页面，扩展也不得因此获得本地文件读取权限。</p></article>
@@ -310,12 +315,13 @@
 
     <section class="section" id="implementation">
       <div class="section-head"><span class="section-no">06</span><h2>实施计划</h2></div>
-      <p class="section-intro">每个任务都从公共入口建立一个失败检查，完成后单独审查。第一阶段完成前不开始 Chrome/Edge profile 导入。</p>
-      <div class="task"><span class="task-tag">TASK 0 · SPIKE</span><div><h3>Electron 37 兼容性夹具</h3><p>使用最小 unpacked fixture 验证 <code>content_scripts</code>、<code>runtime</code>、<code>storage.local</code>、<code>scripting</code> 和 unload/reload；另一个 fixture 包含 <code>background.service_worker</code> 与 <code>chrome.action</code>，证明其限制状态不会被报告为兼容。</p><ul><li>入口：<code>node desktop/scripts/check-browser-extensions.js</code></li><li>不使用真实用户扩展或真实 Chrome profile。</li></ul></div></div>
+      <p class="section-intro">每个任务都从公共入口建立一个失败检查，完成后单独审查。商店安装属于第一阶段；Chrome/Edge profile 导入仍在其后。</p>
+      <div class="task"><span class="task-tag">TASK 0 · SPIKE</span><div><h3>Electron 37 与商店包夹具</h3><p>使用本地签名 CRX3 fixture 验证验签、ID 绑定、受限解包与 unpacked 加载；使用两个扩展夹具分别验证 Electron 已支持能力和明确不兼容能力。测试不请求真实商店，也不读取真实用户扩展。</p><ul><li>入口：<code>node desktop/scripts/check-browser-extensions.js</code></li><li>先确定最小 CRX3 验证与 ZIP 解包实现；若标准库和现有依赖无法正确完成，只增加一个受维护且可审计的依赖。</li></ul></div></div>
       <div class="task"><span class="task-tag">TASK 1 · RUNTIME</span><div><h3>registry、管理目录与 session 生命周期</h3><p>新增 <code>desktop/browser-extension-manager.js</code>，由 <code>desktop/main.js</code> 在首个 WebTab 导航前恢复 enabled 项。安装使用临时目录、完整校验和原子 rename；失败不阻止 App 启动。</p><ul><li>生产文件：<code>desktop/browser-extension-manager.js</code>、<code>desktop/main.js</code>、<code>desktop/package.json</code></li><li>验证：扩展只进入 <code>persist:webtabs</code>，重启恢复，disable/remove 不会再次恢复。</li></ul></div></div>
-      <div class="task"><span class="task-tag">TASK 2 · SURFACE</span><div><h3>IPC 与 Extensions manager</h3><p>preload 只暴露 list、chooseAndInstall、enable、reload、remove。Browser <code>⋯</code> 增加 Extensions；<code>BuiltinPage</code> 增加单例 <code>extensions</code>，管理页复用现有 built-in page 密度与按钮，不改 tab/toolbar/bookmarks CSS。</p><ul><li>生产文件：<code>desktop/preload.js</code>、<code>web/lib/desktop-bridge.ts</code>、<code>web/lib/state/center-tab-ids.ts</code>、<code>browser-controls.tsx</code>、<code>builtin-tab-pane.tsx</code> 及现有 tab label/icon 分支。</li><li>验证：键盘可操作、状态变更以 main 返回为准、旧桌面壳没有 API 时入口隐藏。</li></ul></div></div>
-      <div class="task"><span class="task-tag">TASK 3 · IMPORT</span><div><h3>Chrome / Edge 代码导入</h3><p>复用 <code>browser-profile-import.js</code> 的 browser/profile 发现和真实路径约束，新增扩展候选列表与复制入口。只读取用户选择的 profile；同一扩展只选择最高有效版本。</p><ul><li>导入前显示 identity 可能变化、数据不会迁移和 API 兼容性结果。</li><li>不直接从源浏览器目录加载，不修改源 profile。</li></ul></div></div>
-      <div class="task"><span class="task-tag">DEFERRED</span><div><h3>商店、CRX、自动更新与 action UI</h3><p>只有在 Electron 或独立兼容层提供可验证的签名、更新和 action API 后再设计。当前任务不预留 downloader、update daemon、badge service 或隐藏配置项。</p></div></div>
+      <div class="task"><span class="task-tag">TASK 2 · SURFACE</span><div><h3>IPC 与 Extensions manager</h3><p>preload 只暴露 list、openStore、installFromCurrentStorePage、installFromStoreUrl、chooseAndInstall、enable、reload、remove。Browser <code>⋯</code> 增加 Extensions；<code>BuiltinPage</code> 增加单例 <code>extensions</code>，管理页复用现有 built-in page 密度与按钮，不改 tab/toolbar/bookmarks CSS。</p><ul><li>生产文件：<code>desktop/preload.js</code>、<code>web/lib/desktop-bridge.ts</code>、<code>web/lib/state/center-tab-ids.ts</code>、<code>browser-controls.tsx</code>、<code>builtin-tab-pane.tsx</code> 及现有 tab label/icon 分支。</li><li>验证：键盘可操作、状态变更以 main 返回为准、旧桌面壳没有 API 时入口隐藏。</li></ul></div></div>
+      <div class="task"><span class="task-tag">TASK 3 · STORE</span><div><h3>Edge Add-ons 与 Chrome Web Store 安装</h3><p>详情页识别器只接受两个商店的已知 URL 格式，提取扩展 ID 后交给 main process；main process 使用固定官方更新服务下载，执行签名与 ID 校验、受限解包、manifest preflight 和权限确认。安装取消或失败不能改变已有版本。</p><ul><li>公共 RED：在真实 WebTab 打开 fixture 详情页后出现安装操作；任意 URL、跨商店 ID、签名错误、路径穿越、超时和取消都不能留下临时文件或 registry 项。</li><li>安装成功后当前和新建 WebTab 都能观察到 content script；重启后恢复。</li></ul></div></div>
+      <div class="task"><span class="task-tag">TASK 4 · IMPORT</span><div><h3>Chrome / Edge 代码导入</h3><p>复用 <code>browser-profile-import.js</code> 的 browser/profile 发现和真实路径约束，新增扩展候选列表与复制入口。只读取用户选择的 profile；同一扩展只选择最高有效版本。</p><ul><li>导入前显示 identity 可能变化、数据不会迁移和 API 兼容性结果。</li><li>不直接从源浏览器目录加载，不修改源 profile。</li></ul></div></div>
+      <div class="task"><span class="task-tag">DEFERRED</span><div><h3>后台自动更新与 action UI</h3><p>第一版只在管理页由用户触发检查更新；不增加 update daemon。常驻 toolbar action、动态 badge、popup、账号同步、企业策略和 native messaging 继续保持未支持。</p></div></div>
     </section>
 
     <section class="section" id="acceptance">
@@ -326,12 +332,15 @@
           <thead><tr><th>可观察结果</th><th>状态</th><th>证据要求</th></tr></thead>
           <tbody>
             <tr><td>所有原生 WebTab 共享 persistent <code>persist:webtabs</code> session。</td><td><span class="status yes">已实现</span></td><td><code>desktop/main.js</code> 的 <code>WebContentsView</code> 创建路径。</td></tr>
-            <tr><td>用户从目录安装兼容 fixture，确认权限后启用；现有和新建 WebTab 都执行 content script。</td><td><span class="status no">未实现</span></td><td>Desktop component check + 安装版 App 可见验收。</td></tr>
+            <tr><td>用户从 Edge Add-ons 详情页点击安装，确认权限后完成下载、校验、解包与启用；现有和新建 WebTab 都执行 content script。</td><td><span class="status no">未实现</span></td><td>签名 CRX3 fixture + Desktop component check + 安装版 App 可见验收。</td></tr>
+            <tr><td>Chrome Web Store 可访问时提供同一安装流程；不可访问时明确提示 Edge Add-ons 与本地目录入口。</td><td><span class="status no">未实现</span></td><td>在线可达/不可达两种导航结果检查，不要求代理 Google 网络。</td></tr>
+            <tr><td>网页或 renderer 提供任意下载 URL、错误商店 ID、无效签名或危险归档时安装被拒绝且无残留。</td><td><span class="status no">未实现</span></td><td>IPC trust-boundary 与 CRX3/归档失败路径检查。</td></tr>
+            <tr><td>用户仍可从本地解压目录安装兼容 fixture。</td><td><span class="status no">未实现</span></td><td>原生目录选择器 + Desktop component check。</td></tr>
             <tr><td>App 重启后 enabled 扩展在首个网页导航前恢复；单个失败不阻止窗口启动。</td><td><span class="status no">未实现</span></td><td>冷启动检查，断言加载顺序和失败隔离。</td></tr>
             <tr><td>disable、reload、remove 的 UI 与 Electron 实际状态一致，remove 后磁盘和 registry 都没有残留。</td><td><span class="status no">未实现</span></td><td>失败路径检查 + 安装版 App 操作记录。</td></tr>
             <tr><td>扩展不能注入 OpenProgram chat/Settings，也不能访问 <code>file://</code>。</td><td><span class="status no">未实现</span></td><td>default session 与 webtabs session 隔离检查。</td></tr>
             <tr><td>从 Chrome/Edge profile 导入只复制代码，不复制扩展数据、登录态或权限。</td><td><span class="status no">第二阶段</span></td><td>临时 profile fixture + 源目录只读与目标清理检查。</td></tr>
-            <tr><td>Chrome Web Store、Edge Add-ons 和 <code>.crx</code> 不显示为可用安装方式。</td><td><span class="status no">约束待实现</span></td><td>管理页和 IPC allowlist 检查。</td></tr>
+            <tr><td>用户不能选择任意 <code>.crx</code> 文件；商店 CRX 只作为受控下载的内部传输格式。</td><td><span class="status no">约束待实现</span></td><td>文件选择器类型、IPC allowlist 与下载来源检查。</td></tr>
           </tbody>
         </table>
       </div>

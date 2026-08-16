@@ -441,7 +441,7 @@
           <tr><td>来源损坏、浏览器缺失、临时进程超时和 Cookie 部分失败返回稳定错误码并保留原数据。</td><td><span class="status">已实现</span></td><td><code>browser-profile-import.js</code> 与 <code>browsing-history-store.js</code> self-check</td></tr>
           <tr><td>依赖 PTY 的全屏终端程序。</td><td><span class="status limit">当前限制</span></td><td>产品边界，不作为当前验收缺口。</td></tr>
           <tr><td>Passwords、自动填充、支付/地址数据和源浏览器接管。</td><td><span class="status out">明确排除</span></td><td><code>browser-profile-import.js</code> 的导入类型 allowlist。</td></tr>
-          <tr><td>Chromium 浏览器扩展的安装、权限确认、启停、移除与 Chrome/Edge 代码导入。</td><td><span class="status limit">已设计，未实现</span></td><td><a href="browser-extensions.html"><code>browser-extensions.html</code></a>；扩展不属于现有 profile data import。</td></tr>
+          <tr><td>从 Edge Add-ons、Chrome Web Store 或本地目录安装 Chromium 浏览器扩展，并进行权限确认、启停、移除与后续 Chrome/Edge 代码导入。</td><td><span class="status limit">已设计，未实现</span></td><td><a href="browser-extensions.html"><code>browser-extensions.html</code></a>；扩展不属于现有 profile data import。</td></tr>
         </tbody>
       </table>
       </div>

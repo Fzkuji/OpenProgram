@@ -8,7 +8,7 @@ Web UI surfaces — the surface system, indicator dots, attachment handling, cha
 - [`state-layer.md`](state-layer.md) — web state layer: one store instance per session, with genuinely shared data global
 - [`center-tabs-and-split-layout.html`](center-tabs-and-split-layout.html) — authoritative single-tab and composite split-tab lifecycle, rendering, persistence, and transfer design
 - [`built-in-browser.html`](built-in-browser.html) — built-in browser home, browser-profile import, compact History, and the four-entry new-pane launcher
-- [`browser-extensions.html`](browser-extensions.html) — Chromium extension runtime, compatibility boundaries, permission model, management surface, and staged Chrome/Edge code import
+- [`browser-extensions.html`](browser-extensions.html) — Store-page and local Chromium extension installation, compatibility boundaries, permission model, management surface, and staged Chrome/Edge code import
 - [`integrated-terminal.html`](integrated-terminal.html) — real PTY terminal and direct local Claude Code launcher
 - [`composer-local-attachment-paths.html`](composer-local-attachment-paths.html) — local attachment path preservation from the composer to model context
 - [`composer-responsive-controls.html`](composer-responsive-controls.html) — responsive composer controls and compact-state interaction contract
