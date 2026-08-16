@@ -119,8 +119,14 @@ function isExtensionStoreListing(url: string): boolean {
 function InstallExtensionButton({ bridge, tabId, url }: { bridge: DesktopBridge; tabId: string; url: string }) {
   const { text } = useTranslation();
   const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const requestGenerationRef = useRef(0);
+  const currentUrlRef = useRef(url);
+  currentUrlRef.current = url;
   const api = bridge.extensions;
-  useEffect(() => setState("idle"), [url]);
+  useEffect(() => {
+    requestGenerationRef.current += 1;
+    setState("idle");
+  }, [url]);
   if (!api || !isExtensionStoreListing(url)) return null;
   const label = state === "busy"
     ? text("Installing extension", "正在安装扩展程序")
@@ -138,8 +144,15 @@ function InstallExtensionButton({ bridge, tabId, url }: { bridge: DesktopBridge;
       className={styles.webToolbarBtn}
       disabled={state === "busy"}
       onClick={() => {
+        const requestGeneration = requestGenerationRef.current + 1;
+        requestGenerationRef.current = requestGeneration;
+        const requestUrl = url;
         setState("busy");
         void api.installCurrentPage(tabId).then((result) => {
+          if (
+            requestGenerationRef.current !== requestGeneration
+            || currentUrlRef.current !== requestUrl
+          ) return;
           setState(result.ok ? "done" : result.error === "cancelled" ? "idle" : "error");
           if (result.ok) {
             showToast(text(
@@ -147,7 +160,12 @@ function InstallExtensionButton({ bridge, tabId, url }: { bridge: DesktopBridge;
               "扩展程序已安装。重新加载此网页后生效。",
             ));
           }
-        }).catch(() => setState("error"));
+        }).catch(() => {
+          if (
+            requestGenerationRef.current === requestGeneration
+            && currentUrlRef.current === requestUrl
+          ) setState("error");
+        });
       }}
       title={label}
       aria-label={label}

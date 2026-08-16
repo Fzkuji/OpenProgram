@@ -642,6 +642,7 @@ function createBrowserExtensionManager(options) {
         const declaredSize = Number(response.headers?.get?.("content-length") || 0);
         if (declaredSize > MAX_CRX_BYTES) throw new Error("invalid_crx_size");
         const bytes = await readResponseBuffer(response);
+        clearTimeout(downloadTimer);
         const verified = parseAndVerifyCrx3(bytes, listing.extensionId);
         await extractArchive(verified.archive, path.join(stage, "unpacked"));
         validateExtractedTree(path.join(stage, "unpacked"));

@@ -411,6 +411,24 @@ async function managerChecks() {
   });
   fs.rmSync(timeoutRoot, { recursive: true, force: true });
 
+  const slowConfirmRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-extension-confirm-"));
+  const slowConfirmManager = createBrowserExtensionManager({
+    userDataPath: slowConfirmRoot,
+    extensions,
+    downloadTimeoutMs: 10,
+    fetch,
+    extractArchive,
+    confirm: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return false;
+    },
+  });
+  assert.deepEqual(await slowConfirmManager.installFromStoreUrl(listing), {
+    ok: false,
+    error: "cancelled",
+  });
+  fs.rmSync(slowConfirmRoot, { recursive: true, force: true });
+
   const mainSource = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const preloadSource = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
   const repositoryRoot = path.join(__dirname, "..", "..");
@@ -432,6 +450,8 @@ async function managerChecks() {
   assert.match(webTabSource, /<InstallExtensionButton bridge=\{bridge\} tabId=\{tabId\} url=\{effectiveUrl\} \/>/);
   assert.match(webTabSource, /api\.installCurrentPage\(tabId\)/);
   assert.match(webTabSource, /showToast\(text\([\s\S]*Extension installed\. Reload this page to apply it\./);
+  assert.match(webTabSource, /requestGenerationRef\.current !== requestGeneration/);
+  assert.match(webTabSource, /currentUrlRef\.current !== requestUrl/);
   assert.equal(packageJson.dependencies["extract-zip"], "2.0.1");
   assert.equal(packageJson.build.files.includes("browser-extension-manager.js"), true);
   assert.match(refreshSource, /main\.js preload\.js browser-extension-manager\.js packaged-runtime\.js/);
