@@ -285,6 +285,7 @@ vm.runInContext(
     handleWebTabShortcut,
     loadView,
     activateView,
+    resolveView,
     runNativeNavigation,
     registerWebTabIpc,
     registerDownloads,
@@ -959,6 +960,15 @@ async function checkVisibleCollectionAndActivation() {
   assert.equal(a.visibility.length, hiddenVisibilityCalls);
   assert.equal(a.targetCallCount(), hiddenTargetCalls);
 
+  // Resolving a background Page for computer_use must not reveal it or alter
+  // the renderer's visible collection.
+  const backgroundVisibilityCalls = a.visibility.length;
+  const backgroundTargetCalls = a.targetCallCount();
+  assert.equal(await hooks.resolveView(ctx, "a"), "a-target");
+  assert.deepEqual([...ctx.visibleViewIds], ["b"]);
+  assert.equal(a.visibility.length, backgroundVisibilityCalls);
+  assert.equal(a.targetCallCount(), backgroundTargetCalls + 1);
+
   // Ownership validation happens before any visibility mutation.
   const foreign = controlledRecord("foreign");
   foreign.record.ownerId = "another-window";
@@ -981,12 +991,12 @@ async function checkVisibleCollectionAndActivation() {
   hooks.hideView(ctx, "a");
   a.controls[0].resolve();
   assert.equal(await activation, null);
-  assert.equal(a.targetCallCount(), 0);
+  assert.equal(a.targetCallCount(), backgroundTargetCalls + 1);
 
   const active = hooks.activateView(ctx, "a", "https://example.com/a2");
   a.controls[1].resolve();
   assert.equal(await active, "a-target");
-  assert.equal(a.targetCallCount(), 1);
+  assert.equal(a.targetCallCount(), backgroundTargetCalls + 2);
 
   // A completed navigation cannot return a target after ownership moves.
   const moved = controlledRecord("moved");

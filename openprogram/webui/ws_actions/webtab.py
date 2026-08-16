@@ -22,7 +22,7 @@ from typing import Any
 # "result" 键（claim-once），后续同 req_id 的回执直接忽略。
 _pending: dict[str, tuple[threading.Event, dict, Any | None]] = {}
 _lock = threading.Lock()
-_bindings: dict[str, tuple[Any, str, str, str, float, int, int, int]] = {}
+_bindings: dict[str, tuple[Any, str, str, str, float, int, int, int, bool]] = {}
 _connection_revisions: dict[Any, int] = {}
 _page_revisions: dict[tuple[int, str], int] = {}
 _next_revision = itertools.count(1)
@@ -90,6 +90,7 @@ def register_binding(
     target_id: str,
     ttl: float = 1800.0,
     geometry_revision: int = 0,
+    allow_background: bool = False,
 ) -> str:
     binding_id = "surface_" + uuid.uuid4().hex
     with _lock:
@@ -112,6 +113,7 @@ def register_binding(
             page_revision,
             access_revision,
             max(0, int(geometry_revision)),
+            bool(allow_background),
         )
     return binding_id
 
@@ -164,6 +166,13 @@ def binding_revisions(binding_id: str) -> dict[str, int]:
         "access_revision": entry[6],
         "geometry_revision": entry[7],
     }
+
+
+def binding_connection(binding_id: str):
+    """Return the renderer connection owned by a live server binding."""
+    with _lock:
+        entry = _bindings.get(binding_id)
+    return entry[0] if entry is not None else None
 
 
 def _invalidate_page(ws, target_id: str) -> None:
@@ -226,7 +235,7 @@ def request_bound_tab(
             "error": "surface binding revision changed",
             "reason_code": "page_context_stale",
         }
-    ws, window_id, tab_id, target_id, expires_at, _, _, _ = entry
+    ws, window_id, tab_id, target_id, expires_at, _, _, _, allow_background = entry
     if time.monotonic() >= expires_at:
         release_binding(binding_id)
         return {
@@ -234,7 +243,11 @@ def request_bound_tab(
             "error": "surface binding expired",
             "reason_code": "page_context_stale",
         }
-    command = {"op": "activate", "window_id": window_id, "tab_id": tab_id}
+    command = {
+        "op": "resolve" if allow_background else "activate",
+        "window_id": window_id,
+        "tab_id": tab_id,
+    }
     if url:
         command["url"] = url
     if expected_geometry_revision:
@@ -268,6 +281,28 @@ def request_bound_tab(
     return result
 
 
+def request_page_inventory(binding_id: str, timeout: float = 5.0) -> dict:
+    """List every Page owned by the same renderer as one accepted binding."""
+    with _lock:
+        entry = _bindings.get(binding_id)
+    if entry is None:
+        return {
+            "ok": False,
+            "error": "surface binding is unavailable",
+            "reason_code": "page_context_stale",
+        }
+    if time.monotonic() >= entry[4]:
+        release_binding(binding_id)
+        return {
+            "ok": False,
+            "error": "surface binding expired",
+            "reason_code": "page_context_stale",
+        }
+    return request_on_ws(
+        entry[0], {"op": "list", "window_id": entry[1]}, timeout,
+    )
+
+
 def request_open_tab(url: str, timeout: float = 15.0) -> dict:
     """Open/focus ``url`` and return the active desktop tab identity."""
     return _request({"op": "open", "url": url}, timeout)
@@ -287,6 +322,18 @@ async def handle_webtab_result(ws, cmd: dict):
         ev, holder, expected_ws = entry
         if expected_ws is not None and ws is not expected_ws:
             return
+        pages = []
+        for raw in (cmd.get("pages") or [])[:64]:
+            if not isinstance(raw, dict):
+                continue
+            page = {
+                key: raw[key]
+                for key in ("tab_id", "target_id", "title", "url", "region", "opener_tab_id")
+                if isinstance(raw.get(key), str)
+            }
+            page["focused"] = bool(raw.get("focused"))
+            page["visible"] = bool(raw.get("visible"))
+            pages.append(page)
         holder["result"] = {
             "ok": bool(cmd.get("ok")),
             "error": cmd.get("error"),
@@ -301,6 +348,7 @@ async def handle_webtab_result(ws, cmd: dict):
                if isinstance(cmd.get("geometry_revision"), int) else {}),
             **({"reason_code": cmd["reason_code"]}
                if isinstance(cmd.get("reason_code"), str) else {}),
+            **({"pages": pages} if isinstance(cmd.get("pages"), list) else {}),
         }
     ev.set()
 

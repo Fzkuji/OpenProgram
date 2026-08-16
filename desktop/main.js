@@ -2266,6 +2266,13 @@ async function activateView(ctx, id, url, requireVisible = false) {
   return targetId;
 }
 
+async function resolveView(ctx, id) {
+  const record = recordFor(ctx, id);
+  if (!record) return null;
+  const targetId = await devToolsTargetId(record.view.webContents);
+  return recordFor(ctx, id) === record ? targetId : null;
+}
+
 const SURFACE_PREVIEW_SCRIPT = `(() => {
   const visible = (element) => {
     const style = getComputedStyle(element);
@@ -2716,6 +2723,10 @@ function registerWebTabIpc() {
           requireVisible === true,
         )
       : null;
+  });
+  ipcMain.handle("webtab:resolve", (event, id) => {
+    const ctx = contextForSender(event);
+    return ctx && typeof id === "string" ? resolveView(ctx, id) : null;
   });
   ipcMain.handle("webtab:preview", (event, id) => {
     const ctx = contextForSender(event);

@@ -161,6 +161,25 @@ _TOOL_PARAMETERS = {
     "additionalProperties": False,
 }
 
+_GUI_TOOL_PARAMETERS = {
+    **_TOOL_PARAMETERS,
+    "properties": {
+        **_TOOL_PARAMETERS["properties"],
+        "action": {
+            **_TOOL_PARAMETERS["properties"]["action"],
+            "enum": [
+                *_TOOL_PARAMETERS["properties"]["action"]["enum"],
+                "switch_page",
+            ],
+        },
+        "page_context_token": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Exact Page token returned in the current Page inventory.",
+        },
+    },
+}
+
 def _origin(url: str) -> str:
     parsed = urlparse(url or "")
     if not parsed.scheme or not parsed.hostname:
@@ -775,6 +794,7 @@ def _step_prompt(
     url: str,
     observation: dict[str, Any],
     prior_result: Any,
+    page_inventory: list[dict[str, Any]] | None = None,
 ) -> str:
     if isinstance(prior_result, ToolReturn):
         prior_result = {
@@ -797,6 +817,9 @@ actions.
 Current observation:
 {json.dumps(observation, ensure_ascii=False, default=str)}
 
+Pages in this OpenProgram browser window:
+{json.dumps(page_inventory or [], ensure_ascii=False, default=str)}
+
 Previous command result, if any:
 {json.dumps(prior_result, ensure_ascii=False, default=str)}
 
@@ -806,7 +829,9 @@ true, call verify with this frame_id and a supported assertion. Otherwise
 perform the next single necessary action using this frame_id and an element
 ref. Use screenshot only for visual judgment, canvas, or when no DOM/ARIA ref
 identifies the target. Do not call computer_use or tool_search, do not navigate
-away to rediscover the current Page, and do not answer with only text.
+away to rediscover the current Page, and do not answer with only text. When a
+different Page or popup is required, call switch_page with its current
+page_context_token. Never infer a Page switch from popup creation alone.
 """
 
 
@@ -905,22 +930,51 @@ def _run_browser_task_commands(
     if context is None:
         context = surface_context.capture_active()
     owner_id = "harness:" + str(context.get("context_id") or "unknown")
-    token = surface_context.bind(context)
-    try:
-        binding_id = surface_context.resolve_binding("")
-        page_key = surface_context.resolve_page_key("")
-    except Exception:
-        if captured_here:
-            surface_context.release_bindings(context)
-        raise
-    finally:
-        surface_context.reset(token)
     registry = get_registry()
+
+    page_inventory: list[dict[str, Any]] = []
+    bound_tab_id = ""
+
+    def refresh_inventory() -> list[dict[str, Any]]:
+        try:
+            inventory_context = surface_context.capture_pages(context)
+            listed = registry.list_pages(
+                context=inventory_context, owner_id=owner_id,
+            )
+        except Exception:
+            return []
+        if not listed.get("ok"):
+            surface_context.release_bindings(inventory_context)
+            return []
+        return list(listed.get("pages") or [])
+
+    page_inventory = refresh_inventory()
     try:
-        observed = registry.execute(
-            command="observe", backend=backend, binding_id=binding_id,
-            page_key=page_key, owner_id=owner_id, page_context=context,
-        )
+        if page_inventory:
+            primary = next((
+                page for page in page_inventory if page.get("focused")
+            ), next((
+                page for page in page_inventory if page.get("visible")
+            ), page_inventory[0]))
+            bound_tab_id = str(primary.get("tab_id") or "")
+            if bound_tab_id:
+                for page in page_inventory:
+                    page["bound"] = page.get("tab_id") == bound_tab_id
+            observed = registry.execute(
+                command="observe", backend=backend, owner_id=owner_id,
+                page_context_token=str(primary.get("page_context_token") or ""),
+            )
+        else:
+            token = surface_context.bind(context)
+            try:
+                binding_id = surface_context.resolve_binding("")
+                page_key = surface_context.resolve_page_key("")
+            finally:
+                surface_context.reset(token)
+            observed = registry.execute(
+                command="observe", backend=backend, binding_id=binding_id,
+                page_key=page_key, owner_id=owner_id, page_context=context,
+            )
     except Exception:
         if captured_here:
             surface_context.release_bindings(context)
@@ -941,6 +995,48 @@ def _run_browser_task_commands(
     }
 
     def dispatch(action: str, **arguments):
+        nonlocal observed, session_id, page_inventory, bound_tab_id
+        if action == "switch_page":
+            page_context_token = str(arguments.get("page_context_token") or "")
+            selected_page = next((
+                page for page in page_inventory
+                if page.get("page_context_token") == page_context_token
+            ), None)
+            if not page_context_token:
+                result = {"ok": False, "reason_code": "page_context_required"}
+            else:
+                next_observation = registry.execute(
+                    command="observe", backend=backend, owner_id=owner_id,
+                    page_context_token=page_context_token,
+                )
+                next_session_id = str(
+                    next_observation.get("computer_session_id") or ""
+                )
+                if next_session_id and "frame_id" in next_observation:
+                    previous_session_id = session_id
+                    session_id = next_session_id
+                    observed = next_observation
+                    bound_tab_id = str((selected_page or {}).get("tab_id") or "")
+                    for page in page_inventory:
+                        page["bound"] = (
+                            bool(bound_tab_id)
+                            and page.get("tab_id") == bound_tab_id
+                        )
+                    registry.execute(
+                        command="close",
+                        computer_session_id=previous_session_id,
+                        owner_id=owner_id,
+                    )
+                    result = {
+                        "ok": True,
+                        "switched": True,
+                        "computer_session_id": session_id,
+                        "frame_id": observed.get("frame_id"),
+                    }
+                else:
+                    result = next_observation
+            last.update(result=result, action=action, seq=last["seq"] + 1)
+            return _result_for_prompt(result)
         command = "verify" if action == "verify" else "act"
         arguments["action"] = action
         result = registry.execute(
@@ -960,7 +1056,7 @@ def _run_browser_task_commands(
             "Act on the exact Page observation. Use DOM/ARIA refs by default. "
             "Use screenshot only when refs cannot identify a visual target."
         ),
-        parameters=_TOOL_PARAMETERS,
+        parameters=_GUI_TOOL_PARAMETERS,
         register_globally=False,
     )(dispatch)
     deadline = time.monotonic() + max(1, min(int(max_seconds), 1800))
@@ -980,9 +1076,11 @@ def _run_browser_task_commands(
                 "type": "text",
                 "text": _step_prompt(
                     task, "", observed, _result_for_prompt(last["result"]),
+                    page_inventory,
                 ),
             }]
             sent_screenshot = pending_screenshot is not None
+            sent_screenshot_session_id = session_id
             sent_screenshot_result = (
                 pending_screenshot_result if sent_screenshot else None
             )
@@ -1004,7 +1102,7 @@ def _run_browser_task_commands(
             finally:
                 if sent_screenshot:
                     try:
-                        registry.revoke_screenshot(session_id)
+                        registry.revoke_screenshot(sent_screenshot_session_id)
                     finally:
                         _release_screenshot_payload(content, sent_screenshot_result)
                         if last["screenshot_result"] is sent_screenshot_result:
@@ -1036,6 +1134,26 @@ def _run_browser_task_commands(
                         "summary": "The Page could not be observed after an action.",
                         "backend": backend, "computer_session_id": session_id,
                     }
+                page_inventory = refresh_inventory()
+                if bound_tab_id:
+                    for page in page_inventory:
+                        page["bound"] = page.get("tab_id") == bound_tab_id
+            elif last["action"] == "wait":
+                observed = registry.execute(
+                    command="observe", computer_session_id=session_id,
+                    owner_id=owner_id,
+                )
+                if "frame_id" not in observed:
+                    return {
+                        "status": "failed",
+                        "reason_code": observed.get("reason_code", "page_unavailable"),
+                        "summary": "The Page could not be observed after waiting.",
+                        "backend": backend, "computer_session_id": session_id,
+                    }
+                page_inventory = refresh_inventory()
+                if bound_tab_id:
+                    for page in page_inventory:
+                        page["bound"] = page.get("tab_id") == bound_tab_id
         return {
             "status": "failed", "reason_code": "verification_missing",
             "summary": summary or "Browser task ended without verification.",
@@ -1067,6 +1185,9 @@ def _run_browser_task_commands(
             registry.execute(
                 command="close", computer_session_id=session_id, owner_id=owner_id,
             )
+            release_owner = getattr(registry, "release_owner", None)
+            if callable(release_owner):
+                release_owner(owner_id)
 
 
 @agentic_function(
@@ -1121,14 +1242,24 @@ def computer_use(
     from .computer_use_runtime import get_registry
 
     context = surface_context.current()
+    owner_context_id = str((context or {}).get("context_id") or "")
     captured_here = False
     if context is None and command in {"list_pages", "observe"}:
-        context = surface_context.capture_active()
+        context = (
+            surface_context.capture_pages()
+            if command == "list_pages"
+            else surface_context.capture_active()
+        )
         captured_here = True
 
     if command == "list_pages":
+        if not captured_here:
+            context = surface_context.capture_pages(context)
+            captured_here = True
         context = context or {}
-        owner_id = "turn:" + str(context.get("context_id") or "unknown")
+        owner_id = "turn:" + (owner_context_id or str(
+            context.get("context_id") or "unknown"
+        ))
         try:
             result = get_registry().list_pages(context=context, owner_id=owner_id)
         except Exception:
@@ -1141,7 +1272,7 @@ def computer_use(
 
     binding_id = ""
     page_key = ""
-    if command == "observe" and not computer_session_id:
+    if command == "observe" and not computer_session_id and not page_context_token:
         token = surface_context.bind(context)
         try:
             binding_id = surface_context.resolve_binding(page)
@@ -1159,7 +1290,10 @@ def computer_use(
             computer_session_id=computer_session_id,
             binding_id=binding_id,
             page_key=page_key,
-            owner_id=("turn:" + str((context or {}).get("context_id") or "")),
+            owner_id=("turn:" + (
+                owner_context_id
+                or str((context or {}).get("context_id") or "")
+            )),
             page_context_token=page_context_token,
             page_context=context,
             arguments=arguments,
@@ -1181,7 +1315,7 @@ def execute_direct_computer_use(arguments: dict, *, owner_id: str):
     command = str(arguments.get("command") or "")
     registry = get_registry()
     if command == "list_pages":
-        context = surface_context.capture_active()
+        context = surface_context.capture_pages()
         try:
             result = registry.list_pages(context=context, owner_id=owner_id)
         except Exception:

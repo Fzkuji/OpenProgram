@@ -279,6 +279,108 @@ def capture_active() -> dict:
     }
 
 
+def capture_pages(context: dict | None = None) -> dict:
+    """Capture every browser Page in the renderer that owns this request."""
+    from openprogram.webui import server as _server
+    from openprogram.webui.ws_actions import webtab
+
+    if context is not None:
+        binding_id = next((
+            str(item.get("binding_id"))
+            for item in context.get("surfaces") or []
+            if isinstance(item, dict) and item.get("binding_id")
+        ), "")
+        if not binding_id:
+            raise RuntimeError("no accepted Page binding is available")
+        result = webtab.request_page_inventory(binding_id)
+        owner_ws = webtab.binding_connection(binding_id)
+        if owner_ws is None:
+            raise RuntimeError("Page binding expired during inventory capture")
+    else:
+        connections = list(_server._ws_connections)
+        if len(connections) != 1:
+            raise RuntimeError("direct Page selection requires one desktop connection")
+        owner_ws = connections[0]
+        result = webtab.request_on_ws(owner_ws, {"op": "list"})
+
+    window_id = _text(result.get("window_id"), 160) if isinstance(result, dict) else ""
+    raw_pages = result.get("pages") if isinstance(result, dict) else None
+    if not result.get("ok") or not window_id or not isinstance(raw_pages, list):
+        raise RuntimeError("OpenProgram Page inventory is unavailable")
+
+    surfaces = []
+    aliases: dict[str, str] = {}
+    seen_tabs: set[str] = set()
+    seen_targets: set[str] = set()
+    try:
+        for raw in raw_pages[:32]:
+            if not isinstance(raw, dict):
+                continue
+            tab_id = _text(raw.get("tab_id"), 512)
+            target_id = _text(raw.get("target_id"), 512)
+            if (
+                not tab_id or not target_id
+                or tab_id in seen_tabs or target_id in seen_targets
+            ):
+                continue
+            seen_tabs.add(tab_id)
+            seen_targets.add(target_id)
+            visible = bool(raw.get("visible"))
+            focused = bool(raw.get("focused"))
+            region = raw.get("region")
+            if not visible or region not in {"left", "right", "center"}:
+                region = "background"
+            surface_key = f"p{len(surfaces) + 1}"
+            page_aliases = [surface_key, f"web:{len(surfaces) + 1}", f"tab:{tab_id}"]
+            if focused:
+                page_aliases.append("focused")
+            binding_id = webtab.register_binding(
+                owner_ws,
+                window_id,
+                tab_id,
+                target_id,
+                geometry_revision=0,
+                allow_background=not visible,
+            )
+            surface = {
+                "surface_key": surface_key,
+                "aliases": page_aliases,
+                "kind": "web_tab",
+                "region": region,
+                "title": _text(raw.get("title"), 240),
+                "origin": _origin(str(raw.get("url") or "")),
+                "capabilities": ["observe", "interact", "navigate"],
+                "preview_status": "inventory",
+                "binding_id": binding_id,
+                "page_key": webtab.binding_page_key(binding_id),
+                "tab_id": tab_id,
+                "opener_tab_id": _text(raw.get("opener_tab_id"), 512),
+                "visible": visible,
+                "focused": focused,
+                **webtab.binding_revisions(binding_id),
+            }
+            surfaces.append(surface)
+            for alias in page_aliases:
+                aliases.setdefault(alias, surface_key)
+    except Exception:
+        for surface in surfaces:
+            webtab.release_binding(str(surface["binding_id"]))
+        raise
+    if not surfaces:
+        raise RuntimeError("no OpenProgram Page is available")
+    primary = next((
+        item["surface_key"] for item in surfaces if item.get("focused")
+    ), next((
+        item["surface_key"] for item in surfaces if item.get("visible")
+    ), surfaces[0]["surface_key"]))
+    return {
+        "context_id": "page_ctx_" + uuid.uuid4().hex,
+        "primary_surface_key": primary,
+        "alias_map": aliases,
+        "surfaces": surfaces,
+    }
+
+
 def release_bindings(context: dict | None) -> None:
     if not context:
         return

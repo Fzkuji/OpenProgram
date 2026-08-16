@@ -200,6 +200,10 @@ class ComputerUseSessionRegistry:
                     "region": item.get("region"),
                     "title": item.get("title") or "",
                     "origin": item.get("origin") or "",
+                    "tab_id": item.get("tab_id") or "",
+                    "opener_tab_id": item.get("opener_tab_id") or "",
+                    "visible": bool(item.get("visible")),
+                    "focused": bool(item.get("focused")),
                     "capabilities": list(item.get("capabilities") or []),
                     "page_context_token": token,
                 })

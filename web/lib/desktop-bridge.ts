@@ -111,6 +111,8 @@ export interface DesktopWebTabApi {
     url?: string,
     requireVisible?: boolean,
   ): Promise<string | null>;
+  /** Resolve an owned Page target without changing visible tabs or focus. */
+  resolve?(id: string): Promise<string | null>;
   /** Bounded DOM/ARIA preview for a currently visible native view. */
   preview(id: string): Promise<{
     tab_id: string;
@@ -575,7 +577,7 @@ export function subscribeWebTabPopups(
     if (!state.tabs.some((tab) => tab.id === popup.openerId && tab.kind === "web")) {
       return;
     }
-    state.openPopupWebTab(popup.url);
+    state.openPopupWebTab(popup.url, popup.openerId);
     showCenterSurface();
   }) ?? (() => {});
 }
@@ -693,6 +695,51 @@ export interface TurnSurfaceRef {
   geometry_revision: number;
 }
 
+export interface BrowserPageInventoryItem {
+  tab_id: string;
+  target_id: string;
+  url: string;
+  title: string;
+  focused: boolean;
+  visible: boolean;
+  region: "left" | "right" | "center" | "background";
+  opener_tab_id?: string;
+}
+
+export async function browserPageInventory(
+  bridge: { webTab: Pick<DesktopWebTabApi, "resolve"> },
+): Promise<BrowserPageInventoryItem[]> {
+  if (!bridge.webTab.resolve) return [];
+  const state = useCenterTabs.getState();
+  const pages = await Promise.all(state.tabs
+    .filter((tab) => tab.kind === "web")
+    .map(async (tab) => {
+      const targetId = await bridge.webTab.resolve!(tab.id);
+      if (!targetId) return null;
+      const group = findCenterTabGroup(state.groups, tab.id);
+      const visible = isWebTabActuallyVisible(tab.id);
+      const focused = state.activeId === tab.id;
+      const region = !visible
+        ? "background" as const
+        : !group || group.visibleIds.length === 1
+          ? "center" as const
+          : group.visibleIds.indexOf(tab.id) === 0
+            ? "left" as const
+            : "right" as const;
+      return {
+        tab_id: tab.id,
+        target_id: targetId,
+        url: tab.url || "",
+        title: tab.title,
+        focused,
+        visible,
+        region,
+        ...(tab.openerTabId ? { opener_tab_id: tab.openerTabId } : {}),
+      };
+    }));
+  return pages.filter((page): page is BrowserPageInventoryItem => page !== null);
+}
+
 /** The visible web pane paired with this chat at send time. */
 export function surfaceRefForChat(
   sessionId: string | null,
@@ -799,9 +846,46 @@ export function installDesktopMenuHandlers(): void {
     const d = detail.data as
       | { op?: string; url?: string; window_id?: string; tab_id?: string; req_id?: string; expected_geometry_revision?: number }
       | undefined;
-    if (!d?.req_id || !["open", "active", "activate", "preview"].includes(d.op || "")) return;
+    if (!d?.req_id || !["open", "active", "activate", "preview", "list", "resolve"].includes(d.op || "")) return;
     const ws = getSocket();
     if (ws?.readyState !== WebSocket.OPEN) return;
+
+    if (d.op === "list") {
+      if (d.window_id && d.window_id !== bridge.windowId) {
+        ws.send(JSON.stringify({ action: "webtab_result", req_id: d.req_id, ok: false }));
+        return;
+      }
+      void browserPageInventory(bridge).then((pages) => {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ok: true,
+          window_id: bridge.windowId,
+          pages,
+        }));
+      });
+      return;
+    }
+
+    if (d.op === "resolve") {
+      if (d.window_id && d.window_id !== bridge.windowId) {
+        ws.send(JSON.stringify({ action: "webtab_result", req_id: d.req_id, ok: false }));
+        return;
+      }
+      const tab = d.tab_id
+        ? useCenterTabs.getState().tabs.find((item) => item.id === d.tab_id && item.kind === "web")
+        : null;
+      void (tab && bridge.webTab.resolve
+        ? bridge.webTab.resolve(tab.id)
+        : Promise.resolve(null)
+      ).then((targetId) => sendWebTabResult(
+        ws,
+        d.req_id!,
+        tab?.kind === "web" ? tab : { id: d.tab_id ?? "", url: "" },
+        targetId,
+      ));
+      return;
+    }
 
     if (d.op === "preview" || d.op === "activate") {
       if (d.window_id && d.window_id !== bridge.windowId) {

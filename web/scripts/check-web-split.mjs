@@ -1870,7 +1870,7 @@ assert.match(desktopBridgeSource, /targetBridge\.webTab\.syncVisible/);
 assert.match(desktopBridgeSource, /state\.openWebTabInSplit\(d\.url\)/);
 assert.match(desktopBridgeSource, /waitForWebTabReady\(id, 2000\)/);
 assert.match(desktopBridgeSource, /subscribeWebTabPopups\(bridge\)/);
-assert.match(desktopBridgeSource, /state\.openPopupWebTab\(popup\.url\)/);
+assert.match(desktopBridgeSource, /state\.openPopupWebTab\(popup\.url, popup\.openerId\)/);
 assert.match(
   desktopBridgeSource,
   /if \(!split && !routeVisible\) \{\s*const routed = showCenterSurface\(\);\s*if \(!routed\)/,
@@ -2359,6 +2359,15 @@ const popupOne = plainTabs.getState().activeId;
 popupCallback({ openerId: "w:opener", url: "https://popup.test/" });
 const popupTwo = plainTabs.getState().activeId;
 assert.notEqual(popupOne, popupTwo, "two popup requests must create distinct tabs");
+assert.equal(
+  plainTabs.getState().tabs.find((tab) => tab.id === popupOne)?.openerTabId,
+  "w:opener",
+  "popup tabs must retain their opener Page identity",
+);
+assert.equal(
+  plainTabs.getState().tabs.find((tab) => tab.id === popupTwo)?.openerTabId,
+  "w:opener",
+);
 assert.ok(plainTabs.getState().tabs.some((tab) => tab.id === "w:opener"));
 assert.equal(plainTabs.getState().activeId, popupTwo);
 assert.deepEqual(plainTabs.getState().groups, [popupOpenerGroup]);

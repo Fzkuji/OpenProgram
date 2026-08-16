@@ -368,6 +368,61 @@ def test_direct_mcp_page_capture_requires_one_desktop_connection(monkeypatch):
         raise AssertionError("multiple desktop connections must be rejected")
 
 
+def test_direct_page_inventory_includes_background_and_popup_provenance(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    monkeypatch.setattr(webtab, "request_on_ws", lambda ws, command, timeout=5.0: {
+        "ok": True,
+        "window_id": "window-1",
+        "pages": [
+            {
+                "tab_id": "tab-a", "target_id": "target-a",
+                "url": "https://a.example/path", "title": "A",
+                "focused": True, "visible": True, "region": "center",
+            },
+            {
+                "tab_id": "tab-b", "target_id": "target-b",
+                "url": "https://b.example/path", "title": "B",
+                "focused": False, "visible": False, "region": "background",
+            },
+            {
+                "tab_id": "tab-c", "target_id": "target-c",
+                "url": "https://c.example/path", "title": "C",
+                "focused": False, "visible": False, "region": "background",
+                "opener_tab_id": "tab-a",
+            },
+        ],
+    })
+
+    context = surface_context.capture_pages()
+    assert context["primary_surface_key"] == "p1"
+    assert [page["title"] for page in context["surfaces"]] == ["A", "B", "C"]
+    assert context["surfaces"][1]["visible"] is False
+    assert context["surfaces"][2]["opener_tab_id"] == "tab-a"
+    background_binding = context["surfaces"][1]["binding_id"]
+
+    seen = []
+    monkeypatch.setattr(
+        webtab,
+        "request_on_ws",
+        lambda ws, command, timeout=5.0: seen.append((ws, command)) or {
+            "ok": True,
+            "window_id": "window-1",
+            "tab_id": "tab-b",
+            "target_id": "target-b",
+        },
+    )
+    assert webtab.request_bound_tab(background_binding)["ok"] is True
+    assert seen == [(owner, {
+        "op": "resolve", "window_id": "window-1", "tab_id": "tab-b",
+    })]
+    surface_context.release_bindings(context)
+
+
 def test_frontend_and_electron_expose_turn_surface_preview_contract():
     send = (REPO_ROOT / "web/components/chat/composer/legacy-send.ts").read_text()
     bridge = (REPO_ROOT / "web/lib/desktop-bridge.ts").read_text()
