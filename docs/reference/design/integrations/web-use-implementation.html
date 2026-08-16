@@ -220,7 +220,9 @@
     <tr><td>Runtime 与 session</td><td><code>web_use_runtime.py</code>、<code>WebUseSessionRegistry</code>、<code>web_session_id</code>；三个 browser backend 和 exact Page 生命周期保持不变。</td><td class="pass">完成</td></tr>
     <tr><td>Agent / GUI Harness</td><td>Chat Agent 可直接调用 <code>web_use</code>；<code>gui_agent</code> 通过同一 Web Use adapter 使用相同命令和 session contract。</td><td class="pass">完成</td></tr>
     <tr><td>MCP / HTTP</td><td>MCP <code>tools/list</code> 与 <code>tools/call</code> 只公开 <code>web_use</code>；canonical route 为 <code>/api/web-use</code>。</td><td class="pass">完成</td></tr>
-    <tr><td>自动验证</td><td><code>test_web_use_runtime.py</code>、<code>test_web_use_backend_parity.py</code>、<code>test_web_use_backend_threading.py</code>、<code>test_web_use_surface.py</code>、<code>test_web_use_route.py</code> 与 MCP/Agent 相关组通过。</td><td class="pass">通过</td></tr>
+    <tr><td>取消与连接清理</td><td><code>3a2e6baf</code> 在 MCP 调用取消后关闭延迟返回的 WebSession；<code>cbc24778</code> 精确撤销取消的 <code>list_pages</code> 所签发且未消费的 Page capability，不清理同 owner 的其他 session 或 capability。</td><td class="pass">完成</td></tr>
+    <tr><td>自动验证与复核</td><td><code>test_web_use_runtime.py</code>、<code>test_web_use_backend_parity.py</code>、<code>test_web_use_backend_threading.py</code>、<code>test_web_use_surface.py</code>、<code>test_web_use_route.py</code> 与 MCP/Agent 相关组共 453 passed；Specification 与 Quality 独立复核均为 PASS。</td><td class="pass">通过</td></tr>
+    <tr><td>当前安装版</td><td>使用默认 <code>~/.openprogram</code>、18100 和 <code>/Applications/OpenProgram.app</code> 验证：Agent registry 只返回 <code>web_use</code>；OpenAPI 公开 <code>/api/web-use</code>，隐藏 legacy <code>/api/computer-use</code> 与内部 capability release route；真实 <code>list_pages</code> 成功返回一个 window snapshot。验收时没有已登记 Page，因此本轮没有执行 <code>observe</code> 或网页动作，也没有为验收切换前台窗口。</td><td class="pass">API PASS · PAGE E2E NOT RUN</td></tr>
   </tbody>
 </table>
 </main></body></html>
