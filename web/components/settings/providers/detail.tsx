@@ -154,7 +154,7 @@ export function Detail({
   }, [manualId, provider.id, reloadModels, onChanged]);
 
   return (
-    <>
+    <div className={styles.detailSurface}>
       <div className={styles.detailHeader}>
         <div className={styles.detailIcon}>
           <ProviderIcon id={provider.id} size={40} />
@@ -164,11 +164,17 @@ export function Detail({
           <div className={styles.detailSubtitle}>{subtitle}</div>
         </div>
         <div className={styles.detailHeaderActions}>
-          <Switch
-            checked={provider.enabled}
-            onCheckedChange={onToggle}
-            title={text("Enable this provider", "启用这个 Provider")}
-          />
+          <label className={styles.providerEnabledControl}>
+            <span className={styles.providerEnabledLabel}>
+              {provider.enabled ? text("Enabled", "已启用") : text("Disabled", "已停用")}
+            </span>
+            <Switch
+              checked={provider.enabled}
+              onCheckedChange={onToggle}
+              aria-label={text("Enable this provider", "启用这个 Provider")}
+              title={text("Enable this provider", "启用这个 Provider")}
+            />
+          </label>
           {provider.custom && (
             <Button
               variant="destructive"
@@ -194,7 +200,7 @@ export function Detail({
       {(provider.id === "claude-code" ||
         !!provider.api_key_env ||
         (provider.login_methods?.length ?? 0) > 0) && (
-        <AccountManager provider={provider} onChanged={autoCheckAndFetch} />
+        <AccountManager key={provider.id} provider={provider} onChanged={autoCheckAndFetch} />
       )}
       {provider.api_key_env && provider.id !== "claude-code" && (
         <BaseUrl provider={provider} onChanged={onChanged} />
@@ -259,6 +265,6 @@ export function Detail({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
