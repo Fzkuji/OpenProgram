@@ -71,6 +71,7 @@ assert.match(accountManager, /accounts\.length === 0 \|\| addingKey/);
 assert.match(accountManager, /className=\{styles\.addCredentialCard\}/);
 assert.doesNotMatch(accountManager, /className=\{styles\.acctCellBtn\}/);
 assert.match(accountManager, /aria-label=\{text\("Account name", "账号名称"\)\}/);
+assert.match(accountManager, /const validateLabel = `\$\{statusText\}\. \$\{text\("Validate account", "验证账号"\)\}`/);
 assert.match(accountManager, /styles\.acctStatusButton[\s\S]*onClick=\{validate\}[\s\S]*aria-label=\{validateLabel\}/);
 assert.match(accountManager, /title=\{text\("Rename", "重命名"\)\}[\s\S]{0,180}aria-label=\{text\("Rename account", "重命名账号"\)\}/);
 assert.match(accountManager, /title=\{text\("Replace API key", "替换 API 密钥"\)\}[\s\S]{0,180}aria-label=\{text\("Replace API key", "替换 API 密钥"\)\}/);
