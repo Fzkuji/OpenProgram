@@ -4,7 +4,7 @@
 
 .view {
   /* Decoupled panes: `.view` itself never scrolls. It pins the
-     topbar + .body within the viewport; the panes inside .body
+     Settings body within the viewport; the panes inside .body
      (2nd-level nav, provider list, detail) own their own
      overflow:auto so wheeling one column doesn't drag the others. */
   height: 100vh;
@@ -22,32 +22,9 @@
   .view { padding-left: 49px; }
 }
 
-/* Match programs/memory topbar pattern. Plain flex child; .view is
-   non-scrolling now so we don't need position:sticky to pin it. */
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 24px;
-  height: 64px;
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-secondary);
-  flex-shrink: 0;
-  z-index: 10;
-}
-
-.title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-bright);
-  flex-shrink: 0;
-}
-
 .body {
-  /* Body takes the remaining viewport height after the topbar. Each
-     column inside it scrolls independently (overflow:auto), so the
-     body itself stays a fixed-height grid container. */
+  /* Each column scrolls independently, so the body remains a
+     fixed-height grid container. */
   flex: 1;
   min-height: 0;
   display: grid;
@@ -76,8 +53,19 @@
   height: 40px;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 8px;
   flex-shrink: 0;
+}
+.railTitle {
+  min-width: 0;
+  padding-left: 8px;
+  overflow: hidden;
+  color: var(--text-bright);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .railItems {
   display: flex;
@@ -107,8 +95,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.settingsNavCollapsed .railHeader {
+.settingsNavCollapsed .nav > .railHeader {
   justify-content: center;
+}
+.settingsNavCollapsed .nav > .railHeader .railTitle {
+  display: none;
 }
 .settingsNavCollapsed .navItem {
   width: 32px;
@@ -479,20 +470,11 @@
   border-right: 1px solid var(--border);
   min-height: 0;
 }
-/* Search input wrapper at the top of the provider list. Plain
-   in-flow block — sidebar no longer has its own scroll, so there's
-   nothing for this header to "pin to". */
+/* Search and add controls below the labeled provider rail header. */
 .providersStickyHeader {
   padding: 0 0 8px;
 }
-.providersToolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
 .providerSearch {
-  flex: 1;
   min-width: 0;
 }
 .providerListItems {
@@ -501,10 +483,13 @@
   gap: 1px;
 }
 .providerListCollapsed .providersStickyHeader {
-  padding-bottom: 8px;
+  display: none;
 }
-.providerListCollapsed .providersToolbar {
+.providerListCollapsed .railHeader {
   justify-content: center;
+}
+.providerListCollapsed .railTitle {
+  display: none;
 }
 .providerListCollapsed .providerItem {
   width: 32px;

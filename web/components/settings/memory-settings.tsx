@@ -140,13 +140,6 @@ export function MemorySettings() {
 
   return (
     <div className={`${shared.page} ${styles.memoryPage}`}>
-      <div className={shared.pageHeader}>
-        <h2 className={shared.pageTitle}>Memory</h2>
-        <p className={shared.pageMeta}>{text(
-          "Choose how OpenProgram writes, stores, and recalls long-term memory.",
-          "设置 OpenProgram 如何写入、存储和检索长期记忆。",
-        )}</p>
-      </div>
       <div className={`${shared.pageBody} ${styles.pageBody}`}>
         <div className={styles.lifecycle} aria-label={text("Memory lifecycle", "Memory 生命周期")}>
           <LifecycleStep icon={<Database size={15} />} label={text("Capture", "采集")} value={text("Conversation archive", "对话归档")} />
