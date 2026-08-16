@@ -93,6 +93,12 @@ dependencies = [
     "httpx[socks]>=0.27.0",
     "pydantic>=2.0",
     "jsonschema>=4.23",
+    # Built-in terminal chat falls back to the Python Rich REPL when the Ink
+    # bundle or Node runtime is unavailable (including managed releases).
+    "rich>=13.0",
+    # Built-in `pdf` and `read` tools extract text with pypdf. This is a
+    # complete-product capability, so release runtimes must always carry it.
+    "pypdf>=5.0",
     # Windows ConPTY binding (import name ``winpty``). Drives the interactive
     # Claude-account browser login through a pseudo-terminal on Windows, where
     # stdlib ``pty`` doesn't exist (POSIX reuses ``pty``). Windows-only marker;

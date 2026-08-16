@@ -98,7 +98,10 @@ def execute(
     try:
         import pypdf  # type: ignore
     except ImportError:
-        return "Error: PDF support is unavailable in this installation."
+        return (
+            "Error: PDF support is unavailable in this installation; "
+            "reinstall the complete OpenProgram release."
+        )
 
     try:
         reader = pypdf.PdfReader(file_path)

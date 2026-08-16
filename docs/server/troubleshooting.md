@@ -49,9 +49,11 @@ raising an issue.
 
 ## `import openprogram` raises ModuleNotFoundError
 
-The package isn't installed in the active Python. Either run the installer
-(clone OpenProgram + `./scripts/install.sh`) or activate the venv where it is
-installed.
+Managed product installations use a private bundled Python and intentionally do
+not expose OpenProgram to whichever Python is active in your shell. For source
+development, run `uv sync --locked` in the checkout, then execute scripts with
+`uv run --project /path/to/OpenProgram python ...`; alternatively, activate the
+checkout's `.venv` first.
 
 ## CI says "tests pass" but Mac runs differently
 

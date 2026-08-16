@@ -40,7 +40,27 @@ duplicated in this historical distribution ledger.
   release, and the regression scans first-party Agentic Functions together with
   the rest of the product runtime. Developer-owned extension installers remain
   explicitly excluded.
-- Status: repair implemented; scoped specification re-review pending.
+- Specification re-review on `d9047511`: pass. The remaining Python package
+  operations are limited to release assembly, source development, tests, and
+  developer-owned extension environments.
+- Quality review on `d9047511`: changes required because the OpenClaw source
+  integration prepared a locked uv environment but its sample skill still ran
+  with the unrelated system Python. It also found that the public built-in PDF
+  capability depended on `pypdf`, but the complete runtime neither installed
+  nor verified that dependency. The PDF failure messages also lacked the
+  required repair action, and source troubleshooting incorrectly implied that
+  running the checkout installer changed the shell's active Python. Finally,
+  managed runtimes without Node or `cli/dist` exited before the existing Rich
+  terminal fallback, despite the release contract requiring a terminal UI.
+- Repair: the OpenClaw skill now runs through `uv run --project` for the cloned
+  checkout, with a regression covering both English and Chinese instructions.
+  `pypdf` is now a locked base dependency; the runtime verifier imports it and
+  executes both built-in PDF extraction paths against a generated PDF. Missing
+  PDF dependencies direct a complete reinstall, while troubleshooting separates
+  the managed private runtime from `uv run` or `.venv` source development.
+  Ink startup failures now enter the bundled Rich REPL; `rich` is a direct,
+  locked dependency with a runtime rendering probe and fallback regression.
+- Status: quality repair implemented; scoped re-reviews pending.
 
 ## Local App version coherence
 

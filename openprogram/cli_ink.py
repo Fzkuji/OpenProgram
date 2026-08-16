@@ -72,8 +72,8 @@ def _resolve_cli_entry() -> Path:
     if not cli_dir.exists():
         raise FileNotFoundError(
             f"Ink TUI source missing: no {cli_dir} directory. "
-            "The TUI ships with a source checkout prepared by `uv sync`; "
-            "use `openprogram web` for the packaged browser UI."
+            "Source checkouts prepare it with `uv sync`; packaged runtimes "
+            "fall back to the built-in Rich terminal UI."
         )
 
     _build_ink_bundle(cli_dir, candidate)
@@ -284,7 +284,7 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
         node = _resolve_node()
     except RuntimeError as e:
         _tty_write(f"openprogram: {e}\n")
-        sys.exit(2)
+        raise RuntimeError(str(e)) from e
     try:
         entry = _resolve_cli_entry()
     except (FileNotFoundError, RuntimeError) as e:
@@ -300,7 +300,7 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
             "  openprogram --print \"...\"     # one-shot prompt\n"
             "  openprogram --print \"hi\"      # one-shot prompt\n"
         )
-        sys.exit(2)
+        raise RuntimeError(str(e)) from e
 
     # Auto-start the worker if missing (overridable via env var for the rare
     # case where the user wants a strictly-connecting TUI). The worker manages
@@ -315,7 +315,7 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
     port = _resolve_worker_port(autostart=autostart)
     if port is None:
         _print_no_worker_hint()
-        sys.exit(2)
+        raise RuntimeError("the background service is unavailable")
 
     # cli.py already did the early dup2 for the TUI path and stashed the
     # original tty fds on the cli module. Reuse those so the Node child

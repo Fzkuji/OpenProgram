@@ -59,7 +59,7 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 |---|---|---|
 | `image_generate` | Prompt to a PNG saved on disk | Any one backend: OpenAI (`OPENAI_API_KEY`), Gemini (`GEMINI_API_KEY` or `GOOGLE_API_KEY`), fal (`FAL_KEY`) |
 | `image_analyze` | Describe an image / answer questions about it (local path or URL) | Any vision-model key: OpenAI / Anthropic / Gemini (reuses configured provider keys) |
-| `pdf` | Extract text from a PDF, with offset / limit paging | `pypdf` |
+| `pdf` | Extract text from a PDF, with offset / limit paging | Bundled with the complete release (`pypdf`) |
 
 ## Session and collaboration
 

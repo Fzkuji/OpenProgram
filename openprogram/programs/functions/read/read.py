@@ -46,7 +46,10 @@ def _read_pdf(file_path: str, offset: int, limit: int) -> str:
     try:
         from pypdf import PdfReader
     except ImportError:
-        return "Error: PDF reading is unavailable in this installation."
+        return (
+            "Error: PDF reading is unavailable in this installation; "
+            "reinstall the complete OpenProgram release."
+        )
 
     try:
         reader = PdfReader(file_path)

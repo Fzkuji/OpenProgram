@@ -46,9 +46,10 @@ export OPENPROGRAM_WEB_PORT=8101         # 单端口（默认 18100）
 
 ## `import openprogram` 报 ModuleNotFoundError
 
-该包没有安装在当前激活的 Python 中。要么运行安装程序
-（克隆 OpenProgram + `./scripts/install.sh`），要么激活安装了它的
-那个 venv。
+正式产品安装使用内置的私有 Python，不会把 OpenProgram 暴露给 shell 中
+当前激活的 Python。源码开发时，先在 checkout 中运行 `uv sync --locked`，
+再通过 `uv run --project /path/to/OpenProgram python ...` 执行脚本；也可以
+先激活该 checkout 的 `.venv`。
 
 ## CI 显示"tests pass"但 Mac 上表现不同
 

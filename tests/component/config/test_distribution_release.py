@@ -1411,10 +1411,88 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     assert '"opencv-python==$opencv_version"' in staging
     assert staging.count('--constraint "$program_constraints"') == 3
     assert 'importlib.metadata.version(distribution).split("+", 1)[0]' in verifier
+    assert '"pypdf>=5.0"' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert '"rich>=13.0"' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert '"pypdf",' in verifier
+    assert "_probe_pdf_tools()" in verifier
+    assert "_probe_rich_terminal()" in verifier
     assert "Salesforce/GPA-GUI-Detector" in product_config
     assert "GUI-Agent-Harness" in product_config
     assert "Research-Agent-Harness" in product_config
     assert "Wiki-Agent-Harness" in product_config
+
+
+def test_product_runtime_pdf_tool_probe() -> None:
+    verifier = runpy.run_path(str(ROOT / "scripts" / "verify-product-runtime.py"))
+    verifier["_probe_pdf_tools"]()
+
+
+def test_product_runtime_rich_terminal_probe() -> None:
+    verifier = runpy.run_path(str(ROOT / "scripts" / "verify-product-runtime.py"))
+    verifier["_probe_rich_terminal"]()
+
+
+def test_packaged_cli_falls_back_when_ink_runtime_is_absent(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from types import SimpleNamespace
+
+    from openprogram import cli_chat, cli_ink
+    from openprogram.agent.management import manager
+
+    monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
+    monkeypatch.setattr(
+        cli_ink,
+        "_resolve_node",
+        lambda: (_ for _ in ()).throw(RuntimeError("node unavailable")),
+    )
+    with pytest.raises(RuntimeError, match="node unavailable"):
+        cli_ink.run_ink_tui()
+
+    monkeypatch.setattr(
+        cli_chat, "_get_chat_runtime", lambda: ("test", SimpleNamespace(model="test"))
+    )
+    monkeypatch.setattr(manager, "get_default", lambda: SimpleNamespace(id="main"))
+    monkeypatch.setattr(
+        cli_ink,
+        "run_ink_tui",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("Ink unavailable")),
+    )
+    monkeypatch.setattr(cli_chat, "_print_banner", lambda *_args, **_kwargs: None)
+
+    from rich.console import Console
+
+    monkeypatch.setattr(
+        Console,
+        "input",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(EOFError()),
+    )
+    cli_chat.run_cli_chat(tui=True)
+    output = capsys.readouterr()
+    assert "falling back to REPL" in output.out
+    assert "Goodbye" in output.out
+
+
+def test_missing_bundled_pdf_dependency_requires_complete_reinstall(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import sys
+
+    from openprogram.programs.functions.pdf.pdf import execute as pdf_extract
+    from openprogram.programs.functions.read.read import _read_pdf
+
+    pdf_path = tmp_path / "probe.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    monkeypatch.setitem(sys.modules, "pypdf", None)
+
+    for result in (
+        pdf_extract(file_path=str(pdf_path)),
+        _read_pdf(str(pdf_path), offset=1, limit=1),
+    ):
+        assert "reinstall the complete OpenProgram release" in result
+        assert "pip install" not in result
 
 
 def test_product_runtime_rejects_installed_openprogram_version_mismatch(
@@ -1782,6 +1860,31 @@ def test_public_product_surfaces_do_not_offer_python_package_install() -> None:
         source = path.read_text(encoding="utf-8").lower()
         for phrase in forbidden:
             assert phrase not in source, f"{path.relative_to(ROOT)}: {phrase}"
+
+
+def test_openclaw_source_checkout_uses_its_locked_environment() -> None:
+    for relative_path in (
+        "docs/integrations/openclaw.md",
+        "docs/integrations/openclaw.zh.md",
+    ):
+        source = (ROOT / relative_path).read_text(encoding="utf-8")
+        assert "uv sync --locked" in source
+        assert "uv run --project ~/.openclaw/workspace/OpenProgram python" in source
+        assert (
+            "python3 ~/.openclaw/workspace/skills/my-agentic-skill/scripts/analyze.py"
+            not in source
+        )
+
+
+def test_python_import_troubleshooting_distinguishes_managed_and_source() -> None:
+    for relative_path in (
+        "docs/server/troubleshooting.md",
+        "docs/server/troubleshooting.zh.md",
+    ):
+        source = (ROOT / relative_path).read_text(encoding="utf-8")
+        assert "uv sync --locked" in source
+        assert "uv run --project /path/to/OpenProgram python" in source
+        assert "./scripts/install.sh" not in source
 
 
 def test_packaged_browser_install_does_not_modify_python_environment(

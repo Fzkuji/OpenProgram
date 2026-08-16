@@ -5,9 +5,8 @@ Single-verb model (openclaw / gh / docker style). The top-level grammar
 is:
 
     openprogram                           launch the terminal UI
-                                          (Ink on macOS/Linux, Rich on
-                                          Windows — both are "TUI";
-                                          platform decides which)
+                                          (Ink on macOS/Linux when bundled,
+                                          otherwise the built-in Rich REPL)
     openprogram tui                       same as bare openprogram
     openprogram chat                      alias for `openprogram tui`
     openprogram --print "prompt"          one-shot — send prompt,
@@ -41,8 +40,8 @@ Examples:
 
 Note on retired flags: ``--tui`` / ``--no-tui`` / ``--web`` / ``--cli``
 are gone. The chat mode is now implicit (``openprogram`` is chat); the
-browser is a verb (``openprogram web``); the REPL is a Windows-only
-silent fallback when Ink can't initialise. ``--no-tui`` had no good
+browser is a verb (``openprogram web``); the Rich REPL is the fallback
+when Ink or Node is unavailable. ``--no-tui`` had no good
 analogue (the verb-based design wins where the flag would have lost),
 so it's removed entirely.
 """

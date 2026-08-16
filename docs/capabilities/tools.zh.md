@@ -59,7 +59,7 @@ OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调�
 |---|---|---|
 | `image_generate` | prompt → PNG 存盘 | 任一后端：OpenAI（`OPENAI_API_KEY`）、Gemini（`GEMINI_API_KEY` 或 `GOOGLE_API_KEY`）、fal（`FAL_KEY`） |
 | `image_analyze` | 描述图片 / 回答关于图片的问题（本地路径或 URL） | 任一视觉模型 key：OpenAI / Anthropic / Gemini（复用已配置的 provider key） |
-| `pdf` | 从 PDF 抽取文本，支持 offset / limit 翻页 | `pypdf` |
+| `pdf` | 从 PDF 抽取文本，支持 offset / limit 翻页 | 完整 release 已内置（`pypdf`） |
 
 ## 会话与协作
 

@@ -7,10 +7,12 @@ import argparse
 import hashlib
 import importlib
 import importlib.metadata
+import io
 import json
 import os
 import platform
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -44,6 +46,36 @@ def _verify_openprogram_version(expected: object) -> None:
         raise RuntimeError(
             f"OpenProgram version mismatch: expected {expected}, got {actual}"
         )
+
+
+def _probe_pdf_tools() -> None:
+    from pypdf import PdfWriter
+
+    from openprogram.programs.functions.pdf.pdf import execute as pdf_extract
+    from openprogram.programs.functions.read.read import _read_pdf
+
+    with tempfile.TemporaryDirectory(prefix="openprogram-pdf-probe-") as temp_dir:
+        pdf_path = Path(temp_dir) / "probe.pdf"
+        writer = PdfWriter()
+        writer.add_blank_page(width=72, height=72)
+        with pdf_path.open("wb") as stream:
+            writer.write(stream)
+
+        pdf_result = pdf_extract(file_path=str(pdf_path))
+        read_result = _read_pdf(str(pdf_path), offset=1, limit=1)
+        if "unavailable" in pdf_result.lower():
+            raise RuntimeError("built-in pdf tool is unavailable")
+        if "unavailable" in read_result.lower():
+            raise RuntimeError("built-in read PDF support is unavailable")
+
+
+def _probe_rich_terminal() -> None:
+    from rich.console import Console
+
+    output = io.StringIO()
+    Console(file=output, force_terminal=False).print("OpenProgram terminal probe")
+    if "OpenProgram terminal probe" not in output.getvalue():
+        raise RuntimeError("built-in Rich terminal UI probe failed")
 
 
 def _probe(
@@ -96,8 +128,13 @@ def _probe(
         "semble",
         "easyocr",
         "pymupdf",
+        "pypdf",
+        "rich",
     ):
         importlib.import_module(module)
+
+    _probe_pdf_tools()
+    _probe_rich_terminal()
 
     from playwright.sync_api import sync_playwright
 

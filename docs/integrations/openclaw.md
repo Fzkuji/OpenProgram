@@ -104,9 +104,14 @@ description: Plan and decompose tasks using Agentic Programming with automatic c
 When the user asks to plan, decompose, or break down a task, run:
 
 \`\`\`bash
-python3 ~/.openclaw/workspace/skills/my-agentic-skill/scripts/analyze.py "the task description"
+uv run --project ~/.openclaw/workspace/OpenProgram python \
+  ~/.openclaw/workspace/skills/my-agentic-skill/scripts/analyze.py \
+  "the task description"
 \`\`\`
 ```
+
+This runs the script with the source checkout's locked environment. Do not run
+it with the system Python, which does not contain OpenProgram's dependencies.
 
 OpenClaw and OpenProgram use the same AgentSkills-compatible `SKILL.md` format, so a skill written for one loads in the other. OpenProgram's own skills live in [`skills/`](https://github.com/Fzkuji/OpenProgram/tree/main/skills) at the repo root and can be copied into any OpenClaw skill root as-is.
 

@@ -104,9 +104,14 @@ description: Plan and decompose tasks using Agentic Programming with automatic c
 当用户要求规划、分解或拆解任务时，运行：
 
 \`\`\`bash
-python3 ~/.openclaw/workspace/skills/my-agentic-skill/scripts/analyze.py "任务描述"
+uv run --project ~/.openclaw/workspace/OpenProgram python \
+  ~/.openclaw/workspace/skills/my-agentic-skill/scripts/analyze.py \
+  "任务描述"
 \`\`\`
 ```
+
+该命令使用源码 checkout 的锁定环境运行脚本。不要使用系统 Python；系统
+Python 不包含 OpenProgram 的依赖。
 
 OpenClaw 和 OpenProgram 使用同一套 AgentSkills 兼容的 `SKILL.md` 格式，为其中一方写的 skill 在另一方也能加载。OpenProgram 自己的 skill 放在仓库根目录的 [`skills/`](https://github.com/Fzkuji/OpenProgram/tree/main/skills) 下，可以原样复制进任何 OpenClaw skill 根目录。
 
