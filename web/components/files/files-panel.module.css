@@ -416,7 +416,7 @@
   position: absolute;
   left: var(--guide-x);
   top: 50%;
-  width: 9px;
+  width: 21px;
   height: 1px;
   background: color-mix(in srgb, var(--text-muted) 60%, transparent);
   pointer-events: none;

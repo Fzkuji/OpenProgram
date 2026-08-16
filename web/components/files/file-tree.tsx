@@ -118,9 +118,9 @@ async function copyText(value: string): Promise<void> {
   document.body.removeChild(ta);
 }
 
-/* The folder glyph is the disclosure control. Root rows reuse the
-   toolbar's 16px inset; each nested level adds one 16px tree rail. */
-const INDENT = 16;
+/* The folder glyph is the disclosure control. Each child icon starts
+   where its parent label starts: 16px icon slot + 12px label gap. */
+const INDENT = 28;
 const TREE_BASE_PAD = 16;
 const TREE_LABEL_OFFSET = 44;
 

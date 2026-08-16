@@ -43,6 +43,7 @@ assert.match(fileTreeCss, /\.treeToolbar\s*\{/);
 assert.match(fileTreeCss, /\.treeSearchRow\s*\{/);
 assert.match(fileTree, /const TREE_BASE_PAD = 16/);
 assert.match(fileTree, /const TREE_LABEL_OFFSET = 44/);
+assert.match(fileTree, /const INDENT = 28/);
 assert.match(fileTree, /paddingLeft: TREE_BASE_PAD \+ depth \* INDENT/);
 assert.match(fileTree, /TREE_BASE_PAD \+ 8 \+ depth \* INDENT/);
 assert.doesNotMatch(fileTree, /\bROW_PAD\b|\bFILE_PAD\b/);
@@ -57,6 +58,10 @@ assert.match(
 assert.match(fileTreeCss, /\.treeKids > \.treeNode::before/);
 assert.match(fileTreeCss, /\.treeKids > \.treeNode:last-child::before/);
 assert.match(fileTreeCss, /\.treeKids > \.treeNode > \.treeRow::before/);
+assert.match(
+  fileTreeCss,
+  /\.treeKids > \.treeNode > \.treeRow::before\s*\{[^}]*width:\s*21px/s,
+);
 assert.match(fileTreeCss, /\.treeName,[\s\S]*\.treePath\s*\{[^}]*margin-left:\s*12px/);
 assert.match(
   projectMenu,

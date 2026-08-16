@@ -102,8 +102,8 @@
   .tree-row .label { min-width: 0; margin-left: 12px; overflow: hidden; text-overflow: ellipsis; }
   .tree-branch { position: relative; }
   .tree-branch::before { content: ""; position: absolute; left: 24px; top: 26px; bottom: 13px; width: 1px; background: #55555e; }
-  .tree-child { position: relative; padding-left: 32px; }
-  .tree-child::before { content: ""; position: absolute; left: 24px; top: 13px; width: 9px; height: 1px; background: #55555e; }
+  .tree-child { position: relative; padding-left: 44px; }
+  .tree-child::before { content: ""; position: absolute; left: 24px; top: 13px; width: 21px; height: 1px; background: #55555e; }
   .guides { position: absolute; inset: 0; pointer-events: none; opacity: .8; }
   .guide { position: absolute; top: 0; bottom: 0; border-left: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); }
   .guide.g24 { left: 24px; }
@@ -199,8 +199,8 @@
   <h2>对齐规格</h2>
   <div class="spec-grid">
     <div class="spec"><b>x = 24</b><span>项目图标、根级目录图标和根级父线共用同一中轴线。</span></div>
-    <div class="spec"><b>x = 40</b><span>一级子项图标中心；每深入一层继续增加 16px。</span></div>
-    <div class="spec"><b>x = 44</b><span>项目名和根级名称共用同一起点；子项名称随层级按 16px 递增。</span></div>
+    <div class="spec"><b>x = 44</b><span>项目名与根级名称的起点，也是一级子项图标槽的左边缘；图标中心为 52px。</span></div>
+    <div class="spec"><b>step = 28</b><span>每层由 16px 图标槽和 12px 图文间距组成；下一级图标始终对齐父级名称起点。</span></div>
     <div class="spec"><b>right = 16</b><span>项目操作按钮和展开搜索框的右内容边界。</span></div>
   </div>
 
@@ -213,7 +213,7 @@
       <tr><td>项目工具栏</td><td>40px；内部行 32px</td><td>左右内容边距改为 16px；图标槽改为 16px，图文间距改为 12px。</td></tr>
       <tr><td>操作按钮</td><td>24 × 24px；间距 4px</td><td>保持现状，只移动整个操作组。</td></tr>
       <tr><td>文件树行</td><td>26px；16 + 12px</td><td>移除展开槽；目录图标切换开合状态，名称与图标保持 12px 间距。</td></tr>
-      <tr><td>层级连接</td><td>1px；层级步长 16px</td><td>父目录图标中心向下画竖线，子项用 9px 短横线接到自身图标左缘。</td></tr>
+      <tr><td>层级连接</td><td>1px；层级步长 28px</td><td>父目录图标中心向下画竖线，子项用 21px 短横线接到自身图标左缘。</td></tr>
       <tr><td>搜索展开</td><td>项目行下方 36px</td><td>搜索框左右边界与项目工具栏内容边界一致。</td></tr>
     </tbody>
   </table>
@@ -222,13 +222,14 @@
   <ul>
     <li>采用：项目工具栏继续复用顶部导航的水平内容结构；项目名保持较小、较粗的上下文标签样式。</li>
     <li>采用：文件树使用图标与名称两列；根级图标和名称分别与项目工具栏的图标和项目名对齐。</li>
+    <li>采用：每一级子项图标从父级名称起点开始，形成一致的逐级嵌套关系。</li>
     <li>采用：目录关闭时显示普通文件夹，展开时显示打开文件夹；整行继续作为展开点击区。</li>
     <li>采用：层级线只出现在已经展开的父子关系中，最后一个子项的竖线停在该行中点。</li>
     <li>采用：项目行继续使用底部分隔线，不增加卡片背景、阴影或第二个选中面。</li>
     <li>不采用：为项目名增加展开箭头。当前项目根不可折叠，箭头会表达不存在的操作。</li>
     <li>不采用：把四个操作平均分布。它们是一个右对齐的操作组，平均分布会削弱项目名与操作的关系。</li>
     <li>不采用：保留独立箭头、圆点或额外展开按钮；它们会重复表达目录状态。</li>
-    <li>不采用：改变 16px 的层级递增量；层级线直接复用现有缩进刻度。</li>
+    <li>不采用：让父级名称与子级图标左右错开；层级步长由图标槽和名称间距共同决定。</li>
   </ul>
 
   <h2>验收与实现状态</h2>
@@ -237,7 +238,7 @@
     <tbody>
       <tr><td>目录状态</td><td>文件树中不出现折叠箭头；目录图标的开合状态与实际展开状态一致。</td></tr>
       <tr><td>层级结构</td><td>展开目录的竖线从父图标中心延伸，所有直接子项均通过短横线连接。</td></tr>
-      <tr><td>水平空间</td><td>根级图标中心为 24px，根级名称从 44px 开始，与项目工具栏一致；每层增加 16px。</td></tr>
+      <tr><td>水平空间</td><td>根级图标中心为 24px，根级名称从 44px 开始；每一级子项图标左边缘与父级名称起点一致，每层增加 28px。</td></tr>
       <tr><td>右侧操作</td><td>刷新按钮点击区右缘距离侧栏 16px；240px 下四个操作仍完整。</td></tr>
       <tr><td>搜索</td><td>默认隐藏；展开后左右边界与项目工具栏一致。</td></tr>
       <tr><td>主题</td><td>仅使用现有背景、文字、边框与 hover token，不写死产品色。</td></tr>
