@@ -85,6 +85,9 @@ assert.match(accountManager, /title=\{text\("Remove account", "删除账号"\)\}
 assert.match(css, /\.acctRow\s*\{[^}]*border:\s*1px solid var\(--border\)[^}]*background:\s*var\(--bg-input\)/s);
 assert.match(css, /\.acctCardHeader\s*\{[^}]*display:\s*flex/s);
 assert.match(css, /\.acctStatusButton\s*\{[^}]*display:\s*inline-flex/s);
+assert.match(css, /\.iconBtn\s*\{[^}]*width:\s*28px[^}]*height:\s*28px[^}]*flex:\s*0 0 28px[^}]*border-radius:\s*6px/s);
+assert.match(css, /\.acctStatusButton\s*\{[^}]*height:\s*28px[^}]*border:\s*1px solid transparent[^}]*padding:\s*0 8px[^}]*border-radius:\s*6px/s);
+assert.match(css, /\.iconBtn svg,\s*\.acctStatusButton svg\s*\{[^}]*width:\s*14px[^}]*height:\s*14px[^}]*flex:\s*0 0 14px/s);
 assert.match(css, /\.acctUseRow\s*\{[^}]*border-top:\s*1px solid var\(--border\)/s);
 assert.match(css, /\.addCredentialTrigger\s*\{[^}]*border:\s*1px dashed var\(--border\)/s);
 assert.match(css, /\.addCredentialFieldsSingle\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto/s);
