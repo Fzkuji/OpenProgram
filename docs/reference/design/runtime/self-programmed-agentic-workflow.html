@@ -80,7 +80,7 @@
     <div class="eyebrow">OpenProgram · Runtime design</div>
     <h1>Self-Programming Agentic Workflow</h1>
     <p class="lead">Workflow 不是新的调用协议。它是一个独立 Git 仓库中的普通 Python 小项目，可以按任务直接组合 <code>goal()</code>、<code>agent()</code> 和 <code>llm()</code> 中的任意一种或多种调用。三层能力的依赖顺序固定：Goal 建立在 Agent loop 上，Agent loop 由反复的模型调用和工具执行组成，<code>llm()</code> 直接暴露其中的一次模型调用。入口使用现有 <code>@agentic_function</code>，项目之间通过正常的 Python <code>import</code> 和函数调用组合。</p>
-    <div class="status-row"><span class="pill target">唯一装饰器：@agentic_function</span><span class="pill target">组合：Python import</span><span class="pill">Workflow：任选 Goal / Agent / llm</span><span class="pill">固定依赖：goal → agent → model call → runtime</span><span class="pill">版本：Git commits</span><span class="pill">实现状态：阶段 1 — 参数化入口完成</span></div>
+    <div class="status-row"><span class="pill target">唯一装饰器：@agentic_function</span><span class="pill target">组合：Python import</span><span class="pill">Workflow：任选 Goal / Agent / llm</span><span class="pill">固定依赖：goal → agent → model call → runtime</span><span class="pill">版本：Git commits</span><span class="pill">实现状态：阶段 2 — Git 项目完成</span></div>
   </header>
 
   <div class="layout">
@@ -331,15 +331,15 @@ def research_pipeline(task: str, output_dir: str) -> str:
           <tr><td><code>llm()</code>、<code>agent()</code>、<code>goal()</code></td><td><span class="state keep">保留</span></td><td><code>agent()</code> 支撑 Goal，Agent loop 依赖反复的单次模型调用；<code>llm()</code> 是该模型调用层的直接入口，并继续承担当前 condition judge 实现。</td></tr>
           <tr><td>现有受限执行、checkpoint、权限、取消和Conclusion</td><td><span class="state keep">保留</span></td><td>迁移不能改变这些公共行为。</td></tr>
           <tr><td>新项目 <code>workflow(task)</code> 参数化入口</td><td><span class="state keep">阶段 1 完成</span></td><td>运行时传入本次任务；作者提示要求将参数继续传给helper，并可组合 <code>llm()</code>、<code>agent()</code> 和 <code>goal()</code>。旧schema v1快照只在恢复时继续接受零参数入口。</td></tr>
-          <tr><td>自定义project catalog和revision目录</td><td><span class="state remove">移除</span></td><td>由Git仓库和commits替代。</td></tr>
+          <tr><td>自定义project catalog和revision目录</td><td><span class="state keep">阶段 2 完成</span></td><td>项目直接保存为 <code>~/.openprogram/workflows/&lt;name&gt;</code> Git仓库；元数据位于 <code>pyproject.toml</code>，运行版本为完整commit hash，不再写 <code>project.json</code> 或 <code>revisions/</code>。</td></tr>
           <tr><td>零参数单文件Workflow</td><td><span class="state remove">移除</span></td><td>由接收参数的多文件Python package替代。</td></tr>
-          <tr><td>Workflow Git仓库扫描和commit快照</td><td><span class="state target">待实现</span></td><td>仅负责准备正常Python import环境。</td></tr>
-          <tr><td>跨Workflow静态import分析和隔离worker</td><td><span class="state target">待实现</span></td><td>用于依赖快照、循环检查和主进程隔离。</td></tr>
+          <tr><td>Workflow Git仓库扫描和commit快照</td><td><span class="state keep">阶段 2 完成</span></td><td>Create和revise生成Git commits；reuse及每次run从 <code>git archive HEAD</code> 读取固定快照。修改在临时Git worktree中验证后fast-forward。</td></tr>
+          <tr><td>跨Workflow静态import分析和backend worker加载</td><td><span class="state target">待实现</span></td><td>现有Python backend已经与Electron主进程隔离；后续只在该worker中准备可达commit快照和标准import path，不新增第二个Runtime进程。</td></tr>
           <tr><td><code>agentic_workflow</code> 多文件author/reuse逻辑</td><td><span class="state target">待实现</span></td><td>使用现有 Goal、Agent 和单次模型调用能力创建、组合或修改项目。</td></tr>
         </tbody></table>
         <div class="callout pending">迁移顺序必须保持概念边界：先让生成代码使用现有 <code>@agentic_function</code>、<code>llm()</code>、<code>agent()</code> 和 <code>goal()</code>；再建立Git项目与标准import；最后删除旧revision/catalog。整个过程不新增公开调用API。</div>
       </section>
-      <p class="footer-note">Canonical design document. Phase 1 evidence: public-entry task propagation, llm/agent/goal composition, legacy snapshot resume and rejection of zero-argument new candidates are covered by 60 focused tests. Git repositories, standard imports and the isolated worker remain pending.</p>
+      <p class="footer-note">Canonical design document. Phase 2 evidence: public-entry Git publication, commit-based create/revise/reuse, temporary-worktree rollback, concurrent publication, task propagation, primitive composition and legacy run recovery are covered by 60 focused tests. Standard Python packages/imports remain pending.</p>
     </main>
   </div>
 </div>

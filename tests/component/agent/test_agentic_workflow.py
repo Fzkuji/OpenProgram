@@ -5,6 +5,7 @@ import json
 import inspect
 import multiprocessing as mp
 import re
+import subprocess
 import textwrap
 import threading
 from pathlib import Path
@@ -178,6 +179,15 @@ def _state(repo: Path, run_id: str) -> dict:
     return json.loads((_instance(repo, run_id) / "state.json").read_text())
 
 
+def _git_output(project: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(project), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
 def test_small_task_is_persisted_as_a_reusable_multifile_project(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
@@ -195,7 +205,7 @@ def test_small_task_is_persisted_as_a_reusable_multifile_project(
     assert (snapshot / "steps" / "task.py").exists()
     assert not (_instance(session_repo, result["run_id"]) / "code.py").exists()
     assert result["project_id"]
-    assert result["project_revision"] == "0001"
+    assert len(result["project_revision"]) == 40
     assert _state(session_repo, result["run_id"])["status"] == "completed"
     assert not (session_repo / "todos.json").exists()
 
@@ -994,7 +1004,7 @@ def test_public_entry_creates_and_executes_reusable_multifile_project(
 
     assert result["status"] == "completed"
     assert result["project_id"]
-    assert result["project_revision"] == "0001"
+    assert len(result["project_revision"]) == 40
     assert [call["prompt"] for call in calls] == ["discover papers"]
     instance = _instance(session_repo, result["run_id"])
     snapshot = instance / "snapshot"
@@ -1003,9 +1013,31 @@ def test_public_entry_creates_and_executes_reusable_multifile_project(
     assert (snapshot / "README.md").exists()
     assert (snapshot / "workflow.json").exists()
     project = session_repo / "catalog" / result["project_id"]
-    assert (project / "revisions" / "0001" / "steps" / "discover.py").exists()
-    assert json.loads((project / "project.json").read_text())["active_revision"] == "0001"
+    assert (project / "steps" / "discover.py").exists()
+    assert (project / "pyproject.toml").exists()
+    assert _git_output(project, "rev-parse", "HEAD") == result["project_revision"]
     assert "workflow project candidates" in prompts[0]
+
+
+def test_public_entry_publishes_project_as_git_repository(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _planner(
+        monkeypatch,
+        json.dumps({"action": "create"}),
+        _project(),
+    )
+    _executor(monkeypatch)
+    _summarizer(monkeypatch)
+
+    result = TL.agentic_workflow("research recent papers")
+
+    project = TL._workflow_projects_root() / result["project_id"]
+    head = _git_output(project, "rev-parse", "HEAD")
+    assert (project / ".git").is_dir()
+    assert result["project_revision"] == head
+    assert not (project / "project.json").exists()
+    assert not (project / "revisions").exists()
 
 
 def test_public_entry_passes_task_to_parameterized_project(
@@ -1163,11 +1195,8 @@ def test_entry_only_project_is_rejected_before_execution_and_publish(
     assert result["status"] == "completed"
     assert "at least one Python helper under steps/" in prompts[2]
     assert [call["prompt"] for call in calls] == ["discover papers"]
-    revision = (
-        session_repo / "catalog" / result["project_id"]
-        / "revisions" / result["project_revision"]
-    )
-    assert (revision / "steps" / "discover.py").exists()
+    project = session_repo / "catalog" / result["project_id"]
+    assert (project / "steps" / "discover.py").exists()
 
 
 def test_similar_task_in_another_session_reuses_project_without_authoring(
@@ -1194,8 +1223,9 @@ def test_similar_task_in_another_session_reuses_project_without_authoring(
     second = TL.agentic_workflow("research another paper")
 
     assert second["project_id"] == first["project_id"] == "research-workflow"
-    assert second["project_revision"] == first["project_revision"] == "0001"
-    assert len(list((tmp_path / "catalog" / "research-workflow" / "revisions").iterdir())) == 1
+    assert second["project_revision"] == first["project_revision"]
+    project = tmp_path / "catalog" / "research-workflow"
+    assert _git_output(project, "rev-list", "--count", "HEAD") == "1"
     assert [call["prompt"] for call in calls] == ["discover papers", "discover papers"]
     assert "research-workflow" in prompts[2]
     assert "steps/discover.py" not in prompts[2]
@@ -1228,12 +1258,12 @@ def test_revise_reads_full_active_project_and_preserves_unchanged_file(
     initial = TL.agentic_workflow("research papers")
     updated = TL.agentic_workflow("research papers and verify them")
 
-    assert initial["project_revision"] == "0001"
-    assert updated["project_revision"] == "0002"
-    project = session_repo / "catalog" / "research-workflow" / "revisions"
-    assert (project / "0001" / "steps" / "shared.py").read_bytes() == (
-        project / "0002" / "steps" / "shared.py"
-    ).read_bytes()
+    assert initial["project_revision"] != updated["project_revision"]
+    project = session_repo / "catalog" / "research-workflow"
+    assert _git_output(project, "rev-list", "--count", "HEAD") == "2"
+    assert _git_output(
+        project, "show", f"{initial['project_revision']}:steps/shared.py",
+    ) == (project / "steps" / "shared.py").read_text().strip()
     assert "discover papers" in prompts[3]
     assert "steps/shared.py" in prompts[3]
     assert "Reusable research steps" in prompts[3]
@@ -1261,21 +1291,17 @@ def test_failed_candidate_repairs_snapshot_before_publishing_active_revision(
 
     result = TL.agentic_workflow("repair project")
 
-    assert result["project_revision"] == "0001"
+    assert len(result["project_revision"]) == 40
     project = session_repo / "catalog" / result["project_id"]
-    assert "fixed candidate" in (
-        project / "revisions" / "0001" / "steps" / "run.py"
-    ).read_text()
+    assert "fixed candidate" in (project / "steps" / "run.py").read_text()
     assert "broken candidate" in prompts[2]
     assert "RuntimeError: broken candidate" in prompts[2]
-    assert len(list((project / "revisions").iterdir())) == 1
+    assert _git_output(project, "rev-list", "--count", "HEAD") == "1"
 
 
-@pytest.mark.parametrize("failed_name", ("README.md", "project.json"))
-def test_publish_failure_rolls_back_catalog_and_resume_commits_once(
+def test_publish_failure_keeps_git_head_and_resume_commits_once(
     monkeypatch: pytest.MonkeyPatch,
     session_repo: Path,
-    failed_name: str,
 ) -> None:
     initial = _project(
         readme="# Initial workflow\n",
@@ -1303,40 +1329,37 @@ def test_publish_failure_rolls_back_catalog_and_resume_commits_once(
 
     first = TL.agentic_workflow("create initial project")
     project = session_repo / "catalog" / first["project_id"]
+    previous_head = _git_output(project, "rev-parse", "HEAD")
     previous_readme = (project / "README.md").read_bytes()
     existing_runs = set((session_repo / "workflows").iterdir())
-    real_atomic_write = TL.atomic_write_text
+    real_git = TL._git
     failed = False
 
-    def fail_once(path: Path, content: str) -> Path:
+    def fail_once(path: Path, *args: str) -> str:
         nonlocal failed
-        if not failed and Path(path) == project / failed_name:
+        if not failed and "commit" in args and Path(path) != project:
             failed = True
-            raise OSError(f"injected {failed_name} failure")
-        return real_atomic_write(path, content)
+            raise TL.InvalidWorkflow("injected Git commit failure")
+        return real_git(path, *args)
 
-    monkeypatch.setattr(TL, "atomic_write_text", fail_once)
-    with pytest.raises(OSError, match=f"injected {re.escape(failed_name)} failure"):
+    monkeypatch.setattr(TL, "_git", fail_once)
+    with pytest.raises(TL.InvalidWorkflow, match="injected Git commit failure"):
         TL.agentic_workflow("revise existing project")
 
     failed_run = (set((session_repo / "workflows").iterdir()) - existing_runs).pop()
-    assert json.loads((project / "project.json").read_text())["active_revision"] == "0001"
+    assert _git_output(project, "rev-parse", "HEAD") == previous_head
     assert (project / "README.md").read_bytes() == previous_readme
-    assert not (project / "revisions" / "0002").exists()
     assert _state(session_repo, failed_run.name)["publish_required"] is True
 
-    monkeypatch.setattr(TL, "atomic_write_text", real_atomic_write)
+    monkeypatch.setattr(TL, "_git", real_git)
     resumed = TL.resume_workflow(failed_run.name)
 
-    assert resumed["project_revision"] == "0002"
-    assert sorted(path.name for path in (project / "revisions").iterdir()) == [
-        "0001", "0002",
-    ]
-    assert json.loads((project / "project.json").read_text())["active_revision"] == "0002"
+    assert resumed["project_revision"] != previous_head
+    assert _git_output(project, "rev-list", "--count", "HEAD") == "2"
     assert (project / "README.md").read_text() == "# Revised workflow\n"
 
 
-def test_concurrent_process_publish_creates_two_complete_revisions(
+def test_concurrent_process_publish_creates_two_git_commits(
     monkeypatch: pytest.MonkeyPatch,
     session_repo: Path,
 ) -> None:
@@ -1397,20 +1420,19 @@ def test_concurrent_process_publish_creates_two_complete_revisions(
 
     published = [results.get(timeout=2) for _ in processes]
     assert all(not error for _label, _revision, error in published)
-    assert sorted(revision for _label, revision, _error in published) == ["0002", "0003"]
+    assert len({revision for _label, revision, _error in published}) == 2
     project = session_repo / "catalog" / project_id
     for label, revision, _error in published:
-        loaded = TL._read_candidate_directory(
-            project / "revisions" / revision,
-            candidates[label]["project_metadata"],
+        assert f"return '{label}'" in _git_output(
+            project, "show", f"{revision}:steps/run.py",
         )
-        assert loaded == candidates[label]
+    assert _git_output(project, "rev-list", "--count", "HEAD") == "3"
     index = TL._read_project_index(project)
     active = next(label for label, revision, _error in published
                   if revision == index["active_revision"])
     assert index["project_metadata"] == candidates[active]["project_metadata"]
     assert (project / "README.md").read_text() == candidates[active]["readme"]
-    assert not list((project / "revisions").glob(".*.tmp"))
+    assert len(_git_output(project, "worktree", "list", "--porcelain").split("worktree ")) == 2
 
 
 def test_cancelled_project_run_does_not_publish_candidate(

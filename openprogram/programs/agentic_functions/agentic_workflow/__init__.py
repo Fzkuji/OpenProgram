@@ -14,11 +14,16 @@ import functools
 import hashlib
 import importlib
 import inspect
+import io
 import json
 import re
 import shutil
+import subprocess
+import tarfile
+import tempfile
 import threading
 import time
+import tomllib
 import traceback
 import uuid
 from pathlib import Path
@@ -364,7 +369,7 @@ def _validated_reply(reply: str) -> str:
 def _workflow_projects_root() -> Path:
     from openprogram.paths import get_state_dir
 
-    return get_state_dir() / "workflow-projects"
+    return get_state_dir() / "workflows"
 
 
 def _safe_project_id(value: object) -> str:
@@ -384,28 +389,62 @@ def _project_tokens(value: object) -> set[str]:
     return tokens
 
 
+def _git(project_dir: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(project_dir), *args],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise InvalidWorkflow(f"git {' '.join(args)} failed: {detail}")
+    return completed.stdout.strip()
+
+
+def _project_pyproject(project_id: str, metadata: dict) -> str:
+    return (
+        "[project]\n"
+        f"name = {json.dumps(project_id)}\n"
+        'version = "0.1.0"\n'
+        f"description = {json.dumps(metadata['summary'], ensure_ascii=False)}\n"
+        f"keywords = {json.dumps(metadata['tags'], ensure_ascii=False)}\n\n"
+        "[tool.openprogram]\n"
+        f"display-name = {json.dumps(metadata['name'], ensure_ascii=False)}\n"
+    )
+
+
+def _read_repository_metadata(
+    project_dir: Path, *, expected_project_id: str = "",
+) -> dict:
+    path = project_dir / "pyproject.toml"
+    if path.is_symlink():
+        raise InvalidWorkflow("workflow project pyproject must not be a symlink")
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    project = data.get("project")
+    tool = data.get("tool", {}).get("openprogram", {})
+    if not isinstance(project, dict) or not isinstance(tool, dict):
+        raise InvalidWorkflow("invalid workflow project pyproject")
+    project_id = _safe_project_id(project.get("name"))
+    if project_id != (expected_project_id or project_dir.name):
+        raise InvalidWorkflow("workflow project name does not match its directory")
+    return _validate_project_metadata({
+        "name": tool.get("display-name") or project_id,
+        "summary": project.get("description"),
+        "tags": project.get("keywords"),
+    })
+
+
 def _read_project_index(project_dir: Path) -> dict:
     if project_dir.is_symlink():
         raise InvalidWorkflow("workflow project directory must not be a symlink")
-    path = project_dir / "project.json"
-    if path.is_symlink():
-        raise InvalidWorkflow("workflow project index must not be a symlink")
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise InvalidWorkflow("workflow project index must be an object")
-    project_id = _safe_project_id(data.get("project_id"))
-    if project_id != project_dir.name:
-        raise InvalidWorkflow("workflow project id does not match its directory")
-    revision = str(data.get("active_revision") or "")
-    if not re.fullmatch(r"\d{4}", revision):
-        raise InvalidWorkflow("invalid workflow project active revision")
-    metadata = data.get("project_metadata")
-    if not isinstance(metadata, dict):
-        raise InvalidWorkflow("workflow project metadata must be an object")
+    if not (project_dir / ".git").exists():
+        raise InvalidWorkflow("workflow project must be a Git repository")
+    project_id = _safe_project_id(project_dir.name)
     return {
         "project_id": project_id,
-        "active_revision": revision,
-        "project_metadata": _validate_project_metadata(metadata),
+        "active_revision": _git(project_dir, "rev-parse", "HEAD"),
+        "project_metadata": _read_repository_metadata(project_dir),
     }
 
 
@@ -768,17 +807,94 @@ def _request_project_candidate(
             )
 
 
+def _write_repository_candidate(
+    directory: Path, project_id: str, candidate: dict,
+) -> None:
+    for child in directory.iterdir():
+        if child.name == ".git":
+            continue
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+    atomic_write_text(
+        directory / "pyproject.toml",
+        _project_pyproject(project_id, candidate["project_metadata"]),
+    )
+    atomic_write_text(directory / "README.md", candidate["readme"])
+    for relative, source in candidate["files"].items():
+        path = directory / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(path, source)
+
+
+def _read_repository_candidate(
+    directory: Path, *, allow_legacy_entry: bool = False,
+    expected_project_id: str = "",
+) -> dict:
+    metadata = _read_repository_metadata(
+        directory, expected_project_id=expected_project_id,
+    )
+    readme = directory / "README.md"
+    if readme.is_symlink():
+        raise InvalidWorkflow("workflow project README must not be a symlink")
+    files: dict[str, str] = {}
+    for path in directory.rglob("*"):
+        parts = path.relative_to(directory).parts
+        if ".git" in parts:
+            continue
+        if path.is_symlink():
+            raise InvalidWorkflow("workflow project files must not be symlinks")
+        if not path.is_file():
+            continue
+        relative = path.relative_to(directory).as_posix()
+        if relative in {"README.md", "pyproject.toml"}:
+            continue
+        source_path = _validate_project_path(relative)
+        files[source_path] = path.read_text(encoding="utf-8")
+    return _validate_project_candidate(
+        {
+            "project_metadata": metadata,
+            "readme": readme.read_text(encoding="utf-8"),
+            "files": files,
+        },
+        allow_legacy_entry=allow_legacy_entry,
+    )
+
+
+def _checkout_head(project_dir: Path) -> tuple[dict, str]:
+    revision = _git(project_dir, "rev-parse", "HEAD")
+    archive = subprocess.run(
+        ["git", "-C", str(project_dir), "archive", "--format=tar", revision],
+        check=False,
+        capture_output=True,
+    )
+    if archive.returncode:
+        raise InvalidWorkflow(
+            f"git archive failed: {archive.stderr.decode(errors='replace').strip()}"
+        )
+    with tempfile.TemporaryDirectory(prefix="openprogram-workflow-checkout-") as raw:
+        checkout = Path(raw) / project_dir.name
+        checkout.mkdir()
+        with tarfile.open(fileobj=io.BytesIO(archive.stdout), mode="r:") as bundle:
+            for member in bundle.getmembers():
+                member_path = Path(member.name)
+                if member_path.is_absolute() or ".." in member_path.parts:
+                    raise InvalidWorkflow("invalid path in workflow Git archive")
+            bundle.extractall(checkout, filter="data")
+        return _read_repository_candidate(
+            checkout, allow_legacy_entry=True,
+        ), revision
+
+
 def _active_project(project_id: str) -> tuple[dict, dict, Path]:
     project_id = _safe_project_id(project_id)
     project_dir = _workflow_projects_root() / project_id
     index = _read_project_index(project_dir)
-    revision_dir = project_dir / "revisions" / index["active_revision"]
-    if revision_dir.is_symlink():
-        raise InvalidWorkflow("workflow project revision must not be a symlink")
-    candidate = _read_candidate_directory(
-        revision_dir, index["project_metadata"],
-    )
-    return index, candidate, revision_dir
+    candidate, revision = _checkout_head(project_dir)
+    if revision != index["active_revision"]:
+        raise InvalidWorkflow("workflow project HEAD changed while reading")
+    return index, candidate, project_dir
 
 
 def _copy_active_snapshot(instance: Path, project_id: str) -> tuple[dict, dict]:
@@ -796,11 +912,11 @@ def _publish_snapshot(
 ) -> tuple[str, str]:
     root = _workflow_projects_root()
     if root.is_symlink():
-        raise InvalidWorkflow("workflow project catalog must not be a symlink")
+        raise InvalidWorkflow("workflow project root must not be a symlink")
     root.mkdir(parents=True, exist_ok=True)
     from openprogram.credential_files import _private_file_lock
 
-    with _private_file_lock(root / ".catalog", root=root, timeout=30):
+    with _private_file_lock(root / ".git-publish", root=root, timeout=30):
         if action == "create":
             base_id = _slugify_project_name(metadata["name"])
             allocated = base_id
@@ -812,73 +928,61 @@ def _publish_snapshot(
         else:
             project_id = _safe_project_id(project_id)
         project_dir = root / project_id
-        project_existed = project_dir.exists()
         if project_dir.is_symlink():
             raise InvalidWorkflow("workflow project directory must not be a symlink")
-        revisions = project_dir / "revisions"
-        if revisions.is_symlink():
-            raise InvalidWorkflow("workflow project revisions must not be a symlink")
-        revisions.mkdir(parents=True, exist_ok=True)
-        existing = [
-            int(path.name) for path in revisions.iterdir()
-            if path.is_dir() and re.fullmatch(r"\d{4}", path.name)
-        ]
-        revision = f"{max(existing, default=0) + 1:04d}"
-        temporary = revisions / f".{revision}-{uuid.uuid4().hex}.tmp"
-        final = revisions / revision
-        readme_path = project_dir / "README.md"
-        readme_backup = project_dir / f".README-{uuid.uuid4().hex}.old"
-        if readme_path.is_symlink():
-            raise InvalidWorkflow("workflow project README must not be a symlink")
-        had_readme = readme_path.exists()
-        if had_readme:
-            shutil.copy2(readme_path, readme_backup)
-        index = {
-            "schema_version": PROJECT_SCHEMA_VERSION,
-            "project_id": project_id,
-            "project_metadata": metadata,
-            "active_revision": revision,
-        }
-        committed = False
-        try:
-            shutil.copytree(instance / "snapshot", temporary, symlinks=True)
-            _read_candidate_directory(temporary, metadata)
-            if final.exists():
-                raise FileExistsError(final)
-            temporary.replace(final)
-            atomic_write_text(
-                readme_path,
-                (final / "README.md").read_text(encoding="utf-8"),
-            )
-            atomic_write_text(
-                project_dir / "project.json",
-                json.dumps(index, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            )
-            committed = True
-        except Exception:
+        candidate = _read_candidate_directory(
+            instance / "snapshot", metadata,
+        )
+        if action == "create":
+            staging = Path(tempfile.mkdtemp(prefix=f".{project_id}-", dir=root))
             try:
-                committed = _read_project_index(project_dir) == {
-                    "project_id": project_id,
-                    "active_revision": revision,
-                    "project_metadata": metadata,
-                }
-            except (OSError, ValueError, json.JSONDecodeError):
-                committed = False
-            if not committed:
-                if final.exists():
-                    shutil.rmtree(final)
-                if had_readme and readme_backup.exists():
-                    readme_backup.replace(readme_path)
-                else:
-                    readme_path.unlink(missing_ok=True)
-                if not project_existed and project_dir.exists():
-                    shutil.rmtree(project_dir)
-                raise
-        finally:
-            if temporary.exists():
-                shutil.rmtree(temporary)
-            readme_backup.unlink(missing_ok=True)
-    return project_id, revision
+                _git(staging, "init", "-b", "main")
+                _write_repository_candidate(staging, project_id, candidate)
+                _read_repository_candidate(
+                    staging, expected_project_id=project_id,
+                    allow_legacy_entry=True,
+                )
+                _git(staging, "add", "--all")
+                _git(
+                    staging,
+                    "-c", "user.name=OpenProgram",
+                    "-c", "user.email=openprogram@localhost",
+                    "commit", "-m", "Create workflow project",
+                )
+                staging.replace(project_dir)
+            finally:
+                if staging.exists():
+                    shutil.rmtree(staging)
+        else:
+            _read_project_index(project_dir)
+            if _git(project_dir, "status", "--porcelain"):
+                raise InvalidWorkflow("workflow project has uncommitted changes")
+            worktree = Path(tempfile.mkdtemp(prefix=f".{project_id}-", dir=root))
+            shutil.rmtree(worktree)
+            try:
+                _git(project_dir, "worktree", "add", "--detach", str(worktree), "HEAD")
+                _write_repository_candidate(worktree, project_id, candidate)
+                _read_repository_candidate(
+                    worktree, expected_project_id=project_id,
+                    allow_legacy_entry=True,
+                )
+                _git(worktree, "add", "--all")
+                if _git(worktree, "status", "--porcelain"):
+                    _git(
+                        worktree,
+                        "-c", "user.name=OpenProgram",
+                        "-c", "user.email=openprogram@localhost",
+                        "commit", "-m", "Revise workflow project",
+                    )
+                    revision = _git(worktree, "rev-parse", "HEAD")
+                    _git(project_dir, "merge", "--ff-only", revision)
+            finally:
+                try:
+                    _git(project_dir, "worktree", "remove", "--force", str(worktree))
+                except InvalidWorkflow:
+                    if worktree.exists():
+                        shutil.rmtree(worktree)
+    return project_id, _git(project_dir, "rev-parse", "HEAD")
 
 
 def _new_run_id() -> str:
