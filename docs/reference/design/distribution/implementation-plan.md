@@ -8,6 +8,25 @@ and release-visible acceptance are maintained together in
 `docs/reference/design/distribution/automatic-updates.html`. They are not
 duplicated in this historical distribution ledger.
 
+## Remove Python-package product installation
+
+- Product contract: ordinary users install complete GitHub Release artifacts;
+  `pip install openprogram`, `pipx install openprogram`, `uv tool install
+  openprogram`, and the PyPI project page are not supported product entries.
+- Public surfaces: the site index, onboarding/troubleshooting pages, examples,
+  and runtime dependency errors point to the formal installer or a complete
+  reinstall instead of asking users to mutate Python packages.
+- Preserved developer boundary: release runtime assembly, source checkout
+  development, tests, and explicitly developer-owned third-party extension
+  environments may continue to build or install wheels internally.
+- Public-entry RED: the distribution contract scans public documentation and
+  product repair messages for Python-package installation instructions, while
+  retaining assertions that the runtime builder still consumes the verified
+  wheel.
+- Exclusions: no Python-free rewrite, no removal of `pyproject.toml`, no change
+  to plugin or third-party Program formats, and no remote PyPI mutation.
+- Status: design approved; implementation and reviews pending.
+
 ## Local App version coherence
 
 - Public boundaries: `scripts/refresh-local-app.sh` only refreshes an installed
