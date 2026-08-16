@@ -418,6 +418,7 @@ async function managerChecks() {
   const paneSource = fs.readFileSync(path.join(repositoryRoot, "web/components/center-tabs/builtin-tab-pane.tsx"), "utf8");
   const webTabSource = fs.readFileSync(path.join(repositoryRoot, "web/components/center-tabs/web-tab-pane.tsx"), "utf8");
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+  const refreshSource = fs.readFileSync(path.join(repositoryRoot, "scripts/refresh-local-app.sh"), "utf8");
   assert.match(mainSource, /ipcMain\.handle\("extensions:install-current-page"/);
   assert.match(mainSource, /record\.view\.webContents\.getURL\(\)/);
   assert.match(mainSource, /initializeBrowserExtensions\(\)[\s\S]*registerWebTabIpc\(\)[\s\S]*createWindow\(\)/);
@@ -433,6 +434,10 @@ async function managerChecks() {
   assert.match(webTabSource, /showToast\(text\([\s\S]*Extension installed\. Reload this page to apply it\./);
   assert.equal(packageJson.dependencies["extract-zip"], "2.0.1");
   assert.equal(packageJson.build.files.includes("browser-extension-manager.js"), true);
+  assert.match(refreshSource, /main\.js preload\.js browser-extension-manager\.js packaged-runtime\.js/);
+  for (const moduleName of ["extract-zip", "debug", "get-stream", "yauzl"]) {
+    assert.match(refreshSource, new RegExp(`(?:^|\\s)${moduleName}(?:\\s|$)`));
+  }
 }
 
 managerChecks().then(() => {
