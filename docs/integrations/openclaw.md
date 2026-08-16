@@ -19,9 +19,9 @@ cd ~/.openclaw/workspace
 # Clone OpenProgram
 git clone https://github.com/Fzkuji/OpenProgram.git
 
-# Install it
+# Prepare the source checkout
 cd OpenProgram
-pip install -e .
+uv sync --locked
 ```
 
 ## Usage Pattern 1: Agentic Functions Inside a Skill
@@ -46,7 +46,7 @@ Called by the agent via the exec tool.
 import sys
 import os
 
-# Add OpenProgram to the path (not needed if pip install -e was run)
+# Add the source checkout to the script path
 sys.path.insert(0, os.path.expanduser("~/.openclaw/workspace/OpenProgram"))
 
 from openprogram import agentic_function

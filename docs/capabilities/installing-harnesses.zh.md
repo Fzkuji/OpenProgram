@@ -94,8 +94,8 @@ python -c "import openprogram,os;print(os.path.join(os.path.dirname(openprogram.
 ```
 
 ```bash
-git clone <repo-url> "<AGENTICS>/<Harness-Name>"
-pip install "<AGENTICS>/<Harness-Name>"        # 或其 requirements.txt
+git clone <repo-url> /path/to/Harness-Name
+openprogram programs install file:///path/to/Harness-Name
 # 重启 OpenProgram
 ```
 
@@ -155,7 +155,7 @@ OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list
 |---|---|
 | 重启后 harness 函数没有出现 | 文件夹不匹配契约——确认 `<pkg>/agentics/__init__.py` 存在并导出 `AGENTIC_FUNCTIONS`。用 `OPENPROGRAM_DEBUG_REGISTRY=1` 运行。 |
 | 安装时出现 `[!] … no package with an agentics/__init__.py was found` | 同上——该仓库不满足契约（第二部分）。 |
-| harness 自身依赖出现 `ModuleNotFoundError` | 依赖安装步骤失败——对该克隆（或其 requirements.txt）执行 `pip install` 并检查错误。 |
+| harness 自身依赖出现 `ModuleNotFoundError` | Program 环境准备失败——重新执行 `openprogram programs install <source>` 并检查错误。 |
 | harness 内部的导入失败（`from <pkg>.x import y`） | package 目录的命名与导入根不一致，或缺少 `__init__.py`。package 文件夹名必须等于导入名。 |
 | 现有dev symlink没有加载 | 运行一次`openprogram programs install <Git来源>`完成校验与登记；安装器不会修改链接目标。 |
 | Windows source checkout 无法安装或运行 harness | Windows release 安装和兼容性不受支持。改用受支持的 macOS/Linux 主机，并检查 harness README 中的平台要求。 |

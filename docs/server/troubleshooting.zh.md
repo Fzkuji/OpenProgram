@@ -14,14 +14,12 @@
 
 ## "command not found: openprogram"
 
-pip 安装目录不在 PATH 中。两种方案：
+受支持的 CLI/server 安装器会创建 `~/.local/bin/openprogram`。重新运行安装器，
+然后确保该目录位于 `PATH`：
 
 ```bash
-# 直接调用模块
-python3 -m openprogram <args>
-
-# 或将 user-base 的 bin 加入 PATH（幂等）
-echo 'export PATH="$(python3 -m site --user-base)/bin:$PATH"' >> ~/.zshrc
+curl -fsSL https://openprogram.io/install | sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 ```
 
 ## Web UI 端口被占用
@@ -34,29 +32,10 @@ export OPENPROGRAM_WEB_PORT=8101         # 单端口（默认 18100）
 
 或持久化该偏好：`openprogram ports --port 8101`。
 
-## 本地开发安装（多仓库）
+## 本地开发
 
-如需在与 OpenProgram 并列的情况下开发
-[GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness)
-/ [Research-Agent-Harness](https://github.com/Fzkuji/Research-Agent-Harness)：
-
-```bash
-pip install -e "$OPENPROGRAM_DIR"                   # 始终最先安装
-pip install -e "$GUI_HARNESS_DIR"                   # 依赖 openprogram
-pip install -e "$RESEARCH_HARNESS_DIR"
-```
-
-`openprogram/programs/agentic_functions/{GUI,Research}-Agent-Harness`
-是符号链接 —— 如果仓库移动了需要重新创建：
-
-```bash
-cd openprogram/programs/agentic_functions
-rm -f GUI-Agent-Harness  && ln -s "$GUI_HARNESS_DIR"      GUI-Agent-Harness
-rm -f Research-Agent-Harness && ln -s "$RESEARCH_HARNESS_DIR" Research-Agent-Harness
-```
-
-`pip install -e` 写入的是绝对路径 —— 如果你重命名了某个父目录，请
-从新位置重新运行它。
+源码开发使用 `uv sync --locked --extra dev`。外部 harness 开发见
+[安装 harness](../capabilities/installing-harnesses.zh.md)，它不是普通产品安装入口。
 
 ## worker 无法启动 / 启动在了错误的端口
 

@@ -258,9 +258,9 @@ def _qr_login() -> dict[str, str] | None:
     rendered = _print_qr_terminal(qr_url)
     if not rendered:
         print(f"[wechat] QR payload URL: {qr_url}")
-        print("[wechat] install `qrcode` (`pip install openprogram[channels]`) "
-              "to render the QR in-terminal, or paste the URL above into any "
-              "QR generator and scan with WeChat.")
+        print("[wechat] QR rendering is unavailable in this installation; "
+              "reinstall the complete OpenProgram release, or paste the URL "
+              "above into a QR generator and scan with WeChat.")
     print()
     print("[wechat] waiting for scan + confirm (up to a few minutes)...")
     while True:

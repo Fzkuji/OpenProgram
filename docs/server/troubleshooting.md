@@ -14,14 +14,12 @@ page collects the recurring "it doesn't work" cases.
 
 ## "command not found: openprogram"
 
-pip install dir not on PATH. Two options:
+The supported CLI/server installer creates `~/.local/bin/openprogram`. Run the
+installer again, then ensure that directory is on `PATH`:
 
 ```bash
-# call the module directly
-python3 -m openprogram <args>
-
-# or add the user-base bin to PATH (idempotent)
-echo 'export PATH="$(python3 -m site --user-base)/bin:$PATH"' >> ~/.zshrc
+curl -fsSL https://openprogram.io/install | sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 ```
 
 ## Web UI port in use
@@ -34,29 +32,11 @@ export OPENPROGRAM_WEB_PORT=8101         # single port (defaults to 18100)
 
 Or persist the preference: `openprogram ports --port 8101`.
 
-## Local-development install (multi-repo)
+## Local development
 
-For working on [GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness)
-/ [Research-Agent-Harness](https://github.com/Fzkuji/Research-Agent-Harness)
-side-by-side with OpenProgram:
-
-```bash
-pip install -e "$OPENPROGRAM_DIR"                   # always first
-pip install -e "$GUI_HARNESS_DIR"                   # depends on openprogram
-pip install -e "$RESEARCH_HARNESS_DIR"
-```
-
-`openprogram/programs/agentic_functions/{GUI,Research}-Agent-Harness`
-are symlinks — recreate if a repo moves:
-
-```bash
-cd openprogram/programs/agentic_functions
-rm -f GUI-Agent-Harness  && ln -s "$GUI_HARNESS_DIR"      GUI-Agent-Harness
-rm -f Research-Agent-Harness && ln -s "$RESEARCH_HARNESS_DIR" Research-Agent-Harness
-```
-
-`pip install -e` writes absolute paths — rerun it from the new
-location if you rename a parent folder.
+Source-checkout development uses `uv sync --locked --extra dev`. External
+harness development is documented in [Installing harnesses](../capabilities/installing-harnesses.md)
+and is not a normal product installation path.
 
 ## Worker doesn't start / starts on the wrong port
 

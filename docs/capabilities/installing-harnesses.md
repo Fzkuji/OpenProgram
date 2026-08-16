@@ -98,8 +98,8 @@ python -c "import openprogram,os;print(os.path.join(os.path.dirname(openprogram.
 ```
 
 ```bash
-git clone <repo-url> "<AGENTICS>/<Harness-Name>"
-pip install "<AGENTICS>/<Harness-Name>"        # or its requirements.txt
+git clone <repo-url> /path/to/Harness-Name
+openprogram programs install file:///path/to/Harness-Name
 # restart OpenProgram
 ```
 
@@ -163,7 +163,7 @@ Then use it — the harness's functions are callable like any built-in
 |---|---|
 | Harness functions don't appear after restart | Folder doesn't match the contract — confirm `<pkg>/agentics/__init__.py` exists and exports `AGENTIC_FUNCTIONS`. Run with `OPENPROGRAM_DEBUG_REGISTRY=1`. |
 | `[!] … no package with an agentics/__init__.py was found` at install | Same as above — the repo doesn't satisfy the contract (Part 2). |
-| `ModuleNotFoundError` for the harness's own deps | The dep install step failed — `pip install` the clone (or its requirements.txt) and check the error. |
+| `ModuleNotFoundError` for the harness's own deps | The Program environment preparation failed — rerun `openprogram programs install <source>` and inspect its error. |
 | Imports inside the harness fail (`from <pkg>.x import y`) | The package dir isn't named like the import root, or a missing `__init__.py`. The package folder name must equal the import name. |
 | An existing dev symlink does not load | Run `openprogram programs install <git-source>` once to verify and record it; the installer does not modify the linked checkout. |
 | A Windows source checkout fails to install or run a harness | Windows release installation and compatibility are not supported. Use a supported macOS/Linux host and check the harness README for its own platform requirements. |

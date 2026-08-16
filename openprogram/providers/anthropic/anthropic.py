@@ -241,8 +241,7 @@ def _build_client(
     if _anthropic is None:
         raise ImportError(
             "The 'anthropic' Python SDK is required to use the Anthropic "
-            "provider. Install it with `pip install anthropic` (or, when "
-            "installing OpenProgram, `pip install 'openprogram[anthropic]'`)."
+            "provider. Reinstall the complete OpenProgram release."
         )
     is_oauth = is_oauth_override if is_oauth_override is not None else _is_oauth_token(api_key)
     base_url = base_url_override \

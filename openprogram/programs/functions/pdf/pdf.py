@@ -98,9 +98,7 @@ def execute(
     try:
         import pypdf  # type: ignore
     except ImportError:
-        return (
-            "Error: pypdf is not installed. Install with: pip install pypdf"
-        )
+        return "Error: PDF support is unavailable in this installation."
 
     try:
         reader = pypdf.PdfReader(file_path)

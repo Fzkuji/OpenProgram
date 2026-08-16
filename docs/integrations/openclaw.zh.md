@@ -19,9 +19,9 @@ cd ~/.openclaw/workspace
 # 克隆 OpenProgram
 git clone https://github.com/Fzkuji/OpenProgram.git
 
-# 安装
+# 准备源码环境
 cd OpenProgram
-pip install -e .
+uv sync --locked
 ```
 
 ## 用法 1：在 Skill 中使用 Agentic Function
@@ -46,7 +46,7 @@ Agent 通过 exec 工具调用。
 import sys
 import os
 
-# 把 OpenProgram 加到 path（已 pip install -e 时不需要这行）
+# 把源码 checkout 加入脚本 path
 sys.path.insert(0, os.path.expanduser("~/.openclaw/workspace/OpenProgram"))
 
 from openprogram import agentic_function

@@ -359,7 +359,7 @@ def build_parser() -> argparse.ArgumentParser:
             "    recordings      record, replay, inspect, and prune provider calls\n"
             "    ports           show / set the web UI ports\n"
             "    mcp             manage MCP servers\n"
-            "    browser         install / maintain the browser tools\n"
+            "    browser         maintain browser profiles and developer backends\n"
             "\n"
             "  content\n"
             "    agents          manage agents (model, skills, tools per persona)\n"
@@ -1103,13 +1103,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ---- browser ---------------------------------------------------------
     p_browser = sub.add_parser("browser",
-        help="Install + maintain the browser tools. Lifecycle (open, "
+        help="Maintain browser profiles and source-development backends. "
+             "Complete releases already include the default browser. Lifecycle (open, "
              "login, attach) is handled automatically by the tools "
              "themselves — see /browser inside the chat.")
     p_browser_sub = p_browser.add_subparsers(dest="browser_verb", metavar="verb")
     p_br_install = p_browser_sub.add_parser("install",
-        help="Install browser-tool dependencies (Playwright + Chromium, "
-             "patchright/camoufox, agent-browser). Pick one target or 'all'.")
+        help="Source checkout only: install optional browser backends. "
+             "Packaged releases reject this command.",
+        description="Source checkout only: install optional browser backends. "
+                    "Packaged releases reject this command.")
     p_br_install.add_argument("target", nargs="?", default="playwright",
         choices=["playwright", "patchright", "camoufox", "agent", "all"],
         help="What to install (default: playwright).")

@@ -72,9 +72,8 @@ def _resolve_cli_entry() -> Path:
     if not cli_dir.exists():
         raise FileNotFoundError(
             f"Ink TUI source missing: no {cli_dir} directory. "
-            "The TUI ships with the source tree — install openprogram "
-            "from a git clone (``pip install -e .``) for the full "
-            "experience, or use ``openprogram web`` for the browser UI."
+            "The TUI ships with a source checkout prepared by `uv sync`; "
+            "use `openprogram web` for the packaged browser UI."
         )
 
     _build_ink_bundle(cli_dir, candidate)

@@ -1830,7 +1830,7 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
         except ImportError:
             raise ImportError(
                 "uvicorn is required for the web UI. "
-                "Install with: pip install openprogram[web]"
+                "Reinstall the complete OpenProgram release."
             )
 
         try:

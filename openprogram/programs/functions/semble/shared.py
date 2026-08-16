@@ -39,8 +39,8 @@ def _get_or_build_index(path: str) -> Any:
         from semble import SembleIndex
     except ModuleNotFoundError as exc:
         raise RuntimeError(
-            "semble is not installed. Install the search extra: "
-            "pip install 'openprogram[search]'"
+            "The bundled semantic search backend is unavailable. "
+            "Reinstall the complete OpenProgram release."
         ) from exc
 
     cached = _index_cache.get(path)

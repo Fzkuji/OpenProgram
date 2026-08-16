@@ -100,7 +100,9 @@ def stream_google_gemini_cli(
         try:
             import httpx
         except ImportError:
-            raise ImportError("httpx is required: pip install httpx")
+            raise ImportError(
+                "The HTTP client is missing; reinstall the complete OpenProgram release."
+            )
 
         from openprogram.providers.env_api_keys import resolve_provider_key
 

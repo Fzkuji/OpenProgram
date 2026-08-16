@@ -1,6 +1,7 @@
 """``openprogram browser`` handlers — install / status / refresh / reset / list / rm."""
 from __future__ import annotations
 
+import os
 import subprocess
 import shutil
 import sys
@@ -64,6 +65,14 @@ def _kill_chrome_profile() -> None:
 
 def _cmd_browser_install(target: str) -> int:
     """Install browser-tool dependencies. Pure shell-out — no agent involved."""
+    if os.environ.get("OPENPROGRAM_IMMUTABLE_RUNTIME") == "1":
+        print(
+            "Browser dependencies are included in the complete release; "
+            "the packaged runtime cannot be modified. Source checkout "
+            "developers can manage optional browser backends in their "
+            "development environment."
+        )
+        return 1
     targets = ["playwright", "patchright", "camoufox", "agent"] if target == "all" else [target]
     rc = 0
     for t in targets:

@@ -1746,6 +1746,72 @@ def test_public_docs_describe_one_complete_release_product() -> None:
     assert "相同的完整产品能力" in combined
 
 
+def test_public_product_surfaces_do_not_offer_python_package_install() -> None:
+    public_files = [
+        ROOT / "CONTRIBUTING.md",
+        ROOT / "examples" / "quickstart.py",
+        ROOT / "docs" / "_static_root" / "llms.txt",
+        ROOT / "docs" / "server" / "troubleshooting.md",
+        ROOT / "docs" / "server" / "troubleshooting.zh.md",
+        ROOT / "docs" / "integrations" / "openclaw.md",
+        ROOT / "docs" / "integrations" / "openclaw.zh.md",
+    ]
+    internal_python_installers = {
+        ROOT / "openprogram" / "_cli_cmds" / "browser.py",
+        ROOT / "openprogram" / "_cli_cmds" / "plugins.py",
+        ROOT / "openprogram" / "_cli_cmds" / "programs.py",
+        ROOT / "openprogram" / "_cli_cmds" / "upgrade.py",
+        ROOT / "openprogram" / "_setup_sections" / "sections.py",
+        ROOT / "openprogram" / "programs" / "_programs.py",
+        ROOT / "openprogram" / "programs" / "_registry.py",
+        ROOT / "openprogram" / "updater" / "detect.py",
+    }
+    public_files.extend(
+        path
+        for path in (ROOT / "openprogram").rglob("*.py")
+        if path not in internal_python_installers
+        and "agentic_functions" not in path.parts
+    )
+    forbidden = (
+        "pip install",
+        "pip3 install",
+        "pipx install",
+        "uv tool install openprogram",
+        "pypi.org/project/openprogram",
+    )
+    for path in public_files:
+        source = path.read_text(encoding="utf-8").lower()
+        for phrase in forbidden:
+            assert phrase not in source, f"{path.relative_to(ROOT)}: {phrase}"
+
+
+def test_packaged_browser_install_does_not_modify_python_environment(
+    monkeypatch, capsys
+) -> None:
+    from openprogram._cli_cmds.browser import _cmd_browser_install
+
+    monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
+    monkeypatch.setattr(
+        "openprogram._cli_cmds.browser._pip_install",
+        lambda _spec: (_ for _ in ()).throw(AssertionError("pip invoked")),
+    )
+
+    assert _cmd_browser_install("playwright") == 1
+    output = capsys.readouterr().out.lower()
+    assert "complete release" in output
+    assert "source checkout" in output
+
+    help_output = subprocess.run(
+        [sys.executable, "-m", "openprogram", "browser", "install", "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.lower()
+    help_output = " ".join(help_output.split())
+    assert "source checkout only" in help_output
+    assert "packaged releases reject this command" in help_output
+
+
 def test_release_manifest_records_hashes(tmp_path: Path) -> None:
     import subprocess
 

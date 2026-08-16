@@ -70,9 +70,10 @@ def _start_engine(engine: str):
             return pw, pw.chromium, "patchright"
         except ImportError:
             return None, None, (
-                "Error: patchright not installed. Run:\n"
-                "  pip install \"openprogram[browser-stealth]\"\n"
-                "  patchright install chromium"
+                "Error: the optional patchright backend is unavailable. "
+                "Packaged releases include the default Playwright browser; "
+                "source developers can configure optional backends in their "
+                "development environment."
             )
     if engine == "camoufox":
         try:
@@ -81,9 +82,10 @@ def _start_engine(engine: str):
             return cam, None, "camoufox"
         except ImportError:
             return None, None, (
-                "Error: camoufox not installed. Run:\n"
-                "  pip install \"openprogram[browser-stealth]\"\n"
-                "  camoufox fetch"
+                "Error: the optional camoufox backend is unavailable. "
+                "Packaged releases include the default Playwright browser; "
+                "source developers can configure optional backends in their "
+                "development environment."
             )
     try:
         from playwright.sync_api import sync_playwright as _sync_pw

@@ -30,14 +30,13 @@ classifiers = [
 dependencies = [
     # Used by `openprogram providers setup` / `login` for an interactive
     # arrow-key menu. Falls back to plain input() when not installed,
-    # so this is officially optional — installing openprogram without
-    # extras still works, just with a flatter prompt.
+    # so this is officially optional in source-development environments.
     "questionary>=2.0.0",
     # Web UI is a first-class entry point alongside the TUI (the
     # whole platform pitch is "TUI or browser, same backend"), so the
     # FastAPI/uvicorn/websockets stack ships with the core package
-    # instead of being a `[web]` extra. Keeps `pip install openprogram`
-    # a single line on the landing page. The TUI itself needs no Python
+    # instead of being a `[web]` extra. Complete product runtimes always
+    # include it. The TUI itself needs no Python
     # dep: it is the Ink renderer (cli/, TypeScript) with a Rich-based
     # REPL fallback.
     "fastapi>=0.110.0",
@@ -47,8 +46,8 @@ dependencies = [
     # ChatGPT/Codex, Anthropic, etc.) starts a localhost callback
     # server to receive the redirect. Implementation lives in
     # ``openprogram.auth.methods.pkce_oauth`` and uses ``aiohttp.web``.
-    # Was previously a lazy import that raised "Install with: pip
-    # install aiohttp" at login time — moved into base deps so the
+    # Was previously a lazy import that raised a missing-dependency hint at
+    # login time — moved into base deps so the
     # ChatGPT subscription flow works out of the box.
     "aiohttp>=3.9.0",
     # Model Context Protocol Python SDK. ``webui/routes/mcp.py`` does
@@ -152,7 +151,7 @@ search = ["semble>=0.5.3"]
 # NOTE: the agentic *programs* (gui / research / wiki harnesses) no
 # longer have extras here. Each harness is self-describing — its own
 # pyproject.toml declares its third-party deps, and ``openprogram
-# programs install <name>`` clones it and ``pip install``s the clone, so
+# programs install <name>`` clones it and prepares its isolated environment, so
 # its deps come from the harness, not from OpenProgram. OpenProgram does
 # not carry per-harness dependencies.
 channels = [
@@ -165,7 +164,7 @@ channels = [
     # Slack Socket Mode bot.
     "slack_sdk>=3.27.0",
 ]
-# Browser automation tool (tools/browser). After `pip install`, also
+# Browser automation tool (tools/browser). Source developers also
 # run `playwright install chromium` to fetch the browser binary
 # (~150MB, into ~/Library/Caches/ms-playwright/ on macOS).
 browser = [
@@ -173,7 +172,7 @@ browser = [
 ]
 # `agent_browser` tool — LLM-friendly ariaSnapshot + ref-id interface.
 # Pure Python (subprocess wrapper); the npm package itself is the
-# install step. After `pip install`, also run:
+# install the npm package when enabling this optional backend:
 #   npm install -g agent-browser
 #   agent-browser install
 agent-browser = []

@@ -23,9 +23,17 @@ duplicated in this historical distribution ledger.
   product repair messages for Python-package installation instructions, while
   retaining assertions that the runtime builder still consumes the verified
   wheel.
+- RED evidence: both focused cases failed: public surfaces still advertised
+  Python-package installation, and packaged `openprogram browser install`
+  invoked its Python installer.
+- GREEN evidence: both focused cases pass. The affected distribution,
+  Browser, Channels, Providers, OAuth, configuration, PDF, and embedding suites
+  report 1,330 passed, 5 skipped, and 1 expected failure; the formal-release
+  suite reports 21 passed. Documentation builds 529 pages, the landing check
+  passes, and link validation reports zero broken links.
 - Exclusions: no Python-free rewrite, no removal of `pyproject.toml`, no change
   to plugin or third-party Program formats, and no remote PyPI mutation.
-- Status: design approved; implementation and reviews pending.
+- Status: implementation complete; independent reviews pending.
 
 ## Local App version coherence
 

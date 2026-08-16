@@ -42,7 +42,9 @@ def stream_openai_responses(
         try:
             import openai
         except ImportError:
-            raise ImportError("openai is required: pip install openai")
+            raise ImportError(
+                "The OpenAI SDK is missing; reinstall the complete OpenProgram release."
+            )
 
         from openprogram.providers.env_api_keys import resolve_provider_key
         from openprogram.providers.types import AssistantMessage, Usage

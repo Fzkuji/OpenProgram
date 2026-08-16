@@ -250,8 +250,8 @@ async def stream_simple(
         raise ImportError(
             "The 'openai' Python SDK is required to use the OpenAI "
             "(Chat Completions) provider. It ships as a base dependency, so "
-            "this usually means a broken env — reinstall with "
-            "`pip install -U openprogram` (or `pip install openai`)."
+            "this means the installation is incomplete; reinstall the "
+            "complete OpenProgram release."
         )
     opts = options or SimpleStreamOptions()
 

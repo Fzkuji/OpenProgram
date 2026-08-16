@@ -804,7 +804,7 @@ SETTINGS: list[SettingSpec] = [
         apply=APPLY_LIVE, default=False,
         help="Off means a sandboxed command has no network at all, which "
              "is what stops anything it read from leaving the machine. "
-             "Turn it on and a sandboxed `pip install` works again, along "
+             "Turn it on and sandboxed package downloads work again, along "
              "with every other outbound connection.",
     ),
     SettingSpec(
