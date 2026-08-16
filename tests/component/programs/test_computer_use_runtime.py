@@ -844,9 +844,17 @@ def test_list_pages_returns_group_aware_snapshot_with_page_tokens():
                 ],
             },
         }],
+        "windows": [{
+            "window_id": "window-1", "inventory_revision": 9,
+            "active_tab_entry_id": "group:g3", "focused_page": "p4",
+            "tab_entries": [{
+                "id": "group:g3", "mode": "split", "pages": ["p3", "p4"],
+            }],
+            "pages": ["p3", "p4"],
+        }],
         "surfaces": [
-            {"surface_key": "p3", "binding_id": "binding-3", "tab_entry_id": "group:g3", "placement": {"mode": "split", "pane_id": "pane:g3:0", "order": 0}},
-            {"surface_key": "p4", "binding_id": "binding-4", "tab_entry_id": "group:g3", "placement": {"mode": "split", "pane_id": "pane:g3:1", "order": 1}, "focused": True},
+            {"surface_key": "p3", "window_id": "window-1", "binding_id": "binding-3", "tab_entry_id": "group:g3", "placement": {"mode": "split", "pane_id": "pane:g3:0", "order": 0}},
+            {"surface_key": "p4", "window_id": "window-1", "binding_id": "binding-4", "tab_entry_id": "group:g3", "placement": {"mode": "split", "pane_id": "pane:g3:1", "order": 1}, "focused": True},
         ],
     }
 
@@ -858,7 +866,11 @@ def test_list_pages_returns_group_aware_snapshot_with_page_tokens():
     assert result["active_tab_entry_id"] == "group:g3"
     assert result["focused_page"] == "p4"
     assert result["tab_entries"] == context["tab_entries"]
+    assert result["windows"] == context["windows"]
     assert [page["page"] for page in result["pages"]] == ["p3", "p4"]
+    assert [page["window_id"] for page in result["pages"]] == [
+        "window-1", "window-1",
+    ]
     assert all(page["page_context_token"].startswith("pct_") for page in result["pages"])
     assert result["pages"][1]["placement"] == {
         "mode": "split", "pane_id": "pane:g3:1", "order": 1,
@@ -1155,7 +1167,11 @@ def test_temporary_page_capture_is_released_when_lease_rejects(monkeypatch, rout
 
     monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: _Registry())
     monkeypatch.setattr(surface_context, "current", lambda: None)
-    monkeypatch.setattr(surface_context, "capture_active", lambda: context)
+    monkeypatch.setattr(
+        surface_context,
+        "capture_pages" if route == "harness" else "capture_active",
+        lambda *_args: context,
+    )
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "binding-1")
     monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "page-1")
     monkeypatch.setattr(
@@ -1186,7 +1202,11 @@ def test_temporary_page_capture_is_released_when_binding_resolution_fails(
     context = {"context_id": "ctx-temp", "surfaces": [{}]}
     released = []
     monkeypatch.setattr(surface_context, "current", lambda: None)
-    monkeypatch.setattr(surface_context, "capture_active", lambda: context)
+    monkeypatch.setattr(
+        surface_context,
+        "capture_pages" if route == "harness" else "capture_active",
+        lambda *_args: context,
+    )
     monkeypatch.setattr(
         surface_context, "resolve_binding",
         lambda _page="": (_ for _ in ()).throw(RuntimeError("binding failed")),
@@ -1311,6 +1331,24 @@ def test_gui_agent_prompt_receives_group_aware_page_inventory(monkeypatch):
         "tab_entries": [{
             "id": "group:g3", "mode": "split", "pages": ["p3", "p4"],
         }],
+        "windows": [
+            {
+                "window_id": "window-1", "inventory_revision": 9,
+                "active_tab_entry_id": "group:g3", "focused_page": "p4",
+                "tab_entries": [{
+                    "id": "group:g3", "mode": "split", "pages": ["p3", "p4"],
+                }],
+                "pages": ["p3", "p4"],
+            },
+            {
+                "window_id": "window-2", "inventory_revision": 4,
+                "active_tab_entry_id": "tab:tab-e", "focused_page": "p5",
+                "tab_entries": [{
+                    "id": "tab:tab-e", "mode": "single", "pages": ["p5"],
+                }],
+                "pages": ["p5"],
+            },
+        ],
         "surfaces": [],
     }
 
@@ -1324,9 +1362,11 @@ def test_gui_agent_prompt_receives_group_aware_page_inventory(monkeypatch):
                 "active_tab_entry_id": "group:g3",
                 "focused_page": "p4",
                 "tab_entries": inventory_context["tab_entries"],
+                "windows": inventory_context["windows"],
                 "pages": [
-                    {"page": "p3", "tab_id": "tab-c", "visible": True, "focused": False, "page_context_token": "pct_3"},
-                    {"page": "p4", "tab_id": "tab-d", "visible": True, "focused": True, "page_context_token": "pct_4"},
+                    {"page": "p3", "window_id": "window-1", "tab_id": "tab-c", "visible": True, "focused": False, "page_context_token": "pct_3"},
+                    {"page": "p4", "window_id": "window-1", "tab_id": "tab-d", "visible": True, "focused": True, "page_context_token": "pct_4"},
+                    {"page": "p5", "window_id": "window-2", "tab_id": "tab-e", "visible": True, "focused": True, "page_context_token": "pct_5"},
                 ],
             }
 
@@ -1371,6 +1411,8 @@ def test_gui_agent_prompt_receives_group_aware_page_inventory(monkeypatch):
     assert '"active_tab_entry_id": "group:g3"' in prompts[0]
     assert '"pages": ["p3", "p4"]' in prompts[0]
     assert '"page": "p4"' in prompts[0]
+    assert '"window_id": "window-2"' in prompts[0]
+    assert '"page": "p5"' in prompts[0]
 
 
 def test_gui_agent_discovers_popup_and_switches_by_exact_page_token(monkeypatch):

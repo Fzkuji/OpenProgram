@@ -25,6 +25,7 @@ _lock = threading.Lock()
 _bindings: dict[str, tuple[Any, str, str, str, float, int, int, int, bool]] = {}
 _connection_revisions: dict[Any, int] = {}
 _page_revisions: dict[tuple[int, str], int] = {}
+_desktop_windows: dict[Any, str] = {}
 _next_revision = itertools.count(1)
 
 
@@ -127,6 +128,7 @@ def release_connection(ws) -> None:
     """Revoke bindings and wake exact-socket requests on disconnect."""
     wake = []
     with _lock:
+        _desktop_windows.pop(ws, None)
         connection_revision = _connection_revisions.pop(ws, None)
         for binding_id, entry in list(_bindings.items()):
             if entry[0] is ws:
@@ -144,6 +146,12 @@ def release_connection(ws) -> None:
                 wake.append(ev)
     for ev in wake:
         ev.set()
+
+
+def registered_desktop_windows() -> list[tuple[Any, str]]:
+    """Return registered renderer sockets in registration order."""
+    with _lock:
+        return list(_desktop_windows.items())
 
 
 def binding_page_key(binding_id: str) -> str:
@@ -298,9 +306,16 @@ def request_page_inventory(binding_id: str, timeout: float = 5.0) -> dict:
             "error": "surface binding expired",
             "reason_code": "page_context_stale",
         }
-    return request_on_ws(
+    result = request_on_ws(
         entry[0], {"op": "list", "window_id": entry[1]}, timeout,
     )
+    if result.get("ok") and result.get("window_id") != entry[1]:
+        return {
+            "ok": False,
+            "error": "Page inventory belongs to another window",
+            "reason_code": "page_context_stale",
+        }
+    return result
 
 
 def request_open_tab(url: str, timeout: float = 15.0) -> dict:
@@ -413,6 +428,16 @@ async def handle_webtab_result(ws, cmd: dict):
     ev.set()
 
 
+async def handle_webtab_register(ws, cmd: dict):
+    """Associate one authenticated renderer socket with its Desktop window."""
+    window_id = cmd.get("window_id")
+    if not isinstance(window_id, str) or not window_id or len(window_id) > 160:
+        return
+    with _lock:
+        _desktop_windows[ws] = window_id
+
+
 ACTIONS = {
+    "webtab_register": handle_webtab_register,
     "webtab_result": handle_webtab_result,
 }

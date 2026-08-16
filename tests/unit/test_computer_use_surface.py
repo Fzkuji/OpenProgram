@@ -423,6 +423,115 @@ def test_direct_page_inventory_includes_background_and_popup_provenance(monkeypa
     surface_context.release_bindings(context)
 
 
+def test_page_inventory_aggregates_registered_desktop_windows(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    primary = _WS()
+    secondary = _WS()
+    browser_only = _WS()
+    monkeypatch.setattr(server, "_ws_connections", [primary, secondary, browser_only])
+    asyncio.run(webtab.handle_webtab_register(primary, {
+        "action": "webtab_register", "window_id": "window-1",
+    }))
+    asyncio.run(webtab.handle_webtab_register(secondary, {
+        "action": "webtab_register", "window_id": "window-2",
+    }))
+
+    def inventory(ws, command, timeout=5.0):
+        assert command == {"op": "list", "window_id": (
+            "window-1" if ws is primary else "window-2"
+        )}
+        window_id = command["window_id"]
+        suffix = "a" if ws is primary else "b"
+        return {
+            "ok": True,
+            "window_id": window_id,
+            "inventory_revision": 1,
+            "active_tab_entry_id": f"tab:tab-{suffix}",
+            "focused_tab_id": f"tab-{suffix}",
+            "tab_entries": [{
+                "id": f"tab:tab-{suffix}", "mode": "single",
+                "tab_ids": [f"tab-{suffix}"],
+            }],
+            "pages": [{
+                "tab_id": f"tab-{suffix}",
+                "target_id": f"target-{suffix}",
+                "url": f"https://{suffix}.test/",
+                "title": suffix.upper(),
+                "visible": True,
+                "focused": True,
+                "region": "center",
+                "tab_entry_id": f"tab:tab-{suffix}",
+                "placement": {"mode": "single"},
+            }],
+        }
+
+    monkeypatch.setattr(webtab, "request_on_ws", inventory)
+    context = surface_context.capture_pages()
+
+    assert context["window_id"] == "window-1"
+    assert [window["window_id"] for window in context["windows"]] == [
+        "window-1", "window-2",
+    ]
+    assert [page["window_id"] for page in context["surfaces"]] == [
+        "window-1", "window-2",
+    ]
+    assert context["windows"][0]["pages"] == ["p1"]
+    assert context["windows"][1]["pages"] == ["p2"]
+    assert webtab.binding_connection(context["surfaces"][0]["binding_id"]) is primary
+    assert webtab.binding_connection(context["surfaces"][1]["binding_id"]) is secondary
+    assert browser_only.messages == []
+
+    surface_context.release_bindings(context)
+    webtab.release_connection(primary)
+    webtab.release_connection(secondary)
+
+
+def test_context_page_inventory_keeps_originating_window_primary(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    primary = _WS()
+    secondary = _WS()
+    monkeypatch.setattr(server, "_ws_connections", [secondary, primary])
+    asyncio.run(webtab.handle_webtab_register(secondary, {
+        "action": "webtab_register", "window_id": "window-2",
+    }))
+    binding = webtab.register_binding(
+        primary, "window-1", "tab-a", "target-a", allow_background=True,
+    )
+    accepted = {
+        "context_id": "accepted",
+        "surfaces": [{"binding_id": binding}],
+    }
+
+    def inventory(ws, command, timeout=5.0):
+        window_id = "window-1" if ws is primary else "window-2"
+        assert command == {"op": "list", "window_id": window_id}
+        suffix = "a" if ws is primary else "b"
+        return {
+            "ok": True, "window_id": window_id,
+            "pages": [{
+                "tab_id": f"tab-{suffix}", "target_id": f"target-{suffix}",
+                "url": f"https://{suffix}.test/", "title": suffix.upper(),
+                "visible": True, "focused": True, "region": "center",
+            }],
+        }
+
+    monkeypatch.setattr(webtab, "request_on_ws", inventory)
+    context = surface_context.capture_pages(accepted)
+
+    assert context["window_id"] == "window-1"
+    assert [window["window_id"] for window in context["windows"]] == [
+        "window-1", "window-2",
+    ]
+    surface_context.release_bindings(context)
+    webtab.release_connection(secondary)
+
+
 def test_direct_page_inventory_preserves_tab_entries_and_split_panes(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.webui import server
@@ -490,6 +599,7 @@ def test_frontend_and_electron_expose_turn_surface_preview_contract():
     bridge = (REPO_ROOT / "web/lib/desktop-bridge.ts").read_text()
     preload = (REPO_ROOT / "desktop/preload.js").read_text()
     main = (REPO_ROOT / "desktop/main.js").read_text()
+    use_ws = (REPO_ROOT / "web/lib/net/use-ws.ts").read_text()
     chip = (REPO_ROOT / "web/components/chat/composer/surface-chip.tsx").read_text()
 
     assert "surfaceRefForChat(sessionId, toolsEnabled)" in send
@@ -503,6 +613,7 @@ def test_frontend_and_electron_expose_turn_surface_preview_contract():
     assert geometry_guard < control.index("bridge.webTab.activate(tab.id, d.url, true)")
     assert 'preview: (id) => ipcRenderer.invoke("webtab:preview", id)' in preload
     assert 'ipcMain.handle("webtab:preview"' in main
+    assert 'action: "webtab_register", window_id: desktopWindowId' in use_ws
     assert "visible_text_excerpt" in main
     assert "Agent can access" in chip
     assert "surfaceRefForChat(sessionId, toolsEnabled)" in chip

@@ -928,7 +928,7 @@ def _run_browser_task_commands(
     context = surface_context.current()
     captured_here = context is None
     if context is None:
-        context = surface_context.capture_active()
+        context = surface_context.capture_pages()
     owner_id = "harness:" + str(context.get("context_id") or "unknown")
     registry = get_registry()
 
@@ -952,7 +952,7 @@ def _run_browser_task_commands(
             key: listed.get(key)
             for key in (
                 "browser_context_id", "window_id", "inventory_revision",
-                "active_tab_entry_id", "focused_page", "tab_entries",
+                "active_tab_entry_id", "focused_page", "tab_entries", "windows",
             )
         }
         snapshot["pages"] = pages

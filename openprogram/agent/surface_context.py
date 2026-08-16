@@ -280,10 +280,12 @@ def capture_active() -> dict:
 
 
 def capture_pages(context: dict | None = None) -> dict:
-    """Capture every browser Page in the renderer that owns this request."""
+    """Capture every browser Page across registered Desktop windows."""
     from openprogram.webui import server as _server
     from openprogram.webui.ws_actions import webtab
 
+    connected = list(_server._ws_connections)
+    inventories: list[tuple[object, dict]] = []
     if context is not None:
         binding_id = next((
             str(item.get("binding_id"))
@@ -296,175 +298,256 @@ def capture_pages(context: dict | None = None) -> dict:
         owner_ws = webtab.binding_connection(binding_id)
         if owner_ws is None:
             raise RuntimeError("Page binding expired during inventory capture")
+        inventories.append((owner_ws, result))
     else:
-        connections = list(_server._ws_connections)
-        if len(connections) != 1:
-            raise RuntimeError("direct Page selection requires one desktop connection")
-        owner_ws = connections[0]
-        result = webtab.request_on_ws(owner_ws, {"op": "list"})
+        registered = [
+            (ws, window_id)
+            for ws, window_id in webtab.registered_desktop_windows()
+            if ws in connected
+        ]
+        if not registered:
+            if len(connected) != 1:
+                raise RuntimeError("direct Page selection requires a Desktop window")
+            registered = [(connected[0], "")]
+        for owner_ws, expected_window_id in registered:
+            command = {"op": "list"}
+            if expected_window_id:
+                command["window_id"] = expected_window_id
+            result = webtab.request_on_ws(owner_ws, command)
+            if (
+                expected_window_id and result.get("ok")
+                and result.get("window_id") != expected_window_id
+            ):
+                result = {"ok": False, "reason_code": "page_context_stale"}
+            inventories.append((owner_ws, result))
 
-    window_id = _text(result.get("window_id"), 160) if isinstance(result, dict) else ""
-    raw_pages = result.get("pages") if isinstance(result, dict) else None
-    if not result.get("ok") or not window_id or not isinstance(raw_pages, list):
+    registered = [
+        (ws, window_id)
+        for ws, window_id in webtab.registered_desktop_windows()
+        if ws in connected and all(ws is not owner for owner, _ in inventories)
+    ]
+    for owner_ws, expected_window_id in registered:
+        result = webtab.request_on_ws(
+            owner_ws, {"op": "list", "window_id": expected_window_id},
+        )
+        if (
+            isinstance(result, dict) and result.get("ok")
+            and result.get("window_id") == expected_window_id
+        ):
+            inventories.append((owner_ws, result))
+
+    valid_inventories: list[tuple[object, dict, str]] = []
+    seen_windows: set[str] = set()
+    for index, (owner_ws, result) in enumerate(inventories):
+        window_id = _text(result.get("window_id"), 160) if isinstance(result, dict) else ""
+        raw_pages = result.get("pages") if isinstance(result, dict) else None
+        if (
+            not isinstance(result, dict) or not result.get("ok")
+            or not window_id or not isinstance(raw_pages, list)
+        ):
+            if context is not None and index == 0:
+                raise RuntimeError("OpenProgram Page inventory is unavailable")
+            continue
+        if window_id in seen_windows:
+            continue
+        seen_windows.add(window_id)
+        valid_inventories.append((owner_ws, result, window_id))
+    if not valid_inventories:
         raise RuntimeError("OpenProgram Page inventory is unavailable")
 
     surfaces = []
     aliases: dict[str, str] = {}
-    surface_by_tab: dict[str, str] = {}
-    seen_tabs: set[str] = set()
-    seen_targets: set[str] = set()
+    windows = []
     try:
-        for raw in raw_pages[:32]:
-            if not isinstance(raw, dict):
-                continue
-            tab_id = _text(raw.get("tab_id"), 512)
-            target_id = _text(raw.get("target_id"), 512)
-            if (
-                not tab_id or not target_id
-                or tab_id in seen_tabs or target_id in seen_targets
-            ):
-                continue
-            seen_tabs.add(tab_id)
-            seen_targets.add(target_id)
-            visible = bool(raw.get("visible"))
-            focused = bool(raw.get("focused"))
-            region = raw.get("region")
-            if not visible or region not in {"left", "right", "center"}:
-                region = "background"
-            surface_key = f"p{len(surfaces) + 1}"
-            page_aliases = [surface_key, f"web:{len(surfaces) + 1}", f"tab:{tab_id}"]
-            if focused:
-                page_aliases.append("focused")
-            binding_id = webtab.register_binding(
-                owner_ws,
-                window_id,
-                tab_id,
-                target_id,
-                geometry_revision=_revision(raw.get("geometry_revision")),
-                allow_background=not visible,
-            )
-            surface = {
-                "surface_key": surface_key,
-                "aliases": page_aliases,
-                "kind": "web_tab",
-                "region": region,
-                "title": _text(raw.get("title"), 240),
-                "origin": _origin(str(raw.get("url") or "")),
-                "capabilities": ["observe", "interact", "navigate"],
-                "preview_status": "inventory",
-                "binding_id": binding_id,
-                "page_key": webtab.binding_page_key(binding_id),
-                "tab_id": tab_id,
-                "tab_entry_id": f"tab:{tab_id}",
-                "placement": {"mode": "single"},
-                "opener_tab_id": _text(raw.get("opener_tab_id"), 512),
-                "visible": visible,
-                "focused": focused,
-                **webtab.binding_revisions(binding_id),
+        for owner_ws, result, window_id in valid_inventories:
+            raw_pages = result["pages"]
+            surface_by_tab: dict[str, str] = {}
+            seen_tabs: set[str] = set()
+            seen_targets: set[str] = set()
+            window_pages = []
+            for raw in raw_pages[:32]:
+                if not isinstance(raw, dict):
+                    continue
+                tab_id = _text(raw.get("tab_id"), 512)
+                target_id = _text(raw.get("target_id"), 512)
+                if (
+                    not tab_id or not target_id
+                    or tab_id in seen_tabs or target_id in seen_targets
+                ):
+                    continue
+                seen_tabs.add(tab_id)
+                seen_targets.add(target_id)
+                visible = bool(raw.get("visible"))
+                focused = bool(raw.get("focused"))
+                region = raw.get("region")
+                if not visible or region not in {"left", "right", "center"}:
+                    region = "background"
+                surface_key = f"p{len(surfaces) + 1}"
+                page_aliases = [
+                    surface_key,
+                    f"web:{len(surfaces) + 1}",
+                    f"window:{window_id}:tab:{tab_id}",
+                    f"tab:{tab_id}",
+                ]
+                if focused:
+                    page_aliases.extend([f"focused:{window_id}", "focused"])
+                binding_id = webtab.register_binding(
+                    owner_ws,
+                    window_id,
+                    tab_id,
+                    target_id,
+                    geometry_revision=_revision(raw.get("geometry_revision")),
+                    allow_background=not visible,
+                )
+                surface = {
+                    "surface_key": surface_key,
+                    "aliases": page_aliases,
+                    "kind": "web_tab",
+                    "window_id": window_id,
+                    "region": region,
+                    "title": _text(raw.get("title"), 240),
+                    "origin": _origin(str(raw.get("url") or "")),
+                    "capabilities": ["observe", "interact", "navigate"],
+                    "preview_status": "inventory",
+                    "binding_id": binding_id,
+                    "page_key": webtab.binding_page_key(binding_id),
+                    "tab_id": tab_id,
+                    "tab_entry_id": f"tab:{tab_id}",
+                    "placement": {"mode": "single"},
+                    "opener_tab_id": _text(raw.get("opener_tab_id"), 512),
+                    "visible": visible,
+                    "focused": focused,
+                    **webtab.binding_revisions(binding_id),
+                }
+                surfaces.append(surface)
+                window_pages.append(surface_key)
+                surface_by_tab[tab_id] = surface_key
+                for alias in page_aliases:
+                    aliases.setdefault(alias, surface_key)
+
+            if raw_pages and not window_pages:
+                raise RuntimeError("OpenProgram Page inventory has no valid Page")
+
+            tab_entries = []
+            surface_by_key = {
+                item["surface_key"]: item
+                for item in surfaces
+                if item.get("window_id") == window_id
             }
-            surfaces.append(surface)
-            surface_by_tab[tab_id] = surface_key
-            for alias in page_aliases:
-                aliases.setdefault(alias, surface_key)
+            placed_pages: set[str] = set()
+            for raw_entry in (result.get("tab_entries") or [])[:64]:
+                if not isinstance(raw_entry, dict):
+                    continue
+                entry_id = _text(raw_entry.get("id"), 512)
+                mode = raw_entry.get("mode")
+                page_keys = [
+                    surface_by_tab[tab_id]
+                    for tab_id in raw_entry.get("tab_ids") or []
+                    if tab_id in surface_by_tab
+                ]
+                if mode == "single":
+                    page_keys = page_keys[:1]
+                if not entry_id or mode not in {"single", "split"} or not page_keys:
+                    continue
+                entry = {"id": entry_id, "mode": mode, "pages": page_keys}
+                raw_split = raw_entry.get("split")
+                if mode == "split" and isinstance(raw_split, dict):
+                    panes = []
+                    for raw_pane in (raw_split.get("panes") or [])[:2]:
+                        if not isinstance(raw_pane, dict):
+                            continue
+                        page_key = surface_by_tab.get(
+                            str(raw_pane.get("tab_id") or "")
+                        )
+                        pane_id = _text(raw_pane.get("pane_id"), 512)
+                        order = raw_pane.get("order")
+                        if not page_key or not pane_id or type(order) is not int:
+                            continue
+                        panes.append({
+                            "pane_id": pane_id, "order": order, "page": page_key,
+                        })
+                    entry["split"] = {
+                        "axis": "horizontal",
+                        "ratio": raw_split.get("ratio"),
+                        "panes": panes,
+                    }
+                    if not panes:
+                        continue
+                    for pane in panes:
+                        surface = surface_by_key[pane["page"]]
+                        surface["tab_entry_id"] = entry_id
+                        surface["placement"] = {
+                            "mode": "split",
+                            "pane_id": pane["pane_id"],
+                            "order": pane["order"],
+                        }
+                        placed_pages.add(pane["page"])
+                    for page_key in page_keys:
+                        if page_key in placed_pages:
+                            continue
+                        surface_by_key[page_key]["tab_entry_id"] = entry_id
+                        surface_by_key[page_key]["placement"] = {"mode": "split"}
+                        placed_pages.add(page_key)
+                else:
+                    for page_key in page_keys:
+                        surface_by_key[page_key]["tab_entry_id"] = entry_id
+                        surface_by_key[page_key]["placement"] = {"mode": "single"}
+                        placed_pages.add(page_key)
+                tab_entries.append(entry)
+            for page_key in window_pages:
+                if page_key in placed_pages:
+                    continue
+                surface = surface_by_key[page_key]
+                tab_entries.append({
+                    "id": surface["tab_entry_id"],
+                    "mode": "single",
+                    "pages": [page_key],
+                })
+
+            focused_page = surface_by_tab.get(
+                _text(result.get("focused_tab_id"), 512),
+                next((
+                    item["surface_key"]
+                    for item in surface_by_key.values() if item.get("focused")
+                ), ""),
+            )
+            window_primary = focused_page or next((
+                item["surface_key"]
+                for item in surface_by_key.values() if item.get("visible")
+            ), window_pages[0] if window_pages else "")
+            active_tab_entry_id = _text(result.get("active_tab_entry_id"), 512)
+            if not any(entry["id"] == active_tab_entry_id for entry in tab_entries):
+                active_tab_entry_id = next((
+                    entry["id"] for entry in tab_entries
+                    if window_primary in entry["pages"]
+                ), "")
+            windows.append({
+                "window_id": window_id,
+                "inventory_revision": _revision(result.get("inventory_revision")),
+                "active_tab_entry_id": active_tab_entry_id,
+                "focused_page": focused_page,
+                "tab_entries": tab_entries,
+                "pages": window_pages,
+            })
     except Exception:
         for surface in surfaces:
             webtab.release_binding(str(surface["binding_id"]))
         raise
-    if raw_pages and not surfaces:
-        raise RuntimeError("OpenProgram Page inventory has no valid Page")
-    primary = next((
-        item["surface_key"] for item in surfaces if item.get("focused")
-    ), next((
-        item["surface_key"] for item in surfaces if item.get("visible")
-    ), surfaces[0]["surface_key"] if surfaces else ""))
-    tab_entries = []
-    surface_by_key = {item["surface_key"]: item for item in surfaces}
-    placed_pages: set[str] = set()
-    for raw_entry in (result.get("tab_entries") or [])[:64]:
-        if not isinstance(raw_entry, dict):
-            continue
-        entry_id = _text(raw_entry.get("id"), 512)
-        mode = raw_entry.get("mode")
-        page_keys = [
-            surface_by_tab[tab_id]
-            for tab_id in raw_entry.get("tab_ids") or []
-            if tab_id in surface_by_tab
-        ]
-        if mode == "single":
-            page_keys = page_keys[:1]
-        if not entry_id or mode not in {"single", "split"} or not page_keys:
-            continue
-        entry = {"id": entry_id, "mode": mode, "pages": page_keys}
-        raw_split = raw_entry.get("split")
-        if mode == "split" and isinstance(raw_split, dict):
-            panes = []
-            for raw_pane in (raw_split.get("panes") or [])[:2]:
-                if not isinstance(raw_pane, dict):
-                    continue
-                page_key = surface_by_tab.get(str(raw_pane.get("tab_id") or ""))
-                pane_id = _text(raw_pane.get("pane_id"), 512)
-                order = raw_pane.get("order")
-                if not page_key or not pane_id or type(order) is not int:
-                    continue
-                panes.append({
-                    "pane_id": pane_id, "order": order, "page": page_key,
-                })
-            entry["split"] = {
-                "axis": "horizontal",
-                "ratio": raw_split.get("ratio"),
-                "panes": panes,
-            }
-            if not panes:
-                continue
-            for pane in panes:
-                surface = surface_by_key[pane["page"]]
-                surface["tab_entry_id"] = entry_id
-                surface["placement"] = {
-                    "mode": "split",
-                    "pane_id": pane["pane_id"],
-                    "order": pane["order"],
-                }
-                placed_pages.add(pane["page"])
-            for page_key in page_keys:
-                if page_key in placed_pages:
-                    continue
-                surface_by_key[page_key]["tab_entry_id"] = entry_id
-                surface_by_key[page_key]["placement"] = {"mode": "split"}
-                placed_pages.add(page_key)
-        else:
-            for page_key in page_keys:
-                surface_by_key[page_key]["tab_entry_id"] = entry_id
-                surface_by_key[page_key]["placement"] = {"mode": "single"}
-                placed_pages.add(page_key)
-        tab_entries.append(entry)
-    for surface in surfaces:
-        page_key = surface["surface_key"]
-        if page_key in placed_pages:
-            continue
-        tab_entries.append({
-            "id": surface["tab_entry_id"],
-            "mode": "single",
-            "pages": [page_key],
-        })
-    focused_page = surface_by_tab.get(
-        _text(result.get("focused_tab_id"), 512),
-        next((
-            item["surface_key"] for item in surfaces if item.get("focused")
-        ), ""),
-    )
-    active_tab_entry_id = _text(result.get("active_tab_entry_id"), 512)
-    if not any(entry["id"] == active_tab_entry_id for entry in tab_entries):
-        active_tab_entry_id = next((
-            entry["id"] for entry in tab_entries
-            if primary in entry["pages"]
-        ), "")
+    primary_window = windows[0]
+    primary = primary_window["focused_page"] or next((
+        item["surface_key"]
+        for item in surfaces
+        if item.get("window_id") == primary_window["window_id"]
+        and item.get("visible")
+    ), surfaces[0]["surface_key"] if surfaces else "")
     return {
         "context_id": "page_ctx_" + uuid.uuid4().hex,
-        "window_id": window_id,
-        "inventory_revision": _revision(result.get("inventory_revision")),
-        "active_tab_entry_id": active_tab_entry_id,
-        "focused_page": focused_page,
-        "tab_entries": tab_entries,
+        "window_id": primary_window["window_id"],
+        "inventory_revision": primary_window["inventory_revision"],
+        "active_tab_entry_id": primary_window["active_tab_entry_id"],
+        "focused_page": primary_window["focused_page"],
+        "tab_entries": primary_window["tab_entries"],
+        "windows": windows,
         "primary_surface_key": primary,
         "alias_map": aliases,
         "surfaces": surfaces,

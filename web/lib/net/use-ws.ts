@@ -605,6 +605,14 @@ export function useWS(): void {
         // app-shell route effect — send agent_settings + the initial
         // session load so badges + transcript reflect the right conv.
         loadAgentSettings();
+        const desktopWindowId = (
+          window as unknown as { openprogramDesktop?: { windowId?: string } }
+        ).openprogramDesktop?.windowId;
+        if (desktopWindowId) {
+          socket?.send(JSON.stringify({
+            action: "webtab_register", window_id: desktopWindowId,
+          }));
+        }
         socket?.send(JSON.stringify({ action: "list_sessions" }));
         if (runtimeState.currentSessionId) {
           socket?.send(

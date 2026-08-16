@@ -184,6 +184,9 @@ class ComputerUseSessionRegistry:
                 surface_key = str(item.get("surface_key") or "")
                 capability_context = {
                     "context_id": str(context.get("context_id") or ""),
+                    "window_id": str(
+                        item.get("window_id") or context.get("window_id") or ""
+                    ),
                     "primary_surface_key": surface_key,
                     "alias_map": {
                         str(alias): surface_key
@@ -207,6 +210,7 @@ class ComputerUseSessionRegistry:
                 }
                 pages.append({
                     "page": item.get("surface_key"),
+                    "window_id": item.get("window_id") or context.get("window_id") or "",
                     "aliases": list(item.get("aliases") or []),
                     "region": item.get("region"),
                     "title": item.get("title") or "",
@@ -232,6 +236,7 @@ class ComputerUseSessionRegistry:
             ),
             "focused_page": str(context.get("focused_page") or ""),
             "tab_entries": copy.deepcopy(context.get("tab_entries") or []),
+            "windows": copy.deepcopy(context.get("windows") or []),
             "pages": pages,
         }
 
