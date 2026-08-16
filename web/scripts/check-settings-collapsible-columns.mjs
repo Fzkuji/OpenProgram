@@ -27,9 +27,10 @@ assert.match(providers, /styles\.providerListCollapsed/);
 assert.match(providers, /styles\.providersToolbar[\s\S]*SearchInput[\s\S]*sidebarToggleClass/);
 assert.doesNotMatch(providers, /styles\.railHeader/);
 assert.doesNotMatch(providers, /styles\.railTitle/);
-assert.doesNotMatch(providers, /styles\.pageHeader/);
+assert.match(providers, /styles\.pageHeader[\s\S]*styles\.pageTitle[\s\S]*settings\.tab\.providers[\s\S]*styles\.pageMeta[\s\S]*styles\.pageBody/);
 assert.doesNotMatch(memory, /shared\.pageHeader/);
-assert.match(loading, /tab === "providers" \|\| tab === "memory"/);
+assert.match(loading, /const headerless = tab === "memory"/);
+assert.match(loading, /providers: "settings\.tab\.providers"/);
 assert.match(loading, /\{!headerless[\s\S]*styles\.pageHeader/);
 assert.match(providerItem, /title=\{p\.label\}/);
 
