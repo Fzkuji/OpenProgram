@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -278,6 +280,73 @@ def test_screenshot_is_one_current_viewport_image_on_the_same_frame():
         "ok": False,
         "reason_code": "screenshot_already_captured",
     }
+
+
+def test_planner_screenshot_tool_result_is_metadata_only_and_dag_safe():
+    from openprogram.agentic_programming.runtime import Runtime
+    from openprogram.programs import ToolReturn
+    from openprogram.providers.types import (
+        AssistantMessage,
+        EventDone,
+        EventStart,
+        TextContent,
+        ToolCall,
+    )
+
+    controller, _api = _controller()
+    observation = controller.execute(action="observe")
+    tool = controller.tool_for_actions(["screenshot"])
+    calls = 0
+
+    def message(content, stop_reason):
+        return AssistantMessage(
+            content=content,
+            api="completion",
+            provider="test",
+            model="test",
+            stop_reason=stop_reason,
+            timestamp=int(time.time() * 1000),
+        )
+
+    async def stream(_model, _context, _options=None):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            reply = message([
+                ToolCall(
+                    id="screenshot-1",
+                    name="browser_page",
+                    arguments={
+                        "action": "screenshot",
+                        "expected_frame_id": observation["frame_id"],
+                    },
+                ),
+            ], "toolUse")
+        else:
+            reply = message([TextContent(text="done")], "stop")
+        yield EventStart(partial=reply)
+        yield EventDone(reason=reply.stop_reason, message=reply)
+
+    runtime = Runtime(call=lambda *_args, **_kwargs: "unused")
+    try:
+        runtime.exec(
+            content=[{"type": "text", "text": "inspect"}],
+            tools=[tool],
+            stream_fn=stream,
+            max_iterations=2,
+        )
+        raw = controller._last_result
+        assert isinstance(raw, ToolReturn)
+        assert raw.images == [b"\x89PNG fake"]
+        serialized = json.dumps(runtime.last_blocks, default=str)
+        assert base64.b64encode(raw.images[0]).decode("ascii") not in serialized
+        assert "ImageContent" not in serialized
+        assert set(raw.json_data) == {"frame_id", "viewport"}
+    finally:
+        if isinstance(controller._last_result, ToolReturn):
+            controller._last_result.images.clear()
+        runtime.close()
+        controller.close()
 
 
 def test_write_requires_fresh_frame_and_invalidates_old_refs():
@@ -571,7 +640,7 @@ def test_planner_tool_excludes_runtime_owned_observe_action():
         "verify",
     ]
     assert "observe" in controller.tool.parameters["properties"]["action"]["enum"]
-    assert action_tool.execute is controller.tool.execute
+    assert action_tool.execute is not controller.tool.execute
     assert action_tool._requires_approval == controller.tool._requires_approval
     assert action_tool.parameters["properties"]["value"]["minLength"] == 1
     assert action_tool.parameters["allOf"][0]["then"]["required"] == [
@@ -809,6 +878,35 @@ def test_screenshot_payload_is_released_when_provider_request_is_cancelled(monke
     assert result["status"] == "cancelled"
     assert captured["result"].images == []
     assert [block["type"] for block in captured["content"]] == ["text"]
+
+
+def test_unsent_final_screenshot_payload_is_released(monkeypatch):
+    from openprogram.programs.agentic_functions import browser_agent as module
+
+    controller, _api = _controller()
+    monkeypatch.setattr(module, "_new_controller", lambda: controller)
+    captured = {}
+
+    class _Runtime:
+        calls = 0
+
+        def exec(self, **_kwargs):
+            self.calls += 1
+            if self.calls == 6:
+                frame_id = controller._frame["frame_id"]
+                captured["result"] = controller.execute(
+                    action="screenshot", expected_frame_id=frame_id,
+                )
+            return ""
+
+    result = module.browser_agent(
+        task="Inspect the visual target",
+        max_steps=1,
+        runtime=_Runtime(),
+    )
+
+    assert result["reason_code"] == "verification_missing"
+    assert captured["result"].images == []
 
 
 @pytest.mark.parametrize(

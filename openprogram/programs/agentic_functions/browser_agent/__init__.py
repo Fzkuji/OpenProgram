@@ -540,14 +540,21 @@ class BrowserPageController:
                 "action": action_schema,
             },
         }
-        return self.tool.model_copy(update={
-            "description": (
+        def dispatch(**arguments):
+            return _result_for_prompt(self.execute(**arguments))
+
+        return function(
+            name="browser_page",
+            description=(
                 "Act on or verify the current Runtime observation for the exact "
                 "bound OpenProgram Page. Observe is Runtime-owned and is not "
                 "available in this planner request."
             ),
-            "parameters": parameters,
-        })
+            parameters=parameters,
+            requires_approval=self._requires_approval,
+            register_globally=False,
+            max_result_chars=40_000,
+        )(dispatch)
 
     def revoke_screenshot(self) -> None:
         self._owner.submit(self._revoke_screenshot).result()
@@ -818,9 +825,13 @@ def _result_for_prompt(result: Any) -> Any:
         return result
     metadata = dict(result.json_data) if isinstance(result.json_data, dict) else {}
     return {
-        "ok": not result.is_error,
-        "image_attached": True,
-        **metadata,
+        key: value
+        for key, value in {
+            "frame_id": metadata.get("frame_id"),
+            "viewport": metadata.get("viewport"),
+            "image_attached": True,
+        }.items()
+        if value is not None
     }
 
 
@@ -933,7 +944,7 @@ def _run_browser_task_commands(
             arguments=arguments,
         )
         last.update(result=result, action=action, seq=last["seq"] + 1)
-        return result
+        return _result_for_prompt(result)
 
     action_tool = function(
         name="browser_page",
@@ -946,6 +957,7 @@ def _run_browser_task_commands(
     )(dispatch)
     deadline = time.monotonic() + max(1, min(int(max_seconds), 1800))
     pending_screenshot = None
+    pending_screenshot_result = None
     summary = ""
     try:
         for _ in range(min(max(1, int(max_steps)) * 3 + 3, 303)):
@@ -963,10 +975,13 @@ def _run_browser_task_commands(
                 ),
             }]
             sent_screenshot = pending_screenshot is not None
-            sent_screenshot_result = last["result"] if sent_screenshot else None
+            sent_screenshot_result = (
+                pending_screenshot_result if sent_screenshot else None
+            )
             if pending_screenshot is not None:
                 content.append(pending_screenshot)
                 pending_screenshot = None
+                pending_screenshot_result = None
             seq_before = last["seq"]
             try:
                 reply = runtime.exec(
@@ -980,8 +995,10 @@ def _run_browser_task_commands(
                 )
             finally:
                 if sent_screenshot:
-                    registry.revoke_screenshot(session_id)
-                    _release_screenshot_payload(content, sent_screenshot_result)
+                    try:
+                        registry.revoke_screenshot(session_id)
+                    finally:
+                        _release_screenshot_payload(content, sent_screenshot_result)
             if isinstance(reply, str) and reply.strip():
                 summary = reply.strip()
             if last["seq"] == seq_before:
@@ -995,6 +1012,7 @@ def _run_browser_task_commands(
                     "backend": backend, "computer_session_id": session_id,
                 }
             if last["action"] == "screenshot":
+                pending_screenshot_result = result
                 pending_screenshot = _screenshot_image_block(result)
             if isinstance(result, dict) and result.get("observe_required"):
                 observed = registry.execute(
@@ -1014,9 +1032,16 @@ def _run_browser_task_commands(
             "backend": backend, "computer_session_id": session_id,
         }
     finally:
-        registry.execute(
-            command="close", computer_session_id=session_id, owner_id=owner_id,
-        )
+        try:
+            if pending_screenshot_result is not None:
+                try:
+                    registry.revoke_screenshot(session_id)
+                finally:
+                    _release_screenshot_payload([], pending_screenshot_result)
+        finally:
+            registry.execute(
+                command="close", computer_session_id=session_id, owner_id=owner_id,
+            )
 
 
 @agentic_function(
@@ -1169,6 +1194,7 @@ def _run_browser_task(
     controller.max_steps = max(1, min(int(max_steps), 100))
     result: dict
     turn_request_token = None
+    pending_screenshot_result: Any = None
     try:
         if url and not _is_http_url(url):
             result = controller.final_result(
@@ -1232,7 +1258,11 @@ def _run_browser_task(
                     content.append(pending_screenshot)
                     pending_screenshot = None
                 image_was_sent = len(content) == 2
-                sent_screenshot_result = prior_result if image_was_sent else None
+                sent_screenshot_result = (
+                    pending_screenshot_result if image_was_sent else None
+                )
+                if image_was_sent:
+                    pending_screenshot_result = None
                 action_seq_before = getattr(controller, "_action_seq", 0)
                 try:
                     # Keep this deferred browser tool loop on Runtime until the
@@ -1248,10 +1278,12 @@ def _run_browser_task(
                     )
                 finally:
                     if image_was_sent:
-                        controller.revoke_screenshot()
-                        _release_screenshot_payload(
-                            content, sent_screenshot_result,
-                        )
+                        try:
+                            controller.revoke_screenshot()
+                        finally:
+                            _release_screenshot_payload(
+                                content, sent_screenshot_result,
+                            )
                 action_executed = (
                     getattr(controller, "_action_seq", action_seq_before)
                     != action_seq_before
@@ -1277,6 +1309,7 @@ def _run_browser_task(
                     else {"ok": False, "reason_code": "tool_not_executed"}
                 )
                 if action_executed and getattr(controller, "_last_action", "") == "screenshot":
+                    pending_screenshot_result = prior_result
                     pending_screenshot = _screenshot_image_block(prior_result)
                 if controller._frame is None:
                     observation = controller.execute(action="observe")
@@ -1313,10 +1346,17 @@ def _run_browser_task(
         )
         result = controller.final_result(summary=str(exc), reason_code=reason)
     finally:
-        if turn_request_token is not None:
-            from openprogram.agent.turn_request_context import reset_turn_request
-            reset_turn_request(turn_request_token)
-        cleanup_error = controller.close()
+        try:
+            if pending_screenshot_result is not None:
+                try:
+                    controller.revoke_screenshot()
+                finally:
+                    _release_screenshot_payload([], pending_screenshot_result)
+        finally:
+            if turn_request_token is not None:
+                from openprogram.agent.turn_request_context import reset_turn_request
+                reset_turn_request(turn_request_token)
+            cleanup_error = controller.close()
     if cleanup_error:
         result["cleanup_error"] = cleanup_error
         result["summary"] = (
