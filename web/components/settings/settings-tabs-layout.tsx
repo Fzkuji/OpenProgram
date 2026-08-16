@@ -31,8 +31,8 @@ function readSettingsNavOpen(): boolean {
 }
 
 /**
- * Shell for the Settings tabs — topbar, sticky nav column, content
- * slot. Splits the previous SettingsPage's state-driven tab switching
+ * Shell for the Settings tabs — labeled nav column and content slot.
+ * Splits the previous SettingsPage's state-driven tab switching
  * into URL-routed subpages so refresh/back-button persist the active
  * tab.
  *
@@ -92,9 +92,6 @@ export function SettingsTabsLayout({
   return (
     <div className="main">
       <div className={styles.view}>
-        <div className={styles.topbar}>
-          <span className={styles.title}>{t("settings.title")}</span>
-        </div>
         <div
           className={
             styles.body +
@@ -108,6 +105,7 @@ export function SettingsTabsLayout({
               tab is open. */}
           <nav className={styles.nav} aria-label={t("settings.title")}>
             <div className={styles.railHeader}>
+              <span className={styles.railTitle}>{t("settings.title")}</span>
               <button
                 type="button"
                 className={sidebarToggleClass}

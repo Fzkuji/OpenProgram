@@ -3,47 +3,45 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Settings 可折叠导航列</title>
+  <title>Settings 分级导航栏头</title>
   <style>
-    :root{color-scheme:dark;--bg:#171717;--panel:#202020;--panel2:#272727;--line:#3a3a3a;--text:#f2f2f2;--muted:#aaa;--blue:#6ea8fe;--ok:#77b984;--rail:49px;--open:288px}
-    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 Inter,system-ui,sans-serif}main{max-width:1120px;margin:auto;padding:44px 24px 72px}h1{font-size:30px;line-height:1.2;margin:0 0 10px}h2{font-size:20px;margin:34px 0 12px}h3{font-size:15px;margin:0 0 6px}p{margin:0 0 10px}.muted{color:var(--muted)}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#c9dcff}.status,.card,.mock,.table-wrap{border:1px solid var(--line);border-radius:12px;background:var(--panel)}.status{display:grid;grid-template-columns:repeat(4,1fr);margin:24px 0;overflow:hidden}.status>div{padding:14px 16px}.status>div+div{border-left:1px solid var(--line)}.k{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.v{font-weight:650;margin-top:3px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.card{padding:16px}.mock{padding:14px;overflow:auto}.chrome{display:grid;grid-template-columns:92px 92px 92px minmax(180px,1fr);height:220px;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#191919}.chrome.collapsed{grid-template-columns:32px 32px 32px minmax(180px,1fr)}.col{padding:7px;border-right:1px solid var(--line);overflow:hidden}.col.detail{padding:15px;border:0}.toggle{width:20px;height:20px;margin-left:auto;border-radius:5px;background:var(--panel2);display:grid;place-items:center;color:var(--muted)}.row{height:25px;margin-top:5px;border-radius:5px;background:var(--panel2);display:flex;align-items:center;gap:6px;padding:0 7px;white-space:nowrap}.ico{width:10px;height:10px;border-radius:3px;background:var(--blue);flex:0 0 auto}.detail .block{height:22px;border-radius:6px;background:var(--panel2);margin:8px 0}.detail .block.short{width:55%}.collapsed .col{padding:6px}.collapsed .toggle{margin:auto}.collapsed .row{justify-content:center;padding:0}.collapsed .label{display:none}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:720px}th,td{text-align:left;vertical-align:top;padding:11px 13px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-size:12px}.flow{display:grid;grid-template-columns:200px 1fr;gap:8px 14px}.flow b{color:var(--blue)}ul{margin:8px 0;padding-left:20px}.ok{color:var(--ok)}a{color:var(--blue)}@media(max-width:760px){.status,.grid{grid-template-columns:1fr}.status>div+div{border-left:0;border-top:1px solid var(--line)}.flow{grid-template-columns:1fr}}
+    :root{color-scheme:dark;--bg:#171717;--panel:#202020;--panel2:#292929;--line:#3a3a3a;--text:#f2f2f2;--muted:#aaa;--blue:#72a7f7;--ok:#77b984;--rail:49px;--settings:288px;--provider:288px}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 Inter,system-ui,sans-serif}main{max-width:1120px;margin:auto;padding:44px 24px 72px}h1{font-size:30px;line-height:1.2;margin:0 0 10px}h2{font-size:20px;margin:34px 0 12px}h3{font-size:15px;margin:0 0 6px}p{margin:0 0 10px}.muted{color:var(--muted)}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#c9dcff}.status,.card,.mock,.table-wrap{border:1px solid var(--line);border-radius:12px;background:var(--panel)}.status{display:grid;grid-template-columns:repeat(4,1fr);margin:24px 0;overflow:hidden}.status>div{padding:14px 16px}.status>div+div{border-left:1px solid var(--line)}.k{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.v{font-weight:650;margin-top:3px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.card{padding:16px}.mock{padding:14px;overflow:auto}.chrome{display:grid;grid-template-columns:112px 122px minmax(180px,1fr);height:238px;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#191919}.chrome.compact{grid-template-columns:32px 32px minmax(180px,1fr)}.col{padding:7px;border-right:1px solid var(--line);overflow:hidden}.col.detail{padding:15px;border:0}.rail-head{height:30px;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line);font-weight:650;white-space:nowrap}.toggle{width:22px;height:22px;margin-left:auto;border-radius:5px;background:var(--panel2);display:grid;place-items:center;color:var(--muted)}.row{height:27px;margin-top:5px;border-radius:5px;background:var(--panel2);display:flex;align-items:center;gap:6px;padding:0 7px;white-space:nowrap}.ico{width:10px;height:10px;border-radius:3px;background:var(--blue);flex:0 0 auto}.detail .block{height:22px;border-radius:6px;background:var(--panel2);margin:8px 0}.detail .block.short{width:55%}.compact .col{padding:5px}.compact .rail-head{justify-content:center}.compact .rail-head .label{display:none}.compact .toggle{margin:0}.compact .row{justify-content:center;padding:0}.compact .row .label{display:none}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:720px}th,td{text-align:left;vertical-align:top;padding:11px 13px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-size:12px}.flow{display:grid;grid-template-columns:200px 1fr;gap:8px 14px}.flow b{color:var(--blue)}ul{margin:8px 0;padding-left:20px}.pending{color:#d8af63}.ok{color:var(--ok)}@media(max-width:760px){.status,.grid{grid-template-columns:1fr}.status>div+div{border-left:0;border-top:1px solid var(--line)}.flow{grid-template-columns:1fr}}
   </style>
 </head>
 <body><main>
   <header>
-    <div class="k">OpenProgram · Web UI · implementation design</div>
-    <h1>Settings 可折叠导航列</h1>
-    <p class="muted">问题：主侧栏、设置分类栏、Provider 列表栏同时展开时占用 864px 左右，Provider 详情在窄窗口中被压缩并出现横向溢出。</p>
+    <div class="k">OpenProgram · Web UI · current design</div>
+    <h1>Settings 分级导航栏头</h1>
+    <p class="muted">问题：Settings 顶部标题占用独立区域，Settings 与 Provider 的收起按钮又脱离各自名称，按钮作用范围不清楚；内容区还重复显示当前导航名称和说明。</p>
   </header>
 
   <div class="status">
     <div><div class="k">Audience</div><div class="v">Web / Desktop UI 实现</div></div>
-    <div><div class="k">Scope</div><div class="v">Settings 三层左侧导航</div></div>
-    <div><div class="k">Expanded</div><div class="v">每列约 288px</div></div>
-    <div><div class="k">Collapsed</div><div class="v">每列 49px</div></div>
+    <div><div class="k">Scope</div><div class="v">Settings 与 Provider 导航</div></div>
+    <div><div class="k">Expanded</div><div class="v">沿用现有列宽</div></div>
+    <div><div class="k">Collapsed</div><div class="v">各列 49px</div></div>
   </div>
 
   <section>
-    <h2>当前状态与目标状态</h2>
+    <h2>目标结构</h2>
     <div class="grid">
       <div class="mock">
-        <h3>当前：三列固定展开</h3>
-        <p class="muted">Provider 详情只能使用剩余宽度。</p>
+        <h3>展开状态</h3>
+        <p class="muted">每个按钮与所属菜单名称位于同一栏头。</p>
         <div class="chrome">
-          <div class="col"><div class="toggle">‹</div><div class="row"><i class="ico"></i><span class="label">Programs</span></div></div>
-          <div class="col"><div class="row"><i class="ico"></i><span class="label">LLM Providers</span></div><div class="row"><i class="ico"></i><span class="label">General</span></div></div>
-          <div class="col"><div class="row"><i class="ico"></i><span class="label">OpenAI Codex</span></div><div class="row"><i class="ico"></i><span class="label">DeepSeek</span></div></div>
-          <div class="col detail"><strong>Provider detail</strong><div class="block"></div><div class="block"></div><div class="block short"></div></div>
+          <div class="col"><div class="rail-head"><span class="label">Settings</span><span class="toggle">‹</span></div><div class="row"><i class="ico"></i><span class="label">LLM Providers</span></div><div class="row"><i class="ico"></i><span class="label">Memory</span></div></div>
+          <div class="col"><div class="rail-head"><span class="label">LLM Providers</span><span class="toggle">‹</span></div><div class="row"><i class="ico"></i><span class="label">Claude Code</span></div><div class="row"><i class="ico"></i><span class="label">OpenAI</span></div></div>
+          <div class="col detail"><strong>Selected provider</strong><div class="block"></div><div class="block"></div><div class="block short"></div></div>
         </div>
       </div>
       <div class="mock">
-        <h3>目标：三个导航列独立收起</h3>
-        <p class="muted">窄轨保留展开按钮和可识别图标。</p>
-        <div class="chrome collapsed">
-          <div class="col"><div class="toggle">›</div><div class="row"><i class="ico"></i></div></div>
-          <div class="col"><div class="toggle">›</div><div class="row"><i class="ico"></i></div></div>
-          <div class="col"><div class="toggle">›</div><div class="row"><i class="ico"></i></div><div class="row"><i class="ico"></i></div></div>
-          <div class="col detail"><strong>Provider detail</strong><div class="block"></div><div class="block"></div><div class="block short"></div></div>
+        <h3>用户收起两列</h3>
+        <p class="muted">窗口宽度不会替用户改变展开状态。</p>
+        <div class="chrome compact">
+          <div class="col"><div class="rail-head"><span class="label">Settings</span><span class="toggle">›</span></div><div class="row"><i class="ico"></i></div><div class="row"><i class="ico"></i></div></div>
+          <div class="col"><div class="rail-head"><span class="label">LLM Providers</span><span class="toggle">›</span></div><div class="row"><i class="ico"></i></div><div class="row"><i class="ico"></i></div></div>
+          <div class="col detail"><strong>Selected provider</strong><div class="block"></div><div class="block"></div><div class="block short"></div></div>
         </div>
       </div>
     </div>
@@ -52,11 +50,11 @@
   <section>
     <h2>列级契约</h2>
     <div class="table-wrap"><table>
-      <thead><tr><th>列</th><th>展开态</th><th>收起态</th><th>持久化</th><th>必须保留</th></tr></thead>
+      <thead><tr><th>区域</th><th>展开状态</th><th>收起状态</th><th>持久化</th><th>栏头</th></tr></thead>
       <tbody>
-        <tr><td>应用主侧栏</td><td><code>--sidebar-width</code></td><td>49px</td><td><code>sidebarOpen</code>（现有）</td><td>展开按钮、导航图标</td></tr>
-        <tr><td>Settings 分类栏</td><td><code>--sidebar-width - 1px</code></td><td>49px</td><td><code>settingsNavOpen</code></td><td>展开按钮、分类图标、当前页状态</td></tr>
-        <tr><td>Provider 列表栏</td><td><code>--sidebar-width - 1px</code></td><td>49px</td><td><code>providerListOpen</code></td><td>展开按钮、Provider 图标、当前 Provider 状态</td></tr>
+        <tr><td>Settings 分类栏</td><td><code>--sidebar-width - 1px</code></td><td>49px</td><td><code>settingsNavOpen</code></td><td><code>Settings</code> + 收起按钮</td></tr>
+        <tr><td>Provider 列表栏</td><td><code>--sidebar-width - 1px</code></td><td>49px</td><td><code>providerListOpen</code></td><td><code>LLM Providers</code> + 收起按钮</td></tr>
+        <tr><td>内容区域</td><td colspan="3">使用剩余宽度；Memory 控件在窄宽度下换行，不改变导航状态。</td><td>不重复显示通用页面标题和说明</td></tr>
       </tbody>
     </table></div>
   </section>
@@ -64,47 +62,51 @@
   <section>
     <h2>交互与状态边界</h2>
     <div class="flow">
-      <b>独立控制</b><span>收起任意一列不修改另外两列的状态。</span>
-      <b>选择不展开</b><span>在窄轨点击分类或 Provider，只切换内容，不强制展开导航列。</span>
-      <b>完整键盘入口</b><span>折叠按钮使用原生 <code>button</code>、<code>aria-expanded</code>、明确的中英文名称。</span>
-      <b>宽度过渡</b><span>只过渡 grid column width；不改变详情表单数据、Provider 选择或滚动根。</span>
+      <b>独立控制</b><span>收起 Settings 或 Provider 不修改另一列状态。</span>
+      <b>用户状态优先</b><span>改变窗口宽度不自动展开或收起导航列。</span>
       <b>持久化</b><span>刷新和重新进入 Settings 后恢复用户最后一次选择。</span>
-      <b>窄窗固定轨</b><span>主侧栏进入 fixed 模式后，Settings 保留 49px 左侧空间，窄轨不覆盖页面标题或设置内容。</span>
+      <b>键盘与读屏</b><span>按钮保留原生 <code>button</code>、<code>aria-expanded</code>、<code>aria-controls</code> 与明确名称。</span>
+      <b>内容适配</b><span>窄窗口只触发表单控件换行；详情数据、选择和滚动状态不变。</span>
+      <b>层级表达</b><span>Settings 与 LLM Providers 的名称属于导航栏头，不再占用内容区标题栏。</span>
     </div>
   </section>
 
   <section>
-    <h2>方案比较</h2>
+    <h2>采用与排除</h2>
+    <div class="grid">
+      <div class="card"><h3>采用</h3><ul><li>复用现有两态收起状态和图标。</li><li>删除全局 Settings 顶栏。</li><li>删除 Memory 与 LLM Providers 重复页头。</li><li>在每个导航栏头显示名称和按钮。</li></ul></div>
+      <div class="card"><h3>排除</h3><ul><li>不增加拖拽调整列宽。</li><li>不按 breakpoint 强制改变用户状态。</li><li>不修改 Memory、Provider 或模型数据。</li><li>不改变应用主侧栏行为。</li></ul></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>规范与现有框架对照</h2>
     <div class="table-wrap"><table>
-      <thead><tr><th>方案</th><th>结论</th><th>原因</th></tr></thead>
+      <thead><tr><th>依据</th><th>提供的能力</th><th>本设计采用</th><th>未提供或不采用</th></tr></thead>
       <tbody>
-        <tr><td>React 本地 disclosure 状态 + CSS Grid 列宽</td><td class="ok">采用</td><td>沿用主侧栏模式，不增加 store 或依赖；每列状态边界明确。</td></tr>
-        <tr><td>只在固定 breakpoint 自动隐藏</td><td>不采用</td><td>窗口和字体缩放组合不同，固定阈值会替用户改变布局且无法手动恢复。</td></tr>
-        <tr><td>Provider 详情整体横向滚动</td><td>不采用</td><td>不释放导航占用，表单操作仍需横向滚动。</td></tr>
-        <tr><td>拖拽调整三列宽度</td><td>不采用</td><td>本次只解决显示/隐藏；增加三个 resize handle 会扩大状态和指针交互范围。</td></tr>
+        <tr><td><a href="https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/">WAI-ARIA APG Disclosure</a></td><td>原生按钮、<code>aria-expanded</code>、可选 <code>aria-controls</code>、Enter/Space 键盘触发</td><td>两处收起按钮保留这些语义</td><td>APG 不规定多列宽度和标题位置</td></tr>
+        <tr><td><a href="https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-expanded">MDN aria-expanded</a></td><td>控制元素与被控制区域的状态关系</td><td>状态值与可见列内容同步</td><td>不使用 <code>aria-pressed</code> 表达展开状态</td></tr>
+        <tr><td>OpenProgram 现有 Sidebar + CSS Grid</td><td>49px 收起轨、现有动画图标、本地持久化、剩余内容宽度</td><td>直接复用，不新增组件库或状态层</td><td>不增加拖拽 resize handle 和自动 breakpoint 状态</td></tr>
       </tbody>
     </table></div>
-    <p class="muted" style="margin-top:10px">规范基础：CSS Grid 列宽负责布局；原生 disclosure 语义由 <code>button</code> 与 <code>aria-expanded</code> 表达；不引入新组件库。</p>
   </section>
 
   <section>
-    <h2>验收与排除项</h2>
-    <div class="grid">
-      <div class="card"><h3>验收</h3><ul><li>两处新增折叠按钮均可用鼠标和键盘触发。</li><li>三列收起后各为 49px，详情区得到释放的全部宽度。</li><li>收起态没有标签、搜索框和分组标题溢出。</li><li>分类与 Provider 仍可通过图标选择。</li><li>默认安装版在窄窗口中验证。</li></ul></div>
-      <div class="card"><h3>排除</h3><ul><li>不改 Provider 账号行的字段和动作。</li><li>不新增可拖拽列宽。</li><li>不改变主侧栏已有持久化语义。</li><li>不把导航改成弹窗或 overlay。</li></ul></div>
-    </div>
+    <h2>验收标准</h2>
+    <div class="card"><ul>
+      <li>Settings 页面不再渲染独立的全局 Settings 顶栏。</li>
+      <li>Settings 分类栏展开时显示 <code>Settings</code>，按钮与名称同一行；收起时隐藏名称并居中按钮。</li>
+      <li>LLM Providers 列表栏展开时显示页面名称，按钮不再位于搜索框旁；收起时隐藏名称、搜索和分组标签。</li>
+      <li>Memory 与 LLM Providers 内容区不再重复通用标题和介绍。</li>
+      <li>现有两处 localStorage key、键盘语义、图标选择和 49px 收起宽度保持兼容。</li>
+    </ul></div>
   </section>
 
   <section>
-    <h2>实现证据</h2>
+    <h2>实现状态</h2>
     <div class="card">
-      <p class="ok">状态：已实现并安装到默认 App。</p>
-      <ul>
-        <li><code>settings-tabs-layout.tsx</code>：Settings 分类图标窄轨、独立按钮与 <code>settingsNavOpen</code>。</li>
-        <li><code>providers/index.tsx</code>：Provider 图标窄轨、独立按钮与 <code>providerListOpen</code>。</li>
-        <li><code>check:settings-columns</code>、TypeScript、生产构建、文档链接和补丁格式检查通过。</li>
-        <li>默认安装版 800px 视口实测：三列均为 49px；Provider 详情 <code>clientWidth = scrollWidth = 652px</code>；Settings 标题起点 x=73px，没有被 fixed 主侧栏覆盖。</li>
-      </ul>
+      <p class="pending">状态：待实现与复核。</p>
+      <p class="muted">实现证据只在生产代码、定点检查、可视验收和独立复核全部完成后更新。</p>
     </div>
   </section>
 </main></body>
