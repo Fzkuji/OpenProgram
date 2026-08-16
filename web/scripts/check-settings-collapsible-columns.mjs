@@ -95,9 +95,14 @@ assert.match(css, /@container\s*\(max-width:\s*680px\)[\s\S]*\.detailSurface\s*\
 assert.match(css, /@container\s*\(max-width:\s*300px\)[\s\S]*\.detailSurface\s*\{[^}]*padding-left:\s*8px[^}]*padding-right:\s*8px/s);
 assert.match(modelList, /className=\{styles\.modelRowHeader\}/);
 assert.match(modelList, /className=\{styles\.modelFact\}/);
+assert.match(modelList, /className=\{styles\.modelToggle\}[\s\S]*onClick=\{\(e\) => e\.stopPropagation\(\)\}/);
 assert.match(css, /@container\s*\(max-width:\s*300px\)[\s\S]*\.acctKey\s*\{[^}]*flex-wrap:\s*wrap/s);
 assert.match(css, /@container\s*\(max-width:\s*300px\)[\s\S]*\.acctKey\s*>\s*input\s*\{[^}]*flex:\s*1 1 100%[^}]*width:\s*100%/s);
 assert.match(css, /\.modelCapabilities\s*\{[^}]*flex-wrap:\s*wrap/s);
+assert.match(css, /\.modelCapabilities:empty\s*\{[^}]*display:\s*none/s);
+assert.match(css, /@container\s*\(max-width:\s*420px\)[\s\S]*\.modelRowHeader\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*14px 20px minmax\(0,\s*1fr\) auto[^}]*column-gap:\s*8px[^}]*row-gap:\s*8px/s);
+assert.match(css, /@container\s*\(max-width:\s*420px\)[\s\S]*\.modelCapabilities\s*\{[^}]*grid-column:\s*3\s*\/\s*-1[^}]*grid-row:\s*2[^}]*padding-left:\s*0/s);
+assert.match(css, /@container\s*\(max-width:\s*420px\)[\s\S]*\.modelToggle\s*\{[^}]*grid-column:\s*4[^}]*grid-row:\s*1[^}]*justify-self:\s*end/s);
 assert.match(css, /@container\s*\(max-width:\s*420px\)[\s\S]*\.modelFact\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
 assert.match(css, /@container\s*\(max-width:\s*680px\)[\s\S]*\.detailHeader\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*40px minmax\(0,\s*1fr\) auto/s);
 assert.match(css, /@container\s*\(max-width:\s*680px\)[\s\S]*\.detailHeaderActions\s*\{[^}]*grid-column:\s*3[^}]*flex-wrap:\s*wrap/s);

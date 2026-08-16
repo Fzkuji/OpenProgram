@@ -251,7 +251,7 @@ function ModelRow({
           <span className={styles.modelItemId}>{model.id}</span>
         </div>
         <div className={styles.modelCapabilities}>{caps}</div>
-        <div onClick={(e) => e.stopPropagation()}>
+        <div className={styles.modelToggle} onClick={(e) => e.stopPropagation()}>
           <Switch checked={model.enabled} onCheckedChange={onToggle} />
         </div>
       </div>
