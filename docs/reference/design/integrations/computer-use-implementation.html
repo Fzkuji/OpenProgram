@@ -174,4 +174,15 @@
     <tr><td>安装版</td><td><code>ba665053</code> 已刷新到 <code>/Applications/OpenProgram.app</code>，只使用默认 <code>~/.openprogram</code> 与 18100 worker。三个 backend 依次绑定同一当前可见内置 Page，完成 <code>list_pages → observe → scroll → observe → text_contains verify → close</code>；每条路径只执行一次写动作并返回 <code>passed=true</code>。三个 backend 又各自返回恰好一张带 viewport 元数据的有效 PNG，验收过程不保存图片。真实双窗口 transfer/rollback 同时确认目标 renderer 已 stage、源状态未变化、目标窗口销毁且存储无残留。</td><td class="pass">PASS</td></tr>
   </tbody>
 </table>
+
+<h2>任务 4：浏览器多 Page 与 popup handoff</h2>
+<div class="card">
+  <p><strong>Base：</strong><code>54c466e9</code>。<strong>范围：</strong>当前 OpenProgram window 的 web Page inventory、background exact target、popup opener 归属，以及 <code>browser_agent/gui_agent</code> 的显式 Page 切换。</p>
+  <p><strong>生产文件：</strong><code>desktop/main.js</code>、<code>desktop/preload.js</code>、<code>web/lib/desktop-bridge.ts</code>、<code>web/lib/state/center-tabs-store.ts</code>、<code>openprogram/webui/ws_actions/webtab.py</code>、<code>openprogram/agent/surface_context.py</code>、<code>agentic_functions/browser_agent/__init__.py</code>。<strong>排除：</strong>桌面软件控制、跨窗口 inventory、OCR/YOLO/memory、自动 backend fallback。</p>
+  <p><strong>RED：</strong>同窗口 A/B/popup C inventory；C 保存 opener=A；token 绑定 exact target；background B observe/act 不改变 visible/active/focus；GUI Agent 写动作后发现 C 并以 token 切换；close/target replacement/disconnect 撤销能力。<strong>Gate：</strong>相关 Python tests、desktop navigation check、Web split/compound checks、TypeScript、生产 Web build、docs build/links、安装版 18100 E2E、diff/status。</p>
+</div>
+<table>
+  <thead><tr><th>状态</th><th>证据</th></tr></thead>
+  <tbody><tr><td class="pending">DESIGN COMPLETE · IMPLEMENTATION PENDING</td><td>实现、review 与安装版证据只在对应 commit 通过后补写。</td></tr></tbody>
+</table>
 </main></body></html>

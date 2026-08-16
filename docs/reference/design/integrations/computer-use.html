@@ -92,6 +92,27 @@
     <p class="caption">三个 backend 都是可选执行路径；Runtime 在 ComputerSession 创建时固定其中一个，并把所有动作限制到同一个 Page。</p>
   </section>
 
+  <section aria-labelledby="pages-title">
+    <h2 id="pages-title">一个窗口里的多个 Page</h2>
+    <div class="diagram"><svg viewBox="0 0 1120 330" role="img">
+      <title>Page inventory、后台操作与 popup 切换</title><desc>list_pages 从当前 OpenProgram 窗口取得所有浏览器 Page，为每个 Page 签发一次性 token。Agent 选择 token 后建立 exact Page ComputerSession。popup 创建独立 Page 并保留 opener 归属；当前 session 不自动改变，Agent 显式切换后才操作 popup。</desc>
+      <defs><marker id="pages-arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#858173"/></marker><marker id="pages-blue-arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#5b91f2"/></marker></defs>
+      <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+        <text x="40" y="35" fill="#858173" font-size="11" letter-spacing="1.5">CURRENT OPENPROGRAM WINDOW</text>
+        <g fill="#11120f" stroke="#343126"><rect x="40" y="58" width="210" height="58" rx="9"/><rect x="40" y="132" width="210" height="58" rx="9"/><rect x="40" y="206" width="210" height="58" rx="9"/></g>
+        <g fill="#f3f0e8" font-size="13" font-weight="700"><text x="64" y="83">Page A</text><text x="64" y="157">Page B</text><text x="64" y="231">Popup C</text></g>
+        <g fill="#858173" font-size="11"><text x="64" y="102">visible · focused</text><text x="64" y="176">background</text><text x="64" y="250">opener = Page A</text></g>
+        <path d="M250 87 H360 M250 161 H360 M250 235 H360" fill="none" stroke="#858173" stroke-width="1.6"/>
+        <path d="M360 87 V235 M360 161 H440" fill="none" stroke="#858173" stroke-width="1.8" marker-end="url(#pages-arrow)"/>
+        <text x="400" y="138" fill="#e08a3e" font-size="12" font-weight="700" text-anchor="middle">list_pages</text>
+        <rect x="462" y="113" width="205" height="96" rx="14" fill="#17140f" stroke="#e08a3e"/><text x="564" y="143" fill="#f3f0e8" font-size="15" font-weight="700" text-anchor="middle">Page inventory</text><text x="564" y="168" fill="#c4c0b1" font-size="11" text-anchor="middle">title · URL · focused · opener</text><text x="564" y="191" fill="#858173" font-size="11" text-anchor="middle">one token per exact target</text>
+        <path d="M667 161 H760" fill="none" stroke="#5b91f2" stroke-width="2" marker-end="url(#pages-blue-arrow)"/><text x="714" y="145" fill="#5b91f2" font-size="11" text-anchor="middle">select token</text>
+        <rect x="782" y="92" width="298" height="138" rx="16" fill="#15121b" stroke="#a679e4"/><text x="931" y="126" fill="#a679e4" font-size="11" letter-spacing="1.2" text-anchor="middle">COMPUTERSESSION</text><text x="931" y="155" fill="#f3f0e8" font-size="16" font-weight="700" text-anchor="middle">exact Page only</text><text x="931" y="182" fill="#c4c0b1" font-size="11" text-anchor="middle">background Page 不切换 UI tab</text><text x="931" y="206" fill="#858173" font-size="11" text-anchor="middle">popup 出现后由 Agent 显式选择</text>
+        <text x="560" y="306" fill="#858173" font-size="12" text-anchor="middle">同一窗口可以有多个 Page；一个 ComputerSession 仍只绑定其中一个。</text>
+      </g>
+    </svg></div>
+  </section>
+
   <section aria-labelledby="click-title">
     <h2 id="click-title">Claude Code 的视觉坐标点击分支</h2>
     <div class="diagram"><svg viewBox="0 0 1120 650" role="img">
