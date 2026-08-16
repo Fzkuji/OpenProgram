@@ -20,7 +20,7 @@ from mcp.shared.exceptions import McpError
 from openprogram.agent.authority import (
     decide_capability,
     decide_tool_authority,
-    mcp_browser_control_authority,
+    mcp_web_control_authority,
     mcp_client_authority,
 )
 from openprogram.agent.session_db import SessionDB, default_db
@@ -135,15 +135,15 @@ def _default_event_bus():
     return get_event_bus()
 
 
-def _default_computer_use_dispatch(arguments, *, owner_id):
+def _default_web_use_dispatch(arguments, *, owner_id):
     """Execute browser control inside the running worker process.
 
     The stdio MCP server is a separate process.  Page bindings and the
     renderer WebSocket registry live in the worker, so importing the browser
     tool here would create an empty, unrelated registry.
     """
-    payload = _worker_computer_use_request(
-        "/api/computer-use",
+    payload = _worker_web_use_request(
+        "/api/web-use",
         {"arguments": dict(arguments), "owner_id": owner_id},
         timeout=120,
     )
@@ -152,15 +152,15 @@ def _default_computer_use_dispatch(arguments, *, owner_id):
     return AgentToolResult.model_validate(payload["result"])
 
 
-def _default_computer_use_release_owner(owner_id: str) -> None:
-    _worker_computer_use_request(
-        "/api/computer-use/release-owner",
+def _default_web_use_release_owner(owner_id: str) -> None:
+    _worker_web_use_request(
+        "/api/web-use/release-owner",
         {"owner_id": owner_id},
         timeout=5,
     )
 
 
-def _worker_computer_use_request(
+def _worker_web_use_request(
     path: str, body: Mapping[str, Any], *, timeout: float,
 ) -> dict[str, Any]:
     from openprogram.backend_endpoint import resolve_backend_endpoint
@@ -183,9 +183,9 @@ def _worker_computer_use_request(
         with opener.open(request, timeout=timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, ValueError, urllib.error.HTTPError) as exc:
-        raise RuntimeError("computer_use_worker_unavailable") from exc
+        raise RuntimeError("web_use_worker_unavailable") from exc
     if not isinstance(payload, dict) or payload.get("ok") is not True:
-        raise RuntimeError("computer_use_worker_failed")
+        raise RuntimeError("web_use_worker_failed")
     return payload
 
 
@@ -342,8 +342,8 @@ class MCPService:
         kill_active_runtime: Callable[[str], Any] | None = None,
         question_registry_getter: Callable[[], Any] | None = None,
         event_bus_getter: Callable[[], Any] | None = None,
-        computer_use_dispatch: Callable[..., Any] | None = None,
-        computer_use_release_owner: Callable[[str], Any] | None = None,
+        web_use_dispatch: Callable[..., Any] | None = None,
+        web_use_release_owner: Callable[[str], Any] | None = None,
     ) -> None:
         self.context = context
         self._session_db = session_db or default_db()
@@ -378,14 +378,14 @@ class MCPService:
         )
         self._event_bus = (event_bus_getter or _default_event_bus)()
         self._control_connection_id = uuid.uuid4().hex
-        self._computer_use_owner_id = (
+        self._web_use_owner_id = (
             f"mcp:{self.context.client_id}:{self._control_connection_id}"
         )
-        self._computer_use_dispatch = (
-            computer_use_dispatch or _default_computer_use_dispatch
+        self._web_use_dispatch = (
+            web_use_dispatch or _default_web_use_dispatch
         )
-        self._computer_use_release_owner = (
-            computer_use_release_owner or _default_computer_use_release_owner
+        self._web_use_release_owner = (
+            web_use_release_owner or _default_web_use_release_owner
         )
         self._active_lock = threading.RLock()
         self._active_by_request: dict[str, ActiveMCPRequest] = {}
@@ -541,11 +541,11 @@ class MCPService:
         for request_id in request_ids:
             self.cancel_request(request_id, reason="connection_closed")
         _best_effort(
-            self._computer_use_release_owner,
-            self._computer_use_owner_id,
+            self._web_use_release_owner,
+            self._web_use_owner_id,
         )
 
-    async def computer_use_call(
+    async def web_use_call(
         self,
         arguments: Mapping[str, Any],
         *,
@@ -553,7 +553,7 @@ class MCPService:
         cancel_event: asyncio.Event,
     ) -> AgentToolResult:
         """Run the narrow browser-control route owned by this MCP connection."""
-        authority = mcp_browser_control_authority(self.context.authority)
+        authority = mcp_web_control_authority(self.context.authority)
         decision = decide_capability(authority, "browser.control")
         if not decision.allowed:
             return AgentToolResult(
@@ -566,8 +566,8 @@ class MCPService:
         try:
             copied = _copy_json(arguments)
             raw = await anyio.to_thread.run_sync(
-                lambda: self._computer_use_dispatch(
-                    copied, owner_id=self._computer_use_owner_id,
+                lambda: self._web_use_dispatch(
+                    copied, owner_id=self._web_use_owner_id,
                 )
             )
             if isinstance(raw, AgentToolResult):

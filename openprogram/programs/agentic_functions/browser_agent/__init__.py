@@ -828,7 +828,7 @@ intentionally unavailable in this request. If the task outcome is already
 true, call verify with this frame_id and a supported assertion. Otherwise
 perform the next single necessary action using this frame_id and an element
 ref. Use screenshot only for visual judgment, canvas, or when no DOM/ARIA ref
-identifies the target. Do not call computer_use or tool_search, do not navigate
+identifies the target. Do not call web_use or tool_search, do not navigate
 away to rediscover the current Page, and do not answer with only text. When a
 different Page or popup is required, call switch_page with its current
 page_context_token. Never infer a Page switch from popup creation alone.
@@ -885,7 +885,7 @@ def _release_screenshot_payload(
         "max_steps": {"description": "Maximum state-changing actions"},
         "max_seconds": {"description": "Wall-clock limit in seconds"},
         "backend": {
-            "description": "Optional computer_use backend for GUI Agent Harness",
+            "description": "Optional web_use backend for GUI Agent Harness",
             "options": [
                 "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
             ],
@@ -923,7 +923,7 @@ def _run_browser_task_commands(
     if runtime is None:
         raise ValueError("browser_agent requires a runtime argument")
     from openprogram.agent import surface_context
-    from .computer_use_runtime import get_registry
+    from .web_use_runtime import get_registry
 
     context = surface_context.current()
     captured_here = context is None
@@ -994,7 +994,7 @@ def _run_browser_task_commands(
         if captured_here:
             surface_context.release_bindings(context)
         raise
-    session_id = str(observed.get("computer_session_id") or "")
+    session_id = str(observed.get("web_session_id") or "")
     if not session_id or "frame_id" not in observed:
         if captured_here and not session_id:
             surface_context.release_bindings(context)
@@ -1025,7 +1025,7 @@ def _run_browser_task_commands(
                     page_context_token=page_context_token,
                 )
                 next_session_id = str(
-                    next_observation.get("computer_session_id") or ""
+                    next_observation.get("web_session_id") or ""
                 )
                 if next_session_id and "frame_id" in next_observation:
                     previous_session_id = session_id
@@ -1043,13 +1043,13 @@ def _run_browser_task_commands(
                         )
                     registry.execute(
                         command="close",
-                        computer_session_id=previous_session_id,
+                        web_session_id=previous_session_id,
                         owner_id=owner_id,
                     )
                     result = {
                         "ok": True,
                         "switched": True,
-                        "computer_session_id": session_id,
+                        "web_session_id": session_id,
                         "frame_id": observed.get("frame_id"),
                     }
                 else:
@@ -1060,7 +1060,7 @@ def _run_browser_task_commands(
         arguments["action"] = action
         result = registry.execute(
             command=command,
-            computer_session_id=session_id,
+            web_session_id=session_id,
             owner_id=owner_id,
             arguments=arguments,
         )
@@ -1089,7 +1089,7 @@ def _run_browser_task_commands(
                 return {
                     "status": "failed", "reason_code": "timeout",
                     "summary": "GUI Agent Harness exceeded its time limit.",
-                    "backend": backend, "computer_session_id": session_id,
+                    "backend": backend, "web_session_id": session_id,
                 }
             content: list[dict[str, Any]] = [{
                 "type": "text",
@@ -1136,14 +1136,14 @@ def _run_browser_task_commands(
                 return {
                     "status": "succeeded", "reason_code": "verified",
                     "summary": summary or "Browser task completed and verified.",
-                    "backend": backend, "computer_session_id": session_id,
+                    "backend": backend, "web_session_id": session_id,
                 }
             if last["action"] == "screenshot":
                 pending_screenshot_result = result
                 pending_screenshot = _screenshot_image_block(result)
             if isinstance(result, dict) and result.get("observe_required"):
                 observed = registry.execute(
-                    command="observe", computer_session_id=session_id,
+                    command="observe", web_session_id=session_id,
                     owner_id=owner_id,
                 )
                 if "frame_id" not in observed:
@@ -1151,7 +1151,7 @@ def _run_browser_task_commands(
                         "status": "failed",
                         "reason_code": observed.get("reason_code", "page_unavailable"),
                         "summary": "The Page could not be observed after an action.",
-                        "backend": backend, "computer_session_id": session_id,
+                        "backend": backend, "web_session_id": session_id,
                     }
                 page_inventory, page_inventory_snapshot = refresh_inventory()
                 if all(bound_page_identity):
@@ -1161,7 +1161,7 @@ def _run_browser_task_commands(
                         ) == bound_page_identity
             elif last["action"] == "wait":
                 observed = registry.execute(
-                    command="observe", computer_session_id=session_id,
+                    command="observe", web_session_id=session_id,
                     owner_id=owner_id,
                 )
                 if "frame_id" not in observed:
@@ -1169,7 +1169,7 @@ def _run_browser_task_commands(
                         "status": "failed",
                         "reason_code": observed.get("reason_code", "page_unavailable"),
                         "summary": "The Page could not be observed after waiting.",
-                        "backend": backend, "computer_session_id": session_id,
+                        "backend": backend, "web_session_id": session_id,
                     }
                 page_inventory, page_inventory_snapshot = refresh_inventory()
                 if all(bound_page_identity):
@@ -1180,7 +1180,7 @@ def _run_browser_task_commands(
         return {
             "status": "failed", "reason_code": "verification_missing",
             "summary": summary or "Browser task ended without verification.",
-            "backend": backend, "computer_session_id": session_id,
+            "backend": backend, "web_session_id": session_id,
         }
     finally:
         try:
@@ -1206,7 +1206,7 @@ def _run_browser_task_commands(
                     last["screenshot_result"] = None
         finally:
             registry.execute(
-                command="close", computer_session_id=session_id, owner_id=owner_id,
+                command="close", web_session_id=session_id, owner_id=owner_id,
             )
             release_owner = getattr(registry, "release_owner", None)
             if callable(release_owner):
@@ -1214,7 +1214,7 @@ def _run_browser_task_commands(
 
 
 @agentic_function(
-    name="computer_use",
+    name="web_use",
     toolset=("browser",),
     unsafe_in=("wechat", "telegram", "plan"),
     requires_approval=_browser_agent_requires_approval,
@@ -1235,7 +1235,7 @@ def _run_browser_task_commands(
             },
             "page": {"type": "string", "maxLength": 512},
             "page_context_token": {"type": "string", "maxLength": 128},
-            "computer_session_id": {"type": "string", "maxLength": 128},
+            "web_session_id": {"type": "string", "maxLength": 128},
             "arguments": {"type": "object", "additionalProperties": True},
         },
         "required": ["command"],
@@ -1245,24 +1245,24 @@ def _run_browser_task_commands(
         "command": {"description": "list_pages, observe, act, verify, or close"},
         "backend": {"description": "Backend used when observe creates a session"},
         "page": {"description": "Turn Page alias used by observe"},
-        "computer_session_id": {"description": "Session returned by observe"},
+        "web_session_id": {"description": "Session returned by observe"},
         "arguments": {"description": "Command-specific arguments"},
         "runtime": {"hidden": True},
     },
 )
-def computer_use(
+def web_use(
     command: str,
     backend: str = "",
     page: str = "",
     page_context_token: str = "",
-    computer_session_id: str = "",
+    web_session_id: str = "",
     arguments: dict | None = None,
     runtime=None,
 ) -> dict:
     """Observe or control an exact Page attached to the current chat turn."""
     del runtime
     from openprogram.agent import surface_context
-    from .computer_use_runtime import get_registry
+    from .web_use_runtime import get_registry
 
     context = surface_context.current()
     owner_context_id = str((context or {}).get("context_id") or "")
@@ -1295,7 +1295,7 @@ def computer_use(
 
     binding_id = ""
     page_key = ""
-    if command == "observe" and not computer_session_id and not page_context_token:
+    if command == "observe" and not web_session_id and not page_context_token:
         token = surface_context.bind(context)
         try:
             binding_id = surface_context.resolve_binding(page)
@@ -1310,7 +1310,7 @@ def computer_use(
         result = get_registry().execute(
             command=command,
             backend=backend,
-            computer_session_id=computer_session_id,
+            web_session_id=web_session_id,
             binding_id=binding_id,
             page_key=page_key,
             owner_id=("turn:" + (
@@ -1325,15 +1325,15 @@ def computer_use(
         if captured_here:
             surface_context.release_bindings(context)
         raise
-    if captured_here and command == "observe" and not result.get("computer_session_id"):
+    if captured_here and command == "observe" and not result.get("web_session_id"):
         surface_context.release_bindings(context)
     return result
 
 
-def execute_direct_computer_use(arguments: dict, *, owner_id: str):
+def execute_direct_web_use(arguments: dict, *, owner_id: str):
     """Execute the first-class MCP contract with server-injected ownership."""
     from openprogram.agent import surface_context
-    from .computer_use_runtime import get_registry
+    from .web_use_runtime import get_registry
 
     command = str(arguments.get("command") or "")
     registry = get_registry()
@@ -1350,7 +1350,7 @@ def execute_direct_computer_use(arguments: dict, *, owner_id: str):
     return registry.execute(
         command=command,
         backend=str(arguments.get("backend") or ""),
-        computer_session_id=str(arguments.get("computer_session_id") or ""),
+        web_session_id=str(arguments.get("web_session_id") or ""),
         owner_id=owner_id,
         page_context_token=str(arguments.get("page_context_token") or ""),
         arguments=arguments.get("arguments") or {},
@@ -1367,7 +1367,7 @@ def _run_browser_task(
     binding_id: str = "",
 ) -> dict:
     if runtime is None:
-        raise ValueError("computer use requires a runtime argument")
+        raise ValueError("browser task requires a runtime argument")
     if not (task or "").strip():
         raise ValueError("task must not be empty")
     controller = _new_controller()
@@ -1572,4 +1572,9 @@ def _run_browser_task(
     return result
 
 
-__all__ = ["browser_agent", "computer_use", "BrowserPageController"]
+__all__ = [
+    "browser_agent",
+    "web_use",
+    "execute_direct_web_use",
+    "BrowserPageController",
+]

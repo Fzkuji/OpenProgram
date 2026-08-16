@@ -35,8 +35,8 @@ def _allow_binding(_binding_id):
 
 
 def test_registry_supports_three_backends_and_freezes_one_per_session():
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
         SUPPORTED_BACKENDS,
     )
 
@@ -46,7 +46,7 @@ def test_registry_supports_three_backends_and_freezes_one_per_session():
         "open_claude_chrome",
     )
     adapters = {name: _Adapter(name) for name in SUPPORTED_BACKENDS}
-    registry = ComputerUseSessionRegistry(
+    registry = WebUseSessionRegistry(
         adapters=adapters, binding_validator=_allow_binding,
     )
 
@@ -56,26 +56,26 @@ def test_registry_supports_three_backends_and_freezes_one_per_session():
         binding_id="binding-1",
         arguments={"detail": "interactive"},
     )
-    session_id = observed["computer_session_id"]
+    session_id = observed["web_session_id"]
     assert observed["backend"] == "chrome_devtools_mcp"
 
     mismatch = registry.execute(
         command="act",
         backend="playwright_mcp",
-        computer_session_id=session_id,
+        web_session_id=session_id,
         arguments={"action": "click", "ref": "e1"},
     )
     assert mismatch == {
         "ok": False,
         "reason_code": "backend_mismatch",
-        "computer_session_id": session_id,
+        "web_session_id": session_id,
         "backend": "chrome_devtools_mcp",
     }
     assert adapters["playwright_mcp"].calls == []
 
     acted = registry.execute(
         command="act",
-        computer_session_id=session_id,
+        web_session_id=session_id,
         arguments={"action": "click", "ref": "e1"},
     )
     assert acted["ok"] is True
@@ -87,8 +87,8 @@ def test_registry_supports_three_backends_and_freezes_one_per_session():
 
 
 def test_registry_preserves_one_argument_binding_validator_compatibility():
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
     )
 
     adapters = {
@@ -96,7 +96,7 @@ def test_registry_preserves_one_argument_binding_validator_compatibility():
             "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
         )
     }
-    registry = ComputerUseSessionRegistry(
+    registry = WebUseSessionRegistry(
         adapters=adapters,
         binding_validator=lambda _binding_id: {"ok": True},
     )
@@ -106,7 +106,7 @@ def test_registry_preserves_one_argument_binding_validator_compatibility():
     )
 
     acted = registry.execute(
-        command="act", computer_session_id=observed["computer_session_id"],
+        command="act", web_session_id=observed["web_session_id"],
         arguments={"action": "click"},
     )
 
@@ -114,8 +114,8 @@ def test_registry_preserves_one_argument_binding_validator_compatibility():
 
 
 def test_registry_rejects_action_when_bound_page_revision_changes():
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
     )
 
     adapter = _Adapter("open_claude_chrome")
@@ -127,7 +127,7 @@ def test_registry_rejects_action_when_bound_page_revision_changes():
     revisions = {"page_revision": 11, "access_revision": 12}
     validations = []
     released = []
-    registry = ComputerUseSessionRegistry(
+    registry = WebUseSessionRegistry(
         adapters=adapters,
         binding_revision_resolver=lambda _binding: dict(revisions),
         binding_validator=lambda binding: (
@@ -143,7 +143,7 @@ def test_registry_rejects_action_when_bound_page_revision_changes():
 
     revisions["access_revision"] = 13
     rejected = registry.execute(
-        command="act", computer_session_id=observed["computer_session_id"],
+        command="act", web_session_id=observed["web_session_id"],
         owner_id="owner-1", arguments={"action": "click"},
     )
 
@@ -152,14 +152,14 @@ def test_registry_rejects_action_when_bound_page_revision_changes():
     assert adapter.calls == [("observe", {}), ("close", {})]
     assert released == ["ctx-1"]
     assert registry.execute(
-        command="act", computer_session_id=observed["computer_session_id"],
+        command="act", web_session_id=observed["web_session_id"],
         owner_id="owner-1",
-    )["reason_code"] == "computer_session_not_found"
+    )["reason_code"] == "web_session_not_found"
 
 
 def test_registry_revalidates_visibility_before_each_existing_session_command():
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
     )
 
     adapter = _Adapter("open_claude_chrome")
@@ -170,7 +170,7 @@ def test_registry_revalidates_visibility_before_each_existing_session_command():
     }
     visible = {"ok": True}
     released = []
-    registry = ComputerUseSessionRegistry(
+    registry = WebUseSessionRegistry(
         adapters=adapters,
         binding_revision_resolver=lambda _binding: {
             "page_revision": 21, "access_revision": 22,
@@ -186,7 +186,7 @@ def test_registry_revalidates_visibility_before_each_existing_session_command():
 
     visible.update(ok=False, reason_code="page_context_stale")
     rejected = registry.execute(
-        command="verify", computer_session_id=observed["computer_session_id"],
+        command="verify", web_session_id=observed["web_session_id"],
         owner_id="owner-1", arguments={"assertion": "text_contains"},
     )
 
@@ -196,8 +196,8 @@ def test_registry_revalidates_visibility_before_each_existing_session_command():
 
 
 def test_page_capability_revisions_cross_the_session_validation_boundary(monkeypatch):
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
     )
     from openprogram.webui.ws_actions import webtab
 
@@ -215,7 +215,7 @@ def test_page_capability_revisions_cross_the_session_validation_boundary(monkeyp
 
     monkeypatch.setattr(webtab, "request_bound_tab", validate)
 
-    registry = ComputerUseSessionRegistry(
+    registry = WebUseSessionRegistry(
         adapters=adapters,
         binding_revision_resolver=lambda _binding: {},
     )
@@ -239,7 +239,7 @@ def test_page_capability_revisions_cross_the_session_validation_boundary(monkeyp
     )
 
     acted = registry.execute(
-        command="act", computer_session_id=observed["computer_session_id"],
+        command="act", web_session_id=observed["web_session_id"],
         owner_id="owner-1", arguments={"action": "click"},
     )
 
@@ -256,8 +256,8 @@ def test_page_capability_revisions_cross_the_session_validation_boundary(monkeyp
 
 
 def test_first_observe_rejects_stale_geometry_before_backend(monkeypatch):
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
     )
     from openprogram.webui.ws_actions import webtab
 
@@ -284,7 +284,7 @@ def test_first_observe_rejects_stale_geometry_before_backend(monkeypatch):
         }
 
     monkeypatch.setattr(webtab, "request_on_ws", request_on_ws)
-    registry = ComputerUseSessionRegistry(adapters=adapters)
+    registry = WebUseSessionRegistry(adapters=adapters)
 
     rejected = registry.execute(
         command="observe",
@@ -312,8 +312,8 @@ def test_first_observe_rejects_stale_geometry_before_backend(monkeypatch):
 
 
 def test_geometry_changed_during_activation_blocks_backend_action(monkeypatch):
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
     )
     from openprogram.webui.ws_actions import webtab
 
@@ -335,7 +335,7 @@ def test_geometry_changed_during_activation_blocks_backend_action(monkeypatch):
         "target_id": "target-1",
         "geometry_revision": next(activations),
     })
-    registry = ComputerUseSessionRegistry(adapters=adapters)
+    registry = WebUseSessionRegistry(adapters=adapters)
     context = {
         "context_id": "ctx-geometry",
         "surfaces": [{
@@ -354,7 +354,7 @@ def test_geometry_changed_during_activation_blocks_backend_action(monkeypatch):
 
     rejected = registry.execute(
         command="act",
-        computer_session_id=observed["computer_session_id"],
+        web_session_id=observed["web_session_id"],
         arguments={"action": "click"},
     )
 
@@ -363,14 +363,14 @@ def test_geometry_changed_during_activation_blocks_backend_action(monkeypatch):
 
 
 def test_registry_leases_one_exact_page_to_one_session_until_close():
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
     )
 
     adapters = {name: _Adapter(name) for name in (
         "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
     )}
-    registry = ComputerUseSessionRegistry(
+    registry = WebUseSessionRegistry(
         adapters=adapters,
         page_key_resolver=lambda binding: {
             "binding-1": "page-1", "binding-2": "page-1",
@@ -391,7 +391,7 @@ def test_registry_leases_one_exact_page_to_one_session_until_close():
     assert adapters["playwright_mcp"].calls == []
 
     registry.execute(
-        command="close", computer_session_id=first["computer_session_id"],
+        command="close", web_session_id=first["web_session_id"],
         owner_id="owner-1",
     )
     third = registry.execute(
@@ -405,8 +405,8 @@ def test_registry_leases_one_exact_page_to_one_session_until_close():
 
 
 def test_page_lease_remains_held_until_close_cleanup_finishes():
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
     )
 
     entered = threading.Event()
@@ -419,7 +419,7 @@ def test_page_lease_remains_held_until_close_cleanup_finishes():
     adapters = {name: _Adapter(name) for name in (
         "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
     )}
-    registry = ComputerUseSessionRegistry(
+    registry = WebUseSessionRegistry(
         adapters=adapters,
         release_context=release_context,
         page_key_resolver=lambda _binding: "page-1",
@@ -436,7 +436,7 @@ def test_page_lease_remains_held_until_close_cleanup_finishes():
         try:
             registry.execute(
                 command="close",
-                computer_session_id=observed["computer_session_id"],
+                web_session_id=observed["web_session_id"],
                 owner_id="owner-1",
             )
         except Exception as exc:  # pragma: no cover - assertion reports detail
@@ -461,8 +461,8 @@ def test_page_lease_remains_held_until_close_cleanup_finishes():
 
 @pytest.mark.parametrize("cleanup", ["release_owner", "close_all"])
 def test_cleanup_waits_for_inflight_action_before_releasing_page(cleanup):
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
     )
 
     class _BlockingAdapter(_Adapter):
@@ -482,7 +482,7 @@ def test_cleanup_waits_for_inflight_action_before_releasing_page(cleanup):
         "chrome_devtools_mcp": _Adapter("chrome_devtools_mcp"),
         "open_claude_chrome": blocking,
     }
-    registry = ComputerUseSessionRegistry(
+    registry = WebUseSessionRegistry(
         adapters=adapters,
         page_key_resolver=lambda _binding: "page-1",
         binding_validator=_allow_binding,
@@ -492,7 +492,7 @@ def test_cleanup_waits_for_inflight_action_before_releasing_page(cleanup):
         binding_id="binding-1", owner_id="owner-1",
     )
     action_thread = threading.Thread(target=lambda: registry.execute(
-        command="act", computer_session_id=observed["computer_session_id"],
+        command="act", web_session_id=observed["web_session_id"],
         owner_id="owner-1", arguments={"action": "click"},
     ))
     action_thread.start()
@@ -535,8 +535,8 @@ def test_cleanup_waits_for_inflight_action_before_releasing_page(cleanup):
 
 
 def test_close_failure_still_releases_page_lease_and_context():
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
     )
 
     class _CloseFails(_Adapter):
@@ -550,7 +550,7 @@ def test_close_failure_still_releases_page_lease_and_context():
         "open_claude_chrome": _CloseFails("open_claude_chrome"),
     }
     released = []
-    registry = ComputerUseSessionRegistry(
+    registry = WebUseSessionRegistry(
         adapters=adapters,
         release_context=lambda context: released.append(context["context_id"]),
         binding_validator=_allow_binding,
@@ -564,7 +564,7 @@ def test_close_failure_still_releases_page_lease_and_context():
     with pytest.raises(RuntimeError, match="close failed"):
         registry.execute(
             command="close",
-            computer_session_id=observed["computer_session_id"],
+            web_session_id=observed["web_session_id"],
             owner_id="owner-1",
         )
 
@@ -577,15 +577,15 @@ def test_close_failure_still_releases_page_lease_and_context():
 
 
 def test_close_all_releases_sessions_capabilities_and_page_leases():
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
     )
 
     adapters = {name: _Adapter(name) for name in (
         "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
     )}
     released = []
-    registry = ComputerUseSessionRegistry(
+    registry = WebUseSessionRegistry(
         adapters=adapters,
         release_context=lambda context: released.append(context["context_id"]),
         binding_validator=_allow_binding,
@@ -737,8 +737,8 @@ class _PlaywrightClient:
 
 
 def test_official_playwright_adapter_binds_marker_and_routes_one_action(monkeypatch):
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSession,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSession,
     )
     from openprogram.programs.agentic_functions.browser_agent.mcp_backends import (
         OfficialMCPPageBackend,
@@ -753,7 +753,7 @@ def test_official_playwright_adapter_binds_marker_and_routes_one_action(monkeypa
         "playwright_mcp", lambda: controller,
         client_factory=lambda command: commands.append(command) or client,
     )
-    session = ComputerUseSession("cs-1", "playwright_mcp", "binding-1")
+    session = WebUseSession("cs-1", "playwright_mcp", "binding-1")
 
     observed = adapter.observe(session, {})
     assert observed["aria_snapshot"] == '- button "Save" [ref=e7]'
@@ -771,15 +771,15 @@ def test_official_playwright_adapter_binds_marker_and_routes_one_action(monkeypa
 
 
 def test_registry_binds_session_to_owner_and_consumes_exact_page_capability():
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
     )
 
     adapters = {name: _Adapter(name) for name in (
         "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
     )}
     released = []
-    registry = ComputerUseSessionRegistry(
+    registry = WebUseSessionRegistry(
         adapters=adapters,
         release_context=lambda context: released.append(context["context_id"]),
         binding_validator=_allow_binding,
@@ -804,19 +804,19 @@ def test_registry_binds_session_to_owner_and_consumes_exact_page_capability():
         command="observe", backend="open_claude_chrome",
         owner_id="mcp:connection-a", page_context_token=token,
     )
-    session_id = observed["computer_session_id"]
+    session_id = observed["web_session_id"]
     reused = registry.execute(
         command="observe", backend="open_claude_chrome",
         owner_id="mcp:connection-a", page_context_token=token,
     )
     assert reused["reason_code"] == "page_context_consumed"
     wrong_owner = registry.execute(
-        command="act", computer_session_id=session_id,
+        command="act", web_session_id=session_id,
         owner_id="mcp:connection-b", arguments={"action": "click"},
     )
-    assert wrong_owner["reason_code"] == "computer_session_owner_mismatch"
+    assert wrong_owner["reason_code"] == "web_session_owner_mismatch"
     closed = registry.execute(
-        command="close", computer_session_id=session_id,
+        command="close", web_session_id=session_id,
         owner_id="mcp:connection-a",
     )
     assert closed["closed"] is True
@@ -824,11 +824,11 @@ def test_registry_binds_session_to_owner_and_consumes_exact_page_capability():
 
 
 def test_list_pages_returns_group_aware_snapshot_with_page_tokens():
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
     )
 
-    registry = ComputerUseSessionRegistry(
+    registry = WebUseSessionRegistry(
         adapters={name: _Adapter(name) for name in (
             "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
         )},
@@ -884,8 +884,8 @@ def test_list_pages_returns_group_aware_snapshot_with_page_tokens():
 
 
 def test_closing_one_page_session_keeps_sibling_page_binding_alive(monkeypatch):
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
     )
     from openprogram.webui.ws_actions import webtab
 
@@ -898,7 +898,7 @@ def test_closing_one_page_session_keeps_sibling_page_binding_alive(monkeypatch):
         "tab_id": command["tab_id"],
         "target_id": "target-1" if command["tab_id"] == "tab-1" else "target-2",
     })
-    registry = ComputerUseSessionRegistry(
+    registry = WebUseSessionRegistry(
         adapters={name: _Adapter(name) for name in (
             "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
         )},
@@ -931,11 +931,11 @@ def test_closing_one_page_session_keeps_sibling_page_binding_alive(monkeypatch):
     )
 
     registry.execute(
-        command="close", computer_session_id=first["computer_session_id"],
+        command="close", web_session_id=first["web_session_id"],
         owner_id="owner-1",
     )
     acted = registry.execute(
-        command="act", computer_session_id=second["computer_session_id"],
+        command="act", web_session_id=second["web_session_id"],
         owner_id="owner-1", arguments={"action": "click"},
     )
 
@@ -946,8 +946,8 @@ def test_closing_one_page_session_keeps_sibling_page_binding_alive(monkeypatch):
 
 
 def test_failed_first_observe_releases_session_and_page_context():
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
     )
 
     class _FailingAdapter(_Adapter):
@@ -960,7 +960,7 @@ def test_failed_first_observe_releases_session_and_page_context():
     )}
     adapters["open_claude_chrome"] = adapter
     released = []
-    registry = ComputerUseSessionRegistry(
+    registry = WebUseSessionRegistry(
         adapters=adapters,
         release_context=lambda context: released.append(context["context_id"]),
         binding_validator=_allow_binding,
@@ -970,12 +970,12 @@ def test_failed_first_observe_releases_session_and_page_context():
         binding_id="binding-1", owner_id="owner-1",
         page_context={"context_id": "ctx-failed"},
     )
-    session_id = result["computer_session_id"]
+    session_id = result["web_session_id"]
 
     assert result["reason_code"] == "target_lost"
     assert registry.execute(
-        command="act", computer_session_id=session_id, owner_id="owner-1",
-    )["reason_code"] == "computer_session_not_found"
+        command="act", web_session_id=session_id, owner_id="owner-1",
+    )["reason_code"] == "web_session_not_found"
     retry = registry.execute(
         command="observe", backend="open_claude_chrome",
         binding_id="binding-1", owner_id="owner-1",
@@ -1010,13 +1010,13 @@ def test_sync_mcp_client_cleans_thread_when_start_fails(monkeypatch):
         mcp_backends._SyncMCPClient(["missing"], timeout=0.1)
     deadline = time.monotonic() + 1
     while time.monotonic() < deadline and any(
-        thread.name == "computer-use-mcp" and thread.ident not in before
+        thread.name == "web-use-mcp" and thread.ident not in before
         for thread in threading.enumerate()
     ):
         time.sleep(0.01)
     assert instances[0].stopped is True
     assert not any(
-        thread.name == "computer-use-mcp" and thread.ident not in before
+        thread.name == "web-use-mcp" and thread.ident not in before
         for thread in threading.enumerate()
     )
 
@@ -1025,7 +1025,7 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
     from openprogram.programs import _runtime
     from openprogram.programs.agentic_functions import browser_agent as browser_module
     from openprogram.programs.gui_harness_bridge import (
-        install_gui_harness_computer_use,
+        install_gui_harness_web_use,
     )
 
     calls = []
@@ -1037,11 +1037,11 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
     monkeypatch.setattr(
         browser_module,
         "_run_browser_task_commands",
-        lambda **kwargs: calls.append(("computer_use", kwargs)) or {
-            "mode": "computer_use", "backend": kwargs["backend"],
+        lambda **kwargs: calls.append(("web_use", kwargs)) or {
+            "mode": "web_use", "backend": kwargs["backend"],
         },
     )
-    wrapped = install_gui_harness_computer_use(original)
+    wrapped = install_gui_harness_web_use(original)
     tool = _runtime.get("gui_agent")
     assert tool is not None
     assert tool.parameters["properties"]["backend"]["enum"] == [
@@ -1052,15 +1052,15 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
         task="click Save", backend="chrome_devtools_mcp",
         runtime=SimpleNamespace(),
     )
-    assert result == {"mode": "computer_use", "backend": "chrome_devtools_mcp"}
-    assert calls[0][0] == "computer_use"
+    assert result == {"mode": "web_use", "backend": "chrome_devtools_mcp"}
+    assert calls[0][0] == "web_use"
 
 
 def test_direct_list_pages_releases_capture_when_registry_rejects(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.programs.agentic_functions import browser_agent as module
     from openprogram.programs.agentic_functions.browser_agent import (
-        computer_use_runtime,
+        web_use_runtime,
     )
 
     context = {"context_id": "ctx-rejected", "surfaces": []}
@@ -1070,13 +1070,13 @@ def test_direct_list_pages_releases_capture_when_registry_rejects(monkeypatch):
         def list_pages(self, **_kwargs):
             return {"ok": False, "reason_code": "owner_closing", "pages": []}
 
-    monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
     monkeypatch.setattr(surface_context, "capture_pages", lambda: context)
     monkeypatch.setattr(
         surface_context, "release_bindings", lambda value: released.append(value),
     )
 
-    result = module.execute_direct_computer_use(
+    result = module.execute_direct_web_use(
         {"command": "list_pages"}, owner_id="mcp:closing",
     )
     assert result["reason_code"] == "owner_closing"
@@ -1102,7 +1102,7 @@ def test_direct_list_pages_returns_empty_inventory_without_mounted_page(monkeypa
         "pages": [],
     })
 
-    result = module.execute_direct_computer_use(
+    result = module.execute_direct_web_use(
         {"command": "list_pages"}, owner_id="mcp:empty-window",
     )
 
@@ -1118,7 +1118,7 @@ def test_direct_list_pages_returns_empty_inventory_without_mounted_page(monkeypa
         "pages": [{}],
     })
     with pytest.raises(RuntimeError, match="no valid Page"):
-        module.execute_direct_computer_use(
+        module.execute_direct_web_use(
             {"command": "list_pages"}, owner_id="mcp:invalid-window",
         )
     webtab.release_connection(owner)
@@ -1128,7 +1128,7 @@ def test_public_page_token_keeps_the_turn_owner_across_calls(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.programs.agentic_functions import browser_agent as module
     from openprogram.programs.agentic_functions.browser_agent import (
-        computer_use_runtime,
+        web_use_runtime,
     )
 
     turn_context = {"context_id": "turn-1", "surfaces": []}
@@ -1144,22 +1144,22 @@ def test_public_page_token_keeps_the_turn_owner_across_calls(monkeypatch):
 
         def execute(self, **kwargs):
             self.owners.append(kwargs["owner_id"])
-            return {"frame_id": "frame-popup", "computer_session_id": "cs-popup"}
+            return {"frame_id": "frame-popup", "web_session_id": "cs-popup"}
 
     registry = _Registry()
-    monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
     monkeypatch.setattr(surface_context, "current", lambda: turn_context)
     monkeypatch.setattr(
         surface_context, "capture_pages", lambda context: inventory_context,
     )
 
-    listed = module.computer_use(command="list_pages")
-    observed = module.computer_use(
+    listed = module.web_use(command="list_pages")
+    observed = module.web_use(
         command="observe", backend="playwright_mcp",
         page_context_token=listed["pages"][0]["page_context_token"],
     )
 
-    assert observed["computer_session_id"] == "cs-popup"
+    assert observed["web_session_id"] == "cs-popup"
     assert registry.owners == ["turn:turn-1", "turn:turn-1"]
 
 
@@ -1168,7 +1168,7 @@ def test_temporary_page_capture_is_released_when_lease_rejects(monkeypatch, rout
     from openprogram.agent import surface_context
     from openprogram.programs.agentic_functions import browser_agent as module
     from openprogram.programs.agentic_functions.browser_agent import (
-        computer_use_runtime,
+        web_use_runtime,
     )
 
     context = {"context_id": "ctx-temp", "surfaces": [{}]}
@@ -1178,7 +1178,7 @@ def test_temporary_page_capture_is_released_when_lease_rejects(monkeypatch, rout
         def execute(self, **_kwargs):
             return {"ok": False, "reason_code": "page_in_use"}
 
-    monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
     monkeypatch.setattr(surface_context, "current", lambda: None)
     monkeypatch.setattr(
         surface_context,
@@ -1198,7 +1198,7 @@ def test_temporary_page_capture_is_released_when_lease_rejects(monkeypatch, rout
         )
         assert result["reason_code"] == "page_in_use"
     else:
-        result = module.computer_use(
+        result = module.web_use(
             command="observe", backend="playwright_mcp",
         )
         assert result["reason_code"] == "page_in_use"
@@ -1235,13 +1235,13 @@ def test_temporary_page_capture_is_released_when_binding_resolution_fails(
                 max_steps=1, max_seconds=10, runtime=SimpleNamespace(),
             )
         else:
-            module.computer_use(command="observe", backend="playwright_mcp")
+            module.web_use(command="observe", backend="playwright_mcp")
     assert released == [context]
 
 
 def test_official_backend_rejects_stale_frame_before_upstream_call(monkeypatch):
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSession,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSession,
     )
     from openprogram.programs.agentic_functions.browser_agent.mcp_backends import (
         OfficialMCPPageBackend,
@@ -1253,7 +1253,7 @@ def test_official_backend_rejects_stale_frame_before_upstream_call(monkeypatch):
         "playwright_mcp", lambda: controller,
         client_factory=lambda _command: client,
     )
-    session = ComputerUseSession("cs-1", "playwright_mcp", "binding-1")
+    session = WebUseSession("cs-1", "playwright_mcp", "binding-1")
     session.controller = controller
     session.state["mcp_client"] = client
     before = list(client.calls)
@@ -1268,7 +1268,7 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.programs.agentic_functions import browser_agent as module
     from openprogram.programs.agentic_functions.browser_agent import (
-        computer_use_runtime,
+        web_use_runtime,
     )
 
     class _Registry:
@@ -1280,7 +1280,7 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
             if kwargs["command"] == "observe":
                 return {
                     "ok": True, "frame_id": "frame-1",
-                    "computer_session_id": "cs-1",
+                    "web_session_id": "cs-1",
                     "backend": kwargs.get("backend") or "chrome_devtools_mcp",
                 }
             if kwargs["command"] == "verify":
@@ -1288,7 +1288,7 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
             return {"ok": True}
 
     registry = _Registry()
-    monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
     context = {"context_id": "ctx-1", "surfaces": [{}]}
     monkeypatch.setattr(surface_context, "current", lambda: context)
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "binding-1")
@@ -1323,7 +1323,7 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
         "page_context": context,
     }
     assert registry.calls[-1] == {
-        "command": "close", "computer_session_id": "cs-1",
+        "command": "close", "web_session_id": "cs-1",
         "owner_id": "harness:ctx-1",
     }
 
@@ -1332,7 +1332,7 @@ def test_gui_agent_prompt_receives_group_aware_page_inventory(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.programs.agentic_functions import browser_agent as module
     from openprogram.programs.agentic_functions.browser_agent import (
-        computer_use_runtime,
+        web_use_runtime,
     )
 
     inventory_context = {
@@ -1387,14 +1387,14 @@ def test_gui_agent_prompt_receives_group_aware_page_inventory(monkeypatch):
             if kwargs["command"] == "observe":
                 return {
                     "ok": True, "frame_id": "frame-1",
-                    "computer_session_id": "cs-1",
+                    "web_session_id": "cs-1",
                 }
             if kwargs["command"] == "verify":
                 return {"ok": True, "passed": True}
             return {"ok": True, "closed": True}
 
     registry = _Registry()
-    monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
     monkeypatch.setattr(surface_context, "current", lambda: inventory_context)
     monkeypatch.setattr(
         surface_context, "capture_pages", lambda _context=None: inventory_context,
@@ -1433,7 +1433,7 @@ def test_gui_agent_discovers_popup_and_switches_by_exact_page_token(monkeypatch)
     from openprogram.agent import surface_context
     from openprogram.programs.agentic_functions import browser_agent as module
     from openprogram.programs.agentic_functions.browser_agent import (
-        computer_use_runtime,
+        web_use_runtime,
     )
 
     initial = {"context_id": "ctx-pages", "surfaces": [{"surface_key": "p1"}]}
@@ -1469,11 +1469,11 @@ def test_gui_agent_discovers_popup_and_switches_by_exact_page_token(monkeypatch)
         def execute(self, **kwargs):
             self.calls.append(kwargs)
             if kwargs["command"] == "observe" and kwargs.get("page_context_token") == "pct-c":
-                return {"frame_id": "frame-c", "computer_session_id": "cs-c"}
-            if kwargs["command"] == "observe" and not kwargs.get("computer_session_id"):
-                return {"frame_id": "frame-a", "computer_session_id": "cs-a"}
+                return {"frame_id": "frame-c", "web_session_id": "cs-c"}
+            if kwargs["command"] == "observe" and not kwargs.get("web_session_id"):
+                return {"frame_id": "frame-a", "web_session_id": "cs-a"}
             if kwargs["command"] == "observe":
-                return {"frame_id": "frame-a2", "computer_session_id": "cs-a"}
+                return {"frame_id": "frame-a2", "web_session_id": "cs-a"}
             if kwargs["command"] == "act":
                 return {"ok": True, "observe_required": True}
             if kwargs["command"] == "verify":
@@ -1481,7 +1481,7 @@ def test_gui_agent_discovers_popup_and_switches_by_exact_page_token(monkeypatch)
             return {"ok": True, "closed": True}
 
     registry = _Registry()
-    monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
     monkeypatch.setattr(surface_context, "current", lambda: initial)
     monkeypatch.setattr(surface_context, "capture_pages", capture_pages)
 
@@ -1515,7 +1515,7 @@ def test_gui_agent_discovers_popup_and_switches_by_exact_page_token(monkeypatch)
         for call in registry.calls
     )
     assert any(
-        call["command"] == "close" and call.get("computer_session_id") == "cs-a"
+        call["command"] == "close" and call.get("web_session_id") == "cs-a"
         for call in registry.calls
     )
 
@@ -1525,7 +1525,7 @@ def test_gui_harness_screenshot_capability_is_one_request_only(monkeypatch):
     from openprogram.programs import ToolReturn
     from openprogram.programs.agentic_functions import browser_agent as module
     from openprogram.programs.agentic_functions.browser_agent import (
-        computer_use_runtime,
+        web_use_runtime,
     )
 
     class _Registry:
@@ -1535,7 +1535,7 @@ def test_gui_harness_screenshot_capability_is_one_request_only(monkeypatch):
         def execute(self, **kwargs):
             command = kwargs["command"]
             if command == "observe":
-                return {"frame_id": "f1", "computer_session_id": "cs1"}
+                return {"frame_id": "f1", "web_session_id": "cs1"}
             if command == "act" and kwargs["arguments"]["action"] == "screenshot":
                 return ToolReturn(images=[b"png"], json_data={"frame_id": "f1"})
             if command == "verify":
@@ -1546,7 +1546,7 @@ def test_gui_harness_screenshot_capability_is_one_request_only(monkeypatch):
             self.revoked += 1
 
     registry = _Registry()
-    monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
     monkeypatch.setattr(surface_context, "current", lambda: {"context_id": "ctx"})
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "b1")
     monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "p1")
@@ -1597,7 +1597,7 @@ def test_gui_harness_releases_unsent_final_screenshot(monkeypatch):
     from openprogram.programs import ToolReturn
     from openprogram.programs.agentic_functions import browser_agent as module
     from openprogram.programs.agentic_functions.browser_agent import (
-        computer_use_runtime,
+        web_use_runtime,
     )
 
     captured = {}
@@ -1608,7 +1608,7 @@ def test_gui_harness_releases_unsent_final_screenshot(monkeypatch):
         def execute(self, **kwargs):
             command = kwargs["command"]
             if command == "observe":
-                return {"frame_id": "f1", "computer_session_id": "cs1"}
+                return {"frame_id": "f1", "web_session_id": "cs1"}
             if command == "act":
                 captured["result"] = ToolReturn(
                     images=[b"png"], json_data={"frame_id": "f1"},
@@ -1620,7 +1620,7 @@ def test_gui_harness_releases_unsent_final_screenshot(monkeypatch):
             self.revoked += 1
 
     registry = _Registry()
-    monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
     monkeypatch.setattr(surface_context, "current", lambda: {"context_id": "ctx"})
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "b1")
     monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "p1")
@@ -1655,7 +1655,7 @@ def test_gui_harness_releases_same_request_screenshot_on_runtime_error(
     from openprogram.programs import ToolReturn
     from openprogram.programs.agentic_functions import browser_agent as module
     from openprogram.programs.agentic_functions.browser_agent import (
-        computer_use_runtime,
+        web_use_runtime,
     )
     from openprogram.providers.utils.errors import ExecInterrupt
 
@@ -1667,7 +1667,7 @@ def test_gui_harness_releases_same_request_screenshot_on_runtime_error(
         def execute(self, **kwargs):
             command = kwargs["command"]
             if command == "observe":
-                return {"frame_id": "f1", "computer_session_id": "cs1"}
+                return {"frame_id": "f1", "web_session_id": "cs1"}
             if command == "act":
                 captured["result"] = ToolReturn(
                     images=[b"png"], json_data={"frame_id": "f1"},
@@ -1679,7 +1679,7 @@ def test_gui_harness_releases_same_request_screenshot_on_runtime_error(
             self.revoked += 1
 
     registry = _Registry()
-    monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
     monkeypatch.setattr(surface_context, "current", lambda: {"context_id": "ctx"})
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "b1")
     monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "p1")

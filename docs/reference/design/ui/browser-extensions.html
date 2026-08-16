@@ -181,7 +181,7 @@
         <article class="card">
           <span class="label">Adopt</span>
           <h3>Electron Extensions API</h3>
-          <p>使用 <code>session.fromPartition("persist:webtabs").extensions.loadExtension()</code>。复用当前登录态、Cookies、下载和 Computer Use 的 exact WebTab。</p>
+          <p>使用 <code>session.fromPartition("persist:webtabs").extensions.loadExtension()</code>。复用当前登录态、Cookies、下载和 Web Use 的 exact WebTab。</p>
           <span class="choice">采用 · 唯一运行时</span>
         </article>
         <article class="card">
@@ -306,7 +306,7 @@
         <article class="boundary"><strong>权限确认</strong><p>将 <code>host_permissions</code>、<code>content_scripts.matches</code>、全部网站访问和 file access 转换为用户可读摘要。新权限或 manifest hash 变化会撤销旧批准。</p></article>
         <article class="boundary"><strong>session 隔离</strong><p>扩展只加载到 <code>persist:webtabs</code>。OpenProgram chat、Settings 和 Extensions manager 运行在默认 session，扩展不能注入这些页面。</p></article>
         <article class="boundary"><strong>本地文件</strong><p><code>allowFileAccess</code> 默认且第一版固定为 false。即使 WebTab 打开 <code>file://</code> 页面，扩展也不得因此获得本地文件读取权限。</p></article>
-        <article class="boundary"><strong>Agent</strong><p>Agent 可以观察扩展对网页 DOM 产生的结果，但不能通过 Computer Use 自动安装、移除、启用扩展或批准新增权限。</p></article>
+        <article class="boundary"><strong>Agent</strong><p>Agent 可以观察扩展对网页 DOM 产生的结果，但不能通过 Web Use 自动安装、移除、启用扩展或批准新增权限。</p></article>
         <article class="boundary"><strong>删除与回滚</strong><p>先 unload，再删除 registry 项和管理目录。任一步失败都保留可诊断状态；不能出现 UI 显示已删除但启动时仍恢复的情况。</p></article>
       </div>
       <h3>明确不导入的数据</h3>

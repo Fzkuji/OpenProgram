@@ -91,14 +91,14 @@ def run_loop_blocking(
     )
     tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)
     if _surface_tool_enabled(req.surface_context):
-        if not any(tool.name == "computer_use" for tool in tools or []):
+        if not any(tool.name == "web_use" for tool in tools or []):
             from openprogram.programs import get_agent_tool
 
-            surface_tool = get_agent_tool("computer_use")
+            surface_tool = get_agent_tool("web_use")
             if surface_tool is not None:
                 tools = [*(tools or []), surface_tool]
     elif tools:
-        tools = [tool for tool in tools if tool.name != "computer_use"]
+        tools = [tool for tool in tools if tool.name != "web_use"]
     # Plan mode: hide write/mutate tools when the session is currently
     # in plan mode. ``apply_tool_policy(source="plan", ...)`` filters
     # out every tool that lists "plan" in its ``unsafe_in`` set — see

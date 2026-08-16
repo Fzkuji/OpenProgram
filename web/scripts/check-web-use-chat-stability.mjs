@@ -8,7 +8,7 @@ const source = (path) => readFileSync(new URL(path, root), "utf8");
 
 const handlers = source("lib/runtime-bridge/chat-handlers.ts");
 const design = source(
-  "../docs/reference/design/integrations/computer-use.html",
+  "../docs/reference/design/integrations/web-use.html",
 );
 
 const hydrateStart = handlers.indexOf(
@@ -91,4 +91,4 @@ assert.equal(
 assert.match(design, /Chat 渲染稳定性/);
 assert.match(design, /历史 message element identity 保持不变/);
 
-console.log("computer-use chat stability contract: ok");
+console.log("web-use chat stability contract: ok");

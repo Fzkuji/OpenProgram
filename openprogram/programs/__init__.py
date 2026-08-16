@@ -98,7 +98,7 @@ DEFAULT_TOOLS: list[str] = [
     "skill",
     "playwright_browser",
     "browser_agent",
-    "computer_use",
+    "web_use",
     # Plan-mode gate — the LLM is allowed to enter plan mode on its
     # own when it judges the task warrants it (mirrors claude-code's
     # EnterPlanMode tool). The "plan" pseudo-channel filter in
@@ -163,7 +163,7 @@ DEFERRED_DEFAULT_TOOLS: set = {
 # 这是治「exec 默认全塞 ~14000 token」的唯一旋钮 —— 保守取，宁多勿缺。
 RESIDENT_TOOLS: set = (
     (set(DEFAULT_TOOLS) - DEFERRED_DEFAULT_TOOLS)
-    | {"computer_use", "tool_search"}
+    | {"web_use", "tool_search"}
     # `agent` 是常驻的，而它自己的返回文本会写 "Call job_output(job_id=…) to
     # retrieve result, or job_stop(job_id) to cancel"。这两个 defer 掉，模型
     # 照着提示调用就撞 InputValidationError，得先 tool_search 才能接上，白费一轮。

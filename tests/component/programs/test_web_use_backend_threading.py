@@ -56,8 +56,8 @@ def test_chrome_backend_marker_stays_on_playwright_owner_thread(monkeypatch):
     from openprogram.programs.agentic_functions.browser_agent import (
         BrowserPageController,
     )
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSession,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSession,
     )
     from openprogram.programs.agentic_functions.browser_agent.mcp_backends import (
         OfficialMCPPageBackend,
@@ -75,7 +75,7 @@ def test_chrome_backend_marker_stays_on_playwright_owner_thread(monkeypatch):
         lambda: controller,
         client_factory=lambda _command: _Client(page),
     )
-    session = ComputerUseSession(
+    session = WebUseSession(
         id="cs-thread", backend="chrome_devtools_mcp", binding_id="binding-1",
     )
 
@@ -87,8 +87,8 @@ def test_chrome_backend_marker_stays_on_playwright_owner_thread(monkeypatch):
 
 
 def test_official_backend_action_uses_controller_thread_boundary():
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSession,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSession,
     )
     from openprogram.programs.agentic_functions.browser_agent.mcp_backends import (
         OfficialMCPPageBackend,
@@ -113,7 +113,7 @@ def test_official_backend_action_uses_controller_thread_boundary():
 
     controller = Controller()
     adapter = OfficialMCPPageBackend("playwright_mcp", lambda: controller)
-    session = ComputerUseSession(
+    session = WebUseSession(
         id="cs-action-thread",
         backend="playwright_mcp",
         binding_id="binding-1",

@@ -58,7 +58,7 @@ EXPECTED_SCHEMAS = {
         "required": ["name"],
         "additionalProperties": False,
     },
-    "computer_use": {
+    "web_use": {
         "type": "object",
         "properties": {
             "command": {
@@ -74,7 +74,7 @@ EXPECTED_SCHEMAS = {
             },
             "page": {"type": "string", "maxLength": 512},
             "page_context_token": {"type": "string", "maxLength": 128},
-            "computer_session_id": {"type": "string", "maxLength": 128},
+            "web_session_id": {"type": "string", "maxLength": 128},
             "arguments": {"type": "object", "default": {}},
         },
         "required": ["command"],
@@ -92,7 +92,7 @@ def test_contract_exposes_exact_ordered_wrapper_tools_and_schemas() -> None:
         "prompt_cancel",
         "tools_list",
         "tool_call",
-        "computer_use",
+        "web_use",
     ]
     assert {
         tool.name: tool.model_dump()["inputSchema"] for tool in tools

@@ -215,7 +215,7 @@ try {
       session_id: SID,
       msg_id: runtimeId,
       display: "runtime",
-      function: "computer_use",
+      function: "web_use",
       status: "running",
     },
   });
@@ -228,7 +228,7 @@ try {
       session_id: SID,
       msg_id: runtimeId,
       display: "runtime",
-      function: "computer_use",
+      function: "web_use",
       content: "done",
     },
   });
@@ -248,7 +248,7 @@ try {
       msg_id: nestedRuntimeId,
       predecessor: RID,
       display: "runtime",
-      function: "computer_use",
+      function: "web_use",
       status: "running",
     },
   });
@@ -264,7 +264,7 @@ try {
       msg_id: nestedRuntimeId,
       predecessor: RID,
       display: "runtime",
-      function: "computer_use",
+      function: "web_use",
       status: "running",
     },
   });
@@ -286,7 +286,7 @@ try {
       msg_id: migratingRuntimeId,
       predecessor: futureParentId,
       display: "runtime",
-      function: "computer_use",
+      function: "web_use",
       status: "running",
     },
   });
@@ -310,7 +310,7 @@ try {
       msg_id: migratingRuntimeId,
       predecessor: futureParentId,
       display: "runtime",
-      function: "computer_use",
+      function: "web_use",
       content: "done",
     },
   });

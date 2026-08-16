@@ -402,9 +402,9 @@ def import_installed_programs() -> list[str]:
             importlib.import_module(f"{prog.package}.agentics")
             if prog.function == "gui_agent":
                 from openprogram.programs.gui_harness_bridge import (
-                    install_gui_harness_computer_use,
+                    install_gui_harness_web_use,
                 )
-                install_gui_harness_computer_use()
+                install_gui_harness_web_use()
             registered.append(prog.function)
         except Exception as e:  # noqa: BLE001 — never let one break import
             if os.environ.get("OPENPROGRAM_DEBUG_REGISTRY"):

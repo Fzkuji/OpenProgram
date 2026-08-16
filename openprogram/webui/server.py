@@ -1748,8 +1748,8 @@ def create_app(*, owner_auth=None, port: int = 18100):
 
     # Narrow owner-authenticated bridge used by the independent stdio MCP
     # process. Browser Page bindings remain owned by this worker process.
-    from openprogram.webui.routes import computer_use as _routes_computer_use
-    _routes_computer_use.register(app)
+    from openprogram.webui.routes import web_use as _routes_web_use
+    _routes_web_use.register(app)
 
     # /api/skills/* — Skills management
     from openprogram.webui.routes import skills as _routes_skills

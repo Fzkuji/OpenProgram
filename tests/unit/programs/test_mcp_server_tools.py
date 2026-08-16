@@ -153,8 +153,8 @@ def _service(
     config=None,
     registry=None,
     exposed=None,
-    computer_use_dispatch=None,
-    computer_use_release_owner=None,
+    web_use_dispatch=None,
+    web_use_release_owner=None,
 ) -> MCPService:
     registry = {} if registry is None else registry
     exposed = set(registry) if exposed is None else exposed
@@ -164,14 +164,14 @@ def _service(
         config_getter=lambda: {} if config is None else config,
         registry_get=registry.get,
         registry_exposed_names=lambda: set(exposed),
-        computer_use_dispatch=computer_use_dispatch,
-        computer_use_release_owner=(
-            computer_use_release_owner or (lambda _owner_id: None)
+        web_use_dispatch=web_use_dispatch,
+        web_use_release_owner=(
+            web_use_release_owner or (lambda _owner_id: None)
         ),
     )
 
 
-def test_first_class_computer_use_has_narrow_connection_owned_authority(
+def test_first_class_web_use_has_narrow_connection_owned_authority(
     client_context,
 ) -> None:
     calls = []
@@ -182,11 +182,11 @@ def test_first_class_computer_use_has_narrow_connection_owned_authority(
 
     service = _service(
         client_context,
-        computer_use_dispatch=dispatch,
+        web_use_dispatch=dispatch,
     )
-    result = asyncio.run(service.computer_use_call(
+    result = asyncio.run(service.web_use_call(
         {"command": "list_pages"},
-        call_id="computer-call",
+        call_id="web-call",
         cancel_event=asyncio.Event(),
     ))
 
@@ -195,43 +195,43 @@ def test_first_class_computer_use_has_narrow_connection_owned_authority(
     assert calls[0][0] == {"command": "list_pages"}
     assert calls[0][1].startswith(f"mcp:{client_context.client_id}:")
     from openprogram.agent.authority import decide_tool_authority
-    assert decide_tool_authority(client_context.authority, "computer_use").allowed is False
+    assert decide_tool_authority(client_context.authority, "web_use").allowed is False
 
 
-def test_mcp_connection_close_releases_worker_owned_computer_use_sessions(
+def test_mcp_connection_close_releases_worker_owned_web_use_sessions(
     client_context,
 ) -> None:
     released = []
     service = _service(
         client_context,
-        computer_use_release_owner=released.append,
+        web_use_release_owner=released.append,
     )
-    owner_id = service._computer_use_owner_id
+    owner_id = service._web_use_owner_id
 
     service.close()
 
     assert released == [owner_id]
 
 
-def test_computer_use_does_not_reimport_tool_registry_for_normalized_result(
+def test_web_use_does_not_reimport_tool_registry_for_normalized_result(
     client_context, monkeypatch,
 ) -> None:
     expected = json_result({"ok": True})
     service = _service(
         client_context,
-        computer_use_dispatch=lambda _arguments, *, owner_id: expected,
+        web_use_dispatch=lambda _arguments, *, owner_id: expected,
     )
     original_import = builtins.__import__
 
     def guarded_import(name, *args, **kwargs):
         if name == "openprogram.programs._runtime":
-            raise AssertionError("normalized computer_use result reimported Runtime")
+            raise AssertionError("normalized web_use result reimported Runtime")
         return original_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", guarded_import)
-    result = asyncio.run(service.computer_use_call(
+    result = asyncio.run(service.web_use_call(
         {"command": "list_pages"},
-        call_id="computer-normalized",
+        call_id="web-normalized",
         cancel_event=asyncio.Event(),
     ))
 

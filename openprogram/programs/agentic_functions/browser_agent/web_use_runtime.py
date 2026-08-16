@@ -31,7 +31,7 @@ def _is_timeout_error(exc: Exception) -> bool:
 
 
 @dataclass
-class ComputerUseSession:
+class WebUseSession:
     id: str
     backend: str
     binding_id: str
@@ -57,7 +57,7 @@ class ControllerBackend:
         self.name = name
         self._controller_factory = controller_factory
 
-    def _controller(self, session: ComputerUseSession):
+    def _controller(self, session: WebUseSession):
         if session.controller is None:
             controller = self._controller_factory()
             controller.binding_id = session.binding_id
@@ -67,24 +67,24 @@ class ControllerBackend:
             session.controller = controller
         return session.controller
 
-    def observe(self, session: ComputerUseSession, arguments: Mapping[str, Any]):
+    def observe(self, session: WebUseSession, arguments: Mapping[str, Any]):
         del arguments
         return self._controller(session).execute(action="observe")
 
-    def act(self, session: ComputerUseSession, arguments: Mapping[str, Any]):
+    def act(self, session: WebUseSession, arguments: Mapping[str, Any]):
         return self._controller(session).execute(**dict(arguments))
 
-    def verify(self, session: ComputerUseSession, arguments: Mapping[str, Any]):
+    def verify(self, session: WebUseSession, arguments: Mapping[str, Any]):
         params = dict(arguments)
         params["action"] = "verify"
         return self._controller(session).execute(**params)
 
-    def close(self, session: ComputerUseSession) -> None:
+    def close(self, session: WebUseSession) -> None:
         if session.controller is not None:
             session.controller.close()
 
 
-class ComputerUseSessionRegistry:
+class WebUseSessionRegistry:
     def __init__(
         self,
         *,
@@ -115,7 +115,7 @@ class ComputerUseSessionRegistry:
         if missing:
             raise ValueError(f"missing computer use adapters: {sorted(missing)}")
         self._adapters = dict(adapters)
-        self._sessions: dict[str, ComputerUseSession] = {}
+        self._sessions: dict[str, WebUseSession] = {}
         self._page_leases: dict[str, str] = {}
         self._page_capabilities: dict[str, dict[str, Any]] = {}
         self._closing_all = False
@@ -139,14 +139,14 @@ class ComputerUseSessionRegistry:
         self._binding_validator = binding_validator
         self._lock = threading.RLock()
 
-    def _detach_locked(self, session: ComputerUseSession) -> None:
+    def _detach_locked(self, session: WebUseSession) -> None:
         self._sessions.pop(session.id, None)
         for token, capability in list(self._page_capabilities.items()):
             if capability.get("context") is session.page_context:
                 self._page_capabilities.pop(token, None)
 
     def _cleanup_session(
-        self, session: ComputerUseSession, *, suppress_errors: bool,
+        self, session: WebUseSession, *, suppress_errors: bool,
     ) -> None:
         """Close one locked session before making its Page available again."""
         session.closing = True
@@ -245,7 +245,7 @@ class ComputerUseSessionRegistry:
         *,
         command: str,
         backend: str = "",
-        computer_session_id: str = "",
+        web_session_id: str = "",
         binding_id: str = "",
         page_key: str = "",
         owner_id: str = "",
@@ -254,7 +254,7 @@ class ComputerUseSessionRegistry:
         arguments: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         params = dict(arguments or {})
-        created_session = command == "observe" and not computer_session_id
+        created_session = command == "observe" and not web_session_id
         if created_session:
             revisions: Mapping[str, int] = {}
             selected = backend or DEFAULT_BACKEND
@@ -287,7 +287,7 @@ class ComputerUseSessionRegistry:
                     if isinstance(item, dict)
                     and item.get("binding_id") == binding_id
                 ), {})
-            session = ComputerUseSession(
+            session = WebUseSession(
                 id="cs_" + uuid.uuid4().hex,
                 backend=selected,
                 binding_id=binding_id,
@@ -316,9 +316,9 @@ class ComputerUseSessionRegistry:
                 self._page_leases[page_key] = session.id
         else:
             with self._lock:
-                session = self._sessions.get(computer_session_id)
+                session = self._sessions.get(web_session_id)
             if session is None:
-                return {"ok": False, "reason_code": "computer_session_not_found"}
+                return {"ok": False, "reason_code": "web_session_not_found"}
 
         with session.operation_lock:
             with self._lock:
@@ -326,14 +326,14 @@ class ComputerUseSessionRegistry:
                     self._closing_all or session.owner_id in self._closing_owners
                 )
             if session.closing or session.closed or owner_closing:
-                return {"ok": False, "reason_code": "computer_session_not_found"}
+                return {"ok": False, "reason_code": "web_session_not_found"}
             if session.owner_id and owner_id != session.owner_id:
-                return {"ok": False, "reason_code": "computer_session_owner_mismatch"}
+                return {"ok": False, "reason_code": "web_session_owner_mismatch"}
             if backend and backend != session.backend:
                 return {
                     "ok": False,
                     "reason_code": "backend_mismatch",
-                    "computer_session_id": session.id,
+                    "web_session_id": session.id,
                     "backend": session.backend,
                 }
 
@@ -377,7 +377,7 @@ class ComputerUseSessionRegistry:
                     return {
                         "ok": False,
                         "reason_code": reason_code,
-                        "computer_session_id": session.id,
+                        "web_session_id": session.id,
                         "backend": session.backend,
                     }
 
@@ -428,12 +428,12 @@ class ComputerUseSessionRegistry:
             metadata = (
                 dict(result.json_data) if isinstance(result.json_data, dict) else {}
             )
-            metadata.setdefault("computer_session_id", session.id)
+            metadata.setdefault("web_session_id", session.id)
             metadata.setdefault("backend", session.backend)
             result.json_data = metadata
             return result
         payload = dict(result) if isinstance(result, dict) else {"result": result}
-        payload.setdefault("computer_session_id", session.id)
+        payload.setdefault("web_session_id", session.id)
         payload.setdefault("backend", session.backend)
         return payload
 
@@ -466,9 +466,9 @@ class ComputerUseSessionRegistry:
             with self._lock:
                 self._closing_all = False
 
-    def revoke_screenshot(self, computer_session_id: str) -> None:
+    def revoke_screenshot(self, web_session_id: str) -> None:
         with self._lock:
-            session = self._sessions.get(computer_session_id)
+            session = self._sessions.get(web_session_id)
         if session is None:
             return
         with session.operation_lock:
@@ -511,20 +511,20 @@ class ComputerUseSessionRegistry:
                 self._closing_owners.discard(owner_id)
 
 
-_registry: ComputerUseSessionRegistry | None = None
+_registry: WebUseSessionRegistry | None = None
 _registry_lock = threading.Lock()
 
 
-def get_registry() -> ComputerUseSessionRegistry:
+def get_registry() -> WebUseSessionRegistry:
     global _registry
     with _registry_lock:
         if _registry is None:
-            _registry = ComputerUseSessionRegistry()
+            _registry = WebUseSessionRegistry()
         return _registry
 
 
 __all__ = [
-    "ComputerUseSessionRegistry",
+    "WebUseSessionRegistry",
     "DEFAULT_BACKEND",
     "SUPPORTED_BACKENDS",
     "get_registry",

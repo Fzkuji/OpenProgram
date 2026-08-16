@@ -352,7 +352,7 @@
         <tbody>
           <tr><td>Web Back/Forward/Home/Reload/address</td><td>使用该 toolbar 所属 <code>WebTabPane.tabId</code></td><td>读取全局 active web 或 focusedId</td></tr>
           <tr><td>Composer send</td><td>使用该 session pane 的 sessionId</td><td>把另一 pane 的 session 当作当前会话</td></tr>
-          <tr><td>Computer Use / native target</td><td>使用调用中的 windowId、tabId 和精确 targetId</td><td>从当前可见 Web 中任意选一个</td></tr>
+          <tr><td>Web Use / native target</td><td>使用调用中的 windowId、tabId 和精确 targetId</td><td>从当前可见 Web 中任意选一个</td></tr>
           <tr><td>Cmd+W / entry close</td><td>关闭包含 <code>activeId</code> 的整个 entry</td><td>根据最后 DOM focus 猜测关闭某一 pane</td></tr>
           <tr><td>成员关闭按钮</td><td>使用按钮绑定的 leaf tab id</td><td>关闭整个 split 或另一成员</td></tr>
           <tr><td>Pane-local close</td><td>按钮所属 leaf tab</td><td>关闭整个 split 或另一成员</td></tr>
@@ -443,7 +443,7 @@
       <p><strong>public-entry RED 证据：</strong><code>npm --prefix web run check:web-split</code> 曾因 toolbar 未渲染 <code>SplitViewPicker subjectId={tabId}</code> 而失败；旧实现同时包含 <code>setSplitWebTab(tabId)</code>、<code>openDraftSessionTab()</code> 和 <code>newSession()</code> 的自动配对路径。实现后，同一检查要求 picker 存在并拒绝上述自动路径。</p>
       <p><strong>目标行为：</strong>single Web 的 Split 点击只打开 picker；picker 列出所有合法其他 single tabs，选中后才合并。提交成功时新 pair 立即成为 active entry，两个成员立即显示且 divider 为 50/50；不能继续显示原先 active 的其他 entry，也不能继承旧 ratio。已在 split 中的 Web 点击同一按钮执行现有 Separate 行为。取消、空候选和提交拒绝都不自动选择或创建 tab。</p>
       <p><strong>提交与焦点约束：</strong>选择候选时必须用最新 <code>tabs/groups</code> 重新执行 <code>splitCandidates()</code> 校验；候选已被其他操作加入分屏时拒绝提交，不得把它从现有 owner 移出。空候选时焦点进入 picker 的 Close；Escape、Close 与成功选择恢复 toolbar trigger，outside pointer dismissal 保留用户新点击元素的焦点。</p>
-      <p><strong>明确排除：</strong>不修改候选排序、不增加搜索/MRU、不允许第三 pane、不改变右键菜单、drag、transfer、ratio 或 Computer Use target 绑定。</p>
+      <p><strong>明确排除：</strong>不修改候选排序、不增加搜索/MRU、不允许第三 pane、不改变右键菜单、drag、transfer、ratio 或 Web Use target 绑定。</p>
     </div>
 
     <h3>当前实现约束</h3>
@@ -470,7 +470,7 @@
       <li><strong>整体恢复：</strong>重新选择 split(A,W) 后，两侧内容、滚动/会话状态和 ratio 恢复。</li>
       <li><strong>宽度调整：</strong>从 divider 向左或向右拖动后，两侧 bounding width 按受约束的 <code>splitRatio</code> 改变；刷新或重新选择该 split entry 后恢复相同比例。会话位于第一 pane 与第二 pane 两种顺序都成立。</li>
       <li><strong>不固定 Web：</strong>连续选择 session、file、builtin、NTP 和另一个 web entry，W 都不跟随、不 regroup、不改变 entry order。</li>
-      <li><strong>局部路由：</strong>左右 toolbar、composer、close 与 Computer Use 都作用于事件来源的精确 tab/session/target。</li>
+      <li><strong>局部路由：</strong>左右 toolbar、composer、close 与 Web Use 都作用于事件来源的精确 tab/session/target。</li>
       <li><strong>创建与拆分：</strong>两个 single entries 合成一个 split entry；Separate 后恢复为相邻 singles，顺序确定。</li>
       <li><strong>显式成员选择：</strong>从 Web toolbar 点击 Split 后，当前 Web 固定为 source，必须选择另一个可用 tab 才创建分屏；取消前后 tabs、groups、activeId 和 session 数量完全不变。</li>
       <li><strong>新组合初始状态：</strong>在 ratio=0.35、0.5、0.65 三种旧状态下分别提交新 pair，成功后都必须得到 <code>splitRatio=0.5</code>，<code>activeId</code> 等于用户刚选择的成员，center body 立即只显示这两个成员；若该成员是 session，pathname、<code>runtimeState.currentSessionId</code>、composer 和 Page binding 必须全部指向它。同一次 store mutation 只写一个持久 payload。</li>

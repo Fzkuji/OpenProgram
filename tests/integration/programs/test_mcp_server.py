@@ -50,11 +50,11 @@ def record(kind, **values):
     with evidence.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps({"kind": kind, **values}, sort_keys=True) + "\\n")
 
-def computer_use_dispatch(arguments, *, owner_id):
-    record("computer_use", arguments=arguments, owner_id=owner_id)
+def web_use_dispatch(arguments, *, owner_id):
+    record("web_use", arguments=arguments, owner_id=owner_id)
     return {"ok": True, "owner_bound": owner_id.startswith("mcp:")}
 
-mcp_service_module._default_computer_use_dispatch = computer_use_dispatch
+mcp_service_module._default_web_use_dispatch = web_use_dispatch
 
 async def execute(call_id, arguments, cancel_event, on_update):
     record("execute", call_id=call_id, arguments=arguments,
@@ -202,7 +202,7 @@ def test_real_stdio_subprocess_calls_all_wrappers(tmp_path, client_name):
                 "tool_call", {"name": "memory_status", "arguments": {}}
             )
             computer = await session.call_tool(
-                "computer_use", {"command": "list_pages"}
+                "web_use", {"command": "list_pages"}
             )
         return listed, sessions, session_get, prompt, completed_cancel, tools, runtime, computer
 

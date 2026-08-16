@@ -856,7 +856,7 @@ def test_frontend_and_electron_expose_turn_surface_preview_contract():
     assert 'aria-label={`${stateLabel}: ${regionLabel} · ${title}`}' in chip
 
 
-def test_computer_use_is_registered_as_surface_aware_public_tool():
+def test_web_use_is_registered_as_surface_aware_public_tool():
     from openprogram.programs import (
         DEFERRED_DEFAULT_TOOLS,
         DEFAULT_TOOLS,
@@ -864,9 +864,9 @@ def test_computer_use_is_registered_as_surface_aware_public_tool():
         apply_tool_policy,
     )
 
-    assert "computer_use" in DEFAULT_TOOLS
-    assert "computer_use" not in DEFERRED_DEFAULT_TOOLS
-    tool = next(item for item in agent_tools(names=["computer_use"]) if item.name == "computer_use")
+    assert "web_use" in DEFAULT_TOOLS
+    assert "web_use" not in DEFERRED_DEFAULT_TOOLS
+    tool = next(item for item in agent_tools(names=["web_use"]) if item.name == "web_use")
     assert "page" in tool.parameters["properties"]
     assert "command" in tool.parameters["properties"]
     assert "arguments" in tool.parameters["properties"]
@@ -879,7 +879,7 @@ def test_surface_tool_is_injected_after_tools_are_resolved():
     resolve_at = source.index(
         "tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)"
     )
-    inject_at = source.index('if not any(tool.name == "computer_use"')
+    inject_at = source.index('if not any(tool.name == "web_use"')
     assert resolve_at < inject_at
 
 
@@ -969,10 +969,10 @@ def test_turn_surface_grant_allows_only_computer_use_after_rules(monkeypatch):
         return AgentToolResult(content=[TextContent(text="ok")])
 
     tool = AgentTool(
-        name="computer_use",
+        name="web_use",
         description="Bound in-app web control",
         parameters={"type": "object"},
-        label="computer_use",
+        label="web_use",
         execute=execute,
     )
     req = TurnRequest(

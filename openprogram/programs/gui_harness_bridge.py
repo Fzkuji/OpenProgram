@@ -1,10 +1,10 @@
-"""Optional adapter from the installed GUI Agent Harness to computer_use."""
+"""Optional adapter from the installed GUI Agent Harness to web_use."""
 from __future__ import annotations
 
 from typing import Callable
 
 
-def install_gui_harness_computer_use(original: Callable | None = None):
+def install_gui_harness_web_use(original: Callable | None = None):
     """Replace the registered gui_agent entry with a backend-aware wrapper."""
     if original is None:
         from gui_harness.main import gui_agent as original
@@ -20,7 +20,7 @@ def install_gui_harness_computer_use(original: Callable | None = None):
             "max_steps": {"description": "Maximum number of actions"},
             "app_name": {"description": "Desktop app or browser"},
             "backend": {
-                "description": "Optional built-in Page computer_use backend",
+                "description": "Optional built-in Page web_use backend",
                 "options": [
                     "playwright_mcp", "chrome_devtools_mcp",
                     "open_claude_chrome",
@@ -39,7 +39,7 @@ def install_gui_harness_computer_use(original: Callable | None = None):
         runtime=None,
         allow_general: bool = False,
     ) -> dict:
-        """Run the installed GUI harness or its exact-Page computer_use mode."""
+        """Run the installed GUI harness or its exact-Page web_use mode."""
         if not backend:
             return original(
                 task=task,
@@ -62,4 +62,4 @@ def install_gui_harness_computer_use(original: Callable | None = None):
     return gui_agent
 
 
-__all__ = ["install_gui_harness_computer_use"]
+__all__ = ["install_gui_harness_web_use"]

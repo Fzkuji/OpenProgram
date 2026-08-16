@@ -199,8 +199,8 @@ def mcp_client_authority(client_id: str) -> dict[str, Any]:
     }
 
 
-def mcp_browser_control_authority(value: Mapping[str, Any]) -> dict[str, Any]:
-    """Narrow authority used only by the first-class MCP computer_use route."""
+def mcp_web_control_authority(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Narrow authority used only by the first-class MCP web_use route."""
     authority = normalize_authority(value)
     if (
         authority.get("speaker_kind") != "client"
@@ -362,7 +362,7 @@ _PROCESS_TOOLS = {
     "gui_agent", "research_agent", "wiki_agent", "browser_agent",
     "playwright_browser",
 }
-_BROWSER_CONTROL_TOOLS = {"computer_use"}
+_BROWSER_CONTROL_TOOLS = {"web_use"}
 _NETWORK_TOOLS = {
     "send_message", "send_file", "web_search", "list_mcp_resources",
     "read_mcp_resource", "list_mcp_prompts", "get_mcp_prompt",
@@ -420,7 +420,7 @@ __all__ = [
     "MESSAGE_SCHEMA_VERSION", "MESSAGE_SCHEMA_FIELD",
     "stamp_schema", "is_legacy_message",
     "owner_principal_id", "owner_authority", "local_owner_authority",
-    "mcp_browser_control_authority",
+    "mcp_web_control_authority",
     "paired_channel_authority", "mcp_client_authority",
     "runtime_authority", "normalize_authority",
     "authority_from_message", "has_capability", "decide_capability",

@@ -217,8 +217,8 @@ class _Client:
 
 
 def _registry(monkeypatch):
-    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
-        ComputerUseSessionRegistry,
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
         ControllerBackend,
     )
     from openprogram.programs.agentic_functions.browser_agent.mcp_backends import (
@@ -244,7 +244,7 @@ def _registry(monkeypatch):
         "open_claude_chrome", lambda: controllers["open_claude_chrome"],
     )
     released = []
-    registry = ComputerUseSessionRegistry(
+    registry = WebUseSessionRegistry(
         adapters=adapters,
         binding_validator=lambda _binding: {"ok": True},
         binding_revision_resolver=lambda _binding: {},
@@ -279,39 +279,39 @@ def test_backend_parity_lifecycle(monkeypatch, backend):
 
     registry, controllers, clients, released = _registry(monkeypatch)
     observed = _observe(registry, backend)
-    session_id = observed["computer_session_id"]
+    session_id = observed["web_session_id"]
     frame_id = observed["frame_id"]
     assert observed["backend"] == backend
     assert observed["aria_snapshot"]
 
     writes_before_rejections = _write_count(backend, controllers, clients)
     stale = registry.execute(
-        command="act", computer_session_id=session_id, owner_id="owner-1",
+        command="act", web_session_id=session_id, owner_id="owner-1",
         arguments={"action": "click", "expected_frame_id": "old", "ref": "e1"},
     )
     assert stale["reason_code"] == "stale_observation"
     assert _write_count(backend, controllers, clients) == writes_before_rejections
 
     unsupported = registry.execute(
-        command="act", computer_session_id=session_id, owner_id="owner-1",
+        command="act", web_session_id=session_id, owner_id="owner-1",
         arguments={"action": "drag", "expected_frame_id": frame_id},
     )
     assert unsupported["reason_code"] == "unsupported_action"
     assert _write_count(backend, controllers, clients) == writes_before_rejections
 
     acted = registry.execute(
-        command="act", computer_session_id=session_id, owner_id="owner-1",
+        command="act", web_session_id=session_id, owner_id="owner-1",
         arguments={"action": "click", "expected_frame_id": frame_id, "ref": "e1"},
     )
     assert acted["ok"] is True
     assert acted["observe_required"] is True
 
     observed = registry.execute(
-        command="observe", computer_session_id=session_id, owner_id="owner-1",
+        command="observe", web_session_id=session_id, owner_id="owner-1",
     )
     frame_id = observed["frame_id"]
     passed = registry.execute(
-        command="verify", computer_session_id=session_id, owner_id="owner-1",
+        command="verify", web_session_id=session_id, owner_id="owner-1",
         arguments={
             "expected_frame_id": frame_id,
             "assertion": "text_contains",
@@ -319,7 +319,7 @@ def test_backend_parity_lifecycle(monkeypatch, backend):
         },
     )
     failed = registry.execute(
-        command="verify", computer_session_id=session_id, owner_id="owner-1",
+        command="verify", web_session_id=session_id, owner_id="owner-1",
         arguments={
             "expected_frame_id": frame_id,
             "assertion": "text_contains",
@@ -331,7 +331,7 @@ def test_backend_parity_lifecycle(monkeypatch, backend):
     assert passed["evidence"]["frame_id"] == frame_id
 
     screenshot = registry.execute(
-        command="act", computer_session_id=session_id, owner_id="owner-1",
+        command="act", web_session_id=session_id, owner_id="owner-1",
         arguments={"action": "screenshot", "expected_frame_id": frame_id},
     )
     assert isinstance(screenshot, ToolReturn)
@@ -343,14 +343,14 @@ def test_backend_parity_lifecycle(monkeypatch, backend):
     screenshot.images.clear()
 
     closed = registry.execute(
-        command="close", computer_session_id=session_id, owner_id="owner-1",
+        command="close", web_session_id=session_id, owner_id="owner-1",
     )
     assert closed["ok"] is True
     assert closed["closed"] is True
     missing = registry.execute(
-        command="observe", computer_session_id=session_id, owner_id="owner-1",
+        command="observe", web_session_id=session_id, owner_id="owner-1",
     )
-    assert missing["reason_code"] == "computer_session_not_found"
+    assert missing["reason_code"] == "web_session_not_found"
     assert controllers[backend].closed == 1
     assert released == [{"context_id": f"ctx-{backend}"}]
     if backend in clients:
@@ -360,7 +360,7 @@ def test_backend_parity_lifecycle(monkeypatch, backend):
     assert reacquired["frame_id"]
     registry.execute(
         command="close",
-        computer_session_id=reacquired["computer_session_id"],
+        web_session_id=reacquired["web_session_id"],
         owner_id="owner-1",
     )
     assert released == [
@@ -373,12 +373,12 @@ def test_backend_parity_lifecycle(monkeypatch, backend):
 def test_backend_parity_allows_each_action_once(monkeypatch, backend):
     registry, controllers, clients, _released = _registry(monkeypatch)
     observed = _observe(registry, backend)
-    session_id = observed["computer_session_id"]
+    session_id = observed["web_session_id"]
 
     for action, extra in ACTION_ARGUMENTS.items():
         before = _write_count(backend, controllers, clients)
         result = registry.execute(
-            command="act", computer_session_id=session_id, owner_id="owner-1",
+            command="act", web_session_id=session_id, owner_id="owner-1",
             arguments={
                 "action": action,
                 "expected_frame_id": observed["frame_id"],
@@ -390,7 +390,7 @@ def test_backend_parity_allows_each_action_once(monkeypatch, backend):
         after = _write_count(backend, controllers, clients)
         assert after == before + 1
         observed = registry.execute(
-            command="observe", computer_session_id=session_id, owner_id="owner-1",
+            command="observe", web_session_id=session_id, owner_id="owner-1",
         )
 
 
@@ -404,7 +404,7 @@ def test_backend_parity_normalizes_action_failure_without_fallback(
 ):
     registry, controllers, clients, _released = _registry(monkeypatch)
     observed = _observe(registry, backend)
-    session_id = observed["computer_session_id"]
+    session_id = observed["web_session_id"]
     if backend in clients:
         clients[backend].fail_writes = failure
     else:
@@ -412,7 +412,7 @@ def test_backend_parity_normalizes_action_failure_without_fallback(
     writes_before = _write_count(backend, controllers, clients)
 
     result = registry.execute(
-        command="act", computer_session_id=session_id, owner_id="owner-1",
+        command="act", web_session_id=session_id, owner_id="owner-1",
         arguments={
             "action": "click",
             "expected_frame_id": observed["frame_id"],
@@ -443,7 +443,7 @@ def test_open_claude_backend_normalizes_real_playwright_timeout(monkeypatch):
 
     result = registry.execute(
         command="act",
-        computer_session_id=observed["computer_session_id"],
+        web_session_id=observed["web_session_id"],
         owner_id="owner-1",
         arguments={
             "action": "click",

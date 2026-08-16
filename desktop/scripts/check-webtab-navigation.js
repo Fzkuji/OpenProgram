@@ -961,7 +961,7 @@ async function checkVisibleCollectionAndActivation() {
   assert.equal(a.visibility.length, hiddenVisibilityCalls);
   assert.equal(a.targetCallCount(), hiddenTargetCalls);
 
-  // Resolving a background Page for computer_use must not reveal it or alter
+  // Resolving a background Page for web_use must not reveal it or alter
   // the renderer's visible collection.
   const backgroundVisibilityCalls = a.visibility.length;
   const backgroundTargetCalls = a.targetCallCount();

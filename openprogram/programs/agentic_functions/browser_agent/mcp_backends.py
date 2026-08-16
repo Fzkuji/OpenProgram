@@ -38,12 +38,12 @@ class _SyncMCPClient:
         self._loop = asyncio.new_event_loop()
         self._client = None
         self._thread = threading.Thread(
-            target=self._run, name="computer-use-mcp", daemon=True,
+            target=self._run, name="web-use-mcp", daemon=True,
         )
         self._thread.start()
         try:
             self._client = MCPClient(MCPServerConfig(
-                name="computer-use-private",
+                name="web-use-private",
                 command=command,
                 timeout_seconds=timeout,
             ))

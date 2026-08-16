@@ -404,7 +404,7 @@ def wrap_with_approval(
         # approval here would make that explicit, turn-scoped grant unusable.
         # Deny/ask rules, authority checks, and hard constraints above remain
         # authoritative; this exception applies only to the bound public tool.
-        if name == "computer_use":
+        if name == "web_use":
             from openprogram.agent.surface_context import tool_enabled
 
             if tool_enabled(getattr(req, "surface_context", None)):

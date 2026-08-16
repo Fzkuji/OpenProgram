@@ -62,7 +62,7 @@ _RAW_TOOL_DEFINITIONS: tuple[tuple[str, str, dict[str, Any]], ...] = (
         ),
     ),
     (
-        "computer_use",
+        "web_use",
         "Observe or control an authorized OpenProgram browser Page.",
         _object(
             {
@@ -79,7 +79,7 @@ _RAW_TOOL_DEFINITIONS: tuple[tuple[str, str, dict[str, Any]], ...] = (
                 },
                 "page": {"type": "string", "maxLength": 512},
                 "page_context_token": {"type": "string", "maxLength": 128},
-                "computer_session_id": {"type": "string", "maxLength": 128},
+                "web_session_id": {"type": "string", "maxLength": 128},
                 "arguments": {"type": "object", "default": {}},
             },
             ["command"],
