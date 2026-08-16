@@ -434,6 +434,7 @@ async function managerChecks() {
   const repositoryRoot = path.join(__dirname, "..", "..");
   const controlsSource = fs.readFileSync(path.join(repositoryRoot, "web/components/center-tabs/browser-controls.tsx"), "utf8");
   const paneSource = fs.readFileSync(path.join(repositoryRoot, "web/components/center-tabs/builtin-tab-pane.tsx"), "utf8");
+  const paneStyles = fs.readFileSync(path.join(repositoryRoot, "web/components/center-tabs/center-tabs.module.css"), "utf8");
   const webTabSource = fs.readFileSync(path.join(repositoryRoot, "web/components/center-tabs/web-tab-pane.tsx"), "utf8");
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
   const refreshSource = fs.readFileSync(path.join(repositoryRoot, "scripts/refresh-local-app.sh"), "utf8");
@@ -447,6 +448,10 @@ async function managerChecks() {
   assert.match(paneSource, /function ExtensionsPage\(\)/);
   assert.match(paneSource, /api\.installStoreUrl\(storeUrl\.trim\(\)\)/);
   assert.match(paneSource, /microsoftedge\.microsoft\.com\/addons\/Microsoft-Edge-Extensions-Home/);
+  assert.match(paneSource, /openWebTab\("https:\/\/chromewebstore\.google\.com\/"\)/);
+  assert.match(paneSource, /Browse Chrome Web Store/);
+  assert.match(paneStyles, /\.builtinHeader\s*\{[^}]*flex-wrap:\s*wrap/);
+  assert.match(paneStyles, /\.builtinHeaderActions\s*\{[^}]*flex-wrap:\s*wrap/);
   assert.match(webTabSource, /<InstallExtensionButton bridge=\{bridge\} tabId=\{tabId\} url=\{effectiveUrl\} \/>/);
   assert.match(webTabSource, /api\.installCurrentPage\(tabId\)/);
   assert.match(webTabSource, /showToast\(text\([\s\S]*Extension installed\. Reload this page to apply it\./);

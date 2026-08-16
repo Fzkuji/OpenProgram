@@ -1532,6 +1532,7 @@
 }
 .builtinHeader {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 9px;
   color: var(--text-bright);
@@ -1564,6 +1565,8 @@
 .builtinHeaderActions {
   margin-left: auto;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 7px;
 }
 

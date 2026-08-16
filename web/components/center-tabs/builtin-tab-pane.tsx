@@ -787,6 +787,13 @@ function ExtensionsPage() {
             <button
               type="button"
               className={styles.builtinClear}
+              onClick={() => useCenterTabs.getState().openWebTab("https://chromewebstore.google.com/")}
+            >
+              {text("Browse Chrome Web Store", "浏览 Chrome 扩展商店")}
+            </button>
+            <button
+              type="button"
+              className={styles.builtinClear}
               disabled={Boolean(busy)}
               onClick={() => void run(
                 "folder",
