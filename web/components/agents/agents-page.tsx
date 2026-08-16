@@ -27,8 +27,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  ManagePageHeader,
+  ManageRow,
+  managePageStyles,
+} from "@/components/ui/manage-page";
 import { useTranslation } from "@/lib/i18n";
 
+import settingsStyles from "@/components/settings/settings-page.module.css";
 import styles from "./agents-page.module.css";
 
 type ToolPolicy = {
@@ -468,38 +474,32 @@ export function AgentsPage() {
     }
   }
 
-  function onTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
-    let next = index;
-    if (event.key === "ArrowRight") next = (index + 1) % TABS.length;
-    else if (event.key === "ArrowLeft") next = (index - 1 + TABS.length) % TABS.length;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = TABS.length - 1;
-    else return;
-    event.preventDefault();
-    setTab(TABS[next].id);
-    const buttons = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("button[role=tab]");
-    buttons?.[next]?.focus();
-  }
-
   if (loading) {
-    return <div className="main"><div className={styles.centerState}>{text("Loading Agents…", "正在加载 Agents…")}</div></div>;
+    return <div className="main"><div className={managePageStyles.view}><ManagePageHeader title={text("Agents", "Agents")} /><div className={managePageStyles.empty}>{text("Loading Agents…", "正在加载 Agents…")}</div></div></div>;
   }
 
   return (
     <div className="main">
-      <div className={styles.page}>
-        <header className={styles.header}>
-          <div>
-            <h1>{text("Agents", "Agents")}</h1>
-            <p>{text("Configure each Agent's model, instructions, capabilities, and sessions.", "配置每个 Agent 的模型、指令、能力与会话。")}</p>
-          </div>
-          <div className={styles.headerActions}>
-            {dirty ? <span className={styles.unsaved}>{text("Unsaved changes", "有未保存的修改")}</span> : null}
-            <Button onClick={() => void save()} disabled={!draft || !dirty || busy}>
-              {busy ? text("Working…", "处理中…") : dirty ? text("Save changes", "保存修改") : text("Saved", "已保存")}
-            </Button>
-          </div>
-        </header>
+      <div className={managePageStyles.view}>
+        <ManagePageHeader
+          title={text("Agents", "Agents")}
+          tabs={TABS.map((item) => ({ id: item.id, label: text(item.en, item.zh) }))}
+          activeTab={tab}
+          onTabChange={(id) => setTab(id as TabId)}
+          toolbar={dirty ? <span className={styles.unsaved}>{text("Unsaved changes", "有未保存的修改")}</span> : null}
+          actions={[
+            {
+              label: text("New Agent", "新建 Agent"),
+              onClick: () => { setNewName(""); setNewId(""); setCreateOpen(true); },
+            },
+            {
+              label: busy ? text("Working…", "处理中…") : dirty ? text("Save changes", "保存修改") : text("Saved", "已保存"),
+              onClick: () => { void save(); },
+              primary: true,
+              disabled: !draft || !dirty || busy,
+            },
+          ]}
+        />
 
         {notice ? (
           <div className={notice.tone === "error" ? styles.errorBanner : styles.successBanner} role={notice.tone === "error" ? "alert" : "status"}>
@@ -509,23 +509,19 @@ export function AgentsPage() {
           </div>
         ) : null}
 
-        <div className={styles.layout}>
-          <aside className={styles.agentRail} aria-label={text("Agent list", "Agent 列表")}>
-            <div className={styles.railHeader}>
-              <strong>{text("Agents", "Agents")}</strong>
-              <button onClick={() => { setNewName(""); setNewId(""); setCreateOpen(true); }}><Plus size={15} />{text("New", "新建")}</button>
-            </div>
+        <div className={managePageStyles.splitBody}>
+          <aside className={styles.agentNav} aria-label={text("Agent list", "Agent 列表")}>
             <div className={styles.agentList}>
               {agents.map((agent) => (
-                <button
+                <ManageRow
                   key={agent.id}
-                  className={agent.id === selectedId ? styles.agentActive : styles.agentRow}
+                  className={agent.id === selectedId ? styles.agentSelected : undefined}
                   onClick={() => chooseAgent(agent)}
-                >
-                  <span className={styles.avatar}><BotIcon size={17} /></span>
-                  <span className={styles.agentLabel}><strong>{agent.name || agent.id}</strong><small>{agent.id}</small></span>
-                  {agent.default ? <em>{text("Default", "默认")}</em> : null}
-                </button>
+                  icon={<BotIcon size={16} />}
+                  name={agent.name || agent.id}
+                  description={agent.id}
+                  meta={agent.default ? <span className={managePageStyles.badge}>{text("Default", "默认")}</span> : null}
+                />
               ))}
             </div>
           </aside>
@@ -539,11 +535,14 @@ export function AgentsPage() {
                 <Button onClick={() => setCreateOpen(true)}><Plus size={15} />{text("New Agent", "新建 Agent")}</Button>
               </div>
             ) : (
-              <>
-                <div className={styles.detailHeader}>
+              <div className={settingsStyles.page}>
+                <div className={`${settingsStyles.pageHeader} ${styles.agentPageHeader}`}>
                   <span className={styles.detailAvatar}><BotIcon size={20} /></span>
-                  <div><h2>{draft.name || draft.id}</h2><p>{draft.id}</p></div>
-                  {draft.default ? <span className={styles.defaultBadge}>{text("Default", "默认")}</span> : null}
+                  <div className={styles.agentHeading}>
+                    <h2 className={settingsStyles.pageTitle}>{draft.name || draft.id}</h2>
+                    <p className={settingsStyles.pageMeta}>{draft.id}</p>
+                  </div>
+                  {draft.default ? <span className={managePageStyles.badge}>{text("Default", "默认")}</span> : null}
                   <details className={styles.moreMenu}>
                     <summary aria-label={text("Agent actions", "Agent 操作")}><MoreHorizontal size={18} /></summary>
                     <div>
@@ -554,21 +553,8 @@ export function AgentsPage() {
                     </div>
                   </details>
                 </div>
-
-                <div className={styles.tabs} role="tablist" aria-label={text("Agent configuration", "Agent 配置")}>
-                  {TABS.map((item, index) => (
-                    <button
-                      key={item.id}
-                      role="tab"
-                      aria-selected={tab === item.id}
-                      tabIndex={tab === item.id ? 0 : -1}
-                      onClick={() => setTab(item.id)}
-                      onKeyDown={(event) => onTabKeyDown(event, index)}
-                    >{text(item.en, item.zh)}</button>
-                  ))}
-                </div>
-
-                <div className={styles.panel} role="tabpanel">
+                <div className={settingsStyles.pageBody} role="tabpanel">
+                  <div className={styles.panel}>
                   {tab === "overview" ? <OverviewPanel draft={draft} update={updateDraft} text={text} /> : null}
                   {tab === "model" ? <ModelPanel draft={draft} update={updateDraft} text={text} /> : null}
                   {tab === "programs" ? (
@@ -581,8 +567,9 @@ export function AgentsPage() {
                     <GatePanel kind="mcp" policy={draft.mcp} setMode={(mode) => { setGateMode("mcp", mode); if (mode === "selected") void openPicker("mcp"); }} openPicker={() => void openPicker("mcp")} text={text} />
                   ) : null}
                   {tab === "sessions" ? <SessionsPanel draft={draft} update={updateDraft} workspace={workspace} text={text} /> : null}
+                  </div>
                 </div>
-              </>
+              </div>
             )}
           </main>
         </div>
