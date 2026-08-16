@@ -376,19 +376,20 @@ PAGE_ORDER: dict[str, int] = {
     # Center tabs: authoritative tab/group/view state and split-layout design.
     "reference/design/ui/center-tabs-and-split-layout.html": 1009,
     "reference/design/ui/built-in-browser.html": 1010,
-    "reference/design/ui/integrated-terminal.html": 1011,
-    "reference/design/ui/composer-local-attachment-paths.html": 1012,
-    "reference/design/ui/composer-responsive-controls.html": 1013,
-    "reference/design/ui/composer-tool-profile-menu.html": 1014,
-    "reference/design/ui/programs-source-categories.html": 1015,
-    "reference/design/ui/theme-system.html": 1016,
-    "reference/design/ui/settings-collapsible-columns.html": 1017,
+    "reference/design/ui/browser-extensions.html": 1011,
+    "reference/design/ui/integrated-terminal.html": 1012,
+    "reference/design/ui/composer-local-attachment-paths.html": 1013,
+    "reference/design/ui/composer-responsive-controls.html": 1014,
+    "reference/design/ui/composer-tool-profile-menu.html": 1015,
+    "reference/design/ui/programs-source-categories.html": 1016,
+    "reference/design/ui/theme-system.html": 1017,
+    "reference/design/ui/settings-collapsible-columns.html": 1018,
     # Chat attachments: the delivery note first, its rendered companion
     # next, then the four-layer note on how attachments look and behave
     # inside the chat itself.
-    "reference/design/ui/attachment-handling.md": 1018,
-    "reference/design/ui/attachment-handling.html": 1019,
-    "reference/design/ui/chat-attachments.html": 1020,
+    "reference/design/ui/attachment-handling.md": 1019,
+    "reference/design/ui/attachment-handling.html": 1020,
+    "reference/design/ui/chat-attachments.html": 1021,
     # The three whole-framework pages sit together at the end of the design
     # root: first how one conversation runs inside us, then how we compare to
     # the reference frameworks by design axis, then by feature list.

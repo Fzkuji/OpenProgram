@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>OpenProgram 内置浏览器扩展设计</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f4f5f8;
+      --surface: #ffffff;
+      --ink: #171922;
+      --muted: #646977;
+      --faint: #8a909f;
+      --line: #d9dce5;
+      --line-strong: #b9bfcc;
+      --accent: #5d55d7;
+      --accent-soft: #eceafd;
+      --green: #367b5a;
+      --green-soft: #e6f1eb;
+      --blue: #3569a8;
+      --blue-soft: #e8f0fa;
+      --amber: #9a6420;
+      --amber-soft: #f7ecdc;
+      --red: #a84545;
+      --red-soft: #f8e7e7;
+      --dark: #171715;
+      --dark-2: #242421;
+      --dark-line: #3b3a36;
+      --dark-text: #f4f2eb;
+      --dark-muted: #aaa79f;
+      --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.7 var(--sans); }
+    a { color: var(--blue); text-underline-offset: 3px; }
+    code { padding: .12em .38em; border-radius: 4px; background: #e9ebf1; color: var(--ink); font: .88em/1.5 var(--mono); }
+    .shell { display: grid; grid-template-columns: minmax(0, 900px) 190px; gap: 64px; width: min(1210px, calc(100% - 48px)); margin: 0 auto; padding: 68px 0 96px; }
+    main { min-width: 0; }
+    .eyebrow, .label, .section-no, .metric-label, .rail-title, .state-label { color: var(--faint); font: 600 11px/1.4 var(--mono); letter-spacing: .11em; text-transform: uppercase; }
+    h1, h2, h3 { font-weight: 650; }
+    h1 { max-width: 800px; margin: 12px 0 18px; font-size: clamp(36px, 4.5vw, 55px); line-height: 1.08; letter-spacing: -.035em; }
+    h2 { margin: 0; font-size: 30px; line-height: 1.2; letter-spacing: -.02em; }
+    h3 { margin: 28px 0 8px; font-size: 20px; line-height: 1.35; }
+    p { margin: 0 0 12px; }
+    .lede { max-width: 760px; color: #484b55; font-size: 18px; line-height: 1.72; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px; }
+    .pill { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 4px 11px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.62); color: #555965; font-size: 12px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); }
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); margin: 38px 0 64px; padding: 14px 0; border-block: 1px solid var(--line); }
+    .metric { padding: 0 16px; border-left: 1px solid var(--line); }
+    .metric:first-child { padding-left: 0; border-left: 0; }
+    .metric-value { display: block; margin-top: 5px; font-size: 13px; font-weight: 650; line-height: 1.45; }
+    .section { margin-top: 72px; scroll-margin-top: 24px; }
+    .section-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; }
+    .section-no { min-width: 32px; padding: 4px 7px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); text-align: center; letter-spacing: .04em; }
+    .section-intro { max-width: 760px; margin: 0 0 26px 46px; color: var(--muted); }
+    .notice { margin-top: 22px; padding: 16px 18px; border-left: 3px solid var(--amber); background: var(--amber-soft); color: #5f4a2d; font-size: 14px; }
+    .cards { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+    .card { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.68); }
+    .card h3 { margin: 7px 0 7px; font-size: 17px; }
+    .card p { color: var(--muted); font-size: 13px; }
+    .choice { display: inline-block; margin-top: 12px; color: var(--green); font: 650 11px var(--mono); }
+    .choice.later { color: var(--blue); }
+    .choice.no { color: var(--red); }
+    .table-scroll { max-width: 100%; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    .matrix { min-width: 780px; }
+    th, td { padding: 12px 11px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 13px; }
+    th { color: var(--faint); font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    td:first-child { color: var(--ink); font-weight: 650; }
+    .status { font: 650 11px var(--mono); white-space: nowrap; }
+    .status.yes { color: var(--green); }
+    .status.partial { color: var(--amber); }
+    .status.no { color: var(--red); }
+    .mock { overflow: hidden; margin-top: 26px; border: 1px solid var(--line-strong); border-radius: 15px; background: var(--dark); color: var(--dark-text); box-shadow: 0 18px 46px rgba(23,25,34,.1); }
+    .mock-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 0 18px; border-bottom: 1px solid var(--dark-line); }
+    .mock-head strong { font-size: 15px; }
+    .mock-button { flex: none; padding: 7px 11px; border-radius: 7px; background: var(--dark-text); color: var(--dark); font-size: 12px; font-weight: 650; }
+    .mock-body { padding: 18px; }
+    .extension-row { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; gap: 12px; align-items: center; min-height: 60px; padding: 10px 0; border-bottom: 1px solid var(--dark-line); }
+    .extension-row:last-child { border-bottom: 0; }
+    .ext-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: #34332f; color: #c9c6bd; font: 650 14px var(--mono); }
+    .ext-copy { min-width: 0; }
+    .ext-copy strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+    .ext-copy span { display: block; color: var(--dark-muted); font-size: 11px; }
+    .row-actions { display: flex; align-items: center; gap: 9px; color: var(--dark-muted); font-size: 11px; }
+    .switch { position: relative; width: 30px; height: 17px; border-radius: 999px; background: #55534e; }
+    .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: white; }
+    .switch.on { background: #6f67ef; }
+    .switch.on::after { left: 15px; }
+    .warning-row { margin-top: 14px; padding: 12px 14px; border: 1px solid #675534; border-radius: 8px; background: #2b261f; color: #d6c29b; font-size: 12px; }
+    .architecture { overflow-x: auto; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    .architecture svg { display: block; width: 100%; min-width: 780px; height: auto; }
+    .legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 12px; color: var(--muted); font-size: 12px; }
+    .legend span::before { content: ""; display: inline-block; width: 16px; height: 2px; margin: 0 7px 3px 0; background: var(--ink); }
+    .legend .privileged::before { background: var(--accent); }
+    .legend .source::before { background: var(--blue); }
+    .steps { border-top: 1px solid var(--line); }
+    .step { display: grid; grid-template-columns: 45px 1fr; gap: 14px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+    .step-num { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--surface); border: 1px solid var(--line-strong); color: var(--accent); font: 650 12px var(--mono); }
+    .step strong { display: block; margin-bottom: 4px; }
+    .step p { color: var(--muted); font-size: 13px; }
+    .boundary-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+    .boundary { padding: 16px 17px; border-left: 3px solid var(--accent); background: rgba(255,255,255,.65); }
+    .boundary strong { display: block; margin-bottom: 5px; font-size: 14px; }
+    .boundary p { color: var(--muted); font-size: 12px; }
+    .code-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+    .code-card { padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+    .code-card strong { display: block; font: 650 12px var(--mono); word-break: break-word; }
+    .code-card p { margin-top: 7px; color: var(--muted); font-size: 12px; }
+    .task { display: grid; grid-template-columns: 115px 1fr; gap: 18px; padding: 18px 0; border-top: 1px solid var(--line); }
+    .task:last-child { border-bottom: 1px solid var(--line); }
+    .task-tag { color: var(--accent); font: 650 11px var(--mono); }
+    .task h3 { margin: 0 0 5px; font-size: 16px; }
+    .task p, .task li { color: var(--muted); font-size: 13px; }
+    .task ul { margin: 7px 0 0; padding-left: 18px; }
+    .rail { position: sticky; top: 32px; align-self: start; padding-top: 6px; }
+    .rail nav { margin-top: 14px; border-left: 1px solid var(--line); }
+    .rail a { display: block; padding: 6px 0 6px 14px; color: var(--muted); font-size: 12px; text-decoration: none; }
+    .rail a:hover { color: var(--ink); }
+    .mobile-toc { display: none; margin-top: 24px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.65); }
+    .mobile-toc summary { padding: 10px 13px; cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 650; }
+    .mobile-toc nav { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px; padding: 0 10px 10px; }
+    .mobile-toc a { padding: 6px 4px; color: var(--muted); font-size: 12px; text-decoration: none; }
+    .footnote { margin-top: 68px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--faint); font-size: 12px; }
+    a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    @media (max-width: 980px) {
+      .shell { grid-template-columns: 1fr; width: min(900px, calc(100% - 36px)); padding-top: 42px; }
+      .rail { display: none; }
+      .mobile-toc { display: block; }
+    }
+    @media (max-width: 720px) {
+      body { font-size: 15px; }
+      .metrics, .cards, .boundary-grid, .code-grid { grid-template-columns: 1fr; }
+      .metrics { padding: 0; }
+      .metric, .metric:first-child { padding: 11px 0; border-left: 0; border-top: 1px solid var(--line); }
+      .metric:first-child { border-top: 0; }
+      .section-intro { margin-left: 0; }
+      .task { grid-template-columns: 1fr; gap: 5px; }
+      .extension-row { grid-template-columns: 32px minmax(0,1fr); }
+      .row-actions { grid-column: 2; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <main>
+    <header>
+      <div class="eyebrow">OpenProgram · Browser architecture specification</div>
+      <h1>Chromium 浏览器扩展</h1>
+      <p class="lede">OpenProgram 在桌面 App 的 <code>persist:webtabs</code> session 中加载受信任的 unpacked Chromium extension。Chrome 与 Edge 使用同一扩展包模型；OpenProgram 只承诺 Electron 已实现的 API 子集，不宣称兼容 Chrome Web Store 或 Edge Add-ons 中的任意扩展。</p>
+      <div class="meta">
+        <span class="pill"><span class="dot"></span>设计完成 · 尚未实现</span>
+        <span class="pill">Desktop only</span>
+        <span class="pill">Unpacked extension</span>
+        <span class="pill">User approval required</span>
+      </div>
+      <details class="mobile-toc">
+        <summary>本页目录</summary>
+        <nav aria-label="移动端页内导航">
+          <a href="#decision">方案</a><a href="#contract">支持边界</a><a href="#experience">用户流程</a><a href="#architecture">架构</a><a href="#security">安全</a><a href="#implementation">实施计划</a><a href="#acceptance">验收</a>
+        </nav>
+      </details>
+    </header>
+
+    <section class="metrics" aria-label="扩展设计摘要">
+      <div class="metric"><span class="metric-label">Runtime</span><span class="metric-value">Electron 37 · Extensions API</span></div>
+      <div class="metric"><span class="metric-label">Session</span><span class="metric-value">共享 <code>persist:webtabs</code></span></div>
+      <div class="metric"><span class="metric-label">Install</span><span class="metric-value">文件夹 · Chrome/Edge 代码导入</span></div>
+      <div class="metric"><span class="metric-label">Excluded</span><span class="metric-value">CRX · Store · 自动更新</span></div>
+    </section>
+
+    <section class="section" id="decision">
+      <div class="section-head"><span class="section-no">01</span><h2>选择 Electron session extension</h2></div>
+      <p class="section-intro">当前所有原生网页 tab 都由 main process 创建 <code>WebContentsView</code>，并共享 <code>persist:webtabs</code>。扩展必须在这个 session 上加载，且要在首个网页加载之前恢复。</p>
+      <div class="cards">
+        <article class="card">
+          <span class="label">Adopt</span>
+          <h3>Electron Extensions API</h3>
+          <p>使用 <code>session.fromPartition("persist:webtabs").extensions.loadExtension()</code>。复用当前登录态、Cookies、下载和 Computer Use 的 exact WebTab。</p>
+          <span class="choice">采用 · 唯一运行时</span>
+        </article>
+        <article class="card">
+          <span class="label">Defer</span>
+          <h3>外部 Chrome / Edge 接管</h3>
+          <p>扩展运行在外部浏览器时，不属于 OpenProgram 内置 tab，也不共享现有 WebContentsView 生命周期。它仍可作为单独的 external-browser computer use 能力存在。</p>
+          <span class="choice later">保留为独立能力</span>
+        </article>
+        <article class="card">
+          <span class="label">Reject</span>
+          <h3>完整 Chromium 分发</h3>
+          <p>自行维护 Chromium、商店安装、更新服务和完整 extension API 会改变桌面运行时与发布模型，不属于本功能范围。</p>
+          <span class="choice no">不采用</span>
+        </article>
+      </div>
+      <div class="notice">设计中的“支持 Chrome/Edge 插件”指支持其 Chromium extension 目录格式，并在安装时显示兼容性结果；不等于 OpenProgram 具备 Chrome 或 Edge 的完整扩展平台。</div>
+    </section>
+
+    <section class="section" id="contract">
+      <div class="section-head"><span class="section-no">02</span><h2>第一版支持边界</h2></div>
+      <p class="section-intro">能力由 Electron 官方支持范围决定。安装前只做 manifest-level preflight，不扫描扩展 JavaScript；未列出的 manifest key 或运行时 <code>chrome.*</code> API 只能标记为未验证，不能写成已兼容。</p>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="浏览器扩展支持边界，可横向滚动">
+        <table class="matrix">
+          <thead><tr><th>能力</th><th>第一版</th><th>行为</th><th>原因</th></tr></thead>
+          <tbody>
+            <tr><td>加载 unpacked extension 文件夹</td><td><span class="status yes">支持</span></td><td>main process 选择目录、复制到 App 管理目录、校验后加载。</td><td>Electron 的正式入口。</td></tr>
+            <tr><td>Chrome / Edge 已安装扩展代码</td><td><span class="status partial">第二阶段</span></td><td>从用户选择的 browser profile 发现版本目录，复制代码后按同一流程安装。</td><td>两者采用 Chromium extension 格式；仍需处理 identity 与兼容性。</td></tr>
+            <tr><td><code>content_scripts</code>、<code>chrome.scripting</code>、<code>storage.local</code>、<code>runtime</code>、<code>webRequest</code></td><td><span class="status yes">Electron 子集</span></td><td>按 Electron 实际 API 提供；<code>tabs</code> 只承诺官方列出的部分字段与方法。</td><td>Electron 官方支持清单。</td></tr>
+            <tr><td>Manifest V3 background service worker / declarativeNetRequest</td><td><span class="status no">不兼容</span></td><td>manifest preflight 标记为不可用并保持禁用；不能把仅能加载 manifest 的结果报告为扩展可工作。</td><td>Electron 官方支持表只列出 Manifest V2 <code>background</code>，未列出 MV3 service worker 或 <code>declarativeNetRequest</code>。</td></tr>
+            <tr><td>扩展管理页</td><td><span class="status yes">支持</span></td><td>显示图标、名称、版本、来源、权限、兼容状态、启停、重新加载和移除。</td><td>OpenProgram 自己提供管理 UI。</td></tr>
+            <tr><td>Chrome Web Store / Edge Add-ons 直接安装</td><td><span class="status no">不支持</span></td><td>不拦截商店 Install 按钮，不下载商店 CRX。</td><td>Electron 不支持任意商店扩展或 packed <code>.crx</code>。</td></tr>
+            <tr><td><code>.crx</code> 文件</td><td><span class="status no">不支持</span></td><td>选择文件时直接说明只接受已解压目录。</td><td><code>loadExtension</code> 明确拒绝 packed extension。</td></tr>
+            <tr><td>Chrome 工具栏 action、动态 badge、完整 popup 行为</td><td><span class="status partial">暂不承诺</span></td><td>管理页显示静态扩展图标；不新增常驻 toolbar action。</td><td>Electron 官方支持表未承诺 <code>chrome.action</code> 或 <code>browserAction</code>。</td></tr>
+            <tr><td>自动更新、同步、企业策略、native messaging</td><td><span class="status no">不支持</span></td><td>更新使用重新安装；<code>storage.sync</code>、<code>storage.managed</code> 与 native host 不可用。</td><td>避免隐式代码替换与本机进程权限扩张。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>官方依据</h3>
+      <ul>
+        <li><a href="https://www.electronjs.org/docs/latest/api/extensions-api">Electron Extensions class</a>：只接受 unpacked 目录、仅 persistent session 可用、每次 App 启动都必须重新加载。</li>
+        <li><a href="https://www.electronjs.org/docs/latest/api/extensions/">Electron Chrome Extension Support</a>：只支持 Chrome Extension API 子集，完整 Chrome 兼容不是 Electron 的目标。</li>
+        <li><a href="https://developer.chrome.com/docs/extensions/how-to/distribute">Chrome extension distribution</a>：unpacked extension 用于受信任的本地开发，面向普通用户的直接安装依赖 Chrome Web Store。</li>
+        <li><a href="https://learn.microsoft.com/en-us/microsoft-edge/extensions/developer-guide/port-chrome-extension">Microsoft Edge porting guide</a>：Chrome 与 Edge 的 manifest 和 API 大体代码兼容，但仍需检查具体 API。</li>
+      </ul>
+    </section>
+
+    <section class="section" id="experience">
+      <div class="section-head"><span class="section-no">03</span><h2>入口和用户流程</h2></div>
+      <p class="section-intro">不修改现有 tab 外形、地址栏高度和书签栏。Browser <code>⋯</code> 增加 Extensions，打开单例 <code>b:extensions</code> 管理页；Browser Settings 只提供同一页面的文字链接，不复制管理功能。</p>
+      <div class="mock" role="img" aria-label="扩展管理页示意，包含安装按钮、两个扩展条目、兼容性状态、启停和移除动作">
+        <div class="mock-head"><strong>Extensions</strong><span class="mock-button">Add from folder</span></div>
+        <div class="mock-body">
+          <div class="extension-row">
+            <span class="ext-icon">A</span>
+            <span class="ext-copy"><strong>Article Cleaner</strong><span>1.4.0 · Unpacked folder · Compatible</span></span>
+            <span class="row-actions">Details&nbsp;&nbsp; Remove <span class="switch on" aria-hidden="true"></span></span>
+          </div>
+          <div class="extension-row">
+            <span class="ext-icon">T</span>
+            <span class="ext-copy"><strong>Tab Workflow</strong><span>3.2.1 · Imported from Edge · Limited compatibility</span></span>
+            <span class="row-actions">Details&nbsp;&nbsp; Remove <span class="switch" aria-hidden="true"></span></span>
+          </div>
+          <div class="warning-row">Unsupported: background.service_worker, chrome.action. This extension remains disabled until the user reviews the limitations.</div>
+        </div>
+      </div>
+      <div class="steps" aria-label="扩展安装流程">
+        <div class="step"><span class="step-num">1</span><div><strong>选择来源</strong><p>第一阶段只有 Add from folder。第二阶段增加 Import from Chrome or Edge，列出浏览器、profile 和扩展，不允许 renderer 提供任意磁盘路径。</p></div></div>
+        <div class="step"><span class="step-num">2</span><div><strong>复制并校验</strong><p>main process 解析 <code>manifest.json</code>、限定文件数量和总大小、拒绝符号链接逃逸，并复制到 App 管理目录。来源目录后续变化不直接影响已安装版本。</p></div></div>
+        <div class="step"><span class="step-num">3</span><div><strong>权限与兼容性确认</strong><p>显示 host permissions、content scripts、file access 和未支持的 manifest key。请求全部网站访问、存在未验证能力或来源为浏览器 profile 时，默认保持禁用；不通过 AST 或正则分析 JavaScript 来猜测 API 兼容性。</p></div></div>
+        <div class="step"><span class="step-num">4</span><div><strong>加载到浏览器 session</strong><p>用户启用后调用 <code>persist:webtabs</code> 的 <code>loadExtension</code>。启停对所有内置网页 tab 同时生效，不绑定某一个 tab 或窗口。</p></div></div>
+        <div class="step"><span class="step-num">5</span><div><strong>启动恢复与失败隔离</strong><p>每次 App 启动在首个 WebTab 导航前重新加载 enabled 项。单个扩展失败只更新该项状态，不阻止窗口和其他扩展启动。</p></div></div>
+      </div>
+    </section>
+
+    <section class="section" id="architecture">
+      <div class="section-head"><span class="section-no">04</span><h2>架构与生命周期</h2></div>
+      <p class="section-intro">registry 保存用户意图；Electron session 保存本次进程中的实际加载状态。二者不能混为一个状态。</p>
+      <div class="architecture">
+        <svg viewBox="0 0 900 420" role="img" aria-labelledby="extension-arch-title extension-arch-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="extension-arch-title">OpenProgram 浏览器扩展架构</title>
+          <desc id="extension-arch-desc">扩展来源经 main process 校验复制到管理目录，registry 保存配置，启动时加载进 persist webtabs session，作用于所有内置网页视图。renderer 只通过受限 IPC 管理扩展。</desc>
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6f7481"/></marker>
+            <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5d55d7"/></marker>
+            <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3569a8"/></marker>
+          </defs>
+          <rect x="20" y="42" width="180" height="68" rx="10" fill="#e8f0fa" stroke="#3569a8"/><text x="110" y="69" text-anchor="middle" font-family="ui-monospace" font-size="12">Unpacked folder</text><text x="110" y="89" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">Chrome / Edge code</text>
+          <rect x="20" y="180" width="180" height="68" rx="10" fill="#e8f0fa" stroke="#3569a8"/><text x="110" y="207" text-anchor="middle" font-family="ui-monospace" font-size="12">Browser profiles</text><text x="110" y="227" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">phase 2 · read only</text>
+          <rect x="270" y="92" width="190" height="112" rx="12" fill="#eceafd" stroke="#5d55d7"/><text x="365" y="122" text-anchor="middle" font-family="ui-monospace" font-size="12">browser-extension-manager.js</text><text x="365" y="146" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">validate · copy · permissions</text><text x="365" y="168" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">load · unload · status</text>
+          <rect x="530" y="42" width="170" height="68" rx="10" fill="#ffffff" stroke="#b9bfcc"/><text x="615" y="69" text-anchor="middle" font-family="ui-monospace" font-size="12">registry.json</text><text x="615" y="89" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">desired state · hashes</text>
+          <rect x="530" y="180" width="170" height="68" rx="10" fill="#ffffff" stroke="#b9bfcc"/><text x="615" y="207" text-anchor="middle" font-family="ui-monospace" font-size="12">packages/&lt;id&gt;/&lt;ver&gt;</text><text x="615" y="227" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">App-managed copy</text>
+          <rect x="742" y="104" width="140" height="82" rx="10" fill="#e6f1eb" stroke="#367b5a"/><text x="812" y="135" text-anchor="middle" font-family="ui-monospace" font-size="12">persist:webtabs</text><text x="812" y="157" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">Extensions API</text>
+          <rect x="626" y="310" width="256" height="74" rx="10" fill="#ffffff" stroke="#b9bfcc"/><text x="754" y="339" text-anchor="middle" font-family="ui-monospace" font-size="12">All native WebContentsView tabs</text><text x="754" y="361" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">same session · same enabled set</text>
+          <rect x="270" y="310" width="250" height="74" rx="10" fill="#ffffff" stroke="#b9bfcc"/><text x="395" y="339" text-anchor="middle" font-family="ui-monospace" font-size="12">Extensions manager page</text><text x="395" y="361" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">preload allowlist · no raw path</text>
+          <path d="M200 76H270" stroke="#3569a8" stroke-width="1.8" marker-end="url(#arrow-blue)"/><path d="M200 214C232 214 236 172 270 172" fill="none" stroke="#3569a8" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+          <path d="M460 120H530" stroke="#5d55d7" stroke-width="1.8" marker-end="url(#arrow-accent)"/><path d="M460 174C492 174 500 214 530 214" fill="none" stroke="#5d55d7" stroke-width="1.8" marker-end="url(#arrow-accent)"/>
+          <path d="M700 76C742 76 725 129 742 129" fill="none" stroke="#6f7481" stroke-width="1.6" marker-end="url(#arrow)"/><path d="M700 214C742 214 725 161 742 161" fill="none" stroke="#5d55d7" stroke-width="1.8" marker-end="url(#arrow-accent)"/>
+          <path d="M812 186V310" stroke="#6f7481" stroke-width="1.6" marker-end="url(#arrow)"/><path d="M520 347H626" stroke="#5d55d7" stroke-width="1.8" marker-end="url(#arrow-accent)"/>
+          <text x="219" y="65" font-family="ui-monospace" font-size="10" fill="#3569a8">copy</text><text x="482" y="110" font-family="ui-monospace" font-size="10" fill="#5d55d7">write</text><text x="710" y="92" font-family="ui-monospace" font-size="10" fill="#646977">restore</text><text x="823" y="262" font-family="ui-monospace" font-size="10" fill="#646977">inject</text><text x="550" y="338" font-family="ui-monospace" font-size="10" fill="#5d55d7">IPC</text>
+        </svg>
+      </div>
+      <div class="legend"><span>运行状态</span><span class="privileged">main process 特权操作</span><span class="source">外部只读来源</span></div>
+      <h3>registry 最小字段</h3>
+      <div class="code-grid">
+        <article class="code-card"><strong>identity</strong><p><code>id</code>、<code>name</code>、<code>version</code>、<code>manifestHash</code>、<code>managedPath</code>。renderer 不接收原始来源路径。</p></article>
+        <article class="code-card"><strong>source</strong><p><code>folder</code> 或 <code>browser-profile</code>，以及非敏感的浏览器/profile 标签。扩展数据和浏览记录不进入 registry。</p></article>
+        <article class="code-card"><strong>desired state</strong><p><code>enabled</code>、<code>allowFileAccess=false</code>、已批准的 manifest hash。manifest 改变后必须重新确认。</p></article>
+        <article class="code-card"><strong>observed state</strong><p><code>loaded</code>、<code>loadErrorCode</code>、<code>manifestCompatibility</code>。进程启动后根据 Electron 实际结果刷新。</p></article>
+      </div>
+    </section>
+
+    <section class="section" id="security">
+      <div class="section-head"><span class="section-no">05</span><h2>权限与信任边界</h2></div>
+      <p class="section-intro">浏览器扩展可以读取或修改网页内容，因此安装、启用和权限扩张都必须是明确的用户操作。网页、Agent 和普通 renderer 不能静默完成这些操作。</p>
+      <div class="boundary-grid">
+        <article class="boundary"><strong>安装来源</strong><p>只接受用户通过原生选择器确认的目录，或 main process 返回的 opaque browser/profile/extension id。拒绝 symlink 逃逸、超量文件、无效 manifest 和可写出管理根目录的路径。</p></article>
+        <article class="boundary"><strong>权限确认</strong><p>将 <code>host_permissions</code>、<code>content_scripts.matches</code>、全部网站访问和 file access 转换为用户可读摘要。新权限或 manifest hash 变化会撤销旧批准。</p></article>
+        <article class="boundary"><strong>session 隔离</strong><p>扩展只加载到 <code>persist:webtabs</code>。OpenProgram chat、Settings 和 Extensions manager 运行在默认 session，扩展不能注入这些页面。</p></article>
+        <article class="boundary"><strong>本地文件</strong><p><code>allowFileAccess</code> 默认且第一版固定为 false。即使 WebTab 打开 <code>file://</code> 页面，扩展也不得因此获得本地文件读取权限。</p></article>
+        <article class="boundary"><strong>Agent</strong><p>Agent 可以观察扩展对网页 DOM 产生的结果，但不能通过 Computer Use 自动安装、移除、启用扩展或批准新增权限。</p></article>
+        <article class="boundary"><strong>删除与回滚</strong><p>先 unload，再删除 registry 项和管理目录。任一步失败都保留可诊断状态；不能出现 UI 显示已删除但启动时仍恢复的情况。</p></article>
+      </div>
+      <h3>明确不导入的数据</h3>
+      <p>从 Chrome/Edge 导入只复制扩展代码。不会复制扩展的 <code>storage.local</code>、<code>storage.sync</code>、IndexedDB、Cookies、登录态、授权决定、企业策略或 native messaging 配置。</p>
+    </section>
+
+    <section class="section" id="implementation">
+      <div class="section-head"><span class="section-no">06</span><h2>实施计划</h2></div>
+      <p class="section-intro">每个任务都从公共入口建立一个失败检查，完成后单独审查。第一阶段完成前不开始 Chrome/Edge profile 导入。</p>
+      <div class="task"><span class="task-tag">TASK 0 · SPIKE</span><div><h3>Electron 37 兼容性夹具</h3><p>使用最小 unpacked fixture 验证 <code>content_scripts</code>、<code>runtime</code>、<code>storage.local</code>、<code>scripting</code> 和 unload/reload；另一个 fixture 包含 <code>background.service_worker</code> 与 <code>chrome.action</code>，证明其限制状态不会被报告为兼容。</p><ul><li>入口：<code>node desktop/scripts/check-browser-extensions.js</code></li><li>不使用真实用户扩展或真实 Chrome profile。</li></ul></div></div>
+      <div class="task"><span class="task-tag">TASK 1 · RUNTIME</span><div><h3>registry、管理目录与 session 生命周期</h3><p>新增 <code>desktop/browser-extension-manager.js</code>，由 <code>desktop/main.js</code> 在首个 WebTab 导航前恢复 enabled 项。安装使用临时目录、完整校验和原子 rename；失败不阻止 App 启动。</p><ul><li>生产文件：<code>desktop/browser-extension-manager.js</code>、<code>desktop/main.js</code>、<code>desktop/package.json</code></li><li>验证：扩展只进入 <code>persist:webtabs</code>，重启恢复，disable/remove 不会再次恢复。</li></ul></div></div>
+      <div class="task"><span class="task-tag">TASK 2 · SURFACE</span><div><h3>IPC 与 Extensions manager</h3><p>preload 只暴露 list、chooseAndInstall、enable、reload、remove。Browser <code>⋯</code> 增加 Extensions；<code>BuiltinPage</code> 增加单例 <code>extensions</code>，管理页复用现有 built-in page 密度与按钮，不改 tab/toolbar/bookmarks CSS。</p><ul><li>生产文件：<code>desktop/preload.js</code>、<code>web/lib/desktop-bridge.ts</code>、<code>web/lib/state/center-tab-ids.ts</code>、<code>browser-controls.tsx</code>、<code>builtin-tab-pane.tsx</code> 及现有 tab label/icon 分支。</li><li>验证：键盘可操作、状态变更以 main 返回为准、旧桌面壳没有 API 时入口隐藏。</li></ul></div></div>
+      <div class="task"><span class="task-tag">TASK 3 · IMPORT</span><div><h3>Chrome / Edge 代码导入</h3><p>复用 <code>browser-profile-import.js</code> 的 browser/profile 发现和真实路径约束，新增扩展候选列表与复制入口。只读取用户选择的 profile；同一扩展只选择最高有效版本。</p><ul><li>导入前显示 identity 可能变化、数据不会迁移和 API 兼容性结果。</li><li>不直接从源浏览器目录加载，不修改源 profile。</li></ul></div></div>
+      <div class="task"><span class="task-tag">DEFERRED</span><div><h3>商店、CRX、自动更新与 action UI</h3><p>只有在 Electron 或独立兼容层提供可验证的签名、更新和 action API 后再设计。当前任务不预留 downloader、update daemon、badge service 或隐藏配置项。</p></div></div>
+    </section>
+
+    <section class="section" id="acceptance">
+      <div class="section-head"><span class="section-no">07</span><h2>验收与实现状态</h2></div>
+      <p class="section-intro">设计完成不代表功能可用。下面只有现有浏览器基础设施属于已实现，扩展相关结果在代码、测试和安装版验收完成前保持未实现。</p>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="浏览器扩展验收状态，可横向滚动">
+        <table class="matrix">
+          <thead><tr><th>可观察结果</th><th>状态</th><th>证据要求</th></tr></thead>
+          <tbody>
+            <tr><td>所有原生 WebTab 共享 persistent <code>persist:webtabs</code> session。</td><td><span class="status yes">已实现</span></td><td><code>desktop/main.js</code> 的 <code>WebContentsView</code> 创建路径。</td></tr>
+            <tr><td>用户从目录安装兼容 fixture，确认权限后启用；现有和新建 WebTab 都执行 content script。</td><td><span class="status no">未实现</span></td><td>Desktop component check + 安装版 App 可见验收。</td></tr>
+            <tr><td>App 重启后 enabled 扩展在首个网页导航前恢复；单个失败不阻止窗口启动。</td><td><span class="status no">未实现</span></td><td>冷启动检查，断言加载顺序和失败隔离。</td></tr>
+            <tr><td>disable、reload、remove 的 UI 与 Electron 实际状态一致，remove 后磁盘和 registry 都没有残留。</td><td><span class="status no">未实现</span></td><td>失败路径检查 + 安装版 App 操作记录。</td></tr>
+            <tr><td>扩展不能注入 OpenProgram chat/Settings，也不能访问 <code>file://</code>。</td><td><span class="status no">未实现</span></td><td>default session 与 webtabs session 隔离检查。</td></tr>
+            <tr><td>从 Chrome/Edge profile 导入只复制代码，不复制扩展数据、登录态或权限。</td><td><span class="status no">第二阶段</span></td><td>临时 profile fixture + 源目录只读与目标清理检查。</td></tr>
+            <tr><td>Chrome Web Store、Edge Add-ons 和 <code>.crx</code> 不显示为可用安装方式。</td><td><span class="status no">约束待实现</span></td><td>管理页和 IPC allowlist 检查。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>完整验证清单</h3>
+      <p><code>node desktop/scripts/check-browser-extensions.js</code>；<code>npm --prefix desktop run check</code>；<code>npm --prefix web run check:built-in-browser</code>；<code>npm --prefix web run test:unit</code>；Web TypeScript；<code>python -m tools.docs_site.checklinks</code>；最后仅使用 <code>/Applications/OpenProgram.app</code>、默认 18100 worker 和 <code>~/.openprogram</code> 验收。</p>
+    </section>
+
+    <p class="footnote">本页是内置浏览器扩展的规范性设计。相关实现尚不存在；代码落地后只在本页的实现状态与证据列补充当前事实。</p>
+  </main>
+
+  <aside class="rail" aria-label="页内导航">
+    <div class="rail-title">On this page</div>
+    <nav><a href="#decision">方案</a><a href="#contract">支持边界</a><a href="#experience">用户流程</a><a href="#architecture">架构</a><a href="#security">安全</a><a href="#implementation">实施计划</a><a href="#acceptance">验收</a></nav>
+  </aside>
+</div>
+</body>
+</html>

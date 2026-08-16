@@ -8,6 +8,7 @@ Web UI 界面 — 界面系统、指示点、附件处理、聊天轮次视觉�
 - [`state-layer.md`](state-layer.md) — Web 状态层：每个会话一个 store 实例，真正共享的数据留全局
 - [`center-tabs-and-split-layout.html`](center-tabs-and-split-layout.html) — 普通 tab 与复合分屏 tab 的生命周期、显示、持久化和跨窗口转移权威设计
 - [`built-in-browser.html`](built-in-browser.html) — 内置浏览器主页、浏览器 profile 导入、紧凑 History 与四入口新建 pane
+- [`browser-extensions.html`](browser-extensions.html) — Chromium 扩展运行时、兼容边界、权限模型、管理页面与分阶段 Chrome/Edge 代码导入
 - [`integrated-terminal.html`](integrated-terminal.html) — 真实 PTY 终端与本机 Claude Code 直接启动入口
 - [`composer-local-attachment-paths.html`](composer-local-attachment-paths.html) — Composer 到模型上下文的本地附件路径保留规则
 - [`composer-responsive-controls.html`](composer-responsive-controls.html) — Composer 响应式控件及紧凑状态交互契约
