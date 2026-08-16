@@ -344,6 +344,9 @@ def execute(
             storage_state=ss,
             cdp_url=cdp,
             binding_id=binding_id,
+            expected_page_revision=int(kw.get("expected_page_revision") or 0),
+            expected_access_revision=int(kw.get("expected_access_revision") or 0),
+            expected_geometry_revision=int(kw.get("expected_geometry_revision") or 0),
         )
     if action == "save_login":
         nm = name or read_string_param(kw, "name", "host", "label")

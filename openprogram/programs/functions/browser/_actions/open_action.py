@@ -132,6 +132,9 @@ def _open_app_session(
     timeout_ms: int,
     strict: bool,
     binding_id: str | None = None,
+    expected_page_revision: int = 0,
+    expected_access_revision: int = 0,
+    expected_geometry_revision: int = 0,
 ) -> str | None:
     """Attach to the visible web tabs inside the OpenProgram desktop app.
 
@@ -179,7 +182,14 @@ def _open_app_session(
             request_open_tab,
         )
         if binding_id:
-            reply = request_bound_tab(binding_id, url=url or "", timeout=10.0)
+            reply = request_bound_tab(
+                binding_id,
+                url=url or "",
+                timeout=10.0,
+                expected_page_revision=expected_page_revision,
+                expected_access_revision=expected_access_revision,
+                expected_geometry_revision=expected_geometry_revision,
+            )
         else:
             reply = request_open_tab(url) if url else request_active_tab()
     except Exception as e:
@@ -245,6 +255,9 @@ def _open(
     storage_state: str | None = None,
     cdp_url: str | None = None,
     binding_id: str | None = None,
+    expected_page_revision: int = 0,
+    expected_access_revision: int = 0,
+    expected_geometry_revision: int = 0,
 ) -> str:
     """Open a browser session, optionally pre-loading a saved login.
 
@@ -280,6 +293,9 @@ def _open(
             res = _open_app_session(
                 app_cdp, url=url, timeout_ms=timeout_ms, strict=app_engine,
                 binding_id=binding_id,
+                expected_page_revision=expected_page_revision,
+                expected_access_revision=expected_access_revision,
+                expected_geometry_revision=expected_geometry_revision,
             )
             if res is not None:
                 return res

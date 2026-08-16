@@ -594,6 +594,52 @@ export function visibleWebTab() {
   return null;
 }
 
+function visibleWebTabById(tabId: string) {
+  const state = useCenterTabs.getState();
+  const group = state.activeId
+    ? findCenterTabGroup(state.groups, state.activeId)
+    : undefined;
+  const visibleIds = new Set(
+    resolveCenterTabPanes(group, state.tabs, state.activeId)
+      .flatMap((pane) => pane.kind === "tab" ? [pane.tabId] : []),
+  );
+  if (state.activeId && state.splitWebTabId) {
+    visibleIds.add(state.splitWebTabId);
+  }
+  return visibleIds.has(tabId)
+    ? state.tabs.find((tab) => tab.id === tabId && tab.kind === "web") ?? null
+    : null;
+}
+
+export function finalizeWebTabPreview(
+  tabId: string,
+  expectedGeometryRevision: number,
+  result: Record<string, unknown> | null,
+): Record<string, unknown> {
+  const tab = visibleWebTabById(tabId);
+  const geometryRevision = webTabGeometryRevisions.get(tabId) ?? 0;
+  if (!tab || (
+    expectedGeometryRevision > 0
+    && geometryRevision !== expectedGeometryRevision
+  )) {
+    return {
+      ok: false,
+      error: "web tab geometry changed during preview",
+      reason_code: "page_context_stale",
+      geometry_revision: geometryRevision,
+    };
+  }
+  if (!result) {
+    return { ok: false, error: "desktop web tab preview is unavailable" };
+  }
+  return {
+    ok: true,
+    ...result,
+    window_id: desktopBridge()?.windowId,
+    geometry_revision: geometryRevision,
+  };
+}
+
 export interface TurnSurfaceRef {
   version: 1;
   window_id: string;
@@ -725,20 +771,7 @@ export function installDesktopMenuHandlers(): void {
         }));
         return;
       }
-      const state = useCenterTabs.getState();
-      const group = state.activeId
-        ? findCenterTabGroup(state.groups, state.activeId)
-        : undefined;
-      const visibleIds = new Set(
-        resolveCenterTabPanes(group, state.tabs, state.activeId)
-          .flatMap((pane) => pane.kind === "tab" ? [pane.tabId] : []),
-      );
-      if (state.activeId && state.splitWebTabId) {
-        visibleIds.add(state.splitWebTabId);
-      }
-      const tab = d.tab_id && visibleIds.has(d.tab_id)
-        ? state.tabs.find((item) => item.id === d.tab_id && item.kind === "web")
-        : null;
+      const tab = d.tab_id ? visibleWebTabById(d.tab_id) : null;
       if (!tab || tab.kind !== "web") {
         ws.send(JSON.stringify({
           action: "webtab_result",
@@ -766,10 +799,7 @@ export function installDesktopMenuHandlers(): void {
           ws.send(JSON.stringify({
             action: "webtab_result",
             req_id: d.req_id,
-            ok: !!result,
-            ...(result
-              ? { ...result, window_id: bridge.windowId, geometry_revision: geometryRevision }
-              : { error: "desktop web tab preview is unavailable" }),
+            ...finalizeWebTabPreview(tab.id, geometryRevision, result),
           }));
         });
       } else {

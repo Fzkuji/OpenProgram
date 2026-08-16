@@ -94,6 +94,9 @@ class OfficialMCPPageBackend:
         if session.controller is None:
             controller = self._controller_factory()
             controller.binding_id = session.binding_id
+            controller.page_revision = session.page_revision
+            controller.access_revision = session.access_revision
+            controller.geometry_revision = session.geometry_revision
             session.controller = controller
         return session.controller
 

@@ -195,6 +195,9 @@ class BrowserPageController:
         self.browser_api = browser_api
         self.initial_url = url
         self.binding_id = ""
+        self.page_revision = 0
+        self.access_revision = 0
+        self.geometry_revision = 0
         self.max_steps = max(1, int(max_steps))
         self.session_id = ""
         self._frame: dict[str, Any] | None = None
@@ -247,6 +250,9 @@ class BrowserPageController:
         result = self.browser_api.execute(
             action="open", engine="app", url=self.initial_url or None,
             binding_id=self.binding_id or None,
+            expected_page_revision=self.page_revision,
+            expected_access_revision=self.access_revision,
+            expected_geometry_revision=self.geometry_revision,
         )
         match = re.search(r"`(br_[^`]+)`", str(result))
         if not match:

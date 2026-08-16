@@ -2422,6 +2422,30 @@ assert.ok(
     > firstGeometryRevision,
   "pane movement must advance geometry revision",
 );
+const previewStartRevision = bridgeModule.surfaceRefForChat(
+  "surface-chat",
+  true,
+)?.geometry_revision;
+let resolveDeferredPreview;
+const deferredPreview = new Promise((resolve) => {
+  resolveDeferredPreview = resolve;
+});
+bridgeModule.registerVisibleWebTabBounds(
+  geometryBridge,
+  "w:surface-page",
+  { x: 0, y: 120, width: 520, height: 700 },
+);
+resolveDeferredPreview({ preview: { title: "stale" }, target_id: "target-1" });
+const stalePreview = await deferredPreview.then((result) =>
+  bridgeModule.finalizeWebTabPreview(
+    "w:surface-page",
+    previewStartRevision,
+    result,
+  ),
+);
+assert.equal(stalePreview.reason_code, "page_context_stale");
+assert.equal("preview" in stalePreview, false);
+assert.equal("target_id" in stalePreview, false);
 for (const [visibleIds, expectedRegion] of [
   [["w:surface-page", "s:surface-chat"], "left"],
   [["s:surface-chat", "w:surface-page"], "right"],

@@ -147,7 +147,7 @@ def test_registry_rejects_action_when_bound_page_revision_changes():
     )
 
     assert rejected["reason_code"] == "page_context_stale"
-    assert validations == []
+    assert validations == ["binding-1"]
     assert adapter.calls == [("observe", {}), ("close", {})]
     assert released == ["ctx-1"]
     assert registry.execute(
@@ -247,7 +247,67 @@ def test_page_capability_revisions_cross_the_session_validation_boundary(monkeyp
         "expected_page_revision": 41,
         "expected_access_revision": 42,
         "expected_geometry_revision": 43,
+    }), ("binding-1", {
+        "expected_page_revision": 41,
+        "expected_access_revision": 42,
+        "expected_geometry_revision": 43,
     })]
+
+
+def test_first_observe_rejects_stale_geometry_before_backend(monkeypatch):
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSessionRegistry,
+    )
+    from openprogram.webui.ws_actions import webtab
+
+    adapter = _Adapter("open_claude_chrome")
+    adapters = {
+        "playwright_mcp": _Adapter("playwright_mcp"),
+        "chrome_devtools_mcp": _Adapter("chrome_devtools_mcp"),
+        "open_claude_chrome": adapter,
+    }
+    commands = []
+    owner = object()
+    binding_id = webtab.register_binding(
+        owner, "window-1", "tab-1", "target-1", geometry_revision=9,
+    )
+
+    def request_on_ws(_ws, command, _timeout):
+        commands.append(command)
+        return {
+            "ok": True,
+            "window_id": "window-1",
+            "tab_id": "tab-1",
+            "target_id": "target-1",
+            "geometry_revision": 10,
+        }
+
+    monkeypatch.setattr(webtab, "request_on_ws", request_on_ws)
+    registry = ComputerUseSessionRegistry(adapters=adapters)
+
+    rejected = registry.execute(
+        command="observe",
+        backend="open_claude_chrome",
+        binding_id=binding_id,
+        page_context={
+            "context_id": "ctx-first-observe",
+            "surfaces": [{
+                "surface_key": "s1",
+                "binding_id": binding_id,
+                "page_key": webtab.binding_page_key(binding_id),
+                **webtab.binding_revisions(binding_id),
+            }],
+        },
+    )
+
+    assert rejected["reason_code"] == "page_context_stale"
+    assert commands == [{
+        "op": "activate",
+        "window_id": "window-1",
+        "tab_id": "tab-1",
+        "expected_geometry_revision": 9,
+    }]
+    assert adapter.calls == [("close", {})]
 
 
 def test_geometry_changed_during_activation_blocks_backend_action(monkeypatch):
@@ -266,12 +326,13 @@ def test_geometry_changed_during_activation_blocks_backend_action(monkeypatch):
     binding_id = webtab.register_binding(
         owner, "window-1", "tab-1", "target-1", geometry_revision=9,
     )
+    activations = iter((9, 10))
     monkeypatch.setattr(webtab, "request_on_ws", lambda *_args, **_kwargs: {
         "ok": True,
         "window_id": "window-1",
         "tab_id": "tab-1",
         "target_id": "target-1",
-        "geometry_revision": 10,
+        "geometry_revision": next(activations),
     })
     registry = ComputerUseSessionRegistry(adapters=adapters)
     context = {

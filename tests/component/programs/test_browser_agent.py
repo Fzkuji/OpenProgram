@@ -206,11 +206,13 @@ class _FakeBrowserAPI:
         self._sessions = {}
         self.closed = []
         self.threads = []
+        self.open_arguments = None
 
     def execute(self, action: str, **kwargs):
         self.threads.append(threading.get_ident())
         if action == "open":
             assert kwargs["engine"] == "app"
+            self.open_arguments = dict(kwargs)
             self._sessions["br_test"] = {
                 "page": self.page,
                 "app_tab_id": "tab-1",
@@ -857,6 +859,53 @@ def test_bound_surface_actions_use_the_turn_access_grant():
 
     controller.binding_id = "surface-binding"
     assert controller._requires_approval(action="click") is False
+
+
+def test_bound_controller_open_forwards_exact_page_revisions():
+    controller, api = _controller()
+    controller.binding_id = "surface-binding"
+    controller.page_revision = 31
+    controller.access_revision = 32
+    controller.geometry_revision = 33
+
+    controller.execute(action="observe")
+
+    assert api.open_arguments == {
+        "engine": "app",
+        "url": None,
+        "binding_id": "surface-binding",
+        "expected_page_revision": 31,
+        "expected_access_revision": 32,
+        "expected_geometry_revision": 33,
+    }
+
+
+def test_browser_open_forwards_exact_page_revisions_to_app_session(monkeypatch):
+    from openprogram.programs.functions.browser import browser as browser_api
+    from openprogram.programs.functions.browser._actions import open_action
+
+    captured = {}
+
+    def fake_open(**arguments):
+        captured.update(arguments)
+        return "opened"
+
+    monkeypatch.setattr(open_action, "_open", fake_open)
+
+    result = browser_api.execute(
+        action="open",
+        engine="app",
+        binding_id="surface-binding",
+        expected_page_revision=31,
+        expected_access_revision=32,
+        expected_geometry_revision=33,
+    )
+
+    assert result == "opened"
+    assert captured["binding_id"] == "surface-binding"
+    assert captured["expected_page_revision"] == 31
+    assert captured["expected_access_revision"] == 32
+    assert captured["expected_geometry_revision"] == 33
 
 
 @pytest.mark.parametrize(
