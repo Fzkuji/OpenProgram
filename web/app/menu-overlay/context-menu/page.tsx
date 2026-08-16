@@ -38,6 +38,15 @@ interface MainMenuBridge {
   choose(id: string): void;
   close(): void;
   resize?(size: { width: number; height: number }): void;
+  onUpdate?(cb: (state: MenuState) => void): () => void;
+}
+
+interface MenuState {
+  items: ContextMenuItem[];
+  x: number;
+  y: number;
+  theme?: string;
+  width?: number;
 }
 
 function mainMenuBridge(): MainMenuBridge | null {
@@ -50,6 +59,22 @@ function mainMenuBridge(): MainMenuBridge | null {
 }
 
 const NESTED_MENU_WIDTH = 280;
+
+function parseItems(raw: string | null): ContextMenuItem[] {
+  try {
+    const parsed = JSON.parse(raw ?? "[]") as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is ContextMenuItem =>
+        typeof item === "object"
+        && item !== null
+        && typeof (item as ContextMenuItem).id === "string"
+        && typeof (item as ContextMenuItem).label === "string",
+    );
+  } catch {
+    return [];
+  }
+}
 
 function ItemIcon({ item }: { item: ContextMenuItem }) {
   const [broken, setBroken] = useState(false);
@@ -152,39 +177,46 @@ function NestedContextMenu({
 function ContextMenuOverlayPage() {
   const params = useSearchParams();
   const panelRef = useRef<HTMLDivElement>(null);
-
-  const items = useMemo<ContextMenuItem[]>(() => {
-    try {
-      const parsed = JSON.parse(params.get("items") ?? "[]") as unknown;
-      if (!Array.isArray(parsed)) return [];
-      return parsed.filter(
-        (item): item is ContextMenuItem =>
-          typeof item === "object"
-          && item !== null
-          && typeof (item as ContextMenuItem).id === "string"
-          && typeof (item as ContextMenuItem).label === "string",
-      );
-    } catch {
-      return [];
-    }
-  }, [params]);
+  const initialState = useMemo<MenuState>(() => ({
+    items: parseItems(params.get("items")),
+    x: Number(params.get("x")) || 0,
+    y: Number(params.get("y")) || 0,
+    theme: params.get("theme") || undefined,
+    width: Math.max(0, Number(params.get("width")) || 0),
+  }), [params]);
+  const [menuState, setMenuState] = useState(initialState);
+  const items = menuState.items;
 
   const firstEnabled = items.findIndex((item) => !item.disabled);
   const [active, setActive] = useState(firstEnabled < 0 ? 0 : firstEnabled);
   const nested = params.get("cascade") === "1"
     || items.some((item) => Boolean(item.children?.length));
-  const requestedWidth = Math.max(0, Number(params.get("width")) || 0);
+  const requestedWidth = menuState.width || 0;
+
+  useEffect(() => mainMenuBridge()?.onUpdate?.((state) => {
+    setMenuState({
+      items: Array.isArray(state.items) ? state.items : [],
+      x: Number(state.x) || 0,
+      y: Number(state.y) || 0,
+      theme: state.theme,
+      width: Math.max(0, Number(state.width) || 0),
+    });
+  }), []);
+
+  useEffect(() => {
+    setActive(firstEnabled < 0 ? 0 : firstEnabled);
+  }, [firstEnabled, items]);
 
   // Theme comes from the opener (query) — same contract as the
   // main-menu overlay page.
   useEffect(() => {
-    const theme = params.get("theme");
+    const theme = menuState.theme;
     if (isThemeId(theme)) {
       document.documentElement.dataset.theme = theme;
     }
     document.documentElement.style.background = "transparent";
     document.body.style.background = "transparent";
-  }, [params]);
+  }, [menuState.theme]);
 
   // main.js can only guess the overlay's size before this document exists
   // (it has no font metrics), so it sizes the host view from a row-count
@@ -269,8 +301,8 @@ function ContextMenuOverlayPage() {
     return (
       <NestedContextMenu
         items={items}
-        x={Number(params.get("x")) || 0}
-        y={Number(params.get("y")) || 0}
+        x={menuState.x}
+        y={menuState.y}
       />
     );
   }

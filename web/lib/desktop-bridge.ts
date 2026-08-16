@@ -376,6 +376,13 @@ export interface DesktopMainMenuApi {
     height?: number;
   }): void;
   close(): void;
+  onUpdate?(cb: (state: {
+    items: DesktopContextMenuItem[];
+    x: number;
+    y: number;
+    theme?: ThemeId;
+    width?: number;
+  }) => void): () => void;
   onAction(cb: (id: string) => void): () => void;
 }
 

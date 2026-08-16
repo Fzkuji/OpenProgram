@@ -171,10 +171,15 @@ assert.match(contextMenu, /item\.checked/);
 assert.match(contextMenu, /item\.iconUrl/);
 assert.match(contextMenu, /item\.icon === "folder"/);
 assert.match(contextMenu, /params\.get\("cascade"\) === "1"/);
+assert.match(contextMenu, /mainMenuBridge\(\)\?\.onUpdate\?\./);
 assert.match(contextMenu, /onError=.*setBroken/);
 assert.match(bridge, /iconUrl\?: string/);
 assert.match(bridge, /icon\?: "folder"/);
 assert.match(bridge, /cascade\?: boolean/);
+assert.match(bridge, /onUpdate\?\(cb:/);
+assert.match(preload, /ipcRenderer\.on\("main-menu:update"/);
+assert.match(main, /ctx\.mainMenuCascade/);
+assert.match(main, /webContents\.send\("main-menu:update"/);
 const nestedMenuItems = contextMenu.slice(
   contextMenu.indexOf("function NestedMenuItems"),
   contextMenu.indexOf("function NestedContextMenu"),

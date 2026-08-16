@@ -2568,6 +2568,8 @@ function closeMainMenu(ctx) {
   const view = ctx.mainMenuView;
   ctx.mainMenuView = null;
   ctx.mainMenuAnchor = null;
+  ctx.mainMenuCascade = false;
+  ctx.mainMenuPendingUpdate = null;
   try {
     if (!ctx.win.isDestroyed()) ctx.win.contentView.removeChildView(view);
   } catch (_e) {
@@ -2582,10 +2584,47 @@ function closeMainMenu(ctx) {
 
 function openMainMenu(ctx, opts, zoom = 1) {
   if (!ctx || ctx.win.isDestroyed()) return;
-  closeMainMenu(ctx);
   const menuZoom = Number.isFinite(Number(zoom)) && Number(zoom) > 0
     ? Number(zoom)
     : 1;
+  const requestedCascade = Boolean(opts && opts.cascade);
+  const requestedItems = Array.isArray(opts && opts.items) ? opts.items : null;
+  const requestedAnchor = (opts && opts.anchor) || {};
+
+  // Adjacent bookmark folders share one live overlay. Replacing its data is
+  // immediate and preserves already decoded favicons; rebuilding the whole
+  // WebContentsView on every mouseenter made each folder look as if its icons
+  // were being fetched again.
+  if (
+    requestedCascade
+    && requestedItems
+    && ctx.mainMenuCascade
+    && ctx.mainMenuView
+    && !ctx.mainMenuView.webContents.isDestroyed()
+  ) {
+    const { width: contentW, height: contentH } = ctx.win.getContentBounds();
+    const winW = Number(requestedAnchor.vw) || contentW;
+    const winH = Number(requestedAnchor.vh) || contentH;
+    const geometry = cascadeMenuGeometry(requestedAnchor, winW, winH, menuZoom);
+    const update = {
+      items: requestedItems,
+      x: geometry.anchor.x,
+      y: geometry.anchor.y,
+      theme: opts && opts.theme,
+      width: Number.isFinite(Number(opts && opts.width))
+        ? Number(opts.width) / menuZoom
+        : undefined,
+    };
+    ctx.mainMenuView.setBounds(geometry.bounds);
+    if (ctx.mainMenuView.webContents.isLoadingMainFrame()) {
+      ctx.mainMenuPendingUpdate = update;
+    } else {
+      ctx.mainMenuView.webContents.send("main-menu:update", update);
+    }
+    return;
+  }
+
+  closeMainMenu(ctx);
   const gutter = MAIN_MENU_GUTTER * menuZoom;
   const view = new WebContentsView({
     webPreferences: {
@@ -2599,6 +2638,8 @@ function openMainMenu(ctx, opts, zoom = 1) {
   view.webContents.setZoomFactor(menuZoom);
   view.setBackgroundColor("#00000000");
   ctx.mainMenuView = view;
+  ctx.mainMenuCascade = requestedCascade;
+  ctx.mainMenuPendingUpdate = null;
   ctx.win.contentView.addChildView(view);
 
   // Anchor: the panel's right edge sits `rightInset` (8px, the tab-strip
@@ -2707,6 +2748,10 @@ function openMainMenu(ctx, opts, zoom = 1) {
     .loadURL(menuOverlayUrl(theme, items, overlayAnchor, overlayWidth, cascadeMenu))
     .then(() => {
       if (ctx.mainMenuView === view && !view.webContents.isDestroyed()) {
+        if (ctx.mainMenuPendingUpdate) {
+          view.webContents.send("main-menu:update", ctx.mainMenuPendingUpdate);
+          ctx.mainMenuPendingUpdate = null;
+        }
         view.webContents.focus();
       }
     })
