@@ -15,11 +15,12 @@ import styles from "../settings-page.module.css";
 import type { Provider, ProviderAccountView } from "./types";
 
 /** ONE management panel for every provider's accounts. An *account* is a profile
- *  holding one credential. EVERY provider uses the exact same fixed-column row;
+ *  holding one credential. EVERY provider uses the same account-row structure;
  *  only the left content differs — api-key shows a masked key with an explicit
  *  replacement action, while login/claude shows the account email. Right-hand
- *  controls (status · Validate · active ·
- *  Remove) are fixed-width so they never reflow. The active control is a single
+ *  controls (status · Validate · active · Remove) use fixed columns while the
+ *  detail pane is wide and reflow into additional rows when it is narrow. The
+ *  active control is a single
  *  toggle: it shows the STATE by default and the ACTION on hover, and "none
  *  active" is allowed. A drag handle (≥2 accounts) sets the rotation priority.
  *  See docs/design/unified-account-management.md / the plan file. */

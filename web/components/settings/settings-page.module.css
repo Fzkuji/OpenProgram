@@ -444,7 +444,10 @@
    in view while the user scans the long model list on the right. */
 .providersLayout {
   display: grid;
-  grid-template-columns: calc(var(--sidebar-width) - 1px) minmax(0, 1fr);
+  /* Keep the familiar 287px list on wide pages. When the Settings content
+     itself narrows, let the open list use at most 42% so the detail pane
+     remains visible without changing the user's open/collapsed choice. */
+  grid-template-columns: min(calc(var(--sidebar-width) - 1px), 42%) minmax(0, 1fr);
   /* Fill the page-body's available height so each column gets a
      definite height and can own its own overflow:auto. */
   height: 100%;
@@ -630,6 +633,8 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   min-height: 0;
+  min-width: 0;
+  container-type: inline-size;
 }
 .detailEmpty {
   color: var(--text-muted);
@@ -642,6 +647,12 @@
   gap: 12px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border);
+}
+.detailHeaderActions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 12px;
 }
 .detailIcon {
   width: 40px;
@@ -801,6 +812,125 @@
   flex: 1;
   width: auto;
 }
+.modelActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* The detail column can become narrow independently of the window when the
+   user keeps either navigation column open. Reflow the detail's own controls
+   from its available width without changing either manually controlled rail. */
+@container (max-width: 680px) {
+  .detailHeader {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    align-items: start;
+  }
+  .detailHeaderActions {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .detailTitle {
+    overflow-wrap: anywhere;
+  }
+  .detailSubtitle {
+    overflow-wrap: anywhere;
+  }
+  .detailSectionTitle {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+  .detailSectionTitle > :last-child {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+  .detailRow {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+  .detailRow > input {
+    flex: 1 1 12rem !important;
+    width: auto !important;
+    min-width: 0;
+  }
+  .detailRow > select,
+  .detailRow > .testResult {
+    min-width: 0;
+    max-width: 100% !important;
+  }
+  .detailRow > .testResult {
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+  }
+  .acctRow {
+    grid-template-columns: 16px repeat(3, minmax(0, 1fr));
+    grid-template-areas:
+      "drag content content status"
+      ". validate active remove";
+  }
+  .acctRow > :nth-child(1) { grid-area: drag; }
+  .acctRow > :nth-child(2) { grid-area: content; }
+  .acctRow > :nth-child(3) { grid-area: status; }
+  .acctRow > :nth-child(4) { grid-area: validate; }
+  .acctRow > :nth-child(5) { grid-area: active; }
+  .acctRow > :nth-child(6) { grid-area: remove; }
+  .acctContent {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .acctContent > input {
+    width: 100% !important;
+    min-width: 0;
+  }
+  .acctName {
+    width: 100%;
+    min-width: 0;
+  }
+  .acctKey {
+    width: 100%;
+  }
+  .acctKey > input {
+    flex: 1 1 0%;
+    width: 0;
+    min-width: 0;
+  }
+}
+
+@container (max-width: 420px) {
+  .acctRow {
+    grid-template-columns: 16px repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "drag content content"
+      ". status status"
+      ". validate active"
+      ". remove remove";
+  }
+}
+
+@container (max-width: 300px) {
+  .acctRow {
+    grid-template-columns: 16px minmax(0, 1fr);
+    grid-template-areas:
+      "drag content"
+      ". status"
+      ". validate"
+      ". active"
+      ". remove";
+  }
+  .acctKey {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+  .acctKey > input {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+}
 .modelCountSummary {
   font-size: 12px;
   color: var(--text-muted);
@@ -843,6 +973,13 @@
   display: flex;
   flex-direction: column;
 }
+.modelRowHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
 .modelItemName {
   font-size: 14px;
   color: var(--text-bright);
@@ -860,7 +997,32 @@
 }
 .modelCapabilities {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
+}
+.modelFact {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 12px;
+  padding: 3px 0;
+  border-bottom: 1px dotted var(--border);
+}
+@container (max-width: 420px) {
+  .modelRowHeader {
+    flex-wrap: wrap;
+  }
+  .modelCapabilities {
+    flex-basis: 100%;
+    padding-left: 50px;
+  }
+  .modelFact {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .modelFact > :last-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
 }
 .capBadge {
   width: 22px;

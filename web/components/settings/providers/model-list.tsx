@@ -149,7 +149,7 @@ export function ModelList({
             {text(`${enabledCount} / ${models.length} available`, `${enabledCount} / ${models.length} 可用`)}
           </span>
         </span>
-        <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <span className={styles.modelActions}>
           {fetchStatus && (
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
               {fetchStatus}
@@ -230,7 +230,7 @@ function ModelRow({
           rotates to signal state; the toggle Switch is shielded
           from the click handler. */}
       <div
-        style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+        className={styles.modelRowHeader}
         onClick={() => setOpen((o) => !o)}
       >
         <ChevronRight
@@ -294,13 +294,7 @@ function ModelDetailsPanel({ model }: { model: Model }) {
   };
 
   const fact = (label: string, value: React.ReactNode) => (
-    <div style={{
-      display: "grid",
-      gridTemplateColumns: "150px 1fr",
-      gap: 12,
-      padding: "3px 0",
-      borderBottom: "1px dotted var(--border)",
-    }}>
+    <div className={styles.modelFact}>
       <span style={labelStyle}>{label}</span>
       <span style={valueStyle}>{value}</span>
     </div>

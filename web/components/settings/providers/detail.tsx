@@ -163,21 +163,23 @@ export function Detail({
           <div className={styles.detailTitle}>{provider.label}</div>
           <div className={styles.detailSubtitle}>{subtitle}</div>
         </div>
-        <Switch
-          checked={provider.enabled}
-          onCheckedChange={onToggle}
-          title={text("Enable this provider", "启用这个 Provider")}
-        />
-        {provider.custom && (
-          <Button
-            variant="destructive"
-            size="icon"
-            onClick={deleteProvider}
-            title={text("Delete custom provider", "删除自定义 Provider")}
-          >
-            <Trash2 />
-          </Button>
-        )}
+        <div className={styles.detailHeaderActions}>
+          <Switch
+            checked={provider.enabled}
+            onCheckedChange={onToggle}
+            title={text("Enable this provider", "启用这个 Provider")}
+          />
+          {provider.custom && (
+            <Button
+              variant="destructive"
+              size="icon"
+              onClick={deleteProvider}
+              title={text("Delete custom provider", "删除自定义 Provider")}
+            >
+              <Trash2 />
+            </Button>
+          )}
+        </div>
       </div>
 
       {provider.setup_hint && (
@@ -212,7 +214,7 @@ export function Detail({
           <div className={styles.detailSectionTitle}>
             <span>{text("Add model by id", "手动添加模型")}</span>
           </div>
-          <div style={{ display: "flex", gap: 6 }}>
+          <div className={styles.detailRow}>
             <Input
               placeholder={text("model id (e.g. my-model)", "模型 id（如 my-model）")}
               value={manualId}
@@ -244,7 +246,7 @@ export function Detail({
                 ? text("No models yet — fetch them from the provider.", "还没有模型 — 从 Provider 拉取。")
                 : text("No models in the registry for this provider.", "这个 Provider 在注册表中没有模型。")}
             </span>
-            <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <span className={styles.modelActions}>
               {fetchStatus && (
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{fetchStatus}</span>
               )}
