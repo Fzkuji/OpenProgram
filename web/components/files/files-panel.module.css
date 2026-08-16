@@ -400,6 +400,7 @@
 .treeKids > .treeNode::before {
   content: "";
   position: absolute;
+  z-index: 1;
   left: var(--guide-x);
   top: 0;
   bottom: 0;

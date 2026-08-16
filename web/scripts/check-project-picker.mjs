@@ -56,6 +56,11 @@ assert.match(
   /\.treeRow\s*\{[^}]*grid-template-columns:\s*16px minmax\(0, 1fr\)/s,
 );
 assert.match(fileTreeCss, /\.treeKids > \.treeNode::before/);
+assert.match(
+  fileTreeCss,
+  /\.treeKids > \.treeNode::before\s*\{[^}]*z-index:\s*1/s,
+  "tree connector rails must paint above selected and hover row backgrounds",
+);
 assert.match(fileTreeCss, /\.treeKids > \.treeNode:last-child::before/);
 assert.match(fileTreeCss, /\.treeKids > \.treeNode > \.treeRow::before/);
 assert.match(
