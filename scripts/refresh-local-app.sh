@@ -111,11 +111,18 @@ while true; do
 done
 
 if pgrep -x OpenProgram >/dev/null 2>&1; then
-  osascript -e 'tell application "OpenProgram" to quit'
+  osascript -e 'tell application "OpenProgram" to quit' >/dev/null 2>&1 || true
   for _ in {1..50}; do
     pgrep -x OpenProgram >/dev/null 2>&1 || break
     sleep 0.2
   done
+  if pgrep -x OpenProgram >/dev/null 2>&1; then
+    pkill -TERM -x OpenProgram
+    for _ in {1..50}; do
+      pgrep -x OpenProgram >/dev/null 2>&1 || break
+      sleep 0.2
+    done
+  fi
   pgrep -x OpenProgram >/dev/null 2>&1 && {
     printf 'OpenProgram did not quit before the refresh\n' >&2
     exit 1
