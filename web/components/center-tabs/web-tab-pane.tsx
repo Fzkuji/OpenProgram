@@ -37,6 +37,7 @@ import {
 } from "@/lib/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
 import { browserPageShortcut } from "@/lib/browser-layout";
+import { isExtensionStoreListing } from "@/lib/browser-extension-store";
 import { showToast } from "@/lib/format-utils/toast";
 import {
   isBookmarked,
@@ -100,25 +101,9 @@ function HomeButton({ tabId }: { tabId: string }) {
   );
 }
 
-function isExtensionStoreListing(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "https:") return false;
-    const storePath = parsed.hostname === "microsoftedge.microsoft.com"
-      ? parsed.pathname.toLowerCase().startsWith("/addons/detail/")
-      : parsed.hostname === "chromewebstore.google.com"
-        ? parsed.pathname.toLowerCase().startsWith("/detail/")
-        : parsed.hostname === "chrome.google.com"
-          && parsed.pathname.toLowerCase().startsWith("/webstore/detail/");
-    return storePath && parsed.pathname.split("/").some((part) => /^[a-p]{32}$/.test(part));
-  } catch {
-    return false;
-  }
-}
-
 function InstallExtensionButton({ bridge, tabId, url }: { bridge: DesktopBridge; tabId: string; url: string }) {
   const { text } = useTranslation();
-  const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const [state, setState] = useState<"idle" | "busy" | "done" | "incompatible" | "error">("idle");
   const requestGenerationRef = useRef(0);
   const currentUrlRef = useRef(url);
   currentUrlRef.current = url;
@@ -131,17 +116,24 @@ function InstallExtensionButton({ bridge, tabId, url }: { bridge: DesktopBridge;
   const label = state === "busy"
     ? text("Installing extension", "正在安装扩展程序")
     : state === "done"
-      ? text(
-          "Extension installed. Reload this page to apply it.",
-          "扩展程序已安装。重新加载此网页后生效。",
-        )
-      : state === "error"
-        ? text("Extension installation failed", "扩展程序安装失败")
-        : text("Install extension", "安装扩展程序");
+      ? text("Installed", "已安装")
+      : state === "incompatible"
+        ? text("Not supported", "暂不支持")
+        : state === "error"
+          ? text("Install failed", "安装失败")
+          : text("Install in OpenProgram", "安装到 OpenProgram");
+  const title = state === "done"
+    ? text(
+        "Extension installed. Reload this page to apply it.",
+        "扩展程序已安装。重新加载此网页后生效。",
+      )
+    : state === "incompatible"
+      ? text("This extension is not supported by OpenProgram", "OpenProgram 暂不支持此扩展")
+      : label;
   return (
     <button
       type="button"
-      className={styles.webToolbarBtn}
+      className={`${styles.webToolbarBtn} ${styles.webToolbarInstall}`}
       disabled={state === "busy"}
       onClick={() => {
         const requestGeneration = requestGenerationRef.current + 1;
@@ -153,24 +145,42 @@ function InstallExtensionButton({ bridge, tabId, url }: { bridge: DesktopBridge;
             requestGenerationRef.current !== requestGeneration
             || currentUrlRef.current !== requestUrl
           ) return;
-          setState(result.ok ? "done" : result.error === "cancelled" ? "idle" : "error");
-          if (result.ok) {
+          const incompatible = result.extension?.compatibility.status === "incompatible";
+          setState(result.ok
+            ? (incompatible ? "incompatible" : "done")
+            : result.error === "cancelled" ? "idle" : "error");
+          if (result.ok && incompatible) {
+            showToast(text(
+              "Added to Extensions, but this extension is not supported by OpenProgram.",
+              "已添加到扩展程序，但 OpenProgram 暂不支持此扩展。",
+            ));
+          } else if (result.ok) {
             showToast(text(
               "Extension installed. Reload this page to apply it.",
               "扩展程序已安装。重新加载此网页后生效。",
             ));
+          } else if (result.error !== "cancelled") {
+            showToast(text("Extension installation failed.", "扩展程序安装失败。"));
           }
         }).catch(() => {
           if (
             requestGenerationRef.current === requestGeneration
             && currentUrlRef.current === requestUrl
-          ) setState("error");
+          ) {
+            setState("error");
+            showToast(text("Extension installation failed.", "扩展程序安装失败。"));
+          }
         });
       }}
-      title={label}
-      aria-label={label}
+      title={title}
+      aria-label={title}
     >
-      {state === "done" ? <Check size={14} /> : state === "error" ? <X size={14} /> : <Download size={14} />}
+      {state === "done"
+        ? <Check size={14} />
+        : state === "incompatible" || state === "error"
+          ? <X size={14} />
+          : <Download size={14} />}
+      <span className={styles.webToolbarInstallLabel}>{label}</span>
     </button>
   );
 }

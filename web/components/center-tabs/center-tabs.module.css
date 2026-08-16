@@ -1069,6 +1069,25 @@
   opacity: 0.35;
   cursor: default;
 }
+.webToolbarInstall {
+  width: auto;
+  gap: 5px;
+  padding: 0 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.webToolbarInstallLabel {
+  display: inline;
+}
+@container (max-width: 680px) {
+  .webToolbarInstall {
+    width: 26px;
+    padding: 0;
+  }
+  .webToolbarInstallLabel {
+    display: none;
+  }
+}
 
 .webFindBar {
   height: 32px;
