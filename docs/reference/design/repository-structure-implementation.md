@@ -22,21 +22,24 @@ current design contract; this file is operational history.
 |---|---|---|---|
 | Earlier repository inventory | `codex/file-structure-20260816` / `373af35c` | superseded | Useful inventory and repository contract remain review input; do not merge the old branch wholesale. |
 | CLI parser split | `codex/code-doc-structure-20260817` / `e54bd425` | implemented | Move-only split; `openprogram.cli.build_parser` remains the public import. |
-| Documentation information architecture | `codex/code-doc-structure-20260817` | review candidate | Based on `af5911b3`; integrate with the current main branch only after focused review passes. |
+| Documentation information architecture | `codex/code-doc-structure-20260817` / `d37d9bab` | implemented | Adds the HTML design, implementation ledger, shared navigation rules, and five UI design groups. |
+| Review repairs | `1be7295f`, `df3df11d` | implemented | Preserve the Design landing and make build/language checks share the public-source exclusion. |
 
 ## Verification record
 
 ```text
-4 passed — focused CLI parser and documentation navigation contracts
+5 passed — focused CLI parser and documentation navigation contracts
 206 passed — existing CLI component/unit tests plus focused structure contracts
+158 passed, 2 skipped — independent quality selection of CLI-named and docs IA tests
 497 pages — python -m tools.docs_site.build
 0 broken links — python -m tools.docs_site.checklinks docs/_site
 ok — python -m tools.docs_site.check_landing
+0 Chinese lines — python -m tools.docs_site.checklang
 pass — Ruff and git diff --check
 pass — desktop render at 1280 × 720, no horizontal overflow
 pass — narrow render at 390 × 844, no page overflow; wide tables scroll locally
-pending — independent specification review
-pending — independent quality review
+pass — independent specification review at df3df11d
+pass — independent quality review at df3df11d, including wheel-content and isolated-import probes
 ```
 
 ## Deferred boundaries
