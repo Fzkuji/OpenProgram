@@ -8,6 +8,25 @@ and release-visible acceptance are maintained together in
 `docs/reference/design/distribution/automatic-updates.html`. They are not
 duplicated in this historical distribution ledger.
 
+## Local App version coherence
+
+- Public boundaries: `scripts/refresh-local-app.sh` only refreshes an installed
+  App whose bundle, runtime manifest, Python distribution metadata, Python
+  source version, and Desktop source version are identical.
+  `desktop/scripts/install-app.sh` rejects a candidate older than the current
+  canonical App before lock acquisition, worker shutdown, or filesystem mutation.
+- RED: the public installer accepted a 0.6.1 candidate over an installed 0.6.2
+  App; the release-version entry did not recognize the installed-App source
+  match request.
+- GREEN: both focused public-entry cases pass. The real refresh command rejects
+  a 0.6.6 checkout against the then-installed 0.6.1 App before creating build
+  output, and the App files and healthy worker remain unchanged.
+- Affected gate: formal release and distribution suites report 68 passed;
+  release version, Ruff, shell syntax, and diff checks pass.
+- Exclusions: no downgrade override, prerelease ordering, additional version
+  source, user-state migration, Windows package, or remote release mutation.
+- Status: implementation committed; independent specification review pending.
+
 ## Local canonical App and Apple icon batch
 
 - Base commit: `9477273e`.
