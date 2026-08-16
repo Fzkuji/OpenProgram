@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Settings 分级导航栏头</title>
+  <title>Settings 二级导航栏头</title>
   <style>
     :root{color-scheme:dark;--bg:#171717;--panel:#202020;--panel2:#292929;--line:#3a3a3a;--text:#f2f2f2;--muted:#aaa;--blue:#72a7f7;--ok:#77b984;--rail:49px;--settings:288px;--provider:288px}
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 Inter,system-ui,sans-serif}main{max-width:1120px;margin:auto;padding:44px 24px 72px}h1{font-size:30px;line-height:1.2;margin:0 0 10px}h2{font-size:20px;margin:34px 0 12px}h3{font-size:15px;margin:0 0 6px}p{margin:0 0 10px}.muted{color:var(--muted)}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#c9dcff}.status,.card,.mock,.table-wrap{border:1px solid var(--line);border-radius:12px;background:var(--panel)}.status{display:grid;grid-template-columns:repeat(4,1fr);margin:24px 0;overflow:hidden}.status>div{padding:14px 16px}.status>div+div{border-left:1px solid var(--line)}.k{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.v{font-weight:650;margin-top:3px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.card{padding:16px}.mock{padding:14px;overflow:auto}.chrome{display:grid;grid-template-columns:112px 122px minmax(180px,1fr);height:238px;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#191919}.chrome.compact{grid-template-columns:32px 32px minmax(180px,1fr)}.col{padding:7px;border-right:1px solid var(--line);overflow:hidden}.col.detail{padding:15px;border:0}.rail-head{height:30px;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line);font-weight:650;white-space:nowrap}.toggle{width:22px;height:22px;margin-left:auto;border-radius:5px;background:var(--panel2);display:grid;place-items:center;color:var(--muted)}.row{height:27px;margin-top:5px;border-radius:5px;background:var(--panel2);display:flex;align-items:center;gap:6px;padding:0 7px;white-space:nowrap}.ico{width:10px;height:10px;border-radius:3px;background:var(--blue);flex:0 0 auto}.detail .block{height:22px;border-radius:6px;background:var(--panel2);margin:8px 0}.detail .block.short{width:55%}.compact .col{padding:5px}.compact .rail-head{justify-content:center}.compact .rail-head .label{display:none}.compact .toggle{margin:0}.compact .row{justify-content:center;padding:0}.compact .row .label{display:none}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:720px}th,td{text-align:left;vertical-align:top;padding:11px 13px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-size:12px}.flow{display:grid;grid-template-columns:200px 1fr;gap:8px 14px}.flow b{color:var(--blue)}ul{margin:8px 0;padding-left:20px}.pending{color:#d8af63}.ok{color:var(--ok)}@media(max-width:760px){.status,.grid{grid-template-columns:1fr}.status>div+div{border-left:0;border-top:1px solid var(--line)}.flow{grid-template-columns:1fr}}
@@ -12,36 +12,36 @@
 <body><main>
   <header>
     <div class="k">OpenProgram · Web UI · current design</div>
-    <h1>Settings 分级导航栏头</h1>
-    <p class="muted">问题：Settings 顶部标题占用独立区域，Settings 与 Provider 的收起按钮又脱离各自名称，按钮作用范围不清楚；内容区还重复显示当前导航名称和说明。</p>
+    <h1>Settings 二级导航栏头</h1>
+    <p class="muted">目标：保留 Settings 二级栏头，但让其折叠按钮与应用主侧栏按钮顶边一致；Provider 第三级恢复原有搜索工具栏布局。</p>
   </header>
 
   <div class="status">
     <div><div class="k">Audience</div><div class="v">Web / Desktop UI 实现</div></div>
-    <div><div class="k">Scope</div><div class="v">Settings 与 Provider 导航</div></div>
+    <div><div class="k">Scope</div><div class="v">Settings 二级导航</div></div>
     <div><div class="k">Expanded</div><div class="v">沿用现有列宽</div></div>
-    <div><div class="k">Collapsed</div><div class="v">各列 49px</div></div>
+    <div><div class="k">Collapsed</div><div class="v">Settings 为 49px</div></div>
   </div>
 
   <section>
     <h2>目标结构</h2>
     <div class="grid">
       <div class="mock">
-        <h3>展开状态</h3>
-        <p class="muted">每个按钮与所属菜单名称位于同一栏头。</p>
+        <h3>一级与二级栏头</h3>
+        <p class="muted">应用主侧栏与 Settings 的 32px 按钮使用相同顶部偏移。</p>
         <div class="chrome">
+          <div class="col"><div class="rail-head"><span class="label">OpenProgram</span><span class="toggle">‹</span></div><div class="row"><i class="ico"></i><span class="label">Programs</span></div></div>
           <div class="col"><div class="rail-head"><span class="label">Settings</span><span class="toggle">‹</span></div><div class="row"><i class="ico"></i><span class="label">LLM Providers</span></div><div class="row"><i class="ico"></i><span class="label">Memory</span></div></div>
-          <div class="col"><div class="rail-head"><span class="label">LLM Providers</span><span class="toggle">‹</span></div><div class="row"><i class="ico"></i><span class="label">Claude Code</span></div><div class="row"><i class="ico"></i><span class="label">OpenAI</span></div></div>
-          <div class="col detail"><strong>Selected provider</strong><div class="block"></div><div class="block"></div><div class="block short"></div></div>
+          <div class="col detail"><div class="rail-head"><span class="label">Search providers…</span><span class="toggle">‹</span></div><div class="block"></div><div class="block"></div><div class="block short"></div></div>
         </div>
       </div>
       <div class="mock">
-        <h3>用户收起两列</h3>
-        <p class="muted">窗口宽度不会替用户改变展开状态。</p>
+        <h3>二级收起状态</h3>
+        <p class="muted">Settings 仍可收至 49px；Provider 保持原有搜索框旁按钮。</p>
         <div class="chrome compact">
+          <div class="col"><div class="rail-head"><span class="label">OpenProgram</span><span class="toggle">›</span></div><div class="row"><i class="ico"></i></div></div>
           <div class="col"><div class="rail-head"><span class="label">Settings</span><span class="toggle">›</span></div><div class="row"><i class="ico"></i></div><div class="row"><i class="ico"></i></div></div>
-          <div class="col"><div class="rail-head"><span class="label">LLM Providers</span><span class="toggle">›</span></div><div class="row"><i class="ico"></i></div><div class="row"><i class="ico"></i></div></div>
-          <div class="col detail"><strong>Selected provider</strong><div class="block"></div><div class="block"></div><div class="block short"></div></div>
+          <div class="col detail"><div class="rail-head"><span class="label">Search providers…</span><span class="toggle">‹</span></div><div class="block"></div><div class="block"></div><div class="block short"></div></div>
         </div>
       </div>
     </div>
@@ -53,7 +53,7 @@
       <thead><tr><th>区域</th><th>展开状态</th><th>收起状态</th><th>持久化</th><th>栏头</th></tr></thead>
       <tbody>
         <tr><td>Settings 分类栏</td><td><code>--sidebar-width - 1px</code></td><td>49px</td><td><code>settingsNavOpen</code></td><td><code>Settings</code> + 收起按钮</td></tr>
-        <tr><td>Provider 列表栏</td><td><code>--sidebar-width - 1px</code></td><td>49px</td><td><code>providerListOpen</code></td><td><code>LLM Providers</code> + 收起按钮</td></tr>
+        <tr><td>Provider 列表栏</td><td><code>--sidebar-width - 1px</code></td><td>49px</td><td><code>providerListOpen</code></td><td>沿用搜索框 + 收起按钮工具栏</td></tr>
         <tr><td>内容区域</td><td colspan="3">使用剩余宽度；Memory 控件在窄宽度下换行，不改变导航状态。</td><td>不重复显示通用页面标题和说明</td></tr>
       </tbody>
     </table></div>
@@ -67,14 +67,14 @@
       <b>持久化</b><span>刷新和重新进入 Settings 后恢复用户最后一次选择。</span>
       <b>键盘与读屏</b><span>按钮保留原生 <code>button</code>、<code>aria-expanded</code>、<code>aria-controls</code> 与明确名称。</span>
       <b>内容适配</b><span>窄窗口只触发表单控件换行；详情数据、选择和滚动状态不变。</span>
-      <b>层级表达</b><span>Settings 与 LLM Providers 的名称属于导航栏头，不再占用内容区标题栏。</span>
+      <b>层级表达</b><span>Settings 名称属于二级导航栏头；Provider 第三级不增加独立名称栏头。</span>
     </div>
   </section>
 
   <section>
     <h2>采用与排除</h2>
     <div class="grid">
-      <div class="card"><h3>采用</h3><ul><li>复用现有两态收起状态和图标。</li><li>删除全局 Settings 顶栏。</li><li>删除 Memory 与 LLM Providers 重复页头。</li><li>在每个导航栏头显示名称和按钮。</li></ul></div>
+      <div class="card"><h3>采用</h3><ul><li>复用现有两态收起状态和图标。</li><li>删除全局 Settings 顶栏。</li><li>删除 Memory 与 LLM Providers 重复页头。</li><li>只在 Settings 二级栏头显示名称和按钮。</li></ul></div>
       <div class="card"><h3>排除</h3><ul><li>不增加拖拽调整列宽。</li><li>不按 breakpoint 强制改变用户状态。</li><li>不修改 Memory、Provider 或模型数据。</li><li>不改变应用主侧栏行为。</li></ul></div>
     </div>
   </section>
@@ -95,8 +95,8 @@
     <h2>验收标准</h2>
     <div class="card"><ul>
       <li>Settings 页面不再渲染独立的全局 Settings 顶栏。</li>
-      <li>Settings 分类栏展开时显示 <code>Settings</code>，按钮与名称同一行；收起时隐藏名称并居中按钮。</li>
-      <li>LLM Providers 列表栏展开时显示页面名称，按钮不再位于搜索框旁；收起时隐藏名称、搜索和分组标签。</li>
+      <li>Settings 分类栏展开时显示 <code>Settings</code>，按钮与名称同一行；按钮顶边与主侧栏按钮一致。</li>
+      <li>LLM Providers 列表栏不显示新增名称栏头，折叠按钮恢复到搜索框旁；原有状态和 49px 收起行为不变。</li>
       <li>Memory 与 LLM Providers 内容区不再重复通用标题和介绍。</li>
       <li>现有两处 localStorage key、键盘语义、图标选择和 49px 收起宽度保持兼容。</li>
     </ul></div>
@@ -105,14 +105,8 @@
   <section>
     <h2>实现状态</h2>
     <div class="card">
-      <p><strong>状态：已实现并复核。</strong></p>
-      <ul>
-        <li>生产实现：Settings 分类栏与 Provider 列表栏均使用同一行的名称和收起按钮；Memory 与 LLM Providers 删除重复内容区页头。</li>
-        <li>行为验证：两列可独立保持展开或收起，收起宽度均为 49px；800px 窗口不自动改写用户状态，页面无横向滚动。</li>
-        <li>自动检查：Settings 定点检查、Memory Settings 检查、完整 Web 检查、TypeScript、production build 与 diff 检查通过。</li>
-        <li>人工验收：默认 18100 实例与 <code>/Applications/OpenProgram.app</code> 已检查 Memory、LLM Providers、两种收起状态和窄窗口状态。</li>
-        <li>独立复核：规格复核与代码质量复核通过。</li>
-      </ul>
+      <p class="pending">状态：待实现与复核。</p>
+      <p class="muted">实现证据只在生产代码、定点检查、可视验收和独立复核全部完成后更新。</p>
     </div>
   </section>
 </main></body>
