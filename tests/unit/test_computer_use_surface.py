@@ -95,6 +95,60 @@ def test_disabled_surface_is_visible_to_model_but_has_no_preview_or_binding():
     assert "q=secret" not in rendered
 
 
+def test_surface_preview_cannot_recreate_binding_after_disconnect(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+
+    def disconnect_before_result(*_args, **_kwargs):
+        webtab.release_connection(owner)
+        return {
+            "ok": True,
+            "window_id": "window-1",
+            "tab_id": "tab-1",
+            "target_id": "target-1",
+            "geometry_revision": 1,
+        }
+
+    monkeypatch.setattr(webtab, "request_on_ws", disconnect_before_result)
+    context = surface_context.capture({
+        "version": 1,
+        "window_id": "window-1",
+        "tab_id": "tab-1",
+        "region": "right",
+        "access": "enabled",
+        "geometry_revision": 1,
+    }, owner)
+
+    assert context["surfaces"][0]["preview_status"] == "unavailable"
+    assert "binding_id" not in context["surfaces"][0]
+    assert all(entry[0] is not owner for entry in webtab._bindings.values())
+
+
+def test_active_page_capture_cannot_recreate_binding_after_disconnect(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+
+    def disconnect_before_result(*_args, **_kwargs):
+        webtab.release_connection(owner)
+        return {
+            "ok": True,
+            "window_id": "window-1",
+            "tab_id": "tab-1",
+            "target_id": "target-1",
+        }
+
+    monkeypatch.setattr(webtab, "request_on_ws", disconnect_before_result)
+    with pytest.raises(RuntimeError, match="connection changed during Page binding"):
+        surface_context.capture_active()
+    assert all(entry[0] is not owner for entry in webtab._bindings.values())
+
+
 def test_bound_webtab_request_uses_only_the_registered_socket(monkeypatch):
     from openprogram.webui.ws_actions import webtab
 

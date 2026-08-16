@@ -164,6 +164,16 @@ def registered_desktop_windows() -> list[tuple[Any, str, int]]:
         ]
 
 
+def ensure_connection_revision(ws) -> int:
+    """Return the connection generation used to reject late async results."""
+    with _lock:
+        revision = _connection_revisions.get(ws)
+        if revision is None:
+            revision = next(_next_revision)
+            _connection_revisions[ws] = revision
+        return revision
+
+
 def binding_owner_revision(binding_id: str) -> tuple[Any, int] | None:
     """Return one binding owner and its current connection revision atomically."""
     with _lock:

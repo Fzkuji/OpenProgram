@@ -111,6 +111,7 @@ def capture(raw: Any, ws) -> dict | None:
         return context
 
     from openprogram.webui.ws_actions import webtab
+    connection_revision = webtab.ensure_connection_revision(ws)
     preview_command = {
         "op": "preview",
         "window_id": descriptor["window_id"],
@@ -137,13 +138,18 @@ def capture(raw: Any, ws) -> dict | None:
     ):
         surface["preview_status"] = "unavailable"
         return context
-    binding_id = webtab.register_binding(
-        ws,
-        descriptor["window_id"],
-        descriptor["tab_id"],
-        target_id,
-        geometry_revision=descriptor["geometry_revision"],
-    )
+    try:
+        binding_id = webtab.register_binding(
+            ws,
+            descriptor["window_id"],
+            descriptor["tab_id"],
+            target_id,
+            geometry_revision=descriptor["geometry_revision"],
+            expected_connection_revision=connection_revision,
+        )
+    except RuntimeError:
+        surface["preview_status"] = "unavailable"
+        return context
     revisions = webtab.binding_revisions(binding_id)
     surface.update({
         "title": _text(result.get("title"), 240) or surface["title"],
@@ -244,6 +250,7 @@ def capture_active() -> dict:
     if len(connections) != 1:
         raise RuntimeError("direct Page selection requires one desktop connection")
     owner_ws = connections[0]
+    connection_revision = webtab.ensure_connection_revision(owner_ws)
     result = webtab.request_on_ws(owner_ws, {"op": "active"})
     window_id = _text(result.get("window_id"), 160) if isinstance(result, dict) else ""
     tab_id = _text(result.get("tab_id"), 512) if isinstance(result, dict) else ""
@@ -256,6 +263,7 @@ def capture_active() -> dict:
         tab_id,
         target_id,
         geometry_revision=_revision(result.get("geometry_revision")),
+        expected_connection_revision=connection_revision,
     )
     revisions = webtab.binding_revisions(binding_id)
     surface = {
