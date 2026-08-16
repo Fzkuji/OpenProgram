@@ -425,6 +425,7 @@ function BookmarkFolderButton({
       items: items.length > 0
         ? items
         : [{ id: `${bookmarkFolderActionPrefix(ownerId, folder.id)}empty`, label: "Empty folder", disabled: true }],
+      cascade: true,
       width: 280,
     });
   };

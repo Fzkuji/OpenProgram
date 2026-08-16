@@ -2481,6 +2481,25 @@ function clampContextMenuPanel(anchor, panelW, panelH) {
   };
 }
 
+function cascadeMenuGeometry(anchor, winW, winH, zoom) {
+  const scale = Number.isFinite(Number(zoom)) && Number(zoom) > 0 ? Number(zoom) : 1;
+  const anchorX = Number(anchor && anchor.x) || 0;
+  const anchorY = Number(anchor && anchor.y) || 0;
+  const top = Math.round(Math.min(Math.max(0, anchorY), Math.max(0, winH - 1)));
+  return {
+    bounds: {
+      x: 0,
+      y: top,
+      width: Math.max(1, Math.round(winW)),
+      height: Math.max(1, Math.round(winH - top)),
+    },
+    anchor: {
+      x: anchorX / scale,
+      y: (anchorY - top) / scale,
+    },
+  };
+}
+
 /** The overlay document measured its own panel — resize the host view to the
  *  real size and re-clamp it against the window edges. Only context menus
  *  (which have a stored anchor) participate; the fixed-size main menu ignores
@@ -2512,7 +2531,7 @@ function hasNestedMenuItems(items) {
   );
 }
 
-function menuOverlayUrl(theme, items, anchor, width) {
+function menuOverlayUrl(theme, items, anchor, width, cascade = false) {
   let origin = "http://127.0.0.1:" + WEB_PORT;
   try {
     origin = new URL(START_URL).origin;
@@ -2526,6 +2545,7 @@ function menuOverlayUrl(theme, items, anchor, width) {
     q.set("x", String(anchor.x));
     q.set("y", String(anchor.y));
   }
+  if (cascade) q.set("cascade", "1");
   if (Number.isFinite(width) && width > 0) q.set("width", String(width));
   return (
     origin
@@ -2585,6 +2605,7 @@ function openMainMenu(ctx, opts, zoom = 1) {
   const winH = Number(anchor.vh) || cbH;
   const items = Array.isArray(opts && opts.items) ? opts.items : null;
   const nestedItems = hasNestedMenuItems(items);
+  const cascadeMenu = Boolean(opts && opts.cascade);
   const overlayWidth = Number.isFinite(Number(opts && opts.width))
     ? Number(opts.width) / menuZoom
     : null;
@@ -2593,7 +2614,19 @@ function openMainMenu(ctx, opts, zoom = 1) {
   let panelH;
   let panelX;
   let panelY;
-  if (items && nestedItems) {
+  let cascadeGeometry = null;
+  if (items && cascadeMenu) {
+    // Bookmark-folder menus need full horizontal room for submenu portals,
+    // but must begin below the triggering bar so adjacent folders still
+    // receive hover/click events while the menu is open.
+    ctx.mainMenuAnchor = null;
+    cascadeGeometry = cascadeMenuGeometry(anchor, winW, winH, menuZoom);
+    overlayAnchor = cascadeGeometry.anchor;
+    panelW = cascadeGeometry.bounds.width;
+    panelH = cascadeGeometry.bounds.height;
+    panelX = cascadeGeometry.bounds.x;
+    panelY = cascadeGeometry.bounds.y;
+  } else if (items && nestedItems) {
     // Cascading bookmark folders need the overlay document to cover the
     // content area so submenu portals are not clipped by root-panel bounds.
     ctx.mainMenuAnchor = null;
@@ -2643,7 +2676,9 @@ function openMainMenu(ctx, opts, zoom = 1) {
     panelX = Math.max(0, winW - rightInset - panelW);
     panelY = Number.isFinite(anchor.top) ? anchor.top : 40 * menuZoom;
   }
-  if (nestedItems) {
+  if (cascadeGeometry) {
+    view.setBounds(cascadeGeometry.bounds);
+  } else if (nestedItems) {
     view.setBounds({ x: 0, y: 0, width: Math.round(winW), height: Math.round(winH) });
   } else {
     const viewW = panelW + gutter * 2;
@@ -2660,7 +2695,7 @@ function openMainMenu(ctx, opts, zoom = 1) {
 
   const theme = opts && opts.theme;
   view.webContents
-    .loadURL(menuOverlayUrl(theme, items, overlayAnchor, overlayWidth))
+    .loadURL(menuOverlayUrl(theme, items, overlayAnchor, overlayWidth, cascadeMenu))
     .then(() => {
       if (ctx.mainMenuView === view && !view.webContents.isDestroyed()) {
         view.webContents.focus();

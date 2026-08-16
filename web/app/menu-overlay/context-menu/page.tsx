@@ -171,7 +171,8 @@ function ContextMenuOverlayPage() {
 
   const firstEnabled = items.findIndex((item) => !item.disabled);
   const [active, setActive] = useState(firstEnabled < 0 ? 0 : firstEnabled);
-  const nested = items.some((item) => Boolean(item.children?.length));
+  const nested = params.get("cascade") === "1"
+    || items.some((item) => Boolean(item.children?.length));
   const requestedWidth = Math.max(0, Number(params.get("width")) || 0);
 
   // Theme comes from the opener (query) — same contract as the

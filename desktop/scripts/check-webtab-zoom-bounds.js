@@ -50,17 +50,34 @@ const sandbox = {
     callback({ view: { setBounds: (bounds) => setBoundsCalls.push(bounds) } });
   },
 };
+const cascadeMenuGeometrySource = declaration("cascadeMenuGeometry");
 vm.runInNewContext(
   `${declaration("normalizedBounds")}\n${declaration("rendererZoomFactor")}\n`
     + `${declaration("normalizedRendererBounds")}\n`
     + `${declaration("normalizedRendererMenuOptions")}\n`
+    + `${cascadeMenuGeometrySource}\n`
     + `${declaration("registerWebTabIpc")}\n`
     + "this.normalizedRendererBounds = normalizedRendererBounds;"
     + "this.normalizedRendererMenuOptions = normalizedRendererMenuOptions;"
+    + "this.cascadeMenuGeometry = cascadeMenuGeometry;"
     + "this.registerWebTabIpc = registerWebTabIpc;",
   sandbox,
 );
 const plain = (value) => JSON.parse(JSON.stringify(value));
+
+assert.deepEqual(
+  plain(sandbox.cascadeMenuGeometry(
+    { x: 250, y: 80 },
+    1250,
+    875,
+    1.25,
+  )),
+  {
+    bounds: { x: 0, y: 80, width: 1250, height: 795 },
+    anchor: { x: 200, y: 0 },
+  },
+  "cascading menu hosts must begin below the bookmark bar and use a view-local anchor",
+);
 
 const screenshotBounds = {
   x: 812.6333618164062,
@@ -167,9 +184,10 @@ assert.match(
 );
 assert.match(
   openMainMenuSource,
-  /if \(nestedItems\) \{\s*view\.setBounds\(\{ x: 0, y: 0, width: Math\.round\(winW\), height: Math\.round\(winH\) \}\);/,
-  "nested submenus need a full-window overlay so portals are not clipped",
+  /const cascadeMenu = Boolean\(opts && opts\.cascade\)/,
+  "bookmark folders must request the cascading host even without child folders",
 );
+assert.match(openMainMenuSource, /view\.setBounds\(cascadeGeometry\.bounds\)/);
 const resizeMenuOverlaySource = declaration("resizeMenuOverlay");
 assert.match(resizeMenuOverlaySource, /MAIN_MENU_GUTTER \* zoom/);
 

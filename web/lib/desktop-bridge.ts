@@ -371,6 +371,7 @@ export interface DesktopMainMenuApi {
      *  Namespace the ids (e.g. "tabmenu:*") — every onAction subscriber
      *  shares one channel and must recognise only its own prefix. */
     items?: DesktopContextMenuItem[];
+    cascade?: boolean;
     width?: number;
     height?: number;
   }): void;

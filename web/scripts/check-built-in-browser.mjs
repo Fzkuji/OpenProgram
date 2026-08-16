@@ -136,6 +136,7 @@ assert.match(
 );
 assert.match(browserControls, /icon:\s*"folder"/);
 assert.match(browserControls, /onMouseEnter=\{\(event\) => openFolderMenu\(event\.currentTarget\)\}/);
+assert.match(browserControls, /cascade:\s*true/);
 const browserMenuOwners = [...webTabPane.matchAll(/<BrowserMenu[\s\S]*?ownerId=\{([^}]+)\}/g)]
   .map((match) => match[1]);
 const bookmarkBarOwners = [...webTabPane.matchAll(/<BookmarkBar\s+ownerId=\{([^}]+)\}/g)]
@@ -169,9 +170,11 @@ assert.match(browserSettingsRoute, /<BrowserSettings/);
 assert.match(contextMenu, /item\.checked/);
 assert.match(contextMenu, /item\.iconUrl/);
 assert.match(contextMenu, /item\.icon === "folder"/);
+assert.match(contextMenu, /params\.get\("cascade"\) === "1"/);
 assert.match(contextMenu, /onError=.*setBroken/);
 assert.match(bridge, /iconUrl\?: string/);
 assert.match(bridge, /icon\?: "folder"/);
+assert.match(bridge, /cascade\?: boolean/);
 const nestedMenuItems = contextMenu.slice(
   contextMenu.indexOf("function NestedMenuItems"),
   contextMenu.indexOf("function NestedContextMenu"),
