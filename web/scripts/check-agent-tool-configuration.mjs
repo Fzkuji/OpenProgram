@@ -7,13 +7,18 @@ const sidebar = readFileSync(new URL("components/sidebar/sidebar.tsx", root), "u
 const sender = readFileSync(new URL("components/chat/composer/legacy-send.ts", root), "utf8");
 
 assert.match(page, /fetch\("\/api\/agents"/);
-assert.match(page, /fetch\(`\/api\/agents\/\$\{encodeURIComponent\(selectedAgent\.id\)\}`[\s\S]*method:\s*"PATCH"/);
-assert.match(page, /mode:\s*"automatic"/);
-assert.match(page, /mode:\s*"selected"/);
-assert.match(page, /mode:\s*"none"/);
+assert.match(page, /fetch\(`\/api\/agents\/\$\{encodeURIComponent\(draft\.id\)\}`[\s\S]*method:\s*"PATCH"/);
+assert.match(page, /:\s*"\/api\/agents"[\s\S]*fetch\(url,\s*\{[\s\S]*?method:\s*"POST"/);
+assert.match(page, /\/default`[\s\S]*method:\s*"POST"/);
+assert.match(page, /method:\s*"DELETE"/);
+assert.match(page, /Overview[\s\S]*Model & Instructions[\s\S]*Programs[\s\S]*Skills[\s\S]*MCP[\s\S]*Sessions/);
+assert.match(page, /mode:\s*"automatic"\s*\|\s*"selected"\s*\|\s*"none"/);
 assert.match(page, /Access preset/);
-assert.match(page, /Programs selected/);
 assert.match(page, /Functions[\s\S]*Agentic Functions[\s\S]*Applications/);
+assert.match(page, /Browse programs/);
+assert.match(page, /fetch\("\/api\/skills"/);
+assert.match(page, /fetch\("\/api\/mcp\/servers"/);
+assert.match(page, /async function openPicker[\s\S]*Promise\.all\([\s\S]*fetch\("\/api\/programs"/);
 assert.match(sidebar, /href="\/agents"[\s\S]*nav\.agents/);
 assert.match(sender, /toolsProfile\s*!==\s*"__agent__"[\s\S]*payload\.tools_profile\s*=\s*toolsProfile/);
 
