@@ -105,8 +105,14 @@
   <section>
     <h2>实现状态</h2>
     <div class="card">
-      <p class="pending">状态：待实现与复核。</p>
-      <p class="muted">实现证据只在生产代码、定点检查、可视验收和独立复核全部完成后更新。</p>
+      <p><strong>状态：已实现并复核。</strong></p>
+      <ul>
+        <li>生产实现：Settings 分类栏与 Provider 列表栏均使用同一行的名称和收起按钮；Memory 与 LLM Providers 删除重复内容区页头。</li>
+        <li>行为验证：两列可独立保持展开或收起，收起宽度均为 49px；800px 窗口不自动改写用户状态，页面无横向滚动。</li>
+        <li>自动检查：Settings 定点检查、Memory Settings 检查、完整 Web 检查、TypeScript、production build 与 diff 检查通过。</li>
+        <li>人工验收：默认 18100 实例与 <code>/Applications/OpenProgram.app</code> 已检查 Memory、LLM Providers、两种收起状态和窄窗口状态。</li>
+        <li>独立复核：规格复核与代码质量复核通过。</li>
+      </ul>
     </div>
   </section>
 </main></body>
