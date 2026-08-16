@@ -368,21 +368,31 @@ def register(app):
         return master if master.is_file() else store.core()
 
     @router.get("/api/memory/core")
-    async def get_core():
+    def get_core():
         import tiktoken
 
         from openprogram.memory import store
         from openprogram.memory.management.config import load_memory_config
+        from openprogram.memory.management.transaction import workspace_write_lock
 
-        master = _core_master()
-        rendered = store.core()
-        master_text = master.read_text(encoding="utf-8") if master.is_file() else ""
-        rendered_text = (
-            rendered.read_text(encoding="utf-8") if rendered.is_file() else ""
-        )
-        master_stat = master.stat() if master.is_file() else None
-        rendered_stat = rendered.stat() if rendered.is_file() else None
-        budget = load_memory_config().core_max_tokens
+        config = load_memory_config()
+        with workspace_write_lock(store.root(), timeout_s=WRITE_LOCK_TIMEOUT_S):
+            master = _core_master()
+            rendered = store.core()
+            master_text = (
+                master.read_text(encoding="utf-8") if master.is_file() else ""
+            )
+            rendered_text = (
+                rendered.read_text(encoding="utf-8") if rendered.is_file() else ""
+            )
+            master_stat = master.stat() if master.is_file() else None
+            rendered_stat = rendered.stat() if rendered.is_file() else None
+        body = "\n".join(
+            line for line in rendered_text.splitlines()
+            if not line.startswith("# ")
+        ).strip()
+        injected_text = rendered_text if config.core_inject and body else ""
+        encoding = tiktoken.get_encoding("o200k_base")
         return JSONResponse(content={
             # Compatibility: the editable master remains in the original fields.
             "content": master_text,
@@ -391,10 +401,11 @@ def register(app):
             "rendered_content": rendered_text,
             "rendered_size": rendered_stat.st_size if rendered_stat else 0,
             "rendered_mtime": rendered_stat.st_mtime if rendered_stat else 0,
-            "rendered_tokens": len(
-                tiktoken.get_encoding("o200k_base").encode(rendered_text)
-            ),
-            "budget_tokens": budget,
+            "rendered_tokens": len(encoding.encode(rendered_text)),
+            "injection_enabled": config.core_inject,
+            "injected_content": injected_text,
+            "injected_tokens": len(encoding.encode(injected_text)),
+            "budget_tokens": config.core_max_tokens,
         })
 
     @router.put("/api/memory/core")

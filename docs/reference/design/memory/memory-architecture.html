@@ -735,7 +735,7 @@
   <div class="grid2">
     <div class="oc">
       <h4>Web 默认展示实际注入块</h4>
-      <div class="d"><code>GET /api/memory/core</code>同时返回<code>topics/core.md</code>正本和根目录<code>core.md</code>渲染结果。Core 页默认只读展示渲染结果，并显示实际 token 数与 2000 token 预算；“完整记录”视图才进入可编辑正本。现有<code>content</code>字段继续表示正本，避免破坏旧调用方。</div>
+      <div class="d"><code>GET /api/memory/core</code>同时返回<code>topics/core.md</code>正本、根目录<code>core.md</code>渲染结果和考虑<code>memory.core.inject</code>后的有效注入内容。Core 页默认只读展示有效注入内容，并显示实际 token 数与 2000 token 预算；“完整记录”视图才进入可编辑正本。现有<code>content/size/mtime</code>字段继续表示正本，避免破坏旧调用方。</div>
     </div>
     <div class="oc">
       <h4>Writer 与 Organizer 控制内容用途</h4>
@@ -746,8 +746,8 @@
     <table>
       <thead><tr><th>验收入口</th><th>要求</th></tr></thead>
       <tbody>
-        <tr><td><code>GET /api/memory/core</code></td><td>兼容返回正本<code>content/size/mtime</code>，并额外返回<code>rendered_content/rendered_size/rendered_mtime/rendered_tokens/budget_tokens</code>。</td></tr>
-        <tr><td>Memory → Core</td><td>默认显示实际注入内容和 token 预算；用户可切换到完整正本并沿用现有事务保存。</td></tr>
+        <tr><td><code>GET /api/memory/core</code></td><td>在工作区锁内读取完整快照；兼容返回正本<code>content/size/mtime</code>，并额外返回渲染内容、有效注入内容、注入开关、token 数与预算。</td></tr>
+        <tr><td>Memory → Core</td><td>默认显示实际注入内容和 token 预算；关闭注入时明确显示空注入。用户可切换到完整正本并沿用现有事务保存，保存期间的新草稿不会被刷新覆盖；所有 Markdown 预览经过共享清洗。</td></tr>
         <tr><td>Writer prompt</td><td>不再要求把每个重复过程写成 Topic；Core 不再接收普通项目进度。</td></tr>
         <tr><td>Organizer prompt</td><td>显式整理 Core 中的项目过程、重复记录和过期状态；删除后仍由 Git 保留历史。</td></tr>
       </tbody>

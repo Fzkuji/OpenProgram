@@ -172,6 +172,14 @@ def _migrate_permissions_once(base: Path) -> None:
 def ensure() -> Path:
     """Create the workspace skeleton if it is not there yet."""
     base = root()
+    # An initialized workspace already owns its layout. In particular, do not
+    # recreate ``topics/`` while a transaction has temporarily moved it into
+    # its backup before installing the staged replacement.
+    marker = base / ".git" / "openprogram-memory-ready"
+    if base in _git_initialized or marker.is_file():
+        _ensure_git_history(base)
+        _migrate_permissions_once(base)
+        return base
     _set_aside_superseded(base)
     for name in ("topics", "sources"):
         (base / name).mkdir(parents=True, exist_ok=True)

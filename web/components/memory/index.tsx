@@ -74,13 +74,15 @@ export function MemoryPage() {
   // Core state
   const [coreEditor, setCoreEditor] = useState<EditorState>({ content: "", saving: false, saveStatus: "", viewMode: "edit" });
   const [coreView, setCoreView] = useState<"injected" | "records">("injected");
-  const [coreRendered, setCoreRendered] = useState("");
+  const [coreInjected, setCoreInjected] = useState("");
   const [coreMeta, setCoreMeta] = useState<{
     size: number;
     mtime: number;
     renderedSize: number;
     renderedMtime: number;
     renderedTokens: number;
+    injectedTokens: number;
+    injectionEnabled: boolean;
     budgetTokens: number;
   } | null>(null);
   const [coreLoading, setCoreLoading] = useState(true);
@@ -119,18 +121,25 @@ export function MemoryPage() {
       .catch(() => setRecentLoading(false));
   }, []);
 
-  const fetchCore = useCallback(() => {
+  const fetchCore = useCallback((syncEditor = true) => {
     return fetch("/api/memory/core")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`Core request failed: ${r.status}`);
+        return r.json();
+      })
       .then((data) => {
-        setCoreEditor((e) => ({ ...e, content: data.content ?? "" }));
-        setCoreRendered(data.rendered_content ?? "");
+        if (syncEditor) {
+          setCoreEditor((e) => ({ ...e, content: data.content ?? "" }));
+        }
+        setCoreInjected(data.injected_content ?? "");
         setCoreMeta({
           size: data.size ?? 0,
           mtime: data.mtime ?? 0,
           renderedSize: data.rendered_size ?? 0,
           renderedMtime: data.rendered_mtime ?? 0,
           renderedTokens: data.rendered_tokens ?? 0,
+          injectedTokens: data.injected_tokens ?? 0,
+          injectionEnabled: data.injection_enabled ?? true,
           budgetTokens: data.budget_tokens ?? 2000,
         });
         setCoreLoading(false);
@@ -211,7 +220,7 @@ export function MemoryPage() {
         const detail = await r.json().catch(() => ({}));
         if (detail.error) alert(detail.error);
       }
-      if (r.ok) await fetchCore();
+      if (r.ok) await fetchCore(false);
       setCoreEditor((e) => ({ ...e, saving: false, saveStatus: r.ok ? "saved" : "error" }));
     } catch {
       setCoreEditor((e) => ({ ...e, saving: false, saveStatus: "error" }));
@@ -479,7 +488,12 @@ export function MemoryPage() {
                 </div>
                 <div className={styles.coreInfoTitle}>{text("Core Memory", "核心记忆")}</div>
                 <div className={styles.coreInfoDesc}>
-                  {coreView === "injected"
+                  {coreView === "injected" && coreMeta?.injectionEnabled === false
+                    ? text(
+                      "Core injection is disabled in Memory settings. The editable Core records are retained but no Core block enters system prompts.",
+                      "Memory 设置已关闭 Core 注入。完整 Core 记录仍会保留，但不会进入系统提示词。",
+                    )
+                    : coreView === "injected"
                     ? text(
                       "The exact read-only block injected into every system prompt, rendered from the Core records within its token budget.",
                       "每次系统提示词实际注入的只读内容，由完整 Core 记录按 token 预算派生。",
@@ -509,10 +523,12 @@ export function MemoryPage() {
                   <div className={styles.coreInfoMeta}>
                     {coreView === "injected" ? (
                       <>
-                        <span className={coreMeta.renderedTokens > coreMeta.budgetTokens ? styles.metaWarn : styles.metaOk}>
-                          {coreMeta.renderedTokens} / {coreMeta.budgetTokens} tokens
+                        <span className={coreMeta.injectedTokens > coreMeta.budgetTokens ? styles.metaWarn : styles.metaOk}>
+                          {coreMeta.injectedTokens} / {coreMeta.budgetTokens} tokens
                         </span>
-                        <span>{formatSize(coreMeta.renderedSize)}</span>
+                        {!coreMeta.injectionEnabled && (
+                          <span>{text("Injection disabled", "注入已关闭")}</span>
+                        )}
                       </>
                     ) : (
                       <span>{formatSize(coreMeta.size)}</span>
@@ -550,14 +566,14 @@ export function MemoryPage() {
                       </div>
                       <div className={styles.editorActions}>
                         <span className={styles.fileMeta}>
-                          {coreMeta?.renderedTokens ?? 0} / {coreMeta?.budgetTokens ?? 2000} tokens
+                          {coreMeta?.injectedTokens ?? 0} / {coreMeta?.budgetTokens ?? 2000} tokens
                         </span>
                       </div>
                     </div>
                     <div className={styles.preview}>
                       <div
                         className={styles.markdown}
-                        dangerouslySetInnerHTML={{ __html: coreRendered ? renderMarkdown(coreRendered) : `<em>${text("No Core memory is currently injected", "当前没有注入 Core 记忆")}</em>` }}
+                        dangerouslySetInnerHTML={{ __html: coreInjected ? renderMarkdown(coreInjected) : `<em>${text("No Core memory is currently injected", "当前没有注入 Core 记忆")}</em>` }}
                       />
                     </div>
                   </div>

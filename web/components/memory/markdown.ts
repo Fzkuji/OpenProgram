@@ -3,6 +3,7 @@
  * [[wikilink]] expansion, and the marked.parse() wrapper.
  */
 import { marked } from "marked";
+import { sanitizeHtml } from "@/lib/runtime-bridge/markdown-render";
 
 /** Parse YAML-ish frontmatter from raw markdown. Returns the
  *  ``{ frontmatter, body }`` pair — empty frontmatter when the
@@ -38,7 +39,10 @@ export function expandWikilinks(md: string): string {
  *  falls back to an escaped <pre> on parse error. */
 export function renderMarkdown(md: string): string {
   try {
-    return marked.parse(expandWikilinks(md), { breaks: true, async: false }) as string;
+    return sanitizeHtml(marked.parse(
+      expandWikilinks(md),
+      { breaks: true, async: false },
+    ) as string);
   } catch {
     return `<pre>${md.replace(/</g, "&lt;")}</pre>`;
   }

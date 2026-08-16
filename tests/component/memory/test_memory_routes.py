@@ -16,8 +16,11 @@ from __future__ import annotations
 import glob
 import json
 import os
-import tempfile
 import subprocess
+import tempfile
+import threading
+import time
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -459,6 +462,8 @@ def test_core_save_lands_on_the_master_and_is_rendered(client, memory):
     assert payload["content"] == (
         memory / "topics" / "core.md"
     ).read_text(encoding="utf-8")
+    assert payload["size"] == (memory / "topics/core.md").stat().st_size
+    assert payload["mtime"] == (memory / "topics/core.md").stat().st_mtime
     assert payload["rendered_content"] == (
         memory / "core.md"
     ).read_text(encoding="utf-8")
@@ -466,6 +471,94 @@ def test_core_save_lands_on_the_master_and_is_rendered(client, memory):
     assert payload["rendered_mtime"] == (memory / "core.md").stat().st_mtime
     assert 0 < payload["rendered_tokens"] <= payload["budget_tokens"]
     assert payload["budget_tokens"] == 2_000
+
+
+def test_core_route_distinguishes_rendered_from_disabled_injection(
+    client, memory, monkeypatch,
+):
+    from openprogram.memory.management.config import MemoryConfig
+
+    assert client.put("/api/memory/core", json={"content": CORE}).status_code == 200
+    monkeypatch.setattr(
+        "openprogram.memory.management.config.load_memory_config",
+        lambda: MemoryConfig(core_inject=False),
+    )
+
+    payload = client.get("/api/memory/core").json()
+
+    assert payload["rendered_content"]
+    assert payload["rendered_tokens"] > 0
+    assert payload["injection_enabled"] is False
+    assert payload["injected_content"] == ""
+    assert payload["injected_tokens"] == 0
+
+
+def test_empty_core_keeps_legacy_and_effective_fields(client):
+    payload = client.get("/api/memory/core").json()
+
+    assert payload["content"] == ""
+    assert payload["size"] == 0
+    assert payload["mtime"] == 0
+    assert payload["rendered_content"] == ""
+    assert payload["injected_content"] == ""
+
+
+def test_core_get_waits_for_a_complete_install_snapshot(
+    client, memory, monkeypatch,
+):
+    from openprogram.memory.management import block_views
+    from openprogram.memory.management.transaction import staged_edit
+
+    assert client.put("/api/memory/core", json={"content": CORE}).status_code == 200
+    updated = (memory / "topics/core.md").read_text(
+        encoding="utf-8",
+    ).replace("Always on.", "Always current.")
+    topics_moved = threading.Event()
+    release_install = threading.Event()
+    original_replace = block_views.os.replace
+
+    def paused_replace(source, destination):
+        result = original_replace(source, destination)
+        if Path(source) == memory / "topics":
+            topics_moved.set()
+            assert release_install.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(block_views.os, "replace", paused_replace)
+    responses = {}
+
+    def write_core(stage):
+        (stage / "topics/core.md").write_text(updated, encoding="utf-8")
+
+    writer = threading.Thread(target=lambda: responses.setdefault(
+        "put", staged_edit(
+            memory,
+            write_core,
+            commit_message="memory: edit topics/core.md",
+        ),
+    ))
+    writer.start()
+    if not topics_moved.wait(timeout=5):
+        writer.join(timeout=1)
+        pytest.fail(f"install never moved topics: {responses!r}")
+
+    reader = threading.Thread(target=lambda: responses.setdefault(
+        "get", client.get("/api/memory/core"),
+    ))
+    reader.start()
+    time.sleep(0.1)
+    assert reader.is_alive(), "GET returned during the incomplete install window"
+
+    release_install.set()
+    writer.join(timeout=5)
+    reader.join(timeout=5)
+    assert not writer.is_alive()
+    assert not reader.is_alive()
+    assert responses["put"] == (True, "")
+    assert responses["get"].status_code == 200
+    payload = responses["get"].json()
+    assert "Always current." in payload["content"]
+    assert "Always current." in payload["rendered_content"]
 
 
 def test_delete_is_refused_while_another_topic_links_into_it(client, memory):
