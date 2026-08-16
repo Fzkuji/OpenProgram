@@ -26,8 +26,9 @@ assert.match(memoryPage, /styles\.coreViewSwitch/);
 assert.match(memoryCss, /\.coreViewSwitch\s*\{/);
 assert.match(memoryPage, /data\.injected_content/);
 assert.match(memoryPage, /injectionEnabled/);
-assert.match(memoryPage, /fetchCore\(false\)/);
-assert.match(memoryPage, /if \(syncEditor\)/);
+assert.match(memoryPage, /const submittedContent = coreEditor\.content/);
+assert.match(memoryPage, /fetchCore\(submittedContent\)/);
+assert.match(memoryPage, /e\.content === submittedContent/);
 assert.match(memoryMarkdown, /sanitizeHtml\(marked\.parse\(/);
 
 console.log("check-memory-status: ok");

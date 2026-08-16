@@ -121,16 +121,18 @@ export function MemoryPage() {
       .catch(() => setRecentLoading(false));
   }, []);
 
-  const fetchCore = useCallback((syncEditor = true) => {
+  const fetchCore = useCallback((submittedContent?: string) => {
     return fetch("/api/memory/core")
       .then((r) => {
         if (!r.ok) throw new Error(`Core request failed: ${r.status}`);
         return r.json();
       })
       .then((data) => {
-        if (syncEditor) {
-          setCoreEditor((e) => ({ ...e, content: data.content ?? "" }));
-        }
+        setCoreEditor((e) => (
+          submittedContent === undefined || e.content === submittedContent
+            ? { ...e, content: data.content ?? "" }
+            : e
+        ));
         setCoreInjected(data.injected_content ?? "");
         setCoreMeta({
           size: data.size ?? 0,
@@ -209,18 +211,19 @@ export function MemoryPage() {
   }
 
   async function saveCore() {
+    const submittedContent = coreEditor.content;
     setCoreEditor((e) => ({ ...e, saving: true, saveStatus: "" }));
     try {
       const r = await fetch("/api/memory/core", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: coreEditor.content }),
+        body: JSON.stringify({ content: submittedContent }),
       });
       if (!r.ok) {
         const detail = await r.json().catch(() => ({}));
         if (detail.error) alert(detail.error);
       }
-      if (r.ok) await fetchCore(false);
+      if (r.ok) await fetchCore(submittedContent);
       setCoreEditor((e) => ({ ...e, saving: false, saveStatus: r.ok ? "saved" : "error" }));
     } catch {
       setCoreEditor((e) => ({ ...e, saving: false, saveStatus: "error" }));

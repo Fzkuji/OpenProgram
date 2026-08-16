@@ -195,6 +195,30 @@ def test_ensure_initializes_git_and_snapshots_existing_memory(
     assert saved == "# Existing\n"
 
 
+def test_ensure_migrates_marker_workspace_missing_the_current_layout(
+    tmp_path, monkeypatch,
+):
+    state = tmp_path / "state"
+    root = state / "memory"
+    legacy = root / "wiki/Old.md"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("old memory\n", encoding="utf-8")
+    marker = root / ".git/openprogram-memory-ready"
+    marker.parent.mkdir()
+    marker.write_text("ready\n", encoding="utf-8")
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+
+    from openprogram.memory import store
+
+    assert store.ensure() == root
+    assert (root / "topics").is_dir()
+    assert (root / "sources").is_dir()
+    assert not (root / "wiki").exists()
+    assert (state / "memory-superseded/wiki/Old.md").read_text(
+        encoding="utf-8",
+    ) == "old memory\n"
+
+
 def test_structured_delete_is_recorded_in_git_history(tmp_path):
     from openprogram.memory.management import MemoryWorkspace
 

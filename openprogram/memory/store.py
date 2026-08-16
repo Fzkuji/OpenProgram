@@ -171,12 +171,18 @@ def _migrate_permissions_once(base: Path) -> None:
 
 def ensure() -> Path:
     """Create the workspace skeleton if it is not there yet."""
+    from .workspace_layout import runtime_dir
+
     base = root()
     # An initialized workspace already owns its layout. In particular, do not
     # recreate ``topics/`` while a transaction has temporarily moved it into
     # its backup before installing the staged replacement.
     marker = base / ".git" / "openprogram-memory-ready"
-    if base in _git_initialized or marker.is_file():
+    install_backup = base / f"{runtime_dir(base).name}-block-backup"
+    has_layout = all((base / name).is_dir() for name in ("topics", "sources"))
+    if (base in _git_initialized or marker.is_file()) and (
+        has_layout or install_backup.is_dir()
+    ):
         _ensure_git_history(base)
         _migrate_permissions_once(base)
         return base
