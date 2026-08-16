@@ -5,6 +5,7 @@ import os
 import plistlib
 import re
 import runpy
+import signal
 import subprocess
 import sys
 import time
@@ -1219,6 +1220,39 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     assert "another OpenProgram App installation is running" in blocked.stderr
     assert not mutation_log.exists()
     assert installed_asar.read_bytes() == b"original-asar"
+
+    signal_ready = tmp_path / "signal-ready"
+    fake_pgrep = fake_bin / "pgrep"
+    fake_pgrep.write_text(
+        "#!/bin/sh\n"
+        'touch "$SIGNAL_READY"\n'
+        "sleep 10\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    fake_pgrep.chmod(0o755)
+    signal_env = env | {"SIGNAL_READY": str(signal_ready)}
+    interrupted = subprocess.Popen(
+        ["bash", str(scripts / "refresh-local-app.sh")],
+        env=signal_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+        text=True,
+    )
+    deadline = time.monotonic() + 10
+    while not signal_ready.exists() and interrupted.poll() is None:
+        if time.monotonic() >= deadline:
+            interrupted.kill()
+            raise AssertionError("refresh did not acquire the install lock")
+        time.sleep(0.02)
+    os.killpg(interrupted.pid, signal.SIGTERM)
+    stdout, stderr = interrupted.communicate(timeout=5)
+
+    assert interrupted.returncode == 143, (stdout, stderr)
+    assert not mutation_log.exists()
+    assert installed_asar.read_bytes() == b"original-asar"
+    assert not lock_file.exists()
 
 
 def test_release_frontend_staging_removes_stale_export_before_build() -> None:
