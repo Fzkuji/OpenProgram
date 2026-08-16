@@ -22,11 +22,10 @@ import {
   programsForSelection,
   toolsForSelection,
 } from "./program-source-categories";
+import { groupTools, TOOL_GROUPS, type ToolInfo } from "./tool-groups";
 import { ProfileNavRow } from "./functions-page-parts";
 import styles from "./functions-page.module.css";
 import type { FunctionInfo, FunctionsMeta } from "./types";
-
-type ToolInfo = { name: string; description: string; disabled?: boolean };
 
 export function FunctionsPage() {
   const { t, text, locale } = useTranslation();
@@ -87,12 +86,13 @@ export function FunctionsPage() {
     store.setMeta({ ...store.meta, favorites: [...next.favorites], icons: { ...next.icons } });
   }, []);
 
+  const catalogTools = tools.filter((tool) => tool.source !== "mcp");
   const sourceCategories = [
     {
       id: "__functions__",
       name: text("Functions", "函数"),
       icon: <WrenchIcon size={16} />,
-      count: tools.length,
+      count: catalogTools.length,
     },
     {
       id: "__agentic_functions__",
@@ -111,7 +111,7 @@ export function FunctionsPage() {
       name: text("Favorites", "收藏"),
       icon: <HeartIcon size={16} />,
       count: meta.favorites.filter((name) =>
-        functions.some((program) => program.name === name) || tools.some((tool) => tool.name === name),
+        functions.some((program) => program.name === name) || catalogTools.some((tool) => tool.name === name),
       ).length,
     },
   ];
@@ -126,11 +126,13 @@ export function FunctionsPage() {
   }, [functions, meta.favorites, search, selection, sort]);
 
   const visibleTools = useMemo(
-    () => toolsForSelection(selection, tools, meta.favorites)
+    () => toolsForSelection(selection, catalogTools, meta.favorites)
       .filter((tool) => matchesProgramSearch(tool, search))
       .sort((a, b) => a.name.localeCompare(b.name)),
-    [meta.favorites, search, selection, tools],
+    [catalogTools, meta.favorites, search, selection],
   );
+  const visibleToolGroups = groupTools(visibleTools);
+  const toolGroupLabels = new Map<string, string>(TOOL_GROUPS.map(([id, en, zh]) => [id, text(en, zh)]));
 
   function formatDate(timestamp?: number) {
     if (!timestamp) return "";
@@ -252,18 +254,22 @@ export function FunctionsPage() {
             ) : null}
             {visibleTools.length > 0 ? (
               <div className={visibleFunctions.length ? styles.toolsSection : undefined}>
-                <div className={styles.toolsHeader}>{text("Functions", "函数")}</div>
-                <div className={view === "grid" ? cardGridClass : cardListClass}>
-                  {visibleTools.map((tool) => (
-                    <ToolCard
-                      key={tool.name}
-                      name={tool.name}
-                      description={tool.description}
-                      enabled={!tool.disabled}
-                      onToggle={(enabled) => toggleTool(tool.name, enabled)}
-                    />
-                  ))}
-                </div>
+                {visibleToolGroups.map((group) => (
+                  <section key={group.name} className={styles.toolGroup}>
+                    <div className={styles.toolsHeader}>{toolGroupLabels.get(group.name) || group.name}<span>{group.items.length}</span></div>
+                    <div className={view === "grid" ? cardGridClass : cardListClass}>
+                      {group.items.map((tool) => (
+                        <ToolCard
+                          key={tool.name}
+                          name={tool.name}
+                          description={tool.description || ""}
+                          enabled={!tool.disabled}
+                          onToggle={(enabled) => toggleTool(tool.name, enabled)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                ))}
               </div>
             ) : null}
           </div>

@@ -78,26 +78,39 @@ def register(app):
             "agent_browser": "web", "playwright_browser": "web",
             "pdf": "web", "image_analyze": "web", "image_generate": "web",
             "enter_plan_mode": "planning", "exit_plan_mode": "planning",
-            "agent": "planning", "todo_create": "planning",
+            "todo_create": "planning",
             "todo_update": "planning", "todo_list": "planning",
-            "cron": "planning",
+            "agent": "agents", "archive_agent": "agents",
+            "list_agents": "agents", "read_conversation": "agents",
+            "send_message": "agents", "mixture_of_agents": "agents",
+            "cron": "jobs", "scheduler": "jobs", "job_output": "jobs",
+            "job_stop": "jobs", "list_jobs": "jobs",
+            "execute_code": "code", "lsp_definition": "code",
+            "lsp_diagnostics": "code", "lsp_references": "code",
+            "semble_find_related": "code", "semble_search": "code",
             "list_mcp_prompts": "mcp", "get_mcp_prompt": "mcp",
             "list_mcp_resources": "mcp", "read_mcp_resource": "mcp",
             "tool_search": "mcp",
             "worktree_create": "worktree", "worktree_merge": "worktree",
             "worktree_discard": "worktree", "worktree_list": "worktree",
             "worktree_keep": "worktree",
+            "ask_user_question": "interaction", "canvas": "interaction",
+            "send_file": "interaction",
+            "program": "runtime", "skill": "runtime",
         }
         out = []
         for t in agent_tools(toolset="full", include_disabled=True):
             if getattr(t, "_is_agentic", False):
                 continue
             desc = (t.description or "").strip().split("\n")[0]
+            mcp_server = getattr(t, "_mcp_server", None)
             out.append({
                 "name": t.name,
                 "description": desc,
                 "disabled": t.name in disabled,
-                "group": _TOOL_GROUPS.get(t.name, "other"),
+                "group": "connected" if mcp_server else _TOOL_GROUPS.get(t.name, "other"),
+                "source": "mcp" if mcp_server else "builtin",
+                "server": mcp_server,
             })
         out.sort(key=lambda r: r["name"])
         return JSONResponse(content=out)

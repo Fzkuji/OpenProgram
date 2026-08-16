@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { BotIcon, BoxesIcon, WrenchIcon } from "@/components/animated-icons";
+import { BotIcon, BoxesIcon, PlugZapIcon, WrenchIcon } from "@/components/animated-icons";
 import { Button } from "@/components/ui/button";
+import { groupTools, TOOL_GROUPS, type ToolInfo } from "@/components/functions/tool-groups";
 import { useTranslation } from "@/lib/i18n";
 
 import styles from "./agents-page.module.css";
@@ -16,7 +17,6 @@ type ToolPolicy = {
 };
 type Agent = { id: string; name?: string; default?: boolean; tools?: ToolPolicy };
 type Program = { name: string; description?: string; category?: string };
-type Tool = { name: string; description?: string; disabled?: boolean };
 type Mode = "automatic" | "selected" | "none";
 
 function initialMode(policy?: ToolPolicy): Mode {
@@ -29,7 +29,7 @@ export function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [programs, setPrograms] = useState<Program[]>([]);
-  const [tools, setTools] = useState<Tool[]>([]);
+  const [tools, setTools] = useState<ToolInfo[]>([]);
   const [presets, setPresets] = useState<Record<string, string[]>>({});
   const [mode, setMode] = useState<Mode>("automatic");
   const [preset, setPreset] = useState("__custom__");
@@ -80,12 +80,12 @@ export function AgentsPage() {
     return new Set(preset === "__custom__" ? allowed : presets[preset] || []);
   }, [allowed, mode, preset, presets, programs, tools]);
 
-  const groups = [
-    {
-      label: text("Functions", "函数"),
-      icon: <WrenchIcon size={17} />,
-      rows: tools,
-    },
+  const builtinTools = tools.filter((tool) => tool.source !== "mcp");
+  const connectedTools = tools.filter((tool) => tool.source === "mcp");
+  const builtinGroups = groupTools(builtinTools);
+  const connectedGroups = groupTools(connectedTools, "server");
+  const groupLabels = new Map<string, string>(TOOL_GROUPS.map(([id, en, zh]) => [id, text(en, zh)]));
+  const programGroups = [
     {
       label: text("Agentic Functions", "Agentic 函数"),
       icon: <BotIcon size={17} />,
@@ -166,7 +166,7 @@ export function AgentsPage() {
             <div className={styles.tab}>{text("Tools & Programs", "工具与 Programs")}</div>
             <section className={styles.modeGrid}>
               {([
-                ["automatic", text("Automatic discovery", "自动发现"), text("All globally available Programs; schemas load only when needed.", "允许全部全局可用 Programs，schema 仅在需要时加载。")],
+                ["automatic", text("All Programs", "全部 Programs"), text("Use every globally available Program; schemas load only when needed.", "允许使用全部全局可用 Programs，schema 仅在需要时加载。")],
                 ["selected", text("Selected scope", "指定范围"), text("Use an Access preset or an explicit selection.", "使用 Access preset 或明确选择。")],
                 ["none", text("No Programs", "不使用 Programs"), text("The Agent runs without callable Programs.", "Agent 不获得可调用 Programs。")],
               ] as const).map(([value, title, description]) => (
@@ -188,11 +188,55 @@ export function AgentsPage() {
                 <option value="__custom__">{text("Custom selection", "自定义选择")}</option>
                 {Object.keys(presets).sort().map((name) => <option key={name} value={name}>{name}</option>)}
               </select>
-              <span>{selectedNames.size} {text("Programs selected", "个 Programs 已选择")}</span>
+              <span>{selectedNames.size} {text("Programs available", "个 Programs 可用")}</span>
             </section>
 
             <div className={styles.catalog}>
-              {groups.map((group) => (
+              <section className={styles.group}>
+                <h2><WrenchIcon size={17} />{text("Built-in Functions", "内置函数")}<span>{builtinTools.length}</span></h2>
+                <div className={styles.subgroups}>
+                  {builtinGroups.map((group) => (
+                    <details key={group.name} className={styles.subgroup}>
+                      <summary><strong>{groupLabels.get(group.name) || group.name}</strong><span>{group.items.length}</span></summary>
+                      {group.items.map((row) => (
+                        <label key={row.name} className={styles.programRow}>
+                          <input
+                            type="checkbox"
+                            checked={selectedNames.has(row.name)}
+                            disabled={mode !== "selected" || preset !== "__custom__"}
+                            onChange={() => toggleName(row.name)}
+                          />
+                          <span><strong>{row.name}</strong><small>{row.description || text("No description", "暂无描述")}</small></span>
+                        </label>
+                      ))}
+                    </details>
+                  ))}
+                </div>
+              </section>
+
+              <section className={styles.group}>
+                <h2><PlugZapIcon size={17} />{text("Connected Services", "已连接服务")}<span>{connectedTools.length}</span></h2>
+                <div className={styles.subgroups}>
+                  {connectedGroups.map((group) => (
+                    <details key={group.name} className={styles.subgroup}>
+                      <summary><strong>{group.name}</strong><span>{group.items.length}</span></summary>
+                      {group.items.map((row) => (
+                        <label key={row.name} className={styles.programRow}>
+                          <input
+                            type="checkbox"
+                            checked={selectedNames.has(row.name)}
+                            disabled={mode !== "selected" || preset !== "__custom__"}
+                            onChange={() => toggleName(row.name)}
+                          />
+                          <span><strong>{row.name.split("__", 2).at(-1)}</strong><small>{row.description || text("No description", "暂无描述")}</small></span>
+                        </label>
+                      ))}
+                    </details>
+                  ))}
+                </div>
+              </section>
+
+              {programGroups.map((group) => (
                 <section key={group.label} className={styles.group}>
                   <h2>{group.icon}{group.label}<span>{group.rows.length}</span></h2>
                   {group.rows.map((row) => (
