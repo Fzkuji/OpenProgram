@@ -909,6 +909,37 @@ def test_unsent_final_screenshot_payload_is_released(monkeypatch):
     assert captured["result"].images == []
 
 
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_same_request_screenshot_is_released_when_runtime_raises(
+    monkeypatch, cancelled,
+):
+    from openprogram.programs.agentic_functions import browser_agent as module
+    from openprogram.providers.utils.errors import ExecInterrupt
+
+    controller, _api = _controller()
+    monkeypatch.setattr(module, "_new_controller", lambda: controller)
+    captured = {}
+
+    class _Runtime:
+        def exec(self, **_kwargs):
+            frame_id = controller._frame["frame_id"]
+            captured["result"] = controller.execute(
+                action="screenshot", expected_frame_id=frame_id,
+            )
+            if cancelled:
+                raise ExecInterrupt("cancelled after tool execution")
+            raise RuntimeError("provider failed after tool execution")
+
+    result = module.browser_agent(
+        task="Inspect the visual target",
+        max_steps=1,
+        runtime=_Runtime(),
+    )
+
+    assert result["reason_code"] == ("cancelled" if cancelled else "tool_error")
+    assert captured["result"].images == []
+
+
 @pytest.mark.parametrize(
     "image_request_action",
     ["failed_verify", "invalid_point", "no_tool"],

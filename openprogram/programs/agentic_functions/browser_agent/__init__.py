@@ -213,6 +213,7 @@ class BrowserPageController:
         self._terminal_reason = ""
         self._last_action = ""
         self._last_result: Any = None
+        self._planner_screenshot_result: ToolReturn | None = None
         self._action_seq = 0
         self._owner = ThreadPoolExecutor(
             max_workers=1,
@@ -541,7 +542,10 @@ class BrowserPageController:
             },
         }
         def dispatch(**arguments):
-            return _result_for_prompt(self.execute(**arguments))
+            result = self.execute(**arguments)
+            if isinstance(result, ToolReturn) and result.images:
+                self._planner_screenshot_result = result
+            return _result_for_prompt(result)
 
         return function(
             name="browser_page",
@@ -932,7 +936,9 @@ def _run_browser_task_commands(
             "backend": backend,
         }
 
-    last: dict[str, Any] = {"result": None, "action": "", "seq": 0}
+    last: dict[str, Any] = {
+        "result": None, "action": "", "seq": 0, "screenshot_result": None,
+    }
 
     def dispatch(action: str, **arguments):
         command = "verify" if action == "verify" else "act"
@@ -944,6 +950,8 @@ def _run_browser_task_commands(
             arguments=arguments,
         )
         last.update(result=result, action=action, seq=last["seq"] + 1)
+        if isinstance(result, ToolReturn) and result.images:
+            last["screenshot_result"] = result
         return _result_for_prompt(result)
 
     action_tool = function(
@@ -999,6 +1007,8 @@ def _run_browser_task_commands(
                         registry.revoke_screenshot(session_id)
                     finally:
                         _release_screenshot_payload(content, sent_screenshot_result)
+                        if last["screenshot_result"] is sent_screenshot_result:
+                            last["screenshot_result"] = None
             if isinstance(reply, str) and reply.strip():
                 summary = reply.strip()
             if last["seq"] == seq_before:
@@ -1033,11 +1043,26 @@ def _run_browser_task_commands(
         }
     finally:
         try:
-            if pending_screenshot_result is not None:
+            unreleased_screenshot = (
+                pending_screenshot_result or last["screenshot_result"]
+            )
+            if not (
+                isinstance(unreleased_screenshot, ToolReturn)
+                and unreleased_screenshot.images
+            ):
+                current_result = last["result"]
+                unreleased_screenshot = (
+                    current_result
+                    if isinstance(current_result, ToolReturn)
+                    and current_result.images
+                    else None
+                )
+            if unreleased_screenshot is not None:
                 try:
                     registry.revoke_screenshot(session_id)
                 finally:
-                    _release_screenshot_payload([], pending_screenshot_result)
+                    _release_screenshot_payload([], unreleased_screenshot)
+                    last["screenshot_result"] = None
         finally:
             registry.execute(
                 command="close", computer_session_id=session_id, owner_id=owner_id,
@@ -1284,6 +1309,11 @@ def _run_browser_task(
                             _release_screenshot_payload(
                                 content, sent_screenshot_result,
                             )
+                            if (
+                                getattr(controller, "_planner_screenshot_result", None)
+                                is sent_screenshot_result
+                            ):
+                                controller._planner_screenshot_result = None
                 action_executed = (
                     getattr(controller, "_action_seq", action_seq_before)
                     != action_seq_before
@@ -1347,11 +1377,28 @@ def _run_browser_task(
         result = controller.final_result(summary=str(exc), reason_code=reason)
     finally:
         try:
-            if pending_screenshot_result is not None:
+            unreleased_screenshot = (
+                pending_screenshot_result
+                or getattr(controller, "_planner_screenshot_result", None)
+            )
+            if not (
+                isinstance(unreleased_screenshot, ToolReturn)
+                and unreleased_screenshot.images
+            ):
+                current_result = getattr(controller, "_last_result", None)
+                unreleased_screenshot = (
+                    current_result
+                    if isinstance(current_result, ToolReturn)
+                    and current_result.images
+                    else None
+                )
+            if unreleased_screenshot is not None:
                 try:
                     controller.revoke_screenshot()
                 finally:
-                    _release_screenshot_payload([], pending_screenshot_result)
+                    _release_screenshot_payload([], unreleased_screenshot)
+                    if hasattr(controller, "_planner_screenshot_result"):
+                        controller._planner_screenshot_result = None
         finally:
             if turn_request_token is not None:
                 from openprogram.agent.turn_request_context import reset_turn_request

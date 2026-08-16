@@ -1237,3 +1237,61 @@ def test_gui_harness_releases_unsent_final_screenshot(monkeypatch):
     assert result["reason_code"] == "verification_missing"
     assert captured["result"].images == []
     assert registry.revoked == 1
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_gui_harness_releases_same_request_screenshot_on_runtime_error(
+    monkeypatch, cancelled,
+):
+    from openprogram.agent import surface_context
+    from openprogram.programs import ToolReturn
+    from openprogram.programs.agentic_functions import browser_agent as module
+    from openprogram.programs.agentic_functions.browser_agent import (
+        computer_use_runtime,
+    )
+    from openprogram.providers.utils.errors import ExecInterrupt
+
+    captured = {}
+
+    class _Registry:
+        revoked = 0
+
+        def execute(self, **kwargs):
+            command = kwargs["command"]
+            if command == "observe":
+                return {"frame_id": "f1", "computer_session_id": "cs1"}
+            if command == "act":
+                captured["result"] = ToolReturn(
+                    images=[b"png"], json_data={"frame_id": "f1"},
+                )
+                return captured["result"]
+            return {"ok": True}
+
+        def revoke_screenshot(self, _session_id):
+            self.revoked += 1
+
+    registry = _Registry()
+    monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(surface_context, "current", lambda: {"context_id": "ctx"})
+    monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "b1")
+    monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "p1")
+
+    class _Runtime:
+        def exec(self, **kwargs):
+            asyncio.run(kwargs["tools"][0].execute(
+                "c1", {"action": "screenshot", "expected_frame_id": "f1"},
+                asyncio.Event(), None,
+            ))
+            if cancelled:
+                raise ExecInterrupt("cancelled after tool execution")
+            raise RuntimeError("provider failed after tool execution")
+
+    expected_error = ExecInterrupt if cancelled else RuntimeError
+    with pytest.raises(expected_error, match="cancelled|provider failed"):
+        module._run_browser_task_commands(
+            task="visual task", backend="open_claude_chrome",
+            max_steps=1, max_seconds=30, runtime=_Runtime(),
+        )
+
+    assert captured["result"].images == []
+    assert registry.revoked == 1
