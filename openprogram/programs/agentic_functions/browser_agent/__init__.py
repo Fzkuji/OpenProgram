@@ -812,6 +812,27 @@ def _screenshot_image_block(result: Any) -> dict[str, str] | None:
     }
 
 
+def _result_for_prompt(result: Any) -> Any:
+    """Keep screenshot pixels out of the planner's text channel."""
+    if not isinstance(result, ToolReturn) or not result.images:
+        return result
+    metadata = dict(result.json_data) if isinstance(result.json_data, dict) else {}
+    return {
+        "ok": not result.is_error,
+        "image_attached": True,
+        **metadata,
+    }
+
+
+def _release_screenshot_payload(
+    content: list[dict[str, Any]], result: Any,
+) -> None:
+    """Drop caller-owned screenshot copies after the one provider request."""
+    content[:] = [block for block in content if block.get("type") != "image"]
+    if isinstance(result, ToolReturn):
+        result.images.clear()
+
+
 @agentic_function(
     name="browser_agent",
     toolset=("browser",),
@@ -937,9 +958,12 @@ def _run_browser_task_commands(
                 }
             content: list[dict[str, Any]] = [{
                 "type": "text",
-                "text": _step_prompt(task, "", observed, last["result"]),
+                "text": _step_prompt(
+                    task, "", observed, _result_for_prompt(last["result"]),
+                ),
             }]
             sent_screenshot = pending_screenshot is not None
+            sent_screenshot_result = last["result"] if sent_screenshot else None
             if pending_screenshot is not None:
                 content.append(pending_screenshot)
                 pending_screenshot = None
@@ -957,6 +981,7 @@ def _run_browser_task_commands(
             finally:
                 if sent_screenshot:
                     registry.revoke_screenshot(session_id)
+                    _release_screenshot_payload(content, sent_screenshot_result)
             if isinstance(reply, str) and reply.strip():
                 summary = reply.strip()
             if last["seq"] == seq_before:
@@ -1198,7 +1223,7 @@ def _run_browser_task(
                     task.strip(),
                     url,
                     observation,
-                    prior_result,
+                    _result_for_prompt(prior_result),
                 )
                 content: list[dict[str, Any]] = [
                     {"type": "text", "text": instruction},
@@ -1207,6 +1232,7 @@ def _run_browser_task(
                     content.append(pending_screenshot)
                     pending_screenshot = None
                 image_was_sent = len(content) == 2
+                sent_screenshot_result = prior_result if image_was_sent else None
                 action_seq_before = getattr(controller, "_action_seq", 0)
                 try:
                     # Keep this deferred browser tool loop on Runtime until the
@@ -1223,6 +1249,9 @@ def _run_browser_task(
                 finally:
                     if image_was_sent:
                         controller.revoke_screenshot()
+                        _release_screenshot_payload(
+                            content, sent_screenshot_result,
+                        )
                 action_executed = (
                     getattr(controller, "_action_seq", action_seq_before)
                     != action_seq_before

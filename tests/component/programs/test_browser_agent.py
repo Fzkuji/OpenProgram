@@ -729,9 +729,13 @@ def test_browser_agent_sends_one_screenshot_to_next_point_click_request(monkeypa
     class _Runtime:
         calls = 0
 
+        def __init__(self):
+            self.contents = []
+
         def exec(self, **kwargs):
             self.calls += 1
             content = kwargs["content"]
+            self.contents.append(content)
             if self.calls == 1:
                 assert [block["type"] for block in content] == ["text"]
                 frame_id = controller._frame["frame_id"]
@@ -740,6 +744,7 @@ def test_browser_agent_sends_one_screenshot_to_next_point_click_request(monkeypa
                 assert [block["type"] for block in content] == ["text", "image"]
                 assert base64.b64decode(content[1]["data"]) == b"\x89PNG fake"
                 assert content[1]["mime_type"] == "image/png"
+                assert "PNG fake" not in content[0]["text"]
                 frame_id = controller._frame["frame_id"]
                 controller.execute(
                     action="click", expected_frame_id=frame_id, x=100, y=80,
@@ -767,6 +772,43 @@ def test_browser_agent_sends_one_screenshot_to_next_point_click_request(monkeypa
     assert result["status"] == "succeeded"
     assert runtime.calls == 3
     assert ("mouse_click", 100.0, 80.0) in api.page.calls
+    assert [block["type"] for block in runtime.contents[1]] == ["text"]
+
+
+def test_screenshot_payload_is_released_when_provider_request_is_cancelled(monkeypatch):
+    from openprogram.programs.agentic_functions import browser_agent as module
+    from openprogram.providers.utils.errors import ExecInterrupt
+
+    controller, _api = _controller()
+    monkeypatch.setattr(module, "_new_controller", lambda: controller)
+    captured = {}
+
+    class _Runtime:
+        calls = 0
+
+        def exec(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                frame_id = controller._frame["frame_id"]
+                captured["result"] = controller.execute(
+                    action="screenshot", expected_frame_id=frame_id,
+                )
+                return ""
+            captured["content"] = kwargs["content"]
+            assert [block["type"] for block in captured["content"]] == [
+                "text", "image",
+            ]
+            raise ExecInterrupt("cancelled")
+
+    result = module.browser_agent(
+        task="Inspect the visual target",
+        max_steps=2,
+        runtime=_Runtime(),
+    )
+
+    assert result["status"] == "cancelled"
+    assert captured["result"].images == []
+    assert [block["type"] for block in captured["content"]] == ["text"]
 
 
 @pytest.mark.parametrize(

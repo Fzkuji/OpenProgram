@@ -1145,15 +1145,19 @@ def test_gui_harness_screenshot_capability_is_one_request_only(monkeypatch):
     class _Runtime:
         def __init__(self):
             self.requests = []
+            self.contents = []
 
         def exec(self, **kwargs):
             self.requests.append([block["type"] for block in kwargs["content"]])
+            self.contents.append(kwargs["content"])
             index = len(self.requests)
             if index == 1:
                 asyncio.run(kwargs["tools"][0].execute(
                     "c1", {"action": "screenshot", "expected_frame_id": "f1"},
                     asyncio.Event(), None,
                 ))
+            elif index == 2:
+                assert "b'png'" not in kwargs["content"][0]["text"]
             elif index == 3:
                 asyncio.run(kwargs["tools"][0].execute(
                     "c3", {
@@ -1170,4 +1174,5 @@ def test_gui_harness_screenshot_capability_is_one_request_only(monkeypatch):
     )
     assert result["status"] == "succeeded"
     assert runtime.requests == [["text"], ["text", "image"], ["text"]]
+    assert [block["type"] for block in runtime.contents[1]] == ["text"]
     assert registry.revoked == 1
