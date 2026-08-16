@@ -452,9 +452,17 @@ def test_release_workflow_publishes_structured_release_notes() -> None:
     assert "- **Linux**" in notes
     assert "  - **命令行 / Server 安装**" in notes
     assert notes.count("  - **开发安装**") == 2
-    assert "安装包和命令行安装包含相同的完整产品功能" in notes
+    assert "共享同一套完整 runtime 和 browser backend" in notes
+    assert "内置 Browser Pane 只由 macOS Desktop App 提供" in notes
     assert "| 用户类型 |" not in notes
     assert "curl -fsSL https://openprogram.io/install | sh" in notes
+
+    installer = (ROOT / "scripts" / "install-release.sh").read_text(encoding="utf-8")
+    assert f'OPENPROGRAM_VERSION="${{OPENPROGRAM_VERSION:-{version}}}"' in installer
+    for readme in ("README.md", "docs/README.md", "docs/README.zh.md"):
+        contents = (ROOT / readme).read_text(encoding="utf-8")
+        assert "https://github.com/Fzkuji/OpenProgram/releases/latest" in contents
+        assert "releases/tag/v0.6.0" not in contents
 
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"

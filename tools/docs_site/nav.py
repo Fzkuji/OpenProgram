@@ -245,8 +245,8 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
     "interfaces": [
         ("Overview", "概览", ["interfaces/README.md"]),
         ("Surfaces", "界面", [
-            "interfaces/web.md", "interfaces/tui.md", "interfaces/cli.md",
-            "interfaces/acp.md"]),
+            "interfaces/desktop.md", "interfaces/web.md", "interfaces/tui.md",
+            "interfaces/cli.md", "interfaces/acp.md"]),
     ],
     "models": [
         ("Overview", "概览", ["models/README.md", "models/providers.md"]),
@@ -317,10 +317,11 @@ PAGE_ORDER: dict[str, int] = {
     "capabilities/workflows/research-agent.md": 2,
     "capabilities/workflows/wiki-agent.md": 3,
     "interfaces/README.md": 0,
-    "interfaces/web.md": 1,
-    "interfaces/tui.md": 2,
-    "interfaces/cli.md": 3,
-    "interfaces/acp.md": 4,
+    "interfaces/desktop.md": 1,
+    "interfaces/web.md": 2,
+    "interfaces/tui.md": 3,
+    "interfaces/cli.md": 4,
+    "interfaces/acp.md": 5,
     "models/README.md": 0,
     "models/providers.md": 1,
     "models/auth.md": 2,

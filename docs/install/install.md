@@ -38,7 +38,7 @@ curl -fsSL https://openprogram.io/install | sh
 The short bootstrap resolves the latest stable GitHub Release and then runs the installer from that immutable tag. For a reproducible install of a specific release, pass the version to the shell process:
 
 ```bash
-curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=0.6.1 sh
+curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=0.7.0 sh
 ```
 
 The command creates `~/.local/bin/openprogram`. If that directory is not already on `PATH`, invoke it by its absolute path or add the directory to the shell configuration.

@@ -13,6 +13,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Browser tool + chat channels now install by default** (the `[all]` extra + `playwright install chromium`) — no opt-in menu. `--minimal` / `-Minimal` skips them; the heavier stealth browsers / agent-browser stay opt-in (`--stealth`, `--agent-browser`).
 - Onboarding docs (README / GETTING_STARTED / README_CN / install.md, EN + 中文) lead with the one-command installer; dropped `pip install openprogram` from the onboarding paths. README Quick Start trimmed to **Install → Run → Add a harness** (the GUI/Research/Wiki harnesses presented uniformly via `openprogram programs install <name>`); removed the inline GPU/surfaces flavor text and the "write your own functions" step.
 
+## [0.7.0] - 2026-08-17
+
+### Added — built-in browser
+
+- Added a first-class Browser pane beside Files, chat, and Terminal, including Browser home, navigation, reload/stop, home, address/search input, current-page bookmarking, external opening, and responsive browser controls.
+- Added a default-visible bookmarks bar, bounded overflow and nested-folder menus, favicon display, and a compact two-column Bookmarks manager with search and folder navigation.
+- Added date-grouped compact History backed by a bounded persistent store, browser-data clearing, and a dedicated Browser settings section.
+- Added explicit macOS profile import for Google Chrome, Brave, Microsoft Edge, and Chromium. Users select the source profile and History, Bookmarks, and/or Cookies; source data is copied read-only and merged into OpenProgram's independent profile.
+- Added turn-scoped awareness of a visible internal WebTab and bound `computer_use`: Agents receive a bounded DOM/ARIA/text preview before their first response and can operate the exact pane without operating-system focus. Visual work uses at most one current-viewport screenshot per observation frame.
+
+### Changed
+
+- Browser panes can participate in split layouts and cross-window tab transfer while preserving exact window/tab identity for Agent control.
+- Browser menus now own Bookmarks, History, import, data clearing, and Browser settings; window menus retain app, window, and pane actions.
+- The user documentation now treats the macOS Desktop App as a separate interface and records browser usage, profile import, Agent access, data boundaries, and extension policy.
+
+### Removed
+
+- Browser-extension installation and management are not part of the product. Chrome Web Store and Edge Add-ons remain ordinary webpages; OpenProgram ships no install button, CRX downloader, extension bridge, extension manager, custom Chromium/Electron fork, or additional browser runtime for extension compatibility. The existing Playwright Chromium remains a browser-automation backend. OpenProgram Plugins, Skills, MCP servers, Programs, and agent tools remain available as separate extension mechanisms.
+
+### Fixed
+
+- Browser tab identity, geometry revision, visibility, and transfer checks now reject stale or hidden targets before preview or action execution.
+- Bookmark menus preserve hierarchy, constrain width and height, scroll at window edges, display bookmark and folder icons, and switch folders on pointer hover without changing the existing tab-bar visual design.
+- Browser profile import validates paths and URL schemes, preserves nested bookmark structure, bounds imported records, avoids logging Cookie values, and keeps existing target data on source failures.
+
 ## [0.5.0] - 2026-06-07
 
 ### Added — One-command install (all platforms)

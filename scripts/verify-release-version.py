@@ -18,6 +18,9 @@ def main() -> int:
     desktop_version = json.loads(
         (ROOT / "desktop" / "package.json").read_text(encoding="utf-8")
     )["version"]
+    installer = (ROOT / "scripts" / "install-release.sh").read_text(
+        encoding="utf-8"
+    )
     expected_tag = f"v{python_version}"
     errors = []
     if desktop_version != python_version:
@@ -26,6 +29,11 @@ def main() -> int:
         )
     if args.tag and args.tag != expected_tag:
         errors.append(f"tag {args.tag} != {expected_tag}")
+    expected_default = (
+        f'OPENPROGRAM_VERSION="${{OPENPROGRAM_VERSION:-{python_version}}}"'
+    )
+    if expected_default not in installer:
+        errors.append("release installer default version does not match project version")
     if errors:
         raise SystemExit("; ".join(errors))
     print(f"release version: {python_version}")

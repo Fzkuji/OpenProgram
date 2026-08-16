@@ -206,8 +206,8 @@
     <header>
       <div class="eyebrow">OpenProgram · UI design specification</div>
       <h1>内置浏览器、资料导入与新建 Pane</h1>
-      <p class="lede">新建 Pane 只负责选择内容类型；进入 Browser 后才显示网页导航、书签、History 和资料导入。浏览器工具栏只处理当前网页和浏览资料，整个窗口的菜单只处理 OpenProgram 与 Pane。两类设置共用同一 Settings 页面，但使用不同入口。</p>
-      <div class="meta"><span class="pill"><span class="dot"></span>当前基线已实现</span><span class="pill">桌面 App</span><span class="pill">独立浏览器 profile</span><span class="pill">Browser chrome 已对齐</span></div>
+      <p class="lede">新建 Pane 只负责选择内容类型；进入 Browser 后才显示网页导航、书签、History 和资料导入。浏览器工具栏只处理当前网页和浏览资料，整个窗口的菜单只处理 OpenProgram 与 Pane。内置浏览器使用标准 Electron/Chromium，不提供浏览器扩展安装与管理。</p>
+      <div class="meta"><span class="pill"><span class="dot"></span>当前基线已实现</span><span class="pill">产品与工程验收</span><span class="pill">桌面 App</span><span class="pill">独立浏览器 profile</span><span class="pill">Browser chrome 已对齐</span><span class="pill">不安装浏览器扩展</span></div>
       <details class="mobile-toc">
         <summary>本页目录</summary>
         <nav aria-label="移动端页内导航"><a href="#decisions">产品决策</a><a href="#toolbar">工具栏与菜单</a><a href="#surfaces">可见状态</a><a href="#references">参考行为</a><a href="#architecture">架构与数据流</a><a href="#boundaries">信任边界</a><a href="#acceptance">验收与状态</a></nav>
@@ -217,7 +217,7 @@
     <section class="metrics" aria-label="设计范围摘要">
       <div class="metric"><span class="metric-label">范围</span><span class="metric-value">Pane 层级 · Browser chrome · Profile import</span></div>
       <div class="metric"><span class="metric-label">平台</span><span class="metric-value">桌面 App · 独立 profile · 源数据只读</span></div>
-      <div class="metric"><span class="metric-label">实现状态</span><span class="metric-value">资料导入 · Browser chrome · Browser settings 已实现</span></div>
+      <div class="metric"><span class="metric-label">实现状态</span><span class="metric-value">资料导入 · Browser chrome · Agent control 已实现</span></div>
     </section>
 
     <section class="section" id="decisions">
@@ -237,6 +237,7 @@
       <div class="decision"><strong>菜单分别绑定触发按钮</strong><p>Browser <code>⋯</code> 和窗口 <code>⋯</code> 都使用各自触发按钮的实际屏幕矩形定位，菜单右边缘与按钮右边缘对齐，垂直间距为 4px；二者不能共用位置或内容。</p></div>
       <div class="decision"><strong>History 使用紧凑行</strong><p>记录按本地日期分组，每行只显示时间、favicon、标题、域名和操作；完整 URL 不再单独占用第二行。</p></div>
       <div class="decision"><strong>导入必须显式触发</strong><p>来源浏览器、profile 和数据类型分别确认。OpenProgram 不读取或修改用户正在使用的源 profile。</p></div>
+      <div class="decision" id="browser-extension-boundary"><strong>不提供浏览器扩展安装与管理</strong><p>OpenProgram 保持标准 Electron/Chromium <code>WebContentsView</code>，不维护 Electron 或 Chromium 定制分支，也不为扩展兼容增加另一套浏览器运行时。完整 runtime 中已有的 Playwright Chromium 只属于浏览器自动化后端，不承载 Desktop Browser Pane 或扩展。Electron 官方将兼容任意 Chrome Web Store 扩展明确列为非目标；其扩展 API 只覆盖部分能力，因此不能把商店页面上的“安装”解释为可用性承诺。Chrome Web Store 与 Edge Add-ons 在 OpenProgram 中只是普通网页，不显示 OpenProgram 安装按钮，不下载 CRX，也不提供扩展管理页。需要扩展 OpenProgram 本身时，继续使用 Plugins、Skills、MCP servers、Programs 和 Agent tools；这些能力与浏览器扩展是不同产品边界。</p></div>
     </section>
 
     <section class="section" id="toolbar">
@@ -355,6 +356,7 @@
         <article class="compare-card"><span class="label">Bookmark access</span><h3>Chrome 的分层入口</h3><p>星标保存当前页；书签栏可开关；完整管理器独立存在。OpenProgram 保留三层，但针对分屏定义更严格的收缩规则。</p><span class="choice modified">修改后采用</span></article>
         <article class="compare-card"><span class="label">Settings ownership</span><h3>OpenAI 的 App Settings</h3><p>内置浏览器保持独立状态，Cookies 与历史清理归桌面 App Settings。OpenProgram 增加 Browser <code>⋯</code> 深链，但不复制设置存储。</p><span class="choice modified">修改后采用</span></article>
         <article class="compare-card"><span class="label">Importer</span><h3>Chromium C++ importer</h3><p>组件不作为 Electron JavaScript API 暴露，且不提供通用 Cookies import 实现。</p><span class="choice rejected">不复制</span></article>
+        <article class="compare-card"><span class="label">Browser extensions</span><h3>Chrome / Edge 扩展商店</h3><p>不提供商店安装、CRX 侧载或扩展管理。要承诺任意商店扩展兼容，必须增加外部浏览器依赖或长期维护定制浏览器运行时；两者都不属于当前产品。</p><span class="choice rejected">明确排除</span></article>
       </div>
       <ul class="source-list">
         <li><a href="https://help.openai.com/en/articles/20001277-using-the-built-in-browser-in-the-chatgpt-desktop-app">OpenAI 内置浏览器说明</a>：确认独立浏览状态、外部浏览器边界，以及 Cookies 和 History 由桌面 App Settings 清理。</li>
@@ -363,6 +365,7 @@
         <li><a href="https://chromium.googlesource.com/chromium/src/+/main/docs/user_data_dir.md">Chromium user data directory</a>：确认 History、Bookmarks、Cookies 的 profile 存储位置。</li>
         <li><a href="https://chromium.googlesource.com/chromium/src/+/refs/tags/145.0.7573.1/components/user_data_importer/">Chromium user_data_importer</a>：确认原生导入组件的能力与 Electron 暴露边界。</li>
         <li><a href="https://www.electronjs.org/docs/latest/api/session">Electron session</a> 与 <a href="https://www.electronjs.org/docs/latest/api/cookies">Cookies</a>：确认持久化 partition 和逐条 Cookie 写入接口。</li>
+        <li><a href="https://www.electronjs.org/docs/latest/api/extensions/">Electron Chrome Extensions</a>：确认只支持部分 Chrome Extensions API，且任意 Chrome Web Store 扩展兼容不是 Electron 的目标。</li>
       </ul>
     </section>
 
@@ -409,7 +412,7 @@
         </tbody>
       </table>
       <div class="exclusions">
-        <div class="exclusion">不导入 Passwords、支付信息、地址、扩展、下载记录、缓存、localStorage 或 Service Workers。</div>
+        <div class="exclusion">不导入 Passwords、支付信息、地址、浏览器扩展、扩展存储、下载记录、缓存、localStorage 或 Service Workers。</div>
         <div class="exclusion">不实现密码管理器、系统 Credential Store、自动填充或对运行中的源浏览器进行远程调试。</div>
         <div class="exclusion">Cookie 导入可以减少重复登录，但设备绑定、过期、二次验证或服务端撤销仍会要求重新登录。</div>
         <div class="exclusion">本地浏览器导入仅属于桌面 App；Web-only 模式不得显示为可用能力。</div>
@@ -436,8 +439,9 @@
           <tr><td>窗口主菜单在桌面 App 和 Web 中都与触发按钮右对齐，按钮底部到菜单顶部的间距为 4px。桌面主菜单、Browser 菜单、书签菜单和 tab 右键菜单从 renderer 传入的 CSS 像素坐标必须按发送页面的 zoom factor 转换为 Electron DIP；在 80%、100%、125% 缩放下都保持贴近原触发按钮。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/center-tabs/main-menu.tsx"><code>main-menu.tsx</code></a>；<code>check-center-tabs.mjs</code>；<code>check-webtab-zoom-bounds.js</code></td></tr>
           <tr><td>Cookies 只进入 <code>persist:webtabs</code>；IPC、日志、History 和 renderer 不出现 Cookie 值。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/desktop/browser-profile-import.js"><code>browser-profile-import.js</code></a> self-check；<code>desktop/main.js</code></td></tr>
           <tr><td>来源损坏、浏览器缺失、临时进程超时和 Cookie 部分失败返回稳定错误码并保留原数据。</td><td><span class="status">已实现</span></td><td><code>browser-profile-import.js</code> 与 <code>browsing-history-store.js</code> self-check</td></tr>
+          <tr><td>Chrome Web Store 与 Edge Add-ons 页面按普通网页打开；产品不显示扩展安装按钮，不暴露扩展 IPC/renderer bridge，不打包扩展 manager，也不导入源浏览器扩展。</td><td><span class="status out">明确排除并受回归检查保护</span></td><td><code>check-built-in-browser.mjs</code> 同时检查 Desktop package、preload、main、renderer、bridge 与本设计边界。</td></tr>
           <tr><td>依赖 PTY 的全屏终端程序以及执行中取消浏览器导入。</td><td><span class="status limit">当前限制</span></td><td>产品边界，不作为当前验收缺口。</td></tr>
-          <tr><td>Passwords、自动填充、支付/地址数据和源浏览器接管。</td><td><span class="status out">明确排除</span></td><td><code>browser-profile-import.js</code> 的导入类型 allowlist。</td></tr>
+          <tr><td>Passwords、自动填充、支付/地址数据、浏览器扩展和源浏览器接管。</td><td><span class="status out">明确排除</span></td><td><code>browser-profile-import.js</code> 的导入类型 allowlist；Desktop 与 Web 的扩展能力缺失检查。</td></tr>
         </tbody>
       </table>
       </div>

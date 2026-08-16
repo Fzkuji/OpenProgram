@@ -30,7 +30,7 @@ Everything lives under `~/.openprogram/` by default: `config.json` (configuratio
 
 ## How do I update to the latest version?
 
-Stable installations move only to an explicit published version. The first updater-enabled release requires one transition from v0.6.6: macOS Desktop users install its DMG manually, while macOS/Linux CLI/server users rerun the public installer once. Later Desktop releases are discovered in Settings; managed CLI/server and source-checkout users both run `openprogram upgrade`, which selects the release or gated Git path from the installation type. See [Upgrading](../install/upgrade.md).
+Stable installations move only to an explicit published version. Version 0.7.0 is the first updater-enabled release and the one-time transition from v0.6.6: macOS Desktop users install the v0.7.0 DMG manually, while macOS/Linux CLI/server users rerun the public installer once. Later Desktop releases are discovered in Settings; managed CLI/server and source-checkout users both run `openprogram upgrade`, which selects the release or gated Git path from the installation type. See [Upgrading](../install/upgrade.md).
 
 ## The page opened by `openprogram web` won't load?
 
@@ -59,6 +59,12 @@ openprogram logs tail runtime    # pick a log: worker / runtime / ink
 ## Why is the release download large?
 
 The complete release includes managed Python, PyTorch, Playwright Chromium, EasyOCR data, the GPA detector, and the GUI, Research, and Wiki Programs. Normal installation does not download these product components separately.
+
+## Can I install Chrome or Edge browser extensions?
+
+No. Chrome Web Store and Edge Add-ons pages open as ordinary webpages in the built-in browser, but OpenProgram does not add an extension-install button, download CRX packages, import extensions from another browser, or provide an extension manager. The app uses standard Electron/Chromium; Electron supports only part of the Chrome Extensions API and does not target compatibility with arbitrary Chrome Web Store extensions. OpenProgram does not maintain a custom Chromium/Electron fork or add another browser runtime for extension compatibility. The shipped Playwright Chromium is a browser-automation backend and does not host the Desktop Browser Pane or extensions.
+
+To extend OpenProgram itself, use [Plugins](../capabilities/plugins.md), Skills, MCP servers, Programs, or agent tools. These extend OpenProgram rather than the embedded webpage runtime.
 
 ## An included agent program doesn't show up in the UI?
 

@@ -100,8 +100,12 @@ function profileDirectories(dataRoot) {
   });
 }
 
-function browserDefinitions({ homeDir = os.homedir(), applicationsDir = "/Applications" } = {}) {
-  if (process.platform !== "darwin") return [];
+function browserDefinitions({
+  homeDir = os.homedir(),
+  applicationsDir = "/Applications",
+  platform = process.platform,
+} = {}) {
+  if (platform !== "darwin") return [];
   const applicationRoots = [...new Set([applicationsDir, path.join(homeDir, "Applications")])];
   return MAC_BROWSERS.map((browser) => ({
     ...browser,
@@ -506,7 +510,12 @@ if (require.main === module) {
   historyDb.close();
   (async () => {
     try {
-      const options = { homeDir: home, applicationsDir: apps };
+      const options = { homeDir: home, applicationsDir: apps, platform: "darwin" };
+      assert.deepStrictEqual(
+        browserDefinitions({ ...options, platform: "linux" }),
+        [],
+        "profile discovery stays macOS-only",
+      );
       const listed = listBrowserSources(options);
       assert.strictEqual(listed[0].profiles[0].name, "Person 1");
       assert.strictEqual(listed[0].profiles[0].available.cookies, true);

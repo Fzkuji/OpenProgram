@@ -38,7 +38,7 @@ curl -fsSL https://openprogram.io/install | sh
 短 bootstrap 先解析最新 stable GitHub Release，再执行该不可变 tag 下的 installer。需要可复现地安装指定版本时，把版本传给 shell 进程：
 
 ```bash
-curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=0.6.1 sh
+curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=0.7.0 sh
 ```
 
 命令创建 `~/.local/bin/openprogram`。如果该目录不在 `PATH`，可以使用绝对路径，或把它加入 shell 配置。

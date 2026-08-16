@@ -30,7 +30,7 @@ openprogram setup                # 重新走一遍配置向导
 
 ## 怎么更新到最新版本？
 
-stable installation 只变更到明确的已发布版本。首个含 updater 的 release 需要从 v0.6.6 完成一次过渡：macOS Desktop 用户手动安装该版本的 DMG，macOS/Linux CLI/server 用户重新运行一次公开 installer。后续 Desktop release 在 Settings 中发现；managed CLI/server 和 source-checkout 用户都运行 `openprogram upgrade`，命令根据安装类型选择 release 路径或 Git 门禁路径。详见[升级](../install/upgrade.zh.md)。
+stable installation 只变更到明确的已发布版本。0.7.0 是首个启用 updater 的版本，也是从 v0.6.6 进入 updater release 线的一次性过渡：macOS Desktop 用户手动安装 v0.7.0 DMG，macOS/Linux CLI/server 用户重新运行一次公开 installer。后续 Desktop release 在 Settings 中发现；managed CLI/server 和 source-checkout 用户都运行 `openprogram upgrade`，命令根据安装类型选择 release 路径或 Git 门禁路径。详见[升级](../install/upgrade.zh.md)。
 
 ## `openprogram web` 打开的页面加载不出来？
 
@@ -59,6 +59,12 @@ openprogram logs tail runtime    # 指定日志：worker / runtime / ink
 ## 为什么 release 下载体积较大？
 
 完整 release 已包含 managed Python、PyTorch、Playwright Chromium、EasyOCR 数据、GPA 检测模型，以及 GUI、Research、Wiki Program。普通安装不会再单独下载这些产品组件。
+
+## 可以安装 Chrome 或 Edge 浏览器扩展吗？
+
+不可以。Chrome Web Store 与 Edge Add-ons 页面可以作为普通网页在内置浏览器中打开，但 OpenProgram 不增加扩展安装按钮，不下载 CRX，不从其他浏览器导入扩展，也不提供扩展管理页。应用使用标准 Electron/Chromium；Electron 只支持部分 Chrome Extensions API，也不以兼容任意 Chrome Web Store 扩展为目标。OpenProgram 不维护定制 Chromium/Electron 分支，也不为扩展兼容增加另一套浏览器运行时。release 内已有的 Playwright Chromium 只用于浏览器自动化后端，不承载 Desktop Browser Pane 或扩展。
+
+需要扩展 OpenProgram 本身时，使用 [Plugins](../capabilities/plugins.zh.md)、Skills、MCP servers、Programs 或 agent tools。这些能力扩展的是 OpenProgram，不是内嵌网页运行时。
 
 ## 内置 agent Program 没出现在界面里？
 

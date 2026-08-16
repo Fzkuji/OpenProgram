@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -29,6 +29,8 @@ const bridge = read("../lib/desktop-bridge.ts");
 const preload = read("../../desktop/preload.js");
 const main = read("../../desktop/main.js");
 const historyGroupsSource = read("../lib/history-groups.ts");
+const desktopPackage = JSON.parse(read("../../desktop/package.json"));
+const browserDesign = read("../../docs/reference/design/ui/built-in-browser.html");
 
 for (const label of ["Files", "Browser", "Terminal"]) {
   assert.match(launcher, new RegExp(`text\\(\\"${label}\\"`));
@@ -204,6 +206,35 @@ assert.match(main, /browser-data:clear/);
 assert.match(main, /webtab:stop/);
 assert.match(main, /cookies:\s*result\.cookies/);
 assert.doesNotMatch(main, /cookies:\s*result\.(?:cookies\.)?(?:name|value)/);
+
+for (const path of [
+  "../../desktop/browser-extension-manager.js",
+  "../../desktop/scripts/check-browser-extensions.js",
+  "../../docs/reference/design/ui/browser-extensions.html",
+]) {
+  assert.equal(existsSync(new URL(path, import.meta.url)), false, `${path} must remain absent`);
+}
+for (const [name, source] of [
+  ["desktop preload", preload],
+  ["desktop main", main],
+  ["desktop bridge", bridge],
+  ["WebTab renderer", webTabPane],
+  ["built-in pages", builtin],
+]) {
+  assert.doesNotMatch(
+    source,
+    /browserExtensions|browser-extensions:|InstallExtensionButton|installCurrentPage/,
+    `${name} must not expose browser-extension installation or management`,
+  );
+}
+assert.equal(
+  desktopPackage.build.files.some((path) => /browser-extension/i.test(path)),
+  false,
+  "the Desktop package must not ship a browser-extension manager",
+);
+assert.match(browserDesign, /id="browser-extension-boundary"/);
+assert.match(browserDesign, /不提供浏览器扩展安装与管理/);
+assert.match(browserDesign, /Electron.*任意.*Chrome Web Store.*非目标/s);
 
 const browserLayoutCompiled = ts.transpileModule(browserLayoutSource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },

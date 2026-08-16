@@ -4,7 +4,7 @@
 GitHub Release，但在用户显式重启前不改变运行中的 worker。source checkout 使用本文
 记录的 Git 门禁流程：只有证明新代码能够启动后，才更新代码并重启服务。
 
-Desktop 与 managed CLI/server 的 release 升级，以及 v0.6.6 的一次性过渡，见
+Desktop 与 managed CLI/server 的 release 升级，以及从 v0.6.6 到 v0.7.0 的一次性过渡，见
 [升级 release 安装](../install/upgrade.zh.md)。
 
 ## Source checkout 行为
