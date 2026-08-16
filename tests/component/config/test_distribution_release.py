@@ -1598,21 +1598,21 @@ def test_release_workflow_publishes_structured_release_notes() -> None:
     assert f"OpenProgram-{version}-mac-arm64-unsigned.dmg" in notes
     assert f"OpenProgram-{version}-mac-x64-unsigned.dmg" in notes
     for section in (
-        "## 🐞 修复问题",
-        "## ✨ 新增功能",
-        "## 🚀 优化改进",
-        "## 📦 下载与安装",
-        "## 🔄 版本指南",
+        "## 🐞 Bug fixes",
+        "## ✨ New features",
+        "## 🚀 Improvements",
+        "## 📦 Download and installation",
+        "## 🔄 Upgrade guide",
     ):
         assert section in notes
     assert "- **macOS**" in notes
-    assert "  - **安装包安装**" in notes
-    assert "  - **命令行安装**" in notes
+    assert "  - **Package installation**" in notes
+    assert "  - **Command-line installation**" in notes
     assert "- **Linux**" in notes
-    assert "  - **命令行 / Server 安装**" in notes
-    assert notes.count("  - **开发安装**") == 2
-    assert "安装包和命令行安装包含相同的完整产品功能" in notes
-    assert "| 用户类型 |" not in notes
+    assert "  - **Command-line / Server installation**" in notes
+    assert notes.count("  - **Development installation**") == 2
+    assert "Package and command-line installations contain the same complete product" in notes
+    assert "| User type |" not in notes
     assert "curl -fsSL https://openprogram.io/install | sh" in notes
 
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
@@ -1621,6 +1621,7 @@ def test_release_workflow_publishes_structured_release_notes() -> None:
     assert 'notes_file=".github/release-notes/$GITHUB_REF_NAME.md"' in workflow
     assert 'release_version="${GITHUB_REF_NAME#v}"' in workflow
     assert 'test -s "$notes_file"' in workflow
+    assert "release notes must be English" in workflow
     assert '--title "OpenProgram $release_version Release"' in workflow
     assert '--notes-file "$notes_file"' in workflow
     assert "--generate-notes" not in workflow
@@ -1630,8 +1631,12 @@ def test_all_versioned_release_notes_use_the_public_english_title() -> None:
     notes_dir = ROOT / ".github" / "release-notes"
     for notes_path in sorted(notes_dir.glob("v*.md")):
         version = notes_path.stem.removeprefix("v")
-        heading = notes_path.read_text(encoding="utf-8").splitlines()[0]
+        notes = notes_path.read_text(encoding="utf-8")
+        heading = notes.splitlines()[0]
         assert heading == f"# OpenProgram {version} Release Notes"
+        assert not re.search(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]", notes), (
+            f"release notes must be English: {notes_path.name}"
+        )
 
 
 def test_macos_desktop_matrix_maps_runtime_arch_to_electron_builder_arch() -> None:
