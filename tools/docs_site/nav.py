@@ -15,6 +15,11 @@ from pathlib import Path
 EXCLUDE_DIRS = {"_site", "_site.tmp", "_site.old", "_static_root",
                 "images", "slides"}
 
+# Internal execution plans stay versioned in Git but are not product
+# documentation. Keep this path-level list separate from EXCLUDE_DIRS so a
+# similarly named directory in another product area is not hidden by accident.
+EXCLUDE_PATH_PREFIXES = ("superpowers/",)
+
 # Top-level tabs. Each top-level directory under docs/ is one tab in the top
 # navbar; the sidebar only shows the current tab's tree. Order here is the
 # navbar order. (dir name -> (中文 label, English label))
@@ -99,8 +104,16 @@ def prettify(name: str) -> str:
     return name.strip().title()
 
 
+def _is_excluded(rel: Path) -> bool:
+    rel_str = rel.as_posix()
+    return (
+        any(part in EXCLUDE_DIRS for part in rel.parts)
+        or any(rel_str.startswith(prefix) for prefix in EXCLUDE_PATH_PREFIXES)
+    )
+
+
 def discover(docs_root: Path) -> list[Page]:
-    """All renderable pages under docs/, excluding EXCLUDE_DIRS.
+    """All public renderable pages under docs/, excluding internal paths.
 
     Bilingual convention: ``xxx.md`` is the default (English) version; a sibling
     ``xxx.zh.md`` is its Chinese version. The .zh.md does NOT get its own
@@ -111,7 +124,7 @@ def discover(docs_root: Path) -> list[Page]:
     zh_sources: dict[Path, Path] = {}  # base rel (xxx.md) -> zh src path
     for path in docs_root.rglob("*.zh.md"):
         rel = path.relative_to(docs_root)
-        if any(part in EXCLUDE_DIRS for part in rel.parts):
+        if _is_excluded(rel):
             continue
         base_rel = rel.with_name(rel.name[:-len(".zh.md")] + ".md")
         zh_sources[base_rel] = path
@@ -121,7 +134,7 @@ def discover(docs_root: Path) -> list[Page]:
         if path.suffix not in (".md", ".html"):
             continue
         rel = path.relative_to(docs_root)
-        if any(part in EXCLUDE_DIRS for part in rel.parts):
+        if _is_excluded(rel):
             continue
         if rel.name.endswith(".zh.md"):
             continue  # chinese version is attached to its base, not a page
@@ -278,6 +291,53 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             # generated from code at build time (generate_reference.py):
             "reference/config-keys.md", "reference/provider-registry.md"]),
         ("Notes", "笔记", ["reference/claude-code-compaction.md"]),
+    ],
+    "design": [
+        ("UI · Foundations", "界面 · 基础", [
+            "reference/design/ui/README.md",
+            "reference/design/ui/invariants.md",
+            "reference/design/ui/surface-system.md",
+            "reference/design/ui/state-layer.md",
+            "reference/design/ui/theme-system.html",
+            "reference/design/ui/web-styles.md",
+            "reference/design/ui/interaction-feedback.md",
+            "reference/design/ui/indicator-dots.md",
+            "reference/design/ui/layout-density-mock.html",
+        ]),
+        ("UI · Chat and composer", "界面 · 对话与编辑器", [
+            "reference/design/ui/attachment-handling.html",
+            "reference/design/ui/attachment-handling.md",
+            "reference/design/ui/chat-attachments.html",
+            "reference/design/ui/chat-turn-visual-spec.html",
+            "reference/design/ui/composer-interaction-modes.md",
+            "reference/design/ui/composer-local-attachment-paths.html",
+            "reference/design/ui/composer-responsive-controls.html",
+            "reference/design/ui/composer-tool-profile-menu.html",
+            "reference/design/ui/fn-form-compact-mock.html",
+            "reference/design/ui/gui-agent-context.md",
+            "reference/design/ui/send-queue-reliability.html",
+            "reference/design/ui/websocket-command-lifecycle.html",
+        ]),
+        ("UI · Browser and tabs", "界面 · 浏览器与标签页", [
+            "reference/design/ui/browser-extensions.html",
+            "reference/design/ui/built-in-browser.html",
+            "reference/design/ui/center-tabs-and-split-layout.html",
+            "reference/design/ui/remote-web-access.html",
+            "reference/design/ui/remote-web-access.md",
+            "reference/design/ui/web-tab-home-button.html",
+            "reference/design/ui/web-tab-native-bounds.html",
+        ]),
+        ("UI · Settings and catalog", "界面 · 设置与目录", [
+            "reference/design/ui/programs-source-categories.html",
+            "reference/design/ui/settings-collapsible-columns.html",
+        ]),
+        ("UI · Workspace and sidebar", "界面 · 工作区与侧栏", [
+            "reference/design/ui/integrated-terminal.html",
+            "reference/design/ui/project-workspace-prototype.html",
+            "reference/design/ui/project-workspace.md",
+            "reference/design/ui/right-sidebar-files.html",
+            "reference/design/ui/sidebar-hierarchy-mock.html",
+        ]),
     ],
 }
 

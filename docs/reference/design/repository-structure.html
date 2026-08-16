@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Repository structure — OpenProgram</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0c111b;
+    --panel: #121a28;
+    --panel-2: #182235;
+    --line: #2a3952;
+    --text: #e7edf8;
+    --muted: #9ba9bd;
+    --blue: #79a9ff;
+    --green: #72d6a0;
+    --amber: #ffc66d;
+    --red: #ff8d96;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 52px 0 80px; }
+  h1 { margin: 0; font-size: clamp(30px, 5vw, 48px); line-height: 1.12; }
+  h2 { margin: 44px 0 14px; font-size: 22px; }
+  h3 { margin: 0 0 8px; font-size: 16px; }
+  p { max-width: 84ch; }
+  .eyebrow { color: var(--blue); font-size: 12px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+  .lead { color: var(--muted); font-size: 17px; }
+  .meta-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1px;
+    margin: 24px 0 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--line);
+  }
+  .meta-strip div { padding: 13px 14px; background: var(--panel); }
+  .meta-strip dt { margin: 0 0 3px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .meta-strip dd { margin: 0; font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .card, .flow, .table-wrap {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--panel);
+  }
+  .card { padding: 18px; }
+  .card p, .card ul { margin-bottom: 0; color: var(--muted); }
+  .flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; }
+  .flow div { padding: 18px; background: var(--panel); }
+  .flow strong, code { color: var(--blue); }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; min-width: 760px; border-collapse: collapse; }
+  th, td { padding: 12px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-size: 12px; letter-spacing: .05em; }
+  tr:last-child td { border-bottom: 0; }
+  code { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .state { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+  .now { color: var(--green); background: color-mix(in srgb, var(--green) 12%, transparent); }
+  .later { color: var(--amber); background: color-mix(in srgb, var(--amber) 12%, transparent); }
+  .no { color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }
+  ul { padding-left: 20px; }
+  .note { border-left: 3px solid var(--blue); padding: 8px 0 8px 16px; color: var(--muted); }
+  a { color: var(--blue); }
+  @media (max-width: 760px) {
+    main { width: min(100% - 24px, 1120px); padding-top: 32px; }
+    .grid, .flow, .meta-strip { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">OpenProgram · Engineering design</div>
+  <h1>Repository structure</h1>
+  <p class="lead">本页定义代码与文档的归属边界、超长文件的拆分条件，以及当前可实施的整理顺序。目标是降低修改时需要同时理解的范围，不以文件数量或单一行数作为拆分目标。</p>
+  <dl class="meta-strip">
+    <div><dt>Status</dt><dd>Current design</dd></div>
+    <div><dt>Audience</dt><dd>Maintainers and reviewers</dd></div>
+    <div><dt>Scope</dt><dd>Source layout and docs navigation</dd></div>
+    <div><dt>Excluded</dt><dd>Product behavior and public API changes</dd></div>
+  </dl>
+
+  <h2>1. 设计原则</h2>
+  <div class="grid">
+    <section class="card">
+      <h3>按产品职责归属</h3>
+      <p>Python 产品行为放在 <code>openprogram/</code> 的产品域；Web、CLI 和 Desktop 分别保留在自己的 workspace。跨界调用通过稳定入口完成，不复制实现。</p>
+    </section>
+    <section class="card">
+      <h3>按可验证边界拆分</h3>
+      <p>只有当一段代码具有独立输入、输出和测试入口时才移动。单纯因为文件长而引入 mixin、manager 或 facade 不属于有效拆分。</p>
+    </section>
+    <section class="card">
+      <h3>公共接口保持稳定</h3>
+      <p>移动实现时保留现有 import、CLI 参数和运行行为。调用方无需在同一批次迁移，结构改动可以单独回滚。</p>
+    </section>
+    <section class="card">
+      <h3>当前设计与实施记录分离</h3>
+      <p>本 HTML 只描述长期结构；具体提交、测试结果和未完成工作记录在独立的 implementation ledger 中。</p>
+    </section>
+  </div>
+
+  <h2>2. 顶层职责</h2>
+  <div class="flow" aria-label="OpenProgram top-level repository areas">
+    <div><strong>Product core</strong><br><code>openprogram/</code><br>Python 运行时、服务端、内置能力</div>
+    <div><strong>User surfaces</strong><br><code>web/</code> · <code>cli/</code> · <code>desktop/</code><br>浏览器、终端和桌面宿主</div>
+    <div><strong>Verification</strong><br><code>tests/</code><br>unit、component、integration、contract</div>
+    <div><strong>Delivery</strong><br><code>scripts/</code> · <code>tools/</code> · <code>docs/</code><br>发布、维护工具和文档</div>
+  </div>
+
+  <h2>3. 超长文件处理</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>文件</th><th>现状</th><th>决定</th><th>边界</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>openprogram/cli.py</code></td>
+          <td>参数声明与命令执行共处，约 2,000 行</td>
+          <td><span class="state now">本批实施</span></td>
+          <td>把现有 parser 定义移到 <code>openprogram/_cli_parser.py</code>；<code>openprogram.cli.build_parser</code> 继续可用。</td>
+        </tr>
+        <tr>
+          <td><code>desktop/main.js</code></td>
+          <td>窗口、更新、WebView、标签转移和菜单共处，接近 4,000 行</td>
+          <td><span class="state later">后续批次</span></td>
+          <td>按窗口生命周期、原生 WebView、标签转移、菜单四个既有域移动；先等待当前 Desktop 修改合并。</td>
+        </tr>
+        <tr>
+          <td><code>web/lib/desktop-bridge.ts</code></td>
+          <td>类型、视图状态和标签转移共处，接近 2,000 行</td>
+          <td><span class="state later">后续批次</span></td>
+          <td>先补执行级测试，再拆为公共类型、view state、tab transfer，并由原文件 re-export。</td>
+        </tr>
+        <tr>
+          <td><code>runtime.py</code>、<code>runner.py</code>、<code>resource_governance.py</code></td>
+          <td>文件较长，但核心状态机和不变量集中</td>
+          <td><span class="state no">不按长度拆</span></td>
+          <td>只有出现可独立验证的职责或重复实现时再拆；不引入 mixin 层。</td>
+        </tr>
+        <tr>
+          <td>大型检查脚本与 native runtime</td>
+          <td>测试场景多或包含同步的上游实现</td>
+          <td><span class="state no">保持现状</span></td>
+          <td>优先改善测试数据和局部 helper，不用生产目录规则约束测试及 vendor 文件。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>4. 文档信息架构</h2>
+  <div class="grid">
+    <section class="card">
+      <h3>用户文档</h3>
+      <p><code>start/</code>、<code>install/</code>、<code>capabilities/</code>、<code>interfaces/</code>、<code>models/</code>、<code>integrations/</code>、<code>server/</code>、<code>reference/</code>。进入公开导航和搜索。</p>
+    </section>
+    <section class="card">
+      <h3>当前设计</h3>
+      <p><code>reference/design/</code>。按产品域展示当前有效的设计说明；UI 文档按基础、会话编辑、浏览器标签、设置目录、工作区分组。</p>
+    </section>
+    <section class="card">
+      <h3>实施记录</h3>
+      <p>与设计页相邻的 implementation ledger 以及 <code>reference/design/plans/</code>，只记录提交、门禁、剩余任务和实施历史，不把执行过程写进概念设计。</p>
+    </section>
+    <section class="card">
+      <h3>内部计划</h3>
+      <p><code>docs/superpowers/</code> 保留在 Git 中供维护者追溯，不进入公开站点。仍被当前设计引用的 <code>reference/design/plans/</code> 继续发布，并保持独立 Plans 分组。</p>
+    </section>
+  </div>
+
+  <h2>5. 采用与拒绝</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>选择</th><th>结论</th><th>原因</th></tr></thead>
+      <tbody>
+        <tr><td>move-only 模块拆分</td><td><span class="state now">采用</span></td><td>可以通过兼容 import 和 parser 快照证明行为不变。</td></tr>
+        <tr><td>通过导航分组整理文档</td><td><span class="state now">采用</span></td><td>避免批量移动文件造成旧链接失效。</td></tr>
+        <tr><td>按固定行数自动拆文件</td><td><span class="state no">拒绝</span></td><td>行数不能证明职责独立，容易产生只转发调用的模块。</td></tr>
+        <tr><td>为拆分引入新的依赖注入框架</td><td><span class="state no">拒绝</span></td><td>现有模块函数和显式参数足以保留边界。</td></tr>
+        <tr><td>一次重排整个仓库</td><td><span class="state no">拒绝</span></td><td>会扩大冲突范围，难以区分结构变化与产品行为变化。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>6. 验收合同</h2>
+  <ul>
+    <li><code>openprogram.cli.build_parser</code> 保持可导入，完整命令树与拆分前一致。</li>
+    <li><code>openprogram/cli.py</code> 不再包含大段 parser 声明，命令执行仍位于该文件。</li>
+    <li>公开文档构建不包含 <code>docs/superpowers/</code>，所有公开链接有效。</li>
+    <li>设计导航按产品功能分组；源文件路径保持不变。</li>
+    <li>每个结构批次独立提交，先通过直接相关测试，再进入规格与质量复核。</li>
+  </ul>
+
+  <p class="note">实现状态和可复现命令见 <a href="repository-structure-implementation.html">Repository structure implementation ledger</a>。</p>
+</main>
+</body>
+</html>
