@@ -105,8 +105,14 @@
   <section>
     <h2>实现状态</h2>
     <div class="card">
-      <p class="pending">状态：待实现与复核。</p>
-      <p class="muted">实现证据只在生产代码、定点检查、可视验收和独立复核全部完成后更新。</p>
+      <p><strong>状态：已实现并复核。</strong></p>
+      <ul>
+        <li>生产实现：Settings 二级栏头保持名称与按钮同一行，栏头高度改为 32px；Provider 第三级恢复搜索框旁折叠按钮。</li>
+        <li>可视验收：默认 App 中主侧栏、Settings 与 Provider 按钮均为 32px，展开和收起状态的顶边均为 8px。</li>
+        <li>兼容验证：Settings 与 Provider 仍可独立收至 49px，原有 localStorage、ARIA、Provider 图标选择和内容区布局不变。</li>
+        <li>自动检查：完整 Web 检查、Settings 与 Memory 定点检查、TypeScript、production build 和 diff 检查通过。</li>
+        <li>独立复核：规格复核与代码质量复核通过。</li>
+      </ul>
     </div>
   </section>
 </main></body>
