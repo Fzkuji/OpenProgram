@@ -616,12 +616,14 @@ def test_close_all_releases_sessions_capabilities_and_page_leases():
     )["reason_code"] == "page_context_not_found"
 
 
-def test_public_computer_use_schema_is_command_based():
+def test_public_web_use_schema_is_command_based_and_legacy_name_is_hidden():
     from openprogram.programs import agent_tools
 
+    names = {item.name for item in agent_tools(names=["web_use", "computer_use"])}
+    assert names == {"web_use"}
     tool = next(
-        item for item in agent_tools(names=["computer_use"])
-        if item.name == "computer_use"
+        item for item in agent_tools(names=["web_use"])
+        if item.name == "web_use"
     )
     properties = tool.parameters["properties"]
     assert properties["command"]["enum"] == [
@@ -631,18 +633,22 @@ def test_public_computer_use_schema_is_command_based():
         "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
     ]
     assert "task" not in properties
+    assert "web_session_id" in properties
+    assert "computer_session_id" not in properties
     assert tool.parameters["required"] == ["command"]
 
 
-def test_openprogram_mcp_exposes_computer_use_as_a_first_class_tool():
+def test_openprogram_mcp_exposes_only_web_use_as_browser_control_tool():
     from openprogram.mcp_server.contracts import get_mcp_tools
 
     tools = {tool.name: tool for tool in get_mcp_tools()}
-    assert "computer_use" in tools
-    schema = tools["computer_use"].inputSchema
+    assert "web_use" in tools
+    assert "computer_use" not in tools
+    schema = tools["web_use"].inputSchema
     assert schema["properties"]["command"]["enum"] == [
         "list_pages", "observe", "act", "verify", "close",
     ]
+    assert "web_session_id" in schema["properties"]
 
 
 class _Page:

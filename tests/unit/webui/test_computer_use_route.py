@@ -4,10 +4,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 
-def test_worker_computer_use_route_preserves_images_and_server_owner(monkeypatch):
+def test_worker_web_use_route_preserves_images_and_server_owner(monkeypatch):
     from openprogram.programs import ToolReturn
     from openprogram.programs.agentic_functions import browser_agent
-    from openprogram.webui.routes.computer_use import register
+    from openprogram.webui.routes.web_use import register
 
     calls = []
 
@@ -19,10 +19,10 @@ def test_worker_computer_use_route_preserves_images_and_server_owner(monkeypatch
             json_data={"frame_id": "frame-1"},
         )
 
-    monkeypatch.setattr(browser_agent, "execute_direct_computer_use", execute)
+    monkeypatch.setattr(browser_agent, "execute_direct_web_use", execute)
     app = FastAPI()
     register(app)
-    response = TestClient(app).post("/api/computer-use", json={
+    response = TestClient(app).post("/api/web-use", json={
         "arguments": {"command": "act"},
         "owner_id": "mcp:client:connection",
     })
