@@ -199,6 +199,10 @@
 </div>
 <table>
   <thead><tr><th>状态</th><th>证据</th></tr></thead>
-  <tbody><tr><td class="pending">IMPLEMENTATION PENDING</td><td>先补跨两个 Desktop connection 的公开 <code>list_pages</code> RED，以及后台窗口 screenshot 不调用 focus/整屏 capture 的契约检查。</td></tr></tbody>
+  <tbody>
+    <tr><td class="pass">IMPLEMENTED · INSTALLED E2E PASS</td><td><code>d2e9baa2</code> 定义跨窗口数据模型；<code>348e07f3</code> 实现 Desktop <code>window_id</code> 登记和聚合；<code>67e6ed09</code> 以 <code>window_id + tab_id</code> 标记 GUI Agent 当前 Page；<code>833c2314</code>、<code>1699fb03</code> 保持窗口独立生命周期和 primary fail-closed；<code>26c662e9</code>、<code>d4c4337e</code> 以 connection revision CAS 拒绝断线后的延迟 binding。</td></tr>
+    <tr><td class="pass">自动验证与复核</td><td>Browser Agent、Computer Use Runtime、Page surface 和 process bridge 相关测试 123 passed；Ruff、Web split/compound/WS action、TypeScript 与生产 Web build 通过。Specification 与 Quality 独立复核均为 PASS，覆盖未登记客户端、跨窗口同名 <code>tab_id</code>、origin disconnect/timeout、materialization race 和 direct preview/active late result。</td></tr>
+    <tr><td class="pass">安装版验证</td><td>只使用默认 <code>~/.openprogram</code>、18100 与当前主分支重新生成的 <code>/Applications/OpenProgram.app</code>。真实 <code>list_pages</code> 返回 <code>main</code> 和 detached window 两个 snapshot；选择 detached window 的 Microsoft Edge Add-ons Page 执行 <code>observe → screenshot → close</code>，得到一张 <code>image/png</code> 当前 viewport。调用前后系统前台应用均为 ChatGPT，证明该路径未置前 OpenProgram、未使用整屏截图。</td></tr>
+  </tbody>
 </table>
 </main></body></html>
