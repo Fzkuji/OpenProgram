@@ -1770,7 +1770,6 @@ def test_public_product_surfaces_do_not_offer_python_package_install() -> None:
         path
         for path in (ROOT / "openprogram").rglob("*.py")
         if path not in internal_python_installers
-        and "agentic_functions" not in path.parts
     )
     forbidden = (
         "pip install",

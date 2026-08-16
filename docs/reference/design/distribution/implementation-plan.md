@@ -33,7 +33,14 @@ duplicated in this historical distribution ledger.
   passes, and link validation reports zero broken links.
 - Exclusions: no Python-free rewrite, no removal of `pyproject.toml`, no change
   to plugin or third-party Program formats, and no remote PyPI mutation.
-- Status: implementation complete; independent reviews pending.
+- Specification review on `9e50cebc`: changes required because six first-party
+  PDF Agentic Function errors still suggested `pip install pymupdf`, while the
+  public-surface regression excluded the whole Agentic Functions tree.
+- Repair: those built-in errors now direct users to reinstall the complete
+  release, and the regression scans first-party Agentic Functions together with
+  the rest of the product runtime. Developer-owned extension installers remain
+  explicitly excluded.
+- Status: repair implemented; scoped specification re-review pending.
 
 ## Local App version coherence
 
