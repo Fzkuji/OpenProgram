@@ -144,16 +144,19 @@ Reply with one JSON object and no prose:
   },
   "readme": "Markdown describing applicability, outputs, and limits",
   "files": {
-    "steps/example.py": "def example():\\n    ...\\n",
-    "entry.py": "def workflow():\\n    ...\\n"
+    "steps/example.py": "def example(task):\\n    ...\\n",
+    "entry.py": "def workflow(task):\\n    ...\\n"
   }
 }
 
 Return the complete project, not a patch. Put reusable responsibilities in
 separate steps/*.py files and keep entry.py small. Every import and class is
 forbidden. All files share one restricted execution namespace and load in
-lexicographic order with entry.py last. Exactly one zero-argument workflow()
-must exist, in entry.py. Available managed functions are listed below.
+lexicographic order with entry.py last. Exactly one workflow(task) must exist,
+in entry.py. The task argument is the runtime request; pass it into helpers
+instead of embedding the current request in source code. The workflow may call
+llm(), agent(), goal(), or any combination of them. Available managed functions
+are listed below.
 
 {delivery}
 
@@ -467,7 +470,9 @@ def _validate_project_path(value: object) -> str:
     return normalized
 
 
-def _validate_project_candidate(value: object) -> dict:
+def _validate_project_candidate(
+    value: object, *, allow_legacy_entry: bool = False,
+) -> dict:
     if not isinstance(value, dict):
         raise InvalidWorkflow("workflow project reply must be an object")
     metadata = _validate_project_metadata(value.get("project_metadata"))
@@ -519,9 +524,25 @@ def _validate_project_candidate(value: object) -> dict:
                 if path != "entry.py":
                     raise InvalidWorkflow("workflow() must be defined in entry.py")
                 args = node.args
-                if (args.posonlyargs or args.args or args.kwonlyargs
-                        or args.vararg or args.kwarg):
-                    raise InvalidWorkflow("workflow() must not accept arguments")
+                legacy_entry = (
+                    allow_legacy_entry
+                    and not args.posonlyargs
+                    and not args.args
+                    and not args.kwonlyargs
+                    and args.vararg is None
+                    and args.kwarg is None
+                )
+                if not legacy_entry and (
+                    args.posonlyargs
+                    or len(args.args) != 1
+                    or args.args[0].arg != "task"
+                    or args.kwonlyargs
+                    or args.vararg
+                    or args.kwarg
+                ):
+                    raise InvalidWorkflow(
+                        "workflow() must accept exactly one positional task argument"
+                    )
         clean_files[path] = raw_source.rstrip() + "\n"
     if "entry.py" not in clean_files or workflow_count != 1:
         raise InvalidWorkflow(
@@ -587,11 +608,14 @@ def _read_candidate_directory(directory: Path, metadata: dict) -> dict:
         if path.is_symlink():
             raise InvalidWorkflow("workflow project files must not be symlinks")
         files[relative] = path.read_text(encoding="utf-8")
-    candidate = _validate_project_candidate({
-        "project_metadata": metadata,
-        "readme": readme_path.read_text(encoding="utf-8"),
-        "files": files,
-    })
+    candidate = _validate_project_candidate(
+        {
+            "project_metadata": metadata,
+            "readme": readme_path.read_text(encoding="utf-8"),
+            "files": files,
+        },
+        allow_legacy_entry=True,
+    )
     if manifest != _project_manifest(candidate):
         raise InvalidWorkflow("workflow project manifest does not match its files")
     return candidate
@@ -1268,7 +1292,10 @@ def _execute_snapshot(snapshot: Path, state: dict, state_path: Path, *,
     for relative in manifest["files"]:
         source = candidate["files"][relative]
         exec(compile(source, relative, "exec"), namespace, namespace)
-    return namespace["workflow"]()
+    workflow = namespace["workflow"]
+    if not inspect.signature(workflow).parameters:
+        return workflow()
+    return workflow(state["task"])
 
 
 def _rewrite_prompt(task: str, source: str, state: dict, error: str,

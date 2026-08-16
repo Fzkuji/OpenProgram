@@ -35,7 +35,7 @@ def _project_planner(result: str):
             "readme": f"# {result} workflow\n",
             "files": {
                 "steps/run.py": f"def run():\n    return {result!r}\n",
-                "entry.py": "def workflow():\n    return run()\n",
+                "entry.py": "def workflow(task):\n    return run()\n",
             },
         })
 
