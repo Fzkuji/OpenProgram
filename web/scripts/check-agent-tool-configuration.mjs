@@ -12,6 +12,7 @@ assert.match(page, /mode:\s*"automatic"/);
 assert.match(page, /mode:\s*"selected"/);
 assert.match(page, /mode:\s*"none"/);
 assert.match(page, /Access preset/);
+assert.match(page, /Programs selected/);
 assert.match(page, /Functions[\s\S]*Agentic Functions[\s\S]*Applications/);
 assert.match(sidebar, /href="\/agents"[\s\S]*nav\.agents/);
 assert.match(sender, /toolsProfile\s*!==\s*"__agent__"[\s\S]*payload\.tools_profile\s*=\s*toolsProfile/);

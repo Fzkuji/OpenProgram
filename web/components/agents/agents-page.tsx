@@ -188,7 +188,7 @@ export function AgentsPage() {
                 <option value="__custom__">{text("Custom selection", "自定义选择")}</option>
                 {Object.keys(presets).sort().map((name) => <option key={name} value={name}>{name}</option>)}
               </select>
-              <span>{selectedNames.size} {text("Programs available", "个 Programs 可用")}</span>
+              <span>{selectedNames.size} {text("Programs selected", "个 Programs 已选择")}</span>
             </section>
 
             <div className={styles.catalog}>
