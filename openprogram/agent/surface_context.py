@@ -306,9 +306,9 @@ def capture_pages(context: dict | None = None) -> dict:
             if ws in connected
         ]
         if not registered:
-            if len(connected) != 1:
-                raise RuntimeError("direct Page selection requires a Desktop window")
-            registered = [(connected[0], "")]
+            raise RuntimeError(
+                "direct Page selection requires a registered Desktop window"
+            )
         for owner_ws, expected_window_id in registered:
             command = {"op": "list"}
             if expected_window_id:
@@ -366,6 +366,8 @@ def capture_pages(context: dict | None = None) -> dict:
             seen_targets: set[str] = set()
             window_pages = []
             for raw in raw_pages[:32]:
+                if len(surfaces) >= 32:
+                    break
                 if not isinstance(raw, dict):
                     continue
                 tab_id = _text(raw.get("tab_id"), 512)
@@ -425,7 +427,7 @@ def capture_pages(context: dict | None = None) -> dict:
                 for alias in page_aliases:
                     aliases.setdefault(alias, surface_key)
 
-            if raw_pages and not window_pages:
+            if raw_pages and not window_pages and len(surfaces) < 32:
                 raise RuntimeError("OpenProgram Page inventory has no valid Page")
 
             tab_entries = []

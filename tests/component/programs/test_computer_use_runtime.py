@@ -1082,8 +1082,14 @@ def test_direct_list_pages_returns_empty_inventory_without_mounted_page(monkeypa
     from openprogram.webui import server
     from openprogram.webui.ws_actions import webtab
 
-    owner = SimpleNamespace()
+    class _Owner:
+        pass
+
+    owner = _Owner()
     monkeypatch.setattr(server, "_ws_connections", [owner])
+    asyncio.run(webtab.handle_webtab_register(owner, {
+        "action": "webtab_register", "window_id": "window-1",
+    }))
     monkeypatch.setattr(webtab, "request_on_ws", lambda ws, command, timeout=5.0: {
         "ok": True,
         "window_id": "window-1",
@@ -1109,6 +1115,7 @@ def test_direct_list_pages_returns_empty_inventory_without_mounted_page(monkeypa
         module.execute_direct_computer_use(
             {"command": "list_pages"}, owner_id="mcp:invalid-window",
         )
+    webtab.release_connection(owner)
 
 
 def test_public_page_token_keeps_the_turn_owner_across_calls(monkeypatch):
@@ -1342,9 +1349,9 @@ def test_gui_agent_prompt_receives_group_aware_page_inventory(monkeypatch):
             },
             {
                 "window_id": "window-2", "inventory_revision": 4,
-                "active_tab_entry_id": "tab:tab-e", "focused_page": "p5",
+                "active_tab_entry_id": "tab:tab-d", "focused_page": "p5",
                 "tab_entries": [{
-                    "id": "tab:tab-e", "mode": "single", "pages": ["p5"],
+                    "id": "tab:tab-d", "mode": "single", "pages": ["p5"],
                 }],
                 "pages": ["p5"],
             },
@@ -1366,7 +1373,7 @@ def test_gui_agent_prompt_receives_group_aware_page_inventory(monkeypatch):
                 "pages": [
                     {"page": "p3", "window_id": "window-1", "tab_id": "tab-c", "visible": True, "focused": False, "page_context_token": "pct_3"},
                     {"page": "p4", "window_id": "window-1", "tab_id": "tab-d", "visible": True, "focused": True, "page_context_token": "pct_4"},
-                    {"page": "p5", "window_id": "window-2", "tab_id": "tab-e", "visible": True, "focused": True, "page_context_token": "pct_5"},
+                    {"page": "p5", "window_id": "window-2", "tab_id": "tab-d", "visible": True, "focused": True, "page_context_token": "pct_5"},
                 ],
             }
 
@@ -1413,6 +1420,7 @@ def test_gui_agent_prompt_receives_group_aware_page_inventory(monkeypatch):
     assert '"page": "p4"' in prompts[0]
     assert '"window_id": "window-2"' in prompts[0]
     assert '"page": "p5"' in prompts[0]
+    assert prompts[0].count('"bound": true') == 1
 
 
 def test_gui_agent_discovers_popup_and_switches_by_exact_page_token(monkeypatch):

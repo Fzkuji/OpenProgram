@@ -5,6 +5,8 @@ import json
 import threading
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -375,6 +377,9 @@ def test_direct_page_inventory_includes_background_and_popup_provenance(monkeypa
 
     owner = _WS()
     monkeypatch.setattr(server, "_ws_connections", [owner])
+    asyncio.run(webtab.handle_webtab_register(owner, {
+        "action": "webtab_register", "window_id": "window-1",
+    }))
     monkeypatch.setattr(webtab, "request_on_ws", lambda ws, command, timeout=5.0: {
         "ok": True,
         "window_id": "window-1",
@@ -421,6 +426,26 @@ def test_direct_page_inventory_includes_background_and_popup_provenance(monkeypa
         "op": "resolve", "window_id": "window-1", "tab_id": "tab-b",
     })]
     surface_context.release_bindings(context)
+    webtab.release_connection(owner)
+
+
+def test_page_inventory_rejects_unregistered_web_client(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    browser_only = _WS()
+    calls = []
+    monkeypatch.setattr(server, "_ws_connections", [browser_only])
+    monkeypatch.setattr(
+        webtab,
+        "request_on_ws",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+
+    with pytest.raises(RuntimeError, match="registered Desktop window"):
+        surface_context.capture_pages()
+    assert calls == []
 
 
 def test_page_inventory_aggregates_registered_desktop_windows(monkeypatch):
@@ -445,25 +470,26 @@ def test_page_inventory_aggregates_registered_desktop_windows(monkeypatch):
         )}
         window_id = command["window_id"]
         suffix = "a" if ws is primary else "b"
+        tab_id = "tab-shared"
         return {
             "ok": True,
             "window_id": window_id,
             "inventory_revision": 1,
-            "active_tab_entry_id": f"tab:tab-{suffix}",
-            "focused_tab_id": f"tab-{suffix}",
+            "active_tab_entry_id": f"tab:{tab_id}",
+            "focused_tab_id": tab_id,
             "tab_entries": [{
-                "id": f"tab:tab-{suffix}", "mode": "single",
-                "tab_ids": [f"tab-{suffix}"],
+                "id": f"tab:{tab_id}", "mode": "single",
+                "tab_ids": [tab_id],
             }],
             "pages": [{
-                "tab_id": f"tab-{suffix}",
+                "tab_id": tab_id,
                 "target_id": f"target-{suffix}",
                 "url": f"https://{suffix}.test/",
                 "title": suffix.upper(),
                 "visible": True,
                 "focused": True,
                 "region": "center",
-                "tab_entry_id": f"tab:tab-{suffix}",
+                "tab_entry_id": f"tab:{tab_id}",
                 "placement": {"mode": "single"},
             }],
         }
@@ -480,6 +506,8 @@ def test_page_inventory_aggregates_registered_desktop_windows(monkeypatch):
     ]
     assert context["windows"][0]["pages"] == ["p1"]
     assert context["windows"][1]["pages"] == ["p2"]
+    assert context["alias_map"]["window:window-1:tab:tab-shared"] == "p1"
+    assert context["alias_map"]["window:window-2:tab:tab-shared"] == "p2"
     assert webtab.binding_connection(context["surfaces"][0]["binding_id"]) is primary
     assert webtab.binding_connection(context["surfaces"][1]["binding_id"]) is secondary
     assert browser_only.messages == []
@@ -539,6 +567,9 @@ def test_direct_page_inventory_preserves_tab_entries_and_split_panes(monkeypatch
 
     owner = _WS()
     monkeypatch.setattr(server, "_ws_connections", [owner])
+    asyncio.run(webtab.handle_webtab_register(owner, {
+        "action": "webtab_register", "window_id": "window-1",
+    }))
     monkeypatch.setattr(webtab, "request_on_ws", lambda ws, command, timeout=5.0: {
         "ok": True,
         "window_id": "window-1",
@@ -592,6 +623,7 @@ def test_direct_page_inventory_preserves_tab_entries_and_split_panes(monkeypatch
         "mode": "split", "pane_id": "pane:g3:1", "order": 1,
     }
     surface_context.release_bindings(context)
+    webtab.release_connection(owner)
 
 
 def test_frontend_and_electron_expose_turn_surface_preview_contract():

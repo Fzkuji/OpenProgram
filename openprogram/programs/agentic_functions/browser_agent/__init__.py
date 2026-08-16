@@ -817,7 +817,7 @@ actions.
 Current observation:
 {json.dumps(observation, ensure_ascii=False, default=str)}
 
-Pages in this OpenProgram browser window:
+Pages in the registered OpenProgram windows:
 {json.dumps(page_inventory or [], ensure_ascii=False, default=str)}
 
 Previous command result, if any:
@@ -934,7 +934,7 @@ def _run_browser_task_commands(
 
     page_inventory: list[dict[str, Any]] = []
     page_inventory_snapshot: dict[str, Any] = {"pages": page_inventory}
-    bound_tab_id = ""
+    bound_page_identity = ("", "")
 
     def refresh_inventory() -> tuple[list[dict[str, Any]], dict[str, Any]]:
         try:
@@ -966,10 +966,15 @@ def _run_browser_task_commands(
             ), next((
                 page for page in page_inventory if page.get("visible")
             ), page_inventory[0]))
-            bound_tab_id = str(primary.get("tab_id") or "")
-            if bound_tab_id:
+            bound_page_identity = (
+                str(primary.get("window_id") or ""),
+                str(primary.get("tab_id") or ""),
+            )
+            if all(bound_page_identity):
                 for page in page_inventory:
-                    page["bound"] = page.get("tab_id") == bound_tab_id
+                    page["bound"] = (
+                        page.get("window_id"), page.get("tab_id")
+                    ) == bound_page_identity
             observed = registry.execute(
                 command="observe", backend=backend, owner_id=owner_id,
                 page_context_token=str(primary.get("page_context_token") or ""),
@@ -1005,7 +1010,7 @@ def _run_browser_task_commands(
     }
 
     def dispatch(action: str, **arguments):
-        nonlocal observed, session_id, page_inventory, bound_tab_id
+        nonlocal observed, session_id, page_inventory, bound_page_identity
         if action == "switch_page":
             page_context_token = str(arguments.get("page_context_token") or "")
             selected_page = next((
@@ -1026,11 +1031,15 @@ def _run_browser_task_commands(
                     previous_session_id = session_id
                     session_id = next_session_id
                     observed = next_observation
-                    bound_tab_id = str((selected_page or {}).get("tab_id") or "")
+                    bound_page_identity = (
+                        str((selected_page or {}).get("window_id") or ""),
+                        str((selected_page or {}).get("tab_id") or ""),
+                    )
                     for page in page_inventory:
                         page["bound"] = (
-                            bool(bound_tab_id)
-                            and page.get("tab_id") == bound_tab_id
+                            all(bound_page_identity)
+                            and (page.get("window_id"), page.get("tab_id"))
+                            == bound_page_identity
                         )
                     registry.execute(
                         command="close",
@@ -1145,9 +1154,11 @@ def _run_browser_task_commands(
                         "backend": backend, "computer_session_id": session_id,
                     }
                 page_inventory, page_inventory_snapshot = refresh_inventory()
-                if bound_tab_id:
+                if all(bound_page_identity):
                     for page in page_inventory:
-                        page["bound"] = page.get("tab_id") == bound_tab_id
+                        page["bound"] = (
+                            page.get("window_id"), page.get("tab_id")
+                        ) == bound_page_identity
             elif last["action"] == "wait":
                 observed = registry.execute(
                     command="observe", computer_session_id=session_id,
@@ -1161,9 +1172,11 @@ def _run_browser_task_commands(
                         "backend": backend, "computer_session_id": session_id,
                     }
                 page_inventory, page_inventory_snapshot = refresh_inventory()
-                if bound_tab_id:
+                if all(bound_page_identity):
                     for page in page_inventory:
-                        page["bound"] = page.get("tab_id") == bound_tab_id
+                        page["bound"] = (
+                            page.get("window_id"), page.get("tab_id")
+                        ) == bound_page_identity
         return {
             "status": "failed", "reason_code": "verification_missing",
             "summary": summary or "Browser task ended without verification.",
