@@ -7,7 +7,7 @@ uses, so behaviour stays aligned.
 
 The bulk of this module's logic — banner inventory, slash-command
 handlers, per-turn exec — lives in ``openprogram/_cli_chat/`` and is
-re-exported here so existing call sites (``_timing.py``,
+re-exported here so existing call sites (``scripts/profile_startup.py``,
 ``openprogram.setup``, ``openprogram._cli_cmds.chat``, tests) keep
 working unchanged.
 """

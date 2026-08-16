@@ -7,8 +7,14 @@
 Primitives:
 
     1. @agentic_function  — turn a Python function into one that can call an LLM
-    2. Runtime            — base class for an LLM-call runtime
-    3. decision.make      — let the LLM make the next-step decision
+    2. llm                 — make one model request through the ambient Runtime
+    3. agent               — make a tool loop through the ambient Runtime
+    4. goal                — make a judgment loop through the ambient Runtime
+    5. decision.make       — let the LLM make the next-step decision
+
+Infrastructure:
+
+    Runtime                — base class for provider calls and accounting
 
 Execution traces are persisted as a flat DAG in
 ``openprogram.context.storage`` (SQLite). Older revisions kept a
@@ -20,10 +26,17 @@ agentic_programming, never the other way around.
 
 ## Files in this directory
 
+- **`agent.py`** — Agent: tool loop = repeatedly call llm + execute tools until done
 - **`decision.py`** — decision
 - **`function.py`** — agentic_function
+- **`goal.py`** — Goal: judgment loop = repeatedly call agent + judge condition until met
+- **`llm.py`** — One model request using the ambient agentic-programming Runtime
 - **`runtime.py`** — runtime
 - **`session.py`** — Session management
-- **`skills.py`** — Skill discovery and prompt formatting
+- **`tool_format.py`** — Convert an ``@agentic_function`` spec into other frameworks' tool formats
+
+## Sub-packages
+
+- **`control_flow/`** — Control flow primitives for agentic workflows
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

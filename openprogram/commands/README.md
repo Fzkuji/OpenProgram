@@ -33,6 +33,7 @@ See ``docs/reference/design/cli/slash-commands.md`` for the full design.
 
 - **`_plugin_adapter.py`** — Bridge the existing plugin loader's ``contrib._commands`` list into
 - **`_skill_adapter.py`** — Project every loaded skill into the slash-command registry
+- **`commit_message.py`** — Read-only commit-message generation from the current Git diff
 - **`dispatch.py`** — Resolve + render a slash-command invocation into the next action
 - **`frontmatter.py`** — Frontmatter parsing for command files
 - **`loader.py`** — Scan command source directories and yield parsed entries

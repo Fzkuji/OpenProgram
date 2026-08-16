@@ -8,7 +8,7 @@ Two mechanisms, in order:
      obvious.
 
   2. **Auto-discovered external harnesses** — owner-recorded symlinks and
-     directories under ``openprogram/programs/agentic_functions/`` are treated as
+     directories under ``openprogram/programs/applications/`` are treated as
      external harnesses. For each, we find its Python package
      (``<harness>/<pkg>/__init__.py``) and import ``<pkg>.agentics``.
      That sub-package must expose ``AGENTIC_FUNCTIONS = [...]`` — the
@@ -112,8 +112,8 @@ def load_agentic_modules(
     except Exception as e:
         _debug_registry_error("programs", e)
 
-    # 3. Auto-discovered external harnesses (local-dev symlinks in
-    #    agentics_dir). Still supported for the
+    # 3. Auto-discovered external harnesses (owner-recorded directories or
+    #    local-dev symlinks in applications_dir). Still supported for the
     #    ``<pkg>/agentics/__init__.py`` convention, but no longer the
     #    primary path — a developer working on a harness locally can just
     #    ``pip install -e`` their checkout and it registers via (2) above.

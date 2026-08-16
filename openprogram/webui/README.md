@@ -24,8 +24,14 @@ Or from CLI:
 - **`_chat_routes.py`** — REST routes for ContextGit chat operations
 - **`_exec_dag.py`** — Execution-DAG: reconstruction, live streaming, run-state repair
 - **`_functions.py`** — Function discovery, metadata extraction, loading, and result formatting
+- **`_pause_stop.py`** — Pause / resume / cancel / kill-runtime primitives used by the web UI
 - **`_runtime_management.py`** — Runtime / provider management for the web UI
+- **`_stream_bridge.py`** — Bridge between runtime's ``on_stream(event: dict)`` callback and the v2
 - **`_thinking.py`** — Thinking / reasoning-effort picker config + runtime apply helpers
+- **`frontend.py`** — Serve the Next.js static export (``web/out/``) from the worker itself
+- **`graph_builder.py`** — Unified graph builder for the DAG viewport
+- **`messages.py`** — v2 message model + authoritative in-memory store
+- **`owner_auth.py`** — Single-owner authentication and request policy for the Web server
 - **`persistence.py`** — Per-session persistence
 - **`server.py`** — Visualization server
 

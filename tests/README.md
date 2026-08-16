@@ -106,7 +106,8 @@ for run in 1 2 3; do
 done
 ```
 
-The repository contracts enforce tracked-file placement and the unit resource
+The repository contracts enforce tracked-file placement, declared top-level
+directories, generated package README freshness, and the unit resource
 boundary. CI separately executes contracts, unit on Python 3.11/3.12/3.13,
 component, integration, non-browser e2e, built-Web browser tests, Web, CLI,
 Desktop, documentation checks, and the unit coverage floor.

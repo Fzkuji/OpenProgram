@@ -1,4 +1,6 @@
 import time
+
+
 t0 = time.time()
 import openprogram
 print(f'+{time.time()-t0:.2f}s import openprogram')

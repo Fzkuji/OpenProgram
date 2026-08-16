@@ -6,7 +6,7 @@
  *  Lookup flow per render:
  *
  *    1. ``LOBE_ICONS[id]`` — generated offline by
- *       ``_gen_lobe_slugs.ps1`` against the live LobeHub icon
+ *       ``web/scripts/gen-lobe-slugs.ps1`` against the live LobeHub icon
  *       catalogue. One O(1) hash hit decides which CDN URL to load:
  *       colour SVG when ``hasColor`` is true, else mono SVG when
  *       ``hasMono`` is true. No 404 round-trips, no runtime
@@ -25,7 +25,7 @@
  *       unknown ids rather than 404'ing, so in practice tier 3 only
  *       fires on a network failure.
  *
- *  Re-run ``_gen_lobe_slugs.ps1`` whenever
+ *  Re-run ``web/scripts/gen-lobe-slugs.ps1`` whenever
  *  ``/api/providers/list`` grows or LobeHub publishes new icons —
  *  it overwrites ``./lobe-icons.ts`` in place.
  */

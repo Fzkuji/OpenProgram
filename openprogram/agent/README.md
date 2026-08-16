@@ -21,31 +21,35 @@ The Runtime layer composes these to build whatever agent behavior is needed.
 
 ## Files in this directory
 
-- **`_approval.py`** — Tool-approval gate
-- **`_event_parsing.py`** — Agent-event → chat envelope translation + usage extraction
-- **`_merge.py`** — Merge N peer sessions into one target reply
-- **`_model_tools.py`** — Agent-profile → Model + tools + history resolution
-- **`_revert.py`** — Per-turn revert
-- **`_turn_lifecycle.py`** — Assistant-turn lifecycle helpers
-- **`_workdir.py`** — Default chat-runtime workdir resolution
+- **`_rewind.py`** — Multi-turn rewind
 - **`agent.py`** — Agent class
 - **`agent_loop.py`** — Agent loop
-- **`dispatcher.py`** — Single entry point for every conversation turn
+- **`attended.py`** — Attended / unattended mode
+- **`authority.py`** — Runtime-owned speaker attribution and two-tier authorization
 - **`exec.py`** — Shared subprocess execution utilities
+- **`inbox.py`** — Per-session send_message inbox
 - **`messages.py`** — Custom message types and LLM converters for the agent layer
 - **`plan_mode.py`** — Plan-mode session flag
 - **`process_runner.py`** — Run @agentic_function tools in an isolated subprocess so the stop
+- **`questions.py`** — User-input requests
+- **`resource_governance.py`** — Resource-limit parsing, inheritance, and read-only job diagnostics
 - **`retry.py`** — Retry logic for agent errors
+- **`run_control.py`** — Run control for turn execution: pause / cancel / session binding /
 - **`session.py`** — AgentSession
 - **`session_config.py`** — Per-session run configuration shared by TUI, web, and channels
 - **`session_db.py`** — session_db
 - **`sub_agent_run.py`** — Run an agent turn that can be inherited (sibling branch) or clean
+- **`surface_context.py`** — Turn-scoped awareness of a visible OpenProgram desktop surface
+- **`turn_request_context.py`** — The TurnRequest in force for the current execution context
 - **`types.py`** — Agent types
 
 ## Sub-packages
 
 - **`compaction/`** — Context compaction for long agent sessions
-- **`streaming/`** — Streaming / resumable in-progress state
+- **`dispatcher/`** — Single entry point for every conversation turn
+- **`goal/`** — Session goals
+- **`internals/`** — Agent package internals
 - **`job/`** — Async job lifecycle
+- **`management/`** — Multi-agent support
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

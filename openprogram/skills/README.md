@@ -9,7 +9,8 @@ See ``docs/design/integrations/skills-and-plugins.md`` section 2 for the design.
 ## Files in this directory
 
 - **`discovery.py`** — Remote skill discovery
-- **`loader.py`** — Five-source skill loader
+- **`frontmatter.py`** — Yaml-lite frontmatter, as skill files use it
+- **`loader.py`** — The skill registry: one loader, one prompt renderer
 - **`tool.py`** — Built-in SkillTool
 - **`watcher.py`** — Skill directory watcher
 

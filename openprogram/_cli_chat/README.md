@@ -15,7 +15,7 @@ in topic modules here:
     turn.py     — ``_run_turn_with_history`` (one exec turn + persist)
 
 cli_chat.py re-exports these at module level so external callers
-(``_timing.py``, ``openprogram.setup``, ``openprogram._cli_cmds.chat``,
+(``scripts/profile_startup.py``, ``openprogram.setup``, ``openprogram._cli_cmds.chat``,
 tests) that import ``_get_chat_runtime`` / ``run_cli_chat`` etc. keep
 working unchanged.
 

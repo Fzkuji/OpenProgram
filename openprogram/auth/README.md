@@ -29,18 +29,27 @@ sessions. One workspace profile can hold many credential accounts.
 ## Files in this directory
 
 - **`_migrate_payload.py`** — On-load migration of stored credential JSON to the current schema
+- **`account_labels.py`** — Stable account ids and human-readable account labels
 - **`account_priority.py`** — Per-provider account priority
 - **`account_selection.py`** — Per-provider active account selection
 - **`accounts.py`** — Account manager
+- **`active.py`** — Per-provider active account (profile) selection
+- **`adapter.py`** — ProviderAuthAdapter
 - **`aliases.py`** — Provider alias table
 - **`cli.py`** — Command-line entry points for auth v2
 - **`context.py`** — Ambient auth context
 - **`credential_provider.py`** — Auth v2
+- **`enabled.py`** — Per-provider, per-account ENABLED state for rotation
 - **`interactive.py`** — Interactive auth wizard
 - **`login_driver.py`** — Surface-agnostic login driver
+- **`login_enable.py`** — Subscription-login → config enablement
 - **`login_method_registry.py`** — Single source of truth for which login methods each provider offers,
+- **`login_methods.py`** — Single source of truth for which login methods each provider offers,
 - **`login_seed_models.py`** — Subscription-login → config enablement
+- **`manager.py`** — Auth v2
+- **`order.py`** — Per-provider account (profile) order
 - **`pool.py`** — Auth v2
+- **`profiles.py`** — Profile manager
 - **`provider_contract.py`** — ProviderAuthContract
 - **`resolver.py`** — Single entry point callers use to resolve "the right credential, now"
 - **`rotation.py`** — Per-provider rotation setting, and per-account membership in that rotation

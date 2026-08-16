@@ -15,7 +15,7 @@ globals, and the public ``main`` entry point. All ``_cmd_<verb>`` and
     agents.py    — agents list/add/rm/show/set-default
     channels.py  — accounts + bindings + login
     web.py       — web UI launcher
-    chat.py      — interactive cli chat + deep_work
+    chat.py      — interactive cli chat
     cron.py      — scheduler-worker
 
 cli.py re-exports these at module level so external callers
@@ -24,21 +24,27 @@ cli.py re-exports these at module level so external callers
 
 ## Files in this directory
 
+- **`acp.py`** — `openprogram acp`
 - **`agents.py`** — ``openprogram agents <verb>`` dispatcher
+- **`backup.py`** — Create, list, and restore snapshots of the profile state dir
 - **`browser.py`** — ``openprogram browser`` handlers
 - **`channels.py`** — ``openprogram channels`` accounts + bindings dispatchers + login flow
-- **`chat.py`** — Interactive CLI chat entry point + deep_work runner
+- **`chat.py`** — Interactive CLI chat entry point
 - **`completion.py`** — ``openprogram completion <shell>``
-- **`cron.py`** — ``openprogram scheduler-worker`` handler
+- **`cron.py`** — ``openprogram scheduler-worker`` handler (cron-worker is an alias)
+- **`diagnostics.py`** — ``openprogram diagnostics``
 - **`doctor.py`** — ``openprogram doctor``
+- **`jobs.py`** — Read-only CLI job resource views
 - **`logs.py`** — ``openprogram logs``
 - **`mcp.py`** — ``openprogram mcp`` CLI subcommands
 - **`plugins.py`** — ``openprogram plugins`` handlers
 - **`programs.py`** — ``openprogram programs`` + provider-config wizard handlers
 - **`rescue.py`** — ``openprogram rescue``
-- **`sessions.py`** — ``openprogram sessions`` handlers (list / resume)
+- **`sessions.py`** — ``openprogram sessions`` handlers (list / resume / export / archive)
 - **`skills.py`** — ``openprogram skills`` handlers
-- **`subagent.py`** — ``openprogram subagent`` (spawn / merge subagent sessions)
+- **`subagent.py`** — ``openprogram subagent``
+- **`trash.py`** — List and restore recoverable local deletion records
+- **`upgrade.py`** — Explicit stable-Release or source-checkout upgrades
 - **`web.py`** — ``openprogram web`` handler
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

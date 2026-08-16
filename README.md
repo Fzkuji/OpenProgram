@@ -199,10 +199,13 @@ Four levels, from a one-line edit to a distributable package. Start at the top a
 
 ### Level 1 — Write your own agentic function
 
-Drop a directory under `openprogram/functions/agentics/<your_function>/` with the code in `__init__.py`. A file watcher hot-loads it, so it's a live tool on the next turn — no registration file, no restart.
+Add a directory under `openprogram/programs/agentic_functions/<your_function>/`
+with the code in `__init__.py`, then add its module name to
+`openprogram/programs/_registry.py::AGENTIC_MODULES`. The registry imports the
+module on startup and exposes its decorated functions.
 
 ```python
-# openprogram/functions/agentics/changelog/__init__.py
+# openprogram/programs/agentic_functions/changelog/__init__.py
 import subprocess
 from openprogram import agentic_function
 
@@ -391,32 +394,29 @@ The detailed tour of each one — code samples, design rationale, where to look 
 <summary><strong>Project Structure</strong></summary>
 
 ```
-openprogram/
-├── __init__.py                      # agentic_function re-export
-├── cli.py                           # `openprogram` command entry point
-├── agentic_programming/             # engine — paradigm-essential primitives
-│   ├── function.py                  #   @agentic_function decorator
-│   ├── runtime.py                   #   Runtime (exec + retry + DAG context)
-│   ├── session.py                   #   session lifecycle
-│   └── skills.py                    #   SKILL.md discovery
-├── context/                         # flat-DAG context model — nodes, storage, render, compute_reads
-├── providers/                       # Anthropic, OpenAI, Gemini, Claude Code, Codex, Gemini CLI
-├── functions/
-│   ├── _registry.py                 #   unified registry for tools + agentic functions
-│   ├── tools/                       #   @function leaves — bash, read, edit, grep, semble_search, web_search, …
-│   └── agentics/                    #   @agentic_function modules (each its own dir, code in __init__.py)
-│       ├── ask_user/                #     ask the user a clarifying question
-│       ├── deep_work/               #     autonomous plan-execute-evaluate loop
-│       ├── extract_pdf_figures/     #     PDF figure extraction
-│       ├── …                        #     other agentics …
-│       ├── GUI-Agent-Harness/       #     GUI agent (separate repo, cloned in)
-│       ├── Research-Agent-Harness/  #     Research agent (separate repo, cloned in)
-│       └── Wiki-Agent-Harness/      #     Wiki agent (separate repo, cloned in)
-└── webui/                           # `openprogram web` — browser UI
-skills/                              # SKILL.md files for agent integration
-examples/                            # runnable demos
-tests/                               # pytest suite
+openprogram/                         # Python product package
+├── agent/                         # model loop, tool execution, goals, compaction
+├── agentic_programming/           # @agentic_function runtime and context
+├── programs/
+│   ├── _registry.py               # internal agentic-function registry
+│   ├── agentic_functions/         # internal @agentic_function modules
+│   ├── functions/                 # deterministic @function tools
+│   └── applications/              # owner-recorded external Program checkouts
+├── channels/                       # external chat transports
+├── scheduler/                      # durable schedules and execution
+└── webui/                          # worker API and WebSocket layer
+cli/                                 # TypeScript CLI client
+web/                                 # Next.js web interface
+desktop/                             # Electron desktop shell
+tests/                               # pytest: <layer>/<product-domain>
+scripts/                             # repository maintenance and diagnostics
+tools/                               # release and documentation tooling
+docs/                                # user, operator, and design documentation
 ```
+
+The complete ownership rules are in
+[Repository Structure](docs/reference/design/repository-structure.html). Test
+placement and allowed dependencies are summarized in [tests/README.md](tests/README.md).
 
 </details>
 

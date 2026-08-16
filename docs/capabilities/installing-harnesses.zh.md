@@ -37,7 +37,7 @@ openprogram programs install <ref> --upgrade    # git pull + 重新解析依赖
 对于第三方 Program 或开发者 source overlay，该命令执行四个步骤：
 
 1. **浅克隆（shallow-clone）** 仓库到
-   `openprogram/programs/agentic_functions/<Repo-Name>/`——一个真实、可编辑的
+   `openprogram/programs/applications/<Repo-Name>/`——一个真实、可编辑的
    目录（不是 site-packages）。该克隆被 OpenProgram 加入 git-ignore，
    因此它始终是一份独立的检出（checkout），你可以 `git pull`
    或就地编辑。
@@ -87,7 +87,7 @@ openprogram programs install file:///path/to/checkout # 本地 git 来源
 <details>
 <summary>手动等价方式（镜像 / 无法访问 GitHub）</summary>
 
-`<AGENTICS>` 是 OpenProgram 的内置函数文件夹：
+`<APPLICATIONS>` 是 OpenProgram 登记的外部 Program 文件夹：
 
 ```bash
 python -c "import openprogram,os;print(os.path.join(os.path.dirname(openprogram.__file__),'programs','applications'))"
@@ -99,7 +99,7 @@ openprogram programs install file:///path/to/Harness-Name
 # 重启 OpenProgram
 ```
 
-自动发现会拾取 `<AGENTICS>` 中任何满足契约的目录——这就是安装命令
+自动发现会拾取 `<APPLICATIONS>` 中任何已登记且满足契约的目录——这就是安装命令
 所自动化的全部内容。
 
 </details>
@@ -109,7 +109,7 @@ openprogram programs install file:///path/to/Harness-Name
 把你的工作检出做成 symlink，而不是克隆一份副本：
 
 ```bash
-ln -s /path/to/your/Harness-Checkout "<AGENTICS>/Harness-Checkout"
+ln -s /path/to/your/Harness-Checkout "<APPLICATIONS>/Harness-Checkout"
 ```
 
 编辑会在下次重启时生效；`programs install` 会拒绝覆盖该链接，
@@ -141,7 +141,7 @@ OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list
 - **这些 Program 命令需要可变环境。** source-development checkout 可以使用；
   CLI release 仅在对应 release notes 明确支持 Program mutation 时使用。
   packaged desktop 在 Program 拥有隔离的外部环境前会拒绝这些修改命令。
-- **受支持的可变环境无需 symlink**——把真实目录克隆到 `<AGENTICS>` 是规范路径。
+- **受支持的可变环境无需 symlink**——安装器默认会把真实 checkout 登记到 `<APPLICATIONS>`。
 - **harness 在自身代码中仍可以是平台相关的**（例如，桌面 GUI
   harness 可能只实现 macOS / Linux 后端）。
   在受支持主机上能否安装、每个函数能否运行，取决于 harness 声明的依赖和

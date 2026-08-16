@@ -40,6 +40,6 @@ Public surface:
 - **`oauth_flow.py`** — Browser-based OAuth 2.1 PKCE flow plumbing for remote MCP servers
 - **`registry.py`** — Manager for the set of MCP servers attached to this worker
 - **`sampling.py`** — Sampling
-- **`token_storage.py`** — File-backed ``TokenStorage`` for the MCP SDK's ``OAuthClientProvider``
+- **`token_storage.py`** — File-backed ``TokenStorage`` for the MCP SDK's ``OAuthClientProvider``,
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
