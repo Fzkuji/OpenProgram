@@ -167,7 +167,8 @@ tests/test_workflow.py. Use ordinary relative imports inside the package.
 Import llm, agent, goal, and control-flow helpers from
 openprogram.agentic_programming. Import existing OpenProgram agentic functions
 from their normal openprogram.programs.agentic_functions module. Do not embed
-the current task in source code; pass task into helpers. Do not use dynamic
+the current task in source code; pass task into helpers. Reuse another listed
+Workflow only with `from workflows.<package> import <package>`. Do not use dynamic
 imports, classes, import hooks, a workflow decorator, or a workflow dispatcher.
 
 {delivery}
@@ -332,6 +333,29 @@ def _function_catalog(functions: dict[str, Callable]) -> str:
             rows.append(f"- from {module} import {name}")
         else:
             rows.append(f"- {name}(...)")
+    return "\n".join(rows) or "(none)"
+
+
+def _workflow_import_catalog() -> str:
+    root = _workflow_projects_root()
+    if not root.exists() or root.is_symlink():
+        return "(none)"
+    rows = []
+    for project_dir in sorted(root.iterdir()):
+        if not project_dir.is_dir() or project_dir.is_symlink():
+            continue
+        try:
+            candidate, revision = _checkout_head(project_dir)
+            metadata = candidate["project_metadata"]
+            entrypoint = str(metadata.get("entrypoint") or "")
+            if not entrypoint:
+                continue
+            rows.append(
+                f"- from workflows.{entrypoint} import {entrypoint}"
+                f"  # {metadata['summary']} @ {revision}"
+            )
+        except (InvalidWorkflow, OSError):
+            continue
     return "\n".join(rows) or "(none)"
 
 
@@ -671,10 +695,19 @@ def _allowed_package_import(
         package_depth = len(Path(path).parts) - 1
         return node.level <= package_depth + 1
     module = node.module or ""
+    workflow_parts = module.split(".")
+    workflow_import = (
+        len(workflow_parts) == 2
+        and workflow_parts[0] == "workflows"
+        and re.fullmatch(r"[a-z][a-z0-9_]{0,79}", workflow_parts[1])
+        and len(node.names) == 1
+        and node.names[0].name == workflow_parts[1]
+    )
     return (
         module == "openprogram.agentic_programming"
         or module.startswith("openprogram.agentic_programming.")
         or module.startswith("openprogram.programs.agentic_functions.")
+        or workflow_import
         or (
             path.startswith("tests/")
             and module == f"workflows.{entrypoint}"
@@ -893,19 +926,121 @@ def _read_candidate_directory(directory: Path, metadata: dict) -> dict:
     return candidate
 
 
-def _replace_snapshot(instance: Path, candidate: dict) -> Path:
+def _workflow_imports(candidate: dict) -> list[str]:
+    dependencies = set()
+    for path, source in candidate["files"].items():
+        if path.startswith("tests/"):
+            continue
+        for node in ast.parse(source, filename=path).body:
+            if not isinstance(node, ast.ImportFrom) or node.level:
+                continue
+            parts = (node.module or "").split(".")
+            if len(parts) == 2 and parts[0] == "workflows":
+                dependencies.add(parts[1])
+    return sorted(dependencies)
+
+
+def _resolve_workflow_dependencies(
+    candidate: dict,
+    *,
+    pinned_snapshot: Optional[Path] = None,
+    pinned_dependencies: Optional[dict] = None,
+) -> dict[str, tuple[dict, str]]:
+    root = str(candidate["project_metadata"].get("entrypoint") or "")
+    if not root:
+        return {}
+    pins = dict(pinned_dependencies or {})
+    if pins and pinned_snapshot is None:
+        raise InvalidWorkflow("pinned workflow dependencies require a snapshot")
+    for name, revision in pins.items():
+        _safe_project_id(name)
+        if not re.fullmatch(r"[0-9a-f]{40}", str(revision)):
+            raise InvalidWorkflow("invalid pinned workflow dependency revision")
+    resolved: dict[str, tuple[dict, str]] = {}
+    visited: set[str] = set()
+    visiting: list[str] = []
+
+    def visit(name: str, current: dict) -> None:
+        if name in visiting:
+            cycle = " -> ".join([*visiting[visiting.index(name):], name])
+            raise InvalidWorkflow(f"workflow dependency cycle: {cycle}")
+        if name in visited:
+            return
+        visiting.append(name)
+        try:
+            for dependency in _workflow_imports(current):
+                if dependency in visiting:
+                    cycle = " -> ".join([
+                        *visiting[visiting.index(dependency):], dependency,
+                    ])
+                    raise InvalidWorkflow(f"workflow dependency cycle: {cycle}")
+                if dependency in visited:
+                    continue
+                if dependency in pins:
+                    dependency_candidate = _read_repository_candidate(
+                        pinned_snapshot / "workflows" / dependency,
+                        expected_project_id=dependency,
+                    )
+                    revision = str(pins[dependency])
+                else:
+                    try:
+                        index, dependency_candidate, _ = _active_project(dependency)
+                    except (InvalidWorkflow, OSError) as exc:
+                        raise InvalidWorkflow(
+                            f"workflow dependency {dependency} is unavailable: {exc}"
+                        ) from exc
+                    revision = index["active_revision"]
+                if dependency_candidate["project_metadata"].get("entrypoint") != dependency:
+                    raise InvalidWorkflow(
+                        f"workflow dependency {dependency} is not a standard package"
+                    )
+                visit(dependency, dependency_candidate)
+                resolved[dependency] = (
+                    dependency_candidate,
+                    revision,
+                )
+        finally:
+            visiting.pop()
+        visited.add(name)
+
+    visit(root, candidate)
+    return resolved
+
+
+def _replace_snapshot(
+    instance: Path,
+    candidate: dict,
+    *,
+    pinned_dependencies: Optional[dict] = None,
+) -> dict[str, str]:
     staging = instance / f".snapshot-{uuid.uuid4().hex}.tmp"
     snapshot = instance / "snapshot"
     backup = instance / f".snapshot-{uuid.uuid4().hex}.old"
+    dependencies = _resolve_workflow_dependencies(
+        candidate,
+        pinned_snapshot=instance / "snapshot" if pinned_dependencies else None,
+        pinned_dependencies=pinned_dependencies,
+    )
     try:
         _write_candidate_directory(staging, candidate)
+        for name, (dependency, _revision) in dependencies.items():
+            package = staging / "workflows" / name
+            package.mkdir()
+            _write_repository_candidate(package, name, dependency)
+            _read_repository_candidate(
+                package,
+                expected_project_id=name,
+            )
         _read_candidate_directory(staging, candidate["project_metadata"])
         if snapshot.exists():
             snapshot.replace(backup)
         staging.replace(snapshot)
         if backup.exists():
             shutil.rmtree(backup)
-        return snapshot
+        return {
+            name: revision
+            for name, (_dependency, revision) in dependencies.items()
+        }
     finally:
         if staging.exists():
             shutil.rmtree(staging)
@@ -999,6 +1134,9 @@ def _author_prompt(
         PROJECT_AUTHOR_INSTRUCTIONS
         .replace("{delivery}", DELIVERY_INSTRUCTIONS)
         .replace("{catalog}", _function_catalog(functions))
+        + "\n\n<reusable_workflows>\n"
+        + _workflow_import_catalog()
+        + "\n</reusable_workflows>"
         + f"\n\n<task>\n{task}\n</task>"
     )
     if base is not None:
@@ -1025,6 +1163,8 @@ def _request_project_candidate(
     error: str = "",
     state: Optional[dict] = None,
     require_new_name: bool = False,
+    pinned_snapshot: Optional[Path] = None,
+    pinned_dependencies: Optional[dict] = None,
 ) -> dict:
     prompt = _author_prompt(task, functions, base=base, error=error, state=state)
     while True:
@@ -1051,6 +1191,11 @@ def _request_project_candidate(
                 raise InvalidWorkflow(
                     f"workflow project already exists: {entrypoint}"
                 )
+            _resolve_workflow_dependencies(
+                candidate,
+                pinned_snapshot=pinned_snapshot,
+                pinned_dependencies=pinned_dependencies,
+            )
             return candidate
         except Exception as exc:
             prompt = _author_prompt(
@@ -1154,7 +1299,7 @@ def _active_project(project_id: str) -> tuple[dict, dict, Path]:
 
 def _copy_active_snapshot(instance: Path, project_id: str) -> tuple[dict, dict]:
     index, candidate, _ = _active_project(project_id)
-    _replace_snapshot(instance, candidate)
+    index["workflow_dependencies"] = _replace_snapshot(instance, candidate)
     return index, candidate
 
 
@@ -1265,6 +1410,7 @@ def _load_state(path: Path) -> dict:
         raise ValueError(f"invalid workflow state: {path}")
     state.setdefault("revisions", [])
     state.setdefault("executions", 0)
+    state.setdefault("workflow_dependencies", {})
     disk_versions = sorted(
         int(candidate.stem.split(".")[1])
         for candidate in path.parent.glob("code.*.py")
@@ -1508,6 +1654,7 @@ def _result(state: dict, run_id: str) -> dict:
         "run_id": run_id,
         "project_id": str(state.get("project_id") or ""),
         "project_revision": str(state.get("project_revision") or ""),
+        "workflow_dependencies": dict(state.get("workflow_dependencies") or {}),
         "items": public_items,
         "revisions": public_revisions,
         "summary_kind": HANDOFF_KIND if handoff else "",
@@ -1670,6 +1817,25 @@ def _decorated_function_names(candidate: dict) -> set[str]:
     return names
 
 
+def _snapshot_packages(snapshot: Path) -> dict[str, dict]:
+    root = snapshot / "workflows"
+    packages = {}
+    for path in sorted(root.iterdir()):
+        if not path.is_dir() or path.is_symlink():
+            continue
+        name = _safe_project_id(path.name)
+        candidate = _read_repository_candidate(
+            path,
+            expected_project_id=name,
+        )
+        if candidate["project_metadata"].get("entrypoint") != name:
+            raise InvalidWorkflow(
+                f"workflow snapshot package does not expose {name}"
+            )
+        packages[name] = candidate
+    return packages
+
+
 def _execute_package_snapshot(
     snapshot: Path,
     candidate: dict,
@@ -1680,6 +1846,17 @@ def _execute_package_snapshot(
 ) -> object:
     entrypoint = candidate["project_metadata"]["entrypoint"]
     module_prefix = f"workflows.{entrypoint}"
+    packages = _snapshot_packages(snapshot)
+    if entrypoint not in packages:
+        raise InvalidWorkflow(f"workflow snapshot is missing {entrypoint}")
+    module_prefixes = tuple(f"workflows.{name}" for name in packages)
+
+    def is_snapshot_module(name: str) -> bool:
+        return any(
+            name == prefix or name.startswith(prefix + ".")
+            for prefix in module_prefixes
+        )
+
     checkpoints = _Checkpoints(state, state_path)
     checkpoints.begin_pass()
     managed = {
@@ -1717,7 +1894,10 @@ def _execute_package_snapshot(
     from openprogram.agentic_programming import function as function_runtime
     from openprogram.programs import _runtime as tool_runtime
 
-    decorated = _decorated_function_names(candidate)
+    decorated = set().union(*(
+        _decorated_function_names(package)
+        for package in packages.values()
+    ))
     missing = object()
     prior_agentic = {
         name: function_runtime._registry.get(name, missing)  # noqa: SLF001
@@ -1747,7 +1927,7 @@ def _execute_package_snapshot(
     }
     prior_modules = {
         name: module for name, module in sys.modules.items()
-        if name == module_prefix or name.startswith(module_prefix + ".")
+        if is_snapshot_module(name)
     }
     had_workflows = "workflows" in sys.modules
     for name in prior_modules:
@@ -1760,7 +1940,7 @@ def _execute_package_snapshot(
         package = importlib.import_module(module_prefix)
         loaded = [
             module for name, module in sys.modules.items()
-            if name == module_prefix or name.startswith(module_prefix + ".")
+            if is_snapshot_module(name)
         ]
         for module in loaded:
             for name, value in list(vars(module).items()):
@@ -1779,7 +1959,7 @@ def _execute_package_snapshot(
         sys.dont_write_bytecode = previous_dont_write_bytecode
         sys.path.remove(str(snapshot))
         for name in list(sys.modules):
-            if name == module_prefix or name.startswith(module_prefix + "."):
+            if is_snapshot_module(name):
                 sys.modules.pop(name, None)
         sys.modules.update(prior_modules)
         if not had_workflows:
@@ -1951,6 +2131,7 @@ def _save_project_ref(instance: Path, state: dict) -> None:
             "project_id": state.get("project_id", ""),
             "project_revision": state.get("project_revision", ""),
             "project_action": state.get("project_action", ""),
+            "workflow_dependencies": state.get("workflow_dependencies", {}),
         }, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
     )
 
@@ -1990,9 +2171,16 @@ def _run_project_instance_locked(
                 state["task"], functions, session_id=session_id,
                 agent_id=agent_id, spawn_caller=spawn_caller,
                 base=base, error=error, state=state,
+                pinned_snapshot=instance / "snapshot",
+                pinned_dependencies=state.get("workflow_dependencies"),
             )
-            _replace_snapshot(instance, candidate)
+            dependencies = _replace_snapshot(
+                instance,
+                candidate,
+                pinned_dependencies=state.get("workflow_dependencies"),
+            )
             state["project_metadata"] = candidate["project_metadata"]
+            state["workflow_dependencies"] = dependencies
             state["project_action"] = (
                 "revise" if state.get("project_id") else "create"
             )
@@ -2065,6 +2253,7 @@ def _prepare_project_run(
         state.update(
             project_id=project_id,
             project_revision=index["active_revision"],
+            workflow_dependencies=index["workflow_dependencies"],
             project_action="reuse",
             project_metadata=candidate["project_metadata"],
             publish_required=False,
@@ -2079,9 +2268,10 @@ def _prepare_project_run(
             agent_id=agent_id, spawn_caller=spawn_caller, base=base,
             require_new_name=action == "create",
         )
-        _replace_snapshot(instance, candidate)
+        dependencies = _replace_snapshot(instance, candidate)
         state.update(
             project_id=project_id,
+            workflow_dependencies=dependencies,
             project_action=action,
             project_metadata=candidate["project_metadata"],
             publish_required=True,

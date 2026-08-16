@@ -80,7 +80,7 @@
     <div class="eyebrow">OpenProgram · Runtime design</div>
     <h1>Self-Programming Agentic Workflow</h1>
     <p class="lead">Workflow 不是新的调用协议。它是一个独立 Git 仓库中的普通 Python 小项目，可以按任务直接组合 <code>goal()</code>、<code>agent()</code> 和 <code>llm()</code> 中的任意一种或多种调用。三层能力的依赖顺序固定：Goal 建立在 Agent loop 上，Agent loop 由反复的模型调用和工具执行组成，<code>llm()</code> 直接暴露其中的一次模型调用。入口使用现有 <code>@agentic_function</code>，项目之间通过正常的 Python <code>import</code> 和函数调用组合。</p>
-    <div class="status-row"><span class="pill target">唯一装饰器：@agentic_function</span><span class="pill target">组合：Python import</span><span class="pill">Workflow：任选 Goal / Agent / llm</span><span class="pill">固定依赖：goal → agent → model call → runtime</span><span class="pill">版本：Git commits</span><span class="pill">实现状态：阶段 3 — 标准 package 完成</span></div>
+    <div class="status-row"><span class="pill target">唯一装饰器：@agentic_function</span><span class="pill target">组合：Python import</span><span class="pill">Workflow：任选 Goal / Agent / llm</span><span class="pill">固定依赖：goal → agent → model call → runtime</span><span class="pill">版本：Git commits</span><span class="pill">实现状态：阶段 4 — 跨 Workflow import 完成</span></div>
   </header>
 
   <div class="layout">
@@ -232,11 +232,11 @@ def research_pipeline(task: str, output_dir: str) -> str:
         <h2>7. 加载与执行：准备 import 环境，不改变调用语义</h2>
         <figure><div class="diagram">
           <svg viewBox="0 0 960 470" role="img" aria-labelledby="runtime-title runtime-desc">
-            <title id="runtime-title">Workflow 从 Git 仓库到 Python 调用的运行流程</title><desc id="runtime-desc">OpenProgram扫描入口的静态 imports，解析可达 Workflow Git 仓库，在临时目录创建固定 commit 的只读快照，启动隔离 worker并设置Python import path。随后导入顶层agentic_function并正常调用；嵌套函数继承同一个Runtime和DAG caller。</desc>
+            <title id="runtime-title">Workflow 从 Git 仓库到 Python 调用的运行流程</title><desc id="runtime-desc">OpenProgram扫描入口的静态 imports，解析可达 Workflow Git 仓库，在临时目录通过git archive创建固定commit快照，并在既有backend worker中设置本次Python import path。随后导入顶层agentic_function并正常调用；嵌套函数继承同一个Runtime和DAG caller。</desc>
             <defs><marker id="runtime-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#747b88"/></marker></defs>
             <rect class="box git" x="30" y="52" width="175" height="72" rx="10"/><text x="118" y="81" text-anchor="middle">Git repositories</text><text class="sub" x="118" y="103" text-anchor="middle">root + imported deps</text>
             <rect class="box" x="260" y="52" width="175" height="72" rx="10"/><text x="348" y="81" text-anchor="middle">Static import scan</text><text class="sub" x="348" y="103" text-anchor="middle">reachable packages</text>
-            <rect class="box" x="490" y="52" width="175" height="72" rx="10"/><text x="578" y="81" text-anchor="middle">Commit snapshots</text><text class="sub" x="578" y="103" text-anchor="middle">temporary worktrees</text>
+            <rect class="box" x="490" y="52" width="175" height="72" rx="10"/><text x="578" y="81" text-anchor="middle">Commit snapshots</text><text class="sub" x="578" y="103" text-anchor="middle">git archive · temp dir</text>
             <rect class="box" x="720" y="52" width="205" height="72" rx="10"/><text x="823" y="81" text-anchor="middle">Isolated worker</text><text class="sub" x="823" y="103" text-anchor="middle">controlled import path</text>
             <path d="M205 88H260M435 88H490M665 88H720" fill="none" stroke="#747b88" stroke-width="1.5" marker-end="url(#runtime-arrow)"/>
             <rect class="box workflow" x="120" y="230" width="260" height="82" rx="10"/><text x="250" y="261" text-anchor="middle">import research_pipeline</text><text class="sub" x="250" y="285" text-anchor="middle">call research_pipeline(task, dir)</text>
@@ -336,12 +336,12 @@ def research_pipeline(task: str, output_dir: str) -> str:
           <tr><td>零参数单文件Workflow</td><td><span class="state remove">仅兼容恢复</span></td><td>新任务由接收参数的多文件Python package替代；旧 <code>workflow.json</code> / <code>entry.py</code> 只在显式resume历史run时读取。</td></tr>
           <tr><td>Workflow Git仓库扫描和commit快照</td><td><span class="state keep">阶段 2 完成</span></td><td>Create和revise生成Git commits；reuse及每次run从 <code>git archive HEAD</code> 读取固定快照。修改在临时Git worktree中验证后fast-forward。</td></tr>
           <tr><td>单Workflow标准import和backend worker加载</td><td><span class="state keep">阶段 3 完成</span></td><td>现有Python backend在运行快照中准备普通 <code>workflows.&lt;name&gt;</code> import path，导入后调用同一个 <code>@agentic_function</code> wrapper；不新增第二个Runtime进程。</td></tr>
-          <tr><td>跨Workflow静态import分析和可达commit快照</td><td><span class="state target">待实现</span></td><td>后续解析 <code>from workflows...</code>，在启动前拒绝循环或缺失依赖，并把全部可达Git commit放入同一运行快照。</td></tr>
+          <tr><td>跨Workflow静态import分析和可达commit快照</td><td><span class="state keep">阶段 4 完成</span></td><td>解析唯一允许的 <code>from workflows.&lt;package&gt; import &lt;package&gt;</code>，在执行前拒绝循环、越界或缺失依赖，并把全部可达Git commit放入同一运行快照；依赖内部调用继承同一checkpoint和DAG Runtime。</td></tr>
           <tr><td><code>agentic_workflow</code> author选择逻辑</td><td><span class="state target">待收敛</span></td><td>多文件author/create/revise/reuse已经存在；后续用Agent对现有package的正常检索和修改替代当前显式decision JSON协议。</td></tr>
         </tbody></table>
         <div class="callout pending">迁移顺序必须保持概念边界：先让生成代码使用现有 <code>@agentic_function</code>、<code>llm()</code>、<code>agent()</code> 和 <code>goal()</code>；再建立Git项目与标准import；最后删除旧revision/catalog。整个过程不新增公开调用API。</div>
       </section>
-      <p class="footer-note">Canonical design document. Phase 3 evidence: public-entry package creation, standard entry-point metadata, ordinary package import, existing <code>@agentic_function</code> execution, Agent-loop selection, checkpoint replay, Git create/revise/reuse, registry restoration and explicit legacy-run recovery are covered by 61 focused tests. Cross-Workflow dependency snapshots and replacement of the explicit decision JSON protocol remain pending.</p>
+      <p class="footer-note">Canonical design document. Phase 4 evidence: public-entry package creation, standard entry-point metadata, ordinary package import, transitive Workflow discovery, missing/cycle rejection, fixed dependency commits, shared checkpoint execution, Git create/revise/reuse, registry restoration and explicit legacy-run recovery are covered by 67 focused tests. Replacement of the explicit decision JSON protocol remains pending.</p>
     </main>
   </div>
 </div>

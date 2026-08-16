@@ -258,6 +258,22 @@ def _state(repo: Path, run_id: str) -> dict:
     return json.loads((_instance(repo, run_id) / "state.json").read_text())
 
 
+def _install_workflow_project(repo: Path, reply: str) -> tuple[dict, str]:
+    candidate = TL._validate_project_candidate(json.loads(reply))
+    name = candidate["project_metadata"]["entrypoint"]
+    instance = repo / "project-fixtures" / name
+    instance.mkdir(parents=True)
+    TL._replace_snapshot(instance, candidate)
+    project_id, revision = TL._publish_snapshot(
+        instance,
+        project_id="",
+        action="create",
+        metadata=candidate["project_metadata"],
+    )
+    assert project_id == name
+    return candidate, revision
+
+
 def _git_output(project: Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(project), *args],
@@ -865,6 +881,7 @@ def test_planner_prompt_documents_real_agentic_programming_convention(
     assert "Do not return a report body as the workflow handoff" in prompt
     assert "ordinary relative imports" in prompt
     assert "Do not use dynamic" in prompt
+    assert "<reusable_workflows>" in prompt
 
 
 def test_capped_status_cannot_be_caught_by_generated_code(
@@ -1214,6 +1231,235 @@ def test_package_execution_uses_agent_loop_primitive_not_sub_agent_adapter(
 
     assert result["status"] == "completed"
     assert calls == ["discover recent papers"]
+
+
+def test_public_entry_executes_static_workflow_dependency(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _dependency, dependency_revision = _install_workflow_project(
+        session_repo,
+        _project(
+            name="paper_search",
+            summary="Search papers",
+            files={
+                "steps/search.py": (
+                    "def search(task):\n"
+                    "    return agent('search ' + task)\n"
+                ),
+                "entry.py": (
+                    "def workflow(task):\n"
+                    "    return search(task)\n"
+                ),
+            },
+        ),
+    )
+    parent = json.loads(_package_project())
+    parent["files"]["steps/discover.py"] = (
+        "from workflows.paper_search import paper_search\n\n"
+        "def discover(task):\n"
+        "    return paper_search(task)\n"
+    )
+    _planner(
+        monkeypatch,
+        json.dumps({"action": "create"}),
+        json.dumps(parent),
+    )
+    calls = _executor(monkeypatch)
+    _summarizer(monkeypatch)
+
+    result = TL.agentic_workflow("recent papers")
+
+    assert result["status"] == "completed"
+    assert [call["prompt"] for call in calls] == ["search recent papers"]
+    state = _state(session_repo, result["run_id"])
+    assert state["workflow_dependencies"] == {
+        "paper_search": dependency_revision,
+    }
+    snapshot = _instance(session_repo, result["run_id"]) / "snapshot"
+    assert (snapshot / "workflows" / "literature_review" / "workflow.py").exists()
+    assert (snapshot / "workflows" / "paper_search" / "workflow.py").exists()
+    assert [item["function"] for item in state["items"]] == ["agent"]
+
+
+def test_author_prompt_lists_reusable_workflow_import(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _candidate, revision = _install_workflow_project(
+        session_repo,
+        _project(name="paper_search", summary="Search papers"),
+    )
+
+    prompt = TL._author_prompt("review papers", {})
+
+    assert "from workflows.paper_search import paper_search" in prompt
+    assert "Search papers" in prompt
+    assert revision in prompt
+
+
+def test_public_entry_snapshots_transitive_workflow_dependencies(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _leaf, leaf_revision = _install_workflow_project(
+        session_repo,
+        _project(
+            name="paper_fetch",
+            summary="Fetch paper metadata",
+            files={
+                "steps/fetch.py": (
+                    "def fetch(task):\n"
+                    "    return agent('fetch ' + task)\n"
+                ),
+                "entry.py": "def workflow(task):\n    return fetch(task)\n",
+            },
+        ),
+    )
+    _middle, middle_revision = _install_workflow_project(
+        session_repo,
+        _project(
+            name="paper_search",
+            summary="Search papers",
+            files={
+                "steps/search.py": (
+                    "from workflows.paper_fetch import paper_fetch\n\n"
+                    "def search(task):\n"
+                    "    return paper_fetch(task)\n"
+                ),
+                "entry.py": "def workflow(task):\n    return search(task)\n",
+            },
+        ),
+    )
+    parent = json.loads(_package_project())
+    parent["files"]["steps/discover.py"] = (
+        "from workflows.paper_search import paper_search\n\n"
+        "def discover(task):\n"
+        "    return paper_search(task)\n"
+    )
+    _planner(
+        monkeypatch,
+        json.dumps({"action": "create"}),
+        json.dumps(parent),
+    )
+    calls = _executor(monkeypatch)
+    _summarizer(monkeypatch)
+
+    result = TL.agentic_workflow("recent papers")
+
+    assert [call["prompt"] for call in calls] == ["fetch recent papers"]
+    assert result["workflow_dependencies"] == {
+        "paper_fetch": leaf_revision,
+        "paper_search": middle_revision,
+    }
+    packages = {
+        path.name for path in (
+            _instance(session_repo, result["run_id"]) / "snapshot" / "workflows"
+        ).iterdir()
+    }
+    assert packages == {"literature_review", "paper_search", "paper_fetch"}
+
+
+def test_static_workflow_dependency_must_exist(session_repo: Path) -> None:
+    candidate = json.loads(_package_project())
+    candidate["files"]["steps/discover.py"] = (
+        "from workflows.missing_workflow import missing_workflow\n\n"
+        "def discover(task):\n"
+        "    return missing_workflow(task)\n"
+    )
+
+    with pytest.raises(
+        TL.InvalidWorkflow,
+        match="workflow dependency missing_workflow is unavailable",
+    ):
+        TL._resolve_workflow_dependencies(
+            TL._validate_project_candidate(candidate)
+        )
+
+
+def test_static_workflow_dependency_cycle_is_rejected(session_repo: Path) -> None:
+    candidate = json.loads(_package_project())
+    candidate["files"]["steps/discover.py"] = (
+        "from workflows.literature_review import literature_review\n\n"
+        "def discover(task):\n"
+        "    return literature_review(task)\n"
+    )
+
+    with pytest.raises(
+        TL.InvalidWorkflow,
+        match=(
+            "workflow dependency cycle: "
+            "literature_review -> literature_review"
+        ),
+    ):
+        TL._resolve_workflow_dependencies(
+            TL._validate_project_candidate(candidate)
+        )
+
+
+def test_workflow_dependency_snapshot_keeps_resolved_commit(
+    session_repo: Path,
+) -> None:
+    initial = _project(
+        name="paper_search",
+        summary="Search papers",
+        files={
+            "steps/search.py": "def search(task):\n    return 'initial'\n",
+            "entry.py": "def workflow(task):\n    return search(task)\n",
+        },
+    )
+    _candidate, initial_revision = _install_workflow_project(
+        session_repo, initial,
+    )
+    parent = json.loads(_package_project())
+    parent["files"]["steps/discover.py"] = (
+        "from workflows.paper_search import paper_search\n\n"
+        "def discover(task):\n"
+        "    return paper_search(task)\n"
+    )
+    parent_candidate = TL._validate_project_candidate(parent)
+    instance = session_repo / "fixed-dependency-run"
+    instance.mkdir()
+
+    dependencies = TL._replace_snapshot(instance, parent_candidate)
+
+    revised = TL._validate_project_candidate(json.loads(_project(
+        name="paper_search",
+        summary="Search papers",
+        files={
+            "steps/search.py": "def search(task):\n    return 'revised'\n",
+            "entry.py": "def workflow(task):\n    return search(task)\n",
+        },
+    )))
+    revision_instance = session_repo / "paper-search-revision"
+    revision_instance.mkdir()
+    TL._replace_snapshot(revision_instance, revised)
+    _project_id, revised_revision = TL._publish_snapshot(
+        revision_instance,
+        project_id="paper_search",
+        action="revise",
+        metadata=revised["project_metadata"],
+    )
+
+    assert dependencies == {"paper_search": initial_revision}
+    assert revised_revision != initial_revision
+    snapshot_source = (
+        instance / "snapshot" / "workflows" / "paper_search"
+        / "steps" / "search.py"
+    ).read_text()
+    assert "initial" in snapshot_source
+    assert "revised" not in snapshot_source
+
+    rebuilt_dependencies = TL._replace_snapshot(
+        instance,
+        parent_candidate,
+        pinned_dependencies=dependencies,
+    )
+
+    assert rebuilt_dependencies == {"paper_search": initial_revision}
+    rebuilt_source = (
+        instance / "snapshot" / "workflows" / "paper_search"
+        / "steps" / "search.py"
+    ).read_text()
+    assert "initial" in rebuilt_source
+    assert "revised" not in rebuilt_source
 
 
 def test_package_import_does_not_replace_process_tool_registrations(
