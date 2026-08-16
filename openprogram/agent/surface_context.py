@@ -297,6 +297,12 @@ def capture_pages(context: dict | None = None) -> dict:
         result = webtab.request_page_inventory(binding_id)
         owner_ws = webtab.binding_connection(binding_id)
         if owner_ws is not None:
+            if (
+                not isinstance(result, dict) or not result.get("ok")
+                or not _text(result.get("window_id"), 160)
+                or not isinstance(result.get("pages"), list)
+            ):
+                raise RuntimeError("OpenProgram Page inventory is unavailable")
             inventories.append((owner_ws, result))
     else:
         registered = [

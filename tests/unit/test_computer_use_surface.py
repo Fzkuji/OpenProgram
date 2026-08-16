@@ -610,6 +610,57 @@ def test_context_page_inventory_survives_originating_window_disconnect(monkeypat
     webtab.release_connection(secondary)
 
 
+def test_context_page_inventory_does_not_replace_live_primary_on_timeout(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    primary = _WS()
+    secondary = _WS()
+    monkeypatch.setattr(server, "_ws_connections", [primary, secondary])
+    binding = webtab.register_binding(
+        primary, "window-1", "tab-primary", "target-primary",
+        allow_background=True,
+    )
+    accepted = {
+        "context_id": "accepted",
+        "surfaces": [{"binding_id": binding}],
+    }
+    asyncio.run(webtab.handle_webtab_register(secondary, {
+        "action": "webtab_register", "window_id": "window-2",
+    }))
+    monkeypatch.setattr(
+        webtab,
+        "request_page_inventory",
+        lambda binding_id: {"ok": False, "reason_code": "timeout"},
+    )
+    secondary_calls = []
+    monkeypatch.setattr(
+        webtab,
+        "request_on_ws",
+        lambda ws, command, timeout=5.0: secondary_calls.append((ws, command)) or {
+            "ok": True,
+            "window_id": "window-2",
+            "pages": [{
+                "tab_id": "tab-secondary",
+                "target_id": "target-secondary",
+                "url": "https://secondary.test/",
+                "title": "Secondary",
+                "visible": True,
+                "focused": True,
+                "region": "center",
+            }],
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="Page inventory is unavailable"):
+        surface_context.capture_pages(accepted)
+    assert secondary_calls == []
+
+    webtab.release_connection(primary)
+    webtab.release_connection(secondary)
+
+
 def test_direct_page_inventory_preserves_tab_entries_and_split_panes(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.webui import server
