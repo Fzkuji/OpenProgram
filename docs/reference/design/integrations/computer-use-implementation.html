@@ -183,6 +183,11 @@
 </div>
 <table>
   <thead><tr><th>状态</th><th>证据</th></tr></thead>
-  <tbody><tr><td class="pending">DESIGN COMPLETE · IMPLEMENTATION PENDING</td><td>实现、review 与安装版证据只在对应 commit 通过后补写。</td></tr></tbody>
+  <tbody>
+    <tr><td class="pass">IMPLEMENTED · INSTALLED E2E PASS</td><td><code>fe35dddf</code> 实现同窗口 Page inventory、background exact binding、popup opener 与 GUI Agent 显式切换；<code>67a65e2a</code> 让 inventory 从 native WebContents 读取实时 URL/title，后台导航后不再返回旧 tab metadata。</td></tr>
+    <tr><td class="pass">自动验证</td><td>Browser Agent、Computer Use Runtime 与 Page binding 相关测试 105 passed；WebTab navigation、Web split/compound、TypeScript 与生产 Web build 通过。行为测试确认 resolve/inspect background Page 不调用 show、focus 或 <code>bringToFront()</code>。</td></tr>
+    <tr><td class="pass">安装版验证</td><td>只使用默认 <code>~/.openprogram</code>、18100 与 <code>/Applications/OpenProgram.app</code>。inventory 同时返回前台 Grammarly 与后台 Example；<code>open_claude_chrome</code> 在后台 Example 上执行 <code>observe → click Learn more → observe → close</code>，真实 Page 进入 IANA，前台始终保持 Grammarly；下一次 inventory 实时返回后台 <code>Example Domains / https://www.iana.org</code>。旧安装包已删除。</td></tr>
+    <tr><td class="pending">保留范围</td><td>跨 OpenProgram window inventory、桌面软件控制、OCR/YOLO/memory 与自动 backend fallback 未纳入本任务。popup opener、token handoff 与 stale/close 撤销已有 component 覆盖，尚未增加公开网站 popup 的安装版 fixture。</td></tr>
+  </tbody>
 </table>
 </main></body></html>
