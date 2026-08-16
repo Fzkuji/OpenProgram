@@ -38,7 +38,7 @@ export function FunctionCard({
   formatDate: (ts?: number) => string;
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
-  onDragStart: (e: React.DragEvent) => void;
+  onDragStart?: (e: React.DragEvent) => void;
   onToggleFav: (e: React.MouseEvent) => void;
   onChangeIcon: (e: React.MouseEvent) => void;
 }) {
@@ -51,7 +51,7 @@ export function FunctionCard({
     <div
       data-function-card
       className={styles.card}
-      draggable
+      draggable={Boolean(onDragStart)}
       onDragStart={onDragStart}
       onContextMenu={onContextMenu}
       onMouseEnter={() => cardIconRef.current?.startAnimation?.()}

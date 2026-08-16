@@ -107,6 +107,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const WARM_ROUTES = [
       "/settings/providers",
       "/functions",
+      "/agents",
       "/skills",
       "/settings/general",
       "/memory",

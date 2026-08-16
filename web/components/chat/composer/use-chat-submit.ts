@@ -48,6 +48,7 @@ export interface ChatSubmitOptions {
   clearAttachmentsAfterSubmit: Attachments["clearAfterSubmit"];
   thinking: string;
   toolsEnabled: boolean;
+  toolsProfile: string;
   webSearchEnabled: boolean;
   fastEnabled: boolean;
   fastSupported: boolean;
@@ -70,6 +71,7 @@ export function useChatSubmit({
   clearAttachmentsAfterSubmit,
   thinking,
   toolsEnabled,
+  toolsProfile,
   webSearchEnabled,
   fastEnabled,
   fastSupported,
@@ -92,6 +94,7 @@ export function useChatSubmit({
         text: trimmed,
         thinking,
         toolsEnabled,
+        toolsProfile,
         webSearchEnabled,
         serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
         background: bound !== null,
@@ -177,6 +180,7 @@ export function useChatSubmit({
       attachments: attachmentsPayload.length > 0 ? attachmentsPayload : undefined,
       thinking,
       toolsEnabled,
+      toolsProfile,
       webSearchEnabled,
       serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
     });
@@ -207,6 +211,7 @@ export function useChatSubmit({
     slash,
     thinking,
     toolsEnabled,
+    toolsProfile,
     webSearchEnabled,
     fastEnabled,
     fastSupported,

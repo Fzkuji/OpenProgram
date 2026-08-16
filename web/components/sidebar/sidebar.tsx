@@ -47,6 +47,7 @@ import { usePathname } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 import {
   type AnimatedNavIconHandle,
+  BotIcon,
   BoxesIcon,
   BrainIcon,
   ClockIcon,
@@ -106,6 +107,7 @@ export function Sidebar() {
   // row is the hover target (claude.ai-style). Pilot: functions / skills
   // / mcp only.
   const functionsIconRef = useRef<AnimatedNavIconHandle>(null);
+  const agentsIconRef = useRef<AnimatedNavIconHandle>(null);
   const skillsIconRef = useRef<AnimatedNavIconHandle>(null);
   const projectsIconRef = useRef<AnimatedNavIconHandle>(null);
   const mcpIconRef = useRef<AnimatedNavIconHandle>(null);
@@ -240,6 +242,7 @@ export function Sidebar() {
   const navActive = {
     mcp: pathname.startsWith("/mcp"),
     programs: pathname.startsWith("/programs"),
+    agents: pathname.startsWith("/agents"),
     memory: pathname.startsWith("/memory"),
     scheduler: pathname.startsWith("/scheduler"),
     chats: pathname.startsWith("/chats"),
@@ -427,6 +430,22 @@ export function Sidebar() {
               />
             )}
           </span>
+        </Link>
+
+        <Link
+          href="/agents"
+          className={
+            sidebarNavItemClass +
+            (navActive.agents ? " " + sidebarNavItemActiveClass : "")
+          }
+          id="navAgents"
+          onMouseEnter={() => agentsIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => agentsIconRef.current?.stopAnimation?.()}
+        >
+          <span className={sidebarNavIconClass}>
+            <BotIcon ref={agentsIconRef} size={20} />
+          </span>
+          <span className={sidebarNavLabelClass}>{t("nav.agents")}</span>
         </Link>
 
         <Link

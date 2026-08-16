@@ -143,6 +143,9 @@ _unsafe_in_channel: dict[str, set[str]] = {}       # tool_name → set of unsafe
 # helpers that must never appear in any LLM tools array. Default is exposed,
 # so this is an opt-OUT set, not a whitelist.
 _unexposed: set[str] = set()
+_allowed_tool_names: contextvars.ContextVar[Optional[set[str]]] = contextvars.ContextVar(
+    "_allowed_tool_names", default=None,
+)
 
 
 def register(tool: AgentTool, *, toolsets: list[str] = (),
@@ -209,6 +212,7 @@ def reset_registry() -> None:
     _toolset_membership.clear()
     _unexposed.clear()
     _unsafe_in_channel.clear()
+    _allowed_tool_names.set(None)
 
 
 def snapshot_registry() -> dict:
@@ -1202,6 +1206,11 @@ def install_loaded_deferred(loaded: Optional[set[str]] = None) -> Any:
     return _loaded_deferred.set(set() if loaded is None else loaded)
 
 
+def install_allowed_tool_names(names: set[str]) -> Any:
+    """Limit deferred discovery to the resolver's current allowed set."""
+    return _allowed_tool_names.set(set(names))
+
+
 def mark_deferred_loaded(names: list[str]) -> set[str]:
     """Add tool names to the current session's loaded-deferred set.
 
@@ -1228,9 +1237,8 @@ def split_tools_for_dispatch(
         in the provider's tools array. Every non-deferred tool plus
         every deferred tool whose name is in the session's loaded set.
       - ``deferred_catalog`` is ``[(name, description), ...]`` for
-        every deferred tool *not yet loaded*. The dispatcher pastes
-        this into a "deferred tools — call tool_search to load"
-        section of the system prompt so the LLM still discovers them.
+        every deferred tool *not yet loaded*. The dispatcher exposes
+        only its size plus keyword-search guidance in the prompt.
 
     When the ContextVar isn't installed (no session) the loaded set
     is empty — all deferred tools land in the catalog.
@@ -1334,7 +1342,8 @@ def _tool_search_by_name(payload: str) -> str:
     missing: list[str] = []
     lines: list[str] = []
     for name in requested:
-        t = _registry.get(name)
+        allowed = _allowed_tool_names.get()
+        t = _registry.get(name) if allowed is None or name in allowed else None
         if t is None:
             missing.append(name)
             continue
@@ -1383,6 +1392,7 @@ def _tool_search_by_keyword(query: str, *, max_results: int) -> str:
     candidates = [
         t for t in _registry.values()
         if getattr(t, "_defer", False) and t.name not in loaded
+        and (_allowed_tool_names.get() is None or t.name in _allowed_tool_names.get())
     ]
 
     scored: list[tuple[int, str, AgentTool]] = []
@@ -1448,10 +1458,10 @@ async def _tool_search_execute(call_id, args, cancel, on_update):
 tool_search = AgentTool(
     name="tool_search",
     description=(
-        "Load deferred tools' parameter schemas. Deferred tools appear "
-        "by name only in the system-prompt catalog; until loaded, their "
-        "JSON Schema was never sent and you cannot construct a valid "
-        "call. This returns the full schemas, so you can call the tools "
+        "Find deferred tools within the current Agent's allowed scope and "
+        "load their parameter schemas. Their names and JSON Schemas are not "
+        "sent at turn start. This returns a small matching set with full "
+        "schemas, so you can call the tools "
         "immediately in the same turn, and they join the tools array on "
         "the next turn.\n"
         "\n"
@@ -1500,30 +1510,12 @@ register(tool_search,
 
 
 def deferred_catalog_text(catalog: list[tuple[str, str]]) -> str:
-    """Render the deferred catalog as a system-prompt block.
-
-    Format mirrors what Claude Code injects when deferred tools are
-    present, so the LLM recognises the pattern from training:
-
-        The following deferred tools are now available via ToolSearch.
-        Their schemas are NOT loaded — calling them directly will fail
-        with InputValidationError. Use ToolSearch with query
-        "select:<name>[,<name>...]" to load tool schemas before calling
-        them:
-        <name1>
-        <name2>
-        ...
-
-    Returns the empty string when ``catalog`` is empty so the caller
-    can unconditionally concat it into the prompt.
-    """
+    """Render count-only deferred-discovery guidance for the prompt."""
     if not catalog:
         return ""
-    body = "\n".join(name for name, _desc in catalog)
     return (
-        "The following deferred tools are available via tool_search.\n"
-        "Their schemas are NOT loaded, so you cannot construct a valid "
-        'call yet. Use tool_search with query "select:<name>[,<name>...]" '
-        "— it returns the full schemas, which you can use to call the "
-        "tools right away in the same turn:\n" + body
+        f"{len(catalog)} deferred tools are available via tool_search. "
+        "Their names and schemas are not loaded. Use tool_search with "
+        "descriptive keywords to find a small matching set; returned schemas "
+        "can be called in the same turn."
     )

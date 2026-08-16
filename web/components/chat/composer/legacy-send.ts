@@ -69,6 +69,7 @@ interface SendMessageBridgeArgs {
   sessionId: string | null;
   thinking: string;
   toolsEnabled: boolean;
+  toolsProfile?: string;
   webSearchEnabled: boolean;
   /** Per-turn speed tier — "priority" (Fast) or undefined (provider
    *  default). Sent as ``service_tier`` so the backend forwards it to
@@ -123,6 +124,7 @@ export function sendChatMessage({
   sessionId,
   thinking,
   toolsEnabled,
+  toolsProfile = "__agent__",
   webSearchEnabled,
   serviceTier,
   attachments,
@@ -135,7 +137,7 @@ export function sendChatMessage({
   // the same settings instead of guessed defaults.
   if (sessionId) {
     rememberSendSettings(sessionId, {
-      thinking, toolsEnabled, webSearchEnabled, serviceTier, background,
+      thinking, toolsEnabled, toolsProfile, webSearchEnabled, serviceTier, background,
     });
   }
   const rollbackPendingSend = reservePendingChatSend(sessionId, text);
@@ -175,6 +177,9 @@ export function sendChatMessage({
     tools: toolsEnabled,
     web_search: webSearchEnabled,
   };
+  if (toolsProfile && toolsProfile !== "__agent__") {
+    payload.tools_profile = toolsProfile;
+  }
   const surface = surfaceRefForChat(sessionId, toolsEnabled);
   if (surface) payload.surface = surface;
   if (serviceTier) {

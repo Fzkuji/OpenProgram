@@ -244,6 +244,10 @@ def test_resolve_default_agent_tools_from_profile_dict(
         """Unsafe probe."""
         return "no"
 
+    @function(name="newcatalogprobe", description="New catalog entry")
+    def newcatalogprobe() -> str:
+        return "new"
+
     monkeypatch.setattr(tools_pkg, "DEFAULT_TOOLS", ["safeprobe", "unsafeprobe"])
 
     names = [
@@ -253,7 +257,65 @@ def test_resolve_default_agent_tools_from_profile_dict(
         ) or []
     ]
 
-    assert names == ["safeprobe"]
+    assert set(names) == {"safeprobe", "newcatalogprobe"}
+
+
+def test_resolve_agent_tool_access_modes(fresh_registry) -> None:
+    @function(name="catalog_read", description="Read catalog")
+    def catalog_read() -> str:
+        return "read"
+
+    @function(name="catalog_research", description="Research catalog")
+    def catalog_research() -> str:
+        return "research"
+
+    automatic = {
+        t.name for t in D._resolve_tools(
+            {"tools": {"mode": "automatic"}}, source="web"
+        ) or []
+    }
+    selected = {
+        t.name for t in D._resolve_tools(
+            {"tools": {"mode": "selected", "allowed": ["catalog_research"]}},
+            source="web",
+        ) or []
+    }
+    none = D._resolve_tools({"tools": {"mode": "none"}}, source="web")
+
+    assert automatic == {"catalog_read", "catalog_research"}
+    assert selected == {"catalog_research"}
+    assert none == []
+
+
+def test_inherit_override_uses_agent_policy(fresh_registry) -> None:
+    @function(name="profile_read", description="Read")
+    def profile_read() -> str:
+        return "read"
+
+    names = {
+        t.name for t in D._resolve_tools(
+            {"tools": {"mode": "selected", "allowed": ["profile_read"]}},
+            {"inherit": True},
+            source="web",
+        ) or []
+    }
+    assert names == {"profile_read"}
+
+
+def test_selected_deferred_program_keeps_scoped_search_loader(fresh_registry) -> None:
+    fresh_registry.register(fresh_registry.tool_search)
+
+    @function(name="deferred_report", description="Report", defer=True)
+    def deferred_report() -> str:
+        return "report"
+
+    names = {
+        tool.name for tool in D._resolve_tools(
+            {"tools": {"mode": "selected", "allowed": ["deferred_report"]}},
+            source="web",
+        ) or []
+    }
+    assert names == {"tool_search", "deferred_report"}
 
 
 def test_tool_runtime_prompt_mentions_available_tools() -> None:

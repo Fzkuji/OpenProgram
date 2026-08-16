@@ -20,6 +20,21 @@ assert.match(
 );
 assert.match(
   controls,
+  /switchProfile\("__agent__"\)[\s\S]*Use Agent configuration/,
+  "The submenu must default to the current Agent's persistent configuration",
+);
+const composer = fs.readFileSync(
+  path.join(webRoot, "components/chat/composer/index.tsx"),
+  "utf8",
+);
+assert.match(composer, /useState\("__agent__"\)/);
+assert.doesNotMatch(
+  composer,
+  /api\/tool-profiles\/activate/,
+  "A session preset must not mutate the global active profile",
+);
+assert.match(
+  controls,
   /<Menu\.SubmenuTrigger[\s\S]*?openOnHover=\{false\}/,
   "Tool Profile must open by click, not hover",
 );

@@ -888,23 +888,50 @@ def test_tool_search_handles_unknown_names() -> None:
     assert "no_such_tool" in text
 
 
+def test_tool_search_cannot_load_program_outside_resolved_scope() -> None:
+    from openprogram.programs._runtime import (
+        install_allowed_tool_names,
+        install_loaded_deferred,
+        tool_search,
+    )
+
+    @function(name="allowed_report", defer=True)
+    def allowed_report() -> str:
+        return "allowed"
+
+    @function(name="private_report", defer=True)
+    def private_report() -> str:
+        return "private"
+
+    install_loaded_deferred()
+    token = install_allowed_tool_names({"tool_search", "allowed_report"})
+    try:
+        explicit = _run(tool_search.execute(
+            "c1", {"select": "select:private_report"}, None, None
+        )).content[0].text
+        keyword = _run(tool_search.execute(
+            "c2", {"select": "report", "max_results": 5}, None, None
+        )).content[0].text
+    finally:
+        R._allowed_tool_names.reset(token)
+
+    assert "Loaded 0" in explicit
+    assert "private_report" not in keyword
+    assert "allowed_report" in keyword
+
+
 def test_deferred_catalog_text_format() -> None:
-    """The catalog names the loader and every deferred tool, so the model
-    can discover them and knows how to make them callable."""
+    """Turn-start context discloses only a count and search guidance."""
     from openprogram.programs._runtime import deferred_catalog_text
     block = deferred_catalog_text([("CronCreate", "Create a cron job"),
                                     ("WebFetch",   "Fetch a URL")])
     assert "deferred tools" in block
     assert "tool_search" in block, "must name the actual registered tool"
-    assert "select:" in block
-    assert "CronCreate" in block
-    assert "WebFetch" in block
-    # Descriptions stay out — the catalog sends bare names, and pricing
-    # (budget._estimate_one_tool) is built on that.
+    assert "2" in block
+    assert "CronCreate" not in block
+    assert "WebFetch" not in block
     assert "Create a cron job" not in block
-    # The array is frozen for the turn, so the catalog must promise
-    # same-turn callability via the returned schema, not "next turn only".
-    assert "same turn" in block
+    assert "keyword" in block.lower()
 
     # Empty input → empty string (so callers can unconditionally concat).
     assert deferred_catalog_text([]) == ""

@@ -385,7 +385,7 @@ def log_resolved_tools(req: "TurnRequest", tools: Optional[list]) -> None:
 
 def resolve_tools(
     profile: dict,
-    override: Optional[list[str]] = None,
+    override: object = None,
     *,
     source: Optional[str] = None,
 ) -> Optional[list]:
@@ -435,7 +435,19 @@ def resolve_tools(
             out.append(t)
         return out
 
-    wanted = override if override is not None else profile.get("tools")
+    profile_tools = (profile or {}).get("tools")
+    wanted = override if override is not None else profile_tools
+    if isinstance(wanted, dict) and wanted.get("inherit"):
+        inherited = (
+            dict(profile_tools)
+            if isinstance(profile_tools, dict)
+            else {"mode": "automatic"}
+        )
+        if isinstance(inherited, dict):
+            inherited.pop("inherit", None)
+            if wanted.get("web_search"):
+                inherited["web_search"] = True
+        wanted = inherited
     if wanted is None:
         try:
             from openprogram.programs import agent_tools as _agent_tools
@@ -448,6 +460,16 @@ def resolve_tools(
         from openprogram.programs import DEFAULT_TOOLS, agent_tools
         from openprogram.agent.management.gating import match_any
         if isinstance(wanted, dict):
+            mode = wanted.get("mode")
+            if mode is None and not any(
+                wanted.get(key) for key in ("enabled", "toolset", "preset", "allowed")
+            ):
+                # AgentSpec before access modes stored only empty
+                # disabled/allowed lists. Treat that shape as the new
+                # automatic discovery default without rewriting every agent.
+                mode = "automatic"
+            if mode == "none":
+                return []
             enabled = wanted.get("enabled")
             disabled_patterns = list(wanted.get("disabled") or [])
             allowed_patterns = list(wanted.get("allowed") or [])
@@ -466,6 +488,35 @@ def resolve_tools(
                 extra = agent_tools(names=["web_search"], source=source, only_available=True)
                 return [*tools, *extra]
 
+            preset = wanted.get("preset")
+            if mode == "automatic":
+                resolved = agent_tools(
+                    toolset="full", source=source, only_available=True
+                ) or []
+                if disabled_patterns:
+                    resolved = [
+                        t for t in resolved if not match_any(t.name, disabled_patterns)
+                    ]
+                return _apply_mcp_gate(_overlay_web_search(resolved))
+            if mode == "selected" or isinstance(preset, str):
+                if isinstance(preset, str):
+                    names = _access_preset_names(preset)
+                else:
+                    names = [str(n) for n in allowed_patterns]
+                resolved = agent_tools(
+                    names=names, source=source, only_available=True
+                ) or []
+                if resolved and any(getattr(t, "_defer", False) for t in resolved):
+                    loaders = agent_tools(
+                        names=["tool_search"], source=source, only_available=True
+                    ) or []
+                    if loaders and not any(t.name == "tool_search" for t in resolved):
+                        resolved = [*loaders, *resolved]
+                if disabled_patterns:
+                    resolved = [
+                        t for t in resolved if not match_any(t.name, disabled_patterns)
+                    ]
+                return _apply_mcp_gate(_overlay_web_search(resolved))
             if isinstance(enabled, list):
                 names = [str(n) for n in enabled]
             else:
@@ -498,6 +549,29 @@ def resolve_tools(
         return _apply_mcp_gate([t for t in wanted if hasattr(t, "name")])
     except Exception:
         return None
+
+
+def _access_preset_names(name: str) -> list[str]:
+    """Resolve a stored Access preset to live Program names."""
+    from openprogram.programs import agent_tools
+    if name == "FULL":
+        return [
+            tool.name for tool in agent_tools(
+                toolset="full", include_disabled=True
+            )
+        ]
+    if name == "BUILT-IN":
+        return [
+            tool.name for tool in agent_tools(
+                toolset="full", include_disabled=True
+            )
+            if not getattr(tool, "_is_agentic", False)
+        ]
+    from openprogram.programs.meta_storage import load_functions_meta
+    data = load_functions_meta({"profiles": {}, "active": "FULL"})
+    profiles = data.get("profiles") if isinstance(data, dict) else {}
+    values = profiles.get(name) if isinstance(profiles, dict) else None
+    return [str(value) for value in values] if isinstance(values, list) else []
 
 
 def history_to_agent_messages(history: list[dict]) -> list:

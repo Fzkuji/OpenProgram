@@ -29,6 +29,7 @@ type SendFn = (args: {
   sessionId: string | null;
   thinking: string;
   toolsEnabled: boolean;
+  toolsProfile?: string;
   webSearchEnabled: boolean;
   serviceTier?: string;
   background?: boolean;
@@ -47,6 +48,7 @@ export interface QueuedMessage {
   /** Turn settings captured at type-time, replayed verbatim on send. */
   thinking: string;
   toolsEnabled: boolean;
+  toolsProfile?: string;
   webSearchEnabled: boolean;
   serviceTier?: string;
   background: boolean;
@@ -112,6 +114,7 @@ export const useSendQueue = create<SendQueueState>((set, get) => ({
       sessionId,
       thinking: head.thinking,
       toolsEnabled: head.toolsEnabled,
+      toolsProfile: head.toolsProfile ?? "__agent__",
       webSearchEnabled: head.webSearchEnabled,
       serviceTier: head.serviceTier,
       background: head.background,
@@ -202,6 +205,7 @@ export function requeueRejected(sessionId: string, text: string): void {
   const settings = lastSettings[sessionId] ?? {
     thinking: "medium",
     toolsEnabled: true,
+    toolsProfile: "__agent__",
     webSearchEnabled: false,
     background: false,
   };

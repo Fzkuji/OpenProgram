@@ -315,26 +315,20 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // a profile picker. The active profile determines which tools the
   // model gets for this conversation.
   const [toolProfiles, setToolProfiles] = useState<Record<string, string[]>>({});
-  const [activeProfile, setActiveProfile] = useState("full");
+  const [activeProfile, setActiveProfile] = useState("__agent__");
   useEffect(() => {
     fetch("/api/tool-profiles")
       .then((r) => r.json())
       .then((d) => {
         setToolProfiles(d.profiles ?? {});
-        setActiveProfile(d.active ?? "full");
       })
       .catch(() => {});
   }, []);
 
   const switchProfile = (name: string) => {
     setActiveProfile(name);
-    // Persist the choice to the backend
-    fetch("/api/tool-profiles/activate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    }).catch(() => {});
   };
+  useEffect(() => setActiveProfile("__agent__"), [currentSessionId]);
 
   // Slash-menu state lives in its own hook (./use-slash-menu).
   // fn-form field state (values, workdir, error highlight, closing
@@ -506,6 +500,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     clearAttachmentsAfterSubmit,
     thinking,
     toolsEnabled,
+    toolsProfile: activeProfile,
     webSearchEnabled,
     fastEnabled,
     fastSupported,
@@ -617,6 +612,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           text: trimmed,
           thinking,
           toolsEnabled,
+          toolsProfile: activeProfile,
           webSearchEnabled,
           serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
           background: bound !== null,
@@ -633,6 +629,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
         background: bound !== null,
         thinking,
         toolsEnabled,
+        toolsProfile: activeProfile,
         webSearchEnabled,
         serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
       });
@@ -647,6 +644,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       bound,
       thinking,
       toolsEnabled,
+      activeProfile,
       webSearchEnabled,
       fastEnabled,
       fastSupported,

@@ -174,7 +174,7 @@ def tools_override_from_config(cfg: SessionRunConfig) -> ToolsOverride:
 
     # Bool / toolset / web_search intent → build a dict intent, expanded live.
     if cfg.tools_enabled is True or cfg.toolset or cfg.web_search:
-        intent: dict[str, Any] = {"enabled": True}
+        intent: dict[str, Any] = {"inherit": True}
         if cfg.toolset:
             intent["toolset"] = cfg.toolset
         return _with_web_search(intent, cfg.web_search)

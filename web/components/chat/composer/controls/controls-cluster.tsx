@@ -241,8 +241,19 @@ export function ControlsCluster({
                               style={POPUP_STATIC_RESET}
                             >
                               <div className={GROUP_LABEL}>
-                                {text("Tool Profile", "工具配置")}
+                                {text("Access preset", "Access preset")}
                               </div>
+                              <Menu.Item
+                                className={styles.plusMenuRow}
+                                onClick={() => switchProfile("__agent__")}
+                              >
+                                <PlusMenuItem
+                                  active={activeProfile === "__agent__"}
+                                  onClick={noop}
+                                  icon={null}
+                                  label={text("Use Agent configuration", "使用 Agent 配置")}
+                                />
+                              </Menu.Item>
                               {Object.keys(toolProfiles).sort().map((pName) => (
                                 <Menu.Item
                                   key={pName}

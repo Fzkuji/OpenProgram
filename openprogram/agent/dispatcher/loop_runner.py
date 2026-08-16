@@ -109,6 +109,8 @@ def run_loop_blocking(
     if tools and _plan_mode.is_plan_mode(req.session_id):
         from openprogram.programs import apply_tool_policy as _apply_policy
         tools = _apply_policy(tools, source="plan")
+    from openprogram.programs import install_allowed_tool_names
+    install_allowed_tool_names({tool.name for tool in tools or []})
     _log_resolved_tools(req, tools)
     if tools:
         tools = [_wrap_with_approval(t, req, on_event) for t in tools]

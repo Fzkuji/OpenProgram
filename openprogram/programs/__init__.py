@@ -37,6 +37,7 @@ from ._runtime import (
     freeze_turn_tools,
     function,
     get as _get_agent_tool,
+    install_allowed_tool_names,
     install_loaded_deferred,
     release_turn_tools,
     mark_deferred_loaded,
@@ -560,6 +561,7 @@ __all__ = [
     # Layer 6 — deferred loading helpers
     "deferred_catalog_text",
     "freeze_turn_tools",
+    "install_allowed_tool_names",
     "install_loaded_deferred",
     "mark_deferred_loaded",
     "release_turn_tools",

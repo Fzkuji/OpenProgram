@@ -465,9 +465,8 @@ async def handle_chat(ws, cmd: dict):
     # expanded live each turn by the dispatcher. See
     # docs/design/runtime/tool-toggle-management.md §5.1.
     #
-    # ``tools_profile`` (non-"full" preset chosen in the composer) is passed
-    # straight to save_session_run_config(toolset=...) below — kept here only
-    # so a False/None tools toggle still composes with it correctly.
+    # ``tools_profile`` is a session-only Access preset. It is stored as a
+    # preset reference, never activated globally and never expanded here.
     #
     # web_search states, expressed as intent:
     #   * tools=False, web_search=False → tools off → tools_override=[]
@@ -479,6 +478,8 @@ async def handle_chat(ws, cmd: dict):
     if web_search_flag and tools_flag is False:
         # "tools off but web search on" → the only tool is web_search.
         tools_flag = ["web_search"]
+    elif tools_profile and tools_flag is not False:
+        tools_flag = {"preset": tools_profile}
     # Otherwise leave tools_flag as True / None / False / explicit-list
     # untouched; web_search_flag and tools_profile are persisted as intent.
     raw_attachments = cmd.get("attachments") or None
@@ -705,10 +706,9 @@ async def handle_chat(ws, cmd: dict):
             session_id,
             agent_id=_db_agent_id(session_id),
             tools=tools_flag,
-            # web_search / toolset stored as INTENT (not expanded into a list) so
+            # web_search stored as INTENT (not expanded into a list) so
             # the session always follows the live tool set.
             web_search=web_search_flag,
-            toolset=tools_profile,
             thinking_effort=thinking_effort,
             permission_mode=permission_mode,
             # 草稿会话（尚无 session_id）在首条消息落地额外工作目录的唯一通道

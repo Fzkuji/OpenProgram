@@ -17,7 +17,7 @@ from openprogram.programs import DEFAULT_TOOLS
 
 def test_enabled_true_yields_dict_intent():
     out = tools_override_from_config(SessionRunConfig(tools_enabled=True))
-    assert isinstance(out, dict) and out.get("enabled") is True
+    assert out == {"inherit": True}
     # crucially NOT a materialized list snapshot
     assert not isinstance(out, list)
 

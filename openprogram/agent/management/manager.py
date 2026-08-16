@@ -79,7 +79,7 @@ class AgentSpec:
         "disabled": [], "allowed": [], "categories": [],
     })
     tools: dict[str, Any] = field(default_factory=lambda: {
-        "disabled": [], "allowed": [],
+        "mode": "automatic",
     })
     mcp: dict[str, Any] = field(default_factory=lambda: {
         "disabled": [], "allowed": [], "required": [],
@@ -125,7 +125,7 @@ class AgentSpec:
             skills=dict(raw.get("skills") or {
                 "disabled": [], "allowed": [], "categories": [],
             }),
-            tools=dict(raw.get("tools") or {"disabled": [], "allowed": []}),
+            tools=dict(raw.get("tools") or {"mode": "automatic"}),
             mcp=dict(raw.get("mcp") or {"disabled": [], "allowed": [], "required": []}),
             identity=AgentIdentity(
                 name=str(identity.get("name") or ""),
@@ -344,7 +344,7 @@ def create(
             thinking_effort=thinking_effort,
             system_prompt=system_prompt,
             skills={"disabled": []},
-            tools={"disabled": []},
+            tools={"mode": "automatic"},
             identity=AgentIdentity(
                 name=identity_name or name or agent_id,
                 mention_patterns=list(mention_patterns or []),
@@ -399,6 +399,19 @@ def update(agent_id: str, patch: dict[str, Any]) -> AgentSpec:
         raw = spec.to_dict()
         _deep_merge(raw, patch)
         raw["id"] = agent_id  # can't rename via update
+        new_spec = AgentSpec.from_dict(raw)
+        _write_agent(new_spec)
+        return new_spec
+
+
+def replace_tools(agent_id: str, tools: dict[str, Any]) -> AgentSpec:
+    """Replace one Agent's complete tool-access policy atomically."""
+    with _lock:
+        spec = _read_agent(agent_id)
+        if spec is None:
+            raise AgentNotFound(agent_id)
+        raw = spec.to_dict()
+        raw["tools"] = dict(tools)
         new_spec = AgentSpec.from_dict(raw)
         _write_agent(new_spec)
         return new_spec

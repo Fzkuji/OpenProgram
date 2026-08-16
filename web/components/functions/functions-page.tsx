@@ -1,419 +1,93 @@
 "use client";
 
-/**
- * /programs — Programs catalog page.
- *
- * Fixed source categories mirror openprogram/programs/{functions,
- * agentic_functions,applications}; named profiles remain user-managed.
- * Profiles support rename/delete and drag-and-drop membership; the fixed
- * source categories are read-only filters.
- */
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import styles from "./functions-page.module.css";
-import { SearchInput } from "@/components/ui/search-input";
-import { cls, RenameInput, ProfileNavRow } from "./functions-page-parts";
-import { ConfirmDialog } from "@/components/sidebar/sessions-list/confirm-dialog";
+
+import { BotIcon, BoxesIcon, HeartIcon, WrenchIcon } from "@/components/animated-icons";
 import { Button } from "@/components/ui/button";
+import { SearchInput } from "@/components/ui/search-input";
 import { useTranslation } from "@/lib/i18n";
-import { useFunctions } from "@/lib/state/functions-store";
-import {
-  BotIcon,
-  BoxesIcon,
-  FileTextIcon,
-  FolderOpenIcon,
-  FolderPlusIcon,
-  FoldersIcon,
-  HeartIcon,
-  WrenchIcon,
-} from "@/components/animated-icons";
-import { CustomSelect } from "./custom-select";
-import { CtxMenu, type CtxItem, type CtxMenuState } from "./ctx-menu";
-import { IconPicker, normalizeIcon } from "./icon-picker";
-import { FunctionCard, ToolCard, cardGridClass, cardListClass } from "./function-card";
-import { useProfileMeta } from "./use-profile-meta";
-import { runtimeState } from "@/lib/runtime-bridge/state";
-import { getLastChatPath } from "@/lib/last-chat-path";
-import { setPendingRunFunction } from "@/lib/use-pending-run-function";
 import { jsonFetch } from "@/lib/net/fetch-client";
-import type { FunctionInfo, FunctionsMeta } from "./types";
+import { getLastChatPath } from "@/lib/last-chat-path";
+import { runtimeState } from "@/lib/runtime-bridge/state";
+import { useFunctions } from "@/lib/state/functions-store";
+import { setPendingRunFunction } from "@/lib/use-pending-run-function";
+
+import { CustomSelect } from "./custom-select";
+import { CtxMenu, type CtxMenuState } from "./ctx-menu";
+import { FunctionCard, ToolCard, cardGridClass, cardListClass } from "./function-card";
+import { IconPicker, normalizeIcon } from "./icon-picker";
 import {
   matchesProgramSearch,
-  profileSelection,
   programsForSelection,
-  selectionProfileName,
   toolsForSelection,
 } from "./program-source-categories";
+import { ProfileNavRow } from "./functions-page-parts";
+import styles from "./functions-page.module.css";
+import type { FunctionInfo, FunctionsMeta } from "./types";
+
+type ToolInfo = { name: string; description: string; disabled?: boolean };
 
 export function FunctionsPage() {
   const { t, text, locale } = useTranslation();
   const router = useRouter();
   const [functions, setFunctions] = useState<FunctionInfo[]>([]);
-  const [meta, setMeta] = useState<FunctionsMeta>({
-    favorites: [],
-    profiles: {},
-    icons: {},
-  });
-  const [profile, setProfile] = useState<string>("__all__");
+  const [tools, setTools] = useState<ToolInfo[]>([]);
+  const [meta, setMeta] = useState<FunctionsMeta>({ favorites: [], profiles: {}, icons: {} });
+  const [selection, setSelection] = useState("__functions__");
   const [view, setView] = useState<"grid" | "list">("grid");
-  const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"name" | "recent">("name");
-  const [filter, setFilter] = useState<"all" | "favorites">("all");
-  const [ctx, setCtx] = useState<CtxMenuState | null>(null);
-  const [creatingProfile, setCreatingFolder] = useState(false);
-  const [renamingProfile, setRenamingFolder] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
   const [iconPickerFor, setIconPickerFor] = useState<string | null>(null);
-  const [tools, setTools] = useState<{ name: string; description: string; disabled?: boolean }[]>([]);
-  const draggedRef = useRef<string | null>(null);
-  const selectedProfileName = selectionProfileName(profile);
-  const selectProfileName = useCallback((name: string | null) => {
-    setProfile(name === null ? "__all__" : profileSelection(name));
-  }, []);
+  const [contextMenu, setContextMenu] = useState<CtxMenuState | null>(null);
 
-  // Initial data load (functions list + saved meta). ``signal`` is
-  // optional so the manual "refresh" callers (if any are added later)
-  // can still invoke without an abort. The effect below wires one
-  // through so an unmount mid-fetch doesn't ``setFunctions`` on a
-  // destroyed component.
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
-      const [programsData, progMeta, c, profilesData] = await Promise.all([
+      const [programRows, programMeta, toolRows] = await Promise.all([
         jsonFetch<unknown>("/api/programs", { signal }),
-        fetch("/api/programs/meta", { signal }).then((r) => r.json()),
-        fetch("/api/tools", { signal }).then((r) => r.json()).catch(() => []),
-        fetch("/api/tool-profiles", { signal }).then((r) => r.json()).catch(() => ({})),
+        fetch("/api/programs/meta", { signal }).then((response) => response.json()),
+        fetch("/api/tools", { signal }).then((response) => response.json()),
       ]);
       if (signal?.aborted) return;
-      if (!Array.isArray(programsData)) {
-        throw new TypeError("/api/programs must return an array");
-      }
-      setFunctions(programsData as FunctionInfo[]);
-      setTools(Array.isArray(c) ? c : []);
+      if (!Array.isArray(programRows)) throw new TypeError("/api/programs must return an array");
+      setFunctions(programRows as FunctionInfo[]);
+      setTools(Array.isArray(toolRows) ? toolRows : []);
       setMeta({
-        favorites: progMeta?.favorites ?? [],
-        profiles: profilesData?.profiles ?? {},
-        icons: progMeta?.icons ?? {},
+        favorites: programMeta?.favorites ?? [],
+        profiles: {},
+        icons: programMeta?.icons ?? {},
       });
-    } catch (e) {
-      if ((e as Error).name === "AbortError") return;
+    } catch (error) {
+      if ((error as Error).name === "AbortError") return;
       setFunctions([]);
-      setMeta({ favorites: [], profiles: {}, icons: {} });
+      setTools([]);
     }
   }, []);
 
   useEffect(() => {
-    const ac = new AbortController();
-    void reload(ac.signal);
-    return () => ac.abort();
-  }, [reload]);
-
-  // Manual "refresh" — ask the backend to re-scan agentics/ for harnesses
-  // installed since boot (clone / `programs install`), then reload the
-  // list. The auto-watcher does this on its own; this button is the
-  // reliable fallback (and instant feedback right after installing).
-  const [refreshing, setRefreshing] = useState(false);
-  const refreshPrograms = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await fetch("/api/programs/refresh", { method: "POST" });
-    } catch {
-      /* ignore — reload below still reflects current state */
-    }
-    await reload();
-    setRefreshing(false);
+    const controller = new AbortController();
+    void reload(controller.signal);
+    return () => controller.abort();
   }, [reload]);
 
   const saveMeta = useCallback(async (next: FunctionsMeta) => {
     setMeta(next);
-    try {
-      // Profiles go to the tool-profiles API; favorites+icons to programs/meta.
-      await Promise.all([
-        fetch("/api/tool-profiles", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ profiles: next.profiles }),
-        }),
-        fetch("/api/programs/meta", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ favorites: next.favorites, icons: next.icons }),
-        }),
-      ]);
-    } catch {
-      /* ignore */
-    }
-    // Replace runtimeState.programsMeta with a fresh object so React
-    // subscribers (useWindowGlobals does a ref-identity compare) see
-    // the change immediately. In-place mutation keeps the same ref
-    // and the sidebar would stay stale until a manual page reload.
-        runtimeState.programsMeta = {
-      favorites: [...next.favorites],
-      profiles: Object.fromEntries(
-        Object.entries(next.profiles).map(([k, v]) => [k, [...v]]),
-      ),
-      icons: { ...next.icons },
-    };
-    // The zustand store is what the sidebar actually renders from —
-    // merge favorites/icons in (folders are a separate concept, keep).
-    const fnStore = useFunctions.getState();
-    fnStore.setMeta({
-      ...fnStore.meta,
-      favorites: [...next.favorites],
-      icons: { ...next.icons },
-    });
-  }, []);
-
-  // Close context menu on any outside click.
-  useEffect(() => {
-    if (!ctx) return;
-    const close = () => setCtx(null);
-    document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
-  }, [ctx]);
-
-  // ---- helpers --------------------------------------------------------
-  const isFavorite = (name: string) =>
-    (meta.favorites || []).includes(name);
-
-  function getProfileForProgram(name: string): string | null {
-    for (const key of Object.keys(meta.profiles)) {
-      if ((meta.profiles[key] || []).includes(name)) return key;
-    }
-    return null;
-  }
-
-  function getFunctionsInProfile(id: string): FunctionInfo[] {
-    return programsForSelection(id, functions, meta.favorites, meta.profiles);
-  }
-
-  function getToolsInProfile(id: string) {
-    return toolsForSelection(id, tools, meta.profiles);
-  }
-
-  function formatDate(ts?: number): string {
-    if (!ts) return "";
-    const diff = Date.now() - ts * 1000;
-    if (locale === "zh") {
-      if (diff < 3_600_000) return Math.floor(diff / 60_000) + " 分钟前";
-      if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + " 小时前";
-      if (diff < 604_800_000) return Math.floor(diff / 86_400_000) + " 天前";
-      return new Date(ts * 1000).toLocaleDateString("zh-CN");
-    }
-    if (diff < 3_600_000) return Math.floor(diff / 60_000) + "m ago";
-    if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + "h ago";
-    if (diff < 604_800_000) return Math.floor(diff / 86_400_000) + "d ago";
-    return new Date(ts * 1000).toLocaleDateString();
-  }
-
-  // ---- derived list ---------------------------------------------------
-  const visibleFunctions = useMemo(() => {
-    let arr = getFunctionsInProfile(profile);
-    const q = search.toLowerCase();
-    if (q) {
-      arr = arr.filter((program) => matchesProgramSearch(program, q));
-    }
-    if (filter === "favorites") {
-      const fav = new Set(meta.favorites);
-      arr = arr.filter((p) => fav.has(p.name));
-    }
-    if (sort === "recent")
-      arr = [...arr].sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
-    else arr = [...arr].sort((a, b) => a.name.localeCompare(b.name));
-    return arr;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [functions, meta, profile, search, filter, sort]);
-
-  const visibleTools = useMemo(() => {
-    if (filter === "favorites") return [];
-    return getToolsInProfile(profile)
-      .filter((tool) => matchesProgramSearch(tool, search))
-      .sort((a, b) => a.name.localeCompare(b.name));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tools, meta.profiles, profile, search, filter]);
-
-  // ---- actions --------------------------------------------------------
-  // Return to the conversation the user came from (not a blank /chat),
-  // so the run opens inside that existing session.
-  function chatTarget(): string {
-    return getLastChatPath() || "/chat";
-  }
-
-  function runProgram(name: string, category?: string) {
-    // Carry the request in the URL (?run=NAME&cat=CAT) and navigate to
-    // /chat. Sequential by construction: the chat page mounts, reads its
-    // OWN url, and opens the fn-form — no global stash, no event, no
-    // timing race. (usePendingRunFunction.takePending reads ?run= and
-    // strips it back to /chat so a refresh doesn't re-fire.)
-    const qs = new URLSearchParams({ run: name });
-    if (category) qs.set("cat", category);
-    router.push(`/chat?${qs.toString()}`);
-  }
-
-  /** Toggle a built-in tool on/off for the LLM. ``enabled`` = the new
-   *  desired state. Writes ``tools.disabled.<name>`` via /api/settings
-   *  (agent_tools() hides disabled tools from every LLM toolset), and
-   *  optimistically patches local state so the switch flips instantly. */
-  function toggleTool(name: string, enabled: boolean) {
-    setTools((prev) =>
-      prev.map((t) => (t.name === name ? { ...t, disabled: !enabled } : t)),
-    );
-    void fetch("/api/settings", {
+    await fetch("/api/programs/meta", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key: `tools.disabled.${name}`, value: enabled }),
-    }).catch(() => {
-      // revert on failure
-      setTools((prev) =>
-        prev.map((t) => (t.name === name ? { ...t, disabled: enabled } : t)),
-      );
-    });
-  }
+      body: JSON.stringify({ favorites: next.favorites, icons: next.icons }),
+    }).catch(() => undefined);
+    runtimeState.programsMeta = {
+      favorites: [...next.favorites],
+      profiles: {},
+      icons: { ...next.icons },
+    };
+    const store = useFunctions.getState();
+    store.setMeta({ ...store.meta, favorites: [...next.favorites], icons: { ...next.icons } });
+  }, []);
 
-  function editProgram(name: string) {
-    setPendingRunFunction({ name: "edit", cat: "", fn: name });
-    router.push(chatTarget());
-  }
-
-  // Profile + favorites + icons mutations live in ./use-profile-meta.
-  // The hook needs the live meta + saveMeta and the current ``folder``
-  // selection (so delete/create/rename can move the user off a folder
-  // they just removed or renamed).
-  const {
-    toggleFav,
-    moveToProfile,
-    requestDeleteProfile,
-    confirmDeleteProfile,
-    cancelDeleteProfile,
-    pendingDelete,
-    createProfile,
-    renameProfile,
-    applyIcon,
-  } = useProfileMeta(meta, saveMeta, selectedProfileName, selectProfileName);
-
-  // ---- DnD ------------------------------------------------------------
-  function onProgramDragStart(e: React.DragEvent, name: string) {
-    draggedRef.current = name;
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", name);
-  }
-  function onFolderDragOver(e: React.DragEvent, target: string) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDragOver(target);
-  }
-  function onFolderDragLeave() {
-    setDragOver(null);
-  }
-  function onFolderDrop(e: React.DragEvent, target: string) {
-    e.preventDefault();
-    setDragOver(null);
-    const name = draggedRef.current;
-    draggedRef.current = null;
-    if (!name) return;
-    moveToProfile(name, target);
-  }
-
-  // ---- Context menus --------------------------------------------------
-  function programCtx(e: React.MouseEvent, name: string) {
-    e.preventDefault();
-    e.stopPropagation();
-    const fav = isFavorite(name);
-    const items: CtxItem[] = [
-      {
-        label: fav ? `★ ${text("Unfavorite", "取消收藏")}` : `☆ ${text("Favorite", "收藏")}`,
-        action: () =>
-          toggleFav(name, {
-            stopPropagation: () => {},
-          } as unknown as React.MouseEvent),
-      },
-      { label: text("Change icon...", "更换图标..."), action: () => setIconPickerFor(name) },
-      { label: `✎ ${text("Edit...", "编辑...")}`, action: () => editProgram(name) },
-      { type: "sep" },
-    ];
-    for (const f of Object.keys(meta.profiles).sort()) {
-      items.push({
-        label: text(`Move to ${f}`, `移动到 ${f}`),
-        action: () => moveToProfile(name, f),
-      });
-    }
-    if (getProfileForProgram(name)) {
-      items.push({
-        label: text("Remove from profile", "从配置中移除"),
-        action: () => moveToProfile(name, null),
-      });
-    }
-    setCtx({ x: e.clientX, y: e.clientY, items });
-  }
-
-  function profileCtx(e: React.MouseEvent, name: string) {
-    e.preventDefault();
-    e.stopPropagation();
-    setCtx({
-      x: e.clientX,
-      y: e.clientY,
-      items: [
-        { label: text("Rename", "重命名"), action: () => setRenamingFolder(name) },
-        { label: t("sidebar.delete"), action: () => requestDeleteProfile(name) },
-        { type: "sep" },
-        {
-          label: text("New Profile", "新建配置"),
-          action: () => setCreatingFolder(true),
-        },
-      ],
-    });
-  }
-
-  function sidebarCtx(e: React.MouseEvent) {
-    if ((e.target as HTMLElement).closest(`.${styles.profileItem}`)) return;
-    e.preventDefault();
-    setCtx({
-      x: e.clientX,
-      y: e.clientY,
-      items: [
-        {
-          label: text("New Profile", "新建配置"),
-          action: () => setCreatingFolder(true),
-        },
-      ],
-    });
-  }
-
-  function contentCtx(e: React.MouseEvent) {
-    if ((e.target as HTMLElement).closest("[data-function-card]")) return;
-    e.preventDefault();
-    setCtx({
-      x: e.clientX,
-      y: e.clientY,
-      items: [
-        {
-          label: text("New Profile", "新建配置"),
-          action: () => setCreatingFolder(true),
-        },
-      ],
-    });
-  }
-
-  // ---- Render ---------------------------------------------------------
-  const existingNames = useMemo(
-    () => new Set([...functions.map((p) => p.name), ...tools.map((tool) => tool.name)]),
-    [functions, tools],
-  );
-  const liveCount = (names: string[] | undefined) =>
-    (names || []).filter((n) => existingNames.has(n)).length;
-  const sourceFolders = [
-    {
-      id: "__all__",
-      name: text("All Programs", "全部程序"),
-      icon: <FileTextIcon size={16} />,
-      count: functions.length + tools.length,
-    },
+  const sourceCategories = [
     {
       id: "__functions__",
       name: text("Functions", "函数"),
@@ -424,30 +98,92 @@ export function FunctionsPage() {
       id: "__agentic_functions__",
       name: text("Agentic Functions", "Agentic 函数"),
       icon: <BotIcon size={16} />,
-      count: functions.filter((p) => p.category !== "app").length,
+      count: functions.filter((program) => program.category !== "app").length,
     },
     {
       id: "__applications__",
       name: text("Applications", "应用"),
       icon: <BoxesIcon size={16} />,
-      count: functions.filter((p) => p.category === "app").length,
+      count: functions.filter((program) => program.category === "app").length,
     },
     {
       id: "__favorites__",
       name: text("Favorites", "收藏"),
       icon: <HeartIcon size={16} />,
-      count: liveCount(meta.favorites),
-    },
-    {
-      id: "__uncategorized__",
-      name: text("Uncategorized", "未分类"),
-      icon: <FolderOpenIcon size={16} />,
-      count:
-        getFunctionsInProfile("__uncategorized__").length +
-        getToolsInProfile("__uncategorized__").length,
+      count: meta.favorites.filter((name) =>
+        functions.some((program) => program.name === name) || tools.some((tool) => tool.name === name),
+      ).length,
     },
   ];
-  const userProfiles = Object.keys(meta.profiles).sort();
+
+  const visibleFunctions = useMemo(() => {
+    let rows = programsForSelection(selection, functions, meta.favorites)
+      .filter((program) => matchesProgramSearch(program, search));
+    rows = [...rows].sort(sort === "recent"
+      ? (a, b) => (b.mtime || 0) - (a.mtime || 0)
+      : (a, b) => a.name.localeCompare(b.name));
+    return rows;
+  }, [functions, meta.favorites, search, selection, sort]);
+
+  const visibleTools = useMemo(
+    () => toolsForSelection(selection, tools, meta.favorites)
+      .filter((tool) => matchesProgramSearch(tool, search))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [meta.favorites, search, selection, tools],
+  );
+
+  function formatDate(timestamp?: number) {
+    if (!timestamp) return "";
+    return new Date(timestamp * 1000).toLocaleDateString(locale === "zh" ? "zh-CN" : undefined);
+  }
+
+  function toggleFavorite(name: string, event: React.MouseEvent) {
+    event.stopPropagation();
+    const favorites = meta.favorites.includes(name)
+      ? meta.favorites.filter((item) => item !== name)
+      : [...meta.favorites, name];
+    void saveMeta({ ...meta, favorites });
+  }
+
+  function toggleTool(name: string, enabled: boolean) {
+    setTools((rows) => rows.map((tool) => tool.name === name ? { ...tool, disabled: !enabled } : tool));
+    void fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: `tools.disabled.${name}`, value: enabled }),
+    });
+  }
+
+  function openProgramMenu(event: React.MouseEvent, name: string) {
+    event.preventDefault();
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        {
+          label: meta.favorites.includes(name)
+            ? text("Unfavorite", "取消收藏")
+            : text("Favorite", "收藏"),
+          action: () => toggleFavorite(name, event),
+        },
+        { label: text("Change icon...", "更换图标..."), action: () => setIconPickerFor(name) },
+        {
+          label: text("Edit...", "编辑..."),
+          action: () => {
+            setPendingRunFunction({ name: "edit", cat: "", fn: name });
+            router.push(getLastChatPath() || "/chat");
+          },
+        },
+      ],
+    });
+  }
+
+  async function refreshPrograms() {
+    setRefreshing(true);
+    await fetch("/api/programs/refresh", { method: "POST" }).catch(() => undefined);
+    await reload();
+    setRefreshing(false);
+  }
 
   return (
     <div className="main">
@@ -463,231 +199,91 @@ export function FunctionsPage() {
             />
             <CustomSelect
               value={sort}
-              onChange={(v) => setSort(v)}
+              onChange={setSort}
               options={[
                 { value: "name", label: text("Sort: Name", "排序：名称") },
                 { value: "recent", label: text("Sort: Recent", "排序：最近") },
               ]}
             />
-            <CustomSelect
-              value={filter}
-              onChange={(v) => setFilter(v)}
-              options={[
-                { value: "all", label: text("All", "全部") },
-                { value: "favorites", label: text("Favorites", "收藏") },
-              ]}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setView((v) => (v === "grid" ? "list" : "grid"))}
-            >
+            <Button variant="outline" size="sm" onClick={() => setView(view === "grid" ? "list" : "grid")}>
               {view === "grid" ? text("List", "列表") : text("Grid", "网格")}
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={refreshPrograms}
-              disabled={refreshing}
-              title={text(
-                "Re-scan for newly installed programs",
-                "重新扫描新安装的程序",
-              )}
-            >
+            <Button variant="outline" size="sm" onClick={refreshPrograms} disabled={refreshing}>
               {refreshing ? text("Refreshing…", "刷新中…") : text("Refresh", "刷新")}
             </Button>
           </div>
         </div>
-
         <div className={styles.body}>
-          <div
-            className={styles.profilesNav}
-            onContextMenu={sidebarCtx}
-          >
-            {sourceFolders.map((f) => (
-              <ProfileNavRow
-                key={f.id}
-                icon={f.icon}
-                name={f.name}
-                count={f.count}
-                active={profile === f.id}
-                onClick={() => setProfile(f.id)}
-              />
-            ))}
-            <div className={styles.profileSep} />
-            {userProfiles.map((name) => {
-              if (renamingProfile === name) {
-                return (
-                  <div
-                    key={name}
-                    className={cls(
-                      styles.profileItem,
-                      profile === profileSelection(name) && styles.active,
-                    )}
-                  >
-                    <span className={styles.profileIcon}><FoldersIcon size={16} /></span>
-                    <RenameInput
-                      initial={name}
-                      onCommit={(n) => {
-                        setRenamingFolder(null);
-                        renameProfile(name, n);
-                      }}
-                      onCancel={() => setRenamingFolder(null)}
-                    />
-                  </div>
-                );
-              }
-              const count = liveCount(meta.profiles[name]);
-              return (
+          <div className={styles.profilesNav}>
+            {sourceCategories.map((category, index) => (
+              <Fragment key={category.id}>
+                {index === 3 ? <div className={styles.profileSep} /> : null}
                 <ProfileNavRow
-                  key={name}
-                  icon={<FoldersIcon size={16} />}
-                  name={name}
-                  count={count}
-                  active={profile === profileSelection(name)}
-                  dragOver={dragOver === name}
-                  onClick={() => setProfile(profileSelection(name))}
-                  onDragOver={(e) => onFolderDragOver(e, name)}
-                  onDragLeave={onFolderDragLeave}
-                  onDrop={(e) => onFolderDrop(e, name)}
-                  onContextMenu={(e) => profileCtx(e, name)}
+                  icon={category.icon}
+                  name={category.name}
+                  count={category.count}
+                  active={selection === category.id}
+                  onClick={() => setSelection(category.id)}
                 />
-              );
-            })}
-            {creatingProfile && (
-              <div className={cls(styles.profileItem, styles.active)}>
-                <span className={styles.profileIcon}><FoldersIcon size={16} /></span>
-                <RenameInput
-                  initial=""
-                  placeholder={text("New Profile", "新建配置")}
-                  onCommit={(n) => {
-                    setCreatingFolder(false);
-                    // Default-on: new folder starts with ALL function + tool names.
-                    const allNames = [
-                      ...functions.map((f) => f.name),
-                      ...tools.map((t) => t.name),
-                    ];
-                    createProfile(n, allNames);
-                  }}
-                  onCancel={() => setCreatingFolder(false)}
-                />
-              </div>
-            )}
-            <div
-              className={cls(styles.profileItem, styles.profileNew)}
-              onClick={() => setCreatingFolder(true)}
-              title={text("Create a new profile", "新建配置")}
-            >
-              <span className={styles.profileIcon}><FolderPlusIcon size={16} /></span>
-              <span className={styles.profileName}>{text("New Profile", "新建配置")}</span>
-            </div>
+              </Fragment>
+            ))}
           </div>
-
-          <div
-            className={styles.content}
-            onContextMenu={contentCtx}
-          >
+          <div className={styles.content}>
             {visibleFunctions.length === 0 && visibleTools.length === 0 ? (
-              <div className={styles.empty}>
-                <div className={styles.emptyIcon}><FolderOpenIcon size={40} /></div>
-                <div className={styles.emptyText}>
-                  {search
-                    ? text("No matching programs", "没有匹配的程序")
-                    : profile.startsWith("__")
-                      ? text("This category is empty", "分类为空")
-                      : text("This profile is empty", "配置为空")}
-                </div>
-                {!profile.startsWith("__") && (
-                  <div className={styles.emptyHint}>
-                    {text("Drag programs here to organize", "拖动程序到这里进行整理")}
-                  </div>
-                )}
+              <div className={styles.empty}>{search ? text("No matching programs", "没有匹配的程序") : text("This category is empty", "分类为空")}</div>
+            ) : null}
+            {visibleFunctions.length > 0 ? (
+              <div className={view === "grid" ? cardGridClass : cardListClass}>
+                {visibleFunctions.map((program) => (
+                  <FunctionCard
+                    key={program.name}
+                    p={program}
+                    icon={normalizeIcon(meta.icons[program.name])}
+                    fav={meta.favorites.includes(program.name)}
+                    profileName={null}
+                    formatDate={formatDate}
+                    onClick={() => router.push(`/chat?${new URLSearchParams({ run: program.name, cat: program.category || "" })}`)}
+                    onContextMenu={(event) => openProgramMenu(event, program.name)}
+                    onToggleFav={(event) => toggleFavorite(program.name, event)}
+                    onChangeIcon={(event) => { event.stopPropagation(); setIconPickerFor(program.name); }}
+                  />
+                ))}
               </div>
-            ) : (
-              <>
-                {visibleFunctions.length > 0 && profile === "__all__" && !search && (
-                  <div className={styles.toolsHeader}>
-                    {text("Agentic functions", "Agentic 函数")}
-                    <span className={styles.toolsHint}>
-                      {text(
-                        "Invoked with @ — create, edit, and organize them here.",
-                        "通过 @ 调用——可在此创建、编辑和整理。",
-                      )}
-                    </span>
-                  </div>
-                )}
-                {visibleFunctions.length > 0 && (
-                  <div className={view === "grid" ? cardGridClass : cardListClass}>
-                    {visibleFunctions.map((p) => (
-                      <FunctionCard
-                        key={p.name}
-                        p={p}
-                        icon={normalizeIcon(meta.icons[p.name])}
-                        fav={isFavorite(p.name)}
-                        profileName={getProfileForProgram(p.name)}
-                        formatDate={formatDate}
-                        onClick={() => runProgram(p.name, p.category)}
-                        onContextMenu={(e) => programCtx(e, p.name)}
-                        onDragStart={(e) => onProgramDragStart(e, p.name)}
-                        onToggleFav={(e) => toggleFav(p.name, e)}
-                        onChangeIcon={(e) => {
-                          e.stopPropagation();
-                          setIconPickerFor(p.name);
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-            {visibleTools.length > 0 && (
-              <div className={visibleFunctions.length > 0 ? styles.toolsSection : undefined}>
-                <div className={styles.toolsHeader}>
-                  {text("Functions", "函数")}
-                  <span className={styles.toolsHint}>
-                    {text(
-                      "Toggle a tool off to hide it from the agent.",
-                      "关掉某个工具即不再给 Agent 使用。",
-                    )}
-                  </span>
-                </div>
+            ) : null}
+            {visibleTools.length > 0 ? (
+              <div className={visibleFunctions.length ? styles.toolsSection : undefined}>
+                <div className={styles.toolsHeader}>{text("Functions", "函数")}</div>
                 <div className={view === "grid" ? cardGridClass : cardListClass}>
-                  {visibleTools.map((tl) => (
+                  {visibleTools.map((tool) => (
                     <ToolCard
-                      key={tl.name}
-                      name={tl.name}
-                      description={tl.description}
-                      enabled={!tl.disabled}
-                      onToggle={(on) => toggleTool(tl.name, on)}
+                      key={tool.name}
+                      name={tool.name}
+                      description={tool.description}
+                      enabled={!tool.disabled}
+                      onToggle={(enabled) => toggleTool(tool.name, enabled)}
                     />
                   ))}
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
-      {ctx && <CtxMenu state={ctx} onClose={() => setCtx(null)} />}
-      {iconPickerFor && (
+      {iconPickerFor ? (
         <IconPicker
           name={iconPickerFor}
           current={normalizeIcon(meta.icons[iconPickerFor])}
-          onPick={(icon) => applyIcon(iconPickerFor, icon)}
+          onPick={(icon) => {
+            const icons = { ...meta.icons };
+            if (icon) icons[iconPickerFor] = icon;
+            else delete icons[iconPickerFor];
+            void saveMeta({ ...meta, icons });
+            setIconPickerFor(null);
+          }}
           onClose={() => setIconPickerFor(null)}
         />
-      )}
-      {pendingDelete && (
-        <ConfirmDialog
-          title={text(`Delete profile "${pendingDelete}"?`,
-                       `删除配置"${pendingDelete}"？`)}
-          message={text(
-            "Functions in this profile will not be deleted.",
-            "配置中的工具不会被删除。",
-          )}
-          onConfirm={confirmDeleteProfile}
-          onCancel={cancelDeleteProfile}
-        />
-      )}
+      ) : null}
+      {contextMenu ? <CtxMenu state={contextMenu} onClose={() => setContextMenu(null)} /> : null}
     </div>
   );
 }

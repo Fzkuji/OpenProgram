@@ -141,6 +141,7 @@ const DICT = {
   "nav.new_chat": { en: "New chat", zh: "新会话" },
   "nav.functions": { en: "Functions", zh: "函数" },
   "nav.programs": { en: "Programs", zh: "程序" },
+  "nav.agents": { en: "Agents", zh: "Agents" },
   "nav.skills": { en: "Skills", zh: "技能" },
   "nav.projects": { en: "Projects", zh: "项目" },
   "nav.plugins": { en: "Plugins", zh: "插件" },
