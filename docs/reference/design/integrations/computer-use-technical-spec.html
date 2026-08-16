@@ -128,8 +128,8 @@ computer_use({ command: "observe", page_context_token: "pct_…", arguments: { d
 computer_use({ command: "act", computer_session_id: "cs_…", arguments: { action: "click", expected_frame_id: "f_…", ref: "e1" } })
 computer_use({ command: "verify", computer_session_id: "cs_…", arguments: { action: "verify", expected_frame_id: "f_…", assertion: "text_contains", value: "Saved" } })
 computer_use({ command: "close", computer_session_id: "cs_…" })</pre>
-    <p><code>list_pages</code> 返回 originating OpenProgram window 的 group-aware snapshot：顶层 <code>inventory_revision</code> 保证 <code>tab_entries</code> 与 <code>pages</code> 来自同一次读取；前者表示 single/split 布局，后者表示全部现存 web Page。每个 Page 包含稳定的 <code>tab_id</code>、所属 <code>tab_entry_id</code>、placement、title、origin、<code>focused</code>、<code>visible</code>、可选 <code>opener_tab_id</code> 与一次性 <code>page_context_token</code>。Agent 不用 tab entry 或 pane 执行动作，只在首次 <code>observe</code> 中原样回传目标 Page token。token 绑定 MCP control connection、exact Page target 和 server-owned page/access revision；缺少、重放、跨连接使用、连接重建或 target replacement 必须在 backend 调用前拒绝。首次 observe 之后，每次 observe、act 和 verify 都重新验证 exact binding。visible Page 继续验证 geometry revision；background Page 通过不改变 tab、store 或窗口焦点的 resolve path 校验 target。跨进程调用必须把 ComputerSession 保存的 revision 原样交给父 worker，任一不一致即返回 <code>page_context_stale</code>，且不得执行页面动作。</p>
-    <p>网页 popup 创建独立 web tab 和独立 WebContents/Page，并保存 <code>opener_tab_id</code>。popup 不替换 opener，也不隐式转移现有 ComputerSession；下一次 <code>list_pages</code> 发现 popup，Agent 使用它的 token 显式建立新 session。GUI Agent Harness 在每次写动作后刷新有界 Page inventory，并只通过 token 切换 Page。不同 OpenProgram window 继续隔离；本阶段不跨窗口聚合 inventory。</p>
+    <p><code>list_pages</code> 的目标返回全部已登记 OpenProgram window 的 group-aware snapshot：<code>windows[]</code> 分别保存每个窗口的 <code>window_id</code>、<code>inventory_revision</code>、active/focused identity 与 <code>tab_entries</code>；扁平 <code>pages</code> 让 Agent 直接选择 Page，每项携带所属 <code>window_id</code>。原顶层窗口字段继续表示发起任务的 primary window，以兼容现有调用方。每个 Page 包含稳定的 <code>tab_id</code>、所属 <code>tab_entry_id</code>、placement、title、origin、<code>focused</code>、<code>visible</code>、可选 <code>opener_tab_id</code> 与一次性 <code>page_context_token</code>。Agent 不用 window、tab entry 或 pane 执行动作，只在首次 <code>observe</code> 中原样回传目标 Page token。token 绑定 MCP control connection、<code>window_id</code>、exact Page target 和 server-owned page/access revision；缺少、重放、跨连接使用、连接重建或 target replacement 必须在 backend 调用前拒绝。首次 observe 之后，每次 observe、act 和 verify 都重新验证 exact binding。visible Page 继续验证 geometry revision；background Page 通过不改变 tab、store 或窗口焦点的 resolve path 校验 target。跨进程调用必须把 ComputerSession 保存的 revision 原样交给父 worker，任一不一致即返回 <code>page_context_stale</code>，且不得执行页面动作。</p>
+    <p>网页 popup 创建独立 web tab 和独立 WebContents/Page，并保存 <code>opener_tab_id</code>。popup 不替换 opener，也不隐式转移现有 ComputerSession；下一次 <code>list_pages</code> 发现 popup，Agent 使用它的 token 显式建立新 session。GUI Agent Harness 在每次写动作后刷新有界 Page inventory，并只通过 token 切换 Page。跨窗口聚合只扩展发现范围，不改变 exact Page binding、Page lease 或 session 生命周期。</p>
     <p>每个可见 web tab 还持有 renderer-owned 单调 <code>geometry_revision</code>。现有 bounds lifecycle 在 mount、resize、ancestor scroll、pane 重排、窗口 resize、遮挡与 transfer 时测量 viewport-relative bounds；只有规范化后的 <code>x/y/width/height</code> 或可见性变化才递增 revision，focus 变化不递增。发送 turn 时，surface ref 带当前 revision；<code>preview</code> 必须在调用 native preview 前验证并回显同一 revision。ComputerSession 保存该值，后续 observe、act 和 verify 经父子进程 bridge 原样传到 exact renderer；renderer 在调用 Electron activate 前再次比较。缺失的旧客户端 revision 保持兼容，但一旦 capability 含有非零 revision，任何不一致都返回 <code>page_context_stale</code>，不得调用 native preview、activate 或 backend。Page identity 与 lease 不因单纯 geometry 变化而重建；调用方重新 list/observe 后继续使用同一 Page。</p>
   </section>
 
@@ -158,7 +158,7 @@ computer_use({ command: "close", computer_session_id: "cs_…" })</pre>
     <h2>发布前必须证明</h2>
     <ol class="checks">
       <li><strong>工具面：</strong>浏览器控制只有一个 <code>computer_use</code>，不暴露 backend 自带的第二套工具。</li>
-      <li><strong>Page 隔离：</strong>授权 A 时，对 B、chat Page 和另一窗口的读写调用次数都是 0。</li>
+      <li><strong>Page 隔离：</strong><code>list_pages</code> 可以列出其他窗口的 Page；选择 A 后，对 B、chat Page 和其他窗口未选 Page 的读写调用次数都是 0。</li>
       <li><strong>分组结构：</strong>Google、GitHub、Bilibili/YouTube 分屏返回 3 个有序 <code>tab_entries</code> 和 4 个唯一 Page；第三项为 split，pane order 与实际 UI 一致。</li>
       <li><strong>布局与身份：</strong>交换 split pane、调整 ratio 或拆分后，Page identity 保持且 <code>inventory_revision</code> 更新；受影响 visible Page 的旧 geometry 在写入前 stale，不得新建另一套 split action。</li>
       <li><strong>可见与焦点：</strong>active split 的两个 Page 都是 visible，只有一个 focused；前两个 single Page 是 background。切换 active entry 后下一 snapshot 反映新状态。</li>
@@ -169,7 +169,8 @@ computer_use({ command: "close", computer_session_id: "cs_…" })</pre>
       <li><strong>副作用唯一：</strong>backend failure 不触发另一 backend；一个 Action 最多一次真实写入。</li>
       <li><strong>跨 backend 一致：</strong>同一任务得到相同 Page/frame 生命周期、权限、reason code 和 verification。</li>
       <li><strong>Page Awareness：</strong>页面换到 chat 左侧或右侧后，下一 turn relation 与 preview 正确更新。</li>
-      <li><strong>非前台执行：</strong>应用被遮挡时仍操作相同 Page，且没有 focus/OS input 调用。</li>
+      <li><strong>跨窗口发现：</strong>两个已登记 OpenProgram window 返回两个有序 window snapshot；同名 tab/page 不合并，每个 token 仍解析到原 connection、<code>window_id</code> 与 target。</li>
+      <li><strong>非前台执行：</strong>目标窗口处于后台或被遮挡时，DOM/ref 与 viewport screenshot 仍直接作用于相同 Page/WebContents，且没有窗口 focus、<code>bringToFront()</code>、整屏截图或 OS input 调用。</li>
       <li><strong>视觉限制：</strong>普通 DOM 流截图数为 0；canvas 流每次 observation 最多 1 张。</li>
       <li><strong>图片保留：</strong>截图只出现在紧邻的一次 provider request；同一请求的文字提示不含原始 bytes/base64，返回或异常后调用方 content 与 ToolReturn 不再持有图片，最终 <code>artifacts</code> 仍为空。</li>
       <li><strong>失败诚实性：</strong>空 assertion、stale frame、timeout、cancel、target lost 都不能返回 succeeded。</li>

@@ -134,7 +134,7 @@
         <text x="560" y="425" fill="#858173" font-size="12" text-anchor="middle">顶部标签结构用于理解窗口；Page token 用于观察和操作。分屏不增加另一套 Agent command。</text>
       </g>
     </svg></div>
-    <p class="caption">当前 <code>list_pages</code> 同时返回 <code>tab_entries + pages</code>：前者描述 single/split 与 pane 顺序，后者提供可独立控制的 exact Page token。完整字段见<a href="computer-use-technical-spec.html#page-model">多 Page 数据模型</a>。</p>
+    <p class="caption">当前 <code>list_pages</code> 同时返回 <code>tab_entries + pages</code>：前者描述 single/split 与 pane 顺序，后者提供可独立控制的 exact Page token。跨窗口目标保持相同结构，在外层增加 <code>windows[]</code>，每个 Page 继续携带原 <code>window_id</code>。完整字段见<a href="computer-use-technical-spec.html#page-model">多 Page 数据模型</a>。</p>
   </section>
 
   <section aria-labelledby="click-title">

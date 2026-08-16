@@ -191,4 +191,14 @@
     <tr><td class="pending">保留范围</td><td>跨 OpenProgram window inventory、桌面软件控制、OCR/YOLO/memory 与自动 backend fallback 未纳入本任务。popup opener、token handoff 与 stale/close 撤销已有 component 覆盖，尚未增加公开网站 popup 的安装版 fixture。</td></tr>
   </tbody>
 </table>
+
+<h2>任务 5：跨窗口 Page inventory</h2>
+<div class="card">
+  <p><strong>范围：</strong>登记每个 Desktop renderer 的 <code>window_id</code>，让 <code>list_pages</code> 聚合所有已登记窗口，同时保留原 connection/window/tab/target binding。截图继续直接捕获 exact Page 的当前 viewport，不置前窗口，不读取桌面画面。</p>
+  <p><strong>兼容：</strong>保留现有顶层 primary-window 字段；新增 <code>windows[]</code> 与 Page 级 <code>window_id</code>。不增加配置 ID、权限 UI、OCR、桌面控制或自动 backend fallback。</p>
+</div>
+<table>
+  <thead><tr><th>状态</th><th>证据</th></tr></thead>
+  <tbody><tr><td class="pending">IMPLEMENTATION PENDING</td><td>先补跨两个 Desktop connection 的公开 <code>list_pages</code> RED，以及后台窗口 screenshot 不调用 focus/整屏 capture 的契约检查。</td></tr></tbody>
+</table>
 </main></body></html>
