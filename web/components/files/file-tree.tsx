@@ -118,9 +118,9 @@ async function copyText(value: string): Promise<void> {
   document.body.removeChild(ta);
 }
 
-/* The folder glyph is the disclosure control. Each child icon starts
-   where its parent label starts: 16px icon slot + 12px label gap. */
-const INDENT = 28;
+/* The 14px glyph is centered in a 16px slot. Advancing 27px makes the
+   child's visible glyph edge meet its parent label's start exactly. */
+const INDENT = 27;
 const TREE_BASE_PAD = 16;
 const TREE_LABEL_OFFSET = 44;
 
