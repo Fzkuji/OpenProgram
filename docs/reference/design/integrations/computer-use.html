@@ -9,7 +9,7 @@
   *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
   main{max-width:1180px;margin:auto;padding:58px 28px 80px}header{padding-bottom:44px}.eyebrow{color:var(--accent);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase}.status{margin-top:18px;color:var(--muted);font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em}.caption{margin:12px 0 0;color:var(--muted);font-size:12px}
   h1{max-width:900px;margin:14px 0 16px;color:var(--title);font-size:44px;line-height:1.15;letter-spacing:-.025em}header p{max-width:820px;margin:0;color:#aaa696;font-size:18px}
-  section{padding:44px 0;border-top:1px solid var(--line)}h2{margin:0 0 20px;color:var(--title);font-size:24px}.diagram{overflow-x:auto;background:var(--code)}.architecture-diagram{border:1px solid #29271f;border-radius:18px;background:radial-gradient(circle at 78% 72%,rgba(91,145,242,.09),transparent 30%),radial-gradient(circle at 40% 14%,rgba(224,138,62,.08),transparent 27%),#0d0e0b;box-shadow:inset 0 1px rgba(255,255,255,.025)}.architecture-diagram svg{min-width:1120px}svg{display:block;width:100%;min-width:900px;height:auto}
+  section{padding:44px 0;border-top:1px solid var(--line)}h2{margin:0 0 20px;color:var(--title);font-size:24px}.diagram{overflow-x:auto;background:var(--code)}.architecture-diagram{border:1px solid #29271f;border-radius:18px;background:radial-gradient(circle at 78% 72%,rgba(91,145,242,.09),transparent 30%),radial-gradient(circle at 40% 14%,rgba(224,138,62,.08),transparent 27%),#0d0e0b;box-shadow:inset 0 1px rgba(255,255,255,.025)}.architecture-diagram svg,.page-model-diagram svg{min-width:1120px}svg{display:block;width:100%;min-width:900px;height:auto}
   table{width:100%;border-collapse:collapse;font-size:13.5px}th{padding:10px 12px;border-bottom:1px solid #5a5544;color:var(--muted);text-align:left;font-size:11px;letter-spacing:.06em;white-space:nowrap}td{padding:14px 12px;border-bottom:1px solid var(--line);vertical-align:top}td:first-child{width:120px;color:var(--title);font-weight:700}.table-scroll{overflow-x:auto}.table-scroll table{min-width:760px}.use{color:var(--green)}.adapt{color:var(--accent)}.rebuild{color:#e15b68}
   .links{display:flex;flex-wrap:wrap;gap:12px 28px;padding-top:34px;border-top:1px solid var(--line)}a{color:#55bdd6;text-underline-offset:4px}.links a{font-size:14px}
   @media(max-width:760px){main{padding:34px 20px 60px}h1{font-size:33px}header p{font-size:16px}section{padding:34px 0}}
@@ -20,7 +20,7 @@
     <div class="eyebrow">OpenProgram · Computer Use</div>
     <h1>一个浏览器工具，三个可选 backend，同一个 Page</h1>
     <p>目标是 GUI Agent Harness 只调用统一的 <code>computer_use</code>；设置将决定由 Playwright MCP、Chrome DevTools MCP 或 Open Claude in Chrome-compatible backend 执行。</p>
-    <p class="status">MULTI-BACKEND BASELINE IMPLEMENTED · THREE-BACKEND APP E2E PASSED · FULL TARGET ARCHITECTURE DEFERRED</p>
+    <p class="status">MULTI-BACKEND + FLAT MULTI-PAGE BASELINE IMPLEMENTED · GROUP-AWARE INVENTORY DEFERRED</p>
   </header>
 
   <section aria-labelledby="architecture-title">
@@ -93,24 +93,48 @@
   </section>
 
   <section aria-labelledby="pages-title">
-    <h2 id="pages-title">一个窗口里的多个 Page</h2>
-    <div class="diagram"><svg viewBox="0 0 1120 330" role="img">
-      <title>Page inventory、后台操作与 popup 切换</title><desc>list_pages 从当前 OpenProgram 窗口取得所有浏览器 Page，为每个 Page 签发一次性 token。Agent 选择 token 后建立 exact Page ComputerSession。popup 创建独立 Page 并保留 opener 归属；当前 session 不自动改变，Agent 显式切换后才操作 popup。</desc>
+    <h2 id="pages-title">四个网页在一个窗口里怎样表示</h2>
+    <div class="diagram page-model-diagram"><svg viewBox="0 0 1120 440" role="img">
+      <title>三个顶部标签项包含四个可控制 Page</title><desc>同一个 BrowserContext 和 OpenProgram window 中，前两个顶部标签项各包含一个 Page，第三个顶部标签项是分屏组，包含左右两个 Page。list_pages 同时返回 tab_entries 布局和 pages 控制目标；Agent 最终只用某个 Page 的 token 建立 ComputerSession。</desc>
       <defs><marker id="pages-arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#858173"/></marker><marker id="pages-blue-arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#5b91f2"/></marker></defs>
       <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-        <text x="40" y="35" fill="#858173" font-size="11" letter-spacing="1.5">CURRENT OPENPROGRAM WINDOW</text>
-        <g fill="#11120f" stroke="#343126"><rect x="40" y="58" width="210" height="58" rx="9"/><rect x="40" y="132" width="210" height="58" rx="9"/><rect x="40" y="206" width="210" height="58" rx="9"/></g>
-        <g fill="#f3f0e8" font-size="13" font-weight="700"><text x="64" y="83">Page A</text><text x="64" y="157">Page B</text><text x="64" y="231">Popup C</text></g>
-        <g fill="#858173" font-size="11"><text x="64" y="102">visible · focused</text><text x="64" y="176">background</text><text x="64" y="250">opener = Page A</text></g>
-        <path d="M250 87 H360 M250 161 H360 M250 235 H360" fill="none" stroke="#858173" stroke-width="1.6"/>
-        <path d="M360 87 V235 M360 161 H440" fill="none" stroke="#858173" stroke-width="1.8" marker-end="url(#pages-arrow)"/>
-        <text x="400" y="138" fill="#e08a3e" font-size="12" font-weight="700" text-anchor="middle">list_pages</text>
-        <rect x="462" y="113" width="205" height="96" rx="14" fill="#17140f" stroke="#e08a3e"/><text x="564" y="143" fill="#f3f0e8" font-size="15" font-weight="700" text-anchor="middle">Page inventory</text><text x="564" y="168" fill="#c4c0b1" font-size="11" text-anchor="middle">title · URL · focused · opener</text><text x="564" y="191" fill="#858173" font-size="11" text-anchor="middle">one token per exact target</text>
-        <path d="M667 161 H760" fill="none" stroke="#5b91f2" stroke-width="2" marker-end="url(#pages-blue-arrow)"/><text x="714" y="145" fill="#5b91f2" font-size="11" text-anchor="middle">select token</text>
-        <rect x="782" y="92" width="298" height="138" rx="16" fill="#15121b" stroke="#a679e4"/><text x="931" y="126" fill="#a679e4" font-size="11" letter-spacing="1.2" text-anchor="middle">COMPUTERSESSION</text><text x="931" y="155" fill="#f3f0e8" font-size="16" font-weight="700" text-anchor="middle">exact Page only</text><text x="931" y="182" fill="#c4c0b1" font-size="11" text-anchor="middle">background Page 不切换 UI tab</text><text x="931" y="206" fill="#858173" font-size="11" text-anchor="middle">popup 出现后由 Agent 显式选择</text>
-        <text x="560" y="306" fill="#858173" font-size="12" text-anchor="middle">同一窗口可以有多个 Page；一个 ComputerSession 仍只绑定其中一个。</text>
+        <text x="34" y="31" fill="#858173" font-size="11" letter-spacing="1.4">BROWSERCONTEXT ctx_1 · WINDOW win_1</text>
+        <rect x="34" y="50" width="700" height="340" rx="16" fill="#0d0e0b" stroke="#343126" stroke-width="1.5"/>
+        <path d="M34 102 H734" stroke="#343126"/>
+        <circle cx="55" cy="75" r="4" fill="#e15b68"/><circle cx="70" cy="75" r="4" fill="#e0b23e"/><circle cx="85" cy="75" r="4" fill="#63b15a"/>
+        <g font-size="11.5" font-weight="700">
+          <rect x="112" y="61" width="142" height="31" rx="8" fill="#15140f" stroke="#343126"/><text x="183" y="81" fill="#aaa696" text-anchor="middle">Google · p1</text>
+          <rect x="262" y="61" width="142" height="31" rx="8" fill="#15140f" stroke="#343126"/><text x="333" y="81" fill="#aaa696" text-anchor="middle">GitHub · p2</text>
+          <rect x="412" y="57" width="302" height="39" rx="9" fill="#182034" stroke="#5b91f2" stroke-width="1.5"/><line x1="563" y1="63" x2="563" y2="90" stroke="#3b527d"/><text x="488" y="81" fill="#f3f0e8" text-anchor="middle">Bilibili · p3</text><text x="638" y="81" fill="#f3f0e8" text-anchor="middle">YouTube · p4</text>
+        </g>
+        <g font-size="10.5" fill="#858173"><text x="183" y="119" text-anchor="middle">tab_entry_1 · single · background</text><text x="333" y="136" text-anchor="middle">tab_entry_2 · single · background</text><text x="563" y="119" fill="#5b91f2" text-anchor="middle">tab_entry_3 · split · active</text></g>
+        <rect x="55" y="151" width="320" height="212" rx="11" fill="#111713" stroke="#63b15a"/><rect x="389" y="151" width="324" height="212" rx="11" fill="#121621" stroke="#5b91f2"/>
+        <text x="76" y="177" fill="#63b15a" font-size="11" font-weight="700">PANE LEFT</text><text x="410" y="177" fill="#5b91f2" font-size="11" font-weight="700">PANE RIGHT · FOCUSED</text>
+        <text x="76" y="207" fill="#f3f0e8" font-size="17" font-weight="750">p3</text><text x="410" y="207" fill="#f3f0e8" font-size="17" font-weight="750">p4</text>
+        <text x="76" y="230" fill="#aaa696" font-size="12">Bilibili</text><text x="410" y="230" fill="#aaa696" font-size="12">YouTube</text>
+        <g fill="#20271f"><rect x="76" y="253" width="278" height="11" rx="5.5"/><rect x="76" y="276" width="222" height="8" rx="4"/><rect x="76" y="296" width="255" height="8" rx="4"/></g>
+        <g fill="#202738"><rect x="410" y="253" width="280" height="11" rx="5.5"/><rect x="410" y="276" width="244" height="8" rx="4"/><rect x="410" y="296" width="188" height="8" rx="4"/></g>
+        <text x="217" y="341" fill="#858173" font-size="11" text-anchor="middle">visible = true</text><text x="551" y="341" fill="#5b91f2" font-size="11" text-anchor="middle">visible = true · focused = true</text>
+        <path d="M734 220 H777" fill="none" stroke="#858173" stroke-width="1.8" marker-end="url(#pages-arrow)"/><text x="755" y="204" fill="#e08a3e" font-size="11" font-weight="700" text-anchor="middle">list_pages</text>
+        <text x="804" y="67" fill="#e08a3e" font-size="10.5" font-weight="700" letter-spacing="1.2">GROUP-AWARE INVENTORY · TARGET</text>
+        <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="11.5">
+          <text x="804" y="101" fill="#f3f0e8">tab_entries</text><text x="908" y="101" fill="#858173">3 UI entries</text>
+          <text x="804" y="127" fill="#aaa696">single</text><text x="908" y="127" fill="#858173">p1</text>
+          <text x="804" y="150" fill="#aaa696">single</text><text x="908" y="150" fill="#858173">p2</text>
+          <text x="804" y="173" fill="#5b91f2">split</text><text x="908" y="173" fill="#858173">p3 + p4</text>
+          <line x1="804" y1="191" x2="1074" y2="191" stroke="#343126"/>
+          <text x="804" y="219" fill="#f3f0e8">pages</text><text x="908" y="219" fill="#858173">4 exact targets</text>
+          <text x="804" y="245" fill="#aaa696">p1</text><text x="908" y="245" fill="#858173">background</text>
+          <text x="804" y="268" fill="#aaa696">p2</text><text x="908" y="268" fill="#858173">background</text>
+          <text x="804" y="291" fill="#63b15a">p3</text><text x="908" y="291" fill="#858173">split / left</text>
+          <text x="804" y="314" fill="#5b91f2">p4</text><text x="908" y="314" fill="#858173">split / right</text>
+        </g>
+        <path d="M938 334 V370" fill="none" stroke="#5b91f2" stroke-width="2" marker-end="url(#pages-blue-arrow)"/>
+        <text x="938" y="390" fill="#a679e4" font-size="12" font-weight="700" text-anchor="middle">p4 token → exact ComputerSession</text>
+        <text x="560" y="425" fill="#858173" font-size="12" text-anchor="middle">顶部标签结构用于理解窗口；Page token 用于观察和操作。分屏不增加另一套 Agent command。</text>
       </g>
     </svg></div>
+    <p class="caption">目标返回结构是 <code>tab_entries + pages</code>。当前实现已经能返回四个独立 Page 并控制前台或后台目标，但仍只返回扁平 <code>pages[]</code>；分组字段尚未实现。完整字段见<a href="computer-use-technical-spec.html#page-model">多 Page 数据模型</a>。</p>
   </section>
 
   <section aria-labelledby="click-title">
@@ -157,6 +181,7 @@
 
   <footer class="links">
     <a href="computer-use-technical-spec.html#reuse">开源、接口与复用清单</a>
+    <a href="computer-use-technical-spec.html#page-model">多 Page 与分屏返回结构</a>
     <a href="computer-use-technical-spec.html">技术规格与实施阶段</a>
     <a href="computer-use-implementation.html">当前实现与验证记录</a>
     <a href="https://github.com/microsoft/playwright-mcp">Microsoft Playwright MCP</a>

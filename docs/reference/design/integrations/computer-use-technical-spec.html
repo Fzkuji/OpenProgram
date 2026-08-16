@@ -35,10 +35,10 @@
     <div class="eyebrow">OpenProgram · technical specification</div>
     <h1>Computer Use 技术规格</h1>
     <p class="lead">本页只保留实现需要的模式、工具、权限、失败和验收规格。结构与交互图见 <a href="computer-use.html">设计概览</a>。</p>
-    <p class="status">MULTI-BACKEND + GEOMETRY + TRANSFER BASELINE IMPLEMENTED · THREE-BACKEND APP E2E PASSED · FULL TARGET ARCHITECTURE DEFERRED</p>
+    <p class="status">MULTI-BACKEND + FLAT MULTI-PAGE BASELINE IMPLEMENTED · GROUP-AWARE INVENTORY DEFERRED</p>
   </header>
 
-  <nav aria-label="目录"><a href="#modes">三个 backend</a><a href="#reuse">开源与复用</a><a href="#contract">工具契约</a><a href="#boundaries">成本与边界</a><a href="#delivery">实施顺序</a><a href="#acceptance">验收</a><a href="#evidence">当前证据</a></nav>
+  <nav aria-label="目录"><a href="#modes">三个 backend</a><a href="#page-model">多 Page 模型</a><a href="#reuse">开源与复用</a><a href="#contract">工具契约</a><a href="#boundaries">成本与边界</a><a href="#delivery">实施顺序</a><a href="#acceptance">验收</a><a href="#evidence">当前证据</a></nav>
 
   <section id="modes">
     <h2>三个执行 backend</h2>
@@ -50,6 +50,49 @@
       <tr><td>接入条件</td><td>禁用 tabs/eval/storage/files 等越界工具；先通过 exact Page 隔离测试。</td><td>禁止自行枚举或切换 Page；所有 target 由 Runtime adapter 指定。</td><td>只复用工具契约与交互语义；Page identity、权限、transport 和 verification 均由 Runtime 决定。</td></tr>
     </tbody></table></div>
     <p>设置只影响新的 ComputerSession。session 创建后 backend 冻结；失败、超时或 stale frame 都不能自动切换 backend，避免重复点击和重复提交。</p>
+  </section>
+
+  <section id="page-model">
+    <h2>BrowserContext、Window、顶部标签与 Page</h2>
+    <div class="table-scroll"><table><thead><tr><th>层级</th><th>表示什么</th><th>控制目标</th><th>变化规则</th></tr></thead><tbody>
+      <tr><td><code>BrowserContext</code></td><td>同一浏览会话的 cookies、storage 与网络隔离边界。</td><td>否</td><td>Context 销毁时，其下全部 Page capability 失效。</td></tr>
+      <tr><td><code>Window</code></td><td>一个 OpenProgram 窗口；<code>list_pages</code> 只返回发起连接所属窗口。</td><td>否</td><td>窗口关闭或 control connection 重建时，inventory 与 token 全部失效。</td></tr>
+      <tr><td><code>tab_entry</code></td><td>顶部标签栏中的一个项目。<code>single</code> 含一个 Page；<code>split</code> 含两个有序 pane。</td><td>否</td><td>分组、拆分、换位或比例变化更新 <code>inventory_revision</code>，不改变底层 Page identity。</td></tr>
+      <tr><td><code>Page</code></td><td>Playwright Page / Electron WebContents / CDP target 的统一身份。</td><td class="default">是</td><td>导航保留 identity；close 或 target replacement 撤销旧 token/session。</td></tr>
+      <tr><td><code>pane</code></td><td>Page 在当前 tab entry 中的布局位置，例如 order 0/1 与当前 bounds。</td><td>否</td><td>它是 Page 的布局元数据，不创建第二种 observe/act API。</td></tr>
+    </tbody></table></div>
+    <p>目标结构同时返回 <code>tab_entries</code> 和 <code>pages</code>：前者回答窗口如何排列，后者列出 Agent 可以控制的网页。一个分屏 tab entry 有两个 Page，因此示例窗口是 3 个顶部标签项、4 个 Page。single entry ID 直接取 <code>tab:&lt;tab_id&gt;</code>，split entry ID 直接取 <code>group:&lt;CenterTabGroup.id&gt;</code>；pane ID 由 group 与当次 order 派生。这里不增加数据库表、第二套 registry 或后台进程。下面只展示 identity、布局和 token；title、origin、opener 与 capabilities 延用现有 Page 字段。</p>
+    <pre>{
+  "browser_context_id": "ctx_1",
+  "window_id": "win_1",
+  "inventory_revision": 42,
+  "active_tab_entry_id": "group:g3",
+  "focused_page": "p4",
+  "tab_entries": [
+    { "id": "tab:w:google", "mode": "single", "pages": ["p1"] },
+    { "id": "tab:w:github", "mode": "single", "pages": ["p2"] },
+    {
+      "id": "group:g3",
+      "mode": "split",
+      "pages": ["p3", "p4"],
+      "split": {
+        "axis": "horizontal",
+        "ratio": 0.5,
+        "panes": [
+          { "pane_id": "pane:g3:0", "order": 0, "page": "p3" },
+          { "pane_id": "pane:g3:1", "order": 1, "page": "p4" }
+        ]
+      }
+    }
+  ],
+  "pages": [
+    { "page": "p1", "tab_id": "w:google", "tab_entry_id": "tab:w:google", "visible": false, "focused": false, "placement": { "mode": "single" }, "page_context_token": "pct_…" },
+    { "page": "p2", "tab_id": "w:github", "tab_entry_id": "tab:w:github", "visible": false, "focused": false, "placement": { "mode": "single" }, "page_context_token": "pct_…" },
+    { "page": "p3", "tab_id": "w:bilibili", "tab_entry_id": "group:g3", "visible": true, "focused": false, "placement": { "mode": "split", "pane_id": "pane:g3:0", "order": 0 }, "page_context_token": "pct_…" },
+    { "page": "p4", "tab_id": "w:youtube", "tab_entry_id": "group:g3", "visible": true, "focused": true, "placement": { "mode": "split", "pane_id": "pane:g3:1", "order": 1 }, "page_context_token": "pct_…" }
+  ]
+}</pre>
+    <p><code>axis</code> 与 <code>order</code> 是规范字段；left/right/top/bottom 由当次 bounds 派生，不能作为 Page identity。当前 UI 主要使用水平双 pane，但接口不把“右侧网页”写成固定目标。移动 Page、调整比例或切换 active tab entry 后，下一次 <code>list_pages</code> 返回新布局并递增 <code>inventory_revision</code>；受影响的 visible Page 继续通过 geometry revision 阻止旧布局坐标生效。一个窗口最多只有一个 <code>focused_page</code>，但 active split 中可以有两个 <code>visible=true</code> 的 Page。</p>
   </section>
 
   <section id="reuse">
@@ -85,7 +128,7 @@ computer_use({ command: "observe", page_context_token: "pct_…", arguments: { d
 computer_use({ command: "act", computer_session_id: "cs_…", arguments: { action: "click", expected_frame_id: "f_…", ref: "e1" } })
 computer_use({ command: "verify", computer_session_id: "cs_…", arguments: { action: "verify", expected_frame_id: "f_…", assertion: "text_contains", value: "Saved" } })
 computer_use({ command: "close", computer_session_id: "cs_…" })</pre>
-    <p><code>list_pages</code> 返回 originating OpenProgram window 中全部现存 web Page；每项包含稳定的 <code>tab_id</code>、title、origin、<code>focused</code>、<code>visible</code>、可选 <code>opener_tab_id</code> 与一次性 <code>page_context_token</code>。调用方在首次 <code>observe</code> 中原样回传 token。token 绑定 MCP control connection、exact Page target 和 server-owned page/access revision；缺少、重放、跨连接使用、连接重建或 target replacement 必须在 backend 调用前拒绝。首次 observe 之后，每次 observe、act 和 verify 都重新验证 exact binding。visible Page 继续验证 geometry revision；background Page 通过不改变 tab、store 或窗口焦点的 resolve path 校验 target。跨进程调用必须把 ComputerSession 保存的 revision 原样交给父 worker，任一不一致即返回 <code>page_context_stale</code>，且不得执行页面动作。</p>
+    <p><code>list_pages</code> 返回 originating OpenProgram window 的 group-aware snapshot：顶层 <code>inventory_revision</code> 保证 <code>tab_entries</code> 与 <code>pages</code> 来自同一次读取；前者表示 single/split 布局，后者表示全部现存 web Page。每个 Page 包含稳定的 <code>tab_id</code>、所属 <code>tab_entry_id</code>、placement、title、origin、<code>focused</code>、<code>visible</code>、可选 <code>opener_tab_id</code> 与一次性 <code>page_context_token</code>。Agent 不用 tab entry 或 pane 执行动作，只在首次 <code>observe</code> 中原样回传目标 Page token。token 绑定 MCP control connection、exact Page target 和 server-owned page/access revision；缺少、重放、跨连接使用、连接重建或 target replacement 必须在 backend 调用前拒绝。首次 observe 之后，每次 observe、act 和 verify 都重新验证 exact binding。visible Page 继续验证 geometry revision；background Page 通过不改变 tab、store 或窗口焦点的 resolve path 校验 target。跨进程调用必须把 ComputerSession 保存的 revision 原样交给父 worker，任一不一致即返回 <code>page_context_stale</code>，且不得执行页面动作。</p>
     <p>网页 popup 创建独立 web tab 和独立 WebContents/Page，并保存 <code>opener_tab_id</code>。popup 不替换 opener，也不隐式转移现有 ComputerSession；下一次 <code>list_pages</code> 发现 popup，Agent 使用它的 token 显式建立新 session。GUI Agent Harness 在每次写动作后刷新有界 Page inventory，并只通过 token 切换 Page。不同 OpenProgram window 继续隔离；本阶段不跨窗口聚合 inventory。</p>
     <p>每个可见 web tab 还持有 renderer-owned 单调 <code>geometry_revision</code>。现有 bounds lifecycle 在 mount、resize、ancestor scroll、pane 重排、窗口 resize、遮挡与 transfer 时测量 viewport-relative bounds；只有规范化后的 <code>x/y/width/height</code> 或可见性变化才递增 revision，focus 变化不递增。发送 turn 时，surface ref 带当前 revision；<code>preview</code> 必须在调用 native preview 前验证并回显同一 revision。ComputerSession 保存该值，后续 observe、act 和 verify 经父子进程 bridge 原样传到 exact renderer；renderer 在调用 Electron activate 前再次比较。缺失的旧客户端 revision 保持兼容，但一旦 capability 含有非零 revision，任何不一致都返回 <code>page_context_stale</code>，不得调用 native preview、activate 或 backend。Page identity 与 lease 不因单纯 geometry 变化而重建；调用方重新 list/observe 后继续使用同一 Page。</p>
   </section>
@@ -104,7 +147,7 @@ computer_use({ command: "close", computer_session_id: "cs_…" })</pre>
     <h2>实施顺序</h2>
     <div class="phase"><div class="phase-id">PHASE 0</div><div><strong>验证官方 MCP 隔离能力</strong><br>连接测试 Electron CDP，验证 snapshot/ref 和 exact Page 限制。</div><div class="gate">出口：A/B 两个 web Page 与 chat Page 的越权测试通过；否则选 upstream contract adapter。</div></div>
     <div class="phase"><div class="phase-id">PHASE 1</div><div><strong>扩展现有 OpenProgram MCP server</strong><br>新增一个 browser-control tool 和一次性 Page token；保留现有非浏览器 tools。</div><div class="gate">出口：真实 initialize/list/call/cancel 通过，伪造与重放在 backend 前拒绝。</div></div>
-    <div class="phase"><div class="phase-id">PHASE 2</div><div><strong>完成 Page Registry</strong><br>动态 geometry、revisions、access、exact resolve、hide/transfer/close invalidation。</div><div class="gate">出口：左右互换、上下分屏、双窗口与 target replacement 通过。</div></div>
+    <div class="phase"><div class="phase-id">PHASE 2</div><div><strong>完成 Page Registry 与 group-aware inventory</strong><br>把现有 <code>CenterTabStripEntry</code>、<code>CenterTabGroup</code> 和 Page inventory 组合成 <code>tab_entries + pages</code>；加入 <code>inventory_revision</code>、access、exact resolve 与失效处理。</div><div class="gate">出口：3 个 tab entry / 4 个 Page 示例、左右互换、上下分屏、后台 Page、双窗口与 target replacement 通过。</div></div>
     <div class="phase"><div class="phase-id">PHASE 3</div><div><strong>接入 Playwright MCP backend</strong><br>只开放 snapshot/ref 和允许的动作，复用共同 policy/verification。</div><div class="gate">出口：DOM、canvas、非前台、多 Page、popup 和失败路径通过。</div></div>
     <div class="phase"><div class="phase-id">PHASE 4</div><div><strong>接入 Chrome DevTools MCP backend</strong><br>实现 exact target adapter，禁止 upstream 自行选择 Page。</div><div class="gate">出口：与 Playwright backend 共用的 parity suite 通过。</div></div>
     <div class="phase"><div class="phase-id">PHASE 5</div><div><strong>接入 Open Claude in Chrome-compatible backend</strong><br>在 Electron/CDP adapter 上实现兼容工具契约、结构化读取、截图和 action cursor。</div><div class="gate">出口：同一 Page、权限、失败与 verification parity suite 通过；运行时没有 Chrome extension/native host。</div></div>
@@ -114,7 +157,24 @@ computer_use({ command: "close", computer_session_id: "cs_…" })</pre>
   <section id="acceptance">
     <h2>发布前必须证明</h2>
     <ol class="checks">
-      <li><strong>工具面：</strong>浏览器控制只有一个 <code>computer_use</code>，不暴露 backend 自带的第二套工具。</li><li><strong>Page 隔离：</strong>授权 A 时，对 B、chat Page 和另一窗口的读写调用次数都是 0。</li><li><strong>多 Page inventory：</strong>同窗口 A、B 与 A 打开的 popup C 均出现一次；C 带 <code>opener_tab_id=A</code>，每个 token 只消费一次。</li><li><strong>后台 Page：</strong>选择 B 后读取和动作只到达 B；active tab、visible ids、BrowserWindow focus 与系统鼠标均不变化。</li><li><strong>popup 切换：</strong>A 的 session 不因 C 创建而改绑；GUI Agent 只有选择 C 的 token 后才建立 C session，关闭 C 后其 token/session 在下一动作前失效。</li><li><strong>backend 冻结：</strong>设置变更不影响当前 ComputerSession，只影响下一 session。</li><li><strong>副作用唯一：</strong>backend failure 不触发另一 backend；一个 Action 最多一次真实写入。</li><li><strong>跨 backend 一致：</strong>同一任务得到相同 Page/frame 生命周期、权限、reason code 和 verification。</li><li><strong>Page Awareness：</strong>页面换到 chat 左侧或右侧后，下一 turn relation 与 preview 正确更新。</li><li><strong>非前台执行：</strong>应用被遮挡时仍操作相同 Page，且没有 focus/OS input 调用。</li><li><strong>视觉限制：</strong>普通 DOM 流截图数为 0；canvas 流每次 observation 最多 1 张。</li><li><strong>图片保留：</strong>截图只出现在紧邻的一次 provider request；同一请求的文字提示不含原始 bytes/base64，返回或异常后调用方 content 与 ToolReturn 不再持有图片，最终 <code>artifacts</code> 仍为空。</li><li><strong>失败诚实性：</strong>空 assertion、stale frame、timeout、cancel、target lost 都不能返回 succeeded。</li><li><strong>Chat 稳定：</strong>GUI tool update 不重建历史 message/avatar/markdown DOM。</li><li><strong>安装版双窗口事务：</strong>只连接默认 18100 的 <code>/Applications/OpenProgram.app</code>，通过正式 preload transfer API 创建真实隐藏目标窗口；目标 renderer 完成 inspect/accept/stage 后由源端拒绝临时 payload，事务必须回滚并关闭目标窗口。验收前后的窗口集合、源窗口 tab 状态和持久存储必须一致。</li>
+      <li><strong>工具面：</strong>浏览器控制只有一个 <code>computer_use</code>，不暴露 backend 自带的第二套工具。</li>
+      <li><strong>Page 隔离：</strong>授权 A 时，对 B、chat Page 和另一窗口的读写调用次数都是 0。</li>
+      <li><strong>分组结构：</strong>Google、GitHub、Bilibili/YouTube 分屏返回 3 个有序 <code>tab_entries</code> 和 4 个唯一 Page；第三项为 split，pane order 与实际 UI 一致。</li>
+      <li><strong>布局与身份：</strong>交换 split pane、调整 ratio 或拆分后，Page identity 保持且 <code>inventory_revision</code> 更新；受影响 visible Page 的旧 geometry 在写入前 stale，不得新建另一套 split action。</li>
+      <li><strong>可见与焦点：</strong>active split 的两个 Page 都是 visible，只有一个 focused；前两个 single Page 是 background。切换 active entry 后下一 snapshot 反映新状态。</li>
+      <li><strong>popup inventory：</strong>A 打开的 popup C 单独出现并带 <code>opener_tab_id=A</code>；每个 token 只消费一次。</li>
+      <li><strong>后台 Page：</strong>选择 B 后读取和动作只到达 B；active tab、visible ids、BrowserWindow focus 与系统鼠标均不变化。</li>
+      <li><strong>popup 切换：</strong>A 的 session 不因 C 创建而改绑；GUI Agent 只有选择 C 的 token 后才建立 C session，关闭 C 后其 token/session 在下一动作前失效。</li>
+      <li><strong>backend 冻结：</strong>设置变更不影响当前 ComputerSession，只影响下一 session。</li>
+      <li><strong>副作用唯一：</strong>backend failure 不触发另一 backend；一个 Action 最多一次真实写入。</li>
+      <li><strong>跨 backend 一致：</strong>同一任务得到相同 Page/frame 生命周期、权限、reason code 和 verification。</li>
+      <li><strong>Page Awareness：</strong>页面换到 chat 左侧或右侧后，下一 turn relation 与 preview 正确更新。</li>
+      <li><strong>非前台执行：</strong>应用被遮挡时仍操作相同 Page，且没有 focus/OS input 调用。</li>
+      <li><strong>视觉限制：</strong>普通 DOM 流截图数为 0；canvas 流每次 observation 最多 1 张。</li>
+      <li><strong>图片保留：</strong>截图只出现在紧邻的一次 provider request；同一请求的文字提示不含原始 bytes/base64，返回或异常后调用方 content 与 ToolReturn 不再持有图片，最终 <code>artifacts</code> 仍为空。</li>
+      <li><strong>失败诚实性：</strong>空 assertion、stale frame、timeout、cancel、target lost 都不能返回 succeeded。</li>
+      <li><strong>Chat 稳定：</strong>GUI tool update 不重建历史 message/avatar/markdown DOM。</li>
+      <li><strong>安装版双窗口事务：</strong>只连接默认 18100 的 <code>/Applications/OpenProgram.app</code>，通过正式 preload transfer API 创建真实隐藏目标窗口；目标 renderer 完成 inspect/accept/stage 后由源端拒绝临时 payload，事务必须回滚并关闭目标窗口。验收前后的窗口集合、源窗口 tab 状态和持久存储必须一致。</li>
     </ol>
     <h3>Backend parity suite 的规范矩阵</h3>
     <p>同一组用例必须通过 <code>ComputerUseSessionRegistry.execute()</code> 依次运行 <code>playwright_mcp</code>、<code>chrome_devtools_mcp</code> 与 <code>open_claude_chrome</code> 的真实 adapter class。官方 MCP 的进程和网络边界可由记录调用的 test client 代替，但不得用三个同构 fake adapter 代替生产映射。矩阵比较 OpenProgram 的规范化结果，不比较上游特有的 ARIA 文本、ref 名称或诊断文字。</p>
@@ -137,7 +197,8 @@ computer_use({ command: "close", computer_session_id: "cs_…" })</pre>
       <tr><td>视觉 artifact retention</td><td class="evidence-yes">已实现调用方 ephemeral policy</td><td>截图只发送给紧邻的一次模型请求；planner 文字只含元数据。正常返回或异常后清除 content image block 与 <code>ToolReturn.images</code>，坐标能力同步撤销；不写本地 artifact，最终 <code>artifacts</code> 为空。provider 侧保留不在本地 policy 的控制范围内。</td></tr>
       <tr><td>通用 MCP server/client 与 image content</td><td class="evidence-partial">已有基础</td><td><code>openprogram/mcp_server/</code>、<code>openprogram/mcp/</code></td></tr>
       <tr><td>动态 Page geometry、registry、lease</td><td class="evidence-partial">baseline 已实现</td><td>当前 turn surface 已按实际 pane 顺序生成 left、right 或 center；服务端为 connection、Page 和 access 分配单调 revision，renderer 为每个实际可见 web tab 分配 monotonic geometry revision，并以 Page revision 生成 canonical key。同一连接内 recapture 保持 Page identity；pane bounds 或可见性变化使旧 ComputerSession stale，但不重建 Page identity。ComputerSession 对 canonical key 持有排他 lease；session 内操作串行执行，首次及后续 observe、act 和 verify 在 backend 前重新验证 exact visible binding。preview/activate Promise 完成后再次检查 ready、当前 bounds 和非零 geometry revision；真实 hide、occlusion 或 transfer 后返回 <code>page_context_stale</code>，不向 backend 暴露过期 preview/target。旧客户端 revision 0 只跳过 geometry 比较，仍必须可见。owner disconnect 立即撤销该连接的全部 binding 和 pending exact-socket request。137 项相关 Python 测试、完整 Web check、TypeScript 与生产 build 通过；安装版真实隐藏目标窗口的 stage、rollback、destroy 与无残留验收通过</td></tr>
-      <tr><td>同窗口多 Page 与 popup handoff</td><td class="evidence-yes">browser-only baseline 已实现</td><td>Renderer 为当前 window 的每个 web tab 生成 exact target、实时 URL/title、visible/focused/region 与可选 opener；后台 Page 通过 native WebContents/CDP 解析，不置前。Agent 通过一次性 Page token 选择目标，ComputerSession 不因新 popup 自动改绑；GUI Agent 只在显式 <code>switch_page</code> 后切换。安装版验证在 Grammarly 保持前台时点击后台 Example 的 <code>Learn more</code>，后台 Page 进入 IANA，下一次 inventory 同步返回 IANA 实时元数据。</td></tr>
+      <tr><td>同窗口多 Page 与 popup handoff</td><td class="evidence-yes">flat browser-only baseline 已实现</td><td>Renderer 为当前 window 的每个 web tab 生成 exact target、实时 URL/title、visible/focused/region 与可选 opener；后台 Page 通过 native WebContents/CDP 解析，不置前。Agent 通过一次性 Page token 选择目标，ComputerSession 不因新 popup 自动改绑；GUI Agent 只在显式 <code>switch_page</code> 后切换。安装版验证在 Grammarly 保持前台时点击后台 Example 的 <code>Learn more</code>，后台 Page 进入 IANA，下一次 inventory 同步返回 IANA 实时元数据。</td></tr>
+      <tr><td>Tab entry / split pane topology</td><td class="evidence-partial">目标契约已定义，尚未实现</td><td>Web store 已有 <code>CenterTabStripEntry</code>、<code>CenterTabGroup.memberIds/visibleIds/focusedId</code> 与 <code>splitRatio</code>；当前 <code>browserPageInventory()</code> 仍只返回扁平 <code>pages[]</code> 和派生 region，没有顶层 <code>tab_entries</code>、<code>active_tab_entry_id</code>、pane order 或 inventory revision。</td></tr>
       <tr><td>Playwright MCP backend</td><td class="evidence-yes">已实现 baseline，安装版 E2E 通过</td><td>固定 <code>@playwright/mcp@0.0.79</code>；通过官方 <code>createConnection(contextGetter)</code> 只提供 exact Page，不调用 tab select 或 <code>bringToFront()</code>；只映射 allowlisted action。安装版在同一 exact target 上完成 <code>navigate → observe → click → observe → verify → close</code>。</td></tr>
       <tr><td>Chrome DevTools MCP backend</td><td class="evidence-yes">已实现 baseline，安装版 E2E 通过</td><td>固定 <code>chrome-devtools-mcp@1.7.0</code>；marker 绑定 exact pageId；启用 pageId routing。安装版在同一 exact target 上完成完整命令序列与 DOM assertion。</td></tr>
       <tr><td>Open Claude in Chrome-compatible backend</td><td class="evidence-yes">已实现 baseline，安装版 E2E 通过</td><td>复用现有 exact Page DOM/ref、单截图和坐标 action；不运行 Chrome extension/native host。安装版在同一 exact target 上完成完整命令序列与 DOM assertion。</td></tr>
@@ -146,7 +207,7 @@ computer_use({ command: "close", computer_session_id: "cs_…" })</pre>
     </tbody></table></div>
     <p class="caption">表中的“已实现”表示当前 multi-backend、geometry、transfer、视觉 artifact 生命周期与 parity suite。专用 permission card 仍属于 UI 后续项，不是当前功能实现的发布条件。实施与安装版证据维护在 <a href="computer-use-implementation.html">Computer Use 实施记录</a>。</p>
     <h3>需要实现者展开时再读</h3>
-    <details><summary>Page identity 与生命周期</summary><div>Canonical Page 绑定 <code>window_id + registry_page_id + tab_id + cdp_target_id + revisions</code>。首次 observe 建立 ComputerSession binding，并保存 capability 中的 page/access/geometry revision。后续命令先在父 worker 比较 page/access revision，再由 exact renderer 在 native activate 前比较 geometry revision；任一比较失败都不调用 Electron 或 backend，并清理当前 session。focus 变化不改变 target 或 geometry revision；pane 位置、bounds 或可见性变化保留 Page identity 但使旧 ComputerSession 的 geometry revision 失效；移组、transfer、close、target replacement、access disable 或 disconnect 仍会在下一次副作用前撤销 binding。</div></details>
+    <details><summary>Page identity 与生命周期</summary><div>Canonical Page 绑定 <code>window_id + registry_page_id + tab_id + cdp_target_id + revisions</code>。<code>tab_entry_id</code>、pane order、split ratio 和 <code>inventory_revision</code> 不是 Page identity；它们描述同一次 inventory snapshot。首次 observe 建立 ComputerSession binding，并保存 capability 中的 page/access/geometry revision。后续命令先在父 worker 比较 page/access revision，再由 exact renderer 在 native activate 前比较 geometry revision；任一比较失败都不调用 Electron 或 backend，并清理当前 session。focus 变化不改变 target；pane 位置、bounds 或可见性变化保留 Page identity，但会使依赖旧 geometry 的 session stale；transfer、close、target replacement、access disable 或 disconnect 仍会在下一次副作用前撤销 binding。</div></details>
     <details><summary>Popup 与并发</summary><div>当前 browser-only 增量采用 Electron 已有的同步 popup request：main 拒绝原生 BrowserWindow，renderer 创建独立 web tab/WebContents，并记录 opener。它不把 popup 自动归因成当前 action 的成功结果，也不隐式改绑 session；GUI Agent 在写动作后的 Page inventory 中发现并显式选择。相同 exact Page 的 ComputerSession 写 lease仍排他，不同 Page 可并行。</div></details>
     <details><summary>安装版双窗口验收</summary><div>验收脚本只能连接已安装 App 的 CDP endpoint，禁止从源码启动 Electron、启动第二个 worker或增加生产测试接口。脚本先记录现有 shell targets 和源窗口本地状态，再用正式 <code>tabTransfer.prepare/detach</code> 提交一个唯一、未出现在源 store 中的临时 NTP payload。脚本在源端失败 <code>sourceRemoved</code> 调用点设置临时 CDP breakpoint，并直接连接真实目标 renderer，确认临时 tab DOM、目标 <code>windowId</code> 与对应 token journal 已存在；随后恢复源端，让 main process 执行 rollback、关闭仍未显示的目标窗口并清除 transaction。脚本在 <code>finally</code> 中使用带超时的正式 cancel，并仅在 shell target 集合回到基线、源状态字节未变化、目标三个 storage key 均为空且 transaction 已消失时返回成功。</div></details>
     <details><summary>视觉 artifact 生命周期</summary><div><code>screenshot</code> 的 PNG bytes 只在内存中转换成一个 provider image block，并且只附加到紧邻的下一次 planner request。传给 <code>_step_prompt</code> 的 previous result 先转换成 frame、viewport 与 <code>image_attached</code> 元数据，不允许 bytes 或 base64 进入文字通道。无论该请求正常返回还是抛出异常，<code>finally</code> 都删除调用方 content 中的 image block、清空原 <code>ToolReturn.images</code> 并撤销截图坐标能力；最终结果继续返回空 <code>artifacts</code>。</div></details>
