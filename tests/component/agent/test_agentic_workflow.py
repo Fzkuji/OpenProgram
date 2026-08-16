@@ -26,14 +26,19 @@ def _code(body: str, helpers: str = "") -> str:
 
 
 def _project_entry(body: str) -> str:
-    return TL._validated_reply(_code(body)).replace(
-        "def workflow():", "def workflow(task):", 1,
+    source = TL._validated_reply(_code(body)).replace(
+        "def workflow():", "def research_workflow(task):", 1,
+    )
+    return (
+        "from openprogram.agentic_programming import agentic_function\n\n"
+        "@agentic_function\n"
+        + source
     )
 
 
 def _project(
     *,
-    name: str = "Research workflow",
+    name: str = "research_workflow",
     summary: str = "Research and synthesize a topic",
     tags: list[str] | None = None,
     readme: str = "# Research workflow\n\nReusable research steps.\n",
@@ -50,6 +55,40 @@ def _project(
         project_files["entry.py"] = project_files["entry.py"].replace(
             "def workflow():", "def workflow(task):", 1,
         )
+        entrypoint = re.sub(r"[^a-z0-9_]+", "_", name.lower()).strip("_")
+        entrypoint = entrypoint or "generated_workflow"
+        entry_source = project_files.pop("entry.py").replace(
+            "def workflow(", f"def {entrypoint}(", 1,
+        )
+        imports = []
+        for path, source in sorted(project_files.items()):
+            if not path.startswith(("steps/", "goals/", "helpers/")):
+                continue
+            names = re.findall(r"(?m)^def ([a-zA-Z_][a-zA-Z0-9_]*)\(", source)
+            if names:
+                module = path[:-3].replace("/", ".")
+                imports.append(
+                    f"from .{module} import {', '.join(names)}"
+                )
+        project_files.update({
+            "__init__.py": (
+                f"from .workflow import {entrypoint}\n\n"
+                f"__all__ = [{entrypoint!r}]\n"
+            ),
+            "workflow.py": (
+                "from openprogram.agentic_programming import agentic_function\n"
+                + ("\n".join(imports) + "\n" if imports else "")
+                + "\n@agentic_function\n"
+                + entry_source
+            ),
+            "steps/__init__.py": project_files.get("steps/__init__.py", ""),
+            "tests/test_workflow.py": (
+                f"from workflows.{entrypoint} import {entrypoint}\n\n"
+                "def test_entrypoint_is_callable():\n"
+                f"    assert callable({entrypoint})\n"
+            ),
+        })
+        name = entrypoint
     return json.dumps({
         "project_metadata": {
             "name": name,
@@ -58,6 +97,41 @@ def _project(
         },
         "readme": readme,
         "files": project_files,
+    }, ensure_ascii=False)
+
+
+def _package_project() -> str:
+    return json.dumps({
+        "project_metadata": {
+            "name": "literature_review",
+            "summary": "Research and synthesize a topic",
+            "tags": ["research"],
+        },
+        "readme": "# Literature review\n\nReusable research workflow.\n",
+        "files": {
+            "__init__.py": (
+                "from .workflow import literature_review\n\n"
+                "__all__ = ['literature_review']\n"
+            ),
+            "workflow.py": (
+                "from openprogram.agentic_programming import agentic_function\n"
+                "from .steps.discover import discover\n\n"
+                "@agentic_function\n"
+                "def literature_review(task: str):\n"
+                "    return discover(task)\n"
+            ),
+            "steps/__init__.py": "",
+            "steps/discover.py": (
+                "from openprogram.agentic_programming import agent\n\n"
+                "def discover(task: str):\n"
+                "    return agent('discover ' + task)\n"
+            ),
+            "tests/test_workflow.py": (
+                "from workflows.literature_review import literature_review\n\n"
+                "def test_entrypoint_is_callable():\n"
+                "    assert callable(literature_review)\n"
+            ),
+        },
     }, ensure_ascii=False)
 
 
@@ -133,6 +207,7 @@ def _executor(monkeypatch: pytest.MonkeyPatch, fn=None) -> list[dict]:
         return fn(prompt, kwargs) if fn else f"done: {prompt}"
 
     monkeypatch.setattr(TL, "_agent_function", lambda session_id, spawn_caller: fake)
+    monkeypatch.setattr(TL, "_agent_loop_function", lambda: fake)
     return calls
 
 
@@ -175,6 +250,10 @@ def _instance(repo: Path, run_id: str) -> Path:
     return repo / "workflows" / run_id
 
 
+def _snapshot_package(repo: Path, run_id: str, name: str = "research_workflow") -> Path:
+    return _instance(repo, run_id) / "snapshot" / "workflows" / name
+
+
 def _state(repo: Path, run_id: str) -> dict:
     return json.loads((_instance(repo, run_id) / "state.json").read_text())
 
@@ -200,8 +279,8 @@ def test_small_task_is_persisted_as_a_reusable_multifile_project(
     assert calls[0]["prompt"].startswith("rename one variable")
     assert "save substantive deliverables" in calls[0]["prompt"]
     assert "reuse" in prompts[0] and "revise" in prompts[0] and "create" in prompts[0]
-    snapshot = _instance(session_repo, result["run_id"]) / "snapshot"
-    assert (snapshot / "entry.py").exists()
+    snapshot = _snapshot_package(session_repo, result["run_id"])
+    assert (snapshot / "workflow.py").exists()
     assert (snapshot / "steps" / "task.py").exists()
     assert not (_instance(session_repo, result["run_id"]) / "code.py").exists()
     assert result["project_id"]
@@ -524,7 +603,7 @@ def test_same_function_name_uses_call_order_keys_and_replays_each_call(
     assert [(r["function"], r["call_index"]) for r in records] == [
         ("agent", 0), ("agent", 1)
     ]
-    entry_path = _instance(session_repo, run_id) / "snapshot" / "entry.py"
+    entry_path = _snapshot_package(session_repo, run_id) / "workflow.py"
     entry_path.write_text(_project_entry('''
         agent("one")
         agent("two")
@@ -569,18 +648,28 @@ def test_exception_rewrites_with_traceback_and_state_then_replays_completed_call
     assert '"function": "agent"' in revision_prompt
     assert "<base_project>" in revision_prompt
     instance = _instance(session_repo, result["run_id"])
-    assert (instance / "snapshot" / "steps" / "legacy.py").exists()
+    assert (_snapshot_package(session_repo, result["run_id"]) / "steps" / "legacy.py").exists()
     assert len(result["revisions"]) == 1
 
 
 def test_invalid_plans_keep_requesting_rewrites_with_concrete_errors(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
+    syntax_error = json.loads(_package_project())
+    syntax_error["files"]["steps/discover.py"] = "def discover(:\n"
+    forbidden_import = json.loads(_package_project())
+    forbidden_import["files"]["steps/discover.py"] = (
+        "import os\n\ndef discover(task):\n    return task\n"
+    )
     prompts = _planner(
         monkeypatch,
-        "```python\ndef workflow(:\n```",
-        _code("import os"),
-        _code('return agent("fixed")'),
+        json.dumps({"action": "create"}),
+        json.dumps(syntax_error),
+        json.dumps(forbidden_import),
+        _project(files={
+            "steps/run.py": "def run(task):\n    return agent('fixed')\n",
+            "entry.py": "def workflow(task):\n    return run(task)\n",
+        }),
     )
     calls = _executor(monkeypatch)
 
@@ -589,24 +678,45 @@ def test_invalid_plans_keep_requesting_rewrites_with_concrete_errors(
     assert result["status"] == "completed"
     assert calls[0]["prompt"] == "fixed"
     assert "SyntaxError" in prompts[2]
-    assert "imports are forbidden" in prompts[3]
+    assert "may not use import statements" in prompts[3]
     assert _state(session_repo, result["run_id"])["status"] == "completed"
 
 
 def test_missing_workflow_is_rejected_with_exact_validation_reason(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
+    missing = json.loads(_package_project())
+    missing["files"]["workflow.py"] = (
+        "from openprogram.agentic_programming import agentic_function\n\n"
+        "def helper(task):\n    return task\n"
+    )
     prompts = _planner(
         monkeypatch,
-        "```python\ndef helper():\n    return 1\n```",
-        _code('return "ok"'),
+        json.dumps({"action": "create"}),
+        json.dumps(missing),
+        _project(files={
+            "steps/run.py": "def run(task):\n    return 'ok'\n",
+            "entry.py": "def workflow(task):\n    return run(task)\n",
+        }),
     )
     _executor(monkeypatch)
 
     result = TL.agentic_workflow("missing")
 
     assert result["status"] == "completed"
-    assert "exactly one def workflow()" in prompts[2]
+    assert "must define one @agentic_function literature_review()" in prompts[2]
+
+
+def test_package_rejects_relative_import_outside_own_package() -> None:
+    candidate = json.loads(_package_project())
+    candidate["files"]["steps/discover.py"] = (
+        "from ...other_workflow import run\n\n"
+        "def discover(task):\n"
+        "    return run(task)\n"
+    )
+
+    with pytest.raises(TL.InvalidWorkflow, match="import is not allowed"):
+        TL._validate_project_candidate(candidate)
 
 
 def test_execution_cap_counts_only_real_calls(
@@ -705,8 +815,12 @@ def test_new_runs_for_same_task_are_independent(
 ) -> None:
     _planner(
         monkeypatch,
-        _code('return agent("first run")'),
-        _code('return agent("second run")'),
+        json.dumps({"action": "create"}),
+        _project(files={
+            "steps/run.py": "def run(task):\n    return agent(task)\n",
+            "entry.py": "def workflow(task):\n    return run(task)\n",
+        }),
+        json.dumps({"action": "reuse", "project_id": "research_workflow"}),
     )
     calls = _executor(monkeypatch)
 
@@ -714,7 +828,7 @@ def test_new_runs_for_same_task_are_independent(
     second = TL.agentic_workflow("same")
 
     assert first["run_id"] != second["run_id"]
-    assert [call["prompt"] for call in calls] == ["first run", "second run"]
+    assert [call["prompt"] for call in calls] == ["same", "same"]
     assert _state(session_repo, first["run_id"])["task"] == "same"
     assert _state(session_repo, second["run_id"])["task"] == "same"
 
@@ -739,17 +853,18 @@ def test_planner_prompt_documents_real_agentic_programming_convention(
     assert "reuse" in decision_prompt
     assert "revise" in decision_prompt
     assert "create" in decision_prompt
-    assert "@agentic_function" not in prompt
+    assert "@agentic_function" in prompt
     assert "runtime.exec" not in prompt
-    assert "def workflow(task):" in prompt
-    assert "llm(), agent(), goal()" in prompt
+    assert "short_stable_python_name(task: str)" in prompt
+    assert "llm, agent, goal" in prompt
     assert "project_metadata" in prompt
     assert "steps/example.py" in prompt
     assert "complete project, not a patch" in prompt
     assert "save substantive deliverables" in prompt
     assert "explicitly asks for the content in chat" in prompt
     assert "Do not return a report body as the workflow handoff" in prompt
-    assert "import" in prompt and "forbidden" in prompt
+    assert "ordinary relative imports" in prompt
+    assert "Do not use dynamic" in prompt
 
 
 def test_capped_status_cannot_be_caught_by_generated_code(
@@ -806,8 +921,8 @@ def test_invalid_revision_reports_the_invalid_candidate_as_current_code(
     result = TL.agentic_workflow("rewrite")
 
     assert result["status"] == "completed"
-    assert "def workflow(:" in prompts[3]
     assert "SyntaxError" in prompts[3]
+    assert "<base_project>" in prompts[3]
 
 
 def test_caught_callable_error_writes_failed_after_checkpoint(
@@ -889,7 +1004,7 @@ def test_same_run_id_concurrent_resume_executes_once(
     with pytest.raises(KeyboardInterrupt):
         TL.agentic_workflow("concurrent")
     run_id = next((session_repo / "workflows").iterdir()).name
-    (_instance(session_repo, run_id) / "snapshot" / "entry.py").write_text(
+    (_snapshot_package(session_repo, run_id) / "workflow.py").write_text(
         _project_entry('return agent("once")')
     )
     calls = _executor(monkeypatch)
@@ -927,7 +1042,7 @@ def test_checkpoint_preserves_path_result_and_mixed_key_arguments(
     with pytest.raises(KeyboardInterrupt):
         TL.agentic_workflow("types")
     run_id = next((session_repo / "workflows").iterdir()).name
-    (_instance(session_repo, run_id) / "snapshot" / "entry.py").write_text(
+    (_snapshot_package(session_repo, run_id) / "workflow.py").write_text(
         _project_entry('return registered({1: "integer", "1": "string"})')
     )
     _summarizer(monkeypatch, "Completed typed replay.")
@@ -986,7 +1101,7 @@ def test_resume_continues_planning_when_interrupted_before_code_is_written(
 
     assert result["status"] == "completed"
     assert attempts == 3
-    assert (_instance(session_repo, run_id) / "snapshot" / "steps" / "plan.py").exists()
+    assert (_snapshot_package(session_repo, run_id) / "steps" / "plan.py").exists()
 
 
 def test_public_entry_creates_and_executes_reusable_multifile_project(
@@ -1007,16 +1122,123 @@ def test_public_entry_creates_and_executes_reusable_multifile_project(
     assert len(result["project_revision"]) == 40
     assert [call["prompt"] for call in calls] == ["discover papers"]
     instance = _instance(session_repo, result["run_id"])
-    snapshot = instance / "snapshot"
+    snapshot = _snapshot_package(session_repo, result["run_id"])
     assert (snapshot / "steps" / "discover.py").exists()
-    assert (snapshot / "entry.py").exists()
+    assert (snapshot / "workflow.py").exists()
     assert (snapshot / "README.md").exists()
-    assert (snapshot / "workflow.json").exists()
+    assert (snapshot / "pyproject.toml").exists()
+    assert not (snapshot / "workflow.json").exists()
     project = session_repo / "catalog" / result["project_id"]
     assert (project / "steps" / "discover.py").exists()
     assert (project / "pyproject.toml").exists()
     assert _git_output(project, "rev-parse", "HEAD") == result["project_revision"]
     assert "workflow project candidates" in prompts[0]
+
+
+def test_public_entry_executes_standard_agentic_function_package(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _planner(
+        monkeypatch,
+        json.dumps({"action": "create"}),
+        _package_project(),
+    )
+    calls = _executor(monkeypatch)
+    _summarizer(monkeypatch)
+
+    result = TL.agentic_workflow("recent papers")
+
+    assert result["status"] == "completed"
+    assert result["project_id"] == "literature_review"
+    assert [call["prompt"] for call in calls] == ["discover recent papers"]
+    project = session_repo / "catalog" / "literature_review"
+    assert (project / "__init__.py").exists()
+    assert (project / "workflow.py").exists()
+    assert (project / "steps" / "discover.py").exists()
+    assert (project / "tests" / "test_workflow.py").exists()
+    assert not (project / "workflow.json").exists()
+    metadata = TL.tomllib.loads((project / "pyproject.toml").read_text())
+    assert metadata["project"]["entry-points"]["openprogram.workflows"] == {
+        "literature_review": (
+            "workflows.literature_review:literature_review"
+        ),
+    }
+    snapshot = _instance(session_repo, result["run_id"]) / "snapshot"
+    assert (snapshot / "workflows" / "literature_review" / "workflow.py").exists()
+
+
+def test_repository_metadata_rejects_non_table_entry_points(tmp_path: Path) -> None:
+    project = tmp_path / "literature_review"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "literature_review"\n'
+        'version = "0.1.0"\n'
+        'description = "Research papers"\n'
+        'keywords = []\n'
+        'entry-points = "invalid"\n\n'
+        "[tool.openprogram]\n"
+        'display-name = "Literature review"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(TL.InvalidWorkflow, match="entry points must be a table"):
+        TL._read_repository_metadata(project)
+
+
+def test_package_execution_uses_agent_loop_primitive_not_sub_agent_adapter(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _planner(
+        monkeypatch,
+        json.dumps({"action": "create"}),
+        _package_project(),
+    )
+    calls = []
+
+    def agent_loop(prompt: str, **_kwargs) -> str:
+        calls.append(prompt)
+        return "done"
+
+    monkeypatch.setattr(TL, "_agent_loop_function", lambda: agent_loop)
+    monkeypatch.setattr(
+        TL,
+        "_agent_function",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("package execution used the legacy sub-agent adapter")
+        ),
+    )
+    _summarizer(monkeypatch)
+
+    result = TL.agentic_workflow("recent papers")
+
+    assert result["status"] == "completed"
+    assert calls == ["discover recent papers"]
+
+
+def test_package_import_does_not_replace_process_tool_registrations(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    from openprogram.agentic_programming import function as function_runtime
+    from openprogram.programs import _runtime as tool_runtime
+
+    name = "literature_review"
+    before_agentic = function_runtime._registry.get(name)  # noqa: SLF001
+    before_tool = tool_runtime._registry.get(name)  # noqa: SLF001
+    before_unexposed = name in tool_runtime._unexposed  # noqa: SLF001
+    _planner(
+        monkeypatch,
+        json.dumps({"action": "create"}),
+        _package_project(),
+    )
+    _executor(monkeypatch)
+    _summarizer(monkeypatch)
+
+    TL.agentic_workflow("recent papers")
+
+    assert function_runtime._registry.get(name) is before_agentic  # noqa: SLF001
+    assert tool_runtime._registry.get(name) is before_tool  # noqa: SLF001
+    assert (name in tool_runtime._unexposed) is before_unexposed  # noqa: SLF001
 
 
 def test_public_entry_publishes_project_as_git_repository(
@@ -1074,9 +1296,26 @@ def test_resume_accepts_legacy_zero_argument_project_snapshot(
     with pytest.raises(KeyboardInterrupt, match="pause"):
         TL.agentic_workflow("legacy task")
     run_id = next((session_repo / "workflows").iterdir()).name
-    (_instance(session_repo, run_id) / "snapshot" / "entry.py").write_text(
-        TL._validated_reply(_code('return agent("legacy resumed")'))
-    )
+    instance = _instance(session_repo, run_id)
+    TL.shutil.rmtree(instance / "snapshot")
+    legacy = TL._validate_legacy_project_candidate({
+        "project_metadata": {
+            "name": "Legacy workflow",
+            "summary": "Legacy resume fixture",
+            "tags": ["legacy"],
+        },
+        "readme": "# Legacy workflow\n",
+        "files": {
+            "steps/placeholder.py": "def placeholder():\n    return None\n",
+            "entry.py": TL._validated_reply(
+                _code('return agent("legacy resumed")')
+            ),
+        },
+    }, allow_legacy_entry=True)
+    TL._write_candidate_directory(instance / "snapshot", legacy)
+    state = _state(session_repo, run_id)
+    state["project_metadata"] = legacy["project_metadata"]
+    TL._save_state(instance / "state.json", state)
     calls = _executor(monkeypatch)
     _summarizer(monkeypatch)
 
@@ -1090,7 +1329,9 @@ def test_new_project_rejects_legacy_zero_argument_entry(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
     legacy = json.loads(_project())
-    legacy["files"]["entry.py"] = "def workflow():\n    return discover('ignored')\n"
+    legacy["files"]["workflow.py"] = legacy["files"]["workflow.py"].replace(
+        "def research_workflow(task):", "def research_workflow():",
+    )
     prompts = _planner(
         monkeypatch,
         json.dumps({"action": "create"}),
@@ -1193,7 +1434,7 @@ def test_entry_only_project_is_rejected_before_execution_and_publish(
     result = TL.agentic_workflow("create a maintainable workflow")
 
     assert result["status"] == "completed"
-    assert "at least one Python helper under steps/" in prompts[2]
+    assert "at least one helper module" in prompts[2]
     assert [call["prompt"] for call in calls] == ["discover papers"]
     project = session_repo / "catalog" / result["project_id"]
     assert (project / "steps" / "discover.py").exists()
@@ -1213,7 +1454,7 @@ def test_similar_task_in_another_session_reuses_project_without_authoring(
         monkeypatch,
         json.dumps({"action": "create"}),
         _project(),
-        json.dumps({"action": "reuse", "project_id": "research-workflow"}),
+        json.dumps({"action": "reuse", "project_id": "research_workflow"}),
     )
     calls = _executor(monkeypatch)
     _summarizer(monkeypatch, "Completed reusable research.")
@@ -1222,12 +1463,12 @@ def test_similar_task_in_another_session_reuses_project_without_authoring(
     active_session = "s2"
     second = TL.agentic_workflow("research another paper")
 
-    assert second["project_id"] == first["project_id"] == "research-workflow"
+    assert second["project_id"] == first["project_id"] == "research_workflow"
     assert second["project_revision"] == first["project_revision"]
-    project = tmp_path / "catalog" / "research-workflow"
+    project = tmp_path / "catalog" / "research_workflow"
     assert _git_output(project, "rev-list", "--count", "HEAD") == "1"
     assert [call["prompt"] for call in calls] == ["discover papers", "discover papers"]
-    assert "research-workflow" in prompts[2]
+    assert "research_workflow" in prompts[2]
     assert "steps/discover.py" not in prompts[2]
 
 
@@ -1250,7 +1491,7 @@ def test_revise_reads_full_active_project_and_preserves_unchanged_file(
     prompts = _planner(
         monkeypatch,
         json.dumps({"action": "create"}), first,
-        json.dumps({"action": "revise", "project_id": "research-workflow"}), revised,
+        json.dumps({"action": "revise", "project_id": "research_workflow"}), revised,
     )
     _executor(monkeypatch)
     _summarizer(monkeypatch, "Completed revised research.")
@@ -1259,7 +1500,7 @@ def test_revise_reads_full_active_project_and_preserves_unchanged_file(
     updated = TL.agentic_workflow("research papers and verify them")
 
     assert initial["project_revision"] != updated["project_revision"]
-    project = session_repo / "catalog" / "research-workflow"
+    project = session_repo / "catalog" / "research_workflow"
     assert _git_output(project, "rev-list", "--count", "HEAD") == "2"
     assert _git_output(
         project, "show", f"{initial['project_revision']}:steps/shared.py",
@@ -1321,7 +1562,7 @@ def test_publish_failure_keeps_git_head_and_resume_commits_once(
     _planner(
         monkeypatch,
         json.dumps({"action": "create"}), initial,
-        json.dumps({"action": "revise", "project_id": "research-workflow"}),
+        json.dumps({"action": "revise", "project_id": "research_workflow"}),
         revised,
     )
     _executor(monkeypatch)
@@ -1494,7 +1735,7 @@ def test_continue_word_still_creates_a_new_run_and_uses_catalog_decision(
     prompts = _planner(
         monkeypatch,
         json.dumps({"action": "create"}), _project(),
-        json.dumps({"action": "reuse", "project_id": "research-workflow"}),
+        json.dumps({"action": "reuse", "project_id": "research_workflow"}),
     )
     calls = _executor(monkeypatch)
     _summarizer(monkeypatch, "Completed catalog-selected workflow.")
@@ -1560,6 +1801,7 @@ def test_create_name_collision_allocates_new_project_without_overwrite(
         monkeypatch,
         json.dumps({"action": "create"}), _project(),
         json.dumps({"action": "create"}), _project(),
+        _project(name="research_workflow_two"),
     )
     _executor(monkeypatch)
     _summarizer(monkeypatch, "Completed separate project.")
@@ -1567,7 +1809,7 @@ def test_create_name_collision_allocates_new_project_without_overwrite(
     first = TL.agentic_workflow("first unrelated task")
     second = TL.agentic_workflow("second unrelated task")
 
-    assert first["project_id"] == "research-workflow"
-    assert second["project_id"] == "research-workflow-2"
+    assert first["project_id"] == "research_workflow"
+    assert second["project_id"] == "research_workflow_two"
     assert (session_repo / "catalog" / first["project_id"]).exists()
     assert (session_repo / "catalog" / second["project_id"]).exists()

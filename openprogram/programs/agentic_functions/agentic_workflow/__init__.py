@@ -19,6 +19,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import threading
@@ -143,25 +144,31 @@ PROJECT_AUTHOR_INSTRUCTIONS = """Write one complete reusable workflow project.
 Reply with one JSON object and no prose:
 {
   "project_metadata": {
-    "name": "short stable name",
+    "name": "short_stable_python_name",
     "summary": "what class of tasks this project can perform",
     "tags": ["search terms"]
   },
   "readme": "Markdown describing applicability, outputs, and limits",
   "files": {
-    "steps/example.py": "def example(task):\\n    ...\\n",
-    "entry.py": "def workflow(task):\\n    ...\\n"
+    "__init__.py": "from .workflow import short_stable_python_name\\n",
+    "workflow.py": "from openprogram.agentic_programming import agentic_function\\n\\n@agentic_function\\ndef short_stable_python_name(task: str):\\n    ...\\n",
+    "steps/__init__.py": "",
+    "steps/example.py": "from openprogram.agentic_programming import agent\\n\\ndef example(task: str):\\n    ...\\n",
+    "tests/test_workflow.py": "from workflows.short_stable_python_name import short_stable_python_name\\n"
   }
 }
 
-Return the complete project, not a patch. Put reusable responsibilities in
-separate steps/*.py files and keep entry.py small. Every import and class is
-forbidden. All files share one restricted execution namespace and load in
-lexicographic order with entry.py last. Exactly one workflow(task) must exist,
-in entry.py. The task argument is the runtime request; pass it into helpers
-instead of embedding the current request in source code. The workflow may call
-llm(), agent(), goal(), or any combination of them. Available managed functions
-are listed below.
+Return the complete project, not a patch. The project name must be a valid
+lowercase Python identifier and is also the public function name. Export that
+function from __init__.py. Define it in workflow.py with the existing
+@agentic_function decorator and exactly one task parameter. Put reusable
+responsibilities in separate steps/, goals/, or helpers/ modules and include
+tests/test_workflow.py. Use ordinary relative imports inside the package.
+Import llm, agent, goal, and control-flow helpers from
+openprogram.agentic_programming. Import existing OpenProgram agentic functions
+from their normal openprogram.programs.agentic_functions module. Do not embed
+the current task in source code; pass task into helpers. Do not use dynamic
+imports, classes, import hooks, a workflow decorator, or a workflow dispatcher.
 
 {delivery}
 
@@ -256,6 +263,12 @@ def _agent_function(session_id: str, spawn_caller: Optional[str]) -> Callable:
     return agent
 
 
+def _agent_loop_function() -> Callable:
+    from openprogram.agentic_programming import agent
+
+    return agent
+
+
 def _llm_function() -> Callable:
     from openprogram.agentic_programming import llm
 
@@ -312,8 +325,13 @@ def _registered_agentic_functions() -> dict[str, Callable]:
 
 def _function_catalog(functions: dict[str, Callable]) -> str:
     rows = []
-    for name in sorted(functions.keys()):
-        rows.append(f"- {name}(...)")
+    for name, function in sorted(functions.items()):
+        inner = getattr(function, "_fn", function)
+        module = str(getattr(inner, "__module__", "") or "")
+        if module.startswith("openprogram.programs.agentic_functions."):
+            rows.append(f"- from {module} import {name}")
+        else:
+            rows.append(f"- {name}(...)")
     return "\n".join(rows) or "(none)"
 
 
@@ -374,7 +392,7 @@ def _workflow_projects_root() -> Path:
 
 def _safe_project_id(value: object) -> str:
     project_id = str(value or "")
-    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", project_id):
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,79}", project_id):
         raise InvalidWorkflow("invalid workflow project id")
     return project_id
 
@@ -403,7 +421,7 @@ def _git(project_dir: Path, *args: str) -> str:
 
 
 def _project_pyproject(project_id: str, metadata: dict) -> str:
-    return (
+    text = (
         "[project]\n"
         f"name = {json.dumps(project_id)}\n"
         'version = "0.1.0"\n'
@@ -412,6 +430,14 @@ def _project_pyproject(project_id: str, metadata: dict) -> str:
         "[tool.openprogram]\n"
         f"display-name = {json.dumps(metadata['name'], ensure_ascii=False)}\n"
     )
+    entrypoint = str(metadata.get("entrypoint") or "")
+    if entrypoint:
+        text += (
+            '\n[project.entry-points."openprogram.workflows"]\n'
+            f"{entrypoint} = "
+            f"{json.dumps(f'workflows.{entrypoint}:{entrypoint}')}\n"
+        )
+    return text
 
 
 def _read_repository_metadata(
@@ -428,11 +454,23 @@ def _read_repository_metadata(
     project_id = _safe_project_id(project.get("name"))
     if project_id != (expected_project_id or project_dir.name):
         raise InvalidWorkflow("workflow project name does not match its directory")
-    return _validate_project_metadata({
+    metadata = _validate_project_metadata({
         "name": tool.get("display-name") or project_id,
         "summary": project.get("description"),
         "tags": project.get("keywords"),
     })
+    entrypoint_groups = project.get("entry-points", {})
+    if not isinstance(entrypoint_groups, dict):
+        raise InvalidWorkflow("workflow project entry points must be a table")
+    entrypoints = entrypoint_groups.get("openprogram.workflows", {})
+    if entrypoints:
+        if not isinstance(entrypoints, dict) or len(entrypoints) != 1:
+            raise InvalidWorkflow("workflow project must expose one entry point")
+        entrypoint, target = next(iter(entrypoints.items()))
+        if entrypoint != project_id or target != f"workflows.{entrypoint}:{entrypoint}":
+            raise InvalidWorkflow("workflow project entry point does not match its package")
+        metadata["entrypoint"] = entrypoint
+    return metadata
 
 
 def _read_project_index(project_dir: Path) -> dict:
@@ -471,7 +509,9 @@ def _search_projects(task: str) -> list[dict]:
     return [row for _, row in matches[:PROJECT_CANDIDATE_LIMIT]]
 
 
-def _validate_project_metadata(value: object) -> dict:
+def _validate_project_metadata(
+    value: object, *, require_package_name: bool = False,
+) -> dict:
     if not isinstance(value, dict):
         raise InvalidWorkflow("project_metadata must be an object")
     name = str(value.get("name") or "").strip()
@@ -479,6 +519,10 @@ def _validate_project_metadata(value: object) -> dict:
     tags = value.get("tags")
     if not name or len(name) > 120:
         raise InvalidWorkflow("project name must contain 1 to 120 characters")
+    if require_package_name and not re.fullmatch(r"[a-z][a-z0-9_]{0,79}", name):
+        raise InvalidWorkflow(
+            "project name must be a lowercase Python identifier"
+        )
     if not summary or len(summary) > 500:
         raise InvalidWorkflow("project summary must contain 1 to 500 characters")
     if not isinstance(tags, list) or len(tags) > 20:
@@ -489,10 +533,13 @@ def _validate_project_metadata(value: object) -> dict:
         if not text or len(text) > 60:
             raise InvalidWorkflow("each project tag must contain 1 to 60 characters")
         clean_tags.append(text)
-    return {"name": name, "summary": summary, "tags": clean_tags}
+    metadata = {"name": name, "summary": summary, "tags": clean_tags}
+    if require_package_name:
+        metadata["entrypoint"] = name
+    return metadata
 
 
-def _validate_project_path(value: object) -> str:
+def _validate_legacy_project_path(value: object) -> str:
     raw = str(value or "")
     path = Path(raw)
     if (
@@ -509,7 +556,7 @@ def _validate_project_path(value: object) -> str:
     return normalized
 
 
-def _validate_project_candidate(
+def _validate_legacy_project_candidate(
     value: object, *, allow_legacy_entry: bool = False,
 ) -> dict:
     if not isinstance(value, dict):
@@ -525,7 +572,7 @@ def _validate_project_candidate(
     workflow_count = 0
     function_names: set[str] = set()
     for raw_path, raw_source in files.items():
-        path = _validate_project_path(raw_path)
+        path = _validate_legacy_project_path(raw_path)
         if path in clean_files:
             raise InvalidWorkflow(f"duplicate workflow project path: {path}")
         if not isinstance(raw_source, str):
@@ -598,6 +645,180 @@ def _validate_project_candidate(
     }
 
 
+def _validate_package_path(value: object) -> str:
+    raw = str(value or "")
+    path = Path(raw)
+    if (
+        not raw or path.is_absolute() or ".." in path.parts
+        or any(part in {"", "."} for part in path.parts)
+        or path.suffix != ".py"
+    ):
+        raise InvalidWorkflow(f"invalid workflow project path: {raw!r}")
+    normalized = path.as_posix()
+    if normalized in {"__init__.py", "workflow.py", "tests/test_workflow.py"}:
+        return normalized
+    if len(path.parts) >= 2 and path.parts[0] in {"steps", "goals", "helpers"}:
+        return normalized
+    raise InvalidWorkflow(
+        "workflow project Python files must be package modules, helpers, or tests"
+    )
+
+
+def _allowed_package_import(
+    node: ast.ImportFrom, *, path: str, entrypoint: str,
+) -> bool:
+    if node.level:
+        package_depth = len(Path(path).parts) - 1
+        return node.level <= package_depth + 1
+    module = node.module or ""
+    return (
+        module == "openprogram.agentic_programming"
+        or module.startswith("openprogram.agentic_programming.")
+        or module.startswith("openprogram.programs.agentic_functions.")
+        or (
+            path.startswith("tests/")
+            and module == f"workflows.{entrypoint}"
+        )
+    )
+
+
+def _decorator_name(node: ast.expr) -> str:
+    if isinstance(node, ast.Call):
+        node = node.func
+    return node.id if isinstance(node, ast.Name) else ""
+
+
+def _validate_project_candidate(
+    value: object, *, allow_legacy_entry: bool = False,
+) -> dict:
+    if not isinstance(value, dict):
+        raise InvalidWorkflow("workflow project reply must be an object")
+    files = value.get("files")
+    if allow_legacy_entry and isinstance(files, dict) and "entry.py" in files:
+        return _validate_legacy_project_candidate(
+            value, allow_legacy_entry=True,
+        )
+    metadata = _validate_project_metadata(
+        value.get("project_metadata"), require_package_name=True,
+    )
+    readme = value.get("readme")
+    if not isinstance(readme, str) or not readme.strip():
+        raise InvalidWorkflow("workflow project readme must be non-empty Markdown")
+    if not isinstance(files, dict) or not files:
+        raise InvalidWorkflow("workflow project files must be a non-empty object")
+
+    clean_files: dict[str, str] = {}
+    trees: dict[str, ast.Module] = {}
+    for raw_path, raw_source in files.items():
+        path = _validate_package_path(raw_path)
+        if path in clean_files:
+            raise InvalidWorkflow(f"duplicate workflow project path: {path}")
+        if not isinstance(raw_source, str):
+            raise InvalidWorkflow(f"workflow project source must be text: {path}")
+        try:
+            tree = ast.parse(raw_source, filename=path)
+        except SyntaxError as exc:
+            detail = "".join(traceback.format_exception_only(type(exc), exc)).strip()
+            raise InvalidWorkflow(detail) from exc
+        for node in tree.body:
+            if (
+                isinstance(node, ast.Expr)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                continue
+            if isinstance(node, ast.Import):
+                raise InvalidWorkflow("workflow packages may not use import statements")
+            if isinstance(node, ast.ImportFrom):
+                if not _allowed_package_import(
+                    node, path=path, entrypoint=metadata["entrypoint"],
+                ):
+                    raise InvalidWorkflow(
+                        f"workflow package import is not allowed: {path}"
+                    )
+                continue
+            if isinstance(node, ast.Assign) and all(
+                isinstance(target, ast.Name) and target.id == "__all__"
+                for target in node.targets
+            ):
+                continue
+            if not isinstance(node, ast.FunctionDef):
+                raise InvalidWorkflow(
+                    f"workflow package top level may contain only imports and functions: {path}"
+                )
+            if node.name in PROJECT_RUNTIME_NAMES:
+                raise InvalidWorkflow(
+                    f"workflow project cannot redefine managed function: {node.name}"
+                )
+            decorators = [_decorator_name(item) for item in node.decorator_list]
+            if any(name not in {"agentic_function", "traced"} for name in decorators):
+                raise InvalidWorkflow(
+                    f"workflow function uses an unsupported decorator: {node.name}"
+                )
+            if any(
+                isinstance(item, ast.Call)
+                and any(keyword.arg == "name" for keyword in item.keywords)
+                for item in node.decorator_list
+            ):
+                raise InvalidWorkflow(
+                    "workflow package decorators may not override function names"
+                )
+        clean_files[path] = raw_source.rstrip() + "\n"
+        trees[path] = tree
+
+    required = {"__init__.py", "workflow.py", "tests/test_workflow.py"}
+    missing = sorted(required - clean_files.keys())
+    if missing:
+        raise InvalidWorkflow(
+            "workflow package is missing required files: " + ", ".join(missing)
+        )
+    helpers = [
+        path for path in clean_files
+        if path.startswith(("steps/", "goals/", "helpers/"))
+        and not path.endswith("/__init__.py")
+    ]
+    if not helpers:
+        raise InvalidWorkflow(
+            "workflow package must contain at least one helper module"
+        )
+
+    entrypoint = metadata["entrypoint"]
+    entries = [
+        node for node in trees["workflow.py"].body
+        if isinstance(node, ast.FunctionDef) and node.name == entrypoint
+    ]
+    if len(entries) != 1 or "agentic_function" not in {
+        _decorator_name(item) for item in entries[0].decorator_list
+    }:
+        raise InvalidWorkflow(
+            f"workflow.py must define one @agentic_function {entrypoint}()"
+        )
+    args = entries[0].args
+    if (
+        args.posonlyargs or len(args.args) != 1 or args.args[0].arg != "task"
+        or args.kwonlyargs or args.vararg or args.kwarg
+    ):
+        raise InvalidWorkflow(
+            f"{entrypoint}() must accept exactly one positional task argument"
+        )
+    exports_entry = any(
+        isinstance(node, ast.ImportFrom)
+        and node.level == 1
+        and node.module == "workflow"
+        and any(alias.name == entrypoint for alias in node.names)
+        for node in trees["__init__.py"].body
+    )
+    if not exports_entry:
+        raise InvalidWorkflow(
+            f"__init__.py must export {entrypoint} from .workflow"
+        )
+    return {
+        "project_metadata": metadata,
+        "readme": readme.rstrip() + "\n",
+        "files": clean_files,
+    }
+
+
 def _project_manifest(candidate: dict) -> dict:
     helpers = sorted(path for path in candidate["files"] if path != "entry.py")
     return {
@@ -610,6 +831,12 @@ def _project_manifest(candidate: dict) -> dict:
 
 def _write_candidate_directory(target: Path, candidate: dict) -> None:
     target.mkdir(parents=True, exist_ok=False)
+    entrypoint = str(candidate["project_metadata"].get("entrypoint") or "")
+    if entrypoint:
+        package = target / "workflows" / entrypoint
+        package.mkdir(parents=True)
+        _write_repository_candidate(package, entrypoint, candidate)
+        return
     atomic_write_text(target / "README.md", candidate["readme"])
     atomic_write_text(
         target / "workflow.json",
@@ -624,6 +851,12 @@ def _write_candidate_directory(target: Path, candidate: dict) -> None:
 def _read_candidate_directory(directory: Path, metadata: dict) -> dict:
     if directory.is_symlink():
         raise InvalidWorkflow("workflow project directory must not be a symlink")
+    entrypoint = str(metadata.get("entrypoint") or "")
+    if entrypoint:
+        return _read_repository_candidate(
+            directory / "workflows" / entrypoint,
+            expected_project_id=entrypoint,
+        )
     manifest_path = directory / "workflow.json"
     readme_path = directory / "README.md"
     if manifest_path.is_symlink() or readme_path.is_symlink():
@@ -642,7 +875,7 @@ def _read_candidate_directory(directory: Path, metadata: dict) -> dict:
             raise InvalidWorkflow("workflow project contains an unlisted file")
     files = {}
     for raw_path in paths:
-        relative = _validate_project_path(raw_path)
+        relative = _validate_legacy_project_path(raw_path)
         path = directory / relative
         if path.is_symlink():
             raise InvalidWorkflow("workflow project files must not be symlinks")
@@ -791,6 +1024,7 @@ def _request_project_candidate(
     base: Optional[dict] = None,
     error: str = "",
     state: Optional[dict] = None,
+    require_new_name: bool = False,
 ) -> dict:
     prompt = _author_prompt(task, functions, base=base, error=error, state=state)
     while True:
@@ -799,7 +1033,25 @@ def _request_project_candidate(
             spawn_caller=spawn_caller, label="workflow project author",
         )
         try:
-            return _validate_project_candidate(_parse_json_reply(reply))
+            candidate = _validate_project_candidate(_parse_json_reply(reply))
+            entrypoint = str(
+                candidate["project_metadata"].get("entrypoint") or ""
+            )
+            base_entrypoint = str(
+                (base or {}).get("project_metadata", {}).get("entrypoint") or ""
+            )
+            if base_entrypoint and entrypoint != base_entrypoint:
+                raise InvalidWorkflow(
+                    "revised workflow package must keep its public name"
+                )
+            if (
+                require_new_name and entrypoint
+                and (_workflow_projects_root() / entrypoint).exists()
+            ):
+                raise InvalidWorkflow(
+                    f"workflow project already exists: {entrypoint}"
+                )
+            return candidate
         except Exception as exc:
             prompt = _author_prompt(
                 task, functions, base=base,
@@ -850,7 +1102,10 @@ def _read_repository_candidate(
         relative = path.relative_to(directory).as_posix()
         if relative in {"README.md", "pyproject.toml"}:
             continue
-        source_path = _validate_project_path(relative)
+        if metadata.get("entrypoint"):
+            source_path = _validate_package_path(relative)
+        else:
+            source_path = _validate_legacy_project_path(relative)
         files[source_path] = path.read_text(encoding="utf-8")
     return _validate_project_candidate(
         {
@@ -918,13 +1173,14 @@ def _publish_snapshot(
 
     with _private_file_lock(root / ".git-publish", root=root, timeout=30):
         if action == "create":
-            base_id = _slugify_project_name(metadata["name"])
-            allocated = base_id
-            suffix = 2
-            while (root / allocated).exists():
-                allocated = f"{base_id[:72]}-{suffix}"
-                suffix += 1
-            project_id = allocated
+            project_id = str(metadata.get("entrypoint") or "")
+            if not project_id:
+                project_id = _slugify_project_name(metadata["name"])
+            project_id = _safe_project_id(project_id)
+            if (root / project_id).exists():
+                raise InvalidWorkflow(
+                    f"workflow project already exists: {project_id}"
+                )
         else:
             project_id = _safe_project_id(project_id)
         project_dir = root / project_id
@@ -1362,9 +1618,9 @@ def _execute_source(source: str, state: dict, state_path: Path, *,
     return namespace["workflow"]()
 
 
-def _execute_snapshot(snapshot: Path, state: dict, state_path: Path, *,
-                      session_id: str, spawn_caller: Optional[str],
-                      functions: dict[str, Callable]) -> object:
+def _execute_legacy_snapshot(snapshot: Path, state: dict, state_path: Path, *,
+                             session_id: str, spawn_caller: Optional[str],
+                             functions: dict[str, Callable]) -> object:
     candidate = _read_candidate_directory(
         snapshot, state["project_metadata"],
     )
@@ -1400,6 +1656,176 @@ def _execute_snapshot(snapshot: Path, state: dict, state_path: Path, *,
     if not inspect.signature(workflow).parameters:
         return workflow()
     return workflow(state["task"])
+
+
+def _decorated_function_names(candidate: dict) -> set[str]:
+    names = set()
+    for source in candidate["files"].values():
+        for node in ast.parse(source).body:
+            if isinstance(node, ast.FunctionDef) and any(
+                _decorator_name(item) == "agentic_function"
+                for item in node.decorator_list
+            ):
+                names.add(node.name)
+    return names
+
+
+def _execute_package_snapshot(
+    snapshot: Path,
+    candidate: dict,
+    state: dict,
+    state_path: Path,
+    *,
+    functions: dict[str, Callable],
+) -> object:
+    entrypoint = candidate["project_metadata"]["entrypoint"]
+    module_prefix = f"workflows.{entrypoint}"
+    checkpoints = _Checkpoints(state, state_path)
+    checkpoints.begin_pass()
+    managed = {
+        "llm": _llm_function(),
+        "agent": _agent_loop_function(),
+        "goal": _goal_function(),
+        "validate_and_retry": _validate_and_retry_function(),
+        "route": _route_function(),
+        "conditional": _conditional_function(),
+        **functions,
+    }
+    wrapped = {
+        name: checkpoints.wrap(name, function)
+        for name, function in managed.items()
+    }
+    replacements = {id(managed[name]): function for name, function in wrapped.items()}
+    from openprogram.agentic_programming.agent import agent as package_agent
+    from openprogram.agentic_programming.control_flow import (
+        conditional as package_conditional,
+        route as package_route,
+        validate_and_retry as package_validate_and_retry,
+    )
+    from openprogram.agentic_programming.goal import goal as package_goal
+    from openprogram.agentic_programming.llm import llm as package_llm
+
+    replacements.update({
+        id(package_llm): wrapped["llm"],
+        id(package_agent): wrapped["agent"],
+        id(package_goal): wrapped["goal"],
+        id(package_validate_and_retry): wrapped["validate_and_retry"],
+        id(package_route): wrapped["route"],
+        id(package_conditional): wrapped["conditional"],
+    })
+
+    from openprogram.agentic_programming import function as function_runtime
+    from openprogram.programs import _runtime as tool_runtime
+
+    decorated = _decorated_function_names(candidate)
+    missing = object()
+    prior_agentic = {
+        name: function_runtime._registry.get(name, missing)  # noqa: SLF001
+        for name in decorated
+    }
+    prior_tools = {
+        name: tool_runtime._registry.get(name, missing)  # noqa: SLF001
+        for name in decorated
+    }
+    prior_toolsets = {
+        name: (
+            set(tool_runtime._toolset_membership[name])  # noqa: SLF001
+            if name in tool_runtime._toolset_membership else missing  # noqa: SLF001
+        )
+        for name in decorated
+    }
+    prior_unsafe = {
+        name: (
+            set(tool_runtime._unsafe_in_channel[name])  # noqa: SLF001
+            if name in tool_runtime._unsafe_in_channel else missing  # noqa: SLF001
+        )
+        for name in decorated
+    }
+    prior_unexposed = {
+        name: name in tool_runtime._unexposed  # noqa: SLF001
+        for name in decorated
+    }
+    prior_modules = {
+        name: module for name, module in sys.modules.items()
+        if name == module_prefix or name.startswith(module_prefix + ".")
+    }
+    had_workflows = "workflows" in sys.modules
+    for name in prior_modules:
+        sys.modules.pop(name, None)
+    sys.path.insert(0, str(snapshot))
+    previous_dont_write_bytecode = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    importlib.invalidate_caches()
+    try:
+        package = importlib.import_module(module_prefix)
+        loaded = [
+            module for name, module in sys.modules.items()
+            if name == module_prefix or name.startswith(module_prefix + ".")
+        ]
+        for module in loaded:
+            for name, value in list(vars(module).items()):
+                replacement = replacements.get(id(value))
+                if replacement is not None:
+                    setattr(module, name, replacement)
+            for name, function in wrapped.items():
+                vars(module).setdefault(name, function)
+        workflow = getattr(package, entrypoint, None)
+        if getattr(workflow, "_fn", None) is None:
+            raise InvalidWorkflow(
+                f"workflow package must export @agentic_function {entrypoint}"
+            )
+        return workflow(state["task"])
+    finally:
+        sys.dont_write_bytecode = previous_dont_write_bytecode
+        sys.path.remove(str(snapshot))
+        for name in list(sys.modules):
+            if name == module_prefix or name.startswith(module_prefix + "."):
+                sys.modules.pop(name, None)
+        sys.modules.update(prior_modules)
+        if not had_workflows:
+            sys.modules.pop("workflows", None)
+        for name, value in prior_agentic.items():
+            if value is missing:
+                function_runtime._registry.pop(name, None)  # noqa: SLF001
+            else:
+                function_runtime._registry[name] = value  # noqa: SLF001
+        for name, value in prior_tools.items():
+            if value is missing:
+                tool_runtime._registry.pop(name, None)  # noqa: SLF001
+            else:
+                tool_runtime._registry[name] = value  # noqa: SLF001
+        for name, value in prior_toolsets.items():
+            if value is missing:
+                tool_runtime._toolset_membership.pop(name, None)  # noqa: SLF001
+            else:
+                tool_runtime._toolset_membership[name] = value  # noqa: SLF001
+        for name, value in prior_unsafe.items():
+            if value is missing:
+                tool_runtime._unsafe_in_channel.pop(name, None)  # noqa: SLF001
+            else:
+                tool_runtime._unsafe_in_channel[name] = value  # noqa: SLF001
+        for name, was_unexposed in prior_unexposed.items():
+            if was_unexposed:
+                tool_runtime._unexposed.add(name)  # noqa: SLF001
+            else:
+                tool_runtime._unexposed.discard(name)  # noqa: SLF001
+        importlib.invalidate_caches()
+
+
+def _execute_snapshot(snapshot: Path, state: dict, state_path: Path, *,
+                      session_id: str, spawn_caller: Optional[str],
+                      functions: dict[str, Callable]) -> object:
+    candidate = _read_candidate_directory(
+        snapshot, state["project_metadata"],
+    )
+    if candidate["project_metadata"].get("entrypoint"):
+        return _execute_package_snapshot(
+            snapshot, candidate, state, state_path, functions=functions,
+        )
+    return _execute_legacy_snapshot(
+        snapshot, state, state_path, session_id=session_id,
+        spawn_caller=spawn_caller, functions=functions,
+    )
 
 
 def _rewrite_prompt(task: str, source: str, state: dict, error: str,
@@ -1651,6 +2077,7 @@ def _prepare_project_run(
         candidate = _request_project_candidate(
             state["task"], functions, session_id=session_id,
             agent_id=agent_id, spawn_caller=spawn_caller, base=base,
+            require_new_name=action == "create",
         )
         _replace_snapshot(instance, candidate)
         state.update(
