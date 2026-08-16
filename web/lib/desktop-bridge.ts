@@ -222,6 +222,7 @@ export interface DesktopTabTransferApi {
     role: "source" | "destination";
     windowId: string;
     orphaned: boolean;
+    discardWindowState?: boolean;
   }>>;
   onRemoveSource(cb: (detail: DesktopTransferReceipt) => void): () => void;
   onUndoDestination(cb: (detail: DesktopTransferReceipt) => void): () => void;
@@ -234,6 +235,7 @@ export interface DesktopTabTransferApi {
     role: "source" | "destination";
     windowId: string;
     orphaned: boolean;
+    discardWindowState?: boolean;
   }) => void): () => void;
 }
 
@@ -1539,6 +1541,7 @@ export async function handleFinalizeOrphaned(
     role: "source" | "destination";
     windowId: string;
     orphaned: boolean;
+    discardWindowState?: boolean;
   },
 ): Promise<void> {
   if (!detail.orphaned) return;
@@ -1546,6 +1549,7 @@ export async function handleFinalizeOrphaned(
     detail.token,
     detail.status,
     detail.windowId,
+    detail.discardWindowState,
   )) return;
   await bridge.tabTransfer.journalFinalized(
     detail.token,
@@ -1606,7 +1610,21 @@ export function finalizeOrphanTransferJournal(
   token: string,
   status: "committed" | "rolled-back",
   ownerWindowId: string,
+  discardWindowState = false,
 ): boolean {
+  if (status === "rolled-back" && discardWindowState) {
+    const keys = [
+      `centerTabs:${ownerWindowId}`,
+      sessionDraftStorageKey(ownerWindowId),
+      transferJournalStorageKey(ownerWindowId),
+    ];
+    try {
+      for (const key of keys) localStorage.removeItem(key);
+      return keys.every((key) => localStorage.getItem(key) === null);
+    } catch {
+      return false;
+    }
+  }
   const entry = readTransferJournal(ownerWindowId).entries[token];
   if (!entry) return true; // journal already cleaned — ack is idempotent
   const target = status === "committed" ? "after" : "before";
@@ -1660,7 +1678,12 @@ export async function recoverPendingTabTransfers(
   try {
     for (const item of await transfer.pendingTerminal(bridge.windowId)) {
       if (item.orphaned) {
-        if (!finalizeOrphanTransferJournal(item.token, item.status, item.windowId)) {
+        if (!finalizeOrphanTransferJournal(
+          item.token,
+          item.status,
+          item.windowId,
+          item.discardWindowState,
+        )) {
           continue;
         }
       } else if (readTransferJournal().entries[item.token]) {

@@ -3011,6 +3011,37 @@ const t5SourceBase = {
   cleanup();
 }
 
+// A detached destination whose first cleanup failed must be discarded by the
+// surviving renderer before it acknowledges the orphaned journal role.
+{
+  const ownerWindowId = "window-detached-cleanup";
+  const token = "detached-cleanup-retry";
+  assert.equal(writeTransferJournal({
+    ...journalEntry(token),
+    role: "destination",
+  }, ownerWindowId), true);
+  values.set(`centerTabs:${ownerWindowId}`, "stale-center");
+  values.set(`openprogram.sessionDraftState:${ownerWindowId}`, "stale-session");
+  assert.equal(
+    bridgeModule.finalizeOrphanTransferJournal(
+      token,
+      "rolled-back",
+      ownerWindowId,
+      true,
+    ),
+    true,
+  );
+  assert.equal(values.has(`centerTabs:${ownerWindowId}`), false);
+  assert.equal(
+    values.has(`openprogram.sessionDraftState:${ownerWindowId}`),
+    false,
+  );
+  assert.equal(
+    values.has(`openprogram.tabTransferJournal:${ownerWindowId}`),
+    false,
+  );
+}
+
 // Structure gates: dragstart stays synchronous and never awaits before
 // writing DataTransfer.
 const stripSource = readCenterTabStripSource(import.meta.url);

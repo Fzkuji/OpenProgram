@@ -12,10 +12,11 @@
   "scripts": {
     "postinstall": "electron-builder install-app-deps",
     "dev": "electron .",
-    "check": "npm run check:webtabs && npm run check:webtab-zoom-bounds && npm run check:tab-transfer-store && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime",
+    "check": "npm run check:webtabs && npm run check:webtab-zoom-bounds && npm run check:tab-transfer-store && npm run check:installed-transfer-client && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime",
     "check:webtabs": "node scripts/check-webtab-navigation.js",
     "check:webtab-zoom-bounds": "node scripts/check-webtab-zoom-bounds.js",
     "check:tab-transfer-store": "node scripts/check-tab-transfer-store.js",
+    "check:installed-transfer-client": "node scripts/check-installed-tab-transfer-client.js",
     "check:worker-auth": "node scripts/check-worker-start-url.js",
     "check:worker-recovery": "node scripts/check-worker-recovery.js",
     "check:packaged-runtime": "node scripts/check-packaged-runtime.js",

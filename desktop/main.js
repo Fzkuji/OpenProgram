@@ -875,6 +875,8 @@ function makeTransferCoordinator(options = {}) {
       sourceId: transaction.sourceId,
       destinationId: transaction.destinationId,
       sourceEmpty: !!transaction.sourceEmpty,
+      discardDestinationState:
+        transaction.detachedWindowId === transaction.destinationId,
       requiredRoles: [...transaction.journalRoles.values()],
       finalizedRoles,
       decidedAt: now(),
@@ -984,6 +986,11 @@ function makeTransferCoordinator(options = {}) {
           role: required.role,
           windowId: required.windowId,
           orphaned: true,
+          ...(decision.discardDestinationState
+            && required.role === "destination"
+            && required.windowId === decision.destinationId
+            ? { discardWindowState: true }
+            : {}),
         });
       }
     }
@@ -1622,6 +1629,11 @@ function makeTransferCoordinator(options = {}) {
           role: required.role,
           windowId: required.windowId,
           orphaned,
+          ...(decision.discardDestinationState
+            && required.role === "destination"
+            && required.windowId === decision.destinationId
+            ? { discardWindowState: true }
+            : {}),
         });
       }
     }

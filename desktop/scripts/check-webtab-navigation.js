@@ -3659,11 +3659,23 @@ async function checkPrecommitFailurePathsAndDynamicRoles() {
   );
   assert.equal(detachedUndo?.[1].discardWindowState, true);
   assert.equal(
-    hooks.tabTransfers.destinationUndone(detachedDestination, detachedToken, true),
+    loadTransferDecision(detachedToken).discardDestinationState,
     true,
   );
+  assert.equal(
+    hooks.tabTransfers.destinationUndone(detachedDestination, detachedToken, false),
+    false,
+  );
+  clock.advance(2_000);
   assert.equal(detachedDestination.win.closeCalls, 1);
   assert.equal(detachedDestination.win.destroyed, true);
+  const detachedOrphan = detachedSource.win.sent.find(
+    ([channel, detail]) =>
+      channel === "tab-transfer:finalize-orphaned"
+      && detail.token === detachedToken
+      && detail.role === "destination",
+  );
+  assert.equal(detachedOrphan?.[1].discardWindowState, true);
   assert.equal(
     hooks.tabTransfers.journalFinalized(
       detachedSource,
