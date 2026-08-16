@@ -13,7 +13,7 @@
   <header>
     <div class="k">OpenProgram · Web UI · current design</div>
     <h1>Settings 二级导航栏头</h1>
-    <p class="muted">目标：保留 Settings 二级栏头并与应用主侧栏按钮顶边一致；Provider 页面恢复位于列表和详情上方的完整大标题栏，第三级继续使用原有搜索工具栏。</p>
+    <p class="muted">目标：保留 Settings 二级栏头；栏头按钮顶边以及下方分类按钮的纵向网格都与应用主侧栏一致。Provider 页面继续使用位于列表和详情上方的完整大标题栏，第三级沿用原有搜索工具栏。</p>
   </header>
 
   <div class="status">
@@ -28,7 +28,7 @@
     <div class="grid">
       <div class="mock">
         <h3>一级与二级栏头</h3>
-        <p class="muted">应用主侧栏与 Settings 的 32px 按钮使用相同顶部偏移。</p>
+        <p class="muted">两栏的 32px 栏头按钮顶边一致，第一行及后续 32px 导航按钮也逐行对齐。</p>
         <div class="chrome">
           <div class="col"><div class="rail-head"><span class="label">OpenProgram</span><span class="toggle">‹</span></div><div class="row"><i class="ico"></i><span class="label">Programs</span></div></div>
           <div class="col"><div class="rail-head"><span class="label">Settings</span><span class="toggle">‹</span></div><div class="row"><i class="ico"></i><span class="label">LLM Providers</span></div><div class="row"><i class="ico"></i><span class="label">Memory</span></div></div>
@@ -68,6 +68,7 @@
       <b>键盘与读屏</b><span>按钮保留原生 <code>button</code>、<code>aria-expanded</code>、<code>aria-controls</code> 与明确名称。</span>
       <b>内容适配</b><span>窄窗口只触发表单控件换行；详情数据、选择和滚动状态不变。</span>
       <b>层级表达</b><span>Settings 名称属于二级导航栏头；Provider 第三级不增加独立名称栏头。</span>
+      <b>纵向网格</b><span>Settings 分类列表整体下移 15px，使 Browser、LLM Providers 等行与主侧栏 New chat、Programs 等行逐行对齐；行高和 1px 行距不变。</span>
     </div>
   </section>
 
@@ -96,6 +97,7 @@
     <div class="card"><ul>
       <li>Settings 页面不再渲染独立的全局 Settings 顶栏。</li>
       <li>Settings 分类栏展开时显示 <code>Settings</code>，按钮与名称同一行；按钮顶边与主侧栏按钮一致。</li>
+      <li>Settings 分类列表的前四行与主侧栏前四行具有相同的 <code>y</code> 坐标、32px 行高和 1px 行距。</li>
       <li>LLM Providers 列表栏不显示新增名称栏头，折叠按钮恢复到搜索框旁；原有状态和 49px 收起行为不变。</li>
       <li>LLM Providers 在列表和详情上方显示页面大标题与介绍，路由 loading 状态保持同一结构。</li>
       <li>Memory 内容区继续不显示重复标题和介绍。</li>
@@ -106,13 +108,8 @@
   <section>
     <h2>实现状态</h2>
     <div class="card">
-      <p><strong>状态：已实现并复核。</strong></p>
-      <ul>
-        <li>生产页面已恢复 LLM Providers 大标题和完整介绍，位置覆盖 Provider 列表与详情区域上方。</li>
-        <li>Provider 第三级继续使用搜索框旁的原折叠按钮；Settings 分类栏继续使用 32px 栏头按钮，Memory 内容区保持无重复页头。</li>
-        <li>默认 OpenProgram App 可视验收确认标题位于搜索工具栏上方，Provider 与 Settings 折叠行为保持不变。</li>
-        <li>Settings 定点检查、Memory 设置检查、TypeScript、production build 和 diff check 均通过；规格与质量复核均为 PASS。</li>
-      </ul>
+      <p class="pending">状态：分类按钮纵向对齐待实现与复核。</p>
+      <p class="muted">既有 Providers 页头、三级工具栏、折叠状态和 Memory 页头契约保持已实现；本轮只调整 Settings 分类列表的垂直起点。</p>
     </div>
   </section>
 </main></body>
