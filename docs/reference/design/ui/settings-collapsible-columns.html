@@ -126,7 +126,13 @@
         <li>默认 OpenProgram App 可视验收确认 General 激活态、图标标签绑定和既有纵向对齐均正确。</li>
         <li>实现提交通过 Settings 定点检查、Memory 设置检查、TypeScript、production build、规格复核和质量复核。</li>
       </ul>
-      <p><strong>Provider 窄宽度适配：待实现与复核。</strong></p>
+      <p><strong>Provider 窄宽度适配：已实现并复核。</strong></p>
+      <ul>
+        <li>展开的 Provider 列表在窄内容区连续占 42%，宽内容区封顶 287px；收起态仍为 49px，未增加自动折叠状态。</li>
+        <li>详情容器按 680/420/300px 三个边界重排页头、账号操作、密钥编辑、通用表单和模型信息；宽布局保持原固定列。</li>
+        <li>默认 OpenProgram App 在 750px 窗口、两级栏保持展开时实测列表约 121px、详情约 167px；Replace 编辑态的 103px 密钥区域无横向溢出，Base URL 与 Connectivity 正常断行。</li>
+        <li>Settings 与 Memory 定点检查、TypeScript、production build 和 diff check 均通过；规格与质量复核均为 PASS。</li>
+      </ul>
     </div>
   </section>
 </main></body>
