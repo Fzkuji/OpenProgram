@@ -2617,6 +2617,7 @@ function menuOverlayUrl(theme, items, anchor, width, cascade = false) {
 }
 
 function closeMainMenu(ctx) {
+  cancelMainMenuClose(ctx);
   if (!ctx || !ctx.mainMenuView) return;
   const view = ctx.mainMenuView;
   ctx.mainMenuView = null;
@@ -2635,8 +2636,28 @@ function closeMainMenu(ctx) {
   }
 }
 
+function cancelMainMenuClose(ctx) {
+  if (!ctx || !ctx.mainMenuCloseTimer) return;
+  clearTimeout(ctx.mainMenuCloseTimer);
+  ctx.mainMenuCloseTimer = null;
+}
+
+function scheduleMainMenuClose(ctx, delay) {
+  if (!ctx || !ctx.mainMenuView) return;
+  cancelMainMenuClose(ctx);
+  const requestedDelay = Number(delay);
+  const closeDelay = Number.isFinite(requestedDelay)
+    ? Math.min(500, Math.max(0, requestedDelay))
+    : 120;
+  ctx.mainMenuCloseTimer = setTimeout(() => {
+    ctx.mainMenuCloseTimer = null;
+    closeMainMenu(ctx);
+  }, closeDelay);
+}
+
 function openMainMenu(ctx, opts, zoom = 1) {
   if (!ctx || ctx.win.isDestroyed()) return;
+  cancelMainMenuClose(ctx);
   const menuZoom = Number.isFinite(Number(zoom)) && Number(zoom) > 0
     ? Number(zoom)
     : 1;
@@ -2849,6 +2870,14 @@ function registerWebTabIpc() {
   ipcMain.on("main-menu:close", (event) => {
     const ctx = contextForMenuSender(event);
     if (ctx) closeMainMenu(ctx);
+  });
+  ipcMain.on("main-menu:schedule-close", (event, delay) => {
+    const ctx = contextForMenuSender(event);
+    if (ctx) scheduleMainMenuClose(ctx, delay);
+  });
+  ipcMain.on("main-menu:cancel-close", (event) => {
+    const ctx = contextForMenuSender(event);
+    if (ctx) cancelMainMenuClose(ctx);
   });
   ipcMain.on("main-menu:resize", (event, size) => {
     const ctx = contextForMenuSender(event);

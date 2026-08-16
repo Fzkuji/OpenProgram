@@ -68,6 +68,8 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
   mainMenu: {
     open: (opts) => ipcRenderer.send("main-menu:open", opts),
     close: () => ipcRenderer.send("main-menu:close"),
+    scheduleClose: (delay) => ipcRenderer.send("main-menu:schedule-close", delay),
+    cancelClose: () => ipcRenderer.send("main-menu:cancel-close"),
     choose: (id) => ipcRenderer.send("main-menu:choose", id),
     // Overlay document reports its measured panel size so the host view can
     // resize to fit (labels never wrap, rows never clip).

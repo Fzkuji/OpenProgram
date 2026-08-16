@@ -395,16 +395,18 @@ function BookmarkFolderButton({
   onNavigate,
   appearance = "folder",
   label,
+  hidden = false,
 }: {
   folder: BookmarkFolder;
   ownerId: string;
   onNavigate(url: string): void;
   appearance?: "folder" | "overflow";
   label?: string;
+  hidden?: boolean;
 }) {
   const mainMenu = desktopBridge()?.mainMenu;
   const buttonLabel = label || folder.title;
-  const buttonClass = appearance === "overflow" ? styles.bookmarkBarMore : styles.bookmarkBarItem;
+  const buttonClass = `${appearance === "overflow" ? styles.bookmarkBarMore : styles.bookmarkBarItem}${hidden ? ` ${styles.bookmarkBarOverflowed}` : ""}`;
   const buttonContent = appearance === "overflow" ? (
     <ChevronRight size={14} />
   ) : (
@@ -442,9 +444,15 @@ function BookmarkFolderButton({
         type="button"
         className={buttonClass}
         onClick={(event) => openFolderMenu(event.currentTarget)}
-        onMouseEnter={(event) => openFolderMenu(event.currentTarget)}
+        onMouseEnter={(event) => {
+          mainMenu.cancelClose?.();
+          openFolderMenu(event.currentTarget);
+        }}
+        onMouseLeave={() => mainMenu.scheduleClose?.(120)}
         title={buttonLabel}
         aria-label={buttonLabel}
+        aria-hidden={hidden || undefined}
+        tabIndex={hidden ? -1 : undefined}
       >
         {buttonContent}
       </button>
@@ -454,7 +462,14 @@ function BookmarkFolderButton({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className={buttonClass} title={buttonLabel} aria-label={buttonLabel}>
+        <button
+          type="button"
+          className={buttonClass}
+          title={buttonLabel}
+          aria-label={buttonLabel}
+          aria-hidden={hidden || undefined}
+          tabIndex={hidden ? -1 : undefined}
+        >
           {buttonContent}
         </button>
       </DropdownMenuTrigger>
@@ -468,9 +483,24 @@ function BookmarkFolderButton({
   );
 }
 
-function BookmarkLeafButton({ node, onNavigate }: { node: Extract<BookmarkNode, { kind: "bookmark" }>; onNavigate(url: string): void }) {
+function BookmarkLeafButton({
+  node,
+  onNavigate,
+  hidden = false,
+}: {
+  node: Extract<BookmarkNode, { kind: "bookmark" }>;
+  onNavigate(url: string): void;
+  hidden?: boolean;
+}) {
   return (
-    <button type="button" className={styles.bookmarkBarItem} onClick={() => onNavigate(node.url)} title={node.url}>
+    <button
+      type="button"
+      className={`${styles.bookmarkBarItem}${hidden ? ` ${styles.bookmarkBarOverflowed}` : ""}`}
+      onClick={() => onNavigate(node.url)}
+      title={node.url}
+      aria-hidden={hidden || undefined}
+      tabIndex={hidden ? -1 : undefined}
+    >
       <BookmarkFavicon node={node} />
       <span>{node.title || node.url}</span>
     </button>
@@ -496,12 +526,20 @@ export function BookmarkBar({ ownerId, onNavigate }: { ownerId: string; onNaviga
     const container = itemsRef.current;
     if (!container) return;
     const updateOverflow = () => {
-      const right = container.getBoundingClientRect().right;
       const children = Array.from(container.children) as HTMLElement[];
-      const firstHidden = children.findIndex(
-        (child) => child.getBoundingClientRect().right > right + 0.5,
-      );
-      setOverflowStart(firstHidden < 0 ? items.length : firstHidden);
+      const gap = Number.parseFloat(getComputedStyle(container).columnGap) || 0;
+      let used = 0;
+      let firstHidden = items.length;
+      for (let index = 0; index < children.length; index += 1) {
+        const width = children[index].offsetWidth;
+        const required = width + (index === 0 ? 0 : gap);
+        if (used + required > container.clientWidth + 0.5) {
+          firstHidden = index;
+          break;
+        }
+        used += required;
+      }
+      setOverflowStart(firstHidden);
     };
     updateOverflow();
     const observer = new ResizeObserver(updateOverflow);
@@ -513,10 +551,21 @@ export function BookmarkBar({ ownerId, onNavigate }: { ownerId: string; onNaviga
   return (
     <div className={styles.bookmarkBar} aria-label={text("Bookmarks bar", "书签栏")}>
       <div ref={itemsRef} className={styles.bookmarkBarItems}>
-        {items.map((node) => node.kind === "folder" ? (
-          <BookmarkFolderButton key={node.id} folder={node} ownerId={ownerId} onNavigate={onNavigate} />
+        {items.map((node, index) => node.kind === "folder" ? (
+          <BookmarkFolderButton
+            key={node.id}
+            folder={node}
+            ownerId={ownerId}
+            onNavigate={onNavigate}
+            hidden={index >= overflowStart}
+          />
         ) : (
-          <BookmarkLeafButton key={node.id} node={node} onNavigate={onNavigate} />
+          <BookmarkLeafButton
+            key={node.id}
+            node={node}
+            onNavigate={onNavigate}
+            hidden={index >= overflowStart}
+          />
         ))}
       </div>
       {trailingFolders.map((folder) => (

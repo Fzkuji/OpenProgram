@@ -18,6 +18,9 @@ const managerPath = new URL("../components/center-tabs/builtin-tab-pane.tsx", im
 const mainMenuPath = new URL("../components/center-tabs/main-menu.tsx", import.meta.url);
 const browserControlsPath = new URL("../components/center-tabs/browser-controls.tsx", import.meta.url);
 const contextMenuOverlayPath = new URL("../app/menu-overlay/context-menu/page.tsx", import.meta.url);
+const desktopBridgePath = new URL("../lib/desktop-bridge.ts", import.meta.url);
+const desktopMainPath = new URL("../../desktop/main.js", import.meta.url);
+const desktopPreloadPath = new URL("../../desktop/preload.js", import.meta.url);
 // The strip is split across center-tab-strip.tsx and its submodules;
 // readCenterTabStripSource concatenates them in source order.
 const appShellPath = new URL("../components/app-shell.tsx", import.meta.url);
@@ -61,6 +64,9 @@ const centerTabsCss = readFileSync(
 const mainMenu = readFileSync(mainMenuPath, "utf8");
 const browserControls = readFileSync(browserControlsPath, "utf8");
 const contextMenuOverlay = readFileSync(contextMenuOverlayPath, "utf8");
+const desktopBridge = readFileSync(desktopBridgePath, "utf8");
+const desktopMain = readFileSync(desktopMainPath, "utf8");
+const desktopPreload = readFileSync(desktopPreloadPath, "utf8");
 const strip = readCenterTabStripSource(import.meta.url);
 const appShell = readFileSync(appShellPath, "utf8");
 const tabsStore = readFileSync(tabsStorePath, "utf8");
@@ -109,6 +115,34 @@ assert.match(contextMenuOverlay, /data-\[highlighted\]:bg-bg-hover/,
   "desktop nested bookmark rows need a visible keyboard highlight");
 assert.match(browserControls, /data-\[highlighted\]:bg-bg-hover/,
   "web nested bookmark rows need a visible keyboard highlight");
+assert.match(browserControls, /onMouseLeave=\{\(\) => mainMenu\.scheduleClose\?\.\(120\)\}/,
+  "desktop bookmark folder triggers must schedule close after pointer leave");
+assert.match(browserControls, /mainMenu\.cancelClose\?\.\(\);[\s\S]*?openFolderMenu\(event\.currentTarget\)/,
+  "desktop bookmark folder triggers must cancel a pending close before opening");
+assert.match(browserControls, /hidden=\{index >= overflowStart\}/,
+  "bookmark-bar items moved into the overflow menu must not remain partially visible");
+assert.match(browserControls, /children\[index\]\.offsetWidth/,
+  "bookmark-bar overflow measurement must retain the natural width of hidden items");
+assert.match(centerTabsCss, /\.bookmarkBarOverflowed\s*\{[^}]*position:\s*absolute;[^}]*visibility:\s*hidden;[^}]*pointer-events:\s*none;/s,
+  "overflowed bookmark buttons must stay measurable without being clipped into view");
+assert.match(contextMenuOverlay, /onPointerEnter=\{cancelHoverClose\}/,
+  "desktop bookmark panels must cancel pending close when entered");
+assert.match(contextMenuOverlay, /onPointerLeave=\{scheduleHoverClose\}/,
+  "desktop bookmark panels must schedule close when left");
+assert.match(desktopBridge, /scheduleClose\?\(delay\?: number\): void;/,
+  "desktop bridge must type the delayed menu-close command");
+assert.match(desktopBridge, /cancelClose\?\(\): void;/,
+  "desktop bridge must type the menu-close cancellation command");
+assert.match(desktopPreload, /scheduleClose:\s*\(delay\)\s*=>\s*ipcRenderer\.send\("main-menu:schedule-close", delay\)/,
+  "desktop preload must expose delayed menu close");
+assert.match(desktopPreload, /cancelClose:\s*\(\)\s*=>\s*ipcRenderer\.send\("main-menu:cancel-close"\)/,
+  "desktop preload must expose menu-close cancellation");
+assert.match(desktopMain, /function scheduleMainMenuClose\(ctx, delay\)/,
+  "desktop host must own the shared menu-close timer");
+assert.match(desktopMain, /ipcMain\.on\("main-menu:schedule-close"/,
+  "desktop host must accept delayed menu-close requests");
+assert.match(desktopMain, /ipcMain\.on\("main-menu:cancel-close"/,
+  "desktop host must accept menu-close cancellation requests");
 assert.match(contextMenuOverlay, /width: requestedWidth \|\| "max-content"/,
   "desktop context-menu overlay must honor a caller-supplied finite width");
 // Chrome-style manager: folders stay in the navigation tree while the

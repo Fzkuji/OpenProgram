@@ -37,6 +37,8 @@ interface ContextMenuItem {
 interface MainMenuBridge {
   choose(id: string): void;
   close(): void;
+  scheduleClose?(delay?: number): void;
+  cancelClose?(): void;
   resize?(size: { width: number; height: number }): void;
   onUpdate?(cb: (state: MenuState) => void): () => void;
 }
@@ -59,6 +61,8 @@ function mainMenuBridge(): MainMenuBridge | null {
 }
 
 const NESTED_MENU_WIDTH = 280;
+const cancelHoverClose = () => mainMenuBridge()?.cancelClose?.();
+const scheduleHoverClose = () => mainMenuBridge()?.scheduleClose?.(120);
 
 function parseItems(raw: string | null): ContextMenuItem[] {
   try {
@@ -113,6 +117,8 @@ function NestedMenuItems({ items }: { items: ContextMenuItem[] }) {
               alignOffset={-6}
               collisionPadding={8}
               className={`${MENU_PANEL} w-[280px] max-w-[calc(100vw-16px)] outline-none`}
+              onPointerEnter={cancelHoverClose}
+              onPointerLeave={scheduleHoverClose}
             >
               <NestedMenuItems items={item.children} />
             </DropdownMenuPrimitive.SubContent>
@@ -165,6 +171,8 @@ function NestedContextMenu({
           style={{ width: NESTED_MENU_WIDTH }}
           onEscapeKeyDown={close}
           onPointerDownOutside={close}
+          onPointerEnter={cancelHoverClose}
+          onPointerLeave={scheduleHoverClose}
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
           <NestedMenuItems items={items} />

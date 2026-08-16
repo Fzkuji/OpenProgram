@@ -1149,10 +1149,16 @@
 .bookmarkBarItems {
   flex: 1;
   min-width: 0;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
   overflow: hidden;
+}
+.bookmarkBarOverflowed {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
 }
 .bookmarkBarItem,
 .bookmarkBarMore {
