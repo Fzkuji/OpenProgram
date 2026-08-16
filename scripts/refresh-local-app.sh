@@ -39,6 +39,9 @@ test -f "$installed_asar" || {
   exit 1
 }
 
+"$local_python" "$repo_root/scripts/verify-release-version.py" \
+  --installed-app "$app_path" --require-source-match
+
 app_python_relative="$("$local_python" - "$manifest" <<'PY'
 import json
 import sys

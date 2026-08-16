@@ -40,13 +40,26 @@ def _fake_desktop_app(root: Path, version: str, *, app_id: str = "ai.openprogram
     executable = app / "Contents" / "MacOS" / "OpenProgram"
     resources = app / "Contents" / "Resources"
     runtime = resources / "runtime"
+    runtime_python = runtime / "python" / "bin" / "python3"
     executable.parent.mkdir(parents=True)
-    runtime.mkdir(parents=True)
+    runtime_python.parent.mkdir(parents=True)
     executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     executable.chmod(0o755)
     (resources / "icon.icns").write_bytes(b"icns")
+    runtime_python.write_text(
+        f"#!/bin/sh\nprintf '%s\\n' '{version}'\n",
+        encoding="utf-8",
+    )
+    runtime_python.chmod(0o755)
     (runtime / "runtime-manifest.json").write_text(
-        json.dumps({"schema": 2, "openprogram": version}), encoding="utf-8"
+        json.dumps(
+            {
+                "schema": 2,
+                "openprogram": version,
+                "python": "python/bin/python3",
+            }
+        ),
+        encoding="utf-8",
     )
     with (app / "Contents" / "Info.plist").open("wb") as stream:
         plistlib.dump(
@@ -134,6 +147,21 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
 
     second = _fake_desktop_app(tmp_path / "second", "0.6.2")
     subprocess.run(["bash", str(installer), str(second)], check=True, env=env)
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
+
+    downgrade = _fake_desktop_app(tmp_path / "downgrade", "0.6.1")
+    rejected = subprocess.run(
+        ["bash", str(installer), str(downgrade)],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert rejected.returncode != 0
+    assert "refusing to replace OpenProgram 0.6.2 with older version 0.6.1" in (
+        rejected.stderr
+    )
     with (target / "Contents" / "Info.plist").open("rb") as stream:
         assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
 
@@ -739,6 +767,35 @@ def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
         in final_window
     )
     assert "worker stop >/dev/null 2>&1 || true" not in final_window
+
+
+def test_local_app_refresh_rejects_a_different_product_version_before_build(
+    tmp_path: Path,
+) -> None:
+    installed = _fake_desktop_app(tmp_path, "0.6.7")
+    verifier = ROOT / "scripts" / "verify-release-version.py"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(verifier),
+            "--installed-app",
+            str(installed),
+            "--require-source-match",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "source version 0.6.6 != installed App version 0.6.7" in result.stderr
+
+    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+        encoding="utf-8"
+    )
+    gate = refresh.index("--require-source-match")
+    assert gate < refresh.index('wheel_dir="$(mktemp')
+    assert gate < refresh.index('"$repo_root/scripts/stage-release-assets.sh"')
+    assert gate < refresh.index("openprogram worker stop")
 
 
 def test_release_frontend_staging_removes_stale_export_before_build() -> None:

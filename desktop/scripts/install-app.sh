@@ -93,6 +93,27 @@ validate_app "$source_app" || {
   exit 2
 }
 
+version_is_older() {
+  local left_major left_minor left_patch right_major right_minor right_patch
+  IFS=. read -r left_major left_minor left_patch <<<"$1"
+  IFS=. read -r right_major right_minor right_patch <<<"$2"
+  ((
+    left_major < right_major ||
+    (left_major == right_major && left_minor < right_minor) ||
+    (left_major == right_major && left_minor == right_minor && left_patch < right_patch)
+  ))
+}
+
+if [[ -e "$target_app" ]] && validate_app "$target_app"; then
+  candidate_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$source_app/Contents/Info.plist")"
+  installed_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$target_app/Contents/Info.plist")"
+  if version_is_older "$candidate_version" "$installed_version"; then
+    printf 'refusing to replace OpenProgram %s with older version %s\n' \
+      "$installed_version" "$candidate_version" >&2
+    exit 1
+  fi
+fi
+
 mkdir -p "$applications_dir"
 install_lock_file="$applications_dir/.openprogram-app-install.lock"
 install_lock_owned=0
