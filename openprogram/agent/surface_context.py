@@ -296,9 +296,8 @@ def capture_pages(context: dict | None = None) -> dict:
             raise RuntimeError("no accepted Page binding is available")
         result = webtab.request_page_inventory(binding_id)
         owner_ws = webtab.binding_connection(binding_id)
-        if owner_ws is None:
-            raise RuntimeError("Page binding expired during inventory capture")
-        inventories.append((owner_ws, result))
+        if owner_ws is not None:
+            inventories.append((owner_ws, result))
     else:
         registered = [
             (ws, window_id)
@@ -338,15 +337,13 @@ def capture_pages(context: dict | None = None) -> dict:
 
     valid_inventories: list[tuple[object, dict, str]] = []
     seen_windows: set[str] = set()
-    for index, (owner_ws, result) in enumerate(inventories):
+    for owner_ws, result in inventories:
         window_id = _text(result.get("window_id"), 160) if isinstance(result, dict) else ""
         raw_pages = result.get("pages") if isinstance(result, dict) else None
         if (
             not isinstance(result, dict) or not result.get("ok")
             or not window_id or not isinstance(raw_pages, list)
         ):
-            if context is not None and index == 0:
-                raise RuntimeError("OpenProgram Page inventory is unavailable")
             continue
         if window_id in seen_windows:
             continue

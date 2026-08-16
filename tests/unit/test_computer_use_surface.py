@@ -560,6 +560,56 @@ def test_context_page_inventory_keeps_originating_window_primary(monkeypatch):
     webtab.release_connection(secondary)
 
 
+def test_context_page_inventory_survives_originating_window_disconnect(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    primary = _WS()
+    secondary = _WS()
+    monkeypatch.setattr(server, "_ws_connections", [primary, secondary])
+    binding = webtab.register_binding(
+        primary, "window-1", "tab-primary", "target-primary",
+        allow_background=True,
+    )
+    accepted = {
+        "context_id": "accepted",
+        "surfaces": [{"binding_id": binding}],
+    }
+    asyncio.run(webtab.handle_webtab_register(secondary, {
+        "action": "webtab_register", "window_id": "window-2",
+    }))
+    webtab.release_connection(primary)
+    monkeypatch.setattr(server, "_ws_connections", [secondary])
+
+    calls = []
+    monkeypatch.setattr(
+        webtab,
+        "request_on_ws",
+        lambda ws, command, timeout=5.0: calls.append((ws, command)) or {
+            "ok": True,
+            "window_id": "window-2",
+            "pages": [{
+                "tab_id": "tab-secondary",
+                "target_id": "target-secondary",
+                "url": "https://secondary.test/",
+                "title": "Secondary",
+                "visible": True,
+                "focused": True,
+                "region": "center",
+            }],
+        },
+    )
+
+    context = surface_context.capture_pages(accepted)
+    assert [window["window_id"] for window in context["windows"]] == ["window-2"]
+    assert context["surfaces"][0]["window_id"] == "window-2"
+    assert calls == [(secondary, {"op": "list", "window_id": "window-2"})]
+
+    surface_context.release_bindings(context)
+    webtab.release_connection(secondary)
+
+
 def test_direct_page_inventory_preserves_tab_entries_and_split_panes(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.webui import server
