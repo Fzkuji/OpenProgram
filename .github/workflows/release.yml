@@ -98,11 +98,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15
+          - runner: macos-26
             platform: mac
             runtime_platform: macos
             arch: arm64
-          - runner: macos-15-intel
+          - runner: macos-26-intel
             platform: mac
             runtime_platform: macos
             arch: x86_64
@@ -134,7 +134,6 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: |
-          npm run icon:build
           npm run icon:check
           npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
           for artifact in dist/*.dmg dist/*.zip; do

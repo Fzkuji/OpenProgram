@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenProgram · macOS App 图标规范</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --page:#f5f6f8; --surface:#fff; --ink:#17181c; --muted:#666b76;
+    --line:#dfe2e8; --soft:#eef0f4; --blue:#568ff4; --purple:#8d67ed;
+    --navy:#101622; --ok:#247a4a; --warn:#9b5b12;
+  }
+  @media (prefers-color-scheme:dark) {
+    :root { --page:#15171b; --surface:#1d2025; --ink:#f4f5f7; --muted:#a7acb6;
+      --line:#343840; --soft:#272b31; --ok:#75d39a; --warn:#f0b667; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); font:15px/1.58 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif; }
+  main { width:min(1080px,calc(100% - 32px)); margin:0 auto; padding:56px 0 88px; }
+  header { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:28px; align-items:end; padding-bottom:30px; border-bottom:1px solid var(--line); }
+  h1 { margin:0 0 10px; font-size:clamp(30px,5vw,48px); line-height:1.08; letter-spacing:-.035em; }
+  header p { margin:0; max-width:720px; color:var(--muted); }
+  .status { align-self:start; padding:6px 10px; background:color-mix(in srgb,var(--ok) 13%,transparent); color:var(--ok); border-radius:7px; font-size:12px; font-weight:650; }
+  section { margin-top:48px; }
+  h2 { margin:0 0 18px; font-size:24px; letter-spacing:-.02em; }
+  h3 { margin:0 0 8px; font-size:16px; }
+  p { margin:0 0 12px; }
+  code { font:13px/1.5 ui-monospace,"SFMono-Regular",Menlo,monospace; }
+  .lead { max-width:800px; color:var(--muted); }
+  .flow { display:grid; grid-template-columns:1fr 52px 1fr 52px 1fr; align-items:center; gap:12px; }
+  .stage { min-height:280px; padding:22px; background:var(--surface); border:1px solid var(--line); border-radius:14px; }
+  .stage small { display:block; margin-bottom:18px; color:var(--muted); font-weight:600; letter-spacing:.02em; }
+  .arrow { text-align:center; color:var(--muted); font-size:24px; }
+  .canvas { position:relative; width:174px; height:174px; margin:8px auto 20px; background:var(--navy); }
+  .canvas.transparent { background-image:linear-gradient(45deg,var(--soft) 25%,transparent 25%),linear-gradient(-45deg,var(--soft) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,var(--soft) 75%),linear-gradient(-45deg,transparent 75%,var(--soft) 75%); background-size:20px 20px; background-position:0 0,0 10px,10px -10px,-10px 0; }
+  .canvas.output { border-radius:38px; box-shadow:0 10px 30px rgba(0,0,0,.22),inset 0 1px rgba(255,255,255,.16); }
+  .mark { position:absolute; inset:27px; border:10px solid transparent; border-radius:50%; background:linear-gradient(135deg,var(--blue),var(--purple)) border-box; -webkit-mask:linear-gradient(#000 0 0) padding-box,linear-gradient(#000 0 0); -webkit-mask-composite:xor; mask-composite:exclude; }
+  .node { position:absolute; border-radius:50%; }
+  .a { width:48px; height:48px; left:47px; top:47px; background:#4aa3f1; }
+  .b { width:36px; height:36px; left:89px; top:81px; background:#9a69e7; }
+  .c { width:19px; height:19px; left:67px; top:105px; background:#7283de; }
+  .caption { color:var(--muted); font-size:13px; }
+  .rule-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+  .rule { padding:18px 20px; background:var(--surface); border:1px solid var(--line); border-radius:12px; }
+  .rule b { display:block; margin-bottom:5px; }
+  .do b { color:var(--ok); } .dont b { color:var(--warn); }
+  table { width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--line); }
+  th,td { padding:13px 16px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr:last-child td { border-bottom:0; }
+  th { color:var(--muted); font-size:12px; letter-spacing:.03em; }
+  .files { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  .file { padding:13px 15px; background:var(--surface); border:1px solid var(--line); border-radius:10px; }
+  .file code { display:block; overflow-wrap:anywhere; }
+  .file span { display:block; margin-top:4px; color:var(--muted); font-size:13px; }
+  a { color:var(--blue); }
+  footer { margin-top:52px; padding-top:22px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; }
+  @media (max-width:820px) {
+    header { grid-template-columns:1fr; }
+    .flow { grid-template-columns:1fr; }
+    .arrow { transform:rotate(90deg); }
+    .rule-grid,.files { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>macOS App 图标规范</h1>
+      <p>面向 desktop 打包与品牌资源维护。现代 macOS 使用 Apple Icon Composer 分层资源；OpenProgram 提供背景定义与四个独立品牌深度层。素材不预画最外层系统轮廓，内部节点保留用于表达凸起体积的受光渐变。</p>
+    </div>
+    <div class="status">凸起圆环预览通过 · 安装待 Xcode license</div>
+  </header>
+
+  <section aria-labelledby="gap">
+    <h2 id="gap">当前实现与差距</h2>
+    <table>
+      <thead><tr><th>项目</th><th>当前实现</th><th>官方设计要求</th><th>目标</th></tr></thead>
+      <tbody>
+        <tr><td>深度结构</td><td>轨道与三个节点合并在一个 SVG、一个 group 中，Icon Composer 只能把整个品牌符号视为同一深度面。</td><td>背景与一个或多个前景层共同形成空间层级；group 按从后到前的顺序成为系统渲染的深度层。</td><td>轨道、大节点、中节点和小节点分别进入四个 group。</td></tr>
+        <tr><td>材质</td><td>节点已有凸起明暗，圆环仍只有蓝紫色相过渡，截面明暗不足。</td><td>最外层 squircle 与其边缘效果由系统生成；内部品牌层可使用独立明暗表达前后关系。</td><td>四组均关闭 Specular；节点保留左上受光的径向渐变；圆环使用左上亮、右下暗的蓝紫渐变，并在截面两侧叠加低透明度暗部，形成凸起厚度但不生成白色光圈。</td></tr>
+        <tr><td>内部占比</td><td>轨道外缘约占画布宽度 64%，与 System Settings 的内部主体相比仍偏小。</td><td>主体需要在系统遮罩的安全范围内保持清晰，并与相邻系统图标形成稳定的视觉尺寸。</td><td>轨道外缘扩大到约 69%，三个节点同步小幅放大，保留约 15% 的单侧安全边距。</td></tr>
+        <tr><td>品牌边界</td><td>蓝紫轨道和三个节点已稳定，背景由 automatic gradient 生成。</td><td>素材保持未遮罩的方形画布，主体居中，前景边缘清晰，系统负责最终裁切。</td><td>不复制 System Settings 的齿轮造型，仅采用其分层、遮挡和系统材质方法。</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section aria-labelledby="decision">
+    <h2 id="decision">最终决策</h2>
+    <div class="flow">
+      <article class="stage">
+        <small>1 · 背景定义</small>
+        <div class="canvas" aria-label="未裁切的方形背景"></div>
+        <p class="caption">背景颜色由 <code>icon.json</code> 的 <code>automatic-gradient</code> 定义。素材本身不含圆角。</p>
+      </article>
+      <div class="arrow" aria-hidden="true">+</div>
+      <article class="stage">
+        <small>2 · 四个透明品牌层</small>
+        <div class="canvas transparent" aria-label="透明画布上的 OpenProgram 品牌符号"><i class="mark"></i><i class="node a"></i><i class="node b"></i><i class="node c"></i></div>
+        <p class="caption">轨道与三个节点分别使用独立 SVG，并按从后到前的顺序进入四个 Icon Composer group。</p>
+      </article>
+      <div class="arrow" aria-hidden="true">→</div>
+      <article class="stage">
+        <small>3 · 系统输出示意</small>
+        <div class="canvas output" aria-label="macOS 应用最终遮罩与系统效果后的示意"><i class="mark"></i><i class="node a"></i><i class="node b"></i><i class="node c"></i></div>
+        <p class="caption">最外层圆角遮罩及其边缘效果由 Apple 工具链生成；内部节点的受光方向属于品牌素材，Icon Composer 只为这些节点添加层间阴影，不添加 Specular 光圈。</p>
+      </article>
+    </div>
+  </section>
+
+  <section aria-labelledby="rules">
+    <h2 id="rules">素材边界</h2>
+    <div class="rule-grid">
+      <div class="rule do"><b>源素材保留</b><span>1024 × 1024 画布、带方向性受光和暗边截面的蓝紫轨道、三个带凸起受光渐变的独立节点、透明前景、安全边距和清晰轮廓。</span></div>
+      <div class="rule dont"><b>源素材禁止</b><span>外部 squircle、圆角矩形、外框、最外层轮廓高光、预画投影、模糊、系统容器材质和预合成背景。</span></div>
+      <div class="rule do"><b>Apple 工具链负责</b><span>最终遮罩、组间深度、系统高光、折射、透明度、投影、平台外形、显示模式适配以及兼容资源生成。</span></div>
+      <div class="rule dont"><b>组件资源不得替代</b><span>Web favicon、侧边栏图标和加载动画继续使用各自尺寸的现有资源，不从 App 图标截图导出。</span></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="matrix">
+    <h2 id="matrix">构建与兼容</h2>
+    <table>
+      <thead><tr><th>路径</th><th>输入</th><th>用途</th><th>约束</th></tr></thead>
+      <tbody>
+        <tr><td>当前发布</td><td><code>build/AppIcon.icon</code></td><td>Electron Builder 调用 Xcode 26 <code>actool</code> 生成 <code>Assets.car</code> 与兼容图标。</td><td>GitHub Actions 使用 macOS 26 runner。</td></tr>
+        <tr><td>旧系统回退</td><td>同一份 <code>AppIcon.icon</code></td><td>Xcode 从现代源包生成兼容表示；仓库不再维护第二份手绘 `.icns` 源图。</td><td>兼容结果仍由 Apple 工具链输出，不允许新增独立 squircle 素材。</td></tr>
+        <tr><td>本机开发</td><td>Xcode 26 的 <code>Icon Composer.app</code> 与 <code>ictool</code></td><td>直接导出 macOS Default/Dark/Mono 预览，并在打包后检查 Dock、Finder 与 About。</td><td>本机必须完成 Xcode license 接受后才能执行完整 Electron Builder 打包。</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section aria-labelledby="implementation">
+    <h2 id="implementation">实现入口</h2>
+    <div class="files">
+      <div class="file"><code>desktop/build/AppIcon.icon/icon.json</code><span>背景与图层结构。</span></div>
+      <div class="file"><code>desktop/build/AppIcon.icon/Assets/01-orbit.svg</code><span>最底层蓝紫轨道。</span></div>
+      <div class="file"><code>desktop/build/AppIcon.icon/Assets/02-node-blue.svg</code><span>第二层主节点。</span></div>
+      <div class="file"><code>desktop/build/AppIcon.icon/Assets/03-node-purple.svg</code><span>第三层辅助节点。</span></div>
+      <div class="file"><code>desktop/build/AppIcon.icon/Assets/04-node-indigo.svg</code><span>最前层小节点。</span></div>
+      <div class="file"><code>desktop/scripts/check-icon.sh</code><span>阻止圆角、边框、阴影等重新进入现代素材。</span></div>
+      <div class="file"><code>desktop/package.json</code><span>macOS 打包入口固定为 <code>AppIcon.icon</code>。</span></div>
+      <div class="file"><code>.github/workflows/release.yml</code><span>使用带 Xcode 26 的 macOS 26 runner。</span></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="evidence">
+    <h2 id="evidence">依据与验收</h2>
+    <p class="lead">设计依据为 Apple 的 <a href="https://developer.apple.com/design/human-interface-guidelines/app-icons">App icons HIG</a>、<a href="https://developer.apple.com/icon-composer/">Icon Composer</a> 与 <a href="https://developer.apple.com/documentation/Xcode/creating-your-app-icon-using-icon-composer">Xcode 图标创建说明</a>。打包能力依据 <a href="https://www.electron.build/docs/features/icons-and-images/">Electron Builder 图标文档</a>。</p>
+    <p class="lead">聚焦校验必须确认：四个现代 SVG 均使用 1024 × 1024 透明画布且不含外部 squircle、外框或最外层高光；三个节点使用左上受光的径向渐变；圆环同时包含方向性蓝紫渐变和不含白色的暗边截面渐变；<code>icon.json</code> 按轨道、大节点、中节点、小节点的顺序声明四个 group，四组均关闭 Specular，并使用 42% neutral Shadow；package 配置使用 <code>.icon</code>；发布 runner 提供 Xcode 26。<code>ictool</code> 必须成功导出 Default、Dark 与 Mono，最终视觉验收检查 Dock、Finder、About 面板和相邻官方图标下的尺寸与层次。</p>
+  </section>
+
+  <section aria-labelledby="status">
+    <h2 id="status">实现状态</h2>
+    <table>
+      <thead><tr><th>范围</th><th>状态</th><th>证据</th></tr></thead>
+      <tbody>
+        <tr><td>Apple Icon Composer 构建入口与 automatic gradient 背景</td><td>已实现</td><td><code>desktop/package.json</code> 与当前 <code>AppIcon.icon</code></td></tr>
+        <tr><td>四个前景深度 group</td><td>已实现</td><td><code>icon:check</code> 通过；四组关闭 Specular，取消节点圆周光圈；四组使用 42% neutral Shadow，并按从后到前顺序声明</td></tr>
+        <tr><td>源素材明暗</td><td>已实现</td><td>三个节点使用左上受光、右下压暗的径向渐变；圆环使用方向性受光与不含白色的暗边截面；最外层系统轮廓不进入 SVG</td></tr>
+        <tr><td>主体视觉占比</td><td>已实现</td><td>轨道外缘约占画布 69%，三个节点同步放大；单侧保留约 15% 安全边距</td></tr>
+        <tr><td>本机 Default/Dark/Mono 导出</td><td>已验收</td><td>Xcode 26.3 <code>ictool</code> 均成功导出 1024 × 1024 预览；另验收 128 × 128 Dock 尺寸</td></tr>
+        <tr><td>安装版 Dock、Finder 与 About</td><td>阻塞</td><td><code>actool</code> 返回 Xcode license 未接受；接受后执行完整 Electron Builder 打包</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>范围排除：不在本规范内重绘 Web favicon、README logo、侧边栏 wordmark 或加载动画。</footer>
+</main>
+</body>
+</html>

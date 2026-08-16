@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="OpenProgram purple node">
+  <defs>
+    <radialGradient id="op-node-purple" cx="35%" cy="28%" r="72%" fx="35%" fy="28%">
+      <stop offset="0" stop-color="#C8A2F4"/>
+      <stop offset="0.48" stop-color="#915FD5"/>
+      <stop offset="1" stop-color="#58358E"/>
+    </radialGradient>
+  </defs>
+  <circle id="op-node-b" cx="628" cy="582" r="105" fill="url(#op-node-purple)"/>
+</svg>

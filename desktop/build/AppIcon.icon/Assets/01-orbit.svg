@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="OpenProgram orbit">
+  <defs>
+    <linearGradient id="op-ring" x1="268" y1="255" x2="770" y2="782" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#63B9F2"/>
+      <stop offset="0.42" stop-color="#4D88DB"/>
+      <stop offset="0.72" stop-color="#765DCA"/>
+      <stop offset="1" stop-color="#4A337C"/>
+    </linearGradient>
+    <radialGradient id="op-ring-depth" cx="512" cy="512" r="354" gradientUnits="userSpaceOnUse">
+      <stop offset="0.842" stop-color="#081225" stop-opacity="0.22"/>
+      <stop offset="0.875" stop-color="#081225" stop-opacity="0.03"/>
+      <stop offset="0.93" stop-color="#081225" stop-opacity="0"/>
+      <stop offset="1" stop-color="#081225" stop-opacity="0.2"/>
+    </radialGradient>
+  </defs>
+  <circle id="op-orbit" cx="512" cy="512" r="326" fill="none" stroke="url(#op-ring)" stroke-width="56"/>
+  <circle id="op-orbit-depth" cx="512" cy="512" r="326" fill="none" stroke="url(#op-ring-depth)" stroke-width="56"/>
+</svg>

@@ -21,12 +21,11 @@
     "check:worker-auth": "node scripts/check-worker-start-url.js",
     "check:worker-recovery": "node scripts/check-worker-recovery.js",
     "check:packaged-runtime": "node scripts/check-packaged-runtime.js",
-    "icon:build": "bash scripts/build-icon.sh",
     "icon:check": "bash scripts/check-icon.sh",
     "prepare:runtime": "bash ../scripts/prepare-desktop-runtime.sh",
     "dist": "npm run dist:dir",
     "dist:dir": "npm run prepare:runtime && electron-builder --dir",
-    "dist:mac": "npm run prepare:runtime && npm run icon:build && npm run icon:check && electron-builder --mac dmg zip"
+    "dist:mac": "npm run prepare:runtime && npm run icon:check && electron-builder --mac dmg zip"
   },
   "devDependencies": {
     "electron": "^37.2.0",
@@ -67,7 +66,7 @@
         "dmg",
         "zip"
       ],
-      "icon": "build/icon.icns",
+      "icon": "build/AppIcon.icon",
       "identity": null,
       "hardenedRuntime": false,
       "notarize": false
