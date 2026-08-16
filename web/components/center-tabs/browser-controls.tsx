@@ -316,6 +316,7 @@ function folderItems(
   return folder.children.map((node) => node.kind === "folder" ? {
     id: `${prefix}folder:${node.id}`,
     label: node.title || "Folder",
+    icon: "folder",
     children: node.children.length > 0
       ? folderItems(node, ownerId, rootFolderId)
       : [{ id: `${prefix}empty:${node.id}`, label: "Empty folder", disabled: true }],
@@ -414,22 +415,27 @@ function BookmarkFolderButton({
     });
   }, [folder, mainMenu, onNavigate, ownerId]);
 
+  const openFolderMenu = (button: HTMLButtonElement) => {
+    if (!mainMenu) return;
+    const rect = button.getBoundingClientRect();
+    const items = folderItems(folder, ownerId);
+    mainMenu.open({
+      anchor: { x: rect.left, y: rect.bottom + 2, vw: innerWidth, vh: innerHeight },
+      theme: activeThemeId(),
+      items: items.length > 0
+        ? items
+        : [{ id: `${bookmarkFolderActionPrefix(ownerId, folder.id)}empty`, label: "Empty folder", disabled: true }],
+      width: 280,
+    });
+  };
+
   if (mainMenu) {
     return (
       <button
         type="button"
         className={buttonClass}
-        onClick={(event) => {
-          const rect = event.currentTarget.getBoundingClientRect();
-          mainMenu.open({
-            anchor: { x: rect.left, y: rect.bottom + 2, vw: innerWidth, vh: innerHeight },
-            theme: activeThemeId(),
-            items: folderItems(folder, ownerId).length > 0
-              ? folderItems(folder, ownerId)
-              : [{ id: `${bookmarkFolderActionPrefix(ownerId, folder.id)}empty`, label: "Empty folder", disabled: true }],
-            width: 280,
-          });
-        }}
+        onClick={(event) => openFolderMenu(event.currentTarget)}
+        onMouseEnter={(event) => openFolderMenu(event.currentTarget)}
         title={buttonLabel}
         aria-label={buttonLabel}
       >

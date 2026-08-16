@@ -18,7 +18,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { Bookmark, Check, ChevronRight } from "lucide-react";
+import { Bookmark, Check, ChevronRight, Folder } from "lucide-react";
 
 import { itemCls, MENU_PANEL, MENU_SEPARATOR } from "@/components/chat/top-bar/menu-styles";
 import { isThemeId } from "@/lib/prefs/theme-pref";
@@ -27,6 +27,7 @@ interface ContextMenuItem {
   id: string;
   label: string;
   iconUrl?: string;
+  icon?: "folder";
   disabled?: boolean;
   checked?: boolean;
   separatorBefore?: boolean;
@@ -53,6 +54,7 @@ const NESTED_MENU_WIDTH = 280;
 function ItemIcon({ item }: { item: ContextMenuItem }) {
   const [broken, setBroken] = useState(false);
   if (item.checked) return <Check size={13} aria-hidden="true" />;
+  if (item.icon === "folder") return <Folder size={13} fill="currentColor" aria-hidden="true" />;
   if (!item.iconUrl) return null;
   return broken ? <Bookmark size={13} aria-hidden="true" /> : (
     // eslint-disable-next-line @next/next/no-img-element

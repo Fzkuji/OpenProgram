@@ -345,6 +345,7 @@ export interface DesktopContextMenuItem {
   id: string;
   label: string;
   iconUrl?: string;
+  icon?: "folder";
   disabled?: boolean;
   checked?: boolean;
   separatorBefore?: boolean;

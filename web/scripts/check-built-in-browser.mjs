@@ -134,6 +134,8 @@ assert.match(
   /iconUrl:\s*node\.faviconUrl\s*\|\|\s*faviconUrl\(node\.url\)/,
   "desktop bookmark-folder payloads must include each website favicon",
 );
+assert.match(browserControls, /icon:\s*"folder"/);
+assert.match(browserControls, /onMouseEnter=\{\(event\) => openFolderMenu\(event\.currentTarget\)\}/);
 const browserMenuOwners = [...webTabPane.matchAll(/<BrowserMenu[\s\S]*?ownerId=\{([^}]+)\}/g)]
   .map((match) => match[1]);
 const bookmarkBarOwners = [...webTabPane.matchAll(/<BookmarkBar\s+ownerId=\{([^}]+)\}/g)]
@@ -166,8 +168,10 @@ assert.match(settingsLayout, /\/settings\/browser/);
 assert.match(browserSettingsRoute, /<BrowserSettings/);
 assert.match(contextMenu, /item\.checked/);
 assert.match(contextMenu, /item\.iconUrl/);
+assert.match(contextMenu, /item\.icon === "folder"/);
 assert.match(contextMenu, /onError=.*setBroken/);
 assert.match(bridge, /iconUrl\?: string/);
+assert.match(bridge, /icon\?: "folder"/);
 const nestedMenuItems = contextMenu.slice(
   contextMenu.indexOf("function NestedMenuItems"),
   contextMenu.indexOf("function NestedContextMenu"),
