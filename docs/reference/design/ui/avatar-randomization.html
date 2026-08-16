@@ -25,7 +25,7 @@
   <section>
     <h2>统一数据流</h2>
     <div class="flow" aria-label="Avatar randomization flow">
-      <div class="step"><span>1 · SOURCE</span><b><code>AVATAR_STYLES</code></b><p>唯一样式注册表</p></div>
+      <div class="step"><span>1 · SOURCE</span><b><code>AVATAR_STYLES</code></b><p>选择器样式清单，与运行时映射双向校验</p></div>
       <div class="step"><span>2 · GENERATE</span><b>style + seed</b><p>完整覆盖后随机排序</p></div>
       <div class="step"><span>3 · PREVIEW</span><b>16 candidates</b><p>每格按自己的 style 渲染</p></div>
       <div class="step"><span>4 · SAVE</span><b><code>AvatarConfig</code></b><p>同时保存 style 与 seed</p></div>
@@ -55,7 +55,7 @@
   </section>
   <section>
     <h2>实现与证据</h2>
-    <p><span class="status">已实现。</span> <code>style-options.ts</code> 提供轻量样式元数据，<code>variants.ts</code> 生成完整覆盖的随机候选，<code>AvatarPicker.tsx</code> 渲染并保存候选的 style/seed。<code>web/tests/avatar-randomization.test.mjs</code> 动态验证 14 种样式覆盖，并检查 Agent/User 共享入口和保存合同。Web unit tests、TypeScript、完整 Web checks 与 production build 均已执行。</p>
+    <p><span class="status">已实现。</span> <code>style-options.ts</code> 提供轻量样式元数据，<code>variants.ts</code> 生成完整覆盖的随机候选，<code>AvatarPicker.tsx</code> 渲染并保存候选的 style/seed。<code>web/tests/avatar-randomization.test.mjs</code> 动态验证 14 种样式覆盖，双向比较选择器与运行时样式集合，并检查 Agent/User 共享入口和保存合同。Web unit tests、TypeScript、完整 Web checks 与 production build 均已执行。</p>
   </section>
 </main></body>
 </html>

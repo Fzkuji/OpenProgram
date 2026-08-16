@@ -54,7 +54,10 @@ test("Agent and user settings share the picker and its style registry", () => {
   assert.match(settings, /function AgentSection\(\)[\s\S]*<ProfileEditor/);
   assert.match(settings, /function UserSection\(\)[\s\S]*<ProfileEditor/);
   assert.ok(registryBlock);
-  for (const { id } of AVATAR_STYLES) {
-    assert.match(registryBlock, new RegExp(`\\b${id},`));
-  }
+  const pickerStyleIds = AVATAR_STYLES.map(({ id }) => id);
+  const runtimeStyleIds = [...registryBlock.matchAll(/^\s+(\w+),$/gm)].map(
+    (match) => match[1],
+  );
+  assert.equal(new Set(pickerStyleIds).size, pickerStyleIds.length);
+  assert.deepEqual(new Set(pickerStyleIds), new Set(runtimeStyleIds));
 });
