@@ -24,12 +24,13 @@ current design contract; this file is operational history.
 | CLI parser split | `codex/code-doc-structure-20260817` / `e54bd425` | implemented | Move-only split; `openprogram.cli.build_parser` remains the public import. |
 | Documentation information architecture | `codex/code-doc-structure-20260817` / `d37d9bab` | implemented | Adds the HTML design, implementation ledger, shared navigation rules, and five UI design groups. |
 | Review repairs | `1be7295f`, `df3df11d` | implemented | Preserve the Design landing and make build/language checks share the public-source exclusion. |
+| Main-branch synchronization | `2e3cda14` | integrated | Merges committed `main` at `acf13f8c`; no structural-file conflict. |
 
 ## Verification record
 
 ```text
 5 passed — focused CLI parser and documentation navigation contracts
-206 passed — existing CLI component/unit tests plus focused structure contracts
+207 passed — post-main-merge CLI component/unit tests plus focused structure contracts
 158 passed, 2 skipped — independent quality selection of CLI-named and docs IA tests
 497 pages — python -m tools.docs_site.build
 0 broken links — python -m tools.docs_site.checklinks docs/_site
