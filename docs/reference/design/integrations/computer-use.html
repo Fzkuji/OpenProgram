@@ -20,7 +20,7 @@
     <div class="eyebrow">OpenProgram · Computer Use</div>
     <h1>一个浏览器工具，三个可选 backend，同一个 Page</h1>
     <p>目标是 GUI Agent Harness 只调用统一的 <code>computer_use</code>；设置将决定由 Playwright MCP、Chrome DevTools MCP 或 Open Claude in Chrome-compatible backend 执行。</p>
-    <p class="status">MULTI-BACKEND + FLAT MULTI-PAGE BASELINE IMPLEMENTED · GROUP-AWARE INVENTORY DEFERRED</p>
+    <p class="status">MULTI-BACKEND + GROUP-AWARE MULTI-PAGE INVENTORY IMPLEMENTED</p>
   </header>
 
   <section aria-labelledby="architecture-title">
@@ -116,7 +116,7 @@
         <g fill="#202738"><rect x="410" y="253" width="280" height="11" rx="5.5"/><rect x="410" y="276" width="244" height="8" rx="4"/><rect x="410" y="296" width="188" height="8" rx="4"/></g>
         <text x="217" y="341" fill="#858173" font-size="11" text-anchor="middle">visible = true</text><text x="551" y="341" fill="#5b91f2" font-size="11" text-anchor="middle">visible = true · focused = true</text>
         <path d="M734 220 H777" fill="none" stroke="#858173" stroke-width="1.8" marker-end="url(#pages-arrow)"/><text x="755" y="204" fill="#e08a3e" font-size="11" font-weight="700" text-anchor="middle">list_pages</text>
-        <text x="804" y="67" fill="#e08a3e" font-size="10.5" font-weight="700" letter-spacing="1.2">GROUP-AWARE INVENTORY · TARGET</text>
+        <text x="804" y="67" fill="#e08a3e" font-size="10.5" font-weight="700" letter-spacing="1.2">GROUP-AWARE INVENTORY · IMPLEMENTED</text>
         <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="11.5">
           <text x="804" y="101" fill="#f3f0e8">tab_entries</text><text x="908" y="101" fill="#858173">3 UI entries</text>
           <text x="804" y="127" fill="#aaa696">single</text><text x="908" y="127" fill="#858173">p1</text>
@@ -134,7 +134,7 @@
         <text x="560" y="425" fill="#858173" font-size="12" text-anchor="middle">顶部标签结构用于理解窗口；Page token 用于观察和操作。分屏不增加另一套 Agent command。</text>
       </g>
     </svg></div>
-    <p class="caption">目标返回结构是 <code>tab_entries + pages</code>。当前实现已经能返回四个独立 Page 并控制前台或后台目标，但仍只返回扁平 <code>pages[]</code>；分组字段尚未实现。完整字段见<a href="computer-use-technical-spec.html#page-model">多 Page 数据模型</a>。</p>
+    <p class="caption">当前 <code>list_pages</code> 同时返回 <code>tab_entries + pages</code>：前者描述 single/split 与 pane 顺序，后者提供可独立控制的 exact Page token。完整字段见<a href="computer-use-technical-spec.html#page-model">多 Page 数据模型</a>。</p>
   </section>
 
   <section aria-labelledby="click-title">
