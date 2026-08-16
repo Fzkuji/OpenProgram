@@ -328,12 +328,64 @@ async def handle_webtab_result(ws, cmd: dict):
                 continue
             page = {
                 key: raw[key]
-                for key in ("tab_id", "target_id", "title", "url", "region", "opener_tab_id")
+                for key in (
+                    "tab_id", "target_id", "title", "url", "region",
+                    "opener_tab_id", "tab_entry_id",
+                )
                 if isinstance(raw.get(key), str)
             }
             page["focused"] = bool(raw.get("focused"))
             page["visible"] = bool(raw.get("visible"))
+            if type(raw.get("geometry_revision")) is int:
+                page["geometry_revision"] = max(0, raw["geometry_revision"])
+            placement = raw.get("placement")
+            if isinstance(placement, dict) and placement.get("mode") in {"single", "split"}:
+                page["placement"] = {
+                    "mode": placement["mode"],
+                    **({"pane_id": placement["pane_id"]}
+                       if isinstance(placement.get("pane_id"), str) else {}),
+                    **({"order": placement["order"]}
+                       if type(placement.get("order")) is int else {}),
+                }
             pages.append(page)
+        tab_entries = []
+        for raw in (cmd.get("tab_entries") or [])[:64]:
+            if not isinstance(raw, dict) or raw.get("mode") not in {"single", "split"}:
+                continue
+            entry_id = raw.get("id")
+            if not isinstance(entry_id, str):
+                continue
+            tab_ids = [
+                tab_id for tab_id in (raw.get("tab_ids") or [])[:2]
+                if isinstance(tab_id, str)
+            ]
+            entry = {"id": entry_id, "mode": raw["mode"], "tab_ids": tab_ids}
+            split = raw.get("split")
+            if raw["mode"] == "split" and isinstance(split, dict):
+                panes = []
+                for pane in (split.get("panes") or [])[:2]:
+                    if not isinstance(pane, dict):
+                        continue
+                    if not (
+                        isinstance(pane.get("pane_id"), str)
+                        and type(pane.get("order")) is int
+                        and isinstance(pane.get("tab_id"), str)
+                    ):
+                        continue
+                    panes.append({
+                        "pane_id": pane["pane_id"],
+                        "order": pane["order"],
+                        "tab_id": pane["tab_id"],
+                    })
+                ratio = split.get("ratio")
+                entry["split"] = {
+                    "axis": "horizontal",
+                    **({"ratio": float(ratio)}
+                       if isinstance(ratio, (int, float)) and not isinstance(ratio, bool)
+                       else {}),
+                    "panes": panes,
+                }
+            tab_entries.append(entry)
         holder["result"] = {
             "ok": bool(cmd.get("ok")),
             "error": cmd.get("error"),
@@ -348,6 +400,14 @@ async def handle_webtab_result(ws, cmd: dict):
                if isinstance(cmd.get("geometry_revision"), int) else {}),
             **({"reason_code": cmd["reason_code"]}
                if isinstance(cmd.get("reason_code"), str) else {}),
+            **({"inventory_revision": max(0, cmd["inventory_revision"])}
+               if type(cmd.get("inventory_revision")) is int else {}),
+            **({"active_tab_entry_id": cmd["active_tab_entry_id"]}
+               if isinstance(cmd.get("active_tab_entry_id"), str) else {}),
+            **({"focused_tab_id": cmd["focused_tab_id"]}
+               if isinstance(cmd.get("focused_tab_id"), str) else {}),
+            **({"tab_entries": tab_entries}
+               if isinstance(cmd.get("tab_entries"), list) else {}),
             **({"pages": pages} if isinstance(cmd.get("pages"), list) else {}),
         }
     ev.set()

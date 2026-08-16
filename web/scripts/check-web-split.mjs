@@ -1466,6 +1466,7 @@ const {
 } = await import("../lib/split-layout.ts");
 const {
   registerVisibleWebTabBounds,
+  browserPageInventory,
   removeVisibleWebTabBounds,
   isDesktopSplitLayoutAvailable,
   isWebTabReady,
@@ -1540,6 +1541,99 @@ const webPairPanes = resolveCenterTabPanes({
   focusedId: "w:two",
 }, paneTabs, "w:two");
 assert.deepEqual(webPairPanes.map((pane) => pane.tabId), ["w:one", "w:two"]);
+
+const inventoryTabs = [
+  { id: "w:google", kind: "web", title: "Google", url: "https://google.test/" },
+  { id: "w:github", kind: "web", title: "GitHub", url: "https://github.test/" },
+  { id: "w:bilibili", kind: "web", title: "Bilibili", url: "https://bilibili.test/" },
+  { id: "w:youtube", kind: "web", title: "YouTube", url: "https://youtube.test/" },
+];
+useCenterTabs.setState({
+  tabs: inventoryTabs,
+  activeId: "w:youtube",
+  groups: [{
+    id: "g3",
+    memberIds: ["w:bilibili", "w:youtube"],
+    visibleIds: ["w:bilibili", "w:youtube"],
+    focusedId: "w:youtube",
+  }],
+  splitRatio: 0.5,
+});
+const inventoryBridge = {
+  windowId: "window-1",
+  webTab: {
+    inspect: async (id) => ({
+      target_id: `target:${id}`,
+      url: inventoryTabs.find((tab) => tab.id === id).url,
+      title: inventoryTabs.find((tab) => tab.id === id).title,
+    }),
+    syncVisible: () => {},
+  },
+};
+for (const tab of inventoryTabs) setWebTabReady(tab.id, true);
+registerVisibleWebTabBounds(
+  inventoryBridge,
+  "w:bilibili",
+  { x: 0, y: 0, width: 500, height: 700 },
+);
+registerVisibleWebTabBounds(
+  inventoryBridge,
+  "w:youtube",
+  { x: 500, y: 0, width: 500, height: 700 },
+);
+await Promise.resolve();
+const pageInventory = await browserPageInventory(inventoryBridge);
+assert.equal(pageInventory.window_id, "window-1");
+assert.equal(pageInventory.active_tab_entry_id, "group:g3");
+assert.equal(pageInventory.focused_tab_id, "w:youtube");
+assert.deepEqual(pageInventory.tab_entries, [
+  { id: "tab:w:google", mode: "single", tab_ids: ["w:google"] },
+  { id: "tab:w:github", mode: "single", tab_ids: ["w:github"] },
+  {
+    id: "group:g3",
+    mode: "split",
+    tab_ids: ["w:bilibili", "w:youtube"],
+    split: {
+      axis: "horizontal",
+      ratio: 0.5,
+      panes: [
+        { pane_id: "pane:g3:0", order: 0, tab_id: "w:bilibili" },
+        { pane_id: "pane:g3:1", order: 1, tab_id: "w:youtube" },
+      ],
+    },
+  },
+]);
+assert.deepEqual(
+  pageInventory.pages.map((page) => ({
+    tab_id: page.tab_id,
+    tab_entry_id: page.tab_entry_id,
+    placement: page.placement,
+    visible: page.visible,
+    focused: page.focused,
+  })),
+  [
+    { tab_id: "w:google", tab_entry_id: "tab:w:google", placement: { mode: "single" }, visible: false, focused: false },
+    { tab_id: "w:github", tab_entry_id: "tab:w:github", placement: { mode: "single" }, visible: false, focused: false },
+    { tab_id: "w:bilibili", tab_entry_id: "group:g3", placement: { mode: "split", pane_id: "pane:g3:0", order: 0 }, visible: true, focused: false },
+    { tab_id: "w:youtube", tab_entry_id: "group:g3", placement: { mode: "split", pane_id: "pane:g3:1", order: 1 }, visible: true, focused: true },
+  ],
+);
+const samePageInventory = await browserPageInventory(inventoryBridge);
+assert.equal(
+  samePageInventory.inventory_revision,
+  pageInventory.inventory_revision,
+  "an unchanged Page/layout snapshot keeps its inventory revision",
+);
+useCenterTabs.setState({ splitRatio: 0.6 });
+const resizedPageInventory = await browserPageInventory(inventoryBridge);
+assert.ok(
+  resizedPageInventory.inventory_revision > pageInventory.inventory_revision,
+  "a split ratio change advances the inventory revision",
+);
+assert.equal(resizedPageInventory.tab_entries[2].split.ratio, 0.6);
+removeVisibleWebTabBounds(inventoryBridge, "w:bilibili");
+removeVisibleWebTabBounds(inventoryBridge, "w:youtube");
+for (const tab of inventoryTabs) setWebTabReady(tab.id, false);
 
 const hiddenThird = focusCenterTabGroupMember({
   tabIds: paneTabs.map((tab) => tab.id),

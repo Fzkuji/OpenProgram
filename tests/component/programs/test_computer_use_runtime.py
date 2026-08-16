@@ -817,6 +817,54 @@ def test_registry_binds_session_to_owner_and_consumes_exact_page_capability():
     assert released == ["ctx-1"]
 
 
+def test_list_pages_returns_group_aware_snapshot_with_page_tokens():
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSessionRegistry,
+    )
+
+    registry = ComputerUseSessionRegistry(
+        adapters={name: _Adapter(name) for name in (
+            "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
+        )},
+        binding_validator=_allow_binding,
+    )
+    context = {
+        "context_id": "ctx-pages",
+        "window_id": "window-1",
+        "inventory_revision": 9,
+        "active_tab_entry_id": "group:g3",
+        "focused_page": "p4",
+        "tab_entries": [{
+            "id": "group:g3", "mode": "split", "pages": ["p3", "p4"],
+            "split": {
+                "axis": "horizontal", "ratio": 0.5,
+                "panes": [
+                    {"pane_id": "pane:g3:0", "order": 0, "page": "p3"},
+                    {"pane_id": "pane:g3:1", "order": 1, "page": "p4"},
+                ],
+            },
+        }],
+        "surfaces": [
+            {"surface_key": "p3", "binding_id": "binding-3", "tab_entry_id": "group:g3", "placement": {"mode": "split", "pane_id": "pane:g3:0", "order": 0}},
+            {"surface_key": "p4", "binding_id": "binding-4", "tab_entry_id": "group:g3", "placement": {"mode": "split", "pane_id": "pane:g3:1", "order": 1}, "focused": True},
+        ],
+    }
+
+    result = registry.list_pages(context=context, owner_id="owner-1")
+
+    assert result["browser_context_id"] == "ctx-pages"
+    assert result["window_id"] == "window-1"
+    assert result["inventory_revision"] == 9
+    assert result["active_tab_entry_id"] == "group:g3"
+    assert result["focused_page"] == "p4"
+    assert result["tab_entries"] == context["tab_entries"]
+    assert [page["page"] for page in result["pages"]] == ["p3", "p4"]
+    assert all(page["page_context_token"].startswith("pct_") for page in result["pages"])
+    assert result["pages"][1]["placement"] == {
+        "mode": "split", "pane_id": "pane:g3:1", "order": 1,
+    }
+
+
 def test_failed_first_observe_releases_session_and_page_context():
     from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
         ComputerUseSessionRegistry,
@@ -972,7 +1020,11 @@ def test_direct_list_pages_returns_empty_inventory_without_mounted_page(monkeypa
         {"command": "list_pages"}, owner_id="mcp:empty-window",
     )
 
-    assert result == {"ok": True, "pages": []}
+    assert result["ok"] is True
+    assert result["pages"] == []
+    assert result["tab_entries"] == []
+    assert result["active_tab_entry_id"] == ""
+    assert result["focused_page"] == ""
 
     monkeypatch.setattr(webtab, "request_on_ws", lambda ws, command, timeout=5.0: {
         "ok": True,
@@ -1179,6 +1231,84 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
         "command": "close", "computer_session_id": "cs-1",
         "owner_id": "harness:ctx-1",
     }
+
+
+def test_gui_agent_prompt_receives_group_aware_page_inventory(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.agentic_functions import browser_agent as module
+    from openprogram.programs.agentic_functions.browser_agent import (
+        computer_use_runtime,
+    )
+
+    inventory_context = {
+        "context_id": "ctx-pages",
+        "window_id": "window-1",
+        "inventory_revision": 9,
+        "active_tab_entry_id": "group:g3",
+        "focused_page": "p4",
+        "tab_entries": [{
+            "id": "group:g3", "mode": "split", "pages": ["p3", "p4"],
+        }],
+        "surfaces": [],
+    }
+
+    class _Registry:
+        def list_pages(self, **_kwargs):
+            return {
+                "ok": True,
+                "browser_context_id": "ctx-pages",
+                "window_id": "window-1",
+                "inventory_revision": 9,
+                "active_tab_entry_id": "group:g3",
+                "focused_page": "p4",
+                "tab_entries": inventory_context["tab_entries"],
+                "pages": [
+                    {"page": "p3", "tab_id": "tab-c", "visible": True, "focused": False, "page_context_token": "pct_3"},
+                    {"page": "p4", "tab_id": "tab-d", "visible": True, "focused": True, "page_context_token": "pct_4"},
+                ],
+            }
+
+        def execute(self, **kwargs):
+            if kwargs["command"] == "observe":
+                return {
+                    "ok": True, "frame_id": "frame-1",
+                    "computer_session_id": "cs-1",
+                }
+            if kwargs["command"] == "verify":
+                return {"ok": True, "passed": True}
+            return {"ok": True, "closed": True}
+
+    registry = _Registry()
+    monkeypatch.setattr(computer_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(surface_context, "current", lambda: inventory_context)
+    monkeypatch.setattr(
+        surface_context, "capture_pages", lambda _context=None: inventory_context,
+    )
+    prompts = []
+
+    class _Runtime:
+        def exec(self, **kwargs):
+            prompts.append(kwargs["content"][0]["text"])
+            asyncio.run(kwargs["tools"][0].execute(
+                "call-1",
+                {
+                    "action": "verify", "expected_frame_id": "frame-1",
+                    "assertion": "text_contains", "value": "done",
+                },
+                asyncio.Event(),
+                None,
+            ))
+            return "verified"
+
+    result = module._run_browser_task_commands(
+        task="Verify the split page", backend="chrome_devtools_mcp",
+        max_steps=2, max_seconds=30, runtime=_Runtime(),
+    )
+
+    assert result["status"] == "succeeded"
+    assert '"active_tab_entry_id": "group:g3"' in prompts[0]
+    assert '"pages": ["p3", "p4"]' in prompts[0]
+    assert '"page": "p4"' in prompts[0]
 
 
 def test_gui_agent_discovers_popup_and_switches_by_exact_page_token(monkeypatch):

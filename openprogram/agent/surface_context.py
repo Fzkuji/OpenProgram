@@ -310,6 +310,7 @@ def capture_pages(context: dict | None = None) -> dict:
 
     surfaces = []
     aliases: dict[str, str] = {}
+    surface_by_tab: dict[str, str] = {}
     seen_tabs: set[str] = set()
     seen_targets: set[str] = set()
     try:
@@ -339,7 +340,7 @@ def capture_pages(context: dict | None = None) -> dict:
                 window_id,
                 tab_id,
                 target_id,
-                geometry_revision=0,
+                geometry_revision=_revision(raw.get("geometry_revision")),
                 allow_background=not visible,
             )
             surface = {
@@ -354,12 +355,15 @@ def capture_pages(context: dict | None = None) -> dict:
                 "binding_id": binding_id,
                 "page_key": webtab.binding_page_key(binding_id),
                 "tab_id": tab_id,
+                "tab_entry_id": f"tab:{tab_id}",
+                "placement": {"mode": "single"},
                 "opener_tab_id": _text(raw.get("opener_tab_id"), 512),
                 "visible": visible,
                 "focused": focused,
                 **webtab.binding_revisions(binding_id),
             }
             surfaces.append(surface)
+            surface_by_tab[tab_id] = surface_key
             for alias in page_aliases:
                 aliases.setdefault(alias, surface_key)
     except Exception:
@@ -373,8 +377,89 @@ def capture_pages(context: dict | None = None) -> dict:
     ), next((
         item["surface_key"] for item in surfaces if item.get("visible")
     ), surfaces[0]["surface_key"] if surfaces else ""))
+    tab_entries = []
+    surface_by_key = {item["surface_key"]: item for item in surfaces}
+    placed_pages: set[str] = set()
+    for raw_entry in (result.get("tab_entries") or [])[:64]:
+        if not isinstance(raw_entry, dict):
+            continue
+        entry_id = _text(raw_entry.get("id"), 512)
+        mode = raw_entry.get("mode")
+        page_keys = [
+            surface_by_tab[tab_id]
+            for tab_id in raw_entry.get("tab_ids") or []
+            if tab_id in surface_by_tab
+        ]
+        if mode == "single":
+            page_keys = page_keys[:1]
+        if not entry_id or mode not in {"single", "split"} or not page_keys:
+            continue
+        entry = {"id": entry_id, "mode": mode, "pages": page_keys}
+        raw_split = raw_entry.get("split")
+        if mode == "split" and isinstance(raw_split, dict):
+            panes = []
+            for raw_pane in (raw_split.get("panes") or [])[:2]:
+                if not isinstance(raw_pane, dict):
+                    continue
+                page_key = surface_by_tab.get(str(raw_pane.get("tab_id") or ""))
+                pane_id = _text(raw_pane.get("pane_id"), 512)
+                order = raw_pane.get("order")
+                if not page_key or not pane_id or type(order) is not int:
+                    continue
+                panes.append({
+                    "pane_id": pane_id, "order": order, "page": page_key,
+                })
+            entry["split"] = {
+                "axis": "horizontal",
+                "ratio": raw_split.get("ratio"),
+                "panes": panes,
+            }
+            if not panes:
+                continue
+            entry["pages"] = [pane["page"] for pane in panes]
+            for pane in panes:
+                surface = surface_by_key[pane["page"]]
+                surface["tab_entry_id"] = entry_id
+                surface["placement"] = {
+                    "mode": "split",
+                    "pane_id": pane["pane_id"],
+                    "order": pane["order"],
+                }
+                placed_pages.add(pane["page"])
+        else:
+            for page_key in page_keys:
+                surface_by_key[page_key]["tab_entry_id"] = entry_id
+                surface_by_key[page_key]["placement"] = {"mode": "single"}
+                placed_pages.add(page_key)
+        tab_entries.append(entry)
+    for surface in surfaces:
+        page_key = surface["surface_key"]
+        if page_key in placed_pages:
+            continue
+        tab_entries.append({
+            "id": surface["tab_entry_id"],
+            "mode": "single",
+            "pages": [page_key],
+        })
+    focused_page = surface_by_tab.get(
+        _text(result.get("focused_tab_id"), 512),
+        next((
+            item["surface_key"] for item in surfaces if item.get("focused")
+        ), ""),
+    )
+    active_tab_entry_id = _text(result.get("active_tab_entry_id"), 512)
+    if not any(entry["id"] == active_tab_entry_id for entry in tab_entries):
+        active_tab_entry_id = next((
+            entry["id"] for entry in tab_entries
+            if primary in entry["pages"]
+        ), "")
     return {
         "context_id": "page_ctx_" + uuid.uuid4().hex,
+        "window_id": window_id,
+        "inventory_revision": _revision(result.get("inventory_revision")),
+        "active_tab_entry_id": active_tab_entry_id,
+        "focused_page": focused_page,
+        "tab_entries": tab_entries,
         "primary_surface_key": primary,
         "alias_map": aliases,
         "surfaces": surfaces,

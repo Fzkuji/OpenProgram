@@ -23,6 +23,7 @@ import {
   validateTransferredTabs,
 } from "@/lib/state/center-tabs-store";
 import {
+  centerTabStripEntries,
   findCenterTabGroup,
   resolveCenterTabPanes,
 } from "@/lib/state/center-tab-groups";
@@ -323,6 +324,36 @@ export interface DesktopBrowserDataApi {
   clear(options: { history: boolean; cookies: boolean }): Promise<{ ok: boolean }>;
 }
 
+export interface DesktopBrowserExtension {
+  key: string;
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  source: "edge-addons" | "chrome-web-store" | "folder" | "browser-profile";
+  sourceUrl: string;
+  enabled: boolean;
+  loaded: boolean;
+  permissions: string[];
+  hostPermissions: string[];
+  compatibility: {
+    status: "compatible" | "limited" | "incompatible";
+    incompatible: string[];
+    warnings: string[];
+  };
+  error: string;
+}
+
+export interface DesktopBrowserExtensionsApi {
+  list(): Promise<DesktopBrowserExtension[]>;
+  installCurrentPage(tabId: string): Promise<{ ok: boolean; extension?: DesktopBrowserExtension; error?: string }>;
+  installStoreUrl(url: string): Promise<{ ok: boolean; extension?: DesktopBrowserExtension; error?: string }>;
+  installFolder(): Promise<{ ok: boolean; extension?: DesktopBrowserExtension; error?: string }>;
+  setEnabled(key: string, enabled: boolean): Promise<{ ok: boolean; extension?: DesktopBrowserExtension; error?: string }>;
+  reload(key: string): Promise<{ ok: boolean; extension?: DesktopBrowserExtension; error?: string }>;
+  remove(key: string): Promise<{ ok: boolean; error?: string }>;
+}
+
 export interface DesktopTerminalApi {
   start(request: {
     id: string;
@@ -409,6 +440,8 @@ export interface DesktopBridge {
   browserImport?: DesktopBrowserImportApi;
   /** Desktop-only clearing of the built-in browser profile. */
   browserData?: DesktopBrowserDataApi;
+  /** Desktop-only Chromium extension installation and management. */
+  extensions?: DesktopBrowserExtensionsApi;
   /** Desktop-only local PTY. Never exposed by the Web server. */
   terminal?: DesktopTerminalApi;
 }
@@ -718,22 +751,103 @@ export interface BrowserPageInventoryItem {
   focused: boolean;
   visible: boolean;
   region: "left" | "right" | "center" | "background";
+  geometry_revision: number;
+  tab_entry_id: string;
+  placement:
+    | { mode: "single" }
+    | { mode: "split"; pane_id: string; order: number };
   opener_tab_id?: string;
 }
 
+export interface BrowserPageInventoryTabEntry {
+  id: string;
+  mode: "single" | "split";
+  tab_ids: string[];
+  split?: {
+    axis: "horizontal";
+    ratio: number;
+    panes: Array<{ pane_id: string; order: number; tab_id: string }>;
+  };
+}
+
+export interface BrowserPageInventorySnapshot {
+  window_id: string;
+  inventory_revision: number;
+  active_tab_entry_id: string;
+  focused_tab_id: string;
+  tab_entries: BrowserPageInventoryTabEntry[];
+  pages: BrowserPageInventoryItem[];
+}
+
+const browserInventoryRevisions = new Map<
+  string,
+  { fingerprint: string; revision: number }
+>();
+
+function browserInventoryRevision(windowId: string, fingerprint: string): number {
+  const prior = browserInventoryRevisions.get(windowId);
+  if (prior?.fingerprint === fingerprint) return prior.revision;
+  const revision = (prior?.revision ?? 0) + 1;
+  browserInventoryRevisions.set(windowId, { fingerprint, revision });
+  return revision;
+}
+
 export async function browserPageInventory(
-  bridge: { webTab: Pick<DesktopWebTabApi, "inspect"> },
-): Promise<BrowserPageInventoryItem[]> {
-  if (!bridge.webTab.inspect) return [];
+  bridge: {
+    windowId?: string;
+    webTab: Pick<DesktopWebTabApi, "inspect">;
+  },
+): Promise<BrowserPageInventorySnapshot> {
+  const windowId = bridge.windowId ?? desktopBridge()?.windowId ?? "";
+  const empty = (): BrowserPageInventorySnapshot => ({
+    window_id: windowId,
+    inventory_revision: 0,
+    active_tab_entry_id: "",
+    focused_tab_id: "",
+    tab_entries: [],
+    pages: [],
+  });
+  if (!bridge.webTab.inspect) return empty();
   const state = useCenterTabs.getState();
-  const pages = await Promise.all(state.tabs
+  const tabs = state.tabs.map((tab) => ({ ...tab }));
+  const groups = state.groups.map((group) => ({
+    ...group,
+    memberIds: [...group.memberIds],
+    visibleIds: [...group.visibleIds],
+  }));
+  const activeGroup = state.activeId
+    ? findCenterTabGroup(groups, state.activeId)
+    : undefined;
+  const focusedTabId = activeGroup?.focusedId ?? state.activeId ?? "";
+  const splitRatio = state.splitRatio;
+  const webState = new Map(tabs
+    .filter((tab) => tab.kind === "web")
+    .map((tab) => [tab.id, {
+      visible: isWebTabActuallyVisible(tab.id),
+      geometryRevision: webTabGeometryRevisions.get(tab.id) ?? 0,
+    }]));
+  const layoutFingerprint = JSON.stringify({
+    tabs: tabs.map((tab) => [tab.id, tab.kind]),
+    groups: groups.map((group) => [
+      group.id, group.memberIds, group.visibleIds, group.focusedId,
+    ]),
+    activeId: state.activeId,
+    splitRatio,
+    geometry: Array.from(webState, ([tabId, current]) => [
+      tabId, current.visible, current.geometryRevision,
+    ]),
+  });
+  const pages = await Promise.all(tabs
     .filter((tab) => tab.kind === "web")
     .map(async (tab) => {
       const nativePage = await bridge.webTab.inspect!(tab.id);
       if (!nativePage) return null;
-      const group = findCenterTabGroup(state.groups, tab.id);
-      const visible = isWebTabActuallyVisible(tab.id);
-      const focused = state.activeId === tab.id;
+      const group = findCenterTabGroup(groups, tab.id);
+      const current = webState.get(tab.id)!;
+      const visible = current.visible;
+      const focused = visible && focusedTabId === tab.id;
+      const memberOrder = group?.memberIds.indexOf(tab.id) ?? -1;
+      const tabEntryId = group ? `group:${group.id}` : `tab:${tab.id}`;
       const region = !visible
         ? "background" as const
         : !group || group.visibleIds.length === 1
@@ -749,10 +863,66 @@ export async function browserPageInventory(
         focused,
         visible,
         region,
+        geometry_revision: current.geometryRevision,
+        tab_entry_id: tabEntryId,
+        placement: group && memberOrder >= 0
+          ? {
+              mode: "split" as const,
+              pane_id: `pane:${group.id}:${memberOrder}`,
+              order: memberOrder,
+            }
+          : { mode: "single" as const },
         ...(tab.openerTabId ? { opener_tab_id: tab.openerTabId } : {}),
       };
     }));
-  return pages.filter((page): page is BrowserPageInventoryItem => page !== null);
+  const validPages = pages.filter(
+    (page): page is BrowserPageInventoryItem => page !== null,
+  );
+  const validTabIds = new Set(validPages.map((page) => page.tab_id));
+  const tabEntries = centerTabStripEntries({
+    tabIds: tabs.map((tab) => tab.id),
+    groups,
+  }).flatMap<BrowserPageInventoryTabEntry>((entry) => {
+    if (entry.kind === "tab") {
+      return validTabIds.has(entry.tabId) ? [{
+        id: entry.id,
+        mode: "single",
+        tab_ids: [entry.tabId],
+      }] : [];
+    }
+    const tabIds = entry.group.memberIds.filter((id) => validTabIds.has(id));
+    if (tabIds.length === 0) return [];
+    return [{
+      id: entry.id,
+      mode: "split",
+      tab_ids: tabIds,
+      split: {
+        axis: "horizontal",
+        ratio: splitRatio,
+        panes: tabIds.map((tabId) => {
+          const order = entry.group.memberIds.indexOf(tabId);
+          return {
+            pane_id: `pane:${entry.group.id}:${order}`,
+            order,
+            tab_id: tabId,
+          };
+        }),
+      },
+    }];
+  });
+  const activeTabEntryId = activeGroup
+    ? `group:${activeGroup.id}`
+    : state.activeId ? `tab:${state.activeId}` : "";
+  return {
+    window_id: windowId,
+    inventory_revision: browserInventoryRevision(windowId, layoutFingerprint),
+    active_tab_entry_id: tabEntries.some((entry) => entry.id === activeTabEntryId)
+      ? activeTabEntryId
+      : "",
+    focused_tab_id: validTabIds.has(focusedTabId) ? focusedTabId : "",
+    tab_entries: tabEntries,
+    pages: validPages,
+  };
 }
 
 /** The visible web pane paired with this chat at send time. */
@@ -870,13 +1040,12 @@ export function installDesktopMenuHandlers(): void {
         ws.send(JSON.stringify({ action: "webtab_result", req_id: d.req_id, ok: false }));
         return;
       }
-      void browserPageInventory(bridge).then((pages) => {
+      void browserPageInventory(bridge).then((inventory) => {
         ws.send(JSON.stringify({
           action: "webtab_result",
           req_id: d.req_id,
           ok: true,
-          window_id: bridge.windowId,
-          pages,
+          ...inventory,
         }));
       });
       return;

@@ -423,6 +423,68 @@ def test_direct_page_inventory_includes_background_and_popup_provenance(monkeypa
     surface_context.release_bindings(context)
 
 
+def test_direct_page_inventory_preserves_tab_entries_and_split_panes(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    monkeypatch.setattr(webtab, "request_on_ws", lambda ws, command, timeout=5.0: {
+        "ok": True,
+        "window_id": "window-1",
+        "inventory_revision": 9,
+        "active_tab_entry_id": "group:g3",
+        "focused_tab_id": "tab-d",
+        "tab_entries": [
+            {"id": "tab:tab-a", "mode": "single", "tab_ids": ["tab-a"]},
+            {"id": "tab:tab-b", "mode": "single", "tab_ids": ["tab-b"]},
+            {
+                "id": "group:g3", "mode": "split",
+                "tab_ids": ["tab-c", "tab-d"],
+                "split": {
+                    "axis": "horizontal", "ratio": 0.5,
+                    "panes": [
+                        {"pane_id": "pane:g3:0", "order": 0, "tab_id": "tab-c"},
+                        {"pane_id": "pane:g3:1", "order": 1, "tab_id": "tab-d"},
+                    ],
+                },
+            },
+        ],
+        "pages": [
+            {"tab_id": "tab-a", "target_id": "target-a", "url": "https://a.test", "title": "A", "visible": False, "focused": False, "region": "background", "tab_entry_id": "tab:tab-a", "placement": {"mode": "single"}},
+            {"tab_id": "tab-b", "target_id": "target-b", "url": "https://b.test", "title": "B", "visible": False, "focused": False, "region": "background", "tab_entry_id": "tab:tab-b", "placement": {"mode": "single"}},
+            {"tab_id": "tab-c", "target_id": "target-c", "url": "https://c.test", "title": "C", "visible": True, "focused": False, "region": "left", "tab_entry_id": "group:g3", "placement": {"mode": "split", "pane_id": "pane:g3:0", "order": 0}},
+            {"tab_id": "tab-d", "target_id": "target-d", "url": "https://d.test", "title": "D", "visible": True, "focused": True, "region": "right", "tab_entry_id": "group:g3", "placement": {"mode": "split", "pane_id": "pane:g3:1", "order": 1}},
+        ],
+    })
+
+    context = surface_context.capture_pages()
+
+    assert context["inventory_revision"] == 9
+    assert context["active_tab_entry_id"] == "group:g3"
+    assert context["focused_page"] == "p4"
+    assert context["tab_entries"] == [
+        {"id": "tab:tab-a", "mode": "single", "pages": ["p1"]},
+        {"id": "tab:tab-b", "mode": "single", "pages": ["p2"]},
+        {
+            "id": "group:g3", "mode": "split", "pages": ["p3", "p4"],
+            "split": {
+                "axis": "horizontal", "ratio": 0.5,
+                "panes": [
+                    {"pane_id": "pane:g3:0", "order": 0, "page": "p3"},
+                    {"pane_id": "pane:g3:1", "order": 1, "page": "p4"},
+                ],
+            },
+        },
+    ]
+    assert context["surfaces"][2]["tab_entry_id"] == "group:g3"
+    assert context["surfaces"][3]["placement"] == {
+        "mode": "split", "pane_id": "pane:g3:1", "order": 1,
+    }
+    surface_context.release_bindings(context)
+
+
 def test_frontend_and_electron_expose_turn_surface_preview_contract():
     send = (REPO_ROOT / "web/components/chat/composer/legacy-send.ts").read_text()
     bridge = (REPO_ROOT / "web/lib/desktop-bridge.ts").read_text()

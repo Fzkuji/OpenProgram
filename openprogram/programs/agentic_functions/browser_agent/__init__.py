@@ -794,7 +794,7 @@ def _step_prompt(
     url: str,
     observation: dict[str, Any],
     prior_result: Any,
-    page_inventory: list[dict[str, Any]] | None = None,
+    page_inventory: Any = None,
 ) -> str:
     if isinstance(prior_result, ToolReturn):
         prior_result = {
@@ -933,22 +933,32 @@ def _run_browser_task_commands(
     registry = get_registry()
 
     page_inventory: list[dict[str, Any]] = []
+    page_inventory_snapshot: dict[str, Any] = {"pages": page_inventory}
     bound_tab_id = ""
 
-    def refresh_inventory() -> list[dict[str, Any]]:
+    def refresh_inventory() -> tuple[list[dict[str, Any]], dict[str, Any]]:
         try:
             inventory_context = surface_context.capture_pages(context)
             listed = registry.list_pages(
                 context=inventory_context, owner_id=owner_id,
             )
         except Exception:
-            return []
+            return [], {"pages": []}
         if not listed.get("ok"):
             surface_context.release_bindings(inventory_context)
-            return []
-        return list(listed.get("pages") or [])
+            return [], {"pages": []}
+        pages = list(listed.get("pages") or [])
+        snapshot = {
+            key: listed.get(key)
+            for key in (
+                "browser_context_id", "window_id", "inventory_revision",
+                "active_tab_entry_id", "focused_page", "tab_entries",
+            )
+        }
+        snapshot["pages"] = pages
+        return pages, snapshot
 
-    page_inventory = refresh_inventory()
+    page_inventory, page_inventory_snapshot = refresh_inventory()
     try:
         if page_inventory:
             primary = next((
@@ -1076,7 +1086,7 @@ def _run_browser_task_commands(
                 "type": "text",
                 "text": _step_prompt(
                     task, "", observed, _result_for_prompt(last["result"]),
-                    page_inventory,
+                    page_inventory_snapshot,
                 ),
             }]
             sent_screenshot = pending_screenshot is not None
@@ -1134,7 +1144,7 @@ def _run_browser_task_commands(
                         "summary": "The Page could not be observed after an action.",
                         "backend": backend, "computer_session_id": session_id,
                     }
-                page_inventory = refresh_inventory()
+                page_inventory, page_inventory_snapshot = refresh_inventory()
                 if bound_tab_id:
                     for page in page_inventory:
                         page["bound"] = page.get("tab_id") == bound_tab_id
@@ -1150,7 +1160,7 @@ def _run_browser_task_commands(
                         "summary": "The Page could not be observed after waiting.",
                         "backend": backend, "computer_session_id": session_id,
                     }
-                page_inventory = refresh_inventory()
+                page_inventory, page_inventory_snapshot = refresh_inventory()
                 if bound_tab_id:
                     for page in page_inventory:
                         page["bound"] = page.get("tab_id") == bound_tab_id

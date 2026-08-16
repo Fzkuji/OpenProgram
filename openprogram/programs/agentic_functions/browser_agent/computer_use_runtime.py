@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from dataclasses import field
 from contextlib import suppress
+import copy
 import threading
 import uuid
 from typing import Any, Callable, Mapping
@@ -201,13 +202,28 @@ class ComputerUseSessionRegistry:
                     "title": item.get("title") or "",
                     "origin": item.get("origin") or "",
                     "tab_id": item.get("tab_id") or "",
+                    "tab_entry_id": item.get("tab_entry_id") or "",
+                    "placement": copy.deepcopy(
+                        item.get("placement") or {"mode": "single"}
+                    ),
                     "opener_tab_id": item.get("opener_tab_id") or "",
                     "visible": bool(item.get("visible")),
                     "focused": bool(item.get("focused")),
                     "capabilities": list(item.get("capabilities") or []),
                     "page_context_token": token,
                 })
-        return {"ok": True, "pages": pages}
+        return {
+            "ok": True,
+            "browser_context_id": str(context.get("context_id") or ""),
+            "window_id": str(context.get("window_id") or ""),
+            "inventory_revision": int(context.get("inventory_revision") or 0),
+            "active_tab_entry_id": str(
+                context.get("active_tab_entry_id") or ""
+            ),
+            "focused_page": str(context.get("focused_page") or ""),
+            "tab_entries": copy.deepcopy(context.get("tab_entries") or []),
+            "pages": pages,
+        }
 
     def execute(
         self,
