@@ -80,13 +80,13 @@ export function SettingsTabsLayout({
   const isWide =
     active === "providers" || active === "search" || active === "channels";
   const tabs = [
-    { id: "browser" as const, href: "/settings/browser", label: text("Browser", "浏览器"), Icon: Globe2 },
-    { id: "providers" as const, href: "/settings/providers", label: t("settings.tab.providers"), Icon: Bot },
-    { id: "usage" as const, href: "/settings/usage", label: t("settings.tab.usage"), Icon: ChartNoAxesColumn },
-    { id: "search" as const, href: "/settings/search", label: t("settings.tab.search"), Icon: Search },
-    { id: "channels" as const, href: "/settings/channels", label: t("settings.tab.channels"), Icon: RadioTower },
-    { id: "memory" as const, href: "/settings/memory", label: t("settings.tab.memory"), Icon: Brain },
     { id: "general" as const, href: "/settings/general", label: t("settings.tab.general"), Icon: SlidersHorizontal },
+    { id: "providers" as const, href: "/settings/providers", label: t("settings.tab.providers"), Icon: Bot },
+    { id: "memory" as const, href: "/settings/memory", label: t("settings.tab.memory"), Icon: Brain },
+    { id: "search" as const, href: "/settings/search", label: t("settings.tab.search"), Icon: Search },
+    { id: "browser" as const, href: "/settings/browser", label: text("Browser", "浏览器"), Icon: Globe2 },
+    { id: "channels" as const, href: "/settings/channels", label: t("settings.tab.channels"), Icon: RadioTower },
+    { id: "usage" as const, href: "/settings/usage", label: t("settings.tab.usage"), Icon: ChartNoAxesColumn },
     { id: "system" as const, href: "/settings/system", label: t("settings.tab.system"), Icon: MonitorCog },
   ];
   return (

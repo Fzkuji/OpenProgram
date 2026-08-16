@@ -20,6 +20,10 @@ assert.match(layout, /styles\.railItemLabel/);
 assert.match(layout, /styles\.railHeader[\s\S]*styles\.railTitle[\s\S]*settings\.title[\s\S]*sidebarToggleClass/);
 assert.doesNotMatch(layout, /styles\.topbar/);
 
+const tabsBlock = layout.match(/const tabs = \[([\s\S]*?)\n  \];/)?.[1] ?? "";
+const tabOrder = [...tabsBlock.matchAll(/id: "([^"]+)"/g)].map((match) => match[1]);
+assert.deepEqual(tabOrder, ["general", "providers", "memory", "search", "browser", "channels", "usage", "system"]);
+
 assert.match(providers, /localStorage\.getItem\("providerListOpen"\)/);
 assert.match(providers, /localStorage\.setItem\("providerListOpen",/);
 assert.match(providers, /aria-expanded=\{listOpen\}/);

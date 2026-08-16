@@ -69,6 +69,7 @@
       <b>内容适配</b><span>窄窗口只触发表单控件换行；详情数据、选择和滚动状态不变。</span>
       <b>层级表达</b><span>Settings 名称属于二级导航栏头；Provider 第三级不增加独立名称栏头。</span>
       <b>纵向网格</b><span>Settings 分类列表整体下移 15px，使 Browser、LLM Providers 等行与主侧栏 New chat、Programs 等行逐行对齐；行高和 1px 行距不变。</span>
+      <b>导航顺序</b><span><code>General → LLM Providers → Memory → Web Search → Browser → Channels → Token Usage → System</code>；基础设置优先，模型与记忆相邻，统计和系统置后。</span>
     </div>
   </section>
 
@@ -98,6 +99,7 @@
       <li>Settings 页面不再渲染独立的全局 Settings 顶栏。</li>
       <li>Settings 分类栏展开时显示 <code>Settings</code>，按钮与名称同一行；按钮顶边与主侧栏按钮一致。</li>
       <li>Settings 分类列表的前四行与主侧栏前四行具有相同的 <code>y</code> 坐标、32px 行高和 1px 行距。</li>
+      <li>Settings 分类链接按 <code>General / LLM Providers / Memory / Web Search / Browser / Channels / Token Usage / System</code> 顺序呈现；URL、图标、激活态和键盘顺序随同一数组保持一致。</li>
       <li>LLM Providers 列表栏不显示新增名称栏头，折叠按钮恢复到搜索框旁；原有状态和 49px 收起行为不变。</li>
       <li>LLM Providers 在列表和详情上方显示页面大标题与介绍，路由 loading 状态保持同一结构。</li>
       <li>Memory 内容区继续不显示重复标题和介绍。</li>
@@ -108,13 +110,14 @@
   <section>
     <h2>实现状态</h2>
     <div class="card">
-      <p><strong>状态：已实现并复核。</strong></p>
+      <p><strong>既有结构状态：已实现并复核。</strong></p>
       <ul>
         <li>Settings 分类列表整体下移 15px；生产页面前四行与主侧栏均位于 <code>y=56/89/122/155px</code>，行高均为 32px。</li>
         <li>Settings 收起后首个分类图标仍位于 <code>y=56px</code>；49px 栏宽、栏头按钮顶边、localStorage 与 ARIA 行为不变。</li>
         <li>既有 Providers 页头和三级工具栏、Memory 无重复页头及 loading 结构未修改。</li>
         <li>Settings 定点检查、Memory 设置检查、TypeScript、production build 和 diff check 均通过；规格与质量复核均为 PASS。</li>
       </ul>
+      <p class="pending">本轮导航顺序：待实现与复核。</p>
     </div>
   </section>
 </main></body>
