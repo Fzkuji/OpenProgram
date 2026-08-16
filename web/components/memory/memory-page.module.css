@@ -639,6 +639,35 @@
   color: var(--text-primary);
 }
 
+.coreViewSwitch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-tertiary);
+}
+
+.coreViewButton,
+.coreViewButtonActive {
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-primary);
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.coreViewButtonActive {
+  color: var(--text-bright);
+  background: var(--bg-primary);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
 .metaOk {
   color: var(--accent-green);
 }

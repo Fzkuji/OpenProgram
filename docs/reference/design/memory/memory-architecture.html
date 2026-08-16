@@ -732,6 +732,29 @@
     这里正本是全量的，所以归属这件事根本不用判。
   </div>
 
+  <div class="grid2">
+    <div class="oc">
+      <h4>Web 默认展示实际注入块</h4>
+      <div class="d"><code>GET /api/memory/core</code>同时返回<code>topics/core.md</code>正本、根目录<code>core.md</code>渲染结果和考虑<code>memory.core.inject</code>后的有效注入内容。Core 页默认只读展示有效注入内容，并显示实际 token 数与 2000 token 预算；“完整记录”视图才进入可编辑正本。现有<code>content/size/mtime</code>字段继续表示正本，避免破坏旧调用方。</div>
+    </div>
+    <div class="oc">
+      <h4>Writer 与 Organizer 控制内容用途</h4>
+      <div class="d">Writer 阅读完整输入，但只记录以后仍有用途的事实；不记录重复状态检查、未变化的测量、一次性工具过程和可从项目文件重新读取的细节。项目进度进入对应项目 Topic。Organizer 在处理<code>topics/core.md</code>时，把项目专属、过期或重复内容移入普通 Topic 或删除，只保留多数未来会话都需要的规则、偏好与身份事实。</div>
+    </div>
+  </div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>验收入口</th><th>要求</th></tr></thead>
+      <tbody>
+        <tr><td><code>GET /api/memory/core</code></td><td>在工作区锁内读取完整快照；兼容返回正本<code>content/size/mtime</code>，并额外返回渲染内容、有效注入内容、注入开关、token 数与预算。</td></tr>
+        <tr><td>Memory → Core</td><td>默认显示实际注入内容和 token 预算；关闭注入时明确显示空注入。用户可切换到完整正本并沿用现有事务保存，保存期间的新草稿不会被刷新覆盖；所有 Markdown 预览经过共享清洗。</td></tr>
+        <tr><td>Writer prompt</td><td>不再要求把每个重复过程写成 Topic；Core 不再接收普通项目进度。</td></tr>
+        <tr><td>Organizer prompt</td><td>显式整理 Core 中的项目过程、重复记录和过期状态；删除后仍由 Git 保留历史。</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="legend"><b>实现状态（2026-08-17）：已实现并复核。</b>Web 默认展示考虑注入开关后的有效 Core，完整 records 保存采用 compare-and-set 同步 Runtime 规范化正本，Markdown 经过共享清洗，GET 在事务安装期间只读取完整快照；Writer 与 Organizer 已加入上述内容用途约束。正式工作区通过结构化 Memory 事务从 186 条整理为 15 条，Topic 文件从 9 个整理为 4 个；<code>topics/core.md</code>从 31 条、约 15305 token 整理为 3 条、约 429 token，实际注入约 425 token。重复探测、旧工具清单、项目重复检查及失效状态均已从当前视图删除，原内容仍保留在 Memory Git 历史中。自动写入阈值调整为 8000 token，检索只使用整理后的 Topic，不再直接混入 Source 原文。309 个 Memory 单元与组件测试、Memory/Markdown 定点检查、TypeScript、production build、规格复核和质量复核均通过。</div>
+
   <!-- ══════════ 06九个方法 ══════════ -->
   <h2 id="hooks"><span class="num">06</span>接口的九个方法</h2>
   <p class="lead">记忆和 agent 运行时之间只有这一个接口。除了 <code>name</code> 之外每个方法都有默认实现，
