@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 const root = new URL("../", import.meta.url);
 const page = readFileSync(new URL("components/agents/agents-page.tsx", root), "utf8");
+const pageStyles = readFileSync(new URL("components/agents/agents-page.module.css", root), "utf8");
 const sidebar = readFileSync(new URL("components/sidebar/sidebar.tsx", root), "utf8");
 const sender = readFileSync(new URL("components/chat/composer/legacy-send.ts", root), "utf8");
 
@@ -19,6 +20,13 @@ assert.match(page, /Browse programs/);
 assert.match(page, /fetch\("\/api\/skills"/);
 assert.match(page, /fetch\("\/api\/mcp\/servers"/);
 assert.match(page, /async function openPicker[\s\S]*Promise\.all\([\s\S]*fetch\("\/api\/programs"/);
+assert.match(page, /ManagePageHeader,\s*ManageRow,\s*managePageStyles/);
+assert.match(page, /settings-page\.module\.css/);
+assert.match(page, /<ManagePageHeader[\s\S]*tabs=\{TABS\.map/);
+assert.match(page, /className=\{managePageStyles\.splitBody\}/);
+assert.match(page, /<ManageRow[\s\S]*styles\.agentSelected/);
+assert.doesNotMatch(page, /styles\.(?:header|layout|agentRail|detailHeader|tabs)\b/);
+assert.doesNotMatch(pageStyles, /\.(?:header|layout|agentRail|detailHeader|tabs)\s*\{/);
 assert.match(sidebar, /href="\/agents"[\s\S]*nav\.agents/);
 assert.match(sender, /toolsProfile\s*!==\s*"__agent__"[\s\S]*payload\.tools_profile\s*=\s*toolsProfile/);
 

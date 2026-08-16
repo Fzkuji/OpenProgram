@@ -54,16 +54,33 @@ export function ManagePageHeader({
   toolbar?: ReactNode;
   actions?: ManageAction[];
 }) {
+  function moveTab(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (!tabs || !onTabChange) return;
+    let next = index;
+    if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+    else if (event.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    onTabChange(tabs[next].id);
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("button[role=tab]")[next]?.focus();
+  }
+
   return (
     <div className={styles.topbar}>
       <span className={styles.title}>{title}</span>
       {tabs && tabs.length > 0 && (
-        <div className={styles.tabs}>
-          {tabs.map((tb) => (
+        <div className={styles.tabs} role="tablist">
+          {tabs.map((tb, index) => (
             <button
               key={tb.id}
               type="button"
+              role="tab"
+              aria-selected={activeTab === tb.id}
+              tabIndex={activeTab === tb.id ? 0 : -1}
               onClick={() => onTabChange?.(tb.id)}
+              onKeyDown={(event) => moveTab(event, index)}
               className={cn(styles.tabBtn, activeTab === tb.id && styles.active)}
             >
               {tb.count === undefined ? tb.label : `${tb.label} (${tb.count})`}

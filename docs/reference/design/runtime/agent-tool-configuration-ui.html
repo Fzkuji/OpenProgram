@@ -24,7 +24,7 @@
   </section>
 
   <section id="prototype"><h2>2. Agents 配置页面原型</h2>
-    <p>主页面只承担Agent选择、配置分页、访问模式和当前范围摘要。工具目录是一个按需打开的选择器，不随Agent详情常驻渲染；新增Agent由列表标题中的明确入口完成。</p>
+    <p>主页面只承担Agent选择、配置分页、访问模式和当前范围摘要。外层页面复用现有Web管理页与Settings结构，不另建Agent专用窗口；工具目录是一个按需打开的选择器，不随Agent详情常驻渲染；新增Agent由共享管理页标题栏提供。</p>
     <div class="prototype" aria-label="Agent Tools and Programs 配置页面原型">
       <div class="appbar"><span class="brand">OpenProgram</span><div class="appnav" aria-hidden="true"><span>Programs</span><span class="active">Agents</span><span>Skills</span><span>MCP Servers</span></div><button class="save" type="button">Save changes</button></div>
       <div class="agent-shell">
@@ -54,7 +54,7 @@
 
   <section id="acceptance"><h2>5. 验收合同</h2><ul class="acceptance"><li>Programs页不显示User Profile、Access preset、Agent允许/禁止状态或会话override。</li><li>Agents页可以创建Agent、选择Agent并保存其Tools &amp; Programs策略；同一Program实体不会被复制进Agent配置。</li><li>Agent详情主页面不直接渲染完整Program目录，只显示访问模式、数量、preset和摘要。</li><li>点击Browse programs后才打开选择器；选择器支持搜索、来源过滤、分类折叠和具体条目勾选。</li><li>关闭选择器后，主页面保持同一滚动位置，不因Program数量增加而增长。</li><li>默认聊天Agent不会把全部Workflow名称、描述、schema或源码写进首轮上下文。</li><li>选择Access preset后，<code>tool_search</code>、显式名称加载和真正调用都受同一允许集合限制。</li><li>会话Tools菜单默认显示“Use Agent configuration”；临时修改不反写Agent。</li><li>全局禁用或删除Program后，所有Agent无需迁移配置即可在下一轮得到一致的不可用结果。</li><li>Function、Agentic Function和Application最终都进入现有统一AgentTool执行路径。</li></ul></section>
   <section id="implementation"><h2>6. 实现范围与验证记录</h2>
-    <p>本轮直接复用<code>AgentSpec</code>、现有Tool Profile存储、<code>resolve_tools()</code>与AgentTool executor。新增内容是完整Agent配置HTTP入口、六区Agents页面和Programs / Skills / MCP按需选择器；没有增加第二套执行语义。</p>
+    <p>本轮直接复用<code>AgentSpec</code>、现有Tool Profile存储、<code>resolve_tools()</code>与AgentTool executor；页面层直接复用<code>ManagePageHeader</code>、<code>ManageRow</code>、共享分栏和Settings详情容器。新增内容只保留Agent专属配置表单与Programs / Skills / MCP按需选择器，没有增加第二套页面窗口或执行语义。</p>
     <table><thead><tr><th>范围</th><th>文件边界</th></tr></thead><tbody><tr><td>后端</td><td><code>routes/agents.py</code>提供create、read、patch、default、duplicate、workspace和delete入口，仍委托现有Agent manager持久化。</td></tr><tr><td>前端</td><td><code>/agents</code>提供六个配置区；能力目录仅在Manage对话框打开后请求。</td></tr><tr><td>明确不做</td><td>不新增executor，不复制Program schema、Skill正文或MCP凭据，不重写Profile存储，不删除兼容API。</td></tr></tbody></table>
     <table><thead><tr><th>检查</th><th>状态</th></tr></thead><tbody><tr><td>Agent HTTP生命周期、完整配置与校验</td><td>定向component测试6项通过</td></tr><tr><td>Agents框架、按需选择器与既有Web合同</td><td>Web test/check、TypeScript和production build通过</td></tr><tr><td>WebUI component测试</td><td>178项通过</td></tr><tr><td>Python contracts</td><td>449项通过，1项跳过</td></tr><tr><td>18100 App可视验收</td><td>封装App已验证六区配置、创建入口和按需Programs选择器；18200未监听，未启动源码Electron。</td></tr></tbody></table>
   </section>
