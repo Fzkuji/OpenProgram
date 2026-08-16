@@ -1089,12 +1089,26 @@
   border-bottom: 1px dotted var(--border);
 }
 @container (max-width: 420px) {
+  .modelCapabilities:empty {
+    display: none;
+  }
   .modelRowHeader {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 14px 20px minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 8px;
   }
   .modelCapabilities {
-    flex-basis: 100%;
-    padding-left: 50px;
+    grid-column: 3 / -1;
+    grid-row: 2;
+    min-width: 0;
+    padding-left: 0;
+  }
+  .modelToggle {
+    grid-column: 4;
+    grid-row: 1;
+    justify-self: end;
   }
   .modelFact {
     grid-template-columns: minmax(0, 1fr);
