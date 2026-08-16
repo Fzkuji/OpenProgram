@@ -2446,6 +2446,14 @@ const stalePreview = await deferredPreview.then((result) =>
 assert.equal(stalePreview.reason_code, "page_context_stale");
 assert.equal("preview" in stalePreview, false);
 assert.equal("target_id" in stalePreview, false);
+const legacyPreview = bridgeModule.finalizeWebTabPreview(
+  "w:surface-page",
+  0,
+  { preview: { title: "legacy" }, target_id: "target-legacy" },
+);
+assert.equal(legacyPreview.ok, true);
+assert.equal(legacyPreview.preview.title, "legacy");
+assert.equal(legacyPreview.target_id, "target-legacy");
 for (const [visibleIds, expectedRegion] of [
   [["w:surface-page", "s:surface-chat"], "left"],
   [["s:surface-chat", "w:surface-page"], "right"],
@@ -2504,6 +2512,14 @@ plainTabsModule.replaceCenterTabsPayload({
   splitRatio: 0.5,
 }, { persist: false });
 assert.equal(bridgeModule.surfaceRefForChat("surface-chat", true), null);
+const hiddenLegacyPreview = bridgeModule.finalizeWebTabPreview(
+  "w:surface-page",
+  0,
+  { preview: { title: "hidden" }, target_id: "target-hidden" },
+);
+assert.equal(hiddenLegacyPreview.reason_code, "page_context_stale");
+assert.equal("preview" in hiddenLegacyPreview, false);
+assert.equal("target_id" in hiddenLegacyPreview, false);
 
 // Replacing the id is the cleanup signal used by the desktop bridge. Verify
 // the existing reconciler destroys the native view once Home removes that id.

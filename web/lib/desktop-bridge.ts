@@ -799,7 +799,11 @@ export function installDesktopMenuHandlers(): void {
           ws.send(JSON.stringify({
             action: "webtab_result",
             req_id: d.req_id,
-            ...finalizeWebTabPreview(tab.id, geometryRevision, result),
+            ...finalizeWebTabPreview(
+              tab.id,
+              d.expected_geometry_revision ?? 0,
+              result,
+            ),
           }));
         });
       } else {
