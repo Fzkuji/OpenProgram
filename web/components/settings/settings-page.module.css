@@ -1081,9 +1081,6 @@
   flex-wrap: wrap;
   gap: 4px;
 }
-.modelCapabilities:empty {
-  display: none;
-}
 .modelFact {
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr);
@@ -1092,6 +1089,9 @@
   border-bottom: 1px dotted var(--border);
 }
 @container (max-width: 420px) {
+  .modelCapabilities:empty {
+    display: none;
+  }
   .modelRowHeader {
     display: grid;
     grid-template-columns: 14px 20px minmax(0, 1fr) auto;
