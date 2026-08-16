@@ -2397,6 +2397,7 @@ bridgeModule.registerVisibleWebTabBounds(
   "w:surface-page",
   { x: 600, y: 120, width: 500, height: 700 },
 );
+bridgeModule.setWebTabReady("w:surface-page", true);
 const firstGeometryRevision = bridgeModule.surfaceRefForChat(
   "surface-chat",
   true,
@@ -2454,6 +2455,41 @@ const legacyPreview = bridgeModule.finalizeWebTabPreview(
 assert.equal(legacyPreview.ok, true);
 assert.equal(legacyPreview.preview.title, "legacy");
 assert.equal(legacyPreview.target_id, "target-legacy");
+let resolveDeferredActivation;
+const deferredActivation = new Promise((resolve) => {
+  resolveDeferredActivation = resolve;
+});
+bridgeModule.removeVisibleWebTabBounds(geometryBridge, "w:surface-page");
+bridgeModule.setWebTabReady("w:surface-page", false);
+assert.equal(
+  bridgeModule.surfaceRefForChat("surface-chat", true),
+  null,
+  "the production hide lifecycle must remove the page from turn surfaces",
+);
+const occludedPreview = bridgeModule.finalizeWebTabPreview(
+  "w:surface-page",
+  0,
+  { preview: { title: "occluded" }, target_id: "target-occluded" },
+);
+assert.equal(occludedPreview.reason_code, "page_context_stale");
+assert.equal("preview" in occludedPreview, false);
+assert.equal("target_id" in occludedPreview, false);
+resolveDeferredActivation("target-occluded");
+const occludedActivation = await deferredActivation.then((targetId) =>
+  bridgeModule.finalizeBoundWebTabActivation(
+    "w:surface-page",
+    0,
+    targetId,
+  ),
+);
+assert.equal(occludedActivation.reason_code, "page_context_stale");
+assert.equal("target_id" in occludedActivation, false);
+bridgeModule.registerVisibleWebTabBounds(
+  geometryBridge,
+  "w:surface-page",
+  { x: 0, y: 120, width: 520, height: 700 },
+);
+bridgeModule.setWebTabReady("w:surface-page", true);
 for (const [visibleIds, expectedRegion] of [
   [["w:surface-page", "s:surface-chat"], "left"],
   [["s:surface-chat", "w:surface-page"], "right"],

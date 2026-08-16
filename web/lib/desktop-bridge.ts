@@ -594,6 +594,10 @@ export function visibleWebTab() {
   return null;
 }
 
+function isWebTabActuallyVisible(tabId: string): boolean {
+  return isWebTabReady(tabId) && visibleWebBounds.has(tabId);
+}
+
 function visibleWebTabById(tabId: string) {
   const state = useCenterTabs.getState();
   const group = state.activeId
@@ -606,7 +610,7 @@ function visibleWebTabById(tabId: string) {
   if (state.activeId && state.splitWebTabId) {
     visibleIds.add(state.splitWebTabId);
   }
-  return visibleIds.has(tabId)
+  return visibleIds.has(tabId) && isWebTabActuallyVisible(tabId)
     ? state.tabs.find((tab) => tab.id === tabId && tab.kind === "web") ?? null
     : null;
 }
@@ -636,6 +640,38 @@ export function finalizeWebTabPreview(
     ok: true,
     ...result,
     window_id: desktopBridge()?.windowId,
+    geometry_revision: geometryRevision,
+  };
+}
+
+export function finalizeBoundWebTabActivation(
+  tabId: string,
+  expectedGeometryRevision: number,
+  targetId: string | null,
+): Record<string, unknown> {
+  const tab = visibleWebTabById(tabId);
+  const geometryRevision = webTabGeometryRevisions.get(tabId) ?? 0;
+  if (!tab || (
+    expectedGeometryRevision > 0
+    && geometryRevision !== expectedGeometryRevision
+  )) {
+    return {
+      ok: false,
+      error: "web tab geometry changed during activation",
+      reason_code: "page_context_stale",
+      geometry_revision: geometryRevision,
+    };
+  }
+  const url = tab.url || (tab.id.startsWith("w:") ? tab.id.slice(2) : "");
+  if (!url || !targetId) {
+    return { ok: false, error: "desktop web tab did not expose a CDP target" };
+  }
+  return {
+    ok: true,
+    window_id: desktopBridge()?.windowId,
+    url,
+    tab_id: tab.id,
+    target_id: targetId,
     geometry_revision: geometryRevision,
   };
 }
@@ -674,6 +710,7 @@ export function surfaceRefForChat(
     );
   }
   if (!web || web.kind !== "web") return null;
+  if (!isWebTabActuallyVisible(web.id)) return null;
   const region = !group
     ? "right"
     : group.visibleIds.length === 1
@@ -807,9 +844,24 @@ export function installDesktopMenuHandlers(): void {
           }));
         });
       } else {
-        void bridge.webTab.activate(tab.id, d.url, true).then((targetId) =>
-          sendWebTabResult(ws, d.req_id!, tab, targetId),
-        ).catch(() => sendWebTabResult(ws, d.req_id!, tab, null));
+        void bridge.webTab.activate(tab.id, d.url, true).then((targetId) => {
+          ws.send(JSON.stringify({
+            action: "webtab_result",
+            req_id: d.req_id,
+            ...finalizeBoundWebTabActivation(
+              tab.id,
+              d.expected_geometry_revision ?? 0,
+              targetId,
+            ),
+          }));
+        }).catch(() => {
+          ws.send(JSON.stringify({
+            action: "webtab_result",
+            req_id: d.req_id,
+            ok: false,
+            error: "desktop web tab did not expose a CDP target",
+          }));
+        });
       }
       return;
     }
