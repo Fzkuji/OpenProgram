@@ -12,6 +12,7 @@ const loading = source("app/(shell)/settings/loading.tsx");
 const detail = source("components/settings/providers/detail.tsx");
 const accountManager = source("components/settings/providers/account-manager.tsx");
 const modelList = source("components/settings/providers/model-list.tsx");
+const sidebar = source("components/sidebar/sidebar.tsx");
 const css = source("components/settings/settings-page.module.css");
 
 assert.match(layout, /localStorage\.getItem\("settingsNavOpen"\)/);
@@ -45,6 +46,7 @@ assert.match(css, /\.body\.settingsNavCollapsed\s*\{[^}]*grid-template-columns:\
 assert.match(css, /\.railHeader\s*\{[^}]*height:\s*32px/s);
 assert.match(css, /\.railTitle\s*\{[^}]*font-size:\s*18px[^}]*line-height:\s*1(?:;|\s)/s);
 assert.match(css, /\.pageTitle\s*\{[^}]*font-size:\s*18px[^}]*overflow-wrap:\s*anywhere/s);
+assert.match(sidebar, /className="text-\[20px\] font-bold tracking-\[-0\.01em\] whitespace-nowrap"/);
 assert.match(css, /\.railItems\s*\{[^}]*margin-top:\s*15px/s);
 assert.match(css, /\.providersLayout\.providerListCollapsed\s*\{[^}]*grid-template-columns:\s*49px minmax\(0, 1fr\)/s);
 assert.match(css, /\.providersLayout\s*\{[^}]*grid-template-columns:\s*min\(calc\(var\(--sidebar-width\) - 1px\),\s*42%\) minmax\(0,\s*1fr\)/s);
