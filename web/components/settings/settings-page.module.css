@@ -426,7 +426,10 @@
   color: var(--text-secondary);
   width: 28px;
   height: 28px;
+  flex: 0 0 28px;
+  padding: 0;
   border-radius: 6px;
+  box-sizing: border-box;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -789,13 +792,15 @@
   align-items: center;
   gap: 5px;
   min-width: 0;
-  border: 0;
+  height: 28px;
+  border: 1px solid transparent;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  padding: 5px 7px;
+  padding: 0 8px;
   border-radius: 6px;
+  box-sizing: border-box;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -805,6 +810,12 @@
 }
 .acctStatusButton:hover {
   background: var(--bg-hover);
+}
+.iconBtn svg,
+.acctStatusButton svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
 }
 .acctStatusButton.valid { color: var(--accent-green); background: color-mix(in srgb, var(--accent-green) 15%, transparent); }
 .acctStatusButton.warn { color: var(--accent-yellow); background: color-mix(in srgb, var(--accent-yellow) 17%, transparent); }

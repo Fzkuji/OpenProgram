@@ -7,6 +7,7 @@
   <style>
     :root{color-scheme:dark;--bg:#171717;--panel:#202020;--panel2:#292929;--line:#3a3a3a;--text:#f2f2f2;--muted:#aaa;--blue:#72a7f7;--ok:#77b984;--rail:49px;--settings:288px;--provider:288px}
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 Inter,system-ui,sans-serif}main{max-width:1120px;margin:auto;padding:44px 24px 72px}h1{font-size:30px;line-height:1.2;margin:0 0 10px}h2{font-size:20px;margin:34px 0 12px}h3{font-size:15px;margin:0 0 6px}p{margin:0 0 10px}.muted{color:var(--muted)}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#c9dcff}.status,.card,.mock,.table-wrap{border:1px solid var(--line);border-radius:12px;background:var(--panel)}.status{display:grid;grid-template-columns:repeat(4,1fr);margin:24px 0;overflow:hidden}.status>div{padding:14px 16px}.status>div+div{border-left:1px solid var(--line)}.k{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.v{font-weight:650;margin-top:3px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.card{padding:16px}.mock{padding:14px;overflow:auto}.chrome{display:grid;grid-template-columns:112px 122px minmax(180px,1fr);height:238px;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#191919}.chrome.compact{grid-template-columns:32px 32px minmax(180px,1fr)}.col{padding:7px;border-right:1px solid var(--line);overflow:hidden}.col.detail{padding:15px;border:0}.rail-head{height:30px;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line);font-weight:650;white-space:nowrap}.toggle{width:22px;height:22px;margin-left:auto;border-radius:5px;background:var(--panel2);display:grid;place-items:center;color:var(--muted)}.row{height:27px;margin-top:5px;border-radius:5px;background:var(--panel2);display:flex;align-items:center;gap:6px;padding:0 7px;white-space:nowrap}.ico{width:10px;height:10px;border-radius:3px;background:var(--blue);flex:0 0 auto}.detail .block{height:22px;border-radius:6px;background:var(--panel2);margin:8px 0}.detail .block.short{width:55%}.compact .col{padding:5px}.compact .rail-head{justify-content:center}.compact .rail-head .label{display:none}.compact .toggle{margin:0}.compact .row{justify-content:center;padding:0}.compact .row .label{display:none}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:720px}th,td{text-align:left;vertical-align:top;padding:11px 13px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-size:12px}.flow{display:grid;grid-template-columns:200px 1fr;gap:8px 14px}.flow b{color:var(--blue)}.account-demo{max-width:560px;margin:auto}.provider-demo-head,.account-head,.account-foot,.key-field,.add-key{display:flex;align-items:center;gap:8px}.provider-demo-head{padding:4px 0 14px;border-bottom:1px solid var(--line)}.provider-logo{width:36px;height:36px;border-radius:8px;background:var(--panel2)}.provider-name{min-width:0;flex:1;font-weight:700;font-size:16px}.account-title{display:flex;align-items:center;justify-content:space-between;margin:18px 0 8px}.account-card{border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:12px}.account-head{margin-bottom:10px}.account-name{font-weight:650}.account-status{margin-left:auto;color:var(--ok);font-size:11px;font-weight:700}.icon-action{width:28px;height:28px;border:0;border-radius:7px;background:#343434;color:var(--muted);display:grid;place-items:center}.key-field{height:34px;padding:0 8px 0 11px;border-radius:8px;background:#181818;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.key-field span{flex:1}.account-foot{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}.switch{width:30px;height:17px;border-radius:20px;background:var(--blue);position:relative}.switch:after{content:"";position:absolute;width:13px;height:13px;border-radius:50%;background:white;right:2px;top:2px}.add-key{margin-top:8px;padding:9px 11px;border:1px dashed var(--line);border-radius:9px;color:var(--muted)}ul{margin:8px 0;padding-left:20px}.pending{color:#d8af63}.ok{color:var(--ok)}@media(max-width:760px){.status,.grid{grid-template-columns:1fr}.status>div+div{border-left:0;border-top:1px solid var(--line)}.flow{grid-template-columns:1fr}}
+    .account-demo{--credential-control-size:28px}.account-head .icon-action,.key-field .icon-action{width:var(--credential-control-size);height:var(--credential-control-size);border-radius:6px}.account-status{height:var(--credential-control-size);box-sizing:border-box;border:1px solid transparent;border-radius:6px;padding:0 8px;display:inline-flex;align-items:center;gap:5px}
   </style>
 </head>
 <body><main>
@@ -53,13 +54,13 @@
       <div class="provider-demo-head"><span class="provider-logo"></span><span class="provider-name">Alibaba Token Plan (China)<small class="muted" style="display:block;font-weight:400">API key provider</small></span><span class="muted">Enabled</span><span class="switch"></span></div>
       <div class="account-title"><strong>API keys</strong><span class="muted">1 account</span></div>
       <div class="account-card">
-        <div class="account-head"><span class="account-name">default</span><button class="icon-action" aria-label="Rename">✎</button><button class="account-status" style="border:0;background:transparent" aria-label="Validate API key">✓ VALID ↻</button><button class="icon-action" aria-label="Remove">⌫</button></div>
+        <div class="account-head"><span class="account-name">default</span><button class="icon-action" aria-label="Rename">✎</button><button class="account-status" aria-label="Validate API key">✓ VALID ↻</button><button class="icon-action" aria-label="Remove">⌫</button></div>
         <div class="key-field"><span>sk-…BUCh</span><button class="icon-action" aria-label="Replace API key">⌘</button></div>
         <div class="account-foot"><span class="switch"></span><span>Use this account for requests</span></div>
       </div>
       <div class="add-key"><span>＋</span><span>Add API key</span></div>
     </div>
-    <p class="muted" style="margin-top:10px">每条凭据使用一个有边界的账户卡片。验证结果与重新验证合并为一个控件；启用状态保留为 Switch；重命名、替换和删除使用带可访问名称的图标按钮。新增表单默认收起，避免与已有凭据争夺视觉层级。</p>
+    <p class="muted" style="margin-top:10px">每条凭据使用一个有边界的账户卡片。验证结果与重新验证合并为一个控件；启用状态保留为 Switch；重命名、替换和删除使用带可访问名称的图标按钮。同层级操作统一为 28px 高度、6px 圆角和 14px 图标；纯图标操作为 28px 正方形，状态文字按钮只按内容扩展宽度。新增表单默认收起，避免与已有凭据争夺视觉层级。</p>
   </section>
 
   <section>
@@ -158,6 +159,12 @@
         <li>详情内边距由子级 detailSurface 承载，实测在 681/680/300px 详情宽度下分别为 20/12/8px；零账户与已有账户表单在宽窄状态均保持正确列映射。</li>
         <li>默认 OpenProgram App 已完成正常窗口可视验收；Settings、Memory、TypeScript、production build、目标 HTML 与 diff 检查通过，规格和质量复核均为 PASS。</li>
         <li>账户 API、轮询策略、Provider/Key 状态语义和导航列行为未改变。</li>
+      </ul>
+      <p><strong>Provider 操作控件尺寸：已实现并复核。</strong></p>
+      <ul>
+        <li>账户卡片内 Rename、Validate、Remove、Replace 和取消操作统一为 28px 高度、6px 圆角和 14px 图标；纯图标操作同时固定为 28px 宽度。</li>
+        <li>状态颜色、文字、交互行为和可访问名称保持不变。</li>
+        <li>静态合同在原实现上失败、在当前实现上通过；Settings、Memory、TypeScript、production build、目标 HTML 与 diff 检查通过，规格和质量复核均为 PASS。</li>
       </ul>
     </div>
   </section>
