@@ -416,7 +416,6 @@ def capture_pages(context: dict | None = None) -> dict:
             }
             if not panes:
                 continue
-            entry["pages"] = [pane["page"] for pane in panes]
             for pane in panes:
                 surface = surface_by_key[pane["page"]]
                 surface["tab_entry_id"] = entry_id
@@ -426,6 +425,12 @@ def capture_pages(context: dict | None = None) -> dict:
                     "order": pane["order"],
                 }
                 placed_pages.add(pane["page"])
+            for page_key in page_keys:
+                if page_key in placed_pages:
+                    continue
+                surface_by_key[page_key]["tab_entry_id"] = entry_id
+                surface_by_key[page_key]["placement"] = {"mode": "split"}
+                placed_pages.add(page_key)
         else:
             for page_key in page_keys:
                 surface_by_key[page_key]["tab_entry_id"] = entry_id

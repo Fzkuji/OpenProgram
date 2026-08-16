@@ -332,6 +332,7 @@ export interface DesktopBrowserExtension {
   version: string;
   source: "edge-addons" | "chrome-web-store" | "folder" | "browser-profile";
   sourceUrl: string;
+  iconUrl: string;
   enabled: boolean;
   loaded: boolean;
   permissions: string[];
@@ -407,6 +408,8 @@ export interface DesktopMainMenuApi {
     height?: number;
   }): void;
   close(): void;
+  scheduleClose?(delay?: number): void;
+  cancelClose?(): void;
   onUpdate?(cb: (state: {
     items: DesktopContextMenuItem[];
     x: number;
@@ -755,7 +758,7 @@ export interface BrowserPageInventoryItem {
   tab_entry_id: string;
   placement:
     | { mode: "single" }
-    | { mode: "split"; pane_id: string; order: number };
+    | { mode: "split"; pane_id?: string; order?: number };
   opener_tab_id?: string;
 }
 
@@ -839,14 +842,14 @@ export async function browserPageInventory(
   });
   const pages = await Promise.all(tabs
     .filter((tab) => tab.kind === "web")
-    .map(async (tab) => {
+    .map(async (tab): Promise<BrowserPageInventoryItem | null> => {
       const nativePage = await bridge.webTab.inspect!(tab.id);
       if (!nativePage) return null;
       const group = findCenterTabGroup(groups, tab.id);
       const current = webState.get(tab.id)!;
       const visible = current.visible;
       const focused = visible && focusedTabId === tab.id;
-      const memberOrder = group?.memberIds.indexOf(tab.id) ?? -1;
+      const paneOrder = group?.visibleIds.indexOf(tab.id) ?? -1;
       const tabEntryId = group ? `group:${group.id}` : `tab:${tab.id}`;
       const region = !visible
         ? "background" as const
@@ -865,13 +868,13 @@ export async function browserPageInventory(
         region,
         geometry_revision: current.geometryRevision,
         tab_entry_id: tabEntryId,
-        placement: group && memberOrder >= 0
+        placement: group && paneOrder >= 0
           ? {
               mode: "split" as const,
-              pane_id: `pane:${group.id}:${memberOrder}`,
-              order: memberOrder,
+              pane_id: `pane:${group.id}:${paneOrder}`,
+              order: paneOrder,
             }
-          : { mode: "single" as const },
+          : group ? { mode: "split" as const } : { mode: "single" as const },
         ...(tab.openerTabId ? { opener_tab_id: tab.openerTabId } : {}),
       };
     }));
@@ -890,7 +893,15 @@ export async function browserPageInventory(
         tab_ids: [entry.tabId],
       }] : [];
     }
-    const tabIds = entry.group.memberIds.filter((id) => validTabIds.has(id));
+    const visibleTabIds = entry.group.visibleIds.filter(
+      (id) => validTabIds.has(id),
+    );
+    const tabIds = [
+      ...visibleTabIds,
+      ...entry.group.memberIds.filter(
+        (id) => validTabIds.has(id) && !visibleTabIds.includes(id),
+      ),
+    ];
     if (tabIds.length === 0) return [];
     return [{
       id: entry.id,
@@ -899,8 +910,7 @@ export async function browserPageInventory(
       split: {
         axis: "horizontal",
         ratio: splitRatio,
-        panes: tabIds.map((tabId) => {
-          const order = entry.group.memberIds.indexOf(tabId);
+        panes: visibleTabIds.map((tabId, order) => {
           return {
             pane_id: `pane:${entry.group.id}:${order}`,
             order,

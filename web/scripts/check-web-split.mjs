@@ -1631,6 +1631,34 @@ assert.ok(
   "a split ratio change advances the inventory revision",
 );
 assert.equal(resizedPageInventory.tab_entries[2].split.ratio, 0.6);
+useCenterTabs.getState().moveGroupMember("g3", "w:bilibili", 1);
+const reorderedPageInventory = await browserPageInventory(inventoryBridge);
+assert.deepEqual(
+  useCenterTabs.getState().groups[0].memberIds,
+  ["w:youtube", "w:bilibili"],
+);
+assert.deepEqual(
+  useCenterTabs.getState().groups[0].visibleIds,
+  ["w:bilibili", "w:youtube"],
+);
+assert.deepEqual(
+  reorderedPageInventory.tab_entries[2].split.panes,
+  [
+    { pane_id: "pane:g3:0", order: 0, tab_id: "w:bilibili" },
+    { pane_id: "pane:g3:1", order: 1, tab_id: "w:youtube" },
+  ],
+  "Page inventory pane order must match the rendered visibleIds order",
+);
+assert.deepEqual(
+  Object.fromEntries(reorderedPageInventory.pages.slice(2).map((page) => [
+    page.tab_id,
+    page.placement,
+  ])),
+  {
+    "w:bilibili": { mode: "split", pane_id: "pane:g3:0", order: 0 },
+    "w:youtube": { mode: "split", pane_id: "pane:g3:1", order: 1 },
+  },
+);
 removeVisibleWebTabBounds(inventoryBridge, "w:bilibili");
 removeVisibleWebTabBounds(inventoryBridge, "w:youtube");
 for (const tab of inventoryTabs) setWebTabReady(tab.id, false);

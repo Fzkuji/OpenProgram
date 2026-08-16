@@ -8,7 +8,7 @@
  * not independently selectable from the strip.
  */
 import { useEffect, useRef, useState } from "react";
-import { Bookmark, CirclePlus, Download, FileText, Globe, History, TerminalSquare, X } from "lucide-react";
+import { Bookmark, CirclePlus, Download, FileText, Globe, History, Puzzle, TerminalSquare, X } from "lucide-react";
 
 import {
   MessageCircleIcon,
@@ -87,6 +87,8 @@ function CompoundMemberIcon({ tab, animate }: { tab: CenterTab; animate: boolean
           ? <History size={13} />
           : tab.page === "downloads"
             ? <Download size={13} />
+          : tab.page === "extensions"
+            ? <Puzzle size={13} />
           : tab.page === "browser"
             ? <Globe size={13} />
             : tab.page === "terminal" || tab.page === "claude"
@@ -355,6 +357,8 @@ export function TabItem({
               ? <History size={13} />
               : tab.page === "downloads"
                 ? <Download size={13} />
+              : tab.page === "extensions"
+                ? <Puzzle size={13} />
               : tab.page === "browser"
                 ? <Globe size={13} />
                 : tab.page === "terminal" || tab.page === "claude"

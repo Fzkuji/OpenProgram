@@ -23,6 +23,9 @@ import {
   Globe,
   History,
   MoreVertical,
+  Power,
+  Puzzle,
+  RefreshCw,
   Trash2,
   X,
 } from "lucide-react";
@@ -53,6 +56,7 @@ import {
 } from "@/lib/bookmarks";
 import {
   desktopBridge,
+  type DesktopBrowserExtension,
   type DesktopDownloadEntry,
   type DesktopHistoryEntry,
 } from "@/lib/desktop-bridge";
@@ -68,6 +72,7 @@ const HISTORY_LIST_LIMIT = 5_000;
 export function BuiltinTabPane({ page }: { page: BuiltinPage }) {
   if (page === "bookmarks") return <BookmarksPage />;
   if (page === "downloads") return <DownloadsPage />;
+  if (page === "extensions") return <ExtensionsPage />;
   return <HistoryPage />;
 }
 
@@ -709,6 +714,176 @@ function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${bytes} B`;
+}
+
+function ExtensionsPage() {
+  const { text } = useTranslation();
+  const api = desktopBridge()?.extensions;
+  const [entries, setEntries] = useState<DesktopBrowserExtension[] | null>(null);
+  const [storeUrl, setStoreUrl] = useState("");
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const refresh = useCallback(() => {
+    if (!api) return;
+    void api.list().then(setEntries).catch(() => setEntries([]));
+  }, [api]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  async function run(key: string, operation: () => Promise<{ ok: boolean; error?: string }>) {
+    setBusy(key);
+    setError("");
+    try {
+      const result = await operation();
+      if (!result.ok && result.error !== "cancelled") setError(result.error || "extension_operation_failed");
+      refresh();
+    } catch {
+      setError("extension_operation_failed");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const title = text("Extensions", "扩展程序");
+  if (!api) {
+    return (
+      <div className={styles.builtinPane}>
+        <div className={styles.builtinInner}>
+          <div className={styles.builtinHeader}>
+            <Puzzle size={18} aria-hidden="true" />
+            <h1 className={styles.builtinTitle}>{title}</h1>
+          </div>
+          <div className="bookmarks-empty">
+            {text("Extensions are available in the desktop app only.", "扩展程序仅在桌面应用中可用。")}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.builtinPane}>
+      <div className={styles.builtinInner}>
+        <div className={styles.builtinHeader}>
+          <Puzzle size={18} aria-hidden="true" />
+          <h1 className={styles.builtinTitle}>{title}</h1>
+          <div className={styles.builtinHeaderActions}>
+            <button
+              type="button"
+              className={styles.builtinClear}
+              onClick={() => useCenterTabs.getState().openWebTab("https://microsoftedge.microsoft.com/addons/Microsoft-Edge-Extensions-Home")}
+            >
+              {text("Browse Edge Add-ons", "浏览 Edge 扩展商店")}
+            </button>
+            <button
+              type="button"
+              className={styles.builtinClear}
+              disabled={Boolean(busy)}
+              onClick={() => void run("folder", () => api.installFolder())}
+            >
+              <Folder size={14} aria-hidden="true" />
+              {text("Add from folder", "从文件夹安装")}
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <SearchInput
+            className="flex-1"
+            value={storeUrl}
+            onChange={setStoreUrl}
+            placeholder={text("Paste an Edge Add-ons or Chrome Web Store link", "粘贴 Edge 或 Chrome 扩展商店链接")}
+            aria-label={text("Extension store link", "扩展商店链接")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && storeUrl.trim() && !busy) {
+                void run("store", () => api.installStoreUrl(storeUrl.trim()));
+              }
+            }}
+          />
+          <button
+            type="button"
+            className={styles.builtinClear}
+            disabled={!storeUrl.trim() || Boolean(busy)}
+            onClick={() => void run("store", () => api.installStoreUrl(storeUrl.trim()))}
+          >
+            {text("Install", "安装")}
+          </button>
+        </div>
+        {error ? <div role="status" className="text-xs text-[var(--accent-red)]">{error}</div> : null}
+        {entries === null ? null : entries.length === 0 ? (
+          <div className="bookmarks-empty">
+            {text("No extensions installed", "尚未安装扩展程序")}
+          </div>
+        ) : (
+          <div className="bookmarks-list">
+            {entries.map((entry) => {
+              const status = entry.compatibility.status === "compatible"
+                ? text("Compatible", "兼容")
+                : entry.compatibility.status === "limited"
+                  ? text("Limited compatibility", "部分兼容")
+                  : text("Incompatible", "不兼容");
+              return (
+                <div className="bookmark-row" key={entry.key}>
+                  <div className="bookmark-row-main">
+                    <ExtensionIcon entry={entry} />
+                    <span className="bookmark-title" title={entry.description || entry.name}>{entry.name}</span>
+                    <div className="bookmark-actions">
+                      <button
+                        type="button"
+                        disabled={Boolean(busy) || entry.compatibility.status === "incompatible"}
+                        onClick={() => void run(entry.key, () => api.setEnabled(entry.key, !entry.enabled))}
+                        title={text(entry.enabled ? "Disable" : "Enable", entry.enabled ? "停用" : "启用")}
+                        aria-label={text(entry.enabled ? "Disable" : "Enable", entry.enabled ? "停用" : "启用")}
+                      >
+                        <Power size={14} fill={entry.enabled ? "currentColor" : "none"} />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={Boolean(busy) || !entry.enabled || entry.compatibility.status === "incompatible"}
+                        onClick={() => void run(entry.key, () => api.reload(entry.key))}
+                        title={text("Reload", "重新加载")}
+                        aria-label={text("Reload", "重新加载")}
+                      >
+                        <RefreshCw size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={Boolean(busy)}
+                        onClick={() => void run(entry.key, () => api.remove(entry.key))}
+                        title={text("Remove", "移除")}
+                        aria-label={text("Remove", "移除")}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                  <span className="bookmark-url">
+                    {entry.version} · {entry.source} · {status}{entry.error ? ` · ${entry.error}` : ""}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ExtensionIcon({ entry }: { entry: DesktopBrowserExtension }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [entry.iconUrl]);
+  if (!entry.iconUrl || failed) return <Puzzle size={17} aria-hidden="true" />;
+  return (
+    <img
+      src={entry.iconUrl}
+      alt=""
+      aria-hidden="true"
+      className="h-[17px] w-[17px] shrink-0 object-contain"
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 function DownloadsPage() {

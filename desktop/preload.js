@@ -109,6 +109,18 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
   browserData: {
     clear: (options) => ipcRenderer.invoke("browser-data:clear", options),
   },
+  extensions: {
+    list: () => ipcRenderer.invoke("extensions:list"),
+    installCurrentPage: (tabId) =>
+      ipcRenderer.invoke("extensions:install-current-page", tabId),
+    installStoreUrl: (url) =>
+      ipcRenderer.invoke("extensions:install-store-url", url),
+    installFolder: () => ipcRenderer.invoke("extensions:install-folder"),
+    setEnabled: (key, enabled) =>
+      ipcRenderer.invoke("extensions:set-enabled", key, enabled),
+    reload: (key) => ipcRenderer.invoke("extensions:reload", key),
+    remove: (key) => ipcRenderer.invoke("extensions:remove", key),
+  },
   terminal: {
     start: (request) => ipcRenderer.invoke("terminal:start", request),
     write: (id, data) => ipcRenderer.send("terminal:write", id, data),

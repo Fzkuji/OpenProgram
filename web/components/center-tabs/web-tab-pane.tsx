@@ -23,7 +23,7 @@
  */
 import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, ExternalLink, House, RotateCw, Star, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, Download, ExternalLink, House, RotateCw, Star, X } from "lucide-react";
 
 import {
   desktopBridge,
@@ -95,6 +95,54 @@ function HomeButton({ tabId }: { tabId: string }) {
       aria-label={label}
     >
       <House size={14} />
+    </button>
+  );
+}
+
+function isExtensionStoreListing(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    const storePath = parsed.hostname === "microsoftedge.microsoft.com"
+      ? parsed.pathname.toLowerCase().startsWith("/addons/detail/")
+      : parsed.hostname === "chromewebstore.google.com"
+        ? parsed.pathname.toLowerCase().startsWith("/detail/")
+        : parsed.hostname === "chrome.google.com"
+          && parsed.pathname.toLowerCase().startsWith("/webstore/detail/");
+    return storePath && parsed.pathname.split("/").some((part) => /^[a-p]{32}$/.test(part));
+  } catch {
+    return false;
+  }
+}
+
+function InstallExtensionButton({ bridge, tabId, url }: { bridge: DesktopBridge; tabId: string; url: string }) {
+  const { text } = useTranslation();
+  const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const api = bridge.extensions;
+  useEffect(() => setState("idle"), [url]);
+  if (!api || !isExtensionStoreListing(url)) return null;
+  const label = state === "busy"
+    ? text("Installing extension", "正在安装扩展程序")
+    : state === "done"
+      ? text("Extension installed", "扩展程序已安装")
+      : state === "error"
+        ? text("Extension installation failed", "扩展程序安装失败")
+        : text("Install extension", "安装扩展程序");
+  return (
+    <button
+      type="button"
+      className={styles.webToolbarBtn}
+      disabled={state === "busy"}
+      onClick={() => {
+        setState("busy");
+        void api.installCurrentPage(tabId).then((result) => {
+          setState(result.ok ? "done" : result.error === "cancelled" ? "idle" : "error");
+        }).catch(() => setState("error"));
+      }}
+      title={label}
+      aria-label={label}
+    >
+      {state === "done" ? <Check size={14} /> : state === "error" ? <X size={14} /> : <Download size={14} />}
     </button>
   );
 }
@@ -354,6 +402,7 @@ function DesktopWebTabPane({
           autoComplete="off"
           aria-label={text("Address", "地址")}
         />
+        <InstallExtensionButton bridge={bridge} tabId={tabId} url={effectiveUrl} />
         <BookmarkButton url={effectiveUrl} title={title || effectiveUrl} />
         <BookmarksLibraryButton />
         <button

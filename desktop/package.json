@@ -12,8 +12,9 @@
   "scripts": {
     "postinstall": "electron-builder install-app-deps",
     "dev": "electron .",
-    "check": "npm run check:webtabs && npm run check:webtab-zoom-bounds && npm run check:tab-transfer-store && npm run check:installed-transfer-client && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime",
+    "check": "npm run check:webtabs && npm run check:extensions && npm run check:webtab-zoom-bounds && npm run check:tab-transfer-store && npm run check:installed-transfer-client && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime",
     "check:webtabs": "node scripts/check-webtab-navigation.js",
+    "check:extensions": "node scripts/check-browser-extensions.js",
     "check:webtab-zoom-bounds": "node scripts/check-webtab-zoom-bounds.js",
     "check:tab-transfer-store": "node scripts/check-tab-transfer-store.js",
     "check:installed-transfer-client": "node scripts/check-installed-tab-transfer-client.js",
@@ -37,6 +38,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "browser-extension-manager.js",
       "packaged-runtime.js",
       "worker-start-url.js",
       "tab-transfer-store.js",
@@ -72,6 +74,7 @@
     }
   },
   "dependencies": {
+    "extract-zip": "2.0.1",
     "node-pty": "1.0.0"
   }
 }
