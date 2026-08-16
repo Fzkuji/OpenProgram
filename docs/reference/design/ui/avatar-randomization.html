@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>OpenProgram · Avatar randomization</title>
+  <style>
+    :root{color-scheme:dark;--bg:#111216;--panel:#191b20;--line:#30343d;--text:#eceef2;--muted:#a3a8b2;--accent:#72cad3;--ok:#7bd39c;--warn:#e7a36f;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 var(--sans)}main{width:min(980px,calc(100% - 32px));margin:auto;padding:34px 0 70px}header,section{padding:24px 0;border-bottom:1px solid var(--line)}h1{margin:6px 0 8px;font-size:clamp(28px,5vw,42px);line-height:1.15}h2{margin:0 0 12px;font-size:22px}p{margin:8px 0;color:#c9cdd4}.eyebrow{color:var(--accent);font:11px var(--mono);letter-spacing:.08em;text-transform:uppercase}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.card{padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}.card strong{display:block;margin-bottom:5px}.card p{margin:0;color:var(--muted);font-size:13px}code{padding:2px 5px;border-radius:4px;background:#24272d;color:#dfe4ea;font:12px var(--mono)}ol,ul{padding-left:21px;color:#c9cdd4}.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.step{padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}.step span{display:block;color:var(--accent);font:10px var(--mono)}.step b{font-size:13px}.status{color:var(--ok)}.out{color:var(--warn)}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px 10px;border:1px solid var(--line);text-align:left;vertical-align:top}th{background:#202329}@media(max-width:720px){.cards,.flow{grid-template-columns:1fr}table{display:block;overflow:auto}}
+  </style>
+</head>
+<body><main>
+  <header>
+    <div class="eyebrow">Settings · Agent and user identity</div>
+    <h1>头像随机候选设计</h1>
+    <p>Agent 与用户头像共用一个 <code>AvatarPicker</code>。随机候选必须覆盖完整 DiceBear 样式注册表，并在选择候选时同时保存样式和 seed。</p>
+  </header>
+  <section>
+    <h2>问题与边界</h2>
+    <div class="cards">
+      <article class="card"><strong>当前缺陷</strong><p>Regenerate 只替换 seed，所有候选继续使用当前 style，因此随机结果长期保持同一种视觉类型。</p></article>
+      <article class="card"><strong>目标</strong><p>每批 16 个候选至少包含一次全部 14 个已发布样式；额外两个候选也从同一注册表选择。</p></article>
+      <article class="card"><strong>不变范围</strong><p>上传头像、字母头像、持久化字段、Agent/User profile store 和 DiceBear 依赖均不改变。</p></article>
+    </div>
+  </section>
+  <section>
+    <h2>统一数据流</h2>
+    <div class="flow" aria-label="Avatar randomization flow">
+      <div class="step"><span>1 · SOURCE</span><b><code>AVATAR_STYLES</code></b><p>唯一样式注册表</p></div>
+      <div class="step"><span>2 · GENERATE</span><b>style + seed</b><p>完整覆盖后随机排序</p></div>
+      <div class="step"><span>3 · PREVIEW</span><b>16 candidates</b><p>每格按自己的 style 渲染</p></div>
+      <div class="step"><span>4 · SAVE</span><b><code>AvatarConfig</code></b><p>同时保存 style 与 seed</p></div>
+    </div>
+  </section>
+  <section>
+    <h2>决策</h2>
+    <table>
+      <thead><tr><th>方案</th><th>结论</th><th>原因</th></tr></thead>
+      <tbody>
+        <tr><td>只随机 seed</td><td class="out">拒绝</td><td>无法进入其他样式，是当前缺陷。</td></tr>
+        <tr><td>每格独立随机 style</td><td class="out">修改</td><td>小样本可能遗漏多数样式，不满足完整样式可见性。</td></tr>
+        <tr><td>先放入全部样式，再补足并随机排序</td><td class="status">采用</td><td>每批保证覆盖全部注册样式，同时保留随机顺序与随机 seed。</td></tr>
+        <tr><td>为 Agent 和用户分别实现</td><td class="out">拒绝</td><td>两个设置入口已共用 <code>ProfileEditor</code> 与 <code>AvatarPicker</code>。</td></tr>
+      </tbody>
+    </table>
+  </section>
+  <section>
+    <h2>验收合同</h2>
+    <ol>
+      <li>Agent 和用户设置使用同一生成逻辑。</li>
+      <li>16 个随机候选包含 <code>AVATAR_STYLES</code> 中全部 14 种样式。</li>
+      <li>点击候选后，预览和持久化配置同时采用候选的 <code>style</code> 与 <code>seed</code>。</li>
+      <li>再次 Regenerate 只替换候选，不在用户点击前修改已保存头像。</li>
+      <li>Letter 与 Custom 路径维持现有行为。</li>
+    </ol>
+  </section>
+  <section>
+    <h2>实现与证据</h2>
+    <p><span class="status">已实现。</span> <code>style-options.ts</code> 提供轻量样式元数据，<code>variants.ts</code> 生成完整覆盖的随机候选，<code>AvatarPicker.tsx</code> 渲染并保存候选的 style/seed。<code>web/tests/avatar-randomization.test.mjs</code> 动态验证 14 种样式覆盖，并检查 Agent/User 共享入口和保存合同。Web unit tests、TypeScript、完整 Web checks 与 production build 均已执行。</p>
+  </section>
+</main></body>
+</html>

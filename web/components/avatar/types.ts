@@ -19,7 +19,7 @@ export type AvatarKind = "dicebear" | "upload" | "letter";
 
 /** The DiceBear styles we pre-bundle. Anything beyond this needs an
  *  extra ``@dicebear/<style>`` install + a row in ``STYLES`` /
- *  ``AVATAR_STYLES`` in ``styles.ts``. Keys are camelCase even when
+ *  ``AVATAR_STYLES`` in ``style-options.ts``. Keys are camelCase even when
  *  the npm package is hyphenated (open-peeps → ``openPeeps``) so they
  *  can be object keys / config string values without quoting. */
 export type AvatarStyle =
