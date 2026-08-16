@@ -39,6 +39,15 @@ duplicated in this historical distribution ledger.
 - Main CI run `31828655714` passed Python 3.11/3.12/3.13, Web, and documentation/example jobs. The documentation publication run `31828655717` also passed.
 - Post-release public-entry acceptance resolved `https://openprogram.io/install` through GitHub `latest` to `v0.6.6`, installed the macOS arm64 archive into an isolated state and launcher directory, reported `openprogram 0.6.6`, passed the installer's complete-runtime and `/healthz` probes, and passed `openprogram doctor`.
 
+### v0.7.0 browser-focused release acceptance
+
+- Tag `v0.7.0` resolves to `c7f5916b2b3acb67b936081763945ee080f81b9a`; it was created once after main CI run `31973024049` and documentation publication run `31973024046` completed successfully.
+- Release run `31973458867` completed successfully. Four native product-runtime jobs, four CLI installer jobs, both macOS Desktop jobs, the Python distribution job, and the final publish job passed.
+- The stable [OpenProgram 0.7.0 Release](https://github.com/Fzkuji/OpenProgram/releases/tag/v0.7.0) is non-draft and non-prerelease, and GitHub `latest` resolves to `v0.7.0`. Its 17 uploaded assets comprise four runtime archives and their checksums, arm64/x64 unsigned DMG and ZIP artifacts and checksum lists, developer wheel/sdist artifacts, and `release-manifest.json`.
+- The published manifest reports version `0.7.0`; its byte counts and SHA-256 values match the GitHub asset metadata for both macOS Desktop architectures and all four runtime archives.
+- Release acceptance used CI package/runtime smoke and read-only release metadata checks. It did not install, replace, activate, or restart the user's current `/Applications/OpenProgram.app`, so foreground updater UI, long-running scheduling, and sleep/resume behavior remain explicitly unverified.
+- The browser release scope includes the built-in Browser, profile import, bookmarks/history, and Agent-bound WebTab control. Chrome/Edge extension installation is intentionally excluded and documented in the authoritative built-in browser design and product FAQ.
+
 ## Short public installer batch
 
 - Base commit: `c1886a3fdf7ba196c42ec9a2c19dca7fe86c12e7`.
