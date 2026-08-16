@@ -151,10 +151,13 @@
         <li>默认 OpenProgram App 在 750px 窗口、两级栏保持展开时实测列表约 121px、详情约 167px；Replace 编辑态的 103px 密钥区域无横向溢出，Base URL 与 Connectivity 正常断行。</li>
         <li>Settings 与 Memory 定点检查、TypeScript、production build 和 diff check 均通过；规格与质量复核均为 PASS。</li>
       </ul>
-      <p><strong>Provider 凭据层级：待实现与复核。</strong></p>
+      <p><strong>Provider 凭据层级：已实现并复核。</strong></p>
       <ul>
-        <li>目标是账户卡片、标题区开关、图标化次要操作以及默认收起的新增 Key 表单。</li>
-        <li>不修改账户 API、轮询策略、Provider/Key 状态语义或导航列行为。</li>
+        <li>每个凭据统一为包含标题和使用开关的账户卡片，API Key 卡片额外显示掩码 Key；验证状态与重新验证合并为一个控件，Rename、API Key 的 Replace、Remove 使用带可访问名称的图标操作。</li>
+        <li>已有凭据时，新增 Key 表单默认收起为 Add API key 入口；取消新增会清理 Key 草稿，Key 名称与 native login 名称使用独立状态。</li>
+        <li>详情内边距由子级 detailSurface 承载，实测在 681/680/300px 详情宽度下分别为 20/12/8px；零账户与已有账户表单在宽窄状态均保持正确列映射。</li>
+        <li>默认 OpenProgram App 已完成正常窗口可视验收；Settings、Memory、TypeScript、production build、目标 HTML 与 diff 检查通过，规格和质量复核均为 PASS。</li>
+        <li>账户 API、轮询策略、Provider/Key 状态语义和导航列行为未改变。</li>
       </ul>
     </div>
   </section>
