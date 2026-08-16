@@ -955,6 +955,36 @@ def test_direct_list_pages_releases_capture_when_registry_rejects(monkeypatch):
     assert released == [context]
 
 
+def test_direct_list_pages_returns_empty_inventory_without_mounted_page(monkeypatch):
+    from openprogram.programs.agentic_functions import browser_agent as module
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = SimpleNamespace()
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    monkeypatch.setattr(webtab, "request_on_ws", lambda ws, command, timeout=5.0: {
+        "ok": True,
+        "window_id": "window-1",
+        "pages": [],
+    })
+
+    result = module.execute_direct_computer_use(
+        {"command": "list_pages"}, owner_id="mcp:empty-window",
+    )
+
+    assert result == {"ok": True, "pages": []}
+
+    monkeypatch.setattr(webtab, "request_on_ws", lambda ws, command, timeout=5.0: {
+        "ok": True,
+        "window_id": "window-1",
+        "pages": [{}],
+    })
+    with pytest.raises(RuntimeError, match="no valid Page"):
+        module.execute_direct_computer_use(
+            {"command": "list_pages"}, owner_id="mcp:invalid-window",
+        )
+
+
 def test_public_page_token_keeps_the_turn_owner_across_calls(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.programs.agentic_functions import browser_agent as module

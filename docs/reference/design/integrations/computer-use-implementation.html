@@ -179,13 +179,13 @@
 <div class="card">
   <p><strong>Base：</strong><code>54c466e9</code>。<strong>范围：</strong>当前 OpenProgram window 的 web Page inventory、background exact target、popup opener 归属，以及 <code>browser_agent/gui_agent</code> 的显式 Page 切换。</p>
   <p><strong>生产文件：</strong><code>desktop/main.js</code>、<code>desktop/preload.js</code>、<code>web/lib/desktop-bridge.ts</code>、<code>web/lib/state/center-tabs-store.ts</code>、<code>openprogram/webui/ws_actions/webtab.py</code>、<code>openprogram/agent/surface_context.py</code>、<code>agentic_functions/browser_agent/__init__.py</code>。<strong>排除：</strong>桌面软件控制、跨窗口 inventory、OCR/YOLO/memory、自动 backend fallback。</p>
-  <p><strong>RED：</strong>同窗口 A/B/popup C inventory；C 保存 opener=A；token 绑定 exact target；background B observe/act 不改变 visible/active/focus；GUI Agent 写动作后发现 C 并以 token 切换；close/target replacement/disconnect 撤销能力。<strong>Gate：</strong>相关 Python tests、desktop navigation check、Web split/compound checks、TypeScript、生产 Web build、docs build/links、安装版 18100 E2E、diff/status。</p>
+  <p><strong>RED：</strong>同窗口 A/B/popup C inventory；C 保存 opener=A；token 绑定 exact target；background B observe/act 不改变 visible/active/focus；GUI Agent 写动作后发现 C 并以 token 切换；没有已挂载 native Page 时返回空 inventory；close/target replacement/disconnect 撤销能力。<strong>Gate：</strong>相关 Python tests、desktop navigation check、Web split/compound checks、TypeScript、生产 Web build、docs build/links、安装版 18100 E2E、diff/status。</p>
 </div>
 <table>
   <thead><tr><th>状态</th><th>证据</th></tr></thead>
   <tbody>
-    <tr><td class="pass">IMPLEMENTED · INSTALLED E2E PASS</td><td><code>fe35dddf</code> 实现同窗口 Page inventory、background exact binding、popup opener 与 GUI Agent 显式切换；<code>67a65e2a</code> 让 inventory 从 native WebContents 读取实时 URL/title，后台导航后不再返回旧 tab metadata。</td></tr>
-    <tr><td class="pass">自动验证</td><td>Browser Agent、Computer Use Runtime 与 Page binding 相关测试 105 passed；WebTab navigation、Web split/compound、TypeScript 与生产 Web build 通过。行为测试确认 resolve/inspect background Page 不调用 show、focus 或 <code>bringToFront()</code>。</td></tr>
+    <tr><td class="pass">IMPLEMENTED · INSTALLED E2E PASS</td><td><code>fe35dddf</code> 实现同窗口 Page inventory、background exact binding、popup opener 与 GUI Agent 显式切换；<code>67a65e2a</code> 让 inventory 从 native WebContents 读取实时 URL/title，后台导航后不再返回旧 tab metadata；没有已挂载 native Page 时返回 <code>ok: true, pages: []</code>，不再转换成 HTTP 500。</td></tr>
+    <tr><td class="pass">自动验证</td><td>Browser Agent、Computer Use Runtime、backend parity/threading、Page binding 与 HTTP route 相关测试 123 passed；WebTab navigation、Web split/compound、TypeScript 与生产 Web build 通过。行为测试确认 resolve/inspect background Page 不调用 show、focus 或 <code>bringToFront()</code>。</td></tr>
     <tr><td class="pass">安装版验证</td><td>只使用默认 <code>~/.openprogram</code>、18100 与 <code>/Applications/OpenProgram.app</code>。inventory 同时返回前台 Grammarly 与后台 Example；<code>open_claude_chrome</code> 在后台 Example 上执行 <code>observe → click Learn more → observe → close</code>，真实 Page 进入 IANA，前台始终保持 Grammarly；下一次 inventory 实时返回后台 <code>Example Domains / https://www.iana.org</code>。旧安装包已删除。</td></tr>
     <tr><td class="pending">保留范围</td><td>跨 OpenProgram window inventory、桌面软件控制、OCR/YOLO/memory 与自动 backend fallback 未纳入本任务。popup opener、token handoff 与 stale/close 撤销已有 component 覆盖，尚未增加公开网站 popup 的安装版 fixture。</td></tr>
   </tbody>

@@ -366,13 +366,13 @@ def capture_pages(context: dict | None = None) -> dict:
         for surface in surfaces:
             webtab.release_binding(str(surface["binding_id"]))
         raise
-    if not surfaces:
-        raise RuntimeError("no OpenProgram Page is available")
+    if raw_pages and not surfaces:
+        raise RuntimeError("OpenProgram Page inventory has no valid Page")
     primary = next((
         item["surface_key"] for item in surfaces if item.get("focused")
     ), next((
         item["surface_key"] for item in surfaces if item.get("visible")
-    ), surfaces[0]["surface_key"]))
+    ), surfaces[0]["surface_key"] if surfaces else ""))
     return {
         "context_id": "page_ctx_" + uuid.uuid4().hex,
         "primary_surface_key": primary,
