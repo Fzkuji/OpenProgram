@@ -115,6 +115,17 @@ computer_use({ command: "close", computer_session_id: "cs_…" })</pre>
     <ol class="checks">
       <li><strong>工具面：</strong>浏览器控制只有一个 <code>computer_use</code>，不暴露 backend 自带的第二套工具。</li><li><strong>Page 隔离：</strong>授权 A 时，对 B、chat Page 和另一窗口的读写调用次数都是 0。</li><li><strong>backend 冻结：</strong>设置变更不影响当前 ComputerSession，只影响下一 session。</li><li><strong>副作用唯一：</strong>backend failure 不触发另一 backend；一个 Action 最多一次真实写入。</li><li><strong>跨 backend 一致：</strong>同一任务得到相同 Page/frame 生命周期、权限、reason code 和 verification。</li><li><strong>Page Awareness：</strong>页面换到 chat 左侧或右侧后，下一 turn relation 与 preview 正确更新。</li><li><strong>非前台执行：</strong>应用被遮挡时仍操作相同 Page，且没有 focus/OS input 调用。</li><li><strong>视觉限制：</strong>普通 DOM 流截图数为 0；canvas 流每次 observation 最多 1 张。</li><li><strong>图片保留：</strong>截图只出现在紧邻的一次 provider request；同一请求的文字提示不含原始 bytes/base64，返回或异常后调用方 content 与 ToolReturn 不再持有图片，最终 <code>artifacts</code> 仍为空。</li><li><strong>失败诚实性：</strong>空 assertion、stale frame、timeout、cancel、target lost 都不能返回 succeeded。</li><li><strong>Chat 稳定：</strong>GUI tool update 不重建历史 message/avatar/markdown DOM。</li><li><strong>安装版双窗口事务：</strong>只连接默认 18100 的 <code>/Applications/OpenProgram.app</code>，通过正式 preload transfer API 创建真实隐藏目标窗口；目标 renderer 完成 inspect/accept/stage 后由源端拒绝临时 payload，事务必须回滚并关闭目标窗口。验收前后的窗口集合、源窗口 tab 状态和持久存储必须一致。</li>
     </ol>
+    <h3>Backend parity suite 的规范矩阵</h3>
+    <p>同一组用例必须通过 <code>ComputerUseSessionRegistry.execute()</code> 依次运行 <code>playwright_mcp</code>、<code>chrome_devtools_mcp</code> 与 <code>open_claude_chrome</code> 的真实 adapter class。官方 MCP 的进程和网络边界可由记录调用的 test client 代替，但不得用三个同构 fake adapter 代替生产映射。矩阵比较 OpenProgram 的规范化结果，不比较上游特有的 ARIA 文本、ref 名称或诊断文字。</p>
+    <div class="table-scroll"><table><thead><tr><th>场景</th><th>三个 backend 的共同结果</th><th>额外不变量</th></tr></thead><tbody>
+      <tr><td><code>observe</code></td><td>返回非空 <code>computer_session_id</code>、冻结后的 <code>backend</code>、当前 <code>frame_id</code> 与结构化页面观察</td><td>只绑定授权的 exact Page；不调用 tab select、<code>bringToFront()</code> 或 OS input</td></tr>
+      <tr><td>allowlisted action</td><td><code>ok=true</code>、<code>observe_required=true</code>，旧 frame 立即失效</td><td><code>navigate/click/type/press/scroll/hover/select</code> 各产生一次且仅一次 backend write；不自动 fallback</td></tr>
+      <tr><td>stale / unsupported</td><td>分别返回 <code>stale_observation</code> 与 <code>unsupported_action</code></td><td>在 backend write 前拒绝，调用次数为 0</td></tr>
+      <tr><td>backend action error</td><td>返回 <code>backend_action_failed</code> 与 <code>observe_required=true</code></td><td>当前 frame 失效；其他两个 backend 调用次数为 0</td></tr>
+      <tr><td><code>verify</code></td><td>同一 assertion 得到相同 <code>passed</code>、evidence 与 frame 语义</td><td>不通过的 assertion 不能形成 succeeded 终态</td></tr>
+      <tr><td><code>screenshot</code></td><td>一个当前 viewport PNG；tool-result 仅保留 <code>frame_id</code>、<code>viewport</code>、<code>image_attached</code></td><td>图片只进入紧邻一次 provider request，并按视觉 artifact 生命周期释放</td></tr>
+      <tr><td><code>close</code></td><td><code>ok=true</code>、<code>closed=true</code>；后续命令返回 <code>computer_session_not_found</code></td><td>controller、MCP client、Page lease 与 context 全部释放</td></tr>
+    </tbody></table></div>
   </section>
 
   <section id="evidence">
