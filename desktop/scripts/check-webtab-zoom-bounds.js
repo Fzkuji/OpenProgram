@@ -78,6 +78,38 @@ assert.deepEqual(
   },
   "cascading menu hosts must begin below the bookmark bar and use a view-local anchor",
 );
+assert.deepEqual(
+  plain(sandbox.cascadeMenuGeometry({ x: -50, y: -20 }, 800, 600, 1)),
+  {
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+    anchor: { x: 0, y: 0 },
+  },
+  "top and left overflow must fall back to a usable host and clamp the local anchor",
+);
+assert.deepEqual(
+  plain(sandbox.cascadeMenuGeometry({ x: 900, y: 590 }, 800, 600, 1)),
+  {
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+    anchor: { x: 799, y: 590 },
+  },
+  "an anchor near the bottom must use the full usable window instead of a clipped strip",
+);
+assert.deepEqual(
+  plain(sandbox.cascadeMenuGeometry({ x: 100, y: 700 }, 800, 600, 1)),
+  {
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+    anchor: { x: 100, y: 599 },
+  },
+  "an anchor below the window must stay inside a usable host viewport",
+);
+assert.deepEqual(
+  plain(sandbox.cascadeMenuGeometry({ x: 1500, y: 850 }, 1250, 875, 1.25)),
+  {
+    bounds: { x: 0, y: 0, width: 1250, height: 875 },
+    anchor: { x: 999, y: 680 },
+  },
+  "edge fallback must clamp in CSS pixels after applying a non-unit zoom",
+);
 
 const screenshotBounds = {
   x: 812.6333618164062,
