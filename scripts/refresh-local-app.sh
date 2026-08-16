@@ -190,6 +190,6 @@ done
 curl -fsS http://127.0.0.1:18100/healthz >/dev/null
 open -a "$app_path"
 
-trap - EXIT HUP INT TERM
 cleanup
+trap - EXIT HUP INT TERM
 printf 'refreshed %s from %s\n' "$app_path" "$revision"
