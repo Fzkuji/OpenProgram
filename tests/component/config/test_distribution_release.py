@@ -215,6 +215,47 @@ def test_local_desktop_install_compares_numeric_versions_as_decimal(
     with (target / "Contents" / "Info.plist").open("rb") as stream:
         assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.9.0"
 
+
+def test_local_desktop_install_preserves_an_invalid_existing_app(
+    tmp_path: Path,
+) -> None:
+    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    installed = _fake_desktop_app(tmp_path / "installed", "0.6.4")
+    subprocess.run(["bash", str(installer), str(installed)], check=True, env=env)
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    runtime = target / "Contents" / "Resources" / "runtime"
+    manifest = json.loads(
+        (runtime / "runtime-manifest.json").read_text(encoding="utf-8")
+    )
+    runtime_python = runtime / manifest["python"]
+    runtime_python.write_text(
+        "#!/bin/sh\nprintf '%s\\n' '0.6.1'\n",
+        encoding="utf-8",
+    )
+    runtime_python.chmod(0o755)
+    candidate = _fake_desktop_app(tmp_path / "candidate", "0.6.2")
+
+    rejected = subprocess.run(
+        ["bash", str(installer), str(candidate)],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert rejected.returncode != 0
+    assert "existing OpenProgram app failed validation" in rejected.stderr
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.4"
+    assert runtime_python.read_text(encoding="utf-8").endswith("'0.6.1'\n")
+
 def test_local_desktop_install_preserves_recovery_copy_when_restore_fails(
     tmp_path: Path,
 ) -> None:

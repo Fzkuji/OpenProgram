@@ -116,7 +116,11 @@ NODE
 
 reject_downgrade() {
   local candidate_app="${1:-$source_app}"
-  [[ -e "$target_app" ]] && validate_app "$target_app" || return 0
+  [[ -e "$target_app" || -L "$target_app" ]] || return 0
+  validate_app "$target_app" || {
+    printf 'existing OpenProgram app failed validation: %s\n' "$target_app" >&2
+    exit 1
+  }
   candidate_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$candidate_app/Contents/Info.plist")"
   installed_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$target_app/Contents/Info.plist")"
   if version_is_older "$candidate_version" "$installed_version"; then
