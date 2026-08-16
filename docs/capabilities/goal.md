@@ -6,7 +6,7 @@ A goal is a condition the session keeps working toward. You set it once with `/g
 /goal all unit tests pass and the README documents the new flag
 ```
 
-This stores the goal on the session and immediately starts a first turn with the condition text as the instruction. From then on, whenever a turn ends and the goal is still unmet, the runtime sends a follow-up turn (`[goal] 未达成：<reason>。继续。`) carrying the judge's reason for why it is not done yet. Continuation turns always have web search available on top of the session's tool settings — they run unattended, so they get the search tool you could have toggled on; your session settings themselves are not changed.
+This stores the goal on the session and immediately starts a first turn with the condition text as the instruction. From then on, whenever a turn ends and the goal is still unmet, the runtime sends a localized follow-up turn prefixed with `[goal]`, carrying the judge's reason for why it is not done yet. Continuation turns always have web search available on top of the session's tool settings — they run unattended, so they get the search tool you could have toggled on; your session settings themselves are not changed.
 
 ## Your one-liner is refined automatically
 

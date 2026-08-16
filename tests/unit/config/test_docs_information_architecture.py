@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tools.docs_site import checklang
 from tools.docs_site.nav import build_tabs, discover
 
 
@@ -16,6 +17,20 @@ def test_internal_plans_are_not_part_of_the_public_docs_build() -> None:
     assert any(path.startswith("reference/design/plans/") for path in paths)
     assert "reference/design/repository-structure.html" in paths
     assert "reference/design/repository-structure-implementation.md" in paths
+
+
+def test_language_check_uses_the_same_public_docs_boundary(
+    tmp_path: Path, monkeypatch
+) -> None:
+    internal = tmp_path / "superpowers" / "plans" / "internal.md"
+    internal.parent.mkdir(parents=True)
+    internal.write_text("# 内部计划\n", encoding="utf-8")
+    public = tmp_path / "start" / "public.md"
+    public.parent.mkdir(parents=True)
+    public.write_text("# Public documentation\n", encoding="utf-8")
+    monkeypatch.setattr(checklang, "DOCS", tmp_path)
+
+    assert checklang.main() == 0
 
 
 def test_ui_design_navigation_is_grouped_without_losing_pages() -> None:

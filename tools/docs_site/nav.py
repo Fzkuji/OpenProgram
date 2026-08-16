@@ -104,7 +104,7 @@ def prettify(name: str) -> str:
     return name.strip().title()
 
 
-def _is_excluded(rel: Path) -> bool:
+def is_excluded(rel: Path) -> bool:
     rel_str = rel.as_posix()
     return (
         any(part in EXCLUDE_DIRS for part in rel.parts)
@@ -124,7 +124,7 @@ def discover(docs_root: Path) -> list[Page]:
     zh_sources: dict[Path, Path] = {}  # base rel (xxx.md) -> zh src path
     for path in docs_root.rglob("*.zh.md"):
         rel = path.relative_to(docs_root)
-        if _is_excluded(rel):
+        if is_excluded(rel):
             continue
         base_rel = rel.with_name(rel.name[:-len(".zh.md")] + ".md")
         zh_sources[base_rel] = path
@@ -134,7 +134,7 @@ def discover(docs_root: Path) -> list[Page]:
         if path.suffix not in (".md", ".html"):
             continue
         rel = path.relative_to(docs_root)
-        if _is_excluded(rel):
+        if is_excluded(rel):
             continue
         if rel.name.endswith(".zh.md"):
             continue  # chinese version is attached to its base, not a page
