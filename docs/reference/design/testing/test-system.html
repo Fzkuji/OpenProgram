@@ -48,7 +48,7 @@
   <p class="lead">本页定义测试分类、目录、依赖边界、执行命令和 CI 职责。测试层级由运行时依赖决定，产品域沿用 <code>openprogram/</code> 的模块名称。结构迁移不改变产品行为；测试发现的真实产品缺陷按独立批次修复和验证。</p>
 
   <h2>1. 当前实现</h2>
-  <p>当前共有 394 个 Git tracked Python 测试文件：228 个 unit、136 个 component、14 个 contracts、9 个 integration、4 个 e2e 和 3 个 live。执行层用例全部位于 <code>tests/&lt;layer&gt;/&lt;product-domain&gt;/</code>，没有直接放在层级根目录的 tracked test 文件。</p>
+  <p>当前共有 394 个 Git tracked Python 测试文件：226 个 unit、138 个 component、14 个 contracts、9 个 integration、4 个 e2e 和 3 个 live。执行层用例全部位于 <code>tests/&lt;layer&gt;/&lt;product-domain&gt;/</code>，没有直接放在层级根目录的 tracked test 文件。</p>
   <p>仓库 contract 只枚举 Git tracked 文件，unit 的 TestClient、subprocess、socket、真实线程/线程池、固定等待和全局线程类替换由结构 contract 与 autouse 运行时 guard 共同阻止。CI 分别执行 contracts、三个 Python 版本的 unit、component、integration、非 browser e2e、built-Web browser、Web、CLI、Desktop 和 coverage。</p>
   <p>当前剩余结构差距不是测试层级本身，而是仓库顶层结构约束：需要阻止新的根目录开发脚本、未声明顶层目录和已删除源码路径重新进入有效指南。</p>
 

@@ -24,11 +24,6 @@ release_package_lock() {
   printf 'OpenProgram App packaging requires macOS\n' >&2
   exit 1
 }
-[[ -x "$builder" ]] || {
-  printf 'missing electron-builder; run npm install in %s\n' "$desktop_dir" >&2
-  exit 1
-}
-
 mkdir -p "$desktop_dir/build" "$lock_root"
 if ! /usr/bin/shlock -p "$$" -f "$lock_file"; then
   lock_pid="$(sed -n '1p' "$lock_file" 2>/dev/null || :)"
@@ -37,6 +32,12 @@ if ! /usr/bin/shlock -p "$$" -f "$lock_file"; then
   exit 1
 fi
 lock_owned=1
+trap release_package_lock EXIT
+
+[[ -x "$builder" ]] || {
+  printf 'missing electron-builder; run npm install in %s\n' "$desktop_dir" >&2
+  exit 1
+}
 
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-app-package.XXXXXX")"
 package_dir="$work_dir/package"

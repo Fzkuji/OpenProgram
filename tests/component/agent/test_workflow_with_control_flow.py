@@ -28,14 +28,30 @@ def _project_planner(result: str):
             return json.dumps({"action": "create"})
         return json.dumps({
             "project_metadata": {
-                "name": f"{result} workflow",
+                "name": "control_flow_workflow",
                 "summary": f"Return {result}",
                 "tags": ["test"],
             },
             "readme": f"# {result} workflow\n",
             "files": {
                 "steps/run.py": f"def run():\n    return {result!r}\n",
-                "entry.py": "def workflow(task):\n    return run()\n",
+                "__init__.py": (
+                    "from .workflow import control_flow_workflow\n\n"
+                    "__all__ = ['control_flow_workflow']\n"
+                ),
+                "workflow.py": (
+                    "from openprogram.agentic_programming import agentic_function\n"
+                    "from .steps.run import run\n\n"
+                    "@agentic_function\n"
+                    "def control_flow_workflow(task):\n"
+                    "    return run()\n"
+                ),
+                "tests/test_workflow.py": (
+                    "from workflows.control_flow_workflow import "
+                    "control_flow_workflow\n\n"
+                    "def test_control_flow_workflow():\n"
+                    "    assert callable(control_flow_workflow)\n"
+                ),
             },
         })
 

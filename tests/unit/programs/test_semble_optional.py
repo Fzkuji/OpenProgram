@@ -1,5 +1,4 @@
-"""semble is the `[search]` extra, not a base dep — the tools must keep
-importing fine without it and answer a call with the install hint."""
+"""Semble stays optional to import and reports the release repair action."""
 import builtins
 import sys
 
@@ -19,5 +18,5 @@ def test_semble_tools_hint_when_package_absent(monkeypatch):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", _no_semble)
-    with pytest.raises(RuntimeError, match=r"openprogram\[search\]"):
+    with pytest.raises(RuntimeError, match="complete OpenProgram release"):
         tool_module._get_or_build_index("/tmp")
