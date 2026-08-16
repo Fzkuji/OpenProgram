@@ -1467,6 +1467,7 @@ function makeTransferCoordinator(options = {}) {
     if (!send(destination, "tab-transfer:undo-destination", {
       token: transaction.token,
       reason,
+      discardWindowState: transaction.detachedWindowId === destination.id,
     })) {
       if (transaction.undoTimer !== null) clearTimer(transaction.undoTimer);
       transaction.undoTimer = null;

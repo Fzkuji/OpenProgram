@@ -2730,6 +2730,26 @@ const committedSessionBytes = values.get("openprogram.sessionDraftState:main");
   assert.equal(values.get("centerTabs:main"), committedCenterBytes);
 }
 
+// A rolled-back tear-off window is destroyed after destinationUndone. Its
+// window-keyed tab/session/journal records must be removed before that ack.
+{
+  const detachedId = "window-rollback-cleanup";
+  const keys = [
+    `centerTabs:${detachedId}`,
+    `openprogram.sessionDraftState:${detachedId}`,
+    `openprogram.tabTransferJournal:${detachedId}`,
+  ];
+  for (const key of keys) values.set(key, "temporary");
+  const { bridge, calls } = makeTransferBridge(t5Payload);
+  bridge.windowId = detachedId;
+  await bridgeModule.handleUndoDestination(bridge, {
+    token: "detached-cleanup",
+    discardWindowState: true,
+  });
+  for (const key of keys) assert.equal(values.has(key), false);
+  assert.deepEqual(calls.at(-1), ["destinationUndone", "detached-cleanup", true]);
+}
+
 // Destination commit: journal after* persists, then accepted state and the
 // journal entry are deleted.
 {

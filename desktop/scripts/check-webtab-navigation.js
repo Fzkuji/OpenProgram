@@ -3652,6 +3652,12 @@ async function checkPrecommitFailurePathsAndDynamicRoles() {
     hooks.tabTransfers.destinationReady(detachedDestination, detachedToken, false),
     true,
   );
+  const detachedUndo = detachedDestination.win.sent.find(
+    ([channel, detail]) =>
+      channel === "tab-transfer:undo-destination"
+      && detail.token === detachedToken,
+  );
+  assert.equal(detachedUndo?.[1].discardWindowState, true);
   assert.equal(
     hooks.tabTransfers.destinationUndone(detachedDestination, detachedToken, true),
     true,

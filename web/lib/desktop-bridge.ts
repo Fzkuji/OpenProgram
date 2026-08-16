@@ -44,6 +44,7 @@ import {
   readTransferJournal,
   rebaseSessionSnapshot,
   recoverTransferJournalEntry,
+  transferJournalStorageKey,
   writeTransferJournal,
 } from "@/lib/tab-transfer-journal";
 import "@/lib/net/ws-events";
@@ -155,6 +156,7 @@ export interface DesktopWebTabApi {
 export interface DesktopTransferReceipt {
   token: string;
   reason?: string;
+  discardWindowState?: boolean;
   duplicateId?: string;
   sourceId?: string;
   destinationId?: string | null;
@@ -1467,7 +1469,21 @@ export async function handleUndoDestination(
   const entry = acceptedTransfers.get(token)?.journal
     ?? readTransferJournal().entries[token];
   if (entry) undoDestinationLocal(bridge, entry);
-  await bridge.tabTransfer.destinationUndone(token, true);
+  let cleaned = true;
+  if (detail.discardWindowState) {
+    const keys = [
+      `centerTabs:${bridge.windowId}`,
+      sessionDraftStorageKey(bridge.windowId),
+      transferJournalStorageKey(bridge.windowId),
+    ];
+    try {
+      for (const key of keys) localStorage.removeItem(key);
+      cleaned = keys.every((key) => localStorage.getItem(key) === null);
+    } catch {
+      cleaned = false;
+    }
+  }
+  await bridge.tabTransfer.destinationUndone(token, cleaned);
 }
 
 function transferRole(
