@@ -57,6 +57,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`runtime/controllability-and-three-surface-sync.md`](runtime/controllability-and-three-surface-sync.md) | 值守/无人值守开关 + 中途干预 + 优雅停 + 三端同步 |
 | [`runtime/p3-three-surface-sync.md`](runtime/p3-three-surface-sync.md) | P3 三端同步实施细节 |
 | [`runtime/unified-session-context.md`](runtime/unified-session-context.md) | 统一 session context |
+| [`runtime/agent-configuration-ui.html`](runtime/agent-configuration-ui.html) | Agent 配置整体框架：身份、模型、指令、Programs、Skills、MCP、Sessions（[基础配置](runtime/agent-core-configuration-ui.html)、[能力配置](runtime/agent-capability-configuration-ui.html)、[Programs 选择器](runtime/agent-tool-configuration-ui.html)） |
 | [`runtime/execution/agent-worktree.md`](runtime/execution/agent-worktree.md) | Agent worktree 行为 |
 | [`runtime/execution/async-job-lifecycle.md`](runtime/execution/async-job-lifecycle.md) | 异步任务生命周期 |
 | [`runtime/operations/streaming-resume.md`](runtime/operations/streaming-resume.md) | 流式 + 恢复 |
@@ -141,6 +142,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`ui/interaction-feedback.md`](ui/interaction-feedback.md) | 交互反馈 0ms 规则 |
 | [`ui/surface-system.md`](ui/surface-system.md) | Surface 系统 |
 | [`ui/theme-system.html`](ui/theme-system.html) | 主题入口、完整 token 契约、组件消费与桌面浮层传播 |
+| [`ui/app-icon.html`](ui/app-icon.html) | macOS App 图标分层素材、Apple 系统外形、打包与旧系统回退边界 |
 | [`ui/settings-collapsible-columns.html`](ui/settings-collapsible-columns.html) | 应用、设置分类与 Provider 三层导航列折叠设计 |
 | [`ui/indicator-dots.md`](ui/indicator-dots.md) | 指示点 |
 | [`ui/attachment-handling.md`](ui/attachment-handling.md) | 附件处理（[已渲染](ui/attachment-handling.html)） |

@@ -61,6 +61,7 @@ Proactivity applications (built on the base):
 | [`runtime/controllability-and-three-surface-sync.md`](runtime/controllability-and-three-surface-sync.md) | Attended/unattended toggle, mid-run intervention, graceful stop, three-surface sync |
 | [`runtime/p3-three-surface-sync.md`](runtime/p3-three-surface-sync.md) | P3 three-surface sync implementation detail |
 | [`runtime/unified-session-context.md`](runtime/unified-session-context.md) | Unified session context |
+| [`runtime/agent-configuration-ui.html`](runtime/agent-configuration-ui.html) | Agent configuration framework: identity, model, instructions, Programs, Skills, MCP, and Sessions ([core settings](runtime/agent-core-configuration-ui.html), [capabilities](runtime/agent-capability-configuration-ui.html), [Programs picker](runtime/agent-tool-configuration-ui.html)) |
 | [`runtime/execution/agent-worktree.md`](runtime/execution/agent-worktree.md) | Agent worktree behaviour |
 | [`runtime/execution/async-job-lifecycle.md`](runtime/execution/async-job-lifecycle.md) | Async task lifecycle |
 | [`runtime/agent-resource-governance.html`](runtime/agent-resource-governance.html) | Agent runtime quotas and task lifecycle governance: current implementation audit, reference comparison, admission, budgets, recovery, visibility, and implementation gates |
@@ -148,6 +149,7 @@ Proactivity applications (built on the base):
 | [`ui/interaction-feedback.md`](ui/interaction-feedback.md) | The 0ms interaction-feedback rule |
 | [`ui/surface-system.md`](ui/surface-system.md) | Surface system |
 | [`ui/theme-system.html`](ui/theme-system.html) | Theme entry, complete token contract, component consumption, and desktop-overlay propagation |
+| [`ui/app-icon.html`](ui/app-icon.html) | macOS app icon source layers, Apple-managed enclosure, packaging, and legacy fallback boundary |
 | [`ui/settings-collapsible-columns.html`](ui/settings-collapsible-columns.html) | Collapsible app, Settings, and Provider navigation columns |
 | [`ui/indicator-dots.md`](ui/indicator-dots.md) | Indicator dots |
 | [`ui/attachment-handling.md`](ui/attachment-handling.md) | Attachment handling ([rendered](ui/attachment-handling.html)) |
