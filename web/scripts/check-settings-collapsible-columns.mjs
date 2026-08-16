@@ -43,8 +43,8 @@ assert.match(providerItem, /title=\{p\.label\}/);
 
 assert.match(css, /\.body\.settingsNavCollapsed\s*\{[^}]*grid-template-columns:\s*49px minmax\(0, 1fr\)/s);
 assert.match(css, /\.railHeader\s*\{[^}]*height:\s*32px/s);
-assert.match(css, /\.railTitle\s*\{[^}]*font-size:\s*24px[^}]*line-height:\s*1(?:;|\s)/s);
-assert.match(css, /\.pageTitle\s*\{[^}]*font-size:\s*24px[^}]*overflow-wrap:\s*anywhere/s);
+assert.match(css, /\.railTitle\s*\{[^}]*font-size:\s*18px[^}]*line-height:\s*1(?:;|\s)/s);
+assert.match(css, /\.pageTitle\s*\{[^}]*font-size:\s*18px[^}]*overflow-wrap:\s*anywhere/s);
 assert.match(css, /\.railItems\s*\{[^}]*margin-top:\s*15px/s);
 assert.match(css, /\.providersLayout\.providerListCollapsed\s*\{[^}]*grid-template-columns:\s*49px minmax\(0, 1fr\)/s);
 assert.match(css, /\.providersLayout\s*\{[^}]*grid-template-columns:\s*min\(calc\(var\(--sidebar-width\) - 1px\),\s*42%\) minmax\(0,\s*1fr\)/s);
