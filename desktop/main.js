@@ -2273,6 +2273,19 @@ async function resolveView(ctx, id) {
   return recordFor(ctx, id) === record ? targetId : null;
 }
 
+async function inspectView(ctx, id) {
+  const record = recordFor(ctx, id);
+  if (!record) return null;
+  const contents = record.view.webContents;
+  const targetId = await devToolsTargetId(contents);
+  if (!targetId || recordFor(ctx, id) !== record) return null;
+  return {
+    target_id: targetId,
+    url: contents.getURL(),
+    title: contents.getTitle(),
+  };
+}
+
 const SURFACE_PREVIEW_SCRIPT = `(() => {
   const visible = (element) => {
     const style = getComputedStyle(element);
@@ -2727,6 +2740,10 @@ function registerWebTabIpc() {
   ipcMain.handle("webtab:resolve", (event, id) => {
     const ctx = contextForSender(event);
     return ctx && typeof id === "string" ? resolveView(ctx, id) : null;
+  });
+  ipcMain.handle("webtab:inspect", (event, id) => {
+    const ctx = contextForSender(event);
+    return ctx && typeof id === "string" ? inspectView(ctx, id) : null;
   });
   ipcMain.handle("webtab:preview", (event, id) => {
     const ctx = contextForSender(event);

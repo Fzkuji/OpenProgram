@@ -113,6 +113,12 @@ export interface DesktopWebTabApi {
   ): Promise<string | null>;
   /** Resolve an owned Page target without changing visible tabs or focus. */
   resolve?(id: string): Promise<string | null>;
+  /** Read the exact native Page target and live metadata without revealing it. */
+  inspect?(id: string): Promise<{
+    target_id: string;
+    url: string;
+    title: string;
+  } | null>;
   /** Bounded DOM/ARIA preview for a currently visible native view. */
   preview(id: string): Promise<{
     tab_id: string;
@@ -708,15 +714,15 @@ export interface BrowserPageInventoryItem {
 }
 
 export async function browserPageInventory(
-  bridge: { webTab: Pick<DesktopWebTabApi, "resolve"> },
+  bridge: { webTab: Pick<DesktopWebTabApi, "inspect"> },
 ): Promise<BrowserPageInventoryItem[]> {
-  if (!bridge.webTab.resolve) return [];
+  if (!bridge.webTab.inspect) return [];
   const state = useCenterTabs.getState();
   const pages = await Promise.all(state.tabs
     .filter((tab) => tab.kind === "web")
     .map(async (tab) => {
-      const targetId = await bridge.webTab.resolve!(tab.id);
-      if (!targetId) return null;
+      const nativePage = await bridge.webTab.inspect!(tab.id);
+      if (!nativePage) return null;
       const group = findCenterTabGroup(state.groups, tab.id);
       const visible = isWebTabActuallyVisible(tab.id);
       const focused = state.activeId === tab.id;
@@ -729,9 +735,9 @@ export async function browserPageInventory(
             : "right" as const;
       return {
         tab_id: tab.id,
-        target_id: targetId,
-        url: tab.url || "",
-        title: tab.title,
+        target_id: nativePage.target_id,
+        url: nativePage.url,
+        title: nativePage.title,
         focused,
         visible,
         region,

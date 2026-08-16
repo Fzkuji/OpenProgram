@@ -286,6 +286,7 @@ vm.runInContext(
     loadView,
     activateView,
     resolveView,
+    inspectView,
     runNativeNavigation,
     registerWebTabIpc,
     registerDownloads,
@@ -968,6 +969,20 @@ async function checkVisibleCollectionAndActivation() {
   assert.deepEqual([...ctx.visibleViewIds], ["b"]);
   assert.equal(a.visibility.length, backgroundVisibilityCalls);
   assert.equal(a.targetCallCount(), backgroundTargetCalls + 1);
+
+  // Page inventory must read the native Page's current URL/title. The tabs
+  // store may still contain the pre-navigation metadata for a background Page.
+  const live = controlledRecord("live-title", "https://live.example/path");
+  addRecord(ctx, live);
+  assert.deepEqual(
+    plain(await hooks.inspectView(ctx, "live-title")),
+    {
+      target_id: "live-title-target",
+      url: "https://live.example/path",
+      title: "live-title",
+    },
+  );
+  assert.deepEqual([...ctx.visibleViewIds], ["b"]);
 
   // Ownership validation happens before any visibility mutation.
   const foreign = controlledRecord("foreign");
