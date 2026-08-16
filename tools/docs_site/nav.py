@@ -400,9 +400,9 @@ PAGE_ORDER: dict[str, int] = {
     # implementation ledger.
     "reference/design/distribution/installation-packaging.html": 1035,
     "reference/design/distribution/implementation-plan.md": 1036,
-    # Integrations: keep the current Computer Use and MCP server HTML designs
+    # Integrations: keep the current Web Use and MCP server HTML designs
     # together after the alphabetical integration notes.
-    "reference/design/integrations/computer-use.html": 1039,
+    "reference/design/integrations/web-use.html": 1039,
     "reference/design/integrations/mcp-server.html": 1040,
 
     # Test architecture and execution contracts.

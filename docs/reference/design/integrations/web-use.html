@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Computer Use 设计概览</title>
+<title>Web Use 设计概览</title>
 <style>
   :root{--bg:#15140f;--text:#c4c0b1;--muted:#858173;--title:#f3f0e8;--line:#343126;--accent:#e08a3e;--blue:#5b91f2;--green:#63b15a;--violet:#a679e4;--code:#100f0b}
   *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -17,16 +17,24 @@
 </head>
 <body><main>
   <header>
-    <div class="eyebrow">OpenProgram · Computer Use</div>
-    <h1>一个浏览器工具，三个可选 backend，同一个 Page</h1>
-    <p>目标是 GUI Agent Harness 只调用统一的 <code>computer_use</code>；设置将决定由 Playwright MCP、Chrome DevTools MCP 或 Open Claude in Chrome-compatible backend 执行。</p>
-    <p class="status">MULTI-BACKEND + GROUP-AWARE MULTI-WINDOW PAGE INVENTORY IMPLEMENTED</p>
+    <div class="eyebrow">OpenProgram · Web Use</div>
+    <h1>Web Use：只控制内置浏览器 Page</h1>
+    <p>Agent 可以直接调用 <code>web_use</code>，也可以让 GUI Agent Harness 用同一接口连续执行。Runtime 绑定一个 exact Page，并在三个 browser backend 中固定一个执行。</p>
+    <p class="status">TARGET NAME: WEB_USE · CURRENT PUBLIC NAME: COMPUTER_USE UNTIL MIGRATION LANDS</p>
   </header>
+
+  <section aria-labelledby="boundary-title">
+    <h2 id="boundary-title">名称与边界</h2>
+    <div class="table-scroll"><table><thead><tr><th>能力</th><th>负责什么</th><th>当前状态</th></tr></thead><tbody>
+      <tr><td>Web Use</td><td>内置浏览器的 BrowserContext、Page、tab、popup、分屏、跨窗口发现，以及 DOM/ARIA/viewport 操作。</td><td class="use">本页能力；公开名称迁移为 <code>web_use</code></td></tr>
+      <tr><td>Computer Use</td><td>未来的桌面应用、整屏或应用窗口截图、OS 级鼠标键盘；需要操作网页时可以调用 Web Use。</td><td class="adapt">保留名称，当前不实现，也不预建配置或后台进程</td></tr>
+    </tbody></table></div>
+  </section>
 
   <section aria-labelledby="architecture-title">
     <h2 id="architecture-title">系统结构</h2>
     <div class="diagram architecture-diagram"><svg viewBox="0 0 1120 640" role="img">
-      <title>GUI Agent Harness 与三个可选浏览器 backend 的分层关系</title><desc>Chat Agent 把网页任务交给 GUI Agent Harness。Harness 只调用 OpenProgram 的统一 computer_use 工具；Runtime 为当前 ComputerSession 固定 Playwright MCP、Chrome DevTools MCP 或 Open Claude in Chrome-compatible backend，并由选中的一个 backend 操作绑定的精确 Page。</desc>
+      <title>Agent、Web Use 与三个可选浏览器 backend 的分层关系</title><desc>Agent 可以直接调用 web_use，也可以通过 GUI Agent Harness 调用相同工具。Runtime 为当前 WebSession 固定 Playwright MCP、Chrome DevTools MCP 或 Open Claude in Chrome-compatible backend，并由选中的一个 backend 操作绑定的精确 Page。</desc>
       <defs>
         <linearGradient id="arch-harness" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2b2116"/><stop offset="1" stop-color="#17140f"/></linearGradient>
         <linearGradient id="arch-runtime" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#251a32"/><stop offset="1" stop-color="#15121b"/></linearGradient>
@@ -42,17 +50,17 @@
         <text x="42" y="31" fill="#5a5544" font-size="10" font-weight="700" letter-spacing="2">AGENT / CONTROL</text><line x1="166" y1="27" x2="1078" y2="27" stroke="#29271f"/>
 
         <circle cx="76" cy="115" r="31" fill="#121a28" stroke="#5b91f2" stroke-width="1.5"/><circle cx="76" cy="115" r="20" fill="none" stroke="#5b91f2" stroke-opacity=".35"/><text x="76" y="120" fill="#5b91f2" font-size="12" font-weight="800" text-anchor="middle">AI</text>
-        <text x="122" y="109" fill="#f3f0e8" font-size="16" font-weight="750">Chat Agent</text><text x="122" y="132" fill="#858173" font-size="11">接收用户任务</text>
+        <text x="122" y="109" fill="#f3f0e8" font-size="16" font-weight="750">Any Agent</text><text x="122" y="132" fill="#858173" font-size="11">选择 direct 或 harness</text>
         <path d="M214 115 H272" fill="none" stroke="#5b91f2" stroke-width="2" marker-end="url(#arch-blue-arrow)"/>
 
         <g filter="url(#arch-shadow)"><rect x="286" y="53" width="276" height="124" rx="20" fill="url(#arch-harness)" stroke="#e08a3e" stroke-width="1.5"/></g>
-        <text x="424" y="86" fill="#e08a3e" font-size="10" font-weight="700" letter-spacing="1.6" text-anchor="middle">AGENT LOOP</text><text x="424" y="112" fill="#f3f0e8" font-size="18" font-weight="750" text-anchor="middle">GUI Agent Harness</text>
+        <text x="424" y="86" fill="#e08a3e" font-size="10" font-weight="700" letter-spacing="1.6" text-anchor="middle">CALLERS</text><text x="424" y="112" fill="#f3f0e8" font-size="18" font-weight="750" text-anchor="middle">Direct Tool · GUI Harness</text>
         <line x1="334" y1="140" x2="514" y2="140" stroke="#5a5544" stroke-width="1.5"/>
         <g fill="#0d0e0b" stroke="#e08a3e"><circle cx="334" cy="140" r="7"/><circle cx="424" cy="140" r="7"/><circle cx="514" cy="140" r="7"/></g>
-        <g fill="#aaa696" font-size="11" text-anchor="middle"><text x="334" y="162">OBSERVE</text><text x="424" y="162">ACT</text><text x="514" y="162">VERIFY</text></g>
+        <g fill="#aaa696" font-size="11" text-anchor="middle"><text x="334" y="162">DIRECT</text><text x="424" y="162">HARNESS</text><text x="514" y="162">MCP</text></g>
 
         <path d="M562 115 H623" fill="none" stroke="#858173" stroke-width="2" marker-end="url(#arch-arrow)"/>
-        <text x="650" y="75" fill="#e08a3e" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700" text-anchor="middle">computer_use</text>
+        <text x="650" y="75" fill="#e08a3e" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700" text-anchor="middle">web_use</text>
         <path d="M650 94 L671 115 L650 136 L629 115Z" fill="#211b12" stroke="#e08a3e" stroke-width="1.5"/><circle cx="650" cy="115" r="4" fill="#e08a3e"/>
         <text x="650" y="158" fill="#858173" font-size="11" text-anchor="middle">OpenProgram MCP</text>
         <path d="M677 115 H727" fill="none" stroke="#858173" stroke-width="2" marker-end="url(#arch-arrow)"/>
@@ -60,12 +68,12 @@
         <g filter="url(#arch-shadow)"><rect x="742" y="53" width="332" height="124" rx="20" fill="url(#arch-runtime)" stroke="#a679e4" stroke-width="1.5"/></g>
         <text x="774" y="83" fill="#a679e4" font-size="10" font-weight="700" letter-spacing="1.6">RUNTIME</text><text x="774" y="111" fill="#f3f0e8" font-size="18" font-weight="750">Bind once. Execute exactly.</text>
         <g fill="#aaa696" font-size="11"><text x="774" y="139">Page binding</text><text x="856" y="139" fill="#5a5544">•</text><text x="872" y="139">permission</text><text x="944" y="139" fill="#5a5544">•</text><text x="960" y="139">verification</text></g>
-        <text x="774" y="160" fill="#858173" font-size="11">ComputerSession 创建后冻结 backend</text>
+        <text x="774" y="160" fill="#858173" font-size="11">WebSession 创建后冻结 backend</text>
 
         <text x="42" y="245" fill="#5a5544" font-size="10" font-weight="700" letter-spacing="2">EXECUTION / CHOOSE ONE</text><line x1="224" y1="241" x2="1078" y2="241" stroke="#29271f"/>
         <path d="M908 177 V217" fill="none" stroke="#858173" stroke-width="1.8"/>
         <path d="M210 251 V287 M560 251 V287 M910 217 V287" fill="none" stroke="#858173" stroke-width="1.8" marker-end="url(#arch-arrow)"/><line x1="210" y1="251" x2="910" y2="251" stroke="#858173" stroke-width="1.8"/>
-        <text x="560" y="232" fill="#858173" font-size="11" letter-spacing="1.2" text-anchor="middle">ONE BACKEND PER COMPUTERSESSION</text>
+        <text x="560" y="232" fill="#858173" font-size="11" letter-spacing="1.2" text-anchor="middle">ONE BACKEND PER WEBSESSION</text>
 
         <g filter="url(#arch-shadow)"><rect x="70" y="291" width="280" height="108" rx="16" fill="#111a15" stroke="#63b15a" stroke-width="1.5"/></g>
         <circle cx="112" cy="345" r="21" fill="#17251c" stroke="#63b15a" stroke-opacity=".55"/><text x="112" y="349" fill="#63b15a" font-size="9" font-weight="800" text-anchor="middle">DOM</text>
@@ -89,13 +97,13 @@
         <text x="560" y="623" fill="#858173" font-size="11" text-anchor="middle">同一个 Page · 分屏在任意方向 · 无需窗口置前</text>
       </g>
     </svg></div>
-    <p class="caption">三个 backend 都是可选执行路径；Runtime 在 ComputerSession 创建时固定其中一个，并把所有动作限制到同一个 Page。</p>
+    <p class="caption">三个 backend 都是可选执行路径；Runtime 在 WebSession 创建时固定其中一个，并把所有动作限制到同一个 Page。</p>
   </section>
 
   <section aria-labelledby="pages-title">
     <h2 id="pages-title">四个网页在一个窗口里怎样表示</h2>
     <div class="diagram page-model-diagram"><svg viewBox="0 0 1120 440" role="img">
-      <title>三个顶部标签项包含四个可控制 Page</title><desc>同一个 BrowserContext 和 OpenProgram window 中，前两个顶部标签项各包含一个 Page，第三个顶部标签项是分屏组，包含左右两个 Page。list_pages 同时返回 tab_entries 布局和 pages 控制目标；Agent 最终只用某个 Page 的 token 建立 ComputerSession。</desc>
+      <title>三个顶部标签项包含四个可控制 Page</title><desc>同一个 BrowserContext 和 OpenProgram window 中，前两个顶部标签项各包含一个 Page，第三个顶部标签项是分屏组，包含左右两个 Page。list_pages 同时返回 tab_entries 布局和 pages 控制目标；Agent 最终只用某个 Page 的 token 建立 WebSession。</desc>
       <defs><marker id="pages-arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#858173"/></marker><marker id="pages-blue-arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#5b91f2"/></marker></defs>
       <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
         <text x="34" y="31" fill="#858173" font-size="11" letter-spacing="1.4">BROWSERCONTEXT ctx_1 · WINDOW win_1</text>
@@ -130,11 +138,11 @@
           <text x="804" y="314" fill="#5b91f2">p4</text><text x="908" y="314" fill="#858173">split / right</text>
         </g>
         <path d="M938 334 V370" fill="none" stroke="#5b91f2" stroke-width="2" marker-end="url(#pages-blue-arrow)"/>
-        <text x="938" y="390" fill="#a679e4" font-size="12" font-weight="700" text-anchor="middle">p4 token → exact ComputerSession</text>
+        <text x="938" y="390" fill="#a679e4" font-size="12" font-weight="700" text-anchor="middle">p4 token → exact WebSession</text>
         <text x="560" y="425" fill="#858173" font-size="12" text-anchor="middle">顶部标签结构用于理解窗口；Page token 用于观察和操作。分屏不增加另一套 Agent command。</text>
       </g>
     </svg></div>
-    <p class="caption">当前 <code>list_pages</code> 同时返回 <code>tab_entries + pages</code>：前者描述 single/split 与 pane 顺序，后者提供可独立控制的 exact Page token。跨窗口目标保持相同结构，在外层增加 <code>windows[]</code>，每个 Page 继续携带原 <code>window_id</code>。完整字段见<a href="computer-use-technical-spec.html#page-model">多 Page 数据模型</a>。</p>
+    <p class="caption">当前 <code>list_pages</code> 同时返回 <code>tab_entries + pages</code>：前者描述 single/split 与 pane 顺序，后者提供可独立控制的 exact Page token。跨窗口目标保持相同结构，在外层增加 <code>windows[]</code>，每个 Page 继续携带原 <code>window_id</code>。完整字段见<a href="web-use-technical-spec.html#page-model">多 Page 数据模型</a>。</p>
   </section>
 
   <section aria-labelledby="click-title">
@@ -165,7 +173,7 @@
 
   <section aria-labelledby="chat-stability-title">
     <h2 id="chat-stability-title">Chat 渲染稳定性</h2>
-    <p>存在 live normal assistant reply 或对应 runtime card 已存在时，Computer Use 的 tree update 不得触发 transcript reload。standalone run 缺少 persisted runtime card 时允许首次单次 hydrate。该约束确保已有历史 message element identity 保持不变，避免流式回复、滚动位置和消息操作状态被重置。</p>
+    <p>存在 live normal assistant reply 或对应 runtime card 已存在时，Web Use 的 tree update 不得触发 transcript reload。standalone run 缺少 persisted runtime card 时允许首次单次 hydrate。该约束确保已有历史 message element identity 保持不变，避免流式回复、滚动位置和消息操作状态被重置。</p>
   </section>
 
   <section aria-labelledby="reuse-title">
@@ -175,15 +183,15 @@
       <tr><td class="adapt">直接调用接口</td><td>CDP、Electron <code>webContents.debugger</code>、Chrome <code>debugger</code> / Native Messaging</td><td>不需要复制 Claude 代码；内置浏览器直接使用 Electron/CDP，不需要另装 Chrome 扩展。</td></tr>
       <tr><td class="use">可选 backend</td><td><a href="https://github.com/ChromeDevTools/chrome-devtools-mcp">Chrome DevTools MCP</a></td><td>通过 MCP adapter 接入统一 Runtime，并绑定 exact Page。</td></tr>
       <tr><td class="adapt">可选 backend</td><td><a href="https://github.com/noemica-io/open-claude-in-chrome">Open Claude in Chrome-compatible</a></td><td>采用其工具契约与视觉操作方式；由 OpenProgram Electron/CDP adapter 绑定 exact Page。</td></tr>
-      <tr><td class="rebuild">OpenProgram 层</td><td>exact Page adapter、统一权限、verification 与 backend selector</td><td>三个 backend 共用；单个 ComputerSession 只允许一个 backend 执行动作。</td></tr>
+      <tr><td class="rebuild">OpenProgram 层</td><td>exact Page adapter、统一权限、verification 与 backend selector</td><td>三个 backend 共用；单个 WebSession 只允许一个 backend 执行动作。</td></tr>
     </tbody></table></div>
   </section>
 
   <footer class="links">
-    <a href="computer-use-technical-spec.html#reuse">开源、接口与复用清单</a>
-    <a href="computer-use-technical-spec.html#page-model">多 Page 与分屏返回结构</a>
-    <a href="computer-use-technical-spec.html">技术规格与实施阶段</a>
-    <a href="computer-use-implementation.html">当前实现与验证记录</a>
+    <a href="web-use-technical-spec.html#reuse">开源、接口与复用清单</a>
+    <a href="web-use-technical-spec.html#page-model">多 Page 与分屏返回结构</a>
+    <a href="web-use-technical-spec.html">技术规格与实施阶段</a>
+    <a href="computer-use-implementation.html">当前实现与名称迁移记录</a>
     <a href="https://github.com/microsoft/playwright-mcp">Microsoft Playwright MCP</a>
     <a href="https://github.com/ChromeDevTools/chrome-devtools-mcp">Chrome DevTools MCP</a>
     <a href="https://github.com/noemica-io/open-claude-in-chrome">Open Claude in Chrome</a>
