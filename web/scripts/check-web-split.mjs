@@ -2985,6 +2985,32 @@ const t5SourceBase = {
   assert.equal(dragCoordinator.current(), null);
 }
 
+// A live orphan-finalization notification must not wait for the next renderer
+// restart. The surviving window acknowledges the destroyed destination role.
+{
+  let orphanHandler = null;
+  const { bridge, calls } = makeTransferBridge(t5Payload, {
+    onFinalizeOrphaned: (handler) => {
+      orphanHandler = handler;
+      return () => {};
+    },
+  });
+  const cleanup = bridgeModule.installTabTransferHandlers(bridge);
+  assert.equal(typeof orphanHandler, "function");
+  await orphanHandler({
+    token: "detached-orphan",
+    status: "rolled-back",
+    role: "destination",
+    windowId: "window-destroyed",
+    orphaned: true,
+  });
+  assert.deepEqual(
+    calls.at(-1),
+    ["journalFinalized", "detached-orphan", "destination", "window-destroyed"],
+  );
+  cleanup();
+}
+
 // Structure gates: dragstart stays synchronous and never awaits before
 // writing DataTransfer.
 const stripSource = readCenterTabStripSource(import.meta.url);

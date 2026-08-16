@@ -230,7 +230,7 @@ export interface DesktopTabTransferApi {
   onRolledBack(cb: (detail: DesktopTransferReceipt) => void): () => void;
   onFinalizeOrphaned(cb: (detail: {
     token: string;
-    status: string;
+    status: "committed" | "rolled-back";
     role: "source" | "destination";
     windowId: string;
     orphaned: boolean;
@@ -1531,6 +1531,29 @@ export function handleTransferRejected(detail: DesktopTransferReceipt): void {
   }
 }
 
+export async function handleFinalizeOrphaned(
+  bridge: DesktopBridge,
+  detail: {
+    token: string;
+    status: "committed" | "rolled-back";
+    role: "source" | "destination";
+    windowId: string;
+    orphaned: boolean;
+  },
+): Promise<void> {
+  if (!detail.orphaned) return;
+  if (!finalizeOrphanTransferJournal(
+    detail.token,
+    detail.status,
+    detail.windowId,
+  )) return;
+  await bridge.tabTransfer.journalFinalized(
+    detail.token,
+    detail.role,
+    detail.windowId,
+  );
+}
+
 let transferHandlersInstalled = false;
 
 /** Wire the transfer event channels. Idempotent per renderer. Returns a
@@ -1554,6 +1577,8 @@ export function installTabTransferHandlers(bridge: DesktopBridge): () => void {
       void handleTransferRolledBack(bridge, detail);
     }),
     transfer.onRejected((detail) => handleTransferRejected(detail)),
+    transfer.onFinalizeOrphaned((detail) =>
+      handleFinalizeOrphaned(bridge, detail)),
     // Pointer-driven cross-window drop: the source window delivered a
     // prepared token here; stage it at the end of this window's strip.
     transfer.onStageIncoming?.((detail) => {
