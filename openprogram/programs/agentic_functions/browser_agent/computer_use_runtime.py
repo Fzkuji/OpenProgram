@@ -19,6 +19,16 @@ SUPPORTED_BACKENDS = (
 DEFAULT_BACKEND = SUPPORTED_BACKENDS[0]
 
 
+def _is_timeout_error(exc: Exception) -> bool:
+    if isinstance(exc, TimeoutError):
+        return True
+    try:
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+    except ImportError:
+        return False
+    return isinstance(exc, PlaywrightTimeoutError)
+
+
 @dataclass
 class ComputerUseSession:
     id: str
@@ -363,7 +373,7 @@ class ComputerUseSessionRegistry:
                 result = {
                     "ok": False,
                     "reason_code": (
-                        "timeout" if isinstance(exc, TimeoutError)
+                        "timeout" if _is_timeout_error(exc)
                         else "backend_action_failed"
                     ),
                     "observe_required": True,

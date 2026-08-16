@@ -431,3 +431,29 @@ def test_backend_parity_normalizes_action_failure_without_fallback(
         assert controllers[other].mutations == []
         if other in clients:
             assert clients[other].write_calls == []
+
+
+def test_open_claude_backend_normalizes_real_playwright_timeout(monkeypatch):
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+    registry, controllers, clients, _released = _registry(monkeypatch)
+    backend = "open_claude_chrome"
+    observed = _observe(registry, backend)
+    controllers[backend].fail_writes = PlaywrightTimeoutError("timed out")
+
+    result = registry.execute(
+        command="act",
+        computer_session_id=observed["computer_session_id"],
+        owner_id="owner-1",
+        arguments={
+            "action": "click",
+            "expected_frame_id": observed["frame_id"],
+            "ref": "e1",
+        },
+    )
+
+    assert result["reason_code"] == "timeout"
+    assert result["observe_required"] is True
+    assert controllers[backend].invalidated == 1
+    assert controllers[backend].write_attempts == 1
+    assert all(client.write_calls == [] for client in clients.values())
