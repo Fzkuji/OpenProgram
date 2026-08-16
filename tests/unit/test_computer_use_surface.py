@@ -184,6 +184,36 @@ def test_bound_webtab_request_forwards_geometry_revision_to_exact_renderer(
     assert binding_id not in webtab._bindings
 
 
+def test_bound_webtab_request_rejects_geometry_changed_during_activation(
+    monkeypatch,
+):
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    binding_id = webtab.register_binding(
+        owner, "window-1", "tab-1", "target-1", geometry_revision=9,
+    )
+    monkeypatch.setattr(
+        webtab,
+        "request_on_ws",
+        lambda *_args, **_kwargs: {
+            "ok": True,
+            "window_id": "window-1",
+            "tab_id": "tab-1",
+            "target_id": "target-1",
+            "geometry_revision": 10,
+        },
+    )
+
+    result = webtab.request_bound_tab(
+        binding_id,
+        expected_geometry_revision=9,
+    )
+
+    assert result["reason_code"] == "page_context_stale"
+    assert binding_id not in webtab._bindings
+
+
 def test_webtab_page_key_is_shared_across_recaptures_of_the_same_target():
     from openprogram.webui.ws_actions import webtab
 

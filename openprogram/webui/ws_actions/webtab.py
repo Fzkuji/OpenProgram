@@ -254,6 +254,17 @@ def request_bound_tab(
             "error": "bound web tab changed",
             "reason_code": "page_context_stale",
         }
+    result_geometry_revision = result.get("geometry_revision")
+    if expected_geometry_revision and (
+        type(result_geometry_revision) is not int
+        or result_geometry_revision != expected_geometry_revision
+    ):
+        release_binding(binding_id)
+        return {
+            "ok": False,
+            "error": "web tab geometry changed during activation",
+            "reason_code": "page_context_stale",
+        }
     return result
 
 

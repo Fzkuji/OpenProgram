@@ -250,6 +250,56 @@ def test_page_capability_revisions_cross_the_session_validation_boundary(monkeyp
     })]
 
 
+def test_geometry_changed_during_activation_blocks_backend_action(monkeypatch):
+    from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
+        ComputerUseSessionRegistry,
+    )
+    from openprogram.webui.ws_actions import webtab
+
+    adapter = _Adapter("open_claude_chrome")
+    adapters = {
+        "playwright_mcp": _Adapter("playwright_mcp"),
+        "chrome_devtools_mcp": _Adapter("chrome_devtools_mcp"),
+        "open_claude_chrome": adapter,
+    }
+    owner = object()
+    binding_id = webtab.register_binding(
+        owner, "window-1", "tab-1", "target-1", geometry_revision=9,
+    )
+    monkeypatch.setattr(webtab, "request_on_ws", lambda *_args, **_kwargs: {
+        "ok": True,
+        "window_id": "window-1",
+        "tab_id": "tab-1",
+        "target_id": "target-1",
+        "geometry_revision": 10,
+    })
+    registry = ComputerUseSessionRegistry(adapters=adapters)
+    context = {
+        "context_id": "ctx-geometry",
+        "surfaces": [{
+            "surface_key": "s1",
+            "binding_id": binding_id,
+            "page_key": webtab.binding_page_key(binding_id),
+            **webtab.binding_revisions(binding_id),
+        }],
+    }
+    observed = registry.execute(
+        command="observe",
+        backend="open_claude_chrome",
+        binding_id=binding_id,
+        page_context=context,
+    )
+
+    rejected = registry.execute(
+        command="act",
+        computer_session_id=observed["computer_session_id"],
+        arguments={"action": "click"},
+    )
+
+    assert rejected["reason_code"] == "page_context_stale"
+    assert adapter.calls == [("observe", {}), ("close", {})]
+
+
 def test_registry_leases_one_exact_page_to_one_session_until_close():
     from openprogram.programs.agentic_functions.browser_agent.computer_use_runtime import (
         ComputerUseSessionRegistry,
