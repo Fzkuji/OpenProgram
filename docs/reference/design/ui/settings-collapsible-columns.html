@@ -108,8 +108,13 @@
   <section>
     <h2>实现状态</h2>
     <div class="card">
-      <p class="pending">状态：分类按钮纵向对齐待实现与复核。</p>
-      <p class="muted">既有 Providers 页头、三级工具栏、折叠状态和 Memory 页头契约保持已实现；本轮只调整 Settings 分类列表的垂直起点。</p>
+      <p><strong>状态：已实现并复核。</strong></p>
+      <ul>
+        <li>Settings 分类列表整体下移 15px；生产页面前四行与主侧栏均位于 <code>y=56/89/122/155px</code>，行高均为 32px。</li>
+        <li>Settings 收起后首个分类图标仍位于 <code>y=56px</code>；49px 栏宽、栏头按钮顶边、localStorage 与 ARIA 行为不变。</li>
+        <li>既有 Providers 页头和三级工具栏、Memory 无重复页头及 loading 结构未修改。</li>
+        <li>Settings 定点检查、Memory 设置检查、TypeScript、production build 和 diff check 均通过；规格与质量复核均为 PASS。</li>
+      </ul>
     </div>
   </section>
 </main></body>
