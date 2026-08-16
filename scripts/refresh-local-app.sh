@@ -61,8 +61,22 @@ test -x "$app_python" || {
 }
 
 wheel_dir="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-local-wheel.XXXXXX")"
-cleanup() { rm -rf "$wheel_dir"; }
-trap cleanup EXIT HUP INT TERM
+install_lock_file="$(dirname -- "$app_path")/.openprogram-app-install.lock"
+install_lock_owned=0
+release_install_lock() {
+  if test "$install_lock_owned" = 1 && \
+    test "$(sed -n '1p' "$install_lock_file" 2>/dev/null || :)" = "$$"; then
+    rm -f "$install_lock_file" || :
+  fi
+}
+cleanup() {
+  release_install_lock
+  rm -rf "$wheel_dir"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 asar_cli="$repo_root/desktop/node_modules/@electron/asar/bin/asar.js"
 if ! test -f "$asar_cli"; then
@@ -112,6 +126,19 @@ while true; do
   test "$(git -C "$repo_root" rev-parse HEAD)" = "$build_revision" && break
   printf 'HEAD changed during packaging; rebuilding the current checkout\n'
 done
+
+if ! /usr/bin/shlock -p "$$" -f "$install_lock_file"; then
+  lock_pid="$(sed -n '1p' "$install_lock_file" 2>/dev/null || :)"
+  printf 'another OpenProgram App installation is running%s\n' \
+    "${lock_pid:+ (pid $lock_pid)}" >&2
+  exit 1
+fi
+install_lock_owned=1
+
+# Re-read all mutable version sources under the same lock as the canonical App
+# installer. The wheel is the immutable payload used by both pip operations.
+"$local_python" "$repo_root/scripts/verify-release-version.py" \
+  --installed-app "$app_path" --require-source-match --wheel "$wheel"
 
 if pgrep -x OpenProgram >/dev/null 2>&1; then
   osascript -e 'tell application "OpenProgram" to quit' >/dev/null 2>&1 || true

@@ -7,6 +7,8 @@ import plistlib
 import re
 import subprocess
 import tomllib
+import zipfile
+from email.parser import BytesParser
 from pathlib import Path
 
 
@@ -67,11 +69,38 @@ def _installed_app_version(app_path: Path) -> str:
     return bundle_version
 
 
+def _wheel_version(wheel_path: Path) -> str:
+    try:
+        with zipfile.ZipFile(wheel_path) as archive:
+            metadata_files = [
+                name
+                for name in archive.namelist()
+                if name.endswith(".dist-info/METADATA")
+            ]
+            if len(metadata_files) != 1:
+                raise SystemExit(
+                    "OpenProgram wheel must contain exactly one dist-info METADATA"
+                )
+            metadata = BytesParser().parsebytes(
+                archive.read(metadata_files[0]), headersonly=True
+            )
+    except (OSError, zipfile.BadZipFile, KeyError) as exc:
+        raise SystemExit(f"could not read OpenProgram wheel metadata: {exc}") from exc
+    name = metadata.get("Name", "").strip().lower().replace("_", "-")
+    version = metadata.get("Version", "").strip()
+    if name != "openprogram":
+        raise SystemExit(f"unexpected wheel project: {name or '<missing>'}")
+    if not VERSION_PATTERN.fullmatch(version):
+        raise SystemExit(f"invalid OpenProgram wheel version: {version or '<missing>'}")
+    return version
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--tag")
     parser.add_argument("--installed-app", type=Path)
     parser.add_argument("--require-source-match", action="store_true")
+    parser.add_argument("--wheel", type=Path)
     args = parser.parse_args()
     if args.require_source_match and args.installed_app is None:
         parser.error("--require-source-match requires --installed-app")
@@ -94,6 +123,12 @@ def main() -> int:
             errors.append(
                 f"source version {python_version} != installed App version "
                 f"{installed_version}"
+            )
+    if args.wheel is not None:
+        wheel_version = _wheel_version(args.wheel)
+        if wheel_version != python_version:
+            errors.append(
+                f"wheel version {wheel_version} != source version {python_version}"
             )
     if errors:
         raise SystemExit("; ".join(errors))
