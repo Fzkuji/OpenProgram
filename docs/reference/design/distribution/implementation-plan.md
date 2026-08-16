@@ -20,14 +20,16 @@ duplicated in this historical distribution ledger.
   use decimal arbitrary-precision comparison. An existing canonical path that
   fails bundle, manifest, or embedded metadata validation is preserved and
   rejected rather than treated as absent. The same-version refresh copies the
-  Desktop updater implementation into the rebuilt App archive.
+  Desktop updater implementation into the rebuilt App archive, verifies the
+  built wheel metadata, then reacquires the installer target lock and rechecks
+  source, wheel, and installed App before any worker or App mutation.
 - RED: the public installer accepted a 0.6.1 candidate over an installed 0.6.2
   App; the release-version entry did not recognize the installed-App source
   match request.
 - GREEN: both focused public-entry cases pass. The real refresh command rejects
   a 0.6.6 checkout against the then-installed 0.6.1 App before creating build
   output, and the App files and healthy worker remain unchanged.
-- Affected gate: formal release and distribution suites report 72 passed;
+- Affected gate: formal release and distribution suites report 74 passed;
   release version, Ruff, shell syntax, and diff checks pass.
 - Exclusions: no downgrade override, prerelease ordering, additional version
   source, user-state migration, Windows package, or remote release mutation.

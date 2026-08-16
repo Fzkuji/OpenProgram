@@ -8,6 +8,7 @@ import runpy
 import subprocess
 import sys
 import time
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1004,6 +1005,220 @@ def test_local_app_refresh_rejects_a_different_product_version_before_build(
     assert gate < refresh.index('wheel_dir="$(mktemp')
     assert gate < refresh.index('"$repo_root/scripts/stage-release-assets.sh"')
     assert gate < refresh.index("openprogram worker stop")
+    post_build_gate = refresh.index('--wheel "$wheel"')
+    lock = refresh.index('/usr/bin/shlock -p "$$" -f "$install_lock_file"')
+    archive = refresh.index('node "$asar_cli" pack')
+    first_worker_mutation = refresh.index("pgrep -x OpenProgram")
+    first_pip_mutation = refresh.index('"$local_python" -m pip install')
+    assert refresh.count("--require-source-match") == 2
+    assert archive < lock < post_build_gate < first_worker_mutation
+    assert post_build_gate < first_pip_mutation
+    assert '$(dirname -- "$app_path")/.openprogram-app-install.lock' in refresh
+
+
+def test_release_version_verifier_rejects_a_mismatched_built_wheel(
+    tmp_path: Path,
+) -> None:
+    installed = _fake_desktop_app(tmp_path / "installed", "0.6.6")
+    wheel = tmp_path / "openprogram-0.6.1-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(
+            "openprogram-0.6.1.dist-info/METADATA",
+            "Metadata-Version: 2.1\nName: openprogram\nVersion: 0.6.1\n",
+        )
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "verify-release-version.py"),
+            "--installed-app",
+            str(installed),
+            "--require-source-match",
+            "--wheel",
+            str(wheel),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "wheel version 0.6.1 != source version 0.6.6" in result.stderr
+
+
+def test_local_app_refresh_rejects_dirty_version_change_after_build(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    scripts = repo / "scripts"
+    desktop = repo / "desktop"
+    scripts.mkdir(parents=True)
+    desktop.mkdir()
+    (scripts / "refresh-local-app.sh").write_text(
+        (ROOT / "scripts" / "refresh-local-app.sh").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (scripts / "verify-release-version.py").write_text(
+        (ROOT / "scripts" / "verify-release-version.py").read_text(
+            encoding="utf-8"
+        ),
+        encoding="utf-8",
+    )
+    stage_assets = scripts / "stage-release-assets.sh"
+    stage_assets.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    stage_assets.chmod(0o755)
+    (repo / "pyproject.toml").write_text(
+        '[project]\nname = "openprogram"\nversion = "0.6.6"\n',
+        encoding="utf-8",
+    )
+    (desktop / "package.json").write_text(
+        json.dumps({"version": "0.6.6"}), encoding="utf-8"
+    )
+    desktop_files = [
+        "main.js",
+        "preload.js",
+        "browser-extension-manager.js",
+        "update-service.js",
+        "packaged-runtime.js",
+        "worker-start-url.js",
+        "tab-transfer-store.js",
+        "browsing-history-store.js",
+        "browser-profile-import.js",
+    ]
+    for desktop_file in desktop_files:
+        (desktop / desktop_file).write_text("module.exports = {};\n", encoding="utf-8")
+    asar_cli = desktop / "node_modules" / "@electron" / "asar" / "bin" / "asar.js"
+    asar_cli.parent.mkdir(parents=True)
+    asar_cli.write_text("", encoding="utf-8")
+    for module_name in [
+        "extract-zip",
+        "debug",
+        "ms",
+        "get-stream",
+        "pump",
+        "end-of-stream",
+        "once",
+        "wrappy",
+        "yauzl",
+        "fd-slicer",
+        "pend",
+        "buffer-crc32",
+    ]:
+        module_dir = desktop / "node_modules" / module_name
+        module_dir.mkdir(parents=True)
+        (module_dir / "index.js").write_text("", encoding="utf-8")
+
+    app = _fake_desktop_app(tmp_path / "installed", "0.6.6")
+    installed_asar = app / "Contents" / "Resources" / "app.asar"
+    installed_asar.write_bytes(b"original-asar")
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    mutation_log = tmp_path / "mutation.log"
+    local_python = fake_bin / "local-python"
+    local_python.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'case "${1:-}" in\n'
+        '  *.py|-) exec "$REAL_PYTHON" "$@" ;;\n'
+        "esac\n"
+        'printf "unexpected local Python mutation: %s\\n" "$*" >> "$MUTATION_LOG"\n'
+        "exit 90\n",
+        encoding="utf-8",
+    )
+    local_python.chmod(0o755)
+    fake_git = fake_bin / "git"
+    fake_git.write_text("#!/bin/sh\nprintf 'fixed-head\\n'\n", encoding="utf-8")
+    fake_git.chmod(0o755)
+    fake_node = fake_bin / "node"
+    fake_node.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'case "$2" in\n'
+        '  extract) mkdir -p "$4/node_modules" ;;\n'
+        '  pack) : > "$4" ;;\n'
+        '  *) printf "unexpected node call: %s\\n" "$*" >&2; exit 91 ;;\n'
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_node.chmod(0o755)
+    fake_uv = fake_bin / "uv"
+    fake_uv.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        "out=\n"
+        "while [ \"$#\" -gt 0 ]; do\n"
+        '  if [ "$1" = "--out-dir" ]; then out="$2"; shift 2; else shift; fi\n'
+        "done\n"
+        'printf \'[project]\\nname = "openprogram"\\nversion = "0.6.1"\\n\' > "$REPO_ROOT/pyproject.toml"\n'
+        'printf \'{"version":"0.6.1"}\\n\' > "$REPO_ROOT/desktop/package.json"\n'
+        'mkdir -p "$out"\n'
+        'exec "$REAL_PYTHON" - "$out/openprogram-0.6.1-py3-none-any.whl" <<\'PY\'\n'
+        "import sys, zipfile\n"
+        "with zipfile.ZipFile(sys.argv[1], 'w') as archive:\n"
+        "    archive.writestr('openprogram-0.6.1.dist-info/METADATA', "
+        "'Metadata-Version: 2.1\\nName: openprogram\\nVersion: 0.6.1\\n')\n"
+        "PY\n",
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o755)
+
+    env = {
+        "PATH": f"{fake_bin}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+        "HOME": str(tmp_path / "home"),
+        "TMPDIR": str(tmp_path / "tmp"),
+        "OPENPROGRAM_APP_PATH": str(app),
+        "OPENPROGRAM_LOCAL_PYTHON": str(local_python),
+        "OPENPROGRAM_UV_BIN": str(fake_uv),
+        "REAL_PYTHON": sys.executable,
+        "REPO_ROOT": str(repo),
+        "MUTATION_LOG": str(mutation_log),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    result = subprocess.run(
+        ["bash", str(scripts / "refresh-local-app.sh")],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+
+    assert result.returncode != 0
+    assert "source version 0.6.1 != installed App version 0.6.6" in result.stderr
+    assert not mutation_log.exists()
+    assert installed_asar.read_bytes() == b"original-asar"
+    assert not (app.parent / ".openprogram-app-install.lock").exists()
+
+    (repo / "pyproject.toml").write_text(
+        '[project]\nname = "openprogram"\nversion = "0.6.6"\n',
+        encoding="utf-8",
+    )
+    (desktop / "package.json").write_text(
+        json.dumps({"version": "0.6.6"}), encoding="utf-8"
+    )
+    fake_uv.write_text(
+        fake_uv.read_text(encoding="utf-8").replace("0.6.1", "0.6.6"),
+        encoding="utf-8",
+    )
+    lock_file = app.parent / ".openprogram-app-install.lock"
+    subprocess.run(
+        ["/usr/bin/shlock", "-p", str(os.getpid()), "-f", str(lock_file)],
+        check=True,
+    )
+    try:
+        blocked = subprocess.run(
+            ["bash", str(scripts / "refresh-local-app.sh")],
+            check=False,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    finally:
+        lock_file.unlink()
+
+    assert blocked.returncode != 0
+    assert "another OpenProgram App installation is running" in blocked.stderr
+    assert not mutation_log.exists()
+    assert installed_asar.read_bytes() == b"original-asar"
 
 
 def test_release_frontend_staging_removes_stale_export_before_build() -> None:
