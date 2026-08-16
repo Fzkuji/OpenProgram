@@ -322,6 +322,34 @@ def _execution_error() -> AgentToolResult:
     )
 
 
+def _web_session_id(raw: Any, arguments: Mapping[str, Any]) -> str:
+    existing = arguments.get("web_session_id")
+    if isinstance(existing, str) and existing:
+        return existing
+    payload: Any = raw
+    if isinstance(raw, AgentToolResult):
+        details = raw.details
+        if isinstance(details, Mapping) and isinstance(details.get("json"), Mapping):
+            payload = details["json"]
+        else:
+            payload = None
+            for item in raw.content:
+                text = getattr(item, "text", None)
+                if not isinstance(text, str):
+                    continue
+                try:
+                    candidate = json.loads(text)
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(candidate, Mapping):
+                    payload = candidate
+                    break
+    if not isinstance(payload, Mapping):
+        return ""
+    value = payload.get("web_session_id")
+    return value if isinstance(value, str) else ""
+
+
 class MCPService:
     def __init__(
         self,
@@ -563,13 +591,67 @@ class MCPService:
             )
         if cancel_event.is_set():
             return _execution_error()
-        try:
-            copied = _copy_json(arguments)
-            raw = await anyio.to_thread.run_sync(
-                lambda: self._web_use_dispatch(
+        copied = _copy_json(arguments)
+        state_lock = threading.Lock()
+        state: dict[str, Any] = {
+            "abandoned": False,
+            "cleaned": False,
+            "ready": False,
+            "raw": None,
+        }
+
+        def cleanup_once(raw: Any) -> None:
+            with state_lock:
+                if state["cleaned"]:
+                    return
+                state["cleaned"] = True
+            session_id = _web_session_id(raw, copied)
+            if session_id and copied.get("command") != "close":
+                _best_effort(
+                    lambda: self._web_use_dispatch(
+                        {"command": "close", "web_session_id": session_id},
+                        owner_id=self._web_use_owner_id,
+                    )
+                )
+            if self._closed:
+                _best_effort(
+                    self._web_use_release_owner,
+                    self._web_use_owner_id,
+                )
+
+        def abandon() -> None:
+            with state_lock:
+                state["abandoned"] = True
+                ready = state["ready"]
+                raw = state["raw"]
+            if ready:
+                cleanup_once(raw)
+
+        def dispatch() -> Any:
+            try:
+                raw = self._web_use_dispatch(
                     copied, owner_id=self._web_use_owner_id,
                 )
-            )
+            except Exception:
+                if self._closed:
+                    _best_effort(
+                        self._web_use_release_owner,
+                        self._web_use_owner_id,
+                    )
+                raise
+            with state_lock:
+                state["raw"] = raw
+                state["ready"] = True
+                needs_cleanup = state["abandoned"] or self._closed
+            if needs_cleanup:
+                cleanup_once(raw)
+            return raw
+
+        try:
+            raw = await anyio.to_thread.run_sync(dispatch)
+            if cancel_event.is_set() or self._closed:
+                abandon()
+                return _execution_error()
             if isinstance(raw, AgentToolResult):
                 return raw
             from openprogram.programs._runtime import _normalize_result
@@ -577,6 +659,9 @@ class MCPService:
                 raw, call_id=call_id, max_chars=100_000,
                 persist_full=False, head_ratio=0.7,
             )
+        except asyncio.CancelledError:
+            abandon()
+            raise
         except Exception:
             return _execution_error()
 

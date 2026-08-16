@@ -4,6 +4,7 @@ import asyncio
 import builtins
 import json
 import sys
+import threading
 from copy import deepcopy
 from dataclasses import FrozenInstanceError
 from types import ModuleType
@@ -211,6 +212,97 @@ def test_mcp_connection_close_releases_worker_owned_web_use_sessions(
     service.close()
 
     assert released == [owner_id]
+
+
+def test_cancelled_web_use_observe_closes_late_session(client_context) -> None:
+    started = threading.Event()
+    finish = threading.Event()
+    closed = threading.Event()
+    sessions = set()
+    calls = []
+
+    def dispatch(arguments, *, owner_id):
+        command = arguments["command"]
+        calls.append((command, owner_id))
+        if command == "observe":
+            started.set()
+            assert finish.wait(timeout=2)
+            sessions.add("ws-late")
+            return {"ok": True, "web_session_id": "ws-late", "frame_id": "f1"}
+        if command == "close":
+            sessions.discard(arguments["web_session_id"])
+            closed.set()
+            return {"ok": True, "closed": True}
+        raise AssertionError(command)
+
+    service = _service(client_context, web_use_dispatch=dispatch)
+
+    async def scenario():
+        task = asyncio.create_task(service.web_use_call(
+            {"command": "observe", "page_context_token": "page-1"},
+            call_id="web-cancel",
+            cancel_event=asyncio.Event(),
+        ))
+        assert await asyncio.to_thread(started.wait, 2)
+        task.cancel()
+        finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert await asyncio.to_thread(closed.wait, 2)
+
+    asyncio.run(scenario())
+
+    assert sessions == set()
+    assert [command for command, _ in calls] == ["observe", "close"]
+
+
+def test_connection_close_sweeps_web_use_session_created_by_late_dispatch(
+    client_context,
+) -> None:
+    started = threading.Event()
+    finish = threading.Event()
+    sessions = set()
+    released = []
+
+    def dispatch(arguments, *, owner_id):
+        if arguments["command"] == "observe":
+            started.set()
+            assert finish.wait(timeout=2)
+            sessions.add("ws-after-close")
+            return {
+                "ok": True,
+                "web_session_id": "ws-after-close",
+                "frame_id": "f1",
+            }
+        sessions.discard(arguments["web_session_id"])
+        return {"ok": True, "closed": True}
+
+    def release(owner_id):
+        released.append(owner_id)
+        sessions.clear()
+
+    service = _service(
+        client_context,
+        web_use_dispatch=dispatch,
+        web_use_release_owner=release,
+    )
+
+    async def scenario():
+        task = asyncio.create_task(service.web_use_call(
+            {"command": "observe", "page_context_token": "page-1"},
+            call_id="web-close-race",
+            cancel_event=asyncio.Event(),
+        ))
+        assert await asyncio.to_thread(started.wait, 2)
+        service.close()
+        finish.set()
+        result = await task
+        assert result.is_error is True
+
+    asyncio.run(scenario())
+
+    assert sessions == set()
+    assert released == [service._web_use_owner_id, service._web_use_owner_id]
 
 
 def test_web_use_does_not_reimport_tool_registry_for_normalized_result(

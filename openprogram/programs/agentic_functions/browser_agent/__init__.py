@@ -1109,6 +1109,8 @@ def _run_browser_task_commands(
                 pending_screenshot_result = None
             seq_before = last["seq"]
             try:
+                # Keep this deferred browser tool loop on Runtime until the
+                # agent() migration provides the same forced-call contract.
                 reply = runtime.exec(
                     content=content,
                     tools=[action_tool],
