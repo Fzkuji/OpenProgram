@@ -50,7 +50,10 @@
   overflow-x: hidden;
 }
 .railHeader {
-  height: 40px;
+  /* The main sidebar header starts its 32px toggle 8px from the top.
+     This header already sits inside the Settings nav's 8px padding,
+     so matching the button height keeps both toggle tops aligned. */
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -470,11 +473,18 @@
   border-right: 1px solid var(--border);
   min-height: 0;
 }
-/* Search and add controls below the labeled provider rail header. */
+/* Search input and the original provider-list toggle share one toolbar. */
 .providersStickyHeader {
   padding: 0 0 8px;
 }
+.providersToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 .providerSearch {
+  flex: 1;
   min-width: 0;
 }
 .providerListItems {
@@ -483,13 +493,10 @@
   gap: 1px;
 }
 .providerListCollapsed .providersStickyHeader {
-  display: none;
+  padding-bottom: 8px;
 }
-.providerListCollapsed .railHeader {
+.providerListCollapsed .providersToolbar {
   justify-content: center;
-}
-.providerListCollapsed .railTitle {
-  display: none;
 }
 .providerListCollapsed .providerItem {
   width: 32px;

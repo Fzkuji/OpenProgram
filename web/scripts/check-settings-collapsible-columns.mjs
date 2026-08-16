@@ -24,7 +24,9 @@ assert.match(providers, /localStorage\.getItem\("providerListOpen"\)/);
 assert.match(providers, /localStorage\.setItem\("providerListOpen",/);
 assert.match(providers, /aria-expanded=\{listOpen\}/);
 assert.match(providers, /styles\.providerListCollapsed/);
-assert.match(providers, /styles\.railHeader[\s\S]*styles\.railTitle[\s\S]*settings\.tab\.providers[\s\S]*sidebarToggleClass/);
+assert.match(providers, /styles\.providersToolbar[\s\S]*SearchInput[\s\S]*sidebarToggleClass/);
+assert.doesNotMatch(providers, /styles\.railHeader/);
+assert.doesNotMatch(providers, /styles\.railTitle/);
 assert.doesNotMatch(providers, /styles\.pageHeader/);
 assert.doesNotMatch(memory, /shared\.pageHeader/);
 assert.match(loading, /tab === "providers" \|\| tab === "memory"/);
@@ -32,11 +34,13 @@ assert.match(loading, /\{!headerless[\s\S]*styles\.pageHeader/);
 assert.match(providerItem, /title=\{p\.label\}/);
 
 assert.match(css, /\.body\.settingsNavCollapsed\s*\{[^}]*grid-template-columns:\s*49px minmax\(0, 1fr\)/s);
+assert.match(css, /\.railHeader\s*\{[^}]*height:\s*32px/s);
 assert.match(css, /\.providersLayout\.providerListCollapsed\s*\{[^}]*grid-template-columns:\s*49px minmax\(0, 1fr\)/s);
 assert.match(css, /\.settingsNavCollapsed\s+\.railItemLabel\s*\{[^}]*display:\s*none/s);
 assert.match(css, /\.settingsNavCollapsed\s+\.nav\s*>\s*\.railHeader\s+\.railTitle\s*\{[^}]*display:\s*none/s);
 assert.match(css, /\.providerListCollapsed\s+\.providerLabel[\s\S]*display:\s*none/s);
-assert.match(css, /\.providerListCollapsed\s+\.railTitle\s*\{[^}]*display:\s*none/s);
+assert.match(css, /\.providersToolbar\s*\{[^}]*display:\s*flex/s);
+assert.doesNotMatch(css, /\.providerListCollapsed\s+\.railTitle/);
 assert.match(css, /\.providerListCollapsed\s+\.providersStickyHeader[\s\S]*\.providerItem/s);
 assert.match(css, /@media \(max-width:\s*900px\)\s*\{\s*\.view\s*\{\s*padding-left:\s*49px;/s);
 

@@ -157,30 +157,29 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
       <div className={`${styles.pageBody} ${styles.pageBodyTwoPane}`}>
         <div className={styles.providersLayout + (!listOpen ? " " + styles.providerListCollapsed : "")}>
           <div className={styles.providersSidebar} ref={sidebarRef}>
-            <div className={styles.railHeader}>
-              <span className={styles.railTitle}>{t("settings.tab.providers")}</span>
-              <button
-                type="button"
-                className={sidebarToggleClass}
-                onClick={toggleList}
-                aria-expanded={listOpen}
-                aria-controls="provider-list-items"
-                aria-label={text(listOpen ? "Collapse provider list" : "Expand provider list", listOpen ? "收起 Provider 列表" : "展开 Provider 列表")}
-                title={text(listOpen ? "Collapse provider list" : "Expand provider list", listOpen ? "收起 Provider 列表" : "展开 Provider 列表")}
-              >
-                {listOpen ? <PanelLeftCloseIcon size={20} /> : <PanelLeftOpenIcon size={20} />}
-              </button>
-            </div>
             <div className={styles.providersStickyHeader}>
-              {listOpen && (
-                <div className={styles.providerSearch}>
-                  <SearchInput
-                    placeholder={text("Search providers...", "搜索 Provider...")}
-                    value={search}
-                    onChange={setSearch}
-                  />
-                </div>
-              )}
+              <div className={styles.providersToolbar}>
+                {listOpen && (
+                  <div className={styles.providerSearch}>
+                    <SearchInput
+                      placeholder={text("Search providers...", "搜索 Provider...")}
+                      value={search}
+                      onChange={setSearch}
+                    />
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className={sidebarToggleClass}
+                  onClick={toggleList}
+                  aria-expanded={listOpen}
+                  aria-controls="provider-list-items"
+                  aria-label={text(listOpen ? "Collapse provider list" : "Expand provider list", listOpen ? "收起 Provider 列表" : "展开 Provider 列表")}
+                  title={text(listOpen ? "Collapse provider list" : "Expand provider list", listOpen ? "收起 Provider 列表" : "展开 Provider 列表")}
+                >
+                  {listOpen ? <PanelLeftCloseIcon size={20} /> : <PanelLeftOpenIcon size={20} />}
+                </button>
+              </div>
               {listOpen && (
                 <AddCustomProvider
                   onCreated={(id) => {
