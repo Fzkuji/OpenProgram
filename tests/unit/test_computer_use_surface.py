@@ -661,6 +661,53 @@ def test_context_page_inventory_does_not_replace_live_primary_on_timeout(monkeyp
     webtab.release_connection(secondary)
 
 
+def test_page_inventory_cannot_recreate_binding_after_disconnect(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    binding = webtab.register_binding(
+        owner, "window-1", "tab-1", "target-1", allow_background=True,
+    )
+    accepted = {
+        "context_id": "accepted",
+        "surfaces": [{"binding_id": binding}],
+    }
+    monkeypatch.setattr(
+        webtab,
+        "request_page_inventory",
+        lambda binding_id: {
+            "ok": True,
+            "window_id": "window-1",
+            "pages": [{
+                "tab_id": "tab-1",
+                "target_id": "target-1",
+                "url": "https://example.test/",
+                "title": "Example",
+                "visible": True,
+                "focused": True,
+                "region": "center",
+            }],
+        },
+    )
+    original_owner_revision = webtab.binding_owner_revision
+
+    def disconnect_after_owner_read(binding_id):
+        result = original_owner_revision(binding_id)
+        webtab.release_connection(owner)
+        return result
+
+    monkeypatch.setattr(
+        webtab, "binding_owner_revision", disconnect_after_owner_read,
+    )
+
+    with pytest.raises(RuntimeError, match="connection changed during Page binding"):
+        surface_context.capture_pages(accepted)
+    assert all(entry[0] is not owner for entry in webtab._bindings.values())
+
+
 def test_direct_page_inventory_preserves_tab_entries_and_split_panes(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.webui import server

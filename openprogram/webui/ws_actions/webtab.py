@@ -92,10 +92,16 @@ def register_binding(
     ttl: float = 1800.0,
     geometry_revision: int = 0,
     allow_background: bool = False,
+    expected_connection_revision: int | None = None,
 ) -> str:
     binding_id = "surface_" + uuid.uuid4().hex
     with _lock:
         connection_revision = _connection_revisions.get(ws)
+        if (
+            expected_connection_revision is not None
+            and connection_revision != expected_connection_revision
+        ):
+            raise RuntimeError("Desktop connection changed during Page binding")
         if connection_revision is None:
             connection_revision = next(_next_revision)
             _connection_revisions[ws] = connection_revision
@@ -148,10 +154,26 @@ def release_connection(ws) -> None:
         ev.set()
 
 
-def registered_desktop_windows() -> list[tuple[Any, str]]:
-    """Return registered renderer sockets in registration order."""
+def registered_desktop_windows() -> list[tuple[Any, str, int]]:
+    """Return registered renderer sockets and connection revisions."""
     with _lock:
-        return list(_desktop_windows.items())
+        return [
+            (ws, window_id, _connection_revisions[ws])
+            for ws, window_id in _desktop_windows.items()
+            if ws in _connection_revisions
+        ]
+
+
+def binding_owner_revision(binding_id: str) -> tuple[Any, int] | None:
+    """Return one binding owner and its current connection revision atomically."""
+    with _lock:
+        entry = _bindings.get(binding_id)
+        if entry is None:
+            return None
+        revision = _connection_revisions.get(entry[0])
+        if revision is None:
+            return None
+        return entry[0], revision
 
 
 def binding_page_key(binding_id: str) -> str:
@@ -434,6 +456,8 @@ async def handle_webtab_register(ws, cmd: dict):
     if not isinstance(window_id, str) or not window_id or len(window_id) > 160:
         return
     with _lock:
+        if ws not in _connection_revisions:
+            _connection_revisions[ws] = next(_next_revision)
         _desktop_windows[ws] = window_id
 
 

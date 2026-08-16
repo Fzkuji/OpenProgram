@@ -285,7 +285,7 @@ def capture_pages(context: dict | None = None) -> dict:
     from openprogram.webui.ws_actions import webtab
 
     connected = list(_server._ws_connections)
-    inventories: list[tuple[object, dict]] = []
+    inventories: list[tuple[object, dict, int]] = []
     if context is not None:
         binding_id = next((
             str(item.get("binding_id"))
@@ -295,26 +295,27 @@ def capture_pages(context: dict | None = None) -> dict:
         if not binding_id:
             raise RuntimeError("no accepted Page binding is available")
         result = webtab.request_page_inventory(binding_id)
-        owner_ws = webtab.binding_connection(binding_id)
-        if owner_ws is not None:
+        owner = webtab.binding_owner_revision(binding_id)
+        if owner is not None:
+            owner_ws, connection_revision = owner
             if (
                 not isinstance(result, dict) or not result.get("ok")
                 or not _text(result.get("window_id"), 160)
                 or not isinstance(result.get("pages"), list)
             ):
                 raise RuntimeError("OpenProgram Page inventory is unavailable")
-            inventories.append((owner_ws, result))
+            inventories.append((owner_ws, result, connection_revision))
     else:
         registered = [
-            (ws, window_id)
-            for ws, window_id in webtab.registered_desktop_windows()
+            (ws, window_id, revision)
+            for ws, window_id, revision in webtab.registered_desktop_windows()
             if ws in connected
         ]
         if not registered:
             raise RuntimeError(
                 "direct Page selection requires a registered Desktop window"
             )
-        for owner_ws, expected_window_id in registered:
+        for owner_ws, expected_window_id, connection_revision in registered:
             command = {"op": "list"}
             if expected_window_id:
                 command["window_id"] = expected_window_id
@@ -324,14 +325,14 @@ def capture_pages(context: dict | None = None) -> dict:
                 and result.get("window_id") != expected_window_id
             ):
                 result = {"ok": False, "reason_code": "page_context_stale"}
-            inventories.append((owner_ws, result))
+            inventories.append((owner_ws, result, connection_revision))
 
     registered = [
-        (ws, window_id)
-        for ws, window_id in webtab.registered_desktop_windows()
-        if ws in connected and all(ws is not owner for owner, _ in inventories)
+        (ws, window_id, revision)
+        for ws, window_id, revision in webtab.registered_desktop_windows()
+        if ws in connected and all(ws is not owner for owner, _, _ in inventories)
     ]
-    for owner_ws, expected_window_id in registered:
+    for owner_ws, expected_window_id, connection_revision in registered:
         result = webtab.request_on_ws(
             owner_ws, {"op": "list", "window_id": expected_window_id},
         )
@@ -339,11 +340,11 @@ def capture_pages(context: dict | None = None) -> dict:
             isinstance(result, dict) and result.get("ok")
             and result.get("window_id") == expected_window_id
         ):
-            inventories.append((owner_ws, result))
+            inventories.append((owner_ws, result, connection_revision))
 
-    valid_inventories: list[tuple[object, dict, str]] = []
+    valid_inventories: list[tuple[object, dict, str, int]] = []
     seen_windows: set[str] = set()
-    for owner_ws, result in inventories:
+    for owner_ws, result, connection_revision in inventories:
         window_id = _text(result.get("window_id"), 160) if isinstance(result, dict) else ""
         raw_pages = result.get("pages") if isinstance(result, dict) else None
         if (
@@ -354,7 +355,9 @@ def capture_pages(context: dict | None = None) -> dict:
         if window_id in seen_windows:
             continue
         seen_windows.add(window_id)
-        valid_inventories.append((owner_ws, result, window_id))
+        valid_inventories.append((
+            owner_ws, result, window_id, connection_revision,
+        ))
     if not valid_inventories:
         raise RuntimeError("OpenProgram Page inventory is unavailable")
 
@@ -362,7 +365,7 @@ def capture_pages(context: dict | None = None) -> dict:
     aliases: dict[str, str] = {}
     windows = []
     try:
-        for owner_ws, result, window_id in valid_inventories:
+        for owner_ws, result, window_id, connection_revision in valid_inventories:
             raw_pages = result["pages"]
             surface_by_tab: dict[str, str] = {}
             seen_tabs: set[str] = set()
@@ -403,6 +406,7 @@ def capture_pages(context: dict | None = None) -> dict:
                     target_id,
                     geometry_revision=_revision(raw.get("geometry_revision")),
                     allow_background=not visible,
+                    expected_connection_revision=connection_revision,
                 )
                 surface = {
                     "surface_key": surface_key,
