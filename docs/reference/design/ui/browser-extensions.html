@@ -154,7 +154,7 @@
       <h1>Chromium 浏览器扩展</h1>
       <p class="lede">用户可以在 OpenProgram 内置浏览器中打开 Edge Add-ons 或 Chrome Web Store，在扩展详情页点击 OpenProgram 提供的安装操作，确认权限后自动下载、校验、解包并启用。OpenProgram 只承诺 Electron 已实现的 API 子集，不宣称商店中的任意扩展都能正常工作。</p>
       <div class="meta">
-        <span class="pill"><span class="dot"></span>设计完成 · 尚未实现</span>
+        <span class="pill"><span class="dot"></span>第一阶段已实现 · 安装版已验收</span>
         <span class="pill">Desktop only</span>
         <span class="pill">Store + local folder</span>
         <span class="pill">User approval required</span>
@@ -326,21 +326,21 @@
 
     <section class="section" id="acceptance">
       <div class="section-head"><span class="section-no">07</span><h2>验收与实现状态</h2></div>
-      <p class="section-intro">设计完成不代表功能可用。下面只有现有浏览器基础设施属于已实现，扩展相关结果在代码、测试和安装版验收完成前保持未实现。</p>
+      <p class="section-intro">第一阶段的商店安装、本地目录安装、管理与启动恢复已经实现。安装版验收确认 Extensions 页面、Desktop API 和打包依赖可用；真实商店包的下载、签名、身份与本地化名称在隔离目录中验证，不向默认用户配置写入测试扩展。</p>
       <div class="table-scroll" tabindex="0" role="region" aria-label="浏览器扩展验收状态，可横向滚动">
         <table class="matrix">
           <thead><tr><th>可观察结果</th><th>状态</th><th>证据要求</th></tr></thead>
           <tbody>
             <tr><td>所有原生 WebTab 共享 persistent <code>persist:webtabs</code> session。</td><td><span class="status yes">已实现</span></td><td><code>desktop/main.js</code> 的 <code>WebContentsView</code> 创建路径。</td></tr>
-            <tr><td>用户从 Edge Add-ons 详情页点击安装，确认权限后完成下载、校验、解包与启用；新建 WebTab 和现有 WebTab 的下一次导航执行 content script，已打开页面提示重新加载。</td><td><span class="status no">未实现</span></td><td>签名 CRX3 fixture + Desktop component check + 安装版 App 可见验收。</td></tr>
-            <tr><td>Chrome Web Store 可访问时提供同一安装流程；不可访问时明确提示 Edge Add-ons 与本地目录入口。</td><td><span class="status no">未实现</span></td><td>在线可达/不可达两种导航结果检查，不要求代理 Google 网络。</td></tr>
-            <tr><td>网页或 renderer 提供任意下载 URL、错误商店 ID、无效签名或危险归档时安装被拒绝且无残留。</td><td><span class="status no">未实现</span></td><td>IPC trust-boundary 与 CRX3/归档失败路径检查。</td></tr>
-            <tr><td>用户仍可从本地解压目录安装兼容 fixture。</td><td><span class="status no">未实现</span></td><td>原生目录选择器 + Desktop component check。</td></tr>
-            <tr><td>App 重启后 enabled 扩展在首个网页导航前恢复；单个失败不阻止窗口启动。</td><td><span class="status no">未实现</span></td><td>冷启动检查，断言加载顺序和失败隔离。</td></tr>
-            <tr><td>disable、reload、remove 的 UI 与 Electron 实际状态一致，remove 后磁盘和 registry 都没有残留。</td><td><span class="status no">未实现</span></td><td>失败路径检查 + 安装版 App 操作记录。</td></tr>
-            <tr><td>扩展不能注入 OpenProgram chat/Settings，也不能访问 <code>file://</code>。</td><td><span class="status no">未实现</span></td><td>default session 与 webtabs session 隔离检查。</td></tr>
+            <tr><td>用户从 Edge Add-ons 详情页点击安装，确认权限后完成下载、校验、解包与启用；新建 WebTab 和现有 WebTab 的下一次导航执行 content script，已打开页面提示重新加载。</td><td><span class="status yes">已实现</span></td><td>签名 CRX3 fixture、真实 Edge 商店包隔离验证、Desktop check 与安装版 Extensions 页面验收。</td></tr>
+            <tr><td>Chrome Web Store 可访问时提供同一安装流程；不可访问时明确提示 Edge Add-ons 与本地目录入口。</td><td><span class="status yes">已实现</span></td><td>真实 Chrome 商店包隔离验证；管理页同时提供 Edge Add-ons、本地目录和商店链接入口。</td></tr>
+            <tr><td>网页或 renderer 提供任意下载 URL、错误商店 ID、无效签名或危险归档时安装被拒绝且无残留。</td><td><span class="status yes">已实现</span></td><td><code>check-browser-extensions.js</code> 覆盖来源、ID、签名、归档边界、超时、取消和回滚。</td></tr>
+            <tr><td>用户仍可从本地解压目录安装兼容 fixture。</td><td><span class="status yes">已实现</span></td><td>原生目录选择器、manifest preflight 与 Desktop API 检查。</td></tr>
+            <tr><td>App 重启后 enabled 扩展在首个网页导航前恢复；单个失败不阻止窗口启动。</td><td><span class="status yes">已实现</span></td><td>manager 冷启动恢复与失败隔离检查；安装版 App 已完成启动验收。</td></tr>
+            <tr><td>disable、reload、remove 的 UI 与 Electron 实际状态一致，remove 后磁盘和 registry 都没有残留。</td><td><span class="status yes">已实现</span></td><td>manager 生命周期、失败回滚、替换清理与重启恢复检查。</td></tr>
+            <tr><td>扩展不能注入 OpenProgram chat/Settings，也不能访问 <code>file://</code>。</td><td><span class="status yes">已实现</span></td><td>扩展只加载到 <code>persist:webtabs</code>，并以 <code>allowFileAccess: false</code> 加载。</td></tr>
             <tr><td>从 Chrome/Edge profile 导入只复制代码，不复制扩展数据、登录态或权限。</td><td><span class="status no">第二阶段</span></td><td>临时 profile fixture + 源目录只读与目标清理检查。</td></tr>
-            <tr><td>用户不能选择任意 <code>.crx</code> 文件；商店 CRX 只作为受控下载的内部传输格式。</td><td><span class="status no">约束待实现</span></td><td>文件选择器类型、IPC allowlist 与下载来源检查。</td></tr>
+            <tr><td>用户不能选择任意 <code>.crx</code> 文件；商店 CRX 只作为受控下载的内部传输格式。</td><td><span class="status yes">已实现</span></td><td>文件选择器只接受目录；商店 ID、页面 URL、下载端点和重定向目标均由 main process 校验。</td></tr>
           </tbody>
         </table>
       </div>
@@ -348,7 +348,7 @@
       <p><code>node desktop/scripts/check-browser-extensions.js</code>；<code>npm --prefix desktop run check</code>；<code>npm --prefix web run check:built-in-browser</code>；<code>npm --prefix web run test:unit</code>；Web TypeScript；<code>python -m tools.docs_site.checklinks</code>；最后仅使用 <code>/Applications/OpenProgram.app</code>、默认 18100 worker 和 <code>~/.openprogram</code> 验收。</p>
     </section>
 
-    <p class="footnote">本页是内置浏览器扩展的规范性设计。相关实现尚不存在；代码落地后只在本页的实现状态与证据列补充当前事实。</p>
+    <p class="footnote">本页是内置浏览器扩展的规范性设计与第一阶段实现记录。安装版验收没有向默认用户配置安装测试扩展；content script 与生命周期行为由隔离 manager fixture 验证。Chrome/Edge profile 导入、后台自动更新和完整浏览器 action UI 仍属于后续阶段。</p>
   </main>
 
   <aside class="rail" aria-label="页内导航">
