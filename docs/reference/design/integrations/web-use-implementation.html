@@ -3,18 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Browser Agent 实施与验证记录</title>
+<title>Web Use 实施与验证记录</title>
 <style>
   :root{--bg:#16150f;--panel:#1d1c14;--border:#302d21;--text:#bebaa8;--muted:#8d8876;--title:#f2efe7;--accent:#d4843a;--green:#5aad4e;--yellow:#d5ad45;--red:#e0445a}
   *{box-sizing:border-box}body{margin:0;padding:40px 24px 96px;background:var(--bg);color:var(--text);font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:1080px;margin:auto}h1{margin:0 0 8px;color:var(--title);font-size:25px}h2{margin:34px 0 10px;color:var(--accent);font-size:17px}p,li{max-width:92ch}a{color:#2db3d5}code{padding:1px 5px;background:#12110b;color:var(--accent);border-radius:4px;font:12px Menlo,monospace}.status{display:inline-block;padding:5px 10px;border:1px solid var(--yellow);border-radius:99px;color:var(--yellow);font:11px Menlo,monospace}.card{margin:12px 0;padding:15px 18px;border:1px solid var(--border);border-radius:10px;background:var(--panel)}table{width:100%;border-collapse:collapse;background:var(--panel);font-size:12.5px}th,td{padding:10px 12px;border:1px solid var(--border);text-align:left;vertical-align:top}th{color:var(--muted)}.pending{color:var(--yellow)}.pass{color:var(--green)}.fail{color:var(--red)}
 </style>
 </head>
 <body><main class="wrap">
-<h1>Browser Agent 实施与验证记录</h1>
-<p>本页只记录 <a href="web-use.html">Computer Use 目标设计</a> 的实施任务、验证命令和 review 结论，不修改概念设计。第一项任务交付内置浏览器 Browser Agent 的低成本 baseline。</p>
+<h1>Web Use 实施与验证记录</h1>
+<p>本页只记录 <a href="web-use.html">Web Use 目标设计</a> 的实施任务、验证命令和 review 结论，不修改概念设计。第一项任务交付内置浏览器 Browser Agent 的低成本 baseline。</p>
 <span class="status">TASK 1 · COMPLETE</span>
 <span class="status">TASK 2 · COMPLETE</span>
 <span class="status">TASK 3 · COMPLETE / APP E2E PASSED</span>
+<span class="status">TASK 4–5 · COMPLETE / APP E2E PASSED</span>
+<span class="status">TASK 6 · COMPLETE / PUBLIC API WEB_USE</span>
 
 <h2>任务 1：DOM-first Browser Agent baseline</h2>
 <div class="card">
@@ -104,9 +106,9 @@
   </tbody>
 </table>
 
-<h2>任务 2：Turn-scoped Surface Awareness 与绑定式 Computer Use</h2>
+<h2>任务 2：Turn-scoped Surface Awareness 与绑定式 Web Use</h2>
 <div class="card">
-  <p><strong>实现范围：</strong>chat turn 自动携带当前 split web surface；模型首轮上下文包含有界 DOM/ARIA preview；仅在有效 surface 存在时提供 <code>computer_use</code>；读取和动作固定到 originating WebSocket 的 <code>window_id + tab_id + target_id</code>。</p>
+  <p><strong>实现范围：</strong>chat turn 自动携带当前 split web surface；模型首轮上下文包含有界 DOM/ARIA preview；仅在有效 surface 存在时提供 <code>web_use</code>；读取和动作固定到 originating WebSocket 的 <code>window_id + tab_id + target_id</code>。</p>
   <p><strong>前台要求：</strong>没有。Electron 直接读取绑定 <code>WebContents</code> 并返回其 CDP target；<code>activateView</code> 不调用 <code>BrowserWindow.focus()</code> 或其他 OS focus API。目标 pane 不需要拥有键盘焦点，普通 DOM/ARIA action 不使用桌面坐标和 screenshot。</p>
   <p><strong>运行对象：</strong>默认 profile <code>~/.openprogram</code>、端口 18100、<code>/Applications/OpenProgram.app</code>。没有从 Electron 源码启动第二个桌面进程或第二个可见 worker。</p>
 </div>
@@ -117,9 +119,9 @@
   <tbody>
     <tr><td>1. Turn surface reference</td><td>composer 从当前 compound group 生成 version/window/tab/region/access/focused/title/url 引用，并随 chat command 提交；region 按实际 pane 顺序区分 left、right 与 center，surface chip 显示当前绑定目标和位置。</td><td>关闭访问时只保留 disabled descriptor，不提供 preview 或执行工具。</td></tr>
     <tr><td>2. Exact preview</td><td>服务端只向发起 chat 的 WebSocket 请求 preview，并校验 exact window/tab/target；Electron 从当前 viewport 的 DOM、ARIA landmarks、title 与 URL 生成结果。</td><td>文本最多 2,000 字符，landmark 最多 12 项且 name 最多 160 字符；URL 只保留 origin，不包含 query value；不发送 screenshot。</td></tr>
-    <tr><td>3. Model context and tool schema</td><td>dispatcher 在首个模型调用前注入 Surface Context。<code>computer_use</code> 是 resident tool，但仅在 surface binding 有效时进入 provider tool array；没有 surface 时主动移除。</td><td>模型不能提交 window/tab/CDP target，只能使用当前 turn 的 surface alias。</td></tr>
+    <tr><td>3. Model context and tool schema</td><td>dispatcher 在首个模型调用前注入 Surface Context。<code>web_use</code> 是 resident tool，但仅在 surface binding 有效时进入 provider tool array；没有 surface 时主动移除。</td><td>模型不能提交 window/tab/CDP target，只能使用当前 turn 的 surface alias。</td></tr>
     <tr><td>4. Bound execution</td><td>binding registry 保存 originating WebSocket、window、tab、target 与 expiry；subprocess bridge 只允许 exact binding 的 activate。Browser Agent 继续使用 DOM/ARIA refs 和 post-action observation。</td><td>不使用 OS 输入、桌面坐标、app window focus 或默认 active tab；binding 缺失、过期或 identity 不匹配时失败。</td></tr>
-    <tr><td>5. Approval and verification</td><td>用户发送带 exact surface 的 turn 后，外层 <code>computer_use</code> 不请求第二次通用 approval；hard constraints、authority 和显式 deny/ask rules仍先执行。Plan mode 不提供 <code>computer_use</code>。父 turn 的 permission rules 以纯数据快照传入 agentic 子进程；内部 <code>browser_page</code> 只在该绑定调用期间使用 scoped bypass，结束后恢复。Runtime assertion 决定终态。</td><td>高风险 action 规则仍可 ask/deny；写动作继续要求新鲜 DOM frame。动态页面的 verification 读取同一 bound target 的当前 DOM，不因无关 mutation 永久 stale。</td></tr>
+    <tr><td>5. Approval and verification</td><td>用户发送带 exact surface 的 turn 后，外层 <code>web_use</code> 不请求第二次通用 approval；hard constraints、authority 和显式 deny/ask rules仍先执行。Plan mode 不提供 <code>web_use</code>。父 turn 的 permission rules 以纯数据快照传入 agentic 子进程；内部 <code>browser_page</code> 只在该绑定调用期间使用 scoped bypass，结束后恢复。Runtime assertion 决定终态。</td><td>高风险 action 规则仍可 ask/deny；写动作继续要求新鲜 DOM frame。动态页面的 verification 读取同一 bound target 的当前 DOM，不因无关 mutation 永久 stale。</td></tr>
     <tr><td>6. Cleanup ownership</td><td>chat query 从 surface capture 开始进入 <code>try/finally</code>，直接 owner 无条件幂等释放 binding；正常 dispatcher teardown 也执行相同释放。</td><td><code>prepare_turn</code>、<code>TurnBindings.bind</code> 或 provider 初始化在 context 建立前失败时，binding 不继续持有 originating WebSocket。</td></tr>
   </tbody>
 </table>
@@ -128,8 +130,8 @@
 <table>
   <thead><tr><th>场景</th><th>证据</th><th>结论</th></tr></thead>
   <tbody>
-    <tr><td>首轮页面感知</td><td>安装版 chat command 包含 exact surface；服务端向同一 originating WebSocket 发出 <code>preview</code>，provider 在首个回复前获得 Bilibili title、origin、DOM excerpt、ARIA landmarks 和 <code>computer_use</code> schema。</td><td class="pass">PASS，无 screenshot</td></tr>
-    <tr><td>绑定页面点击</td><td>Session <code>local_340bc50ccd2c4eafb1fc12378e0489ab</code>；模型调用 <code>computer_use</code>，内部以 DOM ref 点击首页导航“番剧”。命令记录同时包含 exact window/tab 的 <code>preview</code> 和 <code>activate</code>。</td><td class="pass">PASS</td></tr>
+    <tr><td>首轮页面感知</td><td>安装版 chat command 包含 exact surface；服务端向同一 originating WebSocket 发出 <code>preview</code>，provider 在首个回复前获得 Bilibili title、origin、DOM excerpt、ARIA landmarks 和 <code>web_use</code> schema。</td><td class="pass">PASS，无 screenshot</td></tr>
+    <tr><td>绑定页面点击</td><td>Session <code>local_340bc50ccd2c4eafb1fc12378e0489ab</code>；模型调用 <code>web_use</code>，内部以 DOM ref 点击首页导航“番剧”。命令记录同时包含 exact window/tab 的 <code>preview</code> 和 <code>activate</code>。</td><td class="pass">PASS</td></tr>
     <tr><td>确定性结果</td><td>目标变为 <code>https://www.bilibili.com/anime/?spm_id_from=333.1007.0.0</code>；<code>title_contains=番剧</code> 在 <code>frame_6_a628e0d2</code> 返回 <code>passed=true</code>。外层工具结果为 <code>status=succeeded</code>、<code>reason_code=verified</code>。</td><td class="pass">PASS</td></tr>
     <tr><td>无需应用置顶</td><td><code>activateView</code> 的 source invariant test 要求 exact target attach，且拒绝 <code>.focus(</code> 和 <code>BrowserWindow.getFocusedWindow</code>；安装版动作使用 WebContents/CDP，不调用屏幕截图或 OS input。</td><td class="pass">架构与 source gate 通过；独立遮挡场景待增加自动化 E2E</td></tr>
   </tbody>
@@ -137,7 +139,7 @@
 
 <h2>任务 2 验证命令</h2>
 <ul>
-  <li><code>python -m pytest -q tests/unit/test_computer_use_surface.py tests/unit/context/test_tool_defer.py tests/unit/security/test_permission_rules.py tests/component/programs/test_browser_agent.py tests/component/programs/test_computer_use_runtime.py tests/component/programs/test_computer_use_backend_threading.py tests/component/agent/test_process_runner_webtab_bridge.py tests/component/agent/test_dispatcher_tools.py tests/unit/security/test_process_runner_sandbox.py</code>：199 passed。</li>
+  <li><code>python -m pytest -q tests/unit/test_web_use_surface.py tests/unit/context/test_tool_defer.py tests/unit/security/test_permission_rules.py tests/component/programs/test_browser_agent.py tests/component/programs/test_web_use_runtime.py tests/component/programs/test_web_use_backend_threading.py tests/component/agent/test_process_runner_webtab_bridge.py tests/component/agent/test_dispatcher_tools.py tests/unit/security/test_process_runner_sandbox.py</code>：199 passed。</li>
   <li><code>./web/node_modules/.bin/tsc --noEmit -p web/tsconfig.json</code></li>
   <li><code>npm --prefix web run build</code></li>
   <li><code>node desktop/scripts/check-webtab-navigation.js</code></li>
@@ -147,7 +149,7 @@
 </ul>
 
 <h2>任务 2 当前范围与剩余项</h2>
-<p>当前实现支持 turn-scoped exact Page binding、server-owned connection/Page/access monotonic revision、renderer-owned monotonic geometry revision、基于 Page revision canonical key 的 ComputerSession 排他 lease，以及显式 <code>screenshot</code> 的单张当前 viewport 原生视觉输入。session 内 action、verify、observe 与 close 串行执行；首次 observe 以及后续每次 observe、act 和 verify 都在 backend 前重新验证 exact visible binding。Page capability 保存 page/access/geometry revision，agentic 子进程把期望值经父子进程 bridge 传回父 worker；父 worker 比较 Page/access revision，exact renderer 在 native preview/activate 前以及异步完成后复核实际可见性与 geometry revision。任一不一致即返回 <code>page_context_stale</code>，不进入 backend；异步完成后的过期结果不包含 preview 或 target。pane bounds 或可见性变化只使旧 ComputerSession 失效，不重建 Page identity。真实 hide/occlusion 以 ready 与当前 bounds 共同判定；旧客户端的 revision <code>0</code> 仍跳过 geometry 比较，但不能绕过可见性检查。close、首次 observe 失败、owner disconnect 或进程清理完成前 lease 不会提前释放。target replacement 会撤销旧 Page identity；owner WebSocket disconnect 会立即撤销该连接的全部 binding 并唤醒 pending exact-socket request。两个 connection、48 个 binding 的 component 并发验证确认命令只发送到 originating connection，断开其中一个不影响另一个。安装版双窗口 transfer/rollback、截图 artifact 临时保留策略与三个 backend 的统一 parity suite 已完成。专用 permission card 属于 UI 后续项，不在本次仅实现功能的范围内。</p>
+<p>当前实现支持 turn-scoped exact Page binding、server-owned connection/Page/access monotonic revision、renderer-owned monotonic geometry revision、基于 Page revision canonical key 的 WebSession 排他 lease，以及显式 <code>screenshot</code> 的单张当前 viewport 原生视觉输入。session 内 action、verify、observe 与 close 串行执行；首次 observe 以及后续每次 observe、act 和 verify 都在 backend 前重新验证 exact visible binding。Page capability 保存 page/access/geometry revision，agentic 子进程把期望值经父子进程 bridge 传回父 worker；父 worker 比较 Page/access revision，exact renderer 在 native preview/activate 前以及异步完成后复核实际可见性与 geometry revision。任一不一致即返回 <code>page_context_stale</code>，不进入 backend；异步完成后的过期结果不包含 preview 或 target。pane bounds 或可见性变化只使旧 WebSession 失效，不重建 Page identity。真实 hide/occlusion 以 ready 与当前 bounds 共同判定；旧客户端的 revision <code>0</code> 仍跳过 geometry 比较，但不能绕过可见性检查。close、首次 observe 失败、owner disconnect 或进程清理完成前 lease 不会提前释放。target replacement 会撤销旧 Page identity；owner WebSocket disconnect 会立即撤销该连接的全部 binding 并唤醒 pending exact-socket request。两个 connection、48 个 binding 的 component 并发验证确认命令只发送到 originating connection，断开其中一个不影响另一个。安装版双窗口 transfer/rollback、截图 artifact 临时保留策略与三个 backend 的统一 parity suite 已完成。专用 permission card 属于 UI 后续项，不在本次仅实现功能的范围内。</p>
 
 <h2>任务 2 审查记录</h2>
 <table>
@@ -165,11 +167,11 @@
 <table>
   <thead><tr><th>交付</th><th>直接证据</th><th>状态</th></tr></thead>
   <tbody>
-    <tr><td>统一入口</td><td><code>computer_use(list_pages / observe / act / verify / close)</code>；OpenProgram MCP 同名第一方工具。</td><td class="pass">完成</td></tr>
+    <tr><td>统一入口</td><td><code>web_use(list_pages / observe / act / verify / close)</code>；OpenProgram MCP 同名第一方工具。</td><td class="pass">完成</td></tr>
     <tr><td>Session selector</td><td><code>observe</code> 选择 <code>playwright_mcp</code>、<code>chrome_devtools_mcp</code> 或 <code>open_claude_chrome</code>；当前 session 禁止切换和自动 fallback。</td><td class="pass">完成</td></tr>
     <tr><td>Exact Page</td><td>Playwright MCP 通过官方 <code>createConnection(contextGetter)</code> 获得只含 exact target 的 BrowserContext 视图；Chrome DevTools MCP 使用一次性 marker 解析 pageId。Runtime 在首次 observe 及后续每次 observe、act 和 verify 前重新验证原绑定 target 的可见性、identity 与 Page/access/geometry revision；controller 的 app attach 继续携带同一 revision。revision、identity 或真实可见性变化时先清理 session，不进入 backend。三个 backend 均不选择或置前 tab。</td><td class="pass">component 通过</td></tr>
     <tr><td>Direct MCP</td><td>单一桌面控制连接时可获取当前 in-app Page；多个连接直接拒绝，不随机选择窗口。</td><td class="pass">component 通过</td></tr>
-    <tr><td>Backend parity</td><td>真实 <code>OfficialMCPPageBackend</code> 与 <code>ControllerBackend</code> adapter 通过公共 <code>ComputerUseSessionRegistry.execute()</code> 运行同一矩阵；覆盖 observe、7 个 allowlisted action、stale/unsupported、backend error、内建及 Playwright timeout、verify、PNG screenshot 与 close。每个写动作只到达所选 backend 一次，失败不触发 fallback。</td><td class="pass">Specification 与 Quality 均 PASS</td></tr>
+    <tr><td>Backend parity</td><td>真实 <code>OfficialMCPPageBackend</code> 与 <code>ControllerBackend</code> adapter 通过公共 <code>WebUseSessionRegistry.execute()</code> 运行同一矩阵；覆盖 observe、7 个 allowlisted action、stale/unsupported、backend error、内建及 Playwright timeout、verify、PNG screenshot 与 close。每个写动作只到达所选 backend 一次，失败不触发 fallback。</td><td class="pass">Specification 与 Quality 均 PASS</td></tr>
     <tr><td>验证</td><td>Surface、permission、跨进程 bridge、Backend parity、Runtime、threading、Browser Agent、MCP contract 与 route 相关测试 312 passed；完整 Web check、TypeScript、生产 build、WebTab navigation/zoom 与安装版 transfer client 检查通过。</td><td class="pass">通过</td></tr>
     <tr><td>安装版</td><td><code>ba665053</code> 已刷新到 <code>/Applications/OpenProgram.app</code>，只使用默认 <code>~/.openprogram</code> 与 18100 worker。三个 backend 依次绑定同一当前可见内置 Page，完成 <code>list_pages → observe → scroll → observe → text_contains verify → close</code>；每条路径只执行一次写动作并返回 <code>passed=true</code>。三个 backend 又各自返回恰好一张带 viewport 元数据的有效 PNG，验收过程不保存图片。真实双窗口 transfer/rollback 同时确认目标 renderer 已 stage、源状态未变化、目标窗口销毁且存储无残留。</td><td class="pass">PASS</td></tr>
   </tbody>
@@ -185,10 +187,10 @@
   <thead><tr><th>状态</th><th>证据</th></tr></thead>
   <tbody>
     <tr><td class="pass">IMPLEMENTED · INSTALLED E2E PASS</td><td><code>fe35dddf</code> 实现同窗口 Page inventory、background exact binding、popup opener 与 GUI Agent 显式切换；<code>67a65e2a</code> 让 inventory 从 native WebContents 读取实时 URL/title，后台导航后不再返回旧 tab metadata；没有已挂载 native Page 时返回 <code>ok: true, pages: []</code>，不再转换成 HTTP 500。</td></tr>
-    <tr><td class="pass">自动验证</td><td>Browser Agent、Computer Use Runtime、backend parity/threading、Page binding 与 HTTP route 相关测试 123 passed；WebTab navigation、Web split/compound、TypeScript 与生产 Web build 通过。行为测试确认 resolve/inspect background Page 不调用 show、focus 或 <code>bringToFront()</code>。</td></tr>
+    <tr><td class="pass">自动验证</td><td>Browser Agent、Web Use Runtime、backend parity/threading、Page binding 与 HTTP route 相关测试 123 passed；WebTab navigation、Web split/compound、TypeScript 与生产 Web build 通过。行为测试确认 resolve/inspect background Page 不调用 show、focus 或 <code>bringToFront()</code>。</td></tr>
     <tr><td class="pass">安装版验证</td><td>只使用默认 <code>~/.openprogram</code>、18100 与 <code>/Applications/OpenProgram.app</code>。inventory 同时返回前台 Grammarly 与后台 Example；<code>open_claude_chrome</code> 在后台 Example 上执行 <code>observe → click Learn more → observe → close</code>，真实 Page 进入 IANA，前台始终保持 Grammarly；下一次 inventory 实时返回后台 <code>Example Domains / https://www.iana.org</code>。旧安装包已删除。</td></tr>
     <tr><td class="pass">GROUP-AWARE INVENTORY · INSTALLED E2E PASS</td><td><code>browserPageInventory()</code> 与 <code>list_pages</code> 现在返回 <code>tab_entries + pages</code>、active/focused identity、pane placement 和单调 <code>inventory_revision</code>。pane 顺序跟随实际 <code>visibleIds</code>；Page capability 独立释放，关闭一个 session 不影响同一 inventory 中的其他 Page。自动测试覆盖 3 个 tab entry、4 个 Page、成员重排、并发 revision 和 sibling session 生命周期；安装版在真实 split entry 的 left Page 完成 <code>list_pages → observe → click → observe → restore → close</code>，点击 Example 的 <code>Learn more</code> 后进入 IANA，再恢复原页。</td></tr>
-    <tr><td class="pending">保留范围</td><td>跨 OpenProgram window inventory、桌面软件控制、OCR/YOLO/memory 与自动 backend fallback 未纳入本任务。popup opener、token handoff 与 stale/close 撤销已有 component 覆盖，尚未增加公开网站 popup 的安装版 fixture。</td></tr>
+    <tr><td class="pending">保留范围</td><td>跨窗口 inventory 已在任务 5 实现。桌面软件控制、OCR/YOLO/memory 与自动 backend fallback 不属于 Web Use。popup opener、token handoff 与 stale/close 撤销已有 component 覆盖，尚未增加公开网站 popup 的安装版 fixture。</td></tr>
   </tbody>
 </table>
 
@@ -201,8 +203,24 @@
   <thead><tr><th>状态</th><th>证据</th></tr></thead>
   <tbody>
     <tr><td class="pass">IMPLEMENTED · INSTALLED E2E PASS</td><td><code>d2e9baa2</code> 定义跨窗口数据模型；<code>348e07f3</code> 实现 Desktop <code>window_id</code> 登记和聚合；<code>67e6ed09</code> 以 <code>window_id + tab_id</code> 标记 GUI Agent 当前 Page；<code>833c2314</code>、<code>1699fb03</code> 保持窗口独立生命周期和 primary fail-closed；<code>26c662e9</code>、<code>d4c4337e</code> 以 connection revision CAS 拒绝断线后的延迟 binding。</td></tr>
-    <tr><td class="pass">自动验证与复核</td><td>Browser Agent、Computer Use Runtime、Page surface 和 process bridge 相关测试 123 passed；Ruff、Web split/compound/WS action、TypeScript 与生产 Web build 通过。Specification 与 Quality 独立复核均为 PASS，覆盖未登记客户端、跨窗口同名 <code>tab_id</code>、origin disconnect/timeout、materialization race 和 direct preview/active late result。</td></tr>
+    <tr><td class="pass">自动验证与复核</td><td>Browser Agent、Web Use Runtime、Page surface 和 process bridge 相关测试 123 passed；Ruff、Web split/compound/WS action、TypeScript 与生产 Web build 通过。Specification 与 Quality 独立复核均为 PASS，覆盖未登记客户端、跨窗口同名 <code>tab_id</code>、origin disconnect/timeout、materialization race 和 direct preview/active late result。</td></tr>
     <tr><td class="pass">安装版验证</td><td>只使用默认 <code>~/.openprogram</code>、18100 与当前主分支重新生成的 <code>/Applications/OpenProgram.app</code>。真实 <code>list_pages</code> 返回 <code>main</code> 和 detached window 两个 snapshot；选择 detached window 的 Microsoft Edge Add-ons Page 执行 <code>observe → screenshot → close</code>，得到一张 <code>image/png</code> 当前 viewport。调用前后系统前台应用均为 ChatGPT，证明该路径未置前 OpenProgram、未使用整屏截图。</td></tr>
+  </tbody>
+</table>
+
+<h2>任务 6：公开名称与边界迁移</h2>
+<div class="card">
+  <p><strong>公开能力：</strong>Agent registry、GUI Agent Harness、OpenProgram MCP 与 canonical HTTP API 统一使用 <code>web_use</code> 和 <code>web_session_id</code>；模型工具列表不再公开 <code>computer_use</code>。</p>
+  <p><strong>兼容边界：</strong><code>/api/computer-use</code> 与旧请求字段 <code>computer_session_id</code> 只作为隐藏 HTTP 兼容入口保留，映射到同一个 Web Use Runtime，且不出现在 OpenAPI、Agent 或 MCP 工具列表中。</p>
+  <p><strong>未来边界：</strong><code>Computer Use</code> 名称只保留给未来桌面应用、应用窗口或整屏截图及 OS 输入能力；本次不增加桌面 adapter、配置或后台进程。</p>
+</div>
+<table>
+  <thead><tr><th>交付</th><th>直接证据</th><th>状态</th></tr></thead>
+  <tbody>
+    <tr><td>Runtime 与 session</td><td><code>web_use_runtime.py</code>、<code>WebUseSessionRegistry</code>、<code>web_session_id</code>；三个 browser backend 和 exact Page 生命周期保持不变。</td><td class="pass">完成</td></tr>
+    <tr><td>Agent / GUI Harness</td><td>Chat Agent 可直接调用 <code>web_use</code>；<code>gui_agent</code> 通过同一 Web Use adapter 使用相同命令和 session contract。</td><td class="pass">完成</td></tr>
+    <tr><td>MCP / HTTP</td><td>MCP <code>tools/list</code> 与 <code>tools/call</code> 只公开 <code>web_use</code>；canonical route 为 <code>/api/web-use</code>。</td><td class="pass">完成</td></tr>
+    <tr><td>自动验证</td><td><code>test_web_use_runtime.py</code>、<code>test_web_use_backend_parity.py</code>、<code>test_web_use_backend_threading.py</code>、<code>test_web_use_surface.py</code>、<code>test_web_use_route.py</code> 与 MCP/Agent 相关组通过。</td><td class="pass">通过</td></tr>
   </tbody>
 </table>
 </main></body></html>

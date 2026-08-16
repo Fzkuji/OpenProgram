@@ -35,13 +35,13 @@
     <div class="eyebrow">OpenProgram · technical specification</div>
     <h1>Web Use 技术规格</h1>
     <p class="lead">本页只保留实现需要的接口、Page 身份、失败和验收规格。结构图与 Web Use / Computer Use 边界见 <a href="web-use.html">设计概览</a>。</p>
-    <p class="status">WEB_USE PUBLIC-NAME MIGRATION DESIGNED · BROWSER RUNTIME ALREADY IMPLEMENTED</p>
+    <p class="status">WEB_USE PUBLIC API IMPLEMENTED · BROWSER-ONLY RUNTIME</p>
   </header>
 
-  <nav aria-label="目录"><a href="#naming">命名迁移</a><a href="#modes">三个 backend</a><a href="#page-model">多 Page 模型</a><a href="#reuse">开源与复用</a><a href="#contract">工具契约</a><a href="#boundaries">成本与边界</a><a href="#delivery">实施顺序</a><a href="#acceptance">验收</a><a href="#evidence">当前证据</a></nav>
+  <nav aria-label="目录"><a href="#naming">公开命名</a><a href="#modes">三个 backend</a><a href="#page-model">多 Page 模型</a><a href="#reuse">开源与复用</a><a href="#contract">工具契约</a><a href="#boundaries">成本与边界</a><a href="#delivery">实施顺序</a><a href="#acceptance">验收</a><a href="#evidence">当前证据</a></nav>
 
   <section id="naming">
-    <h2>公开名称迁移</h2>
+    <h2>公开命名与兼容边界</h2>
     <div class="table-scroll"><table><thead><tr><th>层</th><th>正式名称</th><th>兼容规则</th></tr></thead><tbody>
       <tr><td>Agent / MCP tool</td><td><code>web_use</code></td><td>模型工具列表只公开新名称，不同时公开两个等价工具。</td></tr>
       <tr><td>HTTP bridge</td><td><code>/api/web-use</code></td><td>旧 <code>/api/computer-use</code> 只作为隐藏兼容路由，复用同一 handler。</td></tr>
@@ -217,7 +217,7 @@ web_use({ command: "close", web_session_id: "cs_…" })</pre>
       <tr><td>multi-backend selector</td><td class="evidence-yes">已实现 command selector</td><td><code>observe</code> 选择 backend 并冻结到 WebSession；后续变更返回 <code>backend_mismatch</code>。</td></tr>
       <tr><td>Backend parity suite</td><td class="evidence-yes">已实现并独立复核</td><td>生产 adapter 经公共 Registry 运行统一矩阵；覆盖 7 个写动作、stale/unsupported 的零写入、后端错误与真实 Playwright timeout 的统一 reason code、frame invalidation、PNG screenshot、verification、close 后 lease 重获及无自动 fallback。</td></tr>
     </tbody></table></div>
-    <p class="caption">表中的“已实现”表示当前 multi-backend、geometry、transfer、视觉 artifact 生命周期与 parity suite。专用 permission card 仍属于 UI 后续项，不是当前功能实现的发布条件。当前实现与名称迁移证据维护在 <a href="computer-use-implementation.html">实施记录</a>。</p>
+    <p class="caption">表中的“已实现”表示当前 multi-backend、geometry、transfer、视觉 artifact 生命周期与 parity suite。专用 permission card 仍属于 UI 后续项，不是当前功能实现的发布条件。当前实现与验证证据维护在 <a href="web-use-implementation.html">实施记录</a>。</p>
     <h3>需要实现者展开时再读</h3>
     <details><summary>Page identity 与生命周期</summary><div>Canonical Page 绑定 <code>window_id + registry_page_id + tab_id + cdp_target_id + revisions</code>。<code>tab_entry_id</code>、pane order、split ratio 和 <code>inventory_revision</code> 不是 Page identity；它们描述同一次 inventory snapshot。首次 observe 建立 WebSession binding，并保存 capability 中的 page/access/geometry revision。后续命令先在父 worker 比较 page/access revision，再由 exact renderer 在 native activate 前比较 geometry revision；任一比较失败都不调用 Electron 或 backend，并清理当前 session。focus 变化不改变 target；pane 位置、bounds 或可见性变化保留 Page identity，但会使依赖旧 geometry 的 session stale；transfer、close、target replacement、access disable 或 disconnect 仍会在下一次副作用前撤销 binding。</div></details>
     <details><summary>Popup 与并发</summary><div>当前 browser-only 增量采用 Electron 已有的同步 popup request：main 拒绝原生 BrowserWindow，renderer 创建独立 web tab/WebContents，并记录 opener。它不把 popup 自动归因成当前 action 的成功结果，也不隐式改绑 session；GUI Agent 在写动作后的 Page inventory 中发现并显式选择。相同 exact Page 的 WebSession 写 lease仍排他，不同 Page 可并行。</div></details>

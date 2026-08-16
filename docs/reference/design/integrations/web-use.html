@@ -20,13 +20,13 @@
     <div class="eyebrow">OpenProgram · Web Use</div>
     <h1>Web Use：只控制内置浏览器 Page</h1>
     <p>Agent 可以直接调用 <code>web_use</code>，也可以让 GUI Agent Harness 用同一接口连续执行。Runtime 绑定一个 exact Page，并在三个 browser backend 中固定一个执行。</p>
-    <p class="status">TARGET NAME: WEB_USE · CURRENT PUBLIC NAME: COMPUTER_USE UNTIL MIGRATION LANDS</p>
+    <p class="status">TARGET NAME: WEB_USE · PUBLIC NAME: WEB_USE · BROWSER-ONLY RUNTIME IMPLEMENTED</p>
   </header>
 
   <section aria-labelledby="boundary-title">
     <h2 id="boundary-title">名称与边界</h2>
     <div class="table-scroll"><table><thead><tr><th>能力</th><th>负责什么</th><th>当前状态</th></tr></thead><tbody>
-      <tr><td>Web Use</td><td>内置浏览器的 BrowserContext、Page、tab、popup、分屏、跨窗口发现，以及 DOM/ARIA/viewport 操作。</td><td class="use">本页能力；公开名称迁移为 <code>web_use</code></td></tr>
+      <tr><td>Web Use</td><td>内置浏览器的 BrowserContext、Page、tab、popup、分屏、跨窗口发现，以及 DOM/ARIA/viewport 操作。</td><td class="use">当前能力；公开名称为 <code>web_use</code></td></tr>
       <tr><td>Computer Use</td><td>未来的桌面应用、整屏或应用窗口截图、OS 级鼠标键盘；需要操作网页时可以调用 Web Use。</td><td class="adapt">保留名称，当前不实现，也不预建配置或后台进程</td></tr>
     </tbody></table></div>
   </section>
@@ -191,7 +191,7 @@
     <a href="web-use-technical-spec.html#reuse">开源、接口与复用清单</a>
     <a href="web-use-technical-spec.html#page-model">多 Page 与分屏返回结构</a>
     <a href="web-use-technical-spec.html">技术规格与实施阶段</a>
-    <a href="computer-use-implementation.html">当前实现与名称迁移记录</a>
+    <a href="web-use-implementation.html">当前实现与验证记录</a>
     <a href="https://github.com/microsoft/playwright-mcp">Microsoft Playwright MCP</a>
     <a href="https://github.com/ChromeDevTools/chrome-devtools-mcp">Chrome DevTools MCP</a>
     <a href="https://github.com/noemica-io/open-claude-in-chrome">Open Claude in Chrome</a>
