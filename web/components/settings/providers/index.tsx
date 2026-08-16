@@ -154,6 +154,15 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
 
   return (
     <div className={styles.page}>
+      <div className={styles.pageHeader}>
+        <h2 className={styles.pageTitle}>{t("settings.tab.providers")}</h2>
+        <p className={styles.pageMeta}>
+          {text(
+            "Enable an LLM backend, paste an API key (or rely on local OAuth / subscription), and pick which models the chat composer exposes.",
+            "启用大模型后端，填写 API key（或使用本地 OAuth / 订阅），并选择聊天输入框可用的模型。",
+          )}
+        </p>
+      </div>
       <div className={`${styles.pageBody} ${styles.pageBodyTwoPane}`}>
         <div className={styles.providersLayout + (!listOpen ? " " + styles.providerListCollapsed : "")}>
           <div className={styles.providersSidebar} ref={sidebarRef}>

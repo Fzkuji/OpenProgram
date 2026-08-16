@@ -18,8 +18,8 @@ import styles from "@/components/settings/settings-page.module.css";
  *    grey rectangle. The body is still a skeleton until the page
  *    chunk lands.
  *
- * Providers and Memory intentionally omit the repeated content header,
- * so their fallback does the same. Other tabs keep their page title.
+ * Memory intentionally omits a repeated content header. Providers and
+ * the other titled tabs keep their page title in the fallback.
  */
 const TAB_KEYS: Record<string, "settings.tab.providers"|"settings.tab.search"|"settings.tab.channels"|"settings.tab.general"> = {
   providers: "settings.tab.providers",
@@ -32,7 +32,7 @@ export default function SettingsLoading() {
   const { t } = useTranslation();
   const pathname = usePathname() || "";
   const tab = pathname.split("/")[2] || "providers";
-  const headerless = tab === "providers" || tab === "memory";
+  const headerless = tab === "memory";
   const key = TAB_KEYS[tab];
   const title = key ? t(key) : t("settings.title");
 

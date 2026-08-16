@@ -13,7 +13,7 @@
   <header>
     <div class="k">OpenProgram · Web UI · current design</div>
     <h1>Settings 二级导航栏头</h1>
-    <p class="muted">目标：保留 Settings 二级栏头，但让其折叠按钮与应用主侧栏按钮顶边一致；Provider 第三级恢复原有搜索工具栏布局。</p>
+    <p class="muted">目标：保留 Settings 二级栏头并与应用主侧栏按钮顶边一致；Provider 页面恢复位于列表和详情上方的完整大标题栏，第三级继续使用原有搜索工具栏。</p>
   </header>
 
   <div class="status">
@@ -32,7 +32,7 @@
         <div class="chrome">
           <div class="col"><div class="rail-head"><span class="label">OpenProgram</span><span class="toggle">‹</span></div><div class="row"><i class="ico"></i><span class="label">Programs</span></div></div>
           <div class="col"><div class="rail-head"><span class="label">Settings</span><span class="toggle">‹</span></div><div class="row"><i class="ico"></i><span class="label">LLM Providers</span></div><div class="row"><i class="ico"></i><span class="label">Memory</span></div></div>
-          <div class="col detail"><div class="rail-head"><span class="label">Search providers…</span><span class="toggle">‹</span></div><div class="block"></div><div class="block"></div><div class="block short"></div></div>
+          <div class="col detail"><strong>LLM Providers</strong><div class="rail-head"><span class="label">Search providers…</span><span class="toggle">‹</span></div><div class="block"></div><div class="block short"></div></div>
         </div>
       </div>
       <div class="mock">
@@ -41,7 +41,7 @@
         <div class="chrome compact">
           <div class="col"><div class="rail-head"><span class="label">OpenProgram</span><span class="toggle">›</span></div><div class="row"><i class="ico"></i></div></div>
           <div class="col"><div class="rail-head"><span class="label">Settings</span><span class="toggle">›</span></div><div class="row"><i class="ico"></i></div><div class="row"><i class="ico"></i></div></div>
-          <div class="col detail"><div class="rail-head"><span class="label">Search providers…</span><span class="toggle">‹</span></div><div class="block"></div><div class="block"></div><div class="block short"></div></div>
+          <div class="col detail"><strong>LLM Providers</strong><div class="rail-head"><span class="label">Search providers…</span><span class="toggle">‹</span></div><div class="block"></div><div class="block short"></div></div>
         </div>
       </div>
     </div>
@@ -54,7 +54,7 @@
       <tbody>
         <tr><td>Settings 分类栏</td><td><code>--sidebar-width - 1px</code></td><td>49px</td><td><code>settingsNavOpen</code></td><td><code>Settings</code> + 收起按钮</td></tr>
         <tr><td>Provider 列表栏</td><td><code>--sidebar-width - 1px</code></td><td>49px</td><td><code>providerListOpen</code></td><td>沿用搜索框 + 收起按钮工具栏</td></tr>
-        <tr><td>内容区域</td><td colspan="3">使用剩余宽度；Memory 控件在窄宽度下换行，不改变导航状态。</td><td>不重复显示通用页面标题和说明</td></tr>
+        <tr><td>内容区域</td><td colspan="3">使用剩余宽度；Memory 控件在窄宽度下换行，不改变导航状态。</td><td>Providers 显示页面大标题；Memory 不增加重复页头</td></tr>
       </tbody>
     </table></div>
   </section>
@@ -74,7 +74,7 @@
   <section>
     <h2>采用与排除</h2>
     <div class="grid">
-      <div class="card"><h3>采用</h3><ul><li>复用现有两态收起状态和图标。</li><li>删除全局 Settings 顶栏。</li><li>删除 Memory 与 LLM Providers 重复页头。</li><li>只在 Settings 二级栏头显示名称和按钮。</li></ul></div>
+      <div class="card"><h3>采用</h3><ul><li>复用现有两态收起状态和图标。</li><li>删除全局 Settings 顶栏。</li><li>Memory 不增加重复页头，Providers 恢复完整页面标题栏。</li><li>只在 Settings 二级栏头显示名称和按钮。</li></ul></div>
       <div class="card"><h3>排除</h3><ul><li>不增加拖拽调整列宽。</li><li>不按 breakpoint 强制改变用户状态。</li><li>不修改 Memory、Provider 或模型数据。</li><li>不改变应用主侧栏行为。</li></ul></div>
     </div>
   </section>
@@ -97,7 +97,8 @@
       <li>Settings 页面不再渲染独立的全局 Settings 顶栏。</li>
       <li>Settings 分类栏展开时显示 <code>Settings</code>，按钮与名称同一行；按钮顶边与主侧栏按钮一致。</li>
       <li>LLM Providers 列表栏不显示新增名称栏头，折叠按钮恢复到搜索框旁；原有状态和 49px 收起行为不变。</li>
-      <li>Memory 与 LLM Providers 内容区不再重复通用标题和介绍。</li>
+      <li>LLM Providers 在列表和详情上方显示页面大标题与介绍，路由 loading 状态保持同一结构。</li>
+      <li>Memory 内容区继续不显示重复标题和介绍。</li>
       <li>现有两处 localStorage key、键盘语义、图标选择和 49px 收起宽度保持兼容。</li>
     </ul></div>
   </section>
@@ -105,14 +106,8 @@
   <section>
     <h2>实现状态</h2>
     <div class="card">
-      <p><strong>状态：已实现并复核。</strong></p>
-      <ul>
-        <li>生产实现：Settings 二级栏头保持名称与按钮同一行，栏头高度改为 32px；Provider 第三级恢复搜索框旁折叠按钮。</li>
-        <li>可视验收：默认 App 中主侧栏、Settings 与 Provider 按钮均为 32px，展开和收起状态的顶边均为 8px。</li>
-        <li>兼容验证：Settings 与 Provider 仍可独立收至 49px，原有 localStorage、ARIA、Provider 图标选择和内容区布局不变。</li>
-        <li>自动检查：完整 Web 检查、Settings 与 Memory 定点检查、TypeScript、production build 和 diff 检查通过。</li>
-        <li>独立复核：规格复核与代码质量复核通过。</li>
-      </ul>
+      <p class="pending">状态：待实现与复核。</p>
+      <p class="muted">实现证据只在生产代码、定点检查、可视验收和独立复核全部完成后更新。</p>
     </div>
   </section>
 </main></body>
