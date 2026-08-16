@@ -1254,6 +1254,60 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     assert installed_asar.read_bytes() == b"original-asar"
     assert not lock_file.exists()
 
+    local_python.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'case "${1:-}" in\n'
+        '  *.py|-) exec "$REAL_PYTHON" "$@" ;;\n'
+        "  *) exit 0 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_pgrep.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    fake_open = fake_bin / "open"
+    fake_open.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_open.chmod(0o755)
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_curl.chmod(0o755)
+    cleanup_ready = tmp_path / "cleanup-ready"
+    fake_rm = fake_bin / "rm"
+    fake_rm.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'case "$*" in\n'
+        '  *".openprogram-app-install.lock"*)\n'
+        '    /bin/rm "$@"\n'
+        '    touch "$CLEANUP_READY"\n'
+        "    sleep 10\n"
+        "    ;;\n"
+        '  *) exec /bin/rm "$@" ;;\n'
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_rm.chmod(0o755)
+    cleanup_env = env | {"CLEANUP_READY": str(cleanup_ready)}
+    cleanup_interrupted = subprocess.Popen(
+        ["bash", str(scripts / "refresh-local-app.sh")],
+        env=cleanup_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+        text=True,
+    )
+    deadline = time.monotonic() + 10
+    while not cleanup_ready.exists() and cleanup_interrupted.poll() is None:
+        if time.monotonic() >= deadline:
+            cleanup_interrupted.kill()
+            raise AssertionError("refresh did not enter final cleanup")
+        time.sleep(0.02)
+    os.killpg(cleanup_interrupted.pid, signal.SIGTERM)
+    stdout, stderr = cleanup_interrupted.communicate(timeout=5)
+
+    assert cleanup_interrupted.returncode == 143, (stdout, stderr)
+    assert not lock_file.exists()
+    assert not list(Path(env["TMPDIR"]).glob("openprogram-local-wheel.*"))
+
 
 def test_release_frontend_staging_removes_stale_export_before_build() -> None:
     staging = (ROOT / "scripts" / "stage-release-assets.sh").read_text(
