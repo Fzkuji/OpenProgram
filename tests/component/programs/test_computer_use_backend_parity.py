@@ -21,6 +21,26 @@ ACTION_ARGUMENTS = {
     "select": {"ref": "e1", "value": "one"},
 }
 
+EXPECTED_MCP_WRITES = {
+    "playwright_mcp": {
+        "browser_navigate",
+        "browser_click",
+        "browser_type",
+        "browser_press_key",
+        "browser_mouse_wheel",
+        "browser_hover",
+        "browser_select_option",
+    },
+    "chrome_devtools_mcp": {
+        "navigate_page",
+        "click",
+        "fill",
+        "press_key",
+        "evaluate_script",
+        "hover",
+    },
+}
+
 
 class _Result:
     def __init__(self, text="", *, structured=None, error=False):
@@ -49,6 +69,7 @@ class _Controller:
         self.frame_number = 0
         self.frame = None
         self.mutations = []
+        self.write_attempts = 0
         self.invalidated = 0
         self.closed = 0
         self.fail_writes = False
@@ -88,7 +109,7 @@ class _Controller:
             }
         if action == "screenshot":
             return ToolReturn(
-                images=[b"png"],
+                images=[b"\x89PNG\r\n\x1a\nfake"],
                 json_data={
                     "frame_id": frame_id,
                     "viewport": {"width": 960, "height": 640},
@@ -96,6 +117,7 @@ class _Controller:
             )
         if action not in ACTION_ARGUMENTS:
             return {"ok": False, "reason_code": "unsupported_action"}
+        self.write_attempts += 1
         if self.fail_writes:
             if isinstance(self.fail_writes, BaseException):
                 raise self.fail_writes
@@ -153,10 +175,42 @@ class _Client:
             and "globalThis" in str(arguments.get("function") or "")
         ):
             return _Result(self.controller.page.marker_value)
+        assert name in EXPECTED_MCP_WRITES[self.backend]
+        self._validate_write(name, arguments)
         self.write_calls.append((name, arguments))
         if isinstance(self.fail_writes, BaseException):
             raise self.fail_writes
         return _Result("failed" if self.fail_writes else "done", error=self.fail_writes)
+
+    def _validate_write(self, name, arguments):
+        if self.backend == "playwright_mcp":
+            expected = {
+                "browser_navigate": {"url": "https://example.test/next"},
+                "browser_click": {"target": "e1"},
+                "browser_type": {"target": "e1", "text": "hello"},
+                "browser_press_key": {"key": "Enter"},
+                "browser_mouse_wheel": {"deltaY": 240, "deltaX": 0},
+                "browser_hover": {"target": "e1"},
+                "browser_select_option": {"target": "e1", "values": ["one"]},
+            }
+            assert arguments == expected[name]
+            return
+        assert arguments.get("pageId") == 7
+        if name == "navigate_page":
+            assert arguments == {
+                "type": "url", "url": "https://example.test/next", "pageId": 7,
+            }
+        elif name == "click":
+            assert arguments == {"uid": "e1", "pageId": 7}
+        elif name == "fill":
+            assert arguments == {"uid": "e1", "value": arguments["value"], "pageId": 7}
+            assert arguments["value"] in {"hello", "one"}
+        elif name == "press_key":
+            assert arguments == {"key": "Enter", "pageId": 7}
+        elif name == "evaluate_script":
+            assert "window.scrollBy(0, 240)" in arguments["function"]
+        elif name == "hover":
+            assert arguments == {"uid": "e1", "pageId": 7}
 
     def close(self):
         self.closed += 1
@@ -210,6 +264,14 @@ def _observe(registry, backend):
     )
 
 
+def _write_count(backend, controllers, clients):
+    return (
+        len(clients[backend].write_calls)
+        if backend in clients
+        else controllers[backend].write_attempts
+    )
+
+
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_backend_parity_lifecycle(monkeypatch, backend):
     from openprogram.programs import ToolReturn
@@ -222,17 +284,20 @@ def test_backend_parity_lifecycle(monkeypatch, backend):
     assert observed["backend"] == backend
     assert observed["aria_snapshot"]
 
+    writes_before_rejections = _write_count(backend, controllers, clients)
     stale = registry.execute(
         command="act", computer_session_id=session_id, owner_id="owner-1",
         arguments={"action": "click", "expected_frame_id": "old", "ref": "e1"},
     )
     assert stale["reason_code"] == "stale_observation"
+    assert _write_count(backend, controllers, clients) == writes_before_rejections
 
     unsupported = registry.execute(
         command="act", computer_session_id=session_id, owner_id="owner-1",
         arguments={"action": "drag", "expected_frame_id": frame_id},
     )
     assert unsupported["reason_code"] == "unsupported_action"
+    assert _write_count(backend, controllers, clients) == writes_before_rejections
 
     acted = registry.execute(
         command="act", computer_session_id=session_id, owner_id="owner-1",
@@ -270,7 +335,8 @@ def test_backend_parity_lifecycle(monkeypatch, backend):
         arguments={"action": "screenshot", "expected_frame_id": frame_id},
     )
     assert isinstance(screenshot, ToolReturn)
-    assert screenshot.images == [b"png"]
+    assert len(screenshot.images) == 1
+    assert screenshot.images[0].startswith(b"\x89PNG\r\n\x1a\n")
     assert set(_result_for_prompt(screenshot)) == {
         "frame_id", "viewport", "image_attached",
     }
@@ -290,6 +356,18 @@ def test_backend_parity_lifecycle(monkeypatch, backend):
     if backend in clients:
         assert clients[backend].closed == 1
 
+    reacquired = _observe(registry, backend)
+    assert reacquired["frame_id"]
+    registry.execute(
+        command="close",
+        computer_session_id=reacquired["computer_session_id"],
+        owner_id="owner-1",
+    )
+    assert released == [
+        {"context_id": f"ctx-{backend}"},
+        {"context_id": f"ctx-{backend}"},
+    ]
+
 
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_backend_parity_allows_each_action_once(monkeypatch, backend):
@@ -298,11 +376,7 @@ def test_backend_parity_allows_each_action_once(monkeypatch, backend):
     session_id = observed["computer_session_id"]
 
     for action, extra in ACTION_ARGUMENTS.items():
-        before = (
-            len(clients[backend].write_calls)
-            if backend in clients
-            else len(controllers[backend].mutations)
-        )
+        before = _write_count(backend, controllers, clients)
         result = registry.execute(
             command="act", computer_session_id=session_id, owner_id="owner-1",
             arguments={
@@ -313,11 +387,7 @@ def test_backend_parity_allows_each_action_once(monkeypatch, backend):
         )
         assert result["ok"] is True
         assert result["observe_required"] is True
-        after = (
-            len(clients[backend].write_calls)
-            if backend in clients
-            else len(controllers[backend].mutations)
-        )
+        after = _write_count(backend, controllers, clients)
         assert after == before + 1
         observed = registry.execute(
             command="observe", computer_session_id=session_id, owner_id="owner-1",
@@ -339,6 +409,7 @@ def test_backend_parity_normalizes_action_failure_without_fallback(
         clients[backend].fail_writes = failure
     else:
         controllers[backend].fail_writes = failure
+    writes_before = _write_count(backend, controllers, clients)
 
     result = registry.execute(
         command="act", computer_session_id=session_id, owner_id="owner-1",
@@ -353,6 +424,7 @@ def test_backend_parity_normalizes_action_failure_without_fallback(
     assert result["reason_code"] == reason_code
     assert result["observe_required"] is True
     assert controllers[backend].invalidated == 1
+    assert _write_count(backend, controllers, clients) == writes_before + 1
     for other in BACKENDS:
         if other == backend:
             continue
