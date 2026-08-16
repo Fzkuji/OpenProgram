@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from .nav import is_excluded
+
 DOCS = Path(__file__).resolve().parents[2] / "docs"
 _CJK = re.compile(r"[一-鿿]")
 _EXEMPT = ("reference/design/",)
@@ -19,7 +21,7 @@ def main() -> int:
     bad: list[tuple[str, int, str]] = []
     for p in DOCS.rglob("*.md"):
         rel = str(p.relative_to(DOCS)).replace("\\", "/")
-        if p.name.endswith(".zh.md") or rel.startswith(("_site", "images", "slides")):
+        if p.name.endswith(".zh.md") or is_excluded(Path(rel)):
             continue
         if any(rel.startswith(e) for e in _EXEMPT):
             continue

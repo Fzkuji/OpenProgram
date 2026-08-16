@@ -181,6 +181,8 @@ Extension gating design + reference comparison — see
 | [`framework-comparison.html`](framework-comparison.html) | Whole-framework comparison against twelve reference implementations by design axis: where we lead, where we lag, and what they have that we never considered (rendered) |
 | [`feature-matrix.html`](feature-matrix.html) | The same twelve implementations scanned by feature list instead of design axis: 160 user-facing features in one grid, what only they have, what only we have (rendered) |
 | [`docs-site.md`](docs-site.md) | The documentation site itself (build, nav, bilingual routing) |
+| [`repository-structure.html`](repository-structure.html) | Repository boundaries, long-file split policy, and documentation information architecture |
+| [`repository-structure-implementation.md`](repository-structure-implementation.md) | Implementation ledger for the repository structure design |
 
 ## research/ — investigations
 

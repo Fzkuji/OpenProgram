@@ -174,6 +174,8 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`framework-comparison.html`](framework-comparison.html) | 整框架对标：按设计维度和十二家横向比，强在哪、弱在哪、别人有什么我们没想到（图解） |
 | [`feature-matrix.html`](feature-matrix.html) | 功能清单对标：同样十二家改按功能清单扫，160 项一张大表，只有别人有的、只有我们有的（图解） |
 | [`docs-site.md`](docs-site.zh.md) | 文档站本身（构建、导航、双语路由） |
+| [`repository-structure.html`](repository-structure.html) | 仓库边界、超长文件拆分规则与文档信息架构 |
+| [`repository-structure-implementation.md`](repository-structure-implementation.md) | 仓库结构设计的实施台账 |
 
 ## research/ — 调研
 
