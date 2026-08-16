@@ -1,7 +1,7 @@
 "use client";
 
 import { Reorder, useDragControls } from "framer-motion";
-import { GripVertical, Pencil, X } from "lucide-react";
+import { GripVertical, KeyRound, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -44,14 +44,14 @@ interface State {
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
-function statusClass(status: string): string {
-  if (status === "valid" || status.startsWith("valid")) return `${styles.statusBadge} ${styles.valid}`;
-  if (status === "rate_limited") return `${styles.statusBadge} ${styles.warn}`;
+function statusTone(status: string): string {
+  if (status === "valid" || status.startsWith("valid")) return styles.valid;
+  if (status === "rate_limited") return styles.warn;
   if (status === "billing_blocked" || status === "invalid_credential"
       || status === "needs_reauth" || status === "revoked") {
-    return `${styles.statusBadge} ${styles.error}`;
+    return styles.error;
   }
-  return styles.statusBadge;
+  return "";
 }
 
 /** Literal status text — the key is either usable or stopped for a reason. */
@@ -67,27 +67,25 @@ function statusLabel(status: string, text: (en: string, zh: string) => string): 
   }
 }
 
-/** Active control: shows STATE by default, ACTION on hover. Fixed width. */
-function ActiveToggle({ active, onActivate, onDeactivate }: { active: boolean; onActivate: () => void; onDeactivate: () => void }) {
+function AccountUseToggle({ active, rotation, onActivate, onDeactivate }: {
+  active: boolean;
+  rotation: boolean;
+  onActivate: () => void;
+  onDeactivate: () => void;
+}) {
   const { text } = useTranslation();
-  const [hover, setHover] = useState(false);
-  const label = active
-    ? (hover ? text("Deactivate", "取消激活") : text("Activated", "已激活"))
-    : (hover ? text("Activate", "激活") : text("Deactivated", "未激活"));
-  // Green is reserved for the ON state only. "Deactivate" is a turning-OFF
-  // action and a negative word, so it must NOT be green — show it neutral
-  // grey on hover. "Activate" inherits the button's brand colour (undefined
-  // → the default orange) as a call-to-action; "Deactivated" sits muted.
-  const color = active
-    ? (hover ? "var(--text-secondary)" : "var(--accent-green)")
-    : (hover ? undefined : "var(--text-muted)");
+  const label = rotation
+    ? text("Include in rotation", "加入轮询")
+    : text("Use this account for requests", "使用这个账号处理请求");
   return (
-    <Button size="sm" className={styles.acctCellBtn}
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      onClick={active ? onDeactivate : onActivate}
-      style={{ color }}>
-      {label}
-    </Button>
+    <div className={styles.acctUseRow}>
+      <Switch
+        checked={active}
+        onCheckedChange={(checked) => checked ? onActivate() : onDeactivate()}
+        aria-label={label}
+      />
+      <span>{label}</span>
+    </div>
   );
 }
 
@@ -183,20 +181,16 @@ function AccountRow({
   return (
     <Reorder.Item value={account} dragListener={false} dragControls={controls}
       className={styles.acctRow} onDragEnd={onCommit}
-      whileDrag={{ backgroundColor: "var(--bg-hover)", borderRadius: 8, boxShadow: "var(--shadow)", zIndex: 5 }}
+      whileDrag={{ backgroundColor: "var(--bg-hover)", boxShadow: "var(--shadow)", zIndex: 5 }}
       transition={{ type: "spring", stiffness: 600, damping: 40 }}>
-      {/* drag handle (only with ≥2 accounts) — press it to pick the row up;
-          dragListener is off so the row's buttons/inputs stay clickable */}
-      <span className={styles.dragHandle}
-        onPointerDown={(e) => { if (multi) controls.start(e); }}
-        style={{ visibility: multi ? "visible" : "hidden", touchAction: "none" }}>
-        <GripVertical size={14} />
-      </span>
-
-      {/* content: name (+✎) and, for api-key, the editable key */}
-      <div className={styles.acctContent}>
+      <div className={styles.acctCardHeader}>
+        {multi && (
+          <span className={styles.dragHandle} onPointerDown={(e) => controls.start(e)} style={{ touchAction: "none" }}>
+            <GripVertical size={14} />
+          </span>
+        )}
         {renaming ? (
-          <Input className="font-mono" style={{ width: "9rem" }} autoFocus value={renameVal}
+          <Input className={styles.acctRenameInput} autoFocus value={renameVal}
             onChange={(e) => setRenameVal(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") doRename(); if (e.key === "Escape") setRenaming(false); }}
             onBlur={doRename} />
@@ -204,54 +198,64 @@ function AccountRow({
           <span className={styles.acctName}>
             <span className={styles.acctNameText}>{account.label || account.name}</span>
             {/* Keep rename and cancel controls on the same compact icon size. */}
-            <button className={styles.iconBtn} title={text("Rename", "重命名")}
-              onClick={() => { setRenameVal(account.label || account.name); setRenaming(true); }} style={{ flexShrink: 0 }}>
+            <button type="button" className={styles.iconBtn} title={text("Rename", "重命名")}
+              aria-label={text("Rename account", "重命名账号")}
+              onClick={() => { setRenameVal(account.label || account.name); setRenaming(true); }}>
               <Pencil size={15} />
             </button>
           </span>
         )}
 
-        {account.kind === "api_key" && !renaming && (
-          <span className={styles.acctKey}>
-            {editingKey ? (
-              <>
-                <Input className="flex-1 font-mono" type="password" autoFocus
-                  value={replacement} autoComplete="new-password"
-                  placeholder={text("paste a new key to replace", "粘贴新 key 替换")}
-                  onChange={(e) => setReplacement(e.target.value)} disabled={busy} />
-                <Button size="sm" onClick={update} disabled={busy || !replacement.trim()}>{text("Update", "更新")}</Button>
-                <button className={styles.iconBtn} title={text("Cancel", "取消")} onClick={cancelEdit}><X size={14} /></button>
-              </>
-            ) : (
-              <>
-                <Input className="flex-1 font-mono" readOnly
-                  value={account.has_value ? account.masked_key : ""}
-                  placeholder={text("Not set", "未设置")} />
-                <Button size="sm" onClick={startEdit}>{text("Replace", "替换")}</Button>
-              </>
-            )}
-          </span>
-        )}
+        <button
+          type="button"
+          className={`${styles.acctStatusButton} ${statusTone(status)}`}
+          onClick={validate}
+          aria-label={text("Validate account", "验证账号")}
+          aria-busy={status === "checking"}
+          title={vres?.detail || text("Validate account", "验证账号")}
+        >
+          <RefreshCw size={13} />
+          <span>{status === "checking" ? text("Checking", "验证中") : statusLabel(status, text)}</span>
+        </button>
+
+        <button type="button" className={`${styles.iconBtn} ${styles.dangerIconBtn}`}
+          title={text("Remove account", "删除账号")} aria-label={text("Remove account", "删除账号")}
+          onClick={remove}>
+          <Trash2 size={15} />
+        </button>
       </div>
 
-      {/* status (live) */}
-      {status === "checking"
-        ? <span className={styles.statusChecking}>{text("checking…", "验证中")}</span>
-        : <span className={statusClass(status)} title={vres?.detail || status}>{statusLabel(status, text)}</span>}
+      {account.kind === "api_key" && !renaming && (
+        <div className={styles.acctKey}>
+          {editingKey ? (
+            <>
+              <Input className="font-mono" type="password" autoFocus
+                value={replacement} autoComplete="new-password"
+                placeholder={text("Paste a new API key", "粘贴新的 API 密钥")}
+                onChange={(e) => setReplacement(e.target.value)} disabled={busy} />
+              <Button size="sm" onClick={update} disabled={busy || !replacement.trim()}>{text("Save", "保存")}</Button>
+              <button type="button" className={styles.iconBtn} title={text("Cancel", "取消")}
+                aria-label={text("Cancel replacing API key", "取消替换 API 密钥")} onClick={cancelEdit}>
+                <X size={14} />
+              </button>
+            </>
+          ) : (
+            <>
+              <Input className="font-mono" readOnly
+                value={account.has_value ? account.masked_key : ""}
+                placeholder={text("Not set", "未设置")} />
+              <button type="button" className={styles.iconBtn} title={text("Replace API key", "替换 API 密钥")}
+                aria-label={text("Replace API key", "替换 API 密钥")} onClick={startEdit}>
+                <KeyRound size={15} />
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
-      {/* Validate — text button, every row */}
-      <Button size="sm" className={styles.acctCellBtn} onClick={validate}>{text("Validate", "验证")}</Button>
-
-      {/* Rotation ON → each account is independently in / out of the rotation
-          (several can be on at once; turning one off just excludes it).
-          Rotation OFF → single-active pin (Activate one, or none). Same toggle
-          UI, different wiring. */}
       {rotation
-        ? <ActiveToggle active={account.enabled ?? true} onActivate={() => setEnabled(true)} onDeactivate={() => setEnabled(false)} />
-        : <ActiveToggle active={account.is_active} onActivate={activate} onDeactivate={deactivate} />}
-
-      {/* Remove */}
-      <Button size="sm" className={styles.acctCellBtn} onClick={remove}>{text("Remove", "删除")}</Button>
+        ? <AccountUseToggle active={account.enabled ?? true} rotation onActivate={() => setEnabled(true)} onDeactivate={() => setEnabled(false)} />
+        : <AccountUseToggle active={account.is_active} rotation={false} onActivate={activate} onDeactivate={deactivate} />}
     </Reorder.Item>
   );
 }
@@ -264,6 +268,7 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
   const [state, setState] = useState<State | null>(null);
   const [newKey, setNewKey] = useState("");
   const [newName, setNewName] = useState("");
+  const [addingKey, setAddingKey] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   // Local drag order (account ids). Driven by framer Reorder for instant,
@@ -321,7 +326,7 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
     const r = await fetch(`${base}/keys`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ name: newName.trim(), api_key: key, validate: true }) });
     const d = await r.json().catch(() => ({}));
     setBusy(false);
-    if (r.ok && d.ok) { setNewKey(""); setNewName(""); setMsg(""); await load(); onChanged?.(); }
+    if (r.ok && d.ok) { setNewKey(""); setNewName(""); setAddingKey(false); setMsg(""); await load(); onChanged?.(); }
     else setMsg(d.error || text("Could not add the key.", "添加失败。"));
   }
   async function toggleRotation(enabled: boolean) {
@@ -409,6 +414,9 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
     <div className={styles.detailSection}>
       <div className={styles.detailSectionTitle}>
         <span>{state.add_mode === "api_key" ? text("API keys", "API 密钥") : text(`${provider.label} accounts`, `${provider.label} 账号`)}</span>
+        <span className={styles.modelCountSummary}>
+          {text(`${accounts.length} ${accounts.length === 1 ? "account" : "accounts"}`, `${accounts.length} 个账号`)}
+        </span>
       </div>
 
       {/* rotation toggle (≥2 accounts) */}
@@ -429,24 +437,43 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
       )}
 
       <Reorder.Group axis="y" values={items} onReorder={onReorder}
-        className="flex flex-col gap-[2px] m-0 p-0 list-none">
+        className={styles.accountList}>
         {items.map((a) => (
           <AccountRow key={a.id} provider={pid} account={a} multi={multi}
             rotation={state.rotation} onChanged={onChanged} refresh={load} onCommit={commitOrder} />
         ))}
       </Reorder.Group>
 
-      {/* add */}
+      {/* Keep adding visually secondary once an account exists. */}
       {state.add_mode === "api_key" && (
-        <div className={styles.detailRow}>
+        <>
           {accounts.length > 0 && (
-            <Input className="font-mono" style={{ width: "8rem" }} placeholder={text("name (optional)", "名字（可选）")} value={newName} onChange={(e) => setNewName(e.target.value)} disabled={busy} />
+            <button type="button" className={styles.addCredentialTrigger}
+              aria-expanded={addingKey} aria-controls="add-api-key-form"
+              onClick={() => { setAddingKey((open) => !open); setMsg(""); }}>
+              {addingKey ? <X size={15} /> : <Plus size={15} />}
+              <span>{addingKey ? text("Cancel adding key", "取消添加密钥") : text("Add API key", "添加 API 密钥")}</span>
+            </button>
           )}
-          <Input className="flex-1 font-mono" type="password"
-            placeholder={accounts.length === 0 ? text("paste your API key", "粘贴你的 API key") : text("add another account (paste a key)", "添加账号（粘贴一个 key）")}
-            value={newKey} onChange={(e) => setNewKey(e.target.value)} disabled={busy} />
-          <Button size="sm" onClick={addKey} disabled={busy || !newKey.trim()}>{busy ? text("Adding…", "添加中…") : text("Add", "添加")}</Button>
-        </div>
+          {(accounts.length === 0 || addingKey) && (
+            <div id="add-api-key-form" className={styles.addCredentialCard}>
+              <div className={styles.addCredentialTitle}>
+                {accounts.length === 0 ? text("Add your API key", "添加 API 密钥") : text("New API key", "新 API 密钥")}
+              </div>
+              <div className={styles.addCredentialFields}>
+                {accounts.length > 0 && (
+                  <Input className="font-mono" placeholder={text("Account name (optional)", "账号名称（可选）")}
+                    value={newName} onChange={(e) => setNewName(e.target.value)} disabled={busy} />
+                )}
+                <Input className="font-mono" type="password" placeholder={text("Paste API key", "粘贴 API 密钥")}
+                  value={newKey} onChange={(e) => setNewKey(e.target.value)} disabled={busy} />
+                <Button size="sm" onClick={addKey} disabled={busy || !newKey.trim()}>
+                  {busy ? text("Adding…", "添加中…") : text("Add key", "添加密钥")}
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
       {/* Some api-key providers ALSO support a native sign-in (anthropic:
           OAuth subscription / setup-token; gemini; …). add_mode is a single
@@ -541,14 +568,10 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
         )
       )}
 
-      <div style={{ fontSize: "0.72rem", opacity: 0.55, marginTop: "0.2rem", lineHeight: 1.5 }}>
+      <div className={styles.accountHelp}>
         {state.add_mode === "api_key"
-          ? (multi
-              ? (state.rotation
-                  ? text("Rotation on — every account on is used in turn (drag ⠿ to set priority). Turn any account off to drop it from the rotation; the others keep going.", "已开启轮询 —— 所有「已激活」的账号轮流使用(拖 ⠿ 调优先级)。把某个账号停用即可踢出轮询,其余照常。")
-                  : text("Drag ⠿ to set rotation order. Each key is an account — Activate one to use it, Replace enters a new key, and Validate checks it.", "拖 ⠿ 调整轮询顺序。每个 key 是一个账号 —— Activate 选择使用的账号，Replace 输入新 key，Validate 执行验证。"))
-              : text("Add more keys as accounts to switch between them or rotate on rate limits. Stored keys stay masked; Replace enters a new value.", "添加多个 key 作为账号，即可切换账号或在限流时轮询。已保存的 key 始终显示为掩码；Replace 用于输入新值。"))
-          : text("Each account is a separate sign-in. Activate to switch which the framework runs on.", "每个账号是一次独立登录。Activate 切换框架跑哪个。")}
+          ? text("Each key is a separate account. Saved values stay masked.", "每个密钥都是独立账号，保存后的值始终显示为掩码。")
+          : text("Each account is a separate sign-in. Choose which account handles requests.", "每个账号都是独立登录，可选择处理请求的账号。")}
       </div>
 
       {msg && <div style={{ fontSize: "0.75rem", opacity: 0.75, marginTop: "0.2rem" }}>{msg}</div>}

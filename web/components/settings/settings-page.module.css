@@ -654,6 +654,17 @@
   flex-shrink: 0;
   gap: 12px;
 }
+.providerEnabledControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.providerEnabledLabel {
+  white-space: nowrap;
+}
 .detailIcon {
   width: 40px;
   height: 40px;
@@ -707,43 +718,36 @@
   opacity: 0.7;
 }
 
-/* ── Account row — ONE fixed-column grid for every provider type ───────────
-   The right-hand controls (status · Validate · active · Remove) sit in
-   fixed-width columns so they stay aligned and NEVER reflow when a button's
-   label changes (Activate ⇄ Activated ⇄ Deactivate). The left content area
-   (drag · name · key) flexes. */
+/* One credential is one card. Identity and health live in the header, the
+   masked secret lives in the body, and request routing lives in the footer. */
 .acctRow {
-  display: grid;
-  /* drag · content · status · [Validate · active · Remove] — the three
-     action buttons share ONE width so the row reads as an even rail and
-     no single button (the active toggle used to be 104px) bulges out. */
-  grid-template-columns: 16px minmax(0, 1fr) 66px 88px 88px 88px;
-  align-items: center;
-  gap: 8px;
-  /* Vertical padding only: the picked-up row's grey background (whileDrag)
-     reads as ONE rounded block that's a touch taller than the controls, so
-     it encloses the whole row instead of hugging the text. No horizontal
-     padding / margin, so the block's left+right edges line up with the rest
-     of the panel's content (the add-key row, the API-base input, the section
-     title) — same side margin as everything else, not jutting out. */
-  padding: 5px 0;
-  /* A drag must not turn into a text selection of the name / key / labels. */
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+  padding: 12px;
   user-select: none;
 }
-/* …but the key field is still a real input you can select inside. */
+.accountList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 .acctRow input { user-select: text; }
-.acctContent {
+.acctCardHeader {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
+  margin-bottom: 10px;
 }
 .acctName {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-width: 5rem;
-  flex-shrink: 0;
+  min-width: 0;
 }
 .acctNameText {
   overflow: hidden;
@@ -751,13 +755,21 @@
   white-space: nowrap;
   font-size: 14px;
   color: var(--text-primary);
+  font-weight: 600;
+}
+.acctRenameInput {
+  min-width: 0;
+  max-width: 12rem;
 }
 .acctKey {
-  flex: 1;
-  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+}
+.acctKey > input {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .dragHandle {
   color: var(--text-muted);
@@ -768,45 +780,91 @@
   justify-content: center;
 }
 .dragHandle:hover { opacity: 0.9; }
-/* status badge — same pill language as the "DEFAULT" provider badge and
-   the branch "HEAD" badge: tiny bold uppercase text on a tinted ground,
-   the tint carrying the semantic colour (green / yellow / red). It hugs
-   its label and centres in the status cell; an over-long status (e.g.
-   NEEDS_REAUTH) caps at the cell width and ellipsises. */
-.statusBadge {
-  justify-self: center;
-  max-width: 100%;
+.acctStatusButton {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  border: 0;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 5px 7px;
+  border-radius: 6px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   background: var(--bg-tertiary);
   color: var(--text-muted);
+  cursor: pointer;
 }
-.statusBadge.valid { color: var(--accent-green); background: color-mix(in srgb, var(--accent-green) 18%, transparent); }
-.statusBadge.warn { color: var(--accent-yellow); background: color-mix(in srgb, var(--accent-yellow) 20%, transparent); }
-.statusBadge.error { color: var(--accent-red); background: color-mix(in srgb, var(--accent-red) 18%, transparent); }
-.statusChecking {
-  justify-self: center;
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  white-space: nowrap;
+.acctStatusButton:hover {
+  background: var(--bg-hover);
 }
-/* each right-hand control fills its fixed grid cell, so its width is
-   constant. Compact type + tight padding keeps these row buttons from
-   looking bulky against the dense row. */
-.acctCellBtn {
-  width: 100%;
+.acctStatusButton.valid { color: var(--accent-green); background: color-mix(in srgb, var(--accent-green) 15%, transparent); }
+.acctStatusButton.warn { color: var(--accent-yellow); background: color-mix(in srgb, var(--accent-yellow) 17%, transparent); }
+.acctStatusButton.error { color: var(--accent-red); background: color-mix(in srgb, var(--accent-red) 15%, transparent); }
+.dangerIconBtn:hover {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+}
+.acctUseRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
   font-size: 12px;
-  padding-left: 8px;
-  padding-right: 8px;
+}
+.addCredentialTrigger {
+  width: 100%;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+.addCredentialTrigger:hover {
+  border-color: var(--text-muted);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.addCredentialCard {
+  display: grid;
+  gap: 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+  padding: 12px;
+}
+.addCredentialTitle {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+.addCredentialFields {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.45fr) minmax(10rem, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.addCredentialFields > input {
+  min-width: 0;
+}
+.accountHelp {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
 }
 .detailRow > .input {
   flex: 1;
@@ -824,15 +882,22 @@
    user keeps either navigation column open. Reflow the detail's own controls
    from its available width without changing either manually controlled rail. */
 @container (max-width: 680px) {
+  .detail {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
   .detailHeader {
     display: grid;
-    grid-template-columns: 40px minmax(0, 1fr);
+    grid-template-columns: 40px minmax(0, 1fr) auto;
     align-items: start;
   }
   .detailHeaderActions {
-    grid-column: 1 / -1;
+    grid-column: 3;
     flex-wrap: wrap;
     gap: 6px;
+  }
+  .providerEnabledLabel {
+    display: none;
   }
   .detailTitle {
     overflow-wrap: anywhere;
@@ -867,30 +932,6 @@
     white-space: normal !important;
     overflow-wrap: anywhere;
   }
-  .acctRow {
-    grid-template-columns: 16px repeat(3, minmax(0, 1fr));
-    grid-template-areas:
-      "drag content content status"
-      ". validate active remove";
-  }
-  .acctRow > :nth-child(1) { grid-area: drag; }
-  .acctRow > :nth-child(2) { grid-area: content; }
-  .acctRow > :nth-child(3) { grid-area: status; }
-  .acctRow > :nth-child(4) { grid-area: validate; }
-  .acctRow > :nth-child(5) { grid-area: active; }
-  .acctRow > :nth-child(6) { grid-area: remove; }
-  .acctContent {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .acctContent > input {
-    width: 100% !important;
-    min-width: 0;
-  }
-  .acctName {
-    width: 100%;
-    min-width: 0;
-  }
   .acctKey {
     width: 100%;
   }
@@ -899,28 +940,46 @@
     width: 0;
     min-width: 0;
   }
+  .addCredentialFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .addCredentialFields > button {
+    justify-self: start;
+  }
 }
 
 @container (max-width: 420px) {
-  .acctRow {
-    grid-template-columns: 16px repeat(2, minmax(0, 1fr));
-    grid-template-areas:
-      "drag content content"
-      ". status status"
-      ". validate active"
-      ". remove remove";
+  .acctCardHeader {
+    flex-wrap: wrap;
+  }
+  .acctStatusButton {
+    order: 4;
+    margin-left: 0;
+  }
+  .dangerIconBtn {
+    margin-left: auto;
   }
 }
 
 @container (max-width: 300px) {
+  .detail {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .detailHeader {
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 8px;
+  }
+  .detailIcon {
+    width: 32px;
+    height: 32px;
+  }
+  .detailHeaderActions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
   .acctRow {
-    grid-template-columns: 16px minmax(0, 1fr);
-    grid-template-areas:
-      "drag content"
-      ". status"
-      ". validate"
-      ". active"
-      ". remove";
+    padding: 10px;
   }
   .acctKey {
     flex-wrap: wrap;
@@ -929,6 +988,11 @@
   .acctKey > input {
     flex: 1 1 100%;
     width: 100%;
+  }
+  .acctStatusButton span {
+    max-width: 7rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 .modelCountSummary {

@@ -164,11 +164,17 @@ export function Detail({
           <div className={styles.detailSubtitle}>{subtitle}</div>
         </div>
         <div className={styles.detailHeaderActions}>
-          <Switch
-            checked={provider.enabled}
-            onCheckedChange={onToggle}
-            title={text("Enable this provider", "启用这个 Provider")}
-          />
+          <label className={styles.providerEnabledControl}>
+            <span className={styles.providerEnabledLabel}>
+              {provider.enabled ? text("Enabled", "已启用") : text("Disabled", "已停用")}
+            </span>
+            <Switch
+              checked={provider.enabled}
+              onCheckedChange={onToggle}
+              aria-label={text("Enable this provider", "启用这个 Provider")}
+              title={text("Enable this provider", "启用这个 Provider")}
+            />
+          </label>
           {provider.custom && (
             <Button
               variant="destructive"
