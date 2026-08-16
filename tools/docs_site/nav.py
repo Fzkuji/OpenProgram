@@ -293,6 +293,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
         ("Notes", "笔记", ["reference/claude-code-compaction.md"]),
     ],
     "design": [
+        ("Overview", "概览", ["reference/design/README.md"]),
         ("UI · Foundations", "界面 · 基础", [
             "reference/design/ui/README.md",
             "reference/design/ui/invariants.md",

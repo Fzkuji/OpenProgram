@@ -21,6 +21,7 @@ def test_internal_plans_are_not_part_of_the_public_docs_build() -> None:
 def test_ui_design_navigation_is_grouped_without_losing_pages() -> None:
     pages = discover(ROOT / "docs")
     design = next(tab for tab in build_tabs(ROOT / "docs", pages) if tab.key == "design")
+    assert design.landing == Path("reference/design/README.html")
     ui_sections = {
         section.title: {page.rel.as_posix() for page in section.pages}
         for section in design.sections
