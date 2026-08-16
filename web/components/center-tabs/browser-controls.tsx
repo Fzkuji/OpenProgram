@@ -322,6 +322,7 @@ function folderItems(
   } : {
     id: `${prefix}bookmark:${node.id}`,
     label: node.title || node.url,
+    iconUrl: node.faviconUrl || faviconUrl(node.url),
   });
 }
 
@@ -366,10 +367,19 @@ function BookmarkMenuNodes({
       onSelect={() => onNavigate(node.url)}
       title={node.title || node.url}
     >
-      <Bookmark size={13} className="shrink-0" />
+      <BookmarkFavicon node={node} />
       <span className="min-w-0 flex-1 truncate">{node.title || node.url}</span>
     </DropdownMenuItem>
   ));
+}
+
+function BookmarkFavicon({ node }: { node: Extract<BookmarkNode, { kind: "bookmark" }> }) {
+  const [broken, setBroken] = useState(false);
+  const icon = node.faviconUrl || faviconUrl(node.url);
+  return !broken && icon ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={icon} alt="" width={13} height={13} className="shrink-0" onError={() => setBroken(true)} />
+  ) : <Bookmark size={13} className="shrink-0" />;
 }
 
 function BookmarkFolderButton({
@@ -446,14 +456,9 @@ function BookmarkFolderButton({
 }
 
 function BookmarkLeafButton({ node, onNavigate }: { node: Extract<BookmarkNode, { kind: "bookmark" }>; onNavigate(url: string): void }) {
-  const [broken, setBroken] = useState(false);
-  const icon = node.faviconUrl || faviconUrl(node.url);
   return (
     <button type="button" className={styles.bookmarkBarItem} onClick={() => onNavigate(node.url)} title={node.url}>
-      {!broken && icon ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={icon} alt="" width={13} height={13} onError={() => setBroken(true)} />
-      ) : <Bookmark size={13} />}
+      <BookmarkFavicon node={node} />
       <span>{node.title || node.url}</span>
     </button>
   );

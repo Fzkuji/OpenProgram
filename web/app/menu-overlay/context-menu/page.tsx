@@ -18,7 +18,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { Check, ChevronRight } from "lucide-react";
+import { Bookmark, Check, ChevronRight } from "lucide-react";
 
 import { itemCls, MENU_PANEL, MENU_SEPARATOR } from "@/components/chat/top-bar/menu-styles";
 import { isThemeId } from "@/lib/prefs/theme-pref";
@@ -26,6 +26,7 @@ import { isThemeId } from "@/lib/prefs/theme-pref";
 interface ContextMenuItem {
   id: string;
   label: string;
+  iconUrl?: string;
   disabled?: boolean;
   checked?: boolean;
   separatorBefore?: boolean;
@@ -49,6 +50,16 @@ function mainMenuBridge(): MainMenuBridge | null {
 
 const NESTED_MENU_WIDTH = 280;
 
+function ItemIcon({ item }: { item: ContextMenuItem }) {
+  const [broken, setBroken] = useState(false);
+  if (item.checked) return <Check size={13} aria-hidden="true" />;
+  if (!item.iconUrl) return null;
+  return broken ? <Bookmark size={13} aria-hidden="true" /> : (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={item.iconUrl} alt="" width={13} height={13} onError={() => setBroken(true)} />
+  );
+}
+
 function NestedMenuItems({ items }: { items: ContextMenuItem[] }) {
   const choose = (item: ContextMenuItem) => {
     if (!item.disabled) mainMenuBridge()?.choose(item.id);
@@ -64,7 +75,7 @@ function NestedMenuItems({ items }: { items: ContextMenuItem[] }) {
             title={item.label}
           >
             <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
-              {item.checked ? <Check size={13} aria-hidden="true" /> : null}
+              <ItemIcon item={item} />
             </span>
             <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
             <ChevronRight size={13} className="ml-auto shrink-0" aria-hidden="true" />
@@ -88,7 +99,7 @@ function NestedMenuItems({ items }: { items: ContextMenuItem[] }) {
           onSelect={() => choose(item)}
         >
           <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
-            {item.checked ? <Check size={13} aria-hidden="true" /> : null}
+            <ItemIcon item={item} />
           </span>
           <span className="min-w-0 flex-1 truncate">{item.label}</span>
         </DropdownMenuPrimitive.Item>
@@ -312,7 +323,7 @@ function ContextMenuOverlayPage() {
               onClick={() => choose(item)}
             >
               <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
-                {item.checked ? <Check size={13} aria-hidden="true" /> : null}
+                <ItemIcon item={item} />
               </span>
               <span
                 className={requestedWidth

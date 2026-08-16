@@ -129,6 +129,11 @@ assert.match(browserControls, /\[items\.length, tree, visible\]/);
 assert.match(webTabPane, /const menuOwnerId = useId\(\)/);
 assert.match(browserControls, /browserActionPrefix\(ownerId\)/);
 assert.match(browserControls, /bookmarkFolderActionPrefix\(ownerId, folder\.id\)/);
+assert.match(
+  browserControls,
+  /iconUrl:\s*node\.faviconUrl\s*\|\|\s*faviconUrl\(node\.url\)/,
+  "desktop bookmark-folder payloads must include each website favicon",
+);
 const browserMenuOwners = [...webTabPane.matchAll(/<BrowserMenu[\s\S]*?ownerId=\{([^}]+)\}/g)]
   .map((match) => match[1]);
 const bookmarkBarOwners = [...webTabPane.matchAll(/<BookmarkBar\s+ownerId=\{([^}]+)\}/g)]
@@ -160,6 +165,9 @@ assert.match(browserSettings, /browserData\.clear/);
 assert.match(settingsLayout, /\/settings\/browser/);
 assert.match(browserSettingsRoute, /<BrowserSettings/);
 assert.match(contextMenu, /item\.checked/);
+assert.match(contextMenu, /item\.iconUrl/);
+assert.match(contextMenu, /onError=.*setBroken/);
+assert.match(bridge, /iconUrl\?: string/);
 assert.match(contextMenu, /item\.separatorBefore/);
 assert.match(contextMenu, /maxHeight:\s*"calc\(100vh - 48px\)"/);
 assert.match(contextMenu, /overflowY:\s*"auto"/);

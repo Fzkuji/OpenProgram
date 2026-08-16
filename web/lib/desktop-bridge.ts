@@ -342,6 +342,7 @@ export interface DesktopTerminalApi {
 export interface DesktopContextMenuItem {
   id: string;
   label: string;
+  iconUrl?: string;
   disabled?: boolean;
   checked?: boolean;
   separatorBefore?: boolean;
