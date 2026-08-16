@@ -732,6 +732,29 @@
     这里正本是全量的，所以归属这件事根本不用判。
   </div>
 
+  <div class="grid2">
+    <div class="oc">
+      <h4>Web 默认展示实际注入块</h4>
+      <div class="d"><code>GET /api/memory/core</code>同时返回<code>topics/core.md</code>正本和根目录<code>core.md</code>渲染结果。Core 页默认只读展示渲染结果，并显示实际 token 数与 2000 token 预算；“完整记录”视图才进入可编辑正本。现有<code>content</code>字段继续表示正本，避免破坏旧调用方。</div>
+    </div>
+    <div class="oc">
+      <h4>Writer 与 Organizer 控制内容用途</h4>
+      <div class="d">Writer 阅读完整输入，但只记录以后仍有用途的事实；不记录重复状态检查、未变化的测量、一次性工具过程和可从项目文件重新读取的细节。项目进度进入对应项目 Topic。Organizer 在处理<code>topics/core.md</code>时，把项目专属、过期或重复内容移入普通 Topic 或删除，只保留多数未来会话都需要的规则、偏好与身份事实。</div>
+    </div>
+  </div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>验收入口</th><th>要求</th></tr></thead>
+      <tbody>
+        <tr><td><code>GET /api/memory/core</code></td><td>兼容返回正本<code>content/size/mtime</code>，并额外返回<code>rendered_content/rendered_size/rendered_mtime/rendered_tokens/budget_tokens</code>。</td></tr>
+        <tr><td>Memory → Core</td><td>默认显示实际注入内容和 token 预算；用户可切换到完整正本并沿用现有事务保存。</td></tr>
+        <tr><td>Writer prompt</td><td>不再要求把每个重复过程写成 Topic；Core 不再接收普通项目进度。</td></tr>
+        <tr><td>Organizer prompt</td><td>显式整理 Core 中的项目过程、重复记录和过期状态；删除后仍由 Git 保留历史。</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="legend"><b>实现状态（2026-08-17）：待实现与复核。</b>当前正式工作区的<code>topics/core.md</code>为 31 个 block、约 15305 token，而实际渲染的<code>core.md</code>约 1905 token。正本中的项目进度和 16 轮重复停滞检查不属于常驻内容；本次实现完成后通过同一 Memory 事务整理，保留 Git 历史。</div>
+
   <!-- ══════════ 06九个方法 ══════════ -->
   <h2 id="hooks"><span class="num">06</span>接口的九个方法</h2>
   <p class="lead">记忆和 agent 运行时之间只有这一个接口。除了 <code>name</code> 之外每个方法都有默认实现，
