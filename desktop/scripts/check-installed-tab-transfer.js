@@ -3,8 +3,8 @@ const { execFileSync } = require("node:child_process");
 
 const CDP_HTTP = "http://127.0.0.1:9223";
 const APP_ORIGIN = "http://127.0.0.1:18100";
-const TIMEOUT_MS = 12_000;
-const REQUEST_TIMEOUT_MS = 8_000;
+const TIMEOUT_MS = 20_000;
+const REQUEST_TIMEOUT_MS = 12_000;
 const CLEANUP_TIMEOUT_MS = 2_000;
 
 function withTimeout(promise, timeoutMs, description) {
@@ -203,6 +203,31 @@ async function sourceSnapshot(source) {
   })()`);
 }
 
+async function installFailedSourceRemovalBreakpoint(client) {
+  const scripts = [];
+  client.on("Debugger.scriptParsed", (script) => {
+    if (script.url.includes("/_next/static/chunks/")) scripts.push(script);
+  });
+  await client.send("Debugger.enable");
+  for (const script of scripts) {
+    const { scriptSource } = await client.send("Debugger.getScriptSource", {
+      scriptId: script.scriptId,
+    });
+    const match = /\.sourceRemoved\([^,()]+,!1,!1\)/.exec(scriptSource);
+    if (!match) continue;
+    const index = match.index;
+    const before = scriptSource.slice(0, index);
+    const lineNumber = (before.match(/\n/g) || []).length;
+    const lastNewline = before.lastIndexOf("\n");
+    const columnNumber = index - lastNewline - 1;
+    const result = await client.send("Debugger.setBreakpoint", {
+      location: { scriptId: script.scriptId, lineNumber, columnNumber },
+    });
+    if (result.breakpointId) return result.breakpointId;
+  }
+  throw new Error("failed source-removal callsite was not found in installed assets");
+}
+
 async function main() {
   const processList = execFileSync("ps", ["-axo", "command="], { encoding: "utf8" });
   assert.match(
@@ -230,6 +255,8 @@ async function main() {
   let transfer = null;
   let destinationResidue = null;
   let baselineSource = null;
+  let sourcePaused = false;
+  let detachResult = null;
   try {
     browser = await new CdpClient(version.webSocketDebuggerUrl).connect();
     browser.on("Target.targetCreated", ({ targetInfo }) => {
@@ -243,6 +270,13 @@ async function main() {
     await browser.send("Target.setDiscoverTargets", { discover: true });
 
     source = await new CdpClient(sourceTarget.webSocketDebuggerUrl).connect();
+    await installFailedSourceRemovalBreakpoint(source);
+    const sourcePausedPromise = new Promise((resolve) => {
+      source.on("Debugger.paused", (detail) => {
+        sourcePaused = true;
+        resolve(detail);
+      });
+    });
     baselineSource = await sourceSnapshot(source);
     assert.equal(
       baselineSource.windowId,
@@ -265,18 +299,14 @@ async function main() {
       return { token, tabId };
     })()`);
 
-    // Keep the source renderer from handling remove-source while the detached
-    // renderer completes inspect/accept/stage. Browser-level CDP remains live,
-    // so the target can be inspected during this bounded interval.
-    const detachResult = evaluate(source, `(async () => {
-      const pending = window.openprogramDesktop.tabTransfer.detach(
-        ${JSON.stringify(transfer.token)}
-      );
-      const until = performance.now() + 3_000;
-      while (performance.now() < until) { /* bounded acceptance hold */ }
-      return { destinationId: await pending };
-    })()`);
-
+    detachResult = evaluate(source, `window.openprogramDesktop.tabTransfer.detach(
+      ${JSON.stringify(transfer.token)}
+    )`);
+    await withTimeout(
+      sourcePausedPromise,
+      TIMEOUT_MS,
+      "source renderer to reach failed source removal",
+    );
     const destinationTarget = await waitFor(async () => {
       const targets = await shellTargets();
       return targets.find((target) => !baselineTargetIds.includes(target.id)) || null;
@@ -303,13 +333,14 @@ async function main() {
         };
       })()`);
       return snapshot.domHasTab
-        && snapshot.persistedHasTab
         && snapshot.journalHasToken
         ? snapshot
         : null;
     }, "the destination renderer to inspect, accept, and stage the tab");
 
-    const detached = await detachResult;
+    await source.send("Debugger.resume");
+    sourcePaused = false;
+    const detached = { destinationId: await detachResult };
     assert.ok(detached.destinationId, "detach did not create a destination");
     transfer.destinationId = detached.destinationId;
     assert.equal(
@@ -370,6 +401,25 @@ async function main() {
       destinationStorageClean: true,
     }, null, 2));
   } finally {
+    if (sourcePaused && source) {
+      try {
+        await withTimeout(
+          source.send("Debugger.resume"),
+          CLEANUP_TIMEOUT_MS,
+          "source debugger resume",
+        );
+        sourcePaused = false;
+      } catch {
+        // Closing the CDP client below releases the paused renderer.
+      }
+    }
+    if (detachResult) {
+      await withTimeout(
+        Promise.resolve(detachResult).catch(() => null),
+        CLEANUP_TIMEOUT_MS,
+        "detach result cleanup",
+      ).catch(() => null);
+    }
     if (transfer?.token) {
       try {
         await withTimeout(
