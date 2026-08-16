@@ -150,21 +150,6 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     with (target / "Contents" / "Info.plist").open("rb") as stream:
         assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
 
-    downgrade = _fake_desktop_app(tmp_path / "downgrade", "0.6.1")
-    rejected = subprocess.run(
-        ["bash", str(installer), str(downgrade)],
-        check=False,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    assert rejected.returncode != 0
-    assert "refusing to replace OpenProgram 0.6.2 with older version 0.6.1" in (
-        rejected.stderr
-    )
-    with (target / "Contents" / "Info.plist").open("rb") as stream:
-        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
-
     applications = target.parent
     assert sorted(path.name for path in applications.glob("*.app")) == ["OpenProgram.app"]
     assert not list(applications.glob(".openprogram-app-install.*"))
@@ -183,6 +168,52 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     with (target / "Contents" / "Info.plist").open("rb") as stream:
         assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
 
+    downgrade = _fake_desktop_app(tmp_path / "downgrade", "0.6.1")
+    rejected = subprocess.run(
+        ["bash", str(installer), str(downgrade)],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert rejected.returncode != 0
+    assert "refusing to replace OpenProgram 0.6.2 with older version 0.6.1" in (
+        rejected.stderr
+    )
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
+
+
+def test_local_desktop_install_compares_numeric_versions_as_decimal(
+    tmp_path: Path,
+) -> None:
+    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    installed = _fake_desktop_app(tmp_path / "installed", "0.9.0")
+    subprocess.run(["bash", str(installer), str(installed)], check=True, env=env)
+    leading_zero = _fake_desktop_app(tmp_path / "leading-zero", "0.08.0")
+
+    rejected = subprocess.run(
+        ["bash", str(installer), str(leading_zero)],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert rejected.returncode != 0
+    assert "refusing to replace OpenProgram 0.9.0 with older version 0.08.0" in (
+        rejected.stderr
+    )
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.9.0"
 
 def test_local_desktop_install_preserves_recovery_copy_when_restore_fails(
     tmp_path: Path,
@@ -309,6 +340,64 @@ def test_concurrent_local_desktop_install_cannot_nest_the_canonical_app(
         "OpenProgram.app"
     ]
     assert not (target.parent / ".openprogram-app-install.lock").exists()
+
+
+def test_local_desktop_install_rechecks_downgrade_after_lock(
+    tmp_path: Path,
+) -> None:
+    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    instrumented = tmp_path / "install-app-with-barrier.sh"
+    installer_text = installer.read_text(encoding="utf-8")
+    marker = "reject_downgrade\n\nmkdir -p"
+    assert installer_text.count(marker) == 1
+    instrumented.write_text(
+        installer_text.replace(
+            marker,
+            'reject_downgrade\n'
+            'touch "$TOCTOU_CHECKED"\n'
+            'while [[ ! -f "$TOCTOU_RELEASE" ]]; do sleep 0.01; done\n\n'
+            "mkdir -p",
+        ),
+        encoding="utf-8",
+    )
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    installed = _fake_desktop_app(tmp_path / "installed", "0.6.1")
+    subprocess.run(["bash", str(installer), str(installed)], check=True, env=env)
+
+    checked = tmp_path / "checked"
+    release = tmp_path / "release"
+    stale_candidate = _fake_desktop_app(tmp_path / "stale", "0.6.2")
+    stale = subprocess.Popen(
+        ["bash", str(instrumented), str(stale_candidate)],
+        env=env | {"TOCTOU_CHECKED": str(checked), "TOCTOU_RELEASE": str(release)},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not checked.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert checked.exists()
+        newer = _fake_desktop_app(tmp_path / "newer", "0.6.3")
+        subprocess.run(["bash", str(installer), str(newer)], check=True, env=env)
+    finally:
+        release.touch()
+        stale_stdout, stale_stderr = stale.communicate(timeout=10)
+
+    assert stale.returncode != 0, stale_stdout
+    assert "refusing to replace OpenProgram 0.6.3 with older version 0.6.2" in (
+        stale_stderr
+    )
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.3"
 
 
 def test_packager_honors_one_stable_user_lock_across_worktrees(
@@ -762,6 +851,7 @@ def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
     )
     assert any(install < stop < health for stop in stops)
     final_window = refresh[install:health]
+    assert "update-service.js" in refresh
     assert (
         '"$local_python" -m openprogram worker stop >/dev/null 2>&1\n'
         in final_window

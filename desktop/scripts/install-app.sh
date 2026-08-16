@@ -94,17 +94,20 @@ validate_app "$source_app" || {
 }
 
 version_is_older() {
-  local left_major left_minor left_patch right_major right_minor right_patch
-  IFS=. read -r left_major left_minor left_patch <<<"$1"
-  IFS=. read -r right_major right_minor right_patch <<<"$2"
-  ((
-    left_major < right_major ||
-    (left_major == right_major && left_minor < right_minor) ||
-    (left_major == right_major && left_minor == right_minor && left_patch < right_patch)
-  ))
+  node - "$1" "$2" <<'NODE'
+const parse = (value) => value.split(".").map((part) => BigInt(part));
+const left = parse(process.argv[2]);
+const right = parse(process.argv[3]);
+for (let index = 0; index < 3; index += 1) {
+  if (left[index] < right[index]) process.exit(0);
+  if (left[index] > right[index]) process.exit(1);
+}
+process.exit(1);
+NODE
 }
 
-if [[ -e "$target_app" ]] && validate_app "$target_app"; then
+reject_downgrade() {
+  [[ -e "$target_app" ]] && validate_app "$target_app" || return 0
   candidate_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$source_app/Contents/Info.plist")"
   installed_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$target_app/Contents/Info.plist")"
   if version_is_older "$candidate_version" "$installed_version"; then
@@ -112,7 +115,9 @@ if [[ -e "$target_app" ]] && validate_app "$target_app"; then
       "$installed_version" "$candidate_version" >&2
     exit 1
   fi
-fi
+}
+
+reject_downgrade
 
 mkdir -p "$applications_dir"
 install_lock_file="$applications_dir/.openprogram-app-install.lock"
@@ -130,6 +135,10 @@ if ! /usr/bin/shlock -p "$$" -f "$install_lock_file"; then
 fi
 install_lock_owned=1
 trap release_install_lock EXIT
+
+# The canonical App may have changed between the initial fast check and lock
+# acquisition. Re-read it under the lock before stopping workers or moving files.
+reject_downgrade
 
 transaction_dir="$(mktemp -d "$applications_dir/.openprogram-app-install.XXXXXX")"
 staged_app="$transaction_dir/OpenProgram.app"

@@ -14,14 +14,17 @@ duplicated in this historical distribution ledger.
   App whose bundle, runtime manifest, Python distribution metadata, Python
   source version, and Desktop source version are identical.
   `desktop/scripts/install-app.sh` rejects a candidate older than the current
-  canonical App before lock acquisition, worker shutdown, or filesystem mutation.
+  canonical App before lock acquisition, then re-reads the installed version
+  under the lock before worker shutdown or filesystem mutation. Numeric version
+  segments use decimal arbitrary-precision comparison. The same-version refresh
+  copies the Desktop updater implementation into the rebuilt App archive.
 - RED: the public installer accepted a 0.6.1 candidate over an installed 0.6.2
   App; the release-version entry did not recognize the installed-App source
   match request.
 - GREEN: both focused public-entry cases pass. The real refresh command rejects
   a 0.6.6 checkout against the then-installed 0.6.1 App before creating build
   output, and the App files and healthy worker remain unchanged.
-- Affected gate: formal release and distribution suites report 68 passed;
+- Affected gate: formal release and distribution suites report 70 passed;
   release version, Ruff, shell syntax, and diff checks pass.
 - Exclusions: no downgrade override, prerelease ordering, additional version
   source, user-state migration, Windows package, or remote release mutation.
