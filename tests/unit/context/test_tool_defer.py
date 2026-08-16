@@ -22,9 +22,13 @@ from openprogram.programs import (
 def _no_frozen_turn():
     """Every test starts outside a turn, so the split reads the live loaded
     set unless the test freezes on purpose."""
+    from openprogram.programs._runtime import _allowed_tool_names
+
+    allowed_token = _allowed_tool_names.set(None)
     release_turn_tools()
     yield
     release_turn_tools()
+    _allowed_tool_names.reset(allowed_token)
 
 
 def test_resident_tools_not_deferred():
@@ -60,7 +64,7 @@ def test_apply_is_idempotent():
 # These are in DEFAULT_TOOLS (the model may call them any time) but
 # their schemas stay out of the per-turn request. The three properties
 # below are exactly what makes that safe: absent from the provider array,
-# discoverable in the catalog, loadable via tool_search.
+# represented by the bounded catalog notice, loadable via tool_search.
 
 
 def test_deferred_defaults_absent_from_resident_schema():
@@ -83,10 +87,13 @@ def test_deferred_defaults_appear_in_catalog_line():
     catalog_names = {n for n, _ in catalog}
     missing = DEFERRED_DEFAULT_TOOLS - catalog_names
     assert not missing, f"deferred tools missing from catalog: {sorted(missing)}"
-    # The rendered catalog names each one, so the model can discover it.
+    # The prompt intentionally keeps only a bounded count and search guidance;
+    # names and schemas are returned by tool_search on demand.
     text = deferred_catalog_text(catalog)
-    for name in DEFERRED_DEFAULT_TOOLS:
-        assert name in text, name
+    assert text.startswith(f"{len(catalog)} deferred tools are available")
+    assert "Their names and schemas are not loaded" in text
+    assert "tool_search" in text
+    assert not any(name in text for name in DEFERRED_DEFAULT_TOOLS)
 
 
 def test_default_web_prompt_advertises_deferred_memory_tools(monkeypatch):
