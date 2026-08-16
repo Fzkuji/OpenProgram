@@ -168,6 +168,44 @@ assert.match(contextMenu, /item\.checked/);
 assert.match(contextMenu, /item\.iconUrl/);
 assert.match(contextMenu, /onError=.*setBroken/);
 assert.match(bridge, /iconUrl\?: string/);
+const nestedMenuItems = contextMenu.slice(
+  contextMenu.indexOf("function NestedMenuItems"),
+  contextMenu.indexOf("function NestedContextMenu"),
+);
+assert.equal(
+  nestedMenuItems.match(/<ItemIcon item=\{item\} \/>/g)?.length,
+  2,
+  "nested folder triggers and website rows must both render their icon slot",
+);
+assert.match(nestedMenuItems, /<DropdownMenuPrimitive\.SubTrigger[\s\S]*?<ItemIcon item=\{item\} \/>/);
+assert.match(nestedMenuItems, /<DropdownMenuPrimitive\.Item[\s\S]*?<ItemIcon item=\{item\} \/>/);
+const flatMenuItems = contextMenu.slice(contextMenu.indexOf("function ContextMenuOverlayPage"));
+assert.match(flatMenuItems, /role="menuitemcheckbox"[\s\S]*?<ItemIcon item=\{item\} \/>/);
+assert.equal(
+  contextMenu.match(/<ItemIcon item=\{item\} \/>/g)?.length,
+  3,
+  "desktop bookmark favicons must render in nested triggers, nested rows, and flat rows",
+);
+const bookmarkMenuNodes = browserControls.slice(
+  browserControls.indexOf("function BookmarkMenuNodes"),
+  browserControls.indexOf("function BookmarkFavicon"),
+);
+assert.match(
+  bookmarkMenuNodes,
+  /<DropdownMenuItem[\s\S]*?<BookmarkFavicon node=\{node\} \/>/,
+  "the Web fallback website row must render its favicon",
+);
+const iconPayload = [{
+  id: "bookmark:1",
+  label: "Signed favicon",
+  iconUrl: "https://example.test/favicon.ico?token=a+b&next=x%2Fy#fragment",
+}];
+const encodedIconPayload = new URLSearchParams({ items: JSON.stringify(iconPayload) }).toString();
+assert.deepEqual(
+  JSON.parse(new URLSearchParams(encodedIconPayload).get("items")),
+  iconPayload,
+  "context-menu URL serialization must preserve complete favicon URLs",
+);
 assert.match(contextMenu, /item\.separatorBefore/);
 assert.match(contextMenu, /maxHeight:\s*"calc\(100vh - 48px\)"/);
 assert.match(contextMenu, /overflowY:\s*"auto"/);
