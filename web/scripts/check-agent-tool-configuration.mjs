@@ -9,6 +9,7 @@ const pageStyles = readFileSync(new URL("components/agents/agents-page.module.cs
 const sidebar = readFileSync(new URL("components/sidebar/sidebar.tsx", root), "utf8");
 const sender = readFileSync(new URL("components/chat/composer/legacy-send.ts", root), "utf8");
 const route = readFileSync(new URL("../openprogram/webui/routes/tree.py", root), "utf8");
+const manageHeaderMarkup = page.match(/<ManagePageHeader[\s\S]*?\/>/)?.[0];
 
 assert.match(page, /fetch\("\/api\/agents"/);
 assert.match(page, /fetch\(`\/api\/agents\/\$\{encodeURIComponent\(draft\.id\)\}`[\s\S]*method:\s*"PATCH"/);
@@ -25,7 +26,11 @@ assert.match(page, /fetch\("\/api\/mcp\/servers"/);
 assert.match(page, /async function openPicker[\s\S]*Promise\.all\([\s\S]*fetch\("\/api\/programs"/);
 assert.match(page, /ManagePageHeader,\s*ManageRow,\s*managePageStyles/);
 assert.match(page, /settings-page\.module\.css/);
-assert.match(page, /<ManagePageHeader[\s\S]*tabs=\{TABS\.map/);
+assert.ok(manageHeaderMarkup, "Agents must reuse ManagePageHeader");
+assert.doesNotMatch(manageHeaderMarkup, /\btabs=/, "Agent configuration tabs belong below the selected Agent header");
+assert.match(page, /from "@\/components\/ui\/tabs"/);
+assert.match(page, /<Tabs[\s\S]*value=\{tab\}[\s\S]*onValueChange/);
+assert.match(page, /styles\.agentPageHeader[\s\S]*<TabsList/);
 assert.match(page, /className=\{managePageStyles\.splitBody\}/);
 assert.match(page, /<ManageRow[\s\S]*styles\.agentSelected/);
 assert.doesNotMatch(page, /styles\.(?:header|layout|agentRail|detailHeader|tabs)\b/);

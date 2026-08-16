@@ -32,6 +32,7 @@ import {
   ManageRow,
   managePageStyles,
 } from "@/components/ui/manage-page";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTranslation } from "@/lib/i18n";
 
 import settingsStyles from "@/components/settings/settings-page.module.css";
@@ -483,9 +484,6 @@ export function AgentsPage() {
       <div className={managePageStyles.view}>
         <ManagePageHeader
           title={text("Agents", "Agents")}
-          tabs={TABS.map((item) => ({ id: item.id, label: text(item.en, item.zh) }))}
-          activeTab={tab}
-          onTabChange={(id) => setTab(id as TabId)}
           toolbar={dirty ? <span className={styles.unsaved}>{text("Unsaved changes", "有未保存的修改")}</span> : null}
           actions={[
             {
@@ -553,22 +551,35 @@ export function AgentsPage() {
                     </div>
                   </details>
                 </div>
-                <div className={settingsStyles.pageBody} role="tabpanel">
-                  <div className={styles.panel}>
-                  {tab === "overview" ? <OverviewPanel draft={draft} update={updateDraft} text={text} /> : null}
-                  {tab === "model" ? <ModelPanel draft={draft} update={updateDraft} text={text} /> : null}
-                  {tab === "programs" ? (
-                    <ProgramsPanel draft={draft} update={updateDraft} presets={presets} openPicker={() => void openPicker("programs")} text={text} />
-                  ) : null}
-                  {tab === "skills" ? (
-                    <GatePanel kind="skills" policy={draft.skills} setMode={(mode) => { setGateMode("skills", mode); if (mode === "selected") void openPicker("skills"); }} openPicker={() => void openPicker("skills")} text={text} />
-                  ) : null}
-                  {tab === "mcp" ? (
-                    <GatePanel kind="mcp" policy={draft.mcp} setMode={(mode) => { setGateMode("mcp", mode); if (mode === "selected") void openPicker("mcp"); }} openPicker={() => void openPicker("mcp")} text={text} />
-                  ) : null}
-                  {tab === "sessions" ? <SessionsPanel draft={draft} update={updateDraft} workspace={workspace} text={text} /> : null}
+                <Tabs className={styles.configTabs} value={tab} onValueChange={(value) => setTab(value as TabId)}>
+                  <TabsList className={styles.configTabsList} aria-label={text("Agent configuration", "Agent 配置")}>
+                    {TABS.map((item) => (
+                      <TabsTrigger className={styles.configTab} key={item.id} value={item.id}>
+                        {text(item.en, item.zh)}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                  <div className={settingsStyles.pageBody}>
+                    <TabsContent className={styles.tabPanel} value="overview">
+                      <OverviewPanel draft={draft} update={updateDraft} text={text} />
+                    </TabsContent>
+                    <TabsContent className={styles.tabPanel} value="model">
+                      <ModelPanel draft={draft} update={updateDraft} text={text} />
+                    </TabsContent>
+                    <TabsContent className={styles.tabPanel} value="programs">
+                      <ProgramsPanel draft={draft} update={updateDraft} presets={presets} openPicker={() => void openPicker("programs")} text={text} />
+                    </TabsContent>
+                    <TabsContent className={styles.tabPanel} value="skills">
+                      <GatePanel kind="skills" policy={draft.skills} setMode={(mode) => { setGateMode("skills", mode); if (mode === "selected") void openPicker("skills"); }} openPicker={() => void openPicker("skills")} text={text} />
+                    </TabsContent>
+                    <TabsContent className={styles.tabPanel} value="mcp">
+                      <GatePanel kind="mcp" policy={draft.mcp} setMode={(mode) => { setGateMode("mcp", mode); if (mode === "selected") void openPicker("mcp"); }} openPicker={() => void openPicker("mcp")} text={text} />
+                    </TabsContent>
+                    <TabsContent className={styles.tabPanel} value="sessions">
+                      <SessionsPanel draft={draft} update={updateDraft} workspace={workspace} text={text} />
+                    </TabsContent>
                   </div>
-                </div>
+                </Tabs>
               </div>
             )}
           </main>
