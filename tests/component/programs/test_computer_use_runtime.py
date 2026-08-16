@@ -226,6 +226,7 @@ def test_page_capability_revisions_cross_the_session_validation_boundary(monkeyp
             "page_key": "page:41",
             "page_revision": 41,
             "access_revision": 42,
+            "geometry_revision": 43,
         }],
     }
     token = registry.list_pages(
@@ -245,6 +246,7 @@ def test_page_capability_revisions_cross_the_session_validation_boundary(monkeyp
     assert validations == [("binding-1", {
         "expected_page_revision": 41,
         "expected_access_revision": 42,
+        "expected_geometry_revision": 43,
     })]
 
 

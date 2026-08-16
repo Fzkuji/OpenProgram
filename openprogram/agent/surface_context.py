@@ -28,6 +28,13 @@ def _origin(url: str) -> str:
     return f"{parsed.scheme}://{parsed.hostname}{port}"
 
 
+def _revision(value: Any) -> int:
+    try:
+        return max(0, min(int(value), 2**63 - 1))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 def _descriptor(raw: dict) -> dict | None:
     if raw.get("version") != 1:
         return None
@@ -45,6 +52,7 @@ def _descriptor(raw: dict) -> dict | None:
         "title": _text(raw.get("title"), 240),
         "origin": _origin(str(raw.get("url") or "")),
         "focused": bool(raw.get("focused")),
+        "geometry_revision": _revision(raw.get("geometry_revision")),
     }
 
 
@@ -103,13 +111,16 @@ def capture(raw: Any, ws) -> dict | None:
         return context
 
     from openprogram.webui.ws_actions import webtab
-    result = webtab.request_on_ws(
-        ws, {
-            "op": "preview",
-            "window_id": descriptor["window_id"],
-            "tab_id": descriptor["tab_id"],
-        }, timeout=5.0,
-    )
+    preview_command = {
+        "op": "preview",
+        "window_id": descriptor["window_id"],
+        "tab_id": descriptor["tab_id"],
+    }
+    if descriptor["geometry_revision"]:
+        preview_command["expected_geometry_revision"] = descriptor[
+            "geometry_revision"
+        ]
+    result = webtab.request_on_ws(ws, preview_command, timeout=5.0)
     target_id = result.get("target_id") if isinstance(result, dict) else None
     if (
         not isinstance(result, dict)
@@ -118,11 +129,20 @@ def capture(raw: Any, ws) -> dict | None:
         or result.get("tab_id") != descriptor["tab_id"]
         or not isinstance(target_id, str)
         or not target_id
+        or (
+            descriptor["geometry_revision"]
+            and _revision(result.get("geometry_revision"))
+            != descriptor["geometry_revision"]
+        )
     ):
         surface["preview_status"] = "unavailable"
         return context
     binding_id = webtab.register_binding(
-        ws, descriptor["window_id"], descriptor["tab_id"], target_id,
+        ws,
+        descriptor["window_id"],
+        descriptor["tab_id"],
+        target_id,
+        geometry_revision=descriptor["geometry_revision"],
     )
     revisions = webtab.binding_revisions(binding_id)
     surface.update({
@@ -231,7 +251,11 @@ def capture_active() -> dict:
     if not result.get("ok") or not window_id or not tab_id or not target_id:
         raise RuntimeError("no active OpenProgram Page is available")
     binding_id = webtab.register_binding(
-        owner_ws, window_id, tab_id, target_id,
+        owner_ws,
+        window_id,
+        tab_id,
+        target_id,
+        geometry_revision=_revision(result.get("geometry_revision")),
     )
     revisions = webtab.binding_revisions(binding_id)
     surface = {

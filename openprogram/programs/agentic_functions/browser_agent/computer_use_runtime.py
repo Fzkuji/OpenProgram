@@ -27,6 +27,7 @@ class ComputerUseSession:
     page_key: str = ""
     page_revision: int = 0
     access_revision: int = 0
+    geometry_revision: int = 0
     owner_id: str = ""
     page_context: dict[str, Any] | None = None
     controller: Any = None
@@ -177,6 +178,7 @@ class ComputerUseSessionRegistry:
                     "context": context,
                     "page_revision": int(item.get("page_revision") or 0),
                     "access_revision": int(item.get("access_revision") or 0),
+                    "geometry_revision": int(item.get("geometry_revision") or 0),
                     "consumed": False,
                 }
                 pages.append({
@@ -225,6 +227,7 @@ class ComputerUseSessionRegistry:
                     revisions = {
                         "page_revision": capability["page_revision"],
                         "access_revision": capability["access_revision"],
+                        "geometry_revision": capability["geometry_revision"],
                     }
             if not binding_id:
                 return {"ok": False, "reason_code": "page_context_required"}
@@ -243,6 +246,7 @@ class ComputerUseSessionRegistry:
                 page_key=page_key,
                 page_revision=int(revisions.get("page_revision") or 0),
                 access_revision=int(revisions.get("access_revision") or 0),
+                geometry_revision=int(revisions.get("geometry_revision") or 0),
                 owner_id=owner_id,
                 page_context=page_context,
             )
@@ -295,6 +299,10 @@ class ComputerUseSessionRegistry:
                     session.access_revision
                     and int(revisions.get("access_revision") or 0)
                     != session.access_revision
+                ) or (
+                    session.geometry_revision
+                    and int(revisions.get("geometry_revision") or 0)
+                    != session.geometry_revision
                 ))
                 try:
                     validation = (
@@ -305,6 +313,7 @@ class ComputerUseSessionRegistry:
                                 session.binding_id,
                                 expected_page_revision=session.page_revision,
                                 expected_access_revision=session.access_revision,
+                                expected_geometry_revision=session.geometry_revision,
                             )
                             if self._binding_validator_accepts_revisions
                             else self._binding_validator(session.binding_id)

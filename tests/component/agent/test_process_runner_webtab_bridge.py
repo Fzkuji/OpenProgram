@@ -95,6 +95,7 @@ def test_parent_webtab_bridge_forwards_expected_binding_revisions(monkeypatch):
             "binding_id": "surface-1",
             "expected_page_revision": 31,
             "expected_access_revision": 32,
+            "expected_geometry_revision": 33,
         },
         "timeout": 1,
     }, replies)
@@ -105,6 +106,7 @@ def test_parent_webtab_bridge_forwards_expected_binding_revisions(monkeypatch):
         "timeout": 1,
         "expected_page_revision": 31,
         "expected_access_revision": 32,
+        "expected_geometry_revision": 33,
     })]
 
 

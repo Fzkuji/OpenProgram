@@ -404,6 +404,8 @@ const liveViewIds = new Set<string>();
 const readyWebTabIds = new Set<string>();
 const webTabReadyWaiters = new Map<string, Set<(ready: boolean) => void>>();
 const visibleWebBounds = new Map<string, DesktopWebTabBounds>();
+const webTabGeometryRevisions = new Map<string, number>();
+let nextWebTabGeometryRevision = 1;
 let visibleWebFlushScheduled = false;
 let visibleWebFlushBridge: DesktopBridge | null = null;
 let desktopSplitLayoutAvailable = false;
@@ -431,6 +433,11 @@ export function registerVisibleWebTabBounds(
   id: string,
   bounds: DesktopWebTabBounds,
 ): void {
+  const previous = visibleWebBounds.get(id);
+  if (!previous || previous.x !== bounds.x || previous.y !== bounds.y
+      || previous.width !== bounds.width || previous.height !== bounds.height) {
+    webTabGeometryRevisions.set(id, nextWebTabGeometryRevision++);
+  }
   visibleWebBounds.set(id, { ...bounds });
   scheduleVisibleWebBoundsFlush(bridge);
 }
@@ -439,7 +446,9 @@ export function removeVisibleWebTabBounds(
   bridge: DesktopBridge,
   id: string,
 ): void {
-  visibleWebBounds.delete(id);
+  if (visibleWebBounds.delete(id)) {
+    webTabGeometryRevisions.set(id, nextWebTabGeometryRevision++);
+  }
   scheduleVisibleWebBoundsFlush(bridge);
 }
 
@@ -512,6 +521,7 @@ export function destroyStaleWebViews(
       removeVisibleWebTabBounds(bridge, id);
       bridge.webTab.destroy(id);
       liveViewIds.delete(id);
+      webTabGeometryRevisions.delete(id);
     }
   }
 }
@@ -593,6 +603,7 @@ export interface TurnSurfaceRef {
   focused: boolean;
   title: string;
   url: string;
+  geometry_revision: number;
 }
 
 /** The visible web pane paired with this chat at send time. */
@@ -631,6 +642,7 @@ export function surfaceRefForChat(
     focused: group?.focusedId === web.id,
     title: web.title,
     url: web.url || "",
+    geometry_revision: webTabGeometryRevisions.get(web.id) ?? 0,
   };
 }
 
@@ -661,6 +673,7 @@ function sendWebTabResult(
       url: activeUrl,
       tab_id: active.id,
       target_id: targetId,
+      geometry_revision: webTabGeometryRevisions.get(active.id) ?? 0,
     } : {}),
     ...(!ok ? { error: "desktop web tab did not expose a CDP target" } : {}),
   }));
@@ -696,7 +709,7 @@ export function installDesktopMenuHandlers(): void {
     const detail = e.detail;
     if (detail?.type !== "webtab.command") return;
     const d = detail.data as
-      | { op?: string; url?: string; window_id?: string; tab_id?: string; req_id?: string }
+      | { op?: string; url?: string; window_id?: string; tab_id?: string; req_id?: string; expected_geometry_revision?: number }
       | undefined;
     if (!d?.req_id || !["open", "active", "activate", "preview"].includes(d.op || "")) return;
     const ws = getSocket();
@@ -735,6 +748,19 @@ export function installDesktopMenuHandlers(): void {
         }));
         return;
       }
+      const geometryRevision = webTabGeometryRevisions.get(tab.id) ?? 0;
+      if (d.expected_geometry_revision
+          && d.expected_geometry_revision !== geometryRevision) {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ok: false,
+          error: "web tab geometry changed",
+          reason_code: "page_context_stale",
+          geometry_revision: geometryRevision,
+        }));
+        return;
+      }
       if (d.op === "preview") {
         void bridge.webTab.preview(tab.id).then((result) => {
           ws.send(JSON.stringify({
@@ -742,7 +768,7 @@ export function installDesktopMenuHandlers(): void {
             req_id: d.req_id,
             ok: !!result,
             ...(result
-              ? { ...result, window_id: bridge.windowId }
+              ? { ...result, window_id: bridge.windowId, geometry_revision: geometryRevision }
               : { error: "desktop web tab preview is unavailable" }),
           }));
         });
@@ -906,10 +932,12 @@ export function applyWebViewBookkeeping(
   liveViewIds.clear();
   readyWebTabIds.clear();
   visibleWebBounds.clear();
+  webTabGeometryRevisions.clear();
   for (const id of snapshot.liveIds) liveViewIds.add(id);
   for (const id of snapshot.readyIds) readyWebTabIds.add(id);
   for (const { id, bounds } of snapshot.visibleBounds) {
     visibleWebBounds.set(id, { ...bounds });
+    webTabGeometryRevisions.set(id, nextWebTabGeometryRevision++);
   }
   if (bridge) scheduleVisibleWebBoundsFlush(bridge);
 }
@@ -920,6 +948,7 @@ export function forgetTransferredWebView(
 ): void {
   liveViewIds.delete(id);
   readyWebTabIds.delete(id);
+  webTabGeometryRevisions.delete(id);
   if (visibleWebBounds.delete(id) && bridge) {
     scheduleVisibleWebBoundsFlush(bridge);
   }

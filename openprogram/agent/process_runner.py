@@ -122,6 +122,9 @@ def _bridge_webtab_to_parent(data: dict, answer_queue) -> None:
                     expected_access_revision=int(
                         command.get("expected_access_revision") or 0
                     ),
+                    expected_geometry_revision=int(
+                        command.get("expected_geometry_revision") or 0
+                    ),
                 )
             else:
                 result = webtab._request(command, timeout)

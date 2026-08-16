@@ -27,6 +27,7 @@ def test_surface_context_captures_preview_from_the_originating_socket(monkeypatc
         assert bound_ws is ws
         assert command == {
             "op": "preview", "window_id": "window-1", "tab_id": "w:right",
+            "expected_geometry_revision": 7,
         }
         return {
             "ok": True,
@@ -35,6 +36,7 @@ def test_surface_context_captures_preview_from_the_originating_socket(monkeypatc
             "target_id": "target-right",
             "url": "https://example.com/path?token=secret",
             "title": "Right page",
+            "geometry_revision": 7,
             "preview": {
                 "visible_text_excerpt": "Visible page text",
                 "aria_landmarks": [{"role": "main", "name": "Main"}],
@@ -49,6 +51,7 @@ def test_surface_context_captures_preview_from_the_originating_socket(monkeypatc
         "tab_id": "w:right",
         "region": "right",
         "access": "enabled",
+        "geometry_revision": 7,
     }, ws)
 
     assert context["primary_surface_key"] == "s1"
@@ -57,6 +60,7 @@ def test_surface_context_captures_preview_from_the_originating_socket(monkeypatc
     assert context["surfaces"][0]["origin"] == "https://example.com"
     assert context["surfaces"][0]["page_revision"] > 0
     assert context["surfaces"][0]["access_revision"] > 0
+    assert context["surfaces"][0]["geometry_revision"] == 7
     assert "token=secret" not in surface_context.render_for_model(context)
     assert "preview_status" in surface_context.render_for_model(context)
     assert "do not claim that the page is invisible" in surface_context.render_for_model(context)
@@ -143,6 +147,41 @@ def test_bound_webtab_request_rejects_stale_expected_revision_before_ipc(
 
     assert result["reason_code"] == "page_context_stale"
     assert sent == []
+
+
+def test_bound_webtab_request_forwards_geometry_revision_to_exact_renderer(
+    monkeypatch,
+):
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    binding_id = webtab.register_binding(
+        owner, "window-1", "tab-1", "target-1", geometry_revision=9,
+    )
+    seen = []
+    monkeypatch.setattr(
+        webtab,
+        "request_on_ws",
+        lambda ws, command, timeout=5.0: seen.append((ws, command)) or {
+            "ok": False,
+            "error": "web tab geometry changed",
+            "reason_code": "page_context_stale",
+        },
+    )
+
+    result = webtab.request_bound_tab(
+        binding_id,
+        expected_geometry_revision=9,
+    )
+
+    assert result["reason_code"] == "page_context_stale"
+    assert seen == [(owner, {
+        "op": "activate",
+        "window_id": "window-1",
+        "tab_id": "tab-1",
+        "expected_geometry_revision": 9,
+    })]
+    assert binding_id not in webtab._bindings
 
 
 def test_webtab_page_key_is_shared_across_recaptures_of_the_same_target():
@@ -247,6 +286,27 @@ def test_webtab_result_is_claimed_only_by_expected_socket():
     webtab._pending.clear()
 
 
+def test_webtab_result_preserves_geometry_stale_reason():
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    event = threading.Event()
+    holder: dict = {}
+    webtab._pending["geometry"] = (event, holder, owner)
+    try:
+        asyncio.run(webtab.handle_webtab_result(owner, {
+            "req_id": "geometry",
+            "ok": False,
+            "error": "web tab geometry changed",
+            "reason_code": "page_context_stale",
+            "geometry_revision": 12,
+        }))
+        assert holder["result"]["reason_code"] == "page_context_stale"
+        assert holder["result"]["geometry_revision"] == 12
+    finally:
+        webtab._pending.pop("geometry", None)
+
+
 def test_direct_mcp_page_capture_requires_one_desktop_connection(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.webui import server
@@ -290,6 +350,10 @@ def test_frontend_and_electron_expose_turn_surface_preview_contract():
     assert "export function surfaceRefForChat" in bridge
     assert 'd.op === "preview"' in bridge
     assert "webTab.preview(tab.id)" in bridge
+    control = bridge[bridge.index("export function installDesktopMenuHandlers"):]
+    geometry_guard = control.index("if (d.expected_geometry_revision")
+    assert geometry_guard < control.index("bridge.webTab.preview(tab.id)")
+    assert geometry_guard < control.index("bridge.webTab.activate(tab.id, d.url, true)")
     assert 'preview: (id) => ipcRenderer.invoke("webtab:preview", id)' in preload
     assert 'ipcMain.handle("webtab:preview"' in main
     assert "visible_text_excerpt" in main

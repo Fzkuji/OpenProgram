@@ -2375,6 +2375,53 @@ const surfaceTabs = [
   { id: "s:surface-chat", kind: "session", title: "Chat", sessionId: "surface-chat" },
   { id: "w:surface-page", kind: "web", title: "Page", url: "https://surface.test/" },
 ];
+plainTabs.setState({
+  tabs: surfaceTabs,
+  activeId: "s:surface-chat",
+  groups: [{
+    id: "g:surface-geometry",
+    memberIds: ["s:surface-chat", "w:surface-page"],
+    visibleIds: ["s:surface-chat", "w:surface-page"],
+    focusedId: "s:surface-chat",
+  }],
+  splitWebTabId: null,
+  splitRatio: 0.5,
+});
+const geometryBridge = {
+  webTab: {
+    syncVisible() {},
+  },
+};
+bridgeModule.registerVisibleWebTabBounds(
+  geometryBridge,
+  "w:surface-page",
+  { x: 600, y: 120, width: 500, height: 700 },
+);
+const firstGeometryRevision = bridgeModule.surfaceRefForChat(
+  "surface-chat",
+  true,
+)?.geometry_revision;
+assert.ok(firstGeometryRevision > 0);
+bridgeModule.registerVisibleWebTabBounds(
+  geometryBridge,
+  "w:surface-page",
+  { x: 600, y: 120, width: 500, height: 700 },
+);
+assert.equal(
+  bridgeModule.surfaceRefForChat("surface-chat", true)?.geometry_revision,
+  firstGeometryRevision,
+  "identical bounds must preserve geometry revision",
+);
+bridgeModule.registerVisibleWebTabBounds(
+  geometryBridge,
+  "w:surface-page",
+  { x: 0, y: 120, width: 500, height: 700 },
+);
+assert.ok(
+  bridgeModule.surfaceRefForChat("surface-chat", true)?.geometry_revision
+    > firstGeometryRevision,
+  "pane movement must advance geometry revision",
+);
 for (const [visibleIds, expectedRegion] of [
   [["w:surface-page", "s:surface-chat"], "left"],
   [["s:surface-chat", "w:surface-page"], "right"],

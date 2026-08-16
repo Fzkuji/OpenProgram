@@ -22,7 +22,7 @@ from typing import Any
 # "result" 键（claim-once），后续同 req_id 的回执直接忽略。
 _pending: dict[str, tuple[threading.Event, dict, Any | None]] = {}
 _lock = threading.Lock()
-_bindings: dict[str, tuple[Any, str, str, str, float, int, int]] = {}
+_bindings: dict[str, tuple[Any, str, str, str, float, int, int, int]] = {}
 _connection_revisions: dict[Any, int] = {}
 _page_revisions: dict[tuple[int, str], int] = {}
 _next_revision = itertools.count(1)
@@ -89,6 +89,7 @@ def register_binding(
     tab_id: str,
     target_id: str,
     ttl: float = 1800.0,
+    geometry_revision: int = 0,
 ) -> str:
     binding_id = "surface_" + uuid.uuid4().hex
     with _lock:
@@ -110,6 +111,7 @@ def register_binding(
             time.monotonic() + ttl,
             page_revision,
             access_revision,
+            max(0, int(geometry_revision)),
         )
     return binding_id
 
@@ -157,7 +159,11 @@ def binding_revisions(binding_id: str) -> dict[str, int]:
         entry = _bindings.get(binding_id)
     if entry is None:
         return {}
-    return {"page_revision": entry[5], "access_revision": entry[6]}
+    return {
+        "page_revision": entry[5],
+        "access_revision": entry[6],
+        "geometry_revision": entry[7],
+    }
 
 
 def _invalidate_page(ws, target_id: str) -> None:
@@ -177,6 +183,7 @@ def request_bound_tab(
     timeout: float = 5.0,
     expected_page_revision: int = 0,
     expected_access_revision: int = 0,
+    expected_geometry_revision: int = 0,
 ) -> dict:
     """Activate the exact visible tab captured for this turn."""
     import os
@@ -188,6 +195,8 @@ def request_bound_tab(
             command["expected_page_revision"] = expected_page_revision
         if expected_access_revision:
             command["expected_access_revision"] = expected_access_revision
+        if expected_geometry_revision:
+            command["expected_geometry_revision"] = expected_geometry_revision
         return _request(command, timeout)
     with _lock:
         entry = _bindings.get(binding_id)
@@ -198,6 +207,9 @@ def request_bound_tab(
             ) or (
                 expected_access_revision
                 and entry[6] != expected_access_revision
+            ) or (
+                expected_geometry_revision
+                and entry[7] != expected_geometry_revision
             )
         )
         if revision_mismatch:
@@ -214,7 +226,7 @@ def request_bound_tab(
             "error": "surface binding revision changed",
             "reason_code": "page_context_stale",
         }
-    ws, window_id, tab_id, target_id, expires_at, _, _ = entry
+    ws, window_id, tab_id, target_id, expires_at, _, _, _ = entry
     if time.monotonic() >= expires_at:
         release_binding(binding_id)
         return {
@@ -225,6 +237,8 @@ def request_bound_tab(
     command = {"op": "activate", "window_id": window_id, "tab_id": tab_id}
     if url:
         command["url"] = url
+    if expected_geometry_revision:
+        command["expected_geometry_revision"] = expected_geometry_revision
     result = request_on_ws(ws, command, timeout)
     if not result.get("ok"):
         release_binding(binding_id)
@@ -272,6 +286,10 @@ async def handle_webtab_result(ws, cmd: dict):
             **({"target_id": cmd["target_id"]} if isinstance(cmd.get("target_id"), str) else {}),
             **({"title": cmd["title"]} if isinstance(cmd.get("title"), str) else {}),
             **({"preview": cmd["preview"]} if isinstance(cmd.get("preview"), dict) else {}),
+            **({"geometry_revision": cmd["geometry_revision"]}
+               if isinstance(cmd.get("geometry_revision"), int) else {}),
+            **({"reason_code": cmd["reason_code"]}
+               if isinstance(cmd.get("reason_code"), str) else {}),
         }
     ev.set()
 
