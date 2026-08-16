@@ -216,6 +216,20 @@ jobs:
             echo "missing release notes: $notes_file" >&2
             exit 1
           }
+          python - "$notes_file" "$release_version" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          notes_path = Path(sys.argv[1])
+          version = sys.argv[2]
+          notes = notes_path.read_text(encoding="utf-8")
+          expected_heading = f"# OpenProgram {version} Release Notes\n"
+          if not notes.startswith(expected_heading):
+              raise SystemExit(f"invalid release notes heading: {notes_path}")
+          if re.search(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]", notes):
+              raise SystemExit(f"release notes must be English: {notes_path}")
+          PY
           mapfile -d '' files < <(find release-artifacts -type f -print0)
           gh release create "$GITHUB_REF_NAME" "${files[@]}" \
             --verify-tag \
