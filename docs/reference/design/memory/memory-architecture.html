@@ -753,7 +753,7 @@
       </tbody>
     </table>
   </div>
-  <div class="legend"><b>实现状态（2026-08-17）：待实现与复核。</b>当前正式工作区的<code>topics/core.md</code>为 31 个 block、约 15305 token，而实际渲染的<code>core.md</code>约 1905 token。正本中的项目进度和 16 轮重复停滞检查不属于常驻内容；本次实现完成后通过同一 Memory 事务整理，保留 Git 历史。</div>
+  <div class="legend"><b>实现状态（2026-08-17）：已实现并复核。</b>Web 默认展示考虑注入开关后的有效 Core，完整 records 保存采用 compare-and-set 同步 Runtime 规范化正本，Markdown 经过共享清洗，GET 在事务安装期间只读取完整快照；Writer 与 Organizer 已加入上述内容用途约束。正式工作区通过结构化 Memory 事务从 186 条整理为 15 条，Topic 文件从 9 个整理为 4 个；<code>topics/core.md</code>从 31 条、约 15305 token 整理为 3 条、约 429 token，实际注入约 425 token。重复探测、旧工具清单、项目重复检查及失效状态均已从当前视图删除，原内容仍保留在 Memory Git 历史中。自动写入阈值调整为 8000 token，检索只使用整理后的 Topic，不再直接混入 Source 原文。309 个 Memory 单元与组件测试、Memory/Markdown 定点检查、TypeScript、production build、规格复核和质量复核均通过。</div>
 
   <!-- ══════════ 06九个方法 ══════════ -->
   <h2 id="hooks"><span class="num">06</span>接口的九个方法</h2>
