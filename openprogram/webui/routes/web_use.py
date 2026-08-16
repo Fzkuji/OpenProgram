@@ -73,3 +73,20 @@ def register(app: FastAPI) -> None:
 
         get_registry().release_owner(owner_id)
         return {"ok": True}
+
+    @app.post("/api/web-use/release-pages", include_in_schema=False)
+    def release_pages(payload: dict[str, Any]):
+        owner_id = _owner_id(payload)
+        tokens = payload.get("page_context_tokens")
+        if not isinstance(tokens, list) or any(
+            not isinstance(token, str) or not token for token in tokens
+        ):
+            raise HTTPException(status_code=400, detail="invalid page capabilities")
+        from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+            get_registry,
+        )
+
+        released = get_registry().release_page_capabilities(
+            tokens, owner_id=owner_id,
+        )
+        return {"ok": True, "released": released}

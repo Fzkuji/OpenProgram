@@ -160,6 +160,14 @@ def _default_web_use_release_owner(owner_id: str) -> None:
     )
 
 
+def _default_web_use_release_pages(owner_id: str, tokens: list[str]) -> None:
+    _worker_web_use_request(
+        "/api/web-use/release-pages",
+        {"owner_id": owner_id, "page_context_tokens": list(tokens)},
+        timeout=5,
+    )
+
+
 def _worker_web_use_request(
     path: str, body: Mapping[str, Any], *, timeout: float,
 ) -> dict[str, Any]:
@@ -350,6 +358,39 @@ def _web_session_id(raw: Any, arguments: Mapping[str, Any]) -> str:
     return value if isinstance(value, str) else ""
 
 
+def _web_page_context_tokens(raw: Any) -> list[str]:
+    payload: Any = raw
+    if isinstance(raw, AgentToolResult):
+        details = raw.details
+        if isinstance(details, Mapping) and isinstance(details.get("json"), Mapping):
+            payload = details["json"]
+        else:
+            payload = None
+            for item in raw.content:
+                text = getattr(item, "text", None)
+                if not isinstance(text, str):
+                    continue
+                try:
+                    candidate = json.loads(text)
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(candidate, Mapping):
+                    payload = candidate
+                    break
+    if not isinstance(payload, Mapping):
+        return []
+    pages = payload.get("pages")
+    if not isinstance(pages, list):
+        return []
+    return list(dict.fromkeys(
+        token
+        for page in pages
+        if isinstance(page, Mapping)
+        for token in [page.get("page_context_token")]
+        if isinstance(token, str) and token
+    ))
+
+
 class MCPService:
     def __init__(
         self,
@@ -372,6 +413,7 @@ class MCPService:
         event_bus_getter: Callable[[], Any] | None = None,
         web_use_dispatch: Callable[..., Any] | None = None,
         web_use_release_owner: Callable[[str], Any] | None = None,
+        web_use_release_pages: Callable[[str, list[str]], Any] | None = None,
     ) -> None:
         self.context = context
         self._session_db = session_db or default_db()
@@ -414,6 +456,9 @@ class MCPService:
         )
         self._web_use_release_owner = (
             web_use_release_owner or _default_web_use_release_owner
+        )
+        self._web_use_release_pages = (
+            web_use_release_pages or _default_web_use_release_pages
         )
         self._active_lock = threading.RLock()
         self._active_by_request: dict[str, ActiveMCPRequest] = {}
@@ -606,12 +651,19 @@ class MCPService:
                     return
                 state["cleaned"] = True
             session_id = _web_session_id(raw, copied)
+            page_tokens = _web_page_context_tokens(raw)
             if session_id and copied.get("command") != "close":
                 _best_effort(
                     lambda: self._web_use_dispatch(
                         {"command": "close", "web_session_id": session_id},
                         owner_id=self._web_use_owner_id,
                     )
+                )
+            if page_tokens:
+                _best_effort(
+                    self._web_use_release_pages,
+                    self._web_use_owner_id,
+                    page_tokens,
                 )
             if self._closed:
                 _best_effort(

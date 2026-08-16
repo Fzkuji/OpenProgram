@@ -34,6 +34,47 @@ def _allow_binding(_binding_id):
     return {"ok": True}
 
 
+def test_registry_releases_only_requested_unconsumed_page_capabilities():
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        SUPPORTED_BACKENDS,
+        WebUseSessionRegistry,
+    )
+
+    released = []
+    registry = WebUseSessionRegistry(
+        adapters={name: _Adapter(name) for name in SUPPORTED_BACKENDS},
+        binding_validator=_allow_binding,
+        release_context=lambda context: released.append(context["context_id"]),
+    )
+    listed = registry.list_pages(
+        owner_id="owner-1",
+        context={
+            "context_id": "inventory-1",
+            "surfaces": [
+                {"binding_id": "b1", "surface_key": "p1"},
+                {"binding_id": "b2", "surface_key": "p2"},
+            ],
+        },
+    )
+    first, second = [page["page_context_token"] for page in listed["pages"]]
+
+    assert registry.release_page_capabilities(
+        [first], owner_id="other-owner",
+    ) == 0
+    assert registry.release_page_capabilities(
+        [first], owner_id="owner-1",
+    ) == 1
+    assert released == ["inventory-1"]
+
+    observed = registry.execute(
+        command="observe",
+        backend="open_claude_chrome",
+        owner_id="owner-1",
+        page_context_token=second,
+    )
+    assert observed["web_session_id"]
+
+
 def test_registry_supports_three_backends_and_freezes_one_per_session():
     from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,

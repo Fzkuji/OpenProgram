@@ -156,6 +156,7 @@ def _service(
     exposed=None,
     web_use_dispatch=None,
     web_use_release_owner=None,
+    web_use_release_pages=None,
 ) -> MCPService:
     registry = {} if registry is None else registry
     exposed = set(registry) if exposed is None else exposed
@@ -168,6 +169,9 @@ def _service(
         web_use_dispatch=web_use_dispatch,
         web_use_release_owner=(
             web_use_release_owner or (lambda _owner_id: None)
+        ),
+        web_use_release_pages=(
+            web_use_release_pages or (lambda _owner_id, _tokens: None)
         ),
     )
 
@@ -303,6 +307,56 @@ def test_connection_close_sweeps_web_use_session_created_by_late_dispatch(
 
     assert sessions == set()
     assert released == [service._web_use_owner_id, service._web_use_owner_id]
+
+
+def test_cancelled_web_use_list_pages_revokes_only_late_capabilities(
+    client_context,
+) -> None:
+    started = threading.Event()
+    finish = threading.Event()
+    capabilities = {"pct-existing"}
+    released = []
+
+    def dispatch(arguments, *, owner_id):
+        assert arguments == {"command": "list_pages"}
+        started.set()
+        assert finish.wait(timeout=2)
+        capabilities.add("pct-late")
+        return {
+            "ok": True,
+            "pages": [{"page_context_token": "pct-late"}],
+        }
+
+    def release_pages(owner_id, tokens):
+        released.append((owner_id, list(tokens)))
+        capabilities.difference_update(tokens)
+
+    service = _service(
+        client_context,
+        web_use_dispatch=dispatch,
+        web_use_release_pages=release_pages,
+    )
+
+    async def scenario():
+        task = asyncio.create_task(service.web_use_call(
+            {"command": "list_pages"},
+            call_id="web-list-cancel",
+            cancel_event=asyncio.Event(),
+        ))
+        assert await asyncio.to_thread(started.wait, 2)
+        task.cancel()
+        finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        for _ in range(20):
+            if released:
+                break
+            await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+
+    assert capabilities == {"pct-existing"}
+    assert released == [(service._web_use_owner_id, ["pct-late"])]
 
 
 def test_web_use_does_not_reimport_tool_registry_for_normalized_result(

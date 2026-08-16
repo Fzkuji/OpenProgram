@@ -81,3 +81,27 @@ def test_legacy_computer_use_route_is_hidden_and_maps_session_field(monkeypatch)
         "ok": True, "computer_session_id": "cs-legacy",
     }
     assert "/api/computer-use" not in app.openapi()["paths"]
+
+
+def test_internal_release_pages_route_revokes_exact_owner_tokens(monkeypatch):
+    from openprogram.programs.agentic_functions.browser_agent import web_use_runtime
+    from openprogram.webui.routes.web_use import register
+
+    calls = []
+
+    class Registry:
+        def release_page_capabilities(self, tokens, *, owner_id):
+            calls.append((list(tokens), owner_id))
+            return len(tokens)
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: Registry())
+    app = FastAPI()
+    register(app)
+    response = TestClient(app).post("/api/web-use/release-pages", json={
+        "owner_id": "mcp:client:connection",
+        "page_context_tokens": ["pct-1", "pct-2"],
+    })
+
+    assert response.json() == {"ok": True, "released": 2}
+    assert calls == [(["pct-1", "pct-2"], "mcp:client:connection")]
+    assert "/api/web-use/release-pages" not in app.openapi()["paths"]

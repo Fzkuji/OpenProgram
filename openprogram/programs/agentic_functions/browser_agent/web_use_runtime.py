@@ -466,6 +466,33 @@ class WebUseSessionRegistry:
             with self._lock:
                 self._closing_all = False
 
+    def release_page_capabilities(
+        self, tokens: list[str], *, owner_id: str,
+    ) -> int:
+        """Release only unconsumed capabilities issued to one owner."""
+        capabilities = []
+        with self._lock:
+            for token in dict.fromkeys(tokens):
+                value = self._page_capabilities.get(token)
+                if (
+                    value is None
+                    or value["owner_id"] != owner_id
+                    or value["consumed"]
+                ):
+                    continue
+                self._page_capabilities.pop(token, None)
+                capabilities.append(value)
+        released = set()
+        for capability in capabilities:
+            context = capability["context"]
+            key = id(context)
+            if key in released:
+                continue
+            with suppress(Exception):
+                self._release_context(context)
+            released.add(key)
+        return len(capabilities)
+
     def revoke_screenshot(self, web_session_id: str) -> None:
         with self._lock:
             session = self._sessions.get(web_session_id)
