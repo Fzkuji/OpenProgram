@@ -37,6 +37,7 @@ import {
 } from "@/lib/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
 import { browserPageShortcut } from "@/lib/browser-layout";
+import { showToast } from "@/lib/format-utils/toast";
 import {
   isBookmarked,
   subscribeBookmarks,
@@ -124,7 +125,10 @@ function InstallExtensionButton({ bridge, tabId, url }: { bridge: DesktopBridge;
   const label = state === "busy"
     ? text("Installing extension", "正在安装扩展程序")
     : state === "done"
-      ? text("Extension installed", "扩展程序已安装")
+      ? text(
+          "Extension installed. Reload this page to apply it.",
+          "扩展程序已安装。重新加载此网页后生效。",
+        )
       : state === "error"
         ? text("Extension installation failed", "扩展程序安装失败")
         : text("Install extension", "安装扩展程序");
@@ -137,6 +141,12 @@ function InstallExtensionButton({ bridge, tabId, url }: { bridge: DesktopBridge;
         setState("busy");
         void api.installCurrentPage(tabId).then((result) => {
           setState(result.ok ? "done" : result.error === "cancelled" ? "idle" : "error");
+          if (result.ok) {
+            showToast(text(
+              "Extension installed. Reload this page to apply it.",
+              "扩展程序已安装。重新加载此网页后生效。",
+            ));
+          }
         }).catch(() => setState("error"));
       }}
       title={label}

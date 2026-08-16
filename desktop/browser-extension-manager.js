@@ -198,12 +198,20 @@ function parseAndVerifyCrx3(input, expectedExtensionId) {
   ];
   if (proofs.length === 0) throw new Error("missing_signature");
   let developerProof = false;
+  let developerPublicKey = null;
   for (const [proof, algorithm] of proofs) {
     const publicKey = verifyProof(proof, signedPayload, algorithm);
-    if (extensionIdFromPublicKey(publicKey) === extensionId) developerProof = true;
+    if (extensionIdFromPublicKey(publicKey) === extensionId) {
+      developerProof = true;
+      developerPublicKey = Buffer.from(publicKey);
+    }
   }
   if (!developerProof) throw new Error("missing_developer_signature");
-  return { extensionId, archive: Buffer.from(archive) };
+  return {
+    extensionId,
+    developerPublicKey,
+    archive: Buffer.from(archive),
+  };
 }
 
 function readJson(file, fallback) {
@@ -279,6 +287,42 @@ function manifestCompatibility(manifest) {
   };
 }
 
+function manifestMessages(manifest, directory) {
+  const localeNames = [];
+  if (typeof manifest.default_locale === "string") localeNames.push(manifest.default_locale);
+  localeNames.push("en", "en_US");
+  try {
+    localeNames.push(...fs.readdirSync(path.join(directory, "_locales")));
+  } catch (_error) {
+    // A manifest without locales can still use literal labels.
+  }
+  for (const locale of [...new Set(localeNames)]) {
+    if (!/^[A-Za-z0-9_@-]+$/.test(locale)) continue;
+    const file = path.join(directory, "_locales", locale, "messages.json");
+    try {
+      const stat = fs.lstatSync(file);
+      if (!stat.isFile() || stat.size > 1024 * 1024) continue;
+      const messages = readJson(file, null);
+      if (messages && typeof messages === "object") return messages;
+    } catch (_error) {
+      // Try the next safe locale.
+    }
+  }
+  return null;
+}
+
+function resolveManifestText(value, messages, fallback) {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  const lookup = messages && typeof messages === "object"
+    ? new Map(Object.entries(messages).map(([key, entry]) => [key.toLowerCase(), entry]))
+    : new Map();
+  const resolved = value.replace(/__MSG_([A-Za-z0-9_@-]+)__/gi, (token, key) => {
+    const message = lookup.get(String(key).toLowerCase())?.message;
+    return typeof message === "string" && message.trim() ? message : token;
+  }).trim();
+  return /__MSG_[A-Za-z0-9_@-]+__/i.test(resolved) ? fallback : resolved;
+}
+
 function manifestIconPath(manifest, directory) {
   if (!manifest.icons || typeof manifest.icons !== "object") return "";
   const candidates = Object.entries(manifest.icons)
@@ -310,6 +354,7 @@ function inspectExtensionDirectory(directory) {
   if (!manifest || typeof manifest !== "object") throw new Error("manifest_invalid");
   if (typeof manifest.name !== "string" || !manifest.name.trim()) throw new Error("manifest_invalid");
   if (typeof manifest.version !== "string" || !manifest.version.trim()) throw new Error("manifest_invalid");
+  const messages = manifestMessages(manifest, directory);
   const permissions = Array.isArray(manifest.permissions)
     ? manifest.permissions.filter((value) => typeof value === "string")
     : [];
@@ -320,14 +365,34 @@ function inspectExtensionDirectory(directory) {
       : []),
   ].filter((value, index, values) => typeof value === "string" && values.indexOf(value) === index);
   return {
-    name: manifest.name.trim(),
-    description: typeof manifest.description === "string" ? manifest.description.trim() : "",
+    name: resolveManifestText(manifest.name, messages, "Browser extension"),
+    description: resolveManifestText(manifest.description, messages, ""),
     version: manifest.version.trim(),
     permissions,
     hostPermissions,
     iconRelativePath: manifestIconPath(manifest, directory),
     compatibility: manifestCompatibility(manifest),
   };
+}
+
+function bindManifestIdentity(directory, publicKey, expectedExtensionId) {
+  const manifestFile = path.join(directory, "manifest.json");
+  const manifest = readJson(manifestFile, null);
+  if (!manifest || typeof manifest !== "object") throw new Error("manifest_invalid");
+  if (typeof manifest.key === "string" && manifest.key) {
+    const declaredKey = Buffer.from(manifest.key, "base64");
+    try {
+      crypto.createPublicKey({ key: declaredKey, format: "der", type: "spki" });
+    } catch (_error) {
+      throw new Error("manifest_key_invalid");
+    }
+    if (extensionIdFromPublicKey(declaredKey) !== expectedExtensionId) {
+      throw new Error("manifest_key_mismatch");
+    }
+    return;
+  }
+  manifest.key = Buffer.from(publicKey).toString("base64");
+  writeJsonAtomic(manifestFile, manifest);
 }
 
 function validateExtractedTree(root, limits = {}) {
@@ -442,7 +507,13 @@ function createBrowserExtensionManager(options) {
   const loadedKeys = new Set();
   fs.rmSync(stagingRoot, { recursive: true, force: true });
 
-  const persist = () => writeJsonAtomic(registryFile, { version: 1, extensions: entries });
+  const persist = () => {
+    try {
+      writeJsonAtomic(registryFile, { version: 1, extensions: entries });
+    } catch (_error) {
+      throw new Error("registry_write_failed");
+    }
+  };
   const find = (key) => entries.find((entry) => entry.key === key);
   const unload = (entry) => {
     if (entry?.id && loadedKeys.has(entry.key)) extensionApi.removeExtension(entry.id);
@@ -485,13 +556,23 @@ function createBrowserExtensionManager(options) {
       error: "",
     };
     const previousEntries = entries;
+    let priorRemovalPath = "";
     try {
       if (prior) unload(prior);
       if (entry.enabled) await load(entry);
+      if (prior?.managedPath && prior.managedPath !== target && fs.existsSync(prior.managedPath)) {
+        fs.mkdirSync(stagingRoot, { recursive: true });
+        priorRemovalPath = path.join(stagingRoot, `replace-${crypto.randomUUID()}`);
+        fs.renameSync(prior.managedPath, priorRemovalPath);
+      }
       entries = [...entries.filter((item) => item.key !== key), entry];
       persist();
-      if (prior?.managedPath && prior.managedPath !== target) {
-        fs.rmSync(prior.managedPath, { recursive: true, force: true });
+      if (priorRemovalPath) {
+        try {
+          fs.rmSync(priorRemovalPath, { recursive: true, force: true });
+        } catch (_cleanupError) {
+          // Startup cleanup removes committed replacement orphans.
+        }
       }
       return publicEntry(entry, loadedKeys);
     } catch (error) {
@@ -502,6 +583,10 @@ function createBrowserExtensionManager(options) {
         loadedKeys.delete(key);
       }
       fs.rmSync(target, { recursive: true, force: true });
+      if (priorRemovalPath && fs.existsSync(priorRemovalPath) && prior?.managedPath) {
+        fs.mkdirSync(path.dirname(prior.managedPath), { recursive: true });
+        fs.renameSync(priorRemovalPath, prior.managedPath);
+      }
       if (prior?.enabled && !loadedKeys.has(prior.key)) {
         try {
           await load(prior);
@@ -560,6 +645,11 @@ function createBrowserExtensionManager(options) {
         const verified = parseAndVerifyCrx3(bytes, listing.extensionId);
         await extractArchive(verified.archive, path.join(stage, "unpacked"));
         validateExtractedTree(path.join(stage, "unpacked"));
+        bindManifestIdentity(
+          path.join(stage, "unpacked"),
+          verified.developerPublicKey,
+          listing.extensionId,
+        );
         const extension = await prepareAndInstall(
           stage,
           listing.store,
@@ -619,6 +709,9 @@ function createBrowserExtensionManager(options) {
     async setEnabled(key, enabled) {
       const entry = find(String(key || ""));
       if (!entry) return { ok: false, error: "extension_not_found" };
+      const wasEnabled = entry.enabled;
+      const wasLoaded = loadedKeys.has(entry.key);
+      let registryWriteStarted = false;
       try {
         if (enabled) {
           if (entry.compatibility?.status === "incompatible") {
@@ -629,11 +722,27 @@ function createBrowserExtensionManager(options) {
           unload(entry);
         }
         entry.enabled = Boolean(enabled);
+        registryWriteStarted = true;
         persist();
         return { ok: true, extension: publicEntry(entry, loadedKeys) };
       } catch (error) {
-        entry.error = safeCode(error);
-        persist();
+        const failureCode = safeCode(error);
+        entry.enabled = wasEnabled;
+        try {
+          if (wasLoaded && !loadedKeys.has(entry.key)) await load(entry);
+          if (!wasLoaded && loadedKeys.has(entry.key)) unload(entry);
+        } catch (_restoreError) {
+          entry.error = "restore_failed";
+          return { ok: false, error: entry.error };
+        }
+        entry.error = failureCode;
+        if (!registryWriteStarted) {
+          try {
+            persist();
+          } catch (_persistError) {
+            // A load/unload failure remains visible for this process.
+          }
+        }
         return { ok: false, error: entry.error };
       }
     },
@@ -650,7 +759,11 @@ function createBrowserExtensionManager(options) {
         return { ok: true, extension: publicEntry(entry, loadedKeys) };
       } catch (error) {
         entry.error = safeCode(error);
-        persist();
+        try {
+          persist();
+        } catch (_persistError) {
+          // The prior enabled registry entry remains authoritative.
+        }
         return { ok: false, error: entry.error };
       }
     },
@@ -707,6 +820,7 @@ function createBrowserExtensionManager(options) {
 
 module.exports = {
   createBrowserExtensionManager,
+  bindManifestIdentity,
   extensionIdFromPublicKey,
   inspectExtensionDirectory,
   isAllowedStoreResponseUrl,

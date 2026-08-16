@@ -5,8 +5,10 @@ const os = require("node:os");
 const path = require("node:path");
 
 const {
+  bindManifestIdentity,
   createBrowserExtensionManager,
   extensionIdFromPublicKey,
+  inspectExtensionDirectory,
   isAllowedStoreResponseUrl,
   parseAndVerifyCrx3,
   parseStoreListing,
@@ -128,11 +130,34 @@ const crx = signedCrx(zip, privateKey, publicKey);
 const verified = parseAndVerifyCrx3(crx.bytes, crx.id);
 assert.equal(verified.extensionId, crx.id);
 assert.deepEqual(verified.archive, zip);
+assert.deepEqual(verified.developerPublicKey, publicKey.export({ type: "spki", format: "der" }));
 
 const tampered = Buffer.from(crx.bytes);
 tampered[tampered.length - 30] ^= 1;
 assert.throws(() => parseAndVerifyCrx3(tampered, crx.id), /invalid_signature/);
 assert.throws(() => parseAndVerifyCrx3(crx.bytes, edgeId), /extension_id_mismatch/);
+
+const localeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-extension-locale-"));
+fs.mkdirSync(path.join(localeRoot, "_locales", "en"), { recursive: true });
+fs.writeFileSync(path.join(localeRoot, "manifest.json"), JSON.stringify({
+  manifest_version: 2,
+  name: "__MSG_extensionName__",
+  description: "__MSG_extensionDescription__",
+  version: "1.0.0",
+  default_locale: "en",
+}));
+fs.writeFileSync(path.join(localeRoot, "_locales", "en", "messages.json"), JSON.stringify({
+  extensionName: { message: "Readable extension name" },
+  extensionDescription: { message: "Readable description" },
+}));
+assert.deepEqual(
+  {
+    name: inspectExtensionDirectory(localeRoot).name,
+    description: inspectExtensionDirectory(localeRoot).description,
+  },
+  { name: "Readable extension name", description: "Readable description" },
+);
+fs.rmSync(localeRoot, { recursive: true, force: true });
 
 async function managerChecks() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-extensions-"));
@@ -142,7 +167,8 @@ async function managerChecks() {
     async loadExtension(directory) {
       const manifest = JSON.parse(fs.readFileSync(path.join(directory, "manifest.json"), "utf8"));
       loads.push(directory);
-      return { id: crx.id, name: manifest.name, version: manifest.version };
+      const derivedId = extensionIdFromPublicKey(Buffer.from(manifest.key, "base64"));
+      return { id: derivedId, name: manifest.name, version: manifest.version };
     },
     removeExtension(id) {
       removals.push(id);
@@ -204,15 +230,33 @@ async function managerChecks() {
     hasManagedPath: false,
   }]);
 
+  const originalRenameSync = fs.renameSync;
+  fs.renameSync = (source, destination) => {
+    if (String(destination).endsWith(path.join("browser-extensions", "registry.json"))) {
+      throw new Error("registry unavailable");
+    }
+    return originalRenameSync(source, destination);
+  };
+  try {
+    assert.deepEqual(await manager.setEnabled(installed.extension.key, false), {
+      ok: false,
+      error: "registry_write_failed",
+    });
+  } finally {
+    fs.renameSync = originalRenameSync;
+  }
+  assert.equal(manager.list()[0].enabled, true);
+  assert.equal(manager.list()[0].loaded, true);
+
   await manager.setEnabled(installed.extension.key, false);
-  assert.deepEqual(removals, [crx.id]);
+  assert.deepEqual(removals, [crx.id, crx.id]);
   assert.equal(manager.list()[0].enabled, false);
   assert.deepEqual(await manager.reload(installed.extension.key), {
     ok: false,
     error: "extension_disabled",
   });
   await manager.setEnabled(installed.extension.key, true);
-  assert.equal(loads.length, 2);
+  assert.equal(loads.length, 3);
 
   const restoredLoads = [];
   const restored = createBrowserExtensionManager({
@@ -220,7 +264,8 @@ async function managerChecks() {
     extensions: {
       async loadExtension(directory) {
         restoredLoads.push(directory);
-        return { id: crx.id };
+        const manifest = JSON.parse(fs.readFileSync(path.join(directory, "manifest.json"), "utf8"));
+        return { id: extensionIdFromPublicKey(Buffer.from(manifest.key, "base64")) };
       },
       removeExtension() {},
     },
@@ -249,7 +294,8 @@ async function managerChecks() {
     extensions: {
       async loadExtension(directory) {
         assert.equal(fs.existsSync(path.join(directory, "manifest.json")), true);
-        return { id: crx.id };
+        const manifest = JSON.parse(fs.readFileSync(path.join(directory, "manifest.json"), "utf8"));
+        return { id: extensionIdFromPublicKey(Buffer.from(manifest.key, "base64")) };
       },
       removeExtension() {},
     },
@@ -258,6 +304,74 @@ async function managerChecks() {
   });
   assert.equal((await extracted.installFromStoreUrl(listing)).ok, true);
   fs.rmSync(extractionRoot, { recursive: true, force: true });
+
+  const replacementRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-extension-replace-"));
+  let replacementVersion = "1.0.0";
+  const replacementExtract = async (_archive, destination) => {
+    fs.mkdirSync(destination, { recursive: true });
+    fs.writeFileSync(path.join(destination, "manifest.json"), JSON.stringify({
+      manifest_version: 2,
+      name: "Replacement",
+      version: replacementVersion,
+    }));
+  };
+  const replacementExtensions = {
+    async loadExtension(directory) {
+      const manifest = JSON.parse(fs.readFileSync(path.join(directory, "manifest.json"), "utf8"));
+      return {
+        id: extensionIdFromPublicKey(Buffer.from(manifest.key, "base64")),
+        version: manifest.version,
+      };
+    },
+    removeExtension() {},
+  };
+  const replacementManager = createBrowserExtensionManager({
+    userDataPath: replacementRoot,
+    extensions: replacementExtensions,
+    fetch,
+    extractArchive: replacementExtract,
+    confirm: async () => true,
+  });
+  assert.equal((await replacementManager.installFromStoreUrl(listing)).ok, true);
+  replacementVersion = "2.0.0";
+  const originalRmSync = fs.rmSync;
+  fs.rmSync = (target, options) => {
+    if (path.basename(String(target)).startsWith("replace-")) throw new Error("prior_cleanup_failed");
+    return originalRmSync(target, options);
+  };
+  try {
+    const replacement = await replacementManager.installFromStoreUrl(listing);
+    assert.equal(replacement.ok, true);
+    assert.equal(replacement.extension.version, "2.0.0");
+  } finally {
+    fs.rmSync = originalRmSync;
+  }
+  const replacementRestored = createBrowserExtensionManager({
+    userDataPath: replacementRoot,
+    extensions: replacementExtensions,
+    fetch,
+    extractArchive: replacementExtract,
+    confirm: async () => true,
+  });
+  assert.equal((await replacementRestored.restore())[0].version, "2.0.0");
+  fs.rmSync(replacementRoot, { recursive: true, force: true });
+
+  const identityRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-extension-identity-"));
+  fs.writeFileSync(path.join(identityRoot, "manifest.json"), JSON.stringify({
+    manifest_version: 3,
+    name: "Identity",
+    version: "1.0.0",
+  }));
+  bindManifestIdentity(identityRoot, verified.developerPublicKey, crx.id);
+  const identityManifest = JSON.parse(fs.readFileSync(path.join(identityRoot, "manifest.json"), "utf8"));
+  assert.equal(extensionIdFromPublicKey(Buffer.from(identityManifest.key, "base64")), crx.id);
+  identityManifest.key = Buffer.from("wrong-key").toString("base64");
+  fs.writeFileSync(path.join(identityRoot, "manifest.json"), JSON.stringify(identityManifest));
+  assert.throws(
+    () => bindManifestIdentity(identityRoot, verified.developerPublicKey, crx.id),
+    /manifest_key_invalid|manifest_key_mismatch/,
+  );
+  fs.rmSync(identityRoot, { recursive: true, force: true });
 
   const registryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-extension-registry-"));
   const external = path.join(registryRoot, "do-not-delete");
@@ -316,6 +430,7 @@ async function managerChecks() {
   assert.match(paneSource, /microsoftedge\.microsoft\.com\/addons\/Microsoft-Edge-Extensions-Home/);
   assert.match(webTabSource, /<InstallExtensionButton bridge=\{bridge\} tabId=\{tabId\} url=\{effectiveUrl\} \/>/);
   assert.match(webTabSource, /api\.installCurrentPage\(tabId\)/);
+  assert.match(webTabSource, /showToast\(text\([\s\S]*Extension installed\. Reload this page to apply it\./);
   assert.equal(packageJson.dependencies["extract-zip"], "2.0.1");
   assert.equal(packageJson.build.files.includes("browser-extension-manager.js"), true);
 }

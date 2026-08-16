@@ -723,6 +723,7 @@ function ExtensionsPage() {
   const [storeUrl, setStoreUrl] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const refresh = useCallback(() => {
     if (!api) return;
     void api.list().then(setEntries).catch(() => setEntries([]));
@@ -732,12 +733,18 @@ function ExtensionsPage() {
     refresh();
   }, [refresh]);
 
-  async function run(key: string, operation: () => Promise<{ ok: boolean; error?: string }>) {
+  async function run(
+    key: string,
+    operation: () => Promise<{ ok: boolean; error?: string }>,
+    successMessage = "",
+  ) {
     setBusy(key);
     setError("");
+    setNotice("");
     try {
       const result = await operation();
       if (!result.ok && result.error !== "cancelled") setError(result.error || "extension_operation_failed");
+      if (result.ok && successMessage) setNotice(successMessage);
       refresh();
     } catch {
       setError("extension_operation_failed");
@@ -781,7 +788,11 @@ function ExtensionsPage() {
               type="button"
               className={styles.builtinClear}
               disabled={Boolean(busy)}
-              onClick={() => void run("folder", () => api.installFolder())}
+              onClick={() => void run(
+                "folder",
+                () => api.installFolder(),
+                text("Installed. Reload open pages to apply it.", "已安装。重新加载已打开的网页后生效。"),
+              )}
             >
               <Folder size={14} aria-hidden="true" />
               {text("Add from folder", "从文件夹安装")}
@@ -797,7 +808,11 @@ function ExtensionsPage() {
             aria-label={text("Extension store link", "扩展商店链接")}
             onKeyDown={(event) => {
               if (event.key === "Enter" && storeUrl.trim() && !busy) {
-                void run("store", () => api.installStoreUrl(storeUrl.trim()));
+                void run(
+                  "store",
+                  () => api.installStoreUrl(storeUrl.trim()),
+                  text("Installed. Reload open pages to apply it.", "已安装。重新加载已打开的网页后生效。"),
+                );
               }
             }}
           />
@@ -805,12 +820,17 @@ function ExtensionsPage() {
             type="button"
             className={styles.builtinClear}
             disabled={!storeUrl.trim() || Boolean(busy)}
-            onClick={() => void run("store", () => api.installStoreUrl(storeUrl.trim()))}
+            onClick={() => void run(
+              "store",
+              () => api.installStoreUrl(storeUrl.trim()),
+              text("Installed. Reload open pages to apply it.", "已安装。重新加载已打开的网页后生效。"),
+            )}
           >
             {text("Install", "安装")}
           </button>
         </div>
         {error ? <div role="status" className="text-xs text-[var(--accent-red)]">{error}</div> : null}
+        {notice ? <div role="status" className="text-xs text-[var(--text-muted)]">{notice}</div> : null}
         {entries === null ? null : entries.length === 0 ? (
           <div className="bookmarks-empty">
             {text("No extensions installed", "尚未安装扩展程序")}
