@@ -455,9 +455,17 @@ def test_core_save_lands_on_the_master_and_is_rendered(client, memory):
     assert "Always on." in (memory / "core.md").read_text(encoding="utf-8")
 
     read_back = client.get("/api/memory/core")
-    assert read_back.json()["content"] == (
+    payload = read_back.json()
+    assert payload["content"] == (
         memory / "topics" / "core.md"
     ).read_text(encoding="utf-8")
+    assert payload["rendered_content"] == (
+        memory / "core.md"
+    ).read_text(encoding="utf-8")
+    assert payload["rendered_size"] == (memory / "core.md").stat().st_size
+    assert payload["rendered_mtime"] == (memory / "core.md").stat().st_mtime
+    assert 0 < payload["rendered_tokens"] <= payload["budget_tokens"]
+    assert payload["budget_tokens"] == 2_000
 
 
 def test_delete_is_refused_while_another_topic_links_into_it(client, memory):

@@ -15,5 +15,11 @@ assert.doesNotMatch(memoryCss, /\.writerStatus/);
 assert.doesNotMatch(memoryPage, /\/api\/memory\/status/);
 assert.doesNotMatch(memoryPage, /Commitments|commitments/);
 assert.doesNotMatch(memoryCss, /commitment/);
+assert.match(memoryPage, /useState<"injected" \| "records">\("injected"\)/);
+assert.match(memoryPage, /data\.rendered_content/);
+assert.match(memoryPage, /renderedTokens/);
+assert.match(memoryPage, /topics\/core\.md/);
+assert.match(memoryPage, /styles\.coreViewSwitch/);
+assert.match(memoryCss, /\.coreViewSwitch\s*\{/);
 
 console.log("check-memory-status: ok");

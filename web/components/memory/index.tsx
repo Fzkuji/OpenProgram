@@ -73,7 +73,16 @@ export function MemoryPage() {
 
   // Core state
   const [coreEditor, setCoreEditor] = useState<EditorState>({ content: "", saving: false, saveStatus: "", viewMode: "edit" });
-  const [coreMeta, setCoreMeta] = useState<{ size: number; mtime: number } | null>(null);
+  const [coreView, setCoreView] = useState<"injected" | "records">("injected");
+  const [coreRendered, setCoreRendered] = useState("");
+  const [coreMeta, setCoreMeta] = useState<{
+    size: number;
+    mtime: number;
+    renderedSize: number;
+    renderedMtime: number;
+    renderedTokens: number;
+    budgetTokens: number;
+  } | null>(null);
   const [coreLoading, setCoreLoading] = useState(true);
 
   const fetchTopics = useCallback(() => {
@@ -110,16 +119,26 @@ export function MemoryPage() {
       .catch(() => setRecentLoading(false));
   }, []);
 
-  useEffect(() => {
-    fetch("/api/memory/core")
+  const fetchCore = useCallback(() => {
+    return fetch("/api/memory/core")
       .then((r) => r.json())
       .then((data) => {
         setCoreEditor((e) => ({ ...e, content: data.content ?? "" }));
-        setCoreMeta({ size: data.size ?? 0, mtime: data.mtime ?? 0 });
+        setCoreRendered(data.rendered_content ?? "");
+        setCoreMeta({
+          size: data.size ?? 0,
+          mtime: data.mtime ?? 0,
+          renderedSize: data.rendered_size ?? 0,
+          renderedMtime: data.rendered_mtime ?? 0,
+          renderedTokens: data.rendered_tokens ?? 0,
+          budgetTokens: data.budget_tokens ?? 2000,
+        });
         setCoreLoading(false);
       })
       .catch(() => setCoreLoading(false));
   }, []);
+
+  useEffect(() => { void fetchCore(); }, [fetchCore]);
 
   const openTopic = useCallback((page: TopicPage) => {
     setSelectedTopic(page);
@@ -192,6 +211,7 @@ export function MemoryPage() {
         const detail = await r.json().catch(() => ({}));
         if (detail.error) alert(detail.error);
       }
+      if (r.ok) await fetchCore();
       setCoreEditor((e) => ({ ...e, saving: false, saveStatus: r.ok ? "saved" : "error" }));
     } catch {
       setCoreEditor((e) => ({ ...e, saving: false, saveStatus: "error" }));
@@ -459,22 +479,50 @@ export function MemoryPage() {
                 </div>
                 <div className={styles.coreInfoTitle}>{text("Core Memory", "核心记忆")}</div>
                 <div className={styles.coreInfoDesc}>
-                  {text(
-                    "Injected into every system prompt. Keep it under 2 KB. Use concise facts about the user and current context.",
-                    "会注入到每次系统提示词中。请控制在 2 KB 以内，记录关于用户和当前上下文的简洁事实。",
-                  )}
+                  {coreView === "injected"
+                    ? text(
+                      "The exact read-only block injected into every system prompt, rendered from the Core records within its token budget.",
+                      "每次系统提示词实际注入的只读内容，由完整 Core 记录按 token 预算派生。",
+                    )
+                    : text(
+                      "The editable Core records. Keep only facts and rules needed across most future conversations.",
+                      "可编辑的完整 Core 记录。这里只保留多数未来对话都需要的事实和规则。",
+                    )}
+                </div>
+                <div className={styles.coreViewSwitch} role="group" aria-label={text("Core view", "Core 视图")}>
+                  <button
+                    className={coreView === "injected" ? styles.coreViewButtonActive : styles.coreViewButton}
+                    aria-pressed={coreView === "injected"}
+                    onClick={() => setCoreView("injected")}
+                  >
+                    {text("Injected", "实际注入")}
+                  </button>
+                  <button
+                    className={coreView === "records" ? styles.coreViewButtonActive : styles.coreViewButton}
+                    aria-pressed={coreView === "records"}
+                    onClick={() => setCoreView("records")}
+                  >
+                    {text("Core records", "完整记录")}
+                  </button>
                 </div>
                 {coreMeta && (
                   <div className={styles.coreInfoMeta}>
-                    <span className={coreMeta.size > 2048 ? styles.metaWarn : styles.metaOk}>
-                      {formatSize(coreMeta.size)}
-                      {coreMeta.size > 2048
-                        ? text(" exceeds 2 KB", " 超过 2 KB")
-                        : " / 2 KB"}
-                    </span>
-                    {coreMeta.mtime > 0 && (
+                    {coreView === "injected" ? (
+                      <>
+                        <span className={coreMeta.renderedTokens > coreMeta.budgetTokens ? styles.metaWarn : styles.metaOk}>
+                          {coreMeta.renderedTokens} / {coreMeta.budgetTokens} tokens
+                        </span>
+                        <span>{formatSize(coreMeta.renderedSize)}</span>
+                      </>
+                    ) : (
+                      <span>{formatSize(coreMeta.size)}</span>
+                    )}
+                    {(coreView === "injected" ? coreMeta.renderedMtime : coreMeta.mtime) > 0 && (
                       <span>
-                        {text(`Modified ${formatDate(coreMeta.mtime, locale)}`, `修改于 ${formatDate(coreMeta.mtime, locale)}`)}
+                        {text(
+                          `Modified ${formatDate(coreView === "injected" ? coreMeta.renderedMtime : coreMeta.mtime, locale)}`,
+                          `修改于 ${formatDate(coreView === "injected" ? coreMeta.renderedMtime : coreMeta.mtime, locale)}`,
+                        )}
                       </span>
                     )}
                   </div>
@@ -484,15 +532,35 @@ export function MemoryPage() {
               <div className={styles.rightPane}>
                 {coreLoading ? (
                   <LoadingSkeleton />
-                ) : (
+                ) : coreView === "records" ? (
                   <EditorPanel
-                    title="core.md"
+                    title="topics/core.md"
                     meta={[]}
                     state={coreEditor}
                     onChange={(c) => setCoreEditor((e) => ({ ...e, content: c, saveStatus: "" }))}
                     onSave={saveCore}
                     onViewMode={(m) => setCoreEditor((e) => ({ ...e, viewMode: m }))}
                   />
+                ) : (
+                  <div className={styles.editor}>
+                    <div className={styles.editorHeader}>
+                      <div className={styles.editorHeaderLeft}>
+                        <SparklesIcon size={14} />
+                        <span className={styles.editorTitle}>core.md</span>
+                      </div>
+                      <div className={styles.editorActions}>
+                        <span className={styles.fileMeta}>
+                          {coreMeta?.renderedTokens ?? 0} / {coreMeta?.budgetTokens ?? 2000} tokens
+                        </span>
+                      </div>
+                    </div>
+                    <div className={styles.preview}>
+                      <div
+                        className={styles.markdown}
+                        dangerouslySetInnerHTML={{ __html: coreRendered ? renderMarkdown(coreRendered) : `<em>${text("No Core memory is currently injected", "当前没有注入 Core 记忆")}</em>` }}
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
             </>

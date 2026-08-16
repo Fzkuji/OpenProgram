@@ -300,6 +300,30 @@ def test_source_text_stays_literal_through_writer_and_archive(tmp_path):
     )
 
 
+def test_writer_records_future_useful_facts_without_polluting_core():
+    from openprogram.memory.management.api import render_writer_task
+
+    task = render_writer_task([{
+        "observation_date": "2026-08-17",
+        "turns": [("Owner", "The same file is unchanged for the sixth check.")],
+        "refs": ["turn-1"],
+    }])
+
+    assert "Review every supplied record" in task
+    assert "record only information likely to help in a future interaction" in task
+    assert "repeated unchanged checks" in task
+    assert "Project-specific state belongs in its project Topic" in task
+    assert "Do not put ordinary project progress in `topics/core.md`" in task
+
+
+def test_organizer_removes_low_value_process_history_from_core():
+    from openprogram.memory.prompts import ORGANIZE_MEMORY
+
+    assert "repeated status checks" in ORGANIZE_MEMORY
+    assert "project-specific material out of `topics/core.md`" in ORGANIZE_MEMORY
+    assert "Git records the prior state" in ORGANIZE_MEMORY
+
+
 def test_a_written_date_is_left_alone():
     """``archive_sessions`` builds records from an observation date. It
     is already what the memory layer stores, so it passes through."""
