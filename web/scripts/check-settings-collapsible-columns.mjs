@@ -44,7 +44,7 @@ assert.match(providerItem, /title=\{p\.label\}/);
 
 assert.match(css, /\.body\.settingsNavCollapsed\s*\{[^}]*grid-template-columns:\s*49px minmax\(0, 1fr\)/s);
 assert.match(css, /\.railHeader\s*\{[^}]*height:\s*32px/s);
-assert.match(css, /\.railTitle\s*\{[^}]*font-size:\s*18px[^}]*line-height:\s*1(?:;|\s)/s);
+assert.match(css, /\.railTitle\s*\{[^}]*font-size:\s*18px[^}]*line-height:\s*1\.2(?:;|\s)/s);
 assert.match(css, /\.pageTitle\s*\{[^}]*font-size:\s*18px[^}]*overflow-wrap:\s*anywhere/s);
 assert.match(sidebar, /className="text-\[20px\] font-bold tracking-\[-0\.01em\] whitespace-nowrap"/);
 assert.match(css, /\.railItems\s*\{[^}]*margin-top:\s*15px/s);
