@@ -10,9 +10,8 @@
  *      DiceBear style + Letter + Custom upload. Selected tile gets a
  *      subtle amber-tinted border so the user can see the choice
  *      without reading the labels.
- *   2. **Seed input** (DiceBear sources only) — free-text + a
- *      randomise button. The seed string fully determines which glyph
- *      the chosen style renders.
+ *   2. **Variant grid** (DiceBear sources only) — a regenerated batch
+ *      that covers every shipped style and randomises each seed.
  *   3. **Upload input** (Custom source only) — file picker wired to
  *      ``fileToDataUrl``. Animated GIF / WebP play in place.
  *
@@ -26,9 +25,13 @@
 import { useRef, useState, type CSSProperties } from "react";
 
 import { Avatar } from "./Avatar";
-import { AVATAR_STYLES } from "./styles";
+import { AVATAR_STYLES } from "./style-options";
 import type { AvatarConfig, AvatarStyle } from "./types";
 import { UPLOAD_ACCEPT, UPLOAD_MAX_BYTES, fileToDataUrl } from "./upload";
+import {
+  randomAvatarVariants,
+  type AvatarVariant,
+} from "./variants";
 
 /** What the picker offers as "one click" choices. The DiceBear
  *  styles each get their own entry; ``letter`` and ``upload`` are
@@ -54,15 +57,13 @@ export function sourceOf(cfg: AvatarConfig | undefined): AvatarSource {
  *  drives the variant grid below, not the style tiles. */
 const STYLE_PICKER_SEED = "Sample";
 
-/** Initial variant seeds shown as a grid for the currently-selected
- *  DiceBear style. 16 stable strings (two full rows of 8) give the
- *  user "browse and pick" semantics without the dice-roll feel of the
- *  old Random button.
+/** Initial variants show all shipped styles before the first user action.
+ *  Sixteen stable seeds fill two rows of eight.
  *  Strings are intentionally short + memorable so initials-style users
  *  get readable two-letter chips when this style is active.
  *
  *  This is the FIRST batch only — the Regenerate (↻) button next to
- *  the variant grid swaps in a fresh batch of random seeds. Keeping
+ *  the variant grid swaps in a fresh batch of styles and seeds. Keeping
  *  the first batch a fixed constant (not random) means SSR and the
  *  initial client render produce identical markup; randomisation only
  *  happens in a user-triggered click handler, never during render. */
@@ -71,14 +72,12 @@ const INITIAL_VARIANT_SEEDS = [
   "Indigo", "Juno", "Klein",  "Lumen",  "Mica",  "Nova",  "Onyx",  "Pearl",
 ];
 
-/** Build a fresh batch of N random seed strings for the Regenerate
- *  button. Short base36 chunks — readable and collision-free enough
- *  for a 12-item grid. */
-function _randomVariantSeeds(n: number): string[] {
-  return Array.from({ length: n }, () =>
-    Math.random().toString(36).slice(2, 9),
-  );
-}
+const INITIAL_VARIANTS: AvatarVariant[] = INITIAL_VARIANT_SEEDS.map(
+  (seed, index) => ({
+    seed,
+    style: AVATAR_STYLES[index % AVATAR_STYLES.length]!.id,
+  }),
+);
 
 export interface AvatarPickerProps {
   /** Current avatar config. ``undefined`` is treated as the default
@@ -106,10 +105,10 @@ export function AvatarPicker({
 }: AvatarPickerProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  // The set of seeds the variant grid currently offers. Starts as the
-  // fixed first batch; the ↻ button replaces it with random seeds.
-  const [variantSeeds, setVariantSeeds] = useState<string[]>(
-    INITIAL_VARIANT_SEEDS,
+  // The candidates currently offered. Starts with a stable all-style
+  // batch; the ↻ button replaces it with random style/seed pairs.
+  const [variants, setVariants] = useState<AvatarVariant[]>(
+    INITIAL_VARIANTS,
   );
   // Drives the one-shot spin of the ↻ glyph on each regenerate click.
   const [spinning, setSpinning] = useState(false);
@@ -118,7 +117,12 @@ export function AvatarPicker({
   const isDicebear = source !== "letter" && source !== "upload";
 
   function regenerate() {
-    setVariantSeeds(_randomVariantSeeds(16));
+    setVariants(
+      randomAvatarVariants(
+        AVATAR_STYLES.map((style) => style.id),
+        16,
+      ),
+    );
     // Restart the spin: drop to false this frame, raise next frame so
     // the CSS animation re-triggers even on rapid repeat clicks.
     setSpinning(false);
@@ -145,11 +149,11 @@ export function AvatarPicker({
     });
   }
 
-  function pickVariant(seed: string) {
+  function pickVariant(variant: AvatarVariant) {
     onChange({
       kind: "dicebear",
-      style: (value?.style ?? "shapes") as AvatarStyle,
-      seed,
+      style: variant.style,
+      seed: variant.seed,
     });
   }
 
@@ -174,9 +178,8 @@ export function AvatarPicker({
       <div
         style={{
           display: "grid",
-          // 8 even columns. Style picker (11 tiles) fills row 1 fully
-          // (8) + 3 on row 2; the variant grid below uses the SAME
-          // 8-column / same-maxWidth setup so both blocks share left
+          // 8 even columns. The variant grid below uses the same
+          // 8-column / max-width setup so both blocks share left
           // and right edges instead of one being wider than the other.
           gridTemplateColumns: "repeat(8, 1fr)",
           gap: 8,
@@ -250,13 +253,8 @@ export function AvatarPicker({
         </button>
       </div>
 
-      {/* Variant grid — when a DiceBear style is active, show a batch
-          of seeds rendered IN THAT STYLE. The user clicks the one
-          they like; that seed becomes their avatar. The ↻ button to
-          the right of the caption swaps in a fresh batch of random
-          seeds, so "browse and pick" can keep going until something
-          clicks — without the dice-roll-into-the-void feel of the
-          old single Random button. */}
+      {/* Variant grid — every batch covers all shipped styles and gives
+          each candidate its own seed. Clicking one stores both fields. */}
       {isDicebear && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div
@@ -269,8 +267,7 @@ export function AvatarPicker({
             }}
           >
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              Pick a variant — each renders the same style with a
-              different seed.
+              Pick a variant — each batch includes every avatar style.
             </span>
             <button
               type="button"
@@ -293,30 +290,36 @@ export function AvatarPicker({
             style={{
               display: "grid",
               // Same 8-column / 544px setup as the style picker above
-              // so the two blocks line up edge to edge. 16 seeds →
+              // so the two blocks line up edge to edge. 16 variants →
               // two full rows of 8.
               gridTemplateColumns: "repeat(8, 1fr)",
               gap: 8,
               maxWidth: 544,
             }}
           >
-            {variantSeeds.map((seed) => {
-              const selected = (value?.seed ?? name) === seed;
+            {variants.map((variant) => {
+              const selected =
+                (value?.style ?? "shapes") === variant.style &&
+                (value?.seed ?? name) === variant.seed;
+              const styleLabel =
+                AVATAR_STYLES.find((style) => style.id === variant.style)
+                  ?.label ?? variant.style;
               return (
                 <button
-                  key={seed}
+                  key={`${variant.style}:${variant.seed}`}
                   type="button"
-                  onClick={() => pickVariant(seed)}
-                  title={seed}
+                  onClick={() => pickVariant(variant)}
+                  title={`${styleLabel}: ${variant.seed}`}
+                  aria-label={`Use ${styleLabel} avatar variant`}
                   className={_variantTile(selected)}
                 >
                   <Avatar
                     size={40}
-                    name={seed}
+                    name={variant.seed}
                     config={{
                       kind: "dicebear",
-                      style: (value?.style ?? "shapes") as AvatarStyle,
-                      seed,
+                      style: variant.style,
+                      seed: variant.seed,
                     }}
                   />
                 </button>

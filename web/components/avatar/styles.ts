@@ -1,18 +1,13 @@
 /**
  * DiceBear style registry.
  *
- * Each entry in ``AVATAR_STYLES`` ships with both UI metadata
- * (``label`` / ``hint`` for the picker) and a runtime handle (the
- * DiceBear style namespace, stashed on ``STYLES``). Adding a new
- * style is a 3-line change in this file plus an ``npm install``:
+ * Runtime handles for every shipped DiceBear style. Adding a new
+ * style requires the package import and runtime entry here, plus its
+ * UI entry in ``style-options.ts``:
  *
  *   1. ``npm install @dicebear/<style>``
  *   2. Add ``import * as <name> from "@dicebear/<name>";`` below.
- *   3. Add an entry to ``STYLES`` and ``AVATAR_STYLES``.
- *
- * Keeping the registry in one place means ``<Avatar>``,
- * ``<AvatarPicker>``, and the type union in ``types.ts`` stay in sync
- * automatically.
+ *   3. Add an entry to ``STYLES`` and ``style-options.ts``.
  */
 
 import * as shapes from "@dicebear/shapes";
@@ -56,25 +51,4 @@ export const STYLES = {
   identicon,
   rings,
   initials,
-} as const;
-
-/** UI metadata for the style picker. Order is the order tiles render
- *  in — characters first, then geometric / fun, with the minimal
- *  Initials last. ``Shapes`` is first because it's the default for
- *  new profiles. */
-export const AVATAR_STYLES: { id: AvatarStyle; label: string; hint: string }[] = [
-  { id: "shapes",     label: "Shapes",     hint: "Abstract geometric (default)" },
-  { id: "avataaars",  label: "Avataaars",  hint: "Sketch-style portrait characters" },
-  { id: "adventurer", label: "Adventurer", hint: "Illustrated adventurer faces" },
-  { id: "micah",      label: "Micah",      hint: "Flat illustrated portraits" },
-  { id: "openPeeps",  label: "Open Peeps", hint: "Hand-drawn people" },
-  { id: "personas",   label: "Personas",  hint: "Clean vector personas" },
-  { id: "bigSmile",   label: "Big Smile",  hint: "Cheerful cartoon faces" },
-  { id: "funEmoji",   label: "Fun Emoji",  hint: "Simple emoji-like faces" },
-  { id: "bottts",     label: "Bottts",     hint: "Robot avatars" },
-  { id: "thumbs",     label: "Thumbs",     hint: "Rounded thumb characters" },
-  { id: "pixelArt",   label: "Pixel Art",  hint: "8-bit retro characters" },
-  { id: "identicon",  label: "Identicon",  hint: "GitHub-style geometric hash" },
-  { id: "rings",      label: "Rings",      hint: "Concentric colour rings" },
-  { id: "initials",   label: "Initials",   hint: "Letter on coloured chip" },
-];
+} as const satisfies Record<AvatarStyle, unknown>;
