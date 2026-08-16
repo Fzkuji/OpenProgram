@@ -60,7 +60,15 @@ duplicated in this historical distribution ledger.
   the managed private runtime from `uv run` or `.venv` source development.
   Ink startup failures now enter the bundled Rich REPL; `rich` is a direct,
   locked dependency with a runtime rendering probe and fallback regression.
-- Status: quality repair implemented; scoped re-reviews pending.
+- Final scoped reviews on `8c6b2f0c`: specification pass and quality pass.
+  Distribution, formal release, Browser, and structured-output coverage reports
+  123 passed; the independent release review including standalone coverage
+  reports 120 passed; real PDF fixtures report 6 passed. Documentation builds
+  529 pages, landing validation passes, and link validation reports zero broken
+  links. A broader no-extra run stopped after 793 passed because its dev
+  environment omitted Playwright; that failing case passes with the release
+  runtime's `--extra all --extra search` configuration.
+- Status: complete.
 
 ## Local App version coherence
 
