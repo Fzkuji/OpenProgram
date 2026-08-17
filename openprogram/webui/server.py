@@ -19,12 +19,10 @@ def _load_checkout_package(package_dir: Path):
                 return existing
         except OSError:
             pass
-
-    for module_name in tuple(sys.modules):
-        if module_name == "openprogram_server" or module_name.startswith(
-            "openprogram_server."
-        ):
-            sys.modules.pop(module_name, None)
+        raise ImportError(
+            "openprogram_server was already imported from a different location: "
+            f"{existing_file}"
+        )
     _spec = util.spec_from_file_location(
         "openprogram_server",
         package_dir / "__init__.py",
