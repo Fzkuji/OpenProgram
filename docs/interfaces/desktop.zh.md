@@ -44,4 +44,4 @@ Chrome Web Store 与 Edge Add-ons 页面可以作为普通网页打开，但 Ope
 
 需要扩展 OpenProgram 本身时，使用 [OpenProgram Plugins](../capabilities/plugins.zh.md)、Skills、MCP servers、Programs 或 agent tools。这些能力不修改内嵌网页运行时。
 
-持续维护的工程规范见[内置浏览器设计](../reference/design/ui/built-in-browser.html)与 [Computer Use 设计](../reference/design/integrations/computer-use.html)。
+持续维护的工程规范见[内置浏览器设计](../reference/design/ui/built-in-browser.html)与 [Web Use / Computer Use 边界](../reference/design/integrations/web-use.html)。

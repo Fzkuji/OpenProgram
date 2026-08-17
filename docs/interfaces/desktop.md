@@ -44,4 +44,4 @@ Chrome Web Store and Edge Add-ons pages open as ordinary webpages, but OpenProgr
 
 Use [OpenProgram Plugins](../capabilities/plugins.md), Skills, MCP servers, Programs, or agent tools to extend OpenProgram itself. These do not modify the embedded webpage runtime.
 
-The maintained engineering specifications are [Built-in browser design](../reference/design/ui/built-in-browser.html) and [Computer Use design](../reference/design/integrations/computer-use.html).
+The maintained engineering specifications are [Built-in browser design](../reference/design/ui/built-in-browser.html) and the [Web Use / Computer Use boundary](../reference/design/integrations/web-use.html).
