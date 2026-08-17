@@ -14,4 +14,3 @@ def _cmd_cli_chat(oneshot: str | None = None,
         tui=tui,
         response_format=response_format,
     )
-

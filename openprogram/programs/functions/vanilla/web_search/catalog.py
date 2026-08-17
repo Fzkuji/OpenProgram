@@ -7,7 +7,8 @@ docs, and a 2-5 step "how to get this working" recipe. Consumed by:
   * ``openprogram/webui/routes/providers.py`` — surfaces the metadata
     over ``/api/search-providers/list`` so the React settings page can
     render a rich detail panel.
-  * ``openprogram/cli/setup_sections/sections.py`` (TUI picker) — prints
+  * ``apps/cli/python/openprogram_cli/_impl/setup_sections/sections.py``
+    (TUI picker) — prints
     ``setup_steps`` and ``signup_url`` after the user picks an
     unconfigured backend, so the CLI flow tells you where to go next
     without trying to handle key entry itself.

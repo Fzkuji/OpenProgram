@@ -493,7 +493,7 @@ def _password(prompt: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Section runners + wizard orchestrator live in openprogram/cli/setup_sections/.
+# Section runners + wizard orchestrator are owned by the Python CLI app.
 # Re-exported here under the names cli.py and tests import directly off
 # ``openprogram.setup``.
 # ---------------------------------------------------------------------------

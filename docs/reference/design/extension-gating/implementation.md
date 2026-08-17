@@ -163,7 +163,7 @@ Similarly `tools: ["bash", "read"]` continues to be valid — the list form is t
 
 There are no dedicated unit tests for `gating.py` — `match_any` is `fnmatch.fnmatchcase` plus iteration, so the logic is one line. Integration coverage comes through:
 
-- `openprogram/cli/commands/doctor.py` — health check enumerates installed skills/tools/MCP and surfaces gating errors at start-up.
+- `apps/cli/python/openprogram_cli/_impl/commands/doctor.py` — health check enumerates installed skills/tools/MCP and surfaces gating errors at start-up.
 - WS smoke test — `/skill X` with a disabled-pattern profile returns the rejection message in the chat transcript.
 
 Add proper unit tests if `match_any` semantics ever diverge from `fnmatch.fnmatchcase` (for example if `**` recursive-glob support is added).

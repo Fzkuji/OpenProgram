@@ -6,7 +6,7 @@
 > Chinese translation and the standalone HTML page present the same design.
 > Related code: `openprogram/webui/owner_auth.py`,
 > `openprogram/backend_endpoint.py`,
-> `openprogram/webui/server.py`, `openprogram/cli/commands/web.py`,
+> `apps/server/openprogram_server/server.py`, `apps/cli/python/openprogram_cli/_impl/commands/web.py`,
 > `apps/web/lib/net/owner-auth-bootstrap.ts`, and
 > `openprogram/agent/authority.py`.
 > Related designs: [speaker identity](../memory/speaker-identity.md),

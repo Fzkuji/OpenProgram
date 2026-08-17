@@ -87,5 +87,5 @@ upgrade state. Supplying `--channel` still persists that source-channel choice.
 
 The source checkout gate, status/dry-run modes, persisted channel, isolated
 probe, restart, SHA verification, structured failures, and manual recovery
-instruction are implemented in `openprogram/cli/commands/upgrade.py`. Automatic
+instruction are implemented in `apps/cli/python/openprogram_cli/_impl/commands/upgrade.py`. Automatic
 rollback remains explicitly out of scope for the current implementation.

@@ -6,7 +6,7 @@ locally; non-slash input goes through the same chat runtime the Web UI
 uses, so behaviour stays aligned.
 
 The bulk of this module's logic — banner inventory, slash-command
-handlers, per-turn exec — lives in ``openprogram/cli/repl/`` and is
+handlers, per-turn exec — lives in this application's ``repl`` package and is
 re-exported here so existing call sites (``scripts/profile_startup.py``,
 ``openprogram.setup``, ``openprogram.cli.commands.chat``, tests) keep
 working unchanged.

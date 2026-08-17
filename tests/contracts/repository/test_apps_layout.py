@@ -23,14 +23,39 @@ def test_ink_cli_is_owned_by_apps_workspace() -> None:
     assert not (ROOT / "cli/package.json").exists()
 
 
+def test_python_cli_application_is_owned_by_apps_workspace() -> None:
+    app = ROOT / "apps/cli/python/openprogram_cli"
+    assert (app / "__init__.py").is_file()
+    assert (app / "__main__.py").is_file()
+    assert (app / "_impl/application.py").is_file()
+    assert (app / "_impl/commands").is_dir()
+    assert (app / "_impl/repl").is_dir()
+    assert (app / "_impl/setup_sections").is_dir()
+
+    compatibility_files = {
+        path.relative_to(ROOT / "openprogram/cli").as_posix()
+        for path in (ROOT / "openprogram/cli").rglob("*")
+        if path.is_file() and "__pycache__" not in path.parts
+    }
+    assert compatibility_files == {"README.md", "__init__.py", "__main__.py"}
+
+
+def test_python_cli_canonical_entry_matches_the_compatibility_entry() -> None:
+    import openprogram_cli
+    import openprogram.cli as compatibility_cli
+
+    assert openprogram_cli.main is compatibility_cli.main
+    assert openprogram_cli.build_parser is compatibility_cli.build_parser
+
+
 def test_python_cli_resolves_the_apps_cli_bundle(tmp_path, monkeypatch) -> None:
-    launcher_path = tmp_path / "openprogram" / "cli" / "ink.py"
+    package_init = tmp_path / "openprogram" / "__init__.py"
     bundle = tmp_path / "apps" / "cli" / "dist" / "index.js"
-    launcher_path.parent.mkdir(parents=True)
+    package_init.parent.mkdir(parents=True)
     bundle.parent.mkdir(parents=True)
-    launcher_path.touch()
+    package_init.touch()
     bundle.touch()
-    monkeypatch.setattr(ink, "__file__", str(launcher_path))
+    monkeypatch.setattr(openprogram, "__file__", str(package_init))
 
     assert ink._resolve_cli_entry() == bundle
 

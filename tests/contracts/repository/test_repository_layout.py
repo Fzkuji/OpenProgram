@@ -45,13 +45,17 @@ WORKSPACE_READMES = (
 )
 
 PYTHON_CLI_PATHS = (
+    "apps/cli/python/openprogram_cli/__init__.py",
+    "apps/cli/python/openprogram_cli/__main__.py",
+    "apps/cli/python/openprogram_cli/_impl/application.py",
+    "apps/cli/python/openprogram_cli/_impl/parser.py",
+    "apps/cli/python/openprogram_cli/_impl/chat.py",
+    "apps/cli/python/openprogram_cli/_impl/ink.py",
+    "apps/cli/python/openprogram_cli/_impl/commands/__init__.py",
+    "apps/cli/python/openprogram_cli/_impl/repl/__init__.py",
+    "apps/cli/python/openprogram_cli/_impl/setup_sections/__init__.py",
     "openprogram/cli/__init__.py",
-    "openprogram/cli/parser.py",
-    "openprogram/cli/chat.py",
-    "openprogram/cli/ink.py",
-    "openprogram/cli/commands/__init__.py",
-    "openprogram/cli/repl/__init__.py",
-    "openprogram/cli/setup_sections/__init__.py",
+    "openprogram/cli/__main__.py",
 )
 
 REMOVED_PYTHON_CLI_PATHS = (
@@ -62,6 +66,12 @@ REMOVED_PYTHON_CLI_PATHS = (
     "openprogram/_cli_chat",
     "openprogram/_cli_cmds",
     "openprogram/_setup_sections",
+    "openprogram/cli/parser.py",
+    "openprogram/cli/chat.py",
+    "openprogram/cli/ink.py",
+    "openprogram/cli/commands",
+    "openprogram/cli/repl",
+    "openprogram/cli/setup_sections",
 )
 
 
@@ -134,7 +144,7 @@ def test_workspace_entry_readmes_describe_current_ownership() -> None:
     assert "dist/index.js" in cli_readme
 
 
-def test_python_cli_implementation_has_one_package_root() -> None:
+def test_python_cli_implementation_is_owned_by_the_cli_app() -> None:
     tracked = set(_tracked_paths())
     first_level_packages = {
         path.split("/", 2)[1]
@@ -159,7 +169,7 @@ def test_generated_cli_reference_names_the_current_parser_source(tmp_path) -> No
     assert pages
     for page in pages:
         text = page.read_text(encoding="utf-8")
-        assert "from openprogram/cli/parser.py" in text
+        assert "from apps/cli/python/openprogram_cli/_impl/parser.py" in text
         assert "from openprogram/cli.py" not in text
 
 

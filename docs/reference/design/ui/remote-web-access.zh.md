@@ -4,7 +4,7 @@
 > HTTPS 反向代理上使用 OpenProgram 现有 Web UI。英文正文是规范基准；本文和独立
 > HTML 页面表达同一设计。关联代码：`openprogram/webui/owner_auth.py`、
 > `openprogram/backend_endpoint.py`、
-> `openprogram/webui/server.py`、`openprogram/cli/commands/web.py`、
+> `apps/server/openprogram_server/server.py`、`apps/cli/python/openprogram_cli/_impl/commands/web.py`、
 > `apps/web/lib/net/owner-auth-bootstrap.ts`、`openprogram/agent/authority.py`。
 > 关联设计：[说话人身份](../memory/speaker-identity.md)、
 > [权限模型](../runtime/permission-model.md)、[MCP 服务端](../integrations/mcp-server.html)。

@@ -3,7 +3,8 @@ import type { JobRow } from '../ws/client.js';
 
 /**
  * Compact transcript rendering for the explicit /jobs and /job views.
- * Mirrors the Python CLI's `_format_view` (openprogram/cli/commands/jobs.py):
+ * Mirrors the Python CLI's `_format_view`
+ * (apps/cli/python/openprogram_cli/_impl/commands/jobs.py):
  * one header line per job (id, status, resource state) followed by the
  * indented resource counters. Spawn / cancel results are NOT rendered here —
  * they carry their own confirmation output.

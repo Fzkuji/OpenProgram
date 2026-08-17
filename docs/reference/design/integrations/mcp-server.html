@@ -655,7 +655,7 @@
     <tr><td><b><code>notifications/progress</code> 由 <code>on_update</code> 驱动</b></td><td class="y">已实施</td><td class="g">仅有 <code>progressToken</code> 时发送；每请求单调有序；normal/error/cancel 均有界清理 consumer，保留 parent cancellation</td></tr>
     <tr><td><b><code>AgentToolResult</code> 上的一等 <code>is_error</code></b></td><td class="y">已实施</td><td class="g">Runtime 失败、拒绝与 wire <code>CallToolResult.isError</code> 端到端使用 typed bit；敏感正文/details 在 MCP 边界净化</td></tr>
     <tr><td><b>端到端协议测试</b></td><td class="y">已实施</td><td class="g">真实 MCP 1.29.0 <code>ClientSession</code> + CLI stdio 子进程，协议 <code>2025-11-25</code>；覆盖六项、clientInfo invariance、typed errors、question decline、progress、并发、取消、审计与 stdout 隔离</td></tr>
-    <tr><td><b>ACP stdio 服务端</b></td><td class="g">已存在；本轮不扩张</td><td class="m"><code>openprogram/cli/commands/acp.py</code> 与 <code>openprogram/acp/server.py</code>；只做共享类型回归</td></tr>
+    <tr><td><b>ACP stdio 服务端</b></td><td class="g">已存在；本轮不扩张</td><td class="m"><code>apps/cli/python/openprogram_cli/_impl/commands/acp.py</code> 与 <code>openprogram/acp/server.py</code>；只做共享类型回归</td></tr>
     <tr><td><b>入站 webhook</b></td><td class="g">本轮不做</td><td class="m">依赖沙箱批次 I 与第 05B 步的固化 job capability</td></tr>
     <tr><td><b>客户端 SDK</b></td><td class="g">本轮不做</td><td class="m">标准 MCP SDK 已覆盖客户端角色；仅当已冻结的六工具面被真实集成证明过粗时，再考虑专属 OpenProgram SDK</td></tr>
   </table>

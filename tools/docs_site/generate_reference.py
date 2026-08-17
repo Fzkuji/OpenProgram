@@ -80,7 +80,7 @@ def _subparsers_of(parser: argparse.ArgumentParser):
 
 def _render_command_page(name: str, parser: argparse.ArgumentParser) -> str:
     lines = [
-        GENERATED_NOTE.format(source="openprogram/cli/parser.py"),
+        GENERATED_NOTE.format(source="apps/cli/python/openprogram_cli/_impl/parser.py"),
         f"# {name}\n",
     ]
     desc = parser.description or ""
@@ -144,7 +144,7 @@ def generate_cli(docs_root: Path = DOCS_ROOT) -> list[Path]:
             written.append(out_dir / fname)
 
     # Top-level flags page (openprogram itself: --print, --resume, …)
-    top = [GENERATED_NOTE.format(source="openprogram/cli/parser.py"),
+    top = [GENERATED_NOTE.format(source="apps/cli/python/openprogram_cli/_impl/parser.py"),
            "# openprogram\n",
            (parser.description or "").strip() + "\n",
            "Global flags of the bare `openprogram` command. "

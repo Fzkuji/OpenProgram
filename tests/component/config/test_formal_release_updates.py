@@ -45,6 +45,9 @@ def test_release_wheel_probe_runs_outside_the_checkout():
     assert '(cd "$probe_dir"' in workflow
     assert "python -P -c" in workflow
     assert "assert canonical is legacy" in workflow
+    assert "openprogram_cli/_impl/application.py" in workflow
+    assert "assert openprogram_cli.main is legacy_cli.main" in workflow
+    assert 'openprogram_cli.build_parser().prog == "openprogram"' in workflow
     assert "is_relative_to(checkout)" in workflow
 
 
@@ -93,7 +96,7 @@ def test_automatic_update_design_is_one_accessible_review_page():
         'data-update-state="error"',
         'prefers-reduced-motion',
         'https://github.com/Fzkuji/OpenProgram/blob/main/desktop/update-service.js',
-        'https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/cli/commands/upgrade.py',
+        'https://github.com/Fzkuji/OpenProgram/blob/main/apps/cli/python/openprogram_cli/_impl/commands/upgrade.py',
     ):
         assert contract in design
 

@@ -88,6 +88,6 @@ auth-adjacent.
    (`list`, `add`, `remove`, `set`, `status`) over inventing new ones.
 3. Wire it under the appropriate `argparse` subparser tree, following
    the package boundary:
-   - Command metadata + argparse wiring: `openprogram/cli/parser.py`
-   - Command logic: a topic module under `openprogram/cli/commands/`
-   - Top-level dispatch only: `openprogram/cli/__init__.py`
+   - Command metadata + argparse wiring: `apps/cli/python/openprogram_cli/_impl/parser.py`
+   - Command logic: a topic module under `apps/cli/python/openprogram_cli/_impl/commands/`
+   - Top-level dispatch: `apps/cli/python/openprogram_cli/_impl/application.py`
