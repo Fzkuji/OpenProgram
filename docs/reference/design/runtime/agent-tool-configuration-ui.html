@@ -24,7 +24,7 @@
   </section>
 
   <section id="prototype"><h2>2. Agents 配置页面原型</h2>
-    <p>主页面只承担Agent选择、配置分页、访问模式和当前范围摘要。外层页面复用现有Web管理页与Settings结构，不另建Agent专用窗口；全局标题栏只放页面级操作，配置分页位于选中Agent的详情标题下。工具目录是一个按需打开的选择器，不随Agent详情常驻渲染；新增Agent由共享管理页标题栏提供。</p>
+    <p>主页面只承担Agent选择、配置分页、访问模式和当前范围摘要。外层页面复用现有Web管理页与Settings结构，不另建Agent专用窗口；全局标题栏只放页面级操作，配置分页位于选中Agent的详情标题下。页面字体直接使用Web全局<code>--fs-base</code>/<code>--fs-sm</code>层级，不从缩放原型复制8–12px的局部字号。工具目录是一个按需打开的选择器，不随Agent详情常驻渲染；新增Agent由共享管理页标题栏提供。</p>
     <div class="prototype" aria-label="Agent Tools and Programs 配置页面原型">
       <div class="appbar"><span class="brand">OpenProgram</span><div class="appnav" aria-hidden="true"><span>Programs</span><span class="active">Agents</span><span>Skills</span><span>MCP Servers</span></div><button class="save" type="button">Save changes</button></div>
       <div class="agent-shell">

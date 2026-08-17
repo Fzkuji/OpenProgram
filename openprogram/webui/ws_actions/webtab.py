@@ -234,7 +234,7 @@ def request_bound_tab(
     expected_access_revision: int = 0,
     expected_geometry_revision: int = 0,
 ) -> dict:
-    """Activate the exact visible tab captured for this turn."""
+    """Resolve the exact bound Page without requiring OS foreground state."""
     import os
     if os.environ.get("OPENPROGRAM_IN_AGENTIC_SUBPROCESS") == "1":
         command = {"op": "activate", "binding_id": binding_id}

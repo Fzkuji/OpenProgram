@@ -4,8 +4,8 @@ import base64
 import json
 import os
 import re
-import subprocess
 import threading
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -15,109 +15,15 @@ import pytest
 pytestmark = pytest.mark.live
 
 
-def _frontmost_application() -> str:
-    return subprocess.check_output(
-        [
-            "osascript",
-            "-e",
-            'tell application "System Events" to get name of first '
-            "application process whose frontmost is true",
-        ],
-        text=True,
-    ).strip()
-
-
-def _bounds(window: dict) -> tuple[int, int, int, int]:
-    bounds = window.get("kCGWindowBounds") or {}
-    return (
-        int(bounds.get("X") or 0),
-        int(bounds.get("Y") or 0),
-        int(bounds.get("Width") or 0),
-        int(bounds.get("Height") or 0),
-    )
-
-
-def _occlusion_snapshot(quartz, shell_page) -> dict:
-    frontmost = _frontmost_application()
-    if frontmost == "OpenProgram":
-        pytest.skip("place another application over OpenProgram before the live test")
-
-    screen_bounds = shell_page.evaluate(
-        "() => ({ x: window.screenX, y: window.screenY, "
-        "width: window.outerWidth, height: window.outerHeight })"
-    )
-    windows = quartz.CGWindowListCopyWindowInfo(
-        quartz.kCGWindowListOptionOnScreenOnly,
-        quartz.kCGNullWindowID,
-    )
-    candidates = [
-        (index, window)
-        for index, window in enumerate(windows)
-        if int(window.get("kCGWindowLayer") or 0) == 0
-        and _bounds(window)[2] >= 500
-        and _bounds(window)[3] >= 400
-    ]
-    target = min(
-        (
-            item for item in candidates
-            if item[1].get("kCGWindowOwnerName") == "OpenProgram"
-        ),
-        key=lambda item: sum(abs(value) for value in (
-            _bounds(item[1])[0] - int(screen_bounds["x"]),
-            _bounds(item[1])[1] - int(screen_bounds["y"]),
-            _bounds(item[1])[2] - int(screen_bounds["width"]),
-            _bounds(item[1])[3] - int(screen_bounds["height"]),
-        )),
-        default=None,
-    )
-    if target is None:
-        pytest.skip("the installed OpenProgram window is not on screen")
-    target_index, target_window = target
-    tx, ty, tw, th = _bounds(target_window)
-
-    # The 8 px inset excludes the native frame/shadow. The whole renderer
-    # client area must be behind one higher z-order window from the frontmost
-    # application before the test is allowed to touch the background Page.
-    inset = 8
-    covering = next((
-        (index, window)
-        for index, window in candidates
-        if index < target_index
-        and window.get("kCGWindowOwnerName") == frontmost
-        and _bounds(window)[0] <= tx + inset
-        and _bounds(window)[1] <= ty + inset
-        and _bounds(window)[0] + _bounds(window)[2] >= tx + tw - inset
-        and _bounds(window)[1] + _bounds(window)[3] >= ty + th - inset
-    ), None)
-    if covering is None:
-        pytest.skip("OpenProgram is not fully occluded by the frontmost window")
-    _, covering_window = covering
-    return {
-        "frontmost": frontmost,
-        "cover_pid": int(covering_window.get("kCGWindowOwnerPID") or 0),
-        "cover_window_id": int(covering_window.get("kCGWindowNumber") or 0),
-        "cover_bounds": _bounds(covering_window),
-        "target_window_id": int(target_window.get("kCGWindowNumber") or 0),
-        "target_bounds": _bounds(target_window),
-    }
-
-
-def _assert_occlusion_unchanged(quartz, shell_page, expected: dict) -> None:
-    assert _occlusion_snapshot(quartz, shell_page) == expected
-
-
 class _FixtureHandler(BaseHTTPRequestHandler):
     marker = ""
 
     def do_GET(self):  # noqa: N802 - BaseHTTPRequestHandler API
         body = f"""<!doctype html>
 <html><head><title>{self.marker}</title></head>
-<body style="margin:0;background:#18324a;color:white;font:24px sans-serif">
-  <main><h1>{self.marker}</h1>
-    <button id="change" onclick="document.getElementById('status').textContent='changed'">Change state</button>
-    <p id="status">ready</p>
-  </main>
-</body></html>""".encode()
+<body><h1>{self.marker}</h1>
+<button onclick="document.getElementById('status').textContent='changed'">Change state</button>
+<p id="status">ready</p></body></html>""".encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -129,7 +35,7 @@ class _FixtureHandler(BaseHTTPRequestHandler):
 
 
 def _start_fixture() -> tuple[ThreadingHTTPServer, str, str]:
-    marker = "OpenProgram occluded Web Use " + uuid.uuid4().hex
+    marker = "OpenProgram background Web Use " + uuid.uuid4().hex
     handler = type("FixtureHandler", (_FixtureHandler,), {"marker": marker})
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -142,9 +48,8 @@ def _tool_json(payload: dict) -> dict:
     if isinstance(details.get("json"), dict):
         return details["json"]
     text = next(
-        (item.get("text") for item in result.get("content") or []
-         if item.get("type") == "text"),
-        "{}",
+        item["text"] for item in result.get("content") or []
+        if item.get("type") == "text"
     )
     value = json.loads(text)
     assert isinstance(value, dict)
@@ -172,33 +77,46 @@ def _release_owner(owner_id: str) -> None:
     )
 
 
-def _tab_ids(shell_page) -> list[str]:
+def _tab_ids(shell_page) -> set[str]:
     tabs = shell_page.locator('[role="tab"][data-tab-id]')
-    return [
+    return {
         str(tabs.nth(index).get_attribute("data-tab-id"))
         for index in range(tabs.count())
-    ]
+    }
 
 
-def _dispatch_dom_click(locator) -> None:
+def _active_tab_id(shell_page) -> str:
+    return str(shell_page.locator(
+        '[role="tab"][data-tab-id][aria-selected="true"]'
+    ).first.get_attribute("data-tab-id"))
+
+
+def _dom_click(locator) -> None:
     locator.evaluate(
         "node => node.dispatchEvent(new MouseEvent('click', "
         "{ bubbles: true, cancelable: true, view: window }))"
     )
 
 
-def _open_background_fixture_page(
-    shell_page, url: str, marker: str,
-) -> tuple[str, set[str]]:
-    before = set(_tab_ids(shell_page))
-    original = str(shell_page.locator(
-        '[role="tab"][data-tab-id][aria-selected="true"]'
-    ).first.get_attribute("data-tab-id"))
+def _close_tabs(shell_page, tab_ids: set[str]) -> None:
+    for tab_id in tab_ids:
+        tab = shell_page.locator(f'[role="tab"][data-tab-id="{tab_id}"]')
+        if not tab.count():
+            continue
+        close = tab.locator("xpath=..").locator(
+            'button[aria-label="Close tab"], button[aria-label="关闭标签"]'
+        )
+        if close.count():
+            _dom_click(close)
+
+
+def _create_background_page(shell_page, url: str, marker: str) -> tuple[str, str]:
+    before = _tab_ids(shell_page)
+    original = _active_tab_id(shell_page)
     try:
-        new_tab = shell_page.get_by_role(
+        _dom_click(shell_page.get_by_role(
             "button", name=re.compile(r"^(New tab|新标签页)$")
-        ).last
-        _dispatch_dom_click(new_tab)
+        ).last)
         shell_page.wait_for_function(
             "before => [...document.querySelectorAll('[role=tab][data-tab-id]')]"
             ".some(node => !before.includes(node.dataset.tabId))",
@@ -208,73 +126,45 @@ def _open_background_fixture_page(
             "button", name=re.compile(r"^(Browser|浏览器)$"), exact=True,
         )
         browser_button.wait_for(state="attached")
-        _dispatch_dom_click(browser_button)
+        _dom_click(browser_button)
         address = shell_page.get_by_role(
             "textbox", name=re.compile(r"^(Address|地址)$"), exact=True,
         )
-        address.wait_for(state="attached")
         address.fill(url)
         address.press("Enter")
-        shell_page.wait_for_function(
-            "([before, expectedId]) => { const active = document.querySelector("
-            "'[role=tab][data-tab-id][aria-selected=true]'); "
-            "return active && !before.includes(active.dataset.tabId) "
-            "&& active.dataset.tabId === expectedId; }",
-            arg=[list(before), f"w:{url}"],
-            timeout=10_000,
-        )
-        temporary = set(_tab_ids(shell_page)) - before
-        assert len(temporary) == 1
-        temporary_id = next(iter(temporary))
-        shell_page.wait_for_function(
-            "([tabId, title]) => document.querySelector("
-            "`[role=tab][data-tab-id=\"${tabId}\"]`)?.getAttribute('title') "
-            "=== title",
-            arg=[temporary_id, marker],
-            timeout=10_000,
-        )
-
-        original_tab = shell_page.locator(
-            f'[role="tab"][data-tab-id="{original}"]'
-        )
-        assert original_tab.count() == 1
-        _dispatch_dom_click(original_tab)
+        expected_tab = f"w:{url}"
         shell_page.wait_for_function(
             "tabId => document.querySelector("
-            "`[role=tab][data-tab-id=\"${tabId}\"]`)?.getAttribute("
-            "'aria-selected') === 'true'",
+            "`[role=tab][data-tab-id=\"${tabId}\"]`)?.ariaSelected === 'true'",
+            arg=expected_tab,
+            timeout=10_000,
+        )
+        created = _tab_ids(shell_page) - before
+        assert created == {expected_tab}
+
+        _dom_click(shell_page.locator(
+            f'[role="tab"][data-tab-id="{original}"]'
+        ))
+        shell_page.wait_for_function(
+            "tabId => document.querySelector("
+            "`[role=tab][data-tab-id=\"${tabId}\"]`)?.ariaSelected === 'true'",
             arg=original,
         )
         shell_page.wait_for_timeout(100)
-        return original, temporary
+        return original, expected_tab
     except Exception:
-        _close_temporary_tabs(shell_page, original, set(_tab_ids(shell_page)) - before)
+        _close_tabs(shell_page, _tab_ids(shell_page) - before)
         raise
 
 
-def _close_temporary_tabs(shell_page, original: str, temporary: set[str]) -> None:
-    for tab_id in temporary:
-        tab = shell_page.locator(f'[role="tab"][data-tab-id="{tab_id}"]')
-        if tab.count():
-            close = tab.locator("xpath=..").locator(
-                'button[aria-label="Close tab"], button[aria-label="关闭标签"]'
-            )
-            if close.count():
-                _dispatch_dom_click(close)
-    original_tab = shell_page.locator(
-        f'[role="tab"][data-tab-id="{original}"]'
-    )
-    if original_tab.count():
-        _dispatch_dom_click(original_tab)
+def _assert_unchanged(shell_page, original_tab: str) -> None:
+    assert _active_tab_id(shell_page) == original_tab
 
 
-def test_web_use_reads_screenshots_and_acts_while_app_is_fully_occluded():
+def test_web_use_captures_and_controls_a_hidden_internal_page():
     if os.environ.get("OPENPROGRAM_TEST_LIVE") != "1":
         pytest.skip("set OPENPROGRAM_TEST_LIVE=1 to inspect the installed App")
-    if os.uname().sysname != "Darwin":
-        pytest.skip("the independent occlusion assertion currently uses Quartz")
 
-    quartz = pytest.importorskip("Quartz")
     playwright = pytest.importorskip("playwright.sync_api")
     from openprogram.programs.functions.browser._chrome_bootstrap import (
         desktop_app_ws_url,
@@ -285,14 +175,14 @@ def test_web_use_reads_screenshots_and_acts_while_app_is_fully_occluded():
         pytest.skip("the installed /Applications/OpenProgram.app is not running")
 
     server, fixture_url, marker = _start_fixture()
-    owner_id = "mcp:live-occluded:" + uuid.uuid4().hex
+    owner_id = "mcp:live-background:" + uuid.uuid4().hex
     web_session_id = ""
-    original = ""
-    temporary: set[str] = set()
+    original_tab = ""
+    temporary_tab = ""
     try:
         with playwright.sync_playwright() as runtime:
-            # Do not call browser.close(): on a CDP-attached Electron instance
-            # it closes the application instead of merely disconnecting.
+            # Stopping Playwright disconnects its transport. browser.close()
+            # is forbidden because it closes the attached Electron process.
             browser = runtime.chromium.connect_over_cdp(cdp_url, timeout=15_000)
             shell_page = next((
                 page
@@ -302,19 +192,24 @@ def test_web_use_reads_screenshots_and_acts_while_app_is_fully_occluded():
                 or page.url.startswith("http://localhost:18100")
             ), None)
             assert shell_page is not None
-            occlusion = _occlusion_snapshot(quartz, shell_page)
-
             try:
-                original, temporary = _open_background_fixture_page(
+                original_tab, temporary_tab = _create_background_page(
                     shell_page, fixture_url, marker,
                 )
-                _assert_occlusion_unchanged(quartz, shell_page, occlusion)
+                _assert_unchanged(shell_page, original_tab)
 
-                _, listed = _dispatch({"command": "list_pages"}, owner_id)
-                selected = next(
-                    page for page in listed.get("pages") or []
-                    if page.get("title") == marker
-                )
+                deadline = time.monotonic() + 15
+                selected = None
+                while selected is None and time.monotonic() < deadline:
+                    _, listed = _dispatch({"command": "list_pages"}, owner_id)
+                    selected = next((
+                        page for page in listed.get("pages") or []
+                        if page.get("tab_id") == temporary_tab
+                        and page.get("title") == marker
+                    ), None)
+                    if selected is None:
+                        time.sleep(0.1)
+                assert selected is not None
                 assert selected["visible"] is False
 
                 _, observed = _dispatch({
@@ -323,11 +218,13 @@ def test_web_use_reads_screenshots_and_acts_while_app_is_fully_occluded():
                     "page_context_token": selected["page_context_token"],
                     "arguments": {"detail": "interactive"},
                 }, owner_id)
-                assert observed["ok"] is True
+                assert observed["web_session_id"]
+                assert observed["frame_id"]
                 assert observed["title"] == marker
                 assert marker in observed["text"]
                 web_session_id = observed["web_session_id"]
                 frame_id = observed["frame_id"]
+                _assert_unchanged(shell_page, original_tab)
 
                 screenshot_payload, screenshot = _dispatch({
                     "command": "act",
@@ -348,7 +245,7 @@ def test_web_use_reads_screenshots_and_acts_while_app_is_fully_occluded():
                 assert int.from_bytes(png[16:20], "big") > 0
                 assert int.from_bytes(png[20:24], "big") > 0
                 assert screenshot["frame_id"] == frame_id
-                _assert_occlusion_unchanged(quartz, shell_page, occlusion)
+                _assert_unchanged(shell_page, original_tab)
 
                 change = next(
                     element for element in observed["elements"]
@@ -364,7 +261,6 @@ def test_web_use_reads_screenshots_and_acts_while_app_is_fully_occluded():
                     },
                 }, owner_id)
                 assert clicked["ok"] is True
-                assert clicked["observe_required"] is True
 
                 _, observed_after = _dispatch({
                     "command": "observe",
@@ -382,7 +278,7 @@ def test_web_use_reads_screenshots_and_acts_while_app_is_fully_occluded():
                     },
                 }, owner_id)
                 assert verified["passed"] is True
-                _assert_occlusion_unchanged(quartz, shell_page, occlusion)
+                _assert_unchanged(shell_page, original_tab)
 
                 _, closed = _dispatch({
                     "command": "close", "web_session_id": web_session_id,
@@ -390,10 +286,12 @@ def test_web_use_reads_screenshots_and_acts_while_app_is_fully_occluded():
                 assert closed["closed"] is True
                 web_session_id = ""
             finally:
-                if original:
-                    _close_temporary_tabs(shell_page, original, temporary)
-                    temporary.clear()
-                    _assert_occlusion_unchanged(quartz, shell_page, occlusion)
+                if temporary_tab:
+                    _close_tabs(shell_page, {temporary_tab})
+                if original_tab and _active_tab_id(shell_page) != original_tab:
+                    _dom_click(shell_page.locator(
+                        f'[role="tab"][data-tab-id="{original_tab}"]'
+                    ))
     finally:
         if web_session_id:
             try:

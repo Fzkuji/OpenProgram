@@ -1159,14 +1159,14 @@
         <h3 id="memory-target-title">目标页面 · 宽屏结构</h3>
         <p>点击左侧四个分区，可检查对应的列表与内容状态。</p>
       </div>
-      <p>示例数据来自当前正式 Memory：4 Topics / 15 records / Core 425 tokens</p>
+      <p>示例数据来自当前正式 Memory：3 Topics / 15 records / Core 425 tokens</p>
     </div>
 
     <div class="m-frame" id="memoryPrototype">
       <header class="m-top">
         <div class="m-title">Memory</div>
         <div class="m-top-meta">
-          <span>4 topics</span>
+          <span>3 topics</span>
           <span>15 records</span>
           <a class="m-settings" href="memory-settings-ui.html">Memory settings</a>
         </div>
@@ -1175,7 +1175,7 @@
       <div class="m-shell">
         <aside class="m-rail" aria-label="Memory sections">
           <nav class="m-nav" aria-label="Memory views">
-            <button class="m-nav-item active" type="button" aria-pressed="true" data-memory-proto="topics"><span class="m-glyph">▤</span><span>Topics</span><span class="m-count">4</span></button>
+            <button class="m-nav-item active" type="button" aria-pressed="true" data-memory-proto="topics"><span class="m-glyph">▤</span><span>Topics</span><span class="m-count">3</span></button>
             <button class="m-nav-item" type="button" aria-pressed="false" data-memory-proto="timeline"><span class="m-glyph">◷</span><span>Timeline</span></button>
             <button class="m-nav-item" type="button" aria-pressed="false" data-memory-proto="recent"><span class="m-glyph">⌁</span><span>Recent</span><span class="m-count">15</span></button>
             <button class="m-nav-item" type="button" aria-pressed="false" data-memory-proto="core"><span class="m-glyph">✦</span><span>Core</span><span class="m-count">3</span></button>
@@ -1318,7 +1318,7 @@
       <thead><tr><th>区域</th><th>目标结构</th><th>避免的问题</th></tr></thead>
       <tbody>
         <tr><td><b>顶部标题栏</b></td><td>页面标题、低权重总量、Memory settings</td><td>不放 writer 状态、刷新状态或重复说明</td></tr>
-        <tr><td><b>二级栏</b></td><td>四个 36px 分区行；下方仅显示当前分区的列表、搜索或过滤器</td><td>分区标签和 Topic 文件不再混成同一层级</td></tr>
+        <tr><td><b>二级栏</b></td><td>四个 36px 分区行；下方仅显示当前分区的列表、搜索或过滤器；Topics 不重复显示由 Core 分区管理的 <code>topics/core.md</code></td><td>分区标签和 Topic 文件不再混成同一层级</td></tr>
         <tr><td><b>内容标题</b></td><td>名称、类型、路径、修改时间、视图与编辑操作集中在一个 76px 区域</td><td>删除独立 meta 横条和分散的 Core 状态</td></tr>
         <tr><td><b>正文</b></td><td>Preview/Timeline/Recent/Core 使用最大 780px 阅读面；Edit 保持全宽等宽字体编辑器</td><td>避免超宽文本和大片无结构空白</td></tr>
         <tr><td><b>窄宽度</b></td><td>分区图标栏 + 列表/详情单页切换</td><td>不自动折叠桌面栏，不把三块上下堆叠，不允许内容区重叠</td></tr>
@@ -1337,7 +1337,7 @@
     </div>
   </div>
 
-  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；小于 720px 时列表与详情互斥显示并提供返回路径；所有按钮可键盘访问并有可见焦点；Topics、Timeline、Recent、Core 的请求和编辑语义不变；页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
+  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；小于 720px 时列表与详情互斥显示并提供返回路径；所有按钮可键盘访问并有可见焦点；Topics 列表不显示 <code>core.md</code>，Core 仍通过独立分区查看和编辑；Timeline、Recent 与 Core 的请求和编辑语义不变；页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
   <div class="legend"><b>实现状态：</b>本节已完成目标结构和宽屏/窄屏样稿，生产页面尚未按此稿修改。此前已经实现的“移除 writer 状态条”和 Core 有效注入/records 双视图保持有效。</div>
 
   <h2 id="changes"><span class="num">10</span>统一修改接口</h2>

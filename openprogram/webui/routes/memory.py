@@ -196,12 +196,14 @@ def register(app):
         root = store.topics_dir()
         pages = []
         for path in sorted(root.rglob("*.md")):
+            relative = path.relative_to(root)
+            if relative == Path("core.md"):
+                continue
             try:
                 text = path.read_text(encoding="utf-8")
             except OSError:
                 continue
             stat = path.stat()
-            relative = path.relative_to(root)
             pages.append({
                 "path": str(relative),
                 "title": _title_of(text, path.stem),

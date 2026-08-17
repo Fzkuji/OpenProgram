@@ -1,4 +1,4 @@
-"""DOM-first agent for the visible browser tab in OpenProgram Desktop."""
+"""DOM-first agent for an exact OpenProgram built-in browser Page."""
 from __future__ import annotations
 
 import asyncio
@@ -241,7 +241,7 @@ class BrowserPageController:
         self.tool = function(
             name="browser_page",
             description=(
-                "Control only the visible OpenProgram browser tab. Start with "
+                "Control only the exact bound OpenProgram browser Page. Start with "
                 "observe. Use screenshot only for visual verification, canvas, "
                 "or when DOM/ARIA refs cannot identify the target. Every write "
                 "needs the latest frame_id and refs become stale after it."
@@ -901,7 +901,7 @@ def browser_agent(
     backend: str = "",
     runtime=None,
 ) -> dict:
-    """Complete a task in OpenProgram's visible built-in browser tab."""
+    """Complete a task in one exact OpenProgram built-in browser Page."""
     if backend:
         return _run_browser_task_commands(
             task=task,
