@@ -10,6 +10,7 @@ const sidebar = readFileSync(new URL("components/sidebar/sidebar.tsx", root), "u
 const sender = readFileSync(new URL("components/chat/composer/legacy-send.ts", root), "utf8");
 const route = readFileSync(new URL("../openprogram/webui/routes/tree.py", root), "utf8");
 const manageHeaderMarkup = page.match(/<ManagePageHeader[\s\S]*?\/>/)?.[0];
+const fontDeclarations = pageStyles.match(/\bfont(?:-size)?\s*:[^;}]+/g) ?? [];
 
 assert.match(page, /fetch\("\/api\/agents"/);
 assert.match(page, /fetch\(`\/api\/agents\/\$\{encodeURIComponent\(draft\.id\)\}`[\s\S]*method:\s*"PATCH"/);
@@ -35,6 +36,14 @@ assert.match(page, /className=\{managePageStyles\.splitBody\}/);
 assert.match(page, /<ManageRow[\s\S]*styles\.agentSelected/);
 assert.doesNotMatch(page, /styles\.(?:header|layout|agentRail|detailHeader|tabs)\b/);
 assert.doesNotMatch(pageStyles, /\.(?:header|layout|agentRail|detailHeader|tabs)\s*\{/);
+assert.ok(
+  fontDeclarations.every((declaration) =>
+    /^font-size:var\(--fs-(?:sm|base|md|lg)\)$/.test(declaration)
+    || declaration === "font:var(--fs-sm) var(--font-mono)"),
+  `Agents typography must use the shared scale, found: ${fontDeclarations.join(", ")}`,
+);
+assert.match(pageStyles, /\.configTab\{[^}]*font-size:var\(--fs-base\)/);
+assert.match(pageStyles, /\.formGrid label[^}]*font-size:var\(--fs-base\)/);
 assert.match(sidebar, /href="\/agents"[\s\S]*nav\.agents/);
 assert.match(sender, /toolsProfile\s*!==\s*"__agent__"[\s\S]*payload\.tools_profile\s*=\s*toolsProfile/);
 assert.match(route, /_mcp_server[\s\S]*"source": "mcp" if mcp_server else "builtin"/);
