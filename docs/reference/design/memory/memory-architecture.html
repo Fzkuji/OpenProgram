@@ -1174,7 +1174,7 @@
         <h3 id="memory-target-title">目标页面 · 宽屏结构</h3>
         <p>点击左侧四个分区，可检查对应的列表与内容状态。</p>
       </div>
-      <p>正式数据状态：3 个名称明确的项目 Topics / 5 条项目记录 / 3 条 Core 规则</p>
+      <p>非空样例：3 个名称明确的项目 Topics / 5 条项目记录 / 3 条 Core 规则</p>
     </div>
 
     <div class="m-frame" id="memoryPrototype">
@@ -1362,7 +1362,7 @@
   </div>
 
   <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>，同一项目的不同 test 工作区必须在名称中可区分；小于 720px 时列表与详情互斥显示并提供返回路径；页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
-  <div class="legend"><b>本轮实现状态：</b>Core 的 Prompt preview / Source records 命名、注入状态卡和 Timeline 年/月/日折叠已进入生产代码，仍待默认 App 可视验收。正式 Memory 已通过结构化事务整理为三个名称明确的项目 Topic，项目记录由 12 条压缩为 5 条，Core 保留 3 条；Timeline 与 Recent 已在同一事务重建，Git 提交为 <code>5113162</code>。小于 720px 的列表/详情互斥结构属于整页改版目标，本轮没有实现，生产页面仍沿用现有纵向布局。</div>
+  <div class="legend"><b>本轮实现状态：</b>Core 的 Prompt preview / Source records 命名、注入状态卡和 Timeline 年/月/日折叠已进入生产代码，并已在默认 18100 页面完成可视与 DOM 验收。正式 Memory 已通过结构化事务删除全部 survey test 项目记录，当前 Topics 为 0、Core 为 3 条；Timeline 与 Recent 已在同一事务重建，Git 提交为 <code>7faa128</code>。上方三个项目 Topic 仅用于展示非空列表状态。小于 720px 的列表/详情互斥结构属于整页改版目标，本轮没有实现，生产页面仍沿用现有纵向布局。</div>
 
   <h2 id="changes"><span class="num">10</span>统一修改接口</h2>
   <p class="lead">Memory 同时支持模型直接编辑 Topic 文件，以及模型或其他程序调用结构化接口。两种方式不互相替代；区别只在于调用方如何表达修改。所有修改最终进入同一套 Runtime 暂存、校验、派生视图、原子安装和 Git 流程。</p>
