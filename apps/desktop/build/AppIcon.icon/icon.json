@@ -1,8 +1,22 @@
 {
   "fill": {
-    "automatic-gradient": "extended-srgb:0.03529,0.18039,0.56863,1.00000"
+    "automatic-gradient": "extended-srgb:0.06275,0.08627,0.13333,1.00000"
   },
   "groups": [
+    {
+      "specular": false,
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.42
+      },
+      "layers": [
+        {
+          "image-name": "01-orbit.svg",
+          "name": "Orbit"
+        }
+      ],
+      "name": "01 Orbit"
+    },
     {
       "specular": false,
       "shadow": {
@@ -44,20 +58,6 @@
         }
       ],
       "name": "04 Indigo node"
-    },
-    {
-      "specular": false,
-      "shadow": {
-        "kind": "neutral",
-        "opacity": 0.42
-      },
-      "layers": [
-        {
-          "image-name": "01-orbit.svg",
-          "name": "Orbit"
-        }
-      ],
-      "name": "01 Orbit"
     }
   ],
   "supported-platforms": {

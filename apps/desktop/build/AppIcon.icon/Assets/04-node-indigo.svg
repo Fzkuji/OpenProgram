@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="OpenProgram indigo node">
   <defs>
     <radialGradient id="op-node-indigo" cx="35%" cy="28%" r="72%" fx="35%" fy="28%">
-      <stop offset="0" stop-color="#AAB6FF"/>
-      <stop offset="0.46" stop-color="#626FFF"/>
-      <stop offset="1" stop-color="#3435C9"/>
+      <stop offset="0" stop-color="#9BAAF0"/>
+      <stop offset="0.48" stop-color="#6474CF"/>
+      <stop offset="1" stop-color="#39458A"/>
     </radialGradient>
   </defs>
-  <circle id="op-node-c" cx="438" cy="638" r="52" fill="url(#op-node-indigo)"/>
+  <circle id="op-node-c" cx="447" cy="672" r="55" fill="url(#op-node-indigo)"/>
 </svg>
