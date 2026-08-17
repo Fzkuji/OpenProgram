@@ -323,12 +323,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // at the bottom of init.js. Each call attaches a `mousedown` listener
   // to the handle and drags the target element's `width`.
   useColResize({
-    handleId: "sidebarResize",
-    targetId: "sidebar",
-    direction: 1,
-    minWidth: 180,
-  });
-  useColResize({
     handleId: "detailResize",
     targetId: "detailPanel",
     direction: -1,
@@ -485,7 +479,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ) : null}
       <div className="app">
       <Sidebar />
-      <div className="col-resize" id="sidebarResize"></div>
       {/* Center column: browser-style tab strip over the active tab's
          pane. `order: 2` slots it where `.app .main` used to sit (the
          chat .main is now a grandchild, flexing inside .center-body).

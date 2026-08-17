@@ -2,18 +2,24 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const css = readFileSync(new URL("../app/styles/base.css", import.meta.url), "utf8");
+const sidebar = readFileSync(
+  new URL("../components/sidebar/sidebar.tsx", import.meta.url),
+  "utf8",
+);
+const shell = readFileSync(
+  new URL("../components/app-shell.tsx", import.meta.url),
+  "utf8",
+);
 
-test("a manually resized left sidebar can still collapse", () => {
+test("left sidebar owns its resize state and collapse animation", () => {
   assert.match(
-    css,
-    /#sidebar\.sidebar\.collapsed\s*\{[^}]*width:\s*49px\s*!important;[^}]*min-width:\s*49px\s*!important;[^}]*max-width:\s*49px\s*!important;/s,
+    sidebar,
+    /const \[width, setWidth\] = useState<number>\(LEFT_W_DEFAULT\)/,
   );
-});
-
-test("left sidebar resizing preserves usable center space", () => {
   assert.match(
-    css,
-    /#sidebar:not\(\.collapsed\)\s*\{[^}]*max-width:\s*clamp\(180px,\s*calc\(100vw\s*-\s*360px\),\s*480px\);/s,
+    sidebar,
+    /style=\{open\s*\?\s*\{ width: `\$\{width\}px`, minWidth: `\$\{LEFT_W_MIN\}px` \}\s*:\s*\{ width: "49px", minWidth: "49px" \}\}/s,
   );
+  assert.doesNotMatch(shell, /handleId:\s*"sidebarResize"/);
+  assert.doesNotMatch(shell, /id="sidebarResize"/);
 });

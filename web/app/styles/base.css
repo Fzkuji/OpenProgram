@@ -595,21 +595,6 @@ html.is-desktop .app { height: auto; flex: 1 1 auto; min-height: 0; }
   overflow: hidden !important;
   scrollbar-width: none !important;
 }
-/* Manual resizing writes an inline width on #sidebar. The collapsed
- * Tailwind width class cannot override that inline declaration, so the
- * rail must own all three width constraints while collapsed. Keep the
- * inline value in place: reopening then restores the user's last width. */
-#sidebar.sidebar.collapsed {
-  width: 49px !important;
-  min-width: 49px !important;
-  max-width: 49px !important;
-}
-/* Leave a usable center column even after an aggressive drag. The normal
- * desktop ceiling is 480px; smaller windows reduce it until the center has
- * 360px, with the resize hook's 180px lower bound as the final floor. */
-#sidebar:not(.collapsed) {
-  max-width: clamp(180px, calc(100vw - 360px), 480px);
-}
 /* Nav items in collapsed sidebar:
  *  - keep them left-aligned at the original padding so icons stay at
  *    the SAME x position as when expanded — no "center, then move"

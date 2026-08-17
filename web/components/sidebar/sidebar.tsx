@@ -89,11 +89,17 @@ function readPersistedSidebarOpen(): boolean {
   }
 }
 
+const LEFT_W_MIN = 180;
+const LEFT_W_MAX = 480;
+const LEFT_W_DEFAULT = 288;
+
 export function Sidebar() {
   const pathname = usePathname();
   const { t, text } = useTranslation();
 
   const [open, setOpen] = useState<boolean>(true);
+  const [width, setWidth] = useState<number>(LEFT_W_DEFAULT);
+  const dragRef = useRef<{ startX: number; startW: number } | null>(null);
   const [favCollapsed, setFavCollapsed] = useState(false);
   // 下面滚动区一旦向下滚动就为 true —— 驱动固定 New chat 行底部的
   // 分隔线（Claude 风格）。
@@ -145,6 +151,29 @@ export function Sidebar() {
       document.documentElement.removeAttribute("data-sidebar-closed");
     }
   }, [open]);
+
+  const onResizeMouseDown = (event: React.MouseEvent) => {
+    event.preventDefault();
+    dragRef.current = { startX: event.clientX, startW: width };
+    const onMove = (move: MouseEvent) => {
+      if (!dragRef.current) return;
+      const next = Math.max(
+        LEFT_W_MIN,
+        Math.min(
+          LEFT_W_MAX,
+          dragRef.current.startW + move.clientX - dragRef.current.startX,
+        ),
+      );
+      setWidth(next);
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
 
   function toggleSidebar() {
     setOpen((prev) => {
@@ -274,12 +303,20 @@ export function Sidebar() {
         // (so the icons don't pop), short enough not to drag. Same
         // cubic-bezier Claude uses on its info-opacity fade for a
         // consistent timing feel.
-        "[transition:width_0.15s_cubic-bezier(0.165,0.84,0.44,1),min-width_0.15s_cubic-bezier(0.165,0.84,0.44,1)] " +
-        (open
-          ? "w-sidebar-w"
-          : "w-[49px] min-w-[49px] collapsed")
+        (dragRef.current ? "" : "[transition:width_0.15s_cubic-bezier(0.165,0.84,0.44,1),min-width_0.15s_cubic-bezier(0.165,0.84,0.44,1)] ") +
+        (open ? "" : "collapsed")
       }
+      style={open
+        ? { width: `${width}px`, minWidth: `${LEFT_W_MIN}px` }
+        : { width: "49px", minWidth: "49px" }}
     >
+      {open && (
+        <div
+          onMouseDown={onResizeMouseDown}
+          className="absolute inset-y-0 right-0 z-10 w-[6px] cursor-ew-resize"
+          title={text("Resize sidebar", "调整侧边栏宽度")}
+        />
+      )}
       {/* 收起态（49px 窄轨）只剩收起按钮：改用 justify-center 并去掉左右
           padding，让唯一按钮在窄轨里水平居中，否则 justify-between + p-[8px]
           会把它推到右边（靠右 bug）。 */}
