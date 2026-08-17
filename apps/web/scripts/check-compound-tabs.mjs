@@ -563,6 +563,7 @@ const storageValues = new Map([
     tabs: [
       { id: "s:chat", kind: "session", title: "Chat", sessionId: "chat" },
       { id: "w:one", kind: "web", title: "One", url: "https://one.test/" },
+      { id: "b:extensions", kind: "builtin", title: "Extensions", page: "extensions" },
     ],
     activeId: "s:chat",
   })],
@@ -641,6 +642,11 @@ assert.equal(migrated.version, 2);
 assert.equal(migrated.activeId, "s:chat");
 assert.equal(migrated.splitWebTabId, "w:one");
 assert.equal(migrated.splitRatio, 0.51);
+assert.equal(
+  migrated.tabs.some((tab) => tab.kind === "builtin" && tab.page === "extensions"),
+  false,
+  "removed built-in pages must be discarded from persisted browser state",
+);
 assert.deepEqual(migrated.groups[0].memberIds, ["s:chat", "w:one"]);
 assert.equal(
   [...storageReads, ...storageWrites].includes("openprogram.centerTabGroups"),
