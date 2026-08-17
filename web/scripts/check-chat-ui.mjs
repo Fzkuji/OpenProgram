@@ -30,6 +30,7 @@ const markdownRenderer = source("lib/runtime-bridge/markdown-render.ts");
 const chatVisualSpec = source("../docs/reference/design/ui/chat-turn-visual-spec.html");
 const controlsCluster = source("components/chat/composer/controls/controls-cluster.tsx");
 const composerCss = source("components/chat/composer/composer.module.css");
+const workingDirChips = source("components/chat/top-bar/working-dir-chips.tsx");
 const chatCss = readChatCss(root);
 const baseCss = source("app/styles/base.css");
 const globalsCss = source("app/globals.css");
@@ -400,6 +401,35 @@ assert.match(compactControls, /\.compactEffortIcon[\s\S]*display:\s*inline-flex/
 assert.match(compactControls, /\.permission-badge[\s\S]*width:\s*20px/);
 assert.match(compactControls, /\.agent-badge[\s\S]*width:\s*20px/);
 assert.doesNotMatch(compactControls, /\.(?:permission-badge|agent-badge|effort-pill-host)[^{]*\{[^}]*display:\s*none/s);
+
+const compactEnvStart = composerCss.indexOf("/* Narrow environment chip labels");
+const compactEnvEnd = composerCss.indexOf("/* DAG 画布控件的落点", compactEnvStart);
+assert.ok(
+  compactEnvStart >= 0 && compactEnvEnd > compactEnvStart,
+  "environment chips must have a bounded container-query block",
+);
+const compactEnv = composerCss.slice(compactEnvStart, compactEnvEnd);
+assert.match(composerCss, /\.envChips\s*\{[^}]*container-type:\s*inline-size/s);
+assert.match(compactEnv, /@container \(max-width:\s*560px\)/);
+assert.match(compactEnv, /\.status-badge \.badge-short/);
+assert.match(compactEnv, /\.surfaceChipLabel/);
+assert.match(compactEnv, /\.project-badge \.badge-short/);
+assert.match(compactEnv, /\.workdir-badge \.badge-short/);
+assert.match(compactEnv, /position:\s*absolute/);
+const compactEnvSizing = compactEnv.match(
+  /\.envChips :global\(\.status-badge\),\s*\.envChips :global\(\.runtime-badge\.project-badge\),\s*\.envChips :global\(\.runtime-badge\.workdir-badge\)\s*\{([^}]*)\}/,
+);
+assert.ok(compactEnvSizing, "all three environment chip types must share compact sizing");
+assert.match(compactEnvSizing[1], /width:\s*24px/);
+assert.match(compactEnvSizing[1], /min-width:\s*24px/);
+assert.match(
+  compactEnv,
+  /\.runtime-badge\.workdir-badge:has\(\.workdir-remove\)[\s\S]*width:\s*auto/,
+);
+assert.match(workingDirChips, /className="workdir-remove"/);
+assert.match(workingDirChips, /aria-label=\{text\("Remove folder", "移除文件夹"\)\}/);
+assert.match(workingDirChips, /tabIndex=\{0\}/);
+assert.doesNotMatch(compactEnv, /\.badge-short[^{]*\{[^}]*display:\s*none/s);
 const { effortLevelColor } = await import("../lib/effort-color.ts");
 const effortOptions = ["low", "medium", "high", "max"].map((value) => ({ value }));
 const nonMaxColors = effortOptions
