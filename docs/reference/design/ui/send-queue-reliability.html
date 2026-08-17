@@ -62,14 +62,14 @@
     <div class="state">server running<br><span class="small">服务端状态接管</span></div><span class="arrow">→ clear</span>
     <div class="state">next queued<br><span class="small">仅发送下一条</span></div>
   </div></div>
-  <p>socket write 失败时，队首放回原位置且不进入 running。<code>run_active</code> 表示服务端已有 turn：被拒绝的普通发送放回队首，当前 session 保持 running，等待真实 clear。任何 idle→idle 重复更新都不是新的 drain 信号。</p>
+  <p>socket write 失败时，队首放回原位置且不进入 running。<code>run_active</code> 表示服务端已有 turn：被拒绝的普通发送放回队首，当前 session 保持 running，等待真实 clear。普通本地 idle→idle 更新不是 drain 信号；服务端 <code>running_task_clear</code> 是权威完成事件，即使 UI 已因 stop 乐观显示 idle，也必须尝试 drain。</p>
 
   <h2>03 · 组件职责</h2>
   <div class="table-wrap"><table>
     <thead><tr><th>组件</th><th>唯一职责</th><th>禁止行为</th></tr></thead><tbody>
       <tr><td><code>state/send-queue.ts</code></td><td>FIFO、按 session 隔离、发送失败恢复队首。</td><td>不判断服务端权威状态，不持久化 transcript。</td></tr>
       <tr><td><code>legacy-send.ts</code></td><td>写 WebSocket；成功后立即设置该 session 的 optimistic running。</td><td>不得在同一 session 已有 provisional send 时把第二条视为成功。</td></tr>
-      <tr><td><code>session-store</code></td><td>只在 running→idle 转换时触发一次 drain。</td><td>idle→idle 不得触发 drain。</td></tr>
+      <tr><td><code>session-store</code></td><td>running→idle 转换触发 drain；服务端真实 clear 可显式重试 drain。</td><td>普通 idle→idle 更新不得触发 drain。</td></tr>
       <tr><td><code>use-ws.ts</code></td><td>连接恢复后，当前 session 通过 <code>load_session</code> 恢复；后台队列通过无焦点副作用的 <code>get_run_state</code> 查询状态。</td><td>不得在未知 run 状态下直接发送队列，也不得为后台队列改变 socket 的 focused session。</td></tr>
       <tr><td><code>ws_actions/chat.py</code></td><td>原子占用 session，成功者才能写 user message 和启动 turn。</td><td>不得把“检查”和“占用”分成可并发穿过的两个阶段。</td></tr>
     </tbody></table></div>
@@ -80,7 +80,7 @@
     <li><b>写入前断线：</b><code>sendChatMessage</code> 返回 false，队首恢复；连接恢复且 session 确认 idle 后重试。</li>
     <li><b>写入后断线：</b>本设计沿用 WebSocket 已写出即由服务端处理的现有合同；队首已经从浏览器队列移除。可靠跨进程投递与持久化幂等键不在本次范围。</li>
     <li><b>服务端拒绝：</b><code>run_active</code> 携带原文本，前端放回队首；其他错误仍按普通 turn 错误显示。</li>
-    <li><b>停止并立即发送：</b>目标项移到队首，先发 stop；optimistic clear 只允许该队首发送一次，后端仍以原子占用为最终保护。</li>
+    <li><b>停止并立即发送：</b>目标项移到队首并发送 stop；optimistic clear 只更新 UI，不发送队首。收到服务端真实 clear 后才 drain，后端仍以原子占用为最终保护。</li>
   </ul>
   <div class="note">队列不是持久消息系统。它保证当前 renderer 生命周期内不因重复状态事件、已知 socket 写失败或服务端忙拒绝而丢失文本；页面刷新和已成功写入但 ACK 丢失仍遵循现有非持久边界。</div>
 
@@ -88,6 +88,7 @@
   <div class="table-wrap"><table>
     <thead><tr><th>场景</th><th>预期</th><th>状态</th></tr></thead><tbody>
       <tr><td>两条排队消息 + 两次连续 clear</td><td>只发送第一条，第二条保留。</td><td><span class="pill ok">已验证</span></td></tr>
+      <tr><td>停止并立即发送 + optimistic idle + 服务端真实 clear</td><td>stop 后不提前发送；真实 clear 到达时发送置顶项一次。</td><td><span class="pill ok">已验证</span></td></tr>
       <tr><td>第一条 ACK 后运行结束</td><td>第二条才发送。</td><td><span class="pill ok">已验证</span></td></tr>
       <tr><td>socket 写失败后重连</td><td>消息留在队首，确认 idle 后发送。</td><td><span class="pill ok">已验证</span></td></tr>
       <tr><td>运行中带附件提交</td><td>不排队、不清空草稿。</td><td><span class="pill ok">已验证</span></td></tr>
@@ -96,7 +97,7 @@
     </tbody></table></div>
 
   <h2>06 · 实现记录</h2>
-  <p><span class="pill ok">实现与 review 完成</span>。前端修改集中在发送队列、composer、session running 状态和 WebSocket 重连；后端增加原子 reservation、runtime 接管以及无焦点副作用的运行态查询。review 发现的 reservation 接管窗口和后台 <code>load_session</code> 焦点污染均已修复。</p>
+  <p><span class="pill ok">实现完成</span>。前端修改集中在发送队列、composer、session running 状态和 WebSocket 重连；后端增加原子 reservation、runtime 接管以及无焦点副作用的运行态查询。停止路径的 optimistic idle 不再提前 drain；服务端真实 clear 即使观察到本地 idle，也会重新尝试队列发送。</p>
   <div class="table-wrap"><table>
     <thead><tr><th>验证命令</th><th>实际结果</th></tr></thead><tbody>
       <tr><td><code>cd web &amp;&amp; npm run check</code></td><td><span class="pill ok">通过</span>，包含 send-queue、chat-ui、Markdown sanitize 和 WS action 合同。</td></tr>

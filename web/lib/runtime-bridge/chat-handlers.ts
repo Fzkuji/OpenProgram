@@ -474,7 +474,7 @@ function hydrateTranscriptForTreeUpdate(data: ChatResponseData): void {
 export function handleRunningTaskClear(sessionId: string | undefined): void {
   if (!sessionId) return;
   const store = useSessionStore.getState();
-  store.setRunningTaskFor(sessionId, null);
+  store.setRunningTaskFor(sessionId, null, "always");
   // If the clear is for the currently-active session, also drop the
   // legacy single-task / button state so the composer un-locks.
   if ((store.activeChatKey ?? store.currentSessionId) === sessionId) {

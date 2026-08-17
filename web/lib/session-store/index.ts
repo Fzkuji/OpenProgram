@@ -211,9 +211,13 @@ interface ConvState {
    *  stale reply before the new one streams in. */
   truncateFrom: (sessionId: string, msgId: string) => void;
   /** Set / clear the running task for a specific session. Pass null
-   *  to clear. Used by the per-session running-task WS events so two
-   *  sessions can have independent run state. */
-  setRunningTaskFor: (sessionId: string, t: RunningTask | null) => void;
+   *  to clear. `always` identifies an authoritative server clear;
+   *  `never` keeps an optimistic UI stop from sending too early. */
+  setRunningTaskFor: (
+    sessionId: string,
+    t: RunningTask | null,
+    drain?: "transition" | "always" | "never",
+  ) => void;
   setPaused: (p: boolean) => void;
   setProviderInfo: (p: ConvState["providerInfo"]) => void;
 
@@ -747,7 +751,7 @@ export const useSessionStore = create<ConvState>((set) => ({
       };
     }),
 
-  setRunningTaskFor: (sessionId, t) =>
+  setRunningTaskFor: (sessionId, t, drain = "transition") =>
     set((s) => {
       const wasRunning = Boolean(s.runningTasks[sessionId]);
       const next = { ...s.runningTasks };
@@ -758,12 +762,10 @@ export const useSessionStore = create<ConvState>((set) => ({
       // legacy bridges, which have no React context to write through.
       pushToSessionStore(sessionId, { running: t });
       // Turn finished → hand the client-side send queue its chance to
-      // ship the next parked message. This setter is the single choke
-      // point every run-end path funnels through (WS running_task_clear,
-      // the composer's optimistic stop, fn-form rollback), so the queue
-      // needs no polling of its own. Deferred a tick so the drain's own
-      // store writes don't re-enter this `set`.
-      if (!t && wasRunning) {
+      // ship the next parked message. A server clear may follow an
+      // optimistic local idle, so it uses `always`; optimistic stop uses
+      // `never`. Deferred a tick so drain writes cannot re-enter this `set`.
+      if (!t && drain !== "never" && (wasRunning || drain === "always")) {
         queueMicrotask(() => {
           void import("@/lib/state/send-queue").then((m) =>
             m.useSendQueue.getState().drain(sessionId),

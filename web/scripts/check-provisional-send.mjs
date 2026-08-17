@@ -664,7 +664,11 @@ const stopBody = composer.slice(
   composer.indexOf("// Pick a slash command"),
 );
 assert.match(stopBody, /const targetSessionId = resolveFnFormSessionId\(/);
-assert.match(stopBody, /setRunningTaskFor\(targetSessionId, null\)/);
+assert.match(
+  stopBody,
+  /setRunningTaskFor\(targetSessionId, null, "never"\)/,
+  "optimistic stop must wait for authoritative clear before queue drain",
+);
 assert.match(stopBody, /action: "stop", session_id: targetSessionId/);
 
 const attachmentHook = readFileSync(

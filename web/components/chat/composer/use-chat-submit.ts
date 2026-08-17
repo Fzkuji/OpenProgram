@@ -251,7 +251,7 @@ export function stopSession(
     // a hook point within ~1s for the chat path), it just no longer
     // gates the UI.
     const store = useSessionStore.getState();
-    store.setRunningTaskFor(targetSessionId, null);
+    store.setRunningTaskFor(targetSessionId, null, "never");
     // Also patch the running assistant placeholder (the row that
     // would otherwise be filled in 5-6s later with the late-arriving
     // LLM response) to a cancelled state right now. Backend's

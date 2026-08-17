@@ -78,6 +78,12 @@ const {
 } =
   await import("../lib/state/send-queue.ts");
 const { useSessionStore } = await import("../lib/session-store/index.ts");
+const { stopSession } = await import(
+  "../components/chat/composer/use-chat-submit.ts"
+);
+const { handleRunningTaskClear } = await import(
+  "../lib/runtime-bridge/chat-handlers.ts"
+);
 
 const A = "sess_a";
 const B = "sess_b";
@@ -244,5 +250,27 @@ assert.equal(useSendQueue.getState().queues[A], undefined);
 const attachedId = enqueueMessage(A, draft("caption with image"), 1);
 assert.equal(attachedId, null, "an attached draft must not enter the text queue");
 assert.equal(useSendQueue.getState().queues[A], undefined);
+
+/* --- 11. stop-now waits for the server's authoritative clear -------- */
+sent.length = 0;
+useSendQueue.setState({ queues: {} });
+run(A);
+const stoppedId = enqueueMessage(A, draft("send-after-stop"));
+promoteToHead(A, stoppedId);
+const stopFrames = [];
+stopSession(A, (payload) => {
+  stopFrames.push(payload);
+  return true;
+});
+await settle();
+assert.equal(stopFrames.length, 1, "stop is sent immediately");
+assert.equal(sent.length, 0, "optimistic idle must not send before server clear");
+handleRunningTaskClear(A);
+await settle();
+assert.deepEqual(
+  sent.map((m) => m.text),
+  ["send-after-stop"],
+  "the authoritative server clear sends the promoted entry once",
+);
 
 console.log("check-send-queue: ok");
