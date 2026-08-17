@@ -1476,7 +1476,7 @@ const {
   visibleWebTab,
   waitForWebTabReady,
 } = await import("../lib/desktop-bridge.ts");
-const { measureWebTabBounds } = await import("../lib/web-tab-bounds.ts");
+const { isWebTabOccluded, measureWebTabBounds } = await import("../lib/web-tab-bounds.ts");
 const {
   focusCenterTabGroupMember,
   resolveCenterTabPanes,
@@ -1485,6 +1485,38 @@ const {
 assert.equal(SPLIT_CHAT_MIN_WIDTH, 360);
 assert.equal(SPLIT_WEB_MIN_WIDTH, 480);
 assert.equal(SPLIT_DIVIDER_WIDTH, 6);
+const rect = (left, top, width, height) => ({
+  left,
+  top,
+  right: left + width,
+  bottom: top + height,
+  width,
+  height,
+});
+const webBody = { x: 600, y: 180, width: 500, height: 620 };
+assert.equal(
+  isWebTabOccluded(webBody, [{ getBoundingClientRect: () => rect(150, 900, 420, 360) }]),
+  false,
+  "a project menu confined to the chat pane must not hide the split WebTab",
+);
+assert.equal(
+  isWebTabOccluded(webBody, [{ getBoundingClientRect: () => rect(900, 240, 300, 220) }]),
+  true,
+  "an overlay intersecting the native page body must hide it",
+);
+assert.equal(
+  isWebTabOccluded(webBody, [{ getBoundingClientRect: () => rect(100, 300, 500, 200) }]),
+  false,
+  "edge contact without positive overlap must not hide the WebTab",
+);
+assert.equal(
+  isWebTabOccluded(webBody, [
+    { getBoundingClientRect: () => rect(40, 240, 500, 300) },
+    { getBoundingClientRect: () => rect(0, 0, 1200, 900) },
+  ]),
+  true,
+  "a modal backdrop must occlude the WebTab even when dialog content is elsewhere",
+);
 const thresholdWidth = 846;
 const thresholdRatio = SPLIT_CHAT_MIN_WIDTH / thresholdWidth;
 assert.equal(clampSplitRatioForWidth(0.44, thresholdWidth), thresholdRatio);
@@ -2204,10 +2236,10 @@ assert.doesNotMatch(
   webTabPaneSource,
   /bridge\.webTab\.navigate\(tabId, viewUrlRef\.current\);/,
 );
-assert.match(webTabPaneSource, /const occluded = !!document\.querySelector/);
+assert.match(webTabPaneSource, /const occluded = isWebTabOccluded\(/);
 assert.match(
   webTabPaneSource,
-  /\[role="dialog"\], \.branches-merge-modal-backdrop, \[data-native-view-occluder="true"\]/,
+  /document\.querySelectorAll\([\s\S]*?\[role="dialog"\], \.branches-merge-modal-backdrop, \[data-native-view-occluder="true"\]/,
 );
 assert.match(
   webTabPaneSource,
@@ -2237,6 +2269,15 @@ const fileTilesSource = await readFile(
   "utf8",
 );
 assert.match(fileTilesSource, /data-native-view-occluder="true"/);
+const dialogSource = await readFile(
+  new URL("../components/ui/dialog.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(
+  dialogSource,
+  /<DialogPrimitive\.Overlay[\s\S]*?data-native-view-occluder="true"/,
+  "the full-window dialog backdrop must participate in native view occlusion",
+);
 
 useCenterTabs.setState({
   tabs: [{ id: "s:chat", kind: "session", title: "Chat", sessionId: "chat" }],

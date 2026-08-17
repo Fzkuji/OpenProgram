@@ -45,7 +45,7 @@ import {
   toggleBookmark,
 } from "@/lib/bookmarks";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
-import { measureWebTabBounds } from "@/lib/web-tab-bounds";
+import { isWebTabOccluded, measureWebTabBounds } from "@/lib/web-tab-bounds";
 import styles from "./center-tabs.module.css";
 import { BookmarkBar, BookmarksLibraryButton, BrowserMenu } from "./browser-controls";
 
@@ -250,8 +250,11 @@ function DesktopWebTabPane({
     if (!el) return;
     const report = () => {
       const bounds = measureWebTabBounds(el);
-      const occluded = !!document.querySelector(
-        '[role="dialog"], .branches-merge-modal-backdrop, [data-native-view-occluder="true"]',
+      const occluded = isWebTabOccluded(
+        bounds,
+        document.querySelectorAll(
+          '[role="dialog"], .branches-merge-modal-backdrop, [data-native-view-occluder="true"]',
+        ),
       );
       if (occluded || bounds.width <= 0 || bounds.height <= 0) {
         removeVisibleWebTabBounds(bridge, tabId);

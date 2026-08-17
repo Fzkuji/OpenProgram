@@ -31,6 +31,7 @@
     <li><code>sync-visible</code> 与兼容入口 <code>set-bounds</code> 使用同一转换；主进程内部已经是 DIP 的 show/hide/transfer 路径不重复缩放。</li>
     <li>shell 缩放变化会触发现有 renderer <code>resize</code> listener，重新测量并发送当前 bounds；主进程在每次 IPC 上读取当前缩放因子。</li>
     <li>无效或非正缩放因子按 <code>1</code> 处理。</li>
+    <li>DOM 浮层只在其可见矩形与当前 Web body 相交时遮挡 native <code>WebContentsView</code>。位于聊天 pane 内的 project、permission 等菜单不得隐藏相邻分屏中的网页；覆盖网页区域的对话框、附件预览和 merge backdrop 仍需隐藏 native view，关闭后由现有 bounds observer 恢复。</li>
   </ul>
 
   <h2>边界与排除</h2>
@@ -42,11 +43,13 @@
     <li>自动化覆盖 100% 缩放、约 109.5% 缩放、无效缩放因子、两个 IPC 入口和现有 desktop 回归。</li>
     <li>安装版使用默认 18100 worker；在非 100% shell 缩放下验证 DOM body 与 native viewport 同宽同高，并检查分屏、split ratio 调整及窗口缩放。</li>
     <li>视觉验收只使用一张当前 viewport 截图；不启用 OCR、候选框或多轮 crop。</li>
+    <li>公开回归必须覆盖三个边界：左侧 project menu 与右侧 Web body 不相交时保持可见；浮层与 Web body 相交时隐藏；只有边缘接触而没有面积重叠时保持可见。</li>
   </ul>
 
   <h2>实现证据</h2>
   <ul>
     <li>desktop 与 web 完整检查通过，动态 renderer 测试保留 DOMRect 小数并验证 <code>syncVisible</code> payload。</li>
+    <li><code>check:web-split</code> 执行矩形相交回归：左侧 project menu 不隐藏右侧 WebTab；相交浮层与全屏 dialog backdrop 会隐藏；零面积和仅边缘接触不隐藏。通用 <code>DialogOverlay</code> 通过 <code>data-native-view-occluder</code> 进入同一判断。</li>
     <li>安装版在约 109.5% shell 缩放下，DOM body 换算结果与 native viewport 均为 <code>568×763 DIP</code>。</li>
     <li>窗口调整为 <code>1350×800</code> 后，DOM body 换算结果与 native viewport 均为 <code>526×712 DIP</code>；恢复窗口后仍一致。</li>
     <li>默认 18100 worker 健康检查通过，CDP 9223 同时观察 shell 与当前 Bilibili 原生页面。</li>
