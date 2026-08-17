@@ -106,7 +106,7 @@
     <tr><td>specification review / quality review</td><td class="ok">完成：规格审查与修复后的独立质量审查均通过。</td></tr>
     <tr><td>完整检查与默认安装版可见验收</td><td class="ok">完成：Web 全量检查、TypeScript、构建、desktop webtab/transfer、单元测试和默认安装版 CDP 验收均通过。</td></tr>
     <tr><td>底部控制按钮常态 surface</td><td class="ok">完成：常态仅使用 <code>--chip-bg</code> 填充，不增加边框或内描边；真实 App computed style 验证 border 为 0、shadow 为 none，hover/open 仅增强背景。</td></tr>
-    <tr><td>Context 统计重复打开</td><td class="pending">待实现：保留同一会话与分支的上次结果，后台刷新时不再显示整卡 Loading。</td></tr>
+    <tr><td>Context 统计重复打开</td><td class="ok">已实现：缓存按会话与分支隔离；重复打开立即显示上次结果并后台刷新。<code>check:chat-ui</code> 可执行验证缓存隔离、迟到请求取消、刷新失败保留缓存，并约束面板按会话与分支 key 同步重建。</td></tr>
   </tbody></table></div>
   <p class="sub">可见验收使用实际 <code>/Applications/OpenProgram.app</code>、默认 <code>18100</code> 页面和 <code>9223</code> CDP。测试操作真实 permission、more、active tool、chat model、execution model、effort 与 context 触发器，确认常态无边框、hover/open 背景增强、窄态无重叠且菜单可打开，并在结束时关闭菜单、恢复焦点与原始页面样式。</p>
 </main></body></html>
