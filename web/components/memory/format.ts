@@ -1,7 +1,7 @@
 /**
  * Small formatting + grouping helpers for the Memory page.
  */
-import type { TopicPage } from "./types";
+import type { TimelineDay, TimelineYearGroup, TopicPage } from "./types";
 
 /** Human-readable byte size: 512 B / 12.3 KB / 1.4 MB. */
 export function formatSize(bytes: number): string {
@@ -43,4 +43,44 @@ export function groupByFolder(pages: TopicPage[]): Map<string, TopicPage[]> {
     groups.get(folder)!.push(p);
   }
   return groups;
+}
+
+/** Group derived Timeline files by calendar year and month. The filename date
+ * is the semantic event date; the file mtime is only the last rebuild time. */
+export function groupTimelineDays(
+  days: TimelineDay[],
+  locale: "en" | "zh" = "en",
+): TimelineYearGroup[] {
+  const language = locale === "zh" ? "zh-CN" : "en-US";
+  const years = new Map<string, Map<string, TimelineYearGroup["months"][number]>>();
+
+  for (const day of [...days].sort((a, b) => b.date.localeCompare(a.date))) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day.date);
+    if (!match) continue;
+    const [, year, month, dayLabel] = match;
+    const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(dayLabel)));
+    const monthKey = `${year}-${month}`;
+    const months = years.get(year) ?? new Map();
+    const group = months.get(monthKey) ?? {
+      key: monthKey,
+      label: new Intl.DateTimeFormat(language, { month: "long", timeZone: "UTC" }).format(date),
+      days: [],
+    };
+    group.days.push({
+      ...day,
+      dayLabel,
+      weekday: new Intl.DateTimeFormat(language, { weekday: "long", timeZone: "UTC" }).format(date),
+    });
+    months.set(monthKey, group);
+    years.set(year, months);
+  }
+
+  return Array.from(years, ([year, months]) => {
+    const groupedMonths = Array.from(months.values());
+    return {
+      year,
+      dayCount: groupedMonths.reduce((total, month) => total + month.days.length, 0),
+      months: groupedMonths,
+    };
+  });
 }

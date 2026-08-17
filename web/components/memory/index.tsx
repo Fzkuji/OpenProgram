@@ -20,7 +20,7 @@ import Link from "next/link";
 import { Settings2 } from "lucide-react";
 
 import { renderMarkdown } from "./markdown";
-import { formatDate, formatSize, groupByFolder } from "./format";
+import { formatDate, formatSize, groupByFolder, groupTimelineDays } from "./format";
 import { ClockIcon, TypeBadge } from "./icons";
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -256,6 +256,7 @@ export function MemoryPage() {
   }, [topicPages, search]);
 
   const topicGroups = groupByFolder(filteredTopics);
+  const timelineGroups = useMemo(() => groupTimelineDays(timelineDays, locale), [timelineDays, locale]);
 
   // Wikilink click handler: delegate from the preview container
   function handlePreviewClick(e: React.MouseEvent) {
@@ -384,20 +385,35 @@ export function MemoryPage() {
                   sub={text("Rebuilt from topics after every write", "每次写入后从主题重建")}
                 />
               ) : (
-                <div className={styles.treeContent}>
-                  {timelineDays.map((day) => (
-                    <button
-                      key={day.date}
-                      className={`${styles.sessionRow} ${selectedDate === day.date ? styles.fileRowActive : ""}`}
-                      onClick={() => openTimelineDay(day.date)}
-                    >
-                      <ClockIcon className={styles.fileIcon} />
-                      <div className={styles.sessionInfo}>
-                        <span className={styles.fileName}>{day.date}</span>
-                        <span className={styles.fileMeta}>{formatSize(day.size)}</span>
-                      </div>
-                      <span className={styles.fileMeta}>{formatDate(day.mtime, locale)}</span>
-                    </button>
+                <div className={styles.timelineTree}>
+                  {timelineGroups.map((year, yearIndex) => (
+                    <details key={year.year} className={styles.timelineYear} open={yearIndex === 0}>
+                      <summary className={styles.timelineYearSummary}>
+                        <span>{year.year}</span>
+                        <span>{year.dayCount} {text(year.dayCount === 1 ? "day" : "days", "天")}</span>
+                      </summary>
+                      {year.months.map((month, monthIndex) => (
+                        <details key={month.key} className={styles.timelineMonth} open={yearIndex === 0 && monthIndex === 0}>
+                          <summary className={styles.timelineMonthSummary}>
+                            <span>{month.label}</span>
+                            <span>{month.days.length} {text(month.days.length === 1 ? "day" : "days", "天")}</span>
+                          </summary>
+                          <div className={styles.timelineDays}>
+                            {month.days.map((day) => (
+                              <button
+                                key={day.date}
+                                className={`${styles.timelineDay} ${selectedDate === day.date ? styles.timelineDayActive : ""}`}
+                                onClick={() => openTimelineDay(day.date)}
+                              >
+                                <span className={styles.timelineDayNumber}>{day.dayLabel}</span>
+                                <span className={styles.timelineWeekday}>{day.weekday}</span>
+                                <span className={styles.fileMeta}>{formatSize(day.size)}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </details>
+                      ))}
+                    </details>
                   ))}
                 </div>
               )}
@@ -493,17 +509,17 @@ export function MemoryPage() {
                 <div className={styles.coreInfoDesc}>
                   {coreView === "injected" && coreMeta?.injectionEnabled === false
                     ? text(
-                      "Core injection is disabled in Memory settings. The editable Core records are retained but no Core block enters system prompts.",
-                      "Memory 设置已关闭 Core 注入。完整 Core 记录仍会保留，但不会进入系统提示词。",
+                      "Injection is off. Source records remain saved and editable, but no Core text is added to system prompts.",
+                      "Core 注入已关闭。源记录仍会保存且可编辑，但不会进入系统提示词。",
                     )
                     : coreView === "injected"
                     ? text(
-                      "The exact read-only block injected into every system prompt, rendered from the Core records within its token budget.",
-                      "每次系统提示词实际注入的只读内容，由完整 Core 记录按 token 预算派生。",
+                      "Read-only prompt text generated from Source records. This is what new system prompts receive.",
+                      "由源记录生成的只读提示词内容。新的系统提示词会接收这里显示的文本。",
                     )
                     : text(
-                      "The editable Core records. Keep only facts and rules needed across most future conversations.",
-                      "可编辑的完整 Core 记录。这里只保留多数未来对话都需要的事实和规则。",
+                      "Edit the master Core records. Saving rebuilds the Prompt preview within the token budget.",
+                      "编辑 Core 源记录。保存后会按 token 预算重新生成提示词预览。",
                     )}
                 </div>
                 <div className={styles.coreViewSwitch} role="group" aria-label={text("Core view", "Core 视图")}>
@@ -512,38 +528,52 @@ export function MemoryPage() {
                     aria-pressed={coreView === "injected"}
                     onClick={() => setCoreView("injected")}
                   >
-                    {text("Injected", "实际注入")}
+                    {text("Prompt preview", "提示词预览")}
                   </button>
                   <button
                     className={coreView === "records" ? styles.coreViewButtonActive : styles.coreViewButton}
                     aria-pressed={coreView === "records"}
                     onClick={() => setCoreView("records")}
                   >
-                    {text("Core records", "完整记录")}
+                    {text("Source records", "源记录")}
                   </button>
                 </div>
                 {coreMeta && (
-                  <div className={styles.coreInfoMeta}>
-                    {coreView === "injected" ? (
-                      <>
-                        <span className={coreMeta.injectedTokens > coreMeta.budgetTokens ? styles.metaWarn : styles.metaOk}>
-                          {coreMeta.injectedTokens} / {coreMeta.budgetTokens} tokens
-                        </span>
-                        {!coreMeta.injectionEnabled && (
-                          <span>{text("Injection disabled", "注入已关闭")}</span>
-                        )}
-                      </>
-                    ) : (
-                      <span>{formatSize(coreMeta.size)}</span>
-                    )}
-                    {(coreView === "injected" ? coreMeta.renderedMtime : coreMeta.mtime) > 0 && (
-                      <span>
-                        {text(
-                          `Modified ${formatDate(coreView === "injected" ? coreMeta.renderedMtime : coreMeta.mtime, locale)}`,
-                          `修改于 ${formatDate(coreView === "injected" ? coreMeta.renderedMtime : coreMeta.mtime, locale)}`,
-                        )}
+                  <div className={styles.coreStatusCard}>
+                    <div className={styles.coreStatusRow}>
+                      <span className={coreMeta.injectionEnabled ? styles.coreStatusOn : styles.coreStatusOff}>
+                        {coreMeta.injectionEnabled ? text("Injection enabled", "注入已开启") : text("Injection disabled", "注入已关闭")}
                       </span>
-                    )}
+                      <span>{coreMeta.injectedTokens.toLocaleString()} / {coreMeta.budgetTokens.toLocaleString()} tokens</span>
+                    </div>
+                    <div
+                      className={styles.coreTokenMeter}
+                      role="progressbar"
+                      aria-label={text("Core token budget usage", "Core token 预算使用量")}
+                      aria-valuemin={0}
+                      aria-valuemax={coreMeta.budgetTokens}
+                      aria-valuenow={coreMeta.injectedTokens}
+                    >
+                      <span
+                        className={coreMeta.injectedTokens > coreMeta.budgetTokens ? styles.coreTokenFillWarn : styles.coreTokenFill}
+                        style={{ width: `${Math.min(100, coreMeta.budgetTokens > 0 ? (coreMeta.injectedTokens / coreMeta.budgetTokens) * 100 : 0)}%` }}
+                      />
+                    </div>
+                    <div className={styles.coreStatusFoot}>
+                      {coreView === "injected" && coreMeta.renderedMtime <= 0
+                        ? text("No prompt preview yet", "还没有提示词预览")
+                        : coreView === "records" && coreMeta.mtime <= 0
+                        ? text("No source records yet", "还没有源记录")
+                        : coreView === "injected"
+                        ? text(
+                          `Preview rebuilt ${formatDate(coreMeta.renderedMtime, locale)}`,
+                          `预览重建于 ${formatDate(coreMeta.renderedMtime, locale)}`,
+                        )
+                        : text(
+                          `Source ${formatSize(coreMeta.size)} · modified ${formatDate(coreMeta.mtime, locale)}`,
+                          `源记录 ${formatSize(coreMeta.size)} · 修改于 ${formatDate(coreMeta.mtime, locale)}`,
+                        )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -553,8 +583,8 @@ export function MemoryPage() {
                   <LoadingSkeleton />
                 ) : coreView === "records" ? (
                   <EditorPanel
-                    title="topics/core.md"
-                    meta={[]}
+                    title={text("Core source records", "Core 源记录")}
+                    meta={["topics/core.md"]}
                     state={coreEditor}
                     onChange={(c) => setCoreEditor((e) => ({ ...e, content: c, saveStatus: "" }))}
                     onSave={saveCore}
@@ -565,11 +595,11 @@ export function MemoryPage() {
                     <div className={styles.editorHeader}>
                       <div className={styles.editorHeaderLeft}>
                         <SparklesIcon size={14} />
-                        <span className={styles.editorTitle}>core.md</span>
+                        <span className={styles.editorTitle}>{text("Prompt preview", "提示词预览")}</span>
                       </div>
                       <div className={styles.editorActions}>
                         <span className={styles.fileMeta}>
-                          {coreMeta?.injectedTokens ?? 0} / {coreMeta?.budgetTokens ?? 2000} tokens
+                          {(coreMeta?.injectedTokens ?? 0).toLocaleString()} / {(coreMeta?.budgetTokens ?? 2000).toLocaleString()} tokens
                         </span>
                       </div>
                     </div>

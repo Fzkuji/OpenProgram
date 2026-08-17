@@ -18,6 +18,23 @@ export interface TimelineDay {
   mtime: number;
 }
 
+export interface TimelineDisplayDay extends TimelineDay {
+  dayLabel: string;
+  weekday: string;
+}
+
+export interface TimelineMonthGroup {
+  key: string;
+  label: string;
+  days: TimelineDisplayDay[];
+}
+
+export interface TimelineYearGroup {
+  year: string;
+  dayCount: number;
+  months: TimelineMonthGroup[];
+}
+
 /**
  * One memory paragraph, as the derived recent view records it.
  * Field names match what `rebuild_derived_views` writes into

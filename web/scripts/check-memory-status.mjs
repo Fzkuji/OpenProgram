@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { groupTimelineDays } from "../components/memory/format.ts";
 
 const memoryPage = readFileSync(
   new URL("../components/memory/index.tsx", import.meta.url),
@@ -30,5 +31,27 @@ assert.match(memoryPage, /const submittedContent = coreEditor\.content/);
 assert.match(memoryPage, /fetchCore\(submittedContent\)/);
 assert.match(memoryPage, /e\.content === submittedContent/);
 assert.match(memoryMarkdown, /sanitizeHtml\(marked\.parse\(/);
+assert.match(memoryPage, /Prompt preview/);
+assert.match(memoryPage, /Source records/);
+assert.match(memoryPage, /Injection enabled/);
+assert.doesNotMatch(memoryPage, />\s*Injected\s*</);
+assert.doesNotMatch(memoryPage, />\s*Core records\s*</);
+assert.match(memoryPage, /groupTimelineDays\(timelineDays, locale\)/);
+assert.match(memoryPage, /<details[^>]*className=\{styles\.timelineYear\}/);
+assert.match(memoryPage, /<details[^>]*className=\{styles\.timelineMonth\}/);
+assert.doesNotMatch(memoryPage, /formatDate\(day\.mtime, locale\)/);
+assert.match(memoryCss, /\.coreTokenMeter\s*\{/);
+assert.match(memoryCss, /\.timelineYear\s*\{/);
+assert.match(memoryCss, /\.timelineMonth\s*\{/);
+
+const groupedTimeline = groupTimelineDays([
+  { date: "2026-08-07", size: 20, mtime: 2 },
+  { date: "2025-12-31", size: 10, mtime: 1 },
+  { date: "2026-08-15", size: 30, mtime: 3 },
+], "en");
+assert.deepEqual(
+  groupedTimeline.map((year) => [year.year, year.dayCount, year.months.map((month) => [month.label, month.days.map((day) => day.dayLabel)])]),
+  [["2026", 2, [["August", ["15", "07"]]]], ["2025", 1, [["December", ["31"]]]]],
+);
 
 console.log("check-memory-status: ok");
