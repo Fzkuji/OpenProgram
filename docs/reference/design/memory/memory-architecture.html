@@ -95,6 +95,21 @@
   .m-row-main{min-width:0;flex:1}
   .m-row-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:550}
   .m-row-sub{display:block;margin-top:2px;color:#9698a0;font-size:10.5px}
+  .m-time-tree{padding:8px 7px 14px;overflow:auto}
+  .m-time-tree details{margin:0}
+  .m-time-tree summary{list-style:none;cursor:pointer}
+  .m-time-tree summary::-webkit-details-marker{display:none}
+  .m-year-summary,.m-month-summary{height:34px;padding:0 8px;display:flex;align-items:center;gap:7px;color:#555760}
+  .m-year-summary{font-size:12px;font-weight:700}
+  .m-month-summary{padding-left:22px;color:#73757e;font-size:11px;font-weight:650}
+  .m-year-summary::before,.m-month-summary::before{content:"›";width:10px;color:#9a9ca4;transform:rotate(0);transition:transform .12s ease}
+  details[open]>.m-year-summary::before,details[open]>.m-month-summary::before{transform:rotate(90deg)}
+  .m-time-days{padding:0 0 5px 27px}
+  .m-time-day{min-height:42px;padding:6px 8px;display:grid;grid-template-columns:25px minmax(0,1fr) auto;align-items:center;gap:8px;border-radius:8px;color:#62646c}
+  .m-time-day.active{background:#fff;color:#202126;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+  .m-time-number{font-variant-numeric:tabular-nums;font-size:13px;font-weight:650}
+  .m-time-name{min-width:0;font-size:11.5px}
+  .m-time-size{color:#999ba3;font-size:10px}
   .m-rail-note{margin:auto 10px 10px;padding:12px;border:1px solid #dedee2;border-radius:10px;background:#fff}
   .m-rail-note strong{display:block;margin-bottom:4px;color:#34353b;font-size:12px}
   .m-rail-note span{display:block;color:#858790;font-size:10.5px;line-height:1.45}
@@ -1159,7 +1174,7 @@
         <h3 id="memory-target-title">目标页面 · 宽屏结构</h3>
         <p>点击左侧四个分区，可检查对应的列表与内容状态。</p>
       </div>
-      <p>示例数据来自当前正式 Memory：3 Topics / 15 records / Core 425 tokens</p>
+      <p>目标数据状态：3 个名称明确的项目 Topics / 5 条项目记录 / 3 条 Core 规则</p>
     </div>
 
     <div class="m-frame" id="memoryPrototype">
@@ -1167,7 +1182,7 @@
         <div class="m-title">Memory</div>
         <div class="m-top-meta">
           <span>3 topics</span>
-          <span>15 records</span>
+          <span>8 records</span>
           <a class="m-settings" href="memory-settings-ui.html">Memory settings</a>
         </div>
       </header>
@@ -1177,7 +1192,7 @@
           <nav class="m-nav" aria-label="Memory views">
             <button class="m-nav-item active" type="button" aria-pressed="true" data-memory-proto="topics"><span class="m-glyph">▤</span><span>Topics</span><span class="m-count">3</span></button>
             <button class="m-nav-item" type="button" aria-pressed="false" data-memory-proto="timeline"><span class="m-glyph">◷</span><span>Timeline</span></button>
-            <button class="m-nav-item" type="button" aria-pressed="false" data-memory-proto="recent"><span class="m-glyph">⌁</span><span>Recent</span><span class="m-count">15</span></button>
+            <button class="m-nav-item" type="button" aria-pressed="false" data-memory-proto="recent"><span class="m-glyph">⌁</span><span>Recent</span><span class="m-count">8</span></button>
             <button class="m-nav-item" type="button" aria-pressed="false" data-memory-proto="core"><span class="m-glyph">✦</span><span>Core</span><span class="m-count">3</span></button>
           </nav>
 
@@ -1185,26 +1200,34 @@
             <div class="m-search">⌕ <span>Search topics</span></div>
             <div class="m-section-label">PROJECTS</div>
             <div class="m-list">
-              <div class="m-row active"><span class="m-glyph">▧</span><div class="m-row-main"><span class="m-row-title">Agent memory survey</span><span class="m-row-sub">6 records · updated 6m ago</span></div></div>
-              <div class="m-row"><span class="m-glyph">▧</span><div class="m-row-main"><span class="m-row-title">Agent memory survey LaTeX</span><span class="m-row-sub">4 records</span></div></div>
-              <div class="m-row"><span class="m-glyph">▧</span><div class="m-row-main"><span class="m-row-title">Agent memory survey test 2</span><span class="m-row-sub">2 records</span></div></div>
+              <div class="m-row active"><span class="m-glyph">▧</span><div class="m-row-main"><span class="m-row-title">Agent memory survey · test6 manuscript</span><span class="m-row-sub">2 current records</span></div></div>
+              <div class="m-row"><span class="m-glyph">▧</span><div class="m-row-main"><span class="m-row-title">Agent memory survey · test3 LaTeX</span><span class="m-row-sub">2 current records</span></div></div>
+              <div class="m-row"><span class="m-glyph">▧</span><div class="m-row-main"><span class="m-row-title">Agent memory survey · test2 LaTeX</span><span class="m-row-sub">1 completed record</span></div></div>
             </div>
           </div>
 
           <div class="m-context" data-memory-context="timeline">
-            <div class="m-section-label" style="padding-top:13px">AUGUST 2026</div>
-            <div class="m-list">
-              <div class="m-row active"><span class="m-glyph">15</span><div class="m-row-main"><span class="m-row-title">Saturday</span><span class="m-row-sub">2 memory records</span></div></div>
-              <div class="m-row"><span class="m-glyph">10</span><div class="m-row-main"><span class="m-row-title">Monday</span><span class="m-row-sub">1 memory record</span></div></div>
-              <div class="m-row"><span class="m-glyph">08</span><div class="m-row-main"><span class="m-row-title">Saturday</span><span class="m-row-sub">10 memory records</span></div></div>
+            <div class="m-time-tree">
+              <details open>
+                <summary class="m-year-summary">2026 <span class="m-count">4 days</span></summary>
+                <details open>
+                  <summary class="m-month-summary">August <span class="m-count">4 days</span></summary>
+                  <div class="m-time-days">
+                    <div class="m-time-day active"><span class="m-time-number">15</span><span class="m-time-name">Saturday</span><span class="m-time-size">734 B</span></div>
+                    <div class="m-time-day"><span class="m-time-number">10</span><span class="m-time-name">Monday</span><span class="m-time-size">316 B</span></div>
+                    <div class="m-time-day"><span class="m-time-number">08</span><span class="m-time-name">Saturday</span><span class="m-time-size">11.1 KB</span></div>
+                    <div class="m-time-day"><span class="m-time-number">07</span><span class="m-time-name">Friday</span><span class="m-time-size">2.0 KB</span></div>
+                  </div>
+                </details>
+              </details>
             </div>
           </div>
 
           <div class="m-context" data-memory-context="recent">
             <div class="m-section-label" style="padding-top:13px">FILTER BY TOPIC</div>
             <div class="m-list">
-              <div class="m-row active"><span class="m-glyph">●</span><div class="m-row-main"><span class="m-row-title">All memory</span><span class="m-row-sub">15 records</span></div></div>
-              <div class="m-row"><span class="m-glyph">○</span><div class="m-row-main"><span class="m-row-title">Projects</span><span class="m-row-sub">12 records</span></div></div>
+              <div class="m-row active"><span class="m-glyph">●</span><div class="m-row-main"><span class="m-row-title">All memory</span><span class="m-row-sub">8 records</span></div></div>
+              <div class="m-row"><span class="m-glyph">○</span><div class="m-row-main"><span class="m-row-title">Projects</span><span class="m-row-sub">5 records</span></div></div>
               <div class="m-row"><span class="m-glyph">○</span><div class="m-row-main"><span class="m-row-title">Core</span><span class="m-row-sub">3 records</span></div></div>
             </div>
           </div>
@@ -1214,10 +1237,10 @@
               <div class="m-row active"><span class="m-glyph">✦</span><div class="m-row-main"><span class="m-row-title">Core memory</span><span class="m-row-sub">3 cross-session rules</span></div></div>
             </div>
             <div class="m-rail-note">
-              <strong>Injected into prompts</strong>
-              <span>425 of 2000 tokens</span>
+              <strong>Prompt injection enabled</strong>
+              <span>425 / 2,000 tokens</span>
               <div class="m-meter" aria-label="425 of 2000 tokens"><i></i></div>
-              <span>Core records remain editable from the Records view.</span>
+              <span>The preview is generated from editable source records.</span>
             </div>
           </div>
         </aside>
@@ -1226,8 +1249,8 @@
           <section class="m-panel active" data-memory-panel="topics">
             <header class="m-detail-head">
               <div class="m-detail-copy">
-                <div class="m-detail-title">Agent memory survey <span class="m-badge">PROJECTS</span></div>
-                <div class="m-detail-sub">projects/agent_memory_survey.md · 6 records · updated 6 minutes ago</div>
+                <div class="m-detail-title">Agent memory survey · test6 manuscript <span class="m-badge">PROJECTS</span></div>
+                <div class="m-detail-sub">projects/agent_memory_survey_test6.md · 2 current records</div>
               </div>
               <div class="m-actions"><div class="m-segment"><span class="active">Preview</span><span>Edit</span></div></div>
             </header>
@@ -1255,10 +1278,10 @@
 
           <section class="m-panel" data-memory-panel="core">
             <header class="m-detail-head">
-              <div class="m-detail-copy"><div class="m-detail-title">Core memory</div><div class="m-detail-sub"><span class="m-core-status">Injected</span> · 425 of 2000 tokens · 3 records</div></div>
-              <div class="m-actions"><div class="m-segment"><span class="active">Injected</span><span>Records</span></div></div>
+              <div class="m-detail-copy"><div class="m-detail-title">Core memory</div><div class="m-detail-sub"><span class="m-core-status">Injection enabled</span> · 425 / 2,000 tokens</div></div>
+              <div class="m-actions"><div class="m-segment"><span class="active">Prompt preview</span><span>Source records</span></div></div>
             </header>
-            <div class="m-doc-wrap"><article class="m-doc"><div class="m-doc-kicker">Cross-session operating rules</div><h4>Core memory</h4><p class="m-lede">Only facts and rules needed across most future conversations remain here.</p><div class="m-record"><div class="m-record-meta"><span>Language</span><span>·</span><span>Aug 10</span></div><p>Use Chinese by default when discussing Memory and other operational work.</p></div><div class="m-record"><div class="m-record-meta"><span>Address</span><span>·</span><span>Aug 15</span></div><p>Use plain 你 with no invented honorific unless the owner explicitly chooses one.</p></div><div class="m-record"><div class="m-record-meta"><span>Tool reporting</span><span>·</span><span>Aug 15</span></div><p>Never fabricate tool calls or tool results. Report observed results and state when no available tool returns a result.</p></div></article></div>
+            <div class="m-doc-wrap"><article class="m-doc"><div class="m-doc-kicker">Read-only prompt preview</div><h4>Core memory</h4><p class="m-lede">Generated from Source records and inserted into new system prompts. Edit the source records to change this preview.</p><div class="m-record"><div class="m-record-meta"><span>Language</span><span>·</span><span>Aug 10</span></div><p>Use Chinese by default when discussing Memory and other operational work.</p></div><div class="m-record"><div class="m-record-meta"><span>Address</span><span>·</span><span>Aug 15</span></div><p>Use plain 你 with no invented honorific unless the owner explicitly chooses one.</p></div><div class="m-record"><div class="m-record-meta"><span>Tool reporting</span><span>·</span><span>Aug 15</span></div><p>Never fabricate tool calls or tool results. Report observed results and state when no available tool returns a result.</p></div></article></div>
           </section>
         </main>
       </div>
@@ -1280,21 +1303,22 @@
           </nav>
           <div class="m-mobile-body m-mobile-context" data-mobile-context="topics">
             <div class="m-search" style="margin:0 0 12px">⌕ <span>Search topics</span></div>
-            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Agent memory survey" data-mobile-label="Research scope" data-mobile-content="The survey compares memory systems through a shared evidence framework."><strong>Agent memory survey</strong><span>6 records · updated 6m ago</span></button>
-            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Agent memory survey LaTeX" data-mobile-label="Current state" data-mobile-content="The LaTeX workspace remains separate because its validation state differs."><strong>Agent memory survey LaTeX</strong><span>4 records</span></button>
+            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Agent memory survey · test6 manuscript" data-mobile-label="Current state" data-mobile-content="The test6 manuscript keeps its goal and latest verified status."><strong>Agent memory survey · test6 manuscript</strong><span>2 current records</span></button>
+            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Agent memory survey · test3 LaTeX" data-mobile-label="Current state" data-mobile-content="The test3 LaTeX conversion remains incomplete."><strong>Agent memory survey · test3 LaTeX</strong><span>2 current records</span></button>
+            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Agent memory survey · test2 LaTeX" data-mobile-label="Completed" data-mobile-content="The test2 LaTeX conversion compiled successfully."><strong>Agent memory survey · test2 LaTeX</strong><span>1 completed record</span></button>
           </div>
           <div class="m-mobile-body m-mobile-context" data-mobile-context="timeline" hidden>
-            <div class="m-doc-kicker">August 2026</div>
+            <div class="m-doc-kicker">2026 / August</div>
             <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="August 15, 2026" data-mobile-label="Core" data-mobile-content="Two memory records are present for this date."><strong>August 15 · Saturday</strong><span>2 memory records</span></button>
             <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="August 10, 2026" data-mobile-label="Core" data-mobile-content="One memory record is present for this date."><strong>August 10 · Monday</strong><span>1 memory record</span></button>
           </div>
           <div class="m-mobile-body m-mobile-context" data-mobile-context="recent" hidden>
             <div class="m-doc-kicker">Recent memory</div>
-            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Recent memory" data-mobile-label="Core · 2026-08-10" data-mobile-content="Use Chinese by default when discussing Memory and other operational work."><strong>All recent memory</strong><span>15 records · derived from Topics</span></button>
+            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Recent memory" data-mobile-label="Core · 2026-08-10" data-mobile-content="Use Chinese by default when discussing Memory and other operational work."><strong>All recent memory</strong><span>8 records · derived from Topics</span></button>
           </div>
           <div class="m-mobile-body m-mobile-context" data-mobile-context="core" hidden>
             <div class="m-doc-kicker">Core memory</div>
-            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Core memory" data-mobile-label="Injected" data-mobile-content="Only facts and rules needed across most future conversations remain here."><strong>Core memory</strong><span>3 records · 425 of 2000 tokens</span></button>
+            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Core memory" data-mobile-label="Prompt preview" data-mobile-content="Read-only prompt text generated from editable Core records."><strong>Core memory</strong><span>Injection enabled · 425 / 2,000 tokens</span></button>
           </div>
         </div>
         <div class="m-mobile-view" data-mobile-view="detail" hidden>
@@ -1318,7 +1342,7 @@
       <thead><tr><th>区域</th><th>目标结构</th><th>避免的问题</th></tr></thead>
       <tbody>
         <tr><td><b>顶部标题栏</b></td><td>页面标题、低权重总量、Memory settings</td><td>不放 writer 状态、刷新状态或重复说明</td></tr>
-        <tr><td><b>二级栏</b></td><td>四个 36px 分区行；下方仅显示当前分区的列表、搜索或过滤器；Topics 不重复显示由 Core 分区管理的 <code>topics/core.md</code></td><td>分区标签和 Topic 文件不再混成同一层级</td></tr>
+        <tr><td><b>二级栏</b></td><td>四个 36px 分区行；Timeline 使用年、月、日三级原生折叠；Topics 不重复显示由 Core 分区管理的 <code>topics/core.md</code></td><td>日期不再平铺，分区标签和 Topic 文件不再混成同一层级</td></tr>
         <tr><td><b>内容标题</b></td><td>名称、类型、路径、修改时间、视图与编辑操作集中在一个 76px 区域</td><td>删除独立 meta 横条和分散的 Core 状态</td></tr>
         <tr><td><b>正文</b></td><td>Preview/Timeline/Recent/Core 使用最大 780px 阅读面；Edit 保持全宽等宽字体编辑器</td><td>避免超宽文本和大片无结构空白</td></tr>
         <tr><td><b>窄宽度</b></td><td>分区图标栏 + 列表/详情单页切换</td><td>不自动折叠桌面栏，不把三块上下堆叠，不允许内容区重叠</td></tr>
@@ -1337,8 +1361,8 @@
     </div>
   </div>
 
-  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；小于 720px 时列表与详情互斥显示并提供返回路径；所有按钮可键盘访问并有可见焦点；Topics 列表不显示 <code>core.md</code>，Core 仍通过独立分区查看和编辑；Timeline、Recent 与 Core 的请求和编辑语义不变；页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
-  <div class="legend"><b>实现状态：</b>本节已完成目标结构和宽屏/窄屏样稿，生产页面尚未按此稿修改。此前已经实现的“移除 writer 状态条”和 Core 有效注入/records 双视图保持有效。</div>
+  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>，同一项目的不同 test 工作区必须在名称中可区分；小于 720px 时列表与详情互斥显示并提供返回路径；页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
+  <div class="legend"><b>本轮实现状态：</b>Core 的 Prompt preview / Source records 命名、注入状态卡和 Timeline 年/月/日折叠已进入生产代码，仍待默认 App 可视验收。三个项目 Topic 的目标名称与压缩后计数仍只是样稿数据，必须由后续结构化 Memory 事务写入正式工作区后才能标记完成。小于 720px 的列表/详情互斥结构属于整页改版目标，本轮没有实现，生产页面仍沿用现有纵向布局。</div>
 
   <h2 id="changes"><span class="num">10</span>统一修改接口</h2>
   <p class="lead">Memory 同时支持模型直接编辑 Topic 文件，以及模型或其他程序调用结构化接口。两种方式不互相替代；区别只在于调用方如何表达修改。所有修改最终进入同一套 Runtime 暂存、校验、派生视图、原子安装和 Git 流程。</p>
