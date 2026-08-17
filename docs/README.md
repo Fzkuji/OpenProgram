@@ -209,32 +209,31 @@ The detailed tour of each one — code samples, design rationale, where to look 
 <summary><strong>Project Structure</strong></summary>
 
 ```
-openprogram/
-├── __init__.py                      # agentic_function re-export
-├── cli.py                           # `openprogram` command entry point
-├── agentic_programming/             # engine — paradigm-essential primitives
-│   ├── function.py                  #   @agentic_function decorator
-│   ├── runtime.py                   #   Runtime (exec + retry + DAG context)
-│   ├── session.py                   #   session lifecycle
-│   └── skills.py                    #   SKILL.md discovery
-├── context/                         # flat-DAG context model — nodes, storage, render, compute_reads
-├── providers/                       # Anthropic, OpenAI, Gemini, Claude Code, Codex, Gemini CLI
-├── functions/
-│   ├── _registry.py                 #   unified registry for tools + agentic functions
-│   ├── tools/                       #   @function leaves — bash, read, edit, grep, semble_search, web_search, …
-│   └── agentics/                    #   @agentic_function modules (each its own dir, code in __init__.py)
-│       ├── ask_user/                #     ask the user a clarifying question
-│       ├── deep_work/               #     autonomous plan-execute-evaluate loop
-│       ├── extract_pdf_figures/     #     PDF figure extraction
-│       ├── …                        #     other agentics …
-│       ├── GUI-Agent-Harness/       #     GUI agent (separate repo, cloned in)
-│       ├── Research-Agent-Harness/  #     Research agent (separate repo, cloned in)
-│       └── Wiki-Agent-Harness/      #     Wiki agent (separate repo, cloned in)
-└── webui/                           # `openprogram web` — browser UI
-skills/                              # SKILL.md files for agent integration
-examples/                            # runnable demos
-tests/                               # pytest suite
+openprogram/                         # Python product package
+├── agent/                           # model loop, tools, goals, compaction
+├── agentic_programming/             # @agentic_function runtime and context
+├── programs/
+│   ├── _registry.py                 # internal agentic-function registry
+│   ├── agentic_functions/           # internal @agentic_function modules
+│   ├── functions/                   # deterministic @function tools
+│   └── applications/                # owner-recorded external Program checkouts
+├── channels/                        # external chat transports
+├── scheduler/                       # durable schedules and execution
+└── webui/                           # worker API and WebSocket layer
+cli/                                 # TypeScript Ink terminal client
+web/                                 # Next.js interface
+desktop/                             # Electron desktop host
+tests/                               # pytest: <layer>/<product-domain>
+scripts/                             # executable repository maintenance tools
+tools/                               # importable release and documentation tooling
 ```
+
+See the workspace READMEs for
+[`openprogram/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/README.md),
+[`web/`](https://github.com/Fzkuji/OpenProgram/blob/main/web/README.md), and
+[`cli/`](https://github.com/Fzkuji/OpenProgram/blob/main/cli/README.md). Complete
+ownership rules are in
+[Repository Structure](reference/design/repository-structure.html).
 
 </details>
 

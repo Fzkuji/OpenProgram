@@ -28,12 +28,20 @@ TOP_LEVEL_DIRECTORIES = {
 }
 CURRENT_STRUCTURE_GUIDES = (
     "README.md",
+    "docs/README.md",
+    "docs/README.zh.md",
     "skills/agentic-programming/SKILL.md",
     "openprogram/skills_bundled/agentic-programming/SKILL.md",
     "docs/capabilities/installing-harnesses.md",
     "docs/capabilities/installing-harnesses.zh.md",
     "docs/server/troubleshooting.md",
     "docs/server/troubleshooting.zh.md",
+)
+
+WORKSPACE_READMES = (
+    "openprogram/README.md",
+    "web/README.md",
+    "cli/README.md",
 )
 
 
@@ -80,6 +88,33 @@ def test_current_structure_guides_do_not_reference_removed_roots() -> None:
     )
 
     assert stale_references == []
+
+
+def test_workspace_entry_readmes_describe_current_ownership() -> None:
+    missing = [
+        relative for relative in WORKSPACE_READMES if not (ROOT / relative).is_file()
+    ]
+
+    assert missing == []
+
+    python_readme = (ROOT / "openprogram/README.md").read_text(encoding="utf-8")
+    web_readme = (ROOT / "web/README.md").read_text(encoding="utf-8")
+    cli_readme = (ROOT / "cli/README.md").read_text(encoding="utf-8")
+
+    assert "programs/" in python_readme
+    assert "skills_bundled/" in python_readme
+    assert "OpenProgram Web workspace" in web_readme
+    assert "create-next-app" not in web_readme
+    assert "Ink" in cli_readme
+    assert "dist/index.js" in cli_readme
+
+
+def test_programs_route_has_no_reexport_only_component_directory() -> None:
+    route = (ROOT / "web/app/(shell)/programs/page.tsx").read_text(encoding="utf-8")
+
+    assert "@/components/functions/functions-page" in route
+    assert not (ROOT / "web/components/programs/programs-page.tsx").exists()
+    assert not (ROOT / "web/components/programs/programs-page.module.css").exists()
 
 
 def test_generated_package_readmes_are_current() -> None:

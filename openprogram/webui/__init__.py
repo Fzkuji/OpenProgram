@@ -1,17 +1,17 @@
 """
-agentic_web — real-time web UI for Agentic Programming.
+OpenProgram Web API and static-interface host.
 
-Top-level package, decoupled from the `agentic` framework core. Depends on
-agentic (framework) one-way; nothing in agentic imports from openprogram.webui
-except via lazy imports in the CLI.
+This package exposes the worker's HTTP and WebSocket surface and serves the
+prebuilt Next.js export. Core runtime modules do not eagerly import the server;
+the CLI and worker load it only when the Web service is requested.
 
 Usage:
     from openprogram.webui import start_web
     start_web(port=18100)
 
 Or from CLI:
-    agentic web
-    python -m agentic_web
+    openprogram web
+    python -m openprogram.webui
 """
 
 # ponytail: PEP 562 lazy export instead of an eager

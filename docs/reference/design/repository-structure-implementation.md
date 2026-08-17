@@ -15,6 +15,10 @@ current design contract; this file is operational history.
   files.
 - Record, but do not perform, Desktop and Web bridge splits while those areas
   have active product changes.
+- Keep the root and workspace READMEs aligned with the current Programs,
+  packaged-skill, Web, and TUI ownership boundaries.
+- Remove the Web Programs re-export directory when the public route can import
+  the existing implementation directly.
 
 ## Workstreams
 
@@ -27,6 +31,7 @@ current design contract; this file is operational history.
 | Main-branch synchronization | `2e3cda14` | integrated | Merges committed `main` at `acf13f8c`; no structural-file conflict. |
 | Test and top-level structure maintenance | `codex/test-structure-20260817` / `dbe752eb` | implemented | Declares tracked top-level directories, relocates two root scripts, refreshes generated package READMEs, and removes obsolete active-guide paths. |
 | Post-merge suite repair | `codex/test-structure-20260817` / `d04aa050` | implemented | Moves two real workflow execution tests to component, updates their package schema, and repairs merged documentation, distribution, and optional-dependency regressions. |
+| Documentation entry points and Programs alias | `codex/repository-structure-batch1-20260817` | in progress | Refresh the bilingual project map and workspace READMEs; remove only the confirmed re-export and unused stylesheet. |
 
 ## Verification record
 
@@ -50,6 +55,12 @@ pass — independent quality review at df3df11d, including wheel-content and iso
 pass — Desktop full npm run check after adding update-service.js to build.files
 0 new, 0 refreshed — second package README generator run
 pending — independent specification and quality review for dbe752eb..d04aa050
+444 passed, 1 skipped — complete repository contract suite for the documentation-entry batch
+43 passed — repository-layout and documentation-information-architecture selection
+pass — Web full check, 10 unit tests, TypeScript no-emit check, and 31-page production build
+505 pages; 0 broken links; landing and language checks pass — documentation-entry candidate
+0 new, 0 refreshed — second package README generator run for the candidate
+pending — independent specification and quality review for codex/repository-structure-batch1-20260817
 ```
 
 ## Deferred boundaries

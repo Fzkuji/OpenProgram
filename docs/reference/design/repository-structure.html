@@ -121,13 +121,14 @@
   scripts/       可直接执行的开发、验证和发布脚本
   tools/         可导入的仓库维护工具
   examples/      面向用户的最小可运行示例
-  skills/        随产品分发的技能
+  skills/        source checkout 的项目级技能与维护源文件
   config/        产品运行时构建清单
   experiments/   可复现实验，不参与产品运行时
   references/    参考实现快照与本地比较语料
   promo/         发布与宣传源文件
   site/          静态站点入口</pre>
   <p><code>.github/</code>、<code>.codegraph/</code> 和 <code>.superpowers/</code> 是仓库基础设施，不是产品运行时目录。根目录只保留项目元数据、入口文档、依赖锁和构建配置；可执行的 <code>.py</code>、<code>.ps1</code> 和 <code>.sh</code> 工具进入 <code>scripts/</code> 或对应 workspace 的 <code>scripts/</code>。</p>
+  <p><code>skills/</code> 是 source checkout 的项目级技能来源；正式运行时默认技能位于 <code>openprogram/skills_bundled/</code> 并作为 package data 分发。两处用途不同，不互相复制为第二份运行时注册表。</p>
   <p><code>tests/</code> 中的 Python 用例使用 <code>tests/&lt;layer&gt;/&lt;product-domain&gt;/test_*.py</code>，按最强实际依赖选择层级。具体边界由 <a href="testing/test-system.html">Testing system</a> 和仓库 contracts 维护。</p>
 
   <h2>3. 超长文件处理</h2>
@@ -137,9 +138,9 @@
       <tbody>
         <tr>
           <td><code>openprogram/cli.py</code></td>
-          <td>参数声明与命令执行共处，约 2,000 行</td>
-          <td><span class="state now">本批实施</span></td>
-          <td>把现有 parser 定义移到 <code>openprogram/_cli_parser.py</code>；<code>openprogram.cli.build_parser</code> 继续可用。</td>
+          <td>命令执行约 1,100 行；parser 已移入 <code>openprogram/_cli_parser.py</code></td>
+          <td><span class="state now">已完成</span></td>
+          <td><code>openprogram.cli.build_parser</code> 保持公共导入；后续只按新的可测试职责继续拆分。</td>
         </tr>
         <tr>
           <td><code>desktop/main.js</code></td>
@@ -160,10 +161,10 @@
           <td>只有出现可独立验证的职责或重复实现时再拆；不引入 mixin 层。</td>
         </tr>
         <tr>
-          <td>大型检查脚本与 native runtime</td>
-          <td>测试场景多或包含同步的上游实现</td>
-          <td><span class="state no">保持现状</span></td>
-          <td>优先改善测试数据和局部 helper，不用生产目录规则约束测试及 vendor 文件。</td>
+          <td>大型 Web / Desktop 检查脚本</td>
+          <td>少数脚本同时包含 fixture、场景执行和多项结构断言，最长超过 3,000 行</td>
+          <td><span class="state later">后续批次</span></td>
+          <td>先提取共享 fixture 与可独立执行的场景；保留原命令入口，不为缩短文件引入测试框架。</td>
         </tr>
       </tbody>
     </table>
@@ -188,6 +189,7 @@
       <p><code>docs/superpowers/</code> 保留在 Git 中供维护者追溯，不进入公开站点。仍被当前设计引用的 <code>reference/design/plans/</code> 继续发布，并保持独立 Plans 分组。</p>
     </section>
   </div>
+  <p class="note">根目录 <code>README.md</code> 解释完整产品；<code>openprogram/README.md</code>、<code>web/README.md</code> 和 <code>cli/README.md</code> 分别解释 Python package、Web workspace 与 Ink TUI workspace。入口 README 只描述当前职责、运行边界和验证命令，不复制完整用户手册。</p>
 
   <h2>5. 采用与拒绝</h2>
   <div class="table-wrap">
@@ -211,6 +213,7 @@
     <li>设计导航按产品功能分组；源文件路径保持不变。</li>
     <li>Git tracked 顶层目录必须在结构 contract 中声明，根目录不出现开发脚本。</li>
     <li>有效 README、技能和安装说明不得引用已删除的源码根路径。</li>
+    <li><code>openprogram/</code>、<code>web/</code> 和 <code>cli/</code> 必须各有当前职责入口；Web 的公开 <code>/programs</code> route 不通过只做 re-export 的目录别名。</li>
     <li>一级 Python 包的目录 README 与 <code>__init__.py</code> docstring 保持同步。</li>
     <li>每个结构批次独立提交，先通过直接相关测试，再进入规格与质量复核。</li>
   </ul>

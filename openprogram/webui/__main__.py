@@ -1,5 +1,5 @@
 """
-Allow running the web UI with: python -m agentic_web
+Allow running the web UI with: python -m openprogram.webui
 
 Starts the server and keeps it alive until interrupted.
 """
@@ -11,8 +11,8 @@ import sys
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="python -m agentic_web",
-        description="Start the Agentic Programming web UI.",
+        prog="python -m openprogram.webui",
+        description="Start the OpenProgram web UI.",
     )
     parser.add_argument(
         "--port", "-p", type=int, default=None,
