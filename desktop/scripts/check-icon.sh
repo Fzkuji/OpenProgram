@@ -6,6 +6,7 @@ desktop_dir="$(cd -- "$script_dir/.." && pwd)"
 repository_dir="$(cd -- "$desktop_dir/.." && pwd)"
 modern_icon_dir="$desktop_dir/build/AppIcon.icon"
 modern_icon_json="$modern_icon_dir/icon.json"
+packaged_icon="$desktop_dir/build/icon.icns"
 modern_assets_dir="$modern_icon_dir/Assets"
 modern_symbol_svgs=(
   "$modern_assets_dir/01-orbit.svg"
@@ -28,6 +29,8 @@ done
 
 [[ -f "$modern_icon_json" ]] \
   || fail "missing Apple icon source: build/AppIcon.icon/icon.json"
+[[ -f "$packaged_icon" ]] \
+  || fail "missing packaged macOS icon: build/icon.icns"
 for modern_symbol_svg in "${modern_symbol_svgs[@]}"; do
   [[ -f "$modern_symbol_svg" ]] \
     || fail "missing Apple icon artwork: ${modern_symbol_svg#"$desktop_dir/"}"
@@ -82,8 +85,8 @@ const fs = require("fs");
 const pkg = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const icon = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
 
-if (pkg.build?.mac?.icon !== "build/AppIcon.icon") {
-  throw new Error("build.mac.icon must use the Apple Icon Composer package");
+if (pkg.build?.mac?.icon !== "build/icon.icns") {
+  throw new Error("build.mac.icon must use the approved flat macOS icon");
 }
 if (pkg.scripts?.["icon:check"] !== "bash scripts/check-icon.sh") {
   throw new Error("icon:check must invoke scripts/check-icon.sh");

@@ -648,8 +648,11 @@ def test_macos_icon_uses_the_apple_icon_source_format() -> None:
     desktop = ROOT / "desktop"
     package = json.loads((desktop / "package.json").read_text(encoding="utf-8"))
     icon_source = desktop / "build" / "AppIcon.icon"
-    assert package["build"]["mac"]["icon"] == "build/AppIcon.icon"
+    packaged_icon = desktop / "build" / "icon.icns"
+    assert package["build"]["mac"]["icon"] == "build/icon.icns"
     assert (icon_source / "icon.json").is_file()
+    assert packaged_icon.is_file()
+    assert packaged_icon.read_bytes().startswith(b"icns")
     assert not (desktop / "build" / "icon.svg").exists()
     assert not (desktop / "build" / "icon.iconset").exists()
 

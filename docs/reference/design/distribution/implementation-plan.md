@@ -103,15 +103,13 @@ duplicated in this historical distribution ledger.
 - Public entry: `cd desktop && npm run dist` builds one complete temporary
   `OpenProgram.app`, verifies it, and replaces only
   `/Applications/OpenProgram.app`.
-- Icon contract: `desktop/build/icon.svg` is the deterministic 1024 x 1024
-  source for the legacy ICNS consumed by Electron on the supported macOS 15
-  build host. Its visible body uses the 100...923 template bounds and a 185 px
-  corner radius, with
-  transparent canvas corners and a restrained lower shadow, matching the
-  apparent 824 x 824 footprint of current installed macOS Apps. The brand ring
-  and three nodes remain unchanged. A future Icon Composer `.icon` migration
-  requires a full Xcode toolchain with `actool`; a square unmasked layer must
-  not be passed directly through the current legacy ICNS path.
+- Icon contract: `desktop/build/AppIcon.icon` is the Apple layered authoring
+  source. Its four 1024 x 1024 SVG layers leave the system outline unmasked and
+  preserve the approved brand ring and three nodes. Because the supported
+  macOS 15 build host lacks the full Xcode `actool` pipeline, the reviewed
+  `desktop/build/icon.icns` is checked in as Electron's packaging input. The
+  gate verifies both assets, all legacy representations, and the installed
+  system contour; the removed hand-drawn outer-shape SVG must not return.
 - Transaction contract: a failed activation never deletes the old App's only
   recoverable copy. A genuine launchd unload failure stops before App mutation;
   an unloaded stale plist can be replaced. A failure after Launch Services
@@ -126,7 +124,7 @@ duplicated in this historical distribution ledger.
   Python wheel build, generated Web build/output, copied Web frontend, and lock.
   Installed App data, source files, package dependencies, and user state are not
   removed.
-- Production files: `desktop/build/icon.svg`, generated icon assets,
+- Production files: `desktop/build/AppIcon.icon`, `desktop/build/icon.icns`,
   `desktop/scripts/check-icon.sh`, `desktop/scripts/package-and-install-app.sh`,
   `desktop/scripts/install-app.sh`, and
   `openprogram/worker/services/launchd.py`.

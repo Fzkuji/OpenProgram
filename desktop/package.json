@@ -67,7 +67,7 @@
         "dmg",
         "zip"
       ],
-      "icon": "build/AppIcon.icon",
+      "icon": "build/icon.icns",
       "identity": null,
       "hardenedRuntime": false,
       "notarize": false
