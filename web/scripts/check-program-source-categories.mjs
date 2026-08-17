@@ -20,21 +20,22 @@ const tools = [
   { name: "web_search", description: "Search the web" },
 ];
 
-assert.deepEqual(programsForSelection("__functions__", programs, []), []);
+assert.deepEqual(programsForSelection("__functions__", programs, []), programs);
 assert.deepEqual(
   programsForSelection("__agentic_functions__", programs, []).map((p) => p.name),
-  ["analysis", "legacy"],
+  ["analysis", "legacy", "research_agent"],
 );
 assert.deepEqual(
   programsForSelection("__applications__", programs, []).map((p) => p.name),
-  ["research_agent"],
+  ["analysis", "legacy", "research_agent"],
 );
 assert.deepEqual(
   programsForSelection("__favorites__", programs, ["analysis"]).map((p) => p.name),
   ["analysis"],
 );
 assert.deepEqual(toolsForSelection("__functions__", tools, []), tools);
-assert.deepEqual(toolsForSelection("__agentic_functions__", tools, []), []);
+assert.deepEqual(toolsForSelection("__agentic_functions__", tools, []), tools);
+assert.deepEqual(toolsForSelection("__applications__", tools, []), tools);
 assert.deepEqual(
   toolsForSelection("__favorites__", tools, ["web_search"]).map((tool) => tool.name),
   ["web_search"],
@@ -51,5 +52,10 @@ assert.match(
 );
 assert.doesNotMatch(page, /__all__|All Programs|__uncategorized__|Uncategorized/);
 assert.doesNotMatch(page, /api\/tool-profiles|userProfiles|New Profile|profileSelection/);
+assert.match(
+  page,
+  /id="program-source-functions"[\s\S]*id="program-source-agentic"[\s\S]*id="program-source-applications"/,
+);
+assert.match(page, /scrollIntoView\(\{ block: "start", behavior: "smooth" \}\)/);
 
 console.log("program source category checks passed");

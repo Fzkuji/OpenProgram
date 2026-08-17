@@ -132,6 +132,9 @@ export function FunctionsPage() {
     [catalogTools, meta.favorites, search, selection],
   );
   const visibleToolGroups = groupTools(visibleTools);
+  const visibleAgenticFunctions = visibleFunctions.filter((program) => program.category !== "app");
+  const visibleApplications = visibleFunctions.filter((program) => program.category === "app");
+  const showSourceCatalog = selection !== "__favorites__";
   const toolGroupLabels = new Map<string, string>(TOOL_GROUPS.map(([id, en, zh]) => [id, text(en, zh)]));
 
   function formatDate(timestamp?: number) {
@@ -187,6 +190,61 @@ export function FunctionsPage() {
     setRefreshing(false);
   }
 
+  function selectSource(id: string) {
+    setSelection(id);
+    if (id === "__favorites__") return;
+    const sectionId = id === "__functions__"
+      ? "program-source-functions"
+      : id === "__agentic_functions__"
+        ? "program-source-agentic"
+        : "program-source-applications";
+    requestAnimationFrame(() => {
+      document.getElementById(sectionId)?.scrollIntoView({ block: "start", behavior: "smooth" });
+    });
+  }
+
+  function renderProgramCards(rows: FunctionInfo[]) {
+    if (rows.length === 0) return null;
+    return (
+      <div className={view === "grid" ? cardGridClass : cardListClass}>
+        {rows.map((program) => (
+          <FunctionCard
+            key={program.name}
+            p={program}
+            icon={normalizeIcon(meta.icons[program.name])}
+            fav={meta.favorites.includes(program.name)}
+            profileName={null}
+            formatDate={formatDate}
+            onClick={() => router.push(`/chat?${new URLSearchParams({ run: program.name, cat: program.category || "" })}`)}
+            onContextMenu={(event) => openProgramMenu(event, program.name)}
+            onToggleFav={(event) => toggleFavorite(program.name, event)}
+            onChangeIcon={(event) => { event.stopPropagation(); setIconPickerFor(program.name); }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  function renderToolGroups() {
+    if (visibleTools.length === 0) return null;
+    return visibleToolGroups.map((group) => (
+      <section key={group.name} className={styles.toolGroup}>
+        <div className={styles.toolsHeader}>{toolGroupLabels.get(group.name) || group.name}<span>{group.items.length}</span></div>
+        <div className={view === "grid" ? cardGridClass : cardListClass}>
+          {group.items.map((tool) => (
+            <ToolCard
+              key={tool.name}
+              name={tool.name}
+              description={tool.description || ""}
+              enabled={!tool.disabled}
+              onToggle={(enabled) => toggleTool(tool.name, enabled)}
+            />
+          ))}
+        </div>
+      </section>
+    ));
+  }
+
   return (
     <div className="main">
       <div className={styles.view}>
@@ -225,53 +283,47 @@ export function FunctionsPage() {
                   name={category.name}
                   count={category.count}
                   active={selection === category.id}
-                  onClick={() => setSelection(category.id)}
+                  onClick={() => selectSource(category.id)}
                 />
               </Fragment>
             ))}
           </div>
           <div className={styles.content}>
-            {visibleFunctions.length === 0 && visibleTools.length === 0 ? (
-              <div className={styles.empty}>{search ? text("No matching programs", "没有匹配的程序") : text("This category is empty", "分类为空")}</div>
-            ) : null}
-            {visibleFunctions.length > 0 ? (
-              <div className={view === "grid" ? cardGridClass : cardListClass}>
-                {visibleFunctions.map((program) => (
-                  <FunctionCard
-                    key={program.name}
-                    p={program}
-                    icon={normalizeIcon(meta.icons[program.name])}
-                    fav={meta.favorites.includes(program.name)}
-                    profileName={null}
-                    formatDate={formatDate}
-                    onClick={() => router.push(`/chat?${new URLSearchParams({ run: program.name, cat: program.category || "" })}`)}
-                    onContextMenu={(event) => openProgramMenu(event, program.name)}
-                    onToggleFav={(event) => toggleFavorite(program.name, event)}
-                    onChangeIcon={(event) => { event.stopPropagation(); setIconPickerFor(program.name); }}
-                  />
-                ))}
-              </div>
-            ) : null}
-            {visibleTools.length > 0 ? (
-              <div className={visibleFunctions.length ? styles.toolsSection : undefined}>
-                {visibleToolGroups.map((group) => (
-                  <section key={group.name} className={styles.toolGroup}>
-                    <div className={styles.toolsHeader}>{toolGroupLabels.get(group.name) || group.name}<span>{group.items.length}</span></div>
-                    <div className={view === "grid" ? cardGridClass : cardListClass}>
-                      {group.items.map((tool) => (
-                        <ToolCard
-                          key={tool.name}
-                          name={tool.name}
-                          description={tool.description || ""}
-                          enabled={!tool.disabled}
-                          onToggle={(enabled) => toggleTool(tool.name, enabled)}
-                        />
-                      ))}
-                    </div>
+            {showSourceCatalog ? (
+              <>
+                {visibleFunctions.length === 0 && visibleTools.length === 0 ? (
+                  <div className={styles.empty}>{text("No matching programs", "没有匹配的程序")}</div>
+                ) : null}
+                {visibleTools.length > 0 || !search ? (
+                  <section id="program-source-functions" className={styles.sourceSection}>
+                    <div className={styles.sourceHeader}><h2>{text("Functions", "函数")}</h2><span>{visibleTools.length}</span></div>
+                    {visibleTools.length > 0 ? renderToolGroups() : <div className={styles.sourceEmpty}>{text("No matching functions", "没有匹配的函数")}</div>}
                   </section>
-                ))}
-              </div>
-            ) : null}
+                ) : null}
+                {visibleAgenticFunctions.length > 0 || !search ? (
+                  <section id="program-source-agentic" className={styles.sourceSection}>
+                    <div className={styles.sourceHeader}><h2>{text("Agentic Functions", "Agentic 函数")}</h2><span>{visibleAgenticFunctions.length}</span></div>
+                    {renderProgramCards(visibleAgenticFunctions) || <div className={styles.sourceEmpty}>{text("No agentic functions", "暂无 Agentic 函数")}</div>}
+                  </section>
+                ) : null}
+                {visibleApplications.length > 0 || !search ? (
+                  <section id="program-source-applications" className={styles.sourceSection}>
+                    <div className={styles.sourceHeader}><h2>{text("Applications", "应用")}</h2><span>{visibleApplications.length}</span></div>
+                    {renderProgramCards(visibleApplications) || <div className={styles.sourceEmpty}>{text("No applications installed", "尚未安装应用")}</div>}
+                  </section>
+                ) : null}
+              </>
+            ) : (
+              <>
+                {visibleFunctions.length === 0 && visibleTools.length === 0 ? (
+                  <div className={styles.empty}>{search ? text("No matching favorites", "没有匹配的收藏") : text("No favorites yet", "暂无收藏")}</div>
+                ) : null}
+                {renderProgramCards(visibleFunctions)}
+                {visibleTools.length > 0 ? (
+                  <div className={visibleFunctions.length ? styles.toolsSection : undefined}>{renderToolGroups()}</div>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
       </div>

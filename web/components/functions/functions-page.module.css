@@ -179,6 +179,36 @@
   font-size: 14px;
 }
 
+.sourceSection {
+  scroll-margin-top: 16px;
+}
+.sourceSection + .sourceSection {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.sourceHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.sourceHeader h2 {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.sourceHeader span {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.sourceEmpty {
+  padding: 12px 0 18px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
 
 /* ── Built-in (regular) tools — fixed, display-only ───────────────── */
 /* Cards reuse function-card.module.css wholesale; only the section
