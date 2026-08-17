@@ -47,7 +47,7 @@ export function TreeGroup({ folder, pages, expanded, onToggle, selected, onSelec
   return (
     <div className={styles.treeGroup}>
       {folder && (
-        <button className={styles.folderRow} onClick={() => onToggle(folder)}>
+        <button className={`${styles.folderRow} ${styles.sidebarRow}`} onClick={() => onToggle(folder)}>
           <svg viewBox="0 0 10 10" fill="currentColor" width="8" height="8" className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ""}`}>
             <path d="M2 3l3 4 3-4H2z"/>
           </svg>
@@ -63,7 +63,7 @@ export function TreeGroup({ folder, pages, expanded, onToggle, selected, onSelec
           {pages.map((page) => (
             <button
               key={page.path}
-              className={`${styles.fileRow} ${selected?.path === page.path ? styles.fileRowActive : ""}`}
+              className={`${styles.fileRow} ${styles.sidebarRow} ${selected?.path === page.path ? `${styles.fileRowActive} ${styles.sidebarRowActive}` : ""}`}
               onClick={() => onSelect(page)}
             >
               <DocIcon className={styles.fileIcon} />
