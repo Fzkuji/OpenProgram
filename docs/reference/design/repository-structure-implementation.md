@@ -6,6 +6,17 @@ current design contract; this file is operational history.
 
 ## Scope
 
+- Migrate from the historical top-level `web/`, `desktop/`, `cli/` and
+  `openprogram/webui/` layout to a core-first monorepo:
+  `openprogram/` remains the Agent core and SDK, while runnable products live
+  under `apps/{server,web,desktop,cli}`.
+- Preserve the single-port `18100` runtime, HTTP/WS contracts, user data,
+  browser/desktop behavior, console commands, and required compatibility
+  imports throughout the migration.
+- Keep generated Web output out of the core source package. Stage it only for
+  source execution, wheel construction, or Electron packaging.
+- Remove the confirmed-unused legacy static UI and dual-port Next.js process
+  only after current callers and release paths use the new application roots.
 - Move the existing top-level CLI parser out of `openprogram/cli.py` without
   changing the public `openprogram.cli.build_parser` import or command grammar.
 - Keep `docs/superpowers/` in Git but remove it from the public documentation
@@ -23,6 +34,34 @@ current design contract; this file is operational history.
   sections under the stable `openprogram.cli` package without changing the
   public command tree.
 
+## Approved migration sequence
+
+| Batch | Target | Required compatibility and evidence |
+|---|---|---|
+| A | Canonical design and repository contract | HTML design names the core/application boundary; repository contract fails while old roots remain. |
+| B1 | Ink TUI `cli/` workspace to `apps/cli/` | Node typecheck/tests/build, Python bundle resolution and the real Node auth client use the new path. |
+| B2 | Python CLI application assembly to `apps/cli/python/openprogram_cli/` | Existing console scripts, `python -m openprogram`, `openprogram.cli.build_parser`, Ink TUI launch and parser snapshots remain valid through compatibility imports. |
+| C | `openprogram/webui/` to `apps/server/openprogram_server/` | FastAPI app, REST/WS paths, owner auth, worker startup and package imports remain valid through bounded compatibility modules. |
+| D | `web/` to `apps/web/` | Node checks, TypeScript, static export, Python static serving and release asset staging use the new root. |
+| E | `desktop/` to `apps/desktop/` | Electron checks, runtime packaging, updater, embedded browser and installed-App scripts use the new root. |
+| F | Legacy deletion and compatibility exit | Old static UI, unused dual-port launcher and expired import shims are absent; complete Python/Web/Desktop/docs/package gates pass. |
+
+Each batch is move-only unless a directly exposed path or import must be
+adapted. Large-file decomposition is not part of the directory migration.
+
+## Current migration audit
+
+- Base head observed before batch B1: `e0a5fa41de3d390764d557694178426d8570cbdb`.
+- The checkout contains unrelated in-progress changes in
+  `openprogram/webui/routes/agents.py`, `web/components/agents/`,
+  `web/scripts/check-agent-tool-configuration.mjs`,
+  `desktop/build/icon.icns`, runtime design pages, and promotional assets.
+- These changes overlap batches C, D, and E. They must reach an owner commit or
+  otherwise leave the working tree before those directory moves are staged.
+- System Git is blocked by the host's unaccepted Xcode licence. The bundled
+  fallback Git executable is available for status, diff, staging and commits;
+  the migration does not change host licence state.
+
 ## Workstreams
 
 | Workstream | Branch / commit | Status | Integration note |
@@ -38,6 +77,7 @@ current design contract; this file is operational history.
 | Documentation-entry main integration | `29f8186d` | integrated | Two-parent merge with current `main` at `e2041770`; unrelated local icon and output files remain outside Git. |
 | Python CLI package consolidation | `codex/python-package-layout-cli-20260817` / `d2ae71cc`, `5bd809e8`, `4051edaf` | implemented; reviewed | Replaces three first-level internal CLI directories and four implementation files with one `openprogram/cli/` package; keeps `openprogram.cli`, the console script, and both module entry points; repairs current documentation references and adds the executable interactive-import contract required by review. |
 | Python CLI package main integration | `f5878426` | integrated | Two-parent merge with current `main` at `c45617a4`; unrelated local icon, runtime-design, promo, and output changes remain outside the integration tree. |
+| Apps migration B1: Ink TUI workspace | current main candidate | implemented; review pending | Moves the existing Node workspace from `cli/` to `apps/cli/`; updates the Python launcher, rescue probe, source installer, CI cache/working directories, repository contracts and current documentation paths. No UI or protocol behavior changes. |
 
 ## Verification record
 
@@ -85,6 +125,9 @@ pass — independent quality re-review at `4051edaf`, including a mutation-sensi
 166 passed — post-merge CLI parser, repository, formal release, distribution, upgrade, and runtime HTTP catalog selection
 506 pages; 0 broken links; landing and language checks pass — post-merge documentation build
 pass — post-merge Ruff and `git diff --check`
+140 passed, 2 skipped — `apps/cli` Vitest suite after typecheck
+pass — `apps/cli` production bundle build
+6 passed — apps-layout contract and real Node owner-auth paths
 ```
 
 ## Deferred boundaries

@@ -137,7 +137,7 @@ When the design is correct, all of the following hold at once, and they are also
 - **Writes do not materialize**: after a new session enables web_search or picks research, `tools_override` in the DB is NULL or a dict, never a full list.
 - **New tools appear automatically**: expanding `{enabled: True}` intent includes the tools most recently added to DEFAULT_TOOLS (send_message, list_agents).
 - **Cache stability**: a session with unchanged intent sends two turns back to back and provider usage shows a cache hit on the second, with no toolset thrash.
-- **All writers agree**: no second `list(_DEFAULT_TOOLS)` or `[t.name for t in` materialization exists anywhere in the repo; webui, channels, and the TUI (`session.py`, `cli/src/ws/client.ts`) all pass intent through wherever web_search can be enabled or a profile picked.
+- **All writers agree**: no second `list(_DEFAULT_TOOLS)` or `[t.name for t in` materialization exists anywhere in the repo; webui, channels, and the TUI (`session.py`, `apps/cli/src/ws/client.ts`) all pass intent through wherever web_search can be enabled or a profile picked.
 
 ---
 

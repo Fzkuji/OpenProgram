@@ -89,7 +89,7 @@ def _probe_git() -> Finding:
 
 
 def _probe_tui_bundle() -> Finding:
-    """``cli/dist/index.js`` — the Ink TUI's pre-built Node bundle."""
+    """``apps/cli/dist/index.js`` — the Ink TUI's pre-built Node bundle."""
     try:
         import openprogram
         root = Path(openprogram.__file__).resolve().parent.parent
@@ -97,14 +97,14 @@ def _probe_tui_bundle() -> Finding:
         return Finding("FAIL", "TUI bundle",
                        f"can't locate repo root: {e}",
                        fix=None)
-    bundle = root / "cli" / "dist" / "index.js"
+    bundle = root / "apps" / "cli" / "dist" / "index.js"
     if bundle.exists():
         return Finding("OK", "TUI bundle (Ink)", str(bundle))
     # Auto-built on first launch, so missing is not fatal — just informative.
     return Finding(
         "WARN", "TUI bundle (Ink)", f"not built yet ({bundle})",
         fix="Auto-built on first `openprogram` launch on POSIX. "
-            "Or build manually: cd cli && npm install && npm run build",
+            "Or build manually: cd apps/cli && npm install && npm run build",
     )
 
 

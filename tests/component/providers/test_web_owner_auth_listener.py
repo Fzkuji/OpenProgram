@@ -559,22 +559,22 @@ def test_snapshot_rejects_a_tampered_token_fingerprint(tmp_path: Path):
 # BackendEndpoint.origin). No Python test ever sent that combination, so
 # nothing covered the one request shape the TUI actually makes. These
 # tests spawn a real `node` and send it, over both HTTP and the WebSocket
-# handshake, using the same header construction as cli/src.
+# handshake, using the same header construction as apps/cli/src.
 # ---------------------------------------------------------------------------
 
 _NODE = shutil.which("node")
-_CLI_DIR = Path(__file__).resolve().parents[3] / "cli"
+_CLI_DIR = Path(__file__).resolve().parents[3] / "apps" / "cli"
 requires_node = pytest.mark.skipif(
     _NODE is None or not (_CLI_DIR / "node_modules" / "ws").is_dir(),
-    reason="node with cli/node_modules (for the real `ws` client) is required",
+    reason="node with apps/cli/node_modules (for the real `ws` client) is required",
 )
 
 
 def _run_node(script: str, env_extra: dict[str, str]) -> dict:
-    """Run ``script`` under the real node, in cli/ so `ws` resolves.
+    """Run ``script`` under the real node, in apps/cli/ so `ws` resolves.
 
     The script prints one JSON object; we return it parsed. Written into
-    cli/ rather than tmp_path because Node resolves bare imports against
+    apps/cli/ rather than tmp_path because Node resolves bare imports against
     the directory tree of the *file*, so `import 'ws'` only works from
     inside the package that depends on it.
     """
@@ -595,8 +595,8 @@ def _run_node(script: str, env_extra: dict[str, str]) -> dict:
     return json.loads(proc.stdout.strip().splitlines()[-1])
 
 
-# Mirrors cli/src/utils/backend.ts backendAuthHeaders() + backendFetch(),
-# and cli/src/ws/client.ts connect(): Authorization from the token env var,
+# Mirrors apps/cli/src/utils/backend.ts backendAuthHeaders() + backendFetch(),
+# and apps/cli/src/ws/client.ts connect(): Authorization from the token env var,
 # Origin from OPENPROGRAM_BACKEND_ORIGIN, dialling OPENPROGRAM_BACKEND_URL.
 _PROBE = """
 import WebSocket from 'ws';

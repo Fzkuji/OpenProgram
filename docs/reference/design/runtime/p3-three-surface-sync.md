@@ -36,4 +36,4 @@ G1 (one line) → G2 (make attended session-level + WS action + frontend toggle)
 
 ## To be decided
 - Make attended per-session: confirm we want this (with a single worker and multiple sessions, a global switch leaks across them). Default still unattended.
-- Frontend changes: both frontends — TUI (Ink, cli/src) and web (web/) — need the toggle/input box added. This is where most of the work is. Do the backend WS action first (shared across all three surfaces, testable), then the frontend UI.
+- Frontend changes: both frontends — TUI (Ink, apps/cli/src) and web (web/) — need the toggle/input box added. This is where most of the work is. Do the backend WS action first (shared across all three surfaces, testable), then the frontend UI.

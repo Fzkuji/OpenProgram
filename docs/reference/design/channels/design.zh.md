@@ -376,9 +376,9 @@ openprogram channels bindings
 
 | 入口 | 实现 | 行数 |
 |---|---|---|
-| `/channel` slash command | `cli/src/commands/handler.ts` 触发 `pickers/channel.tsx` | 374 行 picker |
-| Channel 实时活动 feed | `cli/src/components/ChannelActivityFeed.tsx` | 66 行 |
-| WS handler 显示 channel turn | `cli/src/screens/repl/wsHandlers/handleChannelTurn.ts` | — |
+| `/channel` slash command | `apps/cli/src/commands/handler.ts` 触发 `pickers/channel.tsx` | 374 行 picker |
+| Channel 实时活动 feed | `apps/cli/src/components/ChannelActivityFeed.tsx` | 66 行 |
+| WS handler 显示 channel turn | `apps/cli/src/screens/repl/wsHandlers/handleChannelTurn.ts` | — |
 
 `/channel` 工作流：选 channel → 选 account → 引导用户用 `/attach` 把当前对话绑到 channel peer。
 

@@ -158,4 +158,4 @@ Search 和 Tools（逐工具开关）。Model、effort、theme 和 providers 通
 
 权威代码：`openprogram/config_schema.py`、
 `openprogram/webui/ws_actions/settings.py`、
-`cli/src/components/SettingsPanel.tsx`。
+`apps/cli/src/components/SettingsPanel.tsx`。

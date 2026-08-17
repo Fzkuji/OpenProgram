@@ -392,9 +392,9 @@ openprogram channels bindings
 
 | Entry point | Implementation | Lines |
 |---|---|---|
-| `/channel` slash command | `cli/src/commands/handler.ts` triggers `pickers/channel.tsx` | 374-line picker |
-| Channel real-time activity feed | `cli/src/components/ChannelActivityFeed.tsx` | 66 lines |
-| WS handler that displays a channel turn | `cli/src/screens/repl/wsHandlers/handleChannelTurn.ts` | — |
+| `/channel` slash command | `apps/cli/src/commands/handler.ts` triggers `pickers/channel.tsx` | 374-line picker |
+| Channel real-time activity feed | `apps/cli/src/components/ChannelActivityFeed.tsx` | 66 lines |
+| WS handler that displays a channel turn | `apps/cli/src/screens/repl/wsHandlers/handleChannelTurn.ts` | — |
 
 `/channel` workflow: pick a channel → pick an account → guide the user to use `/attach` to bind the current conversation to a channel peer.
 

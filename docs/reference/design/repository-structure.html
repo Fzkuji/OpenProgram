@@ -82,19 +82,19 @@
 <main>
   <div class="eyebrow">OpenProgram · Engineering design</div>
   <h1>Repository structure</h1>
-  <p class="lead">本页定义代码与文档的归属边界、超长文件的拆分条件，以及当前可实施的整理顺序。目标是降低修改时需要同时理解的范围，不以文件数量或单一行数作为拆分目标。</p>
+  <p class="lead">本页定义 core-first monorepo：<code>openprogram/</code> 是可独立导入的 Agent 核心；Server、Web、Desktop 与 CLI 是使用核心的可运行应用，统一归入 <code>apps/</code>。目标是让目录直接表达运行边界和依赖方向，同时保持产品行为与用户数据兼容。</p>
   <dl class="meta-strip">
-    <div><dt>Status</dt><dd>Current design</dd></div>
+    <div><dt>Status</dt><dd>Approved target · migration pending</dd></div>
     <div><dt>Audience</dt><dd>Maintainers and reviewers</dd></div>
-    <div><dt>Scope</dt><dd>Source layout and docs navigation</dd></div>
+    <div><dt>Scope</dt><dd>Core, applications, build and release layout</dd></div>
     <div><dt>Excluded</dt><dd>Product behavior and public API changes</dd></div>
   </dl>
 
   <h2>1. 设计原则</h2>
   <div class="grid">
     <section class="card">
-      <h3>按产品职责归属</h3>
-      <p>Python 产品行为放在 <code>openprogram/</code> 的产品域；Web、CLI 和 Desktop 分别保留在自己的 workspace。跨界调用通过稳定入口完成，不复制实现。</p>
+      <h3>核心与应用分离</h3>
+      <p><code>openprogram/</code> 只承载 Agent、Context、Session、Provider、Program、Tool、Memory 与 Runtime 等核心能力。所有可运行入口放在 <code>apps/</code>，应用只能依赖核心，核心不能依赖应用。</p>
     </section>
     <section class="card">
       <h3>按可验证边界拆分</h3>
@@ -102,7 +102,7 @@
     </section>
     <section class="card">
       <h3>公共接口保持稳定</h3>
-      <p>移动实现时保留现有 import、CLI 参数和运行行为。调用方无需在同一批次迁移，结构改动可以单独回滚。</p>
+      <p>迁移期间保留现有 CLI 命令、HTTP/WS 协议、端口、用户数据目录和必要的 Python import 兼容入口。每个应用独立移动、验证和提交。</p>
     </section>
     <section class="card">
       <h3>当前设计与实施记录分离</h3>
@@ -112,10 +112,13 @@
 
   <h2>2. 顶层职责</h2>
   <pre>OpenProgram/
-  openprogram/   Python 产品运行时与服务端
-  web/           Next.js Web 客户端
-  cli/           Ink 终端客户端
-  desktop/       Electron 宿主与桌面检查
+  openprogram/   OpenProgram Agent 核心与 Python SDK
+  apps/
+    server/      FastAPI、HTTP、WebSocket、认证与静态资源托管
+    web/         Next.js Web 应用
+    desktop/     Electron 桌面应用
+    cli/         Python CLI 与 Ink TUI 应用
+  packages/      至少被两个应用实际复用的协议或 UI package
   tests/         Python 测试：层级 / 产品域
   docs/          用户文档与设计记录
   scripts/       可直接执行的开发、验证和发布脚本
@@ -127,13 +130,14 @@
   references/    参考实现快照与本地比较语料
   promo/         发布与宣传源文件
   site/          静态站点入口</pre>
-  <p><code>.github/</code>、<code>.codegraph/</code> 和 <code>.superpowers/</code> 是仓库基础设施，不是产品运行时目录。根目录只保留项目元数据、入口文档、依赖锁和构建配置；可执行的 <code>.py</code>、<code>.ps1</code> 和 <code>.sh</code> 工具进入 <code>scripts/</code> 或对应 workspace 的 <code>scripts/</code>。</p>
+  <p><code>.github/</code>、<code>.codegraph/</code> 和 <code>.superpowers/</code> 是仓库基础设施，不是产品运行时目录。根目录只保留核心 package、应用 workspace、共享 package、项目元数据、入口文档、依赖锁和构建配置。应用专用脚本放在对应 <code>apps/&lt;name&gt;/scripts/</code>，跨应用脚本放在 <code>scripts/</code>。</p>
   <p><code>skills/</code> 是 source checkout 的项目级技能来源；正式运行时默认技能位于 <code>openprogram/skills_bundled/</code> 并作为 package data 分发。两处用途不同，不互相复制为第二份运行时注册表。</p>
   <p><code>tests/</code> 中的 Python 用例使用 <code>tests/&lt;layer&gt;/&lt;product-domain&gt;/test_*.py</code>，按最强实际依赖选择层级。具体边界由 <a href="testing/test-system.html">Testing system</a> 和仓库 contracts 维护。</p>
 
-  <h3>Python package 的一级 namespace</h3>
-  <p><code>openprogram/</code> 的一级目录只保留可单独说明的产品域或稳定协议边界，例如 <code>agent/</code>、<code>programs/</code>、<code>memory/</code>、<code>providers/</code>、<code>webui/</code>。这些名称已经出现在运行时代码、用户文档和扩展接口中，不为视觉分组改成 <code>core/</code>、<code>services/</code> 或 <code>integrations/</code> 等额外 namespace。</p>
-  <p>同一入口的内部实现必须归到入口 package 下。Python CLI 的公共入口保持 <code>openprogram.cli</code>，parser、command handlers、Rich REPL、Ink launcher 和 setup sections 统一位于 <code>openprogram/cli/</code>；原来的 <code>_cli_chat/</code>、<code>_cli_cmds/</code>、<code>_setup_sections/</code> 以及对应顶层实现文件不再作为一级目录或内部 import 路径。</p>
+  <h3>核心 package 与应用 package</h3>
+  <p><code>openprogram/</code> 的一级目录只保留可独立说明的核心产品域或稳定协议边界，例如 <code>agent/</code>、<code>programs/</code>、<code>context/</code>、<code>memory/</code>、<code>providers/</code> 和 <code>runtime/</code>。FastAPI route、WebSocket handler、静态前端托管、Electron 与界面代码不属于核心 package。</p>
+  <p><code>apps/server/openprogram_server/</code> 是 Python 服务应用；<code>apps/cli/</code> 是 CLI 应用 workspace，Ink TUI 直接使用其中的 <code>src/</code>、<code>tests/</code> 和 <code>package.json</code>，后续迁移的 Python 应用装配位于 <code>apps/cli/python/openprogram_cli/</code>。迁移期间 <code>openprogram.webui</code> 与 <code>openprogram.cli</code> 只允许作为有明确删除期限的兼容入口，不继续承载新实现。</p>
+  <p><code>packages/</code> 不作为通用杂项目录。只有已经被两个及以上应用消费、具有稳定公共入口的协议类型或 UI package 才能进入；当前迁移只建立实际需要的 API/WS contracts，不预建其他 package。</p>
   <p><code>__pycache__/</code>、<code>.DS_Store</code>、构建产物和 Finder 冲突副本不是仓库结构。它们保持 Git ignored，可安全清理，但不能用作代码分层或验收证据。用户安装的 <code>programs/applications/</code> checkout 属于本地产品数据，不随源码目录整理删除。</p>
 
   <h2>3. 超长文件处理</h2>
@@ -142,19 +146,19 @@
       <thead><tr><th>文件</th><th>现状</th><th>决定</th><th>边界</th></tr></thead>
       <tbody>
         <tr>
-          <td><code>openprogram/cli/__init__.py</code></td>
-          <td>命令执行约 1,100 行；parser 位于 <code>openprogram/cli/parser.py</code></td>
-          <td><span class="state now">已完成</span></td>
-          <td><code>openprogram.cli.build_parser</code> 保持公共导入；CLI 的其余内部职责位于同一 package，后续只按新的可测试职责继续拆分。</td>
+          <td><code>openprogram/cli/</code></td>
+          <td>已经完成内部收拢，但仍位于核心 package</td>
+          <td><span class="state later">迁移批次</span></td>
+          <td>应用装配移动到 <code>apps/cli/python/openprogram_cli/</code>；在兼容期保留 <code>openprogram.cli</code> 导入和现有 console script 行为。</td>
         </tr>
         <tr>
-          <td><code>desktop/main.js</code></td>
+          <td><code>apps/desktop/main.js</code></td>
           <td>窗口、更新、WebView、标签转移和菜单共处，接近 4,000 行</td>
           <td><span class="state later">后续批次</span></td>
           <td>按窗口生命周期、原生 WebView、标签转移、菜单四个既有域移动；先等待当前 Desktop 修改合并。</td>
         </tr>
         <tr>
-          <td><code>web/lib/desktop-bridge.ts</code></td>
+          <td><code>apps/web/lib/desktop-bridge.ts</code></td>
           <td>类型、视图状态和标签转移共处，接近 2,000 行</td>
           <td><span class="state later">后续批次</span></td>
           <td>先补执行级测试，再拆为公共类型、view state、tab transfer，并由原文件 re-export。</td>
@@ -194,34 +198,40 @@
       <p><code>docs/superpowers/</code> 保留在 Git 中供维护者追溯，不进入公开站点。仍被当前设计引用的 <code>reference/design/plans/</code> 继续发布，并保持独立 Plans 分组。</p>
     </section>
   </div>
-  <p class="note">根目录 <code>README.md</code> 解释完整产品；<code>openprogram/README.md</code>、<code>web/README.md</code> 和 <code>cli/README.md</code> 分别解释 Python package、Web workspace 与 Ink TUI workspace。入口 README 只描述当前职责、运行边界和验证命令，不复制完整用户手册。</p>
+  <p class="note">根目录 <code>README.md</code> 解释完整产品；<code>openprogram/README.md</code> 解释核心 SDK；<code>apps/server/README.md</code>、<code>apps/web/README.md</code>、<code>apps/desktop/README.md</code> 和 <code>apps/cli/README.md</code> 分别解释各运行入口。入口 README 只描述当前职责、依赖方向和验证命令。</p>
 
   <h2>5. 采用与拒绝</h2>
   <div class="table-wrap">
     <table>
       <thead><tr><th>选择</th><th>结论</th><th>原因</th></tr></thead>
       <tbody>
-        <tr><td>move-only 模块拆分</td><td><span class="state now">采用</span></td><td>可以通过兼容 import 和 parser 快照证明行为不变。</td></tr>
-        <tr><td>按公共入口收拢内部 CLI 文件</td><td><span class="state now">采用</span></td><td>保留 <code>openprogram.cli</code>，删除 3 个只服务该入口的一级内部目录。</td></tr>
+        <tr><td><code>openprogram/</code> 核心 + <code>apps/</code> 运行入口</td><td><span class="state now">采用</span></td><td>核心可以被 Server、CLI 与 Harness 直接复用，应用边界在顶层可见。</td></tr>
+        <tr><td>move-only 应用迁移</td><td><span class="state now">采用</span></td><td>先移动路径并修复构建、import 和脚本，再单独处理内部大文件拆分，避免同时改变行为。</td></tr>
         <tr><td>通过导航分组整理文档</td><td><span class="state now">采用</span></td><td>避免批量移动文件造成旧链接失效。</td></tr>
-        <tr><td>用 <code>core/services/integrations</code> 包裹现有产品域</td><td><span class="state no">拒绝</span></td><td>会改变稳定 import、增加 namespace，并把当前跨域依赖隐藏到更深目录。</td></tr>
+        <tr><td>把 <code>openprogram/</code> 命名为 backend</td><td><span class="state no">拒绝</span></td><td>OpenProgram 是 Agent 核心与 SDK，Server 只是它的一个应用入口。</td></tr>
+        <tr><td>保持 Server 实现在 <code>openprogram/webui/</code></td><td><span class="state no">拒绝</span></td><td>该目录混合服务端、旧静态 UI、构建产物和 Web 命名，无法表达真实职责。</td></tr>
         <tr><td>按固定行数自动拆文件</td><td><span class="state no">拒绝</span></td><td>行数不能证明职责独立，容易产生只转发调用的模块。</td></tr>
         <tr><td>为拆分引入新的依赖注入框架</td><td><span class="state no">拒绝</span></td><td>现有模块函数和显式参数足以保留边界。</td></tr>
-        <tr><td>一次重排整个仓库</td><td><span class="state no">拒绝</span></td><td>会扩大冲突范围，难以区分结构变化与产品行为变化。</td></tr>
+        <tr><td>一次提交移动所有应用</td><td><span class="state no">拒绝</span></td><td>应用分别迁移和验证；最终状态统一进入 <code>apps/</code>，但不以一个不可审查的提交完成。</td></tr>
       </tbody>
     </table>
   </div>
 
   <h2>6. 验收合同</h2>
   <ul>
-    <li><code>openprogram.cli.build_parser</code> 保持可导入，完整命令树与拆分前一致。</li>
-    <li><code>openprogram/cli/</code> 是 Python CLI 的唯一实现根；旧的 <code>openprogram._cli_chat</code>、<code>openprogram._cli_cmds</code>、<code>openprogram._setup_sections</code>、<code>openprogram.cli_chat</code> 和 <code>openprogram.cli_ink</code> 不再存在。</li>
-    <li>tracked 的 <code>openprogram/</code> 一级 package 目录由 33 个降为 31 个；产品域的公开 import 不因视觉分组改变。</li>
+    <li><code>openprogram/</code> 不包含 FastAPI route、WebSocket handler、前端源码、Electron 源码或持久化前端构建产物。</li>
+    <li><code>apps/server</code>、<code>apps/web</code>、<code>apps/desktop</code> 和 <code>apps/cli</code> 均有独立入口、README、测试命令和构建命令。</li>
+    <li><code>openprogram.cli.build_parser</code> 在兼容期保持可导入，完整命令树、console script 与 TUI 行为一致。</li>
+    <li>默认端口仍为 <code>18100</code>；同一 Worker 提供 API、WebSocket 和 Web 静态文件，不恢复旧双端口 Next.js Server。</li>
+    <li>浏览器与 Electron 继续加载同一套 Web 应用；Electron 专属能力只通过 preload/IPC 暴露。</li>
+    <li>Agent Harness 可以直接导入 <code>openprogram</code>，不依赖 Server、Web 或 Desktop。</li>
+    <li>旧 <code>openprogram/webui/static/</code> 和无生产调用的旧双端口实现被删除。</li>
+    <li>前端构建产物只进入 ignored build/staging 目录和最终发行包，不作为核心源码长期维护。</li>
     <li>公开文档构建不包含 <code>docs/superpowers/</code>，所有公开链接有效。</li>
     <li>设计导航按产品功能分组；源文件路径保持不变。</li>
     <li>Git tracked 顶层目录必须在结构 contract 中声明，根目录不出现开发脚本。</li>
     <li>有效 README、技能和安装说明不得引用已删除的源码根路径。</li>
-    <li><code>openprogram/</code>、<code>web/</code> 和 <code>cli/</code> 必须各有当前职责入口；Web 的公开 <code>/programs</code> route 不通过只做 re-export 的目录别名。</li>
+    <li>根目录不再保留旧的 <code>web/</code>、<code>desktop/</code> 和 <code>cli/</code> workspace；有效源码分别位于对应 <code>apps/</code> 子目录。</li>
     <li>一级 Python 包的目录 README 与 <code>__init__.py</code> docstring 保持同步。</li>
     <li>每个结构批次独立提交，先通过直接相关测试，再进入规格与质量复核。</li>
   </ul>

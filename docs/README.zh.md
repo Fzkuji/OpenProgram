@@ -217,7 +217,8 @@ openprogram/                         # Python 产品包
 ├── channels/                        # 外部聊天渠道
 ├── scheduler/                       # 持久化调度与执行
 └── webui/                           # worker API 与 WebSocket 层
-cli/                                 # TypeScript Ink 终端客户端
+apps/
+└── cli/                            # TypeScript Ink 终端客户端
 web/                                 # Next.js 界面
 desktop/                             # Electron 桌面宿主
 tests/                               # pytest：<layer>/<product-domain>
@@ -228,7 +229,7 @@ tools/                               # 可导入的发布和文档工具
 各 workspace 的入口说明见
 [`openprogram/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/README.md)、
 [`web/`](https://github.com/Fzkuji/OpenProgram/blob/main/web/README.md) 和
-[`cli/`](https://github.com/Fzkuji/OpenProgram/blob/main/cli/README.md)。完整归属规则见
+[`apps/cli/`](https://github.com/Fzkuji/OpenProgram/blob/main/apps/cli/README.md)。完整归属规则见
 [Repository Structure](reference/design/repository-structure.html)。
 
 </details>

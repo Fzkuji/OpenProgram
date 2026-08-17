@@ -1,7 +1,7 @@
 # OpenProgram TUI Kit
 
-`cli/src/ui/` — application-side component library for OpenProgram's
-terminal UI. It sits on top of the local runtime in `cli/src/runtime/`.
+`apps/cli/src/ui/` — application-side component library for OpenProgram's
+terminal UI. It sits on top of the local runtime in `apps/cli/src/runtime/`.
 
 ## Why this exists
 
@@ -19,9 +19,9 @@ logic, and resize artifacts.
 ## Layers
 
 ```
-Layer 0   cli/src/runtime/        DOM primitives
-Layer 1   cli/src/ui/             ← this kit
-Layer 2   cli/src/screens/        REPL etc., consumes Layer 1
+Layer 0   apps/cli/src/runtime/        DOM primitives
+Layer 1   apps/cli/src/ui/             ← this kit
+Layer 2   apps/cli/src/screens/        REPL etc., consumes Layer 1
 ```
 
 Screens should import runtime primitives from `../runtime/index` only
@@ -78,7 +78,7 @@ For persistent full-screen screens, use `<Shell mode="alt">`. It wraps
 provides `ModalProvider` + `ToastProvider`. Children flex down by
 default.
 
-REPL should use `cli/src/components/TranscriptViewport.tsx` for the
+REPL should use `apps/cli/src/components/TranscriptViewport.tsx` for the
 chat transcript. It owns transcript wheel/PageUp/PageDown/Home/End
 handling, while `PromptInput` owns only text editing, completion, and
 submit behavior. `ScrollView` remains the generic scroll container for
@@ -177,14 +177,14 @@ Default thresholds: xs<60, sm<100, md<140, else lg.
 
 | Old | New |
 |---|---|
-| `cli/src/components/Picker.tsx` | `Select` (kit re-exports it) |
-| `cli/src/components/LineInput.tsx` | `Input` (same) |
+| `apps/cli/src/components/Picker.tsx` | `Select` (kit re-exports it) |
+| `apps/cli/src/components/LineInput.tsx` | `Input` (same) |
 | `useTerminalWidth/Height/PanelWidth` | `useTerminalSize` |
 | `pushSystem` for system messages | `Alert` (inline) or `useToast` (transient) |
 | 11-branch `pickerKind` switch | `useModal().push()` per picker |
 
 The legacy components stay around for backward compat — kit components
-internally wrap them. Migrate screens at your own pace; `cli/src/ui`
+internally wrap them. Migrate screens at your own pace; `apps/cli/src/ui`
 exports stay stable while internals can swap.
 
 ## Testing
@@ -195,7 +195,7 @@ Run the demo screen to visually inspect every component:
 openprogram --demo
 ```
 
-(see `cli/src/screens/Demo.tsx`)
+(see `apps/cli/src/screens/Demo.tsx`)
 
 Component-level unit tests live alongside each component as
 `Component.test.tsx` once we have a TUI test framework wired.

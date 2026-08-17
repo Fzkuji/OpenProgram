@@ -309,7 +309,7 @@ CLI:
 
 `openprogram/cli/repl/handlers.py:_handle_slash` resolves every `/slash` through the registry — the TUI and the WebUI share the same table, and no hardcoded command list remains. The Rich REPL's local actions live in the builtin layer: `register_repl_builtins` registers each one with `handler` set to the action name as a marker string, and `_LOCAL_ACTIONS` maps that marker to the local implementation. Existence, aliases, and `/help` all read from the registry (`list_all()`). Commands from the other layers (plugin / skill / user / project) render through `dispatch.invoke`; the rendered body is sent to the agent as the turn's message — the same expansion semantics as the Web composer.
 
-The Ink TUI (`cli/src/commands/registry.ts`) hardcodes only its TUI-local actions (theme, pickers, export, ...). It fetches the unified registry from the worker over `GET /api/commands` — merged into completion, the ctrl+K palette, and `/help` — and expands registry commands via `POST /api/commands/invoke`, sending the rendered body as the chat turn.
+The Ink TUI (`apps/cli/src/commands/registry.ts`) hardcodes only its TUI-local actions (theme, pickers, export, ...). It fetches the unified registry from the worker over `GET /api/commands` — merged into completion, the ctrl+K palette, and `/help` — and expands registry commands via `POST /api/commands/invoke`, sending the rendered body as the chat turn.
 
 ### 10.4 Build Order
 

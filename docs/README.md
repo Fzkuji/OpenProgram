@@ -220,7 +220,8 @@ openprogram/                         # Python product package
 ├── channels/                        # external chat transports
 ├── scheduler/                       # durable schedules and execution
 └── webui/                           # worker API and WebSocket layer
-cli/                                 # TypeScript Ink terminal client
+apps/
+└── cli/                            # TypeScript Ink terminal client
 web/                                 # Next.js interface
 desktop/                             # Electron desktop host
 tests/                               # pytest: <layer>/<product-domain>
@@ -231,7 +232,7 @@ tools/                               # importable release and documentation tool
 See the workspace READMEs for
 [`openprogram/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/README.md),
 [`web/`](https://github.com/Fzkuji/OpenProgram/blob/main/web/README.md), and
-[`cli/`](https://github.com/Fzkuji/OpenProgram/blob/main/cli/README.md). Complete
+[`apps/cli/`](https://github.com/Fzkuji/OpenProgram/blob/main/apps/cli/README.md). Complete
 ownership rules are in
 [Repository Structure](reference/design/repository-structure.html).
 

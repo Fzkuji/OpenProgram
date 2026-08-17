@@ -1,7 +1,7 @@
 /**
  * Demo screen — showcases every kit component.
  *
- * Activated by ``openprogram --demo`` (handled in cli/src/index.tsx).
+ * Activated by ``openprogram --demo`` (handled in apps/cli/src/index.tsx).
  * No backend / WS connection; pure UI exercise. Useful for:
  *
  *   - visual regression smoke checks (after refactoring layout

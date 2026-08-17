@@ -35,5 +35,5 @@
    `openprogram/agentic_programming/function.py`（1557）、
    `openprogram/auth/cli.py`（1537）、
    `openprogram/programs/_runtime.py`（1502）。
-   `cli/src/runtime/` 下的 yoga-layout 与 ink 运行时属 vendored 移植代码，
+   `apps/cli/src/runtime/` 下的 yoga-layout 与 ink 运行时属 vendored 移植代码，
    不算多职责问题。

@@ -36,4 +36,4 @@ G1(一行)→ G2(attended 改会话级 + WS action + 前端 toggle)→ G3(steer 
 
 ## 待拍板
 - attended 改 per-session:确认要(单 worker 多 session 时全局开关会串)。默认仍 unattended。
-- 前端改动:TUI(Ink, cli/src)+ web(web/)两套前端都要加 toggle/输入框。工作量主要在这。先做后端 WS action(三端共享、可测),前端 UI 随后。
+- 前端改动:TUI(Ink, apps/cli/src)+ web(web/)两套前端都要加 toggle/输入框。工作量主要在这。先做后端 WS action(三端共享、可测),前端 UI 随后。

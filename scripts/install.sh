@@ -16,7 +16,7 @@
 #   2. Python env (uses an active venv/conda, else creates ./.venv)
 #   3. OpenProgram (editable) + its deps
 #   4. Web UI:   web/ -> npm install && npm run build  (served on :18100)
-#   5. TUI:      cli/ -> npm install && npm run build  (Ink TUI; POSIX)
+#   5. TUI:      apps/cli/ -> npm install && npm run build  (Ink TUI; POSIX)
 #   6. Product extras [all,search] + Playwright Chromium
 #   7. GUI / Research / Wiki first-party Programs, default OCR/model data,
 #      and the Research PDF dependency
@@ -213,10 +213,10 @@ install_web() {
 # ---- 5. Ink TUI (deps + build; POSIX only) -----------------------------------
 install_tui() {
   command -v npm >/dev/null 2>&1 || { warn "npm missing — skipping TUI"; return 0; }
-  [ -f "$HOST_ROOT/cli/package.json" ] || return 0
-  step "installing + building Ink TUI (cli/)"
-  ( cd "$HOST_ROOT/cli" && npm install && npm run build )
-  ok "TUI built (cli/dist/index.js)"
+  [ -f "$HOST_ROOT/apps/cli/package.json" ] || return 0
+  step "installing + building Ink TUI (apps/cli/)"
+  ( cd "$HOST_ROOT/apps/cli" && npm install && npm run build )
+  ok "TUI built (apps/cli/dist/index.js)"
 }
 
 # ---- 7. default extras: [all] = browser + channels ----------------------------

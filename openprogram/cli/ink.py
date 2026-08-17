@@ -1,6 +1,6 @@
 """Launch the Ink-based TUI front-end.
 
-The TUI is a Node.js program (cli/dist/index.js) that talks to the
+The TUI is a Node.js program (apps/cli/dist/index.js) that talks to the
 OpenProgram worker over WebSocket. The worker must already be running
 — ``run_ink_tui`` looks up the live worker via ``worker.{pid,port}``
 and connects. If no worker is running we print actionable hints
@@ -45,26 +45,26 @@ def _wait_until_listening(port: int, timeout: float = 5.0) -> bool:
 def _resolve_cli_entry() -> Path:
     """Return path to the built Ink TUI bundle, building it if needed.
 
-    Fast path: ``cli/dist/index.js`` already exists → return immediately
+    Fast path: ``apps/cli/dist/index.js`` already exists → return immediately
     (one stat call). Cold path (first run on a fresh clone, any platform):
-    transparently run ``npm install`` + ``npm run build`` in ``cli/`` and
+    transparently run ``npm install`` + ``npm run build`` in ``apps/cli/`` and
     return the new bundle. Progress is streamed to the user's saved tty
     so they see it even after the TUI startup stdio redirect.
 
     The TUI source ships as TypeScript / TSX (React-for-terminal via
     Ink); Node can't execute it directly. The build is a one-time
-    compile per machine — git ignores ``cli/dist/`` so every clone
+    compile per machine — git ignores ``apps/cli/dist/`` so every clone
     needs it. Before this autobuild, users had to read the README and
     run the commands manually; "I just ran openprogram and nothing
     happened" was the most common first-run report.
 
-    Raises ``FileNotFoundError`` if ``cli/`` is missing (e.g. wheel
+    Raises ``FileNotFoundError`` if ``apps/cli/`` is missing (e.g. wheel
     install without the source tree) or if the build failed in a way
     that didn't produce the expected output.
     """
     here = Path(__file__).resolve()
-    project_root = here.parent.parent
-    cli_dir = project_root / "cli"
+    project_root = here.parents[2]
+    cli_dir = project_root / "apps" / "cli"
     candidate = cli_dir / "dist" / "index.js"
     if candidate.exists():
         return candidate
@@ -132,7 +132,7 @@ def _build_ink_bundle(cli_dir: Path, expected_bundle: Path) -> None:
                 "this left off."
             )
     else:
-        _tty_write("openprogram: rebuilding Ink TUI (cli/dist/ missing)…\n")
+        _tty_write("openprogram: rebuilding Ink TUI (apps/cli/dist/ missing)…\n")
 
     _tty_write("  → npm run build\n")
     rc = subprocess.run(
@@ -289,7 +289,7 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
         entry = _resolve_cli_entry()
     except (FileNotFoundError, RuntimeError) as e:
         # ``_resolve_cli_entry`` auto-builds the Ink bundle when
-        # missing, so reaching here means either ``cli/`` is gone (wheel
+        # missing, so reaching here means either ``apps/cli/`` is gone (wheel
         # install without source) or the npm install / build failed.
         # Either way, the inner error string already explains it; just
         # add the bail-out options.

@@ -5,7 +5,7 @@ Two endpoints:
 * ``GET /api/file-search?q=...&root=...&limit=...`` — BFS walk under
   ``root`` (defaults to the running worker's cwd) returning files whose
   basename or relpath matches the needle, case-insensitively. Mirrors
-  the TUI's ``cli/src/utils/fileCompletions.ts`` algorithm so both
+  the TUI's ``apps/cli/src/utils/fileCompletions.ts`` algorithm so both
   frontends present the same ranking.
 
 * ``GET /api/file-read?path=...&root=...`` — read a single file as text.
@@ -40,7 +40,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from openprogram import attachments as _attach
 
 
-# Same skiplist as cli/src/utils/fileCompletions.ts so web + tui rank
+# Same skiplist as apps/cli/src/utils/fileCompletions.ts so web + tui rank
 # identically. Hidden dotfolders are pruned separately (any name starting
 # with ".").
 _SKIP_DIRS: set[str] = {

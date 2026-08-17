@@ -16,7 +16,7 @@ list anywhere:
   /api/commands/invoke`` to render; the rendered body lands in the
   textarea.
 * Ink TUI — same two endpoints against the worker; TUI-local actions
-  (theme, pickers, ...) stay in ``cli/src/commands/``, everything
+  (theme, pickers, ...) stay in ``apps/cli/src/commands/``, everything
   else expands into the chat turn.
 * Rich REPL — registers its local actions into the builtin layer
   (``openprogram/cli/repl/handlers.py:register_repl_builtins``) and

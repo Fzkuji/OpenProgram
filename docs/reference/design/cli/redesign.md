@@ -186,4 +186,4 @@ work in progress (§4).
 
 Authoritative code: `openprogram/config_schema.py`,
 `openprogram/webui/ws_actions/settings.py`,
-`cli/src/components/SettingsPanel.tsx`.
+`apps/cli/src/components/SettingsPanel.tsx`.

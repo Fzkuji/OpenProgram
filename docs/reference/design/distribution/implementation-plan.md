@@ -50,7 +50,7 @@ duplicated in this historical distribution ledger.
   nor verified that dependency. The PDF failure messages also lacked the
   required repair action, and source troubleshooting incorrectly implied that
   running the checkout installer changed the shell's active Python. Finally,
-  managed runtimes without Node or `cli/dist` exited before the existing Rich
+  managed runtimes without Node or `apps/cli/dist` exited before the existing Rich
   terminal fallback, despite the release contract requiring a terminal UI.
 - Repair: the OpenClaw skill now runs through `uv run --project` for the cloned
   checkout, with a regression covering both English and Chinese instructions.

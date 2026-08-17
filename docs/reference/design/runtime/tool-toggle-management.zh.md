@@ -131,7 +131,7 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
 - **写入不物化**：新建会话开 web_search 或选 research 后，DB 里 `tools_override` 为 NULL 或 dict，不是全量 list。
 - **新工具自动可见**：`{enabled: True}` 意图展开后含最新加进 DEFAULT_TOOLS 的工具（如 send_message / list_sessions）。
 - **缓存稳定**：意图不变的会话连发两 turn，provider usage 显示第二 turn 命中缓存、工具集未抖动。
-- **各写入端一致**：全仓不存在第二处 `list(_DEFAULT_TOOLS)` / `[t.name for t in` 式物化；webui/channels/TUI（`session.py`、`cli/src/ws/client.ts`）凡能开 web_search / 选 profile 的写入端都透传意图。
+- **各写入端一致**：全仓不存在第二处 `list(_DEFAULT_TOOLS)` / `[t.name for t in` 式物化；webui/channels/TUI（`session.py`、`apps/cli/src/ws/client.ts`）凡能开 web_search / 选 profile 的写入端都透传意图。
 
 ---
 

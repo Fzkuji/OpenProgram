@@ -157,15 +157,15 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: cli/package-lock.json
+          cache-dependency-path: apps/cli/package-lock.json
       - run: npm ci
-        working-directory: cli
+        working-directory: apps/cli
       - run: npm run typecheck
-        working-directory: cli
+        working-directory: apps/cli
       - run: npm test
-        working-directory: cli
+        working-directory: apps/cli
       - run: npm run build
-        working-directory: cli
+        working-directory: apps/cli
 
   desktop:
     runs-on: ubuntu-latest
