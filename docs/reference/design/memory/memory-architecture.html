@@ -1356,12 +1356,12 @@
   </div>
 
   <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；顶部不把受截断的 Recent 数量表述为 Memory 总量；右侧 Preview、Timeline、Recent 与 Core 使用居中的文档面，空 Topics 使用独立空状态卡；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>；小于 720px 时不得产生横向重叠，编辑器操作进入独立下一行并可换行。页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
-  <div class="legend"><b>本轮实现状态：</b>Core 的 Prompt preview / Source records 命名、注入状态卡和 Timeline 年/月/日折叠继续保留。正式 Memory 已通过结构化事务删除 survey test 项目记录；后台 writer 后续仍可按正常行为生成新 Topic。居中文档面、卡片化空状态、76px 单一标题区、780px 阅读宽度和窄窗编辑操作换行已经进入生产代码。二级栏当前仍存在 Topics 文件行、Timeline 日期卡、Recent/Core 信息卡不一致的问题；统一 36px 侧栏行规范属于本轮待实现修正。小于 720px 的完整列表/详情互斥仍不在本轮生产实现范围。</div>
+  <div class="legend"><b>本轮实现状态：</b>Core 的 Prompt preview / Source records 命名、注入状态卡和 Timeline 年/月/日折叠继续保留。正式 Memory 已通过结构化事务删除 survey test 项目记录；后台 writer 后续仍可按正常行为生成新 Topic。居中文档面、卡片化空状态、76px 单一标题区、780px 阅读宽度和窄窗编辑操作换行已经进入生产代码。Topics 文件行、Timeline 年/月/日、Recent 与 Core 入口现已统一复用 36px 行高、10px 横向内边距、8px 圆角和 13px 字号的侧栏行；Timeline 只以缩进表达层级。小于 720px 的完整列表/详情互斥仍不在本轮生产实现范围。</div>
 
   <div class="grid2">
     <div class="oc">
       <h4>实现证据</h4>
-      <div class="d">提交 <code>5f1f06c4</code> 实现文档面、空状态和紧凑上下文栏；<code>1c770a4e</code> 将路径元数据合入 76px 标题区并统一 36px/780px 尺寸；<code>b583833d</code> 删除不准确的顶部总量并补齐窄窗操作换行。<code>check-memory-status</code> 从父提交 RED 变为 GREEN；Memory 设置、Markdown 清洗、TypeScript、production build、HTML、链接与 diff 检查通过；独立规格复核与质量复核均为 PASS。默认 18100 App 的最终可视验收在合并刷新后执行。</div>
+      <div class="d">提交 <code>5f1f06c4</code> 实现文档面、空状态和紧凑上下文栏；<code>1c770a4e</code> 将路径元数据合入 76px 标题区并统一 36px/780px 尺寸；<code>b583833d</code> 删除不准确的顶部总量并补齐窄窗操作换行；<code>7ef440c6</code> 统一 Topics、Timeline、Recent 与 Core 的二级侧栏行。<code>check-memory-status</code> 从父提交 RED 变为 GREEN；Memory 设置、Markdown 清洗、TypeScript、production build、HTML、链接与 diff 检查通过；默认 18100 App 已刷新并完成可视验收。</div>
     </div>
     <div class="oc">
       <h4>兼容要求</h4>
