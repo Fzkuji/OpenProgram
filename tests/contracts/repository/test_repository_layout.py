@@ -158,12 +158,12 @@ def test_generated_cli_reference_names_the_current_parser_source(tmp_path) -> No
         assert "from openprogram/cli.py" not in text
 
 
-def test_programs_route_has_no_reexport_only_component_directory() -> None:
+def test_programs_route_uses_the_programs_workspace_component() -> None:
     route = (ROOT / "web/app/(shell)/programs/page.tsx").read_text(encoding="utf-8")
 
-    assert "@/components/functions/functions-page" in route
-    assert not (ROOT / "web/components/programs/programs-page.tsx").exists()
-    assert not (ROOT / "web/components/programs/programs-page.module.css").exists()
+    assert "@/components/programs/programs-page" in route
+    assert (ROOT / "web/components/programs/programs-page.tsx").is_file()
+    assert (ROOT / "web/components/programs/programs-page.module.css").is_file()
 
 
 def test_generated_package_readmes_are_current() -> None:

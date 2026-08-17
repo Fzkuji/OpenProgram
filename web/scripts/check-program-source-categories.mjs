@@ -1,61 +1,26 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import {
-  matchesProgramSearch,
-  programsForSelection,
-  toolsForSelection,
-} from "../components/functions/program-source-categories.ts";
-
 const root = new URL("../", import.meta.url);
-const page = readFileSync(new URL("components/functions/functions-page.tsx", root), "utf8");
+const route = readFileSync(new URL("app/(shell)/programs/page.tsx", root), "utf8");
+const page = readFileSync(new URL("components/programs/programs-page.tsx", root), "utf8");
+const logic = readFileSync(new URL("components/programs/programs-logic.ts", root), "utf8");
+const css = readFileSync(new URL("components/programs/programs-page.module.css", root), "utf8");
 
-const programs = [
-  { name: "analysis", category: "agentic", description: "Review code" },
-  { name: "legacy", category: "unknown", description: "Older agentic entry" },
-  { name: "research_agent", category: "app", description: "Research application" },
-];
-const tools = [
-  { name: "read", description: "Read files" },
-  { name: "web_search", description: "Search the web" },
-];
+assert.match(route, /@\/components\/programs\/programs-page/);
+assert.match(page, /\/api\/programs\/explorer/);
+assert.match(page, /\/api\/programs\/logic/);
+assert.match(page, /data-testid="programs-explorer"/);
+assert.match(page, /data-testid="programs-call-tree"/);
+assert.match(page, /data-testid="programs-call-graph"/);
+assert.match(page, /Call tree/);
+assert.match(page, /Graph/);
+assert.match(logic, /for \(const edge of logic\.edges\)/);
+assert.match(logic, /rows\.length >= limit/);
+assert.match(page, /logic\.edges\.map/);
+assert.doesNotMatch(page, /graphColumns|graphArrow/);
+assert.match(page, /cancelled = true/);
+assert.match(css, /grid-template-columns:\s*var\(--programs-explorer-width\)\s+minmax\(0,\s*1fr\)/);
+assert.doesNotMatch(page, /All Programs|Uncategorized|ProfileNavRow/);
 
-assert.deepEqual(programsForSelection("__functions__", programs, []), programs);
-assert.deepEqual(
-  programsForSelection("__agentic_functions__", programs, []).map((p) => p.name),
-  ["analysis", "legacy", "research_agent"],
-);
-assert.deepEqual(
-  programsForSelection("__applications__", programs, []).map((p) => p.name),
-  ["analysis", "legacy", "research_agent"],
-);
-assert.deepEqual(
-  programsForSelection("__favorites__", programs, ["analysis"]).map((p) => p.name),
-  ["analysis"],
-);
-assert.deepEqual(toolsForSelection("__functions__", tools, []), tools);
-assert.deepEqual(toolsForSelection("__agentic_functions__", tools, []), tools);
-assert.deepEqual(toolsForSelection("__applications__", tools, []), tools);
-assert.deepEqual(
-  toolsForSelection("__favorites__", tools, ["web_search"]).map((tool) => tool.name),
-  ["web_search"],
-);
-assert.equal(matchesProgramSearch(tools[1], "SEARCH THE"), true);
-
-const categories = page.slice(
-  page.indexOf("const sourceCategories = ["),
-  page.indexOf("];", page.indexOf("const sourceCategories = [")),
-);
-assert.match(
-  categories,
-  /__functions__[\s\S]*Functions[\s\S]*__agentic_functions__[\s\S]*Agentic Functions[\s\S]*__applications__[\s\S]*Applications[\s\S]*__favorites__[\s\S]*Favorites/,
-);
-assert.doesNotMatch(page, /__all__|All Programs|__uncategorized__|Uncategorized/);
-assert.doesNotMatch(page, /api\/tool-profiles|userProfiles|New Profile|profileSelection/);
-assert.match(
-  page,
-  /id="program-source-functions"[\s\S]*id="program-source-agentic"[\s\S]*id="program-source-applications"/,
-);
-assert.match(page, /scrollIntoView\(\{ block: "start", behavior: "smooth" \}\)/);
-
-console.log("program source category checks passed");
+console.log("program workspace checks passed");

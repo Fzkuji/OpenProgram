@@ -17,7 +17,7 @@
     "check:integrated-terminal": "node scripts/check-integrated-terminal.mjs",
     "check:chat-ui": "node --no-warnings --experimental-strip-types scripts/check-chat-ui.mjs",
     "check:composer-tool-profile": "node --no-warnings scripts/check-composer-tool-profile-menu.mjs",
-    "check:program-source-categories": "node --no-warnings scripts/check-program-source-categories.mjs",
+    "check:program-source-categories": "node --no-warnings scripts/check-program-source-categories.mjs && node --no-warnings --experimental-strip-types --test tests/programs-logic.test.mjs",
     "check:agent-tool-configuration": "node --no-warnings scripts/check-agent-tool-configuration.mjs",
     "check:local-attachment-paths": "node --no-warnings --experimental-strip-types scripts/check-local-attachment-paths.mjs",
     "check:compound-tabs": "node --no-warnings --experimental-strip-types scripts/check-compound-tabs.mjs",

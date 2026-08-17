@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 
 const ProgramsPage = dynamic(
-  () => import("@/components/functions/functions-page").then((m) => m.FunctionsPage),
+  () => import("@/components/programs/programs-page").then((m) => m.ProgramsPage),
   { ssr: false },
 );
 

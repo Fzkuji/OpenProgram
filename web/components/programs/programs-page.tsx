@@ -1,0 +1,280 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+  Boxes,
+  ChevronRight,
+  File,
+  FileCode2,
+  Folder,
+  FolderOpen,
+  GitBranch,
+  Network,
+  RefreshCw,
+  Workflow,
+  Wrench,
+} from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { SearchInput } from "@/components/ui/search-input";
+import { useTranslation } from "@/lib/i18n";
+import { jsonFetch } from "@/lib/net/fetch-client";
+
+import {
+  buildCallTreeRows,
+  type LogicResponse,
+  type ProgramKind,
+} from "./programs-logic";
+
+import styles from "./programs-page.module.css";
+
+type ExplorerEntry = {
+  name: string;
+  path: string;
+  kind: "folder" | "file";
+  program_kind: ProgramKind | null;
+  has_children: boolean;
+};
+
+type ExplorerResponse = {
+  path: string;
+  entries: ExplorerEntry[];
+  default_selection?: string | null;
+};
+
+const ROOT_LABEL = "openprogram/programs";
+
+function parentPaths(path: string) {
+  const parts = path.split("/");
+  return parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/"));
+}
+
+function kindLabel(kind: ProgramKind, text: (en: string, zh: string) => string) {
+  if (kind === "workflow") return text("Workflow", "工作流");
+  if (kind === "application") return text("Application", "应用");
+  if (kind === "agentic_function") return text("Agentic Function", "Agentic 函数");
+  return text("Function", "函数");
+}
+
+function EntryIcon({ entry, expanded }: { entry: ExplorerEntry; expanded: boolean }) {
+  if (entry.program_kind === "workflow") return <Workflow size={15} />;
+  if (entry.program_kind === "application") return <Boxes size={15} />;
+  if (entry.program_kind?.endsWith("function")) return <Wrench size={15} />;
+  if (entry.kind === "file") return entry.name.endsWith(".py") ? <FileCode2 size={15} /> : <File size={15} />;
+  return expanded ? <FolderOpen size={15} /> : <Folder size={15} />;
+}
+
+export function ProgramsPage() {
+  const { t, text } = useTranslation();
+  const [directories, setDirectories] = useState<Record<string, ExplorerEntry[]>>({});
+  const [expanded, setExpanded] = useState<Set<string>>(new Set([""]));
+  const [selected, setSelected] = useState<string | null>(null);
+  const [logic, setLogic] = useState<LogicResponse | null>(null);
+  const [loadingTree, setLoadingTree] = useState(true);
+  const [loadingLogic, setLoadingLogic] = useState(false);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [view, setView] = useState<"tree" | "graph">("tree");
+  const [reloadToken, setReloadToken] = useState(0);
+
+  const loadDirectory = useCallback(async (path: string, signal?: AbortSignal) => {
+    const query = path ? `?${new URLSearchParams({ path })}` : "";
+    const response = await jsonFetch<ExplorerResponse>(`/api/programs/explorer${query}`, { signal });
+    setDirectories((current) => ({ ...current, [path]: response.entries }));
+    return response;
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+    async function initialise() {
+      setLoadingTree(true);
+      setError("");
+      setDirectories({});
+      setExpanded(new Set([""]));
+      try {
+        const root = await loadDirectory("", controller.signal);
+        if (cancelled) return;
+        const initial = root.default_selection ?? null;
+        const parents = initial ? parentPaths(initial) : [];
+        for (const parent of parents) {
+          await loadDirectory(parent, controller.signal);
+        }
+        if (cancelled) return;
+        setExpanded(new Set(["", ...parents]));
+        setSelected(initial);
+      } catch (cause) {
+        if ((cause as Error).name !== "AbortError") setError(text("Programs could not be loaded.", "无法加载 Programs。"));
+      } finally {
+        if (!cancelled) setLoadingTree(false);
+      }
+    }
+    void initialise();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [loadDirectory, reloadToken, text]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+    if (!selected) {
+      setLogic(null);
+      return () => controller.abort();
+    }
+    setLogic(null);
+    setLoadingLogic(true);
+    setError("");
+    const query = new URLSearchParams({ path: selected });
+    void jsonFetch<LogicResponse>(`/api/programs/logic?${query}`, { signal: controller.signal })
+      .then((result) => {
+        if (!cancelled) setLogic(result);
+      })
+      .catch((cause) => {
+        if (!cancelled && (cause as Error).name !== "AbortError") {
+          setLogic(null);
+          setError(text("Call logic could not be loaded.", "无法加载调用逻辑。"));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingLogic(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [selected, text]);
+
+  const selectedNode = logic?.nodes.find((node) => node.id === logic.root) ?? null;
+  const callTree = useMemo(() => logic ? buildCallTreeRows(logic) : { rows: [], truncated: false }, [logic]);
+
+  async function toggleDirectory(path: string) {
+    if (expanded.has(path)) {
+      setExpanded((current) => {
+        const next = new Set(current);
+        next.delete(path);
+        return next;
+      });
+      return;
+    }
+    if (!directories[path]) {
+      try {
+        await loadDirectory(path);
+      } catch {
+        setError(text("Folder could not be loaded.", "无法加载文件夹。"));
+        return;
+      }
+    }
+    setExpanded((current) => new Set(current).add(path));
+  }
+
+  function renderDirectory(path: string, depth: number): React.ReactNode {
+    const entries = directories[path] ?? [];
+    const query = search.trim().toLowerCase();
+    return entries.map((entry) => {
+      const isExpanded = expanded.has(entry.path);
+      const dimmed = query && !entry.name.toLowerCase().includes(query);
+      return (
+        <div key={entry.path} className={styles.treeNode}>
+          <div
+            className={`${styles.treeRow} ${selected === entry.path ? styles.treeRowActive : ""} ${dimmed ? styles.treeRowDim : ""}`}
+            style={{ "--tree-depth": depth } as CSSProperties}
+          >
+            {entry.kind === "folder" && entry.has_children ? (
+              <button
+                className={styles.caretButton}
+                type="button"
+                aria-label={isExpanded ? text("Collapse folder", "折叠文件夹") : text("Expand folder", "展开文件夹")}
+                aria-expanded={isExpanded}
+                onClick={() => void toggleDirectory(entry.path)}
+              >
+                <ChevronRight size={13} />
+              </button>
+            ) : <span className={styles.caretSpacer} />}
+            <button
+              className={styles.entryButton}
+              type="button"
+              onClick={() => {
+                if (entry.program_kind) setSelected(entry.path);
+                else if (entry.kind === "folder") void toggleDirectory(entry.path);
+              }}
+            >
+              <span className={styles.entryIcon}><EntryIcon entry={entry} expanded={isExpanded} /></span>
+              <span className={styles.entryName}>{entry.name}</span>
+              {entry.program_kind ? <span className={styles.kindTag}>{kindLabel(entry.program_kind, text)}</span> : null}
+            </button>
+          </div>
+          {entry.kind === "folder" && isExpanded ? renderDirectory(entry.path, depth + 1) : null}
+        </div>
+      );
+    });
+  }
+
+  async function refreshPrograms() {
+    await fetch("/api/programs/refresh", { method: "POST" }).catch(() => undefined);
+    setReloadToken((value) => value + 1);
+  }
+
+  return (
+    <div className="main">
+      <div className={styles.page}>
+        <header className={styles.topbar}>
+          <div><h1>{t("nav.programs")}</h1><p>{text("Browse source files and inspect static call relationships.", "浏览源码文件并检查静态调用关系。")}</p></div>
+          <div className={styles.toolbar}>
+            <SearchInput placeholder={text("Search loaded files…", "搜索已加载文件…")} value={search} onChange={setSearch} />
+            <Button variant="outline" size="sm" onClick={() => void refreshPrograms()}><RefreshCw size={14} />{text("Refresh", "刷新")}</Button>
+          </div>
+        </header>
+        <div className={styles.workspace}>
+          <aside className={styles.explorer} data-testid="programs-explorer">
+            <div className={styles.explorerHeader}><span>{text("Explorer", "文件")}</span><code>{ROOT_LABEL}</code></div>
+            <div className={styles.tree} aria-label={text("Programs files", "Programs 文件")}>
+              <div className={styles.rootRow}>
+                <button className={styles.caretButton} type="button" aria-label={expanded.has("") ? text("Collapse Programs folder", "折叠 Programs 文件夹") : text("Expand Programs folder", "展开 Programs 文件夹")} aria-expanded={expanded.has("")} onClick={() => void toggleDirectory("")}><ChevronRight size={13} /></button>
+                <FolderOpen size={15} /><strong>programs</strong>
+              </div>
+              {loadingTree ? <div className={styles.treeMessage}>{text("Loading…", "加载中…")}</div> : expanded.has("") ? renderDirectory("", 1) : null}
+            </div>
+          </aside>
+          <section className={styles.logicPane}>
+            {error ? <div className={styles.empty} role="alert"><span className={styles.error}>{error}</span></div> : !selected ? (
+              <div className={styles.empty}><Network size={32} /><strong>{text("No Programs found", "没有找到 Program")}</strong><span>{text("Add a Function, Workflow, or Application under openprogram/programs.", "请在 openprogram/programs 下添加 Function、Workflow 或 Application。")}</span></div>
+            ) : loadingLogic ? (
+              <div className={styles.empty}><RefreshCw className={styles.spin} size={25} /><span>{text("Loading call logic…", "正在加载调用逻辑…")}</span></div>
+            ) : !logic || !selectedNode ? (
+              <div className={styles.empty}><Network size={32} /><span>{text("Call logic is unavailable.", "调用逻辑不可用。")}</span></div>
+            ) : (
+              <div className={styles.logicContent}>
+                <div className={styles.breadcrumb}>{ROOT_LABEL}/{selectedNode.path}</div>
+                <div className={styles.entityHeader}>
+                  <span className={styles.entityIcon}>{selectedNode.program_kind === "workflow" ? <Workflow size={20} /> : selectedNode.program_kind === "application" ? <Boxes size={20} /> : <Wrench size={20} />}</span>
+                  <div><h2>{selectedNode.name}</h2><p>{kindLabel(selectedNode.program_kind, text)}</p></div>
+                  <span className={styles.headBadge}>HEAD</span>
+                </div>
+                <div className={styles.summary}><span>{logic.edges.filter((edge) => edge.source === logic.root).length} {text("direct calls", "个直接调用")}</span><span>{Math.max(0, logic.nodes.length - 1)} {text("reachable Programs", "个可达 Program")}</span><span>{logic.edges.length} {text("edges", "条边")}</span></div>
+                {logic.analysis_complete === false ? <div className={styles.analysisWarning} role="status">{text("Partial result: some source files were not analyzed because they exceed the analysis limits.", "部分结果：部分源码超过分析限制，未纳入调用关系。")}</div> : null}
+                <div className={styles.logicToolbar}><div><strong>{text("Call logic", "调用逻辑")}</strong><small>{text("Static imports at the current source state", "当前源码状态下的静态 import")}</small></div><div className={styles.viewSwitch} aria-label={text("Call logic view", "调用逻辑视图")}><button className={view === "tree" ? styles.viewActive : ""} type="button" aria-pressed={view === "tree"} onClick={() => setView("tree")}><GitBranch size={13} />Call tree</button><button className={view === "graph" ? styles.viewActive : ""} type="button" aria-pressed={view === "graph"} onClick={() => setView("graph")}><Network size={13} />Graph</button></div></div>
+                {view === "tree" ? (
+                  <div className={styles.callTree} data-testid="programs-call-tree">
+                    {callTree.rows.map(({ key, node, depth, cycle, reference }) => <div key={key} className={`${styles.callRow} ${depth === 0 ? styles.callRoot : ""} ${reference ? styles.callReference : ""}`} style={{ "--call-depth": depth } as CSSProperties} data-edge-target={depth ? node.id : undefined}><span className={styles.callIcon}>{node.program_kind === "workflow" ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : <Wrench size={15} />}</span><span><strong>{node.name}</strong><small>{node.path}</small></span><em>{cycle ? "cycle" : reference ? "reference" : depth === 0 ? "root" : depth === 1 ? "direct" : "transitive"}</em></div>)}
+                    {callTree.truncated ? <div className={styles.noCalls}>{text("Additional references are hidden.", "其余引用已隐藏。")}</div> : null}
+                    {logic.nodes.length === 1 && logic.analysis_complete !== false ? <div className={styles.noCalls}>{text("This Program has no imports of another Program.", "这个 Program 没有导入其他 Program。")}</div> : null}
+                  </div>
+                ) : (
+                  <div className={styles.callGraph} data-testid="programs-call-graph">
+                    <div className={styles.graphEdges} aria-label={text("Graph connections", "图连接关系")}>{logic.edges.length ? logic.edges.map((edge) => {
+                      const source = logic.nodes.find((node) => node.id === edge.source);
+                      const target = logic.nodes.find((node) => node.id === edge.target);
+                      return <div key={`${edge.source}->${edge.target}`} className={styles.graphEdge} data-edge={`${edge.source}->${edge.target}`}><span className={styles.graphNode}><strong>{source?.name ?? edge.source}</strong><small>{source ? kindLabel(source.program_kind, text) : edge.source}</small></span><ChevronRight size={16} /><span className={styles.graphNode}><strong>{target?.name ?? edge.target}</strong><small>{target ? kindLabel(target.program_kind, text) : edge.target}</small></span></div>;
+                    }) : <div className={styles.graphNode}><strong>{selectedNode.name}</strong><small>{logic.analysis_complete === false ? text("Partial analysis", "分析不完整") : text("No outgoing calls", "没有向外调用")}</small></div>}</div>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
