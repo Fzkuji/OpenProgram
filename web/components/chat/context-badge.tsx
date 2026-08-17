@@ -166,6 +166,7 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
           <>
             {/* 透明全屏遮罩：点圆环外关闭（不压暗背景，纯 click-catcher）*/}
             <div
+              data-native-view-occluder="true"
               style={{
                 position: "fixed",
                 inset: 0,

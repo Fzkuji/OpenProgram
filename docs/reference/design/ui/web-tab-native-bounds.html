@@ -11,6 +11,9 @@
     main { max-width:920px; } h1 { font-size:24px; margin:0 0 8px; } h2 { margin:34px 0 10px; font-size:17px; color:var(--accent); }
     p, li { color:var(--muted); } code { color:var(--text); background:#2a2927; border-radius:4px; padding:1px 5px; }
     .card { border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:18px 20px; }
+    table { width:100%; border-collapse:collapse; margin:14px 0 20px; }
+    th, td { padding:10px 12px; border:1px solid var(--line); text-align:left; vertical-align:top; color:var(--muted); }
+    th { color:var(--text); background:var(--panel); }
     .status { color:var(--accent); font-weight:600; }
   </style>
 </head>
@@ -22,7 +25,20 @@
   <h2>已验证缺口</h2>
   <div class="card">
     <p>shell 缩放因子约为 <code>1.095</code> 时，renderer 发送 <code>x=812.63, width=518.64</code> CSS px，主进程直接当作 DIP 使用。正确 native bounds 应约为 <code>x=890, width=568</code>。结果是网页覆盖左侧聊天 pane，并在右侧留下空白。</p>
+    <p>旧遮挡判断只要文档内存在任意 <code>role=dialog</code> 就隐藏每一个 native Web pane。底部 working directory、project 和 permission 等局部菜单即使完全位于聊天 pane，也会让相邻网页变为空白；同时 <code>role=menu</code>、<code>role=listbox</code> 和若干自定义全屏确认层没有进入同一规则。</p>
   </div>
+
+  <h2>浮层与多个 Web pane 的统一规则</h2>
+  <table>
+    <thead><tr><th>浮层类型</th><th>识别方式</th><th>native Web 行为</th></tr></thead>
+    <tbody>
+      <tr><td>局部 Popover、Dropdown、listbox、tab/split menu</td><td><code>role=dialog/menu/listbox</code></td><td>逐个 Web body 计算矩形；只隐藏实际相交的 pane。</td></tr>
+      <tr><td>全屏 modal、确认背景、附件预览</td><td><code>data-native-view-occluder=true</code> 或既有 merge backdrop</td><td>全屏矩形与每个 Web body 相交，因此所有被覆盖 pane 隐藏。</td></tr>
+      <tr><td>tooltip、toast、drag cue、普通 portaled 内容</td><td>不进入遮挡 selector</td><td>不因短暂提示导致网页整体空白。</td></tr>
+      <tr><td>Desktop main/context/bookmark 原生菜单</td><td>main process 独立 overlay owner</td><td>沿用原生菜单生命周期，不由 renderer DOM 重复管理。</td></tr>
+    </tbody>
+  </table>
+  <p>多 Web 分屏不共享一个全局 visible flag。每个 <code>WebTabPane</code> 使用自己的 body bounds 与同一组当前浮层分别计算；一个菜单只覆盖左侧 Web 时，右侧 Web 保持可见。浮层关闭、移动或 resize 后由现有 MutationObserver、ResizeObserver 和 scroll/resize listener 重新发布 bounds。</p>
 
   <h2>设计</h2>
   <ul>
@@ -31,7 +47,7 @@
     <li><code>sync-visible</code> 与兼容入口 <code>set-bounds</code> 使用同一转换；主进程内部已经是 DIP 的 show/hide/transfer 路径不重复缩放。</li>
     <li>shell 缩放变化会触发现有 renderer <code>resize</code> listener，重新测量并发送当前 bounds；主进程在每次 IPC 上读取当前缩放因子。</li>
     <li>无效或非正缩放因子按 <code>1</code> 处理。</li>
-    <li>DOM 浮层只在其可见矩形与当前 Web body 相交时遮挡 native <code>WebContentsView</code>。位于聊天 pane 内的 project、permission 等菜单不得隐藏相邻分屏中的网页；覆盖网页区域的对话框、附件预览和 merge backdrop 仍需隐藏 native view，关闭后由现有 bounds observer 恢复。</li>
+    <li>DOM 浮层只在其可见矩形与当前 Web body 相交时遮挡 native <code>WebContentsView</code>。位于聊天 pane 内的 working directory、project、permission 等菜单不得隐藏相邻分屏中的网页；覆盖网页区域的对话框、附件预览和 merge backdrop 仍需隐藏 native view，关闭后由现有 bounds observer 恢复。</li>
   </ul>
 
   <h2>边界与排除</h2>
@@ -43,13 +59,14 @@
     <li>自动化覆盖 100% 缩放、约 109.5% 缩放、无效缩放因子、两个 IPC 入口和现有 desktop 回归。</li>
     <li>安装版使用默认 18100 worker；在非 100% shell 缩放下验证 DOM body 与 native viewport 同宽同高，并检查分屏、split ratio 调整及窗口缩放。</li>
     <li>视觉验收只使用一张当前 viewport 截图；不启用 OCR、候选框或多轮 crop。</li>
-    <li>公开回归必须覆盖三个边界：左侧 project menu 与右侧 Web body 不相交时保持可见；浮层与 Web body 相交时隐藏；只有边缘接触而没有面积重叠时保持可见。</li>
+    <li>公开回归必须覆盖：左侧 working directory/project menu 与右侧 Web body 不相交时保持可见；menu/listbox 与单个 Web body 相交时只隐藏该 pane；全屏 modal backdrop 隐藏所有相交 pane；只有边缘接触而没有面积重叠时保持可见。</li>
   </ul>
 
   <h2>实现证据</h2>
   <ul>
     <li>desktop 与 web 完整检查通过，动态 renderer 测试保留 DOMRect 小数并验证 <code>syncVisible</code> payload。</li>
-    <li><code>check:web-split</code> 执行矩形相交回归：左侧 project menu 不隐藏右侧 WebTab；相交浮层与全屏 dialog backdrop 会隐藏；零面积和仅边缘接触不隐藏。通用 <code>DialogOverlay</code> 通过 <code>data-native-view-occluder</code> 进入同一判断。</li>
+    <li><code>check:web-split</code> 执行矩形相交回归：左侧 working directory/project menu 不隐藏右侧 WebTab；<code>dialog/menu/listbox</code>、相交浮层与全屏 dialog backdrop 按每个 Web body 分别判断；零面积和仅边缘接触不隐藏。通用 <code>DialogOverlay</code>、权限确认、context click-catcher 和 scoped drop overlay 通过 <code>data-native-view-occluder</code> 进入同一判断。</li>
+    <li>最终规格复核与质量复核均为 <code>PASS</code>；未修改产品 CSS、现有菜单尺寸、位置、圆角或交互结构。</li>
     <li>安装版在约 109.5% shell 缩放下，DOM body 换算结果与 native viewport 均为 <code>568×763 DIP</code>。</li>
     <li>窗口调整为 <code>1350×800</code> 后，DOM body 换算结果与 native viewport 均为 <code>526×712 DIP</code>；恢复窗口后仍一致。</li>
     <li>默认 18100 worker 健康检查通过，CDP 9223 同时观察 shell 与当前 Bilibili 原生页面。</li>

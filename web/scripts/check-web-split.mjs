@@ -1517,6 +1517,15 @@ assert.equal(
   true,
   "a modal backdrop must occlude the WebTab even when dialog content is elsewhere",
 );
+const leftWebBody = { x: 520, y: 180, width: 420, height: 620 };
+const rightWebBody = { x: 946, y: 180, width: 420, height: 620 };
+const paneMenu = [{ getBoundingClientRect: () => rect(700, 260, 180, 240) }];
+assert.equal(isWebTabOccluded(leftWebBody, paneMenu), true);
+assert.equal(
+  isWebTabOccluded(rightWebBody, paneMenu),
+  false,
+  "each visible WebTab must evaluate the same menu against its own body bounds",
+);
 const thresholdWidth = 846;
 const thresholdRatio = SPLIT_CHAT_MIN_WIDTH / thresholdWidth;
 assert.equal(clampSplitRatioForWidth(0.44, thresholdWidth), thresholdRatio);
@@ -2239,7 +2248,7 @@ assert.doesNotMatch(
 assert.match(webTabPaneSource, /const occluded = isWebTabOccluded\(/);
 assert.match(
   webTabPaneSource,
-  /document\.querySelectorAll\([\s\S]*?\[role="dialog"\], \.branches-merge-modal-backdrop, \[data-native-view-occluder="true"\]/,
+  /document\.querySelectorAll\([\s\S]*?\[role="dialog"\], \[role="menu"\], \[role="listbox"\], \.branches-merge-modal-backdrop, \[data-native-view-occluder="true"\]/,
 );
 assert.match(
   webTabPaneSource,
@@ -2277,6 +2286,33 @@ assert.match(
   dialogSource,
   /<DialogPrimitive\.Overlay[\s\S]*?data-native-view-occluder="true"/,
   "the full-window dialog backdrop must participate in native view occlusion",
+);
+const permissionMenuSource = await readFile(
+  new URL("../components/chat/top-bar/permission-menu.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(
+  permissionMenuSource,
+  /bypassConfirm[\s\S]*?data-native-view-occluder="true"/,
+  "the custom full-window permission confirmation must occlude native views",
+);
+const contextBadgeSource = await readFile(
+  new URL("../components/chat/context-badge.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(
+  contextBadgeSource,
+  /透明全屏遮罩[\s\S]*?data-native-view-occluder="true"/,
+  "the context panel click-catcher must not sit behind a native view",
+);
+const scopedDropOverlaySource = await readFile(
+  new URL("../components/chat/composer/scoped-drop-overlay.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(
+  scopedDropOverlaySource,
+  /<div[\s\S]*?data-native-view-occluder="true"[\s\S]*?\.\.\.style/,
+  "the measured drop overlay must occlude only Web bodies it intersects",
 );
 
 useCenterTabs.setState({
