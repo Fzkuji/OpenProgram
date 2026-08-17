@@ -813,8 +813,7 @@
 .timelineMonthSummary:focus-visible,
 .timelineDay:focus-visible,
 .timelineDayActive:focus-visible {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px var(--accent-blue);
 }
 
 /* ─── Tree toolbar (search + refresh) ─────────────────── */

@@ -58,7 +58,15 @@ export function groupTimelineDays(
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day.date);
     if (!match) continue;
     const [, year, month, dayLabel] = match;
-    const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(dayLabel)));
+    const yearNumber = Number(year);
+    const monthNumber = Number(month);
+    const dayNumber = Number(dayLabel);
+    const date = new Date(Date.UTC(yearNumber, monthNumber - 1, dayNumber));
+    if (
+      date.getUTCFullYear() !== yearNumber
+      || date.getUTCMonth() !== monthNumber - 1
+      || date.getUTCDate() !== dayNumber
+    ) continue;
     const monthKey = `${year}-${month}`;
     const months = years.get(year) ?? new Map();
     const group = months.get(monthKey) ?? {

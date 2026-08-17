@@ -378,7 +378,7 @@ export function MemoryPage() {
           {tab === "timeline" && (
             <>
               <div className={styles.tree}>
-              {timelineLoading ? <LoadingSkeleton /> : timelineDays.length === 0 ? (
+              {timelineLoading ? <LoadingSkeleton /> : timelineGroups.length === 0 ? (
                 <EmptyState
                   icon="clock"
                   text={text("No timeline yet", "还没有时间线")}
