@@ -22,19 +22,16 @@ export interface ContextBreakdown {
 }
 
 const CACHE_LIMIT = 32;
-interface CacheEntry {
-  value?: ContextBreakdown;
-  generation: number;
-}
-const cache = new Map<string, CacheEntry>();
+const cache = new Map<string, ContextBreakdown>();
+const latestRequest = new Map<string, symbol>();
 
 function cacheKey(sessionId: string | null, headId?: string | null): string | null {
   return sessionId ? JSON.stringify([sessionId, headId ?? null]) : null;
 }
 
-function touch(key: string, entry: CacheEntry): void {
+function touch(key: string, value: ContextBreakdown): void {
   cache.delete(key);
-  cache.set(key, entry);
+  cache.set(key, value);
   while (cache.size > CACHE_LIMIT) {
     const oldest = cache.keys().next().value;
     if (oldest === undefined) break;
@@ -48,10 +45,10 @@ export function readContextBreakdownCache(
 ): ContextBreakdown | null {
   const key = cacheKey(sessionId, headId);
   if (!key) return null;
-  const entry = cache.get(key);
-  if (!entry?.value) return null;
-  touch(key, entry);
-  return entry.value;
+  const value = cache.get(key);
+  if (!value) return null;
+  touch(key, value);
+  return value;
 }
 
 export function writeContextBreakdownCache(
@@ -60,9 +57,7 @@ export function writeContextBreakdownCache(
   value: ContextBreakdown,
 ): void {
   const key = JSON.stringify([sessionId, headId ?? null]);
-  const entry = cache.get(key) ?? { generation: 0 };
-  entry.value = value;
-  touch(key, entry);
+  touch(key, value);
 }
 
 type ContextBreakdownFetcher = (
@@ -78,10 +73,9 @@ export async function refreshContextBreakdown(
 ): Promise<ContextBreakdown | null> {
   const key = JSON.stringify([sessionId, headId ?? null]);
   const cached = readContextBreakdownCache(sessionId, headId);
-  const entry = cache.get(key) ?? { generation: 0 };
-  const generation = ++entry.generation;
-  touch(key, entry);
-  const isCurrent = () => cache.get(key)?.generation === generation;
+  const requestToken = Symbol();
+  latestRequest.set(key, requestToken);
+  const isCurrent = () => latestRequest.get(key) === requestToken;
   const qs = headId ? `?head_id=${encodeURIComponent(headId)}` : "";
   try {
     const response = await fetcher(
@@ -97,5 +91,7 @@ export async function refreshContextBreakdown(
   } catch (error) {
     if (signal.aborted || !isCurrent()) return null;
     return cached ?? { error: String(error) };
+  } finally {
+    if (isCurrent()) latestRequest.delete(key);
   }
 }

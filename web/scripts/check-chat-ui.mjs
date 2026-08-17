@@ -114,6 +114,32 @@ assert.equal(
   "the bounded cache must evict its least-recently-used entry",
 );
 assert.equal(contextBreakdownCache.readContextBreakdownCache("evict-39", null).total_used, 39);
+let resolveEvictedOlder;
+let resolveEvictedNewer;
+const evictedOlder = contextBreakdownCache.refreshContextBreakdown(
+  "session-evicted-race",
+  "head",
+  new AbortController().signal,
+  () => new Promise((resolve) => { resolveEvictedOlder = resolve; }),
+);
+for (let i = 0; i < 32; i += 1) {
+  contextBreakdownCache.writeContextBreakdownCache(`race-fill-${i}`, null, { total_used: i });
+}
+const evictedNewer = contextBreakdownCache.refreshContextBreakdown(
+  "session-evicted-race",
+  "head",
+  new AbortController().signal,
+  () => new Promise((resolve) => { resolveEvictedNewer = resolve; }),
+);
+resolveEvictedNewer({ json: async () => ({ total_used: 400, window: 1_000 }) });
+assert.equal((await evictedNewer).total_used, 400);
+resolveEvictedOlder({ json: async () => ({ total_used: 300, window: 1_000 }) });
+assert.equal(await evictedOlder, null);
+assert.equal(
+  contextBreakdownCache.readContextBreakdownCache("session-evicted-race", "head").total_used,
+  400,
+  "LRU eviction must not reset same-key request ordering",
+);
 assert.match(
   contextBreakdownPanel,
   /useState<Breakdown \| null>\(\(\)\s*=>\s*readContextBreakdownCache\(sessionId, headId\),?\s*\)/,
