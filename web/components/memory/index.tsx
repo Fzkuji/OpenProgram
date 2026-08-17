@@ -280,6 +280,11 @@ export function MemoryPage() {
       {/* Header — same pattern as functions page */}
       <div className={styles.topbar}>
         <span className={styles.title}>{t("nav.memory")}</span>
+        <div className={styles.headerStats} aria-label={text("Memory totals", "Memory 总量")}>
+          <span>{topicPages.length} {text("topics", "个主题")}</span>
+          <span aria-hidden="true">·</span>
+          <span>{recentEvents.length} {text("records", "条记录")}</span>
+        </div>
         <Link className={styles.settingsLink} href="/settings/memory">
           <Settings2 size={15} />
           {text("Memory settings", "Memory 设置")}
@@ -363,10 +368,10 @@ export function MemoryPage() {
                 ) : !topicsLoading && topicPages.length === 0 && !search ? (
                   <div className={styles.emptyPanel}>
                     <FileTextIcon size={25} />
-                    <h2>{text("No memory has been written yet", "还没有写入记忆")}</h2>
+                    <h2>{text("No topics yet", "还没有主题")}</h2>
                     <p>{text(
-                      "OpenProgram writes durable topics after enough conversation has accumulated. Configure the writer model and recall method first if needed.",
-                      "OpenProgram 会在积累足够对话后写入持久 Topic；你也可以先设置写入模型和检索方法。",
+                      "Durable memory created from conversations and the background writer will appear here. Core rules are managed separately.",
+                      "由对话和后台写入器生成的持久记忆会显示在这里；Core 规则单独管理。",
                     )}</p>
                     <Link className={styles.emptySettingsLink} href="/settings/memory">
                       {text("Open Memory settings", "打开 Memory 设置")}
@@ -463,18 +468,18 @@ export function MemoryPage() {
             <>
               <div className={styles.tree}>
                 <div className={styles.coreSidebar}>
-                  <div className={styles.coreInfoIcon}>
-                    <ActivityIcon size={22} />
+                  <div className={styles.contextHeader}>
+                    <span className={styles.contextIcon}><ActivityIcon size={15} /></span>
+                    <div>
+                      <div className={styles.coreInfoTitle}>{text("Recent", "最近")}</div>
+                      <div className={styles.contextMeta}>{recentEvents.length} {text("records", "条记录")}</div>
+                    </div>
                   </div>
-                  <div className={styles.coreInfoTitle}>{text("Recent Memory", "最近记忆")}</div>
                   <div className={styles.coreInfoDesc}>
                     {text(
-                      "The latest paragraphs written, newest first. Derived from topics after every write — nothing is stored here of its own.",
-                      "最近写入的段落，新的在前。每次写入后从主题派生，本身不存储任何东西。",
+                      "Newest durable records first. This view is rebuilt after each write.",
+                      "按时间显示最新的持久记录；每次写入后重新生成。",
                     )}
-                  </div>
-                  <div className={styles.coreInfoMeta}>
-                    <span>{recentEvents.length} {text("entries", "条")}</span>
                   </div>
                 </div>
               </div>
@@ -497,11 +502,11 @@ export function MemoryPage() {
                     <div className={styles.preview}>
                       <div className={styles.markdown}>
                         {recentEvents.map((event) => (
-                          <div key={event.memory_id} style={{ marginBottom: "1rem" }}>
-                            <div style={{ fontSize: "0.75rem", opacity: 0.6 }}>
+                          <div key={event.memory_id} className={styles.recentEvent}>
+                            <div className={styles.recentEventMeta}>
                               {[event.when, event.topic_path].filter(Boolean).join(" · ")}
                             </div>
-                            <div>{event.content}</div>
+                            <div className={styles.recentEventContent}>{event.content}</div>
                           </div>
                         ))}
                       </div>
@@ -517,27 +522,12 @@ export function MemoryPage() {
             <>
               <div className={styles.tree}>
               <div className={styles.coreSidebar}>
-                <div className={styles.coreInfoIcon}>
-                  <svg viewBox="0 0 256 256" fill="currentColor">
-                    <path d="M234.29,114.85l-45,38.83L203,211.75a16.4,16.4,0,0,1-24.5,17.82L128,198.49,77.47,229.57A16.4,16.4,0,0,1,53,211.75l13.76-58.07-45-38.83A16.46,16.46,0,0,1,31.08,86l59-4.76,22.76-55.08a16.36,16.36,0,0,1,30.27,0l22.75,55.08,59,4.76a16.46,16.46,0,0,1,9.37,28.86Z"/>
-                  </svg>
-                </div>
-                <div className={styles.coreInfoTitle}>{text("Core Memory", "核心记忆")}</div>
-                <div className={styles.coreInfoDesc}>
-                  {coreView === "injected" && coreMeta?.injectionEnabled === false
-                    ? text(
-                      "Injection is off. Source records remain saved and editable, but no Core text is added to system prompts.",
-                      "Core 注入已关闭。源记录仍会保存且可编辑，但不会进入系统提示词。",
-                    )
-                    : coreView === "injected"
-                    ? text(
-                      "Read-only prompt text generated from Source records. This is what new system prompts receive.",
-                      "由源记录生成的只读提示词内容。新的系统提示词会接收这里显示的文本。",
-                    )
-                    : text(
-                      "Edit the master Core records. Saving rebuilds the Prompt preview within the token budget.",
-                      "编辑 Core 源记录。保存后会按 token 预算重新生成提示词预览。",
-                    )}
+                <div className={styles.contextHeader}>
+                  <span className={styles.contextIcon}><SparklesIcon size={15} /></span>
+                  <div>
+                    <div className={styles.coreInfoTitle}>{text("Core", "核心")}</div>
+                    <div className={styles.contextMeta}>{text("System prompt memory", "系统提示词记忆")}</div>
+                  </div>
                 </div>
                 <div className={styles.coreViewSwitch} role="group" aria-label={text("Core view", "Core 视图")}>
                   <button
@@ -593,6 +583,22 @@ export function MemoryPage() {
                     </div>
                   </div>
                 )}
+                <div className={styles.coreInfoDesc}>
+                  {coreView === "injected" && coreMeta?.injectionEnabled === false
+                    ? text(
+                      "Injection is off. Source records remain saved and editable.",
+                      "Core 注入已关闭，源记录仍会保存且可编辑。",
+                    )
+                    : coreView === "injected"
+                    ? text(
+                      "Read-only text added to new system prompts, generated from Source records.",
+                      "由源记录生成，并加入新系统提示词的只读文本。",
+                    )
+                    : text(
+                      "Edit the source records used to rebuild the Prompt preview.",
+                      "编辑用于重新生成提示词预览的源记录。",
+                    )}
+                </div>
               </div>
             </div>
               <div className={styles.rightPane}>
