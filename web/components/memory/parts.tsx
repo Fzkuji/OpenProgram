@@ -55,7 +55,7 @@ export function TreeGroup({ folder, pages, expanded, onToggle, selected, onSelec
   return (
     <div className={styles.treeGroup}>
       {folder && (
-        <button className={`${styles.folderRow} ${styles.sidebarRow}`} onClick={() => onToggle(folder)}>
+        <button className={`${styles.folderRow} ${styles.sidebarRow}`} onClick={() => onToggle(folder)} aria-expanded={isExpanded}>
           <DisclosureChevron className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ""}`} />
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" width="12" height="12">
             <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5H13A1.5 1.5 0 0 1 14.5 6v6A1.5 1.5 0 0 1 13 13.5H3.5A1.5 1.5 0 0 1 2 12V4.5z"/>
