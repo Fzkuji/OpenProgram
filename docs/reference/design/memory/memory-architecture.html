@@ -1187,8 +1187,6 @@
       <header class="m-top">
         <div class="m-title">Memory</div>
         <div class="m-top-meta">
-          <span>0 topics</span>
-          <span>3 records</span>
           <a class="m-settings" href="memory-settings-ui.html">Memory settings</a>
         </div>
       </header>
@@ -1337,7 +1335,7 @@
     <table>
       <thead><tr><th>区域</th><th>目标结构</th><th>避免的问题</th></tr></thead>
       <tbody>
-        <tr><td><b>顶部标题栏</b></td><td>页面标题、低权重总量、Memory settings</td><td>不放 writer 状态、刷新状态或重复说明</td></tr>
+        <tr><td><b>顶部标题栏</b></td><td>页面标题与 Memory settings</td><td>不显示无法由现有 API 准确计算的总量，也不放 writer 状态、刷新状态或重复说明</td></tr>
         <tr><td><b>二级栏</b></td><td>四个 36px 分区行；Timeline 使用年、月、日三级原生折叠；Topics 不重复显示由 Core 分区管理的 <code>topics/core.md</code></td><td>日期不再平铺，分区标签和 Topic 文件不再混成同一层级</td></tr>
         <tr><td><b>内容标题</b></td><td>名称、类型、路径、修改时间、视图与编辑操作集中在一个 76px 区域</td><td>删除独立 meta 横条和分散的 Core 状态</td></tr>
         <tr><td><b>正文</b></td><td>Preview/Timeline/Recent/Core 使用最大 780px 阅读面；Edit 保持全宽等宽字体编辑器</td><td>避免超宽文本和大片无结构空白</td></tr>
@@ -1357,7 +1355,7 @@
     </div>
   </div>
 
-  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；右侧 Preview、Timeline、Recent 与 Core 使用居中的文档面，空 Topics 使用独立空状态卡；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>；小于 720px 时不得产生横向重叠。页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
+  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；顶部不把受截断的 Recent 数量表述为 Memory 总量；右侧 Preview、Timeline、Recent 与 Core 使用居中的文档面，空 Topics 使用独立空状态卡；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>；小于 720px 时不得产生横向重叠，编辑器操作进入独立下一行并可换行。页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
   <div class="legend"><b>本轮实现状态：</b>Core 的 Prompt preview / Source records 命名、注入状态卡和 Timeline 年/月/日折叠已进入生产代码。正式 Memory 已通过结构化事务删除全部 survey test 项目记录，当前 Topics 为 0、Core 为 3 条；Timeline 与 Recent 已在同一事务重建，Git 提交为 <code>7faa128</code>。本节样稿已经同步当前数据。居中文档面、卡片化空状态、紧凑 Core 上下文栏和统一间距属于本轮待实现目标；小于 720px 的完整列表/详情互斥仍不在本轮生产实现范围。</div>
 
   <div class="grid2">

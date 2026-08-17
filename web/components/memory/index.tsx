@@ -280,11 +280,6 @@ export function MemoryPage() {
       {/* Header — same pattern as functions page */}
       <div className={styles.topbar}>
         <span className={styles.title}>{t("nav.memory")}</span>
-        <div className={styles.headerStats} aria-label={text("Memory totals", "Memory 总量")}>
-          <span>{topicPages.length} {text("topics", "个主题")}</span>
-          <span aria-hidden="true">·</span>
-          <span>{recentEvents.length} {text("records", "条记录")}</span>
-        </div>
         <Link className={styles.settingsLink} href="/settings/memory">
           <Settings2 size={15} />
           {text("Memory settings", "Memory 设置")}
