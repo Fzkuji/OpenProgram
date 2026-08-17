@@ -29,6 +29,7 @@ const runtimeHelpers = source("lib/runtime-bridge/helpers.ts");
 const markdownRenderer = source("lib/runtime-bridge/markdown-render.ts");
 const chatVisualSpec = source("../docs/reference/design/ui/chat-turn-visual-spec.html");
 const controlsCluster = source("components/chat/composer/controls/controls-cluster.tsx");
+const contextBreakdownPanel = source("components/chat/context-breakdown-panel.tsx");
 const composerCss = source("components/chat/composer/composer.module.css");
 const chatCss = readChatCss(root);
 const baseCss = source("app/styles/base.css");
@@ -38,6 +39,26 @@ const lightTheme = source("app/styles/themes/light.css");
 const beigeDarkTheme = source("app/styles/themes/beige-dark.css");
 const beigeLightTheme = source("app/styles/themes/beige-light.css");
 const auroraTheme = source("app/styles/themes/aurora.css");
+
+// Context statistics use stale-while-revalidate semantics. Once a session
+// branch has loaded successfully, reopening its panel must synchronously show
+// that value while a fresh request runs in the background.
+const contextBreakdownCache = await import("../lib/state/context-breakdown-cache.ts");
+const cachedBreakdown = { total_used: 12_345, window: 200_000 };
+contextBreakdownCache.writeContextBreakdownCache("session-a", "head-a", cachedBreakdown);
+assert.deepEqual(
+  contextBreakdownCache.readContextBreakdownCache("session-a", "head-a"),
+  cachedBreakdown,
+);
+assert.equal(contextBreakdownCache.readContextBreakdownCache("session-a", "head-b"), null);
+assert.equal(contextBreakdownCache.readContextBreakdownCache("session-b", "head-a"), null);
+assert.match(
+  contextBreakdownPanel,
+  /useState<Breakdown \| null>\(\(\)\s*=>\s*readContextBreakdownCache\(sessionId, headId\),?\s*\)/,
+);
+assert.match(contextBreakdownPanel, /writeContextBreakdownCache\(sessionId, headId, d\)/);
+assert.match(contextBreakdownPanel, /new AbortController\(\)/);
+assert.doesNotMatch(contextBreakdownPanel, /if \(!sessionId\)[\s\S]{0,300}setLoading\(true\)/);
 
 // Mouse focus and non-tab buttons never draw an outer halo. Top tabs retain a
 // theme-owned focus cue, so focus does not impose one fixed product colour.
