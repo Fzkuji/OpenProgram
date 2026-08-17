@@ -355,6 +355,20 @@ def test_topic_edit_uses_configured_recent_view_limit(
     assert len(rows) == 1
 
 
+def test_recent_route_reports_configured_record_limit(client, monkeypatch):
+    from openprogram.memory.management.config import MemoryConfig
+
+    monkeypatch.setattr(
+        "openprogram.memory.management.config.load_memory_config",
+        lambda: MemoryConfig(recent_limit=25),
+    )
+
+    response = client.get("/api/memory/recent")
+
+    assert response.status_code == 200
+    assert response.headers["x-memory-recent-limit"] == "25"
+
+
 def test_memory_update_schema_constructs_a_google_function_declaration():
     from google.genai import types as gtypes
 
