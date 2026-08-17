@@ -62,9 +62,11 @@ adapted. Large-file decomposition is not part of the directory migration.
 - Batch C1 moved the FastAPI application assembly to
   `apps/server/openprogram_server/server.py`. The existing
   `openprogram.webui.server` path is a module-identity compatibility alias, not
-  a second implementation. Routes and WebSocket handlers remain under
-  `openprogram/webui/` until the unrelated `routes/agents.py` work is committed;
-  this is an explicit partial boundary, not completion of Batch C.
+  a second implementation. Batch C2 moved the Server-owned routes, WebSocket
+  actions, owner auth, frontend mounting and helpers under the application
+  package. Only the independently edited `routes/agents.py` remains at the
+  compatibility path until that work is committed; this is the final partial
+  boundary before Batch C completes.
 - Batch F1 removed the unreferenced `openprogram/webui/static/` interface after
   confirming that runtime and release paths serve only the `apps/web` export.
   This removes the duplicate legacy UI without changing the current Web app.
@@ -90,6 +92,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Apps migration B1: Ink TUI workspace | `f4a3ea0e`, `669f5445` | implemented; reviewed | Moves the existing Node workspace from `cli/` to `apps/cli/`; updates the Python launcher, rescue probe, source installer, CI cache/working directories, repository contracts and current documentation paths. No UI or protocol behavior changes. |
 | Apps migration D/E: Web and Desktop workspaces | `44765788`, `f4e44429`, `e0a4825e` | implemented; reviewed | Moves the complete Next.js and Electron workspaces to `apps/web/` and `apps/desktop/`; updates runtime discovery, CI, packaging, release scripts, cross-workspace checks, tests and current documentation references. Existing UI and protocol behavior are unchanged. |
 | Apps migration C1: Server application assembly | `6b981b32`, `6dc2f1e6`, `34966b16`, `c09b7933` | implemented; reviewed | Moves the FastAPI assembly into the installable `openprogram_server` application package. The legacy import resolves to the same module object, source checkouts reject an already-loaded foreign package, and the release probe imports only from the built wheel outside the checkout. Route and WebSocket modules remain for C2 because one route has unrelated active changes. |
+| Apps migration C2: Server transport implementation | `bd8a9e30`, `b294256b` | implemented; review pending | Moves Server-owned routes, WebSocket actions, owner auth, frontend mounting and helpers into `openprogram_server/_webui`; preserves legacy module names through one shared package path. The independently edited `routes/agents.py` remains the only temporary exception. |
 | Legacy cleanup F1: static Web interface | `23ac60c2` | implemented; reviewed | Removes the unreferenced 9,227-line static HTML/CSS/JS interface and its obsolete settings-page test. Current source, package and runtime paths continue to serve the `apps/web` build. |
 | Apps migration B2: Python CLI application | `2a790501`, `91be4353`, `51303ea8`, `09eb3732`, `252fb4fa`, `a459c443` | implemented; reviewed | Moves parser, dispatch, Rich fallback, Ink launcher and setup flows into the installable `openprogram_cli` application package. `openprogram.cli` remains a bounded compatibility loader; a code-free root module supports raw source checkouts; editable and wheel installs use the application package. |
 
@@ -213,6 +216,10 @@ changes required — first independent specification review found raw-checkout d
 49 passed — raw checkout, stale-package rejection, all module-entry recognition, release and clean README repair contracts
 pass — independent specification re-review for B2 through `a459c443`
 pass — independent quality review for B2 through `a459c443`
+254 passed, 8 warnings — Server ownership, route/WS, auth, frontend, project, run-guard, WebTab, release and distribution selection for C2
+pass — Ruff, compileall and git diff check for the moved Server implementation
+pass — clean wheel contains canonical Server transport modules and no legacy implementation copies; isolated legacy imports resolve to `openprogram_server/_webui`
+pending — independent specification and quality review for Server C2 through `b294256b`
 ```
 
 ## Deferred boundaries
