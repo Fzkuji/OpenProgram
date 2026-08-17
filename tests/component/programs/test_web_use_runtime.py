@@ -668,6 +668,8 @@ def test_close_all_releases_sessions_capabilities_and_page_leases():
 
 
 def test_public_web_use_schema_is_command_based_and_legacy_name_is_hidden():
+    from openprogram.providers.types import ToolCall
+    from openprogram.providers.utils.validation import validate_tool_arguments
     from openprogram.programs import agent_tools
 
     names = {item.name for item in agent_tools(names=["web_use", "computer_use"])}
@@ -681,7 +683,7 @@ def test_public_web_use_schema_is_command_based_and_legacy_name_is_hidden():
         "list_pages", "observe", "act", "verify", "close",
     ]
     assert properties["backend"]["enum"] == [
-        "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
+        "", "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
     ]
     assert "task" not in properties
     assert "web_session_id" in properties
@@ -695,6 +697,35 @@ def test_public_web_use_schema_is_command_based_and_legacy_name_is_hidden():
     assert act_rule["required"] == ["web_session_id", "arguments"]
     assert act_arguments["required"] == ["action", "expected_frame_id"]
     assert act_arguments["additionalProperties"] is False
+    verify_rule = next(
+        rule["then"] for rule in tool.parameters["allOf"]
+        if rule["if"]["properties"]["command"].get("const") == "verify"
+    )
+    assert verify_rule["required"] == ["web_session_id", "arguments"]
+    assert verify_rule["properties"]["arguments"]["required"] == [
+        "expected_frame_id", "assertion", "value",
+    ]
+    close_rule = next(
+        rule["then"] for rule in tool.parameters["allOf"]
+        if rule["if"]["properties"]["command"].get("const") == "close"
+    )
+    assert close_rule["required"] == ["web_session_id"]
+
+    retried_list_pages = {
+        "command": "list_pages",
+        "backend": "",
+        "page": "",
+        "page_context_token": "",
+        "web_session_id": "",
+    }
+    assert validate_tool_arguments(
+        tool,
+        ToolCall(
+            id="call-list-pages-retry",
+            name="web_use",
+            arguments=retried_list_pages,
+        ),
+    ) == retried_list_pages
 
 
 def test_openprogram_mcp_exposes_only_web_use_as_browser_control_tool():

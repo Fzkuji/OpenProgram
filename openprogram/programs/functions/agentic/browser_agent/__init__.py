@@ -17,6 +17,7 @@ from openprogram.agentic_programming.function import CancelledError, agentic_fun
 from openprogram.programs import ToolReturn
 from openprogram.programs._runtime import function
 from openprogram.providers.utils.errors import ExecInterrupt
+from openprogram.web_use_contract import web_use_parameters
 
 
 _INTERACTIVE_SELECTOR = (
@@ -1324,71 +1325,7 @@ def _run_browser_task_commands(
     requires_approval=_browser_agent_requires_approval,
     defer=True,
     timeout=120,
-    parameters={
-        "type": "object",
-        "properties": {
-            "command": {
-                "type": "string",
-                "enum": ["list_pages", "observe", "act", "verify", "close"],
-                "description": "Call list_pages first, then observe, act, verify, or close",
-            },
-            "backend": {
-                "type": "string",
-                "enum": [
-                    "playwright_mcp", "chrome_devtools_mcp",
-                    "open_claude_chrome",
-                ],
-            },
-            "page": {
-                "type": "string",
-                "maxLength": 512,
-                "description": "A Page alias from the current turn; never a URL",
-            },
-            "page_context_token": {"type": "string", "maxLength": 128},
-            "web_session_id": {"type": "string", "maxLength": 128},
-            "arguments": {"type": "object", "additionalProperties": True},
-        },
-        "required": ["command"],
-        "allOf": [{
-            "if": {
-                "properties": {"command": {"const": "act"}},
-                "required": ["command"],
-            },
-            "then": {
-                "required": ["web_session_id", "arguments"],
-                "properties": {
-                    "arguments": {
-                        "type": "object",
-                        "properties": {
-                            "action": {
-                                "type": "string",
-                                "enum": [
-                                    "screenshot", "navigate", "click", "type",
-                                    "press", "scroll", "hover", "select",
-                                ],
-                            },
-                            "expected_frame_id": {
-                                "type": "string",
-                                "minLength": 1,
-                                "description": "Latest frame_id returned by observe",
-                            },
-                            "ref": {"type": "string"},
-                            "x": {"type": "number"},
-                            "y": {"type": "number"},
-                            "url": {"type": "string"},
-                            "text": {"type": "string"},
-                            "key": {"type": "string"},
-                            "value": {"type": "string"},
-                            "amount": {"type": "integer"},
-                        },
-                        "required": ["action", "expected_frame_id"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-        }],
-        "additionalProperties": False,
-    },
+    parameters=web_use_parameters(),
     input={
         "command": {"description": "Call list_pages first; then observe, act, verify, or close"},
         "backend": {"description": "Backend used when observe creates a session"},

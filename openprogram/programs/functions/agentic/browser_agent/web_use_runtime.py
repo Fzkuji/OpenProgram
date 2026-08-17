@@ -10,13 +10,10 @@ import uuid
 from typing import Any, Callable, Mapping
 
 from openprogram.programs import ToolReturn
+from openprogram.web_use_contract import SUPPORTED_WEB_USE_BACKENDS
 
 
-SUPPORTED_BACKENDS = (
-    "playwright_mcp",
-    "chrome_devtools_mcp",
-    "open_claude_chrome",
-)
+SUPPORTED_BACKENDS = SUPPORTED_WEB_USE_BACKENDS
 DEFAULT_BACKEND = SUPPORTED_BACKENDS[0]
 
 

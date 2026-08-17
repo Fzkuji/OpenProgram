@@ -220,7 +220,7 @@
 <table>
   <thead><tr><th>交付</th><th>直接证据</th><th>状态</th></tr></thead>
   <tbody>
-    <tr><td>Runtime 与 session</td><td><code>web_use_runtime.py</code>、<code>WebUseSessionRegistry</code>、<code>web_session_id</code>；三个 browser backend 和 exact Page 生命周期保持不变。公开 <code>act</code> schema 要求 <code>action + expected_frame_id</code>；Runtime 对缺失字段返回完整 <code>missing_arguments</code>，不进入 backend，也不清除仍有效的 observation。</td><td class="pass">完成</td></tr>
+    <tr><td>Runtime 与 session</td><td><code>web_use_contract.py</code> 为 Chat Agent 与 MCP 提供同一份 command-conditioned schema；空的旧版可选字段按未指定处理，<code>act</code>、<code>verify</code> 与 <code>close</code> 各自强制要求所需 session/frame/arguments。<code>web_use_runtime.py</code>、<code>WebUseSessionRegistry</code>、三个 browser backend 和 exact Page 生命周期保持不变；Runtime 对缺失 action 字段返回完整 <code>missing_arguments</code>，不进入 backend，也不清除仍有效的 observation。</td><td class="pass">完成</td></tr>
     <tr><td>Agent / GUI Harness</td><td>Chat Agent 可直接调用 <code>web_use</code>；<code>gui_agent</code> 通过同一 Web Use adapter 使用相同命令和 session contract。</td><td class="pass">完成</td></tr>
     <tr><td>MCP / HTTP</td><td>MCP <code>tools/list</code> 与 <code>tools/call</code> 只公开 <code>web_use</code>；canonical route 为 <code>/api/web-use</code>。</td><td class="pass">完成</td></tr>
     <tr><td>取消与连接清理</td><td><code>3a2e6baf</code> 在 MCP 调用取消后关闭延迟返回的 WebSession；<code>cbc24778</code> 精确撤销取消的 <code>list_pages</code> 所签发且未消费的 Page capability，不清理同 owner 的其他 session 或 capability。</td><td class="pass">完成</td></tr>

@@ -12,6 +12,8 @@ import mcp.types as mcp_types
 from jsonschema import Draft202012Validator
 from mcp.shared.exceptions import McpError
 
+from openprogram.web_use_contract import web_use_parameters
+
 
 _NON_BLANK_STRING = {"type": "string", "minLength": 1, "pattern": r"\S"}
 
@@ -64,26 +66,7 @@ _RAW_TOOL_DEFINITIONS: tuple[tuple[str, str, dict[str, Any]], ...] = (
     (
         "web_use",
         "Observe or control an authorized OpenProgram browser Page.",
-        _object(
-            {
-                "command": {
-                    "type": "string",
-                    "enum": ["list_pages", "observe", "act", "verify", "close"],
-                },
-                "backend": {
-                    "type": "string",
-                    "enum": [
-                        "playwright_mcp", "chrome_devtools_mcp",
-                        "open_claude_chrome",
-                    ],
-                },
-                "page": {"type": "string", "maxLength": 512},
-                "page_context_token": {"type": "string", "maxLength": 128},
-                "web_session_id": {"type": "string", "maxLength": 128},
-                "arguments": {"type": "object", "default": {}},
-            },
-            ["command"],
-        ),
+        web_use_parameters(),
     ),
 )
 
