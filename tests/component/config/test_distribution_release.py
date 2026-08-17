@@ -1149,7 +1149,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         "set -eu\n"
         'case "$2" in\n'
         '  extract) mkdir -p "$4/node_modules" ;;\n'
-        '  pack) : > "$4" ;;\n'
+        '  pack) test -f "$3/menu-geometry.js" || exit 92; : > "$4" ;;\n'
         '  *) printf "unexpected node call: %s\\n" "$*" >&2; exit 91 ;;\n'
         "esac\n",
         encoding="utf-8",
