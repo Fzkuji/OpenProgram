@@ -454,10 +454,26 @@
 .envChips::-webkit-scrollbar { display: none; }
 .envChips > * { flex-shrink: 0; }
 
-/* Narrow environment chip labels follow the bottom control row: keep the
-   existing icon and accessible text, but remove the visible label before the
-   row needs horizontal scrolling. */
-@container (max-width: 560px) {
+/* Keep labels while there is usable room. Long status / project / directory
+   names ellipsize first; icon-only mode is reserved for the pane's minimum
+   width instead of following the bottom row's earlier 560px breakpoint. */
+.envChips > .surfaceChip,
+.envChips :global(.status-badge),
+.envChips :global(.runtime-badge.project-badge),
+.envChips :global(.runtime-badge.workdir-badge) {
+  flex-shrink: 1;
+  min-width: 24px;
+}
+.envChips .surfaceChipLabel,
+.envChips :global(.status-badge .badge-short),
+.envChips :global(.project-badge .badge-short),
+.envChips :global(.workdir-badge .badge-short) {
+  flex-shrink: 1;
+}
+
+/* At the minimum split-pane width, keep the existing icon and accessible
+   text but remove the visible label before the row needs horizontal scroll. */
+@container (max-width: 300px) {
   .envChips :global(.status-badge .badge-short),
   .envChips .surfaceChipLabel,
   .envChips :global(.project-badge .badge-short),

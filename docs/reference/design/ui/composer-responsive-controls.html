@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpenProgram · Composer 底部控制栏响应式设计</title>
+<title>OpenProgram · Composer 控制栏响应式设计</title>
 <style>
   :root { color-scheme:dark; --bg:#11141a; --panel:#181d26; --line:#303a4a;
     --text:#dce3ec; --muted:#96a1b1; --blue:#72a8ff; --green:#55d69c;
@@ -36,12 +36,12 @@
 </style>
 </head>
 <body><main>
-  <h1>Composer 底部控制栏响应式设计</h1>
-  <p class="sub">范围：聊天输入框下方的 permission、more、active tools、chat model、execution model、effort 和 context 控件。</p>
-  <div class="lead">控制栏按 composer 自身可用宽度响应，而不是按窗口宽度响应。正常宽度显示图标和文字；窄到既有文字会互相覆盖时，permission、两个 model 和 effort 只保留可点击图标。菜单、当前值、键盘操作、tooltip 和 accessible name 保持不变。</div>
+  <h1>Composer 控制栏响应式设计</h1>
+  <p class="sub">范围：聊天输入框上方的 environment chips，以及下方的 permission、more、active tools、chat model、execution model、effort 和 context 控件。</p>
+  <div class="lead">两排控制栏分别按自身可用宽度响应。底排在 560px 时收起较长的设置文字；上排先让状态、项目和目录名称省略收缩，只有宽度降到 300px、确实接近最小分屏宽度时才只保留图标。菜单、当前值、键盘操作、tooltip 和 accessible name 保持不变。</div>
 
   <h2>当前实现与缺口</h2>
-  <p><code>.composer-bottom-row</code> 已声明 <code>container-type:inline-size</code>，因此 split pane 可以按自己的实际宽度响应。当前左右 cluster 虽然允许内部横向滚动，但 permission、两个模型和 effort 的文字仍设置为不可换行、不可收缩。分屏缩窄后，flex 会压缩 cluster，最终出现文本截断、控件覆盖或整个 execution model 触发器不可见。</p>
+  <p><code>.composer-bottom-row</code> 与 <code>.envChips</code> 都声明 <code>container-type:inline-size</code>，因此 split pane 可以按自己的实际宽度响应。两排内容密度不同，不能共用同一个断点：底排设置项较多，560px 时需要收起文字；上排通常只有运行位置、项目和目录，先允许名称省略，直到 300px 才切换为图标。</p>
   <p>现有组件已经提供四类互异图标：Shield 表示权限，Message 表示 chat model，Terminal 表示 execution model，Biceps 表示 effort。所有触发器已经具备 Popover/Menu、tooltip 或 accessible name，因此不新增图标组件和菜单。</p>
 
   <h2>参考与选择</h2>
@@ -71,7 +71,7 @@
   </tbody></table></div>
 
   <div class="grid">
-    <section class="card"><h3>收缩优先级</h3><ol><li>在 <code>.composer-bottom-row ≤ 560px</code> 时视觉隐藏四类文字。</li><li>各图标触发器保持 20px 控件尺寸和原顺序。</li><li>active tool chips 与 context ring 本来就是图标，不改变。</li></ol></section>
+    <section class="card"><h3>收缩优先级</h3><ol><li>environment chips 先省略长名称，宽度降到 300px 才隐藏文字。</li><li>在 <code>.composer-bottom-row ≤ 560px</code> 时视觉隐藏底排四类文字。</li><li>各图标触发器保持尺寸和原顺序。</li></ol></section>
     <section class="card"><h3>交互与无障碍</h3><ul><li>点击图标打开原菜单。</li><li>chat 与 execution 使用不同图标。</li><li>effort 图标颜色继续反映当前级别。</li><li>focus、tooltip 和 accessible name 不随文字隐藏而消失。</li></ul></section>
     <section class="card"><h3>边界</h3><ul><li>不改模型、权限和 effort 状态。</li><li>不新增断点监听、ResizeObserver 或依赖。</li><li>不换行、不隐藏整个控件。</li><li>不调整 composer 高度和 splitRatio。</li></ul></section>
   </div>
@@ -79,7 +79,7 @@
   <h2>实施 brief 与验收</h2>
   <p>生产文件限定为 <code>web/components/chat/composer/composer.module.css</code>、<code>controls/controls-cluster.tsx</code>、<code>controls/thinking-effort-pill.tsx</code> 和纯函数 <code>web/lib/effort-color.ts</code>。纯函数只抽取既有 effort 逐级颜色计算，让原 pill 与窄宽度图标使用同一来源。回归入口使用现有 <code>npm --prefix web run check:chat-ui</code>。不修改 Popover、Menu、provider、session store 或提交逻辑。</p>
   <ol>
-    <li>public-entry RED 必须证明 <code>.composer-bottom-row ≤ 560px</code> 时 permission、chat model、execution model 和 effort 的文字均视觉隐藏。</li>
+    <li>public-entry RED 必须证明 <code>.composer-bottom-row ≤ 560px</code> 时底排四类文字视觉隐藏，同时 environment chips 仅在自身宽度不超过 300px 时隐藏文字，并在此之前允许长名称省略收缩。</li>
     <li>同一规则必须证明四个触发器的图标仍显示；不得使用 <code>display:none</code> 隐藏完整 badge 或 effort host。至少两个非 <code>max</code> effort 级别必须生成不同图标颜色。</li>
     <li>默认安装版在 split pane 中把 divider 向左拖到触发阈值后，右侧四个设置入口和左侧 permission/more 均可见、无重叠。</li>
     <li>分别点击 permission、chat model、execution model 和 effort 图标，原菜单或面板正常展开。</li>

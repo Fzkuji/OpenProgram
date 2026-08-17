@@ -402,7 +402,7 @@ assert.match(compactControls, /\.permission-badge[\s\S]*width:\s*20px/);
 assert.match(compactControls, /\.agent-badge[\s\S]*width:\s*20px/);
 assert.doesNotMatch(compactControls, /\.(?:permission-badge|agent-badge|effort-pill-host)[^{]*\{[^}]*display:\s*none/s);
 
-const compactEnvStart = composerCss.indexOf("/* Narrow environment chip labels");
+const compactEnvStart = composerCss.indexOf("/* At the minimum split-pane width");
 const compactEnvEnd = composerCss.indexOf("/* DAG 画布控件的落点", compactEnvStart);
 assert.ok(
   compactEnvStart >= 0 && compactEnvEnd > compactEnvStart,
@@ -410,7 +410,12 @@ assert.ok(
 );
 const compactEnv = composerCss.slice(compactEnvStart, compactEnvEnd);
 assert.match(composerCss, /\.envChips\s*\{[^}]*container-type:\s*inline-size/s);
-assert.match(compactEnv, /@container \(max-width:\s*560px\)/);
+assert.match(compactEnv, /@container \(max-width:\s*300px\)/);
+assert.match(
+  composerCss,
+  /\.envChips :global\(\.status-badge\),[\s\S]*?\.runtime-badge\.workdir-badge\)\s*\{[\s\S]*?flex-shrink:\s*1/,
+  "environment labels must ellipsize before the row switches to icons",
+);
 assert.match(compactEnv, /\.status-badge \.badge-short/);
 assert.match(compactEnv, /\.surfaceChipLabel/);
 assert.match(compactEnv, /\.project-badge \.badge-short/);
