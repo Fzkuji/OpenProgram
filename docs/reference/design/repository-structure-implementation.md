@@ -25,6 +25,8 @@ current design contract; this file is operational history.
 | Documentation information architecture | `codex/code-doc-structure-20260817` / `d37d9bab` | implemented | Adds the HTML design, implementation ledger, shared navigation rules, and five UI design groups. |
 | Review repairs | `1be7295f`, `df3df11d` | implemented | Preserve the Design landing and make build/language checks share the public-source exclusion. |
 | Main-branch synchronization | `2e3cda14` | integrated | Merges committed `main` at `acf13f8c`; no structural-file conflict. |
+| Test and top-level structure maintenance | `codex/test-structure-20260817` / `dbe752eb` | implemented | Declares tracked top-level directories, relocates two root scripts, refreshes generated package READMEs, and removes obsolete active-guide paths. |
+| Post-merge suite repair | `codex/test-structure-20260817` / `d04aa050` | implemented | Moves two real workflow execution tests to component, updates their package schema, and repairs merged documentation, distribution, and optional-dependency regressions. |
 
 ## Verification record
 
@@ -41,6 +43,13 @@ pass — desktop render at 1280 × 720, no horizontal overflow
 pass — narrow render at 390 × 844, no page overflow; wide tables scroll locally
 pass — independent specification review at df3df11d
 pass — independent quality review at df3df11d, including wheel-content and isolated-import probes
+442 passed, 1 skipped — current repository contracts
+5699 passed, 16 skipped, 1 xfailed — fixed -n 4 required selection, repeated three times with 0 worker crash
+2560 passed, 3 skipped; 42.402765% — Python 3.12.13 serial unit branch coverage, repeated twice
+503 pages; 0 broken links; landing and language checks pass — current documentation build
+pass — Desktop full npm run check after adding update-service.js to build.files
+0 new, 0 refreshed — second package README generator run
+pending — independent specification and quality review for dbe752eb..d04aa050
 ```
 
 ## Deferred boundaries
