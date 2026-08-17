@@ -133,7 +133,7 @@
     <tr><td>首轮页面感知</td><td>安装版 chat command 包含 exact surface；服务端向同一 originating WebSocket 发出 <code>preview</code>，provider 在首个回复前获得 Bilibili title、origin、DOM excerpt、ARIA landmarks 和 <code>web_use</code> schema。</td><td class="pass">PASS，无 screenshot</td></tr>
     <tr><td>绑定页面点击</td><td>Session <code>local_340bc50ccd2c4eafb1fc12378e0489ab</code>；模型调用 <code>web_use</code>，内部以 DOM ref 点击首页导航“番剧”。命令记录同时包含 exact window/tab 的 <code>preview</code> 和 <code>activate</code>。</td><td class="pass">PASS</td></tr>
     <tr><td>确定性结果</td><td>目标变为 <code>https://www.bilibili.com/anime/?spm_id_from=333.1007.0.0</code>；<code>title_contains=番剧</code> 在 <code>frame_6_a628e0d2</code> 返回 <code>passed=true</code>。外层工具结果为 <code>status=succeeded</code>、<code>reason_code=verified</code>。</td><td class="pass">PASS</td></tr>
-    <tr><td>无需应用置顶</td><td><code>activateView</code> 的 source invariant test 要求 exact target attach，且拒绝 <code>.focus(</code> 和 <code>BrowserWindow.getFocusedWindow</code>；安装版动作使用 WebContents/CDP，不调用屏幕截图或 OS input。</td><td class="pass">架构与 source gate 通过；独立遮挡场景待增加自动化 E2E</td></tr>
+    <tr><td>无需应用置顶</td><td><code>test_web_use_occluded_app.py</code> 只在 Quartz 证明安装版 renderer client area 被另一个前台窗口完整覆盖后运行。它在后台临时 Page 上执行 <code>list_pages → observe → viewport screenshot → DOM ref click → observe → verify → close</code>，并在建页、截图、点击、验证和清理后逐次断言前台应用、前台窗口 ID/边界及目标 OpenProgram 窗口 ID/边界均未变化。CDP attach 不调用 <code>browser.close()</code>、<code>bringToFront()</code>、窗口 focus、整屏截图或 OS input。</td><td class="pending">独立自动化 E2E 已加入；本轮因 OpenProgram 位于前台而在任何 Page 变更前跳过</td></tr>
   </tbody>
 </table>
 
@@ -144,6 +144,7 @@
   <li><code>npm --prefix web run build</code></li>
   <li><code>node desktop/scripts/check-webtab-navigation.js</code></li>
   <li><code>node web/scripts/check-web-split.mjs</code></li>
+  <li><code>OPENPROGRAM_TEST_LIVE=1 python -m pytest -q -m live tests/live/app/test_web_use_occluded_app.py</code>：独立安装版遮挡 E2E；仅在 OpenProgram 被前台窗口完整覆盖时执行。</li>
   <li><code>python -m tools.docs_site.checklinks</code>：当前仅报告未修改的 <code>chat-turn-visual-spec.raw.html</code> 中 4 个既有源码相对链接；本任务涉及页面没有新增失效链接。</li>
   <li><code>git diff --check</code></li>
 </ul>
