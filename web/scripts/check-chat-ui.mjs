@@ -823,6 +823,20 @@ assert.match(
   /function PendingReplyIndicator[\s\S]*<MessageTimestamp timestamp=\{timestamp \?\? fallbackTimestamp\}/,
   "the pre-reply pending indicator must render a timestamp immediately",
 );
+const pendingReplyIndicator = messageList.slice(
+  messageList.indexOf("function PendingReplyIndicator"),
+  messageList.indexOf("function TranscriptSkeleton"),
+);
+assert.match(
+  pendingReplyIndicator,
+  /className="pending-body"(?:(?!<\/div>)[\s\S])*<MessageTimestamp timestamp=\{timestamp \?\? fallbackTimestamp\}/,
+  "the transient retry indicator must keep its timestamp on the thinking row",
+);
+assert.doesNotMatch(
+  pendingReplyIndicator,
+  /message-actions-footer/,
+  "the transient retry indicator must not create a normal message footer",
+);
 assert.match(
   messageList,
   /msg\.role === "system"[\s\S]*<MessageTimestamp timestamp=\{msg\.timestamp\}/,

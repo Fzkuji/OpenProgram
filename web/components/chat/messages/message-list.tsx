@@ -380,11 +380,7 @@ function PendingReplyIndicator({ timestamp }: { timestamp?: number }) {
       >
         <span className="thinking-spinner" aria-hidden="true" />
         <span className="pending-label">{text("thinking…", "思考中…")}</span>
-      </div>
-      <div className="message-actions-footer">
-        <div className="message-actions">
-          <MessageTimestamp timestamp={timestamp ?? fallbackTimestamp} />
-        </div>
+        <MessageTimestamp timestamp={timestamp ?? fallbackTimestamp} />
       </div>
     </div>
   );
