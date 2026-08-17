@@ -9,7 +9,7 @@ const pageStyles = readFileSync(new URL("components/agents/agents-page.module.cs
 const sidebar = readFileSync(new URL("components/sidebar/sidebar.tsx", root), "utf8");
 const primaryNav = readFileSync(new URL("components/sidebar/sidebar-primary-nav.tsx", root), "utf8");
 const sender = readFileSync(new URL("components/chat/composer/submit/send-chat-message.ts", root), "utf8");
-const route = readFileSync(new URL("../../openprogram/webui/routes/tree.py", root), "utf8");
+const route = readFileSync(new URL("../server/openprogram_server/_webui/routes/tree.py", root), "utf8");
 const manageHeaderMarkup = page.match(/<ManagePageHeader[\s\S]*?\/>/)?.[0];
 const fontDeclarations = pageStyles.match(/\bfont(?:-size)?\s*:[^;}]+/g) ?? [];
 
