@@ -77,7 +77,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Documentation-entry main integration | `29f8186d` | integrated | Two-parent merge with current `main` at `e2041770`; unrelated local icon and output files remain outside Git. |
 | Python CLI package consolidation | `codex/python-package-layout-cli-20260817` / `d2ae71cc`, `5bd809e8`, `4051edaf` | implemented; reviewed | Replaces three first-level internal CLI directories and four implementation files with one `openprogram/cli/` package; keeps `openprogram.cli`, the console script, and both module entry points; repairs current documentation references and adds the executable interactive-import contract required by review. |
 | Python CLI package main integration | `f5878426` | integrated | Two-parent merge with current `main` at `c45617a4`; unrelated local icon, runtime-design, promo, and output changes remain outside the integration tree. |
-| Apps migration B1: Ink TUI workspace | current main candidate | implemented; review pending | Moves the existing Node workspace from `cli/` to `apps/cli/`; updates the Python launcher, rescue probe, source installer, CI cache/working directories, repository contracts and current documentation paths. No UI or protocol behavior changes. |
+| Apps migration B1: Ink TUI workspace | `f4a3ea0e`, `669f5445` | implemented; reviewed | Moves the existing Node workspace from `cli/` to `apps/cli/`; updates the Python launcher, rescue probe, source installer, CI cache/working directories, repository contracts and current documentation paths. No UI or protocol behavior changes. |
 
 ## Verification record
 
@@ -128,6 +128,9 @@ pass — post-merge Ruff and `git diff --check`
 140 passed, 2 skipped — `apps/cli` Vitest suite after typecheck
 pass — `apps/cli` production bundle build
 6 passed — apps-layout contract and real Node owner-auth paths
+15 passed, 1 deselected — apps-layout, exact CI path and repository contracts after review repair; the deselected generated-README check is affected by unrelated in-progress Python docstring edits
+pass — independent specification re-review at `669f5445`
+pass — independent quality re-review at `669f5445`
 ```
 
 ## Deferred boundaries
