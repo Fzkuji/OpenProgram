@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 import json
 import math
 import re
@@ -95,6 +96,86 @@ _VIEWPORT_SCRIPT = """
   scroll_x: window.scrollX,
   scroll_y: window.scrollY,
 })
+"""
+
+_AGENT_CURSOR_SCRIPT = r"""
+armed => {
+  const key = "__openprogramAgentCursor";
+  let state = globalThis[key];
+  if (!state || state.version !== 1) {
+    state = {version: 1, armed: false};
+    try {
+      Object.defineProperty(globalThis, key, {
+        value: state, configurable: true,
+      });
+    } catch (_) {
+      return false;
+    }
+    addEventListener("pointerdown", event => {
+      if (!state.armed || !event.isTrusted) return;
+      state.armed = false;
+      document.querySelectorAll("[data-openprogram-agent-cursor]")
+        .forEach(node => node.remove());
+
+      const host = document.createElement("div");
+      host.setAttribute("data-openprogram-agent-cursor", "");
+      host.setAttribute("aria-hidden", "true");
+      Object.assign(host.style, {
+        position: "fixed",
+        left: `${event.clientX}px`,
+        top: `${event.clientY}px`,
+        width: "0",
+        height: "0",
+        zIndex: "2147483647",
+        pointerEvents: "none",
+      });
+
+      const ring = document.createElement("span");
+      Object.assign(ring.style, {
+        position: "absolute",
+        left: "-15px",
+        top: "-15px",
+        width: "30px",
+        height: "30px",
+        border: "2px solid rgba(112, 92, 255, .9)",
+        borderRadius: "50%",
+        boxSizing: "border-box",
+      });
+
+      const cursor = document.createElement("span");
+      Object.assign(cursor.style, {
+        position: "absolute",
+        left: "-2px",
+        top: "-2px",
+        width: "24px",
+        height: "30px",
+        filter: "drop-shadow(0 2px 3px rgba(0, 0, 0, .35))",
+      });
+      cursor.innerHTML = '<svg viewBox="0 0 24 30" width="24" height="30" '
+        + 'xmlns="http://www.w3.org/2000/svg"><path d="M2 2v21l5.6-5.2 '
+        + '3.8 9.1 4.2-1.8-3.8-9.1H20L2 2Z" fill="#705cff" '
+        + 'stroke="white" stroke-width="2" stroke-linejoin="round"/></svg>';
+      host.append(ring, cursor);
+      (document.documentElement || document.body)?.append(host);
+
+      const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (!reduced) {
+        ring.animate([
+          {transform: "scale(.35)", opacity: 1},
+          {transform: "scale(1.35)", opacity: 0},
+        ], {duration: 650, easing: "cubic-bezier(.2,.8,.2,1)"});
+        cursor.animate([
+          {transform: "translate(-2px,-2px)", opacity: 1},
+          {transform: "translate(0,0)", opacity: 1, offset: .65},
+          {transform: "translate(0,0)", opacity: 0},
+        ], {duration: 900, easing: "ease-out"});
+      }
+      setTimeout(() => host.remove(), reduced ? 240 : 900);
+    }, true);
+  }
+  state.armed = Boolean(armed);
+  return true;
+}
 """
 
 _CAPTURE_HANDLES_SCRIPT = r"""
@@ -304,6 +385,27 @@ class BrowserPageController:
         if argument is None:
             return page.evaluate(expression)
         return page.evaluate(expression, argument)
+
+    def set_agent_cursor_armed(self, armed: bool) -> None:
+        """Show feedback only for pointer events emitted by one Agent click."""
+        self._owner.submit(self._set_agent_cursor_armed, bool(armed)).result()
+
+    def _set_agent_cursor_armed(self, armed: bool) -> None:
+        try:
+            page = self._page()
+        except Exception:
+            return
+        frames = list(getattr(page, "frames", ()) or ()) or [page]
+        for frame in frames:
+            with suppress(Exception):
+                frame.evaluate(_AGENT_CURSOR_SCRIPT, armed)
+
+    def _agent_click(self, callback) -> None:
+        self._set_agent_cursor_armed(True)
+        try:
+            callback()
+        finally:
+            self._set_agent_cursor_armed(False)
 
     def prepare_external_action(self, arguments: Mapping[str, Any]) -> dict | None:
         """Validate an MCP action without moving Playwright objects off-owner."""
@@ -668,7 +770,7 @@ class BrowserPageController:
                     or point_x >= viewport["width"] or point_y >= viewport["height"]
                 ):
                     return {"ok": False, "reason_code": "invalid_coordinate"}
-                page.mouse.click(point_x, point_y)
+                self._agent_click(lambda: page.mouse.click(point_x, point_y))
                 return self._mutated(
                     f"clicked viewport point ({point_x:g}, {point_y:g})"
                 )
@@ -678,7 +780,7 @@ class BrowserPageController:
                 return self._invalidate_frame()
             return {"ok": False, "reason_code": ref_error}
         if action == "click":
-            target.click()
+            self._agent_click(target.click)
             return self._mutated(f"clicked {ref}")
         if action == "type":
             target.fill(text)

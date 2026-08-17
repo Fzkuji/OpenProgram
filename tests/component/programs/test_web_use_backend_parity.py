@@ -73,6 +73,8 @@ class _Controller:
         self.invalidated = 0
         self.closed = 0
         self.fail_writes = False
+        self.agent_cursor_states = []
+        self.fail_agent_cursor = False
 
     def _new_frame(self):
         self.frame_number += 1
@@ -131,6 +133,11 @@ class _Controller:
         if self.frame is None or frame_id != self.frame["frame_id"]:
             return {"ok": False, "reason_code": "stale_observation"}
         return None
+
+    def set_agent_cursor_armed(self, armed):
+        self.agent_cursor_states.append(bool(armed))
+        if self.fail_agent_cursor:
+            raise RuntimeError("cursor injection failed")
 
     def evaluate_bound_page(self, script, argument=None):
         return self.page.evaluate(script, argument)
@@ -392,6 +399,47 @@ def test_backend_parity_allows_each_action_once(monkeypatch, backend):
         observed = registry.execute(
             command="observe", web_session_id=session_id, owner_id="owner-1",
         )
+
+
+@pytest.mark.parametrize("backend", BACKENDS[:2])
+def test_official_mcp_click_arms_only_the_exact_page_cursor(monkeypatch, backend):
+    registry, controllers, _clients, _released = _registry(monkeypatch)
+    observed = _observe(registry, backend)
+
+    result = registry.execute(
+        command="act",
+        web_session_id=observed["web_session_id"],
+        owner_id="owner-1",
+        arguments={
+            "action": "click",
+            "expected_frame_id": observed["frame_id"],
+            "ref": "e1",
+        },
+    )
+
+    assert result["ok"] is True
+    assert controllers[backend].agent_cursor_states == [True, False]
+
+
+def test_cursor_feedback_failure_does_not_change_official_mcp_click(monkeypatch):
+    registry, controllers, _clients, _released = _registry(monkeypatch)
+    backend = "playwright_mcp"
+    observed = _observe(registry, backend)
+    controllers[backend].fail_agent_cursor = True
+
+    result = registry.execute(
+        command="act",
+        web_session_id=observed["web_session_id"],
+        owner_id="owner-1",
+        arguments={
+            "action": "click",
+            "expected_frame_id": observed["frame_id"],
+            "ref": "e1",
+        },
+    )
+
+    assert result["ok"] is True
+    assert controllers[backend].agent_cursor_states == [True, False]
 
 
 @pytest.mark.parametrize("backend", BACKENDS)

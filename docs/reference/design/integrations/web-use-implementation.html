@@ -214,6 +214,8 @@
   <p><strong>公开能力：</strong>Agent registry、GUI Agent Harness、OpenProgram MCP 与 canonical HTTP API 统一使用 <code>web_use</code> 和 <code>web_session_id</code>；模型工具列表不再公开 <code>computer_use</code>。</p>
   <p><strong>兼容边界：</strong><code>/api/computer-use</code> 与旧请求字段 <code>computer_session_id</code> 只作为隐藏 HTTP 兼容入口保留，映射到同一个 Web Use Runtime，且不出现在 OpenAPI、Agent 或 MCP 工具列表中。</p>
   <p><strong>未来边界：</strong><code>Computer Use</code> 名称只保留给未来桌面应用、应用窗口或整屏截图及 OS 输入能力；本次不增加桌面 adapter、配置或后台进程。</p>
+  <h2>Agent cursor task</h2>
+  <p>在 <code>BrowserPageController</code> 的 exact Page 上实现 click-only 内部 overlay，并由官方 MCP adapter 在 click 调用期间复用同一 arming contract。公开验收覆盖 DOM ref click、viewport coordinate click、用户点击不显示、失败不改变 action 结果以及三个 backend 共用同一路径。范围不包含系统鼠标、窗口 focus、hover/type 动画、配置项、依赖或常驻进程。</p>
 </div>
 <table>
   <thead><tr><th>交付</th><th>直接证据</th><th>状态</th></tr></thead>

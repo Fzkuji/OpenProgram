@@ -5,6 +5,7 @@ import asyncio
 import os
 import threading
 import uuid
+from contextlib import suppress
 from typing import Any, Callable, Mapping
 
 from openprogram.mcp.client import MCPClient
@@ -297,7 +298,17 @@ class OfficialMCPPageBackend:
         if call is None:
             return {"ok": False, "reason_code": "unsupported_action"}
         client = self._ensure_bound(session)
-        result = client.call(call[0], call[1])
+        set_cursor = getattr(controller, "set_agent_cursor_armed", None)
+        cursor_armed = action == "click" and callable(set_cursor)
+        if cursor_armed:
+            with suppress(Exception):
+                set_cursor(True)
+        try:
+            result = client.call(call[0], call[1])
+        finally:
+            if cursor_armed:
+                with suppress(Exception):
+                    set_cursor(False)
         is_error = bool(
             getattr(result, "isError", False)
             or getattr(result, "is_error", False)

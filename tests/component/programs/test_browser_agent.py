@@ -78,6 +78,8 @@ class _FakeElementHandle:
         return {"connected": True, "visible": True, **self.page.element_snapshot(index)}
 
     def click(self):
+        if self.page.agent_cursor_armed:
+            self.page.agent_cursor_events.append((120, 80))
         self.page.calls.append(("click", self._index()))
         self.page.body_text = "Saved"
 
@@ -121,6 +123,8 @@ class _FakeMouse:
         self.page = page
 
     def click(self, x: float, y: float):
+        if self.page.agent_cursor_armed:
+            self.page.agent_cursor_events.append((x, y))
         self.page.calls.append(("mouse_click", x, y))
         self.page.body_text = "Clicked point"
 
@@ -139,6 +143,10 @@ class _FakePage:
         self.scroll_x = 0
         self.scroll_y = 0
         self.calls = []
+        self.agent_cursor_armed = False
+        self.agent_cursor_states = []
+        self.agent_cursor_events = []
+        self.agent_cursor_script = ""
         self.node_order = ["save", "name"]
         self.mutate_after_handle_capture = False
         self.mutate_during_screenshot = False
@@ -151,7 +159,12 @@ class _FakePage:
     def locator(self, _selector: str):
         return _FakeLocator(self)
 
-    def evaluate(self, _script: str):
+    def evaluate(self, _script: str, argument=None):
+        if "__openprogramAgentCursor" in _script:
+            self.agent_cursor_armed = bool(argument)
+            self.agent_cursor_states.append(bool(argument))
+            self.agent_cursor_script = _script
+            return None
         return {
             "text": self.body_text,
             "viewport_width": self.viewport_width,
@@ -367,6 +380,39 @@ def test_write_requires_fresh_frame_and_invalidates_old_refs():
         ref="e1",
     )
     assert stale == {"ok": False, "reason_code": "stale_observation"}
+
+
+def test_agent_click_cursor_is_internal_and_only_armed_for_agent_clicks():
+    controller, api = _controller()
+
+    api.page.mouse.click(4, 5)
+    assert api.page.agent_cursor_events == []
+
+    observed = controller.execute(action="observe")
+    clicked = controller.execute(
+        action="click",
+        expected_frame_id=observed["frame_id"],
+        ref="e1",
+    )
+    assert clicked["ok"] is True
+    assert api.page.agent_cursor_states == [True, False]
+    assert api.page.agent_cursor_events == [(120, 80)]
+    assert "pointerEvents" in api.page.agent_cursor_script
+    assert "aria-hidden" in api.page.agent_cursor_script
+
+    observed = controller.execute(action="observe")
+    controller.execute(
+        action="screenshot", expected_frame_id=observed["frame_id"],
+    )
+    clicked = controller.execute(
+        action="click",
+        expected_frame_id=observed["frame_id"],
+        x=100,
+        y=80,
+    )
+    assert clicked["ok"] is True
+    assert api.page.agent_cursor_states == [True, False, True, False]
+    assert api.page.agent_cursor_events[-1] == (100, 80)
 
 
 def test_unrelated_dynamic_dom_change_does_not_invalidate_a_named_ref():

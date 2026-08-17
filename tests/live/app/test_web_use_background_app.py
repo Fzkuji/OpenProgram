@@ -22,8 +22,15 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         body = f"""<!doctype html>
 <html><head><title>{self.marker}</title></head>
 <body><h1>{self.marker}</h1>
-<button onclick="document.getElementById('status').textContent='changed'">Change state</button>
-<p id="status">ready</p></body></html>""".encode()
+<button id="change">Change state</button>
+<p id="status">ready</p>
+<script>
+document.getElementById("change").addEventListener("click", () => {{
+  const cursor = document.querySelector("[data-openprogram-agent-cursor]");
+  document.getElementById("status").textContent =
+    "changed cursor=" + Boolean(cursor);
+}});
+</script></body></html>""".encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -267,14 +274,14 @@ def test_web_use_captures_and_controls_a_hidden_internal_page():
                     "web_session_id": web_session_id,
                     "arguments": {"detail": "interactive"},
                 }, owner_id)
-                assert "changed" in observed_after["text"]
+                assert "changed cursor=true" in observed_after["text"]
                 _, verified = _dispatch({
                     "command": "verify",
                     "web_session_id": web_session_id,
                     "arguments": {
                         "expected_frame_id": observed_after["frame_id"],
                         "assertion": "text_contains",
-                        "value": "changed",
+                        "value": "changed cursor=true",
                     },
                 }, owner_id)
                 assert verified["passed"] is True
