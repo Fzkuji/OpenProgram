@@ -353,37 +353,6 @@ export interface DesktopBrowserDataApi {
   clear(options: { history: boolean; cookies: boolean }): Promise<{ ok: boolean }>;
 }
 
-export interface DesktopBrowserExtension {
-  key: string;
-  id: string;
-  name: string;
-  description: string;
-  version: string;
-  source: "edge-addons" | "chrome-web-store" | "folder" | "browser-profile";
-  sourceUrl: string;
-  iconUrl: string;
-  enabled: boolean;
-  loaded: boolean;
-  permissions: string[];
-  hostPermissions: string[];
-  compatibility: {
-    status: "compatible" | "limited" | "incompatible";
-    incompatible: string[];
-    warnings: string[];
-  };
-  error: string;
-}
-
-export interface DesktopBrowserExtensionsApi {
-  list(): Promise<DesktopBrowserExtension[]>;
-  installCurrentPage(tabId: string): Promise<{ ok: boolean; extension?: DesktopBrowserExtension; error?: string }>;
-  installStoreUrl(url: string): Promise<{ ok: boolean; extension?: DesktopBrowserExtension; error?: string }>;
-  installFolder(): Promise<{ ok: boolean; extension?: DesktopBrowserExtension; error?: string }>;
-  setEnabled(key: string, enabled: boolean): Promise<{ ok: boolean; extension?: DesktopBrowserExtension; error?: string }>;
-  reload(key: string): Promise<{ ok: boolean; extension?: DesktopBrowserExtension; error?: string }>;
-  remove(key: string): Promise<{ ok: boolean; error?: string }>;
-}
-
 export interface DesktopTerminalApi {
   start(request: {
     id: string;
@@ -473,8 +442,6 @@ export interface DesktopBridge {
   browserImport?: DesktopBrowserImportApi;
   /** Desktop-only clearing of the built-in browser profile. */
   browserData?: DesktopBrowserDataApi;
-  /** Desktop-only Chromium extension installation and management. */
-  extensions?: DesktopBrowserExtensionsApi;
   /** Desktop-only local PTY. Never exposed by the Web server. */
   terminal?: DesktopTerminalApi;
 }

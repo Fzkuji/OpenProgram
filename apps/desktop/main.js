@@ -38,7 +38,6 @@ const {
   listBrowserSources,
   runBrowserImport,
 } = require("./browser-profile-import");
-const { createBrowserExtensionManager } = require("./browser-extension-manager");
 
 // 单实例：worker 单端口 18100（详见 docs/reference/design/cli/single-port.md）
 const WEB_PORT = process.env.OPENPROGRAM_WEB_PORT || "18100";
@@ -406,59 +405,7 @@ const downloadsFile = () => path.join(app.getPath("userData"), "downloads.json")
 const downloads = new Map();
 const activeDownloads = new Map();
 let activeBrowserImport = null;
-let browserExtensionManager = null;
-let activeExtensionMutation = false;
 const DOWNLOAD_STATES = new Set(["progressing", "completed", "cancelled", "interrupted"]);
-
-async function confirmBrowserExtensionInstall(win, candidate) {
-  const permissions = [
-    ...(candidate.permissions || []),
-    ...(candidate.hostPermissions || []),
-  ];
-  const limitations = [
-    ...(candidate.compatibility?.incompatible || []),
-    ...(candidate.compatibility?.warnings || []),
-  ];
-  const detail = [
-    `Source: ${candidate.source}`,
-    `Version: ${candidate.version}`,
-    permissions.length ? `Permissions:\n${permissions.map((value) => `• ${value}`).join("\n")}` : "Permissions: none declared",
-    limitations.length ? `Compatibility limits:\n${limitations.map((value) => `• ${value}`).join("\n")}` : "Compatibility: supported subset",
-  ].join("\n\n");
-  const result = await dialog.showMessageBox(win, {
-    type: limitations.length ? "warning" : "question",
-    title: "Install browser extension",
-    message: `Install ${candidate.name}?`,
-    detail,
-    buttons: ["Install", "Cancel"],
-    defaultId: 1,
-    cancelId: 1,
-    noLink: true,
-  });
-  return result.response === 0;
-}
-
-async function runExtensionMutation(operation) {
-  if (!browserExtensionManager) return { ok: false, error: "extensions_unavailable" };
-  if (activeExtensionMutation) return { ok: false, error: "extension_operation_busy" };
-  activeExtensionMutation = true;
-  try {
-    return await operation(browserExtensionManager);
-  } finally {
-    activeExtensionMutation = false;
-  }
-}
-
-async function initializeBrowserExtensions() {
-  const webSession = session.fromPartition("persist:webtabs");
-  browserExtensionManager = createBrowserExtensionManager({
-    userDataPath: app.getPath("userData"),
-    extensions: webSession.extensions,
-    fetch: (url, options) => net.fetch(url, options),
-    chromeVersion: process.versions.chrome,
-  });
-  await browserExtensionManager.restore();
-}
 
 function downloadsRoot() {
   const directory = app.getPath("downloads");
@@ -3149,63 +3096,6 @@ function registerWebTabIpc() {
     return true;
   });
 
-  ipcMain.handle("extensions:list", (event) => {
-    if (!contextForSender(event) || !browserExtensionManager) return [];
-    return browserExtensionManager.list();
-  });
-  ipcMain.handle("extensions:install-current-page", (event, tabId) => {
-    const ctx = contextForSender(event);
-    const record = ctx && typeof tabId === "string" ? recordFor(ctx, tabId) : null;
-    if (!ctx || !record || record.view.webContents.isDestroyed()) {
-      return { ok: false, error: "webtab_not_found" };
-    }
-    const listingUrl = record.view.webContents.getURL();
-    return runExtensionMutation((manager) => manager.installFromStoreUrl(listingUrl, {
-      confirm: (candidate) => confirmBrowserExtensionInstall(ctx.win, candidate),
-    }));
-  });
-  ipcMain.handle("extensions:install-store-url", (event, listingUrl) => {
-    const ctx = contextForSender(event);
-    if (!ctx || typeof listingUrl !== "string") {
-      return { ok: false, error: "invalid_store_url" };
-    }
-    return runExtensionMutation((manager) => manager.installFromStoreUrl(listingUrl, {
-      confirm: (candidate) => confirmBrowserExtensionInstall(ctx.win, candidate),
-    }));
-  });
-  ipcMain.handle("extensions:install-folder", async (event) => {
-    const ctx = contextForSender(event);
-    if (!ctx) return { ok: false, error: "unauthorized" };
-    const selected = await dialog.showOpenDialog(ctx.win, {
-      title: "Select unpacked browser extension",
-      properties: ["openDirectory"],
-    });
-    if (selected.canceled || selected.filePaths.length !== 1) {
-      return { ok: false, error: "cancelled" };
-    }
-    return runExtensionMutation((manager) => manager.installFromFolder(selected.filePaths[0], {
-      confirm: (candidate) => confirmBrowserExtensionInstall(ctx.win, candidate),
-    }));
-  });
-  ipcMain.handle("extensions:set-enabled", (event, key, enabled) => {
-    if (!contextForSender(event) || typeof key !== "string") {
-      return { ok: false, error: "unauthorized" };
-    }
-    return runExtensionMutation((manager) => manager.setEnabled(key, enabled === true));
-  });
-  ipcMain.handle("extensions:reload", (event, key) => {
-    if (!contextForSender(event) || typeof key !== "string") {
-      return { ok: false, error: "unauthorized" };
-    }
-    return runExtensionMutation((manager) => manager.reload(key));
-  });
-  ipcMain.handle("extensions:remove", (event, key) => {
-    if (!contextForSender(event) || typeof key !== "string") {
-      return { ok: false, error: "unauthorized" };
-    }
-    return runExtensionMutation((manager) => manager.remove(key));
-  });
-
   ipcMain.handle("browser-import:list-sources", (event) => {
     if (!contextForSender(event)) return [];
     try {
@@ -3940,11 +3830,6 @@ if (!primaryInstance) {
   app.whenReady().then(async () => {
     registerFileDirectoryListing();
     registerDownloads();
-    try {
-      await initializeBrowserExtensions();
-    } catch (error) {
-      console.error(`[desktop] browser extension restore failed: ${error.message}`);
-    }
     registerWebTabIpc();
     registerTabTransferIpc();
     registerUpdateIpc();

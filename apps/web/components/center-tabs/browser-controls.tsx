@@ -16,7 +16,6 @@ import {
   MoreVertical,
   Plus,
   Printer,
-  Puzzle,
   RotateCcw,
   Search,
   Settings,
@@ -127,9 +126,6 @@ function runBrowserAction(
     case "downloads":
       tabs.openBuiltinTab("downloads");
       break;
-    case "extensions":
-      tabs.openBuiltinTab("extensions");
-      break;
     case "toggle-bookmarks-bar":
       setShowBookmarksBar(!showBookmarksBar());
       break;
@@ -230,7 +226,6 @@ export function BrowserMenu({
               item("bookmarks", "Bookmarks", "书签", { separatorBefore: true }),
               item("history", "History", "历史"),
               item("downloads", "Downloads", "下载内容"),
-              item("extensions", "Extensions", "扩展程序"),
               item("toggle-bookmarks-bar", "Show bookmarks bar", "显示书签栏", { checked: visible }),
               item("import", "Import browser data", "导入浏览器资料", { separatorBefore: true, disabled: !canImport }),
               item("clear-data", "Clear browsing data", "清除浏览数据"),
@@ -284,7 +279,6 @@ export function BrowserMenu({
         {row("bookmarks", <Bookmark size={14} />, "Bookmarks", "书签")}
         {row("history", <Clock3 size={14} />, "History", "历史")}
         {row("downloads", <Download size={14} />, "Downloads", "下载内容")}
-        {row("extensions", <Puzzle size={14} />, "Extensions", "扩展程序")}
         {row("toggle-bookmarks-bar", <span className="w-[14px]" />, "Show bookmarks bar", "显示书签栏", visible)}
         <DropdownMenuSeparator className={MENU_SEPARATOR} />
         {canImport ? row("import", <Import size={14} />, "Import browser data", "导入浏览器资料") : null}

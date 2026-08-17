@@ -39,7 +39,6 @@
       "main.js",
       "preload.js",
       "update-service.js",
-      "browser-extension-manager.js",
       "packaged-runtime.js",
       "worker-start-url.js",
       "tab-transfer-store.js",
@@ -75,7 +74,6 @@
     }
   },
   "dependencies": {
-    "extract-zip": "2.0.1",
     "node-pty": "1.0.0"
   }
 }

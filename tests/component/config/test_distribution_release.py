@@ -1092,7 +1092,6 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     desktop_files = [
         "main.js",
         "preload.js",
-        "browser-extension-manager.js",
         "update-service.js",
         "packaged-runtime.js",
         "worker-start-url.js",
@@ -1105,24 +1104,6 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     asar_cli = desktop / "node_modules" / "@electron" / "asar" / "bin" / "asar.js"
     asar_cli.parent.mkdir(parents=True)
     asar_cli.write_text("", encoding="utf-8")
-    for module_name in [
-        "extract-zip",
-        "debug",
-        "ms",
-        "get-stream",
-        "pump",
-        "end-of-stream",
-        "once",
-        "wrappy",
-        "yauzl",
-        "fd-slicer",
-        "pend",
-        "buffer-crc32",
-    ]:
-        module_dir = desktop / "node_modules" / module_name
-        module_dir.mkdir(parents=True)
-        (module_dir / "index.js").write_text("", encoding="utf-8")
-
     app = _fake_desktop_app(tmp_path / "installed", "0.6.6")
     installed_asar = app / "Contents" / "Resources" / "app.asar"
     installed_asar.write_bytes(b"original-asar")

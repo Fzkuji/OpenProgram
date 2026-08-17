@@ -13,7 +13,7 @@
  * move a tab that another operation has already grouped.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bookmark, Download, FileText, Globe, History, MessageCircle, CirclePlus, Puzzle, TerminalSquare, X } from "lucide-react";
+import { Bookmark, Download, FileText, Globe, History, MessageCircle, CirclePlus, TerminalSquare, X } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
 import { builtinPageLabel } from "./builtin-page-label";
@@ -51,7 +51,6 @@ function IconFor({ tab }: { tab: CenterTab }) {
     if (tab.page === "files") return <FileText size={15} aria-hidden="true" />;
     if (tab.page === "history") return <History size={15} aria-hidden="true" />;
     if (tab.page === "downloads") return <Download size={15} aria-hidden="true" />;
-    if (tab.page === "extensions") return <Puzzle size={15} aria-hidden="true" />;
     if (tab.page === "browser") return <Globe size={15} aria-hidden="true" />;
     if (tab.page === "terminal" || tab.page === "claude") return <TerminalSquare size={15} aria-hidden="true" />;
     return <Bookmark size={15} aria-hidden="true" />;

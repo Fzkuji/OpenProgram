@@ -23,7 +23,7 @@
  */
 import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, Download, ExternalLink, House, RotateCw, Star, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, ExternalLink, House, RotateCw, Star, X } from "lucide-react";
 
 import {
   desktopBridge,
@@ -37,8 +37,6 @@ import {
 } from "@/lib/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
 import { browserPageShortcut } from "@/lib/browser-layout";
-import { isExtensionStoreListing } from "@/lib/browser-extension-store";
-import { showToast } from "@/lib/format-utils/toast";
 import {
   isBookmarked,
   subscribeBookmarks,
@@ -97,90 +95,6 @@ function HomeButton({ tabId }: { tabId: string }) {
       aria-label={label}
     >
       <House size={14} />
-    </button>
-  );
-}
-
-function InstallExtensionButton({ bridge, tabId, url }: { bridge: DesktopBridge; tabId: string; url: string }) {
-  const { text } = useTranslation();
-  const [state, setState] = useState<"idle" | "busy" | "done" | "incompatible" | "error">("idle");
-  const requestGenerationRef = useRef(0);
-  const currentUrlRef = useRef(url);
-  currentUrlRef.current = url;
-  const api = bridge.extensions;
-  useEffect(() => {
-    requestGenerationRef.current += 1;
-    setState("idle");
-  }, [url]);
-  if (!api || !isExtensionStoreListing(url)) return null;
-  const label = state === "busy"
-    ? text("Installing extension", "正在安装扩展程序")
-    : state === "done"
-      ? text("Installed", "已安装")
-      : state === "incompatible"
-        ? text("Not supported", "暂不支持")
-        : state === "error"
-          ? text("Install failed", "安装失败")
-          : text("Install in OpenProgram", "安装到 OpenProgram");
-  const title = state === "done"
-    ? text(
-        "Extension installed. Reload this page to apply it.",
-        "扩展程序已安装。重新加载此网页后生效。",
-      )
-    : state === "incompatible"
-      ? text("This extension is not supported by OpenProgram", "OpenProgram 暂不支持此扩展")
-      : label;
-  return (
-    <button
-      type="button"
-      className={`${styles.webToolbarBtn} ${styles.webToolbarInstall}`}
-      disabled={state === "busy"}
-      onClick={() => {
-        const requestGeneration = requestGenerationRef.current + 1;
-        requestGenerationRef.current = requestGeneration;
-        const requestUrl = url;
-        setState("busy");
-        void api.installCurrentPage(tabId).then((result) => {
-          if (
-            requestGenerationRef.current !== requestGeneration
-            || currentUrlRef.current !== requestUrl
-          ) return;
-          const incompatible = result.extension?.compatibility.status === "incompatible";
-          setState(result.ok
-            ? (incompatible ? "incompatible" : "done")
-            : result.error === "cancelled" ? "idle" : "error");
-          if (result.ok && incompatible) {
-            showToast(text(
-              "Added to Extensions, but this extension is not supported by OpenProgram.",
-              "已添加到扩展程序，但 OpenProgram 暂不支持此扩展。",
-            ));
-          } else if (result.ok) {
-            showToast(text(
-              "Extension installed. Reload this page to apply it.",
-              "扩展程序已安装。重新加载此网页后生效。",
-            ));
-          } else if (result.error !== "cancelled") {
-            showToast(text("Extension installation failed.", "扩展程序安装失败。"));
-          }
-        }).catch(() => {
-          if (
-            requestGenerationRef.current === requestGeneration
-            && currentUrlRef.current === requestUrl
-          ) {
-            setState("error");
-            showToast(text("Extension installation failed.", "扩展程序安装失败。"));
-          }
-        });
-      }}
-      title={title}
-      aria-label={title}
-    >
-      {state === "done"
-        ? <Check size={14} />
-        : state === "incompatible" || state === "error"
-          ? <X size={14} />
-          : <Download size={14} />}
-      <span className={styles.webToolbarInstallLabel}>{label}</span>
     </button>
   );
 }
@@ -443,7 +357,6 @@ function DesktopWebTabPane({
           autoComplete="off"
           aria-label={text("Address", "地址")}
         />
-        <InstallExtensionButton bridge={bridge} tabId={tabId} url={effectiveUrl} />
         <BookmarkButton url={effectiveUrl} title={title || effectiveUrl} />
         <BookmarksLibraryButton />
         <button

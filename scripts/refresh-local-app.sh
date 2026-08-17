@@ -109,16 +109,15 @@ while true; do
   desktop_asar="$attempt_dir/app.asar"
   node "$asar_cli" extract "$installed_asar" "$desktop_stage"
   for desktop_file in \
-    main.js preload.js browser-extension-manager.js update-service.js packaged-runtime.js worker-start-url.js \
+    main.js preload.js update-service.js packaged-runtime.js worker-start-url.js \
     tab-transfer-store.js browsing-history-store.js browser-profile-import.js; do
     cp "$repo_root/apps/desktop/$desktop_file" "$desktop_stage/$desktop_file"
   done
-  for desktop_module in \
+  rm -f "$desktop_stage/browser-extension-manager.js"
+  for obsolete_extension_module in \
     extract-zip debug ms get-stream pump end-of-stream once wrappy \
     yauzl fd-slicer pend buffer-crc32; do
-    rm -rf "$desktop_stage/node_modules/$desktop_module"
-    cp -R "$repo_root/apps/desktop/node_modules/$desktop_module" \
-      "$desktop_stage/node_modules/$desktop_module"
+    rm -rf "$desktop_stage/node_modules/$obsolete_extension_module"
   done
   node "$asar_cli" pack "$desktop_stage" "$desktop_asar" \
     --unpack-dir node_modules/node-pty
