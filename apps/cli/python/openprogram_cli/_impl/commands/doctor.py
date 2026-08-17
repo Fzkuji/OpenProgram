@@ -169,7 +169,21 @@ def runtime_http_checks(
     if config is None:
         config = setup._read_config()
     if inventory is None:
-        inventory = scan_runtime_http(Path(__file__).resolve().parents[1])
+        import openprogram
+        import openprogram_cli
+        import openprogram_server
+
+        inventory = scan_runtime_http(
+            Path(openprogram.__file__).resolve().parent,
+            additional_roots={
+                "apps/server/openprogram_server": (
+                    Path(openprogram_server.__file__).resolve().parent
+                ),
+                "apps/cli/python/openprogram_cli": Path(
+                    next(iter(openprogram_cli.__path__))
+                ),
+            },
+        )
 
     registry_gaps = (
         len(inventory.unregistered)

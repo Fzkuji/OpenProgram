@@ -107,3 +107,13 @@ def test_doctor_fails_closed_for_invalid_config_and_inventory_gaps():
     output = repr(rows)
     assert "BEARER-TOKEN" not in output
     assert "QUERY-SECRET" not in output
+
+
+def test_doctor_scans_all_installed_application_packages():
+    rows = doctor.runtime_http_checks(config={})
+    by_label = {label: (ok, detail) for ok, label, detail in rows}
+
+    assert by_label["runtime-http-registry"] == (
+        True,
+        "all Runtime HTTP calls and registry consumers classified",
+    )

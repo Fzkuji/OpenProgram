@@ -180,7 +180,7 @@ def _active_head_id(store: Any, session_id: str) -> str | None:
         turn_id = str(_current_turn_id.get() or "")
         if turn_id:
             return turn_id
-    except Exception:
+    except ImportError:
         pass
     try:
         return str((store.get_session(session_id) or {}).get("head_id") or "") or None
