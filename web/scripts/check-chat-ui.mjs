@@ -82,6 +82,38 @@ assert.equal(
   null,
   "an aborted old request must not write the cache",
 );
+let resolveOlder;
+let resolveNewer;
+const older = contextBreakdownCache.refreshContextBreakdown(
+  "session-race",
+  "head-race",
+  new AbortController().signal,
+  () => new Promise((resolve) => { resolveOlder = resolve; }),
+);
+const newer = contextBreakdownCache.refreshContextBreakdown(
+  "session-race",
+  "head-race",
+  new AbortController().signal,
+  () => new Promise((resolve) => { resolveNewer = resolve; }),
+);
+resolveNewer({ json: async () => ({ total_used: 200, window: 1_000 }) });
+assert.equal((await newer).total_used, 200);
+resolveOlder({ json: async () => ({ total_used: 100, window: 1_000 }) });
+assert.equal(await older, null, "an older same-key response must be discarded");
+assert.equal(
+  contextBreakdownCache.readContextBreakdownCache("session-race", "head-race").total_used,
+  200,
+  "an older same-key response must not overwrite the newer cache value",
+);
+for (let i = 0; i < 40; i += 1) {
+  contextBreakdownCache.writeContextBreakdownCache(`evict-${i}`, null, { total_used: i });
+}
+assert.equal(
+  contextBreakdownCache.readContextBreakdownCache("evict-0", null),
+  null,
+  "the bounded cache must evict its least-recently-used entry",
+);
+assert.equal(contextBreakdownCache.readContextBreakdownCache("evict-39", null).total_used, 39);
 assert.match(
   contextBreakdownPanel,
   /useState<Breakdown \| null>\(\(\)\s*=>\s*readContextBreakdownCache\(sessionId, headId\),?\s*\)/,

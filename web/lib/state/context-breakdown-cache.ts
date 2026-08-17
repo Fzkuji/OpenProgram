@@ -21,10 +21,25 @@ export interface ContextBreakdown {
   error?: string;
 }
 
-const cache = new Map<string, ContextBreakdown>();
+const CACHE_LIMIT = 32;
+interface CacheEntry {
+  value?: ContextBreakdown;
+  generation: number;
+}
+const cache = new Map<string, CacheEntry>();
 
 function cacheKey(sessionId: string | null, headId?: string | null): string | null {
   return sessionId ? JSON.stringify([sessionId, headId ?? null]) : null;
+}
+
+function touch(key: string, entry: CacheEntry): void {
+  cache.delete(key);
+  cache.set(key, entry);
+  while (cache.size > CACHE_LIMIT) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
 }
 
 export function readContextBreakdownCache(
@@ -32,7 +47,11 @@ export function readContextBreakdownCache(
   headId?: string | null,
 ): ContextBreakdown | null {
   const key = cacheKey(sessionId, headId);
-  return key ? cache.get(key) ?? null : null;
+  if (!key) return null;
+  const entry = cache.get(key);
+  if (!entry?.value) return null;
+  touch(key, entry);
+  return entry.value;
 }
 
 export function writeContextBreakdownCache(
@@ -40,7 +59,10 @@ export function writeContextBreakdownCache(
   headId: string | null | undefined,
   value: ContextBreakdown,
 ): void {
-  cache.set(JSON.stringify([sessionId, headId ?? null]), value);
+  const key = JSON.stringify([sessionId, headId ?? null]);
+  const entry = cache.get(key) ?? { generation: 0 };
+  entry.value = value;
+  touch(key, entry);
 }
 
 type ContextBreakdownFetcher = (
@@ -54,21 +76,26 @@ export async function refreshContextBreakdown(
   signal: AbortSignal,
   fetcher: ContextBreakdownFetcher = (url, init) => fetch(url, init),
 ): Promise<ContextBreakdown | null> {
+  const key = JSON.stringify([sessionId, headId ?? null]);
   const cached = readContextBreakdownCache(sessionId, headId);
+  const entry = cache.get(key) ?? { generation: 0 };
+  const generation = ++entry.generation;
+  touch(key, entry);
+  const isCurrent = () => cache.get(key)?.generation === generation;
   const qs = headId ? `?head_id=${encodeURIComponent(headId)}` : "";
   try {
     const response = await fetcher(
       `/api/sessions/${encodeURIComponent(sessionId)}/context${qs}`,
       { signal },
     );
-    if (signal.aborted) return null;
+    if (signal.aborted || !isCurrent()) return null;
     const data = await response.json();
-    if (signal.aborted) return null;
+    if (signal.aborted || !isCurrent()) return null;
     if (data.error) return cached ?? data;
     writeContextBreakdownCache(sessionId, headId, data);
     return data;
   } catch (error) {
-    if (signal.aborted) return null;
+    if (signal.aborted || !isCurrent()) return null;
     return cached ?? { error: String(error) };
   }
 }

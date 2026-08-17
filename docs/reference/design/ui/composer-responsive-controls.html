@@ -78,7 +78,7 @@
     <tr><td>切换会话或 DAG 分支</td><td>只读取新 <code>sessionId + headId</code> 对应的缓存</td><td>取消旧请求；旧响应不得覆盖当前面板</td></tr>
     <tr><td>请求失败且已有缓存</td><td>继续保留缓存内容</td><td>本次刷新失败不得用错误页替换可用统计</td></tr>
   </tbody></table></div>
-  <p>缓存只驻留当前前端进程，不写入持久存储，不设置定时刷新，不新增依赖。服务端仍是统计数据的唯一来源；缓存只消除重复打开时的过渡画面。</p>
+  <p>缓存只驻留当前前端进程，按最近使用顺序保留 32 个会话分支，不写入持久存储，不设置定时刷新，不新增依赖。同一 key 的并发刷新只允许最新请求更新缓存。服务端仍是统计数据的唯一来源；缓存只消除重复打开时的过渡画面。</p>
 
   <div class="grid">
     <section class="card"><h3>收缩优先级</h3><ol><li>在 <code>.composer-bottom-row ≤ 560px</code> 时视觉隐藏四类文字。</li><li>各图标触发器保持 20px 控件尺寸和原顺序。</li><li>active tool chips 与 context ring 本来就是图标，不改变。</li></ol></section>
@@ -106,7 +106,7 @@
     <tr><td>specification review / quality review</td><td class="ok">完成：规格审查与修复后的独立质量审查均通过。</td></tr>
     <tr><td>完整检查与默认安装版可见验收</td><td class="ok">完成：Web 全量检查、TypeScript、构建、desktop webtab/transfer、单元测试和默认安装版 CDP 验收均通过。</td></tr>
     <tr><td>底部控制按钮常态 surface</td><td class="ok">完成：常态仅使用 <code>--chip-bg</code> 填充，不增加边框或内描边；真实 App computed style 验证 border 为 0、shadow 为 none，hover/open 仅增强背景。</td></tr>
-    <tr><td>Context 统计重复打开</td><td class="ok">已实现：缓存按会话与分支隔离；重复打开立即显示上次结果并后台刷新。<code>check:chat-ui</code> 可执行验证缓存隔离、迟到请求取消、刷新失败保留缓存，并约束面板按会话与分支 key 同步重建。</td></tr>
+    <tr><td>Context 统计重复打开</td><td class="ok">已实现：缓存按会话与分支隔离；重复打开立即显示上次结果并后台刷新。<code>check:chat-ui</code> 可执行验证缓存隔离、迟到请求取消、同 key 反序响应、刷新失败保留、32 项容量淘汰，并约束面板按会话与分支 key 同步重建。</td></tr>
   </tbody></table></div>
   <p class="sub">可见验收使用实际 <code>/Applications/OpenProgram.app</code>、默认 <code>18100</code> 页面和 <code>9223</code> CDP。测试操作真实 permission、more、active tool、chat model、execution model、effort 与 context 触发器，确认常态无边框、hover/open 背景增强、窄态无重叠且菜单可打开，并在结束时关闭菜单、恢复焦点与原始页面样式。</p>
 </main></body></html>
