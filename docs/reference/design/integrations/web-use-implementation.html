@@ -140,8 +140,8 @@
 <h2>任务 2 验证命令</h2>
 <ul>
   <li><code>python -m pytest -q tests/unit/agent/test_web_use_surface.py tests/unit/context/test_tool_defer.py tests/unit/security/test_permission_rules.py tests/component/programs/test_browser_agent.py tests/component/programs/test_web_use_runtime.py tests/component/programs/test_web_use_backend_threading.py tests/component/agent/test_process_runner_webtab_bridge.py tests/component/agent/test_dispatcher_tools.py tests/unit/security/test_process_runner_sandbox.py</code>：199 passed。</li>
-  <li><code>./web/node_modules/.bin/tsc --noEmit -p apps/web/tsconfig.json</code></li>
-  <li><code>npm --prefix web run build</code></li>
+  <li><code>./apps/web/node_modules/.bin/tsc --noEmit -p apps/web/tsconfig.json</code></li>
+  <li><code>npm --prefix apps/web run build</code></li>
   <li><code>node apps/desktop/scripts/check-webtab-navigation.js</code></li>
   <li><code>node apps/web/scripts/check-web-split.mjs</code></li>
   <li><code>OPENPROGRAM_TEST_LIVE=1 OPENPROGRAM_TEST_REAL_HOME=1 python -m pytest -q -m live tests/live/app/test_web_use_background_app.py</code>：独立安装版后台 Page E2E；使用默认安装版 profile，自行构造后台 Page，不要求改变桌面窗口状态。</li>

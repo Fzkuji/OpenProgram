@@ -89,7 +89,7 @@ which makes the DAG gap a known item rather than a prerequisite.
 
 Every wiring change is checked the same way: `py_compile`, the relevant unit
 tests, `openprogram worker restart`, a healthy `/healthz`, and a real message
-sent through the web UI (frontend changes need `cd web && npm run build` first).
+sent through the web UI (frontend changes need `npm --prefix apps/web run build` first).
 
 Event ordering is checked by running a turn that calls a tool and reading
 the session's `events.jsonl` (the event log is always on). The log must

@@ -80,7 +80,7 @@ real work keeps a `generateStaticParams` returning one placeholder instead.
 - SPA fallback: any GET not matching a file or an API route returns the
   shell HTML (`out/chat.html` — the app redirects `/` → `/chat` and resolves
   everything else from `pathname`).
-- Build gate: if `apps/web/out/` is missing or older than `web/` sources, run
+- Build gate: if `apps/web/out/` is missing or older than `apps/web/` sources, run
   `npm run build` once at startup. Node is then a **build-time** dependency
   only; a packaged release ships `out/` pre-built and never invokes Node.
 

@@ -73,7 +73,7 @@ tool allowlist。它跑在一个独立小池里，并发 1–2，可被用户任
 ## 7. 验证方式
 
 每一处接线改动都按同一套查：`py_compile`、相关单测、`openprogram worker restart`、
-`/healthz` 正常，以及经 web UI 发一条真实消息（前端改动要先 `cd web && npm run build`）。
+`/healthz` 正常，以及经 web UI 发一条真实消息（前端改动要先 `npm --prefix apps/web run build`）。
 
 事件顺序的验证方式是跑一个带工具调用的 turn，读该会话的 `events.jsonl`
 （事件日志常开）。日志必须依序出现 `user.prompt_submitted → model.response_started →

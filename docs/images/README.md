@@ -1,6 +1,6 @@
 # Image Sources
 
-This directory keeps the editable image sources used by documentation and the WebUI. Runtime copies live under `web/` and end up in the static export (`apps/web/out/`) the worker serves.
+This directory keeps the editable image sources used by documentation and the WebUI. Runtime copies live under `apps/web/` and end up in the static export (`apps/web/out/`) the worker serves.
 
 ## WebUI Tab Icon
 

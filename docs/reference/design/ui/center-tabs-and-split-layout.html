@@ -425,7 +425,7 @@
     <h3>顶部复合 tab 视觉约束</h3>
     <div class="card">
       <p><strong>生产范围：</strong><code>apps/web/components/center-tabs/tab-items.tsx</code> 和 <code>center-tabs.module.css</code>；回归入口为 <code>apps/web/scripts/check-center-tabs.mjs</code> 与相关 <code>check-chat-ui.mjs</code> 断言。</p>
-      <p><strong>检查契约：</strong><code>npm --prefix web run check:center-tabs</code> 必须证明一个 <code>role=tab</code>、两个 <code>1fr</code> 成员槽位、两个成员关闭按钮和唯一 group drag subject，并拒绝前置 <code>Columns2</code> 图标。</p>
+      <p><strong>检查契约：</strong><code>npm --prefix apps/web run check:center-tabs</code> 必须证明一个 <code>role=tab</code>、两个 <code>1fr</code> 成员槽位、两个成员关闭按钮和唯一 group drag subject，并拒绝前置 <code>Columns2</code> 图标。</p>
       <p><strong>不改：</strong>version 2 payload、group normalization、active entry 推导、pane 渲染、Runtime Web ownership、transfer journal、pointer drag 状态机和跨窗口协议。拖动继续只做整个 entry 的 reorder/transfer；不新增依赖、动画系统或成员拖动。</p>
       <p><strong>证据：</strong>定向 RED/GREEN、TypeScript、Web 全量检查、production build、desktop webtab/transfer、Python desktop checks、文档构建/断链、diff 检查、两个独立 review，以及默认 18100 安装版的实际相等宽度和切换行为。</p>
     </div>
@@ -433,14 +433,14 @@
     <h3>分屏宽度回归修复任务说明</h3>
     <div class="card">
       <p><strong>生产范围：</strong><code>apps/web/app/styles/base.css</code>；测试范围限定为现有公开入口 <code>apps/web/scripts/check-web-split.mjs</code>。不修改 pointer handler、ratio store、持久化 schema、pane 顺序或最小宽度常量。</p>
-      <p><strong>public-entry RED：</strong><code>npm --prefix web run check:web-split</code> 必须先证明第一 pane 同时为 <code>center-split-primary center-pane-chat</code> 时，主 pane 的固定 flex 规则具有足够 specificity，不会被通用 chat pane flex 覆盖。GREEN 后默认安装版必须证明真实 divider pointer drag 同时改变 store ratio 与两个 pane 的 bounding width。</p>
+      <p><strong>public-entry RED：</strong><code>npm --prefix apps/web run check:web-split</code> 必须先证明第一 pane 同时为 <code>center-split-primary center-pane-chat</code> 时，主 pane 的固定 flex 规则具有足够 specificity，不会被通用 chat pane flex 覆盖。GREEN 后默认安装版必须证明真实 divider pointer drag 同时改变 store ratio 与两个 pane 的 bounding width。</p>
       <p><strong>证据：</strong>定向 RED/GREEN、Web 全量检查、TypeScript、production build、desktop webtab/transfer checks、Python desktop checks、文档构建/断链、diff 检查、两个独立 review，以及默认 18100 安装版的拖动前后 ratio、pane width 和刷新恢复数据。</p>
     </div>
 
     <h3>Web toolbar 显式成员选择任务说明</h3>
     <div class="card">
       <p><strong>生产范围：</strong><code>apps/web/components/center-tabs/web-tab-pane.tsx</code>；复用 <code>split-view-picker.tsx</code>、<code>labelOf()</code> 和现有 <code>groupTab()</code>，不新增 store 字段、持久化格式、弹窗组件或依赖。</p>
-      <p><strong>public-entry RED 证据：</strong><code>npm --prefix web run check:web-split</code> 曾因 toolbar 未渲染 <code>SplitViewPicker subjectId={tabId}</code> 而失败；旧实现同时包含 <code>setSplitWebTab(tabId)</code>、<code>openDraftSessionTab()</code> 和 <code>newSession()</code> 的自动配对路径。实现后，同一检查要求 picker 存在并拒绝上述自动路径。</p>
+      <p><strong>public-entry RED 证据：</strong><code>npm --prefix apps/web run check:web-split</code> 曾因 toolbar 未渲染 <code>SplitViewPicker subjectId={tabId}</code> 而失败；旧实现同时包含 <code>setSplitWebTab(tabId)</code>、<code>openDraftSessionTab()</code> 和 <code>newSession()</code> 的自动配对路径。实现后，同一检查要求 picker 存在并拒绝上述自动路径。</p>
       <p><strong>目标行为：</strong>single Web 的 Split 点击只打开 picker；picker 列出所有合法其他 single tabs，选中后才合并。提交成功时新 pair 立即成为 active entry，两个成员立即显示且 divider 为 50/50；不能继续显示原先 active 的其他 entry，也不能继承旧 ratio。已在 split 中的 Web 点击同一按钮执行现有 Separate 行为。取消、空候选和提交拒绝都不自动选择或创建 tab。</p>
       <p><strong>提交与焦点约束：</strong>选择候选时必须用最新 <code>tabs/groups</code> 重新执行 <code>splitCandidates()</code> 校验；候选已被其他操作加入分屏时拒绝提交，不得把它从现有 owner 移出。空候选时焦点进入 picker 的 Close；Escape、Close 与成功选择恢复 toolbar trigger，outside pointer dismissal 保留用户新点击元素的焦点。</p>
       <p><strong>明确排除：</strong>不修改候选排序、不增加搜索/MRU、不允许第三 pane、不改变右键菜单、drag、transfer、ratio 或 Web Use target 绑定。</p>
@@ -494,14 +494,14 @@
     </ul>
 
     <h3>Full gate manifest</h3>
-    <pre><code>npm --prefix web run check:center-tabs
-npm --prefix web run check:compound-tabs
-npm --prefix web run check:web-split
-npm --prefix web run check
-web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit
-npm --prefix web run build
-npm --prefix desktop run check:webtabs
-npm --prefix desktop run check:tab-transfer-store
+    <pre><code>npm --prefix apps/web run check:center-tabs
+npm --prefix apps/web run check:compound-tabs
+npm --prefix apps/web run check:web-split
+npm --prefix apps/web run check
+apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit
+npm --prefix apps/web run build
+npm --prefix apps/desktop run check:webtabs
+npm --prefix apps/desktop run check:tab-transfer-store
 python -m pytest -q tests/component/webui/test_desktop_checks.py
 python -m tools.docs_site.checklinks
 git diff --check</code></pre>

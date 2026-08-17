@@ -120,9 +120,9 @@ def _probe_web_bundle() -> Finding:
         return Finding("OK", "Web bundle (Next.js)",
                        f"built at {build_id.parent}")
     return Finding(
-        "WARN", "Web bundle (Next.js)", f"not built ({root / 'web' / '.next'})",
+        "WARN", "Web bundle (Next.js)", f"not built ({root / 'apps' / 'web' / '.next'})",
         fix="Auto-built on first `openprogram web` launch. Or manually: "
-            "cd web && npm install && npm run build",
+            "npm --prefix apps/web install && npm --prefix apps/web run build",
     )
 
 

@@ -100,10 +100,10 @@
   <p><span class="pill ok">实现完成</span>。前端修改集中在发送队列、composer、session running 状态和 WebSocket 重连；后端增加原子 reservation、runtime 接管以及无焦点副作用的运行态查询。停止路径的 optimistic idle 不再提前 drain；服务端真实 clear 即使观察到本地 idle，也会重新尝试队列发送。</p>
   <div class="table-wrap"><table>
     <thead><tr><th>验证命令</th><th>实际结果</th></tr></thead><tbody>
-      <tr><td><code>cd web &amp;&amp; npm run check</code></td><td><span class="pill ok">通过</span>，包含 send-queue、chat-ui、Markdown sanitize 和 WS action 合同。</td></tr>
+      <tr><td><code>npm --prefix apps/web run check</code></td><td><span class="pill ok">通过</span>，包含 send-queue、chat-ui、Markdown sanitize 和 WS action 合同。</td></tr>
       <tr><td><code>python -m pytest tests/unit/webui/test_webui_head_mirror_and_run_guard.py tests/unit/webui/test_webui_chat_dispatcher.py tests/component/runtime/test_turn_cancellation.py tests/unit/programs/test_retry_function.py tests/unit/agent/test_dispatcher_integration.py -q</code></td><td><span class="pill ok">61 passed, 1 skipped</span></td></tr>
-      <tr><td><code>cd web &amp;&amp; npx tsc --noEmit</code></td><td><span class="pill ok">通过</span></td></tr>
-      <tr><td><code>cd web &amp;&amp; npm run build</code></td><td><span class="pill ok">27 个静态页面生成完成</span></td></tr>
+      <tr><td><code>npm --prefix apps/web exec -- tsc --noEmit</code></td><td><span class="pill ok">通过</span></td></tr>
+      <tr><td><code>npm --prefix apps/web run build</code></td><td><span class="pill ok">27 个静态页面生成完成</span></td></tr>
     </tbody></table></div>
   <p class="small">同轮追加修复：assistant Markdown 不再依赖 CDN <code>marked</code>；CDN 不可用时使用已安装的 npm 包，因此普通回复不会退化为带边框的 <code>&lt;pre&gt;</code>。</p>
 </main></body></html>

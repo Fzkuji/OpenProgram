@@ -208,7 +208,8 @@ def _start_frontend(backend_port: int, web_port: int | None = None) -> subproces
     import shutil
     if shutil.which("node") is None:
         print("Frontend not started: Node.js not found on PATH (needs Node 18+).\n"
-              "  Install Node, or start the frontend manually: cd web && npm run dev")
+              "  Install Node, or start the frontend manually: "
+              "npm --prefix apps/web run dev")
         return None
     cmd = _frontend_command(web, web_port)
     if cmd is None:

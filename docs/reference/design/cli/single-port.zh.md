@@ -73,7 +73,7 @@ Electron 壳 → Python worker（FastAPI，单端口）
 - SPA 回退：任何未命中文件也未命中 API 路由的 GET，返回壳 HTML
   （`out/chat.html`——应用本来就 `/` → `/chat` 重定向，其余全靠
   `pathname` 客户端解析）。
-- 构建门：`apps/web/out/` 缺失或比 `web/` 源码旧，就在启动时跑一次
+- 构建门：`apps/web/out/` 缺失或比 `apps/web/` 源码旧，就在启动时跑一次
   `npm run build`。Node 从此只是**构建期**依赖；打包发布版直接携带预构建的
   `out/`，运行时完全不碰 Node。
 

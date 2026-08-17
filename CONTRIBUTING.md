@@ -72,8 +72,8 @@ public APIs, installation profiles, and current capabilities.
    ```bash
    uv sync --locked --extra dev --extra browser
    uv run --locked --extra dev --extra browser playwright install --with-deps chromium
-   npm --prefix web ci
-   npm --prefix web run build
+   npm --prefix apps/web ci
+   npm --prefix apps/web run build
    uv run --locked --extra dev --extra browser python -m pytest -q -m browser tests/e2e/web
    ```
 

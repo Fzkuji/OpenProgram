@@ -100,7 +100,7 @@ duplicated in this historical distribution ledger.
 ## Local canonical App and Apple icon batch
 
 - Base commit: `9477273e`.
-- Public entry: `cd desktop && npm run dist` builds one complete temporary
+- Public entry: `npm --prefix apps/desktop run dist` builds one complete temporary
   `OpenProgram.app`, verifies it, and replaces only
   `/Applications/OpenProgram.app`.
 - Icon contract: `apps/desktop/build/AppIcon.icon` is the Apple layered authoring

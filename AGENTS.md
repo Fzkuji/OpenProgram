@@ -4,7 +4,7 @@
 
 - App、Web 和本地验收统一使用默认 profile、端口 `18100` 和状态目录 `~/.openprogram`。
 - 不为日常开发或验收启动 `OPENPROGRAM_PROFILE=dev`、`18200` 或另一套前端实例。
-- App 启动和可视验收只使用 `/Applications/OpenProgram.app`；禁止运行 `desktop/node_modules/electron`、`npm --prefix desktop run dev` 或临时 E2E Electron 作为用户可见 App。
+- App 启动和可视验收只使用 `/Applications/OpenProgram.app`；禁止运行 `apps/desktop/node_modules/electron`、`npm --prefix apps/desktop run dev` 或临时 E2E Electron 作为用户可见 App。
 - 一个功能完成并提交后统一运行 `scripts/refresh-local-app.sh`。它从当前 checkout 构建一个 wheel，同时覆盖 PATH 中的 OpenProgram、App 内置 runtime、静态前端和 Electron archive，然后重启默认 worker；禁止从旧 worktree 或旧环境单独执行 `openprogram worker restart`。
 - 禁止在 `post-commit` 中自动重启 worker；连续开发只在功能完成后刷新一次，避免中断正在执行的会话。
 - 本地只保留 `/Applications/OpenProgram.app` 这一份可见 App；更新时覆盖现有内容，不创建按 commit 命名的 App 副本。
