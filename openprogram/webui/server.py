@@ -13,7 +13,11 @@ def _load_checkout_package(package_dir: Path):
     """Load this checkout's Server package instead of an older installation."""
     existing = sys.modules.get("openprogram_server")
     existing_file = getattr(existing, "__file__", None)
-    if existing_file is not None:
+    if existing is not None:
+        if existing_file is None:
+            raise ImportError(
+                "openprogram_server was already imported from an unknown location"
+            )
         try:
             if Path(existing_file).resolve().is_relative_to(package_dir.resolve()):
                 return existing

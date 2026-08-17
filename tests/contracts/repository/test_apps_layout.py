@@ -177,6 +177,41 @@ assert stale.STALE is True
     assert result.returncode == 0, result.stderr
 
 
+def test_legacy_server_rejects_an_already_loaded_namespace_package(tmp_path) -> None:
+    stale_package = tmp_path / "openprogram_server"
+    stale_package.mkdir()
+    (stale_package / "server.py").write_text("STALE = True\n", encoding="utf-8")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(tmp_path)
+    code = """
+import sys
+import openprogram_server
+import openprogram_server.server as stale
+parent = openprogram_server
+assert parent.__file__ is None
+try:
+    import openprogram.webui.server
+except ImportError as exc:
+    assert 'already imported from an unknown location' in str(exc)
+else:
+    raise AssertionError('foreign namespace package was silently replaced')
+assert sys.modules['openprogram_server'] is parent
+assert sys.modules['openprogram_server.server'] is stale
+assert stale.STALE is True
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_current_developer_commands_use_apps_workspaces() -> None:
     current_docs = (
         "AGENTS.md",
