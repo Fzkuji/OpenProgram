@@ -96,6 +96,22 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Legacy cleanup F1: static Web interface | `23ac60c2` | implemented; reviewed | Removes the unreferenced 9,227-line static HTML/CSS/JS interface and its obsolete settings-page test. Current source, package and runtime paths continue to serve the `apps/web` build. |
 | Apps migration B2: Python CLI application | `2a790501`, `91be4353`, `51303ea8`, `09eb3732`, `252fb4fa`, `a459c443` | implemented; reviewed | Moves parser, dispatch, Rich fallback, Ink launcher and setup flows into the installable `openprogram_cli` application package. `openprogram.cli` remains a bounded compatibility loader; a code-free root module supports raw source checkouts; editable and wheel installs use the application package. |
 
+## Active task brief: Legacy cleanup F2
+
+- Approved source: `repository-structure.html`; base: `457539c5`.
+- Remove the tracked package-local `functions_meta.json`; mutable tool profiles
+  remain profile state under `~/.openprogram[-profile]/` and new wheels continue
+  to exclude this file.
+- Preserve one-time migration from an actual older
+  `openprogram/webui/functions_meta.json`. Resolve that location from the legacy
+  compatibility package, not from the Server application module that now lives
+  under `apps/server`.
+- RED/GREEN boundaries: a physical repository ownership contract, a migration
+  test whose Server module points elsewhere, profile isolation and atomic state
+  writes.
+- Exclude changes to profile contents, tool selection behavior, Server routes,
+  Web UI and active Agent configuration work.
+
 ## Implemented task brief: Apps migration B2
 
 - Approved source: `repository-structure.html`; base: `2ba6f078`.

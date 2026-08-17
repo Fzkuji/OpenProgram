@@ -138,6 +138,7 @@
   <h3>核心 package 与应用 package</h3>
   <p><code>openprogram/</code> 的一级目录只保留可独立说明的核心产品域或稳定协议边界，例如 <code>agent/</code>、<code>programs/</code>、<code>context/</code>、<code>memory/</code>、<code>providers/</code> 和 <code>runtime/</code>。FastAPI route、WebSocket handler、静态前端托管、Electron 与界面代码不属于核心 package。</p>
   <p><code>apps/server/openprogram_server/</code> 是 Python 服务应用；FastAPI routes、WebSocket actions、owner auth、静态资源托管与 Server-only helpers 位于其 <code>_webui/</code> 内。兼容期内这些文件仍以既有 <code>openprogram.webui.*</code> 名称加载，根 package 只负责定位同一份应用源码，不复制模块状态。<code>apps/cli/</code> 是 CLI 应用 workspace，Ink TUI 使用其中的 <code>src/</code>、<code>tests/</code> 和 <code>package.json</code>，Python parser、dispatch、Rich fallback 与 setup flow 位于 <code>apps/cli/python/openprogram_cli/</code>。<code>openprogram.cli</code> 只保留兼容 loader 和 module entry；两处兼容边界均不承载新的应用实现。</p>
+  <p>工具配置、收藏夹和其他 profile 状态属于用户数据，写入 <code>~/.openprogram[-profile]/</code>，不作为源码或 wheel seed 保存在 <code>openprogram/</code>。兼容读取只检查旧版 <code>openprogram/webui/</code> package 位置并一次性复制到 profile state；它不能依赖已迁移到 <code>apps/server</code> 的 Server module 路径。</p>
   <p><code>packages/</code> 不作为通用杂项目录。只有已经被两个及以上应用消费、具有稳定公共入口的协议类型或 UI package 才能进入；当前迁移只建立实际需要的 API/WS contracts，不预建其他 package。</p>
   <p><code>__pycache__/</code>、<code>.DS_Store</code>、构建产物和 Finder 冲突副本不是仓库结构。它们保持 Git ignored，可安全清理，但不能用作代码分层或验收证据。用户安装的 <code>programs/applications/</code> checkout 属于本地产品数据，不随源码目录整理删除。</p>
 
@@ -228,6 +229,7 @@
     <li>Agent Harness 可以直接导入 <code>openprogram</code>，不依赖 Server、Web 或 Desktop。</li>
     <li>旧 <code>openprogram/webui/static/</code> 和无生产调用的旧双端口实现被删除。</li>
     <li>前端构建产物只进入 ignored build/staging 目录和最终发行包，不作为核心源码长期维护。</li>
+    <li>可变 profile 状态不进入源码树或 wheel；旧 package-local JSON 只作为升级兼容输入读取，不在新版本继续跟踪。</li>
     <li>公开文档构建不包含 <code>docs/superpowers/</code>，所有公开链接有效。</li>
     <li>设计导航按产品功能分组；源文件路径保持不变。</li>
     <li>Git tracked 顶层目录必须在结构 contract 中声明，根目录不出现开发脚本；不含实现的 source-checkout module entry 必须被 contract 单独列出。</li>
