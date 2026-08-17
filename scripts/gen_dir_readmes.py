@@ -64,6 +64,8 @@ def _list_subdirs(dir_path: Path) -> list[Path]:
             continue
         if p.name.startswith("__"):
             continue
+        if not (p / "__init__.py").is_file():
+            continue
         out.append(p)
     return out
 

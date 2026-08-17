@@ -41,33 +41,17 @@ their provider packages (e.g. ``openprogram.providers.openai_codex``).
 
 - **`_schema/`** — Tool-schema normalization across providers
 - **`_shared/`** — Shared helpers used by multiple provider stream implementations
-- **`alibaba_token_plan_cn/`**
 - **`amazon_bedrock/`** — Amazon Bedrock Converse Stream provider
 - **`anthropic/`** — Anthropic provider
 - **`azure_openai_responses/`** — Azure OpenAI Responses API provider
-- **`cerebras/`**
 - **`deepseek/`**
-- **`gemini_subscription/`**
 - **`github_copilot/`** — GitHub Copilot auth adapter + helpers
 - **`google/`** — Google Generative AI provider
 - **`google_gemini_cli/`** — Google Gemini CLI / Cloud Code Assist provider
-- **`groq/`**
-- **`huggingface/`**
-- **`kimi_coding/`**
-- **`minimax/`**
-- **`minimax_cn/`**
-- **`mistral/`**
-- **`openai/`**
 - **`openai_codex/`** — OpenAI Codex (ChatGPT subscription) provider
 - **`openai_completions/`** — OpenAI Chat Completions API provider
 - **`openai_responses/`** — OpenAI Responses API provider
-- **`opencode/`**
-- **`opencode_go/`**
-- **`openrouter/`**
 - **`sources/`** — External catalogues that enrich fetched model rows with metadata
 - **`utils/`**
-- **`vercel_ai_gateway/`**
-- **`xai/`**
-- **`zai/`**
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

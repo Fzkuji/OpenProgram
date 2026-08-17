@@ -35,6 +35,10 @@ jobs:
           checkout_path="$GITHUB_WORKSPACE"
           probe_dir="$(mktemp -d)"
           (cd "$probe_dir" && OPENPROGRAM_CHECKOUT="$checkout_path" uv run --with "$wheel_path" --no-project -- python -P -c 'from pathlib import Path; import os, openprogram, openprogram_cli, openprogram.cli as legacy_cli, openprogram_server.server as canonical; import openprogram.webui.server as legacy; import openprogram.webui.frontend as frontend; checkout = Path(os.environ["OPENPROGRAM_CHECKOUT"]).resolve(); modules = (openprogram, openprogram_cli, canonical, legacy, frontend); assert canonical is legacy; assert openprogram_cli.main is legacy_cli.main; assert all(not Path(module.__file__).resolve().is_relative_to(checkout) for module in modules); assert (frontend.out_dir() / "index.html").is_file(); assert openprogram_cli.build_parser().prog == "openprogram"')
+          (cd "$probe_dir" && uv run --with "$wheel_path" --no-project -- openprogram --version)
+          (cd "$probe_dir" && uv run --with "$wheel_path" --no-project -- python -P -m openprogram --version)
+          (cd "$probe_dir" && uv run --with "$wheel_path" --no-project -- python -P -m openprogram.cli --version)
+          (cd "$probe_dir" && uv run --with "$wheel_path" --no-project -- python -P -m openprogram_cli --version)
       - uses: actions/upload-artifact@v7
         with:
           name: developer-python-distributions

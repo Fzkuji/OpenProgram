@@ -143,7 +143,7 @@ def _is_cli_process() -> bool:
     if executable != "__main__.py":
         return False
     parent = Path(sys.argv[0]).parent.name
-    return parent in {"openprogram", "cli"}
+    return parent in {"openprogram", "cli", "openprogram_cli"}
 
 
 if _is_cli_process():

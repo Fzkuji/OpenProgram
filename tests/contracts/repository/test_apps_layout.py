@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import sys
+import textwrap
 
 import openprogram
 
@@ -46,6 +47,96 @@ def test_python_cli_canonical_entry_matches_the_compatibility_entry() -> None:
 
     assert openprogram_cli.main is compatibility_cli.main
     assert openprogram_cli.build_parser is compatibility_cli.build_parser
+
+
+def test_python_cli_canonical_module_runs_from_a_raw_checkout() -> None:
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "openprogram_cli", "--version"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().startswith("openprogram ")
+
+
+def test_python_cli_source_entry_precedes_a_stale_pythonpath_package(
+    tmp_path: Path,
+) -> None:
+    stale = tmp_path / "openprogram_cli"
+    stale.mkdir()
+    (stale / "__init__.py").write_text(
+        "def main(): return 'stale'\n",
+        encoding="utf-8",
+    )
+    env = {**os.environ, "PYTHONPATH": str(tmp_path)}
+    script = textwrap.dedent(
+        f"""
+        from pathlib import Path
+        import openprogram_cli
+        import openprogram.cli as legacy
+        assert Path(openprogram_cli.__file__).resolve() == Path({str(ROOT / 'openprogram_cli.py')!r})
+        assert openprogram_cli.main is legacy.main
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_python_cli_rejects_an_already_loaded_foreign_canonical_package(
+    tmp_path: Path,
+) -> None:
+    stale = tmp_path / "openprogram_cli"
+    stale.mkdir()
+    (stale / "__init__.py").write_text("STALE = True\n", encoding="utf-8")
+    script = textwrap.dedent(
+        f"""
+        import sys
+        import openprogram_cli as stale
+        sys.path.insert(0, {str(ROOT)!r})
+        try:
+            import openprogram.cli
+        except ImportError as exc:
+            assert 'foreign openprogram_cli package' in str(exc)
+        else:
+            raise AssertionError('foreign package was accepted')
+        assert sys.modules['openprogram_cli'] is stale
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(tmp_path)},
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_python_cli_process_detection_includes_every_module_entry(monkeypatch) -> None:
+    import openprogram.cli as cli
+
+    for parent in ("openprogram", "cli", "openprogram_cli"):
+        monkeypatch.setattr(sys, "argv", [f"/tmp/{parent}/__main__.py"])
+        assert cli._is_cli_process()
 
 
 def test_python_cli_resolves_the_apps_cli_bundle(tmp_path, monkeypatch) -> None:

@@ -38,11 +38,9 @@ Or from CLI:
 ## Sub-packages
 
 - **`_execute/`** — execute_in_context
-- **`_frontend/`**
 - **`_model_listing/`** — Unified provider + model listing for the webui
 - **`graph_layout/`** — DAG layout pipeline
 - **`routes/`** — FastAPI route registrations split out from server.py by topic
-- **`static/`**
 - **`ws_actions/`** — WebSocket action handlers, split out from server._handle_ws_command
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

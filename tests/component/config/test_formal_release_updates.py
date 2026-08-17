@@ -49,6 +49,10 @@ def test_release_wheel_probe_runs_outside_the_checkout():
     assert "assert openprogram_cli.main is legacy_cli.main" in workflow
     assert 'openprogram_cli.build_parser().prog == "openprogram"' in workflow
     assert "is_relative_to(checkout)" in workflow
+    assert 'uv run --with "$wheel_path" --no-project -- openprogram --version' in workflow
+    assert 'python -P -m openprogram --version' in workflow
+    assert 'python -P -m openprogram.cli --version' in workflow
+    assert 'python -P -m openprogram_cli --version' in workflow
 
 
 def test_system_version_reports_managed_release(monkeypatch):

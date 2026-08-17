@@ -93,10 +93,12 @@ def test_tracked_top_level_directories_are_declared() -> None:
 
 def test_developer_scripts_do_not_live_at_the_repository_root() -> None:
     script_suffixes = {".py", ".ps1", ".sh"}
+    source_entry_modules = {"openprogram_cli.py"}
     misplaced = sorted(
         relative
         for relative in _tracked_paths()
         if "/" not in relative
+        and relative not in source_entry_modules
         and (ROOT / relative).is_file()
         and Path(relative).suffix in script_suffixes
     )

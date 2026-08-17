@@ -34,8 +34,4 @@ What the boundary is, on both platforms:
 
 - **`recoverable_delete.py`** — Best-effort recoverable deletion for local agent child processes
 
-## Sub-packages
-
-- **`shims/`**
-
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

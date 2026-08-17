@@ -113,6 +113,7 @@
   <h2>2. 顶层职责</h2>
   <pre>OpenProgram/
   openprogram/   OpenProgram Agent 核心与 Python SDK
+  openprogram_cli.py  未安装 source checkout 的 Python CLI 入口
   apps/
     server/      FastAPI、HTTP、WebSocket、认证与静态资源托管
     web/         Next.js Web 应用
@@ -130,13 +131,13 @@
   references/    参考实现快照与本地比较语料
   promo/         发布与宣传源文件
   site/          静态站点入口</pre>
-  <p><code>.github/</code>、<code>.codegraph/</code> 和 <code>.superpowers/</code> 是仓库基础设施，不是产品运行时目录。根目录只保留核心 package、应用 workspace、共享 package、项目元数据、入口文档、依赖锁和构建配置。应用专用脚本放在对应 <code>apps/&lt;name&gt;/scripts/</code>，跨应用脚本放在 <code>scripts/</code>。</p>
+  <p><code>.github/</code>、<code>.codegraph/</code> 和 <code>.superpowers/</code> 是仓库基础设施，不是产品运行时目录。根目录只保留核心 package、应用 workspace、共享 package、项目元数据、入口文档、依赖锁和构建配置。<code>openprogram_cli.py</code> 只为未安装 checkout 提供导入和 <code>python -m</code> 入口，不包含应用实现，也不进入 wheel。应用专用脚本放在对应 <code>apps/&lt;name&gt;/scripts/</code>，跨应用脚本放在 <code>scripts/</code>。</p>
   <p><code>skills/</code> 是 source checkout 的项目级技能来源；正式运行时默认技能位于 <code>openprogram/skills_bundled/</code> 并作为 package data 分发。两处用途不同，不互相复制为第二份运行时注册表。</p>
   <p><code>tests/</code> 中的 Python 用例使用 <code>tests/&lt;layer&gt;/&lt;product-domain&gt;/test_*.py</code>，按最强实际依赖选择层级。具体边界由 <a href="testing/test-system.html">Testing system</a> 和仓库 contracts 维护。</p>
 
   <h3>核心 package 与应用 package</h3>
   <p><code>openprogram/</code> 的一级目录只保留可独立说明的核心产品域或稳定协议边界，例如 <code>agent/</code>、<code>programs/</code>、<code>context/</code>、<code>memory/</code>、<code>providers/</code> 和 <code>runtime/</code>。FastAPI route、WebSocket handler、静态前端托管、Electron 与界面代码不属于核心 package。</p>
-  <p><code>apps/server/openprogram_server/</code> 是 Python 服务应用；<code>apps/cli/</code> 是 CLI 应用 workspace，Ink TUI 直接使用其中的 <code>src/</code>、<code>tests/</code> 和 <code>package.json</code>，后续迁移的 Python 应用装配位于 <code>apps/cli/python/openprogram_cli/</code>。迁移期间 <code>openprogram.webui</code> 与 <code>openprogram.cli</code> 只允许作为有明确删除期限的兼容入口，不继续承载新实现。</p>
+  <p><code>apps/server/openprogram_server/</code> 是 Python 服务应用；<code>apps/cli/</code> 是 CLI 应用 workspace，Ink TUI 使用其中的 <code>src/</code>、<code>tests/</code> 和 <code>package.json</code>，Python parser、dispatch、Rich fallback 与 setup flow 位于 <code>apps/cli/python/openprogram_cli/</code>。<code>openprogram.cli</code> 只保留兼容 loader 和 module entry；<code>openprogram.webui</code> 在 Server 后续批次完成前仍是部分兼容边界，两者均不承载新的应用实现。</p>
   <p><code>packages/</code> 不作为通用杂项目录。只有已经被两个及以上应用消费、具有稳定公共入口的协议类型或 UI package 才能进入；当前迁移只建立实际需要的 API/WS contracts，不预建其他 package。</p>
   <p><code>__pycache__/</code>、<code>.DS_Store</code>、构建产物和 Finder 冲突副本不是仓库结构。它们保持 Git ignored，可安全清理，但不能用作代码分层或验收证据。用户安装的 <code>programs/applications/</code> checkout 属于本地产品数据，不随源码目录整理删除。</p>
 
@@ -147,9 +148,9 @@
       <tbody>
         <tr>
           <td><code>openprogram/cli/</code></td>
-          <td>已经完成内部收拢，但仍位于核心 package</td>
-          <td><span class="state later">迁移批次</span></td>
-          <td>应用装配移动到 <code>apps/cli/python/openprogram_cli/</code>；在兼容期保留 <code>openprogram.cli</code> 导入和现有 console script 行为。</td>
+          <td>只保留兼容 loader、<code>python -m openprogram.cli</code> 入口和边界说明</td>
+          <td><span class="state now">已迁移</span></td>
+          <td>应用实现位于 <code>apps/cli/python/openprogram_cli/</code>；raw checkout、editable install 与 wheel 保留既有导入、三个 module entry 和 console script 行为。</td>
         </tr>
         <tr>
           <td><code>apps/desktop/main.js</code></td>
@@ -229,7 +230,7 @@
     <li>前端构建产物只进入 ignored build/staging 目录和最终发行包，不作为核心源码长期维护。</li>
     <li>公开文档构建不包含 <code>docs/superpowers/</code>，所有公开链接有效。</li>
     <li>设计导航按产品功能分组；源文件路径保持不变。</li>
-    <li>Git tracked 顶层目录必须在结构 contract 中声明，根目录不出现开发脚本。</li>
+    <li>Git tracked 顶层目录必须在结构 contract 中声明，根目录不出现开发脚本；不含实现的 source-checkout module entry 必须被 contract 单独列出。</li>
     <li>有效 README、技能和安装说明不得引用已删除的源码根路径。</li>
     <li>根目录不再保留旧的 <code>web/</code>、<code>desktop/</code> 和 <code>cli/</code> workspace；有效源码分别位于对应 <code>apps/</code> 子目录。</li>
     <li>一级 Python 包的目录 README 与 <code>__init__.py</code> docstring 保持同步。</li>
