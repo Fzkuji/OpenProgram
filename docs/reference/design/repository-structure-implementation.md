@@ -86,7 +86,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Python CLI package main integration | `f5878426` | integrated | Two-parent merge with current `main` at `c45617a4`; unrelated local icon, runtime-design, promo, and output changes remain outside the integration tree. |
 | Apps migration B1: Ink TUI workspace | `f4a3ea0e`, `669f5445` | implemented; reviewed | Moves the existing Node workspace from `cli/` to `apps/cli/`; updates the Python launcher, rescue probe, source installer, CI cache/working directories, repository contracts and current documentation paths. No UI or protocol behavior changes. |
 | Apps migration D/E: Web and Desktop workspaces | `44765788`, `f4e44429`, `e0a4825e` | implemented; reviewed | Moves the complete Next.js and Electron workspaces to `apps/web/` and `apps/desktop/`; updates runtime discovery, CI, packaging, release scripts, cross-workspace checks, tests and current documentation references. Existing UI and protocol behavior are unchanged. |
-| Apps migration C1: Server application assembly | `6b981b32` | implemented; review pending | Moves the FastAPI assembly into the installable `openprogram_server` application package. The legacy import resolves to the same module object; route and WebSocket modules remain for C2 because one route has unrelated active changes. |
+| Apps migration C1: Server application assembly | `6b981b32`, `6dc2f1e6`, `34966b16`, `c09b7933` | implemented; reviewed | Moves the FastAPI assembly into the installable `openprogram_server` application package. The legacy import resolves to the same module object, source checkouts reject an already-loaded foreign package, and the release probe imports only from the built wheel outside the checkout. Route and WebSocket modules remain for C2 because one route has unrelated active changes. |
 
 ## Verification record
 
@@ -152,8 +152,9 @@ pass — independent specification and quality re-review for the D/E migration a
 11 passed — Server package identity, health endpoint and built-frontend checks for `6b981b32`
 80 passed — Server state, route, WebSocket and session compatibility selection
 94 passed — release, distribution, packaged-file and apps-layout checks
-pass — isolated wheel imports `openprogram_server.server`; legacy `openprogram.webui.server` is the same module object
-pending — independent specification and quality review for `6b981b32`
+35 passed — Server application ownership, source-package precedence, foreign regular/namespace-package conflict, and release-probe contracts
+pass — external-directory wheel probe imports Agent Core, canonical Server, compatibility Server and packaged frontend only from the built wheel
+pass — independent specification and quality review for Server C1 through `c09b7933`
 ```
 
 ## Deferred boundaries
