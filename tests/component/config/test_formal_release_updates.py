@@ -72,14 +72,6 @@ def test_system_version_reports_managed_release(monkeypatch):
     }
 
 
-def test_legacy_settings_reads_the_runtime_version():
-    from pathlib import Path
-
-    source = Path("openprogram/webui/static/js/settings.js").read_text(encoding="utf-8")
-    assert ">0.1.0<" not in source
-    assert "fetch('/api/system/version')" in source
-
-
 def test_automatic_update_design_is_one_accessible_review_page():
     design = Path(
         "docs/reference/design/distribution/automatic-updates.html"

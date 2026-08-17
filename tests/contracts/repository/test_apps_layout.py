@@ -113,6 +113,13 @@ def test_server_application_assembly_is_owned_by_apps_workspace() -> None:
     ).count("sys.modules[__name__] = _server") == 1
 
 
+def test_removed_legacy_static_ui_does_not_return() -> None:
+    assert not any(
+        path.is_file() for path in (ROOT / "openprogram/webui/static").rglob("*")
+    )
+    assert (ROOT / "apps/web/app").is_dir()
+
+
 def test_source_checkout_server_wins_over_an_older_installed_package(
     tmp_path,
 ) -> None:
