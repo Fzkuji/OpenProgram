@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useRouter } from "next/navigation";
 import {
   Boxes,
   ChevronRight,
@@ -11,14 +12,19 @@ import {
   GitBranch,
   Network,
   RefreshCw,
+  Star,
   Workflow,
   Wrench,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ManagePageHeader, managePageStyles } from "@/components/ui/manage-page";
 import { SearchInput } from "@/components/ui/search-input";
 import { useTranslation } from "@/lib/i18n";
 import { jsonFetch } from "@/lib/net/fetch-client";
+import { runtimeState } from "@/lib/runtime-bridge/state";
+import { useFunctions } from "@/lib/state/functions-store";
+import type { FunctionsMeta } from "@/lib/types";
 
 import {
   buildCallTreeRows,
@@ -66,6 +72,7 @@ function EntryIcon({ entry, expanded }: { entry: ExplorerEntry; expanded: boolea
 
 export function ProgramsPage() {
   const { t, text } = useTranslation();
+  const router = useRouter();
   const [directories, setDirectories] = useState<Record<string, ExplorerEntry[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set([""]));
   const [selected, setSelected] = useState<string | null>(null);
@@ -76,6 +83,7 @@ export function ProgramsPage() {
   const [search, setSearch] = useState("");
   const [view, setView] = useState<"tree" | "graph">("tree");
   const [reloadToken, setReloadToken] = useState(0);
+  const [meta, setMeta] = useState<FunctionsMeta>({ favorites: [], folders: {}, icons: {} });
 
   const loadDirectory = useCallback(async (path: string, signal?: AbortSignal) => {
     const query = path ? `?${new URLSearchParams({ path })}` : "";
@@ -118,6 +126,26 @@ export function ProgramsPage() {
 
   useEffect(() => {
     const controller = new AbortController();
+    void jsonFetch<FunctionsMeta>("/api/programs/meta", { signal: controller.signal })
+      .then((next) => {
+        setMeta(next);
+        runtimeState.programsMeta = {
+          favorites: [...next.favorites],
+          folders: { ...next.folders },
+          icons: { ...(next.icons || {}) },
+        };
+        useFunctions.getState().setMeta(next);
+      })
+      .catch((cause) => {
+        if ((cause as Error).name !== "AbortError") {
+          setError(text("Favorites could not be loaded.", "无法加载收藏。"));
+        }
+      });
+    return () => controller.abort();
+  }, [text]);
+
+  useEffect(() => {
+    const controller = new AbortController();
     let cancelled = false;
     if (!selected) {
       setLogic(null);
@@ -147,6 +175,7 @@ export function ProgramsPage() {
   }, [selected, text]);
 
   const selectedNode = logic?.nodes.find((node) => node.id === logic.root) ?? null;
+  const isFavorite = selectedNode ? meta.favorites.includes(selectedNode.name) : false;
   const callTree = useMemo(() => logic ? buildCallTreeRows(logic) : { rows: [], truncated: false }, [logic]);
 
   async function toggleDirectory(path: string) {
@@ -216,16 +245,34 @@ export function ProgramsPage() {
     setReloadToken((value) => value + 1);
   }
 
+  async function toggleFavorite() {
+    if (!selectedNode) return;
+    const favorites = isFavorite
+      ? meta.favorites.filter((name) => name !== selectedNode.name)
+      : [...meta.favorites, selectedNode.name];
+    const next = { ...meta, favorites };
+    setMeta(next);
+    runtimeState.programsMeta = {
+      favorites: [...next.favorites],
+      folders: { ...next.folders },
+      icons: { ...(next.icons || {}) },
+    };
+    useFunctions.getState().setMeta(next);
+    await fetch("/api/programs/meta", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(next),
+    }).catch(() => undefined);
+  }
+
   return (
     <div className="main">
-      <div className={styles.page}>
-        <header className={styles.topbar}>
-          <div><h1>{t("nav.programs")}</h1><p>{text("Browse source files and inspect static call relationships.", "浏览源码文件并检查静态调用关系。")}</p></div>
-          <div className={styles.toolbar}>
-            <SearchInput placeholder={text("Search loaded files…", "搜索已加载文件…")} value={search} onChange={setSearch} />
-            <Button variant="outline" size="sm" onClick={() => void refreshPrograms()}><RefreshCw size={14} />{text("Refresh", "刷新")}</Button>
-          </div>
-        </header>
+      <div className={managePageStyles.view}>
+        <ManagePageHeader
+          title={t("nav.programs")}
+          toolbar={<SearchInput className="w-[min(320px,32vw)]" placeholder={text("Search loaded files…", "搜索已加载文件…")} value={search} onChange={setSearch} />}
+          actions={[{ label: text("Refresh", "刷新"), onClick: () => { void refreshPrograms(); } }]}
+        />
         <div className={styles.workspace}>
           <aside className={styles.explorer} data-testid="programs-explorer">
             <div className={styles.explorerHeader}><span>{text("Explorer", "文件")}</span><code>{ROOT_LABEL}</code></div>
@@ -250,7 +297,22 @@ export function ProgramsPage() {
                 <div className={styles.entityHeader}>
                   <span className={styles.entityIcon}>{selectedNode.program_kind === "workflow" ? <Workflow size={20} /> : selectedNode.program_kind === "application" ? <Boxes size={20} /> : <Wrench size={20} />}</span>
                   <div><h2>{selectedNode.name}</h2><p>{kindLabel(selectedNode.program_kind, text)}</p></div>
-                  <span className={styles.headBadge}>HEAD</span>
+                  <div className={styles.entityActions}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={isFavorite ? text("Unfavorite", "取消收藏") : text("Favorite", "收藏")}
+                      aria-pressed={isFavorite}
+                      title={isFavorite ? text("Unfavorite", "取消收藏") : text("Favorite", "收藏")}
+                      onClick={() => void toggleFavorite()}
+                    >
+                      <Star className={isFavorite ? styles.favoriteIconActive : styles.favoriteIcon} fill={isFavorite ? "currentColor" : "none"} />
+                    </Button>
+                    <Button onClick={() => router.push(`/chat?${new URLSearchParams({ run: selectedNode.name, cat: selectedNode.program_kind })}`)}>
+                      {text("Use", "使用")}
+                    </Button>
+                    <span className={styles.headBadge}>HEAD</span>
+                  </div>
                 </div>
                 <div className={styles.summary}><span>{logic.edges.filter((edge) => edge.source === logic.root).length} {text("direct calls", "个直接调用")}</span><span>{Math.max(0, logic.nodes.length - 1)} {text("reachable Programs", "个可达 Program")}</span><span>{logic.edges.length} {text("edges", "条边")}</span></div>
                 {logic.analysis_complete === false ? <div className={styles.analysisWarning} role="status">{text("Partial result: some source files were not analyzed because they exceed the analysis limits.", "部分结果：部分源码超过分析限制，未纳入调用关系。")}</div> : null}

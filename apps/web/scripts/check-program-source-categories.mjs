@@ -8,6 +8,8 @@ const logic = readFileSync(new URL("components/programs/programs-logic.ts", root
 const css = readFileSync(new URL("components/programs/programs-page.module.css", root), "utf8");
 
 assert.match(route, /@\/components\/programs\/programs-page/);
+assert.match(page, /ManagePageHeader/);
+assert.doesNotMatch(page, /Browse source files and inspect static call relationships/);
 assert.match(page, /\/api\/programs\/explorer/);
 assert.match(page, /\/api\/programs\/logic/);
 assert.match(page, /data-testid="programs-explorer"/);
@@ -20,6 +22,13 @@ assert.match(logic, /rows\.length >= limit/);
 assert.match(page, /logic\.edges\.map/);
 assert.doesNotMatch(page, /graphColumns|graphArrow/);
 assert.match(page, /cancelled = true/);
+assert.match(page, /fetch\("\/api\/programs\/meta"/);
+assert.match(page, /method:\s*"POST"/);
+assert.match(page, /runtimeState\.programsMeta\s*=/);
+assert.match(page, /useFunctions\.getState\(\)\.setMeta/);
+assert.match(page, /aria-pressed=\{isFavorite\}/);
+assert.match(page, /router\.push\(`\/chat\?\$\{new URLSearchParams\(\{ run: selectedNode\.name/);
+assert.match(page, /text\("Use",\s*"使用"\)/);
 assert.match(css, /grid-template-columns:\s*var\(--programs-explorer-width\)\s+minmax\(0,\s*1fr\)/);
 assert.doesNotMatch(page, /All Programs|Uncategorized|ProfileNavRow/);
 

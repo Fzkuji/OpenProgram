@@ -1,50 +1,11 @@
-.page {
-  height: 100%;
-  min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  overflow: hidden;
-  color: var(--text-primary);
-  background: var(--bg-primary);
-}
-
-.topbar {
-  min-height: 74px;
-  padding: 16px 22px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-}
-
-.topbar h1,
-.topbar p,
 .entityHeader h2,
 .entityHeader p {
   margin: 0;
 }
 
-.topbar h1 {
-  font-size: 22px;
-  line-height: 1.25;
-  font-weight: 650;
-}
-
-.topbar p {
-  margin-top: 3px;
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .workspace {
   --programs-explorer-width: 310px;
+  flex: 1;
   min-height: 0;
   display: grid;
   grid-template-columns: var(--programs-explorer-width) minmax(0, 1fr);
@@ -284,6 +245,21 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
+}
+
+.entityActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.favoriteIcon,
+.favoriteIconActive {
+  color: var(--text-muted);
+}
+
+.favoriteIconActive {
+  color: var(--accent-yellow);
 }
 
 .entityIcon {
