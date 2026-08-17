@@ -18,49 +18,18 @@
  *   - `useSessionStore` is still used for `openFnForm` plumbing
  *     (clickFunction is the global that calls it).
  *
- * Behaviours:
- *   - New chat   → router.push('/chat') + clear active session.
- *   - Programs   → /programs
- *   - Memory     → /memory
- *   - Chats      → /chats
- *   - Click conv → /s/<id>
- *   - Fav click  → `clickFunction()` (opens fn form via store).
- *   - Refresh    → `refreshFunctionsList()` (re-fetch + re-render).
- *   - Collapse   → CSS class toggle on `.sidebar`, persisted to
- *                  localStorage as `sidebarOpen`. We also write
- *                  `runtimeState.sidebarOpen` so non-React readers
- *                  stay in sync.
+ * This shell owns collapse state, new-chat behavior, favourites and
+ * sessions. Fixed navigation and its refresh action live in
+ * `sidebar-primary-nav.tsx`.
  */
 
 import { useEffect, useLayoutEffect, useState, useRef } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-// Sidebar icons. The six nav glyphs (functions / skills / plugins / mcp /
-// memory / chats) AND the collapse toggle use the ANIMATED line set
-// (pqoqubbw/icons — Lucide + Framer Motion, ./animated-nav-icons), each
-// driven from its row's / button's hover. The toggle swaps by state:
-// panel-left-close (chevron ‹) when open, panel-left-open (›) when
-// collapsed. The other two chrome actions keep their own existing motion
-// and just use the lucide LINE glyph: refresh = RefreshCw (spins on
-// click). New-chat uses the animated PlusIcon (spins 180° on row hover);
-// its circular badge still scales/brightens.
-import { RefreshCw } from "lucide-react";
 import {
   type AnimatedNavIconHandle,
-  BotIcon,
-  BoxesIcon,
-  BrainIcon,
-  ClockIcon,
-  FoldersIcon,
-  GraduationCapIcon,
-  LayersIcon,
-  MessageCircleIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   PlusIcon,
-  WorkflowIcon,
 } from "../animated-icons";
-import { refreshFunctionsList } from "@/lib/state/functions-actions";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
 import { activateOnKey } from "@/lib/utils";
@@ -69,13 +38,11 @@ import { SessionsList } from "./sessions-list";
 import { FavoritesList } from "./favorites-list";
 import { SectionHeader } from "./section-header";
 import {
-  sidebarNavActionClass,
-  sidebarNavIconClass,
-  sidebarNavItemActiveClass,
   sidebarNavItemClass,
   sidebarNavLabelClass,
   sidebarToggleClass,
 } from "./nav-classes";
+import { SidebarPrimaryNav } from "./sidebar-primary-nav";
 import { useWindowGlobals } from "./use-window-globals";
 import { runtimeState } from "@/lib/runtime-bridge/state";
 import { newSession } from "@/lib/runtime-bridge/conversations";
@@ -91,7 +58,6 @@ function readPersistedSidebarOpen(): boolean {
 }
 
 export function Sidebar() {
-  const pathname = usePathname();
   const { t, text } = useTranslation();
 
   const [open, setOpen] = useState<boolean>(true);
@@ -106,30 +72,14 @@ export function Sidebar() {
   // 下面滚动区一旦向下滚动就为 true —— 驱动固定 New chat 行底部的
   // 分隔线（Claude 风格）。
   const [navScrolled, setNavScrolled] = useState(false);
-  // Refresh-button states (matches legacy spin → checkmark → revert).
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshDone, setRefreshDone] = useState(false);
-  const refreshSvgRef = useRef<SVGSVGElement>(null);
-  // Animated nav icons (pqoqubbw/icons) are driven from the row's hover
-  // — each Link's onMouseEnter/Leave calls the icon handle, so the whole
-  // row is the hover target (claude.ai-style). Pilot: functions / skills
-  // / mcp only.
-  const functionsIconRef = useRef<AnimatedNavIconHandle>(null);
-  const agentsIconRef = useRef<AnimatedNavIconHandle>(null);
-  const skillsIconRef = useRef<AnimatedNavIconHandle>(null);
-  const projectsIconRef = useRef<AnimatedNavIconHandle>(null);
-  const mcpIconRef = useRef<AnimatedNavIconHandle>(null);
-  const pluginsIconRef = useRef<AnimatedNavIconHandle>(null);
-  const memoryIconRef = useRef<AnimatedNavIconHandle>(null);
-  const schedulerIconRef = useRef<AnimatedNavIconHandle>(null);
-  const chatsIconRef = useRef<AnimatedNavIconHandle>(null);
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
   const newChatIconRef = useRef<AnimatedNavIconHandle>(null);
 
   const { availableFunctions, programsMeta } = useWindowGlobals();
   const favSet = new Set(programsMeta.favorites || []);
-  const hasFavorites =
-    (availableFunctions || []).some((f) => favSet.has(f.name));
+  const hasFavorites = (availableFunctions || []).some((f) =>
+    favSet.has(f.name),
+  );
 
   // 挂载时从 localStorage 同步。必须在首次绘制前（useLayoutEffect）：
   // useEffect 在绘制后才跑，收起状态刷新页面会先画一帧展开、再播
@@ -167,29 +117,6 @@ export function Sidebar() {
     });
   }
 
-  // Auto-refresh the function catalogue: poll every 30s + refetch
-  // whenever the tab regains focus. Drops new external harnesses
-  // (symlinks added under openprogram/programs/functions/agentic/) into the
-  // sidebar without the user having to hit the refresh button.
-  useEffect(() => {
-    let cancelled = false;
-    const tick = () => {
-      if (!cancelled && document.visibilityState === "visible") {
-        void refreshFunctionsList();
-      }
-    };
-    const id = window.setInterval(tick, 30_000);
-    const onVis = () => {
-      if (document.visibilityState === "visible") void refreshFunctionsList();
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-      document.removeEventListener("visibilitychange", onVis);
-    };
-  }, []);
-
   function newChat() {
     // Focus-or-create（浏览器地址栏语义）：已经开着的"新会话"界面
     // ——未发消息的草稿会话 tab 或 NTP tab——直接跳过去，而不是每点
@@ -198,7 +125,9 @@ export function Sidebar() {
     const existingDraft = s.tabs.find(
       (t) => t.kind === "session" && t.draft && t.sessionId,
     );
-    const existingNtp = existingDraft ? null : s.tabs.find((t) => t.kind === "ntp");
+    const existingNtp = existingDraft
+      ? null
+      : s.tabs.find((t) => t.kind === "ntp");
     let draftId: string;
     if (existingDraft) {
       if (s.activeId !== existingDraft.id) s.setActive(existingDraft.id);
@@ -214,50 +143,6 @@ export function Sidebar() {
     newSession(draftId);
     return draftId;
   }
-
-  function doRefresh() {
-    if (refreshing) return;
-    setRefreshing(true);
-    // Re-fetch /api/programs via the React-side helper; it mirrors the
-    // result into the zustand store and `runtimeState.availableFunctions`
-    // so React + non-React consumers stay in sync.
-    void refreshFunctionsList();
-    // Mirror legacy spin → tick → revert timing.
-    const svg = refreshSvgRef.current;
-    if (svg) {
-      const handler = () => {
-        svg.removeEventListener("animationend", handler);
-        setRefreshing(false);
-        setRefreshDone(true);
-        setTimeout(() => setRefreshDone(false), 800);
-      };
-      svg.addEventListener("animationend", handler);
-      // Safety net: animation may not fire if user dropped the tab; reset after 1.2s.
-      setTimeout(() => {
-        if (refreshing) setRefreshing(false);
-      }, 1200);
-    } else {
-      setTimeout(() => {
-        setRefreshing(false);
-        setRefreshDone(true);
-        setTimeout(() => setRefreshDone(false), 800);
-      }, 600);
-    }
-  }
-
-  // Sync `.active` highlighting on nav items based on the route — purely
-  // visual; the AppShell click-interceptor handles the actual routing.
-  const navActive = {
-    mcp: pathname.startsWith("/mcp"),
-    programs: pathname.startsWith("/programs"),
-    agents: pathname.startsWith("/agents"),
-    memory: pathname.startsWith("/memory"),
-    scheduler: pathname.startsWith("/scheduler"),
-    chats: pathname.startsWith("/chats"),
-    skills: pathname.startsWith("/skills"),
-    plugins: pathname.startsWith("/plugins") || pathname.startsWith("/plugin/"),
-    projects: pathname.startsWith("/projects"),
-  };
 
   return (
     <div
@@ -295,9 +180,7 @@ export function Sidebar() {
       <div
         className={
           "flex h-[48px] shrink-0 items-center box-border " +
-          (open
-            ? "justify-between p-[8px]"
-            : "justify-center px-0 py-[8px]")
+          (open ? "justify-between p-[8px]" : "justify-center px-0 py-[8px]")
         }
       >
         <div
@@ -376,244 +259,71 @@ export function Sidebar() {
       {/* New chat 以下（导航链接 + 收藏 + 会话列表）一起滚动。滚动区外
           包一层 relative 容器，用来锚定「滚动时才出现的浮层」。 */}
       <div className="relative flex flex-1 min-h-0 flex-col">
-      {/* 滚动时才出现的浮层：绝对定位贴在滚动区顶部，画一小段空白 +
+        {/* 滚动时才出现的浮层：绝对定位贴在滚动区顶部，画一小段空白 +
           底部分隔线，盖在滚动内容之上。默认（未滚动）display:none —— 完全
           不存在、不占布局、不与任何组件产生间距。滚回顶部即消失。 */}
-      {navScrolled && (
-        <div
-          className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[8px]
+        {navScrolled && (
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[8px]
             bg-[var(--bg-sidebar,var(--bg-secondary))]"
-          style={{ boxShadow: "inset 0 -1px 0 0 var(--border)" }}
-          aria-hidden="true"
-        />
-      )}
-      <div
-        className="flex flex-1 min-h-0 flex-col overflow-y-auto overflow-x-hidden
+            style={{ boxShadow: "inset 0 -1px 0 0 var(--border)" }}
+            aria-hidden="true"
+          />
+        )}
+        <div
+          className="flex flex-1 min-h-0 flex-col overflow-y-auto overflow-x-hidden
           [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        onScroll={(e) => {
-          const s = e.currentTarget.scrollTop > 0;
-          setNavScrolled((prev) => (prev === s ? prev : s));
-        }}
-      >
-        <div className="flex flex-col gap-px shrink-0 px-[8px] pt-px">
-        <Link
-          href="/programs"
-          className={
-            sidebarNavItemClass +
-            (navActive.programs ? " " + sidebarNavItemActiveClass : "")
-          }
-          id="navPrograms"
-          onMouseEnter={() => functionsIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => functionsIconRef.current?.stopAnimation?.()}
+          onScroll={(e) => {
+            const s = e.currentTarget.scrollTop > 0;
+            setNavScrolled((prev) => (prev === s ? prev : s));
+          }}
         >
-          <span className={sidebarNavIconClass}>
-            <WorkflowIcon ref={functionsIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>{t("nav.programs")}</span>
-          <span
-            className={
-              sidebarNavActionClass +
-              " inline-flex size-[22px] items-center justify-center rounded-[5px]" +
-              " [transition:background_0.15s,color_0.15s,opacity_0.15s]" +
-              " hover:bg-bg-hover hover:text-text-bright hover:!opacity-100" +
-              " active:bg-bg-tertiary" +
-              (refreshing || refreshDone ? " !opacity-100" : "") +
-              (refreshDone ? " !text-[#4ade80]" : "")
-            }
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              doRefresh();
-            }}
-            title={t("sidebar.refresh")}
-            aria-label={t("sidebar.refresh")}
-          >
-            {refreshDone ? (
-              <span aria-hidden="true">&#10003;</span>
-            ) : (
-              <RefreshCw
-                ref={refreshSvgRef}
-                size={16}
-                strokeWidth={2}
-                className={refreshing ? "animate-spin-refresh" : ""}
-              />
-            )}
-          </span>
-        </Link>
+          <SidebarPrimaryNav />
 
-        <Link
-          href="/agents"
-          className={
-            sidebarNavItemClass +
-            (navActive.agents ? " " + sidebarNavItemActiveClass : "")
-          }
-          id="navAgents"
-          onMouseEnter={() => agentsIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => agentsIconRef.current?.stopAnimation?.()}
-        >
-          <span className={sidebarNavIconClass}>
-            <BotIcon ref={agentsIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>{t("nav.agents")}</span>
-        </Link>
-
-        <Link
-          href="/skills"
-          className={
-            sidebarNavItemClass +
-            (navActive.skills ? " " + sidebarNavItemActiveClass : "")
-          }
-          id="navSkills"
-          onMouseEnter={() => skillsIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => skillsIconRef.current?.stopAnimation?.()}
-        >
-          <span className={sidebarNavIconClass}>
-            <GraduationCapIcon ref={skillsIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>{t("nav.skills")}</span>
-        </Link>
-
-        <Link
-          href="/projects"
-          className={
-            sidebarNavItemClass +
-            (navActive.projects ? " " + sidebarNavItemActiveClass : "")
-          }
-          id="navProjects"
-          onMouseEnter={() => projectsIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => projectsIconRef.current?.stopAnimation?.()}
-        >
-          <span className={sidebarNavIconClass}>
-            <FoldersIcon ref={projectsIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>{t("nav.projects")}</span>
-        </Link>
-
-        <Link
-          href="/plugins"
-          className={
-            sidebarNavItemClass +
-            (navActive.plugins ? " " + sidebarNavItemActiveClass : "")
-          }
-          id="navPlugins"
-          onMouseEnter={() => pluginsIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => pluginsIconRef.current?.stopAnimation?.()}
-        >
-          <span className={sidebarNavIconClass}>
-            <BoxesIcon ref={pluginsIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>{t("nav.plugins")}</span>
-        </Link>
-
-        <Link
-          href="/mcp"
-          className={
-            sidebarNavItemClass +
-            (navActive.mcp ? " " + sidebarNavItemActiveClass : "")
-          }
-          id="navMcp"
-          onMouseEnter={() => mcpIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => mcpIconRef.current?.stopAnimation?.()}
-        >
-          <span className={sidebarNavIconClass}>
-            <LayersIcon ref={mcpIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>{t("nav.mcp")}</span>
-        </Link>
-
-        <Link
-          href="/scheduler"
-          className={
-            sidebarNavItemClass +
-            (navActive.scheduler ? " " + sidebarNavItemActiveClass : "")
-          }
-          id="navScheduler"
-          onMouseEnter={() => schedulerIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => schedulerIconRef.current?.stopAnimation?.()}
-        >
-          <span className={sidebarNavIconClass}>
-            <ClockIcon ref={schedulerIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>{t("nav.scheduler")}</span>
-        </Link>
-
-        <Link
-          href="/memory"
-          className={
-            sidebarNavItemClass +
-            (navActive.memory ? " " + sidebarNavItemActiveClass : "")
-          }
-          id="navMemory"
-          onMouseEnter={() => memoryIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => memoryIconRef.current?.stopAnimation?.()}
-        >
-          <span className={sidebarNavIconClass}>
-            <BrainIcon ref={memoryIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>{t("nav.memory")}</span>
-        </Link>
-
-        <Link
-          href="/chats"
-          className={
-            sidebarNavItemClass +
-            " sidebar-nav-chats" +
-            (navActive.chats ? " " + sidebarNavItemActiveClass : "")
-          }
-          id="navChats"
-          onMouseEnter={() => chatsIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => chatsIconRef.current?.stopAnimation?.()}
-        >
-          <span className={sidebarNavIconClass}>
-            <MessageCircleIcon ref={chatsIconRef} size={20} aria-hidden="true" />
-          </span>
-          <span className={sidebarNavLabelClass}>{t("nav.chats")}</span>
-        </Link>
-      </div>
-
-      {/* Favorite functions — only when at least one favourite exists
+          {/* Favorite functions — only when at least one favourite exists
           and the sidebar isn't collapsed. */}
-      {open && hasFavorites && (
-        <SidebarSection
-          id="favSection"
-          title={t("sidebar.favorite_functions")}
-          collapsed={favCollapsed}
-          onToggle={() => setFavCollapsed((v) => !v)}
-          // px-[8px] on the SECTION (not just the list) so the header
-          // label lands at the same 16px indent as the Recents section
-          // headers below — those sit inside #convList's px-[8px] AND
-          // their own SectionHeader px-[8px] (8+8). Without it the fav
-          // header was 8px too far left of "Today" / "Yesterday".
-          // No pt here: the SectionHeader's own pt-[15px] is the single
-          // group separator. An extra pt-[16px] used to STACK on it, so
-          // major groups (Favorites / Recents) sat ~16px lower than the
-          // date sub-buckets — visibly inconsistent + too much empty
-          // space above the section.
-          // pb-[5px]: a small extra gap BELOW Favorites so the function
-          // area reads as a distinct block from the conversation groups
-          // that follow (only present when there are favourites).
-          className="px-[8px] pb-[5px]"
-        >
-          <div id="favList" className="flex flex-col gap-px">
-            <FavoritesList />
-          </div>
-        </SidebarSection>
-      )}
+          {open && hasFavorites && (
+            <SidebarSection
+              id="favSection"
+              title={t("sidebar.favorite_functions")}
+              collapsed={favCollapsed}
+              onToggle={() => setFavCollapsed((v) => !v)}
+              // px-[8px] on the SECTION (not just the list) so the header
+              // label lands at the same 16px indent as the Recents section
+              // headers below — those sit inside #convList's px-[8px] AND
+              // their own SectionHeader px-[8px] (8+8). Without it the fav
+              // header was 8px too far left of "Today" / "Yesterday".
+              // No pt here: the SectionHeader's own pt-[15px] is the single
+              // group separator. An extra pt-[16px] used to STACK on it, so
+              // major groups (Favorites / Recents) sat ~16px lower than the
+              // date sub-buckets — visibly inconsistent + too much empty
+              // space above the section.
+              // pb-[5px]: a small extra gap BELOW Favorites so the function
+              // area reads as a distinct block from the conversation groups
+              // that follow (only present when there are favourites).
+              className="px-[8px] pb-[5px]"
+            >
+              <div id="favList" className="flex flex-col gap-px">
+                <FavoritesList />
+              </div>
+            </SidebarSection>
+          )}
 
-      {open && (
-        // The conversation list — classic Recents (date buckets by
-        // default; State / Flat via the filter's Group-by row), or the
-        // project folder tree when Group-by → Project. In project mode
-        // the group headers' ＋ buttons run the same newChat flow as
-        // the nav item above, then record the project for that draft key.
-        <div id="convSection" className="flex flex-col">
-          <div id="convList" className="flex flex-col gap-px px-[8px]">
-            <SessionsList onNewChat={newChat} />
-          </div>
+          {open && (
+            // The conversation list — classic Recents (date buckets by
+            // default; State / Flat via the filter's Group-by row), or the
+            // project folder tree when Group-by → Project. In project mode
+            // the group headers' ＋ buttons run the same newChat flow as
+            // the nav item above, then record the project for that draft key.
+            <div id="convSection" className="flex flex-col">
+              <div id="convList" className="flex flex-col gap-px px-[8px]">
+                <SessionsList onNewChat={newChat} />
+              </div>
+            </div>
+          )}
         </div>
-      )}
       </div>
-      </div>{/* /relative 浮层容器 */}
+      {/* /relative 浮层容器 */}
 
       {/* User menu footer — rendered directly here (no portal). The
          AppShell's `#userMenuFooterMount` portal logic is now a no-op

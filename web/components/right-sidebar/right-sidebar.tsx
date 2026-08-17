@@ -44,17 +44,20 @@ import {
   PanelLeftOpenIcon,
 } from "../animated-icons";
 import { FileTree } from "../files/file-tree";
-import { renderMarkdown, useMarkdownReady } from "../chat/messages/markdown";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useCurrentProject } from "@/lib/state/files-shared";
 import { setRightDockApi } from "@/lib/right-dock";
 import { activateOnKey } from "@/lib/utils";
 import { useResizableRail } from "../layout/use-resizable-rail";
+import {
+  DetailPanel,
+  SessionViewSwitch,
+  VIEW_CONTEXT,
+  VIEW_DETAIL,
+} from "./detail-panel";
 
 // View IDs that round-trip through the `data-view` attribute — e.g.
 // "detail" picks `<div data-view="detail">`.
-const VIEW_DETAIL = "detail";
-const VIEW_CONTEXT = "context";
 const VIEW_FILES = "files";
 
 export function RightSidebar() {
@@ -221,7 +224,8 @@ export function RightSidebar() {
             靠 <SessionViewSwitch /> 切换。 */}
         <div
           className={
-            sidebarNavItemClass + " right-nav-item" +
+            sidebarNavItemClass +
+            " right-nav-item" +
             (view === VIEW_FILES ? " " + sidebarNavItemActiveClass : "")
           }
           data-view={VIEW_FILES}
@@ -246,7 +250,9 @@ export function RightSidebar() {
           {treeProjectId ? (
             <FileTree projectId={treeProjectId} />
           ) : (
-            <div style={{ padding: 16, fontSize: 13, color: "var(--text-dim)" }}>
+            <div
+              style={{ padding: 16, fontSize: 13, color: "var(--text-dim)" }}
+            >
               {text("Bind a project to browse files", "绑定项目后可浏览文件")}
             </div>
           )}
@@ -265,206 +271,5 @@ export function RightSidebar() {
         </div>
       </div>
     </aside>
-  );
-}
-
-/**
- * Entry point for the two DAG-subordinate views. Detail and Context are
- * not top-level destinations (no icon-rail row): they only mean anything
- * once a node in the center DAG perspective is selected, so the switch
- * appears once there is a selection and lets the two swap places.
- *
- * `nodeSelected` (not `detailNode`) is the gate, because both selection
- * paths set it: React callers via the store's showDetail, and the DAG's
- * `showDetail` in runtime-bridge/ui.ts, which paints #detailBody itself
- * and would otherwise leave the switch hidden.
- */
-function SessionViewSwitch({ current }: { current: string }) {
-  const { text } = useTranslation();
-  const selected = useSessionStore((s) => s.nodeSelected);
-  const setRightDockView = useSessionStore((s) => s.setRightDockView);
-  if (!selected) return null;
-
-  const options: Array<{ view: string; label: string }> = [
-    { view: VIEW_DETAIL, label: text("Details", "详情") },
-    { view: VIEW_CONTEXT, label: text("Context", "上下文") },
-  ];
-  return (
-    <div
-      className="session-view-switch"
-      role="tablist"
-      aria-label={text("Selected node views", "选中节点的视图")}
-    >
-      {options.map((option) => (
-        <button
-          key={option.view}
-          type="button"
-          role="tab"
-          aria-selected={current === option.view}
-          className={
-            "session-view-switch-btn" +
-            (current === option.view ? " is-active" : "")
-          }
-          onClick={() => setRightDockView(option.view)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-/**
- * One labelled block in the Details view.
- *
- * Value rendering, in order:
- *   * non-string (params, attempts) → pretty JSON in the code block;
- *   * a string that parses as a JSON object/array → re-indented JSON,
- *     so a tool result that arrived as one long `{"a":1,...}` line is
- *     readable instead of a wrapped wall;
- *   * a string that reads as Markdown (fences / headings / lists /
- *     tables / links) → the *chat* markdown renderer, so LLM replies
- *     look the same here as in the bubble;
- *   * anything else → plain preformatted text.
- *
- * `.detail-code` already scrolls at max-height 300px, so long values
- * stay contained without new CSS.
- */
-function looksLikeMarkdown(s: string): boolean {
-  return /(^|\n)\s*(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|\|)|```|\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*/.test(s);
-}
-
-function DetailBlock({
-  title,
-  value,
-  danger,
-}: {
-  title: string;
-  value: unknown;
-  danger?: boolean;
-}) {
-  // Subscribe to the markdown-ready gate so a block painted before the
-  // shared `renderMd` global lands re-renders once it does.
-  useMarkdownReady();
-  if (value === undefined || value === null) return null;
-
-  let body: React.ReactNode;
-  if (typeof value !== "string") {
-    body = <div className="detail-code">{JSON.stringify(value, null, 2)}</div>;
-  } else {
-    const trimmed = value.trim();
-    let pretty: string | null = null;
-    if (/^[[{]/.test(trimmed)) {
-      try {
-        pretty = JSON.stringify(JSON.parse(trimmed), null, 2);
-      } catch {
-        pretty = null;
-      }
-    }
-    if (pretty !== null) {
-      body = <div className="detail-code">{pretty}</div>;
-    } else if (!danger && looksLikeMarkdown(value)) {
-      body = (
-        <div
-          className="detail-code chat-text"
-          style={{ whiteSpace: "normal", fontFamily: "inherit" }}
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(value) }}
-        />
-      );
-    } else {
-      body = (
-        <div
-          className="detail-code"
-          style={danger ? { color: "var(--accent-red)" } : undefined}
-        >
-          {value}
-        </div>
-      );
-    }
-  }
-
-  return (
-    <div className="detail-section">
-      <div className="detail-section-title">{title}</div>
-      {body}
-    </div>
-  );
-}
-
-function DetailPanel() {
-  const { t } = useTranslation();
-  const node = useSessionStore((s) => s.detailNode);
-
-  if (!node) {
-    return (
-      <div id="detailBody" className="detail-body">
-        <div className="detail-empty">
-          {t("right.no_execution")}
-          <br />
-          <span>{t("right.no_execution_hint")}</span>
-        </div>
-      </div>
-    );
-  }
-
-  const statusIcon = node.status === "success" ? "✓" : node.status === "error" ? "✗" : "●";
-  const dur = node.duration_ms && node.duration_ms > 0 ? `${Math.round(node.duration_ms)}ms` : "running...";
-
-  const filteredParams = node.params
-    ? Object.fromEntries(Object.entries(node.params).filter(([k]) => k !== "runtime" && k !== "callback"))
-    : null;
-
-  return (
-    <div id="detailBody" className="detail-body">
-      <div className="detail-section">
-        <div className="detail-section-title">Status</div>
-        <div className={`detail-badge ${node.status}`}>
-          {statusIcon} {node.status} &middot; {dur}
-        </div>
-      </div>
-
-      <div className="detail-section">
-        <div className="detail-section-title">Path</div>
-        <div className="detail-field-value">{node.path}</div>
-      </div>
-
-      <DetailBlock title="Prompt / Docstring" value={node.prompt || null} />
-
-      <DetailBlock
-        title="Parameters"
-        value={
-          filteredParams && Object.keys(filteredParams).length > 0
-            ? filteredParams
-            : null
-        }
-      />
-
-      <DetailBlock title="Output" value={node.output ?? null} />
-
-      <DetailBlock title="Error" value={node.error || null} danger />
-
-      {node.node_type === "exec" ? (
-        <>
-          <DetailBlock
-            title="LLM Input"
-            value={node.params?._content != null ? String(node.params._content) : null}
-          />
-          <DetailBlock title="LLM Reply" value={node.raw_reply ?? null} />
-        </>
-      ) : (
-        <DetailBlock title="Raw LLM Reply" value={node.raw_reply ?? null} />
-      )}
-
-      <DetailBlock
-        title={`Attempts (${node.attempts?.length || 0})`}
-        value={node.attempts && node.attempts.length > 0 ? node.attempts : null}
-      />
-
-      <div className="detail-section">
-        <div className="detail-section-title">Render / Compress</div>
-        <div className="detail-field-value">
-          render: {node.render || "summary"} | compress: {node.compress ? "true" : "false"}
-        </div>
-      </div>
-    </div>
   );
 }
