@@ -167,7 +167,7 @@ web_use({ command: "close", web_session_id: "cs_…" })</pre>
   <section id="acceptance">
     <h2>发布前必须证明</h2>
     <ol class="checks">
-      <li><strong>工具面：</strong>浏览器控制只有一个 <code>web_use</code>，不暴露 backend 自带的第二套工具。</li>
+      <li><strong>工具面：</strong>浏览器控制只有一个 <code>web_use</code>。Desktop Page inventory 已登记时即可使用；turn-start preview 只是当前 Page 的上下文增强，单次 preview 失败不得移除工具或改为公开会启动独立浏览器的旧工具。Agent 先调用 <code>list_pages</code>，再用返回的 <code>page_context_token</code> 选择 exact Page。</li>
       <li><strong>Page 隔离：</strong><code>list_pages</code> 可以列出其他窗口的 Page；选择 A 后，对 B、chat Page 和其他窗口未选 Page 的读写调用次数都是 0。</li>
       <li><strong>分组结构：</strong>Google、GitHub、Bilibili/YouTube 分屏返回 3 个有序 <code>tab_entries</code> 和 4 个唯一 Page；第三项为 split，pane order 与实际 UI 一致。</li>
       <li><strong>布局与身份：</strong>交换 split pane、调整 ratio 或拆分后，Page identity 保持且 <code>inventory_revision</code> 更新；受影响 visible Page 的旧 geometry 在写入前 stale，不得新建另一套 split action。</li>

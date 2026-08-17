@@ -878,8 +878,92 @@ def test_surface_tool_is_injected_after_tools_are_resolved():
     resolve_at = source.index(
         "tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)"
     )
-    inject_at = source.index('if not any(tool.name == "web_use"')
+    inject_at = source.index(
+        "tools, web_use_enabled = _configure_web_use_tools"
+    )
     assert resolve_at < inject_at
+
+
+def test_registered_page_inventory_keeps_web_use_when_preview_is_unavailable(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from openprogram.agent import surface_context
+    from openprogram.agent.dispatcher.loop_runner import _configure_web_use_tools
+    from openprogram.webui.ws_actions import webtab
+
+    monkeypatch.setattr(
+        webtab, "registered_desktop_windows", lambda: [(object(), "main", 1)],
+    )
+    context = {
+        "surfaces": [{
+            "surface_key": "s1",
+            "preview_status": "unavailable",
+            "capabilities": [],
+        }],
+    }
+    tools = [
+        SimpleNamespace(name="agent_browser"),
+        SimpleNamespace(name="browser_agent"),
+        SimpleNamespace(name="playwright_browser"),
+        SimpleNamespace(name="web_search"),
+    ]
+
+    configured, enabled = _configure_web_use_tools(tools, context)
+    names = [tool.name for tool in configured]
+
+    assert enabled is True
+    assert "web_use" in names
+    assert "web_search" in names
+    assert not ({"agent_browser", "browser_agent", "playwright_browser"} & set(names))
+    prompt = surface_context.render_for_model(
+        context, web_use_enabled=enabled,
+    )
+    assert "web_use list_pages" in prompt
+    assert "Never put a URL in page" in prompt
+
+
+def test_explicitly_disabled_surface_does_not_expose_registered_page_inventory(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from openprogram.agent.dispatcher.loop_runner import _configure_web_use_tools
+    from openprogram.webui.ws_actions import webtab
+
+    monkeypatch.setattr(
+        webtab, "registered_desktop_windows", lambda: [(object(), "main", 1)],
+    )
+    context = {
+        "surfaces": [{
+            "surface_key": "s1",
+            "preview_status": "disabled",
+            "capabilities": [],
+        }],
+    }
+
+    configured, enabled = _configure_web_use_tools(
+        [SimpleNamespace(name="web_use"), SimpleNamespace(name="web_search")],
+        context,
+    )
+
+    assert enabled is False
+    assert [tool.name for tool in configured] == ["web_search"]
+
+
+def test_registered_page_inventory_does_not_override_tools_off(monkeypatch):
+    from openprogram.agent.dispatcher.loop_runner import _configure_web_use_tools
+    from openprogram.webui.ws_actions import webtab
+
+    monkeypatch.setattr(
+        webtab, "registered_desktop_windows", lambda: [(object(), "main", 1)],
+    )
+
+    configured, enabled = _configure_web_use_tools([], None)
+
+    assert configured == []
+    assert enabled is False
 
 
 def test_bound_browser_task_bypasses_only_the_nested_default_ask(monkeypatch):

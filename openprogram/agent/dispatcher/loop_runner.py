@@ -45,6 +45,34 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
+_INDEPENDENT_BROWSER_TOOLS = {
+    "agent_browser", "browser_agent", "playwright_browser",
+}
+
+
+def _configure_web_use_tools(tools, surface_context):
+    """Expose one in-app browser contract when Desktop Page inventory exists."""
+    from openprogram.agent.surface_context import tool_enabled, web_use_available
+
+    bound = tool_enabled(surface_context)
+    enabled = bound or (bool(tools) and web_use_available(surface_context))
+    current = list(tools or [])
+    if not enabled:
+        return [tool for tool in current if tool.name != "web_use"], False
+
+    from openprogram.programs import get_agent_tool
+
+    web_use_tool = next((tool for tool in current if tool.name == "web_use"), None)
+    if web_use_tool is None:
+        web_use_tool = get_agent_tool("web_use")
+    current = [
+        tool for tool in current
+        if tool.name not in _INDEPENDENT_BROWSER_TOOLS and tool.name != "web_use"
+    ]
+    if web_use_tool is not None:
+        current.append(web_use_tool)
+    return current, web_use_tool is not None
+
 
 def run_loop_blocking(
     *,
@@ -87,18 +115,9 @@ def run_loop_blocking(
     agent_profile = _dispatcher._load_agent_profile(req.agent_id)
     from openprogram.agent.surface_context import (
         render_for_model as _render_surface_context,
-        tool_enabled as _surface_tool_enabled,
     )
     tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)
-    if _surface_tool_enabled(req.surface_context):
-        if not any(tool.name == "web_use" for tool in tools or []):
-            from openprogram.programs import get_agent_tool
-
-            surface_tool = get_agent_tool("web_use")
-            if surface_tool is not None:
-                tools = [*(tools or []), surface_tool]
-    elif tools:
-        tools = [tool for tool in tools if tool.name != "web_use"]
+    tools, web_use_enabled = _configure_web_use_tools(tools, req.surface_context)
     # Plan mode: hide write/mutate tools when the session is currently
     # in plan mode. ``apply_tool_policy(source="plan", ...)`` filters
     # out every tool that lists "plan" in its ``unsafe_in`` set — see
@@ -147,7 +166,9 @@ def run_loop_blocking(
         plan_mode=_plan_mode.is_plan_mode(req.session_id),
     )
     recordable_system_prompt = system_prompt
-    surface_prompt = _render_surface_context(req.surface_context)
+    surface_prompt = _render_surface_context(
+        req.surface_context, web_use_enabled=web_use_enabled,
+    )
     if surface_prompt:
         system_prompt = f"{system_prompt}\n\n{surface_prompt}"
     model = _dispatcher._resolve_model(agent_profile, req.model_override)

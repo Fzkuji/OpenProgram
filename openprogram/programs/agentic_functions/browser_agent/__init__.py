@@ -1330,6 +1330,7 @@ def _run_browser_task_commands(
             "command": {
                 "type": "string",
                 "enum": ["list_pages", "observe", "act", "verify", "close"],
+                "description": "Call list_pages first, then observe, act, verify, or close",
             },
             "backend": {
                 "type": "string",
@@ -1338,7 +1339,11 @@ def _run_browser_task_commands(
                     "open_claude_chrome",
                 ],
             },
-            "page": {"type": "string", "maxLength": 512},
+            "page": {
+                "type": "string",
+                "maxLength": 512,
+                "description": "A Page alias from the current turn; never a URL",
+            },
             "page_context_token": {"type": "string", "maxLength": 128},
             "web_session_id": {"type": "string", "maxLength": 128},
             "arguments": {"type": "object", "additionalProperties": True},
@@ -1347,9 +1352,9 @@ def _run_browser_task_commands(
         "additionalProperties": False,
     },
     input={
-        "command": {"description": "list_pages, observe, act, verify, or close"},
+        "command": {"description": "Call list_pages first; then observe, act, verify, or close"},
         "backend": {"description": "Backend used when observe creates a session"},
-        "page": {"description": "Turn Page alias used by observe"},
+        "page": {"description": "Turn Page alias used by observe; never a URL"},
         "web_session_id": {"description": "Session returned by observe"},
         "arguments": {"description": "Command-specific arguments"},
         "runtime": {"hidden": True},
@@ -1364,7 +1369,11 @@ def web_use(
     arguments: dict | None = None,
     runtime=None,
 ) -> dict:
-    """Observe or control an exact Page attached to the current chat turn."""
+    """List, observe, or control exact Pages in OpenProgram's built-in browser.
+
+    Start with ``list_pages``. Select a returned ``page_context_token`` for
+    ``observe``; do not pass a URL as ``page``.
+    """
     del runtime
     from openprogram.agent import surface_context
     from .web_use_runtime import get_registry

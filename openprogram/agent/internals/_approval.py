@@ -405,9 +405,9 @@ def wrap_with_approval(
         # Deny/ask rules, authority checks, and hard constraints above remain
         # authoritative; this exception applies only to the bound public tool.
         if name == "web_use":
-            from openprogram.agent.surface_context import tool_enabled
+            from openprogram.agent.surface_context import web_use_available
 
-            if tool_enabled(getattr(req, "surface_context", None)):
+            if web_use_available(getattr(req, "surface_context", None)):
                 return await _run_original(call_id, args, cancel, on_update)
 
         # ③ bypass 短路（deny/ask/force 之后）
