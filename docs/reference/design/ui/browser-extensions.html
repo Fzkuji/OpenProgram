@@ -3,357 +3,114 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>OpenProgram 内置浏览器扩展设计</title>
+  <title>浏览器扩展支持决策 · OpenProgram</title>
   <style>
-    :root {
-      color-scheme: light;
-      --paper: #f4f5f8;
-      --surface: #ffffff;
-      --ink: #171922;
-      --muted: #646977;
-      --faint: #8a909f;
-      --line: #d9dce5;
-      --line-strong: #b9bfcc;
-      --accent: #5d55d7;
-      --accent-soft: #eceafd;
-      --green: #367b5a;
-      --green-soft: #e6f1eb;
-      --blue: #3569a8;
-      --blue-soft: #e8f0fa;
-      --amber: #9a6420;
-      --amber-soft: #f7ecdc;
-      --red: #a84545;
-      --red-soft: #f8e7e7;
-      --dark: #171715;
-      --dark-2: #242421;
-      --dark-line: #3b3a36;
-      --dark-text: #f4f2eb;
-      --dark-muted: #aaa79f;
-      --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
-      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-    }
-    * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
-    body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.7 var(--sans); }
-    a { color: var(--blue); text-underline-offset: 3px; }
-    code { padding: .12em .38em; border-radius: 4px; background: #e9ebf1; color: var(--ink); font: .88em/1.5 var(--mono); }
-    .shell { display: grid; grid-template-columns: minmax(0, 900px) 190px; gap: 64px; width: min(1210px, calc(100% - 48px)); margin: 0 auto; padding: 68px 0 96px; }
-    main { min-width: 0; }
-    .eyebrow, .label, .section-no, .metric-label, .rail-title, .state-label { color: var(--faint); font: 600 11px/1.4 var(--mono); letter-spacing: .11em; text-transform: uppercase; }
-    h1, h2, h3 { font-weight: 650; }
-    h1 { max-width: 800px; margin: 12px 0 18px; font-size: clamp(36px, 4.5vw, 55px); line-height: 1.08; letter-spacing: -.035em; }
-    h2 { margin: 0; font-size: 30px; line-height: 1.2; letter-spacing: -.02em; }
-    h3 { margin: 28px 0 8px; font-size: 20px; line-height: 1.35; }
-    p { margin: 0 0 12px; }
-    .lede { max-width: 760px; color: #484b55; font-size: 18px; line-height: 1.72; }
-    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px; }
-    .pill { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 4px 11px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.62); color: #555965; font-size: 12px; }
-    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); }
-    .metrics { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); margin: 38px 0 64px; padding: 14px 0; border-block: 1px solid var(--line); }
-    .metric { padding: 0 16px; border-left: 1px solid var(--line); }
-    .metric:first-child { padding-left: 0; border-left: 0; }
-    .metric-value { display: block; margin-top: 5px; font-size: 13px; font-weight: 650; line-height: 1.45; }
-    .section { margin-top: 72px; scroll-margin-top: 24px; }
-    .section-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; }
-    .section-no { min-width: 32px; padding: 4px 7px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); text-align: center; letter-spacing: .04em; }
-    .section-intro { max-width: 760px; margin: 0 0 26px 46px; color: var(--muted); }
-    .notice { margin-top: 22px; padding: 16px 18px; border-left: 3px solid var(--amber); background: var(--amber-soft); color: #5f4a2d; font-size: 14px; }
-    .cards { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
-    .card { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.68); }
-    .card h3 { margin: 7px 0 7px; font-size: 17px; }
-    .card p { color: var(--muted); font-size: 13px; }
-    .choice { display: inline-block; margin-top: 12px; color: var(--green); font: 650 11px var(--mono); }
-    .choice.later { color: var(--blue); }
-    .choice.no { color: var(--red); }
-    .table-scroll { max-width: 100%; overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; }
-    .matrix { min-width: 780px; }
-    th, td { padding: 12px 11px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 13px; }
-    th { color: var(--faint); font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
-    td:first-child { color: var(--ink); font-weight: 650; }
-    .status { font: 650 11px var(--mono); white-space: nowrap; }
-    .status.yes { color: var(--green); }
-    .status.partial { color: var(--amber); }
-    .status.no { color: var(--red); }
-    .mock { overflow: hidden; margin-top: 26px; border: 1px solid var(--line-strong); border-radius: 15px; background: var(--dark); color: var(--dark-text); box-shadow: 0 18px 46px rgba(23,25,34,.1); }
-    .mock-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 0 18px; border-bottom: 1px solid var(--dark-line); }
-    .mock-head strong { font-size: 15px; }
-    .mock-button { flex: none; padding: 7px 11px; border-radius: 7px; background: var(--dark-text); color: var(--dark); font-size: 12px; font-weight: 650; }
-    .mock-body { padding: 18px; }
-    .extension-row { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; gap: 12px; align-items: center; min-height: 60px; padding: 10px 0; border-bottom: 1px solid var(--dark-line); }
-    .extension-row:last-child { border-bottom: 0; }
-    .ext-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: #34332f; color: #c9c6bd; font: 650 14px var(--mono); }
-    .ext-copy { min-width: 0; }
-    .ext-copy strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-    .ext-copy span { display: block; color: var(--dark-muted); font-size: 11px; }
-    .row-actions { display: flex; align-items: center; gap: 9px; color: var(--dark-muted); font-size: 11px; }
-    .switch { position: relative; width: 30px; height: 17px; border-radius: 999px; background: #55534e; }
-    .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: white; }
-    .switch.on { background: #6f67ef; }
-    .switch.on::after { left: 15px; }
-    .warning-row { margin-top: 14px; padding: 12px 14px; border: 1px solid #675534; border-radius: 8px; background: #2b261f; color: #d6c29b; font-size: 12px; }
-    .architecture { overflow-x: auto; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
-    .architecture svg { display: block; width: 100%; min-width: 780px; height: auto; }
-    .legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 12px; color: var(--muted); font-size: 12px; }
-    .legend span::before { content: ""; display: inline-block; width: 16px; height: 2px; margin: 0 7px 3px 0; background: var(--ink); }
-    .legend .privileged::before { background: var(--accent); }
-    .legend .source::before { background: var(--blue); }
-    .steps { border-top: 1px solid var(--line); }
-    .step { display: grid; grid-template-columns: 45px 1fr; gap: 14px; padding: 18px 0; border-bottom: 1px solid var(--line); }
-    .step-num { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--surface); border: 1px solid var(--line-strong); color: var(--accent); font: 650 12px var(--mono); }
-    .step strong { display: block; margin-bottom: 4px; }
-    .step p { color: var(--muted); font-size: 13px; }
-    .boundary-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
-    .boundary { padding: 16px 17px; border-left: 3px solid var(--accent); background: rgba(255,255,255,.65); }
-    .boundary strong { display: block; margin-bottom: 5px; font-size: 14px; }
-    .boundary p { color: var(--muted); font-size: 12px; }
-    .code-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
-    .code-card { padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
-    .code-card strong { display: block; font: 650 12px var(--mono); word-break: break-word; }
-    .code-card p { margin-top: 7px; color: var(--muted); font-size: 12px; }
-    .task { display: grid; grid-template-columns: 115px 1fr; gap: 18px; padding: 18px 0; border-top: 1px solid var(--line); }
-    .task:last-child { border-bottom: 1px solid var(--line); }
-    .task-tag { color: var(--accent); font: 650 11px var(--mono); }
-    .task h3 { margin: 0 0 5px; font-size: 16px; }
-    .task p, .task li { color: var(--muted); font-size: 13px; }
-    .task ul { margin: 7px 0 0; padding-left: 18px; }
-    .rail { position: sticky; top: 32px; align-self: start; padding-top: 6px; }
-    .rail nav { margin-top: 14px; border-left: 1px solid var(--line); }
-    .rail a { display: block; padding: 6px 0 6px 14px; color: var(--muted); font-size: 12px; text-decoration: none; }
-    .rail a:hover { color: var(--ink); }
-    .mobile-toc { display: none; margin-top: 24px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.65); }
-    .mobile-toc summary { padding: 10px 13px; cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 650; }
-    .mobile-toc nav { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px; padding: 0 10px 10px; }
-    .mobile-toc a { padding: 6px 4px; color: var(--muted); font-size: 12px; text-decoration: none; }
-    .footnote { margin-top: 68px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--faint); font-size: 12px; }
-    a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-    @media (max-width: 980px) {
-      .shell { grid-template-columns: 1fr; width: min(900px, calc(100% - 36px)); padding-top: 42px; }
-      .rail { display: none; }
-      .mobile-toc { display: block; }
-    }
-    @media (max-width: 720px) {
-      body { font-size: 15px; }
-      .metrics, .cards, .boundary-grid, .code-grid { grid-template-columns: 1fr; }
-      .metrics { padding: 0; }
-      .metric, .metric:first-child { padding: 11px 0; border-left: 0; border-top: 1px solid var(--line); }
-      .metric:first-child { border-top: 0; }
-      .section-intro { margin-left: 0; }
-      .task { grid-template-columns: 1fr; gap: 5px; }
-      .extension-row { grid-template-columns: 32px minmax(0,1fr); }
-      .row-actions { grid-column: 2; }
-    }
-    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    :root{--paper:#f7f5ef;--surface:#fff;--ink:#202124;--muted:#676a70;--line:#d9d6cd;--accent:#5b55d6;--accent-soft:#eceafd;--warn:#9b5c21;--warn-soft:#fbefe2;--ok:#2f7252;--ok-soft:#e7f2eb;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;--sans:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.62 var(--sans);-webkit-font-smoothing:antialiased}.shell{display:grid;grid-template-columns:minmax(0,920px) 220px;gap:56px;max-width:1240px;margin:0 auto;padding:64px 32px 112px}main{min-width:0}header{padding-bottom:34px;border-bottom:1px solid var(--line)}.eyebrow{margin-bottom:12px;color:var(--accent);font:600 12px/1.3 var(--mono);letter-spacing:.08em;text-transform:uppercase}h1{max-width:780px;margin:0 0 16px;font-size:42px;line-height:1.1;letter-spacing:-.035em}h2{margin:0;font-size:25px;line-height:1.25;letter-spacing:-.02em}h3{margin:0 0 7px;font-size:16px}.lede{max-width:780px;margin:0;color:var(--muted);font-size:18px}.status{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}.pill{display:inline-flex;align-items:center;gap:7px;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted);font:12px/1.2 var(--mono)}.pill strong{color:var(--warn)}.dot{width:7px;height:7px;border-radius:50%;background:var(--warn)}section{padding-top:48px}.section-head{display:flex;align-items:baseline;gap:12px;margin-bottom:10px}.number{color:var(--muted);font:12px/1 var(--mono)}.intro{max-width:760px;margin:0 0 24px;color:var(--muted)}.decision{display:grid;grid-template-columns:1.35fr .65fr;gap:18px}.card,.callout,.flow,.table-wrap{border:1px solid var(--line);border-radius:12px;background:var(--surface)}.card{padding:20px}.card.primary{border-color:#bcb7f0;background:var(--accent-soft)}.label{display:block;margin-bottom:10px;color:var(--muted);font:11px/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase}.choice{margin-top:14px;color:var(--accent);font:600 13px/1.3 var(--mono)}.choice.no{color:var(--warn)}.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px}.fact{padding:16px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.fact strong{display:block;margin-bottom:5px}.fact span{color:var(--muted);font-size:13px}.table-wrap{overflow-x:auto}.matrix{width:100%;min-width:700px;border-collapse:collapse}.matrix th,.matrix td{padding:13px 15px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.matrix th{background:#efede7;color:var(--muted);font:600 11px/1.3 var(--mono);letter-spacing:.05em;text-transform:uppercase}.matrix tr:last-child td{border-bottom:0}.state{white-space:nowrap;font:600 12px/1.25 var(--mono)}.state.keep{color:var(--ok)}.state.remove{color:var(--warn)}.callout{padding:18px 20px;background:var(--warn-soft);border-color:#e7c9a9}.callout strong{display:block;margin-bottom:5px;color:var(--warn)}.flow{padding:22px}.flow-grid{display:grid;grid-template-columns:1fr 36px 1fr 36px 1fr;align-items:center;gap:8px}.node{min-height:104px;padding:16px;border:1px solid var(--line);border-radius:10px;background:#faf9f5}.node strong{display:block}.node span{display:block;margin-top:5px;color:var(--muted);font-size:13px}.arrow{text-align:center;color:var(--muted);font:18px/1 var(--mono)}.removed{border-color:#e5c8aa;background:var(--warn-soft)}.kept{border-color:#bad6c4;background:var(--ok-soft)}.tasks{display:grid;gap:10px}.task{display:grid;grid-template-columns:84px minmax(0,1fr);gap:16px;padding:16px 18px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.task-tag{color:var(--accent);font:600 11px/1.4 var(--mono)}.task p{margin:0;color:var(--muted)}code{font-family:var(--mono);font-size:.9em}.rail{position:sticky;top:32px;align-self:start;padding-left:18px;border-left:1px solid var(--line)}.rail-title{margin-bottom:10px;color:var(--muted);font:11px/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase}.rail a{display:block;padding:5px 0;color:var(--muted);text-decoration:none}.rail a:hover,.rail a:focus-visible{color:var(--accent)}.mobile-toc{display:none;margin-top:20px}.mobile-toc summary{cursor:pointer}.mobile-toc a{display:block;padding:5px 0;color:var(--accent)}.footnote{margin-top:52px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}
+    @media(max-width:900px){.shell{display:block;padding:36px 20px 80px}.rail{display:none}.mobile-toc{display:block}.decision,.facts{grid-template-columns:1fr}.flow-grid{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}h1{font-size:34px}}
+    @media(max-width:560px){.task{grid-template-columns:1fr}.table-wrap{margin-inline:-4px}.matrix th,.matrix td{padding:11px}}
+    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
   </style>
 </head>
 <body>
 <div class="shell">
   <main>
     <header>
-      <div class="eyebrow">OpenProgram · Browser architecture specification</div>
-      <h1>Chromium 浏览器扩展</h1>
-      <p class="lede">用户可以在 OpenProgram 内置浏览器中打开 Edge Add-ons 或 Chrome Web Store，在扩展详情页点击 OpenProgram 提供的安装操作，确认权限后自动下载、校验、解包并启用。OpenProgram 只承诺 Electron 已实现的 API 子集，不宣称商店中的任意扩展都能正常工作。</p>
-      <div class="meta">
-        <span class="pill"><span class="dot"></span>第一阶段已实现 · 安装版已验收</span>
-        <span class="pill">Desktop only</span>
-        <span class="pill">Store + local folder</span>
-        <span class="pill">User approval required</span>
+      <div class="eyebrow">OpenProgram · Architecture decision record</div>
+      <h1>内置浏览器不提供 Chrome / Edge 扩展安装</h1>
+      <p class="lede">OpenProgram 0.7.0 保留完整的内置网页浏览、书签、历史、下载、浏览器数据导入和 Agent 网页控制，但不发布扩展商店安装、本地扩展加载或扩展管理功能。</p>
+      <div class="status">
+        <span class="pill"><span class="dot"></span><strong>Decision: remove before 0.7.0</strong></span>
+        <span class="pill">Audience: product · desktop · web</span>
+        <span class="pill">Status: implementation pending</span>
       </div>
-      <details class="mobile-toc">
-        <summary>本页目录</summary>
-        <nav aria-label="移动端页内导航">
-          <a href="#decision">方案</a><a href="#contract">支持边界</a><a href="#experience">用户流程</a><a href="#architecture">架构</a><a href="#security">安全</a><a href="#implementation">实施计划</a><a href="#acceptance">验收</a>
-        </nav>
-      </details>
+      <details class="mobile-toc"><summary>本页目录</summary><nav><a href="#decision">决策</a><a href="#user-impact">用户边界</a><a href="#reasoning">原因</a><a href="#architecture">架构影响</a><a href="#implementation">移除计划</a><a href="#evidence">验收证据</a></nav></details>
     </header>
 
-    <section class="metrics" aria-label="扩展设计摘要">
-      <div class="metric"><span class="metric-label">Runtime</span><span class="metric-value">Electron 37 · Extensions API</span></div>
-      <div class="metric"><span class="metric-label">Session</span><span class="metric-value">共享 <code>persist:webtabs</code></span></div>
-      <div class="metric"><span class="metric-label">Install</span><span class="metric-value">商店详情页 · 本地文件夹</span></div>
-      <div class="metric"><span class="metric-label">Default store</span><span class="metric-value">Edge Add-ons · Chrome 可选</span></div>
-    </section>
-
-    <section class="section" id="decision">
-      <div class="section-head"><span class="section-no">01</span><h2>选择 Electron session extension</h2></div>
-      <p class="section-intro">当前所有原生网页 tab 都由 main process 创建 <code>WebContentsView</code>，并共享 <code>persist:webtabs</code>。扩展必须在这个 session 上加载，且要在首个网页加载之前恢复。</p>
-      <div class="cards">
-        <article class="card">
-          <span class="label">Adopt</span>
-          <h3>Electron Extensions API</h3>
-          <p>使用 <code>session.fromPartition("persist:webtabs").extensions.loadExtension()</code>。复用当前登录态、Cookies、下载和 Web Use 的 exact WebTab。</p>
-          <span class="choice">采用 · 唯一运行时</span>
-        </article>
-        <article class="card">
-          <span class="label">Defer</span>
-          <h3>外部 Chrome / Edge 接管</h3>
-          <p>扩展运行在外部浏览器时，不属于 OpenProgram 内置 tab，也不共享现有 WebContentsView 生命周期。它仍可作为单独的 external-browser computer use 能力存在。</p>
-          <span class="choice later">保留为独立能力</span>
-        </article>
-        <article class="card">
-          <span class="label">Reject</span>
-          <h3>完整 Chromium 扩展平台</h3>
-          <p>商店下载只作为安装来源；OpenProgram 不复制 Chrome 的完整 extension API、账号同步、企业策略、商店支付或发布能力。</p>
-          <span class="choice no">不采用</span>
-        </article>
+    <section id="decision">
+      <div class="section-head"><span class="number">01</span><h2>产品决策</h2></div>
+      <p class="intro">当前 Desktop 基于 Electron 的 Chromium，并不等于具备 Chrome 浏览器的完整扩展平台。Electron 只实现部分 extension API；大量现代商店扩展依赖未实现的 Manifest V3 service worker、<code>chrome.action</code>、账号同步或浏览器专属行为。仅完成下载和加载会向用户呈现不可靠的“已安装”状态。</p>
+      <div class="decision">
+        <article class="card primary"><span class="label">Adopt</span><h3>聚焦浏览器与 Agent 控制</h3><p>维持单一内置浏览器产品：标签页、地址栏、书签、历史、下载、数据导入、网页状态恢复，以及 DOM/ARIA 优先的 Agent 观察与操作。</p><div class="choice">纳入 0.7.0</div></article>
+        <article class="card"><span class="label">Reject</span><h3>内置扩展平台</h3><p>不提供商店安装、本地目录加载、扩展恢复、启停、更新和管理 UI。</p><div class="choice no">不发布</div></article>
       </div>
-      <div class="notice">商店页面负责发现扩展，OpenProgram 负责安装。网页不能静默安装：用户必须点击 OpenProgram 的安装操作并确认权限。商店原生按钮不作为稳定接口；详情页识别失败时可粘贴当前商店链接到扩展管理页。</div>
-    </section>
-
-    <section class="section" id="contract">
-      <div class="section-head"><span class="section-no">02</span><h2>第一版支持边界</h2></div>
-      <p class="section-intro">能力由 Electron 官方支持范围决定。安装前只做 manifest-level preflight，不扫描扩展 JavaScript；未列出的 manifest key 或运行时 <code>chrome.*</code> API 只能标记为未验证，不能写成已兼容。</p>
-      <div class="table-scroll" tabindex="0" role="region" aria-label="浏览器扩展支持边界，可横向滚动">
-        <table class="matrix">
-          <thead><tr><th>能力</th><th>第一版</th><th>行为</th><th>原因</th></tr></thead>
-          <tbody>
-            <tr><td>Edge Add-ons 详情页安装</td><td><span class="status yes">首选入口</span></td><td>识别正式详情页和扩展 ID，显示 OpenProgram 安装操作；确认权限后从 Microsoft 官方更新服务下载并安装。</td><td>作为默认商店入口，避免把 Chrome Web Store 的可达性作为安装前提。</td></tr>
-            <tr><td>Chrome Web Store 详情页安装</td><td><span class="status yes">可选入口</span></td><td>商店可访问时使用同一流程；无法访问时提示改用 Edge Add-ons 或本地目录，不代理商店网页。</td><td>Google 官方更新服务提供商店扩展包，但网页可达性不由 OpenProgram 保证。</td></tr>
-            <tr><td>加载 unpacked extension 文件夹</td><td><span class="status yes">支持</span></td><td>main process 选择目录、复制到 App 管理目录、校验后加载。</td><td>Electron 的正式入口。</td></tr>
-            <tr><td>Chrome / Edge 已安装扩展代码</td><td><span class="status partial">第二阶段</span></td><td>从用户选择的 browser profile 发现版本目录，复制代码后按同一流程安装。</td><td>两者采用 Chromium extension 格式；仍需处理 identity 与兼容性。</td></tr>
-            <tr><td><code>content_scripts</code>、<code>chrome.scripting</code>、<code>storage.local</code>、<code>runtime</code>、<code>webRequest</code></td><td><span class="status yes">Electron 子集</span></td><td>按 Electron 实际 API 提供；<code>tabs</code> 只承诺官方列出的部分字段与方法。</td><td>Electron 官方支持清单。</td></tr>
-            <tr><td>Manifest V3 background service worker / declarativeNetRequest</td><td><span class="status no">不兼容</span></td><td>manifest preflight 标记为不可用并保持禁用；不能把仅能加载 manifest 的结果报告为扩展可工作。</td><td>Electron 官方支持表只列出 Manifest V2 <code>background</code>，未列出 MV3 service worker 或 <code>declarativeNetRequest</code>。</td></tr>
-            <tr><td>扩展管理页</td><td><span class="status yes">支持</span></td><td>显示图标、名称、版本、来源、权限、兼容状态、启停、重新加载和移除。</td><td>OpenProgram 自己提供管理 UI。</td></tr>
-            <tr><td>商店扩展包</td><td><span class="status partial">安装传输格式</span></td><td>只从 Microsoft 或 Google 的固定官方更新服务下载；先验证来源、包签名、扩展 ID 和归档边界，再解包到 App 管理目录。Electron 只接收解包后的目录。</td><td>Electron 不能直接加载 packed <code>.crx</code>，所以下载、验证和解包属于 OpenProgram 安装器职责。</td></tr>
-            <tr><td>用户选择任意 <code>.crx</code> 文件</td><td><span class="status no">不支持</span></td><td>本地安装只接受已解压目录，不接受来源和签名关系无法确认的单独文件。</td><td>避免把商店受控下载扩大为任意软件包安装入口。</td></tr>
-            <tr><td>Chrome 工具栏 action、动态 badge、完整 popup 行为</td><td><span class="status partial">暂不承诺</span></td><td>管理页显示静态扩展图标；不新增常驻 toolbar action。</td><td>Electron 官方支持表未承诺 <code>chrome.action</code> 或 <code>browserAction</code>。</td></tr>
-            <tr><td>后台自动更新、同步、企业策略、native messaging</td><td><span class="status no">不支持</span></td><td>第一版在管理页显示“检查更新”，仍需用户确认新增权限；<code>storage.sync</code>、<code>storage.managed</code> 与 native host 不可用。</td><td>商店安装不等于允许后台静默替换代码或扩大权限。</td></tr>
-          </tbody>
-        </table>
+      <div class="facts">
+        <div class="fact"><strong>不是更换内核</strong><span>继续使用 Electron/Chromium；删除的是扩展产品承诺。</span></div>
+        <div class="fact"><strong>不是禁用网页</strong><span>Chrome Web Store 和 Edge Add-ons 仍可作为普通网页浏览。</span></div>
+        <div class="fact"><strong>不是外部浏览器接管</strong><span>0.7.0 不新增 Chrome/Edge 远程控制依赖。</span></div>
       </div>
-      <h3>官方依据</h3>
-      <ul>
-        <li><a href="https://www.electronjs.org/docs/latest/api/extensions-api">Electron Extensions class</a>：只接受 unpacked 目录、仅 persistent session 可用、每次 App 启动都必须重新加载。</li>
-        <li><a href="https://www.electronjs.org/docs/latest/api/extensions/">Electron Chrome Extension Support</a>：只支持 Chrome Extension API 子集，完整 Chrome 兼容不是 Electron 的目标。</li>
-        <li><a href="https://developer.chrome.com/docs/extensions/how-to/distribute/install-extensions">Chrome alternative installation</a>：Chrome Web Store 的官方更新服务为 <code>https://clients2.google.com/service/update2/crx</code>，扩展 ID 来自商店详情页。</li>
-        <li><a href="https://learn.microsoft.com/en-us/deployedge/microsoft-edge-manage-extensions-faq">Microsoft Edge extensions FAQ</a>：Edge Add-ons 的官方更新服务为 <code>https://edge.microsoft.com/extensionwebstorebase/v1/crx</code>。</li>
-        <li><a href="https://learn.microsoft.com/en-us/microsoft-edge/extensions/developer-guide/port-chrome-extension">Microsoft Edge porting guide</a>：Chrome 与 Edge 的 manifest 和 API 大体代码兼容，但仍需检查具体 API。</li>
-      </ul>
     </section>
 
-    <section class="section" id="experience">
-      <div class="section-head"><span class="section-no">03</span><h2>入口和用户流程</h2></div>
-      <p class="section-intro">不修改现有 tab 外形、地址栏高度和书签栏。Browser <code>⋯</code> 增加 Extensions，打开单例 <code>b:extensions</code> 管理页。普通用户的主入口是 Browse Edge Add-ons；本地目录安装放在页面次要操作中。</p>
-      <div class="mock" role="img" aria-label="扩展管理页示意，包含浏览商店按钮、两个扩展条目、兼容性状态、启停和移除动作">
-        <div class="mock-head"><strong>Extensions</strong><span class="mock-button">Browse Edge Add-ons</span></div>
-        <div class="mock-body">
-          <div class="extension-row">
-            <span class="ext-icon">A</span>
-            <span class="ext-copy"><strong>Article Cleaner</strong><span>1.4.0 · Edge Add-ons · Compatible</span></span>
-            <span class="row-actions">Details&nbsp;&nbsp; Remove <span class="switch on" aria-hidden="true"></span></span>
-          </div>
-          <div class="extension-row">
-            <span class="ext-icon">T</span>
-            <span class="ext-copy"><strong>Tab Workflow</strong><span>3.2.1 · Imported from Edge · Limited compatibility</span></span>
-            <span class="row-actions">Details&nbsp;&nbsp; Remove <span class="switch" aria-hidden="true"></span></span>
-          </div>
-          <div class="warning-row">Unsupported: background.service_worker, chrome.action. This extension remains disabled until the user reviews the limitations.</div>
+    <section id="user-impact">
+      <div class="section-head"><span class="number">02</span><h2>用户能做什么</h2></div>
+      <p class="intro">界面不再出现 Extensions 页面、“Install in OpenProgram”、商店安装按钮或本地扩展目录选择器。用户不会遇到“已添加但 OpenProgram 不支持”的矛盾结果。</p>
+      <div class="table-wrap"><table class="matrix">
+        <thead><tr><th>用户能力</th><th>0.7.0</th><th>界面与行为</th></tr></thead>
+        <tbody>
+          <tr><td>浏览普通网页与商店网页</td><td><span class="state keep">保留</span></td><td>商店详情页按普通网页显示，不插入安装控件。</td></tr>
+          <tr><td>书签、历史、下载、主页与数据导入</td><td><span class="state keep">保留</span></td><td>继续由内置浏览器管理，不依赖扩展。</td></tr>
+          <tr><td>Agent 感知并操作绑定 WebTab</td><td><span class="state keep">保留</span></td><td>继续使用现有 Web Use / Computer Use 边界。</td></tr>
+          <tr><td>从 Chrome / Edge 导入 Cookie、书签和历史</td><td><span class="state keep">保留</span></td><td>浏览器数据导入与扩展代码导入分离。</td></tr>
+          <tr><td>从 Chrome Web Store / Edge Add-ons 安装</td><td><span class="state remove">移除</span></td><td>没有 OpenProgram 安装入口，不下载 CRX。</td></tr>
+          <tr><td>从本地目录加载 unpacked extension</td><td><span class="state remove">移除</span></td><td>不暴露目录选择器或 preload IPC。</td></tr>
+          <tr><td>扩展启停、重载、更新和恢复</td><td><span class="state remove">移除</span></td><td>不建立 registry、package 目录或启动恢复流程。</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="reasoning">
+      <div class="section-head"><span class="number">03</span><h2>为什么不发布</h2></div>
+      <div class="callout"><strong>主要问题不是下载，而是运行兼容性。</strong>真实商店扩展能被下载和解包，也可能被 Electron 接受加载，但这不能证明扩展的主要功能可用。把 manifest 预检结果显示为“支持/不支持”仍无法覆盖运行时 API、后台生命周期、工具栏交互和供应商自己的浏览器识别。</div>
+      <div class="facts">
+        <div class="fact"><strong>用户结果不可预测</strong><span>同一扩展可能安装成功，但登录、后台任务、popup 或页面注入部分失效。</span></div>
+        <div class="fact"><strong>维护范围持续扩大</strong><span>需要自行承担商店协议、CRX 校验、权限说明、API 兼容、更新和故障诊断。</span></div>
+        <div class="fact"><strong>不属于当前主目标</strong><span>0.7.0 的目标是稳定浏览器和 Agent 网页操作，不是实现另一套浏览器扩展平台。</span></div>
+      </div>
+    </section>
+
+    <section id="architecture">
+      <div class="section-head"><span class="number">04</span><h2>架构影响</h2></div>
+      <p class="intro">移除扩展功能后，网页 session 只负责网页状态、Cookie、下载和 DevTools/Agent 控制，不在启动前加载第三方代码。</p>
+      <div class="flow" role="img" aria-label="移除扩展后的内置浏览器架构">
+        <div class="flow-grid">
+          <div class="node kept"><strong>内置 WebTab</strong><span><code>persist:webtabs</code> 保存网页会话；浏览器 UI 和 Agent 绑定继续使用。</span></div>
+          <div class="arrow">→</div>
+          <div class="node kept"><strong>浏览器能力</strong><span>书签、历史、下载、导入、恢复、DOM/ARIA 操作。</span></div>
+          <div class="arrow">×</div>
+          <div class="node removed"><strong>扩展运行时</strong><span>不再创建 manager、registry、CRX 安装 IPC 或 Extensions 页面。</span></div>
         </div>
       </div>
-      <div class="steps" aria-label="扩展安装流程">
-        <div class="step"><span class="step-num">1</span><div><strong>进入商店</strong><p>用户从 Extensions 管理页打开 Edge Add-ons；Chrome Web Store 可访问时也可直接输入其网址。商店详情页被识别后，浏览器显示“Install in OpenProgram”。</p></div></div>
-        <div class="step"><span class="step-num">2</span><div><strong>点击安装</strong><p>用户点击 OpenProgram 安装操作。网页只能提交当前详情页身份，不能指定下载地址、磁盘路径或自动批准权限。识别失败时，用户可把当前详情页链接粘贴到管理页。</p></div></div>
-        <div class="step"><span class="step-num">3</span><div><strong>自动下载并校验</strong><p>main process 根据商店和扩展 ID 请求固定的官方更新服务，验证包签名、扩展 ID、文件数量、总大小与解包路径，再写入 App 管理目录。临时文件在成功、失败或取消后都清理。</p></div></div>
-        <div class="step"><span class="step-num">4</span><div><strong>确认权限与兼容性</strong><p>显示扩展名称、来源、host permissions、content scripts、file access 和 Electron 未支持的 manifest 能力。用户确认后才启用；明确不兼容的扩展保持禁用。</p></div></div>
-        <div class="step"><span class="step-num">5</span><div><strong>开始使用</strong><p>扩展加载到 <code>persist:webtabs</code>，对新建网页和现有网页的下一次导航生效。安装完成后 UI 明确提示重新加载已打开的网页，不自动刷新或丢弃网页中的未提交状态。App 重启时恢复已启用扩展；单个扩展失败不阻止浏览器启动。</p></div></div>
-      </div>
-      <div class="notice">本地开发者仍可使用 Add from folder。Import from Chrome or Edge 继续作为第二阶段入口；这两项不会取代面向普通用户的商店安装流程。</div>
+      <p class="footnote">已有用户目录中的旧 <code>browser-extensions/</code> 数据不再读取或执行。0.7.0 不主动删除该目录，以避免升级过程删除用户文件；后续若提供清理入口，必须明确列出目标并由用户触发。</p>
     </section>
 
-    <section class="section" id="architecture">
-      <div class="section-head"><span class="section-no">04</span><h2>架构与生命周期</h2></div>
-      <p class="section-intro">registry 保存用户意图；Electron session 保存本次进程中的实际加载状态。二者不能混为一个状态。</p>
-      <div class="architecture">
-        <svg viewBox="0 0 900 420" role="img" aria-labelledby="extension-arch-title extension-arch-desc" xmlns="http://www.w3.org/2000/svg">
-          <title id="extension-arch-title">OpenProgram 浏览器扩展架构</title>
-          <desc id="extension-arch-desc">商店详情页只提供商店类型和扩展 ID，main process 从固定官方更新服务下载、验签、解包；本地目录和浏览器 profile 经同一校验流程复制到管理目录。registry 保存配置，启动时加载进 persist webtabs session，作用于所有内置网页视图。</desc>
-          <defs>
-            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6f7481"/></marker>
-            <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5d55d7"/></marker>
-            <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3569a8"/></marker>
-          </defs>
-          <rect x="20" y="42" width="180" height="68" rx="10" fill="#e8f0fa" stroke="#3569a8"/><text x="110" y="69" text-anchor="middle" font-family="ui-monospace" font-size="12">Official store package</text><text x="110" y="89" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">Edge / Chrome · signed CRX</text>
-          <rect x="20" y="180" width="180" height="68" rx="10" fill="#e8f0fa" stroke="#3569a8"/><text x="110" y="207" text-anchor="middle" font-family="ui-monospace" font-size="12">Local folder / profiles</text><text x="110" y="227" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">folder now · profiles phase 2</text>
-          <rect x="270" y="92" width="190" height="112" rx="12" fill="#eceafd" stroke="#5d55d7"/><text x="365" y="122" text-anchor="middle" font-family="ui-monospace" font-size="12">browser-extension-manager.js</text><text x="365" y="146" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">download · verify · unpack</text><text x="365" y="168" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">permissions · load · status</text>
-          <rect x="530" y="42" width="170" height="68" rx="10" fill="#ffffff" stroke="#b9bfcc"/><text x="615" y="69" text-anchor="middle" font-family="ui-monospace" font-size="12">registry.json</text><text x="615" y="89" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">desired state · hashes</text>
-          <rect x="530" y="180" width="170" height="68" rx="10" fill="#ffffff" stroke="#b9bfcc"/><text x="615" y="207" text-anchor="middle" font-family="ui-monospace" font-size="12">packages/&lt;id&gt;/&lt;ver&gt;</text><text x="615" y="227" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">App-managed copy</text>
-          <rect x="742" y="104" width="140" height="82" rx="10" fill="#e6f1eb" stroke="#367b5a"/><text x="812" y="135" text-anchor="middle" font-family="ui-monospace" font-size="12">persist:webtabs</text><text x="812" y="157" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">Extensions API</text>
-          <rect x="626" y="310" width="256" height="74" rx="10" fill="#ffffff" stroke="#b9bfcc"/><text x="754" y="339" text-anchor="middle" font-family="ui-monospace" font-size="12">All native WebContentsView tabs</text><text x="754" y="361" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">same session · same enabled set</text>
-          <rect x="270" y="310" width="250" height="74" rx="10" fill="#ffffff" stroke="#b9bfcc"/><text x="395" y="339" text-anchor="middle" font-family="ui-monospace" font-size="12">Extensions manager page</text><text x="395" y="361" text-anchor="middle" font-family="ui-sans-serif" font-size="11" fill="#646977">preload allowlist · no raw path</text>
-          <path d="M200 76H270" stroke="#3569a8" stroke-width="1.8" marker-end="url(#arrow-blue)"/><path d="M200 214C232 214 236 172 270 172" fill="none" stroke="#3569a8" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
-          <path d="M460 120H530" stroke="#5d55d7" stroke-width="1.8" marker-end="url(#arrow-accent)"/><path d="M460 174C492 174 500 214 530 214" fill="none" stroke="#5d55d7" stroke-width="1.8" marker-end="url(#arrow-accent)"/>
-          <path d="M700 76C742 76 725 129 742 129" fill="none" stroke="#6f7481" stroke-width="1.6" marker-end="url(#arrow)"/><path d="M700 214C742 214 725 161 742 161" fill="none" stroke="#5d55d7" stroke-width="1.8" marker-end="url(#arrow-accent)"/>
-          <path d="M812 186V310" stroke="#6f7481" stroke-width="1.6" marker-end="url(#arrow)"/><path d="M520 347H626" stroke="#5d55d7" stroke-width="1.8" marker-end="url(#arrow-accent)"/>
-          <text x="213" y="65" font-family="ui-monospace" font-size="10" fill="#3569a8">verify</text><text x="482" y="110" font-family="ui-monospace" font-size="10" fill="#5d55d7">write</text><text x="710" y="92" font-family="ui-monospace" font-size="10" fill="#646977">restore</text><text x="823" y="262" font-family="ui-monospace" font-size="10" fill="#646977">inject</text><text x="550" y="338" font-family="ui-monospace" font-size="10" fill="#5d55d7">IPC</text>
-        </svg>
-      </div>
-      <div class="legend"><span>运行状态</span><span class="privileged">main process 特权操作</span><span class="source">外部只读来源</span></div>
-      <h3>registry 最小字段</h3>
-      <div class="code-grid">
-        <article class="code-card"><strong>identity</strong><p><code>id</code>、<code>name</code>、<code>version</code>、<code>manifestHash</code>、<code>managedPath</code>。renderer 不接收原始来源路径。</p></article>
-        <article class="code-card"><strong>source</strong><p><code>edge-addons</code>、<code>chrome-web-store</code>、<code>folder</code> 或 <code>browser-profile</code>。商店项只保存扩展 ID 和详情页；不保存任意下载 URL。</p></article>
-        <article class="code-card"><strong>desired state</strong><p><code>enabled</code>、<code>allowFileAccess=false</code>、已批准的 manifest hash。manifest 改变后必须重新确认。</p></article>
-        <article class="code-card"><strong>observed state</strong><p><code>loaded</code>、<code>loadErrorCode</code>、<code>manifestCompatibility</code>。进程启动后根据 Electron 实际结果刷新。</p></article>
+    <section id="implementation">
+      <div class="section-head"><span class="number">05</span><h2>移除计划</h2></div>
+      <div class="tasks">
+        <div class="task"><span class="task-tag">DESKTOP</span><p>删除 extension manager、启动恢复、全部 extension IPC、preload API、打包文件和专项安装检查。</p></div>
+        <div class="task"><span class="task-tag">WEB</span><p>删除 Extensions built-in page、Browser 菜单入口、商店详情页安装按钮、相关类型、图标和 URL 识别器。</p></div>
+        <div class="task"><span class="task-tag">CONTRACT</span><p>增加公共检查，确保源码、preload、菜单、built-in page 和打包清单都不会重新暴露扩展安装能力。</p></div>
+        <div class="task"><span class="task-tag">RELEASE</span><p>在 0.7.0 发布说明中明确“浏览器扩展不支持”，同时列出保留的浏览器能力，避免用户把 Chromium 内核误解为完整 Chrome。</p></div>
       </div>
     </section>
 
-    <section class="section" id="security">
-      <div class="section-head"><span class="section-no">05</span><h2>权限与信任边界</h2></div>
-      <p class="section-intro">浏览器扩展可以读取或修改网页内容，因此安装、启用和权限扩张都必须是明确的用户操作。网页、Agent 和普通 renderer 不能静默完成这些操作。</p>
-      <div class="boundary-grid">
-        <article class="boundary"><strong>安装来源</strong><p>商店安装只接受 Edge Add-ons 与 Chrome Web Store 的正式详情页，并由 main process 根据扩展 ID 生成固定官方更新请求；网页和 renderer 不能传入下载 URL。目录安装只接受用户通过原生选择器确认的路径。</p></article>
-        <article class="boundary"><strong>软件包验证</strong><p>下载完成后验证 CRX3 签名、由公钥导出的扩展 ID 与详情页 ID 一致，再执行受限解包。拒绝重定向到非官方主机、超量文件、路径穿越、符号链接和无效 manifest。</p></article>
-        <article class="boundary"><strong>权限确认</strong><p>将 <code>host_permissions</code>、<code>content_scripts.matches</code>、全部网站访问和 file access 转换为用户可读摘要。新权限或 manifest hash 变化会撤销旧批准。</p></article>
-        <article class="boundary"><strong>session 隔离</strong><p>扩展只加载到 <code>persist:webtabs</code>。OpenProgram chat、Settings 和 Extensions manager 运行在默认 session，扩展不能注入这些页面。</p></article>
-        <article class="boundary"><strong>本地文件</strong><p><code>allowFileAccess</code> 默认且第一版固定为 false。即使 WebTab 打开 <code>file://</code> 页面，扩展也不得因此获得本地文件读取权限。</p></article>
-        <article class="boundary"><strong>Agent</strong><p>Agent 可以观察扩展对网页 DOM 产生的结果，但不能通过 Web Use 自动安装、移除、启用扩展或批准新增权限。</p></article>
-        <article class="boundary"><strong>删除与回滚</strong><p>先 unload，再删除 registry 项和管理目录。任一步失败都保留可诊断状态；不能出现 UI 显示已删除但启动时仍恢复的情况。</p></article>
-      </div>
-      <h3>明确不导入的数据</h3>
-      <p>从 Chrome/Edge 导入只复制扩展代码。不会复制扩展的 <code>storage.local</code>、<code>storage.sync</code>、IndexedDB、Cookies、登录态、授权决定、企业策略或 native messaging 配置。</p>
+    <section id="evidence">
+      <div class="section-head"><span class="number">06</span><h2>验收与证据边界</h2></div>
+      <p class="intro">当前状态是“决策已确定、代码待移除”。完成后必须同时满足以下证据，才能把状态改为已实施。</p>
+      <div class="table-wrap"><table class="matrix">
+        <thead><tr><th>验收项</th><th>当前</th><th>完成证据</th></tr></thead>
+        <tbody>
+          <tr><td>产品界面无扩展安装与管理入口</td><td><span class="state remove">待实施</span></td><td>Web browser checks + TypeScript。</td></tr>
+          <tr><td>Desktop 不加载第三方 extension</td><td><span class="state remove">待实施</span></td><td>Desktop public source check + package file contract。</td></tr>
+          <tr><td>旧扩展数据不执行且不被删除</td><td><span class="state remove">待实施</span></td><td>启动检查和用户数据边界审查。</td></tr>
+          <tr><td>保留浏览器能力无回归</td><td><span class="state remove">待实施</span></td><td>built-in browser、webtab、书签、历史、导入和 Computer Use 专项检查。</td></tr>
+        </tbody>
+      </table></div>
     </section>
-
-    <section class="section" id="implementation">
-      <div class="section-head"><span class="section-no">06</span><h2>实施计划</h2></div>
-      <p class="section-intro">每个任务都从公共入口建立一个失败检查，完成后单独审查。商店安装属于第一阶段；Chrome/Edge profile 导入仍在其后。</p>
-      <div class="task"><span class="task-tag">TASK 0 · SPIKE</span><div><h3>Electron 37 与商店包夹具</h3><p>使用本地签名 CRX3 fixture 验证验签、ID 绑定、受限解包与 unpacked 加载；使用两个扩展夹具分别验证 Electron 已支持能力和明确不兼容能力。测试不请求真实商店，也不读取真实用户扩展。</p><ul><li>入口：<code>node apps/desktop/scripts/check-browser-extensions.js</code></li><li>先确定最小 CRX3 验证与 ZIP 解包实现；若标准库和现有依赖无法正确完成，只增加一个受维护且可审计的依赖。</li></ul></div></div>
-      <div class="task"><span class="task-tag">TASK 1 · RUNTIME</span><div><h3>registry、管理目录与 session 生命周期</h3><p>新增 <code>apps/desktop/browser-extension-manager.js</code>，由 <code>apps/desktop/main.js</code> 在首个 WebTab 导航前恢复 enabled 项。安装使用临时目录、完整校验和原子 rename；失败不阻止 App 启动。</p><ul><li>生产文件：<code>apps/desktop/browser-extension-manager.js</code>、<code>apps/desktop/main.js</code>、<code>apps/desktop/package.json</code></li><li>验证：扩展只进入 <code>persist:webtabs</code>，重启恢复，disable/remove 不会再次恢复。</li></ul></div></div>
-      <div class="task"><span class="task-tag">TASK 2 · SURFACE</span><div><h3>IPC 与 Extensions manager</h3><p>preload 只暴露 list、openStore、installFromCurrentStorePage、installFromStoreUrl、chooseAndInstall、enable、reload、remove。Browser <code>⋯</code> 增加 Extensions；<code>BuiltinPage</code> 增加单例 <code>extensions</code>，管理页复用现有 built-in page 密度与按钮，不改 tab/toolbar/bookmarks CSS。</p><ul><li>生产文件：<code>apps/desktop/preload.js</code>、<code>apps/web/lib/desktop-bridge.ts</code>、<code>apps/web/lib/state/center-tab-ids.ts</code>、<code>browser-controls.tsx</code>、<code>builtin-tab-pane.tsx</code> 及现有 tab label/icon 分支。</li><li>验证：键盘可操作、状态变更以 main 返回为准、旧桌面壳没有 API 时入口隐藏。</li></ul></div></div>
-      <div class="task"><span class="task-tag">TASK 3 · STORE</span><div><h3>Edge Add-ons 与 Chrome Web Store 安装</h3><p>详情页识别器只接受两个商店的已知 URL 格式，提取扩展 ID 后交给 main process；main process 使用固定官方更新服务下载，执行签名与 ID 校验、受限解包、manifest preflight 和权限确认。安装取消或失败不能改变已有版本。</p><ul><li>公共 RED：在真实 WebTab 打开 fixture 详情页后出现安装操作；任意 URL、跨商店 ID、签名错误、路径穿越、超时和取消都不能留下临时文件或 registry 项。</li><li>安装成功后新建 WebTab 与现有 WebTab 的下一次导航能够观察到 content script；现有页面提示用户重新加载，重启后恢复。</li></ul></div></div>
-      <div class="task"><span class="task-tag">TASK 4 · IMPORT</span><div><h3>Chrome / Edge 代码导入</h3><p>复用 <code>browser-profile-import.js</code> 的 browser/profile 发现和真实路径约束，新增扩展候选列表与复制入口。只读取用户选择的 profile；同一扩展只选择最高有效版本。</p><ul><li>导入前显示 identity 可能变化、数据不会迁移和 API 兼容性结果。</li><li>不直接从源浏览器目录加载，不修改源 profile。</li></ul></div></div>
-      <div class="task"><span class="task-tag">DEFERRED</span><div><h3>后台自动更新与 action UI</h3><p>第一版只在管理页由用户触发检查更新；不增加 update daemon。常驻 toolbar action、动态 badge、popup、账号同步、企业策略和 native messaging 继续保持未支持。</p></div></div>
-    </section>
-
-    <section class="section" id="acceptance">
-      <div class="section-head"><span class="section-no">07</span><h2>验收与实现状态</h2></div>
-      <p class="section-intro">第一阶段的商店安装、本地目录安装、管理与启动恢复已经实现。安装版验收确认 Extensions 页面、Desktop API 和打包依赖可用；真实商店包的下载、签名、身份与本地化名称在隔离目录中验证，不向默认用户配置写入测试扩展。</p>
-      <div class="table-scroll" tabindex="0" role="region" aria-label="浏览器扩展验收状态，可横向滚动">
-        <table class="matrix">
-          <thead><tr><th>可观察结果</th><th>状态</th><th>证据要求</th></tr></thead>
-          <tbody>
-            <tr><td>所有原生 WebTab 共享 persistent <code>persist:webtabs</code> session。</td><td><span class="status yes">已实现</span></td><td><code>apps/desktop/main.js</code> 的 <code>WebContentsView</code> 创建路径。</td></tr>
-            <tr><td>用户从 Edge Add-ons 详情页点击安装，确认权限后完成下载、校验、解包与启用；新建 WebTab 和现有 WebTab 的下一次导航执行 content script，已打开页面提示重新加载。</td><td><span class="status yes">已实现</span></td><td>签名 CRX3 fixture、真实 Edge 商店包隔离验证、Desktop check 与安装版 Extensions 页面验收。</td></tr>
-            <tr><td>Chrome Web Store 可访问时提供同一安装流程；不可访问时明确提示 Edge Add-ons 与本地目录入口。</td><td><span class="status yes">已实现</span></td><td>真实 Chrome 商店包隔离验证；管理页同时提供 Edge Add-ons、本地目录和商店链接入口。</td></tr>
-            <tr><td>网页或 renderer 提供任意下载 URL、错误商店 ID、无效签名或危险归档时安装被拒绝且无残留。</td><td><span class="status yes">已实现</span></td><td><code>check-browser-extensions.js</code> 覆盖来源、ID、签名、归档边界、超时、取消和回滚。</td></tr>
-            <tr><td>用户仍可从本地解压目录安装兼容 fixture。</td><td><span class="status yes">已实现</span></td><td>原生目录选择器、manifest preflight 与 Desktop API 检查。</td></tr>
-            <tr><td>App 重启后 enabled 扩展在首个网页导航前恢复；单个失败不阻止窗口启动。</td><td><span class="status yes">已实现</span></td><td>manager 冷启动恢复与失败隔离检查；安装版 App 已完成启动验收。</td></tr>
-            <tr><td>disable、reload、remove 的 UI 与 Electron 实际状态一致，remove 后磁盘和 registry 都没有残留。</td><td><span class="status yes">已实现</span></td><td>manager 生命周期、失败回滚、替换清理与重启恢复检查。</td></tr>
-            <tr><td>扩展不能注入 OpenProgram chat/Settings，也不能访问 <code>file://</code>。</td><td><span class="status yes">已实现</span></td><td>扩展只加载到 <code>persist:webtabs</code>，并以 <code>allowFileAccess: false</code> 加载。</td></tr>
-            <tr><td>从 Chrome/Edge profile 导入只复制代码，不复制扩展数据、登录态或权限。</td><td><span class="status no">第二阶段</span></td><td>临时 profile fixture + 源目录只读与目标清理检查。</td></tr>
-            <tr><td>用户不能选择任意 <code>.crx</code> 文件；商店 CRX 只作为受控下载的内部传输格式。</td><td><span class="status yes">已实现</span></td><td>文件选择器只接受目录；商店 ID、页面 URL、下载端点和重定向目标均由 main process 校验。</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <h3>完整验证清单</h3>
-      <p><code>node apps/desktop/scripts/check-browser-extensions.js</code>；<code>npm --prefix apps/desktop run check</code>；<code>npm --prefix apps/web run check:built-in-browser</code>；<code>npm --prefix apps/web run test:unit</code>；Web TypeScript；<code>python -m tools.docs_site.checklinks</code>；最后仅使用 <code>/Applications/OpenProgram.app</code>、默认 18100 worker 和 <code>~/.openprogram</code> 验收。</p>
-    </section>
-
-    <p class="footnote">本页是内置浏览器扩展的规范性设计与第一阶段实现记录。安装版验收没有向默认用户配置安装测试扩展；content script 与生命周期行为由隔离 manager fixture 验证。Chrome/Edge profile 导入、后台自动更新和完整浏览器 action UI 仍属于后续阶段。</p>
   </main>
 
   <aside class="rail" aria-label="页内导航">
     <div class="rail-title">On this page</div>
-    <nav><a href="#decision">方案</a><a href="#contract">支持边界</a><a href="#experience">用户流程</a><a href="#architecture">架构</a><a href="#security">安全</a><a href="#implementation">实施计划</a><a href="#acceptance">验收</a></nav>
+    <nav><a href="#decision">产品决策</a><a href="#user-impact">用户边界</a><a href="#reasoning">不发布原因</a><a href="#architecture">架构影响</a><a href="#implementation">移除计划</a><a href="#evidence">验收证据</a></nav>
   </aside>
 </div>
 </body>
