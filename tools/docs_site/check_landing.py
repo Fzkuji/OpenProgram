@@ -23,6 +23,9 @@ DOCS_README_ZH = ROOT / "docs" / "README.zh.md"
 PYPROJECT = ROOT / "pyproject.toml"
 BUILT_SITE = ROOT / "docs" / "_site"
 SITE_TITLE = "OpenProgram: Self-Programming AI Agent Framework"
+README_HERO = (
+    "Self-Programming AI Assistant. Capture, automate, and refine all your workflows."
+)
 SITE_DESCRIPTION = (
     "Build self-programming AI agents that create and refine their own "
     "workflows with an open-source runtime for models, tools, memory, "
@@ -338,8 +341,8 @@ def main() -> int:
         for background in ("#07080a", "#0d1014", "#11151b"):
             require(_contrast_ratio(faint, background) >= 4.5,
                     f"secondary text fails 4.5:1 contrast on {background}", failures)
-    require(f"<b>{SITE_TITLE}</b>" in readme,
-            "README hero differs from the product title", failures)
+    require(f"<b>{README_HERO}</b>" in readme,
+            "README hero differs from the canonical tagline", failures)
     require(f"<b>{SITE_TITLE}</b>" in docs_readme,
             "docs hero differs from the product title", failures)
     require("<b>OpenProgram：自编程 AI Agent 框架</b>" in docs_readme_zh,
