@@ -161,7 +161,7 @@ Hook 执行始终走 subprocess（即使 verified），与 claude-code 一致。
 
 ## 3. 前端
 
-### 侧栏新增（`web/components/sidebar/sidebar.tsx`）
+### 侧栏新增（`apps/web/components/sidebar/sidebar.tsx`）
 ```
 New chat
 Functions
@@ -186,10 +186,10 @@ Chats
 
 ### 组件
 ```
-web/components/skills/
+apps/web/components/skills/
   skills-list.tsx, skill-detail.tsx, new-skill-dialog.tsx,
   discovery-sources.tsx, invoke-trace.tsx
-web/components/plugins/
+apps/web/components/plugins/
   installed-list.tsx, marketplace-browser.tsx, add-marketplace-dialog.tsx,
   plugin-options-dialog.tsx, plugin-trust-warning.tsx, plugin-errors.tsx,
   validate-plugin.tsx, plugin-detail.tsx, plugin-host.tsx (iframe / dynamic mount)

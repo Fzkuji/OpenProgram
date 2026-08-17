@@ -81,6 +81,6 @@ def test_lobe_icon_map_carries_token_plan_logo():
     import openprogram
 
     root = Path(openprogram.__file__).parent.parent
-    icons = (root / "web/components/settings/lobe-icons.ts").read_text()
+    icons = (root / "apps/web/components/settings/lobe-icons.ts").read_text()
     assert '"alibaba-token-plan-cn": { slug: "alibaba"' in icons
     assert '"alibaba-token-plan": { slug: "alibaba"' in icons

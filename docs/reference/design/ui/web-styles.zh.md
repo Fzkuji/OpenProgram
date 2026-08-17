@@ -6,7 +6,7 @@ UI 自身结构对齐。调某个组件的样式，就打开以它命名的那�
 ## 布局
 
 ```
-web/app/styles/
+apps/web/app/styles/
   base.css          设计令牌 + 全局基元（不动，全局）
   themes/           主题令牌覆盖（不动，全局）
   chat/             每个聊天组件一个文件
@@ -22,7 +22,7 @@ web/app/styles/
     detail.css
 ```
 
-`web/app/styles.css` 按拆分前的层叠顺序（base → chat → detail 时代文件 →
+`apps/web/app/styles.css` 按拆分前的层叠顺序（base → chat → detail 时代文件 →
 right-dock/dag）导入整棵树，特异性平局的判定与拆分前完全一致。
 
 ## 规则

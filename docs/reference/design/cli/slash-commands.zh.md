@@ -303,7 +303,7 @@ GET    /api/commands/conflicts          # 冲突表（同名多源）
 
 前端：
 
-`web/components/chat/composer/slash/use-slash-menu.ts` 改读 `/api/commands`，删掉内部硬编码列表（保留 dispatcher 兼容层，把 client 侧 `/compact` `/clear` 等映射到 builtin local 命令）。
+`apps/web/components/chat/composer/slash/use-slash-menu.ts` 改读 `/api/commands`，删掉内部硬编码列表（保留 dispatcher 兼容层，把 client 侧 `/compact` `/clear` 等映射到 builtin local 命令）。
 
 CLI：
 

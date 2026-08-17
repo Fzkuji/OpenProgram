@@ -88,7 +88,7 @@ async def handle_set_working_dirs(ws, cmd: dict):
 
 ### 3.5 前端：项目 chip 右侧的一目录一 chip
 
-composer 的 `envChips` 行从左到右就是会话的目录集合：`<ProjectBadge />` 是定格的主目录，其后是 `<WorkingDirChips />`——每个额外目录一个 chip，末尾一个纯图标的添加按钮（`web/components/chat/top-bar/working-dir-chips.tsx`）。
+composer 的 `envChips` 行从左到右就是会话的目录集合：`<ProjectBadge />` 是定格的主目录，其后是 `<WorkingDirChips />`——每个额外目录一个 chip，末尾一个纯图标的添加按钮（`apps/web/components/chat/top-bar/working-dir-chips.tsx`）。
 
 ```
 [📁 my-project]  [📂 foo ✕]  [📂 bar ✕]  [＋]

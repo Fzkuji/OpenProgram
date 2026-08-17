@@ -5,7 +5,7 @@
 > HTML 页面表达同一设计。关联代码：`openprogram/webui/owner_auth.py`、
 > `openprogram/backend_endpoint.py`、
 > `openprogram/webui/server.py`、`openprogram/cli/commands/web.py`、
-> `web/lib/net/owner-auth-bootstrap.ts`、`openprogram/agent/authority.py`。
+> `apps/web/lib/net/owner-auth-bootstrap.ts`、`openprogram/agent/authority.py`。
 > 关联设计：[说话人身份](../memory/speaker-identity.md)、
 > [权限模型](../runtime/permission-model.md)、[MCP 服务端](../integrations/mcp-server.html)。
 
@@ -79,7 +79,7 @@ loopback 默认值，并拒绝没有配置 Origin 的非 loopback bind。Uvicorn
 loopback 时提供的单一 `X-Forwarded-Proto`。
 
 公共 `POST /api/auth/bootstrap` 把 fragment token 交换为派生 cookie。前端
-`web/lib/net/owner-auth-bootstrap.ts` 中的 coordinator 同步清除 fragment，在挂载应用子树
+`apps/web/lib/net/owner-auth-bootstrap.ts` 中的 coordinator 同步清除 fragment，在挂载应用子树
 之前完成交换，并且不使用 Web Storage。`openprogram web auth-url --base-url ...` 先通过
 nonce/HMAC ownership challenge 验证 active listener，再只为 effective Origin 输出 fragment
 URL。`/healthz` 现在只返回 `{"status":"ok"}`；需要认证的
@@ -639,11 +639,11 @@ Ownership-challenge route 只执行有界 nonce/revision proof 契约，不授�
 | Owner 进程 credential | `openprogram/webui/owner_auth.py` 中的 `OwnerAuthState` 生成 32 字节 token、持有 `<state-dir>/web.lock`、原子写入 owner-only `<state-dir>/web/token`、派生 profile-specific cookie、使用 `hmac.compare_digest` 比较解码后的 token，并且只清理自己拥有的状态；`test_process_token_is_owner_only_locked_and_replaced_after_release` 覆盖 lock、mode、替换、repr 隐去 token 和 release 后轮换 |
 | Canonical effective Origin | `canonicalize_origin()` 与 `resolve_effective_origins()` 验证精确 Origin、执行显式 HTTP 网段限制、加入有限 loopback 默认值，并在非 loopback bind 没有 Origin 时失败；参数化 owner-auth 测试覆盖接受与拒绝的输入 |
 | 共同 owner-auth 边界 | `create_app()` 在 route 前安装 `OwnerAuthMiddleware`，保护 HTTP 和 WebSocket ASGI scope，并执行 cookie/Bearer 选择、Host/Origin/CSRF 校验、通用 `401`/`403`、no-store 与 owner-authority 附加；owner-auth 测试覆盖 HTTP mutation 与 accept 前 WebSocket |
-| Fragment bootstrap backend 与 frontend coordinator | `POST /api/auth/bootstrap`、`web/lib/net/owner-auth-bootstrap.ts` 和 `OwnerAuthBoundary` 已实现 body-token 交换、同步清除 fragment、禁止 Web Storage 与应用挂载 gate；`web/scripts/check-owner-auth-bootstrap.mjs`、TypeScript 检查和 production Web build 验证 frontend 契约 |
+| Fragment bootstrap backend 与 frontend coordinator | `POST /api/auth/bootstrap`、`apps/web/lib/net/owner-auth-bootstrap.ts` 和 `OwnerAuthBoundary` 已实现 body-token 交换、同步清除 fragment、禁止 Web Storage 与应用挂载 gate；`apps/web/scripts/check-owner-auth-bootstrap.mjs`、TypeScript 检查和 production Web build 验证 frontend 契约 |
 | 认证 URL 命令 | `openprogram web auth-url --base-url ...`、`build_owner_auth_url()` 与 `tests/unit/providers/test_web_auth_url.py` 覆盖 active-server 查找和 effective-Origin 校验；正常 CLI browser launch 使用同一 fragment URL |
 | 最小公共 liveness | `/healthz` 只返回 `{"status":"ok"}` 并带 `no-store`；运维字段位于受保护的 `/api/diagnostics`；integration 与 owner-auth 测试覆盖两条 route |
 | Raw-peer proxy 边界 | Uvicorn 使用 `proxy_headers=False`；`OwnerAuthMiddleware` 只接受 immediate loopback peer 的单一 forwarded scheme，并测试 HTTPS Origin 匹配 |
-| Secret 不可取回 | 两种明文 reveal 形式都已删除：account reveal route 整体移除，`GET /api/config/key/{env_var}?reveal=1` 返回 `404`；`_credential_secrets` 提供统一掩码与 declared-name 校验；`/api/config`、`/api/settings`、`/api/config/verify`、`DELETE /api/config/key/{env_var}` 和 account route 只接受各自的精确 bounded schema，且不返回完整 secret；frontend 不存在 reveal action、control 或 response type。MCP 服务器凭证遵循同一套契约：`MCPServerConfig.to_storage_dict()` 只用于写配置文件、保留完整值，`to_response_dict()` 把每一个 `env` 和 `headers` 值以及 bearer token、OAuth client secret 都替换成掩码，因此 `/api/mcp/servers`、`/api/mcp/servers/{name}`、`/api/mcp/catalog`、`/api/mcp/catalog/diff` 返回的是 `{has_value, masked}` 而不是值；`PATCH /api/mcp/servers/{name}` 采用 preserve（未提交）/ replace（提交新值）/ delete（显式空值）语义，且只在 restart 成功后才落盘；`mcp_servers.json` 经临时文件、`fsync`、`os.replace` 以 `0600` 写入；`tests/component/programs/test_mcp_secret_non_retrievability.py` 与 `web/scripts/check-secret-non-retrieval.mjs` 分别覆盖响应、权限、preserve 语义和前端显示 |
+| Secret 不可取回 | 两种明文 reveal 形式都已删除：account reveal route 整体移除，`GET /api/config/key/{env_var}?reveal=1` 返回 `404`；`_credential_secrets` 提供统一掩码与 declared-name 校验；`/api/config`、`/api/settings`、`/api/config/verify`、`DELETE /api/config/key/{env_var}` 和 account route 只接受各自的精确 bounded schema，且不返回完整 secret；frontend 不存在 reveal action、control 或 response type。MCP 服务器凭证遵循同一套契约：`MCPServerConfig.to_storage_dict()` 只用于写配置文件、保留完整值，`to_response_dict()` 把每一个 `env` 和 `headers` 值以及 bearer token、OAuth client secret 都替换成掩码，因此 `/api/mcp/servers`、`/api/mcp/servers/{name}`、`/api/mcp/catalog`、`/api/mcp/catalog/diff` 返回的是 `{has_value, masked}` 而不是值；`PATCH /api/mcp/servers/{name}` 采用 preserve（未提交）/ replace（提交新值）/ delete（显式空值）语义，且只在 restart 成功后才落盘；`mcp_servers.json` 经临时文件、`fsync`、`os.replace` 以 `0600` 写入；`tests/component/programs/test_mcp_secret_non_retrievability.py` 与 `apps/web/scripts/check-secret-non-retrieval.mjs` 分别覆盖响应、权限、preserve 语义和前端显示 |
 | 内部客户端认证 | `resolve_backend_endpoint()` 返回经 challenge 验证的 `BackendEndpoint`（base URL、WebSocket URL、Origin 和 token），credential 只在 listener 证明持有同一 token 之后才读取；`cli/ink.py` 将其传入 TUI 环境，`cli/commands/mcp.py` 用于 MCP CLI，Node 客户端只对 backend URL 发送 Bearer header（`apps/cli/src/utils/backend.ts`、`apps/cli/tests/backendAuth.test.ts`） |
 | 启动输出 | `start_server()` 打印 bind 地址、binding scope、effective Origin、forwarded-scheme 信任边界和 token fingerprint，并在 effective Origin 是非 loopback 明文 HTTP 时告警；`test_startup_logs_warn_about_plaintext_http_for_remote_origins` 逐项断言 |
 | 真实 listener transport 验收 | `tests/component/providers/test_web_owner_auth_listener.py` 在 ephemeral 端口绑定真实 Uvicorn socket，覆盖带认证与无认证 HTTP、带 `no-store` 的 SSE 认证、accept 前以 `401` 加 Bearer-realm/`no-store` header 拒绝的原始 WebSocket handshake、bind-failure 清理、wire 层 token 轮换、双 profile cookie 隔离、reverse-proxy Origin 矩阵，以及证明 token 不出现在任何 response body、header、日志和渲染页面中的全面扫描 |

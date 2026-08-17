@@ -214,7 +214,7 @@ These names live in two constants in two files: `_RUNTIME_PARAMS` in `agentic_pr
 
 The WebUI does not introspect live Python objects: it AST/regex-parses the source files (`openprogram/webui/_functions.py`). Consequently `input=` must be written as a literal dict in the decorator call to show up in the form — metadata built dynamically (variables, helper calls) is invisible to the WebUI.
 
-The WebUI form renders each parameter by the following rules (implemented in `web/components/chat/composer/modes/fn-form/fn-form.tsx` and `fn-form-fields.tsx`). When authoring `@agentic_function(input={...})`, use this table to predict what kind of input control your function will produce:
+The WebUI form renders each parameter by the following rules (implemented in `apps/web/components/chat/composer/modes/fn-form/fn-form.tsx` and `fn-form-fields.tsx`). When authoring `@agentic_function(input={...})`, use this table to predict what kind of input control your function will produce:
 
 | Parameter trait | WebUI control |
 |---|---|

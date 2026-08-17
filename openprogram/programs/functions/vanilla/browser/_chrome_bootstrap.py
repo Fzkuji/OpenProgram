@@ -31,7 +31,7 @@ from typing import Optional
 DEFAULT_PORT = 9222
 
 # The OpenProgram desktop shell (Electron) exposes its own CDP endpoint on
-# 9223 — see desktop/main.js. 9222 stays reserved for the sidecar Chrome so
+# 9223 — see apps/desktop/main.js. 9222 stays reserved for the sidecar Chrome so
 # the two never fight over a port.
 APP_DEBUG_PORT = 9223
 

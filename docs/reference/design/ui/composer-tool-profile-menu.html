@@ -52,7 +52,7 @@
   <p>Tools 视觉行使用一个 <code>role="none"</code> 容器，内部放置两个同级且非嵌套的 menuitem：Tools <code>Menu.Item</code> 和齿轮 <code>SubmenuTrigger</code>。鼠标和键盘都能分别激活两个动作；激活 Tools 会切换开关并关闭 profile，激活齿轮只切换 profile。视觉必须保持原布局：Tools 标签在左，右侧先显示齿轮，启用时再在最右侧显示勾；齿轮的 22px 尺寸、14px 图标及其与勾的间距不变。Base UI 会用 <code>sibling-open</code> 原因报告父菜单 item 的 pointer move，本组件只忽略这一种关闭原因；outside press、Escape、item press 和父菜单关闭等其他原因仍由 Base UI 处理。</p>
 
   <h2>实施 brief 与验收</h2>
-  <p>生产文件：<code>web/components/chat/composer/controls/controls-cluster.tsx</code>、<code>composer.module.css</code>。回归入口：<code>npm run check:composer-tool-profile</code>。兼容要求：Tools 行仍切换 tools；profile 项仍调用现有回调；一级菜单其他项不变。</p>
+  <p>生产文件：<code>apps/web/components/chat/composer/controls/controls-cluster.tsx</code>、<code>composer.module.css</code>。回归入口：<code>npm run check:composer-tool-profile</code>。兼容要求：Tools 行仍切换 tools；profile 项仍调用现有回调；一级菜单其他项不变。</p>
   <ul>
     <li>点击齿轮打开二级菜单，移动鼠标到菜单外不会关闭。</li>
     <li>二级面板全部绘制在一级面板之上，不受 composer 层叠上下文限制。</li>

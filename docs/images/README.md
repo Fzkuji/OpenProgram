@@ -1,6 +1,6 @@
 # Image Sources
 
-This directory keeps the editable image sources used by documentation and the WebUI. Runtime copies live under `web/` and end up in the static export (`web/out/`) the worker serves.
+This directory keeps the editable image sources used by documentation and the WebUI. Runtime copies live under `web/` and end up in the static export (`apps/web/out/`) the worker serves.
 
 ## WebUI Tab Icon
 
@@ -10,12 +10,12 @@ Canonical source:
 
 Runtime files:
 
-- `web/app/icon.svg`
-- `web/app/favicon.ico`
+- `apps/web/app/icon.svg`
+- `apps/web/app/favicon.ico`
 
 Code reference:
 
-- `web/app/layout.tsx`
+- `apps/web/app/layout.tsx`
 
 Current design:
 
@@ -27,8 +27,8 @@ Current design:
 Sync rule:
 
 - Edit `docs/images/openprogram-tab-icon.source.svg` first.
-- Copy the same SVG to `web/app/icon.svg`.
-- Regenerate `web/app/favicon.ico` from `web/app/icon.svg`.
+- Copy the same SVG to `apps/web/app/icon.svg`.
+- Regenerate `apps/web/app/favicon.ico` from `apps/web/app/icon.svg`.
 
 ## WebUI Sidebar Logo
 
@@ -38,12 +38,12 @@ Canonical source:
 
 Runtime copy:
 
-- `web/public/images/logo.svg`
+- `apps/web/public/images/logo.svg`
 
 Code references:
 
-- `web/components/sidebar/sidebar.tsx`
-- `web/public/html/_sidebar.html`
+- `apps/web/components/sidebar/sidebar.tsx`
+- `apps/web/public/html/_sidebar.html`
 
 Documentation references:
 
@@ -53,7 +53,7 @@ Documentation references:
 Sync rule:
 
 - Edit `docs/images/logo.svg` first.
-- Copy the same SVG to `web/public/images/logo.svg`.
+- Copy the same SVG to `apps/web/public/images/logo.svg`.
 
 ## Documentation Logo PNG
 
@@ -72,8 +72,8 @@ This is not an image file.
 
 Code references:
 
-- `web/components/chat/welcome-screen.tsx`
-- `web/components/chat/welcome-screen.module.css`
+- `apps/web/components/chat/welcome-screen.tsx`
+- `apps/web/components/chat/welcome-screen.module.css`
 
 Use:
 

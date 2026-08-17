@@ -11,12 +11,12 @@ web 端不只是"带项目 chip 的聊天"，而是一个工作区：项目文�
 |---|---|---|
 | Project 实体层（id/name/path/sessions、settings.json） | `openprogram/store/project/project_store.py` | 全部 |
 | Project WS actions（list/create/remove/config/sessions/workdirs） | `openprogram/webui/ws_actions/project.py` | 列表页、工作区 |
-| `/projects` 页（列表 + settings/sessions/info tab） | `web/components/projects/projects-page.tsx` | 演化为新列表页 |
-| 聊天组件群（composer、messages、top-bar） | `web/components/chat/` | 工作区左栏 |
-| 右侧栏骨架（history/detail/context 视图） | `web/components/right-sidebar/` | 聊天概览面板 |
-| Memory 页编辑器（edit/preview 模式、保存） | `web/components/memory/` | 文件编辑（第 5 档） |
-| `wsRequest` + ws action 注册机制 | `web/lib/net/ws-request.ts`、`webui/server.py` | 全部新 API |
-| `/api/pick-folder` 原生目录选择 | `web/app/api/pick-folder` | 添加项目 |
+| `/projects` 页（列表 + settings/sessions/info tab） | `apps/web/components/projects/projects-page.tsx` | 演化为新列表页 |
+| 聊天组件群（composer、messages、top-bar） | `apps/web/components/chat/` | 工作区左栏 |
+| 右侧栏骨架（history/detail/context 视图） | `apps/web/components/right-sidebar/` | 聊天概览面板 |
+| Memory 页编辑器（edit/preview 模式、保存） | `apps/web/components/memory/` | 文件编辑（第 5 档） |
+| `wsRequest` + ws action 注册机制 | `apps/web/lib/net/ws-request.ts`、`webui/server.py` | 全部新 API |
+| `/api/pick-folder` 原生目录选择 | `apps/web/app/api/pick-folder` | 添加项目 |
 
 真正缺的是两件：(a) 限定在项目内的**文件 API**；(b) 聊天视图从路由单例
 改成**按 sessionId 可挂载**。
@@ -51,7 +51,7 @@ GET /files/raw?project_id=...&path=...   → 图片、下载
 
 ## 3. 工作区路由：`/projects/[id]`
 
-Next 路由 `web/app/(shell)/projects/[id]/page.tsx`，三栏：
+Next 路由 `apps/web/app/(shell)/projects/[id]/page.tsx`，三栏：
 
 ```
 ┌────────────┬──────────────────────────┬──────────────┐

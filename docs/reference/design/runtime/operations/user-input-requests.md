@@ -155,7 +155,7 @@ explicit outcomes (answered / UserDeclined / AskTimeout), the WS
 question_reply/reject protocol, the web question card, and stop releasing
 pending questions via cancel_session — in `agent/questions.py`,
 `agentic_programming/runtime.py`, `webui/ws_actions/session.py`,
-`webui/ws_actions/runtime.py`, and `web/components/ui/question-prompt.tsx`.
+`webui/ws_actions/runtime.py`, and `apps/web/components/ui/question-prompt.tsx`.
 
 Reconnect recovery is implemented. A question card is driven only by a live
 `question.asked` frame, so after a refresh or a dropped connection that frame

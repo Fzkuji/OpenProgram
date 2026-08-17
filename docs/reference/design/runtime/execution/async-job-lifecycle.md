@@ -378,7 +378,7 @@ The landing order, in dependency order:
 | 7 | `openprogram/webui/_execute/__init__.py::_run_spawn` | Switch to `submit_agent_task`; write the placeholder attach card with job_id + status=running |
 | 8 | `openprogram/context/commit/generator.py` | When handling attach nodes, check `extra.attach.status`: running / cancelled / errored do not expand, only placeholder (D8) |
 | 9 | `openprogram/programs/functions/vanilla/agent/agent/agent.py` | `_agent_impl` internally switches to `submit_agent_task` + defaults to foreground; returns job_id when `run_in_background=True` |
-| 10 | `web/components/right-sidebar/tasks-panel.tsx` (new) | UI representation (D11); subscribes to the `job_status` ws event |
-| 11 | `web/components/chat/messages/attach-card.tsx` | Render the status badge (running / done / cancelled / error) |
+| 10 | `apps/web/components/right-sidebar/tasks-panel.tsx` (new) | UI representation (D11); subscribes to the `job_status` ws event |
+| 11 | `apps/web/components/chat/messages/attach-card.tsx` | Render the status badge (running / done / cancelled / error) |
 | 12 | `openprogram/agent/dispatcher.py::process_user_turn` | On startup, check `OPENPROGRAM_JOB_WORKERS` and initialize the runner singleton (idempotent) |
 | 13 | Tests | unit: state machine, runner submit + cancel + crash recovery; integration: spawn → await, N concurrent, cancel mid-flight (D13) |

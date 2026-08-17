@@ -109,13 +109,13 @@ def _probe_tui_bundle() -> Finding:
 
 
 def _probe_web_bundle() -> Finding:
-    """``web/.next/BUILD_ID`` — the Next.js webui production build."""
+    """``apps/web/.next/BUILD_ID`` — the Next.js webui production build."""
     try:
         import openprogram
         root = Path(openprogram.__file__).resolve().parent.parent
     except Exception:  # noqa: BLE001
         return Finding("FAIL", "Web bundle", "can't locate repo root", fix=None)
-    build_id = root / "web" / ".next" / "BUILD_ID"
+    build_id = root / "apps" / "web" / ".next" / "BUILD_ID"
     if build_id.exists():
         return Finding("OK", "Web bundle (Next.js)",
                        f"built at {build_id.parent}")

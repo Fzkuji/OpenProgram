@@ -570,15 +570,15 @@ def run_upgrade(*, channel: Optional[str] = None, dry_run: bool = False,
             _run_or_fail([sys.executable, "-m", "pip", "install", "-e", "."],
                          root, "deps-failed")
             done.append("pip install -e .")
-        if "web/package-lock.json" in changed:
-            _run_or_fail(["npm", "ci"], root / "web", "deps-failed")
+        if "apps/web/package-lock.json" in changed:
+            _run_or_fail(["npm", "ci"], root / "apps" / "web", "deps-failed")
             done.append("npm ci")
         steps.record("deps", True, ", ".join(done) or "unchanged", started)
 
         # 4. build — only when something under web/ moved.
         started = time.monotonic()
-        if any(f.startswith("web/") for f in changed):
-            _run_or_fail(["npx", "next", "build"], root / "web", "build-failed")
+        if any(f.startswith("apps/web/") for f in changed):
+            _run_or_fail(["npx", "next", "build"], root / "apps" / "web", "build-failed")
             detail = "next build"
         else:
             detail = "unchanged"

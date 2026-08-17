@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def _desktop_package() -> dict:
-    return json.loads((ROOT / "desktop" / "package.json").read_text(encoding="utf-8"))
+    return json.loads((ROOT / "apps" / "desktop" / "package.json").read_text(encoding="utf-8"))
 
 
 def test_desktop_targets_and_embedded_runtime_are_declared() -> None:
@@ -82,8 +82,8 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     assert package["scripts"]["app:install"] == "bash scripts/package-and-install-app.sh"
     assert "dist:dir" not in package["scripts"]
 
-    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
-    packager = (ROOT / "desktop" / "scripts" / "package-and-install-app.sh").read_text(
+    installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
+    packager = (ROOT / "apps" / "desktop" / "scripts" / "package-and-install-app.sh").read_text(
         encoding="utf-8"
     )
     installer_text = installer.read_text(encoding="utf-8")
@@ -189,7 +189,7 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
 def test_local_desktop_install_compares_numeric_versions_as_decimal(
     tmp_path: Path,
 ) -> None:
-    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
     env = {
         "DESTDIR": str(tmp_path / "root"),
         "HOME": str(tmp_path / "home"),
@@ -221,7 +221,7 @@ def test_local_desktop_install_compares_numeric_versions_as_decimal(
 def test_local_desktop_install_preserves_an_invalid_existing_app(
     tmp_path: Path,
 ) -> None:
-    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
     env = {
         "DESTDIR": str(tmp_path / "root"),
         "HOME": str(tmp_path / "home"),
@@ -261,7 +261,7 @@ def test_local_desktop_install_preserves_an_invalid_existing_app(
 def test_local_desktop_install_preserves_recovery_copy_when_restore_fails(
     tmp_path: Path,
 ) -> None:
-    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
     env = {
         "DESTDIR": str(tmp_path / "root"),
         "HOME": str(tmp_path / "home"),
@@ -314,7 +314,7 @@ def test_local_desktop_install_preserves_recovery_copy_when_restore_fails(
 def test_concurrent_local_desktop_install_cannot_nest_the_canonical_app(
     tmp_path: Path,
 ) -> None:
-    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
     temp_dir = tmp_path / "tmp"
     temp_dir.mkdir()
     env = {
@@ -388,7 +388,7 @@ def test_concurrent_local_desktop_install_cannot_nest_the_canonical_app(
 def test_local_desktop_install_rechecks_downgrade_after_lock(
     tmp_path: Path,
 ) -> None:
-    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
     instrumented = tmp_path / "install-app-with-barrier.sh"
     installer_text = installer.read_text(encoding="utf-8")
     marker = 'reject_downgrade "$source_app"\n\nmkdir -p'
@@ -446,7 +446,7 @@ def test_local_desktop_install_rechecks_downgrade_after_lock(
 def test_local_desktop_install_compares_the_staged_candidate(
     tmp_path: Path,
 ) -> None:
-    installer = ROOT / "desktop" / "scripts" / "install-app.sh"
+    installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
     temp_dir = tmp_path / "tmp"
     temp_dir.mkdir()
     env = {
@@ -537,7 +537,7 @@ def test_packager_honors_one_stable_user_lock_across_worktrees(
     }
 
     competing = subprocess.run(
-        ["bash", str(ROOT / "desktop" / "scripts" / "package-and-install-app.sh")],
+        ["bash", str(ROOT / "apps" / "desktop" / "scripts" / "package-and-install-app.sh")],
         check=False,
         env=env,
         capture_output=True,
@@ -645,7 +645,7 @@ def test_packaged_runtime_smoke_rejects_an_incomplete_app_before_install(
 
 
 def test_macos_icon_uses_the_apple_icon_source_format() -> None:
-    desktop = ROOT / "desktop"
+    desktop = ROOT / "apps" / "desktop"
     package = json.loads((desktop / "package.json").read_text(encoding="utf-8"))
     icon_source = desktop / "build" / "AppIcon.icon"
     packaged_icon = desktop / "build" / "icon.icns"
@@ -683,8 +683,8 @@ def test_core_agentic_functions_are_not_excluded_from_wheel() -> None:
 
 
 def test_packaged_worker_uses_isolated_embedded_python() -> None:
-    helper = (ROOT / "desktop" / "packaged-runtime.js").read_text(encoding="utf-8")
-    main = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    helper = (ROOT / "apps" / "desktop" / "packaged-runtime.js").read_text(encoding="utf-8")
+    main = (ROOT / "apps" / "desktop" / "main.js").read_text(encoding="utf-8")
     assert '"-I", "-B", "-m", "openprogram", "worker", "start"' in helper
     assert "process.resourcesPath" in main
     assert "app.getVersion()" in main
@@ -1062,9 +1062,9 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
 ) -> None:
     repo = tmp_path / "repo"
     scripts = repo / "scripts"
-    desktop = repo / "desktop"
+    desktop = repo / "apps" / "desktop"
     scripts.mkdir(parents=True)
-    desktop.mkdir()
+    desktop.mkdir(parents=True)
     (scripts / "refresh-local-app.sh").write_text(
         (ROOT / "scripts" / "refresh-local-app.sh").read_text(encoding="utf-8"),
         encoding="utf-8",
@@ -1165,7 +1165,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         '  if [ "$1" = "--out-dir" ]; then out="$2"; shift 2; else shift; fi\n'
         "done\n"
         'printf \'[project]\\nname = "openprogram"\\nversion = "0.6.1"\\n\' > "$REPO_ROOT/pyproject.toml"\n'
-        'printf \'{"version":"0.6.1"}\\n\' > "$REPO_ROOT/desktop/package.json"\n'
+        'printf \'{"version":"0.6.1"}\\n\' > "$REPO_ROOT/apps/desktop/package.json"\n'
         'mkdir -p "$out"\n'
         'exec "$REAL_PYTHON" - "$out/openprogram-0.6.1-py3-none-any.whl" <<\'PY\'\n'
         "import sys, zipfile\n"
@@ -1349,7 +1349,7 @@ def test_release_asset_staging_invokes_locked_docs_builder(tmp_path) -> None:
     fake_bin = tmp_path / "bin"
     scripts.mkdir(parents=True)
     fake_bin.mkdir()
-    (repo / "web").mkdir()
+    (repo / "apps" / "web").mkdir(parents=True)
     script = scripts / "stage-release-assets.sh"
     script.write_text(
         (ROOT / "scripts" / "stage-release-assets.sh").read_text(encoding="utf-8"),

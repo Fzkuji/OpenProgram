@@ -37,7 +37,7 @@
   <p>不强制重置用户缩放，不修改 split ratio、DOM 布局、preload API、站点缩放、Browser Agent、依赖或配置。Electron 的 <code>WebContentsView.setBounds</code> 接收 DIP，renderer DOM 测量属于 CSS px；renderer 保留测量精度，主进程负责单位转换和最终取整。</p>
 
   <h2>任务文件与验收</h2>
-  <p>生产代码：<code>desktop/main.js</code>、<code>web/components/center-tabs/web-tab-pane.tsx</code> 和 <code>web/lib/web-tab-bounds.ts</code>。公开门禁：<code>desktop/scripts/check-webtab-zoom-bounds.js</code> 及现有 web split 门禁。</p>
+  <p>生产代码：<code>apps/desktop/main.js</code>、<code>apps/web/components/center-tabs/web-tab-pane.tsx</code> 和 <code>apps/web/lib/web-tab-bounds.ts</code>。公开门禁：<code>apps/desktop/scripts/check-webtab-zoom-bounds.js</code> 及现有 web split 门禁。</p>
   <ul>
     <li>自动化覆盖 100% 缩放、约 109.5% 缩放、无效缩放因子、两个 IPC 入口和现有 desktop 回归。</li>
     <li>安装版使用默认 18100 worker；在非 100% shell 缩放下验证 DOM body 与 native viewport 同宽同高，并检查分屏、split ratio 调整及窗口缩放。</li>

@@ -829,15 +829,15 @@ def test_direct_page_inventory_preserves_tab_entries_and_split_panes(monkeypatch
 
 def test_frontend_and_electron_expose_turn_surface_preview_contract():
     send = (
-        REPO_ROOT / "web/components/chat/composer/submit/send-chat-message.ts"
+        REPO_ROOT / "apps/web/components/chat/composer/submit/send-chat-message.ts"
     ).read_text()
-    bridge = (REPO_ROOT / "web/lib/desktop-bridge.ts").read_text()
-    preload = (REPO_ROOT / "desktop/preload.js").read_text()
-    main = (REPO_ROOT / "desktop/main.js").read_text()
-    use_ws = (REPO_ROOT / "web/lib/net/use-ws.ts").read_text()
+    bridge = (REPO_ROOT / "apps/web/lib/desktop-bridge.ts").read_text()
+    preload = (REPO_ROOT / "apps/desktop/preload.js").read_text()
+    main = (REPO_ROOT / "apps/desktop/main.js").read_text()
+    use_ws = (REPO_ROOT / "apps/web/lib/net/use-ws.ts").read_text()
     chip = (
         REPO_ROOT
-        / "web/components/chat/composer/environment-row/chips/web-surface-chip.tsx"
+        / "apps/web/components/chat/composer/environment-row/chips/web-surface-chip.tsx"
     ).read_text()
 
     assert "surfaceRefForChat(sessionId, toolsEnabled)" in send
@@ -1164,7 +1164,7 @@ def test_websocket_disconnect_releases_owned_surface_bindings():
 
 
 def test_electron_bound_surface_control_does_not_focus_the_app_window():
-    source = (REPO_ROOT / "desktop/main.js").read_text()
+    source = (REPO_ROOT / "apps/desktop/main.js").read_text()
     start = source.index("async function activateView")
     end = source.index("const SURFACE_PREVIEW_SCRIPT", start)
     activate_source = source[start:end]
@@ -1175,9 +1175,9 @@ def test_electron_bound_surface_control_does_not_focus_the_app_window():
 
 
 def test_electron_bound_surface_activation_requires_existing_visibility():
-    bridge = (REPO_ROOT / "web/lib/desktop-bridge.ts").read_text()
-    preload = (REPO_ROOT / "desktop/preload.js").read_text()
-    main = (REPO_ROOT / "desktop/main.js").read_text()
+    bridge = (REPO_ROOT / "apps/web/lib/desktop-bridge.ts").read_text()
+    preload = (REPO_ROOT / "apps/desktop/preload.js").read_text()
+    main = (REPO_ROOT / "apps/desktop/main.js").read_text()
 
     assert "bridge.webTab.activate(tab.id, d.url, true)" in bridge
     assert 'ipcRenderer.invoke("webtab:activate", id, url, requireVisible)' in preload

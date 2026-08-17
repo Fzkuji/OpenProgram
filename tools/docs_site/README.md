@@ -16,7 +16,7 @@ python -m tools.docs_site.build
 
 - **只改了文档内容**：跑上面这条命令即可，worker 直接读 `docs/_site/` 文件，
   刷新浏览器就能看到。
-- **改了 `web/next.config.mjs`（路由）或后端路由**：需要重建前端 + 重启 worker：
+- **改了 `apps/web/next.config.mjs`（路由）或后端路由**：需要重建前端 + 重启 worker：
   ```bash
   cd web && npm run build && cd ..
   openprogram worker restart

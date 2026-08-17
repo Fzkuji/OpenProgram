@@ -110,7 +110,7 @@ Every click renders an optimistic transition immediately (pending
 card, button state, switched index); real data backfills; a timeout
 reverts and toasts. Long operations (function runs pay ~1s subprocess
 cold start) must never feel like a dead click. Entry point:
-`optimisticAction` (web/lib/runtime-bridge/optimistic-action.ts).
+`optimisticAction` (apps/web/lib/runtime-bridge/optimistic-action.ts).
 
 ## 9. Display order may be adjusted; data order may not
 
@@ -122,7 +122,7 @@ persisted order or head semantics.
 
 ## 10. SSR boundary: no window at module scope
 
-`web/lib/runtime-bridge/*` reads `window` at module scope; a static
+`apps/web/lib/runtime-bridge/*` reads `window` at module scope; a static
 import from an App Router page breaks prerendering. Page/settings
 components that need them use dynamic `import()` (example:
 `refreshAgentChip`). New runtime-bridge modules either keep this rule

@@ -8,7 +8,7 @@ from openprogram.webui import frontend
 
 @pytest.fixture()
 def out_tree(tmp_path, monkeypatch):
-    """A fake web/out/ export plus monkeypatched locators."""
+    """A fake apps/web/out/ export plus monkeypatched locators."""
     wd = tmp_path / "web"
     out = wd / "out"
     (out / "_next" / "static" / "chunks").mkdir(parents=True)

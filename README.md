@@ -409,9 +409,9 @@ openprogram/                         # Python product package
 ├── scheduler/                      # durable schedules and execution
 └── webui/                          # worker API and WebSocket layer
 apps/
-└── cli/                            # TypeScript Ink terminal client
-web/                                 # Next.js web interface
-desktop/                             # Electron desktop shell
+├── cli/                            # TypeScript Ink terminal client
+├── web/                            # Next.js web interface
+└── desktop/                        # Electron desktop shell
 tests/                               # pytest: <layer>/<product-domain>
 scripts/                             # repository maintenance and diagnostics
 tools/                               # release and documentation tooling

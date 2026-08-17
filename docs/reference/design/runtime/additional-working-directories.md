@@ -90,7 +90,7 @@ The two copies in `internals/_model_tools.py` and `agent/_model_tools.py` stay i
 
 ### 3.5 Frontend: one chip per directory, right of the project chip
 
-The composer's `envChips` row reads left to right as the session's directory set: `<ProjectBadge />` for the frozen main directory, then `<WorkingDirChips />` — one chip per additional directory plus a trailing icon-only add button (`web/components/chat/top-bar/working-dir-chips.tsx`).
+The composer's `envChips` row reads left to right as the session's directory set: `<ProjectBadge />` for the frozen main directory, then `<WorkingDirChips />` — one chip per additional directory plus a trailing icon-only add button (`apps/web/components/chat/top-bar/working-dir-chips.tsx`).
 
 ```
 [📁 my-project]  [📂 foo ✕]  [📂 bar ✕]  [＋]

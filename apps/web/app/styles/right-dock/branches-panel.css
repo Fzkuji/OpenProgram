@@ -1,0 +1,541 @@
+/* 分支面板：分支行/chip、运行指示、多选合并条与弹窗、attach 选择器。
+   对应组件：components/right-sidebar/branches/（index.tsx,
+   branch-item.tsx, merge-modal.tsx） */
+
+/* HEAD item sits directly in .branches-section, needs same side padding as the list */
+.branches-section > .branch-item {
+  margin: 0 8px 1px;
+}
+
+/* ============ Branches panel — mirrors left sidebar section style ============ */
+/* `.sidebar-section-header / -title / -hint` are emitted by
+   `conversations.js::renderBranchesPanel()` (build innerHTML), so the
+   styling still has to live in a global stylesheet. The same classes
+   used to be a generic sidebar utility but the left-sidebar version
+   was migrated to `<SidebarSection />` Tailwind utilities — only the
+   right-dock Branches header still consumes them. */
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 16px;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+.sidebar-section-title {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.sidebar-section-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+.sidebar-section-header:hover .sidebar-section-hint { opacity: 0.75; }
+.sidebar-section-header.is-collapsed .sidebar-section-hint,
+.is-collapsed > .sidebar-section-header .sidebar-section-hint {
+  opacity: 0.75;
+}
+
+
+/* Wrapper mirrors .sidebar-favorites */
+.branches-section {
+  flex-shrink: 0;
+  padding: 16px 0 8px;
+}
+
+/* List mirrors the favorites/conversations panel in `<SidebarSection />`.
+ * Cap at 4 rows so long branch lists don't push the graph view off-screen.
+ * Auto-scroll-on-checkout is dampened in JS via scrollIntoView
+ * with block:'nearest' — active only moves if it's actually offscreen. */
+.branches-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 8px;
+  max-height: calc(32px * 4 + 3px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.branches-list:has(.branch-item-resource[open]) {
+  max-height: min(50vh, 360px);
+}
+
+/* Item mirrors .fav-item / .conv-item geometry */
+.branch-item {
+  padding: 6px 8px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  line-height: 20px;
+  cursor: pointer;
+  transition: background 75ms;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: var(--ui-list-radius);
+}
+.branch-item:hover { background: var(--bg-hover); }
+.branch-item.active {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+.branch-item:not(.branch-chip):has(> .branch-item-resource[open]) {
+  height: auto;
+  min-height: 32px;
+  max-height: none;
+  overflow: visible;
+  flex-wrap: wrap;
+}
+.branch-item-resource {
+  flex: 0 0 auto;
+  font: 10px/12px var(--font-mono);
+  color: var(--text-muted);
+}
+.branch-item-resource[open] {
+  flex-basis: 100%;
+  padding-left: 32px;
+  white-space: normal;
+}
+.branch-item-resource pre {
+  max-height: 180px;
+  margin: 4px 0 2px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+/* Chip layout of the SAME .branch-item — see BranchItem's `chip` prop.
+   Only the box changes: pill instead of full-width row, content-sized
+   instead of stretched, so a strip of them reads as a row of tabs.
+   Every child (dot / name / HEAD badge / rename / delete) and every
+   action is inherited untouched. */
+.branch-chip {
+  width: auto;
+  height: 28px;
+  min-height: 28px;
+  max-height: 28px;
+  padding: 0 10px;
+  gap: 6px;
+  font-size: 13px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  max-width: 240px;
+}
+.branch-chip .branch-item-name {
+  flex: 0 1 auto;
+  max-width: 150px;
+}
+/* HEAD reads as the selected tab: the lane colour it already carries
+   as a dot, promoted to the border so the chip stands out in the row
+   without a second colour to learn. */
+.branch-chip.active {
+  border-color: var(--accent-blue, #6cb4ff);
+  background: var(--bg-hover);
+}
+.branch-chip .branch-item-actions { margin-right: -4px; }
+
+.branch-item-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.branch-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.branch-item.has-job-resource {
+  height: 46px;
+  min-height: 46px;
+  max-height: 46px;
+  flex-wrap: wrap;
+  align-content: center;
+  row-gap: 0;
+}
+.branch-item-resource-summary {
+  order: 10;
+  width: 100%;
+  margin-left: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 10px/12px var(--font-mono);
+  color: var(--text-muted);
+}
+.branch-item-badge {
+  font-size: 12px;
+  padding: 0 6px;
+  height: 18px;
+  line-height: 18px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-muted) 20%, transparent);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.branch-item-tokens {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Hover-revealed action buttons (rename / delete) on each branch
+   row. Wrapped in a single .branch-item-actions container so the
+   two buttons can sit tight against each other (gap:2px) without
+   inheriting the row's wider gap:8 between dot/name/badge. Sizing
+   (22×22) and border-radius match the topbar dropdown's
+   .branch-selector .branch-del so the two surfaces feel identical. */
+.branch-item-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  /* Sit 5px from the row's right edge (row padding is 8px, so pull back
+     3px) so the right gap EQUALS the button's 5px top/bottom gap
+     ((32px row − 22px button) / 2) — the button is then symmetrically
+     inset on all three sides. Matches the conversation row's ⋮ kebab
+     (`right-[5px]`). */
+  margin-right: -3px;
+}
+.branch-item:hover .branch-item-actions {
+  display: inline-flex;
+}
+.branch-item-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 24×24 matches the topbar branch-dropdown's inline-styled
+     buttons (see conversations.js: `var BTN = 24`). The CSS
+     22×22 you'll find in 05-chat.css is overridden there. */
+  width: 24px; /* 刻度：24 = 图标钮 */
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 75ms, color 75ms;
+}
+.branch-item-action svg { display: block; }
+.branch-item-rename:hover {
+  /* The right-dock sits on `--bg-secondary`, which itself is darker
+     than `--bg-primary`. Hovering with `--bg-hover` (the *lighter*
+     hover token) made the button blend into the row instead of
+     standing out, so use `--bg-hover-contrast` (the deeper-than-primary
+     token) — the button visibly darkens, making the affordance
+     clear on the dark surface. */
+  background: var(--bg-hover-contrast);
+  color: var(--text-bright);
+}
+.branch-item-del:hover {
+  /* Subtle danger — match the app's delete convention (menu-styles /
+     conv-menu): faint red tint + red icon, not a solid red fill. */
+  background: color-mix(in srgb, var(--accent-red) 15%, transparent);
+  color: var(--accent-red);
+}
+/* When hovering the row, the HEAD badge collides visually with the
+   action buttons. Hide the badge during hover so the action icons
+   take its spot — HEAD identity is already conveyed by the row's
+   .active styling. */
+.branch-item:hover .branch-item-badge { display: none; }
+
+/* Running indicator — same visual language as the sidebar's
+   .convRunning class (see apps/web/components/sidebar/sidebar.module.css):
+   a colored gradient sweep on a ::before pseudo-element so the row
+   text stays unaffected. Keyframes (convRunningFlow /
+   convRunningBreathe / convFinishingWipe) live in
+   apps/web/app/styles/base.css to dodge turbopack's CSS-module
+   keyframe-name mangling.
+   Applied by branches-panel.tsx when its job_status subscription
+   reports a job targeting this branch's head_msg_id. */
+.branch-item.is-running,
+.branch-item.is-finishing {
+  position: relative;
+  isolation: isolate;
+}
+.branch-item.is-running::before,
+.branch-item.is-finishing::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background-image: linear-gradient(
+    100deg,
+    rgba(79,  140, 255, 0.28) 0%,
+    rgba(160, 107, 255, 0.32) 25%,
+    rgba(62,  207, 142, 0.28) 50%,
+    rgba(160, 107, 255, 0.32) 75%,
+    rgba(79,  140, 255, 0.28) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: repeat-x;
+  box-shadow:
+    inset 0 0 14px rgba(79,  140, 255, 0.22),
+    0 0 6px rgba(160, 107, 255, 0.20);
+}
+.branch-item.is-running::before {
+  animation:
+    convRunningFlow 2.6s linear infinite,
+    convRunningBreathe 1.8s ease-in-out infinite;
+}
+.branch-item.is-finishing::before {
+  animation: convFinishingWipe 1.1s cubic-bezier(0.4, 0, 0.6, 1) forwards;
+}
+
+/* Multi-select + merge bar inside the Branches panel.
+   Per-row check chip is always there but only visible on hover OR
+   when something is already selected (avoid visual noise for the
+   common 1-branch case). Once two rows are selected a sticky action
+   bar lights up below the list with the Merge button. */
+
+.branch-item-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 150ms ease-out, border-color 150ms ease-out;
+}
+.branch-item.selected .branch-item-check {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: var(--primary-foreground);
+}
+.branch-item.base .branch-item-check {
+  background: var(--accent-purple);
+  border-color: var(--accent-purple);
+  color: var(--primary-foreground);
+}
+
+.branches-merge-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin: 4px 4px 0 4px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+.branches-merge-summary {
+  flex: 1;
+  color: var(--text-secondary);
+}
+.branches-merge-btn {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-blue);
+  background: var(--accent-blue);
+  color: var(--primary-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+.branches-merge-btn:hover { filter: brightness(1.1); }
+.branches-merge-clear {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.branches-merge-clear:hover { color: var(--text-bright); background: var(--bg-hover); }
+
+.branches-merge-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.branches-merge-modal {
+  width: 500px;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: var(--shadow-dialog);
+}
+.branches-merge-modal-title {
+  font-size: 14px;
+  color: var(--text-bright);
+  font-weight: 500;
+}
+.branches-merge-modal-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  transition: border-color 0.15s;
+}
+.branches-merge-modal-input:focus { outline: none; border-color: var(--accent-blue); }
+.branches-merge-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+}
+/* Attach-to dropdown picker — opens under the "Attach to ▾" button in
+   the branches selection bar. Lists every branch that's NOT in the
+   current selection (since attaching a branch to itself is a no-op).
+   Click a branch to anchor the attach pointer there. */
+.branches-attach-wrap {
+  position: relative;
+}
+.branches-attach-picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  /* Anchor to the right edge of the button so the picker grows
+     leftward inside the panel rather than overflowing into the chat
+     pane on narrow right docks. */
+  right: 0;
+  width: max-content;
+  min-width: 200px;
+  max-width: 280px;
+  max-height: 280px;
+  overflow-y: auto;
+  z-index: 20;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow-popover);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.branches-attach-picker-item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: inherit;
+}
+.branches-attach-picker-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+.branches-attach-picker-empty {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.branches-attach-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+.branches-attach-scope-btn {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+}
+.branches-attach-scope-btn.is-active {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+.branches-attach-scope-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-family: inherit;
+}
+.branches-merge-mode-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  line-height: 1.4;
+}
+.branches-merge-mode-row input[type="radio"] {
+  margin-top: 2px;
+}
+.branches-merge-mode-row strong {
+  color: var(--text-bright);
+  font-weight: 500;
+}
+.branches-merge-modal-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.branches-merge-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.branches-merge-cancel,
+.branches-merge-go {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+.branches-merge-cancel:hover { background: var(--bg-hover); }
+.branches-merge-go {
+  border-color: var(--accent-blue);
+  background: var(--accent-blue);
+  color: var(--primary-foreground);
+}
+.branches-merge-go:hover { filter: brightness(1.1); }

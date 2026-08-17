@@ -231,7 +231,7 @@ tools/                               # importable release and documentation tool
 
 See the workspace READMEs for
 [`openprogram/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/README.md),
-[`web/`](https://github.com/Fzkuji/OpenProgram/blob/main/web/README.md), and
+[`web/`](https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/README.md), and
 [`apps/cli/`](https://github.com/Fzkuji/OpenProgram/blob/main/apps/cli/README.md). Complete
 ownership rules are in
 [Repository Structure](reference/design/repository-structure.html).

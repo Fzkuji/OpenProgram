@@ -19,7 +19,7 @@ one object holding both data (`currentSessionId`, `composerDrafts`) and the
 functions that change it (`setCurrentConv`, `setComposerInput`). Any component
 anywhere in the page can read any field from that box without it being passed
 down through props. The main box is
-`web/lib/session-store/index.ts:400`.
+`apps/web/lib/session-store/index.ts:400`.
 
 **A component subscribes to a slice.** When a component calls
 `useSessionStore((s) => s.conversations)`, React re-renders that component
@@ -42,7 +42,7 @@ root cause of most of section 5.
 
 ## 2. The main store: field-by-field inventory
 
-`web/lib/session-store/index.ts` declares its shape in the `ConvState`
+`apps/web/lib/session-store/index.ts` declares its shape in the `ConvState`
 interface and its initial values in the `create<ConvState>` call. Every field
 below falls into one of three groups. Fields marked **removed** are listed
 because they show what the design rules out; they no longer exist in the code.
@@ -55,25 +55,25 @@ converges on.
 
 | Field | Declared at | What it holds |
 | --- | --- | --- |
-| `conversations` | `web/lib/session-store/index.ts:68` | sidebar summary per session (keyed, but see Group C — it is a *list*, not per-session view state) |
-| `messagesById` | `web/lib/session-store/index.ts:70` | every loaded message, keyed by message id |
-| `messageOrder` | `web/lib/session-store/index.ts:72` | ordered message-id list per session |
-| `pendingProjectsByChat` | `web/lib/session-store/index.ts:81` | project chosen for an unsent chat, keyed by provisional chat key |
-| `runningTasks` | `web/lib/session-store/index.ts:90` | per-session running task; drives each composer's send/stop button |
-| `trees` | `web/lib/session-store/index.ts:96` | latest live context tree per session |
-| `tokens` | `web/lib/session-store/index.ts:103` | token usage per session |
-| `contextWindow` | `web/lib/session-store/index.ts:112` | context-window size per session |
-| `heads` | `web/lib/session-store/index.ts:115` | active DAG head (selected branch tip) per session |
-| `additionalWorkingDirsBySession` | `web/lib/session-store/index.ts:146` | extra working directories per session |
-| `composerDrafts` | `web/lib/session-store/index.ts:182` | unsent composer text per session, persisted to localStorage |
-| `composerSettingsBySession` | `web/lib/session-store/index.ts:194` | tool toggles / thinking effort per session, persisted |
-| `contextPanelFor` | `web/lib/session-store/index.ts:211` | *which* session has the `/context` popover open — a single field used as a per-session flag; see section 5. **Removed**: it is now `contextPanelOpen` on each session's own store. |
+| `conversations` | `apps/web/lib/session-store/index.ts:68` | sidebar summary per session (keyed, but see Group C — it is a *list*, not per-session view state) |
+| `messagesById` | `apps/web/lib/session-store/index.ts:70` | every loaded message, keyed by message id |
+| `messageOrder` | `apps/web/lib/session-store/index.ts:72` | ordered message-id list per session |
+| `pendingProjectsByChat` | `apps/web/lib/session-store/index.ts:81` | project chosen for an unsent chat, keyed by provisional chat key |
+| `runningTasks` | `apps/web/lib/session-store/index.ts:90` | per-session running task; drives each composer's send/stop button |
+| `trees` | `apps/web/lib/session-store/index.ts:96` | latest live context tree per session |
+| `tokens` | `apps/web/lib/session-store/index.ts:103` | token usage per session |
+| `contextWindow` | `apps/web/lib/session-store/index.ts:112` | context-window size per session |
+| `heads` | `apps/web/lib/session-store/index.ts:115` | active DAG head (selected branch tip) per session |
+| `additionalWorkingDirsBySession` | `apps/web/lib/session-store/index.ts:146` | extra working directories per session |
+| `composerDrafts` | `apps/web/lib/session-store/index.ts:182` | unsent composer text per session, persisted to localStorage |
+| `composerSettingsBySession` | `apps/web/lib/session-store/index.ts:194` | tool toggles / thinking effort per session, persisted |
+| `contextPanelFor` | `apps/web/lib/session-store/index.ts:211` | *which* session has the `/context` popover open — a single field used as a per-session flag; see section 5. **Removed**: it is now `contextPanelOpen` on each session's own store. |
 
-`pendingDecisions` (`web/lib/session-store/index.ts:244`) is a hybrid worth
+`pendingDecisions` (`apps/web/lib/session-store/index.ts:244`) is a hybrid worth
 calling out: it is a flat FIFO array, but each entry carries its own
-`sessionId` (`web/lib/session-store/types.ts:60`), and the composer filters
+`sessionId` (`apps/web/lib/session-store/types.ts:60`), and the composer filters
 the queue down to its own session at
-`web/components/chat/composer/index.tsx:344`. Functionally it is already
+`apps/web/components/chat/composer/index.tsx:344`. Functionally it is already
 session-scoped; structurally it is a list that every consumer must filter
 correctly.
 
@@ -86,24 +86,24 @@ overwrites the first or is forced to read the first's value.
 
 | Field | Declared at | Why it should be scoped |
 | --- | --- | --- |
-| `currentSessionId` | `web/lib/session-store/index.ts:74` | "the" active session. With two panes there are two, and one is merely the *focused* one. |
-| `activeChatKey` | `web/lib/session-store/index.ts:77` | same, for unsent drafts using a provisional `local_*` id |
-| `runningTask` | `web/lib/session-store/index.ts:86` | deprecated in favour of `runningTasks[sid]`; kept alive only so legacy `setRunning(false)` callers kept working. **Removed.** |
-| `composerInput` | `web/lib/session-store/index.ts:178` | the *live* draft of the focused session; a mirror of `composerDrafts[focused]`. **Removed.** |
-| `composerSettings` | `web/lib/session-store/index.ts:193` | the *live* settings of the focused session; a mirror of `composerSettingsBySession[focused]`. **Removed.** |
-| `composerFocusTick` | `web/lib/session-store/index.ts:206` | a counter bumped to ask "the" composer to focus its textarea; with two composers it is ambiguous which one obeys |
-| `fnFormFunction` | `web/lib/session-store/index.ts:217` | which function's parameter form has replaced the textarea. Belongs to one composer, not the app. |
-| `fnFormPrefill` | `web/lib/session-store/index.ts:226` | prefilled arguments for that form |
-| `fnFormForkOf` | `web/lib/session-store/index.ts:227` | fork anchor node for a re-run |
-| `fnFormClosing` | `web/lib/session-store/index.ts:235` | close-animation flag for that form |
-| `welcomeVisible` | `web/lib/session-store/index.ts:165` | whether the chat area shows the welcome screen — a per-pane condition |
-| `transcriptLoadingId` | `web/lib/session-store/index.ts:172` | holds *one* in-flight session id; two panes can be loading at once |
-| `branchInfo` | `web/lib/session-store/index.ts:62` | branch chip for "the current conversation" |
-| `statusBadge` | `web/lib/session-store/index.ts:65` | topbar status label; derived from one session's run state |
-| `paused` | `web/lib/session-store/index.ts:92` | pause flag, per running session in principle |
-| `providerInfo` | `web/lib/session-store/index.ts:94` | provider/model shown in the header for the current session |
-| `detailNode` | `web/lib/session-store/index.ts:261` | selected DAG node shown in the right rail |
-| `nodeSelected` | `web/lib/session-store/index.ts:271` | "a DAG node is selected" gate |
+| `currentSessionId` | `apps/web/lib/session-store/index.ts:74` | "the" active session. With two panes there are two, and one is merely the *focused* one. |
+| `activeChatKey` | `apps/web/lib/session-store/index.ts:77` | same, for unsent drafts using a provisional `local_*` id |
+| `runningTask` | `apps/web/lib/session-store/index.ts:86` | deprecated in favour of `runningTasks[sid]`; kept alive only so legacy `setRunning(false)` callers kept working. **Removed.** |
+| `composerInput` | `apps/web/lib/session-store/index.ts:178` | the *live* draft of the focused session; a mirror of `composerDrafts[focused]`. **Removed.** |
+| `composerSettings` | `apps/web/lib/session-store/index.ts:193` | the *live* settings of the focused session; a mirror of `composerSettingsBySession[focused]`. **Removed.** |
+| `composerFocusTick` | `apps/web/lib/session-store/index.ts:206` | a counter bumped to ask "the" composer to focus its textarea; with two composers it is ambiguous which one obeys |
+| `fnFormFunction` | `apps/web/lib/session-store/index.ts:217` | which function's parameter form has replaced the textarea. Belongs to one composer, not the app. |
+| `fnFormPrefill` | `apps/web/lib/session-store/index.ts:226` | prefilled arguments for that form |
+| `fnFormForkOf` | `apps/web/lib/session-store/index.ts:227` | fork anchor node for a re-run |
+| `fnFormClosing` | `apps/web/lib/session-store/index.ts:235` | close-animation flag for that form |
+| `welcomeVisible` | `apps/web/lib/session-store/index.ts:165` | whether the chat area shows the welcome screen — a per-pane condition |
+| `transcriptLoadingId` | `apps/web/lib/session-store/index.ts:172` | holds *one* in-flight session id; two panes can be loading at once |
+| `branchInfo` | `apps/web/lib/session-store/index.ts:62` | branch chip for "the current conversation" |
+| `statusBadge` | `apps/web/lib/session-store/index.ts:65` | topbar status label; derived from one session's run state |
+| `paused` | `apps/web/lib/session-store/index.ts:92` | pause flag, per running session in principle |
+| `providerInfo` | `apps/web/lib/session-store/index.ts:94` | provider/model shown in the header for the current session |
+| `detailNode` | `apps/web/lib/session-store/index.ts:261` | selected DAG node shown in the right rail |
+| `nodeSelected` | `apps/web/lib/session-store/index.ts:271` | "a DAG node is selected" gate |
 
 `detailNode` and `nodeSelected` are listed here because they *describe* a
 session's DAG, but they are deliberately a non-goal — see section 9.
@@ -115,36 +115,36 @@ values.
 
 | Field | Declared at | What it is |
 | --- | --- | --- |
-| `wsStatus` | `web/lib/session-store/index.ts:48` | WebSocket connection state |
-| `agentSettings` | `web/lib/session-store/index.ts:51` | Chat/Exec model badges, mirrored from `window._agentSettings` |
-| `conversations` | `web/lib/session-store/index.ts:68` | the session *list* for the sidebar (a catalogue of all sessions, not one session's view state) |
-| `rightDock` | `web/lib/session-store/index.ts:256` | right sidebar open/collapsed and which view, persisted to localStorage |
+| `wsStatus` | `apps/web/lib/session-store/index.ts:48` | WebSocket connection state |
+| `agentSettings` | `apps/web/lib/session-store/index.ts:51` | Chat/Exec model badges, mirrored from `window._agentSettings` |
+| `conversations` | `apps/web/lib/session-store/index.ts:68` | the session *list* for the sidebar (a catalogue of all sessions, not one session's view state) |
+| `rightDock` | `apps/web/lib/session-store/index.ts:256` | right sidebar open/collapsed and which view, persisted to localStorage |
 
 ---
 
 ## 3. The other stores
 
-Beyond the main session store, `web/lib/state/` holds several smaller stores.
+Beyond the main session store, `apps/web/lib/state/` holds several smaller stores.
 None of them is on the critical path for session scoping, but knowing what
 lives where prevents duplicating state later.
 
-- **`web/lib/state/center-tabs-store.ts`** (1020 lines) — the tab strip and
+- **`apps/web/lib/state/center-tabs-store.ts`** (1020 lines) — the tab strip and
   pane layout: `tabs`, `activeId`, `groups`, `splitWebTabId`, `splitRatio`
-  (`web/lib/state/center-tabs-store.ts:129`). This is *view* state and is
+  (`apps/web/lib/state/center-tabs-store.ts:129`). This is *view* state and is
   correctly global: it describes the window, not a session. It is also the
   store that knows a split exists at all, so it is where the scope tree gets
   its session ids from.
-- **`web/lib/state/center-tab-groups.ts`** — pure functions over the tab
+- **`apps/web/lib/state/center-tab-groups.ts`** — pure functions over the tab
   layout (grouping, reordering, split panes). No state of its own.
-- **`web/lib/state/chat-scroll.ts`** — scroll position helpers keyed by chat
+- **`apps/web/lib/state/chat-scroll.ts`** — scroll position helpers keyed by chat
   key, persisted through a storage interface
-  (`web/lib/state/chat-scroll.ts:37`). Already per-session by construction,
+  (`apps/web/lib/state/chat-scroll.ts:37`). Already per-session by construction,
   just not inside the store.
-- **`web/lib/state/functions-store.ts`**, **`skills-store.ts`**,
+- **`apps/web/lib/state/functions-store.ts`**, **`skills-store.ts`**,
   **`plugins-store.ts`** — page-level catalogues and their filter/sort/search
   UI state. Genuinely global; these are settings pages, not sessions.
-- **`web/lib/state/files-shared.ts`** — project list, file reads, and file
-  drafts keyed by path (`web/lib/state/files-shared.ts:144`). Per-file, not
+- **`apps/web/lib/state/files-shared.ts`** — project list, file reads, and file
+  drafts keyed by path (`apps/web/lib/state/files-shared.ts:144`). Per-file, not
   per-session.
 
 ---
@@ -153,41 +153,41 @@ lives where prevents duplicating state later.
 
 There is a second, older state layer that predates the React store: plain
 mutable properties on the browser's `window` object, written and read by the
-modules under `web/lib/runtime-bridge/`. Their types are declared inline, for
-example at `web/lib/runtime-bridge/chat-handlers.ts:34` and
-`web/lib/runtime-bridge/conversations.ts:75`:
+modules under `apps/web/lib/runtime-bridge/`. Their types are declared inline, for
+example at `apps/web/lib/runtime-bridge/chat-handlers.ts:34` and
+`apps/web/lib/runtime-bridge/conversations.ts:75`:
 
 - `W.currentSessionId` — the legacy notion of the active session.
 - `W.conversations` — a heavy per-session map holding full message arrays,
   distinct from the store's lightweight `conversations` summary map.
 - `W.isRunning` — a single global "something is running" flag.
 - `W.__sessionStore` — an escape hatch letting legacy code reach into the
-  React store, used at `web/lib/runtime-bridge/chat-handlers.ts:895`.
+  React store, used at `apps/web/lib/runtime-bridge/chat-handlers.ts:895`.
 
 ### How the two layers relate
 
 They are a **dual-track system kept in sync by hand**. WebSocket frames arrive
 in the runtime bridge, which updates the `window.*` values *and* writes through
-to the React store. `web/lib/runtime-bridge/conv-store-mirror.ts:4` documents
+to the React store. `apps/web/lib/runtime-bridge/conv-store-mirror.ts:4` documents
 this explicitly: the sidebar reads `store.conversations`, so every mutation of
 `window.conversations` must also call through the mirror to keep the store
 authoritative.
 
 Most incoming frames are gated on the legacy global rather than the store. The
 pattern `data.session_id === W.currentSessionId` appears throughout
-`web/lib/runtime-bridge/chat-handlers.ts` (lines 226, 249, 251, 271, 451, 524,
-588, 747) and `web/lib/runtime-bridge/conversations.ts` (lines 332, 387, 527,
+`apps/web/lib/runtime-bridge/chat-handlers.ts` (lines 226, 249, 251, 271, 451, 524,
+588, 747) and `apps/web/lib/runtime-bridge/conversations.ts` (lines 332, 387, 527,
 530, 536). Each of those is a place where an event for a *non-focused* session
 is dropped or misrouted.
 
 **What has already routed around it.** The split-view pane does not go through
-the legacy shell at all. `web/components/chat/peer-session-pane.tsx:1` explains
+the legacy shell at all. `apps/web/components/chat/peer-session-pane.tsx:1` explains
 why: the legacy `#chatView` shell is a singleton keyed on hardcoded DOM ids
 (`#chatArea`, `#chatMessages`) read by roughly ten runtime-bridge modules, so
 it cannot be mounted twice. AppShell hides it entirely while split
-(`web/components/app-shell.tsx:552`) and each pane renders pure React off the
+(`apps/web/components/app-shell.tsx:552`) and each pane renders pure React off the
 store instead. The pane even sends its own `load_session` request
-(`web/components/chat/peer-session-pane.tsx:66`) because nothing in the legacy
+(`apps/web/components/chat/peer-session-pane.tsx:66`) because nothing in the legacy
 path loads a session that is not focused.
 
 **What still uses it.** Message rendering for the non-split path, session
@@ -232,7 +232,7 @@ contextPanelFor: string | null;
 ```
 
 The consumer then compares against its own session id
-(`web/components/chat/context-badge.tsx:44`):
+(`apps/web/components/chat/context-badge.tsx:44`):
 
 ```ts
 const panelOpen = useSessionStore((s) => s.contextPanelFor != null && s.contextPanelFor === sid);
@@ -257,7 +257,7 @@ both copies, and every session switch has to swap the mirror over
 (`switchChat`).
 
 A mirror also leaks into components, which must branch on whether they are
-bound to an explicit session (`web/components/chat/composer/index.tsx:166`):
+bound to an explicit session (`apps/web/components/chat/composer/index.tsx:166`):
 
 ```ts
 const input = useSessionStore((s) =>
@@ -343,13 +343,13 @@ The split is by *ownership*, not by storage shape:
 
 ### The pieces
 
-`web/lib/session-store/session-scope-registry.ts` holds the store factory and
+`apps/web/lib/session-store/session-scope-registry.ts` holds the store factory and
 a module-level `Map<sid, store>`. Instances are cached and **survive pane
 unmount** — tabbing away and back keeps the draft you were typing. They are
 dropped only when the session itself is deleted (`dropSessionStore`, called
 from `removeConversation` and `dropChatDraft`).
 
-`web/lib/session-store/session-scope.tsx` is the React layer:
+`apps/web/lib/session-store/session-scope.tsx` is the React layer:
 `SessionScopeProvider sid=…` and `useSessionScope(selector)`.
 
 **There is no unbound path.** `useSessionScope` throws when no provider
@@ -358,7 +358,7 @@ silent fallback is precisely the bug this layer removes, and it would surface
 only in a split view after a specific interaction sequence; throwing makes a
 missing wrap obvious on the first render. Two providers exist and between them
 cover every composer: `FocusedComposer` in
-`web/components/app-shell.tsx` wraps the single-session composer with the
+`apps/web/components/app-shell.tsx` wraps the single-session composer with the
 focused chat key, and `PeerSessionPane` wraps each split pane with its own.
 
 ### Why instances rather than a keyed global slice
@@ -425,16 +425,16 @@ Every Group B field becomes a property of `SessionScopeState`, read through
   `fnForm` property on the scope. The sidebar and favourites list *open* a form
   without knowing which pane should host it, so they name an explicit target
   session — a genuine behaviour decision, not a mechanical mapping. Consumers:
-  `web/components/chat/composer/modes/resolve-mode.ts:18`,
-  `web/components/chat/composer/modes/fn-form/use-fn-form-state.ts`,
-  `use-fn-form-wrapper.ts`, `web/lib/use-pending-run-function.ts`,
-  `web/components/sidebar/favorites-list.tsx`,
-  `web/components/sidebar/sidebar.tsx`,
-  `web/components/chat/messages/runtime-block.tsx`, and
-  `web/lib/runtime-bridge/functions-panel.ts`.
+  `apps/web/components/chat/composer/modes/resolve-mode.ts:18`,
+  `apps/web/components/chat/composer/modes/fn-form/use-fn-form-state.ts`,
+  `use-fn-form-wrapper.ts`, `apps/web/lib/use-pending-run-function.ts`,
+  `apps/web/components/sidebar/favorites-list.tsx`,
+  `apps/web/components/sidebar/sidebar.tsx`,
+  `apps/web/components/chat/messages/runtime-block.tsx`, and
+  `apps/web/lib/runtime-bridge/functions-panel.ts`.
 - `welcomeVisible` and `transcriptLoadingId` are per-session booleans, read by
-  `web/components/chat/welcome-screen.tsx` and
-  `web/components/chat/messages/message-list.tsx`.
+  `apps/web/components/chat/welcome-screen.tsx` and
+  `apps/web/components/chat/messages/message-list.tsx`.
 - `composerFocusTick` is a per-session counter, so focusing one pane's textarea
   does not yank the other.
 - `branchInfo`, `statusBadge`, `paused`, `providerInfo` are per-session. They
@@ -446,7 +446,7 @@ Every Group B field becomes a property of `SessionScopeState`, read through
   `activeId`.
 
 `pendingDecisions` routing depends on this scoping being right: it is filtered
-by `sessionId` at `web/components/chat/composer/index.tsx:344`, and a
+by `sessionId` at `apps/web/components/chat/composer/index.tsx:344`, and a
 mis-scoped composer would either swallow another session's question or show it
 twice.
 
@@ -456,12 +456,12 @@ The `window.*` layer described in section 4 is not part of the design; it is
 what the store replaces. It can be removed once all of the following hold:
 
 1. Every `data.session_id === W.currentSessionId` gate in
-   `web/lib/runtime-bridge/chat-handlers.ts` and `conversations.ts` is a store
+   `apps/web/lib/runtime-bridge/chat-handlers.ts` and `conversations.ts` is a store
    write keyed on `data.session_id`, so frames for background sessions land
    instead of being dropped. This requires the store to distinguish "focused"
    from "the session" first, which is what the focus pointers in section 7 do.
 2. `window.conversations` has no readers the store's keyed maps do not cover,
-   making `web/lib/runtime-bridge/conv-store-mirror.ts` unnecessary rather than
+   making `apps/web/lib/runtime-bridge/conv-store-mirror.ts` unnecessary rather than
    load-bearing.
 3. `W.isRunning` has no readers; `runningTasks` covers it.
 4. The singleton `#chatView` DOM shell is gone, replaced by the React path that
@@ -476,9 +476,9 @@ verification that the frame still reaches its session.
 
 **The right sidebar and the DAG stay single-instance, following the focused
 session.** `detailNode` and `nodeSelected`
-(`web/lib/session-store/index.ts:261`, `:271`) remain global. Nothing renders
+(`apps/web/lib/session-store/index.ts:261`, `:271`) remain global. Nothing renders
 them twice: the right rail is one dock
-(`web/components/right-sidebar/right-sidebar.tsx:407`, `:575`), and there is no
+(`apps/web/components/right-sidebar/right-sidebar.tsx:407`, `:575`), and there is no
 plan to give each pane its own DAG. They can keep reading the focused session
 and be correct.
 
@@ -514,7 +514,7 @@ Not yet landed:
 - section 8 — the legacy `window.*` layer is still the default path for
   message rendering outside split view, session switching, branch badge
   refresh, and most WebSocket frame routing. Retiring it spans all of
-  `web/lib/runtime-bridge/` (thirteen modules plus the `dag` subdirectory) and
+  `apps/web/lib/runtime-bridge/` (thirteen modules plus the `dag` subdirectory) and
   is the one piece where partial completion leaves the codebase worse than
   either endpoint, so it is sequenced last and done per module in one
   sustained pass.

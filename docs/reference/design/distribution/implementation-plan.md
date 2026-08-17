@@ -75,7 +75,7 @@ duplicated in this historical distribution ledger.
 - Public boundaries: `scripts/refresh-local-app.sh` only refreshes an installed
   App whose bundle, runtime manifest, Python distribution metadata, Python
   source version, and Desktop source version are identical.
-  `desktop/scripts/install-app.sh` rejects a candidate older than the current
+  `apps/desktop/scripts/install-app.sh` rejects a candidate older than the current
   canonical App before lock acquisition, then copies and validates the candidate
   under the lock and compares that immutable staged version with the installed
   App before worker shutdown or filesystem mutation. Numeric version segments
@@ -103,11 +103,11 @@ duplicated in this historical distribution ledger.
 - Public entry: `cd desktop && npm run dist` builds one complete temporary
   `OpenProgram.app`, verifies it, and replaces only
   `/Applications/OpenProgram.app`.
-- Icon contract: `desktop/build/AppIcon.icon` is the Apple layered authoring
+- Icon contract: `apps/desktop/build/AppIcon.icon` is the Apple layered authoring
   source. Its four 1024 x 1024 SVG layers leave the system outline unmasked and
   preserve the approved brand ring and three nodes. Because the supported
   macOS 15 build host lacks the full Xcode `actool` pipeline, the reviewed
-  `desktop/build/icon.icns` is checked in as Electron's packaging input. The
+  `apps/desktop/build/icon.icns` is checked in as Electron's packaging input. The
   gate verifies both assets, all legacy representations, and the installed
   system contour; the removed hand-drawn outer-shape SVG must not return.
 - Transaction contract: a failed activation never deletes the old App's only
@@ -124,9 +124,9 @@ duplicated in this historical distribution ledger.
   Python wheel build, generated Web build/output, copied Web frontend, and lock.
   Installed App data, source files, package dependencies, and user state are not
   removed.
-- Production files: `desktop/build/AppIcon.icon`, `desktop/build/icon.icns`,
-  `desktop/scripts/check-icon.sh`, `desktop/scripts/package-and-install-app.sh`,
-  `desktop/scripts/install-app.sh`, and
+- Production files: `apps/desktop/build/AppIcon.icon`, `apps/desktop/build/icon.icns`,
+  `apps/desktop/scripts/check-icon.sh`, `apps/desktop/scripts/package-and-install-app.sh`,
+  `apps/desktop/scripts/install-app.sh`, and
   `openprogram/worker/services/launchd.py`.
 - Acceptance: the icon gate requires a 1024 x 1024 source, transparent corners,
   the 824 x 824 opaque body bounds, a 256 px raster contour and solid-area
@@ -280,7 +280,7 @@ The platform runtime and public desktop artifact probes run on native release ru
 
 ### Prior-batch files
 
-- Production: `openprogram/webui/frontend.py`, `pyproject.toml`, `desktop/main.js`, `desktop/package.json`, release staging scripts, and the release workflow.
+- Production: `openprogram/webui/frontend.py`, `pyproject.toml`, `apps/desktop/main.js`, `apps/desktop/package.json`, release staging scripts, and the release workflow.
 - Tests: frontend package-resource tests, desktop packaged-runtime checks, and release configuration checks.
 - Documentation: the distribution HTML design, related design links, and install/upgrade/desktop/server product pages.
 
@@ -309,7 +309,7 @@ Platform artifact builds run in the release workflow because a macOS host cannot
 ### Prior Linux completion batch
 
 - Base commit: `540591e9f628498dee87a1c2ebb30ab4c5e757f6`.
-- Production files: `desktop/package.json`, `scripts/smoke-packaged-runtime.sh`, `scripts/install-release.sh`, `.github/workflows/release.yml`, and `.github/workflows/linux-release-smoke.yml`.
+- Production files: `apps/desktop/package.json`, `scripts/smoke-packaged-runtime.sh`, `scripts/install-release.sh`, `.github/workflows/release.yml`, and `.github/workflows/linux-release-smoke.yml`.
 - Test file: `tests/unit/test_distribution_release.py`.
 - Linux x86_64 acceptance: build the AppImage on a native x86_64 runner, execute its public entry under Xvfb, let Electron start the embedded worker, verify `/healthz`, `/chat`, immutable Program behavior, and matching freedesktop filename/`StartupWMClass` metadata.
 - Linux CLI acceptance: on native x86_64 and arm64 runners, install the release wheel with the pinned uv and managed CPython, cold-start the worker before switching `current`, and verify the installed launcher version.

@@ -67,7 +67,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 - **8 zero-importer half-typed orphan files** (`tree-panel.tsx`, `shiki-code.tsx`, `ui/dropdown.tsx`, `branches-panel.tsx`, `memory-page.tsx`, `providers-section.tsx`, `search-providers-section.tsx`, `use-legacy-globals.ts`) — each referenced modules that don't exist, was carried in by an earlier integration commit, and was caught here. `tsc --noEmit` error count dropped from 23 to 0, and the `next.config.mjs` `eslint.ignoreDuringBuilds` / `typescript.ignoreBuildErrors` escape-hatches were removed; `npm run build` now goes through full lint + typecheck on every CI run.
-- **`web/components/programs/`** orphan directory + `web/lib/programs-*.ts` — the upstream `programs → functions` rename finished in `b516787a`, but a parallel local copy of the pre-rename tree had survived; cleaned up here.
+- **`apps/web/components/programs/`** orphan directory + `apps/web/lib/programs-*.ts` — the upstream `programs → functions` rename finished in `b516787a`, but a parallel local copy of the pre-rename tree had survived; cleaned up here.
 
 ### Fixed
 - **Windows: `import fcntl` no longer breaks the worker / agent registry / channel bindings / sleep runner / browser bootstrap** — six modules did a top-level `import fcntl`, which is POSIX-only and crashed every Windows import with `ModuleNotFoundError`. A new `openprogram._compat` shim re-exports `fcntl` on POSIX and emulates the same `flock` / `LOCK_*` surface on Windows via `msvcrt.locking`, translating `EACCES` to `BlockingIOError` so call sites keep the POSIX exception pattern. `openprogram worker <verb>` now runs cleanly on Windows.

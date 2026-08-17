@@ -7,8 +7,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-# desktop/build 是 electron-builder 的源资产目录（应用图标），不是构建产物
-!desktop/build/
+# apps/desktop/build 是 electron-builder 的源资产目录（应用图标），不是构建产物
+!apps/desktop/build/
 .pytest_cache/
 .DS_Store
 
@@ -64,10 +64,10 @@ openprogram/programs/applications/*
 .backend.log.err
 
 # Frontend dependency/build artifacts
-web/node_modules/
-web/.next/
-web/next-env.d.ts
-web/tsconfig.tsbuildinfo
+apps/web/node_modules/
+apps/web/.next/
+apps/web/next-env.d.ts
+apps/web/tsconfig.tsbuildinfo
 # Release staging copies web/out here before building the wheel.
 openprogram/webui/_frontend/
 
@@ -97,9 +97,9 @@ docs/reference/config-keys.md
 docs/reference/provider-registry.md
 
 # Electron desktop shell
-desktop/node_modules/
-desktop/dist/
-desktop/build/runtime/
+apps/desktop/node_modules/
+apps/desktop/dist/
+apps/desktop/build/runtime/
 
 # Scratch state written by examples/embed_in_your_stack.py
 examples/embed_demo_state/

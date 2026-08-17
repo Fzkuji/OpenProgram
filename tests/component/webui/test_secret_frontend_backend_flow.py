@@ -29,7 +29,7 @@ from openprogram.webui.routes import accounts, config, providers
 
 _STORED_SECRET = "sk-stored-secret-abc4"
 _NEW_SECRET = "sk-rotated-secret-9999"
-_WEB_ROOT = Path(__file__).resolve().parents[3] / "web"
+_WEB_ROOT = Path(__file__).resolve().parents[3] / "apps" / "web"
 
 
 def _normalize_in_browser_code(cases: list[tuple[str, str]]) -> list[str | None]:

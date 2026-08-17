@@ -14,7 +14,7 @@
 
 - **版本**: `tailwindcss ^3.4.1`,`postcss ^8`,插件 `tailwindcss-animate ^1.0.7`。
 - **配置**: `web/tailwind.config.ts`(139 行)—— 把 `app/styles/base.css` 的所有 CSS 变量 token 映射成 utility 别名(颜色 `text-bright`/`bg-hover`/`accent-*`、圆角、字号 `fs-*`、间距 `composer-*`/`sidebar-w`、动画 accordion/spin-refresh)。
-- **入口**: `web/app/globals.css` —— `@tailwind base/components/utilities` 三行 + `@import` 字体 + shadcn token bridge (`:root`)。
+- **入口**: `apps/web/app/globals.css` —— `@tailwind base/components/utilities` 三行 + `@import` 字体 + shadcn token bridge (`:root`)。
 - **`@apply` 用量**: **0 处**(省掉 v4 最大迁移坑)。
 - **shadcn/ui**: 组件源码复制进 `components/ui/*.tsx`,非依赖,v4 兼容,不存在版本冲突。
 - **暗色模式**: `darkMode: ["class"]`。

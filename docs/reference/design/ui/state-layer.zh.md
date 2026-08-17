@@ -15,7 +15,7 @@ web 前端的状态存放方式是：**每个会话一个 Zustand store 实例�
 [zustand](https://github.com/pmndrs/zustand)——一个小库，创建一个对象，里面既放数据
 （`currentSessionId`、`composerDrafts`），也放修改数据的函数（`setCurrentConv`、
 `setComposerInput`）。页面任何位置的组件都能直接读这个盒子里的任何字段，不需要一层层
-传 props。主盒子在 `web/lib/session-store/index.ts:400`。
+传 props。主盒子在 `apps/web/lib/session-store/index.ts:400`。
 
 **组件订阅一个切片。** 组件调用 `useSessionStore((s) => s.conversations)` 时，只有
 `conversations` 变化才会触发它重新渲染。那个选择器函数就是订阅关系。
@@ -31,9 +31,9 @@ web 前端的状态存放方式是：**每个会话一个 Zustand store 实例�
 
 ## 2. 主 store 逐字段盘点
 
-`web/lib/session-store/index.ts` 在 `ConvState` 接口
-（`web/lib/session-store/index.ts:46`）里声明形状，在
-`web/lib/session-store/index.ts:400` 给初值。下面把每个字段归入三类之一。标注**已删除**
+`apps/web/lib/session-store/index.ts` 在 `ConvState` 接口
+（`apps/web/lib/session-store/index.ts:46`）里声明形状，在
+`apps/web/lib/session-store/index.ts:400` 给初值。下面把每个字段归入三类之一。标注**已删除**
 的字段列在这里，是因为它们说明了这套设计排除掉什么；代码里已经没有它们了。
 
 ### A 类 —— 按会话隔离
@@ -43,24 +43,24 @@ web 前端的状态存放方式是：**每个会话一个 Zustand store 实例�
 
 | 字段 | 声明位置 | 内容 |
 | --- | --- | --- |
-| `conversations` | `web/lib/session-store/index.ts:68` | 侧栏每会话摘要（虽然按键存，但它是一份*列表*，见 C 类） |
-| `messagesById` | `web/lib/session-store/index.ts:70` | 所有已加载消息，按消息 id 存 |
-| `messageOrder` | `web/lib/session-store/index.ts:72` | 每会话的消息 id 有序列表 |
-| `pendingProjectsByChat` | `web/lib/session-store/index.ts:81` | 未发送会话选定的项目，按临时 chat key 存 |
-| `runningTasks` | `web/lib/session-store/index.ts:90` | 每会话运行任务；驱动各自 composer 的发送/停止按钮 |
-| `trees` | `web/lib/session-store/index.ts:96` | 每会话最新的实时 context 树 |
-| `tokens` | `web/lib/session-store/index.ts:103` | 每会话 token 用量 |
-| `contextWindow` | `web/lib/session-store/index.ts:112` | 每会话上下文窗口大小 |
-| `heads` | `web/lib/session-store/index.ts:115` | 每会话当前 DAG head（选中的分支尖端） |
-| `additionalWorkingDirsBySession` | `web/lib/session-store/index.ts:146` | 每会话附加工作目录 |
-| `composerDrafts` | `web/lib/session-store/index.ts:182` | 每会话未发送草稿文本，持久化到 localStorage |
-| `composerSettingsBySession` | `web/lib/session-store/index.ts:194` | 每会话工具开关/思考强度，持久化 |
-| `contextPanelFor` | `web/lib/session-store/index.ts:211` | `/context` 浮窗开在*哪个*会话上——单字段当按会话标志用，见第 5 节。**已删除**：现在是每会话 store 上的 `contextPanelOpen`。 |
+| `conversations` | `apps/web/lib/session-store/index.ts:68` | 侧栏每会话摘要（虽然按键存，但它是一份*列表*，见 C 类） |
+| `messagesById` | `apps/web/lib/session-store/index.ts:70` | 所有已加载消息，按消息 id 存 |
+| `messageOrder` | `apps/web/lib/session-store/index.ts:72` | 每会话的消息 id 有序列表 |
+| `pendingProjectsByChat` | `apps/web/lib/session-store/index.ts:81` | 未发送会话选定的项目，按临时 chat key 存 |
+| `runningTasks` | `apps/web/lib/session-store/index.ts:90` | 每会话运行任务；驱动各自 composer 的发送/停止按钮 |
+| `trees` | `apps/web/lib/session-store/index.ts:96` | 每会话最新的实时 context 树 |
+| `tokens` | `apps/web/lib/session-store/index.ts:103` | 每会话 token 用量 |
+| `contextWindow` | `apps/web/lib/session-store/index.ts:112` | 每会话上下文窗口大小 |
+| `heads` | `apps/web/lib/session-store/index.ts:115` | 每会话当前 DAG head（选中的分支尖端） |
+| `additionalWorkingDirsBySession` | `apps/web/lib/session-store/index.ts:146` | 每会话附加工作目录 |
+| `composerDrafts` | `apps/web/lib/session-store/index.ts:182` | 每会话未发送草稿文本，持久化到 localStorage |
+| `composerSettingsBySession` | `apps/web/lib/session-store/index.ts:194` | 每会话工具开关/思考强度，持久化 |
+| `contextPanelFor` | `apps/web/lib/session-store/index.ts:211` | `/context` 浮窗开在*哪个*会话上——单字段当按会话标志用，见第 5 节。**已删除**：现在是每会话 store 上的 `contextPanelOpen`。 |
 
-`pendingDecisions`（`web/lib/session-store/index.ts:244`）是个值得单独说的混合体：
+`pendingDecisions`（`apps/web/lib/session-store/index.ts:244`）是个值得单独说的混合体：
 它是扁平的 FIFO 数组，但每一项自带 `sessionId`
-（`web/lib/session-store/types.ts:60`），composer 在
-`web/components/chat/composer/index.tsx:344` 把队列过滤到自己的会话。功能上已经按
+（`apps/web/lib/session-store/types.ts:60`），composer 在
+`apps/web/components/chat/composer/index.tsx:344` 把队列过滤到自己的会话。功能上已经按
 会话隔离，结构上是一份需要每个消费方都正确过滤的列表。
 
 ### B 类 —— 全局单例，但语义属于某个会话
@@ -70,24 +70,24 @@ web 前端的状态存放方式是：**每个会话一个 Zustand store 实例�
 
 | 字段 | 声明位置 | 为什么应该按会话隔离 |
 | --- | --- | --- |
-| `currentSessionId` | `web/lib/session-store/index.ts:74` | "那个"活动会话。两个窗格时有两个，其中一个只是*聚焦*的那个 |
-| `activeChatKey` | `web/lib/session-store/index.ts:77` | 同上，用于未发送草稿的临时 `local_*` id |
-| `runningTask` | `web/lib/session-store/index.ts:86` | 已废弃，应读 `runningTasks[sid]`；保留只为让旧的 `setRunning(false)` 调用方还能用。**已删除。** |
-| `composerInput` | `web/lib/session-store/index.ts:178` | 聚焦会话的*活动*草稿；是 `composerDrafts[focused]` 的镜像。**已删除。** |
-| `composerSettings` | `web/lib/session-store/index.ts:193` | 聚焦会话的*活动*设置；是 `composerSettingsBySession[focused]` 的镜像。**已删除。** |
-| `composerFocusTick` | `web/lib/session-store/index.ts:206` | 自增计数器，用来让"那个"composer 聚焦输入框；两个 composer 时无法确定谁该响应 |
-| `fnFormFunction` | `web/lib/session-store/index.ts:217` | 哪个函数的参数表单替换了输入框。属于某一个 composer，不属于整个应用 |
-| `fnFormPrefill` | `web/lib/session-store/index.ts:226` | 该表单的预填参数 |
-| `fnFormForkOf` | `web/lib/session-store/index.ts:227` | 重跑时的 fork 锚点节点 |
-| `fnFormClosing` | `web/lib/session-store/index.ts:235` | 该表单的关闭动画标志 |
-| `welcomeVisible` | `web/lib/session-store/index.ts:165` | 聊天区是否显示欢迎屏——这是每窗格的条件 |
-| `transcriptLoadingId` | `web/lib/session-store/index.ts:172` | 只存*一个*在途会话 id；两个窗格可以同时在加载 |
-| `branchInfo` | `web/lib/session-store/index.ts:62` | "当前会话"的分支 chip |
-| `statusBadge` | `web/lib/session-store/index.ts:65` | 顶栏状态标签；由某一个会话的运行状态推导 |
-| `paused` | `web/lib/session-store/index.ts:92` | 暂停标志，原理上应按运行中的会话分 |
-| `providerInfo` | `web/lib/session-store/index.ts:94` | 顶栏显示的当前会话 provider/模型 |
-| `detailNode` | `web/lib/session-store/index.ts:261` | 右栏显示的选中 DAG 节点 |
-| `nodeSelected` | `web/lib/session-store/index.ts:271` | "有 DAG 节点被选中"的闸门 |
+| `currentSessionId` | `apps/web/lib/session-store/index.ts:74` | "那个"活动会话。两个窗格时有两个，其中一个只是*聚焦*的那个 |
+| `activeChatKey` | `apps/web/lib/session-store/index.ts:77` | 同上，用于未发送草稿的临时 `local_*` id |
+| `runningTask` | `apps/web/lib/session-store/index.ts:86` | 已废弃，应读 `runningTasks[sid]`；保留只为让旧的 `setRunning(false)` 调用方还能用。**已删除。** |
+| `composerInput` | `apps/web/lib/session-store/index.ts:178` | 聚焦会话的*活动*草稿；是 `composerDrafts[focused]` 的镜像。**已删除。** |
+| `composerSettings` | `apps/web/lib/session-store/index.ts:193` | 聚焦会话的*活动*设置；是 `composerSettingsBySession[focused]` 的镜像。**已删除。** |
+| `composerFocusTick` | `apps/web/lib/session-store/index.ts:206` | 自增计数器，用来让"那个"composer 聚焦输入框；两个 composer 时无法确定谁该响应 |
+| `fnFormFunction` | `apps/web/lib/session-store/index.ts:217` | 哪个函数的参数表单替换了输入框。属于某一个 composer，不属于整个应用 |
+| `fnFormPrefill` | `apps/web/lib/session-store/index.ts:226` | 该表单的预填参数 |
+| `fnFormForkOf` | `apps/web/lib/session-store/index.ts:227` | 重跑时的 fork 锚点节点 |
+| `fnFormClosing` | `apps/web/lib/session-store/index.ts:235` | 该表单的关闭动画标志 |
+| `welcomeVisible` | `apps/web/lib/session-store/index.ts:165` | 聊天区是否显示欢迎屏——这是每窗格的条件 |
+| `transcriptLoadingId` | `apps/web/lib/session-store/index.ts:172` | 只存*一个*在途会话 id；两个窗格可以同时在加载 |
+| `branchInfo` | `apps/web/lib/session-store/index.ts:62` | "当前会话"的分支 chip |
+| `statusBadge` | `apps/web/lib/session-store/index.ts:65` | 顶栏状态标签；由某一个会话的运行状态推导 |
+| `paused` | `apps/web/lib/session-store/index.ts:92` | 暂停标志，原理上应按运行中的会话分 |
+| `providerInfo` | `apps/web/lib/session-store/index.ts:94` | 顶栏显示的当前会话 provider/模型 |
+| `detailNode` | `apps/web/lib/session-store/index.ts:261` | 右栏显示的选中 DAG 节点 |
+| `nodeSelected` | `apps/web/lib/session-store/index.ts:271` | "有 DAG 节点被选中"的闸门 |
 
 `detailNode` 和 `nodeSelected` 列在这里是因为它们*描述*某个会话的 DAG，但它们是明确的
 非目标——见第 9 节。
@@ -98,66 +98,66 @@ web 前端的状态存放方式是：**每个会话一个 Zustand store 实例�
 
 | 字段 | 声明位置 | 是什么 |
 | --- | --- | --- |
-| `wsStatus` | `web/lib/session-store/index.ts:48` | WebSocket 连接状态 |
-| `agentSettings` | `web/lib/session-store/index.ts:51` | Chat/Exec 模型徽标，镜像自 `window._agentSettings` |
-| `conversations` | `web/lib/session-store/index.ts:68` | 侧栏的会话*列表*（所有会话的目录，不是某个会话的视图状态） |
-| `rightDock` | `web/lib/session-store/index.ts:256` | 右侧栏展开/收起及当前视图，持久化到 localStorage |
+| `wsStatus` | `apps/web/lib/session-store/index.ts:48` | WebSocket 连接状态 |
+| `agentSettings` | `apps/web/lib/session-store/index.ts:51` | Chat/Exec 模型徽标，镜像自 `window._agentSettings` |
+| `conversations` | `apps/web/lib/session-store/index.ts:68` | 侧栏的会话*列表*（所有会话的目录，不是某个会话的视图状态） |
+| `rightDock` | `apps/web/lib/session-store/index.ts:256` | 右侧栏展开/收起及当前视图，持久化到 localStorage |
 
 ---
 
 ## 3. 其他 store
 
-除主 session store 外，`web/lib/state/` 下还有若干较小的 store。它们都不在会话隔离的
+除主 session store 外，`apps/web/lib/state/` 下还有若干较小的 store。它们都不在会话隔离的
 关键路径上，但知道各自管什么可以避免以后重复造状态。
 
-- **`web/lib/state/center-tabs-store.ts`**（1020 行）—— 标签条与窗格布局：`tabs`、
+- **`apps/web/lib/state/center-tabs-store.ts`**（1020 行）—— 标签条与窗格布局：`tabs`、
   `activeId`、`groups`、`splitWebTabId`、`splitRatio`
-  （`web/lib/state/center-tabs-store.ts:129`）。这是*视图*状态，全局是正确的：它描述
+  （`apps/web/lib/state/center-tabs-store.ts:129`）。这是*视图*状态，全局是正确的：它描述
   窗口，不描述会话。它也是唯一知道"当前存在分屏"的 store，所以作用域树的会话 id 从这里来。
-- **`web/lib/state/center-tab-groups.ts`** —— 对标签布局的纯函数（分组、重排、分屏窗格）。
+- **`apps/web/lib/state/center-tab-groups.ts`** —— 对标签布局的纯函数（分组、重排、分屏窗格）。
   自身无状态。
-- **`web/lib/state/chat-scroll.ts`** —— 按 chat key 存的滚动位置助手，通过一个存储接口
-  持久化（`web/lib/state/chat-scroll.ts:37`）。天然按会话分，只是不在 store 里。
-- **`web/lib/state/functions-store.ts`**、**`skills-store.ts`**、
+- **`apps/web/lib/state/chat-scroll.ts`** —— 按 chat key 存的滚动位置助手，通过一个存储接口
+  持久化（`apps/web/lib/state/chat-scroll.ts:37`）。天然按会话分，只是不在 store 里。
+- **`apps/web/lib/state/functions-store.ts`**、**`skills-store.ts`**、
   **`plugins-store.ts`** —— 页面级清单及其筛选/排序/搜索的 UI 状态。确实是全局的；
   这些是设置页，不是会话。
-- **`web/lib/state/files-shared.ts`** —— 项目列表、文件读取、按路径分键的文件草稿
-  （`web/lib/state/files-shared.ts:144`）。按文件分，不按会话分。
+- **`apps/web/lib/state/files-shared.ts`** —— 项目列表、文件读取、按路径分键的文件草稿
+  （`apps/web/lib/state/files-shared.ts:144`）。按文件分，不按会话分。
 
 ---
 
 ## 4. 遗留的 `window.*` 层
 
 还有第二套更老的状态层，早于 React store：直接挂在浏览器 `window` 对象上的可变属性，
-由 `web/lib/runtime-bridge/` 下的模块读写。类型就地声明，比如
-`web/lib/runtime-bridge/chat-handlers.ts:34` 和
-`web/lib/runtime-bridge/conversations.ts:75`：
+由 `apps/web/lib/runtime-bridge/` 下的模块读写。类型就地声明，比如
+`apps/web/lib/runtime-bridge/chat-handlers.ts:34` 和
+`apps/web/lib/runtime-bridge/conversations.ts:75`：
 
 - `W.currentSessionId` —— 遗留层对"活动会话"的记法。
 - `W.conversations` —— 一份重量级的每会话表，存完整消息数组，与 store 里轻量的
   `conversations` 摘要表不是同一个东西。
 - `W.isRunning` —— 单个全局"有东西在跑"标志。
 - `W.__sessionStore` —— 让遗留代码伸手进 React store 的逃生口，用在
-  `web/lib/runtime-bridge/chat-handlers.ts:895`。
+  `apps/web/lib/runtime-bridge/chat-handlers.ts:895`。
 
 ### 两层的关系
 
 它们是**手工保持同步的双轨系统**。WebSocket 帧到达 runtime bridge，bridge 更新
-`window.*` 的值，*同时*写穿到 React store。`web/lib/runtime-bridge/conv-store-mirror.ts:4`
+`window.*` 的值，*同时*写穿到 React store。`apps/web/lib/runtime-bridge/conv-store-mirror.ts:4`
 明确写了这一点：侧栏读 `store.conversations`，所以每一处改动
 `window.conversations` 的地方都必须同时走这个镜像，才能让 store 保持权威。
 
 大部分进入的帧是用遗留全局而非 store 做闸门。`data.session_id === W.currentSessionId`
-这个模式贯穿 `web/lib/runtime-bridge/chat-handlers.ts`（第 226、249、251、271、451、
-524、588、747 行）和 `web/lib/runtime-bridge/conversations.ts`（第 332、387、527、530、
+这个模式贯穿 `apps/web/lib/runtime-bridge/chat-handlers.ts`（第 226、249、251、271、451、
+524、588、747 行）和 `apps/web/lib/runtime-bridge/conversations.ts`（第 332、387、527、530、
 536 行）。每一处都是一个"针对*非聚焦*会话的事件会被丢弃或错投"的地方。
 
 **哪些已经绕开了。** 分屏窗格完全不走遗留 shell。
-`web/components/chat/peer-session-pane.tsx:1` 解释了原因：遗留的 `#chatView` shell 是
+`apps/web/components/chat/peer-session-pane.tsx:1` 解释了原因：遗留的 `#chatView` shell 是
 单例，键在写死的 DOM id（`#chatArea`、`#chatMessages`）上，被大约十个 runtime-bridge
 模块读取，因此不可能挂载两次。分屏时 AppShell 把它整个隐藏
-（`web/components/app-shell.tsx:552`），每个窗格改为直接从 store 渲染纯 React。窗格
-甚至自己发 `load_session` 请求（`web/components/chat/peer-session-pane.tsx:66`），因为
+（`apps/web/components/app-shell.tsx:552`），每个窗格改为直接从 store 渲染纯 React。窗格
+甚至自己发 `load_session` 请求（`apps/web/components/chat/peer-session-pane.tsx:66`），因为
 遗留路径里没有任何东西会去加载非聚焦的会话。
 
 **哪些还在用。** 非分屏路径的消息渲染、会话切换、分支徽标刷新，以及大部分 WebSocket
@@ -192,7 +192,7 @@ web 前端的状态存放方式是：**每个会话一个 Zustand store 实例�
 contextPanelFor: string | null;
 ```
 
-消费方随即与自己的会话 id 比较（`web/components/chat/context-badge.tsx:44`）：
+消费方随即与自己的会话 id 比较（`apps/web/components/chat/context-badge.tsx:44`）：
 
 ```ts
 const panelOpen = useSessionStore((s) => s.contextPanelFor != null && s.contextPanelFor === sid);
@@ -212,7 +212,7 @@ const panelOpen = useSessionStore((s) => s.contextPanelFor != null && s.contextP
 会话都必须把镜像换过去（`switchChat`）。
 
 镜像还会渗进组件，组件不得不按"是否绑定了明确的会话"分支
-（`web/components/chat/composer/index.tsx:166`）：
+（`apps/web/components/chat/composer/index.tsx:166`）：
 
 ```ts
 const input = useSessionStore((s) =>
@@ -276,18 +276,18 @@ Chrome 是最极端的例子：主进程管标签条/书签/设置等全局态�
 
 ### 组成部件
 
-`web/lib/session-store/session-scope-registry.ts` 放 store 工厂和模块级
+`apps/web/lib/session-store/session-scope-registry.ts` 放 store 工厂和模块级
 `Map<sid, store>`。实例会缓存，**窗格卸载不销毁**——切走标签再切回来，正在打的草稿还在。
 只有会话本身被删除时才丢弃（`dropSessionStore`，由 `removeConversation` 和
 `dropChatDraft` 调用）。
 
-`web/lib/session-store/session-scope.tsx` 是 React 层：`SessionScopeProvider sid=…`
+`apps/web/lib/session-store/session-scope.tsx` 是 React 层：`SessionScopeProvider sid=…`
 和 `useSessionScope(selector)`。
 
 **不存在无绑定路径。** 组件不在 provider 内时 `useSessionScope` 直接抛错，而不是回落到
 聚焦会话。静默兜底正是这一层要消灭的 bug，而且它只会在分屏、且经过特定交互序列后才暴露；
 抛错让漏包在第一次渲染时就现形。现有两个 provider 覆盖了全部 composer：
-`web/components/app-shell.tsx` 里的 `FocusedComposer` 用聚焦 chat key 包住单会话
+`apps/web/components/app-shell.tsx` 里的 `FocusedComposer` 用聚焦 chat key 包住单会话
 composer，`PeerSessionPane` 用各自的会话 id 包住每个分屏窗格。
 
 ### 为什么用实例，而不是全局分键切片
@@ -338,16 +338,16 @@ React context 提供键，让消费方读 `map[scopeKey]` 而不是读全局。`
 - `fnFormFunction` / `fnFormPrefill` / `fnFormForkOf` / `fnFormClosing` 合成作用域上
   的一个 `fnForm` 属性。侧栏和收藏列表在*打开*表单时并不知道该由哪个窗格承载，因此
   它们指定一个明确的目标会话——这是一个真实的行为决策，不是机械映射。消费方：
-  `web/components/chat/composer/modes/resolve-mode.ts:18`、
-  `web/components/chat/composer/modes/fn-form/use-fn-form-state.ts`、
-  `use-fn-form-wrapper.ts`、`web/lib/use-pending-run-function.ts`、
-  `web/components/sidebar/favorites-list.tsx`、
-  `web/components/sidebar/sidebar.tsx`、
-  `web/components/chat/messages/runtime-block.tsx`、
-  `web/lib/runtime-bridge/functions-panel.ts`。
+  `apps/web/components/chat/composer/modes/resolve-mode.ts:18`、
+  `apps/web/components/chat/composer/modes/fn-form/use-fn-form-state.ts`、
+  `use-fn-form-wrapper.ts`、`apps/web/lib/use-pending-run-function.ts`、
+  `apps/web/components/sidebar/favorites-list.tsx`、
+  `apps/web/components/sidebar/sidebar.tsx`、
+  `apps/web/components/chat/messages/runtime-block.tsx`、
+  `apps/web/lib/runtime-bridge/functions-panel.ts`。
 - `welcomeVisible`、`transcriptLoadingId` 是每会话布尔值，消费方为
-  `web/components/chat/welcome-screen.tsx` 和
-  `web/components/chat/messages/message-list.tsx`。
+  `apps/web/components/chat/welcome-screen.tsx` 和
+  `apps/web/components/chat/messages/message-list.tsx`。
 - `composerFocusTick` 是每会话计数器，这样聚焦一个窗格的输入框不会把另一个拽走。
 - `branchInfo`、`statusBadge`、`paused`、`providerInfo` 按会话分。它们喂给顶栏，而顶栏
   显示的是*聚焦*会话，所以顶栏读聚焦作用域。
@@ -356,7 +356,7 @@ React context 提供键，让消费方读 `map[scopeKey]` 而不是读全局。`
   跟踪的东西。
 
 `pendingDecisions` 的路由依赖这套作用域划分正确：它在
-`web/components/chat/composer/index.tsx:344` 按 `sessionId` 过滤，作用域搞错的 composer
+`apps/web/components/chat/composer/index.tsx:344` 按 `sessionId` 过滤，作用域搞错的 composer
 要么吞掉另一个会话的提问，要么把它显示两遍。
 
 ## 8. 遗留的 `window.*` 层是过渡态
@@ -364,12 +364,12 @@ React context 提供键，让消费方读 `map[scopeKey]` 而不是读全局。`
 第 4 节描述的 `window.*` 层不属于这套设计，它正是 store 要取代的东西。下列条件全部成立
 后即可移除：
 
-1. `web/lib/runtime-bridge/chat-handlers.ts` 和 `conversations.ts` 里每一处
+1. `apps/web/lib/runtime-bridge/chat-handlers.ts` 和 `conversations.ts` 里每一处
    `data.session_id === W.currentSessionId` 闸门都成为按 `data.session_id` 分键的 store
    写入，让后台会话的帧能落地而不是被丢弃。这要求 store 先把"聚焦"和"那个会话"区分开，
    也就是第 7 节的聚焦指针所做的事。
 2. `window.conversations` 没有任何 store 按键表覆盖不到的读取方，此时
-   `web/lib/runtime-bridge/conv-store-mirror.ts` 就不再是必需的，可以直接删掉。
+   `apps/web/lib/runtime-bridge/conv-store-mirror.ts` 就不再是必需的，可以直接删掉。
 3. `W.isRunning` 没有读取方；`runningTasks` 覆盖它。
 4. 单例的 `#chatView` DOM shell 消失，换成 `PeerSessionPane` 已经证明可行的 React 路径。
    这是最重的一条——大约十个 runtime-bridge 模块靠写死的 id 访问那个 shell。
@@ -380,8 +380,8 @@ React context 提供键，让消费方读 `map[scopeKey]` 而不是读全局。`
 ## 9. 非目标
 
 **右栏与 DAG 保持单份，跟随聚焦会话。** `detailNode` 和 `nodeSelected`
-（`web/lib/session-store/index.ts:261`、`:271`）保持全局。没有任何东西把它们渲染两份：
-右栏只有一个 dock（`web/components/right-sidebar/right-sidebar.tsx:407`、`:575`），也没有
+（`apps/web/lib/session-store/index.ts:261`、`:271`）保持全局。没有任何东西把它们渲染两份：
+右栏只有一个 dock（`apps/web/components/right-sidebar/right-sidebar.tsx:407`、`:575`），也没有
 让每个窗格各有一份 DAG 的计划。它们继续读聚焦会话就是正确的。
 
 `rightDock` 本身、顶栏徽标的*显示*（按定义就是显示聚焦会话）、以及设置页的各 store，
@@ -410,7 +410,7 @@ React context 提供键，让消费方读 `map[scopeKey]` 而不是读全局。`
   不是新造机制，大约十五到二十个文件，可拆成五次独立可验证的提交。fn-form 那一组最大，
   因为有八个文件消费它。
 - 第 8 节——遗留 `window.*` 层仍是非分屏路径的消息渲染、会话切换、分支徽标刷新以及
-  大部分 WebSocket 帧路由的默认路径。退役它涉及整个 `web/lib/runtime-bridge/`（十三个
+  大部分 WebSocket 帧路由的默认路径。退役它涉及整个 `apps/web/lib/runtime-bridge/`（十三个
   模块加 `dag` 子目录），也是唯一一处"做一半比两个端点都差"的地方，因此排在最后，
   按模块以一次持续的推进完成。
 

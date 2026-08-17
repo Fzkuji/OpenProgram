@@ -121,8 +121,8 @@ def test_channels_settings_exposes_pairing_management():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[3]
-    index = (root / "web/components/settings/channels/index.tsx").read_text()
-    access = root / "web/components/settings/channels/access-list.tsx"
+    index = (root / "apps/web/components/settings/channels/index.tsx").read_text()
+    access = root / "apps/web/components/settings/channels/access-list.tsx"
 
     assert access.is_file()
     source = access.read_text()

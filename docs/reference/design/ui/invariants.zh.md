@@ -89,7 +89,7 @@ spawn 一个 sub-agent 分支有三个入口：`agent()` 同步路径
 任何点击立即渲染乐观过渡态（pending 卡、按钮态、切换后的索引），真实
 数据到达后回填；超时回滚并 toast。长操作（函数运行有 ~1s 子进程冷启）
 绝不允许"点了没反应"。实现入口：`optimisticAction`
-（web/lib/runtime-bridge/optimistic-action.ts）。
+（apps/web/lib/runtime-bridge/optimistic-action.ts）。
 
 ## 9. 显示顺序可以调，数据顺序不可以
 
@@ -99,7 +99,7 @@ attach 指针节点必须留在对话链尾（head 移动依赖它），但聊�
 
 ## 10. SSR 边界：模块顶层不碰 window
 
-`web/lib/runtime-bridge/*` 在模块作用域读 `window`，被 App Router 页面
+`apps/web/lib/runtime-bridge/*` 在模块作用域读 `window`，被 App Router 页面
 静态 import 会炸 prerender。settings/页面组件需要它们时用动态
 `import()`（例：`refreshAgentChip`）。新写 runtime-bridge 模块时守住
 这条，或者把 window 访问推迟到函数体内。

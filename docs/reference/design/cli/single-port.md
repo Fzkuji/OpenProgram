@@ -21,7 +21,7 @@ Electron shell → Next.js server (Node, web port) → Python worker (backend po
 - The worker spawns and supervises the Next server: ~330 lines in
   `openprogram/worker/web.py` for port reclaim, orphan `next-server` killing,
   BUILD_ID watching, manifest patching, parent-PID watch
-  (`web/scripts/with-parent-watch.mjs`).
+  (`apps/web/scripts/with-parent-watch.mjs`).
 - Users need Node at runtime just to render a UI that is already 100%
   client-side.
 
@@ -30,7 +30,7 @@ Electron shell → Next.js server (Node, web port) → Python worker (backend po
 The frontend has nothing that requires a Node server:
 
 - The app shell is loaded with `next/dynamic` + `ssr: false`
-  (`web/app/(shell)/layout.tsx`); every real page is `"use client"`.
+  (`apps/web/app/(shell)/layout.tsx`); every real page is `"use client"`.
 - No `middleware.ts`, no server actions, no `next/image`, no `output`/
   `basePath`/`headers` config to unwind.
 - The only two route handlers (`app/api/[...path]`, `app/files/[...path]`)
@@ -54,9 +54,9 @@ Electron shell → Python worker (FastAPI, single port)
 
 ### 3.1 The frontend is a static export
 
-`web/next.config.mjs`:
+`apps/web/next.config.mjs`:
 
-- `output: "export"` → `next build` emits plain HTML/JS/CSS into `web/out/`.
+- `output: "export"` → `next build` emits plain HTML/JS/CSS into `apps/web/out/`.
 - No `rewrites()` and no `resolveBackend()` — there is no proxy target to
   resolve.
 - Frontend code talks to its own origin (`/ws`, `/api/...` relative URLs).
@@ -75,12 +75,12 @@ real work keeps a `generateStaticParams` returning one placeholder instead.
 
 `openprogram/webui/frontend.py`, mounted last in `create_app()`:
 
-- Static files from `web/out/` (immutable cache headers for `/_next/static`,
+- Static files from `apps/web/out/` (immutable cache headers for `/_next/static`,
   no-cache for HTML).
 - SPA fallback: any GET not matching a file or an API route returns the
   shell HTML (`out/chat.html` — the app redirects `/` → `/chat` and resolves
   everything else from `pathname`).
-- Build gate: if `web/out/` is missing or older than `web/` sources, run
+- Build gate: if `apps/web/out/` is missing or older than `web/` sources, run
   `npm run build` once at startup. Node is then a **build-time** dependency
   only; a packaged release ships `out/` pre-built and never invokes Node.
 
@@ -88,7 +88,7 @@ real work keeps a `generateStaticParams` returning one placeholder instead.
 
 Nothing spawns or watches a Node process. `openprogram/worker/web.py`
 (spawn, port reclaim, manifest patch, BUILD_ID watcher),
-`web/scripts/with-parent-watch.mjs`, and the `start_web_frontend` call in
+`apps/web/scripts/with-parent-watch.mjs`, and the `start_web_frontend` call in
 `openprogram/worker/runner.py` have no counterpart here.
 
 ### 3.4 Port semantics
@@ -105,7 +105,7 @@ The backend port is *the* port; web-port knobs are retired:
   removed.
 - `worker.port` file: unchanged, still the single source of truth for
   discovery.
-- Electron `desktop/main.js`: the `WEB_PORT` constant (18200 dev / 18100
+- Electron `apps/desktop/main.js`: the `WEB_PORT` constant (18200 dev / 18100
   release) simply *is* the worker port; the three usage sites (start URL,
   origin check, navigation guard) need no structural change.
 - `scripts/promote_stable.sh`: `npm run build` emits `out/`.

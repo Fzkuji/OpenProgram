@@ -107,7 +107,7 @@ def main() -> int:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     python_version = project["project"]["version"]
     desktop_version = json.loads(
-        (ROOT / "desktop" / "package.json").read_text(encoding="utf-8")
+        (ROOT / "apps" / "desktop" / "package.json").read_text(encoding="utf-8")
     )["version"]
     installer = (ROOT / "scripts" / "install-release.sh").read_text(
         encoding="utf-8"

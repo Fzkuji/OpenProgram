@@ -94,7 +94,7 @@
   </div>
 
   <h2>实施 brief 与验收</h2>
-  <p>上排实现集中在 <code>web/components/chat/composer/environment-row/</code>：组件、测量 hook、样式和两个专用 chip 按职责分文件。<code>composer/index.tsx</code> 只渲染 EnvironmentRow；独立检查由 <code>scripts/check-composer-environment-row.mjs</code> 提供，并纳入现有 <code>check:chat-ui</code> 入口。不修改 Popover、Menu、provider、session store、提交逻辑或底部 controls。</p>
+  <p>上排实现集中在 <code>apps/web/components/chat/composer/environment-row/</code>：组件、测量 hook、样式和两个专用 chip 按职责分文件。<code>composer/index.tsx</code> 只渲染 EnvironmentRow；独立检查由 <code>scripts/check-composer-environment-row.mjs</code> 提供，并纳入现有 <code>check:chat-ui</code> 入口。不修改 Popover、Menu、provider、session store、提交逻辑或底部 controls。</p>
   <ol>
     <li>public-entry 检查必须证明 environment chips 由实际溢出切换单一 <code>data-compact</code> 状态，不存在固定宽度特例或 label 的 <code>flex-shrink:1</code>。</li>
     <li>状态、surface、项目、目录、Fit、缩放百分比和 Legend 必须共用同一动画规则；不得使用 <code>display:none</code> 或只收起其中一部分。</li>

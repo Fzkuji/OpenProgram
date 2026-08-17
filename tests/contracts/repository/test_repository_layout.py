@@ -12,7 +12,6 @@ TOP_LEVEL_DIRECTORIES = {
     ".superpowers",
     "apps",
     "config",
-    "desktop",
     "docs",
     "examples",
     "experiments",
@@ -24,7 +23,6 @@ TOP_LEVEL_DIRECTORIES = {
     "skills",
     "tests",
     "tools",
-    "web",
 }
 CURRENT_STRUCTURE_GUIDES = (
     "README.md",
@@ -40,7 +38,8 @@ CURRENT_STRUCTURE_GUIDES = (
 
 WORKSPACE_READMES = (
     "openprogram/README.md",
-    "web/README.md",
+    "apps/web/README.md",
+    "apps/desktop/README.md",
     "apps/cli/README.md",
 )
 
@@ -118,13 +117,15 @@ def test_workspace_entry_readmes_describe_current_ownership() -> None:
     assert missing == []
 
     python_readme = (ROOT / "openprogram/README.md").read_text(encoding="utf-8")
-    web_readme = (ROOT / "web/README.md").read_text(encoding="utf-8")
+    web_readme = (ROOT / "apps/web/README.md").read_text(encoding="utf-8")
+    desktop_readme = (ROOT / "apps/desktop/README.md").read_text(encoding="utf-8")
     cli_readme = (ROOT / "apps/cli/README.md").read_text(encoding="utf-8")
 
     assert "programs/" in python_readme
     assert "skills_bundled/" in python_readme
     assert "OpenProgram Web workspace" in web_readme
     assert "create-next-app" not in web_readme
+    assert "Electron" in desktop_readme
     assert "Ink" in cli_readme
     assert "dist/index.js" in cli_readme
 
@@ -159,11 +160,11 @@ def test_generated_cli_reference_names_the_current_parser_source(tmp_path) -> No
 
 
 def test_programs_route_uses_the_programs_workspace_component() -> None:
-    route = (ROOT / "web/app/(shell)/programs/page.tsx").read_text(encoding="utf-8")
+    route = (ROOT / "apps/web/app/(shell)/programs/page.tsx").read_text(encoding="utf-8")
 
     assert "@/components/programs/programs-page" in route
-    assert (ROOT / "web/components/programs/programs-page.tsx").is_file()
-    assert (ROOT / "web/components/programs/programs-page.module.css").is_file()
+    assert (ROOT / "apps/web/components/programs/programs-page.tsx").is_file()
+    assert (ROOT / "apps/web/components/programs/programs-page.module.css").is_file()
 
 
 def test_generated_package_readmes_are_current() -> None:

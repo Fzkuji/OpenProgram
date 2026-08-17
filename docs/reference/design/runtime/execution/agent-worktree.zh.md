@@ -505,8 +505,8 @@ dependencies 里，它只通过`semble`（一个 MCP 开发工具）传递引入
 | 8 | 新建 `openprogram/programs/functions/vanilla/worktree/` | 4 个 @function 工具：worktree_create / worktree_merge / worktree_discard / worktree_list；走 WorktreeManager |
 | 9 | 改 `openprogram/store/session/session_store.py` | session.meta 加 `active_worktree_id` 字段；helper `set_active_worktree` / `get_active_worktree` |
 | 10 | 新建 `openprogram/webui/ws_actions/worktree.py` | `list_worktrees` / `keep_worktree` / `discard_worktree`（用户手动 UI 操作）|
-| 11 | 新建 `web/components/chat/composer/worktree-chip.tsx` | chip 组件 + hover panel + Merge/Discard/Keep 按钮 |
-| 12 | 改 `web/components/chat/composer/composer.tsx` | 引入 chip |
+| 11 | 新建 `apps/web/components/chat/composer/worktree-chip.tsx` | chip 组件 + hover panel + Merge/Discard/Keep 按钮 |
+| 12 | 改 `apps/web/components/chat/composer/composer.tsx` | 引入 chip |
 | 13 | 改 ContextCommit item metadata 渲染 | 工具调用 item 显示 worktree_id 角标 |
 | 14 | 改 `openprogram/agent/dispatcher.py` 写 marker | worktree_create / merge / discard 写 system 节点进 ContextCommit |
 | 15 | （依赖 async-task）`openprogram/tasks/lifecycle.py` 接 hook | task cancel → `WorktreeManager.on_task_cancel`；task create 可选 attach worktree |

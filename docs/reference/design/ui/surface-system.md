@@ -70,7 +70,7 @@ Components on the panel surface ARE buttons / pills / cards:
 
 ## Button variant guidance
 
-`web/components/ui/button.tsx` already exposes the two main
+`apps/web/components/ui/button.tsx` already exposes the two main
 patterns:
 
 **No borders.** Every Button variant is border-less in both idle
@@ -125,7 +125,7 @@ whether a given action is primary or secondary.
 Every interactive primitive picks ONE of two size sets. There is
 no sm / md / lg ladder inside a set — once you choose list vs
 button, height and radius are locked. CSS variables in
-`web/app/styles/base.css`:
+`apps/web/app/styles/base.css`:
 
 ```
 set         height               radius             css tokens

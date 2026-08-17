@@ -12,7 +12,7 @@
 }
 
 :root {
-  /* light (default) — matches the web UI palette (web/app/styles/base.css) */
+  /* light (default) — matches the web UI palette (apps/web/app/styles/base.css) */
   --bg:        #faf9f5;   /* --bg-primary */
   --bg-side:   #f5f4ed;   /* --bg-secondary */
   --bg-code:   #f0eee6;   /* --bg-tertiary */
@@ -38,7 +38,7 @@
 }
 
 html[data-theme="dark"] {
-  /* matches the web UI dark palette (web/app/styles/base.css) */
+  /* matches the web UI dark palette (apps/web/app/styles/base.css) */
   --bg:        #1f1f1e;   /* --bg-primary */
   --bg-side:   #171716;   /* --bg-secondary */
   --bg-code:   #252524;   /* --bg-tertiary */

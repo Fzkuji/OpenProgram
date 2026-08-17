@@ -140,10 +140,10 @@
 <h2>任务 2 验证命令</h2>
 <ul>
   <li><code>python -m pytest -q tests/unit/agent/test_web_use_surface.py tests/unit/context/test_tool_defer.py tests/unit/security/test_permission_rules.py tests/component/programs/test_browser_agent.py tests/component/programs/test_web_use_runtime.py tests/component/programs/test_web_use_backend_threading.py tests/component/agent/test_process_runner_webtab_bridge.py tests/component/agent/test_dispatcher_tools.py tests/unit/security/test_process_runner_sandbox.py</code>：199 passed。</li>
-  <li><code>./web/node_modules/.bin/tsc --noEmit -p web/tsconfig.json</code></li>
+  <li><code>./web/node_modules/.bin/tsc --noEmit -p apps/web/tsconfig.json</code></li>
   <li><code>npm --prefix web run build</code></li>
-  <li><code>node desktop/scripts/check-webtab-navigation.js</code></li>
-  <li><code>node web/scripts/check-web-split.mjs</code></li>
+  <li><code>node apps/desktop/scripts/check-webtab-navigation.js</code></li>
+  <li><code>node apps/web/scripts/check-web-split.mjs</code></li>
   <li><code>OPENPROGRAM_TEST_LIVE=1 OPENPROGRAM_TEST_REAL_HOME=1 python -m pytest -q -m live tests/live/app/test_web_use_background_app.py</code>：独立安装版后台 Page E2E；使用默认安装版 profile，自行构造后台 Page，不要求改变桌面窗口状态。</li>
   <li><code>python -m tools.docs_site.checklinks</code>：当前仅报告未修改的 <code>chat-turn-visual-spec.raw.html</code> 中 4 个既有源码相对链接；本任务涉及页面没有新增失效链接。</li>
   <li><code>git diff --check</code></li>
@@ -181,7 +181,7 @@
 <h2>任务 4：浏览器多 Page 与 popup handoff</h2>
 <div class="card">
   <p><strong>Base：</strong><code>54c466e9</code>。<strong>范围：</strong>当前 OpenProgram window 的 web Page inventory、background exact target、popup opener 归属，以及 <code>browser_agent/gui_agent</code> 的显式 Page 切换。</p>
-  <p><strong>生产文件：</strong><code>desktop/main.js</code>、<code>desktop/preload.js</code>、<code>web/lib/desktop-bridge.ts</code>、<code>web/lib/state/center-tabs-store.ts</code>、<code>openprogram/webui/ws_actions/webtab.py</code>、<code>openprogram/agent/surface_context.py</code>、<code>agentic_functions/browser_agent/__init__.py</code>。<strong>排除：</strong>桌面软件控制、跨窗口 inventory、OCR/YOLO/memory、自动 backend fallback。</p>
+  <p><strong>生产文件：</strong><code>apps/desktop/main.js</code>、<code>apps/desktop/preload.js</code>、<code>apps/web/lib/desktop-bridge.ts</code>、<code>apps/web/lib/state/center-tabs-store.ts</code>、<code>openprogram/webui/ws_actions/webtab.py</code>、<code>openprogram/agent/surface_context.py</code>、<code>agentic_functions/browser_agent/__init__.py</code>。<strong>排除：</strong>桌面软件控制、跨窗口 inventory、OCR/YOLO/memory、自动 backend fallback。</p>
   <p><strong>RED：</strong>同窗口 A/B/popup C inventory；C 保存 opener=A；token 绑定 exact target；background B observe/act 不改变 visible/active/focus；GUI Agent 写动作后发现 C 并以 token 切换；没有已挂载 native Page 时返回空 inventory；close/target replacement/disconnect 撤销能力。<strong>Gate：</strong>相关 Python tests、desktop navigation check、Web split/compound checks、TypeScript、生产 Web build、docs build/links、安装版 18100 E2E、diff/status。</p>
 </div>
 <table>

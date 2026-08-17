@@ -88,14 +88,14 @@ CSS — drop  .pulse, .pending-pulse, .status-dot[.ok/.warn/.err],
 
 Call sites (8 JSX, 2 CSS files):
 
-- `web/components/chat/messages/execution-dag/index.tsx` (header `●`)
-- `web/components/chat/messages/runtime-block.tsx` (header `●` + pending body)
-- `web/components/chat/messages/tool-card.tsx` (2× header `●`)
-- `web/components/chat/messages/message-list.tsx` (pending bubble)
-- `web/components/chat/messages/assistant-bubble.tsx` (nested pending)
-- `web/components/chat/messages/attach-card.tsx` (status dot)
-- `web/components/chat/top-bar/index.tsx` (provider status)
-- `web/app/styles/chat/indicator-dot.css` (and sibling per-component files under `web/app/styles/chat/`)
+- `apps/web/components/chat/messages/execution-dag/index.tsx` (header `●`)
+- `apps/web/components/chat/messages/runtime-block.tsx` (header `●` + pending body)
+- `apps/web/components/chat/messages/tool-card.tsx` (2× header `●`)
+- `apps/web/components/chat/messages/message-list.tsx` (pending bubble)
+- `apps/web/components/chat/messages/assistant-bubble.tsx` (nested pending)
+- `apps/web/components/chat/messages/attach-card.tsx` (status dot)
+- `apps/web/components/chat/top-bar/index.tsx` (provider status)
+- `apps/web/app/styles/chat/indicator-dot.css` (and sibling per-component files under `apps/web/app/styles/chat/`)
 
 ## Appendix: Implementation Status
 

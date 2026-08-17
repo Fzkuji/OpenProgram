@@ -1,0 +1,81 @@
+{
+  "name": "openprogram-desktop",
+  "version": "0.7.0",
+  "private": true,
+  "description": "Electron desktop shell for OpenProgram",
+  "author": "Fzkuji",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://openprogram.io/",
+  "repository": "https://github.com/Fzkuji/OpenProgram",
+  "main": "main.js",
+  "desktopName": "ai.openprogram.OpenProgram.desktop",
+  "scripts": {
+    "postinstall": "electron-builder install-app-deps",
+    "dev": "electron .",
+    "check": "npm run check:webtabs && npm run check:extensions && npm run check:webtab-zoom-bounds && npm run check:tab-transfer-store && npm run check:installed-transfer-client && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime && npm run check:updates",
+    "check:webtabs": "node scripts/check-webtab-navigation.js",
+    "check:extensions": "node scripts/check-browser-extensions.js",
+    "check:webtab-zoom-bounds": "node scripts/check-webtab-zoom-bounds.js",
+    "check:tab-transfer-store": "node scripts/check-tab-transfer-store.js",
+    "check:installed-transfer-client": "node scripts/check-installed-tab-transfer-client.js",
+    "check:worker-auth": "node scripts/check-worker-start-url.js",
+    "check:worker-recovery": "node scripts/check-worker-recovery.js",
+    "check:packaged-runtime": "node scripts/check-packaged-runtime.js",
+    "check:updates": "node scripts/check-update-service.js",
+    "icon:check": "bash scripts/check-icon.sh",
+    "prepare:runtime": "bash ../../scripts/prepare-desktop-runtime.sh",
+    "dist": "npm run app:install",
+    "app:install": "bash scripts/package-and-install-app.sh",
+    "dist:mac": "npm run prepare:runtime && npm run icon:check && electron-builder --mac dmg zip"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "ai.openprogram.desktop",
+    "productName": "OpenProgram",
+    "files": [
+      "main.js",
+      "preload.js",
+      "update-service.js",
+      "browser-extension-manager.js",
+      "packaged-runtime.js",
+      "worker-start-url.js",
+      "tab-transfer-store.js",
+      "browsing-history-store.js",
+      "browser-profile-import.js"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "asarUnpack": [
+      "node_modules/node-pty/**"
+    ],
+    "extraResources": [
+      {
+        "from": "build/runtime",
+        "to": "runtime",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.icns",
+      "identity": null,
+      "hardenedRuntime": false,
+      "notarize": false
+    }
+  },
+  "dependencies": {
+    "extract-zip": "2.0.1",
+    "node-pty": "1.0.0"
+  }
+}

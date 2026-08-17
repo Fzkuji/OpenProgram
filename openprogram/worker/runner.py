@@ -217,7 +217,7 @@ def run_foreground() -> int:
 
     threading.Thread(target=_warm_providers, daemon=True, name="provider-warmup").start()
 
-    # Frontend build gate — the static export (web/out/) is served by
+    # Frontend build gate — the static export (apps/web/out/) is served by
     # this same process; just make sure it's fresh. Synchronous: the UI
     # isn't usable before it exists anyway. Failure is non-fatal (the
     # API/TUI still work; / returns 503 with a hint).

@@ -131,7 +131,7 @@ runtime.can_ask()  # -> bool；无头运行时为 False，作者可据此分支
 question card，以及 stop 时经 cancel_session 解除待答——分别位于
 `agent/questions.py`、`agentic_programming/runtime.py`、
 `webui/ws_actions/session.py`、`webui/ws_actions/runtime.py` 与
-`web/components/ui/question-prompt.tsx`。
+`apps/web/components/ui/question-prompt.tsx`。
 
 重连恢复已实现。问题卡片只靠活的 `question.asked` 帧驱动，刷新或断线后那帧已
 成过去；`handle_load_session` 在(重)连某 session 时把该 session 所有

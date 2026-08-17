@@ -510,8 +510,8 @@ The work, in dependency order:
 | 8 | new `openprogram/programs/functions/vanilla/worktree/` | 4 @function tools: worktree_create / worktree_merge / worktree_discard / worktree_list; go through WorktreeManager |
 | 9 | edit `openprogram/store/session/session_store.py` | add an `active_worktree_id` field to session.meta; helpers `set_active_worktree` / `get_active_worktree` |
 | 10 | new `openprogram/webui/ws_actions/worktree.py` | `list_worktrees` / `keep_worktree` / `discard_worktree` (user manual UI operations) |
-| 11 | new `web/components/chat/composer/worktree-chip.tsx` | chip component + hover panel + Merge/Discard/Keep buttons |
-| 12 | edit `web/components/chat/composer/composer.tsx` | bring in the chip |
+| 11 | new `apps/web/components/chat/composer/worktree-chip.tsx` | chip component + hover panel + Merge/Discard/Keep buttons |
+| 12 | edit `apps/web/components/chat/composer/composer.tsx` | bring in the chip |
 | 13 | edit ContextCommit item metadata rendering | tool call items show a worktree_id badge |
 | 14 | edit `openprogram/agent/dispatcher.py` to write markers | worktree_create / merge / discard write system nodes into ContextCommit |
 | 15 | (depends on async-task) hook into `openprogram/tasks/lifecycle.py` | task cancel → `WorktreeManager.on_task_cancel`; task create can optionally attach a worktree |

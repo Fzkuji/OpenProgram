@@ -300,7 +300,7 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
 </head>
 <body>
 <h1>聊天轮次视觉规范</h1>
-<div class="desc">执行时间线（去外框、图标竖线串联、行样式统一）+ 手动函数运行 + sub-agent 父子分支导航 + 左缘消息导航。全部可交互——点开试。本文件是聊天轮次视觉的唯一权威；实现在 <code>web/components/chat/messages/execution-strip.tsx</code> / <code>runtime-block.tsx</code> 与 <code>app/styles/chat/execution-strip.css</code>。</div>
+<div class="desc">执行时间线（去外框、图标竖线串联、行样式统一）+ 手动函数运行 + sub-agent 父子分支导航 + 左缘消息导航。全部可交互——点开试。本文件是聊天轮次视觉的唯一权威；实现在 <code>apps/web/components/chat/messages/execution-strip.tsx</code> / <code>runtime-block.tsx</code> 与 <code>app/styles/chat/execution-strip.css</code>。</div>
 <div class="doc-meta" aria-label="文档状态">
   <span class="doc-pill current">时间线折叠与复制规范 · 已实现</span>
   <span class="doc-pill">范围：Chat / workflow / sub-agent 展示</span>
@@ -570,7 +570,7 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
     <tr><td><code>agentic_workflow</code> 内部 agent</td><td><code>tree_update</code> 更新 <code>contextTree</code></td><td><code>TreeStep</code> 子节点</td></tr>
   </tbody>
 </table>
-<div class="rule"><b>已验证的原因：</b>完成事件只更新同一条子代理记录；产生短暂显示的是“新行进入动画”紧接“父级自动收起”。当前回归检查还明确要求 <code>const open = userSet ?? !!streaming</code>，所以它是现行交互合同，不是偶发渲染丢失。相关入口：<a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/chat/messages/execution-strip.tsx" style="color:var(--accent-cyan)">execution-strip.tsx</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/lib/net/chat-stream.ts" style="color:var(--accent-cyan)">chat-stream.ts</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/components/chat/messages/runtime-block.tsx" style="color:var(--accent-cyan)">runtime-block.tsx</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/web/scripts/check-spawn-cards.mjs" style="color:var(--accent-cyan)">check-spawn-cards.mjs</a>。</div>
+<div class="rule"><b>已验证的原因：</b>完成事件只更新同一条子代理记录；产生短暂显示的是“新行进入动画”紧接“父级自动收起”。当前回归检查还明确要求 <code>const open = userSet ?? !!streaming</code>，所以它是现行交互合同，不是偶发渲染丢失。相关入口：<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/messages/execution-strip.tsx" style="color:var(--accent-cyan)">execution-strip.tsx</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/chat-stream.ts" style="color:var(--accent-cyan)">chat-stream.ts</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/messages/runtime-block.tsx" style="color:var(--accent-cyan)">runtime-block.tsx</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/scripts/check-spawn-cards.mjs" style="color:var(--accent-cyan)">check-spawn-cards.mjs</a>。</div>
 
 <!-- ═══════ 5. 父子分支导航 ═══════ -->
 <h2><span class="num">5</span>Sub-agent 父子分支导航：一个进入口，两个返回落点</h2>

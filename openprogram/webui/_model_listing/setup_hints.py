@@ -2,7 +2,7 @@
 detail pane.
 
 Plain text with two minor conventions the React renderer
-(``web/components/settings/providers/setup-hint.tsx``) recognises:
+(``apps/web/components/settings/providers/setup-hint.tsx``) recognises:
 
   * Backticked spans render as inline ``<code>``.
   * ``**bold**`` renders as ``<strong>``.

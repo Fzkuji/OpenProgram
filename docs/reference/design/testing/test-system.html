@@ -104,8 +104,8 @@
   <div class="table"><table>
     <thead><tr><th>现有检查</th><th>目标</th><th>判定</th></tr></thead>
     <tbody>
-      <tr><td>Web security/architecture source check</td><td><code>web/scripts/check-*.mjs</code></td><td>只有源代码结构本身属于契约时保留</td></tr>
-      <tr><td>Web pure helper behavior</td><td><code>web/tests/*.test.mjs</code> + <code>node:test</code></td><td>直接 import 并断言输入输出</td></tr>
+      <tr><td>Web security/architecture source check</td><td><code>apps/web/scripts/check-*.mjs</code></td><td>只有源代码结构本身属于契约时保留</td></tr>
+      <tr><td>Web pure helper behavior</td><td><code>apps/web/tests/*.test.mjs</code> + <code>node:test</code></td><td>直接 import 并断言输入输出</td></tr>
       <tr><td>Web user interaction</td><td><code>tests/e2e/web</code> + Playwright</td><td>操作构建后的页面并观察公开行为</td></tr>
       <tr><td>CLI TypeScript</td><td>现有 Vitest</td><td>CI 执行 typecheck、test、build</td></tr>
       <tr><td>desktop VM/fake Electron</td><td>desktop component checks</td><td>CI 执行完整 <code>npm run check</code></td></tr>

@@ -212,15 +212,15 @@ tool 保护(OpenCode)。
 
 - **History 视图**:完整 DAG,节点 = circle/triangle/square,显示所有 tool 调用 /
   retry 分支 / merge 汇流(靠 `parent_ids` 画分叉)。
-- **ContextCommit Timeline**(右栏):`web/components/right-sidebar/context-commit-timeline/`
+- **ContextCommit Timeline**(右栏):`apps/web/components/right-sidebar/context-commit-timeline/`
   + `ws_actions/context_commits.py`。按状态徽章 + token 计数列出当前 commit 的 items
   (full/aged/cleared/summary、来源 `attached_from`)。
 
 ### 占用统计：一个数，两个读者
 
 报告窗口占用的有两处——composer 里的进度圆环
-（`web/components/chat/context-badge.tsx`）和点开它弹出的 `/context` 分解面板
-（`web/components/chat/context-breakdown-panel.tsx`）。两者渲染的是服务端算好的
+（`apps/web/components/chat/context-badge.tsx`）和点开它弹出的 `/context` 分解面板
+（`apps/web/components/chat/context-breakdown-panel.tsx`）。两者渲染的是服务端算好的
 同一份记录，因此任何时刻都一致：
 
 ```python

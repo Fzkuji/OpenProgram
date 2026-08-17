@@ -214,7 +214,7 @@ fn.input_meta[name]["placeholder"]  (渲染为 "e.g. {placeholder}")
 
 WebUI 不会反射运行中的 Python 对象：它对源文件（`openprogram/webui/_functions.py`）做 AST/正则解析。因此 `input=` 必须在装饰器调用中写成字面量字典，才能在表单中显示出来——动态构建的元数据（变量、辅助函数调用）对 WebUI 是不可见的。
 
-WebUI 表单按下列规则渲染每个参数（实现见 `web/components/chat/composer/modes/fn-form/fn-form.tsx` 和 `fn-form-fields.tsx`）。在编写 `@agentic_function(input={...})` 时，用下表来预判你的函数会生成哪种输入控件：
+WebUI 表单按下列规则渲染每个参数（实现见 `apps/web/components/chat/composer/modes/fn-form/fn-form.tsx` 和 `fn-form-fields.tsx`）。在编写 `@agentic_function(input={...})` 时，用下表来预判你的函数会生成哪种输入控件：
 
 | 参数特征 | WebUI 控件 |
 |---|---|

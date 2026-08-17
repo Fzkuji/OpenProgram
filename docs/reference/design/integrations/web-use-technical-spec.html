@@ -204,7 +204,7 @@ web_use({ command: "close", web_session_id: "cs_…" })</pre>
   <section id="evidence">
     <h2>当前实现证据</h2>
     <div class="table-scroll"><table><thead><tr><th>能力</th><th>当前状态</th><th>直接证据</th></tr></thead><tbody>
-      <tr><td>内置 web tab exact CDP attach</td><td class="evidence-yes">已验证</td><td><code>desktop/main.js</code>、<code>_actions/open_action.py</code></td></tr>
+      <tr><td>内置 web tab exact CDP attach</td><td class="evidence-yes">已验证</td><td><code>apps/desktop/main.js</code>、<code>_actions/open_action.py</code></td></tr>
       <tr><td>DOM-first task wrapper 与 point fallback</td><td class="evidence-yes">已验证 baseline</td><td><code>agentic_functions/browser_agent/__init__.py</code> 与 component tests</td></tr>
       <tr><td>视觉 artifact retention</td><td class="evidence-yes">已实现调用方 ephemeral policy</td><td>截图只发送给紧邻的一次模型请求；planner 文字只含元数据。正常返回或异常后清除 content image block 与 <code>ToolReturn.images</code>，坐标能力同步撤销；不写本地 artifact，最终 <code>artifacts</code> 为空。provider 侧保留不在本地 policy 的控制范围内。</td></tr>
       <tr><td>通用 MCP server/client 与 image content</td><td class="evidence-partial">已有基础</td><td><code>openprogram/mcp_server/</code>、<code>openprogram/mcp/</code></td></tr>

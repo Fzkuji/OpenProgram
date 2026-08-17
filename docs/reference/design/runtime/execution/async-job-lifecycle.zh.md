@@ -358,7 +358,7 @@ agent 自己想撤。
 | 7 | `openprogram/webui/_execute/__init__.py::_run_spawn` | 改用 `submit_agent_task`；写 placeholder attach card 时带 job_id + status=running |
 | 8 | `openprogram/context/commit/generator.py` | 处理 attach 节点时检查 `extra.attach.status`：running / cancelled / errored 不展开，只占位 (D8) |
 | 9 | `openprogram/programs/functions/vanilla/agent/agent/agent.py` | `_agent_impl` 内部改走 `submit_agent_task` + 默认前台；`run_in_background=True` 时返回 job_id |
-| 10 | `web/components/right-sidebar/tasks-panel.tsx` (新建) | UI 表达 (D11)；订阅 `job_status` ws 事件 |
-| 11 | `web/components/chat/messages/attach-card.tsx` | 渲染 status badge (running / done / cancelled / error) |
+| 10 | `apps/web/components/right-sidebar/tasks-panel.tsx` (新建) | UI 表达 (D11)；订阅 `job_status` ws 事件 |
+| 11 | `apps/web/components/chat/messages/attach-card.tsx` | 渲染 status badge (running / done / cancelled / error) |
 | 12 | `openprogram/agent/dispatcher.py::process_user_turn` | 启动时检查 `OPENPROGRAM_JOB_WORKERS` 并初始化 runner 单例（idempotent） |
 | 13 | Tests | unit：state machine、runner submit + cancel + crash 恢复；integration：spawn → await、并发 N、cancel mid-flight (D13) |

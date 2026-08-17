@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-web_dir="$repo_root/web"
+web_dir="$repo_root/apps/web"
 source_dir="$web_dir/out"
 next_build_dir="$web_dir/.next"
 target_dir="$repo_root/openprogram/webui/_frontend"

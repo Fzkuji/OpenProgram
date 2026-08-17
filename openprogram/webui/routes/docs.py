@@ -29,7 +29,7 @@ def _packaged_site_dir() -> Path:
 
 
 def _is_source_checkout() -> bool:
-    return (_repo_root() / "web" / "package.json").is_file()
+    return (_repo_root() / "apps" / "web" / "package.json").is_file()
 
 
 def _site_dir() -> Path:

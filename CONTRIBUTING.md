@@ -40,7 +40,7 @@ public APIs, installation profiles, and current capabilities.
    uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.checklinks
    ```
 
-5. For Web changes, also run from `web/`:
+5. For Web changes, also run from `apps/web/`:
 
    ```bash
    npm ci
@@ -59,7 +59,7 @@ public APIs, installation profiles, and current capabilities.
    npm run build
    ```
 
-7. For desktop changes, run from `desktop/`:
+7. For desktop changes, run from `apps/desktop/`:
 
    ```bash
    npm ci

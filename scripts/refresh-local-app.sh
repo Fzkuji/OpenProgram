@@ -78,9 +78,9 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-asar_cli="$repo_root/desktop/node_modules/@electron/asar/bin/asar.js"
+asar_cli="$repo_root/apps/desktop/node_modules/@electron/asar/bin/asar.js"
 if ! test -f "$asar_cli"; then
-  npm ci --prefix "$repo_root/desktop" --ignore-scripts
+  npm ci --prefix "$repo_root/apps/desktop" --ignore-scripts
 fi
 test -f "$asar_cli" || {
   printf 'the Electron asar tool was not installed: %s\n' "$asar_cli" >&2
@@ -94,7 +94,7 @@ while true; do
   attempt_dir="$wheel_dir/attempt-$attempt"
   mkdir -p "$attempt_dir"
 
-  rm -rf "$repo_root/desktop/dist"
+  rm -rf "$repo_root/apps/desktop/dist"
   "$repo_root/scripts/stage-release-assets.sh"
   rm -rf "$repo_root/build"
   "$uv_bin" build --wheel --out-dir "$attempt_dir" "$repo_root"
@@ -111,13 +111,13 @@ while true; do
   for desktop_file in \
     main.js preload.js browser-extension-manager.js update-service.js packaged-runtime.js worker-start-url.js \
     tab-transfer-store.js browsing-history-store.js browser-profile-import.js; do
-    cp "$repo_root/desktop/$desktop_file" "$desktop_stage/$desktop_file"
+    cp "$repo_root/apps/desktop/$desktop_file" "$desktop_stage/$desktop_file"
   done
   for desktop_module in \
     extract-zip debug ms get-stream pump end-of-stream once wrappy \
     yauzl fd-slicer pend buffer-crc32; do
     rm -rf "$desktop_stage/node_modules/$desktop_module"
-    cp -R "$repo_root/desktop/node_modules/$desktop_module" \
+    cp -R "$repo_root/apps/desktop/node_modules/$desktop_module" \
       "$desktop_stage/node_modules/$desktop_module"
   done
   node "$asar_cli" pack "$desktop_stage" "$desktop_asar" \

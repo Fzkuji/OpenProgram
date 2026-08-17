@@ -402,9 +402,9 @@ openprogram channels bindings
 
 | Entry point | Implementation |
 |---|---|
-| Topbar channel popover | `web/components/chat/top-bar/channel-menu.tsx` |
+| Topbar channel popover | `apps/web/components/chat/top-bar/channel-menu.tsx` |
 | Health badge status API | `/api/channels/{platform}/{account_id}/status` returns alive/stale/unknown |
-| Local access management | `web/components/settings/channels/access-list.tsx` calls the loopback-only `/api/channels/access` list/approve/revoke routes |
+| Local access management | `apps/web/components/settings/channels/access-list.tsx` calls the loopback-only `/api/channels/access` list/approve/revoke routes |
 
 The CLI remains available for account, binding, and access management.
 

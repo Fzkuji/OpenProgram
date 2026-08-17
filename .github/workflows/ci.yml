@@ -131,21 +131,21 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
-        working-directory: web
+        working-directory: apps/web
       - name: Unit tests
         run: npm test
-        working-directory: web
+        working-directory: apps/web
       - name: Typecheck
         run: npx tsc --noEmit
-        working-directory: web
+        working-directory: apps/web
       - name: Source contracts
         run: npm run check
-        working-directory: web
+        working-directory: apps/web
       - name: Build frontend
         run: npm run build
-        working-directory: web
+        working-directory: apps/web
         env:
           NEXT_TELEMETRY_DISABLED: "1"
 
@@ -175,11 +175,11 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: apps/desktop/package-lock.json
       - run: npm ci
-        working-directory: desktop
+        working-directory: apps/desktop
       - run: npm run check
-        working-directory: desktop
+        working-directory: apps/desktop
 
   browser:
     runs-on: ubuntu-latest
@@ -195,15 +195,15 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: apps/web/package-lock.json
       - name: Install locked Python dependencies
         run: uv sync --locked --extra dev --extra browser
       - name: Install managed Chromium
         run: uv run --locked --extra dev --extra browser playwright install --with-deps chromium
       - run: npm ci
-        working-directory: web
+        working-directory: apps/web
       - run: npm run build
-        working-directory: web
+        working-directory: apps/web
         env:
           NEXT_TELEMETRY_DISABLED: "1"
       - name: Built Web and browser tests

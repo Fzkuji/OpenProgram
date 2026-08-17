@@ -362,7 +362,7 @@ def test_installed_package_prefers_bundled_docs(tmp_path, monkeypatch):
     bundled.mkdir(parents=True)
     (source / "index.html").write_text("source", encoding="utf-8")
     (bundled / "index.html").write_text("bundled", encoding="utf-8")
-    package_json = checkout / "web" / "package.json"
+    package_json = checkout / "apps" / "web" / "package.json"
     package_json.parent.mkdir(parents=True)
     package_json.write_text("{}", encoding="utf-8")
 

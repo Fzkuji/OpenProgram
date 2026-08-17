@@ -11,7 +11,7 @@ docs, and a 2-5 step "how to get this working" recipe. Consumed by:
     ``setup_steps`` and ``signup_url`` after the user picks an
     unconfigured backend, so the CLI flow tells you where to go next
     without trying to handle key entry itself.
-  * ``web/public/js/shared/ui.js`` (legacy plus-menu) — pulls ``tier``
+  * ``apps/web/public/js/shared/ui.js`` (legacy plus-menu) — pulls ``tier``
     into the Web Search chip tooltip ("Web Search · Brave · Free 2000
     q/mo").
 

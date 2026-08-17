@@ -64,7 +64,7 @@ panel 表面上的组件就是按钮 / 胶囊 / 卡片：
 
 ## 按钮变体指南
 
-`web/components/ui/button.tsx` 已经暴露了两种主要
+`apps/web/components/ui/button.tsx` 已经暴露了两种主要
 模式：
 
 **无边框。** 每个 Button 变体在闲置和悬停状态下都没有
@@ -115,7 +115,7 @@ destructive bg-background + text-destructive  bg-destructive +
 每个交互原语在两套尺寸中选其一。套内没有
 sm / md / lg 的阶梯——一旦你选定 list 还是 button，
 高度和圆角就被锁定。CSS 变量位于
-`web/app/styles/base.css`：
+`apps/web/app/styles/base.css`：
 
 ```
 set         height               radius             css tokens

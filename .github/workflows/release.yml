@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: apps/web/package-lock.json
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.11.16"
@@ -59,7 +59,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: apps/web/package-lock.json
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.11.16"
@@ -115,7 +115,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: apps/desktop/package-lock.json
       - uses: actions/download-artifact@v8
         with:
           name: product-runtime-${{ matrix.runtime_platform }}-${{ matrix.arch }}
@@ -124,7 +124,7 @@ jobs:
         run: python3 scripts/verify-release-version.py --tag "${GITHUB_REF_NAME}"
       - name: Install desktop dependencies
         run: npm ci
-        working-directory: desktop
+        working-directory: apps/desktop
       - name: Prepare embedded runtime from release archive
         shell: bash
         run: |
@@ -132,7 +132,7 @@ jobs:
           test -n "$archive"
           OPENPROGRAM_RUNTIME_ARCHIVE="$archive" scripts/prepare-desktop-runtime.sh
       - name: Build explicitly unsigned macOS artifacts
-        working-directory: desktop
+        working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: |
@@ -143,19 +143,19 @@ jobs:
             mv "$artifact" "${artifact%.*}-unsigned.$extension"
           done
       - name: Verify embedded complete runtime
-        run: scripts/smoke-packaged-runtime.sh mac desktop/dist
+        run: scripts/smoke-packaged-runtime.sh mac apps/desktop/dist
       - name: Create SHA-256 checksums
         shell: bash
         run: |
-          cd desktop/dist
+          cd apps/desktop/dist
           find . -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' \) -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}
       - uses: actions/upload-artifact@v7
         with:
           name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
-            desktop/dist/*.dmg
-            desktop/dist/*.zip
-            desktop/dist/SHA256SUMS-*
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.zip
+            apps/desktop/dist/SHA256SUMS-*
 
   cli-installer:
     needs: product-runtime

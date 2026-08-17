@@ -8,7 +8,7 @@ at startup), so the user only ever sees the Next.js URL.
 Lifecycle:
 - :func:`start_web_frontend` spawns ``npm run start`` in ``web/``,
   passing ``OPENPROGRAM_BACKEND_URL=http://127.0.0.1:<backend_port>``.
-- If ``web/.next/`` is missing it builds first.
+- If ``apps/web/.next/`` is missing it builds first.
 - If ``node`` / ``npm`` is unavailable, returns ``None`` and the worker
   continues without the frontend (user can still use TUI).
 - The returned :class:`subprocess.Popen` is stored so we can ``terminate``
@@ -33,8 +33,8 @@ from openprogram._ports import (
 def web_dir() -> Path:
     """Return the path to the ``web/`` directory bundled with the repo."""
     # openprogram/worker/web.py → repo_root/openprogram/worker/web.py
-    # repo_root/web/
-    return Path(__file__).resolve().parent.parent.parent / "web"
+    # repo_root/apps/web/
+    return Path(__file__).resolve().parent.parent.parent / "apps" / "web"
 
 
 def _node_available() -> bool:
@@ -129,7 +129,7 @@ def _patch_manifest_ports(wd: Path, backend_port: int) -> bool:
 
 
 def _ensure_built(wd: Path, *, backend_port: int) -> bool:
-    """Make sure ``web/.next/`` has a complete production build.
+    """Make sure ``apps/web/.next/`` has a complete production build.
 
     Cross-platform npm invocation: ``npm`` is a ``.cmd`` shim on Windows
     and CreateProcess (subprocess with shell=False) cannot exec a

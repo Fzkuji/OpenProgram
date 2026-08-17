@@ -26,12 +26,12 @@
 ### Task 1: Persist the Bookmarks view and synchronize bookmark consumers across windows
 
 **Files:**
-- Modify: `web/lib/bookmarks.ts:6-55`
-- Modify: `web/lib/session-store/index.ts:267-305`
-- Modify: `web/components/center-tabs/web-tab-pane.tsx:37-77`
-- Modify: `web/components/center-tabs/new-tab-page.tsx:21-46`
-- Modify: `web/components/right-sidebar/bookmarks-panel.tsx:6-30`
-- Modify: `web/scripts/check-bookmarks.mjs:5-253`
+- Modify: `apps/web/lib/bookmarks.ts:6-55`
+- Modify: `apps/web/lib/session-store/index.ts:267-305`
+- Modify: `apps/web/components/center-tabs/web-tab-pane.tsx:37-77`
+- Modify: `apps/web/components/center-tabs/new-tab-page.tsx:21-46`
+- Modify: `apps/web/components/right-sidebar/bookmarks-panel.tsx:6-30`
+- Modify: `apps/web/scripts/check-bookmarks.mjs:5-253`
 
 **Interfaces:**
 - Consumes: `BOOKMARKS_STORAGE_KEY`, `BOOKMARKS_CHANGE_EVENT`, and browser `storage` events.
@@ -108,7 +108,7 @@ Expected: FAIL because `subscribeBookmarks` is not exported and `VALID_VIEWS` do
 
 - [ ] **Step 3: Implement the shared subscription and persistence fix**
 
-Add this function to `web/lib/bookmarks.ts` immediately after the event constants:
+Add this function to `apps/web/lib/bookmarks.ts` immediately after the event constants:
 
 ```ts
 export function subscribeBookmarks(listener: () => void): () => void {
@@ -127,7 +127,7 @@ export function subscribeBookmarks(listener: () => void): () => void {
 }
 ```
 
-Add `bookmarks` to the right-dock persistence whitelist in `web/lib/session-store/index.ts`:
+Add `bookmarks` to the right-dock persistence whitelist in `apps/web/lib/session-store/index.ts`:
 
 ```ts
 const VALID_VIEWS = new Set(["history", "context", "detail", "files", "bookmarks"]);
@@ -170,21 +170,21 @@ Expected: both commands exit `0`; the focused command prints `bookmark storage c
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/lib/bookmarks.ts web/lib/session-store/index.ts \
-  web/components/center-tabs/web-tab-pane.tsx \
-  web/components/center-tabs/new-tab-page.tsx \
-  web/components/right-sidebar/bookmarks-panel.tsx \
-  web/scripts/check-bookmarks.mjs
+git add apps/web/lib/bookmarks.ts apps/web/lib/session-store/index.ts \
+  apps/web/components/center-tabs/web-tab-pane.tsx \
+  apps/web/components/center-tabs/new-tab-page.tsx \
+  apps/web/components/right-sidebar/bookmarks-panel.tsx \
+  apps/web/scripts/check-bookmarks.mjs
 git commit -m "fix(bookmarks): sync manager across windows"
 ```
 
 ### Task 2: Build the permanent rail and accessible panel interactions
 
 **Files:**
-- Create: `web/lib/right-panel-behavior.ts`
-- Modify: `web/components/right-sidebar/right-sidebar.tsx:29-387`
-- Modify: `web/scripts/check-bookmarks.mjs:5-170`
-- Modify: `web/package.json:5-14`
+- Create: `apps/web/lib/right-panel-behavior.ts`
+- Modify: `apps/web/components/right-sidebar/right-sidebar.tsx:29-387`
+- Modify: `apps/web/scripts/check-bookmarks.mjs:5-170`
+- Modify: `apps/web/package.json:5-14`
 
 **Interfaces:**
 - Consumes: `useSessionStore.rightDock`, `setRightDockOpen(open: boolean)`, `setRightDockView(view: string)`, existing `rightDock` legacy shims, `sidebarNavItemClass`, and existing view components.
@@ -369,7 +369,7 @@ Expected: FAIL with `ERR_MODULE_NOT_FOUND` because `right-panel-behavior.ts` doe
 
 - [ ] **Step 3: Implement the shared behavior module and call its handler from React**
 
-Create `web/lib/right-panel-behavior.ts`:
+Create `apps/web/lib/right-panel-behavior.ts`:
 
 ```ts
 export const RIGHT_RAIL_WIDTH = 49;
@@ -694,17 +694,17 @@ Expected: both commands exit `0`; the focused check prints `bookmark storage che
 - [ ] **Step 6: Commit**
 
 ```bash
-git add web/lib/right-panel-behavior.ts \
-  web/components/right-sidebar/right-sidebar.tsx \
-  web/scripts/check-bookmarks.mjs web/package.json
+git add apps/web/lib/right-panel-behavior.ts \
+  apps/web/components/right-sidebar/right-sidebar.tsx \
+  apps/web/scripts/check-bookmarks.mjs apps/web/package.json
 git commit -m "feat(desktop): add compact right panel controls"
 ```
 
 ### Task 3: Apply compact geometry and keep the panel in layout at narrow widths
 
 **Files:**
-- Modify: `web/app/styles/right-dock.css:1-169`
-- Modify: `web/scripts/check-bookmarks.mjs:5-170`
+- Modify: `apps/web/app/styles/right-dock.css:1-169`
+- Modify: `apps/web/scripts/check-bookmarks.mjs:5-170`
 
 **Interfaces:**
 - Consumes: `.right-sidebar`, `.right-sidebar-panel`, `.right-sidebar-rail`, `.right-sidebar-panel-header`, `.right-panel-resize`, and `data-resizing` from Task 2.
@@ -897,14 +897,14 @@ Expected: every command exits `0`; the focused check prints `bookmark storage ch
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/app/styles/right-dock.css web/scripts/check-bookmarks.mjs
+git add apps/web/app/styles/right-dock.css apps/web/scripts/check-bookmarks.mjs
 git commit -m "style(desktop): add compact right panel geometry"
 ```
 
 ### Task 4: Verify geometry, accessibility, native-view bounds, and the full bookmark workflow
 
 **Files:**
-- Modify only if a live failure first receives a focused executable regression assertion in `web/scripts/check-bookmarks.mjs` or `web/lib/right-panel-behavior.ts`, followed by the smallest covering fix in an already-listed implementation file.
+- Modify only if a live failure first receives a focused executable regression assertion in `apps/web/scripts/check-bookmarks.mjs` or `apps/web/lib/right-panel-behavior.ts`, followed by the smallest covering fix in an already-listed implementation file.
 
 **Interfaces:**
 - Verifies the completed compact-panel and bookmark interfaces without adding production APIs.
@@ -966,7 +966,7 @@ OPENPROGRAM_DESKTOP_URL=http://127.0.0.1:18200/chat \
 npm run dev -- --user-data-dir="$RIGHT_PANEL_PROFILE_DIR"
 ```
 
-Expected: Electron receives an argument of the form `--user-data-dir=/tmp/openprogram-right-panel.…`, opens `http://127.0.0.1:18200/chat`, and `http://127.0.0.1:9223/json/version` responds. Do not use an environment variable such as `ELECTRON_EXTRA_LAUNCH_ARGS`; `desktop/main.js` does not read one.
+Expected: Electron receives an argument of the form `--user-data-dir=/tmp/openprogram-right-panel.…`, opens `http://127.0.0.1:18200/chat`, and `http://127.0.0.1:9223/json/version` responds. Do not use an environment variable such as `ELECTRON_EXTRA_LAUNCH_ARGS`; `apps/desktop/main.js` does not read one.
 
 - [ ] **Step 3: Measure the collapsed and expanded geometry through CDP**
 
@@ -1070,13 +1070,13 @@ Expected: every command exits `0`; no check relies on the stable 18100 applicati
 
 - [ ] **Step 11: Commit only live-discovered fixes**
 
-If live verification exposed no issue, make no commit. If it exposed an issue, first add a failing executable assertion to `web/scripts/check-bookmarks.mjs` or `web/lib/right-panel-behavior.ts`, implement the smallest covering fix, rerun Steps 4–10, then commit only those files:
+If live verification exposed no issue, make no commit. If it exposed an issue, first add a failing executable assertion to `apps/web/scripts/check-bookmarks.mjs` or `apps/web/lib/right-panel-behavior.ts`, implement the smallest covering fix, rerun Steps 4–10, then commit only those files:
 
 ```bash
-git add web/scripts/check-bookmarks.mjs \
-  web/lib/right-panel-behavior.ts \
-  web/components/right-sidebar/right-sidebar.tsx \
-  web/app/styles/right-dock.css \
-  web/lib/bookmarks.ts web/lib/session-store/index.ts
+git add apps/web/scripts/check-bookmarks.mjs \
+  apps/web/lib/right-panel-behavior.ts \
+  apps/web/components/right-sidebar/right-sidebar.tsx \
+  apps/web/app/styles/right-dock.css \
+  apps/web/lib/bookmarks.ts apps/web/lib/session-store/index.ts
 git commit -m "fix(desktop): correct compact right panel behavior"
 ```

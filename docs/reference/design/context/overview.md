@@ -213,15 +213,15 @@ protection (OpenCode).
 
 - **History view**: the full DAG, with nodes = circle/triangle/square, showing all tool calls /
   retry branches / merge confluences (drawing forks from `parent_ids`).
-- **ContextCommit Timeline** (right column): `web/components/right-sidebar/context-commit-timeline/`
+- **ContextCommit Timeline** (right column): `apps/web/components/right-sidebar/context-commit-timeline/`
   + `ws_actions/context_commits.py`. Lists the current commit's items with state badges + token counts
   (full/aged/cleared/summary, with their `attached_from` source).
 
 ### Occupancy: one number, two readers
 
 Two widgets report how full the window is — the progress ring in the composer
-(`web/components/chat/context-badge.tsx`) and the `/context` breakdown panel it
-opens (`web/components/chat/context-breakdown-panel.tsx`). Both render the same
+(`apps/web/components/chat/context-badge.tsx`) and the `/context` breakdown panel it
+opens (`apps/web/components/chat/context-breakdown-panel.tsx`). Both render the same
 server-computed record, so they agree at every moment:
 
 ```python

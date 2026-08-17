@@ -2,7 +2,7 @@
 
 > Status: **Implemented** (2026-06)
 > Reference: Claude Code `/rewind`
-> Code: `agent/_rewind.py`, `webui/ws_actions/chat.py`, `web/components/chat/messages/message-actions.tsx`
+> Code: `agent/_rewind.py`, `webui/ws_actions/chat.py`, `apps/web/components/chat/messages/message-actions.tsx`
 
 ---
 

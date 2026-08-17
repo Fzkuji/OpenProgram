@@ -11,7 +11,7 @@
 ## Non-negotiable invariants
 
 - Test only against the development UI on port `18200` until final promotion. Do not modify stable `18100`.
-- Reuse `CenterTabGroup` from `web/lib/state/center-tab-groups.ts` and the unified `CenterTabsPersistedPayload` from `center-tabs-store.ts`. Do not redefine either and do not create a group-only storage key.
+- Reuse `CenterTabGroup` from `apps/web/lib/state/center-tab-groups.ts` and the unified `CenterTabsPersistedPayload` from `center-tabs-store.ts`. Do not redefine either and do not create a group-only storage key.
 - Renderer state is stored in `centerTabs:<windowId>`. Only the main window migrates the old unkeyed payload once. Split/group state is in that same payload.
 - `WindowContext.visibleViewIds` is a set. Two visible web panes may simultaneously have non-zero bounds and `visible=true`.
 - Every native-view IPC derives its context from `event.sender`; a source window cannot hide, resize, navigate, or destroy a view after ownership moves.
@@ -40,34 +40,34 @@
 
 ## Files
 
-- Modify `desktop/main.js`.
+- Modify `apps/desktop/main.js`.
 - Create `desktop/tab-transfer-store.js`.
-- Modify `desktop/package.json`.
-- Modify `desktop/preload.js`.
-- Modify `desktop/scripts/check-webtab-navigation.js`.
-- Modify `web/lib/desktop-bridge.ts`.
-- Create `web/lib/tab-transfer-journal.ts`.
-- Modify `web/lib/tab-drag-coordinator.ts`.
-- Modify `web/lib/state/center-tabs-store.ts`.
-- Modify `web/lib/session-store/index.ts`.
-- Create `web/lib/session-draft-persistence.ts`.
-- Modify `web/lib/runtime-bridge/draft-channel-choice.ts`.
-- Modify `web/lib/state/files-shared.ts`.
-- Modify `web/components/app-shell.tsx`.
-- Modify `web/components/center-tabs/center-tab-strip.tsx`.
-- Modify `web/components/center-tabs/center-tabs.module.css`.
-- Modify `web/scripts/check-web-split.mjs`.
-- Modify `web/scripts/check-center-tabs.mjs`.
-- Create `web/public/desktop-transfer-acceptance.html`.
+- Modify `apps/desktop/package.json`.
+- Modify `apps/desktop/preload.js`.
+- Modify `apps/desktop/scripts/check-webtab-navigation.js`.
+- Modify `apps/web/lib/desktop-bridge.ts`.
+- Create `apps/web/lib/tab-transfer-journal.ts`.
+- Modify `apps/web/lib/tab-drag-coordinator.ts`.
+- Modify `apps/web/lib/state/center-tabs-store.ts`.
+- Modify `apps/web/lib/session-store/index.ts`.
+- Create `apps/web/lib/session-draft-persistence.ts`.
+- Modify `apps/web/lib/runtime-bridge/draft-channel-choice.ts`.
+- Modify `apps/web/lib/state/files-shared.ts`.
+- Modify `apps/web/components/app-shell.tsx`.
+- Modify `apps/web/components/center-tabs/center-tab-strip.tsx`.
+- Modify `apps/web/components/center-tabs/center-tabs.module.css`.
+- Modify `apps/web/scripts/check-web-split.mjs`.
+- Modify `apps/web/scripts/check-center-tabs.mjs`.
+- Create `apps/web/public/desktop-transfer-acceptance.html`.
 
 ### Task 1: Scope native views and visible sets by window
 
 **Files:**
 
-- Modify `desktop/main.js`
+- Modify `apps/desktop/main.js`
 - Create `desktop/tab-transfer-store.js`
-- Modify `desktop/package.json`
-- Modify `desktop/scripts/check-webtab-navigation.js`
+- Modify `apps/desktop/package.json`
+- Modify `apps/desktop/scripts/check-webtab-navigation.js`
 
 **Durable terminal-decision store:**
 
@@ -98,7 +98,7 @@ putTransferDecision(filePath, decision)
 ackTransferDecision(filePath, token, role)
 ```
 
-`saveTransferDecisionsAtomic` writes mode `0600` to a sibling temporary file, `fsync`s it, renames it over `tab-transfers.json`, and `fsync`s the user-data directory. A failed write leaves the previous valid file intact. Add `tab-transfer-store.js` to `desktop/package.json` `build.files`.
+`saveTransferDecisionsAtomic` writes mode `0600` to a sibling temporary file, `fsync`s it, renames it over `tab-transfers.json`, and `fsync`s the user-data directory. A failed write leaves the previous valid file intact. Add `tab-transfer-store.js` to `apps/desktop/package.json` `build.files`.
 
 `requiredRoles` contains only participants that successfully wrote a renderer journal, recorded by `tab-transfer:journal-opened` before transient mutation. `putTransferDecision` returns only after the new terminal status is durable. `ackTransferDecision` rejects an unknown/non-required role and otherwise returns `{ decision, complete }` after atomically persisting the updated `finalizedRoles`; an already-recorded role is idempotent. When `complete` is true, that same atomic save has removed the token from `decisions`. A write/fsync/rename failure throws and leaves the previously durable decision unchanged.
 
@@ -149,11 +149,11 @@ function hideView(ctx, id) {}
 
 **Files:**
 
-- Modify `desktop/preload.js`
-- Modify `web/lib/desktop-bridge.ts`
-- Modify `web/components/app-shell.tsx`
-- Modify `web/scripts/check-web-split.mjs`
-- Modify `desktop/scripts/check-webtab-navigation.js`
+- Modify `apps/desktop/preload.js`
+- Modify `apps/web/lib/desktop-bridge.ts`
+- Modify `apps/web/components/app-shell.tsx`
+- Modify `apps/web/scripts/check-web-split.mjs`
+- Modify `apps/desktop/scripts/check-webtab-navigation.js`
 
 **Bridge additions:**
 
@@ -189,13 +189,13 @@ interface DesktopBridge {
 
 **Files:**
 
-- Modify `web/lib/state/center-tabs-store.ts`
-- Modify `web/lib/session-store/index.ts`
-- Create `web/lib/session-draft-persistence.ts`
-- Modify `web/lib/state/files-shared.ts`
-- Modify `web/lib/runtime-bridge/draft-channel-choice.ts`
-- Create `web/lib/tab-transfer-journal.ts`
-- Modify `web/scripts/check-web-split.mjs`
+- Modify `apps/web/lib/state/center-tabs-store.ts`
+- Modify `apps/web/lib/session-store/index.ts`
+- Create `apps/web/lib/session-draft-persistence.ts`
+- Modify `apps/web/lib/state/files-shared.ts`
+- Modify `apps/web/lib/runtime-bridge/draft-channel-choice.ts`
+- Create `apps/web/lib/tab-transfer-journal.ts`
+- Modify `apps/web/scripts/check-web-split.mjs`
 
 Import `CenterTabGroup` from `center-tab-groups.ts` and `CenterTabsPersistedPayload` from `center-tabs-store.ts`; do not redeclare either. The compound plan must export `CenterTabsPersistedPayload`.
 
@@ -347,8 +347,8 @@ All operations are atomic for `payload.tabs`. A whole group transfers all member
 
 **Files:**
 
-- Modify `desktop/main.js`
-- Modify `desktop/scripts/check-webtab-navigation.js`
+- Modify `apps/desktop/main.js`
+- Modify `apps/desktop/scripts/check-webtab-navigation.js`
 
 **States and commit boundary:**
 
@@ -401,11 +401,11 @@ committed -> never rolling-back
 
 **Files:**
 
-- Modify `desktop/preload.js`
-- Modify `web/lib/desktop-bridge.ts`
-- Modify `web/lib/tab-drag-coordinator.ts`
-- Modify `web/scripts/check-web-split.mjs`
-- Modify `desktop/scripts/check-webtab-navigation.js`
+- Modify `apps/desktop/preload.js`
+- Modify `apps/web/lib/desktop-bridge.ts`
+- Modify `apps/web/lib/tab-drag-coordinator.ts`
+- Modify `apps/web/scripts/check-web-split.mjs`
+- Modify `apps/desktop/scripts/check-webtab-navigation.js`
 
 **Preload API:**
 
@@ -473,11 +473,11 @@ const acceptedTransfers = new Map<string, AcceptedTransfer>();
 
 **Files:**
 
-- Modify `web/components/center-tabs/center-tab-strip.tsx`
-- Modify `web/lib/tab-drag-coordinator.ts`
-- Modify `web/components/center-tabs/center-tabs.module.css`
-- Modify `web/scripts/check-center-tabs.mjs`
-- Modify `web/scripts/check-compound-tabs.mjs`
+- Modify `apps/web/components/center-tabs/center-tab-strip.tsx`
+- Modify `apps/web/lib/tab-drag-coordinator.ts`
+- Modify `apps/web/components/center-tabs/center-tabs.module.css`
+- Modify `apps/web/scripts/check-center-tabs.mjs`
+- Modify `apps/web/scripts/check-compound-tabs.mjs`
 
 - [ ] Extend the coordinator behavior check with desktop preparation. Pointer down builds one payload with:
 
@@ -517,11 +517,11 @@ For `kind:"group"`, `tabs` contains all group members in member order. For a seg
 
 **Files:**
 
-- Modify `desktop/main.js`
-- Modify `desktop/preload.js`
-- Modify `web/lib/desktop-bridge.ts`
-- Modify `desktop/scripts/check-webtab-navigation.js`
-- Modify `web/scripts/check-web-split.mjs`
+- Modify `apps/desktop/main.js`
+- Modify `apps/desktop/preload.js`
+- Modify `apps/web/lib/desktop-bridge.ts`
+- Modify `apps/desktop/scripts/check-webtab-navigation.js`
+- Modify `apps/web/scripts/check-web-split.mjs`
 
 - [ ] Add a behavior test that creates a hidden window with a pending token, fires a simulated `did-finish-load` without a renderer claim, and asserts nothing is accepted/sent. After store/session hydration, transfer-listener installation, and journal recovery, call `claimPending(windowId)`; assert it returns the token and destination staging starts. Reload the hidden renderer and claim again while still pre-commit; assert the journal reconstructs transient state and the valid token is returned rather than lost.
 - [ ] Add tests that another window id cannot claim the token, a committed/expired token returns null, and rollback closes the hidden window.
@@ -537,10 +537,10 @@ For `kind:"group"`, `tabs` contains all group members in member order. For a seg
 
 **Files:**
 
-- Modify `desktop/main.js`
-- Modify `web/lib/desktop-bridge.ts`
-- Modify `desktop/scripts/check-webtab-navigation.js`
-- Modify `web/scripts/check-web-split.mjs`
+- Modify `apps/desktop/main.js`
+- Modify `apps/web/lib/desktop-bridge.ts`
+- Modify `apps/desktop/scripts/check-webtab-navigation.js`
+- Modify `apps/web/scripts/check-web-split.mjs`
 
 - [ ] Add an executable command-routing harness. Two fake windows register visible web panes and focus changes. Dispatch a menu command and a backend `webtab.command`; assert exactly one focused renderer handles each request and the returned target is its focused visible web pane.
 - [ ] Send the same request id through two renderers; the main atomic claim registry allows only the focused owner. Assert a non-focused or destroyed renderer receives false.
@@ -561,7 +561,7 @@ python -m pytest tests/ --ignore=tests/test_provider_cli.py --ignore=tests/integ
 
 **Files:**
 
-- Create `web/public/desktop-transfer-acceptance.html`
+- Create `apps/web/public/desktop-transfer-acceptance.html`
 - Modify implementation only if acceptance exposes a defect.
 
 - [ ] Add a deterministic local page at `/desktop-transfer-acceptance.html`. It must contain a text input, a 2400px scroll region, buttons that call `history.pushState`/back, and script that sets and displays a same-origin cookie plus `localStorage` session marker. This is the reproducible login/session-state surrogate; do not use a third-party account or the user's browser profile.

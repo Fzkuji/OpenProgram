@@ -15,7 +15,7 @@
 #   1. System toolchain: Python 3.11+, Node 20+, git (installed if missing)
 #   2. Python env (uses an active venv/conda, else creates ./.venv)
 #   3. OpenProgram (editable) + its deps
-#   4. Web UI:   web/ -> npm install && npm run build  (served on :18100)
+#   4. Web UI:   apps/web/ -> npm install && npm run build  (served on :18100)
 #   5. TUI:      apps/cli/ -> npm install && npm run build  (Ink TUI; POSIX)
 #   6. Product extras [all,search] + Playwright Chromium
 #   7. GUI / Research / Wiki first-party Programs, default OCR/model data,
@@ -202,11 +202,11 @@ ok "openprogram installed"
 # ---- 4. web frontend (deps + production build) -------------------------------
 install_web() {
   command -v npm >/dev/null 2>&1 || die "npm is required to build the Web UI"
-  [ -f "$HOST_ROOT/web/package.json" ] || die "web/package.json is missing"
-  step "installing web UI deps (web/ — Next.js)"
-  ( cd "$HOST_ROOT/web" && npm install )
+  [ -f "$HOST_ROOT/apps/web/package.json" ] || die "apps/web/package.json is missing"
+  step "installing web UI deps (apps/web/ — Next.js)"
+  ( cd "$HOST_ROOT/apps/web" && npm install )
   step "building web production bundle"
-  ( cd "$HOST_ROOT/web" && npm run build )
+  ( cd "$HOST_ROOT/apps/web" && npm run build )
   ok "web UI ready (single port :18100)"
 }
 

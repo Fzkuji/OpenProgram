@@ -134,13 +134,13 @@
   <section aria-labelledby="implementation">
     <h2 id="implementation">实现入口</h2>
     <div class="files">
-      <div class="file"><code>desktop/build/AppIcon.icon/icon.json</code><span>背景与图层结构。</span></div>
-      <div class="file"><code>desktop/build/AppIcon.icon/Assets/01-orbit.svg</code><span>最底层蓝紫轨道。</span></div>
-      <div class="file"><code>desktop/build/AppIcon.icon/Assets/02-node-blue.svg</code><span>第二层主节点。</span></div>
-      <div class="file"><code>desktop/build/AppIcon.icon/Assets/03-node-purple.svg</code><span>第三层辅助节点。</span></div>
-      <div class="file"><code>desktop/build/AppIcon.icon/Assets/04-node-indigo.svg</code><span>最前层小节点。</span></div>
-      <div class="file"><code>desktop/scripts/check-icon.sh</code><span>阻止圆角、边框、阴影等重新进入现代素材。</span></div>
-      <div class="file"><code>desktop/package.json</code><span>macOS 打包入口固定为 <code>AppIcon.icon</code>。</span></div>
+      <div class="file"><code>apps/desktop/build/AppIcon.icon/icon.json</code><span>背景与图层结构。</span></div>
+      <div class="file"><code>apps/desktop/build/AppIcon.icon/Assets/01-orbit.svg</code><span>最底层蓝紫轨道。</span></div>
+      <div class="file"><code>apps/desktop/build/AppIcon.icon/Assets/02-node-blue.svg</code><span>第二层主节点。</span></div>
+      <div class="file"><code>apps/desktop/build/AppIcon.icon/Assets/03-node-purple.svg</code><span>第三层辅助节点。</span></div>
+      <div class="file"><code>apps/desktop/build/AppIcon.icon/Assets/04-node-indigo.svg</code><span>最前层小节点。</span></div>
+      <div class="file"><code>apps/desktop/scripts/check-icon.sh</code><span>阻止圆角、边框、阴影等重新进入现代素材。</span></div>
+      <div class="file"><code>apps/desktop/package.json</code><span>macOS 打包入口固定为 <code>AppIcon.icon</code>。</span></div>
       <div class="file"><code>.github/workflows/release.yml</code><span>使用带 Xcode 26 的 macOS 26 runner。</span></div>
     </div>
   </section>
@@ -156,7 +156,7 @@
     <table>
       <thead><tr><th>范围</th><th>状态</th><th>证据</th></tr></thead>
       <tbody>
-        <tr><td>Apple Icon Composer 构建入口与 automatic gradient 背景</td><td>已实现</td><td><code>desktop/package.json</code> 与当前 <code>AppIcon.icon</code></td></tr>
+        <tr><td>Apple Icon Composer 构建入口与 automatic gradient 背景</td><td>已实现</td><td><code>apps/desktop/package.json</code> 与当前 <code>AppIcon.icon</code></td></tr>
         <tr><td>四个前景深度 group</td><td>已实现</td><td><code>icon:check</code> 通过；四组关闭 Specular，取消节点圆周光圈；四组使用 42% neutral Shadow，并按从后到前顺序声明</td></tr>
         <tr><td>源素材明暗</td><td>已实现</td><td>三个节点使用左上受光、右下压暗的径向渐变；圆环使用方向性受光与不含白色的暗边截面；最外层系统轮廓不进入 SVG</td></tr>
         <tr><td>主体视觉占比</td><td>已实现</td><td>轨道外缘约占画布 69%，三个节点同步放大；单侧保留约 15% 安全边距</td></tr>

@@ -18,7 +18,7 @@ Electron 壳 → Next.js 服务（Node，web 端口） → Python worker（后�
   `/api/[...path]` route handler 每请求重读 `worker.port`。
 - worker 还要拉起并看护 Next 进程：`openprogram/worker/web.py` 约 330 行的
   端口回收、孤儿 `next-server` 查杀、BUILD_ID 监视、manifest 补丁、父进程
-  PID 监视（`web/scripts/with-parent-watch.mjs`）。
+  PID 监视（`apps/web/scripts/with-parent-watch.mjs`）。
 - 用户运行时必须装 Node，只为渲染一个本来就 100% 客户端的 UI。
 
 ## 2. 为什么合并很便宜
@@ -26,7 +26,7 @@ Electron 壳 → Next.js 服务（Node，web 端口） → Python worker（后�
 前端没有任何东西需要 Node 服务：
 
 - 应用壳用 `next/dynamic` + `ssr: false` 加载
-  （`web/app/(shell)/layout.tsx`），所有实际页面都是 `"use client"`。
+  （`apps/web/app/(shell)/layout.tsx`），所有实际页面都是 `"use client"`。
 - 没有 `middleware.ts`、server actions、`next/image`，也没有 `output`/
   `basePath`/`headers` 等需要拆的配置。
 - 仅有的两个 route handler（`app/api/[...path]`、`app/files/[...path]`）
@@ -49,9 +49,9 @@ Electron 壳 → Python worker（FastAPI，单端口）
 
 ### 3.1 前端是静态导出
 
-`web/next.config.mjs`：
+`apps/web/next.config.mjs`：
 
-- `output: "export"` → `next build` 输出纯 HTML/JS/CSS 到 `web/out/`。
+- `output: "export"` → `next build` 输出纯 HTML/JS/CSS 到 `apps/web/out/`。
 - 没有 `rewrites()`，也没有 `resolveBackend()`——不存在需要解析的代理目标。
 - 前端只跟自己的源站说话（`/ws`、`/api/...` 相对路径）。
 
@@ -68,19 +68,19 @@ Electron 壳 → Python worker（FastAPI，单端口）
 
 `openprogram/webui/frontend.py`，在 `create_app()` 最后挂载：
 
-- 静态文件来自 `web/out/`（`/_next/static` 加 immutable 缓存头，HTML
+- 静态文件来自 `apps/web/out/`（`/_next/static` 加 immutable 缓存头，HTML
   no-cache）。
 - SPA 回退：任何未命中文件也未命中 API 路由的 GET，返回壳 HTML
   （`out/chat.html`——应用本来就 `/` → `/chat` 重定向，其余全靠
   `pathname` 客户端解析）。
-- 构建门：`web/out/` 缺失或比 `web/` 源码旧，就在启动时跑一次
+- 构建门：`apps/web/out/` 缺失或比 `web/` 源码旧，就在启动时跑一次
   `npm run build`。Node 从此只是**构建期**依赖；打包发布版直接携带预构建的
   `out/`，运行时完全不碰 Node。
 
 ### 3.3 没有进程看护
 
 没有任何东西拉起或监视 Node 进程。`openprogram/worker/web.py`（spawn、
-端口回收、manifest 补丁、BUILD_ID 监视）、`web/scripts/with-parent-watch.mjs`
+端口回收、manifest 补丁、BUILD_ID 监视）、`apps/web/scripts/with-parent-watch.mjs`
 以及 `openprogram/worker/runner.py` 里的 `start_web_frontend` 调用在这里都
 没有对应物。
 
@@ -96,7 +96,7 @@ Electron 壳 → Python worker（FastAPI，单端口）
 - `OPENPROGRAM_WEB_PORT` 与 UI 偏好 `web_port`：过渡期作为后端端口的别名
   接受（打警告日志），之后移除。
 - `worker.port` 文件：不变，仍是端口发现的唯一权威。
-- Electron `desktop/main.js`：`WEB_PORT` 常量（dev 18200 / 发布 18100）
+- Electron `apps/desktop/main.js`：`WEB_PORT` 常量（dev 18200 / 发布 18100）
   现在就是 worker 端口；三处使用（启动 URL、origin 校验、导航守卫）无需
   结构性改动。
 - `scripts/promote_stable.sh`：`npm run build` 输出 `out/`。

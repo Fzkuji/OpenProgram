@@ -175,9 +175,9 @@ Ok "openprogram installed"
 # ---- 4. web frontend deps ---------------------------------------------------
 function Install-Web {
   if (-not (Have npm)) { Warn "npm missing - skipping web UI deps"; return }
-  if (-not (Test-Path "$HostRoot\web\package.json")) { Warn "web/ not found - skipping"; return }
-  Step "installing web UI deps (web/ - Next.js)"
-  Push-Location "$HostRoot\web"
+  if (-not (Test-Path "$HostRoot\apps\web\package.json")) { Warn "apps/web/ not found - skipping"; return }
+  Step "installing web UI deps (apps/web/ - Next.js)"
+  Push-Location "$HostRoot\apps\web"
   try {
     cmd /c "npm install"
     if ($Minimal) { Warn "skipping web production build (-Minimal) - the worker builds it on first start" }

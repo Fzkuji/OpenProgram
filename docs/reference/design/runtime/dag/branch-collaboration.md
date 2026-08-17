@@ -121,10 +121,10 @@ Design points:
 |---|---|
 | merge engine | `openprogram/agent/internals/_merge.py` `process_merge_turn` |
 | merge WS action | `openprogram/webui/ws_actions/merge.py` |
-| merge UI | `web/components/right-sidebar/branches/merge-modal.tsx` |
+| merge UI | `apps/web/components/right-sidebar/branches/merge-modal.tsx` |
 | attach parsing | `openprogram/webui/ws_actions/branch.py` `_attach_info` |
-| DAG edges | `web/lib/runtime-bridge/dag/render/edges.ts` |
-| DAG shapes | `web/lib/runtime-bridge/dag/shapes.ts` |
+| DAG edges | `apps/web/lib/runtime-bridge/dag/render/edges.ts` |
+| DAG shapes | `apps/web/lib/runtime-bridge/dag/shapes.ts` |
 | layout (merge node lane) | `openprogram/webui/graph_layout/{lane,__init__}.py` |
 | send_to_branch tool | to be created under `openprogram/programs/functions/vanilla/` |
 | verification | `tools/dag_dump.py` |

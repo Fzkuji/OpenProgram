@@ -19,11 +19,11 @@
 ### Task 1: Frontend serialization and reconnect
 
 **Files:**
-- Modify: `web/scripts/check-send-queue.mjs`
-- Modify: `web/lib/session-store/index.ts`
-- Modify: `web/components/chat/composer/legacy-send.ts`
-- Modify: `web/lib/net/use-ws.ts`
-- Modify: `web/lib/state/send-queue.ts`
+- Modify: `apps/web/scripts/check-send-queue.mjs`
+- Modify: `apps/web/lib/session-store/index.ts`
+- Modify: `apps/web/components/chat/composer/legacy-send.ts`
+- Modify: `apps/web/lib/net/use-ws.ts`
+- Modify: `apps/web/lib/state/send-queue.ts`
 
 **Interfaces:**
 - Consumes: `setRunningTaskFor(sessionId, task | null)`, `useSendQueue.getState().drain(sessionId)`.
@@ -39,8 +39,8 @@
 ### Task 2: Attachment boundary
 
 **Files:**
-- Modify: `web/scripts/check-send-queue.mjs`
-- Modify: `web/components/chat/composer/use-chat-submit.ts`
+- Modify: `apps/web/scripts/check-send-queue.mjs`
+- Modify: `apps/web/components/chat/composer/use-chat-submit.ts`
 
 **Interfaces:**
 - Consumes: current composer `pendingImages` and `pendingDocs`.

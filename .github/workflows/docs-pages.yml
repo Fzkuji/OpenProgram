@@ -7,7 +7,7 @@ on:
       - "docs/**"
       - "site/**"
       - "tools/docs_site/**"
-      - "web/app/favicon.ico"
+      - "apps/web/app/favicon.ico"
       - ".github/workflows/docs-pages.yml"
   workflow_dispatch:
 

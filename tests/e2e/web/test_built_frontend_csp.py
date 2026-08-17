@@ -16,7 +16,7 @@ pytestmark = pytest.mark.browser
 
 
 def test_static_shell_csp_authorizes_only_its_built_inline_scripts() -> None:
-    built_chat = ROOT / "web/out/chat.html"
+    built_chat = ROOT / "apps/web/out/chat.html"
     assert built_chat.is_file(), "build the Web package before running e2e tests"
 
     with TestClient(create_app(), base_url="http://127.0.0.1:18100") as client:

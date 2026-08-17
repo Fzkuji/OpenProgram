@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-runtime_root="$repo_root/desktop/build/runtime"
+runtime_root="$repo_root/apps/desktop/build/runtime"
 archive="${OPENPROGRAM_RUNTIME_ARCHIVE:-}"
 
 if test -z "$archive"; then

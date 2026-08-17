@@ -34,7 +34,7 @@
 ├── applications/      # 可调用上述全部能力的完整应用，可包含 UI/assets
 ├── _registry.py       # 统一注册与发现
 └── _programs.py       # Application 元数据与加载</pre>
-    <div class="callout">所有实体代码都位于仓库内的 <code>openprogram/programs/</code>。不使用 <code>~/.openprogram/workflows/</code> 作为源码目录，也不保留 <code>openprogram.programs.functions.agentic</code> 兼容包。</div>
+    <div class="callout">所有实体代码都位于仓库内的 <code>openprogram/programs/</code>。不使用 <code>~/.openprogram/workflows/</code> 作为源码目录，也不保留旧 <code>openprogram.programs.agentic_functions</code> 兼容包。</div>
   </section>
 
   <section id="roles"><h2>2. 四类实体的职责</h2>
@@ -58,7 +58,7 @@
 
   <section id="runtime"><h2>4. Workflow 与 Goal / Agent / LLM</h2>
     <div class="flow"><div class="node"><strong>Goal</strong><span>以 Agent loop 完成有判定条件的目标</span></div><div class="arrow">→</div><div class="node"><strong>Agent</strong><span>基于 LLM 的多轮工具循环</span></div><div class="arrow">→</div><div class="node"><strong>LLM</strong><span>单次模型调用</span></div></div>
-    <p>三者仍由 <code>openprogram/agentic_programming/</code> 提供，不移动到 Programs。Workflow 是最高层组合，可以直接调用其中任意一层，也可以在不同步骤组合多层；依赖顺序始终是 <code>goal → agent → llm</code>。</p>
+    <p>三者仍由 <code>openprogram/agentic_programming/</code> 提供，不移动到 Programs，也不形成产品导航或独立管理页。Workflow 是最高层组合，可以直接调用其中任意一层，也可以在不同步骤组合多层；依赖顺序始终是 <code>goal → agent → llm</code>。</p>
   </section>
 
   <section id="discovery"><h2>5. 发现与加载只有一套语义</h2>

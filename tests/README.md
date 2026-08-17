@@ -75,15 +75,15 @@ monkeypatch.
 
 ## JavaScript and interface tests
 
-- Web pure helper behavior: `web/tests/*.test.mjs`, executed by `npm test`.
-- Web source structure: `web/scripts/check-*.mjs`, only when structure itself is
+- Web pure helper behavior: `apps/web/tests/*.test.mjs`, executed by `npm test`.
+- Web source structure: `apps/web/scripts/check-*.mjs`, only when structure itself is
   the contract.
 - Built-Web interaction: `tests/e2e/web/` with the `browser` marker.
 - CLI TypeScript: the existing Vitest suite; CI runs typecheck, test, and build.
 - Desktop: existing VM/fake-Electron component checks; CI runs
   `npm run check`.
 
-Keep Web Node test files directly under `web/tests/`; the current test command
+Keep Web Node test files directly under `apps/web/tests/`; the current test command
 does not recursively collect nested directories.
 
 ## Required checks

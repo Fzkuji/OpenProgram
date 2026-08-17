@@ -1413,7 +1413,7 @@ async def _handle_ws_command(ws, cmd: dict):
     # Unknown action. Silently dropping these is how a frontend command
     # that names a handler nobody wrote (or renamed) looks exactly like a
     # backend that is merely slow — no error, no log, no clue. Say so on
-    # both channels. ``web/scripts/check-ws-actions.mjs`` is the guard
+    # both channels. ``apps/web/scripts/check-ws-actions.mjs`` is the guard
     # that keeps this branch unreachable in practice.
     _log(f"[ws] unknown action {action!r} — no handler registered")
     await ws.send_text(json.dumps({
@@ -1617,7 +1617,7 @@ def create_app(*, owner_auth=None, port: int = 18100):
     from ._auth_routes import router as _auth_router
     app.include_router(_auth_router)
 
-    # Frontend: the Next.js static export (web/out/) is served by this
+    # Frontend: the Next.js static export (apps/web/out/) is served by this
     # same process — mount_frontend() is called LAST below so every API
     # route registered here wins over the SPA catch-all.
 

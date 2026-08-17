@@ -217,7 +217,7 @@
 </div>
 <div class="legend">
   <b>入站四条路都把内容送进模型，也都在聊天流里留下同一条可点的痕迹。</b>标记由 <code>attachments.format_marker</code> 唯一生成，chip 由 <code>parseAttachments</code> 唯一解析；再加第五条入站路只要调这个 formatter，不能自己写一套。网页图片以前只在内存里 base64，模型看得见人看不见，现在跟文档共用同一条落盘路（sha256 去重、32MB/64MB 上限、路径回写），同时照旧作为 ImageContent 送进模型。
-  <span class="src">openprogram/attachments.py · openprogram/channels/_attachments.py:181 · openprogram/webui/ws_actions/chat.py:152-300 · web/components/chat/messages/user-attachments.tsx</span>
+  <span class="src">openprogram/attachments.py · openprogram/channels/_attachments.py:181 · openprogram/webui/ws_actions/chat.py:152-300 · apps/web/components/chat/messages/user-attachments.tsx</span>
 </div>
 
 <h3 id="now-bubble">1.2 同一句话，三种来源，一种结局</h3>
@@ -263,7 +263,7 @@
 </div>
 <div class="legend">
   <b>三种来源，一个组件。</b><code>parseAttachments</code> 从正文里摘出标记，<code>AttachmentChips</code> 画 chip，<code>AttachmentPreview</code> 用 <code>FileViewer</code> 的绝对路径模式打开。用户气泡、助手气泡、消息导轨走的是同一份。
-  <span class="src">web/components/chat/messages/user-attachments.tsx · attachment-preview.tsx · web/components/files/file-viewer.tsx · web/lib/net/chat-stream.ts</span>
+  <span class="src">apps/web/components/chat/messages/user-attachments.tsx · attachment-preview.tsx · apps/web/components/files/file-viewer.tsx · apps/web/lib/net/chat-stream.ts</span>
 </div>
 
 <h3 id="now-out">1.3 出站：一个工具，两条投递路</h3>
@@ -358,7 +358,7 @@
 </div>
 <div class="legend">
   <b>不去扩 <code>/files/raw</code>。</b>它"绝对路径一律拒绝"是值得保留的不变量，两条路由各守各的契约。查看器一份不动：<code>FileViewer</code> 多一个 <code>abs</code> 入参，把两个出口切到绝对路径路由，图片、pdf、markdown、带行号代码、下载卡五种渲染判断仍然只有一处实现。
-  <span class="src">openprogram/attachments.py:readable_roots · openprogram/webui/routes/file_search.py · openprogram/webui/server.py:1498-1531 · web/components/files/file-viewer.tsx</span>
+  <span class="src">openprogram/attachments.py:readable_roots · openprogram/webui/routes/file_search.py · openprogram/webui/server.py:1498-1531 · apps/web/components/files/file-viewer.tsx</span>
 </div>
 
 <h3 id="now-verdict">1.5 三件需求，现在各自到哪</h3>
@@ -727,13 +727,13 @@
 <tr><td>无文件名的粘贴图按 media type 补扩展名</td><td class="y">已实现</td><td class="src">webui/ws_actions/chat.py:_attachment_name</td></tr>
 <tr><td>渠道附件改用网页词法（原来 chip 正则不认，标记当正文露出）</td><td class="y">已实现</td><td class="src">channels/_attachments.py:attachment_notes</td></tr>
 <tr><td>字节出口 /api/file-raw，以及绝对路径版 /api/file-read</td><td class="y">已实现</td><td class="src">webui/routes/file_search.py</td></tr>
-<tr><td>chip 捕获路径、图片缩略图、点开浮层</td><td class="y">已实现</td><td class="src">web/components/chat/messages/user-attachments.tsx · attachment-preview.tsx</td></tr>
-<tr><td>chat_ack 回显存储后正文，刚发出去的附件当轮可点</td><td class="y">已实现</td><td class="src">webui/ws_actions/chat.py · web/lib/net/chat-stream.ts</td></tr>
+<tr><td>chip 捕获路径、图片缩略图、点开浮层</td><td class="y">已实现</td><td class="src">apps/web/components/chat/messages/user-attachments.tsx · attachment-preview.tsx</td></tr>
+<tr><td>chat_ack 回显存储后正文，刚发出去的附件当轮可点</td><td class="y">已实现</td><td class="src">webui/ws_actions/chat.py · apps/web/lib/net/chat-stream.ts</td></tr>
 <tr><td>send_file 工具与 dispatcher 折入 final_text</td><td class="y">已实现</td><td class="src">programs/functions/send_file/ · agent/dispatcher/__init__.py</td></tr>
 <tr><td>渠道回发接线：抽标记、调 post_file、失败改写成人话</td><td class="y">已实现</td><td class="src">channels/_conversation.py:_deliver_outbound_files</td></tr>
 <tr><td>按渠道声明能力（cli / tui / wechat / plan 下工具不出现）</td><td class="y">已实现</td><td class="src">programs/functions/send_file/send_file.py unsafe_in</td></tr>
 <tr><td>四个平台的 post_file 传输实现</td><td class="y">已实现，现在有调用方了</td><td class="src">channels/_transport.py:186-211,777-780</td></tr>
-<tr><td>FileViewer 接受绝对路径</td><td class="y">已实现（abs 模式）</td><td class="src">web/components/files/file-viewer.tsx</td></tr>
+<tr><td>FileViewer 接受绝对路径</td><td class="y">已实现（abs 模式）</td><td class="src">apps/web/components/files/file-viewer.tsx</td></tr>
 <tr><td>中心标签页作为第二种打开方式、caption、出站工具白名单、签名票据、代码高亮</td><td class="n">未实现（第三层）</td><td class="src">—</td></tr>
 <tr><td>附件记录表、TUI 内联图片、canvas 实时渲染面板</td><td class="n">未实现（第四层）</td><td class="src">—</td></tr>
 <tr><td>document 模态与 choose_delivery 能力开关</td><td class="n">未实现，attachment-handling 的决策矩阵里那一列仍是设计</td><td class="src">providers/types.py:329</td></tr>

@@ -182,7 +182,7 @@
           <tr><td><code>light-dark()</code> 仅按 color-scheme</td><td class="no">拒绝</td><td>只能表达明暗两类，不能区分 beige、neutral、aurora 和 custom。</td><td>仍使用各主题显式值。</td></tr>
         </tbody>
       </table>
-      <p style="margin-top:12px;color:var(--muted);font-size:13px">规范依据：<a href="https://www.w3.org/TR/css-variables-1/">CSS Custom Properties Level 1</a>、<a href="https://www.w3.org/TR/css-color-adjust-1/#color-scheme-prop">CSS Color Adjustment 的 color-scheme</a>。现有实现入口见 <code>web/lib/prefs/theme-pref.ts</code>、<code>web/app/globals.css</code> 与 <code>web/app/styles/themes/</code>。</p>
+      <p style="margin-top:12px;color:var(--muted);font-size:13px">规范依据：<a href="https://www.w3.org/TR/css-variables-1/">CSS Custom Properties Level 1</a>、<a href="https://www.w3.org/TR/css-color-adjust-1/#color-scheme-prop">CSS Color Adjustment 的 color-scheme</a>。现有实现入口见 <code>apps/web/lib/prefs/theme-pref.ts</code>、<code>apps/web/app/globals.css</code> 与 <code>apps/web/app/styles/themes/</code>。</p>
     </section>
 
     <section id="acceptance">
@@ -205,7 +205,7 @@
         <p><code>THEME_PREFS</code> 现在是主题入口的唯一清单；五套内置主题各自完整定义 58 个契约 token；composer、provider icon 与 DAG 只消费角色 token，不再判断具体主题 ID；desktop menu overlay 接受并传播全部主题 ID。共享按钮只消费 <code>--primary</code>，由主题层统一映射主色，不在组件内维护主题分支。主题契约检查已纳入 Web 总检查，安装版验收结果记录在本节下方。</p>
         <ul>
           <li><code>npm --prefix web run check</code>：通过，包括 <code>check:theme-contract</code>。</li>
-          <li><code>web/node_modules/.bin/tsc -p web/tsconfig.json --noEmit</code>：通过。</li>
+          <li><code>web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit</code>：通过。</li>
           <li><code>npm --prefix web run build</code>：通过。</li>
           <li>默认安装版 <code>/Applications/OpenProgram.app</code>：五套内置主题均读取到完整 58 个 token，页面背景均按主题变化，原生按钮继承字体设置；Aurora 下 desktop main-menu overlay 收到 <code>theme=aurora</code> 并使用对应 token。</li>
           <li>默认安装版共享按钮实测：dark / light 使用蓝色，beige-dark / beige-light 使用橙色，aurora 使用青绿色；常态、填充、hover 均保持各自主题色族。Custom 主题原有 <code>--accent-orange</code>、<code>--accent-fill</code>、<code>--accent-orange-hover</code> 覆盖方式继续有效。</li>

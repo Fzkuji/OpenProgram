@@ -1,7 +1,7 @@
 """``openprogram web`` handler — start the single-port worker (whole UI).
 
 Single-port architecture: the FastAPI worker serves the API, ``/ws`` AND
-the Next.js static export (``web/out/``) on one port, so this command
+the Next.js static export (``apps/web/out/``) on one port, so this command
 just spawns the detached worker and opens the browser at that port.
 
 The frontend is auto-started only for a source checkout (the ``web/``
@@ -119,7 +119,7 @@ def _find_web_dir() -> Path | None:
     """
     try:
         import openprogram
-        web = Path(openprogram.__file__).resolve().parent.parent / "web"
+        web = Path(openprogram.__file__).resolve().parent.parent / "apps" / "web"
     except Exception:
         return None
     if (web / "package.json").exists():

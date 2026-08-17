@@ -30,7 +30,7 @@ optimistic state that can hang forever is a lie — worse than no feedback.
 
 ## Shared helper
 
-`web/lib/runtime-bridge/optimistic-action.ts` — `optimisticAction({apply,
+`apps/web/lib/runtime-bridge/optimistic-action.ts` — `optimisticAction({apply,
 settled, revert, onTimeoutMessage})`. `apply` flips the 0ms state; `settled()`
 returns true once real data supersedes it (message gone from the store, tree
 repopulated, `branch.active` flipped…); on timeout with `settled()` still

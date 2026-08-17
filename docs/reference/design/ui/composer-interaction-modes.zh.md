@@ -33,7 +33,7 @@ mode 容器，由它选一种变换来呈现。一个后端 registry（QuestionR
 
 ## 现状：fn-form 已经是"变换"的范本
 
-读 `web/components/chat/composer/` 得到的事实——fn-form 已经把"输入框变形"
+读 `apps/web/components/chat/composer/` 得到的事实——fn-form 已经把"输入框变形"
 做对了，新框架是把它的隐式约定显式化、再容纳更多 mode：
 
 * **触发态在 store**：`session-store.ts` 的 `fnFormFunction`（+ `fnFormClosing`），
@@ -46,7 +46,7 @@ mode 容器，由它选一种变换来呈现。一个后端 registry（QuestionR
   disabled / title 也随当前形态变。
 * **组件**：`fn-form/fn-form.tsx`（外形）+ `fn-form-fields.tsx`（字段渲染）。
 
-问题（runtime.ask）现在没走这套，是独立浮窗（`web/components/ui/question-prompt.tsx`，
+问题（runtime.ask）现在没走这套，是独立浮窗（`apps/web/components/ui/question-prompt.tsx`，
 监听 `op:question-asked` window 事件、发 `question_reply`/`question_reject`）。
 本设计让它退役，改成一种 mode。
 
@@ -106,7 +106,7 @@ interface ComposerMode<TState> {
 ### 文件组织
 
 ```
-web/components/chat/composer/
+apps/web/components/chat/composer/
   modes/
     index.ts            # mode 注册表（id → ComposerMode），容器据此查表
     types.ts            # ComposerMode 接口
@@ -187,7 +187,7 @@ web/components/chat/composer/
 
 ## 退役（已完成）
 
-* `web/components/ui/question-prompt.tsx` 浮窗 + app-shell 挂载 → 已删。
+* `apps/web/components/ui/question-prompt.tsx` 浮窗 + app-shell 挂载 → 已删。
 * `_approval.py` 的 `ApprovalRegistry` / `approval_request` 信封 → 已删；
   `approval_registry()` 返回统一 QuestionRegistry。
 

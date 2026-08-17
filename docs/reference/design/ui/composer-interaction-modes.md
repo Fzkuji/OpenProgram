@@ -100,7 +100,7 @@ The container only knows this interface; adding a mode = adding a folder that im
 ### File organization
 
 ```
-web/components/chat/composer/
+apps/web/components/chat/composer/
   modes/
     index.ts            # mode registry (id → ComposerMode), the container looks up against this
     types.ts            # the ComposerMode interface

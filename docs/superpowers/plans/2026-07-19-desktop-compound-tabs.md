@@ -10,7 +10,7 @@
 
 ## Non-negotiable invariants
 
-- `CenterTabGroup` has one definition: `web/lib/state/center-tab-groups.ts`. Other modules import it.
+- `CenterTabGroup` has one definition: `apps/web/lib/state/center-tab-groups.ts`. Other modules import it.
 - A group has two or three unique, live, contiguous members. One-member groups dissolve. A fourth member is rejected without mutation.
 - `visibleIds` contains one or two group members and always contains `focusedId`.
 - Group membership may contain any tab kinds. Pane count is derived by `resolveCenterTabPanes`, not by `visibleIds.length`.
@@ -27,25 +27,25 @@
 
 ## Files
 
-- Create `web/lib/state/center-tab-groups.ts`.
-- Create `web/lib/tab-drag-coordinator.ts`.
-- Create `web/scripts/check-compound-tabs.mjs`.
-- Modify `web/lib/state/center-tabs-store.ts`.
-- Modify `web/components/app-shell.tsx`.
-- Modify `web/components/center-tabs/center-tab-strip.tsx`.
-- Modify `web/components/center-tabs/center-tabs.module.css`.
-- Modify `web/app/styles/base.css`.
-- Modify `web/scripts/check-center-tabs.mjs`.
-- Modify `web/scripts/check-web-split.mjs`.
-- Modify `web/scripts/check-chat-ui.mjs`.
-- Modify `web/package.json`.
+- Create `apps/web/lib/state/center-tab-groups.ts`.
+- Create `apps/web/lib/tab-drag-coordinator.ts`.
+- Create `apps/web/scripts/check-compound-tabs.mjs`.
+- Modify `apps/web/lib/state/center-tabs-store.ts`.
+- Modify `apps/web/components/app-shell.tsx`.
+- Modify `apps/web/components/center-tabs/center-tab-strip.tsx`.
+- Modify `apps/web/components/center-tabs/center-tabs.module.css`.
+- Modify `apps/web/app/styles/base.css`.
+- Modify `apps/web/scripts/check-center-tabs.mjs`.
+- Modify `apps/web/scripts/check-web-split.mjs`.
+- Modify `apps/web/scripts/check-chat-ui.mjs`.
+- Modify `apps/web/package.json`.
 
 ### Task 1: Add the pure group model and pane resolver
 
 **Files:**
 
-- Create `web/lib/state/center-tab-groups.ts`
-- Create `web/scripts/check-compound-tabs.mjs`
+- Create `apps/web/lib/state/center-tab-groups.ts`
+- Create `apps/web/scripts/check-compound-tabs.mjs`
 
 **Public API:**
 
@@ -144,10 +144,10 @@ Also assert one-member dissolution, member contiguity, duplicate removal, fourth
 
 **Files:**
 
-- Modify `web/lib/state/center-tabs-store.ts`
-- Modify `web/scripts/check-compound-tabs.mjs`
-- Modify `web/scripts/check-web-split.mjs`
-- Modify `web/package.json`
+- Modify `apps/web/lib/state/center-tabs-store.ts`
+- Modify `apps/web/scripts/check-compound-tabs.mjs`
+- Modify `apps/web/scripts/check-web-split.mjs`
+- Modify `apps/web/package.json`
 
 **Persistence contract:**
 
@@ -182,7 +182,7 @@ The helper may read `window.openprogramDesktop?.windowId`; until the multi-windo
 - [ ] Replace `readPersisted`, `persist`, `readPersistedSplit`, and `persistSplit` with the unified helpers. Dirty flags still clear on restore. Invalid group members normalize through Task 1.
 - [ ] Route every existing tab mutation through one `persistCenterTabsPayload` call. Do not leave a mutation that persists tabs while omitting groups or split state.
 - [ ] Update `setActive` to focus a grouped member first, ensuring `focusedId` remains visible. Update `openWebTabInSplit` and non-null `setSplitWebTab` to create/reuse the same session+web group. Null split ungrouping keeps other valid groups.
-- [ ] Add `"check:compound-tabs": "node --no-warnings --experimental-strip-types scripts/check-compound-tabs.mjs"` to `web/package.json` and include it in `npm run check`.
+- [ ] Add `"check:compound-tabs": "node --no-warnings --experimental-strip-types scripts/check-compound-tabs.mjs"` to `apps/web/package.json` and include it in `npm run check`.
 - [ ] Run `npm --prefix web run check:compound-tabs`, `npm --prefix web run check:web-split`, and `npm --prefix web run check:multi-draft`; all must pass.
 - [ ] Commit: `feat(desktop): persist compound workspace state`.
 
@@ -190,9 +190,9 @@ The helper may read `window.openprogramDesktop?.windowId`; until the multi-windo
 
 **Files:**
 
-- Modify `web/components/app-shell.tsx`
-- Modify `web/app/styles/base.css`
-- Modify `web/scripts/check-web-split.mjs`
+- Modify `apps/web/components/app-shell.tsx`
+- Modify `apps/web/app/styles/base.css`
+- Modify `apps/web/scripts/check-web-split.mjs`
 
 - [ ] Add a behavior section to `check-web-split.mjs` that calls `resolveCenterTabPanes` for session+session, session+web, web+web, and a hidden-third replacement. Assert pane lengths `1`, `2`, `2`, and at most `2`; assert the session+session descriptor selects the focused session.
 - [ ] Add structural assertions that `AppShell` calls `resolveCenterTabPanes`, derives `showDivider` from `panes.length === 2`, and contains exactly one `<PageShell page="chat" />`. Reject `visibleTabs.length === 2` as a divider condition.
@@ -208,10 +208,10 @@ The helper may read `window.openprogramDesktop?.windowId`; until the multi-windo
 
 **Files:**
 
-- Modify `web/components/center-tabs/center-tab-strip.tsx`
-- Modify `web/components/center-tabs/center-tabs.module.css`
-- Modify `web/scripts/check-center-tabs.mjs`
-- Modify `web/scripts/check-chat-ui.mjs`
+- Modify `apps/web/components/center-tabs/center-tab-strip.tsx`
+- Modify `apps/web/components/center-tabs/center-tabs.module.css`
+- Modify `apps/web/scripts/check-center-tabs.mjs`
+- Modify `apps/web/scripts/check-chat-ui.mjs`
 
 **Required component contract:**
 
@@ -255,11 +255,11 @@ Also assert each `group.memberIds.map` renders a `role="tab"` target and a sibli
 
 **Files:**
 
-- Create `web/lib/tab-drag-coordinator.ts`
-- Modify `web/components/center-tabs/center-tab-strip.tsx`
-- Modify `web/components/center-tabs/center-tabs.module.css`
-- Modify `web/scripts/check-compound-tabs.mjs`
-- Modify `web/scripts/check-center-tabs.mjs`
+- Create `apps/web/lib/tab-drag-coordinator.ts`
+- Modify `apps/web/components/center-tabs/center-tab-strip.tsx`
+- Modify `apps/web/components/center-tabs/center-tabs.module.css`
+- Modify `apps/web/scripts/check-compound-tabs.mjs`
+- Modify `apps/web/scripts/check-center-tabs.mjs`
 
 **Shared types used by both plans:**
 
@@ -309,10 +309,10 @@ export function resolveTabDropIntent(rect: Pick<DOMRect, "left" | "width">, clie
 
 **Files:**
 
-- Modify `web/components/center-tabs/center-tab-strip.tsx`
-- Modify `web/components/center-tabs/center-tabs.module.css`
-- Modify `web/scripts/check-chat-ui.mjs`
-- Modify `web/scripts/check-center-tabs.mjs`
+- Modify `apps/web/components/center-tabs/center-tab-strip.tsx`
+- Modify `apps/web/components/center-tabs/center-tabs.module.css`
+- Modify `apps/web/scripts/check-chat-ui.mjs`
+- Modify `apps/web/scripts/check-center-tabs.mjs`
 
 - [ ] Add checks for ArrowLeft/ArrowRight/Home/End, `Shift+F10`, `Escape`, `role="menu"`, native menu buttons, `role="status" aria-live="polite"`, and focus return to the invoking segment.
 - [ ] Keep normal roving focus across strip segments. Arrow movement changes focus only; menu Move left/right mutates order. For a segment, Move left/right first reorders within `memberIds`, and only crosses the group boundary by ungrouping.

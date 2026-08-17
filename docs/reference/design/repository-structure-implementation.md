@@ -53,9 +53,9 @@ adapted. Large-file decomposition is not part of the directory migration.
 
 - Base head observed before batch B1: `e0a5fa41de3d390764d557694178426d8570cbdb`.
 - The checkout contains unrelated in-progress changes in
-  `openprogram/webui/routes/agents.py`, `web/components/agents/`,
-  `web/scripts/check-agent-tool-configuration.mjs`,
-  `desktop/build/icon.icns`, runtime design pages, and promotional assets.
+  `openprogram/webui/routes/agents.py`, `apps/web/components/agents/`,
+  `apps/web/scripts/check-agent-tool-configuration.mjs`,
+  `apps/desktop/build/icon.icns`, runtime design pages, and promotional assets.
 - These changes overlap batches C, D, and E. They must reach an owner commit or
   otherwise leave the working tree before those directory moves are staged.
 - System Git is blocked by the host's unaccepted Xcode licence. The bundled
@@ -135,9 +135,9 @@ pass — independent quality re-review at `669f5445`
 
 ## Deferred boundaries
 
-- `desktop/main.js`: extract existing window lifecycle, native WebView, tab
+- `apps/desktop/main.js`: extract existing window lifecycle, native WebView, tab
   transfer, and menu responsibilities after the current Desktop work lands.
-- `web/lib/desktop-bridge.ts`: establish executable state/transfer tests before
+- `apps/web/lib/desktop-bridge.ts`: establish executable state/transfer tests before
   moving types, view state, and transfer coordination.
 - Long cohesive Python state machines remain intact until a separately tested
   responsibility is identified; line count alone is not an implementation task.

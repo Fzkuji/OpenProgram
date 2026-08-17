@@ -1,5 +1,5 @@
 """Guard: every local module the Electron main/preload entrypoints require must
-be listed in desktop/package.json build.files, or app.asar ships incomplete and
+be listed in apps/desktop/package.json build.files, or app.asar ships incomplete and
 the app dies at launch with "Cannot find module".
 """
 
@@ -9,7 +9,7 @@ import json
 import re
 from pathlib import Path
 
-DESKTOP = Path(__file__).resolve().parents[3] / "desktop"
+DESKTOP = Path(__file__).resolve().parents[3] / "apps" / "desktop"
 ENTRYPOINTS = ("main.js", "preload.js")
 
 # require("./x") / require('./x') / from "./x"
@@ -48,11 +48,11 @@ def _whitelist() -> list[str]:
 def test_every_required_module_is_packaged():
     missing = sorted(_required_files() - set(_whitelist()))
     assert not missing, (
-        "desktop/package.json build.files is missing modules that main.js/preload.js "
+        "apps/desktop/package.json build.files is missing modules that main.js/preload.js "
         f"require (app.asar would ship broken): {missing}"
     )
 
 
 def test_whitelist_has_no_dead_entries():
     dead = sorted(name for name in _whitelist() if not (DESKTOP / name).exists())
-    assert not dead, f"desktop/package.json build.files lists missing files: {dead}"
+    assert not dead, f"apps/desktop/package.json build.files lists missing files: {dead}"

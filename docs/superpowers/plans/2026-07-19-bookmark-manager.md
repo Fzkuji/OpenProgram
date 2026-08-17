@@ -21,8 +21,8 @@
 ### Task 1: Bookmark rename operation
 
 **Files:**
-- Modify: `web/lib/bookmarks.ts`
-- Modify: `web/scripts/check-bookmarks.mjs`
+- Modify: `apps/web/lib/bookmarks.ts`
+- Modify: `apps/web/scripts/check-bookmarks.mjs`
 
 **Interfaces:**
 - Produces: `renameBookmark(url: string, title: string): Bookmark[]`.
@@ -77,17 +77,17 @@ Expected: `bookmark storage checks passed`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/lib/bookmarks.ts web/scripts/check-bookmarks.mjs
+git add apps/web/lib/bookmarks.ts apps/web/scripts/check-bookmarks.mjs
 git commit -m "feat(bookmarks): support title renaming"
 ```
 
 ### Task 2: Persistent right-sidebar manager
 
 **Files:**
-- Create: `web/components/right-sidebar/bookmarks-panel.tsx`
-- Modify: `web/components/right-sidebar/right-sidebar.tsx`
-- Modify: `web/app/styles/right-dock.css`
-- Modify: `web/scripts/check-bookmarks.mjs`
+- Create: `apps/web/components/right-sidebar/bookmarks-panel.tsx`
+- Modify: `apps/web/components/right-sidebar/right-sidebar.tsx`
+- Modify: `apps/web/app/styles/right-dock.css`
+- Modify: `apps/web/scripts/check-bookmarks.mjs`
 
 **Interfaces:**
 - Consumes: `readBookmarks`, `renameBookmark`, `removeBookmark`, `BOOKMARKS_CHANGE_EVENT`, `openWebTab`, `openWebTabInSplit`, `isDesktopSplitLayoutAvailable`.
@@ -187,7 +187,7 @@ Expected: all exit `0`; build reports successful compilation.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/components/right-sidebar/bookmarks-panel.tsx web/components/right-sidebar/right-sidebar.tsx web/app/styles/right-dock.css web/scripts/check-bookmarks.mjs
+git add apps/web/components/right-sidebar/bookmarks-panel.tsx apps/web/components/right-sidebar/right-sidebar.tsx apps/web/app/styles/right-dock.css apps/web/scripts/check-bookmarks.mjs
 git commit -m "feat(bookmarks): add right-sidebar manager"
 ```
 
@@ -221,7 +221,7 @@ Run:
 
 ```bash
 cd web && npm run check && npm run build
-cd .. && node desktop/scripts/check-webtab-navigation.js
+cd .. && node apps/desktop/scripts/check-webtab-navigation.js
 python -m pytest tests/unit/test_webtab_control.py -q
 git diff --check
 ```

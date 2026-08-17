@@ -614,7 +614,7 @@ def _copy_static_root() -> None:
         dst = OUT_ROOT / path.relative_to(src)
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, dst)
-    shutil.copy2(REPO_ROOT / "web" / "app" / "favicon.ico", OUT_ROOT / "favicon.ico")
+    shutil.copy2(REPO_ROOT / "apps" / "web" / "app" / "favicon.ico", OUT_ROOT / "favicon.ico")
 
 
 def _write_sitemap() -> None:

@@ -1,8 +1,8 @@
-"""Serve the Next.js static export (``web/out/``) from the worker itself.
+"""Serve the Next.js static export (``apps/web/out/``) from the worker itself.
 
 Single-port architecture (docs/reference/design/cli/single-port.md): the
 FastAPI backend is the sole origin. ``mount_frontend`` registers, LAST in
-``create_app()``, a catch-all GET that serves files from ``web/out/`` and
+``create_app()``, a catch-all GET that serves files from ``apps/web/out/`` and
 falls back to the SPA shell for client-routed paths — so every /api, /ws,
 /docs, /files route registered before it always wins.
 
@@ -20,8 +20,8 @@ from pathlib import Path
 
 def web_dir() -> Path:
     """Repo-root ``web/`` directory."""
-    # openprogram/webui/frontend.py → repo_root/web
-    return Path(__file__).resolve().parents[2] / "web"
+    # openprogram/webui/frontend.py → repo_root/apps/web
+    return Path(__file__).resolve().parents[2] / "apps" / "web"
 
 
 def packaged_out_dir() -> Path:
@@ -74,7 +74,7 @@ def _run(cmd: list[str], wd: Path, what: str) -> None:
 
 
 def ensure_frontend_built() -> None:
-    """Build ``web/out/`` if missing or stale. Raises on build failure.
+    """Build ``apps/web/out/`` if missing or stale. Raises on build failure.
 
     Freshness contract: ``out/index.html`` exists (export completed) and
     is no older than the newest file under app/, components/, lib/ or
@@ -94,17 +94,17 @@ def ensure_frontend_built() -> None:
         if not marker.exists():
             raise RuntimeError(
                 f"frontend export not found at {out_dir()} and web/ sources "
-                "are unavailable — reinstall with a prebuilt web/out/."
+                "are unavailable — reinstall with a prebuilt apps/web/out/."
             )
         return
 
     if shutil.which("npm") is None:
         if marker.exists():
-            print("[worker] web: npm not found — serving existing (stale) web/out/")
+            print("[worker] web: npm not found — serving existing (stale) apps/web/out/")
             return
         raise RuntimeError(
             f"frontend export missing at {out_dir()} and npm is not in PATH. "
-            "Install Node.js (build-time only) or ship a prebuilt web/out/."
+            "Install Node.js (build-time only) or ship a prebuilt apps/web/out/."
         )
 
     if not (wd / "node_modules").exists():

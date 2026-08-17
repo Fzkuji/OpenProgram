@@ -443,7 +443,7 @@ def main() -> int:
     built_favicon = BUILT_SITE / "favicon.ico"
     require(built_favicon.is_file(), "docs build did not produce favicon.ico", failures)
     if built_favicon.is_file():
-        require(built_favicon.read_bytes() == (ROOT / "web/app/favicon.ico").read_bytes(),
+        require(built_favicon.read_bytes() == (ROOT / "apps/web/app/favicon.ico").read_bytes(),
                 "built favicon differs from the application favicon", failures)
     built_social_card = BUILT_SITE / "images" / "openprogram-social-card.png"
     require(built_social_card.is_file(),

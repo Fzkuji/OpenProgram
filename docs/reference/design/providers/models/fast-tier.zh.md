@@ -98,8 +98,8 @@ openprogram/webui/_model_listing/fetchers/codex.py 官方端点拉取 + 归一�
 openprogram/webui/_model_listing/fetchers/__init__.py  编排：透传 fetcher 的 fast/thinking，enrich 不覆盖
 openprogram/webui/_model_listing/listing.py        supports_fast 判定入口；list_models_for_provider 优先用 fetcher thinking
 openprogram/webui/routes/runtime.py                /api/agent_settings 下发 chat.fast
-web/lib/session-store/types.ts                     AgentBadgeInfo.fast 类型
-web/components/chat/composer/index.tsx             开关显隐 + 发送门控
+apps/web/lib/session-store/types.ts                     AgentBadgeInfo.fast 类型
+apps/web/components/chat/composer/index.tsx             开关显隐 + 发送门控
 ```
 
 改动指南：codex 的 fast/thinking 全自动，加/去模型什么都不用做——点 Fetch

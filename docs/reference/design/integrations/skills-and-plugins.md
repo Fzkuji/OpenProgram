@@ -161,7 +161,7 @@ Hook execution always goes through a subprocess (even when verified), consistent
 
 ## 3. Frontend
 
-### Sidebar additions (`web/components/sidebar/sidebar.tsx`)
+### Sidebar additions (`apps/web/components/sidebar/sidebar.tsx`)
 ```
 New chat
 Functions
@@ -186,10 +186,10 @@ Chats
 
 ### Components
 ```
-web/components/skills/
+apps/web/components/skills/
   skills-list.tsx, skill-detail.tsx, new-skill-dialog.tsx,
   discovery-sources.tsx, invoke-trace.tsx
-web/components/plugins/
+apps/web/components/plugins/
   installed-list.tsx, marketplace-browser.tsx, add-marketplace-dialog.tsx,
   plugin-options-dialog.tsx, plugin-trust-warning.tsx, plugin-errors.tsx,
   validate-plugin.tsx, plugin-detail.tsx, plugin-host.tsx (iframe / dynamic mount)

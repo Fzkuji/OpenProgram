@@ -427,7 +427,7 @@ plan 是**可见性控制**（藏写工具，`agent/plan_mode.py` 布尔集）�
 
 ### 4.1 审批卡片入口
 
-审批合流进统一的问题渲染（approval 是 `kind="approval"` 的问题，和 `runtime.ask` 走同一条链路）。入口组件 `QuestionMode`（`web/components/chat/composer/modes/question/question-mode.tsx`）按 `kind` 分支：approval 分支（`:82-83, :309-334`）把帧的 `prompt`/`detail`/`risk_level` 归一成一个 approval step 后渲染卡片。
+审批合流进统一的问题渲染（approval 是 `kind="approval"` 的问题，和 `runtime.ask` 走同一条链路）。入口组件 `QuestionMode`（`apps/web/components/chat/composer/modes/question/question-mode.tsx`）按 `kind` 分支：approval 分支（`:82-83, :309-334`）把帧的 `prompt`/`detail`/`risk_level` 归一成一个 approval step 后渲染卡片。
 
 `question.asked` 帧字段（后端 `emit_question_asked` 发，`internals/_approval.py:274-282`）：
 
@@ -528,8 +528,8 @@ def _persist_always_allow_rule(session_id: str, tool_name: str) -> None:
 ### 4.5 权限模式选择（top-bar 权限菜单，会话级）
 
 选择器**不在 composer 的 plus-menu 里**，而是聊天页顶栏的权限徽章
-`PermissionBadge`（`web/components/chat/top-bar/permission-menu.tsx:68`）。徽章由
-`usePermissionMode` hook 驱动（`web/components/chat/composer/controls/use-permission-mode.ts`），
+`PermissionBadge`（`apps/web/components/chat/top-bar/permission-menu.tsx:68`）。徽章由
+`usePermissionMode` hook 驱动（`apps/web/components/chat/composer/controls/use-permission-mode.ts`），
 hook 返回 `{mode, options, set}`。
 
 5 档标签取 Claude Code 官方名（`use-permission-mode.ts:28-34` 的 `MODE_LABELS`，带 1-5 数字快捷键）：
@@ -560,7 +560,7 @@ hook 返回 `{mode, options, set}`。
 
 ### 4.6 规则管理面板（Projects 页，项目级）
 
-规则管理 UI 在 **Projects 页**（`web/components/projects/projects-page.tsx:146-148`）：点开一个项目展开其规则面板。面板组件 `PermissionsSection`（`web/components/projects/permissions-section.tsx`）按 `projectId` 工作：
+规则管理 UI 在 **Projects 页**（`apps/web/components/projects/projects-page.tsx:146-148`）：点开一个项目展开其规则面板。面板组件 `PermissionsSection`（`apps/web/components/projects/permissions-section.tsx`）按 `projectId` 工作：
 
 - 列出该项目的 deny / ask / allow 三组规则，每组可手动新增、逐条删除。
 - 拉取/刷新走 WS：`list_permission_rules` / `add_permission_rule` / `remove_permission_rule`，请求都带 `project_id`；后端广播 `permission_rules` 帧（`session.py:742-748`）刷新面板。
@@ -613,9 +613,9 @@ hook 返回 `{mode, options, set}`。
 | web 默认 bypass + effective_permission | `openprogram/webui/_execute/__init__.py`；`additional_working_dirs` 填充在 `_execute/chat.py`、`channels/_conversation.py` |
 | WS：审批应答 + 项目规则 list/add/remove | `openprogram/webui/ws_actions/session.py`、`chat.py` |
 | 值守（正交机制） | `openprogram/agent/attended.py`、`openprogram/webui/ws_actions/runtime.py` |
-| 前端审批卡片（approval mode） | `web/components/chat/composer/modes/question/question-mode.tsx` + `../approval/approval-mode.module.css` |
-| 前端权限模式选择（会话级 hook） | `web/components/chat/composer/controls/use-permission-mode.ts` + `composer/index.tsx` |
-| 前端规则面板（项目级） | `web/components/projects/projects-page.tsx` + `web/components/projects/permissions-section.tsx` |
+| 前端审批卡片（approval mode） | `apps/web/components/chat/composer/modes/question/question-mode.tsx` + `../approval/approval-mode.module.css` |
+| 前端权限模式选择（会话级 hook） | `apps/web/components/chat/composer/controls/use-permission-mode.ts` + `composer/index.tsx` |
+| 前端规则面板（项目级） | `apps/web/components/projects/projects-page.tsx` + `apps/web/components/projects/permissions-section.tsx` |
 
 ---
 

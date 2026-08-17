@@ -28,7 +28,7 @@ Or from CLI:
 - **`_runtime_management.py`** — Runtime / provider management for the web UI
 - **`_stream_bridge.py`** — Bridge between runtime's ``on_stream(event: dict)`` callback and the v2
 - **`_thinking.py`** — Thinking / reasoning-effort picker config + runtime apply helpers
-- **`frontend.py`** — Serve the Next.js static export (``web/out/``) from the worker itself
+- **`frontend.py`** — Serve the Next.js static export (``apps/web/out/``) from the worker itself
 - **`graph_builder.py`** — Unified graph builder for the DAG viewport
 - **`messages.py`** — v2 message model + authoritative in-memory store
 - **`owner_auth.py`** — Single-owner authentication and request policy for the Web server

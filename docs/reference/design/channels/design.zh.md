@@ -386,9 +386,9 @@ openprogram channels bindings
 
 | 入口 | 实现 |
 |---|---|
-| Topbar channel popover | `web/components/chat/top-bar/channel-menu.tsx` |
+| Topbar channel popover | `apps/web/components/chat/top-bar/channel-menu.tsx` |
 | Health badge status API | `/api/channels/{platform}/{account_id}/status` 返回 alive/stale/unknown |
-| 本地 access 管理 | `web/components/settings/channels/access-list.tsx` 调用仅限 loopback 的 `/api/channels/access` 查询、批准和撤销路由 |
+| 本地 access 管理 | `apps/web/components/settings/channels/access-list.tsx` 调用仅限 loopback 的 `/api/channels/access` 查询、批准和撤销路由 |
 
 CLI 继续提供账号、binding 和 access 管理。
 

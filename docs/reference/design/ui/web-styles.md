@@ -8,7 +8,7 @@ file, named after it.
 ## Layout
 
 ```
-web/app/styles/
+apps/web/app/styles/
   base.css          design tokens + global primitives (unchanged, global)
   themes/           theme token overrides (unchanged, global)
   chat/             one file per chat component
@@ -24,7 +24,7 @@ web/app/styles/
     detail.css
 ```
 
-`web/app/styles.css` imports the tree in the original cascade order
+`apps/web/app/styles.css` imports the tree in the original cascade order
 (base → chat → detail-era files → right-dock/dag), so specificity ties
 resolve exactly as they did before the split.
 

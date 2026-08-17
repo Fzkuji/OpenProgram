@@ -111,8 +111,8 @@ openprogram/webui/_model_listing/fetchers/codex.py official endpoint fetch + nor
 openprogram/webui/_model_listing/fetchers/__init__.py  orchestration: passes through fetcher fast/thinking, enrich can't overwrite
 openprogram/webui/_model_listing/listing.py        supports_fast entry; list_models_for_provider prefers fetcher thinking
 openprogram/webui/routes/runtime.py                /api/agent_settings emits chat.fast
-web/lib/session-store/types.ts                     AgentBadgeInfo.fast type
-web/components/chat/composer/index.tsx             toggle visibility + send gate
+apps/web/lib/session-store/types.ts                     AgentBadgeInfo.fast type
+apps/web/components/chat/composer/index.tsx             toggle visibility + send gate
 ```
 
 Change guide: codex fast/thinking is fully automatic — add/remove a model

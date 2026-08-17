@@ -6,7 +6,7 @@ set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 product_config="$repo_root/config/product-runtime.json"
-runtime_root="${OPENPROGRAM_RUNTIME_ROOT:-$repo_root/desktop/build/runtime}"
+runtime_root="${OPENPROGRAM_RUNTIME_ROOT:-$repo_root/apps/desktop/build/runtime}"
 uv_bin="${OPENPROGRAM_UV_BIN:-$(command -v uv || true)}"
 json_python="${OPENPROGRAM_BUILD_PYTHON:-$(command -v python3 || true)}"
 

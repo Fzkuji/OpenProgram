@@ -184,7 +184,7 @@ def _environment_probes() -> dict[str, Any]:
 
     probes: dict[str, Any] = {"doctor_checks": run_checks()}
 
-    web_out = Path(__file__).resolve().parents[2] / "web" / "out"
+    web_out = Path(__file__).resolve().parents[3] / "apps" / "web" / "out"
     probes["web_build"] = {
         "path": str(web_out),
         "exists": web_out.is_dir(),

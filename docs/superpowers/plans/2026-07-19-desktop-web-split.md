@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Desktop split shows exactly one native `WebContentsView`; do not create a second `BrowserWindow` or change `desktop/main.js` visibility semantics.
+- Desktop split shows exactly one native `WebContentsView`; do not create a second `BrowserWindow` or change `apps/desktop/main.js` visibility semantics.
 - Default chat ratio is `0.44`; persisted ratios clamp to `0.30..0.70`.
 - Minimum chat width is `360` DIP, minimum web width is `480` DIP, divider width is `6` DIP.
 - A visible split keeps the session `activeId`; full-width narrow fallback may activate the web tab but must preserve the `/s/...` or `/chat` route.
@@ -22,9 +22,9 @@
 ### Task 1: Split state and persistence
 
 **Files:**
-- Create: `web/scripts/check-web-split.mjs`
-- Modify: `web/lib/state/center-tabs-store.ts`
-- Modify: `web/package.json`
+- Create: `apps/web/scripts/check-web-split.mjs`
+- Modify: `apps/web/lib/state/center-tabs-store.ts`
+- Modify: `apps/web/package.json`
 
 **Interfaces:**
 - Produces: `splitWebTabId: string | null`, `splitRatio: number`, `setSplitWebTab(id)`, `setSplitRatio(ratio)`, `openWebTabInSplit(url): string`.
@@ -93,17 +93,17 @@ Expected: both commands print their pass message and exit `0`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/lib/state/center-tabs-store.ts web/scripts/check-web-split.mjs web/package.json
+git add apps/web/lib/state/center-tabs-store.ts apps/web/scripts/check-web-split.mjs apps/web/package.json
 git commit -m "feat(tabs): add persistent web split state"
 ```
 
 ### Task 2: Native pane lifecycle and readiness
 
 **Files:**
-- Modify: `web/lib/desktop-bridge.ts`
-- Modify: `web/components/center-tabs/web-tab-pane.tsx`
-- Modify: `web/components/chat/composer/attach/file-tiles.tsx`
-- Modify: `web/scripts/check-web-split.mjs`
+- Modify: `apps/web/lib/desktop-bridge.ts`
+- Modify: `apps/web/components/center-tabs/web-tab-pane.tsx`
+- Modify: `apps/web/components/chat/composer/attach/file-tiles.tsx`
+- Modify: `apps/web/scripts/check-web-split.mjs`
 
 **Interfaces:**
 - Produces: `setWebTabReady(id: string, ready: boolean): void`, `isWebTabReady(id: string): boolean`, `waitForWebTabReady(id: string, timeoutMs: number): Promise<boolean>`.
@@ -149,19 +149,19 @@ Expected: pass with no unhandled timeout.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/lib/desktop-bridge.ts web/components/center-tabs/web-tab-pane.tsx web/components/chat/composer/attach/file-tiles.tsx web/scripts/check-web-split.mjs
+git add apps/web/lib/desktop-bridge.ts apps/web/components/center-tabs/web-tab-pane.tsx apps/web/components/chat/composer/attach/file-tiles.tsx apps/web/scripts/check-web-split.mjs
 git commit -m "fix(desktop): preserve and guard native web views"
 ```
 
 ### Task 3: Split layout and controls
 
 **Files:**
-- Modify: `web/components/app-shell.tsx`
-- Modify: `web/components/center-tabs/web-tab-pane.tsx`
-- Modify: `web/components/center-tabs/center-tab-strip.tsx`
-- Modify: `web/components/center-tabs/center-tabs.module.css`
-- Modify: `web/app/styles/base.css`
-- Modify: `web/scripts/check-web-split.mjs`
+- Modify: `apps/web/components/app-shell.tsx`
+- Modify: `apps/web/components/center-tabs/web-tab-pane.tsx`
+- Modify: `apps/web/components/center-tabs/center-tab-strip.tsx`
+- Modify: `apps/web/components/center-tabs/center-tabs.module.css`
+- Modify: `apps/web/app/styles/base.css`
+- Modify: `apps/web/scripts/check-web-split.mjs`
 
 **Interfaces:**
 - Consumes: split store fields/actions and `setDesktopSplitLayoutAvailable`.
@@ -262,15 +262,15 @@ Expected: all exit `0`; build reports successful compilation.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/components/app-shell.tsx web/components/center-tabs/web-tab-pane.tsx web/components/center-tabs/center-tab-strip.tsx web/components/center-tabs/center-tabs.module.css web/app/styles/base.css web/scripts/check-web-split.mjs
+git add apps/web/components/app-shell.tsx apps/web/components/center-tabs/web-tab-pane.tsx apps/web/components/center-tabs/center-tab-strip.tsx apps/web/components/center-tabs/center-tabs.module.css apps/web/app/styles/base.css apps/web/scripts/check-web-split.mjs
 git commit -m "feat(desktop): add resizable chat web split"
 ```
 
 ### Task 4: Agent control targets the visible split
 
 **Files:**
-- Modify: `web/lib/desktop-bridge.ts`
-- Modify: `web/scripts/check-web-split.mjs`
+- Modify: `apps/web/lib/desktop-bridge.ts`
+- Modify: `apps/web/scripts/check-web-split.mjs`
 - Test: `tests/unit/test_webtab_control.py`
 
 **Interfaces:**
@@ -329,7 +329,7 @@ Run:
 
 ```bash
 cd web && npm run check:web-split
-cd .. && node desktop/scripts/check-webtab-navigation.js
+cd .. && node apps/desktop/scripts/check-webtab-navigation.js
 python -m pytest tests/unit/test_webtab_control.py -q
 ```
 
@@ -338,6 +338,6 @@ Expected: web split check passes, desktop script prints `webtab navigation check
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/lib/desktop-bridge.ts web/scripts/check-web-split.mjs tests/unit/test_webtab_control.py
+git add apps/web/lib/desktop-bridge.ts apps/web/scripts/check-web-split.mjs tests/unit/test_webtab_control.py
 git commit -m "feat(browser): control the visible split web tab"
 ```

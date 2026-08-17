@@ -435,7 +435,7 @@ The frontend does three things: the approval card (receive `question.asked`, ren
 
 ### 4.1 Approval card entry point
 
-Approvals merge into unified question rendering (an approval is a question with `kind="approval"`, taking the same path as `runtime.ask`). The entry component `QuestionMode` (`web/components/chat/composer/modes/question/question-mode.tsx`) branches on `kind`: the approval branch (`:82-83, :309-334`) normalizes the frame's `prompt`/`detail`/`risk_level` into a single approval step and renders the card.
+Approvals merge into unified question rendering (an approval is a question with `kind="approval"`, taking the same path as `runtime.ask`). The entry component `QuestionMode` (`apps/web/components/chat/composer/modes/question/question-mode.tsx`) branches on `kind`: the approval branch (`:82-83, :309-334`) normalizes the frame's `prompt`/`detail`/`risk_level` into a single approval step and renders the card.
 
 `question.asked` frame fields (emitted by the backend `emit_question_asked`, `internals/_approval.py:274-282`):
 
@@ -536,8 +536,8 @@ Once written, the next call to the same tool hits allow in `_match_rule` and no 
 ### 4.5 Permission mode picker (top-bar permission menu, session level)
 
 The picker is **not in the composer's plus menu**; it is the permission badge
-`PermissionBadge` in the chat page top bar (`web/components/chat/top-bar/permission-menu.tsx:68`). The badge is driven by the
-`usePermissionMode` hook (`web/components/chat/composer/controls/use-permission-mode.ts`),
+`PermissionBadge` in the chat page top bar (`apps/web/components/chat/top-bar/permission-menu.tsx:68`). The badge is driven by the
+`usePermissionMode` hook (`apps/web/components/chat/composer/controls/use-permission-mode.ts`),
 which returns `{mode, options, set}`.
 
 The 5 tier labels use Claude Code's official names (`MODE_LABELS` in `use-permission-mode.ts:28-34`, with numeric shortcuts 1-5):
@@ -568,7 +568,7 @@ Downstream the dispatcher still reads the run config: `effective_permission = pe
 
 ### 4.6 Rule management panel (Projects page, project level)
 
-The rule management UI lives on the **Projects page** (`web/components/projects/projects-page.tsx:146-148`): expanding a project reveals its rules panel. The panel component `PermissionsSection` (`web/components/projects/permissions-section.tsx`) works by `projectId`:
+The rule management UI lives on the **Projects page** (`apps/web/components/projects/projects-page.tsx:146-148`): expanding a project reveals its rules panel. The panel component `PermissionsSection` (`apps/web/components/projects/permissions-section.tsx`) works by `projectId`:
 
 - Lists the project's deny / ask / allow rule groups, each of which supports manual addition and per-entry deletion.
 - Fetching and refreshing go over WS: `list_permission_rules` / `add_permission_rule` / `remove_permission_rule`, with `project_id` on every request; the backend broadcasts a `permission_rules` frame (`session.py:742-748`) to refresh the panel.
@@ -621,9 +621,9 @@ Attended mode lives in `openprogram/agent/attended.py`. The core (`attended.py:1
 | Web default bypass + effective_permission | `openprogram/webui/_execute/__init__.py`; `additional_working_dirs` populated in `_execute/chat.py`, `channels/_conversation.py` |
 | WS: approval replies + project rule list/add/remove | `openprogram/webui/ws_actions/session.py`, `chat.py` |
 | Attended mode (orthogonal mechanism) | `openprogram/agent/attended.py`, `openprogram/webui/ws_actions/runtime.py` |
-| Frontend approval card (approval mode) | `web/components/chat/composer/modes/question/question-mode.tsx` + `../approval/approval-mode.module.css` |
-| Frontend permission mode picker (session-level hook) | `web/components/chat/composer/controls/use-permission-mode.ts` + `composer/index.tsx` |
-| Frontend rules panel (project level) | `web/components/projects/projects-page.tsx` + `web/components/projects/permissions-section.tsx` |
+| Frontend approval card (approval mode) | `apps/web/components/chat/composer/modes/question/question-mode.tsx` + `../approval/approval-mode.module.css` |
+| Frontend permission mode picker (session-level hook) | `apps/web/components/chat/composer/controls/use-permission-mode.ts` + `composer/index.tsx` |
+| Frontend rules panel (project level) | `apps/web/components/projects/projects-page.tsx` + `apps/web/components/projects/permissions-section.tsx` |
 
 ---
 

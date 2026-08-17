@@ -2,7 +2,7 @@
 
 > 状态: **已实现** (2026-06)
 > 参考: Claude Code `/rewind`
-> 代码: `agent/_rewind.py`、`webui/ws_actions/chat.py`、`web/components/chat/messages/message-actions.tsx`
+> 代码: `agent/_rewind.py`、`webui/ws_actions/chat.py`、`apps/web/components/chat/messages/message-actions.tsx`
 
 ---
 

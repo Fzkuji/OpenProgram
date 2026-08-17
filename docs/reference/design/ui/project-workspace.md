@@ -13,12 +13,12 @@ file tree right, with the project list as an expandable table.
 |---|---|---|
 | Project entity layer (id/name/path/sessions, settings.json) | `openprogram/store/project/project_store.py` | everything |
 | Project WS actions (list/create/remove/config/sessions/workdirs) | `openprogram/webui/ws_actions/project.py` | list page, workspace |
-| `/projects` page (list + settings/sessions/info tabs) | `web/components/projects/projects-page.tsx` | evolves into the new list page |
-| Chat component tree (composer, messages, top-bar) | `web/components/chat/` | workspace left pane |
-| Right sidebar shell (history/detail/context views) | `web/components/right-sidebar/` | chat overview panel |
-| Memory page editor (edit/preview mode, save) | `web/components/memory/` | file editing (slice 5) |
-| `wsRequest` helper + ws action registry | `web/lib/net/ws-request.ts`, `webui/server.py` | all new APIs |
-| `/api/pick-folder` native folder picker | `web/app/api/pick-folder` | add-project flow |
+| `/projects` page (list + settings/sessions/info tabs) | `apps/web/components/projects/projects-page.tsx` | evolves into the new list page |
+| Chat component tree (composer, messages, top-bar) | `apps/web/components/chat/` | workspace left pane |
+| Right sidebar shell (history/detail/context views) | `apps/web/components/right-sidebar/` | chat overview panel |
+| Memory page editor (edit/preview mode, save) | `apps/web/components/memory/` | file editing (slice 5) |
+| `wsRequest` helper + ws action registry | `apps/web/lib/net/ws-request.ts`, `webui/server.py` | all new APIs |
+| `/api/pick-folder` native folder picker | `apps/web/app/api/pick-folder` | add-project flow |
 
 The main missing pieces are (a) a **file API** scoped to a project, and
 (b) the chat view being **mountable by sessionId** instead of owning the
@@ -60,7 +60,7 @@ action goes through it):
 
 ## 3. Workspace route: `/projects/[id]`
 
-Next route `web/app/(shell)/projects/[id]/page.tsx`, three panes:
+Next route `apps/web/app/(shell)/projects/[id]/page.tsx`, three panes:
 
 ```
 ┌────────────┬──────────────────────────┬──────────────┐

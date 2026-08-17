@@ -159,7 +159,7 @@ def test_app_attach_matches_control_plane_target_across_all_electron_pages():
 
 
 def test_desktop_activation_waits_for_navigation_before_target_receipt():
-    source = (REPO_ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "apps" / "desktop" / "main.js").read_text(encoding="utf-8")
     start = source.index("async function activateView")
     end = source.index("\nfunction withView", start)
     activate = source[start:end]
@@ -170,13 +170,13 @@ def test_desktop_activation_waits_for_navigation_before_target_receipt():
 
 
 def test_desktop_target_id_uses_electron_debugger_api():
-    source = (REPO_ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "apps" / "desktop" / "main.js").read_text(encoding="utf-8")
     assert "getOrCreateDevToolsTargetId" not in source
     assert 'client.sendCommand("Target.getTargetInfo")' in source
 
 
 def test_desktop_navigation_deduplicates_same_pending_url():
-    source = (REPO_ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "apps" / "desktop" / "main.js").read_text(encoding="utf-8")
     start = source.index("function loadView")
     end = source.index("function ensureView", start)
     load_view = source[start:end]
@@ -186,7 +186,7 @@ def test_desktop_navigation_deduplicates_same_pending_url():
 
 
 def test_desktop_activation_does_not_restore_a_tab_changed_while_loading():
-    source = (REPO_ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "apps" / "desktop" / "main.js").read_text(encoding="utf-8")
     start = source.index("async function activateView")
     end = source.index("\nfunction withView", start)
     activate = source[start:end]
@@ -200,7 +200,7 @@ def test_desktop_activation_does_not_restore_a_tab_changed_while_loading():
 
 
 def test_desktop_renderer_reload_discards_pending_native_navigations():
-    source = (REPO_ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "apps" / "desktop" / "main.js").read_text(encoding="utf-8")
     # Renderer reload destroys every view owned by the window, which
     # drops their pending-navigation records with them (destroyView
     # nulls record.navigation). runNativeNavigation likewise clears the
@@ -215,7 +215,7 @@ def test_desktop_renderer_reload_discards_pending_native_navigations():
 
 
 def test_desktop_transfer_acceptance_page_uses_csp_compatible_handlers():
-    source = (REPO_ROOT / "web" / "public" / "desktop-transfer-acceptance.html").read_text(
+    source = (REPO_ROOT / "apps" / "web" / "public" / "desktop-transfer-acceptance.html").read_text(
         encoding="utf-8"
     )
     assert "onclick=" not in source
@@ -224,7 +224,7 @@ def test_desktop_transfer_acceptance_page_uses_csp_compatible_handlers():
 
 
 def test_renderer_control_contract_targets_ready_session_split():
-    source = (REPO_ROOT / "web" / "lib" / "desktop-bridge.ts").read_text(
+    source = (REPO_ROOT / "apps" / "web" / "lib" / "desktop-bridge.ts").read_text(
         encoding="utf-8"
     )
     assert "id = state.openWebTabInSplit(d.url)" in source

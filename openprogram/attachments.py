@@ -10,7 +10,7 @@ reversible. The historical unquoted ``@ <path>`` spelling remains readable.
 The current spelling is written by all four producers — browser upload,
 ``@``-mention, inbound channel attachment, and the agent's own
 ``send_file`` — and read by all four consumers: the web chip parser
-(``web/components/chat/messages/user-attachments.tsx``), the sidebar
+(``apps/web/components/chat/messages/user-attachments.tsx``), the sidebar
 title stripper, the channel delivery step, and this module. Adding a
 fifth producer means calling :func:`format_marker`, not inventing a
 fifth spelling. Divergence here is not cosmetic: a marker the chip
