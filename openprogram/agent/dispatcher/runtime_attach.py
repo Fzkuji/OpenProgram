@@ -63,6 +63,7 @@ def _wrap_agentic_runtime_block(
     orig_execute = agent_tool.execute
     tool_name = agent_tool.name
     _is_agentic_tool = bool(getattr(agent_tool, "_is_agentic", False))
+    _run_in_worker = bool(getattr(agent_tool, "_run_in_worker", False))
 
     async def _runtime_block_execute(call_id, args, cancel, on_update):
         from openprogram.agent.session_db import default_db
@@ -134,7 +135,7 @@ def _wrap_agentic_runtime_block(
             _in_subproc = os.environ.get(
                 "OPENPROGRAM_IN_AGENTIC_SUBPROCESS"
             ) == "1"
-            if _is_agentic_tool and not _in_subproc:
+            if _is_agentic_tool and not _run_in_worker and not _in_subproc:
                 # Route through a fork()'d subprocess so handle_stop's
                 # SIGKILL kills the tool in milliseconds. The child
                 # re-installs the wrapper itself and bridges events
@@ -331,7 +332,7 @@ def _wrap_agentic_runtime_block(
         label=getattr(agent_tool, "label", agent_tool.name) or agent_tool.name,
         execute=_runtime_block_execute,
     )
-    for _attr in ("_is_agentic", "_defer"):
+    for _attr in ("_is_agentic", "_defer", "_run_in_worker"):
         # A frozen/slotted tool object rejects the copy; the wrapper just
         # loses an optional marker attribute.
         try:

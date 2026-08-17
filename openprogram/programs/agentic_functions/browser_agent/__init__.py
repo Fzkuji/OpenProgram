@@ -1323,6 +1323,7 @@ def _run_browser_task_commands(
     unsafe_in=("wechat", "telegram", "plan"),
     requires_approval=_browser_agent_requires_approval,
     defer=True,
+    timeout=120,
     parameters={
         "type": "object",
         "properties": {
@@ -1432,6 +1433,13 @@ def web_use(
     if captured_here and command == "observe" and not result.get("web_session_id"):
         surface_context.release_bindings(context)
     return result
+
+
+# The Page inventory, WebSession registry, and renderer WebSocket registry are
+# worker-owned. Keep the agentic runtime-card UI, but execute this bounded tool
+# in the worker instead of copying those registries into an isolated process.
+if getattr(web_use, "_agent_tool", None) is not None:
+    setattr(web_use._agent_tool, "_run_in_worker", True)
 
 
 def execute_direct_web_use(arguments: dict, *, owner_id: str):

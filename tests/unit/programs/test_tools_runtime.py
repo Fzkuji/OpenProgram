@@ -745,6 +745,95 @@ def test_agentic_subprocess_failure_reaches_agent_loop_as_typed_error(
         assert results[0].details["signal"] == subprocess_result["signal"]
 
 
+def test_worker_resident_agentic_tool_does_not_spawn(monkeypatch) -> None:
+    from contextlib import nullcontext
+
+    import openprogram.agent.process_runner as process_runner
+    import openprogram.agent.session_db as session_db
+    import openprogram.webui._exec_dag as exec_dag
+    from openprogram.agent.dispatcher.runtime_attach import (
+        _wrap_agentic_runtime_block,
+    )
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.types import AgentTool
+
+    class FakeDB:
+        def invalidate_cache(self, session_id):
+            pass
+
+    calls = []
+
+    async def original_execute(call_id, args, cancel, on_update):
+        calls.append((call_id, args))
+        return AgentToolResult(content=[TextContent(text="worker")])
+
+    tool = AgentTool(
+        name="worker_probe",
+        description="probe",
+        parameters={"type": "object", "properties": {}},
+        label="probe",
+        execute=original_execute,
+    )
+    setattr(tool, "_is_agentic", True)
+    setattr(tool, "_run_in_worker", True)
+    monkeypatch.setattr(
+        process_runner,
+        "run_agentic_in_subprocess",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("spawned")),
+    )
+    monkeypatch.setattr(session_db, "default_db", lambda: FakeDB())
+    monkeypatch.setattr(exec_dag, "live_progress", lambda *a, **kw: nullcontext())
+    monkeypatch.setattr(exec_dag, "build_exec_dag", lambda *a, **kw: None)
+
+    wrapped = _wrap_agentic_runtime_block(
+        tool,
+        TurnRequest(
+            session_id="worker-resident",
+            user_text="",
+            agent_id="main",
+            source="web",
+        ),
+        lambda event: None,
+        "assistant-1",
+    )
+    result = _run(wrapped.execute("call-1", {}, None, None))
+
+    assert result.content[0].text == "worker"
+    assert calls == [("call-1", {})]
+
+
+def test_approval_wrapper_preserves_worker_resident_marker() -> None:
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.types import AgentTool
+
+    async def execute(call_id, args, cancel, on_update):
+        return AgentToolResult(content=[TextContent(text="worker")])
+
+    tool = AgentTool(
+        name="worker_probe",
+        description="probe",
+        parameters={"type": "object", "properties": {}},
+        label="probe",
+        execute=execute,
+    )
+    setattr(tool, "_is_agentic", True)
+    setattr(tool, "_run_in_worker", True)
+
+    wrapped = wrap_with_approval(
+        tool,
+        TurnRequest(
+            session_id="worker-resident",
+            user_text="",
+            agent_id="main",
+            source="web",
+        ),
+        lambda event: None,
+    )
+
+    assert getattr(wrapped, "_run_in_worker", False) is True
+
+
 # ---------------------------------------------------------------------------
 # Registry + toolset + unsafe_in
 # ---------------------------------------------------------------------------
