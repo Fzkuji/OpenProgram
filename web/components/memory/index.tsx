@@ -47,6 +47,7 @@ import type {
 } from "./types";
 import styles from "./memory-page.module.css";
 import { SearchInput } from "@/components/ui/search-input";
+import { coreSaveStatus } from "./core-save-state";
 
 export function MemoryPage() {
   const { t, text, locale } = useTranslation();
@@ -224,7 +225,11 @@ export function MemoryPage() {
         if (detail.error) alert(detail.error);
       }
       if (r.ok) await fetchCore(submittedContent);
-      setCoreEditor((e) => ({ ...e, saving: false, saveStatus: r.ok ? "saved" : "error" }));
+      setCoreEditor((e) => ({
+        ...e,
+        saving: false,
+        saveStatus: coreSaveStatus(e.content, submittedContent, r.ok),
+      }));
     } catch {
       setCoreEditor((e) => ({ ...e, saving: false, saveStatus: "error" }));
     }

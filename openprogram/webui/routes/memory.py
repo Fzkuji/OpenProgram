@@ -401,10 +401,14 @@ def register(app):
             "rendered_content": rendered_text,
             "rendered_size": rendered_stat.st_size if rendered_stat else 0,
             "rendered_mtime": rendered_stat.st_mtime if rendered_stat else 0,
-            "rendered_tokens": len(encoding.encode(rendered_text)),
+            "rendered_tokens": len(
+                encoding.encode(rendered_text, disallowed_special=())
+            ),
             "injection_enabled": config.core_inject,
             "injected_content": injected_text,
-            "injected_tokens": len(encoding.encode(injected_text)),
+            "injected_tokens": len(
+                encoding.encode(injected_text, disallowed_special=())
+            ),
             "budget_tokens": config.core_max_tokens,
         })
 

@@ -517,6 +517,17 @@ def test_core_route_distinguishes_rendered_from_disabled_injection(
     assert payload["injected_tokens"] == 0
 
 
+def test_core_route_counts_literal_tiktoken_special_text(client, memory):
+    content = CORE.replace("Always on.", "Keep literal <|endoftext|> text.")
+    (memory / "topics/core.md").write_text(content, encoding="utf-8")
+    (memory / "core.md").write_text(content, encoding="utf-8")
+
+    response = client.get("/api/memory/core")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["rendered_tokens"] > 0
+
+
 def test_empty_core_keeps_legacy_and_effective_fields(client):
     payload = client.get("/api/memory/core").json()
 

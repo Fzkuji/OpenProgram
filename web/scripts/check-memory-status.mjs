@@ -29,6 +29,7 @@ assert.match(memoryPage, /injectionEnabled/);
 assert.match(memoryPage, /const submittedContent = coreEditor\.content/);
 assert.match(memoryPage, /fetchCore\(submittedContent\)/);
 assert.match(memoryPage, /e\.content === submittedContent/);
+assert.match(memoryPage, /coreSaveStatus\(e\.content, submittedContent, r\.ok\)/);
 assert.match(memoryMarkdown, /sanitizeHtml\(marked\.parse\(/);
 
 console.log("check-memory-status: ok");
