@@ -464,15 +464,7 @@ export function MemoryPage() {
           {/* ── Recent ── */}
           {tab === "recent" && (
             <>
-              <div className={styles.tree}>
-                <div className={styles.coreSidebar}>
-                  <div className={`${styles.contextHeader} ${styles.sidebarRow} ${styles.sidebarRowActive}`}>
-                    <ActivityIcon size={13} className={styles.fileIcon} />
-                    <span className={styles.coreInfoTitle}>{text("Recent", "最近")}</span>
-                    <span className={styles.contextMeta}>{recentEvents.length} {text("records", "条记录")}</span>
-                  </div>
-                </div>
-              </div>
+              <div className={`${styles.tree} ${styles.treeEmpty}`} />
               <div className={styles.rightPane}>
                 {recentLoading ? (
                   <LoadingSkeleton />
@@ -510,70 +502,64 @@ export function MemoryPage() {
           {/* ── Core ── */}
           {tab === "core" && (
             <>
-              <div className={styles.tree}>
-              <div className={styles.coreSidebar}>
-                <div className={`${styles.contextHeader} ${styles.sidebarRow} ${styles.sidebarRowActive}`}>
-                  <SparklesIcon size={13} className={styles.fileIcon} />
-                  <span className={styles.coreInfoTitle}>{text("Core", "核心")}</span>
-                  <span className={styles.contextMeta}>{text("System prompt", "系统提示词")}</span>
-                </div>
-                <div className={styles.coreViewSwitch} role="group" aria-label={text("Core view", "Core 视图")}>
-                  <button
-                    className={coreView === "injected" ? styles.coreViewButtonActive : styles.coreViewButton}
-                    aria-pressed={coreView === "injected"}
-                    onClick={() => setCoreView("injected")}
-                  >
-                    {text("Prompt preview", "提示词预览")}
-                  </button>
-                  <button
-                    className={coreView === "records" ? styles.coreViewButtonActive : styles.coreViewButton}
-                    aria-pressed={coreView === "records"}
-                    onClick={() => setCoreView("records")}
-                  >
-                    {text("Source records", "源记录")}
-                  </button>
-                </div>
-                {coreMeta && (
-                  <div className={styles.coreStatusCard}>
-                    <div className={styles.coreStatusRow}>
-                      <span className={coreMeta.injectionEnabled ? styles.coreStatusOn : styles.coreStatusOff}>
-                        {coreMeta.injectionEnabled ? text("Injection enabled", "注入已开启") : text("Injection disabled", "注入已关闭")}
-                      </span>
-                      <span>{coreMeta.injectedTokens.toLocaleString()} / {coreMeta.budgetTokens.toLocaleString()} tokens</span>
-                    </div>
-                    <div
-                      className={styles.coreTokenMeter}
-                      role="progressbar"
-                      aria-label={text("Core token budget usage", "Core token 预算使用量")}
-                      aria-valuemin={0}
-                      aria-valuemax={coreMeta.budgetTokens}
-                      aria-valuenow={coreMeta.injectedTokens}
-                    >
-                      <span
-                        className={coreMeta.injectedTokens > coreMeta.budgetTokens ? styles.coreTokenFillWarn : styles.coreTokenFill}
-                        style={{ width: `${Math.min(100, coreMeta.budgetTokens > 0 ? (coreMeta.injectedTokens / coreMeta.budgetTokens) * 100 : 0)}%` }}
-                      />
-                    </div>
-                    <div className={styles.coreStatusFoot}>
-                      {coreView === "injected" && coreMeta.renderedMtime <= 0
-                        ? text("No prompt preview yet", "还没有提示词预览")
-                        : coreView === "records" && coreMeta.mtime <= 0
-                        ? text("No source records yet", "还没有源记录")
-                        : coreView === "injected"
-                        ? text(
-                          `Preview rebuilt ${formatDate(coreMeta.renderedMtime, locale)}`,
-                          `预览重建于 ${formatDate(coreMeta.renderedMtime, locale)}`,
-                        )
-                        : text(
-                          `Source ${formatSize(coreMeta.size)} · modified ${formatDate(coreMeta.mtime, locale)}`,
-                          `源记录 ${formatSize(coreMeta.size)} · 修改于 ${formatDate(coreMeta.mtime, locale)}`,
-                        )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+              <div className={`${styles.tree} ${styles.treeEmpty}`} />
               <div className={styles.rightPane}>
+                <div className={styles.coreControls}>
+                  <div className={styles.coreViewSwitch} role="group" aria-label={text("Core view", "Core 视图")}>
+                    <button
+                      className={coreView === "injected" ? styles.coreViewButtonActive : styles.coreViewButton}
+                      aria-pressed={coreView === "injected"}
+                      onClick={() => setCoreView("injected")}
+                    >
+                      {text("Prompt preview", "提示词预览")}
+                    </button>
+                    <button
+                      className={coreView === "records" ? styles.coreViewButtonActive : styles.coreViewButton}
+                      aria-pressed={coreView === "records"}
+                      onClick={() => setCoreView("records")}
+                    >
+                      {text("Source records", "源记录")}
+                    </button>
+                  </div>
+                  {coreMeta && (
+                    <div className={styles.coreStatusCard}>
+                      <div className={styles.coreStatusRow}>
+                        <span className={coreMeta.injectionEnabled ? styles.coreStatusOn : styles.coreStatusOff}>
+                          {coreMeta.injectionEnabled ? text("Injection enabled", "注入已开启") : text("Injection disabled", "注入已关闭")}
+                        </span>
+                        <span>{coreMeta.injectedTokens.toLocaleString()} / {coreMeta.budgetTokens.toLocaleString()} tokens</span>
+                      </div>
+                      <div
+                        className={styles.coreTokenMeter}
+                        role="progressbar"
+                        aria-label={text("Core token budget usage", "Core token 预算使用量")}
+                        aria-valuemin={0}
+                        aria-valuemax={coreMeta.budgetTokens}
+                        aria-valuenow={coreMeta.injectedTokens}
+                      >
+                        <span
+                          className={coreMeta.injectedTokens > coreMeta.budgetTokens ? styles.coreTokenFillWarn : styles.coreTokenFill}
+                          style={{ width: `${Math.min(100, coreMeta.budgetTokens > 0 ? (coreMeta.injectedTokens / coreMeta.budgetTokens) * 100 : 0)}%` }}
+                        />
+                      </div>
+                      <div className={styles.coreStatusFoot}>
+                        {coreView === "injected" && coreMeta.renderedMtime <= 0
+                          ? text("No prompt preview yet", "还没有提示词预览")
+                          : coreView === "records" && coreMeta.mtime <= 0
+                          ? text("No source records yet", "还没有源记录")
+                          : coreView === "injected"
+                          ? text(
+                            `Preview rebuilt ${formatDate(coreMeta.renderedMtime, locale)}`,
+                            `预览重建于 ${formatDate(coreMeta.renderedMtime, locale)}`,
+                          )
+                          : text(
+                            `Source ${formatSize(coreMeta.size)} · modified ${formatDate(coreMeta.mtime, locale)}`,
+                            `源记录 ${formatSize(coreMeta.size)} · 修改于 ${formatDate(coreMeta.mtime, locale)}`,
+                          )}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 {coreLoading ? (
                   <LoadingSkeleton />
                 ) : coreView === "records" ? (
@@ -591,11 +577,6 @@ export function MemoryPage() {
                       <div className={styles.editorHeaderLeft}>
                         <SparklesIcon size={14} />
                         <span className={styles.editorTitle}>{text("Prompt preview", "提示词预览")}</span>
-                      </div>
-                      <div className={styles.editorActions}>
-                        <span className={styles.fileMeta}>
-                          {(coreMeta?.injectedTokens ?? 0).toLocaleString()} / {(coreMeta?.budgetTokens ?? 2000).toLocaleString()} tokens
-                        </span>
                       </div>
                     </div>
                     <div className={styles.preview}>

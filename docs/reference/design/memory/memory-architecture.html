@@ -1223,25 +1223,9 @@
             </div>
           </div>
 
-          <div class="m-context" data-memory-context="recent">
-            <div class="m-section-label" style="padding-top:13px">FILTER BY TOPIC</div>
-            <div class="m-list">
-              <div class="m-row active"><span class="m-glyph">●</span><div class="m-row-main"><span class="m-row-title">All memory</span><span class="m-row-sub">3 records</span></div></div>
-              <div class="m-row"><span class="m-glyph">○</span><div class="m-row-main"><span class="m-row-title">Core</span><span class="m-row-sub">3 records</span></div></div>
-            </div>
-          </div>
+          <div class="m-context" data-memory-context="recent" aria-label="Recent has no secondary navigation"></div>
 
-          <div class="m-context" data-memory-context="core">
-            <div class="m-list" style="padding-top:10px">
-              <div class="m-row active"><span class="m-glyph">✦</span><div class="m-row-main"><span class="m-row-title">Core memory</span><span class="m-row-sub">3 cross-session rules</span></div></div>
-            </div>
-            <div class="m-rail-note">
-              <strong>Prompt injection enabled</strong>
-              <span>425 / 2,000 tokens</span>
-              <div class="m-meter" aria-label="425 of 2000 tokens"><i></i></div>
-              <span>The preview is generated from editable source records.</span>
-            </div>
-          </div>
+          <div class="m-context" data-memory-context="core" aria-label="Core controls are shown in the content header"></div>
         </aside>
 
         <main class="m-main">
@@ -1308,11 +1292,12 @@
           </div>
           <div class="m-mobile-body m-mobile-context" data-mobile-context="recent" hidden>
             <div class="m-doc-kicker">Recent memory</div>
-            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Recent memory" data-mobile-label="Core · 2026-08-10" data-mobile-content="Use Chinese by default when discussing Memory and other operational work."><strong>All recent memory</strong><span>3 records · derived from Core</span></button>
+            <div class="m-recent-card"><div class="m-record-meta"><span class="m-badge">CORE</span><span>2026-08-10</span></div><p>Use Chinese by default when discussing Memory and other operational work.</p></div>
           </div>
           <div class="m-mobile-body m-mobile-context" data-mobile-context="core" hidden>
             <div class="m-doc-kicker">Core memory</div>
-            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Core memory" data-mobile-label="Prompt preview" data-mobile-content="Read-only prompt text generated from editable Core records."><strong>Core memory</strong><span>Injection enabled · 425 / 2,000 tokens</span></button>
+            <div class="m-segment"><span class="active">Prompt preview</span><span>Source records</span></div>
+            <div class="m-record"><div class="m-record-meta"><span class="m-core-status">Injection enabled</span><span>425 / 2,000 tokens</span></div><p>Read-only prompt text generated from editable Core records.</p></div>
           </div>
         </div>
         <div class="m-mobile-view" data-mobile-view="detail" hidden>
@@ -1355,8 +1340,8 @@
     </div>
   </div>
 
-  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；顶部不把受截断的 Recent 数量表述为 Memory 总量；右侧 Preview、Timeline、Recent 与 Core 使用居中的文档面，空 Topics 使用独立空状态卡；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>；小于 720px 时不得产生横向重叠，编辑器操作进入独立下一行并可换行。页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
-  <div class="legend"><b>本轮实现状态：</b>Core 的 Prompt preview / Source records 命名、注入状态卡和 Timeline 年/月/日折叠继续保留。正式 Memory 已通过结构化事务删除 survey test 项目记录；后台 writer 后续仍可按正常行为生成新 Topic。居中文档面、卡片化空状态、76px 单一标题区、780px 阅读宽度和窄窗编辑操作换行已经进入生产代码。Topics 文件行、Timeline 年/月/日、Recent 与 Core 入口现已统一复用 36px 行高、10px 横向内边距、8px 圆角和 13px 字号的侧栏行；Folder、Timeline 年和 Timeline 月也已复用同一个 14×14 线性 ChevronRight 与数字徽标，Timeline 只以缩进表达层级。小于 720px 的完整列表/详情互斥仍不在本轮生产实现范围。</div>
+  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；Recent 与 Core 不在中间栏重复标题、数量、视图切换或注入状态，Core 的切换和状态只在右侧内容头部出现一次；顶部不把受截断的 Recent 数量表述为 Memory 总量；右侧 Preview、Timeline、Recent 与 Core 使用居中的文档面，空 Topics 使用独立空状态卡；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>；小于 720px 时不得产生横向重叠，编辑器操作进入独立下一行并可换行。页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
+  <div class="legend"><b>本轮实现状态：</b>Recent 和 Core 已删除中间栏的重复上下文块；Recent 的标题与数量只在右侧内容头部显示，Core 的 Prompt preview / Source records 切换、注入状态和 token 用量也只在右侧显示一次。Timeline 年/月/日折叠继续保留。正式 Memory 已通过结构化事务删除 survey test 项目记录；后台 writer 后续仍可按正常行为生成新 Topic。居中文档面、卡片化空状态、76px 单一标题区、780px 阅读宽度和窄窗编辑操作换行已经进入生产代码。Topics 文件行、Timeline 年/月/日入口继续复用 36px 行高、10px 横向内边距、8px 圆角和 13px 字号的侧栏行；Folder、Timeline 年和 Timeline 月也已复用同一个 14×14 线性 ChevronRight 与数字徽标，Timeline 只以缩进表达层级。小于 720px 的完整列表/详情互斥仍不在本轮生产实现范围。</div>
 
   <div class="grid2">
     <div class="oc">

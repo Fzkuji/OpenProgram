@@ -185,6 +185,12 @@
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
+  .treeEmpty {
+    display: none;
+  }
+  .treeEmpty + .rightPane {
+    grid-row: 2 / -1;
+  }
   .rightPane {
     grid-column: 1;
     grid-row: 3;
@@ -606,39 +612,14 @@
   padding-top: 4px;
 }
 
-/* Core tab */
-/* Core tab — left-right layout shares .layout grid with Wiki/Journal.
-   The .tree column hosts a sidebar info card (.coreSidebar). */
-.coreSidebar {
-  padding: 7px 6px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.contextHeader {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.coreInfoTitle {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: inherit;
-  font-weight: 400;
-  color: var(--text-bright);
-}
-
-.contextMeta {
-  margin-left: auto;
+/* Recent and Core have no secondary navigation. Core controls belong to the
+   right content column so view selection and injection status appear once. */
+.coreControls {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(260px, 1fr);
+  gap: 10px;
+  margin-bottom: 10px;
   flex-shrink: 0;
-  color: var(--text-muted);
-  font-size: 11px;
-  white-space: nowrap;
 }
 
 .coreViewSwitch {
@@ -671,7 +652,7 @@
 }
 
 .coreStatusCard {
-  padding: 11px;
+  padding: 8px 11px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-primary);
@@ -733,6 +714,12 @@
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.4;
+}
+
+@media (max-width: 900px) {
+  .coreControls {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Timeline uses the semantic date encoded by each derived filename. Its mtime
