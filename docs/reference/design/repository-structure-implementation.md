@@ -58,8 +58,13 @@ adapted. Large-file decomposition is not part of the directory migration.
   `apps/desktop/build/icon.icns`, runtime design pages, and promotional assets.
 - Batch D/E preserved those worktree versions while staging their prior Git
   baselines at the new application paths; none of the unrelated content entered
-  the migration commit. Batch C remains deferred while its Server files are
-  under active modification.
+  the migration commit.
+- Batch C1 moved the FastAPI application assembly to
+  `apps/server/openprogram_server/server.py`. The existing
+  `openprogram.webui.server` path is a module-identity compatibility alias, not
+  a second implementation. Routes and WebSocket handlers remain under
+  `openprogram/webui/` until the unrelated `routes/agents.py` work is committed;
+  this is an explicit partial boundary, not completion of Batch C.
 - System Git is blocked by the host's unaccepted Xcode licence. The bundled
   fallback Git executable is available for status, diff, staging and commits;
   the migration does not change host licence state.
@@ -80,7 +85,8 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Python CLI package consolidation | `codex/python-package-layout-cli-20260817` / `d2ae71cc`, `5bd809e8`, `4051edaf` | implemented; reviewed | Replaces three first-level internal CLI directories and four implementation files with one `openprogram/cli/` package; keeps `openprogram.cli`, the console script, and both module entry points; repairs current documentation references and adds the executable interactive-import contract required by review. |
 | Python CLI package main integration | `f5878426` | integrated | Two-parent merge with current `main` at `c45617a4`; unrelated local icon, runtime-design, promo, and output changes remain outside the integration tree. |
 | Apps migration B1: Ink TUI workspace | `f4a3ea0e`, `669f5445` | implemented; reviewed | Moves the existing Node workspace from `cli/` to `apps/cli/`; updates the Python launcher, rescue probe, source installer, CI cache/working directories, repository contracts and current documentation paths. No UI or protocol behavior changes. |
-| Apps migration D/E: Web and Desktop workspaces | `44765788` | implemented; review pending | Moves the complete Next.js and Electron workspaces to `apps/web/` and `apps/desktop/`; updates runtime discovery, CI, packaging, release scripts, cross-workspace checks, tests and documentation references. Existing UI and protocol behavior are unchanged. |
+| Apps migration D/E: Web and Desktop workspaces | `44765788`, `f4e44429`, `e0a4825e` | implemented; reviewed | Moves the complete Next.js and Electron workspaces to `apps/web/` and `apps/desktop/`; updates runtime discovery, CI, packaging, release scripts, cross-workspace checks, tests and current documentation references. Existing UI and protocol behavior are unchanged. |
+| Apps migration C1: Server application assembly | `6b981b32` | implemented; review pending | Moves the FastAPI assembly into the installable `openprogram_server` application package. The legacy import resolves to the same module object; route and WebSocket modules remain for C2 because one route has unrelated active changes. |
 
 ## Verification record
 
@@ -140,6 +146,14 @@ pass — Web 31-page production build from `apps/web`
 pass — staged-candidate Desktop full npm check for `44765788`
 37 passed — static frontend, upgrade, Desktop harness, packaged-file and Memory cross-language tests
 18 passed, 1 deselected — apps-layout, CI-layer and repository-layout contracts; generated README check excluded because unrelated Python docstrings are in progress
+21 passed; 0 broken links — workspace-command repair and documentation checks for `f4e44429`
+9 passed; pass — executable Node-missing hint regression and corrected TypeScript command for `e0a4825e`
+pass — independent specification and quality re-review for the D/E migration and command repairs
+11 passed — Server package identity, health endpoint and built-frontend checks for `6b981b32`
+80 passed — Server state, route, WebSocket and session compatibility selection
+94 passed — release, distribution, packaged-file and apps-layout checks
+pass — isolated wheel imports `openprogram_server.server`; legacy `openprogram.webui.server` is the same module object
+pending — independent specification and quality review for `6b981b32`
 ```
 
 ## Deferred boundaries
