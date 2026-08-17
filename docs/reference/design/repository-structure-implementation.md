@@ -65,6 +65,9 @@ adapted. Large-file decomposition is not part of the directory migration.
   a second implementation. Routes and WebSocket handlers remain under
   `openprogram/webui/` until the unrelated `routes/agents.py` work is committed;
   this is an explicit partial boundary, not completion of Batch C.
+- Batch F1 removed the unreferenced `openprogram/webui/static/` interface after
+  confirming that runtime and release paths serve only the `apps/web` export.
+  This removes the duplicate legacy UI without changing the current Web app.
 - System Git is blocked by the host's unaccepted Xcode licence. The bundled
   fallback Git executable is available for status, diff, staging and commits;
   the migration does not change host licence state.
@@ -87,6 +90,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Apps migration B1: Ink TUI workspace | `f4a3ea0e`, `669f5445` | implemented; reviewed | Moves the existing Node workspace from `cli/` to `apps/cli/`; updates the Python launcher, rescue probe, source installer, CI cache/working directories, repository contracts and current documentation paths. No UI or protocol behavior changes. |
 | Apps migration D/E: Web and Desktop workspaces | `44765788`, `f4e44429`, `e0a4825e` | implemented; reviewed | Moves the complete Next.js and Electron workspaces to `apps/web/` and `apps/desktop/`; updates runtime discovery, CI, packaging, release scripts, cross-workspace checks, tests and current documentation references. Existing UI and protocol behavior are unchanged. |
 | Apps migration C1: Server application assembly | `6b981b32`, `6dc2f1e6`, `34966b16`, `c09b7933` | implemented; reviewed | Moves the FastAPI assembly into the installable `openprogram_server` application package. The legacy import resolves to the same module object, source checkouts reject an already-loaded foreign package, and the release probe imports only from the built wheel outside the checkout. Route and WebSocket modules remain for C2 because one route has unrelated active changes. |
+| Legacy cleanup F1: static Web interface | `23ac60c2` | implemented; reviewed | Removes the unreferenced 9,227-line static HTML/CSS/JS interface and its obsolete settings-page test. Current source, package and runtime paths continue to serve the `apps/web` build. |
 
 ## Verification record
 
@@ -155,6 +159,8 @@ pass — independent specification and quality re-review for the D/E migration a
 35 passed — Server application ownership, source-package precedence, foreign regular/namespace-package conflict, and release-probe contracts
 pass — external-directory wheel probe imports Agent Core, canonical Server, compatibility Server and packaged frontend only from the built wheel
 pass — independent specification and quality review for Server C1 through `c09b7933`
+47 passed, 1 deselected — repository layout, release config, health, frontend asset and built-frontend CSP checks for `23ac60c2`
+pass — independent specification and quality review for legacy static UI removal
 ```
 
 ## Deferred boundaries
