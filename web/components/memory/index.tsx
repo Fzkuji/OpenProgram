@@ -393,33 +393,33 @@ export function MemoryPage() {
                 <div className={styles.timelineTree}>
                   {timelineGroups.map((year, yearIndex) => (
                     <details key={year.year} className={styles.timelineYear} open={yearIndex === 0}>
-                      <summary className={styles.timelineYearSummary}>
+                      <summary className={`${styles.timelineYearSummary} ${styles.sidebarRow}`}>
                         <span>{year.year}</span>
                         <span>{year.entryCount} {text(year.entryCount === 1 ? "entry" : "entries", "条")}</span>
                       </summary>
                       <div className={styles.timelinePeriodEntries}>
                         {year.entries.map((entry) => (
-                          <button key={entry.date} className={`${styles.timelinePeriod} ${selectedDate === entry.date ? styles.timelinePeriodActive : ""}`} onClick={() => openTimelineDay(entry.date)}>
+                          <button key={entry.date} className={`${styles.timelinePeriod} ${styles.sidebarRow} ${selectedDate === entry.date ? `${styles.timelinePeriodActive} ${styles.sidebarRowActive}` : ""}`} onClick={() => openTimelineDay(entry.date)}>
                             <span>{entry.label}</span><span className={styles.fileMeta}>{formatSize(entry.size)}</span>
                           </button>
                         ))}
                       </div>
                       {year.months.map((month, monthIndex) => (
                         <details key={month.key} className={styles.timelineMonth} open={yearIndex === 0 && monthIndex === 0}>
-                          <summary className={styles.timelineMonthSummary}>
+                          <summary className={`${styles.timelineMonthSummary} ${styles.sidebarRow}`}>
                             <span>{month.label}</span>
                             <span>{month.entries.length + month.days.length} {text(month.entries.length + month.days.length === 1 ? "entry" : "entries", "条")}</span>
                           </summary>
                           <div className={styles.timelineDays}>
                             {month.entries.map((entry) => (
-                              <button key={entry.date} className={`${styles.timelinePeriod} ${selectedDate === entry.date ? styles.timelinePeriodActive : ""}`} onClick={() => openTimelineDay(entry.date)}>
+                              <button key={entry.date} className={`${styles.timelinePeriod} ${styles.sidebarRow} ${selectedDate === entry.date ? `${styles.timelinePeriodActive} ${styles.sidebarRowActive}` : ""}`} onClick={() => openTimelineDay(entry.date)}>
                                 <span>{entry.label}</span><span className={styles.fileMeta}>{formatSize(entry.size)}</span>
                               </button>
                             ))}
                             {month.days.map((day) => (
                               <button
                                 key={day.date}
-                                className={`${styles.timelineDay} ${selectedDate === day.date ? styles.timelineDayActive : ""}`}
+                                className={`${styles.timelineDay} ${styles.sidebarRow} ${selectedDate === day.date ? `${styles.timelineDayActive} ${styles.sidebarRowActive}` : ""}`}
                                 onClick={() => openTimelineDay(day.date)}
                               >
                                 <span className={styles.timelineDayNumber}>{day.dayLabel}</span>
@@ -463,18 +463,10 @@ export function MemoryPage() {
             <>
               <div className={styles.tree}>
                 <div className={styles.coreSidebar}>
-                  <div className={styles.contextHeader}>
-                    <span className={styles.contextIcon}><ActivityIcon size={15} /></span>
-                    <div>
-                      <div className={styles.coreInfoTitle}>{text("Recent", "最近")}</div>
-                      <div className={styles.contextMeta}>{recentEvents.length} {text("records", "条记录")}</div>
-                    </div>
-                  </div>
-                  <div className={styles.coreInfoDesc}>
-                    {text(
-                      "Newest durable records first. This view is rebuilt after each write.",
-                      "按时间显示最新的持久记录；每次写入后重新生成。",
-                    )}
+                  <div className={`${styles.contextHeader} ${styles.sidebarRow} ${styles.sidebarRowActive}`}>
+                    <ActivityIcon size={13} className={styles.fileIcon} />
+                    <span className={styles.coreInfoTitle}>{text("Recent", "最近")}</span>
+                    <span className={styles.contextMeta}>{recentEvents.length} {text("records", "条记录")}</span>
                   </div>
                 </div>
               </div>
@@ -517,12 +509,10 @@ export function MemoryPage() {
             <>
               <div className={styles.tree}>
               <div className={styles.coreSidebar}>
-                <div className={styles.contextHeader}>
-                  <span className={styles.contextIcon}><SparklesIcon size={15} /></span>
-                  <div>
-                    <div className={styles.coreInfoTitle}>{text("Core", "核心")}</div>
-                    <div className={styles.contextMeta}>{text("System prompt memory", "系统提示词记忆")}</div>
-                  </div>
+                <div className={`${styles.contextHeader} ${styles.sidebarRow} ${styles.sidebarRowActive}`}>
+                  <SparklesIcon size={13} className={styles.fileIcon} />
+                  <span className={styles.coreInfoTitle}>{text("Core", "核心")}</span>
+                  <span className={styles.contextMeta}>{text("System prompt", "系统提示词")}</span>
                 </div>
                 <div className={styles.coreViewSwitch} role="group" aria-label={text("Core view", "Core 视图")}>
                   <button
@@ -578,22 +568,6 @@ export function MemoryPage() {
                     </div>
                   </div>
                 )}
-                <div className={styles.coreInfoDesc}>
-                  {coreView === "injected" && coreMeta?.injectionEnabled === false
-                    ? text(
-                      "Injection is off. Source records remain saved and editable.",
-                      "Core 注入已关闭，源记录仍会保存且可编辑。",
-                    )
-                    : coreView === "injected"
-                    ? text(
-                      "Read-only text added to new system prompts, generated from Source records.",
-                      "由源记录生成，并加入新系统提示词的只读文本。",
-                    )
-                    : text(
-                      "Edit the source records used to rebuild the Prompt preview.",
-                      "编辑用于重新生成提示词预览的源记录。",
-                    )}
-                </div>
               </div>
             </div>
               <div className={styles.rightPane}>

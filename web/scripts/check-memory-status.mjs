@@ -79,6 +79,15 @@ assert.doesNotMatch(memoryParts, /<div className=\{styles\.editorMeta\}/);
 assert.match(memoryParts, /styles\.editorHeaderMeta/);
 assert.ok(cssRules(".editorHeader").some((rule) => /min-height:\s*76px/.test(rule)));
 assert.match(cssRule(".tabBtn"), /height:\s*36px/);
+assert.match(cssRule(".sidebarRow"), /min-height:\s*36px/);
+assert.match(cssRule(".sidebarRow"), /padding:\s*0 10px/);
+assert.match(cssRule(".sidebarRow"), /border-radius:\s*8px/);
+assert.match(cssRule(".sidebarRow"), /font-size:\s*13px/);
+assert.match(memoryParts, /styles\.folderRow[^\n]*styles\.sidebarRow/);
+assert.match(memoryParts, /styles\.fileRow[^\n]*styles\.sidebarRow/);
+assert.match(memoryPage, /styles\.timelineYearSummary[^\n]*styles\.sidebarRow/);
+assert.match(memoryPage, /styles\.timelineDay[^\n]*styles\.sidebarRow/);
+assert.match(memoryPage, /styles\.contextHeader[^\n]*styles\.sidebarRow/);
 assert.match(memoryCss, /@media\s*\(max-width:\s*720px\)[\s\S]*\.editorHeader\s*\{[^}]*flex-wrap:\s*wrap/);
 assert.match(memoryCss, /@media\s*\(max-width:\s*720px\)[\s\S]*\.editorActions\s*\{[^}]*width:\s*100%[^}]*flex-wrap:\s*wrap/);
 
