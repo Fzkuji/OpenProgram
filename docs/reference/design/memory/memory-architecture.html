@@ -61,6 +61,102 @@
   .note{border-left:3px solid var(--bd);padding:2px 0 2px 13px;color:var(--dim);
     font-size:12.5px;margin:0 0 16px;max-width:88ch;line-height:1.8}
   .note b{color:#f0eee6}
+
+  /* Memory Web target UI — isolated light product mock inside the dark design page. */
+  .m-review{margin:16px 0 20px}
+  .m-review-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:0 0 10px}
+  .m-review-head h3{margin:0;color:#f0eee6;font-size:14px}
+  .m-review-head p{margin:0;color:var(--dim);font-size:12px}
+  .m-frame{overflow:hidden;border:1px solid #d9d9dd;border-radius:14px;background:#fff;color:#202124;
+    box-shadow:0 18px 48px rgba(0,0,0,.24)}
+  .m-top{height:64px;padding:0 20px;display:flex;align-items:center;border-bottom:1px solid #e5e5e8;background:#fbfbfc}
+  .m-title{font-size:20px;font-weight:650;letter-spacing:-.01em}
+  .m-top-meta{margin-left:auto;display:flex;align-items:center;gap:14px;color:#777982;font-size:12px}
+  .m-settings{height:32px;padding:0 11px;border:1px solid #d9d9dd;border-radius:8px;background:#f4f4f6;
+    color:#404148;font:600 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;text-decoration:none;
+    display:inline-flex;align-items:center;justify-content:center}
+  .m-shell{height:610px;display:grid;grid-template-columns:288px minmax(0,1fr);min-width:0}
+  .m-rail{min-width:0;display:flex;flex-direction:column;background:#f7f7f8;border-right:1px solid #e4e4e7}
+  .m-nav{padding:10px 10px 9px;border-bottom:1px solid #e4e4e7;display:grid;gap:2px}
+  .m-nav-item{width:100%;height:36px;padding:0 10px;display:flex;align-items:center;gap:10px;border:0;
+    border-radius:8px;background:transparent;color:#666871;font:500 13px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;text-align:left}
+  .m-nav-item:hover{background:#ececef;color:#25262b}
+  .m-nav-item.active{background:#e7e7ea;color:#17181c;font-weight:600}
+  .m-glyph{width:18px;text-align:center;font-size:15px;color:inherit}
+  .m-count{margin-left:auto;color:#8a8c94;font-size:11px;font-variant-numeric:tabular-nums}
+  .m-context{display:none;min-height:0;flex:1;flex-direction:column}
+  .m-context.active{display:flex}
+  .m-search{height:34px;margin:10px;padding:0 11px;display:flex;align-items:center;gap:8px;border:1px solid #dedee2;
+    border-radius:9px;background:#fff;color:#989aa2;font-size:12px}
+  .m-section-label{padding:4px 14px 6px;color:#93959d;font-size:10px;font-weight:700;letter-spacing:.1em}
+  .m-list{padding:0 7px 10px;overflow:auto}
+  .m-row{min-height:38px;padding:7px 9px;display:flex;align-items:center;gap:8px;border-radius:8px;color:#5e6068;font-size:12.5px}
+  .m-row.active{background:#fff;color:#1f2025;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+  .m-row-main{min-width:0;flex:1}
+  .m-row-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:550}
+  .m-row-sub{display:block;margin-top:2px;color:#9698a0;font-size:10.5px}
+  .m-rail-note{margin:auto 10px 10px;padding:12px;border:1px solid #dedee2;border-radius:10px;background:#fff}
+  .m-rail-note strong{display:block;margin-bottom:4px;color:#34353b;font-size:12px}
+  .m-rail-note span{display:block;color:#858790;font-size:10.5px;line-height:1.45}
+  .m-meter{height:5px;margin:9px 0 5px;overflow:hidden;border-radius:99px;background:#e9e9ec}
+  .m-meter i{display:block;width:21.25%;height:100%;background:#65a477;border-radius:inherit}
+  .m-main{min-width:0;min-height:0;background:#fdfdfd}
+  .m-panel{display:none;height:100%;min-width:0;flex-direction:column}
+  .m-panel.active{display:flex}
+  .m-detail-head{min-height:76px;padding:14px 22px;display:flex;align-items:center;gap:16px;border-bottom:1px solid #e7e7ea;background:#fff}
+  .m-detail-copy{min-width:0;flex:1}
+  .m-detail-title{display:flex;align-items:center;gap:8px;color:#1c1d21;font-size:18px;font-weight:650}
+  .m-detail-sub{margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#858790;font-size:11.5px}
+  .m-badge{height:20px;padding:0 7px;display:inline-flex;align-items:center;border-radius:5px;background:#eeeef1;
+    color:#73757d;font-size:9.5px;font-weight:700;letter-spacing:.07em}
+  .m-actions{display:flex;align-items:center;gap:7px}
+  .m-segment{height:30px;padding:3px;display:flex;border:1px solid #dedee2;border-radius:8px;background:#f3f3f5}
+  .m-segment span{min-width:56px;padding:0 10px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:#858790;font-size:11px}
+  .m-segment span.active{background:#fff;color:#303137;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+  .m-doc-wrap{min-height:0;flex:1;overflow:auto;padding:28px 34px 56px;background:#fafafa}
+  .m-doc{max-width:780px;margin:0 auto;padding:30px 34px;border:1px solid #e4e4e7;border-radius:12px;background:#fff;
+    box-shadow:0 1px 2px rgba(0,0,0,.035)}
+  .m-doc-kicker{margin-bottom:8px;color:#8b8d95;font-size:10px;font-weight:700;letter-spacing:.11em;text-transform:uppercase}
+  .m-doc h4{margin:0 0 10px;color:#202126;font-size:22px;line-height:1.25;letter-spacing:-.015em}
+  .m-doc .m-lede{margin:0 0 22px;color:#6e7078;font-size:13px;line-height:1.6}
+  .m-record{padding:16px 0;border-top:1px solid #ececef}
+  .m-record:first-of-type{border-top:0}
+  .m-record-meta{display:flex;align-items:center;gap:8px;margin-bottom:6px;color:#9799a1;font-size:10.5px}
+  .m-record p{margin:0;color:#3e4046;font-size:13px;line-height:1.65}
+  .m-recent-card{padding:16px 0;border-top:1px solid #ececef}
+  .m-recent-card:first-child{border-top:0}
+  .m-recent-card .m-record-meta{justify-content:space-between}
+  .m-core-status{display:flex;align-items:center;gap:8px;color:#5b7d63;font-size:11px}
+  .m-core-status::before{content:"";width:7px;height:7px;border-radius:50%;background:#65a477}
+  .m-placeholder{margin:auto;padding:28px;text-align:center;color:#8d8f97;font-size:12px}
+  .m-state-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0 18px}
+  .m-state{padding:14px;border:1px solid var(--bd);border-radius:12px;background:var(--pan)}
+  .m-state h4{margin:0 0 4px;color:#f0eee6;font-size:12.5px}
+  .m-state p{margin:0;color:var(--dim);font-size:11.5px;line-height:1.55}
+  .m-mobile{max-width:430px;margin:12px auto 4px;overflow:hidden;border:1px solid #d9d9dd;border-radius:12px;background:#fff;color:#24252a}
+  .m-mobile-head{height:52px;padding:0 12px;display:flex;align-items:center;border-bottom:1px solid #e5e5e8;font-weight:650}
+  .m-back{width:30px;height:30px;margin-right:6px;border:0;border-radius:7px;background:transparent;color:#6d6f77;font-size:20px}
+  .m-mobile-tabs{padding:7px;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;border-bottom:1px solid #e5e5e8;background:#f7f7f8}
+  .m-mobile-tab{height:34px;display:flex;align-items:center;justify-content:center;border:0;border-radius:7px;background:transparent;color:#7b7d85;font-size:14px}
+  .m-mobile-tab.active{background:#fff;color:#24252a;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .m-mobile-body{padding:18px 16px 28px}
+  .m-mobile-body h4{margin:0 0 4px;font-size:17px}
+  .m-mobile-body p{margin:0;color:#73757d;font-size:12px;line-height:1.55}
+  .m-mobile-row{width:100%;margin-top:10px;padding:13px;border:1px solid #e4e4e7;border-radius:9px;background:#fafafa;color:#24252a;text-align:left}
+  .m-mobile-row strong{display:block;margin-bottom:4px;font-size:12px}
+  .m-mobile-row span{font-size:11px;color:#777982}
+  .m-mobile-view[hidden]{display:none}
+  .m-mobile-context[hidden]{display:none}
+  .m-nav-item:focus-visible,.m-mobile-tab:focus-visible,.m-mobile-row:focus-visible,.m-back:focus-visible,.m-settings:focus-visible{
+    outline:2px solid #4f8ef7;outline-offset:2px}
+  @media(max-width:720px){
+    .m-review{display:none}
+    .m-review-head{display:block}.m-review-head p{margin-top:4px}
+    .m-shell{height:560px;grid-template-columns:1fr}.m-rail{display:none}
+    .m-detail-head{padding:12px 14px;align-items:flex-start}.m-actions{flex-wrap:wrap;justify-content:flex-end}
+    .m-doc-wrap{padding:16px}.m-doc{padding:22px 20px}.m-state-grid{grid-template-columns:1fr}
+  }
+  @media(prefers-reduced-motion:reduce){.m-nav-item{transition:none}}
 </style>
 </head>
 <body>
@@ -1039,32 +1135,210 @@
 
   </div>
 
-  <h2 id="web"><span class="num">09</span>Web 页面不显示写入器状态条</h2>
-  <p class="lead">Memory 页面用于查看和编辑记忆内容，不持续展示后台写入器的运行记录。写入器状态仍保留在状态 API、CLI 和模型工具中，供诊断使用。</p>
+  <h2 id="web"><span class="num">09</span>Memory Web 页面</h2>
+  <p class="lead">页面采用 OpenProgram 现有“顶部标题栏 + 二级栏 + 内容区”结构。现代化来自清楚的层级、统一的行高、可读的内容宽度和稳定的窄宽度行为，不增加新的数据层或装饰性仪表盘。</p>
+
+  <div class="grid3">
+    <div class="st" style="border-top-color:#e0445a">
+      <div class="k">当前问题</div>
+      <p>四个分区、上下文列表和 Topic 行使用接近的视觉权重；选中前右侧几乎全空。Core 的说明与视图切换在左栏，实际内容和 token 状态在右栏，关系不清楚。</p>
+    </div>
+    <div class="st" style="border-top-color:#4f8ef7">
+      <div class="k">结构原则</div>
+      <p>顶部只负责页面身份与设置入口；二级栏先选择分区，再显示该分区的列表或过滤器；右侧标题区集中名称、元数据和操作，正文使用受控阅读宽度。</p>
+    </div>
+    <div class="st" style="border-top-color:#5aad4e">
+      <div class="k">保持不变</div>
+      <p>继续使用 Topics、Timeline、Recent、Core 四个现有入口和现有 API。没有 writer 状态条、Commitments、Scheduler 状态、统计仪表盘、新依赖或新的持久化 UI 状态。</p>
+    </div>
+  </div>
+
+  <div class="m-review" aria-labelledby="memory-target-title">
+    <div class="m-review-head">
+      <div>
+        <h3 id="memory-target-title">目标页面 · 宽屏结构</h3>
+        <p>点击左侧四个分区，可检查对应的列表与内容状态。</p>
+      </div>
+      <p>示例数据来自当前正式 Memory：4 Topics / 15 records / Core 425 tokens</p>
+    </div>
+
+    <div class="m-frame" id="memoryPrototype">
+      <header class="m-top">
+        <div class="m-title">Memory</div>
+        <div class="m-top-meta">
+          <span>4 topics</span>
+          <span>15 records</span>
+          <a class="m-settings" href="memory-settings-ui.html">Memory settings</a>
+        </div>
+      </header>
+
+      <div class="m-shell">
+        <aside class="m-rail" aria-label="Memory sections">
+          <nav class="m-nav" aria-label="Memory views">
+            <button class="m-nav-item active" type="button" aria-pressed="true" data-memory-proto="topics"><span class="m-glyph">▤</span><span>Topics</span><span class="m-count">4</span></button>
+            <button class="m-nav-item" type="button" aria-pressed="false" data-memory-proto="timeline"><span class="m-glyph">◷</span><span>Timeline</span></button>
+            <button class="m-nav-item" type="button" aria-pressed="false" data-memory-proto="recent"><span class="m-glyph">⌁</span><span>Recent</span><span class="m-count">15</span></button>
+            <button class="m-nav-item" type="button" aria-pressed="false" data-memory-proto="core"><span class="m-glyph">✦</span><span>Core</span><span class="m-count">3</span></button>
+          </nav>
+
+          <div class="m-context active" data-memory-context="topics">
+            <div class="m-search">⌕ <span>Search topics</span></div>
+            <div class="m-section-label">PROJECTS</div>
+            <div class="m-list">
+              <div class="m-row active"><span class="m-glyph">▧</span><div class="m-row-main"><span class="m-row-title">Agent memory survey</span><span class="m-row-sub">6 records · updated 6m ago</span></div></div>
+              <div class="m-row"><span class="m-glyph">▧</span><div class="m-row-main"><span class="m-row-title">Agent memory survey LaTeX</span><span class="m-row-sub">4 records</span></div></div>
+              <div class="m-row"><span class="m-glyph">▧</span><div class="m-row-main"><span class="m-row-title">Agent memory survey test 2</span><span class="m-row-sub">2 records</span></div></div>
+            </div>
+          </div>
+
+          <div class="m-context" data-memory-context="timeline">
+            <div class="m-section-label" style="padding-top:13px">AUGUST 2026</div>
+            <div class="m-list">
+              <div class="m-row active"><span class="m-glyph">15</span><div class="m-row-main"><span class="m-row-title">Saturday</span><span class="m-row-sub">2 memory records</span></div></div>
+              <div class="m-row"><span class="m-glyph">10</span><div class="m-row-main"><span class="m-row-title">Monday</span><span class="m-row-sub">1 memory record</span></div></div>
+              <div class="m-row"><span class="m-glyph">08</span><div class="m-row-main"><span class="m-row-title">Saturday</span><span class="m-row-sub">10 memory records</span></div></div>
+            </div>
+          </div>
+
+          <div class="m-context" data-memory-context="recent">
+            <div class="m-section-label" style="padding-top:13px">FILTER BY TOPIC</div>
+            <div class="m-list">
+              <div class="m-row active"><span class="m-glyph">●</span><div class="m-row-main"><span class="m-row-title">All memory</span><span class="m-row-sub">15 records</span></div></div>
+              <div class="m-row"><span class="m-glyph">○</span><div class="m-row-main"><span class="m-row-title">Projects</span><span class="m-row-sub">12 records</span></div></div>
+              <div class="m-row"><span class="m-glyph">○</span><div class="m-row-main"><span class="m-row-title">Core</span><span class="m-row-sub">3 records</span></div></div>
+            </div>
+          </div>
+
+          <div class="m-context" data-memory-context="core">
+            <div class="m-list" style="padding-top:10px">
+              <div class="m-row active"><span class="m-glyph">✦</span><div class="m-row-main"><span class="m-row-title">Core memory</span><span class="m-row-sub">3 cross-session rules</span></div></div>
+            </div>
+            <div class="m-rail-note">
+              <strong>Injected into prompts</strong>
+              <span>425 of 2000 tokens</span>
+              <div class="m-meter" aria-label="425 of 2000 tokens"><i></i></div>
+              <span>Core records remain editable from the Records view.</span>
+            </div>
+          </div>
+        </aside>
+
+        <main class="m-main">
+          <section class="m-panel active" data-memory-panel="topics">
+            <header class="m-detail-head">
+              <div class="m-detail-copy">
+                <div class="m-detail-title">Agent memory survey <span class="m-badge">PROJECTS</span></div>
+                <div class="m-detail-sub">projects/agent_memory_survey.md · 6 records · updated 6 minutes ago</div>
+              </div>
+              <div class="m-actions"><div class="m-segment"><span class="active">Preview</span><span>Edit</span></div></div>
+            </header>
+            <div class="m-doc-wrap">
+              <article class="m-doc">
+                <div class="m-doc-kicker">Project memory</div>
+                <h4>Agent memory survey</h4>
+                <p class="m-lede">Durable decisions and current research context. File metadata stays in the header; the reading surface contains only memory content.</p>
+                <div class="m-record"><div class="m-record-meta"><span>Research scope</span><span>·</span><span>Aug 17</span></div><p>The survey compares memory systems through a shared evidence framework and separates architecture claims from implementation status.</p></div>
+                <div class="m-record"><div class="m-record-meta"><span>Writing rule</span><span>·</span><span>Aug 17</span></div><p>Use source-faithful terminology and keep unsupported capabilities marked as absent rather than inferring them from adjacent features.</p></div>
+                <div class="m-record"><div class="m-record-meta"><span>Current state</span><span>·</span><span>Aug 16</span></div><p>The main survey and two LaTeX workspaces remain separate Topics because their validation state differs.</p></div>
+              </article>
+            </div>
+          </section>
+
+          <section class="m-panel" data-memory-panel="timeline">
+            <header class="m-detail-head"><div class="m-detail-copy"><div class="m-detail-title">August 15, 2026</div><div class="m-detail-sub">2 memory records · derived from Topics</div></div></header>
+            <div class="m-doc-wrap"><article class="m-doc"><div class="m-doc-kicker">Timeline</div><h4>Saturday</h4><p class="m-lede">Timeline remains a derived chronological view. It presents the Markdown generated for the selected date without adding event times or change metadata.</p><div class="m-record"><div class="m-record-meta"><span>Core · 2026-08-15</span></div><p>Never fabricate tool calls or tool results. Report only observed results from available tools.</p></div><div class="m-record"><div class="m-record-meta"><span>Core · 2026-08-15</span></div><p>Use plain 你 with no invented honorific unless the owner explicitly chooses one.</p></div></article></div>
+          </section>
+
+          <section class="m-panel" data-memory-panel="recent">
+            <header class="m-detail-head"><div class="m-detail-copy"><div class="m-detail-title">Recent memory</div><div class="m-detail-sub">Newest durable records first · derived from Topics</div></div></header>
+            <div class="m-doc-wrap"><article class="m-doc"><div class="m-recent-card"><div class="m-record-meta"><span class="m-badge">CORE</span><span>2026-08-10</span></div><p>Use Chinese by default when discussing Memory and other operational work.</p></div><div class="m-recent-card"><div class="m-record-meta"><span class="m-badge">PROJECTS</span><span>2026-08-08</span></div><p>The survey uses a shared evidence framework and separates architecture claims from implementation status.</p></div><div class="m-recent-card"><div class="m-record-meta"><span class="m-badge">PROJECTS</span><span>2026-08-08</span></div><p>The main survey and LaTeX workspaces remain separate Topics because their validation state differs.</p></div></article></div>
+          </section>
+
+          <section class="m-panel" data-memory-panel="core">
+            <header class="m-detail-head">
+              <div class="m-detail-copy"><div class="m-detail-title">Core memory</div><div class="m-detail-sub"><span class="m-core-status">Injected</span> · 425 of 2000 tokens · 3 records</div></div>
+              <div class="m-actions"><div class="m-segment"><span class="active">Injected</span><span>Records</span></div></div>
+            </header>
+            <div class="m-doc-wrap"><article class="m-doc"><div class="m-doc-kicker">Cross-session operating rules</div><h4>Core memory</h4><p class="m-lede">Only facts and rules needed across most future conversations remain here.</p><div class="m-record"><div class="m-record-meta"><span>Language</span><span>·</span><span>Aug 10</span></div><p>Use Chinese by default when discussing Memory and other operational work.</p></div><div class="m-record"><div class="m-record-meta"><span>Address</span><span>·</span><span>Aug 15</span></div><p>Use plain 你 with no invented honorific unless the owner explicitly chooses one.</p></div><div class="m-record"><div class="m-record-meta"><span>Tool reporting</span><span>·</span><span>Aug 15</span></div><p>Never fabricate tool calls or tool results. Report observed results and state when no available tool returns a result.</p></div></article></div>
+          </section>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <div class="m-state-grid">
+    <div class="m-state">
+      <h4>窄宽度 · 可操作样稿</h4>
+      <p>小于 720px 时不把分区导航、列表和详情纵向堆叠。点击 Topic 进入详情，点击返回键恢复列表。</p>
+      <div class="m-mobile" id="memoryMobilePrototype">
+        <div class="m-mobile-view" data-mobile-view="list">
+          <div class="m-mobile-head">Memory</div>
+          <nav class="m-mobile-tabs" aria-label="Memory views">
+            <button class="m-mobile-tab active" type="button" aria-label="Topics" aria-pressed="true" data-mobile-section="topics">▤</button>
+            <button class="m-mobile-tab" type="button" aria-label="Timeline" aria-pressed="false" data-mobile-section="timeline">◷</button>
+            <button class="m-mobile-tab" type="button" aria-label="Recent" aria-pressed="false" data-mobile-section="recent">⌁</button>
+            <button class="m-mobile-tab" type="button" aria-label="Core" aria-pressed="false" data-mobile-section="core">✦</button>
+          </nav>
+          <div class="m-mobile-body m-mobile-context" data-mobile-context="topics">
+            <div class="m-search" style="margin:0 0 12px">⌕ <span>Search topics</span></div>
+            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Agent memory survey" data-mobile-label="Research scope" data-mobile-content="The survey compares memory systems through a shared evidence framework."><strong>Agent memory survey</strong><span>6 records · updated 6m ago</span></button>
+            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Agent memory survey LaTeX" data-mobile-label="Current state" data-mobile-content="The LaTeX workspace remains separate because its validation state differs."><strong>Agent memory survey LaTeX</strong><span>4 records</span></button>
+          </div>
+          <div class="m-mobile-body m-mobile-context" data-mobile-context="timeline" hidden>
+            <div class="m-doc-kicker">August 2026</div>
+            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="August 15, 2026" data-mobile-label="Core" data-mobile-content="Two memory records are present for this date."><strong>August 15 · Saturday</strong><span>2 memory records</span></button>
+            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="August 10, 2026" data-mobile-label="Core" data-mobile-content="One memory record is present for this date."><strong>August 10 · Monday</strong><span>1 memory record</span></button>
+          </div>
+          <div class="m-mobile-body m-mobile-context" data-mobile-context="recent" hidden>
+            <div class="m-doc-kicker">Recent memory</div>
+            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Recent memory" data-mobile-label="Core · 2026-08-10" data-mobile-content="Use Chinese by default when discussing Memory and other operational work."><strong>All recent memory</strong><span>15 records · derived from Topics</span></button>
+          </div>
+          <div class="m-mobile-body m-mobile-context" data-mobile-context="core" hidden>
+            <div class="m-doc-kicker">Core memory</div>
+            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Core memory" data-mobile-label="Injected" data-mobile-content="Only facts and rules needed across most future conversations remain here."><strong>Core memory</strong><span>3 records · 425 of 2000 tokens</span></button>
+          </div>
+        </div>
+        <div class="m-mobile-view" data-mobile-view="detail" hidden>
+          <div class="m-mobile-head"><button class="m-back" type="button" aria-label="Back to memory list" data-mobile-back>‹</button><span data-mobile-detail-title>Agent memory survey</span></div>
+          <div class="m-mobile-body"><div class="m-doc-kicker">Memory detail</div><h4 data-mobile-detail-heading>Agent memory survey</h4><p>Durable decisions and current context.</p><div class="m-mobile-row"><strong data-mobile-detail-label>Research scope</strong><span data-mobile-detail-content>The survey compares memory systems through a shared evidence framework.</span></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="m-state">
+      <h4>窄宽度规则</h4>
+      <p>分区导航只在列表态出现；详情态占据全部内容宽度并提供明确返回按钮。Core、Timeline 和 Recent 没有文件列表时直接进入内容态。桌面二级栏的展开状态不被窗口宽度改写。</p>
+      <div class="m-rail-note" style="margin:14px 0 0;background:#171610;border-color:#343226">
+        <strong style="color:#f0eee6">可用宽度优先级</strong>
+        <span>内容详情 ＞ 上下文列表 ＞ 分区标签文字。宽度不足时先隐藏分区文字，只保留图标；不压缩正文到不可读宽度。</span>
+      </div>
+    </div>
+  </div>
 
   <div class="tbl">
     <table>
-      <thead><tr><th>界面</th><th>当前能力</th><th>页面选择</th></tr></thead>
+      <thead><tr><th>区域</th><th>目标结构</th><th>避免的问题</th></tr></thead>
       <tbody>
-        <tr><td><b>Memory Web</b></td><td>Topics、Timeline、Recent、Core 与 MemoryRef 查询</td><td class="y">不请求或渲染 writer 状态条；定时任务由独立 Scheduler 页面管理</td></tr>
-        <tr><td><b>CLI / 模型工具</b></td><td>按需查询最近成功、失败和待处理数</td><td class="y">保持现有诊断契约</td></tr>
-        <tr><td><b>其他管理页面</b></td><td>标题后直接进入页面导航或内容</td><td class="y">Memory 页面采用相同的页面层级</td></tr>
+        <tr><td><b>顶部标题栏</b></td><td>页面标题、低权重总量、Memory settings</td><td>不放 writer 状态、刷新状态或重复说明</td></tr>
+        <tr><td><b>二级栏</b></td><td>四个 36px 分区行；下方仅显示当前分区的列表、搜索或过滤器</td><td>分区标签和 Topic 文件不再混成同一层级</td></tr>
+        <tr><td><b>内容标题</b></td><td>名称、类型、路径、修改时间、视图与编辑操作集中在一个 76px 区域</td><td>删除独立 meta 横条和分散的 Core 状态</td></tr>
+        <tr><td><b>正文</b></td><td>Preview/Timeline/Recent/Core 使用最大 780px 阅读面；Edit 保持全宽等宽字体编辑器</td><td>避免超宽文本和大片无结构空白</td></tr>
+        <tr><td><b>窄宽度</b></td><td>分区图标栏 + 列表/详情单页切换</td><td>不自动折叠桌面栏，不把三块上下堆叠，不允许内容区重叠</td></tr>
       </tbody>
     </table>
   </div>
 
   <div class="grid2">
     <div class="oc">
-      <h4>采用</h4>
-      <div class="d">标题栏后直接显示 Memory 标签和内容。页面不请求 <code>/api/memory/status</code>，因此不会产生全局 writer 提示。其他模块通过 <code>workspace_id + memory_id</code> 的只读引用接口获取当前内容。</div>
+      <h4>实现范围</h4>
+      <div class="d">主要修改 <code>web/components/memory/index.tsx</code>、<code>parts.tsx</code> 和 <code>memory-page.module.css</code>。复用现有 <code>SearchInput</code>、图标、API 请求、EditorState、Markdown 清洗和保存逻辑；Recent 的内联样式移入 CSS module。</div>
     </div>
     <div class="oc">
-      <h4>不采用</h4>
-      <div class="d">不保留空占位、不把状态条改成徽标、不增加隐藏开关。Memory 只管理 Topics、Timeline、Recent 与 Core；Scheduler 的执行和状态文件不进入 Memory 事务。</div>
+      <h4>明确排除</h4>
+      <div class="d">不增加首页 dashboard、统计图、Topic 创建向导、拖拽排序、批量编辑、writer 状态、自动折叠栏、新 API 或新依赖。没有选择内容时只显示简洁的选择提示与现有设置入口。</div>
     </div>
   </div>
 
-  <div class="note"><b>实现边界：</b><code>MemoryPage</code>不请求或渲染 writer 状态、pending 数、Commitments 或 writer 专用刷新按钮；相关 CSS 与 Web transition 路径已删除。Scheduler 通过独立的 MemoryRef API 在执行时读取当前 Topic block。</div>
+  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；小于 720px 时列表与详情互斥显示并提供返回路径；所有按钮可键盘访问并有可见焦点；Topics、Timeline、Recent、Core 的请求和编辑语义不变；页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
+  <div class="legend"><b>实现状态：</b>本节已完成目标结构和宽屏/窄屏样稿，生产页面尚未按此稿修改。此前已经实现的“移除 writer 状态条”和 Core 有效注入/records 双视图保持有效。</div>
 
   <h2 id="changes"><span class="num">10</span>统一修改接口</h2>
   <p class="lead">Memory 同时支持模型直接编辑 Topic 文件，以及模型或其他程序调用结构化接口。两种方式不互相替代；区别只在于调用方如何表达修改。所有修改最终进入同一套 Runtime 暂存、校验、派生视图、原子安装和 Git 流程。</p>
@@ -1135,5 +1409,66 @@
   </div>
 
 </div>
+<script>
+  (function () {
+    var root = document.getElementById("memoryPrototype");
+    if (!root) return;
+    var tabs = Array.prototype.slice.call(root.querySelectorAll("[data-memory-proto]"));
+    tabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        var view = tab.getAttribute("data-memory-proto");
+        tabs.forEach(function (item) {
+          var selected = item === tab;
+          item.classList.toggle("active", selected);
+          item.setAttribute("aria-pressed", selected ? "true" : "false");
+        });
+        root.querySelectorAll("[data-memory-context]").forEach(function (context) {
+          context.classList.toggle("active", context.getAttribute("data-memory-context") === view);
+        });
+        root.querySelectorAll("[data-memory-panel]").forEach(function (panel) {
+          panel.classList.toggle("active", panel.getAttribute("data-memory-panel") === view);
+        });
+      });
+    });
+
+    var mobile = document.getElementById("memoryMobilePrototype");
+    if (!mobile) return;
+    var mobileList = mobile.querySelector('[data-mobile-view="list"]');
+    var mobileDetail = mobile.querySelector('[data-mobile-view="detail"]');
+    var mobileOpener = null;
+    mobile.querySelectorAll("[data-mobile-section]").forEach(function (sectionButton) {
+      sectionButton.addEventListener("click", function () {
+        var section = sectionButton.getAttribute("data-mobile-section");
+        mobile.querySelectorAll("[data-mobile-section]").forEach(function (item) {
+          var selected = item === sectionButton;
+          item.classList.toggle("active", selected);
+          item.setAttribute("aria-pressed", selected ? "true" : "false");
+        });
+        mobile.querySelectorAll("[data-mobile-context]").forEach(function (context) {
+          context.hidden = context.getAttribute("data-mobile-context") !== section;
+        });
+        mobileDetail.hidden = true;
+        mobileList.hidden = false;
+      });
+    });
+    mobile.querySelectorAll("[data-mobile-open]").forEach(function (item) {
+      item.addEventListener("click", function () {
+        mobileOpener = item;
+        mobile.querySelector("[data-mobile-detail-title]").textContent = item.getAttribute("data-mobile-title");
+        mobile.querySelector("[data-mobile-detail-heading]").textContent = item.getAttribute("data-mobile-title");
+        mobile.querySelector("[data-mobile-detail-label]").textContent = item.getAttribute("data-mobile-label");
+        mobile.querySelector("[data-mobile-detail-content]").textContent = item.getAttribute("data-mobile-content");
+        mobileList.hidden = true;
+        mobileDetail.hidden = false;
+        mobile.querySelector("[data-mobile-back]").focus();
+      });
+    });
+    mobile.querySelector("[data-mobile-back]").addEventListener("click", function () {
+      mobileDetail.hidden = true;
+      mobileList.hidden = false;
+      if (mobileOpener) mobileOpener.focus();
+    });
+  }());
+</script>
 </body>
 </html>
