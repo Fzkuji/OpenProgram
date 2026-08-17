@@ -20,11 +20,11 @@
       <h1>内置浏览器不提供 Chrome / Edge 扩展安装</h1>
       <p class="lede">OpenProgram 0.7.0 保留完整的内置网页浏览、书签、历史、下载、浏览器数据导入和 Agent 网页控制，但不发布扩展商店安装、本地扩展加载或扩展管理功能。</p>
       <div class="status">
-        <span class="pill"><span class="dot"></span><strong>Decision: remove before 0.7.0</strong></span>
+        <span class="pill"><span class="dot"></span><strong>Decision: removed for 0.7.0</strong></span>
         <span class="pill">Audience: product · desktop · web</span>
-        <span class="pill">Status: implementation pending</span>
+        <span class="pill">Status: implemented</span>
       </div>
-      <details class="mobile-toc"><summary>本页目录</summary><nav><a href="#decision">决策</a><a href="#user-impact">用户边界</a><a href="#reasoning">原因</a><a href="#architecture">架构影响</a><a href="#implementation">移除计划</a><a href="#evidence">验收证据</a></nav></details>
+      <details class="mobile-toc"><summary>本页目录</summary><nav><a href="#decision">决策</a><a href="#user-impact">用户边界</a><a href="#reasoning">原因</a><a href="#architecture">架构影响</a><a href="#implementation">实施结果</a><a href="#evidence">验收证据</a></nav></details>
     </header>
 
     <section id="decision">
@@ -84,25 +84,26 @@
     </section>
 
     <section id="implementation">
-      <div class="section-head"><span class="number">05</span><h2>移除计划</h2></div>
+      <div class="section-head"><span class="number">05</span><h2>实施结果</h2></div>
       <div class="tasks">
-        <div class="task"><span class="task-tag">DESKTOP</span><p>删除 extension manager、启动恢复、全部 extension IPC、preload API、打包文件和专项安装检查。</p></div>
-        <div class="task"><span class="task-tag">WEB</span><p>删除 Extensions built-in page、Browser 菜单入口、商店详情页安装按钮、相关类型、图标和 URL 识别器。</p></div>
-        <div class="task"><span class="task-tag">CONTRACT</span><p>增加公共检查，确保源码、preload、菜单、built-in page 和打包清单都不会重新暴露扩展安装能力。</p></div>
-        <div class="task"><span class="task-tag">RELEASE</span><p>在 0.7.0 发布说明中明确“浏览器扩展不支持”，同时列出保留的浏览器能力，避免用户把 Chromium 内核误解为完整 Chrome。</p></div>
+        <div class="task"><span class="task-tag">DESKTOP</span><p>已删除 extension manager、启动恢复、全部 extension IPC、preload API 和打包文件；本地刷新会清除旧 ASAR 中残留的 manager 与专用依赖。</p></div>
+        <div class="task"><span class="task-tag">WEB</span><p>已删除 Extensions built-in page、Browser 菜单入口、商店详情页安装按钮、相关类型、图标和 URL 识别器。</p></div>
+        <div class="task"><span class="task-tag">STATE</span><p>恢复旧窗口状态时丢弃历史 Extensions 标签；不读取、不执行、也不删除用户目录中的旧扩展文件。</p></div>
+        <div class="task"><span class="task-tag">CONTRACT</span><p><code>check-no-browser-extensions.js</code> 固定 Desktop、preload、Web 菜单、built-in page、bridge 和打包清单的负向边界。</p></div>
+        <div class="task"><span class="task-tag">RELEASE</span><p>Changelog、0.7.0 release notes、Desktop 文档与 FAQ 均明确“浏览器扩展不支持”，并列出保留的浏览器能力。</p></div>
       </div>
     </section>
 
     <section id="evidence">
       <div class="section-head"><span class="number">06</span><h2>验收与证据边界</h2></div>
-      <p class="intro">当前状态是“决策已确定、代码待移除”。完成后必须同时满足以下证据，才能把状态改为已实施。</p>
+      <p class="intro">状态为“决策与代码均已实施”。证据只证明 OpenProgram 不再暴露或执行扩展功能，以及保留的浏览器专项检查通过；它不声称 Electron 具备完整 Chrome 扩展兼容性。</p>
       <div class="table-wrap"><table class="matrix">
         <thead><tr><th>验收项</th><th>当前</th><th>完成证据</th></tr></thead>
         <tbody>
-          <tr><td>产品界面无扩展安装与管理入口</td><td><span class="state remove">待实施</span></td><td>Web browser checks + TypeScript。</td></tr>
-          <tr><td>Desktop 不加载第三方 extension</td><td><span class="state remove">待实施</span></td><td>Desktop public source check + package file contract。</td></tr>
-          <tr><td>旧扩展数据不执行且不被删除</td><td><span class="state remove">待实施</span></td><td>启动检查和用户数据边界审查。</td></tr>
-          <tr><td>保留浏览器能力无回归</td><td><span class="state remove">待实施</span></td><td>built-in browser、webtab、书签、历史、导入和 Computer Use 专项检查。</td></tr>
+          <tr><td>产品界面无扩展安装与管理入口</td><td><span class="state keep">通过</span></td><td><code>check-no-browser-extensions</code>、<code>check:built-in-browser</code> 与 Web TypeScript。</td></tr>
+          <tr><td>Desktop 不加载第三方 extension</td><td><span class="state keep">通过</span></td><td>Desktop main/preload/package 负向契约；安装 manager 和专用生产依赖已删除。</td></tr>
+          <tr><td>旧扩展数据不执行且不被删除</td><td><span class="state keep">通过</span></td><td><code>check:compound-tabs</code> 覆盖旧标签迁移；生产代码没有删除用户 <code>browser-extensions/</code> 目录的路径。</td></tr>
+          <tr><td>保留浏览器能力无回归</td><td><span class="state keep">通过</span></td><td><code>check:webtabs</code>、<code>check:webtab-zoom-bounds</code>、<code>check:bookmarks</code>、<code>check:web-split</code> 与 <code>check:center-tabs</code>。</td></tr>
         </tbody>
       </table></div>
     </section>
@@ -110,7 +111,7 @@
 
   <aside class="rail" aria-label="页内导航">
     <div class="rail-title">On this page</div>
-    <nav><a href="#decision">产品决策</a><a href="#user-impact">用户边界</a><a href="#reasoning">不发布原因</a><a href="#architecture">架构影响</a><a href="#implementation">移除计划</a><a href="#evidence">验收证据</a></nav>
+    <nav><a href="#decision">产品决策</a><a href="#user-impact">用户边界</a><a href="#reasoning">不发布原因</a><a href="#architecture">架构影响</a><a href="#implementation">实施结果</a><a href="#evidence">验收证据</a></nav>
   </aside>
 </div>
 </body>

@@ -410,7 +410,7 @@
         </tbody>
       </table>
       <div class="exclusions">
-        <div class="exclusion">资料导入不复制 Passwords、支付信息、地址、扩展、下载记录、缓存、localStorage 或 Service Workers。浏览器扩展使用独立的安装与权限流程，见 <a href="browser-extensions.html">Chromium 浏览器扩展设计</a>。</div>
+        <div class="exclusion">资料导入不复制 Passwords、支付信息、地址、扩展、下载记录、缓存、localStorage 或 Service Workers。内置浏览器不提供扩展安装或管理，原因与代码边界见 <a href="browser-extensions.html">浏览器扩展支持决策</a>。</div>
         <div class="exclusion">不实现密码管理器、系统 Credential Store、自动填充或对运行中的源浏览器进行远程调试。</div>
         <div class="exclusion">Cookie 导入可以减少重复登录，但设备绑定、过期、二次验证或服务端撤销仍会要求重新登录。</div>
         <div class="exclusion">本地浏览器导入仅属于桌面 App；Web-only 模式不得显示为可用能力。</div>
@@ -442,7 +442,7 @@
           <tr><td>来源损坏、浏览器缺失、临时进程超时和 Cookie 部分失败返回稳定错误码并保留原数据。</td><td><span class="status">已实现</span></td><td><code>browser-profile-import.js</code> 与 <code>browsing-history-store.js</code> self-check</td></tr>
           <tr><td>依赖 PTY 的全屏终端程序。</td><td><span class="status limit">当前限制</span></td><td>产品边界，不作为当前验收缺口。</td></tr>
           <tr><td>Passwords、自动填充、支付/地址数据和源浏览器接管。</td><td><span class="status out">明确排除</span></td><td><code>browser-profile-import.js</code> 的导入类型 allowlist。</td></tr>
-          <tr><td>从 Edge Add-ons、Chrome Web Store 或本地目录安装 Chromium 浏览器扩展，并进行权限确认、启停、移除与后续 Chrome/Edge 代码导入。</td><td><span class="status limit">已设计，未实现</span></td><td><a href="browser-extensions.html"><code>browser-extensions.html</code></a>；扩展不属于现有 profile data import。</td></tr>
+          <tr><td>Chrome Web Store 与 Edge Add-ons 只作为普通网页打开；产品不提供商店安装、本地目录加载、CRX 下载、扩展运行时或管理页。</td><td><span class="status out">明确排除，代码已移除</span></td><td><a href="browser-extensions.html"><code>browser-extensions.html</code></a>；<code>check-no-browser-extensions.js</code>；扩展不属于 profile data import。</td></tr>
         </tbody>
       </table>
       </div>
