@@ -21,7 +21,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram._cli_chat.turn import _run_turn_with_history
+from openprogram.cli.repl.turn import _run_turn_with_history
 from openprogram.agent.session_db import SessionDB
 
 

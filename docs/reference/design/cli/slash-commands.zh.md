@@ -307,7 +307,7 @@ GET    /api/commands/conflicts          # 冲突表（同名多源）
 
 CLI：
 
-`openprogram/_cli_chat/handlers.py:_handle_slash` 的每条 `/slash` 都经 registry 解析——TUI 与 WebUI 共用同一张表，不再有任何硬编码命令列表。Rich REPL 的本地动作放在 builtin 层：`register_repl_builtins` 逐条注册，`handler` 填动作名字符串作标记，`_LOCAL_ACTIONS` 把标记映射回本地实现。命令的存在性、别名、`/help` 全部读自 registry（`list_all()`）。其余层（plugin / skill / user / project）的命令经 `dispatch.invoke` 渲染，渲染出的正文作为本轮消息发给 agent——与 Web composer 的展开语义一致。
+`openprogram/cli/repl/handlers.py:_handle_slash` 的每条 `/slash` 都经 registry 解析——TUI 与 WebUI 共用同一张表，不再有任何硬编码命令列表。Rich REPL 的本地动作放在 builtin 层：`register_repl_builtins` 逐条注册，`handler` 填动作名字符串作标记，`_LOCAL_ACTIONS` 把标记映射回本地实现。命令的存在性、别名、`/help` 全部读自 registry（`list_all()`）。其余层（plugin / skill / user / project）的命令经 `dispatch.invoke` 渲染，渲染出的正文作为本轮消息发给 agent——与 Web composer 的展开语义一致。
 
 Ink TUI（`cli/src/commands/registry.ts`）只硬编码 TUI 本地动作（主题、picker、导出等），经 `GET /api/commands` 从 worker 拉统一 registry——并入补全、ctrl+K 面板与 `/help`——registry 命令经 `POST /api/commands/invoke` 展开，渲染正文作为聊天轮发送。
 

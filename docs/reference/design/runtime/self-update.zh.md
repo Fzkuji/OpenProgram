@@ -77,5 +77,5 @@ document。
 ## 实现状态
 
 source checkout gate、status/dry-run、持久化 channel、隔离 probe、restart、SHA
-验证、结构化失败和手动恢复指令均已在 `openprogram/_cli_cmds/upgrade.py` 中实现。
+验证、结构化失败和手动恢复指令均已在 `openprogram/cli/commands/upgrade.py` 中实现。
 自动回滚仍明确不属于当前实现范围。

@@ -456,7 +456,7 @@ def _init_providers():
             # some config-file layouts even when an OAuth token is in
             # CredentialProvider). Suppress the user-visible "no provider"
             # warning when any agent has a pinned model.provider —
-            # ``_cli_chat.setup._get_chat_runtime`` will try it next
+            # ``cli.repl.setup._get_chat_runtime`` will try it next
             # and the banner will say so.
             _log("[detect] no provider via auto-detect")
             if not _any_agent_has_pinned_provider():

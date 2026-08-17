@@ -1,7 +1,7 @@
 """Unified port probing + ownership diagnostics.
 
 One home for "is this port taken, and by whom?" — previously scattered
-across ``_cli_cmds/web.py`` (``_port_in_use`` / ``_backend_is_ours`` /
+across ``cli/commands/web.py`` (``_port_in_use`` / ``_backend_is_ours`` /
 ``_frontend_is_ours``), ``webui/frontend.py`` (``_pids_on_port`` /
 ``_process_cmdline``) and ``worker/lifecycle.py`` (``_probe_tcp_listening``).
 

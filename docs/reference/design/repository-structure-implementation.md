@@ -19,6 +19,9 @@ current design contract; this file is operational history.
   packaged-skill, Web, and TUI ownership boundaries.
 - Remove the Web Programs re-export directory when the public route can import
   the existing implementation directly.
+- Consolidate Python CLI parser, handlers, REPL, Ink launcher, and setup
+  sections under the stable `openprogram.cli` package without changing the
+  public command tree.
 
 ## Workstreams
 
@@ -33,6 +36,7 @@ current design contract; this file is operational history.
 | Post-merge suite repair | `codex/test-structure-20260817` / `d04aa050` | implemented | Moves two real workflow execution tests to component, updates their package schema, and repairs merged documentation, distribution, and optional-dependency regressions. |
 | Documentation entry points and Programs alias | `codex/repository-structure-batch1-20260817` / `d9cc9933` | implemented | Refreshes the bilingual project map and workspace READMEs; removes only the confirmed re-export and unused stylesheet. |
 | Documentation-entry main integration | `29f8186d` | integrated | Two-parent merge with current `main` at `e2041770`; unrelated local icon and output files remain outside Git. |
+| Python CLI package consolidation | `codex/python-package-layout-cli-20260817` | in progress | Replace three first-level internal CLI directories and four implementation files with one `openprogram/cli/` package; keep `openprogram.cli` public behavior. |
 
 ## Verification record
 

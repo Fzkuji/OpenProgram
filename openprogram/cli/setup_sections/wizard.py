@@ -6,7 +6,7 @@ walk) and ``run_configure_menu`` (pick-loop) need the same metadata.
 """
 from __future__ import annotations
 
-from openprogram._setup_sections.sections import (
+from openprogram.cli.setup_sections.sections import (
     run_providers_section,
     run_model_section,
     run_tools_section,
@@ -19,8 +19,8 @@ from openprogram._setup_sections.sections import (
     run_tts_section,
     run_programs_section,
 )
-from openprogram._setup_sections.channels import run_channels_section
-from openprogram._setup_sections.backend import run_backend_section
+from openprogram.cli.setup_sections.channels import run_channels_section
+from openprogram.cli.setup_sections.backend import run_backend_section
 
 
 # QuickStart = the things a user MUST answer to have a working chat:
@@ -244,7 +244,7 @@ def _run_setup_inner(mode: str) -> int:
     next_action = _pick_next_action()
     if next_action == "chat":
         try:
-            from openprogram.cli_chat import run_cli_chat
+            from openprogram.cli.chat import run_cli_chat
             run_cli_chat()
         except Exception as e:  # noqa: BLE001
             print(f"[setup] couldn't launch chat: {type(e).__name__}: {e}")

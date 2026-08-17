@@ -1,8 +1,4 @@
-# `openprogram/_setup_sections/`
-
-> Setup-wizard section bodies, extracted from openprogram/setup.py.
-
-## Overview
+"""Setup-wizard section bodies used by :mod:`openprogram.setup`.
 
 ``openprogram/setup.py`` keeps the JSON-config storage (``_read_config``,
 ``_write_config``, ``read_*_prefs``) and the prompt helpers
@@ -15,12 +11,4 @@ Section bodies live here:
     backend.py  — terminal backend section
     wizard.py   — orchestrator (intro/summary/_run_setup_inner/run_full_setup/
                   run_configure_menu) + QUICKSTART / ADVANCED section lists
-
-## Files in this directory
-
-- **`backend.py`** — Terminal exec backend section
-- **`channels.py`** — Channels section: list / add / edit / delete per-channel accounts
-- **`sections.py`** — Per-section runners: providers / model / tools / agent / skills / ui /
-- **`wizard.py`** — Setup wizard orchestrator: intro / mode select / linear walk / summary
-
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+"""

@@ -132,7 +132,7 @@ BOUNDARY_MANIFEST = (
         ),
     ),
     BoundaryExclusion(
-        path="_cli_cmds/mcp.py",
+        path="cli/commands/mcp.py",
         boundary_owner="owner-control-plane",
         reason="owner CLI calls the authenticated OpenProgram backend",
         kinds=frozenset({"urllib.request.build_opener"}),
@@ -144,19 +144,19 @@ BOUNDARY_MANIFEST = (
         kinds=frozenset({"urllib.request.build_opener"}),
     ),
     BoundaryExclusion(
-        path="cli_ink.py",
+        path="cli/ink.py",
         boundary_owner="owner-control-plane",
         reason="loopback worker liveness probe does not fetch a URL",
         kinds=frozenset({"socket.connect"}),
     ),
     BoundaryExclusion(
-        path="_cli_cmds/doctor.py",
+        path="cli/commands/doctor.py",
         boundary_owner="owner-control-plane",
         reason="loopback worker liveness probe does not fetch a URL",
         kinds=frozenset({"socket.connect"}),
     ),
     BoundaryExclusion(
-        path="_cli_cmds/rescue.py",
+        path="cli/commands/rescue.py",
         boundary_owner="owner-control-plane",
         reason="loopback worker liveness probe does not fetch a URL",
         kinds=frozenset({"socket.connect"}),

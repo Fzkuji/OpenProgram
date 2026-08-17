@@ -635,7 +635,7 @@ console.log(JSON.stringify(out));
 
 @requires_node
 def test_real_node_client_is_accepted_with_the_launcher_origin(live):
-    """The exact shape cli_ink.py hands the TUI must authenticate.
+    """The exact shape cli/ink.py hands the TUI must authenticate.
 
     ``BackendEndpoint`` dials the loopback IP but carries the canonical
     ``http://localhost:PORT`` Origin, so Host and Origin are two spellings

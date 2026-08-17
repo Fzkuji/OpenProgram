@@ -163,7 +163,7 @@ def _apply_mcp_gate(tool_list):
 
 目前尚无针对 `gating.py` 的专门单元测试 —— `match_any` 是 `fnmatch.fnmatchcase` + 迭代，逻辑简单到只有一行。集成测试通过以下方式进行：
 
-- `openprogram/_cli_cmds/doctor.py` —— 健康检查会枚举已安装的 skills/tools/MCP，并在启动时暴露门控错误。
+- `openprogram/cli/commands/doctor.py` —— 健康检查会枚举已安装的 skills/tools/MCP，并在启动时暴露门控错误。
 - WS 冒烟测试 —— 在带有 disabled 模式的配置下运行 `/skill X`，会在聊天记录中返回拒绝消息。
 
 若 `match_any` 的语义某天偏离 `fnmatch.fnmatchcase`（例如加入 `**` 递归 glob 支持），再补充正式的单元测试。

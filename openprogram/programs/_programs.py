@@ -207,7 +207,7 @@ class Program:
             Just a handle — it does NOT map to an ``openprogram[...]``
             extra anymore; a harness's runtime deps live in the harness's
             own pyproject and are installed from the clone (see
-            ``_cli_cmds/programs.py``).
+            ``cli/commands/programs.py``).
         repo: HTTPS repo URL (also the ``git clone`` source).
         summary: One-line description for menus / install prompts.
         heavy: True when the program pulls large / native deps (the GUI

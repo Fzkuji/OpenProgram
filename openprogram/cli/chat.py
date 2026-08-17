@@ -6,9 +6,9 @@ locally; non-slash input goes through the same chat runtime the Web UI
 uses, so behaviour stays aligned.
 
 The bulk of this module's logic — banner inventory, slash-command
-handlers, per-turn exec — lives in ``openprogram/_cli_chat/`` and is
+handlers, per-turn exec — lives in ``openprogram/cli/repl/`` and is
 re-exported here so existing call sites (``scripts/profile_startup.py``,
-``openprogram.setup``, ``openprogram._cli_cmds.chat``, tests) keep
+``openprogram.setup``, ``openprogram.cli.commands.chat``, tests) keep
 working unchanged.
 """
 from __future__ import annotations
@@ -17,13 +17,13 @@ import os
 import sys
 
 
-# Re-exports — every external caller imports through ``openprogram.cli_chat``.
-from openprogram._cli_chat.setup import (  # noqa: E402,F401
+# Re-exports — every external caller imports through ``openprogram.cli.chat``.
+from openprogram.cli.repl.setup import (  # noqa: E402,F401
     _get_chat_runtime,
     _reset_provider_cache,
     _prompt_first_run_setup,
 )
-from openprogram._cli_chat.banner import (  # noqa: E402,F401
+from openprogram.cli.repl.banner import (  # noqa: E402,F401
     _tool_inventory,
     _skill_inventory,
     _function_inventory,
@@ -31,7 +31,7 @@ from openprogram._cli_chat.banner import (  # noqa: E402,F401
     _section_text,
     _print_banner,
 )
-from openprogram._cli_chat.handlers import (  # noqa: E402,F401
+from openprogram.cli.repl.handlers import (  # noqa: E402,F401
     register_repl_builtins,
     _parse_kv_args,
     _handle_slash,
@@ -44,7 +44,7 @@ from openprogram._cli_chat.handlers import (  # noqa: E402,F401
     _handle_detach,
     _handle_connections,
 )
-from openprogram._cli_chat.turn import _run_turn_with_history  # noqa: E402,F401
+from openprogram.cli.repl.turn import _run_turn_with_history  # noqa: E402,F401
 
 
 def run_cli_chat(oneshot: str | None = None,
@@ -99,7 +99,7 @@ def run_cli_chat(oneshot: str | None = None,
     # because rendering a scroll buffer for a single turn is overkill.
     if tui and not oneshot:
         try:
-            from openprogram.cli_ink import run_ink_tui
+            from openprogram.cli.ink import run_ink_tui
             run_ink_tui(agent=agent, session_id=session_id, rt=rt)
             return
         except Exception as e:  # noqa: BLE001

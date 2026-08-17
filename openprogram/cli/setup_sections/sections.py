@@ -171,7 +171,7 @@ def run_programs_section() -> int:
         print("Cancelled.")
         return 1
 
-    from openprogram._cli_cmds.programs import _cmd_install, _cmd_uninstall
+    from openprogram.cli.commands.programs import _cmd_install, _cmd_uninstall
     picked_set = set(picked)
     rc = 0
     for label, prog in by_label.items():

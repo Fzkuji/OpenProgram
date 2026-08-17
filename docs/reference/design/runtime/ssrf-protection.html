@@ -184,8 +184,8 @@ target before proxy use, constrains the proxy peer separately, reports delegatio
 <tr><th>Inventory exclusion</th><th>Owner and narrow reason</th></tr>
 <tr><td><code>security/safe_http.py</code></td><td>Runtime managed transport; the only allowed direct <code>httpcore</code> pool/proxy construction</td></tr>
 <tr><td><code>programs/functions/vanilla/browser/_chrome_bootstrap.py</code></td><td>Browser control; exact browser opener construction and loopback CDP liveness dial</td></tr>
-<tr><td><code>_cli_cmds/mcp.py</code></td><td>Owner control plane; authenticated backend opener only</td></tr>
-<tr><td><code>cli_ink.py</code>, <code>_cli_cmds/doctor.py</code>, <code>_cli_cmds/rescue.py</code></td><td>Owner control plane; exact loopback worker liveness socket only</td></tr>
+<tr><td><code>cli/commands/mcp.py</code></td><td>Owner control plane; authenticated backend opener only</td></tr>
+<tr><td><code>cli/ink.py</code>, <code>cli/commands/doctor.py</code>, <code>cli/commands/rescue.py</code></td><td>Owner control plane; exact loopback worker liveness socket only</td></tr>
 </table></div>
 <p>The checker fails for an unregistered raw call, active unmanaged SDK transport, registry entry without a classified consumer,
 or stale exclusion. Doctor exposes stable <code>runtime-http-registry</code>, <code>runtime-http-owner-exceptions</code>,

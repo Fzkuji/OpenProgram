@@ -193,7 +193,7 @@ describe('against the real backend listener', () => {
   const maybe = python ? it : it.skip;
 
   maybe('accepts the launcher header set over HTTP and WebSocket', async () => {
-    // Exactly what cli_ink.py exports: base on the IP, Origin on localhost.
+    // Exactly what cli/ink.py exports: base on the IP, Origin on localhost.
     process.env.OPENPROGRAM_BACKEND_URL = `http://127.0.0.1:${port}`;
     process.env.OPENPROGRAM_BACKEND_ORIGIN = `http://localhost:${port}`;
     process.env.OPENPROGRAM_BACKEND_TOKEN = token;

@@ -11,7 +11,7 @@ def _record_one_deletion(tmp_path, monkeypatch):
 
 
 def test_trash_list_reports_records_and_capture_limit(tmp_path, monkeypatch, capsys):
-    from openprogram._cli_cmds.trash import _cmd_trash_list
+    from openprogram.cli.commands.trash import _cmd_trash_list
 
     source, entry = _record_one_deletion(tmp_path, monkeypatch)
 
@@ -25,7 +25,7 @@ def test_trash_list_reports_records_and_capture_limit(tmp_path, monkeypatch, cap
 
 
 def test_trash_restore_finds_record_without_overwriting(tmp_path, monkeypatch, capsys):
-    from openprogram._cli_cmds.trash import _cmd_trash_restore
+    from openprogram.cli.commands.trash import _cmd_trash_restore
 
     source, entry = _record_one_deletion(tmp_path, monkeypatch)
 

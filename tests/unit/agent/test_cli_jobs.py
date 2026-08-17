@@ -30,7 +30,7 @@ def test_jobs_parser_has_list_and_get_routes() -> None:
 
 
 def test_jobs_commands_print_canonical_resource_dto(monkeypatch, capsys) -> None:
-    from openprogram._cli_cmds import jobs
+    from openprogram.cli.commands import jobs
 
     monkeypatch.setattr("openprogram.agent.job.get_runner", _runner)
     assert jobs._cmd_jobs_list("s1", as_json=True) == 0

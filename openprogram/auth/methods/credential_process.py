@@ -246,7 +246,7 @@ def _redacted_stderr(stderr: bytes) -> str:
     Redaction runs before truncation: cutting first could leave a secret's
     prefix behind with nothing left for a pattern to match.
     """
-    from openprogram._cli_cmds.diagnostics import redact_text
+    from openprogram.cli.commands.diagnostics import redact_text
 
     return redact_text(stderr.decode("utf-8", errors="replace"))[:200]
 

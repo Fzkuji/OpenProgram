@@ -135,7 +135,7 @@ def test_cli_maps_typed_errors_without_candidate_text(
 
 
 def test_one_shot_structured_result_is_json_only(monkeypatch, capsys):
-    from openprogram import cli_chat
+    from openprogram.cli import chat as cli_chat
 
     class Agent:
         id = "main"
@@ -156,7 +156,7 @@ def _run_one_shot_in_pty(*, response_format, reply):
         f"""
         import time
 
-        from openprogram import cli_chat
+        from openprogram.cli import chat as cli_chat
         from openprogram.agent.management import manager
 
         class Agent:

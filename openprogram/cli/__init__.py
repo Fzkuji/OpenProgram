@@ -50,8 +50,9 @@ so it's removed entirely.
 import os
 import sys
 import json
+from pathlib import Path
 
-from openprogram._cli_parser import build_parser
+from openprogram.cli.parser import build_parser
 
 
 # --- Pre-import TTY redirect ------------------------------------------------
@@ -134,7 +135,19 @@ def _maybe_redirect_for_tui() -> None:
         _TUI_TTY_ERR = None
 
 
-_maybe_redirect_for_tui()
+def _is_cli_process() -> bool:
+    """Return whether this package was imported by an OpenProgram entry point."""
+    executable = Path(sys.argv[0]).name.lower()
+    if executable in {"openprogram", "openprogram.exe", "openprogram-script.py"}:
+        return True
+    if executable != "__main__.py":
+        return False
+    parent = Path(sys.argv[0]).parent.name
+    return parent in {"openprogram", "cli"}
+
+
+if _is_cli_process():
+    _maybe_redirect_for_tui()
 
 
 def _ensure_utf8_stdio() -> None:
@@ -348,11 +361,11 @@ def main():
     tui_enabled = sys.platform != "win32"
 
     if args.command == "rescue":
-        from openprogram._cli_cmds.rescue import _cmd_rescue
+        from openprogram.cli.commands.rescue import _cmd_rescue
         sys.exit(_cmd_rescue())
 
     if args.command == "logs":
-        from openprogram._cli_cmds.logs import (
+        from openprogram.cli.commands.logs import (
             _cmd_logs_list, _cmd_logs_path, _cmd_logs_tail,
         )
         verb = getattr(args, "logs_verb", None)
@@ -365,7 +378,7 @@ def main():
         _need_subcommand(args._cmd_parser)
 
     if args.command == "completion":
-        from openprogram._cli_cmds.completion import _cmd_completion
+        from openprogram.cli.commands.completion import _cmd_completion
         sys.exit(_cmd_completion(args.shell))
 
     if args.command in (None, "tui", "chat"):
@@ -505,24 +518,24 @@ def main():
     if args.command == "doctor":
         as_json = getattr(args, "json", False)
         if getattr(args, "topic", None) == "credentials":
-            from openprogram._cli_cmds.doctor import _cmd_doctor_credentials
+            from openprogram.cli.commands.doctor import _cmd_doctor_credentials
             sys.exit(_cmd_doctor_credentials(
                 repair=getattr(args, "repair", False), as_json=as_json
             ))
-        from openprogram._cli_cmds.doctor import _cmd_doctor
+        from openprogram.cli.commands.doctor import _cmd_doctor
         sys.exit(_cmd_doctor(as_json))
 
     if args.command == "diagnostics":
-        from openprogram._cli_cmds.diagnostics import _cmd_diagnostics
+        from openprogram.cli.commands.diagnostics import _cmd_diagnostics
         sys.exit(_cmd_diagnostics(getattr(args, "output", None)))
 
     if args.command == "acp":
-        from openprogram._cli_cmds.acp import _cmd_acp
+        from openprogram.cli.commands.acp import _cmd_acp
         sys.exit(_cmd_acp(getattr(args, "agent", "main"),
                           getattr(args, "permission", "ask")))
 
     if args.command == "trash":
-        from openprogram._cli_cmds.trash import _cmd_trash_list, _cmd_trash_restore
+        from openprogram.cli.commands.trash import _cmd_trash_list, _cmd_trash_restore
 
         verb = getattr(args, "trash_verb", None)
         if verb == "list":
@@ -532,7 +545,7 @@ def main():
         _need_subcommand(args._cmd_parser)
 
     if args.command == "backup":
-        from openprogram._cli_cmds.backup import (
+        from openprogram.cli.commands.backup import (
             _cmd_backup_create, _cmd_backup_list, _cmd_backup_prune,
             _cmd_backup_restore,
         )
@@ -554,7 +567,7 @@ def main():
         _need_subcommand(args._cmd_parser)
 
     if args.command == "plugins":
-        from openprogram._cli_cmds.plugins import (
+        from openprogram.cli.commands.plugins import (
             _cmd_plugins_list, _cmd_plugins_search, _cmd_plugins_install,
             _cmd_plugins_uninstall, _cmd_plugins_update,
             _cmd_plugins_enable, _cmd_plugins_disable,
@@ -653,7 +666,7 @@ def main():
         return
 
     if args.command == "jobs":
-        from openprogram._cli_cmds.jobs import _cmd_jobs_get, _cmd_jobs_list
+        from openprogram.cli.commands.jobs import _cmd_jobs_get, _cmd_jobs_list
 
         verb = getattr(args, "jobs_verb", None)
         if verb == "list":
@@ -664,7 +677,7 @@ def main():
 
     if args.command == "web":
         if getattr(args, "web_verb", None) == "auth-url":
-            from openprogram._cli_cmds.web import _cmd_web_auth_url
+            from openprogram.cli.commands.web import _cmd_web_auth_url
 
             sys.exit(_cmd_web_auth_url(args.base_url))
         _cmd_web(getattr(args, "web_port", None),
@@ -844,7 +857,7 @@ def main():
         from openprogram import worker as _worker
         sys.exit(_worker.restart_worker())
     if args.command == "upgrade":
-        from openprogram._cli_cmds.upgrade import _cmd_upgrade
+        from openprogram.cli.commands.upgrade import _cmd_upgrade
         sys.exit(_cmd_upgrade(args))
     if args.command == "status":
         from openprogram import worker as _worker
@@ -1048,12 +1061,12 @@ def main():
 
 
 # ---------------------------------------------------------------------------
-# Subcommand handlers — bodies live in openprogram/_cli_cmds/*.py. They are
-# re-exported here under the names tests / openprogram.cli_chat /
-# openprogram.cli_ink import directly off ``openprogram.cli``.
+# Subcommand handlers — bodies live in openprogram/cli/commands/*.py. They are
+# re-exported here under the names tests / openprogram.cli.chat /
+# openprogram.cli.ink import directly off ``openprogram.cli``.
 # ---------------------------------------------------------------------------
 
-from openprogram._cli_cmds.programs import (  # noqa: E402,F401
+from openprogram.cli.commands.programs import (  # noqa: E402,F401
     _get_runtime,
     _cmd_configure,
     _cmd_list,
@@ -1062,7 +1075,7 @@ from openprogram._cli_cmds.programs import (  # noqa: E402,F401
     _cmd_uninstall,
     _cmd_programs_available,
 )
-from openprogram._cli_cmds.skills import (  # noqa: E402,F401
+from openprogram.cli.commands.skills import (  # noqa: E402,F401
     _cmd_skills_list,
     _cmd_skills_doctor,
     _cmd_install_skills,
@@ -1071,7 +1084,7 @@ from openprogram._cli_cmds.skills import (  # noqa: E402,F401
     _cmd_skills_update,
     _cmd_skills_remove,
 )
-from openprogram._cli_cmds.browser import (  # noqa: E402,F401
+from openprogram.cli.commands.browser import (  # noqa: E402,F401
     _python_pkg_present,
     _cmd_browser_install,
     _cmd_browser_status,
@@ -1080,7 +1093,7 @@ from openprogram._cli_cmds.browser import (  # noqa: E402,F401
     _cmd_browser_list,
     _cmd_browser_rm,
 )
-from openprogram._cli_cmds.subagent import (  # noqa: E402,F401
+from openprogram.cli.commands.subagent import (  # noqa: E402,F401
     _cmd_subagent_cancel,
     _cmd_subagent_list,
     _cmd_subagent_spawn,
@@ -1088,28 +1101,28 @@ from openprogram._cli_cmds.subagent import (  # noqa: E402,F401
     _cmd_subagent_merge,
 )
 
-from openprogram._cli_cmds.sessions import (  # noqa: E402,F401
+from openprogram.cli.commands.sessions import (  # noqa: E402,F401
     _cmd_chat_sessions,
     _cmd_resume,
     _cmd_session_archive,
     _cmd_sessions,
     _cmd_sessions_export,
 )
-from openprogram._cli_cmds.agents import (  # noqa: E402,F401
+from openprogram.cli.commands.agents import (  # noqa: E402,F401
     _dispatch_agents_verb,
 )
-from openprogram._cli_cmds.channels import (  # noqa: E402,F401
+from openprogram.cli.commands.channels import (  # noqa: E402,F401
     _dispatch_access_verb,
     _dispatch_accounts_verb,
     _dispatch_bindings_verb,
     _login_account,
 )
-from openprogram._cli_cmds.web import _cmd_web  # noqa: E402,F401
-from openprogram._cli_cmds.chat import (  # noqa: E402,F401
+from openprogram.cli.commands.web import _cmd_web  # noqa: E402,F401
+from openprogram.cli.commands.chat import (  # noqa: E402,F401
     _cmd_cli_chat,
 )
-from openprogram._cli_cmds.cron import _cmd_cron_worker  # noqa: E402,F401
-from openprogram._cli_cmds.mcp import (  # noqa: E402,F401
+from openprogram.cli.commands.cron import _cmd_cron_worker  # noqa: E402,F401
+from openprogram.cli.commands.mcp import (  # noqa: E402,F401
     _cmd_mcp_serve,
     _cmd_mcp_token_create,
     _cmd_mcp_list,

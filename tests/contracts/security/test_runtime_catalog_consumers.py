@@ -697,7 +697,7 @@ def _render_exception(error: BaseException) -> str:
 
 
 def test_skills_cli_status_error_hides_signed_source_url(server):
-    from openprogram._cli_cmds.skills import _cmd_skills_search
+    from openprogram.cli.commands.skills import _cmd_skills_search
 
     url = f"http://127.0.0.1:{server.port}/echo-error/TOKEN-PATH?sig=QUERY-SECRET"
 
@@ -807,7 +807,7 @@ def test_skills_invalid_index_hides_peer_values_from_web_routes(
 
 
 def test_skills_invalid_index_hides_peer_values_from_cli(server):
-    from openprogram._cli_cmds.skills import _cmd_skills_install, _cmd_skills_search
+    from openprogram.cli.commands.skills import _cmd_skills_install, _cmd_skills_search
 
     server.mode = "index_invalid"
     url = f"http://127.0.0.1:{server.port}/catalog.json?sig=QUERY-SECRET"
@@ -830,7 +830,7 @@ def test_marketplace_cli_and_web_status_errors_hide_signed_source_url(
 ):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram._cli_cmds.plugins import _cmd_plugins_search
+    from openprogram.cli.commands.plugins import _cmd_plugins_search
     from openprogram.plugins import marketplace
     from openprogram.webui.routes import plugins
 

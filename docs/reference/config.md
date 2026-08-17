@@ -47,7 +47,7 @@ The top-level keys actually written to `~/.openprogram/config.json` (do not edit
 | `default_model` | Default model (written by the setup wizard) | `openprogram/setup.py` |
 | `default_workdir` | Default working directory for agents | `openprogram/paths.py` |
 | `providers` | Per-provider settings subtree (enabled models, custom models, etc.), managed by the Web UI model listing | `openprogram/providers/_config_read.py`, `openprogram/providers/storage.py` |
-| `api_keys` | Environment variable name → API key mapping, written by the setup wizard and exported into the environment at worker startup. Used for web-search / TTS keys; LLM provider keys live in the credential store (`openprogram providers login`), not here | `openprogram/_setup_sections/sections.py`, `openprogram/webui/server.py` |
+| `api_keys` | Environment variable name → API key mapping, written by the setup wizard and exported into the environment at worker startup. Used for web-search / TTS keys; LLM provider keys live in the credential store (`openprogram providers login`), not here | `openprogram/cli/setup_sections/sections.py`, `openprogram/webui/server.py` |
 | `spec_migration_version` | One-time marker for the model-spec migration; see the code for its meaning | `openprogram/providers/storage.py` |
 
 ## Environment variables
@@ -66,16 +66,16 @@ Set these in the shell that launches `openprogram` (or the worker). Every one ha
 
 | Variable | Purpose | Code |
 |------|------|------|
-| `OPENPROGRAM_WEB_PORT` | the single worker port (default 18100); below explicit flags, above the persisted preference | `openprogram/worker/lifecycle.py`, `openprogram/_cli_cmds/web.py` |
+| `OPENPROGRAM_WEB_PORT` | the single worker port (default 18100); below explicit flags, above the persisted preference | `openprogram/worker/lifecycle.py`, `openprogram/cli/commands/web.py` |
 | `OPENPROGRAM_NO_WEB` | `1` = the worker skips the frontend build gate and does not serve the web UI | `openprogram/worker/runner.py` |
-| `OPENPROGRAM_WEB_NO_FRONTEND` | `1` = `openprogram web` skips the frontend and starts only the backend | `openprogram/_cli_cmds/web.py` |
+| `OPENPROGRAM_WEB_NO_FRONTEND` | `1` = `openprogram web` skips the frontend and starts only the backend | `openprogram/cli/commands/web.py` |
 | `OPENPROGRAM_DOCS_BASE` | Mount path of the docs site (default `/docs/`; must start and end with `/`) | `tools/docs_site/build.py` |
 
 ### Behavior switches
 
 | Variable | Purpose | Code |
 |------|------|------|
-| `OPENPROGRAM_NO_AUTO_WORKER` | `1` = the TUI does not auto-launch a worker; connects only to an existing one | `openprogram/cli_ink.py` |
+| `OPENPROGRAM_NO_AUTO_WORKER` | `1` = the TUI does not auto-launch a worker; connects only to an existing one | `openprogram/cli/ink.py` |
 | `OPENPROGRAM_NO_SLEEP` | `1` = disable the memory sleep-consolidation scheduler | `openprogram/memory/scheduler.py` |
 | `OPENPROGRAM_NO_PROGRAMS_WATCH` | `1` = disable the file watcher on the programs directory | `openprogram/programs/watcher.py` |
 | `OPENPROGRAM_PROJECT_AUTOCOMMIT` | `0` = turn off project auto-commit | `openprogram/store/project/project_commit.py` |

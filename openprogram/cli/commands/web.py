@@ -327,7 +327,7 @@ def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
 
     # Start the worker as a DETACHED background service, then free the
     # terminal — same machinery the TUI path already uses
-    # (cli_ink.py:_resolve_worker_port → spawn_detached). ``worker run``
+    # (cli/ink.py:_resolve_worker_port → spawn_detached). ``worker run``
     # serves API + /ws + the frontend export on the single port
     # (runner.py start_web + webui/frontend.py), so we don't boot it
     # in-process here. This is why closing the terminal doesn't kill the
@@ -349,7 +349,7 @@ def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
     # Wait briefly for the frontend to bind before opening the browser, so
     # the user doesn't land on a connection-refused page.
     try:
-        from openprogram.cli_ink import _wait_until_listening
+        from openprogram.cli.ink import _wait_until_listening
         _wait_until_listening(web_port, timeout=10.0)
     except Exception:
         pass

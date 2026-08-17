@@ -157,7 +157,7 @@ save_default_model('openai', 'gpt-4.1')
 def test_interactive_section_does_not_enforce_revision_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram._setup_sections import sections
+    from openprogram.cli.setup_sections import sections
     path = tmp_path / "config.json"
     monkeypatch.setattr(setup, "get_config_path", lambda: path)
     setup._write_config({"memory": {"backend": "local"}})

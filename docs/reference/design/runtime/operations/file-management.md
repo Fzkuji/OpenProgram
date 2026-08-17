@@ -358,7 +358,7 @@ Uses OS kernel mechanisms to restrict what the bash process can do:
 - **Network**: disabled by default
 - **Implementation**: Seatbelt (sandbox-exec) on macOS, bubblewrap on Linux
 - **Code**: `openprogram/sandbox/__init__.py` (`resolve_policy` + `wrap_command`), `backend/local.py` (`_invocation` integration)
-- **Command**: `/sandbox` toggle (CLI `_cli_chat/handlers.py` + webui `ws_actions/chat.py`)
+- **Command**: `/sandbox` toggle (CLI `cli/repl/handlers.py` + webui `ws_actions/chat.py`)
 
 This is the selected OpenProgram runtime boundary because commands use the host's actual Git, Python, Conda, npm, and compiler installations. It is implemented separately for macOS and Linux. Unsupported platforms refuse sandboxed execution by default; Docker is not an automatic fallback.
 

@@ -62,7 +62,7 @@ persisting.
 
 | Entry point | Port |
 |-------------|------|
-| `openprogram web` (`_cli_cmds/web.py:_cmd_web`) | `--web-port` → `resolve_worker_port()` |
+| `openprogram web` (`cli/commands/web.py:_cmd_web`) | `--web-port` → `resolve_worker_port()` |
 | `openprogram worker` (`worker/runner.py`) | `resolve_worker_port()` |
 
 `resolve_worker_port()` in `openprogram/worker/lifecycle.py` is the one

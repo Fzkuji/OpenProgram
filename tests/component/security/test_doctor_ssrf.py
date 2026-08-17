@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from openprogram._cli_cmds import doctor
+from openprogram.cli.commands import doctor
 from openprogram.security import runtime_http_audit
 
 

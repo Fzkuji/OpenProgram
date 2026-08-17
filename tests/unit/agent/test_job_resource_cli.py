@@ -110,7 +110,7 @@ def test_subagent_list_json_is_a_list_of_canonical_views(
 ) -> None:
     runner = _Runner(_view())
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
-    from openprogram._cli_cmds.subagent import _cmd_subagent_list
+    from openprogram.cli.commands.subagent import _cmd_subagent_list
 
     assert _cmd_subagent_list("session-1", as_json=True) == 0
     assert json.loads(capsys.readouterr().out) == [_view()]
@@ -121,7 +121,7 @@ def test_subagent_show_json_is_the_canonical_view(
 ) -> None:
     runner = _Runner(_view())
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
-    from openprogram._cli_cmds.subagent import _cmd_subagent_show
+    from openprogram.cli.commands.subagent import _cmd_subagent_show
 
     assert _cmd_subagent_show("job-1", as_json=True) == 0
     assert json.loads(capsys.readouterr().out) == _view()
@@ -133,7 +133,7 @@ def test_subagent_cancel_returns_the_post_cancel_canonical_view(
     cancelled = _view(status="cancelled", reason_code="cancel.user")
     runner = _Runner(_view(), cancelled)
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
-    from openprogram._cli_cmds.subagent import _cmd_subagent_cancel
+    from openprogram.cli.commands.subagent import _cmd_subagent_cancel
 
     assert _cmd_subagent_cancel("job-1", as_json=True) == 0
     assert json.loads(capsys.readouterr().out) == cancelled
@@ -145,7 +145,7 @@ def test_subagent_human_view_shows_capacity_unknown_cost_and_reason(
 ) -> None:
     runner = _Runner(_view())
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
-    from openprogram._cli_cmds.subagent import _cmd_subagent_show
+    from openprogram.cli.commands.subagent import _cmd_subagent_show
 
     assert _cmd_subagent_show("job-1", as_json=False) == 0
     output = capsys.readouterr().out
@@ -168,7 +168,7 @@ def test_subagent_human_view_treats_missing_resource_as_unmetered(
 
     runner = LegacyRunner(_view())
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
-    from openprogram._cli_cmds.subagent import _cmd_subagent_show
+    from openprogram.cli.commands.subagent import _cmd_subagent_show
 
     assert _cmd_subagent_show("job-1", as_json=False) == 0
     assert "Unmetered" in capsys.readouterr().out

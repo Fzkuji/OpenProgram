@@ -37,7 +37,7 @@ def register(app):
     async def doctor_api():
         """Run the same checks as ``openprogram doctor`` and return the
         results as JSON for the web UI / slash command."""
-        from openprogram._cli_cmds.doctor import run_checks
+        from openprogram.cli.commands.doctor import run_checks
         results = run_checks()
         return JSONResponse(content={
             "results": results,

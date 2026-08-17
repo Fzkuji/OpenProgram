@@ -44,6 +44,26 @@ WORKSPACE_READMES = (
     "cli/README.md",
 )
 
+PYTHON_CLI_PATHS = (
+    "openprogram/cli/__init__.py",
+    "openprogram/cli/parser.py",
+    "openprogram/cli/chat.py",
+    "openprogram/cli/ink.py",
+    "openprogram/cli/commands/__init__.py",
+    "openprogram/cli/repl/__init__.py",
+    "openprogram/cli/setup_sections/__init__.py",
+)
+
+REMOVED_PYTHON_CLI_PATHS = (
+    "openprogram/cli.py",
+    "openprogram/_cli_parser.py",
+    "openprogram/cli_chat.py",
+    "openprogram/cli_ink.py",
+    "openprogram/_cli_chat",
+    "openprogram/_cli_cmds",
+    "openprogram/_setup_sections",
+)
+
 
 def _tracked_paths() -> tuple[str, ...]:
     result = subprocess.run(
@@ -107,6 +127,23 @@ def test_workspace_entry_readmes_describe_current_ownership() -> None:
     assert "create-next-app" not in web_readme
     assert "Ink" in cli_readme
     assert "dist/index.js" in cli_readme
+
+
+def test_python_cli_implementation_has_one_package_root() -> None:
+    tracked = set(_tracked_paths())
+    first_level_packages = {
+        path.split("/", 2)[1]
+        for path in tracked
+        if path.startswith("openprogram/") and path.count("/") >= 2
+    }
+
+    assert len(first_level_packages) == 31
+    assert all(relative in tracked for relative in PYTHON_CLI_PATHS)
+    assert all(
+        relative not in tracked
+        and not any(path.startswith(f"{relative}/") for path in tracked)
+        for relative in REMOVED_PYTHON_CLI_PATHS
+    )
 
 
 def test_programs_route_has_no_reexport_only_component_directory() -> None:

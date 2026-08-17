@@ -217,7 +217,7 @@ def resolve_model(profile: dict, override: Optional[str] = None):
     requested = override or profile.get("model")
     # agent.json stores ``model`` either as the legacy "<provider>/<id>"
     # string or as the newer {"provider": ..., "id": ...} dict
-    # (cli_chat.py and setup.py both write the dict form). Normalize
+    # (cli/chat.py and setup.py both write the dict form). Normalize
     # to a single string shape here.
     provider_hint: Optional[str] = None
     if isinstance(requested, dict):

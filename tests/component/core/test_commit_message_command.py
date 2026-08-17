@@ -5,7 +5,7 @@ import subprocess
 import pytest
 from rich.console import Console
 
-from openprogram._cli_chat import handlers
+from openprogram.cli.repl import handlers
 from openprogram.commands import registry
 from openprogram.commands.dispatch import invoke
 

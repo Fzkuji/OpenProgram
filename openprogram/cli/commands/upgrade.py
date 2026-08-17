@@ -457,7 +457,7 @@ def _cold_start_probe(root: Path, target_sha: str) -> str:
 
     doctor = subprocess.run(
         [sys.executable, "-c",
-         "import json;from openprogram._cli_cmds.doctor import run_checks;"
+         "import json;from openprogram.cli.commands.doctor import run_checks;"
          "print(json.dumps(run_checks()))"],
         cwd=str(root), env=env, capture_output=True, text=True, timeout=120,
     )

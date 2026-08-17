@@ -25,7 +25,7 @@ def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionStore:
 
 
 def test_cli_archive_then_unarchive_round_trips(store, capsys) -> None:
-    from openprogram._cli_cmds.sessions import _cmd_session_archive
+    from openprogram.cli.commands.sessions import _cmd_session_archive
 
     _cmd_session_archive("beta", True)
     assert "Archived session beta" in capsys.readouterr().out
@@ -37,7 +37,7 @@ def test_cli_archive_then_unarchive_round_trips(store, capsys) -> None:
 
 
 def test_cli_archive_of_an_unknown_session_exits_nonzero(store, capsys) -> None:
-    from openprogram._cli_cmds.sessions import _cmd_session_archive
+    from openprogram.cli.commands.sessions import _cmd_session_archive
 
     with pytest.raises(SystemExit) as exc:
         _cmd_session_archive("nope", True)
@@ -51,7 +51,7 @@ def test_cli_archive_of_an_unknown_session_exits_nonzero(store, capsys) -> None:
     [("active", ["alpha"]), ("archived", ["beta"]), ("all", ["beta", "alpha"])],
 )
 def test_cli_list_scopes(store, capsys, scope, expected) -> None:
-    from openprogram._cli_cmds.sessions import _cmd_chat_sessions
+    from openprogram.cli.commands.sessions import _cmd_chat_sessions
 
     store.set_archived("beta", True)
     _cmd_chat_sessions(scope)

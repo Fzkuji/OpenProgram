@@ -11,7 +11,7 @@ t2 = time.time()
 rm._init_providers()
 print(f'+{time.time()-t2:.2f}s _init_providers (cold)')
 t3 = time.time()
-from openprogram.cli_chat import _get_chat_runtime
+from openprogram.cli.chat import _get_chat_runtime
 provider, rt = _get_chat_runtime()
 print(f'+{time.time()-t3:.2f}s _get_chat_runtime')
 print(f'TOTAL {time.time()-t0:.2f}s; provider={provider}, model={getattr(rt,"model",None)}')

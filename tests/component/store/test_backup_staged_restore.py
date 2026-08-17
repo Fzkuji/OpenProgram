@@ -31,7 +31,7 @@ def _wait_for_path(path: Path) -> None:
 
 
 def _archive(tmp_path: Path, members: dict[str, bytes], *, manifest: bytes | None = None) -> Path:
-    from openprogram._cli_cmds.backup import _MANIFEST_NAME
+    from openprogram.cli.commands.backup import _MANIFEST_NAME
 
     tmp_path.mkdir(parents=True, exist_ok=True)
     path = tmp_path / "archive.tar.gz"
@@ -55,7 +55,7 @@ def _archive(tmp_path: Path, members: dict[str, bytes], *, manifest: bytes | Non
 
 
 def test_restore_rejects_traversal_member_without_publishing(tmp_path: Path) -> None:
-    from openprogram._cli_cmds.backup import restore_archive
+    from openprogram.cli.commands.backup import restore_archive
 
     state = _state(tmp_path)
     (state / "config.json").write_text('{"keep": true}')
@@ -69,7 +69,7 @@ def test_restore_rejects_traversal_member_without_publishing(tmp_path: Path) -> 
 
 
 def test_restore_rejects_symlink_member(tmp_path: Path) -> None:
-    from openprogram._cli_cmds.backup import _MANIFEST_NAME, restore_archive
+    from openprogram.cli.commands.backup import _MANIFEST_NAME, restore_archive
 
     state = _state(tmp_path)
     (state / "config.json").write_text('{"keep": true}')
@@ -92,7 +92,7 @@ def test_restore_rejects_symlink_member(tmp_path: Path) -> None:
 
 
 def test_restore_rejects_hardlink_member(tmp_path: Path) -> None:
-    from openprogram._cli_cmds.backup import _MANIFEST_NAME, restore_archive
+    from openprogram.cli.commands.backup import _MANIFEST_NAME, restore_archive
 
     state = _state(tmp_path)
     archive = tmp_path / "evil.tar.gz"
@@ -115,7 +115,7 @@ def test_restore_rejects_hardlink_member(tmp_path: Path) -> None:
 
 
 def test_restore_rejects_duplicate_member_names(tmp_path: Path) -> None:
-    from openprogram._cli_cmds.backup import _MANIFEST_NAME, restore_archive
+    from openprogram.cli.commands.backup import _MANIFEST_NAME, restore_archive
 
     state = _state(tmp_path)
     archive = tmp_path / "duplicate.tar.gz"
@@ -138,7 +138,7 @@ def test_restore_rejects_duplicate_member_names(tmp_path: Path) -> None:
 
 
 def test_restore_rejects_a_missing_manifest(tmp_path: Path) -> None:
-    from openprogram._cli_cmds.backup import restore_archive
+    from openprogram.cli.commands.backup import restore_archive
 
     state = _state(tmp_path)
     archive = tmp_path / "bare.tar.gz"
@@ -162,7 +162,7 @@ def test_restore_rejects_a_missing_manifest(tmp_path: Path) -> None:
     ],
 )
 def test_restore_rejects_invalid_manifest_schema(tmp_path: Path, manifest) -> None:
-    from openprogram._cli_cmds.backup import restore_archive
+    from openprogram.cli.commands.backup import restore_archive
 
     state = _state(tmp_path)
     archive = _archive(
@@ -178,7 +178,7 @@ def test_restore_rejects_invalid_manifest_schema(tmp_path: Path, manifest) -> No
 def test_restore_rejects_a_registered_secret_member_that_is_not_json(
     tmp_path: Path,
 ) -> None:
-    from openprogram._cli_cmds.backup import restore_archive
+    from openprogram.cli.commands.backup import restore_archive
 
     state = _state(tmp_path)
     (state / "config.json").write_text('{"keep": true}')
@@ -193,7 +193,7 @@ def test_restore_rejects_a_registered_secret_member_that_is_not_json(
 def test_restore_rejects_secret_members_when_manifest_denies_opt_in(
     tmp_path: Path,
 ) -> None:
-    from openprogram._cli_cmds.backup import restore_archive
+    from openprogram.cli.commands.backup import restore_archive
 
     state = _state(tmp_path)
     archive = _archive(
@@ -213,7 +213,7 @@ def test_restore_rejects_secret_members_when_manifest_denies_opt_in(
 def test_restore_rejects_unknown_credential_tree_member_without_publishing(
     tmp_path: Path,
 ) -> None:
-    from openprogram._cli_cmds.backup import restore_archive
+    from openprogram.cli.commands.backup import restore_archive
 
     state = _state(tmp_path)
     (state / "config.json").write_text('{"keep": true}')
@@ -237,7 +237,7 @@ def test_restore_rejects_unknown_credential_tree_member_without_publishing(
 
 
 def test_restored_secret_files_are_published(tmp_path: Path) -> None:
-    from openprogram._cli_cmds.backup import restore_archive
+    from openprogram.cli.commands.backup import restore_archive
 
     state = _state(tmp_path)
     archive = _archive(
@@ -260,7 +260,7 @@ def test_restored_secret_files_are_published(tmp_path: Path) -> None:
 
 
 def test_restore_preserves_local_secrets_for_redacted_fields(tmp_path: Path) -> None:
-    from openprogram._cli_cmds.backup import restore_archive
+    from openprogram.cli.commands.backup import restore_archive
 
     state = _state(tmp_path)
     (state / "config.json").write_text(
@@ -295,7 +295,7 @@ def test_failed_restore_does_not_rollback_a_concurrent_public_writer(
     restore_script = """
 import sys, time
 from pathlib import Path
-from openprogram._cli_cmds import backup
+from openprogram.cli.commands import backup
 archive, state, published, release = map(Path, sys.argv[1:])
 real_publish = backup._publish_restored
 def fail_after_publish(target, payload, *, root):
@@ -355,7 +355,7 @@ _write_config({'generation': 'concurrent'})
 def test_recovery_does_not_rollback_a_concurrent_public_writer(
     tmp_path: Path,
 ) -> None:
-    from openprogram._cli_cmds.backup import restore_journal_path
+    from openprogram.cli.commands.backup import restore_journal_path
 
     home = tmp_path / "home"
     state = home / ".openprogram"
@@ -392,7 +392,7 @@ def test_recovery_does_not_rollback_a_concurrent_public_writer(
     recovery_script = """
 import sys, time
 from pathlib import Path
-from openprogram._cli_cmds import backup
+from openprogram.cli.commands import backup
 state, recovering, release = map(Path, sys.argv[1:])
 real_restore = backup._restore_opened_source
 def paused_restore(*args):
@@ -447,7 +447,7 @@ _write_config({'generation': 'concurrent'})
 
 
 def test_restore_leaves_no_staging_directory_behind(tmp_path: Path) -> None:
-    from openprogram._cli_cmds.backup import restore_archive
+    from openprogram.cli.commands.backup import restore_archive
 
     state = _state(tmp_path)
     archive = _archive(tmp_path, {"config.json": b"{}"})
@@ -460,12 +460,12 @@ def test_restore_leaves_no_staging_directory_behind(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX flock semantics")
 def test_restore_state_lock_reports_busy_across_processes(tmp_path: Path) -> None:
-    from openprogram._cli_cmds.backup import RestoreBusyError, _restore_state_lock
+    from openprogram.cli.commands.backup import RestoreBusyError, _restore_state_lock
 
     state = _state(tmp_path)
     code = (
         "import sys; from pathlib import Path; "
-        "from openprogram._cli_cmds.backup import _restore_state_lock; "
+        "from openprogram.cli.commands.backup import _restore_state_lock; "
         "lock=_restore_state_lock(Path(sys.argv[1])); lock.__enter__(); "
         "print('ready', flush=True); sys.stdin.read(1); lock.__exit__(None,None,None)"
     )
@@ -494,7 +494,7 @@ def test_restore_state_lock_reports_busy_across_processes(tmp_path: Path) -> Non
 def test_killed_restore_recovers_old_state_and_releases_lock(
     tmp_path: Path, pause_count: int
 ) -> None:
-    from openprogram._cli_cmds.backup import (
+    from openprogram.cli.commands.backup import (
         RestoreBusyError,
         _restore_state_lock,
         recover_interrupted_restore,
@@ -511,7 +511,7 @@ def test_killed_restore_recovers_old_state_and_releases_lock(
     marker = tmp_path / "paused"
     code = (
         "import sys,time; from pathlib import Path; "
-        "from openprogram._cli_cmds import backup as b; "
+        "from openprogram.cli.commands import backup as b; "
         "state,archive,marker,n=Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),int(sys.argv[4]); "
         "real=b._publish_restored; count=[0]; "
         "exec(\"def publish(target,payload,*,root):\\n count[0]+=1\\n real(target,payload,root=root)\\n if count[0]==n:\\n  marker.write_text('paused')\\n  while True: time.sleep(1)\"); "
@@ -551,7 +551,7 @@ def test_killed_restore_recovers_old_state_and_releases_lock(
 def test_killed_successful_restore_at_finish_boundary_keeps_new_state(
     tmp_path: Path, finish_phase: str
 ) -> None:
-    from openprogram._cli_cmds.backup import (
+    from openprogram.cli.commands.backup import (
         RestoreBusyError,
         _restore_state_lock,
         recover_interrupted_restore,
@@ -569,7 +569,7 @@ def test_killed_successful_restore_at_finish_boundary_keeps_new_state(
     marker = tmp_path / "paused"
     code = (
         "import sys,time; from pathlib import Path; "
-        "from openprogram._cli_cmds import backup as b; "
+        "from openprogram.cli.commands import backup as b; "
         "state,archive,marker,phase=Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),sys.argv[4]; "
         "real_discard=b._RestoreJournal.discard; "
         "exec(\"def discard(self):\\n if phase=='after_discard': real_discard(self)\\n marker.write_text('paused')\\n while True: time.sleep(1)\"); "
@@ -608,7 +608,7 @@ def test_killed_successful_restore_at_finish_boundary_keeps_new_state(
 def test_killed_restore_at_discard_boundary_keeps_old_state_and_releases_lock(
     tmp_path: Path, discard_phase: str
 ) -> None:
-    from openprogram._cli_cmds.backup import (
+    from openprogram.cli.commands.backup import (
         RestoreBusyError,
         _restore_state_lock,
         recover_interrupted_restore,
@@ -625,7 +625,7 @@ def test_killed_restore_at_discard_boundary_keeps_old_state_and_releases_lock(
     marker = tmp_path / "paused"
     code = (
         "import sys,time; from pathlib import Path; "
-        "from openprogram._cli_cmds import backup as b; "
+        "from openprogram.cli.commands import backup as b; "
         "state,archive,marker,phase=Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),sys.argv[4]; "
         "real_publish=b._publish_restored; "
         "exec(\"def publish(target,payload,*,root):\\n real_publish(target,payload,root=root)\\n raise OSError('injected publish failure')\"); "
@@ -667,7 +667,7 @@ def test_killed_restore_at_discard_boundary_keeps_old_state_and_releases_lock(
 def test_mid_restore_failure_rolls_back_every_published_target(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram._cli_cmds import backup as backup_cmd
+    from openprogram.cli.commands import backup as backup_cmd
 
     state = _state(tmp_path)
     (state / "config.json").write_text('{"generation": "old"}')
@@ -704,7 +704,7 @@ def test_mid_restore_failure_rolls_back_every_published_target(
 def test_process_abort_rolls_back_and_propagates_original_base_exception(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram._cli_cmds import backup as backup_cmd
+    from openprogram.cli.commands import backup as backup_cmd
 
     state = _state(tmp_path)
     target = state / "config.json"
@@ -727,7 +727,7 @@ def test_process_abort_rolls_back_and_propagates_original_base_exception(
 def test_colliding_legacy_backup_names_rollback_distinct_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram._cli_cmds import backup as backup_cmd
+    from openprogram.cli.commands import backup as backup_cmd
 
     state = _state(tmp_path)
     first = state / "a" / "b__c"
@@ -760,7 +760,7 @@ def test_colliding_legacy_backup_names_rollback_distinct_files(
 
 
 def test_journal_is_removed_after_a_successful_restore(tmp_path: Path) -> None:
-    from openprogram._cli_cmds.backup import restore_journal_path, restore_archive
+    from openprogram.cli.commands.backup import restore_journal_path, restore_archive
 
     state = _state(tmp_path)
     archive = _archive(tmp_path, {"config.json": b"{}"})
@@ -774,7 +774,7 @@ def test_journal_is_removed_after_a_successful_restore(tmp_path: Path) -> None:
 def test_restore_rejects_a_symlinked_journal_without_mutating_its_target(
     tmp_path: Path,
 ) -> None:
-    from openprogram._cli_cmds.backup import restore_archive, restore_journal_path
+    from openprogram.cli.commands.backup import restore_archive, restore_journal_path
 
     state = _state(tmp_path)
     outside = tmp_path / "outside.json"
@@ -792,7 +792,7 @@ def test_restore_rejects_a_symlinked_journal_without_mutating_its_target(
 def test_short_journal_writes_remain_recoverable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram._cli_cmds import backup as backup_cmd
+    from openprogram.cli.commands import backup as backup_cmd
 
     state = _state(tmp_path)
     target = state / "config.json"
@@ -817,7 +817,7 @@ def test_short_journal_writes_remain_recoverable(
 def test_restore_rejects_existing_target_symlink_without_changing_its_type(
     tmp_path: Path,
 ) -> None:
-    from openprogram._cli_cmds.backup import restore_archive
+    from openprogram.cli.commands.backup import restore_archive
 
     state = _state(tmp_path)
     real = state / "real.json"
@@ -835,7 +835,7 @@ def test_restore_rejects_existing_target_symlink_without_changing_its_type(
 
 def test_crash_after_publish_is_recovered_from_the_journal(tmp_path: Path) -> None:
     """A journal left by a killed restore rolls the state back on recovery."""
-    from openprogram._cli_cmds.backup import (
+    from openprogram.cli.commands.backup import (
         recover_interrupted_restore,
         restore_journal_path,
     )
@@ -885,7 +885,7 @@ def test_crash_after_publish_is_recovered_from_the_journal(tmp_path: Path) -> No
 def test_recovery_rejects_journal_traversal_without_mutation(
     tmp_path: Path, entry: dict
 ) -> None:
-    from openprogram._cli_cmds.backup import (
+    from openprogram.cli.commands.backup import (
         UnrecoverableRestoreJournalError,
         recover_interrupted_restore,
         restore_journal_path,
@@ -911,7 +911,7 @@ def test_recovery_rejects_journal_traversal_without_mutation(
 def test_recovery_rejects_target_parent_symlink_before_any_mutation(
     tmp_path: Path, existed: bool
 ) -> None:
-    from openprogram._cli_cmds.backup import (
+    from openprogram.cli.commands.backup import (
         UnrecoverableRestoreJournalError,
         recover_interrupted_restore,
         restore_journal_path,
@@ -958,7 +958,7 @@ def test_recovery_rejects_target_parent_symlink_before_any_mutation(
 def test_recovery_rejects_duplicate_journal_entries_before_mutation(
     tmp_path: Path,
 ) -> None:
-    from openprogram._cli_cmds.backup import (
+    from openprogram.cli.commands.backup import (
         UnrecoverableRestoreJournalError,
         recover_interrupted_restore,
         restore_journal_path,
@@ -987,7 +987,7 @@ def test_recovery_rejects_duplicate_journal_entries_before_mutation(
 def test_unrecoverable_journal_blocks_new_restore_and_residual_symlink_write(
     tmp_path: Path, journal_kind: str
 ) -> None:
-    from openprogram._cli_cmds.backup import (
+    from openprogram.cli.commands.backup import (
         UnrecoverableRestoreJournalError,
         restore_archive,
         restore_journal_path,
@@ -1036,7 +1036,7 @@ def test_unrecoverable_journal_blocks_new_restore_and_residual_symlink_write(
 
 
 def _write_recovery_case(state: Path, *, existed: bool) -> tuple[Path, Path]:
-    from openprogram._cli_cmds.backup import restore_journal_path
+    from openprogram.cli.commands.backup import restore_journal_path
 
     parent = state / "safe"
     parent.mkdir()
@@ -1075,7 +1075,7 @@ def _write_recovery_case(state: Path, *, existed: bool) -> tuple[Path, Path]:
 def test_recovery_parent_swap_after_validation_cannot_write_outside_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram._cli_cmds import backup as backup_cmd
+    from openprogram.cli.commands import backup as backup_cmd
 
     state = _state(tmp_path)
     parent, _target = _write_recovery_case(state, existed=True)
@@ -1106,7 +1106,7 @@ def test_recovery_parent_swap_after_validation_cannot_write_outside_root(
 def test_recovery_source_swap_after_validation_uses_opened_source_inode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram._cli_cmds import backup as backup_cmd
+    from openprogram.cli.commands import backup as backup_cmd
 
     state = _state(tmp_path)
     _parent, target = _write_recovery_case(state, existed=True)
@@ -1135,7 +1135,7 @@ def test_recovery_source_swap_after_validation_uses_opened_source_inode(
 def test_recovery_unlink_parent_swap_cannot_delete_outside_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram._cli_cmds import backup as backup_cmd
+    from openprogram.cli.commands import backup as backup_cmd
 
     state = _state(tmp_path)
     parent, _target = _write_recovery_case(state, existed=False)
@@ -1165,7 +1165,7 @@ def test_recovery_unlink_parent_swap_cannot_delete_outside_root(
 def test_restore_staging_is_owner_only_and_on_the_state_filesystem(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram._cli_cmds import backup as backup_cmd
+    from openprogram.cli.commands import backup as backup_cmd
 
     state = _state(tmp_path)
     archive = _archive(tmp_path, {"memory/core.md": b"value"})
@@ -1186,7 +1186,7 @@ def test_restore_staging_is_owner_only_and_on_the_state_filesystem(
 
 
 def test_recovery_removes_targets_that_did_not_exist_before(tmp_path: Path) -> None:
-    from openprogram._cli_cmds.backup import (
+    from openprogram.cli.commands.backup import (
         recover_interrupted_restore,
         restore_journal_path,
     )
@@ -1217,7 +1217,7 @@ def test_recovery_removes_targets_that_did_not_exist_before(tmp_path: Path) -> N
 def test_recovery_is_idempotent_and_a_no_op_without_a_journal(
     tmp_path: Path,
 ) -> None:
-    from openprogram._cli_cmds.backup import recover_interrupted_restore
+    from openprogram.cli.commands.backup import recover_interrupted_restore
 
     state = _state(tmp_path)
     (state / "config.json").write_text('{"generation": "current"}')
@@ -1231,7 +1231,7 @@ def test_pre_restore_snapshot_follows_the_archive_credential_authorization(
     tmp_path: Path,
 ) -> None:
     """The undo snapshot keeps credentials exactly when the archive does."""
-    from openprogram._cli_cmds.backup import _archive_carries_credentials
+    from openprogram.cli.commands.backup import _archive_carries_credentials
 
     opted_in = _archive(
         tmp_path / "a",
@@ -1253,7 +1253,7 @@ def test_pre_restore_snapshot_follows_the_archive_credential_authorization(
 
 
 def test_recovery_ignores_a_journal_marked_complete(tmp_path: Path) -> None:
-    from openprogram._cli_cmds.backup import (
+    from openprogram.cli.commands.backup import (
         recover_interrupted_restore,
         restore_journal_path,
     )

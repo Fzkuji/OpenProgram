@@ -11,7 +11,7 @@ HTTP, WebSocket, or CLI boundaries.
 | Area | Packages |
 | --- | --- |
 | Agent execution | `agent/`, `agentic_programming/`, `context/`, `events/` |
-| Programs and commands | `programs/`, `commands/`, `_cli_cmds/`, `_cli_chat/` |
+| Programs and commands | `programs/`, `commands/`, `cli/` |
 | Models and credentials | `providers/`, `auth/`, `credential_files/`, `backend/` |
 | Persistent services | `worker/`, `webui/`, `channels/`, `scheduler/`, `proactive/` |
 | State | `store/`, `memory/`, `usage/`, `contextgit/` |
@@ -22,9 +22,10 @@ HTTP, WebSocket, or CLI boundaries.
 The repository-level `skills/` directory is a project-level source-checkout
 skill location and does not replace the bundled defaults.
 
-The public command starts at `openprogram/__main__.py` and
-`openprogram/cli.py`. Parser construction lives in `_cli_parser.py`; concrete
-command implementations live in `_cli_cmds/`.
+The public command starts at `openprogram/__main__.py` and the
+`openprogram/cli/` package. Parser construction lives in `cli/parser.py`;
+command handlers, the Rich REPL, the Ink launcher, and setup sections remain
+under that same package.
 
 Most first-level packages have their own `README.md`. Generated package
 READMEs use the corresponding `__init__.py` docstring as their source and are

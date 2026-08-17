@@ -14,7 +14,7 @@ and across processes:
   and `openprogram config`.
 - `routes/config.py:save_config` — the web "Save API keys" form.
 - `setup.py:set_ui_ports` and `write_search_default_provider`.
-- `_setup_sections/*` — the `openprogram setup` wizard.
+- `cli/setup_sections/*` — the `openprogram setup` wizard.
 - `storage.py` — the providers section.
 
 A read-modify-write on a shared file is only correct under a lock covering the
@@ -84,7 +84,7 @@ branches), `routes/config.py:save_config` (the api_keys merge), and
 `setup.py`'s own `set_ui_ports` / `write_search_default_provider`. All
 web-facing config write paths are atomic.
 
-Not yet migrated: the `_setup_sections/*` wizard writers, and `storage.py`'s
+Not yet migrated: the `cli/setup_sections/*` wizard writers, and `storage.py`'s
 providers-section writes. Both are in-process safe today (the latter via
 `_cache_lock`); the open gap is a concurrent CLI or wizard write from another
 process.
