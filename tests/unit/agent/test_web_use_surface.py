@@ -1145,7 +1145,10 @@ def test_subprocess_permission_snapshot_denies_nested_browser_page_before_bypass
 
 
 def test_chat_query_owner_always_releases_captured_surface_bindings():
-    source = (REPO_ROOT / "openprogram/webui/_execute/chat.py").read_text()
+    source = (
+        REPO_ROOT
+        / "apps/server/openprogram_server/_webui/_execute/chat.py"
+    ).read_text()
     capture_at = source.index("surface_context = _capture_surface")
     finally_at = source.index("finally:", capture_at)
     release_at = source.index("_release_surface_bindings(surface_context)", finally_at)
@@ -1155,7 +1158,9 @@ def test_chat_query_owner_always_releases_captured_surface_bindings():
 
 
 def test_websocket_disconnect_releases_owned_surface_bindings():
-    source = (REPO_ROOT / "openprogram/webui/server.py").read_text()
+    source = (
+        REPO_ROOT / "apps/server/openprogram_server/server.py"
+    ).read_text()
     finally_at = source.index("    finally:\n", source.index("async def _websocket_handler"))
     remove_at = source.index("_ws_connections.remove(ws)", finally_at)
     release_at = source.index("release_connection(ws)", finally_at)

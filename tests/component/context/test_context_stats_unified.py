@@ -196,7 +196,10 @@ def test_every_graph_change_calls_refresh(monkeypatch):
     the "compaction landed but the ring didn't move" bug.
     """
     import pathlib
-    root = pathlib.Path(srv.__file__).parent
+    root = (
+        pathlib.Path(__file__).resolve().parents[3]
+        / "apps/server/openprogram_server/_webui"
+    )
     wired = {
         "_execute/chat.py": "compaction",
         "routes/runtime.py": "model switch (REST)",

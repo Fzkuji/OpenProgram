@@ -340,6 +340,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/design/ui/project-workspace.md",
             "reference/design/ui/right-sidebar-files.html",
             "reference/design/ui/sidebar-hierarchy-mock.html",
+            "reference/design/ui/sidebars-resizing.html",
         ]),
     ],
 }
